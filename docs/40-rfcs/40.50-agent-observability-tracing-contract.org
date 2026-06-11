@@ -51,6 +51,7 @@ The first tracing surface is intentionally small:
 | =hook.dispatch= | =marlin-agent-hooks= | one hook event dispatched through the registry |
 | =hook.run= | =marlin-agent-hooks= | one registered hook handler run |
 | =harness.execution= | =marlin-agent-harness= | one scenario execution report boundary |
+| =harness.result= | =marlin-agent-harness= | completed scenario execution summary |
 
 ** Stable Fields
 
@@ -70,6 +71,10 @@ Core fields should stay stable across subscribers:
 | =scenario_id= | harness scenario identifier |
 | =run_id= | graph-loop run identifier |
 | =graph_id= | graph identifier |
+| =status= | graph-loop execution status |
+| =duration_ms= | elapsed harness execution milliseconds |
+| =diagnostic_count= | number of execution diagnostics |
+| =event_count= | number of runtime events captured in the report |
 
 Additional fields may be added when they describe core agent behavior. High-cardinality payloads require explicit redaction or summarization before they enter tracing.
 

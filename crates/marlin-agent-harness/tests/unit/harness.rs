@@ -160,7 +160,8 @@ async fn harness_runs_provider_tool_sub_agent_scenario_with_hooks_and_environmen
                 .expecting_span_name(observability::SPAN_AGENT_SUB_AGENT)
                 .expecting_span_name(observability::SPAN_HOOK_DISPATCH)
                 .expecting_span_name(observability::SPAN_HOOK_RUN)
-                .expecting_span_name(observability::SPAN_HARNESS_EXECUTION),
+                .expecting_span_name(observability::SPAN_HARNESS_EXECUTION)
+                .expecting_span_name(observability::SPAN_HARNESS_RESULT),
         )
         .expecting_evidence(LoopEvidenceKind::Runtime);
     let hook_dispatcher = e2e_hook_dispatcher();
@@ -207,6 +208,13 @@ async fn harness_runs_provider_tool_sub_agent_scenario_with_hooks_and_environmen
         .collect::<Vec<_>>();
 
     assert_eq!(report.result.status, GraphLoopExecutionStatus::Completed);
+    assert_eq!(report.summary.status, GraphLoopExecutionStatus::Completed);
+    assert_eq!(report.summary.event_count, report.events.len());
+    assert_eq!(report.summary.span_count, report.trace_spans.len());
+    assert_eq!(
+        report.summary.diagnostic_count,
+        report.result.diagnostics.len()
+    );
     assert_eq!(report.result.visited_nodes, vec!["plan", "apply", "review"]);
     assert!(report.assertion.is_none());
     assert!(evaluated.is_success());
@@ -218,6 +226,7 @@ async fn harness_runs_provider_tool_sub_agent_scenario_with_hooks_and_environmen
         observability::SPAN_HOOK_DISPATCH,
         observability::SPAN_HOOK_RUN,
         observability::SPAN_HARNESS_EXECUTION,
+        observability::SPAN_HARNESS_RESULT,
     ] {
         let expected_span = HarnessSpanName::new(expected_span);
         assert!(
@@ -286,6 +295,35 @@ fn assert_agent_core_trace_spans(report: &HarnessExecutionReport) {
             .map(String::as_str),
         Some("provider")
     );
+
+    let result_span = report
+        .find_span(&HarnessSpanName::new(observability::SPAN_HARNESS_RESULT))
+        .expect("expected harness result trace span");
+    assert_eq!(
+        result_span
+            .fields
+            .get(observability::FIELD_STATUS)
+            .map(String::as_str),
+        Some("Completed")
+    );
+    assert_eq!(
+        result_span
+            .fields
+            .get(observability::FIELD_DIAGNOSTIC_COUNT)
+            .map(String::as_str),
+        Some("0")
+    );
+    let event_count = report.summary.event_count.to_string();
+    assert_eq!(
+        result_span.fields.get(observability::FIELD_EVENT_COUNT),
+        Some(&event_count)
+    );
+    result_span
+        .fields
+        .get(observability::FIELD_DURATION_MS)
+        .expect("expected duration_ms field")
+        .parse::<u64>()
+        .expect("duration_ms field should be numeric");
 }
 
 #[derive(Clone, Debug)]

@@ -3,12 +3,12 @@
 use marlin_agent_kernel::GraphLoopKernel;
 use marlin_agent_protocol::{
     AgentEvent, AgentEventTopic, AgentScenario, GraphLoopExecutionRequest,
-    GraphLoopExecutionResult, LoopEvidence, RuntimePlanSnapshot,
+    GraphLoopExecutionResult, GraphLoopExecutionStatus, LoopEvidence, RuntimePlanSnapshot,
 };
 use marlin_agent_runtime::{
-    CancellationToken, RuntimeEnvironment, RuntimeEventStream, TokioAgentRuntime, observability,
+    CancellationToken, RuntimeEnvironment, RuntimeEventStream, TokioAgentRuntime,
 };
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tokio_stream::StreamExt;
 
 use crate::{HarnessAssertionError, TraceRecorder, TraceSpanRecord, assert_evidence_kinds};
@@ -86,10 +86,11 @@ impl HarnessRuntime {
     where
         K: GraphLoopKernel,
     {
+        let started_at = Instant::now();
         let span_recorder = TraceRecorder::new();
         let _span_guard = span_recorder.install();
         let _harness_span = tracing::info_span!(
-            observability::SPAN_HARNESS_EXECUTION,
+            "harness.execution",
             scenario_id = scenario.id.as_str(),
             run_id = request.run_id.as_str(),
             graph_id = request.graph.graph_id.as_str()
@@ -108,18 +109,30 @@ impl HarnessRuntime {
         };
         let assertion = self.assert_scenario_evidence(scenario).err();
         let events = self.drain_ready_events().await;
+        let duration = started_at.elapsed();
+        record_result_span(&result, events.len(), duration);
         let trace_spans = span_recorder.spans();
-        let span_names = trace_spans
-            .iter()
-            .map(|span| HarnessSpanName::new(span.name))
-            .collect();
+
+        self.execution_report(scenario, result, events, trace_spans, duration, assertion)
+    }
+
+    fn execution_report(
+        &self,
+        scenario: &AgentScenario,
+        result: GraphLoopExecutionResult,
+        events: Vec<AgentEvent>,
+        trace_spans: Vec<TraceSpanRecord>,
+        duration: Duration,
+        assertion: Option<HarnessAssertionError>,
+    ) -> HarnessExecutionReport {
         HarnessExecutionReport {
             scenario_id: scenario.id.clone(),
+            summary: execution_summary(&result, events.len(), trace_spans.len(), duration),
             result,
             events,
             evidence: self.evidence.clone(),
+            span_names: span_names(&trace_spans),
             trace_spans,
-            span_names,
             assertion,
         }
     }
@@ -139,6 +152,44 @@ impl HarnessRuntime {
     }
 }
 
+fn duration_ms(duration: Duration) -> u64 {
+    duration.as_millis().min(u128::from(u64::MAX)) as u64
+}
+
+fn record_result_span(result: &GraphLoopExecutionResult, event_count: usize, duration: Duration) {
+    let status = result.status.clone();
+    let diagnostic_count = result.diagnostics.len();
+    let _result_span = tracing::info_span!(
+        "harness.result",
+        status = ?status,
+        duration_ms = duration_ms(duration),
+        diagnostic_count,
+        event_count
+    );
+}
+
+fn execution_summary(
+    result: &GraphLoopExecutionResult,
+    event_count: usize,
+    span_count: usize,
+    duration: Duration,
+) -> HarnessExecutionSummary {
+    HarnessExecutionSummary {
+        status: result.status.clone(),
+        duration,
+        event_count,
+        span_count,
+        diagnostic_count: result.diagnostics.len(),
+    }
+}
+
+fn span_names(trace_spans: &[TraceSpanRecord]) -> Vec<HarnessSpanName> {
+    trace_spans
+        .iter()
+        .map(|span| HarnessSpanName::new(span.name))
+        .collect()
+}
+
 /// Result of running one graph-loop request through the harness.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HarnessExecutionReport {
@@ -148,7 +199,23 @@ pub struct HarnessExecutionReport {
     pub evidence: Vec<LoopEvidence>,
     pub trace_spans: Vec<TraceSpanRecord>,
     pub span_names: Vec<HarnessSpanName>,
+    pub summary: HarnessExecutionSummary,
     pub assertion: Option<HarnessAssertionError>,
+}
+
+/// Compact execution summary for scanning many harness runs.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct HarnessExecutionSummary {
+    /// Final graph-loop execution status.
+    pub status: GraphLoopExecutionStatus,
+    /// Wall-clock duration observed by the harness.
+    pub duration: Duration,
+    /// Number of runtime events captured in the report.
+    pub event_count: usize,
+    /// Number of tracing spans captured in the report.
+    pub span_count: usize,
+    /// Number of execution diagnostics captured in the result.
+    pub diagnostic_count: usize,
 }
 
 impl HarnessExecutionReport {
