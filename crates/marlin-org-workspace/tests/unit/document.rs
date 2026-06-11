@@ -1,4 +1,6 @@
-use marlin_org_model::{CheckboxState, LinkKind, OrgContractReferenceScope, TodoState};
+use marlin_org_model::{
+    CheckboxState, LinkKind, OrgContractReferenceScope, OrgContractTemplateKind, TodoState,
+};
 use marlin_org_workspace::{OrgDocument, OrgDocumentLoader};
 
 #[test]
@@ -125,6 +127,14 @@ Task `{{ scope.title }}` must contain a Goal section.
     assert_eq!(
         assertion.message.as_deref(),
         Some("Task `{{ scope.title }}` must contain a Goal section.\n")
+    );
+    assert_eq!(assertion.templates.len(), 1);
+    let template = &assertion.templates[0];
+    assert_eq!(template.kind, OrgContractTemplateKind::Message);
+    assert_eq!(template.engine.as_str(), "jinja2");
+    assert_eq!(
+        template.body,
+        "Task `{{ scope.title }}` must contain a Goal section.\n"
     );
     assert_eq!(
         assertion

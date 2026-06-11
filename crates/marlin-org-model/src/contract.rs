@@ -59,8 +59,25 @@ pub struct OrgContractAssertion {
     pub expectation: OrgContractExpectation,
     pub message: Option<String>,
     pub fix: Option<String>,
+    pub templates: Vec<OrgContractTemplate>,
     pub query_source: Option<OrgContractSourceSpan>,
     pub expect_source: Option<OrgContractSourceSpan>,
+}
+
+/// Template text attached to a contract assertion.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct OrgContractTemplate {
+    pub kind: OrgContractTemplateKind,
+    pub engine: OrgContractTemplateEngine,
+    pub body: String,
+    pub source: Option<OrgContractSourceSpan>,
+}
+
+/// Template role inside a contract assertion.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum OrgContractTemplateKind {
+    Message,
+    Fix,
 }
 
 /// Named query binding used by a contract assertion.
@@ -153,6 +170,7 @@ contract_text_id!(OrgContractId);
 contract_text_id!(OrgContractScope);
 contract_text_id!(OrgContractKind);
 contract_text_id!(OrgContractSeverity);
+contract_text_id!(OrgContractTemplateEngine);
 contract_text_id!(OrgContractExpectation);
 contract_text_id!(OrgContractElementCategory);
 contract_text_id!(OrgContractElementKind);

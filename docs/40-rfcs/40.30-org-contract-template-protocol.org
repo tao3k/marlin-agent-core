@@ -54,8 +54,9 @@ Contracts are ordinary Org subtrees:
 ** Native Crates
 
 =marlin-org-model= owns stable DTOs such as =OrgContractRegistry=,
-=OrgContract=, =OrgContractAssertion=, and =OrgContractQuery=. State-like fields
-use typed wrappers instead of public stringly state.
+=OrgContract=, =OrgContractAssertion=, =OrgContractQuery=, and
+=OrgContractTemplate=. State-like fields use typed wrappers instead of public
+stringly state.
 
 =marlin-org-workspace= owns projection from orgize contracts through
 =OrgDocumentLoader::load_workspace=.
@@ -63,6 +64,10 @@ use typed wrappers instead of public stringly state.
 =OrgDocumentLoader::load_workspace= also returns =OrgContractResolutionReport=.
 It resolves local contract ids and aliases, and records =ORG044= warning
 diagnostics for empty or unresolved references.
+
+=marlin-org-workspace= projects assertion =message= and =fix= blocks into
+=OrgContractTemplate= records. The records preserve role, engine label, and
+body text as data for template renderers or Gerbil control planes.
 
 =marlin-agent-core= re-exports =org_model= and =org_workspace= so callers can
 use contract registries from the facade without depending on parser internals.
@@ -82,6 +87,9 @@ consume them to select scaffolds, render messages, or produce
 
 - =OrgDocumentLoader::load_workspace= returns contract reference resolutions and
   unresolved reference diagnostics.
+
+- =OrgDocumentLoader::load_workspace= returns template-facing assertion
+  =message= and =fix= facts as =OrgContractTemplate= records.
 
 - Contract state fields are typed wrappers, not public =String= fields.
 

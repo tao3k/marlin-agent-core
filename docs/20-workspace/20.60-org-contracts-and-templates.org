@@ -42,15 +42,18 @@ parser-owned source span for the reference.
 
 ** Template Boundary
 
-Contracts are template inputs, not direct mutations. A template engine or Gerbil
-control plane may consume =OrgContractRegistry= to choose document scaffolds,
-messages, and fix intent. Durable mutation still goes through
-=WorkspacePatch=, =marlin-org-patch=, and =marlin-org-workflow=.
+Contracts are template inputs, not direct mutations. =marlin-org-workspace=
+projects assertion =message= and =fix= blocks into =OrgContractTemplate=
+records with role, engine label, and body text. A template engine or Gerbil
+control plane may consume those records to choose document scaffolds, messages,
+and fix intent. Durable mutation still goes through =WorkspacePatch=,
+=marlin-org-patch=, and =marlin-org-workflow=.
 
 ** Current Limits
 
-The first projection preserves orgize query, expectation, message, fix, source
-block spans, and local reference resolution. It does not load external contract
-registry files and does not execute the contract assertions inside Marlin.
-Validation execution remains an upstream orgize lint concern until the Marlin
-workspace protocol needs a runtime-independent validation receipt.
+The first projection preserves orgize query, expectation, message, fix,
+template facts, source block spans, and local reference resolution. It does not
+load external contract registry files and does not execute the contract
+assertions inside Marlin. Validation execution remains an upstream orgize lint
+concern until the Marlin workspace protocol needs a runtime-independent
+validation receipt.

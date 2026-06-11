@@ -6,7 +6,8 @@ use marlin_org_model::{
     OrgContractExpectation, OrgContractId, OrgContractKind, OrgContractQuery, OrgContractReference,
     OrgContractReferenceScope, OrgContractRegistry, OrgContractRelativeScope,
     OrgContractResolution, OrgContractResolutionReport, OrgContractScope, OrgContractSeverity,
-    OrgContractSourceSpan, OrgNodeId, OrgSourceSpan,
+    OrgContractSourceSpan, OrgContractTemplate, OrgContractTemplateEngine, OrgContractTemplateKind,
+    OrgNodeId, OrgSourceSpan,
 };
 use orgize::ast::{Document, ParsedAnnotation, parse_contract_reference};
 
@@ -143,6 +144,7 @@ fn project_contract_assertion(
         expectation: OrgContractExpectation::new(debug_label(&assertion.expectation)),
         message: assertion.message.clone(),
         fix: assertion.fix.clone(),
+        templates: project_contract_templates(assertion),
         query_source: assertion
             .query_source
             .as_ref()
@@ -166,6 +168,32 @@ fn project_contract_assertion(
                 end_byte: source.range_end as usize,
             }),
     }
+}
+
+fn project_contract_templates(
+    assertion: &orgize::ast::OrgContractAssertion,
+) -> Vec<OrgContractTemplate> {
+    let mut templates = Vec::new();
+
+    if let Some(message) = &assertion.message {
+        templates.push(OrgContractTemplate {
+            kind: OrgContractTemplateKind::Message,
+            engine: OrgContractTemplateEngine::new("jinja2"),
+            body: message.clone(),
+            source: None,
+        });
+    }
+
+    if let Some(fix) = &assertion.fix {
+        templates.push(OrgContractTemplate {
+            kind: OrgContractTemplateKind::Fix,
+            engine: OrgContractTemplateEngine::new("jinja2"),
+            body: fix.clone(),
+            source: None,
+        });
+    }
+
+    templates
 }
 
 fn project_contract_query(query: &orgize::ast::OrgContractQuery) -> OrgContractQuery {
