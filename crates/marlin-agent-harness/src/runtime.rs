@@ -2,12 +2,14 @@
 
 use marlin_agent_kernel::GraphLoopKernel;
 use marlin_agent_protocol::{
-    AgentScenario, GraphLoopExecutionRequest, GraphLoopExecutionResult, LoopEvidence,
+    AgentEvent, AgentScenario, GraphLoopExecutionRequest, GraphLoopExecutionResult, LoopEvidence,
     RuntimePlanSnapshot,
 };
 use marlin_agent_runtime::{
     CancellationToken, RuntimeEnvironment, RuntimeEventStream, TokioAgentRuntime,
 };
+use std::time::Duration;
+use tokio_stream::StreamExt;
 
 use crate::{HarnessAssertionError, assert_evidence_kinds};
 
@@ -97,12 +99,28 @@ impl HarnessRuntime {
             ),
         };
         let assertion = self.assert_scenario_evidence(scenario).err();
+        let events = self.drain_ready_events().await;
         HarnessExecutionReport {
             scenario_id: scenario.id.clone(),
             result,
+            events,
             evidence: self.evidence.clone(),
             assertion,
         }
+    }
+
+    async fn drain_ready_events(&mut self) -> Vec<AgentEvent> {
+        let mut events = Vec::new();
+
+        while let Ok(Some(event)) = self
+            .runtime
+            .timeout(Duration::from_millis(1), self.events.next())
+            .await
+        {
+            events.push(event);
+        }
+
+        events
     }
 }
 
@@ -111,6 +129,7 @@ impl HarnessRuntime {
 pub struct HarnessExecutionReport {
     pub scenario_id: String,
     pub result: GraphLoopExecutionResult,
+    pub events: Vec<AgentEvent>,
     pub evidence: Vec<LoopEvidence>,
     pub assertion: Option<HarnessAssertionError>,
 }

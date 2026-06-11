@@ -184,11 +184,13 @@ dependencies = [
 name = "marlin-agent-harness"
 version = "0.1.0"
 dependencies = [
+ "marlin-agent-hooks",
  "marlin-agent-kernel",
  "marlin-agent-protocol",
  "marlin-agent-runtime",
  "rust-lang-project-harness 0.1.0 (git+https://github.com/tao3k/rust-lang-project-harness?branch=main)",
  "tokio",
+ "tokio-stream",
 ]
 
 [[package]]

@@ -431,7 +431,21 @@ async fn tokio_kernel_driver_runs_provider_tool_and_subagent_adapters() {
     );
     assert_eq!(
         next_event(&mut events).await,
+        RuntimeEvent::new(
+            "kernel.sub_agent",
+            "sub-agent sub-agent Started source Other(\"kernel.sub-agent-node\") status node review"
+        )
+    );
+    assert_eq!(
+        next_event(&mut events).await,
         RuntimeEvent::new("test.sub-agent", "sub-agent reviewed node review")
+    );
+    assert_eq!(
+        next_event(&mut events).await,
+        RuntimeEvent::new(
+            "kernel.sub_agent",
+            "sub-agent sub-agent Stopped source Other(\"kernel.sub-agent-node\") status node review"
+        )
     );
     assert_eq!(
         next_event(&mut events).await,
@@ -626,7 +640,21 @@ async fn subagent_adapter_failure_fails_graph_execution() {
     );
     assert_eq!(
         next_event(&mut events).await,
+        RuntimeEvent::new(
+            "kernel.sub_agent",
+            "sub-agent sub-agent Started source Other(\"kernel.sub-agent-node\") status node review"
+        )
+    );
+    assert_eq!(
+        next_event(&mut events).await,
         RuntimeEvent::new("test.sub-agent", "sub-agent failed node review")
+    );
+    assert_eq!(
+        next_event(&mut events).await,
+        RuntimeEvent::new(
+            "kernel.sub_agent",
+            "sub-agent sub-agent Stopped source Other(\"kernel.sub-agent-node\") status node review"
+        )
     );
     assert_eq!(
         next_event(&mut events).await,

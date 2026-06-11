@@ -4,6 +4,8 @@ use std::collections::BTreeSet;
 
 use marlin_agent_protocol::{AgentEvent, AgentScenario, LoopEvidence, LoopEvidenceKind};
 
+use crate::runtime::HarnessExecutionReport;
+
 /// Result of validating a scenario transcript and evidence set.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AgentHarnessReport {
@@ -46,6 +48,13 @@ impl AgentHarness {
             evidence: evidence.to_vec(),
             diagnostics,
         }
+    }
+
+    pub fn evaluate_execution_report(
+        scenario: &AgentScenario,
+        report: &HarnessExecutionReport,
+    ) -> AgentHarnessReport {
+        Self::evaluate(scenario, &report.events, &report.evidence)
     }
 }
 

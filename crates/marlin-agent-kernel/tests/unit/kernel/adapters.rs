@@ -3,12 +3,13 @@ use std::{sync::Arc, time::Duration};
 use marlin_agent_hooks::{HookDispatcher, HookInvocation, HookRegistration, HookRegistry};
 use marlin_agent_kernel::{
     GraphLoopExecutionRequest, GraphLoopExecutionStatus, GraphLoopKernel, GraphNodeInvocation,
-    LoopGraph, LoopNodeSpec, ProviderNodeAdapter, TokioGraphLoopKernel, ToolNodeAdapter,
+    LoopGraph, LoopNodeSpec, ProviderNodeAdapter, SubAgentNodeAdapter, TokioGraphLoopKernel,
+    ToolNodeAdapter,
 };
 use marlin_agent_protocol::{HookEventName, HookHandlerType, HookRunSummary};
 use marlin_agent_runtime::{
-    HookRuntime, ProviderRuntime, RuntimeContext, RuntimeEvent, RuntimeFuture, TokioAgentRuntime,
-    ToolRuntime,
+    HookRuntime, ProviderRuntime, RuntimeContext, RuntimeEvent, RuntimeFuture, SubAgentRuntime,
+    TokioAgentRuntime, ToolRuntime,
 };
 use tokio_stream::StreamExt;
 
@@ -57,6 +58,38 @@ async fn provider_node_adapter_dispatches_pre_and_post_tool_hooks() {
     assert_eq!(order, vec!["pre", "provider", "post"]);
 }
 
+#[tokio::test]
+async fn sub_agent_node_adapter_dispatches_lifecycle_hooks_and_activity() {
+    let sub_agent_adapter =
+        SubAgentNodeAdapter::new(OrderingSubAgent, |invocation: GraphNodeInvocation| {
+            invocation.node_id.into_string()
+        })
+        .with_hook_dispatcher(sub_agent_hook_dispatcher());
+    let request =
+        GraphLoopExecutionRequest::new("run", single_node_graph("sub-agent-node", "sub-agent"));
+    let kernel =
+        TokioGraphLoopKernel::new("run", "graph").with_executor("sub-agent", sub_agent_adapter);
+    let (runtime, mut events) = TokioAgentRuntime::new(16);
+
+    let result = kernel
+        .spawn_execution(request, &runtime)
+        .join()
+        .await
+        .expect("kernel task should join");
+    let (order, activity) = collect_sub_agent_events(&mut events).await;
+
+    assert_eq!(result.status, GraphLoopExecutionStatus::Completed);
+    assert_eq!(
+        order,
+        vec!["sub-agent-start", "sub-agent", "sub-agent-stop"]
+    );
+    assert_eq!(activity.len(), 2);
+    assert!(activity[0].contains("Started"));
+    assert!(activity[0].contains("sub-agent"));
+    assert!(activity[1].contains("Stopped"));
+    assert!(activity[1].contains("sub-agent"));
+}
+
 fn ordering_hook_dispatcher() -> HookDispatcher {
     HookDispatcher::new(
         HookRegistry::new()
@@ -71,6 +104,24 @@ fn ordering_hook_dispatcher() -> HookDispatcher {
                 HookEventName::PostToolUse,
                 HookHandlerType::Command,
                 Arc::new(OrderingHook::new("post-run", "post")),
+            )),
+    )
+}
+
+fn sub_agent_hook_dispatcher() -> HookDispatcher {
+    HookDispatcher::new(
+        HookRegistry::new()
+            .with_registration(HookRegistration::new(
+                "sub-agent-start",
+                HookEventName::SubAgentStart,
+                HookHandlerType::Command,
+                Arc::new(OrderingHook::new("sub-agent-start-run", "sub-agent-start")),
+            ))
+            .with_registration(HookRegistration::new(
+                "sub-agent-stop",
+                HookEventName::SubAgentStop,
+                HookHandlerType::Command,
+                Arc::new(OrderingHook::new("sub-agent-stop-run", "sub-agent-stop")),
             )),
     )
 }
@@ -102,6 +153,26 @@ async fn collect_order_events(
     })
     .await
     .expect("order events should arrive")
+}
+
+async fn collect_sub_agent_events(
+    events: &mut marlin_agent_runtime::RuntimeEventStream,
+) -> (Vec<String>, Vec<String>) {
+    tokio::time::timeout(Duration::from_secs(1), async {
+        let mut order = Vec::new();
+        let mut activity = Vec::new();
+        while order.len() < 3 || activity.len() < 2 {
+            let event = events.next().await.expect("event should be emitted");
+            if event.topic == "test.order" {
+                order.push(event.message);
+            } else if event.topic == "kernel.sub_agent" {
+                activity.push(event.message);
+            }
+        }
+        (order, activity)
+    })
+    .await
+    .expect("sub-agent events should arrive")
 }
 
 #[derive(Clone, Debug)]
@@ -144,6 +215,28 @@ impl ToolRuntime for OrderingTool {
                 .await
                 .expect("tool order event should be delivered");
             invocation
+        })
+    }
+}
+
+#[derive(Clone, Debug)]
+struct OrderingSubAgent;
+
+impl SubAgentRuntime for OrderingSubAgent {
+    type Input = String;
+    type Output = String;
+
+    fn run_sub_agent(
+        &self,
+        input: Self::Input,
+        context: RuntimeContext,
+    ) -> RuntimeFuture<Self::Output> {
+        Box::pin(async move {
+            context
+                .emit(RuntimeEvent::new("test.order", "sub-agent"))
+                .await
+                .expect("sub-agent order event should be delivered");
+            input
         })
     }
 }

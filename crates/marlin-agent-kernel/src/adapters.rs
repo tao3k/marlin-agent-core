@@ -5,6 +5,7 @@ use std::sync::Arc;
 use marlin_agent_hooks::{HookDispatchReport, HookDispatcher, HookInvocation};
 use marlin_agent_protocol::{
     ExecutorName, GraphNodeExecutionReceipt, GraphNodeInvocation, HookEventName, NodeId,
+    SubAgentActivity, SubAgentActivityKind, SubAgentSource,
 };
 use marlin_agent_runtime::{
     ProviderRuntime, RuntimeContext, RuntimeEvent, RuntimeFuture, SubAgentRuntime, ToolRuntime,
@@ -220,6 +221,7 @@ where
     sub_agent: Arc<A>,
     input_mapper: Arc<SubAgentInputMapper<A>>,
     receipt_mapper: Arc<SubAgentReceiptMapper<A>>,
+    hook_dispatcher: HookDispatcher,
 }
 
 impl<A> SubAgentNodeAdapter<A>
@@ -249,7 +251,13 @@ where
             sub_agent: Arc::new(sub_agent),
             input_mapper: Arc::new(input_mapper),
             receipt_mapper: Arc::new(receipt_mapper),
+            hook_dispatcher: HookDispatcher::default(),
         }
+    }
+
+    pub fn with_hook_dispatcher(mut self, hook_dispatcher: HookDispatcher) -> Self {
+        self.hook_dispatcher = hook_dispatcher;
+        self
     }
 }
 
@@ -265,11 +273,60 @@ where
         let sub_agent = Arc::clone(&self.sub_agent);
         let input = (self.input_mapper)(invocation.clone());
         let receipt_mapper = Arc::clone(&self.receipt_mapper);
+        let hook_dispatcher = self.hook_dispatcher.clone();
         let node_id = invocation.node_id;
         let executor = invocation.executor;
+        let hook_message = format!(
+            "sub-agent node {} executor {}",
+            node_id.as_str(),
+            executor.as_str()
+        );
+        let activity_status = format!("node {}", node_id.as_str());
+        let agent_reference = executor.as_str().to_owned();
+        let sub_agent_source = SubAgentSource::Other("kernel.sub-agent-node".to_owned());
 
         Box::pin(async move {
-            let output = sub_agent.run_sub_agent(input, context).await;
+            let start_report = hook_dispatcher
+                .dispatch_with_context(
+                    context.child_context(),
+                    HookInvocation::new(HookEventName::SubAgentStart)
+                        .with_message(hook_message.clone()),
+                )
+                .await;
+            emit_hook_report(&context, &start_report).await;
+            emit_sub_agent_activity(
+                &context,
+                SubAgentActivity::new(
+                    agent_reference.clone(),
+                    sub_agent_source.clone(),
+                    SubAgentActivityKind::Started,
+                )
+                .with_status_message(activity_status.clone()),
+            )
+            .await;
+
+            let output = sub_agent
+                .run_sub_agent(input, context.child_context())
+                .await;
+
+            let stop_report = hook_dispatcher
+                .dispatch_with_context(
+                    context.child_context(),
+                    HookInvocation::new(HookEventName::SubAgentStop).with_message(hook_message),
+                )
+                .await;
+            emit_hook_report(&context, &stop_report).await;
+            emit_sub_agent_activity(
+                &context,
+                SubAgentActivity::new(
+                    agent_reference,
+                    sub_agent_source,
+                    SubAgentActivityKind::Stopped,
+                )
+                .with_status_message(activity_status),
+            )
+            .await;
+
             receipt_mapper(output, node_id, executor)
         })
     }
@@ -296,4 +353,17 @@ async fn emit_hook_report(context: &RuntimeContext, report: &HookDispatchReport)
             .emit(RuntimeEvent::new("kernel.hook", message))
             .await;
     }
+}
+
+async fn emit_sub_agent_activity(context: &RuntimeContext, activity: SubAgentActivity) {
+    let message = format!(
+        "sub-agent {} {:?} source {:?} status {}",
+        activity.agent_reference,
+        activity.kind,
+        activity.source,
+        activity.status_message.as_deref().unwrap_or_default()
+    );
+    let _ = context
+        .emit(RuntimeEvent::new("kernel.sub_agent", message))
+        .await;
 }
