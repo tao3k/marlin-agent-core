@@ -125,6 +125,7 @@ pub struct GerbilAotProbeReceipt {
     pub status: GerbilAotProbeStatus,
     pub gxc: PathBuf,
     pub gsc: PathBuf,
+    pub backend_gsc: Option<PathBuf>,
     pub root: PathBuf,
     pub executable: PathBuf,
     pub detail: Option<String>,
@@ -341,6 +342,19 @@ fn classify_gerbil_aot_module_failure(receipt: &GerbilAotCommandReceipt) -> Gerb
     }
 }
 
+fn gerbil_aot_backend_gsc_path(receipt: &GerbilAotCommandReceipt) -> Option<PathBuf> {
+    extract_quoted_gsc_path(&format!("{}\n{}", receipt.stdout, receipt.stderr))
+}
+
+fn extract_quoted_gsc_path(output: &str) -> Option<PathBuf> {
+    output
+        .split('"')
+        .skip(1)
+        .step_by(2)
+        .find(|quoted| quoted.ends_with("/gsc") || quoted.ends_with("\\gsc"))
+        .map(PathBuf::from)
+}
+
 fn prepend_path(path: &Path) -> std::ffi::OsString {
     match env::var_os("PATH") {
         Some(current) => {
@@ -375,10 +389,18 @@ fn gerbil_aot_probe_receipt(
     module_compile: Option<GerbilAotCommandReceipt>,
     executable_compile: Option<GerbilAotCommandReceipt>,
 ) -> GerbilAotProbeReceipt {
+    let backend_gsc = if status == GerbilAotProbeStatus::GscBackendUnavailable {
+        module_compile
+            .as_ref()
+            .and_then(gerbil_aot_backend_gsc_path)
+    } else {
+        None
+    };
     GerbilAotProbeReceipt {
         status,
         gxc: config.gxc.clone(),
         gsc: config.gsc.clone(),
+        backend_gsc,
         root: config.root.clone(),
         executable,
         detail,
