@@ -1,0 +1,67 @@
+#+title: 30.30 Gerbil Command Adapter
+
+* 30.30 Gerbil Command Adapter
+:PROPERTIES:
+:ID: docs-30-30-gerbil-command-adapter
+:KIND: architecture
+:STATUS: active
+:END:
+
+** Contract
+
+=marlin-gerbil-scheme= owns the Rust-side out-of-process compiler adapter. The
+adapter starts a configured command, writes a single JSON
+=GerbilCompileRequest= to stdin, reads a single JSON =GerbilCompileResponse=
+from stdout, and returns a typed =GerbilCompiledArtifact=.
+
+The command boundary is intentionally data-only:
+
+- stdin carries =source= and =expected=.
+- stdout carries =artifact=.
+- =LoopGraph= artifacts carry graph ids, node executor/config maps, and optional
+  edge conditions through the typed Rust IR.
+- workspace patch intent is represented as =WorkspacePatchIntentSpec= inside
+  =GerbilCompiledArtifact=, not as direct mutation authority.
+- stderr is diagnostic text and is surfaced only when the command exits with a
+  non-zero status.
+- The adapter rejects any artifact whose actual kind differs from the requested
+  =expected= kind.
+
+** Gerbil-Side Bindings
+
+The first binding layer is protocol binding, not native VM embedding. Gerbil
+code should own constructors, accessors, and serializers for the Marlin command
+protocol DTOs it emits. The current smoke adapter binds =LoopGraph=,
+=LoopNodeSpec=, and =LoopEdgeSpec= on the Gerbil side before serializing a
+=GerbilCompileResponse=.
+
+Native Rust/Gerbil bindings are a later layer. They should live behind this
+same typed protocol after the command boundary proves the IR shape, because
+embedding the Gerbil/Gambit runtime would add ABI, GC, threading, linker, and
+packaging constraints to the crate before the control-plane IR is stable.
+
+** Boundary
+
+The command adapter does not select or bundle a Gerbil runtime. Runtime
+selection remains configuration owned by the caller. This keeps the Marlin
+kernel dependent on typed IR rather than on the Gerbil implementation.
+
+** Profile Configuration
+
+The portable configuration shape is =GerbilCommandProfile=. It is JSON
+serializable and can be supplied through =MARLIN_GERBIL_COMMAND_PROFILE=:
+
+#+begin_src json
+{"program":"/opt/gerbil/bin/gxi","args":["--stdio-json"],"current_dir":".data/gerbil"}
+#+end_src
+
+The profile is converted into an execution spec without shell parsing. Each
+=args= entry is passed as one process argument. Callers that need shell
+behavior must opt into it explicitly by setting =program= to a shell and
+providing shell flags themselves.
+
+Rust callers can construct a compiler from the same profile shape with
+=GerbilCommandCompiler::from_profile_json= or
+=GerbilCommandCompiler::from_env=. The environment entry point reads
+=MARLIN_GERBIL_COMMAND_PROFILE= and returns no compiler when the variable is
+absent.

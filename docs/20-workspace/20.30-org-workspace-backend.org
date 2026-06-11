@@ -1,0 +1,26 @@
+#+TITLE: 20.30 Org Workspace Backend
+#+FILETAGS: :marlin:workspace:org:backend:
+
+* 20.30 Org Workspace Backend
+:PROPERTIES:
+:ID: docs-20-30-org-workspace-backend
+:KIND: protocol
+:STATUS: active
+:END:
+
+=marlin-org-workspace= is the first-party Org document adapter for native
+workspace backends.
+
+Raw Org text is parsed through =tao3k/orgize=. The projection consumes orgize
+headline, section, property drawer, list item, and link traversal surfaces before
+building structured =OrgNode= records. Each projected heading carries a typed
+=source_span= with document id, byte range, and line range from the orgize syntax
+tree.
+
+** Boundary
+- Does not implement =AgentWorkspace=
+- Owns raw Org document loading and AST projection
+- Loads raw Org text through =tao3k/orgize=
+- Does not become a dependency of =marlin-agent-core=
+- Does not own memory algorithms, query execution, patch execution, view
+  rendering, or external stores

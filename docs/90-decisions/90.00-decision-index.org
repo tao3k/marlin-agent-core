@@ -1,0 +1,15 @@
+#+TITLE: 90.00 Decision Index
+#+FILETAGS: :marlin:decisions:johnny_decimal:
+
+* 90.00 Decision Index
+:PROPERTIES:
+:ID: docs-90-00-decision-index
+:KIND: docs_index
+:STATUS: active
+:END:
+
+** Decisions
+- [[file:90.10-kernel-stays-lean.org][90.10 Kernel Stays Lean]]
+- [[file:90.20-harness-gates-per-crate.org][90.20 Harness Gates Per Crate]]
+- [[file:90.30-agent-system-harness-crate.org][90.30 Agent System Harness Crate]]
+- [[file:90.40-org-token-spans-and-workflow.org][90.40 Org Token Spans And Workflow]]

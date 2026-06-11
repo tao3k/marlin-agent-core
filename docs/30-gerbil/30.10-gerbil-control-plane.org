@@ -1,0 +1,16 @@
+#+TITLE: 30.10 Gerbil Control Plane
+#+FILETAGS: :marlin:gerbil:control_plane:
+
+* 30.10 Gerbil Control Plane
+:PROPERTIES:
+:ID: docs-30-10-gerbil-control-plane
+:KIND: architecture
+:STATUS: active
+:END:
+
+Gerbil Scheme is a control-plane compiler boundary. It defines loop graphs,
+workspace schemas, view policies, validation policies, and memory dispatch
+policies.
+
+Gerbil does not mutate workspace state directly. It emits typed IR that Rust
+validates and executes.

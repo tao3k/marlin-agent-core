@@ -1,0 +1,49 @@
+#+TITLE: 20.50 Org Patch Planning
+#+FILETAGS: :marlin:workspace:org:patch:
+
+* 20.50 Org Patch Planning
+:PROPERTIES:
+:ID: docs-20-50-org-patch-planning
+:KIND: protocol
+:STATUS: active
+:END:
+
+=marlin-org-patch= is the source-aware planning boundary between typed workspace
+patches and durable Org text. It consumes =WorkspacePatch= operations together
+with parser-owned =OrgSourceSpan= records, then returns an =OrgPatchPlan=.
+
+The plan is intentionally not a writer. It contains byte-range edits that a
+caller may apply after validating the current file bytes, and diagnostics for
+operations that need more precise parser evidence before they can be made
+source-safe.
+
+** Native Objects
+- =OrgPatchPlanner= lowers typed patch operations into planned source edits.
+- =OrgPatchPlan= carries =OrgTextEdit= values and =OrgPatchDiagnostic= values.
+- =OrgTextEdit= names the document, byte range, replacement text, and reason.
+- =OrgPatchDiagnostic= records the node, operation, and missing source fact.
+- =OrgPatchApplier= applies a diagnostic-free plan to caller-owned in-memory
+  document text after validating byte ranges.
+- =OrgPatchApplyReport= records applied edit count, diagnostics, and changed
+  document before/after hashes.
+
+** Planning Rule
+The first planner supports append-only Org edits when a node-level source span is
+sufficient. Adding checkboxes, links, and evidence references can anchor at the
+end byte of the affected node source span.
+
+Operations that require token-level authority return diagnostics. Examples
+include replacing a headline TODO keyword, editing a property drawer entry,
+marking an existing checkbox, and emitting a child heading when the parent
+heading level is not available in the patch input.
+
+** Boundary Rule
+=marlin-org-patch= consumes the Org model and patch receipt types. It does not
+parse Org documents itself, does not depend on =orgize= directly, and does not
+perform filesystem writes.
+
+The applier is also not a writer. It mutates only the document strings supplied
+by the caller, and rejects the whole plan if any edit is out of bounds,
+overlapping, missing its target document, or not aligned to a UTF-8 character
+boundary. Successful reports include deterministic document hashes so the caller
+can connect in-memory application to a later filesystem persistence boundary.

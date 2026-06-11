@@ -1,0 +1,16 @@
+#+TITLE: 10.20 Kernel Boundary
+#+FILETAGS: :marlin:architecture:kernel:
+
+* 10.20 Kernel Boundary
+:PROPERTIES:
+:ID: docs-10-20-kernel-boundary
+:KIND: architecture
+:STATUS: active
+:END:
+
+The kernel owns graph execution authority, runtime snapshots, provider/tool
+runtime boundaries, sub-agent runtime boundaries, events, cancellation, and the
+native extension registry.
+
+The kernel consumes workspace and Gerbil IR contracts. It does not own Org
+parsing, memory algorithms, external storage, or transport systems.

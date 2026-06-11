@@ -1,0 +1,134 @@
+#+TITLE: 40.10 RFC: Org-native Agent Work Protocol
+#+FILETAGS: :marlin:rfc:workspace:org:
+
+* 40.10 RFC: Org-native Agent Work Protocol
+:PROPERTIES:
+:ID: rfc-40-10-org-native-agent-work-protocol
+:KIND: rfc
+:STATUS: draft
+:END:
+
+This RFC defines the native work protocol for agents that use Org documents as
+the durable workspace structure. The protocol is not "Org as memory"; it is an
+Org-native workspace where parser-owned Org facts become typed query, patch,
+view, and source-edit planning contracts.
+
+** Motivation
+Agents need a work surface that preserves task structure, evidence, decisions,
+checklists, source provenance, and memory dispatch intent without asking an LLM
+to rewrite whole files. Raw Org remains the durable document format, while
+agent-core crates expose typed protocol surfaces over that document.
+
+** Scope
+The protocol covers these native boundaries:
+
+- Org AST projection from =tao3k/orgize= into =marlin-org-model=.
+- Workspace query filters and scopes over typed =OrgNode= records.
+- Typed patch operations and validation receipts.
+- Rendered views for agent- and UI-scoped reads.
+- Source-aware Org patch planning and in-memory application receipts.
+- Memory dispatch as a downstream backend concern, not the Org parser contract.
+
+The protocol does not define vector storage, long-term memory algorithms,
+filesystem persistence policy, external transport, or Gerbil runtime execution.
+
+** Native Crates
+The work protocol is split across small crates:
+
+| Crate | Native responsibility |
+|-------+-----------------------|
+| =marlin-org-model= | Typed Org node, source span, link, task, block, and table records |
+| =marlin-org-workspace= | =orgize=-backed document loading and AST projection |
+| =marlin-workspace-query= | Query scopes, selectors, filters, and results |
+| =marlin-workspace-patch= | Typed mutation operations and validation receipts |
+| =marlin-workspace-view= | Rendered workspace view specs and results |
+| =marlin-org-memory= | In-memory =AgentWorkspace= backend over Org records |
+| =marlin-org-patch= | Source-aware text edit planning and in-memory application |
+| =marlin-workspace-protocol= | Public =AgentWorkspace= facade and native type exports |
+
+** Source Authority
+Parser-owned source spans are first-class protocol data. A projected node may
+carry =OrgSourceSpan= with document, byte range, and line range. Queries can
+scope by source document or line range, views can render source spans, and patch
+receipts can report affected sources.
+
+Source spans prove where a typed record came from; they are not permission to
+guess token locations. Token-level spans for headline TODO keywords, property
+values, and checkbox markers are projected from =orgize=-owned document facts
+into =OrgNodeSourceTokens=. Patch operations that need those subranges must use
+the token spans or return diagnostics.
+
+** Query Protocol
+Agents query the workspace through =WorkspaceQuery=. Queries may combine semantic
+filters such as TODO state, tags, properties, open checkbox state, evidence, and
+memory dispatch with source-aware filters such as =SourceDocument= and
+=SourceRange=.
+
+Query results return typed node matches. They are not raw Org slices and should
+not be used as a substitute for parser-owned source facts.
+
+** Patch Protocol
+Agents mutate workspace state through =WorkspacePatch=. Patch operations express
+intent such as setting TODO state, updating properties, adding checkboxes, adding
+links, attaching evidence, recording decisions, and marking memory candidates.
+
+Patch execution returns =WorkspacePatchReceipt= with affected node ids,
+validation diagnostics, before/after workspace hashes, memory dispatch receipts,
+and affected source spans for nodes that originated in Org text.
+
+** View Protocol
+Agents read task-scoped context through =WorkspaceViewSpec= and
+=RenderedWorkspaceView=. Compact views include selected typed fields, including
+source spans when requested, so agents can keep context bounded without losing
+the route back to durable Org text.
+
+Rendered views are read models. They are never patch payloads and never become
+the canonical workspace state.
+
+** Org Patch Planning
+=marlin-org-patch= lowers typed patch intent plus source and token spans into
+=OrgPatchPlan=. The planner emits byte-range =OrgTextEdit= values only when the
+operation can be made source-safe from available spans. Unsupported operations
+produce =OrgPatchDiagnostic= values.
+
+Source-safe operations include append-only edits anchored at a node's end byte,
+such as adding checkboxes, links, and evidence references. Token-backed edits
+cover TODO keyword replacement, property value replacement, and checkbox marker
+replacement.
+
+** Apply Boundary
+=OrgPatchApplier= applies a diagnostic-free =OrgPatchPlan= only to
+caller-owned in-memory document text. It validates missing documents, invalid
+byte ranges, overlapping edits, and UTF-8 character boundaries before applying
+anything.
+
+Successful application returns =OrgPatchApplyReport= with applied edit count and
+per-document before/after hashes. The applier is not a filesystem writer; a
+separate persistence boundary must compare current file bytes and decide whether
+to write.
+
+** Memory Boundary
+=marlin-org-memory= is an independent backend, not the parser. It can load Org
+documents into typed nodes, answer workspace queries, render views, apply typed
+patches to in-memory state, and emit receipts. Long-term memory systems consume
+validated workspace records and dispatch receipts downstream.
+
+** Resolved Decisions
+- =marlin-org-workspace= projects token-level spans for TODO keywords, property
+  values, and checkbox markers through =OrgNodeSourceTokens=.
+- Source persistence is split into [[file:40.20-org-source-persistence-boundary.org][40.20 Org Source Persistence Boundary]]
+  so the work protocol can stay independent from filesystem writes.
+
+** Open Questions
+- Which Org conventions should represent decisions, metrics, evidence, and trace
+  events when converting typed patches back into durable text?
+- What validation level should be required before promoting this RFC from draft
+  to accepted?
+
+** Acceptance Criteria
+- All crates stay on workspace-managed dependencies and Rust edition 2024.
+- =tao3k/orgize= remains the Org parser authority; no direct =rowan= dependency
+  is added to agent-core crates.
+- Source-aware query, patch receipt, view rendering, patch planning, and in-memory
+  application are covered by unit tests.
+- Documentation indexes expose the RFC under Johnny Decimal =40.xx=.

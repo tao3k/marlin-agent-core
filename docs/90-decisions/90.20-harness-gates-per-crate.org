@@ -1,0 +1,16 @@
+#+TITLE: 90.20 Harness Gates Per Crate
+#+FILETAGS: :marlin:decision:harness:
+
+* 90.20 Harness Gates Per Crate
+:PROPERTIES:
+:ID: docs-90-20-harness-gates-per-crate
+:KIND: decision
+:STATUS: accepted
+:END:
+
+Every crate in the Cargo workspace carries the Rust project harness as both a
+build dependency and a dev dependency through workspace-managed dependency
+entries.
+
+Each crate owns a thin =build.rs= that invokes the harness cargo-check gate. The
+workspace root owns the dependency coordinate so crate manifests do not drift.

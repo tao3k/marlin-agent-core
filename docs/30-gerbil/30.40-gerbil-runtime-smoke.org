@@ -1,0 +1,84 @@
+#+title: 30.40 Gerbil Runtime Smoke
+
+* 30.40 Gerbil Runtime Smoke
+:PROPERTIES:
+:ID: docs-30-40-gerbil-runtime-smoke
+:KIND: runbook
+:STATUS: active
+:END:
+
+** Runtime
+
+The local runtime used for the first smoke is Homebrew =gerbil-scheme= 0.18.2:
+
+#+begin_src sh
+/opt/homebrew/opt/gerbil-scheme/bin/gxi --version
+#+end_src
+
+Expected runtime family:
+
+#+begin_src text
+Gerbil v0.18.2 on Gambit v4.9.7
+#+end_src
+
+The formula conflicts with Ghostscript on the global =gsc= binary. Keep
+Ghostscript linked for normal PATH behavior and use the Gerbil absolute path in
+Marlin profiles and tests.
+
+** Smoke Program
+
+The minimal Gerbil program lives at:
+
+#+begin_src text
+crates/marlin-gerbil-scheme/fixtures/gerbil/smoke.ss
+#+end_src
+
+Run it with:
+
+#+begin_src sh
+/opt/homebrew/opt/gerbil-scheme/bin/gxi crates/marlin-gerbil-scheme/fixtures/gerbil/smoke.ss
+#+end_src
+
+Expected output:
+
+#+begin_src text
+marlin-gerbil-smoke
+#+end_src
+
+** Rust Adapter Fixture
+
+The first executable adapter shim lives at:
+
+#+begin_src text
+crates/marlin-gerbil-scheme/fixtures/gerbil/fixed-loop-graph-adapter.ss
+#+end_src
+
+It reads the JSON request from stdin, extracts the request =source.text= field,
+and recognizes the first smoke forms:
+
+#+begin_src scheme
+(loop-graph gerbil-source-loop
+  (node provider ask-model (config role planner retries one))
+  (node tool run-tool (config mode execute))
+  (edge provider tool success)
+  (edge tool provider none))
+#+end_src
+
+The shim returns a =LoopGraph= JSON artifact whose =graph_id=, node =config=,
+and edge =condition= values are derived from that form. =none=, =null=, and
+=#f= edge conditions are emitted as JSON =null=.
+
+The adapter now routes parser output through Gerbil-side protocol bindings
+before emitting JSON: constructors/accessors model =LoopGraph=, =LoopNodeSpec=,
+and =LoopEdgeSpec=, and one serializer emits the =GerbilCompileResponse=. This
+validates the real =gxi= process boundary and the first Gerbil-side
+source-to-IR step before the compiler grows a proper JSON and Gerbil reader
+boundary.
+
+Run the Rust boundary test explicitly:
+
+#+begin_src sh
+direnv exec . cargo test -p marlin-gerbil-scheme command_compiler_can_call_real_gxi_fixture -- --ignored --nocapture
+#+end_src
+
+The test is ignored by default because it requires a local Gerbil installation.

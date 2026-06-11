@@ -1,0 +1,34 @@
+#+TITLE: 20.10 Org-native Agent Workspace
+#+FILETAGS: :marlin:workspace:org:
+
+* 20.10 Org-native Agent Workspace
+:PROPERTIES:
+:ID: docs-20-10-org-native-agent-workspace
+:KIND: protocol
+:STATUS: active
+:END:
+
+Org is the structured work metadata plane. It records plans, SDD, checklists,
+goals, evidence, decisions, metrics, trace records, and memory candidates.
+
+Org is not the memory algorithm. Memory backends are downstream extensions fed by
+validated workspace records and dispatch policies.
+
+** Native Objects
+- goal
+- plan
+- sdd
+- task
+- checklist
+- decision
+- evidence
+- metric
+- trace
+- artifact
+- model_record
+- quality_case
+- memory_candidate
+- human_gate
+- verification
+
+- source_span

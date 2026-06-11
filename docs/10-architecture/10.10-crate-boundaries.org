@@ -1,0 +1,40 @@
+#+TITLE: 10.10 Crate Boundaries
+#+FILETAGS: :marlin:architecture:crates:
+
+* 10.10 Crate Boundaries
+:PROPERTIES:
+:ID: docs-10-10-crate-boundaries
+:KIND: architecture
+:STATUS: active
+:END:
+
+The repository is a Cargo workspace. Crates are split by protocol boundary, not
+by implementation convenience.
+
+Agent-system crates are named by owned runtime boundary. =marlin-agent-core= is
+a transitional facade name and must not accumulate new long-term
+responsibilities.
+
+| Crate | Responsibility |
+| =marlin-agent-protocol= | Agent messages, events, transcripts, scenario receipts, and harness evidence contracts |
+| =marlin-agent-kernel= | Lean graph loop kernel, execution state machine, and extension registry |
+| =marlin-agent-runtime= | Tokio-backed execution substrate for providers, tools, sub-agents, cancellation, and event sinks |
+| =marlin-agent-harness= | Agent-system scenario driver, fake providers/tools, transcript replay, loop evidence, and assertions |
+| =marlin-agent-core= | Transitional facade while existing code migrates to the named agent crates |
+| =marlin-workspace-protocol= | Native =AgentWorkspace= protocol traits and errors |
+| =marlin-org-model= | Parser-projected Org node, source span, and token span data model |
+| =marlin-org-workspace= | Org AST projection backed directly by =tao3k/orgize= |
+| =marlin-org-memory= | In-memory =AgentWorkspace= backend over =OrgNode= records |
+| =marlin-org-patch= | Source-aware Org text patch planning boundary |
+| =marlin-org-store= | Source persistence protocol, preflight, conflict, and commit receipts |
+| =marlin-org-workflow= | Thin load -> plan -> commit workflow over workspace and store crates |
+| =marlin-workspace-query= | Query contract types |
+| =marlin-workspace-patch= | Patch and validation receipt types |
+| =marlin-workspace-view= | View rendering request and response types |
+| =marlin-workspace-status= | Goal/checklist/evidence status types |
+| =marlin-gerbil-ir= | Gerbil control-plane IR, policies, and workspace patch intents |
+| =marlin-gerbil-scheme= | Gerbil Scheme compilation boundary and typed artifact envelope |
+
+** Boundary Rule
+Agent kernel and runtime crates must not depend on Org parser implementations,
+Arrow, Flight, ASP, vector stores, DuckDB, Parquet, or ledger systems.

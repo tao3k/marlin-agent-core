@@ -1,0 +1,17 @@
+[package]
+name = "marlin-org-patch"
+edition.workspace = true
+version.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+marlin-org-model.workspace = true
+marlin-workspace-patch.workspace = true
+serde.workspace = true
+
+[build-dependencies]
+rust-lang-project-harness.workspace = true
+
+[dev-dependencies]
+rust-lang-project-harness.workspace = true

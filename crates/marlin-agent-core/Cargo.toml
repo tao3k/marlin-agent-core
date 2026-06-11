@@ -1,0 +1,25 @@
+[package]
+name = "marlin-agent-core"
+edition.workspace = true
+version.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+marlin-agent-harness.workspace = true
+marlin-agent-kernel.workspace = true
+marlin-agent-protocol.workspace = true
+marlin-agent-runtime.workspace = true
+marlin-gerbil-ir.workspace = true
+marlin-org-patch.workspace = true
+marlin-org-store.workspace = true
+marlin-org-workflow.workspace = true
+marlin-workspace-protocol.workspace = true
+
+[build-dependencies]
+rust-lang-project-harness.workspace = true
+
+[dev-dependencies]
+rust-lang-project-harness.workspace = true
+tokio.workspace = true
+tokio-stream.workspace = true

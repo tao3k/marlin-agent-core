@@ -1,0 +1,59 @@
+[workspace]
+members = [
+    "crates/marlin-agent-core",
+    "crates/marlin-agent-harness",
+    "crates/marlin-agent-kernel",
+    "crates/marlin-agent-protocol",
+    "crates/marlin-agent-runtime",
+    "crates/marlin-gerbil-ir",
+    "crates/marlin-gerbil-scheme",
+    "crates/marlin-org-memory",
+    "crates/marlin-org-model",
+    "crates/marlin-org-patch",
+    "crates/marlin-org-store",
+    "crates/marlin-org-workflow",
+    "crates/marlin-org-workspace",
+    "crates/marlin-workspace-patch",
+    "crates/marlin-workspace-protocol",
+    "crates/marlin-workspace-query",
+    "crates/marlin-workspace-status",
+    "crates/marlin-workspace-view",
+]
+resolver = "2"
+
+[workspace.package]
+edition = "2024"
+version = "0.1.0"
+authors = ["marlin contributors"]
+repository = "https://github.com/tao3k/marlin-agent-core"
+
+[workspace.dependencies]
+async-trait = "0.1.89"
+futures-executor = "0.3.32"
+orgize = { git = "https://github.com/tao3k/orgize", branch = "main" }
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.145"
+thiserror = "2.0.18"
+tokio = { version = "1", features = ["rt", "macros", "sync", "time"] }
+tokio-stream = "0.1"
+tokio-util = { version = "0.7", features = ["rt"] }
+rust-lang-project-harness = { git = "https://github.com/tao3k/rust-lang-project-harness", branch = "main" }
+
+marlin-agent-core = { path = "crates/marlin-agent-core" }
+marlin-agent-harness = { path = "crates/marlin-agent-harness" }
+marlin-agent-kernel = { path = "crates/marlin-agent-kernel" }
+marlin-agent-protocol = { path = "crates/marlin-agent-protocol" }
+marlin-agent-runtime = { path = "crates/marlin-agent-runtime" }
+marlin-gerbil-ir = { path = "crates/marlin-gerbil-ir" }
+marlin-gerbil-scheme = { path = "crates/marlin-gerbil-scheme" }
+marlin-org-memory = { path = "crates/marlin-org-memory" }
+marlin-org-model = { path = "crates/marlin-org-model" }
+marlin-org-patch = { path = "crates/marlin-org-patch" }
+marlin-org-store = { path = "crates/marlin-org-store" }
+marlin-org-workflow = { path = "crates/marlin-org-workflow" }
+marlin-org-workspace = { path = "crates/marlin-org-workspace" }
+marlin-workspace-patch = { path = "crates/marlin-workspace-patch" }
+marlin-workspace-protocol = { path = "crates/marlin-workspace-protocol" }
+marlin-workspace-query = { path = "crates/marlin-workspace-query" }
+marlin-workspace-status = { path = "crates/marlin-workspace-status" }
+marlin-workspace-view = { path = "crates/marlin-workspace-view" }

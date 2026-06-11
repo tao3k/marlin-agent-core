@@ -1,0 +1,28 @@
+#+TITLE: 90.40 Org Token Spans And Workflow
+#+FILETAGS: :marlin:decisions:org:
+
+* 90.40 Org Token Spans And Workflow
+:PROPERTIES:
+:ID: decision-90-40-org-token-spans-and-workflow
+:KIND: decision
+:STATUS: accepted
+:END:
+
+** Decision
+
+Org-native source mutation uses parser-projected token spans, not guessed byte
+locations. =marlin-org-workspace= projects TODO keyword, property value, and
+checkbox marker spans from =tao3k/orgize= facts into =OrgNodeSourceTokens=.
+=marlin-org-patch= may emit byte edits for token-backed operations only when
+those spans are present.
+
+The durable load -> plan -> commit path lives in =marlin-org-workflow= so
+=marlin-org-store= remains a source persistence boundary and does not depend on
+the Org workspace loader.
+
+** Consequences
+
+- =marlin-org-store= can stay below parser/workspace concerns.
+- =marlin-org-workflow= owns end-to-end file-backed patch orchestration.
+- Gerbil emits =WorkspacePatchIntentSpec= as data; Rust workflow code decides
+  whether to dry-run or commit that intent.

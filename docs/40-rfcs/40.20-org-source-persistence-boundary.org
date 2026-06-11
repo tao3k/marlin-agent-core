@@ -1,0 +1,131 @@
+#+TITLE: 40.20 RFC: Org Source Persistence Boundary
+#+FILETAGS: :marlin:rfc:workspace:org:persistence:
+
+* 40.20 RFC: Org Source Persistence Boundary
+:PROPERTIES:
+:ID: rfc-40-20-org-source-persistence-boundary
+:KIND: rfc
+:STATUS: draft
+:END:
+
+This RFC defines the persistence boundary that may turn validated Org text edit
+plans into durable file changes. It follows [[file:40.10-org-native-agent-work-protocol.org][40.10 Org-native Agent Work Protocol]]
+and keeps filesystem writes outside =marlin-org-patch=.
+
+** Motivation
+=marlin-org-patch= can plan source edits and apply them to caller-owned in-memory
+documents, but it intentionally does not read or write files. A separate boundary
+is needed for current-byte validation, conflict detection, write receipts, and
+backend-specific persistence policies.
+
+** Scope
+The persistence boundary covers:
+
+- loading the current durable document bytes through an explicit store adapter;
+- comparing current bytes with the expected pre-apply document hash;
+- applying a diagnostic-free =OrgPatchPlan= to in-memory text;
+- writing changed documents only after preflight succeeds;
+- returning a receipt that proves exactly what changed.
+
+The boundary does not own Org parsing, query execution, patch planning, memory
+dispatch, lock management across processes, or transport protocols.
+
+** Native Crate
+The source persistence protocol lives in an independent crate named
+=marlin-org-store=.
+
+=marlin-org-store= should depend on =marlin-org-patch= and shared workspace
+types, but =marlin-org-patch= must not depend on the store. This keeps planning
+testable without filesystem side effects and allows alternate stores for local
+files, virtual workspaces, or remote document backends.
+
+The first implementation includes =MemoryOrgSourceStore= for tests and
+=FileSystemOrgSourceStore= for root-scoped local files. The filesystem adapter
+rejects absolute paths and parent-directory traversal before mapping a document
+name to a path below its configured root.
+
+** Native Objects
+The first source persistence API should use these native records:
+
+| Object | Responsibility |
+|--------+----------------|
+| =OrgSourceStore= | Trait for loading and writing named Org documents |
+| =OrgSourceCommit= | Request containing an =OrgPatchPlan= and expected hashes |
+| =OrgSourceCommitReceipt= | Result containing applied edits, changed documents, and diagnostics |
+| =OrgSourceConflict= | Diagnostic for stale bytes, missing documents, or rejected writes |
+| =OrgSourceWritePolicy= | Caller-selected policy for dry-run, write, or require-clean mode |
+
+** Preflight Rule
+The store must validate every target document before applying any edit. Required
+checks:
+
+- the document exists in the selected store;
+- the current durable text hash matches the expected before hash;
+- the =OrgPatchPlan= has no diagnostics;
+- all edit byte ranges are in bounds, non-overlapping, and UTF-8 aligned;
+- the caller-selected write policy allows the operation.
+
+If any check fails, the store returns diagnostics and does not write any
+documents.
+
+** Commit Rule
+The commit path is two-stage:
+
+1. Load current documents and build the in-memory document map.
+2. Run =OrgPatchApplier= and write only documents reported in
+   =OrgPatchApplyReport.changed_documents=.
+
+The receipt must include document names, before hashes, after hashes, applied
+edit count, exact planned =OrgTextEdit= values, and diagnostics. It may include
+backend-specific metadata such as mtime, revision id, or content address, but
+those fields must not replace the portable hash proof.
+
+Local filesystem writes use a temp file in the target directory followed by
+rename. The adapter validates all requested paths before writing. Multi-document
+writes are rejected by default before any write; callers that knowingly accept
+best-effort multi-document behavior must opt into that policy explicitly.
+
+** Conflict Rule
+Stale source bytes are conflicts, not merge requests. The first implementation
+should reject conflicts and require the caller to re-query, re-plan, and retry.
+Automatic merge can be added later only if it preserves parser authority and
+returns a receipt that explains every accepted edit.
+
+** Dry Run Rule
+Dry run is a first-class mode. It must execute the same load, hash comparison,
+range validation, and in-memory apply path as a write, but it must not persist
+changed documents.
+
+Dry-run receipts are useful for agents because they expose whether a patch plan
+would commit cleanly without giving the agent direct write authority.
+
+** Boundary Rule
+The persistence boundary is below the workspace protocol and above raw
+filesystem APIs. It commits document text; it does not decide which typed patch
+should exist, which nodes match a query, or which memory backend should receive
+dispatch.
+
+=marlin-agent-core= may re-export the store protocol when it exists, but the
+kernel must not learn Org parser or filesystem implementation details.
+
+** Resolved Decisions
+- Local file writes use same-directory temp files followed by rename.
+- Commit receipts store the exact planned =OrgTextEdit= list plus portable
+  document-level hash proofs.
+- Multi-document writes are rejected by default because the first filesystem
+  adapter does not provide rollback.
+
+** Open Questions
+- Should remote stores expose optimistic revision ids in addition to portable
+  text hashes?
+
+** Acceptance Criteria
+- =marlin-org-store= is independent and has harness build/dev dependencies.
+- No store implementation adds a direct =rowan= dependency.
+- Dry-run and write modes share the same validation path.
+- Stale source bytes produce conflict diagnostics and no writes.
+- Commit receipts include portable before/after document hashes.
+- Local filesystem paths stay scoped to the configured store root.
+- A =WorkspacePatch= can be planned through =marlin-org-patch= and committed
+  through =marlin-org-workflow=.
+  through =FileSystemOrgSourceStore= in an end-to-end test.

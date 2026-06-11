@@ -1,0 +1,14 @@
+/target/
+
+.devenv
+.pre-commit-config.yaml
+
+
+# prj-spec directories (numtide/prj-spec)
+# See: https://github.com/numtide/prj-spec
+# All content in these dirs is auto-generated and ignored
+.config/*
+.run/
+.cache/
+.data/
+.bin/

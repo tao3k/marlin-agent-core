@@ -1,0 +1,47 @@
+#+TITLE: 20.20 Query Patch View Protocol
+#+FILETAGS: :marlin:workspace:protocol:
+
+* 20.20 Query Patch View Protocol
+:PROPERTIES:
+:ID: docs-20-20-query-patch-view-protocol
+:KIND: protocol
+:STATUS: active
+:END:
+
+Agents read workspace state through queries and rendered views. Agents write
+workspace state through typed patches that return validation receipts.
+
+** Native Operations
+- workspace.query
+- workspace.read_node
+- workspace.render_view
+- workspace.patch
+- workspace.validate
+- workspace.status
+
+** Context Rule
+Raw Org is the durable structure. Rendered views are task-scoped read-outs for
+agents and UIs. Compact views include parser-owned source spans so an agent can
+tie a rendered node back to the Org document line and byte range without reading
+raw Org.
+
+Queries may also use parser-owned source provenance. =SourceRange= scope limits
+matches to nodes whose Org document line range overlaps the requested range, and
+=SourceDocument= filters can be combined with TODO, tag, property, or checklist
+predicates.
+
+** Mutation Rule
+LLMs do not rewrite whole Org files. They submit typed patch operations such as
+setting TODO state, updating properties, adding evidence, adding metrics, and
+recording decisions.
+
+Patch receipts return both affected node ids and affected source spans. Source
+spans are parser-owned evidence for nodes that came from Org text; runtime-created
+nodes may appear in =affected_nodes= without an =affected_sources= entry until
+they are persisted through an Org writer.
+
+Org source edits are planned separately from workspace mutation. A caller passes
+the typed =WorkspacePatch= plus parser-owned affected source spans into
+=marlin-org-patch=, which returns byte-range text edits and diagnostics. The
+planner does not write files and does not invent token-level spans that =orgize=
+has not projected into the native model.

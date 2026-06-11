@@ -1,0 +1,223 @@
+//! Runtime-backed graph node executor adapters.
+
+use std::sync::Arc;
+
+use marlin_agent_protocol::{ExecutorName, GraphNodeExecutionReceipt, GraphNodeInvocation, NodeId};
+use marlin_agent_runtime::{
+    ProviderRuntime, RuntimeContext, RuntimeFuture, SubAgentRuntime, ToolRuntime,
+};
+
+use crate::GraphNodeExecutor;
+
+type ProviderRequestMapper<P> =
+    dyn Fn(GraphNodeInvocation) -> <P as ProviderRuntime>::Request + Send + Sync;
+type ProviderReceiptMapper<P> = dyn Fn(<P as ProviderRuntime>::Response, NodeId, ExecutorName) -> GraphNodeExecutionReceipt
+    + Send
+    + Sync;
+type ToolInvocationMapper<T> =
+    dyn Fn(GraphNodeInvocation) -> <T as ToolRuntime>::Invocation + Send + Sync;
+type ToolReceiptMapper<T> = dyn Fn(<T as ToolRuntime>::Output, NodeId, ExecutorName) -> GraphNodeExecutionReceipt
+    + Send
+    + Sync;
+type SubAgentInputMapper<A> =
+    dyn Fn(GraphNodeInvocation) -> <A as SubAgentRuntime>::Input + Send + Sync;
+type SubAgentReceiptMapper<A> = dyn Fn(<A as SubAgentRuntime>::Output, NodeId, ExecutorName) -> GraphNodeExecutionReceipt
+    + Send
+    + Sync;
+
+/// Graph node executor backed by a provider runtime.
+pub struct ProviderNodeAdapter<P>
+where
+    P: ProviderRuntime,
+{
+    provider: Arc<P>,
+    request_mapper: Arc<ProviderRequestMapper<P>>,
+    receipt_mapper: Arc<ProviderReceiptMapper<P>>,
+}
+
+impl<P> ProviderNodeAdapter<P>
+where
+    P: ProviderRuntime,
+{
+    pub fn new<RequestMapper>(provider: P, request_mapper: RequestMapper) -> Self
+    where
+        RequestMapper: Fn(GraphNodeInvocation) -> P::Request + Send + Sync + 'static,
+    {
+        Self::with_receipt_mapper(provider, request_mapper, completed_receipt::<P::Response>)
+    }
+
+    pub fn with_receipt_mapper<RequestMapper, ReceiptMapper>(
+        provider: P,
+        request_mapper: RequestMapper,
+        receipt_mapper: ReceiptMapper,
+    ) -> Self
+    where
+        RequestMapper: Fn(GraphNodeInvocation) -> P::Request + Send + Sync + 'static,
+        ReceiptMapper: Fn(P::Response, NodeId, ExecutorName) -> GraphNodeExecutionReceipt
+            + Send
+            + Sync
+            + 'static,
+    {
+        Self {
+            provider: Arc::new(provider),
+            request_mapper: Arc::new(request_mapper),
+            receipt_mapper: Arc::new(receipt_mapper),
+        }
+    }
+}
+
+impl<P> GraphNodeExecutor for ProviderNodeAdapter<P>
+where
+    P: ProviderRuntime,
+{
+    fn execute_node(
+        &self,
+        invocation: GraphNodeInvocation,
+        context: RuntimeContext,
+    ) -> RuntimeFuture<GraphNodeExecutionReceipt> {
+        let provider = Arc::clone(&self.provider);
+        let request = (self.request_mapper)(invocation.clone());
+        let receipt_mapper = Arc::clone(&self.receipt_mapper);
+        let node_id = invocation.node_id;
+        let executor = invocation.executor;
+
+        Box::pin(async move {
+            let output = provider.run_provider(request, context).await;
+            receipt_mapper(output, node_id, executor)
+        })
+    }
+}
+
+/// Graph node executor backed by a tool runtime.
+pub struct ToolNodeAdapter<T>
+where
+    T: ToolRuntime,
+{
+    tool: Arc<T>,
+    invocation_mapper: Arc<ToolInvocationMapper<T>>,
+    receipt_mapper: Arc<ToolReceiptMapper<T>>,
+}
+
+impl<T> ToolNodeAdapter<T>
+where
+    T: ToolRuntime,
+{
+    pub fn new<InvocationMapper>(tool: T, invocation_mapper: InvocationMapper) -> Self
+    where
+        InvocationMapper: Fn(GraphNodeInvocation) -> T::Invocation + Send + Sync + 'static,
+    {
+        Self::with_receipt_mapper(tool, invocation_mapper, completed_receipt::<T::Output>)
+    }
+
+    pub fn with_receipt_mapper<InvocationMapper, ReceiptMapper>(
+        tool: T,
+        invocation_mapper: InvocationMapper,
+        receipt_mapper: ReceiptMapper,
+    ) -> Self
+    where
+        InvocationMapper: Fn(GraphNodeInvocation) -> T::Invocation + Send + Sync + 'static,
+        ReceiptMapper: Fn(T::Output, NodeId, ExecutorName) -> GraphNodeExecutionReceipt
+            + Send
+            + Sync
+            + 'static,
+    {
+        Self {
+            tool: Arc::new(tool),
+            invocation_mapper: Arc::new(invocation_mapper),
+            receipt_mapper: Arc::new(receipt_mapper),
+        }
+    }
+}
+
+impl<T> GraphNodeExecutor for ToolNodeAdapter<T>
+where
+    T: ToolRuntime,
+{
+    fn execute_node(
+        &self,
+        invocation: GraphNodeInvocation,
+        context: RuntimeContext,
+    ) -> RuntimeFuture<GraphNodeExecutionReceipt> {
+        let tool = Arc::clone(&self.tool);
+        let tool_invocation = (self.invocation_mapper)(invocation.clone());
+        let receipt_mapper = Arc::clone(&self.receipt_mapper);
+        let node_id = invocation.node_id;
+        let executor = invocation.executor;
+
+        Box::pin(async move {
+            let output = tool.run_tool(tool_invocation, context).await;
+            receipt_mapper(output, node_id, executor)
+        })
+    }
+}
+
+/// Graph node executor backed by a delegated sub-agent runtime.
+pub struct SubAgentNodeAdapter<A>
+where
+    A: SubAgentRuntime,
+{
+    sub_agent: Arc<A>,
+    input_mapper: Arc<SubAgentInputMapper<A>>,
+    receipt_mapper: Arc<SubAgentReceiptMapper<A>>,
+}
+
+impl<A> SubAgentNodeAdapter<A>
+where
+    A: SubAgentRuntime,
+{
+    pub fn new<InputMapper>(sub_agent: A, input_mapper: InputMapper) -> Self
+    where
+        InputMapper: Fn(GraphNodeInvocation) -> A::Input + Send + Sync + 'static,
+    {
+        Self::with_receipt_mapper(sub_agent, input_mapper, completed_receipt::<A::Output>)
+    }
+
+    pub fn with_receipt_mapper<InputMapper, ReceiptMapper>(
+        sub_agent: A,
+        input_mapper: InputMapper,
+        receipt_mapper: ReceiptMapper,
+    ) -> Self
+    where
+        InputMapper: Fn(GraphNodeInvocation) -> A::Input + Send + Sync + 'static,
+        ReceiptMapper: Fn(A::Output, NodeId, ExecutorName) -> GraphNodeExecutionReceipt
+            + Send
+            + Sync
+            + 'static,
+    {
+        Self {
+            sub_agent: Arc::new(sub_agent),
+            input_mapper: Arc::new(input_mapper),
+            receipt_mapper: Arc::new(receipt_mapper),
+        }
+    }
+}
+
+impl<A> GraphNodeExecutor for SubAgentNodeAdapter<A>
+where
+    A: SubAgentRuntime,
+{
+    fn execute_node(
+        &self,
+        invocation: GraphNodeInvocation,
+        context: RuntimeContext,
+    ) -> RuntimeFuture<GraphNodeExecutionReceipt> {
+        let sub_agent = Arc::clone(&self.sub_agent);
+        let input = (self.input_mapper)(invocation.clone());
+        let receipt_mapper = Arc::clone(&self.receipt_mapper);
+        let node_id = invocation.node_id;
+        let executor = invocation.executor;
+
+        Box::pin(async move {
+            let output = sub_agent.run_sub_agent(input, context).await;
+            receipt_mapper(output, node_id, executor)
+        })
+    }
+}
+
+fn completed_receipt<T>(
+    _output: T,
+    node_id: NodeId,
+    executor: ExecutorName,
+) -> GraphNodeExecutionReceipt {
+    GraphNodeExecutionReceipt::completed(node_id, executor)
+}

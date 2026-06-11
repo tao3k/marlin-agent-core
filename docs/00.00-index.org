@@ -1,0 +1,28 @@
+#+TITLE: 00.00 Documentation Map
+#+FILETAGS: :marlin:docs:johnny_decimal:index:
+
+* 00.00 Documentation Map
+:PROPERTIES:
+:ID: docs-00-00-index
+:KIND: docs_index
+:STATUS: active
+:END:
+
+This directory uses Johnny Decimal identifiers in Org files. The first number is
+the area, and the second number is the document inside that area.
+
+| Area | Purpose |
+|------+---------|
+| 00   | Documentation system and maps |
+| 10   | Architecture and crate boundaries |
+| 20   | Workspace protocol |
+| 30   | Gerbil control plane |
+| 40   | RFCs and protocol proposals |
+| 90   | Decisions and accepted constraints |
+
+** Entry Points
+- [[file:10-architecture/10.00-architecture-index.org][10.00 Architecture Index]]
+- [[file:20-workspace/20.00-workspace-index.org][20.00 Workspace Index]]
+- [[file:30-gerbil/30.00-gerbil-index.org][30.00 Gerbil Index]]
+- [[file:40-rfcs/40.00-rfc-index.org][40.00 RFC Index]]
+- [[file:90-decisions/90.00-decision-index.org][90.00 Decision Index]]

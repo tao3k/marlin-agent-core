@@ -1,0 +1,29 @@
+#+TITLE: 20.40 Org Memory Backend
+#+FILETAGS: :marlin:workspace:org:memory:
+
+* 20.40 Org Memory Backend
+:PROPERTIES:
+:ID: docs-20-40-org-memory-backend
+:KIND: backend
+:STATUS: active
+:END:
+
+=marlin-org-memory= is the first-party in-memory =AgentWorkspace=
+implementation. It consumes structured =OrgNode= records directly and may load
+raw Org documents through =marlin-org-workspace= when tests or local agents need
+a parser-backed fixture path.
+
+The crate owns query, patch, view rendering, validation, and status behavior for
+ephemeral agent workspaces. It is intentionally separate from
+=marlin-org-workspace= so the Org parser adapter can remain a pure document
+projection crate.
+
+When a patch touches parser-projected nodes, the memory backend copies their
+typed =source_span= into the patch receipt. This keeps patch validation tied to
+the same Org document provenance used by compact rendered views.
+
+** Boundary
+- Implements =AgentWorkspace=
+- Depends on =marlin-org-workspace= only for raw Org document loading
+- Does not expose parser internals as memory protocol state
+- Does not become a dependency of =marlin-agent-core=

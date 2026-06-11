@@ -1,0 +1,23 @@
+[package]
+name = "marlin-org-memory"
+edition.workspace = true
+version.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+async-trait.workspace = true
+marlin-org-model.workspace = true
+marlin-org-workspace.workspace = true
+marlin-workspace-patch.workspace = true
+marlin-workspace-protocol.workspace = true
+marlin-workspace-query.workspace = true
+marlin-workspace-status.workspace = true
+marlin-workspace-view.workspace = true
+
+[build-dependencies]
+rust-lang-project-harness.workspace = true
+
+[dev-dependencies]
+futures-executor.workspace = true
+rust-lang-project-harness.workspace = true

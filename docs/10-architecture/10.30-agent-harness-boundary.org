@@ -1,0 +1,44 @@
+#+TITLE: 10.30 Agent Harness Boundary
+#+FILETAGS: :marlin:architecture:harness:
+
+* 10.30 Agent Harness Boundary
+:PROPERTIES:
+:ID: docs-10-30-agent-harness-boundary
+:KIND: architecture
+:STATUS: active
+:END:
+
+The agent-system harness is a first-class agent validation boundary. It is
+unrelated to the Rust project harness gate used by per-crate =build.rs= files.
+
+The harness crate owns controlled execution scenarios, fake providers and
+tools, transcript replay, loop evidence capture, and assertions over protocol
+receipts. It depends on =marlin-agent-protocol=, =marlin-agent-kernel=, and
+=marlin-agent-runtime=. Those crates do not depend on the harness.
+
+The kernel owns loop scheduling and execution authority. The runtime owns Tokio
+execution, cancellation, event sinks, providers, tools, and sub-agent
+execution. The protocol crate owns serializable events, commands, transcripts,
+scenario descriptors, and harness evidence records. The harness composes those
+crates to prove behavior at the runtime boundary.
+
+External loop-engineering references under =.data/loop-engineering= are useful
+as validation material, not as an ownership model. Its loop audit surface shows
+that named signals, safety evidence, budget evidence, registry checks, and run
+logs are useful. Marlin should refine that idea by using typed protocol-owned
+evidence, parser-owned content facts, deterministic replay receipts, and
+scenario-owned assertions instead of relying only on file-existence probes or
+string heuristics.
+
+Harness scenarios should be explicit artifacts:
+
+| Harness artifact | Owner | Purpose |
+| =AgentScenario= | =marlin-agent-protocol= | Declares initial content, workspace fixtures, provider/tool fixtures, and expected receipts |
+| =HarnessRuntime= | =marlin-agent-harness= | Builds a controlled runtime with fake providers, fake tools, cancellation, and event capture |
+| =TranscriptReplay= | =marlin-agent-harness= | Replays recorded agent events against current protocol and runtime behavior |
+| =LoopEvidence= | =marlin-agent-protocol= | Records typed loop facts, content facts, safety facts, budget facts, and registry facts |
+| =HarnessAssertion= | =marlin-agent-harness= | Validates event order, state transitions, receipts, and evidence completeness |
+
+Content belongs in protocol and workspace-owned facts before it reaches the
+harness. The harness can load fixtures, but it should not become the parser or
+source-of-truth for content semantics.

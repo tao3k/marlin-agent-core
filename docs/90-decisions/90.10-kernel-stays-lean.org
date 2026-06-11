@@ -1,0 +1,13 @@
+#+TITLE: 90.10 Kernel Stays Lean
+#+FILETAGS: :marlin:decision:kernel:
+
+* 90.10 Kernel Stays Lean
+:PROPERTIES:
+:ID: docs-90-10-kernel-stays-lean
+:KIND: decision
+:STATUS: accepted
+:END:
+
+The kernel remains lean. Arrow, Flight, ASP, vector stores, DuckDB, Parquet,
+distributed ledgers, and memory trainers are extension surfaces, not kernel
+dependencies.

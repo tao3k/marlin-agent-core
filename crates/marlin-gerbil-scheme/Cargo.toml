@@ -1,0 +1,19 @@
+[package]
+name = "marlin-gerbil-scheme"
+edition.workspace = true
+version.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+marlin-gerbil-ir.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[build-dependencies]
+rust-lang-project-harness.workspace = true
+
+[dev-dependencies]
+marlin-org-model.workspace = true
+marlin-workspace-patch.workspace = true
+rust-lang-project-harness.workspace = true
