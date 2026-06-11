@@ -4,7 +4,7 @@ use marlin_agent_kernel::GraphLoopKernel;
 use marlin_agent_protocol::{
     AgentEvent, AgentEventTopic, AgentExecutionTrace, AgentScenario, AgentSpanName,
     AgentTraceSpanRecord, GraphLoopExecutionRequest, GraphLoopExecutionResult,
-    GraphLoopExecutionStatus, LoopEvidence, RuntimePlanSnapshot,
+    GraphLoopExecutionStatus, LoopEvidence, LoopEvidenceKind, RuntimePlanSnapshot,
 };
 use marlin_agent_runtime::{
     CancellationToken, RuntimeEnvironment, RuntimeEventStream, TokioAgentRuntime,
@@ -61,6 +61,12 @@ impl HarnessRuntime {
 
     pub fn record_evidence(&mut self, evidence: LoopEvidence) {
         self.evidence.push(evidence);
+    }
+
+    /// Record evidence describing the runtime environment visible to harness work.
+    pub fn record_environment_visibility(&mut self) {
+        let evidence = runtime_environment_visibility_evidence(self.environment());
+        self.record_evidence(evidence);
     }
 
     pub fn evidence(&self) -> &[LoopEvidence] {
@@ -151,6 +157,20 @@ impl HarnessRuntime {
 
         events
     }
+}
+
+/// Build evidence summarizing the runtime environment visible to harness work.
+pub fn runtime_environment_visibility_evidence(environment: &RuntimeEnvironment) -> LoopEvidence {
+    let detail = format!(
+        "home={} cwd={} config_layers={} writable_roots={} network_access={}",
+        environment.home.is_some(),
+        environment.cwd.is_some(),
+        environment.config_layers.len(),
+        environment.sandbox.writable_roots.len(),
+        environment.sandbox.network_access,
+    );
+
+    LoopEvidence::present(LoopEvidenceKind::Visibility, "runtime-environment").with_detail(detail)
 }
 
 fn duration_ms(duration: Duration) -> u64 {

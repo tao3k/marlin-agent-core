@@ -40,28 +40,28 @@ tokio = { version = "1", features = ["rt", "macros", "sync", "time"] }
 tokio-stream = "0.1"
 tokio-util = { version = "0.7", features = ["rt"] }
 tracing = "0.1.44"
-rust-lang-project-harness = { git = "https://github.com/tao3k/rust-lang-project-harness", branch = "main" }
+rust-lang-project-harness = { git = "https://github.com/tao3k/rust-lang-project-harness", branch = "main", version = "0.1.0" }
 
-marlin-agent-core = { path = "crates/marlin-agent-core" }
-marlin-agent-environment = { path = "crates/marlin-agent-environment" }
-marlin-agent-harness = { path = "crates/marlin-agent-harness" }
-marlin-agent-hooks = { path = "crates/marlin-agent-hooks" }
-marlin-agent-kernel = { path = "crates/marlin-agent-kernel" }
-marlin-agent-protocol = { path = "crates/marlin-agent-protocol" }
-marlin-agent-runtime = { path = "crates/marlin-agent-runtime" }
-marlin-gerbil-ir = { path = "crates/marlin-gerbil-ir" }
-marlin-gerbil-scheme = { path = "crates/marlin-gerbil-scheme" }
-marlin-org-memory = { path = "crates/marlin-org-memory" }
-marlin-org-model = { path = "crates/marlin-org-model" }
-marlin-org-patch = { path = "crates/marlin-org-patch" }
-marlin-org-store = { path = "crates/marlin-org-store" }
-marlin-org-workflow = { path = "crates/marlin-org-workflow" }
-marlin-org-workspace = { path = "crates/marlin-org-workspace" }
-marlin-workspace-patch = { path = "crates/marlin-workspace-patch" }
-marlin-workspace-protocol = { path = "crates/marlin-workspace-protocol" }
-marlin-workspace-query = { path = "crates/marlin-workspace-query" }
-marlin-workspace-status = { path = "crates/marlin-workspace-status" }
-marlin-workspace-view = { path = "crates/marlin-workspace-view" }
+marlin-agent-core = { path = "crates/marlin-agent-core", version = "0.1.0" }
+marlin-agent-environment = { path = "crates/marlin-agent-environment", version = "0.1.0" }
+marlin-agent-harness = { path = "crates/marlin-agent-harness", version = "0.1.0" }
+marlin-agent-hooks = { path = "crates/marlin-agent-hooks", version = "0.1.0" }
+marlin-agent-kernel = { path = "crates/marlin-agent-kernel", version = "0.1.0" }
+marlin-agent-protocol = { path = "crates/marlin-agent-protocol", version = "0.1.0" }
+marlin-agent-runtime = { path = "crates/marlin-agent-runtime", version = "0.1.0" }
+marlin-gerbil-ir = { path = "crates/marlin-gerbil-ir", version = "0.1.0" }
+marlin-gerbil-scheme = { path = "crates/marlin-gerbil-scheme", version = "0.1.0" }
+marlin-org-memory = { path = "crates/marlin-org-memory", version = "0.1.0" }
+marlin-org-model = { path = "crates/marlin-org-model", version = "0.1.0" }
+marlin-org-patch = { path = "crates/marlin-org-patch", version = "0.1.0" }
+marlin-org-store = { path = "crates/marlin-org-store", version = "0.1.0" }
+marlin-org-workflow = { path = "crates/marlin-org-workflow", version = "0.1.0" }
+marlin-org-workspace = { path = "crates/marlin-org-workspace", version = "0.1.0" }
+marlin-workspace-patch = { path = "crates/marlin-workspace-patch", version = "0.1.0" }
+marlin-workspace-protocol = { path = "crates/marlin-workspace-protocol", version = "0.1.0" }
+marlin-workspace-query = { path = "crates/marlin-workspace-query", version = "0.1.0" }
+marlin-workspace-status = { path = "crates/marlin-workspace-status", version = "0.1.0" }
+marlin-workspace-view = { path = "crates/marlin-workspace-view", version = "0.1.0" }
 
 [profile.release]
 opt-level = 3

@@ -9,7 +9,7 @@ use marlin_workspace_protocol::{AgentWorkspace, WorkspaceCtx};
 use marlin_workspace_query::{
     PropertyFilter, QueryFilter, QueryOrder, SourceRange, WorkspaceQuery, WorkspaceScope,
 };
-use marlin_workspace_status::{GoalState, WorkspaceTarget};
+use marlin_workspace_status::{GoalState, PatchExecutionMode, WorkspaceTarget};
 use marlin_workspace_view::{WorkspaceField, WorkspaceViewSpec};
 
 #[test]
@@ -80,6 +80,19 @@ fn memory_workspace_loads_document_for_query_and_view() {
             .expect("patch succeeds");
     assert_eq!(receipt.affected_sources[0].node, ids[0]);
     assert_eq!(receipt.affected_sources[0].source.document, "doc:goal");
+
+    let status =
+        futures_executor::block_on(workspace.status(WorkspaceTarget::Goal(ids[0].clone()), ctx))
+            .expect("status includes latest patch receipt");
+    let patch_status = status.patch.expect("patch status");
+    assert_eq!(patch_status.latest_patch_id, receipt.patch_id.as_str());
+    assert_eq!(patch_status.affected_nodes, 1);
+    assert_eq!(patch_status.affected_sources, 1);
+    assert_eq!(
+        patch_status.affected_source_documents,
+        vec!["doc:goal".to_string()]
+    );
+    assert!(patch_status.validation_accepted);
 }
 
 #[test]
@@ -244,4 +257,17 @@ fn memory_workspace_queries_patches_renders_and_reports_status() {
     assert_eq!(status.goal.expect("goal status").state, GoalState::Next);
     assert_eq!(status.checklist.expect("checklist status").open, 1);
     assert_eq!(status.evidence.expect("evidence status").linked, 1);
+    let patch_status = status.patch.expect("patch status");
+    assert_eq!(patch_status.latest_patch_id, receipt.patch_id.as_str());
+    assert_eq!(patch_status.execution_mode, PatchExecutionMode::Commit);
+    assert!(patch_status.policy_accepted);
+    assert_eq!(
+        patch_status.policy_reason.as_deref(),
+        Some("in-memory workspace patch applied")
+    );
+    assert_eq!(patch_status.affected_nodes, 1);
+    assert_eq!(patch_status.memory_dispatches, 1);
+    assert_eq!(patch_status.memory_dispatch_accepted, 1);
+    assert_eq!(patch_status.memory_dispatch_failed, 0);
+    assert!(patch_status.validation_accepted);
 }

@@ -6,7 +6,8 @@ use marlin_org_model::OrgNodeId;
 use marlin_org_store::OrgSourceWritePolicy;
 use marlin_workspace_patch::{
     MemoryDispatchReceipt, PatchId, ValidationDiagnostic, ValidationSeverity,
-    WorkspacePatchReceipt, WorkspaceValidationReport,
+    WorkspacePatchExecutionMode, WorkspacePatchExecutionReceipt, WorkspacePatchReceipt,
+    WorkspaceValidationReport,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
@@ -20,8 +21,10 @@ const DRY_RUN_AFTER_HASH: &str = "dry-run:no-workspace-write";
 pub fn gerbil_workspace_patch_receipt_evidence(receipt: &WorkspacePatchReceipt) -> LoopEvidence {
     let subject = format!("workspace-patch:{}", receipt.patch_id.as_str());
     let detail = format!(
-        "accepted={} affected_nodes={} affected_sources={} memory_dispatch={} diagnostics={}",
+        "accepted={} mode={:?} policy_accepted={} affected_nodes={} affected_sources={} memory_dispatch={} diagnostics={}",
         receipt.validation.accepted,
+        receipt.execution.mode,
+        receipt.execution.policy.accepted,
         receipt.affected_nodes.len(),
         receipt.affected_sources.len(),
         receipt.memory_dispatch.len(),
@@ -50,6 +53,7 @@ impl GerbilWorkspacePatchIntentDryRunner {
             affected_sources: Vec::new(),
             before_hash: DRY_RUN_BEFORE_HASH.to_owned(),
             after_hash: DRY_RUN_AFTER_HASH.to_owned(),
+            execution: dry_run_execution(&validation),
             validation,
             memory_dispatch: if accepted {
                 memory_dispatch_dry_run_receipts(intent)
@@ -57,6 +61,19 @@ impl GerbilWorkspacePatchIntentDryRunner {
                 Vec::new()
             },
         }
+    }
+}
+
+fn dry_run_execution(validation: &WorkspaceValidationReport) -> WorkspacePatchExecutionReceipt {
+    if validation.accepted {
+        WorkspacePatchExecutionReceipt::dry_run_accepted(
+            "gerbil intent validated without workspace write",
+        )
+    } else {
+        WorkspacePatchExecutionReceipt::rejected(
+            WorkspacePatchExecutionMode::DryRun,
+            "gerbil intent rejected before workspace write",
+        )
     }
 }
 

@@ -10,6 +10,7 @@ pub struct WorkspaceStatusReport {
     pub checklist: Option<ChecklistStatus>,
     pub evidence: Option<EvidenceStatus>,
     pub contracts: Option<ContractStatus>,
+    pub patch: Option<PatchStatus>,
     pub metrics: Vec<MetricTrace>,
     pub decisions: DecisionTrace,
     pub next_actions: Vec<String>,
@@ -72,6 +73,31 @@ pub struct ContractStatus {
     pub validation_failed: usize,
     pub validation_skipped: usize,
     pub rendered_summary: Vec<String>,
+}
+
+/// Latest workspace patch receipt summary.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct PatchStatus {
+    pub latest_patch_id: String,
+    pub execution_mode: PatchExecutionMode,
+    pub policy_accepted: bool,
+    pub policy_reason: Option<String>,
+    pub affected_nodes: usize,
+    pub affected_sources: usize,
+    pub affected_source_documents: Vec<String>,
+    pub validation_accepted: bool,
+    pub validation_diagnostics: usize,
+    pub memory_dispatches: usize,
+    pub memory_dispatch_accepted: usize,
+    pub memory_dispatch_failed: usize,
+}
+
+/// Execution boundary proven by the latest patch receipt.
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub enum PatchExecutionMode {
+    #[default]
+    DryRun,
+    Commit,
 }
 
 /// Metric trace latest value and target.

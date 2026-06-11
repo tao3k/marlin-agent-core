@@ -2,7 +2,10 @@
 
 use crate::{
     GerbilArtifactKind, GerbilCompiledArtifact, GerbilCompiler, GerbilSource,
-    runtime::{GERBIL_ADAPTER_MODULE, GERBIL_LOADPATH_ENV},
+    runtime::{
+        GERBIL_ADAPTER_MODULE, GERBIL_LOADPATH_ENV, default_gerbil_gxi_program,
+        write_gerbil_runtime_assets,
+    },
 };
 use marlin_org_model::{
     OrgContractRegistry, OrgContractResolutionReport, OrgContractValidationReport,
@@ -12,7 +15,7 @@ use std::{
     collections::BTreeMap,
     env,
     ffi::OsString,
-    io::Write,
+    io::{self, Write},
     path::PathBuf,
     process::{Command, Stdio},
 };
@@ -212,6 +215,18 @@ impl GerbilCommandCompiler {
     ) -> Self {
         Self::new(GerbilCommandSpec::marlin_runtime_module(
             program,
+            loadpath_root,
+        ))
+    }
+
+    /// Writes crate-shipped runtime assets and builds a compiler for the default `gxi`.
+    pub fn from_default_marlin_runtime_module(
+        loadpath_root: impl Into<PathBuf>,
+    ) -> io::Result<Self> {
+        let loadpath_root = loadpath_root.into();
+        write_gerbil_runtime_assets(&loadpath_root)?;
+        Ok(Self::from_marlin_runtime_module(
+            default_gerbil_gxi_program(),
             loadpath_root,
         ))
     }

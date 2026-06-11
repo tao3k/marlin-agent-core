@@ -1,6 +1,7 @@
 use super::{assert_workspace_patch_intent_artifact, local_gxi};
 use marlin_gerbil_scheme::{
-    GERBIL_LOADPATH_ENV, GerbilCompileResponse, write_gerbil_runtime_assets,
+    GERBIL_LOADPATH_ENV, GerbilArtifactKind, GerbilCommandCompiler, GerbilCompileResponse,
+    GerbilCompiler, GerbilSource, write_gerbil_runtime_assets,
 };
 use std::{
     fs,
@@ -35,6 +36,31 @@ fn command_compiler_real_gxi_runs_workspace_patch_intent_example_from_runtime_as
     let response: GerbilCompileResponse =
         serde_json::from_slice(&output.stdout).expect("decode example response");
     assert_workspace_patch_intent_artifact(response.artifact);
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+#[ignore = "requires a local Gerbil gxi executable"]
+fn command_compiler_real_gxi_reads_workspace_patch_intent_source_file() {
+    if local_gxi().is_none() {
+        return;
+    };
+    let root = test_root("runtime-source-file");
+    let compiler = GerbilCommandCompiler::from_default_marlin_runtime_module(&root)
+        .expect("write gerbil runtime assets");
+    let source_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("examples")
+        .join("workspace-patch-intent-source.ss");
+    let source = fs::read_to_string(&source_path).expect("read gerbil source example");
+
+    let artifact = compiler
+        .compile(
+            GerbilSource::new(source_path.to_string_lossy(), source),
+            GerbilArtifactKind::WorkspacePatchIntent,
+        )
+        .expect("compile gerbil source file with real gxi");
+
+    assert_workspace_patch_intent_artifact(artifact);
     let _ = fs::remove_dir_all(root);
 }
 

@@ -2,6 +2,11 @@ use super::support::loop_graph_artifact;
 use marlin_gerbil_scheme::{
     GERBIL_ADAPTER_MODULE, GERBIL_LOADPATH_ENV, GerbilArtifactKind, GerbilCommandCompiler,
     GerbilCommandProfile, GerbilCommandSpec, GerbilCompiler, GerbilSource,
+    default_gerbil_gxi_program,
+};
+use std::{
+    fs,
+    time::{SystemTime, UNIX_EPOCH},
 };
 
 #[test]
@@ -68,6 +73,29 @@ fn command_spec_builds_marlin_runtime_module_entry() {
 }
 
 #[test]
+fn command_compiler_builds_default_marlin_runtime_module_with_assets() {
+    let root = test_root("default-runtime-module");
+    let compiler = GerbilCommandCompiler::from_default_marlin_runtime_module(&root)
+        .expect("default runtime compiler should write loadpath assets");
+    let spec = compiler.spec();
+
+    assert_eq!(spec.program, default_gerbil_gxi_program());
+    assert_eq!(spec.args.len(), 1);
+    assert_eq!(spec.args[0].to_string_lossy(), GERBIL_ADAPTER_MODULE);
+    assert_eq!(
+        spec.env
+            .iter()
+            .find(|(key, _value)| key.to_string_lossy() == GERBIL_LOADPATH_ENV)
+            .map(|(_key, value)| value.to_string_lossy()),
+        Some(root.to_string_lossy())
+    );
+    assert!(root.join("command-adapter.ss").is_file());
+    assert!(root.join("marlin/adapter.ss").is_file());
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
 fn command_compiler_can_be_built_from_profile() {
     let profile = GerbilCommandProfile::new("/bin/sh").arg("-c").arg(
         "printf '%s\n' '{\"artifact\":{\"LoopGraph\":{\"graph_id\":\"from-profile\",\"nodes\":[],\"edges\":[]}}}'",
@@ -101,4 +129,15 @@ fn command_compiler_can_be_built_from_profile_json() {
         .expect("json profile-backed command should decode response");
 
     assert_eq!(artifact, loop_graph_artifact("from-profile-json"));
+}
+
+fn test_root(name: &str) -> std::path::PathBuf {
+    let suffix = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_nanos())
+        .unwrap_or_default();
+    std::env::temp_dir().join(format!(
+        "marlin-gerbil-scheme-{name}-{}-{suffix}",
+        std::process::id()
+    ))
 }

@@ -28,7 +28,80 @@ pub struct WorkspacePatchReceipt {
     pub before_hash: String,
     pub after_hash: String,
     pub validation: WorkspaceValidationReport,
+    #[serde(default)]
+    pub execution: WorkspacePatchExecutionReceipt,
     pub memory_dispatch: Vec<MemoryDispatchReceipt>,
+}
+
+/// Execution proof for the patch receipt boundary.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct WorkspacePatchExecutionReceipt {
+    pub mode: WorkspacePatchExecutionMode,
+    pub policy: WorkspacePatchPolicyDecision,
+}
+
+impl WorkspacePatchExecutionReceipt {
+    pub fn dry_run_accepted(reason: impl Into<String>) -> Self {
+        Self::accepted(WorkspacePatchExecutionMode::DryRun, reason)
+    }
+
+    pub fn commit_accepted(reason: impl Into<String>) -> Self {
+        Self::accepted(WorkspacePatchExecutionMode::Commit, reason)
+    }
+
+    pub fn accepted(mode: WorkspacePatchExecutionMode, reason: impl Into<String>) -> Self {
+        Self {
+            mode,
+            policy: WorkspacePatchPolicyDecision::accepted(reason),
+        }
+    }
+
+    pub fn rejected(mode: WorkspacePatchExecutionMode, reason: impl Into<String>) -> Self {
+        Self {
+            mode,
+            policy: WorkspacePatchPolicyDecision::rejected(reason),
+        }
+    }
+}
+
+impl Default for WorkspacePatchExecutionReceipt {
+    fn default() -> Self {
+        Self::rejected(
+            WorkspacePatchExecutionMode::DryRun,
+            "execution metadata absent",
+        )
+    }
+}
+
+/// Whether a receipt proves a dry-run or durable commit boundary.
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub enum WorkspacePatchExecutionMode {
+    #[default]
+    DryRun,
+    Commit,
+}
+
+/// Policy decision that allowed or blocked execution.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct WorkspacePatchPolicyDecision {
+    pub accepted: bool,
+    pub reason: Option<String>,
+}
+
+impl WorkspacePatchPolicyDecision {
+    pub fn accepted(reason: impl Into<String>) -> Self {
+        Self {
+            accepted: true,
+            reason: Some(reason.into()),
+        }
+    }
+
+    pub fn rejected(reason: impl Into<String>) -> Self {
+        Self {
+            accepted: false,
+            reason: Some(reason.into()),
+        }
+    }
 }
 
 /// Source provenance for an affected workspace node.

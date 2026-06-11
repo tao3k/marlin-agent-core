@@ -27,6 +27,11 @@ fn gerbil_patch_intent_dry_run_returns_receipt_without_workspace_write() {
     assert_eq!(receipt.before_hash, "dry-run:no-workspace-read");
     assert_eq!(receipt.after_hash, "dry-run:no-workspace-write");
     assert!(receipt.validation.accepted);
+    assert_eq!(
+        receipt.execution.mode,
+        marlin_workspace_patch::WorkspacePatchExecutionMode::DryRun
+    );
+    assert!(receipt.execution.policy.accepted);
     assert!(receipt.validation.diagnostics.is_empty());
     assert_eq!(receipt.memory_dispatch.len(), 1);
     assert_eq!(receipt.memory_dispatch[0].target, "long-term");
@@ -44,7 +49,9 @@ fn gerbil_patch_intent_dry_run_returns_receipt_without_workspace_write() {
     assert!(evidence.present);
     assert_eq!(
         evidence.detail.as_deref(),
-        Some("accepted=true affected_nodes=1 affected_sources=0 memory_dispatch=1 diagnostics=0")
+        Some(
+            "accepted=true mode=DryRun policy_accepted=true affected_nodes=1 affected_sources=0 memory_dispatch=1 diagnostics=0"
+        )
     );
 }
 
@@ -55,6 +62,11 @@ fn gerbil_patch_intent_dry_run_rejects_missing_dry_run_first() {
     let receipt = GerbilWorkspacePatchIntentDryRunner::dry_run(&intent);
 
     assert!(!receipt.validation.accepted);
+    assert_eq!(
+        receipt.execution.mode,
+        marlin_workspace_patch::WorkspacePatchExecutionMode::DryRun
+    );
+    assert!(!receipt.execution.policy.accepted);
     assert_eq!(receipt.validation.diagnostics.len(), 1);
     assert_eq!(
         receipt.validation.diagnostics[0].severity,
@@ -75,7 +87,9 @@ fn gerbil_patch_intent_dry_run_rejects_missing_dry_run_first() {
     assert!(!evidence.present);
     assert_eq!(
         evidence.detail.as_deref(),
-        Some("accepted=false affected_nodes=1 affected_sources=0 memory_dispatch=0 diagnostics=1")
+        Some(
+            "accepted=false mode=DryRun policy_accepted=false affected_nodes=1 affected_sources=0 memory_dispatch=0 diagnostics=1"
+        )
     );
 }
 

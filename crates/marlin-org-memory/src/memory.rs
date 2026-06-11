@@ -8,7 +8,8 @@ use marlin_org_model::{
 use marlin_org_workspace::{OrgDocument, OrgDocumentLoader};
 use marlin_workspace_patch::{
     AffectedNodeSource, DecisionRecord, EvidenceRef, EvidenceTrust, MemoryDispatchReceipt,
-    MetricPoint, PatchId, WorkspacePatch, WorkspacePatchOp, WorkspacePatchReceipt,
+    MetricPoint, PatchId, WorkspacePatch, WorkspacePatchExecutionMode,
+    WorkspacePatchExecutionReceipt, WorkspacePatchOp, WorkspacePatchReceipt,
     WorkspaceValidationReport,
 };
 use marlin_workspace_protocol::{AgentWorkspace, WorkspaceCtx, WorkspaceError, WorkspaceResult};
@@ -18,7 +19,8 @@ use marlin_workspace_query::{
 };
 use marlin_workspace_status::{
     ChecklistStatus, ContractStatus, DecisionTrace, EvidenceStatus, GoalState, GoalStatus,
-    MetricTrace, SddStatus, WorkspaceStatusReport, WorkspaceTarget,
+    MetricTrace, PatchExecutionMode, PatchStatus, SddStatus, WorkspaceStatusReport,
+    WorkspaceTarget,
 };
 use marlin_workspace_view::{
     RenderedContractFacts, RenderedViewNode, RenderedWorkspaceView, WorkspaceField,
@@ -32,6 +34,7 @@ use std::sync::RwLock;
 pub struct MemoryOrgWorkspace {
     nodes: RwLock<BTreeMap<OrgNodeId, OrgNode>>,
     contract_facts: RwLock<RenderedContractFacts>,
+    last_patch_receipt: RwLock<Option<WorkspacePatchReceipt>>,
 }
 
 impl MemoryOrgWorkspace {
@@ -40,6 +43,7 @@ impl MemoryOrgWorkspace {
         Self {
             nodes: RwLock::new(BTreeMap::new()),
             contract_facts: RwLock::new(RenderedContractFacts::default()),
+            last_patch_receipt: RwLock::new(None),
         }
     }
 
@@ -52,6 +56,7 @@ impl MemoryOrgWorkspace {
         Self {
             nodes: RwLock::new(indexed),
             contract_facts: RwLock::new(RenderedContractFacts::default()),
+            last_patch_receipt: RwLock::new(None),
         }
     }
 
@@ -164,15 +169,23 @@ impl AgentWorkspace for MemoryOrgWorkspace {
         let affected_sources = affected_sources(&nodes, &affected_nodes);
         let after_hash = workspace_hash(&nodes);
 
-        Ok(WorkspacePatchReceipt {
+        let receipt = WorkspacePatchReceipt {
             patch_id: PatchId::new(format!("patch:{after_hash}")),
             affected_nodes,
             affected_sources,
             before_hash,
             after_hash,
             validation: WorkspaceValidationReport::accepted(),
+            execution: WorkspacePatchExecutionReceipt::commit_accepted(
+                "in-memory workspace patch applied",
+            ),
             memory_dispatch,
-        })
+        };
+        *self
+            .last_patch_receipt
+            .write()
+            .map_err(|error| WorkspaceError::Backend(error.to_string()))? = Some(receipt.clone());
+        Ok(receipt)
     }
 
     async fn render_view(
@@ -237,8 +250,13 @@ impl AgentWorkspace for MemoryOrgWorkspace {
     ) -> WorkspaceResult<WorkspaceStatusReport> {
         let nodes = self.read_nodes()?;
         let contract_facts = self.read_contract_facts()?;
+        let last_patch_receipt = self.read_last_patch_receipt()?;
         let target_node = target_node(&nodes, &target);
-        Ok(status_for_node(target_node, &contract_facts))
+        Ok(status_for_node(
+            target_node,
+            &contract_facts,
+            last_patch_receipt.as_ref(),
+        ))
     }
 }
 
@@ -256,6 +274,13 @@ impl MemoryOrgWorkspace {
     ) -> WorkspaceResult<std::sync::RwLockReadGuard<'_, RenderedContractFacts>> {
         self.contract_facts
             .read()
+            .map_err(|error| WorkspaceError::Backend(error.to_string()))
+    }
+
+    fn read_last_patch_receipt(&self) -> WorkspaceResult<Option<WorkspacePatchReceipt>> {
+        self.last_patch_receipt
+            .read()
+            .map(|receipt| receipt.clone())
             .map_err(|error| WorkspaceError::Backend(error.to_string()))
     }
 
@@ -603,8 +628,10 @@ fn match_reason(node: &OrgNode) -> String {
 fn status_for_node(
     node: Option<&OrgNode>,
     contract_facts: &RenderedContractFacts,
+    last_patch_receipt: Option<&WorkspacePatchReceipt>,
 ) -> WorkspaceStatusReport {
     let contracts = Some(contract_status(contract_facts));
+    let patch = last_patch_receipt.map(patch_status);
     let Some(node) = node else {
         return WorkspaceStatusReport {
             goal: None,
@@ -612,6 +639,7 @@ fn status_for_node(
             checklist: None,
             evidence: None,
             contracts,
+            patch,
             metrics: Vec::new(),
             decisions: DecisionTrace { recent: Vec::new() },
             next_actions: Vec::new(),
@@ -649,6 +677,7 @@ fn status_for_node(
         checklist: Some(checklist),
         evidence: Some(evidence),
         contracts,
+        patch,
         metrics: metric_traces(node),
         decisions: decision_trace(node),
         next_actions: node
@@ -657,6 +686,41 @@ fn status_for_node(
             .filter(|checkbox| checkbox.state == CheckboxState::Open)
             .map(|checkbox| checkbox.text.clone())
             .collect(),
+    }
+}
+
+fn patch_status(receipt: &WorkspacePatchReceipt) -> PatchStatus {
+    let mut affected_source_documents = receipt
+        .affected_sources
+        .iter()
+        .map(|source| source.source.document.clone())
+        .collect::<Vec<_>>();
+    affected_source_documents.sort();
+    affected_source_documents.dedup();
+    PatchStatus {
+        latest_patch_id: receipt.patch_id.as_str().to_string(),
+        execution_mode: match receipt.execution.mode {
+            WorkspacePatchExecutionMode::DryRun => PatchExecutionMode::DryRun,
+            WorkspacePatchExecutionMode::Commit => PatchExecutionMode::Commit,
+        },
+        policy_accepted: receipt.execution.policy.accepted,
+        policy_reason: receipt.execution.policy.reason.clone(),
+        affected_nodes: receipt.affected_nodes.len(),
+        affected_sources: receipt.affected_sources.len(),
+        affected_source_documents,
+        validation_accepted: receipt.validation.accepted,
+        validation_diagnostics: receipt.validation.diagnostics.len(),
+        memory_dispatches: receipt.memory_dispatch.len(),
+        memory_dispatch_accepted: receipt
+            .memory_dispatch
+            .iter()
+            .filter(|dispatch| dispatch.accepted)
+            .count(),
+        memory_dispatch_failed: receipt
+            .memory_dispatch
+            .iter()
+            .filter(|dispatch| !dispatch.accepted)
+            .count(),
     }
 }
 

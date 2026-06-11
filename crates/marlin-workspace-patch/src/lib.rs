@@ -7,5 +7,8 @@ mod validation;
 pub use op::{
     DecisionRecord, EvidenceRef, EvidenceTrust, MetricPoint, WorkspacePatch, WorkspacePatchOp,
 };
-pub use receipt::{AffectedNodeSource, MemoryDispatchReceipt, PatchId, WorkspacePatchReceipt};
+pub use receipt::{
+    AffectedNodeSource, MemoryDispatchReceipt, PatchId, WorkspacePatchExecutionMode,
+    WorkspacePatchExecutionReceipt, WorkspacePatchPolicyDecision, WorkspacePatchReceipt,
+};
 pub use validation::{ValidationDiagnostic, ValidationSeverity, WorkspaceValidationReport};

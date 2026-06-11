@@ -15,6 +15,7 @@ pub enum LoopEvidenceKind {
     Tool,
     SubAgent,
     Runtime,
+    Visibility,
 }
 
 /// Typed fact captured while validating an agent loop.
