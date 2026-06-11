@@ -72,8 +72,9 @@ diagnostics for empty or unresolved references.
 body text as data for template renderers or Gerbil control planes.
 
 =OrgContractValidationReport= is the runtime-independent receipt surface for
-contract assertion results. The workspace loader exposes an empty report during
-projection; validation execution remains a separate boundary.
+contract assertion results. The workspace loader executes the parser-owned
+count-query subset during projection and records passed, failed, or skipped
+assertion receipts without invoking an external runtime.
 
 =OrgDocumentLoader::load_workspace_with_contracts= accepts explicit Org
 contract documents and merges their registries before reference resolution.
