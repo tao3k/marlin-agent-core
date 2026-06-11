@@ -57,9 +57,11 @@ pub use marlin_org_workflow as org_workflow;
 pub use marlin_org_workspace as org_workspace;
 pub use marlin_workspace_protocol as workspace;
 pub use marlin_workspace_protocol::{
-    ReleaseGateReceipt, ReleaseGateState, ReleaseGateStatus, ReleaseStatus, ReleaseVisibilityStatus,
+    ReleaseGateReceipt, ReleaseGateState, ReleaseGateStatus, ReleaseLandingReport, ReleaseStatus,
+    ReleaseVisibilityStatus,
 };
 pub use release::{
+    commit_release_gate_execution_receipts, gerbil_release_status_commit_from_execution_receipts,
     record_release_gate_execution_receipt, release_gate_state_from_execution,
     release_gate_status_receipt,
 };

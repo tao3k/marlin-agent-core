@@ -1,8 +1,33 @@
 //! Release receipt bridges exposed by the core facade.
 
 use marlin_agent_harness::{ReleaseGateExecutionReceipt, ReleaseGateExecutionStatus};
+use marlin_gerbil_ir::ReleaseTopologySpec;
 use marlin_org_store::{FileSystemReleaseStatusStore, OrgSourceStoreResult};
+use marlin_org_workflow::{
+    GerbilReleaseStatusCommit, GerbilReleaseStatusCommitReceipt, GerbilReleaseStatusCommitter,
+};
 use marlin_workspace_protocol::{ReleaseGateReceipt, ReleaseGateState};
+
+/// Persist a Gerbil release status commit from harness execution receipts.
+pub fn commit_release_gate_execution_receipts(
+    store: &FileSystemReleaseStatusStore,
+    topology: ReleaseTopologySpec,
+    receipts: &[ReleaseGateExecutionReceipt],
+) -> OrgSourceStoreResult<GerbilReleaseStatusCommitReceipt> {
+    let commit = gerbil_release_status_commit_from_execution_receipts(topology, receipts);
+    GerbilReleaseStatusCommitter::commit(store, &commit)
+}
+
+/// Build a Gerbil release workflow commit from harness execution receipts.
+pub fn gerbil_release_status_commit_from_execution_receipts(
+    topology: ReleaseTopologySpec,
+    receipts: &[ReleaseGateExecutionReceipt],
+) -> GerbilReleaseStatusCommit {
+    receipts.iter().fold(
+        GerbilReleaseStatusCommit::new(topology),
+        |commit, receipt| commit.with_gate_receipt(release_gate_status_receipt(receipt)),
+    )
+}
 
 /// Record a harness release gate execution receipt in a file-backed workspace status sidecar.
 pub fn record_release_gate_execution_receipt(

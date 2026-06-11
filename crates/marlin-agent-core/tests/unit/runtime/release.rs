@@ -6,8 +6,9 @@ use std::{
 use marlin_agent_core::gerbil_ir::{ReleaseGateSpec, ReleaseTopologySpec, ReleaseVisibilitySpec};
 use marlin_agent_core::{
     FileSystemReleaseStatusStore, LoopEvidenceKind, ReleaseGateExecutionStatus, ReleaseGateState,
-    record_release_gate_execution_receipt, release_gate_execution_receipt,
-    release_gate_state_from_execution, release_gate_status_receipt,
+    ReleaseLandingReport, commit_release_gate_execution_receipts,
+    gerbil_release_status_commit_from_execution_receipts, record_release_gate_execution_receipt,
+    release_gate_execution_receipt, release_gate_state_from_execution, release_gate_status_receipt,
     release_gate_visibility_evidence,
 };
 
@@ -94,26 +95,7 @@ fn core_release_bridge_marks_expected_local_gerbil_gate() {
 fn core_release_bridge_records_execution_receipt_in_status_store() {
     let root = core_release_test_root("status-store");
     let store = FileSystemReleaseStatusStore::new(&root);
-    let topology = ReleaseTopologySpec {
-        topology_id: "release:core".to_owned(),
-        crate_name: "marlin-gerbil-scheme".to_owned(),
-        publish_enabled: false,
-        asset_audit_command: "cargo package -p marlin-gerbil-scheme --list".to_owned(),
-        package_assets: vec!["fixtures/gerbil/command-adapter.ss".to_owned()],
-        runtime_dependency_chain: vec!["marlin-gerbil-ir".to_owned()],
-        workflow_dependency_chain: vec!["marlin-org-workflow".to_owned()],
-        gates: vec![ReleaseGateSpec {
-            gate_id: "package-assets".to_owned(),
-            command: "cargo package -p marlin-gerbil-scheme --list".to_owned(),
-            requires_local_gerbil: false,
-            required_artifacts: vec!["fixtures/gerbil/command-adapter.ss".to_owned()],
-            visibility: vec![ReleaseVisibilitySpec {
-                report_key: "package_asset_audit".to_owned(),
-                evidence_keys: vec!["required_artifacts".to_owned()],
-                artifact_paths: vec!["fixtures/gerbil/command-adapter.ss".to_owned()],
-            }],
-        }],
-    };
+    let topology = release_status_topology();
 
     store
         .record_release_topology(&topology)
@@ -135,8 +117,68 @@ fn core_release_bridge_records_execution_receipt_in_status_store() {
         .expect("status present");
     assert_eq!(status.gates[0].state, ReleaseGateState::Passed);
     assert!(status.visibility_reports[0].observed);
+    let report: ReleaseLandingReport = store
+        .read_landing_report()
+        .expect("landing report readable")
+        .expect("landing report present");
+    assert!(report.landing_complete);
+    assert_eq!(report.passed_gates, 1);
+    assert_eq!(report.observed_visibility_reports, 1);
 
     let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn core_release_bridge_builds_workflow_commit_from_execution_receipts() {
+    let root = core_release_test_root("workflow-commit");
+    let store = FileSystemReleaseStatusStore::new(&root);
+    let topology = release_status_topology();
+    let receipt = release_gate_execution_receipt(
+        &topology,
+        &topology.gates[0],
+        ReleaseGateExecutionStatus::Passed,
+    );
+
+    let workflow_commit = gerbil_release_status_commit_from_execution_receipts(
+        topology.clone(),
+        std::slice::from_ref(&receipt),
+    );
+    assert_eq!(workflow_commit.gate_receipts.len(), 1);
+    assert_eq!(
+        workflow_commit.gate_receipts[0].state,
+        ReleaseGateState::Passed
+    );
+
+    let commit_receipt = commit_release_gate_execution_receipts(&store, topology, &[receipt])
+        .expect("workflow commit should persist release status");
+    assert!(commit_receipt.accepted());
+    assert_eq!(commit_receipt.recorded_gate_receipts, 1);
+    assert!(commit_receipt.status.visibility_reports[0].observed);
+
+    let _ = fs::remove_dir_all(root);
+}
+
+fn release_status_topology() -> ReleaseTopologySpec {
+    ReleaseTopologySpec {
+        topology_id: "release:core".to_owned(),
+        crate_name: "marlin-gerbil-scheme".to_owned(),
+        publish_enabled: false,
+        asset_audit_command: "cargo package -p marlin-gerbil-scheme --list".to_owned(),
+        package_assets: vec!["fixtures/gerbil/command-adapter.ss".to_owned()],
+        runtime_dependency_chain: vec!["marlin-gerbil-ir".to_owned()],
+        workflow_dependency_chain: vec!["marlin-org-workflow".to_owned()],
+        gates: vec![ReleaseGateSpec {
+            gate_id: "package-assets".to_owned(),
+            command: "cargo package -p marlin-gerbil-scheme --list".to_owned(),
+            requires_local_gerbil: false,
+            required_artifacts: vec!["fixtures/gerbil/command-adapter.ss".to_owned()],
+            visibility: vec![ReleaseVisibilitySpec {
+                report_key: "package_asset_audit".to_owned(),
+                evidence_keys: vec!["required_artifacts".to_owned()],
+                artifact_paths: vec!["fixtures/gerbil/command-adapter.ss".to_owned()],
+            }],
+        }],
+    }
 }
 
 fn core_release_test_root(name: &str) -> std::path::PathBuf {
