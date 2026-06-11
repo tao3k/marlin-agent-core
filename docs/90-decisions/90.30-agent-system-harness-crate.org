@@ -12,21 +12,33 @@ The project will design a dedicated =marlin-agent-harness= crate for
 agent-system validation.
 
 This harness is not the Rust project harness gate. The Rust project harness
-remains a per-crate Cargo policy check. The agent-system harness validates
-agent loop behavior, runtime behavior, transcript replay, content evidence,
-safety evidence, budget evidence, and tool/provider/sub-agent boundaries.
+remains a per-crate Cargo policy check. The agent-system harness validates agent
+loop behavior, runtime behavior, transcript replay, content evidence, safety
+evidence, budget evidence, and tool/provider/sub-agent boundaries.
 
 The accepted target split is:
 
 | Crate | Role |
-| =marlin-agent-protocol= | Typed messages, commands, events, transcripts, scenario descriptors, and evidence receipts |
-| =marlin-agent-kernel= | Lean graph loop kernel and execution state machine |
-| =marlin-agent-runtime= | Tokio-backed runtime, cancellation, event sinks, providers, tools, and sub-agent execution |
-| =marlin-agent-harness= | Scenario runner, fake dependencies, transcript replay, loop/content evidence audit, and assertions |
+| =marlin-agent-protocol= | Typed messages, commands, events, transcripts, scenario descriptors, runtime environment records, hook summaries, sub-agent activity, and evidence receipts |
+| =marlin-agent-kernel= | Lean graph loop kernel, execution state machine, node adapters, hook event emission, and sub-agent lifecycle events |
+| =marlin-agent-runtime= | Tokio-backed runtime, cancellation, event sinks, providers, tools, hooks, and sub-agent execution |
+| =marlin-agent-hooks= | Hook registries, registrations, invocations, dispatch reports, and sync/async hook execution |
+| =marlin-agent-harness= | Scenario runner, fake dependencies, graph fixtures, transcript replay, loop/content evidence audit, execution reports, and assertions |
 
 =marlin-agent-core= is a transitional facade name. It should not be the
 long-term owner for new agent subsystems because it conflicts with the
 project-level name and hides module boundaries.
+
+The current implementation has landed the first harness slice:
+
+| Contract | Status |
+| =HarnessRuntime= and =HarnessRuntime::with_environment= | landed |
+| =HarnessExecutionReport= with runtime events and evidence | landed |
+| =AgentHarness::evaluate_execution_report= | landed |
+| =HarnessGraphBuilder= | landed |
+| Provider/tool pre/post hook dispatch | landed |
+| Sub-agent start/stop hook dispatch and =kernel.sub_agent= lifecycle events | landed |
+| End-to-end provider -> tool -> sub-agent scenario over custom runtime home | landed |
 
 The =cobusgreyling/loop-engineering= reference cloned under
 =.data/loop-engineering= validates several useful concepts:

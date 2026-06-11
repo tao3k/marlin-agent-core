@@ -7,20 +7,24 @@
 :KIND: architecture
 :STATUS: active
 :END:
+:ID: docs-10-30-agent-harness-boundary
+:KIND: architecture
+:STATUS: active
+:END:
 
 The agent-system harness is a first-class agent validation boundary. It is
 unrelated to the Rust project harness gate used by per-crate =build.rs= files.
 
-The harness crate owns controlled execution scenarios, fake providers and
-tools, transcript replay, loop evidence capture, and assertions over protocol
-receipts. It depends on =marlin-agent-protocol=, =marlin-agent-kernel=, and
+The harness crate owns controlled execution scenarios, fake providers and tools,
+transcript replay, loop evidence capture, and assertions over protocol receipts.
+It depends on =marlin-agent-protocol=, =marlin-agent-kernel=, and
 =marlin-agent-runtime=. Those crates do not depend on the harness.
 
 The kernel owns loop scheduling and execution authority. The runtime owns Tokio
-execution, cancellation, event sinks, providers, tools, and sub-agent
-execution. The protocol crate owns serializable events, commands, transcripts,
-scenario descriptors, and harness evidence records. The harness composes those
-crates to prove behavior at the runtime boundary.
+execution, cancellation, event sinks, providers, tools, and sub-agent execution.
+The protocol crate owns serializable events, commands, transcripts, scenario
+descriptors, and harness evidence records. The harness composes those crates to
+prove behavior at the runtime boundary.
 
 External loop-engineering references under =.data/loop-engineering= are useful
 as validation material, not as an ownership model. Its loop audit surface shows
@@ -42,3 +46,18 @@ Harness scenarios should be explicit artifacts:
 Content belongs in protocol and workspace-owned facts before it reaches the
 harness. The harness can load fixtures, but it should not become the parser or
 source-of-truth for content semantics.
+
+The current harness implementation has four concrete runtime contracts:
+
+| Runtime contract | Owner | Status |
+| =HarnessGraphBuilder= creates compact graph fixtures and returns protocol-owned =LoopGraph= values | =marlin-agent-harness= | landed |
+| =HarnessRuntime::with_environment= runs scenarios with explicit =RuntimeEnvironment= custom homes and profiles | =marlin-agent-harness= | landed |
+| =HarnessExecutionReport= carries kernel results, drained runtime events, captured evidence, and harness assertions | =marlin-agent-harness= | landed |
+| =AgentHarness::evaluate_execution_report= validates scenario event topics and evidence directly from execution reports | =marlin-agent-harness= | landed |
+
+Provider and tool adapters dispatch =PreToolUse= and =PostToolUse= hook events
+around runtime work. Sub-agent adapters dispatch =SubAgentStart= and
+=SubAgentStop= and emit =kernel.sub_agent= lifecycle events for started and
+stopped activity. End-to-end harness scenarios must prove those hooks, runtime
+events, custom environment visibility, and typed evidence through
+=HarnessExecutionReport= rather than scattered test-local probes.

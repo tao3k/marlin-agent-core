@@ -1,0 +1,112 @@
+#+TITLE: 40.40 Agent System Harness Protocol
+
+* 40.40 Agent System Harness Protocol
+:PROPERTIES:
+:ID: docs-40-40-agent-system-harness-protocol
+:KIND: rfc
+:STATUS: active
+:END:
+
+** Problem
+
+Marlin needs a harness for agent-system behavior, not another Rust project
+policy gate. The workspace already uses =rust-lang-project-harness= through
+per-crate =build.rs= files to enforce source layout and Cargo-facing rules.
+That gate is orthogonal to agent execution.
+
+The agent-system harness must prove runtime behavior across providers, tools,
+hooks, sub-agents, custom homes, graph execution, event streams, and typed
+evidence. It must keep those runtime facts explicit enough for repeatable
+scenario tests and transcript replay.
+
+** Goals
+
+The harness contract has four goals:
+
+1. Compose real agent runtime boundaries in a controlled test runtime.
+
+2. Capture events and evidence in a single scenario execution report.
+
+3. Keep graph fixtures small enough that scenario tests describe behavior, not
+   parser or graph-construction mechanics.
+
+4. Preserve crate ownership so the harness observes kernel, runtime, and
+   protocol behavior without becoming their source of truth.
+
+** Non-goals
+
+The harness is not a parser, source store, vector index, or project policy
+gate. It may load fixtures, fake dependencies, and replay transcripts, but
+parser-owned content facts must arrive through protocol or workspace-owned
+structures first.
+
+The harness must not replace =rust-lang-project-harness=. That project remains
+the Cargo policy and lint gate used by this workspace's build scripts.
+
+** Crate Ownership
+
+| Boundary | Owning crate | Contract |
+|----------+--------------+----------|
+| Scenario descriptions | =marlin-agent-protocol= | serializable event topics, evidence expectations, and runtime facts |
+| Kernel execution | =marlin-agent-kernel= | graph scheduling and node adapter lifecycle hooks |
+| Tokio runtime | =marlin-agent-runtime= | event streams, cancellation, providers, tools, and sub-agents |
+| Harness execution | =marlin-agent-harness= | controlled runtime assembly, graph fixtures, captured evidence, and scenario evaluation |
+
+** Runtime Harness Contract
+
+=HarnessRuntime= owns a controlled =TokioAgentRuntime= plus captured
+=LoopEvidence=. It can be created with an explicit =RuntimeEnvironment= so
+custom homes, config layers, sandbox policy, and sub-agent inheritance can be
+tested through the same runtime context used by production adapters.
+
+=HarnessExecutionReport= is the scenario boundary returned by graph execution.
+It contains:
+
+| Field | Meaning |
+|-------+---------|
+| =graph= | the graph executed by the harness |
+| =result= | kernel execution result |
+| =events= | runtime event stream captured during execution |
+| =evidence= | typed evidence derived from runtime events |
+
+=AgentHarness::evaluate_execution_report= evaluates scenario event topics and
+evidence directly from that report. This keeps tests and replay code from
+manually pairing =report.events= with =report.evidence=.
+
+** Graph Fixture Contract
+
+=HarnessGraphBuilder= owns small graph fixtures for scenario tests. It supports
+explicit nodes and edges, plus linear chains. This is intentionally a fixture
+builder, not a second graph DSL. The canonical graph contract remains
+=LoopGraph= in =marlin-agent-protocol=.
+
+** Hook And Sub-agent Lifecycle Contract
+
+Provider and tool adapters dispatch =PreToolUse= and =PostToolUse= hooks around
+runtime calls. Sub-agent adapters dispatch =SubAgentStart= and =SubAgentStop=
+and emit =kernel.sub_agent= runtime events for =Started= and =Stopped=
+activity.
+
+End-to-end harness scenarios should prove all of these surfaces together:
+
+| Surface | Required proof |
+|---------+----------------|
+| Provider runtime | provider node executes and emits typed output |
+| Tool runtime | tool node executes with hook dispatch |
+| Sub-agent runtime | start/stop hooks and activity events are captured |
+| Environment inheritance | child contexts preserve configured runtime homes |
+| Evidence evaluation | scenario checks read =HarnessExecutionReport= directly |
+
+** Implementation Status
+
+The active implementation has landed the following pieces:
+
+| Item | Status |
+|------+--------|
+| =HarnessRuntime= controlled runtime | implemented |
+| =HarnessExecutionReport= | implemented |
+| graph fixture builder | implemented |
+| provider/tool/sub-agent harness scenario | implemented |
+| runtime event evidence capture | implemented |
+
+Transcript replay and richer fixture loading remain follow-up work.
