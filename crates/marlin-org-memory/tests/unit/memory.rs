@@ -167,6 +167,14 @@ Task `{{ scope.title }}` must contain a Goal section.
     assert_eq!(contract_facts.templates.len(), 1);
     assert_eq!(contract_facts.summary.resolved_references, 1);
     assert_eq!(contract_facts.summary.templates, 1);
+    let view_receipt = &contract_facts.validations.receipts[0];
+    assert_eq!(
+        view_receipt
+            .source
+            .as_ref()
+            .map(|source| source.document.as_str()),
+        Some("doc:contracts")
+    );
     assert!(
         contract_facts
             .rendered_lines
@@ -192,10 +200,14 @@ Task `{{ scope.title }}` must contain a Goal section.
     assert_eq!(contracts.diagnostic_records.len(), 0);
     assert_eq!(contracts.template_records.len(), 1);
     assert_eq!(contracts.validation_report.receipts.len(), 1);
-    assert!(
-        contracts.validation_report.receipts[0]
-            .matched_nodes
-            .is_empty()
+    let status_receipt = &contracts.validation_report.receipts[0];
+    assert!(status_receipt.matched_nodes.is_empty());
+    assert_eq!(
+        status_receipt
+            .source
+            .as_ref()
+            .map(|source| source.document.as_str()),
+        Some("doc:contracts")
     );
     assert!(
         contracts
