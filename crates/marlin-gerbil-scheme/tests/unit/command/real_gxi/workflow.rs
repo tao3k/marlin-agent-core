@@ -1,6 +1,6 @@
 use super::{
-    WORKSPACE_PATCH_INTENT_SOURCE, WORKSPACE_SOURCE_COMMIT_INTENT_SOURCE, local_gxi,
-    real_gxi_module_compiler,
+    WORKSPACE_PATCH_INTENT_SOURCE, WORKSPACE_SOURCE_COMMIT_INTENT_SOURCE,
+    command_adapter_batch_artifacts, local_gxi, real_gxi_module_compiler,
 };
 use marlin_gerbil_scheme::{
     GerbilArtifactKind, GerbilCompiledArtifact, GerbilCompiler, GerbilRuntimeBinding, GerbilSource,
@@ -19,20 +19,11 @@ use std::{
 #[test]
 #[ignore = "requires a local Gerbil gxi executable"]
 fn command_compiler_real_gxi_workspace_patch_intent_dry_runs_through_workflow() {
-    let Some(compiler) = real_gxi_module_compiler() else {
+    let Some(artifacts) = command_adapter_batch_artifacts() else {
         return;
     };
 
-    let artifact = compiler
-        .compile(
-            GerbilSource::new(
-                "audit/workspace-patch-intent",
-                WORKSPACE_PATCH_INTENT_SOURCE,
-            ),
-            GerbilArtifactKind::WorkspacePatchIntent,
-        )
-        .expect("real gxi module entry should compile a workspace patch intent before dry-run");
-
+    let artifact = artifacts[2].clone();
     let GerbilCompiledArtifact::WorkspacePatchIntent(intent) = artifact else {
         panic!("expected workspace patch intent artifact");
     };

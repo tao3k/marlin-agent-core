@@ -1,84 +1,22 @@
 use super::{
-    AGENT_SCENARIO_CONTRACT_SOURCE, RELEASE_TOPOLOGY_SOURCE, RICH_LOOP_GRAPH_SOURCE,
-    WORKSPACE_PATCH_INTENT_SOURCE, WORKSPACE_SCHEMA_SOURCE,
-    assert_agent_scenario_contract_artifact, assert_release_topology_artifact,
-    assert_rich_loop_graph_artifact, assert_workspace_patch_intent_artifact,
-    assert_workspace_schema_artifact, real_gxi_command_adapter_batch_compiler,
-    real_gxi_module_compiler,
+    RICH_LOOP_GRAPH_SOURCE, assert_agent_scenario_contract_artifact,
+    assert_release_topology_artifact, assert_rich_loop_graph_artifact,
+    assert_workspace_patch_intent_artifact, assert_workspace_schema_artifact,
+    command_adapter_batch_artifacts, real_gxi_module_compiler,
 };
-use marlin_gerbil_scheme::{
-    GerbilArtifactKind, GerbilCompileRequest, GerbilCompiledArtifact, GerbilCompiler, GerbilSource,
-    GerbilWorkspaceContractFacts,
-};
-use marlin_org_model::{
-    OrgContractRegistry, OrgContractResolutionReport, OrgContractValidationReport,
-};
+use marlin_gerbil_scheme::{GerbilArtifactKind, GerbilCompiler, GerbilSource};
 use marlin_org_store::FileSystemReleaseStatusStore;
 use marlin_workspace_protocol::{ReleaseGateReceipt, ReleaseGateState, ReleaseLandingReport};
 use std::{
     fs,
-    sync::OnceLock,
     time::{SystemTime, UNIX_EPOCH},
 };
 
 const RELEASE_STATUS_ARTIFACT_DIR_ENV: &str = "MARLIN_RELEASE_STATUS_ARTIFACT_DIR";
 
-static COMMAND_ADAPTER_BATCH_ARTIFACTS: OnceLock<Option<Vec<GerbilCompiledArtifact>>> =
-    OnceLock::new();
-
-fn command_adapter_batch_artifacts() -> Option<&'static [GerbilCompiledArtifact]> {
-    COMMAND_ADAPTER_BATCH_ARTIFACTS
-        .get_or_init(|| {
-            let compiler = real_gxi_command_adapter_batch_compiler()?;
-            Some(
-                compiler
-                    .compile_requests(command_adapter_batch_requests())
-                    .expect("real gxi command adapter batch should compile artifacts"),
-            )
-        })
-        .as_deref()
-}
-
-fn command_adapter_batch_requests() -> Vec<GerbilCompileRequest> {
-    vec![
-        GerbilCompileRequest {
-            source: GerbilSource::new("audit/control-plane", RICH_LOOP_GRAPH_SOURCE),
-            expected: GerbilArtifactKind::LoopGraph,
-            contract_facts: Some(GerbilWorkspaceContractFacts {
-                registry: OrgContractRegistry::default(),
-                resolutions: OrgContractResolutionReport::default(),
-                validations: OrgContractValidationReport::default(),
-            }),
-        },
-        GerbilCompileRequest {
-            source: GerbilSource::new("audit/workspace-schema", WORKSPACE_SCHEMA_SOURCE),
-            expected: GerbilArtifactKind::WorkspaceSchema,
-            contract_facts: None,
-        },
-        GerbilCompileRequest {
-            source: GerbilSource::new(
-                "audit/workspace-patch-intent",
-                WORKSPACE_PATCH_INTENT_SOURCE,
-            ),
-            expected: GerbilArtifactKind::WorkspacePatchIntent,
-            contract_facts: None,
-        },
-        GerbilCompileRequest {
-            source: GerbilSource::new("audit/agent-scenario", AGENT_SCENARIO_CONTRACT_SOURCE),
-            expected: GerbilArtifactKind::AgentScenarioContract,
-            contract_facts: None,
-        },
-        GerbilCompileRequest {
-            source: GerbilSource::new("audit/release-topology", RELEASE_TOPOLOGY_SOURCE),
-            expected: GerbilArtifactKind::ReleaseTopology,
-            contract_facts: None,
-        },
-    ]
-}
-
 #[test]
 #[ignore = "requires a local Gerbil gxi executable"]
-fn command_compiler_can_call_real_gxi_command_adapter_launcher() {
+fn command_compiler_can_call_real_gxi_command_adapter_launcher_with_contract_facts() {
     let Some(artifacts) = command_adapter_batch_artifacts() else {
         return;
     };
