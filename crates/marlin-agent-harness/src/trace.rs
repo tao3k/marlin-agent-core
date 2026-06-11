@@ -20,6 +20,7 @@ pub struct TraceRecorder {
 #[derive(Debug)]
 struct TraceRecorderInner {
     spans: Mutex<Vec<AgentTraceSpanRecord>>,
+    span_indices: Mutex<BTreeMap<u64, usize>>,
     next_id: AtomicU64,
 }
 
@@ -35,6 +36,7 @@ impl TraceRecorder {
         Self {
             inner: Arc::new(TraceRecorderInner {
                 spans: Mutex::new(Vec::new()),
+                span_indices: Mutex::new(BTreeMap::new()),
                 next_id: AtomicU64::new(1),
             }),
         }
@@ -98,19 +100,60 @@ impl Subscriber for TraceRecorder {
         attributes.record(&mut TraceFieldRecorder {
             fields: &mut fields,
         });
-        self.inner
-            .spans
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .push(AgentTraceSpanRecord {
+        let span_id = self.inner.next_id.fetch_add(1, Ordering::Relaxed);
+        let span_index = {
+            let mut spans = self
+                .inner
+                .spans
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let span_index = spans.len();
+            spans.push(AgentTraceSpanRecord {
                 name: AgentSpanName::new(attributes.metadata().name()),
                 fields,
             });
+            span_index
+        };
+        self.inner
+            .span_indices
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .insert(span_id, span_index);
 
-        Id::from_u64(self.inner.next_id.fetch_add(1, Ordering::Relaxed))
+        Id::from_u64(span_id)
     }
 
-    fn record(&self, _span: &Id, _values: &Record<'_>) {}
+    fn record(&self, span: &Id, values: &Record<'_>) {
+        let span_id = span.clone().into_u64();
+        let Some(span_index) = self
+            .inner
+            .span_indices
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .get(&span_id)
+            .copied()
+        else {
+            return;
+        };
+
+        let mut fields = BTreeMap::new();
+        values.record(&mut TraceFieldRecorder {
+            fields: &mut fields,
+        });
+        if fields.is_empty() {
+            return;
+        }
+
+        if let Some(span_record) = self
+            .inner
+            .spans
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .get_mut(span_index)
+        {
+            span_record.fields.extend(fields);
+        }
+    }
 
     fn record_follows_from(&self, _span: &Id, _follows: &Id) {}
 

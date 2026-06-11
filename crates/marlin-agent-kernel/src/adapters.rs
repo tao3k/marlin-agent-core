@@ -300,6 +300,9 @@ where
             observability::SUB_AGENT_SOURCE_KERNEL_NODE,
             agent_reference.as_str(),
         );
+        if let Some(execution) = context.execution_identity() {
+            span.record(observability::FIELD_PARENT_RUN_ID, execution.run_id());
+        }
 
         Box::pin(
             async move {

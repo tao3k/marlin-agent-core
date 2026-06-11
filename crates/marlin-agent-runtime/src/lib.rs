@@ -6,6 +6,7 @@ mod tokio_runtime;
 
 pub use tokio_runtime::{
     CancellationToken, EventStream, HookRuntime, ProviderRuntime, RuntimeContext,
-    RuntimeEnvironment, RuntimeEvent, RuntimeEventSink, RuntimeEventStream, RuntimeFuture,
-    RuntimeTask, RuntimeTaskOutcome, SubAgentRuntime, TokioAgentRuntime, ToolRuntime,
+    RuntimeEnvironment, RuntimeEvent, RuntimeEventSink, RuntimeEventStream,
+    RuntimeExecutionIdentity, RuntimeFuture, RuntimeTask, RuntimeTaskOutcome, SubAgentRuntime,
+    TokioAgentRuntime, ToolRuntime,
 };

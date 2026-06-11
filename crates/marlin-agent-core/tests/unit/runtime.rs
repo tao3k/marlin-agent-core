@@ -3,8 +3,8 @@ use std::{future::pending, sync::Arc};
 use marlin_agent_core::{
     AgentExecutionTrace, AgentExecutionTraceSummary, AgentSpanName, AgentTraceSpanRecord,
     GraphLoopExecutionStatus, HookDispatcher, HookRegistry, ProviderRuntime, RuntimeContext,
-    RuntimeEnvironmentRequest, RuntimeEnvironmentResolver, RuntimeEvent, RuntimeFuture,
-    RuntimeTaskOutcome, TokioAgentRuntime,
+    RuntimeEnvironmentRequest, RuntimeEnvironmentResolver, RuntimeEvent, RuntimeExecutionIdentity,
+    RuntimeFuture, RuntimeTaskOutcome, TokioAgentRuntime,
 };
 use tokio_stream::StreamExt;
 
@@ -118,6 +118,14 @@ fn core_facade_exposes_hook_dispatcher() {
     let dispatcher = HookDispatcher::new(HookRegistry::new());
 
     assert_eq!(dispatcher.registry().registrations().len(), 0);
+}
+
+#[test]
+fn core_facade_exposes_runtime_execution_identity() {
+    let identity = RuntimeExecutionIdentity::new("run-core", "graph-core");
+
+    assert_eq!(identity.run_id(), "run-core");
+    assert_eq!(identity.graph_id(), "graph-core");
 }
 
 #[test]

@@ -250,6 +250,13 @@ fn assert_agent_core_trace_spans(report: &HarnessExecutionReport) {
             .map(String::as_str),
         Some(observability::SUB_AGENT_SOURCE_KERNEL_NODE)
     );
+    assert_eq!(
+        sub_agent_span
+            .fields
+            .get(observability::FIELD_PARENT_RUN_ID)
+            .map(String::as_str),
+        Some("run-e2e")
+    );
 
     let result_span = report
         .find_span(&observability::harness_result_span_name())

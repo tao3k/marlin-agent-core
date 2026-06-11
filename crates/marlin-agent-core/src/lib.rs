@@ -32,8 +32,9 @@ pub use marlin_agent_runtime as runtime;
 pub use marlin_agent_runtime::observability;
 pub use marlin_agent_runtime::{
     CancellationToken, EventStream, HookRuntime, ProviderRuntime, RuntimeContext,
-    RuntimeEnvironment, RuntimeEvent, RuntimeEventSink, RuntimeEventStream, RuntimeFuture,
-    RuntimeTask, RuntimeTaskOutcome, SubAgentRuntime, TokioAgentRuntime, ToolRuntime,
+    RuntimeEnvironment, RuntimeEvent, RuntimeEventSink, RuntimeEventStream,
+    RuntimeExecutionIdentity, RuntimeFuture, RuntimeTask, RuntimeTaskOutcome, SubAgentRuntime,
+    TokioAgentRuntime, ToolRuntime,
 };
 
 pub use marlin_gerbil_ir as gerbil_ir;

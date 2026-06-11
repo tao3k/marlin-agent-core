@@ -250,7 +250,8 @@ pub fn agent_sub_agent_span_with_source(
         node_id = node_id.as_str(),
         executor = executor.as_str(),
         sub_agent_source,
-        agent_reference
+        agent_reference,
+        parent_run_id = tracing::field::Empty
     )
 }
 

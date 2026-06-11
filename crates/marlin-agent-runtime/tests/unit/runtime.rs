@@ -6,7 +6,7 @@ use std::sync::{
 use marlin_agent_protocol::{ExecutorName, NodeId, RuntimeHome, RuntimeSandboxPolicy};
 use marlin_agent_runtime::{
     CancellationToken, HookRuntime, ProviderRuntime, RuntimeContext, RuntimeEnvironment,
-    RuntimeFuture, SubAgentRuntime, TokioAgentRuntime, observability,
+    RuntimeExecutionIdentity, RuntimeFuture, SubAgentRuntime, TokioAgentRuntime, observability,
 };
 use tokio_stream::StreamExt;
 use tracing::{
@@ -49,6 +49,57 @@ async fn runtime_context_exposes_custom_environment() {
 
     assert_eq!(runtime.environment(), &environment);
     assert_eq!(runtime.context().environment(), &environment);
+}
+
+#[test]
+fn runtime_context_carries_execution_identity_to_children() {
+    let (runtime, _events) = TokioAgentRuntime::new(4);
+    let child_environment = RuntimeEnvironment::default().with_cwd("/tmp/child");
+    let context = runtime
+        .context()
+        .with_execution_identity(RuntimeExecutionIdentity::new(
+            "run-identity",
+            "graph-identity",
+        ));
+
+    assert!(runtime.context().execution_identity().is_none());
+    assert_eq!(
+        context
+            .execution_identity()
+            .expect("execution identity should be present")
+            .run_id(),
+        "run-identity"
+    );
+    assert_eq!(
+        context
+            .execution_identity()
+            .expect("execution identity should be present")
+            .graph_id(),
+        "graph-identity"
+    );
+
+    let child_context = context.child_context();
+    assert_eq!(
+        child_context
+            .execution_identity()
+            .expect("child context should inherit execution identity")
+            .run_id(),
+        "run-identity"
+    );
+
+    let child_context_with_environment =
+        context.child_context_with_environment(child_environment.clone());
+    assert_eq!(
+        child_context_with_environment
+            .execution_identity()
+            .expect("environment child context should inherit execution identity")
+            .graph_id(),
+        "graph-identity"
+    );
+    assert_eq!(
+        child_context_with_environment.environment(),
+        &child_environment
+    );
 }
 
 #[tokio::test]

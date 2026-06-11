@@ -13,7 +13,8 @@ use marlin_agent_protocol::{
     RuntimePlanSnapshot,
 };
 use marlin_agent_runtime::{
-    RuntimeContext, RuntimeEvent, RuntimeFuture, RuntimeTask, TokioAgentRuntime, observability,
+    RuntimeContext, RuntimeEvent, RuntimeExecutionIdentity, RuntimeFuture, RuntimeTask,
+    TokioAgentRuntime, observability,
 };
 
 type KernelFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
@@ -255,7 +256,9 @@ impl GraphLoopKernel for TokioGraphLoopKernel {
     ) -> RuntimeTask<GraphLoopExecutionResult> {
         let kernel = self.clone();
         let child_runtime = runtime.child_runtime();
-        let context = child_runtime.context();
+        let execution =
+            RuntimeExecutionIdentity::new(request.run_id.clone(), request.graph.graph_id.clone());
+        let context = child_runtime.context().with_execution_identity(execution);
         child_runtime.spawn(async move { kernel.execute_graph(request, context).await })
     }
 

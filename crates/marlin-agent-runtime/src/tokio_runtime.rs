@@ -3,7 +3,7 @@
 use std::{future::Future, pin::Pin, sync::Arc, time::Duration};
 
 use crate::observability;
-pub use marlin_agent_protocol::{AgentEvent as RuntimeEvent, RuntimeEnvironment};
+pub use marlin_agent_protocol::{AgentEvent as RuntimeEvent, GraphId, RunId, RuntimeEnvironment};
 use tokio::sync::{mpsc, oneshot, watch};
 use tokio::task::{JoinError, JoinSet};
 pub use tokio_util::sync::CancellationToken;
@@ -18,6 +18,7 @@ pub struct TokioAgentRuntime {
     cancellation: CancellationToken,
     events: RuntimeEventSink,
     environment: RuntimeEnvironment,
+    execution: Option<RuntimeExecutionIdentity>,
 }
 
 impl TokioAgentRuntime {
@@ -43,6 +44,7 @@ impl TokioAgentRuntime {
                 cancellation,
                 events,
                 environment,
+                execution: None,
             },
             stream,
         )
@@ -53,6 +55,7 @@ impl TokioAgentRuntime {
             cancellation: self.cancellation.clone(),
             events: self.events.clone(),
             environment: self.environment.clone(),
+            execution: self.execution.clone(),
         }
     }
 
@@ -73,6 +76,7 @@ impl TokioAgentRuntime {
             cancellation: self.cancellation.child_token(),
             events: self.events.clone(),
             environment: self.environment.clone(),
+            execution: self.execution.clone(),
         }
     }
 
@@ -81,6 +85,7 @@ impl TokioAgentRuntime {
             cancellation: self.cancellation.child_token(),
             events: self.events.clone(),
             environment,
+            execution: self.execution.clone(),
         }
     }
 
@@ -234,6 +239,7 @@ pub struct RuntimeContext {
     cancellation: CancellationToken,
     events: RuntimeEventSink,
     environment: RuntimeEnvironment,
+    execution: Option<RuntimeExecutionIdentity>,
 }
 
 impl RuntimeContext {
@@ -249,11 +255,21 @@ impl RuntimeContext {
         &self.environment
     }
 
+    pub fn execution_identity(&self) -> Option<&RuntimeExecutionIdentity> {
+        self.execution.as_ref()
+    }
+
+    pub fn with_execution_identity(mut self, execution: RuntimeExecutionIdentity) -> Self {
+        self.execution = Some(execution);
+        self
+    }
+
     pub fn child_context(&self) -> Self {
         Self {
             cancellation: self.cancellation.child_token(),
             events: self.events.clone(),
             environment: self.environment.clone(),
+            execution: self.execution.clone(),
         }
     }
 
@@ -262,6 +278,7 @@ impl RuntimeContext {
             cancellation: self.cancellation.child_token(),
             events: self.events.clone(),
             environment,
+            execution: self.execution.clone(),
         }
     }
 
@@ -274,6 +291,34 @@ impl RuntimeContext {
         event: RuntimeEvent,
     ) -> Result<(), mpsc::error::SendError<RuntimeEvent>> {
         self.events.emit(event).await
+    }
+}
+
+/// Graph-loop execution identity propagated through runtime child contexts.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RuntimeExecutionIdentity {
+    run_id: RunId,
+    graph_id: GraphId,
+}
+
+impl RuntimeExecutionIdentity {
+    pub fn new(run_id: impl Into<String>, graph_id: impl Into<String>) -> Self {
+        Self {
+            run_id: RunId::new(run_id),
+            graph_id: GraphId::new(graph_id),
+        }
+    }
+
+    pub fn from_parts(run_id: RunId, graph_id: GraphId) -> Self {
+        Self { run_id, graph_id }
+    }
+
+    pub fn run_id(&self) -> &str {
+        self.run_id.as_str()
+    }
+
+    pub fn graph_id(&self) -> &str {
+        self.graph_id.as_str()
     }
 }
 
