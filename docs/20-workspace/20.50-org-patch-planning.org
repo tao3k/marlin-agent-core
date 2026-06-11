@@ -47,3 +47,15 @@ by the caller, and rejects the whole plan if any edit is out of bounds,
 overlapping, missing its target document, or not aligned to a UTF-8 character
 boundary. Successful reports include deterministic document hashes so the caller
 can connect in-memory application to a later filesystem persistence boundary.
+
+** Gerbil Intent Dry Run
+
+=marlin-org-workflow= consumes Gerbil-emitted =WorkspacePatchIntentSpec=
+values through =GerbilWorkspacePatchIntentDryRunner=. This is a workflow receipt
+boundary, not a source writer: it requires =dry_run_first=, reports affected
+Org nodes, leaves =affected_sources= empty, and returns deterministic dry-run
+hash placeholders without reading or writing the workspace.
+
+Memory dispatch operations also remain dry-run only at this boundary. The
+receipt records the requested target and a rejection reason so a later workflow
+can decide whether memory mutation should be enabled with an explicit policy.

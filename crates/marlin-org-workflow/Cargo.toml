@@ -6,6 +6,7 @@ authors.workspace = true
 repository.workspace = true
 
 [dependencies]
+marlin-gerbil-ir.workspace = true
 marlin-org-model.workspace = true
 marlin-org-patch.workspace = true
 marlin-org-store.workspace = true

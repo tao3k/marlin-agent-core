@@ -7,8 +7,10 @@ use marlin_org_store::{
     OrgSourceDiagnosticKind, OrgSourceDocumentHash, OrgSourceStore, OrgSourceWritePolicy,
 };
 use marlin_org_workspace::{OrgDocument, OrgDocumentLoader};
-use marlin_workspace_patch::{AffectedNodeSource, WorkspacePatch, WorkspacePatchOp};
+use marlin_workspace_patch::{AffectedNodeSource, WorkspacePatch};
 use serde::{Deserialize, Serialize};
+
+use crate::patch_ops::workspace_patch_op_node;
 
 /// Request to apply a typed workspace patch to one durable `Org` document.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -87,7 +89,7 @@ fn affected_sources(nodes: &[OrgNode], patch: &WorkspacePatch) -> Vec<AffectedNo
         .ops
         .iter()
         .filter_map(|op| {
-            let target = op_node(op);
+            let target = workspace_patch_op_node(op);
             nodes
                 .iter()
                 .find(|node| &node.id == target)
@@ -100,22 +102,6 @@ fn affected_sources(nodes: &[OrgNode], patch: &WorkspacePatch) -> Vec<AffectedNo
                 })
         })
         .collect()
-}
-
-fn op_node(op: &WorkspacePatchOp) -> &OrgNodeId {
-    match op {
-        WorkspacePatchOp::SetTodo { node, .. }
-        | WorkspacePatchOp::SetProperty { node, .. }
-        | WorkspacePatchOp::AddCheckbox { node, .. }
-        | WorkspacePatchOp::MarkCheckbox { node, .. }
-        | WorkspacePatchOp::AppendSection { node, .. }
-        | WorkspacePatchOp::AddLink { node, .. }
-        | WorkspacePatchOp::AddEvidenceRef { node, .. }
-        | WorkspacePatchOp::AddMetricPoint { node, .. }
-        | WorkspacePatchOp::AddDecision { node, .. }
-        | WorkspacePatchOp::AddTraceEvent { node, .. }
-        | WorkspacePatchOp::MarkMemoryCandidate { node, .. } => node,
-    }
 }
 
 fn blocked_workspace_receipt(
