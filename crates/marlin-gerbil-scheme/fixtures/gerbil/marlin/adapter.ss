@@ -60,14 +60,17 @@ package: marlin
       (compiler source-text)
       (error "marlin gerbil adapter cannot compile artifact kind" expected))))
 
+(def (compile-requested-marlin-artifact expected source-text)
+  (make-marlin-artifact expected (compile-requested-artifact expected source-text)))
+
 (def (run-marlin-command-adapter)
   (let* ((request (read-gerbil-compile-request))
          (expected (gerbil-compile-request-expected-kind request))
          (_ (ensure-marlin-supported-artifact-kind expected))
          (_ (ensure-marlin-artifact-compiler-table))
          (source-text (gerbil-compile-request-source-text request))
-         (artifact (compile-requested-artifact expected source-text)))
-    (display-gerbil-artifact-response expected artifact)
+         (artifact (compile-requested-marlin-artifact expected source-text)))
+    (display-marlin-compile-response artifact)
     (newline)))
 
 (def (main . _args)

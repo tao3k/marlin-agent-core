@@ -17,7 +17,6 @@
 (def artifact
   (compile-workspace-patch-intent workspace-patch-intent-source))
 
-(display-gerbil-artifact-response
- marlin-workspace-patch-intent-artifact-kind
- artifact)
+(display-marlin-compile-response
+ (make-marlin-workspace-patch-intent-artifact artifact))
 (newline)

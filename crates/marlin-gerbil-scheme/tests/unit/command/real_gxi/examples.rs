@@ -41,6 +41,55 @@ fn command_compiler_real_gxi_runs_workspace_patch_intent_example_from_runtime_as
 
 #[test]
 #[ignore = "requires a local Gerbil gxi executable"]
+fn command_compiler_real_gxi_protocol_bindings_emit_workspace_patch_intent() {
+    let Some(gxi) = local_gxi() else {
+        return;
+    };
+    let root = test_root("runtime-protocol-bindings");
+    write_gerbil_runtime_assets(&root).expect("write gerbil runtime assets");
+    let example = root.join("protocol-bindings-example.ss");
+    fs::write(
+        &example,
+        r#"(import :marlin/protocol)
+
+(def patch
+  (make-marlin-workspace-patch
+   "gerbil intent"
+   "gerbil"
+   (list (make-marlin-set-todo-op "memory.org:1:goal" "Done")
+         (make-marlin-set-property-op "memory.org:1:goal" "OWNER" "gerbil")
+         (make-marlin-mark-memory-candidate-op "memory.org:1:goal" "long-term"))))
+
+(def intent
+  (make-marlin-workspace-patch-intent "intent:memory" patch #t))
+
+(display-marlin-compile-response
+ (make-marlin-workspace-patch-intent-artifact intent))
+(newline)
+"#,
+    )
+    .expect("write protocol bindings example");
+
+    let output = Command::new(gxi)
+        .env(GERBIL_LOADPATH_ENV, &root)
+        .arg(example)
+        .output()
+        .expect("run real gxi protocol bindings example");
+
+    assert!(
+        output.status.success(),
+        "gxi protocol bindings example failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let response: GerbilCompileResponse =
+        serde_json::from_slice(&output.stdout).expect("decode protocol bindings response");
+    assert_workspace_patch_intent_artifact(response.artifact);
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+#[ignore = "requires a local Gerbil gxi executable"]
 fn command_compiler_real_gxi_reads_workspace_patch_intent_source_file() {
     if local_gxi().is_none() {
         return;

@@ -13,6 +13,14 @@ package: marlin
         marlin-supported-artifact-kind?
         ensure-marlin-supported-artifact-kind
         ensure-marlin-loop-graph-expected
+        make-marlin-artifact
+        marlin-artifact-kind
+        marlin-artifact-value
+        make-marlin-loop-graph-artifact
+        make-marlin-workspace-schema-artifact
+        make-marlin-workspace-patch-intent-artifact
+        make-marlin-agent-scenario-contract-artifact
+        make-marlin-release-topology-artifact
         marlin-loop-node-id
         marlin-loop-node-executor
         marlin-loop-node-config
@@ -71,6 +79,8 @@ package: marlin
         marlin-release-visibility-report-key
         marlin-release-visibility-evidence-keys
         marlin-release-visibility-artifact-paths
+        display-marlin-artifact
+        display-marlin-compile-response
         display-gerbil-artifact-response
         display-gerbil-compile-response)
 
@@ -99,6 +109,31 @@ package: marlin
 
 (def (ensure-marlin-loop-graph-expected expected)
   (ensure-marlin-supported-artifact-kind expected))
+
+(def (make-marlin-artifact artifact-kind artifact)
+  (ensure-marlin-supported-artifact-kind artifact-kind)
+  (list artifact-kind artifact))
+
+(def (marlin-artifact-kind artifact)
+  (car artifact))
+
+(def (marlin-artifact-value artifact)
+  (cadr artifact))
+
+(def (make-marlin-loop-graph-artifact graph)
+  (make-marlin-artifact marlin-loop-graph-artifact-kind graph))
+
+(def (make-marlin-workspace-schema-artifact schema)
+  (make-marlin-artifact marlin-workspace-schema-artifact-kind schema))
+
+(def (make-marlin-workspace-patch-intent-artifact intent)
+  (make-marlin-artifact marlin-workspace-patch-intent-artifact-kind intent))
+
+(def (make-marlin-agent-scenario-contract-artifact contract)
+  (make-marlin-artifact marlin-agent-scenario-contract-artifact-kind contract))
+
+(def (make-marlin-release-topology-artifact topology)
+  (make-marlin-artifact marlin-release-topology-artifact-kind topology))
 
 (def (make-marlin-loop-node node-id executor config)
   (list node-id executor config))
@@ -571,23 +606,31 @@ package: marlin
   (display-json-release-gates (marlin-release-topology-gates topology))
   (display "}"))
 
+(def (display-marlin-artifact artifact)
+  (let ((artifact-kind (marlin-artifact-kind artifact))
+        (artifact-value (marlin-artifact-value artifact)))
+    (display "{\"artifact\":{")
+    (display-json-string artifact-kind)
+    (display ":")
+    (cond
+      ((equal? artifact-kind marlin-loop-graph-artifact-kind)
+       (display-json-loop-graph artifact-value))
+      ((equal? artifact-kind marlin-workspace-schema-artifact-kind)
+       (display-json-workspace-schema artifact-value))
+      ((equal? artifact-kind marlin-workspace-patch-intent-artifact-kind)
+       (display-json-workspace-patch-intent artifact-value))
+      ((equal? artifact-kind marlin-agent-scenario-contract-artifact-kind)
+       (display-json-agent-scenario-contract artifact-value))
+      ((equal? artifact-kind marlin-release-topology-artifact-kind)
+       (display-json-release-topology artifact-value))
+      (else (error "marlin gerbil protocol cannot serialize artifact kind" artifact-kind)))
+    (display "}}")))
+
+(def (display-marlin-compile-response artifact)
+  (display-marlin-artifact artifact))
+
 (def (display-gerbil-artifact-response artifact-kind artifact)
-  (display "{\"artifact\":{")
-  (display-json-string artifact-kind)
-  (display ":")
-  (cond
-    ((equal? artifact-kind marlin-loop-graph-artifact-kind)
-     (display-json-loop-graph artifact))
-    ((equal? artifact-kind marlin-workspace-schema-artifact-kind)
-     (display-json-workspace-schema artifact))
-    ((equal? artifact-kind marlin-workspace-patch-intent-artifact-kind)
-     (display-json-workspace-patch-intent artifact))
-    ((equal? artifact-kind marlin-agent-scenario-contract-artifact-kind)
-     (display-json-agent-scenario-contract artifact))
-    ((equal? artifact-kind marlin-release-topology-artifact-kind)
-     (display-json-release-topology artifact))
-    (else (error "marlin gerbil protocol cannot serialize artifact kind" artifact-kind)))
-  (display "}}"))
+  (display-marlin-artifact (make-marlin-artifact artifact-kind artifact)))
 
 (def (display-gerbil-compile-response graph)
-  (display-gerbil-artifact-response marlin-loop-graph-artifact-kind graph))
+  (display-marlin-compile-response (make-marlin-loop-graph-artifact graph)))
