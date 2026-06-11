@@ -32,6 +32,27 @@ Use those artifacts as the CI evidence that the Gerbil release topology, local
 `gxi` gate receipt, and release visibility report all crossed the real runtime
 boundary.
 
+## Crate naming boundaries
+
+`marlin-agent-core` is a lean facade crate for stable imports and release
+bridges. It should not become the implementation home for new runtime,
+environment, hook, kernel, protocol, or harness behavior.
+
+Place new behavior in the focused crates that own the boundary:
+
+- `marlin-agent-protocol`: shared protocol data and trace/event contracts;
+- `marlin-agent-runtime`: runtime traits, context, streams, and observability;
+- `marlin-agent-kernel`: graph-loop execution and node adapters;
+- `marlin-agent-hooks`: hook registration and dispatch;
+- `marlin-agent-environment`: custom home, config layers, and sub-agent
+  environment resolution;
+- `marlin-agent-harness`: agent-system scenario, evidence, release visibility,
+  and performance harnessing.
+
+In this workspace, "harness" means the agent-system verification and evidence
+surface. Do not use `marlin-agent-harness` APIs as a synonym for Rust's test
+harness or `cargo test` mechanics.
+
 ## Self-applied policy
 
 The crate runs its own project policy gate in both supported embedding modes:
