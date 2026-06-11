@@ -133,6 +133,31 @@ async fn harness_execution_report_captures_failed_result_observability() {
                 && event.message == "run run-fail failed graph graph")
     );
 
+    let execution_span = report
+        .find_span(&observability::harness_execution_span_name())
+        .expect("expected harness execution trace span");
+    assert_eq!(
+        execution_span
+            .fields
+            .get(observability::FIELD_SCENARIO_ID)
+            .map(String::as_str),
+        Some("failing")
+    );
+    assert_eq!(
+        execution_span
+            .fields
+            .get(observability::FIELD_RUN_ID)
+            .map(String::as_str),
+        Some("run-fail")
+    );
+    assert_eq!(
+        execution_span
+            .fields
+            .get(observability::FIELD_GRAPH_ID)
+            .map(String::as_str),
+        Some("graph")
+    );
+
     let result_span = report
         .find_span(&observability::harness_result_span_name())
         .expect("expected failed harness result trace span");

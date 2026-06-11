@@ -166,6 +166,31 @@ fn assert_agent_core_trace_spans(report: &HarnessExecutionReport) {
             .any(|message| message.contains("Stopped"))
     );
 
+    let execution_span = report
+        .find_span(&observability::harness_execution_span_name())
+        .expect("expected harness execution trace span");
+    assert_eq!(
+        execution_span
+            .fields
+            .get(observability::FIELD_SCENARIO_ID)
+            .map(String::as_str),
+        Some("provider-tool-sub-agent")
+    );
+    assert_eq!(
+        execution_span
+            .fields
+            .get(observability::FIELD_RUN_ID)
+            .map(String::as_str),
+        Some("run-e2e")
+    );
+    assert_eq!(
+        execution_span
+            .fields
+            .get(observability::FIELD_GRAPH_ID)
+            .map(String::as_str),
+        Some("graph")
+    );
+
     let provider_span = report
         .find_span_with_field(
             &observability::agent_provider_span_name(),
