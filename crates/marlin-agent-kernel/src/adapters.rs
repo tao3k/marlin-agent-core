@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use marlin_agent_hooks::{HookDispatchReport, HookDispatcher, HookInvocation};
 use marlin_agent_protocol::{
-    ExecutorName, GraphNodeExecutionReceipt, GraphNodeInvocation, HookEventName, NodeId,
+    ExecutorName, GraphNodeExecutionReceipt, GraphNodeInvocation, HookEventName, NodeId, RunId,
     SubAgentActivity, SubAgentActivityKind, SubAgentSource,
 };
 use marlin_agent_runtime::{
@@ -292,8 +292,16 @@ where
         );
         let activity_status = format!("node {}", node_id.as_str());
         let agent_reference = executor.as_str().to_owned();
-        let sub_agent_source =
-            SubAgentSource::Other(observability::SUB_AGENT_SOURCE_KERNEL_NODE.to_owned());
+        let sub_agent_source = match context.execution_identity() {
+            Some(execution) => SubAgentSource::ThreadSpawn {
+                parent_run_id: Some(RunId::new(execution.run_id())),
+                depth: 1,
+                agent_path: None,
+                agent_nickname: Some(agent_reference.clone()),
+                agent_role: None,
+            },
+            None => SubAgentSource::Other(observability::SUB_AGENT_SOURCE_KERNEL_NODE.to_owned()),
+        };
         let span = observability::agent_sub_agent_span_with_source(
             &node_id,
             &executor,

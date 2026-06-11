@@ -32,6 +32,11 @@ The command boundary is intentionally data-only:
   non-zero status; stdout is also surfaced for runtimes such as =gxi= that print
   failure diagnostics there.
 - The adapter rejects any artifact whose actual kind differs from the requested
+
+Rust callers that need contract-aware Gerbil compilation use
+=GerbilCommandCompiler::compile_with_contract_facts=. The default
+=GerbilCompiler::compile= path still omits =contract_facts= so callers must
+opt into exposing parser-owned contract facts to the control plane.
   =expected= kind.
 
 ** Gerbil-Side Bindings

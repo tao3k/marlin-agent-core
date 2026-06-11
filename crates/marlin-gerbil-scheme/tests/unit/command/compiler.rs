@@ -3,6 +3,10 @@ use super::support::{
 };
 use marlin_gerbil_scheme::{
     GerbilArtifactKind, GerbilCommandCompiler, GerbilCommandSpec, GerbilCompiler, GerbilSource,
+    GerbilWorkspaceContractFacts,
+};
+use marlin_org_model::{
+    OrgContractRegistry, OrgContractResolutionReport, OrgContractValidationReport,
 };
 
 #[test]
@@ -78,6 +82,28 @@ fn command_compiler_passes_configured_environment() {
         .expect("command should receive configured environment values");
 
     assert_eq!(artifact, loop_graph_artifact("from-env"));
+}
+
+#[test]
+fn command_compiler_sends_contract_facts_when_requested() {
+    let command = GerbilCommandSpec::new("/bin/sh").arg("-c").arg(
+        "if grep -q 'contract_facts'; then graph=with-contracts; else graph=missing-contracts; fi; printf '%s\n' \"{\\\"artifact\\\":{\\\"LoopGraph\\\":{\\\"graph_id\\\":\\\"$graph\\\",\\\"nodes\\\":[],\\\"edges\\\":[]}}}\"",
+    );
+    let compiler = GerbilCommandCompiler::new(command);
+
+    let artifact = compiler
+        .compile_with_contract_facts(
+            GerbilSource::new("audit/control-plane", "(module audit/control-plane)"),
+            GerbilArtifactKind::LoopGraph,
+            GerbilWorkspaceContractFacts {
+                registry: OrgContractRegistry::default(),
+                resolutions: OrgContractResolutionReport::default(),
+                validations: OrgContractValidationReport::default(),
+            },
+        )
+        .expect("command should receive contract facts in request json");
+
+    assert_eq!(artifact, loop_graph_artifact("with-contracts"));
 }
 
 #[test]

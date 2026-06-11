@@ -5,6 +5,13 @@ use marlin_workspace_patch::{
 };
 
 #[test]
+fn patch_id_exposes_stable_str_view() {
+    let patch_id = PatchId::new("patch:gerbil");
+
+    assert_eq!(patch_id.as_str(), "patch:gerbil");
+}
+
+#[test]
 fn patch_receipt_records_hashes_validation_and_dispatch() {
     let receipt = WorkspacePatchReceipt {
         patch_id: PatchId::new("patch:1"),

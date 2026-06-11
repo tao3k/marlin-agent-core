@@ -219,20 +219,26 @@ impl GerbilCommandCompiler {
     pub fn spec(&self) -> &GerbilCommandSpec {
         &self.spec
     }
-}
 
-impl GerbilCompiler for GerbilCommandCompiler {
-    fn compile(
+    /// Compile with parser-owned Org contract facts included in the command request.
+    pub fn compile_with_contract_facts(
         &self,
         source: GerbilSource,
         expected: GerbilArtifactKind,
+        contract_facts: GerbilWorkspaceContractFacts,
     ) -> Result<GerbilCompiledArtifact, String> {
-        let request = GerbilCompileRequest {
+        self.compile_request(GerbilCompileRequest {
             source,
             expected,
-            contract_facts: None,
-        };
+            contract_facts: Some(contract_facts),
+        })
+    }
 
+    fn compile_request(
+        &self,
+        request: GerbilCompileRequest,
+    ) -> Result<GerbilCompiledArtifact, String> {
+        let expected = request.expected;
         let mut command = Command::new(&self.spec.program);
         command
             .args(&self.spec.args)
@@ -290,5 +296,19 @@ impl GerbilCompiler for GerbilCommandCompiler {
             .artifact
             .ensure_kind(expected)
             .map_err(|error| error.to_string())
+    }
+}
+
+impl GerbilCompiler for GerbilCommandCompiler {
+    fn compile(
+        &self,
+        source: GerbilSource,
+        expected: GerbilArtifactKind,
+    ) -> Result<GerbilCompiledArtifact, String> {
+        self.compile_request(GerbilCompileRequest {
+            source,
+            expected,
+            contract_facts: None,
+        })
     }
 }

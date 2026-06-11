@@ -165,6 +165,21 @@ fn assert_agent_core_trace_spans(report: &HarnessExecutionReport) {
             .iter()
             .any(|message| message.contains("Stopped"))
     );
+    assert!(
+        sub_agent_lifecycle_events
+            .iter()
+            .all(|message| message.contains("ThreadSpawn"))
+    );
+    assert!(
+        sub_agent_lifecycle_events
+            .iter()
+            .all(|message| message.contains("run-e2e"))
+    );
+    assert!(
+        sub_agent_lifecycle_events
+            .iter()
+            .all(|message| message.contains("depth: 1"))
+    );
 
     let execution_span = report
         .find_span(&observability::harness_execution_span_name())

@@ -1,5 +1,6 @@
 //! Dry-run workflow for Gerbil-emitted workspace patch intents.
 
+use marlin_agent_protocol::{LoopEvidence, LoopEvidenceKind};
 use marlin_gerbil_ir::WorkspacePatchIntentSpec;
 use marlin_org_model::OrgNodeId;
 use marlin_org_store::OrgSourceWritePolicy;
@@ -14,6 +15,25 @@ use crate::patch_ops::workspace_patch_op_node;
 
 const DRY_RUN_BEFORE_HASH: &str = "dry-run:no-workspace-read";
 const DRY_RUN_AFTER_HASH: &str = "dry-run:no-workspace-write";
+
+/// Projects a Gerbil workspace patch receipt into harness-visible workflow evidence.
+pub fn gerbil_workspace_patch_receipt_evidence(receipt: &WorkspacePatchReceipt) -> LoopEvidence {
+    let subject = format!("workspace-patch:{}", receipt.patch_id.as_str());
+    let detail = format!(
+        "accepted={} affected_nodes={} affected_sources={} memory_dispatch={} diagnostics={}",
+        receipt.validation.accepted,
+        receipt.affected_nodes.len(),
+        receipt.affected_sources.len(),
+        receipt.memory_dispatch.len(),
+        receipt.validation.diagnostics.len()
+    );
+
+    if receipt.validation.accepted {
+        LoopEvidence::present(LoopEvidenceKind::Workflow, subject).with_detail(detail)
+    } else {
+        LoopEvidence::missing(LoopEvidenceKind::Workflow, subject).with_detail(detail)
+    }
+}
 
 /// Consumes a Gerbil patch intent without executing durable workspace mutation.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]

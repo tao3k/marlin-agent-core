@@ -8,7 +8,7 @@ use marlin_org_model::{CheckboxState, OrgNodeId};
 use marlin_org_store::{FileSystemOrgSourceStore, OrgSourceWritePolicy};
 use marlin_org_workflow::{
     GerbilWorkspacePatchIntentCommit, GerbilWorkspacePatchIntentDryRunner,
-    OrgWorkspaceSourceCommitter,
+    OrgWorkspaceSourceCommitter, gerbil_workspace_patch_receipt_evidence,
 };
 use marlin_workspace_patch::{PatchId, ValidationSeverity, WorkspacePatch, WorkspacePatchOp};
 
@@ -35,6 +35,17 @@ fn gerbil_patch_intent_dry_run_returns_receipt_without_workspace_write() {
         receipt.memory_dispatch[0].reason.as_deref(),
         Some("dry-run only: memory dispatch not executed")
     );
+    let evidence = gerbil_workspace_patch_receipt_evidence(&receipt);
+    assert_eq!(
+        evidence.kind,
+        marlin_agent_protocol::LoopEvidenceKind::Workflow
+    );
+    assert_eq!(evidence.subject, "workspace-patch:intent:memory");
+    assert!(evidence.present);
+    assert_eq!(
+        evidence.detail.as_deref(),
+        Some("accepted=true affected_nodes=1 affected_sources=0 memory_dispatch=1 diagnostics=0")
+    );
 }
 
 #[test]
@@ -55,6 +66,17 @@ fn gerbil_patch_intent_dry_run_rejects_missing_dry_run_first() {
             .contains("requires dry_run_first")
     );
     assert!(receipt.memory_dispatch.is_empty());
+    let evidence = gerbil_workspace_patch_receipt_evidence(&receipt);
+    assert_eq!(
+        evidence.kind,
+        marlin_agent_protocol::LoopEvidenceKind::Workflow
+    );
+    assert_eq!(evidence.subject, "workspace-patch:intent:memory");
+    assert!(!evidence.present);
+    assert_eq!(
+        evidence.detail.as_deref(),
+        Some("accepted=false affected_nodes=1 affected_sources=0 memory_dispatch=0 diagnostics=1")
+    );
 }
 
 #[test]
