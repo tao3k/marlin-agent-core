@@ -1,5 +1,7 @@
 //! Lean `marlin-agent-core` facade for graph-loop runtime boundaries.
 
+mod release;
+
 pub use marlin_agent_environment as environment;
 pub use marlin_agent_environment::{
     PROJECT_CONFIG_PRECEDENCE, RuntimeEnvironmentError, RuntimeEnvironmentRequest,
@@ -53,3 +55,7 @@ pub use marlin_org_store as org_store;
 pub use marlin_org_workflow as org_workflow;
 pub use marlin_org_workspace as org_workspace;
 pub use marlin_workspace_protocol as workspace;
+pub use marlin_workspace_protocol::{
+    ReleaseGateReceipt, ReleaseGateState, ReleaseGateStatus, ReleaseStatus, ReleaseVisibilityStatus,
+};
+pub use release::{release_gate_state_from_execution, release_gate_status_receipt};

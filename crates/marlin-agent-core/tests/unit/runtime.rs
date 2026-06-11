@@ -5,9 +5,10 @@ use marlin_agent_core::{
     AgentExecutionTrace, AgentExecutionTraceSummary, AgentSpanName, AgentTraceSpanRecord,
     GraphLoopExecutionStatus, HookDispatcher, HookRegistry, LoopEvidence, LoopEvidenceKind,
     LoopPerformanceEvidence, PERFORMANCE_EVIDENCE_KEYS, ProviderRuntime,
-    ReleaseGateExecutionStatus, RuntimeContext, RuntimeEnvironmentRequest,
+    ReleaseGateExecutionStatus, ReleaseGateState, RuntimeContext, RuntimeEnvironmentRequest,
     RuntimeEnvironmentResolver, RuntimeEvent, RuntimeExecutionIdentity, RuntimeFuture,
     RuntimeTaskOutcome, TokioAgentRuntime, release_gate_execution_receipt,
+    release_gate_state_from_execution, release_gate_status_receipt,
     release_gate_visibility_evidence,
 };
 use tokio_stream::StreamExt;
@@ -202,6 +203,7 @@ fn core_facade_exposes_release_visibility_contract() {
     let evidence = release_gate_visibility_evidence(&topology, gate);
     let receipt =
         release_gate_execution_receipt(&topology, gate, ReleaseGateExecutionStatus::Passed);
+    let status_receipt = release_gate_status_receipt(&receipt);
 
     assert_eq!(evidence.len(), 1);
     assert_eq!(evidence[0].kind, LoopEvidenceKind::Visibility);
@@ -210,5 +212,45 @@ fn core_facade_exposes_release_visibility_contract() {
     assert_eq!(
         receipt.artifact_paths,
         vec!["fixtures/gerbil/command-adapter.ss"]
+    );
+    assert_eq!(status_receipt.state, ReleaseGateState::Passed);
+    assert_eq!(status_receipt.evidence_keys, vec!["workspace_schema"]);
+    assert_eq!(
+        status_receipt.artifact_paths,
+        vec!["fixtures/gerbil/command-adapter.ss"]
+    );
+}
+
+#[test]
+fn core_release_bridge_marks_expected_local_gerbil_gate() {
+    let topology = ReleaseTopologySpec {
+        topology_id: "release:core".to_owned(),
+        crate_name: "marlin-gerbil-scheme".to_owned(),
+        publish_enabled: false,
+        asset_audit_command: "cargo package -p marlin-gerbil-scheme --list".to_owned(),
+        package_assets: vec!["README.md".to_owned()],
+        runtime_dependency_chain: vec!["marlin-gerbil-ir".to_owned()],
+        workflow_dependency_chain: vec!["marlin-org-workflow".to_owned()],
+        gates: vec![ReleaseGateSpec {
+            gate_id: "real-gxi".to_owned(),
+            command: "cargo test -p marlin-gerbil-scheme command::real_gxi".to_owned(),
+            requires_local_gerbil: true,
+            required_artifacts: vec!["workspace_schema".to_owned()],
+            visibility: Vec::new(),
+        }],
+    };
+    let receipt = release_gate_execution_receipt(
+        &topology,
+        &topology.gates[0],
+        ReleaseGateExecutionStatus::Expected,
+    );
+
+    assert_eq!(
+        release_gate_state_from_execution(&receipt),
+        ReleaseGateState::RequiresLocalGerbil
+    );
+    assert_eq!(
+        release_gate_status_receipt(&receipt).state,
+        ReleaseGateState::RequiresLocalGerbil
     );
 }

@@ -2,6 +2,7 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     fs,
     path::{Path, PathBuf},
+    thread,
     time::{Duration, Instant},
 };
 
@@ -26,11 +27,16 @@ fn rust_project_harness_performance_verification_covers_workspace_crates() {
     );
 
     let started_at = Instant::now();
-    let mut records = Vec::new();
-
-    for crate_dir in crates {
-        records.push(assert_performance_index_for_crate(&crate_dir));
-    }
+    let handles = crates
+        .into_iter()
+        .map(|crate_dir| thread::spawn(move || assert_performance_index_for_crate(&crate_dir)));
+    let records: Vec<_> = handles
+        .map(|handle| {
+            handle
+                .join()
+                .expect("workspace performance coverage worker should finish")
+        })
+        .collect();
 
     let report = PerformanceCoverageReport::new(records, started_at.elapsed());
 

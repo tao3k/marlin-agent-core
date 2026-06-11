@@ -6,8 +6,11 @@ authors.workspace = true
 repository.workspace = true
 
 [dependencies]
+marlin-gerbil-ir.workspace = true
 marlin-org-patch.workspace = true
+marlin-workspace-status.workspace = true
 serde.workspace = true
+serde_json.workspace = true
 
 [build-dependencies]
 rust-lang-project-harness.workspace = true

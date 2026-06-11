@@ -3,6 +3,7 @@
 mod commit;
 mod file;
 mod memory;
+mod release_status;
 mod store;
 
 pub use commit::{
@@ -12,4 +13,5 @@ pub use commit::{
 };
 pub use file::FileSystemOrgSourceStore;
 pub use memory::MemoryOrgSourceStore;
+pub use release_status::FileSystemReleaseStatusStore;
 pub use store::{OrgSourceStore, OrgSourceStoreError, OrgSourceStoreResult};

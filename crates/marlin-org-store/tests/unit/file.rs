@@ -4,13 +4,15 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+use marlin_gerbil_ir::{ReleaseGateSpec, ReleaseTopologySpec, ReleaseVisibilitySpec};
 use marlin_org_model::{CheckboxState, OrgNodeId, OrgNodeSourceTokens, OrgSourceSpan};
 use marlin_org_patch::{OrgPatchPlan, OrgPatchPlanner, OrgTextEdit};
 use marlin_org_store::{
-    FileSystemOrgSourceStore, OrgSourceCommit, OrgSourceCommitter, OrgSourceDiagnosticKind,
-    OrgSourceDocumentHash, OrgSourceStore, OrgSourceWritePolicy,
+    FileSystemOrgSourceStore, FileSystemReleaseStatusStore, OrgSourceCommit, OrgSourceCommitter,
+    OrgSourceDiagnosticKind, OrgSourceDocumentHash, OrgSourceStore, OrgSourceWritePolicy,
 };
 use marlin_workspace_patch::{AffectedNodeSource, WorkspacePatch, WorkspacePatchOp};
+use marlin_workspace_status::{ReleaseGateReceipt, ReleaseGateState};
 
 #[test]
 fn filesystem_store_commits_through_source_committer() {
@@ -122,6 +124,70 @@ fn filesystem_store_commits_workspace_patch_through_org_planner() {
     assert_eq!(
         fs::read_to_string(root.join("memory.org")).expect("read committed document"),
         format!("{original}\n- [ ] verify persisted\n")
+    );
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn filesystem_release_status_store_persists_gate_receipts() {
+    let root = test_root("release-status");
+    fs::create_dir_all(&root).expect("create temp root");
+    let store = FileSystemReleaseStatusStore::new(&root);
+    let topology = ReleaseTopologySpec {
+        topology_id: "release:gerbil".to_owned(),
+        crate_name: "marlin-gerbil-scheme".to_owned(),
+        publish_enabled: false,
+        asset_audit_command: "cargo package -p marlin-gerbil-scheme --list --allow-dirty"
+            .to_owned(),
+        package_assets: vec!["fixtures/gerbil/build.ss".to_owned()],
+        runtime_dependency_chain: vec!["marlin-gerbil-ir".to_owned()],
+        workflow_dependency_chain: vec!["marlin-org-workflow".to_owned()],
+        gates: vec![ReleaseGateSpec {
+            gate_id: "package-assets".to_owned(),
+            command: "cargo package -p marlin-gerbil-scheme --list --allow-dirty".to_owned(),
+            requires_local_gerbil: false,
+            required_artifacts: vec!["fixtures/gerbil/build.ss".to_owned()],
+            visibility: vec![ReleaseVisibilitySpec {
+                report_key: "package_asset_audit".to_owned(),
+                evidence_keys: vec!["required_artifacts".to_owned()],
+                artifact_paths: vec!["fixtures/gerbil/build.ss".to_owned()],
+            }],
+        }],
+    };
+
+    let pending = store
+        .record_release_topology(&topology)
+        .expect("release topology persisted");
+    assert_eq!(pending.gates[0].state, ReleaseGateState::Pending);
+    assert!(store.path().exists());
+    assert!(
+        store
+            .record_release_gate_receipt(ReleaseGateReceipt::passed(
+                "package-assets",
+                vec!["required_artifacts".to_owned()],
+                vec!["fixtures/gerbil/build.ss".to_owned()],
+            ))
+            .expect("gate receipt persisted")
+    );
+
+    let reopened = FileSystemReleaseStatusStore::new(&root);
+    let status = reopened
+        .read_status()
+        .expect("release status readable")
+        .expect("release status present");
+    assert_eq!(status.topology_id, "release:gerbil");
+    assert_eq!(status.gates[0].state, ReleaseGateState::Passed);
+    assert!(
+        status.visibility_reports[0].observed,
+        "passing gate receipt should mark matching visibility as observed"
+    );
+    assert_eq!(
+        status.gates[0]
+            .last_receipt
+            .as_ref()
+            .expect("gate receipt")
+            .artifact_paths,
+        ["fixtures/gerbil/build.ss"]
     );
     let _ = fs::remove_dir_all(root);
 }

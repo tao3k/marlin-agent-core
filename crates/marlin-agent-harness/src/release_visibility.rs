@@ -24,7 +24,16 @@ pub struct ReleaseGateExecutionReceipt {
     pub required_artifacts: Vec<String>,
     pub evidence_keys: Vec<String>,
     pub artifact_paths: Vec<String>,
+    pub diagnostics: Vec<String>,
     pub visibility_evidence: Vec<LoopEvidence>,
+}
+
+impl ReleaseGateExecutionReceipt {
+    /// Attach diagnostics captured while evaluating this release gate.
+    pub fn with_diagnostics(mut self, diagnostics: impl IntoIterator<Item = String>) -> Self {
+        self.diagnostics = diagnostics.into_iter().collect();
+        self
+    }
 }
 
 /// Convert one release visibility declaration into harness evidence.
@@ -91,6 +100,7 @@ pub fn release_gate_execution_receipt(
         required_artifacts: gate.required_artifacts.clone(),
         evidence_keys,
         artifact_paths,
+        diagnostics: Vec::new(),
         visibility_evidence: release_gate_visibility_evidence(topology, gate),
     }
 }
