@@ -148,93 +148,52 @@ fn command_compiler_can_call_real_gxi_module_entry() {
 #[test]
 #[ignore = "requires a local Gerbil gxi executable"]
 fn command_compiler_can_call_real_gxi_workspace_schema() {
-    let Some(compiler) = real_gxi_module_compiler() else {
+    let Some(artifacts) = command_adapter_batch_artifacts() else {
         return;
     };
 
-    let artifact = compiler
-        .compile(
-            GerbilSource::new("audit/workspace-schema", WORKSPACE_SCHEMA_SOURCE),
-            GerbilArtifactKind::WorkspaceSchema,
-        )
-        .expect(
-            "real gxi module entry should compile source text into a workspace schema artifact",
-        );
-
-    assert_workspace_schema_artifact(artifact);
+    assert_workspace_schema_artifact(artifacts[1].clone());
 }
 
 #[test]
 #[ignore = "requires a local Gerbil gxi executable"]
 fn command_compiler_can_call_real_gxi_workspace_patch_intent() {
-    let Some(compiler) = real_gxi_module_compiler() else {
+    let Some(artifacts) = command_adapter_batch_artifacts() else {
         return;
     };
 
-    let artifact = compiler
-        .compile(
-            GerbilSource::new("audit/workspace-patch-intent", WORKSPACE_PATCH_INTENT_SOURCE),
-            GerbilArtifactKind::WorkspacePatchIntent,
-        )
-        .expect(
-            "real gxi module entry should compile source text into a workspace patch intent artifact",
-        );
-
-    assert_workspace_patch_intent_artifact(artifact);
+    assert_workspace_patch_intent_artifact(artifacts[2].clone());
 }
 
 #[test]
 #[ignore = "requires a local Gerbil gxi executable"]
 fn command_compiler_can_call_real_gxi_agent_scenario_contract() {
-    let Some(compiler) = real_gxi_module_compiler() else {
+    let Some(artifacts) = command_adapter_batch_artifacts() else {
         return;
     };
 
-    let artifact = compiler
-        .compile(
-            GerbilSource::new("audit/agent-scenario", AGENT_SCENARIO_CONTRACT_SOURCE),
-            GerbilArtifactKind::AgentScenarioContract,
-        )
-        .expect(
-            "real gxi module entry should compile source text into an agent scenario contract artifact",
-        );
-
-    assert_agent_scenario_contract_artifact(artifact);
+    assert_agent_scenario_contract_artifact(artifacts[3].clone());
 }
 
 #[test]
 #[ignore = "requires a local Gerbil gxi executable"]
 fn command_compiler_can_call_real_gxi_release_topology() {
-    let Some(compiler) = real_gxi_module_compiler() else {
+    let Some(artifacts) = command_adapter_batch_artifacts() else {
         return;
     };
 
-    let artifact = compiler
-        .compile(
-            GerbilSource::new("audit/release-topology", RELEASE_TOPOLOGY_SOURCE),
-            GerbilArtifactKind::ReleaseTopology,
-        )
-        .expect(
-            "real gxi module entry should compile source text into a release topology artifact",
-        );
-
-    assert_release_topology_artifact(artifact);
+    assert_release_topology_artifact(artifacts[4].clone());
 }
 
 #[test]
 #[ignore = "requires a local Gerbil gxi executable"]
 fn command_compiler_real_gxi_release_topology_persists_landing_status_sidecar() {
-    let Some(compiler) = real_gxi_module_compiler() else {
+    let Some(artifacts) = command_adapter_batch_artifacts() else {
         return;
     };
     let root = test_root("real-gxi-release-topology-status");
 
-    let artifact = compiler
-        .compile(
-            GerbilSource::new("audit/release-topology-status", RELEASE_TOPOLOGY_SOURCE),
-            GerbilArtifactKind::ReleaseTopology,
-        )
-        .expect("real gxi should compile release topology for landing status");
+    let artifact = artifacts[4].clone();
     let topology = artifact
         .release_topology()
         .expect("real gxi should produce a release topology artifact");
