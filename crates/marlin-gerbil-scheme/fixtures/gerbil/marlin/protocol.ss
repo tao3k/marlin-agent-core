@@ -35,6 +35,8 @@ package: marlin
         marlin-workspace-patch-reason
         marlin-workspace-patch-source-agent
         marlin-workspace-patch-ops
+        make-marlin-set-todo-op
+        make-marlin-set-property-op
         make-marlin-mark-memory-candidate-op
         make-marlin-agent-scenario-contract
         marlin-agent-scenario-contract-schema-id
@@ -147,6 +149,12 @@ package: marlin
 
 (def (marlin-workspace-patch-ops patch)
   (caddr patch))
+
+(def (make-marlin-set-todo-op node state)
+  (list 'SetTodo node state))
+
+(def (make-marlin-set-property-op node key value)
+  (list 'SetProperty node key value))
 
 (def (make-marlin-mark-memory-candidate-op node dispatch)
   (list 'MarkMemoryCandidate node dispatch))
@@ -294,9 +302,40 @@ package: marlin
   (display-json-string-list (marlin-workspace-schema-todo-states schema))
   (display "}"))
 
+(def (display-json-todo-state state)
+  (cond
+    ((or (equal? state "Todo") (equal? state "TODO") (equal? state "todo"))
+     (display-json-string "Todo"))
+    ((or (equal? state "Next") (equal? state "NEXT") (equal? state "next"))
+     (display-json-string "Next"))
+    ((or (equal? state "Wait") (equal? state "WAIT") (equal? state "wait"))
+     (display-json-string "Wait"))
+    ((or (equal? state "Blocked") (equal? state "BLOCKED") (equal? state "blocked"))
+     (display-json-string "Blocked"))
+    ((or (equal? state "Done") (equal? state "DONE") (equal? state "done"))
+     (display-json-string "Done"))
+    (else
+     (display "{\"Custom\":")
+     (display-json-string state)
+     (display "}"))))
+
 (def (display-json-workspace-patch-op op)
   (let ((op-kind (car op)))
     (cond
+      ((eq? op-kind 'SetTodo)
+       (display "{\"SetTodo\":{\"node\":")
+       (display-json-string (cadr op))
+       (display ",\"state\":")
+       (display-json-todo-state (caddr op))
+       (display "}}"))
+      ((eq? op-kind 'SetProperty)
+       (display "{\"SetProperty\":{\"node\":")
+       (display-json-string (cadr op))
+       (display ",\"key\":")
+       (display-json-string (caddr op))
+       (display ",\"value\":")
+       (display-json-string (cadddr op))
+       (display "}}"))
       ((eq? op-kind 'MarkMemoryCandidate)
        (display "{\"MarkMemoryCandidate\":{\"node\":")
        (display-json-string (cadr op))

@@ -1,5 +1,6 @@
 use marlin_gerbil_ir::CompiledLoopGraph;
 use marlin_gerbil_scheme::{GerbilCommandCompiler, GerbilCommandSpec, GerbilCompiledArtifact};
+use marlin_org_model::TodoState;
 use marlin_workspace_patch::WorkspacePatchOp;
 use std::{env, path::PathBuf};
 
@@ -26,7 +27,17 @@ pub const WORKSPACE_PATCH_INTENT_SOURCE: &str = r#"(workspace-patch-intent "inte
   (patch
     (reason "gerbil intent")
     (source-agent "gerbil")
+    (set-todo "memory.org:1:goal" DONE)
+    (set-property "memory.org:1:goal" OWNER "gerbil")
     (mark-memory-candidate "memory.org:1:goal" "long-term")))"#;
+
+pub const WORKSPACE_SOURCE_COMMIT_INTENT_SOURCE: &str = r#"(workspace-patch-intent "intent:source-commit"
+  (dry-run-first #t)
+  (patch
+    (reason "gerbil source commit")
+    (source-agent "gerbil")
+    (set-todo "memory.org:1:goal" DONE)
+    (set-property "memory.org:1:goal" OWNER "gerbil")))"#;
 
 pub const AGENT_SCENARIO_CONTRACT_SOURCE: &str = r#"(agent-scenario-contract gerbil-scenario
   (description "from gerbil")
@@ -130,8 +141,23 @@ pub fn assert_workspace_patch_intent_artifact(artifact: GerbilCompiledArtifact) 
             assert!(intent.dry_run_first);
             assert_eq!(intent.patch.reason, "gerbil intent");
             assert_eq!(intent.patch.source_agent.as_deref(), Some("gerbil"));
-            assert_eq!(intent.patch.ops.len(), 1);
+            assert_eq!(intent.patch.ops.len(), 3);
             match &intent.patch.ops[0] {
+                WorkspacePatchOp::SetTodo { node, state } => {
+                    assert_eq!(node.as_str(), "memory.org:1:goal");
+                    assert_eq!(state, &TodoState::Done);
+                }
+                other => panic!("expected set-todo op, got {other:?}"),
+            }
+            match &intent.patch.ops[1] {
+                WorkspacePatchOp::SetProperty { node, key, value } => {
+                    assert_eq!(node.as_str(), "memory.org:1:goal");
+                    assert_eq!(key, "OWNER");
+                    assert_eq!(value, "gerbil");
+                }
+                other => panic!("expected set-property op, got {other:?}"),
+            }
+            match &intent.patch.ops[2] {
                 WorkspacePatchOp::MarkMemoryCandidate { node, dispatch } => {
                     assert_eq!(node.as_str(), "memory.org:1:goal");
                     assert_eq!(dispatch, "long-term");

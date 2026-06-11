@@ -169,6 +169,24 @@ package: marlin
       #t
       (error "workspace-patch-intent requires dry-run-first true" forms))))
 
+(define (parse-set-todo-op form)
+  (if (and (form-tag? form 'set-todo)
+           (pair? (cdr form))
+           (pair? (cddr form)))
+    (make-marlin-set-todo-op (atom->string (cadr form))
+                             (atom->string (caddr form)))
+    (error "invalid set-todo form" form)))
+
+(define (parse-set-property-op form)
+  (if (and (form-tag? form 'set-property)
+           (pair? (cdr form))
+           (pair? (cddr form))
+           (pair? (cdddr form)))
+    (make-marlin-set-property-op (atom->string (cadr form))
+                                 (atom->string (caddr form))
+                                 (atom->string (cadddr form)))
+    (error "invalid set-property form" form)))
+
 (define (parse-mark-memory-candidate-op form)
   (if (and (form-tag? form 'mark-memory-candidate)
            (pair? (cdr form))
@@ -179,6 +197,10 @@ package: marlin
 
 (define (parse-workspace-patch-op form)
   (cond
+    ((form-tag? form 'set-todo)
+     (parse-set-todo-op form))
+    ((form-tag? form 'set-property)
+     (parse-set-property-op form))
     ((form-tag? form 'mark-memory-candidate)
      (parse-mark-memory-candidate-op form))
     (else (error "unsupported workspace patch op form" form))))

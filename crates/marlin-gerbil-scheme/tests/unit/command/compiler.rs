@@ -45,7 +45,7 @@ fn command_compiler_reads_workspace_schema_from_stdout() {
 #[test]
 fn command_compiler_reads_workspace_patch_intent_from_stdout() {
     let command = GerbilCommandSpec::new("/bin/sh").arg("-c").arg(
-        "printf '%s\n' '{\"artifact\":{\"WorkspacePatchIntent\":{\"intent_id\":\"intent:memory\",\"patch\":{\"reason\":\"gerbil intent\",\"source_agent\":\"gerbil\",\"ops\":[{\"MarkMemoryCandidate\":{\"node\":\"memory.org:1:goal\",\"dispatch\":\"long-term\"}}]},\"dry_run_first\":true}}}'",
+        "printf '%s\n' '{\"artifact\":{\"WorkspacePatchIntent\":{\"intent_id\":\"intent:memory\",\"patch\":{\"reason\":\"gerbil intent\",\"source_agent\":\"gerbil\",\"ops\":[{\"SetTodo\":{\"node\":\"memory.org:1:goal\",\"state\":\"Done\"}},{\"SetProperty\":{\"node\":\"memory.org:1:goal\",\"key\":\"OWNER\",\"value\":\"gerbil\"}},{\"MarkMemoryCandidate\":{\"node\":\"memory.org:1:goal\",\"dispatch\":\"long-term\"}}]},\"dry_run_first\":true}}}'",
     );
     let compiler = GerbilCommandCompiler::new(command);
 
