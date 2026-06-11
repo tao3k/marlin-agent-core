@@ -5,6 +5,9 @@ package: marlin
 
 (export make-marlin-loop-node
         marlin-loop-graph-artifact-kind
+        marlin-supported-artifact-kinds
+        marlin-supported-artifact-kind?
+        ensure-marlin-supported-artifact-kind
         ensure-marlin-loop-graph-expected
         marlin-loop-node-id
         marlin-loop-node-executor
@@ -21,9 +24,20 @@ package: marlin
 
 (def marlin-loop-graph-artifact-kind "LoopGraph")
 
+(def marlin-supported-artifact-kinds
+  (list marlin-loop-graph-artifact-kind))
+
+(def (marlin-supported-artifact-kind? expected)
+  (if (member expected marlin-supported-artifact-kinds) #t #f))
+
+(def (ensure-marlin-supported-artifact-kind expected)
+  (unless (marlin-supported-artifact-kind? expected)
+    (error "marlin gerbil protocol unsupported artifact kind"
+           expected
+           marlin-supported-artifact-kinds)))
+
 (def (ensure-marlin-loop-graph-expected expected)
-  (unless (equal? expected marlin-loop-graph-artifact-kind)
-    (error "marlin gerbil protocol expected LoopGraph" expected)))
+  (ensure-marlin-supported-artifact-kind expected))
 
 (def (make-marlin-loop-node node-id executor config)
   (list node-id executor config))

@@ -45,8 +45,9 @@ modules through =GERBIL_LOADPATH=. =fixtures/gerbil/marlin/request.ss= decodes
 reader-backed source-to-=LoopGraph= step. =fixtures/gerbil/marlin/adapter.ss=
 imports =./request=, =./parser=, and =./protocol=, then emits one
 =GerbilCompileResponse=. The protocol binding currently exports the
-=LoopGraph= artifact kind contract and rejects other =expected= artifact kinds
-inside the Gerbil process before source text reaches the parser.
+=LoopGraph= artifact kind through a supported-kind registry and rejects other
+=expected= artifact kinds inside the Gerbil process before source text reaches
+the parser.
 
 Native Rust/Gerbil bindings are a later layer. They should live behind this
 same typed protocol after the command boundary proves the IR shape, because

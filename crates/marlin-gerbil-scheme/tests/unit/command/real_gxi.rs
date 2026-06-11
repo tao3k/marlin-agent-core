@@ -65,6 +65,7 @@ fn command_compiler_real_gxi_module_entry_rejects_unsupported_expected_kind() {
         .unwrap_err();
 
     assert!(error.contains("gerbil compiler command failed"));
-    assert!(error.contains("expected LoopGraph"));
+    assert!(error.contains("unsupported artifact kind"));
+    assert!(error.contains("LoopGraph"));
     assert!(error.contains("WorkspaceSchema"));
 }

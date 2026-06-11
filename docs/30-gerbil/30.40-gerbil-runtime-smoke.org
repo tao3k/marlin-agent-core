@@ -73,8 +73,7 @@ emitting JSON:
 
 - =fixtures/gerbil/marlin/protocol.ss= owns constructors/accessors for
   =LoopGraph=, =LoopNodeSpec=, and =LoopEdgeSpec= plus the
-  =GerbilCompileResponse= serializer and the supported =LoopGraph= artifact
-  kind check.
+  =GerbilCompileResponse= serializer and the supported artifact-kind registry.
 - =fixtures/gerbil/marlin/request.ss= owns the =GerbilCompileRequest= JSON
   reader boundary through =:std/text/json=.
 - =fixtures/gerbil/marlin/parser.ss= owns the Gerbil reader-backed smoke DSL
