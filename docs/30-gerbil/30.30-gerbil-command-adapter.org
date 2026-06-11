@@ -101,7 +101,10 @@ Durable source mutation requires a second Rust-owned request:
 with an explicit document and =OrgSourceWritePolicy= before
 =OrgWorkspaceSourceCommitter::commit_gerbil_intent= may load, plan, and commit
 Org source edits. A missing =dry_run_first= gate returns a diagnostic receipt
-before any Org document is loaded.
+before any Org document is loaded. =OrgSourceWritePolicy::dry_run= still plans
+and applies edits in memory for receipt evidence, but it does not write
+documents. Missing target documents return a diagnostic receipt without
+creating source files.
 
 The current Gerbil fixture supports the =set-todo=, =set-property=, and
 =mark-memory-candidate= =WorkspacePatchOp= surface. Additional patch operations
@@ -145,3 +148,13 @@ Rust callers can construct a compiler from the same profile shape with
 =GerbilCommandCompiler::from_env=. The environment entry point reads
 =MARLIN_GERBIL_COMMAND_PROFILE= and returns no compiler when the variable is
 absent.
+
+For the crate-shipped Gerbil runtime assets, callers do not need to hand-build
+the =GERBIL_LOADPATH= and =:marlin/adapter= arguments. Use
+=GerbilCommandProfile::marlin_runtime_module= when a serializable profile is
+needed, =GerbilCommandSpec::marlin_runtime_module= or
+=GerbilCommandSpec::marlin_runtime_launcher= when constructing a process spec
+directly, and =GerbilCommandCompiler::from_marlin_runtime_module= when the
+caller already has a =gxi= executable path and a loadpath root. The default
+local =gxi= path is resolved by =default_gerbil_gxi_program= from
+=MARLIN_GERBIL_GXI=, falling back to the Homebrew =gerbil-scheme= path.

@@ -55,23 +55,27 @@ and fix intent. Durable mutation still goes through =WorkspacePatch=,
 ** Validation Receipts
 
 =OrgContractValidationReport= is the runtime-independent validation result
-container. It carries assertion receipts and diagnostics as data, but
-=marlin-org-workspace= does not execute assertions while loading a document.
+container. It carries assertion receipts and diagnostics as data.
+=marlin-org-workspace= executes a narrow parser-owned first pass while loading
+a document: resolved =CONTRACT_ORG= references produce receipts for count-based
+assertions over projected node summaries and properties. Unsupported
+expectations remain explicit skipped receipts rather than invoking an external
+runtime.
 
 ** View And Status
 
 =marlin-workspace-view= exposes =ContractFacts= as a selectable compact view
-field and may carry rendered contract facts beside node text.
+field and carries rendered contract summary lines beside node text.
 =marlin-workspace-status= has a =ContractStatus= summary for resolved
-references, unresolved references, diagnostics, and validation receipts.
+references, unresolved references, diagnostics, templates, validation receipts,
+validation outcomes, and rendered summary lines.
 
 ** Current Limits
 
 The first projection preserves orgize query, expectation, message, fix,
 template facts, source block spans, local reference resolution, explicit
-external contract documents, and an empty validation report. View/status crates
-expose contract fact containers but do not compute rendered text or summary
-counts yet. It does not discover registry files implicitly and does not execute
-the contract assertions inside Marlin. Validation execution remains an upstream
-orgize lint concern until Marlin wires a validator into the runtime-independent
-receipt protocol.
+external contract documents, and runtime-independent validation receipts for
+the count-query subset. It does not discover registry files implicitly and does
+not execute template engines inside Marlin. Richer assertion execution remains
+an upstream orgize lint concern until Marlin expands the receipt protocol beyond
+the current parser-owned count summary path.

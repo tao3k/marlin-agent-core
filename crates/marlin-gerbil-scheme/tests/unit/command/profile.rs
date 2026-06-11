@@ -1,7 +1,7 @@
 use super::support::loop_graph_artifact;
 use marlin_gerbil_scheme::{
-    GerbilArtifactKind, GerbilCommandCompiler, GerbilCommandProfile, GerbilCommandSpec,
-    GerbilCompiler, GerbilSource,
+    GERBIL_ADAPTER_MODULE, GERBIL_LOADPATH_ENV, GerbilArtifactKind, GerbilCommandCompiler,
+    GerbilCommandProfile, GerbilCommandSpec, GerbilCompiler, GerbilSource,
 };
 
 #[test]
@@ -33,6 +33,35 @@ fn command_profile_builds_exec_spec_without_shell_parsing() {
         spec.env
             .iter()
             .find(|(key, _value)| key.to_string_lossy() == "GERBIL_LOADPATH")
+            .map(|(_key, value)| value.to_string_lossy()),
+        Some("fixtures/gerbil".into())
+    );
+}
+
+#[test]
+fn command_profile_builds_marlin_runtime_module_entry() {
+    let profile =
+        GerbilCommandProfile::marlin_runtime_module("/opt/gerbil/bin/gxi", "fixtures/gerbil");
+
+    assert_eq!(profile.program, "/opt/gerbil/bin/gxi");
+    assert_eq!(profile.args, [GERBIL_ADAPTER_MODULE.to_owned()]);
+    assert_eq!(
+        profile.env.get(GERBIL_LOADPATH_ENV).map(String::as_str),
+        Some("fixtures/gerbil")
+    );
+}
+
+#[test]
+fn command_spec_builds_marlin_runtime_module_entry() {
+    let spec = GerbilCommandSpec::marlin_runtime_module("/opt/gerbil/bin/gxi", "fixtures/gerbil");
+
+    assert_eq!(spec.program.to_string_lossy(), "/opt/gerbil/bin/gxi");
+    assert_eq!(spec.args.len(), 1);
+    assert_eq!(spec.args[0].to_string_lossy(), GERBIL_ADAPTER_MODULE);
+    assert_eq!(
+        spec.env
+            .iter()
+            .find(|(key, _value)| key.to_string_lossy() == GERBIL_LOADPATH_ENV)
             .map(|(_key, value)| value.to_string_lossy()),
         Some("fixtures/gerbil".into())
     );

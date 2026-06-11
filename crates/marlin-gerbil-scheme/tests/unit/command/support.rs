@@ -1,8 +1,10 @@
 use marlin_gerbil_ir::CompiledLoopGraph;
-use marlin_gerbil_scheme::{GerbilCommandCompiler, GerbilCommandSpec, GerbilCompiledArtifact};
+use marlin_gerbil_scheme::{
+    GerbilCommandCompiler, GerbilCommandSpec, GerbilCompiledArtifact, default_gerbil_gxi_program,
+};
 use marlin_org_model::TodoState;
 use marlin_workspace_patch::WorkspacePatchOp;
-use std::{env, path::PathBuf};
+use std::path::PathBuf;
 
 pub fn loop_graph_artifact(graph_id: &str) -> GerbilCompiledArtifact {
     GerbilCompiledArtifact::LoopGraph(CompiledLoopGraph {
@@ -48,9 +50,7 @@ pub const AGENT_SCENARIO_CONTRACT_SOURCE: &str = r#"(agent-scenario-contract ger
   (evidence Runtime))"#;
 
 pub fn local_gxi() -> Option<PathBuf> {
-    let gxi = env::var("MARLIN_GERBIL_GXI")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from("/opt/homebrew/opt/gerbil-scheme/bin/gxi"));
+    let gxi = default_gerbil_gxi_program();
 
     if !gxi.exists() {
         eprintln!(
@@ -72,21 +72,17 @@ pub fn gerbil_fixture_root() -> PathBuf {
 pub fn real_gxi_module_compiler() -> Option<GerbilCommandCompiler> {
     let gxi = local_gxi()?;
     let fixture_root = gerbil_fixture_root();
-    Some(GerbilCommandCompiler::new(
-        GerbilCommandSpec::new(gxi)
-            .env("GERBIL_LOADPATH", fixture_root.as_os_str().to_os_string())
-            .arg(":marlin/adapter"),
+    Some(GerbilCommandCompiler::from_marlin_runtime_module(
+        gxi,
+        fixture_root,
     ))
 }
 
 pub fn real_gxi_command_adapter_compiler() -> Option<GerbilCommandCompiler> {
     let gxi = local_gxi()?;
     let fixture_root = gerbil_fixture_root();
-    let launcher = fixture_root.join("command-adapter.ss");
     Some(GerbilCommandCompiler::new(
-        GerbilCommandSpec::new(gxi)
-            .env("GERBIL_LOADPATH", fixture_root.as_os_str().to_os_string())
-            .arg(launcher),
+        GerbilCommandSpec::marlin_runtime_launcher(gxi, fixture_root),
     ))
 }
 

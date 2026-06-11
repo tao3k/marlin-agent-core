@@ -1,5 +1,6 @@
 use marlin_gerbil_scheme::{
-    GERBIL_ADAPTER_MODULE, GERBIL_LOADPATH_ENV, gerbil_runtime_assets, write_gerbil_runtime_assets,
+    DEFAULT_GERBIL_GXI_PROGRAM, GERBIL_ADAPTER_MODULE, GERBIL_LOADPATH_ENV, MARLIN_GERBIL_GXI_ENV,
+    gerbil_runtime_assets, write_gerbil_runtime_assets,
 };
 use std::{
     fs,
@@ -12,6 +13,8 @@ fn gerbil_runtime_assets_expose_loadpath_contract() {
 
     assert_eq!(GERBIL_LOADPATH_ENV, "GERBIL_LOADPATH");
     assert_eq!(GERBIL_ADAPTER_MODULE, ":marlin/adapter");
+    assert_eq!(MARLIN_GERBIL_GXI_ENV, "MARLIN_GERBIL_GXI");
+    assert!(DEFAULT_GERBIL_GXI_PROGRAM.ends_with("/bin/gxi"));
     assert_eq!(assets.len(), 6);
     assert!(
         assets

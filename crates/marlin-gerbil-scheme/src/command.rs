@@ -1,6 +1,9 @@
 //! Out-of-process `Gerbil` compiler adapter.
 
-use crate::{GerbilArtifactKind, GerbilCompiledArtifact, GerbilCompiler, GerbilSource};
+use crate::{
+    GerbilArtifactKind, GerbilCompiledArtifact, GerbilCompiler, GerbilSource,
+    runtime::{GERBIL_ADAPTER_MODULE, GERBIL_LOADPATH_ENV},
+};
 use marlin_org_model::{
     OrgContractRegistry, OrgContractResolutionReport, OrgContractValidationReport,
 };
@@ -77,6 +80,20 @@ impl GerbilCommandProfile {
         self
     }
 
+    /// Builds a profile for the crate-shipped `:marlin/adapter` module entrypoint.
+    pub fn marlin_runtime_module(
+        program: impl Into<String>,
+        loadpath_root: impl Into<PathBuf>,
+    ) -> Self {
+        let loadpath_root = loadpath_root.into();
+        Self::new(program)
+            .env(
+                GERBIL_LOADPATH_ENV,
+                loadpath_root.to_string_lossy().into_owned(),
+            )
+            .arg(GERBIL_ADAPTER_MODULE)
+    }
+
     pub fn from_json(value: &str) -> Result<Self, String> {
         serde_json::from_str(value)
             .map_err(|error| format!("failed to decode gerbil command profile: {error}"))
@@ -140,6 +157,29 @@ impl GerbilCommandSpec {
         self.env.insert(key.into(), value.into());
         self
     }
+
+    /// Builds a command spec for the crate-shipped `:marlin/adapter` module entrypoint.
+    pub fn marlin_runtime_module(
+        program: impl Into<PathBuf>,
+        loadpath_root: impl Into<PathBuf>,
+    ) -> Self {
+        let loadpath_root = loadpath_root.into();
+        Self::new(program)
+            .env(GERBIL_LOADPATH_ENV, loadpath_root.into_os_string())
+            .arg(GERBIL_ADAPTER_MODULE)
+    }
+
+    /// Builds a command spec for the crate-shipped `command-adapter.ss` launcher.
+    pub fn marlin_runtime_launcher(
+        program: impl Into<PathBuf>,
+        loadpath_root: impl Into<PathBuf>,
+    ) -> Self {
+        let loadpath_root = loadpath_root.into();
+        let launcher = loadpath_root.join("command-adapter.ss");
+        Self::new(program)
+            .env(GERBIL_LOADPATH_ENV, loadpath_root.into_os_string())
+            .arg(launcher.into_os_string())
+    }
 }
 
 /// Compiler implementation backed by a JSON stdin/stdout command protocol.
@@ -163,6 +203,17 @@ impl GerbilCommandCompiler {
 
     pub fn from_env() -> Result<Option<Self>, String> {
         GerbilCommandProfile::from_env().map(|profile| profile.map(Self::from_profile))
+    }
+
+    /// Builds a compiler for the crate-shipped `:marlin/adapter` module entrypoint.
+    pub fn from_marlin_runtime_module(
+        program: impl Into<PathBuf>,
+        loadpath_root: impl Into<PathBuf>,
+    ) -> Self {
+        Self::new(GerbilCommandSpec::marlin_runtime_module(
+            program,
+            loadpath_root,
+        ))
     }
 
     pub fn spec(&self) -> &GerbilCommandSpec {

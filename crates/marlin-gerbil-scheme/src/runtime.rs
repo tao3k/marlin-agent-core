@@ -1,9 +1,15 @@
 //! Crate-shipped `Gerbil` runtime assets for the `marlin` adapter loadpath.
 
 use std::{
-    fs, io,
+    env, fs, io,
     path::{Path, PathBuf},
 };
+
+/// Environment variable that overrides the `gxi` executable path.
+pub const MARLIN_GERBIL_GXI_ENV: &str = "MARLIN_GERBIL_GXI";
+
+/// Homebrew `gerbil-scheme` executable path used when no override is present.
+pub const DEFAULT_GERBIL_GXI_PROGRAM: &str = "/opt/homebrew/opt/gerbil-scheme/bin/gxi";
 
 /// Gerbil loadpath environment variable consumed by `gxi`.
 pub const GERBIL_LOADPATH_ENV: &str = "GERBIL_LOADPATH";
@@ -64,6 +70,13 @@ pub const GERBIL_RUNTIME_ASSETS: &[GerbilRuntimeAsset] = &[
 /// Returns the crate-owned `Gerbil` runtime asset manifest.
 pub fn gerbil_runtime_assets() -> &'static [GerbilRuntimeAsset] {
     GERBIL_RUNTIME_ASSETS
+}
+
+/// Returns the configured `gxi` executable path without checking filesystem state.
+pub fn default_gerbil_gxi_program() -> PathBuf {
+    env::var_os(MARLIN_GERBIL_GXI_ENV)
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from(DEFAULT_GERBIL_GXI_PROGRAM))
 }
 
 /// Writes the crate-owned `Gerbil` runtime assets under a loadpath root.

@@ -169,7 +169,11 @@ unsupported =expected= artifact kinds and mismatched source forms.
 assets. =write_gerbil_runtime_assets= writes =command-adapter.ss=, =smoke.ss=,
 and the =marlin/= modules into a caller-provided loadpath root. A local runtime
 can then run the module entrypoint with =GERBIL_LOADPATH=<root> gxi
-:marlin/adapter=, or run the example source directly.
+:marlin/adapter=, or run the example source directly. Rust callers can use
+=GerbilCommandCompiler::from_marlin_runtime_module= for the same module
+entrypoint, or =GerbilCommandSpec::marlin_runtime_launcher= for the source-file
+launcher. Local smoke tests discover =gxi= through =MARLIN_GERBIL_GXI= before
+falling back to the Homebrew =gerbil-scheme= path.
 
 =examples/workspace-patch-intent.ss= is the minimal user-facing Gerbil scheme
 example. It imports =:marlin/parser= and =:marlin/protocol=, compiles a
