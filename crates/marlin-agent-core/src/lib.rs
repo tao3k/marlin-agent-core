@@ -7,6 +7,11 @@ pub use marlin_agent_environment::{
     SYSTEM_CONFIG_PRECEDENCE, SubAgentEnvironmentRequest, USER_CONFIG_PRECEDENCE,
 };
 pub use marlin_agent_harness as harness;
+pub use marlin_agent_harness::{
+    ReleaseGateExecutionReceipt, ReleaseGateExecutionStatus, release_gate_execution_receipt,
+    release_gate_visibility_evidence, release_topology_execution_receipts,
+    release_topology_visibility_evidence, release_visibility_evidence,
+};
 pub use marlin_agent_hooks as hooks;
 pub use marlin_agent_hooks::{
     HookDispatchReport, HookDispatcher, HookInvocation, HookRegistration, HookRegistry,

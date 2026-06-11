@@ -15,8 +15,9 @@ pub use fakes::{
 };
 pub use graph::HarnessGraphBuilder;
 pub use release_visibility::{
-    release_gate_visibility_evidence, release_topology_visibility_evidence,
-    release_visibility_evidence,
+    ReleaseGateExecutionReceipt, ReleaseGateExecutionStatus, release_gate_execution_receipt,
+    release_gate_visibility_evidence, release_topology_execution_receipts,
+    release_topology_visibility_evidence, release_visibility_evidence,
 };
 pub use runtime::{
     HarnessExecutionReport, HarnessRuntime, runtime_environment_visibility_evidence,

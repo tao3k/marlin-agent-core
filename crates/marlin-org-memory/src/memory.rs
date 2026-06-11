@@ -20,8 +20,8 @@ use marlin_workspace_query::{
 };
 use marlin_workspace_status::{
     ChecklistStatus, ContractStatus, DecisionTrace, EvidenceStatus, GoalState, GoalStatus,
-    MetricTrace, PatchExecutionMode, PatchStatus, ReleaseStatus, SddStatus, WorkspaceStatusReport,
-    WorkspaceTarget,
+    MetricTrace, PatchExecutionMode, PatchStatus, ReleaseGateReceipt, ReleaseStatus, SddStatus,
+    WorkspaceStatusReport, WorkspaceTarget,
 };
 use marlin_workspace_view::{
     RenderedContractFacts, RenderedViewNode, RenderedWorkspaceView, WorkspaceField,
@@ -91,6 +91,20 @@ impl MemoryOrgWorkspace {
         let status = ReleaseStatus::pending_from_topology(topology);
         self.record_release_status(status.clone())?;
         Ok(status)
+    }
+
+    /// Record execution evidence for one gate in the latest release status.
+    pub fn record_release_gate_receipt(
+        &self,
+        receipt: ReleaseGateReceipt,
+    ) -> WorkspaceResult<bool> {
+        let mut release_status = self
+            .release_status
+            .write()
+            .map_err(|error| WorkspaceError::Backend(error.to_string()))?;
+        Ok(release_status
+            .as_mut()
+            .is_some_and(|status| status.record_gate_receipt(receipt)))
     }
 
     /// Load a raw `Org` document into the in-memory workspace.

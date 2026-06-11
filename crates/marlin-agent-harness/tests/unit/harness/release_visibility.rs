@@ -1,4 +1,7 @@
-use marlin_agent_harness::{AgentHarness, HarnessRuntime};
+use marlin_agent_harness::{
+    AgentHarness, HarnessRuntime, ReleaseGateExecutionStatus, release_gate_execution_receipt,
+    release_topology_execution_receipts,
+};
 use marlin_agent_protocol::{AgentScenario, LoopEvidenceKind};
 use marlin_gerbil_ir::{ReleaseGateSpec, ReleaseTopologySpec, ReleaseVisibilitySpec};
 
@@ -26,6 +29,29 @@ fn harness_runtime_records_release_visibility_evidence() {
             }],
         }],
     };
+    let gate = &topology.gates[0];
+    let receipt =
+        release_gate_execution_receipt(&topology, gate, ReleaseGateExecutionStatus::Passed);
+    assert_eq!(receipt.topology_id, "release:gerbil");
+    assert_eq!(receipt.crate_name, "marlin-gerbil-scheme");
+    assert_eq!(receipt.gate_id, "real-gxi");
+    assert_eq!(receipt.status, ReleaseGateExecutionStatus::Passed);
+    assert_eq!(receipt.required_artifacts, vec!["workspace_schema"]);
+    assert_eq!(
+        receipt.evidence_keys,
+        vec!["workspace_schema", "package_asset"]
+    );
+    assert_eq!(
+        receipt.artifact_paths,
+        vec!["fixtures/gerbil/command-adapter.ss"]
+    );
+    assert_eq!(receipt.visibility_evidence.len(), 1);
+
+    let receipts =
+        release_topology_execution_receipts(&topology, ReleaseGateExecutionStatus::Expected);
+    assert_eq!(receipts.len(), 1);
+    assert_eq!(receipts[0].status, ReleaseGateExecutionStatus::Expected);
+
     let mut harness = HarnessRuntime::new(16);
 
     harness.record_release_topology_visibility(&topology);

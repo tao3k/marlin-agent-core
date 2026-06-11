@@ -28,8 +28,8 @@ pub use marlin_workspace_query::{
 };
 pub use marlin_workspace_status::{
     ChecklistStatus, DecisionTrace, EvidenceStatus, GoalState, GoalStatus, MetricTrace,
-    ReleaseGateState, ReleaseGateStatus, ReleaseStatus, ReleaseVisibilityStatus, SddStatus,
-    WorkspaceStatusReport, WorkspaceTarget,
+    ReleaseGateReceipt, ReleaseGateState, ReleaseGateStatus, ReleaseStatus,
+    ReleaseVisibilityStatus, SddStatus, WorkspaceStatusReport, WorkspaceTarget,
 };
 pub use marlin_workspace_view::{
     RenderMode, RenderedViewNode, RenderedWorkspaceView, WorkspaceField, WorkspaceViewSpec,
