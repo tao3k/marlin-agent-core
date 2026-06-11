@@ -8,7 +8,7 @@ mod runtime;
 pub use artifact::{GerbilArtifactKind, GerbilArtifactKindMismatch, GerbilCompiledArtifact};
 pub use command::{
     GERBIL_COMMAND_PROFILE_ENV, GerbilCommandCompiler, GerbilCommandProfile, GerbilCommandSpec,
-    GerbilCompileRequest, GerbilCompileResponse,
+    GerbilCompileRequest, GerbilCompileResponse, GerbilRuntimeBinding,
 };
 pub use compiler::{GerbilCompiler, GerbilSource, compile_checked};
 pub use marlin_gerbil_ir::GerbilWorkspaceContractFacts;

@@ -1,7 +1,7 @@
 use super::support::loop_graph_artifact;
 use marlin_gerbil_scheme::{
     GERBIL_ADAPTER_MODULE, GERBIL_LOADPATH_ENV, GerbilArtifactKind, GerbilCommandCompiler,
-    GerbilCommandProfile, GerbilCommandSpec, GerbilCompiler, GerbilSource,
+    GerbilCommandProfile, GerbilCommandSpec, GerbilCompiler, GerbilRuntimeBinding, GerbilSource,
     default_gerbil_gxi_program,
 };
 use std::{
@@ -91,6 +91,36 @@ fn command_compiler_builds_default_marlin_runtime_module_with_assets() {
     );
     assert!(root.join("command-adapter.ss").is_file());
     assert!(root.join("marlin/adapter.ss").is_file());
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn runtime_binding_writes_assets_and_exposes_compiler_spec() {
+    let root = test_root("runtime-binding");
+    let binding =
+        GerbilRuntimeBinding::from_default_gxi(&root).expect("runtime binding should write assets");
+
+    assert_eq!(binding.loadpath_root(), root.as_path());
+    assert!(
+        binding
+            .written_assets()
+            .iter()
+            .any(|asset| asset.ends_with("command-adapter.ss"))
+    );
+    assert!(
+        binding
+            .written_assets()
+            .iter()
+            .any(|asset| asset.ends_with("marlin/protocol.ss"))
+    );
+    assert_eq!(binding.spec().program, default_gerbil_gxi_program());
+    assert_eq!(binding.spec().args.len(), 1);
+    assert_eq!(
+        binding.spec().args[0].to_string_lossy(),
+        GERBIL_ADAPTER_MODULE
+    );
+    assert_eq!(binding.compiler().spec(), binding.spec());
 
     let _ = fs::remove_dir_all(root);
 }

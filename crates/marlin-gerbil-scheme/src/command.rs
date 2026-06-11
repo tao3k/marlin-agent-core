@@ -14,7 +14,7 @@ use std::{
     env,
     ffi::OsString,
     io::{self, Write},
-    path::PathBuf,
+    path::{Path, PathBuf},
     process::{Command, Stdio},
 };
 
@@ -179,6 +179,54 @@ impl GerbilCommandSpec {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct GerbilCommandCompiler {
     spec: GerbilCommandSpec,
+}
+
+/// One-stop Rust binding for the crate-shipped `Gerbil` runtime assets and adapter.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GerbilRuntimeBinding {
+    loadpath_root: PathBuf,
+    written_assets: Vec<PathBuf>,
+    compiler: GerbilCommandCompiler,
+}
+
+impl GerbilRuntimeBinding {
+    /// Writes runtime assets under `loadpath_root` and binds the `:marlin/adapter` module.
+    pub fn new(program: impl Into<PathBuf>, loadpath_root: impl Into<PathBuf>) -> io::Result<Self> {
+        let loadpath_root = loadpath_root.into();
+        let written_assets = write_gerbil_runtime_assets(&loadpath_root)?;
+        let compiler =
+            GerbilCommandCompiler::from_marlin_runtime_module(program, loadpath_root.clone());
+        Ok(Self {
+            loadpath_root,
+            written_assets,
+            compiler,
+        })
+    }
+
+    /// Writes runtime assets and binds the default `gxi` executable.
+    pub fn from_default_gxi(loadpath_root: impl Into<PathBuf>) -> io::Result<Self> {
+        Self::new(default_gerbil_gxi_program(), loadpath_root)
+    }
+
+    pub fn loadpath_root(&self) -> &Path {
+        &self.loadpath_root
+    }
+
+    pub fn written_assets(&self) -> &[PathBuf] {
+        &self.written_assets
+    }
+
+    pub fn compiler(&self) -> &GerbilCommandCompiler {
+        &self.compiler
+    }
+
+    pub fn spec(&self) -> &GerbilCommandSpec {
+        self.compiler.spec()
+    }
+
+    pub fn into_compiler(self) -> GerbilCommandCompiler {
+        self.compiler
+    }
 }
 
 impl GerbilCommandCompiler {
