@@ -197,6 +197,34 @@ fn assert_agent_core_trace_spans(report: &HarnessExecutionReport) {
             .count(),
         1
     );
+    let sub_agent_span = report
+        .find_span_with_field(
+            &observability::agent_sub_agent_span_name(),
+            observability::FIELD_NODE_ID,
+            "review",
+        )
+        .expect("expected sub-agent trace span");
+    assert_eq!(
+        sub_agent_span
+            .fields
+            .get(observability::FIELD_EXECUTOR)
+            .map(String::as_str),
+        Some("sub-agent")
+    );
+    assert_eq!(
+        sub_agent_span
+            .fields
+            .get(observability::FIELD_AGENT_REFERENCE)
+            .map(String::as_str),
+        Some("sub-agent")
+    );
+    assert_eq!(
+        sub_agent_span
+            .fields
+            .get(observability::FIELD_SUB_AGENT_SOURCE)
+            .map(String::as_str),
+        Some(observability::SUB_AGENT_SOURCE_KERNEL_NODE)
+    );
 
     let result_span = report
         .find_span(&observability::harness_result_span_name())

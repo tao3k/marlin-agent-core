@@ -292,8 +292,14 @@ where
         );
         let activity_status = format!("node {}", node_id.as_str());
         let agent_reference = executor.as_str().to_owned();
-        let sub_agent_source = SubAgentSource::Other("kernel.sub-agent-node".to_owned());
-        let span = observability::agent_sub_agent_span(&node_id, &executor);
+        let sub_agent_source =
+            SubAgentSource::Other(observability::SUB_AGENT_SOURCE_KERNEL_NODE.to_owned());
+        let span = observability::agent_sub_agent_span_with_source(
+            &node_id,
+            &executor,
+            observability::SUB_AGENT_SOURCE_KERNEL_NODE,
+            agent_reference.as_str(),
+        );
 
         Box::pin(
             async move {

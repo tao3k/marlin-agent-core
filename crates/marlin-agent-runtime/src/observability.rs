@@ -60,8 +60,16 @@ pub const FIELD_HOOK_HANDLER: &str = "hook_handler";
 pub const FIELD_SCENARIO_ID: &str = "scenario_id";
 /// Tracing field key for graph-loop run identifiers.
 pub const FIELD_RUN_ID: &str = "run_id";
+/// Tracing field key for a parent graph-loop run identifier.
+pub const FIELD_PARENT_RUN_ID: &str = "parent_run_id";
+/// Tracing field key for a child graph-loop run identifier.
+pub const FIELD_CHILD_RUN_ID: &str = "child_run_id";
 /// Tracing field key for graph identifiers.
 pub const FIELD_GRAPH_ID: &str = "graph_id";
+/// Tracing field key for a sub-agent source classifier.
+pub const FIELD_SUB_AGENT_SOURCE: &str = "sub_agent_source";
+/// Tracing field key for a sub-agent reference.
+pub const FIELD_AGENT_REFERENCE: &str = "agent_reference";
 /// Tracing field key for execution status.
 pub const FIELD_STATUS: &str = "status";
 /// Tracing field key for elapsed execution milliseconds.
@@ -91,6 +99,10 @@ pub const NODE_KIND_PROVIDER: &str = "provider";
 pub const NODE_KIND_TOOL: &str = "tool";
 /// Graph node kind for sub-agent-backed nodes.
 pub const NODE_KIND_SUB_AGENT: &str = "sub_agent";
+/// Sub-agent source value for kernel-owned sub-agent graph nodes.
+pub const SUB_AGENT_SOURCE_KERNEL_NODE: &str = "kernel.sub-agent-node";
+/// Sub-agent source value used when no narrower source is available.
+pub const SUB_AGENT_SOURCE_UNSPECIFIED: &str = "unspecified";
 
 /// Runtime-owned identifier for a registered hook handler.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -217,11 +229,28 @@ pub fn agent_tool_span(node_id: &NodeId, executor: &ExecutorName) -> tracing::Sp
 
 /// Create an `agent.sub_agent` tracing span for a kernel sub-agent node.
 pub fn agent_sub_agent_span(node_id: &NodeId, executor: &ExecutorName) -> tracing::Span {
+    agent_sub_agent_span_with_source(
+        node_id,
+        executor,
+        SUB_AGENT_SOURCE_UNSPECIFIED,
+        executor.as_str(),
+    )
+}
+
+/// Create an `agent.sub_agent` tracing span with sub-agent correlation fields.
+pub fn agent_sub_agent_span_with_source(
+    node_id: &NodeId,
+    executor: &ExecutorName,
+    sub_agent_source: &str,
+    agent_reference: &str,
+) -> tracing::Span {
     tracing::info_span!(
         "agent.sub_agent",
         node_kind = NODE_KIND_SUB_AGENT,
         node_id = node_id.as_str(),
-        executor = executor.as_str()
+        executor = executor.as_str(),
+        sub_agent_source,
+        agent_reference
     )
 }
 

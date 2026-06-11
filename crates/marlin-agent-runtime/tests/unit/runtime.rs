@@ -133,10 +133,18 @@ fn observability_contract_names_kernel_hook_and_agent_surfaces() {
     );
     assert_eq!(observability::FIELD_NODE_KIND, "node_kind");
     assert_eq!(observability::FIELD_HOOK_EVENT, "hook_event");
+    assert_eq!(observability::FIELD_PARENT_RUN_ID, "parent_run_id");
+    assert_eq!(observability::FIELD_CHILD_RUN_ID, "child_run_id");
+    assert_eq!(observability::FIELD_SUB_AGENT_SOURCE, "sub_agent_source");
+    assert_eq!(observability::FIELD_AGENT_REFERENCE, "agent_reference");
     assert_eq!(observability::FIELD_STATUS, "status");
     assert_eq!(observability::FIELD_DURATION_MS, "duration_ms");
     assert_eq!(observability::FIELD_DIAGNOSTIC_COUNT, "diagnostic_count");
     assert_eq!(observability::FIELD_EVENT_COUNT, "event_count");
+    assert_eq!(
+        observability::SUB_AGENT_SOURCE_KERNEL_NODE,
+        "kernel.sub-agent-node"
+    );
 
     let subscriber = RecordingSubscriber::new();
     let _guard = tracing::subscriber::set_default(subscriber.clone());

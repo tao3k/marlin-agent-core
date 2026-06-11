@@ -70,7 +70,11 @@ Core fields should stay stable across subscribers:
 | =error= | bounded error string for runtime join failures |
 | =scenario_id= | harness scenario identifier |
 | =run_id= | graph-loop run identifier |
+| =parent_run_id= | parent graph-loop run identifier for delegated sub-agent work |
+| =child_run_id= | child graph-loop run identifier when known at span creation time |
 | =graph_id= | graph identifier |
+| =agent_reference= | stable sub-agent reference such as executor name or configured alias |
+| =sub_agent_source= | low-cardinality source classifier for sub-agent delegation |
 | =status= | graph-loop execution status |
 | =duration_ms= | elapsed harness execution milliseconds |
 | =diagnostic_count= | number of execution diagnostics |
