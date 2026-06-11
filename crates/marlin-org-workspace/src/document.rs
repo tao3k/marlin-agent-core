@@ -1,9 +1,14 @@
 //! Document loading adapter from `Org` text into structured workspace nodes.
 
 use marlin_org_model::{
-    CheckboxState, LinkKind, OrgCheckbox, OrgLink, OrgNode, OrgNodeId, OrgSourceSpan, TodoState,
+    CheckboxState, LinkKind, OrgCheckbox, OrgContract, OrgContractAssertion, OrgContractBinding,
+    OrgContractElementCategory, OrgContractElementKind, OrgContractExpectation, OrgContractKind,
+    OrgContractQuery, OrgContractRegistry, OrgContractRelativeScope, OrgContractScope,
+    OrgContractSeverity, OrgContractSourceSpan, OrgLink, OrgNode, OrgNodeId, OrgSourceSpan,
+    TodoState,
 };
 use marlin_workspace_protocol::{WorkspaceError, WorkspaceResult};
+use orgize::ast::parse_contracts_from_document;
 use orgize::export::{Container, Event, TraversalContext, Traverser};
 use orgize::syntax_ast::{Headline, SyntaxLink};
 
@@ -42,6 +47,13 @@ pub struct OrgDocument {
     pub text: String,
 }
 
+/// Parser-owned workspace projection for one `Org` document.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct OrgDocumentWorkspace {
+    pub nodes: Vec<OrgNode>,
+    pub contracts: OrgContractRegistry,
+}
+
 impl OrgDocument {
     /// Create a document payload from an id and raw `Org` text.
     pub fn new(id: impl Into<OrgDocumentId>, text: impl Into<String>) -> Self {
@@ -58,6 +70,11 @@ pub struct OrgDocumentLoader;
 impl OrgDocumentLoader {
     /// Parse document text into workspace nodes.
     pub fn load(document: &OrgDocument) -> WorkspaceResult<Vec<OrgNode>> {
+        Self::load_workspace(document).map(|workspace| workspace.nodes)
+    }
+
+    /// Parse document text into workspace nodes and parser-owned contract facts.
+    pub fn load_workspace(document: &OrgDocument) -> WorkspaceResult<OrgDocumentWorkspace> {
         OrgDocumentParser::new(document).parse()
     }
 }
@@ -71,15 +88,21 @@ impl<'a> OrgDocumentParser<'a> {
         Self { document }
     }
 
-    fn parse(self) -> WorkspaceResult<Vec<OrgNode>> {
+    fn parse(self) -> WorkspaceResult<OrgDocumentWorkspace> {
         let org = parse_org_with_workspace_todo_keywords(&self.document.text);
+        let parsed_document = org.document();
+        let contracts =
+            project_contract_registry(parse_contracts_from_document(&parsed_document, None));
         let mut projection = OrgAstProjection::new(&self.document.id, &self.document.text);
 
         for headline in org.syntax_document().headlines() {
             projection.push_headline(headline, None)?;
         }
 
-        Ok(projection.into_nodes())
+        Ok(OrgDocumentWorkspace {
+            nodes: projection.into_nodes(),
+            contracts,
+        })
     }
 }
 
@@ -322,6 +345,102 @@ fn parse_org_with_workspace_todo_keywords(text: &str) -> orgize::Org {
     ];
     config.todo_keywords.1 = vec!["DONE".to_string()];
     config.parse(text)
+}
+
+fn project_contract_registry(registry: orgize::ast::OrgContractRegistry) -> OrgContractRegistry {
+    OrgContractRegistry {
+        contracts: registry.contracts.iter().map(project_contract).collect(),
+    }
+}
+
+fn project_contract(contract: &orgize::ast::OrgContract) -> OrgContract {
+    OrgContract {
+        id: contract.id.clone(),
+        aliases: contract.aliases.clone(),
+        scope: OrgContractScope::new(debug_label(&contract.scope)),
+        kind: OrgContractKind::new(debug_label(&contract.kind)),
+        assertions: contract
+            .assertions
+            .iter()
+            .map(project_contract_assertion)
+            .collect(),
+    }
+}
+
+fn project_contract_assertion(
+    assertion: &orgize::ast::OrgContractAssertion,
+) -> OrgContractAssertion {
+    OrgContractAssertion {
+        id: assertion.id.clone(),
+        severity: OrgContractSeverity::new(debug_label(&assertion.severity)),
+        bindings: assertion
+            .bindings
+            .iter()
+            .map(|binding| OrgContractBinding {
+                name: binding.name.clone(),
+                query: project_contract_query(&binding.query),
+            })
+            .collect(),
+        query: project_contract_query(&assertion.query),
+        expectation: OrgContractExpectation::new(debug_label(&assertion.expectation)),
+        message: assertion.message.clone(),
+        fix: assertion.fix.clone(),
+        query_source: assertion
+            .query_source
+            .as_ref()
+            .map(|source| OrgContractSourceSpan {
+                start_line: source.start.line,
+                start_column: source.start.column,
+                end_line: source.end.line,
+                end_column: source.end.column,
+                start_byte: source.range_start as usize,
+                end_byte: source.range_end as usize,
+            }),
+        expect_source: assertion
+            .expect_source
+            .as_ref()
+            .map(|source| OrgContractSourceSpan {
+                start_line: source.start.line,
+                start_column: source.start.column,
+                end_line: source.end.line,
+                end_column: source.end.column,
+                start_byte: source.range_start as usize,
+                end_byte: source.range_end as usize,
+            }),
+    }
+}
+
+fn project_contract_query(query: &orgize::ast::OrgContractQuery) -> OrgContractQuery {
+    OrgContractQuery {
+        category: query
+            .category
+            .as_ref()
+            .map(|category| OrgContractElementCategory::new(debug_label(category))),
+        kind: query
+            .kind
+            .as_ref()
+            .map(|kind| OrgContractElementKind::new(debug_label(kind))),
+        affiliated_name: query.affiliated_name.clone(),
+        context: query.context.clone(),
+        outline_path_prefix: query.outline_path_prefix.clone(),
+        outline_path_exact_len: query.outline_path_exact_len,
+        property_equals: query.property_equals.clone(),
+        property_contains: query.property_contains.clone(),
+        summary_equals: query.summary_equals.clone(),
+        summary_contains: query.summary_contains.clone(),
+        limit: query.limit,
+        use_scope_outline_path: query.use_scope_outline_path,
+        has_outline_path_prefix: query.has_outline_path_prefix,
+        scope_outline_depth: query.scope_outline_depth,
+        relative_to: query
+            .relative_to
+            .as_ref()
+            .map(|scope| OrgContractRelativeScope::new(debug_label(scope))),
+    }
+}
+
+fn debug_label(value: &impl std::fmt::Debug) -> String {
+    format!("{value:?}")
 }
 
 fn headline_title(headline: &Headline, line_number: usize) -> String {

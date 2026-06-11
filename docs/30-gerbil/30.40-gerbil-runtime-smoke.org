@@ -68,10 +68,20 @@ The shim returns a =LoopGraph= JSON artifact whose =graph_id=, node =config=,
 and edge =condition= values are derived from that form. =none=, =null=, and
 =#f= edge conditions are emitted as JSON =null=.
 
-The adapter now routes parser output through Gerbil-side protocol bindings
-before emitting JSON: constructors/accessors model =LoopGraph=, =LoopNodeSpec=,
-and =LoopEdgeSpec=, and one serializer emits the =GerbilCompileResponse=. This
-validates the real =gxi= process boundary and the first Gerbil-side
+The adapter now routes parser output through Gerbil-side modules before
+emitting JSON:
+
+- =fixtures/gerbil/marlin/protocol.ss= owns constructors/accessors for
+  =LoopGraph=, =LoopNodeSpec=, and =LoopEdgeSpec= plus the
+  =GerbilCompileResponse= serializer.
+- =fixtures/gerbil/marlin/request.ss= owns the =GerbilCompileRequest= JSON
+  reader boundary through =:std/text/json=.
+- =fixtures/gerbil/marlin/parser.ss= owns the smoke DSL tokenizer and
+  source-to-=LoopGraph= parser.
+- =fixtures/gerbil/fixed-loop-graph-adapter.ss= owns request extraction,
+  compile dispatch, and response emission.
+
+This validates the real =gxi= process boundary and the first Gerbil-side
 source-to-IR step before the compiler grows a proper JSON and Gerbil reader
 boundary.
 

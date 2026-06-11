@@ -1,7 +1,7 @@
 //! Graph-loop driver built on the Tokio agent runtime.
 
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     future::Future,
     pin::Pin,
     sync::{Arc, RwLock},
@@ -9,7 +9,8 @@ use std::{
 
 use marlin_agent_protocol::{
     GraphId, GraphLoopExecutionRequest, GraphLoopExecutionResult, GraphNodeExecutionReceipt,
-    GraphNodeExecutionStatus, GraphNodeInvocation, LoopNodeSpec, RunId, RuntimePlanSnapshot,
+    GraphNodeExecutionStatus, GraphNodeInvocation, LoopEdgeSpec, LoopNodeSpec, RunId,
+    RuntimePlanSnapshot,
 };
 use marlin_agent_runtime::{
     RuntimeContext, RuntimeEvent, RuntimeFuture, RuntimeTask, TokioAgentRuntime,
@@ -85,20 +86,22 @@ impl TokioGraphLoopKernel {
                 .await;
         }
 
-        self.drive_graph_nodes_from(
-            &request.graph.nodes,
-            0,
-            &run_id,
-            &graph_id,
-            context,
-            Vec::new(),
-        )
-        .await
+        let planned_nodes = match resolve_graph_plan(&request.graph.nodes, &request.graph.edges) {
+            Ok(planned_nodes) => planned_nodes,
+            Err(diagnostics) => {
+                return self
+                    .failed_result(&context, &run_id, &graph_id, Vec::new(), diagnostics)
+                    .await;
+            }
+        };
+
+        self.drive_graph_nodes_from(&planned_nodes, 0, &run_id, &graph_id, context, Vec::new())
+            .await
     }
 
     fn drive_graph_nodes_from<'a>(
         &'a self,
-        nodes: &'a [LoopNodeSpec],
+        nodes: &'a [&'a LoopNodeSpec],
         next_index: usize,
         run_id: &'a str,
         graph_id: &'a str,
@@ -123,7 +126,7 @@ impl TokioGraphLoopKernel {
                     .await;
             }
 
-            let node = &nodes[next_index];
+            let node = nodes[next_index];
             self.store_snapshot(run_id, graph_id, Some(node.id.clone()));
             emit(
                 &context,
@@ -265,4 +268,158 @@ impl GraphLoopKernel for TokioGraphLoopKernel {
 
 async fn emit(context: &RuntimeContext, topic: impl Into<String>, message: impl Into<String>) {
     let _ = context.emit(RuntimeEvent::new(topic, message)).await;
+}
+
+fn resolve_graph_plan<'a>(
+    nodes: &'a [LoopNodeSpec],
+    edges: &[LoopEdgeSpec],
+) -> Result<Vec<&'a LoopNodeSpec>, Vec<String>> {
+    let duplicate_ids = duplicate_node_ids(nodes);
+    if !duplicate_ids.is_empty() {
+        return Err(vec![format!(
+            "graph contains duplicate node ids: {}",
+            duplicate_ids.join(", ")
+        )]);
+    }
+
+    if edges.is_empty() {
+        return Ok(nodes.iter().collect());
+    }
+
+    let node_by_id = nodes
+        .iter()
+        .map(|node| (node.id.as_str(), node))
+        .collect::<BTreeMap<_, _>>();
+
+    let unsupported_conditions = edges
+        .iter()
+        .filter(|edge| edge.condition.is_some())
+        .map(|edge| {
+            format!(
+                "conditional graph edge {} -> {} is not supported",
+                edge.from, edge.to
+            )
+        })
+        .collect::<Vec<_>>();
+    if !unsupported_conditions.is_empty() {
+        return Err(unsupported_conditions);
+    }
+
+    let missing_endpoints = missing_edge_endpoints(edges, &node_by_id);
+    if !missing_endpoints.is_empty() {
+        return Err(missing_endpoints);
+    }
+
+    let node_rank = nodes
+        .iter()
+        .enumerate()
+        .map(|(index, node)| (node.id.as_str(), index))
+        .collect::<BTreeMap<_, _>>();
+    let mut incoming = nodes
+        .iter()
+        .map(|node| (node.id.as_str(), 0usize))
+        .collect::<BTreeMap<_, _>>();
+    let mut outgoing = nodes
+        .iter()
+        .map(|node| (node.id.as_str(), Vec::<&str>::new()))
+        .collect::<BTreeMap<_, _>>();
+
+    edges.iter().for_each(|edge| {
+        *incoming
+            .get_mut(edge.to.as_str())
+            .expect("edge endpoint should be validated") += 1;
+        outgoing
+            .get_mut(edge.from.as_str())
+            .expect("edge endpoint should be validated")
+            .push(edge.to.as_str());
+    });
+
+    let mut ready = nodes
+        .iter()
+        .filter(|node| incoming[node.id.as_str()] == 0)
+        .map(|node| node.id.as_str())
+        .collect::<Vec<_>>();
+    let mut ordered_ids = Vec::with_capacity(nodes.len());
+
+    while let Some(node_id) = pop_next_ready_node(&mut ready, &node_rank) {
+        ordered_ids.push(node_id);
+        outgoing[node_id].iter().copied().for_each(|successor| {
+            let incoming_count = incoming
+                .get_mut(successor)
+                .expect("edge endpoint should be validated");
+            *incoming_count -= 1;
+            if *incoming_count == 0 {
+                ready.push(successor);
+            }
+        });
+    }
+
+    if ordered_ids.len() != nodes.len() {
+        let visited = ordered_ids.iter().copied().collect::<BTreeSet<_>>();
+        let pending = nodes
+            .iter()
+            .filter(|node| !visited.contains(node.id.as_str()))
+            .map(|node| node.id.clone())
+            .collect::<Vec<_>>();
+        return Err(vec![format!(
+            "graph edge topology contains a cycle; pending nodes: {}",
+            pending.join(", ")
+        )]);
+    }
+
+    Ok(ordered_ids
+        .into_iter()
+        .map(|node_id| node_by_id[node_id])
+        .collect())
+}
+
+fn duplicate_node_ids(nodes: &[LoopNodeSpec]) -> Vec<String> {
+    let mut seen = BTreeSet::new();
+    nodes
+        .iter()
+        .filter_map(|node| {
+            if seen.insert(node.id.as_str()) {
+                None
+            } else {
+                Some(node.id.clone())
+            }
+        })
+        .collect()
+}
+
+fn missing_edge_endpoints(
+    edges: &[LoopEdgeSpec],
+    node_by_id: &BTreeMap<&str, &LoopNodeSpec>,
+) -> Vec<String> {
+    edges
+        .iter()
+        .flat_map(|edge| {
+            let mut diagnostics = Vec::new();
+            if !node_by_id.contains_key(edge.from.as_str()) {
+                diagnostics.push(format!(
+                    "graph edge references missing source node `{}`",
+                    edge.from
+                ));
+            }
+            if !node_by_id.contains_key(edge.to.as_str()) {
+                diagnostics.push(format!(
+                    "graph edge references missing target node `{}`",
+                    edge.to
+                ));
+            }
+            diagnostics
+        })
+        .collect()
+}
+
+fn pop_next_ready_node<'a>(
+    ready: &mut Vec<&'a str>,
+    node_rank: &BTreeMap<&'a str, usize>,
+) -> Option<&'a str> {
+    let next_index = ready
+        .iter()
+        .enumerate()
+        .min_by_key(|(_, node_id)| node_rank[*node_id])
+        .map(|(index, _)| index)?;
+    Some(ready.remove(next_index))
 }

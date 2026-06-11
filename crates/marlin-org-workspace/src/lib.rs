@@ -2,4 +2,4 @@
 
 mod document;
 
-pub use document::{OrgDocument, OrgDocumentId, OrgDocumentLoader};
+pub use document::{OrgDocument, OrgDocumentId, OrgDocumentLoader, OrgDocumentWorkspace};

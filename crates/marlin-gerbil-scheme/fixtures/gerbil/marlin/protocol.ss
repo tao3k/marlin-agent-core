@@ -1,0 +1,138 @@
+;;; -*- Gerbil -*-
+;;; Marlin command protocol bindings used by Gerbil-side adapters.
+
+(export make-marlin-loop-node
+        marlin-loop-node-id
+        marlin-loop-node-executor
+        marlin-loop-node-config
+        make-marlin-loop-edge
+        marlin-loop-edge-from
+        marlin-loop-edge-to
+        marlin-loop-edge-condition
+        make-marlin-loop-graph
+        marlin-loop-graph-id
+        marlin-loop-graph-nodes
+        marlin-loop-graph-edges
+        display-gerbil-compile-response)
+
+(def (make-marlin-loop-node node-id executor config)
+  (list node-id executor config))
+
+(def (marlin-loop-node-id node)
+  (car node))
+
+(def (marlin-loop-node-executor node)
+  (cadr node))
+
+(def (marlin-loop-node-config node)
+  (caddr node))
+
+(def (make-marlin-loop-edge from to condition)
+  (list from to condition))
+
+(def (marlin-loop-edge-from edge)
+  (car edge))
+
+(def (marlin-loop-edge-to edge)
+  (cadr edge))
+
+(def (marlin-loop-edge-condition edge)
+  (caddr edge))
+
+(def (make-marlin-loop-graph graph-id nodes edges)
+  (list graph-id nodes edges))
+
+(def (marlin-loop-graph-id graph)
+  (car graph))
+
+(def (marlin-loop-graph-nodes graph)
+  (cadr graph))
+
+(def (marlin-loop-graph-edges graph)
+  (caddr graph))
+
+(def (display-json-string value)
+  (display "\"")
+  (let ((value-length (string-length value)))
+    (let loop ((index 0))
+      (if (< index value-length)
+        (begin
+          (let ((ch (string-ref value index)))
+            (cond
+              ((char=? ch #\") (display "\\\""))
+              ((char=? ch #\\) (display "\\\\"))
+              ((char=? ch #\newline) (display "\\n"))
+              ((char=? ch #\tab) (display "\\t"))
+              (else (display ch))))
+          (loop (+ index 1)))
+        #t)))
+  (display "\""))
+
+(def (display-json-nullable-string value)
+  (if value
+    (display-json-string value)
+    (display "null")))
+
+(def (display-json-config config)
+  (display "{")
+  (let loop ((remaining config) (first #t))
+    (if (null? remaining)
+      #t
+      (begin
+        (if first #f (display ","))
+        (let ((pair (car remaining)))
+          (display-json-string (car pair))
+          (display ":")
+          (display-json-string (cadr pair)))
+        (loop (cdr remaining) #f))))
+  (display "}"))
+
+(def (display-json-nodes nodes)
+  (display "[")
+  (let loop ((remaining nodes) (first #t))
+    (if (null? remaining)
+      #t
+      (begin
+        (if first #f (display ","))
+        (let ((node (car remaining)))
+          (display "{\"id\":")
+          (display-json-string (marlin-loop-node-id node))
+          (display ",\"executor\":")
+          (display-json-string (marlin-loop-node-executor node))
+          (display ",\"config\":")
+          (display-json-config (marlin-loop-node-config node))
+          (display "}"))
+        (loop (cdr remaining) #f))))
+  (display "]"))
+
+(def (display-json-edges edges)
+  (display "[")
+  (let loop ((remaining edges) (first #t))
+    (if (null? remaining)
+      #t
+      (begin
+        (if first #f (display ","))
+        (let ((edge (car remaining)))
+          (display "{\"from\":")
+          (display-json-string (marlin-loop-edge-from edge))
+          (display ",\"to\":")
+          (display-json-string (marlin-loop-edge-to edge))
+          (display ",\"condition\":")
+          (display-json-nullable-string (marlin-loop-edge-condition edge))
+          (display "}"))
+        (loop (cdr remaining) #f))))
+  (display "]"))
+
+(def (display-json-loop-graph graph)
+  (display "{\"graph_id\":")
+  (display-json-string (marlin-loop-graph-id graph))
+  (display ",\"nodes\":")
+  (display-json-nodes (marlin-loop-graph-nodes graph))
+  (display ",\"edges\":")
+  (display-json-edges (marlin-loop-graph-edges graph))
+  (display "}"))
+
+(def (display-gerbil-compile-response graph)
+  (display "{\"artifact\":{\"LoopGraph\":")
+  (display-json-loop-graph graph)
+  (display "}}"))

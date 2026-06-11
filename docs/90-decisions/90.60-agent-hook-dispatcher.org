@@ -1,0 +1,15 @@
+#+TITLE: 90.60 Agent Hook Dispatcher
+#+FILETAGS: :marlin:decisions:johnny_decimal:
+
+* 90.60 Agent Hook Dispatcher
+:PROPERTIES:
+:ID: docs-90-60-agent-hook-dispatcher
+:KIND: decision
+:STATUS: active
+:END:
+
+Agent hook orchestration is owned by `marlin-agent-hooks`.
+
+`marlin-agent-protocol` owns hook event, handler, source, trust, status, and receipt contracts. `marlin-agent-runtime` owns the `HookRuntime` execution trait and Tokio context. `marlin-agent-hooks` connects those layers through a registry and dispatcher that filters by event, sorts by display order, applies registration metadata, and returns `HookRunSummary` receipts.
+
+This keeps hook configuration and execution ordering out of the protocol crate while still making hook behavior testable without a full kernel run.

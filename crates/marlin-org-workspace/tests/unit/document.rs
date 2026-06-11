@@ -78,6 +78,79 @@ fn org_document_loader_projects_headings_properties_tasks_and_links() {
     );
 }
 
+#[test]
+fn org_document_loader_projects_contract_registry() {
+    let text = r#"* agent-task-v1
+:PROPERTIES:
+:CONTRACT_ID: agent.task.v1
+:CONTRACT_SCOPE: subtree
+:CONTRACT_KIND: org-elements
+:END:
+
+** must-have-goal-section
+:PROPERTIES:
+:ASSERT_ID: task.has-goal
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-elements-query
+category = "section"
+kind = "headline"
+within = "$scope"
+summary.title = "Goal"
+#+END_SRC
+
+#+BEGIN_SRC org-elements-expect
+count >= 1
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+Task `{{ scope.title }}` must contain a Goal section.
+#+END_SRC
+"#;
+    let document = OrgDocument::new("doc:contracts", text);
+
+    let workspace = OrgDocumentLoader::load_workspace(&document).expect("document loads");
+
+    assert_eq!(workspace.contracts.contracts.len(), 1);
+    let contract = &workspace.contracts.contracts[0];
+    assert_eq!(contract.id, "agent.task.v1");
+    assert_eq!(contract.scope.as_str(), "Subtree");
+    assert_eq!(contract.kind.as_str(), "OrgElementsAssertions");
+    assert_eq!(contract.assertions.len(), 1);
+    let assertion = &contract.assertions[0];
+    assert_eq!(assertion.id, "task.has-goal");
+    assert_eq!(assertion.severity.as_str(), "Error");
+    assert!(assertion.expectation.as_str().contains("Count"));
+    assert_eq!(
+        assertion.message.as_deref(),
+        Some("Task `{{ scope.title }}` must contain a Goal section.\n")
+    );
+    assert_eq!(
+        assertion
+            .query
+            .category
+            .as_ref()
+            .map(|category| category.as_str()),
+        Some("Section")
+    );
+    assert!(
+        assertion
+            .query
+            .kind
+            .as_ref()
+            .map(|kind| kind.as_str())
+            .is_some_and(|kind| kind.contains("headline"))
+    );
+    assert_eq!(
+        assertion.query.summary_equals,
+        vec![("title".to_string(), "Goal".to_string())]
+    );
+    assert!(assertion.query.use_scope_outline_path);
+    let query_source = assertion.query_source.as_ref().expect("query source span");
+    assert!(query_source.start_byte < query_source.end_byte);
+}
+
 fn slice<'a>(text: &'a str, span: &marlin_org_model::OrgSourceSpan) -> &'a str {
     &text[span.start_byte..span.end_byte]
 }

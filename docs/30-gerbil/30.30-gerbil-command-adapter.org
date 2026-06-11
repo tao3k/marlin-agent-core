@@ -29,11 +29,17 @@ The command boundary is intentionally data-only:
 
 ** Gerbil-Side Bindings
 
-The first binding layer is protocol binding, not native VM embedding. Gerbil
-code should own constructors, accessors, and serializers for the Marlin command
-protocol DTOs it emits. The current smoke adapter binds =LoopGraph=,
-=LoopNodeSpec=, and =LoopEdgeSpec= on the Gerbil side before serializing a
-=GerbilCompileResponse=.
+The first binding layer is protocol binding, not native VM embedding. This
+follows the shape audited from =gerbil-mysql=: keep low-level bindings behind a
+dedicated Gerbil interface, then wrap them in a public Gerbil API. Gerbil code
+should own constructors, accessors, and serializers for the Marlin command
+protocol DTOs it emits. The current smoke adapter loads
+=fixtures/gerbil/marlin/request.ss= and =fixtures/gerbil/marlin/parser.ss=.
+The request module decodes =GerbilCompileRequest= with =:std/text/json=. The
+parser module depends on =fixtures/gerbil/marlin/protocol.ss=. The protocol
+module binds =LoopGraph=, =LoopNodeSpec=, and =LoopEdgeSpec= on the Gerbil side
+before serializing a =GerbilCompileResponse=; the parser module owns the smoke
+DSL source-to-=LoopGraph= step.
 
 Native Rust/Gerbil bindings are a later layer. They should live behind this
 same typed protocol after the command boundary proves the IR shape, because

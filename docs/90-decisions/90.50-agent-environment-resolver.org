@@ -1,0 +1,15 @@
+#+TITLE: 90.50 Agent Environment Resolver
+#+FILETAGS: :marlin:decisions:johnny_decimal:
+
+* 90.50 Agent Environment Resolver
+:PROPERTIES:
+:ID: docs-90-50-agent-environment-resolver
+:KIND: decision
+:STATUS: active
+:END:
+
+The agent runtime environment is resolved by a dedicated crate, not by the protocol or Tokio runtime crates.
+
+`marlin-agent-protocol` owns serializable environment contracts such as runtime homes, config layers, and sandbox policy. `marlin-agent-environment` owns resolution from runtime inputs into an immutable `RuntimeEnvironment` snapshot. `marlin-agent-runtime` consumes the snapshot and does not parse home or config sources.
+
+This keeps custom homes, profile overlays, session flags, and sub-agent inherited homes testable without coupling configuration discovery to execution.

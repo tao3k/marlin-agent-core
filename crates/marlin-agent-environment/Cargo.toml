@@ -1,19 +1,16 @@
 [package]
-name = "marlin-agent-kernel"
+name = "marlin-agent-environment"
 edition.workspace = true
 version.workspace = true
 authors.workspace = true
 repository.workspace = true
 
 [dependencies]
-marlin-agent-hooks.workspace = true
 marlin-agent-protocol.workspace = true
-marlin-agent-runtime.workspace = true
+thiserror.workspace = true
 
 [build-dependencies]
 rust-lang-project-harness.workspace = true
 
 [dev-dependencies]
 rust-lang-project-harness.workspace = true
-tokio.workspace = true
-tokio-stream.workspace = true

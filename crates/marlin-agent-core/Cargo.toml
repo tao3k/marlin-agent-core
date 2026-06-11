@@ -6,14 +6,18 @@ authors.workspace = true
 repository.workspace = true
 
 [dependencies]
+marlin-agent-environment.workspace = true
 marlin-agent-harness.workspace = true
+marlin-agent-hooks.workspace = true
 marlin-agent-kernel.workspace = true
 marlin-agent-protocol.workspace = true
 marlin-agent-runtime.workspace = true
 marlin-gerbil-ir.workspace = true
+marlin-org-model.workspace = true
 marlin-org-patch.workspace = true
 marlin-org-store.workspace = true
 marlin-org-workflow.workspace = true
+marlin-org-workspace.workspace = true
 marlin-workspace-protocol.workspace = true
 
 [build-dependencies]

@@ -13,3 +13,4 @@
 - [[file:30.20-gerbil-upstream-audit.org][30.20 Gerbil Upstream Audit]]
 - [[file:30.30-gerbil-command-adapter.org][30.30 Gerbil Command Adapter]]
 - [[file:30.40-gerbil-runtime-smoke.org][30.40 Gerbil Runtime Smoke]]
+- [[file:30.50-gerbil-bindings-reference.org][30.50 Gerbil Bindings Reference]]

@@ -1,0 +1,45 @@
+#+title: 20.60 Org Contracts And Templates
+
+* 20.60 Org Contracts And Templates
+
+Org contracts are parser-owned template and validation facts. They are authored
+as ordinary Org subtrees and parsed by =tao3k/orgize= through its
+=CONTRACT_ORG= contract mechanism.
+
+** Contract Shape
+
+The first supported shape mirrors orgize contracts:
+
+- contract headings carry =CONTRACT_ID=, =CONTRACT_SCOPE=, and =CONTRACT_KIND=;
+
+- assertion headings carry =ASSERT_ID= and =SEVERITY=;
+
+- =org-elements-query= source blocks select required document facts;
+
+- =org-elements-expect= source blocks describe expected counts or existence;
+
+- =jinja2 :name message= and future fix blocks provide template-facing text.
+
+** Native Projection
+
+=marlin-org-workspace= exposes =OrgDocumentLoader::load_workspace=. It returns
+both the projected =OrgNode= list and an =OrgContractRegistry= projected from
+orgize contract facts.
+
+=marlin-org-model= owns the stable protocol DTOs. It keeps contract scope, kind,
+severity, expectation, element category, element kind, and relative scope behind
+typed wrapper boundaries so the agent protocol does not expose stringly state.
+
+** Template Boundary
+
+Contracts are template inputs, not direct mutations. A template engine or Gerbil
+control plane may consume =OrgContractRegistry= to choose document scaffolds,
+messages, and fix intent. Durable mutation still goes through
+=WorkspacePatch=, =marlin-org-patch=, and =marlin-org-workflow=.
+
+** Current Limits
+
+The first projection preserves orgize query, expectation, message, fix, and
+source block spans. It does not execute the contract assertions inside Marlin.
+Validation execution remains an upstream orgize lint concern until the Marlin
+workspace protocol needs a runtime-independent validation receipt.

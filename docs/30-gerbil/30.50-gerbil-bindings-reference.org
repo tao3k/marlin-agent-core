@@ -1,0 +1,75 @@
+#+title: 30.50 Gerbil Bindings Reference
+
+* 30.50 Gerbil Bindings Reference
+
+This note records the first external binding reference used for
+=marlin-gerbil-scheme=.
+
+** Source Baseline
+
+- Repository: =https://git.cons.io/mighty-gerbils/gerbil-mysql=
+- Local checkout: =.data/gerbil-mysql=
+- Audited commit: =847b4b61747152e505dfc72acee4438009302c5f=
+
+** Binding Shape
+
+=gerbil-mysql= uses a three-layer binding shape:
+
+- =db/_mysql.scm= owns the low-level Gambit FFI surface with =c-declare=,
+  =c-define-type=, =c-lambda=, and helper macros such as =define-c-lambda=.
+- =db/_mysql.ssi= owns the Gerbil interface boundary with =package:=,
+  =export=, and =extern= declarations for the low-level functions.
+- =db/mysql.ss= owns the public Gerbil API. It imports the low-level module and
+  wraps pointer/error/async behavior behind Gerbil-level functions and structs.
+
+The build script compiles the low-level FFI module first, builds the =.ssi=
+interface, and then builds the public module:
+
+#+begin_src scheme
+(gsc: "db/_mysql" ...)
+(ssi: "db/_mysql")
+"db/mysql"
+#+end_src
+
+** Marlin Application
+
+For Marlin, the same pattern maps to:
+
+- a low-level native layer later, if we embed or link against Gerbil/Gambit
+  directly;
+- a Gerbil protocol binding layer now, where Gerbil owns constructors,
+  accessors, and serializers for Marlin command protocol DTOs;
+- a Gerbil request binding layer now, where Gerbil decodes
+  =GerbilCompileRequest= JSON with =:std/text/json=;
+- a Gerbil parser layer now, where Gerbil compiles source text into protocol
+  values;
+- an adapter layer that reads requests, calls the parser, and emits one
+  =GerbilCompileResponse=.
+
+The current smoke implementation therefore keeps native VM bindings out of the
+Rust crate while still moving bindings out of ad hoc JSON string construction.
+The first binding module is:
+
+#+begin_src text
+crates/marlin-gerbil-scheme/fixtures/gerbil/marlin/protocol.ss
+#+end_src
+
+The first parser module is:
+
+#+begin_src text
+crates/marlin-gerbil-scheme/fixtures/gerbil/marlin/parser.ss
+#+end_src
+
+The first request module is:
+
+#+begin_src text
+crates/marlin-gerbil-scheme/fixtures/gerbil/marlin/request.ss
+#+end_src
+
+** Next Work
+
+- Replace script-local =load= with Gerbil package/module imports once the smoke
+  adapter becomes a proper Gerbil package.
+- Replace the smoke parser's token-only subset with a Gerbil reader boundary.
+- Only introduce native =.scm/.ssi= FFI bindings after the command protocol and
+  typed IR have stabilized.

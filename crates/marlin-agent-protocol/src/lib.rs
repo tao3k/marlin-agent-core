@@ -16,8 +16,9 @@ pub use graph::{
     GraphNodeInvocation, LoopEdgeSpec, LoopGraph, LoopNodeSpec, NodeId, RunId, RuntimePlanSnapshot,
 };
 pub use hook::{
-    HookEventName, HookExecutionMode, HookHandlerType, HookOutputEntry, HookOutputEntryKind,
-    HookRunStatus, HookRunSummary, HookScope, HookSource, HookTrustStatus,
+    HookDurationMs, HookEventName, HookExecutionMode, HookHandlerType, HookOutputEntry,
+    HookOutputEntryKind, HookRunId, HookRunStatus, HookRunSummary, HookScope, HookSource,
+    HookSourcePath, HookTimestampMs, HookTrustStatus,
 };
 pub use runtime_environment::{
     RuntimeConfigLayer, RuntimeConfigLayerSource, RuntimeEnvironment, RuntimeHome,

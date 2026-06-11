@@ -1,8 +1,8 @@
 use std::{future::pending, sync::Arc};
 
 use marlin_agent_core::{
-    ProviderRuntime, RuntimeContext, RuntimeEvent, RuntimeFuture, RuntimeTaskOutcome,
-    TokioAgentRuntime,
+    HookDispatcher, HookRegistry, ProviderRuntime, RuntimeContext, RuntimeEnvironmentRequest,
+    RuntimeEnvironmentResolver, RuntimeEvent, RuntimeFuture, RuntimeTaskOutcome, TokioAgentRuntime,
 };
 use tokio_stream::StreamExt;
 
@@ -91,4 +91,29 @@ async fn runtime_spawns_provider_contract_with_context() {
         events.next().await,
         Some(RuntimeEvent::new("provider", "echo"))
     );
+}
+
+#[test]
+fn core_facade_exposes_environment_resolver() {
+    let environment = RuntimeEnvironmentResolver::new().resolve(
+        RuntimeEnvironmentRequest::default()
+            .with_custom_home("/tmp/marlin-home")
+            .with_cwd("/tmp/workspace"),
+    );
+
+    assert_eq!(
+        environment
+            .home
+            .as_ref()
+            .expect("home should be resolved")
+            .path,
+        std::path::PathBuf::from("/tmp/marlin-home")
+    );
+}
+
+#[test]
+fn core_facade_exposes_hook_dispatcher() {
+    let dispatcher = HookDispatcher::new(HookRegistry::new());
+
+    assert_eq!(dispatcher.registry().registrations().len(), 0);
 }

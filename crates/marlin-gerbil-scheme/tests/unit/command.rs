@@ -158,11 +158,11 @@ fn command_compiler_can_call_real_gxi_fixture() {
         .compile(
             GerbilSource::new(
                 "audit/control-plane",
-                "(loop-graph gerbil-source-loop \
-                 (node provider ask-model (config role planner retries one)) \
-                 (node tool run-tool (config mode execute)) \
-                 (edge provider tool success) \
-                 (edge tool provider none))",
+                r#"(loop-graph gerbil-source-loop
+  (node provider ask-model (config role planner retries one))
+  (node tool run-tool (config mode execute))
+  (edge provider tool success)
+  (edge tool provider none))"#,
             ),
             GerbilArtifactKind::LoopGraph,
         )

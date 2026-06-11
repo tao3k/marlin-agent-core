@@ -2,9 +2,12 @@
 
 use std::sync::Arc;
 
-use marlin_agent_protocol::{ExecutorName, GraphNodeExecutionReceipt, GraphNodeInvocation, NodeId};
+use marlin_agent_hooks::{HookDispatchReport, HookDispatcher, HookInvocation};
+use marlin_agent_protocol::{
+    ExecutorName, GraphNodeExecutionReceipt, GraphNodeInvocation, HookEventName, NodeId,
+};
 use marlin_agent_runtime::{
-    ProviderRuntime, RuntimeContext, RuntimeFuture, SubAgentRuntime, ToolRuntime,
+    ProviderRuntime, RuntimeContext, RuntimeEvent, RuntimeFuture, SubAgentRuntime, ToolRuntime,
 };
 
 use crate::GraphNodeExecutor;
@@ -96,6 +99,7 @@ where
     tool: Arc<T>,
     invocation_mapper: Arc<ToolInvocationMapper<T>>,
     receipt_mapper: Arc<ToolReceiptMapper<T>>,
+    hook_dispatcher: HookDispatcher,
 }
 
 impl<T> ToolNodeAdapter<T>
@@ -125,7 +129,13 @@ where
             tool: Arc::new(tool),
             invocation_mapper: Arc::new(invocation_mapper),
             receipt_mapper: Arc::new(receipt_mapper),
+            hook_dispatcher: HookDispatcher::default(),
         }
+    }
+
+    pub fn with_hook_dispatcher(mut self, hook_dispatcher: HookDispatcher) -> Self {
+        self.hook_dispatcher = hook_dispatcher;
+        self
     }
 }
 
@@ -141,11 +151,33 @@ where
         let tool = Arc::clone(&self.tool);
         let tool_invocation = (self.invocation_mapper)(invocation.clone());
         let receipt_mapper = Arc::clone(&self.receipt_mapper);
+        let hook_dispatcher = self.hook_dispatcher.clone();
         let node_id = invocation.node_id;
         let executor = invocation.executor;
+        let hook_message = format!("node {} executor {}", node_id.as_str(), executor.as_str());
 
         Box::pin(async move {
-            let output = tool.run_tool(tool_invocation, context).await;
+            let pre_report = hook_dispatcher
+                .dispatch_with_context(
+                    context.child_context(),
+                    HookInvocation::new(HookEventName::PreToolUse)
+                        .with_message(hook_message.clone()),
+                )
+                .await;
+            emit_hook_report(&context, &pre_report).await;
+
+            let output = tool
+                .run_tool(tool_invocation, context.child_context())
+                .await;
+
+            let post_report = hook_dispatcher
+                .dispatch_with_context(
+                    context.child_context(),
+                    HookInvocation::new(HookEventName::PostToolUse).with_message(hook_message),
+                )
+                .await;
+            emit_hook_report(&context, &post_report).await;
+
             receipt_mapper(output, node_id, executor)
         })
     }
@@ -220,4 +252,19 @@ fn completed_receipt<T>(
     executor: ExecutorName,
 ) -> GraphNodeExecutionReceipt {
     GraphNodeExecutionReceipt::completed(node_id, executor)
+}
+
+async fn emit_hook_report(context: &RuntimeContext, report: &HookDispatchReport) {
+    for run in &report.runs {
+        let message = format!(
+            "hook {} {:?} {:?} status {:?}",
+            run.id.as_str(),
+            run.event_name,
+            run.execution_mode,
+            run.status
+        );
+        let _ = context
+            .emit(RuntimeEvent::new("kernel.hook", message))
+            .await;
+    }
 }

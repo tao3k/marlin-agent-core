@@ -1,16 +1,20 @@
 #+TITLE: 40.00 RFC Index
-#+FILETAGS: :marlin:rfc:johnny_decimal:index:
 
 * 40.00 RFC Index
-:PROPERTIES:
-:ID: docs-40-00-rfc-index
-:KIND: docs_index
-:STATUS: active
-:END:
 
 RFC documents define proposed or active protocol contracts before they become
 accepted decisions or crate-level implementation details.
 
 ** Documents
+
 - [[file:40.10-org-native-agent-work-protocol.org][40.10 Org-native Agent Work Protocol]]
+
+[[file:40.10-org-native-agent-work-protocol.org][40.10 Org-native Agent Work Protocol]]
+
 - [[file:40.20-org-source-persistence-boundary.org][40.20 Org Source Persistence Boundary]]
+
+[[file:40.20-org-source-persistence-boundary.org][40.20 Org Source Persistence Boundary]]
+
+- [[file:40.30-org-contract-template-protocol.org][40.30 Org Contract Template Protocol]]
+
+[[file:40.30-org-contract-template-protocol.org][40.30 Org Contract Template Protocol]]

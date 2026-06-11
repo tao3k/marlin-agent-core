@@ -153,18 +153,31 @@ checksum = "47f142fe24a9c9944451e8349de0a56af5f3e7226dc46f3ed4d4ecc0b85af75e"
 name = "marlin-agent-core"
 version = "0.1.0"
 dependencies = [
+ "marlin-agent-environment",
  "marlin-agent-harness",
+ "marlin-agent-hooks",
  "marlin-agent-kernel",
  "marlin-agent-protocol",
  "marlin-agent-runtime",
  "marlin-gerbil-ir",
+ "marlin-org-model",
  "marlin-org-patch",
  "marlin-org-store",
  "marlin-org-workflow",
+ "marlin-org-workspace",
  "marlin-workspace-protocol",
  "rust-lang-project-harness 0.1.0 (git+https://github.com/tao3k/rust-lang-project-harness?branch=main)",
  "tokio",
  "tokio-stream",
+]
+
+[[package]]
+name = "marlin-agent-environment"
+version = "0.1.0"
+dependencies = [
+ "marlin-agent-protocol",
+ "rust-lang-project-harness 0.1.0 (git+https://github.com/tao3k/rust-lang-project-harness?branch=main)",
+ "thiserror",
 ]
 
 [[package]]
@@ -179,9 +192,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "marlin-agent-hooks"
+version = "0.1.0"
+dependencies = [
+ "marlin-agent-protocol",
+ "marlin-agent-runtime",
+ "rust-lang-project-harness 0.1.0 (git+https://github.com/tao3k/rust-lang-project-harness?branch=main)",
+ "tokio",
+]
+
+[[package]]
 name = "marlin-agent-kernel"
 version = "0.1.0"
 dependencies = [
+ "marlin-agent-hooks",
  "marlin-agent-protocol",
  "marlin-agent-runtime",
  "rust-lang-project-harness 0.1.0 (git+https://github.com/tao3k/rust-lang-project-harness?branch=main)",
@@ -369,7 +393,7 @@ dependencies = [
 [[package]]
 name = "orgize"
 version = "0.10.0-alpha.10"
-source = "git+https://github.com/tao3k/orgize?branch=main#1c9f7378c4dfb5ffe05281f0207561d603659df7"
+source = "git+https://github.com/tao3k/orgize?branch=main#14c99071283c9a09f0bd58ecd7dc61f17d634f12"
 dependencies = [
  "bytecount",
  "cfg-if",

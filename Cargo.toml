@@ -1,7 +1,9 @@
 [workspace]
 members = [
     "crates/marlin-agent-core",
+    "crates/marlin-agent-environment",
     "crates/marlin-agent-harness",
+    "crates/marlin-agent-hooks",
     "crates/marlin-agent-kernel",
     "crates/marlin-agent-protocol",
     "crates/marlin-agent-runtime",
@@ -40,7 +42,9 @@ tokio-util = { version = "0.7", features = ["rt"] }
 rust-lang-project-harness = { git = "https://github.com/tao3k/rust-lang-project-harness", branch = "main" }
 
 marlin-agent-core = { path = "crates/marlin-agent-core" }
+marlin-agent-environment = { path = "crates/marlin-agent-environment" }
 marlin-agent-harness = { path = "crates/marlin-agent-harness" }
+marlin-agent-hooks = { path = "crates/marlin-agent-hooks" }
 marlin-agent-kernel = { path = "crates/marlin-agent-kernel" }
 marlin-agent-protocol = { path = "crates/marlin-agent-protocol" }
 marlin-agent-runtime = { path = "crates/marlin-agent-runtime" }

@@ -1,0 +1,80 @@
+#+title: 40.30 RFC: Org Contract Template Protocol
+
+* 40.30 RFC: Org Contract Template Protocol
+
+This RFC extends [[file:40.10-org-native-agent-work-protocol.org][40.10 Org-native Agent Work Protocol]] with parser-owned Org
+contracts as template and validation protocol input.
+
+** Motivation
+
+Org templates should not be free-form strings owned by an agent prompt. They
+need a parser-owned contract that can say which document or subtree shape is
+expected, which Org elements must exist, and which message or fix template is
+attached to a failed assertion.
+
+=tao3k/orgize= now provides a =CONTRACT_ORG= contract mechanism. Marlin should
+consume that mechanism directly rather than inventing a parallel template DSL.
+
+** Scope
+
+The protocol covers:
+
+- projecting orgize contract registries into =marlin-org-model= DTOs;
+
+- loading contracts beside workspace nodes through =marlin-org-workspace=;
+
+- exposing the projection through the =marlin-agent-core= facade;
+
+- making the registry available to template engines and control planes as data.
+
+The protocol does not execute contract assertions inside Marlin yet, does not
+choose a template engine, and does not give contracts direct write authority.
+
+** Contract Source
+
+Contracts are ordinary Org subtrees:
+
+- =CONTRACT_ID= identifies the reusable contract;
+
+- =CONTRACT_SCOPE= defines whether it applies to a document or subtree;
+
+- =CONTRACT_KIND= identifies the contract family;
+
+- assertion children use =ASSERT_ID= and =SEVERITY=;
+
+- =org-elements-query= and =org-elements-expect= blocks define parser-owned
+  assertions;
+
+- =jinja2 :name message= and future fix blocks provide template-facing text.
+
+** Native Crates
+
+=marlin-org-model= owns stable DTOs such as =OrgContractRegistry=,
+=OrgContract=, =OrgContractAssertion=, and =OrgContractQuery=. State-like fields
+use typed wrappers instead of public stringly state.
+
+=marlin-org-workspace= owns projection from orgize contracts through
+=OrgDocumentLoader::load_workspace=.
+
+=marlin-agent-core= re-exports =org_model= and =org_workspace= so callers can
+use contract registries from the facade without depending on parser internals.
+
+** Mutation Boundary
+
+Contracts are read-side facts. A Gerbil control plane or template engine may
+consume them to select scaffolds, render messages, or produce
+=WorkspacePatchIntentSpec=. Durable changes still go through =WorkspacePatch=,
+=marlin-org-patch=, and =marlin-org-workflow=.
+
+** Acceptance Criteria
+
+- =orgize= is updated to a revision containing =CONTRACT_ORG= contracts.
+
+- =OrgDocumentLoader::load_workspace= returns nodes and =OrgContractRegistry=.
+
+- Contract state fields are typed wrappers, not public =String= fields.
+
+- Unit tests parse a contract fixture through orgize and assert the Marlin
+  projection.
+
+- Workspace gates pass after the dependency update.
