@@ -76,14 +76,24 @@ emitting JSON:
   =GerbilCompileResponse= serializer.
 - =fixtures/gerbil/marlin/request.ss= owns the =GerbilCompileRequest= JSON
   reader boundary through =:std/text/json=.
-- =fixtures/gerbil/marlin/parser.ss= owns the smoke DSL tokenizer and
+- =fixtures/gerbil/marlin/parser.ss= owns the Gerbil reader-backed smoke DSL
   source-to-=LoopGraph= parser.
-- =fixtures/gerbil/fixed-loop-graph-adapter.ss= owns request extraction,
-  compile dispatch, and response emission.
+- =fixtures/gerbil/marlin/adapter.ss= imports the request/parser/protocol
+  modules and owns compile dispatch plus response emission.
+- =fixtures/gerbil/fixed-loop-graph-adapter.ss= is a thin launcher that imports
+  =:marlin/adapter=.
 
 This validates the real =gxi= process boundary and the first Gerbil-side
-source-to-IR step before the compiler grows a proper JSON and Gerbil reader
-boundary.
+source-to-IR step before the compiler grows a full package/build boundary.
+
+The launcher requires =GERBIL_LOADPATH= to point at the fixture root so the
+=package: marlin= modules resolve:
+
+#+begin_src sh
+GERBIL_LOADPATH=crates/marlin-gerbil-scheme/fixtures/gerbil \
+  /opt/homebrew/opt/gerbil-scheme/bin/gxi \
+  crates/marlin-gerbil-scheme/fixtures/gerbil/fixed-loop-graph-adapter.ss
+#+end_src
 
 Run the Rust boundary test explicitly:
 

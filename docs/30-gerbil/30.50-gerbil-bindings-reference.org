@@ -41,8 +41,8 @@ For Marlin, the same pattern maps to:
   accessors, and serializers for Marlin command protocol DTOs;
 - a Gerbil request binding layer now, where Gerbil decodes
   =GerbilCompileRequest= JSON with =:std/text/json=;
-- a Gerbil parser layer now, where Gerbil compiles source text into protocol
-  values;
+- a Gerbil reader-backed parser layer now, where Gerbil compiles source text
+  into protocol values;
 - an adapter layer that reads requests, calls the parser, and emits one
   =GerbilCompileResponse=.
 
@@ -66,10 +66,18 @@ The first request module is:
 crates/marlin-gerbil-scheme/fixtures/gerbil/marlin/request.ss
 #+end_src
 
+The first adapter module is:
+
+#+begin_src text
+crates/marlin-gerbil-scheme/fixtures/gerbil/marlin/adapter.ss
+#+end_src
+
+These modules use =package: marlin= and resolve through =GERBIL_LOADPATH= during
+the smoke test.
+
 ** Next Work
 
-- Replace script-local =load= with Gerbil package/module imports once the smoke
-  adapter becomes a proper Gerbil package.
-- Replace the smoke parser's token-only subset with a Gerbil reader boundary.
+- Add a Gerbil build/install script for the fixture modules once the package
+  boundary stabilizes.
 - Only introduce native =.scm/.ssi= FFI bindings after the command protocol and
   typed IR have stabilized.

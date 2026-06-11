@@ -10,18 +10,12 @@
 ;;     (edge provider tool success)
 ;;     (edge tool provider none))
 ;;
-;; It intentionally supports only a small tokenized source language. A later
-;; compiler pass should replace this with a real Gerbil reader boundary.
+;; The source parser is Gerbil reader-backed and intentionally supports only
+;; the first loop graph DSL subset.
 ;;
-;; Gerbil-side modules mirror the first Marlin command protocol DTOs and keep
-;; the source parser separate from request/response transport.
+;; Run this launcher with GERBIL_LOADPATH pointing at this fixture directory so
+;; `:marlin/adapter` resolves as a Gerbil library module.
 
-(load (path-expand "marlin/request.ss" (path-directory (this-source-file))))
-(load (path-expand "marlin/parser.ss" (path-directory (this-source-file))))
+(import (only-in :marlin/adapter run-fixed-loop-graph-adapter))
 
-(let* ((request (read-gerbil-compile-request))
-       (_expected (gerbil-compile-request-expected-kind request))
-       (source-text (gerbil-compile-request-source-text request))
-       (graph (compile-loop-graph source-text)))
-  (display-gerbil-compile-response graph)
-  (newline))
+(run-fixed-loop-graph-adapter)

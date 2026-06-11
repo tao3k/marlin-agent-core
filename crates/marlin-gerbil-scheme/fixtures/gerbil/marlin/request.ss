@@ -1,6 +1,8 @@
 ;;; -*- Gerbil -*-
 ;;; GerbilCompileRequest JSON reader used by Gerbil-side adapters.
 
+package: marlin
+
 (import :std/text/json)
 
 (export read-gerbil-compile-request

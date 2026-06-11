@@ -1,11 +1,14 @@
 use std::sync::Arc;
 
-use marlin_agent_harness::{AgentHarness, StaticHookRuntime};
+use marlin_agent_harness::{AgentHarness, HarnessRuntime, StaticHookRuntime};
 use marlin_agent_protocol::{
     AgentEvent, AgentScenario, AgentScenarioStep, HookEventName, HookHandlerType, HookRunStatus,
-    HookRunSummary, LoopEvidence, LoopEvidenceKind,
+    HookRunSummary, LoopEvidence, LoopEvidenceKind, RuntimeHome,
 };
-use marlin_agent_runtime::TokioAgentRuntime;
+use marlin_agent_runtime::{
+    HookRuntime, RuntimeContext, RuntimeEnvironment, RuntimeFuture, SubAgentRuntime,
+    TokioAgentRuntime,
+};
 
 #[test]
 fn harness_accepts_present_evidence_and_event_topics() {
@@ -59,4 +62,70 @@ async fn static_hook_runtime_returns_configured_summary() {
 
     assert_eq!(output.status, HookRunStatus::Completed);
     assert_eq!(output, summary);
+}
+
+#[tokio::test]
+async fn harness_runtime_preserves_custom_environment_for_hooks_and_sub_agents() {
+    let parent_environment = RuntimeEnvironment::default()
+        .with_home(RuntimeHome::custom("/tmp/marlin-home").with_profile("main"))
+        .with_cwd("/tmp/workspace");
+    let child_environment = RuntimeEnvironment::default()
+        .with_home(RuntimeHome::custom("/tmp/marlin-home/sub/reviewer").with_profile("reviewer"))
+        .with_cwd("/tmp/workspace/sub");
+    let harness = HarnessRuntime::with_environment(4, parent_environment.clone());
+
+    let hook_environment = harness
+        .runtime()
+        .spawn_hook(Arc::new(EnvironmentEchoHook), "pre-tool".to_owned())
+        .join()
+        .await
+        .expect("hook task should finish");
+    let sub_agent_environment = harness
+        .runtime()
+        .spawn_sub_agent_with_environment(
+            Arc::new(EnvironmentEchoSubAgent),
+            (),
+            child_environment.clone(),
+        )
+        .join()
+        .await
+        .expect("sub-agent task should finish");
+
+    assert_eq!(harness.environment(), &parent_environment);
+    assert_eq!(hook_environment, parent_environment);
+    assert_eq!(sub_agent_environment, child_environment);
+}
+
+#[derive(Clone, Debug)]
+struct EnvironmentEchoHook;
+
+impl HookRuntime for EnvironmentEchoHook {
+    type Request = String;
+    type Output = RuntimeEnvironment;
+
+    fn run_hook(
+        &self,
+        _request: Self::Request,
+        context: RuntimeContext,
+    ) -> RuntimeFuture<Self::Output> {
+        let environment = context.environment().clone();
+        Box::pin(async move { environment })
+    }
+}
+
+#[derive(Clone, Debug)]
+struct EnvironmentEchoSubAgent;
+
+impl SubAgentRuntime for EnvironmentEchoSubAgent {
+    type Input = ();
+    type Output = RuntimeEnvironment;
+
+    fn run_sub_agent(
+        &self,
+        _input: Self::Input,
+        context: RuntimeContext,
+    ) -> RuntimeFuture<Self::Output> {
+        let environment = context.environment().clone();
+        Box::pin(async move { environment })
+    }
 }

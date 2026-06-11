@@ -36,6 +36,7 @@ where
     provider: Arc<P>,
     request_mapper: Arc<ProviderRequestMapper<P>>,
     receipt_mapper: Arc<ProviderReceiptMapper<P>>,
+    hook_dispatcher: HookDispatcher,
 }
 
 impl<P> ProviderNodeAdapter<P>
@@ -65,7 +66,13 @@ where
             provider: Arc::new(provider),
             request_mapper: Arc::new(request_mapper),
             receipt_mapper: Arc::new(receipt_mapper),
+            hook_dispatcher: HookDispatcher::default(),
         }
+    }
+
+    pub fn with_hook_dispatcher(mut self, hook_dispatcher: HookDispatcher) -> Self {
+        self.hook_dispatcher = hook_dispatcher;
+        self
     }
 }
 
@@ -81,11 +88,33 @@ where
         let provider = Arc::clone(&self.provider);
         let request = (self.request_mapper)(invocation.clone());
         let receipt_mapper = Arc::clone(&self.receipt_mapper);
+        let hook_dispatcher = self.hook_dispatcher.clone();
         let node_id = invocation.node_id;
         let executor = invocation.executor;
+        let hook_message = format!("node {} executor {}", node_id.as_str(), executor.as_str());
 
         Box::pin(async move {
-            let output = provider.run_provider(request, context).await;
+            let pre_report = hook_dispatcher
+                .dispatch_with_context(
+                    context.child_context(),
+                    HookInvocation::new(HookEventName::PreToolUse)
+                        .with_message(hook_message.clone()),
+                )
+                .await;
+            emit_hook_report(&context, &pre_report).await;
+
+            let output = provider
+                .run_provider(request, context.child_context())
+                .await;
+
+            let post_report = hook_dispatcher
+                .dispatch_with_context(
+                    context.child_context(),
+                    HookInvocation::new(HookEventName::PostToolUse).with_message(hook_message),
+                )
+                .await;
+            emit_hook_report(&context, &post_report).await;
+
             receipt_mapper(output, node_id, executor)
         })
     }

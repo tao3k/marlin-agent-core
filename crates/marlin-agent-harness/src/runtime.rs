@@ -5,7 +5,9 @@ use marlin_agent_protocol::{
     AgentScenario, GraphLoopExecutionRequest, GraphLoopExecutionResult, LoopEvidence,
     RuntimePlanSnapshot,
 };
-use marlin_agent_runtime::{RuntimeEventStream, TokioAgentRuntime};
+use marlin_agent_runtime::{
+    CancellationToken, RuntimeEnvironment, RuntimeEventStream, TokioAgentRuntime,
+};
 
 use crate::{HarnessAssertionError, assert_evidence_kinds};
 
@@ -27,8 +29,27 @@ impl HarnessRuntime {
         }
     }
 
+    /// Create a harness runtime with an explicit runtime environment snapshot.
+    pub fn with_environment(event_buffer: usize, environment: RuntimeEnvironment) -> Self {
+        let (runtime, events) = TokioAgentRuntime::with_environment(
+            event_buffer,
+            CancellationToken::new(),
+            environment,
+        );
+        Self {
+            runtime,
+            events,
+            evidence: Vec::new(),
+        }
+    }
+
     pub fn runtime(&self) -> TokioAgentRuntime {
         self.runtime.clone()
+    }
+
+    /// Borrow the environment visible to harness-owned runtime work.
+    pub fn environment(&self) -> &RuntimeEnvironment {
+        self.runtime.environment()
     }
 
     pub fn events(&mut self) -> &mut RuntimeEventStream {

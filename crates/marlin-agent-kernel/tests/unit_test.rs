@@ -1,2 +1,2 @@
-#[path = "unit/kernel.rs"]
+#[path = "unit/kernel/mod.rs"]
 mod kernel;

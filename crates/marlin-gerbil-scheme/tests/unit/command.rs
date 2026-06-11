@@ -148,11 +148,16 @@ fn command_compiler_can_call_real_gxi_fixture() {
         return;
     }
 
-    let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+    let fixture_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("fixtures")
-        .join("gerbil")
-        .join("fixed-loop-graph-adapter.ss");
-    let compiler = GerbilCommandCompiler::new(GerbilCommandSpec::new(gxi).arg(fixture));
+        .join("gerbil");
+    let fixture = fixture_root.join("fixed-loop-graph-adapter.ss");
+    let compiler = GerbilCommandCompiler::new(
+        GerbilCommandSpec::new("/usr/bin/env")
+            .arg(format!("GERBIL_LOADPATH={}", fixture_root.display()))
+            .arg(gxi)
+            .arg(fixture),
+    );
 
     let artifact = compiler
         .compile(

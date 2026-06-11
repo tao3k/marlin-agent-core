@@ -1,6 +1,8 @@
 ;;; -*- Gerbil -*-
 ;;; Marlin command protocol bindings used by Gerbil-side adapters.
 
+package: marlin
+
 (export make-marlin-loop-node
         marlin-loop-node-id
         marlin-loop-node-executor
