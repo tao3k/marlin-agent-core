@@ -24,9 +24,13 @@ pub use marlin_agent_protocol::{
     AgentEventTopic, AgentExecutionTrace, AgentExecutionTraceSummary, AgentSpanName,
     AgentTraceSpanRecord, HookDurationMs, HookEventName, HookExecutionMode, HookHandlerType,
     HookOutputEntry, HookOutputEntryKind, HookRunId, HookRunStatus, HookRunSummary, HookScope,
-    HookSource, HookSourcePath, HookTimestampMs, HookTrustStatus, RuntimeConfigLayer,
-    RuntimeConfigLayerSource, RuntimeHome, RuntimeHomeSource, RuntimeSandboxPolicy,
-    SubAgentActivity, SubAgentActivityKind, SubAgentSource,
+    HookSource, HookSourcePath, HookTimestampMs, HookTrustStatus, LoopEvidence, LoopEvidenceKind,
+    LoopPerformanceEvidence, PERFORMANCE_EVIDENCE_ALLOCATION_PROFILE,
+    PERFORMANCE_EVIDENCE_BASELINE, PERFORMANCE_EVIDENCE_BENCHMARK_COMMAND,
+    PERFORMANCE_EVIDENCE_KEYS, PERFORMANCE_EVIDENCE_LATENCY_OR_THROUGHPUT,
+    PERFORMANCE_EVIDENCE_PROFILE_ARTIFACT, PERFORMANCE_EVIDENCE_REGRESSION_THRESHOLD,
+    RuntimeConfigLayer, RuntimeConfigLayerSource, RuntimeHome, RuntimeHomeSource,
+    RuntimeSandboxPolicy, SubAgentActivity, SubAgentActivityKind, SubAgentSource,
 };
 pub use marlin_agent_runtime as runtime;
 pub use marlin_agent_runtime::observability;

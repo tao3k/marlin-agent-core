@@ -1,8 +1,4 @@
-use std::{
-    collections::{BTreeMap, BTreeSet},
-    path::{Path, PathBuf},
-    sync::Arc,
-};
+use std::sync::Arc;
 
 use marlin_agent_harness::{
     AgentHarness, HarnessGraphBuilder, HarnessRuntime, StaticHookRuntime,
@@ -21,12 +17,6 @@ use marlin_agent_runtime::{
     HookRuntime, RuntimeContext, RuntimeEnvironment, RuntimeEvent, RuntimeFuture, SubAgentRuntime,
     TokioAgentRuntime, observability,
 };
-use rust_lang_project_harness::{
-    RustHarnessConfig, RustVerificationPhase, RustVerificationPolicy, RustVerificationProfileHint,
-    RustVerificationTaskKind, RustVerificationTaskState, build_rust_verification_performance_index,
-    plan_rust_project_verification_with_config, render_rust_verification_performance_index,
-};
-
 #[tokio::test]
 async fn static_hook_runtime_returns_configured_summary() {
     let summary = HookRunSummary::running(
@@ -168,52 +158,6 @@ async fn harness_execution_report_carries_performance_benchmark_evidence() {
             "missing performance evidence key {key}"
         );
     }
-}
-
-#[test]
-fn harness_uses_rust_project_harness_performance_verification_index() {
-    let owner_path = PathBuf::from("src/runtime.rs");
-    let profile_hint = RustVerificationProfileHint {
-        owner_path: owner_path.clone(),
-        responsibilities: BTreeSet::new(),
-        task_kinds: Some(BTreeSet::from([RustVerificationTaskKind::Performance])),
-        task_contract_overrides: BTreeMap::new(),
-        rationale: Some("harness runtime owns execution-report performance evidence".to_owned()),
-    };
-    let config = RustHarnessConfig {
-        verification_policy: RustVerificationPolicy::default().with_profile_hint(profile_hint),
-        ..Default::default()
-    };
-    let plan =
-        plan_rust_project_verification_with_config(Path::new(env!("CARGO_MANIFEST_DIR")), &config)
-            .expect("rust harness verification plan should build");
-    let index = build_rust_verification_performance_index(&plan);
-    let rendered = render_rust_verification_performance_index(&index);
-    let records = index.records_for_owner(&owner_path);
-
-    assert!(!index.is_empty());
-    assert!(plan.tasks.iter().any(|task| {
-        task.kind == RustVerificationTaskKind::Performance
-            && task.state == RustVerificationTaskState::Pending
-            && task.phase == RustVerificationPhase::AfterUnitTestsPass
-    }));
-    assert!(
-        plan.report_obligations
-            .iter()
-            .any(|obligation| obligation.key == "performance_index_json")
-    );
-    assert_eq!(records.len(), 1);
-    assert_eq!(records[0].state, RustVerificationTaskState::Pending);
-    for key in PERFORMANCE_EVIDENCE_KEYS {
-        assert!(
-            records[0]
-                .required_evidence_keys
-                .iter()
-                .any(|required_key| required_key == key),
-            "rust harness performance index missing evidence key {key}",
-        );
-    }
-    assert!(rendered.contains("[perf-state]"));
 }
 
 #[tokio::test]

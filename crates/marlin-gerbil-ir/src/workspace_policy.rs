@@ -46,6 +46,28 @@ pub struct WorkspacePatchIntentSpec {
     pub dry_run_first: bool,
 }
 
+/// Release topology for a crate or artifact family managed by `Gerbil`.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct ReleaseTopologySpec {
+    pub topology_id: String,
+    pub crate_name: String,
+    pub publish_enabled: bool,
+    pub asset_audit_command: String,
+    pub package_assets: Vec<String>,
+    pub runtime_dependency_chain: Vec<String>,
+    pub workflow_dependency_chain: Vec<String>,
+    pub gates: Vec<ReleaseGateSpec>,
+}
+
+/// Release gate command and artifacts required by a `Gerbil` release topology.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct ReleaseGateSpec {
+    pub gate_id: String,
+    pub command: String,
+    pub requires_local_gerbil: bool,
+    pub required_artifacts: Vec<String>,
+}
+
 /// Parser-owned workspace contract facts made available to the `Gerbil` control plane.
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct GerbilWorkspaceContractFacts {

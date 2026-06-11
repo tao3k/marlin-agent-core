@@ -2,8 +2,8 @@
 
 use marlin_agent_protocol::AgentScenarioContract;
 use marlin_gerbil_ir::{
-    CompiledLoopGraph, MemoryDispatchPolicySpec, WorkspacePatchIntentSpec, WorkspaceSchemaSpec,
-    WorkspaceValidationPolicySpec, WorkspaceViewPolicySpec,
+    CompiledLoopGraph, MemoryDispatchPolicySpec, ReleaseTopologySpec, WorkspacePatchIntentSpec,
+    WorkspaceSchemaSpec, WorkspaceValidationPolicySpec, WorkspaceViewPolicySpec,
 };
 use serde::{Deserialize, Serialize};
 use std::{error::Error, fmt};
@@ -18,6 +18,7 @@ pub enum GerbilCompiledArtifact {
     MemoryDispatchPolicy(MemoryDispatchPolicySpec),
     WorkspacePatchIntent(WorkspacePatchIntentSpec),
     AgentScenarioContract(AgentScenarioContract),
+    ReleaseTopology(ReleaseTopologySpec),
 }
 
 impl GerbilCompiledArtifact {
@@ -31,6 +32,7 @@ impl GerbilCompiledArtifact {
             Self::MemoryDispatchPolicy(_) => GerbilArtifactKind::MemoryDispatchPolicy,
             Self::WorkspacePatchIntent(_) => GerbilArtifactKind::WorkspacePatchIntent,
             Self::AgentScenarioContract(_) => GerbilArtifactKind::AgentScenarioContract,
+            Self::ReleaseTopology(_) => GerbilArtifactKind::ReleaseTopology,
         }
     }
 
@@ -58,6 +60,7 @@ pub enum GerbilArtifactKind {
     MemoryDispatchPolicy,
     WorkspacePatchIntent,
     AgentScenarioContract,
+    ReleaseTopology,
 }
 
 /// Error returned when a compiler emits a different artifact class than requested.

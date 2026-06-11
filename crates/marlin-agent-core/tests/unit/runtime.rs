@@ -2,7 +2,8 @@ use std::{future::pending, sync::Arc};
 
 use marlin_agent_core::{
     AgentExecutionTrace, AgentExecutionTraceSummary, AgentSpanName, AgentTraceSpanRecord,
-    GraphLoopExecutionStatus, HookDispatcher, HookRegistry, ProviderRuntime, RuntimeContext,
+    GraphLoopExecutionStatus, HookDispatcher, HookRegistry, LoopEvidence, LoopEvidenceKind,
+    LoopPerformanceEvidence, PERFORMANCE_EVIDENCE_KEYS, ProviderRuntime, RuntimeContext,
     RuntimeEnvironmentRequest, RuntimeEnvironmentResolver, RuntimeEvent, RuntimeExecutionIdentity,
     RuntimeFuture, RuntimeTaskOutcome, TokioAgentRuntime,
 };
@@ -145,4 +146,28 @@ fn core_facade_exposes_execution_trace_summary() {
             .find_span_with_field(&AgentSpanName::new("harness.result"), "run_id", "run")
             .is_some()
     );
+}
+
+#[test]
+fn core_facade_exposes_performance_evidence_contract() {
+    let evidence: LoopEvidence = LoopPerformanceEvidence {
+        subject: "core-runtime".to_owned(),
+        benchmark_command: "cargo bench -p marlin-agent-core".to_owned(),
+        baseline: "p95=10ms".to_owned(),
+        regression_threshold: "5%".to_owned(),
+        latency_or_throughput: "throughput=1000/s".to_owned(),
+        allocation_profile: "allocations=steady".to_owned(),
+        profile_artifact: "target/criterion/core/index.html".to_owned(),
+    }
+    .into();
+    let detail = evidence.detail.as_deref().expect("performance detail");
+
+    assert_eq!(evidence.kind, LoopEvidenceKind::Performance);
+    assert_eq!(evidence.subject, "core-runtime");
+    for key in PERFORMANCE_EVIDENCE_KEYS {
+        assert!(
+            detail.contains(key),
+            "missing performance evidence key {key}"
+        );
+    }
 }

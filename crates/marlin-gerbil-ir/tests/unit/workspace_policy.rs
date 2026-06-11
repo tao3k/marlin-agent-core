@@ -1,4 +1,6 @@
-use marlin_gerbil_ir::{WorkspacePatchIntentSpec, WorkspaceViewPolicySpec};
+use marlin_gerbil_ir::{
+    ReleaseGateSpec, ReleaseTopologySpec, WorkspacePatchIntentSpec, WorkspaceViewPolicySpec,
+};
 use marlin_org_model::{OrgNodeId, TodoState};
 use marlin_workspace_patch::{WorkspacePatch, WorkspacePatchOp};
 use marlin_workspace_view::{RenderMode, WorkspaceViewSpec};
@@ -41,4 +43,52 @@ fn gerbil_patch_intent_carries_typed_workspace_patch() {
             state: TodoState::Next,
         } if actual == &node
     ));
+}
+
+#[test]
+fn gerbil_release_topology_carries_package_gates_and_dependency_chains() {
+    let topology = ReleaseTopologySpec {
+        topology_id: "gerbil-scheme-internal-release".to_string(),
+        crate_name: "marlin-gerbil-scheme".to_string(),
+        publish_enabled: false,
+        asset_audit_command: "cargo package -p marlin-gerbil-scheme --list --allow-dirty"
+            .to_string(),
+        package_assets: vec![
+            "README.md".to_string(),
+            "examples/workspace-patch-intent-workflow.rs".to_string(),
+            "fixtures/gerbil/marlin/protocol.ss".to_string(),
+        ],
+        runtime_dependency_chain: vec![
+            "marlin-gerbil-ir".to_string(),
+            "marlin-org-model".to_string(),
+            "marlin-agent-protocol".to_string(),
+        ],
+        workflow_dependency_chain: vec![
+            "marlin-workspace-patch".to_string(),
+            "marlin-org-workflow".to_string(),
+        ],
+        gates: vec![ReleaseGateSpec {
+            gate_id: "package-assets".to_string(),
+            command: "cargo package -p marlin-gerbil-scheme --list --allow-dirty".to_string(),
+            requires_local_gerbil: false,
+            required_artifacts: vec!["fixtures/gerbil/marlin/protocol.ss".to_string()],
+        }],
+    };
+
+    assert_eq!(topology.crate_name, "marlin-gerbil-scheme");
+    assert!(!topology.publish_enabled);
+    assert!(
+        topology
+            .package_assets
+            .iter()
+            .any(|asset| asset == "README.md")
+    );
+    assert!(
+        topology
+            .runtime_dependency_chain
+            .iter()
+            .any(|crate_name| crate_name == "marlin-agent-protocol")
+    );
+    assert_eq!(topology.gates[0].gate_id, "package-assets");
+    assert!(!topology.gates[0].requires_local_gerbil);
 }

@@ -1,7 +1,7 @@
 use marlin_agent_protocol::{
     AgentScenario, AgentScenarioContract, AgentScenarioStep, LoopEvidenceKind,
 };
-use marlin_gerbil_ir::{CompiledLoopGraph, WorkspacePatchIntentSpec};
+use marlin_gerbil_ir::{CompiledLoopGraph, ReleaseTopologySpec, WorkspacePatchIntentSpec};
 use marlin_gerbil_scheme::{GerbilArtifactKind, GerbilCompiledArtifact};
 use marlin_org_model::OrgNodeId;
 use marlin_workspace_patch::{WorkspacePatch, WorkspacePatchOp};
@@ -57,4 +57,26 @@ fn artifact_reports_agent_scenario_contract_kind() {
         GerbilCompiledArtifact::AgentScenarioContract(AgentScenarioContract::new(scenario));
 
     assert_eq!(artifact.kind(), GerbilArtifactKind::AgentScenarioContract);
+}
+
+#[test]
+fn artifact_reports_release_topology_kind() {
+    let artifact = GerbilCompiledArtifact::ReleaseTopology(ReleaseTopologySpec {
+        topology_id: "gerbil-scheme-internal-release".to_owned(),
+        crate_name: "marlin-gerbil-scheme".to_owned(),
+        publish_enabled: false,
+        asset_audit_command: "cargo package -p marlin-gerbil-scheme --list --allow-dirty"
+            .to_owned(),
+        package_assets: vec!["README.md".to_owned()],
+        runtime_dependency_chain: vec!["marlin-gerbil-ir".to_owned()],
+        workflow_dependency_chain: vec!["marlin-org-workflow".to_owned()],
+        gates: Vec::new(),
+    });
+
+    assert_eq!(artifact.kind(), GerbilArtifactKind::ReleaseTopology);
+    assert!(
+        artifact
+            .ensure_kind(GerbilArtifactKind::ReleaseTopology)
+            .is_ok()
+    );
 }
