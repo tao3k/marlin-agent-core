@@ -115,6 +115,8 @@ Task `{{ scope.title }}` must contain a Goal section.
     let workspace = OrgDocumentLoader::load_workspace(&document).expect("document loads");
 
     assert_eq!(workspace.contracts.contracts.len(), 1);
+    assert!(workspace.contract_validations.receipts.is_empty());
+    assert!(workspace.contract_validations.diagnostics.is_empty());
     let contract = &workspace.contracts.contracts[0];
     assert_eq!(contract.id.as_str(), "agent.task.v1");
     assert_eq!(contract.scope.as_str(), "Subtree");
@@ -214,6 +216,39 @@ count >= 1
     assert!(resolution.reference.target_node.is_some());
     let source = resolution.reference.source.as_ref().expect("source span");
     assert_eq!(slice(text, source), "agent.task.v1");
+}
+
+#[test]
+fn org_document_loader_resolves_references_from_external_contract_documents() {
+    let contract_text = r#"* external-agent-task
+:PROPERTIES:
+:CONTRACT_ID: external.agent.task
+:CONTRACT_SCOPE: subtree
+:CONTRACT_KIND: org-elements
+:END:
+"#;
+    let task_text = r#"* TODO Task A
+:PROPERTIES:
+:CONTRACT_ORG: external.agent.task
+:END:
+"#;
+    let contract_document = OrgDocument::new("doc:external-contracts", contract_text);
+    let task_document = OrgDocument::new("doc:task", task_text);
+
+    let workspace =
+        OrgDocumentLoader::load_workspace_with_contracts(&task_document, &[contract_document])
+            .expect("document loads with external contracts");
+
+    assert!(workspace.contract_resolutions.diagnostics.is_empty());
+    assert_eq!(workspace.contracts.contracts.len(), 1);
+    let resolution = &workspace.contract_resolutions.references[0];
+    assert_eq!(
+        resolution
+            .resolved_contract_id
+            .as_ref()
+            .map(|contract_id| contract_id.as_str()),
+        Some("external.agent.task")
+    );
 }
 
 #[test]

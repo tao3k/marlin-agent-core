@@ -15,6 +15,8 @@ pub use contract::{
     OrgContractReferenceScope, OrgContractRegistry, OrgContractRelativeScope,
     OrgContractResolution, OrgContractResolutionReport, OrgContractScope, OrgContractSeverity,
     OrgContractSourceSpan, OrgContractTemplate, OrgContractTemplateEngine, OrgContractTemplateKind,
+    OrgContractValidationReceipt, OrgContractValidationReport, OrgContractValidationStatus,
+    OrgContractValidationTarget,
 };
 pub use link::{LinkKind, OrgLink};
 pub use node::{

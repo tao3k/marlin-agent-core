@@ -1,8 +1,12 @@
 //! Out-of-process `Gerbil` compiler adapter.
 
 use crate::{GerbilArtifactKind, GerbilCompiledArtifact, GerbilCompiler, GerbilSource};
+use marlin_org_model::{
+    OrgContractRegistry, OrgContractResolutionReport, OrgContractValidationReport,
+};
 use serde::{Deserialize, Serialize};
 use std::{
+    collections::BTreeMap,
     env,
     ffi::OsString,
     io::Write,
@@ -18,6 +22,16 @@ pub const GERBIL_COMMAND_PROFILE_ENV: &str = "MARLIN_GERBIL_COMMAND_PROFILE";
 pub struct GerbilCompileRequest {
     pub source: GerbilSource,
     pub expected: GerbilArtifactKind,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub contract_facts: Option<GerbilWorkspaceContractFacts>,
+}
+
+/// Workspace contract facts made available to a `Gerbil` control plane.
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub struct GerbilWorkspaceContractFacts {
+    pub registry: OrgContractRegistry,
+    pub resolutions: OrgContractResolutionReport,
+    pub validations: OrgContractValidationReport,
 }
 
 /// JSON response read from an external `Gerbil` compiler process on stdout.
@@ -34,6 +48,8 @@ pub struct GerbilCommandProfile {
     pub args: Vec<String>,
     #[serde(default)]
     pub current_dir: Option<String>,
+    #[serde(default)]
+    pub env: BTreeMap<String, String>,
 }
 
 impl GerbilCommandProfile {
@@ -42,6 +58,7 @@ impl GerbilCommandProfile {
             program: program.into(),
             args: Vec::new(),
             current_dir: None,
+            env: BTreeMap::new(),
         }
     }
 
@@ -52,6 +69,11 @@ impl GerbilCommandProfile {
 
     pub fn current_dir(mut self, current_dir: impl Into<String>) -> Self {
         self.current_dir = Some(current_dir.into());
+        self
+    }
+
+    pub fn env(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
+        self.env.insert(key.into(), value.into());
         self
     }
 
@@ -76,6 +98,11 @@ impl From<GerbilCommandProfile> for GerbilCommandSpec {
         let mut spec = GerbilCommandSpec::new(profile.program);
         spec.args = profile.args.into_iter().map(OsString::from).collect();
         spec.current_dir = profile.current_dir.map(PathBuf::from);
+        spec.env = profile
+            .env
+            .into_iter()
+            .map(|(key, value)| (OsString::from(key), OsString::from(value)))
+            .collect();
         spec
     }
 }
@@ -86,6 +113,7 @@ pub struct GerbilCommandSpec {
     pub program: PathBuf,
     pub args: Vec<OsString>,
     pub current_dir: Option<PathBuf>,
+    pub env: BTreeMap<OsString, OsString>,
 }
 
 impl GerbilCommandSpec {
@@ -94,6 +122,7 @@ impl GerbilCommandSpec {
             program: program.into(),
             args: Vec::new(),
             current_dir: None,
+            env: BTreeMap::new(),
         }
     }
 
@@ -104,6 +133,11 @@ impl GerbilCommandSpec {
 
     pub fn current_dir(mut self, current_dir: impl Into<PathBuf>) -> Self {
         self.current_dir = Some(current_dir.into());
+        self
+    }
+
+    pub fn env(mut self, key: impl Into<OsString>, value: impl Into<OsString>) -> Self {
+        self.env.insert(key.into(), value.into());
         self
     }
 }
@@ -142,7 +176,11 @@ impl GerbilCompiler for GerbilCommandCompiler {
         source: GerbilSource,
         expected: GerbilArtifactKind,
     ) -> Result<GerbilCompiledArtifact, String> {
-        let request = GerbilCompileRequest { source, expected };
+        let request = GerbilCompileRequest {
+            source,
+            expected,
+            contract_facts: None,
+        };
 
         let mut command = Command::new(&self.spec.program);
         command
@@ -154,6 +192,8 @@ impl GerbilCompiler for GerbilCommandCompiler {
         if let Some(current_dir) = &self.spec.current_dir {
             command.current_dir(current_dir);
         }
+
+        command.envs(&self.spec.env);
 
         let mut child = command
             .spawn()

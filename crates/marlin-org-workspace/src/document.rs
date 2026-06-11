@@ -2,8 +2,8 @@
 
 use marlin_org_model::{
     CheckboxState, LinkKind, OrgCheckbox, OrgContractReference, OrgContractReferenceScope,
-    OrgContractRegistry, OrgContractResolutionReport, OrgLink, OrgNode, OrgNodeId, OrgSourceSpan,
-    TodoState,
+    OrgContractRegistry, OrgContractResolutionReport, OrgContractValidationReport, OrgLink,
+    OrgNode, OrgNodeId, OrgSourceSpan, TodoState,
 };
 use marlin_workspace_protocol::{WorkspaceError, WorkspaceResult};
 use orgize::ast::parse_contracts_from_document;
@@ -56,6 +56,7 @@ pub struct OrgDocumentWorkspace {
     pub nodes: Vec<OrgNode>,
     pub contracts: OrgContractRegistry,
     pub contract_resolutions: OrgContractResolutionReport,
+    pub contract_validations: OrgContractValidationReport,
 }
 
 impl OrgDocument {
@@ -79,7 +80,15 @@ impl OrgDocumentLoader {
 
     /// Parse document text into workspace nodes and parser-owned contract facts.
     pub fn load_workspace(document: &OrgDocument) -> WorkspaceResult<OrgDocumentWorkspace> {
-        OrgDocumentParser::new(document).parse()
+        OrgDocumentParser::new(document).parse(&[])
+    }
+
+    /// Parse document text with additional explicit contract registry documents.
+    pub fn load_workspace_with_contracts(
+        document: &OrgDocument,
+        contract_documents: &[OrgDocument],
+    ) -> WorkspaceResult<OrgDocumentWorkspace> {
+        OrgDocumentParser::new(document).parse(contract_documents)
     }
 }
 
@@ -92,11 +101,21 @@ impl<'a> OrgDocumentParser<'a> {
         Self { document }
     }
 
-    fn parse(self) -> WorkspaceResult<OrgDocumentWorkspace> {
+    fn parse(self, contract_documents: &[OrgDocument]) -> WorkspaceResult<OrgDocumentWorkspace> {
         let org = parse_org_with_workspace_todo_keywords(&self.document.text);
         let parsed_document = org.document();
-        let contracts =
+        let mut contracts =
             project_contract_registry(parse_contracts_from_document(&parsed_document, None));
+        for contract_document in contract_documents {
+            let contract_org = parse_org_with_workspace_todo_keywords(&contract_document.text);
+            contracts.contracts.extend(
+                project_contract_registry(parse_contracts_from_document(
+                    &contract_org.document(),
+                    None,
+                ))
+                .contracts,
+            );
+        }
         let document_contract_reference = document_contract_reference(
             &parsed_document,
             self.document.id.as_str(),
@@ -121,6 +140,7 @@ impl<'a> OrgDocumentParser<'a> {
             nodes,
             contracts,
             contract_resolutions,
+            contract_validations: OrgContractValidationReport::default(),
         })
     }
 }

@@ -17,6 +17,10 @@ from stdout, and returns a typed =GerbilCompiledArtifact=.
 The command boundary is intentionally data-only:
 
 - stdin carries =source= and =expected=.
+
+- stdin may carry =contract_facts= with =OrgContractRegistry=,
+  =OrgContractResolutionReport=, and =OrgContractValidationReport= for
+  control-plane template selection.
 - stdout carries =artifact=.
 - =LoopGraph= artifacts carry graph ids, node executor/config maps, and optional
   edge conditions through the typed Rust IR.
@@ -51,6 +55,9 @@ packaging constraints to the crate before the control-plane IR is stable.
 The command adapter does not select or bundle a Gerbil runtime. Runtime
 selection remains configuration owned by the caller. This keeps the Marlin
 kernel dependent on typed IR rather than on the Gerbil implementation.
+Contract facts are read-side command inputs. Durable mutation remains a typed
+=WorkspacePatchIntentSpec= output that must pass through the Rust workspace
+patch pipeline.
 
 ** Profile Configuration
 
@@ -65,6 +72,11 @@ The profile is converted into an execution spec without shell parsing. Each
 =args= entry is passed as one process argument. Callers that need shell
 behavior must opt into it explicitly by setting =program= to a shell and
 providing shell flags themselves.
+
+=env= entries are passed directly to the spawned process through
+=std::process::Command::envs=. This makes runtime module resolution, such as
+=GERBIL_LOADPATH= for =package: marlin= fixture modules, part of the typed
+command profile instead of shell wrapper state.
 
 Rust callers can construct a compiler from the same profile shape with
 =GerbilCommandCompiler::from_profile_json= or

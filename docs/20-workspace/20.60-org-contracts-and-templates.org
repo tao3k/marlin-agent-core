@@ -25,6 +25,9 @@ The first supported shape mirrors orgize contracts:
 =marlin-org-workspace= exposes =OrgDocumentLoader::load_workspace=. It returns
 both the projected =OrgNode= list and an =OrgContractRegistry= projected from
 orgize contract facts.
+=OrgDocumentLoader::load_workspace_with_contracts= accepts explicit Org
+contract documents and merges their contracts into the registry before
+reference resolution.
 
 =marlin-org-model= owns the stable protocol DTOs. It keeps contract scope, kind,
 severity, expectation, element category, element kind, and relative scope behind
@@ -49,11 +52,26 @@ control plane may consume those records to choose document scaffolds, messages,
 and fix intent. Durable mutation still goes through =WorkspacePatch=,
 =marlin-org-patch=, and =marlin-org-workflow=.
 
+** Validation Receipts
+
+=OrgContractValidationReport= is the runtime-independent validation result
+container. It carries assertion receipts and diagnostics as data, but
+=marlin-org-workspace= does not execute assertions while loading a document.
+
+** View And Status
+
+=marlin-workspace-view= exposes =ContractFacts= as a selectable compact view
+field and may carry rendered contract facts beside node text.
+=marlin-workspace-status= has a =ContractStatus= summary for resolved
+references, unresolved references, diagnostics, and validation receipts.
+
 ** Current Limits
 
 The first projection preserves orgize query, expectation, message, fix,
-template facts, source block spans, and local reference resolution. It does not
-load external contract registry files and does not execute the contract
-assertions inside Marlin. Validation execution remains an upstream orgize lint
-concern until the Marlin workspace protocol needs a runtime-independent
-validation receipt.
+template facts, source block spans, local reference resolution, explicit
+external contract documents, and an empty validation report. View/status crates
+expose contract fact containers but do not compute rendered text or summary
+counts yet. It does not discover registry files implicitly and does not execute
+the contract assertions inside Marlin. Validation execution remains an upstream
+orgize lint concern until Marlin wires a validator into the runtime-independent
+receipt protocol.

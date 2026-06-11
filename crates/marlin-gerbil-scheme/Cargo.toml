@@ -7,6 +7,7 @@ repository.workspace = true
 
 [dependencies]
 marlin-gerbil-ir.workspace = true
+marlin-org-model.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 
@@ -14,6 +15,5 @@ serde_json.workspace = true
 rust-lang-project-harness.workspace = true
 
 [dev-dependencies]
-marlin-org-model.workspace = true
 marlin-workspace-patch.workspace = true
 rust-lang-project-harness.workspace = true

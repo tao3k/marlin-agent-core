@@ -125,6 +125,40 @@ pub struct OrgContractResolutionReport {
     pub diagnostics: Vec<OrgContractDiagnostic>,
 }
 
+/// Runtime-independent validation receipts for contract assertions.
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub struct OrgContractValidationReport {
+    pub receipts: Vec<OrgContractValidationReceipt>,
+    pub diagnostics: Vec<OrgContractDiagnostic>,
+}
+
+/// Result of evaluating one assertion against a document or subtree.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct OrgContractValidationReceipt {
+    pub contract_id: OrgContractId,
+    pub assertion_id: String,
+    pub target: OrgContractValidationTarget,
+    pub status: OrgContractValidationStatus,
+    pub severity: OrgContractSeverity,
+    pub message: Option<String>,
+    pub source: Option<OrgSourceSpan>,
+}
+
+/// Target validated by a contract assertion.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum OrgContractValidationTarget {
+    Document,
+    Node(OrgNodeId),
+}
+
+/// Assertion validation outcome.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum OrgContractValidationStatus {
+    Passed,
+    Failed,
+    Skipped,
+}
+
 /// One `CONTRACT_ORG` reference projected from a document or subtree.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct OrgContractReference {

@@ -9,6 +9,7 @@ pub struct WorkspaceStatusReport {
     pub sdd: Option<SddStatus>,
     pub checklist: Option<ChecklistStatus>,
     pub evidence: Option<EvidenceStatus>,
+    pub contracts: Option<ContractStatus>,
     pub metrics: Vec<MetricTrace>,
     pub decisions: DecisionTrace,
     pub next_actions: Vec<String>,
@@ -57,6 +58,15 @@ pub struct EvidenceStatus {
     pub linked: usize,
     pub missing: usize,
     pub quarantined: usize,
+}
+
+/// Contract projection and validation summary.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct ContractStatus {
+    pub resolved_references: usize,
+    pub unresolved_references: usize,
+    pub diagnostics: usize,
+    pub validation_receipts: usize,
 }
 
 /// Metric trace latest value and target.

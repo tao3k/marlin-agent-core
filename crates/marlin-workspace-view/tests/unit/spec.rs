@@ -10,6 +10,7 @@ fn compact_view_reads_selected_fields_not_raw_org() {
     assert!(spec.include.contains(&WorkspaceField::SourceSpan));
     assert!(spec.include.contains(&WorkspaceField::OpenCheckboxes));
     assert!(spec.include.contains(&WorkspaceField::EvidenceLinks));
+    assert!(spec.include.contains(&WorkspaceField::ContractFacts));
     assert!(spec.exclude.contains(&WorkspaceField::RawBlockOutput));
     assert!(spec.exclude.contains(&WorkspaceField::Archived));
 }

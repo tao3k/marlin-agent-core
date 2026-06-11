@@ -3,5 +3,5 @@
 mod render;
 mod spec;
 
-pub use render::{RenderedViewNode, RenderedWorkspaceView};
+pub use render::{RenderedContractFacts, RenderedViewNode, RenderedWorkspaceView};
 pub use spec::{RenderMode, WorkspaceField, WorkspaceViewSpec};
