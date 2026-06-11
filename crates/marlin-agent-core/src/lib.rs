@@ -52,10 +52,14 @@ pub use marlin_gerbil_ir as gerbil_ir;
 pub use marlin_org_model as org_model;
 pub use marlin_org_patch as org_patch;
 pub use marlin_org_store as org_store;
+pub use marlin_org_store::{FileSystemReleaseStatusStore, OrgSourceStoreResult};
 pub use marlin_org_workflow as org_workflow;
 pub use marlin_org_workspace as org_workspace;
 pub use marlin_workspace_protocol as workspace;
 pub use marlin_workspace_protocol::{
     ReleaseGateReceipt, ReleaseGateState, ReleaseGateStatus, ReleaseStatus, ReleaseVisibilityStatus,
 };
-pub use release::{release_gate_state_from_execution, release_gate_status_receipt};
+pub use release::{
+    record_release_gate_execution_receipt, release_gate_state_from_execution,
+    release_gate_status_receipt,
+};

@@ -13,6 +13,7 @@ marlin-org-patch.workspace = true
 marlin-org-store.workspace = true
 marlin-org-workspace.workspace = true
 marlin-workspace-patch.workspace = true
+marlin-workspace-status.workspace = true
 serde.workspace = true
 
 [build-dependencies]

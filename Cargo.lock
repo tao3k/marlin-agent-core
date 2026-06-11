@@ -330,6 +330,7 @@ dependencies = [
  "marlin-org-store",
  "marlin-org-workspace",
  "marlin-workspace-patch",
+ "marlin-workspace-status",
  "rust-lang-project-harness 0.1.0 (git+https://github.com/tao3k/rust-lang-project-harness?branch=main)",
  "serde",
 ]

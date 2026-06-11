@@ -1,7 +1,16 @@
 //! Release receipt bridges exposed by the core facade.
 
 use marlin_agent_harness::{ReleaseGateExecutionReceipt, ReleaseGateExecutionStatus};
+use marlin_org_store::{FileSystemReleaseStatusStore, OrgSourceStoreResult};
 use marlin_workspace_protocol::{ReleaseGateReceipt, ReleaseGateState};
+
+/// Record a harness release gate execution receipt in a file-backed workspace status sidecar.
+pub fn record_release_gate_execution_receipt(
+    store: &FileSystemReleaseStatusStore,
+    receipt: &ReleaseGateExecutionReceipt,
+) -> OrgSourceStoreResult<bool> {
+    store.record_release_gate_receipt(release_gate_status_receipt(receipt))
+}
 
 /// Convert a harness release gate execution receipt into a workspace status receipt.
 pub fn release_gate_status_receipt(receipt: &ReleaseGateExecutionReceipt) -> ReleaseGateReceipt {

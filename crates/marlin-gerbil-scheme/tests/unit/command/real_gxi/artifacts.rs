@@ -6,6 +6,12 @@ use super::{
     assert_workspace_schema_artifact, real_gxi_command_adapter_compiler, real_gxi_module_compiler,
 };
 use marlin_gerbil_scheme::{GerbilArtifactKind, GerbilCompiler, GerbilSource};
+use marlin_org_store::FileSystemReleaseStatusStore;
+use marlin_workspace_protocol::{ReleaseGateReceipt, ReleaseGateState};
+use std::{
+    fs,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 #[test]
 #[ignore = "requires a local Gerbil gxi executable"]
@@ -195,4 +201,67 @@ fn command_compiler_can_call_real_gxi_release_topology() {
         );
 
     assert_release_topology_artifact(artifact);
+}
+
+#[test]
+#[ignore = "requires a local Gerbil gxi executable"]
+fn command_compiler_real_gxi_release_topology_persists_landing_status_sidecar() {
+    let Some(compiler) = real_gxi_module_compiler() else {
+        return;
+    };
+    let root = test_root("real-gxi-release-topology-status");
+
+    let artifact = compiler
+        .compile(
+            GerbilSource::new("audit/release-topology-status", RELEASE_TOPOLOGY_SOURCE),
+            GerbilArtifactKind::ReleaseTopology,
+        )
+        .expect("real gxi should compile release topology for landing status");
+    let topology = artifact
+        .release_topology()
+        .expect("real gxi should produce a release topology artifact");
+    let store = FileSystemReleaseStatusStore::new(&root);
+
+    let pending = store
+        .record_release_topology(topology)
+        .expect("release topology should be persisted as a landing status sidecar");
+    assert_eq!(pending.topology_id, "release:gerbil");
+    assert_eq!(
+        pending.gates[0].state,
+        ReleaseGateState::RequiresLocalGerbil
+    );
+
+    assert!(
+        store
+            .record_release_gate_receipt(ReleaseGateReceipt::passed(
+                "real-gxi",
+                vec![
+                    "workspace_schema".to_owned(),
+                    "workspace_patch_intent".to_owned()
+                ],
+                vec!["fixtures/gerbil/command-adapter.ss".to_owned()],
+            ))
+            .expect("real gxi gate receipt should update sidecar")
+    );
+    let status = store
+        .read_status()
+        .expect("release status should remain readable")
+        .expect("release status sidecar should exist");
+
+    assert_eq!(status.crate_name, "marlin-gerbil-scheme");
+    assert_eq!(status.gates[0].state, ReleaseGateState::Passed);
+    assert!(status.visibility_reports[0].observed);
+
+    let _ = fs::remove_dir_all(root);
+}
+
+fn test_root(name: &str) -> std::path::PathBuf {
+    let suffix = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_nanos())
+        .unwrap_or_default();
+    std::env::temp_dir().join(format!(
+        "marlin-gerbil-scheme-{name}-{}-{suffix}",
+        std::process::id()
+    ))
 }
