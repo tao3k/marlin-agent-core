@@ -174,6 +174,13 @@ fn command_adapter_batch_requests() -> Vec<GerbilCompileRequest> {
             GerbilSource::new("audit/release-topology", RELEASE_TOPOLOGY_SOURCE),
             GerbilArtifactKind::ReleaseTopology,
         ),
+        GerbilCompileRequest::new(
+            GerbilSource::new(
+                "audit/workspace-source-commit",
+                WORKSPACE_SOURCE_COMMIT_INTENT_SOURCE,
+            ),
+            GerbilArtifactKind::WorkspacePatchIntent,
+        ),
     ]
 }
 

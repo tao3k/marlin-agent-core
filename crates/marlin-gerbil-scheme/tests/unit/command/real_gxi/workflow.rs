@@ -1,7 +1,4 @@
-use super::{
-    WORKSPACE_PATCH_INTENT_SOURCE, WORKSPACE_SOURCE_COMMIT_INTENT_SOURCE,
-    command_adapter_batch_artifacts, local_gxi, real_gxi_module_compiler,
-};
+use super::{WORKSPACE_PATCH_INTENT_SOURCE, command_adapter_batch_artifacts, local_gxi};
 use marlin_gerbil_scheme::{
     GerbilArtifactKind, GerbilCompiledArtifact, GerbilCompiler, GerbilRuntimeBinding, GerbilSource,
 };
@@ -85,7 +82,7 @@ fn runtime_binding_real_gxi_workspace_patch_intent_dry_runs_through_workflow() {
 #[test]
 #[ignore = "requires a local Gerbil gxi executable"]
 fn command_compiler_real_gxi_workspace_patch_intent_commits_with_policy() {
-    let Some(compiler) = real_gxi_module_compiler() else {
+    let Some(artifacts) = command_adapter_batch_artifacts() else {
         return;
     };
     let root = test_root("real-gxi-gerbil-intent-commit");
@@ -97,15 +94,7 @@ fn command_compiler_real_gxi_workspace_patch_intent_commits_with_policy() {
     .expect("seed document");
     let mut store = FileSystemOrgSourceStore::new(&root);
 
-    let artifact = compiler
-        .compile(
-            GerbilSource::new(
-                "audit/workspace-source-commit",
-                WORKSPACE_SOURCE_COMMIT_INTENT_SOURCE,
-            ),
-            GerbilArtifactKind::WorkspacePatchIntent,
-        )
-        .expect("real gxi should compile a policy-gated workspace source commit intent");
+    let artifact = artifacts[5].clone();
     let GerbilCompiledArtifact::WorkspacePatchIntent(intent) = artifact else {
         panic!("expected workspace patch intent artifact");
     };

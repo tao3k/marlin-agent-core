@@ -5,7 +5,7 @@ use marlin_gerbil_scheme::{
 };
 use std::{
     fs,
-    path::PathBuf,
+    path::{Path, PathBuf},
     process::Command,
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -128,20 +128,10 @@ fn command_compiler_real_gxi_runs_compile_source_example() {
     let source_path = manifest_dir
         .join("examples")
         .join("workspace-patch-intent-source.ss");
-    let cargo = std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
+    let mut command = compile_source_example_command(workspace_root);
 
-    let output = Command::new(cargo)
-        .current_dir(workspace_root)
-        .args([
-            "run",
-            "--locked",
-            "-p",
-            "marlin-gerbil-scheme",
-            "--example",
-            "compile-source",
-            "--",
-            "workspace-patch-intent",
-        ])
+    let output = command
+        .arg("workspace-patch-intent")
         .arg(&source_path)
         .output()
         .expect("run Gerbil compile-source example");
@@ -155,6 +145,36 @@ fn command_compiler_real_gxi_runs_compile_source_example() {
     let artifact: GerbilCompiledArtifact =
         serde_json::from_slice(&output.stdout).expect("decode compile-source artifact");
     assert_workspace_patch_intent_artifact(artifact);
+}
+
+fn compile_source_example_command(workspace_root: &Path) -> Command {
+    if let Some(program) = std::env::var_os("CARGO_BIN_EXE_compile-source") {
+        return Command::new(program);
+    }
+
+    let target_dir = std::env::var_os("CARGO_TARGET_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| workspace_root.join("target"));
+    let compiled_example = target_dir
+        .join("debug")
+        .join("examples")
+        .join(format!("compile-source{}", std::env::consts::EXE_SUFFIX));
+    if compiled_example.is_file() {
+        return Command::new(compiled_example);
+    }
+
+    let cargo = std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
+    let mut command = Command::new(cargo);
+    command.current_dir(workspace_root).args([
+        "run",
+        "--locked",
+        "-p",
+        "marlin-gerbil-scheme",
+        "--example",
+        "compile-source",
+        "--",
+    ]);
+    command
 }
 
 #[test]
