@@ -1,8 +1,9 @@
 use super::{
-    WORKSPACE_PATCH_INTENT_SOURCE, WORKSPACE_SOURCE_COMMIT_INTENT_SOURCE, real_gxi_module_compiler,
+    WORKSPACE_PATCH_INTENT_SOURCE, WORKSPACE_SOURCE_COMMIT_INTENT_SOURCE, local_gxi,
+    real_gxi_module_compiler,
 };
 use marlin_gerbil_scheme::{
-    GerbilArtifactKind, GerbilCompiledArtifact, GerbilCompiler, GerbilSource,
+    GerbilArtifactKind, GerbilCompiledArtifact, GerbilCompiler, GerbilRuntimeBinding, GerbilSource,
 };
 use marlin_org_store::{FileSystemOrgSourceStore, OrgSourceWritePolicy};
 use marlin_org_workflow::{
@@ -48,6 +49,46 @@ fn command_compiler_real_gxi_workspace_patch_intent_dry_runs_through_workflow() 
     assert_eq!(receipt.memory_dispatch.len(), 1);
     assert_eq!(receipt.memory_dispatch[0].target, "long-term");
     assert!(!receipt.memory_dispatch[0].accepted);
+}
+
+#[test]
+#[ignore = "requires a local Gerbil gxi executable"]
+fn runtime_binding_real_gxi_workspace_patch_intent_dry_runs_through_workflow() {
+    let Some(gxi) = local_gxi() else {
+        return;
+    };
+    let root = test_root("runtime-binding-workflow");
+    let binding = GerbilRuntimeBinding::new(gxi, &root)
+        .expect("runtime binding should write assets for real gxi workflow execution");
+
+    let artifact = binding
+        .compiler()
+        .compile(
+            GerbilSource::new(
+                "audit/runtime-binding-workspace-patch-intent",
+                WORKSPACE_PATCH_INTENT_SOURCE,
+            ),
+            GerbilArtifactKind::WorkspacePatchIntent,
+        )
+        .expect("real gxi runtime binding should compile a workspace patch intent");
+
+    assert!(
+        binding
+            .written_assets()
+            .iter()
+            .any(|asset| asset.ends_with("marlin/protocol.ss"))
+    );
+    let GerbilCompiledArtifact::WorkspacePatchIntent(intent) = artifact else {
+        panic!("expected workspace patch intent artifact");
+    };
+    let receipt = GerbilWorkspacePatchIntentDryRunner::dry_run(&intent);
+
+    assert_eq!(receipt.patch_id, PatchId::new("intent:memory"));
+    assert!(receipt.validation.accepted);
+    assert_eq!(receipt.memory_dispatch.len(), 1);
+    assert_eq!(receipt.memory_dispatch[0].target, "long-term");
+
+    let _ = fs::remove_dir_all(root);
 }
 
 #[test]
