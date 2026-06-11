@@ -28,6 +28,30 @@ jobs:
       - name: Check Rust formatting
         run: cargo fmt --all -- --check
 
+  check:
+    name: Rust check
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      CARGO_INCREMENTAL: "0"
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: marlin-agent-core-check-${{ runner.os }}
+          cache-on-failure: true
+
+      - name: Fetch workspace dependencies
+        run: cargo fetch --locked
+
+      - name: Check Rust workspace
+        run: cargo check --workspace --all-targets --locked
+
   lint:
     name: Rust lint
     runs-on: ubuntu-latest
