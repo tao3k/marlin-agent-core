@@ -63,10 +63,21 @@ package: marlin
 (def (compile-requested-marlin-artifact expected source-text)
   (make-marlin-artifact expected (compile-requested-artifact expected source-text)))
 
+(def (ensure-marlin-contract-facts-shape contract-facts)
+  (when contract-facts
+    (unless (hash-ref contract-facts "registry" #f)
+      (error "marlin gerbil adapter contract_facts missing registry"))
+    (unless (hash-ref contract-facts "resolutions" #f)
+      (error "marlin gerbil adapter contract_facts missing resolutions"))
+    (unless (hash-ref contract-facts "validations" #f)
+      (error "marlin gerbil adapter contract_facts missing validations"))))
+
 (def (compile-gerbil-compile-request request)
   (let* ((expected (gerbil-compile-request-expected-kind request))
          (_ (ensure-marlin-supported-artifact-kind expected))
          (_ (ensure-marlin-artifact-compiler-table))
+         (contract-facts (gerbil-compile-request-contract-facts request))
+         (_ (ensure-marlin-contract-facts-shape contract-facts))
          (source-text (gerbil-compile-request-source-text request))
          (artifact (compile-requested-marlin-artifact expected source-text)))
     artifact))

@@ -1,6 +1,7 @@
 use marlin_gerbil_scheme::{
     DEFAULT_GERBIL_GXI_PROGRAM, GERBIL_ADAPTER_MODULE, GERBIL_BUILD_SOURCE, GERBIL_LOADPATH_ENV,
-    MARLIN_GERBIL_GXI_ENV, gerbil_runtime_assets, write_gerbil_runtime_assets,
+    GERBIL_MARLIN_ADAPTER_SOURCE, GERBIL_MARLIN_REQUEST_SOURCE, MARLIN_GERBIL_GXI_ENV,
+    gerbil_runtime_assets, write_gerbil_runtime_assets,
 };
 use std::{
     fs,
@@ -16,6 +17,8 @@ fn gerbil_runtime_assets_expose_loadpath_contract() {
     assert_eq!(MARLIN_GERBIL_GXI_ENV, "MARLIN_GERBIL_GXI");
     assert!(DEFAULT_GERBIL_GXI_PROGRAM.ends_with("/bin/gxi"));
     assert!(GERBIL_BUILD_SOURCE.contains("defmarlin-runtime-build-script"));
+    assert!(GERBIL_MARLIN_REQUEST_SOURCE.contains("gerbil-compile-request-contract-facts"));
+    assert!(GERBIL_MARLIN_ADAPTER_SOURCE.contains("ensure-marlin-contract-facts-shape"));
     assert_eq!(assets.len(), 8);
     assert!(
         assets

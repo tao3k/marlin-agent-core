@@ -8,7 +8,8 @@ package: marlin
 (export read-gerbil-compile-request
         read-gerbil-compile-request-lines
         gerbil-compile-request-source-text
-        gerbil-compile-request-expected-kind)
+        gerbil-compile-request-expected-kind
+        gerbil-compile-request-contract-facts)
 
 (define (read-all input)
   (let loop ((acc ""))
@@ -44,3 +45,6 @@ package: marlin
 
 (define (gerbil-compile-request-expected-kind request)
   (hash-ref request "expected"))
+
+(define (gerbil-compile-request-contract-facts request)
+  (hash-ref request "contract_facts" #f))

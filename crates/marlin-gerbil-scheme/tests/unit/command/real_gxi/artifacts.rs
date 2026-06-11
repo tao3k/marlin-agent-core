@@ -8,6 +8,10 @@ use super::{
 };
 use marlin_gerbil_scheme::{
     GerbilArtifactKind, GerbilCompileRequest, GerbilCompiledArtifact, GerbilCompiler, GerbilSource,
+    GerbilWorkspaceContractFacts,
+};
+use marlin_org_model::{
+    OrgContractRegistry, OrgContractResolutionReport, OrgContractValidationReport,
 };
 use marlin_org_store::FileSystemReleaseStatusStore;
 use marlin_workspace_protocol::{ReleaseGateReceipt, ReleaseGateState};
@@ -38,7 +42,11 @@ fn command_adapter_batch_requests() -> Vec<GerbilCompileRequest> {
         GerbilCompileRequest {
             source: GerbilSource::new("audit/control-plane", RICH_LOOP_GRAPH_SOURCE),
             expected: GerbilArtifactKind::LoopGraph,
-            contract_facts: None,
+            contract_facts: Some(GerbilWorkspaceContractFacts {
+                registry: OrgContractRegistry::default(),
+                resolutions: OrgContractResolutionReport::default(),
+                validations: OrgContractValidationReport::default(),
+            }),
         },
         GerbilCompileRequest {
             source: GerbilSource::new("audit/workspace-schema", WORKSPACE_SCHEMA_SOURCE),
