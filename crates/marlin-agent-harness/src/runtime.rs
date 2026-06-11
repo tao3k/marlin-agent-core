@@ -9,10 +9,14 @@ use marlin_agent_protocol::{
 use marlin_agent_runtime::{
     CancellationToken, RuntimeEnvironment, RuntimeEventStream, TokioAgentRuntime,
 };
+use marlin_gerbil_ir::{ReleaseGateSpec, ReleaseTopologySpec};
 use std::time::{Duration, Instant};
 use tokio_stream::StreamExt;
 
-use crate::{HarnessAssertionError, TraceRecorder, assert_evidence_kinds};
+use crate::{
+    HarnessAssertionError, TraceRecorder, assert_evidence_kinds, release_gate_visibility_evidence,
+    release_topology_visibility_evidence,
+};
 
 /// Controlled runtime plus typed evidence captured for one harness scenario.
 #[derive(Debug)]
@@ -67,6 +71,24 @@ impl HarnessRuntime {
     pub fn record_environment_visibility(&mut self) {
         let evidence = runtime_environment_visibility_evidence(self.environment());
         self.record_evidence(evidence);
+    }
+
+    /// Record visibility evidence declared by one `Gerbil` release gate.
+    pub fn record_release_gate_visibility(
+        &mut self,
+        topology: &ReleaseTopologySpec,
+        gate: &ReleaseGateSpec,
+    ) {
+        for evidence in release_gate_visibility_evidence(topology, gate) {
+            self.record_evidence(evidence);
+        }
+    }
+
+    /// Record visibility evidence declared by all gates in a `Gerbil` release topology.
+    pub fn record_release_topology_visibility(&mut self, topology: &ReleaseTopologySpec) {
+        for evidence in release_topology_visibility_evidence(topology) {
+            self.record_evidence(evidence);
+        }
     }
 
     pub fn evidence(&self) -> &[LoopEvidence] {

@@ -1,5 +1,6 @@
 //! Status report structures derived from workspace records.
 
+use marlin_gerbil_ir::ReleaseTopologySpec;
 use serde::{Deserialize, Serialize};
 
 /// Combined status projection for a workspace target.
@@ -11,6 +12,8 @@ pub struct WorkspaceStatusReport {
     pub evidence: Option<EvidenceStatus>,
     pub contracts: Option<ContractStatus>,
     pub patch: Option<PatchStatus>,
+    #[serde(default)]
+    pub release: Option<ReleaseStatus>,
     pub metrics: Vec<MetricTrace>,
     pub decisions: DecisionTrace,
     pub next_actions: Vec<String>,
@@ -90,6 +93,111 @@ pub struct PatchStatus {
     pub memory_dispatches: usize,
     pub memory_dispatch_accepted: usize,
     pub memory_dispatch_failed: usize,
+}
+
+/// Release topology status derived from a `Gerbil` release artifact.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct ReleaseStatus {
+    /// Stable release topology identifier.
+    pub topology_id: String,
+    /// Crate or artifact family covered by this topology.
+    pub crate_name: String,
+    /// Whether publishing is enabled for this topology.
+    pub publish_enabled: bool,
+    /// Command used to audit package contents.
+    pub asset_audit_command: String,
+    /// Package assets that must be present before release.
+    pub package_assets: Vec<String>,
+    /// Runtime dependency chain that must remain coherent.
+    pub runtime_dependency_chain: Vec<String>,
+    /// Workflow dependency chain that must remain coherent.
+    pub workflow_dependency_chain: Vec<String>,
+    /// Gate-level status projections.
+    pub gates: Vec<ReleaseGateStatus>,
+    /// Flattened visibility reports expected from every gate.
+    pub visibility_reports: Vec<ReleaseVisibilityStatus>,
+}
+
+impl ReleaseStatus {
+    /// Build a pending release status projection from a `Gerbil` topology artifact.
+    pub fn pending_from_topology(topology: &ReleaseTopologySpec) -> Self {
+        let gates = topology
+            .gates
+            .iter()
+            .map(|gate| ReleaseGateStatus {
+                gate_id: gate.gate_id.clone(),
+                command: gate.command.clone(),
+                requires_local_gerbil: gate.requires_local_gerbil,
+                required_artifacts: gate.required_artifacts.clone(),
+                state: if gate.requires_local_gerbil {
+                    ReleaseGateState::RequiresLocalGerbil
+                } else {
+                    ReleaseGateState::Pending
+                },
+            })
+            .collect();
+        let visibility_reports = topology
+            .gates
+            .iter()
+            .flat_map(|gate| {
+                gate.visibility
+                    .iter()
+                    .map(|visibility| ReleaseVisibilityStatus {
+                        gate_id: gate.gate_id.clone(),
+                        report_key: visibility.report_key.clone(),
+                        evidence_keys: visibility.evidence_keys.clone(),
+                        artifact_paths: visibility.artifact_paths.clone(),
+                    })
+            })
+            .collect();
+
+        Self {
+            topology_id: topology.topology_id.clone(),
+            crate_name: topology.crate_name.clone(),
+            publish_enabled: topology.publish_enabled,
+            asset_audit_command: topology.asset_audit_command.clone(),
+            package_assets: topology.package_assets.clone(),
+            runtime_dependency_chain: topology.runtime_dependency_chain.clone(),
+            workflow_dependency_chain: topology.workflow_dependency_chain.clone(),
+            gates,
+            visibility_reports,
+        }
+    }
+}
+
+/// Status for one release gate command.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct ReleaseGateStatus {
+    /// Release gate identifier.
+    pub gate_id: String,
+    /// Command that should be run to satisfy the gate.
+    pub command: String,
+    /// Whether this gate requires a local Gerbil installation.
+    pub requires_local_gerbil: bool,
+    /// Artifacts the gate must prove.
+    pub required_artifacts: Vec<String>,
+    /// Current known gate state.
+    pub state: ReleaseGateState,
+}
+
+/// Release gate state before execution evidence is attached.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum ReleaseGateState {
+    Pending,
+    RequiresLocalGerbil,
+}
+
+/// Visibility report that should be emitted by a release gate.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct ReleaseVisibilityStatus {
+    /// Gate that owns this visibility report.
+    pub gate_id: String,
+    /// Report key expected in the release status surface.
+    pub report_key: String,
+    /// Evidence keys required by this report.
+    pub evidence_keys: Vec<String>,
+    /// Artifact paths that should be visible in the report.
+    pub artifact_paths: Vec<String>,
 }
 
 /// Execution boundary proven by the latest patch receipt.

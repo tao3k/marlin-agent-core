@@ -640,6 +640,7 @@ fn status_for_node(
             evidence: None,
             contracts,
             patch,
+            release: None,
             metrics: Vec::new(),
             decisions: DecisionTrace { recent: Vec::new() },
             next_actions: Vec::new(),
@@ -678,6 +679,7 @@ fn status_for_node(
         evidence: Some(evidence),
         contracts,
         patch,
+        release: None,
         metrics: metric_traces(node),
         decisions: decision_trace(node),
         next_actions: node

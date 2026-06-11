@@ -1,6 +1,12 @@
 //! Tokio-backed execution substrate for agent providers, tools, and sub-agents.
 
-use std::{future::Future, pin::Pin, sync::Arc, time::Duration};
+use std::{
+    future::Future,
+    pin::Pin,
+    sync::Arc,
+    task::{Context, Poll},
+    time::Duration,
+};
 
 use crate::observability;
 pub use marlin_agent_protocol::{AgentEvent as RuntimeEvent, GraphId, RunId, RuntimeEnvironment};
@@ -331,10 +337,7 @@ pub struct RuntimeEventSink {
 impl RuntimeEventSink {
     pub fn channel(event_buffer: usize) -> (Self, RuntimeEventStream) {
         let (sender, receiver) = mpsc::channel(event_buffer);
-        (
-            Self { sender },
-            tokio_stream::wrappers::ReceiverStream::new(receiver),
-        )
+        (Self { sender }, RuntimeEventStream::new(receiver))
     }
 
     pub async fn emit(
@@ -346,7 +349,35 @@ impl RuntimeEventSink {
 }
 
 /// Tokio stream of runtime observations and receipts.
-pub type RuntimeEventStream = tokio_stream::wrappers::ReceiverStream<RuntimeEvent>;
+#[derive(Debug)]
+pub struct RuntimeEventStream {
+    receiver: mpsc::Receiver<RuntimeEvent>,
+}
+
+impl RuntimeEventStream {
+    /// Wrap a Tokio event receiver in the Marlin runtime event stream boundary.
+    pub fn new(receiver: mpsc::Receiver<RuntimeEvent>) -> Self {
+        Self { receiver }
+    }
+
+    /// Return one already-buffered runtime event without waiting.
+    pub fn try_next(&mut self) -> Option<RuntimeEvent> {
+        self.receiver.try_recv().ok()
+    }
+
+    /// Close the stream so no further runtime events can be received.
+    pub fn close(&mut self) {
+        self.receiver.close();
+    }
+}
+
+impl tokio_stream::Stream for RuntimeEventStream {
+    type Item = RuntimeEvent;
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        self.receiver.poll_recv(cx)
+    }
+}
 
 /// Compatibility alias for the runtime event stream boundary.
 pub type EventStream = RuntimeEventStream;
