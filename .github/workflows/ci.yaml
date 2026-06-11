@@ -13,9 +13,9 @@ on:
         default: false
         type: boolean
       real_gxi_runner:
-        description: JSON runs-on labels for the real_gxi job, for example ["self-hosted","macOS"].
+        description: JSON runs-on labels for the real_gxi job, for example ["macos-latest"] or ["self-hosted","macOS"].
         required: false
-        default: '["ubuntu-latest"]'
+        default: '["macos-latest"]'
         type: string
 
 permissions:
@@ -163,7 +163,7 @@ jobs:
   real-gxi:
     name: Real gxi release gate
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_real_gxi }}
-    runs-on: ${{ fromJSON(inputs.real_gxi_runner || '["ubuntu-latest"]') }}
+    runs-on: ${{ fromJSON(inputs.real_gxi_runner || '["macos-latest"]') }}
     timeout-minutes: 60
     env:
       CARGO_INCREMENTAL: "0"
@@ -183,6 +183,21 @@ jobs:
 
       - name: Fetch workspace dependencies
         run: cargo fetch --locked
+
+      - name: Install Gerbil with Homebrew
+        run: |
+          if [ -n "${MARLIN_GERBIL_GXI:-}" ] && [ -x "$MARLIN_GERBIL_GXI" ]; then
+            exit 0
+          fi
+
+          if ! command -v brew >/dev/null 2>&1; then
+            echo "::error::run_real_gxi requested but brew is unavailable. Set MARLIN_GERBIL_GXI or choose a runner with Homebrew."
+            exit 1
+          fi
+
+          brew list gerbil-scheme >/dev/null 2>&1 || brew install gerbil-scheme
+          gerbil_prefix="$(brew --prefix gerbil-scheme)"
+          echo "MARLIN_GERBIL_GXI=$gerbil_prefix/bin/gxi" >> "$GITHUB_ENV"
 
       - name: Resolve gxi executable
         run: |
