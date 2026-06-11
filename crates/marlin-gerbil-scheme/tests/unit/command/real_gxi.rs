@@ -1,6 +1,6 @@
 use super::support::{
-    RICH_LOOP_GRAPH_SOURCE, assert_rich_loop_graph_artifact, gerbil_fixture_root, local_gxi,
-    real_gxi_module_compiler,
+    RICH_LOOP_GRAPH_SOURCE, WORKSPACE_SCHEMA_SOURCE, assert_rich_loop_graph_artifact,
+    assert_workspace_schema_artifact, gerbil_fixture_root, local_gxi, real_gxi_module_compiler,
 };
 use marlin_gerbil_scheme::{
     GerbilArtifactKind, GerbilCommandCompiler, GerbilCommandSpec, GerbilCompiler, GerbilSource,
@@ -52,6 +52,25 @@ fn command_compiler_can_call_real_gxi_module_entry() {
 
 #[test]
 #[ignore = "requires a local Gerbil gxi executable"]
+fn command_compiler_can_call_real_gxi_workspace_schema() {
+    let Some(compiler) = real_gxi_module_compiler() else {
+        return;
+    };
+
+    let artifact = compiler
+        .compile(
+            GerbilSource::new("audit/workspace-schema", WORKSPACE_SCHEMA_SOURCE),
+            GerbilArtifactKind::WorkspaceSchema,
+        )
+        .expect(
+            "real gxi module entry should compile source text into a workspace schema artifact",
+        );
+
+    assert_workspace_schema_artifact(artifact);
+}
+
+#[test]
+#[ignore = "requires a local Gerbil gxi executable"]
 fn command_compiler_real_gxi_module_entry_rejects_unsupported_expected_kind() {
     let Some(compiler) = real_gxi_module_compiler() else {
         return;
@@ -60,7 +79,7 @@ fn command_compiler_real_gxi_module_entry_rejects_unsupported_expected_kind() {
     let error = compiler
         .compile(
             GerbilSource::new("audit/control-plane", RICH_LOOP_GRAPH_SOURCE),
-            GerbilArtifactKind::WorkspaceSchema,
+            GerbilArtifactKind::WorkspacePatchIntent,
         )
         .unwrap_err();
 
@@ -68,4 +87,5 @@ fn command_compiler_real_gxi_module_entry_rejects_unsupported_expected_kind() {
     assert!(error.contains("unsupported artifact kind"));
     assert!(error.contains("LoopGraph"));
     assert!(error.contains("WorkspaceSchema"));
+    assert!(error.contains("WorkspacePatchIntent"));
 }

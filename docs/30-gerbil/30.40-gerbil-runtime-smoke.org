@@ -68,6 +68,17 @@ The shim returns a =LoopGraph= JSON artifact whose =graph_id=, node =config=,
 and edge =condition= values are derived from that form. =none=, =null=, and
 =#f= edge conditions are emitted as JSON =null=.
 
+It also recognizes a minimal workspace schema smoke form:
+
+#+begin_src scheme
+(workspace-schema workspace-record
+  (required ID TITLE)
+  (todo TODO DONE))
+#+end_src
+
+When =expected= is =WorkspaceSchema=, the adapter emits a =WorkspaceSchema=
+JSON artifact with =schema_id=, =required_properties=, and =todo_states=.
+
 The adapter now routes parser output through Gerbil-side modules before
 emitting JSON:
 
@@ -77,7 +88,7 @@ emitting JSON:
 - =fixtures/gerbil/marlin/request.ss= owns the =GerbilCompileRequest= JSON
   reader boundary through =:std/text/json=.
 - =fixtures/gerbil/marlin/parser.ss= owns the Gerbil reader-backed smoke DSL
-  source-to-=LoopGraph= parser.
+  source-to-=LoopGraph= and source-to-=WorkspaceSchema= parsers.
 - =fixtures/gerbil/marlin/adapter.ss= imports the request/parser/protocol
   modules and owns compile dispatch plus response emission.
 - =fixtures/gerbil/fixed-loop-graph-adapter.ss= is a thin launcher that imports
@@ -105,8 +116,9 @@ GERBIL_LOADPATH=crates/marlin-gerbil-scheme/fixtures/gerbil \
 #+end_src
 
 The Rust boundary tests pass that value through =GerbilCommandSpec.env=, not
-through a shell wrapper. They cover both successful =LoopGraph= compilation and
-Gerbil-side rejection of unsupported =expected= artifact kinds.
+through a shell wrapper. They cover successful =LoopGraph= and
+=WorkspaceSchema= compilation plus Gerbil-side rejection of unsupported
+=expected= artifact kinds.
 
 Run the Rust boundary tests explicitly:
 

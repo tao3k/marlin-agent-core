@@ -16,6 +16,10 @@ pub const RICH_LOOP_GRAPH_SOURCE: &str = r#"(loop-graph gerbil-source-loop
   (edge provider tool success)
   (edge tool provider none))"#;
 
+pub const WORKSPACE_SCHEMA_SOURCE: &str = r#"(workspace-schema workspace-record
+  (required ID TITLE)
+  (todo TODO DONE))"#;
+
 pub fn local_gxi() -> Option<PathBuf> {
     let gxi = env::var("MARLIN_GERBIL_GXI")
         .map(PathBuf::from)
@@ -78,5 +82,16 @@ pub fn assert_rich_loop_graph_artifact(artifact: GerbilCompiledArtifact) {
             assert_eq!(graph.edges[1].condition, None);
         }
         other => panic!("expected loop graph artifact, got {other:?}"),
+    }
+}
+
+pub fn assert_workspace_schema_artifact(artifact: GerbilCompiledArtifact) {
+    match artifact {
+        GerbilCompiledArtifact::WorkspaceSchema(schema) => {
+            assert_eq!(schema.schema_id, "workspace-record");
+            assert_eq!(schema.required_properties, ["ID", "TITLE"]);
+            assert_eq!(schema.todo_states, ["TODO", "DONE"]);
+        }
+        other => panic!("expected workspace schema artifact, got {other:?}"),
     }
 }
