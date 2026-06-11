@@ -61,3 +61,13 @@ marlin-workspace-protocol = { path = "crates/marlin-workspace-protocol" }
 marlin-workspace-query = { path = "crates/marlin-workspace-query" }
 marlin-workspace-status = { path = "crates/marlin-workspace-status" }
 marlin-workspace-view = { path = "crates/marlin-workspace-view" }
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+strip = true
+panic = "abort"
+
+[profile.dev]
+debug = 1
+split-debuginfo = "unpacked"
