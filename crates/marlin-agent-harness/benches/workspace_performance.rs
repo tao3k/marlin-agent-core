@@ -7,7 +7,9 @@ use std::{
 };
 
 use marlin_agent_protocol::PERFORMANCE_EVIDENCE_KEYS;
-use marlin_gerbil_scheme::{GerbilAotProbeConfig, GerbilAotProbeStatus};
+use marlin_gerbil_scheme::{
+    GerbilAotBackendShimStatus, GerbilAotProbeConfig, GerbilAotProbeStatus,
+};
 use rust_lang_project_harness::{
     RustHarnessConfig, RustVerificationPhase, RustVerificationPolicy, RustVerificationProfileHint,
     RustVerificationTaskKind, RustVerificationTaskState, build_rust_verification_performance_index,
@@ -68,6 +70,7 @@ struct GerbilAotProbeBenchRecord {
     status: GerbilAotProbeStatus,
     duration: Duration,
     backend_gsc: Option<PathBuf>,
+    backend_shim: GerbilAotBackendShimStatus,
     executable_ready: bool,
 }
 
@@ -133,10 +136,11 @@ impl GerbilAotProbeBenchRecord {
             .map(|path| path.display().to_string())
             .unwrap_or_else(|| "-".to_owned());
         format!(
-            "status={:?},duration={}ms,backend_gsc={},executable_ready={}",
+            "status={:?},duration={}ms,backend_gsc={},backend_shim={:?},executable_ready={}",
             self.status,
             self.duration.as_millis(),
             backend_gsc,
+            self.backend_shim,
             self.executable_ready,
         )
     }
@@ -219,6 +223,10 @@ fn gerbil_aot_probe_bench() -> GerbilAotProbeBenchRecord {
     let duration = started_at.elapsed();
     let executable_ready =
         receipt.status == GerbilAotProbeStatus::ExecutableReady && receipt.executable.is_file();
+    let backend_shim = receipt
+        .prepare_backend_gsc_shim(workspace_root().join("target").join("gerbil-backend-shims"))
+        .expect("Gerbil AOT backend shim contract should be checkable")
+        .status;
 
     assert!(
         duration <= GERBIL_AOT_PROBE_BENCH_BUDGET,
@@ -251,6 +259,7 @@ fn gerbil_aot_probe_bench() -> GerbilAotProbeBenchRecord {
         status: receipt.status,
         duration,
         backend_gsc: receipt.backend_gsc,
+        backend_shim,
         executable_ready,
     };
     let _ = fs::remove_dir_all(root);

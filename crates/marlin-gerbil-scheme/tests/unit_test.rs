@@ -7,5 +7,5 @@ mod compiler;
 #[path = "unit/command/mod.rs"]
 mod command;
 
-#[path = "unit/runtime.rs"]
+#[path = "unit/runtime/mod.rs"]
 mod runtime;
