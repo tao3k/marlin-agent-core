@@ -5,6 +5,7 @@ package: marlin
 
 (export make-marlin-loop-node
         marlin-loop-graph-artifact-kind
+        marlin-workspace-schema-artifact-kind
         marlin-supported-artifact-kinds
         marlin-supported-artifact-kind?
         ensure-marlin-supported-artifact-kind
@@ -20,12 +21,19 @@ package: marlin
         marlin-loop-graph-id
         marlin-loop-graph-nodes
         marlin-loop-graph-edges
+        make-marlin-workspace-schema
+        marlin-workspace-schema-id
+        marlin-workspace-schema-required-properties
+        marlin-workspace-schema-todo-states
+        display-gerbil-artifact-response
         display-gerbil-compile-response)
 
 (def marlin-loop-graph-artifact-kind "LoopGraph")
+(def marlin-workspace-schema-artifact-kind "WorkspaceSchema")
 
 (def marlin-supported-artifact-kinds
-  (list marlin-loop-graph-artifact-kind))
+  (list marlin-loop-graph-artifact-kind
+        marlin-workspace-schema-artifact-kind))
 
 (def (marlin-supported-artifact-kind? expected)
   (if (member expected marlin-supported-artifact-kinds) #t #f))
@@ -75,6 +83,18 @@ package: marlin
 (def (marlin-loop-graph-edges graph)
   (caddr graph))
 
+(def (make-marlin-workspace-schema schema-id required-properties todo-states)
+  (list schema-id required-properties todo-states))
+
+(def (marlin-workspace-schema-id schema)
+  (car schema))
+
+(def (marlin-workspace-schema-required-properties schema)
+  (cadr schema))
+
+(def (marlin-workspace-schema-todo-states schema)
+  (caddr schema))
+
 (def (display-json-string value)
   (display "\"")
   (let ((value-length (string-length value)))
@@ -96,6 +116,17 @@ package: marlin
   (if value
     (display-json-string value)
     (display "null")))
+
+(def (display-json-string-list values)
+  (display "[")
+  (let loop ((remaining values) (first #t))
+    (if (null? remaining)
+      #t
+      (begin
+        (if first #f (display ","))
+        (display-json-string (car remaining))
+        (loop (cdr remaining) #f))))
+  (display "]"))
 
 (def (display-json-config config)
   (display "{")
@@ -156,7 +187,26 @@ package: marlin
   (display-json-edges (marlin-loop-graph-edges graph))
   (display "}"))
 
-(def (display-gerbil-compile-response graph)
-  (display "{\"artifact\":{\"LoopGraph\":")
-  (display-json-loop-graph graph)
+(def (display-json-workspace-schema schema)
+  (display "{\"schema_id\":")
+  (display-json-string (marlin-workspace-schema-id schema))
+  (display ",\"required_properties\":")
+  (display-json-string-list (marlin-workspace-schema-required-properties schema))
+  (display ",\"todo_states\":")
+  (display-json-string-list (marlin-workspace-schema-todo-states schema))
+  (display "}"))
+
+(def (display-gerbil-artifact-response artifact-kind artifact)
+  (display "{\"artifact\":{")
+  (display-json-string artifact-kind)
+  (display ":")
+  (cond
+    ((equal? artifact-kind marlin-loop-graph-artifact-kind)
+     (display-json-loop-graph artifact))
+    ((equal? artifact-kind marlin-workspace-schema-artifact-kind)
+     (display-json-workspace-schema artifact))
+    (else (error "marlin gerbil protocol cannot serialize artifact kind" artifact-kind)))
   (display "}}"))
+
+(def (display-gerbil-compile-response graph)
+  (display-gerbil-artifact-response marlin-loop-graph-artifact-kind graph))

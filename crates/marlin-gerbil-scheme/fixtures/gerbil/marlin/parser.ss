@@ -5,7 +5,8 @@ package: marlin
 
 (import ./protocol)
 
-(export compile-loop-graph)
+(export compile-loop-graph
+        compile-workspace-schema)
 
 (define (source->form source-text)
   (let ((form (read (open-input-string source-text))))
@@ -103,3 +104,29 @@ package: marlin
                                 (parse-nodes forms)
                                 (parse-edges forms)))
       (error "expected loop-graph form" form))))
+
+(define (atom-list->strings values)
+  (let loop ((remaining values) (strings '()))
+    (if (null? remaining)
+      (reverse strings)
+      (loop (cdr remaining) (cons (atom->string (car remaining)) strings)))))
+
+(define (tagged-values forms tag)
+  (let loop ((remaining forms) (values '()))
+    (cond
+      ((null? remaining) (reverse values))
+      ((form-tag? (car remaining) tag)
+       (loop (cdr remaining)
+             (append (reverse (atom-list->strings (cdar remaining))) values)))
+      (else (loop (cdr remaining) values)))))
+
+(define (compile-workspace-schema source-text)
+  (let ((form (source->form source-text)))
+    (if (and (form-tag? form 'workspace-schema)
+             (pair? (cdr form)))
+      (let ((schema-id (atom->string (cadr form)))
+            (forms (cddr form)))
+        (make-marlin-workspace-schema schema-id
+                                      (tagged-values forms 'required)
+                                      (tagged-values forms 'todo)))
+      (error "expected workspace-schema form" form))))
