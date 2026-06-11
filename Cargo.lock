@@ -428,7 +428,7 @@ checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
 [[package]]
 name = "orgize"
 version = "0.10.0-alpha.10"
-source = "git+https://github.com/tao3k/orgize?branch=main#14c99071283c9a09f0bd58ecd7dc61f17d634f12"
+source = "git+https://github.com/tao3k/orgize?branch=main#f9300d279ceb36e12a8ce3266f4bb3e1081bb007"
 dependencies = [
  "bytecount",
  "cfg-if",
