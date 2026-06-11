@@ -75,8 +75,27 @@ Core fields should stay stable across subscribers:
 | =duration_ms= | elapsed harness execution milliseconds |
 | =diagnostic_count= | number of execution diagnostics |
 | =event_count= | number of runtime events captured in the report |
+| =span_count= | number of trace spans captured in the report |
 
 Additional fields may be added when they describe core agent behavior. High-cardinality payloads require explicit redaction or summarization before they enter tracing.
+
+** Protocol Surface
+
+=marlin-agent-protocol= owns the typed observability identifiers that tests and downstream crates should depend on:
+
+| Type | Meaning |
+|------+---------|
+| =AgentEventTopic= | stable runtime event topic identifier |
+| =AgentSpanName= | stable trace span name identifier |
+| =AgentTraceSpanRecord= | captured trace span record with span name and low-cardinality fields |
+
+Scenario contracts may assert observability through =AgentScenarioStep.expected_event_topics= and =AgentScenarioStep.expected_span_names=. These fields are typed collections, not ad hoc strings.
+
+=marlin-agent-harness= captures runtime events and trace spans into =HarnessExecutionReport=. The report exposes =events=, =trace_spans=, =span_names=, =summary=, =evidence=, and =assertion= so tests can validate both runtime behavior and observability evidence at the same boundary.
+
+=AgentHarness::evaluate_execution_report= validates expected event topics and expected span names against the captured report. Missing topics or span names become diagnostics rather than subscriber-specific failures.
+
+=marlin-agent-runtime::observability= owns the stable span/topic constants and typed helper constructors. Runtime and kernel callsites may use literal span names in =tracing= macros when required by macro syntax, but those literals must match the contract constants and helpers.
 
 ** Ownership
 
@@ -94,4 +113,6 @@ Provider, tool, and model implementation crates may add child spans later, but t
 
 ** Implementation Status
 
-The initial implementation adds =tracing= as a workspace dependency and instruments runtime, kernel adapter, and hook dispatcher boundaries. It also provides a harness-local =TraceRecorder= so scenario tests can capture span names and fields without adopting =tracing-subscriber= or OpenTelemetry as normal dependencies.
+The implementation adds =tracing= as a workspace dependency and instruments runtime, kernel adapter, hook dispatcher, and harness execution boundaries. It provides a harness-local =TraceRecorder= that captures protocol-owned =AgentTraceSpanRecord= values so scenario tests can capture span names and fields without adopting =tracing-subscriber= or OpenTelemetry as normal dependencies.
+
+=marlin-agent-core= re-exports the protocol observability surface, including =AgentEventTopic=, =AgentSpanName=, and =AgentTraceSpanRecord=, so downstream users can stay on the facade crate while the modular ownership remains explicit.

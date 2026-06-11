@@ -3,7 +3,8 @@
 use std::collections::BTreeSet;
 
 use marlin_agent_protocol::{
-    AgentEvent, AgentEventTopic, AgentScenario, AgentSpanName, LoopEvidence, LoopEvidenceKind,
+    AgentEvent, AgentEventTopic, AgentScenario, AgentScenarioContract, AgentSpanName, LoopEvidence,
+    LoopEvidenceKind,
 };
 
 use crate::runtime::HarnessExecutionReport;
@@ -33,6 +34,15 @@ impl AgentHarness {
         evidence: &[LoopEvidence],
     ) -> AgentHarnessReport {
         Self::evaluate_with_span_names(scenario, events, evidence, &BTreeSet::new())
+    }
+
+    pub fn evaluate_contract(
+        contract: &AgentScenarioContract,
+        events: &[AgentEvent],
+        evidence: &[LoopEvidence],
+    ) -> AgentHarnessReport {
+        let report = Self::evaluate(&contract.scenario, events, evidence);
+        append_contract_schema_diagnostic(contract, report)
     }
 
     fn evaluate_with_span_names(
@@ -74,6 +84,31 @@ impl AgentHarness {
 
         Self::evaluate_with_span_names(scenario, &report.events, &report.evidence, &span_names)
     }
+
+    pub fn evaluate_contract_execution_report(
+        contract: &AgentScenarioContract,
+        report: &HarnessExecutionReport,
+    ) -> AgentHarnessReport {
+        let report = Self::evaluate_execution_report(&contract.scenario, report);
+        append_contract_schema_diagnostic(contract, report)
+    }
+}
+
+fn append_contract_schema_diagnostic(
+    contract: &AgentScenarioContract,
+    mut report: AgentHarnessReport,
+) -> AgentHarnessReport {
+    if !contract.is_supported_schema() {
+        report.diagnostics.insert(
+            0,
+            format!(
+                "unsupported scenario contract schema `{}`",
+                contract.schema_id
+            ),
+        );
+    }
+
+    report
 }
 
 fn missing_evidence_diagnostics(

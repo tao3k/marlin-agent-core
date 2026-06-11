@@ -1,2 +1,2 @@
-#[path = "unit/harness.rs"]
+#[path = "unit/harness/mod.rs"]
 mod harness;

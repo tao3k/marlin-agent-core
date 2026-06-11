@@ -1,145 +1,21 @@
 use std::sync::Arc;
 
 use marlin_agent_harness::{
-    AgentHarness, HarnessExecutionReport, HarnessGraphBuilder, HarnessRuntime, StaticHookRuntime,
+    AgentHarness, HarnessExecutionReport, HarnessGraphBuilder, HarnessRuntime,
 };
 use marlin_agent_hooks::{HookDispatcher, HookInvocation, HookRegistration, HookRegistry};
 use marlin_agent_kernel::{
-    GraphLoopExecutionRequest, GraphLoopExecutionStatus, GraphNodeExecutionReceipt,
-    GraphNodeExecutor, GraphNodeInvocation, ProviderNodeAdapter, SubAgentNodeAdapter,
-    TokioGraphLoopKernel, ToolNodeAdapter,
+    GraphLoopExecutionRequest, GraphLoopExecutionStatus, GraphNodeInvocation, ProviderNodeAdapter,
+    SubAgentNodeAdapter, TokioGraphLoopKernel, ToolNodeAdapter,
 };
 use marlin_agent_protocol::{
-    AgentEvent, AgentScenario, AgentScenarioStep, HookEventName, HookHandlerType, HookRunStatus,
-    HookRunSummary, LoopEvidence, LoopEvidenceKind, RuntimeHome,
+    AgentScenario, AgentScenarioStep, HookEventName, HookHandlerType, HookRunSummary, LoopEvidence,
+    LoopEvidenceKind, RuntimeHome,
 };
 use marlin_agent_runtime::{
     HookRuntime, ProviderRuntime, RuntimeContext, RuntimeEnvironment, RuntimeEvent, RuntimeFuture,
-    SubAgentRuntime, TokioAgentRuntime, ToolRuntime, observability,
+    SubAgentRuntime, ToolRuntime, observability,
 };
-
-#[test]
-fn harness_accepts_present_evidence_and_event_topics() {
-    let scenario = AgentScenario::new("loop")
-        .with_step(
-            AgentScenarioStep::new("run")
-                .expecting_event_topic(observability::TOPIC_KERNEL_EXECUTION),
-        )
-        .expecting_evidence(LoopEvidenceKind::Runtime);
-    let events = vec![AgentEvent::new(
-        observability::TOPIC_KERNEL_EXECUTION,
-        "run started",
-    )];
-    let evidence = vec![LoopEvidence::present(LoopEvidenceKind::Runtime, "tokio")];
-
-    let report = AgentHarness::evaluate(&scenario, &events, &evidence);
-
-    assert!(report.is_success());
-    assert_eq!(report.scenario_id, "loop");
-}
-
-#[test]
-fn harness_reports_missing_evidence_and_event_topics() {
-    let scenario = AgentScenario::new("loop")
-        .with_step(
-            AgentScenarioStep::new("run")
-                .expecting_event_topic(observability::TOPIC_KERNEL_EXECUTION)
-                .expecting_span_name(observability::SPAN_HARNESS_EXECUTION),
-        )
-        .expecting_evidence(LoopEvidenceKind::Runtime);
-
-    let report = AgentHarness::evaluate(&scenario, &[], &[]);
-
-    assert_eq!(
-        report.diagnostics,
-        vec![
-            "missing expected evidence `Runtime`",
-            "missing expected event topic `kernel.execution` for step run",
-            "missing expected span `harness.execution` for step run",
-        ]
-    );
-}
-
-#[tokio::test]
-async fn static_hook_runtime_returns_configured_summary() {
-    let summary = HookRunSummary::running(
-        "hook-1",
-        HookEventName::PreToolUse,
-        HookHandlerType::Command,
-    )
-    .completed();
-    let hook = Arc::new(StaticHookRuntime::<(), HookRunSummary>::new(
-        summary.clone(),
-    ));
-    let (runtime, _events) = TokioAgentRuntime::new(4);
-
-    let output = runtime
-        .spawn_hook(hook, ())
-        .join()
-        .await
-        .expect("hook task should finish");
-
-    assert_eq!(output.status, HookRunStatus::Completed);
-    assert_eq!(output, summary);
-}
-
-#[tokio::test]
-async fn harness_runtime_preserves_custom_environment_for_hooks_and_sub_agents() {
-    let parent_environment = RuntimeEnvironment::default()
-        .with_home(RuntimeHome::custom("/tmp/marlin-home").with_profile("main"))
-        .with_cwd("/tmp/workspace");
-    let child_environment = RuntimeEnvironment::default()
-        .with_home(RuntimeHome::custom("/tmp/marlin-home/sub/reviewer").with_profile("reviewer"))
-        .with_cwd("/tmp/workspace/sub");
-    let harness = HarnessRuntime::with_environment(4, parent_environment.clone());
-
-    let hook_environment = harness
-        .runtime()
-        .spawn_hook(Arc::new(EnvironmentEchoHook), "pre-tool".to_owned())
-        .join()
-        .await
-        .expect("hook task should finish");
-    let sub_agent_environment = harness
-        .runtime()
-        .spawn_sub_agent_with_environment(
-            Arc::new(EnvironmentEchoSubAgent),
-            (),
-            child_environment.clone(),
-        )
-        .join()
-        .await
-        .expect("sub-agent task should finish");
-
-    assert_eq!(harness.environment(), &parent_environment);
-    assert_eq!(hook_environment, parent_environment);
-    assert_eq!(sub_agent_environment, child_environment);
-}
-
-#[tokio::test]
-async fn harness_execution_report_captures_runtime_events() {
-    let scenario = AgentScenario::new("eventful")
-        .with_step(AgentScenarioStep::new("run").expecting_event_topic("test.harness"));
-    let graph = HarnessGraphBuilder::new("graph")
-        .node("node-1", "eventful")
-        .build();
-    let request = GraphLoopExecutionRequest::new("run", graph);
-    let kernel =
-        TokioGraphLoopKernel::new("run", "graph").with_executor("eventful", EventfulExecutor);
-    let mut harness = HarnessRuntime::new(16);
-
-    let report = harness.execute_graph(&scenario, &kernel, request).await;
-    let evaluated = AgentHarness::evaluate_execution_report(&scenario, &report);
-
-    assert_eq!(report.result.status, GraphLoopExecutionStatus::Completed);
-    assert!(report.assertion.is_none());
-    assert!(
-        report
-            .events
-            .iter()
-            .any(|event| event.topic == "test.harness" && event.message == "node node-1 observed")
-    );
-    assert!(evaluated.is_success());
-}
 
 #[tokio::test]
 async fn harness_runs_provider_tool_sub_agent_scenario_with_hooks_and_environment() {
@@ -323,64 +199,6 @@ fn assert_agent_core_trace_spans(report: &HarnessExecutionReport) {
         .expect("expected duration_ms field")
         .parse::<u64>()
         .expect("duration_ms field should be numeric");
-}
-
-#[derive(Clone, Debug)]
-struct EnvironmentEchoHook;
-
-impl HookRuntime for EnvironmentEchoHook {
-    type Request = String;
-    type Output = RuntimeEnvironment;
-
-    fn run_hook(
-        &self,
-        _request: Self::Request,
-        context: RuntimeContext,
-    ) -> RuntimeFuture<Self::Output> {
-        let environment = context.environment().clone();
-        Box::pin(async move { environment })
-    }
-}
-
-#[derive(Clone, Debug)]
-struct EnvironmentEchoSubAgent;
-
-impl SubAgentRuntime for EnvironmentEchoSubAgent {
-    type Input = ();
-    type Output = RuntimeEnvironment;
-
-    fn run_sub_agent(
-        &self,
-        _input: Self::Input,
-        context: RuntimeContext,
-    ) -> RuntimeFuture<Self::Output> {
-        let environment = context.environment().clone();
-        Box::pin(async move { environment })
-    }
-}
-
-#[derive(Clone, Debug)]
-struct EventfulExecutor;
-
-impl GraphNodeExecutor for EventfulExecutor {
-    fn execute_node(
-        &self,
-        invocation: GraphNodeInvocation,
-        context: RuntimeContext,
-    ) -> RuntimeFuture<GraphNodeExecutionReceipt> {
-        Box::pin(async move {
-            let node_id = invocation.node_id;
-            let executor = invocation.executor;
-            context
-                .emit(RuntimeEvent::new(
-                    "test.harness",
-                    format!("node {} observed", node_id.as_str()),
-                ))
-                .await
-                .expect("harness event should be emitted");
-            GraphNodeExecutionReceipt::completed(node_id, executor)
-        })
-    }
 }
 
 fn e2e_hook_dispatcher() -> HookDispatcher {

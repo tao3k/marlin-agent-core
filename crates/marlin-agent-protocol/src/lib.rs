@@ -25,6 +25,8 @@ pub use runtime_environment::{
     RuntimeConfigLayer, RuntimeConfigLayerSource, RuntimeEnvironment, RuntimeHome,
     RuntimeHomeSource, RuntimeSandboxPolicy,
 };
-pub use scenario::{AgentScenario, AgentScenarioStep};
+pub use scenario::{
+    AGENT_SCENARIO_CONTRACT_SCHEMA_ID, AgentScenario, AgentScenarioContract, AgentScenarioStep,
+};
 pub use sub_agent::{SubAgentActivity, SubAgentActivityKind, SubAgentSource};
 pub use trace::{AgentSpanName, AgentTraceSpanRecord};

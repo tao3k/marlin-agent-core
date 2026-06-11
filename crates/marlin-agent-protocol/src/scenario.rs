@@ -6,12 +6,42 @@ use serde::{Deserialize, Serialize};
 
 use crate::{AgentEventTopic, AgentSpanName, LoopEvidenceKind};
 
+/// Stable schema id for serialized agent scenario contracts.
+pub const AGENT_SCENARIO_CONTRACT_SCHEMA_ID: &str = "marlin.agent.scenario.v1";
+
+/// Serializable fixture/document contract carrying one agent scenario.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct AgentScenarioContract {
+    #[serde(default = "default_agent_scenario_contract_schema_id")]
+    pub schema_id: String,
+    pub scenario: AgentScenario,
+}
+
+impl AgentScenarioContract {
+    pub fn new(scenario: AgentScenario) -> Self {
+        Self {
+            schema_id: AGENT_SCENARIO_CONTRACT_SCHEMA_ID.to_owned(),
+            scenario,
+        }
+    }
+
+    pub fn is_supported_schema(&self) -> bool {
+        self.schema_id == AGENT_SCENARIO_CONTRACT_SCHEMA_ID
+    }
+
+    pub fn into_scenario(self) -> AgentScenario {
+        self.scenario
+    }
+}
+
 /// Declarative scenario consumed by the agent harness.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct AgentScenario {
     pub id: String,
     pub description: Option<String>,
+    #[serde(default)]
     pub steps: Vec<AgentScenarioStep>,
+    #[serde(default)]
     pub expected_evidence: Vec<LoopEvidenceKind>,
 }
 
@@ -45,8 +75,11 @@ impl AgentScenario {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct AgentScenarioStep {
     pub name: String,
+    #[serde(default)]
     pub input: BTreeMap<String, String>,
+    #[serde(default)]
     pub expected_event_topics: Vec<AgentEventTopic>,
+    #[serde(default)]
     pub expected_span_names: Vec<AgentSpanName>,
 }
 
@@ -74,4 +107,8 @@ impl AgentScenarioStep {
         self.expected_span_names.push(span_name.into());
         self
     }
+}
+
+fn default_agent_scenario_contract_schema_id() -> String {
+    AGENT_SCENARIO_CONTRACT_SCHEMA_ID.to_owned()
 }
