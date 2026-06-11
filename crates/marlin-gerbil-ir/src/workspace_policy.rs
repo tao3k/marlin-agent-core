@@ -1,5 +1,8 @@
 //! Workspace policy `IR` emitted by the `Gerbil` control plane.
 
+use marlin_org_model::{
+    OrgContractRegistry, OrgContractResolutionReport, OrgContractValidationReport,
+};
 use marlin_workspace_patch::WorkspacePatch;
 use marlin_workspace_view::WorkspaceViewSpec;
 use serde::{Deserialize, Serialize};
@@ -41,4 +44,12 @@ pub struct WorkspacePatchIntentSpec {
     pub intent_id: String,
     pub patch: WorkspacePatch,
     pub dry_run_first: bool,
+}
+
+/// Parser-owned workspace contract facts made available to the `Gerbil` control plane.
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub struct GerbilWorkspaceContractFacts {
+    pub registry: OrgContractRegistry,
+    pub resolutions: OrgContractResolutionReport,
+    pub validations: OrgContractValidationReport,
 }

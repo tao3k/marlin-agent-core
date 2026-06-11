@@ -10,7 +10,7 @@ use marlin_org_workspace::{OrgDocument, OrgDocumentLoader};
 use marlin_workspace_patch::{AffectedNodeSource, ValidationDiagnostic, WorkspacePatch};
 use serde::{Deserialize, Serialize};
 
-use crate::gerbil_intent::{GerbilWorkspacePatchIntentCommit, validate_intent};
+use crate::gerbil_intent::{GerbilWorkspacePatchIntentCommit, validate_intent_with_contract_facts};
 use crate::patch_ops::workspace_patch_op_node;
 
 /// Request to apply a typed workspace patch to one durable `Org` document.
@@ -52,7 +52,8 @@ impl OrgWorkspaceSourceCommitter {
         store: &mut S,
         request: &GerbilWorkspacePatchIntentCommit,
     ) -> OrgWorkspaceSourceCommitReceipt {
-        let validation = validate_intent(&request.intent);
+        let validation =
+            validate_intent_with_contract_facts(&request.intent, request.contract_facts.as_ref());
         if !validation.accepted {
             return blocked_validation_receipt(validation.diagnostics);
         }

@@ -1,8 +1,8 @@
 //! Dry-run workflow for Gerbil-emitted workspace patch intents.
 
 use marlin_agent_protocol::{LoopEvidence, LoopEvidenceKind};
-use marlin_gerbil_ir::WorkspacePatchIntentSpec;
-use marlin_org_model::OrgNodeId;
+use marlin_gerbil_ir::{GerbilWorkspaceContractFacts, WorkspacePatchIntentSpec};
+use marlin_org_model::{OrgContractDiagnosticSeverity, OrgContractValidationStatus, OrgNodeId};
 use marlin_org_store::OrgSourceWritePolicy;
 use marlin_workspace_patch::{
     MemoryDispatchReceipt, PatchId, ValidationDiagnostic, ValidationSeverity,
@@ -44,7 +44,21 @@ pub struct GerbilWorkspacePatchIntentDryRunner;
 
 impl GerbilWorkspacePatchIntentDryRunner {
     pub fn dry_run(intent: &WorkspacePatchIntentSpec) -> WorkspacePatchReceipt {
-        let validation = validate_intent(intent);
+        Self::dry_run_with_optional_contract_facts(intent, None)
+    }
+
+    pub fn dry_run_with_contract_facts(
+        intent: &WorkspacePatchIntentSpec,
+        contract_facts: &GerbilWorkspaceContractFacts,
+    ) -> WorkspacePatchReceipt {
+        Self::dry_run_with_optional_contract_facts(intent, Some(contract_facts))
+    }
+
+    fn dry_run_with_optional_contract_facts(
+        intent: &WorkspacePatchIntentSpec,
+        contract_facts: Option<&GerbilWorkspaceContractFacts>,
+    ) -> WorkspacePatchReceipt {
+        let validation = validate_intent_with_contract_facts(intent, contract_facts);
         let accepted = validation.accepted;
 
         WorkspacePatchReceipt {
@@ -83,6 +97,8 @@ pub struct GerbilWorkspacePatchIntentCommit {
     pub document: String,
     pub intent: WorkspacePatchIntentSpec,
     pub policy: OrgSourceWritePolicy,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub contract_facts: Option<GerbilWorkspaceContractFacts>,
 }
 
 impl GerbilWorkspacePatchIntentCommit {
@@ -95,23 +111,85 @@ impl GerbilWorkspacePatchIntentCommit {
             document: document.into(),
             intent,
             policy,
+            contract_facts: None,
         }
+    }
+
+    pub fn with_contract_facts(mut self, contract_facts: GerbilWorkspaceContractFacts) -> Self {
+        self.contract_facts = Some(contract_facts);
+        self
     }
 }
 
-pub(crate) fn validate_intent(intent: &WorkspacePatchIntentSpec) -> WorkspaceValidationReport {
-    if intent.dry_run_first {
-        WorkspaceValidationReport::accepted()
-    } else {
-        WorkspaceValidationReport {
-            accepted: false,
-            diagnostics: vec![ValidationDiagnostic {
-                severity: ValidationSeverity::Error,
-                message: "gerbil workspace patch intent requires dry_run_first before workflow consumption"
+pub(crate) fn validate_intent_with_contract_facts(
+    intent: &WorkspacePatchIntentSpec,
+    contract_facts: Option<&GerbilWorkspaceContractFacts>,
+) -> WorkspaceValidationReport {
+    let mut diagnostics = Vec::new();
+
+    if !intent.dry_run_first {
+        diagnostics.push(ValidationDiagnostic {
+            severity: ValidationSeverity::Error,
+            message:
+                "gerbil workspace patch intent requires dry_run_first before workflow consumption"
                     .to_owned(),
-            }],
-        }
+        });
     }
+
+    if let Some(contract_facts) = contract_facts {
+        diagnostics.extend(contract_fact_diagnostics(contract_facts));
+    }
+
+    WorkspaceValidationReport {
+        accepted: diagnostics.is_empty(),
+        diagnostics,
+    }
+}
+
+fn contract_fact_diagnostics(
+    contract_facts: &GerbilWorkspaceContractFacts,
+) -> Vec<ValidationDiagnostic> {
+    let resolution_errors = contract_facts
+        .resolutions
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.severity == OrgContractDiagnosticSeverity::Error)
+        .map(|diagnostic| ValidationDiagnostic {
+            severity: ValidationSeverity::Error,
+            message: format!("org contract resolution failed: {}", diagnostic.message),
+        });
+    let validation_errors = contract_facts
+        .validations
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.severity == OrgContractDiagnosticSeverity::Error)
+        .map(|diagnostic| ValidationDiagnostic {
+            severity: ValidationSeverity::Error,
+            message: format!("org contract validation failed: {}", diagnostic.message),
+        });
+    let failed_assertions = contract_facts
+        .validations
+        .receipts
+        .iter()
+        .filter(|receipt| receipt.status == OrgContractValidationStatus::Failed)
+        .map(|receipt| ValidationDiagnostic {
+            severity: ValidationSeverity::Error,
+            message: format!(
+                "org contract assertion failed: {}#{}{}",
+                receipt.contract_id.as_str(),
+                receipt.assertion_id,
+                receipt
+                    .message
+                    .as_ref()
+                    .map(|message| format!(": {message}"))
+                    .unwrap_or_default()
+            ),
+        });
+
+    resolution_errors
+        .chain(validation_errors)
+        .chain(failed_assertions)
+        .collect()
 }
 
 fn affected_nodes(intent: &WorkspacePatchIntentSpec) -> Vec<OrgNodeId> {

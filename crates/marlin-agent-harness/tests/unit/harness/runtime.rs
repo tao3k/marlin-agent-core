@@ -1,7 +1,11 @@
-use std::{sync::Arc, time::Duration};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 use marlin_agent_harness::{
-    AgentHarness, HarnessGraphBuilder, HarnessPerformanceBudget, HarnessRuntime, StaticHookRuntime,
+    AgentHarness, HarnessGraphBuilder, HarnessRuntime, StaticHookRuntime,
     runtime_environment_visibility_evidence,
 };
 use marlin_agent_kernel::{
@@ -15,6 +19,11 @@ use marlin_agent_protocol::{
 use marlin_agent_runtime::{
     HookRuntime, RuntimeContext, RuntimeEnvironment, RuntimeEvent, RuntimeFuture, SubAgentRuntime,
     TokioAgentRuntime, observability,
+};
+use rust_lang_project_harness::{
+    RustHarnessConfig, RustVerificationPhase, RustVerificationPolicy, RustVerificationProfileHint,
+    RustVerificationTaskKind, RustVerificationTaskState, build_rust_verification_performance_index,
+    plan_rust_project_verification_with_config, render_rust_verification_performance_index,
 };
 
 #[tokio::test]
@@ -119,70 +128,53 @@ async fn harness_execution_report_captures_runtime_events() {
     assert!(evaluated.is_success());
 }
 
-#[tokio::test]
-async fn harness_performance_budget_accepts_execution_report_summary() {
-    let scenario = AgentScenario::new("budget-ok")
-        .with_step(AgentScenarioStep::new("run").expecting_event_topic("test.harness"))
-        .expecting_evidence(LoopEvidenceKind::Budget);
-    let graph = HarnessGraphBuilder::new("graph")
-        .node("node-1", "eventful")
-        .build();
-    let request = GraphLoopExecutionRequest::new("run-budget-ok", graph);
-    let kernel = TokioGraphLoopKernel::new("run-budget-ok", "graph")
-        .with_executor("eventful", EventfulExecutor);
-    let mut harness = HarnessRuntime::new(16);
+#[test]
+fn harness_uses_rust_project_harness_performance_verification_index() {
+    let owner_path = PathBuf::from("src/runtime.rs");
+    let profile_hint = RustVerificationProfileHint {
+        owner_path: owner_path.clone(),
+        responsibilities: BTreeSet::new(),
+        task_kinds: Some(BTreeSet::from([RustVerificationTaskKind::Performance])),
+        task_contract_overrides: BTreeMap::new(),
+        rationale: Some("harness runtime owns execution-report performance evidence".to_owned()),
+    };
+    let config = RustHarnessConfig {
+        verification_policy: RustVerificationPolicy::default().with_profile_hint(profile_hint),
+        ..Default::default()
+    };
+    let plan =
+        plan_rust_project_verification_with_config(Path::new(env!("CARGO_MANIFEST_DIR")), &config)
+            .expect("rust harness verification plan should build");
+    let index = build_rust_verification_performance_index(&plan);
+    let rendered = render_rust_verification_performance_index(&index);
+    let records = index.records_for_owner(&owner_path);
 
-    let report = harness.execute_graph(&scenario, &kernel, request).await;
-    let performance = HarnessPerformanceBudget::new()
-        .with_max_duration(Duration::from_secs(60))
-        .with_max_event_count(report.summary.event_count)
-        .with_max_span_count(report.summary.span_count)
-        .with_max_diagnostic_count(report.summary.diagnostic_count)
-        .evaluate_report(&report);
-    let evidence = performance.evidence();
-    harness.record_evidence(evidence.clone());
-    let evaluated = AgentHarness::evaluate(&scenario, &report.events, harness.evidence());
-
-    assert!(performance.is_success());
-    assert!(evidence.present);
-    assert_eq!(evidence.kind, LoopEvidenceKind::Budget);
-    assert_eq!(evidence.subject, "harness-performance");
-    assert!(evaluated.is_success());
-}
-
-#[tokio::test]
-async fn harness_performance_budget_reports_exceeded_limits() {
-    let scenario = AgentScenario::new("budget-fail");
-    let graph = HarnessGraphBuilder::new("graph")
-        .node("node-1", "eventful")
-        .build();
-    let request = GraphLoopExecutionRequest::new("run-budget-fail", graph);
-    let kernel = TokioGraphLoopKernel::new("run-budget-fail", "graph")
-        .with_executor("eventful", EventfulExecutor);
-    let mut harness = HarnessRuntime::new(16);
-
-    let report = harness.execute_graph(&scenario, &kernel, request).await;
-    let performance = HarnessPerformanceBudget::new()
-        .with_max_event_count(0)
-        .with_max_span_count(0)
-        .evaluate_report(&report);
-    let evidence = performance.evidence();
-
-    assert!(!performance.is_success());
-    assert!(!evidence.present);
-    assert_eq!(evidence.kind, LoopEvidenceKind::Budget);
+    assert!(!index.is_empty());
+    assert!(plan.tasks.iter().any(|task| {
+        task.kind == RustVerificationTaskKind::Performance
+            && task.state == RustVerificationTaskState::Pending
+            && task.phase == RustVerificationPhase::AfterUnitTestsPass
+    }));
     assert!(
-        performance
-            .diagnostics
+        plan.report_obligations
             .iter()
-            .any(|diagnostic| diagnostic.contains("event_count"))
+            .any(|obligation| obligation.key == "performance_index_json")
+    );
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].state, RustVerificationTaskState::Pending);
+    assert!(
+        records[0]
+            .required_evidence_keys
+            .iter()
+            .any(|key| key == "benchmark_command")
     );
     assert!(
-        performance
-            .diagnostics
+        records[0]
+            .required_evidence_keys
             .iter()
-            .any(|diagnostic| diagnostic.contains("span_count"))
+            .any(|key| key == "latency_or_throughput")
     );
+    assert!(rendered.contains("[perf-state]"));
 }
 
 #[tokio::test]

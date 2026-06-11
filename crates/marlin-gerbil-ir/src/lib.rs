@@ -5,6 +5,6 @@ mod workspace_policy;
 
 pub use loop_graph::{CompiledLoopGraph, LoopEdgeSpec, LoopNodeSpec};
 pub use workspace_policy::{
-    MemoryDispatchPolicySpec, WorkspacePatchIntentSpec, WorkspaceSchemaSpec,
-    WorkspaceValidationPolicySpec, WorkspaceViewPolicySpec,
+    GerbilWorkspaceContractFacts, MemoryDispatchPolicySpec, WorkspacePatchIntentSpec,
+    WorkspaceSchemaSpec, WorkspaceValidationPolicySpec, WorkspaceViewPolicySpec,
 };

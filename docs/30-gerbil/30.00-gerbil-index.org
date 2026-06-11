@@ -1,7 +1,7 @@
 #+TITLE: 30.00 Gerbil Index
 #+FILETAGS: :marlin:gerbil:johnny_decimal:
 
-* 30.00 Gerbil Index
+30.00 Gerbil Index
 :PROPERTIES:
 :ID: docs-30-00-gerbil-index
 :KIND: docs_index
@@ -9,8 +9,15 @@
 :END:
 
 ** Documents
-- [[file:30.10-gerbil-control-plane.org][30.10 Gerbil Control Plane]]
-- [[file:30.20-gerbil-upstream-audit.org][30.20 Gerbil Upstream Audit]]
-- [[file:30.30-gerbil-command-adapter.org][30.30 Gerbil Command Adapter]]
-- [[file:30.40-gerbil-runtime-smoke.org][30.40 Gerbil Runtime Smoke]]
-- [[file:30.50-gerbil-bindings-reference.org][30.50 Gerbil Bindings Reference]]
+
+[[file:30.10-gerbil-control-plane.org][30.10 Gerbil Control Plane]]
+
+[[file:30.20-gerbil-upstream-audit.org][30.20 Gerbil Upstream Audit]]
+
+[[file:30.30-gerbil-command-adapter.org][30.30 Gerbil Command Adapter]]
+
+[[file:30.40-gerbil-runtime-smoke.org][30.40 Gerbil Runtime Smoke]]
+
+[[file:30.50-gerbil-bindings-reference.org][30.50 Gerbil Bindings Reference]]
+
+[[file:30.60-gerbil-gates.org][30.60 Gerbil Gates]]

@@ -1,0 +1,73 @@
+#+TITLE: 30.60 Gerbil Gates
+#+FILETAGS: :marlin:gerbil:gates:
+
+30.60 Gerbil Gates
+:PROPERTIES:
+:ID: docs-30-60-gerbil-gates
+:KIND: runbook
+:STATUS: active
+:END:
+
+** Default CI Gate
+
+The default gate must not require a local Gerbil installation. It proves the
+Rust API surface, package contents, examples, and workflow handoff while leaving
+real =gxi= execution behind ignored tests.
+
+#+begin_src sh
+direnv exec . cargo fmt -p marlin-gerbil-scheme --check
+direnv exec . cargo test -p marlin-gerbil-scheme
+direnv exec . cargo test -p marlin-org-workflow
+direnv exec . cargo check -p marlin-gerbil-scheme --examples
+direnv exec . cargo package -p marlin-gerbil-scheme --list --allow-dirty
+asp rust check --changed .
+#+end_src
+
+Expected outcome:
+
+- =marlin-gerbil-scheme= unit tests pass with real =gxi= tests ignored.
+- =marlin-org-workflow= proves dry-run, policy-gated commit, and missing-document rejection.
+- Example binaries type-check.
+- The package list includes =README.md=, both Rust examples, the Gerbil =.ss=
+  examples, and the crate-owned =fixtures/gerbil= runtime assets.
+
+** Local Real-GXI Gate
+
+Run this gate on machines with Gerbil installed. The crate discovers =gxi=
+through =MARLIN_GERBIL_GXI= first, then falls back to the Homebrew
+=gerbil-scheme= path.
+
+#+begin_src sh
+direnv exec . cargo run -p marlin-gerbil-scheme --example workspace-patch-intent
+direnv exec . cargo run -p marlin-gerbil-scheme --example workspace-patch-intent-workflow
+direnv exec . cargo test -p marlin-gerbil-scheme command::real_gxi -- --ignored --nocapture
+#+end_src
+
+Expected outcome:
+
+- =workspace-patch-intent= prints =compiled intent:memory=, =dry_run_first true=,
+  and =ops 3=.
+- =workspace-patch-intent-workflow= reads
+  =examples/workspace-patch-intent-source.ss=, compiles it through real =gxi=,
+  and prints =workflow_accepted true= plus =evidence_present true=.
+- The ignored =command::real_gxi= suite covers the module entrypoint, launcher
+  file, user-facing =.ss= example, source-file compilation, workflow dry-run,
+  policy-gated commit, and negative parser/artifact cases.
+
+** Distribution Boundary
+
+The crate is currently an internal workspace crate, not an independently
+published crates.io package. Its manifest uses =publish = false= while the
+workspace dependency graph is still path-owned.
+
+#+begin_src sh
+direnv exec . cargo package -p marlin-gerbil-scheme --list --allow-dirty
+#+end_src
+
+This gate audits the distributable crate contents without asking Cargo to
+resolve unpublished workspace-internal crates from the registry.
+
+External publishing is a separate release task. Before enabling it, publish or
+otherwise provide the internal dependency chain first, including
+=marlin-agent-protocol= and the Gerbil/workspace protocol crates that
+=marlin-gerbil-scheme= depends on.

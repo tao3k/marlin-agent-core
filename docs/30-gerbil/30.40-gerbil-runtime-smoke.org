@@ -195,6 +195,16 @@ crate-owned Gerbil runtime assets to a temporary loadpath, constructs a
 cargo run -p marlin-gerbil-scheme --example workspace-patch-intent
 #+end_src
 
+=examples/workspace-patch-intent-source.ss= is the source-file form consumed by
+the workflow example. =examples/workspace-patch-intent-workflow.rs= reads that
+=.ss= file, compiles it through the crate-owned runtime binding, feeds the
+decoded =WorkspacePatchIntent= into =GerbilWorkspacePatchIntentDryRunner=, and
+prints the workflow receipt/evidence summary.
+
+#+begin_src sh
+cargo run -p marlin-gerbil-scheme --example workspace-patch-intent-workflow
+#+end_src
+
 The package audit must include both examples and the Gerbil runtime assets:
 
 #+begin_src sh
@@ -208,3 +218,6 @@ direnv exec . cargo test -p marlin-gerbil-scheme command::real_gxi -- --ignored 
 #+end_src
 
 The tests are ignored by default because they require a local Gerbil installation.
+
+The maintained gate ladder is recorded in
+[[file:30.60-gerbil-gates.org][30.60 Gerbil Gates]].

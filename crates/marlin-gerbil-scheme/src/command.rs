@@ -7,9 +7,7 @@ use crate::{
         write_gerbil_runtime_assets,
     },
 };
-use marlin_org_model::{
-    OrgContractRegistry, OrgContractResolutionReport, OrgContractValidationReport,
-};
+use marlin_gerbil_ir::GerbilWorkspaceContractFacts;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::BTreeMap,
@@ -30,14 +28,6 @@ pub struct GerbilCompileRequest {
     pub expected: GerbilArtifactKind,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub contract_facts: Option<GerbilWorkspaceContractFacts>,
-}
-
-/// Workspace contract facts made available to a `Gerbil` control plane.
-#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
-pub struct GerbilWorkspaceContractFacts {
-    pub registry: OrgContractRegistry,
-    pub resolutions: OrgContractResolutionReport,
-    pub validations: OrgContractValidationReport,
 }
 
 /// JSON response read from an external `Gerbil` compiler process on stdout.

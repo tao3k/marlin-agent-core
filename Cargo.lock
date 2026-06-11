@@ -244,6 +244,7 @@ dependencies = [
 name = "marlin-gerbil-ir"
 version = "0.1.0"
 dependencies = [
+ "marlin-org-model",
  "marlin-workspace-patch",
  "marlin-workspace-view",
  "rust-lang-project-harness 0.1.0 (git+https://github.com/tao3k/rust-lang-project-harness?branch=main)",

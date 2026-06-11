@@ -7,6 +7,7 @@ repository.workspace = true
 description = "Gerbil Scheme runtime bindings for typed Marlin artifacts."
 license = "Apache-2.0"
 readme = "README.md"
+publish = false
 
 [dependencies]
 marlin-agent-protocol.workspace = true

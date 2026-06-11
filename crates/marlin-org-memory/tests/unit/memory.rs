@@ -75,6 +75,10 @@ fn memory_workspace_loads_document_for_query_and_view() {
         key: "STATUS".to_string(),
         value: "active".to_string(),
     });
+    patch.ops.push(WorkspacePatchOp::MarkMemoryCandidate {
+        node: ids[0].clone(),
+        dispatch: "semantic-long-term".to_string(),
+    });
     let receipt =
         futures_executor::block_on(workspace.patch(patch, WorkspaceCtx::new("unit-test")))
             .expect("patch succeeds");
@@ -92,7 +96,17 @@ fn memory_workspace_loads_document_for_query_and_view() {
         patch_status.affected_source_documents,
         vec!["doc:goal".to_string()]
     );
+    assert_eq!(patch_status.execution_mode, PatchExecutionMode::Commit);
+    assert!(patch_status.policy_accepted);
+    assert_eq!(
+        patch_status.policy_reason.as_deref(),
+        Some("in-memory workspace patch applied")
+    );
     assert!(patch_status.validation_accepted);
+    assert_eq!(patch_status.validation_diagnostics, 0);
+    assert_eq!(patch_status.memory_dispatches, 1);
+    assert_eq!(patch_status.memory_dispatch_accepted, 1);
+    assert_eq!(patch_status.memory_dispatch_failed, 0);
 }
 
 #[test]

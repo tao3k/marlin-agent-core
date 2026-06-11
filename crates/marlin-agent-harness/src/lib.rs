@@ -4,7 +4,6 @@ mod assertion;
 mod evidence;
 mod fakes;
 mod graph;
-mod performance;
 mod runtime;
 mod trace;
 
@@ -14,9 +13,6 @@ pub use fakes::{
     StaticHookRuntime, StaticProviderRuntime, StaticSubAgentRuntime, StaticToolRuntime,
 };
 pub use graph::HarnessGraphBuilder;
-pub use performance::{
-    HarnessPerformanceBudget, HarnessPerformanceMeasurements, HarnessPerformanceReport,
-};
 pub use runtime::{
     HarnessExecutionReport, HarnessRuntime, runtime_environment_visibility_evidence,
 };

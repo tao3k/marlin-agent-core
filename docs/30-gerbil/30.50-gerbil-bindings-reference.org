@@ -81,3 +81,8 @@ the smoke test.
   boundary stabilizes.
 - Only introduce native =.scm/.ssi= FFI bindings after the command protocol and
   typed IR have stabilized.
+- Keep the default CI gate free of local =gxi= requirements. The real runtime
+  gate is documented separately in
+  [[file:30.60-gerbil-gates.org][30.60 Gerbil Gates]] so binding work can move
+  forward without making ordinary workspace checks depend on a machine-local
+  Gerbil installation.
