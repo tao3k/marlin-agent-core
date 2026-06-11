@@ -2,7 +2,8 @@
 
 use async_trait::async_trait;
 use marlin_org_model::{
-    CheckboxState, LinkKind, OrgCheckbox, OrgLink, OrgNode, OrgNodeId, OrgNodeKind, TodoState,
+    CheckboxState, LinkKind, OrgCheckbox, OrgContractRegistry, OrgContractResolutionReport,
+    OrgContractValidationReport, OrgLink, OrgNode, OrgNodeId, OrgNodeKind, TodoState,
 };
 use marlin_org_workspace::{OrgDocument, OrgDocumentLoader};
 use marlin_workspace_patch::{
@@ -16,11 +17,12 @@ use marlin_workspace_query::{
     WorkspaceQueryResult, WorkspaceScope,
 };
 use marlin_workspace_status::{
-    ChecklistStatus, DecisionTrace, EvidenceStatus, GoalState, GoalStatus, MetricTrace, SddStatus,
-    WorkspaceStatusReport, WorkspaceTarget,
+    ChecklistStatus, ContractStatus, DecisionTrace, EvidenceStatus, GoalState, GoalStatus,
+    MetricTrace, SddStatus, WorkspaceStatusReport, WorkspaceTarget,
 };
 use marlin_workspace_view::{
-    RenderedViewNode, RenderedWorkspaceView, WorkspaceField, WorkspaceViewSpec,
+    RenderedContractFacts, RenderedViewNode, RenderedWorkspaceView, WorkspaceField,
+    WorkspaceViewSpec,
 };
 use std::collections::{BTreeMap, HashSet};
 use std::hash::{DefaultHasher, Hash, Hasher};
@@ -29,6 +31,7 @@ use std::sync::RwLock;
 /// In-memory implementation of the native `AgentWorkspace` protocol.
 pub struct MemoryOrgWorkspace {
     nodes: RwLock<BTreeMap<OrgNodeId, OrgNode>>,
+    contract_facts: RwLock<RenderedContractFacts>,
 }
 
 impl MemoryOrgWorkspace {
@@ -36,6 +39,7 @@ impl MemoryOrgWorkspace {
     pub fn new() -> Self {
         Self {
             nodes: RwLock::new(BTreeMap::new()),
+            contract_facts: RwLock::new(RenderedContractFacts::default()),
         }
     }
 
@@ -47,6 +51,7 @@ impl MemoryOrgWorkspace {
         }
         Self {
             nodes: RwLock::new(indexed),
+            contract_facts: RwLock::new(RenderedContractFacts::default()),
         }
     }
 
@@ -62,8 +67,9 @@ impl MemoryOrgWorkspace {
 
     /// Load a raw `Org` document into the in-memory workspace.
     pub fn load_document(&self, document: OrgDocument) -> WorkspaceResult<Vec<OrgNodeId>> {
-        let parsed = OrgDocumentLoader::load(&document)?;
-        let ids = parsed
+        let workspace = OrgDocumentLoader::load_workspace(&document)?;
+        let ids = workspace
+            .nodes
             .iter()
             .map(|node| node.id.clone())
             .collect::<Vec<_>>();
@@ -71,9 +77,18 @@ impl MemoryOrgWorkspace {
             .nodes
             .write()
             .map_err(|error| WorkspaceError::Backend(error.to_string()))?;
-        for node in parsed {
+        for node in workspace.nodes {
             nodes.insert(node.id.clone(), node);
         }
+        *self
+            .contract_facts
+            .write()
+            .map_err(|error| WorkspaceError::Backend(error.to_string()))? =
+            contract_facts_from_workspace(
+                workspace.contracts,
+                workspace.contract_resolutions,
+                workspace.contract_validations,
+            );
         Ok(ids)
     }
 }
@@ -166,6 +181,7 @@ impl AgentWorkspace for MemoryOrgWorkspace {
         _ctx: WorkspaceCtx,
     ) -> WorkspaceResult<RenderedWorkspaceView> {
         let nodes = self.read_nodes()?;
+        let contract_facts = self.read_contract_facts()?;
         let mut rendered_nodes = Vec::new();
         let mut text = String::new();
 
@@ -184,11 +200,25 @@ impl AgentWorkspace for MemoryOrgWorkspace {
             }
         }
 
+        let selected_contract_facts = if includes(&view, WorkspaceField::ContractFacts) {
+            let lines = render_contract_facts(&contract_facts);
+            if !lines.is_empty() {
+                if !text.is_empty() {
+                    text.push('\n');
+                }
+                text.push_str(&lines.join("\n"));
+            }
+            Some(contract_facts.clone())
+        } else {
+            None
+        };
+
         let token_estimate = text.split_whitespace().count();
         Ok(RenderedWorkspaceView {
             spec_hash: view_hash(&view),
             token_estimate,
             nodes: rendered_nodes,
+            contract_facts: selected_contract_facts,
             text,
         })
     }
@@ -207,8 +237,9 @@ impl AgentWorkspace for MemoryOrgWorkspace {
         _ctx: WorkspaceCtx,
     ) -> WorkspaceResult<WorkspaceStatusReport> {
         let nodes = self.read_nodes()?;
+        let contract_facts = self.read_contract_facts()?;
         let target_node = target_node(&nodes, &target);
-        Ok(status_for_node(target_node))
+        Ok(status_for_node(target_node, &contract_facts))
     }
 }
 
@@ -217,6 +248,14 @@ impl MemoryOrgWorkspace {
         &self,
     ) -> WorkspaceResult<std::sync::RwLockReadGuard<'_, BTreeMap<OrgNodeId, OrgNode>>> {
         self.nodes
+            .read()
+            .map_err(|error| WorkspaceError::Backend(error.to_string()))
+    }
+
+    fn read_contract_facts(
+        &self,
+    ) -> WorkspaceResult<std::sync::RwLockReadGuard<'_, RenderedContractFacts>> {
+        self.contract_facts
             .read()
             .map_err(|error| WorkspaceError::Backend(error.to_string()))
     }
@@ -510,6 +549,75 @@ fn render_node_lines(node: &OrgNode, view: &WorkspaceViewSpec) -> Vec<String> {
     lines
 }
 
+fn contract_facts_from_workspace(
+    registry: OrgContractRegistry,
+    resolutions: OrgContractResolutionReport,
+    validations: OrgContractValidationReport,
+) -> RenderedContractFacts {
+    let templates = registry
+        .contracts
+        .iter()
+        .flat_map(|contract| contract.assertions.iter())
+        .flat_map(|assertion| assertion.templates.iter().cloned())
+        .collect();
+
+    RenderedContractFacts {
+        resolutions: resolutions.references,
+        diagnostics: resolutions.diagnostics,
+        templates,
+        validations,
+    }
+}
+
+fn render_contract_facts(contract_facts: &RenderedContractFacts) -> Vec<String> {
+    let resolved = contract_facts
+        .resolutions
+        .iter()
+        .filter(|resolution| resolution.resolved_contract_id.is_some())
+        .count();
+    let unresolved = contract_facts.resolutions.len().saturating_sub(resolved);
+    let mut lines = vec![
+        format!("contracts.resolved: {resolved}"),
+        format!("contracts.unresolved: {unresolved}"),
+        format!(
+            "contracts.diagnostics: {}",
+            contract_facts.diagnostics.len()
+        ),
+        format!("contracts.templates: {}", contract_facts.templates.len()),
+        format!(
+            "contracts.validation_receipts: {}",
+            contract_facts.validations.receipts.len()
+        ),
+    ];
+
+    for diagnostic in &contract_facts.diagnostics {
+        lines.push(format!(
+            "contract.diagnostic.{}: {}",
+            diagnostic.code, diagnostic.message
+        ));
+    }
+
+    lines
+}
+
+fn contract_status(contract_facts: &RenderedContractFacts) -> ContractStatus {
+    let resolved_references = contract_facts
+        .resolutions
+        .iter()
+        .filter(|resolution| resolution.resolved_contract_id.is_some())
+        .count();
+
+    ContractStatus {
+        resolved_references,
+        unresolved_references: contract_facts
+            .resolutions
+            .len()
+            .saturating_sub(resolved_references),
+        diagnostics: contract_facts.diagnostics.len(),
+        validation_receipts: contract_facts.validations.receipts.len(),
+    }
+}
+
 fn includes(view: &WorkspaceViewSpec, field: WorkspaceField) -> bool {
     view.include.contains(&field) && !view.exclude.contains(&field)
 }
@@ -526,13 +634,18 @@ fn match_reason(node: &OrgNode) -> String {
         .unwrap_or_else(|| "in-memory match".to_string())
 }
 
-fn status_for_node(node: Option<&OrgNode>) -> WorkspaceStatusReport {
+fn status_for_node(
+    node: Option<&OrgNode>,
+    contract_facts: &RenderedContractFacts,
+) -> WorkspaceStatusReport {
+    let contracts = Some(contract_status(contract_facts));
     let Some(node) = node else {
         return WorkspaceStatusReport {
             goal: None,
             sdd: None,
             checklist: None,
             evidence: None,
+            contracts,
             metrics: Vec::new(),
             decisions: DecisionTrace { recent: Vec::new() },
             next_actions: Vec::new(),
@@ -569,6 +682,7 @@ fn status_for_node(node: Option<&OrgNode>) -> WorkspaceStatusReport {
         }),
         checklist: Some(checklist),
         evidence: Some(evidence),
+        contracts,
         metrics: metric_traces(node),
         decisions: decision_trace(node),
         next_actions: node

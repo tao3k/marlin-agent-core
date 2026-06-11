@@ -83,6 +83,70 @@ fn memory_workspace_loads_document_for_query_and_view() {
 }
 
 #[test]
+fn memory_workspace_renders_loaded_contract_facts() {
+    let workspace = MemoryOrgWorkspace::new();
+    let document = OrgDocument::new(
+        "doc:contracts",
+        r#"* agent-task-v1
+:PROPERTIES:
+:CONTRACT_ID: agent.task.v1
+:CONTRACT_SCOPE: subtree
+:CONTRACT_KIND: org-elements
+:END:
+
+** must-have-goal-section
+:PROPERTIES:
+:ASSERT_ID: task.has-goal
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-elements-query
+category = "section"
+kind = "headline"
+within = "$scope"
+summary.title = "Goal"
+#+END_SRC
+
+#+BEGIN_SRC org-elements-expect
+count >= 1
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+Task `{{ scope.title }}` must contain a Goal section.
+#+END_SRC
+
+* TODO Task A
+:PROPERTIES:
+:CONTRACT_ORG: agent.task.v1
+:END:
+"#,
+    );
+
+    let ids = workspace
+        .load_document(document)
+        .expect("document inserted with contract facts");
+    let ctx = WorkspaceCtx::new("unit-test");
+    let view = block_on(workspace.render_view(
+        WorkspaceViewSpec::compact(vec![ids[2].clone()]),
+        ctx.clone(),
+    ))
+    .expect("view renders contract facts");
+
+    let contract_facts = view.contract_facts.expect("contract facts selected");
+    assert_eq!(contract_facts.resolutions.len(), 1);
+    assert_eq!(contract_facts.templates.len(), 1);
+    assert!(view.text.contains("contracts.resolved: 1"));
+    assert!(view.text.contains("contracts.templates: 1"));
+
+    let status = block_on(workspace.status(WorkspaceTarget::Goal(ids[2].clone()), ctx))
+        .expect("status includes contract facts");
+    let contracts = status.contracts.expect("contract status");
+    assert_eq!(contracts.resolved_references, 1);
+    assert_eq!(contracts.unresolved_references, 0);
+    assert_eq!(contracts.validation_receipts, 0);
+}
+
+#[test]
 fn memory_workspace_queries_patches_renders_and_reports_status() {
     let goal_id = OrgNodeId::from("goal:workspace");
     let mut goal = OrgNode::heading(goal_id.clone(), "Implement workspace backend");
