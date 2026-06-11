@@ -28,6 +28,7 @@ pub use marlin_agent_protocol::{
     SubAgentSource,
 };
 pub use marlin_agent_runtime as runtime;
+pub use marlin_agent_runtime::observability;
 pub use marlin_agent_runtime::{
     CancellationToken, EventStream, HookRuntime, ProviderRuntime, RuntimeContext,
     RuntimeEnvironment, RuntimeEvent, RuntimeEventSink, RuntimeEventStream, RuntimeFuture,

@@ -1,0 +1,84 @@
+#+TITLE: 40.50 Agent Observability Tracing Contract
+#+FILETAGS: :marlin:rfc:observability:
+
+* 40.50 Agent Observability Tracing Contract
+:PROPERTIES:
+:ID: docs-40-50-agent-observability-tracing-contract
+:KIND: rfc
+:STATUS: active
+:END:
+
+** Problem
+
+Marlin is an agent-core workspace. It needs runtime observability for graph-loop execution, provider calls, tool calls, hook dispatch, sub-agent delegation, cancellation, and task failures without becoming a full application platform.
+
+When many agents run concurrently, ordinary string logs are not enough. Operators and tests need stable trace spans and fields that can answer which agent node ran, which executor or hook was involved, which runtime boundary spawned work, and where failures or cancellations occurred.
+
+** Goals
+
+The tracing contract has four goals:
+
+Expose stable spans for agent-core runtime boundaries.
+
+Keep trace fields low-cardinality and safe to aggregate.
+
+Allow local debugging through any =tracing= subscriber without requiring OpenTelemetry or a server process.
+
+Preserve protocol ownership: tracing observes runtime behavior, while typed receipts and evidence remain protocol-owned data.
+
+** Non-goals
+
+This RFC does not introduce a metrics backend, distributed tracing collector, web UI, app server, model provider implementation, or tool catalog.
+
+This RFC does not make =tracing-subscriber= a normal library dependency. Subscribers belong to binaries, harnesses, tests, or later integration crates.
+
+This RFC does not put raw prompts, model responses, tool arguments, or filesystem contents into trace fields. Such payloads must stay in typed receipts, redacted summaries, or explicit debug artifacts.
+
+** Span Taxonomy
+
+The first tracing surface is intentionally small:
+
+| Span | Owner | Meaning |
+|------+-------+---------|
+| =runtime.task= | =marlin-agent-runtime= | generic runtime-spawned work |
+| =runtime.provider= | =marlin-agent-runtime= | provider runtime boundary |
+| =runtime.tool= | =marlin-agent-runtime= | tool runtime boundary |
+| =runtime.sub_agent= | =marlin-agent-runtime= | delegated sub-agent runtime boundary |
+| =runtime.hook= | =marlin-agent-runtime= | hook runtime boundary |
+| =agent.provider= | =marlin-agent-kernel= | graph node executed through a provider adapter |
+| =agent.tool= | =marlin-agent-kernel= | graph node executed through a tool adapter |
+| =agent.sub_agent= | =marlin-agent-kernel= | graph node executed through a sub-agent adapter |
+| =hook.dispatch= | =marlin-agent-hooks= | one hook event dispatched through the registry |
+| =hook.run= | =marlin-agent-hooks= | one registered hook handler run |
+
+** Stable Fields
+
+Core fields should stay stable across subscribers:
+
+| Field | Meaning |
+|-------+---------|
+| =runtime_kind= | provider, tool, sub_agent, hook, blocking, cancellable, or generic |
+| =node_kind= | provider, tool, or sub_agent graph node adapter |
+| =node_id= | graph node identifier |
+| =executor= | graph executor name |
+| =hook_event= | hook event name |
+| =hook_id= | registered hook identifier |
+| =hook_mode= | sync or async hook execution mode |
+| =hook_count= | number of matching hook registrations |
+| =error= | bounded error string for runtime join failures |
+
+Additional fields may be added when they describe core agent behavior. High-cardinality payloads require explicit redaction or summarization before they enter tracing.
+
+** Ownership
+
+=marlin-agent-runtime= owns runtime task spans and cancellation-related runtime events.
+
+=marlin-agent-kernel= owns graph node spans because it has node IDs, executor names, and adapter kind.
+
+=marlin-agent-hooks= owns hook dispatch and handler-run spans because it has hook registry metadata.
+
+Provider, tool, and model implementation crates may add child spans later, but they should inherit this contract instead of inventing unrelated names.
+
+** Implementation Status
+
+The initial implementation adds =tracing= as a workspace dependency and instruments runtime, kernel adapter, and hook dispatcher boundaries. It deliberately avoids =tracing-subscriber= and OpenTelemetry as normal dependencies.

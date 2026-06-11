@@ -2,10 +2,12 @@
 
 use std::{future::Future, pin::Pin, sync::Arc, time::Duration};
 
+use crate::observability;
 pub use marlin_agent_protocol::{AgentEvent as RuntimeEvent, RuntimeEnvironment};
 use tokio::sync::{mpsc, oneshot, watch};
 use tokio::task::{JoinError, JoinSet};
 pub use tokio_util::sync::CancellationToken;
+use tracing::Instrument;
 
 /// Boxed async work item used by runtime extension traits.
 pub type RuntimeFuture<T> = Pin<Box<dyn Future<Output = T> + Send + 'static>>;
@@ -87,7 +89,10 @@ impl TokioAgentRuntime {
         F: Future + Send + 'static,
         F::Output: Send + 'static,
     {
-        RuntimeTask::new(tokio::spawn(future))
+        self.spawn_with_span(
+            future,
+            observability::runtime_task_span(observability::RUNTIME_KIND_GENERIC),
+        )
     }
 
     pub fn spawn_cancellable<F>(&self, future: F) -> RuntimeTask<RuntimeTaskOutcome<F::Output>>
@@ -96,12 +101,21 @@ impl TokioAgentRuntime {
         F::Output: Send + 'static,
     {
         let cancellation = self.cancellation.clone();
-        self.spawn(async move {
-            tokio::select! {
-                output = future => RuntimeTaskOutcome::Completed(output),
-                () = cancellation.cancelled() => RuntimeTaskOutcome::Cancelled,
-            }
-        })
+        self.spawn_with_span(
+            async move {
+                tokio::select! {
+                    output = future => RuntimeTaskOutcome::Completed(output),
+                    () = cancellation.cancelled() => {
+                        tracing::debug!(
+                            runtime_kind = observability::RUNTIME_KIND_CANCELLABLE,
+                            "runtime task cancelled"
+                        );
+                        RuntimeTaskOutcome::Cancelled
+                    },
+                }
+            },
+            observability::runtime_task_span(observability::RUNTIME_KIND_CANCELLABLE),
+        )
     }
 
     pub fn spawn_blocking<F, T>(&self, operation: F) -> RuntimeTask<T>
@@ -109,7 +123,10 @@ impl TokioAgentRuntime {
         F: FnOnce() -> T + Send + 'static,
         T: Send + 'static,
     {
-        RuntimeTask::new(tokio::task::spawn_blocking(operation))
+        let span = observability::runtime_task_span(observability::RUNTIME_KIND_BLOCKING);
+        RuntimeTask::new(tokio::task::spawn_blocking(move || {
+            span.in_scope(operation)
+        }))
     }
 
     pub fn join_set<T>(&self) -> JoinSet<T>
@@ -147,7 +164,10 @@ impl TokioAgentRuntime {
         P: ProviderRuntime,
     {
         let context = self.context();
-        self.spawn(async move { provider.run_provider(request, context).await })
+        self.spawn_with_span(
+            async move { provider.run_provider(request, context).await },
+            observability::runtime_provider_span(),
+        )
     }
 
     pub fn spawn_tool<T>(&self, tool: Arc<T>, invocation: T::Invocation) -> RuntimeTask<T::Output>
@@ -155,7 +175,10 @@ impl TokioAgentRuntime {
         T: ToolRuntime,
     {
         let context = self.context();
-        self.spawn(async move { tool.run_tool(invocation, context).await })
+        self.spawn_with_span(
+            async move { tool.run_tool(invocation, context).await },
+            observability::runtime_tool_span(),
+        )
     }
 
     pub fn spawn_sub_agent<A>(&self, sub_agent: Arc<A>, input: A::Input) -> RuntimeTask<A::Output>
@@ -163,7 +186,10 @@ impl TokioAgentRuntime {
         A: SubAgentRuntime,
     {
         let context = self.context();
-        self.spawn(async move { sub_agent.run_sub_agent(input, context).await })
+        self.spawn_with_span(
+            async move { sub_agent.run_sub_agent(input, context).await },
+            observability::runtime_sub_agent_span(),
+        )
     }
 
     pub fn spawn_sub_agent_with_environment<A>(
@@ -176,7 +202,10 @@ impl TokioAgentRuntime {
         A: SubAgentRuntime,
     {
         let context = self.context().child_context_with_environment(environment);
-        self.spawn(async move { sub_agent.run_sub_agent(input, context).await })
+        self.spawn_with_span(
+            async move { sub_agent.run_sub_agent(input, context).await },
+            observability::runtime_sub_agent_span(),
+        )
     }
 
     pub fn spawn_hook<H>(&self, hook: Arc<H>, request: H::Request) -> RuntimeTask<H::Output>
@@ -184,7 +213,18 @@ impl TokioAgentRuntime {
         H: HookRuntime,
     {
         let context = self.context();
-        self.spawn(async move { hook.run_hook(request, context).await })
+        self.spawn_with_span(
+            async move { hook.run_hook(request, context).await },
+            observability::runtime_hook_span(),
+        )
+    }
+
+    fn spawn_with_span<F>(&self, future: F, span: tracing::Span) -> RuntimeTask<F::Output>
+    where
+        F: Future + Send + 'static,
+        F::Output: Send + 'static,
+    {
+        RuntimeTask::new(tokio::spawn(future.instrument(span)))
     }
 }
 

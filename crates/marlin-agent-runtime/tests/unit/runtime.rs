@@ -1,11 +1,18 @@
-use std::sync::Arc;
+use std::sync::{
+    Arc, Mutex,
+    atomic::{AtomicU64, Ordering},
+};
 
 use marlin_agent_protocol::{RuntimeHome, RuntimeSandboxPolicy};
 use marlin_agent_runtime::{
-    CancellationToken, HookRuntime, RuntimeContext, RuntimeEnvironment, RuntimeEvent,
-    RuntimeFuture, SubAgentRuntime, TokioAgentRuntime,
+    CancellationToken, HookRuntime, ProviderRuntime, RuntimeContext, RuntimeEnvironment,
+    RuntimeEvent, RuntimeFuture, SubAgentRuntime, TokioAgentRuntime,
 };
 use tokio_stream::StreamExt;
+use tracing::{
+    Event, Metadata, Subscriber,
+    span::{Attributes, Id, Record},
+};
 
 #[tokio::test]
 async fn runtime_emits_protocol_owned_events() {
@@ -85,6 +92,25 @@ async fn hook_runtime_executes_with_runtime_environment() {
     assert_eq!(output_environment, environment);
 }
 
+#[tokio::test]
+async fn runtime_provider_spawn_creates_tracing_span() {
+    let subscriber = RecordingSubscriber::new();
+    let _guard = tracing::subscriber::set_default(subscriber.clone());
+    let (runtime, _events) = TokioAgentRuntime::new(4);
+
+    let output = runtime
+        .spawn_provider(Arc::new(EchoProvider), "hello".to_owned())
+        .join()
+        .await
+        .expect("provider task should finish");
+
+    assert_eq!(output, "hello");
+    assert!(
+        subscriber.span_names().contains(&"runtime.provider"),
+        "provider runtime span should be recorded"
+    );
+}
+
 #[derive(Clone, Debug)]
 struct EnvironmentEchoSubAgent;
 
@@ -117,4 +143,66 @@ impl HookRuntime for EnvironmentEchoHook {
         let environment = context.environment().clone();
         Box::pin(async move { (request, environment) })
     }
+}
+
+#[derive(Clone, Debug)]
+struct EchoProvider;
+
+impl ProviderRuntime for EchoProvider {
+    type Request = String;
+    type Response = String;
+
+    fn run_provider(
+        &self,
+        request: Self::Request,
+        _context: RuntimeContext,
+    ) -> RuntimeFuture<Self::Response> {
+        Box::pin(async move { request })
+    }
+}
+
+#[derive(Clone, Default)]
+struct RecordingSubscriber {
+    spans: Arc<Mutex<Vec<&'static str>>>,
+    next_id: Arc<AtomicU64>,
+}
+
+impl RecordingSubscriber {
+    fn new() -> Self {
+        Self {
+            spans: Arc::new(Mutex::new(Vec::new())),
+            next_id: Arc::new(AtomicU64::new(1)),
+        }
+    }
+
+    fn span_names(&self) -> Vec<&'static str> {
+        self.spans
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
+    }
+}
+
+impl Subscriber for RecordingSubscriber {
+    fn enabled(&self, _metadata: &Metadata<'_>) -> bool {
+        true
+    }
+
+    fn new_span(&self, attributes: &Attributes<'_>) -> Id {
+        self.spans
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .push(attributes.metadata().name());
+        Id::from_u64(self.next_id.fetch_add(1, Ordering::Relaxed))
+    }
+
+    fn record(&self, _span: &Id, _values: &Record<'_>) {}
+
+    fn record_follows_from(&self, _span: &Id, _follows: &Id) {}
+
+    fn event(&self, _event: &Event<'_>) {}
+
+    fn enter(&self, _span: &Id) {}
+
+    fn exit(&self, _span: &Id) {}
 }

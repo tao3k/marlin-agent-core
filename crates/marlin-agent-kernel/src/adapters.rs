@@ -10,6 +10,7 @@ use marlin_agent_protocol::{
 use marlin_agent_runtime::{
     ProviderRuntime, RuntimeContext, RuntimeEvent, RuntimeFuture, SubAgentRuntime, ToolRuntime,
 };
+use tracing::Instrument;
 
 use crate::GraphNodeExecutor;
 
@@ -93,31 +94,40 @@ where
         let node_id = invocation.node_id;
         let executor = invocation.executor;
         let hook_message = format!("node {} executor {}", node_id.as_str(), executor.as_str());
+        let span = tracing::info_span!(
+            "agent.provider",
+            node_kind = "provider",
+            node_id = %node_id.as_str(),
+            executor = %executor.as_str()
+        );
 
-        Box::pin(async move {
-            let pre_report = hook_dispatcher
-                .dispatch_with_context(
-                    context.child_context(),
-                    HookInvocation::new(HookEventName::PreToolUse)
-                        .with_message(hook_message.clone()),
-                )
-                .await;
-            emit_hook_report(&context, &pre_report).await;
+        Box::pin(
+            async move {
+                let pre_report = hook_dispatcher
+                    .dispatch_with_context(
+                        context.child_context(),
+                        HookInvocation::new(HookEventName::PreToolUse)
+                            .with_message(hook_message.clone()),
+                    )
+                    .await;
+                emit_hook_report(&context, &pre_report).await;
 
-            let output = provider
-                .run_provider(request, context.child_context())
-                .await;
+                let output = provider
+                    .run_provider(request, context.child_context())
+                    .await;
 
-            let post_report = hook_dispatcher
-                .dispatch_with_context(
-                    context.child_context(),
-                    HookInvocation::new(HookEventName::PostToolUse).with_message(hook_message),
-                )
-                .await;
-            emit_hook_report(&context, &post_report).await;
+                let post_report = hook_dispatcher
+                    .dispatch_with_context(
+                        context.child_context(),
+                        HookInvocation::new(HookEventName::PostToolUse).with_message(hook_message),
+                    )
+                    .await;
+                emit_hook_report(&context, &post_report).await;
 
-            receipt_mapper(output, node_id, executor)
-        })
+                receipt_mapper(output, node_id, executor)
+            }
+            .instrument(span),
+        )
     }
 }
 
@@ -185,31 +195,40 @@ where
         let node_id = invocation.node_id;
         let executor = invocation.executor;
         let hook_message = format!("node {} executor {}", node_id.as_str(), executor.as_str());
+        let span = tracing::info_span!(
+            "agent.tool",
+            node_kind = "tool",
+            node_id = %node_id.as_str(),
+            executor = %executor.as_str()
+        );
 
-        Box::pin(async move {
-            let pre_report = hook_dispatcher
-                .dispatch_with_context(
-                    context.child_context(),
-                    HookInvocation::new(HookEventName::PreToolUse)
-                        .with_message(hook_message.clone()),
-                )
-                .await;
-            emit_hook_report(&context, &pre_report).await;
+        Box::pin(
+            async move {
+                let pre_report = hook_dispatcher
+                    .dispatch_with_context(
+                        context.child_context(),
+                        HookInvocation::new(HookEventName::PreToolUse)
+                            .with_message(hook_message.clone()),
+                    )
+                    .await;
+                emit_hook_report(&context, &pre_report).await;
 
-            let output = tool
-                .run_tool(tool_invocation, context.child_context())
-                .await;
+                let output = tool
+                    .run_tool(tool_invocation, context.child_context())
+                    .await;
 
-            let post_report = hook_dispatcher
-                .dispatch_with_context(
-                    context.child_context(),
-                    HookInvocation::new(HookEventName::PostToolUse).with_message(hook_message),
-                )
-                .await;
-            emit_hook_report(&context, &post_report).await;
+                let post_report = hook_dispatcher
+                    .dispatch_with_context(
+                        context.child_context(),
+                        HookInvocation::new(HookEventName::PostToolUse).with_message(hook_message),
+                    )
+                    .await;
+                emit_hook_report(&context, &post_report).await;
 
-            receipt_mapper(output, node_id, executor)
-        })
+                receipt_mapper(output, node_id, executor)
+            }
+            .instrument(span),
+        )
     }
 }
 
@@ -284,51 +303,60 @@ where
         let activity_status = format!("node {}", node_id.as_str());
         let agent_reference = executor.as_str().to_owned();
         let sub_agent_source = SubAgentSource::Other("kernel.sub-agent-node".to_owned());
+        let span = tracing::info_span!(
+            "agent.sub_agent",
+            node_kind = "sub_agent",
+            node_id = %node_id.as_str(),
+            executor = %executor.as_str()
+        );
 
-        Box::pin(async move {
-            let start_report = hook_dispatcher
-                .dispatch_with_context(
-                    context.child_context(),
-                    HookInvocation::new(HookEventName::SubAgentStart)
-                        .with_message(hook_message.clone()),
+        Box::pin(
+            async move {
+                let start_report = hook_dispatcher
+                    .dispatch_with_context(
+                        context.child_context(),
+                        HookInvocation::new(HookEventName::SubAgentStart)
+                            .with_message(hook_message.clone()),
+                    )
+                    .await;
+                emit_hook_report(&context, &start_report).await;
+                emit_sub_agent_activity(
+                    &context,
+                    SubAgentActivity::new(
+                        agent_reference.clone(),
+                        sub_agent_source.clone(),
+                        SubAgentActivityKind::Started,
+                    )
+                    .with_status_message(activity_status.clone()),
                 )
                 .await;
-            emit_hook_report(&context, &start_report).await;
-            emit_sub_agent_activity(
-                &context,
-                SubAgentActivity::new(
-                    agent_reference.clone(),
-                    sub_agent_source.clone(),
-                    SubAgentActivityKind::Started,
-                )
-                .with_status_message(activity_status.clone()),
-            )
-            .await;
 
-            let output = sub_agent
-                .run_sub_agent(input, context.child_context())
+                let output = sub_agent
+                    .run_sub_agent(input, context.child_context())
+                    .await;
+
+                let stop_report = hook_dispatcher
+                    .dispatch_with_context(
+                        context.child_context(),
+                        HookInvocation::new(HookEventName::SubAgentStop).with_message(hook_message),
+                    )
+                    .await;
+                emit_hook_report(&context, &stop_report).await;
+                emit_sub_agent_activity(
+                    &context,
+                    SubAgentActivity::new(
+                        agent_reference,
+                        sub_agent_source,
+                        SubAgentActivityKind::Stopped,
+                    )
+                    .with_status_message(activity_status),
+                )
                 .await;
 
-            let stop_report = hook_dispatcher
-                .dispatch_with_context(
-                    context.child_context(),
-                    HookInvocation::new(HookEventName::SubAgentStop).with_message(hook_message),
-                )
-                .await;
-            emit_hook_report(&context, &stop_report).await;
-            emit_sub_agent_activity(
-                &context,
-                SubAgentActivity::new(
-                    agent_reference,
-                    sub_agent_source,
-                    SubAgentActivityKind::Stopped,
-                )
-                .with_status_message(activity_status),
-            )
-            .await;
-
-            receipt_mapper(output, node_id, executor)
-        })
+                receipt_mapper(output, node_id, executor)
+            }
+            .instrument(span),
+        )
     }
 }
 

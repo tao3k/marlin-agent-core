@@ -7,6 +7,7 @@ use marlin_agent_protocol::{
     HookSource, HookSourcePath, HookTrustStatus,
 };
 use marlin_agent_runtime::{HookRuntime, RuntimeContext, TokioAgentRuntime};
+use tracing::Instrument;
 
 /// Runtime shape accepted by hook registrations.
 pub type RegisteredHookRuntime =
@@ -118,7 +119,8 @@ impl HookRegistration {
         invocation: HookInvocation,
     ) -> tokio::task::JoinHandle<HookRunSummary> {
         let handler = self.handler.clone();
-        tokio::spawn(async move { handler.run_hook(invocation, context).await })
+        let span = hook_run_span(self);
+        tokio::spawn(async move { handler.run_hook(invocation, context).await }.instrument(span))
     }
 }
 
@@ -200,37 +202,58 @@ impl HookDispatcher {
         context: RuntimeContext,
         invocation: HookInvocation,
     ) -> HookDispatchReport {
-        let mut runs = Vec::new();
-        let mut async_runs = Vec::new();
+        let registrations = self.registry.matching(&invocation.event_name);
+        let dispatch_span = tracing::info_span!(
+            "hook.dispatch",
+            hook_event = ?invocation.event_name,
+            hook_count = registrations.len()
+        );
 
-        for registration in self.registry.matching(&invocation.event_name) {
-            match registration.execution_mode {
-                HookExecutionMode::Sync => {
-                    let summary = registration
-                        .handler
-                        .run_hook(invocation.clone(), context.child_context())
-                        .await;
-                    runs.push(apply_registration_metadata(&registration, summary));
-                }
-                HookExecutionMode::Async => {
-                    let task = registration.run(context.child_context(), invocation.clone());
-                    async_runs.push((registration, task));
+        async move {
+            let mut runs = Vec::new();
+            let mut async_runs = Vec::new();
+
+            for registration in registrations {
+                match registration.execution_mode {
+                    HookExecutionMode::Sync => {
+                        let span = hook_run_span(&registration);
+                        let summary = registration
+                            .handler
+                            .run_hook(invocation.clone(), context.child_context())
+                            .instrument(span)
+                            .await;
+                        runs.push(apply_registration_metadata(&registration, summary));
+                    }
+                    HookExecutionMode::Async => {
+                        let task = registration.run(context.child_context(), invocation.clone());
+                        async_runs.push((registration, task));
+                    }
                 }
             }
-        }
 
-        for (registration, task) in async_runs {
-            let summary = match task.await {
-                Ok(summary) => summary,
-                Err(error) => failed_join_summary(&registration, &invocation, error.to_string()),
-            };
-            runs.push(apply_registration_metadata(&registration, summary));
-        }
+            for (registration, task) in async_runs {
+                let summary = match task.await {
+                    Ok(summary) => summary,
+                    Err(error) => {
+                        tracing::warn!(
+                            hook_id = %registration.id,
+                            hook_event = ?registration.event_name,
+                            error = %error,
+                            "async hook task join failed"
+                        );
+                        failed_join_summary(&registration, &invocation, error.to_string())
+                    }
+                };
+                runs.push(apply_registration_metadata(&registration, summary));
+            }
 
-        HookDispatchReport {
-            event_name: invocation.event_name,
-            runs,
+            HookDispatchReport {
+                event_name: invocation.event_name,
+                runs,
+            }
         }
+        .instrument(dispatch_span)
+        .await
     }
 }
 
@@ -263,6 +286,16 @@ fn apply_registration_metadata(
     summary.trust = registration.trust.clone();
     summary.display_order = registration.display_order;
     summary
+}
+
+fn hook_run_span(registration: &HookRegistration) -> tracing::Span {
+    tracing::info_span!(
+        "hook.run",
+        hook_id = %registration.id,
+        hook_event = ?registration.event_name,
+        hook_mode = ?registration.execution_mode,
+        hook_handler = ?registration.handler_type
+    )
 }
 
 fn failed_join_summary(

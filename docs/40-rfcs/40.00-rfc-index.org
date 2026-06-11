@@ -20,3 +20,4 @@ accepted decisions or crate-level implementation details.
 [[file:40.30-org-contract-template-protocol.org][40.30 Org Contract Template Protocol]]
 
 - [[file:40.40-agent-system-harness-protocol.org][40.40 Agent System Harness Protocol]]
+- [[file:40.50-agent-observability-tracing-contract.org][40.50 Agent Observability Tracing Contract]]

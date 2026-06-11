@@ -1,5 +1,7 @@
 //! Tokio-backed runtime extension traits used by the graph-loop kernel.
 
+pub mod observability;
+
 mod tokio_runtime;
 
 pub use tokio_runtime::{
