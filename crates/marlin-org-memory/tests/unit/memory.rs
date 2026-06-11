@@ -140,10 +140,15 @@ Task `{{ scope.title }}` must contain a Goal section.
     assert!(
         contract_facts
             .rendered_lines
-            .contains(&"contracts.validation_receipts: 0".to_string())
+            .contains(&"contracts.validation_receipts: 1".to_string())
     );
     assert!(view.text.contains("contracts.resolved: 1"));
     assert!(view.text.contains("contracts.templates: 1"));
+    assert!(
+        view.text.contains("contracts.validation.failed: 1"),
+        "{}",
+        view.text
+    );
 
     let status = block_on(workspace.status(WorkspaceTarget::Goal(ids[2].clone()), ctx))
         .expect("status includes contract facts");
@@ -151,8 +156,8 @@ Task `{{ scope.title }}` must contain a Goal section.
     assert_eq!(contracts.resolved_references, 1);
     assert_eq!(contracts.unresolved_references, 0);
     assert_eq!(contracts.templates, 1);
-    assert_eq!(contracts.validation_receipts, 0);
-    assert_eq!(contracts.validation_failed, 0);
+    assert_eq!(contracts.validation_receipts, 1);
+    assert_eq!(contracts.validation_failed, 1);
     assert!(
         contracts
             .rendered_summary

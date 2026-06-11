@@ -14,6 +14,7 @@ use crate::contract::{
     contract_reference, document_contract_reference, project_contract_registry,
     resolve_contract_references,
 };
+use crate::validation::validate_contract_references;
 
 /// Stable identifier for an imported `Org` document.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -135,12 +136,14 @@ impl<'a> OrgDocumentParser<'a> {
                 .collect(),
             &contracts,
         );
+        let contract_validations =
+            validate_contract_references(&nodes, &contracts, &contract_resolutions);
 
         Ok(OrgDocumentWorkspace {
             nodes,
             contracts,
             contract_resolutions,
-            contract_validations: OrgContractValidationReport::default(),
+            contract_validations,
         })
     }
 }

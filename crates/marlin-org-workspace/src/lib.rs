@@ -2,5 +2,6 @@
 
 mod contract;
 mod document;
+mod validation;
 
 pub use document::{OrgDocument, OrgDocumentId, OrgDocumentLoader, OrgDocumentWorkspace};

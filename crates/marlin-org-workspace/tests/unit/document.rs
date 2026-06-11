@@ -1,5 +1,6 @@
 use marlin_org_model::{
-    CheckboxState, LinkKind, OrgContractReferenceScope, OrgContractTemplateKind, TodoState,
+    CheckboxState, LinkKind, OrgContractReferenceScope, OrgContractTemplateKind,
+    OrgContractValidationStatus, OrgContractValidationTarget, TodoState,
 };
 use marlin_org_workspace::{OrgDocument, OrgDocumentLoader};
 
@@ -199,6 +200,15 @@ count >= 1
     let workspace = OrgDocumentLoader::load_workspace(&document).expect("document loads");
 
     assert!(workspace.contract_resolutions.diagnostics.is_empty());
+    assert_eq!(workspace.contract_validations.receipts.len(), 1);
+    let receipt = &workspace.contract_validations.receipts[0];
+    assert_eq!(receipt.contract_id.as_str(), "agent.task.v1");
+    assert_eq!(receipt.assertion_id, "task.has-goal");
+    assert_eq!(receipt.status, OrgContractValidationStatus::Failed);
+    assert!(matches!(
+        receipt.target,
+        OrgContractValidationTarget::Node(_)
+    ));
     assert_eq!(workspace.contract_resolutions.references.len(), 1);
     let resolution = &workspace.contract_resolutions.references[0];
     assert_eq!(
@@ -216,6 +226,53 @@ count >= 1
     assert!(resolution.reference.target_node.is_some());
     let source = resolution.reference.source.as_ref().expect("source span");
     assert_eq!(slice(text, source), "agent.task.v1");
+}
+
+#[test]
+fn org_document_loader_validates_subtree_contract_references() {
+    let text = r#"* agent-task-v1
+:PROPERTIES:
+:CONTRACT_ID: agent.task.v1
+:CONTRACT_SCOPE: subtree
+:CONTRACT_KIND: org-elements
+:END:
+
+** must-have-goal-section
+:PROPERTIES:
+:ASSERT_ID: task.has-goal
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-elements-query
+category = "section"
+kind = "headline"
+within = "$scope"
+summary.title = "Goal"
+#+END_SRC
+
+#+BEGIN_SRC org-elements-expect
+count >= 1
+#+END_SRC
+
+* TODO Task A
+:PROPERTIES:
+:CONTRACT_ORG: agent.task.v1
+:END:
+
+** Goal
+"#;
+    let document = OrgDocument::new("doc:validated-contract", text);
+
+    let workspace = OrgDocumentLoader::load_workspace(&document).expect("document loads");
+
+    assert!(workspace.contract_validations.diagnostics.is_empty());
+    assert_eq!(workspace.contract_validations.receipts.len(), 1);
+    let receipt = &workspace.contract_validations.receipts[0];
+    assert_eq!(receipt.contract_id.as_str(), "agent.task.v1");
+    assert_eq!(receipt.assertion_id, "task.has-goal");
+    assert_eq!(receipt.status, OrgContractValidationStatus::Passed);
+    let source = receipt.source.as_ref().expect("validated source span");
+    assert!(slice(text, source).contains("* TODO Task A"));
 }
 
 #[test]
