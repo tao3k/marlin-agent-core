@@ -174,6 +174,15 @@ fn command_compiler_real_gxi_release_topology_persists_landing_status_sidecar() 
     assert_eq!(report.topology_id, "release:gerbil");
     assert_eq!(report.passed_gates, 1);
     assert_eq!(report.observed_visibility_reports, 1);
+    assert_eq!(
+        report.observed_evidence_keys,
+        ["workspace_patch_intent", "workspace_schema"]
+    );
+    assert_eq!(
+        report.observed_artifact_paths,
+        ["fixtures/gerbil/command-adapter.ss"]
+    );
+    assert!(report.missing_artifact_paths.is_empty());
 
     persist_release_status_artifacts(&store, &report);
 

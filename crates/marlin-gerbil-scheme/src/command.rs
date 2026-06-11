@@ -30,10 +30,53 @@ pub struct GerbilCompileRequest {
     pub contract_facts: Option<GerbilWorkspaceContractFacts>,
 }
 
+impl GerbilCompileRequest {
+    /// Build a compile request with protocol defaults for the expected artifact.
+    pub fn new(source: GerbilSource, expected: GerbilArtifactKind) -> Self {
+        Self {
+            source,
+            expected,
+            contract_facts: default_contract_facts_for(expected),
+        }
+    }
+
+    /// Build a compile request with explicit parser-owned Org contract facts.
+    pub fn with_contract_facts(
+        source: GerbilSource,
+        expected: GerbilArtifactKind,
+        contract_facts: GerbilWorkspaceContractFacts,
+    ) -> Self {
+        Self {
+            source,
+            expected,
+            contract_facts: Some(contract_facts),
+        }
+    }
+}
+
 /// JSON response read from an external `Gerbil` compiler process on stdout.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct GerbilCompileResponse {
     pub artifact: GerbilCompiledArtifact,
+}
+
+/// Error envelope emitted by the Gerbil batch compiler adapter.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+struct GerbilCompileErrorResponse {
+    error: GerbilCompileErrorDetail,
+}
+
+/// Error detail emitted for a single Gerbil compile request.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+struct GerbilCompileErrorDetail {
+    message: String,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(untagged)]
+enum GerbilCompileBatchResponse {
+    Artifact(GerbilCompileResponse),
+    Error(GerbilCompileErrorResponse),
 }
 
 /// Serializable command profile for configuring a `Gerbil` compiler executable.
@@ -304,49 +347,87 @@ impl GerbilCommandCompiler {
         &self,
         requests: Vec<GerbilCompileRequest>,
     ) -> Result<Vec<GerbilCompiledArtifact>, String> {
+        self.compile_request_results(requests)?
+            .into_iter()
+            .collect::<Result<Vec<_>, _>>()
+    }
+
+    /// Compile several requests through one command process while preserving per-request errors.
+    pub fn compile_request_results(
+        &self,
+        requests: Vec<GerbilCompileRequest>,
+    ) -> Result<Vec<Result<GerbilCompiledArtifact, String>>, String> {
+        self.compile_request_results_inner(requests)
+    }
+
+    fn compile_request_results_inner(
+        &self,
+        requests: Vec<GerbilCompileRequest>,
+    ) -> Result<Vec<Result<GerbilCompiledArtifact, String>>, String> {
         let expected = requests
             .iter()
             .map(|request| request.expected)
             .collect::<Vec<_>>();
-        let mut request_json = Vec::new();
-        for request in &requests {
-            serde_json::to_writer(&mut request_json, request)
-                .map_err(|error| format!("failed to encode gerbil compile request: {error}"))?;
-            request_json.push(b'\n');
-        }
+        let request_json = requests
+            .iter()
+            .map(|request| {
+                let mut line = serde_json::to_vec(request)
+                    .map_err(|error| format!("failed to encode gerbil compile request: {error}"))?;
+                line.push(b'\n');
+                Ok(line)
+            })
+            .collect::<Result<Vec<_>, String>>()?
+            .concat();
 
         let output = self.run_command_with_stdin(request_json)?;
         let stdout = BufReader::new(output.stdout.as_slice());
-        let mut artifacts = Vec::new();
-        for (index, line) in stdout.lines().enumerate() {
-            let line = line
-                .map_err(|error| format!("failed to read gerbil compile response line: {error}"))?;
-            if line.trim().is_empty() {
-                continue;
-            }
-            let response: GerbilCompileResponse = serde_json::from_str(&line)
-                .map_err(|error| format!("failed to decode gerbil compile response: {error}"))?;
-            let expected_kind = expected
-                .get(index)
-                .copied()
-                .ok_or_else(|| format!("unexpected gerbil compile response at index {index}"))?;
-            artifacts.push(
-                response
-                    .artifact
-                    .ensure_kind(expected_kind)
-                    .map_err(|error| error.to_string())?,
-            );
-        }
+        let results = stdout
+            .lines()
+            .filter_map(|line| match line {
+                Ok(line) if line.trim().is_empty() => None,
+                other => Some(other),
+            })
+            .enumerate()
+            .map(|(index, line)| {
+                let line = line.map_err(|error| {
+                    format!("failed to read gerbil compile response line: {error}")
+                })?;
+                Self::decode_compile_batch_response_line(index, &line, &expected)
+            })
+            .collect::<Result<Vec<_>, String>>()?;
 
-        if artifacts.len() != expected.len() {
+        if results.len() != expected.len() {
             return Err(format!(
                 "gerbil compiler returned {} responses for {} requests",
-                artifacts.len(),
+                results.len(),
                 expected.len()
             ));
         }
 
-        Ok(artifacts)
+        Ok(results)
+    }
+
+    fn decode_compile_batch_response_line(
+        index: usize,
+        line: &str,
+        expected: &[GerbilArtifactKind],
+    ) -> Result<Result<GerbilCompiledArtifact, String>, String> {
+        let response: GerbilCompileBatchResponse = serde_json::from_str(line)
+            .map_err(|error| format!("failed to decode gerbil compile response: {error}"))?;
+        let expected_kind = expected
+            .get(index)
+            .copied()
+            .ok_or_else(|| format!("unexpected gerbil compile response at index {index}"))?;
+        Ok(match response {
+            GerbilCompileBatchResponse::Artifact(response) => response
+                .artifact
+                .ensure_kind(expected_kind)
+                .map_err(|error| error.to_string()),
+            GerbilCompileBatchResponse::Error(response) => Err(format!(
+                "gerbil compiler command failed for request {index}: {}",
+                response.error.message
+            )),
+        })
     }
 
     fn compile_request(
@@ -424,16 +505,19 @@ impl GerbilCommandCompiler {
     }
 }
 
+fn default_contract_facts_for(
+    expected: GerbilArtifactKind,
+) -> Option<GerbilWorkspaceContractFacts> {
+    matches!(expected, GerbilArtifactKind::WorkspacePatchIntent)
+        .then(GerbilWorkspaceContractFacts::default)
+}
+
 impl GerbilCompiler for GerbilCommandCompiler {
     fn compile(
         &self,
         source: GerbilSource,
         expected: GerbilArtifactKind,
     ) -> Result<GerbilCompiledArtifact, String> {
-        self.compile_request(GerbilCompileRequest {
-            source,
-            expected,
-            contract_facts: None,
-        })
+        self.compile_request(GerbilCompileRequest::new(source, expected))
     }
 }

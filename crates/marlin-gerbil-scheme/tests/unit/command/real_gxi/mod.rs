@@ -149,34 +149,31 @@ fn sample_contract_facts() -> GerbilWorkspaceContractFacts {
 
 fn command_adapter_batch_requests() -> Vec<GerbilCompileRequest> {
     vec![
-        GerbilCompileRequest {
-            source: GerbilSource::new("audit/control-plane", RICH_LOOP_GRAPH_SOURCE),
-            expected: GerbilArtifactKind::LoopGraph,
-            contract_facts: Some(sample_contract_facts()),
-        },
-        GerbilCompileRequest {
-            source: GerbilSource::new("audit/workspace-schema", WORKSPACE_SCHEMA_SOURCE),
-            expected: GerbilArtifactKind::WorkspaceSchema,
-            contract_facts: None,
-        },
-        GerbilCompileRequest {
-            source: GerbilSource::new(
+        GerbilCompileRequest::with_contract_facts(
+            GerbilSource::new("audit/control-plane", RICH_LOOP_GRAPH_SOURCE),
+            GerbilArtifactKind::LoopGraph,
+            sample_contract_facts(),
+        ),
+        GerbilCompileRequest::new(
+            GerbilSource::new("audit/workspace-schema", WORKSPACE_SCHEMA_SOURCE),
+            GerbilArtifactKind::WorkspaceSchema,
+        ),
+        GerbilCompileRequest::with_contract_facts(
+            GerbilSource::new(
                 "audit/workspace-patch-intent",
                 WORKSPACE_PATCH_INTENT_SOURCE,
             ),
-            expected: GerbilArtifactKind::WorkspacePatchIntent,
-            contract_facts: Some(sample_contract_facts()),
-        },
-        GerbilCompileRequest {
-            source: GerbilSource::new("audit/agent-scenario", AGENT_SCENARIO_CONTRACT_SOURCE),
-            expected: GerbilArtifactKind::AgentScenarioContract,
-            contract_facts: None,
-        },
-        GerbilCompileRequest {
-            source: GerbilSource::new("audit/release-topology", RELEASE_TOPOLOGY_SOURCE),
-            expected: GerbilArtifactKind::ReleaseTopology,
-            contract_facts: None,
-        },
+            GerbilArtifactKind::WorkspacePatchIntent,
+            sample_contract_facts(),
+        ),
+        GerbilCompileRequest::new(
+            GerbilSource::new("audit/agent-scenario", AGENT_SCENARIO_CONTRACT_SOURCE),
+            GerbilArtifactKind::AgentScenarioContract,
+        ),
+        GerbilCompileRequest::new(
+            GerbilSource::new("audit/release-topology", RELEASE_TOPOLOGY_SOURCE),
+            GerbilArtifactKind::ReleaseTopology,
+        ),
     ]
 }
 

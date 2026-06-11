@@ -4,6 +4,7 @@ use marlin_agent_protocol::{LoopEvidence, LoopEvidenceKind};
 use marlin_gerbil_ir::ReleaseTopologySpec;
 use marlin_org_model::{
     OrgContractDiagnostic, OrgContractResolution, OrgContractTemplate, OrgContractValidationReport,
+    OrgNodeId,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
@@ -80,6 +81,9 @@ pub struct ContractStatus {
     pub validation_passed: usize,
     pub validation_failed: usize,
     pub validation_skipped: usize,
+    pub validation_matched_nodes: usize,
+    #[serde(default)]
+    pub validation_matched_node_ids: Vec<OrgNodeId>,
     #[serde(default)]
     pub reference_resolutions: Vec<OrgContractResolution>,
     #[serde(default)]
@@ -260,6 +264,12 @@ pub struct ReleaseLandingReport {
     pub visibility_report_count: usize,
     /// Number of observed visibility reports.
     pub observed_visibility_reports: usize,
+    /// Evidence keys observed by passing release visibility reports.
+    pub observed_evidence_keys: Vec<String>,
+    /// Artifact paths observed by passing release visibility reports.
+    pub observed_artifact_paths: Vec<String>,
+    /// Artifact paths still missing from unobserved visibility reports.
+    pub missing_artifact_paths: Vec<String>,
     /// Gate identifiers that still block landing completion.
     pub blocking_gates: Vec<String>,
     /// Visibility report keys that have not been observed.
@@ -286,6 +296,9 @@ impl ReleaseLandingReport {
             skipped_gates: gates.skipped,
             visibility_report_count: status.visibility_reports.len(),
             observed_visibility_reports: visibility.observed,
+            observed_evidence_keys: observed_visibility_evidence_keys(&status.visibility_reports),
+            observed_artifact_paths: observed_visibility_artifact_paths(&status.visibility_reports),
+            missing_artifact_paths: missing_visibility_artifact_paths(&status.visibility_reports),
             blocking_gates: gates.blocking_gates,
             missing_visibility_reports: visibility.missing_visibility_reports,
         }
@@ -361,6 +374,36 @@ fn update_release_visibility_summary(
             .missing_visibility_reports
             .push(format!("{}:{}", report.gate_id, report.report_key));
     }
+}
+
+fn observed_visibility_evidence_keys(reports: &[ReleaseVisibilityStatus]) -> Vec<String> {
+    reports
+        .iter()
+        .filter(|report| report.observed)
+        .flat_map(|report| report.evidence_keys.iter().cloned())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect()
+}
+
+fn observed_visibility_artifact_paths(reports: &[ReleaseVisibilityStatus]) -> Vec<String> {
+    reports
+        .iter()
+        .filter(|report| report.observed)
+        .flat_map(|report| report.artifact_paths.iter().cloned())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect()
+}
+
+fn missing_visibility_artifact_paths(reports: &[ReleaseVisibilityStatus]) -> Vec<String> {
+    reports
+        .iter()
+        .filter(|report| !report.observed)
+        .flat_map(|report| report.artifact_paths.iter().cloned())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect()
 }
 
 fn mark_visibility_reports_observed(

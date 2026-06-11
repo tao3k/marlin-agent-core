@@ -124,6 +124,12 @@ fn core_release_bridge_records_execution_receipt_in_status_store() {
     assert!(report.landing_complete);
     assert_eq!(report.passed_gates, 1);
     assert_eq!(report.observed_visibility_reports, 1);
+    assert_eq!(report.observed_evidence_keys, ["required_artifacts"]);
+    assert_eq!(
+        report.observed_artifact_paths,
+        ["fixtures/gerbil/command-adapter.ss"]
+    );
+    assert!(report.missing_artifact_paths.is_empty());
 
     let _ = fs::remove_dir_all(root);
 }

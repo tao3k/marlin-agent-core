@@ -26,6 +26,8 @@ The crate also ships runnable examples:
 ```sh
 direnv exec . cargo run -p marlin-gerbil-scheme --example workspace-patch-intent
 direnv exec . cargo run -p marlin-gerbil-scheme --example workspace-patch-intent-workflow
+direnv exec . cargo run --locked -p marlin-gerbil-scheme --example compile-source -- \
+  workspace-patch-intent crates/marlin-gerbil-scheme/examples/workspace-patch-intent-source.ss
 ```
 
 Local verification without requiring Gerbil in default CI:

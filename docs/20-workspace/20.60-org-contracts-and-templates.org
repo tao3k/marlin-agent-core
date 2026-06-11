@@ -57,8 +57,9 @@ and fix intent. Durable mutation still goes through =WorkspacePatch=,
 =OrgContractValidationReport= is the runtime-independent validation result
 container. It carries assertion receipts and diagnostics as data.
 =marlin-org-workspace= executes a narrow parser-owned first pass while loading
-a document: resolved =CONTRACT_ORG= references produce receipts for count-based
-assertions over projected node summaries and properties. Unsupported
+a document: resolved =CONTRACT_ORG= references produce receipts for orgize
+=Exists=, =NotExists=, and =Count(op, n)= assertions over projected node
+summaries, properties, element category, and element kind. Unsupported
 expectations remain explicit skipped receipts rather than invoking an external
 runtime. Supported assertion receipts include matched node ids so downstream
 agents can inspect the evidence without re-running the query.
@@ -66,10 +67,11 @@ agents can inspect the evidence without re-running the query.
 ** View And Status
 
 =marlin-workspace-view= exposes =ContractFacts= as a selectable compact view
-field and carries rendered contract summary lines beside node text.
+field and carries rendered contract summary lines beside node text, including
+matched-node counts and ids for supported validation receipts.
 =marlin-workspace-status= has a =ContractStatus= summary for resolved
 references, unresolved references, diagnostics, templates, validation receipts,
-validation outcomes, and rendered summary lines. It also carries typed
+validation outcomes, matched nodes, and rendered summary lines. It also carries typed
 reference resolutions, diagnostic records, template records, and the full
 =OrgContractValidationReport= so agents do not need to parse rendered text.
 
@@ -78,11 +80,12 @@ reference resolutions, diagnostic records, template records, and the full
 The first projection preserves orgize query, expectation, message, fix,
 template facts, source block spans, local reference resolution, explicit
 external contract documents, and runtime-independent validation receipts for
-the count-query subset. =MemoryOrgWorkspace= can load a document with explicit
-external contract documents and expose unresolved references as typed status
-diagnostics. =OrgDocumentLoader::discover_contract_documents= can filter a
-caller-provided candidate document set down to documents that contain contract
-registries. It does not discover registry files from the filesystem implicitly
-and does not execute template engines inside Marlin. Richer assertion execution
-remains an upstream orgize lint concern until Marlin expands the receipt
-protocol beyond the current parser-owned count summary path.
+the parser-owned count/existence subset. =MemoryOrgWorkspace= can load a batch
+of documents with =load_documents_with_discovered_contracts=, discover contract
+registry documents from that batch, and expose unresolved references as typed
+status diagnostics. =OrgDocumentLoader::discover_contract_documents= can filter
+a caller-provided candidate document set down to documents that contain
+contract registries. It does not discover registry files from the filesystem
+implicitly and does not execute template engines inside Marlin. Richer
+assertion execution remains an upstream orgize lint concern until Marlin
+expands the receipt protocol beyond the current parser-owned summary path.

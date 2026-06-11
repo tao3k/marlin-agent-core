@@ -4,7 +4,7 @@ use super::support::{
 };
 use marlin_gerbil_scheme::{
     GerbilArtifactKind, GerbilCommandCompiler, GerbilCommandSpec, GerbilCompileRequest,
-    GerbilCompiler, GerbilSource, GerbilWorkspaceContractFacts,
+    GerbilCompiledArtifact, GerbilCompiler, GerbilSource, GerbilWorkspaceContractFacts,
 };
 use marlin_org_model::{
     OrgContractRegistry, OrgContractResolutionReport, OrgContractValidationReport,
@@ -36,25 +36,56 @@ fn command_compiler_reads_batched_artifacts_from_stdout_lines() {
 
     let artifacts = compiler
         .compile_requests(vec![
-            GerbilCompileRequest {
-                source: GerbilSource::new("audit/control-plane", "(module audit/control-plane)"),
-                expected: GerbilArtifactKind::LoopGraph,
-                contract_facts: None,
-            },
-            GerbilCompileRequest {
-                source: GerbilSource::new(
+            GerbilCompileRequest::new(
+                GerbilSource::new("audit/control-plane", "(module audit/control-plane)"),
+                GerbilArtifactKind::LoopGraph,
+            ),
+            GerbilCompileRequest::new(
+                GerbilSource::new(
                     "audit/workspace-schema",
                     "(workspace-schema workspace-record)",
                 ),
-                expected: GerbilArtifactKind::WorkspaceSchema,
-                contract_facts: None,
-            },
+                GerbilArtifactKind::WorkspaceSchema,
+            ),
         ])
         .expect("command output should decode newline-delimited artifacts");
 
     assert_eq!(artifacts.len(), 2);
     assert_eq!(artifacts[0], loop_graph_artifact("batch-graph"));
     assert_workspace_schema_artifact(artifacts[1].clone());
+}
+
+#[test]
+fn command_compiler_preserves_batched_request_errors_from_stdout_lines() {
+    let command = GerbilCommandSpec::new("/bin/sh").arg("-c").arg(
+        "cat >/dev/null; printf '%s\n' '{\"artifact\":{\"LoopGraph\":{\"graph_id\":\"batch-graph\",\"nodes\":[],\"edges\":[]}}}' '{\"error\":{\"message\":\"expected workspace-schema form: loop-graph\"}}'",
+    );
+    let compiler = GerbilCommandCompiler::new(command);
+
+    let results = compiler
+        .compile_request_results(vec![
+            GerbilCompileRequest {
+                source: GerbilSource::new("audit/control-plane", "(module audit/control-plane)"),
+                expected: GerbilArtifactKind::LoopGraph,
+                contract_facts: None,
+            },
+            GerbilCompileRequest {
+                source: GerbilSource::new("audit/control-plane", "(loop-graph invalid)"),
+                expected: GerbilArtifactKind::WorkspaceSchema,
+                contract_facts: None,
+            },
+        ])
+        .expect("command output should decode newline-delimited request results");
+
+    assert_eq!(results.len(), 2);
+    assert_eq!(
+        results[0].as_ref().expect("first result should succeed"),
+        &loop_graph_artifact("batch-graph")
+    );
+    let error = results[1].as_ref().expect_err("second result should fail");
+    assert!(error.contains("gerbil compiler command failed for request 1"));
+    assert!(error.contains("expected workspace-schema form"));
+    assert!(error.contains("loop-graph"));
 }
 
 #[test]
@@ -98,6 +129,29 @@ fn command_compiler_reads_workspace_patch_intent_from_stdout() {
 }
 
 #[test]
+fn command_compiler_sends_default_contract_facts_for_workspace_patch_intent() {
+    let command = GerbilCommandSpec::new("/bin/sh").arg("-c").arg(
+        "if grep -q 'contract_facts'; then intent=with-contracts; else intent=missing-contracts; fi; printf '%s\n' \"{\\\"artifact\\\":{\\\"WorkspacePatchIntent\\\":{\\\"intent_id\\\":\\\"$intent\\\",\\\"patch\\\":{\\\"reason\\\":\\\"gerbil intent\\\",\\\"source_agent\\\":\\\"gerbil\\\",\\\"ops\\\":[]},\\\"dry_run_first\\\":true}}}\"",
+    );
+    let compiler = GerbilCommandCompiler::new(command);
+
+    let artifact = compiler
+        .compile(
+            GerbilSource::new(
+                "audit/workspace-patch-intent",
+                "(workspace-patch-intent \"intent:memory\")",
+            ),
+            GerbilArtifactKind::WorkspacePatchIntent,
+        )
+        .expect("workspace patch-intent compile should send contract facts by default");
+
+    let GerbilCompiledArtifact::WorkspacePatchIntent(intent) = artifact else {
+        panic!("expected workspace patch-intent artifact");
+    };
+    assert_eq!(intent.intent_id, "with-contracts");
+}
+
+#[test]
 fn command_compiler_reads_release_topology_from_stdout() {
     let command = GerbilCommandSpec::new("/bin/sh").arg("-c").arg(
         "cat >/dev/null; printf '%s\n' '{\"artifact\":{\"ReleaseTopology\":{\"topology_id\":\"release:gerbil\",\"crate_name\":\"marlin-gerbil-scheme\",\"publish_enabled\":false,\"asset_audit_command\":\"cargo package -p marlin-gerbil-scheme --allow-dirty --no-verify --list\",\"package_assets\":[\"README.md\",\"fixtures/gerbil\"],\"runtime_dependency_chain\":[\"marlin-gerbil-ir\",\"marlin-workspace-patch\"],\"workflow_dependency_chain\":[\"marlin-org-workflow\",\"marlin-org-store\"],\"gates\":[{\"gate_id\":\"real-gxi\",\"command\":\"cargo test -p marlin-gerbil-scheme --test unit_test command::real_gxi -- --ignored\",\"requires_local_gerbil\":true,\"required_artifacts\":[\"workspace_schema\",\"workspace_patch_intent\"],\"visibility\":[{\"report_key\":\"real_gxi_release_gate\",\"evidence_keys\":[\"workspace_schema\",\"workspace_patch_intent\"],\"artifact_paths\":[\"fixtures/gerbil/command-adapter.ss\"]}]}]}}}'",
@@ -130,6 +184,30 @@ fn command_compiler_passes_configured_environment() {
         .expect("command should receive configured environment values");
 
     assert_eq!(artifact, loop_graph_artifact("from-env"));
+}
+
+#[test]
+fn compile_request_defaults_workspace_patch_intent_contract_facts() {
+    let request = GerbilCompileRequest::new(
+        GerbilSource::new(
+            "audit/workspace-patch-intent",
+            "(workspace-patch-intent \"intent:memory\")",
+        ),
+        GerbilArtifactKind::WorkspacePatchIntent,
+    );
+    let schema_request = GerbilCompileRequest::new(
+        GerbilSource::new(
+            "audit/workspace-schema",
+            "(workspace-schema workspace-record)",
+        ),
+        GerbilArtifactKind::WorkspaceSchema,
+    );
+
+    assert!(
+        request.contract_facts.is_some(),
+        "workspace patch-intent requests carry contract facts by default"
+    );
+    assert!(schema_request.contract_facts.is_none());
 }
 
 #[test]

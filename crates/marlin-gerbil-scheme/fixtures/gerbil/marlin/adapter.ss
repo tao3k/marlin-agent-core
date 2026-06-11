@@ -82,6 +82,17 @@ package: marlin
          (artifact (compile-requested-marlin-artifact expected source-text)))
     artifact))
 
+(def (marlin-error->string error)
+  (call-with-output-string "" (lambda (port) (write error port))))
+
+(def (display-marlin-compile-request-result request)
+  (with-catch
+   (lambda (error)
+     (display-marlin-compile-error-response (marlin-error->string error)))
+   (lambda ()
+     (display-marlin-compile-response
+      (compile-gerbil-compile-request request)))))
+
 (def (run-marlin-command-adapter)
   (let ((artifact (compile-gerbil-compile-request (read-gerbil-compile-request))))
     (display-marlin-compile-response artifact)
@@ -90,8 +101,7 @@ package: marlin
 (def (run-marlin-command-adapter-batch)
   (let loop ((requests (read-gerbil-compile-request-lines)))
     (unless (null? requests)
-      (display-marlin-compile-response
-       (compile-gerbil-compile-request (car requests)))
+      (display-marlin-compile-request-result (car requests))
       (newline)
       (loop (cdr requests)))))
 

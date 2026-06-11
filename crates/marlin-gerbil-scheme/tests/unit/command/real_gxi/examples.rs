@@ -1,10 +1,11 @@
 use super::{assert_workspace_patch_intent_artifact, local_gxi};
 use marlin_gerbil_scheme::{
     GERBIL_LOADPATH_ENV, GerbilArtifactKind, GerbilCommandCompiler, GerbilCompileResponse,
-    GerbilCompiler, GerbilSource, write_gerbil_runtime_assets,
+    GerbilCompiledArtifact, GerbilCompiler, GerbilSource, write_gerbil_runtime_assets,
 };
 use std::{
     fs,
+    path::PathBuf,
     process::Command,
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -111,6 +112,49 @@ fn command_compiler_real_gxi_reads_workspace_patch_intent_source_file() {
 
     assert_workspace_patch_intent_artifact(artifact);
     let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+#[ignore = "requires a local Gerbil gxi executable"]
+fn command_compiler_real_gxi_runs_compile_source_example() {
+    if local_gxi().is_none() {
+        return;
+    };
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = manifest_dir
+        .parent()
+        .and_then(|path| path.parent())
+        .expect("resolve workspace root from crate manifest dir");
+    let source_path = manifest_dir
+        .join("examples")
+        .join("workspace-patch-intent-source.ss");
+    let cargo = std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
+
+    let output = Command::new(cargo)
+        .current_dir(workspace_root)
+        .args([
+            "run",
+            "--locked",
+            "-p",
+            "marlin-gerbil-scheme",
+            "--example",
+            "compile-source",
+            "--",
+            "workspace-patch-intent",
+        ])
+        .arg(&source_path)
+        .output()
+        .expect("run Gerbil compile-source example");
+
+    assert!(
+        output.status.success(),
+        "compile-source example failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let artifact: GerbilCompiledArtifact =
+        serde_json::from_slice(&output.stdout).expect("decode compile-source artifact");
+    assert_workspace_patch_intent_artifact(artifact);
 }
 
 #[test]

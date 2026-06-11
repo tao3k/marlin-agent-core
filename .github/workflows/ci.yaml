@@ -151,6 +151,7 @@ jobs:
         run: |
           cargo package -p marlin-gerbil-scheme --list --allow-dirty | tee gerbil-package-files.txt
           grep -Fx README.md gerbil-package-files.txt
+          grep -Fx examples/compile-source.rs gerbil-package-files.txt
           grep -Fx examples/workspace-patch-intent.rs gerbil-package-files.txt
           grep -Fx examples/workspace-patch-intent-workflow.rs gerbil-package-files.txt
           grep -Fx examples/workspace-patch-intent-source.ss gerbil-package-files.txt

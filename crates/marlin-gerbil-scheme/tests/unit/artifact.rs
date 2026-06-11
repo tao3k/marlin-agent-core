@@ -212,6 +212,12 @@ fn artifact_release_topology_persists_landing_status_sidecar() {
     assert_eq!(landing.crate_name, "marlin-gerbil-scheme");
     assert_eq!(landing.passed_gates, 1);
     assert_eq!(landing.observed_visibility_reports, 1);
+    assert_eq!(landing.observed_evidence_keys, ["required_artifacts"]);
+    assert_eq!(
+        landing.observed_artifact_paths,
+        ["fixtures/gerbil/build.ss"]
+    );
+    assert!(landing.missing_artifact_paths.is_empty());
 
     let _ = fs::remove_dir_all(root);
 }

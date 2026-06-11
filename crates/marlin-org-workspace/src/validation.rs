@@ -92,9 +92,9 @@ fn validate_contract_assertion(
         .map(|node| node.id.clone())
         .collect::<Vec<_>>();
     let matched = matched_nodes.len();
-    let status = count_at_least(&assertion.expectation)
-        .map(|minimum| {
-            if matched >= minimum {
+    let status = evaluate_expectation(&assertion.expectation, matched)
+        .map(|passed| {
+            if passed {
                 OrgContractValidationStatus::Passed
             } else {
                 OrgContractValidationStatus::Failed
@@ -114,26 +114,96 @@ fn validate_contract_assertion(
     }
 }
 
-fn count_at_least(expectation: &OrgContractExpectation) -> Option<usize> {
+fn evaluate_expectation(expectation: &OrgContractExpectation, actual: usize) -> Option<bool> {
     let label = expectation.as_str();
+    let lower = label.to_ascii_lowercase();
+    if lower == "exists" {
+        return Some(actual > 0);
+    }
+    if lower == "notexists" || lower == "not exists" {
+        return Some(actual == 0);
+    }
+
+    let comparison = parse_count_comparison(label)?;
+    Some(comparison.operator.matches(actual, comparison.expected))
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct CountComparison {
+    operator: CountCompareOperator,
+    expected: usize,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum CountCompareOperator {
+    Eq,
+    Ne,
+    Lt,
+    Le,
+    Gt,
+    Ge,
+}
+
+impl CountCompareOperator {
+    fn matches(self, actual: usize, expected: usize) -> bool {
+        match self {
+            Self::Eq => actual == expected,
+            Self::Ne => actual != expected,
+            Self::Lt => actual < expected,
+            Self::Le => actual <= expected,
+            Self::Gt => actual > expected,
+            Self::Ge => actual >= expected,
+        }
+    }
+}
+
+fn parse_count_comparison(label: &str) -> Option<CountComparison> {
     let lower = label.to_ascii_lowercase();
     if !lower.contains("count") {
         return None;
     }
 
+    let operator = parse_count_operator(label).unwrap_or(CountCompareOperator::Ge);
+    let expected = parse_first_usize(label)?;
+    Some(CountComparison { operator, expected })
+}
+
+fn parse_count_operator(label: &str) -> Option<CountCompareOperator> {
+    let normalized = label.to_ascii_lowercase();
+    if normalized.contains("!=") || normalized.contains("(ne,") {
+        Some(CountCompareOperator::Ne)
+    } else if normalized.contains("<=") || normalized.contains("(le,") {
+        Some(CountCompareOperator::Le)
+    } else if normalized.contains('<') || normalized.contains("(lt,") {
+        Some(CountCompareOperator::Lt)
+    } else if normalized.contains(">=") || normalized.contains("(ge,") {
+        Some(CountCompareOperator::Ge)
+    } else if normalized.contains('>') || normalized.contains("(gt,") {
+        Some(CountCompareOperator::Gt)
+    } else if normalized.contains("==") || normalized.contains("(eq,") {
+        Some(CountCompareOperator::Eq)
+    } else {
+        None
+    }
+}
+
+fn parse_first_usize(label: &str) -> Option<usize> {
     let start = label.find(|character: char| character.is_ascii_digit())?;
-    let value = label[start..]
+    label[start..]
         .chars()
         .take_while(|character| character.is_ascii_digit())
-        .collect::<String>();
-    value.parse().ok()
+        .collect::<String>()
+        .parse()
+        .ok()
 }
 
 fn node_matches_contract_query(node: &OrgNode, query: &OrgContractQuery) -> bool {
-    query
-        .summary_equals
-        .iter()
-        .all(|(key, value)| node_summary_value(node, key).is_some_and(|actual| actual == value))
+    node_matches_contract_category(node, query)
+        && node_matches_contract_kind(node, query)
+        && query
+            .summary_equals
+            .iter()
+            .all(|(key, value)| node_summary_value(node, key).is_some_and(|actual| actual == value))
         && query.summary_contains.iter().all(|(key, value)| {
             node_summary_value(node, key).is_some_and(|actual| actual.contains(value))
         })
@@ -147,6 +217,28 @@ fn node_matches_contract_query(node: &OrgNode, query: &OrgContractQuery) -> bool
                 .get(key)
                 .is_some_and(|actual| actual.contains(value))
         })
+}
+
+fn node_matches_contract_category(node: &OrgNode, query: &OrgContractQuery) -> bool {
+    query.category.as_ref().is_none_or(|category| {
+        let category = category.as_str().to_ascii_lowercase();
+        if category == "section" {
+            node.kind == marlin_org_model::OrgNodeKind::Heading
+        } else {
+            category == format!("{:?}", node.kind).to_ascii_lowercase()
+        }
+    })
+}
+
+fn node_matches_contract_kind(node: &OrgNode, query: &OrgContractQuery) -> bool {
+    query.kind.as_ref().is_none_or(|kind| {
+        let kind = kind.as_str().to_ascii_lowercase();
+        if kind.contains("headline") || kind.contains("heading") {
+            node.kind == marlin_org_model::OrgNodeKind::Heading
+        } else {
+            kind == format!("{:?}", node.kind).to_ascii_lowercase()
+        }
+    })
 }
 
 fn node_summary_value<'a>(node: &'a OrgNode, key: &str) -> Option<&'a str> {

@@ -5,6 +5,7 @@ use marlin_org_model::{
     OrgContractValidationStatus, OrgNodeId,
 };
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeSet;
 
 /// Rendered workspace view bounded for agent or UI consumers.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -63,6 +64,8 @@ pub struct RenderedContractSummary {
     pub validation_passed: usize,
     pub validation_failed: usize,
     pub validation_skipped: usize,
+    pub validation_matched_nodes: usize,
+    pub validation_matched_node_ids: Vec<OrgNodeId>,
 }
 
 impl RenderedContractSummary {
@@ -90,6 +93,14 @@ impl RenderedContractSummary {
             .iter()
             .filter(|receipt| matches!(receipt.status, OrgContractValidationStatus::Skipped))
             .count();
+        let validation_matched_node_ids = facts
+            .validations
+            .receipts
+            .iter()
+            .flat_map(|receipt| receipt.matched_nodes.iter().cloned())
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>();
 
         Self {
             resolved_references,
@@ -100,6 +111,8 @@ impl RenderedContractSummary {
             validation_passed,
             validation_failed,
             validation_skipped,
+            validation_matched_nodes: validation_matched_node_ids.len(),
+            validation_matched_node_ids,
         }
     }
 
@@ -116,7 +129,18 @@ impl RenderedContractSummary {
             format!("contracts.validation.passed: {}", self.validation_passed),
             format!("contracts.validation.failed: {}", self.validation_failed),
             format!("contracts.validation.skipped: {}", self.validation_skipped),
+            format!(
+                "contracts.validation.matched_nodes: {}",
+                self.validation_matched_nodes
+            ),
         ];
+
+        for node in &self.validation_matched_node_ids {
+            lines.push(format!(
+                "contract.validation.matched_node: {}",
+                node.as_str()
+            ));
+        }
 
         for diagnostic in diagnostics {
             lines.push(format!(

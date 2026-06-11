@@ -81,6 +81,7 @@ package: marlin
         marlin-release-visibility-artifact-paths
         display-marlin-artifact
         display-marlin-compile-response
+        display-marlin-compile-error-response
         display-gerbil-artifact-response
         display-gerbil-compile-response)
 
@@ -628,6 +629,11 @@ package: marlin
 
 (def (display-marlin-compile-response artifact)
   (display-marlin-artifact artifact))
+
+(def (display-marlin-compile-error-response message)
+  (display "{\"error\":{\"message\":")
+  (display-json-string message)
+  (display "}}"))
 
 (def (display-gerbil-artifact-response artifact-kind artifact)
   (display-marlin-artifact (make-marlin-artifact artifact-kind artifact)))

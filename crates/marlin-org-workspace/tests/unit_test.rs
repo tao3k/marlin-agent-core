@@ -1,2 +1,2 @@
-#[path = "unit/document.rs"]
+#[path = "unit/document/mod.rs"]
 mod document;

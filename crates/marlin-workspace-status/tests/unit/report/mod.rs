@@ -79,6 +79,17 @@ fn release_status_projects_pending_topology_visibility() {
                 && report.evidence_keys == ["workspace_patch_intent"]
                 && !report.observed)
     );
+    let report = status.landing_report();
+    assert!(!report.landing_complete);
+    assert_eq!(
+        report.missing_artifact_paths,
+        [
+            "fixtures/gerbil/build.ss".to_string(),
+            "fixtures/gerbil/command-adapter.ss".to_string()
+        ]
+    );
+    assert!(report.observed_evidence_keys.is_empty());
+    assert!(report.observed_artifact_paths.is_empty());
 }
 
 #[test]
@@ -135,6 +146,9 @@ fn release_status_records_gate_receipts() {
     assert_eq!(report.gate_count, 1);
     assert_eq!(report.passed_gates, 1);
     assert_eq!(report.observed_visibility_reports, 1);
+    assert_eq!(report.observed_evidence_keys, ["required_artifacts"]);
+    assert_eq!(report.observed_artifact_paths, ["fixtures/gerbil/build.ss"]);
+    assert!(report.missing_artifact_paths.is_empty());
     assert!(report.blocking_gates.is_empty());
     assert!(report.missing_visibility_reports.is_empty());
 }
@@ -189,6 +203,12 @@ fn release_status_marks_visibility_evidence_as_passed_gate() {
     assert_eq!(report.passed_gates, 1);
     assert_eq!(report.visibility_report_count, 1);
     assert_eq!(report.observed_visibility_reports, 1);
+    assert_eq!(report.observed_evidence_keys, ["workspace_patch_intent"]);
+    assert_eq!(
+        report.observed_artifact_paths,
+        ["fixtures/gerbil/command-adapter.ss"]
+    );
+    assert!(report.missing_artifact_paths.is_empty());
     assert!(report.blocking_gates.is_empty());
     assert!(report.missing_visibility_reports.is_empty());
 }

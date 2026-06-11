@@ -1,2 +1,2 @@
-#[path = "unit/memory.rs"]
+#[path = "unit/memory/mod.rs"]
 mod memory;

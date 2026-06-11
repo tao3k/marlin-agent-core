@@ -124,6 +124,37 @@ impl MemoryOrgWorkspace {
         self.load_workspace(workspace)
     }
 
+    /// Load multiple `Org` documents and discover contract registry documents from the batch.
+    pub fn load_documents_with_discovered_contracts(
+        &self,
+        documents: &[OrgDocument],
+    ) -> WorkspaceResult<Vec<OrgNodeId>> {
+        let contract_documents = OrgDocumentLoader::discover_contract_documents(documents);
+        self.load_documents_with_contracts(documents, &contract_documents)
+    }
+
+    /// Load multiple `Org` documents with explicit contract registry documents.
+    pub fn load_documents_with_contracts(
+        &self,
+        documents: &[OrgDocument],
+        contract_documents: &[OrgDocument],
+    ) -> WorkspaceResult<Vec<OrgNodeId>> {
+        let mut merged_workspace = OrgDocumentWorkspace::default();
+        for document in documents {
+            let external_contract_documents = contract_documents
+                .iter()
+                .filter(|contract_document| contract_document.id != document.id)
+                .cloned()
+                .collect::<Vec<_>>();
+            let workspace = OrgDocumentLoader::load_workspace_with_contracts(
+                document,
+                &external_contract_documents,
+            )?;
+            merge_document_workspace(&mut merged_workspace, workspace);
+        }
+        self.load_workspace(merged_workspace)
+    }
+
     fn load_workspace(&self, workspace: OrgDocumentWorkspace) -> WorkspaceResult<Vec<OrgNodeId>> {
         let ids = workspace
             .nodes
@@ -369,6 +400,39 @@ impl MemoryOrgWorkspace {
                     .collect()
             }
             WorkspaceScope::Nodes(ids) => ids.iter().filter_map(|id| nodes.get(id)).collect(),
+        }
+    }
+}
+
+fn merge_document_workspace(target: &mut OrgDocumentWorkspace, workspace: OrgDocumentWorkspace) {
+    append_contracts_unique(&mut target.contracts, workspace.contracts);
+    target.nodes.extend(workspace.nodes);
+    target
+        .contract_resolutions
+        .references
+        .extend(workspace.contract_resolutions.references);
+    target
+        .contract_resolutions
+        .diagnostics
+        .extend(workspace.contract_resolutions.diagnostics);
+    target
+        .contract_validations
+        .receipts
+        .extend(workspace.contract_validations.receipts);
+    target
+        .contract_validations
+        .diagnostics
+        .extend(workspace.contract_validations.diagnostics);
+}
+
+fn append_contracts_unique(target: &mut OrgContractRegistry, incoming: OrgContractRegistry) {
+    for contract in incoming.contracts {
+        if !target
+            .contracts
+            .iter()
+            .any(|existing| existing.id == contract.id)
+        {
+            target.contracts.push(contract);
         }
     }
 }
@@ -666,6 +730,8 @@ fn contract_status(contract_facts: &RenderedContractFacts) -> ContractStatus {
         validation_passed: summary.validation_passed,
         validation_failed: summary.validation_failed,
         validation_skipped: summary.validation_skipped,
+        validation_matched_nodes: summary.validation_matched_nodes,
+        validation_matched_node_ids: summary.validation_matched_node_ids.clone(),
         reference_resolutions: contract_facts.resolutions.clone(),
         diagnostic_records: contract_facts.diagnostics.clone(),
         template_records: contract_facts.templates.clone(),
