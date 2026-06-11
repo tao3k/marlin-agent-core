@@ -1,2 +1,2 @@
-#[path = "unit/protocol.rs"]
+#[path = "unit/protocol/mod.rs"]
 mod protocol;

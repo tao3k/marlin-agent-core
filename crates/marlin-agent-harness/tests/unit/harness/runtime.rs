@@ -14,7 +14,8 @@ use marlin_agent_kernel::{
 };
 use marlin_agent_protocol::{
     AgentScenario, AgentScenarioStep, HookEventName, HookHandlerType, HookRunStatus,
-    HookRunSummary, LoopEvidenceKind, RuntimeHome,
+    HookRunSummary, LoopEvidence, LoopEvidenceKind, LoopPerformanceEvidence,
+    PERFORMANCE_EVIDENCE_KEYS, RuntimeHome,
 };
 use marlin_agent_runtime::{
     HookRuntime, RuntimeContext, RuntimeEnvironment, RuntimeEvent, RuntimeFuture, SubAgentRuntime,
@@ -128,6 +129,47 @@ async fn harness_execution_report_captures_runtime_events() {
     assert!(evaluated.is_success());
 }
 
+#[tokio::test]
+async fn harness_execution_report_carries_performance_benchmark_evidence() {
+    let scenario = AgentScenario::new("bench").expecting_evidence(LoopEvidenceKind::Performance);
+    let graph = HarnessGraphBuilder::new("graph")
+        .node("node-1", "eventful")
+        .build();
+    let request = GraphLoopExecutionRequest::new("run", graph);
+    let kernel =
+        TokioGraphLoopKernel::new("run", "graph").with_executor("eventful", EventfulExecutor);
+    let mut harness = HarnessRuntime::new(16);
+    let performance_evidence: LoopEvidence = LoopPerformanceEvidence {
+        subject: "src/runtime.rs".to_owned(),
+        benchmark_command: "cargo bench -p marlin-agent-harness".to_owned(),
+        baseline: "p95=10ms".to_owned(),
+        regression_threshold: "5%".to_owned(),
+        latency_or_throughput: "throughput=1000/s".to_owned(),
+        allocation_profile: "allocations=steady".to_owned(),
+        profile_artifact: "target/criterion/report/index.html".to_owned(),
+    }
+    .into();
+
+    harness.record_evidence(performance_evidence);
+
+    let report = harness.execute_graph(&scenario, &kernel, request).await;
+    let evaluated = AgentHarness::evaluate_execution_report(&scenario, &report);
+    let detail = report.evidence[0]
+        .detail
+        .as_deref()
+        .expect("performance detail");
+
+    assert!(report.assertion.is_none());
+    assert_eq!(report.evidence[0].kind, LoopEvidenceKind::Performance);
+    assert!(evaluated.is_success());
+    for key in PERFORMANCE_EVIDENCE_KEYS {
+        assert!(
+            detail.contains(key),
+            "missing performance evidence key {key}"
+        );
+    }
+}
+
 #[test]
 fn harness_uses_rust_project_harness_performance_verification_index() {
     let owner_path = PathBuf::from("src/runtime.rs");
@@ -162,18 +204,15 @@ fn harness_uses_rust_project_harness_performance_verification_index() {
     );
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].state, RustVerificationTaskState::Pending);
-    assert!(
-        records[0]
-            .required_evidence_keys
-            .iter()
-            .any(|key| key == "benchmark_command")
-    );
-    assert!(
-        records[0]
-            .required_evidence_keys
-            .iter()
-            .any(|key| key == "latency_or_throughput")
-    );
+    for key in PERFORMANCE_EVIDENCE_KEYS {
+        assert!(
+            records[0]
+                .required_evidence_keys
+                .iter()
+                .any(|required_key| required_key == key),
+            "rust harness performance index missing evidence key {key}",
+        );
+    }
     assert!(rendered.contains("[perf-state]"));
 }
 

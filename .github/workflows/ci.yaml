@@ -107,3 +107,44 @@ jobs:
 
       - name: Run Rust tests
         run: cargo test --workspace --locked
+
+  gerbil:
+    name: Gerbil gates
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      CARGO_INCREMENTAL: "0"
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: marlin-agent-core-gerbil-${{ runner.os }}
+          cache-on-failure: true
+
+      - name: Fetch workspace dependencies
+        run: cargo fetch --locked
+
+      - name: Test Gerbil workflow surface
+        run: |
+          cargo test -p marlin-gerbil-ir -p marlin-gerbil-scheme -p marlin-org-workflow --locked
+
+      - name: Check Gerbil examples
+        run: cargo check -p marlin-gerbil-scheme --examples --locked
+
+      - name: Audit Gerbil package assets
+        run: |
+          cargo package -p marlin-gerbil-scheme --list --allow-dirty | tee gerbil-package-files.txt
+          grep -Fx README.md gerbil-package-files.txt
+          grep -Fx examples/workspace-patch-intent.rs gerbil-package-files.txt
+          grep -Fx examples/workspace-patch-intent-workflow.rs gerbil-package-files.txt
+          grep -Fx examples/workspace-patch-intent-source.ss gerbil-package-files.txt
+          grep -Fx fixtures/gerbil/command-adapter.ss gerbil-package-files.txt
+          grep -Fx fixtures/gerbil/marlin/adapter.ss gerbil-package-files.txt
+          grep -Fx fixtures/gerbil/marlin/parser.ss gerbil-package-files.txt
+          grep -Fx fixtures/gerbil/marlin/protocol.ss gerbil-package-files.txt
+          grep -Fx fixtures/gerbil/marlin/request.ss gerbil-package-files.txt

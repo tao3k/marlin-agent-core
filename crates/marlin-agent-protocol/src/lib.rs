@@ -10,7 +10,13 @@ mod sub_agent;
 mod trace;
 
 pub use event::{AgentEvent, AgentEventTopic};
-pub use evidence::{LoopEvidence, LoopEvidenceKind};
+pub use evidence::{
+    LoopEvidence, LoopEvidenceKind, LoopPerformanceEvidence,
+    PERFORMANCE_EVIDENCE_ALLOCATION_PROFILE, PERFORMANCE_EVIDENCE_BASELINE,
+    PERFORMANCE_EVIDENCE_BENCHMARK_COMMAND, PERFORMANCE_EVIDENCE_KEYS,
+    PERFORMANCE_EVIDENCE_LATENCY_OR_THROUGHPUT, PERFORMANCE_EVIDENCE_PROFILE_ARTIFACT,
+    PERFORMANCE_EVIDENCE_REGRESSION_THRESHOLD,
+};
 pub use graph::{
     ExecutorName, GraphId, GraphLoopExecutionRequest, GraphLoopExecutionResult,
     GraphLoopExecutionStatus, GraphNodeExecutionReceipt, GraphNodeExecutionStatus,
