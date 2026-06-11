@@ -1,8 +1,7 @@
 use std::sync::Arc;
 
 use marlin_agent_harness::{
-    AgentHarness, HarnessExecutionReport, HarnessGraphBuilder, HarnessRuntime, HarnessSpanName,
-    StaticHookRuntime,
+    AgentHarness, HarnessExecutionReport, HarnessGraphBuilder, HarnessRuntime, StaticHookRuntime,
 };
 use marlin_agent_hooks::{HookDispatcher, HookInvocation, HookRegistration, HookRegistry};
 use marlin_agent_kernel::{
@@ -154,14 +153,14 @@ async fn harness_runs_provider_tool_sub_agent_scenario_with_hooks_and_environmen
                 .expecting_event_topic(observability::TOPIC_KERNEL_HOOK)
                 .expecting_event_topic(observability::TOPIC_KERNEL_SUB_AGENT)
                 .expecting_event_topic("test.e2e")
-                .expecting_span_name(observability::SPAN_RUNTIME_TASK)
-                .expecting_span_name(observability::SPAN_AGENT_PROVIDER)
-                .expecting_span_name(observability::SPAN_AGENT_TOOL)
-                .expecting_span_name(observability::SPAN_AGENT_SUB_AGENT)
-                .expecting_span_name(observability::SPAN_HOOK_DISPATCH)
-                .expecting_span_name(observability::SPAN_HOOK_RUN)
-                .expecting_span_name(observability::SPAN_HARNESS_EXECUTION)
-                .expecting_span_name(observability::SPAN_HARNESS_RESULT),
+                .expecting_span_name(observability::runtime_task_span_name())
+                .expecting_span_name(observability::agent_provider_span_name())
+                .expecting_span_name(observability::agent_tool_span_name())
+                .expecting_span_name(observability::agent_sub_agent_span_name())
+                .expecting_span_name(observability::hook_dispatch_span_name())
+                .expecting_span_name(observability::hook_run_span_name())
+                .expecting_span_name(observability::harness_execution_span_name())
+                .expecting_span_name(observability::harness_result_span_name()),
         )
         .expecting_evidence(LoopEvidenceKind::Runtime);
     let hook_dispatcher = e2e_hook_dispatcher();
@@ -219,16 +218,15 @@ async fn harness_runs_provider_tool_sub_agent_scenario_with_hooks_and_environmen
     assert!(report.assertion.is_none());
     assert!(evaluated.is_success());
     for expected_span in [
-        observability::SPAN_RUNTIME_TASK,
-        observability::SPAN_AGENT_PROVIDER,
-        observability::SPAN_AGENT_TOOL,
-        observability::SPAN_AGENT_SUB_AGENT,
-        observability::SPAN_HOOK_DISPATCH,
-        observability::SPAN_HOOK_RUN,
-        observability::SPAN_HARNESS_EXECUTION,
-        observability::SPAN_HARNESS_RESULT,
+        observability::runtime_task_span_name(),
+        observability::agent_provider_span_name(),
+        observability::agent_tool_span_name(),
+        observability::agent_sub_agent_span_name(),
+        observability::hook_dispatch_span_name(),
+        observability::hook_run_span_name(),
+        observability::harness_execution_span_name(),
+        observability::harness_result_span_name(),
     ] {
-        let expected_span = HarnessSpanName::new(expected_span);
         assert!(
             report.has_span(&expected_span),
             "missing expected harness span {}",
@@ -266,21 +264,22 @@ fn assert_agent_core_trace_spans(report: &HarnessExecutionReport) {
         .map(|span_name| span_name.as_str())
         .collect::<Vec<_>>();
     assert!(
-        report.has_span(&HarnessSpanName::new(observability::SPAN_RUNTIME_TASK)),
+        report.has_span(&observability::runtime_task_span_name()),
         "captured spans: {span_names:?}"
     );
     assert_eq!(
-        report.count_span(&HarnessSpanName::new(observability::SPAN_HOOK_DISPATCH)),
+        report.count_span(&observability::hook_dispatch_span_name()),
         6
     );
-    assert_eq!(
-        report.count_span(&HarnessSpanName::new(observability::SPAN_HOOK_RUN)),
-        6
-    );
+    assert_eq!(report.count_span(&observability::hook_run_span_name()), 6);
 
     let provider_span = report
-        .find_span(&HarnessSpanName::new(observability::SPAN_AGENT_PROVIDER))
+        .find_span(&observability::agent_provider_span_name())
         .expect("expected provider trace span");
+    assert_eq!(
+        provider_span.name,
+        observability::agent_provider_span_name()
+    );
     assert_eq!(
         provider_span
             .fields
@@ -297,7 +296,7 @@ fn assert_agent_core_trace_spans(report: &HarnessExecutionReport) {
     );
 
     let result_span = report
-        .find_span(&HarnessSpanName::new(observability::SPAN_HARNESS_RESULT))
+        .find_span(&observability::harness_result_span_name())
         .expect("expected harness result trace span");
     assert_eq!(
         result_span

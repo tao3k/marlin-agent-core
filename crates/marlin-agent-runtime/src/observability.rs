@@ -2,7 +2,7 @@
 
 use std::fmt;
 
-use marlin_agent_protocol::{AgentEvent, AgentEventTopic, ExecutorName, NodeId};
+use marlin_agent_protocol::{AgentEvent, AgentEventTopic, AgentSpanName, ExecutorName, NodeId};
 
 /// Tracing span name for runtime-owned task execution.
 pub const SPAN_RUNTIME_TASK: &str = "runtime.task";
@@ -108,6 +108,66 @@ impl<'a> HookRegistrationId<'a> {
     pub fn as_str(self) -> &'a str {
         self.value
     }
+}
+
+/// Create a typed `runtime.task` span name.
+pub fn runtime_task_span_name() -> AgentSpanName {
+    AgentSpanName::new(SPAN_RUNTIME_TASK)
+}
+
+/// Create a typed `runtime.provider` span name.
+pub fn runtime_provider_span_name() -> AgentSpanName {
+    AgentSpanName::new(SPAN_RUNTIME_PROVIDER)
+}
+
+/// Create a typed `runtime.tool` span name.
+pub fn runtime_tool_span_name() -> AgentSpanName {
+    AgentSpanName::new(SPAN_RUNTIME_TOOL)
+}
+
+/// Create a typed `runtime.sub_agent` span name.
+pub fn runtime_sub_agent_span_name() -> AgentSpanName {
+    AgentSpanName::new(SPAN_RUNTIME_SUB_AGENT)
+}
+
+/// Create a typed `runtime.hook` span name.
+pub fn runtime_hook_span_name() -> AgentSpanName {
+    AgentSpanName::new(SPAN_RUNTIME_HOOK)
+}
+
+/// Create a typed `agent.provider` span name.
+pub fn agent_provider_span_name() -> AgentSpanName {
+    AgentSpanName::new(SPAN_AGENT_PROVIDER)
+}
+
+/// Create a typed `agent.tool` span name.
+pub fn agent_tool_span_name() -> AgentSpanName {
+    AgentSpanName::new(SPAN_AGENT_TOOL)
+}
+
+/// Create a typed `agent.sub_agent` span name.
+pub fn agent_sub_agent_span_name() -> AgentSpanName {
+    AgentSpanName::new(SPAN_AGENT_SUB_AGENT)
+}
+
+/// Create a typed `hook.dispatch` span name.
+pub fn hook_dispatch_span_name() -> AgentSpanName {
+    AgentSpanName::new(SPAN_HOOK_DISPATCH)
+}
+
+/// Create a typed `hook.run` span name.
+pub fn hook_run_span_name() -> AgentSpanName {
+    AgentSpanName::new(SPAN_HOOK_RUN)
+}
+
+/// Create a typed `harness.execution` span name.
+pub fn harness_execution_span_name() -> AgentSpanName {
+    AgentSpanName::new(SPAN_HARNESS_EXECUTION)
+}
+
+/// Create a typed `harness.result` span name.
+pub fn harness_result_span_name() -> AgentSpanName {
+    AgentSpanName::new(SPAN_HARNESS_RESULT)
 }
 
 /// Create a `runtime.task` tracing span with the supplied runtime kind.

@@ -2,8 +2,9 @@
 
 use marlin_agent_kernel::GraphLoopKernel;
 use marlin_agent_protocol::{
-    AgentEvent, AgentEventTopic, AgentScenario, GraphLoopExecutionRequest,
-    GraphLoopExecutionResult, GraphLoopExecutionStatus, LoopEvidence, RuntimePlanSnapshot,
+    AgentEvent, AgentEventTopic, AgentScenario, AgentSpanName, AgentTraceSpanRecord,
+    GraphLoopExecutionRequest, GraphLoopExecutionResult, GraphLoopExecutionStatus, LoopEvidence,
+    RuntimePlanSnapshot,
 };
 use marlin_agent_runtime::{
     CancellationToken, RuntimeEnvironment, RuntimeEventStream, TokioAgentRuntime,
@@ -11,7 +12,7 @@ use marlin_agent_runtime::{
 use std::time::{Duration, Instant};
 use tokio_stream::StreamExt;
 
-use crate::{HarnessAssertionError, TraceRecorder, TraceSpanRecord, assert_evidence_kinds};
+use crate::{HarnessAssertionError, TraceRecorder, assert_evidence_kinds};
 
 /// Controlled runtime plus typed evidence captured for one harness scenario.
 #[derive(Debug)]
@@ -121,7 +122,7 @@ impl HarnessRuntime {
         scenario: &AgentScenario,
         result: GraphLoopExecutionResult,
         events: Vec<AgentEvent>,
-        trace_spans: Vec<TraceSpanRecord>,
+        trace_spans: Vec<AgentTraceSpanRecord>,
         duration: Duration,
         assertion: Option<HarnessAssertionError>,
     ) -> HarnessExecutionReport {
@@ -183,11 +184,8 @@ fn execution_summary(
     }
 }
 
-fn span_names(trace_spans: &[TraceSpanRecord]) -> Vec<HarnessSpanName> {
-    trace_spans
-        .iter()
-        .map(|span| HarnessSpanName::new(span.name))
-        .collect()
+fn span_names(trace_spans: &[AgentTraceSpanRecord]) -> Vec<AgentSpanName> {
+    trace_spans.iter().map(|span| span.name.clone()).collect()
 }
 
 /// Result of running one graph-loop request through the harness.
@@ -197,8 +195,8 @@ pub struct HarnessExecutionReport {
     pub result: GraphLoopExecutionResult,
     pub events: Vec<AgentEvent>,
     pub evidence: Vec<LoopEvidence>,
-    pub trace_spans: Vec<TraceSpanRecord>,
-    pub span_names: Vec<HarnessSpanName>,
+    pub trace_spans: Vec<AgentTraceSpanRecord>,
+    pub span_names: Vec<AgentSpanName>,
     pub summary: HarnessExecutionSummary,
     pub assertion: Option<HarnessAssertionError>,
 }
@@ -225,40 +223,20 @@ impl HarnessExecutionReport {
     }
 
     /// Returns true when the report captured at least one tracing span with this name.
-    pub fn has_span(&self, name: &HarnessSpanName) -> bool {
-        self.trace_spans
-            .iter()
-            .any(|span| span.name == name.as_str())
+    pub fn has_span(&self, name: &AgentSpanName) -> bool {
+        self.trace_spans.iter().any(|span| &span.name == name)
     }
 
     /// Counts tracing spans captured with this name.
-    pub fn count_span(&self, name: &HarnessSpanName) -> usize {
+    pub fn count_span(&self, name: &AgentSpanName) -> usize {
         self.trace_spans
             .iter()
-            .filter(|span| span.name == name.as_str())
+            .filter(|span| &span.name == name)
             .count()
     }
 
     /// Returns the first tracing span captured with this name.
-    pub fn find_span(&self, name: &HarnessSpanName) -> Option<&TraceSpanRecord> {
-        self.trace_spans
-            .iter()
-            .find(|span| span.name == name.as_str())
-    }
-}
-
-/// Harness-owned tracing span name captured during one execution report.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct HarnessSpanName(String);
-
-impl HarnessSpanName {
-    /// Creates a harness-owned span-name fact.
-    pub fn new(value: impl Into<String>) -> Self {
-        Self(value.into())
-    }
-
-    /// Returns the captured span name.
-    pub fn as_str(&self) -> &str {
-        self.0.as_str()
+    pub fn find_span(&self, name: &AgentSpanName) -> Option<&AgentTraceSpanRecord> {
+        self.trace_spans.iter().find(|span| &span.name == name)
     }
 }

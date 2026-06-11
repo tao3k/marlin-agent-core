@@ -27,4 +27,4 @@ pub use runtime_environment::{
 };
 pub use scenario::{AgentScenario, AgentScenarioStep};
 pub use sub_agent::{SubAgentActivity, SubAgentActivityKind, SubAgentSource};
-pub use trace::AgentSpanName;
+pub use trace::{AgentSpanName, AgentTraceSpanRecord};

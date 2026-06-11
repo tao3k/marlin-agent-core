@@ -86,6 +86,10 @@ Additional fields may be added when they describe core agent behavior. High-card
 
 =marlin-agent-hooks= owns hook dispatch and handler-run spans because it has hook registry metadata.
 
+=marlin-agent-protocol= owns reusable observability facts such as span names and captured span records.
+
+=marlin-agent-harness= owns scenario execution and result capture spans because it combines runtime events, trace spans, evidence, and diagnostics for tests.
+
 Provider, tool, and model implementation crates may add child spans later, but they should inherit this contract instead of inventing unrelated names.
 
 ** Implementation Status

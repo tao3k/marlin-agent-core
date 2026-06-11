@@ -13,5 +13,5 @@ pub use fakes::{
     StaticHookRuntime, StaticProviderRuntime, StaticSubAgentRuntime, StaticToolRuntime,
 };
 pub use graph::HarnessGraphBuilder;
-pub use runtime::{HarnessExecutionReport, HarnessRuntime, HarnessSpanName};
-pub use trace::{TraceRecorder, TraceSpanRecord};
+pub use runtime::{HarnessExecutionReport, HarnessRuntime};
+pub use trace::TraceRecorder;

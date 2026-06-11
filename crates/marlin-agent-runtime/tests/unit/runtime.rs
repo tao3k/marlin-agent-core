@@ -123,6 +123,14 @@ fn observability_contract_names_kernel_hook_and_agent_surfaces() {
 
     assert_eq!(hook_event.topic, observability::TOPIC_KERNEL_HOOK);
     assert_eq!(sub_agent_event.topic, observability::TOPIC_KERNEL_SUB_AGENT);
+    assert_eq!(
+        observability::agent_provider_span_name().as_str(),
+        observability::SPAN_AGENT_PROVIDER
+    );
+    assert_eq!(
+        observability::harness_result_span_name().as_str(),
+        observability::SPAN_HARNESS_RESULT
+    );
     assert_eq!(observability::FIELD_NODE_KIND, "node_kind");
     assert_eq!(observability::FIELD_HOOK_EVENT, "hook_event");
 

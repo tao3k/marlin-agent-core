@@ -5,19 +5,11 @@ use std::fmt;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
+use marlin_agent_protocol::{AgentSpanName, AgentTraceSpanRecord};
 use tracing::field::{Field, Visit};
 use tracing::span::{Attributes, Id, Record};
 use tracing::subscriber::Interest;
 use tracing::{Event, Metadata, Subscriber};
-
-/// Captured `tracing` span metadata for one span creation.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct TraceSpanRecord {
-    /// Stable span name, such as `agent.provider` or `hook.dispatch`.
-    pub name: &'static str,
-    /// Field values recorded when the span was created.
-    pub fields: BTreeMap<String, String>,
-}
 
 /// Minimal in-memory `tracing` subscriber used by harness tests.
 #[derive(Clone, Debug)]
@@ -27,7 +19,7 @@ pub struct TraceRecorder {
 
 #[derive(Debug)]
 struct TraceRecorderInner {
-    spans: Mutex<Vec<TraceSpanRecord>>,
+    spans: Mutex<Vec<AgentTraceSpanRecord>>,
     next_id: AtomicU64,
 }
 
@@ -57,7 +49,7 @@ impl TraceRecorder {
     }
 
     /// Returns all span records captured so far.
-    pub fn spans(&self) -> Vec<TraceSpanRecord> {
+    pub fn spans(&self) -> Vec<AgentTraceSpanRecord> {
         self.inner
             .spans
             .lock()
@@ -66,28 +58,28 @@ impl TraceRecorder {
     }
 
     /// Returns the captured span names in creation order.
-    pub fn span_names(&self) -> Vec<&'static str> {
+    pub fn span_names(&self) -> Vec<AgentSpanName> {
         self.spans().into_iter().map(|span| span.name).collect()
     }
 
     /// Returns true when any captured span has the supplied name.
-    pub fn contains_span(&self, name: &str) -> bool {
+    pub fn contains_span(&self, name: &AgentSpanName) -> bool {
         self.inner
             .spans
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .iter()
-            .any(|span| span.name == name)
+            .any(|span| &span.name == name)
     }
 
     /// Counts captured spans with the supplied name.
-    pub fn count_span(&self, name: &str) -> usize {
+    pub fn count_span(&self, name: &AgentSpanName) -> usize {
         self.inner
             .spans
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .iter()
-            .filter(|span| span.name == name)
+            .filter(|span| &span.name == name)
             .count()
     }
 }
@@ -110,8 +102,8 @@ impl Subscriber for TraceRecorder {
             .spans
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .push(TraceSpanRecord {
-                name: attributes.metadata().name(),
+            .push(AgentTraceSpanRecord {
+                name: AgentSpanName::new(attributes.metadata().name()),
                 fields,
             });
 

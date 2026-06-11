@@ -1,11 +1,11 @@
 use std::path::PathBuf;
 
 use marlin_agent_protocol::{
-    AgentEvent, AgentEventTopic, AgentScenario, AgentScenarioStep, AgentSpanName, HookEventName,
-    HookHandlerType, HookOutputEntry, HookOutputEntryKind, HookRunStatus, HookRunSummary,
-    LoopEvidence, LoopEvidenceKind, RuntimeConfigLayer, RuntimeConfigLayerSource,
-    RuntimeEnvironment, RuntimeHome, RuntimeHomeSource, RuntimeSandboxPolicy, SubAgentActivity,
-    SubAgentActivityKind, SubAgentSource,
+    AgentEvent, AgentEventTopic, AgentScenario, AgentScenarioStep, AgentSpanName,
+    AgentTraceSpanRecord, HookEventName, HookHandlerType, HookOutputEntry, HookOutputEntryKind,
+    HookRunStatus, HookRunSummary, LoopEvidence, LoopEvidenceKind, RuntimeConfigLayer,
+    RuntimeConfigLayerSource, RuntimeEnvironment, RuntimeHome, RuntimeHomeSource,
+    RuntimeSandboxPolicy, SubAgentActivity, SubAgentActivityKind, SubAgentSource,
 };
 
 #[test]
@@ -40,6 +40,17 @@ fn agent_event_topic_round_trips_through_events() {
     assert_eq!(
         AgentEvent::new("kernel.node", "started").topic_id(),
         AgentEventTopic::new("kernel.node")
+    );
+}
+
+#[test]
+fn agent_trace_span_record_keeps_name_and_fields() {
+    let record = AgentTraceSpanRecord::new("agent.provider").with_field("node_id", "plan");
+
+    assert_eq!(record.name, AgentSpanName::new("agent.provider"));
+    assert_eq!(
+        record.fields.get("node_id").map(String::as_str),
+        Some("plan")
     );
 }
 
