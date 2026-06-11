@@ -13,7 +13,7 @@ use std::{
     collections::BTreeMap,
     env,
     ffi::OsString,
-    io::{self, Write},
+    io::{self, BufRead, BufReader, Write},
     path::{Path, PathBuf},
     process::{Command, Stdio},
 };
@@ -173,6 +173,18 @@ impl GerbilCommandSpec {
             .env(GERBIL_LOADPATH_ENV, loadpath_root.into_os_string())
             .arg(launcher.into_os_string())
     }
+
+    /// Builds a command spec for the batched `command-adapter-batch.ss` launcher.
+    pub fn marlin_runtime_batch_launcher(
+        program: impl Into<PathBuf>,
+        loadpath_root: impl Into<PathBuf>,
+    ) -> Self {
+        let loadpath_root = loadpath_root.into();
+        let launcher = loadpath_root.join("command-adapter-batch.ss");
+        Self::new(program)
+            .env(GERBIL_LOADPATH_ENV, loadpath_root.into_os_string())
+            .arg(launcher.into_os_string())
+    }
 }
 
 /// Compiler implementation backed by a JSON stdin/stdout command protocol.
@@ -287,6 +299,56 @@ impl GerbilCommandCompiler {
         })
     }
 
+    /// Compile several requests through one command process using newline-delimited JSON.
+    pub fn compile_requests(
+        &self,
+        requests: Vec<GerbilCompileRequest>,
+    ) -> Result<Vec<GerbilCompiledArtifact>, String> {
+        let expected = requests
+            .iter()
+            .map(|request| request.expected)
+            .collect::<Vec<_>>();
+        let mut request_json = Vec::new();
+        for request in &requests {
+            serde_json::to_writer(&mut request_json, request)
+                .map_err(|error| format!("failed to encode gerbil compile request: {error}"))?;
+            request_json.push(b'\n');
+        }
+
+        let output = self.run_command_with_stdin(request_json)?;
+        let stdout = BufReader::new(output.stdout.as_slice());
+        let mut artifacts = Vec::new();
+        for (index, line) in stdout.lines().enumerate() {
+            let line = line
+                .map_err(|error| format!("failed to read gerbil compile response line: {error}"))?;
+            if line.trim().is_empty() {
+                continue;
+            }
+            let response: GerbilCompileResponse = serde_json::from_str(&line)
+                .map_err(|error| format!("failed to decode gerbil compile response: {error}"))?;
+            let expected_kind = expected
+                .get(index)
+                .copied()
+                .ok_or_else(|| format!("unexpected gerbil compile response at index {index}"))?;
+            artifacts.push(
+                response
+                    .artifact
+                    .ensure_kind(expected_kind)
+                    .map_err(|error| error.to_string())?,
+            );
+        }
+
+        if artifacts.len() != expected.len() {
+            return Err(format!(
+                "gerbil compiler returned {} responses for {} requests",
+                artifacts.len(),
+                expected.len()
+            ));
+        }
+
+        Ok(artifacts)
+    }
+
     fn compile_request(
         &self,
         request: GerbilCompileRequest,
@@ -296,6 +358,18 @@ impl GerbilCommandCompiler {
             .map_err(|error| format!("failed to encode gerbil compile request: {error}"))?;
         request_json.push(b'\n');
 
+        let output = self.run_command_with_stdin(request_json)?;
+
+        let response: GerbilCompileResponse = serde_json::from_slice(&output.stdout)
+            .map_err(|error| format!("failed to decode gerbil compile response: {error}"))?;
+
+        response
+            .artifact
+            .ensure_kind(expected)
+            .map_err(|error| error.to_string())
+    }
+
+    fn run_command_with_stdin(&self, stdin_bytes: Vec<u8>) -> Result<std::process::Output, String> {
         let mut command = Command::new(&self.spec.program);
         command
             .args(&self.spec.args)
@@ -318,7 +392,7 @@ impl GerbilCommandCompiler {
                 .stdin
                 .take()
                 .ok_or_else(|| "gerbil compiler command did not expose stdin".to_string())?;
-            if let Err(error) = stdin.write_all(&request_json)
+            if let Err(error) = stdin.write_all(&stdin_bytes)
                 && error.kind() != io::ErrorKind::BrokenPipe
             {
                 return Err(format!("failed to write gerbil compile request: {error}"));
@@ -346,13 +420,7 @@ impl GerbilCommandCompiler {
             ));
         }
 
-        let response: GerbilCompileResponse = serde_json::from_slice(&output.stdout)
-            .map_err(|error| format!("failed to decode gerbil compile response: {error}"))?;
-
-        response
-            .artifact
-            .ensure_kind(expected)
-            .map_err(|error| error.to_string())
+        Ok(output)
     }
 }
 

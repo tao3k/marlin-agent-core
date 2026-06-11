@@ -5,7 +5,7 @@ package: marlin
 
 (import ./request ./parser ./protocol)
 
-(export run-marlin-command-adapter main)
+(export run-marlin-command-adapter run-marlin-command-adapter-batch main)
 
 (def marlin-artifact-compilers
   (list (list marlin-loop-graph-artifact-kind compile-loop-graph)
@@ -63,15 +63,26 @@ package: marlin
 (def (compile-requested-marlin-artifact expected source-text)
   (make-marlin-artifact expected (compile-requested-artifact expected source-text)))
 
-(def (run-marlin-command-adapter)
-  (let* ((request (read-gerbil-compile-request))
-         (expected (gerbil-compile-request-expected-kind request))
+(def (compile-gerbil-compile-request request)
+  (let* ((expected (gerbil-compile-request-expected-kind request))
          (_ (ensure-marlin-supported-artifact-kind expected))
          (_ (ensure-marlin-artifact-compiler-table))
          (source-text (gerbil-compile-request-source-text request))
          (artifact (compile-requested-marlin-artifact expected source-text)))
+    artifact))
+
+(def (run-marlin-command-adapter)
+  (let ((artifact (compile-gerbil-compile-request (read-gerbil-compile-request))))
     (display-marlin-compile-response artifact)
     (newline)))
+
+(def (run-marlin-command-adapter-batch)
+  (let loop ((requests (read-gerbil-compile-request-lines)))
+    (unless (null? requests)
+      (display-marlin-compile-response
+       (compile-gerbil-compile-request (car requests)))
+      (newline)
+      (loop (cdr requests)))))
 
 (def (main . _args)
   (run-marlin-command-adapter))

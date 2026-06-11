@@ -204,6 +204,14 @@ fn artifact_release_topology_persists_landing_status_sidecar() {
             .artifact_paths,
         ["fixtures/gerbil/build.ss"]
     );
+    let landing = reopened
+        .read_landing_report()
+        .expect("landing report should be readable")
+        .expect("landing report should exist");
+    assert!(landing.landing_complete);
+    assert_eq!(landing.crate_name, "marlin-gerbil-scheme");
+    assert_eq!(landing.passed_gates, 1);
+    assert_eq!(landing.observed_visibility_reports, 1);
 
     let _ = fs::remove_dir_all(root);
 }

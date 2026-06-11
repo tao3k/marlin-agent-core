@@ -102,11 +102,11 @@ pub fn real_gxi_module_compiler() -> Option<GerbilCommandCompiler> {
     ))
 }
 
-pub fn real_gxi_command_adapter_compiler() -> Option<GerbilCommandCompiler> {
+pub fn real_gxi_command_adapter_batch_compiler() -> Option<GerbilCommandCompiler> {
     let gxi = local_gxi()?;
     let fixture_root = gerbil_fixture_root();
     Some(GerbilCommandCompiler::new(
-        GerbilCommandSpec::marlin_runtime_launcher(gxi, fixture_root),
+        GerbilCommandSpec::marlin_runtime_batch_launcher(gxi, fixture_root),
     ))
 }
 
