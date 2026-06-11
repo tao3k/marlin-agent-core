@@ -37,6 +37,10 @@ string heuristics.
 Harness scenarios should be explicit artifacts:
 
 | Harness artifact | Owner | Purpose |
+|------------------+-------+---------|
+| Scenario descriptors | =marlin-agent-protocol= | expected topics, evidence, and runtime facts |
+| Graph fixtures | =marlin-agent-harness= | small reusable execution graphs |
+| Execution reports | =marlin-agent-harness= | captured events, result, and evidence |
 | =AgentScenario= | =marlin-agent-protocol= | Declares initial content, workspace fixtures, provider/tool fixtures, and expected receipts |
 | =HarnessRuntime= | =marlin-agent-harness= | Builds a controlled runtime with fake providers, fake tools, cancellation, and event capture |
 | =TranscriptReplay= | =marlin-agent-harness= | Replays recorded agent events against current protocol and runtime behavior |
@@ -50,6 +54,11 @@ source-of-truth for content semantics.
 The current harness implementation has four concrete runtime contracts:
 
 | Runtime contract | Owner | Status |
+|------------------+-------+--------|
+| controlled Tokio runtime | =marlin-agent-harness= | implemented |
+| graph execution report | =marlin-agent-harness= | implemented |
+| provider and tool hook evidence | =marlin-agent-kernel= and =marlin-agent-harness= | implemented |
+| sub-agent lifecycle evidence | =marlin-agent-kernel= and =marlin-agent-harness= | implemented |
 | =HarnessGraphBuilder= creates compact graph fixtures and returns protocol-owned =LoopGraph= values | =marlin-agent-harness= | landed |
 | =HarnessRuntime::with_environment= runs scenarios with explicit =RuntimeEnvironment= custom homes and profiles | =marlin-agent-harness= | landed |
 | =HarnessExecutionReport= carries kernel results, drained runtime events, captured evidence, and harness assertions | =marlin-agent-harness= | landed |

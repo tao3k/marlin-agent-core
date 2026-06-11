@@ -16,10 +16,12 @@ a transitional facade name and must not accumulate new long-term
 responsibilities.
 
 | Crate | Responsibility |
-| =marlin-agent-protocol= | Agent messages, events, transcripts, scenario receipts, and harness evidence contracts |
-| =marlin-agent-kernel= | Lean graph loop kernel, execution state machine, and extension registry |
-| =marlin-agent-runtime= | Tokio-backed execution substrate for providers, tools, sub-agents, cancellation, and event sinks |
-| =marlin-agent-harness= | Agent-system scenario driver, fake providers/tools, transcript replay, loop evidence, and assertions |
+| =marlin-agent-protocol= | Agent messages, events, transcripts, scenario receipts, runtime environment records, hook summaries, sub-agent activity, and harness evidence contracts |
+| =marlin-agent-kernel= | Lean graph loop kernel, execution state machine, node adapters, hook event emission, and sub-agent lifecycle events |
+| =marlin-agent-runtime= | Tokio-backed execution substrate for providers, tools, hooks, sub-agents, cancellation, and event sinks |
+| =marlin-agent-hooks= | Hook registries, registrations, invocations, dispatch reports, and sync/async hook execution |
+| =marlin-agent-environment= | Runtime environment resolution for custom homes, config layers, sandbox policy, and sub-agent inheritance |
+| =marlin-agent-harness= | Agent-system scenario driver, fake providers/tools/sub-agents/hooks, graph fixtures, transcript replay, loop evidence, execution reports, and assertions |
 | =marlin-agent-core= | Transitional facade while existing code migrates to the named agent crates |
 | =marlin-workspace-protocol= | Native =AgentWorkspace= protocol traits and errors |
 | =marlin-org-model= | Parser-projected Org node, source span, and token span data model |
@@ -36,5 +38,6 @@ responsibilities.
 | =marlin-gerbil-scheme= | Gerbil Scheme compilation boundary and typed artifact envelope |
 
 ** Boundary Rule
+
 Agent kernel and runtime crates must not depend on Org parser implementations,
 Arrow, Flight, ASP, vector stores, DuckDB, Parquet, or ledger systems.
