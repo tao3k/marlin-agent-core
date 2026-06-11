@@ -1,4 +1,4 @@
-use marlin_org_model::{CheckboxState, LinkKind, TodoState};
+use marlin_org_model::{CheckboxState, LinkKind, OrgContractReferenceScope, TodoState};
 use marlin_org_workspace::{OrgDocument, OrgDocumentLoader};
 
 #[test]
@@ -114,7 +114,7 @@ Task `{{ scope.title }}` must contain a Goal section.
 
     assert_eq!(workspace.contracts.contracts.len(), 1);
     let contract = &workspace.contracts.contracts[0];
-    assert_eq!(contract.id, "agent.task.v1");
+    assert_eq!(contract.id.as_str(), "agent.task.v1");
     assert_eq!(contract.scope.as_str(), "Subtree");
     assert_eq!(contract.kind.as_str(), "OrgElementsAssertions");
     assert_eq!(contract.assertions.len(), 1);
@@ -149,6 +149,87 @@ Task `{{ scope.title }}` must contain a Goal section.
     assert!(assertion.query.use_scope_outline_path);
     let query_source = assertion.query_source.as_ref().expect("query source span");
     assert!(query_source.start_byte < query_source.end_byte);
+}
+
+#[test]
+fn org_document_loader_resolves_subtree_contract_references() {
+    let text = r#"* agent-task-v1
+:PROPERTIES:
+:CONTRACT_ID: agent.task.v1
+:CONTRACT_SCOPE: subtree
+:CONTRACT_KIND: org-elements
+:END:
+
+** must-have-goal-section
+:PROPERTIES:
+:ASSERT_ID: task.has-goal
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-elements-query
+category = "section"
+kind = "headline"
+within = "$scope"
+summary.title = "Goal"
+#+END_SRC
+
+#+BEGIN_SRC org-elements-expect
+count >= 1
+#+END_SRC
+
+* TODO Task A
+:PROPERTIES:
+:CONTRACT_ORG: agent.task.v1
+:END:
+"#;
+    let document = OrgDocument::new("doc:resolved-contract", text);
+
+    let workspace = OrgDocumentLoader::load_workspace(&document).expect("document loads");
+
+    assert!(workspace.contract_resolutions.diagnostics.is_empty());
+    assert_eq!(workspace.contract_resolutions.references.len(), 1);
+    let resolution = &workspace.contract_resolutions.references[0];
+    assert_eq!(
+        resolution
+            .resolved_contract_id
+            .as_ref()
+            .map(|contract_id| contract_id.as_str()),
+        Some("agent.task.v1")
+    );
+    assert_eq!(resolution.reference.raw, "agent.task.v1");
+    assert_eq!(
+        resolution.reference.scope,
+        OrgContractReferenceScope::Subtree
+    );
+    assert!(resolution.reference.target_node.is_some());
+    let source = resolution.reference.source.as_ref().expect("source span");
+    assert_eq!(slice(text, source), "agent.task.v1");
+}
+
+#[test]
+fn org_document_loader_reports_unresolved_document_contract_references() {
+    let text = "#+CONTRACT_ORG: missing.contract\n* Task A\n";
+    let document = OrgDocument::new("doc:missing-contract", text);
+
+    let workspace = OrgDocumentLoader::load_workspace(&document).expect("document loads");
+
+    assert_eq!(workspace.contract_resolutions.references.len(), 1);
+    let resolution = &workspace.contract_resolutions.references[0];
+    assert_eq!(resolution.resolved_contract_id, None);
+    assert_eq!(resolution.reference.raw, "missing.contract");
+    assert_eq!(
+        resolution.reference.scope,
+        OrgContractReferenceScope::Document
+    );
+    let diagnostic = workspace
+        .contract_resolutions
+        .diagnostics
+        .first()
+        .expect("unresolved diagnostic");
+    assert_eq!(diagnostic.code, "ORG044");
+    assert!(diagnostic.message.contains("missing.contract"));
+    let source = diagnostic.reference.source.as_ref().expect("source span");
+    assert_eq!(slice(text, source), "#+CONTRACT_ORG: missing.contract\n");
 }
 
 fn slice<'a>(text: &'a str, span: &marlin_org_model::OrgSourceSpan) -> &'a str {

@@ -2,6 +2,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::node::{OrgNodeId, OrgSourceSpan};
+
 macro_rules! contract_text_id {
     ($name:ident) => {
         #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
@@ -16,6 +18,18 @@ macro_rules! contract_text_id {
                 &self.0
             }
         }
+
+        impl From<&str> for $name {
+            fn from(value: &str) -> Self {
+                Self::new(value)
+            }
+        }
+
+        impl From<String> for $name {
+            fn from(value: String) -> Self {
+                Self::new(value)
+            }
+        }
     };
 }
 
@@ -28,8 +42,8 @@ pub struct OrgContractRegistry {
 /// Contract that can validate or template a document or subtree.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct OrgContract {
-    pub id: String,
-    pub aliases: Vec<String>,
+    pub id: OrgContractId,
+    pub aliases: Vec<OrgContractId>,
     pub scope: OrgContractScope,
     pub kind: OrgContractKind,
     pub assertions: Vec<OrgContractAssertion>,
@@ -87,6 +101,55 @@ pub struct OrgContractSourceSpan {
     pub end_byte: usize,
 }
 
+/// Resolved and unresolved `CONTRACT_ORG` references found in a document.
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub struct OrgContractResolutionReport {
+    pub references: Vec<OrgContractResolution>,
+    pub diagnostics: Vec<OrgContractDiagnostic>,
+}
+
+/// One `CONTRACT_ORG` reference projected from a document or subtree.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct OrgContractReference {
+    pub raw: String,
+    pub path: Option<String>,
+    pub contract_id: Option<OrgContractId>,
+    pub scope: OrgContractReferenceScope,
+    pub target_node: Option<OrgNodeId>,
+    pub source: Option<OrgSourceSpan>,
+}
+
+/// Resolution result for one contract reference.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct OrgContractResolution {
+    pub reference: OrgContractReference,
+    pub resolved_contract_id: Option<OrgContractId>,
+}
+
+/// Diagnostic produced while resolving contract references.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct OrgContractDiagnostic {
+    pub code: String,
+    pub severity: OrgContractDiagnosticSeverity,
+    pub message: String,
+    pub reference: OrgContractReference,
+}
+
+/// Scope where a `CONTRACT_ORG` reference was found.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum OrgContractReferenceScope {
+    Document,
+    Subtree,
+}
+
+/// Severity for contract reference resolution diagnostics.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum OrgContractDiagnosticSeverity {
+    Warning,
+    Error,
+}
+
+contract_text_id!(OrgContractId);
 contract_text_id!(OrgContractScope);
 contract_text_id!(OrgContractKind);
 contract_text_id!(OrgContractSeverity);

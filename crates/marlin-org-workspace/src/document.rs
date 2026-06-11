@@ -1,16 +1,19 @@
 //! Document loading adapter from `Org` text into structured workspace nodes.
 
 use marlin_org_model::{
-    CheckboxState, LinkKind, OrgCheckbox, OrgContract, OrgContractAssertion, OrgContractBinding,
-    OrgContractElementCategory, OrgContractElementKind, OrgContractExpectation, OrgContractKind,
-    OrgContractQuery, OrgContractRegistry, OrgContractRelativeScope, OrgContractScope,
-    OrgContractSeverity, OrgContractSourceSpan, OrgLink, OrgNode, OrgNodeId, OrgSourceSpan,
+    CheckboxState, LinkKind, OrgCheckbox, OrgContractReference, OrgContractReferenceScope,
+    OrgContractRegistry, OrgContractResolutionReport, OrgLink, OrgNode, OrgNodeId, OrgSourceSpan,
     TodoState,
 };
 use marlin_workspace_protocol::{WorkspaceError, WorkspaceResult};
 use orgize::ast::parse_contracts_from_document;
 use orgize::export::{Container, Event, TraversalContext, Traverser};
 use orgize::syntax_ast::{Headline, SyntaxLink};
+
+use crate::contract::{
+    contract_reference, document_contract_reference, project_contract_registry,
+    resolve_contract_references,
+};
 
 /// Stable identifier for an imported `Org` document.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -52,6 +55,7 @@ pub struct OrgDocument {
 pub struct OrgDocumentWorkspace {
     pub nodes: Vec<OrgNode>,
     pub contracts: OrgContractRegistry,
+    pub contract_resolutions: OrgContractResolutionReport,
 }
 
 impl OrgDocument {
@@ -93,15 +97,30 @@ impl<'a> OrgDocumentParser<'a> {
         let parsed_document = org.document();
         let contracts =
             project_contract_registry(parse_contracts_from_document(&parsed_document, None));
+        let document_contract_reference = document_contract_reference(
+            &parsed_document,
+            self.document.id.as_str(),
+            &self.document.text,
+        );
         let mut projection = OrgAstProjection::new(&self.document.id, &self.document.text);
 
         for headline in org.syntax_document().headlines() {
             projection.push_headline(headline, None)?;
         }
 
+        let (nodes, subtree_contract_references) = projection.into_parts();
+        let contract_resolutions = resolve_contract_references(
+            document_contract_reference
+                .into_iter()
+                .chain(subtree_contract_references)
+                .collect(),
+            &contracts,
+        );
+
         Ok(OrgDocumentWorkspace {
-            nodes: projection.into_nodes(),
+            nodes,
             contracts,
+            contract_resolutions,
         })
     }
 }
@@ -110,6 +129,7 @@ struct OrgAstProjection<'a> {
     document_id: &'a OrgDocumentId,
     document_text: &'a str,
     nodes: Vec<OrgNode>,
+    contract_references: Vec<OrgContractReference>,
 }
 
 impl<'a> OrgAstProjection<'a> {
@@ -118,6 +138,7 @@ impl<'a> OrgAstProjection<'a> {
             document_id,
             document_text,
             nodes: Vec::new(),
+            contract_references: Vec::new(),
         }
     }
 
@@ -158,6 +179,14 @@ impl<'a> OrgAstProjection<'a> {
                 if let Some(span) =
                     self.property_value_span(&headline, key.as_ref(), value.as_ref())
                 {
+                    if key.as_ref().eq_ignore_ascii_case("CONTRACT_ORG") {
+                        self.contract_references.push(contract_reference(
+                            value.as_ref(),
+                            OrgContractReferenceScope::Subtree,
+                            Some(id.clone()),
+                            Some(span.clone()),
+                        ));
+                    }
                     node.tokens.property_values.insert(key.to_string(), span);
                 }
             }
@@ -199,8 +228,8 @@ impl<'a> OrgAstProjection<'a> {
         Ok(id)
     }
 
-    fn into_nodes(self) -> Vec<OrgNode> {
-        self.nodes
+    fn into_parts(self) -> (Vec<OrgNode>, Vec<OrgContractReference>) {
+        (self.nodes, self.contract_references)
     }
 
     fn node_id(&self, headline: &Headline, title: &str) -> OrgNodeId {
@@ -291,7 +320,7 @@ impl<'a> OrgAstProjection<'a> {
     }
 }
 
-fn source_span_for_range(
+pub(crate) fn source_span_for_range(
     document_id: &OrgDocumentId,
     document_text: &str,
     start_byte: usize,
@@ -345,102 +374,6 @@ fn parse_org_with_workspace_todo_keywords(text: &str) -> orgize::Org {
     ];
     config.todo_keywords.1 = vec!["DONE".to_string()];
     config.parse(text)
-}
-
-fn project_contract_registry(registry: orgize::ast::OrgContractRegistry) -> OrgContractRegistry {
-    OrgContractRegistry {
-        contracts: registry.contracts.iter().map(project_contract).collect(),
-    }
-}
-
-fn project_contract(contract: &orgize::ast::OrgContract) -> OrgContract {
-    OrgContract {
-        id: contract.id.clone(),
-        aliases: contract.aliases.clone(),
-        scope: OrgContractScope::new(debug_label(&contract.scope)),
-        kind: OrgContractKind::new(debug_label(&contract.kind)),
-        assertions: contract
-            .assertions
-            .iter()
-            .map(project_contract_assertion)
-            .collect(),
-    }
-}
-
-fn project_contract_assertion(
-    assertion: &orgize::ast::OrgContractAssertion,
-) -> OrgContractAssertion {
-    OrgContractAssertion {
-        id: assertion.id.clone(),
-        severity: OrgContractSeverity::new(debug_label(&assertion.severity)),
-        bindings: assertion
-            .bindings
-            .iter()
-            .map(|binding| OrgContractBinding {
-                name: binding.name.clone(),
-                query: project_contract_query(&binding.query),
-            })
-            .collect(),
-        query: project_contract_query(&assertion.query),
-        expectation: OrgContractExpectation::new(debug_label(&assertion.expectation)),
-        message: assertion.message.clone(),
-        fix: assertion.fix.clone(),
-        query_source: assertion
-            .query_source
-            .as_ref()
-            .map(|source| OrgContractSourceSpan {
-                start_line: source.start.line,
-                start_column: source.start.column,
-                end_line: source.end.line,
-                end_column: source.end.column,
-                start_byte: source.range_start as usize,
-                end_byte: source.range_end as usize,
-            }),
-        expect_source: assertion
-            .expect_source
-            .as_ref()
-            .map(|source| OrgContractSourceSpan {
-                start_line: source.start.line,
-                start_column: source.start.column,
-                end_line: source.end.line,
-                end_column: source.end.column,
-                start_byte: source.range_start as usize,
-                end_byte: source.range_end as usize,
-            }),
-    }
-}
-
-fn project_contract_query(query: &orgize::ast::OrgContractQuery) -> OrgContractQuery {
-    OrgContractQuery {
-        category: query
-            .category
-            .as_ref()
-            .map(|category| OrgContractElementCategory::new(debug_label(category))),
-        kind: query
-            .kind
-            .as_ref()
-            .map(|kind| OrgContractElementKind::new(debug_label(kind))),
-        affiliated_name: query.affiliated_name.clone(),
-        context: query.context.clone(),
-        outline_path_prefix: query.outline_path_prefix.clone(),
-        outline_path_exact_len: query.outline_path_exact_len,
-        property_equals: query.property_equals.clone(),
-        property_contains: query.property_contains.clone(),
-        summary_equals: query.summary_equals.clone(),
-        summary_contains: query.summary_contains.clone(),
-        limit: query.limit,
-        use_scope_outline_path: query.use_scope_outline_path,
-        has_outline_path_prefix: query.has_outline_path_prefix,
-        scope_outline_depth: query.scope_outline_depth,
-        relative_to: query
-            .relative_to
-            .as_ref()
-            .map(|scope| OrgContractRelativeScope::new(debug_label(scope))),
-    }
-}
-
-fn debug_label(value: &impl std::fmt::Debug) -> String {
-    format!("{value:?}")
 }
 
 fn headline_title(headline: &Headline, line_number: usize) -> String {

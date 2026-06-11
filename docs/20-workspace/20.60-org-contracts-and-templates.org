@@ -30,6 +30,16 @@ orgize contract facts.
 severity, expectation, element category, element kind, and relative scope behind
 typed wrapper boundaries so the agent protocol does not expose stringly state.
 
+** Reference Resolution
+
+The workspace loader also projects =CONTRACT_ORG= references into
+=OrgContractResolutionReport=. Document-level keyword references and subtree
+property references are parsed with orgize =parse_contract_reference= and
+resolved against the local =OrgContractRegistry= by contract id or alias.
+
+Unresolved or empty references produce =ORG044= warning diagnostics with the
+parser-owned source span for the reference.
+
 ** Template Boundary
 
 Contracts are template inputs, not direct mutations. A template engine or Gerbil
@@ -39,7 +49,8 @@ messages, and fix intent. Durable mutation still goes through
 
 ** Current Limits
 
-The first projection preserves orgize query, expectation, message, fix, and
-source block spans. It does not execute the contract assertions inside Marlin.
+The first projection preserves orgize query, expectation, message, fix, source
+block spans, and local reference resolution. It does not load external contract
+registry files and does not execute the contract assertions inside Marlin.
 Validation execution remains an upstream orgize lint concern until the Marlin
 workspace protocol needs a runtime-independent validation receipt.

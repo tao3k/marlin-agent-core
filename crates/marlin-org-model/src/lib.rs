@@ -9,9 +9,11 @@ mod task;
 
 pub use block::{BlockKind, OrgBlock};
 pub use contract::{
-    OrgContract, OrgContractAssertion, OrgContractBinding, OrgContractElementCategory,
-    OrgContractElementKind, OrgContractExpectation, OrgContractKind, OrgContractQuery,
-    OrgContractRegistry, OrgContractRelativeScope, OrgContractScope, OrgContractSeverity,
+    OrgContract, OrgContractAssertion, OrgContractBinding, OrgContractDiagnostic,
+    OrgContractDiagnosticSeverity, OrgContractElementCategory, OrgContractElementKind,
+    OrgContractExpectation, OrgContractId, OrgContractKind, OrgContractQuery, OrgContractReference,
+    OrgContractReferenceScope, OrgContractRegistry, OrgContractRelativeScope,
+    OrgContractResolution, OrgContractResolutionReport, OrgContractScope, OrgContractSeverity,
     OrgContractSourceSpan,
 };
 pub use link::{LinkKind, OrgLink};
