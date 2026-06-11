@@ -6,3 +6,6 @@ mod compiler;
 
 #[path = "unit/command/mod.rs"]
 mod command;
+
+#[path = "unit/runtime.rs"]
+mod runtime;

@@ -3,6 +3,7 @@
 mod artifact;
 mod command;
 mod compiler;
+mod runtime;
 
 pub use artifact::{GerbilArtifactKind, GerbilArtifactKindMismatch, GerbilCompiledArtifact};
 pub use command::{
@@ -10,3 +11,9 @@ pub use command::{
     GerbilCompileRequest, GerbilCompileResponse, GerbilWorkspaceContractFacts,
 };
 pub use compiler::{GerbilCompiler, GerbilSource, compile_checked};
+pub use runtime::{
+    GERBIL_ADAPTER_MODULE, GERBIL_COMMAND_ADAPTER_SOURCE, GERBIL_LOADPATH_ENV,
+    GERBIL_MARLIN_ADAPTER_SOURCE, GERBIL_MARLIN_PARSER_SOURCE, GERBIL_MARLIN_PROTOCOL_SOURCE,
+    GERBIL_MARLIN_REQUEST_SOURCE, GERBIL_RUNTIME_ASSETS, GERBIL_SMOKE_SOURCE, GerbilRuntimeAsset,
+    gerbil_runtime_assets, write_gerbil_runtime_assets,
+};
