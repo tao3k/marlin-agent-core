@@ -7,10 +7,6 @@
 :KIND: architecture
 :STATUS: active
 :END:
-:ID: docs-10-30-agent-harness-boundary
-:KIND: architecture
-:STATUS: active
-:END:
 
 The agent-system harness is a first-class agent validation boundary. It is
 unrelated to the Rust project harness gate used by per-crate =build.rs= files.

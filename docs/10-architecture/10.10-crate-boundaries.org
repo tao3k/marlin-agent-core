@@ -16,6 +16,7 @@ a transitional facade name and must not accumulate new long-term
 responsibilities.
 
 | Crate | Responsibility |
+|-------+----------------|
 | =marlin-agent-protocol= | Agent messages, events, transcripts, scenario receipts, runtime environment records, hook summaries, sub-agent activity, and harness evidence contracts |
 | =marlin-agent-kernel= | Lean graph loop kernel, execution state machine, node adapters, hook event emission, and sub-agent lifecycle events |
 | =marlin-agent-runtime= | Tokio-backed execution substrate for providers, tools, hooks, sub-agents, cancellation, and event sinks |
