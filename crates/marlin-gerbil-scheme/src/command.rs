@@ -244,6 +244,10 @@ impl GerbilCommandCompiler {
         request: GerbilCompileRequest,
     ) -> Result<GerbilCompiledArtifact, String> {
         let expected = request.expected;
+        let mut request_json = serde_json::to_vec(&request)
+            .map_err(|error| format!("failed to encode gerbil compile request: {error}"))?;
+        request_json.push(b'\n');
+
         let mut command = Command::new(&self.spec.program);
         command
             .args(&self.spec.args)
@@ -262,15 +266,15 @@ impl GerbilCommandCompiler {
             .map_err(|error| format!("failed to start gerbil compiler command: {error}"))?;
 
         {
-            let stdin = child
+            let mut stdin = child
                 .stdin
-                .as_mut()
+                .take()
                 .ok_or_else(|| "gerbil compiler command did not expose stdin".to_string())?;
-            serde_json::to_writer(&mut *stdin, &request)
-                .map_err(|error| format!("failed to encode gerbil compile request: {error}"))?;
-            stdin
-                .write_all(b"\n")
-                .map_err(|error| format!("failed to finish gerbil compile request: {error}"))?;
+            if let Err(error) = stdin.write_all(&request_json)
+                && error.kind() != io::ErrorKind::BrokenPipe
+            {
+                return Err(format!("failed to write gerbil compile request: {error}"));
+            }
         }
 
         let output = child
