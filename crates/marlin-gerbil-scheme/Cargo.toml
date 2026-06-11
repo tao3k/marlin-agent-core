@@ -20,7 +20,10 @@ serde_json.workspace = true
 rust-lang-project-harness.workspace = true
 
 [dev-dependencies]
+futures-executor.workspace = true
+marlin-org-memory.workspace = true
 marlin-org-store.workspace = true
 marlin-org-workflow.workspace = true
+marlin-workspace-protocol.workspace = true
 marlin-workspace-patch.workspace = true
 rust-lang-project-harness.workspace = true

@@ -256,12 +256,15 @@ dependencies = [
 name = "marlin-gerbil-scheme"
 version = "0.1.0"
 dependencies = [
+ "futures-executor",
  "marlin-agent-protocol",
  "marlin-gerbil-ir",
+ "marlin-org-memory",
  "marlin-org-model",
  "marlin-org-store",
  "marlin-org-workflow",
  "marlin-workspace-patch",
+ "marlin-workspace-protocol",
  "rust-lang-project-harness 0.1.0 (git+https://github.com/tao3k/rust-lang-project-harness?branch=main)",
  "serde",
  "serde_json",

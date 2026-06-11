@@ -36,6 +36,22 @@ impl GerbilCompiledArtifact {
         }
     }
 
+    /// Borrow the release topology carried by this artifact, when present.
+    pub fn release_topology(&self) -> Option<&ReleaseTopologySpec> {
+        match self {
+            Self::ReleaseTopology(topology) => Some(topology),
+            _ => None,
+        }
+    }
+
+    /// Consume this artifact and return its release topology payload, when present.
+    pub fn into_release_topology(self) -> Option<ReleaseTopologySpec> {
+        match self {
+            Self::ReleaseTopology(topology) => Some(topology),
+            _ => None,
+        }
+    }
+
     /// Validate that the compiler returned the requested artifact class.
     pub fn ensure_kind(
         self,

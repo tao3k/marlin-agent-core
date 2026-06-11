@@ -2,9 +2,12 @@ use marlin_agent_protocol::{
     AgentScenario, AgentScenarioContract, AgentScenarioStep, LoopEvidenceKind,
 };
 use marlin_gerbil_ir::{CompiledLoopGraph, ReleaseTopologySpec, WorkspacePatchIntentSpec};
+use marlin_gerbil_ir::{ReleaseGateSpec, ReleaseVisibilitySpec};
 use marlin_gerbil_scheme::{GerbilArtifactKind, GerbilCompiledArtifact};
+use marlin_org_memory::MemoryOrgWorkspace;
 use marlin_org_model::OrgNodeId;
 use marlin_workspace_patch::{WorkspacePatch, WorkspacePatchOp};
+use marlin_workspace_protocol::{AgentWorkspace, WorkspaceCtx, WorkspaceTarget};
 
 fn empty_loop_graph() -> CompiledLoopGraph {
     CompiledLoopGraph {
@@ -79,4 +82,61 @@ fn artifact_reports_release_topology_kind() {
             .ensure_kind(GerbilArtifactKind::ReleaseTopology)
             .is_ok()
     );
+}
+
+#[test]
+fn artifact_release_topology_projects_into_workspace_status() {
+    let artifact = GerbilCompiledArtifact::ReleaseTopology(ReleaseTopologySpec {
+        topology_id: "gerbil-scheme-internal-release".to_owned(),
+        crate_name: "marlin-gerbil-scheme".to_owned(),
+        publish_enabled: false,
+        asset_audit_command: "cargo package -p marlin-gerbil-scheme --list --allow-dirty"
+            .to_owned(),
+        package_assets: vec!["fixtures/gerbil/build.ss".to_owned()],
+        runtime_dependency_chain: vec!["marlin-gerbil-ir".to_owned()],
+        workflow_dependency_chain: vec!["marlin-org-workflow".to_owned()],
+        gates: vec![ReleaseGateSpec {
+            gate_id: "package-assets".to_owned(),
+            command: "cargo package -p marlin-gerbil-scheme --list --allow-dirty".to_owned(),
+            requires_local_gerbil: false,
+            required_artifacts: vec!["fixtures/gerbil/build.ss".to_owned()],
+            visibility: vec![ReleaseVisibilitySpec {
+                report_key: "package_asset_audit".to_owned(),
+                evidence_keys: vec!["required_artifacts".to_owned()],
+                artifact_paths: vec!["fixtures/gerbil/build.ss".to_owned()],
+            }],
+        }],
+    });
+    let workspace = MemoryOrgWorkspace::new();
+
+    workspace
+        .record_release_topology(
+            artifact
+                .release_topology()
+                .expect("release topology artifact"),
+        )
+        .expect("release topology recorded");
+    let report = futures_executor::block_on(
+        workspace.status(WorkspaceTarget::Workspace, WorkspaceCtx::new("unit-test")),
+    )
+    .expect("workspace status");
+    let release = report.release.expect("release status");
+
+    assert_eq!(release.topology_id, "gerbil-scheme-internal-release");
+    assert_eq!(release.crate_name, "marlin-gerbil-scheme");
+    assert!(
+        release
+            .visibility_reports
+            .iter()
+            .any(|report| report.report_key == "package_asset_audit"
+                && report.artifact_paths == ["fixtures/gerbil/build.ss"])
+    );
+}
+
+#[test]
+fn artifact_non_release_topology_has_no_release_topology_payload() {
+    let artifact = GerbilCompiledArtifact::LoopGraph(empty_loop_graph());
+
+    assert!(artifact.release_topology().is_none());
+    assert!(artifact.into_release_topology().is_none());
 }
