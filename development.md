@@ -13,6 +13,25 @@ Rust doc comments follow Clippy's `doc_markdown` style. Wrap API names,
 literal identifiers, command names, and rule IDs in backticks rather than
 leaving mixed-case technical terms as prose.
 
+## Release visibility artifacts
+
+The `real-gxi` workflow is a manual release boundary. Run it with
+`workflow_dispatch` and `run_real_gxi=true` when a runner has Gerbil available
+through `MARLIN_GERBIL_GXI` or Homebrew `gerbil-scheme`.
+
+That job sets `MARLIN_RELEASE_STATUS_ARTIFACT_DIR` before running the ignored
+`command::real_gxi` suite. The
+`command_compiler_real_gxi_release_topology_persists_landing_status_sidecar`
+test writes two downloadable artifacts into that directory:
+
+- `release-status.json`: the persisted `.marlin/release-status.json` sidecar;
+- `release-landing-report.json`: the compact landing report derived from the
+  sidecar.
+
+Use those artifacts as the CI evidence that the Gerbil release topology, local
+`gxi` gate receipt, and release visibility report all crossed the real runtime
+boundary.
+
 ## Self-applied policy
 
 The crate runs its own project policy gate in both supported embedding modes:

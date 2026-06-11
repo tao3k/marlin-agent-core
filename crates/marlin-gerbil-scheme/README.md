@@ -38,5 +38,13 @@ direnv exec . cargo clippy -p marlin-gerbil-scheme --all-targets --all-features 
 On machines with `gxi`, run the ignored runtime boundary suite:
 
 ```sh
-direnv exec . cargo test -p marlin-gerbil-scheme --test unit_test command::real_gxi -- --ignored --nocapture
+artifact_dir="$(mktemp -d)"
+MARLIN_REQUIRE_REAL_GXI=1 \
+  MARLIN_RELEASE_STATUS_ARTIFACT_DIR="$artifact_dir" \
+  direnv exec . cargo test -p marlin-gerbil-scheme --test unit_test command::real_gxi -- --ignored --nocapture
+ls "$artifact_dir"/release-status.json "$artifact_dir"/release-landing-report.json
 ```
+
+The same artifact contract is used by the manual `real-gxi` CI workflow so
+release visibility evidence is available after the ignored suite crosses the
+local Gerbil runtime boundary.
