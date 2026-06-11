@@ -141,6 +141,59 @@ impl AgentExecutionTrace {
         self
     }
 
+    /// Returns true when the trace captured at least one span with this name.
+    pub fn has_span(&self, name: &AgentSpanName) -> bool {
+        self.spans_by_name(name).next().is_some()
+    }
+
+    /// Counts spans captured with this name.
+    pub fn count_span(&self, name: &AgentSpanName) -> usize {
+        self.spans_by_name(name).count()
+    }
+
+    /// Returns spans captured with this name.
+    pub fn spans_by_name(
+        &self,
+        name: &AgentSpanName,
+    ) -> impl Iterator<Item = &AgentTraceSpanRecord> {
+        let name = name.clone();
+        self.spans.iter().filter(move |span| span.name == name)
+    }
+
+    /// Returns the first span captured with this name.
+    pub fn find_span(&self, name: &AgentSpanName) -> Option<&AgentTraceSpanRecord> {
+        self.spans_by_name(name).next()
+    }
+
+    /// Returns spans that captured a matching field value.
+    pub fn spans_with_field(
+        &self,
+        field: &str,
+        value: &str,
+    ) -> impl Iterator<Item = &AgentTraceSpanRecord> {
+        let field = field.to_owned();
+        let value = value.to_owned();
+        self.spans.iter().filter(move |span| {
+            span.fields
+                .get(&field)
+                .is_some_and(|actual| actual.as_str() == value)
+        })
+    }
+
+    /// Returns the first span with this name and matching field value.
+    pub fn find_span_with_field(
+        &self,
+        name: &AgentSpanName,
+        field: &str,
+        value: &str,
+    ) -> Option<&AgentTraceSpanRecord> {
+        self.spans_by_name(name).find(|span| {
+            span.fields
+                .get(field)
+                .is_some_and(|actual| actual.as_str() == value)
+        })
+    }
+
     /// Returns a compact summary suitable for scanning many traces.
     pub fn summary(&self) -> AgentExecutionTraceSummary {
         AgentExecutionTraceSummary {

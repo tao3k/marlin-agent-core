@@ -95,6 +95,8 @@ Scenario contracts may assert observability through =AgentScenarioStep.expected_
 
 =marlin-agent-harness= captures runtime events and trace spans into =HarnessExecutionReport=. The report exposes =events=, =trace_spans=, =span_names=, =summary=, =evidence=, =assertion=, and =execution_trace()= so tests can validate both runtime behavior and observability evidence at the same boundary.
 
+=AgentExecutionTrace= is the protocol-owned trace package for one graph run. It exposes span query helpers such as =has_span=, =count_span=, =spans_by_name=, =spans_with_field=, and =find_span_with_field= so downstream Agent core users can inspect captured trace facts by =run_id=, =graph_id=, =status=, executor, or node fields without depending on the harness report type.
+
 =AgentHarness::evaluate_execution_report= validates expected event topics and expected span names against the captured report. Missing topics or span names become diagnostics rather than subscriber-specific failures.
 
 =marlin-agent-runtime::observability= owns the stable span/topic constants and typed helper constructors. Runtime and kernel callsites may use literal span names in =tracing= macros when required by macro syntax, but those literals must match the contract constants and helpers.
