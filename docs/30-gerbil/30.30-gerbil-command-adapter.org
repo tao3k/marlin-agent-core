@@ -40,8 +40,10 @@ The first binding layer is protocol binding, not native VM embedding. This
 follows the shape audited from =gerbil-mysql=: keep low-level bindings behind a
 dedicated Gerbil interface, then wrap them in a public Gerbil API. Gerbil code
 should own constructors, accessors, and serializers for the Marlin command
-protocol DTOs it emits. The current smoke adapter resolves =package: marlin=
-modules through =GERBIL_LOADPATH=. =fixtures/gerbil/marlin/request.ss= decodes
+protocol DTOs it emits. The smoke adapter resolves =package: marlin= modules
+through =GERBIL_LOADPATH=. The Rust crate now owns the runtime asset manifest
+through =GERBIL_RUNTIME_ASSETS= and can write the Gerbil loadpath tree with
+=write_gerbil_runtime_assets=. =marlin/request.ss= decodes
 =GerbilCompileRequest= with =:std/text/json=.
 =fixtures/gerbil/marlin/parser.ss= imports =./protocol= and owns the smoke DSL
 reader-backed source-to-=LoopGraph=, source-to-=WorkspaceSchema=, and

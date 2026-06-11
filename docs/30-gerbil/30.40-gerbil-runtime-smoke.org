@@ -163,6 +163,24 @@ successful =LoopGraph=, =WorkspaceSchema=, =WorkspacePatchIntent=, and
 policy-gated commit workflow receipts, plus Gerbil-side rejection of
 unsupported =expected= artifact kinds and mismatched source forms.
 
+** Runtime Assets And Example Scheme
+
+=marlin-gerbil-scheme= ships the Gerbil binding sources as crate-owned runtime
+assets. =write_gerbil_runtime_assets= writes =command-adapter.ss=, =smoke.ss=,
+and the =marlin/= modules into a caller-provided loadpath root. A local runtime
+can then run the module entrypoint with =GERBIL_LOADPATH=<root> gxi
+:marlin/adapter=, or run the example source directly.
+
+=examples/workspace-patch-intent.ss= is the minimal user-facing Gerbil scheme
+example. It imports =:marlin/parser= and =:marlin/protocol=, compiles a
+=WorkspacePatchIntent= source form containing =set-todo=, =set-property=, and
+=mark-memory-candidate=, and emits the same JSON =GerbilCompileResponse= shape
+that Rust decodes from the command adapter. The
+=command_compiler_real_gxi_runs_workspace_patch_intent_example_from_runtime_assets=
+smoke writes the crate assets to a temporary loadpath, runs that example through
+real =gxi=, decodes the JSON response in Rust, and verifies the typed
+=WorkspacePatchIntent= artifact.
+
 Run the Rust boundary tests explicitly:
 
 #+begin_src sh
