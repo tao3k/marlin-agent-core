@@ -204,6 +204,29 @@ fn assert_agent_core_trace_spans(report: &HarnessExecutionReport) {
     assert_eq!(
         result_span
             .fields
+            .get(observability::FIELD_RUN_ID)
+            .map(String::as_str),
+        Some("run-e2e")
+    );
+    assert_eq!(
+        result_span
+            .fields
+            .get(observability::FIELD_GRAPH_ID)
+            .map(String::as_str),
+        Some("graph")
+    );
+    assert!(
+        report
+            .find_span_with_field(
+                &observability::harness_result_span_name(),
+                observability::FIELD_RUN_ID,
+                "run-e2e",
+            )
+            .is_some()
+    );
+    assert_eq!(
+        result_span
+            .fields
             .get(observability::FIELD_STATUS)
             .map(String::as_str),
         Some("Completed")

@@ -162,6 +162,8 @@ fn record_result_span(result: &GraphLoopExecutionResult, event_count: usize, dur
     let diagnostic_count = result.diagnostics.len();
     let _result_span = tracing::info_span!(
         "harness.result",
+        run_id = result.snapshot.run_id.as_str(),
+        graph_id = result.snapshot.graph_id.as_str(),
         status = ?status,
         duration_ms = duration_ms(duration),
         diagnostic_count,
