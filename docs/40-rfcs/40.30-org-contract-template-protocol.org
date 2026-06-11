@@ -78,7 +78,8 @@ body text as data for template renderers or Gerbil control planes.
 contract assertion results. The workspace loader executes the parser-owned
 count/existence subset during projection and records passed, failed, or skipped
 assertion receipts without invoking an external runtime. Supported receipts
-carry matched node ids.
+carry matched node ids. Skipped receipts carry typed skip reasons such as
+unsupported expectations.
 
 =OrgDocumentLoader::load_workspace_with_contracts= accepts explicit Org
 contract documents and merges their registries before reference resolution.
@@ -90,13 +91,15 @@ workspace-level batch lifecycle for in-memory agents.
 
 =marlin-workspace-view= and =marlin-workspace-status= expose contract facts as
 selected view data and status summaries, including matched-node validation
-evidence and structured expectation summaries, without owning template
-execution. Both surfaces carry the typed =OrgContractRegistry= so rendered text
-is never the only contract fact channel.
+evidence, structured expectation summaries, and typed skip-reason summaries,
+without owning template execution. Both surfaces carry the typed
+=OrgContractRegistry= and full validation report so rendered text is never the
+only contract fact channel.
 
 =marlin-gerbil-scheme= may pass =GerbilWorkspaceContractFacts= in
 =GerbilCompileRequest= so command-backed Gerbil control planes can select
-contract templates or emit patch intents from typed facts.
+contract templates or emit patch intents from typed facts, including validation
+skip reasons.
 Workspace patch-intent compile requests carry default empty contract facts and
 can be overridden with real parser-owned facts.
 
@@ -124,7 +127,8 @@ consume them to select scaffolds, render messages, or produce
   body, and source span facts.
 
 - =OrgDocumentLoader::load_workspace= returns an =OrgContractValidationReport=
-  for runtime-independent parser-owned assertion receipts during load.
+  for runtime-independent parser-owned assertion receipts during load, including
+  typed skip reasons for skipped receipts.
 
 - =OrgDocumentLoader::load_workspace_with_contracts= resolves references against
   explicit external Org contract documents.
@@ -136,15 +140,16 @@ consume them to select scaffolds, render messages, or produce
   of Org documents, discovers registry documents from that batch, and exposes
   merged contract facts in view and status.
 
-- View and status DTOs can carry typed contract registries, diagnostics, and validation
-  records as typed fields, not only rendered summary counts for agent-facing
-  context.
+- View and status DTOs can carry typed contract registries, diagnostics,
+  validation records, and skip-reason summaries as typed fields, not only
+  rendered summary counts for agent-facing context.
 
 - Validation receipts carry matched node ids for supported parser-owned
-  assertions.
+  assertions and typed skip reasons for unsupported expectations.
 
-- =GerbilCompileRequest= can carry contract registry, resolution, structured expectation, and
-  validation facts through command-backed Gerbil adapters, and
+- =GerbilCompileRequest= can carry contract registry, resolution, structured
+  expectation, validation facts, and validation skip reasons through
+  command-backed Gerbil adapters, and
   =GerbilCommandCompiler::compile_with_contract_facts= can send those facts
   through the JSON stdin command boundary.
 

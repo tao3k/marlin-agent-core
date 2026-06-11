@@ -63,22 +63,23 @@ a document: resolved =CONTRACT_ORG= references produce receipts for orgize
 =Exists=, =NotExists=, and =Count(op, n)= assertions over projected node
 summaries, properties, element category, and element kind. Unsupported
 expectations remain explicit skipped receipts rather than invoking an external
-runtime. Supported assertion receipts include matched node ids so downstream
-agents can inspect the evidence without re-running the query.
+runtime, and those skipped receipts carry typed skip reasons. Supported
+assertion receipts include matched node ids so downstream agents can inspect
+the evidence without re-running the query.
 
 ** View And Status
 
 =marlin-workspace-view= exposes =ContractFacts= as a selectable compact view
 field and carries the typed =OrgContractRegistry= beside rendered contract
 summary lines. Rendered lines include assertion counts, structured expectation
-summaries, matched-node counts, and matched node ids for supported validation
-receipts.
+summaries, matched-node counts, matched node ids for supported validation
+receipts, and skip-reason summaries for skipped validation receipts.
 =marlin-workspace-status= has a =ContractStatus= summary for resolved
 references, unresolved references, diagnostics, templates, validation receipts,
 validation outcomes, assertions, matched nodes, and rendered summary lines. It
 also carries the typed contract registry, reference resolutions, diagnostic
-records, template records, and the full =OrgContractValidationReport= so agents
-do not need to parse rendered text.
+records, template records, skip-reason summaries, and the full
+=OrgContractValidationReport= so agents do not need to parse rendered text.
 
 ** Current Limits
 

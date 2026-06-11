@@ -49,6 +49,7 @@ pub fn failed_contract_facts() -> GerbilWorkspaceContractFacts {
                 severity: OrgContractSeverity::new("error"),
                 message: Some("Goal section is required".to_string()),
                 matched_nodes: vec![OrgNodeId::new("memory.org:1:goal")],
+                skip_reason: None,
                 source: None,
             }],
             diagnostics: Vec::new(),

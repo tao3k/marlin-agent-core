@@ -118,6 +118,17 @@ impl OrgContractExpectation {
         }
     }
 
+    pub fn skip_reason(&self) -> Option<OrgContractValidationSkipReason> {
+        match self {
+            Self::Unsupported { label } => {
+                Some(OrgContractValidationSkipReason::UnsupportedExpectation {
+                    expectation: label.clone(),
+                })
+            }
+            Self::Exists | Self::NotExists | Self::Count { .. } => None,
+        }
+    }
+
     pub fn expected_summary(&self) -> String {
         match self {
             Self::Exists => "exists".to_string(),
@@ -219,7 +230,26 @@ pub struct OrgContractValidationReceipt {
     pub message: Option<String>,
     #[serde(default)]
     pub matched_nodes: Vec<OrgNodeId>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub skip_reason: Option<OrgContractValidationSkipReason>,
     pub source: Option<OrgSourceSpan>,
+}
+
+/// Typed reason explaining why a validation receipt was skipped.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum OrgContractValidationSkipReason {
+    UnsupportedExpectation { expectation: String },
+}
+
+impl OrgContractValidationSkipReason {
+    pub fn summary(&self) -> String {
+        match self {
+            Self::UnsupportedExpectation { expectation } => {
+                format!("unsupported expectation: {expectation}")
+            }
+        }
+    }
 }
 
 /// Target validated by a contract assertion.

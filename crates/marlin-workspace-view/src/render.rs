@@ -94,6 +94,8 @@ pub struct RenderedContractSummary {
     pub validation_matched_node_ids: Vec<OrgNodeId>,
     #[serde(default)]
     pub contract_expectation_summaries: Vec<String>,
+    #[serde(default)]
+    pub validation_skip_reasons: Vec<String>,
 }
 
 impl RenderedContractSummary {
@@ -144,6 +146,21 @@ impl RenderedContractSummary {
                 })
             })
             .collect::<Vec<_>>();
+        let validation_skip_reasons = facts
+            .validations
+            .receipts
+            .iter()
+            .filter_map(|receipt| {
+                receipt.skip_reason.as_ref().map(|reason| {
+                    format!(
+                        "{}/{}: {}",
+                        receipt.contract_id.as_str(),
+                        receipt.assertion_id,
+                        reason.summary()
+                    )
+                })
+            })
+            .collect::<Vec<_>>();
 
         Self {
             resolved_references,
@@ -158,6 +175,7 @@ impl RenderedContractSummary {
             validation_matched_nodes: validation_matched_node_ids.len(),
             validation_matched_node_ids,
             contract_expectation_summaries,
+            validation_skip_reasons,
         }
     }
 
@@ -190,6 +208,10 @@ impl RenderedContractSummary {
 
         for expectation in &self.contract_expectation_summaries {
             lines.push(format!("contract.validation.expectation: {expectation}"));
+        }
+
+        for skip_reason in &self.validation_skip_reasons {
+            lines.push(format!("contract.validation.skip_reason: {skip_reason}"));
         }
 
         for diagnostic in diagnostics {

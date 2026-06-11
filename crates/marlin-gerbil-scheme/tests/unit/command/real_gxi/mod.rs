@@ -133,6 +133,7 @@ fn sample_contract_facts() -> GerbilWorkspaceContractFacts {
                 severity: OrgContractSeverity::new("Error"),
                 message: Some("Task must contain a Goal section.".to_string()),
                 matched_nodes: Vec::new(),
+                skip_reason: None,
                 source: Some(OrgSourceSpan {
                     document: "memory.org".to_string(),
                     start_byte: 0,

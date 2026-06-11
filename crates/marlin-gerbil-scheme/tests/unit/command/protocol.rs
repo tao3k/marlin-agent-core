@@ -9,7 +9,9 @@ use marlin_gerbil_scheme::{
 use marlin_org_model::{
     OrgContract, OrgContractAssertion, OrgContractCompareOp, OrgContractExpectation, OrgContractId,
     OrgContractKind, OrgContractQuery, OrgContractRegistry, OrgContractResolutionReport,
-    OrgContractScope, OrgContractSeverity, OrgContractValidationReport,
+    OrgContractScope, OrgContractSeverity, OrgContractValidationReceipt,
+    OrgContractValidationReport, OrgContractValidationSkipReason, OrgContractValidationStatus,
+    OrgContractValidationTarget,
 };
 use marlin_workspace_status::ContractStatus;
 use marlin_workspace_view::{RenderedContractFacts, RenderedContractFactsInput};
@@ -44,7 +46,7 @@ fn command_protocol_round_trips_json_contract() {
 fn command_request_json_preserves_view_status_contract_facts() {
     let rendered = RenderedContractFacts::from_input(RenderedContractFactsInput {
         registry: contract_registry(),
-        validations: OrgContractValidationReport::default(),
+        validations: validation_report_with_skip_reason(),
         ..Default::default()
     });
     let status = ContractStatus {
@@ -59,6 +61,7 @@ fn command_request_json_preserves_view_status_contract_facts() {
         validation_skipped: rendered.summary.validation_skipped,
         validation_matched_nodes: rendered.summary.validation_matched_nodes,
         validation_matched_node_ids: rendered.summary.validation_matched_node_ids.clone(),
+        validation_skip_reasons: rendered.summary.validation_skip_reasons.clone(),
         reference_resolutions: rendered.resolutions.clone(),
         diagnostic_records: rendered.diagnostics.clone(),
         template_records: rendered.templates.clone(),
@@ -71,6 +74,10 @@ fn command_request_json_preserves_view_status_contract_facts() {
     assert_eq!(
         status.contract_expectation_summaries,
         ["agent.task.v1/task.has-goal: count >= 1"]
+    );
+    assert_eq!(
+        status.validation_skip_reasons,
+        ["agent.task.v1/task.legacy-check: unsupported expectation: legacy predicate"]
     );
     assert!(
         status.rendered_summary.iter().any(|line| line
@@ -97,6 +104,13 @@ fn command_request_json_preserves_view_status_contract_facts() {
             "kind": "count",
             "op": "Ge",
             "expected": 1
+        })
+    );
+    assert_eq!(
+        encoded["contract_facts"]["validations"]["receipts"][0]["skip_reason"],
+        json!({
+            "kind": "unsupported_expectation",
+            "expectation": "legacy predicate"
         })
     );
 
@@ -206,5 +220,24 @@ fn contract_registry() -> OrgContractRegistry {
                 expect_source: None,
             }],
         }],
+    }
+}
+
+fn validation_report_with_skip_reason() -> OrgContractValidationReport {
+    OrgContractValidationReport {
+        receipts: vec![OrgContractValidationReceipt {
+            contract_id: OrgContractId::new("agent.task.v1"),
+            assertion_id: "task.legacy-check".to_string(),
+            target: OrgContractValidationTarget::Document,
+            status: OrgContractValidationStatus::Skipped,
+            severity: OrgContractSeverity::new("Warning"),
+            message: None,
+            matched_nodes: Vec::new(),
+            skip_reason: Some(OrgContractValidationSkipReason::UnsupportedExpectation {
+                expectation: "legacy predicate".to_string(),
+            }),
+            source: None,
+        }],
+        diagnostics: Vec::new(),
     }
 }

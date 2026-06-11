@@ -3,7 +3,8 @@ use marlin_gerbil_ir::{ReleaseGateSpec, ReleaseTopologySpec, ReleaseVisibilitySp
 use marlin_org_model::{
     OrgContract, OrgContractAssertion, OrgContractCompareOp, OrgContractExpectation, OrgContractId,
     OrgContractKind, OrgContractQuery, OrgContractRegistry, OrgContractScope, OrgContractSeverity,
-    OrgContractValidationReport,
+    OrgContractValidationReceipt, OrgContractValidationReport, OrgContractValidationSkipReason,
+    OrgContractValidationStatus, OrgContractValidationTarget,
 };
 use marlin_workspace_status::{
     ContractStatus, ReleaseGateReceipt, ReleaseGateState, ReleaseStatus,
@@ -18,21 +19,25 @@ fn contract_status_json_carries_typed_registry_expectations() {
         diagnostics: 0,
         templates: 0,
         contract_assertions: 1,
-        validation_receipts: 0,
+        validation_receipts: 1,
         validation_passed: 0,
         validation_failed: 0,
-        validation_skipped: 0,
+        validation_skipped: 1,
         validation_matched_nodes: 0,
         validation_matched_node_ids: Vec::new(),
+        validation_skip_reasons: vec![
+            "agent.task.v1/task.legacy-check: unsupported expectation: legacy predicate".to_string(),
+        ],
         reference_resolutions: Vec::new(),
         diagnostic_records: Vec::new(),
         template_records: Vec::new(),
         registry: contract_registry(),
-        validation_report: OrgContractValidationReport::default(),
+        validation_report: validation_report_with_skip_reason(),
         contract_expectation_summaries: vec!["agent.task.v1/task.has-goal: count >= 1".to_string()],
         rendered_summary: vec![
             "contracts.assertions: 1".to_string(),
             "contract.validation.expectation: agent.task.v1/task.has-goal: count >= 1".to_string(),
+            "contract.validation.skip_reason: agent.task.v1/task.legacy-check: unsupported expectation: legacy predicate".to_string(),
         ],
     };
 
@@ -51,6 +56,17 @@ fn contract_status_json_carries_typed_registry_expectations() {
         encoded["contract_expectation_summaries"],
         json!(["agent.task.v1/task.has-goal: count >= 1"])
     );
+    assert_eq!(
+        encoded["validation_report"]["receipts"][0]["skip_reason"],
+        json!({
+            "kind": "unsupported_expectation",
+            "expectation": "legacy predicate"
+        })
+    );
+    assert_eq!(
+        encoded["validation_skip_reasons"],
+        json!(["agent.task.v1/task.legacy-check: unsupported expectation: legacy predicate"])
+    );
     assert!(
         encoded["rendered_summary"]
             .as_array()
@@ -59,6 +75,16 @@ fn contract_status_json_carries_typed_registry_expectations() {
             .any(|line| line.as_str()
                 == Some(
                     "contract.validation.expectation: agent.task.v1/task.has-goal: count >= 1"
+                ))
+    );
+    assert!(
+        encoded["rendered_summary"]
+            .as_array()
+            .expect("rendered summary")
+            .iter()
+            .any(|line| line.as_str()
+                == Some(
+                    "contract.validation.skip_reason: agent.task.v1/task.legacy-check: unsupported expectation: legacy predicate"
                 ))
     );
 
@@ -89,6 +115,25 @@ fn contract_registry() -> OrgContractRegistry {
                 expect_source: None,
             }],
         }],
+    }
+}
+
+fn validation_report_with_skip_reason() -> OrgContractValidationReport {
+    OrgContractValidationReport {
+        receipts: vec![OrgContractValidationReceipt {
+            contract_id: OrgContractId::new("agent.task.v1"),
+            assertion_id: "task.legacy-check".to_string(),
+            target: OrgContractValidationTarget::Document,
+            status: OrgContractValidationStatus::Skipped,
+            severity: OrgContractSeverity::new("Warning"),
+            message: None,
+            matched_nodes: Vec::new(),
+            skip_reason: Some(OrgContractValidationSkipReason::UnsupportedExpectation {
+                expectation: "legacy predicate".to_string(),
+            }),
+            source: None,
+        }],
+        diagnostics: Vec::new(),
     }
 }
 

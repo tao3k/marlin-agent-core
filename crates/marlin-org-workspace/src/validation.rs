@@ -92,7 +92,8 @@ fn validate_contract_assertion(
         .map(|node| node.id.clone())
         .collect::<Vec<_>>();
     let matched = matched_nodes.len();
-    let status = evaluate_expectation(&assertion.expectation, matched)
+    let evaluation = evaluate_expectation(&assertion.expectation, matched);
+    let status = evaluation
         .map(|passed| {
             if passed {
                 OrgContractValidationStatus::Passed
@@ -101,6 +102,10 @@ fn validate_contract_assertion(
             }
         })
         .unwrap_or(OrgContractValidationStatus::Skipped);
+    let skip_reason = evaluation
+        .is_none()
+        .then(|| assertion.expectation.skip_reason())
+        .flatten();
 
     OrgContractValidationReceipt {
         contract_id: contract.id.clone(),
@@ -110,6 +115,7 @@ fn validate_contract_assertion(
         severity: assertion.severity.clone(),
         message: assertion.message.clone(),
         matched_nodes,
+        skip_reason,
         source: validation_target_source(target, scoped_nodes),
     }
 }

@@ -87,6 +87,8 @@ pub struct ContractStatus {
     #[serde(default)]
     pub validation_matched_node_ids: Vec<OrgNodeId>,
     #[serde(default)]
+    pub validation_skip_reasons: Vec<String>,
+    #[serde(default)]
     pub reference_resolutions: Vec<OrgContractResolution>,
     #[serde(default)]
     pub diagnostic_records: Vec<OrgContractDiagnostic>,

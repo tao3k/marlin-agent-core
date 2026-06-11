@@ -1,7 +1,8 @@
 use marlin_org_model::{
     OrgContract, OrgContractAssertion, OrgContractCompareOp, OrgContractExpectation, OrgContractId,
     OrgContractKind, OrgContractQuery, OrgContractRegistry, OrgContractScope, OrgContractSeverity,
-    OrgContractValidationReport,
+    OrgContractValidationReceipt, OrgContractValidationReport, OrgContractValidationSkipReason,
+    OrgContractValidationStatus, OrgContractValidationTarget,
 };
 use marlin_workspace_view::{RenderedContractFacts, RenderedContractFactsInput};
 use serde_json::json;
@@ -10,7 +11,7 @@ use serde_json::json;
 fn rendered_contract_facts_json_carries_typed_registry_expectations() {
     let facts = RenderedContractFacts::from_input(RenderedContractFactsInput {
         registry: contract_registry(),
-        validations: OrgContractValidationReport::default(),
+        validations: validation_report_with_skip_reason(),
         ..Default::default()
     });
 
@@ -29,6 +30,17 @@ fn rendered_contract_facts_json_carries_typed_registry_expectations() {
         encoded["summary"]["contract_expectation_summaries"],
         json!(["agent.task.v1/task.has-goal: count >= 1"])
     );
+    assert_eq!(
+        encoded["validations"]["receipts"][0]["skip_reason"],
+        json!({
+            "kind": "unsupported_expectation",
+            "expectation": "legacy predicate"
+        })
+    );
+    assert_eq!(
+        encoded["summary"]["validation_skip_reasons"],
+        json!(["agent.task.v1/task.legacy-check: unsupported expectation: legacy predicate"])
+    );
     assert!(
         encoded["rendered_lines"]
             .as_array()
@@ -37,6 +49,16 @@ fn rendered_contract_facts_json_carries_typed_registry_expectations() {
             .any(|line| line.as_str()
                 == Some(
                     "contract.validation.expectation: agent.task.v1/task.has-goal: count >= 1"
+                ))
+    );
+    assert!(
+        encoded["rendered_lines"]
+            .as_array()
+            .expect("rendered lines")
+            .iter()
+            .any(|line| line.as_str()
+                == Some(
+                    "contract.validation.skip_reason: agent.task.v1/task.legacy-check: unsupported expectation: legacy predicate"
                 ))
     );
 
@@ -68,5 +90,24 @@ fn contract_registry() -> OrgContractRegistry {
                 expect_source: None,
             }],
         }],
+    }
+}
+
+fn validation_report_with_skip_reason() -> OrgContractValidationReport {
+    OrgContractValidationReport {
+        receipts: vec![OrgContractValidationReceipt {
+            contract_id: OrgContractId::new("agent.task.v1"),
+            assertion_id: "task.legacy-check".to_string(),
+            target: OrgContractValidationTarget::Document,
+            status: OrgContractValidationStatus::Skipped,
+            severity: OrgContractSeverity::new("Warning"),
+            message: None,
+            matched_nodes: Vec::new(),
+            skip_reason: Some(OrgContractValidationSkipReason::UnsupportedExpectation {
+                expectation: "legacy predicate".to_string(),
+            }),
+            source: None,
+        }],
+        diagnostics: Vec::new(),
     }
 }

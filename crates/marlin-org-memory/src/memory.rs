@@ -734,6 +734,7 @@ fn contract_status(contract_facts: &RenderedContractFacts) -> ContractStatus {
         validation_skipped: summary.validation_skipped,
         validation_matched_nodes: summary.validation_matched_nodes,
         validation_matched_node_ids: summary.validation_matched_node_ids.clone(),
+        validation_skip_reasons: summary.validation_skip_reasons.clone(),
         reference_resolutions: contract_facts.resolutions.clone(),
         diagnostic_records: contract_facts.diagnostics.clone(),
         template_records: contract_facts.templates.clone(),
