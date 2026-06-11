@@ -81,3 +81,7 @@ Before enabling external publish, choose one release shape:
   and keep the current examples/tests intact.
 
 Until that decision is made, =publish = false= is the correct stable boundary.
+
+The local real-gxi release gate persists its file-backed landing status as CI
+artifacts when =MARLIN_RELEASE_STATUS_ARTIFACT_DIR= is set. The expected
+receipts are =release-status.json= and =release-landing-report.json=.

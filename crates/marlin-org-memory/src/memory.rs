@@ -6,7 +6,7 @@ use marlin_org_model::{
     CheckboxState, LinkKind, OrgCheckbox, OrgContractRegistry, OrgContractResolutionReport,
     OrgContractValidationReport, OrgLink, OrgNode, OrgNodeId, OrgNodeKind, TodoState,
 };
-use marlin_org_workspace::{OrgDocument, OrgDocumentLoader};
+use marlin_org_workspace::{OrgDocument, OrgDocumentLoader, OrgDocumentWorkspace};
 use marlin_workspace_patch::{
     AffectedNodeSource, DecisionRecord, EvidenceRef, EvidenceTrust, MemoryDispatchReceipt,
     MetricPoint, PatchId, WorkspacePatch, WorkspacePatchExecutionMode,
@@ -110,6 +110,21 @@ impl MemoryOrgWorkspace {
     /// Load a raw `Org` document into the in-memory workspace.
     pub fn load_document(&self, document: OrgDocument) -> WorkspaceResult<Vec<OrgNodeId>> {
         let workspace = OrgDocumentLoader::load_workspace(&document)?;
+        self.load_workspace(workspace)
+    }
+
+    /// Load a raw `Org` document with additional external contract documents.
+    pub fn load_document_with_contracts(
+        &self,
+        document: OrgDocument,
+        contract_documents: &[OrgDocument],
+    ) -> WorkspaceResult<Vec<OrgNodeId>> {
+        let workspace =
+            OrgDocumentLoader::load_workspace_with_contracts(&document, contract_documents)?;
+        self.load_workspace(workspace)
+    }
+
+    fn load_workspace(&self, workspace: OrgDocumentWorkspace) -> WorkspaceResult<Vec<OrgNodeId>> {
         let ids = workspace
             .nodes
             .iter()

@@ -200,6 +200,108 @@ Task `{{ scope.title }}` must contain a Goal section.
 }
 
 #[test]
+fn memory_workspace_loads_external_contract_documents() {
+    let workspace = MemoryOrgWorkspace::new();
+    let contract_document = OrgDocument::new(
+        "doc:external-contracts",
+        r#"* agent-task-v1
+:PROPERTIES:
+:CONTRACT_ID: agent.task.v1
+:CONTRACT_SCOPE: subtree
+:CONTRACT_KIND: org-elements
+:END:
+
+** must-have-goal-section
+:PROPERTIES:
+:ASSERT_ID: task.has-goal
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-elements-query
+category = "section"
+kind = "headline"
+within = "$scope"
+summary.title = "Goal"
+#+END_SRC
+
+#+BEGIN_SRC org-elements-expect
+count >= 1
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+Task `{{ scope.title }}` must contain a Goal section.
+#+END_SRC
+"#,
+    );
+    let task_document = OrgDocument::new(
+        "doc:task",
+        r#"* TODO Task A
+:PROPERTIES:
+:CONTRACT_ORG: agent.task.v1
+:END:
+"#,
+    );
+
+    let ids = workspace
+        .load_document_with_contracts(task_document, &[contract_document])
+        .expect("document inserted with external contract facts");
+    let status = block_on(workspace.status(
+        WorkspaceTarget::Goal(ids[0].clone()),
+        WorkspaceCtx::new("unit-test"),
+    ))
+    .expect("status includes external contract facts");
+    let contracts = status.contracts.expect("contract status");
+
+    assert_eq!(contracts.resolved_references, 1);
+    assert_eq!(contracts.unresolved_references, 0);
+    assert_eq!(contracts.template_records.len(), 1);
+    assert_eq!(contracts.validation_report.receipts.len(), 1);
+    assert_eq!(
+        contracts.reference_resolutions[0]
+            .resolved_contract_id
+            .as_ref()
+            .map(|contract_id| contract_id.as_str()),
+        Some("agent.task.v1")
+    );
+}
+
+#[test]
+fn memory_workspace_status_reports_unresolved_contract_diagnostics() {
+    let workspace = MemoryOrgWorkspace::new();
+    let document = OrgDocument::new(
+        "doc:missing-contract",
+        "#+CONTRACT_ORG: missing.contract\n* TODO Task A\n",
+    );
+
+    workspace
+        .load_document(document)
+        .expect("document inserted with unresolved contract facts");
+    let status =
+        block_on(workspace.status(WorkspaceTarget::Workspace, WorkspaceCtx::new("unit-test")))
+            .expect("workspace status includes unresolved contract diagnostics");
+    let contracts = status.contracts.expect("contract status");
+
+    assert_eq!(contracts.resolved_references, 0);
+    assert_eq!(contracts.unresolved_references, 1);
+    assert_eq!(contracts.diagnostic_records.len(), 1);
+    assert_eq!(contracts.diagnostic_records[0].code, "ORG044");
+    assert!(
+        contracts.diagnostic_records[0]
+            .message
+            .contains("missing.contract")
+    );
+    assert_eq!(contracts.reference_resolutions.len(), 1);
+    assert_eq!(
+        contracts.reference_resolutions[0]
+            .reference
+            .contract_id
+            .as_ref()
+            .map(|contract_id| contract_id.as_str()),
+        Some("missing.contract")
+    );
+}
+
+#[test]
 fn memory_workspace_queries_patches_renders_and_reports_status() {
     let goal_id = OrgNodeId::from("goal:workspace");
     let mut goal = OrgNode::heading(goal_id.clone(), "Implement workspace backend");

@@ -68,14 +68,18 @@ runtime.
 field and carries rendered contract summary lines beside node text.
 =marlin-workspace-status= has a =ContractStatus= summary for resolved
 references, unresolved references, diagnostics, templates, validation receipts,
-validation outcomes, and rendered summary lines.
+validation outcomes, and rendered summary lines. It also carries typed
+reference resolutions, diagnostic records, template records, and the full
+=OrgContractValidationReport= so agents do not need to parse rendered text.
 
 ** Current Limits
 
 The first projection preserves orgize query, expectation, message, fix,
 template facts, source block spans, local reference resolution, explicit
 external contract documents, and runtime-independent validation receipts for
-the count-query subset. It does not discover registry files implicitly and does
-not execute template engines inside Marlin. Richer assertion execution remains
-an upstream orgize lint concern until Marlin expands the receipt protocol beyond
-the current parser-owned count summary path.
+the count-query subset. =MemoryOrgWorkspace= can load a document with explicit
+external contract documents and expose unresolved references as typed status
+diagnostics. It does not discover registry files implicitly and does not execute
+template engines inside Marlin. Richer assertion execution remains an upstream
+orgize lint concern until Marlin expands the receipt protocol beyond the current
+parser-owned count summary path.
