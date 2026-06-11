@@ -7,9 +7,10 @@ use marlin_org_store::{
     OrgSourceDiagnosticKind, OrgSourceDocumentHash, OrgSourceStore, OrgSourceWritePolicy,
 };
 use marlin_org_workspace::{OrgDocument, OrgDocumentLoader};
-use marlin_workspace_patch::{AffectedNodeSource, WorkspacePatch};
+use marlin_workspace_patch::{AffectedNodeSource, ValidationDiagnostic, WorkspacePatch};
 use serde::{Deserialize, Serialize};
 
+use crate::gerbil_intent::{GerbilWorkspacePatchIntentCommit, validate_intent};
 use crate::patch_ops::workspace_patch_op_node;
 
 /// Request to apply a typed workspace patch to one durable `Org` document.
@@ -47,6 +48,23 @@ pub struct OrgWorkspaceSourceCommitReceipt {
 pub struct OrgWorkspaceSourceCommitter;
 
 impl OrgWorkspaceSourceCommitter {
+    pub fn commit_gerbil_intent<S: OrgSourceStore>(
+        store: &mut S,
+        request: &GerbilWorkspacePatchIntentCommit,
+    ) -> OrgWorkspaceSourceCommitReceipt {
+        let validation = validate_intent(&request.intent);
+        if !validation.accepted {
+            return blocked_validation_receipt(validation.diagnostics);
+        }
+
+        let source_request = OrgWorkspaceSourceCommit::new(
+            request.document.clone(),
+            request.intent.patch.clone(),
+            request.policy.clone(),
+        );
+        Self::commit_document(store, &source_request)
+    }
+
     pub fn commit_document<S: OrgSourceStore>(
         store: &mut S,
         request: &OrgWorkspaceSourceCommit,
@@ -120,6 +138,33 @@ fn blocked_workspace_receipt(
                 kind,
                 message,
             }],
+            conflicts: Vec::new(),
+            wrote_documents: false,
+        },
+    }
+}
+
+fn blocked_validation_receipt(
+    diagnostics: Vec<ValidationDiagnostic>,
+) -> OrgWorkspaceSourceCommitReceipt {
+    OrgWorkspaceSourceCommitReceipt {
+        loaded_nodes: Vec::new(),
+        plan: OrgPatchPlan::default(),
+        source: OrgSourceCommitReceipt {
+            applied_edits: 0,
+            planned_edits: Vec::new(),
+            changed_documents: Vec::new(),
+            diagnostics: diagnostics
+                .into_iter()
+                .map(|diagnostic| OrgSourceDiagnostic {
+                    document: None,
+                    kind: OrgSourceDiagnosticKind::PatchDiagnostic,
+                    message: format!(
+                        "gerbil workspace patch intent rejected: {}",
+                        diagnostic.message
+                    ),
+                })
+                .collect(),
             conflicts: Vec::new(),
             wrote_documents: false,
         },

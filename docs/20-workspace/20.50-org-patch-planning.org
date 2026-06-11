@@ -59,3 +59,10 @@ hash placeholders without reading or writing the workspace.
 Memory dispatch operations also remain dry-run only at this boundary. The
 receipt records the requested target and a rejection reason so a later workflow
 can decide whether memory mutation should be enabled with an explicit policy.
+
+Durable source mutation is a separate request. =GerbilWorkspacePatchIntentCommit=
+pairs the Gerbil-emitted intent with a caller-selected document and
+=OrgSourceWritePolicy=. =OrgWorkspaceSourceCommitter::commit_gerbil_intent=
+first enforces the =dry_run_first= gate, then delegates to the normal
+parser-owned source commit workflow. Rejected intents return a source receipt
+diagnostic without loading or writing the Org document.

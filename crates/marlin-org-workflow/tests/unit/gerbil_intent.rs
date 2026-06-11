@@ -1,6 +1,15 @@
+use std::{
+    fs,
+    time::{SystemTime, UNIX_EPOCH},
+};
+
 use marlin_gerbil_ir::WorkspacePatchIntentSpec;
-use marlin_org_model::OrgNodeId;
-use marlin_org_workflow::GerbilWorkspacePatchIntentDryRunner;
+use marlin_org_model::{CheckboxState, OrgNodeId};
+use marlin_org_store::{FileSystemOrgSourceStore, OrgSourceWritePolicy};
+use marlin_org_workflow::{
+    GerbilWorkspacePatchIntentCommit, GerbilWorkspacePatchIntentDryRunner,
+    OrgWorkspaceSourceCommitter,
+};
 use marlin_workspace_patch::{PatchId, ValidationSeverity, WorkspacePatch, WorkspacePatchOp};
 
 #[test]
@@ -48,6 +57,61 @@ fn gerbil_patch_intent_dry_run_rejects_missing_dry_run_first() {
     assert!(receipt.memory_dispatch.is_empty());
 }
 
+#[test]
+fn gerbil_patch_intent_commit_writes_when_policy_allows() {
+    let root = test_root("gerbil-intent-commit");
+    fs::create_dir_all(&root).expect("create temp root");
+    fs::write(root.join("memory.org"), "* Goal\n").expect("seed document");
+    let mut store = FileSystemOrgSourceStore::new(&root);
+    let request = GerbilWorkspacePatchIntentCommit::new(
+        "memory.org",
+        workspace_patch_source_intent(true),
+        OrgSourceWritePolicy::write(),
+    );
+
+    let receipt = OrgWorkspaceSourceCommitter::commit_gerbil_intent(&mut store, &request);
+
+    assert!(receipt.source.accepted());
+    assert_eq!(receipt.plan.edits.len(), 1);
+    assert_eq!(receipt.source.applied_edits, 1);
+    assert!(receipt.source.wrote_documents);
+    assert_eq!(
+        fs::read_to_string(root.join("memory.org")).expect("read committed document"),
+        "* Goal\n\n- [ ] verify via gerbil\n"
+    );
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn gerbil_patch_intent_commit_rejects_missing_dry_run_first_without_write() {
+    let root = test_root("gerbil-intent-reject");
+    fs::create_dir_all(&root).expect("create temp root");
+    fs::write(root.join("memory.org"), "* Goal\n").expect("seed document");
+    let mut store = FileSystemOrgSourceStore::new(&root);
+    let request = GerbilWorkspacePatchIntentCommit::new(
+        "memory.org",
+        workspace_patch_source_intent(false),
+        OrgSourceWritePolicy::write(),
+    );
+
+    let receipt = OrgWorkspaceSourceCommitter::commit_gerbil_intent(&mut store, &request);
+
+    assert!(receipt.loaded_nodes.is_empty());
+    assert!(!receipt.source.accepted());
+    assert_eq!(receipt.source.diagnostics.len(), 1);
+    assert!(
+        receipt.source.diagnostics[0]
+            .message
+            .contains("requires dry_run_first")
+    );
+    assert!(!receipt.source.wrote_documents);
+    assert_eq!(
+        fs::read_to_string(root.join("memory.org")).expect("read unchanged document"),
+        "* Goal\n"
+    );
+    let _ = fs::remove_dir_all(root);
+}
+
 fn workspace_patch_intent(dry_run_first: bool) -> WorkspacePatchIntentSpec {
     let mut patch = WorkspacePatch::new("gerbil intent");
     patch.source_agent = Some("gerbil".to_owned());
@@ -61,4 +125,31 @@ fn workspace_patch_intent(dry_run_first: bool) -> WorkspacePatchIntentSpec {
         patch,
         dry_run_first,
     }
+}
+
+fn workspace_patch_source_intent(dry_run_first: bool) -> WorkspacePatchIntentSpec {
+    let mut patch = WorkspacePatch::new("gerbil source edit");
+    patch.source_agent = Some("gerbil".to_owned());
+    patch.ops.push(WorkspacePatchOp::AddCheckbox {
+        node: OrgNodeId::new("memory.org:1:goal"),
+        text: "verify via gerbil".to_owned(),
+        state: CheckboxState::Open,
+    });
+
+    WorkspacePatchIntentSpec {
+        intent_id: "intent:source-edit".to_owned(),
+        patch,
+        dry_run_first,
+    }
+}
+
+fn test_root(name: &str) -> std::path::PathBuf {
+    let suffix = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_nanos())
+        .unwrap_or_default();
+    std::env::temp_dir().join(format!(
+        "marlin-org-workflow-{name}-{}-{suffix}",
+        std::process::id()
+    ))
 }

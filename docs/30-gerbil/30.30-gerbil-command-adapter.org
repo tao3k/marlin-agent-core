@@ -77,6 +77,8 @@ A proposed Gerbil source form is:
   (patch
     (reason "gerbil intent")
     (source-agent "gerbil")
+    (set-todo "memory.org:1:goal" DONE)
+    (set-property "memory.org:1:goal" OWNER "gerbil")
     (mark-memory-candidate "memory.org:1:goal" "long-term")))
 #+end_src
 
@@ -92,13 +94,21 @@ ops, emits deterministic dry-run hashes, and records memory dispatch requests as
 rejected dry-run receipts. It deliberately does not load Org documents or plan
 source edits.
 
-The current Gerbil fixture supports only the =mark-memory-candidate=
-=WorkspacePatchOp= surface. Additional patch operations need explicit parser
-and serializer clauses plus Rust and real =gxi= tests before they enter the DSL.
-=WorkspacePatchIntent= is registered only because =protocol.ss= serializes it,
-=parser.ss= reads it, =adapter.ss= dispatches it through the compiler table,
-and real =gxi= tests prove the JSON artifact. The table/registry self-check is
-the gate that prevents Rust from asking Gerbil for a half-registered artifact.
+Durable source mutation requires a second Rust-owned request:
+=GerbilWorkspacePatchIntentCommit=. That request pairs the typed Gerbil intent
+with an explicit document and =OrgSourceWritePolicy= before
+=OrgWorkspaceSourceCommitter::commit_gerbil_intent= may load, plan, and commit
+Org source edits. A missing =dry_run_first= gate returns a diagnostic receipt
+before any Org document is loaded.
+
+The current Gerbil fixture supports the =set-todo=, =set-property=, and
+=mark-memory-candidate= =WorkspacePatchOp= surface. Additional patch operations
+need explicit parser and serializer clauses plus Rust and real =gxi= tests
+before they enter the DSL. =WorkspacePatchIntent= is registered only because
+=protocol.ss= serializes it, =parser.ss= reads it, =adapter.ss= dispatches it
+through the compiler table, and real =gxi= tests prove the JSON artifact. The
+table/registry self-check is the gate that prevents Rust from asking Gerbil for
+a half-registered artifact.
 
 ** Boundary
 

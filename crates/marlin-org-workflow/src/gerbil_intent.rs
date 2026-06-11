@@ -2,10 +2,12 @@
 
 use marlin_gerbil_ir::WorkspacePatchIntentSpec;
 use marlin_org_model::OrgNodeId;
+use marlin_org_store::OrgSourceWritePolicy;
 use marlin_workspace_patch::{
     MemoryDispatchReceipt, PatchId, ValidationDiagnostic, ValidationSeverity,
     WorkspacePatchReceipt, WorkspaceValidationReport,
 };
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
 use crate::patch_ops::workspace_patch_op_node;
@@ -38,7 +40,29 @@ impl GerbilWorkspacePatchIntentDryRunner {
     }
 }
 
-fn validate_intent(intent: &WorkspacePatchIntentSpec) -> WorkspaceValidationReport {
+/// Explicit request to persist a Gerbil-emitted workspace patch intent.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct GerbilWorkspacePatchIntentCommit {
+    pub document: String,
+    pub intent: WorkspacePatchIntentSpec,
+    pub policy: OrgSourceWritePolicy,
+}
+
+impl GerbilWorkspacePatchIntentCommit {
+    pub fn new(
+        document: impl Into<String>,
+        intent: WorkspacePatchIntentSpec,
+        policy: OrgSourceWritePolicy,
+    ) -> Self {
+        Self {
+            document: document.into(),
+            intent,
+            policy,
+        }
+    }
+}
+
+pub(crate) fn validate_intent(intent: &WorkspacePatchIntentSpec) -> WorkspaceValidationReport {
     if intent.dry_run_first {
         WorkspaceValidationReport::accepted()
     } else {
