@@ -273,6 +273,7 @@ count >= 1
     assert_eq!(receipt.status, OrgContractValidationStatus::Passed);
     let source = receipt.source.as_ref().expect("validated source span");
     assert!(slice(text, source).contains("* TODO Task A"));
+    assert_eq!(receipt.matched_nodes.len(), 1);
 }
 
 #[test]
@@ -301,6 +302,48 @@ fn org_document_loader_resolves_references_from_external_contract_documents() {
     let resolution = &workspace.contract_resolutions.references[0];
     assert_eq!(
         resolution
+            .resolved_contract_id
+            .as_ref()
+            .map(|contract_id| contract_id.as_str()),
+        Some("external.agent.task")
+    );
+}
+
+#[test]
+fn org_document_loader_discovers_contract_documents_from_candidates() {
+    let contract_document = OrgDocument::new(
+        "doc:external-contracts",
+        r#"* external-agent-task
+:PROPERTIES:
+:CONTRACT_ID: external.agent.task
+:CONTRACT_SCOPE: subtree
+:CONTRACT_KIND: org-elements
+:END:
+"#,
+    );
+    let task_document = OrgDocument::new(
+        "doc:task",
+        r#"* TODO Task A
+:PROPERTIES:
+:CONTRACT_ORG: external.agent.task
+:END:
+"#,
+    );
+    let note_document = OrgDocument::new("doc:note", "* NOTE Plain note\n");
+
+    let discovered = OrgDocumentLoader::discover_contract_documents(&[
+        task_document.clone(),
+        contract_document,
+        note_document,
+    ]);
+    let workspace = OrgDocumentLoader::load_workspace_with_contracts(&task_document, &discovered)
+        .expect("document loads with discovered contract documents");
+
+    assert_eq!(discovered.len(), 1);
+    assert_eq!(discovered[0].id.as_str(), "doc:external-contracts");
+    assert!(workspace.contract_resolutions.diagnostics.is_empty());
+    assert_eq!(
+        workspace.contract_resolutions.references[0]
             .resolved_contract_id
             .as_ref()
             .map(|contract_id| contract_id.as_str()),

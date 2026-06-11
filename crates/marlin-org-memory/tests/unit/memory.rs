@@ -193,6 +193,11 @@ Task `{{ scope.title }}` must contain a Goal section.
     assert_eq!(contracts.template_records.len(), 1);
     assert_eq!(contracts.validation_report.receipts.len(), 1);
     assert!(
+        contracts.validation_report.receipts[0]
+            .matched_nodes
+            .is_empty()
+    );
+    assert!(
         contracts
             .rendered_summary
             .contains(&"contracts.templates: 1".to_string())
@@ -256,6 +261,11 @@ Task `{{ scope.title }}` must contain a Goal section.
     assert_eq!(contracts.unresolved_references, 0);
     assert_eq!(contracts.template_records.len(), 1);
     assert_eq!(contracts.validation_report.receipts.len(), 1);
+    assert!(
+        contracts.validation_report.receipts[0]
+            .matched_nodes
+            .is_empty()
+    );
     assert_eq!(
         contracts.reference_resolutions[0]
             .resolved_contract_id

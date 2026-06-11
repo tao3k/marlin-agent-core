@@ -86,10 +86,12 @@ fn validate_contract_assertion(
     target: &OrgContractValidationTarget,
     scoped_nodes: &[&OrgNode],
 ) -> OrgContractValidationReceipt {
-    let matched = scoped_nodes
+    let matched_nodes = scoped_nodes
         .iter()
         .filter(|node| node_matches_contract_query(node, &assertion.query))
-        .count();
+        .map(|node| node.id.clone())
+        .collect::<Vec<_>>();
+    let matched = matched_nodes.len();
     let status = count_at_least(&assertion.expectation)
         .map(|minimum| {
             if matched >= minimum {
@@ -107,6 +109,7 @@ fn validate_contract_assertion(
         status,
         severity: assertion.severity.clone(),
         message: assertion.message.clone(),
+        matched_nodes,
         source: validation_target_source(target, scoped_nodes),
     }
 }

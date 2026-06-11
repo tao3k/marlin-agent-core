@@ -62,7 +62,7 @@ fn command_adapter_batch_requests() -> Vec<GerbilCompileRequest> {
                 WORKSPACE_PATCH_INTENT_SOURCE,
             ),
             expected: GerbilArtifactKind::WorkspacePatchIntent,
-            contract_facts: None,
+            contract_facts: Some(empty_contract_facts()),
         },
         GerbilCompileRequest {
             source: GerbilSource::new("audit/agent-scenario", AGENT_SCENARIO_CONTRACT_SOURCE),

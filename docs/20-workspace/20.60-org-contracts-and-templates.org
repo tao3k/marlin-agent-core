@@ -60,7 +60,8 @@ container. It carries assertion receipts and diagnostics as data.
 a document: resolved =CONTRACT_ORG= references produce receipts for count-based
 assertions over projected node summaries and properties. Unsupported
 expectations remain explicit skipped receipts rather than invoking an external
-runtime.
+runtime. Supported assertion receipts include matched node ids so downstream
+agents can inspect the evidence without re-running the query.
 
 ** View And Status
 
@@ -79,7 +80,9 @@ template facts, source block spans, local reference resolution, explicit
 external contract documents, and runtime-independent validation receipts for
 the count-query subset. =MemoryOrgWorkspace= can load a document with explicit
 external contract documents and expose unresolved references as typed status
-diagnostics. It does not discover registry files implicitly and does not execute
-template engines inside Marlin. Richer assertion execution remains an upstream
-orgize lint concern until Marlin expands the receipt protocol beyond the current
-parser-owned count summary path.
+diagnostics. =OrgDocumentLoader::discover_contract_documents= can filter a
+caller-provided candidate document set down to documents that contain contract
+registries. It does not discover registry files from the filesystem implicitly
+and does not execute template engines inside Marlin. Richer assertion execution
+remains an upstream orgize lint concern until Marlin expands the receipt
+protocol beyond the current parser-owned count summary path.

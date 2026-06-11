@@ -141,6 +141,8 @@ pub struct OrgContractValidationReceipt {
     pub status: OrgContractValidationStatus,
     pub severity: OrgContractSeverity,
     pub message: Option<String>,
+    #[serde(default)]
+    pub matched_nodes: Vec<OrgNodeId>,
     pub source: Option<OrgSourceSpan>,
 }
 

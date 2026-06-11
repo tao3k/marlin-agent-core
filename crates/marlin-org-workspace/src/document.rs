@@ -91,6 +91,20 @@ impl OrgDocumentLoader {
     ) -> WorkspaceResult<OrgDocumentWorkspace> {
         OrgDocumentParser::new(document).parse(contract_documents)
     }
+
+    /// Select candidate documents that contain parser-owned Org contract registries.
+    pub fn discover_contract_documents(candidates: &[OrgDocument]) -> Vec<OrgDocument> {
+        candidates
+            .iter()
+            .filter(|document| {
+                let org = parse_org_with_workspace_todo_keywords(&document.text);
+                !parse_contracts_from_document(&org.document(), None)
+                    .contracts
+                    .is_empty()
+            })
+            .cloned()
+            .collect()
+    }
 }
 
 struct OrgDocumentParser<'a> {
