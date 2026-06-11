@@ -1,6 +1,96 @@
 use marlin_agent_protocol::{LoopEvidence, LoopEvidenceKind};
 use marlin_gerbil_ir::{ReleaseGateSpec, ReleaseTopologySpec, ReleaseVisibilitySpec};
-use marlin_workspace_status::{ReleaseGateReceipt, ReleaseGateState, ReleaseStatus};
+use marlin_org_model::{
+    OrgContract, OrgContractAssertion, OrgContractCompareOp, OrgContractExpectation, OrgContractId,
+    OrgContractKind, OrgContractQuery, OrgContractRegistry, OrgContractScope, OrgContractSeverity,
+    OrgContractValidationReport,
+};
+use marlin_workspace_status::{
+    ContractStatus, ReleaseGateReceipt, ReleaseGateState, ReleaseStatus,
+};
+use serde_json::json;
+
+#[test]
+fn contract_status_json_carries_typed_registry_expectations() {
+    let status = ContractStatus {
+        resolved_references: 1,
+        unresolved_references: 0,
+        diagnostics: 0,
+        templates: 0,
+        contract_assertions: 1,
+        validation_receipts: 0,
+        validation_passed: 0,
+        validation_failed: 0,
+        validation_skipped: 0,
+        validation_matched_nodes: 0,
+        validation_matched_node_ids: Vec::new(),
+        reference_resolutions: Vec::new(),
+        diagnostic_records: Vec::new(),
+        template_records: Vec::new(),
+        registry: contract_registry(),
+        validation_report: OrgContractValidationReport::default(),
+        contract_expectation_summaries: vec!["agent.task.v1/task.has-goal: count >= 1".to_string()],
+        rendered_summary: vec![
+            "contracts.assertions: 1".to_string(),
+            "contract.validation.expectation: agent.task.v1/task.has-goal: count >= 1".to_string(),
+        ],
+    };
+
+    let encoded = serde_json::to_value(&status).expect("contract status encodes");
+
+    assert_eq!(
+        encoded["registry"]["contracts"][0]["assertions"][0]["expectation"],
+        json!({
+            "kind": "count",
+            "op": "Ge",
+            "expected": 1
+        })
+    );
+    assert_eq!(encoded["contract_assertions"], json!(1));
+    assert_eq!(
+        encoded["contract_expectation_summaries"],
+        json!(["agent.task.v1/task.has-goal: count >= 1"])
+    );
+    assert!(
+        encoded["rendered_summary"]
+            .as_array()
+            .expect("rendered summary")
+            .iter()
+            .any(|line| line.as_str()
+                == Some(
+                    "contract.validation.expectation: agent.task.v1/task.has-goal: count >= 1"
+                ))
+    );
+
+    let decoded: ContractStatus = serde_json::from_value(encoded).expect("contract status decodes");
+    assert_eq!(decoded, status);
+}
+
+fn contract_registry() -> OrgContractRegistry {
+    OrgContractRegistry {
+        contracts: vec![OrgContract {
+            id: OrgContractId::new("agent.task.v1"),
+            aliases: Vec::new(),
+            scope: OrgContractScope::new("Subtree"),
+            kind: OrgContractKind::new("OrgElementsAssertions"),
+            assertions: vec![OrgContractAssertion {
+                id: "task.has-goal".to_string(),
+                severity: OrgContractSeverity::new("Error"),
+                bindings: Vec::new(),
+                query: OrgContractQuery::default(),
+                expectation: OrgContractExpectation::Count {
+                    op: OrgContractCompareOp::Ge,
+                    expected: 1,
+                },
+                message: None,
+                fix: None,
+                templates: Vec::new(),
+                query_source: None,
+                expect_source: None,
+            }],
+        }],
+    }
+}
 
 #[test]
 fn release_status_projects_pending_topology_visibility() {

@@ -16,3 +16,4 @@ rust-lang-project-harness.workspace = true
 
 [dev-dependencies]
 rust-lang-project-harness.workspace = true
+serde_json.workspace = true
