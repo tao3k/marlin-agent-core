@@ -1,13 +1,13 @@
 //! Contract projection and `CONTRACT_ORG` reference resolution.
 
 use marlin_org_model::{
-    OrgContract, OrgContractAssertion, OrgContractBinding, OrgContractDiagnostic,
-    OrgContractDiagnosticSeverity, OrgContractElementCategory, OrgContractElementKind,
-    OrgContractExpectation, OrgContractId, OrgContractKind, OrgContractQuery, OrgContractReference,
-    OrgContractReferenceScope, OrgContractRegistry, OrgContractRelativeScope,
-    OrgContractResolution, OrgContractResolutionReport, OrgContractScope, OrgContractSeverity,
-    OrgContractSourceSpan, OrgContractTemplate, OrgContractTemplateEngine, OrgContractTemplateKind,
-    OrgNodeId, OrgSourceSpan,
+    OrgContract, OrgContractAssertion, OrgContractBinding, OrgContractCompareOp,
+    OrgContractDiagnostic, OrgContractDiagnosticSeverity, OrgContractElementCategory,
+    OrgContractElementKind, OrgContractExpectation, OrgContractId, OrgContractKind,
+    OrgContractQuery, OrgContractReference, OrgContractReferenceScope, OrgContractRegistry,
+    OrgContractRelativeScope, OrgContractResolution, OrgContractResolutionReport, OrgContractScope,
+    OrgContractSeverity, OrgContractSourceSpan, OrgContractTemplate, OrgContractTemplateEngine,
+    OrgContractTemplateKind, OrgNodeId, OrgSourceSpan,
 };
 use orgize::ast::{Document, ParsedAnnotation, parse_contract_reference};
 
@@ -141,7 +141,7 @@ fn project_contract_assertion(
             })
             .collect(),
         query: project_contract_query(&assertion.query),
-        expectation: OrgContractExpectation::new(debug_label(&assertion.expectation)),
+        expectation: project_contract_expectation(&assertion.expectation),
         message: assertion.message.clone(),
         fix: assertion.fix.clone(),
         templates: project_contract_templates(assertion),
@@ -167,6 +167,30 @@ fn project_contract_assertion(
                 start_byte: source.range_start as usize,
                 end_byte: source.range_end as usize,
             }),
+    }
+}
+
+fn project_contract_expectation(
+    expectation: &orgize::ast::OrgContractExpectation,
+) -> OrgContractExpectation {
+    match expectation {
+        orgize::ast::OrgContractExpectation::Exists => OrgContractExpectation::Exists,
+        orgize::ast::OrgContractExpectation::NotExists => OrgContractExpectation::NotExists,
+        orgize::ast::OrgContractExpectation::Count(op, expected) => OrgContractExpectation::Count {
+            op: project_contract_compare_op(*op),
+            expected: *expected,
+        },
+    }
+}
+
+fn project_contract_compare_op(op: orgize::ast::OrgContractCompareOp) -> OrgContractCompareOp {
+    match op {
+        orgize::ast::OrgContractCompareOp::Eq => OrgContractCompareOp::Eq,
+        orgize::ast::OrgContractCompareOp::Ne => OrgContractCompareOp::Ne,
+        orgize::ast::OrgContractCompareOp::Lt => OrgContractCompareOp::Lt,
+        orgize::ast::OrgContractCompareOp::Le => OrgContractCompareOp::Le,
+        orgize::ast::OrgContractCompareOp::Gt => OrgContractCompareOp::Gt,
+        orgize::ast::OrgContractCompareOp::Ge => OrgContractCompareOp::Ge,
     }
 }
 

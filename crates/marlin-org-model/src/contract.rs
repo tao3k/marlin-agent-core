@@ -87,6 +87,82 @@ pub struct OrgContractBinding {
     pub query: OrgContractQuery,
 }
 
+/// Assertion expectation projected from orgize contracts.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum OrgContractExpectation {
+    Exists,
+    NotExists,
+    Count {
+        op: OrgContractCompareOp,
+        expected: usize,
+    },
+    Unsupported {
+        label: String,
+    },
+}
+
+impl OrgContractExpectation {
+    pub fn unsupported(label: impl Into<String>) -> Self {
+        Self::Unsupported {
+            label: label.into(),
+        }
+    }
+
+    pub fn evaluate_count(&self, actual: usize) -> Option<bool> {
+        match self {
+            Self::Exists => Some(actual > 0),
+            Self::NotExists => Some(actual == 0),
+            Self::Count { op, expected } => Some(op.matches(actual, *expected)),
+            Self::Unsupported { .. } => None,
+        }
+    }
+
+    pub fn expected_summary(&self) -> String {
+        match self {
+            Self::Exists => "exists".to_string(),
+            Self::NotExists => "not exists".to_string(),
+            Self::Count { op, expected } => format!("count {} {}", op.as_str(), expected),
+            Self::Unsupported { label } => label.clone(),
+        }
+    }
+}
+
+/// Comparison operator for a count-based contract expectation.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum OrgContractCompareOp {
+    Eq,
+    Ne,
+    Lt,
+    Le,
+    Gt,
+    Ge,
+}
+
+impl OrgContractCompareOp {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Eq => "==",
+            Self::Ne => "!=",
+            Self::Lt => "<",
+            Self::Le => "<=",
+            Self::Gt => ">",
+            Self::Ge => ">=",
+        }
+    }
+
+    pub fn matches(self, actual: usize, expected: usize) -> bool {
+        match self {
+            Self::Eq => actual == expected,
+            Self::Ne => actual != expected,
+            Self::Lt => actual < expected,
+            Self::Le => actual <= expected,
+            Self::Gt => actual > expected,
+            Self::Ge => actual >= expected,
+        }
+    }
+}
+
 /// Query shape used by parser-owned Org contracts.
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct OrgContractQuery {
@@ -207,7 +283,6 @@ contract_text_id!(OrgContractScope);
 contract_text_id!(OrgContractKind);
 contract_text_id!(OrgContractSeverity);
 contract_text_id!(OrgContractTemplateEngine);
-contract_text_id!(OrgContractExpectation);
 contract_text_id!(OrgContractElementCategory);
 contract_text_id!(OrgContractElementKind);
 contract_text_id!(OrgContractRelativeScope);

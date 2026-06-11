@@ -10,13 +10,14 @@ use marlin_gerbil_scheme::{
     GerbilWorkspaceContractFacts,
 };
 use marlin_org_model::{
-    OrgContract, OrgContractAssertion, OrgContractDiagnostic, OrgContractDiagnosticSeverity,
-    OrgContractElementCategory, OrgContractElementKind, OrgContractExpectation, OrgContractId,
-    OrgContractKind, OrgContractQuery, OrgContractReference, OrgContractReferenceScope,
-    OrgContractRegistry, OrgContractResolution, OrgContractResolutionReport, OrgContractScope,
-    OrgContractSeverity, OrgContractSourceSpan, OrgContractTemplate, OrgContractTemplateEngine,
-    OrgContractTemplateKind, OrgContractValidationReceipt, OrgContractValidationReport,
-    OrgContractValidationStatus, OrgContractValidationTarget, OrgNodeId, OrgSourceSpan,
+    OrgContract, OrgContractAssertion, OrgContractCompareOp, OrgContractDiagnostic,
+    OrgContractDiagnosticSeverity, OrgContractElementCategory, OrgContractElementKind,
+    OrgContractExpectation, OrgContractId, OrgContractKind, OrgContractQuery, OrgContractReference,
+    OrgContractReferenceScope, OrgContractRegistry, OrgContractResolution,
+    OrgContractResolutionReport, OrgContractScope, OrgContractSeverity, OrgContractSourceSpan,
+    OrgContractTemplate, OrgContractTemplateEngine, OrgContractTemplateKind,
+    OrgContractValidationReceipt, OrgContractValidationReport, OrgContractValidationStatus,
+    OrgContractValidationTarget, OrgNodeId, OrgSourceSpan,
 };
 use std::sync::OnceLock;
 
@@ -78,7 +79,10 @@ fn sample_contract_facts() -> GerbilWorkspaceContractFacts {
                         use_scope_outline_path: true,
                         ..Default::default()
                     },
-                    expectation: OrgContractExpectation::new("CountAtLeast(1)"),
+                    expectation: OrgContractExpectation::Count {
+                        op: OrgContractCompareOp::Ge,
+                        expected: 1,
+                    },
                     message: Some("Task must contain a Goal section.".to_string()),
                     fix: None,
                     templates: vec![OrgContractTemplate {

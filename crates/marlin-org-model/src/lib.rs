@@ -9,14 +9,14 @@ mod task;
 
 pub use block::{BlockKind, OrgBlock};
 pub use contract::{
-    OrgContract, OrgContractAssertion, OrgContractBinding, OrgContractDiagnostic,
-    OrgContractDiagnosticSeverity, OrgContractElementCategory, OrgContractElementKind,
-    OrgContractExpectation, OrgContractId, OrgContractKind, OrgContractQuery, OrgContractReference,
-    OrgContractReferenceScope, OrgContractRegistry, OrgContractRelativeScope,
-    OrgContractResolution, OrgContractResolutionReport, OrgContractScope, OrgContractSeverity,
-    OrgContractSourceSpan, OrgContractTemplate, OrgContractTemplateEngine, OrgContractTemplateKind,
-    OrgContractValidationReceipt, OrgContractValidationReport, OrgContractValidationStatus,
-    OrgContractValidationTarget,
+    OrgContract, OrgContractAssertion, OrgContractBinding, OrgContractCompareOp,
+    OrgContractDiagnostic, OrgContractDiagnosticSeverity, OrgContractElementCategory,
+    OrgContractElementKind, OrgContractExpectation, OrgContractId, OrgContractKind,
+    OrgContractQuery, OrgContractReference, OrgContractReferenceScope, OrgContractRegistry,
+    OrgContractRelativeScope, OrgContractResolution, OrgContractResolutionReport, OrgContractScope,
+    OrgContractSeverity, OrgContractSourceSpan, OrgContractTemplate, OrgContractTemplateEngine,
+    OrgContractTemplateKind, OrgContractValidationReceipt, OrgContractValidationReport,
+    OrgContractValidationStatus, OrgContractValidationTarget,
 };
 pub use link::{LinkKind, OrgLink};
 pub use node::{

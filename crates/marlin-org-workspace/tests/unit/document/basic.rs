@@ -1,4 +1,7 @@
-use marlin_org_model::{CheckboxState, LinkKind, OrgContractTemplateKind, TodoState};
+use marlin_org_model::{
+    CheckboxState, LinkKind, OrgContractCompareOp, OrgContractExpectation, OrgContractTemplateKind,
+    TodoState,
+};
 use marlin_org_workspace::{OrgDocument, OrgDocumentLoader};
 
 use super::slice;
@@ -125,7 +128,13 @@ Task `{{ scope.title }}` must contain a Goal section.
     let assertion = &contract.assertions[0];
     assert_eq!(assertion.id, "task.has-goal");
     assert_eq!(assertion.severity.as_str(), "Error");
-    assert!(assertion.expectation.as_str().contains("Count"));
+    assert_eq!(
+        assertion.expectation,
+        OrgContractExpectation::Count {
+            op: OrgContractCompareOp::Ge,
+            expected: 1,
+        }
+    );
     assert_eq!(
         assertion.message.as_deref(),
         Some("Task `{{ scope.title }}` must contain a Goal section.\n")

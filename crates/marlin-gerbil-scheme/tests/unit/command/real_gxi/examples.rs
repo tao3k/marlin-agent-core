@@ -148,6 +148,10 @@ fn command_compiler_real_gxi_runs_compile_source_example() {
 }
 
 fn compile_source_example_command(workspace_root: &Path) -> Command {
+    if let Some(program) = option_env!("CARGO_BIN_EXE_compile-source") {
+        return Command::new(program);
+    }
+
     if let Some(program) = std::env::var_os("CARGO_BIN_EXE_compile-source") {
         return Command::new(program);
     }
@@ -187,7 +191,7 @@ fn command_compiler_real_gxi_build_script_compiles_runtime_assets() {
     write_gerbil_runtime_assets(&root).expect("write gerbil runtime assets");
 
     let output = Command::new(gxi)
-        .env(GERBIL_LOADPATH_ENV, &root)
+        .env(GERBIL_LOADPATH_ENV, root.as_path())
         .current_dir(&root)
         .arg(root.join("build.ss"))
         .arg("compile")

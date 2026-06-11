@@ -30,8 +30,10 @@ contract documents and merges their contracts into the registry before
 reference resolution.
 
 =marlin-org-model= owns the stable protocol DTOs. It keeps contract scope, kind,
-severity, expectation, element category, element kind, and relative scope behind
-typed wrapper boundaries so the agent protocol does not expose stringly state.
+severity, element category, element kind, and relative scope behind typed wrapper
+boundaries. Expectation is projected as a structured enum (=Exists=,
+=NotExists=, =Count { op, expected }=, or =Unsupported { label }=) so validation
+does not depend on orgize debug strings.
 
 ** Reference Resolution
 
