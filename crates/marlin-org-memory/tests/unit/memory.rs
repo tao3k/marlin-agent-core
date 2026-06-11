@@ -135,6 +135,13 @@ Task `{{ scope.title }}` must contain a Goal section.
     let contract_facts = view.contract_facts.expect("contract facts selected");
     assert_eq!(contract_facts.resolutions.len(), 1);
     assert_eq!(contract_facts.templates.len(), 1);
+    assert_eq!(contract_facts.summary.resolved_references, 1);
+    assert_eq!(contract_facts.summary.templates, 1);
+    assert!(
+        contract_facts
+            .rendered_lines
+            .contains(&"contracts.validation_receipts: 0".to_string())
+    );
     assert!(view.text.contains("contracts.resolved: 1"));
     assert!(view.text.contains("contracts.templates: 1"));
 
@@ -143,7 +150,14 @@ Task `{{ scope.title }}` must contain a Goal section.
     let contracts = status.contracts.expect("contract status");
     assert_eq!(contracts.resolved_references, 1);
     assert_eq!(contracts.unresolved_references, 0);
+    assert_eq!(contracts.templates, 1);
     assert_eq!(contracts.validation_receipts, 0);
+    assert_eq!(contracts.validation_failed, 0);
+    assert!(
+        contracts
+            .rendered_summary
+            .contains(&"contracts.templates: 1".to_string())
+    );
 }
 
 #[test]

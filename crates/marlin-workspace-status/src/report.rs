@@ -66,7 +66,12 @@ pub struct ContractStatus {
     pub resolved_references: usize,
     pub unresolved_references: usize,
     pub diagnostics: usize,
+    pub templates: usize,
     pub validation_receipts: usize,
+    pub validation_passed: usize,
+    pub validation_failed: usize,
+    pub validation_skipped: usize,
+    pub rendered_summary: Vec<String>,
 }
 
 /// Metric trace latest value and target.

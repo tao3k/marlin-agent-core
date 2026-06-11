@@ -201,12 +201,11 @@ impl AgentWorkspace for MemoryOrgWorkspace {
         }
 
         let selected_contract_facts = if includes(&view, WorkspaceField::ContractFacts) {
-            let lines = render_contract_facts(&contract_facts);
-            if !lines.is_empty() {
+            if !contract_facts.rendered_lines.is_empty() {
                 if !text.is_empty() {
                     text.push('\n');
                 }
-                text.push_str(&lines.join("\n"));
+                text.push_str(&contract_facts.rendered_lines.join("\n"));
             }
             Some(contract_facts.clone())
         } else {
@@ -561,60 +560,27 @@ fn contract_facts_from_workspace(
         .flat_map(|assertion| assertion.templates.iter().cloned())
         .collect();
 
-    RenderedContractFacts {
-        resolutions: resolutions.references,
-        diagnostics: resolutions.diagnostics,
+    RenderedContractFacts::new(
+        resolutions.references,
+        resolutions.diagnostics,
         templates,
         validations,
-    }
-}
-
-fn render_contract_facts(contract_facts: &RenderedContractFacts) -> Vec<String> {
-    let resolved = contract_facts
-        .resolutions
-        .iter()
-        .filter(|resolution| resolution.resolved_contract_id.is_some())
-        .count();
-    let unresolved = contract_facts.resolutions.len().saturating_sub(resolved);
-    let mut lines = vec![
-        format!("contracts.resolved: {resolved}"),
-        format!("contracts.unresolved: {unresolved}"),
-        format!(
-            "contracts.diagnostics: {}",
-            contract_facts.diagnostics.len()
-        ),
-        format!("contracts.templates: {}", contract_facts.templates.len()),
-        format!(
-            "contracts.validation_receipts: {}",
-            contract_facts.validations.receipts.len()
-        ),
-    ];
-
-    for diagnostic in &contract_facts.diagnostics {
-        lines.push(format!(
-            "contract.diagnostic.{}: {}",
-            diagnostic.code, diagnostic.message
-        ));
-    }
-
-    lines
+    )
 }
 
 fn contract_status(contract_facts: &RenderedContractFacts) -> ContractStatus {
-    let resolved_references = contract_facts
-        .resolutions
-        .iter()
-        .filter(|resolution| resolution.resolved_contract_id.is_some())
-        .count();
+    let summary = &contract_facts.summary;
 
     ContractStatus {
-        resolved_references,
-        unresolved_references: contract_facts
-            .resolutions
-            .len()
-            .saturating_sub(resolved_references),
-        diagnostics: contract_facts.diagnostics.len(),
-        validation_receipts: contract_facts.validations.receipts.len(),
+        resolved_references: summary.resolved_references,
+        unresolved_references: summary.unresolved_references,
+        diagnostics: summary.diagnostics,
+        templates: summary.templates,
+        validation_receipts: summary.validation_receipts,
+        validation_passed: summary.validation_passed,
+        validation_failed: summary.validation_failed,
+        validation_skipped: summary.validation_skipped,
+        rendered_summary: contract_facts.rendered_lines.clone(),
     }
 }
 
