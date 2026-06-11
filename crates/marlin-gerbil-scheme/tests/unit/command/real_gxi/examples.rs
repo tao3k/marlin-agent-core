@@ -23,7 +23,7 @@ fn command_compiler_real_gxi_runs_workspace_patch_intent_example_from_runtime_as
         .join("workspace-patch-intent.ss");
 
     let output = Command::new(gxi)
-        .env(GERBIL_LOADPATH_ENV, &root)
+        .env(GERBIL_LOADPATH_ENV, root.as_path())
         .arg(example)
         .output()
         .expect("run real gxi workspace patch intent example");
@@ -72,7 +72,7 @@ fn command_compiler_real_gxi_protocol_bindings_emit_workspace_patch_intent() {
     .expect("write protocol bindings example");
 
     let output = Command::new(gxi)
-        .env(GERBIL_LOADPATH_ENV, &root)
+        .env(GERBIL_LOADPATH_ENV, root.as_path())
         .arg(example)
         .output()
         .expect("run real gxi protocol bindings example");

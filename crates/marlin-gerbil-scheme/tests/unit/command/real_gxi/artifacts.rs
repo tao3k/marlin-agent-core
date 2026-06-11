@@ -6,9 +6,12 @@ use super::{
 };
 use marlin_gerbil_scheme::{GerbilArtifactKind, GerbilCompiler, GerbilSource};
 use marlin_org_store::FileSystemReleaseStatusStore;
-use marlin_workspace_protocol::{ReleaseGateReceipt, ReleaseGateState, ReleaseLandingReport};
+use marlin_workspace_protocol::{
+    ReleaseGateReceipt, ReleaseGateState, ReleaseLandingReport, ReleaseStatus,
+};
 use std::{
     fs,
+    path::Path,
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -207,6 +210,40 @@ fn persist_release_status_artifacts(
         report_json,
     )
     .expect("release landing report should be written to artifact dir");
+    assert_release_status_artifacts(&artifact_dir);
+}
+
+fn assert_release_status_artifacts(artifact_dir: &Path) {
+    let status_path = artifact_dir.join("release-status.json");
+    let report_path = artifact_dir.join("release-landing-report.json");
+    let status: ReleaseStatus = serde_json::from_str(
+        &fs::read_to_string(status_path).expect("release status artifact should be readable"),
+    )
+    .expect("release status artifact should match ReleaseStatus schema");
+    let report: ReleaseLandingReport = serde_json::from_str(
+        &fs::read_to_string(report_path)
+            .expect("release landing report artifact should be readable"),
+    )
+    .expect("release landing report artifact should match ReleaseLandingReport schema");
+
+    assert_eq!(status.topology_id, report.topology_id);
+    assert_eq!(status.crate_name, report.crate_name);
+    assert!(report.landing_complete);
+    assert_eq!(report.passed_gates, status.gates.len());
+    assert_eq!(
+        report.observed_visibility_reports,
+        status.visibility_reports.len()
+    );
+    assert_eq!(
+        report.observed_evidence_keys,
+        ["workspace_patch_intent", "workspace_schema"]
+    );
+    assert_eq!(
+        report.observed_artifact_paths,
+        ["fixtures/gerbil/command-adapter.ss"]
+    );
+    assert!(report.missing_artifact_paths.is_empty());
+    assert!(report.missing_visibility_reports.is_empty());
 }
 
 fn test_root(name: &str) -> std::path::PathBuf {
