@@ -254,6 +254,7 @@ dependencies = [
 name = "marlin-gerbil-scheme"
 version = "0.1.0"
 dependencies = [
+ "marlin-agent-protocol",
  "marlin-gerbil-ir",
  "marlin-org-model",
  "marlin-workspace-patch",

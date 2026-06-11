@@ -29,4 +29,6 @@ pub use scenario::{
     AGENT_SCENARIO_CONTRACT_SCHEMA_ID, AgentScenario, AgentScenarioContract, AgentScenarioStep,
 };
 pub use sub_agent::{SubAgentActivity, SubAgentActivityKind, SubAgentSource};
-pub use trace::{AgentSpanName, AgentTraceSpanRecord};
+pub use trace::{
+    AgentExecutionTrace, AgentExecutionTraceSummary, AgentSpanName, AgentTraceSpanRecord,
+};

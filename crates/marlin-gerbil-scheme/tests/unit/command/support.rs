@@ -28,6 +28,14 @@ pub const WORKSPACE_PATCH_INTENT_SOURCE: &str = r#"(workspace-patch-intent "inte
     (source-agent "gerbil")
     (mark-memory-candidate "memory.org:1:goal" "long-term")))"#;
 
+pub const AGENT_SCENARIO_CONTRACT_SOURCE: &str = r#"(agent-scenario-contract gerbil-scenario
+  (description "from gerbil")
+  (step run
+    (input path LOOP.org)
+    (event-topic kernel.execution)
+    (span-name harness.execution))
+  (evidence Runtime))"#;
+
 pub fn local_gxi() -> Option<PathBuf> {
     let gxi = env::var("MARLIN_GERBIL_GXI")
         .map(PathBuf::from)
@@ -132,5 +140,46 @@ pub fn assert_workspace_patch_intent_artifact(artifact: GerbilCompiledArtifact) 
             }
         }
         other => panic!("expected workspace patch intent artifact, got {other:?}"),
+    }
+}
+
+pub fn assert_agent_scenario_contract_artifact(artifact: GerbilCompiledArtifact) {
+    match artifact {
+        GerbilCompiledArtifact::AgentScenarioContract(contract) => {
+            assert!(contract.is_supported_schema());
+            assert_eq!(contract.scenario.id, "gerbil-scenario");
+            assert_eq!(
+                contract.scenario.description.as_deref(),
+                Some("from gerbil")
+            );
+            assert_eq!(contract.scenario.steps.len(), 1);
+            let step = &contract.scenario.steps[0];
+            assert_eq!(step.name, "run");
+            assert_eq!(step.input.get("path").map(String::as_str), Some("LOOP.org"));
+            assert_eq!(
+                step.expected_event_topics
+                    .iter()
+                    .map(|topic| topic.as_str())
+                    .collect::<Vec<_>>(),
+                vec!["kernel.execution"]
+            );
+            assert_eq!(
+                step.expected_span_names
+                    .iter()
+                    .map(|span| span.as_str())
+                    .collect::<Vec<_>>(),
+                vec!["harness.execution"]
+            );
+            assert_eq!(
+                contract
+                    .scenario
+                    .expected_evidence
+                    .iter()
+                    .map(|kind| format!("{kind:?}"))
+                    .collect::<Vec<_>>(),
+                vec!["Runtime"]
+            );
+        }
+        other => panic!("expected agent scenario contract artifact, got {other:?}"),
     }
 }

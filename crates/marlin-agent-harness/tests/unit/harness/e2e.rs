@@ -149,8 +149,29 @@ fn assert_agent_core_trace_spans(report: &HarnessExecutionReport) {
     );
     assert_eq!(report.count_span(&observability::hook_run_span_name()), 6);
 
+    let sub_agent_topic = observability::kernel_sub_agent_topic();
+    let sub_agent_lifecycle_events = report
+        .events_by_topic(&sub_agent_topic)
+        .map(|event| event.message.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(sub_agent_lifecycle_events.len(), 2);
+    assert!(
+        sub_agent_lifecycle_events
+            .iter()
+            .any(|message| message.contains("Started"))
+    );
+    assert!(
+        sub_agent_lifecycle_events
+            .iter()
+            .any(|message| message.contains("Stopped"))
+    );
+
     let provider_span = report
-        .find_span(&observability::agent_provider_span_name())
+        .find_span_with_field(
+            &observability::agent_provider_span_name(),
+            observability::FIELD_NODE_ID,
+            "plan",
+        )
         .expect("expected provider trace span");
     assert_eq!(
         provider_span.name,
@@ -169,6 +190,12 @@ fn assert_agent_core_trace_spans(report: &HarnessExecutionReport) {
             .get(observability::FIELD_EXECUTOR)
             .map(String::as_str),
         Some("provider")
+    );
+    assert_eq!(
+        report
+            .spans_with_field(observability::FIELD_EXECUTOR, "provider")
+            .count(),
+        1
     );
 
     let result_span = report

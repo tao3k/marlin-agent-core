@@ -1,4 +1,7 @@
 use super::support::loop_graph_artifact;
+use marlin_agent_protocol::{
+    AGENT_SCENARIO_CONTRACT_SCHEMA_ID, AgentEventTopic, AgentSpanName, LoopEvidenceKind,
+};
 use marlin_gerbil_scheme::{
     GerbilArtifactKind, GerbilCompileRequest, GerbilCompileResponse, GerbilCompiledArtifact,
     GerbilSource, GerbilWorkspaceContractFacts,
@@ -27,6 +30,51 @@ fn command_protocol_round_trips_json_contract() {
 
     assert_eq!(decoded, request);
     assert!(decoded.contract_facts.is_some());
+}
+
+#[test]
+fn command_response_decodes_agent_scenario_contract_and_ensures_kind() {
+    let response: GerbilCompileResponse = serde_json::from_str(
+        r#"{"artifact":{"AgentScenarioContract":{"schema_id":"marlin.agent.scenario.v1","scenario":{"id":"gerbil-scenario","description":"from gerbil","steps":[{"name":"run","input":{"path":"LOOP.org"},"expected_event_topics":["kernel.execution"],"expected_span_names":["harness.execution"]}],"expected_evidence":["Runtime"]}}}}"#,
+    )
+    .expect("agent scenario contract response should decode");
+
+    let artifact = response
+        .artifact
+        .ensure_kind(GerbilArtifactKind::AgentScenarioContract)
+        .expect("agent scenario contract response should match requested kind");
+
+    match artifact {
+        GerbilCompiledArtifact::AgentScenarioContract(contract) => {
+            assert_eq!(contract.schema_id, AGENT_SCENARIO_CONTRACT_SCHEMA_ID);
+            assert!(contract.is_supported_schema());
+            assert_eq!(contract.scenario.id, "gerbil-scenario");
+            assert_eq!(
+                contract.scenario.description.as_deref(),
+                Some("from gerbil")
+            );
+            assert_eq!(
+                contract.scenario.steps[0]
+                    .input
+                    .get("path")
+                    .map(String::as_str),
+                Some("LOOP.org")
+            );
+            assert_eq!(
+                contract.scenario.steps[0].expected_event_topics,
+                vec![AgentEventTopic::new("kernel.execution")]
+            );
+            assert_eq!(
+                contract.scenario.steps[0].expected_span_names,
+                vec![AgentSpanName::new("harness.execution")]
+            );
+            assert_eq!(
+                contract.scenario.expected_evidence,
+                vec![LoopEvidenceKind::Runtime]
+            );
+        }
+        other => panic!("expected agent scenario contract artifact, got {other:?}"),
+    }
 }
 
 #[test]

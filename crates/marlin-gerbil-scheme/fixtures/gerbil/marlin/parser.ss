@@ -7,7 +7,8 @@ package: marlin
 
 (export compile-loop-graph
         compile-workspace-schema
-        compile-workspace-patch-intent)
+        compile-workspace-patch-intent
+        compile-agent-scenario-contract)
 
 (define (source->form source-text)
   (let ((form (read (open-input-string source-text))))
@@ -213,3 +214,55 @@ package: marlin
          (parse-workspace-patch-form (find-tagged-form forms 'patch))
          (required-dry-run-first forms)))
       (error "expected workspace-patch-intent form" form))))
+
+(define (parse-scenario-input form)
+  (if (and (form-tag? form 'input)
+           (pair? (cdr form))
+           (pair? (cddr form)))
+    (list (atom->string (cadr form))
+          (atom->string (caddr form)))
+    (error "invalid scenario input form" form)))
+
+(define (parse-scenario-step-inputs forms)
+  (let loop ((remaining forms) (inputs '()))
+    (cond
+      ((null? remaining) (reverse inputs))
+      ((form-tag? (car remaining) 'input)
+       (loop (cdr remaining)
+             (cons (parse-scenario-input (car remaining)) inputs)))
+      (else (loop (cdr remaining) inputs)))))
+
+(define (parse-scenario-step-form form)
+  (if (and (form-tag? form 'step)
+           (pair? (cdr form)))
+    (let ((name (atom->string (cadr form)))
+          (forms (cddr form)))
+      (make-marlin-agent-scenario-step
+       name
+       (parse-scenario-step-inputs forms)
+       (tagged-values forms 'event-topic)
+       (tagged-values forms 'span-name)))
+    (error "invalid agent scenario step form" form)))
+
+(define (parse-scenario-steps forms)
+  (let loop ((remaining forms) (steps '()))
+    (cond
+      ((null? remaining) (reverse steps))
+      ((form-tag? (car remaining) 'step)
+       (loop (cdr remaining)
+             (cons (parse-scenario-step-form (car remaining)) steps)))
+      (else (loop (cdr remaining) steps)))))
+
+(define (compile-agent-scenario-contract source-text)
+  (let ((form (source->form source-text)))
+    (if (and (form-tag? form 'agent-scenario-contract)
+             (pair? (cdr form)))
+      (let ((scenario-id (atom->string (cadr form)))
+            (forms (cddr form)))
+        (make-marlin-agent-scenario-contract
+         (make-marlin-agent-scenario
+          scenario-id
+          (optional-single-value forms 'description)
+          (parse-scenario-steps forms)
+          (tagged-values forms 'evidence))))
+      (error "expected agent-scenario-contract form" form))))

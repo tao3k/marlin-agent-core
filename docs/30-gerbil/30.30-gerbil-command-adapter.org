@@ -26,6 +26,8 @@ The command boundary is intentionally data-only:
   edge conditions through the typed Rust IR.
 - workspace patch intent is represented as =WorkspacePatchIntentSpec= inside
   =GerbilCompiledArtifact=, not as direct mutation authority.
+- agent scenario fixtures are represented as =AgentScenarioContract= inside
+  =GerbilCompiledArtifact=, with =schema_id= owned by =marlin-agent-protocol=.
 - stderr is diagnostic text and is surfaced when the command exits with a
   non-zero status; stdout is also surfaced for runtimes such as =gxi= that print
   failure diagnostics there.
@@ -43,14 +45,15 @@ modules through =GERBIL_LOADPATH=. =fixtures/gerbil/marlin/request.ss= decodes
 =GerbilCompileRequest= with =:std/text/json=.
 =fixtures/gerbil/marlin/parser.ss= imports =./protocol= and owns the smoke DSL
 reader-backed source-to-=LoopGraph=, source-to-=WorkspaceSchema=, and
-source-to-=WorkspacePatchIntent= steps.
+source-to-=WorkspacePatchIntent=, and source-to-=AgentScenarioContract= steps.
 =fixtures/gerbil/marlin/adapter.ss=
 imports =./request=, =./parser=, and =./protocol=, dispatches through an
 artifact compiler table, checks that the table and supported-kind registry stay
 consistent, then emits one =GerbilCompileResponse=. The protocol binding
-currently exports =LoopGraph=, =WorkspaceSchema=, and =WorkspacePatchIntent=
-artifact kinds through a supported-kind registry and rejects other =expected=
-artifact kinds inside the Gerbil process before source text reaches the parser.
+currently exports =LoopGraph=, =WorkspaceSchema=, =WorkspacePatchIntent=, and
+=AgentScenarioContract= artifact kinds through a supported-kind registry and
+rejects other =expected= artifact kinds inside the Gerbil process before source
+text reaches the parser.
 
 Native Rust/Gerbil bindings are a later layer. They should live behind this
 same typed protocol after the command boundary proves the IR shape, because

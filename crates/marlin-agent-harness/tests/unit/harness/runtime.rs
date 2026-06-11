@@ -161,6 +161,23 @@ async fn harness_execution_report_captures_failed_result_observability() {
         .expect("expected duration_ms field")
         .parse::<u64>()
         .expect("duration_ms field should be numeric");
+
+    let trace = report.execution_trace();
+    assert_eq!(trace.run_id.as_str(), "run-fail");
+    assert_eq!(trace.graph_id.as_str(), "graph");
+    assert_eq!(trace.status, GraphLoopExecutionStatus::Failed);
+    assert_eq!(trace.events, report.events);
+    assert_eq!(trace.spans, report.trace_spans);
+    assert_eq!(trace.diagnostics, report.result.diagnostics);
+
+    let trace_summary = trace.summary();
+    assert_eq!(trace_summary.status, report.summary.status);
+    assert_eq!(trace_summary.event_count, report.summary.event_count);
+    assert_eq!(trace_summary.span_count, report.summary.span_count);
+    assert_eq!(
+        trace_summary.diagnostic_count,
+        report.summary.diagnostic_count
+    );
 }
 
 #[derive(Clone, Debug)]

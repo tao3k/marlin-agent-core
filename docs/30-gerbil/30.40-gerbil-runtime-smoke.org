@@ -84,13 +84,14 @@ emitting JSON:
 
 - =fixtures/gerbil/marlin/protocol.ss= owns constructors/accessors for
   =LoopGraph=, =LoopNodeSpec=, =LoopEdgeSpec=, =WorkspaceSchema=, and
-  =WorkspacePatchIntent= plus the =GerbilCompileResponse= serializer and the
-  supported artifact-kind registry.
+  =WorkspacePatchIntent=, and =AgentScenarioContract= plus the
+  =GerbilCompileResponse= serializer and the supported artifact-kind registry.
 - =fixtures/gerbil/marlin/request.ss= owns the =GerbilCompileRequest= JSON
   reader boundary through =:std/text/json=.
 - =fixtures/gerbil/marlin/parser.ss= owns the Gerbil reader-backed smoke DSL
   source-to-=LoopGraph=, source-to-=WorkspaceSchema=, and
-  source-to-=WorkspacePatchIntent= parsers.
+  source-to-=WorkspacePatchIntent=, and source-to-=AgentScenarioContract=
+  parsers.
 - =fixtures/gerbil/marlin/adapter.ss= imports the request/parser/protocol
   modules and owns the artifact compiler table, table/registry self-check, and
   response emission.
@@ -111,6 +112,15 @@ file and module entrypoint.
 This smoke does not execute a workspace mutation. Patch validation, dry-run
 receipts, and durable persistence remain Rust workflow responsibilities after
 the command adapter has decoded and kind-checked the artifact.
+
+** AgentScenarioContract Smoke
+
+The runtime smoke includes =AgentScenarioContract= as a JSON artifact only. The
+source form compiles through =protocol.ss=, =parser.ss=, and =adapter.ss= into
+=AgentScenarioContract= with =schema_id= =marlin.agent.scenario.v1=, one
+scenario step, expected event topics, expected span names, and expected
+evidence. The smoke proves Gerbil can produce the same scenario fixture
+contract consumed by =AgentHarness::evaluate_contract=.
 
 ** Launcher
 
@@ -134,9 +144,9 @@ GERBIL_LOADPATH=crates/marlin-gerbil-scheme/fixtures/gerbil \
 
 The Rust boundary tests pass that value through =GerbilCommandSpec.env=, not
 through a shell wrapper. They cover the source-file launcher and module entry,
-successful =LoopGraph=, =WorkspaceSchema=, and =WorkspacePatchIntent=
-compilation, plus Gerbil-side rejection of unsupported =expected= artifact
-kinds and mismatched source forms.
+successful =LoopGraph=, =WorkspaceSchema=, =WorkspacePatchIntent=, and
+=AgentScenarioContract= compilation, plus Gerbil-side rejection of unsupported
+=expected= artifact kinds and mismatched source forms.
 
 Run the Rust boundary tests explicitly:
 

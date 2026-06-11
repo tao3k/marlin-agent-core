@@ -1,5 +1,6 @@
 use super::support::{
-    RICH_LOOP_GRAPH_SOURCE, WORKSPACE_PATCH_INTENT_SOURCE, WORKSPACE_SCHEMA_SOURCE,
+    AGENT_SCENARIO_CONTRACT_SOURCE, RICH_LOOP_GRAPH_SOURCE, WORKSPACE_PATCH_INTENT_SOURCE,
+    WORKSPACE_SCHEMA_SOURCE, assert_agent_scenario_contract_artifact,
     assert_rich_loop_graph_artifact, assert_workspace_patch_intent_artifact,
     assert_workspace_schema_artifact, real_gxi_command_adapter_compiler, real_gxi_module_compiler,
 };
@@ -64,6 +65,25 @@ fn command_compiler_can_call_real_gxi_command_adapter_launcher_workspace_patch_i
 
 #[test]
 #[ignore = "requires a local Gerbil gxi executable"]
+fn command_compiler_can_call_real_gxi_command_adapter_launcher_agent_scenario_contract() {
+    let Some(compiler) = real_gxi_command_adapter_compiler() else {
+        return;
+    };
+
+    let artifact = compiler
+        .compile(
+            GerbilSource::new("audit/agent-scenario", AGENT_SCENARIO_CONTRACT_SOURCE),
+            GerbilArtifactKind::AgentScenarioContract,
+        )
+        .expect(
+            "real gxi command adapter launcher should compile source text into an agent scenario contract artifact",
+        );
+
+    assert_agent_scenario_contract_artifact(artifact);
+}
+
+#[test]
+#[ignore = "requires a local Gerbil gxi executable"]
 fn command_compiler_can_call_real_gxi_module_entry() {
     let Some(compiler) = real_gxi_module_compiler() else {
         return;
@@ -117,6 +137,25 @@ fn command_compiler_can_call_real_gxi_workspace_patch_intent() {
         );
 
     assert_workspace_patch_intent_artifact(artifact);
+}
+
+#[test]
+#[ignore = "requires a local Gerbil gxi executable"]
+fn command_compiler_can_call_real_gxi_agent_scenario_contract() {
+    let Some(compiler) = real_gxi_module_compiler() else {
+        return;
+    };
+
+    let artifact = compiler
+        .compile(
+            GerbilSource::new("audit/agent-scenario", AGENT_SCENARIO_CONTRACT_SOURCE),
+            GerbilArtifactKind::AgentScenarioContract,
+        )
+        .expect(
+            "real gxi module entry should compile source text into an agent scenario contract artifact",
+        );
+
+    assert_agent_scenario_contract_artifact(artifact);
 }
 
 #[test]
@@ -176,6 +215,7 @@ fn command_compiler_real_gxi_module_entry_rejects_unsupported_expected_kind() {
     assert!(error.contains("LoopGraph"));
     assert!(error.contains("WorkspaceSchema"));
     assert!(error.contains("WorkspacePatchIntent"));
+    assert!(error.contains("AgentScenarioContract"));
     assert!(error.contains("WorkspaceViewPolicy"));
 }
 
@@ -195,5 +235,24 @@ fn command_compiler_real_gxi_workspace_patch_intent_rejects_loop_graph_source() 
 
     assert!(error.contains("gerbil compiler command failed"));
     assert!(error.contains("expected workspace-patch-intent form"));
+    assert!(error.contains("loop-graph"));
+}
+
+#[test]
+#[ignore = "requires a local Gerbil gxi executable"]
+fn command_compiler_real_gxi_agent_scenario_contract_rejects_loop_graph_source() {
+    let Some(compiler) = real_gxi_module_compiler() else {
+        return;
+    };
+
+    let error = compiler
+        .compile(
+            GerbilSource::new("audit/control-plane", RICH_LOOP_GRAPH_SOURCE),
+            GerbilArtifactKind::AgentScenarioContract,
+        )
+        .unwrap_err();
+
+    assert!(error.contains("gerbil compiler command failed"));
+    assert!(error.contains("expected agent-scenario-contract form"));
     assert!(error.contains("loop-graph"));
 }

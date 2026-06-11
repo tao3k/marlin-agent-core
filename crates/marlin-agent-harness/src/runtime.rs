@@ -2,9 +2,9 @@
 
 use marlin_agent_kernel::GraphLoopKernel;
 use marlin_agent_protocol::{
-    AgentEvent, AgentEventTopic, AgentScenario, AgentSpanName, AgentTraceSpanRecord,
-    GraphLoopExecutionRequest, GraphLoopExecutionResult, GraphLoopExecutionStatus, LoopEvidence,
-    RuntimePlanSnapshot,
+    AgentEvent, AgentEventTopic, AgentExecutionTrace, AgentScenario, AgentSpanName,
+    AgentTraceSpanRecord, GraphLoopExecutionRequest, GraphLoopExecutionResult,
+    GraphLoopExecutionStatus, LoopEvidence, RuntimePlanSnapshot,
 };
 use marlin_agent_runtime::{
     CancellationToken, RuntimeEnvironment, RuntimeEventStream, TokioAgentRuntime,
@@ -219,24 +219,81 @@ pub struct HarnessExecutionSummary {
 impl HarnessExecutionReport {
     /// Returns true when the report captured at least one event with this topic.
     pub fn has_event_topic(&self, topic: &AgentEventTopic) -> bool {
-        self.events.iter().any(|event| event.topic_id() == *topic)
+        self.events_by_topic(topic).next().is_some()
+    }
+
+    /// Returns events captured with this topic.
+    pub fn events_by_topic(&self, topic: &AgentEventTopic) -> impl Iterator<Item = &AgentEvent> {
+        let topic = topic.clone();
+        self.events
+            .iter()
+            .filter(move |event| event.topic_id() == topic)
     }
 
     /// Returns true when the report captured at least one tracing span with this name.
     pub fn has_span(&self, name: &AgentSpanName) -> bool {
-        self.trace_spans.iter().any(|span| &span.name == name)
+        self.spans_by_name(name).next().is_some()
     }
 
     /// Counts tracing spans captured with this name.
     pub fn count_span(&self, name: &AgentSpanName) -> usize {
+        self.spans_by_name(name).count()
+    }
+
+    /// Returns tracing spans captured with this name.
+    pub fn spans_by_name(
+        &self,
+        name: &AgentSpanName,
+    ) -> impl Iterator<Item = &AgentTraceSpanRecord> {
+        let name = name.clone();
         self.trace_spans
             .iter()
-            .filter(|span| &span.name == name)
-            .count()
+            .filter(move |span| span.name == name)
     }
 
     /// Returns the first tracing span captured with this name.
     pub fn find_span(&self, name: &AgentSpanName) -> Option<&AgentTraceSpanRecord> {
-        self.trace_spans.iter().find(|span| &span.name == name)
+        self.spans_by_name(name).next()
+    }
+
+    /// Returns tracing spans that captured a matching field value.
+    pub fn spans_with_field(
+        &self,
+        field: &str,
+        value: &str,
+    ) -> impl Iterator<Item = &AgentTraceSpanRecord> {
+        let field = field.to_owned();
+        let value = value.to_owned();
+        self.trace_spans.iter().filter(move |span| {
+            span.fields
+                .get(&field)
+                .is_some_and(|actual| actual.as_str() == value)
+        })
+    }
+
+    /// Returns the first tracing span with this name and matching field value.
+    pub fn find_span_with_field(
+        &self,
+        name: &AgentSpanName,
+        field: &str,
+        value: &str,
+    ) -> Option<&AgentTraceSpanRecord> {
+        self.spans_by_name(name).find(|span| {
+            span.fields
+                .get(field)
+                .is_some_and(|actual| actual.as_str() == value)
+        })
+    }
+
+    /// Builds a compact protocol-owned trace package for this execution.
+    pub fn execution_trace(&self) -> AgentExecutionTrace {
+        AgentExecutionTrace::new(
+            self.result.snapshot.run_id.clone(),
+            self.result.snapshot.graph_id.clone(),
+            self.result.status.clone(),
+        )
+        .with_events(self.events.clone())
+        .with_spans(self.trace_spans.clone())
+        .with_diagnostics(self.result.diagnostics.clone())
     }
 }

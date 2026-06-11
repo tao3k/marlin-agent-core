@@ -1,12 +1,12 @@
 use std::path::PathBuf;
 
 use marlin_agent_protocol::{
-    AGENT_SCENARIO_CONTRACT_SCHEMA_ID, AgentEvent, AgentEventTopic, AgentScenario,
-    AgentScenarioContract, AgentScenarioStep, AgentSpanName, AgentTraceSpanRecord, HookEventName,
-    HookHandlerType, HookOutputEntry, HookOutputEntryKind, HookRunStatus, HookRunSummary,
-    LoopEvidence, LoopEvidenceKind, RuntimeConfigLayer, RuntimeConfigLayerSource,
-    RuntimeEnvironment, RuntimeHome, RuntimeHomeSource, RuntimeSandboxPolicy, SubAgentActivity,
-    SubAgentActivityKind, SubAgentSource,
+    AGENT_SCENARIO_CONTRACT_SCHEMA_ID, AgentEvent, AgentEventTopic, AgentExecutionTrace,
+    AgentScenario, AgentScenarioContract, AgentScenarioStep, AgentSpanName, AgentTraceSpanRecord,
+    GraphLoopExecutionStatus, HookEventName, HookHandlerType, HookOutputEntry, HookOutputEntryKind,
+    HookRunStatus, HookRunSummary, LoopEvidence, LoopEvidenceKind, RuntimeConfigLayer,
+    RuntimeConfigLayerSource, RuntimeEnvironment, RuntimeHome, RuntimeHomeSource,
+    RuntimeSandboxPolicy, SubAgentActivity, SubAgentActivityKind, SubAgentSource,
 };
 
 #[test]
@@ -90,6 +90,31 @@ fn agent_trace_span_record_keeps_name_and_fields() {
         record.fields.get("node_id").map(String::as_str),
         Some("plan")
     );
+}
+
+#[test]
+fn agent_execution_trace_packages_run_facts() {
+    let event = AgentEvent::new("kernel.execution", "failed");
+    let span = AgentTraceSpanRecord::new("harness.result").with_field("status", "Failed");
+    let trace = AgentExecutionTrace::new("run-1", "graph-1", GraphLoopExecutionStatus::Failed)
+        .with_events(vec![event.clone()])
+        .with_spans(vec![span.clone()])
+        .with_diagnostics(vec!["failed intentionally".to_owned()]);
+
+    assert_eq!(trace.run_id.as_str(), "run-1");
+    assert_eq!(trace.graph_id.as_str(), "graph-1");
+    assert_eq!(trace.status, GraphLoopExecutionStatus::Failed);
+    assert_eq!(trace.events, vec![event]);
+    assert_eq!(trace.spans, vec![span]);
+    assert_eq!(trace.diagnostics, vec!["failed intentionally"]);
+
+    let summary = trace.summary();
+    assert_eq!(summary.run_id.as_str(), "run-1");
+    assert_eq!(summary.graph_id.as_str(), "graph-1");
+    assert_eq!(summary.status, GraphLoopExecutionStatus::Failed);
+    assert_eq!(summary.event_count, 1);
+    assert_eq!(summary.span_count, 1);
+    assert_eq!(summary.diagnostic_count, 1);
 }
 
 #[test]

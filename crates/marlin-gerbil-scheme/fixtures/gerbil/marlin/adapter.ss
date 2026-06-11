@@ -11,7 +11,9 @@ package: marlin
   (list (list marlin-loop-graph-artifact-kind compile-loop-graph)
         (list marlin-workspace-schema-artifact-kind compile-workspace-schema)
         (list marlin-workspace-patch-intent-artifact-kind
-              compile-workspace-patch-intent)))
+              compile-workspace-patch-intent)
+        (list marlin-agent-scenario-contract-artifact-kind
+              compile-agent-scenario-contract)))
 
 (def (marlin-artifact-compiler-kind entry)
   (car entry))

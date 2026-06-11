@@ -1,3 +1,6 @@
+use marlin_agent_protocol::{
+    AgentScenario, AgentScenarioContract, AgentScenarioStep, LoopEvidenceKind,
+};
 use marlin_gerbil_ir::{CompiledLoopGraph, WorkspacePatchIntentSpec};
 use marlin_gerbil_scheme::{GerbilArtifactKind, GerbilCompiledArtifact};
 use marlin_org_model::OrgNodeId;
@@ -43,4 +46,15 @@ fn artifact_reports_workspace_patch_intent_kind() {
     });
 
     assert_eq!(artifact.kind(), GerbilArtifactKind::WorkspacePatchIntent);
+}
+
+#[test]
+fn artifact_reports_agent_scenario_contract_kind() {
+    let scenario = AgentScenario::new("gerbil-scenario")
+        .with_step(AgentScenarioStep::new("run").expecting_event_topic("kernel.execution"))
+        .expecting_evidence(LoopEvidenceKind::Runtime);
+    let artifact =
+        GerbilCompiledArtifact::AgentScenarioContract(AgentScenarioContract::new(scenario));
+
+    assert_eq!(artifact.kind(), GerbilArtifactKind::AgentScenarioContract);
 }

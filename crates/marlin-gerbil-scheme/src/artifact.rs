@@ -1,5 +1,6 @@
 //! Compiled `Gerbil` artifact envelopes.
 
+use marlin_agent_protocol::AgentScenarioContract;
 use marlin_gerbil_ir::{
     CompiledLoopGraph, MemoryDispatchPolicySpec, WorkspacePatchIntentSpec, WorkspaceSchemaSpec,
     WorkspaceValidationPolicySpec, WorkspaceViewPolicySpec,
@@ -16,6 +17,7 @@ pub enum GerbilCompiledArtifact {
     WorkspaceValidationPolicy(WorkspaceValidationPolicySpec),
     MemoryDispatchPolicy(MemoryDispatchPolicySpec),
     WorkspacePatchIntent(WorkspacePatchIntentSpec),
+    AgentScenarioContract(AgentScenarioContract),
 }
 
 impl GerbilCompiledArtifact {
@@ -28,6 +30,7 @@ impl GerbilCompiledArtifact {
             Self::WorkspaceValidationPolicy(_) => GerbilArtifactKind::WorkspaceValidationPolicy,
             Self::MemoryDispatchPolicy(_) => GerbilArtifactKind::MemoryDispatchPolicy,
             Self::WorkspacePatchIntent(_) => GerbilArtifactKind::WorkspacePatchIntent,
+            Self::AgentScenarioContract(_) => GerbilArtifactKind::AgentScenarioContract,
         }
     }
 
@@ -54,6 +57,7 @@ pub enum GerbilArtifactKind {
     WorkspaceValidationPolicy,
     MemoryDispatchPolicy,
     WorkspacePatchIntent,
+    AgentScenarioContract,
 }
 
 /// Error returned when a compiler emits a different artifact class than requested.

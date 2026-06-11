@@ -7,6 +7,7 @@ package: marlin
         marlin-loop-graph-artifact-kind
         marlin-workspace-schema-artifact-kind
         marlin-workspace-patch-intent-artifact-kind
+        marlin-agent-scenario-contract-artifact-kind
         marlin-supported-artifact-kinds
         marlin-supported-artifact-kind?
         ensure-marlin-supported-artifact-kind
@@ -35,17 +36,33 @@ package: marlin
         marlin-workspace-patch-source-agent
         marlin-workspace-patch-ops
         make-marlin-mark-memory-candidate-op
+        make-marlin-agent-scenario-contract
+        marlin-agent-scenario-contract-schema-id
+        marlin-agent-scenario-contract-scenario
+        make-marlin-agent-scenario
+        marlin-agent-scenario-id
+        marlin-agent-scenario-description
+        marlin-agent-scenario-steps
+        marlin-agent-scenario-expected-evidence
+        make-marlin-agent-scenario-step
+        marlin-agent-scenario-step-name
+        marlin-agent-scenario-step-input
+        marlin-agent-scenario-step-expected-event-topics
+        marlin-agent-scenario-step-expected-span-names
         display-gerbil-artifact-response
         display-gerbil-compile-response)
 
 (def marlin-loop-graph-artifact-kind "LoopGraph")
 (def marlin-workspace-schema-artifact-kind "WorkspaceSchema")
 (def marlin-workspace-patch-intent-artifact-kind "WorkspacePatchIntent")
+(def marlin-agent-scenario-contract-artifact-kind "AgentScenarioContract")
+(def marlin-agent-scenario-contract-schema-id-value "marlin.agent.scenario.v1")
 
 (def marlin-supported-artifact-kinds
   (list marlin-loop-graph-artifact-kind
         marlin-workspace-schema-artifact-kind
-        marlin-workspace-patch-intent-artifact-kind))
+        marlin-workspace-patch-intent-artifact-kind
+        marlin-agent-scenario-contract-artifact-kind))
 
 (def (marlin-supported-artifact-kind? expected)
   (if (member expected marlin-supported-artifact-kinds) #t #f))
@@ -133,6 +150,45 @@ package: marlin
 
 (def (make-marlin-mark-memory-candidate-op node dispatch)
   (list 'MarkMemoryCandidate node dispatch))
+
+(def (make-marlin-agent-scenario-contract scenario)
+  (list marlin-agent-scenario-contract-schema-id-value scenario))
+
+(def (marlin-agent-scenario-contract-schema-id contract)
+  (car contract))
+
+(def (marlin-agent-scenario-contract-scenario contract)
+  (cadr contract))
+
+(def (make-marlin-agent-scenario scenario-id description steps expected-evidence)
+  (list scenario-id description steps expected-evidence))
+
+(def (marlin-agent-scenario-id scenario)
+  (car scenario))
+
+(def (marlin-agent-scenario-description scenario)
+  (cadr scenario))
+
+(def (marlin-agent-scenario-steps scenario)
+  (caddr scenario))
+
+(def (marlin-agent-scenario-expected-evidence scenario)
+  (cadddr scenario))
+
+(def (make-marlin-agent-scenario-step name input expected-event-topics expected-span-names)
+  (list name input expected-event-topics expected-span-names))
+
+(def (marlin-agent-scenario-step-name step)
+  (car step))
+
+(def (marlin-agent-scenario-step-input step)
+  (cadr step))
+
+(def (marlin-agent-scenario-step-expected-event-topics step)
+  (caddr step))
+
+(def (marlin-agent-scenario-step-expected-span-names step)
+  (cadddr step))
 
 (def (display-json-string value)
   (display "\"")
@@ -278,6 +334,46 @@ package: marlin
   (display-json-boolean (marlin-workspace-patch-intent-dry-run-first intent))
   (display "}"))
 
+(def (display-json-agent-scenario-steps steps)
+  (display "[")
+  (let loop ((remaining steps) (first #t))
+    (if (null? remaining)
+      #t
+      (begin
+        (if first #f (display ","))
+        (let ((step (car remaining)))
+          (display "{\"name\":")
+          (display-json-string (marlin-agent-scenario-step-name step))
+          (display ",\"input\":")
+          (display-json-config (marlin-agent-scenario-step-input step))
+          (display ",\"expected_event_topics\":")
+          (display-json-string-list
+           (marlin-agent-scenario-step-expected-event-topics step))
+          (display ",\"expected_span_names\":")
+          (display-json-string-list
+           (marlin-agent-scenario-step-expected-span-names step))
+          (display "}"))
+        (loop (cdr remaining) #f))))
+  (display "]"))
+
+(def (display-json-agent-scenario scenario)
+  (display "{\"id\":")
+  (display-json-string (marlin-agent-scenario-id scenario))
+  (display ",\"description\":")
+  (display-json-nullable-string (marlin-agent-scenario-description scenario))
+  (display ",\"steps\":")
+  (display-json-agent-scenario-steps (marlin-agent-scenario-steps scenario))
+  (display ",\"expected_evidence\":")
+  (display-json-string-list (marlin-agent-scenario-expected-evidence scenario))
+  (display "}"))
+
+(def (display-json-agent-scenario-contract contract)
+  (display "{\"schema_id\":")
+  (display-json-string (marlin-agent-scenario-contract-schema-id contract))
+  (display ",\"scenario\":")
+  (display-json-agent-scenario (marlin-agent-scenario-contract-scenario contract))
+  (display "}"))
+
 (def (display-gerbil-artifact-response artifact-kind artifact)
   (display "{\"artifact\":{")
   (display-json-string artifact-kind)
@@ -289,6 +385,8 @@ package: marlin
      (display-json-workspace-schema artifact))
     ((equal? artifact-kind marlin-workspace-patch-intent-artifact-kind)
      (display-json-workspace-patch-intent artifact))
+    ((equal? artifact-kind marlin-agent-scenario-contract-artifact-kind)
+     (display-json-agent-scenario-contract artifact))
     (else (error "marlin gerbil protocol cannot serialize artifact kind" artifact-kind)))
   (display "}}"))
 
