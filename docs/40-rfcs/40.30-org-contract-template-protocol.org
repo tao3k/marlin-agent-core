@@ -102,35 +102,31 @@ consume them to select scaffolds, render messages, or produce
 
 - =OrgDocumentLoader::load_workspace= returns contract reference resolutions and
   =ORG044= diagnostics for empty or unresolved =CONTRACT_ORG= references.
-  unresolved reference diagnostics.
 
 - =OrgDocumentLoader::load_workspace= returns template-facing assertion
-  templates with role, engine, body, and source span facts.
-  =message= and =fix= facts as =OrgContractTemplate= records.
+  =message= and =fix= facts as =OrgContractTemplate= records with role, engine,
+  body, and source span facts.
 
 - =OrgDocumentLoader::load_workspace= returns an =OrgContractValidationReport=
-  for runtime-independent assertion receipts.
-  receipt container without executing assertions during load.
+  for runtime-independent assertion receipts without executing assertions during
+  load.
 
 - =OrgDocumentLoader::load_workspace_with_contracts= resolves references against
   explicit external Org contract documents.
-  explicit external Org contract documents.
 
 - View and status DTOs can carry contract facts, diagnostics, and validation
-  records as typed fields, not only rendered summary text.
-  summary counts for agent-facing context.
+  records as typed fields, not only rendered summary counts for agent-facing
+  context.
 
 - =GerbilCompileRequest= can carry contract registry, resolution, and
-  validation facts through command-backed Gerbil adapters.
-  validation facts, and =GerbilCommandCompiler::compile_with_contract_facts=
-  can send those facts through the JSON stdin command boundary.
-  validation facts for command-backed control-plane code.
+  validation facts through command-backed Gerbil adapters, and
+  =GerbilCommandCompiler::compile_with_contract_facts= can send those facts
+  through the JSON stdin command boundary.
 
 - Contract state fields are typed wrappers, not public =String= fields.
 
 - Unit tests parse a contract fixture through orgize and assert the Marlin
   registry, resolution, template, validation, view, status, and Gerbil request
   projections.
-  projection.
 
 - Workspace gates pass after the dependency update.
