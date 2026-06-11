@@ -59,7 +59,11 @@ pub const RELEASE_TOPOLOGY_SOURCE: &str = r#"(release-topology "release:gerbil"
   (gate real-gxi
     (command "cargo test -p marlin-gerbil-scheme --test unit_test command::real_gxi -- --ignored")
     (requires-local-gerbil #t)
-    (required-artifacts workspace_schema workspace_patch_intent)))"#;
+    (required-artifacts workspace_schema workspace_patch_intent)
+    (visibility
+      (report-key real_gxi_release_gate)
+      (evidence-keys workspace_schema workspace_patch_intent)
+      (artifact-paths "fixtures/gerbil/command-adapter.ss"))))"#;
 
 pub fn local_gxi() -> Option<PathBuf> {
     let gxi = default_gerbil_gxi_program();

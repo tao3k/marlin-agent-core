@@ -5,6 +5,13 @@ pub(super) use super::support::{
     assert_workspace_patch_intent_artifact, assert_workspace_schema_artifact, local_gxi,
     real_gxi_command_adapter_compiler, real_gxi_module_compiler,
 };
+use marlin_gerbil_scheme::GerbilCompiledArtifact;
+
+pub(super) const RELEASE_TOPOLOGY_SOURCE: &str = super::support::RELEASE_TOPOLOGY_SOURCE;
+
+pub(super) fn assert_release_topology_artifact(artifact: GerbilCompiledArtifact) {
+    super::support::assert_release_topology_artifact(artifact);
+}
 
 mod artifacts;
 mod errors;

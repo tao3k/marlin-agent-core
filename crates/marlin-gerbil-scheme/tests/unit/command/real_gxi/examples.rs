@@ -64,6 +64,32 @@ fn command_compiler_real_gxi_reads_workspace_patch_intent_source_file() {
     let _ = fs::remove_dir_all(root);
 }
 
+#[test]
+#[ignore = "requires a local Gerbil gxi executable"]
+fn command_compiler_real_gxi_build_script_compiles_runtime_assets() {
+    let Some(gxi) = local_gxi() else {
+        return;
+    };
+    let root = test_root("runtime-build-script");
+    write_gerbil_runtime_assets(&root).expect("write gerbil runtime assets");
+
+    let output = Command::new(gxi)
+        .env(GERBIL_LOADPATH_ENV, &root)
+        .current_dir(&root)
+        .arg(root.join("build.ss"))
+        .arg("compile")
+        .output()
+        .expect("run real gxi build script");
+
+    assert!(
+        output.status.success(),
+        "gxi build script failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let _ = fs::remove_dir_all(root);
+}
+
 fn test_root(name: &str) -> std::path::PathBuf {
     let suffix = SystemTime::now()
         .duration_since(UNIX_EPOCH)

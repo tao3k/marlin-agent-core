@@ -1,6 +1,6 @@
 use super::support::{
-    assert_release_topology_artifact, assert_workspace_patch_intent_artifact,
-    assert_workspace_schema_artifact, loop_graph_artifact,
+    RELEASE_TOPOLOGY_SOURCE, assert_release_topology_artifact,
+    assert_workspace_patch_intent_artifact, assert_workspace_schema_artifact, loop_graph_artifact,
 };
 use marlin_gerbil_scheme::{
     GerbilArtifactKind, GerbilCommandCompiler, GerbilCommandSpec, GerbilCompiler, GerbilSource,
@@ -76,10 +76,7 @@ fn command_compiler_reads_release_topology_from_stdout() {
 
     let artifact = compiler
         .compile(
-            GerbilSource::new(
-                "audit/release-topology",
-                "(release-topology release:gerbil)",
-            ),
+            GerbilSource::new("audit/release-topology", RELEASE_TOPOLOGY_SOURCE),
             GerbilArtifactKind::ReleaseTopology,
         )
         .expect("command output should decode to requested release topology artifact kind");

@@ -1,6 +1,7 @@
 use super::{
-    AGENT_SCENARIO_CONTRACT_SOURCE, RICH_LOOP_GRAPH_SOURCE, WORKSPACE_PATCH_INTENT_SOURCE,
-    WORKSPACE_SCHEMA_SOURCE, assert_agent_scenario_contract_artifact,
+    AGENT_SCENARIO_CONTRACT_SOURCE, RELEASE_TOPOLOGY_SOURCE, RICH_LOOP_GRAPH_SOURCE,
+    WORKSPACE_PATCH_INTENT_SOURCE, WORKSPACE_SCHEMA_SOURCE,
+    assert_agent_scenario_contract_artifact, assert_release_topology_artifact,
     assert_rich_loop_graph_artifact, assert_workspace_patch_intent_artifact,
     assert_workspace_schema_artifact, real_gxi_command_adapter_compiler, real_gxi_module_compiler,
 };
@@ -84,6 +85,25 @@ fn command_compiler_can_call_real_gxi_command_adapter_launcher_agent_scenario_co
 
 #[test]
 #[ignore = "requires a local Gerbil gxi executable"]
+fn command_compiler_can_call_real_gxi_command_adapter_launcher_release_topology() {
+    let Some(compiler) = real_gxi_command_adapter_compiler() else {
+        return;
+    };
+
+    let artifact = compiler
+        .compile(
+            GerbilSource::new("audit/release-topology", RELEASE_TOPOLOGY_SOURCE),
+            GerbilArtifactKind::ReleaseTopology,
+        )
+        .expect(
+            "real gxi command adapter launcher should compile source text into a release topology artifact",
+        );
+
+    assert_release_topology_artifact(artifact);
+}
+
+#[test]
+#[ignore = "requires a local Gerbil gxi executable"]
 fn command_compiler_can_call_real_gxi_module_entry() {
     let Some(compiler) = real_gxi_module_compiler() else {
         return;
@@ -156,4 +176,23 @@ fn command_compiler_can_call_real_gxi_agent_scenario_contract() {
         );
 
     assert_agent_scenario_contract_artifact(artifact);
+}
+
+#[test]
+#[ignore = "requires a local Gerbil gxi executable"]
+fn command_compiler_can_call_real_gxi_release_topology() {
+    let Some(compiler) = real_gxi_module_compiler() else {
+        return;
+    };
+
+    let artifact = compiler
+        .compile(
+            GerbilSource::new("audit/release-topology", RELEASE_TOPOLOGY_SOURCE),
+            GerbilArtifactKind::ReleaseTopology,
+        )
+        .expect(
+            "real gxi module entry should compile source text into a release topology artifact",
+        );
+
+    assert_release_topology_artifact(artifact);
 }

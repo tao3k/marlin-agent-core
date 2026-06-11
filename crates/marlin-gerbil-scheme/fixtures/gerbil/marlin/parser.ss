@@ -296,6 +296,24 @@ package: marlin
           (tagged-values forms 'evidence))))
       (error "expected agent-scenario-contract form" form))))
 
+(define (parse-release-visibility-form form)
+  (if (form-tag? form 'visibility)
+    (let ((forms (cdr form)))
+      (make-marlin-release-visibility
+       (required-single-value forms 'report-key)
+       (tagged-values forms 'evidence-keys)
+       (tagged-values forms 'artifact-paths)))
+    (error "invalid release visibility form" form)))
+
+(define (parse-release-visibility forms)
+  (let loop ((remaining forms) (visibility '()))
+    (cond
+      ((null? remaining) (reverse visibility))
+      ((form-tag? (car remaining) 'visibility)
+       (loop (cdr remaining)
+             (cons (parse-release-visibility-form (car remaining)) visibility)))
+      (else (loop (cdr remaining) visibility)))))
+
 (define (parse-release-gate-form form)
   (if (and (form-tag? form 'gate)
            (pair? (cdr form)))
@@ -305,7 +323,8 @@ package: marlin
        gate-id
        (required-single-value forms 'command)
        (required-boolean-value forms 'requires-local-gerbil)
-       (tagged-values forms 'required-artifacts)))
+       (tagged-values forms 'required-artifacts)
+       (parse-release-visibility forms)))
     (error "invalid release gate form" form)))
 
 (define (parse-release-gates forms)

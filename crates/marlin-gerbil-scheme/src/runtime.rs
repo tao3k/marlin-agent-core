@@ -27,6 +27,8 @@ pub struct GerbilRuntimeAsset {
 /// Source-file launcher that runs the `:marlin/adapter` command adapter.
 pub const GERBIL_COMMAND_ADAPTER_SOURCE: &str =
     include_str!("../fixtures/gerbil/command-adapter.ss");
+/// Build script for compiling the crate-shipped Gerbil runtime assets.
+pub const GERBIL_BUILD_SOURCE: &str = include_str!("../fixtures/gerbil/build.ss");
 /// Standalone smoke source used to verify `Gerbil` module loading.
 pub const GERBIL_SMOKE_SOURCE: &str = include_str!("../fixtures/gerbil/smoke.ss");
 /// Library module that reads a compile request and emits a compile response.
@@ -44,6 +46,10 @@ pub const GERBIL_RUNTIME_ASSETS: &[GerbilRuntimeAsset] = &[
     GerbilRuntimeAsset {
         path: "command-adapter.ss",
         source: GERBIL_COMMAND_ADAPTER_SOURCE,
+    },
+    GerbilRuntimeAsset {
+        path: "build.ss",
+        source: GERBIL_BUILD_SOURCE,
     },
     GerbilRuntimeAsset {
         path: "smoke.ss",

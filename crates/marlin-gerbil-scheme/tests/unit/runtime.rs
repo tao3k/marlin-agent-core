@@ -1,6 +1,6 @@
 use marlin_gerbil_scheme::{
-    DEFAULT_GERBIL_GXI_PROGRAM, GERBIL_ADAPTER_MODULE, GERBIL_LOADPATH_ENV, MARLIN_GERBIL_GXI_ENV,
-    gerbil_runtime_assets, write_gerbil_runtime_assets,
+    DEFAULT_GERBIL_GXI_PROGRAM, GERBIL_ADAPTER_MODULE, GERBIL_BUILD_SOURCE, GERBIL_LOADPATH_ENV,
+    MARLIN_GERBIL_GXI_ENV, gerbil_runtime_assets, write_gerbil_runtime_assets,
 };
 use std::{
     fs,
@@ -15,12 +15,14 @@ fn gerbil_runtime_assets_expose_loadpath_contract() {
     assert_eq!(GERBIL_ADAPTER_MODULE, ":marlin/adapter");
     assert_eq!(MARLIN_GERBIL_GXI_ENV, "MARLIN_GERBIL_GXI");
     assert!(DEFAULT_GERBIL_GXI_PROGRAM.ends_with("/bin/gxi"));
-    assert_eq!(assets.len(), 6);
+    assert!(GERBIL_BUILD_SOURCE.contains("defmarlin-runtime-build-script"));
+    assert_eq!(assets.len(), 7);
     assert!(
         assets
             .iter()
             .any(|asset| asset.path == "command-adapter.ss")
     );
+    assert!(assets.iter().any(|asset| asset.path == "build.ss"));
     assert!(assets.iter().any(|asset| asset.path == "smoke.ss"));
     assert!(assets.iter().any(|asset| asset.path == "marlin/adapter.ss"));
     assert!(assets.iter().any(|asset| asset.path == "marlin/parser.ss"));
@@ -40,7 +42,13 @@ fn gerbil_runtime_assets_write_loadpath_tree() {
 
     assert_eq!(written.len(), gerbil_runtime_assets().len());
     assert!(root.join("command-adapter.ss").is_file());
+    assert!(root.join("build.ss").is_file());
     assert!(root.join("marlin/adapter.ss").is_file());
+    assert!(
+        fs::read_to_string(root.join("build.ss"))
+            .expect("read build script")
+            .contains("defmarlin-runtime-build-script")
+    );
     assert!(
         fs::read_to_string(root.join("marlin/protocol.ss"))
             .expect("read protocol")

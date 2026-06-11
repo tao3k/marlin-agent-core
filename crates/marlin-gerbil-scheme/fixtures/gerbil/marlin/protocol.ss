@@ -66,6 +66,11 @@ package: marlin
         marlin-release-gate-command
         marlin-release-gate-requires-local-gerbil
         marlin-release-gate-required-artifacts
+        marlin-release-gate-visibility
+        make-marlin-release-visibility
+        marlin-release-visibility-report-key
+        marlin-release-visibility-evidence-keys
+        marlin-release-visibility-artifact-paths
         display-gerbil-artifact-response
         display-gerbil-compile-response)
 
@@ -259,8 +264,9 @@ package: marlin
 (def (make-marlin-release-gate gate-id
                                command
                                requires-local-gerbil
-                               required-artifacts)
-  (list gate-id command requires-local-gerbil required-artifacts))
+                               required-artifacts
+                               visibility)
+  (list gate-id command requires-local-gerbil required-artifacts visibility))
 
 (def (marlin-release-gate-id gate)
   (list-ref gate 0))
@@ -273,6 +279,21 @@ package: marlin
 
 (def (marlin-release-gate-required-artifacts gate)
   (list-ref gate 3))
+
+(def (marlin-release-gate-visibility gate)
+  (list-ref gate 4))
+
+(def (make-marlin-release-visibility report-key evidence-keys artifact-paths)
+  (list report-key evidence-keys artifact-paths))
+
+(def (marlin-release-visibility-report-key visibility)
+  (list-ref visibility 0))
+
+(def (marlin-release-visibility-evidence-keys visibility)
+  (list-ref visibility 1))
+
+(def (marlin-release-visibility-artifact-paths visibility)
+  (list-ref visibility 2))
 
 (def (display-json-string value)
   (display "\"")
@@ -489,6 +510,24 @@ package: marlin
   (display-json-agent-scenario (marlin-agent-scenario-contract-scenario contract))
   (display "}"))
 
+(def (display-json-release-visibility visibility)
+  (display "[")
+  (let loop ((remaining visibility) (first #t))
+    (if (null? remaining)
+      #t
+      (begin
+        (if first #f (display ","))
+        (let ((entry (car remaining)))
+          (display "{\"report_key\":")
+          (display-json-string (marlin-release-visibility-report-key entry))
+          (display ",\"evidence_keys\":")
+          (display-json-string-list (marlin-release-visibility-evidence-keys entry))
+          (display ",\"artifact_paths\":")
+          (display-json-string-list (marlin-release-visibility-artifact-paths entry))
+          (display "}"))
+        (loop (cdr remaining) #f))))
+  (display "]"))
+
 (def (display-json-release-gates gates)
   (display "[")
   (let loop ((remaining gates) (first #t))
@@ -505,6 +544,8 @@ package: marlin
           (display-json-boolean (marlin-release-gate-requires-local-gerbil gate))
           (display ",\"required_artifacts\":")
           (display-json-string-list (marlin-release-gate-required-artifacts gate))
+          (display ",\"visibility\":")
+          (display-json-release-visibility (marlin-release-gate-visibility gate))
           (display "}"))
         (loop (cdr remaining) #f))))
   (display "]"))
