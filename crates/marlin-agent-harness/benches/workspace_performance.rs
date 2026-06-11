@@ -3,10 +3,11 @@ use std::{
     fs,
     path::{Path, PathBuf},
     thread,
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 use marlin_agent_protocol::PERFORMANCE_EVIDENCE_KEYS;
+use marlin_gerbil_scheme::{GerbilAotProbeConfig, GerbilAotProbeStatus};
 use rust_lang_project_harness::{
     RustHarnessConfig, RustVerificationPhase, RustVerificationPolicy, RustVerificationProfileHint,
     RustVerificationTaskKind, RustVerificationTaskState, build_rust_verification_performance_index,
@@ -14,6 +15,7 @@ use rust_lang_project_harness::{
 };
 
 const WORKSPACE_PERFORMANCE_BENCH_BUDGET: Duration = Duration::from_secs(10);
+const GERBIL_AOT_PROBE_BENCH_BUDGET: Duration = Duration::from_secs(20);
 
 fn main() {
     let crates = workspace_crates();
@@ -37,13 +39,20 @@ fn main() {
         })
         .collect();
 
-    let report = PerformanceBenchReport::new(records, started_at.elapsed());
+    let workspace_duration = started_at.elapsed();
+    let gerbil_aot_probe = gerbil_aot_probe_bench();
+    let report = PerformanceBenchReport::new(records, workspace_duration, gerbil_aot_probe);
     println!("[bench] {}", report.render_slowest(5));
 
     assert_eq!(report.crate_count(), expected_crate_count);
     assert!(
-        report.total_duration <= WORKSPACE_PERFORMANCE_BENCH_BUDGET,
+        report.workspace_duration <= WORKSPACE_PERFORMANCE_BENCH_BUDGET,
         "workspace performance bench exceeded budget: {}",
+        report.render_slowest(5),
+    );
+    assert!(
+        report.gerbil_aot_probe.duration <= GERBIL_AOT_PROBE_BENCH_BUDGET,
+        "Gerbil AOT probe bench exceeded budget: {}",
         report.render_slowest(5),
     );
 }
@@ -55,16 +64,30 @@ struct PerformanceBenchRecord {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+struct GerbilAotProbeBenchRecord {
+    status: GerbilAotProbeStatus,
+    duration: Duration,
+    backend_gsc: Option<PathBuf>,
+    executable_ready: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 struct PerformanceBenchReport {
     records: Vec<PerformanceBenchRecord>,
-    total_duration: Duration,
+    workspace_duration: Duration,
+    gerbil_aot_probe: GerbilAotProbeBenchRecord,
 }
 
 impl PerformanceBenchReport {
-    fn new(records: Vec<PerformanceBenchRecord>, total_duration: Duration) -> Self {
+    fn new(
+        records: Vec<PerformanceBenchRecord>,
+        workspace_duration: Duration,
+        gerbil_aot_probe: GerbilAotProbeBenchRecord,
+    ) -> Self {
         Self {
             records,
-            total_duration,
+            workspace_duration,
+            gerbil_aot_probe,
         }
     }
 
@@ -93,10 +116,28 @@ impl PerformanceBenchReport {
             .join(", ");
 
         format!(
-            "total={}ms crate_count={} slowest=[{}]",
-            self.total_duration.as_millis(),
+            "workspace={}ms crate_count={} slowest=[{}] gerbil_aot_probe={}",
+            self.workspace_duration.as_millis(),
             self.crate_count(),
             slowest,
+            self.gerbil_aot_probe.render(),
+        )
+    }
+}
+
+impl GerbilAotProbeBenchRecord {
+    fn render(&self) -> String {
+        let backend_gsc = self
+            .backend_gsc
+            .as_ref()
+            .map(|path| path.display().to_string())
+            .unwrap_or_else(|| "-".to_owned());
+        format!(
+            "status={:?},duration={}ms,backend_gsc={},executable_ready={}",
+            self.status,
+            self.duration.as_millis(),
+            backend_gsc,
+            self.executable_ready,
         )
     }
 }
@@ -164,6 +205,62 @@ fn performance_index_for_crate(crate_dir: &Path) -> PerformanceBenchRecord {
         crate_name: crate_name.to_owned(),
         duration: started_at.elapsed(),
     }
+}
+
+fn gerbil_aot_probe_bench() -> GerbilAotProbeBenchRecord {
+    let root = temp_bench_root("gerbil-aot-probe");
+    let started_at = Instant::now();
+    let receipt = GerbilAotProbeConfig::new(&root).probe();
+    let duration = started_at.elapsed();
+    let executable_ready =
+        receipt.status == GerbilAotProbeStatus::ExecutableReady && receipt.executable.is_file();
+
+    assert!(
+        duration <= GERBIL_AOT_PROBE_BENCH_BUDGET,
+        "Gerbil AOT probe exceeded budget: {}ms",
+        duration.as_millis(),
+    );
+    if receipt.status == GerbilAotProbeStatus::GscBackendUnavailable {
+        assert!(
+            receipt.backend_gsc.is_some(),
+            "Gerbil AOT backend failure should report the backend gsc path",
+        );
+    }
+    if matches!(
+        receipt.status,
+        GerbilAotProbeStatus::MissingGxc | GerbilAotProbeStatus::MissingGsc
+    ) {
+        assert!(
+            receipt.module_compile.is_none(),
+            "missing Gerbil toolchain probes should not attempt module compilation",
+        );
+    }
+    if receipt.status == GerbilAotProbeStatus::ExecutableReady {
+        assert!(
+            executable_ready,
+            "Gerbil AOT executable-ready probe should leave an executable artifact",
+        );
+    }
+
+    let record = GerbilAotProbeBenchRecord {
+        status: receipt.status,
+        duration,
+        backend_gsc: receipt.backend_gsc,
+        executable_ready,
+    };
+    let _ = fs::remove_dir_all(root);
+    record
+}
+
+fn temp_bench_root(name: &str) -> PathBuf {
+    let suffix = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_nanos())
+        .unwrap_or_default();
+    std::env::temp_dir().join(format!(
+        "marlin-agent-harness-{name}-{}-{suffix}",
+        std::process::id()
+    ))
 }
 
 fn workspace_crates() -> Vec<PathBuf> {

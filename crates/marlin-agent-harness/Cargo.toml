@@ -22,5 +22,6 @@ harness = false
 
 [dev-dependencies]
 marlin-agent-hooks.workspace = true
+marlin-gerbil-scheme.workspace = true
 rust-lang-project-harness.workspace = true
 tokio.workspace = true
