@@ -59,6 +59,14 @@ pub struct ReleaseTopologySpec {
     pub gates: Vec<ReleaseGateSpec>,
 }
 
+/// Visibility evidence expected from a release gate.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct ReleaseVisibilitySpec {
+    pub report_key: String,
+    pub evidence_keys: Vec<String>,
+    pub artifact_paths: Vec<String>,
+}
+
 /// Release gate command and artifacts required by a `Gerbil` release topology.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ReleaseGateSpec {
@@ -66,6 +74,7 @@ pub struct ReleaseGateSpec {
     pub command: String,
     pub requires_local_gerbil: bool,
     pub required_artifacts: Vec<String>,
+    pub visibility: Vec<ReleaseVisibilitySpec>,
 }
 
 /// Parser-owned workspace contract facts made available to the `Gerbil` control plane.

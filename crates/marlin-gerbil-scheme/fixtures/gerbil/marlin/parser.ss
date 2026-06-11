@@ -8,7 +8,8 @@ package: marlin
 (export compile-loop-graph
         compile-workspace-schema
         compile-workspace-patch-intent
-        compile-agent-scenario-contract)
+        compile-agent-scenario-contract
+        compile-release-topology)
 
 (define (source->form source-text)
   (let ((form (read (open-input-string source-text))))
@@ -163,6 +164,12 @@ package: marlin
      #t)
     (else #f)))
 
+(define (required-boolean-value forms tag)
+  (let ((form (find-tagged-form forms tag)))
+    (if (and form (pair? (cdr form)))
+      (true-value? (cadr form))
+      (error "expected boolean form" tag forms))))
+
 (define (required-dry-run-first forms)
   (let ((form (find-tagged-form forms 'dry-run-first)))
     (if (and form (pair? (cdr form)) (true-value? (cadr form)))
@@ -288,3 +295,41 @@ package: marlin
           (parse-scenario-steps forms)
           (tagged-values forms 'evidence))))
       (error "expected agent-scenario-contract form" form))))
+
+(define (parse-release-gate-form form)
+  (if (and (form-tag? form 'gate)
+           (pair? (cdr form)))
+    (let ((gate-id (atom->string (cadr form)))
+          (forms (cddr form)))
+      (make-marlin-release-gate
+       gate-id
+       (required-single-value forms 'command)
+       (required-boolean-value forms 'requires-local-gerbil)
+       (tagged-values forms 'required-artifacts)))
+    (error "invalid release gate form" form)))
+
+(define (parse-release-gates forms)
+  (let loop ((remaining forms) (gates '()))
+    (cond
+      ((null? remaining) (reverse gates))
+      ((form-tag? (car remaining) 'gate)
+       (loop (cdr remaining)
+             (cons (parse-release-gate-form (car remaining)) gates)))
+      (else (loop (cdr remaining) gates)))))
+
+(define (compile-release-topology source-text)
+  (let ((form (source->form source-text)))
+    (if (and (form-tag? form 'release-topology)
+             (pair? (cdr form)))
+      (let ((topology-id (atom->string (cadr form)))
+            (forms (cddr form)))
+        (make-marlin-release-topology
+         topology-id
+         (required-single-value forms 'crate)
+         (required-boolean-value forms 'publish-enabled)
+         (required-single-value forms 'asset-audit-command)
+         (tagged-values forms 'package-assets)
+         (tagged-values forms 'runtime-dependency-chain)
+         (tagged-values forms 'workflow-dependency-chain)
+         (parse-release-gates forms)))
+      (error "expected release-topology form" form))))

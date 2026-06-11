@@ -49,6 +49,18 @@ pub const AGENT_SCENARIO_CONTRACT_SOURCE: &str = r#"(agent-scenario-contract ger
     (span-name harness.execution))
   (evidence Runtime))"#;
 
+pub const RELEASE_TOPOLOGY_SOURCE: &str = r#"(release-topology "release:gerbil"
+  (crate "marlin-gerbil-scheme")
+  (publish-enabled #f)
+  (asset-audit-command "cargo package -p marlin-gerbil-scheme --allow-dirty --no-verify --list")
+  (package-assets README.md "fixtures/gerbil")
+  (runtime-dependency-chain "marlin-gerbil-ir" "marlin-workspace-patch")
+  (workflow-dependency-chain "marlin-org-workflow" "marlin-org-store")
+  (gate real-gxi
+    (command "cargo test -p marlin-gerbil-scheme --test unit_test command::real_gxi -- --ignored")
+    (requires-local-gerbil #t)
+    (required-artifacts workspace_schema workspace_patch_intent)))"#;
+
 pub fn local_gxi() -> Option<PathBuf> {
     let gxi = default_gerbil_gxi_program();
 
@@ -162,6 +174,53 @@ pub fn assert_workspace_patch_intent_artifact(artifact: GerbilCompiledArtifact) 
             }
         }
         other => panic!("expected workspace patch intent artifact, got {other:?}"),
+    }
+}
+
+pub fn assert_release_topology_artifact(artifact: GerbilCompiledArtifact) {
+    match artifact {
+        GerbilCompiledArtifact::ReleaseTopology(topology) => {
+            assert_eq!(topology.topology_id, "release:gerbil");
+            assert_eq!(topology.crate_name, "marlin-gerbil-scheme");
+            assert!(!topology.publish_enabled);
+            assert_eq!(
+                topology.asset_audit_command,
+                "cargo package -p marlin-gerbil-scheme --allow-dirty --no-verify --list"
+            );
+            assert_eq!(topology.package_assets, ["README.md", "fixtures/gerbil"]);
+            assert_eq!(
+                topology.runtime_dependency_chain,
+                ["marlin-gerbil-ir", "marlin-workspace-patch"]
+            );
+            assert_eq!(
+                topology.workflow_dependency_chain,
+                ["marlin-org-workflow", "marlin-org-store"]
+            );
+            assert_eq!(topology.gates.len(), 1);
+            assert_eq!(topology.gates[0].gate_id, "real-gxi");
+            assert_eq!(
+                topology.gates[0].command,
+                "cargo test -p marlin-gerbil-scheme --test unit_test command::real_gxi -- --ignored"
+            );
+            assert!(topology.gates[0].requires_local_gerbil);
+            assert_eq!(
+                topology.gates[0].required_artifacts,
+                ["workspace_schema", "workspace_patch_intent"]
+            );
+            assert_eq!(
+                topology.gates[0].visibility[0].report_key,
+                "real_gxi_release_gate"
+            );
+            assert_eq!(
+                topology.gates[0].visibility[0].evidence_keys,
+                ["workspace_schema", "workspace_patch_intent"]
+            );
+            assert_eq!(
+                topology.gates[0].visibility[0].artifact_paths,
+                ["fixtures/gerbil/command-adapter.ss"]
+            );
+        }
+        other => panic!("expected release topology artifact, got {other:?}"),
     }
 }
 

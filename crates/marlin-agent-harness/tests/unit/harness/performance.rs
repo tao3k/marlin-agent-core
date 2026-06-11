@@ -2,6 +2,7 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     fs,
     path::{Path, PathBuf},
+    time::{Duration, Instant},
 };
 
 use marlin_agent_protocol::PERFORMANCE_EVIDENCE_KEYS;
@@ -11,22 +12,95 @@ use rust_lang_project_harness::{
     plan_rust_project_verification_with_config, render_rust_verification_performance_index,
 };
 
+const WORKSPACE_PERFORMANCE_COVERAGE_BUDGET: Duration = Duration::from_secs(10);
+
 #[test]
 fn rust_project_harness_performance_verification_covers_workspace_crates() {
     let crates = workspace_crates();
+    let expected_crate_count = crates.len();
 
     assert!(
-        crates.len() >= 20,
+        expected_crate_count >= 20,
         "workspace performance coverage expected at least 20 crates, got {}",
-        crates.len(),
+        expected_crate_count,
     );
 
+    let started_at = Instant::now();
+    let mut records = Vec::new();
+
     for crate_dir in crates {
-        assert_performance_index_for_crate(&crate_dir);
+        records.push(assert_performance_index_for_crate(&crate_dir));
+    }
+
+    let report = PerformanceCoverageReport::new(records, started_at.elapsed());
+
+    assert!(
+        report.total_duration <= WORKSPACE_PERFORMANCE_COVERAGE_BUDGET,
+        "workspace performance coverage exceeded budget: {}",
+        report.render_slowest(5),
+    );
+    assert_eq!(report.crate_count(), expected_crate_count);
+    assert!(
+        report.slowest_crates(3).len() == 3,
+        "workspace performance coverage should retain slowest crate evidence",
+    );
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct PerformanceCoverageRecord {
+    crate_name: String,
+    duration: Duration,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct PerformanceCoverageReport {
+    records: Vec<PerformanceCoverageRecord>,
+    total_duration: Duration,
+}
+
+impl PerformanceCoverageReport {
+    fn new(records: Vec<PerformanceCoverageRecord>, total_duration: Duration) -> Self {
+        Self {
+            records,
+            total_duration,
+        }
+    }
+
+    fn crate_count(&self) -> usize {
+        self.records.len()
+    }
+
+    fn slowest_crates(&self, limit: usize) -> Vec<&PerformanceCoverageRecord> {
+        let mut records = self.records.iter().collect::<Vec<_>>();
+        records.sort_by(|left, right| {
+            right
+                .duration
+                .cmp(&left.duration)
+                .then_with(|| left.crate_name.cmp(&right.crate_name))
+        });
+        records.truncate(limit);
+        records
+    }
+
+    fn render_slowest(&self, limit: usize) -> String {
+        let slowest = self
+            .slowest_crates(limit)
+            .into_iter()
+            .map(|record| format!("{}={}ms", record.crate_name, record.duration.as_millis()))
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        format!(
+            "total={}ms crate_count={} slowest=[{}]",
+            self.total_duration.as_millis(),
+            self.crate_count(),
+            slowest,
+        )
     }
 }
 
-fn assert_performance_index_for_crate(crate_dir: &Path) {
+fn assert_performance_index_for_crate(crate_dir: &Path) -> PerformanceCoverageRecord {
+    let started_at = Instant::now();
     let owner_path = PathBuf::from("src/lib.rs");
     let crate_name = crate_dir
         .file_name()
@@ -88,6 +162,11 @@ fn assert_performance_index_for_crate(crate_dir: &Path) {
         rendered.contains("[perf-state]"),
         "{crate_name} rendered performance index should expose state",
     );
+
+    PerformanceCoverageRecord {
+        crate_name: crate_name.to_owned(),
+        duration: started_at.elapsed(),
+    }
 }
 
 fn workspace_crates() -> Vec<PathBuf> {

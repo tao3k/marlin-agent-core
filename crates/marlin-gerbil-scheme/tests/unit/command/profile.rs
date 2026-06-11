@@ -115,7 +115,7 @@ fn command_compiler_can_be_built_from_profile() {
 #[test]
 fn command_compiler_can_be_built_from_profile_json() {
     let profile = GerbilCommandProfile::new("/bin/sh").arg("-c").arg(
-        "printf '%s\n' '{\"artifact\":{\"LoopGraph\":{\"graph_id\":\"from-profile-json\",\"nodes\":[],\"edges\":[]}}}'",
+        "cat >/dev/null; printf '%s\n' '{\"artifact\":{\"LoopGraph\":{\"graph_id\":\"from-profile-json\",\"nodes\":[],\"edges\":[]}}}'",
     );
     let profile_json = serde_json::to_string(&profile).expect("profile should encode as json");
     let compiler =

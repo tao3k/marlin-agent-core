@@ -1,5 +1,6 @@
 use marlin_gerbil_ir::{
-    ReleaseGateSpec, ReleaseTopologySpec, WorkspacePatchIntentSpec, WorkspaceViewPolicySpec,
+    ReleaseGateSpec, ReleaseTopologySpec, ReleaseVisibilitySpec, WorkspacePatchIntentSpec,
+    WorkspaceViewPolicySpec,
 };
 use marlin_org_model::{OrgNodeId, TodoState};
 use marlin_workspace_patch::{WorkspacePatch, WorkspacePatchOp};
@@ -72,6 +73,11 @@ fn gerbil_release_topology_carries_package_gates_and_dependency_chains() {
             command: "cargo package -p marlin-gerbil-scheme --list --allow-dirty".to_string(),
             requires_local_gerbil: false,
             required_artifacts: vec!["fixtures/gerbil/marlin/protocol.ss".to_string()],
+            visibility: vec![ReleaseVisibilitySpec {
+                report_key: "package_asset_audit".to_string(),
+                evidence_keys: vec!["required_artifacts".to_string()],
+                artifact_paths: vec!["fixtures/gerbil/marlin/protocol.ss".to_string()],
+            }],
         }],
     };
 
@@ -91,4 +97,18 @@ fn gerbil_release_topology_carries_package_gates_and_dependency_chains() {
     );
     assert_eq!(topology.gates[0].gate_id, "package-assets");
     assert!(!topology.gates[0].requires_local_gerbil);
+    assert_eq!(
+        topology.gates[0].visibility[0].report_key,
+        "package_asset_audit"
+    );
+    assert!(
+        topology.gates[0].visibility[0]
+            .evidence_keys
+            .iter()
+            .any(|key| key == "required_artifacts")
+    );
+    assert_eq!(
+        topology.gates[0].visibility[0].artifact_paths,
+        topology.gates[0].required_artifacts
+    );
 }

@@ -8,6 +8,7 @@ package: marlin
         marlin-workspace-schema-artifact-kind
         marlin-workspace-patch-intent-artifact-kind
         marlin-agent-scenario-contract-artifact-kind
+        marlin-release-topology-artifact-kind
         marlin-supported-artifact-kinds
         marlin-supported-artifact-kind?
         ensure-marlin-supported-artifact-kind
@@ -51,6 +52,20 @@ package: marlin
         marlin-agent-scenario-step-input
         marlin-agent-scenario-step-expected-event-topics
         marlin-agent-scenario-step-expected-span-names
+        make-marlin-release-topology
+        marlin-release-topology-id
+        marlin-release-topology-crate-name
+        marlin-release-topology-publish-enabled
+        marlin-release-topology-asset-audit-command
+        marlin-release-topology-package-assets
+        marlin-release-topology-runtime-dependency-chain
+        marlin-release-topology-workflow-dependency-chain
+        marlin-release-topology-gates
+        make-marlin-release-gate
+        marlin-release-gate-id
+        marlin-release-gate-command
+        marlin-release-gate-requires-local-gerbil
+        marlin-release-gate-required-artifacts
         display-gerbil-artifact-response
         display-gerbil-compile-response)
 
@@ -58,13 +73,15 @@ package: marlin
 (def marlin-workspace-schema-artifact-kind "WorkspaceSchema")
 (def marlin-workspace-patch-intent-artifact-kind "WorkspacePatchIntent")
 (def marlin-agent-scenario-contract-artifact-kind "AgentScenarioContract")
+(def marlin-release-topology-artifact-kind "ReleaseTopology")
 (def marlin-agent-scenario-contract-schema-id-value "marlin.agent.scenario.v1")
 
 (def marlin-supported-artifact-kinds
   (list marlin-loop-graph-artifact-kind
         marlin-workspace-schema-artifact-kind
         marlin-workspace-patch-intent-artifact-kind
-        marlin-agent-scenario-contract-artifact-kind))
+        marlin-agent-scenario-contract-artifact-kind
+        marlin-release-topology-artifact-kind))
 
 (def (marlin-supported-artifact-kind? expected)
   (if (member expected marlin-supported-artifact-kinds) #t #f))
@@ -197,6 +214,65 @@ package: marlin
 
 (def (marlin-agent-scenario-step-expected-span-names step)
   (cadddr step))
+
+(def (make-marlin-release-topology topology-id
+                                  crate-name
+                                  publish-enabled
+                                  asset-audit-command
+                                  package-assets
+                                  runtime-dependency-chain
+                                  workflow-dependency-chain
+                                  gates)
+  (list topology-id
+        crate-name
+        publish-enabled
+        asset-audit-command
+        package-assets
+        runtime-dependency-chain
+        workflow-dependency-chain
+        gates))
+
+(def (marlin-release-topology-id topology)
+  (list-ref topology 0))
+
+(def (marlin-release-topology-crate-name topology)
+  (list-ref topology 1))
+
+(def (marlin-release-topology-publish-enabled topology)
+  (list-ref topology 2))
+
+(def (marlin-release-topology-asset-audit-command topology)
+  (list-ref topology 3))
+
+(def (marlin-release-topology-package-assets topology)
+  (list-ref topology 4))
+
+(def (marlin-release-topology-runtime-dependency-chain topology)
+  (list-ref topology 5))
+
+(def (marlin-release-topology-workflow-dependency-chain topology)
+  (list-ref topology 6))
+
+(def (marlin-release-topology-gates topology)
+  (list-ref topology 7))
+
+(def (make-marlin-release-gate gate-id
+                               command
+                               requires-local-gerbil
+                               required-artifacts)
+  (list gate-id command requires-local-gerbil required-artifacts))
+
+(def (marlin-release-gate-id gate)
+  (list-ref gate 0))
+
+(def (marlin-release-gate-command gate)
+  (list-ref gate 1))
+
+(def (marlin-release-gate-requires-local-gerbil gate)
+  (list-ref gate 2))
+
+(def (marlin-release-gate-required-artifacts gate)
+  (list-ref gate 3))
 
 (def (display-json-string value)
   (display "\"")
@@ -413,6 +489,47 @@ package: marlin
   (display-json-agent-scenario (marlin-agent-scenario-contract-scenario contract))
   (display "}"))
 
+(def (display-json-release-gates gates)
+  (display "[")
+  (let loop ((remaining gates) (first #t))
+    (if (null? remaining)
+      #t
+      (begin
+        (if first #f (display ","))
+        (let ((gate (car remaining)))
+          (display "{\"gate_id\":")
+          (display-json-string (marlin-release-gate-id gate))
+          (display ",\"command\":")
+          (display-json-string (marlin-release-gate-command gate))
+          (display ",\"requires_local_gerbil\":")
+          (display-json-boolean (marlin-release-gate-requires-local-gerbil gate))
+          (display ",\"required_artifacts\":")
+          (display-json-string-list (marlin-release-gate-required-artifacts gate))
+          (display "}"))
+        (loop (cdr remaining) #f))))
+  (display "]"))
+
+(def (display-json-release-topology topology)
+  (display "{\"topology_id\":")
+  (display-json-string (marlin-release-topology-id topology))
+  (display ",\"crate_name\":")
+  (display-json-string (marlin-release-topology-crate-name topology))
+  (display ",\"publish_enabled\":")
+  (display-json-boolean (marlin-release-topology-publish-enabled topology))
+  (display ",\"asset_audit_command\":")
+  (display-json-string (marlin-release-topology-asset-audit-command topology))
+  (display ",\"package_assets\":")
+  (display-json-string-list (marlin-release-topology-package-assets topology))
+  (display ",\"runtime_dependency_chain\":")
+  (display-json-string-list
+   (marlin-release-topology-runtime-dependency-chain topology))
+  (display ",\"workflow_dependency_chain\":")
+  (display-json-string-list
+   (marlin-release-topology-workflow-dependency-chain topology))
+  (display ",\"gates\":")
+  (display-json-release-gates (marlin-release-topology-gates topology))
+  (display "}"))
+
 (def (display-gerbil-artifact-response artifact-kind artifact)
   (display "{\"artifact\":{")
   (display-json-string artifact-kind)
@@ -426,6 +543,8 @@ package: marlin
      (display-json-workspace-patch-intent artifact))
     ((equal? artifact-kind marlin-agent-scenario-contract-artifact-kind)
      (display-json-agent-scenario-contract artifact))
+    ((equal? artifact-kind marlin-release-topology-artifact-kind)
+     (display-json-release-topology artifact))
     (else (error "marlin gerbil protocol cannot serialize artifact kind" artifact-kind)))
   (display "}}"))
 

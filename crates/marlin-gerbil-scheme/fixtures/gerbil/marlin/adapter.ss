@@ -13,7 +13,9 @@ package: marlin
         (list marlin-workspace-patch-intent-artifact-kind
               compile-workspace-patch-intent)
         (list marlin-agent-scenario-contract-artifact-kind
-              compile-agent-scenario-contract)))
+              compile-agent-scenario-contract)
+        (list marlin-release-topology-artifact-kind
+              compile-release-topology)))
 
 (def (marlin-artifact-compiler-kind entry)
   (car entry))
