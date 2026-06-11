@@ -6,7 +6,7 @@ use marlin_agent_protocol::{
     HookEventName, HookExecutionMode, HookHandlerType, HookRunStatus, HookRunSummary, HookScope,
     HookSource, HookSourcePath, HookTrustStatus,
 };
-use marlin_agent_runtime::{HookRuntime, RuntimeContext, TokioAgentRuntime};
+use marlin_agent_runtime::{HookRuntime, RuntimeContext, TokioAgentRuntime, observability};
 use tracing::Instrument;
 
 /// Runtime shape accepted by hook registrations.
@@ -203,11 +203,8 @@ impl HookDispatcher {
         invocation: HookInvocation,
     ) -> HookDispatchReport {
         let registrations = self.registry.matching(&invocation.event_name);
-        let dispatch_span = tracing::info_span!(
-            "hook.dispatch",
-            hook_event = ?invocation.event_name,
-            hook_count = registrations.len()
-        );
+        let dispatch_span =
+            observability::hook_dispatch_span(&invocation.event_name, registrations.len());
 
         async move {
             let mut runs = Vec::new();
@@ -289,12 +286,11 @@ fn apply_registration_metadata(
 }
 
 fn hook_run_span(registration: &HookRegistration) -> tracing::Span {
-    tracing::info_span!(
-        "hook.run",
-        hook_id = %registration.id,
-        hook_event = ?registration.event_name,
-        hook_mode = ?registration.execution_mode,
-        hook_handler = ?registration.handler_type
+    observability::hook_run_span(
+        observability::HookRegistrationId::borrowed(&registration.id),
+        &registration.event_name,
+        &registration.execution_mode,
+        &registration.handler_type,
     )
 }
 

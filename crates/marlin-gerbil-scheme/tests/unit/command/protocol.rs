@@ -1,7 +1,7 @@
 use super::support::loop_graph_artifact;
 use marlin_gerbil_scheme::{
-    GerbilArtifactKind, GerbilCompileRequest, GerbilCompileResponse, GerbilSource,
-    GerbilWorkspaceContractFacts,
+    GerbilArtifactKind, GerbilCompileRequest, GerbilCompileResponse, GerbilCompiledArtifact,
+    GerbilSource, GerbilWorkspaceContractFacts,
 };
 use marlin_org_model::{
     OrgContractRegistry, OrgContractResolutionReport, OrgContractValidationReport,
@@ -36,4 +36,26 @@ fn command_response_carries_typed_artifact() {
     };
 
     assert_eq!(response.artifact.kind(), GerbilArtifactKind::LoopGraph);
+}
+
+#[test]
+fn command_response_decodes_workspace_schema_and_ensures_kind() {
+    let response: GerbilCompileResponse = serde_json::from_str(
+        r#"{"artifact":{"WorkspaceSchema":{"schema_id":"workspace-record","required_properties":["ID","TITLE"],"todo_states":["TODO","DONE"]}}}"#,
+    )
+    .expect("workspace schema response should decode");
+
+    let artifact = response
+        .artifact
+        .ensure_kind(GerbilArtifactKind::WorkspaceSchema)
+        .expect("workspace schema response should match requested kind");
+
+    match artifact {
+        GerbilCompiledArtifact::WorkspaceSchema(schema) => {
+            assert_eq!(schema.schema_id, "workspace-record");
+            assert_eq!(schema.required_properties, ["ID", "TITLE"]);
+            assert_eq!(schema.todo_states, ["TODO", "DONE"]);
+        }
+        other => panic!("expected workspace schema artifact, got {other:?}"),
+    }
 }

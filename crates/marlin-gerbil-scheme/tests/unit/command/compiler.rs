@@ -1,4 +1,4 @@
-use super::support::loop_graph_artifact;
+use super::support::{assert_workspace_schema_artifact, loop_graph_artifact};
 use marlin_gerbil_scheme::{
     GerbilArtifactKind, GerbilCommandCompiler, GerbilCommandSpec, GerbilCompiler, GerbilSource,
 };
@@ -18,6 +18,26 @@ fn command_compiler_reads_typed_artifact_from_stdout() {
         .expect("command output should decode to requested artifact kind");
 
     assert_eq!(artifact, loop_graph_artifact("from-command"));
+}
+
+#[test]
+fn command_compiler_reads_workspace_schema_from_stdout() {
+    let command = GerbilCommandSpec::new("/bin/sh").arg("-c").arg(
+        "printf '%s\n' '{\"artifact\":{\"WorkspaceSchema\":{\"schema_id\":\"workspace-record\",\"required_properties\":[\"ID\",\"TITLE\"],\"todo_states\":[\"TODO\",\"DONE\"]}}}'",
+    );
+    let compiler = GerbilCommandCompiler::new(command);
+
+    let artifact = compiler
+        .compile(
+            GerbilSource::new(
+                "audit/workspace-schema",
+                "(workspace-schema workspace-record)",
+            ),
+            GerbilArtifactKind::WorkspaceSchema,
+        )
+        .expect("command output should decode to requested workspace schema artifact kind");
+
+    assert_workspace_schema_artifact(artifact);
 }
 
 #[test]

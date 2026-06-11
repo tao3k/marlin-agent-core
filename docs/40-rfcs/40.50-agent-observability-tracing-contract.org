@@ -81,4 +81,4 @@ Provider, tool, and model implementation crates may add child spans later, but t
 
 ** Implementation Status
 
-The initial implementation adds =tracing= as a workspace dependency and instruments runtime, kernel adapter, and hook dispatcher boundaries. It deliberately avoids =tracing-subscriber= and OpenTelemetry as normal dependencies.
+The initial implementation adds =tracing= as a workspace dependency and instruments runtime, kernel adapter, and hook dispatcher boundaries. It also provides a harness-local =TraceRecorder= so scenario tests can capture span names and fields without adopting =tracing-subscriber= or OpenTelemetry as normal dependencies.

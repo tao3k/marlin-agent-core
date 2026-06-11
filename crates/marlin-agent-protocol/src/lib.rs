@@ -8,7 +8,7 @@ mod runtime_environment;
 mod scenario;
 mod sub_agent;
 
-pub use event::AgentEvent;
+pub use event::{AgentEvent, AgentEventTopic};
 pub use evidence::{LoopEvidence, LoopEvidenceKind};
 pub use graph::{
     ExecutorName, GraphId, GraphLoopExecutionRequest, GraphLoopExecutionResult,

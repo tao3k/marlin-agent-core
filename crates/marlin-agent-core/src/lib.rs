@@ -21,11 +21,11 @@ pub use marlin_agent_kernel::{
 };
 pub use marlin_agent_protocol as protocol;
 pub use marlin_agent_protocol::{
-    HookDurationMs, HookEventName, HookExecutionMode, HookHandlerType, HookOutputEntry,
-    HookOutputEntryKind, HookRunId, HookRunStatus, HookRunSummary, HookScope, HookSource,
-    HookSourcePath, HookTimestampMs, HookTrustStatus, RuntimeConfigLayer, RuntimeConfigLayerSource,
-    RuntimeHome, RuntimeHomeSource, RuntimeSandboxPolicy, SubAgentActivity, SubAgentActivityKind,
-    SubAgentSource,
+    AgentEventTopic, HookDurationMs, HookEventName, HookExecutionMode, HookHandlerType,
+    HookOutputEntry, HookOutputEntryKind, HookRunId, HookRunStatus, HookRunSummary, HookScope,
+    HookSource, HookSourcePath, HookTimestampMs, HookTrustStatus, RuntimeConfigLayer,
+    RuntimeConfigLayerSource, RuntimeHome, RuntimeHomeSource, RuntimeSandboxPolicy,
+    SubAgentActivity, SubAgentActivityKind, SubAgentSource,
 };
 pub use marlin_agent_runtime as runtime;
 pub use marlin_agent_runtime::observability;

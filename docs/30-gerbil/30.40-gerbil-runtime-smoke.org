@@ -90,7 +90,7 @@ emitting JSON:
 - =fixtures/gerbil/marlin/parser.ss= owns the Gerbil reader-backed smoke DSL
   source-to-=LoopGraph= and source-to-=WorkspaceSchema= parsers.
 - =fixtures/gerbil/marlin/adapter.ss= imports the request/parser/protocol
-  modules and owns compile dispatch plus response emission.
+  modules and owns the artifact compiler table plus response emission.
 - =fixtures/gerbil/fixed-loop-graph-adapter.ss= is a thin launcher that imports
   =:marlin/adapter=.
 

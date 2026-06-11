@@ -13,7 +13,7 @@ use marlin_agent_protocol::{
     RuntimePlanSnapshot,
 };
 use marlin_agent_runtime::{
-    RuntimeContext, RuntimeEvent, RuntimeFuture, RuntimeTask, TokioAgentRuntime,
+    RuntimeContext, RuntimeEvent, RuntimeFuture, RuntimeTask, TokioAgentRuntime, observability,
 };
 
 type KernelFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
@@ -75,8 +75,7 @@ impl TokioGraphLoopKernel {
         self.store_snapshot(&run_id, &graph_id, None);
         emit(
             &context,
-            "kernel.execution",
-            format!("run {run_id} started graph {graph_id}"),
+            observability::kernel_execution_event(format!("run {run_id} started graph {graph_id}")),
         )
         .await;
 
@@ -113,8 +112,9 @@ impl TokioGraphLoopKernel {
                 self.store_snapshot(run_id, graph_id, None);
                 emit(
                     &context,
-                    "kernel.execution",
-                    format!("run {run_id} completed graph {graph_id}"),
+                    observability::kernel_execution_event(format!(
+                        "run {run_id} completed graph {graph_id}"
+                    )),
                 )
                 .await;
                 return GraphLoopExecutionResult::completed(self.snapshot(), visited_nodes);
@@ -130,8 +130,10 @@ impl TokioGraphLoopKernel {
             self.store_snapshot(run_id, graph_id, Some(node.id.clone()));
             emit(
                 &context,
-                "kernel.node",
-                format!("node {} started executor {}", node.id, node.executor),
+                observability::kernel_node_event(format!(
+                    "node {} started executor {}",
+                    node.id, node.executor
+                )),
             )
             .await;
 
@@ -158,12 +160,11 @@ impl TokioGraphLoopKernel {
                 GraphNodeExecutionStatus::Completed => {
                     emit(
                         &context,
-                        "kernel.node",
-                        format!(
+                        observability::kernel_node_event(format!(
                             "node {} completed executor {}",
                             receipt.node_id.as_str(),
                             receipt.executor.as_str()
-                        ),
+                        )),
                     )
                     .await;
                     let mut next_visited = visited_nodes;
@@ -202,8 +203,9 @@ impl TokioGraphLoopKernel {
         self.store_snapshot(run_id, graph_id, None);
         emit(
             context,
-            "kernel.execution",
-            format!("run {run_id} cancelled graph {graph_id}"),
+            observability::kernel_execution_event(format!(
+                "run {run_id} cancelled graph {graph_id}"
+            )),
         )
         .await;
         GraphLoopExecutionResult::cancelled(self.snapshot(), visited_nodes)
@@ -220,8 +222,7 @@ impl TokioGraphLoopKernel {
         self.store_snapshot(run_id, graph_id, None);
         emit(
             context,
-            "kernel.execution",
-            format!("run {run_id} failed graph {graph_id}"),
+            observability::kernel_execution_event(format!("run {run_id} failed graph {graph_id}")),
         )
         .await;
         GraphLoopExecutionResult::failed_with_visited(self.snapshot(), visited_nodes, diagnostics)
@@ -266,8 +267,8 @@ impl GraphLoopKernel for TokioGraphLoopKernel {
     }
 }
 
-async fn emit(context: &RuntimeContext, topic: impl Into<String>, message: impl Into<String>) {
-    let _ = context.emit(RuntimeEvent::new(topic, message)).await;
+async fn emit(context: &RuntimeContext, event: RuntimeEvent) {
+    let _ = context.emit(event).await;
 }
 
 fn resolve_graph_plan<'a>(

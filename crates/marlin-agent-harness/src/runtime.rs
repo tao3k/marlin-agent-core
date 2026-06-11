@@ -11,7 +11,7 @@ use marlin_agent_runtime::{
 use std::time::Duration;
 use tokio_stream::StreamExt;
 
-use crate::{HarnessAssertionError, assert_evidence_kinds};
+use crate::{HarnessAssertionError, TraceRecorder, TraceSpanRecord, assert_evidence_kinds};
 
 /// Controlled runtime plus typed evidence captured for one harness scenario.
 #[derive(Debug)]
@@ -86,6 +86,9 @@ impl HarnessRuntime {
     where
         K: GraphLoopKernel,
     {
+        let span_recorder = TraceRecorder::new();
+        let _span_guard = span_recorder.install();
+        let _harness_span = tracing::info_span!("harness.execute_graph");
         let task = kernel.spawn_execution(request, &self.runtime);
         let result = match task.join().await {
             Ok(result) => result,
@@ -100,11 +103,18 @@ impl HarnessRuntime {
         };
         let assertion = self.assert_scenario_evidence(scenario).err();
         let events = self.drain_ready_events().await;
+        let trace_spans = span_recorder.spans();
+        let span_names = trace_spans
+            .iter()
+            .map(|span| HarnessSpanName::new(span.name))
+            .collect();
         HarnessExecutionReport {
             scenario_id: scenario.id.clone(),
             result,
             events,
             evidence: self.evidence.clone(),
+            trace_spans,
+            span_names,
             assertion,
         }
     }
@@ -131,5 +141,23 @@ pub struct HarnessExecutionReport {
     pub result: GraphLoopExecutionResult,
     pub events: Vec<AgentEvent>,
     pub evidence: Vec<LoopEvidence>,
+    pub trace_spans: Vec<TraceSpanRecord>,
+    pub span_names: Vec<HarnessSpanName>,
     pub assertion: Option<HarnessAssertionError>,
+}
+
+/// Harness-owned tracing span name captured during one execution report.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct HarnessSpanName(String);
+
+impl HarnessSpanName {
+    /// Creates a harness-owned span-name fact.
+    pub fn new(value: impl Into<String>) -> Self {
+        Self(value.into())
+    }
+
+    /// Returns the captured span name.
+    pub fn as_str(&self) -> &str {
+        self.0.as_str()
+    }
 }

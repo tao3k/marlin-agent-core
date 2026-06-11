@@ -1,10 +1,10 @@
 use std::path::PathBuf;
 
 use marlin_agent_protocol::{
-    AgentScenario, AgentScenarioStep, HookEventName, HookHandlerType, HookOutputEntry,
-    HookOutputEntryKind, HookRunStatus, HookRunSummary, LoopEvidence, LoopEvidenceKind,
-    RuntimeConfigLayer, RuntimeConfigLayerSource, RuntimeEnvironment, RuntimeHome,
-    RuntimeHomeSource, RuntimeSandboxPolicy, SubAgentActivity, SubAgentActivityKind,
+    AgentEvent, AgentEventTopic, AgentScenario, AgentScenarioStep, HookEventName, HookHandlerType,
+    HookOutputEntry, HookOutputEntryKind, HookRunStatus, HookRunSummary, LoopEvidence,
+    LoopEvidenceKind, RuntimeConfigLayer, RuntimeConfigLayerSource, RuntimeEnvironment,
+    RuntimeHome, RuntimeHomeSource, RuntimeSandboxPolicy, SubAgentActivity, SubAgentActivityKind,
     SubAgentSource,
 };
 
@@ -22,6 +22,20 @@ fn scenario_records_expected_evidence_and_steps() {
     assert_eq!(scenario.id, "content-loop");
     assert_eq!(scenario.steps[0].input["path"], "LOOP.org");
     assert_eq!(scenario.expected_evidence, vec![LoopEvidenceKind::Content]);
+}
+
+#[test]
+fn agent_event_topic_round_trips_through_events() {
+    let topic = AgentEventTopic::new("kernel.execution");
+    let event = AgentEvent::new(topic.clone(), "started");
+
+    assert_eq!(topic.as_str(), "kernel.execution");
+    assert_eq!(event.topic, "kernel.execution");
+    assert_eq!(event.topic_id(), topic);
+    assert_eq!(
+        AgentEvent::new("kernel.node", "started").topic_id(),
+        AgentEventTopic::new("kernel.node")
+    );
 }
 
 #[test]

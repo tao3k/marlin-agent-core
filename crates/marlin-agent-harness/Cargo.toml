@@ -10,6 +10,7 @@ marlin-agent-kernel.workspace = true
 marlin-agent-protocol.workspace = true
 marlin-agent-runtime.workspace = true
 tokio-stream.workspace = true
+tracing.workspace = true
 
 [build-dependencies]
 rust-lang-project-harness.workspace = true

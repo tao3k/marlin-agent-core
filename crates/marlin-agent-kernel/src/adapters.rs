@@ -8,7 +8,7 @@ use marlin_agent_protocol::{
     SubAgentActivity, SubAgentActivityKind, SubAgentSource,
 };
 use marlin_agent_runtime::{
-    ProviderRuntime, RuntimeContext, RuntimeEvent, RuntimeFuture, SubAgentRuntime, ToolRuntime,
+    ProviderRuntime, RuntimeContext, RuntimeFuture, SubAgentRuntime, ToolRuntime, observability,
 };
 use tracing::Instrument;
 
@@ -94,12 +94,7 @@ where
         let node_id = invocation.node_id;
         let executor = invocation.executor;
         let hook_message = format!("node {} executor {}", node_id.as_str(), executor.as_str());
-        let span = tracing::info_span!(
-            "agent.provider",
-            node_kind = "provider",
-            node_id = %node_id.as_str(),
-            executor = %executor.as_str()
-        );
+        let span = observability::agent_provider_span(&node_id, &executor);
 
         Box::pin(
             async move {
@@ -195,12 +190,7 @@ where
         let node_id = invocation.node_id;
         let executor = invocation.executor;
         let hook_message = format!("node {} executor {}", node_id.as_str(), executor.as_str());
-        let span = tracing::info_span!(
-            "agent.tool",
-            node_kind = "tool",
-            node_id = %node_id.as_str(),
-            executor = %executor.as_str()
-        );
+        let span = observability::agent_tool_span(&node_id, &executor);
 
         Box::pin(
             async move {
@@ -303,12 +293,7 @@ where
         let activity_status = format!("node {}", node_id.as_str());
         let agent_reference = executor.as_str().to_owned();
         let sub_agent_source = SubAgentSource::Other("kernel.sub-agent-node".to_owned());
-        let span = tracing::info_span!(
-            "agent.sub_agent",
-            node_kind = "sub_agent",
-            node_id = %node_id.as_str(),
-            executor = %executor.as_str()
-        );
+        let span = observability::agent_sub_agent_span(&node_id, &executor);
 
         Box::pin(
             async move {
@@ -378,7 +363,7 @@ async fn emit_hook_report(context: &RuntimeContext, report: &HookDispatchReport)
             run.status
         );
         let _ = context
-            .emit(RuntimeEvent::new("kernel.hook", message))
+            .emit(observability::kernel_hook_event(message))
             .await;
     }
 }
@@ -392,6 +377,6 @@ async fn emit_sub_agent_activity(context: &RuntimeContext, activity: SubAgentAct
         activity.status_message.as_deref().unwrap_or_default()
     );
     let _ = context
-        .emit(RuntimeEvent::new("kernel.sub_agent", message))
+        .emit(observability::kernel_sub_agent_event(message))
         .await;
 }

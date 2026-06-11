@@ -3,10 +3,10 @@ use std::sync::{
     atomic::{AtomicU64, Ordering},
 };
 
-use marlin_agent_protocol::{RuntimeHome, RuntimeSandboxPolicy};
+use marlin_agent_protocol::{ExecutorName, NodeId, RuntimeHome, RuntimeSandboxPolicy};
 use marlin_agent_runtime::{
     CancellationToken, HookRuntime, ProviderRuntime, RuntimeContext, RuntimeEnvironment,
-    RuntimeEvent, RuntimeFuture, SubAgentRuntime, TokioAgentRuntime,
+    RuntimeFuture, SubAgentRuntime, TokioAgentRuntime, observability,
 };
 use tokio_stream::StreamExt;
 use tracing::{
@@ -20,7 +20,10 @@ async fn runtime_emits_protocol_owned_events() {
 
     runtime
         .context()
-        .emit(RuntimeEvent::new("runtime.test", "observed"))
+        .emit(observability::runtime_event(
+            "runtime.test".into(),
+            "observed",
+        ))
         .await
         .expect("event sink should be open");
 
@@ -106,9 +109,59 @@ async fn runtime_provider_spawn_creates_tracing_span() {
 
     assert_eq!(output, "hello");
     assert!(
-        subscriber.span_names().contains(&"runtime.provider"),
+        subscriber
+            .span_names()
+            .contains(&observability::SPAN_RUNTIME_PROVIDER),
         "provider runtime span should be recorded"
     );
+}
+
+#[test]
+fn observability_contract_names_kernel_hook_and_agent_surfaces() {
+    let hook_event = observability::kernel_hook_event("hook observed");
+    let sub_agent_event = observability::kernel_sub_agent_event("sub-agent observed");
+
+    assert_eq!(hook_event.topic, observability::TOPIC_KERNEL_HOOK);
+    assert_eq!(sub_agent_event.topic, observability::TOPIC_KERNEL_SUB_AGENT);
+    assert_eq!(observability::FIELD_NODE_KIND, "node_kind");
+    assert_eq!(observability::FIELD_HOOK_EVENT, "hook_event");
+
+    let subscriber = RecordingSubscriber::new();
+    let _guard = tracing::subscriber::set_default(subscriber.clone());
+
+    let provider_node_id = NodeId::new("plan");
+    let provider_executor = ExecutorName::new("provider");
+    let tool_node_id = NodeId::new("apply");
+    let tool_executor = ExecutorName::new("tool");
+    let sub_agent_node_id = NodeId::new("review");
+    let sub_agent_executor = ExecutorName::new("sub-agent");
+
+    drop(observability::agent_provider_span(
+        &provider_node_id,
+        &provider_executor,
+    ));
+    drop(observability::agent_tool_span(
+        &tool_node_id,
+        &tool_executor,
+    ));
+    drop(observability::agent_sub_agent_span(
+        &sub_agent_node_id,
+        &sub_agent_executor,
+    ));
+    drop(observability::hook_dispatch_span("PreToolUse", 1));
+    drop(observability::hook_run_span(
+        observability::HookRegistrationId::borrowed("pre-tool"),
+        "PreToolUse",
+        "Sync",
+        "Command",
+    ));
+
+    let span_names = subscriber.span_names();
+    assert!(span_names.contains(&observability::SPAN_AGENT_PROVIDER));
+    assert!(span_names.contains(&observability::SPAN_AGENT_TOOL));
+    assert!(span_names.contains(&observability::SPAN_AGENT_SUB_AGENT));
+    assert!(span_names.contains(&observability::SPAN_HOOK_DISPATCH));
+    assert!(span_names.contains(&observability::SPAN_HOOK_RUN));
 }
 
 #[derive(Clone, Debug)]
