@@ -2,6 +2,9 @@
 
 use marlin_agent_protocol::{LoopEvidence, LoopEvidenceKind};
 use marlin_gerbil_ir::ReleaseTopologySpec;
+use marlin_org_model::{
+    OrgContractDiagnostic, OrgContractResolution, OrgContractTemplate, OrgContractValidationReport,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
@@ -77,6 +80,14 @@ pub struct ContractStatus {
     pub validation_passed: usize,
     pub validation_failed: usize,
     pub validation_skipped: usize,
+    #[serde(default)]
+    pub reference_resolutions: Vec<OrgContractResolution>,
+    #[serde(default)]
+    pub diagnostic_records: Vec<OrgContractDiagnostic>,
+    #[serde(default)]
+    pub template_records: Vec<OrgContractTemplate>,
+    #[serde(default)]
+    pub validation_report: OrgContractValidationReport,
     pub rendered_summary: Vec<String>,
 }
 
@@ -214,6 +225,141 @@ impl ReleaseStatus {
             &self.visibility_reports,
             &failed_gates,
         );
+    }
+
+    /// Build a compact landing report for humans and thin CLI/query facades.
+    pub fn landing_report(&self) -> ReleaseLandingReport {
+        ReleaseLandingReport::from_status(self)
+    }
+}
+
+/// Compact, query-friendly release landing summary.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct ReleaseLandingReport {
+    /// Stable release topology identifier.
+    pub topology_id: String,
+    /// Crate or artifact family covered by this report.
+    pub crate_name: String,
+    /// Whether publishing is enabled for this topology.
+    pub publish_enabled: bool,
+    /// True when all gates passed and all visibility reports were observed.
+    pub landing_complete: bool,
+    /// Number of release gates in the topology.
+    pub gate_count: usize,
+    /// Number of gates with a passing receipt.
+    pub passed_gates: usize,
+    /// Number of gates still pending.
+    pub pending_gates: usize,
+    /// Number of gates waiting for local Gerbil.
+    pub local_gerbil_gates: usize,
+    /// Number of failed gates.
+    pub failed_gates: usize,
+    /// Number of skipped gates.
+    pub skipped_gates: usize,
+    /// Number of expected visibility reports.
+    pub visibility_report_count: usize,
+    /// Number of observed visibility reports.
+    pub observed_visibility_reports: usize,
+    /// Gate identifiers that still block landing completion.
+    pub blocking_gates: Vec<String>,
+    /// Visibility report keys that have not been observed.
+    pub missing_visibility_reports: Vec<String>,
+}
+
+impl ReleaseLandingReport {
+    /// Build a compact landing report from the full release status.
+    pub fn from_status(status: &ReleaseStatus) -> Self {
+        let gates = release_gate_summary(&status.gates);
+        let visibility = release_visibility_summary(&status.visibility_reports);
+
+        Self {
+            topology_id: status.topology_id.clone(),
+            crate_name: status.crate_name.clone(),
+            publish_enabled: status.publish_enabled,
+            landing_complete: gates.blocking_gates.is_empty()
+                && visibility.missing_visibility_reports.is_empty(),
+            gate_count: status.gates.len(),
+            passed_gates: gates.passed,
+            pending_gates: gates.pending,
+            local_gerbil_gates: gates.local_gerbil,
+            failed_gates: gates.failed,
+            skipped_gates: gates.skipped,
+            visibility_report_count: status.visibility_reports.len(),
+            observed_visibility_reports: visibility.observed,
+            blocking_gates: gates.blocking_gates,
+            missing_visibility_reports: visibility.missing_visibility_reports,
+        }
+    }
+}
+
+#[derive(Debug, Default, Eq, PartialEq)]
+struct ReleaseGateSummary {
+    passed: usize,
+    pending: usize,
+    local_gerbil: usize,
+    failed: usize,
+    skipped: usize,
+    blocking_gates: Vec<String>,
+}
+
+#[derive(Debug, Default, Eq, PartialEq)]
+struct ReleaseVisibilitySummary {
+    observed: usize,
+    missing_visibility_reports: Vec<String>,
+}
+
+fn release_gate_summary(gates: &[ReleaseGateStatus]) -> ReleaseGateSummary {
+    let mut summary = ReleaseGateSummary::default();
+
+    for gate in gates {
+        update_release_gate_summary(&mut summary, gate);
+    }
+
+    summary
+}
+
+fn update_release_gate_summary(summary: &mut ReleaseGateSummary, gate: &ReleaseGateStatus) {
+    match gate.state {
+        ReleaseGateState::Passed => summary.passed += 1,
+        ReleaseGateState::Pending => {
+            summary.pending += 1;
+            summary.blocking_gates.push(gate.gate_id.clone());
+        }
+        ReleaseGateState::RequiresLocalGerbil => {
+            summary.local_gerbil += 1;
+            summary.blocking_gates.push(gate.gate_id.clone());
+        }
+        ReleaseGateState::Failed => {
+            summary.failed += 1;
+            summary.blocking_gates.push(gate.gate_id.clone());
+        }
+        ReleaseGateState::Skipped => {
+            summary.skipped += 1;
+            summary.blocking_gates.push(gate.gate_id.clone());
+        }
+    }
+}
+
+fn release_visibility_summary(reports: &[ReleaseVisibilityStatus]) -> ReleaseVisibilitySummary {
+    let mut summary = ReleaseVisibilitySummary::default();
+
+    for report in reports {
+        update_release_visibility_summary(&mut summary, report);
+    }
+
+    summary
+}
+
+fn update_release_visibility_summary(
+    summary: &mut ReleaseVisibilitySummary,
+    report: &ReleaseVisibilityStatus,
+) {
+    if report.observed {
+        summary.observed += 1;
+    } else {
+        summary
+            .missing_visibility_reports
+            .push(format!("{}:{}", report.gate_id, report.report_key));
     }
 }
 

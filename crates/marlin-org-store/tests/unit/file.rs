@@ -189,6 +189,15 @@ fn filesystem_release_status_store_persists_gate_receipts() {
             .artifact_paths,
         ["fixtures/gerbil/build.ss"]
     );
+    let report = reopened
+        .read_landing_report()
+        .expect("landing report readable")
+        .expect("landing report present");
+    assert!(report.landing_complete);
+    assert_eq!(report.crate_name, "marlin-gerbil-scheme");
+    assert_eq!(report.passed_gates, 1);
+    assert_eq!(report.observed_visibility_reports, 1);
+    assert!(report.blocking_gates.is_empty());
     let _ = fs::remove_dir_all(root);
 }
 

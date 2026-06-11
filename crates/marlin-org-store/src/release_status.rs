@@ -6,7 +6,7 @@ use std::{
 };
 
 use marlin_gerbil_ir::ReleaseTopologySpec;
-use marlin_workspace_status::{ReleaseGateReceipt, ReleaseStatus};
+use marlin_workspace_status::{ReleaseGateReceipt, ReleaseLandingReport, ReleaseStatus};
 
 use crate::{OrgSourceStoreError, OrgSourceStoreResult};
 
@@ -39,6 +39,11 @@ impl FileSystemReleaseStatusStore {
     /// Read the persisted release status, if present.
     pub fn read_status(&self) -> OrgSourceStoreResult<Option<ReleaseStatus>> {
         read_status_file(&self.path)
+    }
+
+    /// Read the persisted release status as a compact landing report, if present.
+    pub fn read_landing_report(&self) -> OrgSourceStoreResult<Option<ReleaseLandingReport>> {
+        Ok(self.read_status()?.map(|status| status.landing_report()))
     }
 
     /// Persist a release status snapshot.

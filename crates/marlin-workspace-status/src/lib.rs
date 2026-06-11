@@ -6,6 +6,7 @@ mod target;
 pub use report::{
     ChecklistStatus, ContractStatus, DecisionTrace, EvidenceStatus, GoalState, GoalStatus,
     MetricTrace, PatchExecutionMode, PatchStatus, ReleaseGateReceipt, ReleaseGateState,
-    ReleaseGateStatus, ReleaseStatus, ReleaseVisibilityStatus, SddStatus, WorkspaceStatusReport,
+    ReleaseGateStatus, ReleaseLandingReport, ReleaseStatus, ReleaseVisibilityStatus, SddStatus,
+    WorkspaceStatusReport,
 };
 pub use target::WorkspaceTarget;

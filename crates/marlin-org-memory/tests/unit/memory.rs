@@ -188,6 +188,10 @@ Task `{{ scope.title }}` must contain a Goal section.
     assert_eq!(contracts.templates, 1);
     assert_eq!(contracts.validation_receipts, 1);
     assert_eq!(contracts.validation_failed, 1);
+    assert_eq!(contracts.reference_resolutions.len(), 1);
+    assert_eq!(contracts.diagnostic_records.len(), 0);
+    assert_eq!(contracts.template_records.len(), 1);
+    assert_eq!(contracts.validation_report.receipts.len(), 1);
     assert!(
         contracts
             .rendered_summary

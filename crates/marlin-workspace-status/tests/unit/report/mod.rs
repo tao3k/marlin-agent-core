@@ -127,6 +127,16 @@ fn release_status_records_gate_receipts() {
         "missing-gate",
         vec!["not in topology".to_string()],
     )));
+
+    let report = status.landing_report();
+    assert_eq!(report.topology_id, "release:gerbil");
+    assert_eq!(report.crate_name, "marlin-gerbil-scheme");
+    assert!(report.landing_complete);
+    assert_eq!(report.gate_count, 1);
+    assert_eq!(report.passed_gates, 1);
+    assert_eq!(report.observed_visibility_reports, 1);
+    assert!(report.blocking_gates.is_empty());
+    assert!(report.missing_visibility_reports.is_empty());
 }
 
 #[test]
@@ -172,4 +182,13 @@ fn release_status_marks_visibility_evidence_as_passed_gate() {
         ["fixtures/gerbil/command-adapter.ss"]
     );
     assert!(status.visibility_reports[0].observed);
+
+    let report = status.landing_report();
+    assert!(report.landing_complete);
+    assert_eq!(report.local_gerbil_gates, 0);
+    assert_eq!(report.passed_gates, 1);
+    assert_eq!(report.visibility_report_count, 1);
+    assert_eq!(report.observed_visibility_reports, 1);
+    assert!(report.blocking_gates.is_empty());
+    assert!(report.missing_visibility_reports.is_empty());
 }
