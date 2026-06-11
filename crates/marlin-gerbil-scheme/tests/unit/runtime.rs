@@ -16,11 +16,16 @@ fn gerbil_runtime_assets_expose_loadpath_contract() {
     assert_eq!(MARLIN_GERBIL_GXI_ENV, "MARLIN_GERBIL_GXI");
     assert!(DEFAULT_GERBIL_GXI_PROGRAM.ends_with("/bin/gxi"));
     assert!(GERBIL_BUILD_SOURCE.contains("defmarlin-runtime-build-script"));
-    assert_eq!(assets.len(), 7);
+    assert_eq!(assets.len(), 8);
     assert!(
         assets
             .iter()
             .any(|asset| asset.path == "command-adapter.ss")
+    );
+    assert!(
+        assets
+            .iter()
+            .any(|asset| asset.path == "command-adapter-batch.ss")
     );
     assert!(assets.iter().any(|asset| asset.path == "build.ss"));
     assert!(assets.iter().any(|asset| asset.path == "smoke.ss"));

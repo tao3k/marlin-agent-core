@@ -3,8 +3,8 @@ use super::support::{
     assert_workspace_patch_intent_artifact, assert_workspace_schema_artifact, loop_graph_artifact,
 };
 use marlin_gerbil_scheme::{
-    GerbilArtifactKind, GerbilCommandCompiler, GerbilCommandSpec, GerbilCompiler, GerbilSource,
-    GerbilWorkspaceContractFacts,
+    GerbilArtifactKind, GerbilCommandCompiler, GerbilCommandSpec, GerbilCompileRequest,
+    GerbilCompiler, GerbilSource, GerbilWorkspaceContractFacts,
 };
 use marlin_org_model::{
     OrgContractRegistry, OrgContractResolutionReport, OrgContractValidationReport,
@@ -25,6 +25,36 @@ fn command_compiler_reads_typed_artifact_from_stdout() {
         .expect("command output should decode to requested artifact kind");
 
     assert_eq!(artifact, loop_graph_artifact("from-command"));
+}
+
+#[test]
+fn command_compiler_reads_batched_artifacts_from_stdout_lines() {
+    let command = GerbilCommandSpec::new("/bin/sh").arg("-c").arg(
+        "cat >/dev/null; printf '%s\n' '{\"artifact\":{\"LoopGraph\":{\"graph_id\":\"batch-graph\",\"nodes\":[],\"edges\":[]}}}' '{\"artifact\":{\"WorkspaceSchema\":{\"schema_id\":\"workspace-record\",\"required_properties\":[\"ID\",\"TITLE\"],\"todo_states\":[\"TODO\",\"DONE\"]}}}'",
+    );
+    let compiler = GerbilCommandCompiler::new(command);
+
+    let artifacts = compiler
+        .compile_requests(vec![
+            GerbilCompileRequest {
+                source: GerbilSource::new("audit/control-plane", "(module audit/control-plane)"),
+                expected: GerbilArtifactKind::LoopGraph,
+                contract_facts: None,
+            },
+            GerbilCompileRequest {
+                source: GerbilSource::new(
+                    "audit/workspace-schema",
+                    "(workspace-schema workspace-record)",
+                ),
+                expected: GerbilArtifactKind::WorkspaceSchema,
+                contract_facts: None,
+            },
+        ])
+        .expect("command output should decode newline-delimited artifacts");
+
+    assert_eq!(artifacts.len(), 2);
+    assert_eq!(artifacts[0], loop_graph_artifact("batch-graph"));
+    assert_workspace_schema_artifact(artifacts[1].clone());
 }
 
 #[test]
