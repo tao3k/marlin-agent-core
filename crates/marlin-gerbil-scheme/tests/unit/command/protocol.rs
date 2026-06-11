@@ -11,6 +11,9 @@ use marlin_org_model::{
     OrgContractKind, OrgContractQuery, OrgContractRegistry, OrgContractResolutionReport,
     OrgContractScope, OrgContractSeverity, OrgContractValidationReport,
 };
+use marlin_workspace_status::ContractStatus;
+use marlin_workspace_view::{RenderedContractFacts, RenderedContractFactsInput};
+use serde_json::json;
 
 #[test]
 fn command_protocol_round_trips_json_contract() {
@@ -18,29 +21,7 @@ fn command_protocol_round_trips_json_contract() {
         source: GerbilSource::new("audit/control-plane", "(module audit/control-plane)"),
         expected: GerbilArtifactKind::LoopGraph,
         contract_facts: Some(GerbilWorkspaceContractFacts {
-            registry: OrgContractRegistry {
-                contracts: vec![OrgContract {
-                    id: OrgContractId::new("agent.task.v1"),
-                    aliases: Vec::new(),
-                    scope: OrgContractScope::new("Subtree"),
-                    kind: OrgContractKind::new("OrgElementsAssertions"),
-                    assertions: vec![OrgContractAssertion {
-                        id: "task.has-goal".to_string(),
-                        severity: OrgContractSeverity::new("Error"),
-                        bindings: Vec::new(),
-                        query: OrgContractQuery::default(),
-                        expectation: OrgContractExpectation::Count {
-                            op: OrgContractCompareOp::Ge,
-                            expected: 1,
-                        },
-                        message: None,
-                        fix: None,
-                        templates: Vec::new(),
-                        query_source: None,
-                        expect_source: None,
-                    }],
-                }],
-            },
+            registry: contract_registry(),
             resolutions: OrgContractResolutionReport::default(),
             validations: OrgContractValidationReport::default(),
         }),
@@ -57,6 +38,73 @@ fn command_protocol_round_trips_json_contract() {
 
     assert_eq!(decoded, request);
     assert!(decoded.contract_facts.is_some());
+}
+
+#[test]
+fn command_request_json_preserves_view_status_contract_facts() {
+    let rendered = RenderedContractFacts::from_input(RenderedContractFactsInput {
+        registry: contract_registry(),
+        validations: OrgContractValidationReport::default(),
+        ..Default::default()
+    });
+    let status = ContractStatus {
+        resolved_references: rendered.summary.resolved_references,
+        unresolved_references: rendered.summary.unresolved_references,
+        diagnostics: rendered.summary.diagnostics,
+        templates: rendered.summary.templates,
+        contract_assertions: rendered.summary.contract_assertions,
+        validation_receipts: rendered.summary.validation_receipts,
+        validation_passed: rendered.summary.validation_passed,
+        validation_failed: rendered.summary.validation_failed,
+        validation_skipped: rendered.summary.validation_skipped,
+        validation_matched_nodes: rendered.summary.validation_matched_nodes,
+        validation_matched_node_ids: rendered.summary.validation_matched_node_ids.clone(),
+        reference_resolutions: rendered.resolutions.clone(),
+        diagnostic_records: rendered.diagnostics.clone(),
+        template_records: rendered.templates.clone(),
+        registry: rendered.registry.clone(),
+        validation_report: rendered.validations.clone(),
+        contract_expectation_summaries: rendered.summary.contract_expectation_summaries.clone(),
+        rendered_summary: rendered.rendered_lines.clone(),
+    };
+
+    assert_eq!(
+        status.contract_expectation_summaries,
+        ["agent.task.v1/task.has-goal: count >= 1"]
+    );
+    assert!(
+        status.rendered_summary.iter().any(|line| line
+            == "contract.validation.expectation: agent.task.v1/task.has-goal: count >= 1")
+    );
+
+    let request = GerbilCompileRequest {
+        source: GerbilSource::new("audit/control-plane", "(module audit/control-plane)"),
+        expected: GerbilArtifactKind::LoopGraph,
+        contract_facts: Some(GerbilWorkspaceContractFacts {
+            registry: status.registry.clone(),
+            resolutions: OrgContractResolutionReport {
+                references: status.reference_resolutions.clone(),
+                diagnostics: status.diagnostic_records.clone(),
+            },
+            validations: status.validation_report.clone(),
+        }),
+    };
+
+    let encoded = serde_json::to_value(&request).expect("request should encode as json");
+    assert_eq!(
+        encoded["contract_facts"]["registry"]["contracts"][0]["assertions"][0]["expectation"],
+        json!({
+            "kind": "count",
+            "op": "Ge",
+            "expected": 1
+        })
+    );
+
+    let decoded: GerbilCompileRequest =
+        serde_json::from_value(encoded).expect("request should decode from json");
+    let contract_facts = decoded.contract_facts.expect("contract facts");
+    assert_eq!(contract_facts.registry, status.registry);
+    assert_eq!(contract_facts.validations, status.validation_report);
 }
 
 #[test]
@@ -132,5 +180,31 @@ fn command_response_decodes_workspace_schema_and_ensures_kind() {
             assert_eq!(schema.todo_states, ["TODO", "DONE"]);
         }
         other => panic!("expected workspace schema artifact, got {other:?}"),
+    }
+}
+
+fn contract_registry() -> OrgContractRegistry {
+    OrgContractRegistry {
+        contracts: vec![OrgContract {
+            id: OrgContractId::new("agent.task.v1"),
+            aliases: Vec::new(),
+            scope: OrgContractScope::new("Subtree"),
+            kind: OrgContractKind::new("OrgElementsAssertions"),
+            assertions: vec![OrgContractAssertion {
+                id: "task.has-goal".to_string(),
+                severity: OrgContractSeverity::new("Error"),
+                bindings: Vec::new(),
+                query: OrgContractQuery::default(),
+                expectation: OrgContractExpectation::Count {
+                    op: OrgContractCompareOp::Ge,
+                    expected: 1,
+                },
+                message: None,
+                fix: None,
+                templates: Vec::new(),
+                query_source: None,
+                expect_source: None,
+            }],
+        }],
     }
 }

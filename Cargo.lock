@@ -265,6 +265,8 @@ dependencies = [
  "marlin-org-workflow",
  "marlin-workspace-patch",
  "marlin-workspace-protocol",
+ "marlin-workspace-status",
+ "marlin-workspace-view",
  "rust-lang-project-harness 0.1.0 (git+https://github.com/tao3k/rust-lang-project-harness?branch=main)",
  "serde",
  "serde_json",

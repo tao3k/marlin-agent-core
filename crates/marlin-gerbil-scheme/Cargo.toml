@@ -26,4 +26,6 @@ marlin-org-store.workspace = true
 marlin-org-workflow.workspace = true
 marlin-workspace-protocol.workspace = true
 marlin-workspace-patch.workspace = true
+marlin-workspace-status.workspace = true
+marlin-workspace-view.workspace = true
 rust-lang-project-harness.workspace = true
