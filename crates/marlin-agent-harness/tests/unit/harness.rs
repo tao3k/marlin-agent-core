@@ -1,7 +1,8 @@
 use std::sync::Arc;
 
 use marlin_agent_harness::{
-    AgentHarness, HarnessGraphBuilder, HarnessRuntime, StaticHookRuntime, TraceSpanRecord,
+    AgentHarness, HarnessExecutionReport, HarnessGraphBuilder, HarnessRuntime, HarnessSpanName,
+    StaticHookRuntime,
 };
 use marlin_agent_hooks::{HookDispatcher, HookInvocation, HookRegistration, HookRegistry};
 use marlin_agent_kernel::{
@@ -23,7 +24,8 @@ fn harness_accepts_present_evidence_and_event_topics() {
     let scenario = AgentScenario::new("loop")
         .with_step(
             AgentScenarioStep::new("run")
-                .expecting_event_topic(observability::TOPIC_KERNEL_EXECUTION),
+                .expecting_event_topic(observability::TOPIC_KERNEL_EXECUTION)
+                .expecting_span_name(observability::SPAN_HARNESS_EXECUTION),
         )
         .expecting_evidence(LoopEvidenceKind::Runtime);
     let events = vec![AgentEvent::new(
@@ -54,6 +56,7 @@ fn harness_reports_missing_evidence_and_event_topics() {
         vec![
             "missing expected evidence `Runtime`",
             "missing expected event topic `kernel.execution` for step run",
+            "missing expected span `harness.execution` for step run",
         ]
     );
 }
@@ -150,7 +153,14 @@ async fn harness_runs_provider_tool_sub_agent_scenario_with_hooks_and_environmen
                 .expecting_event_topic(observability::TOPIC_KERNEL_EXECUTION)
                 .expecting_event_topic(observability::TOPIC_KERNEL_HOOK)
                 .expecting_event_topic(observability::TOPIC_KERNEL_SUB_AGENT)
-                .expecting_event_topic("test.e2e"),
+                .expecting_event_topic("test.e2e")
+                .expecting_span_name(observability::SPAN_RUNTIME_TASK)
+                .expecting_span_name(observability::SPAN_AGENT_PROVIDER)
+                .expecting_span_name(observability::SPAN_AGENT_TOOL)
+                .expecting_span_name(observability::SPAN_AGENT_SUB_AGENT)
+                .expecting_span_name(observability::SPAN_HOOK_DISPATCH)
+                .expecting_span_name(observability::SPAN_HOOK_RUN)
+                .expecting_span_name(observability::SPAN_HARNESS_EXECUTION),
         )
         .expecting_evidence(LoopEvidenceKind::Runtime);
     let hook_dispatcher = e2e_hook_dispatcher();
@@ -200,11 +210,6 @@ async fn harness_runs_provider_tool_sub_agent_scenario_with_hooks_and_environmen
     assert_eq!(report.result.visited_nodes, vec!["plan", "apply", "review"]);
     assert!(report.assertion.is_none());
     assert!(evaluated.is_success());
-    let span_names = report
-        .span_names
-        .iter()
-        .map(|span_name| span_name.as_str())
-        .collect::<Vec<_>>();
     for expected_span in [
         observability::SPAN_RUNTIME_TASK,
         observability::SPAN_AGENT_PROVIDER,
@@ -212,10 +217,13 @@ async fn harness_runs_provider_tool_sub_agent_scenario_with_hooks_and_environmen
         observability::SPAN_AGENT_SUB_AGENT,
         observability::SPAN_HOOK_DISPATCH,
         observability::SPAN_HOOK_RUN,
+        observability::SPAN_HARNESS_EXECUTION,
     ] {
+        let expected_span = HarnessSpanName::new(expected_span);
         assert!(
-            span_names.contains(&expected_span),
-            "missing expected harness span {expected_span}"
+            report.has_span(&expected_span),
+            "missing expected harness span {}",
+            expected_span.as_str()
         );
     }
     assert!(e2e_messages.contains(&"hook pre-tool"));
@@ -239,31 +247,31 @@ async fn harness_runs_provider_tool_sub_agent_scenario_with_hooks_and_environmen
                 && event.message.contains("Stopped"))
     );
 
-    assert_agent_core_trace_spans(&report.trace_spans);
+    assert_agent_core_trace_spans(&report);
 }
 
-fn assert_agent_core_trace_spans(trace_spans: &[TraceSpanRecord]) {
-    let span_names = trace_spans.iter().map(|span| span.name).collect::<Vec<_>>();
+fn assert_agent_core_trace_spans(report: &HarnessExecutionReport) {
+    let span_names = report
+        .span_names
+        .iter()
+        .map(|span_name| span_name.as_str())
+        .collect::<Vec<_>>();
     assert!(
-        contains_span(trace_spans, observability::SPAN_RUNTIME_TASK),
+        report.has_span(&HarnessSpanName::new(observability::SPAN_RUNTIME_TASK)),
         "captured spans: {span_names:?}"
     );
-    assert!(contains_span(
-        trace_spans,
-        observability::SPAN_AGENT_PROVIDER
-    ));
-    assert!(contains_span(trace_spans, observability::SPAN_AGENT_TOOL));
-    assert!(contains_span(
-        trace_spans,
-        observability::SPAN_AGENT_SUB_AGENT
-    ));
     assert_eq!(
-        count_span(trace_spans, observability::SPAN_HOOK_DISPATCH),
+        report.count_span(&HarnessSpanName::new(observability::SPAN_HOOK_DISPATCH)),
         6
     );
-    assert_eq!(count_span(trace_spans, observability::SPAN_HOOK_RUN), 6);
+    assert_eq!(
+        report.count_span(&HarnessSpanName::new(observability::SPAN_HOOK_RUN)),
+        6
+    );
 
-    let provider_span = find_span(trace_spans, observability::SPAN_AGENT_PROVIDER);
+    let provider_span = report
+        .find_span(&HarnessSpanName::new(observability::SPAN_AGENT_PROVIDER))
+        .expect("expected provider trace span");
     assert_eq!(
         provider_span
             .fields
@@ -278,22 +286,6 @@ fn assert_agent_core_trace_spans(trace_spans: &[TraceSpanRecord]) {
             .map(String::as_str),
         Some("provider")
     );
-}
-
-fn contains_span(trace_spans: &[TraceSpanRecord], name: &str) -> bool {
-    trace_spans.iter().any(|span| span.name == name)
-}
-
-fn count_span(trace_spans: &[TraceSpanRecord], name: &str) -> usize {
-    trace_spans.iter().filter(|span| span.name == name).count()
-}
-
-fn find_span(trace_spans: &[TraceSpanRecord], name: &'static str) -> TraceSpanRecord {
-    trace_spans
-        .iter()
-        .find(|span| span.name == name)
-        .cloned()
-        .unwrap_or_else(|| panic!("expected trace span `{name}`"))
 }
 
 #[derive(Clone, Debug)]

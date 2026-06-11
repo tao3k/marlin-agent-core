@@ -1,5 +1,7 @@
 //! Serializable event contracts emitted by agent-owned execution.
 
+use std::fmt;
+
 use serde::{Deserialize, Serialize};
 
 /// Stable runtime event topic identifier.
@@ -20,6 +22,12 @@ impl AgentEventTopic {
     /// Converts the event topic into its owned string.
     pub fn into_string(self) -> String {
         self.0
+    }
+}
+
+impl fmt::Display for AgentEventTopic {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.as_str())
     }
 }
 

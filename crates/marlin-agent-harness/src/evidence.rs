@@ -2,7 +2,9 @@
 
 use std::collections::BTreeSet;
 
-use marlin_agent_protocol::{AgentEvent, AgentScenario, LoopEvidence, LoopEvidenceKind};
+use marlin_agent_protocol::{
+    AgentEvent, AgentEventTopic, AgentScenario, AgentSpanName, LoopEvidence, LoopEvidenceKind,
+};
 
 use crate::runtime::HarnessExecutionReport;
 
@@ -30,6 +32,15 @@ impl AgentHarness {
         events: &[AgentEvent],
         evidence: &[LoopEvidence],
     ) -> AgentHarnessReport {
+        Self::evaluate_with_span_names(scenario, events, evidence, &BTreeSet::new())
+    }
+
+    fn evaluate_with_span_names(
+        scenario: &AgentScenario,
+        events: &[AgentEvent],
+        evidence: &[LoopEvidence],
+        span_names: &BTreeSet<AgentSpanName>,
+    ) -> AgentHarnessReport {
         let present_evidence = evidence
             .iter()
             .filter(|fact| fact.present)
@@ -37,11 +48,12 @@ impl AgentHarness {
             .collect::<BTreeSet<_>>();
         let event_topics = events
             .iter()
-            .map(|event| event.topic.as_str())
+            .map(AgentEvent::topic_id)
             .collect::<BTreeSet<_>>();
 
         let mut diagnostics = missing_evidence_diagnostics(scenario, &present_evidence);
         diagnostics.extend(missing_event_diagnostics(scenario, &event_topics));
+        diagnostics.extend(missing_span_diagnostics(scenario, span_names));
 
         AgentHarnessReport {
             scenario_id: scenario.id.clone(),
@@ -54,7 +66,13 @@ impl AgentHarness {
         scenario: &AgentScenario,
         report: &HarnessExecutionReport,
     ) -> AgentHarnessReport {
-        Self::evaluate(scenario, &report.events, &report.evidence)
+        let span_names = report
+            .span_names
+            .iter()
+            .map(|span_name| AgentSpanName::new(span_name.as_str()))
+            .collect::<BTreeSet<_>>();
+
+        Self::evaluate_with_span_names(scenario, &report.events, &report.evidence, &span_names)
     }
 }
 
@@ -72,7 +90,7 @@ fn missing_evidence_diagnostics(
 
 fn missing_event_diagnostics(
     scenario: &AgentScenario,
-    event_topics: &BTreeSet<&str>,
+    event_topics: &BTreeSet<AgentEventTopic>,
 ) -> Vec<String> {
     scenario
         .steps
@@ -80,12 +98,30 @@ fn missing_event_diagnostics(
         .flat_map(|step| {
             step.expected_event_topics
                 .iter()
-                .filter(|topic| !event_topics.contains(topic.as_str()))
+                .filter(|topic| !event_topics.contains(*topic))
                 .map(|topic| {
                     format!(
                         "missing expected event topic `{topic}` for step {}",
                         step.name
                     )
+                })
+        })
+        .collect()
+}
+
+fn missing_span_diagnostics(
+    scenario: &AgentScenario,
+    span_names: &BTreeSet<AgentSpanName>,
+) -> Vec<String> {
+    scenario
+        .steps
+        .iter()
+        .flat_map(|step| {
+            step.expected_span_names
+                .iter()
+                .filter(|span_name| !span_names.contains(*span_name))
+                .map(|span_name| {
+                    format!("missing expected span `{span_name}` for step {}", step.name)
                 })
         })
         .collect()

@@ -50,6 +50,7 @@ The first tracing surface is intentionally small:
 | =agent.sub_agent= | =marlin-agent-kernel= | graph node executed through a sub-agent adapter |
 | =hook.dispatch= | =marlin-agent-hooks= | one hook event dispatched through the registry |
 | =hook.run= | =marlin-agent-hooks= | one registered hook handler run |
+| =harness.execution= | =marlin-agent-harness= | one scenario execution report boundary |
 
 ** Stable Fields
 
@@ -66,6 +67,9 @@ Core fields should stay stable across subscribers:
 | =hook_mode= | sync or async hook execution mode |
 | =hook_count= | number of matching hook registrations |
 | =error= | bounded error string for runtime join failures |
+| =scenario_id= | harness scenario identifier |
+| =run_id= | graph-loop run identifier |
+| =graph_id= | graph identifier |
 
 Additional fields may be added when they describe core agent behavior. High-cardinality payloads require explicit redaction or summarization before they enter tracing.
 

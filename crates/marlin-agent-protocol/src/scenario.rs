@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::LoopEvidenceKind;
+use crate::{AgentEventTopic, AgentSpanName, LoopEvidenceKind};
 
 /// Declarative scenario consumed by the agent harness.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -46,7 +46,8 @@ impl AgentScenario {
 pub struct AgentScenarioStep {
     pub name: String,
     pub input: BTreeMap<String, String>,
-    pub expected_event_topics: Vec<String>,
+    pub expected_event_topics: Vec<AgentEventTopic>,
+    pub expected_span_names: Vec<AgentSpanName>,
 }
 
 impl AgentScenarioStep {
@@ -55,6 +56,7 @@ impl AgentScenarioStep {
             name: name.into(),
             input: BTreeMap::new(),
             expected_event_topics: Vec::new(),
+            expected_span_names: Vec::new(),
         }
     }
 
@@ -63,8 +65,13 @@ impl AgentScenarioStep {
         self
     }
 
-    pub fn expecting_event_topic(mut self, topic: impl Into<String>) -> Self {
+    pub fn expecting_event_topic(mut self, topic: impl Into<AgentEventTopic>) -> Self {
         self.expected_event_topics.push(topic.into());
+        self
+    }
+
+    pub fn expecting_span_name(mut self, span_name: impl Into<AgentSpanName>) -> Self {
+        self.expected_span_names.push(span_name.into());
         self
     }
 }

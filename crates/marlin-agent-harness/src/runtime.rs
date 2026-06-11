@@ -2,11 +2,11 @@
 
 use marlin_agent_kernel::GraphLoopKernel;
 use marlin_agent_protocol::{
-    AgentEvent, AgentScenario, GraphLoopExecutionRequest, GraphLoopExecutionResult, LoopEvidence,
-    RuntimePlanSnapshot,
+    AgentEvent, AgentEventTopic, AgentScenario, GraphLoopExecutionRequest,
+    GraphLoopExecutionResult, LoopEvidence, RuntimePlanSnapshot,
 };
 use marlin_agent_runtime::{
-    CancellationToken, RuntimeEnvironment, RuntimeEventStream, TokioAgentRuntime,
+    CancellationToken, RuntimeEnvironment, RuntimeEventStream, TokioAgentRuntime, observability,
 };
 use std::time::Duration;
 use tokio_stream::StreamExt;
@@ -88,7 +88,12 @@ impl HarnessRuntime {
     {
         let span_recorder = TraceRecorder::new();
         let _span_guard = span_recorder.install();
-        let _harness_span = tracing::info_span!("harness.execute_graph");
+        let _harness_span = tracing::info_span!(
+            observability::SPAN_HARNESS_EXECUTION,
+            scenario_id = scenario.id.as_str(),
+            run_id = request.run_id.as_str(),
+            graph_id = request.graph.graph_id.as_str()
+        );
         let task = kernel.spawn_execution(request, &self.runtime);
         let result = match task.join().await {
             Ok(result) => result,
@@ -144,6 +149,35 @@ pub struct HarnessExecutionReport {
     pub trace_spans: Vec<TraceSpanRecord>,
     pub span_names: Vec<HarnessSpanName>,
     pub assertion: Option<HarnessAssertionError>,
+}
+
+impl HarnessExecutionReport {
+    /// Returns true when the report captured at least one event with this topic.
+    pub fn has_event_topic(&self, topic: &AgentEventTopic) -> bool {
+        self.events.iter().any(|event| event.topic_id() == *topic)
+    }
+
+    /// Returns true when the report captured at least one tracing span with this name.
+    pub fn has_span(&self, name: &HarnessSpanName) -> bool {
+        self.trace_spans
+            .iter()
+            .any(|span| span.name == name.as_str())
+    }
+
+    /// Counts tracing spans captured with this name.
+    pub fn count_span(&self, name: &HarnessSpanName) -> usize {
+        self.trace_spans
+            .iter()
+            .filter(|span| span.name == name.as_str())
+            .count()
+    }
+
+    /// Returns the first tracing span captured with this name.
+    pub fn find_span(&self, name: &HarnessSpanName) -> Option<&TraceSpanRecord> {
+        self.trace_spans
+            .iter()
+            .find(|span| span.name == name.as_str())
+    }
 }
 
 /// Harness-owned tracing span name captured during one execution report.

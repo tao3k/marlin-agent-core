@@ -14,7 +14,7 @@ fn command_compiler_can_call_real_gxi_fixture() {
     };
 
     let fixture_root = gerbil_fixture_root();
-    let fixture = fixture_root.join("fixed-loop-graph-adapter.ss");
+    let fixture = fixture_root.join("command-adapter.ss");
     let compiler = GerbilCommandCompiler::new(
         GerbilCommandSpec::new(gxi)
             .env("GERBIL_LOADPATH", fixture_root.as_os_str().to_os_string())

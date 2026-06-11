@@ -7,6 +7,7 @@ mod hook;
 mod runtime_environment;
 mod scenario;
 mod sub_agent;
+mod trace;
 
 pub use event::{AgentEvent, AgentEventTopic};
 pub use evidence::{LoopEvidence, LoopEvidenceKind};
@@ -26,3 +27,4 @@ pub use runtime_environment::{
 };
 pub use scenario::{AgentScenario, AgentScenarioStep};
 pub use sub_agent::{SubAgentActivity, SubAgentActivityKind, SubAgentSource};
+pub use trace::AgentSpanName;

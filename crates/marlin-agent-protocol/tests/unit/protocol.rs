@@ -1,11 +1,11 @@
 use std::path::PathBuf;
 
 use marlin_agent_protocol::{
-    AgentEvent, AgentEventTopic, AgentScenario, AgentScenarioStep, HookEventName, HookHandlerType,
-    HookOutputEntry, HookOutputEntryKind, HookRunStatus, HookRunSummary, LoopEvidence,
-    LoopEvidenceKind, RuntimeConfigLayer, RuntimeConfigLayerSource, RuntimeEnvironment,
-    RuntimeHome, RuntimeHomeSource, RuntimeSandboxPolicy, SubAgentActivity, SubAgentActivityKind,
-    SubAgentSource,
+    AgentEvent, AgentEventTopic, AgentScenario, AgentScenarioStep, AgentSpanName, HookEventName,
+    HookHandlerType, HookOutputEntry, HookOutputEntryKind, HookRunStatus, HookRunSummary,
+    LoopEvidence, LoopEvidenceKind, RuntimeConfigLayer, RuntimeConfigLayerSource,
+    RuntimeEnvironment, RuntimeHome, RuntimeHomeSource, RuntimeSandboxPolicy, SubAgentActivity,
+    SubAgentActivityKind, SubAgentSource,
 };
 
 #[test]
@@ -15,12 +15,17 @@ fn scenario_records_expected_evidence_and_steps() {
         .with_step(
             AgentScenarioStep::new("load-content")
                 .with_input("path", "LOOP.org")
-                .expecting_event_topic("kernel.execution"),
+                .expecting_event_topic("kernel.execution")
+                .expecting_span_name("harness.execution"),
         )
         .expecting_evidence(LoopEvidenceKind::Content);
 
     assert_eq!(scenario.id, "content-loop");
     assert_eq!(scenario.steps[0].input["path"], "LOOP.org");
+    assert_eq!(
+        scenario.steps[0].expected_span_names,
+        vec![AgentSpanName::new("harness.execution")]
+    );
     assert_eq!(scenario.expected_evidence, vec![LoopEvidenceKind::Content]);
 }
 

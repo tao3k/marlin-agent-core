@@ -50,7 +50,7 @@ marlin-gerbil-smoke
 The first executable adapter shim lives at:
 
 #+begin_src text
-crates/marlin-gerbil-scheme/fixtures/gerbil/fixed-loop-graph-adapter.ss
+crates/marlin-gerbil-scheme/fixtures/gerbil/command-adapter.ss
 #+end_src
 
 It reads the JSON request from stdin, extracts the request =source.text= field,
@@ -90,9 +90,10 @@ emitting JSON:
 - =fixtures/gerbil/marlin/parser.ss= owns the Gerbil reader-backed smoke DSL
   source-to-=LoopGraph= and source-to-=WorkspaceSchema= parsers.
 - =fixtures/gerbil/marlin/adapter.ss= imports the request/parser/protocol
-  modules and owns the artifact compiler table plus response emission.
-- =fixtures/gerbil/fixed-loop-graph-adapter.ss= is a thin launcher that imports
-  =:marlin/adapter=.
+  modules and owns the artifact compiler table, table/registry self-check, and
+  response emission.
+- =fixtures/gerbil/command-adapter.ss= is a thin launcher that imports
+  =:marlin/adapter= and calls =run-marlin-command-adapter=.
 
 This validates the real =gxi= process boundary and the first Gerbil-side
 source-to-IR step before the compiler grows a full package/build boundary.
@@ -103,7 +104,7 @@ The launcher requires =GERBIL_LOADPATH= to point at the fixture root so the
 #+begin_src sh
 GERBIL_LOADPATH=crates/marlin-gerbil-scheme/fixtures/gerbil \
   /opt/homebrew/opt/gerbil-scheme/bin/gxi \
-  crates/marlin-gerbil-scheme/fixtures/gerbil/fixed-loop-graph-adapter.ss
+  crates/marlin-gerbil-scheme/fixtures/gerbil/command-adapter.ss
 #+end_src
 
 The same adapter module can be invoked directly through Gerbil's module

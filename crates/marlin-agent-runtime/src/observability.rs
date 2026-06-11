@@ -24,6 +24,10 @@ pub const SPAN_AGENT_SUB_AGENT: &str = "agent.sub_agent";
 pub const SPAN_HOOK_DISPATCH: &str = "hook.dispatch";
 /// Tracing span name for one hook handler run.
 pub const SPAN_HOOK_RUN: &str = "hook.run";
+/// Tracing span name for one harness-managed scenario execution.
+pub const SPAN_HARNESS_EXECUTION: &str = "harness.execution";
+/// Tracing span name for one completed harness execution report.
+pub const SPAN_HARNESS_RESULT: &str = "harness.result";
 
 /// Runtime event topic for graph-loop execution lifecycle messages.
 pub const TOPIC_KERNEL_EXECUTION: &str = "kernel.execution";
@@ -52,6 +56,20 @@ pub const FIELD_HOOK_ID: &str = "hook_id";
 pub const FIELD_HOOK_MODE: &str = "hook_mode";
 /// Tracing field key for hook handler type.
 pub const FIELD_HOOK_HANDLER: &str = "hook_handler";
+/// Tracing field key for harness scenario identifiers.
+pub const FIELD_SCENARIO_ID: &str = "scenario_id";
+/// Tracing field key for graph-loop run identifiers.
+pub const FIELD_RUN_ID: &str = "run_id";
+/// Tracing field key for graph identifiers.
+pub const FIELD_GRAPH_ID: &str = "graph_id";
+/// Tracing field key for execution status.
+pub const FIELD_STATUS: &str = "status";
+/// Tracing field key for elapsed execution milliseconds.
+pub const FIELD_DURATION_MS: &str = "duration_ms";
+/// Tracing field key for diagnostic count.
+pub const FIELD_DIAGNOSTIC_COUNT: &str = "diagnostic_count";
+/// Tracing field key for runtime event count.
+pub const FIELD_EVENT_COUNT: &str = "event_count";
 
 /// Runtime task kind used when no narrower task category is available.
 pub const RUNTIME_KIND_GENERIC: &str = "generic";
