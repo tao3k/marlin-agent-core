@@ -24,8 +24,7 @@ fn harness_accepts_present_evidence_and_event_topics() {
     let scenario = AgentScenario::new("loop")
         .with_step(
             AgentScenarioStep::new("run")
-                .expecting_event_topic(observability::TOPIC_KERNEL_EXECUTION)
-                .expecting_span_name(observability::SPAN_HARNESS_EXECUTION),
+                .expecting_event_topic(observability::TOPIC_KERNEL_EXECUTION),
         )
         .expecting_evidence(LoopEvidenceKind::Runtime);
     let events = vec![AgentEvent::new(
@@ -45,7 +44,8 @@ fn harness_reports_missing_evidence_and_event_topics() {
     let scenario = AgentScenario::new("loop")
         .with_step(
             AgentScenarioStep::new("run")
-                .expecting_event_topic(observability::TOPIC_KERNEL_EXECUTION),
+                .expecting_event_topic(observability::TOPIC_KERNEL_EXECUTION)
+                .expecting_span_name(observability::SPAN_HARNESS_EXECUTION),
         )
         .expecting_evidence(LoopEvidenceKind::Runtime);
 
