@@ -9,7 +9,9 @@ package: marlin
 
 (def marlin-artifact-compilers
   (list (list marlin-loop-graph-artifact-kind compile-loop-graph)
-        (list marlin-workspace-schema-artifact-kind compile-workspace-schema)))
+        (list marlin-workspace-schema-artifact-kind compile-workspace-schema)
+        (list marlin-workspace-patch-intent-artifact-kind
+              compile-workspace-patch-intent)))
 
 (def (marlin-artifact-compiler-kind entry)
   (car entry))

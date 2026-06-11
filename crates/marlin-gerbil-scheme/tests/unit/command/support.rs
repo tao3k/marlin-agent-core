@@ -1,5 +1,6 @@
 use marlin_gerbil_ir::CompiledLoopGraph;
 use marlin_gerbil_scheme::{GerbilCommandCompiler, GerbilCommandSpec, GerbilCompiledArtifact};
+use marlin_workspace_patch::WorkspacePatchOp;
 use std::{env, path::PathBuf};
 
 pub fn loop_graph_artifact(graph_id: &str) -> GerbilCompiledArtifact {
@@ -19,6 +20,13 @@ pub const RICH_LOOP_GRAPH_SOURCE: &str = r#"(loop-graph gerbil-source-loop
 pub const WORKSPACE_SCHEMA_SOURCE: &str = r#"(workspace-schema workspace-record
   (required ID TITLE)
   (todo TODO DONE))"#;
+
+pub const WORKSPACE_PATCH_INTENT_SOURCE: &str = r#"(workspace-patch-intent "intent:memory"
+  (dry-run-first #t)
+  (patch
+    (reason "gerbil intent")
+    (source-agent "gerbil")
+    (mark-memory-candidate "memory.org:1:goal" "long-term")))"#;
 
 pub fn local_gxi() -> Option<PathBuf> {
     let gxi = env::var("MARLIN_GERBIL_GXI")
@@ -49,6 +57,17 @@ pub fn real_gxi_module_compiler() -> Option<GerbilCommandCompiler> {
         GerbilCommandSpec::new(gxi)
             .env("GERBIL_LOADPATH", fixture_root.as_os_str().to_os_string())
             .arg(":marlin/adapter"),
+    ))
+}
+
+pub fn real_gxi_command_adapter_compiler() -> Option<GerbilCommandCompiler> {
+    let gxi = local_gxi()?;
+    let fixture_root = gerbil_fixture_root();
+    let launcher = fixture_root.join("command-adapter.ss");
+    Some(GerbilCommandCompiler::new(
+        GerbilCommandSpec::new(gxi)
+            .env("GERBIL_LOADPATH", fixture_root.as_os_str().to_os_string())
+            .arg(launcher),
     ))
 }
 
@@ -93,5 +112,25 @@ pub fn assert_workspace_schema_artifact(artifact: GerbilCompiledArtifact) {
             assert_eq!(schema.todo_states, ["TODO", "DONE"]);
         }
         other => panic!("expected workspace schema artifact, got {other:?}"),
+    }
+}
+
+pub fn assert_workspace_patch_intent_artifact(artifact: GerbilCompiledArtifact) {
+    match artifact {
+        GerbilCompiledArtifact::WorkspacePatchIntent(intent) => {
+            assert_eq!(intent.intent_id, "intent:memory");
+            assert!(intent.dry_run_first);
+            assert_eq!(intent.patch.reason, "gerbil intent");
+            assert_eq!(intent.patch.source_agent.as_deref(), Some("gerbil"));
+            assert_eq!(intent.patch.ops.len(), 1);
+            match &intent.patch.ops[0] {
+                WorkspacePatchOp::MarkMemoryCandidate { node, dispatch } => {
+                    assert_eq!(node.as_str(), "memory.org:1:goal");
+                    assert_eq!(dispatch, "long-term");
+                }
+                other => panic!("expected mark-memory-candidate op, got {other:?}"),
+            }
+        }
+        other => panic!("expected workspace patch intent artifact, got {other:?}"),
     }
 }

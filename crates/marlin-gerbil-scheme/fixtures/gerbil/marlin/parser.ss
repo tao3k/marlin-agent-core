@@ -6,7 +6,8 @@ package: marlin
 (import ./protocol)
 
 (export compile-loop-graph
-        compile-workspace-schema)
+        compile-workspace-schema
+        compile-workspace-patch-intent)
 
 (define (source->form source-text)
   (let ((form (read (open-input-string source-text))))
@@ -130,3 +131,85 @@ package: marlin
                                       (tagged-values forms 'required)
                                       (tagged-values forms 'todo)))
       (error "expected workspace-schema form" form))))
+
+(define (find-tagged-form forms tag)
+  (let loop ((remaining forms))
+    (cond
+      ((null? remaining) #f)
+      ((form-tag? (car remaining) tag) (car remaining))
+      (else (loop (cdr remaining))))))
+
+(define (required-single-value forms tag)
+  (let ((form (find-tagged-form forms tag)))
+    (if (and form (pair? (cdr form)))
+      (atom->string (cadr form))
+      (error "expected single-value form" tag forms))))
+
+(define (optional-single-value forms tag)
+  (let ((form (find-tagged-form forms tag)))
+    (if form
+      (if (pair? (cdr form))
+        (atom->string (cadr form))
+        (error "expected single-value form" tag forms))
+      #f)))
+
+(define (true-value? value)
+  (cond
+    ((eq? value #t) #t)
+    ((and (symbol? value)
+          (or (eq? value 'true)
+              (eq? value 'yes)))
+     #t)
+    (else #f)))
+
+(define (required-dry-run-first forms)
+  (let ((form (find-tagged-form forms 'dry-run-first)))
+    (if (and form (pair? (cdr form)) (true-value? (cadr form)))
+      #t
+      (error "workspace-patch-intent requires dry-run-first true" forms))))
+
+(define (parse-mark-memory-candidate-op form)
+  (if (and (form-tag? form 'mark-memory-candidate)
+           (pair? (cdr form))
+           (pair? (cddr form)))
+    (make-marlin-mark-memory-candidate-op (atom->string (cadr form))
+                                          (atom->string (caddr form)))
+    (error "invalid mark-memory-candidate form" form)))
+
+(define (parse-workspace-patch-op form)
+  (cond
+    ((form-tag? form 'mark-memory-candidate)
+     (parse-mark-memory-candidate-op form))
+    (else (error "unsupported workspace patch op form" form))))
+
+(define (parse-workspace-patch-ops forms)
+  (let loop ((remaining forms) (ops '()))
+    (cond
+      ((null? remaining) (reverse ops))
+      ((or (form-tag? (car remaining) 'reason)
+           (form-tag? (car remaining) 'source-agent))
+       (loop (cdr remaining) ops))
+      (else
+       (loop (cdr remaining)
+             (cons (parse-workspace-patch-op (car remaining)) ops))))))
+
+(define (parse-workspace-patch-form form)
+  (if (form-tag? form 'patch)
+    (let ((forms (cdr form)))
+      (make-marlin-workspace-patch
+       (required-single-value forms 'reason)
+       (optional-single-value forms 'source-agent)
+       (parse-workspace-patch-ops forms)))
+    (error "expected patch form" form)))
+
+(define (compile-workspace-patch-intent source-text)
+  (let ((form (source->form source-text)))
+    (if (and (form-tag? form 'workspace-patch-intent)
+             (pair? (cdr form)))
+      (let ((intent-id (atom->string (cadr form)))
+            (forms (cddr form)))
+        (make-marlin-workspace-patch-intent
+         intent-id
+         (parse-workspace-patch-form (find-tagged-form forms 'patch))
+         (required-dry-run-first forms)))
+      (error "expected workspace-patch-intent form" form))))

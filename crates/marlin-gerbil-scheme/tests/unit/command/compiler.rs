@@ -1,4 +1,6 @@
-use super::support::{assert_workspace_schema_artifact, loop_graph_artifact};
+use super::support::{
+    assert_workspace_patch_intent_artifact, assert_workspace_schema_artifact, loop_graph_artifact,
+};
 use marlin_gerbil_scheme::{
     GerbilArtifactKind, GerbilCommandCompiler, GerbilCommandSpec, GerbilCompiler, GerbilSource,
 };
@@ -38,6 +40,26 @@ fn command_compiler_reads_workspace_schema_from_stdout() {
         .expect("command output should decode to requested workspace schema artifact kind");
 
     assert_workspace_schema_artifact(artifact);
+}
+
+#[test]
+fn command_compiler_reads_workspace_patch_intent_from_stdout() {
+    let command = GerbilCommandSpec::new("/bin/sh").arg("-c").arg(
+        "printf '%s\n' '{\"artifact\":{\"WorkspacePatchIntent\":{\"intent_id\":\"intent:memory\",\"patch\":{\"reason\":\"gerbil intent\",\"source_agent\":\"gerbil\",\"ops\":[{\"MarkMemoryCandidate\":{\"node\":\"memory.org:1:goal\",\"dispatch\":\"long-term\"}}]},\"dry_run_first\":true}}}'",
+    );
+    let compiler = GerbilCommandCompiler::new(command);
+
+    let artifact = compiler
+        .compile(
+            GerbilSource::new(
+                "audit/workspace-patch-intent",
+                "(workspace-patch-intent \"intent:memory\")",
+            ),
+            GerbilArtifactKind::WorkspacePatchIntent,
+        )
+        .expect("command output should decode to requested workspace patch intent artifact kind");
+
+    assert_workspace_patch_intent_artifact(artifact);
 }
 
 #[test]

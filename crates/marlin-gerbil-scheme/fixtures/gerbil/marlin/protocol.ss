@@ -6,6 +6,7 @@ package: marlin
 (export make-marlin-loop-node
         marlin-loop-graph-artifact-kind
         marlin-workspace-schema-artifact-kind
+        marlin-workspace-patch-intent-artifact-kind
         marlin-supported-artifact-kinds
         marlin-supported-artifact-kind?
         ensure-marlin-supported-artifact-kind
@@ -25,15 +26,26 @@ package: marlin
         marlin-workspace-schema-id
         marlin-workspace-schema-required-properties
         marlin-workspace-schema-todo-states
+        make-marlin-workspace-patch-intent
+        marlin-workspace-patch-intent-id
+        marlin-workspace-patch-intent-patch
+        marlin-workspace-patch-intent-dry-run-first
+        make-marlin-workspace-patch
+        marlin-workspace-patch-reason
+        marlin-workspace-patch-source-agent
+        marlin-workspace-patch-ops
+        make-marlin-mark-memory-candidate-op
         display-gerbil-artifact-response
         display-gerbil-compile-response)
 
 (def marlin-loop-graph-artifact-kind "LoopGraph")
 (def marlin-workspace-schema-artifact-kind "WorkspaceSchema")
+(def marlin-workspace-patch-intent-artifact-kind "WorkspacePatchIntent")
 
 (def marlin-supported-artifact-kinds
   (list marlin-loop-graph-artifact-kind
-        marlin-workspace-schema-artifact-kind))
+        marlin-workspace-schema-artifact-kind
+        marlin-workspace-patch-intent-artifact-kind))
 
 (def (marlin-supported-artifact-kind? expected)
   (if (member expected marlin-supported-artifact-kinds) #t #f))
@@ -95,6 +107,33 @@ package: marlin
 (def (marlin-workspace-schema-todo-states schema)
   (caddr schema))
 
+(def (make-marlin-workspace-patch-intent intent-id patch dry-run-first)
+  (list intent-id patch dry-run-first))
+
+(def (marlin-workspace-patch-intent-id intent)
+  (car intent))
+
+(def (marlin-workspace-patch-intent-patch intent)
+  (cadr intent))
+
+(def (marlin-workspace-patch-intent-dry-run-first intent)
+  (caddr intent))
+
+(def (make-marlin-workspace-patch reason source-agent ops)
+  (list reason source-agent ops))
+
+(def (marlin-workspace-patch-reason patch)
+  (car patch))
+
+(def (marlin-workspace-patch-source-agent patch)
+  (cadr patch))
+
+(def (marlin-workspace-patch-ops patch)
+  (caddr patch))
+
+(def (make-marlin-mark-memory-candidate-op node dispatch)
+  (list 'MarkMemoryCandidate node dispatch))
+
 (def (display-json-string value)
   (display "\"")
   (let ((value-length (string-length value)))
@@ -116,6 +155,9 @@ package: marlin
   (if value
     (display-json-string value)
     (display "null")))
+
+(def (display-json-boolean value)
+  (display (if value "true" "false")))
 
 (def (display-json-string-list values)
   (display "[")
@@ -196,6 +238,46 @@ package: marlin
   (display-json-string-list (marlin-workspace-schema-todo-states schema))
   (display "}"))
 
+(def (display-json-workspace-patch-op op)
+  (let ((op-kind (car op)))
+    (cond
+      ((eq? op-kind 'MarkMemoryCandidate)
+       (display "{\"MarkMemoryCandidate\":{\"node\":")
+       (display-json-string (cadr op))
+       (display ",\"dispatch\":")
+       (display-json-string (caddr op))
+       (display "}}"))
+      (else (error "marlin gerbil protocol cannot serialize workspace patch op" op-kind)))))
+
+(def (display-json-workspace-patch-ops ops)
+  (display "[")
+  (let loop ((remaining ops) (first #t))
+    (if (null? remaining)
+      #t
+      (begin
+        (if first #f (display ","))
+        (display-json-workspace-patch-op (car remaining))
+        (loop (cdr remaining) #f))))
+  (display "]"))
+
+(def (display-json-workspace-patch patch)
+  (display "{\"reason\":")
+  (display-json-string (marlin-workspace-patch-reason patch))
+  (display ",\"source_agent\":")
+  (display-json-nullable-string (marlin-workspace-patch-source-agent patch))
+  (display ",\"ops\":")
+  (display-json-workspace-patch-ops (marlin-workspace-patch-ops patch))
+  (display "}"))
+
+(def (display-json-workspace-patch-intent intent)
+  (display "{\"intent_id\":")
+  (display-json-string (marlin-workspace-patch-intent-id intent))
+  (display ",\"patch\":")
+  (display-json-workspace-patch (marlin-workspace-patch-intent-patch intent))
+  (display ",\"dry_run_first\":")
+  (display-json-boolean (marlin-workspace-patch-intent-dry-run-first intent))
+  (display "}"))
+
 (def (display-gerbil-artifact-response artifact-kind artifact)
   (display "{\"artifact\":{")
   (display-json-string artifact-kind)
@@ -205,6 +287,8 @@ package: marlin
      (display-json-loop-graph artifact))
     ((equal? artifact-kind marlin-workspace-schema-artifact-kind)
      (display-json-workspace-schema artifact))
+    ((equal? artifact-kind marlin-workspace-patch-intent-artifact-kind)
+     (display-json-workspace-patch-intent artifact))
     (else (error "marlin gerbil protocol cannot serialize artifact kind" artifact-kind)))
   (display "}}"))
 
