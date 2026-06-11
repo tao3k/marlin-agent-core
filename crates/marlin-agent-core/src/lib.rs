@@ -42,11 +42,14 @@ pub use marlin_agent_protocol::{
 pub use marlin_agent_runtime as runtime;
 pub use marlin_agent_runtime::observability;
 pub use marlin_agent_runtime::{
-    CancellationToken, EventStream, HookRuntime, ProviderRuntime, RuntimeContext,
+    AgentSessionContext, CancellationToken, ContextExpansionPolicy, ContextNamespace,
+    ContextVisibility, EventStream, HookRuntime, ProviderRuntime, RuntimeContext,
     RuntimeEnvironment, RuntimeEvent, RuntimeEventSink, RuntimeEventStream,
-    RuntimeExecutionIdentity, RuntimeFuture, RuntimeTask, RuntimeTaskOutcome, SubAgentRuntime,
-    TokioAgentRuntime, ToolRuntime,
+    RuntimeExecutionIdentity, RuntimeFuture, RuntimeTask, RuntimeTaskOutcome, SessionId,
+    SessionIdError, SessionIdentity, SessionIsolationPolicy, SessionIsolationReceipt, SessionKind,
+    SubAgentRuntime, TokioAgentRuntime, ToolRuntime,
 };
+pub use marlin_agent_sessions as sessions;
 
 pub use marlin_gerbil_ir as gerbil_ir;
 pub use marlin_org_model as org_model;

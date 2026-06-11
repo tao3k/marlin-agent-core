@@ -7,6 +7,7 @@ members = [
     "crates/marlin-agent-kernel",
     "crates/marlin-agent-protocol",
     "crates/marlin-agent-runtime",
+    "crates/marlin-agent-sessions",
     "crates/marlin-gerbil-ir",
     "crates/marlin-gerbil-scheme",
     "crates/marlin-org-memory",
@@ -49,6 +50,7 @@ marlin-agent-hooks = { path = "crates/marlin-agent-hooks", version = "0.1.0" }
 marlin-agent-kernel = { path = "crates/marlin-agent-kernel", version = "0.1.0" }
 marlin-agent-protocol = { path = "crates/marlin-agent-protocol", version = "0.1.0" }
 marlin-agent-runtime = { path = "crates/marlin-agent-runtime", version = "0.1.0" }
+marlin-agent-sessions = { path = "crates/marlin-agent-sessions", version = "0.1.0" }
 marlin-gerbil-ir = { path = "crates/marlin-gerbil-ir", version = "0.1.0" }
 marlin-gerbil-scheme = { path = "crates/marlin-gerbil-scheme", version = "0.1.0" }
 marlin-org-memory = { path = "crates/marlin-org-memory", version = "0.1.0" }

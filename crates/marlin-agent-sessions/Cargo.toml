@@ -1,17 +1,12 @@
 [package]
-name = "marlin-agent-runtime"
+name = "marlin-agent-sessions"
 edition.workspace = true
 version.workspace = true
 authors.workspace = true
 repository.workspace = true
 
 [dependencies]
-marlin-agent-protocol.workspace = true
-marlin-agent-sessions.workspace = true
-tokio.workspace = true
-tokio-stream.workspace = true
-tokio-util.workspace = true
-tracing.workspace = true
+serde.workspace = true
 
 [build-dependencies]
 rust-lang-project-harness.workspace = true

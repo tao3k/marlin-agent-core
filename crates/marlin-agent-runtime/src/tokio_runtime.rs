@@ -10,6 +10,10 @@ use std::{
 
 use crate::observability;
 pub use marlin_agent_protocol::{AgentEvent as RuntimeEvent, GraphId, RunId, RuntimeEnvironment};
+pub use marlin_agent_sessions::{
+    AgentSessionContext, ContextExpansionPolicy, ContextNamespace, ContextVisibility, SessionId,
+    SessionIdError, SessionIdentity, SessionIsolationPolicy, SessionIsolationReceipt, SessionKind,
+};
 use tokio::sync::{mpsc, oneshot, watch};
 use tokio::task::{JoinError, JoinSet};
 pub use tokio_util::sync::CancellationToken;
@@ -25,6 +29,7 @@ pub struct TokioAgentRuntime {
     events: RuntimeEventSink,
     environment: RuntimeEnvironment,
     execution: Option<RuntimeExecutionIdentity>,
+    session: AgentSessionContext,
 }
 
 impl TokioAgentRuntime {
@@ -44,6 +49,20 @@ impl TokioAgentRuntime {
         cancellation: CancellationToken,
         environment: RuntimeEnvironment,
     ) -> (Self, RuntimeEventStream) {
+        Self::with_session(
+            event_buffer,
+            cancellation,
+            environment,
+            AgentSessionContext::runtime_root(),
+        )
+    }
+
+    pub fn with_session(
+        event_buffer: usize,
+        cancellation: CancellationToken,
+        environment: RuntimeEnvironment,
+        session: AgentSessionContext,
+    ) -> (Self, RuntimeEventStream) {
         let (events, stream) = RuntimeEventSink::channel(event_buffer);
         (
             Self {
@@ -51,6 +70,7 @@ impl TokioAgentRuntime {
                 events,
                 environment,
                 execution: None,
+                session,
             },
             stream,
         )
@@ -62,11 +82,16 @@ impl TokioAgentRuntime {
             events: self.events.clone(),
             environment: self.environment.clone(),
             execution: self.execution.clone(),
+            session: self.session.clone(),
         }
     }
 
     pub fn environment(&self) -> &RuntimeEnvironment {
         &self.environment
+    }
+
+    pub fn session(&self) -> &AgentSessionContext {
+        &self.session
     }
 
     pub fn cancellation_token(&self) -> CancellationToken {
@@ -83,6 +108,7 @@ impl TokioAgentRuntime {
             events: self.events.clone(),
             environment: self.environment.clone(),
             execution: self.execution.clone(),
+            session: self.session.clone(),
         }
     }
 
@@ -92,7 +118,29 @@ impl TokioAgentRuntime {
             events: self.events.clone(),
             environment,
             execution: self.execution.clone(),
+            session: self.session.clone(),
         }
+    }
+
+    pub fn child_runtime_for_session(
+        &self,
+        kind: SessionKind,
+        child_session_id: impl Into<SessionId>,
+        requested_visibility: ContextVisibility,
+    ) -> (Self, SessionIsolationReceipt) {
+        let (session, receipt) =
+            self.session
+                .child_session(kind, child_session_id, requested_visibility);
+        (
+            Self {
+                cancellation: self.cancellation.child_token(),
+                events: self.events.clone(),
+                environment: self.environment.clone(),
+                execution: self.execution.clone(),
+                session,
+            },
+            receipt,
+        )
     }
 
     pub fn spawn<F>(&self, future: F) -> RuntimeTask<F::Output>
@@ -181,6 +229,30 @@ impl TokioAgentRuntime {
         )
     }
 
+    pub fn spawn_provider_with_session<P>(
+        &self,
+        provider: Arc<P>,
+        request: P::Request,
+        child_session_id: impl Into<SessionId>,
+        requested_visibility: ContextVisibility,
+    ) -> (RuntimeTask<P::Response>, SessionIsolationReceipt)
+    where
+        P: ProviderRuntime,
+    {
+        let (context, receipt) = self.context().child_context_for_session(
+            SessionKind::Provider,
+            child_session_id,
+            requested_visibility,
+        );
+        (
+            self.spawn_with_span(
+                async move { provider.run_provider(request, context).await },
+                observability::runtime_provider_span(),
+            ),
+            receipt,
+        )
+    }
+
     pub fn spawn_tool<T>(&self, tool: Arc<T>, invocation: T::Invocation) -> RuntimeTask<T::Output>
     where
         T: ToolRuntime,
@@ -192,6 +264,30 @@ impl TokioAgentRuntime {
         )
     }
 
+    pub fn spawn_tool_with_session<T>(
+        &self,
+        tool: Arc<T>,
+        invocation: T::Invocation,
+        child_session_id: impl Into<SessionId>,
+        requested_visibility: ContextVisibility,
+    ) -> (RuntimeTask<T::Output>, SessionIsolationReceipt)
+    where
+        T: ToolRuntime,
+    {
+        let (context, receipt) = self.context().child_context_for_session(
+            SessionKind::Tool,
+            child_session_id,
+            requested_visibility,
+        );
+        (
+            self.spawn_with_span(
+                async move { tool.run_tool(invocation, context).await },
+                observability::runtime_tool_span(),
+            ),
+            receipt,
+        )
+    }
+
     pub fn spawn_sub_agent<A>(&self, sub_agent: Arc<A>, input: A::Input) -> RuntimeTask<A::Output>
     where
         A: SubAgentRuntime,
@@ -200,6 +296,30 @@ impl TokioAgentRuntime {
         self.spawn_with_span(
             async move { sub_agent.run_sub_agent(input, context).await },
             observability::runtime_sub_agent_span(),
+        )
+    }
+
+    pub fn spawn_sub_agent_with_session<A>(
+        &self,
+        sub_agent: Arc<A>,
+        input: A::Input,
+        child_session_id: impl Into<SessionId>,
+        requested_visibility: ContextVisibility,
+    ) -> (RuntimeTask<A::Output>, SessionIsolationReceipt)
+    where
+        A: SubAgentRuntime,
+    {
+        let (context, receipt) = self.context().child_context_for_session(
+            SessionKind::SubAgent,
+            child_session_id,
+            requested_visibility,
+        );
+        (
+            self.spawn_with_span(
+                async move { sub_agent.run_sub_agent(input, context).await },
+                observability::runtime_sub_agent_span(),
+            ),
+            receipt,
         )
     }
 
@@ -230,6 +350,30 @@ impl TokioAgentRuntime {
         )
     }
 
+    pub fn spawn_hook_with_session<H>(
+        &self,
+        hook: Arc<H>,
+        request: H::Request,
+        child_session_id: impl Into<SessionId>,
+        requested_visibility: ContextVisibility,
+    ) -> (RuntimeTask<H::Output>, SessionIsolationReceipt)
+    where
+        H: HookRuntime,
+    {
+        let (context, receipt) = self.context().child_context_for_session(
+            SessionKind::Hook,
+            child_session_id,
+            requested_visibility,
+        );
+        (
+            self.spawn_with_span(
+                async move { hook.run_hook(request, context).await },
+                observability::runtime_hook_span(),
+            ),
+            receipt,
+        )
+    }
+
     fn spawn_with_span<F>(&self, future: F, span: tracing::Span) -> RuntimeTask<F::Output>
     where
         F: Future + Send + 'static,
@@ -246,6 +390,7 @@ pub struct RuntimeContext {
     events: RuntimeEventSink,
     environment: RuntimeEnvironment,
     execution: Option<RuntimeExecutionIdentity>,
+    session: AgentSessionContext,
 }
 
 impl RuntimeContext {
@@ -261,6 +406,10 @@ impl RuntimeContext {
         &self.environment
     }
 
+    pub fn session(&self) -> &AgentSessionContext {
+        &self.session
+    }
+
     pub fn execution_identity(&self) -> Option<&RuntimeExecutionIdentity> {
         self.execution.as_ref()
     }
@@ -270,12 +419,18 @@ impl RuntimeContext {
         self
     }
 
+    pub fn with_session_context(mut self, session: AgentSessionContext) -> Self {
+        self.session = session;
+        self
+    }
+
     pub fn child_context(&self) -> Self {
         Self {
             cancellation: self.cancellation.child_token(),
             events: self.events.clone(),
             environment: self.environment.clone(),
             execution: self.execution.clone(),
+            session: self.session.clone(),
         }
     }
 
@@ -285,7 +440,29 @@ impl RuntimeContext {
             events: self.events.clone(),
             environment,
             execution: self.execution.clone(),
+            session: self.session.clone(),
         }
+    }
+
+    pub fn child_context_for_session(
+        &self,
+        kind: SessionKind,
+        child_session_id: impl Into<SessionId>,
+        requested_visibility: ContextVisibility,
+    ) -> (Self, SessionIsolationReceipt) {
+        let (session, receipt) =
+            self.session
+                .child_session(kind, child_session_id, requested_visibility);
+        (
+            Self {
+                cancellation: self.cancellation.child_token(),
+                events: self.events.clone(),
+                environment: self.environment.clone(),
+                execution: self.execution.clone(),
+                session,
+            },
+            receipt,
+        )
     }
 
     pub fn is_cancelled(&self) -> bool {

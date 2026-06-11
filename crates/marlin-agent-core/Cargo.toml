@@ -12,6 +12,7 @@ marlin-agent-hooks.workspace = true
 marlin-agent-kernel.workspace = true
 marlin-agent-protocol.workspace = true
 marlin-agent-runtime.workspace = true
+marlin-agent-sessions.workspace = true
 marlin-gerbil-ir.workspace = true
 marlin-org-model.workspace = true
 marlin-org-patch.workspace = true
