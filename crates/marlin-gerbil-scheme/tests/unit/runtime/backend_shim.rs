@@ -1,6 +1,54 @@
 use super::support::{gerbil_backend_failure_receipt, test_root};
-use marlin_gerbil_scheme::GerbilAotBackendShimStatus;
+use marlin_gerbil_scheme::{GerbilAotBackendRepairStatus, GerbilAotBackendShimStatus};
 use std::fs;
+
+#[test]
+fn gerbil_aot_backend_repair_plan_reports_repo_shim_available_without_writing() {
+    let root = test_root("aot-backend-repair-plan");
+    fs::create_dir_all(&root).expect("create aot backend repair root");
+    let gsc = root.join("real-gsc");
+    let backend_gsc = root.join("gerbil").join("v0.18.2").join("bin").join("gsc");
+    fs::write(&gsc, "#!/bin/sh\nexit 0\n").expect("write configured gsc");
+
+    let receipt = gerbil_backend_failure_receipt(&root, &gsc, &backend_gsc);
+    let plan = receipt
+        .plan_backend_gsc_repair(&root)
+        .expect("plan backend gsc repair");
+
+    assert_eq!(plan.status, GerbilAotBackendRepairStatus::RepoShimAvailable);
+    assert!(plan.can_create_shim);
+    assert!(!plan.requires_system_write);
+    assert!(!backend_gsc.exists());
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn gerbil_aot_backend_repair_plan_reports_system_write_requirement() {
+    let root = test_root("aot-backend-repair-system");
+    fs::create_dir_all(&root).expect("create aot backend repair root");
+    let gsc = root.join("real-gsc");
+    let backend_gsc = root.join("outside").join("v0.18.2").join("bin").join("gsc");
+    let allowed = root.join("allowed");
+    fs::write(&gsc, "#!/bin/sh\nexit 0\n").expect("write configured gsc");
+
+    let receipt = gerbil_backend_failure_receipt(&root, &gsc, &backend_gsc);
+    let plan = receipt
+        .plan_backend_gsc_repair(&allowed)
+        .expect("plan backend gsc repair");
+
+    assert_eq!(
+        plan.status,
+        GerbilAotBackendRepairStatus::RequiresSystemWrite
+    );
+    assert!(!plan.can_create_shim);
+    assert!(plan.requires_system_write);
+    assert!(
+        plan.recommended_action
+            .contains("authorize a system-level shim")
+    );
+    assert!(!backend_gsc.exists());
+    let _ = fs::remove_dir_all(root);
+}
 
 #[cfg(unix)]
 #[test]
