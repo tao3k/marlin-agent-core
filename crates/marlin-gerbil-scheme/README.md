@@ -21,12 +21,12 @@ let compiler = marlin_gerbil_scheme::GerbilCommandCompiler::from_default_marlin_
 For custom process control, build a `GerbilCommandSpec` or
 `GerbilCommandProfile` directly and pass it to `GerbilCommandCompiler`.
 
-The crate also ships runnable examples:
+The crate also ships a runnable source compiler and examples:
 
 ```sh
 direnv exec . cargo run -p marlin-gerbil-scheme --example workspace-patch-intent
 direnv exec . cargo run -p marlin-gerbil-scheme --example workspace-patch-intent-workflow
-direnv exec . cargo run --locked -p marlin-gerbil-scheme --example compile-source -- \
+direnv exec . cargo run --locked -p marlin-gerbil-scheme --bin marlin-gerbil-compile-source -- \
   workspace-patch-intent crates/marlin-gerbil-scheme/examples/workspace-patch-intent-source.ss
 ```
 

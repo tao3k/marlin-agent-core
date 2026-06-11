@@ -69,13 +69,16 @@ agents can inspect the evidence without re-running the query.
 ** View And Status
 
 =marlin-workspace-view= exposes =ContractFacts= as a selectable compact view
-field and carries rendered contract summary lines beside node text, including
-matched-node counts and ids for supported validation receipts.
+field and carries the typed =OrgContractRegistry= beside rendered contract
+summary lines. Rendered lines include assertion counts, structured expectation
+summaries, matched-node counts, and matched node ids for supported validation
+receipts.
 =marlin-workspace-status= has a =ContractStatus= summary for resolved
 references, unresolved references, diagnostics, templates, validation receipts,
-validation outcomes, matched nodes, and rendered summary lines. It also carries typed
-reference resolutions, diagnostic records, template records, and the full
-=OrgContractValidationReport= so agents do not need to parse rendered text.
+validation outcomes, assertions, matched nodes, and rendered summary lines. It
+also carries the typed contract registry, reference resolutions, diagnostic
+records, template records, and the full =OrgContractValidationReport= so agents
+do not need to parse rendered text.
 
 ** Current Limits
 

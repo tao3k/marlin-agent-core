@@ -56,10 +56,16 @@ Task `{{ scope.title }}` must contain a Goal section.
     .expect("view renders contract facts");
 
     let contract_facts = view.contract_facts.expect("contract facts selected");
+    assert_eq!(contract_facts.registry.contracts.len(), 1);
     assert_eq!(contract_facts.resolutions.len(), 1);
     assert_eq!(contract_facts.templates.len(), 1);
     assert_eq!(contract_facts.summary.resolved_references, 1);
+    assert_eq!(contract_facts.summary.contract_assertions, 1);
     assert_eq!(contract_facts.summary.templates, 1);
+    assert_eq!(
+        contract_facts.summary.contract_expectation_summaries,
+        vec!["agent.task.v1/task.has-goal: count >= 1"]
+    );
     let view_receipt = &contract_facts.validations.receipts[0];
     assert_eq!(
         view_receipt
@@ -73,8 +79,16 @@ Task `{{ scope.title }}` must contain a Goal section.
             .rendered_lines
             .contains(&"contracts.validation_receipts: 1".to_string())
     );
+    assert!(contract_facts.rendered_lines.contains(
+        &"contract.validation.expectation: agent.task.v1/task.has-goal: count >= 1".to_string()
+    ));
     assert!(view.text.contains("contracts.resolved: 1"));
+    assert!(view.text.contains("contracts.assertions: 1"));
     assert!(view.text.contains("contracts.templates: 1"));
+    assert!(
+        view.text
+            .contains("contract.validation.expectation: agent.task.v1/task.has-goal: count >= 1")
+    );
     assert!(
         view.text.contains("contracts.validation.failed: 1"),
         "{}",
@@ -87,12 +101,18 @@ Task `{{ scope.title }}` must contain a Goal section.
     assert_eq!(contracts.resolved_references, 1);
     assert_eq!(contracts.unresolved_references, 0);
     assert_eq!(contracts.templates, 1);
+    assert_eq!(contracts.contract_assertions, 1);
     assert_eq!(contracts.validation_receipts, 1);
     assert_eq!(contracts.validation_failed, 1);
     assert_eq!(contracts.validation_matched_nodes, 0);
     assert!(contracts.validation_matched_node_ids.is_empty());
     assert_eq!(contracts.reference_resolutions.len(), 1);
     assert_eq!(contracts.diagnostic_records.len(), 0);
+    assert_eq!(contracts.registry.contracts.len(), 1);
+    assert_eq!(
+        contracts.contract_expectation_summaries,
+        vec!["agent.task.v1/task.has-goal: count >= 1"]
+    );
     assert_eq!(contracts.template_records.len(), 1);
     assert_eq!(contracts.validation_report.receipts.len(), 1);
     let status_receipt = &contracts.validation_report.receipts[0];
@@ -109,6 +129,9 @@ Task `{{ scope.title }}` must contain a Goal section.
             .rendered_summary
             .contains(&"contracts.templates: 1".to_string())
     );
+    assert!(contracts.rendered_summary.contains(
+        &"contract.validation.expectation: agent.task.v1/task.has-goal: count >= 1".to_string()
+    ));
 }
 
 #[test]

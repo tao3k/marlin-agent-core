@@ -3,8 +3,8 @@
 use marlin_agent_protocol::{LoopEvidence, LoopEvidenceKind};
 use marlin_gerbil_ir::ReleaseTopologySpec;
 use marlin_org_model::{
-    OrgContractDiagnostic, OrgContractResolution, OrgContractTemplate, OrgContractValidationReport,
-    OrgNodeId,
+    OrgContractDiagnostic, OrgContractRegistry, OrgContractResolution, OrgContractTemplate,
+    OrgContractValidationReport, OrgNodeId,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
@@ -77,6 +77,8 @@ pub struct ContractStatus {
     pub unresolved_references: usize,
     pub diagnostics: usize,
     pub templates: usize,
+    #[serde(default)]
+    pub contract_assertions: usize,
     pub validation_receipts: usize,
     pub validation_passed: usize,
     pub validation_failed: usize,
@@ -91,7 +93,11 @@ pub struct ContractStatus {
     #[serde(default)]
     pub template_records: Vec<OrgContractTemplate>,
     #[serde(default)]
+    pub registry: OrgContractRegistry,
+    #[serde(default)]
     pub validation_report: OrgContractValidationReport,
+    #[serde(default)]
+    pub contract_expectation_summaries: Vec<String>,
     pub rendered_summary: Vec<String>,
 }
 

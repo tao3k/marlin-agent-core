@@ -7,7 +7,9 @@ use marlin_gerbil_scheme::{
     GerbilSource, GerbilWorkspaceContractFacts,
 };
 use marlin_org_model::{
-    OrgContractRegistry, OrgContractResolutionReport, OrgContractValidationReport,
+    OrgContract, OrgContractAssertion, OrgContractCompareOp, OrgContractExpectation, OrgContractId,
+    OrgContractKind, OrgContractQuery, OrgContractRegistry, OrgContractResolutionReport,
+    OrgContractScope, OrgContractSeverity, OrgContractValidationReport,
 };
 
 #[test]
@@ -16,7 +18,29 @@ fn command_protocol_round_trips_json_contract() {
         source: GerbilSource::new("audit/control-plane", "(module audit/control-plane)"),
         expected: GerbilArtifactKind::LoopGraph,
         contract_facts: Some(GerbilWorkspaceContractFacts {
-            registry: OrgContractRegistry::default(),
+            registry: OrgContractRegistry {
+                contracts: vec![OrgContract {
+                    id: OrgContractId::new("agent.task.v1"),
+                    aliases: Vec::new(),
+                    scope: OrgContractScope::new("Subtree"),
+                    kind: OrgContractKind::new("OrgElementsAssertions"),
+                    assertions: vec![OrgContractAssertion {
+                        id: "task.has-goal".to_string(),
+                        severity: OrgContractSeverity::new("Error"),
+                        bindings: Vec::new(),
+                        query: OrgContractQuery::default(),
+                        expectation: OrgContractExpectation::Count {
+                            op: OrgContractCompareOp::Ge,
+                            expected: 1,
+                        },
+                        message: None,
+                        fix: None,
+                        templates: Vec::new(),
+                        query_source: None,
+                        expect_source: None,
+                    }],
+                }],
+            },
             resolutions: OrgContractResolutionReport::default(),
             validations: OrgContractValidationReport::default(),
         }),
@@ -24,6 +48,9 @@ fn command_protocol_round_trips_json_contract() {
 
     let encoded = serde_json::to_string(&request).expect("request should encode as json");
     assert!(encoded.contains("\"expected\":\"LoopGraph\""));
+    assert!(encoded.contains("\"kind\":\"count\""));
+    assert!(encoded.contains("\"op\":\"Ge\""));
+    assert!(encoded.contains("\"expected\":1"));
 
     let decoded: GerbilCompileRequest =
         serde_json::from_str(&encoded).expect("request should decode from json");

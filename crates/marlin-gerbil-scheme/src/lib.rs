@@ -2,6 +2,7 @@
 
 mod artifact;
 mod command;
+mod compile_source;
 mod compiler;
 mod runtime;
 
@@ -10,6 +11,7 @@ pub use command::{
     GERBIL_COMMAND_PROFILE_ENV, GerbilCommandCompiler, GerbilCommandProfile, GerbilCommandSpec,
     GerbilCompileRequest, GerbilCompileResponse, GerbilRuntimeBinding,
 };
+pub use compile_source::run_compile_source_cli;
 pub use compiler::{GerbilCompiler, GerbilSource, compile_checked};
 pub use marlin_gerbil_ir::GerbilWorkspaceContractFacts;
 pub use runtime::{

@@ -710,12 +710,13 @@ fn contract_facts_from_workspace(
         .flat_map(|assertion| assertion.templates.iter().cloned())
         .collect();
 
-    RenderedContractFacts::new(
-        resolutions.references,
-        resolutions.diagnostics,
+    RenderedContractFacts::from_input(marlin_workspace_view::RenderedContractFactsInput {
+        registry,
+        resolutions: resolutions.references,
+        diagnostics: resolutions.diagnostics,
         templates,
         validations,
-    )
+    })
 }
 
 fn contract_status(contract_facts: &RenderedContractFacts) -> ContractStatus {
@@ -726,6 +727,7 @@ fn contract_status(contract_facts: &RenderedContractFacts) -> ContractStatus {
         unresolved_references: summary.unresolved_references,
         diagnostics: summary.diagnostics,
         templates: summary.templates,
+        contract_assertions: summary.contract_assertions,
         validation_receipts: summary.validation_receipts,
         validation_passed: summary.validation_passed,
         validation_failed: summary.validation_failed,
@@ -735,7 +737,9 @@ fn contract_status(contract_facts: &RenderedContractFacts) -> ContractStatus {
         reference_resolutions: contract_facts.resolutions.clone(),
         diagnostic_records: contract_facts.diagnostics.clone(),
         template_records: contract_facts.templates.clone(),
+        registry: contract_facts.registry.clone(),
         validation_report: contract_facts.validations.clone(),
+        contract_expectation_summaries: summary.contract_expectation_summaries.clone(),
         rendered_summary: contract_facts.rendered_lines.clone(),
     }
 }

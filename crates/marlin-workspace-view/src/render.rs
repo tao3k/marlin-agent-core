@@ -1,8 +1,8 @@
 //! Rendered workspace view records.
 
 use marlin_org_model::{
-    OrgContractDiagnostic, OrgContractResolution, OrgContractTemplate, OrgContractValidationReport,
-    OrgContractValidationStatus, OrgNodeId,
+    OrgContractDiagnostic, OrgContractRegistry, OrgContractResolution, OrgContractTemplate,
+    OrgContractValidationReport, OrgContractValidationStatus, OrgNodeId,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
@@ -20,12 +20,25 @@ pub struct RenderedWorkspaceView {
 /// Contract facts selected for a rendered workspace view.
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct RenderedContractFacts {
+    #[serde(default)]
+    pub registry: OrgContractRegistry,
     pub resolutions: Vec<OrgContractResolution>,
     pub diagnostics: Vec<OrgContractDiagnostic>,
     pub templates: Vec<OrgContractTemplate>,
     pub validations: OrgContractValidationReport,
     pub summary: RenderedContractSummary,
     pub rendered_lines: Vec<String>,
+}
+
+/// Named input for rendering selected contract facts into a workspace view.
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub struct RenderedContractFactsInput {
+    #[serde(default)]
+    pub registry: OrgContractRegistry,
+    pub resolutions: Vec<OrgContractResolution>,
+    pub diagnostics: Vec<OrgContractDiagnostic>,
+    pub templates: Vec<OrgContractTemplate>,
+    pub validations: OrgContractValidationReport,
 }
 
 impl RenderedContractFacts {
@@ -35,11 +48,22 @@ impl RenderedContractFacts {
         templates: Vec<OrgContractTemplate>,
         validations: OrgContractValidationReport,
     ) -> Self {
-        let mut facts = Self {
+        Self::from_input(RenderedContractFactsInput {
+            registry: OrgContractRegistry::default(),
             resolutions,
             diagnostics,
             templates,
             validations,
+        })
+    }
+
+    pub fn from_input(input: RenderedContractFactsInput) -> Self {
+        let mut facts = Self {
+            registry: input.registry,
+            resolutions: input.resolutions,
+            diagnostics: input.diagnostics,
+            templates: input.templates,
+            validations: input.validations,
             summary: RenderedContractSummary::default(),
             rendered_lines: Vec::new(),
         };
@@ -58,6 +82,8 @@ impl RenderedContractFacts {
 pub struct RenderedContractSummary {
     pub resolved_references: usize,
     pub unresolved_references: usize,
+    #[serde(default)]
+    pub contract_assertions: usize,
     pub diagnostics: usize,
     pub templates: usize,
     pub validation_receipts: usize,
@@ -66,6 +92,8 @@ pub struct RenderedContractSummary {
     pub validation_skipped: usize,
     pub validation_matched_nodes: usize,
     pub validation_matched_node_ids: Vec<OrgNodeId>,
+    #[serde(default)]
+    pub contract_expectation_summaries: Vec<String>,
 }
 
 impl RenderedContractSummary {
@@ -101,10 +129,26 @@ impl RenderedContractSummary {
             .collect::<BTreeSet<_>>()
             .into_iter()
             .collect::<Vec<_>>();
+        let contract_expectation_summaries = facts
+            .registry
+            .contracts
+            .iter()
+            .flat_map(|contract| {
+                contract.assertions.iter().map(|assertion| {
+                    format!(
+                        "{}/{}: {}",
+                        contract.id.as_str(),
+                        assertion.id,
+                        assertion.expectation.expected_summary()
+                    )
+                })
+            })
+            .collect::<Vec<_>>();
 
         Self {
             resolved_references,
             unresolved_references: facts.resolutions.len().saturating_sub(resolved_references),
+            contract_assertions: contract_expectation_summaries.len(),
             diagnostics: facts.diagnostics.len(),
             templates: facts.templates.len(),
             validation_receipts: facts.validations.receipts.len(),
@@ -113,6 +157,7 @@ impl RenderedContractSummary {
             validation_skipped,
             validation_matched_nodes: validation_matched_node_ids.len(),
             validation_matched_node_ids,
+            contract_expectation_summaries,
         }
     }
 
@@ -120,6 +165,7 @@ impl RenderedContractSummary {
         let mut lines = vec![
             format!("contracts.resolved: {}", self.resolved_references),
             format!("contracts.unresolved: {}", self.unresolved_references),
+            format!("contracts.assertions: {}", self.contract_assertions),
             format!("contracts.diagnostics: {}", self.diagnostics),
             format!("contracts.templates: {}", self.templates),
             format!(
@@ -140,6 +186,10 @@ impl RenderedContractSummary {
                 "contract.validation.matched_node: {}",
                 node.as_str()
             ));
+        }
+
+        for expectation in &self.contract_expectation_summaries {
+            lines.push(format!("contract.validation.expectation: {expectation}"));
         }
 
         for diagnostic in diagnostics {

@@ -144,8 +144,8 @@ jobs:
         run: |
           cargo test -p marlin-gerbil-ir -p marlin-gerbil-scheme -p marlin-org-workflow --locked
 
-      - name: Check Gerbil examples
-        run: cargo check -p marlin-gerbil-scheme --examples --locked
+      - name: Check Gerbil binaries and examples
+        run: cargo check -p marlin-gerbil-scheme --bins --examples --locked
 
       - name: Audit Gerbil package assets
         run: |
@@ -155,6 +155,8 @@ jobs:
           grep -Fx examples/workspace-patch-intent.rs gerbil-package-files.txt
           grep -Fx examples/workspace-patch-intent-workflow.rs gerbil-package-files.txt
           grep -Fx examples/workspace-patch-intent-source.ss gerbil-package-files.txt
+          grep -Fx src/bin/marlin-gerbil-compile-source.rs gerbil-package-files.txt
+          grep -Fx src/compile_source.rs gerbil-package-files.txt
           grep -Fx fixtures/gerbil/command-adapter.ss gerbil-package-files.txt
           grep -Fx fixtures/gerbil/command-adapter-batch.ss gerbil-package-files.txt
           grep -Fx fixtures/gerbil/marlin/adapter.ss gerbil-package-files.txt

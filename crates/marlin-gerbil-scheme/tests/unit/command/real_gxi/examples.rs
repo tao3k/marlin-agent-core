@@ -23,7 +23,7 @@ fn command_compiler_real_gxi_runs_workspace_patch_intent_example_from_runtime_as
         .join("workspace-patch-intent.ss");
 
     let output = Command::new(gxi)
-        .env(GERBIL_LOADPATH_ENV, root.as_path())
+        .env(GERBIL_LOADPATH_ENV, &root)
         .arg(example)
         .output()
         .expect("run real gxi workspace patch intent example");
@@ -72,7 +72,7 @@ fn command_compiler_real_gxi_protocol_bindings_emit_workspace_patch_intent() {
     .expect("write protocol bindings example");
 
     let output = Command::new(gxi)
-        .env(GERBIL_LOADPATH_ENV, root.as_path())
+        .env(GERBIL_LOADPATH_ENV, &root)
         .arg(example)
         .output()
         .expect("run real gxi protocol bindings example");
@@ -116,7 +116,7 @@ fn command_compiler_real_gxi_reads_workspace_patch_intent_source_file() {
 
 #[test]
 #[ignore = "requires a local Gerbil gxi executable"]
-fn command_compiler_real_gxi_runs_compile_source_example() {
+fn command_compiler_real_gxi_runs_compile_source_binary() {
     if local_gxi().is_none() {
         return;
     };
@@ -128,17 +128,17 @@ fn command_compiler_real_gxi_runs_compile_source_example() {
     let source_path = manifest_dir
         .join("examples")
         .join("workspace-patch-intent-source.ss");
-    let mut command = compile_source_example_command(workspace_root);
+    let mut command = compile_source_command(workspace_root);
 
     let output = command
         .arg("workspace-patch-intent")
         .arg(&source_path)
         .output()
-        .expect("run Gerbil compile-source example");
+        .expect("run Gerbil compile-source binary");
 
     assert!(
         output.status.success(),
-        "compile-source example failed\nstdout:\n{}\nstderr:\n{}",
+        "compile-source binary failed\nstdout:\n{}\nstderr:\n{}",
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
@@ -147,24 +147,24 @@ fn command_compiler_real_gxi_runs_compile_source_example() {
     assert_workspace_patch_intent_artifact(artifact);
 }
 
-fn compile_source_example_command(workspace_root: &Path) -> Command {
-    if let Some(program) = option_env!("CARGO_BIN_EXE_compile-source") {
+fn compile_source_command(workspace_root: &Path) -> Command {
+    if let Some(program) = option_env!("CARGO_BIN_EXE_marlin-gerbil-compile-source") {
         return Command::new(program);
     }
 
-    if let Some(program) = std::env::var_os("CARGO_BIN_EXE_compile-source") {
+    if let Some(program) = std::env::var_os("CARGO_BIN_EXE_marlin-gerbil-compile-source") {
         return Command::new(program);
     }
 
     let target_dir = std::env::var_os("CARGO_TARGET_DIR")
         .map(PathBuf::from)
         .unwrap_or_else(|| workspace_root.join("target"));
-    let compiled_example = target_dir
-        .join("debug")
-        .join("examples")
-        .join(format!("compile-source{}", std::env::consts::EXE_SUFFIX));
-    if compiled_example.is_file() {
-        return Command::new(compiled_example);
+    let compiled_binary = target_dir.join("debug").join(format!(
+        "marlin-gerbil-compile-source{}",
+        std::env::consts::EXE_SUFFIX
+    ));
+    if compiled_binary.is_file() {
+        return Command::new(compiled_binary);
     }
 
     let cargo = std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
@@ -174,8 +174,8 @@ fn compile_source_example_command(workspace_root: &Path) -> Command {
         "--locked",
         "-p",
         "marlin-gerbil-scheme",
-        "--example",
-        "compile-source",
+        "--bin",
+        "marlin-gerbil-compile-source",
         "--",
     ]);
     command
