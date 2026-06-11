@@ -209,8 +209,13 @@ fn performance_index_for_crate(crate_dir: &Path) -> PerformanceBenchRecord {
 
 fn gerbil_aot_probe_bench() -> GerbilAotProbeBenchRecord {
     let root = temp_bench_root("gerbil-aot-probe");
+    let cache_path = workspace_root()
+        .join("target")
+        .join("marlin-gerbil-aot-probe-cache.json");
     let started_at = Instant::now();
-    let receipt = GerbilAotProbeConfig::new(&root).probe();
+    let receipt = GerbilAotProbeConfig::new(&root)
+        .probe_with_toolchain_cache(&cache_path)
+        .expect("Gerbil AOT probe cache should be readable and writable");
     let duration = started_at.elapsed();
     let executable_ready =
         receipt.status == GerbilAotProbeStatus::ExecutableReady && receipt.executable.is_file();
@@ -264,10 +269,7 @@ fn temp_bench_root(name: &str) -> PathBuf {
 }
 
 fn workspace_crates() -> Vec<PathBuf> {
-    let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .ancestors()
-        .nth(2)
-        .expect("harness crate should live under workspace/crates");
+    let workspace_root = workspace_root();
     let crates_dir = workspace_root.join("crates");
     let mut crates = fs::read_dir(&crates_dir)
         .unwrap_or_else(|error| panic!("read workspace crates dir {crates_dir:?}: {error}"))
@@ -277,4 +279,12 @@ fn workspace_crates() -> Vec<PathBuf> {
 
     crates.sort();
     crates
+}
+
+fn workspace_root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .ancestors()
+        .nth(2)
+        .expect("harness crate should live under workspace/crates")
+        .to_path_buf()
 }
