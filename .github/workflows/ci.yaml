@@ -23,7 +23,6 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 jobs:
   format:
@@ -225,7 +224,7 @@ jobs:
 
       - name: Upload release status artifacts
         if: ${{ always() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: release-status-${{ runner.os }}
           path: ${{ env.MARLIN_RELEASE_STATUS_ARTIFACT_DIR }}
