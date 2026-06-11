@@ -73,7 +73,8 @@ emitting JSON:
 
 - =fixtures/gerbil/marlin/protocol.ss= owns constructors/accessors for
   =LoopGraph=, =LoopNodeSpec=, and =LoopEdgeSpec= plus the
-  =GerbilCompileResponse= serializer.
+  =GerbilCompileResponse= serializer and the supported =LoopGraph= artifact
+  kind check.
 - =fixtures/gerbil/marlin/request.ss= owns the =GerbilCompileRequest= JSON
   reader boundary through =:std/text/json=.
 - =fixtures/gerbil/marlin/parser.ss= owns the Gerbil reader-backed smoke DSL
@@ -95,10 +96,23 @@ GERBIL_LOADPATH=crates/marlin-gerbil-scheme/fixtures/gerbil \
   crates/marlin-gerbil-scheme/fixtures/gerbil/fixed-loop-graph-adapter.ss
 #+end_src
 
-Run the Rust boundary test explicitly:
+The same adapter module can be invoked directly through Gerbil's module
+entrypoint without the launcher file:
 
 #+begin_src sh
-direnv exec . cargo test -p marlin-gerbil-scheme command_compiler_can_call_real_gxi_fixture -- --ignored --nocapture
+GERBIL_LOADPATH=crates/marlin-gerbil-scheme/fixtures/gerbil \
+  /opt/homebrew/opt/gerbil-scheme/bin/gxi \
+  :marlin/adapter
 #+end_src
 
-The test is ignored by default because it requires a local Gerbil installation.
+The Rust boundary tests pass that value through =GerbilCommandSpec.env=, not
+through a shell wrapper. They cover both successful =LoopGraph= compilation and
+Gerbil-side rejection of unsupported =expected= artifact kinds.
+
+Run the Rust boundary tests explicitly:
+
+#+begin_src sh
+direnv exec . cargo test -p marlin-gerbil-scheme command_compiler_can_call_real_gxi -- --ignored --nocapture
+#+end_src
+
+The tests are ignored by default because they require a local Gerbil installation.

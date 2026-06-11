@@ -4,5 +4,5 @@ mod artifact;
 #[path = "unit/compiler.rs"]
 mod compiler;
 
-#[path = "unit/command.rs"]
+#[path = "unit/command/mod.rs"]
 mod command;

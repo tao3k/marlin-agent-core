@@ -4,6 +4,8 @@
 package: marlin
 
 (export make-marlin-loop-node
+        marlin-loop-graph-artifact-kind
+        ensure-marlin-loop-graph-expected
         marlin-loop-node-id
         marlin-loop-node-executor
         marlin-loop-node-config
@@ -16,6 +18,12 @@ package: marlin
         marlin-loop-graph-nodes
         marlin-loop-graph-edges
         display-gerbil-compile-response)
+
+(def marlin-loop-graph-artifact-kind "LoopGraph")
+
+(def (ensure-marlin-loop-graph-expected expected)
+  (unless (equal? expected marlin-loop-graph-artifact-kind)
+    (error "marlin gerbil protocol expected LoopGraph" expected)))
 
 (def (make-marlin-loop-node node-id executor config)
   (list node-id executor config))

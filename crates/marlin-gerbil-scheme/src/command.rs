@@ -217,10 +217,18 @@ impl GerbilCompiler for GerbilCommandCompiler {
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let stderr = stderr.trim();
+            let stdout = stdout.trim();
+            let diagnostics = match (stderr.is_empty(), stdout.is_empty()) {
+                (false, false) => format!("stderr: {stderr}\nstdout: {stdout}"),
+                (false, true) => stderr.to_string(),
+                (true, false) => stdout.to_string(),
+                (true, true) => String::new(),
+            };
             return Err(format!(
                 "gerbil compiler command failed with status {}: {}",
-                output.status,
-                stderr.trim()
+                output.status, diagnostics
             ));
         }
 

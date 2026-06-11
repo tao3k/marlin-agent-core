@@ -9,7 +9,8 @@ package: marlin
 
 (def (run-fixed-loop-graph-adapter)
   (let* ((request (read-gerbil-compile-request))
-         (_expected (gerbil-compile-request-expected-kind request))
+         (expected (gerbil-compile-request-expected-kind request))
+         (_ (ensure-marlin-loop-graph-expected expected))
          (source-text (gerbil-compile-request-source-text request))
          (graph (compile-loop-graph source-text)))
     (display-gerbil-compile-response graph)

@@ -26,8 +26,9 @@ The command boundary is intentionally data-only:
   edge conditions through the typed Rust IR.
 - workspace patch intent is represented as =WorkspacePatchIntentSpec= inside
   =GerbilCompiledArtifact=, not as direct mutation authority.
-- stderr is diagnostic text and is surfaced only when the command exits with a
-  non-zero status.
+- stderr is diagnostic text and is surfaced when the command exits with a
+  non-zero status; stdout is also surfaced for runtimes such as =gxi= that print
+  failure diagnostics there.
 - The adapter rejects any artifact whose actual kind differs from the requested
   =expected= kind.
 
@@ -43,7 +44,9 @@ modules through =GERBIL_LOADPATH=. =fixtures/gerbil/marlin/request.ss= decodes
 =fixtures/gerbil/marlin/parser.ss= imports =./protocol= and owns the smoke DSL
 reader-backed source-to-=LoopGraph= step. =fixtures/gerbil/marlin/adapter.ss=
 imports =./request=, =./parser=, and =./protocol=, then emits one
-=GerbilCompileResponse=.
+=GerbilCompileResponse=. The protocol binding currently exports the
+=LoopGraph= artifact kind contract and rejects other =expected= artifact kinds
+inside the Gerbil process before source text reaches the parser.
 
 Native Rust/Gerbil bindings are a later layer. They should live behind this
 same typed protocol after the command boundary proves the IR shape, because
