@@ -11,7 +11,6 @@ use marlin_agent_runtime::{
 };
 use marlin_gerbil_ir::{ReleaseGateSpec, ReleaseTopologySpec};
 use std::time::{Duration, Instant};
-use tokio_stream::StreamExt;
 
 use crate::{
     HarnessAssertionError, TraceRecorder, assert_evidence_kinds, release_gate_visibility_evidence,
@@ -137,7 +136,7 @@ impl HarnessRuntime {
             ),
         };
         let assertion = self.assert_scenario_evidence(scenario).err();
-        let events = self.drain_ready_events().await;
+        let events = self.drain_ready_events();
         let duration = started_at.elapsed();
         record_result_span(&result, events.len(), duration);
         let trace_spans = span_recorder.spans();
@@ -166,14 +165,10 @@ impl HarnessRuntime {
         }
     }
 
-    async fn drain_ready_events(&mut self) -> Vec<AgentEvent> {
+    fn drain_ready_events(&mut self) -> Vec<AgentEvent> {
         let mut events = Vec::new();
 
-        while let Ok(Some(event)) = self
-            .runtime
-            .timeout(Duration::from_millis(1), self.events.next())
-            .await
-        {
+        while let Some(event) = self.events.try_next() {
             events.push(event);
         }
 

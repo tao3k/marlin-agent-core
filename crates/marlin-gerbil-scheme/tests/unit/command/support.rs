@@ -6,6 +6,8 @@ use marlin_org_model::TodoState;
 use marlin_workspace_patch::WorkspacePatchOp;
 use std::path::PathBuf;
 
+pub const MARLIN_REQUIRE_REAL_GXI_ENV: &str = "MARLIN_REQUIRE_REAL_GXI";
+
 pub fn loop_graph_artifact(graph_id: &str) -> GerbilCompiledArtifact {
     GerbilCompiledArtifact::LoopGraph(CompiledLoopGraph {
         graph_id: graph_id.to_string(),
@@ -69,10 +71,16 @@ pub fn local_gxi() -> Option<PathBuf> {
     let gxi = default_gerbil_gxi_program();
 
     if !gxi.exists() {
-        eprintln!(
+        let message = format!(
             "skipping real gxi test because {} is missing",
             gxi.display()
         );
+        if std::env::var_os(MARLIN_REQUIRE_REAL_GXI_ENV).is_some() {
+            panic!(
+                "{message}; unset {MARLIN_REQUIRE_REAL_GXI_ENV} or set MARLIN_GERBIL_GXI to an existing executable"
+            );
+        }
+        eprintln!("{message}");
         return None;
     }
 

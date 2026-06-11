@@ -1,4 +1,5 @@
 use futures_executor::block_on;
+use marlin_gerbil_ir::{ReleaseGateSpec, ReleaseTopologySpec, ReleaseVisibilitySpec};
 use marlin_org_memory::MemoryOrgWorkspace;
 use marlin_org_model::{CheckboxState, OrgNode, OrgNodeId, TodoState};
 use marlin_org_workspace::OrgDocument;
@@ -9,7 +10,7 @@ use marlin_workspace_protocol::{AgentWorkspace, WorkspaceCtx};
 use marlin_workspace_query::{
     PropertyFilter, QueryFilter, QueryOrder, SourceRange, WorkspaceQuery, WorkspaceScope,
 };
-use marlin_workspace_status::{GoalState, PatchExecutionMode, WorkspaceTarget};
+use marlin_workspace_status::{GoalState, PatchExecutionMode, ReleaseGateState, WorkspaceTarget};
 use marlin_workspace_view::{WorkspaceField, WorkspaceViewSpec};
 
 #[test]
@@ -284,4 +285,50 @@ fn memory_workspace_queries_patches_renders_and_reports_status() {
     assert_eq!(patch_status.memory_dispatch_accepted, 1);
     assert_eq!(patch_status.memory_dispatch_failed, 0);
     assert!(patch_status.validation_accepted);
+}
+
+#[test]
+fn memory_workspace_reports_recorded_release_topology_status() {
+    let workspace = MemoryOrgWorkspace::new();
+    let topology = ReleaseTopologySpec {
+        topology_id: "release:gerbil".to_string(),
+        crate_name: "marlin-gerbil-scheme".to_string(),
+        publish_enabled: false,
+        asset_audit_command: "cargo package -p marlin-gerbil-scheme --list --allow-dirty"
+            .to_string(),
+        package_assets: vec!["fixtures/gerbil/build.ss".to_string()],
+        runtime_dependency_chain: vec!["marlin-gerbil-ir".to_string()],
+        workflow_dependency_chain: vec!["marlin-org-workflow".to_string()],
+        gates: vec![ReleaseGateSpec {
+            gate_id: "package-assets".to_string(),
+            command: "cargo package -p marlin-gerbil-scheme --list --allow-dirty".to_string(),
+            requires_local_gerbil: false,
+            required_artifacts: vec!["fixtures/gerbil/build.ss".to_string()],
+            visibility: vec![ReleaseVisibilitySpec {
+                report_key: "package_asset_audit".to_string(),
+                evidence_keys: vec!["required_artifacts".to_string()],
+                artifact_paths: vec!["fixtures/gerbil/build.ss".to_string()],
+            }],
+        }],
+    };
+
+    let recorded = workspace
+        .record_release_topology(&topology)
+        .expect("release topology recorded");
+    let status =
+        block_on(workspace.status(WorkspaceTarget::Workspace, WorkspaceCtx::new("unit-test")))
+            .expect("workspace status");
+    let release = status.release.expect("release status");
+
+    assert_eq!(recorded.topology_id, "release:gerbil");
+    assert_eq!(release.topology_id, "release:gerbil");
+    assert_eq!(release.crate_name, "marlin-gerbil-scheme");
+    assert_eq!(release.gates[0].state, ReleaseGateState::Pending);
+    assert!(
+        release
+            .visibility_reports
+            .iter()
+            .any(|report| report.report_key == "package_asset_audit"
+                && report.artifact_paths == ["fixtures/gerbil/build.ss"])
+    );
 }

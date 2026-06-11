@@ -6,6 +6,17 @@ on:
     branches:
       - main
   workflow_dispatch:
+    inputs:
+      run_real_gxi:
+        description: Run ignored real_gxi tests that require a local Gerbil gxi executable.
+        required: false
+        default: false
+        type: boolean
+      real_gxi_runner:
+        description: JSON runs-on labels for the real_gxi job, for example ["self-hosted","macOS"].
+        required: false
+        default: '["ubuntu-latest"]'
+        type: string
 
 permissions:
   contents: read
@@ -148,3 +159,45 @@ jobs:
           grep -Fx fixtures/gerbil/marlin/parser.ss gerbil-package-files.txt
           grep -Fx fixtures/gerbil/marlin/protocol.ss gerbil-package-files.txt
           grep -Fx fixtures/gerbil/marlin/request.ss gerbil-package-files.txt
+
+  real-gxi:
+    name: Real gxi release gate
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_real_gxi }}
+    runs-on: ${{ fromJSON(inputs.real_gxi_runner || '["ubuntu-latest"]') }}
+    timeout-minutes: 60
+    env:
+      CARGO_INCREMENTAL: "0"
+      MARLIN_REQUIRE_REAL_GXI: "1"
+      MARLIN_GERBIL_GXI: ${{ vars.MARLIN_GERBIL_GXI }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: marlin-agent-core-real-gxi-${{ runner.os }}
+          cache-on-failure: true
+
+      - name: Fetch workspace dependencies
+        run: cargo fetch --locked
+
+      - name: Resolve gxi executable
+        run: |
+          if [ -z "${MARLIN_GERBIL_GXI:-}" ] && command -v gxi >/dev/null 2>&1; then
+            MARLIN_GERBIL_GXI="$(command -v gxi)"
+            echo "MARLIN_GERBIL_GXI=$MARLIN_GERBIL_GXI" >> "$GITHUB_ENV"
+          fi
+
+          gxi_program="${MARLIN_GERBIL_GXI:-/opt/homebrew/opt/gerbil-scheme/bin/gxi}"
+          if [ ! -x "$gxi_program" ]; then
+            echo "::error::run_real_gxi requested but $gxi_program is not executable. Set MARLIN_GERBIL_GXI or choose a runner with Gerbil installed."
+            exit 1
+          fi
+
+          "$gxi_program" --version || true
+
+      - name: Run real gxi tests
+        run: cargo test -p marlin-gerbil-scheme --test unit_test --locked command::real_gxi -- --ignored --nocapture

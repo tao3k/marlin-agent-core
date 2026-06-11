@@ -27,7 +27,8 @@ pub use marlin_workspace_query::{
     WorkspaceQueryResult, WorkspaceScope,
 };
 pub use marlin_workspace_status::{
-    ChecklistStatus, DecisionTrace, EvidenceStatus, GoalState, GoalStatus, MetricTrace, SddStatus,
+    ChecklistStatus, DecisionTrace, EvidenceStatus, GoalState, GoalStatus, MetricTrace,
+    ReleaseGateState, ReleaseGateStatus, ReleaseStatus, ReleaseVisibilityStatus, SddStatus,
     WorkspaceStatusReport, WorkspaceTarget,
 };
 pub use marlin_workspace_view::{

@@ -1,6 +1,7 @@
 //! In-memory `Org` workspace backend for protocol tests and local agents.
 
 use async_trait::async_trait;
+use marlin_gerbil_ir::ReleaseTopologySpec;
 use marlin_org_model::{
     CheckboxState, LinkKind, OrgCheckbox, OrgContractRegistry, OrgContractResolutionReport,
     OrgContractValidationReport, OrgLink, OrgNode, OrgNodeId, OrgNodeKind, TodoState,
@@ -19,7 +20,7 @@ use marlin_workspace_query::{
 };
 use marlin_workspace_status::{
     ChecklistStatus, ContractStatus, DecisionTrace, EvidenceStatus, GoalState, GoalStatus,
-    MetricTrace, PatchExecutionMode, PatchStatus, SddStatus, WorkspaceStatusReport,
+    MetricTrace, PatchExecutionMode, PatchStatus, ReleaseStatus, SddStatus, WorkspaceStatusReport,
     WorkspaceTarget,
 };
 use marlin_workspace_view::{
@@ -35,6 +36,7 @@ pub struct MemoryOrgWorkspace {
     nodes: RwLock<BTreeMap<OrgNodeId, OrgNode>>,
     contract_facts: RwLock<RenderedContractFacts>,
     last_patch_receipt: RwLock<Option<WorkspacePatchReceipt>>,
+    release_status: RwLock<Option<ReleaseStatus>>,
 }
 
 impl MemoryOrgWorkspace {
@@ -44,6 +46,7 @@ impl MemoryOrgWorkspace {
             nodes: RwLock::new(BTreeMap::new()),
             contract_facts: RwLock::new(RenderedContractFacts::default()),
             last_patch_receipt: RwLock::new(None),
+            release_status: RwLock::new(None),
         }
     }
 
@@ -57,6 +60,7 @@ impl MemoryOrgWorkspace {
             nodes: RwLock::new(indexed),
             contract_facts: RwLock::new(RenderedContractFacts::default()),
             last_patch_receipt: RwLock::new(None),
+            release_status: RwLock::new(None),
         }
     }
 
@@ -68,6 +72,25 @@ impl MemoryOrgWorkspace {
             .map_err(|error| WorkspaceError::Backend(error.to_string()))?;
         nodes.insert(node.id.clone(), node);
         Ok(())
+    }
+
+    /// Record the latest release status projection visible through `status()`.
+    pub fn record_release_status(&self, status: ReleaseStatus) -> WorkspaceResult<()> {
+        *self
+            .release_status
+            .write()
+            .map_err(|error| WorkspaceError::Backend(error.to_string()))? = Some(status);
+        Ok(())
+    }
+
+    /// Record a pending release status from a `Gerbil` release topology artifact.
+    pub fn record_release_topology(
+        &self,
+        topology: &ReleaseTopologySpec,
+    ) -> WorkspaceResult<ReleaseStatus> {
+        let status = ReleaseStatus::pending_from_topology(topology);
+        self.record_release_status(status.clone())?;
+        Ok(status)
     }
 
     /// Load a raw `Org` document into the in-memory workspace.
@@ -251,11 +274,13 @@ impl AgentWorkspace for MemoryOrgWorkspace {
         let nodes = self.read_nodes()?;
         let contract_facts = self.read_contract_facts()?;
         let last_patch_receipt = self.read_last_patch_receipt()?;
+        let release_status = self.read_release_status()?;
         let target_node = target_node(&nodes, &target);
         Ok(status_for_node(
             target_node,
             &contract_facts,
             last_patch_receipt.as_ref(),
+            release_status,
         ))
     }
 }
@@ -281,6 +306,13 @@ impl MemoryOrgWorkspace {
         self.last_patch_receipt
             .read()
             .map(|receipt| receipt.clone())
+            .map_err(|error| WorkspaceError::Backend(error.to_string()))
+    }
+
+    fn read_release_status(&self) -> WorkspaceResult<Option<ReleaseStatus>> {
+        self.release_status
+            .read()
+            .map(|status| status.clone())
             .map_err(|error| WorkspaceError::Backend(error.to_string()))
     }
 
@@ -629,6 +661,7 @@ fn status_for_node(
     node: Option<&OrgNode>,
     contract_facts: &RenderedContractFacts,
     last_patch_receipt: Option<&WorkspacePatchReceipt>,
+    release: Option<ReleaseStatus>,
 ) -> WorkspaceStatusReport {
     let contracts = Some(contract_status(contract_facts));
     let patch = last_patch_receipt.map(patch_status);
@@ -640,7 +673,7 @@ fn status_for_node(
             evidence: None,
             contracts,
             patch,
-            release: None,
+            release,
             metrics: Vec::new(),
             decisions: DecisionTrace { recent: Vec::new() },
             next_actions: Vec::new(),
@@ -679,7 +712,7 @@ fn status_for_node(
         evidence: Some(evidence),
         contracts,
         patch,
-        release: None,
+        release,
         metrics: metric_traces(node),
         decisions: decision_trace(node),
         next_actions: node
