@@ -171,7 +171,7 @@ jobs:
       CARGO_INCREMENTAL: "0"
       MARLIN_REQUIRE_REAL_GXI: "1"
       MARLIN_GERBIL_GXI: ${{ vars.MARLIN_GERBIL_GXI }}
-      MARLIN_RELEASE_STATUS_ARTIFACT_DIR: target/release-status-artifacts
+      MARLIN_RELEASE_STATUS_ARTIFACT_DIR: ${{ github.workspace }}/target/release-status-artifacts
     steps:
       - uses: actions/checkout@v6
 
@@ -228,4 +228,4 @@ jobs:
         with:
           name: release-status-${{ runner.os }}
           path: ${{ env.MARLIN_RELEASE_STATUS_ARTIFACT_DIR }}
-          if-no-files-found: warn
+          if-no-files-found: error
