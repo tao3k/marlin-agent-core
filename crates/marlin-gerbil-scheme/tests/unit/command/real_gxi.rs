@@ -4,7 +4,11 @@ use super::support::{
     assert_rich_loop_graph_artifact, assert_workspace_patch_intent_artifact,
     assert_workspace_schema_artifact, real_gxi_command_adapter_compiler, real_gxi_module_compiler,
 };
-use marlin_gerbil_scheme::{GerbilArtifactKind, GerbilCompiler, GerbilSource};
+use marlin_gerbil_scheme::{
+    GerbilArtifactKind, GerbilCompiledArtifact, GerbilCompiler, GerbilSource,
+};
+use marlin_org_workflow::GerbilWorkspacePatchIntentDryRunner;
+use marlin_workspace_patch::PatchId;
 
 #[test]
 #[ignore = "requires a local Gerbil gxi executable"]
@@ -137,6 +141,41 @@ fn command_compiler_can_call_real_gxi_workspace_patch_intent() {
         );
 
     assert_workspace_patch_intent_artifact(artifact);
+}
+
+#[test]
+#[ignore = "requires a local Gerbil gxi executable"]
+fn command_compiler_real_gxi_workspace_patch_intent_dry_runs_through_workflow() {
+    let Some(compiler) = real_gxi_module_compiler() else {
+        return;
+    };
+
+    let artifact = compiler
+        .compile(
+            GerbilSource::new(
+                "audit/workspace-patch-intent",
+                WORKSPACE_PATCH_INTENT_SOURCE,
+            ),
+            GerbilArtifactKind::WorkspacePatchIntent,
+        )
+        .expect("real gxi module entry should compile a workspace patch intent before dry-run");
+
+    let GerbilCompiledArtifact::WorkspacePatchIntent(intent) = artifact else {
+        panic!("expected workspace patch intent artifact");
+    };
+    let receipt = GerbilWorkspacePatchIntentDryRunner::dry_run(&intent);
+
+    assert_eq!(receipt.patch_id, PatchId::new("intent:memory"));
+    assert_eq!(receipt.affected_nodes.len(), 1);
+    assert_eq!(receipt.affected_nodes[0].as_str(), "memory.org:1:goal");
+    assert!(receipt.affected_sources.is_empty());
+    assert_eq!(receipt.before_hash, "dry-run:no-workspace-read");
+    assert_eq!(receipt.after_hash, "dry-run:no-workspace-write");
+    assert!(receipt.validation.accepted);
+    assert!(receipt.validation.diagnostics.is_empty());
+    assert_eq!(receipt.memory_dispatch.len(), 1);
+    assert_eq!(receipt.memory_dispatch[0].target, "long-term");
+    assert!(!receipt.memory_dispatch[0].accepted);
 }
 
 #[test]

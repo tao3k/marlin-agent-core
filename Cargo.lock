@@ -257,6 +257,7 @@ dependencies = [
  "marlin-agent-protocol",
  "marlin-gerbil-ir",
  "marlin-org-model",
+ "marlin-org-workflow",
  "marlin-workspace-patch",
  "rust-lang-project-harness 0.1.0 (git+https://github.com/tao3k/rust-lang-project-harness?branch=main)",
  "serde",

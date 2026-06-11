@@ -103,15 +103,22 @@ source-to-IR step before the compiler grows a full package/build boundary.
 
 ** WorkspacePatchIntent Smoke
 
-The runtime smoke includes =WorkspacePatchIntent= as a JSON artifact only. The
-source form compiles through =protocol.ss=, =parser.ss=, and =adapter.ss= into
-=WorkspacePatchIntentSpec= with =dry_run_first= set to true. The smoke proves
-the real =gxi= boundary returns the typed artifact through both the launcher
-file and module entrypoint.
+The runtime smoke includes =WorkspacePatchIntent= as a JSON artifact that can
+enter the Rust dry-run workflow. The source form compiles through
+=protocol.ss=, =parser.ss=, and =adapter.ss= into =WorkspacePatchIntentSpec=
+with =dry_run_first= set to true. The smoke proves the real =gxi= boundary
+returns the typed artifact through both the launcher file and module entrypoint,
+then proves Rust can pass the decoded intent into
+=GerbilWorkspacePatchIntentDryRunner= and receive a =WorkspacePatchReceipt=.
 
-This smoke does not execute a workspace mutation. Patch validation, dry-run
-receipts, and durable persistence remain Rust workflow responsibilities after
-the command adapter has decoded and kind-checked the artifact.
+This smoke does not execute a workspace mutation. The dry-run receipt records
+affected nodes, deterministic dry-run hashes, and rejected memory dispatch
+requests. Durable persistence remains a later Rust workflow responsibility
+after the command adapter has decoded and kind-checked the artifact.
+=command_compiler_real_gxi_workspace_patch_intent_dry_runs_through_workflow=
+then feeds the real =gxi= artifact into
+=GerbilWorkspacePatchIntentDryRunner= and verifies the deterministic dry-run
+receipt.
 
 ** AgentScenarioContract Smoke
 
@@ -145,8 +152,9 @@ GERBIL_LOADPATH=crates/marlin-gerbil-scheme/fixtures/gerbil \
 The Rust boundary tests pass that value through =GerbilCommandSpec.env=, not
 through a shell wrapper. They cover the source-file launcher and module entry,
 successful =LoopGraph=, =WorkspaceSchema=, =WorkspacePatchIntent=, and
-=AgentScenarioContract= compilation, plus Gerbil-side rejection of unsupported
-=expected= artifact kinds and mismatched source forms.
+=AgentScenarioContract= compilation, the =WorkspacePatchIntent= dry-run
+workflow receipt, plus Gerbil-side rejection of unsupported =expected= artifact
+kinds and mismatched source forms.
 
 Run the Rust boundary tests explicitly:
 
