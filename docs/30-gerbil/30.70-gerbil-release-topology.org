@@ -1,0 +1,83 @@
+#+TITLE: 30.70 Gerbil Release Topology
+#+FILETAGS: :marlin:gerbil:release:
+
+30.70 Gerbil Release Topology
+:PROPERTIES:
+:ID: docs-30-70-gerbil-release-topology
+:KIND: release_plan
+:STATUS: draft
+:END:
+
+** Current Boundary
+
+=marlin-gerbil-scheme= is currently a workspace-internal crate. Its manifest is
+marked =publish = false= so the Gerbil landing can remain green while the
+workspace dependency graph is still path-owned.
+
+The supported distributable check is an asset audit:
+
+#+begin_src sh
+direnv exec . cargo package -p marlin-gerbil-scheme --list --allow-dirty
+#+end_src
+
+That check proves the package contents include the Rust examples, Gerbil =.ss=
+examples, README, and crate-owned runtime assets. It does not ask Cargo to
+resolve unpublished workspace crates from crates.io.
+
+** External Publish Blocker
+
+Running upload preparation now fails because Cargo rewrites local =path=
+dependencies into registry dependencies during packaging:
+
+#+begin_src sh
+direnv exec . cargo package -p marlin-gerbil-scheme --allow-dirty --no-verify
+#+end_src
+
+The first current blocker is =marlin-agent-protocol v0.1.0= missing from the
+registry. After that is fixed, the same rule applies to the remaining
+workspace/internal and git dependencies used by normal, build, and dev targets.
+
+** Minimal Runtime Publish Chain
+
+For a runtime-only external crate, publish or otherwise provide these direct
+normal dependencies first:
+
+- =marlin-gerbil-ir=
+- =marlin-org-model=
+- =marlin-agent-protocol=
+
+Then publish =marlin-gerbil-scheme= after removing =publish = false=.
+
+This path keeps the crate focused on compiling Gerbil Scheme into typed Marlin
+artifacts. It does not guarantee that packaged examples and tests can run from
+the registry unless their dev dependencies are also published or split away.
+
+** Full Example And Workflow Chain
+
+If the external package must preserve the current examples and test surface,
+the release chain also needs the workflow/dev stack:
+
+- =marlin-workspace-patch=
+- =marlin-org-patch=
+- =marlin-org-store=
+- =marlin-org-workspace=
+- =marlin-org-workflow=
+
+The build gate dependency also needs a crates.io-compatible distribution path:
+
+- =rust-lang-project-harness=
+
+Keep the crate internal until that full chain is ready, or split examples/tests
+so the published runtime crate does not require unpublished workspace crates as
+dev dependencies.
+
+** Decision Point
+
+Before enabling external publish, choose one release shape:
+
+- Runtime crate only: publish the normal dependency chain and keep workflow
+  examples as workspace-only documentation/tests.
+- Full workspace package: publish the normal, build, and dev dependency chains
+  and keep the current examples/tests intact.
+
+Until that decision is made, =publish = false= is the correct stable boundary.

@@ -21,3 +21,5 @@
 [[file:30.50-gerbil-bindings-reference.org][30.50 Gerbil Bindings Reference]]
 
 [[file:30.60-gerbil-gates.org][30.60 Gerbil Gates]]
+
+[[file:30.70-gerbil-release-topology.org][30.70 Gerbil Release Topology]]

@@ -1,12 +1,9 @@
 #+TITLE: 30.60 Gerbil Gates
-#+FILETAGS: :marlin:gerbil:gates:
+#+PROPERTY: ID docs-30-60-gerbil-gates
+#+PROPERTY: KIND runbook
+#+PROPERTY: STATUS active
 
-30.60 Gerbil Gates
-:PROPERTIES:
-:ID: docs-30-60-gerbil-gates
-:KIND: runbook
-:STATUS: active
-:END:
+* 30.60 Gerbil Gates
 
 ** Default CI Gate
 
@@ -15,21 +12,19 @@ Rust API surface, package contents, examples, and workflow handoff while leaving
 real =gxi= execution behind ignored tests.
 
 #+begin_src sh
-direnv exec . cargo fmt -p marlin-gerbil-scheme --check
-direnv exec . cargo test -p marlin-gerbil-scheme
-direnv exec . cargo test -p marlin-org-workflow
-direnv exec . cargo check -p marlin-gerbil-scheme --examples
-direnv exec . cargo package -p marlin-gerbil-scheme --list --allow-dirty
+direnv exec . cargo fmt --all -- --check
+direnv exec . cargo test --workspace
+direnv exec . cargo clippy --workspace --all-targets --all-features -- -D warnings
 asp rust check --changed .
 #+end_src
 
 Expected outcome:
 
 - =marlin-gerbil-scheme= unit tests pass with real =gxi= tests ignored.
-- =marlin-org-workflow= proves dry-run, policy-gated commit, and missing-document rejection.
-- Example binaries type-check.
-- The package list includes =README.md=, both Rust examples, the Gerbil =.ss=
-  examples, and the crate-owned =fixtures/gerbil= runtime assets.
+- =marlin-org-workflow= proves dry-run, contract-fact rejection,
+  policy-gated commit, dry-run source policy, and missing-document rejection.
+- Example binaries type-check under =cargo clippy --all-targets=.
+- Harness build gates keep large tests split into folder-first suites.
 
 ** Local Real-GXI Gate
 
@@ -38,21 +33,28 @@ through =MARLIN_GERBIL_GXI= first, then falls back to the Homebrew
 =gerbil-scheme= path.
 
 #+begin_src sh
+direnv exec . cargo test -p marlin-gerbil-scheme --test unit_test command::real_gxi -- --ignored --nocapture
 direnv exec . cargo run -p marlin-gerbil-scheme --example workspace-patch-intent
 direnv exec . cargo run -p marlin-gerbil-scheme --example workspace-patch-intent-workflow
-direnv exec . cargo test -p marlin-gerbil-scheme command::real_gxi -- --ignored --nocapture
 #+end_src
 
 Expected outcome:
 
+- The ignored =command::real_gxi= suite passes artifact, error, example,
+  dry-run workflow, and policy-gated commit smoke tests.
 - =workspace-patch-intent= prints =compiled intent:memory=, =dry_run_first true=,
-  and =ops 3=.
+  and the emitted patch operation count.
 - =workspace-patch-intent-workflow= reads
-  =examples/workspace-patch-intent-source.ss=, compiles it through real =gxi=,
-  and prints =workflow_accepted true= plus =evidence_present true=.
-- The ignored =command::real_gxi= suite covers the module entrypoint, launcher
-  file, user-facing =.ss= example, source-file compilation, workflow dry-run,
-  policy-gated commit, and negative parser/artifact cases.
+  =examples/workspace-patch-intent-source.ss=, compiles through the crate-owned
+  =:marlin/adapter= runtime, dry-runs the intent, and prints
+  =workflow_accepted true= plus =evidence_present true=.
+
+Observed local evidence on 2026-06-11:
+
+#+begin_src text
+direnv exec . cargo test -p marlin-gerbil-scheme --test unit_test command::real_gxi -- --ignored --nocapture
+test result: ok. 17 passed; 0 failed; 0 ignored; 26 filtered out
+#+end_src
 
 ** Distribution Boundary
 
@@ -67,7 +69,21 @@ direnv exec . cargo package -p marlin-gerbil-scheme --list --allow-dirty
 This gate audits the distributable crate contents without asking Cargo to
 resolve unpublished workspace-internal crates from the registry.
 
+Expected contents include:
+
+- =README.md=
+- =examples/workspace-patch-intent.rs=
+- =examples/workspace-patch-intent-workflow.rs=
+- =examples/workspace-patch-intent-source.ss=
+- =fixtures/gerbil/command-adapter.ss=
+- =fixtures/gerbil/marlin/adapter.ss=
+- =fixtures/gerbil/marlin/parser.ss=
+- =fixtures/gerbil/marlin/protocol.ss=
+- =fixtures/gerbil/marlin/request.ss=
+
 External publishing is a separate release task. Before enabling it, publish or
 otherwise provide the internal dependency chain first, including
-=marlin-agent-protocol= and the Gerbil/workspace protocol crates that
-=marlin-gerbil-scheme= depends on.
+=marlin-agent-protocol=, =marlin-gerbil-ir=, =marlin-org-model=, and the
+Gerbil/workspace protocol crates that =marlin-gerbil-scheme= depends on. The
+release topology is tracked in
+[[file:30.70-gerbil-release-topology.org][30.70 Gerbil Release Topology]].
