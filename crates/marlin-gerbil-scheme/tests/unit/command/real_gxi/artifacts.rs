@@ -14,12 +14,14 @@ use marlin_org_model::{
     OrgContractRegistry, OrgContractResolutionReport, OrgContractValidationReport,
 };
 use marlin_org_store::FileSystemReleaseStatusStore;
-use marlin_workspace_protocol::{ReleaseGateReceipt, ReleaseGateState};
+use marlin_workspace_protocol::{ReleaseGateReceipt, ReleaseGateState, ReleaseLandingReport};
 use std::{
     fs,
     sync::OnceLock,
     time::{SystemTime, UNIX_EPOCH},
 };
+
+const RELEASE_STATUS_ARTIFACT_DIR_ENV: &str = "MARLIN_RELEASE_STATUS_ARTIFACT_DIR";
 
 static COMMAND_ADAPTER_BATCH_ARTIFACTS: OnceLock<Option<Vec<GerbilCompiledArtifact>>> =
     OnceLock::new();
@@ -276,7 +278,29 @@ fn command_compiler_real_gxi_release_topology_persists_landing_status_sidecar() 
     assert_eq!(report.passed_gates, 1);
     assert_eq!(report.observed_visibility_reports, 1);
 
+    persist_release_status_artifacts(&store, &report);
+
     let _ = fs::remove_dir_all(root);
+}
+
+fn persist_release_status_artifacts(
+    store: &FileSystemReleaseStatusStore,
+    report: &ReleaseLandingReport,
+) {
+    let Some(artifact_dir) = std::env::var_os(RELEASE_STATUS_ARTIFACT_DIR_ENV) else {
+        return;
+    };
+    let artifact_dir = std::path::PathBuf::from(artifact_dir);
+    fs::create_dir_all(&artifact_dir).expect("release status artifact dir should be created");
+    fs::copy(store.path(), artifact_dir.join("release-status.json"))
+        .expect("release status sidecar should be copied to artifact dir");
+    let report_json =
+        serde_json::to_string_pretty(report).expect("release landing report should encode as json");
+    fs::write(
+        artifact_dir.join("release-landing-report.json"),
+        report_json,
+    )
+    .expect("release landing report should be written to artifact dir");
 }
 
 fn test_root(name: &str) -> std::path::PathBuf {
