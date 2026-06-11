@@ -108,5 +108,8 @@ The active implementation has landed the following pieces:
 | graph fixture builder | implemented |
 | provider/tool/sub-agent harness scenario | implemented |
 | runtime event evidence capture | implemented |
+| scenario contract fixtures | implemented |
+
+=AgentScenarioContract= is the fixture/document boundary for scenarios. It carries =schema_id= =marlin.agent.scenario.v1= and embeds =AgentScenario= so JSON, Org-derived, or Gerbil-produced artifacts can flow into =AgentHarness::evaluate_contract= or =AgentHarness::evaluate_contract_execution_report=.
 
 Transcript replay and richer fixture loading remain follow-up work.

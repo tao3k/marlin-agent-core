@@ -83,12 +83,14 @@ The adapter now routes parser output through Gerbil-side modules before
 emitting JSON:
 
 - =fixtures/gerbil/marlin/protocol.ss= owns constructors/accessors for
-  =LoopGraph=, =LoopNodeSpec=, and =LoopEdgeSpec= plus the
-  =GerbilCompileResponse= serializer and the supported artifact-kind registry.
+  =LoopGraph=, =LoopNodeSpec=, =LoopEdgeSpec=, =WorkspaceSchema=, and
+  =WorkspacePatchIntent= plus the =GerbilCompileResponse= serializer and the
+  supported artifact-kind registry.
 - =fixtures/gerbil/marlin/request.ss= owns the =GerbilCompileRequest= JSON
   reader boundary through =:std/text/json=.
 - =fixtures/gerbil/marlin/parser.ss= owns the Gerbil reader-backed smoke DSL
-  source-to-=LoopGraph= and source-to-=WorkspaceSchema= parsers.
+  source-to-=LoopGraph=, source-to-=WorkspaceSchema=, and
+  source-to-=WorkspacePatchIntent= parsers.
 - =fixtures/gerbil/marlin/adapter.ss= imports the request/parser/protocol
   modules and owns the artifact compiler table, table/registry self-check, and
   response emission.
@@ -98,16 +100,15 @@ emitting JSON:
 This validates the real =gxi= process boundary and the first Gerbil-side
 source-to-IR step before the compiler grows a full package/build boundary.
 
-** Next Smoke: WorkspacePatchIntent
+** WorkspacePatchIntent Smoke
 
-The next runtime smoke should add =WorkspacePatchIntent= as a JSON artifact
-only. The source form should compile through =protocol.ss=, =parser.ss=, and
-=adapter.ss= into =WorkspacePatchIntentSpec= with =dry_run_first= set to true.
-The smoke must prove the real =gxi= boundary returns the typed artifact and
-that the Gerbil-side supported-kind registry still rejects it until the
-serializer, parser, compiler table, and Rust tests are all present.
+The runtime smoke includes =WorkspacePatchIntent= as a JSON artifact only. The
+source form compiles through =protocol.ss=, =parser.ss=, and =adapter.ss= into
+=WorkspacePatchIntentSpec= with =dry_run_first= set to true. The smoke proves
+the real =gxi= boundary returns the typed artifact through both the launcher
+file and module entrypoint.
 
-That smoke must not execute a workspace mutation. Patch validation, dry-run
+This smoke does not execute a workspace mutation. Patch validation, dry-run
 receipts, and durable persistence remain Rust workflow responsibilities after
 the command adapter has decoded and kind-checked the artifact.
 
@@ -133,8 +134,9 @@ GERBIL_LOADPATH=crates/marlin-gerbil-scheme/fixtures/gerbil \
 
 The Rust boundary tests pass that value through =GerbilCommandSpec.env=, not
 through a shell wrapper. They cover the source-file launcher and module entry,
-successful =LoopGraph= and =WorkspaceSchema= compilation, plus Gerbil-side
-rejection of unsupported =expected= artifact kinds and mismatched source forms.
+successful =LoopGraph=, =WorkspaceSchema=, and =WorkspacePatchIntent=
+compilation, plus Gerbil-side rejection of unsupported =expected= artifact
+kinds and mismatched source forms.
 
 Run the Rust boundary tests explicitly:
 
