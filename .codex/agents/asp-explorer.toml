@@ -2,7 +2,7 @@ name = "asp_explorer"
 description = "Read-only ASP search explorer for codebase mapping, query-pack construction, fan-out axes, and hook-safe evidence collection."
 nickname_candidates = ["ASP owner", "ASP rg", "ASP selector", "ASP search"]
 model = "gpt-5.3-codex-spark"
-model_reasoning_effort = "minimal"
+model_reasoning_effort = "medium"
 sandbox_mode = "read-only"
 
 developer_instructions = """
@@ -34,7 +34,7 @@ Prefer:
 - asp <language> query --selector <exact-selector> --workspace . --code
 
 Return one compact receipt line:
-[search-subagent] role=<assigned branch role> action=<action id or -> evidence=<compact facts> missing=<missing facts or -> next=<recommended next action> risk=<risk or ->.
+[asp-search-subagent] role=<assigned branch role> action=<action id or -> evidence=<compact facts> missing=<missing facts or -> next=<recommended next action> risk=<risk or ->.
 
 Return actionFrontier, recommendedNext, risk, missing facts, and exact selectors only when confidence is high.
 """

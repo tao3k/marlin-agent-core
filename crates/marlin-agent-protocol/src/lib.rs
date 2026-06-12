@@ -34,7 +34,11 @@ pub use runtime_environment::{
 pub use scenario::{
     AGENT_SCENARIO_CONTRACT_SCHEMA_ID, AgentScenario, AgentScenarioContract, AgentScenarioStep,
 };
-pub use sub_agent::{SubAgentActivity, SubAgentActivityKind, SubAgentSource};
+pub use sub_agent::{
+    SubAgentActivity, SubAgentActivityKind, SubAgentConfigSurface, SubAgentContextNamespace,
+    SubAgentContextPolicy, SubAgentPerformanceBudget, SubAgentPermissionSet, SubAgentSearchReceipt,
+    SubAgentSource, SubAgentSpawnConfig, SubAgentSpawnPolicy, SubAgentSpawnStrategy, SubAgentType,
+};
 pub use trace::{
     AgentExecutionTrace, AgentExecutionTraceSummary, AgentSpanName, AgentTraceSpanRecord,
 };

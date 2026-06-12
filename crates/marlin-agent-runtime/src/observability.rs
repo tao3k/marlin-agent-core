@@ -1,6 +1,6 @@
 //! Stable tracing names for agent-core runtime observability.
 
-use std::fmt;
+use std::{collections::BTreeMap, fmt};
 
 use marlin_agent_protocol::{AgentEvent, AgentEventTopic, AgentSpanName, ExecutorName, NodeId};
 
@@ -78,6 +78,10 @@ pub const FIELD_DURATION_MS: &str = "duration_ms";
 pub const FIELD_DIAGNOSTIC_COUNT: &str = "diagnostic_count";
 /// Tracing field key for runtime event count.
 pub const FIELD_EVENT_COUNT: &str = "event_count";
+/// Tracing field key for an OS process identifier.
+pub const FIELD_PROCESS_ID: &str = "pid";
+/// Tracing field key for process lifecycle state.
+pub const FIELD_PROCESS_STATUS: &str = "process_status";
 
 /// Runtime task kind used when no narrower task category is available.
 pub const RUNTIME_KIND_GENERIC: &str = "generic";
@@ -103,6 +107,149 @@ pub const NODE_KIND_SUB_AGENT: &str = "sub_agent";
 pub const SUB_AGENT_SOURCE_KERNEL_NODE: &str = "kernel.sub-agent-node";
 /// Sub-agent source value used when no narrower source is available.
 pub const SUB_AGENT_SOURCE_UNSPECIFIED: &str = "unspecified";
+
+/// Runtime-visible process kind.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum RuntimeProcessKind {
+    Tool,
+    SubAgent,
+    Provider,
+    Hook,
+    Other(String),
+}
+
+/// Runtime-visible process lifecycle state.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum RuntimeProcessStatus {
+    Running,
+    Finished,
+    Failed,
+    Orphaned,
+    CleanupRequested,
+}
+
+/// Active or terminal process observation owned by the runtime.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RuntimeProcessObservation {
+    pub pid: u32,
+    pub kind: RuntimeProcessKind,
+    pub owner_reference: String,
+    pub status: RuntimeProcessStatus,
+    pub started_at_ms: Option<u64>,
+    pub last_observed_at_ms: Option<u64>,
+}
+
+/// Tracks currently active runtime-owned child processes.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct RuntimeProcessRegistry {
+    active: BTreeMap<u32, RuntimeProcessObservation>,
+}
+
+impl RuntimeProcessObservation {
+    pub fn new(pid: u32, kind: RuntimeProcessKind, owner_reference: impl Into<String>) -> Self {
+        Self {
+            pid,
+            kind,
+            owner_reference: owner_reference.into(),
+            status: RuntimeProcessStatus::Running,
+            started_at_ms: None,
+            last_observed_at_ms: None,
+        }
+    }
+
+    pub fn with_started_at_ms(mut self, started_at_ms: u64) -> Self {
+        self.started_at_ms = Some(started_at_ms);
+        self.last_observed_at_ms = Some(started_at_ms);
+        self
+    }
+
+    pub fn observed_at(mut self, observed_at_ms: u64) -> Self {
+        self.last_observed_at_ms = Some(observed_at_ms);
+        self
+    }
+}
+
+impl RuntimeProcessRegistry {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn track(&mut self, observation: RuntimeProcessObservation) {
+        self.active.insert(observation.pid, observation);
+    }
+
+    pub fn active_processes(&self) -> Vec<&RuntimeProcessObservation> {
+        self.active.values().collect()
+    }
+
+    pub fn get(&self, pid: u32) -> Option<&RuntimeProcessObservation> {
+        self.active.get(&pid)
+    }
+
+    pub fn finish(&mut self, pid: u32, observed_at_ms: u64) -> Option<RuntimeProcessObservation> {
+        self.complete(pid, RuntimeProcessStatus::Finished, observed_at_ms)
+    }
+
+    pub fn fail(&mut self, pid: u32, observed_at_ms: u64) -> Option<RuntimeProcessObservation> {
+        self.complete(pid, RuntimeProcessStatus::Failed, observed_at_ms)
+    }
+
+    pub fn mark_orphaned(
+        &mut self,
+        pid: u32,
+        observed_at_ms: u64,
+    ) -> Option<&RuntimeProcessObservation> {
+        self.update_active(pid, RuntimeProcessStatus::Orphaned, observed_at_ms)
+    }
+
+    pub fn request_cleanup(
+        &mut self,
+        pid: u32,
+        observed_at_ms: u64,
+    ) -> Option<&RuntimeProcessObservation> {
+        self.update_active(pid, RuntimeProcessStatus::CleanupRequested, observed_at_ms)
+    }
+
+    pub fn cleanup_candidates(&self) -> Vec<&RuntimeProcessObservation> {
+        self.active
+            .values()
+            .filter(|observation| {
+                matches!(
+                    observation.status,
+                    RuntimeProcessStatus::Orphaned | RuntimeProcessStatus::CleanupRequested
+                )
+            })
+            .collect()
+    }
+
+    pub fn remove(&mut self, pid: u32) -> Option<RuntimeProcessObservation> {
+        self.active.remove(&pid)
+    }
+
+    fn complete(
+        &mut self,
+        pid: u32,
+        status: RuntimeProcessStatus,
+        observed_at_ms: u64,
+    ) -> Option<RuntimeProcessObservation> {
+        let mut observation = self.active.remove(&pid)?;
+        observation.status = status;
+        observation.last_observed_at_ms = Some(observed_at_ms);
+        Some(observation)
+    }
+
+    fn update_active(
+        &mut self,
+        pid: u32,
+        status: RuntimeProcessStatus,
+        observed_at_ms: u64,
+    ) -> Option<&RuntimeProcessObservation> {
+        let observation = self.active.get_mut(&pid)?;
+        observation.status = status;
+        observation.last_observed_at_ms = Some(observed_at_ms);
+        Some(observation)
+    }
+}
 
 /// Runtime-owned identifier for a registered hook handler.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

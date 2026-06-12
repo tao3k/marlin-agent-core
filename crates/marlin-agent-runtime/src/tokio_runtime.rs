@@ -3,13 +3,17 @@
 use std::{
     future::Future,
     pin::Pin,
-    sync::Arc,
+    sync::{Arc, Mutex},
     task::{Context, Poll},
     time::Duration,
 };
 
 use crate::observability;
-pub use marlin_agent_protocol::{AgentEvent as RuntimeEvent, GraphId, RunId, RuntimeEnvironment};
+pub use marlin_agent_protocol::{
+    AgentEvent as RuntimeEvent, GraphId, RunId, RuntimeEnvironment, SubAgentConfigSurface,
+    SubAgentContextNamespace, SubAgentContextPolicy, SubAgentPerformanceBudget,
+    SubAgentPermissionSet, SubAgentSpawnConfig, SubAgentSpawnPolicy, SubAgentSpawnStrategy,
+};
 pub use marlin_agent_sessions::{
     AgentSessionContext, ContextExpansionPolicy, ContextNamespace, ContextVisibility, SessionId,
     SessionIdError, SessionIdentity, SessionIsolationPolicy, SessionIsolationReceipt, SessionKind,
@@ -30,6 +34,7 @@ pub struct TokioAgentRuntime {
     environment: RuntimeEnvironment,
     execution: Option<RuntimeExecutionIdentity>,
     session: AgentSessionContext,
+    process_registry: Arc<Mutex<observability::RuntimeProcessRegistry>>,
 }
 
 impl TokioAgentRuntime {
@@ -71,6 +76,9 @@ impl TokioAgentRuntime {
                 environment,
                 execution: None,
                 session,
+                process_registry: Arc::new(
+                    Mutex::new(observability::RuntimeProcessRegistry::new()),
+                ),
             },
             stream,
         )
@@ -83,6 +91,7 @@ impl TokioAgentRuntime {
             environment: self.environment.clone(),
             execution: self.execution.clone(),
             session: self.session.clone(),
+            process_registry: self.process_registry.clone(),
         }
     }
 
@@ -102,6 +111,10 @@ impl TokioAgentRuntime {
         self.events.clone()
     }
 
+    pub fn process_registry(&self) -> Arc<Mutex<observability::RuntimeProcessRegistry>> {
+        self.process_registry.clone()
+    }
+
     pub fn child_runtime(&self) -> Self {
         Self {
             cancellation: self.cancellation.child_token(),
@@ -109,6 +122,7 @@ impl TokioAgentRuntime {
             environment: self.environment.clone(),
             execution: self.execution.clone(),
             session: self.session.clone(),
+            process_registry: self.process_registry.clone(),
         }
     }
 
@@ -119,6 +133,7 @@ impl TokioAgentRuntime {
             environment,
             execution: self.execution.clone(),
             session: self.session.clone(),
+            process_registry: self.process_registry.clone(),
         }
     }
 
@@ -138,6 +153,7 @@ impl TokioAgentRuntime {
                 environment: self.environment.clone(),
                 execution: self.execution.clone(),
                 session,
+                process_registry: self.process_registry.clone(),
             },
             receipt,
         )
@@ -323,6 +339,20 @@ impl TokioAgentRuntime {
         )
     }
 
+    pub fn spawn_sub_agent_with_config<A>(
+        &self,
+        sub_agent: Arc<A>,
+        input: A::Input,
+        config: SubAgentSpawnConfig,
+    ) -> (RuntimeTask<A::Output>, SessionIsolationReceipt)
+    where
+        A: SubAgentRuntime,
+    {
+        let child_session_id = config.child_session_id().to_owned();
+        let requested_visibility = context_visibility_from_sub_agent_policy(&config.policy.context);
+        self.spawn_sub_agent_with_session(sub_agent, input, child_session_id, requested_visibility)
+    }
+
     pub fn spawn_sub_agent_with_environment<A>(
         &self,
         sub_agent: Arc<A>,
@@ -383,6 +413,31 @@ impl TokioAgentRuntime {
     }
 }
 
+fn context_visibility_from_sub_agent_policy(policy: &SubAgentContextPolicy) -> ContextVisibility {
+    ContextVisibility::from_namespaces(
+        policy
+            .namespaces
+            .iter()
+            .map(runtime_context_namespace_from_protocol),
+    )
+    .with_max_history_items(policy.max_history_items)
+}
+
+fn runtime_context_namespace_from_protocol(
+    namespace: &SubAgentContextNamespace,
+) -> ContextNamespace {
+    match namespace {
+        SubAgentContextNamespace::System => ContextNamespace::System,
+        SubAgentContextNamespace::User => ContextNamespace::User,
+        SubAgentContextNamespace::Workspace => ContextNamespace::Workspace,
+        SubAgentContextNamespace::Memory => ContextNamespace::Memory,
+        SubAgentContextNamespace::Tools => ContextNamespace::Tools,
+        SubAgentContextNamespace::Hooks => ContextNamespace::Hooks,
+        SubAgentContextNamespace::SubAgents => ContextNamespace::SubAgents,
+        SubAgentContextNamespace::Secrets => ContextNamespace::Secrets,
+    }
+}
+
 /// Per-call runtime context passed into provider, tool, and sub-agent work.
 #[derive(Clone, Debug)]
 pub struct RuntimeContext {
@@ -391,6 +446,7 @@ pub struct RuntimeContext {
     environment: RuntimeEnvironment,
     execution: Option<RuntimeExecutionIdentity>,
     session: AgentSessionContext,
+    process_registry: Arc<Mutex<observability::RuntimeProcessRegistry>>,
 }
 
 impl RuntimeContext {
@@ -414,6 +470,10 @@ impl RuntimeContext {
         self.execution.as_ref()
     }
 
+    pub fn process_registry(&self) -> Arc<Mutex<observability::RuntimeProcessRegistry>> {
+        self.process_registry.clone()
+    }
+
     pub fn with_execution_identity(mut self, execution: RuntimeExecutionIdentity) -> Self {
         self.execution = Some(execution);
         self
@@ -431,6 +491,7 @@ impl RuntimeContext {
             environment: self.environment.clone(),
             execution: self.execution.clone(),
             session: self.session.clone(),
+            process_registry: self.process_registry.clone(),
         }
     }
 
@@ -441,6 +502,7 @@ impl RuntimeContext {
             environment,
             execution: self.execution.clone(),
             session: self.session.clone(),
+            process_registry: self.process_registry.clone(),
         }
     }
 
@@ -460,6 +522,7 @@ impl RuntimeContext {
                 environment: self.environment.clone(),
                 execution: self.execution.clone(),
                 session,
+                process_registry: self.process_registry.clone(),
             },
             receipt,
         )

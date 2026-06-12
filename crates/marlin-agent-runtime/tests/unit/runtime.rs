@@ -95,6 +95,43 @@ fn runtime_context_carries_execution_identity_to_children() {
     );
 }
 
+#[test]
+fn runtime_context_shares_process_registry_with_children() {
+    let (runtime, _events) = TokioAgentRuntime::new(4);
+    let process_registry = runtime.process_registry();
+    process_registry
+        .lock()
+        .expect("process registry lock should be available")
+        .track(
+            observability::RuntimeProcessObservation::new(
+                2100,
+                observability::RuntimeProcessKind::Tool,
+                "tool:apply",
+            )
+            .with_started_at_ms(1),
+        );
+
+    let child_context = runtime.context().child_context();
+    let child_registry = child_context.process_registry();
+    let finished = child_registry
+        .lock()
+        .expect("child process registry lock should be available")
+        .finish(2100, 2)
+        .expect("process should be visible from child context");
+
+    assert_eq!(
+        finished.status,
+        observability::RuntimeProcessStatus::Finished
+    );
+    assert!(
+        process_registry
+            .lock()
+            .expect("process registry lock should be available")
+            .active_processes()
+            .is_empty()
+    );
+}
+
 #[tokio::test]
 async fn sub_agent_can_run_with_child_environment() {
     let parent_environment = RuntimeEnvironment::default().with_cwd("/tmp/parent");

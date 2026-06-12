@@ -1,0 +1,88 @@
+* 40.60 RFC: Configurable Sub-agent Spawn Policy
+
+Status: active
+
+This RFC defines the first stable contract for configurable sub-agent spawning.
+The contract keeps declaration, strategy, and runtime execution separate so
+Codex-facing configuration remains auditable while high-performance strategy
+work can still use Gerbil later.
+
+** Problem
+
+Sub-agent spawning currently crosses several concerns at once: Codex profile
+configuration, ASP explorer fanout, runtime session isolation, cancellation,
+process observation, and performance limits. If those concerns are encoded
+directly in runtime calls, agents must re-read call sites to preserve behavior.
+
+** Goals
+
+- Make spawn policy a typed protocol object.
+- Keep the primary configuration surface declarative and reviewable.
+- Allow Scheme/Gerbil strategy metadata without making Scheme the default
+  configuration language.
+- Preserve runtime ownership of execution, cancellation, and observation.
+- Provide enough budget fields to reason about high-performance fanout.
+
+** Non-goals
+
+- This RFC does not require a Gerbil strategy evaluator.
+- This RFC does not make runtime crates parse TOML or Scheme.
+- This RFC does not define model selection for every Codex client.
+
+** Contract
+
+The protocol crate owns the serializable spawn contract:
+
+- =SubAgentSpawnConfig= names the profile, agent type, role, config surface,
+  strategy, and policy.
+- =SubAgentSpawnPolicy= groups permissions, context visibility, and performance
+  budget.
+- =SubAgentPermissionSet= records write, network, process, and descendant-spawn
+  permissions.
+- =SubAgentContextPolicy= records the child session id, visible namespaces, and
+  bounded history.
+- =SubAgentPerformanceBudget= records concurrency, timeout, token, and depth
+  limits.
+
+** Configuration Surface
+
+TOML is the primary declaration surface. It is easy to diff, validate in CI, and
+map into the typed protocol object without executing code.
+
+Scheme is an optional strategy surface. A config may carry Scheme module,
+procedure, and AOT intent metadata, but runtime crates must consume the compiled
+typed policy rather than interpret Scheme directly.
+
+** Runtime Boundary
+
+Runtime crates receive typed policy and request objects. They own session
+derivation, task spawning, cancellation, event emission, and process lifecycle
+observation. Public runtime functions should use named request/config types
+instead of broad positional parameter lists.
+
+** Performance Boundary
+
+High-performance spawn behavior starts from explicit limits:
+
+- =max_concurrency= bounds fanout.
+- =timeout_ms= bounds wall-clock work.
+- =token_budget= bounds prompt expansion.
+- =max_depth= bounds descendant spawning.
+
+These limits are protocol facts. Strategy engines may rank or partition work,
+but they must not bypass the typed limits.
+
+** Implementation Status
+
+The first implementation lands protocol-level typed policy objects and runtime
+process request surfaces. The next implementation step is a TOML fixture/parser
+that compiles Codex agent profile files into =SubAgentSpawnConfig= without
+linking runtime crates to TOML parsing.
+
+** Acceptance Criteria
+
+- Protocol tests cover default TOML read-only policy.
+- Protocol tests cover optional Scheme strategy metadata.
+- Runtime tests cover observed process spawning through named request surfaces.
+- ASP changed checks accept the public API shape.
+- CI keeps real execution gates separate from pure configuration changes.

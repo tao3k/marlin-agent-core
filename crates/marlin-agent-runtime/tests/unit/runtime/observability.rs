@@ -58,6 +58,8 @@ fn observability_contract_names_kernel_hook_and_agent_surfaces() {
     assert_eq!(observability::FIELD_DURATION_MS, "duration_ms");
     assert_eq!(observability::FIELD_DIAGNOSTIC_COUNT, "diagnostic_count");
     assert_eq!(observability::FIELD_EVENT_COUNT, "event_count");
+    assert_eq!(observability::FIELD_PROCESS_ID, "pid");
+    assert_eq!(observability::FIELD_PROCESS_STATUS, "process_status");
     assert_eq!(
         observability::SUB_AGENT_SOURCE_KERNEL_NODE,
         "kernel.sub-agent-node"
@@ -99,6 +101,69 @@ fn observability_contract_names_kernel_hook_and_agent_surfaces() {
     assert!(span_names.contains(&observability::SPAN_AGENT_SUB_AGENT));
     assert!(span_names.contains(&observability::SPAN_HOOK_DISPATCH));
     assert!(span_names.contains(&observability::SPAN_HOOK_RUN));
+}
+
+#[test]
+fn runtime_process_registry_drops_finished_processes_from_active_tracking() {
+    let mut registry = observability::RuntimeProcessRegistry::new();
+    registry.track(
+        observability::RuntimeProcessObservation::new(
+            42,
+            observability::RuntimeProcessKind::Tool,
+            "tool:apply",
+        )
+        .with_started_at_ms(1),
+    );
+
+    let finished = registry.finish(42, 10).expect("process is tracked");
+
+    assert_eq!(finished.pid, 42);
+    assert_eq!(
+        finished.status,
+        observability::RuntimeProcessStatus::Finished
+    );
+    assert_eq!(finished.last_observed_at_ms, Some(10));
+    assert!(registry.get(42).is_none());
+    assert!(registry.active_processes().is_empty());
+}
+
+#[test]
+fn runtime_process_registry_reports_orphan_cleanup_candidates() {
+    let mut registry = observability::RuntimeProcessRegistry::new();
+    registry.track(
+        observability::RuntimeProcessObservation::new(
+            100,
+            observability::RuntimeProcessKind::SubAgent,
+            "sub-agent:review",
+        )
+        .with_started_at_ms(1),
+    );
+    registry.track(
+        observability::RuntimeProcessObservation::new(
+            101,
+            observability::RuntimeProcessKind::Tool,
+            "tool:cache-writer",
+        )
+        .with_started_at_ms(2),
+    );
+    registry
+        .mark_orphaned(100, 30)
+        .expect("sub-agent process is tracked");
+    registry
+        .request_cleanup(101, 31)
+        .expect("tool process is tracked");
+
+    let candidates = registry.cleanup_candidates();
+
+    assert_eq!(candidates.len(), 2);
+    assert_eq!(
+        registry.get(100).map(|process| &process.status),
+        Some(&observability::RuntimeProcessStatus::Orphaned)
+    );
+    assert_eq!(
+        registry.get(101).map(|process| &process.status),
+        Some(&observability::RuntimeProcessStatus::CleanupRequested)
+    );
 }
 
 #[derive(Clone, Debug)]
