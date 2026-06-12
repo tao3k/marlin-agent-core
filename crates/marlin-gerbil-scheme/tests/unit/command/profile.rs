@@ -1,20 +1,18 @@
 use super::support::loop_graph_artifact;
 use marlin_gerbil_scheme::{
-    GERBIL_ADAPTER_MODULE, GERBIL_LOADPATH_ENV, GerbilArtifactKind, GerbilCommandCompiler,
-    GerbilCommandProfile, GerbilCommandSpec, GerbilCompiler, GerbilRuntimeBinding, GerbilSource,
-    default_gerbil_gxi_program,
+    GERBIL_ADAPTER_MODULE, GERBIL_COMMAND_ADAPTER_PATH, GERBIL_LOADPATH_ENV,
+    GERBIL_MARLIN_ADAPTER_PATH, GERBIL_MARLIN_PROTOCOL_PATH, GerbilArtifactKind,
+    GerbilCommandCompiler, GerbilCommandProfile, GerbilCommandSpec, GerbilCompiler,
+    GerbilRuntimeBinding, GerbilSource, default_gerbil_gxi_program, gerbil_runtime_loadpath,
 };
-use std::{
-    fs,
-    time::{SystemTime, UNIX_EPOCH},
-};
+use tempfile::{Builder, TempDir};
 
 #[test]
 fn command_profile_round_trips_json_configuration() {
     let profile = GerbilCommandProfile::new("/opt/gerbil/bin/gxi")
         .arg("--stdio-json")
         .current_dir(".data/gerbil")
-        .env("GERBIL_LOADPATH", "fixtures/gerbil");
+        .env("GERBIL_LOADPATH", "gerbil/src");
 
     let encoded = serde_json::to_string(&profile).expect("profile should encode as json");
     let decoded = GerbilCommandProfile::from_json(&encoded).expect("profile should decode");
@@ -27,7 +25,7 @@ fn command_profile_builds_exec_spec_without_shell_parsing() {
     let profile = GerbilCommandProfile::new("/opt/gerbil/bin/gxi")
         .arg("--stdio-json")
         .arg("(import :marlin/compiler)")
-        .env("GERBIL_LOADPATH", "fixtures/gerbil");
+        .env("GERBIL_LOADPATH", "gerbil/src");
     let spec: GerbilCommandSpec = profile.into();
 
     assert_eq!(spec.program.to_string_lossy(), "/opt/gerbil/bin/gxi");
@@ -39,26 +37,25 @@ fn command_profile_builds_exec_spec_without_shell_parsing() {
             .iter()
             .find(|(key, _value)| key.to_string_lossy() == "GERBIL_LOADPATH")
             .map(|(_key, value)| value.to_string_lossy()),
-        Some("fixtures/gerbil".into())
+        Some("gerbil/src".into())
     );
 }
 
 #[test]
 fn command_profile_builds_marlin_runtime_module_entry() {
-    let profile =
-        GerbilCommandProfile::marlin_runtime_module("/opt/gerbil/bin/gxi", "fixtures/gerbil");
+    let profile = GerbilCommandProfile::marlin_runtime_module("/opt/gerbil/bin/gxi", "gerbil");
 
     assert_eq!(profile.program, "/opt/gerbil/bin/gxi");
     assert_eq!(profile.args, [GERBIL_ADAPTER_MODULE.to_owned()]);
     assert_eq!(
         profile.env.get(GERBIL_LOADPATH_ENV).map(String::as_str),
-        Some("fixtures/gerbil")
+        Some("gerbil/src")
     );
 }
 
 #[test]
 fn command_spec_builds_marlin_runtime_module_entry() {
-    let spec = GerbilCommandSpec::marlin_runtime_module("/opt/gerbil/bin/gxi", "fixtures/gerbil");
+    let spec = GerbilCommandSpec::marlin_runtime_module("/opt/gerbil/bin/gxi", "gerbil");
 
     assert_eq!(spec.program.to_string_lossy(), "/opt/gerbil/bin/gxi");
     assert_eq!(spec.args.len(), 1);
@@ -68,14 +65,14 @@ fn command_spec_builds_marlin_runtime_module_entry() {
             .iter()
             .find(|(key, _value)| key.to_string_lossy() == GERBIL_LOADPATH_ENV)
             .map(|(_key, value)| value.to_string_lossy()),
-        Some("fixtures/gerbil".into())
+        Some("gerbil/src".into())
     );
 }
 
 #[test]
 fn command_compiler_builds_default_marlin_runtime_module_with_assets() {
     let root = test_root("default-runtime-module");
-    let compiler = GerbilCommandCompiler::from_default_marlin_runtime_module(&root)
+    let compiler = GerbilCommandCompiler::from_default_marlin_runtime_module(root.path())
         .expect("default runtime compiler should write loadpath assets");
     let spec = compiler.spec();
 
@@ -87,32 +84,30 @@ fn command_compiler_builds_default_marlin_runtime_module_with_assets() {
             .iter()
             .find(|(key, _value)| key.to_string_lossy() == GERBIL_LOADPATH_ENV)
             .map(|(_key, value)| value.to_string_lossy()),
-        Some(root.to_string_lossy())
+        Some(gerbil_runtime_loadpath(root.path()).to_string_lossy())
     );
-    assert!(root.join("command-adapter.ss").is_file());
-    assert!(root.join("marlin/adapter.ss").is_file());
-
-    let _ = fs::remove_dir_all(root);
+    assert!(root.path().join(GERBIL_COMMAND_ADAPTER_PATH).is_file());
+    assert!(root.path().join(GERBIL_MARLIN_ADAPTER_PATH).is_file());
 }
 
 #[test]
 fn runtime_binding_writes_assets_and_exposes_compiler_spec() {
     let root = test_root("runtime-binding");
-    let binding =
-        GerbilRuntimeBinding::from_default_gxi(&root).expect("runtime binding should write assets");
+    let binding = GerbilRuntimeBinding::from_default_gxi(root.path())
+        .expect("runtime binding should write assets");
 
-    assert_eq!(binding.loadpath_root(), root.as_path());
+    assert_eq!(binding.loadpath_root(), root.path());
     assert!(
         binding
             .written_assets()
             .iter()
-            .any(|asset| asset.ends_with("command-adapter.ss"))
+            .any(|asset| asset.ends_with(GERBIL_COMMAND_ADAPTER_PATH))
     );
     assert!(
         binding
             .written_assets()
             .iter()
-            .any(|asset| asset.ends_with("marlin/protocol.ss"))
+            .any(|asset| asset.ends_with(GERBIL_MARLIN_PROTOCOL_PATH))
     );
     assert_eq!(binding.spec().program, default_gerbil_gxi_program());
     assert_eq!(binding.spec().args.len(), 1);
@@ -121,8 +116,6 @@ fn runtime_binding_writes_assets_and_exposes_compiler_spec() {
         GERBIL_ADAPTER_MODULE
     );
     assert_eq!(binding.compiler().spec(), binding.spec());
-
-    let _ = fs::remove_dir_all(root);
 }
 
 #[test]
@@ -161,13 +154,9 @@ fn command_compiler_can_be_built_from_profile_json() {
     assert_eq!(artifact, loop_graph_artifact("from-profile-json"));
 }
 
-fn test_root(name: &str) -> std::path::PathBuf {
-    let suffix = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_nanos())
-        .unwrap_or_default();
-    std::env::temp_dir().join(format!(
-        "marlin-gerbil-scheme-{name}-{}-{suffix}",
-        std::process::id()
-    ))
+fn test_root(name: &str) -> TempDir {
+    Builder::new()
+        .prefix(&format!("marlin-gerbil-scheme-{name}-"))
+        .tempdir()
+        .unwrap_or_else(|error| panic!("creates {name} test root: {error}"))
 }

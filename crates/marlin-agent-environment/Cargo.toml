@@ -6,10 +6,14 @@ authors.workspace = true
 repository.workspace = true
 
 [dependencies]
+async-trait.workspace = true
 marlin-agent-protocol.workspace = true
+serde_json.workspace = true
 thiserror.workspace = true
+tokio.workspace = true
 
 [build-dependencies]
+marlin-rust-project-harness-policy.workspace = true
 rust-lang-project-harness.workspace = true
 
 [dev-dependencies]

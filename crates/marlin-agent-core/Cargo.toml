@@ -6,6 +6,7 @@ authors.workspace = true
 repository.workspace = true
 
 [dependencies]
+marlin-gerbil-scheme.workspace = true
 marlin-agent-environment.workspace = true
 marlin-agent-harness.workspace = true
 marlin-agent-hooks.workspace = true
@@ -13,6 +14,7 @@ marlin-agent-kernel.workspace = true
 marlin-agent-protocol.workspace = true
 marlin-agent-runtime.workspace = true
 marlin-agent-sessions.workspace = true
+marlin-agent-stream.workspace = true
 marlin-gerbil-ir.workspace = true
 marlin-org-model.workspace = true
 marlin-org-patch.workspace = true
@@ -22,9 +24,11 @@ marlin-org-workspace.workspace = true
 marlin-workspace-protocol.workspace = true
 
 [build-dependencies]
+marlin-rust-project-harness-policy.workspace = true
 rust-lang-project-harness.workspace = true
 
 [dev-dependencies]
 rust-lang-project-harness.workspace = true
+tempfile.workspace = true
 tokio.workspace = true
 tokio-stream.workspace = true

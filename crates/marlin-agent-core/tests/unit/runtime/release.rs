@@ -1,8 +1,3 @@
-use std::{
-    fs,
-    time::{SystemTime, UNIX_EPOCH},
-};
-
 use marlin_agent_core::gerbil_ir::{ReleaseGateSpec, ReleaseTopologySpec, ReleaseVisibilitySpec};
 use marlin_agent_core::{
     FileSystemReleaseStatusStore, LoopEvidenceKind, ReleaseGateExecutionStatus, ReleaseGateState,
@@ -11,6 +6,7 @@ use marlin_agent_core::{
     release_gate_execution_receipt, release_gate_state_from_execution, release_gate_status_receipt,
     release_gate_visibility_evidence,
 };
+use tempfile::{TempDir, tempdir};
 
 #[test]
 fn core_facade_exposes_release_visibility_contract() {
@@ -94,7 +90,7 @@ fn core_release_bridge_marks_expected_local_gerbil_gate() {
 #[test]
 fn core_release_bridge_records_execution_receipt_in_status_store() {
     let root = core_release_test_root("status-store");
-    let store = FileSystemReleaseStatusStore::new(&root);
+    let store = FileSystemReleaseStatusStore::new(root.path());
     let topology = release_status_topology();
 
     store
@@ -130,14 +126,12 @@ fn core_release_bridge_records_execution_receipt_in_status_store() {
         ["fixtures/gerbil/command-adapter.ss"]
     );
     assert!(report.missing_artifact_paths.is_empty());
-
-    let _ = fs::remove_dir_all(root);
 }
 
 #[test]
 fn core_release_bridge_builds_workflow_commit_from_execution_receipts() {
     let root = core_release_test_root("workflow-commit");
-    let store = FileSystemReleaseStatusStore::new(&root);
+    let store = FileSystemReleaseStatusStore::new(root.path());
     let topology = release_status_topology();
     let receipt = release_gate_execution_receipt(
         &topology,
@@ -160,8 +154,6 @@ fn core_release_bridge_builds_workflow_commit_from_execution_receipts() {
     assert!(commit_receipt.accepted());
     assert_eq!(commit_receipt.recorded_gate_receipts, 1);
     assert!(commit_receipt.status.visibility_reports[0].observed);
-
-    let _ = fs::remove_dir_all(root);
 }
 
 fn release_status_topology() -> ReleaseTopologySpec {
@@ -187,10 +179,6 @@ fn release_status_topology() -> ReleaseTopologySpec {
     }
 }
 
-fn core_release_test_root(name: &str) -> std::path::PathBuf {
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("time should be monotonic")
-        .as_nanos();
-    std::env::temp_dir().join(format!("marlin-agent-core-{name}-{nanos}"))
+fn core_release_test_root(name: &str) -> TempDir {
+    tempdir().unwrap_or_else(|error| panic!("creates {name} release temp root: {error}"))
 }

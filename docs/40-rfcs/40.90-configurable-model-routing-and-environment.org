@@ -1,0 +1,232 @@
+* 40.90 RFC: Configurable Model Routing and Environment Isolation
+
+Status: active
+
+This RFC defines the next Marlin-specific interface that should be stronger
+than the Codex baseline: configurable command-to-model routing with persistent
+agent sessions, explicit history policy, ASP spawn interaction, and native
+runtime environment isolation.
+
+The goal is not to choose a model by a single global setting. The goal is to let
+Marlin route work by command shape, workspace context, sub-agent role, session
+lifecycle, history requirements, and shell environment policy.
+
+** Problem
+
+Agent runtimes usually treat model selection, session history, process
+execution, and shell environment as separate concerns. That makes simple cases
+easy but makes serious agent work hard to control:
+
+- one command may need a cheap model while another command needs a stronger
+  reasoning model;
+
+- a long-running ASP explorer may need a stable agent id and retained history;
+
+- a worker may need a fresh isolated history snapshot for risky edits;
+
+- a project command may need =direnv= and =.envrc= instead of a generic shell;
+
+- shell permissions and environment inheritance need to be auditable policy,
+  not implicit process state.
+
+Marlin should make these choices first-class protocol facts.
+
+** Existing Contract Surface
+
+The current protocol and runtime work already point in this direction:
+
+- =ModelCommandMatcher= matches executable, argv, cwd, workspace, sub-agent
+  role, and command kind globs.
+
+- =ModelSessionLifecycle= distinguishes ephemeral, persistent, and pooled model
+  sessions.
+
+- =ModelContextForkMode= distinguishes forked snapshot, shared live context,
+  minimal context, and isolated context.
+
+- =ModelRouteRule= combines a priority, matcher, endpoint, and session policy.
+
+- model route requests can carry a requested session id.
+
+- =SubAgentContextPolicy= can name a session id and bound visible history.
+
+- =RuntimeEnvironment= records cwd, home, sandbox policy, and config layers.
+
+The missing design step is to connect these surfaces into one configurable
+routing and environment policy.
+
+** Routing Contract
+
+A route rule should be able to say:
+
+- this command shape routes to this provider/model endpoint;
+
+- this route is only active in matching cwd/workspace/sub-agent role contexts;
+
+- this route uses ephemeral, persistent, or pooled session lifecycle;
+
+- this route may request a specific session or agent id;
+
+- this route controls whether history is shared live, forked as a snapshot,
+  reduced to minimal context, or isolated;
+
+- this route emits a decision receipt that records rule id, endpoint, session
+  lifecycle, context fork mode, fallback reason, and budget.
+
+The command matcher is intentionally richer than a model alias. It lets Marlin
+route =asp rust search=, shell execution, long-running sub-agent work, or
+project-specific commands to different model/runtime behavior without hard
+coding provider choices in call sites.
+
+** Persistent Agent Interaction
+
+ASP and sub-agent work should support explicit persistent interaction:
+
+- a spawn policy may request a stable agent/session id;
+
+- follow-up commands may target that id to reuse history and runtime state;
+
+- a policy may cap retained history with =max_history_items=;
+
+- a policy may choose snapshot, shared live, minimal, or isolated context;
+
+- runtime receipts should make it clear whether an agent was created, reused,
+  pooled, or rejected by policy.
+
+This is stronger than a generic "spawn sub-agent" API because persistence,
+history, and routing are controlled by typed policy rather than by hidden
+conversation state.
+
+** Direnv And Shell Environment Isolation
+
+Marlin should support =direnv= and =.envrc= as native runtime environment
+policy, not as ad hoc shell text.
+
+The protocol should grow an explicit environment activation contract that can
+represent:
+
+- disabled activation;
+
+- trusted project =.envrc= activation;
+
+- audited =direnv export= activation with captured environment delta;
+
+- isolated shell environment that excludes host-only variables;
+
+- inherited shell environment with explicit allowlist or denylist;
+
+- sandbox roots and network policy applied after activation.
+
+Runtime crates should execute project commands through a compiled environment
+request. They should not infer =direnv= behavior from whichever shell happens to
+launch the runtime.
+
+** Configuration Surface
+
+TOML should be the default declaration surface:
+
+#+begin_src toml
+[[model_routes]]
+id = "asp-rust-search-persistent"
+priority = 100
+executable_globs = ["asp"]
+argv_globs = ["rust", "search", "*"]
+sub_agent_role_globs = ["asp_explorer"]
+provider = "openai"
+model = "gpt-5.3-codex-spark"
+session_lifecycle = "persistent"
+session_key = "asp-rust-search"
+context_fork = "shared_live"
+max_history_items = 120
+
+[model_routes.environment]
+activation = "direnv"
+envrc = "project"
+capture_delta = true
+isolate_shell = true
+#+end_src
+
+Scheme/Gerbil may later compute or rank routes, but it must compile back into
+the same typed policy before runtime execution.
+
+** Runtime Boundary
+
+Runtime owns:
+
+- compiling route rules into deterministic priority order;
+
+- resolving the command and environment request;
+
+- deriving or reusing persistent agent/session handles;
+
+- enforcing history, timeout, concurrency, sandbox, and network policy;
+
+- executing through Tokio supervision with cancellation and backpressure;
+
+- emitting route, environment, and session receipts.
+
+Protocol owns the serializable route, session, history, and environment facts.
+Runtime does not parse user TOML or execute Scheme directly.
+
+** Observability
+
+Every routed execution should produce stable evidence:
+
+- route decision receipt;
+
+- session decision receipt;
+
+- environment activation receipt;
+
+- sandbox and shell isolation receipt;
+
+- provider/model endpoint receipt;
+
+- fallback or rejection reason when policy cannot be satisfied.
+
+These receipts make persistent agents debuggable. They also make it possible to
+prove that a command used the intended model and environment.
+
+** Non-goals
+
+- Do not use a single global model setting as the long-term routing interface.
+
+- Do not make runtime crates parse TOML or Scheme.
+
+- Do not make =direnv= an implicit shell side effect.
+
+- Do not reuse persistent agent history without an explicit policy decision.
+
+- Do not expose provider-specific fields as shared protocol unless they become
+  stable cross-provider facts.
+
+** Acceptance Criteria
+
+- Protocol tests cover command-to-model routing by executable, argv, cwd,
+  workspace, sub-agent role, and command kind.
+
+- Protocol tests cover requested persistent session ids and bounded history.
+
+- Runtime tests cover deterministic route priority and stable tie-breaking.
+
+- Runtime tests cover create/reuse/reject receipts for persistent sessions.
+
+- Environment tests cover explicit =direnv= activation policy and isolated shell
+  environment deltas.
+
+- Observability tests cover route, session, provider, and environment receipts.
+
+** Implementation Order
+
+1. Extend protocol route/session policy only where current typed facts are
+   missing.
+
+2. Add environment activation policy for =direnv=, =.envrc=, environment delta,
+   and shell isolation.
+
+3. Compile TOML route profiles into typed protocol policy outside runtime
+   crates.
+
+4. Extend runtime resolver to return route/session/environment receipts.
+
+5. Add focused tests before broad workspace validation.

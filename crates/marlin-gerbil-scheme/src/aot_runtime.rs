@@ -1,7 +1,9 @@
 //! `Gerbil` ahead-of-time compiler toolchain probing and repair contracts.
 
 use crate::runtime::{
-    GERBIL_LOADPATH_ENV, default_gerbil_gsc_program, default_gerbil_gxc_program,
+    GERBIL_COMMAND_ADAPTER_PATH, GERBIL_LOADPATH_ENV, GERBIL_MARLIN_ADAPTER_PATH,
+    GERBIL_MARLIN_PARSER_PATH, GERBIL_MARLIN_PROTOCOL_PATH, GERBIL_MARLIN_REQUEST_PATH,
+    default_gerbil_gsc_program, default_gerbil_gxc_program, gerbil_runtime_loadpath,
     write_gerbil_runtime_assets,
 };
 use serde::{Deserialize, Serialize};
@@ -12,10 +14,10 @@ use std::{
 };
 
 const GERBIL_AOT_MODULE_SOURCES: &[&str] = &[
-    "marlin/protocol.ss",
-    "marlin/request.ss",
-    "marlin/parser.ss",
-    "marlin/adapter.ss",
+    GERBIL_MARLIN_PROTOCOL_PATH,
+    GERBIL_MARLIN_REQUEST_PATH,
+    GERBIL_MARLIN_PARSER_PATH,
+    GERBIL_MARLIN_ADAPTER_PATH,
 ];
 
 const GERBIL_AOT_EXECUTABLE_NAME: &str = "command-adapter-aot";
@@ -563,7 +565,7 @@ fn run_gerbil_aot_executable_compile(
         .arg("-O")
         .arg("-o")
         .arg(executable)
-        .arg("command-adapter.ss");
+        .arg(GERBIL_COMMAND_ADAPTER_PATH);
     gerbil_aot_command_receipt(command.output())
 }
 
@@ -571,7 +573,7 @@ fn gerbil_aot_command(config: &GerbilAotProbeConfig) -> Command {
     let mut command = Command::new(&config.gxc);
     command
         .current_dir(&config.root)
-        .env(GERBIL_LOADPATH_ENV, &config.root);
+        .env(GERBIL_LOADPATH_ENV, gerbil_runtime_loadpath(&config.root));
     if let Some(parent) = config.gsc.parent() {
         command.env("PATH", prepend_path(parent));
     }

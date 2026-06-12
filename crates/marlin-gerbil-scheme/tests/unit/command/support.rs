@@ -55,7 +55,7 @@ pub const RELEASE_TOPOLOGY_SOURCE: &str = r#"(release-topology "release:gerbil"
   (crate "marlin-gerbil-scheme")
   (publish-enabled #f)
   (asset-audit-command "cargo package -p marlin-gerbil-scheme --allow-dirty --no-verify --list")
-  (package-assets README.md "fixtures/gerbil")
+  (package-assets README.md "gerbil")
   (runtime-dependency-chain "marlin-gerbil-ir" "marlin-workspace-patch")
   (workflow-dependency-chain "marlin-org-workflow" "marlin-org-store")
   (gate real-gxi
@@ -65,7 +65,7 @@ pub const RELEASE_TOPOLOGY_SOURCE: &str = r#"(release-topology "release:gerbil"
     (visibility
       (report-key real_gxi_release_gate)
       (evidence-keys workspace_schema workspace_patch_intent)
-      (artifact-paths "fixtures/gerbil/command-adapter.ss"))))"#;
+      (artifact-paths "gerbil/bin/command-adapter.ss"))))"#;
 
 pub fn local_gxi() -> Option<PathBuf> {
     let gxi = default_gerbil_gxi_program();
@@ -87,26 +87,24 @@ pub fn local_gxi() -> Option<PathBuf> {
     Some(gxi)
 }
 
-pub fn gerbil_fixture_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("fixtures")
-        .join("gerbil")
+pub fn gerbil_runtime_package_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("gerbil")
 }
 
 pub fn real_gxi_module_compiler() -> Option<GerbilCommandCompiler> {
     let gxi = local_gxi()?;
-    let fixture_root = gerbil_fixture_root();
+    let runtime_package_root = gerbil_runtime_package_root();
     Some(GerbilCommandCompiler::from_marlin_runtime_module(
         gxi,
-        fixture_root,
+        runtime_package_root,
     ))
 }
 
 pub fn real_gxi_command_adapter_batch_compiler() -> Option<GerbilCommandCompiler> {
     let gxi = local_gxi()?;
-    let fixture_root = gerbil_fixture_root();
+    let runtime_package_root = gerbil_runtime_package_root();
     Some(GerbilCommandCompiler::new(
-        GerbilCommandSpec::marlin_runtime_batch_launcher(gxi, fixture_root),
+        GerbilCommandSpec::marlin_runtime_batch_launcher(gxi, runtime_package_root),
     ))
 }
 
@@ -199,7 +197,7 @@ pub fn assert_release_topology_artifact(artifact: GerbilCompiledArtifact) {
                 topology.asset_audit_command,
                 "cargo package -p marlin-gerbil-scheme --allow-dirty --no-verify --list"
             );
-            assert_eq!(topology.package_assets, ["README.md", "fixtures/gerbil"]);
+            assert_eq!(topology.package_assets, ["README.md", "gerbil"]);
             assert_eq!(
                 topology.runtime_dependency_chain,
                 ["marlin-gerbil-ir", "marlin-workspace-patch"]
@@ -229,7 +227,7 @@ pub fn assert_release_topology_artifact(artifact: GerbilCompiledArtifact) {
             );
             assert_eq!(
                 topology.gates[0].visibility[0].artifact_paths,
-                ["fixtures/gerbil/command-adapter.ss"]
+                ["gerbil/bin/command-adapter.ss"]
             );
         }
         other => panic!("expected release topology artifact, got {other:?}"),

@@ -6,15 +6,26 @@ authors.workspace = true
 repository.workspace = true
 
 [dependencies]
+aho-corasick.workspace = true
+globset.workspace = true
 marlin-agent-protocol.workspace = true
 marlin-agent-sessions.workspace = true
-tokio.workspace = true
+marlin-agent-stream.workspace = true
+parking_lot.workspace = true
+process-wrap = { version = "9.1.0", features = ["tokio1"] }
+serde.workspace = true
+sysinfo = "0.39.3"
+tokio = { version = "1", features = ["rt", "macros", "sync", "time", "process"] }
 tokio-stream.workspace = true
 tokio-util.workspace = true
+toml.workspace = true
 tracing.workspace = true
 
 [build-dependencies]
+marlin-rust-project-harness-policy.workspace = true
 rust-lang-project-harness.workspace = true
 
 [dev-dependencies]
+marlin-agent-test-support.workspace = true
 rust-lang-project-harness.workspace = true
+tempfile.workspace = true

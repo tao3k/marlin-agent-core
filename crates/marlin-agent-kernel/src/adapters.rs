@@ -5,7 +5,7 @@ use std::sync::Arc;
 use marlin_agent_hooks::{HookDispatchReport, HookDispatcher, HookInvocation};
 use marlin_agent_protocol::{
     ExecutorName, GraphNodeExecutionReceipt, GraphNodeInvocation, HookEventName, NodeId, RunId,
-    SubAgentActivity, SubAgentActivityKind, SubAgentSource,
+    SubAgentActivity, SubAgentActivityKind, SubAgentSource, SubAgentSpawnProfile,
 };
 use marlin_agent_runtime::{
     ProviderRuntime, RuntimeContext, RuntimeFuture, SubAgentRuntime, ToolRuntime, observability,
@@ -298,10 +298,16 @@ where
                 depth: 1,
                 agent_path: None,
                 agent_nickname: Some(agent_reference.clone()),
-                agent_role: None,
+                agent_role: Some(agent_reference.clone()),
             },
             None => SubAgentSource::Other(observability::SUB_AGENT_SOURCE_KERNEL_NODE.to_owned()),
         };
+        let spawn_profile = SubAgentSpawnProfile::new(
+            agent_reference.clone(),
+            agent_reference.clone(),
+            agent_reference.clone(),
+        )
+        .with_nickname(agent_reference.clone());
         let span = observability::agent_sub_agent_span_with_source(
             &node_id,
             &executor,
@@ -329,6 +335,7 @@ where
                         sub_agent_source.clone(),
                         SubAgentActivityKind::Started,
                     )
+                    .with_spawn_profile(spawn_profile.clone())
                     .with_status_message(activity_status.clone()),
                 )
                 .await;
@@ -351,6 +358,7 @@ where
                         sub_agent_source,
                         SubAgentActivityKind::Stopped,
                     )
+                    .with_spawn_profile(spawn_profile)
                     .with_status_message(activity_status),
                 )
                 .await;
@@ -386,12 +394,26 @@ async fn emit_hook_report(context: &RuntimeContext, report: &HookDispatchReport)
 }
 
 async fn emit_sub_agent_activity(context: &RuntimeContext, activity: SubAgentActivity) {
+    let profile_status = activity
+        .spawn_profile
+        .as_ref()
+        .map(|profile| {
+            format!(
+                " profile_id {} agent_type {} role {} nickname {:?}",
+                profile.profile_id,
+                profile.agent_type.as_str(),
+                profile.role,
+                profile.nickname
+            )
+        })
+        .unwrap_or_default();
     let message = format!(
-        "sub-agent {} {:?} source {:?} status {}",
+        "sub-agent {} {:?} source {:?} status {}{}",
         activity.agent_reference,
         activity.kind,
         activity.source,
-        activity.status_message.as_deref().unwrap_or_default()
+        activity.status_message.as_deref().unwrap_or_default(),
+        profile_status
     );
     let _ = context
         .emit(observability::kernel_sub_agent_event(message))

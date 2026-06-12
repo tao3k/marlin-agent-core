@@ -9,11 +9,8 @@ use marlin_org_store::FileSystemReleaseStatusStore;
 use marlin_workspace_protocol::{
     ReleaseGateReceipt, ReleaseGateState, ReleaseLandingReport, ReleaseStatus,
 };
-use std::{
-    fs,
-    path::Path,
-    time::{SystemTime, UNIX_EPOCH},
-};
+use std::{fs, path::Path};
+use tempfile::{Builder, TempDir};
 
 const RELEASE_STATUS_ARTIFACT_DIR_ENV: &str = "MARLIN_RELEASE_STATUS_ARTIFACT_DIR";
 
@@ -138,7 +135,7 @@ fn command_compiler_real_gxi_release_topology_persists_landing_status_sidecar() 
     let topology = artifact
         .release_topology()
         .expect("real gxi should produce a release topology artifact");
-    let store = FileSystemReleaseStatusStore::new(&root);
+    let store = FileSystemReleaseStatusStore::new(root.path());
 
     let pending = store
         .record_release_topology(topology)
@@ -157,7 +154,7 @@ fn command_compiler_real_gxi_release_topology_persists_landing_status_sidecar() 
                     "workspace_schema".to_owned(),
                     "workspace_patch_intent".to_owned()
                 ],
-                vec!["fixtures/gerbil/command-adapter.ss".to_owned()],
+                vec!["gerbil/bin/command-adapter.ss".to_owned()],
             ))
             .expect("real gxi gate receipt should update sidecar")
     );
@@ -183,13 +180,11 @@ fn command_compiler_real_gxi_release_topology_persists_landing_status_sidecar() 
     );
     assert_eq!(
         report.observed_artifact_paths,
-        ["fixtures/gerbil/command-adapter.ss"]
+        ["gerbil/bin/command-adapter.ss"]
     );
     assert!(report.missing_artifact_paths.is_empty());
 
     persist_release_status_artifacts(&store, &report);
-
-    let _ = fs::remove_dir_all(root);
 }
 
 fn persist_release_status_artifacts(
@@ -240,19 +235,15 @@ fn assert_release_status_artifacts(artifact_dir: &Path) {
     );
     assert_eq!(
         report.observed_artifact_paths,
-        ["fixtures/gerbil/command-adapter.ss"]
+        ["gerbil/bin/command-adapter.ss"]
     );
     assert!(report.missing_artifact_paths.is_empty());
     assert!(report.missing_visibility_reports.is_empty());
 }
 
-fn test_root(name: &str) -> std::path::PathBuf {
-    let suffix = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_nanos())
-        .unwrap_or_default();
-    std::env::temp_dir().join(format!(
-        "marlin-gerbil-scheme-{name}-{}-{suffix}",
-        std::process::id()
-    ))
+fn test_root(name: &str) -> TempDir {
+    Builder::new()
+        .prefix(&format!("marlin-gerbil-scheme-{name}-"))
+        .tempdir()
+        .unwrap_or_else(|error| panic!("creates {name} test root: {error}"))
 }

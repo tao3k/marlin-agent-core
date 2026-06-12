@@ -1,7 +1,8 @@
 use marlin_agent_protocol::{
-    SubAgentActivity, SubAgentActivityKind, SubAgentContextNamespace, SubAgentContextPolicy,
-    SubAgentPerformanceBudget, SubAgentPermissionSet, SubAgentSearchReceipt, SubAgentSource,
-    SubAgentSpawnConfig, SubAgentSpawnPolicy, SubAgentSpawnStrategy,
+    HookAgentScope, SubAgentActivity, SubAgentActivityKind, SubAgentContextPolicy,
+    SubAgentContextVisibility, SubAgentPerformanceBudget, SubAgentPermissionSet,
+    SubAgentSearchReceipt, SubAgentSource, SubAgentSpawnConfig, SubAgentSpawnPolicy,
+    SubAgentSpawnProfile, SubAgentSpawnStrategy,
 };
 
 #[test]
@@ -14,12 +15,30 @@ fn sub_agent_source_and_activity_keep_thread_spawn_context() {
         agent_role: Some("code-review".to_owned()),
     };
     let activity = SubAgentActivity::new("reviewer", source.clone(), SubAgentActivityKind::Started)
+        .with_spawn_profile(
+            SubAgentSpawnProfile::new("reviewer", "reviewer", "code-review")
+                .with_nickname("reviewer"),
+        )
         .with_status_message("spawned");
 
     assert_eq!(activity.source, source);
     assert_eq!(activity.agent_reference, "reviewer");
     assert_eq!(activity.kind, SubAgentActivityKind::Started);
     assert_eq!(activity.status_message.as_deref(), Some("spawned"));
+    assert_eq!(
+        activity
+            .spawn_profile
+            .as_ref()
+            .map(|profile| profile.agent_type.as_str()),
+        Some("reviewer")
+    );
+    assert_eq!(
+        activity
+            .spawn_profile
+            .as_ref()
+            .map(|profile| &profile.hook_agent_scope),
+        Some(&HookAgentScope::SubAgent)
+    );
 }
 
 #[test]
@@ -59,22 +78,53 @@ fn sub_agent_spawn_config_defaults_to_toml_read_only_policy() {
 
     assert_eq!(config.profile_id, "asp-explorer");
     assert_eq!(config.agent_type.as_str(), "asp_explorer");
+    assert_eq!(config.hook_agent_scope, HookAgentScope::SubAgent);
     assert_eq!(config.child_session_id(), "asp-explorer");
     assert_eq!(
         config.policy.permissions,
         SubAgentPermissionSet::read_only()
     );
     assert!(!config.policy.permissions.workspace_write);
+    assert!(config.policy.permissions.tool_access);
+    assert!(!config.policy.permissions.hook_access);
+    assert!(!config.policy.permissions.secret_access);
     assert_eq!(
-        config.policy.context.namespaces,
+        config.policy.context.visibility,
         vec![
-            SubAgentContextNamespace::System,
-            SubAgentContextNamespace::User,
-            SubAgentContextNamespace::Workspace,
-            SubAgentContextNamespace::Memory,
+            SubAgentContextVisibility::System,
+            SubAgentContextVisibility::User,
+            SubAgentContextVisibility::Workspace,
+            SubAgentContextVisibility::Memory,
         ]
     );
     assert_eq!(config.policy.performance.max_concurrency, Some(1));
+}
+
+#[test]
+fn sub_agent_context_policy_rejects_removed_namespaces_key() {
+    let error = serde_json::from_value::<SubAgentContextPolicy>(serde_json::json!({
+        "session_id": "legacy-session",
+        "namespaces": ["System", "Workspace"],
+        "max_history_items": 4
+    }))
+    .expect_err("removed namespaces key must not be accepted");
+
+    assert!(error.to_string().contains("namespaces"));
+
+    let decoded: SubAgentContextPolicy = serde_json::from_value(serde_json::json!({
+        "session_id": "current-session",
+        "visibility": ["System", "Workspace"],
+        "max_history_items": 4
+    }))
+    .expect("visibility key is accepted");
+
+    assert_eq!(
+        decoded.visibility,
+        vec![
+            SubAgentContextVisibility::System,
+            SubAgentContextVisibility::Workspace,
+        ]
+    );
 }
 
 #[test]
@@ -87,6 +137,7 @@ fn sub_agent_spawn_config_keeps_scheme_strategy_optional() {
             .with_timeout_ms(30_000),
     };
     let config = SubAgentSpawnConfig::toml("worker", "worker", "implementation")
+        .with_hook_agent_scope(HookAgentScope::CustomAgent)
         .with_strategy(SubAgentSpawnStrategy::Scheme {
             module: "marlin/spawn-strategy".to_owned(),
             procedure: Some("rank-workers".to_owned()),
@@ -100,9 +151,11 @@ fn sub_agent_spawn_config_keeps_scheme_strategy_optional() {
         "marlin/spawn-strategy"
     );
     assert_eq!(value["strategy"]["Scheme"]["aot"], true);
+    assert_eq!(value["hook_agent_scope"], "CustomAgent");
     assert_eq!(value["policy"]["permissions"]["workspace_write"], true);
     assert_eq!(value["policy"]["performance"]["max_concurrency"], 4);
 
     let decoded: SubAgentSpawnConfig = serde_json::from_value(value).expect("config deserializes");
     assert_eq!(decoded.child_session_id(), "worker-session");
+    assert_eq!(decoded.hook_agent_scope, HookAgentScope::CustomAgent);
 }

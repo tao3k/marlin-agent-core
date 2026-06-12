@@ -1,8 +1,12 @@
 #[path = "unit/runtime.rs"]
 mod runtime;
+#[path = "unit/runtime/cleanup.rs"]
+mod runtime_cleanup;
+#[path = "unit/runtime/model_route/mod.rs"]
+mod runtime_model_route;
 #[path = "unit/runtime/observability.rs"]
 mod runtime_observability;
-#[path = "unit/runtime/process.rs"]
+#[path = "unit/runtime/process/mod.rs"]
 mod runtime_process;
 #[path = "unit/runtime/session.rs"]
 mod runtime_session;

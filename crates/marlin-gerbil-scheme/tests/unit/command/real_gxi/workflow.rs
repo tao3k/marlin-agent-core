@@ -1,6 +1,7 @@
 use super::{WORKSPACE_PATCH_INTENT_SOURCE, command_adapter_batch_artifacts, local_gxi};
 use marlin_gerbil_scheme::{
-    GerbilArtifactKind, GerbilCompiledArtifact, GerbilCompiler, GerbilRuntimeBinding, GerbilSource,
+    GERBIL_MARLIN_PROTOCOL_PATH, GerbilArtifactKind, GerbilCompiledArtifact, GerbilCompiler,
+    GerbilRuntimeBinding, GerbilSource,
 };
 use marlin_org_store::{FileSystemOrgSourceStore, OrgSourceWritePolicy};
 use marlin_org_workflow::{
@@ -8,10 +9,8 @@ use marlin_org_workflow::{
     OrgWorkspaceSourceCommitter,
 };
 use marlin_workspace_patch::PatchId;
-use std::{
-    fs,
-    time::{SystemTime, UNIX_EPOCH},
-};
+use std::fs;
+use tempfile::{Builder, TempDir};
 
 #[test]
 #[ignore = "requires a local Gerbil gxi executable"]
@@ -46,7 +45,7 @@ fn runtime_binding_real_gxi_workspace_patch_intent_dry_runs_through_workflow() {
         return;
     };
     let root = test_root("runtime-binding-workflow");
-    let binding = GerbilRuntimeBinding::new(gxi, &root)
+    let binding = GerbilRuntimeBinding::new(gxi, root.path())
         .expect("runtime binding should write assets for real gxi workflow execution");
 
     let artifact = binding
@@ -64,7 +63,7 @@ fn runtime_binding_real_gxi_workspace_patch_intent_dry_runs_through_workflow() {
         binding
             .written_assets()
             .iter()
-            .any(|asset| asset.ends_with("marlin/protocol.ss"))
+            .any(|asset| asset.ends_with(GERBIL_MARLIN_PROTOCOL_PATH))
     );
     let GerbilCompiledArtifact::WorkspacePatchIntent(intent) = artifact else {
         panic!("expected workspace patch intent artifact");
@@ -75,8 +74,6 @@ fn runtime_binding_real_gxi_workspace_patch_intent_dry_runs_through_workflow() {
     assert!(receipt.validation.accepted);
     assert_eq!(receipt.memory_dispatch.len(), 1);
     assert_eq!(receipt.memory_dispatch[0].target, "long-term");
-
-    let _ = fs::remove_dir_all(root);
 }
 
 #[test]
@@ -86,13 +83,13 @@ fn command_compiler_real_gxi_workspace_patch_intent_commits_with_policy() {
         return;
     };
     let root = test_root("real-gxi-gerbil-intent-commit");
-    fs::create_dir_all(&root).expect("create temp root");
+    fs::create_dir_all(root.path()).expect("create temp root");
     fs::write(
-        root.join("memory.org"),
+        root.path().join("memory.org"),
         "* TODO Goal\n:PROPERTIES:\n:OWNER: old-owner\n:END:\n",
     )
     .expect("seed document");
-    let mut store = FileSystemOrgSourceStore::new(&root);
+    let mut store = FileSystemOrgSourceStore::new(root.path());
 
     let artifact = artifacts[5].clone();
     let GerbilCompiledArtifact::WorkspacePatchIntent(intent) = artifact else {
@@ -108,19 +105,14 @@ fn command_compiler_real_gxi_workspace_patch_intent_commits_with_policy() {
     assert_eq!(receipt.source.applied_edits, 2);
     assert!(receipt.source.wrote_documents);
     assert_eq!(
-        fs::read_to_string(root.join("memory.org")).expect("read committed document"),
+        fs::read_to_string(root.path().join("memory.org")).expect("read committed document"),
         "* DONE Goal\n:PROPERTIES:\n:OWNER: gerbil\n:END:\n",
     );
-    let _ = fs::remove_dir_all(root);
 }
 
-fn test_root(name: &str) -> std::path::PathBuf {
-    let suffix = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_nanos())
-        .unwrap_or_default();
-    std::env::temp_dir().join(format!(
-        "marlin-gerbil-scheme-{name}-{}-{suffix}",
-        std::process::id()
-    ))
+fn test_root(name: &str) -> TempDir {
+    Builder::new()
+        .prefix(&format!("marlin-gerbil-scheme-{name}-"))
+        .tempdir()
+        .unwrap_or_else(|error| panic!("creates {name} test root: {error}"))
 }

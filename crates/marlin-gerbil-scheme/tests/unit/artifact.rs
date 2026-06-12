@@ -11,10 +11,7 @@ use marlin_workspace_patch::{WorkspacePatch, WorkspacePatchOp};
 use marlin_workspace_protocol::{
     AgentWorkspace, ReleaseGateReceipt, ReleaseGateState, WorkspaceCtx, WorkspaceTarget,
 };
-use std::{
-    fs,
-    time::{SystemTime, UNIX_EPOCH},
-};
+use tempfile::{Builder, TempDir};
 
 fn empty_loop_graph() -> CompiledLoopGraph {
     CompiledLoopGraph {
@@ -99,18 +96,18 @@ fn artifact_release_topology_projects_into_workspace_status() {
         publish_enabled: false,
         asset_audit_command: "cargo package -p marlin-gerbil-scheme --list --allow-dirty"
             .to_owned(),
-        package_assets: vec!["fixtures/gerbil/build.ss".to_owned()],
+        package_assets: vec!["gerbil/build.ss".to_owned()],
         runtime_dependency_chain: vec!["marlin-gerbil-ir".to_owned()],
         workflow_dependency_chain: vec!["marlin-org-workflow".to_owned()],
         gates: vec![ReleaseGateSpec {
             gate_id: "package-assets".to_owned(),
             command: "cargo package -p marlin-gerbil-scheme --list --allow-dirty".to_owned(),
             requires_local_gerbil: false,
-            required_artifacts: vec!["fixtures/gerbil/build.ss".to_owned()],
+            required_artifacts: vec!["gerbil/build.ss".to_owned()],
             visibility: vec![ReleaseVisibilitySpec {
                 report_key: "package_asset_audit".to_owned(),
                 evidence_keys: vec!["required_artifacts".to_owned()],
-                artifact_paths: vec!["fixtures/gerbil/build.ss".to_owned()],
+                artifact_paths: vec!["gerbil/build.ss".to_owned()],
             }],
         }],
     });
@@ -136,7 +133,7 @@ fn artifact_release_topology_projects_into_workspace_status() {
             .visibility_reports
             .iter()
             .any(|report| report.report_key == "package_asset_audit"
-                && report.artifact_paths == ["fixtures/gerbil/build.ss"])
+                && report.artifact_paths == ["gerbil/build.ss"])
     );
 }
 
@@ -148,23 +145,23 @@ fn artifact_release_topology_persists_landing_status_sidecar() {
         publish_enabled: false,
         asset_audit_command: "cargo package -p marlin-gerbil-scheme --list --allow-dirty"
             .to_owned(),
-        package_assets: vec!["fixtures/gerbil/build.ss".to_owned()],
+        package_assets: vec!["gerbil/build.ss".to_owned()],
         runtime_dependency_chain: vec!["marlin-gerbil-ir".to_owned()],
         workflow_dependency_chain: vec!["marlin-org-workflow".to_owned()],
         gates: vec![ReleaseGateSpec {
             gate_id: "package-assets".to_owned(),
             command: "cargo package -p marlin-gerbil-scheme --list --allow-dirty".to_owned(),
             requires_local_gerbil: false,
-            required_artifacts: vec!["fixtures/gerbil/build.ss".to_owned()],
+            required_artifacts: vec!["gerbil/build.ss".to_owned()],
             visibility: vec![ReleaseVisibilitySpec {
                 report_key: "package_asset_audit".to_owned(),
                 evidence_keys: vec!["required_artifacts".to_owned()],
-                artifact_paths: vec!["fixtures/gerbil/build.ss".to_owned()],
+                artifact_paths: vec!["gerbil/build.ss".to_owned()],
             }],
         }],
     });
     let root = test_root("release-topology-status");
-    let store = FileSystemReleaseStatusStore::new(&root);
+    let store = FileSystemReleaseStatusStore::new(root.path());
 
     let pending = store
         .record_release_topology(
@@ -182,12 +179,12 @@ fn artifact_release_topology_persists_landing_status_sidecar() {
             .record_release_gate_receipt(ReleaseGateReceipt::passed(
                 "package-assets",
                 vec!["required_artifacts".to_owned()],
-                vec!["fixtures/gerbil/build.ss".to_owned()],
+                vec!["gerbil/build.ss".to_owned()],
             ))
             .expect("release gate receipt should update persisted sidecar")
     );
 
-    let reopened = FileSystemReleaseStatusStore::new(&root);
+    let reopened = FileSystemReleaseStatusStore::new(root.path());
     let status = reopened
         .read_status()
         .expect("release status sidecar should be readable")
@@ -202,7 +199,7 @@ fn artifact_release_topology_persists_landing_status_sidecar() {
             .as_ref()
             .expect("release gate receipt")
             .artifact_paths,
-        ["fixtures/gerbil/build.ss"]
+        ["gerbil/build.ss"]
     );
     let landing = reopened
         .read_landing_report()
@@ -213,13 +210,8 @@ fn artifact_release_topology_persists_landing_status_sidecar() {
     assert_eq!(landing.passed_gates, 1);
     assert_eq!(landing.observed_visibility_reports, 1);
     assert_eq!(landing.observed_evidence_keys, ["required_artifacts"]);
-    assert_eq!(
-        landing.observed_artifact_paths,
-        ["fixtures/gerbil/build.ss"]
-    );
+    assert_eq!(landing.observed_artifact_paths, ["gerbil/build.ss"]);
     assert!(landing.missing_artifact_paths.is_empty());
-
-    let _ = fs::remove_dir_all(root);
 }
 
 #[test]
@@ -230,13 +222,9 @@ fn artifact_non_release_topology_has_no_release_topology_payload() {
     assert!(artifact.into_release_topology().is_none());
 }
 
-fn test_root(name: &str) -> std::path::PathBuf {
-    let suffix = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_nanos())
-        .unwrap_or_default();
-    std::env::temp_dir().join(format!(
-        "marlin-gerbil-scheme-{name}-{}-{suffix}",
-        std::process::id()
-    ))
+fn test_root(name: &str) -> TempDir {
+    Builder::new()
+        .prefix(&format!("marlin-gerbil-scheme-{name}-"))
+        .tempdir()
+        .unwrap_or_else(|error| panic!("creates {name} test root: {error}"))
 }

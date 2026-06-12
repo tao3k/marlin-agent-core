@@ -1,16 +1,26 @@
-use std::sync::{
-    Arc, Mutex,
-    atomic::{AtomicU64, Ordering},
+use std::{
+    fmt,
+    sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
+    },
 };
 
 use marlin_agent_protocol::{ExecutorName, NodeId};
 use marlin_agent_runtime::{
     ProviderRuntime, RuntimeContext, RuntimeFuture, TokioAgentRuntime, observability,
 };
+use parking_lot::Mutex;
 use tracing::{
     Event, Metadata, Subscriber,
+    field::{Field, Visit},
     span::{Attributes, Id, Record},
 };
+
+#[path = "observability/process_cleanup.rs"]
+mod process_cleanup;
+#[path = "observability/process_lifecycle.rs"]
+mod process_lifecycle;
 
 #[tokio::test]
 async fn runtime_provider_spawn_creates_tracing_span() {
@@ -58,8 +68,53 @@ fn observability_contract_names_kernel_hook_and_agent_surfaces() {
     assert_eq!(observability::FIELD_DURATION_MS, "duration_ms");
     assert_eq!(observability::FIELD_DIAGNOSTIC_COUNT, "diagnostic_count");
     assert_eq!(observability::FIELD_EVENT_COUNT, "event_count");
+    assert_eq!(observability::FIELD_OBSERVED_AT_MS, "observed_at_ms");
+    assert_eq!(observability::TARGET_RUNTIME_PROCESS, "runtime.process");
     assert_eq!(observability::FIELD_PROCESS_ID, "pid");
+    assert_eq!(observability::FIELD_PROCESS_EVENT, "process_event");
+    assert_eq!(observability::FIELD_PROCESS_HANDLE, "process_handle");
+    assert_eq!(observability::FIELD_PROCESS_KIND, "process_kind");
     assert_eq!(observability::FIELD_PROCESS_STATUS, "process_status");
+    assert_eq!(observability::FIELD_OWNER_REFERENCE, "owner_reference");
+    assert_eq!(observability::FIELD_CLEANUP_OUTCOME, "cleanup_outcome");
+    assert_eq!(
+        observability::FIELD_CLEANUP_CANDIDATE_COUNT,
+        "cleanup_candidate_count"
+    );
+    assert_eq!(
+        observability::FIELD_REMOVED_STALE_COUNT,
+        "removed_stale_count"
+    );
+    assert_eq!(
+        observability::FIELD_TERMINATION_REQUESTED_COUNT,
+        "termination_requested_count"
+    );
+    assert_eq!(
+        observability::FIELD_TERMINATION_FAILED_COUNT,
+        "termination_failed_count"
+    );
+    assert_eq!(
+        observability::FIELD_RETAINED_IN_REGISTRY,
+        "retained_in_registry"
+    );
+    assert_eq!(
+        observability::FIELD_REQUIRES_FOLLOW_UP,
+        "requires_follow_up"
+    );
+    assert_eq!(
+        observability::FIELD_FORCE_CLEANUP_RECOMMENDED,
+        "force_cleanup_recommended"
+    );
+    assert_eq!(observability::PROCESS_EVENT_TRACKED, "tracked");
+    assert_eq!(observability::PROCESS_EVENT_CLEANUP_SWEEP, "cleanup_sweep");
+    assert_eq!(
+        observability::PROCESS_EVENT_CLEANUP_REQUESTED,
+        "cleanup_requested"
+    );
+    assert_eq!(
+        observability::PROCESS_EVENT_TERMINATION_FAILED,
+        "termination_failed"
+    );
     assert_eq!(
         observability::SUB_AGENT_SOURCE_KERNEL_NODE,
         "kernel.sub-agent-node"
@@ -103,69 +158,6 @@ fn observability_contract_names_kernel_hook_and_agent_surfaces() {
     assert!(span_names.contains(&observability::SPAN_HOOK_RUN));
 }
 
-#[test]
-fn runtime_process_registry_drops_finished_processes_from_active_tracking() {
-    let mut registry = observability::RuntimeProcessRegistry::new();
-    registry.track(
-        observability::RuntimeProcessObservation::new(
-            42,
-            observability::RuntimeProcessKind::Tool,
-            "tool:apply",
-        )
-        .with_started_at_ms(1),
-    );
-
-    let finished = registry.finish(42, 10).expect("process is tracked");
-
-    assert_eq!(finished.pid, 42);
-    assert_eq!(
-        finished.status,
-        observability::RuntimeProcessStatus::Finished
-    );
-    assert_eq!(finished.last_observed_at_ms, Some(10));
-    assert!(registry.get(42).is_none());
-    assert!(registry.active_processes().is_empty());
-}
-
-#[test]
-fn runtime_process_registry_reports_orphan_cleanup_candidates() {
-    let mut registry = observability::RuntimeProcessRegistry::new();
-    registry.track(
-        observability::RuntimeProcessObservation::new(
-            100,
-            observability::RuntimeProcessKind::SubAgent,
-            "sub-agent:review",
-        )
-        .with_started_at_ms(1),
-    );
-    registry.track(
-        observability::RuntimeProcessObservation::new(
-            101,
-            observability::RuntimeProcessKind::Tool,
-            "tool:cache-writer",
-        )
-        .with_started_at_ms(2),
-    );
-    registry
-        .mark_orphaned(100, 30)
-        .expect("sub-agent process is tracked");
-    registry
-        .request_cleanup(101, 31)
-        .expect("tool process is tracked");
-
-    let candidates = registry.cleanup_candidates();
-
-    assert_eq!(candidates.len(), 2);
-    assert_eq!(
-        registry.get(100).map(|process| &process.status),
-        Some(&observability::RuntimeProcessStatus::Orphaned)
-    );
-    assert_eq!(
-        registry.get(101).map(|process| &process.status),
-        Some(&observability::RuntimeProcessStatus::CleanupRequested)
-    );
-}
-
 #[derive(Clone, Debug)]
 struct EchoProvider;
 
@@ -185,6 +177,7 @@ impl ProviderRuntime for EchoProvider {
 #[derive(Clone, Default)]
 struct RecordingSubscriber {
     spans: Arc<Mutex<Vec<&'static str>>>,
+    events: Arc<Mutex<Vec<RecordedEvent>>>,
     next_id: Arc<AtomicU64>,
 }
 
@@ -192,15 +185,77 @@ impl RecordingSubscriber {
     fn new() -> Self {
         Self {
             spans: Arc::new(Mutex::new(Vec::new())),
+            events: Arc::new(Mutex::new(Vec::new())),
             next_id: Arc::new(AtomicU64::new(1)),
         }
     }
 
     fn span_names(&self) -> Vec<&'static str> {
-        self.spans
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .clone()
+        self.spans.lock().clone()
+    }
+
+    fn events(&self) -> Vec<RecordedEvent> {
+        self.events.lock().clone()
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct RecordedEvent {
+    target: &'static str,
+    fields: Vec<RecordedField>,
+}
+
+impl RecordedEvent {
+    fn has_field(&self, name: &str) -> bool {
+        self.fields.iter().any(|field| field.name == name)
+    }
+
+    fn has_value(&self, name: &str, value: &str) -> bool {
+        self.fields
+            .iter()
+            .any(|field| field.name == name && field.value == value)
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct RecordedField {
+    name: &'static str,
+    value: String,
+}
+
+#[derive(Default)]
+struct EventFieldRecorder {
+    fields: Vec<RecordedField>,
+}
+
+impl EventFieldRecorder {
+    fn push(&mut self, field: &Field, value: String) {
+        self.fields.push(RecordedField {
+            name: field.name(),
+            value,
+        });
+    }
+}
+
+impl Visit for EventFieldRecorder {
+    fn record_debug(&mut self, field: &Field, value: &dyn fmt::Debug) {
+        self.push(field, format!("{value:?}"));
+    }
+
+    fn record_str(&mut self, field: &Field, value: &str) {
+        self.push(field, value.to_owned());
+    }
+
+    fn record_bool(&mut self, field: &Field, value: bool) {
+        self.push(field, value.to_string());
+    }
+
+    fn record_u64(&mut self, field: &Field, value: u64) {
+        self.push(field, value.to_string());
+    }
+
+    fn record_i64(&mut self, field: &Field, value: i64) {
+        self.push(field, value.to_string());
     }
 }
 
@@ -210,10 +265,7 @@ impl Subscriber for RecordingSubscriber {
     }
 
     fn new_span(&self, attributes: &Attributes<'_>) -> Id {
-        self.spans
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .push(attributes.metadata().name());
+        self.spans.lock().push(attributes.metadata().name());
         Id::from_u64(self.next_id.fetch_add(1, Ordering::Relaxed))
     }
 
@@ -221,7 +273,14 @@ impl Subscriber for RecordingSubscriber {
 
     fn record_follows_from(&self, _span: &Id, _follows: &Id) {}
 
-    fn event(&self, _event: &Event<'_>) {}
+    fn event(&self, event: &Event<'_>) {
+        let mut recorder = EventFieldRecorder::default();
+        event.record(&mut recorder);
+        self.events.lock().push(RecordedEvent {
+            target: event.metadata().target(),
+            fields: recorder.fields,
+        });
+    }
 
     fn enter(&self, _span: &Id) {}
 

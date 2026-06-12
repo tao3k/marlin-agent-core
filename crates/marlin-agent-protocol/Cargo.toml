@@ -10,6 +10,7 @@ marlin-gerbil-ir.workspace = true
 serde.workspace = true
 
 [build-dependencies]
+marlin-rust-project-harness-policy.workspace = true
 rust-lang-project-harness.workspace = true
 
 [dev-dependencies]

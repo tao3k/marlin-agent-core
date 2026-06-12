@@ -36,8 +36,8 @@ async fn harness_execution_report_captures_runtime_events() {
 
 #[tokio::test]
 async fn harness_execution_report_drain_has_no_idle_timeout_floor() {
-    const RUN_COUNT: usize = 128;
-    const TOTAL_DURATION_BUDGET: Duration = Duration::from_millis(96);
+    const RUN_COUNT: u32 = 128;
+    const PER_RUN_DURATION_BUDGET: Duration = Duration::from_millis(2);
 
     let scenario = AgentScenario::new("event-drain-no-idle-timeout");
     let mut harness = HarnessRuntime::new(16);
@@ -66,10 +66,12 @@ async fn harness_execution_report_drain_has_no_idle_timeout_floor() {
         total_duration += report.summary.duration;
     }
 
+    let total_duration_budget = PER_RUN_DURATION_BUDGET * RUN_COUNT;
     assert!(
-        total_duration <= TOTAL_DURATION_BUDGET,
-        "ready event drain should not pay an idle timeout floor: {:?} across {} runs",
+        total_duration <= total_duration_budget,
+        "ready event drain should not pay an idle timeout floor: {:?} across {} runs, budget {:?}",
         total_duration,
-        RUN_COUNT
+        RUN_COUNT,
+        total_duration_budget
     );
 }

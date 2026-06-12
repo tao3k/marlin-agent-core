@@ -1,33 +1,54 @@
 use std::sync::Arc;
 
 use marlin_agent_runtime::{
-    ContextNamespace, RuntimeContext, RuntimeFuture, SubAgentContextNamespace,
-    SubAgentContextPolicy, SubAgentPerformanceBudget, SubAgentPermissionSet, SubAgentRuntime,
+    ContextNamespace, RuntimeContext, RuntimeFuture, SubAgentContextPolicy,
+    SubAgentContextVisibility, SubAgentPerformanceBudget, SubAgentPermissionSet, SubAgentRuntime,
     SubAgentSpawnConfig, SubAgentSpawnPolicy, TokioAgentRuntime,
 };
 
 #[tokio::test]
 async fn sub_agent_config_compiles_to_child_session_visibility() {
     let (runtime, _events) = TokioAgentRuntime::new(4);
-    let config = SubAgentSpawnConfig::toml("asp-explorer", "asp_explorer", "explorer").with_policy(
-        SubAgentSpawnPolicy {
+    let config = SubAgentSpawnConfig::toml("asp-explorer", "asp_explorer", "explorer")
+        .with_nickname("Galileo")
+        .with_policy(SubAgentSpawnPolicy {
             permissions: SubAgentPermissionSet::read_only(),
             context: SubAgentContextPolicy {
                 session_id: Some("session:asp-explorer".to_owned()),
-                namespaces: vec![
-                    SubAgentContextNamespace::System,
-                    SubAgentContextNamespace::Workspace,
+                visibility: vec![
+                    SubAgentContextVisibility::System,
+                    SubAgentContextVisibility::Workspace,
                 ],
                 max_history_items: Some(2),
             },
             performance: SubAgentPerformanceBudget::interactive(),
-        },
-    );
+        });
 
     let (task, receipt) =
         runtime.spawn_sub_agent_with_config(Arc::new(SessionPolicyEchoSubAgent), (), config);
 
     assert_eq!(receipt.child_session_id().as_str(), "session:asp-explorer");
+    assert_eq!(receipt.profile_id(), "asp-explorer");
+    assert_eq!(receipt.agent_type(), "asp_explorer");
+    assert_eq!(receipt.role(), "explorer");
+    assert_eq!(receipt.nickname(), Some("Galileo"));
+    let activity_profile = receipt.activity_profile();
+    assert_eq!(activity_profile.profile_id, "asp-explorer");
+    assert_eq!(activity_profile.agent_type.as_str(), "asp_explorer");
+    assert_eq!(activity_profile.role, "explorer");
+    assert_eq!(activity_profile.nickname.as_deref(), Some("Galileo"));
+    assert_eq!(
+        receipt.isolation_receipt().child_session_id().as_str(),
+        "session:asp-explorer"
+    );
+    assert!(
+        receipt
+            .config()
+            .policy
+            .context
+            .visibility
+            .contains(&SubAgentContextVisibility::System)
+    );
     let output = task.join().await.expect("sub-agent task should finish");
 
     assert_eq!(output.session_id, "session:asp-explorer");

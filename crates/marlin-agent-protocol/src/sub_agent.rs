@@ -2,7 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::RunId;
+use crate::{HookAgentScope, RunId};
 
 /// Source that caused a sub-agent to run.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -37,7 +37,24 @@ pub struct SubAgentActivity {
     pub kind: SubAgentActivityKind,
     pub status_message: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub spawn_profile: Option<SubAgentSpawnProfile>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub search_receipt: Option<SubAgentSearchReceipt>,
+}
+
+/// Compact custom-agent profile metadata carried by spawn and activity receipts.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct SubAgentSpawnProfile {
+    /// Stable profile identifier, such as a custom-agent config name.
+    pub profile_id: String,
+    /// Runtime agent type selected for this sub-agent profile.
+    pub agent_type: SubAgentType,
+    /// Role used for routing, policy, and human-readable activity views.
+    pub role: String,
+    /// Optional display nickname assigned by the agent runtime.
+    pub nickname: Option<String>,
+    /// Hook agent scope assigned to this sub-agent at runtime.
+    pub hook_agent_scope: HookAgentScope,
 }
 
 /// Compact receipt emitted by ASP-style sub-agent search audits.
@@ -72,24 +89,22 @@ pub enum SubAgentSpawnStrategy {
     },
 }
 
-/// Serializable context namespace requested by a sub-agent profile.
+/// Context visibility requested by a sub-agent profile.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
-pub enum SubAgentContextNamespace {
+pub enum SubAgentContextVisibility {
     System,
     User,
     Workspace,
     Memory,
-    Tools,
-    Hooks,
-    SubAgents,
-    Secrets,
 }
 
 /// Context visibility requested when deriving a child session for a sub-agent.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SubAgentContextPolicy {
     pub session_id: Option<String>,
-    pub namespaces: Vec<SubAgentContextNamespace>,
+    #[serde(default)]
+    pub visibility: Vec<SubAgentContextVisibility>,
     pub max_history_items: Option<usize>,
 }
 
@@ -101,6 +116,12 @@ pub struct SubAgentPermissionSet {
     pub network_access: bool,
     pub process_spawn: bool,
     pub descendant_spawn: bool,
+    #[serde(default)]
+    pub tool_access: bool,
+    #[serde(default)]
+    pub hook_access: bool,
+    #[serde(default)]
+    pub secret_access: bool,
 }
 
 /// Bounded runtime budget for high-performance sub-agent spawning.
@@ -127,6 +148,7 @@ pub struct SubAgentSpawnConfig {
     pub agent_type: SubAgentType,
     pub role: String,
     pub nickname: Option<String>,
+    pub hook_agent_scope: HookAgentScope,
     pub surface: SubAgentConfigSurface,
     pub strategy: SubAgentSpawnStrategy,
     pub policy: SubAgentSpawnPolicy,
@@ -148,6 +170,7 @@ impl SubAgentActivity {
             source,
             kind,
             status_message: None,
+            spawn_profile: None,
             search_receipt: None,
         }
     }
@@ -157,8 +180,44 @@ impl SubAgentActivity {
         self
     }
 
+    pub fn with_spawn_profile(mut self, profile: SubAgentSpawnProfile) -> Self {
+        self.spawn_profile = Some(profile);
+        self
+    }
+
     pub fn with_search_receipt(mut self, receipt: SubAgentSearchReceipt) -> Self {
         self.search_receipt = Some(receipt);
+        self
+    }
+}
+
+impl SubAgentSpawnProfile {
+    pub fn new(
+        profile_id: impl Into<String>,
+        agent_type: impl Into<SubAgentType>,
+        role: impl Into<String>,
+    ) -> Self {
+        Self {
+            profile_id: profile_id.into(),
+            agent_type: agent_type.into(),
+            role: role.into(),
+            nickname: None,
+            hook_agent_scope: HookAgentScope::SubAgent,
+        }
+    }
+
+    pub fn from_config(config: &SubAgentSpawnConfig) -> Self {
+        Self {
+            profile_id: config.profile_id.clone(),
+            agent_type: config.agent_type.clone(),
+            role: config.role.clone(),
+            nickname: config.nickname.clone(),
+            hook_agent_scope: config.hook_agent_scope.clone(),
+        }
+    }
+
+    pub fn with_nickname(mut self, nickname: impl Into<String>) -> Self {
+        self.nickname = Some(nickname.into());
         self
     }
 }
@@ -167,7 +226,7 @@ impl SubAgentContextPolicy {
     pub fn isolated(session_id: impl Into<String>) -> Self {
         Self {
             session_id: Some(session_id.into()),
-            namespaces: vec![SubAgentContextNamespace::System],
+            visibility: vec![SubAgentContextVisibility::System],
             max_history_items: Some(0),
         }
     }
@@ -175,14 +234,18 @@ impl SubAgentContextPolicy {
     pub fn workspace_read(session_id: impl Into<String>) -> Self {
         Self {
             session_id: Some(session_id.into()),
-            namespaces: vec![
-                SubAgentContextNamespace::System,
-                SubAgentContextNamespace::User,
-                SubAgentContextNamespace::Workspace,
-                SubAgentContextNamespace::Memory,
+            visibility: vec![
+                SubAgentContextVisibility::System,
+                SubAgentContextVisibility::User,
+                SubAgentContextVisibility::Workspace,
+                SubAgentContextVisibility::Memory,
             ],
             max_history_items: Some(32),
         }
+    }
+
+    pub fn visible_context(&self) -> &[SubAgentContextVisibility] {
+        &self.visibility
     }
 }
 
@@ -194,6 +257,9 @@ impl SubAgentPermissionSet {
             network_access: false,
             process_spawn: false,
             descendant_spawn: false,
+            tool_access: true,
+            hook_access: false,
+            secret_access: false,
         }
     }
 
@@ -204,6 +270,9 @@ impl SubAgentPermissionSet {
             network_access: false,
             process_spawn: false,
             descendant_spawn: false,
+            tool_access: true,
+            hook_access: false,
+            secret_access: false,
         }
     }
 }
@@ -266,9 +335,15 @@ impl SubAgentSpawnConfig {
             agent_type: agent_type.into(),
             role: role.into(),
             nickname: None,
+            hook_agent_scope: HookAgentScope::SubAgent,
             surface: SubAgentConfigSurface::Toml,
             strategy: SubAgentSpawnStrategy::Declarative,
         }
+    }
+
+    pub fn with_hook_agent_scope(mut self, hook_agent_scope: HookAgentScope) -> Self {
+        self.hook_agent_scope = hook_agent_scope;
+        self
     }
 
     pub fn with_nickname(mut self, nickname: impl Into<String>) -> Self {

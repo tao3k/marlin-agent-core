@@ -1,0 +1,239 @@
+* 40.80 RFC: Marlin Architecture Principles
+
+Status: active
+
+This RFC defines the project-level architecture principles for Marlin agent
+core. It is the controlling document for work that touches runtime execution,
+protocol contracts, model routing, sub-agent spawning, observability, tool
+execution, provider integration, and configurable policy.
+
+Marlin is not a Codex clone. Codex is useful as an engineering lessons corpus:
+it shows mature problem boundaries around tools, sessions, providers, process
+execution, approvals, traces, and configuration. Those lessons are inputs to
+Marlin design, not implementation templates. Marlin owns its own contracts,
+performance model, extensibility surface, and runtime shape.
+
+** Design Thesis
+
+Marlin is a semantic-agent runtime. Its central job is to turn parser-owned
+facts, typed protocol contracts, configurable policy, and supervised execution
+into auditable agent work.
+
+The runtime must therefore be designed around:
+
+- typed facts before side effects;
+
+- explicit execution ownership;
+
+- high-performance async supervision;
+
+- replaceable providers and tools;
+
+- observable receipts at every risky boundary;
+
+- configuration that stays reviewable even when strategy becomes programmable.
+
+** Architecture Principles
+
+1. Marlin owns the problem model.
+
+   Codex can identify mature engineering concerns, but it does not define
+   Marlin's workspace topology, public APIs, scheduling model, or configuration
+   language. Every Codex-inspired decision must state the problem being solved
+   and the Marlin-native contract that replaces or improves the Codex shape.
+
+2. Protocol facts precede runtime behavior.
+
+   Cross-crate behavior starts as a typed protocol object, request, response,
+   receipt, or schema. Runtime crates consume those facts; they do not infer
+   public behavior from TOML, Scheme, CLI arguments, or provider-specific text.
+
+3. Runtime execution is Tokio-native and budget-aware.
+
+   Async execution, cancellation, backpressure, concurrency limits, process
+   supervision, timeout handling, and stream delivery are runtime concerns. They
+   must be explicit in request/config objects instead of hidden behind broad
+   function arguments.
+
+4. Configuration is declarative by default and programmable by extension.
+
+   TOML is the stable declaration surface for static policy. Scheme/Gerbil may
+   provide advanced strategy, ranking, partitioning, or optimization, but its
+   output must compile back into typed protocol policy before runtime execution.
+
+5. Observability is a contract, not logging.
+
+   Sub-agent spawning, process execution, model routing, provider calls,
+   cancellation, retries, cache use, and hook decisions should emit stable
+   events or receipts that tests and debugging tools can reason about.
+
+6. Performance is a first-order design constraint.
+
+   Performance is not a late optimization pass. Work that introduces fanout,
+   streaming, routing, provider calls, hooks, or process supervision must define
+   budgets and backpressure behavior at the same time as it defines capability.
+
+   Runtime and protocol owners should use proven Rust ecosystem crates when
+   they provide materially better async behavior, validation, observability,
+   search, or performance contracts than raw =std= usage. See
+   [[file:40.95-rust-dependency-strategy.org][40.95 Rust Dependency Strategy]].
+
+7. Crate ownership stays small and explicit.
+
+   Facade modules stay thin. Owner modules hold domain concepts. Shared crates
+   expose stable contracts; implementation crates compile and execute them.
+   Broad shims and positional public APIs are treated as design debt.
+
+8. Parser-owned evidence outranks text heuristics.
+
+   ASP and language providers should expose structural facts, selectors, query
+   results, receipts, and next commands. Raw source scans and prose heuristics
+   are fallback evidence, not the primary design surface.
+
+** Codex Learning Boundary
+
+When learning from Codex, use this translation rule:
+
+- Learn the engineering concern.
+
+- Identify the useful boundary.
+
+- Reject product-specific coupling.
+
+- Replace fixed behavior with typed Marlin policy.
+
+- Add performance and observability requirements before implementation.
+
+For example, Codex process spawning demonstrates that process operations should
+be protocol-visible. Marlin should keep that lesson, but its runtime API should
+use named request/config objects, Tokio supervision, stable observations, and
+policy-driven permissions rather than cloning Codex implementation details.
+
+** Current Workstream Application
+
+Configurable model routing and environment isolation:
+
+- Marlin should route commands to model/provider endpoints by executable, argv,
+  cwd, workspace, sub-agent role, and command kind rather than relying on a
+  single global model setting;
+
+- route policy should control persistent agent/session ids, pooled sessions,
+  history reuse, history bounds, and context fork mode;
+
+- ASP spawn workflows should be able to target a stable agent id for continued
+  interaction when policy allows it;
+
+- project command execution should support native =direnv= and =.envrc=
+  activation as typed environment policy with isolated shell state;
+
+- see [[file:40.90-configurable-model-routing-and-environment.org][40.90 Configurable Model Routing and Environment Isolation]].
+
+Model routing:
+
+- protocol owns routes, matchers, providers, session lifecycle, and context fork
+  semantics;
+
+- runtime compiles route rules, preserves deterministic priority behavior, and
+  executes provider selection without owning policy meaning;
+
+- observability records selected rule, fallback reason, budget, and provider
+  receipt.
+
+Sub-agent spawning:
+
+- TOML declares static profiles and limits;
+
+- Scheme/Gerbil may compute strategy metadata;
+
+- protocol policy owns permissions, context visibility, budgets, and optional
+  strategy metadata;
+
+- runtime owns session derivation, task spawning, cancellation, and lifecycle
+  observation.
+
+Observability:
+
+- process lifecycle, spans, routing decisions, hook decisions, cache decisions,
+  and cancellation should be separate event families;
+
+- events should be stable enough for tests and downstream debugging;
+
+- logging-only output is insufficient for core runtime behavior.
+
+Tool and process execution:
+
+- shell command, PTY command, direct process spawn, stdin transport, and managed
+  runtime process handles remain distinct capability surfaces;
+
+- escalation, sandboxing, permissions, and budgets are typed policy inputs;
+
+- every process boundary produces an observation or receipt.
+
+Provider and strategy integration:
+
+- providers stay replaceable behind typed clients and route endpoints;
+
+- strategy engines never bypass protocol budgets;
+
+- provider-specific data does not leak into shared protocol unless it is a
+  stable cross-provider fact.
+
+** Review Gate
+
+Any architecture or implementation change that cites Codex must answer:
+
+1. What problem did Codex reveal?
+
+2. Which boundary is worth preserving?
+
+3. Which Codex-specific implementation choice are we rejecting?
+
+4. What is the Marlin-native typed contract?
+
+5. What are the runtime budget, cancellation, and backpressure rules?
+
+6. What observation or receipt proves the behavior happened?
+
+7. Which focused tests guard the contract?
+
+** Non-goals
+
+- Do not copy Codex workspace shape.
+
+- Do not vendor Codex implementation code.
+
+- Do not treat Codex config or provider behavior as normative.
+
+- Do not make Scheme/Gerbil the default static configuration format.
+
+- Do not hide public behavior in runtime-only helper functions.
+
+** Acceptance Criteria
+
+- New cross-crate behavior cites this RFC or a narrower RFC.
+
+- Protocol crates own serializable contracts before runtime crates execute them.
+
+- Runtime APIs use named request/config objects for public capabilities.
+
+- Configurable behavior has typed policy, focused tests, and validation gates.
+
+- Performance budgets and observation receipts are designed with the feature.
+
+- Codex audit notes are framed as engineering lessons, not clone instructions.
+
+** Next Work Items
+
+- Classify current local changes into model routing, observability, and
+  runtime/process workstreams before committing them.
+
+- Finish model routing with protocol-owned facts and runtime-owned compiled
+  execution.
+
+- Finish observability module boundaries around process lifecycle and spans.
+
+- Add a TOML-to-typed-policy loader for sub-agent profiles without linking
+  runtime crates to TOML parsing.
+
+- Specify and implement configurable model routing and environment isolation
+  from [[file:40.90-configurable-model-routing-and-environment.org][40.90]].

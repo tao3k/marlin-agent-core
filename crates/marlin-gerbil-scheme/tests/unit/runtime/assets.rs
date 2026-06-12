@@ -1,9 +1,14 @@
 use super::support::test_root;
 use marlin_gerbil_scheme::{
     DEFAULT_GERBIL_GSC_PROGRAM, DEFAULT_GERBIL_GXC_PROGRAM, DEFAULT_GERBIL_GXI_PROGRAM,
-    GERBIL_ADAPTER_MODULE, GERBIL_BUILD_SOURCE, GERBIL_LOADPATH_ENV, GERBIL_MARLIN_ADAPTER_SOURCE,
-    GERBIL_MARLIN_REQUEST_SOURCE, MARLIN_GERBIL_GSC_ENV, MARLIN_GERBIL_GXC_ENV,
-    MARLIN_GERBIL_GXI_ENV, gerbil_runtime_assets, write_gerbil_runtime_assets,
+    GERBIL_ADAPTER_MODULE, GERBIL_BUILD_SOURCE, GERBIL_COMMAND_ADAPTER_BATCH_PATH,
+    GERBIL_COMMAND_ADAPTER_PATH, GERBIL_HOOK_POLICY_ADAPTER_PATH, GERBIL_LOADPATH_ENV,
+    GERBIL_MARLIN_ADAPTER_PATH, GERBIL_MARLIN_ADAPTER_SOURCE, GERBIL_MARLIN_HOOK_POLICY_PATH,
+    GERBIL_MARLIN_PARSER_PATH, GERBIL_MARLIN_PROTOCOL_PATH, GERBIL_MARLIN_REQUEST_PATH,
+    GERBIL_MARLIN_REQUEST_SOURCE, GERBIL_PACKAGE_MANIFEST_PATH, GERBIL_PACKAGE_MANIFEST_SOURCE,
+    GERBIL_PACKAGE_SOURCE_PATH, GERBIL_SMOKE_PATH, MARLIN_GERBIL_GSC_ENV, MARLIN_GERBIL_GXC_ENV,
+    MARLIN_GERBIL_GXI_ENV, gerbil_runtime_assets, gerbil_runtime_loadpath,
+    write_gerbil_runtime_assets,
 };
 use std::fs;
 
@@ -19,51 +24,54 @@ fn gerbil_runtime_assets_expose_loadpath_contract() {
     assert!(DEFAULT_GERBIL_GXI_PROGRAM.ends_with("/bin/gxi"));
     assert!(DEFAULT_GERBIL_GXC_PROGRAM.ends_with("/bin/gxc"));
     assert!(DEFAULT_GERBIL_GSC_PROGRAM.ends_with("/bin/gsc"));
+    assert_eq!(GERBIL_PACKAGE_SOURCE_PATH, "src");
+    assert!(GERBIL_PACKAGE_MANIFEST_SOURCE.contains("marlin-gerbil-runtime"));
     assert!(GERBIL_BUILD_SOURCE.contains("defmarlin-runtime-build-script"));
     assert!(GERBIL_MARLIN_REQUEST_SOURCE.contains("gerbil-compile-request-contract-facts"));
     assert!(GERBIL_MARLIN_ADAPTER_SOURCE.contains("ensure-marlin-contract-facts-shape"));
-    assert_eq!(assets.len(), 8);
-    assert!(
-        assets
-            .iter()
-            .any(|asset| asset.path == "command-adapter.ss")
+
+    let asset_paths = assets.iter().map(|asset| asset.path).collect::<Vec<_>>();
+    assert_eq!(
+        asset_paths.as_slice(),
+        &[
+            GERBIL_PACKAGE_MANIFEST_PATH,
+            GERBIL_COMMAND_ADAPTER_PATH,
+            GERBIL_COMMAND_ADAPTER_BATCH_PATH,
+            GERBIL_HOOK_POLICY_ADAPTER_PATH,
+            "build.ss",
+            GERBIL_SMOKE_PATH,
+            GERBIL_MARLIN_ADAPTER_PATH,
+            GERBIL_MARLIN_HOOK_POLICY_PATH,
+            GERBIL_MARLIN_PARSER_PATH,
+            GERBIL_MARLIN_PROTOCOL_PATH,
+            GERBIL_MARLIN_REQUEST_PATH,
+        ]
     );
-    assert!(
-        assets
-            .iter()
-            .any(|asset| asset.path == "command-adapter-batch.ss")
-    );
-    assert!(assets.iter().any(|asset| asset.path == "build.ss"));
-    assert!(assets.iter().any(|asset| asset.path == "smoke.ss"));
-    assert!(assets.iter().any(|asset| asset.path == "marlin/adapter.ss"));
-    assert!(assets.iter().any(|asset| asset.path == "marlin/parser.ss"));
-    assert!(
-        assets
-            .iter()
-            .any(|asset| asset.path == "marlin/protocol.ss")
-    );
-    assert!(assets.iter().any(|asset| asset.path == "marlin/request.ss"));
 }
 
 #[test]
 fn gerbil_runtime_assets_write_loadpath_tree() {
     let root = test_root("runtime-assets");
 
-    let written = write_gerbil_runtime_assets(&root).expect("write runtime assets");
+    let written = write_gerbil_runtime_assets(root.path()).expect("write runtime assets");
 
     assert_eq!(written.len(), gerbil_runtime_assets().len());
-    assert!(root.join("command-adapter.ss").is_file());
-    assert!(root.join("build.ss").is_file());
-    assert!(root.join("marlin/adapter.ss").is_file());
+    assert_eq!(
+        gerbil_runtime_loadpath(root.path()),
+        root.path().join("src")
+    );
+    assert!(root.path().join(GERBIL_PACKAGE_MANIFEST_PATH).is_file());
+    assert!(root.path().join(GERBIL_COMMAND_ADAPTER_PATH).is_file());
+    assert!(root.path().join("build.ss").is_file());
+    assert!(root.path().join(GERBIL_MARLIN_ADAPTER_PATH).is_file());
     assert!(
-        fs::read_to_string(root.join("build.ss"))
+        fs::read_to_string(root.path().join("build.ss"))
             .expect("read build script")
-            .contains("defmarlin-runtime-build-script")
+            .contains("src/marlin/hook-policy")
     );
     assert!(
-        fs::read_to_string(root.join("marlin/protocol.ss"))
+        fs::read_to_string(root.path().join(GERBIL_MARLIN_PROTOCOL_PATH))
             .expect("read protocol")
             .contains("marlin-workspace-patch-intent-artifact-kind")
     );
-    let _ = fs::remove_dir_all(root);
 }

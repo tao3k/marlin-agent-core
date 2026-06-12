@@ -1,12 +1,16 @@
-* 40.70 RFC: Codex Engineering Baseline
+* 40.70 RFC: Codex Engineering Lessons Baseline
 
 Status: active
 
 This RFC records the first engineering baseline extracted from the Codex source
-tree under =.data/codex=. The goal is not to clone Codex. The goal is to learn
-the mature boundary shapes, keep the useful contracts, and make Marlin more
-configurable for ASP, sub-agent fanout, provider replacement, and
-high-performance execution.
+tree under =.data/codex=. This baseline is subordinate to
+[[file:40.80-marlin-architecture-principles.org][40.80 Marlin Architecture Principles]].
+
+The goal is not to clone Codex. Codex is treated as an engineering lessons
+corpus: it helps identify mature problem boundaries, but it does not define
+Marlin's implementation shape. Marlin keeps only the useful contracts and
+replaces fixed product behavior with typed policy, Tokio-native execution,
+ASP-owned evidence, and more configurable strategy surfaces.
 
 ** Source Baseline
 
@@ -23,8 +27,9 @@ experimental rather than being hidden in runtime internals:
 - =process/writeStdin= owns stdin transport for the spawned process.
 - PTY-backed =command/exec= remains a separate protocol surface.
 
-That shape is worth adopting: capability entry points should be protocol facts
-before they become runtime implementation details.
+That lesson is worth adopting: capability entry points should be protocol facts
+before they become runtime implementation details. The concrete Codex
+implementation is not normative for Marlin.
 
 ** Mature Capabilities To Learn
 
@@ -46,8 +51,8 @@ before they become runtime implementation details.
 
 ** Marlin Adaptation Rules
 
-Marlin should adopt the boundary discipline but keep the implementation smaller
-and more replaceable:
+Marlin should adopt boundary discipline but keep the design independent,
+smaller, more performant, and more replaceable:
 
 - RFC first for new cross-crate capabilities.
 - Shared protocol schema before runtime behavior.

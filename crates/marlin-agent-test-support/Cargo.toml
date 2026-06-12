@@ -1,0 +1,19 @@
+[package]
+name = "marlin-agent-test-support"
+edition.workspace = true
+version.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+async-trait.workspace = true
+marlin-agent-stream.workspace = true
+
+[build-dependencies]
+marlin-rust-project-harness-policy.workspace = true
+rust-lang-project-harness.workspace = true
+
+[dev-dependencies]
+marlin-agent-protocol.workspace = true
+rust-lang-project-harness.workspace = true
+tokio.workspace = true

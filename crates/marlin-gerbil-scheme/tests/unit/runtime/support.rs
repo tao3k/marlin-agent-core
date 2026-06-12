@@ -1,19 +1,46 @@
 use marlin_gerbil_scheme::{GerbilAotProbeReceipt, GerbilAotProbeStatus};
 use std::{
     fs,
-    path::Path,
-    time::{SystemTime, UNIX_EPOCH},
+    ops::Deref,
+    path::{Path, PathBuf},
 };
+use tempfile::{Builder, TempDir};
 
-pub(super) fn test_root(name: &str) -> std::path::PathBuf {
-    let suffix = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_nanos())
-        .unwrap_or_default();
-    std::env::temp_dir().join(format!(
-        "marlin-gerbil-scheme-{name}-{}-{suffix}",
-        std::process::id()
-    ))
+pub(super) struct TestRoot(TempDir);
+
+impl TestRoot {
+    pub(super) fn path(&self) -> &Path {
+        self.0.path()
+    }
+}
+
+impl Deref for TestRoot {
+    type Target = Path;
+
+    fn deref(&self) -> &Self::Target {
+        self.path()
+    }
+}
+
+impl AsRef<Path> for TestRoot {
+    fn as_ref(&self) -> &Path {
+        self.path()
+    }
+}
+
+impl From<&TestRoot> for PathBuf {
+    fn from(root: &TestRoot) -> Self {
+        root.path().to_path_buf()
+    }
+}
+
+pub(super) fn test_root(name: &str) -> TestRoot {
+    TestRoot(
+        Builder::new()
+            .prefix(&format!("marlin-gerbil-scheme-{name}-"))
+            .tempdir()
+            .unwrap_or_else(|error| panic!("creates {name} test root: {error}")),
+    )
 }
 
 pub(super) fn gerbil_backend_failure_receipt(

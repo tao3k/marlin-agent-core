@@ -24,6 +24,14 @@ pub const GERBIL_LOADPATH_ENV: &str = "GERBIL_LOADPATH";
 
 /// Module entry point for the crate-shipped Marlin command adapter.
 pub const GERBIL_ADAPTER_MODULE: &str = ":marlin/adapter";
+/// Package manifest path for the crate-shipped `Gerbil` runtime package.
+pub const GERBIL_PACKAGE_MANIFEST_PATH: &str = "gerbil.pkg";
+/// Package manifest source for the crate-shipped `Gerbil` runtime package.
+pub const GERBIL_PACKAGE_MANIFEST_SOURCE: &str = include_str!("../gerbil/gerbil.pkg");
+/// Source directory inside the crate-shipped `Gerbil` runtime package.
+pub const GERBIL_PACKAGE_SOURCE_PATH: &str = "src";
+/// Executable launcher directory inside the crate-shipped `Gerbil` runtime package.
+pub const GERBIL_PACKAGE_BIN_PATH: &str = "bin";
 
 /// Runtime source asset that can be written into a `gxi` loadpath root.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -33,57 +41,91 @@ pub struct GerbilRuntimeAsset {
 }
 
 /// Source-file launcher that runs the `:marlin/adapter` command adapter.
-pub const GERBIL_COMMAND_ADAPTER_SOURCE: &str =
-    include_str!("../fixtures/gerbil/command-adapter.ss");
+pub const GERBIL_COMMAND_ADAPTER_PATH: &str = "bin/command-adapter.ss";
+/// Source text for the `:marlin/adapter` command adapter launcher.
+pub const GERBIL_COMMAND_ADAPTER_SOURCE: &str = include_str!("../gerbil/bin/command-adapter.ss");
 /// Source-file launcher that runs newline-delimited command adapter requests.
+pub const GERBIL_COMMAND_ADAPTER_BATCH_PATH: &str = "bin/command-adapter-batch.ss";
+/// Source text for the newline-delimited command adapter launcher.
 pub const GERBIL_COMMAND_ADAPTER_BATCH_SOURCE: &str =
-    include_str!("../fixtures/gerbil/command-adapter-batch.ss");
+    include_str!("../gerbil/bin/command-adapter-batch.ss");
+/// Source-file launcher that runs a configured `Gerbil Scheme` hook policy.
+pub const GERBIL_HOOK_POLICY_ADAPTER_PATH: &str = "bin/hook-policy-adapter.ss";
+/// Source text for the configured `Gerbil Scheme` hook policy launcher.
+pub const GERBIL_HOOK_POLICY_ADAPTER_SOURCE: &str =
+    include_str!("../gerbil/bin/hook-policy-adapter.ss");
 /// Build script for compiling the crate-shipped Gerbil runtime assets.
-pub const GERBIL_BUILD_SOURCE: &str = include_str!("../fixtures/gerbil/build.ss");
+pub const GERBIL_BUILD_SOURCE: &str = include_str!("../gerbil/build.ss");
+/// Smoke launcher path inside the crate-shipped `Gerbil` runtime package.
+pub const GERBIL_SMOKE_PATH: &str = "bin/smoke.ss";
 /// Standalone smoke source used to verify `Gerbil` module loading.
-pub const GERBIL_SMOKE_SOURCE: &str = include_str!("../fixtures/gerbil/smoke.ss");
+pub const GERBIL_SMOKE_SOURCE: &str = include_str!("../gerbil/bin/smoke.ss");
 /// Library module that reads a compile request and emits a compile response.
-pub const GERBIL_MARLIN_ADAPTER_SOURCE: &str = include_str!("../fixtures/gerbil/marlin/adapter.ss");
+pub const GERBIL_MARLIN_ADAPTER_PATH: &str = "src/marlin/adapter.ss";
+/// Source text for the `:marlin/adapter` library module.
+pub const GERBIL_MARLIN_ADAPTER_SOURCE: &str = include_str!("../gerbil/src/marlin/adapter.ss");
+/// Library module that dynamically invokes configured hook policy procedures.
+pub const GERBIL_MARLIN_HOOK_POLICY_PATH: &str = "src/marlin/hook-policy.ss";
+/// Source text for dynamically invoking configured hook policy procedures.
+pub const GERBIL_MARLIN_HOOK_POLICY_SOURCE: &str =
+    include_str!("../gerbil/src/marlin/hook-policy.ss");
 /// Reader-backed source parser for `marlin` smoke artifact forms.
-pub const GERBIL_MARLIN_PARSER_SOURCE: &str = include_str!("../fixtures/gerbil/marlin/parser.ss");
+pub const GERBIL_MARLIN_PARSER_PATH: &str = "src/marlin/parser.ss";
+/// Source text for the reader-backed source parser.
+pub const GERBIL_MARLIN_PARSER_SOURCE: &str = include_str!("../gerbil/src/marlin/parser.ss");
 /// Protocol binding constructors and JSON serializers for `marlin` artifacts.
-pub const GERBIL_MARLIN_PROTOCOL_SOURCE: &str =
-    include_str!("../fixtures/gerbil/marlin/protocol.ss");
+pub const GERBIL_MARLIN_PROTOCOL_PATH: &str = "src/marlin/protocol.ss";
+/// Source text for protocol binding constructors and JSON serializers.
+pub const GERBIL_MARLIN_PROTOCOL_SOURCE: &str = include_str!("../gerbil/src/marlin/protocol.ss");
 /// JSON request decoder for the Rust-to-`Gerbil` command protocol.
-pub const GERBIL_MARLIN_REQUEST_SOURCE: &str = include_str!("../fixtures/gerbil/marlin/request.ss");
+pub const GERBIL_MARLIN_REQUEST_PATH: &str = "src/marlin/request.ss";
+/// Source text for the Rust-to-`Gerbil` command protocol request decoder.
+pub const GERBIL_MARLIN_REQUEST_SOURCE: &str = include_str!("../gerbil/src/marlin/request.ss");
 
 /// Complete file manifest required under a `GERBIL_LOADPATH` root.
 pub const GERBIL_RUNTIME_ASSETS: &[GerbilRuntimeAsset] = &[
     GerbilRuntimeAsset {
-        path: "command-adapter.ss",
+        path: GERBIL_PACKAGE_MANIFEST_PATH,
+        source: GERBIL_PACKAGE_MANIFEST_SOURCE,
+    },
+    GerbilRuntimeAsset {
+        path: GERBIL_COMMAND_ADAPTER_PATH,
         source: GERBIL_COMMAND_ADAPTER_SOURCE,
     },
     GerbilRuntimeAsset {
-        path: "command-adapter-batch.ss",
+        path: GERBIL_COMMAND_ADAPTER_BATCH_PATH,
         source: GERBIL_COMMAND_ADAPTER_BATCH_SOURCE,
+    },
+    GerbilRuntimeAsset {
+        path: GERBIL_HOOK_POLICY_ADAPTER_PATH,
+        source: GERBIL_HOOK_POLICY_ADAPTER_SOURCE,
     },
     GerbilRuntimeAsset {
         path: "build.ss",
         source: GERBIL_BUILD_SOURCE,
     },
     GerbilRuntimeAsset {
-        path: "smoke.ss",
+        path: GERBIL_SMOKE_PATH,
         source: GERBIL_SMOKE_SOURCE,
     },
     GerbilRuntimeAsset {
-        path: "marlin/adapter.ss",
+        path: GERBIL_MARLIN_ADAPTER_PATH,
         source: GERBIL_MARLIN_ADAPTER_SOURCE,
     },
     GerbilRuntimeAsset {
-        path: "marlin/parser.ss",
+        path: GERBIL_MARLIN_HOOK_POLICY_PATH,
+        source: GERBIL_MARLIN_HOOK_POLICY_SOURCE,
+    },
+    GerbilRuntimeAsset {
+        path: GERBIL_MARLIN_PARSER_PATH,
         source: GERBIL_MARLIN_PARSER_SOURCE,
     },
     GerbilRuntimeAsset {
-        path: "marlin/protocol.ss",
+        path: GERBIL_MARLIN_PROTOCOL_PATH,
         source: GERBIL_MARLIN_PROTOCOL_SOURCE,
     },
     GerbilRuntimeAsset {
-        path: "marlin/request.ss",
+        path: GERBIL_MARLIN_REQUEST_PATH,
         source: GERBIL_MARLIN_REQUEST_SOURCE,
     },
 ];
@@ -91,6 +133,11 @@ pub const GERBIL_RUNTIME_ASSETS: &[GerbilRuntimeAsset] = &[
 /// Returns the crate-owned `Gerbil` runtime asset manifest.
 pub fn gerbil_runtime_assets() -> &'static [GerbilRuntimeAsset] {
     GERBIL_RUNTIME_ASSETS
+}
+
+/// Returns the package source path that must be exposed through `GERBIL_LOADPATH`.
+pub fn gerbil_runtime_loadpath(root: impl AsRef<Path>) -> PathBuf {
+    root.as_ref().join(GERBIL_PACKAGE_SOURCE_PATH)
 }
 
 /// Returns the configured `gxi` executable path without checking filesystem state.

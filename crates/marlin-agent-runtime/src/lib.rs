@@ -2,17 +2,29 @@
 
 pub mod observability;
 
-mod process;
+mod model_route;
 mod tokio_runtime;
 
-pub use process::{ManagedChildProcess, ManagedChildProcessSpec};
+pub use model_route::{
+    ChatMessage, CompiledModelRouteResolver, CompletionOptions, CompletionResponse,
+    LiteLlmModelClient, LiteLlmModelClientError, LiteLlmModelClientResult, ModelRouteCompileError,
+    ModelRouteConfig, ModelRouteConfigError, ModelRouteSessionBinding, RoutedSubAgentSpawn,
+    assistant_message, system_message, user_message,
+};
+pub use observability::process::{
+    AsyncManagedChildProcess, ManagedChildProcessSpec, RuntimeProcessCleanupController,
+    RuntimeProcessCleanupSweep, RuntimeProcessExitStatus, RuntimeProcessLiveness,
+    RuntimeProcessOutput, RuntimeProcessRegistryHandle, RuntimeProcessTerminator,
+    SysinfoRuntimeProcessController,
+};
 pub use tokio_runtime::{
     AgentSessionContext, CancellationToken, ContextExpansionPolicy, ContextNamespace,
     ContextVisibility, EventStream, HookRuntime, ProviderRuntime, RuntimeContext,
     RuntimeEnvironment, RuntimeEvent, RuntimeEventSink, RuntimeEventStream,
     RuntimeExecutionIdentity, RuntimeFuture, RuntimeTask, RuntimeTaskOutcome, SessionId,
     SessionIdError, SessionIdentity, SessionIsolationPolicy, SessionIsolationReceipt, SessionKind,
-    SubAgentConfigSurface, SubAgentContextNamespace, SubAgentContextPolicy,
+    SubAgentConfigSurface, SubAgentContextPolicy, SubAgentContextVisibility,
     SubAgentPerformanceBudget, SubAgentPermissionSet, SubAgentRuntime, SubAgentSpawnConfig,
-    SubAgentSpawnPolicy, SubAgentSpawnStrategy, TokioAgentRuntime, ToolRuntime,
+    SubAgentSpawnPolicy, SubAgentSpawnProfile, SubAgentSpawnReceipt, SubAgentSpawnStrategy,
+    TokioAgentRuntime, ToolRuntime,
 };

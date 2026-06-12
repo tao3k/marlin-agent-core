@@ -15,8 +15,8 @@ use marlin_workspace_view::{
     RenderedContractFacts, RenderedViewNode, RenderedWorkspaceView, WorkspaceField,
     WorkspaceViewSpec,
 };
+use parking_lot::{RwLock, RwLockReadGuard};
 use std::collections::BTreeMap;
-use std::sync::RwLock;
 
 /// In-memory implementation of the native `AgentWorkspace` protocol.
 pub struct MemoryOrgWorkspace {
@@ -53,20 +53,14 @@ impl MemoryOrgWorkspace {
 
     /// Insert or replace one structured `Org` node.
     pub fn insert_node(&self, node: OrgNode) -> WorkspaceResult<()> {
-        let mut nodes = self
-            .nodes
-            .write()
-            .map_err(|error| WorkspaceError::Backend(error.to_string()))?;
+        let mut nodes = self.nodes.write();
         nodes.insert(node.id.clone(), node);
         Ok(())
     }
 
     /// Record the latest release status projection visible through `status()`.
     pub fn record_release_status(&self, status: ReleaseStatus) -> WorkspaceResult<()> {
-        *self
-            .release_status
-            .write()
-            .map_err(|error| WorkspaceError::Backend(error.to_string()))? = Some(status);
+        *self.release_status.write() = Some(status);
         Ok(())
     }
 
@@ -85,10 +79,7 @@ impl MemoryOrgWorkspace {
         &self,
         receipt: ReleaseGateReceipt,
     ) -> WorkspaceResult<bool> {
-        let mut release_status = self
-            .release_status
-            .write()
-            .map_err(|error| WorkspaceError::Backend(error.to_string()))?;
+        let mut release_status = self.release_status.write();
         Ok(release_status
             .as_mut()
             .is_some_and(|status| status.record_gate_receipt(receipt)))
@@ -149,10 +140,7 @@ impl MemoryOrgWorkspace {
             .map(|node| node.id.clone())
             .collect::<Vec<_>>();
         {
-            let mut nodes = self
-                .nodes
-                .write()
-                .map_err(|error| WorkspaceError::Backend(error.to_string()))?;
+            let mut nodes = self.nodes.write();
             for node in workspace.nodes {
                 nodes.insert(node.id.clone(), node);
             }
@@ -162,10 +150,7 @@ impl MemoryOrgWorkspace {
             workspace.contract_resolutions,
             workspace.contract_validations,
         );
-        let mut contract_facts = self
-            .contract_facts
-            .write()
-            .map_err(|error| WorkspaceError::Backend(error.to_string()))?;
+        let mut contract_facts = self.contract_facts.write();
         contracts::merge_contract_facts(&mut contract_facts, incoming_contract_facts);
         Ok(ids)
     }
@@ -225,15 +210,9 @@ impl AgentWorkspace for MemoryOrgWorkspace {
         patch: WorkspacePatch,
         _ctx: WorkspaceCtx,
     ) -> WorkspaceResult<WorkspacePatchReceipt> {
-        let mut nodes = self
-            .nodes
-            .write()
-            .map_err(|error| WorkspaceError::Backend(error.to_string()))?;
+        let mut nodes = self.nodes.write();
         let receipt = patch::apply_workspace_patch(&mut nodes, patch)?;
-        *self
-            .last_patch_receipt
-            .write()
-            .map_err(|error| WorkspaceError::Backend(error.to_string()))? = Some(receipt.clone());
+        *self.last_patch_receipt.write() = Some(receipt.clone());
         Ok(receipt)
     }
 
@@ -312,33 +291,19 @@ impl AgentWorkspace for MemoryOrgWorkspace {
 }
 
 impl MemoryOrgWorkspace {
-    fn read_nodes(
-        &self,
-    ) -> WorkspaceResult<std::sync::RwLockReadGuard<'_, BTreeMap<OrgNodeId, OrgNode>>> {
-        self.nodes
-            .read()
-            .map_err(|error| WorkspaceError::Backend(error.to_string()))
+    fn read_nodes(&self) -> WorkspaceResult<RwLockReadGuard<'_, BTreeMap<OrgNodeId, OrgNode>>> {
+        Ok(self.nodes.read())
     }
 
-    fn read_contract_facts(
-        &self,
-    ) -> WorkspaceResult<std::sync::RwLockReadGuard<'_, RenderedContractFacts>> {
-        self.contract_facts
-            .read()
-            .map_err(|error| WorkspaceError::Backend(error.to_string()))
+    fn read_contract_facts(&self) -> WorkspaceResult<RwLockReadGuard<'_, RenderedContractFacts>> {
+        Ok(self.contract_facts.read())
     }
 
     fn read_last_patch_receipt(&self) -> WorkspaceResult<Option<WorkspacePatchReceipt>> {
-        self.last_patch_receipt
-            .read()
-            .map(|receipt| receipt.clone())
-            .map_err(|error| WorkspaceError::Backend(error.to_string()))
+        Ok(self.last_patch_receipt.read().clone())
     }
 
     fn read_release_status(&self) -> WorkspaceResult<Option<ReleaseStatus>> {
-        self.release_status
-            .read()
-            .map(|status| status.clone())
-            .map_err(|error| WorkspaceError::Backend(error.to_string()))
+        Ok(self.release_status.read().clone())
     }
 }

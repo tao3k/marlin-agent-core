@@ -86,8 +86,16 @@ async fn sub_agent_node_adapter_dispatches_lifecycle_hooks_and_activity() {
     assert_eq!(activity.len(), 2);
     assert!(activity[0].contains("Started"));
     assert!(activity[0].contains("sub-agent"));
+    assert!(activity[0].contains("agent_role: Some(\"sub-agent\")"));
+    assert!(activity[0].contains("profile_id sub-agent"));
+    assert!(activity[0].contains("agent_type sub-agent"));
+    assert!(activity[0].contains("role sub-agent"));
     assert!(activity[1].contains("Stopped"));
     assert!(activity[1].contains("sub-agent"));
+    assert!(activity[1].contains("agent_role: Some(\"sub-agent\")"));
+    assert!(activity[1].contains("profile_id sub-agent"));
+    assert!(activity[1].contains("agent_type sub-agent"));
+    assert!(activity[1].contains("role sub-agent"));
 }
 
 fn ordering_hook_dispatcher() -> HookDispatcher {

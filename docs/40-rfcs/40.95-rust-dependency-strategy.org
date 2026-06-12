@@ -1,0 +1,181 @@
+* 40.95 RFC: Rust Dependency Strategy
+
+Status: active
+
+This RFC defines how Marlin chooses Rust ecosystem dependencies. The goal is to
+move core agent infrastructure away from bootstrap-grade =std= usage when a
+well-maintained ecosystem crate gives stronger async behavior, safer contracts,
+better observability, better validation, or clearer ownership.
+
+This is not a rule to add dependencies casually. Dependencies must enter through
+an owner crate and solve a named runtime, protocol, configuration, search,
+observability, or performance problem.
+
+** Codex Dependency Lessons
+
+The local Codex workspace under =.data/codex/codex-rs= is useful as an
+engineering dependency corpus. It uses a broad but structured dependency set:
+
+- async/process: =tokio= with process, sync, io, signal, and multi-threaded
+  runtime features;
+
+- PTY/process UX: =portable-pty= for terminal-backed execution;
+
+- file search: =ignore=, =walkdir=, =nucleo=, =globset=;
+
+- config/schema: =toml=, =toml_edit=, =schemars=, =serde_ignored=,
+  =serde_path_to_error=, =serde_with=;
+
+- protocol bindings: =ts-rs=, =uuid=, =strum=;
+
+- observability: =tracing=, =tracing-subscriber=, =opentelemetry=,
+  =tracing-opentelemetry=, =tracing-test=;
+
+- collections/cache: =indexmap=, =lru=, =arc-swap=;
+
+- CLI/test/dev quality: =clap=, =assert_cmd=, =insta=, =pretty_assertions=,
+  =test-log=, =wiremock=;
+
+- platform/security: =landlock=, =seccompiler=, =rustls=, =keyring=,
+  =zeroize=.
+
+Marlin should learn these categories, not clone the full dependency graph.
+
+** Dependency Principles
+
+1. Runtime IO should be async-native.
+
+   Process execution, stream handling, cancellation, timeouts, and long-running
+   agent work should use =tokio= and Tokio-compatible crates. Blocking =std=
+   calls are acceptable only when isolated behind an explicit adapter or test
+   boundary.
+
+2. Protocol contracts should be schema-generatable.
+
+   Serializable cross-crate contracts should be compatible with schema
+   generation and typed foreign-language bindings where useful. =schemars=,
+   =serde_with=, =serde_path_to_error=, and =ts-rs= are candidate tools.
+
+3. Configuration should preserve source fidelity.
+
+   User-facing TOML should not be parsed into lossy ad hoc maps when comments,
+   ordering, or patching matter. =toml= is suitable for loading; =toml_edit= is
+   suitable for edits and generated config.
+
+4. Observability needs ecosystem support.
+
+   Stable events and receipts remain Marlin protocol facts, but runtime spans,
+   test capture, JSON formatting, and OTLP export should use =tracing=,
+   =tracing-subscriber=, and OpenTelemetry crates when a runtime boundary needs
+   production-grade diagnostics.
+
+5. Search and path traversal should use proven scanners.
+
+   Workspace and file discovery should prefer =ignore=, =walkdir=, =globset=,
+   and parser-owned ASP providers over raw recursive filesystem code.
+
+6. Collections depend on the contract.
+
+   Keep =BTreeMap= and =BTreeSet= when deterministic ordering is the contract.
+   Use =indexmap= when insertion order is the contract. Consider =lru= or
+   =arc-swap= for cache/config hot paths. Consider =dashmap= or =parking_lot=
+   only after contention evidence.
+
+7. Error handling should stay typed at boundaries.
+
+   Library crates use =thiserror=. Binary and CLI crates may use =anyhow= or
+   =color-eyre= for top-level reporting. Protocol-visible failures should remain
+   typed and serializable.
+
+** Adoption Tiers
+
+P0: Core runtime and contract dependencies.
+
+- =tokio= process/fs/io/signal features for runtime-owned IO.
+
+- =tokio-util= for cancellation, task management, and controlled shutdown.
+
+- =tracing= plus =tracing-subscriber= for runtime diagnostics.
+
+- =toml= and =toml_edit= for config loading/editing.
+
+- =schemars= and =serde_path_to_error= for protocol/config validation.
+
+P1: Agent UX and search dependencies.
+
+- =portable-pty= for PTY-backed command surfaces.
+
+- =ignore= and =walkdir= for workspace discovery.
+
+- =indexmap= where stable insertion order is a user-visible or protocol-visible
+  fact.
+
+- =lru= or =arc-swap= for cache and live config hot paths.
+
+- =insta= and =pretty_assertions= for snapshot-heavy protocol tests.
+
+P2: Specialized performance and platform dependencies.
+
+- =parking_lot= or =dashmap= only after benchmark or contention evidence.
+
+- =memchr=, =regex-lite=, or parser-owned providers for hot text scanning.
+
+- =landlock=, =seccompiler=, or OS-specific hardening crates only behind
+  platform owner crates.
+
+- OpenTelemetry exporters only after core tracing spans and event contracts are
+  stable.
+
+** Current Marlin Gaps
+
+Marlin already has =tokio=, =tokio-util=, =tracing=, =globset=, =serde=,
+=serde_json=, =thiserror=, and =async-trait=. Recent environment activation work
+moved process execution from blocking =std::process= to =tokio::process=.
+
+The remaining gaps are:
+
+- runtime process registry still needs a stricter Tokio-native process and
+  supervision audit;
+
+- configuration loading needs =toml= / =toml_edit= ownership rather than raw
+  path facts alone;
+
+- protocol schemas need =schemars= or equivalent generation;
+
+- observability needs =tracing-subscriber= and test capture strategy;
+
+- workspace/file discovery should use =ignore= / =walkdir= in owner crates;
+
+- lock and collection choices need benchmark-gated evaluation.
+
+** Acceptance Criteria
+
+- New dependencies are added at workspace level only after a crate owner and
+  contract are named.
+
+- Dependencies are grouped by capability in RFCs or crate docs.
+
+- Runtime-owned IO avoids blocking =std= APIs unless the adapter explicitly
+  documents isolation.
+
+- Protocol/config crates can generate or validate schemas for public contracts.
+
+- Performance-oriented dependency swaps cite benchmark, contention, or
+  determinism evidence.
+
+- Codex dependency references are framed as engineering lessons, not as a graph
+  to copy.
+
+** Next Work Items
+
+- Audit =marlin-agent-runtime= process/observability owners for remaining
+  blocking process or sync lock hotspots.
+
+- Introduce =schemars= for protocol/config contracts behind focused tests.
+
+- Introduce =toml= / =toml_edit= in a config owner crate before parsing TOML in
+  runtime crates.
+
+- Evaluate =portable-pty= for PTY-backed tool surfaces.
+
+- Add benchmark or contention evidence before changing lock primitives.

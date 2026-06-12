@@ -1,5 +1,4 @@
 use std::{
-    collections::{BTreeMap, BTreeSet},
     fs,
     path::{Path, PathBuf},
     thread,
@@ -8,9 +7,10 @@ use std::{
 
 use marlin_agent_protocol::PERFORMANCE_EVIDENCE_KEYS;
 use rust_lang_project_harness::{
-    RustHarnessConfig, RustVerificationPhase, RustVerificationPolicy, RustVerificationProfileHint,
-    RustVerificationTaskKind, RustVerificationTaskState, build_rust_verification_performance_index,
-    plan_rust_project_verification_with_config, render_rust_verification_performance_index,
+    RustHarnessConfig, RustOwnerResponsibility, RustVerificationPhase, RustVerificationPolicy,
+    RustVerificationProfileHint, RustVerificationTaskKind, RustVerificationTaskState,
+    build_rust_verification_performance_index, plan_rust_project_verification_with_config,
+    render_rust_verification_performance_index,
 };
 
 const WORKSPACE_PERFORMANCE_COVERAGE_BUDGET: Duration = Duration::from_secs(10);
@@ -112,15 +112,14 @@ fn assert_performance_index_for_crate(crate_dir: &Path) -> PerformanceCoverageRe
         .file_name()
         .and_then(|name| name.to_str())
         .expect("workspace crate should have a utf-8 directory name");
-    let profile_hint = RustVerificationProfileHint {
-        owner_path: owner_path.clone(),
-        responsibilities: BTreeSet::new(),
-        task_kinds: Some(BTreeSet::from([RustVerificationTaskKind::Performance])),
-        task_contract_overrides: BTreeMap::new(),
-        rationale: Some(format!(
-            "{crate_name} owns crate-level benchmark and performance evidence",
-        )),
-    };
+    let profile_hint = RustVerificationProfileHint::new(
+        owner_path.clone(),
+        [RustOwnerResponsibility::LatencySensitive],
+    )
+    .with_task_kinds([RustVerificationTaskKind::Performance])
+    .with_rationale(format!(
+        "{crate_name} owns crate-level benchmark and performance evidence",
+    ));
     let config = RustHarnessConfig {
         verification_policy: RustVerificationPolicy::default().with_profile_hint(profile_hint),
         ..Default::default()

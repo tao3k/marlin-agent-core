@@ -1,9 +1,16 @@
 use marlin_agent_core::{
     AgentExecutionTrace, AgentExecutionTraceSummary, AgentSpanName, AgentTraceSpanRecord,
-    GraphLoopExecutionStatus, HookDispatcher, HookRegistry, LoopEvidence, LoopEvidenceKind,
-    LoopPerformanceEvidence, PERFORMANCE_EVIDENCE_KEYS, RuntimeEnvironmentRequest,
-    RuntimeEnvironmentResolver, RuntimeExecutionIdentity,
+    GerbilCommandSpec, GerbilHookPolicyCommandEvaluator, GerbilHookPolicyFinalizer,
+    GerbilHookPolicyRuntimeBinding, GraphLoopExecutionStatus, HookAgentScope, HookDispatchPolicy,
+    HookDispatcher, HookEventName, HookHandlerType, HookInvocation, HookPolicyDecisionReason,
+    HookPolicyExtension, HookRegistration, HookRegistry, HookRunSummary, HookRuntime, LoopEvidence,
+    LoopEvidenceKind, LoopPerformanceEvidence, ModelContextForkMode, ModelEndpoint,
+    ModelRouteConfig, ModelRouteRequest, ModelStreamChunk, ModelStreamEvent, ModelStreamGateway,
+    ModelStreamRequest, ModelStreamTransport, PERFORMANCE_EVIDENCE_KEYS, RuntimeContext,
+    RuntimeEnvironmentRequest, RuntimeEnvironmentResolver, RuntimeExecutionIdentity, RuntimeFuture,
 };
+use std::sync::Arc;
+use tempfile::Builder;
 
 #[test]
 fn core_facade_exposes_environment_resolver() {
@@ -30,12 +37,152 @@ fn core_facade_exposes_hook_dispatcher() {
     assert_eq!(dispatcher.registry().registrations().len(), 0);
 }
 
+#[derive(Clone, Debug)]
+struct CoreSummaryHook;
+
+impl HookRuntime for CoreSummaryHook {
+    type Request = HookInvocation;
+    type Output = HookRunSummary;
+
+    fn run_hook(
+        &self,
+        request: Self::Request,
+        _context: RuntimeContext,
+    ) -> RuntimeFuture<Self::Output> {
+        Box::pin(async move {
+            HookRunSummary::running(
+                "core-gerbil-run",
+                request.event_name,
+                HookHandlerType::Command,
+            )
+            .completed()
+        })
+    }
+}
+
+#[tokio::test]
+async fn core_facade_wires_gerbil_hook_policy_finalizer() {
+    let registry = HookRegistry::new().with_registration(HookRegistration::new(
+        "core-gerbil",
+        HookEventName::PreToolUse,
+        HookHandlerType::Command,
+        Arc::new(CoreSummaryHook),
+    ));
+    let evaluator = GerbilHookPolicyCommandEvaluator::new(
+        GerbilCommandSpec::new("/bin/sh").arg("-c").arg(
+            "cat >/dev/null; printf '%s\n' '{\"decision\":\"Rejected\",\"diagnostics\":[{\"message\":\"core finalizer rejected\"}]}'",
+        ),
+    );
+    let finalizer = GerbilHookPolicyFinalizer::new(evaluator);
+    let (runtime, _events) = marlin_agent_core::TokioAgentRuntime::new(4);
+
+    let report = HookDispatcher::new(registry)
+        .with_policy(HookDispatchPolicy::observe_only().with_extension(
+            HookPolicyExtension::gerbil_scheme("marlin/hooks/policy", "decide-hook-policy"),
+        ))
+        .with_policy_finalizer(Arc::new(finalizer))
+        .dispatch(
+            &runtime,
+            HookInvocation::new(HookEventName::PreToolUse)
+                .with_agent_scope(HookAgentScope::CustomerAgent),
+        )
+        .await;
+
+    assert_eq!(report.policy.allowed_count, 0);
+    assert_eq!(report.policy.rejected_count, 1);
+    assert_eq!(
+        report.policy.decisions[0].reason,
+        HookPolicyDecisionReason::ExtensionRejected
+    );
+    assert!(report.runs.is_empty());
+    assert!(!report.is_success());
+}
+
+#[test]
+fn core_facade_builds_gerbil_hook_policy_finalizer_from_runtime_binding() {
+    let root = Builder::new()
+        .prefix("marlin-core-gerbil-hook-policy-binding-")
+        .tempdir()
+        .expect("creates core hook policy binding root");
+    let binding = GerbilHookPolicyRuntimeBinding::new("/bin/sh", root.path())
+        .expect("runtime binding should write hook policy assets");
+    let finalizer = GerbilHookPolicyFinalizer::from_runtime_binding(binding);
+
+    assert_eq!(
+        finalizer.evaluator().spec().program,
+        std::path::Path::new("/bin/sh")
+    );
+    assert!(
+        finalizer
+            .evaluator()
+            .spec()
+            .args
+            .iter()
+            .any(|arg| arg.to_string_lossy().contains("hook-policy-adapter.ss"))
+    );
+}
+
 #[test]
 fn core_facade_exposes_runtime_execution_identity() {
     let identity = RuntimeExecutionIdentity::new("run-core", "graph-core");
 
     assert_eq!(identity.run_id(), "run-core");
     assert_eq!(identity.graph_id(), "graph-core");
+}
+
+#[test]
+fn core_facade_exposes_model_route_config_loader() {
+    let config = ModelRouteConfig::from_toml_str(
+        r#"
+[[rules]]
+rule_id = "core-facade-test"
+priority = 20
+
+[rules.matcher]
+executable_globs = ["cargo"]
+command_kind_globs = ["test"]
+
+[rules.endpoint]
+provider = "openai"
+model = "gpt-5-mini"
+
+[rules.session]
+context = "Minimal"
+
+[rules.session.lifecycle.Persistent]
+key = "core-facade"
+"#,
+    )
+    .expect("config parses through core facade");
+
+    let resolver = config
+        .compile_resolver()
+        .expect("resolver compiles through core facade");
+    let decision = resolver
+        .resolve(&ModelRouteRequest::command(["cargo", "test"]).with_command_kind("test"))
+        .expect("route resolves through core facade");
+
+    assert_eq!(decision.endpoint.provider.as_str(), "openai");
+    assert_eq!(decision.endpoint.model.as_str(), "gpt-5-mini");
+    assert_eq!(decision.receipt.context_fork, ModelContextForkMode::Minimal);
+}
+
+#[tokio::test]
+async fn core_facade_exposes_model_stream_gateway_boundary() {
+    let request = ModelStreamRequest::new(ModelEndpoint::new("openai", "codex"), vec![])
+        .with_transport(ModelStreamTransport::WebSocket);
+    let event = ModelStreamEvent::Chunk(ModelStreamChunk::new(1, "delta"));
+
+    assert_eq!(request.transport(), &ModelStreamTransport::WebSocket);
+    assert!(matches!(event, ModelStreamEvent::Chunk(_)));
+
+    let gateway = marlin_agent_core::LiteLlmStreamGateway::new();
+    let result = gateway.complete(request).await;
+
+    assert!(
+        result.is_err(),
+        "core stream gateway should expose endpoint validation before network calls",
+    );
 }
 
 #[test]

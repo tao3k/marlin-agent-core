@@ -3,8 +3,9 @@
 use std::path::PathBuf;
 
 use marlin_agent_protocol::{
-    RuntimeConfigLayer, RuntimeConfigLayerSource, RuntimeEnvironment, RuntimeHome,
-    RuntimeHomeSource, RuntimeSandboxPolicy,
+    RuntimeConfigLayer, RuntimeConfigLayerSource, RuntimeEnvironment, RuntimeEnvironmentActivation,
+    RuntimeEnvironmentActivationPolicy, RuntimeEnvironmentActivationReceipt,
+    RuntimeEnvironmentResolution, RuntimeHome, RuntimeHomeSource, RuntimeSandboxPolicy,
 };
 use thiserror::Error;
 
@@ -35,7 +36,17 @@ impl RuntimeEnvironmentResolver {
 
     /// Resolves a top-level runtime environment snapshot.
     pub fn resolve(&self, request: RuntimeEnvironmentRequest) -> RuntimeEnvironment {
-        let mut environment = RuntimeEnvironment::default().with_sandbox(request.sandbox.clone());
+        self.resolve_with_receipt(request).environment
+    }
+
+    /// Resolves a top-level runtime environment snapshot with activation receipt.
+    pub fn resolve_with_receipt(
+        &self,
+        request: RuntimeEnvironmentRequest,
+    ) -> RuntimeEnvironmentResolution {
+        let mut environment = RuntimeEnvironment::default()
+            .with_sandbox(request.sandbox.clone())
+            .with_activation(request.activation.clone());
 
         if let Some(home) = request.resolve_home() {
             environment = environment.with_home(home);
@@ -77,7 +88,12 @@ impl RuntimeEnvironmentResolver {
         }
 
         sort_config_layers(&mut environment.config_layers);
-        environment
+        let activation_receipt = activation_receipt_for_policy(&environment.activation);
+
+        RuntimeEnvironmentResolution {
+            environment,
+            activation_receipt,
+        }
     }
 
     /// Resolves a child environment for a sub-agent spawned from an existing parent snapshot.
@@ -132,6 +148,19 @@ impl RuntimeEnvironmentResolver {
     }
 }
 
+fn activation_receipt_for_policy(
+    policy: &RuntimeEnvironmentActivationPolicy,
+) -> RuntimeEnvironmentActivationReceipt {
+    match policy.activation {
+        RuntimeEnvironmentActivation::Disabled => {
+            RuntimeEnvironmentActivationReceipt::disabled(policy)
+        }
+        RuntimeEnvironmentActivation::Direnv { .. } => {
+            RuntimeEnvironmentActivationReceipt::planned(policy)
+        }
+    }
+}
+
 /// Input used to resolve a top-level runtime environment.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct RuntimeEnvironmentRequest {
@@ -145,6 +174,8 @@ pub struct RuntimeEnvironmentRequest {
     pub cwd: Option<PathBuf>,
     /// Sandbox policy visible to runtime-owned work.
     pub sandbox: RuntimeSandboxPolicy,
+    /// Explicit shell/environment activation policy.
+    pub activation: RuntimeEnvironmentActivationPolicy,
     /// Optional system config file.
     pub system_config: Option<PathBuf>,
     /// Optional user config file.
@@ -183,6 +214,12 @@ impl RuntimeEnvironmentRequest {
     /// Sets the runtime sandbox policy.
     pub fn with_sandbox(mut self, sandbox: RuntimeSandboxPolicy) -> Self {
         self.sandbox = sandbox;
+        self
+    }
+
+    /// Sets the explicit shell/environment activation policy.
+    pub fn with_activation(mut self, activation: RuntimeEnvironmentActivationPolicy) -> Self {
+        self.activation = activation;
         self
     }
 

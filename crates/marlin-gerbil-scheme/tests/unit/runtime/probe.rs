@@ -1,5 +1,7 @@
 use super::support::{line_count, test_root};
-use marlin_gerbil_scheme::{GerbilAotProbeConfig, GerbilAotProbeStatus};
+use marlin_gerbil_scheme::{
+    GERBIL_COMMAND_ADAPTER_PATH, GerbilAotProbeConfig, GerbilAotProbeStatus,
+};
 use std::fs;
 
 #[cfg(unix)]
@@ -8,10 +10,10 @@ use std::os::unix::fs::PermissionsExt;
 #[test]
 fn gerbil_aot_probe_reports_missing_gxc_without_writing_assets() {
     let root = test_root("aot-missing-gxc");
-    let missing_gxc = root.join("missing-gxc");
-    let missing_gsc = root.join("missing-gsc");
+    let missing_gxc = root.path().join("missing-gxc");
+    let missing_gsc = root.path().join("missing-gsc");
 
-    let receipt = GerbilAotProbeConfig::new(&root)
+    let receipt = GerbilAotProbeConfig::new(root.path())
         .with_gxc(&missing_gxc)
         .with_gsc(&missing_gsc)
         .probe();
@@ -20,18 +22,18 @@ fn gerbil_aot_probe_reports_missing_gxc_without_writing_assets() {
     assert_eq!(receipt.gxc, missing_gxc);
     assert_eq!(receipt.gsc, missing_gsc);
     assert_eq!(receipt.backend_gsc, None);
-    assert!(!root.join("command-adapter.ss").exists());
+    assert!(!root.path().join(GERBIL_COMMAND_ADAPTER_PATH).exists());
 }
 
 #[test]
 fn gerbil_aot_probe_reports_missing_gsc_before_compile() {
     let root = test_root("aot-missing-gsc");
-    fs::create_dir_all(&root).expect("create aot root");
-    let fake_gxc = root.join("gxc");
+    fs::create_dir_all(root.path()).expect("create aot root");
+    let fake_gxc = root.path().join("gxc");
     fs::write(&fake_gxc, "#!/bin/sh\nexit 0\n").expect("write fake gxc");
-    let missing_gsc = root.join("missing-gsc");
+    let missing_gsc = root.path().join("missing-gsc");
 
-    let receipt = GerbilAotProbeConfig::new(&root)
+    let receipt = GerbilAotProbeConfig::new(root.path())
         .with_gxc(&fake_gxc)
         .with_gsc(&missing_gsc)
         .probe();
@@ -41,17 +43,21 @@ fn gerbil_aot_probe_reports_missing_gsc_before_compile() {
     assert_eq!(receipt.gsc, missing_gsc);
     assert_eq!(receipt.backend_gsc, None);
     assert!(receipt.module_compile.is_none());
-    let _ = fs::remove_dir_all(root);
 }
 
 #[cfg(unix)]
 #[test]
 fn gerbil_aot_probe_reports_missing_backend_gsc_path() {
     let root = test_root("aot-backend-gsc");
-    fs::create_dir_all(&root).expect("create aot root");
-    let fake_gxc = root.join("gxc");
-    let fake_gsc = root.join("gsc");
-    let expected_backend_gsc = root.join("gerbil").join("v0.18.2").join("bin").join("gsc");
+    fs::create_dir_all(root.path()).expect("create aot root");
+    let fake_gxc = root.path().join("gxc");
+    let fake_gsc = root.path().join("gsc");
+    let expected_backend_gsc = root
+        .path()
+        .join("gerbil")
+        .join("v0.18.2")
+        .join("bin")
+        .join("gsc");
     fs::write(&fake_gsc, "#!/bin/sh\nexit 0\n").expect("write fake gsc");
     fs::write(
         &fake_gxc,
@@ -67,7 +73,7 @@ fn gerbil_aot_probe_reports_missing_backend_gsc_path() {
     permissions.set_mode(0o755);
     fs::set_permissions(&fake_gxc, permissions).expect("mark fake gxc executable");
 
-    let receipt = GerbilAotProbeConfig::new(&root)
+    let receipt = GerbilAotProbeConfig::new(root.path())
         .with_gxc(&fake_gxc)
         .with_gsc(&fake_gsc)
         .probe();
@@ -85,22 +91,26 @@ fn gerbil_aot_probe_reports_missing_backend_gsc_path() {
         Some(70)
     );
     assert!(receipt.executable_compile.is_none());
-    let _ = fs::remove_dir_all(root);
 }
 
 #[cfg(unix)]
 #[test]
 fn gerbil_aot_probe_cache_reuses_backend_failure_until_backend_exists() {
     let root = test_root("aot-cache-backend-gsc");
-    fs::create_dir_all(&root).expect("create aot cache root");
-    let fake_gxc = root.join("gxc");
-    let fake_gsc = root.join("gsc");
-    let invocations = root.join("gxc-invocations");
-    let cache = root.join("probe-cache.json");
-    let first_probe_root = root.join("first-probe");
-    let second_probe_root = root.join("second-probe");
-    let third_probe_root = root.join("third-probe");
-    let expected_backend_gsc = root.join("gerbil").join("v0.18.2").join("bin").join("gsc");
+    fs::create_dir_all(root.path()).expect("create aot cache root");
+    let fake_gxc = root.path().join("gxc");
+    let fake_gsc = root.path().join("gsc");
+    let invocations = root.path().join("gxc-invocations");
+    let cache = root.path().join("probe-cache.json");
+    let first_probe_root = root.path().join("first-probe");
+    let second_probe_root = root.path().join("second-probe");
+    let third_probe_root = root.path().join("third-probe");
+    let expected_backend_gsc = root
+        .path()
+        .join("gerbil")
+        .join("v0.18.2")
+        .join("bin")
+        .join("gsc");
 
     fs::write(&fake_gsc, "#!/bin/sh\nexit 0\n").expect("write fake gsc");
     fs::write(
@@ -158,8 +168,6 @@ fn gerbil_aot_probe_cache_reuses_backend_failure_until_backend_exists() {
     assert_eq!(third.status, GerbilAotProbeStatus::GscBackendUnavailable);
     assert!(third.module_compile.is_some());
     assert_eq!(line_count(&invocations), 2);
-
-    let _ = fs::remove_dir_all(root);
 }
 
 #[test]
@@ -167,7 +175,7 @@ fn gerbil_aot_probe_cache_reuses_backend_failure_until_backend_exists() {
 fn gerbil_aot_probe_reports_local_toolchain_status() {
     let root = test_root("aot-local-toolchain");
 
-    let receipt = GerbilAotProbeConfig::new(&root).probe();
+    let receipt = GerbilAotProbeConfig::new(root.path()).probe();
     eprintln!("{receipt:?}");
 
     assert_ne!(receipt.status, GerbilAotProbeStatus::MissingGxc);
@@ -181,5 +189,4 @@ fn gerbil_aot_probe_reports_local_toolchain_status() {
                 || module_compile.status_code == Some(0)
         );
     }
-    let _ = fs::remove_dir_all(root);
 }

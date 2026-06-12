@@ -158,6 +158,7 @@ fn performance_index_for_crate(crate_dir: &Path) -> PerformanceBenchRecord {
         responsibilities: BTreeSet::new(),
         task_kinds: Some(BTreeSet::from([RustVerificationTaskKind::Performance])),
         task_contract_overrides: BTreeMap::new(),
+        stability_picture: None,
         rationale: Some(format!(
             "{crate_name} owns crate-level benchmark and performance evidence",
         )),

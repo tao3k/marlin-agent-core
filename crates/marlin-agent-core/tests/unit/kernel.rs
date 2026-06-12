@@ -433,7 +433,7 @@ async fn tokio_kernel_driver_runs_provider_tool_and_subagent_adapters() {
         next_event(&mut events).await,
         RuntimeEvent::new(
             "kernel.sub_agent",
-            "sub-agent sub-agent Started source ThreadSpawn { parent_run_id: Some(RunId(\"run-adapter\")), depth: 1, agent_path: None, agent_nickname: Some(\"sub-agent\"), agent_role: None } status node review"
+            "sub-agent sub-agent Started source ThreadSpawn { parent_run_id: Some(RunId(\"run-adapter\")), depth: 1, agent_path: None, agent_nickname: Some(\"sub-agent\"), agent_role: Some(\"sub-agent\") } status node review profile_id sub-agent agent_type sub-agent role sub-agent nickname Some(\"sub-agent\")"
         )
     );
     assert_eq!(
@@ -444,7 +444,7 @@ async fn tokio_kernel_driver_runs_provider_tool_and_subagent_adapters() {
         next_event(&mut events).await,
         RuntimeEvent::new(
             "kernel.sub_agent",
-            "sub-agent sub-agent Stopped source ThreadSpawn { parent_run_id: Some(RunId(\"run-adapter\")), depth: 1, agent_path: None, agent_nickname: Some(\"sub-agent\"), agent_role: None } status node review"
+            "sub-agent sub-agent Stopped source ThreadSpawn { parent_run_id: Some(RunId(\"run-adapter\")), depth: 1, agent_path: None, agent_nickname: Some(\"sub-agent\"), agent_role: Some(\"sub-agent\") } status node review profile_id sub-agent agent_type sub-agent role sub-agent nickname Some(\"sub-agent\")"
         )
     );
     assert_eq!(
@@ -642,7 +642,7 @@ async fn subagent_adapter_failure_fails_graph_execution() {
         next_event(&mut events).await,
         RuntimeEvent::new(
             "kernel.sub_agent",
-            "sub-agent sub-agent Started source ThreadSpawn { parent_run_id: Some(RunId(\"run-subagent-fail\")), depth: 1, agent_path: None, agent_nickname: Some(\"sub-agent\"), agent_role: None } status node review"
+            "sub-agent sub-agent Started source ThreadSpawn { parent_run_id: Some(RunId(\"run-subagent-fail\")), depth: 1, agent_path: None, agent_nickname: Some(\"sub-agent\"), agent_role: Some(\"sub-agent\") } status node review profile_id sub-agent agent_type sub-agent role sub-agent nickname Some(\"sub-agent\")"
         )
     );
     assert_eq!(
@@ -653,7 +653,7 @@ async fn subagent_adapter_failure_fails_graph_execution() {
         next_event(&mut events).await,
         RuntimeEvent::new(
             "kernel.sub_agent",
-            "sub-agent sub-agent Stopped source ThreadSpawn { parent_run_id: Some(RunId(\"run-subagent-fail\")), depth: 1, agent_path: None, agent_nickname: Some(\"sub-agent\"), agent_role: None } status node review"
+            "sub-agent sub-agent Stopped source ThreadSpawn { parent_run_id: Some(RunId(\"run-subagent-fail\")), depth: 1, agent_path: None, agent_nickname: Some(\"sub-agent\"), agent_role: Some(\"sub-agent\") } status node review profile_id sub-agent agent_type sub-agent role sub-agent nickname Some(\"sub-agent\")"
         )
     );
     assert_eq!(

@@ -8,6 +8,8 @@ members = [
     "crates/marlin-agent-protocol",
     "crates/marlin-agent-runtime",
     "crates/marlin-agent-sessions",
+    "crates/marlin-agent-stream",
+    "crates/marlin-agent-test-support",
     "crates/marlin-gerbil-ir",
     "crates/marlin-gerbil-scheme",
     "crates/marlin-org-memory",
@@ -31,17 +33,24 @@ authors = ["marlin contributors"]
 repository = "https://github.com/tao3k/marlin-agent-core"
 
 [workspace.dependencies]
+aho-corasick = "1.1.4"
 async-trait = "0.1.89"
 futures-executor = "0.3.32"
+globset = "0.4.18"
+litellm-rs = { version = "0.5", default-features = false, features = ["lite", "gateway", "sqlite", "redis", "websockets"] }
 orgize = { git = "https://github.com/tao3k/orgize", branch = "main" }
+parking_lot = "0.12.5"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.145"
+tempfile = "3"
+toml = "1.1.2"
 thiserror = "2.0.18"
-tokio = { version = "1", features = ["rt", "macros", "sync", "time"] }
+tokio = { version = "1", features = ["rt", "macros", "sync", "time", "process"] }
 tokio-stream = "0.1"
 tokio-util = { version = "0.7", features = ["rt"] }
 tracing = "0.1.44"
-rust-lang-project-harness = { git = "https://github.com/tao3k/rust-lang-project-harness", branch = "main", version = "0.1.0" }
+rust-lang-project-harness = { git = "https://github.com/tao3k/rust-lang-project-harness", rev = "9c59588b6ada02d5c2518ca90bc22452155f2e6f", version = "=0.1.2" }
+marlin-rust-project-harness-policy = { path = "build-support/marlin-rust-project-harness-policy", version = "0.1.0" }
 
 marlin-agent-core = { path = "crates/marlin-agent-core", version = "0.1.0" }
 marlin-agent-environment = { path = "crates/marlin-agent-environment", version = "0.1.0" }
@@ -51,6 +60,8 @@ marlin-agent-kernel = { path = "crates/marlin-agent-kernel", version = "0.1.0" }
 marlin-agent-protocol = { path = "crates/marlin-agent-protocol", version = "0.1.0" }
 marlin-agent-runtime = { path = "crates/marlin-agent-runtime", version = "0.1.0" }
 marlin-agent-sessions = { path = "crates/marlin-agent-sessions", version = "0.1.0" }
+marlin-agent-stream = { path = "crates/marlin-agent-stream", version = "0.1.0" }
+marlin-agent-test-support = { path = "crates/marlin-agent-test-support", version = "0.1.0" }
 marlin-gerbil-ir = { path = "crates/marlin-gerbil-ir", version = "0.1.0" }
 marlin-gerbil-scheme = { path = "crates/marlin-gerbil-scheme", version = "0.1.0" }
 marlin-org-memory = { path = "crates/marlin-org-memory", version = "0.1.0" }

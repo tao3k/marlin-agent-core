@@ -11,12 +11,15 @@ publish = false
 
 [dependencies]
 marlin-agent-protocol.workspace = true
+marlin-agent-runtime.workspace = true
 marlin-gerbil-ir.workspace = true
 marlin-org-model.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+tokio = { workspace = true, features = ["io-util", "macros", "process", "rt"] }
 
 [build-dependencies]
+marlin-rust-project-harness-policy.workspace = true
 rust-lang-project-harness.workspace = true
 
 [dev-dependencies]
@@ -29,3 +32,4 @@ marlin-workspace-patch.workspace = true
 marlin-workspace-status.workspace = true
 marlin-workspace-view.workspace = true
 rust-lang-project-harness.workspace = true
+tempfile.workspace = true

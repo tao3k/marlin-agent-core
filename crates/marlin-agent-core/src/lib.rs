@@ -1,5 +1,6 @@
 //! Lean `marlin-agent-core` facade for graph-loop runtime boundaries.
 
+mod hook_policy;
 mod release;
 
 pub use marlin_agent_environment as environment;
@@ -16,8 +17,9 @@ pub use marlin_agent_harness::{
 };
 pub use marlin_agent_hooks as hooks;
 pub use marlin_agent_hooks::{
+    HookDispatchPolicy, HookDispatchPolicyFinalizer, HookDispatchPolicyFinalizerInput,
     HookDispatchReport, HookDispatcher, HookInvocation, HookRegistration, HookRegistry,
-    RegisteredHookRuntime,
+    RegisteredHookPolicyFinalizer, RegisteredHookRuntime,
 };
 pub use marlin_agent_kernel::{
     ExecutorName, GraphId, GraphLoopExecutionRequest, GraphLoopExecutionResult,
@@ -29,29 +31,48 @@ pub use marlin_agent_kernel::{
 pub use marlin_agent_protocol as protocol;
 pub use marlin_agent_protocol::{
     AgentEventTopic, AgentExecutionTrace, AgentExecutionTraceSummary, AgentSpanName,
-    AgentTraceSpanRecord, HookDurationMs, HookEventName, HookExecutionMode, HookHandlerType,
-    HookOutputEntry, HookOutputEntryKind, HookRunId, HookRunStatus, HookRunSummary, HookScope,
-    HookSource, HookSourcePath, HookTimestampMs, HookTrustStatus, LoopEvidence, LoopEvidenceKind,
-    LoopPerformanceEvidence, PERFORMANCE_EVIDENCE_ALLOCATION_PROFILE,
-    PERFORMANCE_EVIDENCE_BASELINE, PERFORMANCE_EVIDENCE_BENCHMARK_COMMAND,
-    PERFORMANCE_EVIDENCE_KEYS, PERFORMANCE_EVIDENCE_LATENCY_OR_THROUGHPUT,
-    PERFORMANCE_EVIDENCE_PROFILE_ARTIFACT, PERFORMANCE_EVIDENCE_REGRESSION_THRESHOLD,
-    RuntimeConfigLayer, RuntimeConfigLayerSource, RuntimeHome, RuntimeHomeSource,
-    RuntimeSandboxPolicy, SubAgentActivity, SubAgentActivityKind, SubAgentSource,
+    AgentTraceSpanRecord, HookAgentScope, HookDispatchPolicyReceipt,
+    HookDispatchPolicyReceiptInput, HookDurationMs, HookEventName, HookExecutionMode,
+    HookHandlerType, HookOutputEntry, HookOutputEntryKind, HookPolicyDecision,
+    HookPolicyDecisionReason, HookPolicyExtension, HookRunId, HookRunStatus, HookRunSummary,
+    HookScope, HookSource, HookSourcePath, HookTimestampMs, HookTrustStatus, LiteLlmModelId,
+    LoopEvidence, LoopEvidenceKind, LoopPerformanceEvidence, ModelAlias, ModelCommandKind,
+    ModelCommandMatcher, ModelContextForkMode, ModelEndpoint, ModelName, ModelProviderId,
+    ModelRouteDecision, ModelRouteReceipt, ModelRouteRequest, ModelRouteRule, ModelRouteRuleId,
+    ModelRouteSessionId, ModelSessionLifecycle, ModelSessionPersistenceKey, ModelSessionPolicy,
+    ModelSessionPoolId, PERFORMANCE_EVIDENCE_ALLOCATION_PROFILE, PERFORMANCE_EVIDENCE_BASELINE,
+    PERFORMANCE_EVIDENCE_BENCHMARK_COMMAND, PERFORMANCE_EVIDENCE_KEYS,
+    PERFORMANCE_EVIDENCE_LATENCY_OR_THROUGHPUT, PERFORMANCE_EVIDENCE_PROFILE_ARTIFACT,
+    PERFORMANCE_EVIDENCE_REGRESSION_THRESHOLD, RuntimeConfigLayer, RuntimeConfigLayerSource,
+    RuntimeHome, RuntimeHomeSource, RuntimeSandboxPolicy, SubAgentActivity, SubAgentActivityKind,
+    SubAgentSource,
 };
 pub use marlin_agent_runtime as runtime;
 pub use marlin_agent_runtime::observability;
 pub use marlin_agent_runtime::{
-    AgentSessionContext, CancellationToken, ContextExpansionPolicy, ContextNamespace,
-    ContextVisibility, EventStream, HookRuntime, ProviderRuntime, RuntimeContext,
-    RuntimeEnvironment, RuntimeEvent, RuntimeEventSink, RuntimeEventStream,
-    RuntimeExecutionIdentity, RuntimeFuture, RuntimeTask, RuntimeTaskOutcome, SessionId,
-    SessionIdError, SessionIdentity, SessionIsolationPolicy, SessionIsolationReceipt, SessionKind,
-    SubAgentRuntime, TokioAgentRuntime, ToolRuntime,
+    AgentSessionContext, CancellationToken, ChatMessage, CompiledModelRouteResolver,
+    CompletionOptions, CompletionResponse, ContextExpansionPolicy, ContextNamespace,
+    ContextVisibility, EventStream, HookRuntime, LiteLlmModelClient, ModelRouteCompileError,
+    ModelRouteConfig, ModelRouteConfigError, ModelRouteSessionBinding, ProviderRuntime,
+    RoutedSubAgentSpawn, RuntimeContext, RuntimeEnvironment, RuntimeEvent, RuntimeEventSink,
+    RuntimeEventStream, RuntimeExecutionIdentity, RuntimeFuture, RuntimeTask, RuntimeTaskOutcome,
+    SessionId, SessionIdError, SessionIdentity, SessionIsolationPolicy, SessionIsolationReceipt,
+    SessionKind, SubAgentRuntime, TokioAgentRuntime, ToolRuntime, assistant_message,
+    system_message, user_message,
 };
 pub use marlin_agent_sessions as sessions;
+pub use marlin_agent_stream as stream;
+pub use marlin_agent_stream::{
+    ChunkGate, ChunkGatePermit, LiteLlmStreamGateway, ModelStreamChunk, ModelStreamEvent,
+    ModelStreamGateway, ModelStreamRequest, ModelStreamTransport,
+};
 
+pub use hook_policy::GerbilHookPolicyFinalizer;
 pub use marlin_gerbil_ir as gerbil_ir;
+pub use marlin_gerbil_scheme as gerbil_scheme;
+pub use marlin_gerbil_scheme::{
+    GerbilCommandSpec, GerbilHookPolicyCommandEvaluator, GerbilHookPolicyRuntimeBinding,
+};
 pub use marlin_org_model as org_model;
 pub use marlin_org_patch as org_patch;
 pub use marlin_org_store as org_store;
