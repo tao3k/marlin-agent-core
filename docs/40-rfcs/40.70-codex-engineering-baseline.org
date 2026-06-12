@@ -1,0 +1,108 @@
+* 40.70 RFC: Codex Engineering Baseline
+
+Status: active
+
+This RFC records the first engineering baseline extracted from the Codex source
+tree under =.data/codex=. The goal is not to clone Codex. The goal is to learn
+the mature boundary shapes, keep the useful contracts, and make Marlin more
+configurable for ASP, sub-agent fanout, provider replacement, and
+high-performance execution.
+
+** Source Baseline
+
+The local Codex checkout is rooted at =.data/codex/codex-rs=. Its workspace is
+large and intentionally split across protocol, core, app server, execution,
+tools, hooks, model providers, state, rollout, observability, and configuration
+crates.
+
+One selector-level example from Codex is the app-server protocol boundary for
+standalone process spawning. The method is protocol-owned and explicitly marked
+experimental rather than being hidden in runtime internals:
+
+- =process/spawn= owns argv-based process spawn parameters and response shape.
+- =process/writeStdin= owns stdin transport for the spawned process.
+- PTY-backed =command/exec= remains a separate protocol surface.
+
+That shape is worth adopting: capability entry points should be protocol facts
+before they become runtime implementation details.
+
+** Mature Capabilities To Learn
+
+- Protocol/schema ownership: public capabilities are named operations with
+  parameter and response types.
+- App server boundaries: client, daemon, protocol, and transport are separated.
+- Execution boundaries: shell commands, sandboxing, escalation, and process
+  hardening are not collapsed into agent logic.
+- Tooling boundaries: tools, hooks, skills, plugins, and MCP integration are
+  separate extension surfaces.
+- Provider boundaries: model providers, backend clients, proxies, and realtime
+  paths can evolve independently.
+- State boundaries: thread store, rollout, memories, message history, and graph
+  storage are independent persistence surfaces.
+- Observability boundaries: rollout traces, debug context, telemetry, and
+  event streams provide runtime evidence.
+- Configuration boundaries: config, cloud config, auth, secrets, and feature
+  flags are not owned by runtime task execution.
+
+** Marlin Adaptation Rules
+
+Marlin should adopt the boundary discipline but keep the implementation smaller
+and more replaceable:
+
+- RFC first for new cross-crate capabilities.
+- Shared protocol schema before runtime behavior.
+- Runtime crates consume typed requests and policies, not raw TOML, Scheme, or
+  Codex-specific config files.
+- Provider and tool implementations stay replaceable behind thin facades.
+- ASP parser-owned facts are first-class evidence, not after-the-fact logs.
+- Sub-agent spawn policy stays declarative by default, with Scheme/Gerbil as an
+  optional strategy layer after typed policy compilation.
+- Public runtime APIs use named request/config objects instead of broad
+  positional argument lists.
+
+** Flexibility Improvements Over Codex
+
+Codex has strong engineering boundaries, but many client-facing choices are
+still fixed by the current product surface. Marlin should improve flexibility
+in these areas:
+
+- Configurable sub-agent profiles with explicit permissions, context visibility,
+  and performance budgets.
+- Strategy plugins that can rank or partition work without widening typed
+  policy limits.
+- Provider-native search and mutation frontiers that avoid raw source scanning.
+- Hook decisions that produce reusable receipts and next commands.
+- Runtime scheduling that is budget-aware, replay-safe, and cache-aware.
+- Smaller crates with explicit ownership so a new capability does not require a
+  monorepo-wide mental model.
+
+** Baseline Workstreams
+
+- Protocol baseline: define the operation, request, response, and receipt
+  before implementation.
+- Runtime baseline: map typed requests into Tokio tasks, cancellation,
+  isolation, process observation, and event emission.
+- Tool execution baseline: split process spawn, shell command, PTY command,
+  stdin, sandbox, and escalation.
+- Hook baseline: keep hook policy and client envelopes distinct from provider
+  facts.
+- State baseline: separate thread, memory, rollout, and trace persistence.
+- Observability baseline: every high-risk runtime action emits stable evidence.
+- Configuration baseline: TOML declares policy; Scheme/Gerbil may optimize
+  strategy only after policy is typed.
+
+** Non-goals
+
+- Do not vendor Codex code into Marlin.
+- Do not mirror the full Codex workspace shape.
+- Do not make runtime crates parse Codex config directly.
+- Do not make Scheme/Gerbil the default user-facing config language.
+
+** Acceptance Criteria
+
+- Future runtime capabilities cite this baseline or a narrower RFC.
+- New process/tool/sub-agent APIs expose named typed request objects.
+- New configurable behavior has a declarative policy surface and tests.
+- Codex source reads used for design decisions are selector-scoped and recorded
+  as evidence.
+- Implementation changes keep unrelated local dirty work isolated.
