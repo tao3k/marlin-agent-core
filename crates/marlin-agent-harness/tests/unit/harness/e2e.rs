@@ -24,7 +24,8 @@ use marlin_agent_test_support::{
     assert_budgeted_graph_policy_execution_request,
     assert_deterministic_sub_agent_scenario_fixture, assert_sub_agent_memory_session_fixture,
     budgeted_graph_policy_execution_request_fixture,
-    deterministic_reviewer_sub_agent_scenario_fixture,
+    deterministic_reviewer_sub_agent_scenario_fixture, hook_dispatch_replay_evidence,
+    sub_agent_memory_session_replay_evidence, sub_agent_memory_session_visibility_evidence,
 };
 
 #[tokio::test]
@@ -226,6 +227,19 @@ async fn harness_e2e_combines_graph_policy_environment_hooks_and_sub_agent_sessi
     let mut harness = HarnessRuntime::with_environment(64, environment);
     harness.record_evidence(LoopEvidence::present(LoopEvidenceKind::Runtime, "tokio"));
     harness.record_graph_policy_proposal_visibility(&graph_policy.compilation().receipt);
+    harness.record_evidence(hook_dispatch_replay_evidence(
+        sub_agent_fixture.start_hook_summary(),
+        sub_agent_fixture.hook_selection(),
+        sub_agent_fixture.hook_policy(),
+    ));
+    harness.record_evidence(sub_agent_memory_session_visibility_evidence(
+        &child_session,
+        &isolation_receipt,
+    ));
+    harness.record_evidence(sub_agent_memory_session_replay_evidence(
+        &child_session,
+        &isolation_receipt,
+    ));
 
     let report = harness.execute_graph(&scenario, &kernel, request).await;
     let evaluated = AgentHarness::evaluate_execution_report(&scenario, &report);
@@ -244,6 +258,58 @@ async fn harness_e2e_combines_graph_policy_environment_hooks_and_sub_agent_sessi
         &graph_policy.proposal().strategy.strategy_id,
         graph_policy.compilation().receipt.status.clone(),
     ));
+    assert_eq!(
+        report
+            .evidence
+            .iter()
+            .filter(|evidence| evidence.kind == LoopEvidenceKind::Visibility)
+            .count(),
+        3
+    );
+    assert_eq!(
+        report
+            .evidence
+            .iter()
+            .filter(|evidence| evidence.kind == LoopEvidenceKind::Runtime)
+            .count(),
+        2
+    );
+    assert!(evidence_detail_contains(&report, "memory_visible=true"));
+    assert!(evidence_detail_contains(&report, "denied_memory=false"));
+    assert!(evidence_detail_contains(
+        &report,
+        "requested_namespaces=[System,User,Workspace,Memory]"
+    ));
+    assert!(evidence_detail_contains(
+        &report,
+        "granted_namespaces=[System,User,Workspace,Memory]"
+    ));
+    assert!(evidence_detail_contains(&report, "denied_namespaces=[]"));
+    assert!(evidence_detail_contains(
+        &report,
+        "history_limit_applied=true"
+    ));
+    assert!(evidence_detail_contains(
+        &report,
+        "visibility_contracted=true"
+    ));
+    assert!(evidence_detail_contains(
+        &report,
+        "matcher_strategy=AhoCorasickEventIndex"
+    ));
+    assert!(evidence_detail_contains(
+        &report,
+        "policy_mode=EnforceTrusted"
+    ));
+    assert!(evidence_detail_contains(
+        &report,
+        "policy_extension_kind=GerbilScheme"
+    ));
+    assert!(evidence_detail_contains(
+        &report,
+        "selection_agent_scope=SubAgent"
+    ));
+    assert!(evidence_detail_contains(&report, "live_llm=false"));
     assert!(e2e_messages.contains(&"hook pre-tool"));
     assert!(e2e_messages.contains(&"hook sub-agent-start"));
     assert!(e2e_messages.contains(&"hook sub-agent-stop"));
@@ -328,6 +394,14 @@ async fn harness_e2e_preserves_graph_policy_visibility_when_budget_gate_fails_wi
             .map(String::as_str),
         Some("1")
     );
+}
+
+fn evidence_detail_contains(report: &HarnessExecutionReport, needle: &str) -> bool {
+    report
+        .evidence
+        .iter()
+        .filter_map(|evidence| evidence.detail.as_deref())
+        .any(|detail| detail.contains(needle))
 }
 
 fn assert_agent_core_trace_spans(report: &HarnessExecutionReport) {
