@@ -104,3 +104,86 @@ fn core_facade_exposes_gerbil_graph_policy_and_budget_contracts() {
         Some(1)
     );
 }
+
+#[test]
+fn core_facade_rejects_invalid_gerbil_loop_graph_shapes_before_execution() {
+    let cases = [
+        (
+            "core-gerbil-missing-edge-target",
+            marlin_agent_core::gerbil_ir::CompiledLoopGraph {
+                graph_id: "core-gerbil-invalid-edge".to_owned(),
+                nodes: vec![marlin_agent_core::gerbil_ir::LoopNodeSpec {
+                    id: "rank".to_owned(),
+                    executor: "gerbil.rank".to_owned(),
+                    config: BTreeMap::new(),
+                }],
+                edges: vec![marlin_agent_core::gerbil_ir::LoopEdgeSpec {
+                    from: "rank".to_owned(),
+                    to: "missing".to_owned(),
+                    condition: Some("always".to_owned()),
+                }],
+            },
+            "graph_policy_proposal.edge_to_unknown:missing",
+        ),
+        (
+            "core-gerbil-cycle",
+            marlin_agent_core::gerbil_ir::CompiledLoopGraph {
+                graph_id: "core-gerbil-cycle".to_owned(),
+                nodes: vec![
+                    marlin_agent_core::gerbil_ir::LoopNodeSpec {
+                        id: "rank".to_owned(),
+                        executor: "gerbil.rank".to_owned(),
+                        config: BTreeMap::new(),
+                    },
+                    marlin_agent_core::gerbil_ir::LoopNodeSpec {
+                        id: "dispatch".to_owned(),
+                        executor: "kernel.dispatch".to_owned(),
+                        config: BTreeMap::new(),
+                    },
+                ],
+                edges: vec![
+                    marlin_agent_core::gerbil_ir::LoopEdgeSpec {
+                        from: "rank".to_owned(),
+                        to: "dispatch".to_owned(),
+                        condition: Some("always".to_owned()),
+                    },
+                    marlin_agent_core::gerbil_ir::LoopEdgeSpec {
+                        from: "dispatch".to_owned(),
+                        to: "rank".to_owned(),
+                        condition: Some("always".to_owned()),
+                    },
+                ],
+            },
+            "graph_policy_proposal.graph_cycle_detected",
+        ),
+    ];
+
+    for (strategy_id, graph, expected_diagnostic) in cases {
+        let proposal = compile_gerbil_loop_graph_policy(
+            GerbilLoopGraphPolicyCompilationRequest::new(
+                GraphLoopStrategy::native_gerbil(strategy_id, "v1"),
+                graph,
+                "sha256:core-gerbil-invalid-input",
+                "sha256:core-gerbil-invalid-output",
+            )
+            .with_diagnostic(GERBIL_LOOP_GRAPH_POLICY_COMPILATION_SCHEMA_ID),
+        );
+        let compilation = compile_graph_policy_proposal("core-gerbil-invalid-run", &proposal);
+
+        assert!(!compilation.is_accepted());
+        assert_eq!(
+            compilation.receipt.status,
+            GraphPolicyProposalStatus::Rejected
+        );
+        assert!(compilation.request.is_none());
+        assert!(
+            compilation
+                .receipt
+                .diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic == expected_diagnostic),
+            "missing diagnostic {expected_diagnostic:?}: {:?}",
+            compilation.receipt.diagnostics
+        );
+    }
+}

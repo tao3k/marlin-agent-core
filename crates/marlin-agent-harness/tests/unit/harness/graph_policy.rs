@@ -125,6 +125,42 @@ async fn harness_executes_gerbil_ir_graph_policy_with_budget_without_live_llm() 
     assert!(evaluated.is_success());
 }
 
+#[tokio::test]
+async fn harness_preserves_gerbil_ir_graph_policy_visibility_when_budget_fails_without_live_llm() {
+    let fixture = accepted_gerbil_ir_graph_policy_proposal_fixture();
+    assert_accepted_gerbil_ir_graph_policy_proposal_fixture(&fixture);
+
+    let scenario = AgentScenario::new("gerbil-ir-graph-policy-budget-failure")
+        .expecting_evidence(LoopEvidenceKind::Visibility);
+    let request = budgeted_graph_policy_execution_request_fixture(&fixture, 1);
+    assert_budgeted_graph_policy_execution_request(&request, 1);
+
+    let kernel = TokioGraphLoopKernel::new(
+        fixture.expected_run_id(),
+        fixture.proposal().proposed_graph.graph_id.clone(),
+    )
+    .with_executor("gerbil.rank", QuietGraphPolicyExecutor)
+    .with_executor("kernel.dispatch", QuietGraphPolicyExecutor);
+    let mut harness = HarnessRuntime::new(16);
+    harness.record_graph_policy_proposal_visibility(&fixture.compilation().receipt);
+
+    let report = harness.execute_graph(&scenario, &kernel, request).await;
+    let evaluated = AgentHarness::evaluate_execution_report(&scenario, &report);
+
+    assert_eq!(report.result.status, GraphLoopExecutionStatus::Failed);
+    assert!(report.result.visited_nodes.is_empty());
+    assert_eq!(
+        report.result.diagnostics,
+        vec!["graph execution budget exceeded: planned node executions 2 > max 1"]
+    );
+    assert_eq!(report.evidence, vec![fixture.visibility_evidence()]);
+    assert!(report.has_graph_policy_proposal_visibility_status(
+        &fixture.proposal().strategy.strategy_id,
+        fixture.compilation().receipt.status.clone()
+    ));
+    assert!(evaluated.is_success());
+}
+
 #[derive(Clone, Debug)]
 struct QuietGraphPolicyExecutor;
 
