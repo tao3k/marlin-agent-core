@@ -123,6 +123,14 @@ It must not serialize JSON or allocate runtime-owned receipt bytes on the hot
 path. JSON is reserved for configuration, tracing, CLI receipts, and
 cross-process protocol boundaries.
 
+The Scheme package follows the same split. Core modules such as
+=:marlin/deck-runtime= and =:marlin/deck-runtime-strategy= now expose Scheme
+values and POO objects through =marlin-deck-runtime-model-route-selection= and
+=marlin-deck-runtime-strategy-selection=. They do not emit text receipts.
+Process adapters such as =:marlin/deck-runtime-policy= remain the place where a
+CLI or cross-process boundary can translate those values for Rust-owned outer
+protocol handling.
+
 The long-term native conversion path is:
 
 Rust validates the C layout before projecting it into
@@ -235,23 +243,24 @@ strategy template into native ABI code.
 
 On 2026-06-13 the local
 =deck_runtime_real_scheme_compiled_policy/compiled_policy_process_roundtrip=
-benchmark measured approximately 625.02-872.79 milliseconds with a 742.98
+benchmark measured approximately 428.73-495.93 milliseconds with a 460.52
 millisecond midpoint. This is a real =gxi= process roundtrip gate, not the
 steady-state selector hot path. Use it to verify that the compiled macro module
 can be package-built and executed from Rust-owned assets; use a resident runtime
 or native ABI benchmark for hot-path promotion decisions.
 
-The same run added
-=deck_runtime_real_scheme_compiled_policy/compiled_policy_batch_10000_process_roundtrip=,
-which executes 10,000 macro-generated selector calls inside one =gxi= process.
-It measured approximately 1.4891-1.9565 seconds with a 1.7131 second midpoint.
-This is still not an acceptable selector hot-path benchmark. The benchmark
-starts a fresh =gxi= process for each Criterion iteration and executes a
-temporary script after =build.ss compile= has already completed, so the
-macro-generated selector instance itself is not proven as an AOT-compiled,
-resident policy module. Treat this number as gap evidence only. The next
-accepted gate must either run a compiled policy-template module through a
-resident Gerbil runtime or measure the linked native ABI selector directly.
+The same run measured
+=deck_runtime_real_scheme_compiled_policy/compiled_policy_batch_10000_process_roundtrip=
+at approximately 438.61-535.60 milliseconds with a 484.07 millisecond midpoint.
+That outer Criterion sample still starts a fresh =gxi= process per iteration,
+so the accepted hot-path evidence is the internal loop emitted by the compiled
+policy module itself. The policy-object selector loop reported
+=policy_elapsed_us= of =3988= for 10,000 selector calls, about 398 nanoseconds
+per call. The direct policy-index selector loop reported =index_elapsed_us= of
+=2188= for 10,000 selector calls, about 218 nanoseconds per call. This is the
+current Scheme compiled-macro promotion gate: complex policy shape remains in
+Gerbil Scheme, while the hot selector can avoid object projection and runtime
+rule interpretation.
 
 A later same-day rerun of the linked native ABI selector provides the current
 hot-path control sample for this audit:
@@ -338,6 +347,25 @@ The P0-P4 implementation pass verified the Scheme typed projection split,
 real Scheme policy plane, real linked native ABI, model-route projection, hook
 runtime actions, and LiteLLM stream boundary with these commands:
 
+The 2026-06-13 optimization pass additionally removed the old Deck core
+display helpers from the runtime and strategy modules, replaced the
+=json-handshake= runtime contract label with =typed-native-abi=, and verified
+the package through object-returning real =gxi= examples.
+
+The follow-up typed runtime pass landed the Rust-native P0-P4 protocol pieces:
+
+- P0/P1 hook dispatch receipts now carry =HookDecisionContext=, including
+  session, agent lineage, workspace state, Org memory hits, and agent class.
+- P2 model-route native policy-index projection now emits
+  =ModelRouteSelectionProjectionReceipt= before returning the selected
+  =ModelRouteDecision=.
+- P3 Gerbil resident runtime planning is represented by
+  =GerbilResidentRuntimePlan= with disabled, shared-context, forked-context,
+  and isolated-session modes.
+- P4 graph native ABI readiness is represented by
+  =GraphNativeAbiReadinessReceipt=, which reports missing required symbols
+  before a linked selector is treated as usable.
+
 #+begin_src sh
 direnv exec . cargo test -p marlin-gerbil-scheme scheme_types -- --nocapture
 direnv exec . cargo test -p marlin-gerbil-scheme --tests -- --nocapture
@@ -351,6 +379,15 @@ direnv exec . cargo test -p marlin-agent-runtime model_route -- --nocapture
 direnv exec . cargo test -p marlin-agent-stream --tests -- --nocapture
 direnv exec . cargo test -p marlin-agent-hooks hooks -- --nocapture
 direnv exec . cargo bench -p marlin-deck-runtime-native --features linked-native --bench linked_selector
+direnv exec . cargo fmt --all -- --check
+direnv exec . rtk --ultra-compact cargo test -p marlin-agent-protocol graph_native_abi_readiness_receipt_reports_symbol_coverage -- --nocapture
+direnv exec . rtk --ultra-compact cargo test -p marlin-agent-hooks dispatcher_carries_typed_policy_context_into_receipts -- --nocapture
+direnv exec . rtk --ultra-compact cargo test -p marlin-agent-runtime native_projection_emits_typed_projection_receipt -- --nocapture
+direnv exec . rtk --ultra-compact cargo test -p marlin-gerbil-scheme resident_runtime -- --nocapture
+direnv exec . rtk --ultra-compact cargo test -p marlin-agent-protocol
+direnv exec . rtk --ultra-compact cargo test -p marlin-agent-hooks
+direnv exec . rtk --ultra-compact cargo test -p marlin-agent-runtime
+direnv exec . rtk --ultra-compact cargo test -p marlin-gerbil-scheme
 #+end_src
 
 ** Next Work
