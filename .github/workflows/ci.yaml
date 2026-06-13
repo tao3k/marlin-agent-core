@@ -167,13 +167,30 @@ jobs:
           grep -Fx examples/workspace-patch-intent-workflow.rs gerbil-package-files.txt
           grep -Fx examples/workspace-patch-intent-source.ss gerbil-package-files.txt
           grep -Fx src/bin/marlin-gerbil-compile-source.rs gerbil-package-files.txt
+          grep -Fx src/bin/marlin-gerbil-native-aot.rs gerbil-package-files.txt
+          grep -Fx src/bin/marlin-gerbil-real-gxi-gate.rs gerbil-package-files.txt
           grep -Fx src/compile_source.rs gerbil-package-files.txt
-          grep -Fx fixtures/gerbil/command-adapter.ss gerbil-package-files.txt
-          grep -Fx fixtures/gerbil/command-adapter-batch.ss gerbil-package-files.txt
-          grep -Fx fixtures/gerbil/marlin/adapter.ss gerbil-package-files.txt
-          grep -Fx fixtures/gerbil/marlin/parser.ss gerbil-package-files.txt
-          grep -Fx fixtures/gerbil/marlin/protocol.ss gerbil-package-files.txt
-          grep -Fx fixtures/gerbil/marlin/request.ss gerbil-package-files.txt
+          grep -Fx src/resident_runtime.rs gerbil-package-files.txt
+          grep -Fx src/scheme_type_fixtures.rs gerbil-package-files.txt
+          grep -Fx include/marlin_deck_runtime_native.h gerbil-package-files.txt
+          grep -Fx gerbil/gerbil.pkg gerbil-package-files.txt
+          grep -Fx gerbil/bin/command-adapter.ss gerbil-package-files.txt
+          grep -Fx gerbil/bin/command-adapter-batch.ss gerbil-package-files.txt
+          grep -Fx gerbil/bin/deck-runtime-policy-adapter.ss gerbil-package-files.txt
+          grep -Fx gerbil/bin/hook-policy-adapter.ss gerbil-package-files.txt
+          grep -Fx gerbil/bin/smoke.ss gerbil-package-files.txt
+          grep -Fx gerbil/src/marlin/adapter.ss gerbil-package-files.txt
+          grep -Fx gerbil/src/marlin/deck-runtime-compiled-policy-sample.ss gerbil-package-files.txt
+          grep -Fx gerbil/src/marlin/deck-runtime-compiled-policy.ss gerbil-package-files.txt
+          grep -Fx gerbil/src/marlin/deck-runtime-native.ss gerbil-package-files.txt
+          grep -Fx gerbil/src/marlin/deck-runtime-policy.ss gerbil-package-files.txt
+          grep -Fx gerbil/src/marlin/deck-runtime-strategy.ss gerbil-package-files.txt
+          grep -Fx gerbil/src/marlin/deck-runtime.ss gerbil-package-files.txt
+          grep -Fx gerbil/src/marlin/hook-policy.ss gerbil-package-files.txt
+          grep -Fx gerbil/src/marlin/hooks/policy-samples.ss gerbil-package-files.txt
+          grep -Fx gerbil/src/marlin/parser.ss gerbil-package-files.txt
+          grep -Fx gerbil/src/marlin/protocol.ss gerbil-package-files.txt
+          grep -Fx gerbil/src/marlin/request.ss gerbil-package-files.txt
 
   real-gxi:
     name: Real gxi release gate
