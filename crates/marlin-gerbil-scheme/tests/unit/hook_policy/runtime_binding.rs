@@ -11,6 +11,15 @@ use marlin_gerbil_scheme::{
 use std::{ffi::OsString, fs, path::Path};
 use tempfile::Builder;
 
+fn complex_hook_decision_context() -> HookDecisionContext {
+    HookDecisionContext::new()
+        .with_session_id("cheap-test-session")
+        .with_agent_lineage_node("release")
+        .with_workspace_state("dirty")
+        .with_org_memory_hit("needs-human-review")
+        .with_agent_class("customer-agent")
+}
+
 #[test]
 fn gerbil_hook_policy_runtime_binding_writes_launcher_assets() {
     let root = Builder::new()
@@ -155,6 +164,63 @@ fn gerbil_hook_policy_runtime_binding_real_gxi_runs_sample_policy_module() {
             .as_ref()
             .map(|target| target.as_str()),
         Some("catalog:customer-agent-hook")
+    );
+}
+
+#[test]
+#[ignore = "requires a local Gerbil gxi executable"]
+fn gerbil_hook_policy_runtime_binding_real_gxi_runs_complex_sample_policy_context() {
+    if !Path::new(DEFAULT_GERBIL_GXI_PROGRAM).exists() {
+        return;
+    }
+
+    let root = Builder::new()
+        .prefix("marlin-gerbil-hook-policy-complex-sample-real-gxi-")
+        .tempdir()
+        .expect("creates real gxi complex hook policy sample binding root");
+    let binding = GerbilHookPolicyRuntimeBinding::new(DEFAULT_GERBIL_GXI_PROGRAM, root.path())
+        .expect("runtime binding should write hook policy sample assets");
+
+    let extension = HookPolicyExtension::gerbil_scheme(
+        "marlin/hooks/policy-samples",
+        "decide-hook-policy-sample",
+    );
+    let receipt = binding
+        .evaluator()
+        .evaluate(GerbilHookPolicyInvocationInput {
+            extension: extension.clone(),
+            event_name: HookEventName::PreToolUse,
+            agent_scope: HookAgentScope::CustomerAgent,
+            policy_receipt: HookDispatchPolicyReceipt::new(HookDispatchPolicyReceiptInput {
+                event_name: HookEventName::PreToolUse,
+                invocation_agent_scope: HookAgentScope::CustomerAgent,
+                decision_context: complex_hook_decision_context(),
+                mode: HookPolicyMode::ObserveOnly,
+                extension,
+                actions: Vec::new(),
+                decisions: Vec::new(),
+            }),
+        })
+        .expect("real gxi hook policy sample should evaluate complex decision context");
+
+    assert!(receipt.is_allowed());
+    assert_eq!(receipt.actions.len(), 4);
+    assert_eq!(
+        receipt.actions[0].kind,
+        HookPolicyDynamicActionKind::Register
+    );
+    assert_eq!(receipt.actions[1].kind, HookPolicyDynamicActionKind::Defer);
+    assert_eq!(receipt.actions[2].kind, HookPolicyDynamicActionKind::Deny);
+    assert_eq!(
+        receipt.actions[3].kind,
+        HookPolicyDynamicActionKind::Rewrite
+    );
+    assert_eq!(
+        receipt.actions[3]
+            .replacement
+            .as_ref()
+            .map(|replacement| replacement.as_str()),
+        Some("cargo test --locked")
     );
 }
 

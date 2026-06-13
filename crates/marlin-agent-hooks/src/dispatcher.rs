@@ -64,6 +64,29 @@ impl HookInvocation {
         self
     }
 
+    /// Adds session and execution facts from a runtime context to the hook decision context.
+    pub fn with_runtime_context(mut self, context: &RuntimeContext) -> Self {
+        let session = context.session();
+        let mut decision_context = self
+            .decision_context
+            .with_session_id(session.session_id().as_str().to_owned())
+            .with_agent_lineage_node(format!(
+                "root_session:{}",
+                session.root_session_id().as_str()
+            ));
+        if let Some(parent_session_id) = session.parent_session_id() {
+            decision_context = decision_context
+                .with_agent_lineage_node(format!("parent_session:{}", parent_session_id.as_str()));
+        }
+        if let Some(execution) = context.execution_identity() {
+            decision_context = decision_context
+                .with_workspace_state(format!("run_id={}", execution.run_id()))
+                .with_workspace_state(format!("graph_id={}", execution.graph_id()));
+        }
+        self.decision_context = decision_context;
+        self
+    }
+
     /// Adds a human-readable message to the invocation.
     pub fn with_message(mut self, message: impl Into<String>) -> Self {
         self.message = Some(message.into());

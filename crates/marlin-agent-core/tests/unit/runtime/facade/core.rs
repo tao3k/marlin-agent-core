@@ -1,17 +1,11 @@
 use marlin_agent_core::{
     AgentExecutionTrace, AgentExecutionTraceSummary, AgentSpanName, AgentTraceSpanRecord,
-    GerbilCommandSpec, GerbilHookPolicyCommandEvaluator, GerbilHookPolicyFinalizer,
-    GerbilHookPolicyRuntimeBinding, GraphLoopExecutionStatus, HookAgentScope, HookDispatchPolicy,
-    HookDispatcher, HookEventName, HookHandlerType, HookInvocation, HookPolicyDecisionReason,
-    HookPolicyDynamicActionKind, HookPolicyExtension, HookRegistration, HookRegistry,
-    HookRunSummary, HookRuntime, LoopEvidence, LoopEvidenceKind, LoopPerformanceEvidence,
-    ModelContextForkMode, ModelEndpoint, ModelGatewayMessageRole, ModelGatewayRequest,
-    ModelGatewayTransport, ModelRouteConfig, ModelRouteRequest, PERFORMANCE_EVIDENCE_KEYS,
-    RuntimeContext, RuntimeEnvironmentRequest, RuntimeEnvironmentResolver,
-    RuntimeExecutionIdentity, RuntimeFuture, system_gateway_message,
+    GraphLoopExecutionStatus, HookDispatcher, HookRegistry, LoopEvidence, LoopEvidenceKind,
+    LoopPerformanceEvidence, ModelContextForkMode, ModelEndpoint, ModelGatewayMessageRole,
+    ModelGatewayRequest, ModelGatewayTransport, ModelRouteConfig, ModelRouteRequest,
+    PERFORMANCE_EVIDENCE_KEYS, RuntimeEnvironmentRequest, RuntimeEnvironmentResolver,
+    RuntimeExecutionIdentity, system_gateway_message,
 };
-use std::sync::Arc;
-use tempfile::Builder;
 
 #[test]
 fn core_facade_exposes_environment_resolver() {
@@ -36,96 +30,6 @@ fn core_facade_exposes_hook_dispatcher() {
     let dispatcher = HookDispatcher::new(HookRegistry::new());
 
     assert_eq!(dispatcher.registry().registrations().len(), 0);
-}
-
-#[derive(Clone, Debug)]
-struct CoreSummaryHook;
-
-impl HookRuntime for CoreSummaryHook {
-    type Request = HookInvocation;
-    type Output = HookRunSummary;
-
-    fn run_hook(
-        &self,
-        request: Self::Request,
-        _context: RuntimeContext,
-    ) -> RuntimeFuture<Self::Output> {
-        Box::pin(async move {
-            HookRunSummary::running(
-                "core-gerbil-run",
-                request.event_name,
-                HookHandlerType::Command,
-            )
-            .completed()
-        })
-    }
-}
-
-#[tokio::test]
-async fn core_facade_wires_gerbil_hook_policy_finalizer() {
-    let registry = HookRegistry::new().with_registration(HookRegistration::new(
-        "core-gerbil",
-        HookEventName::PreToolUse,
-        HookHandlerType::Command,
-        Arc::new(CoreSummaryHook),
-    ));
-    let evaluator = GerbilHookPolicyCommandEvaluator::new(
-        GerbilCommandSpec::new("/bin/sh").arg("-c").arg(
-            "cat >/dev/null; printf '%s\n' '{\"decision\":\"Rejected\",\"diagnostics\":[{\"message\":\"core finalizer rejected\"}],\"actions\":[{\"kind\":\"Deny\",\"target\":\"core-gerbil\"}]}'",
-        ),
-    );
-    let finalizer = GerbilHookPolicyFinalizer::new(evaluator);
-    let (runtime, _events) = marlin_agent_core::TokioAgentRuntime::new(4);
-
-    let report = HookDispatcher::new(registry)
-        .with_policy(HookDispatchPolicy::observe_only().with_extension(
-            HookPolicyExtension::gerbil_scheme("marlin/hooks/policy", "decide-hook-policy"),
-        ))
-        .with_policy_finalizer(Arc::new(finalizer))
-        .dispatch(
-            &runtime,
-            HookInvocation::new(HookEventName::PreToolUse)
-                .with_agent_scope(HookAgentScope::CustomerAgent),
-        )
-        .await;
-
-    assert_eq!(report.policy.allowed_count, 0);
-    assert_eq!(report.policy.rejected_count, 1);
-    assert_eq!(
-        report.policy.decisions[0].reason,
-        HookPolicyDecisionReason::ExtensionRejected
-    );
-    assert_eq!(report.policy.actions.len(), 1);
-    assert_eq!(
-        report.policy.actions[0].kind,
-        HookPolicyDynamicActionKind::Deny
-    );
-    assert!(report.runs.is_empty());
-    assert!(!report.is_success());
-}
-
-#[test]
-fn core_facade_builds_gerbil_hook_policy_finalizer_from_runtime_binding() {
-    let root = Builder::new()
-        .prefix("marlin-core-gerbil-hook-policy-binding-")
-        .tempdir()
-        .expect("creates core hook policy binding root");
-    let binding = GerbilHookPolicyRuntimeBinding::new("/bin/sh", root.path())
-        .expect("runtime binding should write hook policy assets");
-    let finalizer = GerbilHookPolicyFinalizer::from_runtime_binding(binding);
-
-    assert_eq!(
-        finalizer.evaluator().spec().program,
-        std::path::Path::new("/bin/sh")
-    );
-    assert!(
-        finalizer
-            .evaluator()
-            .spec()
-            .args
-            .iter()
-            .any(|arg| arg.to_string_lossy().contains("hook-policy-adapter.ss"))
-    );
 }
 
 #[test]

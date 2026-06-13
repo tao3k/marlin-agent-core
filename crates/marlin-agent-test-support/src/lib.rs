@@ -21,8 +21,11 @@ pub use graph_policy::{
     rejected_graph_policy_proposal_fixture,
 };
 pub use hook::{
-    assert_custom_hook_policy_receipt, assert_custom_sub_agent_start_hook_summary,
-    assert_sub_agent_hook_dispatch_selection, custom_hook_policy_receipt_fixture,
+    assert_complex_gerbil_hook_policy_receipt, assert_custom_hook_policy_receipt,
+    assert_custom_sub_agent_start_hook_summary, assert_sub_agent_hook_dispatch_selection,
+    complex_gerbil_hook_policy_decision_context_fixture,
+    complex_gerbil_hook_policy_receipt_fixture,
+    complex_gerbil_hook_policy_receipt_with_decision_context, custom_hook_policy_receipt_fixture,
     custom_sub_agent_start_hook_summary_fixture, hook_dispatch_replay_evidence,
     sub_agent_hook_dispatch_selection_fixture,
 };

@@ -54,11 +54,43 @@ package: marlin/hooks
 (def (sample-field object field default)
   (hash-ref object field default))
 
+(def (sample-object-field object field)
+  (and object (sample-field object field #f)))
+
+(def (sample-decision-context request)
+  (sample-object-field
+   (sample-object-field request "policy_receipt")
+   "decision_context"))
+
+(def (sample-context-field request field default)
+  (let ((context (sample-decision-context request)))
+    (if context
+      (sample-field context field default)
+      default)))
+
+(def (sample-string-value value default)
+  (if (string? value) value default))
+
+(def (sample-list-value value default)
+  (if (list? value) value default))
+
+(def (sample-context-string-field request field default)
+  (sample-string-value
+   (sample-context-field request field default)
+   default))
+
+(def (sample-context-list-field request field default)
+  (sample-list-value
+   (sample-context-field request field default)
+   default))
+
 (def (sample-list-member? value values)
   (let loop ((remaining values))
     (cond
      ((null? remaining) #f)
-     ((string=? value (car remaining)) #t)
+     ((and (string? (car remaining))
+           (string=? value (car remaining)))
+      #t)
      (else (loop (cdr remaining))))))
 
 (def (sample-json-array items)
@@ -72,14 +104,16 @@ package: marlin/hooks
    "]"))
 
 (def (sample-actions request)
-  (let ((agent-scope (sample-field request "agent_scope" "Any"))
-        (session-id (sample-field request "session_id" ""))
-        (agent-lineage (sample-field request "agent_lineage" '()))
-        (workspace-state (sample-field request "workspace_state" '()))
-        (org-memory-hits (sample-field request "org_memory_hits" '())))
+  (let ((agent-scope (sample-string-value (sample-field request "agent_scope" "Any") "Any"))
+        (session-id (sample-context-string-field request "session_id" ""))
+        (agent-lineage (sample-context-list-field request "agent_lineage" '()))
+        (workspace-state (sample-context-list-field request "workspace_state" '()))
+        (org-memory-hits (sample-context-list-field request "org_memory_hits" '()))
+        (agent-class (sample-context-string-field request "agent_class" "")))
     (let loop ((candidates
                 (list
-                 (if (string=? agent-scope "CustomerAgent")
+                 (if (or (string=? agent-scope "CustomerAgent")
+                         (string=? agent-class "customer-agent"))
                    register-customer-agent-hook-action
                    #f)
                  (if (and (sample-list-member? "release" agent-lineage)

@@ -2,7 +2,7 @@ use marlin_agent_hooks::{HookDispatcher, HookInvocation, HookRegistry};
 use marlin_agent_protocol::{
     HookAgentScope, HookDecisionContext, HookEventName, HookHandlerType, HookSelectionSkipReason,
 };
-use marlin_agent_runtime::TokioAgentRuntime;
+use marlin_agent_runtime::{RuntimeExecutionIdentity, TokioAgentRuntime};
 
 use crate::hooks::support::summary_hook_registration;
 
@@ -162,4 +162,59 @@ async fn dispatcher_carries_typed_policy_context_into_receipts() {
         Some("customer-reviewer")
     );
     assert_eq!(report.runs.len(), 1);
+}
+
+#[tokio::test]
+async fn dispatcher_projects_runtime_context_into_hook_decision_context() {
+    let registry = HookRegistry::new().with_registration(summary_hook_registration(
+        "runtime-context",
+        HookEventName::PreToolUse,
+        HookHandlerType::Command,
+        "runtime-context-run",
+    ));
+    let (runtime, _events) = TokioAgentRuntime::new(4);
+    let context = runtime
+        .context()
+        .with_execution_identity(RuntimeExecutionIdentity::new("run-7", "graph-9"));
+
+    let report = HookDispatcher::new(registry)
+        .dispatch(
+            &runtime,
+            HookInvocation::new(HookEventName::PreToolUse).with_runtime_context(&context),
+        )
+        .await;
+
+    assert_eq!(
+        report
+            .selection
+            .decision_context
+            .session_id
+            .as_ref()
+            .map(|session_id| session_id.as_str()),
+        Some("runtime.root")
+    );
+    assert!(
+        report
+            .policy
+            .decision_context
+            .agent_lineage
+            .iter()
+            .any(|node| node.as_str() == "root_session:runtime.root")
+    );
+    assert!(
+        report
+            .policy
+            .decision_context
+            .workspace_state
+            .iter()
+            .any(|fact| fact.as_str() == "run_id=run-7")
+    );
+    assert!(
+        report
+            .policy
+            .decision_context
+            .workspace_state
+            .iter()
+            .any(|fact| fact.as_str() == "graph_id=graph-9")
+    );
 }

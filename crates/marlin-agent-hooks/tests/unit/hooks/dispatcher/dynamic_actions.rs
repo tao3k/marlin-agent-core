@@ -3,11 +3,12 @@ use marlin_agent_hooks::{
     HookDispatcher, HookInvocation, HookRegistration, HookRegistrationCatalog, HookRegistry,
 };
 use marlin_agent_protocol::{
-    HookAgentScope, HookDispatchPolicyReceipt, HookDispatchPolicyReceiptInput, HookEventName,
-    HookHandlerType, HookPolicyDynamicAction, HookPolicyDynamicActionApplicationEffect,
-    HookPolicyDynamicActionApplicationReason, HookPolicyDynamicActionApplicationStatus,
-    HookPolicyDynamicActionKind, HookPolicyDynamicActionTarget, HookRegistryUpdateKind,
-    HookTrustStatus,
+    HookAgentScope, HookDecisionContext, HookDispatchPolicyReceipt, HookDispatchPolicyReceiptInput,
+    HookEventName, HookHandlerType, HookPolicyDecisionReason, HookPolicyDynamicAction,
+    HookPolicyDynamicActionApplicationEffect, HookPolicyDynamicActionApplicationReason,
+    HookPolicyDynamicActionApplicationStatus, HookPolicyDynamicActionKind,
+    HookPolicyDynamicActionReplacement, HookPolicyDynamicActionTarget, HookPolicyExtension,
+    HookRegistryUpdateKind, HookTrustStatus,
 };
 use marlin_agent_runtime::TokioAgentRuntime;
 use std::{collections::BTreeMap, sync::Arc};
@@ -63,6 +64,66 @@ impl HookRegistrationCatalog<HookRegistration> for StaticRegistrationCatalog {
     ) -> Option<HookRegistration> {
         self.registrations.get(target.as_str()).cloned()
     }
+}
+
+fn complex_gerbil_hook_decision_context() -> HookDecisionContext {
+    HookDecisionContext::new()
+        .with_session_id("cheap-test-session")
+        .with_agent_lineage_node("release")
+        .with_workspace_state("dirty")
+        .with_org_memory_hit("needs-human-review")
+        .with_agent_class("customer-agent")
+}
+
+fn complex_gerbil_sample_actions() -> Vec<HookPolicyDynamicAction> {
+    vec![
+        dynamic_action(
+            HookPolicyDynamicActionKind::Register,
+            Some("catalog:customer-agent-hook"),
+            None,
+        ),
+        dynamic_action(
+            HookPolicyDynamicActionKind::Defer,
+            Some("session:release"),
+            None,
+        ),
+        dynamic_action(
+            HookPolicyDynamicActionKind::Deny,
+            Some("dangerous-shell"),
+            None,
+        ),
+        dynamic_action(
+            HookPolicyDynamicActionKind::Rewrite,
+            Some("command"),
+            Some("cargo test --locked"),
+        ),
+    ]
+}
+
+fn dynamic_action(
+    kind: HookPolicyDynamicActionKind,
+    target: Option<&str>,
+    replacement: Option<&str>,
+) -> HookPolicyDynamicAction {
+    HookPolicyDynamicAction {
+        kind,
+        target: target.map(HookPolicyDynamicActionTarget::from),
+        replacement: replacement.map(HookPolicyDynamicActionReplacement::from),
+        reason: None,
+    }
+}
+
+fn policy_decision_reason(
+    policy: &HookDispatchPolicyReceipt,
+    hook_id: &str,
+) -> HookPolicyDecisionReason {
+    policy
+        .decisions
+        .iter()
+        .find(|decision| decision.hook_id.as_str() == hook_id)
+        .expect("policy decision should exist")
+        .reason
+        .clone()
 }
 
 #[tokio::test]
@@ -129,6 +190,96 @@ async fn dispatcher_dynamic_register_action_resolves_catalog_registration() {
             .kind,
         HookRegistryUpdateKind::Registered
     );
+}
+
+#[tokio::test]
+async fn dispatcher_complex_gerbil_policy_action_set_applies_catalog_session_deny_and_rewrite() {
+    let registry = HookRegistry::new()
+        .with_registration(
+            summary_hook_registration(
+                "dangerous-shell",
+                HookEventName::PreToolUse,
+                HookHandlerType::Command,
+                "dangerous-run",
+            )
+            .with_trust(HookTrustStatus::Trusted),
+        )
+        .with_registration(
+            summary_hook_registration(
+                "regular-shell",
+                HookEventName::PreToolUse,
+                HookHandlerType::Command,
+                "regular-run",
+            )
+            .with_trust(HookTrustStatus::Trusted),
+        );
+    let catalog = StaticRegistrationCatalog::default().with_registration(
+        "catalog:customer-agent-hook",
+        summary_hook_registration(
+            "customer-agent-hook",
+            HookEventName::PreToolUse,
+            HookHandlerType::Command,
+            "catalog-run",
+        )
+        .with_trust(HookTrustStatus::Trusted),
+    );
+    let extension = HookPolicyExtension::gerbil_scheme(
+        "marlin/hooks/policy-samples",
+        "decide-hook-policy-sample",
+    );
+    let (runtime, _events) = TokioAgentRuntime::new(4);
+
+    let report = HookDispatcher::new(registry)
+        .with_policy(HookDispatchPolicy::enforce_trusted().with_extension(extension.clone()))
+        .with_registration_catalog(Arc::new(catalog))
+        .with_policy_finalizer(Arc::new(DynamicActionPolicyFinalizer::new(
+            complex_gerbil_sample_actions(),
+        )))
+        .dispatch(
+            &runtime,
+            HookInvocation::new(HookEventName::PreToolUse)
+                .with_agent_scope(HookAgentScope::CustomerAgent)
+                .with_decision_context(complex_gerbil_hook_decision_context())
+                .with_message("cargo test"),
+        )
+        .await;
+
+    assert_eq!(report.policy.extension, extension);
+    assert_eq!(report.selection.selected_count, 3);
+    assert_eq!(report.policy.actions.len(), 4);
+    assert_eq!(report.policy.evaluated_count, 3);
+    assert_eq!(report.policy.allowed_count, 0);
+    assert_eq!(report.policy.rejected_count, 3);
+    assert_eq!(
+        policy_decision_reason(&report.policy, "dangerous-shell"),
+        HookPolicyDecisionReason::ExtensionRejected,
+    );
+    assert_eq!(
+        policy_decision_reason(&report.policy, "regular-shell"),
+        HookPolicyDecisionReason::ExtensionDeferred,
+    );
+    assert_eq!(
+        policy_decision_reason(&report.policy, "customer-agent-hook"),
+        HookPolicyDecisionReason::ExtensionDeferred,
+    );
+    assert_eq!(
+        report
+            .applied_actions
+            .iter()
+            .map(|receipt| receipt.effect.clone())
+            .collect::<Vec<_>>(),
+        vec![
+            HookPolicyDynamicActionApplicationEffect::RegistrationRegistered,
+            HookPolicyDynamicActionApplicationEffect::DispatchDeferred,
+            HookPolicyDynamicActionApplicationEffect::DecisionRejected,
+            HookPolicyDynamicActionApplicationEffect::InvocationRewritten,
+        ],
+    );
+    assert_eq!(
+        report.applied_actions[0].reason,
+        HookPolicyDynamicActionApplicationReason::CatalogResolved,
+    );
+    assert!(report.runs.is_empty());
 }
 
 #[tokio::test]

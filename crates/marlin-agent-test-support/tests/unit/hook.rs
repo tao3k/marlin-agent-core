@@ -1,7 +1,8 @@
 use marlin_agent_protocol::LoopEvidenceKind;
 use marlin_agent_test_support::{
-    assert_custom_hook_policy_receipt, assert_custom_sub_agent_start_hook_summary,
-    assert_sub_agent_hook_dispatch_selection, custom_hook_policy_receipt_fixture,
+    assert_complex_gerbil_hook_policy_receipt, assert_custom_hook_policy_receipt,
+    assert_custom_sub_agent_start_hook_summary, assert_sub_agent_hook_dispatch_selection,
+    complex_gerbil_hook_policy_receipt_fixture, custom_hook_policy_receipt_fixture,
     custom_sub_agent_start_hook_summary_fixture, hook_dispatch_replay_evidence,
     sub_agent_hook_dispatch_selection_fixture,
 };
@@ -28,6 +29,13 @@ fn custom_hook_policy_fixture_records_enforced_extension_decisions() {
 }
 
 #[test]
+fn complex_gerbil_hook_policy_fixture_records_dynamic_actions() {
+    let receipt = complex_gerbil_hook_policy_receipt_fixture();
+
+    assert_complex_gerbil_hook_policy_receipt(&receipt);
+}
+
+#[test]
 fn hook_dispatch_replay_fixture_projects_runtime_evidence() {
     let summary = custom_sub_agent_start_hook_summary_fixture();
     let selection = sub_agent_hook_dispatch_selection_fixture();
@@ -51,8 +59,28 @@ fn hook_dispatch_replay_fixture_projects_runtime_evidence() {
     assert!(detail.contains("policy_extension_kind=GerbilScheme"));
     assert!(detail.contains("allowed_decisions=1"));
     assert!(detail.contains("rejected_decisions=1"));
+    assert!(detail.contains("policy_action_count=0"));
     assert!(detail.contains("summary_agent_scope=SubAgent"));
     assert!(detail.contains("selection_agent_scope=SubAgent"));
     assert!(detail.contains("policy_agent_scope=CustomAgent"));
+    assert!(detail.contains("live_llm=false"));
+}
+
+#[test]
+fn complex_gerbil_hook_policy_replay_projects_dynamic_action_evidence() {
+    let summary = custom_sub_agent_start_hook_summary_fixture();
+    let selection = sub_agent_hook_dispatch_selection_fixture();
+    let policy = complex_gerbil_hook_policy_receipt_fixture();
+
+    let evidence = hook_dispatch_replay_evidence(&summary, &selection, &policy);
+    let detail = evidence.detail.as_deref().expect("hook replay detail");
+
+    assert!(evidence.present);
+    assert_eq!(evidence.kind, LoopEvidenceKind::Runtime);
+    assert!(detail.contains("policy_decisions=1"));
+    assert!(detail.contains("policy_mode=ObserveOnly"));
+    assert!(detail.contains("policy_agent_scope=CustomerAgent"));
+    assert!(detail.contains("policy_action_count=4"));
+    assert!(detail.contains("policy_action_kinds=Register|Defer|Deny|Rewrite"));
     assert!(detail.contains("live_llm=false"));
 }

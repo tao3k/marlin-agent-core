@@ -235,41 +235,55 @@ fn apply_dynamic_decision_action(
     reason: HookPolicyDecisionReason,
     effect: HookPolicyDynamicActionApplicationEffect,
 ) -> HookPolicyDynamicActionApplicationReceipt {
-    let matched = decisions.iter_mut().find_map(|decision| {
-        dynamic_action_targets_decision(action, decision).then(|| {
+    let mut matched_hook_id = None;
+    let mut matched = false;
+    for decision in decisions.iter_mut() {
+        if dynamic_action_targets_decision(action, decision, &effect) {
+            if matched_hook_id.is_none() {
+                matched_hook_id = Some(decision.hook_id.clone());
+            }
             decision.decision = HookPolicyDecision::Rejected;
             decision.reason = reason.clone();
-            decision.hook_id.clone()
-        })
-    });
+            matched = true;
+        }
+    }
 
-    match matched {
-        Some(hook_id) => dynamic_action_receipt(
+    if matched {
+        dynamic_action_receipt(
             action,
             HookPolicyDynamicActionApplicationStatus::Applied,
             effect,
             HookPolicyDynamicActionApplicationReason::TargetMatched,
-            Some(hook_id),
+            matched_hook_id,
             None,
-        ),
-        None => dynamic_action_receipt(
+        )
+    } else {
+        dynamic_action_receipt(
             action,
             HookPolicyDynamicActionApplicationStatus::Ignored,
             HookPolicyDynamicActionApplicationEffect::Noop,
             HookPolicyDynamicActionApplicationReason::TargetNotMatched,
             None,
             None,
-        ),
+        )
     }
 }
 
 fn dynamic_action_targets_decision(
     action: &HookPolicyDynamicAction,
     decision: &HookPolicyDecisionReceipt,
+    effect: &HookPolicyDynamicActionApplicationEffect,
 ) -> bool {
-    match action.target.as_ref() {
-        Some(target) => target.as_str() == decision.hook_id.as_str(),
+    match action.target.as_ref().map(|target| target.as_str()) {
+        Some(target) if target == decision.hook_id.as_str() => true,
+        Some(target)
+            if effect == &HookPolicyDynamicActionApplicationEffect::DispatchDeferred
+                && target.starts_with("session:") =>
+        {
+            true
+        }
         None => true,
+        Some(_) => false,
     }
 }
 
