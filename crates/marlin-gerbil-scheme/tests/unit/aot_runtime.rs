@@ -147,13 +147,37 @@ fn deck_runtime_native_aot_build_runs_link_unit_runner() {
         .prefix("marlin-gerbil-native-aot-build-")
         .tempdir()
         .expect("create root");
-    let gxc = root.path().join("toolchain/gxc");
-    let gsc = root.path().join("toolchain/gsc");
+    let gerbil_prefix = root.path().join("gerbil-prefix");
+    fs::create_dir_all(gerbil_prefix.join("bin")).expect("create Gerbil bin");
+    fs::create_dir_all(gerbil_prefix.join("lib/gerbil")).expect("create Gerbil lib");
+    write_empty_file(&gerbil_prefix.join("include/gambit.h"));
+    write_empty_file(&gerbil_prefix.join("lib/libgambit.a"));
+
+    let gxc = gerbil_prefix.join("bin/gxc");
+    let gsc = gerbil_prefix.join("bin/gsc");
     let nm = root.path().join("toolchain/nm");
+    let expected_prefix = gerbil_prefix.to_string_lossy();
     write_executable(
         &gxc,
-        r#"#!/bin/sh
+        format!(
+            r#"#!/bin/sh
 set -eu
+if [ "${{GERBIL_HOME:-}}" != "{expected_prefix}" ]; then
+  echo "expected GERBIL_HOME={expected_prefix}, got ${{GERBIL_HOME:-}}" >&2
+  exit 71
+fi
+case "${{GAMBOPT:-}}" in
+  *"~~bin={expected_prefix}/bin"* ) ;;
+  * ) echo "missing ~~bin in GAMBOPT=${{GAMBOPT:-}}" >&2; exit 72 ;;
+esac
+case "${{GAMBOPT:-}}" in
+  *"~~lib={expected_prefix}/lib"* ) ;;
+  * ) echo "missing ~~lib in GAMBOPT=${{GAMBOPT:-}}" >&2; exit 73 ;;
+esac
+case "${{GAMBOPT:-}}" in
+  *"~~include={expected_prefix}/include"* ) ;;
+  * ) echo "missing ~~include in GAMBOPT=${{GAMBOPT:-}}" >&2; exit 74 ;;
+esac
 out=""
 previous=""
 for arg in "$@"; do
@@ -169,11 +193,31 @@ mkdir -p "$out/marlin-deck-runtime/src/marlin" "$out/static"
 : > "$out/marlin-deck-runtime/src/marlin/deck-runtime-native~0.scm"
 : > "$out/static/marlin-deck-runtime__src__marlin__deck-runtime-native.scm"
 "#,
+            expected_prefix = expected_prefix
+        )
+        .as_str(),
     );
     write_executable(
         &gsc,
-        r#"#!/bin/sh
+        format!(
+            r#"#!/bin/sh
 set -eu
+if [ "${{GERBIL_HOME:-}}" != "{expected_prefix}" ]; then
+  echo "expected GERBIL_HOME={expected_prefix}, got ${{GERBIL_HOME:-}}" >&2
+  exit 71
+fi
+case "${{GAMBOPT:-}}" in
+  *"~~bin={expected_prefix}/bin"* ) ;;
+  * ) echo "missing ~~bin in GAMBOPT=${{GAMBOPT:-}}" >&2; exit 72 ;;
+esac
+case "${{GAMBOPT:-}}" in
+  *"~~lib={expected_prefix}/lib"* ) ;;
+  * ) echo "missing ~~lib in GAMBOPT=${{GAMBOPT:-}}" >&2; exit 73 ;;
+esac
+case "${{GAMBOPT:-}}" in
+  *"~~include={expected_prefix}/include"* ) ;;
+  * ) echo "missing ~~include in GAMBOPT=${{GAMBOPT:-}}" >&2; exit 74 ;;
+esac
 mode=""
 source=""
 skip_next=0
@@ -202,6 +246,9 @@ else
   : > "$dir/deck-runtime-native~0.o"
 fi
 "#,
+            expected_prefix = expected_prefix
+        )
+        .as_str(),
     );
     write_executable(
         &nm,

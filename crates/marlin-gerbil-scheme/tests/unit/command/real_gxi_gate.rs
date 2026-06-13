@@ -34,6 +34,15 @@ fn real_gxi_gate_command_defaults_to_workspace_gerbil_tree() {
         command.env().get(&OsString::from(MARLIN_GERBIL_GXI_ENV)),
         Some(&gxi.into_os_string())
     );
+    assert_eq!(
+        command.packages(),
+        &[
+            "marlin-gerbil-scheme".to_string(),
+            "marlin-agent-harness".to_string()
+        ]
+    );
+    assert_eq!(command.test_binary(), "unit_test");
+    assert_eq!(command.filter(), "real_gxi");
     assert!(!command.describe().contains("MARLIN_REQUIRE_REAL_GXI"));
 }
 
@@ -66,11 +75,11 @@ fn real_gxi_gate_command_uses_explicit_paths_and_filter() {
     );
     assert_eq!(
         command.env().get(&OsString::from("GERBIL_HOME")),
-        Some(&gerbil_home.into_os_string())
+        Some(&gerbil_home.clone().into_os_string())
     );
     assert_eq!(
         command.env().get(&OsString::from(MARLIN_GERBIL_GXI_ENV)),
-        Some(&gxi.into_os_string())
+        Some(&gxi.clone().into_os_string())
     );
     assert!(
         command
@@ -82,6 +91,46 @@ fn real_gxi_gate_command_uses_explicit_paths_and_filter() {
             .describe()
             .contains("-p marlin-agent-harness --locked")
     );
+    assert_eq!(command.gerbil_home(), gerbil_home.as_path());
+    assert_eq!(command.gxi(), gxi.as_path());
+}
+
+#[test]
+fn real_gxi_gate_plan_renders_stable_diagnostics() {
+    let workspace = TempDir::new().expect("workspace tempdir");
+    let gxi = write_fake_workspace_gxi(workspace.path());
+
+    let command = RealGxiGateCommand::from_args(vec![
+        OsString::from("gate"),
+        OsString::from("--workspace-root"),
+        workspace.path().as_os_str().to_os_string(),
+        OsString::from("--cargo"),
+        OsString::from("cargo-test"),
+        OsString::from("--print-plan"),
+    ])
+    .expect("real gxi gate command");
+    let plan = command.plan();
+    let rendered = plan.render();
+
+    assert_eq!(plan.workspace_root.as_path(), workspace.path());
+    assert_eq!(plan.cargo, PathBuf::from("cargo-test"));
+    assert_eq!(
+        plan.packages,
+        vec![
+            "marlin-gerbil-scheme".to_string(),
+            "marlin-agent-harness".to_string()
+        ]
+    );
+    assert_eq!(plan.test_binary, "unit_test");
+    assert_eq!(plan.filter, "real_gxi");
+    assert!(plan.ignored);
+    assert_eq!(plan.gxi, gxi);
+    assert!(rendered.starts_with("real_gxi_gate_plan\n"));
+    assert!(rendered.contains("packages=marlin-gerbil-scheme,marlin-agent-harness"));
+    assert!(rendered.contains("test_binary=unit_test"));
+    assert!(rendered.contains("filter=real_gxi"));
+    assert!(rendered.contains("ignored=true"));
+    assert!(rendered.contains("command=cd "));
 }
 
 #[test]

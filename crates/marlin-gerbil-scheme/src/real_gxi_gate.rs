@@ -39,6 +39,10 @@ pub fn run_real_gxi_gate_from_args(
         println!("{}", command.describe());
         return Ok(());
     }
+    if request.print_plan {
+        println!("{}", command.plan().render());
+        return Ok(());
+    }
 
     let status = command.to_command().status().map_err(|error| {
         RealGxiGateError::message(format!("failed to run real gxi gate: {error}"))
@@ -83,6 +87,7 @@ struct RealGxiGateRequest {
     cargo: Option<PathBuf>,
     filter: String,
     print_command: bool,
+    print_plan: bool,
     help: bool,
 }
 
@@ -100,6 +105,7 @@ impl RealGxiGateRequest {
             cargo: None,
             filter: DEFAULT_TEST_FILTER.to_string(),
             print_command: false,
+            print_plan: false,
             help: false,
         };
 
@@ -123,6 +129,9 @@ impl RealGxiGateRequest {
                 "--print-command" => {
                     request.print_command = true;
                 }
+                "--print-plan" => {
+                    request.print_plan = true;
+                }
                 "-h" | "--help" => {
                     request.help = true;
                 }
@@ -144,6 +153,11 @@ impl RealGxiGateRequest {
 pub struct RealGxiGateCommand {
     cargo: PathBuf,
     workspace_root: PathBuf,
+    packages: Vec<String>,
+    test_binary: String,
+    filter: String,
+    gerbil_home: PathBuf,
+    gxi: PathBuf,
     args: Vec<OsString>,
     env: BTreeMap<OsString, OsString>,
 }
@@ -212,19 +226,27 @@ impl RealGxiGateCommand {
             .clone()
             .or_else(|| env::var_os("CARGO").map(PathBuf::from))
             .unwrap_or_else(|| PathBuf::from("cargo"));
+        let packages = vec![
+            "marlin-gerbil-scheme".to_string(),
+            "marlin-agent-harness".to_string(),
+        ];
+        let test_binary = "unit_test".to_string();
+        let filter = request.filter.clone();
         let args = vec![
             "test".into(),
             "-p".into(),
-            "marlin-gerbil-scheme".into(),
+            packages[0].clone().into(),
             "-p".into(),
-            "marlin-agent-harness".into(),
+            packages[1].clone().into(),
             "--locked".into(),
             "--test".into(),
-            "unit_test".into(),
-            request.filter.clone().into(),
+            test_binary.clone().into(),
+            filter.clone().into(),
             "--".into(),
             "--ignored".into(),
         ];
+        let gate_gerbil_home = gerbil_home.clone();
+        let gate_gxi = gxi.clone();
         let env = BTreeMap::from([
             (
                 OsString::from(GERBIL_HOME_ENV),
@@ -236,6 +258,11 @@ impl RealGxiGateCommand {
         Ok(Self {
             cargo,
             workspace_root,
+            packages,
+            test_binary,
+            filter,
+            gerbil_home: gate_gerbil_home,
+            gxi: gate_gxi,
             args,
             env,
         })
@@ -263,6 +290,31 @@ impl RealGxiGateCommand {
         &self.args
     }
 
+    /// Returns the workspace packages covered by the gate.
+    pub fn packages(&self) -> &[String] {
+        &self.packages
+    }
+
+    /// Returns the Cargo test binary used by the gate.
+    pub fn test_binary(&self) -> &str {
+        self.test_binary.as_str()
+    }
+
+    /// Returns the test filter used by the gate.
+    pub fn filter(&self) -> &str {
+        self.filter.as_str()
+    }
+
+    /// Returns the Gerbil home used by the gate.
+    pub fn gerbil_home(&self) -> &Path {
+        &self.gerbil_home
+    }
+
+    /// Returns the `gxi` executable used by the gate.
+    pub fn gxi(&self) -> &Path {
+        &self.gxi
+    }
+
     /// Returns the environment variables injected into the gate command.
     pub fn env(&self) -> &BTreeMap<OsString, OsString> {
         &self.env
@@ -287,6 +339,54 @@ impl RealGxiGateCommand {
             self.workspace_root.display(),
             self.cargo.display()
         )
+    }
+
+    /// Returns a typed execution plan for diagnostics and CI logs.
+    pub fn plan(&self) -> RealGxiGatePlan {
+        RealGxiGatePlan {
+            workspace_root: self.workspace_root.clone(),
+            cargo: self.cargo.clone(),
+            packages: self.packages.clone(),
+            test_binary: self.test_binary.clone(),
+            filter: self.filter.clone(),
+            ignored: true,
+            gerbil_home: self.gerbil_home.clone(),
+            gxi: self.gxi.clone(),
+            command: self.describe(),
+        }
+    }
+}
+
+/// Stable execution plan emitted by the real `gxi` gate.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RealGxiGatePlan {
+    pub workspace_root: PathBuf,
+    pub cargo: PathBuf,
+    pub packages: Vec<String>,
+    pub test_binary: String,
+    pub filter: String,
+    pub ignored: bool,
+    pub gerbil_home: PathBuf,
+    pub gxi: PathBuf,
+    pub command: String,
+}
+
+impl RealGxiGatePlan {
+    /// Render the plan as newline-delimited key-value diagnostics.
+    pub fn render(&self) -> String {
+        [
+            "real_gxi_gate_plan".to_string(),
+            format!("workspace_root={}", self.workspace_root.display()),
+            format!("cargo={}", self.cargo.display()),
+            format!("packages={}", self.packages.join(",")),
+            format!("test_binary={}", self.test_binary),
+            format!("filter={}", self.filter),
+            format!("ignored={}", self.ignored),
+            format!("gerbil_home={}", self.gerbil_home.display()),
+            format!("gxi={}", self.gxi.display()),
+            format!("command={}", self.command),
+        ]
+        .join("\n")
     }
 }
 
@@ -334,8 +434,8 @@ fn display_os(value: &OsStr) -> String {
 fn usage(program: &str) -> String {
     format!(
         "usage: {program} [--workspace-root <path>] [--gerbil-home <path>] [--gxi <path>] \
-[--cargo <path>] [--filter <test-filter>] [--print-command]\n\n\
-Runs: cargo test -p marlin-gerbil-scheme --locked --test unit_test <filter> -- --ignored\n\
+[--cargo <path>] [--filter <test-filter>] [--print-command] [--print-plan]\n\n\
+Runs: cargo test -p marlin-gerbil-scheme -p marlin-agent-harness --locked --test unit_test <filter> -- --ignored\n\
 Defaults: filter={DEFAULT_TEST_FILTER}, gxi=.data/gerbil/build/bin/gxi"
     )
 }

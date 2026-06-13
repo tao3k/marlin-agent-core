@@ -24,6 +24,8 @@ fn emit_native_link_rerun_inputs() {
         "MARLIN_DECK_RUNTIME_NATIVE_C_COMPILER",
         "MARLIN_DECK_RUNTIME_NATIVE_GAMBIT_LINK_LIBRARY",
         GAMBIT_LINK_SEARCH_DIR_ENV,
+        "GAMBOPT",
+        "GERBIL_HOME",
         "MARLIN_GERBIL_GSC",
         "MARLIN_GERBIL_GXC",
     ] {

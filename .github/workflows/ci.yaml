@@ -17,6 +17,16 @@ on:
         required: false
         default: '["macos-latest"]'
         type: string
+      run_linked_native:
+        description: Run the linked-native Deck runtime AOT link and benchmark gate.
+        required: false
+        default: false
+        type: boolean
+      linked_native_runner:
+        description: JSON runs-on labels for the linked-native job, for example ["macos-latest"] or ["self-hosted","Linux"].
+        required: false
+        default: '["macos-latest"]'
+        type: string
 
 permissions:
   contents: read
@@ -220,10 +230,13 @@ jobs:
 
           "$gxi_program" --version || true
 
-      - name: Run real gxi tests
+      - name: Print real gxi gate plan
+        run: cargo run --locked -p marlin-gerbil-scheme --bin marlin-gerbil-real-gxi-gate -- --print-plan
+
+      - name: Run real gxi release gate
         run: |
           mkdir -p "$MARLIN_RELEASE_STATUS_ARTIFACT_DIR"
-          cargo test -p marlin-gerbil-scheme --test unit_test --locked command::real_gxi -- --ignored --nocapture
+          cargo run --locked -p marlin-gerbil-scheme --bin marlin-gerbil-real-gxi-gate
 
       - name: Upload release status artifacts
         if: ${{ always() }}
@@ -232,3 +245,86 @@ jobs:
           name: release-status-${{ runner.os }}
           path: ${{ env.MARLIN_RELEASE_STATUS_ARTIFACT_DIR }}
           if-no-files-found: error
+
+  linked-native:
+    name: Linked native AOT gate
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_linked_native }}
+    runs-on: ${{ fromJSON(inputs.linked_native_runner || '["macos-latest"]') }}
+    timeout-minutes: 60
+    env:
+      CARGO_INCREMENTAL: "0"
+      MARLIN_DECK_RUNTIME_NATIVE_C_COMPILER: clang
+      MARLIN_DECK_RUNTIME_NATIVE_GAMBIT_LINK_LIBRARY: ${{ vars.MARLIN_DECK_RUNTIME_NATIVE_GAMBIT_LINK_LIBRARY }}
+      MARLIN_DECK_RUNTIME_NATIVE_GAMBIT_LINK_SEARCH_DIR: ${{ vars.MARLIN_DECK_RUNTIME_NATIVE_GAMBIT_LINK_SEARCH_DIR }}
+      MARLIN_GERBIL_GSC: ${{ vars.MARLIN_GERBIL_GSC }}
+      MARLIN_GERBIL_GXC: ${{ vars.MARLIN_GERBIL_GXC }}
+      MARLIN_GERBIL_GXI: ${{ vars.MARLIN_GERBIL_GXI }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: marlin-agent-core-linked-native-${{ runner.os }}
+          cache-on-failure: true
+
+      - name: Fetch workspace dependencies
+        run: cargo fetch --locked
+
+      - name: Install native compiler
+        run: |
+          case "${{ runner.os }}" in
+            Linux)
+              sudo apt-get update
+              sudo apt-get install -y clang
+              ;;
+            macOS)
+              clang --version
+              ;;
+            *)
+              echo "::error::run_linked_native requested on unsupported runner OS ${{ runner.os }}."
+              exit 1
+              ;;
+          esac
+
+      - name: Install Gerbil with Homebrew when needed
+        run: |
+          if [ -n "${MARLIN_GERBIL_GSC:-}" ] && [ -x "$MARLIN_GERBIL_GSC" ] && \
+             [ -n "${MARLIN_GERBIL_GXC:-}" ] && [ -x "$MARLIN_GERBIL_GXC" ]; then
+            exit 0
+          fi
+
+          if ! command -v brew >/dev/null 2>&1; then
+            echo "::error::run_linked_native requested but brew is unavailable. Set MARLIN_GERBIL_GSC and MARLIN_GERBIL_GXC, or choose a runner with Homebrew."
+            exit 1
+          fi
+
+          brew list --formula mighty-gerbils/gerbil/gerbil-scheme >/dev/null 2>&1 || \
+            brew install mighty-gerbils/gerbil/gerbil-scheme
+          gerbil_prefix="$(brew --prefix mighty-gerbils/gerbil/gerbil-scheme)"
+          echo "MARLIN_GERBIL_GSC=$gerbil_prefix/bin/gsc" >> "$GITHUB_ENV"
+          echo "MARLIN_GERBIL_GXC=$gerbil_prefix/bin/gxc" >> "$GITHUB_ENV"
+          echo "MARLIN_GERBIL_GXI=$gerbil_prefix/bin/gxi" >> "$GITHUB_ENV"
+
+      - name: Resolve native Gerbil toolchain
+        run: |
+          for name in MARLIN_GERBIL_GSC MARLIN_GERBIL_GXC; do
+            value="$(printenv "$name")"
+            if [ -z "$value" ] || [ ! -x "$value" ]; then
+              echo "::error::$name must point at an executable for run_linked_native."
+              exit 1
+            fi
+            "$value" --version || true
+          done
+
+      - name: Compile linked-native tests
+        run: cargo test --locked -p marlin-deck-runtime-native --features linked-native --no-run
+
+      - name: Run linked-native tests
+        run: cargo test --locked -p marlin-deck-runtime-native --features linked-native
+
+      - name: Benchmark linked selector
+        run: cargo bench --locked -p marlin-deck-runtime-native --features linked-native --bench linked_selector

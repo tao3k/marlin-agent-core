@@ -32,6 +32,14 @@ Run this gate on machines with Gerbil installed. The crate discovers =gxi=
 through =MARLIN_GERBIL_GXI= first, then falls back to the Homebrew
 =gerbil-scheme= path.
 
+The workflow calls the native gate binary instead of duplicating the cargo test
+filter inline. Print the plan first when auditing a runner:
+
+#+begin_src sh
+cargo run --locked -p marlin-gerbil-scheme --bin marlin-gerbil-real-gxi-gate -- --print-plan
+cargo run --locked -p marlin-gerbil-scheme --bin marlin-gerbil-real-gxi-gate
+#+end_src
+
 #+begin_src sh
 direnv exec . cargo test -p marlin-gerbil-scheme --test unit_test command::real_gxi -- --ignored --nocapture
 direnv exec . cargo run -p marlin-gerbil-scheme --example workspace-patch-intent
@@ -49,12 +57,52 @@ Expected outcome:
   =:marlin/adapter= runtime, dry-runs the intent, and prints
   =workflow_accepted true= plus =evidence_present true=.
 
+If the gate fails after a Gerbil/Gambit version repair, first verify the user
+package surface. Stale =clan= artefacts can report old/new compiler mismatches
+or missing exports, and a missing =clan/poo= build reports
+=cannot find library module :clan/poo/object=.
+
+#+begin_src sh
+env GERBIL_HOME="$PWD/.data/gerbil/build" \
+  .data/gerbil/build/bin/gxi -e '(begin (import :clan/base) (display "clan-base-ok") (newline))'
+env GERBIL_HOME="$PWD/.data/gerbil/build" \
+  .data/gerbil/build/bin/gxi -e '(begin (import :clan/poo/object) (display "poo-object-ok") (newline))'
+rm -rf "$HOME/.gerbil/lib/clan"
+env GERBIL_HOME="$PWD/.data/gerbil/build" \
+  .data/gerbil/build/bin/gxpkg build clan
+env GERBIL_HOME="$PWD/.data/gerbil/build" \
+  .data/gerbil/build/bin/gxpkg build --dependencies clan/poo
+#+end_src
+
 Observed local evidence on 2026-06-11:
 
 #+begin_src text
 direnv exec . cargo test -p marlin-gerbil-scheme --test unit_test command::real_gxi -- --ignored --nocapture
 test result: ok. 17 passed; 0 failed; 0 ignored; 26 filtered out
 #+end_src
+
+** CI Gate Matrix
+
+[[file:../../.github/workflows/ci.yaml][.github/workflows/ci.yaml]] keeps the
+default Rust gate separate from gates that require a real Gerbil/Gambit native
+toolchain.
+
+| Gate | Trigger | Real tool requirement | Command boundary |
+|-
+| Rust format/check/lint/test | push, pull request, manual | none | =cargo fmt=, =cargo check --workspace --all-targets=, =cargo clippy --workspace --all-targets=, =cargo test --workspace= |
+| Gerbil package surface | push, pull request, manual | none | =cargo test -p marlin-gerbil-ir -p marlin-gerbil-scheme -p marlin-org-workflow=, binary/example check, package asset audit |
+| Real =gxi= release gate | manual =run_real_gxi= | executable =gxi= via =MARLIN_GERBIL_GXI= or Homebrew =gerbil-scheme= | =marlin-gerbil-real-gxi-gate --print-plan=, then =marlin-gerbil-real-gxi-gate= |
+| Linked native AOT gate | manual =run_linked_native= | executable =gsc= and =gxc= via =MARLIN_GERBIL_GSC= / =MARLIN_GERBIL_GXC= or Homebrew =gerbil-scheme=; =clang= as C compiler | =cargo test -p marlin-deck-runtime-native --features linked-native= and =cargo bench -p marlin-deck-runtime-native --features linked-native --bench linked_selector= |
+
+The manual gate runners are configurable through JSON =runs-on= inputs. Use
+=real_gxi_runner= or =linked_native_runner= for self-hosted Linux or macOS
+runners that already provide Gerbil/Gambit. Generic hosted Linux runners are
+not treated as Gerbil-ready unless the required executables are supplied through
+repository variables or the runner image.
+
+The linked native AOT runner infers the Gerbil/Gambit prefix from =gsc= and
+=gxc=, then injects =GERBIL_HOME= and =GAMBOPT= for compiler subprocesses. CI
+therefore needs real tool paths, not a pre-created =~~bin= repair directory.
 
 ** Distribution Boundary
 

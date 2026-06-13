@@ -141,19 +141,28 @@ The current real linked typed selector benchmark uses the initialized linked
 selector directly through =select_policy_index=:
 
 #+begin_src text
-deck_runtime_linked_native_selector/1_policy: [1.3301 us 1.3574 us 1.3941 us]
-deck_runtime_linked_native_selector/8_policy: [6.7139 us 6.7731 us 6.8317 us]
+deck_runtime_linked_native_selector/1_policy: [1.8082 us 1.8629 us 1.9122 us]
+deck_runtime_linked_native_selector/8_policy: [7.2820 us 9.9488 us 14.287 us]
 #+end_src
 
 The current local macOS benchmark must force =clang= because the Homebrew GCC
 toolchain can pick an SDK header set that lacks =_bounds.h=. With
-=MARLIN_DECK_RUNTIME_NATIVE_C_COMPILER=clang=, the linked selector baseline is
-approximately 1.36 microseconds for one policy and 6.77 microseconds for eight
-policies.
+=MARLIN_DECK_RUNTIME_NATIVE_C_COMPILER=clang= and explicit local
+=MARLIN_GERBIL_GSC= / =MARLIN_GERBIL_GXC=, the 2026-06-13 linked selector
+baseline is approximately 1.86 microseconds for one policy and 9.95
+microseconds for eight policies. The eight-policy run had a wide outlier range,
+so the performance target remains open until repeated runs stabilize below the
+earlier 6.77 microsecond baseline.
 
 The previous JSON-returning smoke path measured the wrong boundary because it
 included JSON serialization plus runtime-owned byte-buffer allocation/free. That
 path is no longer the native API shape.
+
+The native AOT command runner infers the Gerbil/Gambit prefix from =gxc= and
+=gsc=. When the prefix has =bin=, =lib/gerbil=, =include/gambit.h=, and a
+Gambit runtime library, the runner injects =GERBIL_HOME= and =GAMBOPT= for the
+compiler subprocesses. This avoids repairing a source-built Gerbil tree just to
+make Gambit resolve =~~bin=, =~~lib=, and =~~include=.
 
 ** Verification
 
@@ -165,6 +174,8 @@ direnv exec . cargo test -p marlin-deck-runtime-native-build
 direnv exec . cargo test -p marlin-deck-runtime-native
 direnv exec . env \
   MARLIN_DECK_RUNTIME_NATIVE_C_COMPILER=clang \
+  MARLIN_GERBIL_GSC="$PWD/.data/gerbil/build/bin/gsc" \
+  MARLIN_GERBIL_GXC="$PWD/.data/gerbil/build/bin/gxc" \
   cargo test -p marlin-deck-runtime-native --features linked-native --no-run
 #+end_src
 
@@ -174,10 +185,14 @@ objects produced by the =marlin-deck-runtime-native= feature build:
 #+begin_src sh
 direnv exec . env \
   MARLIN_DECK_RUNTIME_NATIVE_C_COMPILER=clang \
+  MARLIN_GERBIL_GSC="$PWD/.data/gerbil/build/bin/gsc" \
+  MARLIN_GERBIL_GXC="$PWD/.data/gerbil/build/bin/gxc" \
   cargo test -p marlin-deck-runtime-native --features linked-native \
     linked_native_route_resolver_calls_real_deck_selector -- --nocapture
 direnv exec . env \
   MARLIN_DECK_RUNTIME_NATIVE_C_COMPILER=clang \
+  MARLIN_GERBIL_GSC="$PWD/.data/gerbil/build/bin/gsc" \
+  MARLIN_GERBIL_GXC="$PWD/.data/gerbil/build/bin/gxc" \
   cargo bench -p marlin-deck-runtime-native --features linked-native \
     --bench linked_selector
 #+end_src
@@ -200,7 +215,10 @@ The real linked selector benchmark is feature gated because it depends on the
 native linked object:
 
 #+begin_src sh
-MARLIN_DECK_RUNTIME_NATIVE_C_COMPILER=clang cargo bench -p marlin-deck-runtime-native --features linked-native --bench linked_selector
+MARLIN_DECK_RUNTIME_NATIVE_C_COMPILER=clang \
+MARLIN_GERBIL_GSC="$PWD/.data/gerbil/build/bin/gsc" \
+MARLIN_GERBIL_GXC="$PWD/.data/gerbil/build/bin/gxc" \
+cargo bench -p marlin-deck-runtime-native --features linked-native --bench linked_selector
 #+end_src
 
 ** Next Work

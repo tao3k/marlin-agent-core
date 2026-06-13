@@ -153,6 +153,18 @@ The explicit local Gerbil gate is:
 cargo run -p marlin-gerbil-scheme --bin marlin-gerbil-real-gxi-gate
 #+end_src
 
+For CI logs and local diagnosis, print the typed gate plan without executing
+tests:
+
+#+begin_src sh
+cargo run -p marlin-gerbil-scheme --bin marlin-gerbil-real-gxi-gate -- --print-plan
+#+end_src
+
+The plan is newline-delimited key-value text with =workspace_root=, =cargo=,
+=packages=, =test_binary=, =filter=, =ignored=, =gerbil_home=, =gxi=, and
+=command=. It is intentionally not a Scheme DSL and not part of the native C
+ABI path.
+
 The gate validates the local =gxi= executable and Gerbil home before invoking:
 
 #+begin_src sh
