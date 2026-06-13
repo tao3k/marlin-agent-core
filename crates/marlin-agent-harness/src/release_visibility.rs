@@ -1,6 +1,8 @@
 //! Release visibility evidence bridge for `Gerbil` release topology gates.
 
-use marlin_agent_protocol::{LoopEvidence, LoopEvidenceKind};
+use marlin_agent_protocol::{
+    GraphNativeAbiReadinessReceipt, GraphNativeAbiReadinessStatus, LoopEvidence, LoopEvidenceKind,
+};
 use marlin_gerbil_ir::{ReleaseGateSpec, ReleaseTopologySpec, ReleaseVisibilitySpec};
 
 /// Execution status captured for one release gate receipt.
@@ -103,6 +105,44 @@ pub fn release_gate_execution_receipt(
         diagnostics: Vec::new(),
         visibility_evidence: release_gate_visibility_evidence(topology, gate),
     }
+}
+
+/// Project a graph native ABI readiness receipt into a release gate execution receipt.
+pub fn native_abi_readiness_release_gate_execution_receipt(
+    topology: &ReleaseTopologySpec,
+    gate: &ReleaseGateSpec,
+    readiness: &GraphNativeAbiReadinessReceipt,
+) -> ReleaseGateExecutionReceipt {
+    let status = match readiness.status {
+        GraphNativeAbiReadinessStatus::Ready => ReleaseGateExecutionStatus::Passed,
+        GraphNativeAbiReadinessStatus::MissingSymbols => ReleaseGateExecutionStatus::Failed,
+    };
+    let mut receipt = release_gate_execution_receipt(topology, gate, status);
+    if !receipt
+        .evidence_keys
+        .iter()
+        .any(|key| key == "native_abi_readiness")
+    {
+        receipt
+            .evidence_keys
+            .push("native_abi_readiness".to_owned());
+    }
+    if readiness.status == GraphNativeAbiReadinessStatus::MissingSymbols {
+        receipt.diagnostics.extend([
+            "native_abi_readiness.missing_symbols".to_owned(),
+            format!("native_abi_readiness.abi_id={}", readiness.abi_id.as_str()),
+            format!(
+                "native_abi_readiness.missing={}",
+                readiness
+                    .missing_symbols
+                    .iter()
+                    .map(|symbol| symbol.as_str())
+                    .collect::<Vec<_>>()
+                    .join(",")
+            ),
+        ]);
+    }
+    receipt
 }
 
 /// Convert all release gate visibility declarations in a topology into harness evidence.
