@@ -28,21 +28,38 @@ pub enum GerbilSchemeTypeDecodeError {
         field_name: GerbilSchemeFieldName,
         field_type_id: GerbilSchemeTypeId,
     },
+    ArrayElementTypeOnNonArrayField {
+        type_id: GerbilSchemeTypeId,
+        field_name: GerbilSchemeFieldName,
+        field_type_id: GerbilSchemeTypeId,
+    },
     UnknownType {
         type_id: GerbilSchemeTypeId,
     },
     ValueTypeMismatch {
         type_id: GerbilSchemeTypeId,
         expected: GerbilSchemeTypeId,
+        field_path: String,
     },
     MissingRequiredField {
         type_id: GerbilSchemeTypeId,
         field_name: GerbilSchemeFieldName,
+        field_path: String,
     },
     FieldTypeMismatch {
         type_id: GerbilSchemeTypeId,
         field_name: GerbilSchemeFieldName,
         expected: GerbilSchemeTypeId,
+        field_path: String,
+    },
+    RecursiveTypeReference {
+        type_id: GerbilSchemeTypeId,
+        field_path: String,
+    },
+    DynamicValidationDepthExceeded {
+        type_id: GerbilSchemeTypeId,
+        max_depth: usize,
+        field_path: String,
     },
     SchemaMismatch {
         type_id: GerbilSchemeTypeId,
@@ -111,36 +128,76 @@ impl Display for GerbilSchemeTypeDecodeError {
                 field_name.as_str(),
                 field_type_id.as_str()
             ),
+            Self::ArrayElementTypeOnNonArrayField {
+                type_id,
+                field_name,
+                field_type_id,
+            } => write!(
+                formatter,
+                "Scheme type {} field {} declares element_type_id for non-array type {}",
+                type_id.as_str(),
+                field_name.as_str(),
+                field_type_id.as_str()
+            ),
             Self::UnknownType { type_id } => write!(
                 formatter,
                 "Scheme typed value has unknown type_id {}",
                 type_id.as_str()
             ),
-            Self::ValueTypeMismatch { type_id, expected } => write!(
+            Self::ValueTypeMismatch {
+                type_id,
+                expected,
+                field_path,
+            } => write!(
                 formatter,
-                "Scheme typed value {} payload must be {}",
+                "Scheme typed value {} path {} must be {}",
                 type_id.as_str(),
+                field_path,
                 expected.as_str()
             ),
             Self::MissingRequiredField {
                 type_id,
                 field_name,
+                field_path,
             } => write!(
                 formatter,
-                "Scheme typed value {} is missing required field {}",
+                "Scheme typed value {} is missing required field {} at path {}",
                 type_id.as_str(),
-                field_name.as_str()
+                field_name.as_str(),
+                field_path
             ),
             Self::FieldTypeMismatch {
                 type_id,
                 field_name,
                 expected,
+                field_path,
             } => write!(
                 formatter,
-                "Scheme typed value {} field {} must be {}",
+                "Scheme typed value {} field {} at path {} must be {}",
                 type_id.as_str(),
                 field_name.as_str(),
+                field_path,
                 expected.as_str()
+            ),
+            Self::RecursiveTypeReference {
+                type_id,
+                field_path,
+            } => write!(
+                formatter,
+                "Scheme typed value recursion reached type_id {} at path {}",
+                type_id.as_str(),
+                field_path
+            ),
+            Self::DynamicValidationDepthExceeded {
+                type_id,
+                max_depth,
+                field_path,
+            } => write!(
+                formatter,
+                "Scheme typed value dynamic validation exceeded depth {} at type_id {} path {}",
+                max_depth,
+                type_id.as_str(),
+                field_path
             ),
             Self::SchemaMismatch {
                 type_id,

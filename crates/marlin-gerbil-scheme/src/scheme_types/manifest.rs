@@ -12,6 +12,8 @@ use super::{
 pub struct GerbilSchemeTypeFieldSpec {
     pub name: GerbilSchemeFieldName,
     pub type_id: GerbilSchemeTypeId,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub element_type_id: Option<GerbilSchemeTypeId>,
     #[serde(default)]
     pub required: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]

@@ -1,3 +1,4 @@
+mod dynamic_graph_policy;
 mod failures;
 mod happy_path;
 
