@@ -21,7 +21,9 @@ use marlin_gerbil_scheme::{
 const RECEIPT_JSON: &str = r#"{"schema_id":"marlin-deck-runtime.model-route-selection.v1","command":"cargo test","agent_scope":"sub-agent","matched":true,"policy":{"kind":"marlin-deck-runtime.model-route-policy.v1","name":"cheap-test-runner","provider":"openai","model":"gpt-5-mini","command_prefixes":["cargo test"],"agent_scopes":["sub-agent"],"context_mode":"forked-context","isolation_mode":"workspace-isolated"}}"#;
 const REAL_PACKAGE_BENCH_ENV: &str = "MARLIN_GERBIL_REAL_PACKAGE_BENCH";
 const REAL_STRATEGY_BENCH_ENV: &str = "MARLIN_GERBIL_REAL_STRATEGY_BENCH";
+const REAL_COMPILED_POLICY_BENCH_ENV: &str = "MARLIN_GERBIL_REAL_COMPILED_POLICY_BENCH";
 const REAL_NATIVE_AOT_BENCH_ENV: &str = "MARLIN_GERBIL_NATIVE_AOT_BENCH";
+const COMPILED_POLICY_BATCH_ITERATIONS: usize = 10_000;
 
 fn bench_native_selector(c: &mut Criterion) {
     let selector = GerbilDeckRuntimeNativeModelRouteSelector::new(fake_select_model_route_fast);
@@ -150,6 +152,83 @@ fn bench_real_scheme_strategy_selector(c: &mut Criterion) {
     group.finish();
 }
 
+fn bench_real_scheme_compiled_policy_selector(c: &mut Criterion) {
+    if !real_compiled_policy_bench_enabled() {
+        eprintln!(
+            "skipping real Scheme compiled policy benchmark; set {REAL_COMPILED_POLICY_BENCH_ENV}=1 to run it"
+        );
+        return;
+    }
+
+    let gxi = default_gerbil_gxi_program();
+    assert!(
+        executable_exists(&gxi),
+        "real Scheme compiled policy benchmark requires gxi at {}; set MARLIN_GERBIL_GXI to override",
+        gxi.display()
+    );
+
+    let loadpath_root = tempfile::Builder::new()
+        .prefix("marlin-gerbil-real-compiled-policy-bench-")
+        .tempdir()
+        .expect("create real Scheme compiled policy benchmark loadpath");
+    write_gerbil_runtime_assets(loadpath_root.path())
+        .expect("write real Scheme compiled policy benchmark assets");
+    run_real_scheme_package_build_in_root(&gxi, loadpath_root.path());
+    let script = loadpath_root
+        .path()
+        .join("deck-runtime-compiled-policy-bench.ss");
+    let batch_script = loadpath_root
+        .path()
+        .join("deck-runtime-compiled-policy-batch-bench.ss");
+    write_compiled_policy_bench_script(&script);
+    write_compiled_policy_batch_bench_script(&batch_script, COMPILED_POLICY_BATCH_ITERATIONS);
+
+    let warmup = run_real_scheme_strategy_script(&gxi, loadpath_root.path(), &script);
+    assert!(
+        warmup.contains("marlin-deck-runtime.compiled-policy.v1"),
+        "real Scheme compiled policy benchmark warmup returned unexpected output: {warmup}"
+    );
+    let batch_warmup = run_real_scheme_strategy_script(&gxi, loadpath_root.path(), &batch_script);
+    assert!(
+        batch_warmup.contains("matches=10000"),
+        "real Scheme compiled policy batch benchmark warmup returned unexpected output: {batch_warmup}"
+    );
+    let batch_elapsed_us = parse_compiled_policy_batch_elapsed_us(&batch_warmup);
+    eprintln!(
+        "real Scheme compiled policy template module internal loop: iterations={COMPILED_POLICY_BATCH_ITERATIONS} elapsed_us={batch_elapsed_us} approx_ns_per_call={}",
+        (batch_elapsed_us * 1000) / COMPILED_POLICY_BATCH_ITERATIONS as u64
+    );
+
+    let mut group = c.benchmark_group("deck_runtime_real_scheme_compiled_policy");
+    group.sample_size(10);
+    group.warm_up_time(Duration::from_millis(100));
+    group.measurement_time(Duration::from_secs(2));
+    group.bench_function("compiled_policy_process_roundtrip", |bencher| {
+        bencher.iter(|| {
+            let output = run_real_scheme_strategy_script(
+                std::hint::black_box(&gxi),
+                std::hint::black_box(loadpath_root.path()),
+                std::hint::black_box(&script),
+            );
+            std::hint::black_box(output);
+        });
+    });
+    group.bench_function(
+        format!("compiled_policy_batch_{COMPILED_POLICY_BATCH_ITERATIONS}_process_roundtrip"),
+        |bencher| {
+            bencher.iter(|| {
+                let output = run_real_scheme_strategy_script(
+                    std::hint::black_box(&gxi),
+                    std::hint::black_box(loadpath_root.path()),
+                    std::hint::black_box(&batch_script),
+                );
+                std::hint::black_box(output);
+            });
+        },
+    );
+    group.finish();
+}
+
 fn bench_real_scheme_package_build(c: &mut Criterion) {
     if !real_package_bench_enabled() {
         eprintln!(
@@ -226,13 +305,14 @@ fn run_real_scheme_package_build(gxi: &Path) {
     write_gerbil_runtime_assets(loadpath_root.path())
         .expect("write real Scheme package build benchmark assets");
 
+    run_real_scheme_package_build_in_root(gxi, loadpath_root.path());
+}
+
+fn run_real_scheme_package_build_in_root(gxi: &Path, loadpath_root: &Path) {
     let output = Command::new(gxi)
-        .env(
-            GERBIL_LOADPATH_ENV,
-            gerbil_runtime_loadpath(loadpath_root.path()),
-        )
-        .current_dir(loadpath_root.path())
-        .arg(loadpath_root.path().join("build.ss"))
+        .env(GERBIL_LOADPATH_ENV, gerbil_runtime_loadpath(loadpath_root))
+        .current_dir(loadpath_root)
+        .arg(loadpath_root.join("build.ss"))
         .arg("compile")
         .output()
         .expect("run real Scheme package build script");
@@ -320,6 +400,46 @@ fn write_strategy_bench_script(script: &Path) {
     .expect("write real Scheme strategy benchmark script");
 }
 
+fn write_compiled_policy_bench_script(script: &Path) {
+    fs::write(
+        script,
+        r#"(import :marlin/deck-runtime-compiled-policy-sample)
+
+(display-marlin-deck-runtime-sample-compiled-policy-selection-json
+ "cargo test -p marlin-gerbil-scheme"
+ "sub-agent")
+(newline)
+"#,
+    )
+    .expect("write real Scheme compiled policy template benchmark script");
+}
+
+fn write_compiled_policy_batch_bench_script(script: &Path, iterations: usize) {
+    fs::write(
+        script,
+        format!(
+            r#"(import :marlin/deck-runtime-compiled-policy-sample)
+
+(display-marlin-deck-runtime-sample-compiled-policy-batch-metrics
+ {iterations}
+ "cargo test -p marlin-gerbil-scheme"
+ "sub-agent")
+"#
+        ),
+    )
+    .expect("write real Scheme compiled policy template batch benchmark script");
+}
+
+fn parse_compiled_policy_batch_elapsed_us(output: &str) -> u64 {
+    output
+        .split_whitespace()
+        .find_map(|field| field.strip_prefix("elapsed_us="))
+        .and_then(|value| value.parse::<u64>().ok())
+        .unwrap_or_else(|| {
+            panic!("missing elapsed_us field in compiled policy batch output: {output}")
+        })
+}
+
 fn run_real_native_aot_link_unit_build() {
     let root = tempfile::Builder::new()
         .prefix("marlin-gerbil-native-aot-build-bench-")
@@ -365,6 +485,10 @@ fn real_package_bench_enabled() -> bool {
 
 fn real_strategy_bench_enabled() -> bool {
     env::var_os(REAL_STRATEGY_BENCH_ENV).as_deref() == Some(std::ffi::OsStr::new("1"))
+}
+
+fn real_compiled_policy_bench_enabled() -> bool {
+    env::var_os(REAL_COMPILED_POLICY_BENCH_ENV).as_deref() == Some(std::ffi::OsStr::new("1"))
 }
 
 fn real_native_aot_bench_enabled() -> bool {
@@ -414,6 +538,6 @@ criterion_group! {
         .sample_size(20)
         .warm_up_time(Duration::from_millis(100))
         .measurement_time(Duration::from_millis(500));
-    targets = bench_native_selector, bench_receipt_decode, bench_real_scheme_package_selector, bench_real_scheme_strategy_selector, bench_real_scheme_package_build, bench_real_native_aot_link_unit_build
+    targets = bench_native_selector, bench_receipt_decode, bench_real_scheme_package_selector, bench_real_scheme_strategy_selector, bench_real_scheme_compiled_policy_selector, bench_real_scheme_package_build, bench_real_native_aot_link_unit_build
 }
 criterion_main!(deck_runtime_native);

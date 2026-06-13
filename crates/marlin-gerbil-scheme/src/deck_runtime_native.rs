@@ -15,6 +15,8 @@ use crate::{
 
 /// Current `Deck` runtime native ABI version accepted by Rust.
 pub const GERBIL_DECK_RUNTIME_NATIVE_ABI_VERSION: u32 = 1;
+/// Stable Scheme package ABI id for the native `Deck` runtime.
+pub const GERBIL_DECK_RUNTIME_NATIVE_ABI_ID: &str = "marlin.deck-runtime.native";
 /// Native selector status code for success.
 pub const GERBIL_DECK_RUNTIME_NATIVE_STATUS_OK: i32 = 0;
 /// Native selector status code for null pointer inputs.

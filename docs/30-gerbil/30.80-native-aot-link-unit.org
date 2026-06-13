@@ -72,6 +72,19 @@ and the canonicalized =gsc= path. It accepts =libgambit.a=, =libgambit.dylib=,
 =libgambit.so=, and versioned Linux =libgambit.so.*= files. Explicit environment
 configuration remains authoritative.
 
+The build-support crate uses Rust bindings helpers only around the native
+boundary; they do not replace the Gerbil/Gambit compiler pipeline. =cc= selects
+the host C compiler through the standard Cargo environment contract and packages
+the two =gsc=-produced objects into one static archive for linked consumers.
+=cbindgen= is used as a generated-header audit surface. =object= verifies
+required ABI symbols from real object files before falling back to shell =nm=.
+=static_assertions= and =memoffset= gate the Rust =repr(C)= ABI shape in tests.
+The native AOT build receipt records this audit path through
+=GerbilDeckRuntimeNativeSymbolAuditMethod= so harnesses can distinguish the
+object-file parser path from the shell symbol-table fallback.
+Both audit paths inspect the module object and the generated Gambit link object,
+because the native link unit is not complete unless both objects are consumed.
+
 The helper CLI prints explicit metadata for downstream consumers:
 
 - =MARLIN_GERBIL_NATIVE_AOT_MODULE_OBJECT=
@@ -145,14 +158,19 @@ deck_runtime_linked_native_selector/1_policy: [1.8082 us 1.8629 us 1.9122 us]
 deck_runtime_linked_native_selector/8_policy: [7.2820 us 9.9488 us 14.287 us]
 #+end_src
 
-The current local macOS benchmark must force =clang= because the Homebrew GCC
-toolchain can pick an SDK header set that lacks =_bounds.h=. With
-=MARLIN_DECK_RUNTIME_NATIVE_C_COMPILER=clang= and explicit local
-=MARLIN_GERBIL_GSC= / =MARLIN_GERBIL_GXC=, the 2026-06-13 linked selector
-baseline is approximately 1.86 microseconds for one policy and 9.95
-microseconds for eight policies. The eight-policy run had a wide outlier range,
-so the performance target remains open until repeated runs stabilize below the
-earlier 6.77 microsecond baseline.
+The 2026-06-13 linked selector benchmark was run through:
+
+#+begin_src sh
+direnv exec . cargo bench -p marlin-deck-runtime-native --features linked-native --bench linked_selector
+#+end_src
+
+That run measured =deck_runtime_linked_native_selector/1_policy= at
+approximately 1.2072-1.2811 microseconds, with a 1.2479 microsecond midpoint.
+It measured =deck_runtime_linked_native_selector/8_policy= at approximately
+7.0585-7.8608 microseconds, with a 7.4723 microsecond midpoint. The one-policy
+path improved relative to the previous local baseline; the eight-policy path
+is below the earlier 9.95 microsecond sample but still needs repeated Linux CI
+runs before we call the scaling target closed.
 
 The previous JSON-returning smoke path measured the wrong boundary because it
 included JSON serialization plus runtime-owned byte-buffer allocation/free. That
@@ -192,6 +210,60 @@ local sample, so the stable regression threshold remains open. This is the hot
 runtime-action budget; Scheme policy evaluation and process adapter costs remain
 separate measurements.
 
+The compiled macro policy path is the middle performance tier between process
+strategy execution and native C ABI selectors. The
+=:marlin/deck-runtime-compiled-policy= module exposes
+=defmarlin-deck-runtime-compiled-route-selector=, which expands stable policy
+templates into direct Scheme selector functions at compile time. This keeps the
+policy shape in Gerbil Scheme while removing the runtime rule-object
+interpretation loop for policies that are stable enough to compile with
+=build.ss= but not yet simple enough to push into the native selector ABI.
+
+The current benchmark gate is feature-disabled by default:
+
+#+begin_src sh
+MARLIN_GERBIL_REAL_COMPILED_POLICY_BENCH=1 \
+  direnv exec . cargo bench -p marlin-gerbil-scheme --bench deck_runtime_native -- \
+  deck_runtime_real_scheme_compiled_policy
+#+end_src
+
+This benchmark writes the crate-shipped Gerbil package, runs =build.ss compile=
+so the macro module is compiled, then executes a script that imports the
+compiled policy module and calls the macro-generated selector. Its performance
+should be compared with =deck_runtime_real_scheme_strategy= before promoting a
+strategy template into native ABI code.
+
+On 2026-06-13 the local
+=deck_runtime_real_scheme_compiled_policy/compiled_policy_process_roundtrip=
+benchmark measured approximately 625.02-872.79 milliseconds with a 742.98
+millisecond midpoint. This is a real =gxi= process roundtrip gate, not the
+steady-state selector hot path. Use it to verify that the compiled macro module
+can be package-built and executed from Rust-owned assets; use a resident runtime
+or native ABI benchmark for hot-path promotion decisions.
+
+The same run added
+=deck_runtime_real_scheme_compiled_policy/compiled_policy_batch_10000_process_roundtrip=,
+which executes 10,000 macro-generated selector calls inside one =gxi= process.
+It measured approximately 1.4891-1.9565 seconds with a 1.7131 second midpoint.
+This is still not an acceptable selector hot-path benchmark. The benchmark
+starts a fresh =gxi= process for each Criterion iteration and executes a
+temporary script after =build.ss compile= has already completed, so the
+macro-generated selector instance itself is not proven as an AOT-compiled,
+resident policy module. Treat this number as gap evidence only. The next
+accepted gate must either run a compiled policy-template module through a
+resident Gerbil runtime or measure the linked native ABI selector directly.
+
+A later same-day rerun of the linked native ABI selector provides the current
+hot-path control sample for this audit:
+
+- =deck_runtime_linked_native_selector/1_policy=: 1.5715-1.9232 microseconds.
+- =deck_runtime_linked_native_selector/8_policy=: 9.3581-12.816 microseconds.
+
+Criterion reported both rerun samples as slower than the previous local
+baseline recorded earlier in this section, so this path still needs regression
+work. Even with that regression, it is the right order of magnitude for the
+runtime selector path; the =gxi= process benchmarks above are not.
+
 The native AOT command runner infers the Gerbil/Gambit prefix from =gxc= and
 =gsc=. When the prefix has =bin=, =lib/gerbil=, =include/gambit.h=, and a
 Gambit runtime library, the runner injects =GERBIL_HOME= and =GAMBOPT= for the
@@ -201,6 +273,11 @@ make Gambit resolve =~~bin=, =~~lib=, and =~~include=.
 ** Verification
 
 Current native AOT verification commands:
+
+#+begin_src sh
+direnv exec . cargo test -p marlin-gerbil-scheme scheme_types -- --nocapture
+direnv exec . cargo test -p marlin-gerbil-scheme --tests -- --nocapture
+#+end_src
 
 #+begin_src sh
 direnv exec . cargo test -p marlin-gerbil-scheme --test unit_test aot_runtime
@@ -253,6 +330,27 @@ MARLIN_DECK_RUNTIME_NATIVE_C_COMPILER=clang \
 MARLIN_GERBIL_GSC="$PWD/.data/gerbil/build/bin/gsc" \
 MARLIN_GERBIL_GXC="$PWD/.data/gerbil/build/bin/gxc" \
 cargo bench -p marlin-deck-runtime-native --features linked-native --bench linked_selector
+#+end_src
+
+** 2026-06-13 P0-P4 Verification Receipt
+
+The P0-P4 implementation pass verified the Scheme typed projection split,
+real Scheme policy plane, real linked native ABI, model-route projection, hook
+runtime actions, and LiteLLM stream boundary with these commands:
+
+#+begin_src sh
+direnv exec . cargo test -p marlin-gerbil-scheme scheme_types -- --nocapture
+direnv exec . cargo test -p marlin-gerbil-scheme --tests -- --nocapture
+direnv exec . cargo test -p marlin-gerbil-scheme command_compiler_real_gxi_deck_runtime_runs_scheme_complex_strategy -- --ignored --nocapture
+direnv exec . cargo test -p marlin-gerbil-scheme command_compiler_real_gxi_deck_runtime_selects_scheme_model_route_policy -- --ignored --nocapture
+direnv exec . cargo test -p marlin-gerbil-scheme gerbil_hook_policy_runtime_binding_real_gxi_runs_sample_policy_module -- --ignored --nocapture
+direnv exec . cargo test -p marlin-deck-runtime-native --tests -- --nocapture
+direnv exec . cargo test -p marlin-deck-runtime-native --features linked-native --tests -- --nocapture
+direnv exec . cargo test -p marlin-gerbil-scheme command_compiler_real_gxi_deck_runtime_native_compiles_link_unit -- --ignored --nocapture
+direnv exec . cargo test -p marlin-agent-runtime model_route -- --nocapture
+direnv exec . cargo test -p marlin-agent-stream --tests -- --nocapture
+direnv exec . cargo test -p marlin-agent-hooks hooks -- --nocapture
+direnv exec . cargo bench -p marlin-deck-runtime-native --features linked-native --bench linked_selector
 #+end_src
 
 ** Next Work

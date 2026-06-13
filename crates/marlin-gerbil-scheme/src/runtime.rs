@@ -84,6 +84,18 @@ pub const GERBIL_MARLIN_DECK_RUNTIME_PATH: &str = "src/marlin/deck-runtime.ss";
 /// Source text for the Deck runtime capability bridge.
 pub const GERBIL_MARLIN_DECK_RUNTIME_SOURCE: &str =
     include_str!("../gerbil/src/marlin/deck-runtime.ss");
+/// Library module that exposes macro-specialized Deck runtime policy selectors.
+pub const GERBIL_MARLIN_DECK_RUNTIME_COMPILED_POLICY_PATH: &str =
+    "src/marlin/deck-runtime-compiled-policy.ss";
+/// Source text for macro-specialized Deck runtime policy selectors.
+pub const GERBIL_MARLIN_DECK_RUNTIME_COMPILED_POLICY_SOURCE: &str =
+    include_str!("../gerbil/src/marlin/deck-runtime-compiled-policy.ss");
+/// Package-compiled sample policy template used by compiled macro performance gates.
+pub const GERBIL_MARLIN_DECK_RUNTIME_COMPILED_POLICY_SAMPLE_PATH: &str =
+    "src/marlin/deck-runtime-compiled-policy-sample.ss";
+/// Source text for the package-compiled sample policy template.
+pub const GERBIL_MARLIN_DECK_RUNTIME_COMPILED_POLICY_SAMPLE_SOURCE: &str =
+    include_str!("../gerbil/src/marlin/deck-runtime-compiled-policy-sample.ss");
 /// Native C ABI source for the Deck runtime selector.
 pub const GERBIL_MARLIN_DECK_RUNTIME_NATIVE_PATH: &str = "src/marlin/deck-runtime-native.ss";
 /// Source text for the native C ABI Deck runtime selector.

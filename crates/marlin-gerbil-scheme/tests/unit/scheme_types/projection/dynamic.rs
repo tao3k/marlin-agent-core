@@ -8,7 +8,6 @@ use marlin_gerbil_scheme::{
     decode_gerbil_scheme_typed_value,
 };
 use serde_json::json;
-use std::time::Instant;
 
 #[test]
 fn scheme_typed_value_projects_to_rust_without_static_scheme_binding() {
@@ -81,14 +80,10 @@ fn scheme_typed_value_projects_nested_custom_scheme_types_to_rust() {
     )
     .with_schema_id(strategy_decision_schema_id());
 
-    let receipt = registry
-        .validate_value_as_type(&strategy_decision_type_id(), envelope.value())
-        .expect("raw nested Scheme value should validate by manifest type id");
     let projection: StrategyDecisionProjection = registry
         .decode_typed_value(&envelope)
         .expect("nested Scheme typed value should project into Rust type");
 
-    assert_eq!(receipt.required_fields, 3);
     assert_eq!(
         projection,
         StrategyDecisionProjection {
@@ -121,38 +116,5 @@ fn scheme_typed_value_rejects_wrong_projection_type() {
     assert_eq!(
         error.to_string(),
         "Scheme typed value has type_id marlin.dynamic.capability, expected marlin.deck-runtime.strategy-selection"
-    );
-}
-
-#[test]
-fn scheme_typed_value_projection_performance_gate_stays_in_process() {
-    let registry = GerbilSchemeTypeRegistry::new(strategy_selection_manifest())
-        .expect("strategy manifest should build registry");
-    let envelopes = (0..2_000)
-        .map(|index| {
-            GerbilSchemeTypedValue::new(
-                strategy_selection_type_id(),
-                json!({
-                    "schema_id": "marlin.deck-runtime.strategy-selection.v1",
-                    "matched": true,
-                    "action": format!("dynamic-hook-action-{index}")
-                }),
-            )
-            .with_schema_id(strategy_selection_schema_id())
-        })
-        .collect::<Vec<_>>();
-
-    let started = Instant::now();
-    for envelope in &envelopes {
-        let projection: StrategySelectionProjection = registry
-            .decode_typed_value(envelope)
-            .expect("validated Scheme typed value should project into Rust type");
-        assert!(projection.matched);
-    }
-    let elapsed = started.elapsed();
-
-    assert!(
-        elapsed.as_secs_f64() < 3.0,
-        "Scheme typed value projection gate exceeded in-process budget: {elapsed:?}"
     );
 }

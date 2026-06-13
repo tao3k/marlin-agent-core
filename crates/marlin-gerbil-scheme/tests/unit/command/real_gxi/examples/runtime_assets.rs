@@ -256,6 +256,91 @@ fn command_compiler_real_gxi_deck_runtime_runs_scheme_complex_strategy() {
     }
 }
 
+#[test]
+#[ignore = "requires a local Gerbil gxi executable and installed gerbil-poo dependency"]
+fn command_compiler_real_gxi_deck_runtime_runs_compiled_policy_macro_selector() {
+    let Some(gxi) = local_gxi() else {
+        return;
+    };
+    let root = test_root("deck-runtime-compiled-policy");
+    write_gerbil_runtime_assets(root.path()).expect("write gerbil runtime assets");
+    let example = root.path().join("deck-runtime-compiled-policy.ss");
+    write_deck_runtime_compiled_policy_example(&example);
+
+    let output = Command::new(gxi)
+        .env(GERBIL_LOADPATH_ENV, gerbil_runtime_loadpath(root.path()))
+        .arg(example)
+        .output()
+        .expect("run real gxi deck runtime compiled policy selector");
+
+    assert!(
+        output.status.success(),
+        "gxi deck runtime compiled policy failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let response: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("decode compiled policy selection");
+    assert_eq!(
+        response["schema_id"],
+        "marlin-deck-runtime.model-route-selection.v1"
+    );
+    assert_eq!(
+        response["compiled_policy_schema"],
+        "marlin-deck-runtime.compiled-policy.v1"
+    );
+    assert_eq!(response["matched"], true);
+    assert_eq!(response["policy"]["name"], "compiled-cheap-test-runner");
+    assert_eq!(response["policy"]["model"], "gpt-5-mini");
+
+    let capabilities = response["capabilities"]
+        .as_array()
+        .expect("compiled policy capabilities are an array");
+    for expected in [
+        "compiled-macro-selector",
+        "ahead-of-time-policy-shape",
+        "direct-branch-dispatch",
+        "rust-json-compatible-selection",
+    ] {
+        assert!(
+            capabilities
+                .iter()
+                .any(|capability| capability.as_str() == Some(expected)),
+            "missing compiled policy capability {expected}"
+        );
+    }
+}
+
+#[test]
+#[ignore = "requires a local Gerbil gxi executable and installed gerbil-poo dependency"]
+fn command_compiler_real_gxi_deck_runtime_runs_compiled_policy_macro_selector_batch() {
+    let Some(gxi) = local_gxi() else {
+        return;
+    };
+    let root = test_root("deck-runtime-compiled-policy-batch");
+    write_gerbil_runtime_assets(root.path()).expect("write gerbil runtime assets");
+    let example = root.path().join("deck-runtime-compiled-policy-batch.ss");
+    write_deck_runtime_compiled_policy_batch_example(&example, 10_000);
+
+    let output = Command::new(gxi)
+        .env(GERBIL_LOADPATH_ENV, gerbil_runtime_loadpath(root.path()))
+        .arg(example)
+        .output()
+        .expect("run real gxi deck runtime compiled policy selector batch");
+
+    assert!(
+        output.status.success(),
+        "gxi deck runtime compiled policy batch failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout).expect("batch output should be UTF-8");
+    assert!(stdout.contains("marlin-deck-runtime.compiled-policy.v1"));
+    assert!(stdout.contains("iterations=10000"));
+    assert!(stdout.contains("matches=10000"));
+    assert!(stdout.contains("elapsed_us="));
+}
+
 fn write_deck_runtime_model_route_policy_example(path: &Path) {
     fs::write(
         path,
@@ -288,6 +373,55 @@ fn write_deck_runtime_model_route_policy_example(path: &Path) {
 "#,
     )
     .expect("write deck runtime model route policy example");
+}
+
+fn write_deck_runtime_compiled_policy_example(path: &Path) {
+    fs::write(
+        path,
+        r#"(import :marlin/deck-runtime
+        :marlin/deck-runtime-compiled-policy)
+
+(defmarlin-deck-runtime-compiled-route-selector
+  select-compiled-policy
+  ("compiled-cheap-test-runner"
+   "openai"
+   "gpt-5-mini"
+   ("cargo test" "just test")
+   ("sub-agent" "hook")
+   "forked-context"
+   "workspace-isolated")
+  ("compiled-deep-reviewer"
+   "anthropic"
+   "claude-opus-4-8"
+   ("codex customer-review" "cargo clippy")
+   ("reviewer")
+   "shared-context"
+   "isolated-session"))
+
+(display-marlin-deck-runtime-compiled-selection-json
+ select-compiled-policy
+ "cargo test -p marlin-gerbil-scheme"
+ "sub-agent")
+(newline)
+"#,
+    )
+    .expect("write deck runtime compiled policy example");
+}
+
+fn write_deck_runtime_compiled_policy_batch_example(path: &Path, iterations: usize) {
+    fs::write(
+        path,
+        format!(
+            r#"(import :marlin/deck-runtime-compiled-policy-sample)
+
+(display-marlin-deck-runtime-sample-compiled-policy-batch-metrics
+ {iterations}
+ "cargo test -p marlin-gerbil-scheme"
+ "sub-agent")
+"#
+        ),
+    )
+    .expect("write deck runtime compiled policy template batch example");
 }
 
 fn write_deck_runtime_complex_strategy_example(path: &Path) {

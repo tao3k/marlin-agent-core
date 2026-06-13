@@ -2,7 +2,7 @@ use marlin_gerbil_scheme::{
     GERBIL_MARLIN_DECK_RUNTIME_NATIVE_PATH, GerbilDeckRuntimeNativeAotBuildStatus,
     GerbilDeckRuntimeNativeAotConfig, GerbilDeckRuntimeNativeAotStatus,
     GerbilDeckRuntimeNativeCargoDirectiveKind, GerbilDeckRuntimeNativeStaticLinkStatus,
-    write_gerbil_runtime_assets,
+    GerbilDeckRuntimeNativeSymbolAuditMethod, write_gerbil_runtime_assets,
 };
 use std::{fs, path::Path};
 use tempfile::Builder;
@@ -105,7 +105,10 @@ fn deck_runtime_native_aot_plan_records_link_unit_compile() {
     assert_eq!(plan.audit_symbols.program, std::path::PathBuf::from("nm"));
     assert_eq!(
         plan.audit_symbols.args,
-        [plan.object.to_string_lossy().into_owned()]
+        [
+            plan.object.to_string_lossy().into_owned(),
+            plan.link_object.to_string_lossy().into_owned()
+        ]
     );
     assert_eq!(plan.detail, None);
 }
@@ -296,6 +299,10 @@ printf '00000000 T marlin_deck_runtime_select_model_route\n'
             .as_ref()
             .and_then(|command| command.status_code),
         Some(0)
+    );
+    assert_eq!(
+        receipt.symbol_audit_method,
+        Some(GerbilDeckRuntimeNativeSymbolAuditMethod::SymbolTableCommand)
     );
     assert_eq!(
         receipt
@@ -576,6 +583,10 @@ printf '00000000 T unrelated_symbol\n'
     assert_eq!(
         receipt.status,
         GerbilDeckRuntimeNativeAotBuildStatus::RequiredSymbolsMissing
+    );
+    assert_eq!(
+        receipt.symbol_audit_method,
+        Some(GerbilDeckRuntimeNativeSymbolAuditMethod::SymbolTableCommand)
     );
     assert_eq!(
         receipt

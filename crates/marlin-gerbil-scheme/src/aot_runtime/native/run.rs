@@ -5,11 +5,14 @@ use super::{
     receipt::{
         GerbilDeckRuntimeNativeAotBuildReceipt, GerbilDeckRuntimeNativeAotCommandPlan,
         GerbilDeckRuntimeNativeAotCommandReceipt, GerbilDeckRuntimeNativeAotPlan,
+        GerbilDeckRuntimeNativeSymbol, GerbilDeckRuntimeNativeSymbolAuditMethod,
     },
     status::{GerbilDeckRuntimeNativeAotBuildStatus, GerbilDeckRuntimeNativeAotStatus},
 };
 use crate::runtime::{GERBIL_LOADPATH_ENV, gerbil_runtime_loadpath, write_gerbil_runtime_assets};
+use object::{Object, ObjectSymbol};
 use std::{
+    collections::HashSet,
     env,
     ffi::OsString,
     fs,
@@ -26,6 +29,7 @@ struct NativeBuildCommandReceipts {
     gsc_compile_object: Option<GerbilDeckRuntimeNativeAotCommandReceipt>,
     gsc_generate_link_source: Option<GerbilDeckRuntimeNativeAotCommandReceipt>,
     gsc_compile_link_object: Option<GerbilDeckRuntimeNativeAotCommandReceipt>,
+    symbol_audit_method: Option<GerbilDeckRuntimeNativeSymbolAuditMethod>,
     symbol_audit: Option<GerbilDeckRuntimeNativeAotCommandReceipt>,
 }
 
@@ -210,6 +214,42 @@ pub(super) fn build_gerbil_deck_runtime_native_link_unit(
         );
     }
 
+    if let Ok(missing_symbols) = missing_exported_symbols_from_object_files(&plan) {
+        if !missing_symbols.is_empty() {
+            return native_build_receipt(
+                GerbilDeckRuntimeNativeAotBuildStatus::RequiredSymbolsMissing,
+                plan,
+                Some("native object is missing required Deck runtime ABI symbols".to_string()),
+                NativeBuildCommandReceipts {
+                    gxc_generate_scheme: Some(gxc_generate_scheme),
+                    gsc_compile_object: Some(gsc_compile_object),
+                    gsc_generate_link_source: Some(gsc_generate_link_source),
+                    gsc_compile_link_object: Some(gsc_compile_link_object),
+                    symbol_audit_method: Some(
+                        GerbilDeckRuntimeNativeSymbolAuditMethod::ObjectFiles,
+                    ),
+                    ..Default::default()
+                },
+                missing_symbols,
+            );
+        }
+
+        return native_build_receipt(
+            GerbilDeckRuntimeNativeAotBuildStatus::LinkUnitReady,
+            plan,
+            None,
+            NativeBuildCommandReceipts {
+                gxc_generate_scheme: Some(gxc_generate_scheme),
+                gsc_compile_object: Some(gsc_compile_object),
+                gsc_generate_link_source: Some(gsc_generate_link_source),
+                gsc_compile_link_object: Some(gsc_compile_link_object),
+                symbol_audit_method: Some(GerbilDeckRuntimeNativeSymbolAuditMethod::ObjectFiles),
+                ..Default::default()
+            },
+            Vec::new(),
+        );
+    }
+
     let symbol_audit = run_native_aot_command(&plan, &plan.audit_symbols);
     if symbol_audit.status_code.is_none_or(|status| status != 0) {
         return native_build_receipt(
@@ -221,6 +261,9 @@ pub(super) fn build_gerbil_deck_runtime_native_link_unit(
                 gsc_compile_object: Some(gsc_compile_object),
                 gsc_generate_link_source: Some(gsc_generate_link_source),
                 gsc_compile_link_object: Some(gsc_compile_link_object),
+                symbol_audit_method: Some(
+                    GerbilDeckRuntimeNativeSymbolAuditMethod::SymbolTableCommand,
+                ),
                 symbol_audit: Some(symbol_audit),
             },
             Vec::new(),
@@ -237,6 +280,9 @@ pub(super) fn build_gerbil_deck_runtime_native_link_unit(
                 gsc_compile_object: Some(gsc_compile_object),
                 gsc_generate_link_source: Some(gsc_generate_link_source),
                 gsc_compile_link_object: Some(gsc_compile_link_object),
+                symbol_audit_method: Some(
+                    GerbilDeckRuntimeNativeSymbolAuditMethod::SymbolTableCommand,
+                ),
                 symbol_audit: Some(symbol_audit),
             },
             missing_symbols,
@@ -252,6 +298,7 @@ pub(super) fn build_gerbil_deck_runtime_native_link_unit(
             gsc_compile_object: Some(gsc_compile_object),
             gsc_generate_link_source: Some(gsc_generate_link_source),
             gsc_compile_link_object: Some(gsc_compile_link_object),
+            symbol_audit_method: Some(GerbilDeckRuntimeNativeSymbolAuditMethod::SymbolTableCommand),
             symbol_audit: Some(symbol_audit),
         },
         Vec::new(),
@@ -356,12 +403,50 @@ fn merged_gambopt(prefix: &Path) -> OsString {
 fn missing_exported_symbols(
     plan: &GerbilDeckRuntimeNativeAotPlan,
     symbol_table: &str,
-) -> Vec<super::receipt::GerbilDeckRuntimeNativeSymbol> {
+) -> Vec<GerbilDeckRuntimeNativeSymbol> {
     plan.exported_symbols
         .iter()
         .filter(|symbol| !symbol_table_contains(symbol_table, symbol.as_str()))
         .cloned()
         .collect()
+}
+
+fn missing_exported_symbols_from_object_files(
+    plan: &GerbilDeckRuntimeNativeAotPlan,
+) -> Result<Vec<GerbilDeckRuntimeNativeSymbol>, String> {
+    let mut symbol_names = HashSet::new();
+    for path in [&plan.object, &plan.link_object] {
+        for name in object_file_symbol_names(path)? {
+            symbol_names.insert(name);
+        }
+    }
+
+    Ok(plan
+        .exported_symbols
+        .iter()
+        .filter(|symbol| {
+            let prefixed_symbol = format!("_{}", symbol.as_str());
+            !symbol_names.contains(symbol.as_str()) && !symbol_names.contains(&prefixed_symbol)
+        })
+        .cloned()
+        .collect())
+}
+
+fn object_file_symbol_names(path: &Path) -> Result<Vec<String>, String> {
+    let bytes = fs::read(path).map_err(|error| error.to_string())?;
+    let object = object::File::parse(bytes.as_slice()).map_err(|error| error.to_string())?;
+    let mut names = Vec::new();
+    names.extend(
+        object
+            .symbols()
+            .filter_map(|symbol| symbol.name().ok().map(str::to_owned)),
+    );
+    names.extend(
+        object
+            .dynamic_symbols()
+            .filter_map(|symbol| symbol.name().ok().map(str::to_owned)),
+    );
+    Ok(names)
 }
 
 fn symbol_table_contains(symbol_table: &str, symbol: &str) -> bool {
@@ -376,7 +461,7 @@ fn native_build_receipt(
     plan: GerbilDeckRuntimeNativeAotPlan,
     detail: Option<String>,
     commands: NativeBuildCommandReceipts,
-    missing_symbols: Vec<super::receipt::GerbilDeckRuntimeNativeSymbol>,
+    missing_symbols: Vec<GerbilDeckRuntimeNativeSymbol>,
 ) -> GerbilDeckRuntimeNativeAotBuildReceipt {
     GerbilDeckRuntimeNativeAotBuildReceipt {
         status,
@@ -386,6 +471,7 @@ fn native_build_receipt(
         gsc_compile_object: commands.gsc_compile_object,
         gsc_generate_link_source: commands.gsc_generate_link_source,
         gsc_compile_link_object: commands.gsc_compile_link_object,
+        symbol_audit_method: commands.symbol_audit_method,
         symbol_audit: commands.symbol_audit,
         missing_symbols,
     }

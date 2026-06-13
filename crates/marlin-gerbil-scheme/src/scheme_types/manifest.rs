@@ -62,8 +62,7 @@ pub struct GerbilSchemeTypedValueValidationReceipt {
     pub type_id: GerbilSchemeTypeId,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub schema_id: Option<GerbilSchemeSchemaId>,
-    pub required_fields: usize,
-    pub value_field_count: usize,
+    pub declared_field_count: usize,
 }
 
 /// Decode a Scheme-emitted type manifest.

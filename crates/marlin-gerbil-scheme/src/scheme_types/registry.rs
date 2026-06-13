@@ -3,7 +3,6 @@
 use std::collections::BTreeMap;
 
 use serde::de::DeserializeOwned;
-use serde_json::Value;
 
 use super::{
     error::GerbilSchemeTypeDecodeError,
@@ -12,11 +11,12 @@ use super::{
         GerbilSchemeTypeManifest, GerbilSchemeTypeManifestValidationReceipt, GerbilSchemeTypeSpec,
         GerbilSchemeTypedValueValidationReceipt,
     },
+    projection::{GerbilSchemeProjectionContract, GerbilSchemeTypedProjection},
     typed_value::GerbilSchemeTypedValue,
     validation,
 };
 
-/// Prevalidated Scheme type registry for hot-path value validation and projection.
+/// Prevalidated Scheme type registry for hot-path envelope validation and projection.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct GerbilSchemeTypeRegistry {
     manifest: GerbilSchemeTypeManifest,
@@ -67,19 +67,6 @@ impl GerbilSchemeTypeRegistry {
         validation::validate_typed_value_with_lookup(|type_id| self.type_spec(type_id), typed_value)
     }
 
-    /// Validate a raw `JSON` payload as a named Scheme type through this registry.
-    pub fn validate_value_as_type(
-        &self,
-        type_id: &GerbilSchemeTypeId,
-        value: &Value,
-    ) -> Result<GerbilSchemeTypedValueValidationReceipt, GerbilSchemeTypeDecodeError> {
-        validation::validate_value_as_type_with_lookup(
-            |resolved_type_id| self.type_spec(resolved_type_id),
-            type_id,
-            value,
-        )
-    }
-
     /// Validate and decode a typed Scheme value into a Rust projection.
     pub fn decode_typed_value<T>(
         &self,
@@ -90,5 +77,30 @@ impl GerbilSchemeTypeRegistry {
     {
         self.validate_typed_value(typed_value)?;
         typed_value.decode_value()
+    }
+
+    /// Validate and decode a typed Scheme value into a Rust projection with a runtime contract.
+    pub fn decode_typed_value_with_contract<T>(
+        &self,
+        typed_value: &GerbilSchemeTypedValue,
+        contract: &GerbilSchemeProjectionContract,
+    ) -> Result<T, GerbilSchemeTypeDecodeError>
+    where
+        T: DeserializeOwned,
+    {
+        self.validate_typed_value(typed_value)?;
+        typed_value.decode_value_with_contract(contract)
+    }
+
+    /// Validate and decode a typed Scheme value into a Rust projection with a static type contract.
+    pub fn decode_projection<T>(
+        &self,
+        typed_value: &GerbilSchemeTypedValue,
+    ) -> Result<T, GerbilSchemeTypeDecodeError>
+    where
+        T: GerbilSchemeTypedProjection,
+    {
+        let contract = T::scheme_projection_contract();
+        self.decode_typed_value_with_contract(typed_value, &contract)
     }
 }

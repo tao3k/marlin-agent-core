@@ -17,6 +17,7 @@ harness = false
 marlin-agent-protocol.workspace = true
 marlin-gerbil-ir.workspace = true
 marlin-org-model.workspace = true
+object.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 
@@ -34,6 +35,8 @@ marlin-workspace-protocol.workspace = true
 marlin-workspace-patch.workspace = true
 marlin-workspace-status.workspace = true
 marlin-workspace-view.workspace = true
+memoffset.workspace = true
 rust-lang-project-harness.workspace = true
+static_assertions.workspace = true
 tempfile.workspace = true
 toml.workspace = true

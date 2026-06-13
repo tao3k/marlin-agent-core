@@ -28,11 +28,11 @@ pub use graph::{
     GerbilLoopGraphPolicyCompilationRequest, GraphId, GraphLoopExecutionBudget,
     GraphLoopExecutionRequest, GraphLoopExecutionResult, GraphLoopExecutionStatus,
     GraphLoopStrategy, GraphLoopStrategyId, GraphLoopStrategyRuntime, GraphLoopStrategyVersion,
-    GraphNodeExecutionReceipt, GraphNodeExecutionStatus, GraphNodeInvocation, GraphPolicyDigest,
-    GraphPolicyProposal, GraphPolicyProposalReceipt, GraphPolicyProposalStatus,
-    GraphPolicyProposalValidationReport, LoopEdgeSpec, LoopGraph, LoopNodeSpec, NodeId, RunId,
-    RuntimePlanSnapshot, compile_gerbil_loop_graph, compile_gerbil_loop_graph_policy,
-    validate_graph_policy_proposal,
+    GraphNativeAbiId, GraphNativeAbiRequirement, GraphNativeSymbol, GraphNodeExecutionReceipt,
+    GraphNodeExecutionStatus, GraphNodeInvocation, GraphPolicyDigest, GraphPolicyProposal,
+    GraphPolicyProposalReceipt, GraphPolicyProposalStatus, GraphPolicyProposalValidationReport,
+    LoopEdgeSpec, LoopGraph, LoopNodeSpec, NodeId, RunId, RuntimePlanSnapshot,
+    compile_gerbil_loop_graph, compile_gerbil_loop_graph_policy, validate_graph_policy_proposal,
 };
 pub use hook::{
     HookAgentScope, HookConfigurationReloadReceipt, HookConfigurationVersion,

@@ -25,8 +25,8 @@ pub use aot_runtime::{
     GerbilDeckRuntimeNativeAotPlan, GerbilDeckRuntimeNativeAotStatus,
     GerbilDeckRuntimeNativeCargoDirective, GerbilDeckRuntimeNativeCargoDirectiveKind,
     GerbilDeckRuntimeNativeStaticLinkPlan, GerbilDeckRuntimeNativeStaticLinkStatus,
-    GerbilDeckRuntimeNativeSymbol, GerbilNativeCCompiler, GerbilNativeLinkLibrary,
-    GerbilNativeSymbolAuditor,
+    GerbilDeckRuntimeNativeSymbol, GerbilDeckRuntimeNativeSymbolAuditMethod, GerbilNativeCCompiler,
+    GerbilNativeLinkLibrary, GerbilNativeSymbolAuditor,
 };
 pub use artifact::{GerbilArtifactKind, GerbilArtifactKindMismatch, GerbilCompiledArtifact};
 pub use command::{
@@ -36,9 +36,9 @@ pub use command::{
 pub use compile_source::run_compile_source_cli;
 pub use compiler::{GerbilCompiler, GerbilSource, compile_checked};
 pub use deck_runtime_native::{
-    GERBIL_DECK_RUNTIME_NATIVE_ABI_VERSION, GERBIL_DECK_RUNTIME_NATIVE_HEADER_PATH,
-    GERBIL_DECK_RUNTIME_NATIVE_HEADER_SOURCE, GERBIL_DECK_RUNTIME_NATIVE_NO_POLICY_INDEX,
-    GERBIL_DECK_RUNTIME_NATIVE_STATUS_ABI_MISMATCH,
+    GERBIL_DECK_RUNTIME_NATIVE_ABI_ID, GERBIL_DECK_RUNTIME_NATIVE_ABI_VERSION,
+    GERBIL_DECK_RUNTIME_NATIVE_HEADER_PATH, GERBIL_DECK_RUNTIME_NATIVE_HEADER_SOURCE,
+    GERBIL_DECK_RUNTIME_NATIVE_NO_POLICY_INDEX, GERBIL_DECK_RUNTIME_NATIVE_STATUS_ABI_MISMATCH,
     GERBIL_DECK_RUNTIME_NATIVE_STATUS_INVALID_SELECTION,
     GERBIL_DECK_RUNTIME_NATIVE_STATUS_NULL_POINTER, GERBIL_DECK_RUNTIME_NATIVE_STATUS_OK,
     GerbilDeckRuntimeNativeAbiError, GerbilDeckRuntimeNativeModelRoutePolicy,
@@ -78,7 +78,10 @@ pub use runtime::{
     GERBIL_COMMAND_ADAPTER_SOURCE, GERBIL_DECK_RUNTIME_POLICY_ADAPTER_PATH,
     GERBIL_DECK_RUNTIME_POLICY_ADAPTER_SOURCE, GERBIL_HOOK_POLICY_ADAPTER_PATH,
     GERBIL_HOOK_POLICY_ADAPTER_SOURCE, GERBIL_LOADPATH_ENV, GERBIL_MARLIN_ADAPTER_PATH,
-    GERBIL_MARLIN_ADAPTER_SOURCE, GERBIL_MARLIN_DECK_RUNTIME_NATIVE_PATH,
+    GERBIL_MARLIN_ADAPTER_SOURCE, GERBIL_MARLIN_DECK_RUNTIME_COMPILED_POLICY_PATH,
+    GERBIL_MARLIN_DECK_RUNTIME_COMPILED_POLICY_SAMPLE_PATH,
+    GERBIL_MARLIN_DECK_RUNTIME_COMPILED_POLICY_SAMPLE_SOURCE,
+    GERBIL_MARLIN_DECK_RUNTIME_COMPILED_POLICY_SOURCE, GERBIL_MARLIN_DECK_RUNTIME_NATIVE_PATH,
     GERBIL_MARLIN_DECK_RUNTIME_NATIVE_SOURCE, GERBIL_MARLIN_DECK_RUNTIME_PATH,
     GERBIL_MARLIN_DECK_RUNTIME_POLICY_PATH, GERBIL_MARLIN_DECK_RUNTIME_POLICY_SOURCE,
     GERBIL_MARLIN_DECK_RUNTIME_SOURCE, GERBIL_MARLIN_HOOK_POLICY_PATH,
@@ -93,11 +96,16 @@ pub use runtime::{
     gerbil_runtime_assets, gerbil_runtime_loadpath, write_gerbil_runtime_assets,
 };
 pub use scheme_types::{
-    GerbilSchemeFieldName, GerbilSchemeJsonTypeKind, GerbilSchemeSchemaId,
-    GerbilSchemeTypeDecodeError, GerbilSchemeTypeFieldSpec, GerbilSchemeTypeId,
-    GerbilSchemeTypeManifest, GerbilSchemeTypeManifestValidationReceipt, GerbilSchemeTypeRegistry,
-    GerbilSchemeTypeSpec, GerbilSchemeTypedValue, GerbilSchemeTypedValueValidationReceipt,
-    decode_gerbil_scheme_type_manifest, decode_gerbil_scheme_typed_value,
-    validate_gerbil_scheme_type_manifest, validate_gerbil_scheme_typed_value,
-    validate_gerbil_scheme_value_as_type,
+    GerbilSchemeFieldName, GerbilSchemeNativeAbiContract, GerbilSchemeNativeAbiId,
+    GerbilSchemeNativeAbiReadinessPlan, GerbilSchemeNativeSymbol, GerbilSchemePackageId,
+    GerbilSchemePackageManifest, GerbilSchemePackageManifestValidationReceipt,
+    GerbilSchemePackageNativeReadinessReceipt, GerbilSchemeProjectionContract,
+    GerbilSchemeSchemaId, GerbilSchemeTypeDecodeError, GerbilSchemeTypeFieldSpec,
+    GerbilSchemeTypeId, GerbilSchemeTypeManifest, GerbilSchemeTypeManifestValidationReceipt,
+    GerbilSchemeTypeRegistry, GerbilSchemeTypeSpec, GerbilSchemeTypedProjection,
+    GerbilSchemeTypedValue, GerbilSchemeTypedValueValidationReceipt,
+    decode_gerbil_scheme_package_manifest, decode_gerbil_scheme_type_manifest,
+    decode_gerbil_scheme_typed_value, validate_gerbil_scheme_package_manifest,
+    validate_gerbil_scheme_package_native_readiness, validate_gerbil_scheme_type_manifest,
+    validate_gerbil_scheme_typed_value,
 };

@@ -2,7 +2,11 @@
 
 use std::{env, path::PathBuf};
 
-use crate::discovery::{GambitLinkSearchDiscovery, find_gambit_link_search_dir_from_gsc};
+use crate::{
+    archive::build_static_archive_from_link_plan,
+    discovery::{GambitLinkSearchDiscovery, find_gambit_link_search_dir_from_gsc},
+    toolchain::discover_native_c_compiler,
+};
 use marlin_gerbil_scheme::{
     GerbilDeckRuntimeNativeAotBuildReceipt, GerbilDeckRuntimeNativeAotCommandReceipt,
     GerbilDeckRuntimeNativeAotConfig, GerbilDeckRuntimeNativeStaticLinkPlan,
@@ -24,10 +28,17 @@ fn emit_native_link_rerun_inputs() {
         "MARLIN_DECK_RUNTIME_NATIVE_C_COMPILER",
         "MARLIN_DECK_RUNTIME_NATIVE_GAMBIT_LINK_LIBRARY",
         GAMBIT_LINK_SEARCH_DIR_ENV,
+        "AR",
+        "CC",
+        "CFLAGS",
         "GAMBOPT",
         "GERBIL_HOME",
+        "HOST_AR",
+        "HOST_CC",
         "MARLIN_GERBIL_GSC",
         "MARLIN_GERBIL_GXC",
+        "TARGET_AR",
+        "TARGET_CC",
     ] {
         println!("cargo:rerun-if-env-changed={name}");
     }
@@ -38,6 +49,8 @@ fn emit_native_link_directives() {
     let mut config = GerbilDeckRuntimeNativeAotConfig::new(&root);
     if let Some(c_compiler) = env::var_os("MARLIN_DECK_RUNTIME_NATIVE_C_COMPILER") {
         config = config.with_c_compiler(c_compiler.to_string_lossy());
+    } else if let Ok(c_compiler) = discover_native_c_compiler() {
+        config = config.with_c_compiler(c_compiler.program.to_string_lossy());
     }
     if let Some(link_library) = env::var_os("MARLIN_DECK_RUNTIME_NATIVE_GAMBIT_LINK_LIBRARY") {
         config = config.with_gambit_link_library(link_library.to_string_lossy());
@@ -68,8 +81,22 @@ fn emit_native_link_directives() {
         );
     }
 
-    for directive in link_plan.cargo_directives {
-        println!("{}", directive.line());
+    let archive_dir = out_dir().join("deck-runtime-native-link-archive");
+    match build_static_archive_from_link_plan(&link_plan, &archive_dir) {
+        Ok(archive) => {
+            println!("cargo:rerun-if-changed={}", archive.archive_file.display());
+            for directive in archive.cargo_directives {
+                println!("{}", directive.line());
+            }
+        }
+        Err(error) => {
+            println!(
+                "cargo:warning=native Deck runtime archive packaging failed; falling back to object link args: {error}"
+            );
+            for directive in link_plan.cargo_directives {
+                println!("{}", directive.line());
+            }
+        }
     }
 }
 

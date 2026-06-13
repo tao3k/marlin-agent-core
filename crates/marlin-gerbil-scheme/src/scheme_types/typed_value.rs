@@ -6,6 +6,7 @@ use serde_json::Value;
 use super::{
     error::GerbilSchemeTypeDecodeError,
     ids::{GerbilSchemeSchemaId, GerbilSchemeTypeId},
+    projection::{GerbilSchemeProjectionContract, GerbilSchemeTypedProjection},
 };
 
 /// Stable envelope for Scheme values whose concrete Rust projection may evolve downstream.
@@ -57,6 +58,42 @@ impl GerbilSchemeTypedValue {
         })
     }
 
+    pub fn ensure_schema(
+        &self,
+        expected_schema_id: &GerbilSchemeSchemaId,
+    ) -> Result<(), GerbilSchemeTypeDecodeError> {
+        if self.schema_id() == Some(expected_schema_id) {
+            return Ok(());
+        }
+
+        Err(GerbilSchemeTypeDecodeError::SchemaMismatch {
+            type_id: self.type_id.clone(),
+            expected: Some(expected_schema_id.clone()),
+            actual: self.schema_id.clone(),
+        })
+    }
+
+    pub fn ensure_type_and_schema(
+        &self,
+        expected_type_id: &GerbilSchemeTypeId,
+        expected_schema_id: Option<&GerbilSchemeSchemaId>,
+    ) -> Result<(), GerbilSchemeTypeDecodeError> {
+        self.ensure_type(expected_type_id)?;
+
+        if let Some(expected_schema_id) = expected_schema_id {
+            self.ensure_schema(expected_schema_id)?;
+        }
+
+        Ok(())
+    }
+
+    pub fn ensure_projection_contract(
+        &self,
+        contract: &GerbilSchemeProjectionContract,
+    ) -> Result<(), GerbilSchemeTypeDecodeError> {
+        self.ensure_type_and_schema(contract.type_id(), contract.schema_id())
+    }
+
     pub fn decode_value<T>(&self) -> Result<T, GerbilSchemeTypeDecodeError>
     where
         T: DeserializeOwned,
@@ -75,6 +112,25 @@ impl GerbilSchemeTypedValue {
     {
         self.ensure_type(expected_type_id)?;
         self.decode_value()
+    }
+
+    pub fn decode_value_with_contract<T>(
+        &self,
+        contract: &GerbilSchemeProjectionContract,
+    ) -> Result<T, GerbilSchemeTypeDecodeError>
+    where
+        T: DeserializeOwned,
+    {
+        self.ensure_projection_contract(contract)?;
+        self.decode_value()
+    }
+
+    pub fn decode_projection<T>(&self) -> Result<T, GerbilSchemeTypeDecodeError>
+    where
+        T: GerbilSchemeTypedProjection,
+    {
+        let contract = T::scheme_projection_contract();
+        self.decode_value_with_contract(&contract)
     }
 }
 

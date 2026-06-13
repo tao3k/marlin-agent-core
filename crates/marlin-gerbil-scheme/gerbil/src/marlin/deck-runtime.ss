@@ -59,6 +59,7 @@ package: marlin
     "runtime-assets"
     "hook-policy"
     "scheme-policy-runtime"
+    "scheme-compiled-policy-macro"
     "scheme-complex-strategy"
     "dynamic-hook-policy"
     "model-route-policy"

@@ -4,6 +4,7 @@ use marlin_agent_kernel::{
     GraphPolicyProposalStatus, LoopEdgeSpec, LoopGraph, LoopNodeSpec, TokioGraphLoopKernel,
     compile_graph_policy_proposal,
 };
+use marlin_agent_protocol::GraphNativeAbiRequirement;
 use marlin_agent_runtime::TokioAgentRuntime;
 use tokio_stream::StreamExt;
 
@@ -60,7 +61,8 @@ async fn compiles_accepted_policy_proposal_into_execution_request() {
         graph,
         "sha256:input",
         "sha256:output",
-    );
+    )
+    .with_native_abi_requirement(native_policy_abi_requirement());
 
     let compilation = compile_graph_policy_proposal("run", &proposal);
 
@@ -94,7 +96,8 @@ fn rejects_invalid_policy_proposal_before_execution_request() {
         },
         "sha256:input",
         "sha256:output",
-    );
+    )
+    .with_native_abi_requirement(native_policy_abi_requirement());
 
     let compilation = compile_graph_policy_proposal("run", &proposal);
 
@@ -263,4 +266,9 @@ fn edge(from: &str, to: &str) -> LoopEdgeSpec {
         to: to.to_owned(),
         condition: None,
     }
+}
+
+fn native_policy_abi_requirement() -> GraphNativeAbiRequirement {
+    GraphNativeAbiRequirement::new("marlin.graph-loop.native", 1)
+        .with_required_symbols(["marlin_graph_loop_rank", "marlin_graph_loop_select"])
 }

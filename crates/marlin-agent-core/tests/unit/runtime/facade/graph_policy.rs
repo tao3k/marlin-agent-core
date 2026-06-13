@@ -5,6 +5,7 @@ use marlin_agent_core::{
     GraphLoopStrategyId, GraphPolicyProposal, GraphPolicyProposalStatus, LoopEvidenceKind,
     LoopGraph, LoopNodeSpec, compile_gerbil_loop_graph_policy, compile_graph_policy_proposal,
 };
+use marlin_agent_test_support::graph_native_abi_requirement_fixture;
 use std::collections::BTreeMap;
 
 #[test]
@@ -22,7 +23,8 @@ fn core_facade_compiles_policy_proposal_before_kernel_execution() {
         },
         "sha256:input",
         "sha256:output",
-    );
+    )
+    .with_native_abi_requirement(graph_native_abi_requirement_fixture());
 
     let compilation = compile_graph_policy_proposal("run-proposal", &proposal);
 
@@ -83,6 +85,7 @@ fn core_facade_exposes_gerbil_graph_policy_and_budget_contracts() {
             "sha256:core-gerbil-input",
             "sha256:core-gerbil-output",
         )
+        .with_native_abi_requirement(graph_native_abi_requirement_fixture())
         .with_diagnostic(GERBIL_LOOP_GRAPH_POLICY_COMPILATION_SCHEMA_ID),
     );
     let compilation = compile_graph_policy_proposal("core-gerbil-run", &proposal);
@@ -166,6 +169,7 @@ fn core_facade_rejects_invalid_gerbil_loop_graph_shapes_before_execution() {
                 "sha256:core-gerbil-invalid-input",
                 "sha256:core-gerbil-invalid-output",
             )
+            .with_native_abi_requirement(graph_native_abi_requirement_fixture())
             .with_diagnostic(GERBIL_LOOP_GRAPH_POLICY_COMPILATION_SCHEMA_ID),
         );
         let compilation = compile_graph_policy_proposal("core-gerbil-invalid-run", &proposal);

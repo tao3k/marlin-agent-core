@@ -1,6 +1,6 @@
 use marlin_gerbil_scheme::{
-    GerbilSchemeSchemaId, GerbilSchemeTypeId, GerbilSchemeTypeManifest,
-    decode_gerbil_scheme_type_manifest,
+    GerbilSchemeProjectionContract, GerbilSchemeSchemaId, GerbilSchemeTypeId,
+    GerbilSchemeTypeManifest, GerbilSchemeTypedProjection, decode_gerbil_scheme_type_manifest,
 };
 use serde::Deserialize;
 
@@ -11,11 +11,25 @@ pub(super) struct StrategySelectionProjection {
     pub action: String,
 }
 
+impl GerbilSchemeTypedProjection for StrategySelectionProjection {
+    fn scheme_projection_contract() -> GerbilSchemeProjectionContract {
+        GerbilSchemeProjectionContract::new(strategy_selection_type_id())
+            .with_schema_id(strategy_selection_schema_id())
+    }
+}
+
 #[derive(Debug, Deserialize, PartialEq)]
 pub(super) struct StrategyDecisionProjection {
     pub schema_id: String,
     pub selection: StrategySelectionProjection,
     pub reason: String,
+}
+
+impl GerbilSchemeTypedProjection for StrategyDecisionProjection {
+    fn scheme_projection_contract() -> GerbilSchemeProjectionContract {
+        GerbilSchemeProjectionContract::new(strategy_decision_type_id())
+            .with_schema_id(strategy_decision_schema_id())
+    }
 }
 
 pub(super) fn strategy_selection_type_id() -> GerbilSchemeTypeId {

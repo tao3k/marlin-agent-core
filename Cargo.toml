@@ -37,14 +37,19 @@ repository = "https://github.com/tao3k/marlin-agent-core"
 [workspace.dependencies]
 aho-corasick = "1.1.4"
 async-trait = "0.1.89"
+cc = "1.2.64"
+cbindgen = "0.29.4"
 criterion = "0.8.2"
 futures-executor = "0.3.32"
 globset = "0.4.18"
 litellm-rs = { version = "0.5", default-features = false, features = ["lite", "gateway", "sqlite", "redis", "websockets"] }
+memoffset = "0.9.1"
+object = "0.39.1"
 orgize = { git = "https://github.com/tao3k/orgize", branch = "main" }
 parking_lot = "0.12.5"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.145"
+static_assertions = "1.1.0"
 tempfile = "3"
 toml = "1.1.2"
 thiserror = "2.0.18"
@@ -88,5 +93,7 @@ strip = true
 panic = "abort"
 
 [profile.dev]
-debug = 1
+debug = "line-tables-only"
 split-debuginfo = "unpacked"
+strip = "debuginfo"
+incremental = true

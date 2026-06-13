@@ -19,7 +19,7 @@ pub use link::{
 pub use receipt::{
     GerbilDeckRuntimeNativeAotBuildReceipt, GerbilDeckRuntimeNativeAotCommandPlan,
     GerbilDeckRuntimeNativeAotCommandReceipt, GerbilDeckRuntimeNativeAotPlan,
-    GerbilDeckRuntimeNativeSymbol,
+    GerbilDeckRuntimeNativeSymbol, GerbilDeckRuntimeNativeSymbolAuditMethod,
 };
 pub use status::{
     GerbilDeckRuntimeNativeAotBuildStatus, GerbilDeckRuntimeNativeAotStatus,

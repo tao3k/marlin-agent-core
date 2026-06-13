@@ -46,3 +46,48 @@ impl GerbilSchemeFieldName {
         &self.0
     }
 }
+
+/// Stable identifier for a downstream Scheme package.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct GerbilSchemePackageId(String);
+
+impl GerbilSchemePackageId {
+    pub fn new(package_id: impl Into<String>) -> Self {
+        Self(package_id.into())
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+/// Stable identifier for a native ABI contract emitted by Scheme package metadata.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct GerbilSchemeNativeAbiId(String);
+
+impl GerbilSchemeNativeAbiId {
+    pub fn new(abi_id: impl Into<String>) -> Self {
+        Self(abi_id.into())
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+/// Stable C symbol name required by a native Scheme package ABI.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct GerbilSchemeNativeSymbol(String);
+
+impl GerbilSchemeNativeSymbol {
+    pub fn new(symbol: impl Into<String>) -> Self {
+        Self(symbol.into())
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}

@@ -144,6 +144,7 @@ impl GerbilDeckRuntimeNativeAotConfig {
             audit_symbols: audit_symbols_plan(
                 self.symbol_auditor.as_path(),
                 &generated_object(&self.output_dir),
+                &generated_link_object(&self.output_dir),
             ),
             detail,
         }
@@ -282,9 +283,13 @@ fn gsc_generate_link_source_plan(
 fn audit_symbols_plan(
     symbol_auditor: &Path,
     object: &Path,
+    link_object: &Path,
 ) -> GerbilDeckRuntimeNativeAotCommandPlan {
     GerbilDeckRuntimeNativeAotCommandPlan {
         program: symbol_auditor.to_path_buf(),
-        args: vec![object.to_string_lossy().into_owned()],
+        args: vec![
+            object.to_string_lossy().into_owned(),
+            link_object.to_string_lossy().into_owned(),
+        ],
     }
 }

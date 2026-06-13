@@ -4,6 +4,12 @@ use super::{
     config::{GerbilNativeCCompiler, GerbilNativeLinkLibrary, GerbilNativeSymbolAuditor},
     status::{GerbilDeckRuntimeNativeAotBuildStatus, GerbilDeckRuntimeNativeAotStatus},
 };
+use crate::{
+    GERBIL_DECK_RUNTIME_NATIVE_ABI_ID, GERBIL_DECK_RUNTIME_NATIVE_ABI_VERSION,
+    GerbilSchemeNativeAbiContract, GerbilSchemeNativeAbiId, GerbilSchemeNativeAbiReadinessPlan,
+    GerbilSchemeNativeSymbol,
+};
+use marlin_agent_protocol::GraphNativeAbiRequirement;
 use std::path::PathBuf;
 
 /// Exported C symbol name owned by the native Deck runtime ABI.
@@ -20,6 +26,12 @@ impl GerbilDeckRuntimeNativeSymbol {
     }
 }
 
+impl From<&GerbilDeckRuntimeNativeSymbol> for GerbilSchemeNativeSymbol {
+    fn from(symbol: &GerbilDeckRuntimeNativeSymbol) -> Self {
+        Self::new(symbol.as_str())
+    }
+}
+
 /// Program and argv for one native AOT compiler phase.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct GerbilDeckRuntimeNativeAotCommandPlan {
@@ -33,6 +45,13 @@ pub struct GerbilDeckRuntimeNativeAotCommandReceipt {
     pub status_code: Option<i32>,
     pub stdout: String,
     pub stderr: String,
+}
+
+/// Mechanism used to verify required symbols on generated native objects.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum GerbilDeckRuntimeNativeSymbolAuditMethod {
+    ObjectFiles,
+    SymbolTableCommand,
 }
 
 /// Typed plan for producing a Rust-linkable native Deck runtime link unit.
@@ -64,6 +83,38 @@ pub struct GerbilDeckRuntimeNativeAotPlan {
     pub detail: Option<String>,
 }
 
+impl GerbilDeckRuntimeNativeAotPlan {
+    /// Convert this native build plan into a Scheme package native ABI contract.
+    pub fn scheme_native_abi_contract(&self) -> GerbilSchemeNativeAbiContract {
+        GerbilSchemeNativeAbiContract::new(
+            GerbilSchemeNativeAbiId::new(GERBIL_DECK_RUNTIME_NATIVE_ABI_ID),
+            GERBIL_DECK_RUNTIME_NATIVE_ABI_VERSION,
+        )
+        .with_exported_symbols(self.scheme_native_symbols())
+    }
+
+    /// Convert this native build plan into a graph-loop native ABI requirement.
+    pub fn graph_native_abi_requirement(&self) -> GraphNativeAbiRequirement {
+        self.scheme_native_abi_contract()
+            .graph_native_abi_requirement()
+    }
+
+    /// Convert this native build plan into a Scheme package readiness plan.
+    pub fn scheme_native_abi_readiness_plan(&self) -> GerbilSchemeNativeAbiReadinessPlan {
+        GerbilSchemeNativeAbiReadinessPlan::new(
+            GerbilSchemeNativeAbiId::new(GERBIL_DECK_RUNTIME_NATIVE_ABI_ID),
+            GERBIL_DECK_RUNTIME_NATIVE_ABI_VERSION,
+        )
+        .with_exported_symbols(self.scheme_native_symbols())
+    }
+
+    fn scheme_native_symbols(&self) -> impl Iterator<Item = GerbilSchemeNativeSymbol> + '_ {
+        self.exported_symbols
+            .iter()
+            .map(GerbilSchemeNativeSymbol::from)
+    }
+}
+
 /// Structured result for executing a native Deck runtime AOT link-unit build.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct GerbilDeckRuntimeNativeAotBuildReceipt {
@@ -74,6 +125,7 @@ pub struct GerbilDeckRuntimeNativeAotBuildReceipt {
     pub gsc_compile_object: Option<GerbilDeckRuntimeNativeAotCommandReceipt>,
     pub gsc_generate_link_source: Option<GerbilDeckRuntimeNativeAotCommandReceipt>,
     pub gsc_compile_link_object: Option<GerbilDeckRuntimeNativeAotCommandReceipt>,
+    pub symbol_audit_method: Option<GerbilDeckRuntimeNativeSymbolAuditMethod>,
     pub symbol_audit: Option<GerbilDeckRuntimeNativeAotCommandReceipt>,
     pub missing_symbols: Vec<GerbilDeckRuntimeNativeSymbol>,
 }

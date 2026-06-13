@@ -7,8 +7,9 @@ use marlin_agent_protocol::{
     AgentTraceSpanRecord, GERBIL_LOOP_GRAPH_POLICY_COMPILATION_SCHEMA_ID,
     GRAPH_POLICY_PROPOSAL_SPAN_NAME, GRAPH_POLICY_PROPOSAL_VISIBILITY_SUBJECT_PREFIX,
     GerbilLoopGraphPolicyCompilationRequest, GraphLoopExecutionBudget, GraphLoopExecutionRequest,
-    GraphLoopStrategy, GraphLoopStrategyRuntime, GraphPolicyProposal, GraphPolicyProposalStatus,
-    LoopEvidence, LoopEvidenceKind, LoopGraph, LoopNodeSpec, compile_gerbil_loop_graph_policy,
+    GraphLoopStrategy, GraphLoopStrategyRuntime, GraphNativeAbiRequirement, GraphPolicyProposal,
+    GraphPolicyProposalStatus, LoopEvidence, LoopEvidenceKind, LoopGraph, LoopNodeSpec,
+    compile_gerbil_loop_graph_policy,
 };
 
 const ACCEPTED_RUN_ID: &str = "test-support/graph-policy/accepted";
@@ -73,7 +74,8 @@ pub fn accepted_graph_policy_proposal_fixture() -> DeterministicGraphPolicyPropo
         },
         "sha256:test-support-input",
         "sha256:test-support-output",
-    );
+    )
+    .with_native_abi_requirement(graph_native_abi_requirement_fixture());
     let compilation = compile_graph_policy_proposal(ACCEPTED_RUN_ID, &proposal);
 
     DeterministicGraphPolicyProposalFixture {
@@ -93,6 +95,7 @@ pub fn accepted_gerbil_ir_graph_policy_proposal_fixture() -> DeterministicGraphP
             "sha256:test-support-gerbil-ir-input",
             "sha256:test-support-gerbil-ir-output",
         )
+        .with_native_abi_requirement(graph_native_abi_requirement_fixture())
         .with_diagnostic(GERBIL_LOOP_GRAPH_POLICY_COMPILATION_SCHEMA_ID),
     );
     let compilation = compile_graph_policy_proposal(GERBIL_IR_RUN_ID, &proposal);
@@ -113,6 +116,7 @@ pub fn complex_gerbil_graph_policy_replay_fixture() -> DeterministicGraphPolicyP
             "sha256:real-gxi-complex-policy-input",
             "sha256:real-gxi-complex-policy-output",
         )
+        .with_native_abi_requirement(graph_native_abi_requirement_fixture())
         .with_diagnostic(GERBIL_LOOP_GRAPH_POLICY_COMPILATION_SCHEMA_ID)
         .with_diagnostic("source=real-gxi complex scheme policy replay"),
     );
@@ -214,7 +218,8 @@ pub fn rejected_graph_policy_proposal_fixture() -> DeterministicGraphPolicyPropo
         },
         "sha256:test-support-input",
         "sha256:test-support-output",
-    );
+    )
+    .with_native_abi_requirement(graph_native_abi_requirement_fixture());
     let compilation = compile_graph_policy_proposal(REJECTED_RUN_ID, &proposal);
 
     DeterministicGraphPolicyProposalFixture {
@@ -222,6 +227,12 @@ pub fn rejected_graph_policy_proposal_fixture() -> DeterministicGraphPolicyPropo
         compilation,
         expected_run_id: REJECTED_RUN_ID.to_owned(),
     }
+}
+
+/// Deterministic native ABI requirement used by no-LLM graph-policy fixtures.
+pub fn graph_native_abi_requirement_fixture() -> GraphNativeAbiRequirement {
+    GraphNativeAbiRequirement::new("marlin.graph-loop.native", 1)
+        .with_required_symbols(["marlin_graph_loop_rank", "marlin_graph_loop_select"])
 }
 
 /// Assert the accepted proposal fixture stays on the Rust compilation path.
@@ -275,6 +286,10 @@ fn assert_accepted_compilation_receipt(fixture: &DeterministicGraphPolicyProposa
     assert_eq!(
         fixture.compilation.receipt.status,
         GraphPolicyProposalStatus::Accepted
+    );
+    assert_eq!(
+        fixture.compilation.receipt.native_abi,
+        Some(graph_native_abi_requirement_fixture())
     );
     assert!(fixture.compilation.receipt.diagnostics.is_empty());
 }
@@ -341,6 +356,10 @@ fn assert_rejected_compilation_receipt(fixture: &DeterministicGraphPolicyProposa
     assert_eq!(
         fixture.compilation.receipt.status,
         GraphPolicyProposalStatus::Rejected
+    );
+    assert_eq!(
+        fixture.compilation.receipt.native_abi,
+        Some(graph_native_abi_requirement_fixture())
     );
     assert!(fixture.compilation.request.is_none());
     assert!(

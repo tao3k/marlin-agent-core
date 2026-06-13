@@ -5,9 +5,9 @@ use std::{
     fmt::{self, Display, Formatter},
 };
 
-use super::{
-    ids::{GerbilSchemeFieldName, GerbilSchemeSchemaId, GerbilSchemeTypeId},
-    json_kind::GerbilSchemeJsonTypeKind,
+use super::ids::{
+    GerbilSchemeFieldName, GerbilSchemeNativeAbiId, GerbilSchemeNativeSymbol,
+    GerbilSchemePackageId, GerbilSchemeSchemaId, GerbilSchemeTypeId,
 };
 
 /// Error raised while decoding Scheme type manifests or typed values.
@@ -36,20 +36,30 @@ pub enum GerbilSchemeTypeDecodeError {
         expected: Option<GerbilSchemeSchemaId>,
         actual: Option<GerbilSchemeSchemaId>,
     },
-    ValueShape {
+    DuplicateProjectionContract {
         type_id: GerbilSchemeTypeId,
-        expected: GerbilSchemeJsonTypeKind,
-        actual: GerbilSchemeJsonTypeKind,
+        schema_id: Option<GerbilSchemeSchemaId>,
     },
-    MissingRequiredField {
-        type_id: GerbilSchemeTypeId,
-        field_name: GerbilSchemeFieldName,
+    MissingNativeSymbols {
+        abi_id: GerbilSchemeNativeAbiId,
     },
-    FieldTypeMismatch {
-        type_id: GerbilSchemeTypeId,
-        field_name: GerbilSchemeFieldName,
-        expected: GerbilSchemeTypeId,
-        actual: GerbilSchemeJsonTypeKind,
+    DuplicateNativeSymbol {
+        symbol: GerbilSchemeNativeSymbol,
+    },
+    MissingNativeAbi {
+        package_id: GerbilSchemePackageId,
+    },
+    NativeAbiMismatch {
+        expected: GerbilSchemeNativeAbiId,
+        actual: GerbilSchemeNativeAbiId,
+    },
+    NativeAbiVersionMismatch {
+        abi_id: GerbilSchemeNativeAbiId,
+        expected: u32,
+        actual: u32,
+    },
+    MissingNativeSymbol {
+        symbol: GerbilSchemeNativeSymbol,
     },
     TypeMismatch {
         expected: GerbilSchemeTypeId,
@@ -104,38 +114,48 @@ impl Display for GerbilSchemeTypeDecodeError {
                 schema_id_label(actual.as_ref()),
                 schema_id_label(expected.as_ref())
             ),
-            Self::ValueShape {
-                type_id,
+            Self::DuplicateProjectionContract { type_id, schema_id } => write!(
+                formatter,
+                "Scheme package repeats projection contract for type_id {} schema_id {}",
+                type_id.as_str(),
+                schema_id_label(schema_id.as_ref())
+            ),
+            Self::MissingNativeSymbols { abi_id } => write!(
+                formatter,
+                "Scheme native ABI {} declares no exported symbols",
+                abi_id.as_str()
+            ),
+            Self::DuplicateNativeSymbol { symbol } => write!(
+                formatter,
+                "Scheme native ABI repeats exported symbol {}",
+                symbol.as_str()
+            ),
+            Self::MissingNativeAbi { package_id } => write!(
+                formatter,
+                "Scheme package {} declares no native ABI",
+                package_id.as_str()
+            ),
+            Self::NativeAbiMismatch { expected, actual } => write!(
+                formatter,
+                "Scheme native ABI id {}, expected {}",
+                actual.as_str(),
+                expected.as_str()
+            ),
+            Self::NativeAbiVersionMismatch {
+                abi_id,
                 expected,
                 actual,
             } => write!(
                 formatter,
-                "Scheme typed value {} has {} payload, expected {}",
-                type_id.as_str(),
-                actual.as_str(),
-                expected.as_str()
-            ),
-            Self::MissingRequiredField {
-                type_id,
-                field_name,
-            } => write!(
-                formatter,
-                "Scheme typed value {} is missing required field {}",
-                type_id.as_str(),
-                field_name.as_str()
-            ),
-            Self::FieldTypeMismatch {
-                type_id,
-                field_name,
-                expected,
+                "Scheme native ABI {} has version {}, expected {}",
+                abi_id.as_str(),
                 actual,
-            } => write!(
+                expected
+            ),
+            Self::MissingNativeSymbol { symbol } => write!(
                 formatter,
-                "Scheme typed value {} field {} has {} payload, expected {}",
-                type_id.as_str(),
-                field_name.as_str(),
-                actual.as_str(),
-                expected.as_str()
+                "Scheme native ABI is missing exported symbol {}",
+                symbol.as_str()
             ),
             Self::TypeMismatch { expected, actual } => write!(
                 formatter,

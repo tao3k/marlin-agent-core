@@ -3,13 +3,14 @@ use std::collections::BTreeMap;
 use marlin_agent_protocol::{
     GRAPH_POLICY_PROPOSAL_SCHEMA_ID, GerbilLoopGraphPolicyCompilationRequest,
     GraphLoopExecutionBudget, GraphLoopExecutionRequest, GraphLoopStrategy,
-    GraphLoopStrategyRuntime, GraphPolicyProposal, GraphPolicyProposalReceipt,
-    GraphPolicyProposalStatus, GraphPolicyProposalValidationReport, LoopEdgeSpec, LoopGraph,
-    LoopNodeSpec, compile_gerbil_loop_graph_policy,
+    GraphLoopStrategyRuntime, GraphNativeAbiId, GraphNativeAbiRequirement, GraphNativeSymbol,
+    GraphPolicyProposal, GraphPolicyProposalReceipt, GraphPolicyProposalStatus,
+    GraphPolicyProposalValidationReport, LoopEdgeSpec, LoopGraph, LoopNodeSpec,
+    compile_gerbil_loop_graph_policy,
 };
 
 #[test]
-fn graph_policy_proposal_records_native_scheme_strategy_without_runtime_power() {
+fn graph_policy_proposal_records_native_scheme_strategy_with_abi_requirement() {
     let graph = LoopGraph {
         graph_id: "turn-frontier-1".to_string(),
         nodes: vec![
@@ -36,6 +37,7 @@ fn graph_policy_proposal_records_native_scheme_strategy_without_runtime_power() 
         "sha256:input",
         "sha256:output",
     )
+    .with_native_abi_requirement(native_policy_abi_requirement())
     .with_diagnostic("scheme_policy_plane=proposal_only");
 
     assert!(proposal.has_current_schema());
@@ -51,6 +53,12 @@ fn graph_policy_proposal_records_native_scheme_strategy_without_runtime_power() 
     assert_eq!(value["schema_id"], GRAPH_POLICY_PROPOSAL_SCHEMA_ID);
     assert_eq!(value["strategy"]["strategy_id"], "scheme-loop-ranker");
     assert_eq!(value["strategy"]["runtime"], "NativeScheme");
+    assert_eq!(value["native_abi"]["abi_id"], "marlin.graph-loop.native");
+    assert_eq!(value["native_abi"]["version"], 1);
+    assert_eq!(
+        value["native_abi"]["required_symbols"][0],
+        "marlin_graph_loop_rank"
+    );
     assert_eq!(value["proposed_graph"]["graph_id"], "turn-frontier-1");
     assert_eq!(value["diagnostics"][0], "scheme_policy_plane=proposal_only");
 
@@ -69,6 +77,10 @@ fn graph_policy_proposal_records_native_scheme_strategy_without_runtime_power() 
     let accepted = GraphPolicyProposalReceipt::accepted(&proposal);
     assert_eq!(accepted.status, GraphPolicyProposalStatus::Accepted);
     assert_eq!(
+        accepted.native_abi.as_ref().expect("native abi").abi_id,
+        GraphNativeAbiId::new("marlin.graph-loop.native")
+    );
+    assert_eq!(
         accepted
             .selected_graph_id
             .as_ref()
@@ -82,6 +94,7 @@ fn graph_policy_proposal_records_native_scheme_strategy_without_runtime_power() 
         vec!["budget_exceeds_runtime_policy".to_string()],
     );
     assert_eq!(rejected.status, GraphPolicyProposalStatus::Rejected);
+    assert!(rejected.native_abi.is_some());
     assert!(rejected.selected_graph_id.is_none());
     assert_eq!(rejected.diagnostics[0], "budget_exceeds_runtime_policy");
 }
@@ -116,6 +129,7 @@ fn gerbil_loop_graph_ir_compiles_into_graph_policy_proposal() {
             "sha256:gerbil-input",
             "sha256:gerbil-output",
         )
+        .with_native_abi_requirement(native_policy_abi_requirement())
         .with_diagnostic("gerbil_ir=compiled"),
     );
 
@@ -128,6 +142,17 @@ fn gerbil_loop_graph_ir_compiles_into_graph_policy_proposal() {
     assert_eq!(
         proposal.proposed_graph.edges[0].condition.as_deref(),
         Some("always")
+    );
+    assert_eq!(
+        proposal
+            .native_abi
+            .as_ref()
+            .expect("native abi")
+            .required_symbols,
+        vec![
+            GraphNativeSymbol::new("marlin_graph_loop_rank"),
+            GraphNativeSymbol::new("marlin_graph_loop_select")
+        ]
     );
     assert_eq!(proposal.diagnostics, vec!["gerbil_ir=compiled"]);
     assert!(proposal.validate().is_accepted());
@@ -236,6 +261,11 @@ fn graph_policy_proposal_validation_rejects_invalid_runtime_graph() {
     assert!(
         validation
             .diagnostics
+            .contains(&"graph_policy_proposal.native_abi_missing".to_string())
+    );
+    assert!(
+        validation
+            .diagnostics
             .contains(&"graph_policy_proposal.graph_id_empty".to_string())
     );
     assert!(
@@ -262,4 +292,104 @@ fn graph_policy_proposal_validation_rejects_invalid_runtime_graph() {
     let receipt = GraphPolicyProposalReceipt::validate(&proposal);
     assert_eq!(receipt.status, GraphPolicyProposalStatus::Rejected);
     assert_eq!(receipt.diagnostics, validation.diagnostics);
+}
+
+#[test]
+fn native_graph_policy_proposal_validation_requires_native_abi_requirement() {
+    let proposal = GraphPolicyProposal::new(
+        GraphLoopStrategy::native_gerbil("gerbil-loop-ranker", "v1"),
+        valid_graph(),
+        "sha256:input",
+        "sha256:output",
+    );
+
+    let validation = proposal.validate();
+
+    assert_eq!(validation.status, GraphPolicyProposalStatus::Rejected);
+    assert!(validation.selected_graph_id.is_none());
+    assert!(validation.native_abi.is_none());
+    assert!(
+        validation
+            .diagnostics
+            .contains(&"graph_policy_proposal.native_abi_missing".to_string())
+    );
+}
+
+#[test]
+fn graph_policy_proposal_validation_rejects_invalid_native_abi_requirement() {
+    let proposal = GraphPolicyProposal::new(
+        GraphLoopStrategy::native_scheme("scheme-loop-ranker", "v1"),
+        valid_graph(),
+        "sha256:input",
+        "sha256:output",
+    )
+    .with_native_abi_requirement(
+        GraphNativeAbiRequirement::new(" ", 0).with_required_symbols(["rank", "rank", " "]),
+    );
+
+    let validation = proposal.validate();
+
+    assert_eq!(validation.status, GraphPolicyProposalStatus::Rejected);
+    assert!(validation.selected_graph_id.is_none());
+    assert!(
+        validation
+            .diagnostics
+            .contains(&"graph_policy_proposal.native_abi_id_empty".to_string())
+    );
+    assert!(
+        validation
+            .diagnostics
+            .contains(&"graph_policy_proposal.native_abi_version_zero".to_string())
+    );
+    assert!(
+        validation
+            .diagnostics
+            .contains(&"graph_policy_proposal.native_abi_symbol_duplicate:rank".to_string())
+    );
+    assert!(
+        validation
+            .diagnostics
+            .contains(&"graph_policy_proposal.native_abi_symbol_empty".to_string())
+    );
+}
+
+#[test]
+fn static_graph_policy_proposal_validation_rejects_native_abi_requirement() {
+    let proposal = GraphPolicyProposal::new(
+        GraphLoopStrategy::new(
+            "static-loop-ranker",
+            "v1",
+            GraphLoopStrategyRuntime::StaticPolicy,
+        ),
+        valid_graph(),
+        "sha256:input",
+        "sha256:output",
+    )
+    .with_native_abi_requirement(native_policy_abi_requirement());
+
+    let validation = proposal.validate();
+
+    assert_eq!(validation.status, GraphPolicyProposalStatus::Rejected);
+    assert!(
+        validation
+            .diagnostics
+            .contains(&"graph_policy_proposal.native_abi_unexpected".to_string())
+    );
+}
+
+fn native_policy_abi_requirement() -> GraphNativeAbiRequirement {
+    GraphNativeAbiRequirement::new("marlin.graph-loop.native", 1)
+        .with_required_symbols(["marlin_graph_loop_rank", "marlin_graph_loop_select"])
+}
+
+fn valid_graph() -> LoopGraph {
+    LoopGraph {
+        graph_id: "valid-graph".to_string(),
+        nodes: vec![LoopNodeSpec {
+            id: "rank".to_string(),
+            executor: "gerbil.rank".to_string(),
+            config: BTreeMap::new(),
+        }],
+        edges: Vec::new(),
+    }
 }

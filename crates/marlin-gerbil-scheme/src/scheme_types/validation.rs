@@ -2,15 +2,11 @@
 
 use std::collections::BTreeSet;
 
-use serde_json::Value;
-
 use super::{
     error::GerbilSchemeTypeDecodeError,
-    ids::{GerbilSchemeSchemaId, GerbilSchemeTypeId},
-    json_kind::GerbilSchemeJsonTypeKind,
+    ids::GerbilSchemeTypeId,
     manifest::{
-        GerbilSchemeTypeFieldSpec, GerbilSchemeTypeManifest,
-        GerbilSchemeTypeManifestValidationReceipt, GerbilSchemeTypeSpec,
+        GerbilSchemeTypeManifest, GerbilSchemeTypeManifestValidationReceipt, GerbilSchemeTypeSpec,
         GerbilSchemeTypedValueValidationReceipt,
     },
     typed_value::GerbilSchemeTypedValue,
@@ -39,19 +35,6 @@ pub fn validate_gerbil_scheme_typed_value(
     validate_typed_value_with_lookup(|type_id| manifest.type_spec(type_id), typed_value)
 }
 
-/// Validate a raw `JSON` payload as a named `Gerbil` Scheme type.
-pub fn validate_gerbil_scheme_value_as_type(
-    manifest: &GerbilSchemeTypeManifest,
-    type_id: &GerbilSchemeTypeId,
-    value: &Value,
-) -> Result<GerbilSchemeTypedValueValidationReceipt, GerbilSchemeTypeDecodeError> {
-    validate_value_as_type_with_lookup(
-        |resolved_type_id| manifest.type_spec(resolved_type_id),
-        type_id,
-        value,
-    )
-}
-
 pub(super) fn validate_typed_value_with_lookup<'a>(
     mut lookup: impl FnMut(&GerbilSchemeTypeId) -> Option<&'a GerbilSchemeTypeSpec>,
     typed_value: &GerbilSchemeTypedValue,
@@ -62,20 +45,12 @@ pub(super) fn validate_typed_value_with_lookup<'a>(
         })?;
 
     validate_typed_value_schema(spec, typed_value)?;
-    validate_typed_value_against_spec(spec, typed_value, &mut lookup)
-}
 
-pub(super) fn validate_value_as_type_with_lookup<'a>(
-    mut lookup: impl FnMut(&GerbilSchemeTypeId) -> Option<&'a GerbilSchemeTypeSpec>,
-    type_id: &GerbilSchemeTypeId,
-    value: &Value,
-) -> Result<GerbilSchemeTypedValueValidationReceipt, GerbilSchemeTypeDecodeError> {
-    let spec = lookup(type_id).ok_or_else(|| GerbilSchemeTypeDecodeError::UnknownType {
-        type_id: type_id.clone(),
-    })?;
-    let schema_id = schema_id_from_value(value);
-
-    validate_value_against_spec(spec, schema_id.as_ref(), value, &mut lookup)
+    Ok(GerbilSchemeTypedValueValidationReceipt {
+        type_id: spec.type_id.clone(),
+        schema_id: typed_value.schema_id().cloned(),
+        declared_field_count: spec.fields.len(),
+    })
 }
 
 fn collect_unique_type_ids(
@@ -165,144 +140,9 @@ fn validate_typed_value_schema(
     Ok(())
 }
 
-fn validate_typed_value_against_spec<'a>(
-    spec: &GerbilSchemeTypeSpec,
-    typed_value: &GerbilSchemeTypedValue,
-    lookup: &mut impl FnMut(&GerbilSchemeTypeId) -> Option<&'a GerbilSchemeTypeSpec>,
-) -> Result<GerbilSchemeTypedValueValidationReceipt, GerbilSchemeTypeDecodeError> {
-    validate_value_against_spec(spec, typed_value.schema_id(), typed_value.value(), lookup)
-}
-
-fn validate_value_against_spec<'a>(
-    spec: &GerbilSchemeTypeSpec,
-    schema_id: Option<&GerbilSchemeSchemaId>,
-    value: &Value,
-    lookup: &mut impl FnMut(&GerbilSchemeTypeId) -> Option<&'a GerbilSchemeTypeSpec>,
-) -> Result<GerbilSchemeTypedValueValidationReceipt, GerbilSchemeTypeDecodeError> {
-    if let Some(expected_schema_id) = spec.schema_id.as_ref()
-        && schema_id != Some(expected_schema_id)
-    {
-        return Err(GerbilSchemeTypeDecodeError::SchemaMismatch {
-            type_id: spec.type_id.clone(),
-            expected: Some(expected_schema_id.clone()),
-            actual: schema_id.cloned(),
-        });
-    }
-
-    let object = value
-        .as_object()
-        .ok_or_else(|| GerbilSchemeTypeDecodeError::ValueShape {
-            type_id: spec.type_id.clone(),
-            expected: GerbilSchemeJsonTypeKind::Object,
-            actual: GerbilSchemeJsonTypeKind::from_value(value),
-        })?;
-
-    let required_fields = spec.fields.iter().try_fold(0, |required_fields, field| {
-        validate_typed_value_field(spec, field, object, lookup)
-            .map(|field_required| required_fields + usize::from(field_required))
-    })?;
-
-    Ok(GerbilSchemeTypedValueValidationReceipt {
-        type_id: spec.type_id.clone(),
-        schema_id: schema_id.cloned(),
-        required_fields,
-        value_field_count: object.len(),
-    })
-}
-
-fn validate_typed_value_field<'a>(
-    spec: &GerbilSchemeTypeSpec,
-    field: &GerbilSchemeTypeFieldSpec,
-    object: &serde_json::Map<String, Value>,
-    lookup: &mut impl FnMut(&GerbilSchemeTypeId) -> Option<&'a GerbilSchemeTypeSpec>,
-) -> Result<bool, GerbilSchemeTypeDecodeError> {
-    let value = object.get(field.name.as_str());
-    if field.required && value.is_none() {
-        return Err(GerbilSchemeTypeDecodeError::MissingRequiredField {
-            type_id: spec.type_id.clone(),
-            field_name: field.name.clone(),
-        });
-    }
-
-    if let Some(value) = value {
-        validate_field_value_matches_type(spec, field, value, lookup)?;
-    }
-
-    Ok(field.required)
-}
-
-fn validate_field_value_matches_type<'a>(
-    spec: &GerbilSchemeTypeSpec,
-    field: &GerbilSchemeTypeFieldSpec,
-    value: &Value,
-    lookup: &mut impl FnMut(&GerbilSchemeTypeId) -> Option<&'a GerbilSchemeTypeSpec>,
-) -> Result<(), GerbilSchemeTypeDecodeError> {
-    if is_builtin_scheme_type(&field.type_id) {
-        return validate_builtin_field_value_matches_type(spec, field, value);
-    }
-
-    let nested_spec =
-        lookup(&field.type_id).ok_or_else(|| GerbilSchemeTypeDecodeError::UnknownFieldType {
-            type_id: spec.type_id.clone(),
-            field_name: field.name.clone(),
-            field_type_id: field.type_id.clone(),
-        })?;
-
-    if !value.is_object() {
-        return Err(GerbilSchemeTypeDecodeError::FieldTypeMismatch {
-            type_id: spec.type_id.clone(),
-            field_name: field.name.clone(),
-            expected: field.type_id.clone(),
-            actual: GerbilSchemeJsonTypeKind::from_value(value),
-        });
-    }
-
-    let schema_id = schema_id_from_value(value);
-    validate_value_against_spec(nested_spec, schema_id.as_ref(), value, lookup).map(|_| ())
-}
-
-fn validate_builtin_field_value_matches_type(
-    spec: &GerbilSchemeTypeSpec,
-    field: &GerbilSchemeTypeFieldSpec,
-    value: &Value,
-) -> Result<(), GerbilSchemeTypeDecodeError> {
-    if builtin_field_value_matches_type(value, &field.type_id) {
-        Ok(())
-    } else {
-        Err(GerbilSchemeTypeDecodeError::FieldTypeMismatch {
-            type_id: spec.type_id.clone(),
-            field_name: field.name.clone(),
-            expected: field.type_id.clone(),
-            actual: GerbilSchemeJsonTypeKind::from_value(value),
-        })
-    }
-}
-
-fn builtin_field_value_matches_type(value: &Value, type_id: &GerbilSchemeTypeId) -> bool {
-    match type_id.as_str() {
-        "any" | "json" => true,
-        "null" => value.is_null(),
-        "boolean" => value.is_boolean(),
-        "number" => value.is_number(),
-        "integer" => value.as_i64().is_some() || value.as_u64().is_some(),
-        "string" => value.is_string(),
-        "array" => value.is_array(),
-        "object" => value.is_object(),
-        _ => false,
-    }
-}
-
 fn is_builtin_scheme_type(type_id: &GerbilSchemeTypeId) -> bool {
     matches!(
         type_id.as_str(),
         "any" | "json" | "null" | "boolean" | "number" | "integer" | "string" | "array" | "object"
     )
-}
-
-fn schema_id_from_value(value: &Value) -> Option<GerbilSchemeSchemaId> {
-    value
-        .as_object()
-        .and_then(|object| object.get("schema_id"))
-        .and_then(Value::as_str)
-        .map(GerbilSchemeSchemaId::new)
 }
