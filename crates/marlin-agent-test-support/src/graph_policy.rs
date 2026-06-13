@@ -12,6 +12,7 @@ use marlin_agent_protocol::{
 };
 
 const ACCEPTED_RUN_ID: &str = "test-support/graph-policy/accepted";
+const COMPLEX_GERBIL_POLICY_RUN_ID: &str = "test-support/graph-policy/complex-gerbil-policy";
 const GERBIL_IR_RUN_ID: &str = "test-support/graph-policy/gerbil-ir";
 const REJECTED_RUN_ID: &str = "test-support/graph-policy/rejected";
 
@@ -103,6 +104,27 @@ pub fn accepted_gerbil_ir_graph_policy_proposal_fixture() -> DeterministicGraphP
     }
 }
 
+/// Replay fixture mirroring the real-gxi complex Scheme graph-policy bridge.
+pub fn complex_gerbil_graph_policy_replay_fixture() -> DeterministicGraphPolicyProposalFixture {
+    let proposal = compile_gerbil_loop_graph_policy(
+        GerbilLoopGraphPolicyCompilationRequest::new(
+            GraphLoopStrategy::native_gerbil("real-gxi-complex-policy", "v1"),
+            complex_gerbil_policy_loop_graph(),
+            "sha256:real-gxi-complex-policy-input",
+            "sha256:real-gxi-complex-policy-output",
+        )
+        .with_diagnostic(GERBIL_LOOP_GRAPH_POLICY_COMPILATION_SCHEMA_ID)
+        .with_diagnostic("source=real-gxi complex scheme policy replay"),
+    );
+    let compilation = compile_graph_policy_proposal(COMPLEX_GERBIL_POLICY_RUN_ID, &proposal);
+
+    DeterministicGraphPolicyProposalFixture {
+        proposal,
+        compilation,
+        expected_run_id: COMPLEX_GERBIL_POLICY_RUN_ID.to_owned(),
+    }
+}
+
 fn gerbil_ir_loop_graph() -> marlin_gerbil_ir::CompiledLoopGraph {
     marlin_gerbil_ir::CompiledLoopGraph {
         graph_id: "test-support-gerbil-ir-graph".to_owned(),
@@ -123,6 +145,57 @@ fn gerbil_ir_loop_graph() -> marlin_gerbil_ir::CompiledLoopGraph {
             to: "dispatch".to_owned(),
             condition: Some("always".to_owned()),
         }],
+    }
+}
+
+fn complex_gerbil_policy_loop_graph() -> marlin_gerbil_ir::CompiledLoopGraph {
+    marlin_gerbil_ir::CompiledLoopGraph {
+        graph_id: "gerbil-complex-policy".to_owned(),
+        nodes: vec![
+            marlin_gerbil_ir::LoopNodeSpec {
+                id: "rank".to_owned(),
+                executor: "gerbil-rank".to_owned(),
+                config: BTreeMap::from([
+                    ("complexity".to_owned(), "complex".to_owned()),
+                    ("policy".to_owned(), "native".to_owned()),
+                ]),
+            },
+            marlin_gerbil_ir::LoopNodeSpec {
+                id: "budget-check".to_owned(),
+                executor: "policy-budget".to_owned(),
+                config: BTreeMap::from([
+                    ("gate".to_owned(), "strict".to_owned()),
+                    ("max-steps".to_owned(), "4".to_owned()),
+                ]),
+            },
+            marlin_gerbil_ir::LoopNodeSpec {
+                id: "dispatch".to_owned(),
+                executor: "kernel-dispatch".to_owned(),
+                config: BTreeMap::from([("mode".to_owned(), "deterministic".to_owned())]),
+            },
+            marlin_gerbil_ir::LoopNodeSpec {
+                id: "audit".to_owned(),
+                executor: "policy-audit".to_owned(),
+                config: BTreeMap::from([("receipt".to_owned(), "visibility".to_owned())]),
+            },
+        ],
+        edges: vec![
+            marlin_gerbil_ir::LoopEdgeSpec {
+                from: "rank".to_owned(),
+                to: "budget-check".to_owned(),
+                condition: Some("always".to_owned()),
+            },
+            marlin_gerbil_ir::LoopEdgeSpec {
+                from: "budget-check".to_owned(),
+                to: "dispatch".to_owned(),
+                condition: Some("always".to_owned()),
+            },
+            marlin_gerbil_ir::LoopEdgeSpec {
+                from: "dispatch".to_owned(),
+                to: "audit".to_owned(),
+                condition: Some("always".to_owned()),
+            },
+        ],
     }
 }
 

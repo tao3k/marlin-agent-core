@@ -5,7 +5,8 @@ use marlin_agent_test_support::{
     assert_accepted_graph_policy_proposal_fixture, assert_budgeted_graph_policy_execution_request,
     assert_deterministic_sub_agent_scenario_fixture, assert_rejected_graph_policy_proposal_fixture,
     assert_sub_agent_memory_session_fixture, budgeted_graph_policy_execution_request_fixture,
-    deterministic_reviewer_sub_agent_scenario_fixture, rejected_graph_policy_proposal_fixture,
+    complex_gerbil_graph_policy_replay_fixture, deterministic_reviewer_sub_agent_scenario_fixture,
+    rejected_graph_policy_proposal_fixture,
 };
 
 #[test]
@@ -35,6 +36,43 @@ fn graph_policy_fixture_accepts_gerbil_ir_proposal_without_live_llm() {
     assert_eq!(
         fixture.proposal().strategy.strategy_id.as_str(),
         "test-support-gerbil-ir-loop-ranker"
+    );
+}
+
+#[test]
+fn graph_policy_fixture_replays_complex_gerbil_policy_receipt_without_live_llm() {
+    let fixture = complex_gerbil_graph_policy_replay_fixture();
+    let graph = &fixture.proposal().proposed_graph;
+    let evidence = fixture.visibility_evidence();
+
+    assert!(fixture.compilation().is_accepted());
+    assert_eq!(
+        fixture.expected_run_id(),
+        "test-support/graph-policy/complex-gerbil-policy"
+    );
+    assert_eq!(
+        fixture.proposal().strategy.strategy_id.as_str(),
+        "real-gxi-complex-policy"
+    );
+    assert_eq!(graph.graph_id, "gerbil-complex-policy");
+    assert_eq!(graph.nodes.len(), 4);
+    assert_eq!(graph.edges.len(), 3);
+    assert_eq!(graph.nodes[1].id, "budget-check");
+    assert_eq!(graph.nodes[3].executor, "policy-audit");
+    assert!(
+        fixture
+            .proposal()
+            .diagnostics
+            .iter()
+            .any(|diagnostic| { diagnostic.contains("real-gxi complex scheme policy replay") })
+    );
+    assert_eq!(fixture.compilation().receipt.diagnostics.len(), 0);
+    assert!(evidence.present);
+    assert!(
+        evidence
+            .detail
+            .as_deref()
+            .is_some_and(|detail| detail.contains("real-gxi-complex-policy"))
     );
 }
 

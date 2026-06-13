@@ -39,6 +39,7 @@ fn no_llm_runtime_replay_artifact_loads_graph_session_and_hook_evidence() {
         1
     );
     assert!(detail_contains(evidence, "status=Accepted"));
+    assert!(detail_contains(evidence, "real-gxi-complex-policy"));
     assert!(detail_contains(evidence, "denied_memory=true"));
     assert!(detail_contains(evidence, "visibility_contracted=true"));
     assert!(detail_contains(evidence, "policy_decisions=2"));

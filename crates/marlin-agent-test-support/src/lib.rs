@@ -17,7 +17,7 @@ pub use graph_policy::{
     assert_accepted_gerbil_ir_graph_policy_proposal_fixture,
     assert_accepted_graph_policy_proposal_fixture, assert_budgeted_graph_policy_execution_request,
     assert_rejected_graph_policy_proposal_fixture, budgeted_graph_policy_execution_request_fixture,
-    rejected_graph_policy_proposal_fixture,
+    complex_gerbil_graph_policy_replay_fixture, rejected_graph_policy_proposal_fixture,
 };
 pub use hook::{
     assert_custom_hook_policy_receipt, assert_custom_sub_agent_start_hook_summary,

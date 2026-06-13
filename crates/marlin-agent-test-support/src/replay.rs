@@ -8,7 +8,7 @@ use marlin_agent_protocol::{
 use marlin_agent_sessions::SessionKind;
 
 use crate::{
-    accepted_graph_policy_proposal_fixture, custom_hook_policy_receipt_fixture,
+    complex_gerbil_graph_policy_replay_fixture, custom_hook_policy_receipt_fixture,
     custom_sub_agent_start_hook_summary_fixture, hook_dispatch_replay_evidence,
     sub_agent_hook_dispatch_selection_fixture, sub_agent_memory_denied_fixture,
     sub_agent_memory_session_replay_evidence, sub_agent_memory_session_visibility_evidence,
@@ -133,7 +133,7 @@ fn deterministic_no_llm_runtime_replay_evidence() -> Vec<LoopEvidence> {
     let hook_summary = custom_sub_agent_start_hook_summary_fixture();
     let hook_selection = sub_agent_hook_dispatch_selection_fixture();
     let hook_policy = custom_hook_policy_receipt_fixture();
-    let graph_policy = accepted_graph_policy_proposal_fixture();
+    let graph_policy = complex_gerbil_graph_policy_replay_fixture();
 
     vec![
         graph_policy.visibility_evidence(),
