@@ -99,6 +99,9 @@ async fn static_hook_runtime_replay_records_complex_gerbil_policy_action_evidenc
         "policy_action_targets=catalog:customer-agent-hook|session:release|dangerous-shell|command"
     ));
     assert!(detail.contains("policy_action_replacements=none|none|none|cargo test --locked"));
+    assert!(detail.contains(
+        "policy_action_reasons=customer agent session requires runtime catalog hook|release lineage waits for org memory review|dirty workspace blocks dangerous shell hook|session policy prefers locked tests"
+    ));
     assert!(detail.contains("context_session_id=cheap-test-session"));
     assert!(detail.contains("context_agent_lineage=release"));
     assert!(detail.contains("context_workspace_state=dirty"));
