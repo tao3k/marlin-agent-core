@@ -10,8 +10,13 @@ use marlin_agent_test_support::{
     RuntimeStabilityEvidenceInput, runtime_stability_budget_diagnostics,
     runtime_stability_budget_evidence,
 };
+use marlin_gerbil_scheme::{
+    GERBIL_COMMAND_ADAPTER_BATCH_PATH, GerbilResidentRuntimePlan,
+    GerbilResidentRuntimeProcessStatus,
+};
 
 use super::support::EventfulExecutor;
+use tempfile::Builder;
 
 #[tokio::test]
 async fn harness_execution_report_carries_performance_benchmark_evidence() {
@@ -52,6 +57,65 @@ async fn harness_execution_report_carries_performance_benchmark_evidence() {
             "missing performance evidence key {key}"
         );
     }
+}
+
+#[test]
+fn harness_performance_evidence_covers_resident_gerbil_runtime_process_plan() {
+    let root = Builder::new()
+        .prefix("marlin-harness-resident-runtime-performance-")
+        .tempdir()
+        .expect("resident runtime tempdir");
+    let handle = GerbilResidentRuntimePlan::shared_context(root.path(), "perf-session")
+        .prepare()
+        .expect("prepare resident runtime");
+    let process = handle.process_receipt();
+    let command_profile = process
+        .command_profile
+        .as_ref()
+        .expect("resident process command profile");
+    let performance_evidence: LoopEvidence = LoopPerformanceEvidence {
+        subject: "crates/marlin-gerbil-scheme/src/resident_runtime.rs".to_owned(),
+        benchmark_command: "cargo test -p marlin-gerbil-scheme --test unit_test resident_runtime"
+            .to_owned(),
+        baseline: format!(
+            "resident_process_status={:?},prepared_assets={}",
+            process.status, process.written_asset_count
+        ),
+        regression_threshold: "process projection must not spawn child processes or add JSON hops"
+            .to_owned(),
+        latency_or_throughput:
+            "process_plan_projection=O(1),spawn_boundary=command-adapter-batch.ss".to_owned(),
+        allocation_profile: format!(
+            "command_profile_args={},command_profile_env={}",
+            command_profile.args.len(),
+            command_profile.env.len()
+        ),
+        profile_artifact:
+            "target/agent-harness/performance/resident-gerbil-runtime-process-plan.json".to_owned(),
+    }
+    .into();
+    let detail = performance_evidence
+        .detail
+        .as_deref()
+        .expect("performance detail");
+
+    assert_eq!(
+        process.status,
+        GerbilResidentRuntimeProcessStatus::ReadyToSpawn
+    );
+    assert!(process.written_asset_count > 0);
+    assert_eq!(command_profile.args.len(), 1);
+    assert!(command_profile.args[0].ends_with(GERBIL_COMMAND_ADAPTER_BATCH_PATH));
+    assert!(root.path().join(GERBIL_COMMAND_ADAPTER_BATCH_PATH).exists());
+    for key in PERFORMANCE_EVIDENCE_KEYS {
+        assert!(
+            detail.contains(key),
+            "missing performance evidence key {key}"
+        );
+    }
+    assert!(detail.contains("process_plan_projection=O(1)"));
+    assert!(detail.contains("spawn_boundary=command-adapter-batch.ss"));
+    assert!(detail.contains("JSON hops"));
 }
 
 #[tokio::test]

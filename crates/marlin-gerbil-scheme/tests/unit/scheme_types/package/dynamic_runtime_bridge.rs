@@ -21,7 +21,10 @@ fn downstream_scheme_runtime_bridge_decodes_graph_hook_and_session_without_rust_
             (
                 "hook_action",
                 GerbilSchemeValue::record([
+                    ("kind", "Rewrite".into()),
+                    ("target", "command".into()),
                     ("command", "cargo test".into()),
+                    ("replacement", "cargo test --locked".into()),
                     ("mode", "observe".into()),
                 ]),
             ),
@@ -29,6 +32,7 @@ fn downstream_scheme_runtime_bridge_decodes_graph_hook_and_session_without_rust_
                 "session",
                 GerbilSchemeValue::record([
                     ("session_id", "session:downstream:42".into()),
+                    ("parent_session_id", "session:root".into()),
                     ("visibility", "isolated".into()),
                 ]),
             ),
@@ -56,10 +60,24 @@ fn downstream_scheme_runtime_bridge_decodes_graph_hook_and_session_without_rust_
     );
     assert_eq!(
         projection
+            .get("hook_action")
+            .and_then(|hook| hook.get("replacement"))
+            .and_then(GerbilSchemeValue::as_text),
+        Some("cargo test --locked")
+    );
+    assert_eq!(
+        projection
             .get("session")
             .and_then(|session| session.get("visibility"))
             .and_then(GerbilSchemeValue::as_text),
         Some("isolated")
+    );
+    assert_eq!(
+        projection
+            .get("session")
+            .and_then(|session| session.get("parent_session_id"))
+            .and_then(GerbilSchemeValue::as_text),
+        Some("session:root")
     );
 }
 
@@ -77,7 +95,10 @@ fn runtime_bridge_manifest() -> GerbilSchemeTypeManifest {
             type_spec(
                 "downstream.runtime.hook-action",
                 [
+                    field("kind", "string", true),
+                    field("target", "string", true),
                     field("command", "string", true),
+                    field("replacement", "string", true),
                     field("mode", "string", true),
                 ],
             ),
@@ -85,6 +106,7 @@ fn runtime_bridge_manifest() -> GerbilSchemeTypeManifest {
                 "downstream.runtime.session",
                 [
                     field("session_id", "string", true),
+                    field("parent_session_id", "string", true),
                     field("visibility", "string", true),
                 ],
             ),

@@ -366,6 +366,27 @@ The follow-up typed runtime pass landed the Rust-native P0-P4 protocol pieces:
   =GraphNativeAbiReadinessReceipt=, which reports missing required symbols
   before a linked selector is treated as usable.
 
+The next implementation pass moved those pieces closer to runtime use:
+
+- P0 keeps the local CI-equivalent gates on crate-scoped tests plus workspace
+  checks before touching Linux-specific native toolchain work.
+- P1 adds =GerbilResidentRuntimeHandle= and
+  =GerbilResidentRuntimePrepareReceipt=. Preparing the handle writes the
+  crate-shipped Scheme assets and records whether process reuse and state
+  isolation are required.
+- P2/P3 adds
+  =compile_graph_policy_proposal_with_native_abi_readiness= so graph policy
+  compilation can reject a native strategy before producing an execution
+  request when the linked ABI receipt is missing symbols or mismatches the
+  declared ABI.
+- P3 hook invocation can project =RuntimeContext= into =HookDecisionContext=,
+  carrying session id, root/parent session lineage, run id, and graph id into
+  selection and policy receipts.
+- P4 remains split into native linked selector benchmarks, resident runtime
+  strategy calls, and process =gxi= strategy calls. These are separate budgets;
+  process roundtrip numbers must not be used as the native ABI hot-path
+  baseline.
+
 #+begin_src sh
 direnv exec . cargo test -p marlin-gerbil-scheme scheme_types -- --nocapture
 direnv exec . cargo test -p marlin-gerbil-scheme --tests -- --nocapture
@@ -388,6 +409,46 @@ direnv exec . rtk --ultra-compact cargo test -p marlin-agent-protocol
 direnv exec . rtk --ultra-compact cargo test -p marlin-agent-hooks
 direnv exec . rtk --ultra-compact cargo test -p marlin-agent-runtime
 direnv exec . rtk --ultra-compact cargo test -p marlin-gerbil-scheme
+direnv exec . rtk --ultra-compact cargo test -p marlin-agent-kernel native_abi_readiness -- --nocapture
+direnv exec . rtk --ultra-compact cargo test -p marlin-agent-hooks dispatcher_projects_runtime_context_into_hook_decision_context -- --nocapture
+direnv exec . rtk --ultra-compact cargo test -p marlin-agent-kernel
+#+end_src
+
+** 2026-06-13 P1-P4 Landing Receipt
+
+This pass closes the next typed runtime slice after the earlier P0-P4 audit:
+
+- P1 resident Gerbil runtime planning now has a process-plan boundary. A
+  prepared =GerbilResidentRuntimeHandle= can emit
+  =GerbilResidentRuntimeProcessPlan= and
+  =GerbilResidentRuntimeProcessReceipt=. Enabled sessions point at the
+  crate-written =command-adapter-batch.ss= launcher while preserving the
+  caller's configured =gxi= program, current directory, and environment.
+  =GerbilResidentRuntimeHandle::spawn_process= owns the actual child process
+  and kills any still-running batch adapter on drop.
+
+- P2 native AOT build receipts now project directly into
+  =GraphNativeAbiReadinessReceipt=. =LinkUnitReady= reports the exported symbol
+  set as available, =RequiredSymbolsMissing= reports the audited gap, and all
+  other build or audit failures remain missing-symbol graph gates.
+
+- P3 harness hook replay evidence now records typed decision context and
+  dynamic action detail: session id, lineage, workspace state, Org memory hits,
+  agent class, action targets, rewrite replacements, and action reasons. This
+  keeps complex hook policy in the Gerbil Scheme extension plane instead of
+  adding a Rust hook DSL.
+
+- P4 harness performance evidence now covers resident runtime process-plan
+  projection. The guarded boundary is one prepared batch-launcher argv, no
+  child process spawn during plan projection, and no hot-path serialization hop
+  inside the resident runtime plan.
+
+The focused validation commands for this pass are:
+
+#+begin_src sh
+cargo test -p marlin-gerbil-scheme --test unit_test resident_runtime
+cargo test -p marlin-gerbil-scheme --test unit_test deck_runtime_native
+cargo test -p marlin-agent-harness --test unit_test harness::runtime
 #+end_src
 
 ** Next Work
@@ -397,3 +458,20 @@ Linux CI image and compare policy-count scaling before optimizing the Scheme
 selector loop. The native hot path remains typed C ABI selection; JSON receipts
 are allowed only at trace or cross-process protocol boundaries, outside the
 native selector path.
+
+** CI Gate Map
+
+Default CI runs the Rust gates that must remain independent of a local Gerbil/Gambit toolchain:
+
+- =cargo fmt= / format gate
+- =cargo check --workspace --all-targets=
+- =cargo clippy --workspace --all-targets -- -D warnings=
+- =cargo test --workspace --all-targets=
+- Gerbil asset and package-shape gates that do not require real =gxi=, =gxc=, =gsc=, or native linking
+
+Two CI jobs are intentionally manual =workflow_dispatch= gates:
+
+- =Real gxi release gate= runs only when =run_real_gxi=true=. It requires a real =gxi= executable and validates the Scheme process boundary.
+- =Linked native AOT gate= runs only when =run_linked_native=true=. It requires Gerbil/Gambit compiler paths and native link configuration, then validates the linked selector path.
+
+GitHub reports both jobs as skipped on ordinary pushes and pull requests. That skipped state is expected and means the external toolchain gates were not requested, not that default CI failed. When either manual gate is requested, the runner inputs and repository variables must provide the corresponding Gerbil/Gambit paths before the job can be treated as a release-quality signal.

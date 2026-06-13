@@ -64,19 +64,19 @@ pub struct GerbilCompileResponse {
 
 /// Error envelope emitted by the Gerbil batch compiler adapter.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-struct GerbilCompileErrorResponse {
+pub(crate) struct GerbilCompileErrorResponse {
     error: GerbilCompileErrorDetail,
 }
 
 /// Error detail emitted for a single Gerbil compile request.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-struct GerbilCompileErrorDetail {
+pub(crate) struct GerbilCompileErrorDetail {
     message: String,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(untagged)]
-enum GerbilCompileBatchResponse {
+pub(crate) enum GerbilCompileBatchResponse {
     Artifact(GerbilCompileResponse),
     Error(GerbilCompileErrorResponse),
 }
@@ -436,7 +436,7 @@ impl GerbilCommandCompiler {
         Ok(results)
     }
 
-    fn decode_compile_batch_response_line(
+    pub(crate) fn decode_compile_batch_response_line(
         index: usize,
         line: &str,
         expected: &[GerbilArtifactKind],

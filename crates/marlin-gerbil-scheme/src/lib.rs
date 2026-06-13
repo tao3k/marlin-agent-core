@@ -75,7 +75,13 @@ pub use real_gxi_gate::{
     RealGxiGateCommand, RealGxiGateError, run_real_gxi_gate_cli, run_real_gxi_gate_from_args,
 };
 pub use resident_runtime::{
-    GerbilResidentRuntimePlan, GerbilResidentRuntimeSessionId, GerbilResidentRuntimeSessionMode,
+    GerbilResidentRuntimeHandle, GerbilResidentRuntimeHealthReceipt,
+    GerbilResidentRuntimeHealthStatus, GerbilResidentRuntimePlan,
+    GerbilResidentRuntimePrepareReceipt, GerbilResidentRuntimeProcess,
+    GerbilResidentRuntimeProcessPlan, GerbilResidentRuntimeProcessReceipt,
+    GerbilResidentRuntimeProcessStatus, GerbilResidentRuntimeSessionId,
+    GerbilResidentRuntimeSessionMode, GerbilResidentRuntimeShutdownReceipt,
+    GerbilResidentRuntimeShutdownStatus,
 };
 pub use runtime::{
     DEFAULT_GERBIL_GSC_PROGRAM, DEFAULT_GERBIL_GXC_PROGRAM, DEFAULT_GERBIL_GXI_PROGRAM,
