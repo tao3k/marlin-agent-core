@@ -129,12 +129,39 @@ state and =OWNER= property.
 
 ** AgentScenarioContract Smoke
 
-The runtime smoke includes =AgentScenarioContract= as a JSON artifact only. The
-source form compiles through =protocol.ss=, =parser.ss=, and =adapter.ss= into
-=AgentScenarioContract= with =schema_id= =marlin.agent.scenario.v1=, one
-scenario step, expected event topics, expected span names, and expected
-evidence. The smoke proves Gerbil can produce the same scenario fixture
-contract consumed by =AgentHarness::evaluate_contract=.
+The runtime smoke includes =AgentScenarioContract= as a typed artifact emitted
+by real =gxi=. The source form compiles through =protocol.ss=, =parser.ss=,
+and =adapter.ss= into =AgentScenarioContract= with =schema_id=
+=marlin.agent.scenario.v1=, one scenario step, expected event topics, expected
+span names, and expected evidence. The Gerbil crate smoke proves artifact
+production and decoding.
+
+The harness crate owns the execution proof. The
+=harness_executes_real_gxi_loop_graph_against_real_gxi_scenario_contract=
+ignored test compiles both a Gerbil =LoopGraph= and a Gerbil
+=AgentScenarioContract=, projects the graph into the protocol =LoopGraph=,
+executes it through =HarnessRuntime= and =TokioGraphLoopKernel=, and evaluates
+the resulting =HarnessExecutionReport= through
+=AgentHarness::evaluate_contract_execution_report=. That is the first
+Scheme-produced artifact path wired into graph-loop execution.
+
+** Real =gxi= Gate
+
+The explicit local Gerbil gate is:
+
+#+begin_src sh
+cargo run -p marlin-gerbil-scheme --bin marlin-gerbil-real-gxi-gate
+#+end_src
+
+The gate validates the local =gxi= executable and Gerbil home before invoking:
+
+#+begin_src sh
+cargo test -p marlin-gerbil-scheme -p marlin-agent-harness --locked --test unit_test real_gxi -- --ignored
+#+end_src
+
+Use =--filter= to narrow the gate to a specific package-local test path when
+debugging, but the default gate must remain cross-crate so Scheme artifact
+production and harness loop execution stay connected.
 
 ** Launcher
 

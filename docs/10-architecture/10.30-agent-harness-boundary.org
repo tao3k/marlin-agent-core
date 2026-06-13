@@ -66,3 +66,12 @@ around runtime work. Sub-agent adapters dispatch =SubAgentStart= and
 stopped activity. End-to-end harness scenarios must prove those hooks, runtime
 events, custom environment visibility, and typed evidence through
 =HarnessExecutionReport= rather than scattered test-local probes.
+
+The harness now has a real =gxi= integration smoke for the Gerbil control
+plane. =marlin-gerbil-scheme= still owns Gerbil artifact compilation, but
+=marlin-agent-harness= owns the graph-loop proof: a Gerbil-produced
+=LoopGraph= is projected into the protocol =LoopGraph= request, executed by
+=HarnessRuntime= through =TokioGraphLoopKernel=, and checked with a
+Gerbil-produced =AgentScenarioContract= through
+=AgentHarness::evaluate_contract_execution_report=. This is an ignored local
+Gerbil gate, not a live LLM test.

@@ -25,7 +25,7 @@ fn real_gxi_gate_command_defaults_to_workspace_gerbil_tree() {
 
     assert_eq!(command.workspace_root(), workspace.path());
     assert_eq!(command.cargo(), Path::new("cargo-test"));
-    assert_eq!(command.args(), expected_gate_args("command::real_gxi"));
+    assert_eq!(command.args(), expected_gate_args("real_gxi"));
     assert_eq!(
         command.env().get(&OsString::from("GERBIL_HOME")),
         Some(&workspace.path().join(".data/gerbil/build").into_os_string())
@@ -76,6 +76,11 @@ fn real_gxi_gate_command_uses_explicit_paths_and_filter() {
         command
             .describe()
             .contains("cargo-custom test -p marlin-gerbil-scheme")
+    );
+    assert!(
+        command
+            .describe()
+            .contains("-p marlin-agent-harness --locked")
     );
 }
 
@@ -148,6 +153,8 @@ fn expected_gate_args(filter: &str) -> Vec<OsString> {
         "test",
         "-p",
         "marlin-gerbil-scheme",
+        "-p",
+        "marlin-agent-harness",
         "--locked",
         "--test",
         "unit_test",

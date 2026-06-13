@@ -11,7 +11,7 @@ use std::{
 };
 
 const GERBIL_HOME_ENV: &str = "GERBIL_HOME";
-const DEFAULT_TEST_FILTER: &str = "command::real_gxi";
+const DEFAULT_TEST_FILTER: &str = "real_gxi";
 
 /// Runs the real `gxi` harness gate.
 pub fn run_real_gxi_gate_cli() -> ExitCode {
@@ -216,6 +216,8 @@ impl RealGxiGateCommand {
             "test".into(),
             "-p".into(),
             "marlin-gerbil-scheme".into(),
+            "-p".into(),
+            "marlin-agent-harness".into(),
             "--locked".into(),
             "--test".into(),
             "unit_test".into(),

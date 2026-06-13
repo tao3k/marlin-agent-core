@@ -112,4 +112,12 @@ The active implementation has landed the following pieces:
 
 =AgentScenarioContract= is the fixture/document boundary for scenarios. It carries =schema_id= =marlin.agent.scenario.v1= and embeds =AgentScenario= so JSON, Org-derived, or Gerbil-produced artifacts can flow into =AgentHarness::evaluate_contract= or =AgentHarness::evaluate_contract_execution_report=.
 
+Gerbil-produced scenarios are now covered at the graph-loop boundary. The
+=harness_executes_real_gxi_loop_graph_against_real_gxi_scenario_contract=
+ignored test compiles a real =gxi= =LoopGraph= and
+=AgentScenarioContract=, executes the graph through =HarnessRuntime=, and
+evaluates the resulting =HarnessExecutionReport= through the Gerbil-produced
+contract. The default real =gxi= gate covers both =marlin-gerbil-scheme= and
+=marlin-agent-harness= ignored tests with the =real_gxi= filter.
+
 Transcript replay and richer fixture loading remain follow-up work.

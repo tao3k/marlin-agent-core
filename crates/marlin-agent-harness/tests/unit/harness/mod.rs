@@ -1,6 +1,7 @@
 mod e2e;
 mod evidence;
 mod graph_policy;
+mod real_gxi;
 mod release_visibility;
 mod runtime;
 mod sub_agent_session;

@@ -141,9 +141,15 @@ The current real linked typed selector benchmark uses the initialized linked
 selector directly through =select_policy_index=:
 
 #+begin_src text
-deck_runtime_linked_native_selector/1_policy: [1.8203 us 2.4104 us 3.1522 us]
-deck_runtime_linked_native_selector/8_policy: [10.303 us 14.147 us 20.457 us]
+deck_runtime_linked_native_selector/1_policy: [1.3301 us 1.3574 us 1.3941 us]
+deck_runtime_linked_native_selector/8_policy: [6.7139 us 6.7731 us 6.8317 us]
 #+end_src
+
+The current local macOS benchmark must force =clang= because the Homebrew GCC
+toolchain can pick an SDK header set that lacks =_bounds.h=. With
+=MARLIN_DECK_RUNTIME_NATIVE_C_COMPILER=clang=, the linked selector baseline is
+approximately 1.36 microseconds for one policy and 6.77 microseconds for eight
+policies.
 
 The previous JSON-returning smoke path measured the wrong boundary because it
 included JSON serialization plus runtime-owned byte-buffer allocation/free. That
@@ -176,10 +182,31 @@ direnv exec . env \
     --bench linked_selector
 #+end_src
 
+The local real =gxi= link-unit smoke is part of the explicit Gerbil gate
+surface:
+
+#+begin_src sh
+cargo test -p marlin-gerbil-scheme --test unit_test command::real_gxi::examples::build_script::command_compiler_real_gxi_deck_runtime_native_compiles_link_unit -- --ignored --exact
+#+end_src
+
+The always-on Rust ABI projection and in-process performance gates remain:
+
+#+begin_src sh
+cargo test -p marlin-gerbil-scheme --test unit_test deck_runtime_native::projection
+cargo test -p marlin-gerbil-scheme --test unit_test deck_runtime_native::performance
+#+end_src
+
+The real linked selector benchmark is feature gated because it depends on the
+native linked object:
+
+#+begin_src sh
+MARLIN_DECK_RUNTIME_NATIVE_C_COMPILER=clang cargo bench -p marlin-deck-runtime-native --features linked-native --bench linked_selector
+#+end_src
+
 ** Next Work
 
 The next implementation step is to run the linked selector benchmark under a
 Linux CI image and compare policy-count scaling before optimizing the Scheme
-selector loop. A separate protocol adapter may project typed selections into
-JSON receipts for trace and cross-process boundaries, but that adapter must stay
-outside the native hot path.
+selector loop. The native hot path remains typed C ABI selection; JSON receipts
+are allowed only at trace or cross-process protocol boundaries, outside the
+native selector path.
