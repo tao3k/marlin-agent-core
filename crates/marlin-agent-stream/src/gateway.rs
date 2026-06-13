@@ -1,18 +1,12 @@
 //! Gateway traits and the default `LiteLLM` stream adapter.
 
-use async_trait::async_trait;
+pub use marlin_agent_protocol::ModelGateway as ModelStreamGateway;
+use marlin_agent_protocol::{
+    ModelGateway, ModelGatewayCompletionResponse, ModelGatewayFuture, ModelGatewayRequest,
+    ModelGatewayResult,
+};
 
-use crate::{CompletionResponse, LiteLlmModelClient, LiteLlmModelClientResult, ModelStreamRequest};
-
-/// Gateway abstraction for Marlin-owned model stream requests.
-#[async_trait]
-pub trait ModelStreamGateway: Send + Sync {
-    /// Completes a request through the gateway implementation.
-    async fn complete(
-        &self,
-        request: ModelStreamRequest,
-    ) -> LiteLlmModelClientResult<CompletionResponse>;
-}
+use crate::LiteLlmModelClient;
 
 /// Default stream gateway backed by `litellm-rs`.
 #[derive(Clone, Debug, Default)]
@@ -34,13 +28,15 @@ impl LiteLlmStreamGateway {
     }
 }
 
-#[async_trait]
-impl ModelStreamGateway for LiteLlmStreamGateway {
-    async fn complete(
+impl ModelGateway for LiteLlmStreamGateway {
+    fn complete(
         &self,
-        request: ModelStreamRequest,
-    ) -> LiteLlmModelClientResult<CompletionResponse> {
-        let (endpoint, messages, options, _transport) = request.into_parts();
-        self.client.complete(&endpoint, messages, options).await
+        request: ModelGatewayRequest,
+    ) -> ModelGatewayFuture<ModelGatewayResult<ModelGatewayCompletionResponse>> {
+        let client = self.client.clone();
+        Box::pin(async move {
+            let (endpoint, messages, options, _transport) = request.into_parts();
+            client.complete(&endpoint, messages, options).await
+        })
     }
 }

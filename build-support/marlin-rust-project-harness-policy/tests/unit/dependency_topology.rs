@@ -5,7 +5,7 @@ use marlin_rust_project_harness_policy::{
 };
 
 #[test]
-fn dependency_topology_receipt_is_optional_until_external_provider_is_configured() {
+fn dependency_topology_receipt_is_optional_for_hermetic_builds() {
     let receipt = consume_external_dependency_topology_receipt(
         workspace_root(),
         "rust-lang-project-harness",
@@ -21,8 +21,9 @@ fn dependency_topology_receipt_is_optional_until_external_provider_is_configured
         receipt
             .agent_next_action()
             .expect("missing receipt should guide the agent")
-            .contains("MARLIN_DEPENDENCY_TOPOLOGY_RECEIPT")
+            .contains("no external topology receipt is required")
     );
+    assert!(!receipt.blocks_build(false));
 }
 
 #[test]
@@ -85,6 +86,8 @@ fn dependency_topology_receipt_rejects_mismatched_package() {
     );
 
     assert!(!receipt.is_success());
+    assert!(!receipt.blocks_build(false));
+    assert!(receipt.blocks_build(true));
     assert_eq!(
         receipt.status(),
         &ExternalDependencyTopologyReceiptStatus::PackageMismatch {

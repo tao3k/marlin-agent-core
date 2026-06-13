@@ -22,16 +22,21 @@ pub use marlin_agent_hooks::{
     RegisteredHookPolicyFinalizer, RegisteredHookRuntime,
 };
 pub use marlin_agent_kernel::{
-    ExecutorName, GraphId, GraphLoopExecutionRequest, GraphLoopExecutionResult,
-    GraphLoopExecutionStatus, GraphLoopKernel, GraphNodeExecutionReceipt, GraphNodeExecutionStatus,
-    GraphNodeExecutor, GraphNodeInvocation, LoopEdgeSpec, LoopGraph, LoopNodeSpec, NodeId,
-    ProviderNodeAdapter, RunId, RuntimePlanSnapshot, SubAgentNodeAdapter, TokioGraphLoopKernel,
-    ToolNodeAdapter,
+    ExecutorName, GraphId, GraphLoopExecutionBudget, GraphLoopExecutionRequest,
+    GraphLoopExecutionResult, GraphLoopExecutionStatus, GraphLoopKernel, GraphLoopStrategy,
+    GraphLoopStrategyId, GraphLoopStrategyRuntime, GraphLoopStrategyVersion,
+    GraphNodeExecutionReceipt, GraphNodeExecutionStatus, GraphNodeExecutor, GraphNodeInvocation,
+    GraphPolicyProposal, GraphPolicyProposalCompilation, GraphPolicyProposalReceipt,
+    GraphPolicyProposalStatus, LoopEdgeSpec, LoopGraph, LoopNodeSpec, NodeId, ProviderNodeAdapter,
+    RunId, RuntimePlanSnapshot, SubAgentNodeAdapter, TokioGraphLoopKernel, ToolNodeAdapter,
+    compile_graph_policy_proposal,
 };
 pub use marlin_agent_protocol as protocol;
 pub use marlin_agent_protocol::{
     AgentEventTopic, AgentExecutionTrace, AgentExecutionTraceSummary, AgentSpanName,
-    AgentTraceSpanRecord, HookAgentScope, HookDispatchPolicyReceipt,
+    AgentTraceSpanRecord, GERBIL_LOOP_GRAPH_POLICY_COMPILATION_SCHEMA_ID,
+    GRAPH_POLICY_PROPOSAL_SPAN_NAME, GRAPH_POLICY_PROPOSAL_VISIBILITY_SUBJECT_PREFIX,
+    GerbilLoopGraphPolicyCompilationRequest, HookAgentScope, HookDispatchPolicyReceipt,
     HookDispatchPolicyReceiptInput, HookDurationMs, HookEventName, HookExecutionMode,
     HookHandlerType, HookOutputEntry, HookOutputEntryKind, HookPolicyDecision,
     HookPolicyDecisionReason, HookPolicyExtension, HookRunId, HookRunStatus, HookRunSummary,
@@ -45,27 +50,24 @@ pub use marlin_agent_protocol::{
     PERFORMANCE_EVIDENCE_LATENCY_OR_THROUGHPUT, PERFORMANCE_EVIDENCE_PROFILE_ARTIFACT,
     PERFORMANCE_EVIDENCE_REGRESSION_THRESHOLD, RuntimeConfigLayer, RuntimeConfigLayerSource,
     RuntimeHome, RuntimeHomeSource, RuntimeSandboxPolicy, SubAgentActivity, SubAgentActivityKind,
-    SubAgentSource,
+    SubAgentSource, compile_gerbil_loop_graph, compile_gerbil_loop_graph_policy,
 };
 pub use marlin_agent_runtime as runtime;
 pub use marlin_agent_runtime::observability;
 pub use marlin_agent_runtime::{
-    AgentSessionContext, CancellationToken, ChatMessage, CompiledModelRouteResolver,
-    CompletionOptions, CompletionResponse, ContextExpansionPolicy, ContextNamespace,
-    ContextVisibility, EventStream, HookRuntime, LiteLlmModelClient, ModelRouteCompileError,
+    AgentSessionContext, CancellationToken, CompiledModelRouteResolver, ContextExpansionPolicy,
+    ContextNamespace, ContextVisibility, EventStream, HookRuntime, ModelGateway,
+    ModelGatewayCompletionChoice, ModelGatewayCompletionOptions, ModelGatewayCompletionResponse,
+    ModelGatewayError, ModelGatewayFuture, ModelGatewayMessage, ModelGatewayMessageRole,
+    ModelGatewayRequest, ModelGatewayResult, ModelGatewayTransport, ModelRouteCompileError,
     ModelRouteConfig, ModelRouteConfigError, ModelRouteSessionBinding, ProviderRuntime,
     RoutedSubAgentSpawn, RuntimeContext, RuntimeEnvironment, RuntimeEvent, RuntimeEventSink,
     RuntimeEventStream, RuntimeExecutionIdentity, RuntimeFuture, RuntimeTask, RuntimeTaskOutcome,
     SessionId, SessionIdError, SessionIdentity, SessionIsolationPolicy, SessionIsolationReceipt,
-    SessionKind, SubAgentRuntime, TokioAgentRuntime, ToolRuntime, assistant_message,
-    system_message, user_message,
+    SessionKind, SubAgentRuntime, TokioAgentRuntime, ToolRuntime, assistant_gateway_message,
+    system_gateway_message, user_gateway_message,
 };
 pub use marlin_agent_sessions as sessions;
-pub use marlin_agent_stream as stream;
-pub use marlin_agent_stream::{
-    ChunkGate, ChunkGatePermit, LiteLlmStreamGateway, ModelStreamChunk, ModelStreamEvent,
-    ModelStreamGateway, ModelStreamRequest, ModelStreamTransport,
-};
 
 pub use hook_policy::GerbilHookPolicyFinalizer;
 pub use marlin_gerbil_ir as gerbil_ir;

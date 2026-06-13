@@ -5,6 +5,8 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use serde::Serialize;
+
 use rust_lang_project_harness::{
     RustDeterminismReadiness, RustDeterminismReadinessInput, RustEvidenceGraph,
     RustEvidenceGraphInput, RustEvidenceGraphSummary, RustHarnessConfig, RustHarnessReport,
@@ -41,12 +43,16 @@ pub struct RustProjectHarnessEvidenceReceipt {
     pub stability_index_path: PathBuf,
     /// Path to the stability-picture JSON artifact, when configured.
     pub stability_picture_path: Option<PathBuf>,
+    /// Path to the agent-actionable quality findings JSON artifact.
+    pub quality_findings_path: PathBuf,
     /// Path to the compact text summary artifact.
     pub summary_path: PathBuf,
     /// Summary copied from the emitted evidence graph.
     pub evidence_graph_summary: RustEvidenceGraphSummary,
     /// Package-level performance and stability gate receipt.
     pub gate_receipt: RustProjectHarnessGateReceipt,
+    /// Agent-actionable quality findings derived from Marlin's package gate.
+    pub quality_findings_receipt: RustProjectHarnessQualityFindingsReceipt,
 }
 
 /// Structured package-level gate receipt for required Rust harness evidence.
@@ -74,6 +80,170 @@ impl RustProjectHarnessGateReceipt {
     }
 }
 
+/// Severity taxonomy for agent-actionable quality findings.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum RustProjectHarnessFindingSeverity {
+    HardError,
+    Warning,
+    Advice,
+}
+
+/// One structured finding that an agent can reason over without parsing prose.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct RustProjectHarnessQualityFinding {
+    pub finding_id: String,
+    pub severity: RustProjectHarnessFindingSeverity,
+    pub rule_id: String,
+    pub owner: String,
+    pub evidence: Vec<String>,
+    pub why: String,
+    pub agent_next_action: String,
+    pub verification_command: String,
+    pub source_authority: String,
+}
+
+/// JSON receipt containing hard errors, warnings, and advice for the package gate.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct RustProjectHarnessQualityFindingsReceipt {
+    pub schema_id: String,
+    pub schema_version: String,
+    pub package_name: String,
+    pub findings: Vec<RustProjectHarnessQualityFinding>,
+}
+
+/// Named input for evaluating package-level gate state into structured findings.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RustProjectHarnessQualityFindingsInput {
+    pub package_name: String,
+    pub gate_receipt: RustProjectHarnessGateReceipt,
+    pub evidence_paths: RustProjectHarnessQualityFindingEvidencePaths,
+}
+
+/// Artifact paths exposed to agents as structured evidence handles.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RustProjectHarnessQualityFindingEvidencePaths {
+    evidence_graph_path: PathBuf,
+    verification_plan_path: PathBuf,
+    task_index_path: PathBuf,
+}
+
+impl RustProjectHarnessQualityFindingEvidencePaths {
+    pub fn new(
+        evidence_graph_path: impl Into<PathBuf>,
+        verification_plan_path: impl Into<PathBuf>,
+        task_index_path: impl Into<PathBuf>,
+    ) -> Self {
+        Self {
+            evidence_graph_path: evidence_graph_path.into(),
+            verification_plan_path: verification_plan_path.into(),
+            task_index_path: task_index_path.into(),
+        }
+    }
+
+    pub fn agent_evidence(&self) -> Vec<String> {
+        vec![
+            self.evidence_graph_path.display().to_string(),
+            self.verification_plan_path.display().to_string(),
+            self.task_index_path.display().to_string(),
+        ]
+    }
+}
+
+impl RustProjectHarnessQualityFindingsReceipt {
+    pub fn hard_error_count(&self) -> usize {
+        self.findings
+            .iter()
+            .filter(|finding| finding.severity == RustProjectHarnessFindingSeverity::HardError)
+            .count()
+    }
+
+    pub fn warning_count(&self) -> usize {
+        self.findings
+            .iter()
+            .filter(|finding| finding.severity == RustProjectHarnessFindingSeverity::Warning)
+            .count()
+    }
+
+    pub fn advice_count(&self) -> usize {
+        self.findings
+            .iter()
+            .filter(|finding| finding.severity == RustProjectHarnessFindingSeverity::Advice)
+            .count()
+    }
+}
+
+/// Evaluates package-level gate state into structured findings for agent repair.
+pub fn evaluate_quality_findings_for_gate(
+    input: RustProjectHarnessQualityFindingsInput,
+) -> RustProjectHarnessQualityFindingsReceipt {
+    let RustProjectHarnessQualityFindingsInput {
+        package_name,
+        gate_receipt,
+        evidence_paths,
+    } = input;
+    let mut findings = Vec::new();
+
+    push_gate_finding(
+        &mut findings,
+        &package_name,
+        gate_receipt.performance_gate,
+        "MARLIN-QUALITY-GATE-PERF",
+        "performance-gate",
+        "active performance verification task",
+        "add or enable a performance verification task for this package policy",
+    );
+    push_gate_finding(
+        &mut findings,
+        &package_name,
+        gate_receipt.stability_gate,
+        "MARLIN-QUALITY-GATE-STABILITY",
+        "stability-gate",
+        "active stability verification task",
+        "add or enable a stability verification task for this package policy",
+    );
+    push_gate_finding(
+        &mut findings,
+        &package_name,
+        gate_receipt.performance_report_obligation,
+        "MARLIN-QUALITY-REPORT-PERF",
+        "performance-report-obligation",
+        "performance_index_json report obligation",
+        "add performance_index_json to the package verification report obligations",
+    );
+    push_gate_finding(
+        &mut findings,
+        &package_name,
+        gate_receipt.stability_report_obligation,
+        "MARLIN-QUALITY-REPORT-STABILITY",
+        "stability-report-obligation",
+        "stability_index_json report obligation",
+        "add stability_index_json to the package verification report obligations",
+    );
+
+    findings.push(RustProjectHarnessQualityFinding {
+        finding_id: format!("{package_name}:agent-read-evidence"),
+        severity: RustProjectHarnessFindingSeverity::Advice,
+        rule_id: "MARLIN-QUALITY-AGENT-EVIDENCE".to_owned(),
+        owner: package_name.clone(),
+        evidence: evidence_paths.agent_evidence(),
+        why: "agent repair should reason from structured evidence before editing package code"
+            .to_owned(),
+        agent_next_action:
+            "read evidence-graph.json, verification_plan.json, and task_index.json before selecting an edit boundary"
+                .to_owned(),
+        verification_command: "cargo test --workspace --no-fail-fast --quiet".to_owned(),
+        source_authority: "marlin-rust-project-harness-policy".to_owned(),
+    });
+
+    RustProjectHarnessQualityFindingsReceipt {
+        schema_id: "marlin.rust-project-harness.quality-findings".to_owned(),
+        schema_version: "1".to_owned(),
+        package_name,
+        findings,
+    }
+}
+
 /// Writes `rust-lang-project-harness` evidence artifacts using Cargo build env vars.
 pub fn write_evidence_graph_from_env(
     config: &RustHarnessConfig,
@@ -83,13 +253,20 @@ pub fn write_evidence_graph_from_env(
     let artifacts = build_evidence_artifacts(config, harness_report, &build_env.project_root);
     let paths = HarnessEvidencePaths::create(&build_env.out_dir);
 
-    let gate_receipt = assert_performance_and_stability_gate(
+    let gate_receipt = evaluate_performance_and_stability_gate(
         &artifacts.verification_plan,
         &build_env.package_name,
     );
-    write_evidence_artifacts(&paths, &build_env, &artifacts);
+    let quality_findings_receipt =
+        build_quality_findings_receipt(&paths, &build_env, &artifacts, &gate_receipt);
+    write_evidence_artifacts(&paths, &build_env, &artifacts, &quality_findings_receipt);
+    assert_performance_and_stability_gate_receipt(&gate_receipt);
 
-    paths.into_receipt(artifacts.evidence_graph_summary, gate_receipt)
+    paths.into_receipt(
+        artifacts.evidence_graph_summary,
+        gate_receipt,
+        quality_findings_receipt,
+    )
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -222,11 +399,8 @@ pub fn evaluate_performance_and_stability_gate(
     }
 }
 
-fn assert_performance_and_stability_gate(
-    plan: &RustVerificationPlan,
-    package_name: &str,
-) -> RustProjectHarnessGateReceipt {
-    let receipt = evaluate_performance_and_stability_gate(plan, package_name.to_owned());
+fn assert_performance_and_stability_gate_receipt(receipt: &RustProjectHarnessGateReceipt) {
+    let package_name = receipt.package_name.as_str();
     assert_verification_gate(receipt.performance_gate, package_name, "performance");
     assert_verification_report_obligation(
         receipt.performance_report_obligation,
@@ -239,7 +413,6 @@ fn assert_performance_and_stability_gate(
         package_name,
         "stability_index_json",
     );
-    receipt
 }
 
 fn has_active_verification_task(
@@ -286,6 +459,7 @@ struct HarnessEvidencePaths {
     performance_index_path: PathBuf,
     stability_index_path: PathBuf,
     stability_picture_path: PathBuf,
+    quality_findings_path: PathBuf,
     summary_path: PathBuf,
 }
 
@@ -308,6 +482,7 @@ impl HarnessEvidencePaths {
             performance_index_path: evidence_dir.join("performance_index.json"),
             stability_index_path: evidence_dir.join("stability_index.json"),
             stability_picture_path: evidence_dir.join("stability_picture.json"),
+            quality_findings_path: evidence_dir.join("quality_findings.json"),
             summary_path: evidence_dir.join("summary.txt"),
             evidence_dir,
         }
@@ -317,6 +492,7 @@ impl HarnessEvidencePaths {
         self,
         evidence_graph_summary: RustEvidenceGraphSummary,
         gate_receipt: RustProjectHarnessGateReceipt,
+        quality_findings_receipt: RustProjectHarnessQualityFindingsReceipt,
     ) -> RustProjectHarnessEvidenceReceipt {
         let stability_picture_path = self
             .stability_picture_path
@@ -333,9 +509,11 @@ impl HarnessEvidencePaths {
             performance_index_path: self.performance_index_path,
             stability_index_path: self.stability_index_path,
             stability_picture_path,
+            quality_findings_path: self.quality_findings_path,
             summary_path: self.summary_path,
             evidence_graph_summary,
             gate_receipt,
+            quality_findings_receipt,
         }
     }
 }
@@ -344,6 +522,7 @@ fn write_evidence_artifacts(
     paths: &HarnessEvidencePaths,
     build_env: &HarnessEvidenceBuildEnv,
     artifacts: &HarnessEvidenceArtifacts,
+    quality_findings_receipt: &RustProjectHarnessQualityFindingsReceipt,
 ) {
     write_artifact(
         &paths.determinism_readiness_path,
@@ -387,15 +566,118 @@ fn write_evidence_artifacts(
                 .unwrap_or_else(|error| panic!("failed to render stability picture: {error}")),
         );
     }
-    write_artifact(&paths.summary_path, render_summary(build_env, artifacts));
+    write_artifact(
+        &paths.quality_findings_path,
+        serde_json::to_string_pretty(quality_findings_receipt)
+            .unwrap_or_else(|error| panic!("failed to render quality findings receipt: {error}")),
+    );
+    write_artifact(
+        &paths.summary_path,
+        render_summary(build_env, artifacts, quality_findings_receipt),
+    );
+}
+
+fn build_quality_findings_receipt(
+    paths: &HarnessEvidencePaths,
+    build_env: &HarnessEvidenceBuildEnv,
+    artifacts: &HarnessEvidenceArtifacts,
+    gate_receipt: &RustProjectHarnessGateReceipt,
+) -> RustProjectHarnessQualityFindingsReceipt {
+    let package_name = build_env.package_name.as_str();
+    let mut receipt = evaluate_quality_findings_for_gate(RustProjectHarnessQualityFindingsInput {
+        package_name: package_name.to_owned(),
+        gate_receipt: gate_receipt.clone(),
+        evidence_paths: RustProjectHarnessQualityFindingEvidencePaths::new(
+            paths.evidence_graph_path.clone(),
+            paths.verification_plan_path.clone(),
+            paths.task_index_path.clone(),
+        ),
+    });
+
+    append_quality_findings_for_artifacts(&mut receipt, package_name, artifacts, Some(paths));
+
+    receipt
+}
+
+fn append_quality_findings_for_artifacts(
+    receipt: &mut RustProjectHarnessQualityFindingsReceipt,
+    package_name: &str,
+    artifacts: &HarnessEvidenceArtifacts,
+    paths: Option<&HarnessEvidencePaths>,
+) {
+    if artifacts.evidence_graph_summary.nodes == 0 {
+        let evidence = paths
+            .map(|paths| paths.evidence_graph_path.display().to_string())
+            .unwrap_or_else(|| "evidence-graph".to_owned());
+        receipt.findings.push(RustProjectHarnessQualityFinding {
+            finding_id: format!("{package_name}:evidence-graph-empty"),
+            severity: RustProjectHarnessFindingSeverity::Warning,
+            rule_id: "MARLIN-QUALITY-EVIDENCE-GRAPH".to_owned(),
+            owner: package_name.to_owned(),
+            evidence: vec![evidence],
+            why: "the emitted evidence graph has no nodes for the agent to inspect".to_owned(),
+            agent_next_action:
+                "inspect upstream rust-harness graph inputs before editing Marlin policy"
+                    .to_owned(),
+            verification_command: "cargo test -p marlin-rust-project-harness-policy --quiet"
+                .to_owned(),
+            source_authority: "marlin-rust-project-harness-policy".to_owned(),
+        });
+    }
+    if artifacts.determinism_observation_count == 0 {
+        let evidence = paths
+            .map(|paths| paths.determinism_readiness_path.display().to_string())
+            .unwrap_or_else(|| "determinism-readiness".to_owned());
+        receipt.findings.push(RustProjectHarnessQualityFinding {
+            finding_id: format!("{package_name}:determinism-observations-empty"),
+            severity: RustProjectHarnessFindingSeverity::Warning,
+            rule_id: "MARLIN-QUALITY-DETERMINISM".to_owned(),
+            owner: package_name.to_owned(),
+            evidence: vec![evidence],
+            why: "the determinism readiness packet contains no observations".to_owned(),
+            agent_next_action:
+                "inspect language harness determinism inputs and package ownership boundaries"
+                    .to_owned(),
+            verification_command: "cargo test -p marlin-rust-project-harness-policy --quiet"
+                .to_owned(),
+            source_authority: "marlin-rust-project-harness-policy".to_owned(),
+        });
+    }
+}
+
+fn push_gate_finding(
+    findings: &mut Vec<RustProjectHarnessQualityFinding>,
+    package_name: &str,
+    gate_present: bool,
+    rule_id: &str,
+    finding_suffix: &str,
+    evidence_label: &str,
+    agent_next_action: &str,
+) {
+    if gate_present {
+        return;
+    }
+
+    findings.push(RustProjectHarnessQualityFinding {
+        finding_id: format!("{package_name}:{finding_suffix}"),
+        severity: RustProjectHarnessFindingSeverity::HardError,
+        rule_id: rule_id.to_owned(),
+        owner: package_name.to_owned(),
+        evidence: vec![evidence_label.to_owned()],
+        why: format!("package quality gate is missing {evidence_label}"),
+        agent_next_action: agent_next_action.to_owned(),
+        verification_command: "cargo test -p marlin-rust-project-harness-policy --quiet".to_owned(),
+        source_authority: "marlin-rust-project-harness-policy".to_owned(),
+    });
 }
 
 fn render_summary(
     build_env: &HarnessEvidenceBuildEnv,
     artifacts: &HarnessEvidenceArtifacts,
+    quality_findings_receipt: &RustProjectHarnessQualityFindingsReceipt,
 ) -> String {
     format!(
-        "package={}\nmodules={}\ndeterminism_observations={}\nevidence_graph_nodes={}\nverification_tasks={}\nactive_verification_tasks={}\nreport_obligations={}\ntask_index_records={}\nperformance_records={}\nstability_records={}\nstability_picture_records={}\n",
+        "package={}\nmodules={}\ndeterminism_observations={}\nevidence_graph_nodes={}\nverification_tasks={}\nactive_verification_tasks={}\nreport_obligations={}\ntask_index_records={}\nperformance_records={}\nstability_records={}\nstability_picture_records={}\nquality_findings={}\nquality_hard_errors={}\nquality_warnings={}\nquality_advice={}\n",
         build_env.package_name,
         artifacts.module_count,
         artifacts.determinism_observation_count,
@@ -409,7 +691,11 @@ fn render_summary(
         artifacts
             .stability_picture
             .as_ref()
-            .map_or(0, |picture| picture.records.len())
+            .map_or(0, |picture| picture.records.len()),
+        quality_findings_receipt.findings.len(),
+        quality_findings_receipt.hard_error_count(),
+        quality_findings_receipt.warning_count(),
+        quality_findings_receipt.advice_count()
     )
 }
 

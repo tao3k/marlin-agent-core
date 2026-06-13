@@ -1,44 +1,24 @@
 use std::sync::Arc;
 
-use marlin_agent_protocol::{
-    ModelCommandMatcher, ModelContextForkMode, ModelEndpoint, ModelRouteRequest, ModelRouteRule,
-    ModelSessionPolicy,
-};
+use marlin_agent_protocol::ModelRouteRequest;
 use marlin_agent_runtime::{
-    AgentSessionContext, CancellationToken, CompiledModelRouteResolver, ContextNamespace,
-    ContextVisibility, ModelRouteConfig, RuntimeContext, RuntimeEnvironment, RuntimeFuture,
-    SubAgentRuntime, TokioAgentRuntime,
+    CancellationToken, CompiledModelRouteResolver, ContextNamespace, RuntimeContext,
+    RuntimeEnvironment, RuntimeFuture, SubAgentRuntime, TokioAgentRuntime,
+};
+use marlin_agent_test_support::{
+    DeterministicRoutedSubAgentExecutionReceipt, DeterministicSubAgentScenarioFixture,
+    assert_deterministic_routed_sub_agent_execution, assert_deterministic_sub_agent_route_decision,
+    deterministic_reviewer_sub_agent_scenario_fixture,
 };
 
 #[tokio::test]
 async fn routed_sub_agent_spawn_runs_inside_model_route_session() {
-    let resolver = CompiledModelRouteResolver::new(vec![
-        ModelRouteRule::new(
-            "reviewer-opus",
-            100,
-            ModelCommandMatcher::new().with_sub_agent_role_glob("reviewer"),
-            ModelEndpoint::new("anthropic", "claude-opus-4-8"),
-        )
-        .with_session(ModelSessionPolicy::persistent(
-            "workspace:reviewer",
-            ModelContextForkMode::Isolated,
-        )),
-    ])
-    .expect("route rule compiles");
+    let fixture = deterministic_reviewer_sub_agent_scenario_fixture();
+    let resolver = resolver_from_fixture(&fixture);
     let decision = resolver
-        .resolve(
-            &ModelRouteRequest::command(["codex", "sub-agent", "review"])
-                .with_sub_agent_role("reviewer"),
-        )
+        .resolve(fixture.route_request())
         .expect("sub-agent route resolves");
-    let parent_session = AgentSessionContext::root(
-        "session/root",
-        ContextVisibility::from_namespaces([
-            ContextNamespace::System,
-            ContextNamespace::Workspace,
-            ContextNamespace::Memory,
-        ]),
-    );
+    let parent_session = fixture.session_fixture().parent_session().clone();
     let (runtime, _events) = TokioAgentRuntime::with_session(
         4,
         CancellationToken::new(),
@@ -53,81 +33,42 @@ async fn routed_sub_agent_spawn_runs_inside_model_route_session() {
     );
     let output = task.join().await.expect("routed sub-agent should finish");
 
+    assert_deterministic_sub_agent_route_decision(&fixture, &decision);
     assert_eq!(
         binding.child_session_id().as_str(),
-        "model-route/persistent/workspace:reviewer"
+        fixture.expected_route_child_session_id(),
     );
-    assert_eq!(output.session_id, binding.child_session_id().as_str());
-    assert_eq!(output.parent_session_id.as_deref(), Some("session/root"));
-    assert!(output.system_visible);
-    assert!(!output.workspace_visible);
-    assert!(!output.memory_visible);
+    assert_deterministic_routed_sub_agent_execution(&fixture, &output.to_execution_receipt());
 }
 
 #[tokio::test]
 async fn routed_sub_agent_spawn_resolves_request_before_spawning() {
-    let resolver = ModelRouteConfig::from_toml_str(
-        r#"
-[[rules]]
-rule_id = "reviewer-opus"
-priority = 100
-
-[rules.matcher]
-sub_agent_role_globs = ["reviewer"]
-command_kind_globs = ["review"]
-
-[rules.endpoint]
-provider = "anthropic"
-model = "claude-opus-4-8"
-
-[rules.session]
-context = "Isolated"
-
-[rules.session.lifecycle.Persistent]
-key = "workspace:reviewer"
-"#,
-    )
-    .expect("route config parses")
-    .into_resolver()
-    .expect("route resolver compiles");
-    let parent_session = AgentSessionContext::root(
-        "session/root",
-        ContextVisibility::from_namespaces([
-            ContextNamespace::System,
-            ContextNamespace::Workspace,
-            ContextNamespace::Memory,
-        ]),
-    );
+    let fixture = deterministic_reviewer_sub_agent_scenario_fixture();
+    let resolver = resolver_from_fixture(&fixture);
+    let parent_session = fixture.session_fixture().parent_session().clone();
     let (runtime, _events) = TokioAgentRuntime::with_session(
         4,
         CancellationToken::new(),
         RuntimeEnvironment::default(),
         parent_session,
     );
-    let request = ModelRouteRequest::command(["codex", "sub-agent", "review"])
-        .with_sub_agent_role("reviewer")
-        .with_command_kind("review");
 
     let (task, binding, decision) = runtime
         .spawn_routed_sub_agent(
             Arc::new(ModelRouteSessionEchoSubAgent),
             (),
             &resolver,
-            &request,
+            fixture.route_request(),
         )
         .expect("route resolves and sub-agent is spawned");
     let output = task.join().await.expect("routed sub-agent should finish");
 
-    assert_eq!(decision.endpoint.provider.as_str(), "anthropic");
-    assert_eq!(decision.endpoint.model.as_str(), "claude-opus-4-8");
+    assert_deterministic_sub_agent_route_decision(&fixture, &decision);
     assert_eq!(
         binding.child_session_id().as_str(),
-        "model-route/persistent/workspace:reviewer"
+        fixture.expected_route_child_session_id(),
     );
-    assert_eq!(output.session_id, binding.child_session_id().as_str());
-    assert!(output.system_visible);
-    assert!(!output.workspace_visible);
-    assert!(!output.memory_visible);
+    assert_deterministic_routed_sub_agent_execution(&fixture, &output.to_execution_receipt());
 }
 
 #[tokio::test]
@@ -179,4 +120,23 @@ struct ModelRouteSessionEcho {
     system_visible: bool,
     workspace_visible: bool,
     memory_visible: bool,
+}
+
+impl ModelRouteSessionEcho {
+    fn to_execution_receipt(&self) -> DeterministicRoutedSubAgentExecutionReceipt {
+        DeterministicRoutedSubAgentExecutionReceipt {
+            session_id: self.session_id.clone(),
+            parent_session_id: self.parent_session_id.clone(),
+            system_visible: self.system_visible,
+            workspace_visible: self.workspace_visible,
+            memory_visible: self.memory_visible,
+        }
+    }
+}
+
+fn resolver_from_fixture(
+    fixture: &DeterministicSubAgentScenarioFixture,
+) -> CompiledModelRouteResolver {
+    CompiledModelRouteResolver::new(vec![fixture.route_rule().clone()])
+        .expect("fixture route rule compiles")
 }

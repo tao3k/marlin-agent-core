@@ -9,9 +9,10 @@ mod request;
 pub use chunk_gate::{ChunkGate, ChunkGatePermit};
 pub use event::{ModelStreamChunk, ModelStreamEvent, ModelStreamTransport};
 pub use gateway::{LiteLlmStreamGateway, ModelStreamGateway};
-pub use litellm::{
-    ChatMessage, CompletionOptions, CompletionResponse, LiteLlmModelClient,
-    LiteLlmModelClientError, LiteLlmModelClientResult, assistant_message, system_message,
-    user_message,
+pub use litellm::LiteLlmModelClient;
+pub use marlin_agent_protocol::{
+    ModelGatewayCompletionChoice, ModelGatewayCompletionOptions, ModelGatewayCompletionResponse,
+    ModelGatewayError, ModelGatewayMessage, ModelGatewayMessageRole, ModelGatewayResult,
+    assistant_gateway_message, system_gateway_message, user_gateway_message,
 };
 pub use request::ModelStreamRequest;

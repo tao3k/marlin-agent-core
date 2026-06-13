@@ -17,16 +17,10 @@ tracing.workspace = true
 marlin-rust-project-harness-policy.workspace = true
 rust-lang-project-harness.workspace = true
 
-[[bench]]
-name = "workspace_performance"
-harness = false
-
 [dev-dependencies]
 marlin-agent-hooks.workspace = true
-marlin-agent-stream.workspace = true
+marlin-agent-sessions.workspace = true
 marlin-agent-test-support.workspace = true
-marlin-rust-project-harness-policy.workspace = true
 marlin-gerbil-scheme.workspace = true
-rust-lang-project-harness.workspace = true
 tempfile.workspace = true
 tokio.workspace = true

@@ -26,6 +26,16 @@ pub const GERBIL_LOADPATH_ENV: &str = "GERBIL_LOADPATH";
 pub const GERBIL_ADAPTER_MODULE: &str = ":marlin/adapter";
 /// Package manifest path for the crate-shipped `Gerbil` runtime package.
 pub const GERBIL_PACKAGE_MANIFEST_PATH: &str = "gerbil.pkg";
+/// Object-system package dependency used by the crate-shipped runtime package.
+pub const GERBIL_POO_DEPENDENCY: &str = "git.cons.io/mighty-gerbils/gerbil-poo";
+/// Gerbil package name provided by the `gerbil-poo` dependency.
+pub const GERBIL_POO_PACKAGE_NAME: &str = "clan/poo";
+/// Object prototype module provided by the `gerbil-poo` dependency.
+pub const GERBIL_POO_OBJECT_MODULE: &str = ":clan/poo/object";
+/// Meta-object protocol module provided by the `gerbil-poo` dependency.
+pub const GERBIL_POO_MOP_MODULE: &str = ":clan/poo/mop";
+/// Prototype composition module provided by the `gerbil-poo` dependency.
+pub const GERBIL_POO_PROTO_MODULE: &str = ":clan/poo/proto";
 /// Package manifest source for the crate-shipped `Gerbil` runtime package.
 pub const GERBIL_PACKAGE_MANIFEST_SOURCE: &str = include_str!("../gerbil/gerbil.pkg");
 /// Source directory inside the crate-shipped `Gerbil` runtime package.
@@ -54,6 +64,11 @@ pub const GERBIL_HOOK_POLICY_ADAPTER_PATH: &str = "bin/hook-policy-adapter.ss";
 /// Source text for the configured `Gerbil Scheme` hook policy launcher.
 pub const GERBIL_HOOK_POLICY_ADAPTER_SOURCE: &str =
     include_str!("../gerbil/bin/hook-policy-adapter.ss");
+/// Source-file launcher that runs the Deck runtime model-route policy selector.
+pub const GERBIL_DECK_RUNTIME_POLICY_ADAPTER_PATH: &str = "bin/deck-runtime-policy-adapter.ss";
+/// Source text for the Deck runtime model-route policy selector launcher.
+pub const GERBIL_DECK_RUNTIME_POLICY_ADAPTER_SOURCE: &str =
+    include_str!("../gerbil/bin/deck-runtime-policy-adapter.ss");
 /// Build script for compiling the crate-shipped Gerbil runtime assets.
 pub const GERBIL_BUILD_SOURCE: &str = include_str!("../gerbil/build.ss");
 /// Smoke launcher path inside the crate-shipped `Gerbil` runtime package.
@@ -64,6 +79,21 @@ pub const GERBIL_SMOKE_SOURCE: &str = include_str!("../gerbil/bin/smoke.ss");
 pub const GERBIL_MARLIN_ADAPTER_PATH: &str = "src/marlin/adapter.ss";
 /// Source text for the `:marlin/adapter` library module.
 pub const GERBIL_MARLIN_ADAPTER_SOURCE: &str = include_str!("../gerbil/src/marlin/adapter.ss");
+/// Library module that exposes the Deck runtime capability bridge.
+pub const GERBIL_MARLIN_DECK_RUNTIME_PATH: &str = "src/marlin/deck-runtime.ss";
+/// Source text for the Deck runtime capability bridge.
+pub const GERBIL_MARLIN_DECK_RUNTIME_SOURCE: &str =
+    include_str!("../gerbil/src/marlin/deck-runtime.ss");
+/// Native C ABI source for the Deck runtime selector.
+pub const GERBIL_MARLIN_DECK_RUNTIME_NATIVE_PATH: &str = "src/marlin/deck-runtime-native.ss";
+/// Source text for the native C ABI Deck runtime selector.
+pub const GERBIL_MARLIN_DECK_RUNTIME_NATIVE_SOURCE: &str =
+    include_str!("../gerbil/src/marlin/deck-runtime-native.ss");
+/// Library module that adapts JSON requests into Deck runtime policy selection.
+pub const GERBIL_MARLIN_DECK_RUNTIME_POLICY_PATH: &str = "src/marlin/deck-runtime-policy.ss";
+/// Source text for the Deck runtime policy selector adapter module.
+pub const GERBIL_MARLIN_DECK_RUNTIME_POLICY_SOURCE: &str =
+    include_str!("../gerbil/src/marlin/deck-runtime-policy.ss");
 /// Library module that dynamically invokes configured hook policy procedures.
 pub const GERBIL_MARLIN_HOOK_POLICY_PATH: &str = "src/marlin/hook-policy.ss";
 /// Source text for dynamically invoking configured hook policy procedures.
@@ -101,6 +131,10 @@ pub const GERBIL_RUNTIME_ASSETS: &[GerbilRuntimeAsset] = &[
         source: GERBIL_HOOK_POLICY_ADAPTER_SOURCE,
     },
     GerbilRuntimeAsset {
+        path: GERBIL_DECK_RUNTIME_POLICY_ADAPTER_PATH,
+        source: GERBIL_DECK_RUNTIME_POLICY_ADAPTER_SOURCE,
+    },
+    GerbilRuntimeAsset {
         path: "build.ss",
         source: GERBIL_BUILD_SOURCE,
     },
@@ -111,6 +145,18 @@ pub const GERBIL_RUNTIME_ASSETS: &[GerbilRuntimeAsset] = &[
     GerbilRuntimeAsset {
         path: GERBIL_MARLIN_ADAPTER_PATH,
         source: GERBIL_MARLIN_ADAPTER_SOURCE,
+    },
+    GerbilRuntimeAsset {
+        path: GERBIL_MARLIN_DECK_RUNTIME_PATH,
+        source: GERBIL_MARLIN_DECK_RUNTIME_SOURCE,
+    },
+    GerbilRuntimeAsset {
+        path: GERBIL_MARLIN_DECK_RUNTIME_NATIVE_PATH,
+        source: GERBIL_MARLIN_DECK_RUNTIME_NATIVE_SOURCE,
+    },
+    GerbilRuntimeAsset {
+        path: GERBIL_MARLIN_DECK_RUNTIME_POLICY_PATH,
+        source: GERBIL_MARLIN_DECK_RUNTIME_POLICY_SOURCE,
     },
     GerbilRuntimeAsset {
         path: GERBIL_MARLIN_HOOK_POLICY_PATH,

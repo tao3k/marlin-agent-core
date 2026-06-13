@@ -5,8 +5,9 @@ use marlin_agent_harness::{
 };
 use marlin_agent_hooks::{HookDispatcher, HookInvocation, HookRegistration, HookRegistry};
 use marlin_agent_kernel::{
-    GraphLoopExecutionRequest, GraphLoopExecutionStatus, GraphNodeInvocation, ProviderNodeAdapter,
-    SubAgentNodeAdapter, TokioGraphLoopKernel, ToolNodeAdapter,
+    GraphLoopExecutionBudget, GraphLoopExecutionRequest, GraphLoopExecutionStatus,
+    GraphNodeInvocation, ProviderNodeAdapter, SubAgentNodeAdapter, TokioGraphLoopKernel,
+    ToolNodeAdapter,
 };
 use marlin_agent_protocol::{
     AgentScenario, AgentScenarioStep, HookEventName, HookHandlerType, HookRunSummary, LoopEvidence,
@@ -16,9 +17,20 @@ use marlin_agent_runtime::{
     HookRuntime, ProviderRuntime, RuntimeContext, RuntimeEnvironment, RuntimeEvent, RuntimeFuture,
     SubAgentRuntime, ToolRuntime, observability,
 };
+use marlin_agent_sessions::SessionKind;
+use marlin_agent_test_support::{
+    accepted_gerbil_ir_graph_policy_proposal_fixture,
+    assert_accepted_gerbil_ir_graph_policy_proposal_fixture,
+    assert_budgeted_graph_policy_execution_request,
+    assert_deterministic_sub_agent_scenario_fixture, assert_sub_agent_memory_session_fixture,
+    budgeted_graph_policy_execution_request_fixture,
+    deterministic_reviewer_sub_agent_scenario_fixture,
+};
 
 #[tokio::test]
 async fn harness_runs_provider_tool_sub_agent_scenario_with_hooks_and_environment() {
+    let sub_agent_fixture = deterministic_reviewer_sub_agent_scenario_fixture();
+    assert_deterministic_sub_agent_scenario_fixture(&sub_agent_fixture);
     let environment = RuntimeEnvironment::default()
         .with_home(RuntimeHome::custom("/tmp/marlin-e2e-home").with_profile("e2e"))
         .with_cwd("/tmp/marlin-e2e-workspace");
@@ -131,6 +143,191 @@ async fn harness_runs_provider_tool_sub_agent_scenario_with_hooks_and_environmen
     );
 
     assert_agent_core_trace_spans(&report);
+}
+
+#[tokio::test]
+async fn harness_e2e_combines_graph_policy_environment_hooks_and_sub_agent_session_without_live_llm()
+ {
+    let graph_policy = accepted_gerbil_ir_graph_policy_proposal_fixture();
+    let graph_policy_request = budgeted_graph_policy_execution_request_fixture(&graph_policy, 2);
+    assert_accepted_gerbil_ir_graph_policy_proposal_fixture(&graph_policy);
+    assert_budgeted_graph_policy_execution_request(&graph_policy_request, 2);
+
+    let sub_agent_fixture = deterministic_reviewer_sub_agent_scenario_fixture();
+    let session = sub_agent_fixture.session_fixture();
+    let (child_session, isolation_receipt) = session.parent_session().child_session(
+        SessionKind::SubAgent,
+        session.config().child_session_id(),
+        session.requested_visibility(),
+    );
+    assert_deterministic_sub_agent_scenario_fixture(&sub_agent_fixture);
+    assert_sub_agent_memory_session_fixture(
+        session,
+        &child_session,
+        session.config(),
+        &isolation_receipt,
+    );
+
+    let environment = RuntimeEnvironment::default()
+        .with_home(RuntimeHome::custom("/tmp/marlin-policy-e2e-home").with_profile("policy-e2e"))
+        .with_cwd("/tmp/marlin-policy-e2e-workspace");
+    let scenario = AgentScenario::new("graph-policy-provider-tool-sub-agent")
+        .with_step(
+            AgentScenarioStep::new("run")
+                .expecting_event_topic(observability::TOPIC_KERNEL_EXECUTION)
+                .expecting_event_topic(observability::TOPIC_KERNEL_HOOK)
+                .expecting_event_topic(observability::TOPIC_KERNEL_SUB_AGENT)
+                .expecting_event_topic("test.e2e")
+                .expecting_span_name(observability::runtime_task_span_name())
+                .expecting_span_name(observability::agent_provider_span_name())
+                .expecting_span_name(observability::agent_tool_span_name())
+                .expecting_span_name(observability::agent_sub_agent_span_name())
+                .expecting_span_name(observability::hook_dispatch_span_name())
+                .expecting_span_name(observability::hook_run_span_name())
+                .expecting_span_name(observability::harness_execution_span_name())
+                .expecting_span_name(observability::harness_result_span_name()),
+        )
+        .expecting_evidence(LoopEvidenceKind::Runtime)
+        .expecting_evidence(LoopEvidenceKind::Visibility);
+    let request = GraphLoopExecutionRequest::new(
+        "run-policy-e2e",
+        HarnessGraphBuilder::new("policy-e2e-graph")
+            .linear([
+                ("plan", "provider"),
+                ("apply", "tool"),
+                ("review", "sub-agent"),
+            ])
+            .build(),
+    )
+    .with_budget(GraphLoopExecutionBudget::max_node_executions(3));
+    let hook_dispatcher = e2e_hook_dispatcher();
+    let kernel = TokioGraphLoopKernel::new("run-policy-e2e", "policy-e2e-graph")
+        .with_executor(
+            "provider",
+            ProviderNodeAdapter::new(E2eProvider, |invocation: GraphNodeInvocation| {
+                invocation.node_id.into_string()
+            })
+            .with_hook_dispatcher(hook_dispatcher.clone()),
+        )
+        .with_executor(
+            "tool",
+            ToolNodeAdapter::new(E2eTool, |invocation: GraphNodeInvocation| {
+                invocation.node_id.into_string()
+            })
+            .with_hook_dispatcher(hook_dispatcher.clone()),
+        )
+        .with_executor(
+            "sub-agent",
+            SubAgentNodeAdapter::new(E2eSubAgent, |invocation: GraphNodeInvocation| {
+                invocation.node_id.into_string()
+            })
+            .with_hook_dispatcher(hook_dispatcher),
+        );
+    let mut harness = HarnessRuntime::with_environment(64, environment);
+    harness.record_evidence(LoopEvidence::present(LoopEvidenceKind::Runtime, "tokio"));
+    harness.record_graph_policy_proposal_visibility(&graph_policy.compilation().receipt);
+
+    let report = harness.execute_graph(&scenario, &kernel, request).await;
+    let evaluated = AgentHarness::evaluate_execution_report(&scenario, &report);
+    let e2e_messages = report
+        .events
+        .iter()
+        .filter(|event| event.topic == "test.e2e")
+        .map(|event| event.message.as_str())
+        .collect::<Vec<_>>();
+
+    assert_eq!(report.result.status, GraphLoopExecutionStatus::Completed);
+    assert_eq!(report.result.visited_nodes, vec!["plan", "apply", "review"]);
+    assert!(report.assertion.is_none());
+    assert!(evaluated.is_success());
+    assert!(report.has_graph_policy_proposal_visibility_status(
+        &graph_policy.proposal().strategy.strategy_id,
+        graph_policy.compilation().receipt.status.clone(),
+    ));
+    assert!(e2e_messages.contains(&"hook pre-tool"));
+    assert!(e2e_messages.contains(&"hook sub-agent-start"));
+    assert!(e2e_messages.contains(&"hook sub-agent-stop"));
+    assert!(
+        e2e_messages
+            .iter()
+            .any(|message| message.contains("provider plan home /tmp/marlin-policy-e2e-home"))
+    );
+    assert!(
+        e2e_messages
+            .iter()
+            .any(|message| message.contains("sub-agent review home /tmp/marlin-policy-e2e-home"))
+    );
+}
+
+#[tokio::test]
+async fn harness_e2e_preserves_graph_policy_visibility_when_budget_gate_fails_without_live_llm() {
+    let graph_policy = accepted_gerbil_ir_graph_policy_proposal_fixture();
+    let request = budgeted_graph_policy_execution_request_fixture(&graph_policy, 1);
+    assert_accepted_gerbil_ir_graph_policy_proposal_fixture(&graph_policy);
+    assert_budgeted_graph_policy_execution_request(&request, 1);
+
+    let scenario = AgentScenario::new("graph-policy-budget-failure")
+        .with_step(
+            AgentScenarioStep::new("run")
+                .expecting_event_topic(observability::TOPIC_KERNEL_EXECUTION)
+                .expecting_span_name(observability::harness_result_span_name()),
+        )
+        .expecting_evidence(LoopEvidenceKind::Visibility);
+    let kernel = TokioGraphLoopKernel::new(
+        graph_policy.expected_run_id(),
+        graph_policy.proposal().proposed_graph.graph_id.clone(),
+    )
+    .with_executor(
+        "gerbil.rank",
+        ProviderNodeAdapter::new(E2eProvider, |invocation: GraphNodeInvocation| {
+            invocation.node_id.into_string()
+        }),
+    )
+    .with_executor(
+        "kernel.dispatch",
+        ToolNodeAdapter::new(E2eTool, |invocation: GraphNodeInvocation| {
+            invocation.node_id.into_string()
+        }),
+    );
+    let mut harness = HarnessRuntime::new(16);
+    harness.record_graph_policy_proposal_visibility(&graph_policy.compilation().receipt);
+
+    let report = harness.execute_graph(&scenario, &kernel, request).await;
+    let evaluated = AgentHarness::evaluate_execution_report(&scenario, &report);
+
+    assert_eq!(report.result.status, GraphLoopExecutionStatus::Failed);
+    assert_eq!(report.summary.status, GraphLoopExecutionStatus::Failed);
+    assert!(report.result.visited_nodes.is_empty());
+    assert_eq!(
+        report.result.diagnostics,
+        vec!["graph execution budget exceeded: planned node executions 2 > max 1"]
+    );
+    assert_eq!(report.summary.diagnostic_count, 1);
+    assert!(report.assertion.is_none());
+    assert!(evaluated.is_success());
+    assert!(report.has_graph_policy_proposal_visibility_status(
+        &graph_policy.proposal().strategy.strategy_id,
+        graph_policy.compilation().receipt.status.clone(),
+    ));
+    assert!(!report.events.iter().any(|event| event.topic == "test.e2e"));
+
+    let result_span = report
+        .find_span(&observability::harness_result_span_name())
+        .expect("expected budget failure harness result span");
+    assert_eq!(
+        result_span
+            .fields
+            .get(observability::FIELD_STATUS)
+            .map(String::as_str),
+        Some("Failed")
+    );
+    assert_eq!(
+        result_span
+            .fields
+            .get(observability::FIELD_DIAGNOSTIC_COUNT)
+            .map(String::as_str),
+        Some("1")
+    );
 }
 
 fn assert_agent_core_trace_spans(report: &HarnessExecutionReport) {

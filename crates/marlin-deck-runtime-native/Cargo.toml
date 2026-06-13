@@ -1,0 +1,28 @@
+[package]
+name = "marlin-deck-runtime-native"
+edition.workspace = true
+version.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[features]
+default = []
+linked-native = []
+
+[[bench]]
+name = "linked_selector"
+harness = false
+
+[dependencies]
+marlin-agent-protocol.workspace = true
+marlin-agent-runtime.workspace = true
+marlin-gerbil-scheme.workspace = true
+
+[build-dependencies]
+marlin-deck-runtime-native-build.workspace = true
+marlin-rust-project-harness-policy.workspace = true
+rust-lang-project-harness.workspace = true
+
+[dev-dependencies]
+criterion.workspace = true
+rust-lang-project-harness.workspace = true

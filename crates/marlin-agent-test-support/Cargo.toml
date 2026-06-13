@@ -6,14 +6,12 @@ authors.workspace = true
 repository.workspace = true
 
 [dependencies]
-async-trait.workspace = true
-marlin-agent-stream.workspace = true
+marlin-agent-kernel.workspace = true
+marlin-agent-protocol.workspace = true
+marlin-agent-sessions.workspace = true
+marlin-gerbil-ir.workspace = true
+tokio.workspace = true
 
 [build-dependencies]
 marlin-rust-project-harness-policy.workspace = true
 rust-lang-project-harness.workspace = true
-
-[dev-dependencies]
-marlin-agent-protocol.workspace = true
-rust-lang-project-harness.workspace = true
-tokio.workspace = true

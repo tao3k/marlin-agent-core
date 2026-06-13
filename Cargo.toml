@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "build-support/marlin-deck-runtime-native-build",
     "crates/marlin-agent-core",
     "crates/marlin-agent-environment",
     "crates/marlin-agent-harness",
@@ -10,6 +11,7 @@ members = [
     "crates/marlin-agent-sessions",
     "crates/marlin-agent-stream",
     "crates/marlin-agent-test-support",
+    "crates/marlin-deck-runtime-native",
     "crates/marlin-gerbil-ir",
     "crates/marlin-gerbil-scheme",
     "crates/marlin-org-memory",
@@ -35,6 +37,7 @@ repository = "https://github.com/tao3k/marlin-agent-core"
 [workspace.dependencies]
 aho-corasick = "1.1.4"
 async-trait = "0.1.89"
+criterion = "0.8.2"
 futures-executor = "0.3.32"
 globset = "0.4.18"
 litellm-rs = { version = "0.5", default-features = false, features = ["lite", "gateway", "sqlite", "redis", "websockets"] }
@@ -62,6 +65,7 @@ marlin-agent-runtime = { path = "crates/marlin-agent-runtime", version = "0.1.0"
 marlin-agent-sessions = { path = "crates/marlin-agent-sessions", version = "0.1.0" }
 marlin-agent-stream = { path = "crates/marlin-agent-stream", version = "0.1.0" }
 marlin-agent-test-support = { path = "crates/marlin-agent-test-support", version = "0.1.0" }
+marlin-deck-runtime-native = { path = "crates/marlin-deck-runtime-native", version = "0.1.0" }
 marlin-gerbil-ir = { path = "crates/marlin-gerbil-ir", version = "0.1.0" }
 marlin-gerbil-scheme = { path = "crates/marlin-gerbil-scheme", version = "0.1.0" }
 marlin-org-memory = { path = "crates/marlin-org-memory", version = "0.1.0" }
@@ -75,6 +79,7 @@ marlin-workspace-protocol = { path = "crates/marlin-workspace-protocol", version
 marlin-workspace-query = { path = "crates/marlin-workspace-query", version = "0.1.0" }
 marlin-workspace-status = { path = "crates/marlin-workspace-status", version = "0.1.0" }
 marlin-workspace-view = { path = "crates/marlin-workspace-view", version = "0.1.0" }
+marlin-deck-runtime-native-build = { path = "build-support/marlin-deck-runtime-native-build", version = "0.1.0" }
 
 [profile.release]
 opt-level = 3

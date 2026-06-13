@@ -1,9 +1,12 @@
+use std::time::Duration;
+
 use marlin_agent_harness::{AgentHarness, HarnessGraphBuilder, HarnessRuntime};
 use marlin_agent_kernel::{GraphLoopExecutionRequest, TokioGraphLoopKernel};
 use marlin_agent_protocol::{
-    AgentScenario, LoopEvidence, LoopEvidenceKind, LoopPerformanceEvidence,
-    PERFORMANCE_EVIDENCE_KEYS,
+    AgentScenario, GraphLoopExecutionStatus, LoopEvidence, LoopEvidenceKind,
+    LoopPerformanceEvidence, PERFORMANCE_EVIDENCE_KEYS, STABILITY_EVIDENCE_KEYS,
 };
+use marlin_agent_test_support::{RuntimeStabilityEvidenceInput, runtime_stability_budget_evidence};
 
 use super::support::EventfulExecutor;
 
@@ -44,6 +47,105 @@ async fn harness_execution_report_carries_performance_benchmark_evidence() {
         assert!(
             detail.contains(key),
             "missing performance evidence key {key}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn harness_execution_report_carries_runtime_stability_budget_evidence() {
+    const DURATION_BUDGET: Duration = Duration::from_millis(250);
+    const EVENT_BUDGET: usize = 5;
+    const SPAN_BUDGET: usize = 32;
+
+    let execution_scenario = AgentScenario::new("runtime-stability-gate");
+    let validation_scenario = AgentScenario::new("runtime-stability-gate")
+        .expecting_evidence(LoopEvidenceKind::Stability);
+    let graph = HarnessGraphBuilder::new("graph")
+        .node("node-1", "eventful")
+        .build();
+    let request = GraphLoopExecutionRequest::new("run", graph);
+    let kernel =
+        TokioGraphLoopKernel::new("run", "graph").with_executor("eventful", EventfulExecutor);
+    let mut harness = HarnessRuntime::new(16);
+
+    let mut report = harness
+        .execute_graph(&execution_scenario, &kernel, request)
+        .await;
+
+    assert_eq!(report.result.status, GraphLoopExecutionStatus::Completed);
+    assert_eq!(report.summary.status, GraphLoopExecutionStatus::Completed);
+    assert!(report.assertion.is_none());
+    assert_eq!(report.summary.event_count, report.events.len());
+    assert_eq!(report.summary.span_count, report.trace_spans.len());
+    assert_eq!(
+        report.summary.diagnostic_count,
+        report.result.diagnostics.len()
+    );
+    let custom_event_count = report
+        .events
+        .iter()
+        .filter(|event| event.topic == "test.harness")
+        .count();
+
+    assert_eq!(custom_event_count, 1);
+    assert!(report.summary.event_count <= EVENT_BUDGET);
+    assert!(
+        report.summary.duration <= DURATION_BUDGET,
+        "runtime stability gate exceeded duration budget: {:?} > {:?}",
+        report.summary.duration,
+        DURATION_BUDGET
+    );
+    assert!(
+        report.summary.span_count <= SPAN_BUDGET,
+        "runtime stability gate exceeded span budget: {} > {}",
+        report.summary.span_count,
+        SPAN_BUDGET
+    );
+    assert_eq!(report.summary.diagnostic_count, 0);
+
+    let stability_evidence = runtime_stability_budget_evidence(RuntimeStabilityEvidenceInput {
+        subject: "crates/marlin-agent-harness/src/runtime.rs".to_owned(),
+        stability_command:
+            "cargo test -p marlin-agent-harness --test unit_test harness::runtime::performance"
+                .to_owned(),
+        duration: report.summary.duration,
+        duration_budget: DURATION_BUDGET,
+        event_count: report.summary.event_count,
+        event_budget: EVENT_BUDGET,
+        custom_event_count: Some(custom_event_count),
+        span_count: report.summary.span_count,
+        span_budget: SPAN_BUDGET,
+        diagnostic_count: report.summary.diagnostic_count,
+        state_growth: "event_queue=drained,trace_spans=bounded".to_owned(),
+        determinism: "scripted-eventful-executor,node_order=stable".to_owned(),
+        stability_artifact: "target/agent-harness/stability/runtime-performance.json".to_owned(),
+    });
+
+    report.evidence.push(stability_evidence);
+
+    let evaluated = AgentHarness::evaluate_execution_report(&validation_scenario, &report);
+    let detail = report
+        .evidence
+        .iter()
+        .find(|evidence| evidence.kind == LoopEvidenceKind::Stability)
+        .and_then(|evidence| evidence.detail.as_deref())
+        .expect("stability detail");
+
+    assert!(evaluated.is_success());
+    for key in STABILITY_EVIDENCE_KEYS {
+        assert!(detail.contains(key), "missing stability evidence key {key}");
+    }
+    for expected_observation in [
+        "event_count=5",
+        "event_budget=5",
+        "custom_event_count=1",
+        "span_budget=32",
+        "diagnostic_count=0",
+        "duration_budget_ms=250",
+    ] {
+        assert!(
+            detail.contains(expected_observation),
+            "missing stability observation {expected_observation}"
         );
     }
 }

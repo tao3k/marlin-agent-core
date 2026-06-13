@@ -6,7 +6,6 @@ authors.workspace = true
 repository.workspace = true
 
 [dependencies]
-async-trait.workspace = true
 litellm-rs.workspace = true
 marlin-agent-protocol.workspace = true
 serde.workspace = true

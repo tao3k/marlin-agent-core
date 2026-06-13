@@ -2,6 +2,8 @@
 mod runtime;
 #[path = "unit/runtime/cleanup.rs"]
 mod runtime_cleanup;
+#[path = "unit/runtime/dependency_boundary.rs"]
+mod runtime_dependency_boundary;
 #[path = "unit/runtime/model_route/mod.rs"]
 mod runtime_model_route;
 #[path = "unit/runtime/observability.rs"]

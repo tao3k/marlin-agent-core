@@ -1,8 +1,23 @@
 #[path = "unit/artifact.rs"]
 mod artifact;
 
+#[path = "unit/aot_runtime.rs"]
+mod aot_runtime;
+
 #[path = "unit/compiler.rs"]
 mod compiler;
+
+#[path = "unit/deps.rs"]
+mod deps;
+
+#[path = "unit/dependency_boundary.rs"]
+mod dependency_boundary;
+
+#[path = "unit/deck_runtime_policy.rs"]
+mod deck_runtime_policy;
+
+#[path = "unit/deck_runtime_native/mod.rs"]
+mod deck_runtime_native;
 
 #[path = "unit/hook_policy.rs"]
 mod hook_policy;

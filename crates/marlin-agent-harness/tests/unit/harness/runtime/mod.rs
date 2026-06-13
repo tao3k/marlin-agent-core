@@ -1,7 +1,10 @@
+mod composite;
 mod correlation;
 mod environment;
 mod events;
 mod failure_observability;
+mod fakes;
 mod hooks;
 mod performance;
+mod stream;
 mod support;

@@ -4,9 +4,14 @@ use std::{
 };
 
 use marlin_rust_project_harness_policy::{
-    evaluate_performance_and_stability_gate, rust_project_harness_config_for_project,
+    RustProjectHarnessFindingSeverity, RustProjectHarnessPackageEvidenceGraphRequest,
+    RustProjectHarnessQualityFindingEvidencePaths, RustProjectHarnessQualityFindingsInput,
+    build_package_evidence_graph_receipt, evaluate_performance_and_stability_gate,
+    evaluate_quality_findings_for_gate, rust_project_harness_config_for_project,
 };
-use rust_lang_project_harness::plan_rust_project_verification_with_config;
+use rust_lang_project_harness::{
+    plan_rust_project_verification_with_config, run_rust_project_harness_with_config,
+};
 
 #[test]
 fn performance_and_stability_gate_receipt_accepts_marlin_project_policy() {
@@ -41,6 +46,98 @@ fn performance_and_stability_gate_receipt_reports_missing_package_gates() {
     assert!(!receipt.stability_gate);
     assert!(!receipt.performance_report_obligation);
     assert!(!receipt.stability_report_obligation);
+}
+
+#[test]
+fn quality_findings_turn_missing_gates_into_agent_actionable_hard_errors() {
+    let receipt = marlin_rust_project_harness_policy::RustProjectHarnessGateReceipt {
+        package_name: "demo".to_owned(),
+        performance_gate: false,
+        stability_gate: false,
+        performance_report_obligation: false,
+        stability_report_obligation: false,
+    };
+
+    let findings = evaluate_quality_findings_for_gate(RustProjectHarnessQualityFindingsInput {
+        package_name: "demo".to_owned(),
+        gate_receipt: receipt,
+        evidence_paths: RustProjectHarnessQualityFindingEvidencePaths::new(
+            "evidence-graph.json",
+            "verification_plan.json",
+            "task_index.json",
+        ),
+    });
+
+    assert_eq!(findings.hard_error_count(), 4);
+    assert_eq!(findings.warning_count(), 0);
+    assert_eq!(findings.advice_count(), 1);
+    assert!(findings.findings.iter().any(|finding| {
+        finding.severity == RustProjectHarnessFindingSeverity::HardError
+            && finding.rule_id == "MARLIN-QUALITY-GATE-PERF"
+            && finding.agent_next_action.contains("performance")
+    }));
+}
+
+#[test]
+fn quality_findings_keep_successful_gate_as_agent_evidence_advice() {
+    let receipt = marlin_rust_project_harness_policy::RustProjectHarnessGateReceipt {
+        package_name: "demo".to_owned(),
+        performance_gate: true,
+        stability_gate: true,
+        performance_report_obligation: true,
+        stability_report_obligation: true,
+    };
+
+    let findings = evaluate_quality_findings_for_gate(RustProjectHarnessQualityFindingsInput {
+        package_name: "demo".to_owned(),
+        gate_receipt: receipt,
+        evidence_paths: RustProjectHarnessQualityFindingEvidencePaths::new(
+            "evidence-graph.json",
+            "verification_plan.json",
+            "task_index.json",
+        ),
+    });
+
+    assert_eq!(findings.hard_error_count(), 0);
+    assert_eq!(findings.warning_count(), 0);
+    assert_eq!(findings.advice_count(), 1);
+    assert_eq!(
+        findings.findings[0].severity,
+        RustProjectHarnessFindingSeverity::Advice
+    );
+    assert!(
+        findings.findings[0]
+            .evidence
+            .contains(&"evidence-graph.json".to_owned())
+    );
+}
+
+#[test]
+fn package_evidence_graph_receipt_is_owned_by_build_support() {
+    let project_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let package_name = env!("CARGO_PKG_NAME").to_owned();
+    let config = rust_project_harness_config_for_project(project_root);
+    let harness_report = run_rust_project_harness_with_config(project_root, &config)
+        .expect("build-support crate should produce rust harness report");
+
+    let receipt =
+        build_package_evidence_graph_receipt(RustProjectHarnessPackageEvidenceGraphRequest {
+            config: &config,
+            harness_report,
+            project_root: project_root.to_path_buf(),
+            package_name: package_name.clone(),
+            evidence_paths: RustProjectHarnessQualityFindingEvidencePaths::new(
+                "evidence-graph.json",
+                "verification_plan.json",
+                "task_index.json",
+            ),
+        });
+
+    assert_eq!(receipt.package_name, package_name);
+    assert!(receipt.evidence_graph_summary.nodes > 0);
+    assert!(receipt.gate_receipt.is_success());
+    assert_eq!(receipt.quality_findings_receipt.hard_error_count(), 0);
+    assert!(receipt.is_success());
 }
 
 #[test]

@@ -4,6 +4,7 @@ mod event;
 mod evidence;
 mod graph;
 mod hook;
+mod model_gateway;
 mod model_route;
 mod runtime_environment;
 mod scenario;
@@ -23,9 +24,15 @@ pub use evidence::{
     STABILITY_EVIDENCE_STATE_GROWTH,
 };
 pub use graph::{
-    ExecutorName, GraphId, GraphLoopExecutionRequest, GraphLoopExecutionResult,
-    GraphLoopExecutionStatus, GraphNodeExecutionReceipt, GraphNodeExecutionStatus,
-    GraphNodeInvocation, LoopEdgeSpec, LoopGraph, LoopNodeSpec, NodeId, RunId, RuntimePlanSnapshot,
+    ExecutorName, GERBIL_LOOP_GRAPH_POLICY_COMPILATION_SCHEMA_ID, GRAPH_POLICY_PROPOSAL_SCHEMA_ID,
+    GerbilLoopGraphPolicyCompilationRequest, GraphId, GraphLoopExecutionBudget,
+    GraphLoopExecutionRequest, GraphLoopExecutionResult, GraphLoopExecutionStatus,
+    GraphLoopStrategy, GraphLoopStrategyId, GraphLoopStrategyRuntime, GraphLoopStrategyVersion,
+    GraphNodeExecutionReceipt, GraphNodeExecutionStatus, GraphNodeInvocation, GraphPolicyDigest,
+    GraphPolicyProposal, GraphPolicyProposalReceipt, GraphPolicyProposalStatus,
+    GraphPolicyProposalValidationReport, LoopEdgeSpec, LoopGraph, LoopNodeSpec, NodeId, RunId,
+    RuntimePlanSnapshot, compile_gerbil_loop_graph, compile_gerbil_loop_graph_policy,
+    validate_graph_policy_proposal,
 };
 pub use hook::{
     HookAgentScope, HookConfigurationReloadReceipt, HookConfigurationVersion,
@@ -37,6 +44,12 @@ pub use hook::{
     HookRunId, HookRunStatus, HookRunSummary, HookSchemeModule, HookSchemeProcedure, HookScope,
     HookSelectedCandidateInput, HookSelectionCandidateReceipt, HookSelectionSkipReason,
     HookSkippedCandidateInput, HookSource, HookSourcePath, HookTimestampMs, HookTrustStatus,
+};
+pub use model_gateway::{
+    ModelGateway, ModelGatewayCompletionChoice, ModelGatewayCompletionOptions,
+    ModelGatewayCompletionResponse, ModelGatewayError, ModelGatewayFuture, ModelGatewayMessage,
+    ModelGatewayMessageRole, ModelGatewayRequest, ModelGatewayResult, ModelGatewayTransport,
+    assistant_gateway_message, system_gateway_message, user_gateway_message,
 };
 pub use model_route::{
     LiteLlmModelId, ModelAlias, ModelCommandKind, ModelCommandMatcher, ModelContextForkMode,
@@ -63,4 +76,5 @@ pub use sub_agent::{
 };
 pub use trace::{
     AgentExecutionTrace, AgentExecutionTraceSummary, AgentSpanName, AgentTraceSpanRecord,
+    GRAPH_POLICY_PROPOSAL_SPAN_NAME, GRAPH_POLICY_PROPOSAL_VISIBILITY_SUBJECT_PREFIX,
 };

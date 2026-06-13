@@ -1,7 +1,8 @@
-//! Compatibility re-exports for the stream-owned LiteLLM adapter.
+//! Runtime-facing model gateway protocol re-exports.
 
-pub use marlin_agent_stream::{
-    ChatMessage, CompletionOptions, CompletionResponse, LiteLlmModelClient,
-    LiteLlmModelClientError, LiteLlmModelClientResult, assistant_message, system_message,
-    user_message,
+pub use marlin_agent_protocol::{
+    ModelGateway, ModelGatewayCompletionChoice, ModelGatewayCompletionOptions,
+    ModelGatewayCompletionResponse, ModelGatewayError, ModelGatewayFuture, ModelGatewayMessage,
+    ModelGatewayMessageRole, ModelGatewayRequest, ModelGatewayResult, ModelGatewayTransport,
+    assistant_gateway_message, system_gateway_message, user_gateway_message,
 };

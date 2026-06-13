@@ -6,10 +6,12 @@ mod model_route;
 mod tokio_runtime;
 
 pub use model_route::{
-    ChatMessage, CompiledModelRouteResolver, CompletionOptions, CompletionResponse,
-    LiteLlmModelClient, LiteLlmModelClientError, LiteLlmModelClientResult, ModelRouteCompileError,
-    ModelRouteConfig, ModelRouteConfigError, ModelRouteSessionBinding, RoutedSubAgentSpawn,
-    assistant_message, system_message, user_message,
+    CompiledModelRouteResolver, ModelGateway, ModelGatewayCompletionChoice,
+    ModelGatewayCompletionOptions, ModelGatewayCompletionResponse, ModelGatewayError,
+    ModelGatewayFuture, ModelGatewayMessage, ModelGatewayMessageRole, ModelGatewayRequest,
+    ModelGatewayResult, ModelGatewayTransport, ModelRouteCompileError, ModelRouteConfig,
+    ModelRouteConfigError, ModelRouteSelectionProjectionError, ModelRouteSessionBinding,
+    RoutedSubAgentSpawn, assistant_gateway_message, system_gateway_message, user_gateway_message,
 };
 pub use observability::process::{
     AsyncManagedChildProcess, ManagedChildProcessSpec, RuntimeProcessCleanupController,

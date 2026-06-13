@@ -95,6 +95,46 @@ fn gerbil_aot_probe_reports_missing_backend_gsc_path() {
 
 #[cfg(unix)]
 #[test]
+fn gerbil_aot_probe_reports_unquoted_missing_backend_gsc_path() {
+    let root = test_root("aot-backend-gsc-unquoted");
+    fs::create_dir_all(root.path()).expect("create aot root");
+    let fake_gxc = root.path().join("gxc");
+    let fake_gsc = root.path().join("gsc");
+    let expected_backend_gsc = root
+        .path()
+        .join("gerbil")
+        .join("v0.18.2")
+        .join("bin")
+        .join("gsc");
+    fs::write(&fake_gsc, "#!/bin/sh\nexit 0\n").expect("write fake gsc");
+    fs::write(
+        &fake_gxc,
+        format!(
+            "#!/bin/sh\ncat <<'EOF'\n*** ERROR IN gxc#gsc-compile-file -- No such file or directory\n(open-process '(path: {} arguments: (\"-target\" \"C\" \"protocol~0.scm\")))\nEOF\nexit 70\n",
+            expected_backend_gsc.display()
+        ),
+    )
+    .expect("write fake gxc");
+    let mut permissions = fs::metadata(&fake_gxc)
+        .expect("fake gxc metadata")
+        .permissions();
+    permissions.set_mode(0o755);
+    fs::set_permissions(&fake_gxc, permissions).expect("mark fake gxc executable");
+
+    let receipt = GerbilAotProbeConfig::new(root.path())
+        .with_gxc(&fake_gxc)
+        .with_gsc(&fake_gsc)
+        .probe();
+
+    assert_eq!(receipt.status, GerbilAotProbeStatus::GscBackendUnavailable);
+    assert_eq!(
+        receipt.backend_gsc.as_deref(),
+        Some(expected_backend_gsc.as_path())
+    );
+}
+
+#[cfg(unix)]
+#[test]
 fn gerbil_aot_probe_cache_reuses_backend_failure_until_backend_exists() {
     let root = test_root("aot-cache-backend-gsc");
     fs::create_dir_all(root.path()).expect("create aot cache root");

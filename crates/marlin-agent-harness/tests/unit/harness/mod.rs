@@ -1,8 +1,8 @@
 mod e2e;
 mod evidence;
-mod performance;
+mod graph_policy;
 mod release_visibility;
 mod runtime;
-mod rust_project_harness;
-mod stability;
+mod sub_agent_session;
+mod test_run;
 mod three_layer;

@@ -168,6 +168,12 @@ Runtime owns:
 Protocol owns the serializable route, session, history, and environment facts.
 Runtime does not parse user TOML or execute Scheme directly.
 
+Runtime also does not own concrete LLM provider clients. It consumes the
+provider-neutral =ModelGateway= protocol contract. The real LiteLLM adapter and
+=litellm-rs= dependency stay in =marlin-agent-stream= so runtime tests can
+prove model routing without pulling a live provider gateway into the runtime
+crate.
+
 ** Observability
 
 Every routed execution should produce stable evidence:
@@ -193,6 +199,8 @@ prove that a command used the intended model and environment.
 
 - Do not make runtime crates parse TOML or Scheme.
 
+- Do not make runtime crates depend on =marlin-agent-stream= or =litellm-rs=.
+
 - Do not make =direnv= an implicit shell side effect.
 
 - Do not reuse persistent agent history without an explicit policy decision.
@@ -208,6 +216,9 @@ prove that a command used the intended model and environment.
 - Protocol tests cover requested persistent session ids and bounded history.
 
 - Runtime tests cover deterministic route priority and stable tie-breaking.
+
+- Runtime tests cover a provider-neutral =ModelGateway= completion path without
+  =marlin-agent-stream= or =litellm-rs= in the runtime dependency tree.
 
 - Runtime tests cover create/reuse/reject receipts for persistent sessions.
 

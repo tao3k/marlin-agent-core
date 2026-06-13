@@ -200,8 +200,9 @@ jobs:
             exit 1
           fi
 
-          brew list gerbil-scheme >/dev/null 2>&1 || brew install gerbil-scheme
-          gerbil_prefix="$(brew --prefix gerbil-scheme)"
+          brew list --formula mighty-gerbils/gerbil/gerbil-scheme >/dev/null 2>&1 || \
+            brew install mighty-gerbils/gerbil/gerbil-scheme
+          gerbil_prefix="$(brew --prefix mighty-gerbils/gerbil/gerbil-scheme)"
           echo "MARLIN_GERBIL_GXI=$gerbil_prefix/bin/gxi" >> "$GITHUB_ENV"
 
       - name: Resolve gxi executable

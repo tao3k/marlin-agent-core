@@ -4,15 +4,9 @@ use crate::{
     GerbilArtifactKind, GerbilCompiledArtifact, GerbilCompiler, GerbilSource,
     runtime::{
         GERBIL_ADAPTER_MODULE, GERBIL_COMMAND_ADAPTER_BATCH_PATH, GERBIL_COMMAND_ADAPTER_PATH,
-        GERBIL_HOOK_POLICY_ADAPTER_PATH, GERBIL_LOADPATH_ENV, default_gerbil_gxi_program,
-        gerbil_runtime_loadpath, write_gerbil_runtime_assets,
-    },
-};
-use marlin_agent_runtime::{
-    AsyncManagedChildProcess, ManagedChildProcessSpec, RuntimeContext,
-    observability::{
-        RuntimeCommandObservation, RuntimeProcessExitStatus, RuntimeProcessKind,
-        RuntimeProcessOutput,
+        GERBIL_DECK_RUNTIME_POLICY_ADAPTER_PATH, GERBIL_HOOK_POLICY_ADAPTER_PATH,
+        GERBIL_LOADPATH_ENV, default_gerbil_gxi_program, gerbil_runtime_loadpath,
+        write_gerbil_runtime_assets,
     },
 };
 use marlin_gerbil_ir::GerbilWorkspaceContractFacts;
@@ -24,15 +18,10 @@ use std::{
     io::{self, BufRead, BufReader, Write},
     path::{Path, PathBuf},
     process::{Child, Command as StdCommand, Stdio},
-    sync::atomic::{AtomicU64, Ordering},
 };
-use tokio::io::AsyncWriteExt;
-use tokio::process::Command as AsyncCommand;
 
 /// Environment variable carrying a JSON encoded `GerbilCommandProfile`.
 pub const GERBIL_COMMAND_PROFILE_ENV: &str = "MARLIN_GERBIL_COMMAND_PROFILE";
-
-static GERBIL_COMMAND_PROCESS_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 
 /// JSON request sent to an external `Gerbil` compiler process on stdin.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -255,6 +244,19 @@ impl GerbilCommandSpec {
             .env(GERBIL_LOADPATH_ENV, loadpath.into_os_string())
             .arg(launcher.into_os_string())
     }
+
+    /// Builds a command spec for the `deck-runtime-policy-adapter.ss` launcher.
+    pub fn marlin_deck_runtime_policy_launcher(
+        program: impl Into<PathBuf>,
+        loadpath_root: impl Into<PathBuf>,
+    ) -> Self {
+        let loadpath_root = loadpath_root.into();
+        let loadpath = gerbil_runtime_loadpath(&loadpath_root);
+        let launcher = loadpath_root.join(GERBIL_DECK_RUNTIME_POLICY_ADAPTER_PATH);
+        Self::new(program)
+            .env(GERBIL_LOADPATH_ENV, loadpath.into_os_string())
+            .arg(launcher.into_os_string())
+    }
 }
 
 /// Compiler implementation backed by a JSON stdin/stdout command protocol.
@@ -387,58 +389,6 @@ impl GerbilCommandCompiler {
         self.compile_request_results_inner(requests)
     }
 
-    /// Compile with parser-owned Org contract facts included in a runtime-observed command request.
-    pub async fn compile_with_contract_facts_with_runtime(
-        &self,
-        context: &RuntimeContext,
-        source: GerbilSource,
-        expected: GerbilArtifactKind,
-        contract_facts: GerbilWorkspaceContractFacts,
-    ) -> Result<GerbilCompiledArtifact, String> {
-        self.compile_request_with_runtime(
-            context,
-            GerbilCompileRequest {
-                source,
-                expected,
-                contract_facts: Some(contract_facts),
-            },
-        )
-        .await
-    }
-
-    /// Compile one request through a runtime-observed command process.
-    pub async fn compile_with_runtime(
-        &self,
-        context: &RuntimeContext,
-        source: GerbilSource,
-        expected: GerbilArtifactKind,
-    ) -> Result<GerbilCompiledArtifact, String> {
-        self.compile_request_with_runtime(context, GerbilCompileRequest::new(source, expected))
-            .await
-    }
-
-    /// Compile several requests through one runtime-observed command process.
-    pub async fn compile_requests_with_runtime(
-        &self,
-        context: &RuntimeContext,
-        requests: Vec<GerbilCompileRequest>,
-    ) -> Result<Vec<GerbilCompiledArtifact>, String> {
-        self.compile_request_results_with_runtime(context, requests)
-            .await?
-            .into_iter()
-            .collect::<Result<Vec<_>, _>>()
-    }
-
-    /// Compile several requests while preserving per-request errors and process visibility.
-    pub async fn compile_request_results_with_runtime(
-        &self,
-        context: &RuntimeContext,
-        requests: Vec<GerbilCompileRequest>,
-    ) -> Result<Vec<Result<GerbilCompiledArtifact, String>>, String> {
-        self.compile_request_results_inner_with_runtime(context, requests)
-            .await
-    }
-
     fn compile_request_results_inner(
         &self,
         requests: Vec<GerbilCompileRequest>,
@@ -459,56 +409,6 @@ impl GerbilCommandCompiler {
             .concat();
 
         let output = self.run_command_with_stdin(request_json)?;
-        let stdout = BufReader::new(output.stdout.as_slice());
-        let results = stdout
-            .lines()
-            .filter_map(|line| match line {
-                Ok(line) if line.trim().is_empty() => None,
-                other => Some(other),
-            })
-            .enumerate()
-            .map(|(index, line)| {
-                let line = line.map_err(|error| {
-                    format!("failed to read gerbil compile response line: {error}")
-                })?;
-                Self::decode_compile_batch_response_line(index, &line, &expected)
-            })
-            .collect::<Result<Vec<_>, String>>()?;
-
-        if results.len() != expected.len() {
-            return Err(format!(
-                "gerbil compiler returned {} responses for {} requests",
-                results.len(),
-                expected.len()
-            ));
-        }
-
-        Ok(results)
-    }
-
-    async fn compile_request_results_inner_with_runtime(
-        &self,
-        context: &RuntimeContext,
-        requests: Vec<GerbilCompileRequest>,
-    ) -> Result<Vec<Result<GerbilCompiledArtifact, String>>, String> {
-        let expected = requests
-            .iter()
-            .map(|request| request.expected)
-            .collect::<Vec<_>>();
-        let request_json = requests
-            .iter()
-            .map(|request| {
-                let mut line = serde_json::to_vec(request)
-                    .map_err(|error| format!("failed to encode gerbil compile request: {error}"))?;
-                line.push(b'\n');
-                Ok(line)
-            })
-            .collect::<Result<Vec<_>, String>>()?
-            .concat();
-
-        let output = self
-            .run_command_with_stdin_with_runtime(context, request_json)
-            .await?;
         let stdout = BufReader::new(output.stdout.as_slice());
         let results = stdout
             .lines()
@@ -579,29 +479,6 @@ impl GerbilCommandCompiler {
             .map_err(|error| error.to_string())
     }
 
-    async fn compile_request_with_runtime(
-        &self,
-        context: &RuntimeContext,
-        request: GerbilCompileRequest,
-    ) -> Result<GerbilCompiledArtifact, String> {
-        let expected = request.expected;
-        let mut request_json = serde_json::to_vec(&request)
-            .map_err(|error| format!("failed to encode gerbil compile request: {error}"))?;
-        request_json.push(b'\n');
-
-        let output = self
-            .run_command_with_stdin_with_runtime(context, request_json)
-            .await?;
-
-        let response: GerbilCompileResponse = serde_json::from_slice(&output.stdout)
-            .map_err(|error| format!("failed to decode gerbil compile response: {error}"))?;
-
-        response
-            .artifact
-            .ensure_kind(expected)
-            .map_err(|error| error.to_string())
-    }
-
     fn run_command_with_stdin(&self, stdin_bytes: Vec<u8>) -> Result<std::process::Output, String> {
         let mut command = StdCommand::new(&self.spec.program);
         command
@@ -642,84 +519,11 @@ impl GerbilCommandCompiler {
 
         validate_gerbil_command_output(output)
     }
-
-    async fn run_command_with_stdin_with_runtime(
-        &self,
-        context: &RuntimeContext,
-        stdin_bytes: Vec<u8>,
-    ) -> Result<RuntimeProcessOutput, String> {
-        let mut command = AsyncCommand::new(&self.spec.program);
-        command
-            .args(&self.spec.args)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
-
-        if let Some(current_dir) = &self.spec.current_dir {
-            command.current_dir(current_dir);
-        }
-
-        command.envs(&self.spec.env);
-
-        let owner_reference = self.runtime_process_owner_reference();
-        let mut child = AsyncManagedChildProcess::spawn_with_spec(
-            context,
-            command,
-            ManagedChildProcessSpec::new(RuntimeProcessKind::Tool, owner_reference.clone())
-                .with_handle(next_gerbil_command_process_handle(&owner_reference))
-                .with_command(self.runtime_command_observation()),
-        )
-        .await
-        .map_err(|error| format!("failed to start gerbil compiler command: {error}"))?;
-
-        {
-            let mut stdin = match child.take_stdin() {
-                Some(stdin) => stdin,
-                None => {
-                    terminate_async_child_after_start_failure(child).await;
-                    return Err("gerbil compiler command did not expose stdin".to_string());
-                }
-            };
-            if let Err(error) = stdin.write_all(&stdin_bytes).await
-                && error.kind() != io::ErrorKind::BrokenPipe
-            {
-                terminate_async_child_after_start_failure(child).await;
-                return Err(format!("failed to write gerbil compile request: {error}"));
-            }
-        }
-
-        let output = child
-            .wait_with_output()
-            .await
-            .map_err(|error| format!("failed to read gerbil compiler command output: {error}"))?;
-
-        validate_runtime_gerbil_command_output(output)
-    }
-
-    fn runtime_process_owner_reference(&self) -> String {
-        format!("gerbil-command:{}", self.spec.program.display())
-    }
-
-    fn runtime_command_observation(&self) -> RuntimeCommandObservation {
-        let argv = std::iter::once(self.spec.program.as_os_str())
-            .chain(self.spec.args.iter().map(OsString::as_os_str))
-            .map(|value| value.to_string_lossy().into_owned());
-        let mut observation =
-            RuntimeCommandObservation::new("gerbil-compiler-command").with_argv(argv);
-        if let Some(current_dir) = &self.spec.current_dir {
-            observation = observation.with_cwd(current_dir.display().to_string());
-        }
-        observation
-    }
 }
 
 fn terminate_child_after_start_failure(child: &mut Child) {
     let _ = child.kill();
     let _ = child.wait();
-}
-
-async fn terminate_async_child_after_start_failure(child: AsyncManagedChildProcess) {
-    let _ = child.kill().await;
 }
 
 fn validate_gerbil_command_output(
@@ -743,42 +547,6 @@ fn validate_gerbil_command_output(
     }
 
     Ok(output)
-}
-
-fn validate_runtime_gerbil_command_output(
-    output: RuntimeProcessOutput,
-) -> Result<RuntimeProcessOutput, String> {
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let stderr = stderr.trim();
-        let stdout = stdout.trim();
-        let diagnostics = match (stderr.is_empty(), stdout.is_empty()) {
-            (false, false) => format!("stderr: {stderr}\nstdout: {stdout}"),
-            (false, true) => stderr.to_string(),
-            (true, false) => stdout.to_string(),
-            (true, true) => String::new(),
-        };
-        return Err(format!(
-            "gerbil compiler command failed with status {}: {}",
-            format_runtime_exit_status(&output.status),
-            diagnostics
-        ));
-    }
-
-    Ok(output)
-}
-
-fn format_runtime_exit_status(status: &RuntimeProcessExitStatus) -> String {
-    status
-        .code()
-        .map(|code| format!("exit status: {code}"))
-        .unwrap_or_else(|| "terminated by signal".to_string())
-}
-
-fn next_gerbil_command_process_handle(owner_reference: &str) -> String {
-    let sequence = GERBIL_COMMAND_PROCESS_SEQUENCE.fetch_add(1, Ordering::Relaxed);
-    format!("{owner_reference}#{sequence}")
 }
 
 fn default_contract_facts_for(

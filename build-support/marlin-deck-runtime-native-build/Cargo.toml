@@ -1,0 +1,16 @@
+[package]
+name = "marlin-deck-runtime-native-build"
+edition.workspace = true
+version.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+marlin-gerbil-scheme.workspace = true
+
+[build-dependencies]
+marlin-rust-project-harness-policy.workspace = true
+rust-lang-project-harness.workspace = true
+
+[dev-dependencies]
+rust-lang-project-harness.workspace = true

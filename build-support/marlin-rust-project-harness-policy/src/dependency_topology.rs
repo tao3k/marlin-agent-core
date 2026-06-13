@@ -9,6 +9,7 @@ use serde::Deserialize;
 
 const RUST_HARNESS_PACKAGE: &str = "rust-lang-project-harness";
 const RECEIPT_ENV: &str = "MARLIN_DEPENDENCY_TOPOLOGY_RECEIPT";
+const RECEIPT_STRICT_ENV: &str = "MARLIN_DEPENDENCY_TOPOLOGY_RECEIPT_STRICT";
 const RECEIPT_SCHEMA_ID: &str = "agent.semantic-protocols.dependency-topology-receipt";
 
 /// Result status for consuming an externally produced dependency topology receipt.
@@ -64,6 +65,10 @@ impl ExternalDependencyTopologyReceipt {
         )
     }
 
+    pub fn blocks_build(&self, strict: bool) -> bool {
+        strict && !self.is_success()
+    }
+
     pub fn package_name(&self) -> &str {
         self.package_name.as_str()
     }
@@ -108,7 +113,7 @@ impl ExternalDependencyTopologyReceipt {
             self.status,
             ExternalDependencyTopologyReceiptStatus::NotConfigured
         ) {
-            "set MARLIN_DEPENDENCY_TOPOLOGY_RECEIPT to an ASP graph turbo or rust harness topology receipt"
+            "no generated topology data is required for hermetic builds; optionally set MARLIN_DEPENDENCY_TOPOLOGY_RECEIPT for ASP graph turbo or rust harness topology evidence"
         } else {
             "regenerate the external dependency topology receipt with ASP graph turbo or rust harness"
         };
@@ -121,11 +126,12 @@ impl ExternalDependencyTopologyReceipt {
     }
 }
 
-/// Consume the Rust harness topology receipt from the build environment.
-pub fn consume_rust_harness_dependency_topology_receipt_from_env(
+/// Observe the optional Rust harness topology receipt from the build environment.
+pub fn observe_rust_harness_dependency_topology_receipt_from_env(
     project_root: &Path,
 ) -> ExternalDependencyTopologyReceipt {
     println!("cargo:rerun-if-env-changed={RECEIPT_ENV}");
+    println!("cargo:rerun-if-env-changed={RECEIPT_STRICT_ENV}");
     let receipt_path = env::var_os(RECEIPT_ENV).map(PathBuf::from);
     consume_external_dependency_topology_receipt(
         project_root,
@@ -134,12 +140,13 @@ pub fn consume_rust_harness_dependency_topology_receipt_from_env(
     )
 }
 
-/// Assert the configured Rust harness topology receipt without computing topology locally.
-pub fn assert_rust_harness_dependency_topology_receipt_from_env(
+/// Observe the configured Rust harness topology receipt and gate it only in strict mode.
+pub fn assert_rust_harness_dependency_topology_receipt_from_env_if_strict(
     project_root: &Path,
 ) -> ExternalDependencyTopologyReceipt {
-    let receipt = consume_rust_harness_dependency_topology_receipt_from_env(project_root);
-    assert!(receipt.is_success(), "{}", receipt.agent_message());
+    let strict = dependency_topology_receipt_strict_from_env();
+    let receipt = observe_rust_harness_dependency_topology_receipt_from_env(project_root);
+    assert!(!receipt.blocks_build(strict), "{}", receipt.agent_message());
     receipt
 }
 
@@ -157,7 +164,7 @@ pub fn consume_external_dependency_topology_receipt(
             Vec::new(),
             ExternalDependencyTopologyReceiptStatus::NotConfigured,
             Some(format!(
-                "generate an external topology receipt for {package_name} and set {RECEIPT_ENV}"
+                "no external topology receipt is required for hermetic builds; optionally set {RECEIPT_ENV} for {package_name}"
             )),
             Some(format!(
                 "asp rust search pipe 'dependency topology {package_name}' --workspace {} --view seeds",
@@ -215,6 +222,13 @@ pub fn consume_external_dependency_topology_receipt(
     };
 
     document.into_receipt(project_root, package_name, receipt_path)
+}
+
+fn dependency_topology_receipt_strict_from_env() -> bool {
+    env::var_os(RECEIPT_STRICT_ENV)
+        .and_then(|value| value.into_string().ok())
+        .map(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
+        .unwrap_or(false)
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]

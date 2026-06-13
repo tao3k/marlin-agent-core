@@ -6,7 +6,17 @@ use std::fmt;
 use serde::{Deserialize, Serialize};
 
 use crate::event::AgentEvent;
-use crate::graph::{GraphId, GraphLoopExecutionStatus, RunId};
+use crate::evidence::{LoopEvidence, LoopEvidenceKind};
+use crate::graph::{
+    GraphId, GraphLoopExecutionStatus, GraphLoopStrategyId, GraphPolicyProposalReceipt,
+    GraphPolicyProposalStatus, RunId,
+};
+
+/// Span name for Rust-side graph policy proposal validation and compilation.
+pub const GRAPH_POLICY_PROPOSAL_SPAN_NAME: &str = "graph.policy_proposal";
+
+/// Subject prefix for visibility evidence derived from graph policy proposal spans.
+pub const GRAPH_POLICY_PROPOSAL_VISIBILITY_SUBJECT_PREFIX: &str = "graph-policy-proposal";
 
 /// Stable tracing span name identifier.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
@@ -69,6 +79,82 @@ impl AgentTraceSpanRecord {
     pub fn with_field(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
         self.fields.insert(key.into(), value.into());
         self
+    }
+
+    /// Creates a span that exposes Rust-side graph policy proposal validation.
+    pub fn graph_policy_proposal_receipt(receipt: &GraphPolicyProposalReceipt) -> Self {
+        let mut span = Self::new(GRAPH_POLICY_PROPOSAL_SPAN_NAME)
+            .with_field("schema_id", receipt.schema_id.clone())
+            .with_field("strategy_id", receipt.strategy_id.as_str())
+            .with_field("status", graph_policy_proposal_status_name(&receipt.status))
+            .with_field("diagnostic_count", receipt.diagnostics.len().to_string());
+        if let Some(graph_id) = &receipt.selected_graph_id {
+            span = span.with_field("selected_graph_id", graph_id.as_str());
+        }
+        span
+    }
+
+    /// Returns true when this span records a graph policy proposal receipt.
+    pub fn is_graph_policy_proposal(&self) -> bool {
+        self.name.as_str() == GRAPH_POLICY_PROPOSAL_SPAN_NAME
+    }
+
+    /// Graph policy proposal strategy id captured by this span.
+    pub fn graph_policy_proposal_strategy_id(&self) -> Option<GraphLoopStrategyId> {
+        self.fields
+            .get("strategy_id")
+            .map(|strategy_id| GraphLoopStrategyId::new(strategy_id.clone()))
+    }
+
+    /// Graph policy proposal status captured by this span.
+    pub fn graph_policy_proposal_status(&self) -> Option<GraphPolicyProposalStatus> {
+        self.fields
+            .get("status")
+            .and_then(|status| graph_policy_proposal_status_from_name(status.as_str()))
+    }
+
+    /// Accepted graph id selected by this proposal span, when present.
+    pub fn graph_policy_proposal_selected_graph_id(&self) -> Option<GraphId> {
+        self.fields
+            .get("selected_graph_id")
+            .map(|graph_id| GraphId::new(graph_id.clone()))
+    }
+
+    /// Projects a graph policy proposal span into harness visibility evidence.
+    pub fn graph_policy_proposal_visibility_evidence(&self) -> Option<LoopEvidence> {
+        if !self.is_graph_policy_proposal() {
+            return None;
+        }
+
+        let schema_id = self.fields.get("schema_id")?;
+        let strategy_id = self.fields.get("strategy_id")?;
+        let status = self.fields.get("status")?;
+        let diagnostic_count = self.fields.get("diagnostic_count")?;
+        let subject = format!("{GRAPH_POLICY_PROPOSAL_VISIBILITY_SUBJECT_PREFIX}:{strategy_id}");
+        let mut detail = format!(
+            "schema_id={schema_id} strategy_id={strategy_id} status={status} diagnostic_count={diagnostic_count}",
+        );
+        if let Some(selected_graph_id) = self.fields.get("selected_graph_id") {
+            detail.push_str(" selected_graph_id=");
+            detail.push_str(selected_graph_id);
+        }
+
+        Some(LoopEvidence::present(LoopEvidenceKind::Visibility, subject).with_detail(detail))
+    }
+}
+
+fn graph_policy_proposal_status_name(status: &GraphPolicyProposalStatus) -> &'static str {
+    match status {
+        GraphPolicyProposalStatus::Accepted => "Accepted",
+        GraphPolicyProposalStatus::Rejected => "Rejected",
+    }
+}
+
+fn graph_policy_proposal_status_from_name(name: &str) -> Option<GraphPolicyProposalStatus> {
+    match name {
+        "Accepted" => Some(GraphPolicyProposalStatus::Accepted),
+        "Rejected" => Some(GraphPolicyProposalStatus::Rejected),
+        _ => None,
     }
 }
 
@@ -141,6 +227,42 @@ impl AgentExecutionTrace {
         self
     }
 
+    /// Returns visibility evidence derived from graph policy proposal spans.
+    pub fn graph_policy_proposal_visibility_evidence(&self) -> Vec<LoopEvidence> {
+        self.spans
+            .iter()
+            .filter_map(AgentTraceSpanRecord::graph_policy_proposal_visibility_evidence)
+            .collect()
+    }
+
+    /// Returns spans that record Rust-side graph policy proposal receipts.
+    pub fn graph_policy_proposal_spans(&self) -> impl Iterator<Item = &AgentTraceSpanRecord> {
+        self.spans
+            .iter()
+            .filter(|span| span.is_graph_policy_proposal())
+    }
+
+    /// Finds the first graph policy proposal span for a strategy id.
+    pub fn find_graph_policy_proposal_span(
+        &self,
+        strategy_id: &GraphLoopStrategyId,
+    ) -> Option<&AgentTraceSpanRecord> {
+        self.graph_policy_proposal_spans().find(|span| {
+            span.graph_policy_proposal_strategy_id()
+                .is_some_and(|actual| &actual == strategy_id)
+        })
+    }
+
+    /// Returns true when a strategy id has a graph policy proposal span with this status.
+    pub fn has_graph_policy_proposal_status(
+        &self,
+        strategy_id: &GraphLoopStrategyId,
+        status: GraphPolicyProposalStatus,
+    ) -> bool {
+        self.find_graph_policy_proposal_span(strategy_id)
+            .and_then(AgentTraceSpanRecord::graph_policy_proposal_status)
+            .is_some_and(|actual| actual == status)
+    }
     /// Returns true when the trace captured at least one span with this name.
     pub fn has_span(&self, name: &AgentSpanName) -> bool {
         self.spans_by_name(name).next().is_some()

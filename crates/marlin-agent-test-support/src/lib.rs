@@ -1,7 +1,66 @@
 //! Shared test support for Marlin agent runtime and stream contracts.
 
+mod graph_policy;
+mod hook;
+mod runtime_environment;
+mod stability;
 mod stream;
+mod sub_agent_scenario;
+mod sub_agent_session;
+mod test_run;
+mod three_layer;
 
+pub use graph_policy::{
+    DeterministicGraphPolicyProposalFixture, accepted_gerbil_ir_graph_policy_proposal_fixture,
+    accepted_graph_policy_proposal_fixture,
+    assert_accepted_gerbil_ir_graph_policy_proposal_fixture,
+    assert_accepted_graph_policy_proposal_fixture, assert_budgeted_graph_policy_execution_request,
+    assert_rejected_graph_policy_proposal_fixture, budgeted_graph_policy_execution_request_fixture,
+    rejected_graph_policy_proposal_fixture,
+};
+pub use hook::{
+    assert_custom_hook_policy_receipt, assert_custom_sub_agent_start_hook_summary,
+    assert_sub_agent_hook_dispatch_selection, custom_hook_policy_receipt_fixture,
+    custom_sub_agent_start_hook_summary_fixture, hook_dispatch_replay_evidence,
+    sub_agent_hook_dispatch_selection_fixture,
+};
+pub use runtime_environment::{
+    RuntimeEnvironmentFixture, assert_custom_sub_agent_environment,
+    assert_hook_environment_uses_root_home, custom_home_runtime_environment_fixture,
+};
+pub use stability::{RuntimeStabilityEvidenceInput, runtime_stability_budget_evidence};
 pub use stream::{
-    ScriptedGatewayRequestReceipt, ScriptedModelGateway, ScriptedModelStream, ScriptedStreamReceipt,
+    ScriptedChunkGate, ScriptedChunkGatePermit, ScriptedGatewayRequestReceipt,
+    ScriptedModelGateway, ScriptedModelStream, ScriptedModelStreamChunk, ScriptedModelStreamEvent,
+    ScriptedStreamReceipt, scripted_stream_gate_evidence,
+};
+pub use sub_agent_scenario::{
+    DeterministicRoutedSubAgentExecutionReceipt, DeterministicSubAgentScenarioFixture,
+    assert_deterministic_routed_sub_agent_execution, assert_deterministic_routed_sub_agent_session,
+    assert_deterministic_sub_agent_gateway_request, assert_deterministic_sub_agent_route_decision,
+    assert_deterministic_sub_agent_scenario_fixture,
+    deterministic_reviewer_sub_agent_scenario_fixture,
+};
+pub use sub_agent_session::{
+    SubAgentMemoryExpectation, SubAgentMemorySessionFixture,
+    assert_sub_agent_memory_session_fixture, sub_agent_memory_allowed_fixture,
+    sub_agent_memory_denied_fixture, sub_agent_memory_session_visibility_evidence,
+};
+pub use test_run::{
+    LibtestCommandCapture, LibtestCommandImportReport, LibtestCommandSpec, LibtestTextImportConfig,
+    LibtestTextImportReport, LibtestTextResultSummary, TEST_RUN_EVIDENCE_SCHEMA_VERSION,
+    TestRunCaseRecord, TestRunCaseStatus, TestRunEvidenceReceipt, TestRunLayer,
+    TestRunLayerSummary, WorkspaceLibtestCommandImportReport, WorkspaceLibtestCommandPackageReport,
+    WorkspaceLibtestTextImportInput, WorkspaceLibtestTextImportReport,
+    WorkspaceLibtestTextPackageReport, assert_deterministic_test_run_evidence,
+    capture_libtest_command_output, capture_workspace_libtest_commands,
+    deterministic_test_run_evidence_fixture, import_libtest_text_output,
+    import_workspace_libtest_text_outputs,
+};
+pub use three_layer::{
+    DEFAULT_THREE_LAYER_PACKAGES, DeterministicAgentRuntimeScenarioReceipt,
+    DeterministicGatewayReceipt, PackageThreeLayerReceipt, ThreeLayerCoverageReport,
+    assert_deterministic_agent_runtime_scenario_layer, assert_deterministic_gateway_layer,
+    assert_package_three_layer_coverage, assert_three_layer_testing_system_for_workspace,
+    workspace_crate_dirs,
 };

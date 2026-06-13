@@ -1,8 +1,8 @@
-use marlin_agent_protocol::{ModelEndpoint, ModelEndpointContractError};
+use marlin_agent_protocol::{ModelEndpoint, ModelEndpointContractError, ModelGatewayError};
 use marlin_agent_stream::{
-    ChunkGate, LiteLlmModelClient, LiteLlmModelClientError, LiteLlmStreamGateway, ModelStreamChunk,
-    ModelStreamEvent, ModelStreamGateway, ModelStreamRequest, ModelStreamTransport, system_message,
-    user_message,
+    ChunkGate, LiteLlmModelClient, LiteLlmStreamGateway, ModelStreamChunk, ModelStreamEvent,
+    ModelStreamGateway, ModelStreamRequest, ModelStreamTransport, system_gateway_message,
+    user_gateway_message,
 };
 
 #[test]
@@ -10,7 +10,10 @@ fn model_stream_request_preserves_gateway_parts() {
     let endpoint = ModelEndpoint::new("anthropic", "claude-opus-4-8");
     let request = ModelStreamRequest::new(
         endpoint,
-        vec![system_message("system"), user_message("hello")],
+        vec![
+            system_gateway_message("system"),
+            user_gateway_message("hello"),
+        ],
     )
     .with_transport(ModelStreamTransport::Sse);
 
@@ -52,7 +55,7 @@ async fn litellm_client_validates_endpoint_contract_before_network_call() {
 
     assert!(matches!(
         result,
-        Err(LiteLlmModelClientError::EndpointContract(
+        Err(ModelGatewayError::EndpointContract(
             ModelEndpointContractError::CodexIsNotModelName { .. }
         ))
     ));
@@ -66,7 +69,7 @@ async fn litellm_stream_gateway_validates_endpoint_contract_before_network_call(
 
     assert!(matches!(
         result,
-        Err(LiteLlmModelClientError::EndpointContract(
+        Err(ModelGatewayError::EndpointContract(
             ModelEndpointContractError::CodexIsNotModelName { .. }
         ))
     ));

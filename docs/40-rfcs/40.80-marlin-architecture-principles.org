@@ -176,6 +176,24 @@ Provider and strategy integration:
 - strategy engines never bypass protocol budgets;
 
 - provider-specific data does not leak into shared protocol unless it is a
+
+Graph loop strategy plane:
+
+- a loop is a repeated execution of bounded acyclic graph frontiers;
+
+- complex strategy engines may propose graph rewrites, continuation choices,
+  route ranking, context selection, or compaction policy;
+
+- Scheme/Gerbil strategy engines stay outside the Rust hot path and enter
+  through typed native adapters;
+
+- native strategies return =GraphPolicyProposal= payloads, not runtime actions;
+
+- Rust validates, compiles, enforces budgets, and emits
+  =GraphPolicyProposalReceipt= before any graph execution;
+
+- the static TOML/Rust policy path remains sufficient when no Scheme strategy
+  is installed.
   stable cross-provider fact.
 
 ** Review Gate

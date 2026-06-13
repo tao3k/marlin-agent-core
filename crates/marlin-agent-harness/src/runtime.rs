@@ -3,8 +3,10 @@
 use marlin_agent_kernel::GraphLoopKernel;
 use marlin_agent_protocol::{
     AgentEvent, AgentEventTopic, AgentExecutionTrace, AgentScenario, AgentSpanName,
-    AgentTraceSpanRecord, GraphLoopExecutionRequest, GraphLoopExecutionResult,
-    GraphLoopExecutionStatus, LoopEvidence, LoopEvidenceKind, RuntimePlanSnapshot,
+    AgentTraceSpanRecord, GRAPH_POLICY_PROPOSAL_VISIBILITY_SUBJECT_PREFIX,
+    GraphLoopExecutionRequest, GraphLoopExecutionResult, GraphLoopExecutionStatus,
+    GraphLoopStrategyId, GraphPolicyProposalReceipt, GraphPolicyProposalStatus, LoopEvidence,
+    LoopEvidenceKind, RuntimePlanSnapshot,
 };
 use marlin_agent_runtime::{
     CancellationToken, RuntimeEnvironment, RuntimeEventStream, TokioAgentRuntime,
@@ -69,6 +71,17 @@ impl HarnessRuntime {
     /// Record evidence describing the runtime environment visible to harness work.
     pub fn record_environment_visibility(&mut self) {
         let evidence = runtime_environment_visibility_evidence(self.environment());
+        self.record_evidence(evidence);
+    }
+
+    /// Record visibility evidence for a Rust-validated graph policy proposal.
+    pub fn record_graph_policy_proposal_visibility(
+        &mut self,
+        receipt: &GraphPolicyProposalReceipt,
+    ) {
+        let evidence = AgentTraceSpanRecord::graph_policy_proposal_receipt(receipt)
+            .graph_policy_proposal_visibility_evidence()
+            .expect("graph policy proposal receipt span should project visibility evidence");
         self.record_evidence(evidence);
     }
 
@@ -256,6 +269,55 @@ pub struct HarnessExecutionSummary {
 }
 
 impl HarnessExecutionReport {
+    /// Returns evidence facts captured with this kind.
+    pub fn evidence_by_kind(&self, kind: LoopEvidenceKind) -> impl Iterator<Item = &LoopEvidence> {
+        self.evidence
+            .iter()
+            .filter(move |evidence| evidence.kind == kind)
+    }
+
+    /// Returns visibility evidence derived from graph policy proposal receipts.
+    pub fn graph_policy_proposal_visibility_evidence(&self) -> impl Iterator<Item = &LoopEvidence> {
+        self.evidence_by_kind(LoopEvidenceKind::Visibility)
+            .filter(|evidence| {
+                evidence
+                    .subject
+                    .starts_with(GRAPH_POLICY_PROPOSAL_VISIBILITY_SUBJECT_PREFIX)
+            })
+    }
+
+    /// Finds graph policy proposal visibility evidence for a strategy id.
+    pub fn find_graph_policy_proposal_visibility_evidence(
+        &self,
+        strategy_id: &GraphLoopStrategyId,
+    ) -> Option<&LoopEvidence> {
+        let expected_subject = format!(
+            "{}:{}",
+            GRAPH_POLICY_PROPOSAL_VISIBILITY_SUBJECT_PREFIX,
+            strategy_id.as_str()
+        );
+
+        self.graph_policy_proposal_visibility_evidence()
+            .find(|evidence| evidence.subject == expected_subject)
+    }
+
+    /// Returns true when graph policy proposal visibility evidence records this status.
+    pub fn has_graph_policy_proposal_visibility_status(
+        &self,
+        strategy_id: &GraphLoopStrategyId,
+        status: GraphPolicyProposalStatus,
+    ) -> bool {
+        self.find_graph_policy_proposal_visibility_evidence(strategy_id)
+            .and_then(|evidence| evidence.detail.as_deref())
+            .is_some_and(|detail| {
+                let expected_status = match status {
+                    GraphPolicyProposalStatus::Accepted => "status=Accepted",
+                    GraphPolicyProposalStatus::Rejected => "status=Rejected",
+                };
+                detail.contains(expected_status)
+            })
+    }
+
     /// Returns true when the report captured at least one event with this topic.
     pub fn has_event_topic(&self, topic: &AgentEventTopic) -> bool {
         self.events_by_topic(topic).next().is_some()

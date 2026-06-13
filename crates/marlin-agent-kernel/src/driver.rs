@@ -8,8 +8,9 @@ use std::{
 };
 
 use marlin_agent_protocol::{
-    GraphId, GraphLoopExecutionRequest, GraphLoopExecutionResult, GraphNodeExecutionReceipt,
-    GraphNodeExecutionStatus, GraphNodeInvocation, LoopEdgeSpec, LoopNodeSpec, RunId,
+    GraphId, GraphLoopExecutionBudget, GraphLoopExecutionRequest, GraphLoopExecutionResult,
+    GraphNodeExecutionReceipt, GraphNodeExecutionStatus, GraphNodeInvocation, GraphPolicyProposal,
+    GraphPolicyProposalReceipt, GraphPolicyProposalStatus, LoopEdgeSpec, LoopNodeSpec, RunId,
     RuntimePlanSnapshot,
 };
 use marlin_agent_runtime::{
@@ -37,6 +38,31 @@ pub trait GraphLoopKernel: Send + Sync + 'static {
     ) -> RuntimeTask<GraphLoopExecutionResult>;
 
     fn snapshot(&self) -> RuntimePlanSnapshot;
+}
+
+/// Kernel-side compilation result for a graph policy proposal.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GraphPolicyProposalCompilation {
+    pub receipt: GraphPolicyProposalReceipt,
+    pub request: Option<GraphLoopExecutionRequest>,
+}
+
+impl GraphPolicyProposalCompilation {
+    /// Returns true when Rust accepted the proposal and produced an execution request.
+    pub fn is_accepted(&self) -> bool {
+        self.receipt.status == GraphPolicyProposalStatus::Accepted && self.request.is_some()
+    }
+}
+
+/// Validates a graph policy proposal and compiles it into an execution request.
+pub fn compile_graph_policy_proposal(
+    run_id: impl Into<String>,
+    proposal: &GraphPolicyProposal,
+) -> GraphPolicyProposalCompilation {
+    let receipt = GraphPolicyProposalReceipt::validate(proposal);
+    let request = (receipt.status == GraphPolicyProposalStatus::Accepted)
+        .then(|| GraphLoopExecutionRequest::new(run_id, proposal.proposed_graph.clone()));
+    GraphPolicyProposalCompilation { receipt, request }
 }
 
 /// Tokio-backed graph-loop kernel with named node executors.
@@ -94,6 +120,14 @@ impl TokioGraphLoopKernel {
                     .await;
             }
         };
+
+        if let Some(diagnostic) =
+            execution_budget_diagnostic(request.budget.as_ref(), planned_nodes.len())
+        {
+            return self
+                .failed_result(&context, &run_id, &graph_id, Vec::new(), vec![diagnostic])
+                .await;
+        }
 
         self.drive_graph_nodes_from(&planned_nodes, 0, &run_id, &graph_id, context, Vec::new())
             .await
@@ -295,24 +329,13 @@ fn resolve_graph_plan<'a>(
         .map(|node| (node.id.as_str(), node))
         .collect::<BTreeMap<_, _>>();
 
-    let unsupported_conditions = edges
-        .iter()
-        .filter(|edge| edge.condition.is_some())
-        .map(|edge| {
-            format!(
-                "conditional graph edge {} -> {} is not supported",
-                edge.from, edge.to
-            )
-        })
-        .collect::<Vec<_>>();
-    if !unsupported_conditions.is_empty() {
-        return Err(unsupported_conditions);
-    }
-
     let missing_endpoints = missing_edge_endpoints(edges, &node_by_id);
     if !missing_endpoints.is_empty() {
         return Err(missing_endpoints);
     }
+
+    let active_edges = active_graph_edges(edges)?;
+    let executable_ids = executable_node_ids(nodes, edges, &active_edges);
 
     let node_rank = nodes
         .iter()
@@ -328,7 +351,7 @@ fn resolve_graph_plan<'a>(
         .map(|node| (node.id.as_str(), Vec::<&str>::new()))
         .collect::<BTreeMap<_, _>>();
 
-    edges.iter().for_each(|edge| {
+    active_edges.iter().for_each(|edge| {
         *incoming
             .get_mut(edge.to.as_str())
             .expect("edge endpoint should be validated") += 1;
@@ -373,8 +396,146 @@ fn resolve_graph_plan<'a>(
 
     Ok(ordered_ids
         .into_iter()
+        .filter(|node_id| executable_ids.contains(*node_id))
         .map(|node_id| node_by_id[node_id])
         .collect())
+}
+
+fn execution_budget_diagnostic(
+    budget: Option<&GraphLoopExecutionBudget>,
+    planned_node_count: usize,
+) -> Option<String> {
+    let max_node_executions = budget?.max_node_executions?;
+    let planned_node_count = planned_node_count as u64;
+    (planned_node_count > max_node_executions).then(|| {
+        format!(
+            "graph execution budget exceeded: planned node executions {planned_node_count} > max {max_node_executions}"
+        )
+    })
+}
+
+fn active_graph_edges(edges: &[LoopEdgeSpec]) -> Result<Vec<&LoopEdgeSpec>, Vec<String>> {
+    let evaluations = edges.iter().map(active_graph_edge).collect::<Vec<_>>();
+    let diagnostics = evaluations
+        .iter()
+        .filter_map(|evaluation| evaluation.as_ref().err().cloned())
+        .collect::<Vec<_>>();
+    if diagnostics.is_empty() {
+        Ok(evaluations
+            .into_iter()
+            .filter_map(Result::ok)
+            .flatten()
+            .collect())
+    } else {
+        Err(diagnostics)
+    }
+}
+
+fn active_graph_edge(edge: &LoopEdgeSpec) -> Result<Option<&LoopEdgeSpec>, String> {
+    graph_edge_condition_is_active(edge).map(|is_active| is_active.then_some(edge))
+}
+
+fn graph_edge_condition_is_active(edge: &LoopEdgeSpec) -> Result<bool, String> {
+    let Some(condition) = edge
+        .condition
+        .as_deref()
+        .map(str::trim)
+        .filter(|condition| !condition.is_empty())
+    else {
+        return Ok(true);
+    };
+
+    if condition.eq_ignore_ascii_case("always") || condition.eq_ignore_ascii_case("true") {
+        return Ok(true);
+    }
+    if condition.eq_ignore_ascii_case("never") || condition.eq_ignore_ascii_case("false") {
+        return Ok(false);
+    }
+    Err(format!(
+        "unsupported graph edge condition `{condition}` on {} -> {}",
+        edge.from, edge.to
+    ))
+}
+
+fn executable_node_ids(
+    nodes: &[LoopNodeSpec],
+    edges: &[LoopEdgeSpec],
+    active_edges: &[&LoopEdgeSpec],
+) -> BTreeSet<String> {
+    let incoming = original_incoming_counts(nodes, edges);
+    let executable = root_node_ids(&incoming);
+    let outgoing = active_outgoing_edges(active_edges);
+    reachable_node_ids(executable, &outgoing)
+}
+
+fn original_incoming_counts<'a>(
+    nodes: &'a [LoopNodeSpec],
+    edges: &[LoopEdgeSpec],
+) -> BTreeMap<&'a str, usize> {
+    edges.iter().fold(
+        nodes
+            .iter()
+            .map(|node| (node.id.as_str(), 0usize))
+            .collect::<BTreeMap<_, _>>(),
+        |mut incoming, edge| {
+            if let Some(incoming_count) = incoming.get_mut(edge.to.as_str()) {
+                *incoming_count += 1;
+            }
+            incoming
+        },
+    )
+}
+
+fn root_node_ids(incoming: &BTreeMap<&str, usize>) -> BTreeSet<String> {
+    incoming
+        .iter()
+        .filter(|(_, incoming_count)| **incoming_count == 0)
+        .map(|(node_id, _)| (*node_id).to_owned())
+        .collect()
+}
+
+fn active_outgoing_edges<'a>(active_edges: &[&'a LoopEdgeSpec]) -> BTreeMap<&'a str, Vec<&'a str>> {
+    active_edges
+        .iter()
+        .fold(BTreeMap::<&str, Vec<&str>>::new(), |mut outgoing, edge| {
+            outgoing
+                .entry(edge.from.as_str())
+                .or_default()
+                .push(edge.to.as_str());
+            outgoing
+        })
+}
+
+fn reachable_node_ids(
+    mut executable: BTreeSet<String>,
+    outgoing: &BTreeMap<&str, Vec<&str>>,
+) -> BTreeSet<String> {
+    let mut frontier = executable.iter().cloned().collect::<Vec<_>>();
+    while let Some(node_id) = frontier.pop() {
+        push_new_successors(node_id.as_str(), outgoing, &mut executable, &mut frontier);
+    }
+    executable
+}
+
+fn push_new_successors(
+    node_id: &str,
+    outgoing: &BTreeMap<&str, Vec<&str>>,
+    executable: &mut BTreeSet<String>,
+    frontier: &mut Vec<String>,
+) {
+    if let Some(successors) = outgoing.get(node_id) {
+        frontier.extend(
+            successors
+                .iter()
+                .filter_map(|successor| pushable_successor(successor, executable)),
+        );
+    }
+}
+
+fn pushable_successor(successor: &str, executable: &mut BTreeSet<String>) -> Option<String> {
+    executable
+        .insert(successor.to_owned())
+        .then(|| successor.to_owned())
 }
 
 fn duplicate_node_ids(nodes: &[LoopNodeSpec]) -> Vec<String> {

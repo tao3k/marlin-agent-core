@@ -1,18 +1,7 @@
 //! Serializable Marlin model stream event contracts.
 
+pub use marlin_agent_protocol::ModelGatewayTransport as ModelStreamTransport;
 use serde::{Deserialize, Serialize};
-
-/// Stream transport selected by a gateway implementation.
-#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
-pub enum ModelStreamTransport {
-    /// Let the gateway choose its best transport.
-    #[default]
-    Auto,
-    /// Server-sent events transport.
-    Sse,
-    /// WebSocket transport.
-    WebSocket,
-}
 
 /// One text or tool-call payload fragment emitted by a model stream.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]

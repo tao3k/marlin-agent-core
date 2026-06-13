@@ -9,20 +9,23 @@ license = "Apache-2.0"
 readme = "README.md"
 publish = false
 
+[[bench]]
+name = "deck_runtime_native"
+harness = false
+
 [dependencies]
 marlin-agent-protocol.workspace = true
-marlin-agent-runtime.workspace = true
 marlin-gerbil-ir.workspace = true
 marlin-org-model.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-tokio = { workspace = true, features = ["io-util", "macros", "process", "rt"] }
 
 [build-dependencies]
 marlin-rust-project-harness-policy.workspace = true
 rust-lang-project-harness.workspace = true
 
 [dev-dependencies]
+criterion.workspace = true
 futures-executor.workspace = true
 marlin-org-memory.workspace = true
 marlin-org-store.workspace = true
@@ -33,3 +36,4 @@ marlin-workspace-status.workspace = true
 marlin-workspace-view.workspace = true
 rust-lang-project-harness.workspace = true
 tempfile.workspace = true
+toml.workspace = true

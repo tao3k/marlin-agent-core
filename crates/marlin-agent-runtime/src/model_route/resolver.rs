@@ -12,6 +12,8 @@ use marlin_agent_protocol::{
     ModelCommandMatcher, ModelRouteDecision, ModelRouteReceipt, ModelRouteRequest, ModelRouteRule,
 };
 
+use super::selection::ModelRouteSelectionProjectionError;
+
 /// Compiled route resolver backed by Aho-Corasick prefilters and `globset`.
 #[derive(Clone, Debug)]
 pub struct CompiledModelRouteResolver {
@@ -46,6 +48,21 @@ impl CompiledModelRouteResolver {
             .candidate_rule_indexes(haystack.as_str())
             .into_iter()
             .find_map(|index| self.rules[index].resolve(request))
+    }
+
+    pub fn resolve_selected_policy_index(
+        &self,
+        request: &ModelRouteRequest,
+        policy_index: usize,
+    ) -> Result<ModelRouteDecision, ModelRouteSelectionProjectionError> {
+        let rule = self
+            .rules
+            .iter()
+            .find(|rule| rule.index == policy_index)
+            .ok_or(ModelRouteSelectionProjectionError::UnknownPolicyIndex { policy_index })?;
+
+        rule.resolve(request)
+            .ok_or(ModelRouteSelectionProjectionError::SelectedRuleDidNotMatch { policy_index })
     }
 }
 

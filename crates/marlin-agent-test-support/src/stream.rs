@@ -1,26 +1,116 @@
-//! Deterministic scripted model stream support for tests.
+//! Deterministic scripted model gateway and stream support for tests.
 
 use std::collections::VecDeque;
 use std::fmt::{self, Formatter};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
-use async_trait::async_trait;
-use marlin_agent_stream::{
-    ChunkGate, CompletionResponse, LiteLlmModelClientError, LiteLlmModelClientResult,
-    ModelStreamChunk, ModelStreamEvent, ModelStreamGateway, ModelStreamRequest,
-    ModelStreamTransport,
+use marlin_agent_protocol::{
+    LoopEvidence, LoopEvidenceKind, ModelGateway, ModelGatewayCompletionResponse,
+    ModelGatewayError, ModelGatewayFuture, ModelGatewayRequest, ModelGatewayResult,
+    ModelGatewayTransport,
 };
+use tokio::sync::Semaphore;
 
-/// Scripted stream that emits `ModelStreamEvent` values in order.
+/// Deterministic test gate for scripted stream chunk delivery.
+#[derive(Clone, Debug)]
+pub struct ScriptedChunkGate {
+    admitted_chunks: Arc<AtomicU64>,
+    permits: Arc<Semaphore>,
+}
+
+impl Default for ScriptedChunkGate {
+    fn default() -> Self {
+        Self {
+            admitted_chunks: Arc::new(AtomicU64::new(0)),
+            permits: Arc::new(Semaphore::new(0)),
+        }
+    }
+}
+
+impl ScriptedChunkGate {
+    /// Creates a gate with no chunk permits.
+    pub fn closed() -> Self {
+        Self::default()
+    }
+
+    /// Releases one pending chunk.
+    pub fn release_next(&self) {
+        self.permits.add_permits(1);
+    }
+
+    /// Releases several pending chunks.
+    pub fn release_many(&self, permits: usize) {
+        self.permits.add_permits(permits);
+    }
+
+    /// Waits until this gate admits the next chunk.
+    pub async fn wait_for_next(&self) -> ScriptedChunkGatePermit {
+        let permit = self
+            .permits
+            .acquire()
+            .await
+            .expect("scripted chunk gate semaphore is not externally closed");
+        permit.forget();
+        let sequence = self.admitted_chunks.fetch_add(1, Ordering::SeqCst) + 1;
+        ScriptedChunkGatePermit { sequence }
+    }
+
+    /// Returns how many chunks have passed through this gate.
+    pub fn admitted_chunks(&self) -> u64 {
+        self.admitted_chunks.load(Ordering::SeqCst)
+    }
+}
+
+/// Receipt returned when a chunk is admitted by a scripted gate.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ScriptedChunkGatePermit {
+    sequence: u64,
+}
+
+impl ScriptedChunkGatePermit {
+    /// Sequence number of the admitted chunk, starting at one.
+    pub fn sequence(self) -> u64 {
+        self.sequence
+    }
+}
+
+/// One text or tool-call payload fragment emitted by a scripted model stream.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ScriptedModelStreamChunk {
+    pub sequence: u64,
+    pub content: String,
+}
+
+impl ScriptedModelStreamChunk {
+    /// Creates a scripted model stream chunk.
+    pub fn new(sequence: u64, content: impl Into<String>) -> Self {
+        Self {
+            sequence,
+            content: content.into(),
+        }
+    }
+}
+
+/// Provider-neutral scripted stream event.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ScriptedModelStreamEvent {
+    Started { transport: ModelGatewayTransport },
+    Chunk(ScriptedModelStreamChunk),
+    Completed { stop_reason: Option<String> },
+    Failed { message: String },
+}
+
+/// Scripted stream that emits `ScriptedModelStreamEvent` values in order.
 #[derive(Clone, Debug)]
 pub struct ScriptedModelStream {
-    events: Vec<ModelStreamEvent>,
-    chunk_gate: Option<ChunkGate>,
+    events: Vec<ScriptedModelStreamEvent>,
+    chunk_gate: Option<ScriptedChunkGate>,
 }
 
 impl ScriptedModelStream {
     /// Creates a scripted stream from an explicit event list.
-    pub fn new(events: impl IntoIterator<Item = ModelStreamEvent>) -> Self {
+    pub fn new(events: impl IntoIterator<Item = ScriptedModelStreamEvent>) -> Self {
         Self {
             events: events.into_iter().collect(),
             chunk_gate: None,
@@ -30,16 +120,16 @@ impl ScriptedModelStream {
     /// Creates a one-chunk text stream with `Auto` transport.
     pub fn single_text_delta(content: impl Into<String>) -> Self {
         Self::new([
-            ModelStreamEvent::Started {
-                transport: ModelStreamTransport::Auto,
+            ScriptedModelStreamEvent::Started {
+                transport: ModelGatewayTransport::Auto,
             },
-            ModelStreamEvent::Chunk(ModelStreamChunk::new(1, content)),
-            ModelStreamEvent::Completed { stop_reason: None },
+            ScriptedModelStreamEvent::Chunk(ScriptedModelStreamChunk::new(1, content)),
+            ScriptedModelStreamEvent::Completed { stop_reason: None },
         ])
     }
 
     /// Gates every scripted chunk event through the provided gate.
-    pub fn with_chunk_gate(mut self, chunk_gate: ChunkGate) -> Self {
+    pub fn with_chunk_gate(mut self, chunk_gate: ScriptedChunkGate) -> Self {
         self.chunk_gate = Some(chunk_gate);
         self
     }
@@ -53,14 +143,14 @@ impl ScriptedModelStream {
         let mut failed = false;
 
         for event in self.events {
-            if matches!(event, ModelStreamEvent::Chunk(_)) {
+            if matches!(event, ScriptedModelStreamEvent::Chunk(_)) {
                 if let Some(chunk_gate) = &self.chunk_gate {
                     gate_sequences.push(chunk_gate.wait_for_next().await.sequence());
                 }
                 chunk_count += 1;
             }
-            completed |= matches!(event, ModelStreamEvent::Completed { .. });
-            failed |= matches!(event, ModelStreamEvent::Failed { .. });
+            completed |= matches!(event, ScriptedModelStreamEvent::Completed { .. });
+            failed |= matches!(event, ScriptedModelStreamEvent::Failed { .. });
             emitted_events.push(event);
         }
 
@@ -78,7 +168,7 @@ impl ScriptedModelStream {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ScriptedStreamReceipt {
     /// Events emitted by the scripted stream.
-    pub events: Vec<ModelStreamEvent>,
+    pub events: Vec<ScriptedModelStreamEvent>,
     /// Number of chunk events emitted by the scripted stream.
     pub chunk_count: usize,
     /// Gate permit sequences observed while releasing chunk events.
@@ -87,6 +177,36 @@ pub struct ScriptedStreamReceipt {
     pub completed: bool,
     /// Whether the script emitted a failure event.
     pub failed: bool,
+}
+
+/// Project a scripted stream gate receipt into runtime evidence for harness tests.
+pub fn scripted_stream_gate_evidence(
+    stream_id: impl Into<String>,
+    receipt: &ScriptedStreamReceipt,
+    gate: &ScriptedChunkGate,
+) -> LoopEvidence {
+    let stream_id = stream_id.into();
+    let gate_sequences = receipt
+        .gate_sequences
+        .iter()
+        .map(u64::to_string)
+        .collect::<Vec<_>>()
+        .join(",");
+    let detail = format!(
+        "stream_id={} chunk_count={} gate_sequences=[{}] admitted_chunks={} completed={} failed={} live_llm=false",
+        stream_id,
+        receipt.chunk_count,
+        gate_sequences,
+        gate.admitted_chunks(),
+        receipt.completed,
+        receipt.failed,
+    );
+
+    LoopEvidence::present(
+        LoopEvidenceKind::Runtime,
+        format!("scripted-stream-gate:{stream_id}"),
+    )
+    .with_detail(detail)
 }
 
 /// Request receipt captured by `ScriptedModelGateway`.
@@ -99,11 +219,11 @@ pub struct ScriptedGatewayRequestReceipt {
     /// Whether the request supplied completion options.
     pub has_options: bool,
     /// Requested transport policy.
-    pub transport: ModelStreamTransport,
+    pub transport: ModelGatewayTransport,
 }
 
 impl ScriptedGatewayRequestReceipt {
-    fn from_request(request: &ModelStreamRequest) -> Self {
+    fn from_request(request: &ModelGatewayRequest) -> Self {
         Self {
             litellm_model_id: request.endpoint().litellm_model_id().as_str().to_owned(),
             message_count: request.messages().len(),
@@ -113,10 +233,10 @@ impl ScriptedGatewayRequestReceipt {
     }
 }
 
-/// Deterministic `ModelStreamGateway` double that records requests and returns queued outcomes.
+/// Deterministic `ModelGateway` double that records requests and returns queued outcomes.
 #[derive(Clone)]
 pub struct ScriptedModelGateway {
-    outcomes: Arc<Mutex<VecDeque<LiteLlmModelClientResult<CompletionResponse>>>>,
+    outcomes: Arc<Mutex<VecDeque<ModelGatewayResult<ModelGatewayCompletionResponse>>>>,
     requests: Arc<Mutex<Vec<ScriptedGatewayRequestReceipt>>>,
 }
 
@@ -133,7 +253,7 @@ impl fmt::Debug for ScriptedModelGateway {
 impl ScriptedModelGateway {
     /// Creates a scripted gateway from explicit completion outcomes.
     pub fn new(
-        outcomes: impl IntoIterator<Item = LiteLlmModelClientResult<CompletionResponse>>,
+        outcomes: impl IntoIterator<Item = ModelGatewayResult<ModelGatewayCompletionResponse>>,
     ) -> Self {
         Self {
             outcomes: Arc::new(Mutex::new(outcomes.into_iter().collect())),
@@ -148,7 +268,7 @@ impl ScriptedModelGateway {
 
     /// Creates a gateway that returns one deterministic completion failure.
     pub fn completion_failure(message: impl Into<String>) -> Self {
-        Self::new([Err(LiteLlmModelClientError::Completion(message.into()))])
+        Self::new([Err(ModelGatewayError::Completion(message.into()))])
     }
 
     /// Returns captured request receipts.
@@ -168,25 +288,26 @@ impl ScriptedModelGateway {
     }
 }
 
-#[async_trait]
-impl ModelStreamGateway for ScriptedModelGateway {
-    async fn complete(
+impl ModelGateway for ScriptedModelGateway {
+    fn complete(
         &self,
-        request: ModelStreamRequest,
-    ) -> LiteLlmModelClientResult<CompletionResponse> {
+        request: ModelGatewayRequest,
+    ) -> ModelGatewayFuture<ModelGatewayResult<ModelGatewayCompletionResponse>> {
         self.requests
             .lock()
             .expect("scripted gateway request lock poisoned")
             .push(ScriptedGatewayRequestReceipt::from_request(&request));
 
-        self.outcomes
+        let outcome = self
+            .outcomes
             .lock()
             .expect("scripted gateway outcome lock poisoned")
             .pop_front()
             .unwrap_or_else(|| {
-                Err(LiteLlmModelClientError::Completion(
+                Err(ModelGatewayError::Completion(
                     "scripted model gateway has no queued completion outcome".to_owned(),
                 ))
-            })
+            });
+        Box::pin(async move { outcome })
     }
 }

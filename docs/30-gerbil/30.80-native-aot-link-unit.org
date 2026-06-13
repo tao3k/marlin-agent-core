@@ -1,0 +1,185 @@
+* 30.80 Native AOT Link Unit
+
+The native AOT path for =marlin-deck-runtime= is a Gerbil/Gambit build
+boundary, not a default Cargo build-script side effect.
+
+The Scheme crate owns the Gerbil package assets, the C ABI types, and the typed
+Rust plan for producing a native link unit. The crate does not link that unit
+from its own =build.rs=. Runtime or real LLM integration crates must opt in to
+linking the native unit so normal Scheme package builds, tests, and docs do not
+inherit native compiler and Gambit linker costs.
+
+** Artifact Shape
+
+The native AOT build has four ordered compiler phases:
+
+1. =gxc -target C -s -S -O= emits the generated Gambit Scheme file.
+
+2. =gsc -target C -obj= compiles the generated Scheme module object.
+
+3. =gsc -target C -link= emits the non-flat Gambit link C source.
+
+4. =gsc -target C -cc-options -D___LIBRARY -obj= compiles the link C source.
+
+The link source must stay non-flat. =gsc -link -flat= avoids emitting =main=,
+but it also drags Gambit base globals into the link object and collides with
+=libgambit.a=. The upstream Gambit embedding shape is ordinary =gsc -link= plus
+=-D___LIBRARY= when compiling the generated link C source.
+
+The Rust static-link plan must consume both objects:
+
+- module object: =deck-runtime-native~0.o=
+
+- link object: =deck-runtime-native~0_.o=
+
+Linking only =deck-runtime-native~0.o= is incomplete. It misses the Gambit
+link-unit symbols that initialize the generated module set.
+
+The required native ABI exports are:
+
+- =marlin_deck_runtime_initialize=
+
+- =marlin_deck_runtime_select_model_route=
+
+The initializer is part of the hot ABI contract. It calls Gambit =___setup= with
+=setup_params.version = ___VERSION= and the generated linkfile linker
+=___LNK_deck_2d_runtime_2d_native_7e_0__=. Rust linked consumers must initialize
+the Gambit runtime before calling the selector. Omitting this produces a
+linkable binary that crashes or fails at the first selector call.
+
+** Cargo Boundary
+
+=GerbilDeckRuntimeNativeAotConfig::build_link_unit= is the Rust entrypoint for
+producing the link unit. =GerbilDeckRuntimeNativeAotBuildReceipt::static_link_plan=
+projects a successful build into Cargo linker directives.
+
+=marlin-deck-runtime-native= owns the opt-in Cargo integration. Its
+=linked-native= feature runs a build script that emits the two generated object
+files and the Gambit link directives. The default crate build remains pure Rust
+and does not invoke =gxc=, =gsc=, a C compiler, or the Gambit linker.
+
+The feature build accepts these environment overrides:
+
+- =MARLIN_DECK_RUNTIME_NATIVE_C_COMPILER=
+
+- =MARLIN_DECK_RUNTIME_NATIVE_GAMBIT_LINK_LIBRARY=
+
+- =MARLIN_DECK_RUNTIME_NATIVE_GAMBIT_LINK_SEARCH_DIR=
+
+When =MARLIN_DECK_RUNTIME_NATIVE_GAMBIT_LINK_SEARCH_DIR= is absent, the build
+support crate derives candidate =lib= directories from =default_gerbil_gsc_program=
+and the canonicalized =gsc= path. It accepts =libgambit.a=, =libgambit.dylib=,
+=libgambit.so=, and versioned Linux =libgambit.so.*= files. Explicit environment
+configuration remains authoritative.
+
+The helper CLI prints explicit metadata for downstream consumers:
+
+- =MARLIN_GERBIL_NATIVE_AOT_MODULE_OBJECT=
+
+- =MARLIN_GERBIL_NATIVE_AOT_LINK_SOURCE=
+
+- =MARLIN_GERBIL_NATIVE_AOT_LINK_OBJECT=
+
+- =MARLIN_GERBIL_NATIVE_AOT_GAMBIT_LINK_LIB=
+
+- =MARLIN_GERBIL_NATIVE_AOT_GAMBIT_LINK_SEARCH= when configured
+
+Downstream crates decide when those values become =cargo:rustc-link-arg=,
+=cargo:rustc-link-search=, and =cargo:rustc-link-lib= directives.
+
+** Performance Baseline
+
+The current real native AOT benchmark is gated by
+=MARLIN_GERBIL_NATIVE_AOT_BENCH= so default benches do not repeatedly compile
+Gerbil/Gambit artifacts.
+
+The current complete link-unit build result is:
+
+#+begin_src text
+linked-native --no-run: passed; generated AOT objects linked into the Rust test
+binary with required symbols marlin_deck_runtime_initialize and
+marlin_deck_runtime_select_model_route.
+#+end_src
+
+This number is the build-time cost for a complete native link unit. It is not
+the runtime selector cost.
+
+The native selector ABI is a typed C boundary. It returns
+=MarlinDeckRuntimeModelRouteSelection= with =matched= and =policy_index= fields.
+It must not serialize JSON or allocate runtime-owned receipt bytes on the hot
+path. JSON is reserved for configuration, tracing, CLI receipts, and
+cross-process protocol boundaries.
+
+The long-term native conversion path is:
+
+Rust validates the C layout before projecting it into
+=GerbilDeckRuntimeModelRouteSelectionReceipt=. The stable selector status codes
+are =OK=0, =NULL_POINTER=2, =ABI_MISMATCH=3, and =INVALID_SELECTION=4=. An
+unmatched selection must use =MARLIN_DECK_RUNTIME_NATIVE_NO_POLICY_INDEX=.
+Matched selections must use an index into the request policy array.
+
+The runtime-facing bridge consumes that typed policy index through
+=CompiledModelRouteResolver::resolve_selected_policy_index=. This keeps the
+projection Rust-native and independent of the Gerbil crate: the linked native
+selector chooses an original policy index, runtime revalidates that selected
+policy against the current =ModelRouteRequest=, and the result is the same
+=ModelRouteDecision= used by the ordinary resolver. The real LiteLLM stream
+gateway only consumes the decision endpoint and does not need to link Gerbil or
+know about the native ABI.
+
+The dedicated =marlin-deck-runtime-native= crate owns this composition boundary.
+It depends on =marlin-gerbil-scheme= and =marlin-agent-runtime=, while
+=marlin-agent-runtime= and =marlin-agent-stream= remain free of Gerbil native
+linkage. The crate feeds a priority-ordered native policy list to the Scheme
+selector, maps the returned native-list index back to the original route rule
+index, and then calls the runtime projection API. Unsupported native policy
+predicates are treated as selector candidates only when they can be represented
+as Deck command prefixes and agent-scope labels; Rust projection remains the
+final correctness gate.
+
+The current real linked typed selector benchmark uses the initialized linked
+selector directly through =select_policy_index=:
+
+#+begin_src text
+deck_runtime_linked_native_selector/1_policy: [1.8203 us 2.4104 us 3.1522 us]
+deck_runtime_linked_native_selector/8_policy: [10.303 us 14.147 us 20.457 us]
+#+end_src
+
+The previous JSON-returning smoke path measured the wrong boundary because it
+included JSON serialization plus runtime-owned byte-buffer allocation/free. That
+path is no longer the native API shape.
+
+** Verification
+
+Current native AOT verification commands:
+
+#+begin_src sh
+direnv exec . cargo test -p marlin-gerbil-scheme --test unit_test aot_runtime
+direnv exec . cargo test -p marlin-deck-runtime-native-build
+direnv exec . cargo test -p marlin-deck-runtime-native
+direnv exec . env \
+  MARLIN_DECK_RUNTIME_NATIVE_C_COMPILER=clang \
+  cargo test -p marlin-deck-runtime-native --features linked-native --no-run
+#+end_src
+
+The real linked typed ABI smoke used the current Scheme source and the linked
+objects produced by the =marlin-deck-runtime-native= feature build:
+
+#+begin_src sh
+direnv exec . env \
+  MARLIN_DECK_RUNTIME_NATIVE_C_COMPILER=clang \
+  cargo test -p marlin-deck-runtime-native --features linked-native \
+    linked_native_route_resolver_calls_real_deck_selector -- --nocapture
+direnv exec . env \
+  MARLIN_DECK_RUNTIME_NATIVE_C_COMPILER=clang \
+  cargo bench -p marlin-deck-runtime-native --features linked-native \
+    --bench linked_selector
+#+end_src
+
+** Next Work
+
+The next implementation step is to run the linked selector benchmark under a
+Linux CI image and compare policy-count scaling before optimizing the Scheme
+selector loop. A separate protocol adapter may project typed selections into
+JSON receipts for trace and cross-process boundaries, but that adapter must stay
+outside the native hot path.

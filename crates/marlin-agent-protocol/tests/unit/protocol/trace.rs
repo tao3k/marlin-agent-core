@@ -1,5 +1,9 @@
 use marlin_agent_protocol::{
-    AgentEvent, AgentExecutionTrace, AgentSpanName, AgentTraceSpanRecord, GraphLoopExecutionStatus,
+    AgentEvent, AgentExecutionTrace, AgentSpanName, AgentTraceSpanRecord,
+    GRAPH_POLICY_PROPOSAL_SCHEMA_ID, GRAPH_POLICY_PROPOSAL_SPAN_NAME,
+    GRAPH_POLICY_PROPOSAL_VISIBILITY_SUBJECT_PREFIX, GraphId, GraphLoopExecutionStatus,
+    GraphLoopStrategy, GraphLoopStrategyId, GraphPolicyProposal, GraphPolicyProposalReceipt,
+    GraphPolicyProposalStatus, LoopEvidenceKind, LoopGraph,
 };
 
 #[test]
@@ -11,6 +15,124 @@ fn agent_trace_span_record_keeps_name_and_fields() {
         record.fields.get("node_id").map(String::as_str),
         Some("plan")
     );
+}
+
+#[test]
+fn agent_trace_span_record_projects_graph_policy_proposal_receipts() {
+    let proposal = GraphPolicyProposal::new(
+        GraphLoopStrategy::native_scheme("scheme-loop-ranker", "v1"),
+        LoopGraph {
+            graph_id: "turn-frontier-1".to_string(),
+            nodes: Vec::new(),
+            edges: Vec::new(),
+        },
+        "sha256:input",
+        "sha256:output",
+    );
+    let accepted = GraphPolicyProposalReceipt::accepted(&proposal);
+    let rejected = GraphPolicyProposalReceipt::rejected(
+        &proposal,
+        vec!["graph_policy_proposal.nodes_empty".to_string()],
+    );
+
+    let accepted_span = AgentTraceSpanRecord::graph_policy_proposal_receipt(&accepted);
+    let rejected_span = AgentTraceSpanRecord::graph_policy_proposal_receipt(&rejected);
+
+    assert_eq!(
+        accepted_span.name,
+        AgentSpanName::new(GRAPH_POLICY_PROPOSAL_SPAN_NAME)
+    );
+    assert_eq!(
+        accepted_span.fields.get("strategy_id").map(String::as_str),
+        Some("scheme-loop-ranker")
+    );
+    assert!(accepted_span.is_graph_policy_proposal());
+    assert_eq!(
+        accepted_span.graph_policy_proposal_strategy_id(),
+        Some(GraphLoopStrategyId::new("scheme-loop-ranker"))
+    );
+    assert_eq!(
+        accepted_span.graph_policy_proposal_status(),
+        Some(GraphPolicyProposalStatus::Accepted)
+    );
+    assert_eq!(
+        accepted_span.graph_policy_proposal_selected_graph_id(),
+        Some(GraphId::new("turn-frontier-1"))
+    );
+    assert_eq!(
+        accepted_span.fields.get("status").map(String::as_str),
+        Some("Accepted")
+    );
+    assert_eq!(
+        accepted_span
+            .fields
+            .get("selected_graph_id")
+            .map(String::as_str),
+        Some("turn-frontier-1")
+    );
+    assert_eq!(
+        rejected_span.fields.get("status").map(String::as_str),
+        Some("Rejected")
+    );
+    assert_eq!(
+        rejected_span.graph_policy_proposal_status(),
+        Some(GraphPolicyProposalStatus::Rejected)
+    );
+    assert!(
+        rejected_span
+            .graph_policy_proposal_selected_graph_id()
+            .is_none()
+    );
+    assert_eq!(
+        rejected_span
+            .fields
+            .get("diagnostic_count")
+            .map(String::as_str),
+        Some("1")
+    );
+    assert!(!rejected_span.fields.contains_key("selected_graph_id"));
+
+    let accepted_evidence = accepted_span
+        .graph_policy_proposal_visibility_evidence()
+        .expect("accepted proposal span should project visibility evidence");
+    let accepted_detail = accepted_evidence
+        .detail
+        .as_deref()
+        .expect("accepted visibility detail");
+    assert_eq!(accepted_evidence.kind, LoopEvidenceKind::Visibility);
+    assert_eq!(
+        accepted_evidence.subject,
+        format!("{GRAPH_POLICY_PROPOSAL_VISIBILITY_SUBJECT_PREFIX}:scheme-loop-ranker")
+    );
+    assert!(accepted_evidence.present);
+    assert!(accepted_detail.contains(&format!("schema_id={GRAPH_POLICY_PROPOSAL_SCHEMA_ID}")));
+    assert!(accepted_detail.contains("strategy_id=scheme-loop-ranker"));
+    assert!(accepted_detail.contains("status=Accepted"));
+    assert!(accepted_detail.contains("diagnostic_count=0"));
+    assert!(accepted_detail.contains("selected_graph_id=turn-frontier-1"));
+
+    let rejected_evidence = rejected_span
+        .graph_policy_proposal_visibility_evidence()
+        .expect("rejected proposal span should project visibility evidence");
+    let rejected_detail = rejected_evidence
+        .detail
+        .as_deref()
+        .expect("rejected visibility detail");
+    assert_eq!(rejected_evidence.kind, LoopEvidenceKind::Visibility);
+    assert_eq!(
+        rejected_evidence.subject,
+        format!("{GRAPH_POLICY_PROPOSAL_VISIBILITY_SUBJECT_PREFIX}:scheme-loop-ranker")
+    );
+    assert!(rejected_evidence.present);
+    assert!(rejected_detail.contains("status=Rejected"));
+    assert!(rejected_detail.contains("diagnostic_count=1"));
+    assert!(!rejected_detail.contains("selected_graph_id="));
+    assert!(
+        AgentTraceSpanRecord::new("agent.provider")
+            .graph_policy_proposal_visibility_evidence()
+            .is_none()
+    );
+    assert!(!AgentTraceSpanRecord::new("agent.provider").is_graph_policy_proposal());
 }
 
 #[test]
@@ -47,6 +169,8 @@ fn agent_execution_trace_packages_run_facts() {
         trace.find_span_with_field(&AgentSpanName::new("harness.result"), "run_id", "run-1"),
         Some(&result_span)
     );
+    assert_eq!(trace.graph_policy_proposal_spans().count(), 0);
+    assert!(trace.graph_policy_proposal_visibility_evidence().is_empty());
 
     let summary = trace.summary();
     assert_eq!(summary.run_id.as_str(), "run-1");
@@ -55,6 +179,42 @@ fn agent_execution_trace_packages_run_facts() {
     assert_eq!(summary.event_count, 1);
     assert_eq!(summary.span_count, 2);
     assert_eq!(summary.diagnostic_count, 1);
+}
+
+#[test]
+fn agent_execution_trace_finds_graph_policy_proposal_spans_by_strategy() {
+    let proposal = GraphPolicyProposal::new(
+        GraphLoopStrategy::native_scheme("scheme-loop-ranker", "v1"),
+        LoopGraph {
+            graph_id: "turn-frontier-1".to_string(),
+            nodes: Vec::new(),
+            edges: Vec::new(),
+        },
+        "sha256:input",
+        "sha256:output",
+    );
+    let receipt = GraphPolicyProposalReceipt::accepted(&proposal);
+    let strategy_id = GraphLoopStrategyId::new("scheme-loop-ranker");
+    let proposal_span = AgentTraceSpanRecord::graph_policy_proposal_receipt(&receipt);
+    let trace = AgentExecutionTrace::new(
+        "run-1",
+        "turn-frontier-1",
+        GraphLoopExecutionStatus::Completed,
+    )
+    .with_spans(vec![proposal_span]);
+
+    assert_eq!(trace.graph_policy_proposal_spans().count(), 1);
+    assert!(
+        trace
+            .find_graph_policy_proposal_span(&strategy_id)
+            .is_some()
+    );
+    assert!(
+        trace.has_graph_policy_proposal_status(&strategy_id, GraphPolicyProposalStatus::Accepted)
+    );
+    assert!(
+        !trace.has_graph_policy_proposal_status(&strategy_id, GraphPolicyProposalStatus::Rejected)
+    );
 }
 
 #[test]

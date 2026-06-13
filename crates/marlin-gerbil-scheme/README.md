@@ -37,6 +37,26 @@ direnv exec . cargo test -p marlin-gerbil-scheme
 direnv exec . cargo clippy -p marlin-gerbil-scheme --all-targets --all-features -- -D warnings
 ```
 
+Performance benchmarks use Criterion and do not require a local Gerbil toolchain
+for the Rust-side native ABI wrapper baseline:
+
+```sh
+direnv exec . cargo bench -p marlin-gerbil-scheme --bench deck_runtime_native -- --quick
+```
+
+To cross the real Scheme package boundary, run the same benchmark with an
+explicit opt-in. This writes the crate-shipped `gerbil.pkg`, `build.ss`, and
+`src/marlin/*` package assets, runs `build.ss compile`, and measures the
+`gxi` process roundtrip through the Deck runtime policy selector:
+
+```sh
+MARLIN_GERBIL_REAL_PACKAGE_BENCH=1 \
+  direnv exec . cargo bench -p marlin-gerbil-scheme --bench deck_runtime_native -- --quick
+```
+
+Use `MARLIN_GERBIL_GXI` to override the `gxi` executable path when the default
+Homebrew path is not correct.
+
 On machines with `gxi`, run the ignored runtime boundary suite:
 
 ```sh
@@ -50,3 +70,47 @@ ls "$artifact_dir"/release-status.json "$artifact_dir"/release-landing-report.js
 The same artifact contract is used by the manual `real-gxi` CI workflow so
 release visibility evidence is available after the ignored suite crosses the
 local Gerbil runtime boundary.
+
+## Gerbil dependency bootstrap
+
+`marlin-gerbil-deps` is the build-system entrypoint for preparing the external
+Gerbil packages required by the deck runtime:
+
+```sh
+direnv exec . cargo run -p marlin-gerbil-scheme --bin marlin-gerbil-deps -- bootstrap
+```
+
+The command resolves its plan from the host platform and explicit
+configuration:
+
+```sh
+direnv exec . cargo run -p marlin-gerbil-scheme --bin marlin-gerbil-deps -- env --print-plan
+```
+
+On macOS it can repair the Homebrew Gerbil/Gambit layout before building
+`gerbil-utils` and `clan/poo`. On Linux and other platforms it skips the
+Homebrew repair path and uses the configured or discovered `gxi`, `gxpkg`, and
+`gsc` toolchain directly.
+
+Cargo `build.rs` remains side-effect bounded: it runs the Rust harness policy
+gate and does not fetch network dependencies or mutate `$HOME`. CI jobs,
+packaging scripts, and local developer wrappers should call `marlin-gerbil-deps`
+explicitly before running the real `gxi` boundary tests.
+
+## Native AOT downstream integration boundary
+
+This crate owns the Gerbil package, native AOT link-unit build helpers, and
+Rust-side ABI types for the Deck runtime. It does not link a prebuilt
+Gerbil/Gambit unit from its own `build.rs`, because that would push native
+LLM/model-route integration costs into every consumer of the Scheme package.
+
+Use `GerbilDeckRuntimeNativeAotConfig::build_link_unit` or the
+`marlin-gerbil-native-aot` helper to produce the concrete module object, Gambit
+link source, link object, and link metadata. The crate that performs real
+LLM/model-route integration should decide whether and how to link those objects,
+emit Cargo linker directives, and benchmark the linked path.
+
+The local Criterion benchmark keeps the Rust ABI baseline, real Gerbil package
+process boundary, and gated native AOT link-unit build timing here. Fully linked
+runtime benchmarking still belongs next to the real LLM integration crate so
+this package does not affect unrelated build and test chains.

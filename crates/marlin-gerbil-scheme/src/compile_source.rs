@@ -1,10 +1,9 @@
 //! CLI adapter for compiling Gerbil source files into typed `marlin` artifacts.
 
 use crate::{
-    GerbilArtifactKind, GerbilCommandCompiler, GerbilSource, MARLIN_GERBIL_GXI_ENV,
+    GerbilArtifactKind, GerbilCommandCompiler, GerbilCompiler, GerbilSource, MARLIN_GERBIL_GXI_ENV,
     default_gerbil_gxi_program,
 };
-use marlin_agent_runtime::TokioAgentRuntime;
 use std::{
     env,
     error::Error,
@@ -13,7 +12,6 @@ use std::{
     process::ExitCode,
     time::{SystemTime, UNIX_EPOCH},
 };
-use tokio::runtime::Builder;
 
 const ARTIFACT_KIND_USAGE: &str = "loop-graph, workspace-schema, workspace-view-policy, \
 workspace-validation-policy, memory-dispatch-policy, workspace-patch-intent, \
@@ -34,16 +32,12 @@ fn run_compile_source_from_args(
     args: impl IntoIterator<Item = String>,
 ) -> Result<(), Box<dyn Error>> {
     let request = CompileSourceRequest::parse(args.into_iter())?;
-    let artifact = Builder::new_current_thread()
-        .enable_io()
-        .enable_time()
-        .build()?
-        .block_on(compile_source_request(&request))?;
+    let artifact = compile_source_request(&request)?;
     println!("{}", serde_json::to_string_pretty(&artifact)?);
     Ok(())
 }
 
-async fn compile_source_request(
+fn compile_source_request(
     request: &CompileSourceRequest,
 ) -> Result<crate::GerbilCompiledArtifact, Box<dyn Error>> {
     let source = fs::read_to_string(&request.source_path)?;
@@ -58,15 +52,11 @@ async fn compile_source_request(
 
     let runtime_root = RuntimeRoot::new("compile-source");
     let compiler = GerbilCommandCompiler::from_default_marlin_runtime_module(runtime_root.path())?;
-    let (runtime, _events) = TokioAgentRuntime::new(4);
-    let context = runtime.context();
     compiler
-        .compile_with_runtime(
-            &context,
+        .compile(
             GerbilSource::new(request.source_path.display().to_string(), source),
             request.kind,
         )
-        .await
         .map_err(io::Error::other)
         .map_err(Into::into)
 }

@@ -10,7 +10,6 @@ aho-corasick.workspace = true
 globset.workspace = true
 marlin-agent-protocol.workspace = true
 marlin-agent-sessions.workspace = true
-marlin-agent-stream.workspace = true
 parking_lot.workspace = true
 process-wrap = { version = "9.1.0", features = ["tokio1"] }
 serde.workspace = true

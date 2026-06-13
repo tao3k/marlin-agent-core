@@ -7,14 +7,19 @@
 (defrules defmarlin-runtime-build-script ()
   ((_ extra-target ...)
    (defbuild-script
-     '("src/marlin/protocol"
+     '((gsc: "src/marlin/deck-runtime-native")
+       (ssi: "src/marlin/deck-runtime-native")
+       "src/marlin/protocol"
        "src/marlin/request"
        "src/marlin/parser"
        "src/marlin/adapter"
+       "src/marlin/deck-runtime"
+       "src/marlin/deck-runtime-policy"
        "src/marlin/hook-policy"
        extra-target ...))))
 
 (defmarlin-runtime-build-script
   (exe: "bin/command-adapter")
   (exe: "bin/command-adapter-batch")
+  (exe: "bin/deck-runtime-policy-adapter")
   (exe: "bin/hook-policy-adapter"))
