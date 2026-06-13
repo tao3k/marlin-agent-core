@@ -1,6 +1,8 @@
 use marlin_agent_protocol::{LoopEvidence, LoopEvidenceKind};
 use marlin_agent_test_support::{
-    NO_LLM_RUNTIME_REPLAY_ARTIFACT_ID, no_llm_runtime_replay_artifact_fixture,
+    NO_LLM_RUNTIME_REPLAY_ARTIFACT_ID, NO_LLM_RUNTIME_REPLAY_CONTRACT_JSON,
+    NoLlmRuntimeReplayArtifactLoadError, load_no_llm_runtime_replay_artifact,
+    no_llm_runtime_replay_artifact_fixture,
 };
 
 #[test]
@@ -41,6 +43,37 @@ fn no_llm_runtime_replay_artifact_loads_graph_session_and_hook_evidence() {
     assert!(detail_contains(evidence, "visibility_contracted=true"));
     assert!(detail_contains(evidence, "policy_decisions=2"));
     assert!(detail_contains(evidence, "live_llm=false"));
+}
+
+#[test]
+fn no_llm_runtime_replay_artifact_loads_from_serialized_contract() {
+    let artifact = load_no_llm_runtime_replay_artifact(NO_LLM_RUNTIME_REPLAY_CONTRACT_JSON)
+        .expect("serialized replay contract should load");
+    let (contract, evidence) = artifact.into_parts();
+
+    assert!(contract.is_supported_schema());
+    assert_eq!(contract.scenario.id, NO_LLM_RUNTIME_REPLAY_ARTIFACT_ID);
+    assert_eq!(contract.scenario.expected_evidence.len(), 2);
+    assert_eq!(evidence.len(), 4);
+    assert!(detail_contains(&evidence, "status=Accepted"));
+}
+
+#[test]
+fn no_llm_runtime_replay_artifact_rejects_unsupported_schema() {
+    let error = load_no_llm_runtime_replay_artifact(
+        r#"{
+  "schema_id": "marlin.agent.scenario.v0",
+  "scenario": {
+    "id": "no-llm-runtime-replay"
+  }
+}"#,
+    )
+    .expect_err("unsupported schema should be rejected");
+
+    assert!(matches!(
+        error,
+        NoLlmRuntimeReplayArtifactLoadError::UnsupportedSchema { .. }
+    ));
 }
 
 fn detail_contains(evidence: &[LoopEvidence], needle: &str) -> bool {

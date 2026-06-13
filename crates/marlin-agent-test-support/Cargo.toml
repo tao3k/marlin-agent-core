@@ -10,6 +10,7 @@ marlin-agent-kernel.workspace = true
 marlin-agent-protocol.workspace = true
 marlin-agent-sessions.workspace = true
 marlin-gerbil-ir.workspace = true
+serde_json.workspace = true
 tokio.workspace = true
 
 [build-dependencies]

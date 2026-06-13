@@ -1,7 +1,9 @@
 //! Replay artifacts for no-LLM runtime evidence chains.
 
+use std::{error::Error, fmt};
+
 use marlin_agent_protocol::{
-    AgentScenario, AgentScenarioContract, AgentScenarioStep, LoopEvidence, LoopEvidenceKind,
+    AGENT_SCENARIO_CONTRACT_SCHEMA_ID, AgentScenario, AgentScenarioContract, LoopEvidence,
 };
 use marlin_agent_sessions::SessionKind;
 
@@ -15,11 +17,65 @@ use crate::{
 /// Stable fixture id for the no-LLM runtime replay artifact.
 pub const NO_LLM_RUNTIME_REPLAY_ARTIFACT_ID: &str = "no-llm-runtime-replay";
 
+/// Serialized scenario contract used by the deterministic no-LLM replay fixture.
+pub const NO_LLM_RUNTIME_REPLAY_CONTRACT_JSON: &str = r#"{
+  "schema_id": "marlin.agent.scenario.v1",
+  "scenario": {
+    "id": "no-llm-runtime-replay",
+    "description": "replays graph, sub-agent session, and hook receipts without live LLMs",
+    "steps": [
+      {
+        "name": "load-replay-artifact",
+        "input": {
+          "artifact": "no-llm-runtime-replay"
+        }
+      }
+    ],
+    "expected_evidence": ["Visibility", "Runtime"]
+  }
+}"#;
+
 /// Typed replay artifact loaded by harness tests without touching live LLMs.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct NoLlmRuntimeReplayArtifact {
     contract: AgentScenarioContract,
     replay_evidence: Vec<LoopEvidence>,
+}
+
+/// Error returned while loading a serialized no-LLM replay artifact contract.
+#[derive(Debug)]
+pub enum NoLlmRuntimeReplayArtifactLoadError {
+    InvalidContract(serde_json::Error),
+    UnsupportedSchema { schema_id: String },
+}
+
+impl fmt::Display for NoLlmRuntimeReplayArtifactLoadError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::InvalidContract(error) => {
+                write!(f, "invalid no-LLM replay scenario contract: {error}")
+            }
+            Self::UnsupportedSchema { schema_id } => write!(
+                f,
+                "unsupported no-LLM replay scenario schema: {schema_id} (expected {AGENT_SCENARIO_CONTRACT_SCHEMA_ID})"
+            ),
+        }
+    }
+}
+
+impl Error for NoLlmRuntimeReplayArtifactLoadError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::InvalidContract(error) => Some(error),
+            Self::UnsupportedSchema { .. } => None,
+        }
+    }
+}
+
+impl From<serde_json::Error> for NoLlmRuntimeReplayArtifactLoadError {
+    fn from(error: serde_json::Error) -> Self {
+        Self::InvalidContract(error)
+    }
 }
 
 impl NoLlmRuntimeReplayArtifact {
@@ -44,8 +100,30 @@ impl NoLlmRuntimeReplayArtifact {
     }
 }
 
-/// Deterministic replay artifact covering graph, session, and hook receipts.
+/// Load a deterministic no-LLM replay artifact from a serialized scenario contract.
+pub fn load_no_llm_runtime_replay_artifact(
+    serialized_contract: &str,
+) -> Result<NoLlmRuntimeReplayArtifact, NoLlmRuntimeReplayArtifactLoadError> {
+    let contract: AgentScenarioContract = serde_json::from_str(serialized_contract)?;
+    if !contract.is_supported_schema() {
+        return Err(NoLlmRuntimeReplayArtifactLoadError::UnsupportedSchema {
+            schema_id: contract.schema_id,
+        });
+    }
+
+    Ok(NoLlmRuntimeReplayArtifact {
+        contract,
+        replay_evidence: deterministic_no_llm_runtime_replay_evidence(),
+    })
+}
+
+/// Deterministic replay artifact fixture covering graph, session, and hook receipts.
 pub fn no_llm_runtime_replay_artifact_fixture() -> NoLlmRuntimeReplayArtifact {
+    load_no_llm_runtime_replay_artifact(NO_LLM_RUNTIME_REPLAY_CONTRACT_JSON)
+        .expect("no-LLM runtime replay contract fixture should load")
+}
+
+fn deterministic_no_llm_runtime_replay_evidence() -> Vec<LoopEvidence> {
     let memory_fixture = sub_agent_memory_denied_fixture();
     let (child_session, isolation_receipt) = memory_fixture.parent_session().child_session(
         SessionKind::SubAgent,
@@ -57,24 +135,10 @@ pub fn no_llm_runtime_replay_artifact_fixture() -> NoLlmRuntimeReplayArtifact {
     let hook_policy = custom_hook_policy_receipt_fixture();
     let graph_policy = accepted_graph_policy_proposal_fixture();
 
-    let scenario = AgentScenario::new(NO_LLM_RUNTIME_REPLAY_ARTIFACT_ID)
-        .with_description("replays graph, sub-agent session, and hook receipts without live LLMs")
-        .with_step(
-            AgentScenarioStep::new("load-replay-artifact")
-                .with_input("artifact", NO_LLM_RUNTIME_REPLAY_ARTIFACT_ID),
-        )
-        .expecting_evidence(LoopEvidenceKind::Visibility)
-        .expecting_evidence(LoopEvidenceKind::Runtime);
-
-    let replay_evidence = vec![
+    vec![
         graph_policy.visibility_evidence(),
         sub_agent_memory_session_visibility_evidence(&child_session, &isolation_receipt),
         sub_agent_memory_session_replay_evidence(&child_session, &isolation_receipt),
         hook_dispatch_replay_evidence(&hook_summary, &hook_selection, &hook_policy),
-    ];
-
-    NoLlmRuntimeReplayArtifact {
-        contract: AgentScenarioContract::new(scenario),
-        replay_evidence,
-    }
+    ]
 }

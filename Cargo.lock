@@ -2253,6 +2253,7 @@ dependencies = [
  "marlin-gerbil-ir",
  "marlin-rust-project-harness-policy",
  "rust-lang-project-harness",
+ "serde_json",
  "tokio",
 ]
 
