@@ -3,6 +3,7 @@
 use std::collections::BTreeMap;
 
 use serde::de::DeserializeOwned;
+use serde_json::Value;
 
 use super::{
     error::GerbilSchemeTypeDecodeError,
@@ -67,6 +68,23 @@ impl GerbilSchemeTypeRegistry {
         validation::validate_typed_value_with_lookup(|type_id| self.type_spec(type_id), typed_value)
     }
 
+    /// Validate a dynamic Scheme value, including manifest-declared required fields.
+    pub fn validate_dynamic_typed_value(
+        &self,
+        typed_value: &GerbilSchemeTypedValue,
+    ) -> Result<GerbilSchemeTypedValueValidationReceipt, GerbilSchemeTypeDecodeError> {
+        let receipt = self.validate_typed_value(typed_value)?;
+        let spec = self
+            .type_spec(typed_value.type_id())
+            .expect("typed value type was validated before payload validation");
+        validation::validate_typed_value_payload(
+            |type_id| self.type_spec(type_id),
+            spec,
+            typed_value,
+        )?;
+        Ok(receipt)
+    }
+
     /// Validate and decode a typed Scheme value into a Rust projection.
     pub fn decode_typed_value<T>(
         &self,
@@ -77,6 +95,15 @@ impl GerbilSchemeTypeRegistry {
     {
         self.validate_typed_value(typed_value)?;
         typed_value.decode_value()
+    }
+
+    /// Validate and decode a dynamic Scheme value without requiring a Rust projection type.
+    pub fn decode_dynamic_typed_value(
+        &self,
+        typed_value: &GerbilSchemeTypedValue,
+    ) -> Result<Value, GerbilSchemeTypeDecodeError> {
+        self.validate_dynamic_typed_value(typed_value)?;
+        Ok(typed_value.value().clone())
     }
 
     /// Validate and decode a typed Scheme value into a Rust projection with a runtime contract.

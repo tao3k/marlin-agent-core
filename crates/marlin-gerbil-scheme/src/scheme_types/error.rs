@@ -31,6 +31,19 @@ pub enum GerbilSchemeTypeDecodeError {
     UnknownType {
         type_id: GerbilSchemeTypeId,
     },
+    ValueTypeMismatch {
+        type_id: GerbilSchemeTypeId,
+        expected: GerbilSchemeTypeId,
+    },
+    MissingRequiredField {
+        type_id: GerbilSchemeTypeId,
+        field_name: GerbilSchemeFieldName,
+    },
+    FieldTypeMismatch {
+        type_id: GerbilSchemeTypeId,
+        field_name: GerbilSchemeFieldName,
+        expected: GerbilSchemeTypeId,
+    },
     SchemaMismatch {
         type_id: GerbilSchemeTypeId,
         expected: Option<GerbilSchemeSchemaId>,
@@ -102,6 +115,32 @@ impl Display for GerbilSchemeTypeDecodeError {
                 formatter,
                 "Scheme typed value has unknown type_id {}",
                 type_id.as_str()
+            ),
+            Self::ValueTypeMismatch { type_id, expected } => write!(
+                formatter,
+                "Scheme typed value {} payload must be {}",
+                type_id.as_str(),
+                expected.as_str()
+            ),
+            Self::MissingRequiredField {
+                type_id,
+                field_name,
+            } => write!(
+                formatter,
+                "Scheme typed value {} is missing required field {}",
+                type_id.as_str(),
+                field_name.as_str()
+            ),
+            Self::FieldTypeMismatch {
+                type_id,
+                field_name,
+                expected,
+            } => write!(
+                formatter,
+                "Scheme typed value {} field {} must be {}",
+                type_id.as_str(),
+                field_name.as_str(),
+                expected.as_str()
             ),
             Self::SchemaMismatch {
                 type_id,

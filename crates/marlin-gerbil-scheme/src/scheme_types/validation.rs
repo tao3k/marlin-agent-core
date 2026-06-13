@@ -140,9 +140,85 @@ fn validate_typed_value_schema(
     Ok(())
 }
 
+pub(super) fn validate_typed_value_payload<'a>(
+    mut lookup: impl FnMut(&GerbilSchemeTypeId) -> Option<&'a GerbilSchemeTypeSpec>,
+    spec: &'a GerbilSchemeTypeSpec,
+    typed_value: &GerbilSchemeTypedValue,
+) -> Result<(), GerbilSchemeTypeDecodeError> {
+    validate_typed_value_payload_value(&mut lookup, spec, typed_value.value())
+}
+
+fn validate_typed_value_payload_value<'a>(
+    lookup: &mut impl FnMut(&GerbilSchemeTypeId) -> Option<&'a GerbilSchemeTypeSpec>,
+    spec: &GerbilSchemeTypeSpec,
+    value: &serde_json::Value,
+) -> Result<(), GerbilSchemeTypeDecodeError> {
+    if spec.fields.is_empty() {
+        return Ok(());
+    }
+
+    let object =
+        value
+            .as_object()
+            .ok_or_else(|| GerbilSchemeTypeDecodeError::ValueTypeMismatch {
+                type_id: spec.type_id.clone(),
+                expected: GerbilSchemeTypeId::new("object"),
+            })?;
+
+    for field in &spec.fields {
+        let Some(value) = object.get(field.name.as_str()) else {
+            if field.required {
+                return Err(GerbilSchemeTypeDecodeError::MissingRequiredField {
+                    type_id: spec.type_id.clone(),
+                    field_name: field.name.clone(),
+                });
+            }
+            continue;
+        };
+
+        if builtin_field_value_matches(field.type_id.as_str(), value) == Some(false) {
+            return Err(GerbilSchemeTypeDecodeError::FieldTypeMismatch {
+                type_id: spec.type_id.clone(),
+                field_name: field.name.clone(),
+                expected: field.type_id.clone(),
+            });
+        }
+
+        if !is_builtin_scheme_type(&field.type_id) {
+            let Some(nested_spec) = lookup(&field.type_id) else {
+                continue;
+            };
+            if !value.is_object() {
+                return Err(GerbilSchemeTypeDecodeError::FieldTypeMismatch {
+                    type_id: spec.type_id.clone(),
+                    field_name: field.name.clone(),
+                    expected: field.type_id.clone(),
+                });
+            }
+            validate_typed_value_payload_value(lookup, nested_spec, value)?;
+        }
+    }
+
+    Ok(())
+}
+
 fn is_builtin_scheme_type(type_id: &GerbilSchemeTypeId) -> bool {
     matches!(
         type_id.as_str(),
         "any" | "json" | "null" | "boolean" | "number" | "integer" | "string" | "array" | "object"
     )
+}
+
+fn builtin_field_value_matches(type_id: &str, value: &serde_json::Value) -> Option<bool> {
+    match type_id {
+        "any" | "json" => Some(true),
+        "null" => Some(value.is_null()),
+        "boolean" => Some(value.is_boolean()),
+        "number" => Some(value.is_number()),
+        "integer" => Some(value.as_i64().is_some() || value.as_u64().is_some()),
+        "string" => Some(value.is_string()),
+        "array" => Some(value.is_array()),
+        "object" => Some(value.is_object()),
+        _ => None,
+    }
 }
