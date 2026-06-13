@@ -9,7 +9,8 @@ use marlin_agent_test_support::{
     custom_hook_policy_receipt_fixture, custom_sub_agent_start_hook_summary_fixture,
     hook_dispatch_replay_evidence, runtime_stability_budget_evidence,
     scripted_stream_gate_evidence, sub_agent_hook_dispatch_selection_fixture,
-    sub_agent_memory_denied_fixture, sub_agent_memory_session_visibility_evidence,
+    sub_agent_memory_denied_fixture, sub_agent_memory_session_replay_evidence,
+    sub_agent_memory_session_visibility_evidence,
 };
 
 use super::support::EventfulExecutor;
@@ -28,6 +29,8 @@ async fn harness_execution_report_composes_no_llm_runtime_evidence_chain() {
     );
     let visibility_evidence =
         sub_agent_memory_session_visibility_evidence(&child_session, &isolation_receipt);
+    let replay_evidence =
+        sub_agent_memory_session_replay_evidence(&child_session, &isolation_receipt);
 
     let hook_summary = custom_sub_agent_start_hook_summary_fixture();
     let hook_selection = sub_agent_hook_dispatch_selection_fixture();
@@ -60,6 +63,7 @@ async fn harness_execution_report_composes_no_llm_runtime_evidence_chain() {
         TokioGraphLoopKernel::new("run", "graph").with_executor("eventful", EventfulExecutor);
     let mut harness = HarnessRuntime::new(16);
     harness.record_evidence(visibility_evidence);
+    harness.record_evidence(replay_evidence);
     harness.record_evidence(hook_evidence);
     harness.record_evidence(stream_evidence);
 
@@ -107,7 +111,7 @@ async fn harness_execution_report_composes_no_llm_runtime_evidence_chain() {
             .iter()
             .filter(|evidence| evidence.kind == LoopEvidenceKind::Visibility)
             .count(),
-        1
+        2
     );
     assert_eq!(
         report
@@ -126,6 +130,14 @@ async fn harness_execution_report_composes_no_llm_runtime_evidence_chain() {
         1
     );
     assert!(detail_contains(&report.evidence, "denied_memory=true"));
+    assert!(detail_contains(
+        &report.evidence,
+        "denied_namespaces=[Memory]"
+    ));
+    assert!(detail_contains(
+        &report.evidence,
+        "visibility_contracted=true"
+    ));
     assert!(detail_contains(&report.evidence, "policy_decisions=2"));
     assert!(detail_contains(&report.evidence, "live_llm=false"));
     assert!(detail_contains(&report.evidence, "custom_event_count=1"));
