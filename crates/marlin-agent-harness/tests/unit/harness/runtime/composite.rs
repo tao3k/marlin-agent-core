@@ -3,14 +3,10 @@ use std::time::Duration;
 use marlin_agent_harness::{AgentHarness, HarnessGraphBuilder, HarnessRuntime};
 use marlin_agent_kernel::{GraphLoopExecutionRequest, TokioGraphLoopKernel};
 use marlin_agent_protocol::{AgentScenario, GraphLoopExecutionStatus, LoopEvidenceKind};
-use marlin_agent_sessions::SessionKind;
 use marlin_agent_test_support::{
     RuntimeStabilityEvidenceInput, ScriptedChunkGate, ScriptedModelStream,
-    custom_hook_policy_receipt_fixture, custom_sub_agent_start_hook_summary_fixture,
-    hook_dispatch_replay_evidence, runtime_stability_budget_evidence,
-    scripted_stream_gate_evidence, sub_agent_hook_dispatch_selection_fixture,
-    sub_agent_memory_denied_fixture, sub_agent_memory_session_replay_evidence,
-    sub_agent_memory_session_visibility_evidence,
+    no_llm_runtime_replay_artifact_fixture, runtime_stability_budget_evidence,
+    scripted_stream_gate_evidence,
 };
 
 use super::support::EventfulExecutor;
@@ -21,21 +17,7 @@ async fn harness_execution_report_composes_no_llm_runtime_evidence_chain() {
     const EVENT_BUDGET: usize = 5;
     const SPAN_BUDGET: usize = 32;
 
-    let memory_fixture = sub_agent_memory_denied_fixture();
-    let (child_session, isolation_receipt) = memory_fixture.parent_session().child_session(
-        SessionKind::SubAgent,
-        memory_fixture.config().child_session_id(),
-        memory_fixture.requested_visibility(),
-    );
-    let visibility_evidence =
-        sub_agent_memory_session_visibility_evidence(&child_session, &isolation_receipt);
-    let replay_evidence =
-        sub_agent_memory_session_replay_evidence(&child_session, &isolation_receipt);
-
-    let hook_summary = custom_sub_agent_start_hook_summary_fixture();
-    let hook_selection = sub_agent_hook_dispatch_selection_fixture();
-    let hook_policy = custom_hook_policy_receipt_fixture();
-    let hook_evidence = hook_dispatch_replay_evidence(&hook_summary, &hook_selection, &hook_policy);
+    let replay_artifact = no_llm_runtime_replay_artifact_fixture();
 
     let gate = ScriptedChunkGate::closed();
     let collection = tokio::spawn(
@@ -51,9 +33,9 @@ async fn harness_execution_report_composes_no_llm_runtime_evidence_chain() {
         scripted_stream_gate_evidence("composite-review-stream", &stream_receipt, &gate);
 
     let execution_scenario = AgentScenario::new("composite-runtime-evidence");
-    let validation_scenario = AgentScenario::new("composite-runtime-evidence")
-        .expecting_evidence(LoopEvidenceKind::Visibility)
-        .expecting_evidence(LoopEvidenceKind::Runtime)
+    let validation_scenario = replay_artifact
+        .scenario()
+        .clone()
         .expecting_evidence(LoopEvidenceKind::Stability);
     let graph = HarnessGraphBuilder::new("graph")
         .node("node-1", "eventful")
@@ -62,9 +44,9 @@ async fn harness_execution_report_composes_no_llm_runtime_evidence_chain() {
     let kernel =
         TokioGraphLoopKernel::new("run", "graph").with_executor("eventful", EventfulExecutor);
     let mut harness = HarnessRuntime::new(16);
-    harness.record_evidence(visibility_evidence);
-    harness.record_evidence(replay_evidence);
-    harness.record_evidence(hook_evidence);
+    for evidence in replay_artifact.replay_evidence().iter().cloned() {
+        harness.record_evidence(evidence);
+    }
     harness.record_evidence(stream_evidence);
 
     let mut report = harness
@@ -111,7 +93,7 @@ async fn harness_execution_report_composes_no_llm_runtime_evidence_chain() {
             .iter()
             .filter(|evidence| evidence.kind == LoopEvidenceKind::Visibility)
             .count(),
-        2
+        3
     );
     assert_eq!(
         report
