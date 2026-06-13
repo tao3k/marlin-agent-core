@@ -44,6 +44,15 @@ fn hook_dispatch_replay_fixture_projects_runtime_evidence() {
     );
     assert!(detail.contains("selected_count=1"));
     assert!(detail.contains("candidate_count=2"));
+    assert!(detail.contains("matcher_strategy=AhoCorasickEventIndex"));
+    assert!(detail.contains("matched_token_count=1"));
     assert!(detail.contains("policy_decisions=2"));
+    assert!(detail.contains("policy_mode=EnforceTrusted"));
+    assert!(detail.contains("policy_extension_kind=GerbilScheme"));
+    assert!(detail.contains("allowed_decisions=1"));
     assert!(detail.contains("rejected_decisions=1"));
+    assert!(detail.contains("summary_agent_scope=SubAgent"));
+    assert!(detail.contains("selection_agent_scope=SubAgent"));
+    assert!(detail.contains("policy_agent_scope=CustomAgent"));
+    assert!(detail.contains("live_llm=false"));
 }

@@ -162,15 +162,21 @@ pub fn hook_dispatch_replay_evidence(
         .filter(|decision| decision.decision == HookPolicyDecision::Rejected)
         .count();
     let detail = format!(
-        "hook_id={} event={:?} run_status={:?} selected_count={} candidate_count={} policy_decisions={} rejected_decisions={} summary_agent_scope={:?} policy_agent_scope={:?}",
+        "hook_id={} event={:?} run_status={:?} selected_count={} candidate_count={} matcher_strategy={:?} matched_token_count={} policy_decisions={} policy_mode={:?} policy_extension_kind={:?} allowed_decisions={} rejected_decisions={} summary_agent_scope={:?} selection_agent_scope={:?} policy_agent_scope={:?} live_llm=false",
         summary.id.as_str(),
         summary.event_name,
         summary.status,
         selection.selected_count,
         selection.candidate_count,
+        selection.matcher_strategy,
+        selection.matched_tokens.len(),
         policy.decisions.len(),
+        policy.mode,
+        policy.extension.kind,
+        policy.allowed_count,
         rejected_decisions,
         summary.agent_scope,
+        selection.invocation_agent_scope,
         policy.invocation_agent_scope,
     );
 

@@ -8,7 +8,8 @@ use marlin_agent_test_support::{
     SubAgentMemoryExpectation, assert_deterministic_routed_sub_agent_session,
     assert_deterministic_sub_agent_route_decision, assert_sub_agent_memory_session_fixture,
     deterministic_reviewer_sub_agent_scenario_fixture, sub_agent_memory_allowed_fixture,
-    sub_agent_memory_denied_fixture, sub_agent_memory_session_visibility_evidence,
+    sub_agent_memory_denied_fixture, sub_agent_memory_session_replay_evidence,
+    sub_agent_memory_session_visibility_evidence,
 };
 
 #[test]
@@ -57,6 +58,66 @@ fn harness_consumes_sub_agent_memory_session_visibility_without_live_llm() {
                 assert!(detail.contains("denied_memory=true"));
                 assert!(detail.contains("denied_namespace_count=1"));
                 assert!(detail.contains("max_history_items=Some(32)"));
+                assert!(detail.contains("history_limit_applied=false"));
+            }
+        }
+    }
+}
+
+#[test]
+fn harness_consumes_sub_agent_memory_session_replay_without_live_llm() {
+    for fixture in [
+        sub_agent_memory_allowed_fixture(),
+        sub_agent_memory_denied_fixture(),
+    ] {
+        let (child_session, isolation_receipt) = fixture.parent_session().child_session(
+            SessionKind::SubAgent,
+            fixture.config().child_session_id(),
+            fixture.requested_visibility(),
+        );
+        assert_sub_agent_memory_session_fixture(
+            &fixture,
+            &child_session,
+            fixture.config(),
+            &isolation_receipt,
+        );
+
+        let scenario = AgentScenario::new("sub-agent-memory-session-replay")
+            .expecting_evidence(LoopEvidenceKind::Visibility);
+        let mut harness = HarnessRuntime::new(8);
+        harness.record_evidence(sub_agent_memory_session_replay_evidence(
+            &child_session,
+            &isolation_receipt,
+        ));
+
+        let report = AgentHarness::evaluate(&scenario, &[], harness.evidence());
+        let detail = harness.evidence()[0]
+            .detail
+            .as_deref()
+            .expect("sub-agent memory replay detail");
+
+        assert!(report.is_success());
+        assert!(detail.contains("parent_session_id=session/root"));
+        assert!(detail.contains("root_session_id=session/root"));
+        assert!(detail.contains("requested_namespaces=[System,User,Workspace,Memory]"));
+        assert!(detail.contains("visibility_contracted=true"));
+        assert!(detail.contains("live_llm=false"));
+
+        match fixture.expectation() {
+            SubAgentMemoryExpectation::Granted => {
+                assert!(detail.contains("session_id=reviewer"));
+                assert!(detail.contains("granted_namespaces=[System,User,Workspace,Memory]"));
+                assert!(detail.contains("denied_namespaces=[]"));
+                assert!(detail.contains("requested_history_limit=Some(32)"));
+                assert!(detail.contains("granted_history_limit=Some(16)"));
+                assert!(detail.contains("history_limit_applied=true"));
+            }
+            SubAgentMemoryExpectation::Denied => {
+                assert!(detail.contains("session_id=auditor"));
+                assert!(detail.contains("granted_namespaces=[System,User,Workspace]"));
+                assert!(detail.contains("denied_namespaces=[Memory]"));
+                assert!(detail.contains("requested_history_limit=Some(32)"));
+                assert!(detail.contains("granted_history_limit=Some(32)"));
                 assert!(detail.contains("history_limit_applied=false"));
             }
         }

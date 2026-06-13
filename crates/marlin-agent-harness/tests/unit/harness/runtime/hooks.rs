@@ -56,6 +56,11 @@ async fn static_hook_runtime_replay_receipts_feed_harness_runtime_evidence() {
 
     assert!(report.is_success());
     assert!(detail.contains("hook_id=custom-sub-agent-start"));
+    assert!(detail.contains("matcher_strategy=AhoCorasickEventIndex"));
     assert!(detail.contains("selected_count=1"));
+    assert!(detail.contains("selection_agent_scope=SubAgent"));
+    assert!(detail.contains("policy_mode=EnforceTrusted"));
+    assert!(detail.contains("policy_extension_kind=GerbilScheme"));
     assert!(detail.contains("rejected_decisions=1"));
+    assert!(detail.contains("live_llm=false"));
 }
