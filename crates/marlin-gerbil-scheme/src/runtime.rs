@@ -84,6 +84,11 @@ pub const GERBIL_MARLIN_DECK_RUNTIME_PATH: &str = "src/marlin/deck-runtime.ss";
 /// Source text for the Deck runtime capability bridge.
 pub const GERBIL_MARLIN_DECK_RUNTIME_SOURCE: &str =
     include_str!("../gerbil/src/marlin/deck-runtime.ss");
+/// Library module that hosts complex Deck runtime strategy policies.
+pub const GERBIL_MARLIN_DECK_RUNTIME_STRATEGY_PATH: &str = "src/marlin/deck-runtime-strategy.ss";
+/// Source text for complex Deck runtime strategy policies.
+pub const GERBIL_MARLIN_DECK_RUNTIME_STRATEGY_SOURCE: &str =
+    include_str!("../gerbil/src/marlin/deck-runtime-strategy.ss");
 /// Native C ABI source for the Deck runtime selector.
 pub const GERBIL_MARLIN_DECK_RUNTIME_NATIVE_PATH: &str = "src/marlin/deck-runtime-native.ss";
 /// Source text for the native C ABI Deck runtime selector.
@@ -149,6 +154,10 @@ pub const GERBIL_RUNTIME_ASSETS: &[GerbilRuntimeAsset] = &[
     GerbilRuntimeAsset {
         path: GERBIL_MARLIN_DECK_RUNTIME_PATH,
         source: GERBIL_MARLIN_DECK_RUNTIME_SOURCE,
+    },
+    GerbilRuntimeAsset {
+        path: GERBIL_MARLIN_DECK_RUNTIME_STRATEGY_PATH,
+        source: GERBIL_MARLIN_DECK_RUNTIME_STRATEGY_SOURCE,
     },
     GerbilRuntimeAsset {
         path: GERBIL_MARLIN_DECK_RUNTIME_NATIVE_PATH,

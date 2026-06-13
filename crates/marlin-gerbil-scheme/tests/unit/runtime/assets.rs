@@ -8,6 +8,7 @@ use marlin_gerbil_scheme::{
     GERBIL_MARLIN_DECK_RUNTIME_NATIVE_PATH, GERBIL_MARLIN_DECK_RUNTIME_NATIVE_SOURCE,
     GERBIL_MARLIN_DECK_RUNTIME_PATH, GERBIL_MARLIN_DECK_RUNTIME_POLICY_PATH,
     GERBIL_MARLIN_DECK_RUNTIME_POLICY_SOURCE, GERBIL_MARLIN_DECK_RUNTIME_SOURCE,
+    GERBIL_MARLIN_DECK_RUNTIME_STRATEGY_PATH, GERBIL_MARLIN_DECK_RUNTIME_STRATEGY_SOURCE,
     GERBIL_MARLIN_HOOK_POLICY_PATH, GERBIL_MARLIN_PARSER_PATH, GERBIL_MARLIN_PROTOCOL_PATH,
     GERBIL_MARLIN_REQUEST_PATH, GERBIL_MARLIN_REQUEST_SOURCE, GERBIL_PACKAGE_MANIFEST_PATH,
     GERBIL_PACKAGE_MANIFEST_SOURCE, GERBIL_PACKAGE_SOURCE_PATH, GERBIL_POO_DEPENDENCY,
@@ -44,6 +45,7 @@ fn gerbil_runtime_assets_expose_loadpath_contract() {
     assert!(GERBIL_BUILD_SOURCE.contains("defmarlin-runtime-build-script"));
     assert!(GERBIL_BUILD_SOURCE.contains("src/marlin/deck-runtime-native"));
     assert!(GERBIL_BUILD_SOURCE.contains("src/marlin/deck-runtime"));
+    assert!(GERBIL_BUILD_SOURCE.contains("src/marlin/deck-runtime-strategy"));
     assert!(GERBIL_BUILD_SOURCE.contains("src/marlin/deck-runtime-policy"));
     assert!(GERBIL_DECK_RUNTIME_POLICY_ADAPTER_SOURCE.contains(":marlin/deck-runtime-policy"));
     assert!(GERBIL_MARLIN_REQUEST_SOURCE.contains("gerbil-compile-request-contract-facts"));
@@ -53,6 +55,7 @@ fn gerbil_runtime_assets_expose_loadpath_contract() {
     );
     assert!(GERBIL_MARLIN_DECK_RUNTIME_SOURCE.contains("poo-object-system"));
     assert!(GERBIL_MARLIN_DECK_RUNTIME_SOURCE.contains("scheme-policy-runtime"));
+    assert!(GERBIL_MARLIN_DECK_RUNTIME_SOURCE.contains("scheme-complex-strategy"));
     assert!(GERBIL_MARLIN_DECK_RUNTIME_SOURCE.contains("model-route-policy"));
     assert!(
         GERBIL_MARLIN_DECK_RUNTIME_SOURCE.contains("make-marlin-deck-runtime-model-route-policy")
@@ -67,6 +70,14 @@ fn gerbil_runtime_assets_expose_loadpath_contract() {
     assert!(
         GERBIL_MARLIN_DECK_RUNTIME_SOURCE
             .contains("display-marlin-deck-runtime-model-route-selection-json")
+    );
+    assert!(
+        GERBIL_MARLIN_DECK_RUNTIME_STRATEGY_SOURCE.contains("defmarlin-deck-runtime-strategy-rule")
+    );
+    assert!(GERBIL_MARLIN_DECK_RUNTIME_STRATEGY_SOURCE.contains("dynamic-hook-action"));
+    assert!(
+        GERBIL_MARLIN_DECK_RUNTIME_STRATEGY_SOURCE
+            .contains("display-marlin-deck-runtime-strategy-selection-json")
     );
     assert!(GERBIL_MARLIN_DECK_RUNTIME_NATIVE_SOURCE.contains("c-define"));
     assert!(GERBIL_MARLIN_DECK_RUNTIME_NATIVE_SOURCE.contains("begin-ffi"));
@@ -93,6 +104,7 @@ fn gerbil_runtime_assets_expose_loadpath_contract() {
             GERBIL_SMOKE_PATH,
             GERBIL_MARLIN_ADAPTER_PATH,
             GERBIL_MARLIN_DECK_RUNTIME_PATH,
+            GERBIL_MARLIN_DECK_RUNTIME_STRATEGY_PATH,
             GERBIL_MARLIN_DECK_RUNTIME_NATIVE_PATH,
             GERBIL_MARLIN_DECK_RUNTIME_POLICY_PATH,
             GERBIL_MARLIN_HOOK_POLICY_PATH,
@@ -126,6 +138,11 @@ fn gerbil_runtime_assets_write_loadpath_tree() {
     assert!(root.path().join(GERBIL_MARLIN_DECK_RUNTIME_PATH).is_file());
     assert!(
         root.path()
+            .join(GERBIL_MARLIN_DECK_RUNTIME_STRATEGY_PATH)
+            .is_file()
+    );
+    assert!(
+        root.path()
             .join(GERBIL_MARLIN_DECK_RUNTIME_NATIVE_PATH)
             .is_file()
     );
@@ -148,6 +165,11 @@ fn gerbil_runtime_assets_write_loadpath_tree() {
         fs::read_to_string(root.path().join(GERBIL_MARLIN_DECK_RUNTIME_PATH))
             .expect("read deck runtime")
             .contains("display-marlin-deck-runtime-capability-json")
+    );
+    assert!(
+        fs::read_to_string(root.path().join(GERBIL_MARLIN_DECK_RUNTIME_STRATEGY_PATH))
+            .expect("read deck runtime strategy")
+            .contains("display-marlin-deck-runtime-strategy-selection-json")
     );
     assert!(
         fs::read_to_string(root.path().join(GERBIL_MARLIN_PROTOCOL_PATH))

@@ -14,6 +14,7 @@
        "src/marlin/parser"
        "src/marlin/adapter"
        "src/marlin/deck-runtime"
+       "src/marlin/deck-runtime-strategy"
        "src/marlin/deck-runtime-policy"
        "src/marlin/hook-policy"
        extra-target ...))))

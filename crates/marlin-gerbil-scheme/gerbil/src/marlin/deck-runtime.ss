@@ -59,6 +59,8 @@ package: marlin
     "runtime-assets"
     "hook-policy"
     "scheme-policy-runtime"
+    "scheme-complex-strategy"
+    "dynamic-hook-policy"
     "model-route-policy"
     "poo-object-system"))
 
@@ -74,6 +76,12 @@ package: marlin
     "agent-scopes"
     "context-mode"
     "isolation-mode"
+    "session"
+    "agent-lineage"
+    "workspace-state"
+    "org-memory"
+    "hook-action"
+    "customer-agent-class"
     "scheme-selector"))
 
 (def (marlin-deck-runtime-object-model-slot-names)
