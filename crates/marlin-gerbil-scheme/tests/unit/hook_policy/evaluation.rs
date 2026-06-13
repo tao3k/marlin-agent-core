@@ -1,6 +1,7 @@
 use marlin_agent_protocol::{
-    HookAgentScope, HookDispatchPolicyReceipt, HookDispatchPolicyReceiptInput, HookEventName,
-    HookPolicyDecision, HookPolicyExtension, HookPolicyExtensionKind, HookPolicyMode,
+    HookAgentScope, HookDecisionContext, HookDispatchPolicyReceipt, HookDispatchPolicyReceiptInput,
+    HookEventName, HookPolicyDecision, HookPolicyExtension, HookPolicyExtensionKind,
+    HookPolicyMode,
 };
 use marlin_gerbil_scheme::{
     GerbilHookPolicyEvaluationDecodeInput, GerbilHookPolicyEvaluationError,
@@ -19,6 +20,7 @@ fn gerbil_hook_policy_evaluation_decodes_typed_receipt() {
             policy_receipt: HookDispatchPolicyReceipt::new(HookDispatchPolicyReceiptInput {
                 event_name: HookEventName::PreToolUse,
                 invocation_agent_scope: HookAgentScope::CustomerAgent,
+                decision_context: HookDecisionContext::default(),
                 mode: HookPolicyMode::ObserveOnly,
                 extension: extension.clone(),
                 actions: Vec::new(),
@@ -58,6 +60,7 @@ fn gerbil_hook_policy_evaluation_rejects_invalid_json() {
             policy_receipt: HookDispatchPolicyReceipt::new(HookDispatchPolicyReceiptInput {
                 event_name: HookEventName::PreToolUse,
                 invocation_agent_scope: HookAgentScope::SubAgent,
+                decision_context: HookDecisionContext::default(),
                 mode: HookPolicyMode::ObserveOnly,
                 extension,
                 actions: Vec::new(),
@@ -84,6 +87,7 @@ fn gerbil_hook_policy_evaluation_reuses_invocation_validation() {
             policy_receipt: HookDispatchPolicyReceipt::new(HookDispatchPolicyReceiptInput {
                 event_name: HookEventName::PreToolUse,
                 invocation_agent_scope: HookAgentScope::SubAgent,
+                decision_context: HookDecisionContext::default(),
                 mode: HookPolicyMode::ObserveOnly,
                 extension: HookPolicyExtension::none(),
                 actions: Vec::new(),

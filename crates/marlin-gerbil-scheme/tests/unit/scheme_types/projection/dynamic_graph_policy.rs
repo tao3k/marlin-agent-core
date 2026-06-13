@@ -1,45 +1,45 @@
 use marlin_gerbil_scheme::{
     GerbilSchemeFieldName, GerbilSchemeSchemaId, GerbilSchemeTypeDecodeError,
     GerbilSchemeTypeFieldSpec, GerbilSchemeTypeId, GerbilSchemeTypeManifest,
-    GerbilSchemeTypeRegistry, GerbilSchemeTypeSpec, GerbilSchemeTypedValue,
-    decode_gerbil_scheme_type_manifest,
+    GerbilSchemeTypeRegistry, GerbilSchemeTypeSpec, GerbilSchemeTypedValue, GerbilSchemeValue,
+    scheme_type_fixtures::decode_gerbil_scheme_type_manifest_fixture,
 };
-use serde_json::{Value, json};
 
 #[test]
 fn downstream_scheme_graph_policy_projects_without_rust_static_binding() {
     let registry = downstream_graph_policy_registry();
     let envelope = GerbilSchemeTypedValue::new(
         downstream_graph_policy_type_id(),
-        json!({
-            "schema_id": "downstream.agent.graph-policy.experimental.v1",
-            "policy": {
-                "strategy": "beam-search-v2",
-                "ranker": "pure-gerbil-policy",
-                "max_candidates": 8
-            },
-            "native_abi": {
-                "abi_id": "downstream.agent.graph-policy.native",
-                "version": 3,
-                "required_symbols": [
-                    "downstream_graph_policy_rank",
-                    "downstream_graph_policy_select"
-                ]
-            }
-        }),
+        dynamic_graph_policy_payload(native_abi_payload(
+            3.into(),
+            GerbilSchemeValue::vector([
+                "downstream_graph_policy_rank".into(),
+                "downstream_graph_policy_select".into(),
+            ]),
+        )),
     )
     .with_schema_id(downstream_graph_policy_schema_id());
 
-    let projection: Value = registry
+    let projection = registry
         .decode_dynamic_typed_value(&envelope)
         .expect("dynamic downstream graph policy should project without a Rust policy type");
 
     assert_eq!(registry.validation_receipt().type_count, 2);
     assert_eq!(registry.validation_receipt().field_count, 6);
-    assert_eq!(projection["policy"]["strategy"], "beam-search-v2");
     assert_eq!(
-        projection["native_abi"]["required_symbols"][1],
-        "downstream_graph_policy_select"
+        projection
+            .get("policy")
+            .and_then(|policy| policy.get("strategy"))
+            .and_then(GerbilSchemeValue::as_text),
+        Some("beam-search-v2")
+    );
+    assert_eq!(
+        projection
+            .get("native_abi")
+            .and_then(|native_abi| native_abi.get("required_symbols"))
+            .and_then(|symbols| symbols.get_index(1))
+            .and_then(GerbilSchemeValue::as_text),
+        Some("downstream_graph_policy_select")
     );
 }
 
@@ -48,13 +48,19 @@ fn downstream_scheme_graph_policy_rejects_missing_required_field_without_rust_po
     let registry = downstream_graph_policy_registry();
     let envelope = GerbilSchemeTypedValue::new(
         downstream_graph_policy_type_id(),
-        json!({
-            "schema_id": "downstream.agent.graph-policy.experimental.v1",
-            "policy": {
-                "strategy": "beam-search-v2",
-                "ranker": "pure-gerbil-policy"
-            }
-        }),
+        GerbilSchemeValue::record([
+            (
+                "schema_id",
+                "downstream.agent.graph-policy.experimental.v1".into(),
+            ),
+            (
+                "policy",
+                GerbilSchemeValue::record([
+                    ("strategy", "beam-search-v2".into()),
+                    ("ranker", "pure-gerbil-policy".into()),
+                ]),
+            ),
+        ]),
     )
     .with_schema_id(downstream_graph_policy_schema_id());
 
@@ -77,14 +83,20 @@ fn downstream_scheme_graph_policy_rejects_builtin_field_type_mismatch_without_ru
     let registry = downstream_graph_policy_registry();
     let envelope = GerbilSchemeTypedValue::new(
         downstream_graph_policy_type_id(),
-        json!({
-            "schema_id": "downstream.agent.graph-policy.experimental.v1",
-            "policy": {
-                "strategy": "beam-search-v2",
-                "ranker": "pure-gerbil-policy"
-            },
-            "native_abi": "not-an-abi-object"
-        }),
+        GerbilSchemeValue::record([
+            (
+                "schema_id",
+                "downstream.agent.graph-policy.experimental.v1".into(),
+            ),
+            (
+                "policy",
+                GerbilSchemeValue::record([
+                    ("strategy", "beam-search-v2".into()),
+                    ("ranker", "pure-gerbil-policy".into()),
+                ]),
+            ),
+            ("native_abi", "not-an-abi-object".into()),
+        ]),
     )
     .with_schema_id(downstream_graph_policy_schema_id());
 
@@ -109,21 +121,13 @@ fn downstream_scheme_graph_policy_rejects_nested_custom_type_field_mismatch_with
     let registry = downstream_graph_policy_registry();
     let envelope = GerbilSchemeTypedValue::new(
         downstream_graph_policy_type_id(),
-        json!({
-            "schema_id": "downstream.agent.graph-policy.experimental.v1",
-            "policy": {
-                "strategy": "beam-search-v2",
-                "ranker": "pure-gerbil-policy"
-            },
-            "native_abi": {
-                "abi_id": "downstream.agent.graph-policy.native",
-                "version": "3",
-                "required_symbols": [
-                    "downstream_graph_policy_rank",
-                    "downstream_graph_policy_select"
-                ]
-            }
-        }),
+        dynamic_graph_policy_payload(native_abi_payload(
+            "3".into(),
+            GerbilSchemeValue::vector([
+                "downstream_graph_policy_rank".into(),
+                "downstream_graph_policy_select".into(),
+            ]),
+        )),
     )
     .with_schema_id(downstream_graph_policy_schema_id());
 
@@ -147,21 +151,10 @@ fn downstream_scheme_graph_policy_rejects_array_element_type_mismatch_without_ru
     let registry = downstream_graph_policy_registry();
     let envelope = GerbilSchemeTypedValue::new(
         downstream_graph_policy_type_id(),
-        json!({
-            "schema_id": "downstream.agent.graph-policy.experimental.v1",
-            "policy": {
-                "strategy": "beam-search-v2",
-                "ranker": "pure-gerbil-policy"
-            },
-            "native_abi": {
-                "abi_id": "downstream.agent.graph-policy.native",
-                "version": 3,
-                "required_symbols": [
-                    "downstream_graph_policy_rank",
-                    42
-                ]
-            }
-        }),
+        dynamic_graph_policy_payload(native_abi_payload(
+            3.into(),
+            GerbilSchemeValue::vector(["downstream_graph_policy_rank".into(), 42.into()]),
+        )),
     )
     .with_schema_id(downstream_graph_policy_schema_id());
 
@@ -186,15 +179,25 @@ fn downstream_scheme_graph_policy_rejects_recursive_custom_type_without_rust_pol
         .expect("recursive manifest remains structurally valid");
     let envelope = GerbilSchemeTypedValue::new(
         downstream_graph_policy_type_id(),
-        json!({
-            "schema_id": "downstream.agent.graph-policy.experimental.v1",
-            "native_abi": {
-                "parent": {
-                    "schema_id": "downstream.agent.graph-policy.experimental.v1",
-                    "native_abi": {}
-                }
-            }
-        }),
+        GerbilSchemeValue::record([
+            (
+                "schema_id",
+                "downstream.agent.graph-policy.experimental.v1".into(),
+            ),
+            (
+                "native_abi",
+                GerbilSchemeValue::record([(
+                    "parent",
+                    GerbilSchemeValue::record([
+                        (
+                            "schema_id",
+                            "downstream.agent.graph-policy.experimental.v1".into(),
+                        ),
+                        ("native_abi", GerbilSchemeValue::empty_record()),
+                    ]),
+                )]),
+            ),
+        ]),
     )
     .with_schema_id(downstream_graph_policy_schema_id());
 
@@ -242,7 +245,7 @@ fn downstream_graph_policy_registry() -> GerbilSchemeTypeRegistry {
 }
 
 fn downstream_graph_policy_manifest() -> GerbilSchemeTypeManifest {
-    decode_gerbil_scheme_type_manifest(
+    decode_gerbil_scheme_type_manifest_fixture(
         r#"{
             "schema_id": "marlin.scheme-types.manifest.v1",
             "types": [
@@ -292,7 +295,7 @@ fn downstream_graph_policy_schema_id() -> GerbilSchemeSchemaId {
 }
 
 fn recursive_graph_policy_manifest() -> GerbilSchemeTypeManifest {
-    decode_gerbil_scheme_type_manifest(
+    decode_gerbil_scheme_type_manifest_fixture(
         r#"{
             "schema_id": "marlin.scheme-types.manifest.v1",
             "types": [
@@ -351,10 +354,36 @@ fn deep_graph_policy_manifest(depth: usize) -> GerbilSchemeTypeManifest {
     }
 }
 
-fn deep_graph_policy_value(depth: usize) -> Value {
-    (1..depth).rev().fold(json!({}), |value, _| {
-        json!({
-            "child": value
+fn dynamic_graph_policy_payload(native_abi: GerbilSchemeValue) -> GerbilSchemeValue {
+    GerbilSchemeValue::record([
+        (
+            "schema_id",
+            "downstream.agent.graph-policy.experimental.v1".into(),
+        ),
+        (
+            "policy",
+            GerbilSchemeValue::record([
+                ("strategy", "beam-search-v2".into()),
+                ("ranker", "pure-gerbil-policy".into()),
+                ("max_candidates", 8.into()),
+            ]),
+        ),
+        ("native_abi", native_abi),
+    ])
+}
+
+fn native_abi_payload(version: GerbilSchemeValue, symbols: GerbilSchemeValue) -> GerbilSchemeValue {
+    GerbilSchemeValue::record([
+        ("abi_id", "downstream.agent.graph-policy.native".into()),
+        ("version", version),
+        ("required_symbols", symbols),
+    ])
+}
+
+fn deep_graph_policy_value(depth: usize) -> GerbilSchemeValue {
+    (1..depth)
+        .rev()
+        .fold(GerbilSchemeValue::empty_record(), |value, _| {
+            GerbilSchemeValue::record([("child", value)])
         })
-    })
 }

@@ -92,6 +92,60 @@ impl GraphNativeAbiRequirement {
     }
 }
 
+/// Runtime status for native ABI readiness checks.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum GraphNativeAbiReadinessStatus {
+    Ready,
+    MissingSymbols,
+}
+
+/// Receipt proving native ABI symbol coverage at a runtime or CI boundary.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct GraphNativeAbiReadinessReceipt {
+    pub abi_id: GraphNativeAbiId,
+    pub version: u32,
+    pub required_symbol_count: usize,
+    pub available_symbol_count: usize,
+    pub matched_symbol_count: usize,
+    pub missing_symbols: Vec<GraphNativeSymbol>,
+    pub status: GraphNativeAbiReadinessStatus,
+}
+
+impl GraphNativeAbiReadinessReceipt {
+    pub fn evaluate<I, S>(requirement: &GraphNativeAbiRequirement, available_symbols: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<GraphNativeSymbol>,
+    {
+        let available_symbols = available_symbols
+            .into_iter()
+            .map(Into::into)
+            .collect::<BTreeSet<_>>();
+        let missing_symbols = requirement
+            .required_symbols
+            .iter()
+            .filter(|symbol| !available_symbols.contains(*symbol))
+            .cloned()
+            .collect::<Vec<_>>();
+        let matched_symbol_count = requirement.required_symbols.len() - missing_symbols.len();
+        let status = if missing_symbols.is_empty() {
+            GraphNativeAbiReadinessStatus::Ready
+        } else {
+            GraphNativeAbiReadinessStatus::MissingSymbols
+        };
+
+        Self {
+            abi_id: requirement.abi_id.clone(),
+            version: requirement.version,
+            required_symbol_count: requirement.required_symbols.len(),
+            available_symbol_count: available_symbols.len(),
+            matched_symbol_count,
+            missing_symbols,
+            status,
+        }
+    }
+}
+
 pub(super) fn validate_graph_native_abi_requirement(
     native_abi: &GraphNativeAbiRequirement,
     diagnostics: &mut Vec<String>,

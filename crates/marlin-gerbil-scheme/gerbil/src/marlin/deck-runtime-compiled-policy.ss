@@ -9,7 +9,8 @@ package: marlin
         marlin-deck-runtime-compiled-policy-capability-names
         defmarlin-deck-runtime-compiled-route-selector
         defmarlin-deck-runtime-cached-compiled-route-selector
-        display-marlin-deck-runtime-compiled-selection-json)
+        defmarlin-deck-runtime-cached-compiled-route-index-selector
+        defmarlin-deck-runtime-direct-compiled-route-index-selector)
 
 (def marlin-deck-runtime-compiled-policy-kind
   "marlin-deck-runtime.compiled-policy.v1")
@@ -19,19 +20,11 @@ package: marlin
     "ahead-of-time-policy-shape"
     "direct-branch-dispatch"
     "cached-policy-template"
-    "rust-json-compatible-selection"))
+    "policy-index-selector"
+    "direct-policy-index-selector"))
 
 (def (compiled-policy-string-prefix? prefix value)
-  (let ((prefix-length (string-length prefix))
-        (value-length (string-length value)))
-    (if (> prefix-length value-length)
-      #f
-      (let loop ((index 0))
-        (cond
-          ((= index prefix-length) #t)
-          ((char=? (string-ref prefix index) (string-ref value index))
-           (loop (+ index 1)))
-          (else #f))))))
+  (string-prefix? prefix value))
 
 (def (compiled-policy-any-prefix? prefixes value)
   (let loop ((remaining prefixes))
@@ -102,56 +95,43 @@ package: marlin
               (caddr (car remaining)))
              (else (loop (cdr remaining))))))))))
 
-(def (display-compiled-policy-json-string value)
-  (display "\"")
-  (let ((value-length (string-length value)))
-    (let loop ((index 0))
-      (if (< index value-length)
-        (begin
-          (let ((ch (string-ref value index)))
-            (cond
-              ((char=? ch #\") (display "\\\""))
-              ((char=? ch #\\) (display "\\\\"))
-              ((char=? ch #\newline) (display "\\n"))
-              ((char=? ch #\tab) (display "\\t"))
-              (else (display ch))))
-          (loop (+ index 1)))
-        #t)))
-  (display "\""))
+(defrules defmarlin-deck-runtime-cached-compiled-route-index-selector ()
+  ((_ binding
+      (policy-index
+       (command-prefix ...)
+       (agent-scope-value ...))
+      ...)
+   (def binding
+     (let ((compiled-routes
+            (list
+             (list
+              (list command-prefix ...)
+              (list agent-scope-value ...)
+              policy-index)
+             ...)))
+       (lambda (request-command request-agent-scope)
+         (let loop ((remaining compiled-routes))
+           (cond
+             ((null? remaining) #f)
+             ((and
+               (compiled-policy-any-prefix? (car (car remaining)) request-command)
+               (compiled-policy-string-member?
+                request-agent-scope
+                (cadr (car remaining))))
+              (caddr (car remaining)))
+             (else (loop (cdr remaining))))))))))
 
-(def (display-compiled-policy-json-string-list values)
-  (display "[")
-  (let loop ((remaining values) (first #t))
-    (if (null? remaining)
-      #t
-      (begin
-        (if first #f (display ","))
-        (display-compiled-policy-json-string (car remaining))
-        (loop (cdr remaining) #f))))
-  (display "]"))
-
-(def (display-compiled-policy-json-bool value)
-  (if value (display "true") (display "false")))
-
-(def (display-marlin-deck-runtime-compiled-selection-json selector command agent-scope)
-  (let ((policy (selector command agent-scope)))
-    (display "{\"schema_id\":")
-    (display-compiled-policy-json-string
-     marlin-deck-runtime-model-route-selection-kind)
-    (display ",\"compiled_policy_schema\":")
-    (display-compiled-policy-json-string
-     marlin-deck-runtime-compiled-policy-kind)
-    (display ",\"command\":")
-    (display-compiled-policy-json-string command)
-    (display ",\"agent_scope\":")
-    (display-compiled-policy-json-string agent-scope)
-    (display ",\"matched\":")
-    (display-compiled-policy-json-bool policy)
-    (display ",\"capabilities\":")
-    (display-compiled-policy-json-string-list
-     (marlin-deck-runtime-compiled-policy-capability-names))
-    (display ",\"policy\":")
-    (if policy
-      (display-marlin-deck-runtime-model-route-policy-json policy)
-      (display "null"))
-    (display "}")))
+(defrules defmarlin-deck-runtime-direct-compiled-route-index-selector ()
+  ((_ binding
+      (policy-index
+       (command-prefix ...)
+       (agent-scope-value ...))
+      ...)
+   (def (binding request-command request-agent-scope)
+     (cond
+       ((and
+         (or (compiled-policy-string-prefix? command-prefix request-command) ...)
+         (or (string=? request-agent-scope agent-scope-value) ...))
+        policy-index)
+       ...
+       (else #f)))))

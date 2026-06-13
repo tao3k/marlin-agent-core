@@ -67,6 +67,7 @@ fn attach_policy_actions(
     HookDispatchPolicyReceipt::new(HookDispatchPolicyReceiptInput {
         event_name: policy_receipt.event_name,
         invocation_agent_scope: policy_receipt.invocation_agent_scope,
+        decision_context: policy_receipt.decision_context,
         mode: policy_receipt.mode,
         extension: policy_receipt.extension,
         actions,
@@ -91,6 +92,7 @@ fn reject_policy_receipt(
     HookDispatchPolicyReceipt::new(HookDispatchPolicyReceiptInput {
         event_name: policy_receipt.event_name,
         invocation_agent_scope: policy_receipt.invocation_agent_scope,
+        decision_context: policy_receipt.decision_context,
         mode: policy_receipt.mode,
         extension: policy_receipt.extension,
         actions,

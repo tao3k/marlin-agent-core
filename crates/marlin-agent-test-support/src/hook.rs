@@ -1,7 +1,7 @@
 //! Reusable hook fixtures for custom sub-agent runtime tests.
 
 use marlin_agent_protocol::{
-    HookAgentScope, HookDispatchPolicyReceipt, HookDispatchPolicyReceiptInput,
+    HookAgentScope, HookDecisionContext, HookDispatchPolicyReceipt, HookDispatchPolicyReceiptInput,
     HookDispatchSelectionInput, HookDispatchSelectionReceipt, HookEventName, HookHandlerType,
     HookMatcherStrategy, HookMatcherToken, HookOutputEntry, HookOutputEntryKind,
     HookPolicyDecision, HookPolicyDecisionReason, HookPolicyDecisionReceipt, HookPolicyExtension,
@@ -60,6 +60,7 @@ pub fn sub_agent_hook_dispatch_selection_fixture() -> HookDispatchSelectionRecei
     HookDispatchSelectionReceipt::new(HookDispatchSelectionInput {
         event_name: HookEventName::PreToolUse,
         invocation_agent_scope: HookAgentScope::SubAgent,
+        decision_context: HookDecisionContext::default(),
         matcher_strategy: HookMatcherStrategy::AhoCorasickEventIndex,
         matched_tokens: vec![HookMatcherToken::new("|PreToolUse|")],
         candidates: vec![
@@ -109,6 +110,7 @@ pub fn custom_hook_policy_receipt_fixture() -> HookDispatchPolicyReceipt {
     HookDispatchPolicyReceipt::new(HookDispatchPolicyReceiptInput {
         event_name: HookEventName::PreToolUse,
         invocation_agent_scope: HookAgentScope::CustomAgent,
+        decision_context: HookDecisionContext::default(),
         mode: HookPolicyMode::EnforceTrusted,
         extension: HookPolicyExtension::gerbil_scheme("marlin/hooks/policy", "decide-hook-policy"),
         actions: Vec::new(),

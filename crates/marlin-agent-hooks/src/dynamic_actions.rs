@@ -43,6 +43,7 @@ pub(crate) fn attach_dynamic_actions(
     HookDispatchPolicyReceipt::new(HookDispatchPolicyReceiptInput {
         event_name: policy.event_name,
         invocation_agent_scope: policy.invocation_agent_scope,
+        decision_context: policy.decision_context,
         mode: policy.mode,
         extension: policy.extension,
         actions,
@@ -214,6 +215,7 @@ pub(crate) fn apply_dynamic_policy_actions(
     let policy = HookDispatchPolicyReceipt::new(HookDispatchPolicyReceiptInput {
         event_name: policy.event_name,
         invocation_agent_scope: policy.invocation_agent_scope,
+        decision_context: policy.decision_context,
         mode: policy.mode,
         extension: policy.extension,
         actions: policy.actions,

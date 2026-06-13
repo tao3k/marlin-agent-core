@@ -19,4 +19,7 @@ pub use gerbil_policy::{
     GERBIL_LOOP_GRAPH_POLICY_COMPILATION_SCHEMA_ID, GerbilLoopGraphPolicyCompilationRequest,
     compile_gerbil_loop_graph, compile_gerbil_loop_graph_policy,
 };
-pub use native_abi::{GraphNativeAbiId, GraphNativeAbiRequirement, GraphNativeSymbol};
+pub use native_abi::{
+    GraphNativeAbiId, GraphNativeAbiReadinessReceipt, GraphNativeAbiReadinessStatus,
+    GraphNativeAbiRequirement, GraphNativeSymbol,
+};

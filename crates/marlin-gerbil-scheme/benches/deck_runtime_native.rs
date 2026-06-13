@@ -193,10 +193,17 @@ fn bench_real_scheme_compiled_policy_selector(c: &mut Criterion) {
         batch_warmup.contains("matches=10000"),
         "real Scheme compiled policy batch benchmark warmup returned unexpected output: {batch_warmup}"
     );
-    let batch_elapsed_us = parse_compiled_policy_batch_elapsed_us(&batch_warmup);
+    let policy_batch_elapsed_us =
+        parse_compiled_policy_batch_elapsed_us(&batch_warmup, "policy_elapsed_us=");
+    let index_batch_elapsed_us =
+        parse_compiled_policy_batch_elapsed_us(&batch_warmup, "index_elapsed_us=");
     eprintln!(
-        "real Scheme compiled policy template module internal loop: iterations={COMPILED_POLICY_BATCH_ITERATIONS} elapsed_us={batch_elapsed_us} approx_ns_per_call={}",
-        (batch_elapsed_us * 1000) / COMPILED_POLICY_BATCH_ITERATIONS as u64
+        "real Scheme compiled policy template module internal loop: iterations={COMPILED_POLICY_BATCH_ITERATIONS} policy_elapsed_us={policy_batch_elapsed_us} approx_policy_ns_per_call={}",
+        (policy_batch_elapsed_us * 1000) / COMPILED_POLICY_BATCH_ITERATIONS as u64
+    );
+    eprintln!(
+        "real Scheme compiled policy template index loop: iterations={COMPILED_POLICY_BATCH_ITERATIONS} index_elapsed_us={index_batch_elapsed_us} approx_index_ns_per_call={}",
+        (index_batch_elapsed_us * 1000) / COMPILED_POLICY_BATCH_ITERATIONS as u64
     );
 
     let mut group = c.benchmark_group("deck_runtime_real_scheme_compiled_policy");
@@ -346,7 +353,8 @@ fn run_real_scheme_strategy_script(gxi: &Path, loadpath_root: &Path, script: &Pa
 fn write_strategy_bench_script(script: &Path) {
     fs::write(
         script,
-        r#"(import :marlin/deck-runtime
+        r#"(import :clan/poo/object
+        :marlin/deck-runtime
         :marlin/deck-runtime-strategy)
 
 (def policies
@@ -388,12 +396,19 @@ fn write_strategy_bench_script(script: &Path) {
    (list "hook-roadmap" "runtime-positioning" "native-aot-benchmark")
    "customer-agent"))
 
-(display-marlin-deck-runtime-strategy-selection-json
- policies
- (list customer-release-subagent)
- context
- "codex customer-review --session release-session"
- "sub-agent")
+(def selection
+  (marlin-deck-runtime-strategy-selection
+   policies
+   (list customer-release-subagent)
+   context
+   "codex customer-review --session release-session"
+   "sub-agent"))
+
+(display (.get selection kind))
+(newline)
+(display (if (.get selection matched) "matched" "miss"))
+(newline)
+(display (.get selection strategy-rule))
 (newline)
 "#,
     )
@@ -405,10 +420,15 @@ fn write_compiled_policy_bench_script(script: &Path) {
         script,
         r#"(import :marlin/deck-runtime-compiled-policy-sample)
 
-(display-marlin-deck-runtime-sample-compiled-policy-selection-json
+(display-marlin-deck-runtime-sample-compiled-policy-batch-metrics
+ 1
  "cargo test -p marlin-gerbil-scheme"
  "sub-agent")
-(newline)
+
+(display-marlin-deck-runtime-sample-compiled-policy-index-batch-metrics
+ 1
+ "cargo test -p marlin-gerbil-scheme"
+ "sub-agent")
 "#,
     )
     .expect("write real Scheme compiled policy template benchmark script");
@@ -424,19 +444,24 @@ fn write_compiled_policy_batch_bench_script(script: &Path, iterations: usize) {
  {iterations}
  "cargo test -p marlin-gerbil-scheme"
  "sub-agent")
+
+(display-marlin-deck-runtime-sample-compiled-policy-index-batch-metrics
+ {iterations}
+ "cargo test -p marlin-gerbil-scheme"
+ "sub-agent")
 "#
         ),
     )
     .expect("write real Scheme compiled policy template batch benchmark script");
 }
 
-fn parse_compiled_policy_batch_elapsed_us(output: &str) -> u64 {
+fn parse_compiled_policy_batch_elapsed_us(output: &str, field_prefix: &str) -> u64 {
     output
         .split_whitespace()
-        .find_map(|field| field.strip_prefix("elapsed_us="))
+        .find_map(|field| field.strip_prefix(field_prefix))
         .and_then(|value| value.parse::<u64>().ok())
         .unwrap_or_else(|| {
-            panic!("missing elapsed_us field in compiled policy batch output: {output}")
+            panic!("missing {field_prefix} field in compiled policy batch output: {output}")
         })
 }
 

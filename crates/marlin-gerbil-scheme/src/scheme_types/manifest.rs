@@ -67,11 +67,11 @@ pub struct GerbilSchemeTypedValueValidationReceipt {
     pub declared_field_count: usize,
 }
 
-/// Decode a Scheme-emitted type manifest.
-pub fn decode_gerbil_scheme_type_manifest(
-    manifest_json: &str,
+/// Decode a serialized Scheme type manifest fixture.
+pub fn decode_gerbil_scheme_type_manifest_fixture(
+    fixture: &str,
 ) -> Result<GerbilSchemeTypeManifest, GerbilSchemeTypeDecodeError> {
-    serde_json::from_str(manifest_json).map_err(|error| GerbilSchemeTypeDecodeError::Json {
+    serde_json::from_str(fixture).map_err(|error| GerbilSchemeTypeDecodeError::SerializedFixture {
         message: error.to_string(),
     })
 }

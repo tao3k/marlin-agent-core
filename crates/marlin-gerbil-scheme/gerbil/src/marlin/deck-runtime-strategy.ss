@@ -15,7 +15,8 @@ package: marlin
         defmarlin-deck-runtime-strategy-rule
         marlin-deck-runtime-strategy-rule-match?
         marlin-deck-runtime-select-model-route-policy/strategy
-        display-marlin-deck-runtime-strategy-selection-json)
+        marlin-deck-runtime-strategy-rule-signal-names
+        marlin-deck-runtime-strategy-selection)
 
 (def marlin-deck-runtime-strategy-rule-kind
   "marlin-deck-runtime.strategy-rule.v1")
@@ -153,42 +154,6 @@ package: marlin
              (.o selected-rule: rule selected-policy: policy)
              (loop (cdr remaining)))))))))
 
-(def (display-json-string value)
-  (display "\"")
-  (let ((value-length (string-length value)))
-    (let loop ((index 0))
-      (if (< index value-length)
-        (begin
-          (let ((ch (string-ref value index)))
-            (cond
-              ((char=? ch #\") (display "\\\""))
-              ((char=? ch #\\) (display "\\\\"))
-              ((char=? ch #\newline) (display "\\n"))
-              ((char=? ch #\tab) (display "\\t"))
-              (else (display ch))))
-          (loop (+ index 1)))
-        #t)))
-  (display "\""))
-
-(def (display-json-string-or-null value)
-  (if (strategy-string-active? value)
-    (display-json-string value)
-    (display "null")))
-
-(def (display-json-string-list values)
-  (display "[")
-  (let loop ((remaining values) (first #t))
-    (if (null? remaining)
-      #t
-      (begin
-        (if first #f (display ","))
-        (display-json-string (car remaining))
-        (loop (cdr remaining) #f))))
-  (display "]"))
-
-(def (display-json-bool value)
-  (if value (display "true") (display "false")))
-
 (def (marlin-deck-runtime-strategy-rule-signal-names rule)
   (append
    '("model-route" "command-prefix" "agent-scope" "high-order-matcher")
@@ -208,43 +173,31 @@ package: marlin
      '("customer-agent")
      '())))
 
-(def (display-marlin-deck-runtime-strategy-selection-json
+(def (marlin-deck-runtime-strategy-selection
       policies rules context command agent-scope)
   (let ((selection
          (marlin-deck-runtime-select-model-route-policy/strategy
           policies rules context command agent-scope)))
-    (display "{\"schema_id\":")
-    (display-json-string marlin-deck-runtime-strategy-selection-kind)
-    (display ",\"command\":")
-    (display-json-string command)
-    (display ",\"agent_scope\":")
-    (display-json-string agent-scope)
-    (display ",\"matched\":")
-    (display-json-bool selection)
     (if selection
       (let ((matched-rule (.get selection selected-rule))
             (matched-policy (.get selection selected-policy)))
-        (display ",\"strategy_rule\":")
-        (display-json-string (.get matched-rule name))
-        (display ",\"hook_action\":")
-        (display-json-string-or-null (.get matched-rule hook-action))
-        (display ",\"rewrite_command\":")
-        (display-json-string-or-null (.get matched-rule rewrite-command))
-        (display ",\"matched_signals\":")
-        (display-json-string-list
-         (marlin-deck-runtime-strategy-rule-signal-names matched-rule))
-        (display ",\"capabilities\":")
-        (display-json-string-list
-         (marlin-deck-runtime-strategy-capability-names))
-        (display ",\"policy\":")
-        (display-marlin-deck-runtime-model-route-policy-json matched-policy))
-      (begin
-        (display ",\"strategy_rule\":null")
-        (display ",\"hook_action\":null")
-        (display ",\"rewrite_command\":null")
-        (display ",\"matched_signals\":[]")
-        (display ",\"capabilities\":")
-        (display-json-string-list
-         (marlin-deck-runtime-strategy-capability-names))
-        (display ",\"policy\":null")))
-    (display "}")))
+        (.o kind: marlin-deck-runtime-strategy-selection-kind
+            command: command
+            agent-scope: agent-scope
+            matched: #t
+            strategy-rule: (.get matched-rule name)
+            hook-action: (.get matched-rule hook-action)
+            rewrite-command: (.get matched-rule rewrite-command)
+            matched-signals: (marlin-deck-runtime-strategy-rule-signal-names matched-rule)
+            capabilities: (marlin-deck-runtime-strategy-capability-names)
+            policy: matched-policy))
+      (.o kind: marlin-deck-runtime-strategy-selection-kind
+          command: command
+          agent-scope: agent-scope
+          matched: #f
+          strategy-rule: #f
+          hook-action: #f
+          rewrite-command: #f
+          matched-signals: '()
+          capabilities: (marlin-deck-runtime-strategy-capability-names)
+          policy: #f))))

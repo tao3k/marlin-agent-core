@@ -45,6 +45,7 @@ impl HookDispatchPolicyFinalizer for BenchFinalizer {
         HookDispatchPolicyReceipt::new(HookDispatchPolicyReceiptInput {
             event_name: input.invocation.event_name,
             invocation_agent_scope: input.invocation.agent_scope,
+            decision_context: input.policy_receipt.decision_context,
             mode: input.policy_receipt.mode,
             extension: input.policy_receipt.extension,
             actions: self.actions.clone(),

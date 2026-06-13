@@ -4,7 +4,7 @@ use std::{collections::BTreeMap, sync::Arc};
 
 use aho_corasick::{AhoCorasick, AhoCorasickBuilder};
 use marlin_agent_protocol::{
-    HookAgentScope, HookConfigurationVersion, HookDispatchPolicyReceipt,
+    HookAgentScope, HookConfigurationVersion, HookDecisionContext, HookDispatchPolicyReceipt,
     HookDispatchPolicyReceiptInput, HookDispatchSelectionInput, HookDispatchSelectionReceipt,
     HookEventName, HookExecutionMode, HookHandlerType, HookMatcherStrategy, HookMatcherToken,
     HookPolicyDecision, HookPolicyDecisionReason, HookPolicyDecisionReceipt,
@@ -37,6 +37,7 @@ pub type RegisteredHookRegistrationCatalog =
 pub struct HookInvocation {
     pub event_name: HookEventName,
     pub agent_scope: HookAgentScope,
+    pub decision_context: HookDecisionContext,
     pub message: Option<String>,
 }
 
@@ -46,6 +47,7 @@ impl HookInvocation {
         Self {
             event_name,
             agent_scope: HookAgentScope::Any,
+            decision_context: HookDecisionContext::default(),
             message: None,
         }
     }
@@ -53,6 +55,12 @@ impl HookInvocation {
     /// Assigns the invoking agent runtime scope.
     pub fn with_agent_scope(mut self, agent_scope: HookAgentScope) -> Self {
         self.agent_scope = agent_scope;
+        self
+    }
+
+    /// Assigns typed context facts for policy selection and extension decisions.
+    pub fn with_decision_context(mut self, decision_context: HookDecisionContext) -> Self {
+        self.decision_context = decision_context;
         self
     }
 
@@ -297,6 +305,7 @@ impl HookRegistry {
         let selection = HookDispatchSelectionReceipt::new(HookDispatchSelectionInput {
             event_name: invocation.event_name.clone(),
             invocation_agent_scope: invocation.agent_scope.clone(),
+            decision_context: invocation.decision_context.clone(),
             matcher_strategy: indexed_match.strategy,
             matched_tokens: indexed_match.matched_tokens,
             candidates,
@@ -551,6 +560,7 @@ impl HookDispatchPolicy {
         HookDispatchPolicyReceipt::new(HookDispatchPolicyReceiptInput {
             event_name: invocation.event_name.clone(),
             invocation_agent_scope: invocation.agent_scope.clone(),
+            decision_context: invocation.decision_context.clone(),
             mode: self.mode.clone(),
             extension: self.extension.clone(),
             actions: Vec::new(),

@@ -9,6 +9,8 @@ use marlin_agent_protocol::{
     compile_gerbil_loop_graph_policy,
 };
 
+mod native_abi;
+
 #[test]
 fn graph_policy_proposal_records_native_scheme_strategy_with_abi_requirement() {
     let graph = LoopGraph {

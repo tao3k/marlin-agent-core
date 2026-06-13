@@ -40,7 +40,7 @@ pub(super) fn write_deck_runtime_handshake_example(example: &Path) {
         example,
         r#"(import :marlin/deck-runtime)
 
-(display-marlin-deck-runtime-capability-json)
+(write (marlin-deck-runtime-capability-fact))
 (newline)
 "#,
     )

@@ -4,17 +4,16 @@ use super::support::{
     strategy_selection_schema_id, strategy_selection_type_id,
 };
 use marlin_gerbil_scheme::{
-    GerbilSchemeTypeId, GerbilSchemeTypeRegistry, GerbilSchemeTypedValue,
-    decode_gerbil_scheme_typed_value,
+    GerbilSchemeTypeId, GerbilSchemeTypeRegistry, GerbilSchemeTypedValue, GerbilSchemeValue,
+    scheme_type_fixtures::decode_gerbil_scheme_typed_value_fixture,
 };
-use serde_json::json;
 
 #[test]
 fn scheme_typed_value_projects_to_rust_without_static_scheme_binding() {
     let manifest = strategy_selection_manifest();
     let registry =
         GerbilSchemeTypeRegistry::new(manifest).expect("strategy manifest builds registry");
-    let envelope = decode_gerbil_scheme_typed_value(
+    let envelope = decode_gerbil_scheme_typed_value_fixture(
         r#"{
             "type_id": "marlin.deck-runtime.strategy-selection",
             "schema_id": "marlin.deck-runtime.strategy-selection.v1",
@@ -68,15 +67,24 @@ fn scheme_typed_value_projects_nested_custom_scheme_types_to_rust() {
         .expect("nested strategy manifest should build registry");
     let envelope = GerbilSchemeTypedValue::new(
         strategy_decision_type_id(),
-        json!({
-            "schema_id": "marlin.deck-runtime.strategy-decision.v1",
-            "selection": {
-                "schema_id": "marlin.deck-runtime.strategy-selection.v1",
-                "matched": true,
-                "action": "dynamic-hook-action"
-            },
-            "reason": "nested manifest projection"
-        }),
+        GerbilSchemeValue::record([
+            (
+                "schema_id",
+                "marlin.deck-runtime.strategy-decision.v1".into(),
+            ),
+            (
+                "selection",
+                GerbilSchemeValue::record([
+                    (
+                        "schema_id",
+                        "marlin.deck-runtime.strategy-selection.v1".into(),
+                    ),
+                    ("matched", true.into()),
+                    ("action", "dynamic-hook-action".into()),
+                ]),
+            ),
+            ("reason", "nested manifest projection".into()),
+        ]),
     )
     .with_schema_id(strategy_decision_schema_id());
 
@@ -102,11 +110,11 @@ fn scheme_typed_value_projects_nested_custom_scheme_types_to_rust() {
 fn scheme_typed_value_rejects_wrong_projection_type() {
     let envelope = GerbilSchemeTypedValue::new(
         GerbilSchemeTypeId::new("marlin.dynamic.capability"),
-        json!({
-            "schema_id": "marlin.dynamic.capability.v1",
-            "matched": false,
-            "action": "observe"
-        }),
+        GerbilSchemeValue::record([
+            ("schema_id", "marlin.dynamic.capability.v1".into()),
+            ("matched", false.into()),
+            ("action", "observe".into()),
+        ]),
     );
 
     let error = envelope

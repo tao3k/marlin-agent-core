@@ -14,5 +14,8 @@ pub use client::{
 };
 pub use config::{ModelRouteConfig, ModelRouteConfigError};
 pub use resolver::{CompiledModelRouteResolver, ModelRouteCompileError};
-pub use selection::ModelRouteSelectionProjectionError;
+pub use selection::{
+    ModelRouteSelectionProjectionError, ModelRouteSelectionProjectionReceipt,
+    ModelRouteSelectionProjectionSource, ProjectedModelRouteDecision,
+};
 pub use session::{ModelRouteSessionBinding, RoutedSubAgentSpawn};

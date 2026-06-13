@@ -1,7 +1,8 @@
 use super::support::{strategy_selection_manifest, strategy_selection_type_id};
 use marlin_gerbil_scheme::{
     GerbilSchemeFieldName, GerbilSchemeTypeDecodeError, GerbilSchemeTypeId,
-    decode_gerbil_scheme_type_manifest, validate_gerbil_scheme_type_manifest,
+    scheme_type_fixtures::decode_gerbil_scheme_type_manifest_fixture,
+    validate_gerbil_scheme_type_manifest,
 };
 
 #[test]
@@ -34,7 +35,7 @@ fn scheme_type_manifest_describes_downstream_value_shape() {
 
 #[test]
 fn scheme_type_manifest_rejects_duplicate_type_ids() {
-    let manifest = decode_gerbil_scheme_type_manifest(
+    let manifest = decode_gerbil_scheme_type_manifest_fixture(
         r#"{
             "schema_id": "marlin.scheme-types.manifest.v1",
             "types": [
@@ -58,7 +59,7 @@ fn scheme_type_manifest_rejects_duplicate_type_ids() {
 
 #[test]
 fn scheme_type_manifest_rejects_duplicate_field_names() {
-    let manifest = decode_gerbil_scheme_type_manifest(
+    let manifest = decode_gerbil_scheme_type_manifest_fixture(
         r#"{
             "schema_id": "marlin.scheme-types.manifest.v1",
             "types": [
@@ -88,7 +89,7 @@ fn scheme_type_manifest_rejects_duplicate_field_names() {
 
 #[test]
 fn scheme_type_manifest_rejects_unknown_field_type_references() {
-    let manifest = decode_gerbil_scheme_type_manifest(
+    let manifest = decode_gerbil_scheme_type_manifest_fixture(
         r#"{
             "schema_id": "marlin.scheme-types.manifest.v1",
             "types": [
@@ -112,6 +113,36 @@ fn scheme_type_manifest_rejects_unknown_field_type_references() {
             type_id: GerbilSchemeTypeId::new("marlin.bad-field-type"),
             field_name: GerbilSchemeFieldName::new("action"),
             field_type_id: GerbilSchemeTypeId::new("marlin.missing-type"),
+        }
+    );
+}
+
+#[test]
+fn scheme_type_manifest_rejects_json_as_native_value_type() {
+    let manifest = decode_gerbil_scheme_type_manifest_fixture(
+        r#"{
+            "schema_id": "marlin.scheme-types.manifest.v1",
+            "types": [
+                {
+                    "type_id": "marlin.json-leak",
+                    "fields": [
+                        {"name": "payload", "type_id": "json", "required": true}
+                    ]
+                }
+            ]
+        }"#,
+    )
+    .expect("decode json leak manifest fixture");
+
+    let error = validate_gerbil_scheme_type_manifest(&manifest)
+        .expect_err("json must not be a native Scheme value type");
+
+    assert_eq!(
+        error,
+        GerbilSchemeTypeDecodeError::UnknownFieldType {
+            type_id: GerbilSchemeTypeId::new("marlin.json-leak"),
+            field_name: GerbilSchemeFieldName::new("payload"),
+            field_type_id: GerbilSchemeTypeId::new("json"),
         }
     );
 }

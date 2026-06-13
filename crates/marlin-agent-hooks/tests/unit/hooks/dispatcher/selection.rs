@@ -1,6 +1,6 @@
 use marlin_agent_hooks::{HookDispatcher, HookInvocation, HookRegistry};
 use marlin_agent_protocol::{
-    HookAgentScope, HookEventName, HookHandlerType, HookSelectionSkipReason,
+    HookAgentScope, HookDecisionContext, HookEventName, HookHandlerType, HookSelectionSkipReason,
 };
 use marlin_agent_runtime::TokioAgentRuntime;
 
@@ -113,4 +113,53 @@ async fn dispatcher_filters_hooks_by_agent_scope() {
         vec!["sub-agent-run"]
     );
     assert_eq!(report.runs[0].agent_scope, HookAgentScope::SubAgent);
+}
+
+#[tokio::test]
+async fn dispatcher_carries_typed_policy_context_into_receipts() {
+    let registry = HookRegistry::new().with_registration(summary_hook_registration(
+        "customer-policy",
+        HookEventName::PreToolUse,
+        HookHandlerType::Command,
+        "customer-policy-run",
+    ));
+    let (runtime, _events) = TokioAgentRuntime::new(4);
+    let context = HookDecisionContext::new()
+        .with_session_id("session-42")
+        .with_agent_lineage_node("root-agent")
+        .with_agent_lineage_node("customer-agent")
+        .with_workspace_state("native-aot-ready")
+        .with_org_memory_hit("hook-roadmap")
+        .with_agent_class("customer-reviewer");
+
+    let report = HookDispatcher::new(registry)
+        .dispatch(
+            &runtime,
+            HookInvocation::new(HookEventName::PreToolUse)
+                .with_agent_scope(HookAgentScope::CustomerAgent)
+                .with_decision_context(context.clone()),
+        )
+        .await;
+
+    assert_eq!(report.selection.decision_context, context);
+    assert_eq!(report.policy.decision_context, context);
+    assert_eq!(
+        report
+            .selection
+            .decision_context
+            .session_id
+            .as_ref()
+            .map(|session_id| session_id.as_str()),
+        Some("session-42")
+    );
+    assert_eq!(
+        report
+            .policy
+            .decision_context
+            .agent_class
+            .as_ref()
+            .map(|agent_class| agent_class.as_str()),
+        Some("customer-reviewer")
+    );
+    assert_eq!(report.runs.len(), 1);
 }

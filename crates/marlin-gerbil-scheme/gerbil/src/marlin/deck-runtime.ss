@@ -22,12 +22,9 @@ package: marlin
         make-marlin-deck-runtime-model-route-policy
         marlin-deck-runtime-route-policy-match?
         marlin-deck-runtime-select-model-route-policy
+        marlin-deck-runtime-model-route-selection
         marlin-deck-runtime-capability-fact
-        marlin-deck-runtime-object-model-fact
-        display-marlin-deck-runtime-capability-json
-        display-marlin-deck-runtime-object-model-json
-        display-marlin-deck-runtime-model-route-policy-json
-        display-marlin-deck-runtime-model-route-selection-json)
+        marlin-deck-runtime-object-model-fact)
 
 (def marlin-deck-runtime-package-name "marlin-deck-runtime")
 (def marlin-deck-runtime-module ":marlin/deck-runtime")
@@ -68,7 +65,7 @@ package: marlin
 (def (marlin-deck-runtime-rust-contract-names)
   '("runtime-assets"
     "real-gxi"
-    "json-handshake"))
+    "typed-native-abi"))
 
 (def (marlin-deck-runtime-policy-primitive-names)
   '("provider-id"
@@ -153,6 +150,15 @@ package: marlin
        (car remaining))
       (else (loop (cdr remaining))))))
 
+(def (marlin-deck-runtime-model-route-selection policies command agent-scope)
+  (let ((selected-policy (marlin-deck-runtime-select-model-route-policy
+                          policies command agent-scope)))
+    (.o kind: marlin-deck-runtime-model-route-selection-kind
+        command: command
+        agent-scope: agent-scope
+        matched: (if selected-policy #t #f)
+        policy: selected-policy)))
+
 (def (marlin-deck-runtime-capability-fact)
   (list marlin-deck-runtime-package-name
         marlin-deck-runtime-module
@@ -170,103 +176,3 @@ package: marlin
         (marlin-deck-runtime-poo-module-names)
         (marlin-deck-runtime-poo-form-names)
         (marlin-deck-runtime-policy-primitive-names)))
-
-(def (display-json-string value)
-  (display "\"")
-  (let ((value-length (string-length value)))
-    (let loop ((index 0))
-      (if (< index value-length)
-        (begin
-          (let ((ch (string-ref value index)))
-            (cond
-              ((char=? ch #\") (display "\\\""))
-              ((char=? ch #\\) (display "\\\\"))
-              ((char=? ch #\newline) (display "\\n"))
-              ((char=? ch #\tab) (display "\\t"))
-              (else (display ch))))
-          (loop (+ index 1)))
-        #t)))
-  (display "\""))
-
-(def (display-json-string-list values)
-  (display "[")
-  (let loop ((remaining values) (first #t))
-    (if (null? remaining)
-      #t
-      (begin
-        (if first #f (display ","))
-        (display-json-string (car remaining))
-        (loop (cdr remaining) #f))))
-  (display "]"))
-
-(def (display-json-bool value)
-  (if value (display "true") (display "false")))
-
-(def (display-marlin-deck-runtime-capability-json)
-  (display "{\"package\":")
-  (display-json-string marlin-deck-runtime-package-name)
-  (display ",\"module\":")
-  (display-json-string marlin-deck-runtime-module)
-  (display ",\"poo_dependency\":")
-  (display-json-string marlin-deck-runtime-poo-dependency)
-  (display ",\"poo_package\":")
-  (display-json-string marlin-deck-runtime-poo-package-name)
-  (display ",\"poo_modules\":")
-  (display-json-string-list (marlin-deck-runtime-poo-module-names))
-  (display ",\"poo_forms\":")
-  (display-json-string-list (marlin-deck-runtime-poo-form-names))
-  (display ",\"capabilities\":")
-  (display-json-string-list (marlin-deck-runtime-capability-names))
-  (display ",\"policy_primitives\":")
-  (display-json-string-list (marlin-deck-runtime-policy-primitive-names))
-  (display ",\"rust_contracts\":")
-  (display-json-string-list (marlin-deck-runtime-rust-contract-names))
-  (display "}"))
-
-(def (display-marlin-deck-runtime-object-model-json)
-  (display "{\"schema_id\":\"marlin-deck-runtime.object-model.v1\"")
-  (display ",\"slots\":")
-  (display-json-string-list (marlin-deck-runtime-object-model-slot-names))
-  (display ",\"poo_modules\":")
-  (display-json-string-list (marlin-deck-runtime-poo-module-names))
-  (display ",\"poo_forms\":")
-  (display-json-string-list (marlin-deck-runtime-poo-form-names))
-  (display ",\"policy_primitives\":")
-  (display-json-string-list (marlin-deck-runtime-policy-primitive-names))
-  (display "}"))
-
-(def (display-marlin-deck-runtime-model-route-policy-json policy)
-  (display "{\"kind\":")
-  (display-json-string (.get policy kind))
-  (display ",\"name\":")
-  (display-json-string (.get policy name))
-  (display ",\"provider\":")
-  (display-json-string (.get policy provider))
-  (display ",\"model\":")
-  (display-json-string (.get policy model))
-  (display ",\"command_prefixes\":")
-  (display-json-string-list (.get policy command-prefixes))
-  (display ",\"agent_scopes\":")
-  (display-json-string-list (.get policy agent-scopes))
-  (display ",\"context_mode\":")
-  (display-json-string (.get policy context-mode))
-  (display ",\"isolation_mode\":")
-  (display-json-string (.get policy isolation-mode))
-  (display "}"))
-
-(def (display-marlin-deck-runtime-model-route-selection-json policies command agent-scope)
-  (let ((policy (marlin-deck-runtime-select-model-route-policy
-                 policies command agent-scope)))
-    (display "{\"schema_id\":")
-    (display-json-string marlin-deck-runtime-model-route-selection-kind)
-    (display ",\"command\":")
-    (display-json-string command)
-    (display ",\"agent_scope\":")
-    (display-json-string agent-scope)
-    (display ",\"matched\":")
-    (display-json-bool policy)
-    (display ",\"policy\":")
-    (if policy
-      (display-marlin-deck-runtime-model-route-policy-json policy)
-      (display "null"))
-    (display "}")))

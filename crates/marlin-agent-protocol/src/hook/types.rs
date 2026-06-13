@@ -1,6 +1,8 @@
-//! Hook protocol contracts for runtime interception and observation.
+//! Core hook protocol types.
 
 use serde::{Deserialize, Serialize};
+
+use super::context::HookDecisionContext;
 
 /// Runtime event that can trigger configured hook handlers.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
@@ -444,6 +446,7 @@ impl HookSelectionCandidateReceipt {
 pub struct HookDispatchSelectionReceipt {
     pub event_name: HookEventName,
     pub invocation_agent_scope: HookAgentScope,
+    pub decision_context: HookDecisionContext,
     pub matcher_strategy: HookMatcherStrategy,
     pub matched_tokens: Vec<HookMatcherToken>,
     pub candidate_count: usize,
@@ -456,6 +459,7 @@ pub struct HookDispatchSelectionReceipt {
 pub struct HookDispatchSelectionInput {
     pub event_name: HookEventName,
     pub invocation_agent_scope: HookAgentScope,
+    pub decision_context: HookDecisionContext,
     pub matcher_strategy: HookMatcherStrategy,
     pub matched_tokens: Vec<HookMatcherToken>,
     pub candidates: Vec<HookSelectionCandidateReceipt>,
@@ -466,6 +470,7 @@ impl HookDispatchSelectionReceipt {
         let HookDispatchSelectionInput {
             event_name,
             invocation_agent_scope,
+            decision_context,
             matcher_strategy,
             matched_tokens,
             candidates,
@@ -478,6 +483,7 @@ impl HookDispatchSelectionReceipt {
         Self {
             event_name,
             invocation_agent_scope,
+            decision_context,
             matcher_strategy,
             matched_tokens,
             candidate_count,
@@ -692,6 +698,7 @@ pub struct HookPolicyDecisionReceipt {
 pub struct HookDispatchPolicyReceipt {
     pub event_name: HookEventName,
     pub invocation_agent_scope: HookAgentScope,
+    pub decision_context: HookDecisionContext,
     pub mode: HookPolicyMode,
     pub extension: HookPolicyExtension,
     pub evaluated_count: usize,
@@ -706,6 +713,7 @@ pub struct HookDispatchPolicyReceipt {
 pub struct HookDispatchPolicyReceiptInput {
     pub event_name: HookEventName,
     pub invocation_agent_scope: HookAgentScope,
+    pub decision_context: HookDecisionContext,
     pub mode: HookPolicyMode,
     pub extension: HookPolicyExtension,
     pub actions: Vec<HookPolicyDynamicAction>,
@@ -724,6 +732,7 @@ impl HookDispatchPolicyReceipt {
         Self {
             event_name: input.event_name,
             invocation_agent_scope: input.invocation_agent_scope,
+            decision_context: input.decision_context,
             mode: input.mode,
             extension: input.extension,
             evaluated_count,

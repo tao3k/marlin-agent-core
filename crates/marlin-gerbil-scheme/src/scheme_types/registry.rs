@@ -2,9 +2,6 @@
 
 use std::collections::BTreeMap;
 
-use serde::de::DeserializeOwned;
-use serde_json::Value;
-
 use super::{
     error::GerbilSchemeTypeDecodeError,
     ids::GerbilSchemeTypeId,
@@ -13,9 +10,10 @@ use super::{
         GerbilSchemeTypedValueValidationReceipt,
     },
     projection::{GerbilSchemeProjectionContract, GerbilSchemeTypedProjection},
-    typed_value::GerbilSchemeTypedValue,
+    typed_value::{GerbilSchemeTypedValue, GerbilSchemeValue},
     validation,
 };
+use serde::de::DeserializeOwned;
 
 /// Prevalidated Scheme type registry for hot-path envelope validation and projection.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -101,7 +99,7 @@ impl GerbilSchemeTypeRegistry {
     pub fn decode_dynamic_typed_value(
         &self,
         typed_value: &GerbilSchemeTypedValue,
-    ) -> Result<Value, GerbilSchemeTypeDecodeError> {
+    ) -> Result<GerbilSchemeValue, GerbilSchemeTypeDecodeError> {
         self.validate_dynamic_typed_value(typed_value)?;
         Ok(typed_value.value().clone())
     }

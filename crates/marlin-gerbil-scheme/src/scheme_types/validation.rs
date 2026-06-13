@@ -10,7 +10,7 @@ use super::{
         GerbilSchemeTypeManifestValidationReceipt, GerbilSchemeTypeSpec,
         GerbilSchemeTypedValueValidationReceipt,
     },
-    typed_value::GerbilSchemeTypedValue,
+    typed_value::{GerbilSchemeTypedValue, GerbilSchemeValue},
 };
 
 const MAX_DYNAMIC_VALIDATION_DEPTH: usize = 32;
@@ -192,7 +192,7 @@ pub(super) fn validate_typed_value_payload<'a>(
 fn validate_typed_value_payload_value<'a>(
     lookup: &mut impl FnMut(&GerbilSchemeTypeId) -> Option<&'a GerbilSchemeTypeSpec>,
     spec: &GerbilSchemeTypeSpec,
-    value: &serde_json::Value,
+    value: &GerbilSchemeValue,
     field_path: &mut Vec<String>,
     type_stack: &mut Vec<GerbilSchemeTypeId>,
 ) -> Result<(), GerbilSchemeTypeDecodeError> {
@@ -221,7 +221,7 @@ fn validate_typed_value_payload_value<'a>(
 fn validate_typed_value_payload_fields<'a>(
     lookup: &mut impl FnMut(&GerbilSchemeTypeId) -> Option<&'a GerbilSchemeTypeSpec>,
     spec: &GerbilSchemeTypeSpec,
-    value: &serde_json::Value,
+    value: &GerbilSchemeValue,
     field_path: &mut Vec<String>,
     type_stack: &mut Vec<GerbilSchemeTypeId>,
 ) -> Result<(), GerbilSchemeTypeDecodeError> {
@@ -231,7 +231,7 @@ fn validate_typed_value_payload_fields<'a>(
 
     let object =
         value
-            .as_object()
+            .as_record()
             .ok_or_else(|| GerbilSchemeTypeDecodeError::ValueTypeMismatch {
                 type_id: spec.type_id.clone(),
                 expected: GerbilSchemeTypeId::new("object"),
@@ -265,7 +265,7 @@ fn validate_typed_value_payload_fields<'a>(
             let Some(nested_spec) = lookup(&field.type_id) else {
                 continue;
             };
-            if !value.is_object() {
+            if !value.is_record() {
                 return Err(GerbilSchemeTypeDecodeError::FieldTypeMismatch {
                     type_id: spec.type_id.clone(),
                     field_name: field.name.clone(),
@@ -293,14 +293,14 @@ fn validate_array_elements<'a>(
     lookup: &mut impl FnMut(&GerbilSchemeTypeId) -> Option<&'a GerbilSchemeTypeSpec>,
     spec: &GerbilSchemeTypeSpec,
     field: &GerbilSchemeTypeFieldSpec,
-    value: &serde_json::Value,
+    value: &GerbilSchemeValue,
     field_path: &mut Vec<String>,
     type_stack: &mut Vec<GerbilSchemeTypeId>,
 ) -> Result<(), GerbilSchemeTypeDecodeError> {
     let Some(element_type_id) = &field.element_type_id else {
         return Ok(());
     };
-    let Some(elements) = value.as_array() else {
+    let Some(elements) = value.as_vector() else {
         return Ok(());
     };
 
@@ -320,7 +320,7 @@ fn validate_array_elements<'a>(
                 field_path.pop();
                 continue;
             };
-            if !element.is_object() {
+            if !element.is_record() {
                 return Err(GerbilSchemeTypeDecodeError::FieldTypeMismatch {
                     type_id: spec.type_id.clone(),
                     field_name: field.name.clone(),
@@ -348,20 +348,20 @@ fn validate_array_elements<'a>(
 fn is_builtin_scheme_type(type_id: &GerbilSchemeTypeId) -> bool {
     matches!(
         type_id.as_str(),
-        "any" | "json" | "null" | "boolean" | "number" | "integer" | "string" | "array" | "object"
+        "any" | "null" | "boolean" | "number" | "integer" | "string" | "array" | "object"
     )
 }
 
-fn builtin_field_value_matches(type_id: &str, value: &serde_json::Value) -> Option<bool> {
+fn builtin_field_value_matches(type_id: &str, value: &GerbilSchemeValue) -> Option<bool> {
     match type_id {
-        "any" | "json" => Some(true),
+        "any" => Some(true),
         "null" => Some(value.is_null()),
         "boolean" => Some(value.is_boolean()),
         "number" => Some(value.is_number()),
-        "integer" => Some(value.as_i64().is_some() || value.as_u64().is_some()),
-        "string" => Some(value.is_string()),
-        "array" => Some(value.is_array()),
-        "object" => Some(value.is_object()),
+        "integer" => Some(value.is_integer()),
+        "string" => Some(value.is_text()),
+        "array" => Some(value.is_vector()),
+        "object" => Some(value.is_record()),
         _ => None,
     }
 }

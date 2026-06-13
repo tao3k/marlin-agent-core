@@ -4,9 +4,8 @@ use super::support::{
 };
 use marlin_gerbil_scheme::{
     GerbilSchemeProjectionContract, GerbilSchemeSchemaId, GerbilSchemeTypeId,
-    GerbilSchemeTypeRegistry, GerbilSchemeTypedValue,
+    GerbilSchemeTypeRegistry, GerbilSchemeTypedValue, GerbilSchemeValue,
 };
-use serde_json::json;
 
 #[test]
 fn scheme_type_registry_decodes_static_typed_projection_contract() {
@@ -14,11 +13,14 @@ fn scheme_type_registry_decodes_static_typed_projection_contract() {
         .expect("strategy manifest should build registry");
     let envelope = GerbilSchemeTypedValue::new(
         strategy_selection_type_id(),
-        json!({
-            "schema_id": "marlin.deck-runtime.strategy-selection.v1",
-            "matched": true,
-            "action": "dynamic-hook-action"
-        }),
+        GerbilSchemeValue::record([
+            (
+                "schema_id",
+                "marlin.deck-runtime.strategy-selection.v1".into(),
+            ),
+            ("matched", true.into()),
+            ("action", "dynamic-hook-action".into()),
+        ]),
     )
     .with_schema_id(strategy_selection_schema_id());
 
@@ -44,11 +46,14 @@ fn scheme_type_registry_decodes_runtime_projection_contract() {
         .with_schema_id(strategy_selection_schema_id());
     let envelope = GerbilSchemeTypedValue::new(
         strategy_selection_type_id(),
-        json!({
-            "schema_id": "marlin.deck-runtime.strategy-selection.v1",
-            "matched": true,
-            "action": "runtime-contract-action"
-        }),
+        GerbilSchemeValue::record([
+            (
+                "schema_id",
+                "marlin.deck-runtime.strategy-selection.v1".into(),
+            ),
+            ("matched", true.into()),
+            ("action", "runtime-contract-action".into()),
+        ]),
     )
     .with_schema_id(strategy_selection_schema_id());
 
@@ -75,10 +80,13 @@ fn scheme_projection_contract_round_trips_as_protocol_data() {
 fn scheme_typed_projection_rejects_wrong_schema_before_payload_decode() {
     let envelope = GerbilSchemeTypedValue::new(
         strategy_selection_type_id(),
-        json!({
-            "schema_id": "marlin.deck-runtime.strategy-selection.v2",
-            "matched": "serde should not run before schema check"
-        }),
+        GerbilSchemeValue::record([
+            (
+                "schema_id",
+                "marlin.deck-runtime.strategy-selection.v2".into(),
+            ),
+            ("matched", "serde should not run before schema check".into()),
+        ]),
     )
     .with_schema_id(GerbilSchemeSchemaId::new(
         "marlin.deck-runtime.strategy-selection.v2",
@@ -100,10 +108,13 @@ fn scheme_typed_value_contract_rejects_wrong_schema_before_payload_decode() {
         .with_schema_id(strategy_selection_schema_id());
     let envelope = GerbilSchemeTypedValue::new(
         strategy_selection_type_id(),
-        json!({
-            "schema_id": "marlin.deck-runtime.strategy-selection.v2",
-            "matched": "serde should not run before schema check"
-        }),
+        GerbilSchemeValue::record([
+            (
+                "schema_id",
+                "marlin.deck-runtime.strategy-selection.v2".into(),
+            ),
+            ("matched", "serde should not run before schema check".into()),
+        ]),
     )
     .with_schema_id(GerbilSchemeSchemaId::new(
         "marlin.deck-runtime.strategy-selection.v2",
@@ -123,10 +134,10 @@ fn scheme_typed_value_contract_rejects_wrong_schema_before_payload_decode() {
 fn scheme_typed_projection_rejects_wrong_type_before_payload_decode() {
     let envelope = GerbilSchemeTypedValue::new(
         GerbilSchemeTypeId::new("marlin.dynamic.capability"),
-        json!({
-            "schema_id": "marlin.dynamic.capability.v1",
-            "matched": "serde should not run before type check"
-        }),
+        GerbilSchemeValue::record([
+            ("schema_id", "marlin.dynamic.capability.v1".into()),
+            ("matched", "serde should not run before type check".into()),
+        ]),
     );
 
     let error = envelope

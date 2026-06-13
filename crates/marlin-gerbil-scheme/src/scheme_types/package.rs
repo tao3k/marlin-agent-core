@@ -136,11 +136,11 @@ pub struct GerbilSchemePackageNativeReadinessReceipt {
     pub matched_symbol_count: usize,
 }
 
-/// Decode a Scheme-emitted downstream package manifest.
-pub fn decode_gerbil_scheme_package_manifest(
-    manifest_json: &str,
+/// Decode a serialized downstream package manifest fixture.
+pub fn decode_gerbil_scheme_package_manifest_fixture(
+    fixture: &str,
 ) -> Result<GerbilSchemePackageManifest, GerbilSchemeTypeDecodeError> {
-    serde_json::from_str(manifest_json).map_err(|error| GerbilSchemeTypeDecodeError::Json {
+    serde_json::from_str(fixture).map_err(|error| GerbilSchemeTypeDecodeError::SerializedFixture {
         message: error.to_string(),
     })
 }

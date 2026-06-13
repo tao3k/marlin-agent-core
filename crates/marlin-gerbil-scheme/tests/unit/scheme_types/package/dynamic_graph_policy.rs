@@ -1,14 +1,13 @@
 use super::deck_runtime_native_readiness_plan;
 use marlin_gerbil_scheme::{
     GerbilSchemeSchemaId, GerbilSchemeTypeId, GerbilSchemeTypeRegistry, GerbilSchemeTypedValue,
-    decode_gerbil_scheme_package_manifest, validate_gerbil_scheme_package_manifest,
-    validate_gerbil_scheme_package_native_readiness,
+    GerbilSchemeValue, scheme_type_fixtures::decode_gerbil_scheme_package_manifest_fixture,
+    validate_gerbil_scheme_package_manifest, validate_gerbil_scheme_package_native_readiness,
 };
-use serde_json::json;
 
 #[test]
 fn scheme_package_manifest_decodes_dynamic_graph_policy_payload_through_native_abi_bridge() {
-    let manifest = decode_gerbil_scheme_package_manifest(
+    let manifest = decode_gerbil_scheme_package_manifest_fixture(
         r#"{
             "schema_id": "marlin.scheme-package.manifest.v1",
             "package_id": "marlin.downstream.graph-policy-package",
@@ -65,21 +64,30 @@ fn scheme_package_manifest_decodes_dynamic_graph_policy_payload_through_native_a
         .expect("package type manifest should build dynamic registry");
     let envelope = GerbilSchemeTypedValue::new(
         GerbilSchemeTypeId::new("marlin.downstream.graph-policy"),
-        json!({
-            "schema_id": "marlin.downstream.graph-policy.v1",
-            "policy": {
-                "strategy": "beam-search-v2",
-                "ranker": "pure-gerbil-policy"
-            },
-            "native_abi": {
-                "abi_id": "marlin.deck-runtime.native",
-                "version": 1,
-                "required_symbols": [
-                    "marlin_deck_runtime_initialize",
-                    "marlin_deck_runtime_select_model_route"
-                ]
-            }
-        }),
+        GerbilSchemeValue::record([
+            ("schema_id", "marlin.downstream.graph-policy.v1".into()),
+            (
+                "policy",
+                GerbilSchemeValue::record([
+                    ("strategy", "beam-search-v2".into()),
+                    ("ranker", "pure-gerbil-policy".into()),
+                ]),
+            ),
+            (
+                "native_abi",
+                GerbilSchemeValue::record([
+                    ("abi_id", "marlin.deck-runtime.native".into()),
+                    ("version", 1.into()),
+                    (
+                        "required_symbols",
+                        GerbilSchemeValue::vector([
+                            "marlin_deck_runtime_initialize".into(),
+                            "marlin_deck_runtime_select_model_route".into(),
+                        ]),
+                    ),
+                ]),
+            ),
+        ]),
     )
     .with_schema_id(GerbilSchemeSchemaId::new(
         "marlin.downstream.graph-policy.v1",
@@ -91,9 +99,19 @@ fn scheme_package_manifest_decodes_dynamic_graph_policy_payload_through_native_a
 
     assert_eq!(receipt.type_count, 2);
     assert_eq!(readiness.matched_symbol_count, 2);
-    assert_eq!(projection["policy"]["ranker"], "pure-gerbil-policy");
     assert_eq!(
-        projection["native_abi"]["required_symbols"][0],
-        "marlin_deck_runtime_initialize"
+        projection
+            .get("policy")
+            .and_then(|policy| policy.get("ranker"))
+            .and_then(GerbilSchemeValue::as_text),
+        Some("pure-gerbil-policy")
+    );
+    assert_eq!(
+        projection
+            .get("native_abi")
+            .and_then(|native_abi| native_abi.get("required_symbols"))
+            .and_then(|symbols| symbols.get_index(0))
+            .and_then(GerbilSchemeValue::as_text),
+        Some("marlin_deck_runtime_initialize")
     );
 }

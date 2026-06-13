@@ -10,7 +10,8 @@ use marlin_agent_protocol::{
 use marlin_gerbil_scheme::{
     GERBIL_DECK_RUNTIME_NATIVE_ABI_ID, GERBIL_DECK_RUNTIME_NATIVE_ABI_VERSION,
     GerbilDeckRuntimeNativeAotConfig, GerbilSchemeNativeAbiId, GerbilSchemeNativeSymbol,
-    GerbilSchemePackageId, GerbilSchemeProjectionContract, decode_gerbil_scheme_package_manifest,
+    GerbilSchemePackageId, GerbilSchemeProjectionContract,
+    scheme_type_fixtures::decode_gerbil_scheme_package_manifest_fixture,
     validate_gerbil_scheme_package_manifest, validate_gerbil_scheme_package_native_readiness,
 };
 use std::collections::BTreeMap;
@@ -52,8 +53,8 @@ fn scheme_package_manifest_connects_types_projection_and_native_abi() {
 }
 
 #[test]
-fn scheme_package_manifest_round_trips_from_downstream_json() {
-    let manifest = decode_gerbil_scheme_package_manifest(
+fn scheme_package_manifest_round_trips_from_serialized_fixture() {
+    let manifest = decode_gerbil_scheme_package_manifest_fixture(
         r#"{
             "schema_id": "marlin.scheme-package.manifest.v1",
             "package_id": "marlin.downstream.strategy-package",

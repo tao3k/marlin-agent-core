@@ -1,4 +1,5 @@
 mod dynamic_graph_policy;
+mod dynamic_runtime_bridge;
 mod failures;
 mod happy_path;
 

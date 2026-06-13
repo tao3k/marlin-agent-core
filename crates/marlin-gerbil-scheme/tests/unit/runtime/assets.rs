@@ -68,21 +68,38 @@ fn gerbil_runtime_assets_expose_loadpath_contract() {
     );
     assert!(GERBIL_MARLIN_DECK_RUNTIME_SOURCE.contains(GERBIL_POO_OBJECT_MODULE));
     assert!(
-        GERBIL_MARLIN_DECK_RUNTIME_SOURCE.contains("display-marlin-deck-runtime-object-model-json")
+        GERBIL_MARLIN_DECK_RUNTIME_SOURCE.contains("marlin-deck-runtime-model-route-selection")
     );
-    assert!(
-        GERBIL_MARLIN_DECK_RUNTIME_SOURCE
-            .contains("display-marlin-deck-runtime-model-route-selection-json")
-    );
+    assert!(GERBIL_MARLIN_DECK_RUNTIME_SOURCE.contains("typed-native-abi"));
+    assert!(!GERBIL_MARLIN_DECK_RUNTIME_SOURCE.contains("json-handshake"));
+    assert!(!GERBIL_MARLIN_DECK_RUNTIME_SOURCE.contains("display-json-string"));
+    assert!(!GERBIL_MARLIN_DECK_RUNTIME_SOURCE.contains("display-marlin-deck-runtime-"));
     assert!(
         GERBIL_MARLIN_DECK_RUNTIME_COMPILED_POLICY_SOURCE
             .contains("defmarlin-deck-runtime-compiled-route-selector")
     );
+    assert!(
+        GERBIL_MARLIN_DECK_RUNTIME_COMPILED_POLICY_SOURCE
+            .contains("defmarlin-deck-runtime-cached-compiled-route-index-selector")
+    );
+    assert!(
+        GERBIL_MARLIN_DECK_RUNTIME_COMPILED_POLICY_SOURCE
+            .contains("defmarlin-deck-runtime-direct-compiled-route-index-selector")
+    );
     assert!(GERBIL_MARLIN_DECK_RUNTIME_COMPILED_POLICY_SOURCE.contains("compiled-macro-selector"));
+    assert!(GERBIL_MARLIN_DECK_RUNTIME_COMPILED_POLICY_SOURCE.contains("policy-index-selector"));
+    assert!(
+        GERBIL_MARLIN_DECK_RUNTIME_COMPILED_POLICY_SOURCE.contains("direct-policy-index-selector")
+    );
     assert!(
         GERBIL_MARLIN_DECK_RUNTIME_COMPILED_POLICY_SAMPLE_SOURCE
             .contains("select-marlin-deck-runtime-sample-compiled-policy")
     );
+    assert!(
+        GERBIL_MARLIN_DECK_RUNTIME_COMPILED_POLICY_SAMPLE_SOURCE
+            .contains("select-marlin-deck-runtime-sample-compiled-policy-index")
+    );
+    assert!(GERBIL_MARLIN_DECK_RUNTIME_COMPILED_POLICY_SAMPLE_SOURCE.contains("index_elapsed_us"));
     assert!(GERBIL_MARLIN_DECK_RUNTIME_COMPILED_POLICY_SAMPLE_SOURCE.contains("current-jiffy"));
     let strategy_asset = assets
         .iter()
@@ -97,8 +114,10 @@ fn gerbil_runtime_assets_expose_loadpath_contract() {
     assert!(
         strategy_asset
             .source
-            .contains("display-marlin-deck-runtime-strategy-selection-json")
+            .contains("marlin-deck-runtime-strategy-selection")
     );
+    assert!(!strategy_asset.source.contains("display-json-string"));
+    assert!(!strategy_asset.source.contains("selection-json"));
     assert!(GERBIL_MARLIN_DECK_RUNTIME_NATIVE_SOURCE.contains("c-define"));
     assert!(GERBIL_MARLIN_DECK_RUNTIME_NATIVE_SOURCE.contains("begin-ffi"));
     assert!(GERBIL_MARLIN_DECK_RUNTIME_NATIVE_SOURCE.contains("begin-foreign"));
@@ -181,7 +200,7 @@ fn gerbil_runtime_assets_write_loadpath_tree() {
     assert!(
         fs::read_to_string(root.path().join(GERBIL_MARLIN_DECK_RUNTIME_PATH))
             .expect("read deck runtime")
-            .contains("display-marlin-deck-runtime-capability-json")
+            .contains("marlin-deck-runtime-capability-fact")
     );
     assert!(
         fs::read_to_string(
@@ -202,7 +221,7 @@ fn gerbil_runtime_assets_write_loadpath_tree() {
     assert!(
         fs::read_to_string(root.path().join("src/marlin/deck-runtime-strategy.ss"))
             .expect("read deck runtime strategy")
-            .contains("display-marlin-deck-runtime-strategy-selection-json")
+            .contains("marlin-deck-runtime-strategy-selection")
     );
     assert!(
         fs::read_to_string(root.path().join(GERBIL_MARLIN_PROTOCOL_PATH))

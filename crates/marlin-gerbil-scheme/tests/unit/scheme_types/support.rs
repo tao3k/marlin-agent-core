@@ -1,6 +1,7 @@
 use marlin_gerbil_scheme::{
     GerbilSchemeProjectionContract, GerbilSchemeSchemaId, GerbilSchemeTypeId,
-    GerbilSchemeTypeManifest, GerbilSchemeTypedProjection, decode_gerbil_scheme_type_manifest,
+    GerbilSchemeTypeManifest, GerbilSchemeTypedProjection,
+    scheme_type_fixtures::decode_gerbil_scheme_type_manifest_fixture,
 };
 use serde::Deserialize;
 
@@ -49,7 +50,7 @@ pub(super) fn strategy_decision_schema_id() -> GerbilSchemeSchemaId {
 }
 
 pub(super) fn strategy_selection_manifest() -> GerbilSchemeTypeManifest {
-    decode_gerbil_scheme_type_manifest(
+    decode_gerbil_scheme_type_manifest_fixture(
         r#"{
             "schema_id": "marlin.scheme-types.manifest.v1",
             "types": [
@@ -69,7 +70,7 @@ pub(super) fn strategy_selection_manifest() -> GerbilSchemeTypeManifest {
 }
 
 pub(super) fn nested_strategy_manifest() -> GerbilSchemeTypeManifest {
-    decode_gerbil_scheme_type_manifest(
+    decode_gerbil_scheme_type_manifest_fixture(
         r#"{
             "schema_id": "marlin.scheme-types.manifest.v1",
             "types": [

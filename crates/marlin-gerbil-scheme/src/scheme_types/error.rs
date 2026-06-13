@@ -1,5 +1,6 @@
 //! Decode and validation errors for `Scheme` type manifests.
 
+use serde::de;
 use std::{
     error::Error,
     fmt::{self, Display, Formatter},
@@ -13,7 +14,10 @@ use super::ids::{
 /// Error raised while decoding Scheme type manifests or typed values.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum GerbilSchemeTypeDecodeError {
-    Json {
+    SerializedFixture {
+        message: String,
+    },
+    RustProjection {
         message: String,
     },
     DuplicateType {
@@ -100,8 +104,17 @@ pub enum GerbilSchemeTypeDecodeError {
 impl Display for GerbilSchemeTypeDecodeError {
     fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Json { message } => {
-                write!(formatter, "failed to decode Scheme type JSON: {message}")
+            Self::SerializedFixture { message } => {
+                write!(
+                    formatter,
+                    "failed to decode serialized Scheme fixture: {message}"
+                )
+            }
+            Self::RustProjection { message } => {
+                write!(
+                    formatter,
+                    "failed to decode Scheme value into Rust projection: {message}"
+                )
             }
             Self::DuplicateType { type_id } => write!(
                 formatter,
@@ -264,6 +277,17 @@ impl Display for GerbilSchemeTypeDecodeError {
 }
 
 impl Error for GerbilSchemeTypeDecodeError {}
+
+impl de::Error for GerbilSchemeTypeDecodeError {
+    fn custom<T>(message: T) -> Self
+    where
+        T: Display,
+    {
+        Self::RustProjection {
+            message: message.to_string(),
+        }
+    }
+}
 
 fn schema_id_label(schema_id: Option<&GerbilSchemeSchemaId>) -> &str {
     schema_id.map_or("<none>", GerbilSchemeSchemaId::as_str)

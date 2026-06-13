@@ -42,13 +42,80 @@ package: marlin
       (reverse acc)
       (loop (cdr remaining) (cons (policy-object (car remaining)) acc)))))
 
+(def (display-json-string value)
+  (display "\"")
+  (let ((value-length (string-length value)))
+    (let loop ((index 0))
+      (if (< index value-length)
+        (begin
+          (let ((ch (string-ref value index)))
+            (cond
+              ((char=? ch #\") (display "\\\""))
+              ((char=? ch #\\) (display "\\\\"))
+              ((char=? ch #\newline) (display "\\n"))
+              ((char=? ch #\tab) (display "\\t"))
+              (else (display ch))))
+          (loop (+ index 1)))
+        #t)))
+  (display "\""))
+
+(def (display-json-string-list values)
+  (display "[")
+  (let loop ((remaining values) (first #t))
+    (if (null? remaining)
+      #t
+      (begin
+        (if first #f (display ","))
+        (display-json-string (car remaining))
+        (loop (cdr remaining) #f))))
+  (display "]"))
+
+(def (display-json-bool value)
+  (if value (display "true") (display "false")))
+
+(def (display-marlin-deck-runtime-policy-adapter-policy policy)
+  (display "{\"kind\":")
+  (display-json-string (.get policy kind))
+  (display ",\"name\":")
+  (display-json-string (.get policy name))
+  (display ",\"provider\":")
+  (display-json-string (.get policy provider))
+  (display ",\"model\":")
+  (display-json-string (.get policy model))
+  (display ",\"command_prefixes\":")
+  (display-json-string-list (.get policy command-prefixes))
+  (display ",\"agent_scopes\":")
+  (display-json-string-list (.get policy agent-scopes))
+  (display ",\"context_mode\":")
+  (display-json-string (.get policy context-mode))
+  (display ",\"isolation_mode\":")
+  (display-json-string (.get policy isolation-mode))
+  (display "}"))
+
+(def (display-marlin-deck-runtime-policy-adapter-selection selection)
+  (display "{\"schema_id\":")
+  (display-json-string (.get selection kind))
+  (display ",\"command\":")
+  (display-json-string (.get selection command))
+  (display ",\"agent_scope\":")
+  (display-json-string (.get selection agent-scope))
+  (display ",\"matched\":")
+  (display-json-bool (.get selection matched))
+  (display ",\"policy\":")
+  (let ((policy (.get selection policy)))
+    (if policy
+      (display-marlin-deck-runtime-policy-adapter-policy policy)
+      (display "null")))
+  (display "}"))
+
 (def (run-marlin-deck-runtime-policy-adapter)
   (let* ((request (read-marlin-deck-runtime-policy-request))
          (policies (policy-objects (required-field request "policies")))
          (command (required-field request "command"))
          (agent-scope (required-field request "agent_scope")))
-    (display-marlin-deck-runtime-model-route-selection-json
-     policies command agent-scope)
+    (display-marlin-deck-runtime-policy-adapter-selection
+     (marlin-deck-runtime-model-route-selection
+      policies command agent-scope))
     (newline)))
 
 (def (main . _args)

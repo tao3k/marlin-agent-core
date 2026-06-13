@@ -65,73 +65,21 @@ fn command_compiler_real_gxi_deck_runtime_capability_handshake() {
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
-    let response: serde_json::Value =
-        serde_json::from_slice(&output.stdout).expect("decode deck runtime handshake");
-    assert_eq!(response["package"], "marlin-deck-runtime");
-    assert_eq!(response["module"], ":marlin/deck-runtime");
-    assert_eq!(
-        response["poo_dependency"],
-        "git.cons.io/mighty-gerbils/gerbil-poo"
-    );
-    assert_eq!(response["poo_package"], GERBIL_POO_PACKAGE_NAME);
-    let poo_modules = response["poo_modules"]
-        .as_array()
-        .expect("deck runtime poo modules are an array");
-    assert!(
-        poo_modules
-            .iter()
-            .any(|value| value.as_str() == Some(GERBIL_POO_OBJECT_MODULE))
-    );
-    assert!(
-        poo_modules
-            .iter()
-            .any(|value| value.as_str() == Some(GERBIL_POO_MOP_MODULE))
-    );
-    assert!(
-        poo_modules
-            .iter()
-            .any(|value| value.as_str() == Some(GERBIL_POO_PROTO_MODULE))
-    );
-    let poo_forms = response["poo_forms"]
-        .as_array()
-        .expect("deck runtime poo forms are an array");
-    assert!(poo_forms.iter().any(|value| value.as_str() == Some(".o")));
-    assert!(
-        poo_forms
-            .iter()
-            .any(|value| value.as_str() == Some(".defgeneric"))
-    );
-    assert!(
-        poo_forms
-            .iter()
-            .any(|value| value.as_str() == Some("defmethod"))
-    );
-    let capabilities = response["capabilities"]
-        .as_array()
-        .expect("deck runtime capabilities are an array");
-    assert!(
-        capabilities
-            .iter()
-            .any(|value| value.as_str() == Some("rust-bridge"))
-    );
-    assert!(
-        capabilities
-            .iter()
-            .any(|value| value.as_str() == Some("poo-object-system"))
-    );
-    let rust_contracts = response["rust_contracts"]
-        .as_array()
-        .expect("deck runtime rust contracts are an array");
-    assert!(
-        rust_contracts
-            .iter()
-            .any(|value| value.as_str() == Some("real-gxi"))
-    );
-    assert!(
-        rust_contracts
-            .iter()
-            .any(|value| value.as_str() == Some("json-handshake"))
-    );
+    let stdout = String::from_utf8(output.stdout).expect("handshake output should be UTF-8");
+    assert!(stdout.contains("marlin-deck-runtime"));
+    assert!(stdout.contains(":marlin/deck-runtime"));
+    assert!(stdout.contains("git.cons.io/mighty-gerbils/gerbil-poo"));
+    assert!(stdout.contains(GERBIL_POO_PACKAGE_NAME));
+    assert!(stdout.contains(GERBIL_POO_OBJECT_MODULE));
+    assert!(stdout.contains(GERBIL_POO_MOP_MODULE));
+    assert!(stdout.contains(GERBIL_POO_PROTO_MODULE));
+    assert!(stdout.contains(".o"));
+    assert!(stdout.contains(".defgeneric"));
+    assert!(stdout.contains("defmethod"));
+    assert!(stdout.contains("rust-bridge"));
+    assert!(stdout.contains("poo-object-system"));
+    assert!(stdout.contains("real-gxi"));
+    assert!(stdout.contains("typed-native-abi"));
 }
 
 #[test]
@@ -157,22 +105,16 @@ fn command_compiler_real_gxi_deck_runtime_selects_scheme_model_route_policy() {
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
-    let response: serde_json::Value =
-        serde_json::from_slice(&output.stdout).expect("decode deck runtime policy selection");
-    assert_eq!(
-        response["schema_id"],
-        "marlin-deck-runtime.model-route-selection.v1"
-    );
-    assert_eq!(response["matched"], true);
-    assert_eq!(
-        response["policy"]["kind"],
-        "marlin-deck-runtime.model-route-policy.v1"
-    );
-    assert_eq!(response["policy"]["name"], "cheap-test-runner");
-    assert_eq!(response["policy"]["provider"], "openai");
-    assert_eq!(response["policy"]["model"], "gpt-5-mini");
-    assert_eq!(response["policy"]["context_mode"], "forked-context");
-    assert_eq!(response["policy"]["isolation_mode"], "workspace-isolated");
+    let stdout = String::from_utf8(output.stdout).expect("policy selection output should be UTF-8");
+    assert_no_json_handoff(&stdout);
+    assert!(stdout.contains("marlin-deck-runtime.model-route-selection.v1"));
+    assert!(stdout.contains("matched"));
+    assert!(stdout.contains("marlin-deck-runtime.model-route-policy.v1"));
+    assert!(stdout.contains("cheap-test-runner"));
+    assert!(stdout.contains("openai"));
+    assert!(stdout.contains("gpt-5-mini"));
+    assert!(stdout.contains("forked-context"));
+    assert!(stdout.contains("workspace-isolated"));
 }
 
 #[test]
@@ -198,23 +140,17 @@ fn command_compiler_real_gxi_deck_runtime_runs_scheme_complex_strategy() {
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
-    let response: serde_json::Value =
-        serde_json::from_slice(&output.stdout).expect("decode deck runtime strategy selection");
-    assert_eq!(
-        response["schema_id"],
-        "marlin-deck-runtime.strategy-selection.v1"
-    );
-    assert_eq!(response["matched"], true);
-    assert_eq!(response["strategy_rule"], "customer-release-subagent");
-    assert_eq!(response["hook_action"], "defer");
-    assert_eq!(response["rewrite_command"], serde_json::Value::Null);
-    assert_eq!(response["policy"]["name"], "deep-customer-reviewer");
-    assert_eq!(response["policy"]["provider"], "anthropic");
-    assert_eq!(response["policy"]["model"], "claude-opus-4-8");
+    let stdout =
+        String::from_utf8(output.stdout).expect("strategy selection output should be UTF-8");
+    assert_no_json_handoff(&stdout);
+    assert!(stdout.contains("marlin-deck-runtime.strategy-selection.v1"));
+    assert!(stdout.contains("matched"));
+    assert!(stdout.contains("customer-release-subagent"));
+    assert!(stdout.contains("defer"));
+    assert!(stdout.contains("deep-customer-reviewer"));
+    assert!(stdout.contains("anthropic"));
+    assert!(stdout.contains("claude-opus-4-8"));
 
-    let signals = response["matched_signals"]
-        .as_array()
-        .expect("matched signals are an array");
     for expected in [
         "model-route",
         "command-prefix",
@@ -227,16 +163,11 @@ fn command_compiler_real_gxi_deck_runtime_runs_scheme_complex_strategy() {
         "high-order-matcher",
     ] {
         assert!(
-            signals
-                .iter()
-                .any(|signal| signal.as_str() == Some(expected)),
+            stdout.contains(expected),
             "missing strategy signal {expected}"
         );
     }
 
-    let capabilities = response["capabilities"]
-        .as_array()
-        .expect("strategy capabilities are an array");
     for expected in [
         "session-policy",
         "agent-lineage-policy",
@@ -248,9 +179,7 @@ fn command_compiler_real_gxi_deck_runtime_runs_scheme_complex_strategy() {
         "strategy-template-macro",
     ] {
         assert!(
-            capabilities
-                .iter()
-                .any(|capability| capability.as_str() == Some(expected)),
+            stdout.contains(expected),
             "missing strategy capability {expected}"
         );
     }
@@ -279,36 +208,10 @@ fn command_compiler_real_gxi_deck_runtime_runs_compiled_policy_macro_selector() 
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
-    let response: serde_json::Value =
-        serde_json::from_slice(&output.stdout).expect("decode compiled policy selection");
-    assert_eq!(
-        response["schema_id"],
-        "marlin-deck-runtime.model-route-selection.v1"
-    );
-    assert_eq!(
-        response["compiled_policy_schema"],
-        "marlin-deck-runtime.compiled-policy.v1"
-    );
-    assert_eq!(response["matched"], true);
-    assert_eq!(response["policy"]["name"], "compiled-cheap-test-runner");
-    assert_eq!(response["policy"]["model"], "gpt-5-mini");
-
-    let capabilities = response["capabilities"]
-        .as_array()
-        .expect("compiled policy capabilities are an array");
-    for expected in [
-        "compiled-macro-selector",
-        "ahead-of-time-policy-shape",
-        "direct-branch-dispatch",
-        "rust-json-compatible-selection",
-    ] {
-        assert!(
-            capabilities
-                .iter()
-                .any(|capability| capability.as_str() == Some(expected)),
-            "missing compiled policy capability {expected}"
-        );
-    }
+    let stdout = String::from_utf8(output.stdout).expect("compiled policy output should be UTF-8");
+    assert_no_json_handoff(&stdout);
+    assert!(stdout.contains("marlin-deck-runtime.compiled-policy.v1"));
+    assert!(stdout.contains("compiled-policy-match"));
 }
 
 #[test]
@@ -335,16 +238,33 @@ fn command_compiler_real_gxi_deck_runtime_runs_compiled_policy_macro_selector_ba
         String::from_utf8_lossy(&output.stderr)
     );
     let stdout = String::from_utf8(output.stdout).expect("batch output should be UTF-8");
+    assert_no_json_handoff(&stdout);
     assert!(stdout.contains("marlin-deck-runtime.compiled-policy.v1"));
     assert!(stdout.contains("iterations=10000"));
     assert!(stdout.contains("matches=10000"));
-    assert!(stdout.contains("elapsed_us="));
+    assert!(stdout.contains("policy_elapsed_us="));
+    assert!(stdout.contains("index_elapsed_us="));
+}
+
+fn assert_no_json_handoff(stdout: &str) {
+    for forbidden in [
+        "json-handshake",
+        "display-json-string",
+        "display-marlin-deck-runtime-strategy-selection-json",
+        "{\"",
+    ] {
+        assert!(
+            !stdout.contains(forbidden),
+            "real gxi output leaked serialized handoff marker {forbidden}: {stdout}"
+        );
+    }
 }
 
 fn write_deck_runtime_model_route_policy_example(path: &Path) {
     fs::write(
         path,
-        r#"(import :marlin/deck-runtime)
+        r#"(import :clan/poo/object
+        :marlin/deck-runtime)
 
 (def policies
   (list
@@ -365,10 +285,28 @@ fn write_deck_runtime_model_route_policy_example(path: &Path) {
     "shared-context"
     "isolated-session")))
 
-(display-marlin-deck-runtime-model-route-selection-json
- policies
- "cargo test -p marlin-gerbil-scheme --test unit_test"
- "sub-agent")
+(def selection
+  (marlin-deck-runtime-model-route-selection
+   policies
+   "cargo test -p marlin-gerbil-scheme --test unit_test"
+   "sub-agent"))
+
+(display (.get selection kind))
+(newline)
+(display (if (.get selection matched) "matched" "miss"))
+(newline)
+(def selected-policy (.get selection policy))
+(display (.get selected-policy kind))
+(newline)
+(display (.get selected-policy name))
+(newline)
+(display (.get selected-policy provider))
+(newline)
+(display (.get selected-policy model))
+(newline)
+(display (.get selected-policy context-mode))
+(newline)
+(display (.get selected-policy isolation-mode))
 (newline)
 "#,
     )
@@ -398,10 +336,14 @@ fn write_deck_runtime_compiled_policy_example(path: &Path) {
    "shared-context"
    "isolated-session"))
 
-(display-marlin-deck-runtime-compiled-selection-json
- select-compiled-policy
- "cargo test -p marlin-gerbil-scheme"
- "sub-agent")
+(display marlin-deck-runtime-compiled-policy-kind)
+(newline)
+(display
+ (if (select-compiled-policy
+      "cargo test -p marlin-gerbil-scheme"
+      "sub-agent")
+   "compiled-policy-match"
+   "compiled-policy-miss"))
 (newline)
 "#,
     )
@@ -418,6 +360,11 @@ fn write_deck_runtime_compiled_policy_batch_example(path: &Path, iterations: usi
  {iterations}
  "cargo test -p marlin-gerbil-scheme"
  "sub-agent")
+
+(display-marlin-deck-runtime-sample-compiled-policy-index-batch-metrics
+ {iterations}
+ "cargo test -p marlin-gerbil-scheme"
+ "sub-agent")
 "#
         ),
     )
@@ -427,7 +374,8 @@ fn write_deck_runtime_compiled_policy_batch_example(path: &Path, iterations: usi
 fn write_deck_runtime_complex_strategy_example(path: &Path) {
     fs::write(
         path,
-        r#"(import :marlin/deck-runtime
+        r#"(import :clan/poo/object
+        :marlin/deck-runtime
         :marlin/deck-runtime-strategy)
 
 (def policies
@@ -469,12 +417,32 @@ fn write_deck_runtime_complex_strategy_example(path: &Path) {
    (list "hook-roadmap" "runtime-positioning" "native-aot-benchmark")
    "customer-agent"))
 
-(display-marlin-deck-runtime-strategy-selection-json
- policies
- (list customer-release-subagent)
- context
- "codex customer-review --session release-session"
- "sub-agent")
+(def selection
+  (marlin-deck-runtime-strategy-selection
+   policies
+   (list customer-release-subagent)
+   context
+   "codex customer-review --session release-session"
+   "sub-agent"))
+
+(display (.get selection kind))
+(newline)
+(display (if (.get selection matched) "matched" "miss"))
+(newline)
+(display (.get selection strategy-rule))
+(newline)
+(display (.get selection hook-action))
+(newline)
+(write (.get selection matched-signals))
+(newline)
+(write (.get selection capabilities))
+(newline)
+(def selected-policy (.get selection policy))
+(display (.get selected-policy name))
+(newline)
+(display (.get selected-policy provider))
+(newline)
+(display (.get selected-policy model))
 (newline)
 "#,
     )

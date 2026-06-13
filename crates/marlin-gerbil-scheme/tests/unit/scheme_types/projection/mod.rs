@@ -14,8 +14,8 @@ pub(super) mod support {
     };
 }
 
-fn assert_json_decode_error(error: GerbilSchemeTypeDecodeError, needle: &str) {
-    let GerbilSchemeTypeDecodeError::Json { message } = error else {
+fn assert_rust_projection_decode_error(error: GerbilSchemeTypeDecodeError, needle: &str) {
+    let GerbilSchemeTypeDecodeError::RustProjection { message } = error else {
         panic!("unexpected non-serde decode error: {error}");
     };
 

@@ -12,7 +12,10 @@ mod deps;
 mod hook_policy;
 mod native_aot_cli;
 mod real_gxi_gate;
+mod resident_runtime;
 mod runtime;
+#[doc(hidden)]
+pub mod scheme_type_fixtures;
 mod scheme_types;
 
 pub use aot_repair_cli::run_gerbil_aot_repair_cli;
@@ -71,6 +74,9 @@ pub use native_aot_cli::run_gerbil_native_aot_cli;
 pub use real_gxi_gate::{
     RealGxiGateCommand, RealGxiGateError, run_real_gxi_gate_cli, run_real_gxi_gate_from_args,
 };
+pub use resident_runtime::{
+    GerbilResidentRuntimePlan, GerbilResidentRuntimeSessionId, GerbilResidentRuntimeSessionMode,
+};
 pub use runtime::{
     DEFAULT_GERBIL_GSC_PROGRAM, DEFAULT_GERBIL_GXC_PROGRAM, DEFAULT_GERBIL_GXI_PROGRAM,
     GERBIL_ADAPTER_MODULE, GERBIL_BUILD_SOURCE, GERBIL_COMMAND_ADAPTER_BATCH_PATH,
@@ -103,9 +109,7 @@ pub use scheme_types::{
     GerbilSchemeSchemaId, GerbilSchemeTypeDecodeError, GerbilSchemeTypeFieldSpec,
     GerbilSchemeTypeId, GerbilSchemeTypeManifest, GerbilSchemeTypeManifestValidationReceipt,
     GerbilSchemeTypeRegistry, GerbilSchemeTypeSpec, GerbilSchemeTypedProjection,
-    GerbilSchemeTypedValue, GerbilSchemeTypedValueValidationReceipt,
-    decode_gerbil_scheme_package_manifest, decode_gerbil_scheme_type_manifest,
-    decode_gerbil_scheme_typed_value, validate_gerbil_scheme_package_manifest,
-    validate_gerbil_scheme_package_native_readiness, validate_gerbil_scheme_type_manifest,
-    validate_gerbil_scheme_typed_value,
+    GerbilSchemeTypedValue, GerbilSchemeTypedValueValidationReceipt, GerbilSchemeValue,
+    validate_gerbil_scheme_package_manifest, validate_gerbil_scheme_package_native_readiness,
+    validate_gerbil_scheme_type_manifest, validate_gerbil_scheme_typed_value,
 };

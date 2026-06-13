@@ -12,7 +12,10 @@ use marlin_agent_protocol::{
     ModelCommandMatcher, ModelRouteDecision, ModelRouteReceipt, ModelRouteRequest, ModelRouteRule,
 };
 
-use super::selection::ModelRouteSelectionProjectionError;
+use super::selection::{
+    ModelRouteSelectionProjectionError, ModelRouteSelectionProjectionReceipt,
+    ModelRouteSelectionProjectionSource, ProjectedModelRouteDecision,
+};
 
 /// Compiled route resolver backed by Aho-Corasick prefilters and `globset`.
 #[derive(Clone, Debug)]
@@ -55,14 +58,34 @@ impl CompiledModelRouteResolver {
         request: &ModelRouteRequest,
         policy_index: usize,
     ) -> Result<ModelRouteDecision, ModelRouteSelectionProjectionError> {
+        self.resolve_selected_policy_index_with_source(
+            request,
+            policy_index,
+            ModelRouteSelectionProjectionSource::NativeAbiPolicyIndex,
+        )
+        .map(|projection| projection.decision)
+    }
+
+    pub fn resolve_selected_policy_index_with_source(
+        &self,
+        request: &ModelRouteRequest,
+        policy_index: usize,
+        source: ModelRouteSelectionProjectionSource,
+    ) -> Result<ProjectedModelRouteDecision, ModelRouteSelectionProjectionError> {
         let rule = self
             .rules
             .iter()
             .find(|rule| rule.index == policy_index)
             .ok_or(ModelRouteSelectionProjectionError::UnknownPolicyIndex { policy_index })?;
 
-        rule.resolve(request)
-            .ok_or(ModelRouteSelectionProjectionError::SelectedRuleDidNotMatch { policy_index })
+        let decision = rule
+            .resolve(request)
+            .ok_or(ModelRouteSelectionProjectionError::SelectedRuleDidNotMatch { policy_index })?;
+        let projection = ModelRouteSelectionProjectionReceipt::new(source, policy_index, &decision);
+        Ok(ProjectedModelRouteDecision {
+            decision,
+            projection,
+        })
     }
 }
 

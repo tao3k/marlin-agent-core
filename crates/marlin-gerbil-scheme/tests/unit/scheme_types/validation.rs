@@ -3,16 +3,21 @@ use super::support::{
 };
 use marlin_gerbil_scheme::{
     GerbilSchemeSchemaId, GerbilSchemeTypeDecodeError, GerbilSchemeTypeId, GerbilSchemeTypedValue,
-    validate_gerbil_scheme_typed_value,
+    GerbilSchemeValue, validate_gerbil_scheme_typed_value,
 };
-use serde_json::json;
 
 #[test]
 fn scheme_typed_value_validation_leaves_payload_shape_to_rust_decode() {
     let manifest = strategy_selection_manifest();
     let envelope = GerbilSchemeTypedValue::new(
         strategy_selection_type_id(),
-        json!(["payload", "shape", "belongs", "to", "serde"]),
+        GerbilSchemeValue::vector([
+            "payload".into(),
+            "shape".into(),
+            "belongs".into(),
+            "to".into(),
+            "serde".into(),
+        ]),
     )
     .with_schema_id(strategy_selection_schema_id());
 
@@ -29,11 +34,14 @@ fn scheme_typed_value_rejects_schema_mismatch() {
     let manifest = strategy_selection_manifest();
     let envelope = GerbilSchemeTypedValue::new(
         strategy_selection_type_id(),
-        json!({
-            "schema_id": "marlin.deck-runtime.strategy-selection.v2",
-            "matched": true,
-            "action": "dynamic-hook-action"
-        }),
+        GerbilSchemeValue::record([
+            (
+                "schema_id",
+                "marlin.deck-runtime.strategy-selection.v2".into(),
+            ),
+            ("matched", true.into()),
+            ("action", "dynamic-hook-action".into()),
+        ]),
     )
     .with_schema_id(GerbilSchemeSchemaId::new(
         "marlin.deck-runtime.strategy-selection.v2",
@@ -53,9 +61,7 @@ fn scheme_typed_value_rejects_unknown_type() {
     let manifest = strategy_selection_manifest();
     let envelope = GerbilSchemeTypedValue::new(
         GerbilSchemeTypeId::new("marlin.unknown"),
-        json!({
-            "schema_id": "marlin.unknown.v1"
-        }),
+        GerbilSchemeValue::record([("schema_id", "marlin.unknown.v1".into())]),
     );
 
     let error = validate_gerbil_scheme_typed_value(&manifest, &envelope)

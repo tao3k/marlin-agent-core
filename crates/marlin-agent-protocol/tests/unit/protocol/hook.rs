@@ -1,5 +1,5 @@
 use marlin_agent_protocol::{
-    HookAgentScope, HookDispatchPolicyReceipt, HookDispatchPolicyReceiptInput,
+    HookAgentScope, HookDecisionContext, HookDispatchPolicyReceipt, HookDispatchPolicyReceiptInput,
     HookDispatchSelectionInput, HookDispatchSelectionReceipt, HookEventName, HookHandlerType,
     HookMatcherStrategy, HookMatcherToken, HookOutputEntry, HookOutputEntryKind,
     HookPolicyDecision, HookPolicyDecisionReason, HookPolicyDecisionReceipt, HookPolicyExtension,
@@ -7,6 +7,15 @@ use marlin_agent_protocol::{
     HookSelectedCandidateInput, HookSelectionCandidateReceipt, HookSelectionSkipReason,
     HookSkippedCandidateInput, HookSource, HookTrustStatus,
 };
+
+fn sample_decision_context() -> HookDecisionContext {
+    HookDecisionContext::new()
+        .with_session_id("session-1")
+        .with_agent_lineage_node("root-agent")
+        .with_workspace_state("dirty-worktree=false")
+        .with_org_memory_hit("hook-policy")
+        .with_agent_class("sub-agent")
+}
 
 #[test]
 fn hook_run_summary_tracks_status_and_output_entries() {
@@ -34,6 +43,7 @@ fn hook_dispatch_selection_receipt_records_candidates_and_strategy() {
     let receipt = HookDispatchSelectionReceipt::new(HookDispatchSelectionInput {
         event_name: HookEventName::PreToolUse,
         invocation_agent_scope: HookAgentScope::SubAgent,
+        decision_context: sample_decision_context(),
         matcher_strategy: HookMatcherStrategy::AhoCorasickEventIndex,
         matched_tokens: vec![HookMatcherToken::new("|PreToolUse|")],
         candidates: vec![
@@ -55,6 +65,15 @@ fn hook_dispatch_selection_receipt_records_candidates_and_strategy() {
 
     assert_eq!(receipt.candidate_count, 2);
     assert_eq!(receipt.selected_count, 1);
+    assert_eq!(
+        receipt
+            .decision_context
+            .session_id
+            .as_ref()
+            .expect("session context")
+            .as_str(),
+        "session-1"
+    );
     assert_eq!(receipt.matched_tokens[0].as_str(), "|PreToolUse|");
     assert_eq!(
         receipt.candidates[1].skip_reason,
@@ -67,6 +86,7 @@ fn hook_dispatch_policy_receipt_counts_allowed_and_rejected_decisions() {
     let receipt = HookDispatchPolicyReceipt::new(HookDispatchPolicyReceiptInput {
         event_name: HookEventName::PreToolUse,
         invocation_agent_scope: HookAgentScope::CustomerAgent,
+        decision_context: sample_decision_context(),
         mode: HookPolicyMode::EnforceTrusted,
         extension: HookPolicyExtension::gerbil_scheme("marlin/hooks/policy", "decide-hook-policy"),
         actions: Vec::new(),
@@ -102,6 +122,15 @@ fn hook_dispatch_policy_receipt_counts_allowed_and_rejected_decisions() {
     assert_eq!(
         receipt.invocation_agent_scope,
         HookAgentScope::CustomerAgent
+    );
+    assert_eq!(
+        receipt
+            .decision_context
+            .agent_class
+            .as_ref()
+            .expect("agent class")
+            .as_str(),
+        "sub-agent"
     );
     assert_eq!(receipt.allowed_count, 1);
     assert_eq!(receipt.rejected_count, 1);

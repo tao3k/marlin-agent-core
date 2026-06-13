@@ -1,6 +1,6 @@
 use marlin_agent_protocol::{
-    HookAgentScope, HookDispatchPolicyReceipt, HookDispatchPolicyReceiptInput, HookEventName,
-    HookPolicyExtension, HookPolicyMode,
+    HookAgentScope, HookDecisionContext, HookDispatchPolicyReceipt, HookDispatchPolicyReceiptInput,
+    HookEventName, HookPolicyExtension, HookPolicyMode,
 };
 use marlin_gerbil_scheme::{
     GerbilCommandSpec, GerbilHookPolicyCommandEvaluator, GerbilHookPolicyEvaluationError,
@@ -24,6 +24,7 @@ fn gerbil_hook_policy_command_evaluator_decodes_command_stdout() {
             policy_receipt: HookDispatchPolicyReceipt::new(HookDispatchPolicyReceiptInput {
                 event_name: HookEventName::PreToolUse,
                 invocation_agent_scope: HookAgentScope::CustomerAgent,
+                decision_context: HookDecisionContext::default(),
                 mode: HookPolicyMode::ObserveOnly,
                 extension,
                 actions: Vec::new(),
@@ -53,6 +54,7 @@ fn gerbil_hook_policy_command_evaluator_reports_command_failure_diagnostics() {
             policy_receipt: HookDispatchPolicyReceipt::new(HookDispatchPolicyReceiptInput {
                 event_name: HookEventName::PreToolUse,
                 invocation_agent_scope: HookAgentScope::SubAgent,
+                decision_context: HookDecisionContext::default(),
                 mode: HookPolicyMode::ObserveOnly,
                 extension,
                 actions: Vec::new(),

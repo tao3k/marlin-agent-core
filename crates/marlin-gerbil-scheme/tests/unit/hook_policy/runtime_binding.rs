@@ -1,6 +1,7 @@
 use marlin_agent_protocol::{
-    HookAgentScope, HookDispatchPolicyReceipt, HookDispatchPolicyReceiptInput, HookEventName,
-    HookPolicyDecision, HookPolicyDynamicActionKind, HookPolicyExtension, HookPolicyMode,
+    HookAgentScope, HookDecisionContext, HookDispatchPolicyReceipt, HookDispatchPolicyReceiptInput,
+    HookEventName, HookPolicyDecision, HookPolicyDynamicActionKind, HookPolicyExtension,
+    HookPolicyMode,
 };
 use marlin_gerbil_scheme::{
     DEFAULT_GERBIL_GXI_PROGRAM, GERBIL_HOOK_POLICY_ADAPTER_PATH, GERBIL_LOADPATH_ENV,
@@ -90,6 +91,7 @@ package: marlin/hooks
             policy_receipt: HookDispatchPolicyReceipt::new(HookDispatchPolicyReceiptInput {
                 event_name: HookEventName::PreToolUse,
                 invocation_agent_scope: HookAgentScope::CustomerAgent,
+                decision_context: HookDecisionContext::default(),
                 mode: HookPolicyMode::ObserveOnly,
                 extension,
                 actions: Vec::new(),
@@ -132,6 +134,7 @@ fn gerbil_hook_policy_runtime_binding_real_gxi_runs_sample_policy_module() {
             policy_receipt: HookDispatchPolicyReceipt::new(HookDispatchPolicyReceiptInput {
                 event_name: HookEventName::PreToolUse,
                 invocation_agent_scope: HookAgentScope::CustomerAgent,
+                decision_context: HookDecisionContext::default(),
                 mode: HookPolicyMode::ObserveOnly,
                 extension,
                 actions: Vec::new(),
@@ -195,6 +198,7 @@ package: marlin/hooks
             policy_receipt: HookDispatchPolicyReceipt::new(HookDispatchPolicyReceiptInput {
                 event_name: HookEventName::PreToolUse,
                 invocation_agent_scope: HookAgentScope::CustomerAgent,
+                decision_context: HookDecisionContext::default(),
                 mode: HookPolicyMode::ObserveOnly,
                 extension,
                 actions: Vec::new(),

@@ -17,15 +17,17 @@ pub use ids::{
 pub use manifest::{
     GerbilSchemeTypeFieldSpec, GerbilSchemeTypeManifest, GerbilSchemeTypeManifestValidationReceipt,
     GerbilSchemeTypeSpec, GerbilSchemeTypedValueValidationReceipt,
-    decode_gerbil_scheme_type_manifest,
+    decode_gerbil_scheme_type_manifest_fixture,
 };
 pub use package::{
     GerbilSchemeNativeAbiContract, GerbilSchemeNativeAbiReadinessPlan, GerbilSchemePackageManifest,
     GerbilSchemePackageManifestValidationReceipt, GerbilSchemePackageNativeReadinessReceipt,
-    decode_gerbil_scheme_package_manifest, validate_gerbil_scheme_package_manifest,
+    decode_gerbil_scheme_package_manifest_fixture, validate_gerbil_scheme_package_manifest,
     validate_gerbil_scheme_package_native_readiness,
 };
 pub use projection::{GerbilSchemeProjectionContract, GerbilSchemeTypedProjection};
 pub use registry::GerbilSchemeTypeRegistry;
-pub use typed_value::{GerbilSchemeTypedValue, decode_gerbil_scheme_typed_value};
+pub use typed_value::{
+    GerbilSchemeTypedValue, GerbilSchemeValue, decode_gerbil_scheme_typed_value_fixture,
+};
 pub use validation::{validate_gerbil_scheme_type_manifest, validate_gerbil_scheme_typed_value};
