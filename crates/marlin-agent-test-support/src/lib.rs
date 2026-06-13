@@ -28,7 +28,10 @@ pub use runtime_environment::{
     RuntimeEnvironmentFixture, assert_custom_sub_agent_environment,
     assert_hook_environment_uses_root_home, custom_home_runtime_environment_fixture,
 };
-pub use stability::{RuntimeStabilityEvidenceInput, runtime_stability_budget_evidence};
+pub use stability::{
+    RuntimeStabilityEvidenceInput, runtime_stability_budget_diagnostics,
+    runtime_stability_budget_evidence,
+};
 pub use stream::{
     ScriptedChunkGate, ScriptedChunkGatePermit, ScriptedGatewayRequestReceipt,
     ScriptedModelGateway, ScriptedModelStream, ScriptedModelStreamChunk, ScriptedModelStreamEvent,
@@ -44,7 +47,8 @@ pub use sub_agent_scenario::{
 pub use sub_agent_session::{
     SubAgentMemoryExpectation, SubAgentMemorySessionFixture,
     assert_sub_agent_memory_session_fixture, sub_agent_memory_allowed_fixture,
-    sub_agent_memory_denied_fixture, sub_agent_memory_session_visibility_evidence,
+    sub_agent_memory_denied_fixture, sub_agent_memory_session_replay_evidence,
+    sub_agent_memory_session_visibility_evidence,
 };
 pub use test_run::{
     LibtestCommandCapture, LibtestCommandImportReport, LibtestCommandSpec, LibtestTextImportConfig,

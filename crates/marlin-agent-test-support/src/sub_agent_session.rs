@@ -204,6 +204,49 @@ pub fn sub_agent_memory_session_visibility_evidence(
     .with_detail(detail)
 }
 
+/// Project a child-session isolation receipt into replay evidence for contraction checks.
+pub fn sub_agent_memory_session_replay_evidence(
+    child_session: &AgentSessionContext,
+    isolation_receipt: &SessionIsolationReceipt,
+) -> LoopEvidence {
+    let parent_session_id = child_session
+        .parent_session_id()
+        .map(|session_id| session_id.as_str())
+        .unwrap_or("none");
+    let requested_namespaces = namespace_list(isolation_receipt.requested_visibility());
+    let granted_namespaces = namespace_list(isolation_receipt.granted_visibility());
+    let denied_namespaces = isolation_receipt
+        .denied_namespaces()
+        .iter()
+        .map(namespace_name)
+        .collect::<Vec<_>>()
+        .join(",");
+    let visibility_contracted = !isolation_receipt.denied_namespaces().is_empty()
+        || isolation_receipt.history_limit_applied();
+    let detail = format!(
+        "session_id={} parent_session_id={} root_session_id={} requested_namespaces=[{}] granted_namespaces=[{}] denied_namespaces=[{}] requested_history_limit={:?} granted_history_limit={:?} history_limit_applied={} visibility_contracted={} live_llm=false",
+        child_session.session_id().as_str(),
+        parent_session_id,
+        child_session.root_session_id().as_str(),
+        requested_namespaces,
+        granted_namespaces,
+        denied_namespaces,
+        isolation_receipt.requested_visibility().max_history_items(),
+        isolation_receipt.granted_visibility().max_history_items(),
+        isolation_receipt.history_limit_applied(),
+        visibility_contracted,
+    );
+
+    LoopEvidence::present(
+        LoopEvidenceKind::Visibility,
+        format!(
+            "sub-agent-session-replay:{}",
+            child_session.session_id().as_str()
+        ),
+    )
+    .with_detail(detail)
+}
+
 fn config_requests_memory(config: &SubAgentSpawnConfig) -> bool {
     config
         .policy
@@ -231,5 +274,26 @@ fn context_namespace_from_protocol(visibility: &SubAgentContextVisibility) -> Co
         SubAgentContextVisibility::User => ContextNamespace::User,
         SubAgentContextVisibility::Workspace => ContextNamespace::Workspace,
         SubAgentContextVisibility::Memory => ContextNamespace::Memory,
+    }
+}
+
+fn namespace_list(visibility: &ContextVisibility) -> String {
+    visibility
+        .namespaces()
+        .map(namespace_name)
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
+fn namespace_name(namespace: &ContextNamespace) -> &'static str {
+    match namespace {
+        ContextNamespace::System => "System",
+        ContextNamespace::User => "User",
+        ContextNamespace::Workspace => "Workspace",
+        ContextNamespace::Memory => "Memory",
+        ContextNamespace::Tools => "Tools",
+        ContextNamespace::Hooks => "Hooks",
+        ContextNamespace::SubAgents => "SubAgents",
+        ContextNamespace::Secrets => "Secrets",
     }
 }

@@ -12,7 +12,7 @@ use marlin_agent_test_support::{
     DeterministicSubAgentScenarioFixture, ScriptedModelGateway,
     assert_deterministic_routed_sub_agent_session, assert_deterministic_sub_agent_gateway_request,
     assert_deterministic_sub_agent_route_decision,
-    deterministic_reviewer_sub_agent_scenario_fixture,
+    deterministic_reviewer_sub_agent_scenario_fixture, sub_agent_memory_session_replay_evidence,
     sub_agent_memory_session_visibility_evidence,
 };
 
@@ -84,6 +84,44 @@ fn model_route_session_binding_projects_memory_visibility_evidence_without_live_
         "history_limit_applied={}",
         binding.isolation_receipt().history_limit_applied()
     )));
+}
+
+#[test]
+fn model_route_session_binding_projects_replay_visibility_evidence_without_live_llm() {
+    let fixture = deterministic_reviewer_sub_agent_scenario_fixture();
+    let decision = reviewer_decision_from_fixture(&fixture);
+    let parent_session = fixture.session_fixture().parent_session().clone();
+    let (runtime, _events) = TokioAgentRuntime::with_session(
+        4,
+        CancellationToken::new(),
+        RuntimeEnvironment::default(),
+        parent_session,
+    );
+
+    let (child_runtime, binding) =
+        runtime.child_runtime_for_model_route(&decision, SessionKind::SubAgent);
+    let evidence = sub_agent_memory_session_replay_evidence(
+        child_runtime.session(),
+        binding.isolation_receipt(),
+    );
+    let detail = evidence.detail.as_deref().expect("replay detail");
+
+    assert!(evidence.present);
+    assert_eq!(evidence.kind, LoopEvidenceKind::Visibility);
+    assert_eq!(
+        evidence.subject,
+        format!(
+            "sub-agent-session-replay:{}",
+            fixture.expected_route_child_session_id()
+        )
+    );
+    assert!(detail.contains("parent_session_id=session/root"));
+    assert!(detail.contains("root_session_id=session/root"));
+    assert!(detail.contains("requested_namespaces=[System,User,Workspace,Memory]"));
+    assert!(detail.contains("granted_namespaces=[System,User,Workspace,Memory]"));
+    assert!(detail.contains("denied_namespaces=[]"));
+    assert!(detail.contains("visibility_contracted=false"));
+    assert!(detail.contains("live_llm=false"));
 }
 
 #[tokio::test]

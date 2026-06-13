@@ -54,3 +54,36 @@ pub fn runtime_stability_budget_evidence(input: RuntimeStabilityEvidenceInput) -
     }
     .into()
 }
+
+/// Return stable diagnostics when a no-LLM runtime stability gate exceeds its budget.
+pub fn runtime_stability_budget_diagnostics(input: &RuntimeStabilityEvidenceInput) -> Vec<String> {
+    let mut diagnostics = Vec::new();
+
+    if input.duration > input.duration_budget {
+        diagnostics.push(format!(
+            "runtime stability duration budget exceeded: actual_ms={} budget_ms={}",
+            input.duration.as_millis(),
+            input.duration_budget.as_millis()
+        ));
+    }
+    if input.event_count > input.event_budget {
+        diagnostics.push(format!(
+            "runtime stability event budget exceeded: actual={} budget={}",
+            input.event_count, input.event_budget
+        ));
+    }
+    if input.span_count > input.span_budget {
+        diagnostics.push(format!(
+            "runtime stability span budget exceeded: actual={} budget={}",
+            input.span_count, input.span_budget
+        ));
+    }
+    if input.diagnostic_count > 0 {
+        diagnostics.push(format!(
+            "runtime stability diagnostics present: count={}",
+            input.diagnostic_count
+        ));
+    }
+
+    diagnostics
+}

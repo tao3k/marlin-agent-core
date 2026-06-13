@@ -6,7 +6,10 @@ use marlin_agent_protocol::{
     AgentScenario, GraphLoopExecutionStatus, LoopEvidence, LoopEvidenceKind,
     LoopPerformanceEvidence, PERFORMANCE_EVIDENCE_KEYS, STABILITY_EVIDENCE_KEYS,
 };
-use marlin_agent_test_support::{RuntimeStabilityEvidenceInput, runtime_stability_budget_evidence};
+use marlin_agent_test_support::{
+    RuntimeStabilityEvidenceInput, runtime_stability_budget_diagnostics,
+    runtime_stability_budget_evidence,
+};
 
 use super::support::EventfulExecutor;
 
@@ -49,6 +52,62 @@ async fn harness_execution_report_carries_performance_benchmark_evidence() {
             "missing performance evidence key {key}"
         );
     }
+}
+
+#[tokio::test]
+async fn harness_execution_report_reports_missing_runtime_stability_evidence() {
+    let execution_scenario = AgentScenario::new("runtime-stability-missing-evidence");
+    let validation_scenario = AgentScenario::new("runtime-stability-missing-evidence")
+        .expecting_evidence(LoopEvidenceKind::Stability);
+    let graph = HarnessGraphBuilder::new("graph")
+        .node("node-1", "eventful")
+        .build();
+    let request = GraphLoopExecutionRequest::new("run", graph);
+    let kernel =
+        TokioGraphLoopKernel::new("run", "graph").with_executor("eventful", EventfulExecutor);
+    let mut harness = HarnessRuntime::new(16);
+
+    let report = harness
+        .execute_graph(&execution_scenario, &kernel, request)
+        .await;
+    let evaluated = AgentHarness::evaluate_execution_report(&validation_scenario, &report);
+
+    assert_eq!(report.result.status, GraphLoopExecutionStatus::Completed);
+    assert_eq!(
+        evaluated.diagnostics,
+        vec!["missing expected evidence `Stability`"]
+    );
+}
+
+#[test]
+fn harness_runtime_stability_budget_reports_negative_gate_diagnostics() {
+    let input = RuntimeStabilityEvidenceInput {
+        subject: "crates/marlin-agent-harness/src/runtime.rs".to_owned(),
+        stability_command:
+            "cargo test -p marlin-agent-harness --test unit_test harness::runtime::performance"
+                .to_owned(),
+        duration: Duration::from_millis(251),
+        duration_budget: Duration::from_millis(250),
+        event_count: 6,
+        event_budget: 5,
+        custom_event_count: Some(1),
+        span_count: 33,
+        span_budget: 32,
+        diagnostic_count: 2,
+        state_growth: "event_queue=drained,trace_spans=bounded".to_owned(),
+        determinism: "scripted-eventful-executor,node_order=stable".to_owned(),
+        stability_artifact: "target/agent-harness/stability/runtime-performance.json".to_owned(),
+    };
+
+    assert_eq!(
+        runtime_stability_budget_diagnostics(&input),
+        vec![
+            "runtime stability duration budget exceeded: actual_ms=251 budget_ms=250",
+            "runtime stability event budget exceeded: actual=6 budget=5",
+            "runtime stability span budget exceeded: actual=33 budget=32",
+            "runtime stability diagnostics present: count=2",
+        ]
+    );
 }
 
 #[tokio::test]

@@ -84,7 +84,14 @@ fn out_dir() -> PathBuf {
 fn running_under_clippy() -> bool {
     env::var_os("RUSTC_WORKSPACE_WRAPPER")
         .or_else(|| env::var_os("RUSTC_WRAPPER"))
-        .is_some_and(|wrapper| wrapper.to_string_lossy().contains("clippy-driver"))
+        .is_some_and(rustc_wrapper_is_clippy)
+}
+
+/// Returns true when a Rust compiler wrapper path points at `clippy-driver`.
+pub fn rustc_wrapper_is_clippy(wrapper: impl AsRef<std::ffi::OsStr>) -> bool {
+    std::path::Path::new(wrapper.as_ref())
+        .file_name()
+        .is_some_and(|file_name| file_name == "clippy-driver")
 }
 
 fn native_link_failure_detail(
