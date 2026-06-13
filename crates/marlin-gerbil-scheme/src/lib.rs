@@ -93,7 +93,9 @@ pub use runtime::{
     gerbil_runtime_assets, gerbil_runtime_loadpath, write_gerbil_runtime_assets,
 };
 pub use scheme_types::{
-    GerbilSchemeSchemaId, GerbilSchemeTypeDecodeError, GerbilSchemeTypeFieldSpec,
-    GerbilSchemeTypeId, GerbilSchemeTypeManifest, GerbilSchemeTypeSpec, GerbilSchemeTypedValue,
+    GerbilSchemeFieldName, GerbilSchemeJsonTypeKind, GerbilSchemeSchemaId,
+    GerbilSchemeTypeDecodeError, GerbilSchemeTypeFieldSpec, GerbilSchemeTypeId,
+    GerbilSchemeTypeManifest, GerbilSchemeTypeManifestValidationReceipt, GerbilSchemeTypeSpec,
+    GerbilSchemeTypedValue, GerbilSchemeTypedValueValidationReceipt,
     decode_gerbil_scheme_type_manifest, decode_gerbil_scheme_typed_value,
 };

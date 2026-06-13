@@ -28,5 +28,5 @@ mod command;
 #[path = "unit/runtime/mod.rs"]
 mod runtime;
 
-#[path = "unit/scheme_types.rs"]
+#[path = "unit/scheme_types/mod.rs"]
 mod scheme_types;
