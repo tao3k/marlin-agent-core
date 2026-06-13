@@ -84,11 +84,6 @@ pub const GERBIL_MARLIN_DECK_RUNTIME_PATH: &str = "src/marlin/deck-runtime.ss";
 /// Source text for the Deck runtime capability bridge.
 pub const GERBIL_MARLIN_DECK_RUNTIME_SOURCE: &str =
     include_str!("../gerbil/src/marlin/deck-runtime.ss");
-/// Library module that hosts complex Deck runtime strategy policies.
-pub const GERBIL_MARLIN_DECK_RUNTIME_STRATEGY_PATH: &str = "src/marlin/deck-runtime-strategy.ss";
-/// Source text for complex Deck runtime strategy policies.
-pub const GERBIL_MARLIN_DECK_RUNTIME_STRATEGY_SOURCE: &str =
-    include_str!("../gerbil/src/marlin/deck-runtime-strategy.ss");
 /// Native C ABI source for the Deck runtime selector.
 pub const GERBIL_MARLIN_DECK_RUNTIME_NATIVE_PATH: &str = "src/marlin/deck-runtime-native.ss";
 /// Source text for the native C ABI Deck runtime selector.
@@ -117,73 +112,7 @@ pub const GERBIL_MARLIN_REQUEST_PATH: &str = "src/marlin/request.ss";
 /// Source text for the Rust-to-`Gerbil` command protocol request decoder.
 pub const GERBIL_MARLIN_REQUEST_SOURCE: &str = include_str!("../gerbil/src/marlin/request.ss");
 
-/// Complete file manifest required under a `GERBIL_LOADPATH` root.
-pub const GERBIL_RUNTIME_ASSETS: &[GerbilRuntimeAsset] = &[
-    GerbilRuntimeAsset {
-        path: GERBIL_PACKAGE_MANIFEST_PATH,
-        source: GERBIL_PACKAGE_MANIFEST_SOURCE,
-    },
-    GerbilRuntimeAsset {
-        path: GERBIL_COMMAND_ADAPTER_PATH,
-        source: GERBIL_COMMAND_ADAPTER_SOURCE,
-    },
-    GerbilRuntimeAsset {
-        path: GERBIL_COMMAND_ADAPTER_BATCH_PATH,
-        source: GERBIL_COMMAND_ADAPTER_BATCH_SOURCE,
-    },
-    GerbilRuntimeAsset {
-        path: GERBIL_HOOK_POLICY_ADAPTER_PATH,
-        source: GERBIL_HOOK_POLICY_ADAPTER_SOURCE,
-    },
-    GerbilRuntimeAsset {
-        path: GERBIL_DECK_RUNTIME_POLICY_ADAPTER_PATH,
-        source: GERBIL_DECK_RUNTIME_POLICY_ADAPTER_SOURCE,
-    },
-    GerbilRuntimeAsset {
-        path: "build.ss",
-        source: GERBIL_BUILD_SOURCE,
-    },
-    GerbilRuntimeAsset {
-        path: GERBIL_SMOKE_PATH,
-        source: GERBIL_SMOKE_SOURCE,
-    },
-    GerbilRuntimeAsset {
-        path: GERBIL_MARLIN_ADAPTER_PATH,
-        source: GERBIL_MARLIN_ADAPTER_SOURCE,
-    },
-    GerbilRuntimeAsset {
-        path: GERBIL_MARLIN_DECK_RUNTIME_PATH,
-        source: GERBIL_MARLIN_DECK_RUNTIME_SOURCE,
-    },
-    GerbilRuntimeAsset {
-        path: GERBIL_MARLIN_DECK_RUNTIME_STRATEGY_PATH,
-        source: GERBIL_MARLIN_DECK_RUNTIME_STRATEGY_SOURCE,
-    },
-    GerbilRuntimeAsset {
-        path: GERBIL_MARLIN_DECK_RUNTIME_NATIVE_PATH,
-        source: GERBIL_MARLIN_DECK_RUNTIME_NATIVE_SOURCE,
-    },
-    GerbilRuntimeAsset {
-        path: GERBIL_MARLIN_DECK_RUNTIME_POLICY_PATH,
-        source: GERBIL_MARLIN_DECK_RUNTIME_POLICY_SOURCE,
-    },
-    GerbilRuntimeAsset {
-        path: GERBIL_MARLIN_HOOK_POLICY_PATH,
-        source: GERBIL_MARLIN_HOOK_POLICY_SOURCE,
-    },
-    GerbilRuntimeAsset {
-        path: GERBIL_MARLIN_PARSER_PATH,
-        source: GERBIL_MARLIN_PARSER_SOURCE,
-    },
-    GerbilRuntimeAsset {
-        path: GERBIL_MARLIN_PROTOCOL_PATH,
-        source: GERBIL_MARLIN_PROTOCOL_SOURCE,
-    },
-    GerbilRuntimeAsset {
-        path: GERBIL_MARLIN_REQUEST_PATH,
-        source: GERBIL_MARLIN_REQUEST_SOURCE,
-    },
-];
+include!(concat!(env!("OUT_DIR"), "/gerbil_runtime_assets.rs"));
 
 /// Returns the crate-owned `Gerbil` runtime asset manifest.
 pub fn gerbil_runtime_assets() -> &'static [GerbilRuntimeAsset] {

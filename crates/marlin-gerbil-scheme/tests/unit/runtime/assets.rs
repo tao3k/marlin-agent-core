@@ -1,23 +1,19 @@
 use super::support::test_root;
 use marlin_gerbil_scheme::{
     DEFAULT_GERBIL_GSC_PROGRAM, DEFAULT_GERBIL_GXC_PROGRAM, DEFAULT_GERBIL_GXI_PROGRAM,
-    GERBIL_ADAPTER_MODULE, GERBIL_BUILD_SOURCE, GERBIL_COMMAND_ADAPTER_BATCH_PATH,
-    GERBIL_COMMAND_ADAPTER_PATH, GERBIL_DECK_RUNTIME_POLICY_ADAPTER_PATH,
-    GERBIL_DECK_RUNTIME_POLICY_ADAPTER_SOURCE, GERBIL_HOOK_POLICY_ADAPTER_PATH,
+    GERBIL_ADAPTER_MODULE, GERBIL_BUILD_SOURCE, GERBIL_COMMAND_ADAPTER_PATH,
+    GERBIL_DECK_RUNTIME_POLICY_ADAPTER_PATH, GERBIL_DECK_RUNTIME_POLICY_ADAPTER_SOURCE,
     GERBIL_LOADPATH_ENV, GERBIL_MARLIN_ADAPTER_PATH, GERBIL_MARLIN_ADAPTER_SOURCE,
     GERBIL_MARLIN_DECK_RUNTIME_NATIVE_PATH, GERBIL_MARLIN_DECK_RUNTIME_NATIVE_SOURCE,
     GERBIL_MARLIN_DECK_RUNTIME_PATH, GERBIL_MARLIN_DECK_RUNTIME_POLICY_PATH,
     GERBIL_MARLIN_DECK_RUNTIME_POLICY_SOURCE, GERBIL_MARLIN_DECK_RUNTIME_SOURCE,
-    GERBIL_MARLIN_DECK_RUNTIME_STRATEGY_PATH, GERBIL_MARLIN_DECK_RUNTIME_STRATEGY_SOURCE,
-    GERBIL_MARLIN_HOOK_POLICY_PATH, GERBIL_MARLIN_PARSER_PATH, GERBIL_MARLIN_PROTOCOL_PATH,
-    GERBIL_MARLIN_REQUEST_PATH, GERBIL_MARLIN_REQUEST_SOURCE, GERBIL_PACKAGE_MANIFEST_PATH,
+    GERBIL_MARLIN_PROTOCOL_PATH, GERBIL_MARLIN_REQUEST_SOURCE, GERBIL_PACKAGE_MANIFEST_PATH,
     GERBIL_PACKAGE_MANIFEST_SOURCE, GERBIL_PACKAGE_SOURCE_PATH, GERBIL_POO_DEPENDENCY,
     GERBIL_POO_MOP_MODULE, GERBIL_POO_OBJECT_MODULE, GERBIL_POO_PACKAGE_NAME,
-    GERBIL_POO_PROTO_MODULE, GERBIL_SMOKE_PATH, MARLIN_GERBIL_GSC_ENV, MARLIN_GERBIL_GXC_ENV,
-    MARLIN_GERBIL_GXI_ENV, gerbil_runtime_assets, gerbil_runtime_loadpath,
-    write_gerbil_runtime_assets,
+    GERBIL_POO_PROTO_MODULE, MARLIN_GERBIL_GSC_ENV, MARLIN_GERBIL_GXC_ENV, MARLIN_GERBIL_GXI_ENV,
+    gerbil_runtime_assets, gerbil_runtime_loadpath, write_gerbil_runtime_assets,
 };
-use std::fs;
+use std::{fs, path::Path};
 
 #[test]
 fn gerbil_runtime_assets_expose_loadpath_contract() {
@@ -71,12 +67,19 @@ fn gerbil_runtime_assets_expose_loadpath_contract() {
         GERBIL_MARLIN_DECK_RUNTIME_SOURCE
             .contains("display-marlin-deck-runtime-model-route-selection-json")
     );
+    let strategy_asset = assets
+        .iter()
+        .find(|asset| asset.path == "src/marlin/deck-runtime-strategy.ss")
+        .expect("generated manifest includes deck runtime strategy source");
     assert!(
-        GERBIL_MARLIN_DECK_RUNTIME_STRATEGY_SOURCE.contains("defmarlin-deck-runtime-strategy-rule")
+        strategy_asset
+            .source
+            .contains("defmarlin-deck-runtime-strategy-rule")
     );
-    assert!(GERBIL_MARLIN_DECK_RUNTIME_STRATEGY_SOURCE.contains("dynamic-hook-action"));
+    assert!(strategy_asset.source.contains("dynamic-hook-action"));
     assert!(
-        GERBIL_MARLIN_DECK_RUNTIME_STRATEGY_SOURCE
+        strategy_asset
+            .source
             .contains("display-marlin-deck-runtime-strategy-selection-json")
     );
     assert!(GERBIL_MARLIN_DECK_RUNTIME_NATIVE_SOURCE.contains("c-define"));
@@ -91,27 +94,14 @@ fn gerbil_runtime_assets_expose_loadpath_contract() {
     assert!(!GERBIL_MARLIN_DECK_RUNTIME_NATIVE_SOURCE.contains("MarlinDeckRuntimeOwnedBytes"));
     assert!(!GERBIL_MARLIN_DECK_RUNTIME_NATIVE_SOURCE.contains("selection-json"));
 
-    let asset_paths = assets.iter().map(|asset| asset.path).collect::<Vec<_>>();
+    let mut asset_paths = assets
+        .iter()
+        .map(|asset| asset.path.to_owned())
+        .collect::<Vec<_>>();
+    asset_paths.sort();
     assert_eq!(
         asset_paths.as_slice(),
-        &[
-            GERBIL_PACKAGE_MANIFEST_PATH,
-            GERBIL_COMMAND_ADAPTER_PATH,
-            GERBIL_COMMAND_ADAPTER_BATCH_PATH,
-            GERBIL_HOOK_POLICY_ADAPTER_PATH,
-            GERBIL_DECK_RUNTIME_POLICY_ADAPTER_PATH,
-            "build.ss",
-            GERBIL_SMOKE_PATH,
-            GERBIL_MARLIN_ADAPTER_PATH,
-            GERBIL_MARLIN_DECK_RUNTIME_PATH,
-            GERBIL_MARLIN_DECK_RUNTIME_STRATEGY_PATH,
-            GERBIL_MARLIN_DECK_RUNTIME_NATIVE_PATH,
-            GERBIL_MARLIN_DECK_RUNTIME_POLICY_PATH,
-            GERBIL_MARLIN_HOOK_POLICY_PATH,
-            GERBIL_MARLIN_PARSER_PATH,
-            GERBIL_MARLIN_PROTOCOL_PATH,
-            GERBIL_MARLIN_REQUEST_PATH,
-        ]
+        expected_gerbil_runtime_asset_paths().as_slice()
     );
 }
 
@@ -138,7 +128,7 @@ fn gerbil_runtime_assets_write_loadpath_tree() {
     assert!(root.path().join(GERBIL_MARLIN_DECK_RUNTIME_PATH).is_file());
     assert!(
         root.path()
-            .join(GERBIL_MARLIN_DECK_RUNTIME_STRATEGY_PATH)
+            .join("src/marlin/deck-runtime-strategy.ss")
             .is_file()
     );
     assert!(
@@ -167,7 +157,7 @@ fn gerbil_runtime_assets_write_loadpath_tree() {
             .contains("display-marlin-deck-runtime-capability-json")
     );
     assert!(
-        fs::read_to_string(root.path().join(GERBIL_MARLIN_DECK_RUNTIME_STRATEGY_PATH))
+        fs::read_to_string(root.path().join("src/marlin/deck-runtime-strategy.ss"))
             .expect("read deck runtime strategy")
             .contains("display-marlin-deck-runtime-strategy-selection-json")
     );
@@ -176,4 +166,42 @@ fn gerbil_runtime_assets_write_loadpath_tree() {
             .expect("read protocol")
             .contains("marlin-workspace-patch-intent-artifact-kind")
     );
+}
+
+fn expected_gerbil_runtime_asset_paths() -> Vec<String> {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("gerbil");
+    let mut paths = Vec::new();
+    collect_gerbil_runtime_asset_paths(&root, &root, &mut paths);
+    paths.sort();
+    paths
+}
+
+fn collect_gerbil_runtime_asset_paths(root: &Path, dir: &Path, paths: &mut Vec<String>) {
+    let mut entries = fs::read_dir(dir)
+        .expect("read Gerbil runtime asset directory")
+        .map(|entry| entry.expect("read Gerbil runtime asset entry"))
+        .collect::<Vec<_>>();
+    entries.sort_by_key(|entry| entry.file_name());
+
+    for entry in entries {
+        let path = entry.path();
+        if path.is_dir() {
+            collect_gerbil_runtime_asset_paths(root, &path, paths);
+            continue;
+        }
+        if !is_gerbil_runtime_asset(&path) {
+            continue;
+        }
+        let relative = path
+            .strip_prefix(root)
+            .expect("runtime asset path under Gerbil root")
+            .to_string_lossy()
+            .replace(std::path::MAIN_SEPARATOR, "/");
+        paths.push(relative);
+    }
+}
+
+fn is_gerbil_runtime_asset(path: &Path) -> bool {
+    path.file_name().is_some_and(|name| name == "gerbil.pkg")
+        || path.extension().is_some_and(|extension| extension == "ss")
 }

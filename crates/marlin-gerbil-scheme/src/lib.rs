@@ -13,6 +13,7 @@ mod hook_policy;
 mod native_aot_cli;
 mod real_gxi_gate;
 mod runtime;
+mod scheme_types;
 
 pub use aot_repair_cli::run_gerbil_aot_repair_cli;
 pub use aot_runtime::{
@@ -80,8 +81,7 @@ pub use runtime::{
     GERBIL_MARLIN_ADAPTER_SOURCE, GERBIL_MARLIN_DECK_RUNTIME_NATIVE_PATH,
     GERBIL_MARLIN_DECK_RUNTIME_NATIVE_SOURCE, GERBIL_MARLIN_DECK_RUNTIME_PATH,
     GERBIL_MARLIN_DECK_RUNTIME_POLICY_PATH, GERBIL_MARLIN_DECK_RUNTIME_POLICY_SOURCE,
-    GERBIL_MARLIN_DECK_RUNTIME_SOURCE, GERBIL_MARLIN_DECK_RUNTIME_STRATEGY_PATH,
-    GERBIL_MARLIN_DECK_RUNTIME_STRATEGY_SOURCE, GERBIL_MARLIN_HOOK_POLICY_PATH,
+    GERBIL_MARLIN_DECK_RUNTIME_SOURCE, GERBIL_MARLIN_HOOK_POLICY_PATH,
     GERBIL_MARLIN_HOOK_POLICY_SOURCE, GERBIL_MARLIN_PARSER_PATH, GERBIL_MARLIN_PARSER_SOURCE,
     GERBIL_MARLIN_PROTOCOL_PATH, GERBIL_MARLIN_PROTOCOL_SOURCE, GERBIL_MARLIN_REQUEST_PATH,
     GERBIL_MARLIN_REQUEST_SOURCE, GERBIL_PACKAGE_BIN_PATH, GERBIL_PACKAGE_MANIFEST_PATH,
@@ -91,4 +91,9 @@ pub use runtime::{
     GerbilRuntimeAsset, MARLIN_GERBIL_GSC_ENV, MARLIN_GERBIL_GXC_ENV, MARLIN_GERBIL_GXI_ENV,
     default_gerbil_gsc_program, default_gerbil_gxc_program, default_gerbil_gxi_program,
     gerbil_runtime_assets, gerbil_runtime_loadpath, write_gerbil_runtime_assets,
+};
+pub use scheme_types::{
+    GerbilSchemeSchemaId, GerbilSchemeTypeDecodeError, GerbilSchemeTypeFieldSpec,
+    GerbilSchemeTypeId, GerbilSchemeTypeManifest, GerbilSchemeTypeSpec, GerbilSchemeTypedValue,
+    decode_gerbil_scheme_type_manifest, decode_gerbil_scheme_typed_value,
 };
