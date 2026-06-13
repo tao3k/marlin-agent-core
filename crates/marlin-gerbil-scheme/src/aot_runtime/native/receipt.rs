@@ -9,7 +9,7 @@ use crate::{
     GerbilSchemeNativeAbiContract, GerbilSchemeNativeAbiId, GerbilSchemeNativeAbiReadinessPlan,
     GerbilSchemeNativeSymbol,
 };
-use marlin_agent_protocol::GraphNativeAbiRequirement;
+use marlin_agent_protocol::{GraphNativeAbiReadinessReceipt, GraphNativeAbiRequirement};
 use std::path::PathBuf;
 
 /// Exported C symbol name owned by the native Deck runtime ABI.
@@ -128,4 +128,34 @@ pub struct GerbilDeckRuntimeNativeAotBuildReceipt {
     pub symbol_audit_method: Option<GerbilDeckRuntimeNativeSymbolAuditMethod>,
     pub symbol_audit: Option<GerbilDeckRuntimeNativeAotCommandReceipt>,
     pub missing_symbols: Vec<GerbilDeckRuntimeNativeSymbol>,
+}
+
+impl GerbilDeckRuntimeNativeAotBuildReceipt {
+    /// Project the executed native AOT build into the graph-loop ABI readiness gate.
+    pub fn graph_native_abi_readiness_receipt(&self) -> GraphNativeAbiReadinessReceipt {
+        let requirement = self.plan.graph_native_abi_requirement();
+        let available_symbols = match self.status {
+            GerbilDeckRuntimeNativeAotBuildStatus::LinkUnitReady => self
+                .plan
+                .exported_symbols
+                .iter()
+                .map(|symbol| symbol.as_str().to_owned())
+                .collect::<Vec<_>>(),
+            GerbilDeckRuntimeNativeAotBuildStatus::RequiredSymbolsMissing => self
+                .plan
+                .exported_symbols
+                .iter()
+                .filter(|symbol| {
+                    !self
+                        .missing_symbols
+                        .iter()
+                        .any(|missing| missing == *symbol)
+                })
+                .map(|symbol| symbol.as_str().to_owned())
+                .collect::<Vec<_>>(),
+            _ => Vec::new(),
+        };
+
+        GraphNativeAbiReadinessReceipt::evaluate(&requirement, available_symbols)
+    }
 }

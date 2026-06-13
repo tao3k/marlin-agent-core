@@ -6,7 +6,7 @@ mod driver;
 pub use adapters::{ProviderNodeAdapter, SubAgentNodeAdapter, ToolNodeAdapter};
 pub use driver::{
     GraphLoopKernel, GraphNodeExecutor, GraphPolicyProposalCompilation, TokioGraphLoopKernel,
-    compile_graph_policy_proposal,
+    compile_graph_policy_proposal, compile_graph_policy_proposal_with_native_abi_readiness,
 };
 pub use marlin_agent_protocol::{
     ExecutorName, GraphId, GraphLoopExecutionBudget, GraphLoopExecutionRequest,

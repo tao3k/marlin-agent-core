@@ -9,9 +9,9 @@ use std::{
 
 use marlin_agent_protocol::{
     GraphId, GraphLoopExecutionBudget, GraphLoopExecutionRequest, GraphLoopExecutionResult,
-    GraphNodeExecutionReceipt, GraphNodeExecutionStatus, GraphNodeInvocation, GraphPolicyProposal,
-    GraphPolicyProposalReceipt, GraphPolicyProposalStatus, LoopEdgeSpec, LoopNodeSpec, RunId,
-    RuntimePlanSnapshot,
+    GraphNativeAbiReadinessReceipt, GraphNativeAbiReadinessStatus, GraphNodeExecutionReceipt,
+    GraphNodeExecutionStatus, GraphNodeInvocation, GraphPolicyProposal, GraphPolicyProposalReceipt,
+    GraphPolicyProposalStatus, LoopEdgeSpec, LoopNodeSpec, RunId, RuntimePlanSnapshot,
 };
 use marlin_agent_runtime::{
     RuntimeContext, RuntimeEvent, RuntimeExecutionIdentity, RuntimeFuture, RuntimeTask,
@@ -63,6 +63,66 @@ pub fn compile_graph_policy_proposal(
     let request = (receipt.status == GraphPolicyProposalStatus::Accepted)
         .then(|| GraphLoopExecutionRequest::new(run_id, proposal.proposed_graph.clone()));
     GraphPolicyProposalCompilation { receipt, request }
+}
+
+/// Validates a graph policy proposal against a native ABI readiness receipt before execution.
+pub fn compile_graph_policy_proposal_with_native_abi_readiness(
+    run_id: impl Into<String>,
+    proposal: &GraphPolicyProposal,
+    readiness: &GraphNativeAbiReadinessReceipt,
+) -> GraphPolicyProposalCompilation {
+    let mut receipt = GraphPolicyProposalReceipt::validate(proposal);
+    if receipt.status == GraphPolicyProposalStatus::Accepted {
+        let diagnostics = native_abi_readiness_diagnostics(proposal, readiness);
+        if !diagnostics.is_empty() {
+            receipt = GraphPolicyProposalReceipt::rejected(proposal, diagnostics);
+        }
+    }
+
+    let request = (receipt.status == GraphPolicyProposalStatus::Accepted)
+        .then(|| GraphLoopExecutionRequest::new(run_id, proposal.proposed_graph.clone()));
+    GraphPolicyProposalCompilation { receipt, request }
+}
+
+fn native_abi_readiness_diagnostics(
+    proposal: &GraphPolicyProposal,
+    readiness: &GraphNativeAbiReadinessReceipt,
+) -> Vec<String> {
+    let mut diagnostics = Vec::new();
+    let Some(requirement) = proposal.native_abi.as_ref() else {
+        diagnostics.push("graph_policy_proposal.native_abi_readiness_unexpected".to_string());
+        return diagnostics;
+    };
+
+    if requirement.abi_id != readiness.abi_id {
+        diagnostics.push(format!(
+            "graph_policy_proposal.native_abi_readiness_abi_id_mismatch:{}:{}",
+            requirement.abi_id.as_str(),
+            readiness.abi_id.as_str()
+        ));
+    }
+    if requirement.version != readiness.version {
+        diagnostics.push(format!(
+            "graph_policy_proposal.native_abi_readiness_version_mismatch:{}:{}",
+            requirement.version, readiness.version
+        ));
+    }
+    if readiness.status != GraphNativeAbiReadinessStatus::Ready {
+        diagnostics.push("graph_policy_proposal.native_abi_readiness_not_ready".to_string());
+    }
+    if !readiness.missing_symbols.is_empty() {
+        diagnostics.push(format!(
+            "graph_policy_proposal.native_abi_readiness_missing_symbols:{}",
+            readiness
+                .missing_symbols
+                .iter()
+                .map(|symbol| symbol.as_str())
+                .collect::<Vec<_>>()
+                .join(",")
+        ));
+    }
+
+    diagnostics
 }
 
 /// Tokio-backed graph-loop kernel with named node executors.
