@@ -1,6 +1,6 @@
 use marlin_agent_protocol::{
     HookAgentScope, HookDispatchPolicyReceipt, HookDispatchPolicyReceiptInput, HookEventName,
-    HookPolicyExtension, HookPolicyMode,
+    HookPolicyDecision, HookPolicyDynamicActionKind, HookPolicyExtension, HookPolicyMode,
 };
 use marlin_gerbil_scheme::{
     DEFAULT_GERBIL_GXI_PROGRAM, GERBIL_HOOK_POLICY_ADAPTER_PATH, GERBIL_LOADPATH_ENV,
@@ -92,6 +92,7 @@ package: marlin/hooks
                 invocation_agent_scope: HookAgentScope::CustomerAgent,
                 mode: HookPolicyMode::ObserveOnly,
                 extension,
+                actions: Vec::new(),
                 decisions: Vec::new(),
             }),
         })
@@ -101,5 +102,143 @@ package: marlin/hooks
     assert_eq!(
         receipt.diagnostics[0].message,
         "real gxi hook policy allowed"
+    );
+}
+
+#[test]
+#[ignore = "requires a local Gerbil gxi executable"]
+fn gerbil_hook_policy_runtime_binding_real_gxi_runs_sample_policy_module() {
+    if !Path::new(DEFAULT_GERBIL_GXI_PROGRAM).exists() {
+        return;
+    }
+
+    let root = Builder::new()
+        .prefix("marlin-gerbil-hook-policy-sample-real-gxi-")
+        .tempdir()
+        .expect("creates real gxi hook policy sample binding root");
+    let binding = GerbilHookPolicyRuntimeBinding::new(DEFAULT_GERBIL_GXI_PROGRAM, root.path())
+        .expect("runtime binding should write hook policy sample assets");
+
+    let extension = HookPolicyExtension::gerbil_scheme(
+        "marlin/hooks/policy-samples",
+        "decide-hook-policy-sample",
+    );
+    let receipt = binding
+        .evaluator()
+        .evaluate(GerbilHookPolicyInvocationInput {
+            extension: extension.clone(),
+            event_name: HookEventName::PreToolUse,
+            agent_scope: HookAgentScope::CustomerAgent,
+            policy_receipt: HookDispatchPolicyReceipt::new(HookDispatchPolicyReceiptInput {
+                event_name: HookEventName::PreToolUse,
+                invocation_agent_scope: HookAgentScope::CustomerAgent,
+                mode: HookPolicyMode::ObserveOnly,
+                extension,
+                actions: Vec::new(),
+                decisions: Vec::new(),
+            }),
+        })
+        .expect("real gxi hook policy sample should decode dynamic actions");
+
+    assert!(receipt.is_allowed());
+    assert_eq!(receipt.actions.len(), 1);
+    assert_eq!(
+        receipt.actions[0].kind,
+        HookPolicyDynamicActionKind::Register
+    );
+    assert_eq!(
+        receipt.actions[0]
+            .target
+            .as_ref()
+            .map(|target| target.as_str()),
+        Some("catalog:customer-agent-hook")
+    );
+}
+
+#[test]
+#[ignore = "requires a local Gerbil gxi executable"]
+fn gerbil_hook_policy_runtime_binding_real_gxi_decodes_dynamic_actions() {
+    if !Path::new(DEFAULT_GERBIL_GXI_PROGRAM).exists() {
+        return;
+    }
+
+    let root = Builder::new()
+        .prefix("marlin-gerbil-hook-policy-actions-real-gxi-")
+        .tempdir()
+        .expect("creates real gxi hook policy action binding root");
+    let binding = GerbilHookPolicyRuntimeBinding::new(DEFAULT_GERBIL_GXI_PROGRAM, root.path())
+        .expect("runtime binding should write hook policy assets");
+    let policy_module = root.path().join("src/marlin/hooks/actions.ss");
+    fs::create_dir_all(policy_module.parent().expect("policy module parent"))
+        .expect("creates policy module parent");
+    fs::write(
+        &policy_module,
+        r#";;; -*- Gerbil -*-
+package: marlin/hooks
+
+(export decide-hook-policy-actions)
+
+(def (decide-hook-policy-actions request-json)
+  "{\"decision\":\"Rejected\",\"diagnostics\":[{\"message\":\"real gxi hook policy actions\"}],\"actions\":[{\"kind\":\"Deny\",\"target\":\"tool:rm\",\"reason\":\"workspace policy\"},{\"kind\":\"Rewrite\",\"target\":\"command\",\"replacement\":\"cargo test --locked\",\"reason\":\"prefer locked tests\"},{\"kind\":\"Register\",\"target\":\"hook:customer-agent\",\"reason\":\"session requires customer hook\"},{\"kind\":\"Unregister\",\"target\":\"hook:legacy\",\"reason\":\"legacy hook disabled\"},{\"kind\":\"Defer\",\"target\":\"session:release\",\"reason\":\"wait for org memory query\"}]}")
+"#,
+    )
+    .expect("writes policy module");
+
+    let extension =
+        HookPolicyExtension::gerbil_scheme("marlin/hooks/actions", "decide-hook-policy-actions");
+    let receipt = binding
+        .evaluator()
+        .evaluate(GerbilHookPolicyInvocationInput {
+            extension: extension.clone(),
+            event_name: HookEventName::PreToolUse,
+            agent_scope: HookAgentScope::CustomerAgent,
+            policy_receipt: HookDispatchPolicyReceipt::new(HookDispatchPolicyReceiptInput {
+                event_name: HookEventName::PreToolUse,
+                invocation_agent_scope: HookAgentScope::CustomerAgent,
+                mode: HookPolicyMode::ObserveOnly,
+                extension,
+                actions: Vec::new(),
+                decisions: Vec::new(),
+            }),
+        })
+        .expect("real gxi hook policy should decode dynamic actions");
+
+    assert!(!receipt.is_allowed());
+    assert_eq!(receipt.decision, HookPolicyDecision::Rejected);
+    assert_eq!(receipt.actions.len(), 5);
+    assert_eq!(receipt.actions[0].kind, HookPolicyDynamicActionKind::Deny);
+    assert_eq!(
+        receipt.actions[0]
+            .target
+            .as_ref()
+            .map(|target| target.as_str()),
+        Some("tool:rm")
+    );
+    assert_eq!(
+        receipt.actions[1].kind,
+        HookPolicyDynamicActionKind::Rewrite
+    );
+    assert_eq!(
+        receipt.actions[1]
+            .replacement
+            .as_ref()
+            .map(|replacement| replacement.as_str()),
+        Some("cargo test --locked")
+    );
+    assert_eq!(
+        receipt.actions[2].kind,
+        HookPolicyDynamicActionKind::Register
+    );
+    assert_eq!(
+        receipt.actions[3].kind,
+        HookPolicyDynamicActionKind::Unregister
+    );
+    assert_eq!(receipt.actions[4].kind, HookPolicyDynamicActionKind::Defer);
+    assert_eq!(
+        receipt.actions[4]
+            .reason
+            .as_ref()
+            .map(|reason| reason.as_str()),
+        Some("wait for org memory query")
     );
 }

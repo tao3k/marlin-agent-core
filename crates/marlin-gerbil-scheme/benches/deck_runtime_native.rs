@@ -1,5 +1,5 @@
 use std::{
-    env,
+    env, fs,
     path::Path,
     process::Command,
     slice, str,
@@ -20,6 +20,7 @@ use marlin_gerbil_scheme::{
 
 const RECEIPT_JSON: &str = r#"{"schema_id":"marlin-deck-runtime.model-route-selection.v1","command":"cargo test","agent_scope":"sub-agent","matched":true,"policy":{"kind":"marlin-deck-runtime.model-route-policy.v1","name":"cheap-test-runner","provider":"openai","model":"gpt-5-mini","command_prefixes":["cargo test"],"agent_scopes":["sub-agent"],"context_mode":"forked-context","isolation_mode":"workspace-isolated"}}"#;
 const REAL_PACKAGE_BENCH_ENV: &str = "MARLIN_GERBIL_REAL_PACKAGE_BENCH";
+const REAL_STRATEGY_BENCH_ENV: &str = "MARLIN_GERBIL_REAL_STRATEGY_BENCH";
 const REAL_NATIVE_AOT_BENCH_ENV: &str = "MARLIN_GERBIL_NATIVE_AOT_BENCH";
 
 fn bench_native_selector(c: &mut Criterion) {
@@ -97,6 +98,53 @@ fn bench_real_scheme_package_selector(c: &mut Criterion) {
                 .evaluate(std::hint::black_box(request.clone()))
                 .expect("real Scheme package selector bench receipt should decode");
             std::hint::black_box(receipt);
+        });
+    });
+    group.finish();
+}
+
+fn bench_real_scheme_strategy_selector(c: &mut Criterion) {
+    if !real_strategy_bench_enabled() {
+        eprintln!(
+            "skipping real Scheme strategy benchmark; set {REAL_STRATEGY_BENCH_ENV}=1 to run it"
+        );
+        return;
+    }
+
+    let gxi = default_gerbil_gxi_program();
+    assert!(
+        executable_exists(&gxi),
+        "real Scheme strategy benchmark requires gxi at {}; set MARLIN_GERBIL_GXI to override",
+        gxi.display()
+    );
+
+    let loadpath_root = tempfile::Builder::new()
+        .prefix("marlin-gerbil-real-strategy-bench-")
+        .tempdir()
+        .expect("create real Scheme strategy benchmark loadpath");
+    write_gerbil_runtime_assets(loadpath_root.path())
+        .expect("write real Scheme strategy benchmark assets");
+    let script = loadpath_root.path().join("deck-runtime-strategy-bench.ss");
+    write_strategy_bench_script(&script);
+
+    let warmup = run_real_scheme_strategy_script(&gxi, loadpath_root.path(), &script);
+    assert!(
+        warmup.contains("marlin-deck-runtime.strategy-selection.v1"),
+        "real Scheme strategy benchmark warmup returned unexpected output: {warmup}"
+    );
+
+    let mut group = c.benchmark_group("deck_runtime_real_scheme_strategy");
+    group.sample_size(10);
+    group.warm_up_time(Duration::from_millis(100));
+    group.measurement_time(Duration::from_secs(2));
+    group.bench_function("complex_strategy_process_roundtrip", |bencher| {
+        bencher.iter(|| {
+            let output = run_real_scheme_strategy_script(
+                std::hint::black_box(&gxi),
+                std::hint::black_box(loadpath_root.path()),
+                std::hint::black_box(&script),
+            );
+            std::hint::black_box(output);
         });
     });
     group.finish();
@@ -198,6 +246,80 @@ fn run_real_scheme_package_build(gxi: &Path) {
     std::hint::black_box(output);
 }
 
+fn run_real_scheme_strategy_script(gxi: &Path, loadpath_root: &Path, script: &Path) -> String {
+    let output = Command::new(gxi)
+        .env(GERBIL_LOADPATH_ENV, gerbil_runtime_loadpath(loadpath_root))
+        .arg(script)
+        .output()
+        .expect("run real Scheme strategy benchmark script");
+
+    assert!(
+        output.status.success(),
+        "real Scheme strategy benchmark failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    String::from_utf8(output.stdout).expect("real Scheme strategy output should be UTF-8")
+}
+
+fn write_strategy_bench_script(script: &Path) {
+    fs::write(
+        script,
+        r#"(import :marlin/deck-runtime
+        :marlin/deck-runtime-strategy)
+
+(def policies
+  (list
+   (make-marlin-deck-runtime-model-route-policy
+    "cheap-test-runner"
+    "openai"
+    "gpt-5-mini"
+    (list "cargo test")
+    (list "sub-agent" "hook")
+    "forked-context"
+    "workspace-isolated")
+   (make-marlin-deck-runtime-model-route-policy
+    "deep-customer-reviewer"
+    "anthropic"
+    "claude-opus-4-8"
+    (list "codex customer-review" "cargo test")
+    (list "sub-agent")
+    "shared-context"
+    "isolated-session")))
+
+(defmarlin-deck-runtime-strategy-rule
+  customer-release-subagent
+  "customer-release-subagent"
+  "deep-customer-reviewer"
+  "release-session"
+  (list "root-agent" "customer-agent")
+  (list "real-gxi-ready" "org-memory-indexed")
+  (list "hook-roadmap" "runtime-positioning")
+  "customer-agent"
+  "defer"
+  "")
+
+(def context
+  (make-marlin-deck-runtime-strategy-context
+   "release-session"
+   (list "root-agent" "customer-agent" "review-agent")
+   (list "real-gxi-ready" "org-memory-indexed" "dirty-docs-ok")
+   (list "hook-roadmap" "runtime-positioning" "native-aot-benchmark")
+   "customer-agent"))
+
+(display-marlin-deck-runtime-strategy-selection-json
+ policies
+ (list customer-release-subagent)
+ context
+ "codex customer-review --session release-session"
+ "sub-agent")
+(newline)
+"#,
+    )
+    .expect("write real Scheme strategy benchmark script");
+}
+
 fn run_real_native_aot_link_unit_build() {
     let root = tempfile::Builder::new()
         .prefix("marlin-gerbil-native-aot-build-bench-")
@@ -239,6 +361,10 @@ fn route_request(policy_count: usize) -> GerbilDeckRuntimeModelRoutePolicyReques
 
 fn real_package_bench_enabled() -> bool {
     env::var_os(REAL_PACKAGE_BENCH_ENV).as_deref() == Some(std::ffi::OsStr::new("1"))
+}
+
+fn real_strategy_bench_enabled() -> bool {
+    env::var_os(REAL_STRATEGY_BENCH_ENV).as_deref() == Some(std::ffi::OsStr::new("1"))
 }
 
 fn real_native_aot_bench_enabled() -> bool {
@@ -288,6 +414,6 @@ criterion_group! {
         .sample_size(20)
         .warm_up_time(Duration::from_millis(100))
         .measurement_time(Duration::from_millis(500));
-    targets = bench_native_selector, bench_receipt_decode, bench_real_scheme_package_selector, bench_real_scheme_package_build, bench_real_native_aot_link_unit_build
+    targets = bench_native_selector, bench_receipt_decode, bench_real_scheme_package_selector, bench_real_scheme_strategy_selector, bench_real_scheme_package_build, bench_real_native_aot_link_unit_build
 }
 criterion_main!(deck_runtime_native);

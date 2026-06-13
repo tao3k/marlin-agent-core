@@ -1,14 +1,13 @@
 use super::support::{strategy_selection_manifest, strategy_selection_type_id};
 use marlin_gerbil_scheme::{
     GerbilSchemeFieldName, GerbilSchemeTypeDecodeError, GerbilSchemeTypeId,
-    decode_gerbil_scheme_type_manifest,
+    decode_gerbil_scheme_type_manifest, validate_gerbil_scheme_type_manifest,
 };
 
 #[test]
 fn scheme_type_manifest_describes_downstream_value_shape() {
     let manifest = strategy_selection_manifest();
-    let receipt = manifest
-        .validate()
+    let receipt = validate_gerbil_scheme_type_manifest(&manifest)
         .expect("manifest should pass structural validation");
 
     let strategy = manifest
@@ -46,8 +45,7 @@ fn scheme_type_manifest_rejects_duplicate_type_ids() {
     )
     .expect("decode duplicate manifest");
 
-    let error = manifest
-        .validate()
+    let error = validate_gerbil_scheme_type_manifest(&manifest)
         .expect_err("duplicate type ids should fail manifest validation");
 
     assert_eq!(
@@ -76,8 +74,7 @@ fn scheme_type_manifest_rejects_duplicate_field_names() {
     )
     .expect("decode duplicate field manifest");
 
-    let error = manifest
-        .validate()
+    let error = validate_gerbil_scheme_type_manifest(&manifest)
         .expect_err("duplicate field names should fail manifest validation");
 
     assert_eq!(
@@ -85,6 +82,36 @@ fn scheme_type_manifest_rejects_duplicate_field_names() {
         GerbilSchemeTypeDecodeError::DuplicateField {
             type_id: GerbilSchemeTypeId::new("marlin.duplicate-fields"),
             field_name: GerbilSchemeFieldName::new("action"),
+        }
+    );
+}
+
+#[test]
+fn scheme_type_manifest_rejects_unknown_field_type_references() {
+    let manifest = decode_gerbil_scheme_type_manifest(
+        r#"{
+            "schema_id": "marlin.scheme-types.manifest.v1",
+            "types": [
+                {
+                    "type_id": "marlin.bad-field-type",
+                    "fields": [
+                        {"name": "action", "type_id": "marlin.missing-type", "required": true}
+                    ]
+                }
+            ]
+        }"#,
+    )
+    .expect("decode unknown field type manifest");
+
+    let error = validate_gerbil_scheme_type_manifest(&manifest)
+        .expect_err("unknown field type should fail manifest validation");
+
+    assert_eq!(
+        error,
+        GerbilSchemeTypeDecodeError::UnknownFieldType {
+            type_id: GerbilSchemeTypeId::new("marlin.bad-field-type"),
+            field_name: GerbilSchemeFieldName::new("action"),
+            field_type_id: GerbilSchemeTypeId::new("marlin.missing-type"),
         }
     );
 }

@@ -7,14 +7,19 @@ use marlin_agent_protocol::{
     HookAgentScope, HookConfigurationVersion, HookDispatchPolicyReceipt,
     HookDispatchPolicyReceiptInput, HookDispatchSelectionInput, HookDispatchSelectionReceipt,
     HookEventName, HookExecutionMode, HookHandlerType, HookMatcherStrategy, HookMatcherToken,
-    HookPolicyDecision, HookPolicyDecisionReason, HookPolicyDecisionReceipt, HookPolicyExtension,
-    HookPolicyMode, HookRegistryUpdateKind, HookRegistryUpdateReceipt, HookRunId, HookRunStatus,
-    HookRunSummary, HookScope, HookSelectedCandidateInput, HookSelectionCandidateReceipt,
-    HookSelectionSkipReason, HookSkippedCandidateInput, HookSource, HookSourcePath,
-    HookTrustStatus,
+    HookPolicyDecision, HookPolicyDecisionReason, HookPolicyDecisionReceipt,
+    HookPolicyDynamicActionApplicationReceipt, HookPolicyExtension, HookPolicyMode,
+    HookRegistryUpdateKind, HookRegistryUpdateReceipt, HookRunId, HookRunStatus, HookRunSummary,
+    HookScope, HookSelectedCandidateInput, HookSelectionCandidateReceipt, HookSelectionSkipReason,
+    HookSkippedCandidateInput, HookSource, HookSourcePath, HookTrustStatus,
 };
 use marlin_agent_runtime::{HookRuntime, RuntimeContext, TokioAgentRuntime, observability};
 use tracing::Instrument;
+
+use crate::dynamic_actions::{
+    HookRegistrationCatalog, HookRegistryActionTarget, apply_dynamic_policy_actions,
+    apply_dynamic_registry_actions, attach_dynamic_actions,
+};
 
 /// Runtime shape accepted by hook registrations.
 pub type RegisteredHookRuntime =
@@ -22,6 +27,10 @@ pub type RegisteredHookRuntime =
 
 /// Runtime-independent finalizer for extension-owned hook policy decisions.
 pub type RegisteredHookPolicyFinalizer = dyn HookDispatchPolicyFinalizer + Send + Sync + 'static;
+
+/// Runtime catalog that resolves extension-requested hook registrations.
+pub type RegisteredHookRegistrationCatalog =
+    dyn HookRegistrationCatalog<HookRegistration> + Send + Sync + 'static;
 
 /// Input passed to registered hook runtimes.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -311,6 +320,22 @@ impl Default for HookRegistry {
     }
 }
 
+impl HookRegistryActionTarget<HookRegistration> for HookRegistry {
+    fn register_dynamic_hook(
+        &mut self,
+        registration: HookRegistration,
+    ) -> HookRegistryUpdateReceipt {
+        self.register_with_receipt(registration, None)
+    }
+
+    fn unregister_dynamic_hook(
+        &mut self,
+        hook_id: &HookRunId,
+    ) -> Option<HookRegistryUpdateReceipt> {
+        self.unregister(hook_id, None)
+    }
+}
+
 #[derive(Clone, Debug, Default)]
 struct HookEventIndex {
     automaton: Option<AhoCorasick>,
@@ -528,6 +553,7 @@ impl HookDispatchPolicy {
             invocation_agent_scope: invocation.agent_scope.clone(),
             mode: self.mode.clone(),
             extension: self.extension.clone(),
+            actions: Vec::new(),
             decisions: registrations
                 .iter()
                 .map(|registration| self.evaluate_registration(registration))
@@ -596,6 +622,7 @@ pub struct HookDispatcher {
     registry: HookRegistry,
     policy: HookDispatchPolicy,
     policy_finalizer: Option<Arc<RegisteredHookPolicyFinalizer>>,
+    registration_catalog: Option<Arc<RegisteredHookRegistrationCatalog>>,
 }
 
 impl HookDispatcher {
@@ -605,6 +632,7 @@ impl HookDispatcher {
             registry,
             policy: HookDispatchPolicy::default(),
             policy_finalizer: None,
+            registration_catalog: None,
         }
     }
 
@@ -623,6 +651,11 @@ impl HookDispatcher {
         self.policy_finalizer.as_deref()
     }
 
+    /// Returns the optional runtime registration catalog.
+    pub fn registration_catalog(&self) -> Option<&RegisteredHookRegistrationCatalog> {
+        self.registration_catalog.as_deref()
+    }
+
     /// Returns a dispatcher with a different policy.
     pub fn with_policy(mut self, policy: HookDispatchPolicy) -> Self {
         self.policy = policy;
@@ -636,6 +669,16 @@ impl HookDispatcher {
     {
         let finalizer: Arc<RegisteredHookPolicyFinalizer> = finalizer;
         self.policy_finalizer = Some(finalizer);
+        self
+    }
+
+    /// Returns a dispatcher with an extension-requested registration catalog.
+    pub fn with_registration_catalog<C>(mut self, catalog: Arc<C>) -> Self
+    where
+        C: HookRegistrationCatalog<HookRegistration> + Send + Sync + 'static,
+    {
+        let catalog: Arc<RegisteredHookRegistrationCatalog> = catalog;
+        self.registration_catalog = Some(catalog);
         self
     }
 
@@ -655,60 +698,65 @@ impl HookDispatcher {
         context: RuntimeContext,
         invocation: HookInvocation,
     ) -> HookDispatchReport {
-        let (registrations, selection) = self.registry.matching(&invocation);
-        let policy = self.policy.evaluate(&invocation, &registrations);
-        let policy = self.finalize_policy(&invocation, policy);
-        let registrations = permitted_registrations(registrations, &policy);
-        let dispatch_span =
-            observability::hook_dispatch_span(&invocation.event_name, registrations.len());
+        let prepared = self.prepare_dispatch(invocation);
+        let runs = run_permitted_hook_registrations(
+            context,
+            prepared.invocation.clone(),
+            prepared.registrations,
+        )
+        .instrument(observability::hook_dispatch_span(
+            &prepared.invocation.event_name,
+            prepared.registration_count,
+        ))
+        .await;
 
-        async move {
-            let mut runs = Vec::new();
-            let mut async_runs = Vec::new();
-
-            for registration in registrations {
-                match registration.execution_mode {
-                    HookExecutionMode::Sync => {
-                        let span = hook_run_span(&registration);
-                        let summary = registration
-                            .handler
-                            .run_hook(invocation.clone(), context.child_context())
-                            .instrument(span)
-                            .await;
-                        runs.push(apply_registration_metadata(&registration, summary));
-                    }
-                    HookExecutionMode::Async => {
-                        let task = registration.run(context.child_context(), invocation.clone());
-                        async_runs.push((registration, task));
-                    }
-                }
-            }
-
-            for (registration, task) in async_runs {
-                let summary = match task.await {
-                    Ok(summary) => summary,
-                    Err(error) => {
-                        tracing::warn!(
-                            hook_id = %registration.id,
-                            hook_event = ?registration.event_name,
-                            error = %error,
-                            "async hook task join failed"
-                        );
-                        failed_join_summary(&registration, &invocation, error.to_string())
-                    }
-                };
-                runs.push(apply_registration_metadata(&registration, summary));
-            }
-
-            HookDispatchReport {
-                event_name: invocation.event_name,
-                selection,
-                policy,
-                runs,
-            }
+        HookDispatchReport {
+            event_name: prepared.invocation.event_name,
+            selection: prepared.selection,
+            policy: prepared.policy,
+            applied_actions: prepared.applied_actions,
+            runs,
         }
-        .instrument(dispatch_span)
-        .await
+    }
+
+    fn prepare_dispatch(&self, invocation: HookInvocation) -> PreparedHookDispatch {
+        let mut dispatch_registry = self.registry.clone();
+        let (registrations, _) = dispatch_registry.matching(&invocation);
+        let policy = self.policy.evaluate(&invocation, &registrations);
+        let finalized_policy = self.finalize_policy(&invocation, policy);
+        let actions = finalized_policy.actions.clone();
+        let registry_application = apply_dynamic_registry_actions(
+            &mut dispatch_registry,
+            &actions,
+            self.registration_catalog.as_deref(),
+        );
+        let mut applied_actions = registry_application.receipts;
+        let (registrations, selection, policy) = if registry_application.changed {
+            let (registrations, selection) = dispatch_registry.matching(&invocation);
+            let policy =
+                attach_dynamic_actions(self.policy.evaluate(&invocation, &registrations), actions);
+            (registrations, selection, policy)
+        } else {
+            let (registrations, selection) = dispatch_registry.matching(&invocation);
+            (registrations, selection, finalized_policy)
+        };
+        let policy_application = apply_dynamic_policy_actions(invocation.message.clone(), policy);
+        let invocation = HookInvocation {
+            message: policy_application.message,
+            ..invocation
+        };
+        let policy = policy_application.policy;
+        applied_actions.extend(policy_application.receipts);
+        let registrations = permitted_registrations(registrations, &policy);
+
+        PreparedHookDispatch {
+            registration_count: registrations.len(),
+            invocation,
+            selection,
+            policy,
+            applied_actions,
+            registrations,
+        }
     }
 
     fn finalize_policy(
@@ -727,12 +775,22 @@ impl HookDispatcher {
     }
 }
 
+struct PreparedHookDispatch {
+    registration_count: usize,
+    invocation: HookInvocation,
+    selection: HookDispatchSelectionReceipt,
+    policy: HookDispatchPolicyReceipt,
+    applied_actions: Vec<HookPolicyDynamicActionApplicationReceipt>,
+    registrations: Vec<HookRegistration>,
+}
+
 /// Receipt collection for one hook event dispatch.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HookDispatchReport {
     pub event_name: HookEventName,
     pub selection: HookDispatchSelectionReceipt,
     pub policy: HookDispatchPolicyReceipt,
+    pub applied_actions: Vec<HookPolicyDynamicActionApplicationReceipt>,
     pub runs: Vec<HookRunSummary>,
 }
 
@@ -745,6 +803,51 @@ impl HookDispatchReport {
                 .iter()
                 .all(|run| run.status == HookRunStatus::Completed)
     }
+}
+
+async fn run_permitted_hook_registrations(
+    context: RuntimeContext,
+    invocation: HookInvocation,
+    registrations: Vec<HookRegistration>,
+) -> Vec<HookRunSummary> {
+    let mut runs = Vec::new();
+    let mut async_runs = Vec::new();
+
+    for registration in registrations {
+        match registration.execution_mode {
+            HookExecutionMode::Sync => {
+                let span = hook_run_span(&registration);
+                let summary = registration
+                    .handler
+                    .run_hook(invocation.clone(), context.child_context())
+                    .instrument(span)
+                    .await;
+                runs.push(apply_registration_metadata(&registration, summary));
+            }
+            HookExecutionMode::Async => {
+                let task = registration.run(context.child_context(), invocation.clone());
+                async_runs.push((registration, task));
+            }
+        }
+    }
+
+    for (registration, task) in async_runs {
+        let summary = match task.await {
+            Ok(summary) => summary,
+            Err(error) => {
+                tracing::warn!(
+                    hook_id = %registration.id,
+                    hook_event = ?registration.event_name,
+                    error = %error,
+                    "async hook task join failed"
+                );
+                failed_join_summary(&registration, &invocation, error.to_string())
+            }
+        };
+        runs.push(apply_registration_metadata(&registration, summary));
+    }
+
+    runs
 }
 
 fn permitted_registrations(

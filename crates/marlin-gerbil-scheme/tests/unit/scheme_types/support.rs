@@ -11,12 +11,27 @@ pub(super) struct StrategySelectionProjection {
     pub action: String,
 }
 
+#[derive(Debug, Deserialize, PartialEq)]
+pub(super) struct StrategyDecisionProjection {
+    pub schema_id: String,
+    pub selection: StrategySelectionProjection,
+    pub reason: String,
+}
+
 pub(super) fn strategy_selection_type_id() -> GerbilSchemeTypeId {
     GerbilSchemeTypeId::new("marlin.deck-runtime.strategy-selection")
 }
 
 pub(super) fn strategy_selection_schema_id() -> GerbilSchemeSchemaId {
     GerbilSchemeSchemaId::new("marlin.deck-runtime.strategy-selection.v1")
+}
+
+pub(super) fn strategy_decision_type_id() -> GerbilSchemeTypeId {
+    GerbilSchemeTypeId::new("marlin.deck-runtime.strategy-decision")
+}
+
+pub(super) fn strategy_decision_schema_id() -> GerbilSchemeSchemaId {
+    GerbilSchemeSchemaId::new("marlin.deck-runtime.strategy-decision.v1")
 }
 
 pub(super) fn strategy_selection_manifest() -> GerbilSchemeTypeManifest {
@@ -37,4 +52,37 @@ pub(super) fn strategy_selection_manifest() -> GerbilSchemeTypeManifest {
         }"#,
     )
     .expect("decode scheme type manifest")
+}
+
+pub(super) fn nested_strategy_manifest() -> GerbilSchemeTypeManifest {
+    decode_gerbil_scheme_type_manifest(
+        r#"{
+            "schema_id": "marlin.scheme-types.manifest.v1",
+            "types": [
+                {
+                    "type_id": "marlin.deck-runtime.strategy-selection",
+                    "schema_id": "marlin.deck-runtime.strategy-selection.v1",
+                    "fields": [
+                        {"name": "schema_id", "type_id": "string", "required": true},
+                        {"name": "matched", "type_id": "boolean", "required": true},
+                        {"name": "action", "type_id": "string", "required": true}
+                    ]
+                },
+                {
+                    "type_id": "marlin.deck-runtime.strategy-decision",
+                    "schema_id": "marlin.deck-runtime.strategy-decision.v1",
+                    "fields": [
+                        {"name": "schema_id", "type_id": "string", "required": true},
+                        {
+                            "name": "selection",
+                            "type_id": "marlin.deck-runtime.strategy-selection",
+                            "required": true
+                        },
+                        {"name": "reason", "type_id": "string", "required": true}
+                    ]
+                }
+            ]
+        }"#,
+    )
+    .expect("decode nested scheme type manifest")
 }

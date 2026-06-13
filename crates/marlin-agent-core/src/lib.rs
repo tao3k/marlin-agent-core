@@ -18,8 +18,9 @@ pub use marlin_agent_harness::{
 pub use marlin_agent_hooks as hooks;
 pub use marlin_agent_hooks::{
     HookDispatchPolicy, HookDispatchPolicyFinalizer, HookDispatchPolicyFinalizerInput,
-    HookDispatchReport, HookDispatcher, HookInvocation, HookRegistration, HookRegistry,
-    RegisteredHookPolicyFinalizer, RegisteredHookRuntime,
+    HookDispatchReport, HookDispatcher, HookInvocation, HookRegistration, HookRegistrationCatalog,
+    HookRegistry, RegisteredHookPolicyFinalizer, RegisteredHookRegistrationCatalog,
+    RegisteredHookRuntime,
 };
 pub use marlin_agent_kernel::{
     ExecutorName, GraphId, GraphLoopExecutionBudget, GraphLoopExecutionRequest,
@@ -39,7 +40,11 @@ pub use marlin_agent_protocol::{
     GerbilLoopGraphPolicyCompilationRequest, HookAgentScope, HookDispatchPolicyReceipt,
     HookDispatchPolicyReceiptInput, HookDurationMs, HookEventName, HookExecutionMode,
     HookHandlerType, HookOutputEntry, HookOutputEntryKind, HookPolicyDecision,
-    HookPolicyDecisionReason, HookPolicyExtension, HookRunId, HookRunStatus, HookRunSummary,
+    HookPolicyDecisionReason, HookPolicyDynamicAction, HookPolicyDynamicActionApplicationEffect,
+    HookPolicyDynamicActionApplicationReason, HookPolicyDynamicActionApplicationReceipt,
+    HookPolicyDynamicActionApplicationStatus, HookPolicyDynamicActionKind,
+    HookPolicyDynamicActionReason, HookPolicyDynamicActionReplacement,
+    HookPolicyDynamicActionTarget, HookPolicyExtension, HookRunId, HookRunStatus, HookRunSummary,
     HookScope, HookSource, HookSourcePath, HookTimestampMs, HookTrustStatus, LiteLlmModelId,
     LoopEvidence, LoopEvidenceKind, LoopPerformanceEvidence, ModelAlias, ModelCommandKind,
     ModelCommandMatcher, ModelContextForkMode, ModelEndpoint, ModelName, ModelProviderId,

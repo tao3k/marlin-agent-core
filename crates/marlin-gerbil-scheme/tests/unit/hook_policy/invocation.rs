@@ -19,6 +19,7 @@ fn gerbil_hook_policy_invocation_builds_typed_request() {
             invocation_agent_scope: HookAgentScope::CustomerAgent,
             mode: HookPolicyMode::ObserveOnly,
             extension,
+            actions: Vec::new(),
             decisions: Vec::new(),
         }),
     })
@@ -41,6 +42,7 @@ fn gerbil_hook_policy_invocation_rejects_non_scheme_extension() {
             invocation_agent_scope: HookAgentScope::SubAgent,
             mode: HookPolicyMode::ObserveOnly,
             extension: HookPolicyExtension::none(),
+            actions: Vec::new(),
             decisions: Vec::new(),
         }),
     })
@@ -66,6 +68,7 @@ fn gerbil_hook_policy_invocation_rejects_agent_scope_mismatch() {
             invocation_agent_scope: HookAgentScope::CustomerAgent,
             mode: HookPolicyMode::ObserveOnly,
             extension,
+            actions: Vec::new(),
             decisions: Vec::new(),
         }),
     })

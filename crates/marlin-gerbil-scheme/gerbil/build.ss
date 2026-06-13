@@ -17,6 +17,7 @@
        "src/marlin/deck-runtime-strategy"
        "src/marlin/deck-runtime-policy"
        "src/marlin/hook-policy"
+       "src/marlin/hooks/policy-samples"
        extra-target ...))))
 
 (defmarlin-runtime-build-script

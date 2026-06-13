@@ -1,5 +1,7 @@
 use marlin_agent_hooks::{HookInvocation, HookRegistration};
-use marlin_agent_protocol::{HookHandlerType, HookRunSummary};
+use marlin_agent_protocol::{
+    HookHandlerType, HookOutputEntry, HookOutputEntryKind, HookRunSummary,
+};
 use marlin_agent_runtime::{HookRuntime, RuntimeContext, RuntimeFuture};
 
 #[derive(Clone, Debug)]
@@ -24,7 +26,15 @@ impl HookRuntime for SummaryHook {
     ) -> RuntimeFuture<Self::Output> {
         let id = self.id;
         Box::pin(async move {
-            HookRunSummary::running(id, request.event_name, HookHandlerType::Command).completed()
+            let mut summary =
+                HookRunSummary::running(id, request.event_name, HookHandlerType::Command);
+            if let Some(message) = request.message {
+                summary = summary.with_entry(HookOutputEntry {
+                    kind: HookOutputEntryKind::Context,
+                    text: message,
+                });
+            }
+            summary.completed()
         })
     }
 }

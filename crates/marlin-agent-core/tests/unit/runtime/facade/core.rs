@@ -3,11 +3,12 @@ use marlin_agent_core::{
     GerbilCommandSpec, GerbilHookPolicyCommandEvaluator, GerbilHookPolicyFinalizer,
     GerbilHookPolicyRuntimeBinding, GraphLoopExecutionStatus, HookAgentScope, HookDispatchPolicy,
     HookDispatcher, HookEventName, HookHandlerType, HookInvocation, HookPolicyDecisionReason,
-    HookPolicyExtension, HookRegistration, HookRegistry, HookRunSummary, HookRuntime, LoopEvidence,
-    LoopEvidenceKind, LoopPerformanceEvidence, ModelContextForkMode, ModelEndpoint,
-    ModelGatewayMessageRole, ModelGatewayRequest, ModelGatewayTransport, ModelRouteConfig,
-    ModelRouteRequest, PERFORMANCE_EVIDENCE_KEYS, RuntimeContext, RuntimeEnvironmentRequest,
-    RuntimeEnvironmentResolver, RuntimeExecutionIdentity, RuntimeFuture, system_gateway_message,
+    HookPolicyDynamicActionKind, HookPolicyExtension, HookRegistration, HookRegistry,
+    HookRunSummary, HookRuntime, LoopEvidence, LoopEvidenceKind, LoopPerformanceEvidence,
+    ModelContextForkMode, ModelEndpoint, ModelGatewayMessageRole, ModelGatewayRequest,
+    ModelGatewayTransport, ModelRouteConfig, ModelRouteRequest, PERFORMANCE_EVIDENCE_KEYS,
+    RuntimeContext, RuntimeEnvironmentRequest, RuntimeEnvironmentResolver,
+    RuntimeExecutionIdentity, RuntimeFuture, system_gateway_message,
 };
 use std::sync::Arc;
 use tempfile::Builder;
@@ -70,7 +71,7 @@ async fn core_facade_wires_gerbil_hook_policy_finalizer() {
     ));
     let evaluator = GerbilHookPolicyCommandEvaluator::new(
         GerbilCommandSpec::new("/bin/sh").arg("-c").arg(
-            "cat >/dev/null; printf '%s\n' '{\"decision\":\"Rejected\",\"diagnostics\":[{\"message\":\"core finalizer rejected\"}]}'",
+            "cat >/dev/null; printf '%s\n' '{\"decision\":\"Rejected\",\"diagnostics\":[{\"message\":\"core finalizer rejected\"}],\"actions\":[{\"kind\":\"Deny\",\"target\":\"core-gerbil\"}]}'",
         ),
     );
     let finalizer = GerbilHookPolicyFinalizer::new(evaluator);
@@ -93,6 +94,11 @@ async fn core_facade_wires_gerbil_hook_policy_finalizer() {
     assert_eq!(
         report.policy.decisions[0].reason,
         HookPolicyDecisionReason::ExtensionRejected
+    );
+    assert_eq!(report.policy.actions.len(), 1);
+    assert_eq!(
+        report.policy.actions[0].kind,
+        HookPolicyDynamicActionKind::Deny
     );
     assert!(report.runs.is_empty());
     assert!(!report.is_success());

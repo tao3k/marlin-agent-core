@@ -4,8 +4,10 @@ use marlin_agent_hooks::{
 };
 use marlin_agent_protocol::{
     HookAgentScope, HookDispatchPolicyReceipt, HookDispatchPolicyReceiptInput, HookEventName,
-    HookHandlerType, HookPolicyDecision, HookPolicyDecisionReason, HookPolicyExtension,
-    HookTrustStatus,
+    HookHandlerType, HookPolicyDecision, HookPolicyDecisionReason, HookPolicyDynamicAction,
+    HookPolicyDynamicActionApplicationEffect, HookPolicyDynamicActionApplicationStatus,
+    HookPolicyDynamicActionKind, HookPolicyDynamicActionReplacement, HookPolicyDynamicActionTarget,
+    HookPolicyExtension, HookTrustStatus,
 };
 use marlin_agent_runtime::TokioAgentRuntime;
 use std::sync::Arc;
@@ -121,6 +123,7 @@ impl HookDispatchPolicyFinalizer for RejectingPolicyFinalizer {
             invocation_agent_scope: input.invocation.agent_scope,
             mode: input.policy_receipt.mode,
             extension: input.policy_receipt.extension,
+            actions: Vec::new(),
             decisions,
         })
     }
@@ -165,4 +168,186 @@ async fn dispatcher_policy_finalizer_can_reject_after_rust_policy_allows() {
     );
     assert!(report.runs.is_empty());
     assert!(!report.is_success());
+}
+
+#[derive(Clone, Debug)]
+struct DynamicActionPolicyFinalizer {
+    actions: Vec<HookPolicyDynamicAction>,
+}
+
+impl DynamicActionPolicyFinalizer {
+    fn new(actions: Vec<HookPolicyDynamicAction>) -> Self {
+        Self { actions }
+    }
+}
+
+impl HookDispatchPolicyFinalizer for DynamicActionPolicyFinalizer {
+    fn finalize(&self, input: HookDispatchPolicyFinalizerInput) -> HookDispatchPolicyReceipt {
+        HookDispatchPolicyReceipt::new(HookDispatchPolicyReceiptInput {
+            event_name: input.invocation.event_name,
+            invocation_agent_scope: input.invocation.agent_scope,
+            mode: input.policy_receipt.mode,
+            extension: input.policy_receipt.extension,
+            actions: self.actions.clone(),
+            decisions: input.policy_receipt.decisions,
+        })
+    }
+}
+
+#[tokio::test]
+async fn dispatcher_dynamic_deny_action_blocks_target_registration() {
+    let registry = HookRegistry::new()
+        .with_registration(
+            summary_hook_registration(
+                "allowed",
+                HookEventName::PreToolUse,
+                HookHandlerType::Command,
+                "allowed-run",
+            )
+            .with_trust(HookTrustStatus::Trusted),
+        )
+        .with_registration(
+            summary_hook_registration(
+                "blocked",
+                HookEventName::PreToolUse,
+                HookHandlerType::Command,
+                "blocked-run",
+            )
+            .with_trust(HookTrustStatus::Trusted),
+        );
+    let (runtime, _events) = TokioAgentRuntime::new(4);
+
+    let report = HookDispatcher::new(registry)
+        .with_policy(HookDispatchPolicy::enforce_trusted())
+        .with_policy_finalizer(Arc::new(DynamicActionPolicyFinalizer::new(vec![
+            HookPolicyDynamicAction {
+                kind: HookPolicyDynamicActionKind::Deny,
+                target: Some(HookPolicyDynamicActionTarget::from("blocked")),
+                replacement: None,
+                reason: None,
+            },
+        ])))
+        .dispatch(
+            &runtime,
+            HookInvocation::new(HookEventName::PreToolUse)
+                .with_agent_scope(HookAgentScope::SubAgent),
+        )
+        .await;
+
+    assert_eq!(report.policy.allowed_count, 1);
+    assert_eq!(report.policy.rejected_count, 1);
+    assert_eq!(
+        report
+            .policy
+            .decisions
+            .iter()
+            .find(|decision| decision.hook_id.as_str() == "blocked")
+            .expect("blocked decision")
+            .reason,
+        HookPolicyDecisionReason::ExtensionRejected
+    );
+    assert_eq!(
+        report
+            .runs
+            .iter()
+            .map(|run| run.id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["allowed-run"]
+    );
+    assert_eq!(
+        report.applied_actions[0].status,
+        HookPolicyDynamicActionApplicationStatus::Applied
+    );
+    assert_eq!(
+        report.applied_actions[0].effect,
+        HookPolicyDynamicActionApplicationEffect::DecisionRejected
+    );
+}
+
+#[tokio::test]
+async fn dispatcher_dynamic_defer_action_suppresses_current_dispatch() {
+    let registry = HookRegistry::new().with_registration(
+        summary_hook_registration(
+            "deferred",
+            HookEventName::PreToolUse,
+            HookHandlerType::Command,
+            "deferred-run",
+        )
+        .with_trust(HookTrustStatus::Trusted),
+    );
+    let (runtime, _events) = TokioAgentRuntime::new(4);
+
+    let report = HookDispatcher::new(registry)
+        .with_policy(HookDispatchPolicy::enforce_trusted())
+        .with_policy_finalizer(Arc::new(DynamicActionPolicyFinalizer::new(vec![
+            HookPolicyDynamicAction {
+                kind: HookPolicyDynamicActionKind::Defer,
+                target: None,
+                replacement: None,
+                reason: None,
+            },
+        ])))
+        .dispatch(
+            &runtime,
+            HookInvocation::new(HookEventName::PreToolUse)
+                .with_agent_scope(HookAgentScope::SubAgent),
+        )
+        .await;
+
+    assert_eq!(report.policy.allowed_count, 0);
+    assert_eq!(report.policy.rejected_count, 1);
+    assert_eq!(
+        report.policy.decisions[0].reason,
+        HookPolicyDecisionReason::ExtensionDeferred
+    );
+    assert!(report.runs.is_empty());
+    assert_eq!(
+        report.applied_actions[0].effect,
+        HookPolicyDynamicActionApplicationEffect::DispatchDeferred
+    );
+}
+
+#[tokio::test]
+async fn dispatcher_dynamic_rewrite_action_updates_hook_invocation_message() {
+    let registry = HookRegistry::new().with_registration(
+        summary_hook_registration(
+            "rewritten",
+            HookEventName::PreToolUse,
+            HookHandlerType::Command,
+            "rewritten-run",
+        )
+        .with_trust(HookTrustStatus::Trusted),
+    );
+    let (runtime, _events) = TokioAgentRuntime::new(4);
+
+    let report = HookDispatcher::new(registry)
+        .with_policy(HookDispatchPolicy::enforce_trusted())
+        .with_policy_finalizer(Arc::new(DynamicActionPolicyFinalizer::new(vec![
+            HookPolicyDynamicAction {
+                kind: HookPolicyDynamicActionKind::Rewrite,
+                target: Some(HookPolicyDynamicActionTarget::from("message")),
+                replacement: Some(HookPolicyDynamicActionReplacement::from(
+                    "cargo test --locked",
+                )),
+                reason: None,
+            },
+        ])))
+        .dispatch(
+            &runtime,
+            HookInvocation::new(HookEventName::PreToolUse)
+                .with_agent_scope(HookAgentScope::SubAgent)
+                .with_message("cargo test"),
+        )
+        .await;
+
+    assert_eq!(report.policy.allowed_count, 1);
+    assert_eq!(report.runs.len(), 1);
+    assert_eq!(
+        report.runs[0].entries[0].text.as_str(),
+        "cargo test --locked"
+    );
+    assert_eq!(
+        report.applied_actions[0].effect,
+        HookPolicyDynamicActionApplicationEffect::InvocationRewritten
+    );
 }

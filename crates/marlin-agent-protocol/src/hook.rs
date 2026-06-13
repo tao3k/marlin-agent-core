@@ -512,6 +512,164 @@ pub enum HookPolicyDecisionReason {
     ModifiedRejected,
     ExtensionAllowed,
     ExtensionRejected,
+    ExtensionDeferred,
+}
+
+/// Dynamic hook action target emitted by an extension policy.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+pub struct HookPolicyDynamicActionTarget(String);
+
+impl HookPolicyDynamicActionTarget {
+    pub fn new(value: impl Into<String>) -> Self {
+        Self(value.into())
+    }
+
+    pub fn as_str(&self) -> &str {
+        self.0.as_str()
+    }
+
+    pub fn into_string(self) -> String {
+        self.0
+    }
+}
+
+impl From<String> for HookPolicyDynamicActionTarget {
+    fn from(value: String) -> Self {
+        Self::new(value)
+    }
+}
+
+impl From<&str> for HookPolicyDynamicActionTarget {
+    fn from(value: &str) -> Self {
+        Self::new(value)
+    }
+}
+
+/// Dynamic hook rewrite value emitted by an extension policy.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+pub struct HookPolicyDynamicActionReplacement(String);
+
+impl HookPolicyDynamicActionReplacement {
+    pub fn new(value: impl Into<String>) -> Self {
+        Self(value.into())
+    }
+
+    pub fn as_str(&self) -> &str {
+        self.0.as_str()
+    }
+
+    pub fn into_string(self) -> String {
+        self.0
+    }
+}
+
+impl From<String> for HookPolicyDynamicActionReplacement {
+    fn from(value: String) -> Self {
+        Self::new(value)
+    }
+}
+
+impl From<&str> for HookPolicyDynamicActionReplacement {
+    fn from(value: &str) -> Self {
+        Self::new(value)
+    }
+}
+
+/// Dynamic hook action reason emitted by an extension policy.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+pub struct HookPolicyDynamicActionReason(String);
+
+impl HookPolicyDynamicActionReason {
+    pub fn new(value: impl Into<String>) -> Self {
+        Self(value.into())
+    }
+
+    pub fn as_str(&self) -> &str {
+        self.0.as_str()
+    }
+
+    pub fn into_string(self) -> String {
+        self.0
+    }
+}
+
+impl From<String> for HookPolicyDynamicActionReason {
+    fn from(value: String) -> Self {
+        Self::new(value)
+    }
+}
+
+impl From<&str> for HookPolicyDynamicActionReason {
+    fn from(value: &str) -> Self {
+        Self::new(value)
+    }
+}
+
+/// Dynamic hook action kind emitted by an extension policy.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum HookPolicyDynamicActionKind {
+    Deny,
+    Rewrite,
+    Register,
+    Unregister,
+    Defer,
+}
+
+/// Dynamic hook action emitted by an extension policy.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct HookPolicyDynamicAction {
+    pub kind: HookPolicyDynamicActionKind,
+    #[serde(default)]
+    pub target: Option<HookPolicyDynamicActionTarget>,
+    #[serde(default)]
+    pub replacement: Option<HookPolicyDynamicActionReplacement>,
+    #[serde(default)]
+    pub reason: Option<HookPolicyDynamicActionReason>,
+}
+
+/// Runtime status for applying one dynamic hook policy action.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum HookPolicyDynamicActionApplicationStatus {
+    Applied,
+    Ignored,
+    Failed,
+}
+
+/// Runtime effect produced by applying one dynamic hook policy action.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum HookPolicyDynamicActionApplicationEffect {
+    DecisionRejected,
+    DispatchDeferred,
+    InvocationRewritten,
+    RegistrationRegistered,
+    RegistrationUnregistered,
+    Noop,
+}
+
+/// Runtime reason for one dynamic hook policy action application.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum HookPolicyDynamicActionApplicationReason {
+    TargetMatched,
+    TargetNotMatched,
+    MissingTarget,
+    MissingReplacement,
+    UnsupportedTarget,
+    CatalogUnavailable,
+    CatalogMiss,
+    RegistryMiss,
+    CatalogResolved,
+    RegistryUpdated,
+}
+
+/// Receipt proving how the runtime handled one dynamic hook policy action.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct HookPolicyDynamicActionApplicationReceipt {
+    pub action: HookPolicyDynamicAction,
+    pub status: HookPolicyDynamicActionApplicationStatus,
+    pub effect: HookPolicyDynamicActionApplicationEffect,
+    pub reason: HookPolicyDynamicActionApplicationReason,
+    pub target_hook_id: Option<HookRunId>,
+    pub registry_update: Option<HookRegistryUpdateReceipt>,
 }
 
 /// Policy decision receipt for one selected hook registration.
@@ -539,6 +697,7 @@ pub struct HookDispatchPolicyReceipt {
     pub evaluated_count: usize,
     pub allowed_count: usize,
     pub rejected_count: usize,
+    pub actions: Vec<HookPolicyDynamicAction>,
     pub decisions: Vec<HookPolicyDecisionReceipt>,
 }
 
@@ -549,6 +708,7 @@ pub struct HookDispatchPolicyReceiptInput {
     pub invocation_agent_scope: HookAgentScope,
     pub mode: HookPolicyMode,
     pub extension: HookPolicyExtension,
+    pub actions: Vec<HookPolicyDynamicAction>,
     pub decisions: Vec<HookPolicyDecisionReceipt>,
 }
 
@@ -569,6 +729,7 @@ impl HookDispatchPolicyReceipt {
             evaluated_count,
             allowed_count,
             rejected_count,
+            actions: input.actions,
             decisions: input.decisions,
         }
     }

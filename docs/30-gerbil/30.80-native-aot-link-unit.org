@@ -158,6 +158,40 @@ The previous JSON-returning smoke path measured the wrong boundary because it
 included JSON serialization plus runtime-owned byte-buffer allocation/free. That
 path is no longer the native API shape.
 
+Complex Deck strategy policies live on the Gerbil Scheme extension plane rather
+than the native selector ABI. The current strategy process benchmark is gated by
+=MARLIN_GERBIL_REAL_STRATEGY_BENCH= and runs the package-shipped
+=:marlin/deck-runtime-strategy= module through a real =gxi= script process:
+
+#+begin_src sh
+MARLIN_GERBIL_REAL_STRATEGY_BENCH=1 \
+  cargo bench -p marlin-gerbil-scheme --bench deck_runtime_native -- \
+  deck_runtime_real_scheme_strategy
+#+end_src
+
+On 2026-06-13 the local benchmark for
+=deck_runtime_real_scheme_strategy/complex_strategy_process_roundtrip= was
+approximately 563-636 milliseconds. This measures the full =gxi= process
+roundtrip for session, agent-lineage, workspace-state, Org-memory, customer
+agent, and dynamic hook-action strategy selection. It is the correct boundary
+for policy-plane expressiveness checks, not for hot model-route selection. The
+microsecond native ABI target remains scoped to the linked selector path above.
+
+Dynamic hook action application is measured on the Rust runtime side, not
+through the LLM gateway or a =gxi= process. The current benchmark command is:
+
+#+begin_src sh
+direnv exec . cargo bench --locked -p marlin-agent-hooks --bench dynamic_actions -- hook_dynamic_actions_register_rewrite_dispatch
+#+end_src
+
+On 2026-06-13 the local
+=hook_dynamic_actions_register_rewrite_dispatch= benchmark measured
+approximately 18.4-23.0 microseconds for catalog-backed =Register= plus
+=Rewrite= dispatch. Criterion reported this run as slower than the previous
+local sample, so the stable regression threshold remains open. This is the hot
+runtime-action budget; Scheme policy evaluation and process adapter costs remain
+separate measurements.
+
 The native AOT command runner infers the Gerbil/Gambit prefix from =gxc= and
 =gsc=. When the prefix has =bin=, =lib/gerbil=, =include/gambit.h=, and a
 Gambit runtime library, the runner injects =GERBIL_HOME= and =GAMBOPT= for the

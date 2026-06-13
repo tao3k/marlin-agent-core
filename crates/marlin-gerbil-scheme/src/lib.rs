@@ -95,7 +95,9 @@ pub use runtime::{
 pub use scheme_types::{
     GerbilSchemeFieldName, GerbilSchemeJsonTypeKind, GerbilSchemeSchemaId,
     GerbilSchemeTypeDecodeError, GerbilSchemeTypeFieldSpec, GerbilSchemeTypeId,
-    GerbilSchemeTypeManifest, GerbilSchemeTypeManifestValidationReceipt, GerbilSchemeTypeSpec,
-    GerbilSchemeTypedValue, GerbilSchemeTypedValueValidationReceipt,
+    GerbilSchemeTypeManifest, GerbilSchemeTypeManifestValidationReceipt, GerbilSchemeTypeRegistry,
+    GerbilSchemeTypeSpec, GerbilSchemeTypedValue, GerbilSchemeTypedValueValidationReceipt,
     decode_gerbil_scheme_type_manifest, decode_gerbil_scheme_typed_value,
+    validate_gerbil_scheme_type_manifest, validate_gerbil_scheme_typed_value,
+    validate_gerbil_scheme_value_as_type,
 };

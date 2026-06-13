@@ -111,6 +111,7 @@ pub fn custom_hook_policy_receipt_fixture() -> HookDispatchPolicyReceipt {
         invocation_agent_scope: HookAgentScope::CustomAgent,
         mode: HookPolicyMode::EnforceTrusted,
         extension: HookPolicyExtension::gerbil_scheme("marlin/hooks/policy", "decide-hook-policy"),
+        actions: Vec::new(),
         decisions: vec![
             HookPolicyDecisionReceipt {
                 hook_id: HookRunId::new("trusted-custom-command"),

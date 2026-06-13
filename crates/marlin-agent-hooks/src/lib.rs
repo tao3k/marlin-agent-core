@@ -4,6 +4,7 @@
 
 mod config;
 mod dispatcher;
+mod dynamic_actions;
 
 pub use config::{
     HookConfigurationEnvelope, HookConfigurationError, HookPolicyConfiguration,
@@ -12,5 +13,6 @@ pub use config::{
 pub use dispatcher::{
     HookDispatchPolicy, HookDispatchPolicyFinalizer, HookDispatchPolicyFinalizerInput,
     HookDispatchReport, HookDispatcher, HookInvocation, HookRegistration, HookRegistry,
-    RegisteredHookPolicyFinalizer, RegisteredHookRuntime,
+    RegisteredHookPolicyFinalizer, RegisteredHookRegistrationCatalog, RegisteredHookRuntime,
 };
+pub use dynamic_actions::HookRegistrationCatalog;

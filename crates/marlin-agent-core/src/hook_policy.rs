@@ -3,7 +3,7 @@
 use marlin_agent_hooks::{HookDispatchPolicyFinalizer, HookDispatchPolicyFinalizerInput};
 use marlin_agent_protocol::{
     HookDispatchPolicyReceipt, HookDispatchPolicyReceiptInput, HookPolicyDecision,
-    HookPolicyDecisionReason,
+    HookPolicyDecisionReason, HookPolicyDynamicAction,
 };
 use marlin_gerbil_scheme::{
     GerbilHookPolicyCommandEvaluator, GerbilHookPolicyInvocationInput,
@@ -51,13 +51,33 @@ impl HookDispatchPolicyFinalizer for GerbilHookPolicyFinalizer {
         });
 
         match evaluation {
-            Ok(receipt) if receipt.is_allowed() => policy_receipt,
-            Ok(_) | Err(_) => reject_policy_receipt(policy_receipt),
+            Ok(receipt) if receipt.is_allowed() => {
+                attach_policy_actions(policy_receipt, receipt.actions)
+            }
+            Ok(receipt) => reject_policy_receipt(policy_receipt, receipt.actions),
+            Err(_) => reject_policy_receipt(policy_receipt, Vec::new()),
         }
     }
 }
 
-fn reject_policy_receipt(policy_receipt: HookDispatchPolicyReceipt) -> HookDispatchPolicyReceipt {
+fn attach_policy_actions(
+    policy_receipt: HookDispatchPolicyReceipt,
+    actions: Vec<HookPolicyDynamicAction>,
+) -> HookDispatchPolicyReceipt {
+    HookDispatchPolicyReceipt::new(HookDispatchPolicyReceiptInput {
+        event_name: policy_receipt.event_name,
+        invocation_agent_scope: policy_receipt.invocation_agent_scope,
+        mode: policy_receipt.mode,
+        extension: policy_receipt.extension,
+        actions,
+        decisions: policy_receipt.decisions,
+    })
+}
+
+fn reject_policy_receipt(
+    policy_receipt: HookDispatchPolicyReceipt,
+    actions: Vec<HookPolicyDynamicAction>,
+) -> HookDispatchPolicyReceipt {
     let decisions = policy_receipt
         .decisions
         .into_iter()
@@ -73,6 +93,7 @@ fn reject_policy_receipt(policy_receipt: HookDispatchPolicyReceipt) -> HookDispa
         invocation_agent_scope: policy_receipt.invocation_agent_scope,
         mode: policy_receipt.mode,
         extension: policy_receipt.extension,
+        actions,
         decisions,
     })
 }

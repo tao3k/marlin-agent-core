@@ -5,6 +5,10 @@ version.workspace = true
 authors.workspace = true
 repository.workspace = true
 
+[[bench]]
+name = "dynamic_actions"
+harness = false
+
 [dependencies]
 aho-corasick.workspace = true
 marlin-agent-protocol.workspace = true
@@ -19,4 +23,5 @@ marlin-rust-project-harness-policy.workspace = true
 rust-lang-project-harness.workspace = true
 
 [dev-dependencies]
+criterion.workspace = true
 rust-lang-project-harness.workspace = true

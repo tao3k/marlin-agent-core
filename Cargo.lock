@@ -2163,6 +2163,7 @@ name = "marlin-agent-hooks"
 version = "0.1.0"
 dependencies = [
  "aho-corasick",
+ "criterion",
  "marlin-agent-protocol",
  "marlin-agent-runtime",
  "marlin-rust-project-harness-policy",

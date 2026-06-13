@@ -69,6 +69,7 @@ fn hook_dispatch_policy_receipt_counts_allowed_and_rejected_decisions() {
         invocation_agent_scope: HookAgentScope::CustomerAgent,
         mode: HookPolicyMode::EnforceTrusted,
         extension: HookPolicyExtension::gerbil_scheme("marlin/hooks/policy", "decide-hook-policy"),
+        actions: Vec::new(),
         decisions: vec![
             HookPolicyDecisionReceipt {
                 hook_id: "trusted".into(),

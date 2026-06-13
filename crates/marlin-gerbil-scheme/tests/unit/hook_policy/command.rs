@@ -26,6 +26,7 @@ fn gerbil_hook_policy_command_evaluator_decodes_command_stdout() {
                 invocation_agent_scope: HookAgentScope::CustomerAgent,
                 mode: HookPolicyMode::ObserveOnly,
                 extension,
+                actions: Vec::new(),
                 decisions: Vec::new(),
             }),
         })
@@ -54,6 +55,7 @@ fn gerbil_hook_policy_command_evaluator_reports_command_failure_diagnostics() {
                 invocation_agent_scope: HookAgentScope::SubAgent,
                 mode: HookPolicyMode::ObserveOnly,
                 extension,
+                actions: Vec::new(),
                 decisions: Vec::new(),
             }),
         })

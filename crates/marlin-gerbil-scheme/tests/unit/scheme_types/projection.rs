@@ -1,9 +1,11 @@
 use super::support::{
-    StrategySelectionProjection, strategy_selection_manifest, strategy_selection_schema_id,
-    strategy_selection_type_id,
+    StrategyDecisionProjection, StrategySelectionProjection, nested_strategy_manifest,
+    strategy_decision_schema_id, strategy_decision_type_id, strategy_selection_manifest,
+    strategy_selection_schema_id, strategy_selection_type_id,
 };
 use marlin_gerbil_scheme::{
-    GerbilSchemeTypeId, GerbilSchemeTypedValue, decode_gerbil_scheme_typed_value,
+    GerbilSchemeTypeId, GerbilSchemeTypeRegistry, GerbilSchemeTypedValue,
+    decode_gerbil_scheme_typed_value,
 };
 use serde_json::json;
 use std::time::Instant;
@@ -11,6 +13,8 @@ use std::time::Instant;
 #[test]
 fn scheme_typed_value_projects_to_rust_without_static_scheme_binding() {
     let manifest = strategy_selection_manifest();
+    let registry =
+        GerbilSchemeTypeRegistry::new(manifest).expect("strategy manifest builds registry");
     let envelope = decode_gerbil_scheme_typed_value(
         r#"{
             "type_id": "marlin.deck-runtime.strategy-selection",
@@ -24,8 +28,8 @@ fn scheme_typed_value_projects_to_rust_without_static_scheme_binding() {
     )
     .expect("decode typed value envelope");
 
-    let projection: StrategySelectionProjection = envelope
-        .decode_value_with_manifest(&manifest)
+    let projection: StrategySelectionProjection = registry
+        .decode_typed_value(&envelope)
         .expect("project envelope payload into Rust type");
 
     assert_eq!(
@@ -38,6 +42,63 @@ fn scheme_typed_value_projects_to_rust_without_static_scheme_binding() {
             schema_id: "marlin.deck-runtime.strategy-selection.v1".to_string(),
             matched: true,
             action: "dynamic-hook-action".to_string(),
+        }
+    );
+}
+
+#[test]
+fn scheme_type_registry_reuses_validated_manifest_index() {
+    let registry = GerbilSchemeTypeRegistry::new(strategy_selection_manifest())
+        .expect("strategy manifest should build registry");
+
+    assert_eq!(registry.validation_receipt().type_count, 1);
+    assert_eq!(registry.validation_receipt().field_count, 3);
+    assert!(
+        registry
+            .type_spec(&strategy_selection_type_id())
+            .expect("strategy type is indexed")
+            .schema_id
+            .as_ref()
+            .is_some_and(|schema| schema == &strategy_selection_schema_id())
+    );
+}
+
+#[test]
+fn scheme_typed_value_projects_nested_custom_scheme_types_to_rust() {
+    let registry = GerbilSchemeTypeRegistry::new(nested_strategy_manifest())
+        .expect("nested strategy manifest should build registry");
+    let envelope = GerbilSchemeTypedValue::new(
+        strategy_decision_type_id(),
+        json!({
+            "schema_id": "marlin.deck-runtime.strategy-decision.v1",
+            "selection": {
+                "schema_id": "marlin.deck-runtime.strategy-selection.v1",
+                "matched": true,
+                "action": "dynamic-hook-action"
+            },
+            "reason": "nested manifest projection"
+        }),
+    )
+    .with_schema_id(strategy_decision_schema_id());
+
+    let receipt = registry
+        .validate_value_as_type(&strategy_decision_type_id(), envelope.value())
+        .expect("raw nested Scheme value should validate by manifest type id");
+    let projection: StrategyDecisionProjection = registry
+        .decode_typed_value(&envelope)
+        .expect("nested Scheme typed value should project into Rust type");
+
+    assert_eq!(receipt.required_fields, 3);
+    assert_eq!(
+        projection,
+        StrategyDecisionProjection {
+            schema_id: "marlin.deck-runtime.strategy-decision.v1".to_string(),
+            selection: StrategySelectionProjection {
+                schema_id: "marlin.deck-runtime.strategy-selection.v1".to_string(),
+                matched: true,
+                action: "dynamic-hook-action".to_string(),
+            },
+            reason: "nested manifest projection".to_string(),
         }
     );
 }
@@ -65,7 +126,8 @@ fn scheme_typed_value_rejects_wrong_projection_type() {
 
 #[test]
 fn scheme_typed_value_projection_performance_gate_stays_in_process() {
-    let manifest = strategy_selection_manifest();
+    let registry = GerbilSchemeTypeRegistry::new(strategy_selection_manifest())
+        .expect("strategy manifest should build registry");
     let envelopes = (0..2_000)
         .map(|index| {
             GerbilSchemeTypedValue::new(
@@ -82,8 +144,8 @@ fn scheme_typed_value_projection_performance_gate_stays_in_process() {
 
     let started = Instant::now();
     for envelope in &envelopes {
-        let projection: StrategySelectionProjection = envelope
-            .decode_value_with_manifest(&manifest)
+        let projection: StrategySelectionProjection = registry
+            .decode_typed_value(envelope)
             .expect("validated Scheme typed value should project into Rust type");
         assert!(projection.matched);
     }

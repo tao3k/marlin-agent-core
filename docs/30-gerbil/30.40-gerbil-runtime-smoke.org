@@ -214,6 +214,31 @@ entrypoint, or =GerbilCommandSpec::marlin_runtime_launcher= for the source-file
 launcher. Local smoke tests discover =gxi= through =MARLIN_GERBIL_GXI= before
 falling back to the Homebrew =gerbil-scheme= path.
 
+=:marlin/hook-policy= is the runtime adapter for complex hook policy modules.
+Simple hook matching stays in typed Rust/TOML, while Gerbil Scheme policies can
+now return a typed dynamic action receipt through the adapter. The decoded Rust
+shape keeps the existing =decision= gate and adds =actions= for =Deny=,
+=Rewrite=, =Register=, =Unregister=, and =Defer=, each with optional =target=,
+=replacement=, and =reason=. The current real =gxi= smoke is
+=gerbil_hook_policy_runtime_binding_real_gxi_decodes_dynamic_actions=. It proves
+the adapter I/O boundary. The dispatcher now applies the current-dispatch action
+subset directly: =Deny= rejects the targeted hook registration, =Defer=
+suppresses the targeted registration with an =ExtensionDeferred= decision, and
+=Rewrite= updates the invocation message before selected handlers run.
+=Register= and =Unregister= now operate through a Rust-owned runtime catalog
+and dispatch-local registry snapshot: Scheme can request a named target, while
+Rust resolves that target to an existing =HookRegistration= or records an
+applied-action failure. This keeps complex policy in Scheme without allowing
+Scheme or JSON to manufacture Rust hook handlers.
+
+=:marlin/hooks/policy-samples= is the crate-shipped Scheme sample module for
+complex hook policy placement. It includes session, agent-lineage,
+workspace-state, Org-memory, and customer-agent predicates, plus action-template
+macros for =Register=, =Defer=, =Deny=, and =Rewrite=. The real =gxi= smoke
+=gerbil_hook_policy_runtime_binding_real_gxi_runs_sample_policy_module= invokes
+that sample through the Rust runtime binding and decodes the resulting typed
+dynamic action receipt.
+
 =examples/workspace-patch-intent.ss= is the minimal user-facing Gerbil scheme
 example. It imports =:marlin/parser= and =:marlin/protocol=, compiles a
 =WorkspacePatchIntent= source form containing =set-todo=, =set-property=, and

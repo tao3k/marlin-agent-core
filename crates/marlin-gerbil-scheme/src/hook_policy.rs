@@ -12,7 +12,8 @@ use crate::command::GerbilCommandSpec;
 use crate::runtime::{default_gerbil_gxi_program, write_gerbil_runtime_assets};
 use marlin_agent_protocol::{
     HookAgentScope, HookDispatchPolicyReceipt, HookEventName, HookPolicyDecision,
-    HookPolicyExtension, HookPolicyExtensionKind, HookSchemeModule, HookSchemeProcedure,
+    HookPolicyDynamicAction, HookPolicyExtension, HookPolicyExtensionKind, HookSchemeModule,
+    HookSchemeProcedure,
 };
 use serde::{Deserialize, Serialize};
 
@@ -63,6 +64,8 @@ pub struct GerbilHookPolicyEvaluationOutput {
     pub decision: HookPolicyDecision,
     #[serde(default)]
     pub diagnostics: Vec<GerbilHookPolicyDiagnostic>,
+    #[serde(default)]
+    pub actions: Vec<HookPolicyDynamicAction>,
 }
 
 /// Diagnostic emitted by a `Gerbil Scheme` hook policy procedure.
@@ -79,6 +82,7 @@ pub struct GerbilHookPolicyEvaluationReceipt {
     pub extension: HookPolicyExtension,
     pub decision: HookPolicyDecision,
     pub diagnostics: Vec<GerbilHookPolicyDiagnostic>,
+    pub actions: Vec<HookPolicyDynamicAction>,
     pub policy_evaluated_count: usize,
     pub policy_rejected_count: usize,
 }
@@ -308,6 +312,7 @@ pub fn decode_gerbil_hook_policy_evaluation(
         extension: input.invocation.extension,
         decision: output.decision,
         diagnostics: output.diagnostics,
+        actions: output.actions,
         policy_evaluated_count: input.invocation.policy_receipt.evaluated_count,
         policy_rejected_count: input.invocation.policy_receipt.rejected_count,
     })
