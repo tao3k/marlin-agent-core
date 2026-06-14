@@ -78,6 +78,10 @@ route =asp rust search=, shell execution, long-running sub-agent work, or
 project-specific commands to different model/runtime behavior without hard
 coding provider choices in call sites.
 
+Codex is a product/client surface, not a model identifier. OpenAI model
+requests and route examples must use GPT-family model names such as =gpt-5.5=
+or =gpt-5-mini=, with =openai= remaining the provider id.
+
 ** Persistent Agent Interaction
 
 ASP and sub-agent work should support explicit persistent interaction:

@@ -19,6 +19,8 @@ const REVIEWER_MODEL_ID: &str = "anthropic/claude-opus-4-8";
 const REVIEWER_ROUTE_RULE_ID: &str = "reviewer-opus";
 const REVIEWER_PERSISTENCE_KEY: &str = "workspace:reviewer";
 const REVIEWER_CHILD_SESSION_ID: &str = "model-route/persistent/workspace:reviewer";
+const REVIEWER_ROUTE_COMMAND: [&str; 3] = ["gpt-5.5", "sub-agent", "review"];
+const REVIEWER_ROUTE_COMMAND_LINE: &str = "gpt-5.5 sub-agent review";
 
 /// Fixture for one no-LLM sub-agent path across route, session, hook, and gateway.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -106,7 +108,7 @@ pub fn deterministic_reviewer_sub_agent_scenario_fixture() -> DeterministicSubAg
         REVIEWER_PERSISTENCE_KEY,
         ModelContextForkMode::ForkSnapshot,
     ));
-    let route_request = ModelRouteRequest::command(["codex", "sub-agent", "review"])
+    let route_request = ModelRouteRequest::command(REVIEWER_ROUTE_COMMAND)
         .with_sub_agent_role("reviewer")
         .with_command_kind("review");
 
@@ -142,7 +144,7 @@ pub fn assert_deterministic_sub_agent_route_decision(
         fixture.expected_litellm_model_id(),
     );
     assert_eq!(decision.receipt.rule_id.as_str(), REVIEWER_ROUTE_RULE_ID);
-    assert_eq!(decision.receipt.command_line, "codex sub-agent review");
+    assert_eq!(decision.receipt.command_line, REVIEWER_ROUTE_COMMAND_LINE);
     assert_eq!(
         decision.receipt.context_fork,
         ModelContextForkMode::ForkSnapshot

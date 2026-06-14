@@ -331,7 +331,7 @@ fn write_deck_runtime_compiled_policy_example(path: &Path) {
   ("compiled-deep-reviewer"
    "anthropic"
    "claude-opus-4-8"
-   ("codex customer-review" "cargo clippy")
+   ("gpt-5.5 customer-review" "cargo clippy")
    ("reviewer")
    "shared-context"
    "isolated-session"))
@@ -392,7 +392,7 @@ fn write_deck_runtime_complex_strategy_example(path: &Path) {
     "deep-customer-reviewer"
     "anthropic"
     "claude-opus-4-8"
-    (list "codex customer-review" "cargo test")
+    (list "gpt-5.5 customer-review" "cargo test")
     (list "sub-agent")
     "shared-context"
     "isolated-session")))
@@ -422,7 +422,7 @@ fn write_deck_runtime_complex_strategy_example(path: &Path) {
    policies
    (list customer-release-subagent)
    context
-   "codex customer-review --session release-session"
+   "gpt-5.5 customer-review --session release-session"
    "sub-agent"))
 
 (display (.get selection kind))

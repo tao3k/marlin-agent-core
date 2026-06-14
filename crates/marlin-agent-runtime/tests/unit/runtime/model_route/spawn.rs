@@ -80,7 +80,7 @@ async fn routed_sub_agent_spawn_returns_none_without_route_match() {
         Arc::new(ModelRouteSessionEchoSubAgent),
         (),
         &resolver,
-        &ModelRouteRequest::command(["codex", "sub-agent", "review"]),
+        &ModelRouteRequest::command(["gpt-5.5", "sub-agent", "review"]),
     );
 
     assert!(spawn.is_none());

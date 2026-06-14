@@ -35,7 +35,7 @@ fn model_route_session_binding_covers_create_reuse_reject_and_environment_receip
 
     let create_decision = resolver
         .resolve(
-            &ModelRouteRequest::command(["codex", "sub-agent", "build"])
+            &ModelRouteRequest::command(["gpt-5.5", "sub-agent", "build"])
                 .with_sub_agent_role("builder")
                 .with_command_kind("create"),
         )
@@ -76,7 +76,7 @@ fn model_route_session_binding_covers_create_reuse_reject_and_environment_receip
 
     let reuse_decision = resolver
         .resolve(
-            &ModelRouteRequest::command(["codex", "sub-agent", "review"])
+            &ModelRouteRequest::command(["gpt-5.5", "sub-agent", "review"])
                 .with_sub_agent_role("reviewer")
                 .with_command_kind("reuse"),
         )
@@ -104,7 +104,7 @@ fn model_route_session_binding_covers_create_reuse_reject_and_environment_receip
     );
 
     let rejected = resolver.resolve(
-        &ModelRouteRequest::command(["codex", "sub-agent", "unknown"])
+        &ModelRouteRequest::command(["gpt-5.5", "sub-agent", "unknown"])
             .with_sub_agent_role("unknown")
             .with_command_kind("reject"),
     );

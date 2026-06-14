@@ -334,7 +334,7 @@ fn reviewer_decision(context: ModelContextForkMode) -> marlin_agent_protocol::Mo
 
     resolver
         .resolve(
-            &ModelRouteRequest::command(["codex", "sub-agent", "review"])
+            &ModelRouteRequest::command(["gpt-5.5", "sub-agent", "review"])
                 .with_sub_agent_role("reviewer"),
         )
         .expect("sub-agent route resolves")

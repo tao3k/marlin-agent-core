@@ -137,7 +137,7 @@ fn model_route_rejects_removed_hook_agent_scope_keys() {
     assert!(matcher_error.to_string().contains("hook_agent_scope_globs"));
 
     let request_error = serde_json::from_value::<ModelRouteRequest>(serde_json::json!({
-        "argv": ["codex", "sub-agent", "run"],
+        "argv": ["gpt-5.5", "sub-agent", "run"],
         "hook_agent_scope": "CustomerAgent"
     }))
     .expect_err("removed request key must not be accepted");
@@ -146,7 +146,7 @@ fn model_route_rejects_removed_hook_agent_scope_keys() {
     let receipt_error = serde_json::from_value::<ModelRouteReceipt>(serde_json::json!({
         "rule_id": "removed-hook-scope",
         "matched_globs": ["agent_scope:CustomerAgent"],
-        "command_line": "codex sub-agent run",
+        "command_line": "gpt-5.5 sub-agent run",
         "litellm_model_id": "openai/gpt-5-mini",
         "session_lifecycle": "Ephemeral",
         "context_fork": "Minimal",
@@ -160,7 +160,7 @@ fn model_route_rejects_removed_hook_agent_scope_keys() {
 
 #[test]
 fn model_route_decision_receipt_records_context_and_lifecycle() {
-    let request = ModelRouteRequest::command(["codex", "exec", "review"])
+    let request = ModelRouteRequest::command(["gpt-5.5", "exec", "review"])
         .with_workspace("/tmp/workspace")
         .with_sub_agent_role("reviewer")
         .with_agent_scope(ModelRouteAgentScope::SubAgent);
@@ -209,7 +209,7 @@ fn model_route_decision_receipt_records_context_and_lifecycle() {
             .status,
         RuntimeEnvironmentActivationStatus::Planned
     );
-    assert_eq!(decision.receipt.command_line, "codex exec review");
+    assert_eq!(decision.receipt.command_line, "gpt-5.5 exec review");
     assert_eq!(
         decision.receipt.agent_scope,
         Some(ModelRouteAgentScope::SubAgent)

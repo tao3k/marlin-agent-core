@@ -371,7 +371,7 @@ fn write_strategy_bench_script(script: &Path) {
     "deep-customer-reviewer"
     "anthropic"
     "claude-opus-4-8"
-    (list "codex customer-review" "cargo test")
+    (list "gpt-5.5 customer-review" "cargo test")
     (list "sub-agent")
     "shared-context"
     "isolated-session")))
@@ -401,7 +401,7 @@ fn write_strategy_bench_script(script: &Path) {
    policies
    (list customer-release-subagent)
    context
-   "codex customer-review --session release-session"
+   "gpt-5.5 customer-review --session release-session"
    "sub-agent"))
 
 (display (.get selection kind))

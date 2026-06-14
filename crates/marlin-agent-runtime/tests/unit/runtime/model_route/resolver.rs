@@ -84,23 +84,23 @@ fn resolver_keeps_wildcard_only_routes_matchable() {
 #[test]
 fn resolver_keeps_alternation_globs_matchable() {
     let resolver = CompiledModelRouteResolver::new(vec![ModelRouteRule::new(
-        "codex-subcommands",
+        "gpt-subcommands",
         1,
-        ModelCommandMatcher::new().with_argv_glob("codex {exec,review}*"),
+        ModelCommandMatcher::new().with_argv_glob("gpt-5.5 {exec,review}*"),
         ModelEndpoint::new("openai", "gpt-5-mini"),
     )])
     .expect("alternation route compiles");
 
     let decision = resolver
-        .resolve(&ModelRouteRequest::command(["codex", "exec", "task"]))
+        .resolve(&ModelRouteRequest::command(["gpt-5.5", "exec", "task"]))
         .expect("alternation route resolves");
 
-    assert_eq!(decision.receipt.rule_id.as_str(), "codex-subcommands");
+    assert_eq!(decision.receipt.rule_id.as_str(), "gpt-subcommands");
     assert!(
         decision
             .receipt
             .matched_globs
-            .contains(&"argv:codex {exec,review}*".to_owned())
+            .contains(&"argv:gpt-5.5 {exec,review}*".to_owned())
     );
 }
 
@@ -155,7 +155,7 @@ fn resolver_can_route_sub_agent_roles_to_isolated_models() {
 
     let decision = resolver
         .resolve(
-            &ModelRouteRequest::command(["codex", "sub-agent", "review"])
+            &ModelRouteRequest::command(["gpt-5.5", "sub-agent", "review"])
                 .with_sub_agent_role("reviewer"),
         )
         .expect("sub-agent role route resolves");
@@ -183,7 +183,7 @@ fn resolver_can_route_by_agent_scope() {
 
     let decision = resolver
         .resolve(
-            &ModelRouteRequest::command(["codex", "sub-agent", "run"])
+            &ModelRouteRequest::command(["gpt-5.5", "sub-agent", "run"])
                 .with_agent_scope(ModelRouteAgentScope::CustomerAgent),
         )
         .expect("agent scope route resolves");
