@@ -1,4 +1,5 @@
 use marlin_agent_protocol::LoopEvidenceKind;
+use marlin_agent_protocol::SubAgentConfigSurface;
 use marlin_agent_test_support::{
     DeterministicRoutedSubAgentExecutionReceipt,
     assert_deterministic_reviewer_applied_environment_activation_receipt,
@@ -21,6 +22,26 @@ fn deterministic_sub_agent_scenario_fixture_combines_route_session_and_hooks() {
     assert_eq!(
         fixture.expected_litellm_model_id(),
         "anthropic/claude-opus-4-8"
+    );
+    assert_eq!(
+        fixture.session_fixture().config().surface,
+        SubAgentConfigSurface::Toml,
+    );
+    assert_eq!(
+        fixture
+            .session_fixture()
+            .config()
+            .policy
+            .context
+            .max_history_items,
+        Some(32),
+    );
+    assert!(
+        fixture
+            .session_fixture()
+            .config()
+            .environment_activation
+            .is_some()
     );
 }
 

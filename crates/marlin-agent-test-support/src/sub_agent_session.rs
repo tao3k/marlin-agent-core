@@ -58,6 +58,17 @@ impl SubAgentMemorySessionFixture {
 
 /// Fixture where parent context grants Memory to the configured sub-agent.
 pub fn sub_agent_memory_allowed_fixture() -> SubAgentMemorySessionFixture {
+    sub_agent_memory_allowed_fixture_with_config(SubAgentSpawnConfig::toml(
+        "reviewer",
+        "reviewer",
+        "memory-aware reviewer",
+    ))
+}
+
+/// Fixture where parent context grants Memory to an explicit typed sub-agent config.
+pub fn sub_agent_memory_allowed_fixture_with_config(
+    config: SubAgentSpawnConfig,
+) -> SubAgentMemorySessionFixture {
     SubAgentMemorySessionFixture {
         parent_session: AgentSessionContext::root(
             "session/root",
@@ -69,7 +80,7 @@ pub fn sub_agent_memory_allowed_fixture() -> SubAgentMemorySessionFixture {
             ])
             .with_max_history_items(Some(16)),
         ),
-        config: SubAgentSpawnConfig::toml("reviewer", "reviewer", "memory-aware reviewer"),
+        config,
         expectation: SubAgentMemoryExpectation::Granted,
         expected_history_limit: Some(16),
         history_limit_applied: true,

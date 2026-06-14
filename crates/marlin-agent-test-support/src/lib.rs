@@ -62,8 +62,8 @@ pub use sub_agent_scenario::{
 pub use sub_agent_session::{
     SubAgentMemoryExpectation, SubAgentMemorySessionFixture,
     assert_sub_agent_memory_session_fixture, sub_agent_memory_allowed_fixture,
-    sub_agent_memory_denied_fixture, sub_agent_memory_session_replay_evidence,
-    sub_agent_memory_session_visibility_evidence,
+    sub_agent_memory_allowed_fixture_with_config, sub_agent_memory_denied_fixture,
+    sub_agent_memory_session_replay_evidence, sub_agent_memory_session_visibility_evidence,
 };
 pub use test_run::{
     LibtestCommandCapture, LibtestCommandImportReport, LibtestCommandSpec, LibtestTextImportConfig,

@@ -15,7 +15,7 @@ use crate::{
     ScriptedGatewayRequestReceipt, SubAgentMemorySessionFixture, assert_custom_hook_policy_receipt,
     assert_custom_sub_agent_start_hook_summary, assert_sub_agent_hook_dispatch_selection,
     custom_hook_policy_receipt_fixture, custom_sub_agent_start_hook_summary_fixture,
-    sub_agent_hook_dispatch_selection_fixture, sub_agent_memory_allowed_fixture,
+    sub_agent_hook_dispatch_selection_fixture, sub_agent_memory_allowed_fixture_with_config,
 };
 
 const REVIEWER_MODEL_ID: &str = "anthropic/claude-opus-4-8";
@@ -38,6 +38,26 @@ capture_delta = true
 isolate_host_environment = true
 allowlist = ["PATH", "HOME"]
 denylist = ["AWS_SECRET_ACCESS_KEY"]
+
+[profiles.policy.permissions]
+read_only = true
+workspace_write = false
+network_access = false
+process_spawn = false
+descendant_spawn = false
+tool_access = true
+hook_access = false
+secret_access = false
+
+[profiles.policy.context]
+session_id = "reviewer"
+visibility = ["System", "User", "Workspace", "Memory"]
+max_history_items = 32
+
+[profiles.policy.performance]
+max_concurrency = 1
+timeout_ms = 300000
+max_depth = 1
 "#;
 
 /// Fixture for one no-LLM sub-agent path across route, session, hook, and gateway.
@@ -112,7 +132,9 @@ impl DeterministicSubAgentScenarioFixture {
 
 /// Fixture for a reviewer sub-agent that routes to a deterministic model endpoint.
 pub fn deterministic_reviewer_sub_agent_scenario_fixture() -> DeterministicSubAgentScenarioFixture {
-    let session_fixture = sub_agent_memory_allowed_fixture();
+    let session_fixture = sub_agent_memory_allowed_fixture_with_config(
+        deterministic_reviewer_sub_agent_spawn_config(),
+    );
     let endpoint = ModelEndpoint::new("anthropic", "claude-opus-4-8");
     let route_rule = ModelRouteRule::new(
         REVIEWER_ROUTE_RULE_ID,
