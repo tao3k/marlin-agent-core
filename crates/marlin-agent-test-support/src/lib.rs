@@ -54,6 +54,8 @@ pub use sub_agent_scenario::{
     assert_deterministic_routed_sub_agent_execution, assert_deterministic_routed_sub_agent_session,
     assert_deterministic_sub_agent_gateway_request, assert_deterministic_sub_agent_route_decision,
     assert_deterministic_sub_agent_scenario_fixture,
+    deterministic_reviewer_applied_environment_activation_receipt_fixture,
+    deterministic_reviewer_routed_receipt_family_evidence,
     deterministic_reviewer_sub_agent_scenario_fixture,
     deterministic_reviewer_sub_agent_spawn_config,
 };

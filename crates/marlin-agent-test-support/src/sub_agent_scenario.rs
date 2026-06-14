@@ -1,13 +1,13 @@
 //! Deterministic sub-agent scenario fixtures spanning routing, session, and hooks.
 
 use marlin_agent_protocol::{
-    HookDispatchPolicyReceipt, HookDispatchSelectionReceipt, HookRunSummary, ModelCommandMatcher,
-    ModelContextForkMode, ModelEndpoint, ModelGatewayRequest, ModelGatewayTransport,
-    ModelRouteDecision, ModelRouteRequest, ModelRouteRule, ModelSessionLifecycle,
-    ModelSessionPolicy, RuntimeEnvironmentActivation, RuntimeEnvironmentActivationReceipt,
-    RuntimeEnvironmentActivationStatus, RuntimeEnvrcPolicy, RuntimeShellIsolationPolicy,
-    SubAgentSpawnConfig, SubAgentSpawnConfigSet, SubAgentSpawnProfile, SubAgentSpawnProfileId,
-    user_gateway_message,
+    HookDispatchPolicyReceipt, HookDispatchSelectionReceipt, HookRunSummary, LoopEvidence,
+    LoopEvidenceKind, ModelCommandMatcher, ModelContextForkMode, ModelEndpoint,
+    ModelGatewayRequest, ModelGatewayTransport, ModelRouteDecision, ModelRouteRequest,
+    ModelRouteRule, ModelSessionLifecycle, ModelSessionPolicy, RuntimeEnvironmentActivation,
+    RuntimeEnvironmentActivationReceipt, RuntimeEnvironmentActivationStatus,
+    RuntimeEnvironmentDelta, RuntimeEnvrcPolicy, RuntimeShellIsolationPolicy, SubAgentSpawnConfig,
+    SubAgentSpawnConfigSet, SubAgentSpawnProfile, SubAgentSpawnProfileId, user_gateway_message,
 };
 use marlin_agent_sessions::{AgentSessionContext, ContextNamespace, SessionIsolationReceipt};
 
@@ -149,6 +149,49 @@ pub fn deterministic_reviewer_sub_agent_spawn_config() -> SubAgentSpawnConfig {
         .profile(&SubAgentSpawnProfileId::from("reviewer"))
         .expect("deterministic reviewer profile exists")
         .clone()
+}
+
+/// Deterministic applied environment activation receipt for the reviewer profile.
+pub fn deterministic_reviewer_applied_environment_activation_receipt_fixture()
+-> RuntimeEnvironmentActivationReceipt {
+    let profile = deterministic_reviewer_sub_agent_spawn_config();
+    let policy = profile
+        .environment_activation
+        .as_ref()
+        .expect("deterministic reviewer profile carries environment activation");
+
+    RuntimeEnvironmentActivationReceipt::applied(
+        policy,
+        RuntimeEnvironmentDelta {
+            added: vec!["REVIEWER_ENV".to_owned()],
+            changed: vec!["PATH".to_owned()],
+            removed: vec!["REMOVE_ME".to_owned()],
+        },
+    )
+}
+
+/// Runtime evidence replaying the routed reviewer receipt family without live LLMs.
+pub fn deterministic_reviewer_routed_receipt_family_evidence() -> LoopEvidence {
+    let fixture = deterministic_reviewer_sub_agent_scenario_fixture();
+    let environment = deterministic_reviewer_applied_environment_activation_receipt_fixture();
+    let detail = format!(
+        "route_rule_id={} command_line={} session_child_id={} session_lifecycle=Persistent provider_model_id={} provider_transport={:?} environment_status={:?} environment_delta_added=[{}] environment_delta_changed=[{}] environment_delta_removed=[{}] metadata_format=org live_llm=false",
+        REVIEWER_ROUTE_RULE_ID,
+        REVIEWER_ROUTE_COMMAND_LINE,
+        fixture.expected_route_child_session_id(),
+        fixture.expected_litellm_model_id(),
+        ModelGatewayTransport::Sse,
+        environment.status,
+        environment.delta.added.join(","),
+        environment.delta.changed.join(","),
+        environment.delta.removed.join(","),
+    );
+
+    LoopEvidence::present(
+        LoopEvidenceKind::Runtime,
+        "routed-sub-agent-receipt-family:reviewer",
+    )
+    .with_detail(detail)
 }
 
 /// Assert the fixture's protocol-owned route, session, and hook setup.

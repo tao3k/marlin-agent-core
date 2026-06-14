@@ -1,6 +1,11 @@
+use marlin_agent_protocol::LoopEvidenceKind;
 use marlin_agent_test_support::{
-    DeterministicRoutedSubAgentExecutionReceipt, assert_deterministic_routed_sub_agent_execution,
+    DeterministicRoutedSubAgentExecutionReceipt,
+    assert_deterministic_reviewer_applied_environment_activation_receipt,
+    assert_deterministic_routed_sub_agent_execution,
     assert_deterministic_sub_agent_scenario_fixture,
+    deterministic_reviewer_applied_environment_activation_receipt_fixture,
+    deterministic_reviewer_routed_receipt_family_evidence,
     deterministic_reviewer_sub_agent_scenario_fixture,
 };
 
@@ -31,4 +36,25 @@ fn deterministic_sub_agent_execution_receipt_records_routed_session_visibility()
     };
 
     assert_deterministic_routed_sub_agent_execution(&fixture, &receipt);
+}
+
+#[test]
+fn deterministic_sub_agent_receipt_family_evidence_records_org_metadata_and_environment_delta() {
+    let activation = deterministic_reviewer_applied_environment_activation_receipt_fixture();
+    assert_deterministic_reviewer_applied_environment_activation_receipt(&activation);
+
+    let evidence = deterministic_reviewer_routed_receipt_family_evidence();
+    let detail = evidence.detail.as_deref().expect("receipt family detail");
+
+    assert_eq!(evidence.kind, LoopEvidenceKind::Runtime);
+    assert_eq!(evidence.subject, "routed-sub-agent-receipt-family:reviewer");
+    assert!(detail.contains("route_rule_id=reviewer-opus"));
+    assert!(detail.contains("session_child_id=model-route/persistent/workspace:reviewer"));
+    assert!(detail.contains("provider_model_id=anthropic/claude-opus-4-8"));
+    assert!(detail.contains("environment_status=Applied"));
+    assert!(detail.contains("environment_delta_added=[REVIEWER_ENV]"));
+    assert!(detail.contains("environment_delta_changed=[PATH]"));
+    assert!(detail.contains("environment_delta_removed=[REMOVE_ME]"));
+    assert!(detail.contains("metadata_format=org"));
+    assert!(detail.contains("live_llm=false"));
 }
