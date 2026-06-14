@@ -129,6 +129,9 @@ copy isolation protocol:
 - GitHub pull request checkout is a typed operation family, not an opaque shell
   command;
 
+- requests compile into provider-specific typed plan steps before runtime
+  adapters execute commands;
+
 - every planned, applied, or rejected isolation action emits a stable receipt.
 
 =GitWorktree= is the Rust-core baseline provider. It covers create, switch,
@@ -139,6 +142,41 @@ or GitHub integration.
 =Worktrunk= is the P0 agent-oriented provider. It builds on Git worktrees but
 adds the workflow surface that matters for agent harnesses: branch-addressed
 working copies, PR checkout, merge flow, hooks, and cleanup.
+
+The protocol handoff to runtime is =WorkingCopyIsolationPlan=. A plan may
+contain steps such as =GitWorktreeCreate= or =WorktrunkPullRequestCheckout=.
+Runtime adapters may later translate those typed steps to concrete provider
+commands, but shared protocol must not expose shell strings as the semantic API.
+
+** P1 Command Projection
+
+P1 adds a second handoff layer: =WorkingCopyCommandProjection=.
+
+The projection turns typed plan steps into structured provider command
+invocations:
+
+- program is an enum such as =Git= or =Worktrunk=;
+
+- cwd is a typed path, not process-global state;
+
+- args are argv entries, not a shell string;
+
+- the expected working copy handle remains attached to the command.
+
+This still does not execute commands. It gives runtime adapters a deterministic
+projection target and keeps provider command construction testable before
+Tokio execution, cancellation, stdout/stderr capture, and receipts are added.
+
+Examples:
+
+- =GitWorktreeCreate= projects to =git worktree add ...= with cwd set to the
+  repository root;
+
+- =WorktrunkPullRequestCheckout= projects to =wt switch pr:<number>= with cwd
+  set to the repository root.
+
+The projection must reject requests that are under-specified for execution,
+such as a Worktrunk pull request checkout without a repository root.
 
 =jj= workspaces remain a later VCS extension. They can provide parallel working
 copies, but their value comes from change graph and rewrite policy. That policy
@@ -171,6 +209,12 @@ and GitHub remains the collaboration and operations plane.
 
 - =marlin-workspace-protocol= exports typed working-copy isolation providers,
   requests, operation families, and receipts for =GitWorktree= and =Worktrunk=.
+
+- =WorkingCopyIsolationRequest= compiles into =WorkingCopyIsolationPlan= with
+  provider-specific typed steps before any runtime adapter executes commands.
+
+- =WorkingCopyIsolationPlan= projects into =WorkingCopyCommandProjection= with
+  structured program, cwd, argv, and expected working-copy metadata.
 
 - =marlin-workspace-protocol= exports typed project id, Git core backend,
   repository, VCS extension, policy plane, root, trust, GitHub operations,

@@ -16,10 +16,13 @@ pub use project::{
     WorkspaceProjectVcsExtensionKind,
 };
 pub use working_copy::{
-    WorkingCopyBaseRef, WorkingCopyBranchName, WorkingCopyCreateRequest, WorkingCopyHandle,
-    WorkingCopyId, WorkingCopyIsolationOperationKind, WorkingCopyIsolationProvider,
-    WorkingCopyIsolationReceipt, WorkingCopyIsolationRequest, WorkingCopyIsolationStatus,
-    WorkingCopyPullRequestCheckoutRequest, WorkingCopyPullRequestNumber,
+    WorkingCopyBaseRef, WorkingCopyBranchName, WorkingCopyCommandInvocation,
+    WorkingCopyCommandProgram, WorkingCopyCommandProjection, WorkingCopyCommandProjectionError,
+    WorkingCopyCreateRequest, WorkingCopyHandle, WorkingCopyId, WorkingCopyIsolationOperationKind,
+    WorkingCopyIsolationPlan, WorkingCopyIsolationPlanError, WorkingCopyIsolationPlanStep,
+    WorkingCopyIsolationProvider, WorkingCopyIsolationReceipt, WorkingCopyIsolationRequest,
+    WorkingCopyIsolationStatus, WorkingCopyPullRequestCheckoutRequest,
+    WorkingCopyPullRequestNumber,
 };
 pub use workspace::AgentWorkspace;
 
