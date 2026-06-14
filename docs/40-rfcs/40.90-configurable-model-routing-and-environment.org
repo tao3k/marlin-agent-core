@@ -219,11 +219,11 @@ prove that a command used the intended model and environment.
 | Track | Owner | Current Evidence | Next Gate |
 |-------+-------+------------------+-----------|
 | Route Protocol | =marlin-agent-protocol= | Model endpoint identity, command glob dimensions, and route receipts have protocol tests. | Add schema/contract generation when =schemars= lands. |
-| Route Runtime | =marlin-agent-runtime= | Runtime resolver covers priority, tie-breaking, native projection, and provider-neutral gateway completion. | Matrix test for route/session/environment receipt combinations. |
+| Route Runtime | =marlin-agent-runtime= | Runtime resolver covers priority, tie-breaking, native projection, provider-neutral gateway completion, and create/reuse/reject route-session matrix coverage. | Extend matrix into an end-to-end receipt-family scenario. |
 | Session Binding | =marlin-agent-runtime=, =marlin-agent-sessions= | Requested session ids, inherited/forked/isolated context policies, and bounded history are tested. | Align with 40.60 profile compiler output. |
 | Environment | =marlin-agent-environment= | =direnv= activation policy, explicit envrc, custom home, and environment delta receipts are tested. | Profile loader emits environment activation policy as typed data. |
 | Observability | =marlin-agent-protocol=, =marlin-agent-harness= | Route, session, provider, and environment receipts are visible in runtime/harness tests. | One end-to-end scenario captures all four receipt families. |
-| Config Loader | =marlin-agent-protocol=, route config owner | TOML route config loader exists for model routes, and sub-agent profile TOML compiles into typed =SubAgentSpawnConfigSet=. | Align route/session/environment fixtures into one receipt matrix. |
+| Config Loader | =marlin-agent-protocol=, route config owner | TOML route config loader exists for model routes, sub-agent profile TOML compiles into typed =SubAgentSpawnConfigSet=, and the first route/session/environment matrix exists. | Align profile-to-environment fixture loading with the receipt-family scenario. |
 
 ** Acceptance Criteria
 
@@ -238,6 +238,8 @@ prove that a command used the intended model and environment.
   =marlin-agent-stream= or =litellm-rs= in the runtime dependency tree.
 
 - Runtime tests cover create/reuse/reject receipts for persistent sessions.
+  The first focused matrix is
+  =runtime_model_route::session_binding_matrix::model_route_session_binding_covers_create_reuse_reject_and_environment_receipts=.
 
 - Environment tests cover explicit =direnv= activation policy and isolated shell
   environment deltas.

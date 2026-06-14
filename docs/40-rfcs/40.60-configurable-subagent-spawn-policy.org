@@ -1,6 +1,6 @@
 * 40.60 RFC: Configurable Sub-agent Spawn Policy
 
-Status: active
+Status: closeout-ready
 
 This RFC defines the first stable contract for configurable sub-agent spawning.
 The contract keeps declaration, strategy, and runtime execution separate so
@@ -75,8 +75,9 @@ but they must not bypass the typed limits.
 ** Implementation Status
 
 The current implementation lands protocol-level typed policy objects, runtime
-process request surfaces, and a TOML profile compiler in
-=marlin-agent-protocol=. =SubAgentSpawnConfigSet::from_toml_str= and
+process request surfaces, a TOML profile compiler in =marlin-agent-protocol=,
+and a route/session/environment receipt matrix in =marlin-agent-runtime=.
+=SubAgentSpawnConfigSet::from_toml_str= and
 =SubAgentSpawnConfigSet::from_toml_path= compile profile documents into typed
 =SubAgentSpawnConfig= values. The TOML entry shape is private to the compiler;
 runtime code consumes the compiled Rust types and keeps Scheme strategy metadata
@@ -89,7 +90,8 @@ as typed policy data.
 | Profile Fixture | =marlin-agent-protocol= | Canonical TOML fixture covers default read-only profiles, Scheme strategy metadata, and explicit worker policy overrides. | =protocol::sub_agent::sub_agent_spawn_config_set_compiles_toml_profiles_to_typed_configs= passes. |
 | Typed Compiler | =marlin-agent-protocol= | =SubAgentSpawnConfigSet= compiles TOML profiles into typed =SubAgentSpawnConfig= values and rejects source-surface ambiguity. | =protocol::sub_agent::sub_agent_spawn_profile_toml_rejects_source_surface_field= and duplicate-id tests pass. |
 | Runtime Binding | =marlin-agent-runtime= | Runtime consumes typed config and emits child session/profile/process receipts. | =runtime_spawn_config::sub_agent_config_compiles_to_child_session_visibility= and model-route spawn tests pass. |
-| Closeout | RFC and index | Acceptance items point to exact tests and unresolved variants become follow-up work. | RFC index status update. |
+| Receipt Matrix | =marlin-agent-runtime= | Create, reuse, reject, and environment receipt projections are covered in one focused model-route session binding matrix. | =runtime_model_route::session_binding_matrix::model_route_session_binding_covers_create_reuse_reject_and_environment_receipts= passes. |
+| Closeout | RFC and index | Acceptance items point to exact tests and unresolved variants become follow-up work. | RFC index status is =Closeout-ready=. |
 
 ** Acceptance Criteria
 
@@ -98,5 +100,14 @@ as typed policy data.
 - Protocol tests cover TOML profile compilation into typed config sets without
   exposing TOML entry structs as runtime protocol.
 - Runtime tests cover observed process spawning through named request surfaces.
+- Runtime tests cover create/reuse/reject session binding outcomes and
+  environment receipt projection in one focused matrix.
 - ASP changed checks accept the public API shape.
 - CI keeps real execution gates separate from pure configuration changes.
+
+** Closeout Notes
+
+This RFC is closeout-ready. The inherited/forked profile variants that are not
+covered by the deterministic matrix are follow-up expansion work for 40.90's
+route/session/environment receipt family rather than blockers for the core
+spawn policy contract.
