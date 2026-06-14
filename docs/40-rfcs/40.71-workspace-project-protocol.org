@@ -116,6 +116,35 @@ Runtime crates consume typed project facts and emit receipts:
 Runtime must not infer trust from path shape, cwd, shell state, or Org file
 presence. Trust gates come from typed project policy.
 
+** P0 Working Copy Isolation
+
+The near-term P0 is not a general VCS replacement layer. It is an agent working
+copy isolation protocol:
+
+- one agent can receive one isolated working copy path;
+
+- the provider records whether isolation came from native =git worktree= or
+  Worktrunk;
+
+- GitHub pull request checkout is a typed operation family, not an opaque shell
+  command;
+
+- every planned, applied, or rejected isolation action emits a stable receipt.
+
+=GitWorktree= is the Rust-core baseline provider. It covers create, switch,
+list, and remove behavior over native Git worktree semantics. It intentionally
+does not claim GitHub PR checkout because that requires a higher-level provider
+or GitHub integration.
+
+=Worktrunk= is the P0 agent-oriented provider. It builds on Git worktrees but
+adds the workflow surface that matters for agent harnesses: branch-addressed
+working copies, PR checkout, merge flow, hooks, and cleanup.
+
+=jj= workspaces remain a later VCS extension. They can provide parallel working
+copies, but their value comes from change graph and rewrite policy. That policy
+belongs in the Scheme extension plane and must compile back into typed Rust
+receipts before runtime consumes it.
+
 ** GitHub And jj Operations
 
 GitHub operations are project capabilities. They are not implied by the VCS
@@ -139,6 +168,9 @@ operations foundation, =jj= is represented as a Scheme-policy VCS extension,
 and GitHub remains the collaboration and operations plane.
 
 ** Acceptance Criteria
+
+- =marlin-workspace-protocol= exports typed working-copy isolation providers,
+  requests, operation families, and receipts for =GitWorktree= and =Worktrunk=.
 
 - =marlin-workspace-protocol= exports typed project id, Git core backend,
   repository, VCS extension, policy plane, root, trust, GitHub operations,

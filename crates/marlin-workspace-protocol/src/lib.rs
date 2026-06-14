@@ -3,6 +3,7 @@
 mod context;
 mod error;
 mod project;
+mod working_copy;
 mod workspace;
 
 pub use context::WorkspaceCtx;
@@ -13,6 +14,12 @@ pub use project::{
     WorkspaceProjectProfile, WorkspaceProjectRepository, WorkspaceProjectRoot,
     WorkspaceProjectTrust, WorkspaceProjectVcsBackend, WorkspaceProjectVcsExtension,
     WorkspaceProjectVcsExtensionKind,
+};
+pub use working_copy::{
+    WorkingCopyBaseRef, WorkingCopyBranchName, WorkingCopyCreateRequest, WorkingCopyHandle,
+    WorkingCopyId, WorkingCopyIsolationOperationKind, WorkingCopyIsolationProvider,
+    WorkingCopyIsolationReceipt, WorkingCopyIsolationRequest, WorkingCopyIsolationStatus,
+    WorkingCopyPullRequestCheckoutRequest, WorkingCopyPullRequestNumber,
 };
 pub use workspace::AgentWorkspace;
 
