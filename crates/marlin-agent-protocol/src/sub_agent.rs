@@ -10,7 +10,7 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
-use crate::{HookAgentScope, RunId};
+use crate::{HookAgentScope, RunId, RuntimeEnvironmentActivationPolicy};
 
 /// Source that caused a sub-agent to run.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -160,6 +160,7 @@ pub struct SubAgentSpawnConfig {
     pub role: String,
     pub nickname: Option<String>,
     pub hook_agent_scope: HookAgentScope,
+    pub environment_activation: Option<RuntimeEnvironmentActivationPolicy>,
     pub surface: SubAgentConfigSurface,
     pub strategy: SubAgentSpawnStrategy,
     pub policy: SubAgentSpawnPolicy,
@@ -195,6 +196,7 @@ struct SubAgentSpawnProfileToml {
     role: String,
     nickname: Option<String>,
     hook_agent_scope: Option<HookAgentScope>,
+    environment_activation: Option<RuntimeEnvironmentActivationPolicy>,
     strategy: Option<SubAgentSpawnStrategy>,
     policy: Option<SubAgentSpawnPolicy>,
 }
@@ -393,6 +395,7 @@ impl SubAgentSpawnConfig {
             role: role.into(),
             nickname: None,
             hook_agent_scope: HookAgentScope::SubAgent,
+            environment_activation: None,
             surface: SubAgentConfigSurface::Toml,
             strategy: SubAgentSpawnStrategy::Declarative,
         }
@@ -405,6 +408,14 @@ impl SubAgentSpawnConfig {
 
     pub fn with_nickname(mut self, nickname: impl Into<String>) -> Self {
         self.nickname = Some(nickname.into());
+        self
+    }
+
+    pub fn with_environment_activation(
+        mut self,
+        activation: RuntimeEnvironmentActivationPolicy,
+    ) -> Self {
+        self.environment_activation = Some(activation);
         self
     }
 
@@ -491,6 +502,9 @@ impl SubAgentSpawnProfileToml {
         }
         if let Some(hook_agent_scope) = self.hook_agent_scope {
             config = config.with_hook_agent_scope(hook_agent_scope);
+        }
+        if let Some(environment_activation) = self.environment_activation {
+            config = config.with_environment_activation(environment_activation);
         }
         if let Some(strategy) = self.strategy {
             config = config.with_strategy(strategy);

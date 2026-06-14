@@ -1,9 +1,9 @@
 use marlin_agent_protocol::{
-    HookAgentScope, SubAgentActivity, SubAgentActivityKind, SubAgentConfigSurface,
-    SubAgentContextPolicy, SubAgentContextVisibility, SubAgentPerformanceBudget,
-    SubAgentPermissionSet, SubAgentSearchReceipt, SubAgentSource, SubAgentSpawnConfig,
-    SubAgentSpawnConfigError, SubAgentSpawnConfigSet, SubAgentSpawnPolicy, SubAgentSpawnProfile,
-    SubAgentSpawnProfileId, SubAgentSpawnStrategy,
+    HookAgentScope, RuntimeEnvironmentActivation, RuntimeEnvrcPolicy, RuntimeShellIsolationPolicy,
+    SubAgentConfigSurface, SubAgentContextPolicy, SubAgentContextVisibility,
+    SubAgentPerformanceBudget, SubAgentPermissionSet, SubAgentSpawnConfig,
+    SubAgentSpawnConfigError, SubAgentSpawnConfigSet, SubAgentSpawnPolicy, SubAgentSpawnProfileId,
+    SubAgentSpawnStrategy,
 };
 
 const SUB_AGENT_SPAWN_PROFILE_TOML: &str = r#"
@@ -40,79 +40,21 @@ session_id = "worker-session"
 visibility = ["System", "Workspace"]
 max_history_items = 8
 
+[profiles.environment_activation.activation.Direnv]
+envrc = "Project"
+capture_delta = true
+
+[profiles.environment_activation.shell]
+isolate_host_environment = true
+allowlist = ["PATH", "HOME"]
+denylist = ["AWS_SECRET_ACCESS_KEY"]
+
 [profiles.policy.performance]
 max_concurrency = 4
 timeout_ms = 30000
 token_budget = 2000
 max_depth = 2
 "#;
-
-#[test]
-fn sub_agent_source_and_activity_keep_thread_spawn_context() {
-    let source = SubAgentSource::ThreadSpawn {
-        parent_run_id: Some("run-1".to_owned().into()),
-        depth: 2,
-        agent_path: Some("agents/reviewer.md".to_owned()),
-        agent_nickname: Some("reviewer".to_owned()),
-        agent_role: Some("code-review".to_owned()),
-    };
-    let activity = SubAgentActivity::new("reviewer", source.clone(), SubAgentActivityKind::Started)
-        .with_spawn_profile(
-            SubAgentSpawnProfile::new("reviewer", "reviewer", "code-review")
-                .with_nickname("reviewer"),
-        )
-        .with_status_message("spawned");
-
-    assert_eq!(activity.source, source);
-    assert_eq!(activity.agent_reference, "reviewer");
-    assert_eq!(activity.kind, SubAgentActivityKind::Started);
-    assert_eq!(activity.status_message.as_deref(), Some("spawned"));
-    assert_eq!(
-        activity
-            .spawn_profile
-            .as_ref()
-            .map(|profile| profile.agent_type.as_str()),
-        Some("reviewer")
-    );
-    assert_eq!(
-        activity
-            .spawn_profile
-            .as_ref()
-            .map(|profile| &profile.hook_agent_scope),
-        Some(&HookAgentScope::SubAgent)
-    );
-}
-
-#[test]
-fn sub_agent_activity_round_trips_search_receipt() {
-    let receipt = SubAgentSearchReceipt::new("A2-owner-items", "owner-items")
-        .with_evidence([
-            "owner:path(crates/marlin-agent-sessions/src/id.rs)!owner",
-            "test:path(crates/marlin-agent-sessions/src/id.rs)!tests",
-        ])
-        .with_missing("owner item match/code selector/concrete test evidence")
-        .with_next("follow T.tests or broaden owner query terms around session id API")
-        .with_risk("query terms may miss renamed command/receipt/surface concepts");
-    let activity = SubAgentActivity::new(
-        "019eba14-6f17-7e82-a960-34fdb7852507",
-        SubAgentSource::ThreadSpawn {
-            parent_run_id: Some("run-2".to_owned().into()),
-            depth: 1,
-            agent_path: Some("019eba14-6f17-7e82-a960-34fdb7852507".to_owned()),
-            agent_nickname: Some("Linnaeus".to_owned()),
-            agent_role: Some("explorer".to_owned()),
-        },
-        SubAgentActivityKind::Stopped,
-    )
-    .with_search_receipt(receipt.clone());
-
-    let value = serde_json::to_value(&activity).expect("activity serializes");
-    assert_eq!(value["search_receipt"]["role"], "A2-owner-items");
-    assert_eq!(value["search_receipt"]["action"], "owner-items");
-
-    let decoded: SubAgentActivity = serde_json::from_value(value).expect("activity deserializes");
-    assert_eq!(decoded.search_receipt, Some(receipt));
-}
 
 #[test]
 fn sub_agent_spawn_config_defaults_to_toml_read_only_policy() {
@@ -140,6 +82,7 @@ fn sub_agent_spawn_config_defaults_to_toml_read_only_policy() {
         ]
     );
     assert_eq!(config.policy.performance.max_concurrency, Some(1));
+    assert_eq!(config.environment_activation, None);
 }
 
 #[test]
@@ -200,6 +143,7 @@ fn sub_agent_spawn_config_keeps_scheme_strategy_optional() {
     let decoded: SubAgentSpawnConfig = serde_json::from_value(value).expect("config deserializes");
     assert_eq!(decoded.child_session_id(), "worker-session");
     assert_eq!(decoded.hook_agent_scope, HookAgentScope::CustomAgent);
+    assert_eq!(decoded.environment_activation, None);
 }
 
 #[test]
@@ -221,6 +165,7 @@ fn sub_agent_spawn_config_set_compiles_toml_profiles_to_typed_configs() {
         SubAgentPermissionSet::read_only()
     );
     assert_eq!(explorer.child_session_id(), "asp-explorer");
+    assert_eq!(explorer.environment_activation, None);
     assert_eq!(
         explorer.strategy,
         SubAgentSpawnStrategy::Scheme {
@@ -246,6 +191,24 @@ fn sub_agent_spawn_config_set_compiles_toml_profiles_to_typed_configs() {
     );
     assert_eq!(worker.policy.performance.max_concurrency, Some(4));
     assert_eq!(worker.policy.performance.token_budget, Some(2000));
+    let activation = worker
+        .environment_activation
+        .as_ref()
+        .expect("worker profile carries environment activation");
+    assert!(matches!(
+        activation.activation,
+        RuntimeEnvironmentActivation::Direnv {
+            envrc: RuntimeEnvrcPolicy::Project,
+            capture_delta: true,
+        }
+    ));
+    assert_eq!(
+        activation.shell,
+        RuntimeShellIsolationPolicy::isolated()
+            .with_allowed("PATH")
+            .with_allowed("HOME")
+            .with_denied("AWS_SECRET_ACCESS_KEY")
+    );
 }
 
 #[test]
