@@ -154,6 +154,80 @@ fn gerbil_hook_policy_evaluation_decodes_complex_scheme_policy_actions_without_l
 }
 
 #[test]
+fn gerbil_hook_policy_evaluation_decodes_workspace_project_trust_actions_without_llm() {
+    let extension = HookPolicyExtension::gerbil_scheme(
+        "marlin/hooks/policy-samples",
+        "decide-hook-policy-sample",
+    );
+    let receipt = decode_gerbil_hook_policy_evaluation(GerbilHookPolicyEvaluationDecodeInput {
+        invocation: GerbilHookPolicyInvocationInput {
+            extension: extension.clone(),
+            event_name: HookEventName::PreToolUse,
+            agent_scope: HookAgentScope::CustomerAgent,
+            policy_receipt: HookDispatchPolicyReceipt::new(HookDispatchPolicyReceiptInput {
+                event_name: HookEventName::PreToolUse,
+                invocation_agent_scope: HookAgentScope::CustomerAgent,
+                decision_context: HookDecisionContext::new()
+                    .with_session_id("expensive-live-session")
+                    .with_workspace_state("project-untrusted")
+                    .with_agent_class("customer-agent"),
+                mode: HookPolicyMode::ObserveOnly,
+                extension: extension.clone(),
+                actions: Vec::new(),
+                decisions: Vec::new(),
+            }),
+        },
+        output_json: serde_json::json!({
+            "decision": "Allowed",
+            "diagnostics": [
+                {
+                    "message": "sample Gerbil hook policy evaluated workspace project trust"
+                }
+            ],
+            "actions": [
+                {
+                    "kind": "Register",
+                    "target": "catalog:customer-agent-hook",
+                    "reason": "customer agent session requires runtime catalog hook"
+                },
+                {
+                    "kind": "Unregister",
+                    "target": "catalog:live-project-hook",
+                    "reason": "untrusted project disables live hook"
+                }
+            ]
+        })
+        .to_string(),
+    })
+    .expect("workspace project trust actions decode without LLM");
+
+    assert!(receipt.is_allowed());
+    assert_eq!(receipt.actions.len(), 2);
+    assert_eq!(
+        receipt.actions[0].kind,
+        HookPolicyDynamicActionKind::Register
+    );
+    assert_eq!(
+        receipt.actions[1].kind,
+        HookPolicyDynamicActionKind::Unregister
+    );
+    assert_eq!(
+        receipt.actions[1]
+            .target
+            .as_ref()
+            .map(|target| target.as_str()),
+        Some("catalog:live-project-hook")
+    );
+    assert_eq!(
+        receipt.actions[1]
+            .reason
+            .as_ref()
+            .map(|reason| reason.as_str()),
+        Some("untrusted project disables live hook")
+    );
+}
+
+#[test]
 fn gerbil_hook_policy_evaluation_rejects_invalid_json() {
     let extension = HookPolicyExtension::gerbil_scheme("marlin/hooks/policy", "decide-hook-policy");
     let error = decode_gerbil_hook_policy_evaluation(GerbilHookPolicyEvaluationDecodeInput {

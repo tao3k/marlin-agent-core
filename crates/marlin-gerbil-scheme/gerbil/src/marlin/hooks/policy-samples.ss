@@ -42,14 +42,21 @@ package: marlin/hooks
   "cargo test --locked"
   "session policy prefers locked tests")
 
+(defmarlin-hook-policy-action-template unregister-live-project-hook-action
+  "Unregister"
+  "catalog:live-project-hook"
+  #f
+  "untrusted project disables live hook")
+
 (def (marlin-hook-policy-sample-capability-names)
   '("session-policy"
     "agent-lineage-policy"
     "workspace-state-policy"
     "org-memory-policy"
     "customer-agent-policy"
+    "workspace-project-trust-policy"
     "runtime-catalog-register"
-    "dynamic-defer-deny-rewrite"))
+    "dynamic-defer-deny-rewrite-unregister"))
 
 (def (sample-field object field default)
   (hash-ref object field default))
@@ -122,6 +129,9 @@ package: marlin/hooks
                    #f)
                  (if (sample-list-member? "dirty" workspace-state)
                    deny-dangerous-shell-action
+                   #f)
+                 (if (sample-list-member? "project-untrusted" workspace-state)
+                   unregister-live-project-hook-action
                    #f)
                  (if (string=? session-id "cheap-test-session")
                    rewrite-locked-test-action

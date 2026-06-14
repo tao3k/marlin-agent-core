@@ -16,6 +16,7 @@ fn complex_hook_decision_context() -> HookDecisionContext {
         .with_session_id("cheap-test-session")
         .with_agent_lineage_node("release")
         .with_workspace_state("dirty")
+        .with_workspace_state("project-untrusted")
         .with_org_memory_hit("needs-human-review")
         .with_agent_class("customer-agent")
 }
@@ -204,7 +205,7 @@ fn gerbil_hook_policy_runtime_binding_real_gxi_runs_complex_sample_policy_contex
         .expect("real gxi hook policy sample should evaluate complex decision context");
 
     assert!(receipt.is_allowed());
-    assert_eq!(receipt.actions.len(), 4);
+    assert_eq!(receipt.actions.len(), 5);
     assert_eq!(
         receipt.actions[0].kind,
         HookPolicyDynamicActionKind::Register
@@ -213,10 +214,21 @@ fn gerbil_hook_policy_runtime_binding_real_gxi_runs_complex_sample_policy_contex
     assert_eq!(receipt.actions[2].kind, HookPolicyDynamicActionKind::Deny);
     assert_eq!(
         receipt.actions[3].kind,
-        HookPolicyDynamicActionKind::Rewrite
+        HookPolicyDynamicActionKind::Unregister
     );
     assert_eq!(
         receipt.actions[3]
+            .target
+            .as_ref()
+            .map(|target| target.as_str()),
+        Some("catalog:live-project-hook")
+    );
+    assert_eq!(
+        receipt.actions[4].kind,
+        HookPolicyDynamicActionKind::Rewrite
+    );
+    assert_eq!(
+        receipt.actions[4]
             .replacement
             .as_ref()
             .map(|replacement| replacement.as_str()),

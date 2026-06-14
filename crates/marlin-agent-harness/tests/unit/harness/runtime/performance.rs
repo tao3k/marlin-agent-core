@@ -96,6 +96,19 @@ fn harness_performance_evidence_covers_resident_gerbil_runtime_process_plan() {
             ),
         ])
         .expect("resident runtime request loop");
+    let mixed_results = resident
+        .compile_request_results(vec![
+            GerbilCompileRequest::new(
+                GerbilSource::new("audit/control-plane", "(module audit/control-plane)"),
+                GerbilArtifactKind::LoopGraph,
+            ),
+            GerbilCompileRequest {
+                source: GerbilSource::new("audit/control-plane", "(invalid resident request)"),
+                expected: GerbilArtifactKind::LoopGraph,
+                contract_facts: None,
+            },
+        ])
+        .expect("resident runtime request loop should preserve per-request errors");
     let shutdown = resident
         .shutdown()
         .expect("resident runtime graceful shutdown");
@@ -110,8 +123,8 @@ fn harness_performance_evidence_covers_resident_gerbil_runtime_process_plan() {
         regression_threshold: "resident reuse must keep one child for multiple requests"
             .to_owned(),
         latency_or_throughput: format!(
-            "process_plan_projection=O(1),spawn_boundary=command-adapter-batch.ss,resident_request_loop_reuse={}requests/child",
-            artifacts.len()
+            "process_plan_projection=O(1),spawn_boundary=command-adapter-batch.ss,resident_request_loop_reuse={}requests/child,resident_error_isolation=preserved",
+            artifacts.len() + mixed_results.len()
         ),
         allocation_profile: format!(
             "command_profile_args={},command_profile_env={}",
@@ -136,6 +149,13 @@ fn harness_performance_evidence_covers_resident_gerbil_runtime_process_plan() {
     assert!(command_profile.args[0].ends_with(GERBIL_COMMAND_ADAPTER_BATCH_PATH));
     assert!(root.path().join(GERBIL_COMMAND_ADAPTER_BATCH_PATH).exists());
     assert_eq!(artifacts.len(), 2);
+    assert!(mixed_results[0].is_ok());
+    assert!(
+        mixed_results[1]
+            .as_ref()
+            .expect_err("invalid resident request should stay isolated")
+            .contains("resident performance adapter rejected invalid request")
+    );
     assert!(shutdown.exit_success);
     for key in PERFORMANCE_EVIDENCE_KEYS {
         assert!(
@@ -145,7 +165,8 @@ fn harness_performance_evidence_covers_resident_gerbil_runtime_process_plan() {
     }
     assert!(detail.contains("process_plan_projection=O(1)"));
     assert!(detail.contains("spawn_boundary=command-adapter-batch.ss"));
-    assert!(detail.contains("resident_request_loop_reuse=2requests/child"));
+    assert!(detail.contains("resident_request_loop_reuse=4requests/child"));
+    assert!(detail.contains("resident_error_isolation=preserved"));
 }
 
 #[tokio::test]
@@ -309,7 +330,14 @@ fn resident_fake_batch_adapter(root: &std::path::Path) -> std::path::PathBuf {
         &path,
         r#"#!/bin/sh
 while IFS= read -r line; do
-  printf '%s\n' '{"artifact":{"LoopGraph":{"graph_id":"resident-performance-graph","nodes":[],"edges":[]}}}'
+  case "$line" in
+    *invalid*)
+      printf '%s\n' '{"error":{"message":"resident performance adapter rejected invalid request"}}'
+      ;;
+    *)
+      printf '%s\n' '{"artifact":{"LoopGraph":{"graph_id":"resident-performance-graph","nodes":[],"edges":[]}}}'
+      ;;
+  esac
 done
 "#,
     )
