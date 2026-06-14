@@ -115,6 +115,18 @@ kernel must not learn Org parser or filesystem implementation details.
 - Multi-document writes are rejected by default because the first filesystem
   adapter does not provide rollback.
 
+** Implementation Status
+
+The local source-persistence boundary is closeout-ready. =marlin-org-store=
+owns filesystem-backed store commits, source hashes, root-scoped path checks,
+dry-run receipts, stale-hash rejection, and release-status sidecars.
+=marlin-org-patch= owns patch planning and validation, and
+=marlin-org-workflow= composes those receipts into workspace patch commits.
+
+Focused evidence lives in =marlin-org-store=, =marlin-org-patch=, and
+=marlin-org-workflow= unit tests. Remote revision ids remain a follow-up
+extension and do not block accepting the local filesystem boundary.
+
 ** Open Questions
 - Should remote stores expose optimistic revision ids in addition to portable
   text hashes?

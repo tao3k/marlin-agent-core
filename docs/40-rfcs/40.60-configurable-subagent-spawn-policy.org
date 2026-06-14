@@ -79,6 +79,15 @@ process request surfaces. The next implementation step is a TOML fixture/parser
 that compiles Codex agent profile files into =SubAgentSpawnConfig= without
 linking runtime crates to TOML parsing.
 
+** Acceleration Plan
+
+| Step | Owner | Output | Gate |
+|------+-------+--------+------|
+| Profile Fixture | =marlin-agent-protocol= or a config-owner crate | Canonical TOML fixture for read-only, inherited, forked, and isolated sub-agent contexts. | Deserialization test only. |
+| Typed Compiler | Config-owner crate | =SubAgentSpawnConfig= plus Scheme strategy metadata, with no runtime dependency on TOML. | Protocol/config unit tests. |
+| Runtime Binding | =marlin-agent-runtime= | Runtime consumes the typed config and emits create/reuse/reject receipts. | Runtime process request tests. |
+| Closeout | RFC and index | Acceptance items point to exact tests and unresolved variants become follow-up work. | RFC index status update. |
+
 ** Acceptance Criteria
 
 - Protocol tests cover default TOML read-only policy.

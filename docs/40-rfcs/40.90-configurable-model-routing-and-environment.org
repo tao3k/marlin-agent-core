@@ -208,6 +208,17 @@ prove that a command used the intended model and environment.
 - Do not expose provider-specific fields as shared protocol unless they become
   stable cross-provider facts.
 
+** Progress Control
+
+| Track | Owner | Current Evidence | Next Gate |
+|-------+-------+------------------+-----------|
+| Route Protocol | =marlin-agent-protocol= | Model endpoint identity, command glob dimensions, and route receipts have protocol tests. | Add schema/contract generation when =schemars= lands. |
+| Route Runtime | =marlin-agent-runtime= | Runtime resolver covers priority, tie-breaking, native projection, and provider-neutral gateway completion. | Matrix test for route/session/environment receipt combinations. |
+| Session Binding | =marlin-agent-runtime=, =marlin-agent-sessions= | Requested session ids, inherited/forked/isolated context policies, and bounded history are tested. | Align with 40.60 profile compiler output. |
+| Environment | =marlin-agent-environment= | =direnv= activation policy, explicit envrc, custom home, and environment delta receipts are tested. | Profile loader emits environment activation policy as typed data. |
+| Observability | =marlin-agent-protocol=, =marlin-agent-harness= | Route, session, provider, and environment receipts are visible in runtime/harness tests. | One end-to-end scenario captures all four receipt families. |
+| Config Loader | Config-owner crate | TOML route config loader exists for model routes. | Unify route and sub-agent profile fixtures without runtime TOML parsing. |
+
 ** Acceptance Criteria
 
 - Protocol tests cover command-to-model routing by executable, argv, cwd,

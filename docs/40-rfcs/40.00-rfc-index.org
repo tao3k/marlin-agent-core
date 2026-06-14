@@ -5,42 +5,37 @@ accepted decisions or crate-level implementation details.
 
 ** Documents
 
-- [[file:40.10-org-native-agent-work-protocol.org][40.10 Org-native Agent Work Protocol]]
+| RFC | Status | Owner Crates | Implementation Evidence | Next Gap |
+|-----+--------+--------------+-------------------------+----------|
+| [[file:40.10-org-native-agent-work-protocol.org][40.10 Org-native Agent Work Protocol]] | Active | =marlin-org-*=, =marlin-workspace-*= | Query, patch, view, memory, and workflow crates are present with workspace tests. | Define promotion rule for Org conventions: decisions, metrics, evidence, trace facts. |
+| [[file:40.20-org-source-persistence-boundary.org][40.20 Org Source Persistence Boundary]] | Closeout-ready | =marlin-org-store=, =marlin-org-patch=, =marlin-org-workflow= | Store tests cover dry-run/write validation, stale hash conflicts, root scope, and workflow commit. | Add final implementation-status receipt and mark remote revision ids as follow-up. |
+| [[file:40.30-org-contract-template-protocol.org][40.30 Org Contract Template Protocol]] | Active | =marlin-org-workspace=, =marlin-org-memory=, =marlin-gerbil-scheme= | Contract loader, registry, memory status/view, Gerbil compile facts, and real-gxi workflow tests exist. | Split acceptance into loader, memory, Gerbil, release-report, and gate phases. |
+| [[file:40.40-agent-system-harness-protocol.org][40.40 Agent System Harness Protocol]] | Closeout-ready | =marlin-agent-harness=, =marlin-agent-kernel=, =marlin-gerbil-scheme= | Harness scenarios, graph-loop execution, real-gxi ignored gates, and runtime evidence tests pass. | Keep transcript replay and richer fixture loading as follow-up work. |
+| [[file:40.50-agent-observability-tracing-contract.org][40.50 Agent Observability Tracing Contract]] | Closeout-ready | =marlin-agent-protocol=, =marlin-agent-runtime=, =marlin-agent-harness= | Protocol span records, runtime/kernel/hook spans, and harness trace capture are implemented. | Add process-lifecycle span checklist if runtime process ownership expands. |
+| [[file:40.60-configurable-subagent-spawn-policy.org][40.60 Configurable Sub-agent Spawn Policy]] | Active | =marlin-agent-protocol=, =marlin-agent-runtime= | Typed policy objects and runtime process request surfaces are implemented. | Add TOML/profile fixture parser that compiles into =SubAgentSpawnConfig=. |
+| [[file:40.70-codex-engineering-baseline.org][40.70 Codex Engineering Lessons Baseline]] | Governance | Cross-cutting | Baseline workstreams and non-goals are documented. | Cite this RFC from new runtime/tool/sub-agent APIs. |
+| [[file:40.80-marlin-architecture-principles.org][40.80 Marlin Architecture Principles]] | Governance | Cross-cutting | Architecture principles, review gate, and current workstream application are documented. | Use this as the review checklist before large cross-crate changes. |
+| [[file:40.90-configurable-model-routing-and-environment.org][40.90 Configurable Model Routing and Environment Isolation]] | Active | =marlin-agent-protocol=, =marlin-agent-runtime=, =marlin-agent-environment= | Model route config, runtime resolver, session binding, gateway, env activation, and observability tests exist. | Close TOML/profile loader ownership and route/session/environment receipt matrix. |
+| [[file:40.95-rust-dependency-strategy.org][40.95 Rust Dependency Strategy]] | Active | Workspace dependencies, owner crates | Workspace-managed dependency policy and current gaps are documented. | Introduce =toml/toml_edit= and =schemars= only through owner crates with focused tests. |
 
-[[file:40.10-org-native-agent-work-protocol.org][40.10 Org-native Agent Work Protocol]]
+** Acceleration Lanes
 
-- [[file:40.20-org-source-persistence-boundary.org][40.20 Org Source Persistence Boundary]]
+| Lane | RFCs | Goal | Immediate Gate |
+|------+------|------+----------------|
+| Closeout | 40.20, 40.40, 40.50 | Turn implemented behavior into accepted decisions. | Add implementation-status receipts and focused validation commands. |
+| Active Build | 40.10, 40.30, 40.60, 40.90 | Convert remaining open items into typed policy, fixtures, and tests. | Keep each change tied to one owner crate and one focused gate. |
+| Governance | 40.70, 40.80, 40.95 | Prevent dependency and ownership drift while accelerating. | Every new cross-crate behavior cites the narrowest RFC. |
 
-[[file:40.20-org-source-persistence-boundary.org][40.20 Org Source Persistence Boundary]]
+** Progress Rules
 
-- [[file:40.30-org-contract-template-protocol.org][40.30 Org Contract Template Protocol]]
+- RFC status values are =Active=, =Closeout-ready=, =Governance=, or =Accepted=.
 
-[[file:40.30-org-contract-template-protocol.org][40.30 Org Contract Template Protocol]]
+- A RFC becomes =Closeout-ready= only when implementation evidence and
+  verification commands exist in repository-local tests or documented release
+  gates.
 
-- [[file:40.40-agent-system-harness-protocol.org][40.40 Agent System Harness Protocol]]
+- A RFC becomes =Accepted= only after its open questions are either resolved or
+  explicitly moved to a follow-up RFC or decision document.
 
-[[file:40.40-agent-system-harness-protocol.org][40.40 Agent System Harness Protocol]]
-
-- [[file:40.50-agent-observability-tracing-contract.org][40.50 Agent Observability Tracing Contract]]
-
-[[file:40.50-agent-observability-tracing-contract.org][40.50 Agent Observability Tracing Contract]]
-
-- [[file:40.60-configurable-subagent-spawn-policy.org][40.60 Configurable Sub-agent Spawn Policy]]
-
-[[file:40.60-configurable-subagent-spawn-policy.org][40.60 Configurable Sub-agent Spawn Policy]]
-
-- [[file:40.70-codex-engineering-baseline.org][40.70 Codex Engineering Lessons Baseline]]
-
-[[file:40.70-codex-engineering-baseline.org][40.70 Codex Engineering Lessons Baseline]]
-
-- [[file:40.80-marlin-architecture-principles.org][40.80 Marlin Architecture Principles]]
-
-[[file:40.80-marlin-architecture-principles.org][40.80 Marlin Architecture Principles]]
-
-- [[file:40.90-configurable-model-routing-and-environment.org][40.90 Configurable Model Routing and Environment Isolation]]
-
-[[file:40.90-configurable-model-routing-and-environment.org][40.90 Configurable Model Routing and Environment Isolation]]
-
-- [[file:40.95-rust-dependency-strategy.org][40.95 Rust Dependency Strategy]]
-
-[[file:40.95-rust-dependency-strategy.org][40.95 Rust Dependency Strategy]]
+- New code work should update this index in the same pass as the implementation
+  receipt, so progress remains visible from one file.
