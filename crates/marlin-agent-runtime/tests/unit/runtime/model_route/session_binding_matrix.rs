@@ -1,12 +1,39 @@
 use marlin_agent_protocol::{
     ModelCommandMatcher, ModelContextForkMode, ModelEndpoint, ModelRouteRequest, ModelRouteRule,
-    ModelSessionLifecycle, ModelSessionPolicy, RuntimeEnvironmentActivationPolicy,
-    RuntimeEnvironmentActivationReceipt, RuntimeEnvironmentActivationStatus,
+    ModelSessionLifecycle, ModelSessionPolicy, RuntimeEnvironmentActivation,
+    RuntimeEnvironmentActivationReceipt, RuntimeEnvironmentActivationStatus, RuntimeEnvrcPolicy,
+    RuntimeShellIsolationPolicy, SubAgentSpawnConfigSet, SubAgentSpawnProfileId,
 };
 use marlin_agent_runtime::{CompiledModelRouteResolver, SessionKind, TokioAgentRuntime};
 
+const MODEL_ROUTE_SUB_AGENT_PROFILE_TOML: &str = r#"
+[[profiles]]
+profile_id = "builder"
+agent_type = "builder"
+role = "builder"
+
+[profiles.environment_activation.activation.Direnv]
+envrc = "Project"
+capture_delta = true
+
+[profiles.environment_activation.shell]
+isolate_host_environment = true
+allowlist = ["PATH", "HOME"]
+denylist = ["AWS_SECRET_ACCESS_KEY"]
+"#;
+
 #[test]
 fn model_route_session_binding_covers_create_reuse_reject_and_environment_receipts() {
+    let profile_config = SubAgentSpawnConfigSet::from_toml_str(MODEL_ROUTE_SUB_AGENT_PROFILE_TOML)
+        .expect("sub-agent profile TOML compiles");
+    let builder_profile = profile_config
+        .profile(&SubAgentSpawnProfileId::from("builder"))
+        .expect("builder profile exists");
+    let builder_environment = builder_profile
+        .environment_activation
+        .as_ref()
+        .expect("builder profile carries environment activation");
+
     let resolver = CompiledModelRouteResolver::new(vec![
         ModelRouteRule::new(
             "builder-create",
@@ -42,12 +69,9 @@ fn model_route_session_binding_covers_create_reuse_reject_and_environment_receip
         .expect("create route resolves");
     let (_create_runtime, create_binding) =
         runtime.child_runtime_for_model_route(&create_decision, SessionKind::SubAgent);
-    let create_binding =
-        create_binding.with_environment_activation_receipt(
-            RuntimeEnvironmentActivationReceipt::planned(
-                &RuntimeEnvironmentActivationPolicy::default(),
-            ),
-        );
+    let create_binding = create_binding.with_environment_activation_receipt(
+        RuntimeEnvironmentActivationReceipt::planned(builder_environment),
+    );
 
     assert_eq!(
         create_binding.child_session_id().as_str(),
@@ -69,22 +93,43 @@ fn model_route_session_binding_covers_create_reuse_reject_and_environment_receip
         create_binding.route_receipt().session_lifecycle,
         ModelSessionLifecycle::Ephemeral
     );
+    let expected_shell = RuntimeShellIsolationPolicy::isolated()
+        .with_allowed("PATH")
+        .with_allowed("HOME")
+        .with_denied("AWS_SECRET_ACCESS_KEY");
+    let binding_environment = create_binding
+        .environment_activation_receipt()
+        .expect("create route carries environment receipt");
     assert_eq!(
-        create_binding
-            .environment_activation_receipt()
-            .expect("create route carries environment receipt")
-            .status,
+        binding_environment.status,
         RuntimeEnvironmentActivationStatus::Planned
     );
+    assert!(matches!(
+        &binding_environment.activation,
+        RuntimeEnvironmentActivation::Direnv {
+            envrc: RuntimeEnvrcPolicy::Project,
+            capture_delta: true,
+        }
+    ));
+    assert_eq!(binding_environment.shell, expected_shell);
+
+    let route_environment = create_binding
+        .route_receipt()
+        .environment_activation
+        .as_ref()
+        .expect("route receipt projects environment receipt");
     assert_eq!(
-        create_binding
-            .route_receipt()
-            .environment_activation
-            .as_ref()
-            .expect("route receipt projects environment receipt")
-            .status,
+        route_environment.status,
         RuntimeEnvironmentActivationStatus::Planned
     );
+    assert!(matches!(
+        &route_environment.activation,
+        RuntimeEnvironmentActivation::Direnv {
+            envrc: RuntimeEnvrcPolicy::Project,
+            capture_delta: true,
+        }
+    ));
+    assert_eq!(route_environment.shell, expected_shell);
 
     let reuse_decision = resolver
         .resolve(

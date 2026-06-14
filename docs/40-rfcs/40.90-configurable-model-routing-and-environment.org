@@ -223,11 +223,11 @@ prove that a command used the intended model and environment.
 | Track | Owner | Current Evidence | Next Gate |
 |-------+-------+------------------+-----------|
 | Route Protocol | =marlin-agent-protocol= | Model endpoint identity, GPT-family OpenAI model names, command glob dimensions, and route receipts have protocol tests. | Add schema/contract generation when =schemars= lands. |
-| Route Runtime | =marlin-agent-runtime= | Runtime resolver covers priority, tie-breaking, native projection, provider-neutral gateway completion, and create/reuse/reject route, session, provider, and environment receipt-family matrix coverage. | Align profile-to-environment fixture loading with the receipt-family scenario. |
+| Route Runtime | =marlin-agent-runtime= | Runtime resolver covers priority, tie-breaking, native projection, provider-neutral gateway completion, create/reuse/reject route, session, provider, and profile-loaded environment receipt-family matrix coverage. | One end-to-end spawned sub-agent scenario captures route, session, provider, and environment receipts together. |
 | Session Binding | =marlin-agent-runtime=, =marlin-agent-sessions= | Requested session ids, inherited/forked/isolated context policies, and bounded history are tested. | Align with 40.60 profile compiler output. |
-| Environment | =marlin-agent-environment= | =direnv= activation policy, explicit envrc, custom home, environment delta receipts, and profile-loader environment activation policy projection are tested. | Connect profile-loaded activation policy to the runtime receipt-family fixture. |
+| Environment | =marlin-agent-environment= | =direnv= activation policy, explicit envrc, custom home, environment delta receipts, profile-loader environment activation policy projection, and runtime receipt-family projection are tested. | Exercise captured activation deltas in the spawned sub-agent end-to-end scenario. |
 | Observability | =marlin-agent-protocol=, =marlin-agent-harness= | Route, session, provider, and environment receipts are visible in runtime/harness tests. | One end-to-end scenario captures all four receipt families. |
-| Config Loader | =marlin-agent-protocol=, route config owner | TOML route config loader exists for model routes, sub-agent profile TOML compiles into typed =SubAgentSpawnConfigSet= values, and profile TOML can emit typed =RuntimeEnvironmentActivationPolicy=. | Align profile-loaded environment policy with the runtime receipt-family scenario. |
+| Config Loader | =marlin-agent-protocol=, route config owner | TOML route config loader exists for model routes, sub-agent profile TOML compiles into typed =SubAgentSpawnConfigSet= values, and profile-loaded =RuntimeEnvironmentActivationPolicy= values project into runtime route receipts. | Share the same profile fixture with the spawned sub-agent end-to-end scenario. |
 
 ** Acceptance Criteria
 
