@@ -1,13 +1,16 @@
-use std::sync::Arc;
+use std::{collections::BTreeMap, sync::Arc};
 
+use marlin_agent_environment::RuntimeEnvironmentActivator;
 use marlin_agent_protocol::{ModelGateway, ModelRouteRequest};
 use marlin_agent_runtime::{
-    CancellationToken, CompiledModelRouteResolver, ContextNamespace, RuntimeContext,
-    RuntimeEnvironment, RuntimeFuture, SubAgentRuntime, TokioAgentRuntime,
+    ActivatedModelRouteProfileSpawnRequest, CancellationToken, CompiledModelRouteResolver,
+    ContextNamespace, RuntimeContext, RuntimeEnvironment, RuntimeFuture, SubAgentRuntime,
+    TokioAgentRuntime,
 };
 use marlin_agent_test_support::{
     DeterministicRoutedSubAgentExecutionReceipt, DeterministicSubAgentScenarioFixture,
-    ScriptedModelGateway, assert_deterministic_reviewer_environment_activation_receipt,
+    ScriptedDirenvCommandRunner, ScriptedModelGateway,
+    assert_deterministic_reviewer_applied_environment_activation_receipt,
     assert_deterministic_routed_sub_agent_execution,
     assert_deterministic_sub_agent_gateway_request, assert_deterministic_sub_agent_route_decision,
     deterministic_reviewer_sub_agent_scenario_fixture,
@@ -52,20 +55,41 @@ async fn routed_sub_agent_spawn_captures_route_session_provider_and_environment_
         .resolve(fixture.route_request())
         .expect("sub-agent route resolves");
     let reviewer_profile = deterministic_reviewer_sub_agent_spawn_config();
+    let base_environment = BTreeMap::from([
+        ("PATH".to_owned(), "/bin".to_owned()),
+        ("HOME".to_owned(), "/home/reviewer".to_owned()),
+        ("REMOVE_ME".to_owned(), "old".to_owned()),
+        ("AWS_SECRET_ACCESS_KEY".to_owned(), "secret".to_owned()),
+    ]);
+    let command_environment = BTreeMap::from([
+        ("PATH".to_owned(), "/bin".to_owned()),
+        ("HOME".to_owned(), "/home/reviewer".to_owned()),
+    ]);
+    let activator = RuntimeEnvironmentActivator::with_runner(ScriptedDirenvCommandRunner::success(
+        "/repo",
+        command_environment,
+        r#"{"PATH":"/direnv/bin","REVIEWER_ENV":"new-secret","REMOVE_ME":null}"#,
+    ));
     let parent_session = fixture.session_fixture().parent_session().clone();
     let (runtime, _events) = TokioAgentRuntime::with_session(
         4,
         CancellationToken::new(),
-        RuntimeEnvironment::default(),
+        RuntimeEnvironment::default().with_cwd("/repo"),
         parent_session,
     );
 
-    let (task, binding) = runtime.spawn_sub_agent_with_model_route_profile(
-        Arc::new(ModelRouteSessionEchoSubAgent),
-        (),
-        &decision,
-        &reviewer_profile,
-    );
+    let (task, binding, activation_result) = runtime
+        .spawn_sub_agent_with_activated_model_route_profile(
+            ActivatedModelRouteProfileSpawnRequest {
+                sub_agent: Arc::new(ModelRouteSessionEchoSubAgent),
+                input: (),
+                decision: &decision,
+                profile: &reviewer_profile,
+                activator: &activator,
+                base_environment,
+            },
+        )
+        .await;
     let output = task.join().await.expect("routed sub-agent should finish");
     let gateway = ScriptedModelGateway::completion_failure("spawn e2e no-live-llm");
     let gateway_error = gateway
@@ -92,7 +116,16 @@ async fn routed_sub_agent_spawn_captures_route_session_provider_and_environment_
     let environment = binding
         .environment_activation_receipt()
         .expect("spawn route carries environment receipt");
-    assert_deterministic_reviewer_environment_activation_receipt(environment);
+    assert_deterministic_reviewer_applied_environment_activation_receipt(environment);
+    assert_eq!(&activation_result.receipt, environment);
+    assert_eq!(
+        activation_result
+            .environment
+            .get("REVIEWER_ENV")
+            .map(String::as_str),
+        Some("new-secret")
+    );
+    assert!(!activation_result.environment.contains_key("REMOVE_ME"));
 }
 
 #[tokio::test]

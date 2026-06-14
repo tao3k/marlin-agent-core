@@ -141,6 +141,11 @@ impl TokioAgentRuntime {
         }
     }
 
+    pub fn with_runtime_environment(mut self, environment: RuntimeEnvironment) -> Self {
+        self.environment = environment;
+        self
+    }
+
     pub fn child_runtime_for_session(
         &self,
         kind: SessionKind,

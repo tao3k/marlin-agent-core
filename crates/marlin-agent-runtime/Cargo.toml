@@ -8,6 +8,7 @@ repository.workspace = true
 [dependencies]
 aho-corasick.workspace = true
 globset.workspace = true
+marlin-agent-environment.workspace = true
 marlin-agent-protocol.workspace = true
 marlin-agent-sessions.workspace = true
 parking_lot.workspace = true

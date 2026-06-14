@@ -1,7 +1,11 @@
 //! Session binding for model route decisions.
 
-use std::sync::Arc;
+use std::{collections::BTreeMap, sync::Arc};
 
+use marlin_agent_environment::{
+    DirenvCommandRunner, RuntimeEnvironmentActivationRequest, RuntimeEnvironmentActivationResult,
+    RuntimeEnvironmentActivator,
+};
 use marlin_agent_protocol::{
     ModelContextForkMode, ModelRouteDecision, ModelRouteReceipt, ModelRouteRequest,
     ModelSessionLifecycle, RuntimeEnvironmentActivationPolicy, RuntimeEnvironmentActivationReceipt,
@@ -18,6 +22,20 @@ use super::resolver::CompiledModelRouteResolver;
 
 /// Resolved sub-agent spawn output for a matched model route request.
 pub type RoutedSubAgentSpawn<T> = (RuntimeTask<T>, ModelRouteSessionBinding, ModelRouteDecision);
+
+/// Request for spawning a routed sub-agent after applying profile environment activation.
+pub struct ActivatedModelRouteProfileSpawnRequest<'a, A, R>
+where
+    A: SubAgentRuntime,
+    R: DirenvCommandRunner,
+{
+    pub sub_agent: Arc<A>,
+    pub input: A::Input,
+    pub decision: &'a ModelRouteDecision,
+    pub profile: &'a SubAgentSpawnConfig,
+    pub activator: &'a RuntimeEnvironmentActivator<R>,
+    pub base_environment: BTreeMap<String, String>,
+}
 
 /// Runtime receipt produced when a model route is bound to a child session.
 #[derive(Clone, Debug)]
@@ -140,6 +158,50 @@ impl TokioAgentRuntime {
         let (runtime, binding) =
             self.child_runtime_for_model_route_profile(decision, SessionKind::SubAgent, profile);
         (runtime.spawn_sub_agent(sub_agent, input), binding)
+    }
+
+    pub async fn spawn_sub_agent_with_activated_model_route_profile<A, R>(
+        &self,
+        request: ActivatedModelRouteProfileSpawnRequest<'_, A, R>,
+    ) -> (
+        RuntimeTask<A::Output>,
+        ModelRouteSessionBinding,
+        RuntimeEnvironmentActivationResult,
+    )
+    where
+        A: SubAgentRuntime,
+        R: DirenvCommandRunner,
+    {
+        let activation_policy = request
+            .profile
+            .environment_activation
+            .clone()
+            .unwrap_or_default();
+        let runtime_environment = self
+            .environment()
+            .clone()
+            .with_activation(activation_policy);
+        let activation_result = request
+            .activator
+            .activate(RuntimeEnvironmentActivationRequest::new(
+                runtime_environment.clone(),
+                request.base_environment,
+            ))
+            .await;
+        let (runtime, binding) = self.child_runtime_for_model_route_profile(
+            request.decision,
+            SessionKind::SubAgent,
+            request.profile,
+        );
+        let runtime = runtime.with_runtime_environment(runtime_environment);
+        let binding =
+            binding.with_environment_activation_receipt(activation_result.receipt.clone());
+
+        (
+            runtime.spawn_sub_agent(request.sub_agent, request.input),
+            binding,
+            activation_result,
+        )
     }
 
     pub fn spawn_routed_sub_agent<A>(

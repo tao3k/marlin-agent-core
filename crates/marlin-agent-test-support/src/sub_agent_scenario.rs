@@ -241,6 +241,24 @@ pub fn assert_deterministic_reviewer_environment_activation_receipt(
     receipt: &RuntimeEnvironmentActivationReceipt,
 ) {
     assert_eq!(receipt.status, RuntimeEnvironmentActivationStatus::Planned);
+    assert_deterministic_reviewer_environment_activation_shape(receipt);
+    assert!(receipt.delta.is_empty());
+}
+
+/// Assert the deterministic reviewer profile's applied environment activation receipt.
+pub fn assert_deterministic_reviewer_applied_environment_activation_receipt(
+    receipt: &RuntimeEnvironmentActivationReceipt,
+) {
+    assert_eq!(receipt.status, RuntimeEnvironmentActivationStatus::Applied);
+    assert_deterministic_reviewer_environment_activation_shape(receipt);
+    assert_eq!(receipt.delta.added, vec!["REVIEWER_ENV"]);
+    assert_eq!(receipt.delta.changed, vec!["PATH"]);
+    assert_eq!(receipt.delta.removed, vec!["REMOVE_ME"]);
+}
+
+fn assert_deterministic_reviewer_environment_activation_shape(
+    receipt: &RuntimeEnvironmentActivationReceipt,
+) {
     assert!(matches!(
         &receipt.activation,
         RuntimeEnvironmentActivation::Direnv {

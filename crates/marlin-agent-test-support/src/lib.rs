@@ -35,7 +35,7 @@ pub use replay::{
     load_no_llm_runtime_replay_artifact, no_llm_runtime_replay_artifact_fixture,
 };
 pub use runtime_environment::{
-    RuntimeEnvironmentFixture, assert_custom_sub_agent_environment,
+    RuntimeEnvironmentFixture, ScriptedDirenvCommandRunner, assert_custom_sub_agent_environment,
     assert_hook_environment_uses_root_home, custom_home_runtime_environment_fixture,
 };
 pub use stability::{
@@ -49,6 +49,7 @@ pub use stream::{
 };
 pub use sub_agent_scenario::{
     DeterministicRoutedSubAgentExecutionReceipt, DeterministicSubAgentScenarioFixture,
+    assert_deterministic_reviewer_applied_environment_activation_receipt,
     assert_deterministic_reviewer_environment_activation_receipt,
     assert_deterministic_routed_sub_agent_execution, assert_deterministic_routed_sub_agent_session,
     assert_deterministic_sub_agent_gateway_request, assert_deterministic_sub_agent_route_decision,

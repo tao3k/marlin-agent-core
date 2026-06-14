@@ -2226,6 +2226,7 @@ version = "0.1.0"
 dependencies = [
  "aho-corasick",
  "globset",
+ "marlin-agent-environment",
  "marlin-agent-protocol",
  "marlin-agent-sessions",
  "marlin-agent-test-support",
@@ -2269,6 +2270,8 @@ dependencies = [
 name = "marlin-agent-test-support"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
+ "marlin-agent-environment",
  "marlin-agent-kernel",
  "marlin-agent-protocol",
  "marlin-agent-sessions",

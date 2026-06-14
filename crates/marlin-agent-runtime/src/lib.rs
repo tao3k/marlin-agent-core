@@ -6,11 +6,11 @@ mod model_route;
 mod tokio_runtime;
 
 pub use model_route::{
-    CompiledModelRouteResolver, ModelGateway, ModelGatewayCompletionChoice,
-    ModelGatewayCompletionOptions, ModelGatewayCompletionResponse, ModelGatewayError,
-    ModelGatewayFuture, ModelGatewayMessage, ModelGatewayMessageRole, ModelGatewayRequest,
-    ModelGatewayResult, ModelGatewayTransport, ModelRouteCompileError, ModelRouteConfig,
-    ModelRouteConfigError, ModelRouteSelectionProjectionError,
+    ActivatedModelRouteProfileSpawnRequest, CompiledModelRouteResolver, ModelGateway,
+    ModelGatewayCompletionChoice, ModelGatewayCompletionOptions, ModelGatewayCompletionResponse,
+    ModelGatewayError, ModelGatewayFuture, ModelGatewayMessage, ModelGatewayMessageRole,
+    ModelGatewayRequest, ModelGatewayResult, ModelGatewayTransport, ModelRouteCompileError,
+    ModelRouteConfig, ModelRouteConfigError, ModelRouteSelectionProjectionError,
     ModelRouteSelectionProjectionReceipt, ModelRouteSelectionProjectionSource,
     ModelRouteSessionBinding, ProjectedModelRouteDecision, RoutedSubAgentSpawn,
     assistant_gateway_message, system_gateway_message, user_gateway_message,

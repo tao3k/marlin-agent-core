@@ -1,7 +1,12 @@
 //! Reusable runtime environment fixtures for custom homes and sub-agents.
 
-use std::path::PathBuf;
+use std::{
+    collections::BTreeMap,
+    path::{Path, PathBuf},
+};
 
+use async_trait::async_trait;
+use marlin_agent_environment::{DirenvCommandRunner, RuntimeEnvironmentActivationError};
 use marlin_agent_protocol::{
     RuntimeConfigLayer, RuntimeConfigLayerSource, RuntimeEnvironment, RuntimeHome,
     RuntimeHomeSource,
@@ -29,6 +34,41 @@ impl RuntimeEnvironmentFixture {
     /// Environment expected for a custom sub-agent home.
     pub fn sub_agent_environment(&self) -> &RuntimeEnvironment {
         &self.sub_agent_environment
+    }
+}
+
+/// Deterministic direnv runner for runtime activation tests.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ScriptedDirenvCommandRunner {
+    cwd: PathBuf,
+    environment: BTreeMap<String, String>,
+    json: String,
+}
+
+impl ScriptedDirenvCommandRunner {
+    pub fn success(
+        cwd: impl Into<PathBuf>,
+        environment: BTreeMap<String, String>,
+        json: impl Into<String>,
+    ) -> Self {
+        Self {
+            cwd: cwd.into(),
+            environment,
+            json: json.into(),
+        }
+    }
+}
+
+#[async_trait]
+impl DirenvCommandRunner for ScriptedDirenvCommandRunner {
+    async fn export_json(
+        &self,
+        cwd: &Path,
+        environment: &BTreeMap<String, String>,
+    ) -> Result<String, RuntimeEnvironmentActivationError> {
+        assert_eq!(cwd, self.cwd.as_path());
+        assert_eq!(environment, &self.environment);
+        Ok(self.json.clone())
     }
 }
 

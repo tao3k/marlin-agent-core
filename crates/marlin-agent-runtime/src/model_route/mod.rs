@@ -18,4 +18,6 @@ pub use selection::{
     ModelRouteSelectionProjectionError, ModelRouteSelectionProjectionReceipt,
     ModelRouteSelectionProjectionSource, ProjectedModelRouteDecision,
 };
-pub use session::{ModelRouteSessionBinding, RoutedSubAgentSpawn};
+pub use session::{
+    ActivatedModelRouteProfileSpawnRequest, ModelRouteSessionBinding, RoutedSubAgentSpawn,
+};
