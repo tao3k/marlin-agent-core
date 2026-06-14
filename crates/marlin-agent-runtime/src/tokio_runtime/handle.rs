@@ -12,6 +12,7 @@ use super::{
     RuntimeContext, RuntimeEnvironment, RuntimeEventSink, RuntimeEventStream,
     RuntimeExecutionIdentity, RuntimeTask, RuntimeTaskOutcome, SessionId, SessionIsolationReceipt,
     SessionKind, SubAgentRuntime, SubAgentSpawnConfig, SubAgentSpawnReceipt, ToolRuntime,
+    WorkingCopyIsolationReceipt,
 };
 use crate::tokio_runtime::context::context_visibility_from_sub_agent_policy;
 
@@ -80,6 +81,7 @@ impl TokioAgentRuntime {
             environment: self.environment.clone(),
             execution: self.execution.clone(),
             session: self.session.clone(),
+            working_copy_receipts: Vec::new(),
             process_registry: self.process_registry.clone(),
             process_cleanup_policy: self.process_cleanup_policy.clone(),
         }
@@ -379,6 +381,26 @@ impl TokioAgentRuntime {
         A: SubAgentRuntime,
     {
         let context = self.context().child_context_with_environment(environment);
+        self.spawn_with_span(
+            async move { sub_agent.run_sub_agent(input, context).await },
+            observability::runtime_sub_agent_span(),
+        )
+    }
+
+    pub fn spawn_sub_agent_with_working_copy_environment<A>(
+        &self,
+        sub_agent: Arc<A>,
+        input: A::Input,
+        environment: RuntimeEnvironment,
+        working_copy_receipt: WorkingCopyIsolationReceipt,
+    ) -> RuntimeTask<A::Output>
+    where
+        A: SubAgentRuntime,
+    {
+        let context = self
+            .context()
+            .child_context_with_environment(environment)
+            .with_working_copy_receipt(working_copy_receipt);
         self.spawn_with_span(
             async move { sub_agent.run_sub_agent(input, context).await },
             observability::runtime_sub_agent_span(),

@@ -46,6 +46,9 @@ state boundary. Marlin adopts the boundary discipline, not the product shape:
 
 - repository/worktree roots and Git metadata are explicit;
 
+- Git operations are rooted at the imported Git top-level, not at ambient
+  process cwd;
+
 - ecosystem VCS choices, including =jj=, stay policy-driven extensions;
 
 - trust is attached to paths before tools or sub-agents use them;
@@ -65,6 +68,12 @@ state boundary. Marlin adopts the boundary discipline, not the product shape:
 
 - =WorkspaceProjectRepository= records the worktree root, Git core backend,
   optional Git metadata directory, VCS extensions, and trust gate;
+
+- =WorkingCopyRepositoryDiscoveryPath= records the imported absolute path used
+  as input to native Git top-level discovery;
+
+- =WorkingCopyGitTopLevel= records the resolved absolute Git top-level path
+  from the imported project's =.git= boundary;
 
 - =WorkspaceProjectVcsBackend= anchors the Rust-owned core backend to =Git=;
 
@@ -157,31 +166,153 @@ invocations:
 
 - program is an enum such as =Git= or =Worktrunk=;
 
-- cwd is a typed path, not process-global state;
+- =repository_discovery_path= is the imported absolute path used only as input
+  to native Git top-level resolution;
+
+- =git_toplevel= is the resolved Git top-level carried by command
+  invocations, not an ambient process directory;
 
 - args are argv entries, not a shell string;
 
 - the expected working copy handle remains attached to the command.
 
 This still does not execute commands. It gives runtime adapters a deterministic
-projection target and keeps provider command construction testable before
+projection target after a resolver converts discovery paths through native Git
+top-level resolution. Provider command construction stays testable before
 Tokio execution, cancellation, stdout/stderr capture, and receipts are added.
 
 Examples:
 
-- =GitWorktreeCreate= projects to =git worktree add ...= with cwd set to the
-  repository root;
+- =GitWorktreeCreate= accepts a repository discovery path, resolves it through
+  =git rev-parse --show-toplevel=, and projects to =git worktree add ...= with
+  the resolved =git_toplevel=;
 
-- =WorktrunkPullRequestCheckout= projects to =wt switch pr:<number>= with cwd
-  set to the repository root.
+- =WorktrunkPullRequestCheckout= accepts a repository discovery path, resolves
+  it through =git rev-parse --show-toplevel=, and projects to =wt switch
+  --no-cd --no-hooks --format json pr:<number>= with the resolved
+  =git_toplevel=.
 
 The projection must reject requests that are under-specified for execution,
-such as a Worktrunk pull request checkout without a repository root.
+such as a Worktrunk pull request checkout without a repository discovery path.
+
+Codex treats the caller process directory as a discovery/input detail, but
+repo-scoped behavior resolves the repository root through =git rev-parse
+--show-toplevel=. Marlin follows that split at the protocol layer: runtime
+adapters resolve =repository_discovery_path= into =git_toplevel= through
+=marlin-git-utils=, then use =git_toplevel= only as the provider process launch
+directory. Public receipts and command projections name the Git semantic root
+instead of the process detail.
+
+** P2 Provider Executable Probe
+
+P2 adds a runtime smoke boundary for provider executables.
+
+The environment crate probes provider programs with non-mutating =--version=
+commands before a real isolation driver has to modify a repository:
+
+- =Git= probes the =git= executable;
+
+- =Worktrunk= probes the =wt= executable;
+
+- probe results record executable name, status, status code, stdout, and
+  stderr;
+
+- missing provider binaries are typed as =Missing= instead of being confused
+  with provider command failure.
+
+This keeps installation verification separate from working-copy creation. A
+developer machine can run the real =wt= smoke once Worktrunk is installed
+globally, while default tests remain portable.
 
 =jj= workspaces remain a later VCS extension. They can provide parallel working
 copies, but their value comes from change graph and rewrite policy. That policy
 belongs in the Scheme extension plane and must compile back into typed Rust
 receipts before runtime consumes it.
+
+** P3 Runtime Driver
+
+P3 connects protocol projection to runtime execution without duplicating provider
+command semantics.
+
+=marlin-agent-environment= owns the runtime driver:
+
+- it compiles =WorkingCopyIsolationRequest= into =WorkingCopyIsolationPlan=;
+
+- it resolves each =WorkingCopyRepositoryDiscoveryPath= through
+  =marlin-git-utils= before projection;
+
+- it calls =WorkingCopyCommandProjection::from_plan= after Git top-level
+  resolution;
+
+- it executes structured command invocations through an injectable runner;
+
+- it emits =WorkingCopyCommandReceipt= values with status, stdout, stderr,
+  status code, and expected working-copy metadata.
+
+The runtime driver must not rebuild Worktrunk or Git argv independently.
+Provider command construction is centralized in =marlin-workspace-protocol= so
+the runtime boundary executes the typed projection instead of owning a second
+command compiler.
+
+** P4 Operation Family Coverage
+
+P4 closes the initial working-copy operation family for Git and Worktrunk:
+
+- =GitWorktree= supports create, switch, list, and remove through native Git
+  worktree semantics;
+
+- =Worktrunk= supports create/switch, list, remove, and GitHub pull request
+  checkout through =wt=;
+
+- remove behavior is represented by =WorkingCopyRemovalMode= instead of a bare
+  boolean;
+
+- switch creation behavior is represented by =WorkingCopySwitchMode= instead of
+  a bare boolean;
+
+- list visibility is represented by =WorkingCopyListOptions= instead of raw
+  branch/remote flags;
+
+- command receipts carry the expected working-copy handle when the provider
+  operation is supposed to affect one.
+
+The Worktrunk command projection is intentionally non-interactive for agent use:
+=wt switch= uses =--no-cd --no-hooks --format json=, =wt list= uses
+=--format json=, and =wt remove= uses =--foreground --no-hooks --format json=.
+
+** P5 Scheme Extension Boundary
+
+P5 keeps complex VCS and workspace policy outside the Rust command compiler
+while preserving typed Rust receipts.
+
+Rust owns:
+
+- project identity;
+
+- Git top-level discovery;
+
+- provider executable probing;
+
+- working-copy request, plan, command projection, and receipts;
+
+- TOML configuration envelopes and outer CLI/trace serialization.
+
+Scheme may decide:
+
+- which provider should satisfy a policy;
+
+- whether a =jj= extension should rewrite, defer, deny, or request a
+  working-copy operation;
+
+- how dynamic hook/customer-agent policy should select model, provider, and
+  workspace behavior;
+
+- which typed Rust request should be emitted for runtime execution.
+
+Scheme must not own JSON serialization for this core path. JSON is allowed at
+configuration, trace, CLI, or explicit cross-process protocol boundaries only.
+Native internal integration is Scheme types -> Rust types -> typed
+request/receipt values.
 
 ** GitHub And jj Operations
 
@@ -213,12 +344,28 @@ and GitHub remains the collaboration and operations plane.
 - =WorkingCopyIsolationRequest= compiles into =WorkingCopyIsolationPlan= with
   provider-specific typed steps before any runtime adapter executes commands.
 
-- =WorkingCopyIsolationPlan= projects into =WorkingCopyCommandProjection= with
-  structured program, cwd, argv, and expected working-copy metadata.
+- =WorkingCopyIsolationPlan= projects into =WorkingCopyCommandProjection= only
+  after repository discovery paths resolve to Git top-levels, with structured
+  program, =git_toplevel=, argv, and expected working-copy metadata.
+
+- =marlin-agent-environment= executes =WorkingCopyCommandProjection= through an
+  injectable runtime driver and records command receipts without duplicating
+  provider argv construction.
+
+- =GitWorktree= and =Worktrunk= cover create/switch/list/remove where
+  supported, and =Worktrunk= covers typed GitHub pull request checkout.
+
+- Provider flags that affect behavior are represented by named protocol types
+  such as =WorkingCopySwitchMode=, =WorkingCopyRemovalMode=, and
+  =WorkingCopyListOptions=.
 
 - =marlin-workspace-protocol= exports typed project id, Git core backend,
   repository, VCS extension, policy plane, root, trust, GitHub operations,
   persistence, and optional Org metadata contracts.
+
+- Scheme policy may choose or rewrite typed working-copy requests, but core
+  working-copy runtime integration remains Scheme types -> Rust types -> typed
+  Rust requests/receipts. JSON is not a native-internal policy surface.
 
 - =WorkspaceCtx= can carry project identity independently of runtime
   activation.

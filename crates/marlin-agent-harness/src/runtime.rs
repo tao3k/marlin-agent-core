@@ -10,6 +10,7 @@ use marlin_agent_protocol::{
 };
 use marlin_agent_runtime::{
     CancellationToken, RuntimeEnvironment, RuntimeEventStream, TokioAgentRuntime,
+    WorkingCopyCommandStatus, WorkingCopyIsolationReceipt,
 };
 use marlin_gerbil_ir::{ReleaseGateSpec, ReleaseTopologySpec};
 use std::time::{Duration, Instant};
@@ -72,6 +73,14 @@ impl HarnessRuntime {
     pub fn record_environment_visibility(&mut self) {
         let evidence = runtime_environment_visibility_evidence(self.environment());
         self.record_evidence(evidence);
+    }
+
+    /// Record evidence describing an isolated working copy visible to runtime work.
+    pub fn record_working_copy_isolation_visibility(
+        &mut self,
+        receipt: &WorkingCopyIsolationReceipt,
+    ) {
+        self.record_evidence(working_copy_isolation_visibility_evidence(receipt));
     }
 
     /// Record visibility evidence for a Rust-validated graph policy proposal.
@@ -201,6 +210,40 @@ pub fn runtime_environment_visibility_evidence(environment: &RuntimeEnvironment)
     );
 
     LoopEvidence::present(LoopEvidenceKind::Visibility, "runtime-environment").with_detail(detail)
+}
+
+/// Build evidence summarizing a working-copy isolation receipt.
+pub fn working_copy_isolation_visibility_evidence(
+    receipt: &WorkingCopyIsolationReceipt,
+) -> LoopEvidence {
+    let failed_commands = receipt
+        .command_receipts
+        .iter()
+        .filter(|command| command.status == WorkingCopyCommandStatus::Failed)
+        .count();
+    let working_copy_id = receipt
+        .working_copy
+        .as_ref()
+        .map(|copy| copy.id.as_str())
+        .unwrap_or("none");
+    let reason = receipt.reason.as_deref().unwrap_or("none");
+    let detail = format!(
+        "project_id={} provider={:?} operation={:?} status={:?} working_copy={} command_count={} failed_command_count={} reason={}",
+        receipt.project_id.as_str(),
+        receipt.provider,
+        receipt.operation,
+        receipt.status,
+        working_copy_id,
+        receipt.command_receipts.len(),
+        failed_commands,
+        reason,
+    );
+
+    LoopEvidence::present(
+        LoopEvidenceKind::Visibility,
+        format!("working-copy-isolation:{}", receipt.project_id.as_str()),
+    )
+    .with_detail(detail)
 }
 
 fn duration_ms(duration: Duration) -> u64 {

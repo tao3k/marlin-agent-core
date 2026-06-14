@@ -18,11 +18,14 @@ pub use project::{
 pub use working_copy::{
     WorkingCopyBaseRef, WorkingCopyBranchName, WorkingCopyCommandInvocation,
     WorkingCopyCommandProgram, WorkingCopyCommandProjection, WorkingCopyCommandProjectionError,
-    WorkingCopyCreateRequest, WorkingCopyHandle, WorkingCopyId, WorkingCopyIsolationOperationKind,
+    WorkingCopyCommandReceipt, WorkingCopyCommandStatus, WorkingCopyCreateRequest,
+    WorkingCopyGitTopLevel, WorkingCopyHandle, WorkingCopyId, WorkingCopyIsolationOperationKind,
     WorkingCopyIsolationPlan, WorkingCopyIsolationPlanError, WorkingCopyIsolationPlanStep,
     WorkingCopyIsolationProvider, WorkingCopyIsolationReceipt, WorkingCopyIsolationRequest,
-    WorkingCopyIsolationStatus, WorkingCopyPullRequestCheckoutRequest,
-    WorkingCopyPullRequestNumber,
+    WorkingCopyIsolationStatus, WorkingCopyListOptions, WorkingCopyListRequest,
+    WorkingCopyPullRequestCheckoutRequest, WorkingCopyPullRequestNumber, WorkingCopyRemovalMode,
+    WorkingCopyRemoveRequest, WorkingCopyRepositoryDiscoveryPath, WorkingCopySwitchMode,
+    WorkingCopySwitchRequest,
 };
 pub use workspace::AgentWorkspace;
 

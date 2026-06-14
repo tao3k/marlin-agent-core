@@ -30,5 +30,12 @@ pub use tokio_runtime::{
     SubAgentConfigSurface, SubAgentContextPolicy, SubAgentContextVisibility,
     SubAgentPerformanceBudget, SubAgentPermissionSet, SubAgentRuntime, SubAgentSpawnConfig,
     SubAgentSpawnPolicy, SubAgentSpawnProfile, SubAgentSpawnReceipt, SubAgentSpawnStrategy,
-    TokioAgentRuntime, ToolRuntime,
+    TokioAgentRuntime, ToolRuntime, WorkingCopyBaseRef, WorkingCopyBranchName,
+    WorkingCopyCommandInvocation, WorkingCopyCommandProgram, WorkingCopyCommandProjection,
+    WorkingCopyCommandReceipt, WorkingCopyCommandStatus, WorkingCopyCreateRequest,
+    WorkingCopyGitTopLevel, WorkingCopyHandle, WorkingCopyId, WorkingCopyIsolationOperationKind,
+    WorkingCopyIsolationPlan, WorkingCopyIsolationPlanStep, WorkingCopyIsolationProvider,
+    WorkingCopyIsolationReceipt, WorkingCopyIsolationRequest, WorkingCopyIsolationStatus,
+    WorkingCopyPullRequestCheckoutRequest, WorkingCopyPullRequestNumber,
+    WorkingCopyRepositoryDiscoveryPath,
 };

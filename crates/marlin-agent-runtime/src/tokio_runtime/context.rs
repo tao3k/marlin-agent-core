@@ -6,7 +6,7 @@ use tokio::sync::mpsc;
 use super::{
     AgentSessionContext, CancellationToken, ContextNamespace, ContextVisibility, GraphId, RunId,
     RuntimeEnvironment, RuntimeEvent, RuntimeEventSink, SessionId, SessionIsolationReceipt,
-    SessionKind, SubAgentContextPolicy, SubAgentContextVisibility,
+    SessionKind, SubAgentContextPolicy, SubAgentContextVisibility, WorkingCopyIsolationReceipt,
 };
 
 /// Per-call runtime context passed into provider, tool, and sub-agent work.
@@ -17,6 +17,7 @@ pub struct RuntimeContext {
     pub(super) environment: RuntimeEnvironment,
     pub(super) execution: Option<RuntimeExecutionIdentity>,
     pub(super) session: AgentSessionContext,
+    pub(super) working_copy_receipts: Vec<WorkingCopyIsolationReceipt>,
     pub(super) process_registry: observability::RuntimeProcessRegistryHandle,
     pub(super) process_cleanup_policy: observability::RuntimeProcessCleanupPolicy,
 }
@@ -36,6 +37,10 @@ impl RuntimeContext {
 
     pub fn session(&self) -> &AgentSessionContext {
         &self.session
+    }
+
+    pub fn working_copy_receipts(&self) -> &[WorkingCopyIsolationReceipt] {
+        &self.working_copy_receipts
     }
 
     pub fn execution_identity(&self) -> Option<&RuntimeExecutionIdentity> {
@@ -60,6 +65,11 @@ impl RuntimeContext {
         self
     }
 
+    pub fn with_working_copy_receipt(mut self, receipt: WorkingCopyIsolationReceipt) -> Self {
+        self.working_copy_receipts.push(receipt);
+        self
+    }
+
     pub fn child_context(&self) -> Self {
         Self {
             cancellation: self.cancellation.child_token(),
@@ -67,6 +77,7 @@ impl RuntimeContext {
             environment: self.environment.clone(),
             execution: self.execution.clone(),
             session: self.session.clone(),
+            working_copy_receipts: self.working_copy_receipts.clone(),
             process_registry: self.process_registry.clone(),
             process_cleanup_policy: self.process_cleanup_policy.clone(),
         }
@@ -79,6 +90,7 @@ impl RuntimeContext {
             environment,
             execution: self.execution.clone(),
             session: self.session.clone(),
+            working_copy_receipts: self.working_copy_receipts.clone(),
             process_registry: self.process_registry.clone(),
             process_cleanup_policy: self.process_cleanup_policy.clone(),
         }
@@ -100,6 +112,7 @@ impl RuntimeContext {
                 environment: self.environment.clone(),
                 execution: self.execution.clone(),
                 session,
+                working_copy_receipts: self.working_copy_receipts.clone(),
                 process_registry: self.process_registry.clone(),
                 process_cleanup_policy: self.process_cleanup_policy.clone(),
             },

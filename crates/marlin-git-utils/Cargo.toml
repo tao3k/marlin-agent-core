@@ -1,16 +1,11 @@
 [package]
-name = "marlin-agent-environment"
+name = "marlin-git-utils"
 edition.workspace = true
 version.workspace = true
 authors.workspace = true
 repository.workspace = true
 
 [dependencies]
-async-trait.workspace = true
-marlin-agent-protocol.workspace = true
-marlin-git-utils.workspace = true
-marlin-workspace-protocol.workspace = true
-serde_json.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 
@@ -20,3 +15,4 @@ rust-lang-project-harness.workspace = true
 
 [dev-dependencies]
 rust-lang-project-harness.workspace = true
+tempfile.workspace = true

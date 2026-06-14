@@ -14,6 +14,7 @@ members = [
     "crates/marlin-deck-runtime-native",
     "crates/marlin-gerbil-ir",
     "crates/marlin-gerbil-scheme",
+    "crates/marlin-git-utils",
     "crates/marlin-org-memory",
     "crates/marlin-org-model",
     "crates/marlin-org-patch",
@@ -73,6 +74,7 @@ marlin-agent-test-support = { path = "crates/marlin-agent-test-support", version
 marlin-deck-runtime-native = { path = "crates/marlin-deck-runtime-native", version = "0.1.0" }
 marlin-gerbil-ir = { path = "crates/marlin-gerbil-ir", version = "0.1.0" }
 marlin-gerbil-scheme = { path = "crates/marlin-gerbil-scheme", version = "0.1.0" }
+marlin-git-utils = { path = "crates/marlin-git-utils", version = "0.1.0" }
 marlin-org-memory = { path = "crates/marlin-org-memory", version = "0.1.0" }
 marlin-org-model = { path = "crates/marlin-org-model", version = "0.1.0" }
 marlin-org-patch = { path = "crates/marlin-org-patch", version = "0.1.0" }

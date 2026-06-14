@@ -2151,7 +2151,9 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "marlin-agent-protocol",
+ "marlin-git-utils",
  "marlin-rust-project-harness-policy",
+ "marlin-workspace-protocol",
  "rust-lang-project-harness",
  "serde_json",
  "thiserror",
@@ -2344,6 +2346,17 @@ dependencies = [
  "static_assertions",
  "tempfile",
  "toml 1.1.2+spec-1.1.0",
+]
+
+[[package]]
+name = "marlin-git-utils"
+version = "0.1.0"
+dependencies = [
+ "marlin-rust-project-harness-policy",
+ "rust-lang-project-harness",
+ "tempfile",
+ "thiserror",
+ "tokio",
 ]
 
 [[package]]

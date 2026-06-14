@@ -22,5 +22,6 @@ pub use release_visibility::{
 };
 pub use runtime::{
     HarnessExecutionReport, HarnessRuntime, runtime_environment_visibility_evidence,
+    working_copy_isolation_visibility_evidence,
 };
 pub use trace::TraceRecorder;

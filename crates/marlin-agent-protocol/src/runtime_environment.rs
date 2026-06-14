@@ -421,6 +421,33 @@ pub enum RuntimeEnvironmentActivationStatus {
     Rejected,
 }
 
+/// Execution placement for refreshing project environment state.
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub enum RuntimeEnvironmentRefreshExecution {
+    #[default]
+    Foreground,
+    Background,
+}
+
+/// Cache ownership for refresh. Marlin records this but does not own direnv,
+/// nix-direnv, or devenv cache files.
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub enum RuntimeEnvironmentRefreshCachePolicy {
+    #[default]
+    ExternalToolOwned,
+    Disabled,
+}
+
+/// Status recorded for an environment refresh attempt.
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub enum RuntimeEnvironmentRefreshStatus {
+    #[default]
+    Skipped,
+    Applied,
+    Rejected,
+    TimedOut,
+}
+
 /// Name-only environment delta. Values are intentionally omitted to avoid
 /// leaking secrets into receipts.
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
@@ -561,6 +588,110 @@ impl RuntimeEnvironmentActivationReceipt {
             actions,
             reason: Some(reason.into()),
         }
+    }
+}
+
+/// Receipt for a runtime environment refresh. The activation receipt remains
+/// the source of truth for the actual shell/env changes.
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub struct RuntimeEnvironmentRefreshReceipt {
+    #[serde(default)]
+    pub execution: RuntimeEnvironmentRefreshExecution,
+    #[serde(default)]
+    pub cache_policy: RuntimeEnvironmentRefreshCachePolicy,
+    #[serde(default)]
+    pub status: RuntimeEnvironmentRefreshStatus,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub elapsed_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timeout_ms: Option<u64>,
+    pub activation_receipt: RuntimeEnvironmentActivationReceipt,
+    pub reason: Option<String>,
+}
+
+/// Named request for constructing a timed-out runtime refresh receipt.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct RuntimeEnvironmentRefreshTimeout {
+    pub execution: RuntimeEnvironmentRefreshExecution,
+    pub cache_policy: RuntimeEnvironmentRefreshCachePolicy,
+    pub activation_receipt: RuntimeEnvironmentActivationReceipt,
+    pub elapsed_ms: u64,
+    pub timeout_ms: u64,
+}
+
+impl RuntimeEnvironmentRefreshTimeout {
+    pub fn new(
+        activation_receipt: RuntimeEnvironmentActivationReceipt,
+        elapsed_ms: u64,
+        timeout_ms: u64,
+    ) -> Self {
+        Self {
+            execution: RuntimeEnvironmentRefreshExecution::Foreground,
+            cache_policy: RuntimeEnvironmentRefreshCachePolicy::ExternalToolOwned,
+            activation_receipt,
+            elapsed_ms,
+            timeout_ms,
+        }
+    }
+
+    pub fn with_execution(mut self, execution: RuntimeEnvironmentRefreshExecution) -> Self {
+        self.execution = execution;
+        self
+    }
+
+    pub fn with_cache_policy(mut self, cache_policy: RuntimeEnvironmentRefreshCachePolicy) -> Self {
+        self.cache_policy = cache_policy;
+        self
+    }
+}
+
+impl RuntimeEnvironmentRefreshReceipt {
+    pub fn from_activation(
+        execution: RuntimeEnvironmentRefreshExecution,
+        cache_policy: RuntimeEnvironmentRefreshCachePolicy,
+        activation_receipt: RuntimeEnvironmentActivationReceipt,
+    ) -> Self {
+        let status = match &activation_receipt.status {
+            RuntimeEnvironmentActivationStatus::Applied => RuntimeEnvironmentRefreshStatus::Applied,
+            RuntimeEnvironmentActivationStatus::Rejected => {
+                RuntimeEnvironmentRefreshStatus::Rejected
+            }
+            RuntimeEnvironmentActivationStatus::Disabled
+            | RuntimeEnvironmentActivationStatus::Planned => {
+                RuntimeEnvironmentRefreshStatus::Skipped
+            }
+        };
+        let reason = activation_receipt.reason.clone();
+
+        Self {
+            execution,
+            cache_policy,
+            status,
+            elapsed_ms: None,
+            timeout_ms: None,
+            activation_receipt,
+            reason,
+        }
+    }
+
+    pub fn timed_out(timeout: RuntimeEnvironmentRefreshTimeout) -> Self {
+        let reason = timeout.activation_receipt.reason.clone();
+
+        Self {
+            execution: timeout.execution,
+            cache_policy: timeout.cache_policy,
+            status: RuntimeEnvironmentRefreshStatus::TimedOut,
+            elapsed_ms: Some(timeout.elapsed_ms),
+            timeout_ms: Some(timeout.timeout_ms),
+            activation_receipt: timeout.activation_receipt,
+            reason,
+        }
+    }
+
+    pub fn with_timing(mut self, elapsed_ms: u64, timeout_ms: Option<u64>) -> Self {
+        self.elapsed_ms = Some(elapsed_ms);
+        self.timeout_ms = timeout_ms;
+        self
     }
 }
 

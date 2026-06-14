@@ -1,6 +1,4 @@
 mod activation;
-mod import;
+mod core;
 mod refresh;
-mod resolver;
-mod working_copy;
 mod workspace_project;
