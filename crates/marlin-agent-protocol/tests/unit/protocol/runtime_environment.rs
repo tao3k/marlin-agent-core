@@ -2,9 +2,14 @@ use std::{collections::BTreeMap, path::PathBuf};
 
 use marlin_agent_protocol::{
     RuntimeConfigLayer, RuntimeConfigLayerSource, RuntimeEnvironment, RuntimeEnvironmentActivation,
-    RuntimeEnvironmentActivationPolicy, RuntimeEnvironmentActivationReceipt,
-    RuntimeEnvironmentActivationStatus, RuntimeEnvironmentDelta, RuntimeEnvrcPolicy, RuntimeHome,
-    RuntimeHomeSource, RuntimeSandboxPolicy, RuntimeShellIsolationPolicy,
+    RuntimeEnvironmentActivationAction, RuntimeEnvironmentActivationActionReceipt,
+    RuntimeEnvironmentActivationActionStatus, RuntimeEnvironmentActivationPolicy,
+    RuntimeEnvironmentActivationReceipt, RuntimeEnvironmentActivationStatus,
+    RuntimeEnvironmentDelta, RuntimeEnvrcPolicy, RuntimeHome, RuntimeHomeSource,
+    RuntimeSandboxPolicy, RuntimeShellIsolationPolicy, RuntimeWorkspaceProject,
+    RuntimeWorkspaceProjectImportAction, RuntimeWorkspaceProjectImportActionReceipt,
+    RuntimeWorkspaceProjectImportActionStatus, RuntimeWorkspaceProjectImportReceipt,
+    RuntimeWorkspaceProjectImportStatus, RuntimeWorkspaceProjectTrust,
 };
 
 #[test]
@@ -37,6 +42,69 @@ fn runtime_environment_records_custom_home_layers_and_sandbox() {
     assert_eq!(environment.sandbox, sandbox);
     assert_eq!(environment.config_layers.len(), 2);
     assert_eq!(environment.config_layers[1].precedence, 100);
+}
+
+#[test]
+fn runtime_environment_records_imported_workspace_projects() {
+    let sandbox = RuntimeSandboxPolicy {
+        writable_roots: vec![PathBuf::from("/repo")],
+        network_access: true,
+        exclude_tmpdir_env_var: false,
+        exclude_slash_tmp: true,
+    };
+    let project = RuntimeWorkspaceProject::trusted("main", "/repo")
+        .with_project_config("/repo/.marlin")
+        .with_activation(RuntimeEnvironmentActivationPolicy::direnv_project())
+        .with_sandbox(sandbox.clone());
+    let environment = RuntimeEnvironment::default()
+        .with_workspace_project(project.clone())
+        .with_active_workspace_project("main");
+    let receipt = RuntimeWorkspaceProjectImportReceipt::imported(&project);
+
+    assert_eq!(environment.workspace_projects, vec![project.clone()]);
+    assert_eq!(
+        environment
+            .active_workspace_project
+            .as_ref()
+            .map(|id| id.as_str()),
+        Some("main")
+    );
+    assert_eq!(receipt.project_id.as_str(), "main");
+    assert_eq!(receipt.root, Some(PathBuf::from("/repo")));
+    assert_eq!(project.trust, RuntimeWorkspaceProjectTrust::Trusted);
+    assert_eq!(
+        receipt.status,
+        RuntimeWorkspaceProjectImportStatus::Imported
+    );
+    assert_eq!(receipt.reason, None);
+    assert!(receipt.actions.is_empty());
+}
+
+#[test]
+fn runtime_environment_records_trusted_direnv_import_allow_receipt() {
+    let project = RuntimeWorkspaceProject::trusted("main", "/repo")
+        .with_activation(RuntimeEnvironmentActivationPolicy::direnv_project());
+    let receipt = RuntimeWorkspaceProjectImportReceipt::imported_with_actions(
+        &project,
+        vec![RuntimeWorkspaceProjectImportActionReceipt::applied(
+            RuntimeWorkspaceProjectImportAction::DirenvAllow,
+        )],
+    );
+
+    assert_eq!(receipt.project_id.as_str(), "main");
+    assert_eq!(
+        receipt.status,
+        RuntimeWorkspaceProjectImportStatus::Imported
+    );
+    assert_eq!(receipt.actions.len(), 1);
+    assert_eq!(
+        receipt.actions[0].action,
+        RuntimeWorkspaceProjectImportAction::DirenvAllow
+    );
+    assert_eq!(
+        receipt.actions[0].status,
+        RuntimeWorkspaceProjectImportActionStatus::Applied
+    );
 }
 
 #[test]
@@ -83,6 +151,16 @@ fn runtime_environment_records_direnv_activation_and_shell_isolation() {
 }
 
 #[test]
+fn runtime_environment_records_direnv_reload_preflight_action() {
+    let activation = RuntimeEnvironmentActivationPolicy::direnv_project().with_direnv_reload();
+
+    assert_eq!(
+        activation.preflight_actions,
+        vec![RuntimeEnvironmentActivationAction::DirenvReload]
+    );
+}
+
+#[test]
 fn runtime_environment_can_name_explicit_envrc_file() {
     let activation = RuntimeEnvironmentActivationPolicy::direnv_file("/repo/.envrc");
 
@@ -117,6 +195,8 @@ fn runtime_environment_defaults_missing_activation_when_deserializing() {
         environment.activation,
         RuntimeEnvironmentActivationPolicy::disabled()
     );
+    assert!(environment.workspace_projects.is_empty());
+    assert_eq!(environment.active_workspace_project, None);
 }
 
 #[test]
@@ -152,5 +232,30 @@ fn runtime_environment_activation_receipt_records_status_and_policy() {
     assert_eq!(receipt.activation, policy.activation);
     assert_eq!(receipt.shell, policy.shell);
     assert!(receipt.delta.is_empty());
+    assert!(receipt.actions.is_empty());
     assert_eq!(receipt.reason, None);
+}
+
+#[test]
+fn runtime_environment_activation_receipt_records_direnv_actions() {
+    let policy = RuntimeEnvironmentActivationPolicy::direnv_project().with_direnv_reload();
+    let receipt = RuntimeEnvironmentActivationReceipt::applied_with_actions(
+        &policy,
+        RuntimeEnvironmentDelta::default(),
+        vec![RuntimeEnvironmentActivationActionReceipt::rejected(
+            RuntimeEnvironmentActivationAction::DirenvReload,
+            "direnv reload failed",
+        )],
+    );
+
+    assert_eq!(receipt.status, RuntimeEnvironmentActivationStatus::Applied);
+    assert_eq!(receipt.actions.len(), 1);
+    assert_eq!(
+        receipt.actions[0].status,
+        RuntimeEnvironmentActivationActionStatus::Rejected
+    );
+    assert_eq!(
+        receipt.actions[0].reason.as_deref(),
+        Some("direnv reload failed")
+    );
 }

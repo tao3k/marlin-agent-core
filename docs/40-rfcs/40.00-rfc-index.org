@@ -6,37 +6,39 @@ accepted decisions or crate-level implementation details.
 ** Documents
 
 | RFC | Status | Owner Crates | Implementation Evidence | Next Gap |
-|-----+--------+--------------+-------------------------+----------|
-| [[file:40.10-org-native-agent-work-protocol.org][40.10 Org-native Agent Work Protocol]] | Active | =marlin-org-*=, =marlin-workspace-*= | Query, patch, view, memory, and workflow crates are present with workspace tests. | Define promotion rule for Org conventions: decisions, metrics, evidence, trace facts. |
-| [[file:40.20-org-source-persistence-boundary.org][40.20 Org Source Persistence Boundary]] | Accepted | =marlin-org-store=, =marlin-org-patch=, =marlin-org-workflow= | Store tests cover dry-run/write validation, stale hash conflicts, root scope, workflow commit, and accepted local filesystem boundary. | Remote revision ids are follow-up work. |
-| [[file:40.30-org-contract-template-protocol.org][40.30 Org Contract Template Protocol]] | Active | =marlin-org-workspace=, =marlin-org-memory=, =marlin-gerbil-scheme= | Contract loader, registry, memory status/view, Gerbil compile facts, and real-gxi workflow tests exist. | Split acceptance into loader, memory, Gerbil, release-report, and gate phases. |
-| [[file:40.40-agent-system-harness-protocol.org][40.40 Agent System Harness Protocol]] | Accepted | =marlin-agent-harness=, =marlin-agent-kernel=, =marlin-gerbil-scheme= | Harness scenarios, graph-loop execution, real-gxi ignored gates, runtime evidence tests, and accepted harness protocol boundary pass. | Transcript replay and richer fixture loading are follow-up work. |
-| [[file:40.50-agent-observability-tracing-contract.org][40.50 Agent Observability Tracing Contract]] | Accepted | =marlin-agent-protocol=, =marlin-agent-runtime=, =marlin-agent-harness= | Protocol span records, runtime/kernel/hook spans, harness trace capture, and accepted tracing contract are implemented. | Process-lifecycle span checklist is follow-up if runtime process ownership expands. |
-| [[file:40.60-configurable-subagent-spawn-policy.org][40.60 Configurable Sub-agent Spawn Policy]] | Closeout-ready | =marlin-agent-protocol=, =marlin-agent-runtime= | Typed policy objects, TOML profile compiler, runtime process request surfaces, model-route spawn tests, and create/reuse/reject receipt matrix are implemented. | Move inherited/forked profile variant expansion into 40.90 receipt-family follow-up work. |
-| [[file:40.70-codex-engineering-baseline.org][40.70 Codex Engineering Lessons Baseline]] | Governance | Cross-cutting | Baseline workstreams and non-goals are documented. | Cite this RFC from new runtime/tool/sub-agent APIs. |
-| [[file:40.80-marlin-architecture-principles.org][40.80 Marlin Architecture Principles]] | Governance | Cross-cutting | Architecture principles, review gate, and current workstream application are documented. | Use this as the review checklist before large cross-crate changes. |
-| [[file:40.90-configurable-model-routing-and-environment.org][40.90 Configurable Model Routing and Environment Isolation]] | Active | =marlin-agent-protocol=, =marlin-agent-runtime=, =marlin-agent-environment= | Model route config, sub-agent profile compiler, runtime resolver, session binding, gateway, env activation, observability tests, and the first route/session/environment matrix exist. | Close profile-to-environment fixture alignment and one end-to-end receipt-family scenario. |
-| [[file:40.95-rust-dependency-strategy.org][40.95 Rust Dependency Strategy]] | Active | Workspace dependencies, owner crates | Workspace-managed dependency policy and current gaps are documented. | Introduce =toml/toml_edit= and =schemars= only through owner crates with focused tests. |
+
+[[file:40.10-org-native-agent-work-protocol.org][40.10 Org-native Agent Work Protocol]]
+
+[[file:40.20-org-source-persistence-boundary.org][40.20 Org Source Persistence Boundary]]
+
+[[file:40.30-org-contract-template-protocol.org][40.30 Org Contract Template Protocol]]
+
+[[file:40.40-agent-system-harness-protocol.org][40.40 Agent System Harness Protocol]]
+
+[[file:40.50-agent-observability-tracing-contract.org][40.50 Agent Observability Tracing Contract]]
+
+[[file:40.60-configurable-subagent-spawn-policy.org][40.60 Configurable Sub-agent Spawn Policy]]
+
+[[file:40.70-codex-engineering-baseline.org][40.70 Codex Engineering Lessons Baseline]]
+
+[[file:40.71-workspace-project-protocol.org][40.71 Workspace Project Protocol]]
+
+[[file:40.80-marlin-architecture-principles.org][40.80 Marlin Architecture Principles]]
+
+[[file:40.90-configurable-model-routing-and-environment.org][40.90 Configurable Model Routing and Environment Isolation]]
+
+[[file:40.95-rust-dependency-strategy.org][40.95 Rust Dependency Strategy]]
 
 ** Acceleration Lanes
 
 | Lane | RFCs | Goal | Immediate Gate |
-|------+------|------+----------------|
-| Accepted Baseline | 40.20, 40.40, 40.50 | Keep accepted behavior stable while active RFCs build on it. | New changes cite these accepted boundaries or create follow-up RFCs. |
-| Active Build | 40.10, 40.30, 40.60, 40.90 | Convert remaining open items into typed policy, fixtures, and tests. | Keep each change tied to one owner crate and one focused gate. |
-| Native Performance | 30.80, 40.90 | Keep complex policy in Scheme while preserving typed Rust/native ABI boundaries. | Run linked selector benchmark under Linux CI and compare policy-count scaling. |
-| Governance | 40.70, 40.80, 40.95 | Prevent dependency and ownership drift while accelerating. | Every new cross-crate behavior cites the narrowest RFC. |
 
 ** Progress Rules
 
 - RFC status values are =Active=, =Closeout-ready=, =Governance=, or =Accepted=.
 
 - A RFC becomes =Closeout-ready= only when implementation evidence, a focused
-  validation gate, and verification commands exist in repository-local tests or
-  documented release gates.
 
 - A RFC becomes =Accepted= only after its open questions are either resolved or
-  explicitly moved to a follow-up RFC or decision document.
 
 - New code work should update this index in the same pass as the implementation
-  receipt, so progress remains visible from one file.

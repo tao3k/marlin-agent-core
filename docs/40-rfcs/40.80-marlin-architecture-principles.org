@@ -160,6 +160,19 @@ Observability:
 
 - logging-only output is insufficient for core runtime behavior.
 
+Workspace and project protocol:
+
+- Codex reveals that project identity, Git repository roots, VCS ecosystem
+  extensions, trust, GitHub operations, metadata, and runtime execution context
+  should be separate facts;
+
+- Marlin keeps that boundary through
+  [[file:40.71-workspace-project-protocol.org][40.71 Workspace Project Protocol]]
+  and rejects Codex-specific project shape;
+
+- a project is primarily a Git repository/worktree; jj-style behavior is a
+  policy extension, while Org is an attached metadata content file.
+
 Tool and process execution:
 
 - shell command, PTY command, direct process spawn, stdin transport, and managed

@@ -31,6 +31,13 @@ That lesson is worth adopting: capability entry points should be protocol facts
 before they become runtime implementation details. The concrete Codex
 implementation is not normative for Marlin.
 
+Workspace and project management is another mature Codex boundary worth
+learning from. Marlin records that narrower adaptation in
+[[file:40.71-workspace-project-protocol.org][40.71 Workspace Project Protocol]]:
+Git repository/worktree identity, jj-style VCS ecosystem extensions, explicit
+roots, trust gates, GitHub operation families, optional Org-native metadata
+files, and runtime project import stay separate facts.
+
 ** Mature Capabilities To Learn
 
 - Protocol/schema ownership: public capabilities are named operations with

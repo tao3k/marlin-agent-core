@@ -1,0 +1,155 @@
+* 40.71 RFC: Workspace Project Protocol
+
+Status: active
+
+This RFC defines the Marlin-native workspace project boundary learned from the
+Codex workspace/projects design. The useful lesson is that project identity,
+Git repository roots, VCS ecosystem extensions, trust, remote operations,
+metadata, runtime import, and execution environment must be separate protocol
+facts.
+
+** Problem
+
+For Marlin, a project is primarily a Git repository or worktree:
+
+- the Rust-owned project boundary is the repository/worktree root and its Git
+  metadata;
+
+- Git operations are the core repository foundation in Rust;
+
+- =jj= is an ecosystem VCS extension over that foundation, not an equal
+  Rust-core backend;
+
+- a stable project id names that repository-backed workspace across sessions
+  and receipts;
+
+- Org is not the project identity and does not define the repository boundary;
+
+- Org files hold project/workspace metadata, memory, reviewer notes, and other
+  agent-facing content;
+
+- GitHub operations are attached to a typed remote repository such as
+  =jj-vcs/jj=;
+
+- complex =jj= policy is resolved by the Scheme extension plane and compiled
+  back into typed Marlin project policy;
+
+- runtime activation should import a typed project snapshot, not infer project
+  identity from cwd or from an Org file.
+
+** Codex Lesson
+
+Codex is mature in treating workspace/projects as an explicit runtime and
+state boundary. Marlin adopts the boundary discipline, not the product shape:
+
+- project identity is a typed value;
+
+- repository/worktree roots and Git metadata are explicit;
+
+- ecosystem VCS choices, including =jj=, stay policy-driven extensions;
+
+- trust is attached to paths before tools or sub-agents use them;
+
+- GitHub issues, pull requests, checks, actions, and releases are typed
+  operation families, not free-form shell commands;
+
+- metadata files are separate from execution state;
+
+- runtime receives a selected project instead of discovering one implicitly.
+
+** Marlin Contract
+
+=marlin-workspace-protocol= owns the durable project profile:
+
+- =WorkspaceProjectId= is the stable project identifier;
+
+- =WorkspaceProjectRepository= records the worktree root, Git core backend,
+  optional Git metadata directory, VCS extensions, and trust gate;
+
+- =WorkspaceProjectVcsBackend= anchors the Rust-owned core backend to =Git=;
+
+- =WorkspaceProjectVcsExtension= records ecosystem VCS layers such as =jj=;
+
+- =WorkspaceProjectPolicyPlane= records whether behavior is Rust-core or
+  Scheme-extension policy;
+
+- =WorkspaceProjectRoot= records additional roots that may belong to the
+  project but do not define the repository identity;
+
+- =WorkspaceProjectGitHubOps= records an optional GitHub remote, canonical
+  =owner/repo= slug, and allowed operation families;
+
+- =WorkspaceProjectPersistence= records repository-local state persistence;
+
+- =WorkspaceProjectProfile= combines project id, repository boundary,
+  additional roots, optional Org metadata file, and persistence policy;
+
+- =WorkspaceCtx= may carry a project id so query, patch, view, validation, and
+  status calls stay project-scoped without deriving identity from cwd.
+
+=marlin-agent-protocol= may carry =RuntimeWorkspaceProject= as an imported
+runtime snapshot for cwd, sandbox, activation, and config-layer selection. That
+runtime snapshot is not the durable project profile.
+
+** Org Metadata Boundary
+
+Org metadata is a content file attached to the repository-backed project. It
+may store workspace memory, reviewer evidence, contract notes, release state,
+or agent metadata, but it must not replace the VCS repository boundary.
+
+Markdown is not a compatibility surface for project metadata. If metadata needs
+to be persisted for agent work, use Org-native files or typed Rust values that
+project to Org.
+
+** Runtime Boundary
+
+Runtime crates consume typed project facts and emit receipts:
+
+- active project import receipts record whether the requested project was
+  imported;
+
+- environment activation receipts record cwd, sandbox, activation plan, and
+  delta;
+
+- workspace protocol calls retain project identity through =WorkspaceCtx=.
+
+Runtime must not infer trust from path shape, cwd, shell state, or Org file
+presence. Trust gates come from typed project policy.
+
+** GitHub And jj Operations
+
+GitHub operations are project capabilities. They are not implied by the VCS
+extension: a =jj= project may still have a GitHub remote, and a Git project may
+choose not to enable GitHub operations.
+
+The protocol should represent GitHub operation families explicitly:
+
+- pull requests;
+
+- issues;
+
+- checks;
+
+- actions;
+
+- releases.
+
+The =jj-vcs/jj= repository is the motivating shape: Git remains the Rust-core
+operations foundation, =jj= is represented as a Scheme-policy VCS extension,
+and GitHub remains the collaboration and operations plane.
+
+** Acceptance Criteria
+
+- =marlin-workspace-protocol= exports typed project id, Git core backend,
+  repository, VCS extension, policy plane, root, trust, GitHub operations,
+  persistence, and optional Org metadata contracts.
+
+- =WorkspaceCtx= can carry project identity independently of runtime
+  activation.
+
+- Focused tests prove repository-first identity, Git core backend, =jj= as a
+  Scheme-policy VCS extension, optional Org metadata, GitHub operation
+  families, trust filtering, and project context.
+
+- RFC 40.70 and 40.80 cite this RFC when applying Codex workspace/project
+  lessons.

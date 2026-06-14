@@ -71,6 +71,29 @@ impl RuntimeConfigLayer {
     }
 }
 
+/// Stable identifier for one imported workspace project.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+pub struct RuntimeWorkspaceProjectId(String);
+
+impl RuntimeWorkspaceProjectId {
+    pub fn new(id: impl Into<String>) -> Self {
+        Self(id.into())
+    }
+
+    pub fn as_str(&self) -> &str {
+        self.0.as_str()
+    }
+}
+
+/// Trust decision attached to a runtime workspace project import.
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub enum RuntimeWorkspaceProjectTrust {
+    Trusted,
+    #[default]
+    ReviewRequired,
+    Denied,
+}
+
 /// Sandbox policy attached to runtime-owned execution.
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct RuntimeSandboxPolicy {
@@ -80,6 +103,174 @@ pub struct RuntimeSandboxPolicy {
     pub exclude_slash_tmp: bool,
 }
 
+/// One project imported into the runtime workspace.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct RuntimeWorkspaceProject {
+    pub id: RuntimeWorkspaceProjectId,
+    pub root: PathBuf,
+    #[serde(default)]
+    pub trust: RuntimeWorkspaceProjectTrust,
+    pub project_config: Option<PathBuf>,
+    pub activation: RuntimeEnvironmentActivationPolicy,
+    pub sandbox: RuntimeSandboxPolicy,
+}
+
+impl RuntimeWorkspaceProject {
+    pub fn new(id: impl Into<String>, root: impl Into<PathBuf>) -> Self {
+        Self {
+            id: RuntimeWorkspaceProjectId::new(id),
+            root: root.into(),
+            trust: RuntimeWorkspaceProjectTrust::ReviewRequired,
+            project_config: None,
+            activation: RuntimeEnvironmentActivationPolicy::disabled(),
+            sandbox: RuntimeSandboxPolicy::default(),
+        }
+    }
+
+    pub fn trusted(id: impl Into<String>, root: impl Into<PathBuf>) -> Self {
+        Self::new(id, root).with_trust(RuntimeWorkspaceProjectTrust::Trusted)
+    }
+
+    pub fn with_trust(mut self, trust: RuntimeWorkspaceProjectTrust) -> Self {
+        self.trust = trust;
+        self
+    }
+
+    pub fn with_project_config(mut self, dot_marlin_folder: impl Into<PathBuf>) -> Self {
+        self.project_config = Some(dot_marlin_folder.into());
+        self
+    }
+
+    pub fn with_activation(mut self, activation: RuntimeEnvironmentActivationPolicy) -> Self {
+        self.activation = activation;
+        self
+    }
+
+    pub fn with_sandbox(mut self, sandbox: RuntimeSandboxPolicy) -> Self {
+        self.sandbox = sandbox;
+        self
+    }
+
+    pub fn is_trusted(&self) -> bool {
+        self.trust == RuntimeWorkspaceProjectTrust::Trusted
+    }
+
+    pub fn uses_direnv(&self) -> bool {
+        matches!(
+            self.activation.activation,
+            RuntimeEnvironmentActivation::Direnv { .. }
+        )
+    }
+}
+
+/// Status for importing a workspace project into a resolved runtime environment.
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub enum RuntimeWorkspaceProjectImportStatus {
+    #[default]
+    Imported,
+    Rejected,
+}
+
+/// Native action executed while importing a workspace project.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum RuntimeWorkspaceProjectImportAction {
+    DirenvAllow,
+}
+
+/// Status for one native workspace project import action.
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub enum RuntimeWorkspaceProjectImportActionStatus {
+    #[default]
+    Applied,
+    Skipped,
+    Rejected,
+}
+
+/// Receipt for one native workspace project import action.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct RuntimeWorkspaceProjectImportActionReceipt {
+    pub action: RuntimeWorkspaceProjectImportAction,
+    pub status: RuntimeWorkspaceProjectImportActionStatus,
+    pub reason: Option<String>,
+}
+
+impl RuntimeWorkspaceProjectImportActionReceipt {
+    pub fn applied(action: RuntimeWorkspaceProjectImportAction) -> Self {
+        Self {
+            action,
+            status: RuntimeWorkspaceProjectImportActionStatus::Applied,
+            reason: None,
+        }
+    }
+
+    pub fn skipped(action: RuntimeWorkspaceProjectImportAction, reason: impl Into<String>) -> Self {
+        Self {
+            action,
+            status: RuntimeWorkspaceProjectImportActionStatus::Skipped,
+            reason: Some(reason.into()),
+        }
+    }
+
+    pub fn rejected(
+        action: RuntimeWorkspaceProjectImportAction,
+        reason: impl Into<String>,
+    ) -> Self {
+        Self {
+            action,
+            status: RuntimeWorkspaceProjectImportActionStatus::Rejected,
+            reason: Some(reason.into()),
+        }
+    }
+}
+
+/// Receipt recording whether a requested workspace project import was applied.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct RuntimeWorkspaceProjectImportReceipt {
+    pub project_id: RuntimeWorkspaceProjectId,
+    pub root: Option<PathBuf>,
+    pub status: RuntimeWorkspaceProjectImportStatus,
+    pub reason: Option<String>,
+    #[serde(default)]
+    pub actions: Vec<RuntimeWorkspaceProjectImportActionReceipt>,
+}
+
+impl RuntimeWorkspaceProjectImportReceipt {
+    pub fn imported(project: &RuntimeWorkspaceProject) -> Self {
+        Self::imported_with_actions(project, Vec::new())
+    }
+
+    pub fn imported_with_actions(
+        project: &RuntimeWorkspaceProject,
+        actions: Vec<RuntimeWorkspaceProjectImportActionReceipt>,
+    ) -> Self {
+        Self {
+            project_id: project.id.clone(),
+            root: Some(project.root.clone()),
+            status: RuntimeWorkspaceProjectImportStatus::Imported,
+            reason: None,
+            actions,
+        }
+    }
+
+    pub fn rejected(project_id: RuntimeWorkspaceProjectId, reason: impl Into<String>) -> Self {
+        Self::rejected_with_actions(project_id, reason, Vec::new())
+    }
+
+    pub fn rejected_with_actions(
+        project_id: RuntimeWorkspaceProjectId,
+        reason: impl Into<String>,
+        actions: Vec<RuntimeWorkspaceProjectImportActionReceipt>,
+    ) -> Self {
+        Self {
+            project_id,
+            root: None,
+            status: RuntimeWorkspaceProjectImportStatus::Rejected,
+            reason: Some(reason.into()),
+            actions,
+        }
+    }
+}
+
 /// Explicit environment activation policy for project shell state.
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct RuntimeEnvironmentActivationPolicy {
@@ -87,6 +278,8 @@ pub struct RuntimeEnvironmentActivationPolicy {
     pub activation: RuntimeEnvironmentActivation,
     #[serde(default)]
     pub shell: RuntimeShellIsolationPolicy,
+    #[serde(default)]
+    pub preflight_actions: Vec<RuntimeEnvironmentActivationAction>,
 }
 
 impl RuntimeEnvironmentActivationPolicy {
@@ -101,6 +294,7 @@ impl RuntimeEnvironmentActivationPolicy {
                 capture_delta: true,
             },
             shell: RuntimeShellIsolationPolicy::default(),
+            preflight_actions: Vec::new(),
         }
     }
 
@@ -111,11 +305,18 @@ impl RuntimeEnvironmentActivationPolicy {
                 capture_delta: true,
             },
             shell: RuntimeShellIsolationPolicy::default(),
+            preflight_actions: Vec::new(),
         }
     }
 
     pub fn with_shell(mut self, shell: RuntimeShellIsolationPolicy) -> Self {
         self.shell = shell;
+        self
+    }
+
+    pub fn with_direnv_reload(mut self) -> Self {
+        self.preflight_actions
+            .push(RuntimeEnvironmentActivationAction::DirenvReload);
         self
     }
 }
@@ -136,6 +337,47 @@ pub enum RuntimeEnvironmentActivation {
 pub enum RuntimeEnvrcPolicy {
     Project,
     Explicit { file: PathBuf },
+}
+
+/// Runtime environment activation action executed by the native activator.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum RuntimeEnvironmentActivationAction {
+    DirenvReload,
+    DirenvExportJson,
+}
+
+/// Status for one native activation action.
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub enum RuntimeEnvironmentActivationActionStatus {
+    #[default]
+    Applied,
+    Rejected,
+}
+
+/// Receipt for one native activation action.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct RuntimeEnvironmentActivationActionReceipt {
+    pub action: RuntimeEnvironmentActivationAction,
+    pub status: RuntimeEnvironmentActivationActionStatus,
+    pub reason: Option<String>,
+}
+
+impl RuntimeEnvironmentActivationActionReceipt {
+    pub fn applied(action: RuntimeEnvironmentActivationAction) -> Self {
+        Self {
+            action,
+            status: RuntimeEnvironmentActivationActionStatus::Applied,
+            reason: None,
+        }
+    }
+
+    pub fn rejected(action: RuntimeEnvironmentActivationAction, reason: impl Into<String>) -> Self {
+        Self {
+            action,
+            status: RuntimeEnvironmentActivationActionStatus::Rejected,
+            reason: Some(reason.into()),
+        }
+    }
 }
 
 /// Shell environment isolation applied around activation and process execution.
@@ -235,6 +477,8 @@ pub struct RuntimeEnvironmentActivationReceipt {
     pub status: RuntimeEnvironmentActivationStatus,
     #[serde(default)]
     pub delta: RuntimeEnvironmentDelta,
+    #[serde(default)]
+    pub actions: Vec<RuntimeEnvironmentActivationActionReceipt>,
     pub reason: Option<String>,
 }
 
@@ -245,6 +489,7 @@ impl RuntimeEnvironmentActivationReceipt {
             shell: policy.shell.clone(),
             status: RuntimeEnvironmentActivationStatus::Disabled,
             delta: RuntimeEnvironmentDelta::default(),
+            actions: Vec::new(),
             reason: None,
         }
     }
@@ -255,6 +500,7 @@ impl RuntimeEnvironmentActivationReceipt {
             shell: policy.shell.clone(),
             status: RuntimeEnvironmentActivationStatus::Planned,
             delta: RuntimeEnvironmentDelta::default(),
+            actions: Vec::new(),
             reason: None,
         }
     }
@@ -268,6 +514,22 @@ impl RuntimeEnvironmentActivationReceipt {
             shell: policy.shell.clone(),
             status: RuntimeEnvironmentActivationStatus::Applied,
             delta,
+            actions: Vec::new(),
+            reason: None,
+        }
+    }
+
+    pub fn applied_with_actions(
+        policy: &RuntimeEnvironmentActivationPolicy,
+        delta: RuntimeEnvironmentDelta,
+        actions: Vec<RuntimeEnvironmentActivationActionReceipt>,
+    ) -> Self {
+        Self {
+            activation: policy.activation.clone(),
+            shell: policy.shell.clone(),
+            status: RuntimeEnvironmentActivationStatus::Applied,
+            delta,
+            actions,
             reason: None,
         }
     }
@@ -281,6 +543,22 @@ impl RuntimeEnvironmentActivationReceipt {
             shell: policy.shell.clone(),
             status: RuntimeEnvironmentActivationStatus::Rejected,
             delta: RuntimeEnvironmentDelta::default(),
+            actions: Vec::new(),
+            reason: Some(reason.into()),
+        }
+    }
+
+    pub fn rejected_with_actions(
+        policy: &RuntimeEnvironmentActivationPolicy,
+        reason: impl Into<String>,
+        actions: Vec<RuntimeEnvironmentActivationActionReceipt>,
+    ) -> Self {
+        Self {
+            activation: policy.activation.clone(),
+            shell: policy.shell.clone(),
+            status: RuntimeEnvironmentActivationStatus::Rejected,
+            delta: RuntimeEnvironmentDelta::default(),
+            actions,
             reason: Some(reason.into()),
         }
     }
@@ -295,6 +573,10 @@ pub struct RuntimeEnvironment {
     pub config_layers: Vec<RuntimeConfigLayer>,
     #[serde(default)]
     pub activation: RuntimeEnvironmentActivationPolicy,
+    #[serde(default)]
+    pub workspace_projects: Vec<RuntimeWorkspaceProject>,
+    #[serde(default)]
+    pub active_workspace_project: Option<RuntimeWorkspaceProjectId>,
 }
 
 impl RuntimeEnvironment {
@@ -322,6 +604,16 @@ impl RuntimeEnvironment {
         self.activation = activation;
         self
     }
+
+    pub fn with_workspace_project(mut self, project: RuntimeWorkspaceProject) -> Self {
+        self.workspace_projects.push(project);
+        self
+    }
+
+    pub fn with_active_workspace_project(mut self, project_id: impl Into<String>) -> Self {
+        self.active_workspace_project = Some(RuntimeWorkspaceProjectId::new(project_id));
+        self
+    }
 }
 
 /// Resolved runtime environment and the receipt for its activation policy.
@@ -329,4 +621,6 @@ impl RuntimeEnvironment {
 pub struct RuntimeEnvironmentResolution {
     pub environment: RuntimeEnvironment,
     pub activation_receipt: RuntimeEnvironmentActivationReceipt,
+    #[serde(default)]
+    pub project_import_receipts: Vec<RuntimeWorkspaceProjectImportReceipt>,
 }

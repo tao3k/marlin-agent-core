@@ -1,11 +1,7 @@
-use std::{
-    collections::BTreeMap,
-    path::{Path, PathBuf},
-};
+use std::{collections::BTreeMap, path::PathBuf};
 
-use async_trait::async_trait;
 use marlin_agent_environment::{
-    DirenvCommandRunner, RuntimeEnvironmentActivationError, RuntimeEnvironmentActivationRequest,
+    RuntimeEnvironmentActivationError, RuntimeEnvironmentActivationRequest,
     RuntimeEnvironmentActivator,
 };
 use marlin_agent_protocol::{
@@ -13,37 +9,7 @@ use marlin_agent_protocol::{
     RuntimeShellIsolationPolicy,
 };
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-enum FakeDirenvRunner {
-    Success {
-        cwd: PathBuf,
-        environment: BTreeMap<String, String>,
-        json: String,
-    },
-    Error(RuntimeEnvironmentActivationError),
-}
-
-#[async_trait]
-impl DirenvCommandRunner for FakeDirenvRunner {
-    async fn export_json(
-        &self,
-        cwd: &Path,
-        environment: &BTreeMap<String, String>,
-    ) -> Result<String, RuntimeEnvironmentActivationError> {
-        match self {
-            Self::Success {
-                cwd: expected_cwd,
-                environment: expected_environment,
-                json,
-            } => {
-                assert_eq!(cwd, expected_cwd.as_path());
-                assert_eq!(environment, expected_environment);
-                Ok(json.clone())
-            }
-            Self::Error(error) => Err(error.clone()),
-        }
-    }
-}
+use super::FakeDirenvRunner;
 
 #[tokio::test]
 async fn activator_applies_direnv_json_and_records_name_only_delta() {

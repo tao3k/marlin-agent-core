@@ -3,12 +3,17 @@
 #![forbid(unsafe_code)]
 
 mod activation;
+mod import;
 mod resolver;
 
 pub use activation::{
     DirenvCommandRunner, ProcessDirenvCommandRunner, RuntimeEnvironmentActivationError,
     RuntimeEnvironmentActivationRequest, RuntimeEnvironmentActivationResult,
     RuntimeEnvironmentActivator,
+};
+pub use import::{
+    RuntimeWorkspaceProjectImportRequest, RuntimeWorkspaceProjectImportResult,
+    RuntimeWorkspaceProjectImporter,
 };
 pub use resolver::{
     PROJECT_CONFIG_PRECEDENCE, RuntimeEnvironmentError, RuntimeEnvironmentRequest,

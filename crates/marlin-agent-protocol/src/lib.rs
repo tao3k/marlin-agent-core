@@ -67,10 +67,15 @@ pub use model_route::{
 };
 pub use runtime_environment::{
     RuntimeConfigLayer, RuntimeConfigLayerSource, RuntimeEnvironment, RuntimeEnvironmentActivation,
-    RuntimeEnvironmentActivationPolicy, RuntimeEnvironmentActivationReceipt,
-    RuntimeEnvironmentActivationStatus, RuntimeEnvironmentDelta, RuntimeEnvironmentResolution,
-    RuntimeEnvrcPolicy, RuntimeHome, RuntimeHomeSource, RuntimeSandboxPolicy,
-    RuntimeShellIsolationPolicy,
+    RuntimeEnvironmentActivationAction, RuntimeEnvironmentActivationActionReceipt,
+    RuntimeEnvironmentActivationActionStatus, RuntimeEnvironmentActivationPolicy,
+    RuntimeEnvironmentActivationReceipt, RuntimeEnvironmentActivationStatus,
+    RuntimeEnvironmentDelta, RuntimeEnvironmentResolution, RuntimeEnvrcPolicy, RuntimeHome,
+    RuntimeHomeSource, RuntimeSandboxPolicy, RuntimeShellIsolationPolicy, RuntimeWorkspaceProject,
+    RuntimeWorkspaceProjectId, RuntimeWorkspaceProjectImportAction,
+    RuntimeWorkspaceProjectImportActionReceipt, RuntimeWorkspaceProjectImportActionStatus,
+    RuntimeWorkspaceProjectImportReceipt, RuntimeWorkspaceProjectImportStatus,
+    RuntimeWorkspaceProjectTrust,
 };
 pub use scenario::{
     AGENT_SCENARIO_CONTRACT_SCHEMA_ID, AgentScenario, AgentScenarioContract, AgentScenarioStep,

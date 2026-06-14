@@ -2,10 +2,18 @@
 
 mod context;
 mod error;
+mod project;
 mod workspace;
 
 pub use context::WorkspaceCtx;
 pub use error::{WorkspaceError, WorkspaceResult};
+pub use project::{
+    WorkspaceProjectGitHubOperation, WorkspaceProjectGitHubOps, WorkspaceProjectGitHubRepository,
+    WorkspaceProjectId, WorkspaceProjectPersistence, WorkspaceProjectPolicyPlane,
+    WorkspaceProjectProfile, WorkspaceProjectRepository, WorkspaceProjectRoot,
+    WorkspaceProjectTrust, WorkspaceProjectVcsBackend, WorkspaceProjectVcsExtension,
+    WorkspaceProjectVcsExtensionKind,
+};
 pub use workspace::AgentWorkspace;
 
 pub use marlin_org_model::{

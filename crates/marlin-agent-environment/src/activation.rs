@@ -7,7 +7,8 @@ use std::{
 
 use async_trait::async_trait;
 use marlin_agent_protocol::{
-    RuntimeEnvironment, RuntimeEnvironmentActivation, RuntimeEnvironmentActivationPolicy,
+    RuntimeEnvironment, RuntimeEnvironmentActivation, RuntimeEnvironmentActivationAction,
+    RuntimeEnvironmentActivationActionReceipt, RuntimeEnvironmentActivationPolicy,
     RuntimeEnvironmentActivationReceipt, RuntimeEnvironmentDelta, RuntimeEnvrcPolicy,
     RuntimeShellIsolationPolicy,
 };
@@ -43,7 +44,23 @@ pub struct RuntimeEnvironmentActivationResult {
 
 /// Runner used by the activator to execute `direnv export json`.
 #[async_trait]
-pub trait DirenvCommandRunner {
+pub trait DirenvCommandRunner: Send + Sync {
+    async fn allow(
+        &self,
+        _cwd: &Path,
+        _environment: &BTreeMap<String, String>,
+    ) -> Result<(), RuntimeEnvironmentActivationError> {
+        Ok(())
+    }
+
+    async fn reload(
+        &self,
+        _cwd: &Path,
+        _environment: &BTreeMap<String, String>,
+    ) -> Result<(), RuntimeEnvironmentActivationError> {
+        Ok(())
+    }
+
     async fn export_json(
         &self,
         cwd: &Path,
@@ -57,16 +74,29 @@ pub struct ProcessDirenvCommandRunner;
 
 #[async_trait]
 impl DirenvCommandRunner for ProcessDirenvCommandRunner {
+    async fn allow(
+        &self,
+        cwd: &Path,
+        environment: &BTreeMap<String, String>,
+    ) -> Result<(), RuntimeEnvironmentActivationError> {
+        run_direnv_command(cwd, environment, &["allow"]).await
+    }
+
+    async fn reload(
+        &self,
+        cwd: &Path,
+        environment: &BTreeMap<String, String>,
+    ) -> Result<(), RuntimeEnvironmentActivationError> {
+        run_direnv_command(cwd, environment, &["reload"]).await
+    }
+
     async fn export_json(
         &self,
         cwd: &Path,
         environment: &BTreeMap<String, String>,
     ) -> Result<String, RuntimeEnvironmentActivationError> {
-        let output = Command::new("direnv")
+        let output = direnv_command(cwd, environment)
             .args(["export", "json"])
-            .current_dir(cwd)
-            .env_clear()
-            .envs(environment)
             .output()
             .await
             .map_err(|error| RuntimeEnvironmentActivationError::CommandIo {
@@ -85,6 +115,34 @@ impl DirenvCommandRunner for ProcessDirenvCommandRunner {
             }
         })
     }
+}
+
+async fn run_direnv_command(
+    cwd: &Path,
+    environment: &BTreeMap<String, String>,
+    args: &[&str],
+) -> Result<(), RuntimeEnvironmentActivationError> {
+    let output = direnv_command(cwd, environment)
+        .args(args)
+        .output()
+        .await
+        .map_err(|error| RuntimeEnvironmentActivationError::CommandIo {
+            message: error.to_string(),
+        })?;
+
+    if !output.status.success() {
+        return Err(RuntimeEnvironmentActivationError::CommandFailed {
+            status: output.status.code(),
+        });
+    }
+
+    Ok(())
+}
+
+fn direnv_command(cwd: &Path, environment: &BTreeMap<String, String>) -> Command {
+    let mut command = Command::new("direnv");
+    command.current_dir(cwd).env_clear().envs(environment);
+    command
 }
 
 /// Applies activation policy with an injectable command runner.
@@ -147,14 +205,47 @@ where
             Err(error) => return rejected(request.base_environment, policy, error),
         };
         let command_environment = command_environment(&request.base_environment, &policy.shell);
+        let mut actions = Vec::new();
+
+        for action in &policy.preflight_actions {
+            let result = match action {
+                RuntimeEnvironmentActivationAction::DirenvReload => {
+                    self.runner.reload(&cwd, &command_environment).await
+                }
+                RuntimeEnvironmentActivationAction::DirenvExportJson => Ok(()),
+            };
+            if let Err(error) = result {
+                actions.push(RuntimeEnvironmentActivationActionReceipt::rejected(
+                    action.clone(),
+                    error.to_string(),
+                ));
+                return rejected_with_actions(request.base_environment, policy, error, actions);
+            }
+            actions.push(RuntimeEnvironmentActivationActionReceipt::applied(
+                action.clone(),
+            ));
+        }
 
         let json = match self.runner.export_json(&cwd, &command_environment).await {
-            Ok(json) => json,
-            Err(error) => return rejected(request.base_environment, policy, error),
+            Ok(json) => {
+                actions.push(RuntimeEnvironmentActivationActionReceipt::applied(
+                    RuntimeEnvironmentActivationAction::DirenvExportJson,
+                ));
+                json
+            }
+            Err(error) => {
+                actions.push(RuntimeEnvironmentActivationActionReceipt::rejected(
+                    RuntimeEnvironmentActivationAction::DirenvExportJson,
+                    error.to_string(),
+                ));
+                return rejected_with_actions(request.base_environment, policy, error, actions);
+            }
         };
         let activated = match apply_direnv_json(&request.base_environment, &json) {
             Ok(activated) => activated,
-            Err(error) => return rejected(request.base_environment, policy, error),
+            Err(error) => {
+                return rejected_with_actions(request.base_environment, policy, error, actions);
+            }
         };
         let delta = if capture_delta {
             RuntimeEnvironmentDelta::from_snapshots(&request.base_environment, &activated)
@@ -164,7 +255,9 @@ where
 
         RuntimeEnvironmentActivationResult {
             environment: activated,
-            receipt: RuntimeEnvironmentActivationReceipt::applied(policy, delta),
+            receipt: RuntimeEnvironmentActivationReceipt::applied_with_actions(
+                policy, delta, actions,
+            ),
         }
     }
 }
@@ -203,7 +296,23 @@ fn rejected(
     }
 }
 
-fn direnv_cwd(
+fn rejected_with_actions(
+    environment: BTreeMap<String, String>,
+    policy: &RuntimeEnvironmentActivationPolicy,
+    error: RuntimeEnvironmentActivationError,
+    actions: Vec<RuntimeEnvironmentActivationActionReceipt>,
+) -> RuntimeEnvironmentActivationResult {
+    RuntimeEnvironmentActivationResult {
+        environment,
+        receipt: RuntimeEnvironmentActivationReceipt::rejected_with_actions(
+            policy,
+            error.to_string(),
+            actions,
+        ),
+    }
+}
+
+pub(crate) fn direnv_cwd(
     environment: &RuntimeEnvironment,
     envrc: &RuntimeEnvrcPolicy,
 ) -> Result<PathBuf, RuntimeEnvironmentActivationError> {
@@ -227,7 +336,7 @@ fn direnv_cwd(
     }
 }
 
-fn command_environment(
+pub(crate) fn command_environment(
     base: &BTreeMap<String, String>,
     shell: &RuntimeShellIsolationPolicy,
 ) -> BTreeMap<String, String> {

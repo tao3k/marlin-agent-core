@@ -6,6 +6,8 @@ use marlin_agent_protocol::{
     RuntimeConfigLayer, RuntimeConfigLayerSource, RuntimeEnvironment, RuntimeEnvironmentActivation,
     RuntimeEnvironmentActivationPolicy, RuntimeEnvironmentActivationReceipt,
     RuntimeEnvironmentResolution, RuntimeHome, RuntimeHomeSource, RuntimeSandboxPolicy,
+    RuntimeWorkspaceProject, RuntimeWorkspaceProjectId, RuntimeWorkspaceProjectImportReceipt,
+    RuntimeWorkspaceProjectTrust,
 };
 use thiserror::Error;
 
@@ -47,6 +49,7 @@ impl RuntimeEnvironmentResolver {
         let mut environment = RuntimeEnvironment::default()
             .with_sandbox(request.sandbox.clone())
             .with_activation(request.activation.clone());
+        let mut project_import_receipts = Vec::new();
 
         if let Some(home) = request.resolve_home() {
             environment = environment.with_home(home);
@@ -80,6 +83,46 @@ impl RuntimeEnvironmentResolver {
             ));
         }
 
+        for project in request.workspace_projects.clone() {
+            if project.is_trusted() {
+                project_import_receipts
+                    .push(RuntimeWorkspaceProjectImportReceipt::imported(&project));
+                environment.workspace_projects.push(project);
+            } else {
+                let reason = project_trust_rejection_reason(&project.trust);
+                project_import_receipts.push(RuntimeWorkspaceProjectImportReceipt::rejected(
+                    project.id, reason,
+                ));
+            }
+        }
+        if let Some(project_id) = request.active_workspace_project.clone() {
+            let active_project = environment
+                .workspace_projects
+                .iter()
+                .find(|project| project.id.as_str() == project_id.as_str())
+                .cloned();
+            match active_project {
+                Some(project) => {
+                    environment.active_workspace_project = Some(project_id.clone());
+                    environment.cwd = Some(project.root.clone());
+                    environment.sandbox = project.sandbox.clone();
+                    environment.activation = project.activation.clone();
+                    if let Some(dot_marlin_folder) = project.project_config.clone() {
+                        environment = environment.with_config_layer(RuntimeConfigLayer::new(
+                            RuntimeConfigLayerSource::Project { dot_marlin_folder },
+                            PROJECT_CONFIG_PRECEDENCE,
+                        ));
+                    }
+                }
+                None => {
+                    project_import_receipts.push(RuntimeWorkspaceProjectImportReceipt::rejected(
+                        project_id,
+                        "active workspace project was not imported",
+                    ));
+                }
+            }
+        }
+
         if request.session_flags {
             environment = environment.with_config_layer(RuntimeConfigLayer::new(
                 RuntimeConfigLayerSource::SessionFlags,
@@ -93,6 +136,7 @@ impl RuntimeEnvironmentResolver {
         RuntimeEnvironmentResolution {
             environment,
             activation_receipt,
+            project_import_receipts,
         }
     }
 
@@ -148,6 +192,16 @@ impl RuntimeEnvironmentResolver {
     }
 }
 
+fn project_trust_rejection_reason(trust: &RuntimeWorkspaceProjectTrust) -> &'static str {
+    match trust {
+        RuntimeWorkspaceProjectTrust::Trusted => "workspace project is trusted",
+        RuntimeWorkspaceProjectTrust::ReviewRequired => {
+            "workspace project requires trust review before import"
+        }
+        RuntimeWorkspaceProjectTrust::Denied => "workspace project trust was denied",
+    }
+}
+
 fn activation_receipt_for_policy(
     policy: &RuntimeEnvironmentActivationPolicy,
 ) -> RuntimeEnvironmentActivationReceipt {
@@ -182,6 +236,10 @@ pub struct RuntimeEnvironmentRequest {
     pub user_config: Option<PathBuf>,
     /// Optional project `.marlin` config folder.
     pub project_config: Option<PathBuf>,
+    /// Projects imported into this runtime workspace.
+    pub workspace_projects: Vec<RuntimeWorkspaceProject>,
+    /// Project selected as the active runtime project.
+    pub active_workspace_project: Option<RuntimeWorkspaceProjectId>,
     /// Whether explicit session flags should be represented as the top config layer.
     pub session_flags: bool,
 }
@@ -238,6 +296,18 @@ impl RuntimeEnvironmentRequest {
     /// Adds a project `.marlin` config folder.
     pub fn with_project_config(mut self, dot_marlin_folder: impl Into<PathBuf>) -> Self {
         self.project_config = Some(dot_marlin_folder.into());
+        self
+    }
+
+    /// Imports a project into the runtime workspace.
+    pub fn with_workspace_project(mut self, project: RuntimeWorkspaceProject) -> Self {
+        self.workspace_projects.push(project);
+        self
+    }
+
+    /// Selects one imported workspace project as the active runtime project.
+    pub fn with_active_workspace_project(mut self, project_id: impl Into<String>) -> Self {
+        self.active_workspace_project = Some(RuntimeWorkspaceProjectId::new(project_id));
         self
     }
 

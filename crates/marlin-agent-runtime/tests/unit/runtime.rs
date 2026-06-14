@@ -1,6 +1,9 @@
 use std::sync::Arc;
 
-use marlin_agent_protocol::{RuntimeHome, RuntimeSandboxPolicy};
+use marlin_agent_environment::{RuntimeEnvironmentRequest, RuntimeEnvironmentResolver};
+use marlin_agent_protocol::{
+    RuntimeEnvironmentActivationPolicy, RuntimeHome, RuntimeSandboxPolicy, RuntimeWorkspaceProject,
+};
 use marlin_agent_runtime::{
     CancellationToken, HookRuntime, RuntimeContext, RuntimeEnvironment, RuntimeExecutionIdentity,
     RuntimeFuture, SubAgentRuntime, TokioAgentRuntime, observability,
@@ -145,6 +148,48 @@ async fn sub_agent_can_run_with_child_environment() {
 
     assert_eq!(runtime.environment(), &parent_environment);
     assert_eq!(output, child_environment);
+}
+
+#[tokio::test]
+async fn runtime_runs_with_resolved_active_workspace_project_environment() {
+    let activation = RuntimeEnvironmentActivationPolicy::direnv_project().with_direnv_reload();
+    let project = RuntimeWorkspaceProject::trusted("main", "/tmp/project")
+        .with_project_config("/tmp/project/.marlin")
+        .with_activation(activation.clone())
+        .with_sandbox(RuntimeSandboxPolicy {
+            writable_roots: vec!["/tmp/project".into()],
+            network_access: true,
+            exclude_tmpdir_env_var: false,
+            exclude_slash_tmp: true,
+        });
+    let resolution = RuntimeEnvironmentResolver::new().resolve_with_receipt(
+        RuntimeEnvironmentRequest::default()
+            .with_custom_home("/tmp/marlin-home")
+            .with_workspace_project(project)
+            .with_active_workspace_project("main"),
+    );
+    let environment = resolution.environment;
+    let (runtime, _events) =
+        TokioAgentRuntime::with_environment(4, CancellationToken::new(), environment.clone());
+
+    let output = runtime
+        .spawn_sub_agent(Arc::new(EnvironmentEchoSubAgent), ())
+        .join()
+        .await
+        .expect("sub-agent task should finish");
+    let project_root = std::path::PathBuf::from("/tmp/project");
+
+    assert_eq!(runtime.environment().cwd.as_ref(), Some(&project_root));
+    assert_eq!(runtime.environment().activation, activation);
+    assert_eq!(
+        runtime
+            .environment()
+            .active_workspace_project
+            .as_ref()
+            .map(|project_id| project_id.as_str()),
+        Some("main")
+    );
+    assert_eq!(output, environment);
 }
 
 #[tokio::test]
