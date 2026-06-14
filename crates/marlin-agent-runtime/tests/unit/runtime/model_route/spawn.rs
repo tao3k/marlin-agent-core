@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use marlin_agent_protocol::{
     ModelGateway, ModelRouteRequest, RuntimeEnvironmentActivation,
-    RuntimeEnvironmentActivationReceipt, RuntimeEnvironmentActivationStatus, RuntimeEnvrcPolicy,
-    RuntimeShellIsolationPolicy, SubAgentSpawnConfigSet, SubAgentSpawnProfileId,
+    RuntimeEnvironmentActivationStatus, RuntimeEnvrcPolicy, RuntimeShellIsolationPolicy,
+    SubAgentSpawnConfigSet, SubAgentSpawnProfileId,
 };
 use marlin_agent_runtime::{
     CancellationToken, CompiledModelRouteResolver, ContextNamespace, RuntimeContext,
@@ -69,6 +69,11 @@ async fn routed_sub_agent_spawn_captures_route_session_provider_and_environment_
     let decision = resolver
         .resolve(fixture.route_request())
         .expect("sub-agent route resolves");
+    let profile_config = SubAgentSpawnConfigSet::from_toml_str(ROUTED_SUB_AGENT_PROFILE_TOML)
+        .expect("sub-agent profile TOML compiles");
+    let reviewer_profile = profile_config
+        .profile(&SubAgentSpawnProfileId::from("reviewer"))
+        .expect("reviewer profile exists");
     let parent_session = fixture.session_fixture().parent_session().clone();
     let (runtime, _events) = TokioAgentRuntime::with_session(
         4,
@@ -77,13 +82,12 @@ async fn routed_sub_agent_spawn_captures_route_session_provider_and_environment_
         parent_session,
     );
 
-    let (task, binding) = runtime.spawn_sub_agent_with_model_route(
+    let (task, binding) = runtime.spawn_sub_agent_with_model_route_profile(
         Arc::new(ModelRouteSessionEchoSubAgent),
         (),
         &decision,
+        reviewer_profile,
     );
-    let binding =
-        binding.with_environment_activation_receipt(reviewer_profile_environment_receipt());
     let output = task.join().await.expect("routed sub-agent should finish");
     let gateway = ScriptedModelGateway::completion_failure("spawn e2e no-live-llm");
     let gateway_error = gateway
@@ -226,18 +230,4 @@ fn resolver_from_fixture(
 ) -> CompiledModelRouteResolver {
     CompiledModelRouteResolver::new(vec![fixture.route_rule().clone()])
         .expect("fixture route rule compiles")
-}
-
-fn reviewer_profile_environment_receipt() -> RuntimeEnvironmentActivationReceipt {
-    let profile_config = SubAgentSpawnConfigSet::from_toml_str(ROUTED_SUB_AGENT_PROFILE_TOML)
-        .expect("sub-agent profile TOML compiles");
-    let reviewer_profile = profile_config
-        .profile(&SubAgentSpawnProfileId::from("reviewer"))
-        .expect("reviewer profile exists");
-    let environment = reviewer_profile
-        .environment_activation
-        .as_ref()
-        .expect("reviewer profile carries environment activation");
-
-    RuntimeEnvironmentActivationReceipt::planned(environment)
 }

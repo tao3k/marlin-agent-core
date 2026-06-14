@@ -4,7 +4,8 @@ use std::sync::Arc;
 
 use marlin_agent_protocol::{
     ModelContextForkMode, ModelRouteDecision, ModelRouteReceipt, ModelRouteRequest,
-    ModelSessionLifecycle, RuntimeEnvironmentActivationReceipt,
+    ModelSessionLifecycle, RuntimeEnvironmentActivationPolicy, RuntimeEnvironmentActivationReceipt,
+    SubAgentSpawnConfig,
 };
 use marlin_agent_sessions::{
     AgentSessionContext, ContextNamespace, ContextVisibility, SessionId, SessionIsolationReceipt,
@@ -56,6 +57,25 @@ impl ModelRouteSessionBinding {
         self
     }
 
+    pub fn with_environment_activation_policy(
+        self,
+        activation: &RuntimeEnvironmentActivationPolicy,
+    ) -> Self {
+        self.with_environment_activation_receipt(RuntimeEnvironmentActivationReceipt::planned(
+            activation,
+        ))
+    }
+
+    pub fn with_optional_environment_activation_policy(
+        self,
+        activation: Option<&RuntimeEnvironmentActivationPolicy>,
+    ) -> Self {
+        match activation {
+            Some(activation) => self.with_environment_activation_policy(activation),
+            None => self,
+        }
+    }
+
     pub fn child_session_id(&self) -> &SessionId {
         self.isolation_receipt.child_session_id()
     }
@@ -78,6 +98,21 @@ impl TokioAgentRuntime {
         )
     }
 
+    pub fn child_runtime_for_model_route_profile(
+        &self,
+        decision: &ModelRouteDecision,
+        kind: SessionKind,
+        profile: &SubAgentSpawnConfig,
+    ) -> (Self, ModelRouteSessionBinding) {
+        let (runtime, binding) = self.child_runtime_for_model_route(decision, kind);
+        (
+            runtime,
+            binding.with_optional_environment_activation_policy(
+                profile.environment_activation.as_ref(),
+            ),
+        )
+    }
+
     pub fn spawn_sub_agent_with_model_route<A>(
         &self,
         sub_agent: Arc<A>,
@@ -89,6 +124,21 @@ impl TokioAgentRuntime {
     {
         let (runtime, binding) =
             self.child_runtime_for_model_route(decision, SessionKind::SubAgent);
+        (runtime.spawn_sub_agent(sub_agent, input), binding)
+    }
+
+    pub fn spawn_sub_agent_with_model_route_profile<A>(
+        &self,
+        sub_agent: Arc<A>,
+        input: A::Input,
+        decision: &ModelRouteDecision,
+        profile: &SubAgentSpawnConfig,
+    ) -> (RuntimeTask<A::Output>, ModelRouteSessionBinding)
+    where
+        A: SubAgentRuntime,
+    {
+        let (runtime, binding) =
+            self.child_runtime_for_model_route_profile(decision, SessionKind::SubAgent, profile);
         (runtime.spawn_sub_agent(sub_agent, input), binding)
     }
 
