@@ -125,6 +125,15 @@ validated workspace records and dispatch receipts downstream.
 - What validation level should be required before promoting this RFC from draft
   to accepted?
 
+** Progress Control
+
+| Track | Owner | Current Evidence | Next Gate |
+| Parser authority | =marlin-org-workspace= | =tao3k/orgize= remains the parser authority, and no =rowan= dependency owns Org structure. | Keep parser-owned facts in orgize and reject parallel AST shims. |
+| Query, patch, and view | =marlin-org-workspace=, =marlin-org-patch= | Source-aware query, patch planning, patch receipts, and view rendering have dedicated crates. | Run focused Org crate tests and mark covered acceptance rows done. |
+| Persistence and workflow | =marlin-org-store=, =marlin-org-workflow= | 40.20 accepted local source persistence, dry-run receipts, stale-hash rejection, and workflow commits. | Leave remote revision ids as explicit follow-up. |
+| Memory integration | =marlin-org-memory= | Memory workspace can record release topology and release gate receipts. | Tie contract discovery and memory batch loading to 40.30 closeout. |
+| Documentation control | docs | Johnny Decimal RFC and architecture docs are indexed under =docs/=. | Keep this RFC index updated with every implementation change. |
+
 ** Acceptance Criteria
 - All crates stay on workspace-managed dependencies and Rust edition 2024.
 - =tao3k/orgize= remains the Org parser authority; no direct =rowan= dependency

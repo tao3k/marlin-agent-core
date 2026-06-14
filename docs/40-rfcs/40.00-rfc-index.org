@@ -24,15 +24,16 @@ accepted decisions or crate-level implementation details.
 |------+------|------+----------------|
 | Accepted Baseline | 40.20, 40.40, 40.50 | Keep accepted behavior stable while active RFCs build on it. | New changes cite these accepted boundaries or create follow-up RFCs. |
 | Active Build | 40.10, 40.30, 40.60, 40.90 | Convert remaining open items into typed policy, fixtures, and tests. | Keep each change tied to one owner crate and one focused gate. |
+| Native Performance | 30.80, 40.90 | Keep complex policy in Scheme while preserving typed Rust/native ABI boundaries. | Run linked selector benchmark under Linux CI and compare policy-count scaling. |
 | Governance | 40.70, 40.80, 40.95 | Prevent dependency and ownership drift while accelerating. | Every new cross-crate behavior cites the narrowest RFC. |
 
 ** Progress Rules
 
 - RFC status values are =Active=, =Closeout-ready=, =Governance=, or =Accepted=.
 
-- A RFC becomes =Closeout-ready= only when implementation evidence and
-  verification commands exist in repository-local tests or documented release
-  gates.
+- A RFC becomes =Closeout-ready= only when implementation evidence, a focused
+  validation gate, and verification commands exist in repository-local tests or
+  documented release gates.
 
 - A RFC becomes =Accepted= only after its open questions are either resolved or
   explicitly moved to a follow-up RFC or decision document.

@@ -222,7 +222,7 @@ prove that a command used the intended model and environment.
 
 | Track | Owner | Current Evidence | Next Gate |
 |-------+-------+------------------+-----------|
-| Route Protocol | =marlin-agent-protocol= | Model endpoint identity, command glob dimensions, and route receipts have protocol tests. | Add schema/contract generation when =schemars= lands. |
+| Route Protocol | =marlin-agent-protocol= | Model endpoint identity, GPT-family OpenAI model names, command glob dimensions, and route receipts have protocol tests. | Add schema/contract generation when =schemars= lands. |
 | Route Runtime | =marlin-agent-runtime= | Runtime resolver covers priority, tie-breaking, native projection, provider-neutral gateway completion, and create/reuse/reject route-session matrix coverage. | Extend matrix into an end-to-end receipt-family scenario. |
 | Session Binding | =marlin-agent-runtime=, =marlin-agent-sessions= | Requested session ids, inherited/forked/isolated context policies, and bounded history are tested. | Align with 40.60 profile compiler output. |
 | Environment | =marlin-agent-environment= | =direnv= activation policy, explicit envrc, custom home, and environment delta receipts are tested. | Profile loader emits environment activation policy as typed data. |
