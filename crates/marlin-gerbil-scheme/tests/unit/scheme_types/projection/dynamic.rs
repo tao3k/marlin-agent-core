@@ -3,9 +3,10 @@ use super::support::{
     strategy_decision_schema_id, strategy_decision_type_id, strategy_selection_manifest,
     strategy_selection_schema_id, strategy_selection_type_id,
 };
+use marlin_agent_protocol::{HookPolicyDynamicAction, HookPolicyDynamicActionKind};
 use marlin_gerbil_scheme::{
-    GerbilSchemeTypeId, GerbilSchemeTypeRegistry, GerbilSchemeTypedValue, GerbilSchemeValue,
-    scheme_type_fixtures::decode_gerbil_scheme_typed_value_fixture,
+    GerbilSchemeSchemaId, GerbilSchemeTypeId, GerbilSchemeTypeRegistry, GerbilSchemeTypedValue,
+    GerbilSchemeValue, scheme_type_fixtures::decode_gerbil_scheme_typed_value_fixture,
 };
 
 #[test]
@@ -103,6 +104,61 @@ fn scheme_typed_value_projects_nested_custom_scheme_types_to_rust() {
             },
             reason: "nested manifest projection".to_string(),
         }
+    );
+}
+
+#[test]
+fn downstream_scheme_hook_actions_project_without_rust_static_binding() {
+    let envelope = GerbilSchemeTypedValue::new(
+        GerbilSchemeTypeId::new("marlin.hooks.dynamic-action-set"),
+        GerbilSchemeValue::vector([
+            GerbilSchemeValue::record([
+                ("kind", "Register".into()),
+                ("target", "catalog:customer-agent-hook".into()),
+                (
+                    "reason",
+                    "customer agent session requires runtime catalog hook".into(),
+                ),
+            ]),
+            GerbilSchemeValue::record([
+                ("kind", "Unregister".into()),
+                ("target", "catalog:live-project-hook".into()),
+                ("reason", "untrusted project disables live hook".into()),
+            ]),
+            GerbilSchemeValue::record([
+                ("kind", "Rewrite".into()),
+                ("target", "command".into()),
+                ("replacement", "cargo test --locked".into()),
+                ("reason", "session policy prefers locked tests".into()),
+            ]),
+        ]),
+    )
+    .with_schema_id(GerbilSchemeSchemaId::new(
+        "marlin.hooks.dynamic-action-set.v1",
+    ));
+
+    let actions: Vec<HookPolicyDynamicAction> = envelope
+        .decode_value()
+        .expect("Scheme native action set should decode through Rust protocol types");
+
+    assert_eq!(actions.len(), 3);
+    assert_eq!(actions[0].kind, HookPolicyDynamicActionKind::Register);
+    assert_eq!(
+        actions[0].target.as_ref().map(|target| target.as_str()),
+        Some("catalog:customer-agent-hook")
+    );
+    assert_eq!(actions[1].kind, HookPolicyDynamicActionKind::Unregister);
+    assert_eq!(
+        actions[1].target.as_ref().map(|target| target.as_str()),
+        Some("catalog:live-project-hook")
+    );
+    assert_eq!(actions[2].kind, HookPolicyDynamicActionKind::Rewrite);
+    assert_eq!(
+        actions[2]
+            .replacement
+            .as_ref()
+            .map(|replacement| replacement.as_str()),
+        Some("cargo test --locked")
     );
 }
 
