@@ -210,7 +210,7 @@ fn assert_sub_agent_profile(fixture: &DeterministicSubAgentScenarioFixture) {
     let config = fixture.session_fixture().config();
     let profile = SubAgentSpawnProfile::from_config(config);
 
-    assert_eq!(profile.profile_id, "reviewer");
+    assert_eq!(profile.profile_id.as_str(), "reviewer");
     assert_eq!(profile.role, "memory-aware reviewer");
     assert_eq!(profile.hook_agent_scope, config.hook_agent_scope);
 }

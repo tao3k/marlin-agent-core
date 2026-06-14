@@ -1,5 +1,13 @@
 //! Sub-agent source and activity protocol contracts.
 
+use std::{
+    collections::BTreeSet,
+    error::Error,
+    fmt::{self, Display, Formatter},
+    fs, io,
+    path::{Path, PathBuf},
+};
+
 use serde::{Deserialize, Serialize};
 
 use crate::{HookAgentScope, RunId};
@@ -46,7 +54,7 @@ pub struct SubAgentActivity {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct SubAgentSpawnProfile {
     /// Stable profile identifier, such as a custom-agent config name.
-    pub profile_id: String,
+    pub profile_id: SubAgentSpawnProfileId,
     /// Runtime agent type selected for this sub-agent profile.
     pub agent_type: SubAgentType,
     /// Role used for routing, policy, and human-readable activity views.
@@ -110,6 +118,7 @@ pub struct SubAgentContextPolicy {
 
 /// Capability policy for one sub-agent profile.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SubAgentPermissionSet {
     pub read_only: bool,
     pub workspace_write: bool,
@@ -126,6 +135,7 @@ pub struct SubAgentPermissionSet {
 
 /// Bounded runtime budget for high-performance sub-agent spawning.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SubAgentPerformanceBudget {
     pub max_concurrency: Option<u16>,
     pub timeout_ms: Option<u64>,
@@ -135,6 +145,7 @@ pub struct SubAgentPerformanceBudget {
 
 /// Declarative policy compiled from TOML, with optional strategy metadata.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SubAgentSpawnPolicy {
     pub permissions: SubAgentPermissionSet,
     pub context: SubAgentContextPolicy,
@@ -144,7 +155,7 @@ pub struct SubAgentSpawnPolicy {
 /// Top-level configurable profile for a sub-agent spawn target.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct SubAgentSpawnConfig {
-    pub profile_id: String,
+    pub profile_id: SubAgentSpawnProfileId,
     pub agent_type: SubAgentType,
     pub role: String,
     pub nickname: Option<String>,
@@ -154,10 +165,56 @@ pub struct SubAgentSpawnConfig {
     pub policy: SubAgentSpawnPolicy,
 }
 
+/// Compiled typed sub-agent spawn profiles loaded from a TOML profile document.
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
+pub struct SubAgentSpawnConfigSet {
+    profiles: Vec<SubAgentSpawnConfig>,
+}
+
+/// Stable sub-agent spawn profile identifier.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct SubAgentSpawnProfileId(String);
+
 /// Typed sub-agent runtime type identifier.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct SubAgentType(String);
+
+#[derive(Clone, Debug, Default, Eq, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields, default)]
+struct SubAgentSpawnConfigTomlDocument {
+    profiles: Vec<SubAgentSpawnProfileToml>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SubAgentSpawnProfileToml {
+    profile_id: SubAgentSpawnProfileId,
+    agent_type: SubAgentType,
+    role: String,
+    nickname: Option<String>,
+    hook_agent_scope: Option<HookAgentScope>,
+    strategy: Option<SubAgentSpawnStrategy>,
+    policy: Option<SubAgentSpawnPolicy>,
+}
+
+/// Error raised while loading or validating sub-agent spawn profile configuration.
+#[derive(Debug)]
+pub enum SubAgentSpawnConfigError {
+    Io {
+        path: PathBuf,
+        source: io::Error,
+    },
+    Toml(toml::de::Error),
+    EmptyProfileField {
+        profile_id: Option<SubAgentSpawnProfileId>,
+        field: &'static str,
+    },
+    DuplicateProfileId {
+        profile_id: SubAgentSpawnProfileId,
+    },
+}
 
 impl SubAgentActivity {
     pub fn new(
@@ -193,7 +250,7 @@ impl SubAgentActivity {
 
 impl SubAgentSpawnProfile {
     pub fn new(
-        profile_id: impl Into<String>,
+        profile_id: impl Into<SubAgentSpawnProfileId>,
         agent_type: impl Into<SubAgentType>,
         role: impl Into<String>,
     ) -> Self {
@@ -322,14 +379,14 @@ impl SubAgentSpawnPolicy {
 
 impl SubAgentSpawnConfig {
     pub fn toml(
-        profile_id: impl Into<String>,
+        profile_id: impl Into<SubAgentSpawnProfileId>,
         agent_type: impl Into<SubAgentType>,
         role: impl Into<String>,
     ) -> Self {
         let profile_id = profile_id.into();
         Self {
             policy: SubAgentSpawnPolicy::read_only(SubAgentContextPolicy::workspace_read(
-                profile_id.clone(),
+                profile_id.as_str().to_owned(),
             )),
             profile_id,
             agent_type: agent_type.into(),
@@ -366,7 +423,82 @@ impl SubAgentSpawnConfig {
             .context
             .session_id
             .as_deref()
-            .unwrap_or(&self.profile_id)
+            .unwrap_or(self.profile_id.as_str())
+    }
+}
+
+impl SubAgentSpawnConfigSet {
+    pub fn new(profiles: Vec<SubAgentSpawnConfig>) -> Result<Self, SubAgentSpawnConfigError> {
+        validate_unique_profiles(&profiles)?;
+        Ok(Self { profiles })
+    }
+
+    pub fn from_toml_str(source: &str) -> Result<Self, SubAgentSpawnConfigError> {
+        let document: SubAgentSpawnConfigTomlDocument =
+            toml::from_str(source).map_err(SubAgentSpawnConfigError::Toml)?;
+        document.compile()
+    }
+
+    pub fn from_toml_path(path: impl AsRef<Path>) -> Result<Self, SubAgentSpawnConfigError> {
+        let path = path.as_ref();
+        let source = fs::read_to_string(path).map_err(|source| SubAgentSpawnConfigError::Io {
+            path: path.to_path_buf(),
+            source,
+        })?;
+        Self::from_toml_str(&source)
+    }
+
+    pub fn profiles(&self) -> &[SubAgentSpawnConfig] {
+        &self.profiles
+    }
+
+    pub fn into_profiles(self) -> Vec<SubAgentSpawnConfig> {
+        self.profiles
+    }
+
+    pub fn profile(&self, profile_id: &SubAgentSpawnProfileId) -> Option<&SubAgentSpawnConfig> {
+        self.profiles
+            .iter()
+            .find(|profile| &profile.profile_id == profile_id)
+    }
+}
+
+impl SubAgentSpawnConfigTomlDocument {
+    fn compile(self) -> Result<SubAgentSpawnConfigSet, SubAgentSpawnConfigError> {
+        let profiles = self
+            .profiles
+            .into_iter()
+            .map(SubAgentSpawnProfileToml::compile)
+            .collect::<Result<Vec<_>, _>>()?;
+        SubAgentSpawnConfigSet::new(profiles)
+    }
+}
+
+impl SubAgentSpawnProfileToml {
+    fn compile(self) -> Result<SubAgentSpawnConfig, SubAgentSpawnConfigError> {
+        validate_text_field("profile_id", self.profile_id.as_str(), None)?;
+        validate_text_field(
+            "agent_type",
+            self.agent_type.as_str(),
+            Some(&self.profile_id),
+        )?;
+        validate_text_field("role", &self.role, Some(&self.profile_id))?;
+
+        let mut config = SubAgentSpawnConfig::toml(self.profile_id, self.agent_type, self.role);
+        if let Some(nickname) = self.nickname {
+            validate_text_field("nickname", &nickname, Some(&config.profile_id))?;
+            config = config.with_nickname(nickname);
+        }
+        if let Some(hook_agent_scope) = self.hook_agent_scope {
+            config = config.with_hook_agent_scope(hook_agent_scope);
+        }
+        if let Some(strategy) = self.strategy {
+            config = config.with_strategy(strategy);
+        }
+        if let Some(policy) = self.policy {
+            config = config.with_policy(policy);
+        }
+        Ok(config)
     }
 }
 
@@ -377,6 +509,34 @@ impl SubAgentType {
 
     pub fn as_str(&self) -> &str {
         &self.0
+    }
+}
+
+impl SubAgentSpawnProfileId {
+    pub fn new(value: impl Into<String>) -> Self {
+        Self(value.into())
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl Display for SubAgentSpawnProfileId {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.as_str())
+    }
+}
+
+impl From<String> for SubAgentSpawnProfileId {
+    fn from(value: String) -> Self {
+        Self::new(value)
+    }
+}
+
+impl From<&str> for SubAgentSpawnProfileId {
+    fn from(value: &str) -> Self {
+        Self::new(value)
     }
 }
 
@@ -427,4 +587,83 @@ impl SubAgentSearchReceipt {
         self.risk = Some(risk.into());
         self
     }
+}
+
+impl Display for SubAgentSpawnConfigError {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Io { path, source } => {
+                write!(
+                    formatter,
+                    "failed to read sub-agent spawn config `{}`: {source}",
+                    path.display()
+                )
+            }
+            Self::Toml(error) => write!(
+                formatter,
+                "failed to parse sub-agent spawn profile TOML: {error}"
+            ),
+            Self::EmptyProfileField { profile_id, field } => {
+                if let Some(profile_id) = profile_id {
+                    write!(
+                        formatter,
+                        "sub-agent spawn profile `{profile_id}` has empty `{field}`"
+                    )
+                } else {
+                    write!(formatter, "sub-agent spawn profile has empty `{field}`")
+                }
+            }
+            Self::DuplicateProfileId { profile_id } => {
+                write!(
+                    formatter,
+                    "duplicate sub-agent spawn profile `{profile_id}`"
+                )
+            }
+        }
+    }
+}
+
+impl Error for SubAgentSpawnConfigError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::Io { source, .. } => Some(source),
+            Self::Toml(error) => Some(error),
+            Self::EmptyProfileField { .. } | Self::DuplicateProfileId { .. } => None,
+        }
+    }
+}
+
+fn validate_unique_profiles(
+    profiles: &[SubAgentSpawnConfig],
+) -> Result<(), SubAgentSpawnConfigError> {
+    let mut seen = BTreeSet::new();
+    for profile in profiles {
+        validate_text_field("profile_id", profile.profile_id.as_str(), None)?;
+        validate_text_field(
+            "agent_type",
+            profile.agent_type.as_str(),
+            Some(&profile.profile_id),
+        )?;
+        validate_text_field("role", &profile.role, Some(&profile.profile_id))?;
+        if !seen.insert(profile.profile_id.clone()) {
+            return Err(SubAgentSpawnConfigError::DuplicateProfileId {
+                profile_id: profile.profile_id.clone(),
+            });
+        }
+    }
+    Ok(())
+}
+
+fn validate_text_field(
+    field: &'static str,
+    value: &str,
+    profile_id: Option<&SubAgentSpawnProfileId>,
+) -> Result<(), SubAgentSpawnConfigError> {
+    if value.trim().is_empty() {
+        return Err(SubAgentSpawnConfigError::EmptyProfileField {
+            profile_id: profile_id.cloned(),
+            field,
+        });
+    }
+    Ok(())
 }

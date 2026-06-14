@@ -149,6 +149,12 @@ isolate_shell = true
 Scheme/Gerbil may later compute or rank routes, but it must compile back into
 the same typed policy before runtime execution.
 
+Sub-agent spawn profile TOML now follows the same boundary in
+=marlin-agent-protocol=: profile documents compile through
+=SubAgentSpawnConfigSet= into typed =SubAgentSpawnConfig= values before runtime
+consumption. The loader rejects source-surface ambiguity so TOML remains a
+configuration edge, not a runtime-internal protocol.
+
 ** Runtime Boundary
 
 Runtime owns:
@@ -217,7 +223,7 @@ prove that a command used the intended model and environment.
 | Session Binding | =marlin-agent-runtime=, =marlin-agent-sessions= | Requested session ids, inherited/forked/isolated context policies, and bounded history are tested. | Align with 40.60 profile compiler output. |
 | Environment | =marlin-agent-environment= | =direnv= activation policy, explicit envrc, custom home, and environment delta receipts are tested. | Profile loader emits environment activation policy as typed data. |
 | Observability | =marlin-agent-protocol=, =marlin-agent-harness= | Route, session, provider, and environment receipts are visible in runtime/harness tests. | One end-to-end scenario captures all four receipt families. |
-| Config Loader | Config-owner crate | TOML route config loader exists for model routes. | Unify route and sub-agent profile fixtures without runtime TOML parsing. |
+| Config Loader | =marlin-agent-protocol=, route config owner | TOML route config loader exists for model routes, and sub-agent profile TOML compiles into typed =SubAgentSpawnConfigSet=. | Align route/session/environment fixtures into one receipt matrix. |
 
 ** Acceptance Criteria
 
@@ -246,8 +252,8 @@ prove that a command used the intended model and environment.
 2. Add environment activation policy for =direnv=, =.envrc=, environment delta,
    and shell isolation.
 
-3. Compile TOML route profiles into typed protocol policy outside runtime
-   crates.
+3. Compile TOML route and sub-agent profiles into typed protocol policy before
+   runtime execution.
 
 4. Extend runtime resolver to return route/session/environment receipts.
 

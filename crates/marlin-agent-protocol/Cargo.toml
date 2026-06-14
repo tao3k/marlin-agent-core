@@ -8,6 +8,7 @@ repository.workspace = true
 [dependencies]
 marlin-gerbil-ir.workspace = true
 serde.workspace = true
+toml.workspace = true
 
 [build-dependencies]
 marlin-rust-project-harness-policy.workspace = true

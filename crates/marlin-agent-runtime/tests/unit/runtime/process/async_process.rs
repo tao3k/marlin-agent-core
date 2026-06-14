@@ -82,7 +82,7 @@ async fn async_managed_child_process_records_command_lifecycle_metadata() {
         .as_ref()
         .and_then(|command| command.sub_agent_profile.as_ref())
         .expect("managed child process should preserve sub-agent profile");
-    assert_eq!(profile.profile_id, "researcher");
+    assert_eq!(profile.profile_id.as_str(), "researcher");
     assert_eq!(profile.agent_type.as_str(), "asp_explorer");
     assert_eq!(profile.role, "research");
     assert_eq!(profile.nickname.as_deref(), Some("Galileo"));

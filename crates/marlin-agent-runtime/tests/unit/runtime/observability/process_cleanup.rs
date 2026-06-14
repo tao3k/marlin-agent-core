@@ -100,7 +100,7 @@ fn runtime_process_registry_sweeps_stale_and_live_cleanup_candidates() {
         .as_ref()
         .and_then(|command| command.sub_agent_profile.as_ref())
         .expect("sub-agent cleanup receipt should preserve profile");
-    assert_eq!(stale_profile.profile_id, "researcher");
+    assert_eq!(stale_profile.profile_id.as_str(), "researcher");
     assert_eq!(stale_profile.agent_type.as_str(), "asp_explorer");
     assert_eq!(stale_profile.role, "research");
     assert_eq!(stale_profile.nickname.as_deref(), Some("Galileo"));

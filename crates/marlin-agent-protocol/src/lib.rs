@@ -78,8 +78,9 @@ pub use scenario::{
 pub use sub_agent::{
     SubAgentActivity, SubAgentActivityKind, SubAgentConfigSurface, SubAgentContextPolicy,
     SubAgentContextVisibility, SubAgentPerformanceBudget, SubAgentPermissionSet,
-    SubAgentSearchReceipt, SubAgentSource, SubAgentSpawnConfig, SubAgentSpawnPolicy,
-    SubAgentSpawnProfile, SubAgentSpawnStrategy, SubAgentType,
+    SubAgentSearchReceipt, SubAgentSource, SubAgentSpawnConfig, SubAgentSpawnConfigError,
+    SubAgentSpawnConfigSet, SubAgentSpawnPolicy, SubAgentSpawnProfile, SubAgentSpawnProfileId,
+    SubAgentSpawnStrategy, SubAgentType,
 };
 pub use trace::{
     AgentExecutionTrace, AgentExecutionTraceSummary, AgentSpanName, AgentTraceSpanRecord,

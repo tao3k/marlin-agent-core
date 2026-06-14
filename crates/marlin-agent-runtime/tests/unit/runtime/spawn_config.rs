@@ -33,7 +33,7 @@ async fn sub_agent_config_compiles_to_child_session_visibility() {
     assert_eq!(receipt.role(), "explorer");
     assert_eq!(receipt.nickname(), Some("Galileo"));
     let activity_profile = receipt.activity_profile();
-    assert_eq!(activity_profile.profile_id, "asp-explorer");
+    assert_eq!(activity_profile.profile_id.as_str(), "asp-explorer");
     assert_eq!(activity_profile.agent_type.as_str(), "asp_explorer");
     assert_eq!(activity_profile.role, "explorer");
     assert_eq!(activity_profile.nickname.as_deref(), Some("Galileo"));
