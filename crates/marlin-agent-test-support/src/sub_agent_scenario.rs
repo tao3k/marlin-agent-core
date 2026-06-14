@@ -4,7 +4,10 @@ use marlin_agent_protocol::{
     HookDispatchPolicyReceipt, HookDispatchSelectionReceipt, HookRunSummary, ModelCommandMatcher,
     ModelContextForkMode, ModelEndpoint, ModelGatewayRequest, ModelGatewayTransport,
     ModelRouteDecision, ModelRouteRequest, ModelRouteRule, ModelSessionLifecycle,
-    ModelSessionPolicy, SubAgentSpawnProfile, user_gateway_message,
+    ModelSessionPolicy, RuntimeEnvironmentActivation, RuntimeEnvironmentActivationReceipt,
+    RuntimeEnvironmentActivationStatus, RuntimeEnvrcPolicy, RuntimeShellIsolationPolicy,
+    SubAgentSpawnConfig, SubAgentSpawnConfigSet, SubAgentSpawnProfile, SubAgentSpawnProfileId,
+    user_gateway_message,
 };
 use marlin_agent_sessions::{AgentSessionContext, ContextNamespace, SessionIsolationReceipt};
 
@@ -21,6 +24,21 @@ const REVIEWER_PERSISTENCE_KEY: &str = "workspace:reviewer";
 const REVIEWER_CHILD_SESSION_ID: &str = "model-route/persistent/workspace:reviewer";
 const REVIEWER_ROUTE_COMMAND: [&str; 3] = ["gpt-5.5", "sub-agent", "review"];
 const REVIEWER_ROUTE_COMMAND_LINE: &str = "gpt-5.5 sub-agent review";
+const REVIEWER_PROFILE_TOML: &str = r#"
+[[profiles]]
+profile_id = "reviewer"
+agent_type = "reviewer"
+role = "memory-aware reviewer"
+
+[profiles.environment_activation.activation.Direnv]
+envrc = "Project"
+capture_delta = true
+
+[profiles.environment_activation.shell]
+isolate_host_environment = true
+allowlist = ["PATH", "HOME"]
+denylist = ["AWS_SECRET_ACCESS_KEY"]
+"#;
 
 /// Fixture for one no-LLM sub-agent path across route, session, hook, and gateway.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -123,6 +141,16 @@ pub fn deterministic_reviewer_sub_agent_scenario_fixture() -> DeterministicSubAg
     }
 }
 
+/// Deterministic reviewer sub-agent profile loaded from TOML.
+pub fn deterministic_reviewer_sub_agent_spawn_config() -> SubAgentSpawnConfig {
+    let config_set = SubAgentSpawnConfigSet::from_toml_str(REVIEWER_PROFILE_TOML)
+        .expect("deterministic reviewer profile TOML compiles");
+    config_set
+        .profile(&SubAgentSpawnProfileId::from("reviewer"))
+        .expect("deterministic reviewer profile exists")
+        .clone()
+}
+
 /// Assert the fixture's protocol-owned route, session, and hook setup.
 pub fn assert_deterministic_sub_agent_scenario_fixture(
     fixture: &DeterministicSubAgentScenarioFixture,
@@ -206,6 +234,27 @@ pub fn assert_deterministic_sub_agent_gateway_request(
     );
     assert_eq!(request.message_count, 1);
     assert_eq!(request.transport, ModelGatewayTransport::Sse);
+}
+
+/// Assert the deterministic reviewer profile's environment activation receipt.
+pub fn assert_deterministic_reviewer_environment_activation_receipt(
+    receipt: &RuntimeEnvironmentActivationReceipt,
+) {
+    assert_eq!(receipt.status, RuntimeEnvironmentActivationStatus::Planned);
+    assert!(matches!(
+        &receipt.activation,
+        RuntimeEnvironmentActivation::Direnv {
+            envrc: RuntimeEnvrcPolicy::Project,
+            capture_delta: true,
+        }
+    ));
+    assert_eq!(
+        receipt.shell,
+        RuntimeShellIsolationPolicy::isolated()
+            .with_allowed("PATH")
+            .with_allowed("HOME")
+            .with_denied("AWS_SECRET_ACCESS_KEY")
+    );
 }
 
 fn assert_sub_agent_profile(fixture: &DeterministicSubAgentScenarioFixture) {

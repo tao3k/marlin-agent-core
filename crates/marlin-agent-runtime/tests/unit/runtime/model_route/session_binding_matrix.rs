@@ -1,45 +1,27 @@
 use marlin_agent_protocol::{
     ModelCommandMatcher, ModelContextForkMode, ModelEndpoint, ModelRouteRequest, ModelRouteRule,
-    ModelSessionLifecycle, ModelSessionPolicy, RuntimeEnvironmentActivation,
-    RuntimeEnvironmentActivationReceipt, RuntimeEnvironmentActivationStatus, RuntimeEnvrcPolicy,
-    RuntimeShellIsolationPolicy, SubAgentSpawnConfigSet, SubAgentSpawnProfileId,
+    ModelSessionLifecycle, ModelSessionPolicy, RuntimeEnvironmentActivationReceipt,
 };
 use marlin_agent_runtime::{CompiledModelRouteResolver, SessionKind, TokioAgentRuntime};
-
-const MODEL_ROUTE_SUB_AGENT_PROFILE_TOML: &str = r#"
-[[profiles]]
-profile_id = "builder"
-agent_type = "builder"
-role = "builder"
-
-[profiles.environment_activation.activation.Direnv]
-envrc = "Project"
-capture_delta = true
-
-[profiles.environment_activation.shell]
-isolate_host_environment = true
-allowlist = ["PATH", "HOME"]
-denylist = ["AWS_SECRET_ACCESS_KEY"]
-"#;
+use marlin_agent_test_support::{
+    assert_deterministic_reviewer_environment_activation_receipt,
+    deterministic_reviewer_sub_agent_spawn_config,
+};
 
 #[test]
 fn model_route_session_binding_covers_create_reuse_reject_and_environment_receipts() {
-    let profile_config = SubAgentSpawnConfigSet::from_toml_str(MODEL_ROUTE_SUB_AGENT_PROFILE_TOML)
-        .expect("sub-agent profile TOML compiles");
-    let builder_profile = profile_config
-        .profile(&SubAgentSpawnProfileId::from("builder"))
-        .expect("builder profile exists");
-    let builder_environment = builder_profile
+    let reviewer_profile = deterministic_reviewer_sub_agent_spawn_config();
+    let reviewer_environment = reviewer_profile
         .environment_activation
         .as_ref()
-        .expect("builder profile carries environment activation");
+        .expect("reviewer profile carries environment activation");
 
     let resolver = CompiledModelRouteResolver::new(vec![
         ModelRouteRule::new(
-            "builder-create",
+            "reviewer-create",
             100,
             ModelCommandMatcher::new()
-                .with_sub_agent_role_glob("builder")
+                .with_sub_agent_role_glob("reviewer")
                 .with_command_kind_glob("create"),
             ModelEndpoint::new("openai", "gpt-5-mini"),
         )
@@ -63,23 +45,23 @@ fn model_route_session_binding_covers_create_reuse_reject_and_environment_receip
     let create_decision = resolver
         .resolve(
             &ModelRouteRequest::command(["gpt-5.5", "sub-agent", "build"])
-                .with_sub_agent_role("builder")
+                .with_sub_agent_role("reviewer")
                 .with_command_kind("create"),
         )
         .expect("create route resolves");
     let (_create_runtime, create_binding) =
         runtime.child_runtime_for_model_route(&create_decision, SessionKind::SubAgent);
     let create_binding = create_binding.with_environment_activation_receipt(
-        RuntimeEnvironmentActivationReceipt::planned(builder_environment),
+        RuntimeEnvironmentActivationReceipt::planned(reviewer_environment),
     );
 
     assert_eq!(
         create_binding.child_session_id().as_str(),
-        "model-route/builder-create/ephemeral"
+        "model-route/reviewer-create/ephemeral"
     );
     assert_eq!(
         create_binding.route_receipt().rule_id.as_str(),
-        "builder-create"
+        "reviewer-create"
     );
     assert_eq!(
         create_binding.route_receipt().command_line,
@@ -93,43 +75,17 @@ fn model_route_session_binding_covers_create_reuse_reject_and_environment_receip
         create_binding.route_receipt().session_lifecycle,
         ModelSessionLifecycle::Ephemeral
     );
-    let expected_shell = RuntimeShellIsolationPolicy::isolated()
-        .with_allowed("PATH")
-        .with_allowed("HOME")
-        .with_denied("AWS_SECRET_ACCESS_KEY");
     let binding_environment = create_binding
         .environment_activation_receipt()
         .expect("create route carries environment receipt");
-    assert_eq!(
-        binding_environment.status,
-        RuntimeEnvironmentActivationStatus::Planned
-    );
-    assert!(matches!(
-        &binding_environment.activation,
-        RuntimeEnvironmentActivation::Direnv {
-            envrc: RuntimeEnvrcPolicy::Project,
-            capture_delta: true,
-        }
-    ));
-    assert_eq!(binding_environment.shell, expected_shell);
+    assert_deterministic_reviewer_environment_activation_receipt(binding_environment);
 
     let route_environment = create_binding
         .route_receipt()
         .environment_activation
         .as_ref()
         .expect("route receipt projects environment receipt");
-    assert_eq!(
-        route_environment.status,
-        RuntimeEnvironmentActivationStatus::Planned
-    );
-    assert!(matches!(
-        &route_environment.activation,
-        RuntimeEnvironmentActivation::Direnv {
-            envrc: RuntimeEnvrcPolicy::Project,
-            capture_delta: true,
-        }
-    ));
-    assert_eq!(route_environment.shell, expected_shell);
+    assert_deterministic_reviewer_environment_activation_receipt(route_environment);
 
     let reuse_decision = resolver
         .resolve(

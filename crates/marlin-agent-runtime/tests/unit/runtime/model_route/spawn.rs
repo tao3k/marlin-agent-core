@@ -1,36 +1,18 @@
 use std::sync::Arc;
 
-use marlin_agent_protocol::{
-    ModelGateway, ModelRouteRequest, RuntimeEnvironmentActivation,
-    RuntimeEnvironmentActivationStatus, RuntimeEnvrcPolicy, RuntimeShellIsolationPolicy,
-    SubAgentSpawnConfigSet, SubAgentSpawnProfileId,
-};
+use marlin_agent_protocol::{ModelGateway, ModelRouteRequest};
 use marlin_agent_runtime::{
     CancellationToken, CompiledModelRouteResolver, ContextNamespace, RuntimeContext,
     RuntimeEnvironment, RuntimeFuture, SubAgentRuntime, TokioAgentRuntime,
 };
 use marlin_agent_test_support::{
     DeterministicRoutedSubAgentExecutionReceipt, DeterministicSubAgentScenarioFixture,
-    ScriptedModelGateway, assert_deterministic_routed_sub_agent_execution,
+    ScriptedModelGateway, assert_deterministic_reviewer_environment_activation_receipt,
+    assert_deterministic_routed_sub_agent_execution,
     assert_deterministic_sub_agent_gateway_request, assert_deterministic_sub_agent_route_decision,
     deterministic_reviewer_sub_agent_scenario_fixture,
+    deterministic_reviewer_sub_agent_spawn_config,
 };
-
-const ROUTED_SUB_AGENT_PROFILE_TOML: &str = r#"
-[[profiles]]
-profile_id = "reviewer"
-agent_type = "reviewer"
-role = "memory-aware reviewer"
-
-[profiles.environment_activation.activation.Direnv]
-envrc = "Project"
-capture_delta = true
-
-[profiles.environment_activation.shell]
-isolate_host_environment = true
-allowlist = ["PATH", "HOME"]
-denylist = ["AWS_SECRET_ACCESS_KEY"]
-"#;
 
 #[tokio::test]
 async fn routed_sub_agent_spawn_runs_inside_model_route_session() {
@@ -69,11 +51,7 @@ async fn routed_sub_agent_spawn_captures_route_session_provider_and_environment_
     let decision = resolver
         .resolve(fixture.route_request())
         .expect("sub-agent route resolves");
-    let profile_config = SubAgentSpawnConfigSet::from_toml_str(ROUTED_SUB_AGENT_PROFILE_TOML)
-        .expect("sub-agent profile TOML compiles");
-    let reviewer_profile = profile_config
-        .profile(&SubAgentSpawnProfileId::from("reviewer"))
-        .expect("reviewer profile exists");
+    let reviewer_profile = deterministic_reviewer_sub_agent_spawn_config();
     let parent_session = fixture.session_fixture().parent_session().clone();
     let (runtime, _events) = TokioAgentRuntime::with_session(
         4,
@@ -86,7 +64,7 @@ async fn routed_sub_agent_spawn_captures_route_session_provider_and_environment_
         Arc::new(ModelRouteSessionEchoSubAgent),
         (),
         &decision,
-        reviewer_profile,
+        &reviewer_profile,
     );
     let output = task.join().await.expect("routed sub-agent should finish");
     let gateway = ScriptedModelGateway::completion_failure("spawn e2e no-live-llm");
@@ -111,25 +89,10 @@ async fn routed_sub_agent_spawn_captures_route_session_provider_and_environment_
     assert_eq!(requests.len(), 1);
     assert_deterministic_sub_agent_gateway_request(&fixture, &requests[0]);
 
-    let expected_shell = RuntimeShellIsolationPolicy::isolated()
-        .with_allowed("PATH")
-        .with_allowed("HOME")
-        .with_denied("AWS_SECRET_ACCESS_KEY");
     let environment = binding
         .environment_activation_receipt()
         .expect("spawn route carries environment receipt");
-    assert_eq!(
-        environment.status,
-        RuntimeEnvironmentActivationStatus::Planned
-    );
-    assert!(matches!(
-        &environment.activation,
-        RuntimeEnvironmentActivation::Direnv {
-            envrc: RuntimeEnvrcPolicy::Project,
-            capture_delta: true,
-        }
-    ));
-    assert_eq!(environment.shell, expected_shell);
+    assert_deterministic_reviewer_environment_activation_receipt(environment);
 }
 
 #[tokio::test]
