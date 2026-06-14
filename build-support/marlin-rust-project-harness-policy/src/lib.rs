@@ -24,7 +24,10 @@ pub use evidence::{
     evaluate_quality_findings_for_gate, write_evidence_graph_from_env,
 };
 pub use gate::complete_build_gate;
-pub use gerbil_runtime_assets::generate_gerbil_runtime_assets;
+pub use gerbil_runtime_assets::{
+    GerbilRuntimeAssetManifestReceipt, GerbilRuntimeAssetManifestStatus,
+    generate_gerbil_runtime_assets, inspect_gerbil_runtime_assets,
+};
 pub use package_evidence_graph::{
     RustProjectHarnessPackageEvidenceGraphReceipt, RustProjectHarnessPackageEvidenceGraphRequest,
     build_package_evidence_graph_receipt,

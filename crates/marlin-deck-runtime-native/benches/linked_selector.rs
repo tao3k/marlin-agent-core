@@ -17,7 +17,7 @@ fn bench_linked_native_selector(c: &mut Criterion) {
     let selector = linked_deck_runtime_native_selector();
     let mut group = c.benchmark_group("deck_runtime_linked_native_selector");
 
-    for policy_count in [1_u64, 8] {
+    for policy_count in [1_u64, 8, 64, 256] {
         let request = route_request(policy_count as usize);
         let warmup = selector
             .select_policy_index(&request)

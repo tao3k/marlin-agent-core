@@ -451,6 +451,95 @@ cargo test -p marlin-gerbil-scheme --test unit_test deck_runtime_native
 cargo test -p marlin-agent-harness --test unit_test harness::runtime
 #+end_src
 
+** 2026-06-13 P0-P5 Runtime Closeout Receipt
+
+This closeout pass turns the resident Gerbil process plan into a reusable
+runtime protocol and connects its evidence back into harness release gates:
+
+- P0 keeps the implementation boundary narrow: resident runtime, native ABI
+  readiness, hook evidence, and harness performance receipts are crate-local
+  protocol surfaces, not compatibility shims or a Rust-side policy DSL.
+
+- P1 resident Gerbil runtime processes now expose typed health and shutdown
+  receipts. The same resident child can accept multiple compile requests over
+  the batch launcher stdin/stdout loop and returns typed
+  =GerbilCompiledArtifact= results per request.
+
+- P2 native ABI readiness now has a release-gate projection helper. A ready
+  =GraphNativeAbiReadinessReceipt= maps to a passed release gate, while missing
+  native symbols map to a failed gate with explicit diagnostics and evidence
+  keys.
+
+- P3 dynamic hook replay evidence includes the policy action reasons that
+  explain runtime register/unregister/defer/deny/rewrite behavior. Complex
+  strategy remains in the Gerbil Scheme plane; TOML stays the simple typed
+  envelope.
+
+- P4 harness performance evidence now proves resident reuse: the guarded test
+  drives two compile requests through one child process and records
+  =resident_request_loop_reuse= in the latency evidence detail.
+
+- P5 validation is split between focused crate gates and the workspace gates
+  listed below. Real =gxi= and linked-native gates remain explicit local or
+  manual CI release signals because they depend on an installed Gerbil/Gambit
+  toolchain.
+
+The focused validation commands for this closeout are:
+
+#+begin_src sh
+cargo test -p marlin-gerbil-scheme --test unit_test resident_runtime
+cargo test -p marlin-gerbil-scheme --test unit_test resident_runtime::real_gxi::resident_runtime_real_gxi_batch_launcher_starts_and_terminates -- --ignored
+cargo test -p marlin-agent-harness --test unit_test harness::release_visibility
+cargo test -p marlin-agent-harness --test unit_test harness::runtime
+#+end_src
+
+The workspace closeout commands for this pass are:
+
+#+begin_src sh
+cargo fmt --all -- --check
+cargo check --workspace --all-targets
+cargo test --workspace
+cargo test -p marlin-deck-runtime-native --features linked-native
+#+end_src
+
+** 2026-06-13 P0-P5 Build Gate Landing Receipt
+
+This pass moves the P0-P5 closeout from documentation-only evidence into the
+build-support gate:
+
+- P0 keeps the new evidence in =marlin-rust-project-harness-policy=, so runtime
+  crates do not learn Gerbil package internals or linked-native build details.
+
+- P1 adds =GerbilRuntimeAssetManifestReceipt= to the build-support surface.
+  =write_evidence_graph_from_env= now emits =gerbil_runtime_assets.json= beside
+  the Rust harness evidence graph, verification plan, task index, and quality
+  findings.
+
+- P2 validates real Gerbil asset freshness at build-gate time. A package with no
+  =gerbil/= root is =NotPresent= and non-blocking; a package with a =gerbil/=
+  root must include =gerbil.pkg=, =build.ss=,
+  =bin/command-adapter-batch.ss=, =src/marlin/deck-runtime.ss=,
+  =src/marlin/deck-runtime-native.ss=, and =src/marlin/hook-policy.ss=.
+
+- P3 projects missing Gerbil runtime assets into agent-actionable quality
+  findings and then fails the build gate. This keeps package-shape drift from
+  hiding behind a successful Rust compile.
+
+- P4 extends the linked-native selector benchmark from two policy-count points
+  to four: =1=, =8=, =64=, and =256=. The benchmark still compiles only behind
+  =linked-native= and remains separate from ordinary workspace tests.
+
+- P5 closes this pass with build-support unit tests, workspace check, and
+  linked-native benchmark compile evidence.
+
+The focused validation commands for this build-gate landing are:
+
+#+begin_src sh
+cargo test -p marlin-rust-project-harness-policy --test unit_test
+cargo check --workspace --all-targets
+cargo bench -p marlin-deck-runtime-native --features linked-native --bench linked_selector --no-run
+#+end_src
+
 ** Next Work
 
 The next implementation step is to run the linked selector benchmark under a

@@ -22,6 +22,11 @@ use rust_lang_project_harness::{
     render_rust_verification_stability_picture_json, render_rust_verification_task_index_json,
 };
 
+use crate::gerbil_runtime_assets::{
+    GerbilRuntimeAssetManifestReceipt, GerbilRuntimeAssetManifestStatus,
+    inspect_gerbil_runtime_assets,
+};
+
 /// Receipt for `rust-lang-project-harness` evidence emitted from `build.rs`.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RustProjectHarnessEvidenceReceipt {
@@ -45,6 +50,8 @@ pub struct RustProjectHarnessEvidenceReceipt {
     pub stability_picture_path: Option<PathBuf>,
     /// Path to the agent-actionable quality findings JSON artifact.
     pub quality_findings_path: PathBuf,
+    /// Path to the Gerbil runtime asset manifest receipt JSON artifact.
+    pub gerbil_runtime_assets_path: PathBuf,
     /// Path to the compact text summary artifact.
     pub summary_path: PathBuf,
     /// Summary copied from the emitted evidence graph.
@@ -53,6 +60,8 @@ pub struct RustProjectHarnessEvidenceReceipt {
     pub gate_receipt: RustProjectHarnessGateReceipt,
     /// Agent-actionable quality findings derived from Marlin's package gate.
     pub quality_findings_receipt: RustProjectHarnessQualityFindingsReceipt,
+    /// Gerbil runtime asset manifest observed at build time.
+    pub gerbil_runtime_assets_receipt: GerbilRuntimeAssetManifestReceipt,
 }
 
 /// Structured package-level gate receipt for required Rust harness evidence.
@@ -252,20 +261,34 @@ pub fn write_evidence_graph_from_env(
     let build_env = HarnessEvidenceBuildEnv::from_process();
     let artifacts = build_evidence_artifacts(config, harness_report, &build_env.project_root);
     let paths = HarnessEvidencePaths::create(&build_env.out_dir);
+    let gerbil_runtime_assets_receipt = inspect_gerbil_runtime_assets(&build_env.project_root);
 
     let gate_receipt = evaluate_performance_and_stability_gate(
         &artifacts.verification_plan,
         &build_env.package_name,
     );
-    let quality_findings_receipt =
-        build_quality_findings_receipt(&paths, &build_env, &artifacts, &gate_receipt);
-    write_evidence_artifacts(&paths, &build_env, &artifacts, &quality_findings_receipt);
+    let quality_findings_receipt = build_quality_findings_receipt(
+        &paths,
+        &build_env,
+        &artifacts,
+        &gate_receipt,
+        &gerbil_runtime_assets_receipt,
+    );
+    write_evidence_artifacts(
+        &paths,
+        &build_env,
+        &artifacts,
+        &quality_findings_receipt,
+        &gerbil_runtime_assets_receipt,
+    );
+    assert_gerbil_runtime_asset_manifest_receipt(&gerbil_runtime_assets_receipt);
     assert_performance_and_stability_gate_receipt(&gate_receipt);
 
     paths.into_receipt(
         artifacts.evidence_graph_summary,
         gate_receipt,
         quality_findings_receipt,
+        gerbil_runtime_assets_receipt,
     )
 }
 
@@ -460,6 +483,7 @@ struct HarnessEvidencePaths {
     stability_index_path: PathBuf,
     stability_picture_path: PathBuf,
     quality_findings_path: PathBuf,
+    gerbil_runtime_assets_path: PathBuf,
     summary_path: PathBuf,
 }
 
@@ -483,6 +507,7 @@ impl HarnessEvidencePaths {
             stability_index_path: evidence_dir.join("stability_index.json"),
             stability_picture_path: evidence_dir.join("stability_picture.json"),
             quality_findings_path: evidence_dir.join("quality_findings.json"),
+            gerbil_runtime_assets_path: evidence_dir.join("gerbil_runtime_assets.json"),
             summary_path: evidence_dir.join("summary.txt"),
             evidence_dir,
         }
@@ -493,6 +518,7 @@ impl HarnessEvidencePaths {
         evidence_graph_summary: RustEvidenceGraphSummary,
         gate_receipt: RustProjectHarnessGateReceipt,
         quality_findings_receipt: RustProjectHarnessQualityFindingsReceipt,
+        gerbil_runtime_assets_receipt: GerbilRuntimeAssetManifestReceipt,
     ) -> RustProjectHarnessEvidenceReceipt {
         let stability_picture_path = self
             .stability_picture_path
@@ -510,10 +536,12 @@ impl HarnessEvidencePaths {
             stability_index_path: self.stability_index_path,
             stability_picture_path,
             quality_findings_path: self.quality_findings_path,
+            gerbil_runtime_assets_path: self.gerbil_runtime_assets_path,
             summary_path: self.summary_path,
             evidence_graph_summary,
             gate_receipt,
             quality_findings_receipt,
+            gerbil_runtime_assets_receipt,
         }
     }
 }
@@ -523,6 +551,7 @@ fn write_evidence_artifacts(
     build_env: &HarnessEvidenceBuildEnv,
     artifacts: &HarnessEvidenceArtifacts,
     quality_findings_receipt: &RustProjectHarnessQualityFindingsReceipt,
+    gerbil_runtime_assets_receipt: &GerbilRuntimeAssetManifestReceipt,
 ) {
     write_artifact(
         &paths.determinism_readiness_path,
@@ -572,8 +601,19 @@ fn write_evidence_artifacts(
             .unwrap_or_else(|error| panic!("failed to render quality findings receipt: {error}")),
     );
     write_artifact(
+        &paths.gerbil_runtime_assets_path,
+        serde_json::to_string_pretty(gerbil_runtime_assets_receipt).unwrap_or_else(|error| {
+            panic!("failed to render Gerbil runtime asset receipt: {error}")
+        }),
+    );
+    write_artifact(
         &paths.summary_path,
-        render_summary(build_env, artifacts, quality_findings_receipt),
+        render_summary(
+            build_env,
+            artifacts,
+            quality_findings_receipt,
+            gerbil_runtime_assets_receipt,
+        ),
     );
 }
 
@@ -582,6 +622,7 @@ fn build_quality_findings_receipt(
     build_env: &HarnessEvidenceBuildEnv,
     artifacts: &HarnessEvidenceArtifacts,
     gate_receipt: &RustProjectHarnessGateReceipt,
+    gerbil_runtime_assets_receipt: &GerbilRuntimeAssetManifestReceipt,
 ) -> RustProjectHarnessQualityFindingsReceipt {
     let package_name = build_env.package_name.as_str();
     let mut receipt = evaluate_quality_findings_for_gate(RustProjectHarnessQualityFindingsInput {
@@ -595,6 +636,12 @@ fn build_quality_findings_receipt(
     });
 
     append_quality_findings_for_artifacts(&mut receipt, package_name, artifacts, Some(paths));
+    append_quality_findings_for_gerbil_runtime_assets(
+        &mut receipt,
+        package_name,
+        gerbil_runtime_assets_receipt,
+        &paths.gerbil_runtime_assets_path,
+    );
 
     receipt
 }
@@ -645,6 +692,51 @@ fn append_quality_findings_for_artifacts(
     }
 }
 
+fn append_quality_findings_for_gerbil_runtime_assets(
+    receipt: &mut RustProjectHarnessQualityFindingsReceipt,
+    package_name: &str,
+    gerbil_runtime_assets_receipt: &GerbilRuntimeAssetManifestReceipt,
+    gerbil_runtime_assets_path: &Path,
+) {
+    if !matches!(
+        gerbil_runtime_assets_receipt.status,
+        GerbilRuntimeAssetManifestStatus::MissingRequiredAssets
+    ) {
+        return;
+    }
+
+    receipt.findings.push(RustProjectHarnessQualityFinding {
+        finding_id: format!("{package_name}:gerbil-runtime-assets-missing"),
+        severity: RustProjectHarnessFindingSeverity::HardError,
+        rule_id: "MARLIN-GERBIL-RUNTIME-ASSETS".to_owned(),
+        owner: package_name.to_owned(),
+        evidence: vec![gerbil_runtime_assets_path.display().to_string()],
+        why: format!(
+            "the crate owns a gerbil/ runtime root but misses required assets: {}",
+            gerbil_runtime_assets_receipt
+                .missing_required_assets
+                .join(", ")
+        ),
+        agent_next_action:
+            "restore the missing Gerbil runtime files before relying on generated loadpath assets"
+                .to_owned(),
+        verification_command: "cargo test -p marlin-rust-project-harness-policy --quiet".to_owned(),
+        source_authority: "marlin-rust-project-harness-policy".to_owned(),
+    });
+}
+
+fn assert_gerbil_runtime_asset_manifest_receipt(receipt: &GerbilRuntimeAssetManifestReceipt) {
+    if receipt.is_success() {
+        return;
+    }
+
+    panic!(
+        "Gerbil runtime asset manifest gate failed for {}: missing {}",
+        receipt.project_root.display(),
+        receipt.missing_required_assets.join(", ")
+    );
+}
+
 fn push_gate_finding(
     findings: &mut Vec<RustProjectHarnessQualityFinding>,
     package_name: &str,
@@ -675,9 +767,10 @@ fn render_summary(
     build_env: &HarnessEvidenceBuildEnv,
     artifacts: &HarnessEvidenceArtifacts,
     quality_findings_receipt: &RustProjectHarnessQualityFindingsReceipt,
+    gerbil_runtime_assets_receipt: &GerbilRuntimeAssetManifestReceipt,
 ) -> String {
     format!(
-        "package={}\nmodules={}\ndeterminism_observations={}\nevidence_graph_nodes={}\nverification_tasks={}\nactive_verification_tasks={}\nreport_obligations={}\ntask_index_records={}\nperformance_records={}\nstability_records={}\nstability_picture_records={}\nquality_findings={}\nquality_hard_errors={}\nquality_warnings={}\nquality_advice={}\n",
+        "package={}\nmodules={}\ndeterminism_observations={}\nevidence_graph_nodes={}\nverification_tasks={}\nactive_verification_tasks={}\nreport_obligations={}\ntask_index_records={}\nperformance_records={}\nstability_records={}\nstability_picture_records={}\ngerbil_runtime_asset_status={:?}\ngerbil_runtime_assets={}\ngerbil_runtime_missing_assets={}\nquality_findings={}\nquality_hard_errors={}\nquality_warnings={}\nquality_advice={}\n",
         build_env.package_name,
         artifacts.module_count,
         artifacts.determinism_observation_count,
@@ -692,6 +785,9 @@ fn render_summary(
             .stability_picture
             .as_ref()
             .map_or(0, |picture| picture.records.len()),
+        gerbil_runtime_assets_receipt.status,
+        gerbil_runtime_assets_receipt.asset_count,
+        gerbil_runtime_assets_receipt.missing_required_assets.len(),
         quality_findings_receipt.findings.len(),
         quality_findings_receipt.hard_error_count(),
         quality_findings_receipt.warning_count(),
