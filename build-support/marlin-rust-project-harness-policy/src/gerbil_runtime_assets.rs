@@ -13,7 +13,7 @@ const REQUIRED_GERBIL_RUNTIME_ASSETS: &[&str] = &[
     "bin/command-adapter-batch.ss",
     "src/marlin/deck-runtime.ss",
     "src/marlin/deck-runtime-native.ss",
-    "src/marlin/hook-policy.ss",
+    "src/marlin/deck-runtime-strategy.ss",
 ];
 
 /// Build-gate status for crate-shipped Gerbil runtime assets.

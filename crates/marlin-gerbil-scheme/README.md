@@ -53,10 +53,10 @@ direnv exec . cargo bench -p marlin-gerbil-scheme --bench deck_runtime_native --
 
 To cross the real Scheme package boundary, run the same benchmark with an
 explicit opt-in. This writes the crate-shipped `gerbil.pkg`, `build.ss`, and
-`src/marlin/*` package assets, runs `build.ss compile`, and measures the `gxi`
-process smoke boundary for the Deck runtime policy selector. This is evidence
-that the package can be built and executed; it is not the hot-path data
-contract. The hot path is the typed native ABI and Rust projection layer:
+`src/marlin/*` package assets, runs `build.ss compile`, and measures package
+build plus Scheme strategy smoke paths. This is evidence that the package can be
+built and executed; it is not the hot-path data contract. The hot path is the
+typed native ABI and Rust projection layer:
 
 ```sh
 MARLIN_GERBIL_REAL_PACKAGE_BENCH=1 \
@@ -121,6 +121,7 @@ LLM/model-route integration should decide whether and how to link those objects,
 emit Cargo linker directives, and benchmark the linked path.
 
 The local Criterion benchmark keeps the Rust ABI baseline, real Gerbil package
-process smoke boundary, and gated native AOT link-unit build timing here. Fully
-linked runtime benchmarking still belongs next to the real LLM integration crate
-so this package does not affect unrelated build and test chains.
+build and strategy smoke boundary, and gated native AOT link-unit build timing
+here. Fully linked runtime benchmarking still belongs next to the real LLM
+integration crate so this package does not affect unrelated build and test
+chains.

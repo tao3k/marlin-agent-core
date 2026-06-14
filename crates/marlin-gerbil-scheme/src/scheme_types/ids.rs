@@ -17,7 +17,7 @@ impl GerbilSchemeTypeId {
     }
 }
 
-/// Stable identifier for a JSON schema emitted by Scheme.
+/// Stable identifier for a Scheme-owned typed contract projection.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct GerbilSchemeSchemaId(String);

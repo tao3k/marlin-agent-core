@@ -17,13 +17,8 @@
        "src/marlin/deck-runtime-compiled-policy"
        "src/marlin/deck-runtime-compiled-policy-sample"
        "src/marlin/deck-runtime-strategy"
-       "src/marlin/deck-runtime-policy"
-       "src/marlin/hook-policy"
-       "src/marlin/hooks/policy-samples"
        extra-target ...))))
 
 (defmarlin-runtime-build-script
   (exe: "bin/command-adapter")
-  (exe: "bin/command-adapter-batch")
-  (exe: "bin/deck-runtime-policy-adapter")
-  (exe: "bin/hook-policy-adapter"))
+  (exe: "bin/command-adapter-batch"))

@@ -16,11 +16,11 @@ mod dependency_boundary;
 #[path = "unit/deck_runtime_policy.rs"]
 mod deck_runtime_policy;
 
+#[path = "unit/working_copy_policy.rs"]
+mod working_copy_policy;
+
 #[path = "unit/deck_runtime_native/mod.rs"]
 mod deck_runtime_native;
-
-#[path = "unit/hook_policy.rs"]
-mod hook_policy;
 
 #[path = "unit/command/mod.rs"]
 mod command;

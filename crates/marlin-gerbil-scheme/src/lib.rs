@@ -9,7 +9,6 @@ mod compiler;
 mod deck_runtime_native;
 mod deck_runtime_policy;
 mod deps;
-mod hook_policy;
 mod native_aot_cli;
 mod real_gxi_gate;
 mod resident_runtime;
@@ -17,6 +16,7 @@ mod runtime;
 #[doc(hidden)]
 pub mod scheme_type_fixtures;
 mod scheme_types;
+mod working_copy_policy;
 
 pub use aot_repair_cli::run_gerbil_aot_repair_cli;
 pub use aot_runtime::{
@@ -51,23 +51,13 @@ pub use deck_runtime_native::{
 };
 pub use deck_runtime_policy::{
     GerbilDeckRuntimeContextMode, GerbilDeckRuntimeIsolationMode,
-    GerbilDeckRuntimeModelRoutePolicy, GerbilDeckRuntimeModelRoutePolicyError,
-    GerbilDeckRuntimeModelRoutePolicyEvaluator, GerbilDeckRuntimeModelRoutePolicyRequest,
-    GerbilDeckRuntimeModelRoutePolicyRuntimeBinding, GerbilDeckRuntimeModelRouteSelectedPolicy,
-    GerbilDeckRuntimeModelRouteSelectionReceipt, GerbilDeckRuntimeSelectedPolicyKind,
-    decode_gerbil_deck_runtime_model_route_selection,
+    GerbilDeckRuntimeModelRoutePolicy, GerbilDeckRuntimeModelRoutePolicyRequest,
+    GerbilDeckRuntimeModelRouteSelectedPolicy, GerbilDeckRuntimeModelRouteSelectionReceipt,
+    GerbilDeckRuntimeSelectedPolicyKind,
 };
 pub use deps::{
     GerbilDepsAction, GerbilDepsConfig, GerbilDepsError, run_gerbil_deps_cli,
     run_gerbil_deps_from_args,
-};
-pub use hook_policy::{
-    GerbilHookPolicyCommandEvaluator, GerbilHookPolicyDiagnostic,
-    GerbilHookPolicyEvaluationDecodeInput, GerbilHookPolicyEvaluationError,
-    GerbilHookPolicyEvaluationOutput, GerbilHookPolicyEvaluationReceipt,
-    GerbilHookPolicyInvocation, GerbilHookPolicyInvocationError, GerbilHookPolicyInvocationInput,
-    GerbilHookPolicyRuntimeBinding, build_gerbil_hook_policy_invocation,
-    decode_gerbil_hook_policy_evaluation,
 };
 pub use marlin_gerbil_ir::GerbilWorkspaceContractFacts;
 pub use native_aot_cli::run_gerbil_native_aot_cli;
@@ -87,17 +77,13 @@ pub use runtime::{
     DEFAULT_GERBIL_GSC_PROGRAM, DEFAULT_GERBIL_GXC_PROGRAM, DEFAULT_GERBIL_GXI_PROGRAM,
     GERBIL_ADAPTER_MODULE, GERBIL_BUILD_SOURCE, GERBIL_COMMAND_ADAPTER_BATCH_PATH,
     GERBIL_COMMAND_ADAPTER_BATCH_SOURCE, GERBIL_COMMAND_ADAPTER_PATH,
-    GERBIL_COMMAND_ADAPTER_SOURCE, GERBIL_DECK_RUNTIME_POLICY_ADAPTER_PATH,
-    GERBIL_DECK_RUNTIME_POLICY_ADAPTER_SOURCE, GERBIL_HOOK_POLICY_ADAPTER_PATH,
-    GERBIL_HOOK_POLICY_ADAPTER_SOURCE, GERBIL_LOADPATH_ENV, GERBIL_MARLIN_ADAPTER_PATH,
+    GERBIL_COMMAND_ADAPTER_SOURCE, GERBIL_LOADPATH_ENV, GERBIL_MARLIN_ADAPTER_PATH,
     GERBIL_MARLIN_ADAPTER_SOURCE, GERBIL_MARLIN_DECK_RUNTIME_COMPILED_POLICY_PATH,
     GERBIL_MARLIN_DECK_RUNTIME_COMPILED_POLICY_SAMPLE_PATH,
     GERBIL_MARLIN_DECK_RUNTIME_COMPILED_POLICY_SAMPLE_SOURCE,
     GERBIL_MARLIN_DECK_RUNTIME_COMPILED_POLICY_SOURCE, GERBIL_MARLIN_DECK_RUNTIME_NATIVE_PATH,
     GERBIL_MARLIN_DECK_RUNTIME_NATIVE_SOURCE, GERBIL_MARLIN_DECK_RUNTIME_PATH,
-    GERBIL_MARLIN_DECK_RUNTIME_POLICY_PATH, GERBIL_MARLIN_DECK_RUNTIME_POLICY_SOURCE,
-    GERBIL_MARLIN_DECK_RUNTIME_SOURCE, GERBIL_MARLIN_HOOK_POLICY_PATH,
-    GERBIL_MARLIN_HOOK_POLICY_SOURCE, GERBIL_MARLIN_PARSER_PATH, GERBIL_MARLIN_PARSER_SOURCE,
+    GERBIL_MARLIN_DECK_RUNTIME_SOURCE, GERBIL_MARLIN_PARSER_PATH, GERBIL_MARLIN_PARSER_SOURCE,
     GERBIL_MARLIN_PROTOCOL_PATH, GERBIL_MARLIN_PROTOCOL_SOURCE, GERBIL_MARLIN_REQUEST_PATH,
     GERBIL_MARLIN_REQUEST_SOURCE, GERBIL_PACKAGE_BIN_PATH, GERBIL_PACKAGE_MANIFEST_PATH,
     GERBIL_PACKAGE_MANIFEST_SOURCE, GERBIL_PACKAGE_SOURCE_PATH, GERBIL_POO_DEPENDENCY,
@@ -119,3 +105,4 @@ pub use scheme_types::{
     validate_gerbil_scheme_package_manifest, validate_gerbil_scheme_package_native_readiness,
     validate_gerbil_scheme_type_manifest, validate_gerbil_scheme_typed_value,
 };
+pub use working_copy_policy::{GerbilWorkingCopyPolicyOperation, GerbilWorkingCopyPolicySelection};

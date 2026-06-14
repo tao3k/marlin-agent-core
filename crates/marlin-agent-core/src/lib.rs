@@ -1,6 +1,5 @@
 //! Lean `marlin-agent-core` facade for graph-loop runtime boundaries.
 
-mod hook_policy;
 mod release;
 
 pub use marlin_agent_environment as environment;
@@ -74,12 +73,9 @@ pub use marlin_agent_runtime::{
 };
 pub use marlin_agent_sessions as sessions;
 
-pub use hook_policy::GerbilHookPolicyFinalizer;
 pub use marlin_gerbil_ir as gerbil_ir;
 pub use marlin_gerbil_scheme as gerbil_scheme;
-pub use marlin_gerbil_scheme::{
-    GerbilCommandSpec, GerbilHookPolicyCommandEvaluator, GerbilHookPolicyRuntimeBinding,
-};
+pub use marlin_gerbil_scheme::GerbilCommandSpec;
 pub use marlin_org_model as org_model;
 pub use marlin_org_patch as org_patch;
 pub use marlin_org_store as org_store;

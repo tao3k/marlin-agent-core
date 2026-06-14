@@ -9,16 +9,14 @@ use std::{
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use marlin_gerbil_scheme::{
     GERBIL_DECK_RUNTIME_NATIVE_ABI_VERSION, GERBIL_LOADPATH_ENV, GerbilDeckRuntimeModelRoutePolicy,
-    GerbilDeckRuntimeModelRoutePolicyRequest, GerbilDeckRuntimeModelRoutePolicyRuntimeBinding,
-    GerbilDeckRuntimeNativeAotBuildStatus, GerbilDeckRuntimeNativeAotConfig,
-    GerbilDeckRuntimeNativeModelRouteRequest, GerbilDeckRuntimeNativeModelRouteSelection,
-    GerbilDeckRuntimeNativeModelRouteSelector, GerbilDeckRuntimeNativeStatus,
-    GerbilDeckRuntimeNativeUtf8, decode_gerbil_deck_runtime_model_route_selection,
-    default_gerbil_gsc_program, default_gerbil_gxc_program, default_gerbil_gxi_program,
-    gerbil_runtime_loadpath, write_gerbil_runtime_assets,
+    GerbilDeckRuntimeModelRoutePolicyRequest, GerbilDeckRuntimeNativeAotBuildStatus,
+    GerbilDeckRuntimeNativeAotConfig, GerbilDeckRuntimeNativeModelRouteRequest,
+    GerbilDeckRuntimeNativeModelRouteSelection, GerbilDeckRuntimeNativeModelRouteSelector,
+    GerbilDeckRuntimeNativeStatus, GerbilDeckRuntimeNativeUtf8, default_gerbil_gsc_program,
+    default_gerbil_gxc_program, default_gerbil_gxi_program, gerbil_runtime_loadpath,
+    write_gerbil_runtime_assets,
 };
 
-const RECEIPT_JSON: &str = r#"{"schema_id":"marlin-deck-runtime.model-route-selection.v1","command":"cargo test","agent_scope":"sub-agent","matched":true,"policy":{"kind":"marlin-deck-runtime.model-route-policy.v1","name":"cheap-test-runner","provider":"openai","model":"gpt-5-mini","command_prefixes":["cargo test"],"agent_scopes":["sub-agent"],"context_mode":"forked-context","isolation_mode":"workspace-isolated"}}"#;
 const REAL_PACKAGE_BENCH_ENV: &str = "MARLIN_GERBIL_REAL_PACKAGE_BENCH";
 const REAL_STRATEGY_BENCH_ENV: &str = "MARLIN_GERBIL_REAL_STRATEGY_BENCH";
 const REAL_COMPILED_POLICY_BENCH_ENV: &str = "MARLIN_GERBIL_REAL_COMPILED_POLICY_BENCH";
@@ -46,62 +44,6 @@ fn bench_native_selector(c: &mut Criterion) {
         );
     }
 
-    group.finish();
-}
-
-fn bench_receipt_decode(c: &mut Criterion) {
-    c.bench_function("deck_runtime_native_receipt_decode", |bencher| {
-        bencher.iter(|| {
-            let receipt = decode_gerbil_deck_runtime_model_route_selection(std::hint::black_box(
-                RECEIPT_JSON,
-            ))
-            .expect("bench receipt should decode");
-            std::hint::black_box(receipt);
-        });
-    });
-}
-
-fn bench_real_scheme_package_selector(c: &mut Criterion) {
-    if !real_package_bench_enabled() {
-        eprintln!(
-            "skipping real Scheme package benchmark; set {REAL_PACKAGE_BENCH_ENV}=1 to run it"
-        );
-        return;
-    }
-
-    let gxi = default_gerbil_gxi_program();
-    assert!(
-        executable_exists(&gxi),
-        "real Scheme package benchmark requires gxi at {}; set MARLIN_GERBIL_GXI to override",
-        gxi.display()
-    );
-
-    let loadpath_root = tempfile::Builder::new()
-        .prefix("marlin-gerbil-real-package-bench-")
-        .tempdir()
-        .expect("create real Scheme package benchmark loadpath");
-    let binding = GerbilDeckRuntimeModelRoutePolicyRuntimeBinding::new(&gxi, loadpath_root.path())
-        .expect("write real Scheme package runtime assets");
-    let evaluator = binding.evaluator().clone();
-    let request = route_request(2);
-
-    let warmup_receipt = evaluator
-        .evaluate(request.clone())
-        .expect("real Scheme package selector should evaluate before benchmarking");
-    assert!(warmup_receipt.matched);
-
-    let mut group = c.benchmark_group("deck_runtime_real_scheme_package");
-    group.sample_size(10);
-    group.warm_up_time(Duration::from_millis(100));
-    group.measurement_time(Duration::from_secs(2));
-    group.bench_function("model_route_policy_process_roundtrip", |bencher| {
-        bencher.iter(|| {
-            let receipt = evaluator
-                .evaluate(std::hint::black_box(request.clone()))
-                .expect("real Scheme package selector bench receipt should decode");
-            std::hint::black_box(receipt);
-        });
-    });
     group.finish();
 }
 
@@ -563,6 +505,6 @@ criterion_group! {
         .sample_size(20)
         .warm_up_time(Duration::from_millis(100))
         .measurement_time(Duration::from_millis(500));
-    targets = bench_native_selector, bench_receipt_decode, bench_real_scheme_package_selector, bench_real_scheme_strategy_selector, bench_real_scheme_compiled_policy_selector, bench_real_scheme_package_build, bench_real_native_aot_link_unit_build
+    targets = bench_native_selector, bench_real_scheme_strategy_selector, bench_real_scheme_compiled_policy_selector, bench_real_scheme_package_build, bench_real_native_aot_link_unit_build
 }
 criterion_main!(deck_runtime_native);

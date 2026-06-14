@@ -59,16 +59,6 @@ pub const GERBIL_COMMAND_ADAPTER_BATCH_PATH: &str = "bin/command-adapter-batch.s
 /// Source text for the newline-delimited command adapter launcher.
 pub const GERBIL_COMMAND_ADAPTER_BATCH_SOURCE: &str =
     include_str!("../gerbil/bin/command-adapter-batch.ss");
-/// Source-file launcher that runs a configured `Gerbil Scheme` hook policy.
-pub const GERBIL_HOOK_POLICY_ADAPTER_PATH: &str = "bin/hook-policy-adapter.ss";
-/// Source text for the configured `Gerbil Scheme` hook policy launcher.
-pub const GERBIL_HOOK_POLICY_ADAPTER_SOURCE: &str =
-    include_str!("../gerbil/bin/hook-policy-adapter.ss");
-/// Source-file launcher that runs the Deck runtime model-route policy selector.
-pub const GERBIL_DECK_RUNTIME_POLICY_ADAPTER_PATH: &str = "bin/deck-runtime-policy-adapter.ss";
-/// Source text for the Deck runtime model-route policy selector launcher.
-pub const GERBIL_DECK_RUNTIME_POLICY_ADAPTER_SOURCE: &str =
-    include_str!("../gerbil/bin/deck-runtime-policy-adapter.ss");
 /// Build script for compiling the crate-shipped Gerbil runtime assets.
 pub const GERBIL_BUILD_SOURCE: &str = include_str!("../gerbil/build.ss");
 /// Smoke launcher path inside the crate-shipped `Gerbil` runtime package.
@@ -101,16 +91,6 @@ pub const GERBIL_MARLIN_DECK_RUNTIME_NATIVE_PATH: &str = "src/marlin/deck-runtim
 /// Source text for the native C ABI Deck runtime selector.
 pub const GERBIL_MARLIN_DECK_RUNTIME_NATIVE_SOURCE: &str =
     include_str!("../gerbil/src/marlin/deck-runtime-native.ss");
-/// Library module that adapts JSON requests into Deck runtime policy selection.
-pub const GERBIL_MARLIN_DECK_RUNTIME_POLICY_PATH: &str = "src/marlin/deck-runtime-policy.ss";
-/// Source text for the Deck runtime policy selector adapter module.
-pub const GERBIL_MARLIN_DECK_RUNTIME_POLICY_SOURCE: &str =
-    include_str!("../gerbil/src/marlin/deck-runtime-policy.ss");
-/// Library module that dynamically invokes configured hook policy procedures.
-pub const GERBIL_MARLIN_HOOK_POLICY_PATH: &str = "src/marlin/hook-policy.ss";
-/// Source text for dynamically invoking configured hook policy procedures.
-pub const GERBIL_MARLIN_HOOK_POLICY_SOURCE: &str =
-    include_str!("../gerbil/src/marlin/hook-policy.ss");
 /// Reader-backed source parser for `marlin` smoke artifact forms.
 pub const GERBIL_MARLIN_PARSER_PATH: &str = "src/marlin/parser.ss";
 /// Source text for the reader-backed source parser.

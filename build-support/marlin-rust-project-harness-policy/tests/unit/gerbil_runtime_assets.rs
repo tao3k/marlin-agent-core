@@ -27,7 +27,7 @@ fn gerbil_runtime_asset_receipt_accepts_complete_marlin_runtime_package() {
             "bin/command-adapter-batch.ss",
             "src/marlin/deck-runtime.ss",
             "src/marlin/deck-runtime-native.ss",
-            "src/marlin/hook-policy.ss",
+            "src/marlin/deck-runtime-strategy.ss",
             "src/marlin/extra-policy.ss",
         ],
     );

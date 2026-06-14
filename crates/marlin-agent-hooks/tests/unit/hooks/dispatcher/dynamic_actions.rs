@@ -66,7 +66,7 @@ impl HookRegistrationCatalog<HookRegistration> for StaticRegistrationCatalog {
     }
 }
 
-fn complex_gerbil_hook_decision_context() -> HookDecisionContext {
+fn complex_scheme_hook_decision_context() -> HookDecisionContext {
     HookDecisionContext::new()
         .with_session_id("cheap-test-session")
         .with_agent_lineage_node("release")
@@ -75,7 +75,7 @@ fn complex_gerbil_hook_decision_context() -> HookDecisionContext {
         .with_agent_class("customer-agent")
 }
 
-fn complex_gerbil_sample_actions() -> Vec<HookPolicyDynamicAction> {
+fn complex_scheme_policy_actions() -> Vec<HookPolicyDynamicAction> {
     vec![
         dynamic_action(
             HookPolicyDynamicActionKind::Register,
@@ -193,7 +193,7 @@ async fn dispatcher_dynamic_register_action_resolves_catalog_registration() {
 }
 
 #[tokio::test]
-async fn dispatcher_complex_gerbil_policy_action_set_applies_catalog_session_deny_and_rewrite() {
+async fn dispatcher_complex_scheme_policy_action_set_applies_catalog_session_deny_and_rewrite() {
     let registry = HookRegistry::new()
         .with_registration(
             summary_hook_registration(
@@ -223,23 +223,21 @@ async fn dispatcher_complex_gerbil_policy_action_set_applies_catalog_session_den
         )
         .with_trust(HookTrustStatus::Trusted),
     );
-    let extension = HookPolicyExtension::gerbil_scheme(
-        "marlin/hooks/policy-samples",
-        "decide-hook-policy-sample",
-    );
+    let extension =
+        HookPolicyExtension::gerbil_scheme("marlin/hooks/dynamic-policy", "decide-hook-policy");
     let (runtime, _events) = TokioAgentRuntime::new(4);
 
     let report = HookDispatcher::new(registry)
         .with_policy(HookDispatchPolicy::enforce_trusted().with_extension(extension.clone()))
         .with_registration_catalog(Arc::new(catalog))
         .with_policy_finalizer(Arc::new(DynamicActionPolicyFinalizer::new(
-            complex_gerbil_sample_actions(),
+            complex_scheme_policy_actions(),
         )))
         .dispatch(
             &runtime,
             HookInvocation::new(HookEventName::PreToolUse)
                 .with_agent_scope(HookAgentScope::CustomerAgent)
-                .with_decision_context(complex_gerbil_hook_decision_context())
+                .with_decision_context(complex_scheme_hook_decision_context())
                 .with_message("cargo test"),
         )
         .await;

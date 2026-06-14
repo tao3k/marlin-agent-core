@@ -4,7 +4,6 @@ use crate::{
     GerbilArtifactKind, GerbilCompiledArtifact, GerbilCompiler, GerbilSource,
     runtime::{
         GERBIL_ADAPTER_MODULE, GERBIL_COMMAND_ADAPTER_BATCH_PATH, GERBIL_COMMAND_ADAPTER_PATH,
-        GERBIL_DECK_RUNTIME_POLICY_ADAPTER_PATH, GERBIL_HOOK_POLICY_ADAPTER_PATH,
         GERBIL_LOADPATH_ENV, default_gerbil_gxi_program, gerbil_runtime_loadpath,
         write_gerbil_runtime_assets,
     },
@@ -227,32 +226,6 @@ impl GerbilCommandSpec {
         let loadpath_root = loadpath_root.into();
         let loadpath = gerbil_runtime_loadpath(&loadpath_root);
         let launcher = loadpath_root.join(GERBIL_COMMAND_ADAPTER_BATCH_PATH);
-        Self::new(program)
-            .env(GERBIL_LOADPATH_ENV, loadpath.into_os_string())
-            .arg(launcher.into_os_string())
-    }
-
-    /// Builds a command spec for the `hook-policy-adapter.ss` launcher.
-    pub fn marlin_hook_policy_launcher(
-        program: impl Into<PathBuf>,
-        loadpath_root: impl Into<PathBuf>,
-    ) -> Self {
-        let loadpath_root = loadpath_root.into();
-        let loadpath = gerbil_runtime_loadpath(&loadpath_root);
-        let launcher = loadpath_root.join(GERBIL_HOOK_POLICY_ADAPTER_PATH);
-        Self::new(program)
-            .env(GERBIL_LOADPATH_ENV, loadpath.into_os_string())
-            .arg(launcher.into_os_string())
-    }
-
-    /// Builds a command spec for the `deck-runtime-policy-adapter.ss` launcher.
-    pub fn marlin_deck_runtime_policy_launcher(
-        program: impl Into<PathBuf>,
-        loadpath_root: impl Into<PathBuf>,
-    ) -> Self {
-        let loadpath_root = loadpath_root.into();
-        let loadpath = gerbil_runtime_loadpath(&loadpath_root);
-        let launcher = loadpath_root.join(GERBIL_DECK_RUNTIME_POLICY_ADAPTER_PATH);
         Self::new(program)
             .env(GERBIL_LOADPATH_ENV, loadpath.into_os_string())
             .arg(launcher.into_os_string())

@@ -146,7 +146,7 @@ pub fn custom_hook_policy_receipt_fixture() -> HookDispatchPolicyReceipt {
     })
 }
 
-/// Decision context fixture that triggers the complex Gerbil hook policy sample.
+/// Decision context fixture that triggers a complex Scheme hook policy.
 pub fn complex_gerbil_hook_policy_decision_context_fixture() -> HookDecisionContext {
     HookDecisionContext::new()
         .with_session_id("cheap-test-session")
@@ -156,14 +156,14 @@ pub fn complex_gerbil_hook_policy_decision_context_fixture() -> HookDecisionCont
         .with_agent_class("customer-agent")
 }
 
-/// Policy receipt fixture for a complex Gerbil hook policy dynamic action set.
+/// Policy receipt fixture for a complex Scheme hook policy dynamic action set.
 pub fn complex_gerbil_hook_policy_receipt_fixture() -> HookDispatchPolicyReceipt {
     complex_gerbil_hook_policy_receipt_with_decision_context(
         complex_gerbil_hook_policy_decision_context_fixture(),
     )
 }
 
-/// Policy receipt fixture for a complex Gerbil hook policy using supplied runtime context facts.
+/// Policy receipt fixture for a complex Scheme hook policy using supplied runtime context facts.
 pub fn complex_gerbil_hook_policy_receipt_with_decision_context(
     decision_context: HookDecisionContext,
 ) -> HookDispatchPolicyReceipt {
@@ -173,8 +173,8 @@ pub fn complex_gerbil_hook_policy_receipt_with_decision_context(
         decision_context,
         mode: HookPolicyMode::ObserveOnly,
         extension: HookPolicyExtension::gerbil_scheme(
-            "marlin/hooks/policy-samples",
-            "decide-hook-policy-sample",
+            "marlin/hooks/dynamic-policy",
+            "decide-hook-policy",
         ),
         actions: vec![
             dynamic_hook_action(
@@ -209,7 +209,7 @@ pub fn complex_gerbil_hook_policy_receipt_with_decision_context(
             scope: HookScope::Turn,
             agent_scope: HookAgentScope::CustomerAgent,
             source_path: Some(HookSourcePath::new(
-                "gerbil/src/marlin/hooks/policy-samples.ss",
+                "test-home/root/hooks/dynamic-policy.ss",
             )),
             source: HookSource::Project,
             trust: HookTrustStatus::Trusted,
@@ -256,7 +256,7 @@ fn assert_complex_gerbil_hook_policy_extension(receipt: &HookDispatchPolicyRecei
             .as_ref()
             .expect("complex hook policy should record Gerbil module")
             .as_str(),
-        "marlin/hooks/policy-samples",
+        "marlin/hooks/dynamic-policy",
     );
     assert_eq!(
         receipt
@@ -265,7 +265,7 @@ fn assert_complex_gerbil_hook_policy_extension(receipt: &HookDispatchPolicyRecei
             .as_ref()
             .expect("complex hook policy should record Gerbil procedure")
             .as_str(),
-        "decide-hook-policy-sample",
+        "decide-hook-policy",
     );
 }
 
