@@ -5,7 +5,7 @@
 :PROPERTIES:
 :ID: docs-40-50-agent-observability-tracing-contract
 :KIND: rfc
-:STATUS: active
+:STATUS: accepted
 :END:
 
 ** Problem
@@ -124,3 +124,11 @@ Provider, tool, and model implementation crates may add child spans later, but t
 The implementation adds =tracing= as a workspace dependency and instruments runtime, kernel adapter, hook dispatcher, and harness execution boundaries. It provides a harness-local =TraceRecorder= that captures protocol-owned =AgentTraceSpanRecord= values so scenario tests can capture span names and fields without adopting =tracing-subscriber= or OpenTelemetry as normal dependencies.
 
 =marlin-agent-core= re-exports the protocol observability surface, including =AgentEventTopic=, =AgentSpanName=, and =AgentTraceSpanRecord=, so downstream users can stay on the facade crate while the modular ownership remains explicit.
+
+** Acceptance Decision
+
+Accepted for the current observability tracing contract. The accepted boundary
+covers protocol-owned span records, runtime spans, kernel adapter spans, hook
+dispatcher spans, harness execution spans, and facade re-exports. Additional
+process-lifecycle span checklists are follow-up work only when runtime process
+ownership expands.

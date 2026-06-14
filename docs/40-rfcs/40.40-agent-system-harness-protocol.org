@@ -4,7 +4,7 @@
 :PROPERTIES:
 :ID: docs-40-40-agent-system-harness-protocol
 :KIND: rfc
-:STATUS: active
+:STATUS: accepted
 :END:
 
 ** Problem
@@ -121,3 +121,11 @@ contract. The default real =gxi= gate covers both =marlin-gerbil-scheme= and
 =marlin-agent-harness= ignored tests with the =real_gxi= filter.
 
 Transcript replay and richer fixture loading remain follow-up work.
+
+** Acceptance Decision
+
+Accepted for the agent-system harness protocol. The accepted boundary covers
+controlled runtime execution, harness reports, graph fixtures, provider/tool
+and sub-agent scenarios, runtime event evidence, scenario contracts, and real
+=gxi= graph-loop proof. Transcript replay and richer fixture loading remain
+follow-up work and do not block this accepted protocol boundary.

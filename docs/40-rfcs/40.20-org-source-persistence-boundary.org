@@ -5,7 +5,7 @@
 :PROPERTIES:
 :ID: rfc-40-20-org-source-persistence-boundary
 :KIND: rfc
-:STATUS: draft
+:STATUS: accepted
 :END:
 
 This RFC defines the persistence boundary that may turn validated Org text edit
@@ -127,7 +127,13 @@ Focused evidence lives in =marlin-org-store=, =marlin-org-patch=, and
 =marlin-org-workflow= unit tests. Remote revision ids remain a follow-up
 extension and do not block accepting the local filesystem boundary.
 
-** Open Questions
+** Acceptance Decision
+
+Accepted for the local filesystem source-persistence boundary. Remote store
+revision ids are explicitly follow-up work; portable source hashes remain the
+accepted cross-backend proof for this RFC.
+
+** Follow-up Questions
 - Should remote stores expose optimistic revision ids in addition to portable
   text hashes?
 
