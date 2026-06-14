@@ -92,7 +92,10 @@ pub use marlin_workspace_protocol::{
     ReleaseVisibilityStatus,
 };
 pub use release::{
-    commit_release_gate_execution_receipts, gerbil_release_status_commit_from_execution_receipts,
-    record_release_gate_execution_receipt, release_gate_state_from_execution,
-    release_gate_status_receipt,
+    ProcessReleaseGateCommandRunner, ReleaseGateCommandOutput, ReleaseGateCommandRunner,
+    ReleaseGateRecordRequest, ReleaseGateRunOptions, commit_release_gate_execution_receipts,
+    execute_and_record_release_gate_with_runner, execute_release_gate,
+    execute_release_gate_with_runner, gerbil_release_status_commit_from_execution_receipts,
+    record_release_gate_execution_receipt, release_gate_execution_receipt_from_output,
+    release_gate_state_from_execution, release_gate_status_receipt,
 };
