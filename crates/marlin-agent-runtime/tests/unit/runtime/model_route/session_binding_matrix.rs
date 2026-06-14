@@ -54,6 +54,18 @@ fn model_route_session_binding_covers_create_reuse_reject_and_environment_receip
         "model-route/builder-create/ephemeral"
     );
     assert_eq!(
+        create_binding.route_receipt().rule_id.as_str(),
+        "builder-create"
+    );
+    assert_eq!(
+        create_binding.route_receipt().command_line,
+        "gpt-5.5 sub-agent build"
+    );
+    assert_eq!(
+        create_binding.route_receipt().litellm_model_id.as_str(),
+        "openai/gpt-5-mini"
+    );
+    assert_eq!(
         create_binding.route_receipt().session_lifecycle,
         ModelSessionLifecycle::Ephemeral
     );
@@ -98,6 +110,21 @@ fn model_route_session_binding_covers_create_reuse_reject_and_environment_receip
         &first_reuse_binding.route_receipt().session_lifecycle,
         ModelSessionLifecycle::Persistent { key } if key.as_str() == "workspace:reviewer"
     ));
+    assert_eq!(
+        first_reuse_binding.route_receipt().rule_id.as_str(),
+        "reviewer-reuse"
+    );
+    assert_eq!(
+        first_reuse_binding.route_receipt().command_line,
+        "gpt-5.5 sub-agent review"
+    );
+    assert_eq!(
+        first_reuse_binding
+            .route_receipt()
+            .litellm_model_id
+            .as_str(),
+        "anthropic/claude-opus-4-8"
+    );
     assert_eq!(
         first_reuse_binding.route_receipt().context_fork,
         ModelContextForkMode::ForkSnapshot
