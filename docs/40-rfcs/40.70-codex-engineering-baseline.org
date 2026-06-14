@@ -36,7 +36,8 @@ learning from. Marlin records that narrower adaptation in
 [[file:40.71-workspace-project-protocol.org][40.71 Workspace Project Protocol]]:
 Git repository/worktree identity, jj-style VCS ecosystem extensions, explicit
 roots, trust gates, GitHub operation families, optional Org-native metadata
-files, and runtime project import stay separate facts.
+files, runtime project import, and typed working-copy isolation stay separate
+facts.
 
 ** Mature Capabilities To Learn
 

@@ -171,7 +171,11 @@ Workspace and project protocol:
   and rejects Codex-specific project shape;
 
 - a project is primarily a Git repository/worktree; jj-style behavior is a
-  policy extension, while Org is an attached metadata content file.
+  policy extension, while Org is an attached metadata content file;
+
+- agent working-copy isolation follows the same boundary: policy selects typed
+  requests, protocol compiles plans and command projections, and runtime emits
+  receipts before any provider-specific behavior leaks into shared contracts.
 
 Tool and process execution:
 
