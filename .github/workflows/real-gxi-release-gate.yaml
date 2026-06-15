@@ -1,0 +1,117 @@
+name: Real gxi release gate
+
+on:
+  workflow_dispatch:
+    inputs:
+      real_gxi_runner:
+        description: JSON runs-on labels, for example ["macos-latest"] or ["self-hosted","macOS"].
+        required: false
+        default: '["macos-latest"]'
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+  MARLIN_GERBIL_SOURCE_TAG: v0.18.2
+  MARLIN_REQUIRE_REAL_GXI: "1"
+  MARLIN_GERBIL_GXI: ${{ vars.MARLIN_GERBIL_GXI }}
+  MARLIN_RELEASE_STATUS_ARTIFACT_DIR: ${{ github.workspace }}/target/release-status-artifacts
+
+jobs:
+  real-gxi:
+    name: Real gxi release gate
+    runs-on: ${{ fromJSON(inputs.real_gxi_runner || '["macos-latest"]') }}
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: marlin-agent-core-real-gxi-${{ runner.os }}
+          cache-on-failure: true
+
+      - name: Cache Gerbil source build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/marlin/gerbil-source/v0.18.2
+            ~/.local/opt/gerbil
+          key: marlin-gerbil-source-${{ runner.os }}-${{ runner.arch }}-v0.18.2-v1
+
+      - name: Fetch workspace dependencies
+        run: cargo fetch --locked
+
+      - name: Install Gerbil from source
+        run: |
+          case "${{ runner.os }}" in
+            Linux)
+              sudo apt-get update
+              sudo apt-get install -y build-essential libssl-dev zlib1g-dev libsqlite3-dev
+              ;;
+            macOS)
+              brew install openssl@3 sqlite zlib
+              openssl_prefix="$(brew --prefix openssl@3)"
+              sqlite_prefix="$(brew --prefix sqlite)"
+              zlib_prefix="$(brew --prefix zlib)"
+              echo "CFLAGS=-I$openssl_prefix/include -I$sqlite_prefix/include -I$zlib_prefix/include" >> "$GITHUB_ENV"
+              echo "LDFLAGS=-L$openssl_prefix/lib -L$sqlite_prefix/lib -L$zlib_prefix/lib" >> "$GITHUB_ENV"
+              export CFLAGS="-I$openssl_prefix/include -I$sqlite_prefix/include -I$zlib_prefix/include"
+              export LDFLAGS="-L$openssl_prefix/lib -L$sqlite_prefix/lib -L$zlib_prefix/lib"
+              ;;
+            *)
+              echo "::error::real gxi gate requested on unsupported runner OS ${{ runner.os }}."
+              exit 1
+              ;;
+          esac
+
+          gerbil_install_base="$HOME/.local/opt/gerbil"
+          gerbil_source_root="$HOME/.cache/marlin/gerbil-source/$MARLIN_GERBIL_SOURCE_TAG"
+          if [ ! -x "$gerbil_install_base/bin/gxi" ]; then
+            rm -rf "$gerbil_source_root"
+            git clone --depth 1 --branch "$MARLIN_GERBIL_SOURCE_TAG" \
+              https://github.com/mighty-gerbils/gerbil.git "$gerbil_source_root"
+            cd "$gerbil_source_root"
+            ./configure --prefix="$gerbil_install_base" --version-string="$MARLIN_GERBIL_SOURCE_TAG"
+            make -j"$(getconf _NPROCESSORS_ONLN)"
+            make install
+          fi
+
+          echo "MARLIN_GERBIL_GXI=$gerbil_install_base/bin/gxi" >> "$GITHUB_ENV"
+
+      - name: Resolve gxi executable
+        run: |
+          if [ -z "${MARLIN_GERBIL_GXI:-}" ] && command -v gxi >/dev/null 2>&1; then
+            MARLIN_GERBIL_GXI="$(command -v gxi)"
+            echo "MARLIN_GERBIL_GXI=$MARLIN_GERBIL_GXI" >> "$GITHUB_ENV"
+          fi
+
+          gxi_program="${MARLIN_GERBIL_GXI:-$HOME/.local/opt/gerbil/bin/gxi}"
+          if [ ! -x "$gxi_program" ]; then
+            echo "::error::real gxi gate requested but $gxi_program is not executable. Set MARLIN_GERBIL_GXI or choose a runner with Gerbil installed."
+            exit 1
+          fi
+
+          "$gxi_program" --version || true
+
+      - name: Print real gxi gate plan
+        run: cargo run --locked -p marlin-gerbil-scheme --bin marlin-gerbil-real-gxi-gate -- --print-plan
+
+      - name: Run real gxi release gate
+        run: |
+          mkdir -p "$MARLIN_RELEASE_STATUS_ARTIFACT_DIR"
+          cargo run --locked -p marlin-gerbil-scheme --bin marlin-gerbil-real-gxi-gate
+
+      - name: Upload release status artifacts
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-status-${{ runner.os }}
+          path: ${{ env.MARLIN_RELEASE_STATUS_ARTIFACT_DIR }}
+          if-no-files-found: error

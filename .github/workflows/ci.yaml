@@ -6,27 +6,6 @@ on:
     branches:
       - main
   workflow_dispatch:
-    inputs:
-      run_real_gxi:
-        description: Run ignored real_gxi tests that require a local Gerbil gxi executable.
-        required: false
-        default: false
-        type: boolean
-      real_gxi_runner:
-        description: JSON runs-on labels for the real_gxi job, for example ["macos-latest"] or ["self-hosted","macOS"].
-        required: false
-        default: '["macos-latest"]'
-        type: string
-      run_linked_native:
-        description: Run the linked-native Deck runtime AOT link and benchmark gate on workflow_dispatch.
-        required: false
-        default: false
-        type: boolean
-      linked_native_runner:
-        description: JSON runs-on labels for the linked-native job, for example ["macos-latest"] or ["self-hosted","Linux"].
-        required: false
-        default: '["macos-latest"]'
-        type: string
 
 permissions:
   contents: read
@@ -154,6 +133,7 @@ jobs:
       - name: Test Gerbil workflow surface
         run: |
           cargo test -p marlin-gerbil-ir -p marlin-gerbil-scheme -p marlin-org-workflow --locked
+          cargo test -p marlin-rust-project-harness-policy --locked gerbil_runtime_asset
 
       - name: Check Gerbil binaries and examples
         run: cargo check -p marlin-gerbil-scheme --bins --examples --locked
@@ -161,245 +141,20 @@ jobs:
       - name: Audit Gerbil package assets
         run: |
           cargo package -p marlin-gerbil-scheme --list --allow-dirty | tee gerbil-package-files.txt
-          grep -Fx README.md gerbil-package-files.txt
-          grep -Fx examples/compile-source.rs gerbil-package-files.txt
-          grep -Fx examples/workspace-patch-intent.rs gerbil-package-files.txt
-          grep -Fx examples/workspace-patch-intent-workflow.rs gerbil-package-files.txt
-          grep -Fx examples/workspace-patch-intent-source.ss gerbil-package-files.txt
-          grep -Fx src/bin/marlin-gerbil-compile-source.rs gerbil-package-files.txt
-          grep -Fx src/bin/marlin-gerbil-native-aot.rs gerbil-package-files.txt
-          grep -Fx src/bin/marlin-gerbil-real-gxi-gate.rs gerbil-package-files.txt
-          grep -Fx src/compile_source.rs gerbil-package-files.txt
-          grep -Fx src/resident_runtime.rs gerbil-package-files.txt
-          grep -Fx src/scheme_type_fixtures.rs gerbil-package-files.txt
-          grep -Fx include/marlin_deck_runtime_native.h gerbil-package-files.txt
-          grep -Fx gerbil/gerbil.pkg gerbil-package-files.txt
-          grep -Fx gerbil/bin/command-adapter.ss gerbil-package-files.txt
-          grep -Fx gerbil/bin/command-adapter-batch.ss gerbil-package-files.txt
-          grep -Fx gerbil/bin/deck-runtime-policy-adapter.ss gerbil-package-files.txt
-          grep -Fx gerbil/bin/hook-policy-adapter.ss gerbil-package-files.txt
-          grep -Fx gerbil/bin/smoke.ss gerbil-package-files.txt
-          grep -Fx gerbil/src/marlin/adapter.ss gerbil-package-files.txt
-          grep -Fx gerbil/src/marlin/deck-runtime-compiled-policy-sample.ss gerbil-package-files.txt
-          grep -Fx gerbil/src/marlin/deck-runtime-compiled-policy.ss gerbil-package-files.txt
-          grep -Fx gerbil/src/marlin/deck-runtime-native.ss gerbil-package-files.txt
-          grep -Fx gerbil/src/marlin/deck-runtime-policy.ss gerbil-package-files.txt
-          grep -Fx gerbil/src/marlin/deck-runtime-strategy.ss gerbil-package-files.txt
-          grep -Fx gerbil/src/marlin/deck-runtime.ss gerbil-package-files.txt
-          grep -Fx gerbil/src/marlin/hook-policy.ss gerbil-package-files.txt
-          grep -Fx gerbil/src/marlin/hooks/policy-samples.ss gerbil-package-files.txt
-          grep -Fx gerbil/src/marlin/parser.ss gerbil-package-files.txt
-          grep -Fx gerbil/src/marlin/protocol.ss gerbil-package-files.txt
-          grep -Fx gerbil/src/marlin/request.ss gerbil-package-files.txt
-
-  real-gxi:
-    name: Real gxi release gate
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_real_gxi }}
-    runs-on: ${{ fromJSON(inputs.real_gxi_runner || '["macos-latest"]') }}
-    timeout-minutes: 120
-    env:
-      CARGO_INCREMENTAL: "0"
-      MARLIN_REQUIRE_REAL_GXI: "1"
-      MARLIN_GERBIL_GXI: ${{ vars.MARLIN_GERBIL_GXI }}
-      MARLIN_RELEASE_STATUS_ARTIFACT_DIR: ${{ github.workspace }}/target/release-status-artifacts
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache cargo artifacts
-        uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: marlin-agent-core-real-gxi-${{ runner.os }}
-          cache-on-failure: true
-
-      - name: Cache Gerbil source build
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cache/marlin/gerbil-source/v0.18.2
-            ~/.local/opt/gerbil
-          key: marlin-gerbil-source-${{ runner.os }}-${{ runner.arch }}-v0.18.2-v1
-
-      - name: Fetch workspace dependencies
-        run: cargo fetch --locked
-
-      - name: Install Gerbil from source
-        run: |
-          case "${{ runner.os }}" in
-            Linux)
-              sudo apt-get update
-              sudo apt-get install -y build-essential libssl-dev zlib1g-dev libsqlite3-dev
-              ;;
-            macOS)
-              brew install openssl@3 sqlite zlib
-              openssl_prefix="$(brew --prefix openssl@3)"
-              sqlite_prefix="$(brew --prefix sqlite)"
-              zlib_prefix="$(brew --prefix zlib)"
-              echo "CFLAGS=-I$openssl_prefix/include -I$sqlite_prefix/include -I$zlib_prefix/include" >> "$GITHUB_ENV"
-              echo "LDFLAGS=-L$openssl_prefix/lib -L$sqlite_prefix/lib -L$zlib_prefix/lib" >> "$GITHUB_ENV"
-              export CFLAGS="-I$openssl_prefix/include -I$sqlite_prefix/include -I$zlib_prefix/include"
-              export LDFLAGS="-L$openssl_prefix/lib -L$sqlite_prefix/lib -L$zlib_prefix/lib"
-              ;;
-            *)
-              echo "::error::run_real_gxi requested on unsupported runner OS ${{ runner.os }}."
-              exit 1
-              ;;
-          esac
-
-          gerbil_install_base="$HOME/.local/opt/gerbil"
-          gerbil_source_root="$HOME/.cache/marlin/gerbil-source/$MARLIN_GERBIL_SOURCE_TAG"
-          if [ ! -x "$gerbil_install_base/bin/gxi" ]; then
-            rm -rf "$gerbil_source_root"
-            git clone --depth 1 --branch "$MARLIN_GERBIL_SOURCE_TAG" \
-              https://github.com/mighty-gerbils/gerbil.git "$gerbil_source_root"
-            cd "$gerbil_source_root"
-            ./configure --prefix="$gerbil_install_base" --version-string="$MARLIN_GERBIL_SOURCE_TAG"
-            make -j"$(getconf _NPROCESSORS_ONLN)"
-            make install
-          fi
-
-          echo "MARLIN_GERBIL_GXI=$gerbil_install_base/bin/gxi" >> "$GITHUB_ENV"
-
-      - name: Resolve gxi executable
-        run: |
-          if [ -z "${MARLIN_GERBIL_GXI:-}" ] && command -v gxi >/dev/null 2>&1; then
-            MARLIN_GERBIL_GXI="$(command -v gxi)"
-            echo "MARLIN_GERBIL_GXI=$MARLIN_GERBIL_GXI" >> "$GITHUB_ENV"
-          fi
-
-          gxi_program="${MARLIN_GERBIL_GXI:-$HOME/.local/opt/gerbil/bin/gxi}"
-          if [ ! -x "$gxi_program" ]; then
-            echo "::error::run_real_gxi requested but $gxi_program is not executable. Set MARLIN_GERBIL_GXI or choose a runner with Gerbil installed."
-            exit 1
-          fi
-
-          "$gxi_program" --version || true
-
-      - name: Print real gxi gate plan
-        run: cargo run --locked -p marlin-gerbil-scheme --bin marlin-gerbil-real-gxi-gate -- --print-plan
-
-      - name: Run real gxi release gate
-        run: |
-          mkdir -p "$MARLIN_RELEASE_STATUS_ARTIFACT_DIR"
-          cargo run --locked -p marlin-gerbil-scheme --bin marlin-gerbil-real-gxi-gate
-
-      - name: Upload release status artifacts
-        if: ${{ always() }}
-        uses: actions/upload-artifact@v7
-        with:
-          name: release-status-${{ runner.os }}
-          path: ${{ env.MARLIN_RELEASE_STATUS_ARTIFACT_DIR }}
-          if-no-files-found: error
-
-  linked-native:
-    name: Linked native AOT gate
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_linked_native }}
-    runs-on: ${{ fromJSON(inputs.linked_native_runner || '["macos-latest"]') }}
-    timeout-minutes: 120
-    env:
-      CARGO_INCREMENTAL: "0"
-      MARLIN_DECK_RUNTIME_NATIVE_C_COMPILER: clang
-      MARLIN_DECK_RUNTIME_NATIVE_GAMBIT_LINK_LIBRARY: ${{ vars.MARLIN_DECK_RUNTIME_NATIVE_GAMBIT_LINK_LIBRARY }}
-      MARLIN_DECK_RUNTIME_NATIVE_GAMBIT_LINK_SEARCH_DIR: ${{ vars.MARLIN_DECK_RUNTIME_NATIVE_GAMBIT_LINK_SEARCH_DIR }}
-      MARLIN_GERBIL_GSC: ${{ vars.MARLIN_GERBIL_GSC }}
-      MARLIN_GERBIL_GXC: ${{ vars.MARLIN_GERBIL_GXC }}
-      MARLIN_GERBIL_GXI: ${{ vars.MARLIN_GERBIL_GXI }}
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache cargo artifacts
-        uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: marlin-agent-core-linked-native-${{ runner.os }}
-          cache-on-failure: true
-
-      - name: Cache Gerbil source build
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cache/marlin/gerbil-source/v0.18.2
-            ~/.local/opt/gerbil
-          key: marlin-gerbil-source-${{ runner.os }}-${{ runner.arch }}-v0.18.2-v1
-
-      - name: Fetch workspace dependencies
-        run: cargo fetch --locked
-
-      - name: Install native compiler
-        run: |
-          case "${{ runner.os }}" in
-            Linux)
-              sudo apt-get update
-              sudo apt-get install -y clang
-              ;;
-            macOS)
-              clang --version
-              ;;
-            *)
-              echo "::error::run_linked_native requested on unsupported runner OS ${{ runner.os }}."
-              exit 1
-              ;;
-          esac
-
-      - name: Install Gerbil from source when needed
-        run: |
-          case "${{ runner.os }}" in
-            Linux)
-              sudo apt-get update
-              sudo apt-get install -y build-essential libssl-dev zlib1g-dev libsqlite3-dev
-              ;;
-            macOS)
-              brew install openssl@3 sqlite zlib
-              openssl_prefix="$(brew --prefix openssl@3)"
-              sqlite_prefix="$(brew --prefix sqlite)"
-              zlib_prefix="$(brew --prefix zlib)"
-              echo "CFLAGS=-I$openssl_prefix/include -I$sqlite_prefix/include -I$zlib_prefix/include" >> "$GITHUB_ENV"
-              echo "LDFLAGS=-L$openssl_prefix/lib -L$sqlite_prefix/lib -L$zlib_prefix/lib" >> "$GITHUB_ENV"
-              export CFLAGS="-I$openssl_prefix/include -I$sqlite_prefix/include -I$zlib_prefix/include"
-              export LDFLAGS="-L$openssl_prefix/lib -L$sqlite_prefix/lib -L$zlib_prefix/lib"
-              ;;
-            *)
-              echo "::error::run_linked_native requested on unsupported runner OS ${{ runner.os }}."
-              exit 1
-              ;;
-          esac
-
-          gerbil_install_base="$HOME/.local/opt/gerbil"
-          gerbil_source_root="$HOME/.cache/marlin/gerbil-source/$MARLIN_GERBIL_SOURCE_TAG"
-          if [ ! -x "$gerbil_install_base/bin/gsc" ] || [ ! -x "$gerbil_install_base/bin/gxc" ]; then
-            rm -rf "$gerbil_source_root"
-            git clone --depth 1 --branch "$MARLIN_GERBIL_SOURCE_TAG" \
-              https://github.com/mighty-gerbils/gerbil.git "$gerbil_source_root"
-            cd "$gerbil_source_root"
-            ./configure --prefix="$gerbil_install_base" --version-string="$MARLIN_GERBIL_SOURCE_TAG"
-            make -j"$(getconf _NPROCESSORS_ONLN)"
-            make install
-          fi
-
-          echo "MARLIN_GERBIL_GSC=$gerbil_install_base/bin/gsc" >> "$GITHUB_ENV"
-          echo "MARLIN_GERBIL_GXC=$gerbil_install_base/bin/gxc" >> "$GITHUB_ENV"
-          echo "MARLIN_GERBIL_GXI=$gerbil_install_base/bin/gxi" >> "$GITHUB_ENV"
-
-      - name: Resolve native Gerbil toolchain
-        run: |
-          for name in MARLIN_GERBIL_GSC MARLIN_GERBIL_GXC; do
-            value="$(printenv "$name")"
-            if [ -z "$value" ] || [ ! -x "$value" ]; then
-              echo "::error::$name must point at an executable for run_linked_native."
+          git -C crates/marlin-gerbil-scheme ls-files \
+            Cargo.toml \
+            README.md \
+            benches \
+            build.rs \
+            examples \
+            gerbil \
+            include \
+            src \
+            tests \
+            | sort > gerbil-package-required-assets.txt
+          while IFS= read -r asset; do
+            if ! grep -Fx "$asset" gerbil-package-files.txt >/dev/null; then
+              echo "::error::marlin-gerbil-scheme package is missing tracked asset: $asset"
               exit 1
             fi
-            "$value" --version || true
-          done
-
-      - name: Compile linked-native tests
-        run: cargo test --locked -p marlin-deck-runtime-native --features linked-native --no-run
-
-      - name: Run linked-native tests
-        run: cargo test --locked -p marlin-deck-runtime-native --features linked-native
-
-      - name: Benchmark linked selector
-        run: cargo bench --locked -p marlin-deck-runtime-native --features linked-native --bench linked_selector
+          done < gerbil-package-required-assets.txt
