@@ -7,9 +7,11 @@ use marlin_agent_environment::{
     RuntimeEnvironmentActivator,
 };
 use marlin_agent_protocol::{
-    ModelContextForkMode, ModelRouteDecision, ModelRouteReceipt, ModelRouteRequest,
-    ModelSessionLifecycle, RuntimeEnvironmentActivationPolicy, RuntimeEnvironmentActivationReceipt,
-    SubAgentSpawnConfig,
+    AgentSessionFact, AgentSessionHistoryLimit, ContextPackReceipt, GraphQuerySecretVisibility,
+    GraphQueryVisibility, GraphQueryVisibleSurface, ModelContextForkMode, ModelRouteDecision,
+    ModelRouteReceipt, ModelRouteRequest, ModelSessionLifecycle, ProjectRuntimeContextPackId,
+    ProjectRuntimeProjectId, ProjectRuntimeReceiptId, RuntimeEnvironmentActivationPolicy,
+    RuntimeEnvironmentActivationReceipt, SubAgentSpawnConfig,
 };
 use marlin_agent_sessions::{
     AgentSessionContext, ContextNamespace, ContextVisibility, SessionId, SessionIsolationReceipt,
@@ -96,6 +98,68 @@ impl ModelRouteSessionBinding {
 
     pub fn child_session_id(&self) -> &SessionId {
         self.isolation_receipt.child_session_id()
+    }
+
+    pub fn agent_session_fact(
+        &self,
+        project_id: ProjectRuntimeProjectId,
+        child_session: &AgentSessionContext,
+    ) -> AgentSessionFact {
+        let mut fact = match child_session.kind() {
+            SessionKind::Root => AgentSessionFact::root(
+                project_id.as_str(),
+                child_session.root_session_id().as_str(),
+                child_session.session_id().as_str(),
+            ),
+            SessionKind::SubAgent => AgentSessionFact::sub_agent(
+                project_id.as_str(),
+                child_session.root_session_id().as_str(),
+                child_session.session_id().as_str(),
+                child_session
+                    .parent_session_id()
+                    .unwrap_or_else(|| self.isolation_receipt.parent_session_id())
+                    .as_str(),
+            ),
+            SessionKind::Provider | SessionKind::Tool | SessionKind::Hook => {
+                AgentSessionFact::child(
+                    project_id.as_str(),
+                    child_session.root_session_id().as_str(),
+                    child_session.session_id().as_str(),
+                    child_session
+                        .parent_session_id()
+                        .unwrap_or_else(|| self.isolation_receipt.parent_session_id())
+                        .as_str(),
+                )
+            }
+        }
+        .with_visibility(graph_query_visibility_from_context(
+            child_session.visibility(),
+        ));
+
+        if let Some(max_history_items) = child_session.visibility().max_history_items() {
+            fact = fact.with_history_limit(AgentSessionHistoryLimit::new(
+                max_history_items.min(u16::MAX as usize) as u16,
+            ));
+        }
+
+        fact
+    }
+
+    pub fn context_pack_receipt(
+        &self,
+        receipt_id: ProjectRuntimeReceiptId,
+        context_pack_id: ProjectRuntimeContextPackId,
+        child_session: &AgentSessionContext,
+    ) -> ContextPackReceipt {
+        ContextPackReceipt::new(
+            receipt_id.as_str(),
+            context_pack_id.as_str(),
+            child_session.root_session_id().as_str(),
+            child_session.session_id().as_str(),
+        )
+        .with_visibility(graph_query_visibility_from_context(
+            child_session.visibility(),
+        ))
     }
 }
 
@@ -256,5 +320,54 @@ fn visibility_for_context_fork(
             ContextVisibility::from_namespaces([ContextNamespace::System])
                 .with_max_history_items(Some(0))
         }
+    }
+}
+
+fn graph_query_visibility_from_context(visibility: &ContextVisibility) -> GraphQueryVisibility {
+    let mut surfaces = Vec::new();
+    push_surface_if(
+        &mut surfaces,
+        visibility.contains(&ContextNamespace::Workspace),
+        GraphQueryVisibleSurface::Workspace,
+    );
+    push_surface_if(
+        &mut surfaces,
+        visibility.contains(&ContextNamespace::Memory),
+        GraphQueryVisibleSurface::Memory,
+    );
+    push_surface_if(
+        &mut surfaces,
+        visibility.contains(&ContextNamespace::Tools),
+        GraphQueryVisibleSurface::Tools,
+    );
+    push_surface_if(
+        &mut surfaces,
+        visibility.contains(&ContextNamespace::Hooks)
+            || visibility.contains(&ContextNamespace::SubAgents),
+        GraphQueryVisibleSurface::Sessions,
+    );
+    push_surface_if(
+        &mut surfaces,
+        visibility.max_history_items() != Some(0),
+        GraphQueryVisibleSurface::Content,
+    );
+
+    GraphQueryVisibility {
+        surfaces,
+        secrets: if visibility.contains(&ContextNamespace::Secrets) {
+            GraphQuerySecretVisibility::Allowed
+        } else {
+            GraphQuerySecretVisibility::Denied
+        },
+    }
+}
+
+fn push_surface_if(
+    surfaces: &mut Vec<GraphQueryVisibleSurface>,
+    condition: bool,
+    surface: GraphQueryVisibleSurface,
+) {
+    if condition && !surfaces.contains(&surface) {
+        surfaces.push(surface);
     }
 }

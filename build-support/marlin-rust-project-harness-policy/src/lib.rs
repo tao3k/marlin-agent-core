@@ -11,9 +11,14 @@ mod dependency_topology;
 mod evidence;
 mod gate;
 mod gerbil_runtime_assets;
+mod improvement_queue;
 mod package_evidence_graph;
+mod quality_findings;
+mod quality_gate;
+mod verification_policy;
 
 pub use config::{
+    MarlinCrateVerificationRole, marlin_crate_verification_role_for_project,
     rust_project_harness_config_for_project, rust_project_harness_policy_for_project,
 };
 pub use dependency_topology::{
@@ -22,19 +27,28 @@ pub use dependency_topology::{
     consume_external_dependency_topology_receipt,
     observe_rust_harness_dependency_topology_receipt_from_env,
 };
-pub use evidence::{
-    RustProjectHarnessEvidenceReceipt, RustProjectHarnessFindingSeverity,
-    RustProjectHarnessGateReceipt, RustProjectHarnessQualityFinding,
-    RustProjectHarnessQualityFindingEvidencePaths, RustProjectHarnessQualityFindingsInput,
-    RustProjectHarnessQualityFindingsReceipt, evaluate_performance_and_stability_gate,
-    evaluate_quality_findings_for_gate, write_evidence_graph_from_env,
-};
-pub use gate::complete_build_gate;
+pub use evidence::{RustProjectHarnessEvidenceReceipt, write_evidence_graph_from_env};
+pub use gate::{complete_build_gate, complete_marlin_rust_project_harness_gate_from_env};
 pub use gerbil_runtime_assets::{
     GerbilRuntimeAssetManifestReceipt, GerbilRuntimeAssetManifestStatus,
     generate_gerbil_runtime_assets, inspect_gerbil_runtime_assets,
 };
+pub use improvement_queue::{
+    RustProjectHarnessImprovementItem, RustProjectHarnessImprovementPriority,
+    RustProjectHarnessImprovementQueueReceipt, RustProjectHarnessImprovementQueueStatus,
+    build_improvement_queue_receipt,
+};
 pub use package_evidence_graph::{
     RustProjectHarnessPackageEvidenceGraphReceipt, RustProjectHarnessPackageEvidenceGraphRequest,
     build_package_evidence_graph_receipt,
+};
+pub use quality_findings::{
+    RustProjectHarnessFindingSeverity, RustProjectHarnessQualityFinding,
+    RustProjectHarnessQualityFindingEvidencePaths, RustProjectHarnessQualityFindingsInput,
+    RustProjectHarnessQualityFindingsReceipt, evaluate_quality_findings_for_gate,
+};
+pub use quality_gate::{RustProjectHarnessGateReceipt, evaluate_performance_and_stability_gate};
+pub use verification_policy::{
+    RustProjectHarnessVerificationOwnerProfileReceipt, RustProjectHarnessVerificationPolicyReceipt,
+    build_verification_policy_receipt,
 };

@@ -22,6 +22,23 @@ When a patch touches parser-projected nodes, the memory backend copies their
 typed =source_span= into the patch receipt. This keeps patch validation tied to
 the same Org document provenance used by compact rendered views.
 
+** Project Memory Query Boundary
+
+=marlin-org-memory= may load explicit Org documents for tests and local debug
+fixtures, but production project-memory recall should receive a typed query
+context and recall terms rather than a caller-supplied shard list. Store-backed
+discovery belongs in =marlin-org-store=; this crate should consume the resulting
+typed =OrgNode= records and build a compact graph read model.
+
+The first project-memory query path is hybrid recall: use contract-indexed facts
+such as =RECALL_QUERY=, tags, properties, evidence links, backlinks, and
+=source_span= to build a fast frontier with Org query and bounded =fd=/=rg=
+style search; then apply typed project/session/content relationship facts,
+visibility policy, salience, trust, retention, and validation state to rerank
+and pack results. The output is a bounded context pack with claims, evidence
+pointers, source spans, relationship reasons, and scores. It is not a raw Org
+document dump.
+
 ** Boundary
 - Implements =AgentWorkspace=
 - Depends on =marlin-org-workspace= only for raw Org document loading

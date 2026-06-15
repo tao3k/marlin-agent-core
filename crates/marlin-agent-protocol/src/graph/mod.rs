@@ -4,6 +4,7 @@ mod contract;
 mod controller;
 mod execution_budget;
 mod gerbil_policy;
+mod loop_event;
 mod native_abi;
 
 pub use contract::{
@@ -26,6 +27,14 @@ pub use gerbil_policy::{
     GerbilLoopGraphContinuationRequest, GerbilLoopGraphPolicyCompilationRequest,
     compile_gerbil_loop_graph, compile_gerbil_loop_graph_continuation,
     compile_gerbil_loop_graph_policy,
+};
+pub use loop_event::{
+    GraphLoopContinuationAction, GraphLoopContinuationDecision, GraphLoopContinuationReceipt,
+    GraphLoopEvent, GraphLoopEventEnvelope, GraphLoopEventId, GraphLoopInputDrainPolicy,
+    GraphLoopInputLane, GraphLoopInputQueueReceipt, GraphLoopIterationId, GraphLoopMessageRole,
+    GraphLoopQueuedInput, GraphLoopStopReason, GraphLoopStopReceipt, GraphNodeExecutionId,
+    GraphToolBatchDecision, GraphToolBatchExecutionMode, GraphToolBatchExecutionReceipt,
+    GraphToolCallId, GraphToolCallReceipt, GraphToolCallStatus,
 };
 pub use native_abi::{
     GraphNativeAbiId, GraphNativeAbiReadinessReceipt, GraphNativeAbiReadinessStatus,

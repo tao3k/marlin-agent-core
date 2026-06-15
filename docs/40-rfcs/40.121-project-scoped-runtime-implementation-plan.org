@@ -1,0 +1,378 @@
+#+TITLE: 40.121 Project-scoped Runtime Implementation Plan
+#+FILETAGS: :marlin:rfc:runtime:implementation:graph:
+
+* 40.121 Project-scoped Runtime Implementation Plan
+:PROPERTIES:
+:status: Active
+:owner-crates: marlin-agent-protocol, marlin-org-memory, marlin-org-store, marlin-agent-runtime, marlin-agent-core, marlin-agent-harness
+:END:
+
+** Purpose
+This plan turns [[file:40.120-project-scoped-agent-graph-runtime.org][40.120 Project-scoped Agent Graph Runtime]] into code without blocking on [[file:40.130-sandbox-backend-capability-protocol.org][40.130 Sandbox Backend Capability Protocol]].
+
+Architecture calibration: the implementation is Org-first. Org is the core
+reference substrate for project memory, evidence, contracts, source spans, and
+compact context packs; code slices should be selected because they strengthen
+that substrate, not because they are the smallest local patch. See
+[[file:../superpowers/specs/2026-06-15-org-first-project-memory-runtime-design.md][Org-first Project Memory Runtime Design]].
+
+Sandbox backend capability remains important, but it is not a prerequisite for the first project-scoped runtime. The first runtime slice is a read-model and protocol slice:
+
+#+begin_example
+Project/session/content/tool/memory facts
+  -> typed protocol contracts
+  -> Org-backed projection
+  -> scoped graph query
+  -> debug CLI readout
+  -> harness replay evidence
+#+end_example
+
+No P0 runtime step executes untrusted code through a new sandbox backend. Sandbox execution adapters start only after the read runtime can produce typed scope, query, and receipt evidence.
+
+** Current Anchors
+ASP discovery found these existing anchors:
+
+- =crates/marlin-agent-protocol/src/runtime_environment.rs= owns runtime workspace project identity and the current small =RuntimeSandboxPolicy=.
+- =crates/marlin-agent-runtime/src/model_route/session.rs= owns child session id derivation and visibility projection for context forks.
+- =crates/marlin-org-store/src/memory.rs= owns =MemoryOrgSourceStore=.
+- =crates/marlin-agent-core/tests/unit/runtime/facade/debug_cli/graph/query.rs= already tests debug graph query over loop/run receipt facts.
+- =crates/marlin-agent-harness/src/runtime.rs= owns runtime/environment visibility evidence and working-copy isolation visibility evidence.
+
+The implementation should extend these boundaries rather than creating a broad new runtime crate.
+
+** Deferred Scope
+Defer these until after the runtime read model is stable:
+
+- Nono, CubeSandbox, native OS, or external sandbox execution adapters.
+- backend capability selection during actual command execution.
+- DataFusion/Arrow query backend.
+- live LLM integration for memory promotion or content compression.
+
+The first implementation may define receipt contracts for these future features when needed, but it should not execute them.
+
+** Slice A: Protocol Contracts
+Owner: =marlin-agent-protocol=.
+Status: Implemented on 2026-06-15 for the protocol envelope and JSON contract tests.
+
+Add a new module:
+
+#+begin_example
+crates/marlin-agent-protocol/src/project_runtime/
+#+end_example
+
+Export it from =lib.rs=.
+
+Initial types:
+
+#+begin_example
+ProjectRuntimeProjectId
+ProjectRuntimeWorkspaceId
+ProjectRuntimeWorktreeId
+ProjectRuntimeBranchRef
+ProjectRuntimeRootSessionId
+ProjectRuntimeSessionId
+ProjectRuntimeAgentId
+ProjectRuntimeContentId
+ProjectRuntimeMemoryId
+ProjectRuntimeToolCapabilityId
+ProjectRuntimeReceiptId
+
+GraphQueryVisibility
+GraphQueryFallbackPolicy
+GraphQueryContext
+GraphQueryFamily
+GraphQueryRequest
+GraphQueryMatchRelationship
+GraphQueryMatch
+GraphQueryResponse
+#+end_example
+
+Landed type additions: =GraphQueryLimit=, =GraphQueryScoreBasisPoints=, =GraphQueryVisibleSurface=, =GraphQuerySecretVisibility=, =GraphQueryFallbackScope=, =GraphQueryExternalProjectPolicy=, and =GraphQueryRelationshipFact=. These keep public policy and relationship semantics out of primitive booleans and numeric fields.
+
+Rules:
+
+- use domain newtypes instead of raw strings for public semantic ids;
+- keep =WorktreeId= as execution provenance, not a memory namespace;
+- keep root session transcript isolation separate from project memory visibility;
+- keep sandbox backend fields out of this slice.
+
+Tests:
+
+#+begin_example
+crates/marlin-agent-protocol/tests/unit/protocol/project_runtime.rs
+#+end_example
+
+Test JSON shape for:
+
+- same-project memory query context;
+- child-session content anchor query;
+- tool capability query with project fallback;
+- external project fallback disabled by default.
+
+Verification:
+#+begin_example
+rtk run 'direnv exec . cargo test -p marlin-agent-protocol'
+#+end_example
+Result: 69 protocol tests passed, including 9 =project_runtime= tests.
+
+** Slice B: Session And Content Facts
+Owner: =marlin-agent-protocol= first, =marlin-agent-runtime= second.
+Status: Implemented on 2026-06-15 for protocol facts, JSON contract tests, and the first model-route runtime projection. Content body and Org graph integration remain pending.
+
+Add protocol facts:
+Landed protocol additions: =AgentSessionFact=, =AgentContentNode=, =ContentUsageReceipt=, =ContentCompressionReceipt=, =ContextPackReceipt=, =MemoryTriggerReceipt=, plus typed status/role/count/context-pack/body-ref helpers. Broad public constructors use named input types rather than positional parameter lists.
+
+#+begin_example
+AgentSessionFact
+AgentContentNode
+ContentUsageReceipt
+ContentCompressionReceipt
+ContextPackReceipt
+MemoryTriggerReceipt
+#+end_example
+
+Runtime integration should connect existing =model_route/session.rs= helpers to these ids without changing sub-agent execution behavior yet.
+
+Runtime integration note: =ModelRouteSessionBinding= now projects a child =AgentSessionContext= into =AgentSessionFact= and =ContextPackReceipt= using caller-supplied typed project/receipt/context-pack ids. It does not infer project identity and does not change child runtime creation.
+
+Tests:
+
+- protocol JSON round-trip for root session, child session, content fork, and context pack;
+- runtime unit test proving child session binding can carry a content anchor and bounded visibility without exposing sibling root transcript.
+
+Verification:
+#+begin_example
+rtk run 'direnv exec . cargo test -p marlin-agent-protocol'
+#+end_example
+Result: 69 protocol tests passed, including 9 =project_runtime= tests.
+Focused event verification: =cargo test -p marlin-agent-protocol loop_event --test unit_test= passed 5 tests.
+
+Runtime verification:
+#+begin_example
+rtk run 'direnv exec . cargo test -p marlin-agent-runtime'
+#+end_example
+Result: 80 runtime tests passed.
+Focused graph-loop verification: =cargo test -p marlin-agent-runtime graph_loop --test unit_test= passed 7 tests.
+
+** Slice C: Org-backed Project Memory Graph
+Owners: =marlin-org-memory= and =marlin-org-store=.
+Status: Partially implemented on 2026-06-15 for the first in-memory Org node projection in =marlin-org-memory=. Store-backed multi-shard loading and protocol-level source-span projection remain pending.
+
+Add an internal read model over existing Org nodes:
+
+#+begin_example
+ProjectMemoryGraph
+ProjectMemoryGraphShard
+ProjectMemoryGraphQuery
+ProjectMemoryGraphMatch
+ProjectMemoryRelationship
+#+end_example
+
+The first implementation may reuse current =WorkspaceQuery= filtering and =MemoryOrgSourceStore= loading. It must add relationship scoring fields:
+Slice A landed these as typed =GraphQueryRelationshipFact= values plus =GraphQueryScoreBasisPoints=, rather than as primitive boolean columns. Slice C should project Org/source-span evidence into those facts and scores.
+
+Hybrid recall calibration: Slice C treats Org shards as store/index inputs, not
+as the caller-facing memory API. The caller supplies a typed graph query context
+and recall terms. =marlin-org-store= should discover eligible project memory
+roots; =marlin-org-memory= should build a candidate frontier from
+contract-indexed facts such as =RECALL_QUERY=, tags, properties, evidence links,
+source spans, and backlinks, then rerank with typed project/session/content
+relationship facts.
+
+#+begin_example
+same_project
+same_workspace
+same_root_session
+same_session_lineage
+same_content_ancestry
+same_worktree_provenance
+explicit_backlink
+contract_validated
+salience
+external_project
+#+end_example
+
+Tests:
+
+- same project across different worktrees still ranks strong;
+- sibling session raw transcript is not visible;
+- promoted project memory is visible to sibling sessions;
+- external project memory is excluded by default.
+
+Implementation note: =MemoryOrgWorkspace::query_project_memory_graph= now projects explicit Org node properties into typed =GraphQueryMatch= values. It honors =GraphQueryVisibleSurface::Memory=, same-project fallback, external-project gating, result limits, relationship facts, and basis-point scores. It treats =PROJECT_ID= as explicit graph scope metadata and does not derive project identity from file layout.
+
+Next implementation target: replace explicit shard plumbing in production paths
+with store-backed shard discovery plus a contract-indexed frontier builder.
+Repeated file inputs should remain only a debug fixture shape until store
+discovery lands.
+
+Verification:
+#+begin_example
+rtk run 'direnv exec . cargo test -p marlin-org-memory'
+#+end_example
+Result: 12 =marlin-org-memory= unit tests passed, including 2 =project_memory_graph= tests.
+Focused verification: =cargo test -p marlin-org-memory project_graph --test unit_test= passed 2 tests.
+
+** Slice D: Scoped Graph Query Read Model
+Owners: =marlin-agent-protocol=, =marlin-org-memory=, =marlin-agent-core=.
+Status: Partially implemented on 2026-06-15 for the first debug CLI receipt reader and explicit-file Org memory fixture execution path. Store-backed shard discovery, source-span projection, and tool/session/content families remain pending.
+
+Implement read-only query families:
+
+#+begin_example
+org
+memory
+tool
+session
+content
+#+end_example
+
+The first backend can be in-memory over Org facts. The output must include:
+
+#+begin_example
+typed facts
+source spans
+relationship strength
+match reason
+visibility decision
+expected receipt contracts
+#+end_example
+
+Do not return whole documents or raw grep-style output.
+
+Tests:
+
+- debug CLI graph query can return a compact project memory match;
+- graph query refuses sibling transcript without explicit link;
+- tool capability query returns project-local card before global fallback;
+- query output includes source span and reason.
+
+Implementation note: =marlin graph query= now accepts typed =GraphQueryResponse= JSON and returns a compact =ProjectRuntimeQuerySummary= with receipt id, query family, query text, match count, source project ids, source root/session ids, memory/content ids, relationship facts, and score basis points. For debug fixtures, it can execute a local memory query with =--input <GraphQueryRequest.json> --org-memory-fixture <memory.org> [--org-memory-fixture <memory.org> ...] [--receipt-id <id>]=. That path loads explicit Org memory fixture files into =MemoryOrgWorkspace=, runs =query_project_memory_graph=, and returns the same compact summary without exposing whole documents. This proves multiple producer sessions can project into one graph read, but it is not the production recall API. Production recall now starts from =ProjectMemoryRecallRequest=, discovers typed roots through =marlin-org-store=, builds a contract-indexed frontier in =marlin-org-memory=, then returns a bounded =ProjectMemoryContextPack=. Each returned =ProjectMemoryContextFact= now carries the matched Org source span and stable =MEMORY_ID= evidence handle when the source node provides them.
+
+Verification:
+#+begin_example
+rtk run 'direnv exec . cargo test -p marlin-agent-core debug_cli_graph_query'
+#+end_example
+Result: 4 graph query debug CLI tests passed, including the project-runtime graph query receipt summary test and the single-document Org memory execution test.
+Focused verification: =cargo test -p marlin-agent-core debug_cli --test unit_test= passed 17 tests.
+Follow-up verification for repeated memory shards is currently blocked by unrelated build-time harness gate drift in dirty =build.rs= files: =RUST-PROJ-R012= reports incomplete build-time harness gates for =marlin-agent-core=, =marlin-agent-harness=, and =marlin-agent-test-support= even though their current wrappers call =complete_marlin_rust_project_harness_gate_from_env=.
+
+** Slice E: Tool Capability Cards
+Owners: =marlin-agent-protocol= and =marlin-org-memory=.
+
+Add =agent.tool.v1= protocol shape:
+
+#+begin_example
+ToolCapabilityCard
+  capability_id
+  project_id
+  workspace_id
+  command_template_or_handler
+  input_schema
+  safety_constraints
+  required_receipts
+  source_span
+#+end_example
+
+Sandbox requirements should be represented only as future =required_receipts= or capability tags in this slice. Do not invoke sandbox backend selection.
+
+Tests:
+
+- project tool card overrides global tool card;
+- card includes required receipt expectations;
+- query by capability id returns compact view and source span.
+
+** Slice F: Harness Replay Gate
+Owner: =marlin-agent-harness=.
+
+Add no-live-LLM harness scenarios for:
+
+- project-scoped memory visibility;
+- session transcript isolation;
+- child session content fork;
+- memory trigger receipt shape;
+- tool capability lookup;
+- debug graph query readout.
+
+These tests should prove the runtime read model works without provider calls, sandbox execution, or live command execution.
+
+** First Code PR Shape
+The first code PR should include only Slice A:
+
+- add =project_runtime.rs= protocol types;
+- export the module;
+- add protocol JSON tests;
+- update =40.120= implementation evidence once tests pass.
+
+Do not combine Slice A with Org memory graph or debug CLI changes. The protocol surface needs to stabilize first.
+
+** Verification Commands
+Use repository-native wrappers:
+
+#+begin_example
+direnv exec . cargo test -p marlin-agent-protocol project_runtime
+direnv exec . cargo test -p marlin-agent-protocol --test unit_test
+direnv exec . cargo test -p marlin-org-memory project_memory
+direnv exec . cargo test -p marlin-agent-core debug_cli_graph_query
+direnv exec . cargo test -p marlin-agent-harness project_scoped_runtime
+#+end_example
+
+Focused verification receipt for the 2026-06-15 project-scoped runtime slice:
+
+- =cargo test -p marlin-agent-protocol project_runtime --test unit_test=: 9 passed, 60 filtered.
+- =cargo test -p marlin-agent-protocol --test unit_test=: 69 passed.
+- =cargo test -p marlin-agent-protocol loop_event --test unit_test=: 5 passed, 62 filtered.
+- =cargo test -p marlin-agent-runtime graph_loop --test unit_test=: 7 passed, 73 filtered.
+- =cargo test -p marlin-agent-runtime --test unit_test=: 80 passed.
+- =cargo test -p marlin-org-memory project_graph --test unit_test=: 2 passed, 10 filtered.
+- =cargo test -p marlin-agent-core debug_cli --test unit_test=: 17 passed, 39 filtered.
+- =cargo test -p marlin-agent-test-support runtime_environment --test unit_test=: 2 passed, 42 filtered.
+
+Rust harness verification policy is crate-role aware. The build-support policy
+classifies packages as agent runtime, agent harness, protocol contract, Org
+workspace, Gerbil/native runtime, native build support, Rust harness policy,
+Git/environment boundary, or general library. Each role injects different
+=RustOwnerResponsibility= sets and owner-local profile hints while still
+requiring performance and stability verification tasks plus report obligations.
+This keeps agent-facing verification evidence specific to the crate's actual
+responsibility instead of treating every crate as a generic =src/lib.rs= unit.
+The policy now emits a dedicated =verification_policy.json= build evidence
+artifact. That receipt exposes the package name, crate role, owner profiles,
+responsibility labels, role-specific task kinds, performance/stability task
+counts, and report-obligation booleans. Agents should read this artifact before
+choosing crate-local verification policy because it explains why a crate needs
+runtime, protocol, Org persistence, Gerbil/native, Git/environment, or
+general-library evidence.
+The quality findings receipt also includes =verification_policy.json= in its
+agent evidence set, so repair guidance points agents at the role policy before
+they edit crate-local verification gates.
+Reflection now feeds an explicit =improvement_queue.json= artifact. That queue
+is derived from =quality_findings.json= plus =verification_policy.json= and
+converts hard errors and warnings into prioritized improvement items with owner,
+crate role, repair objective, next action, verification command, and source
+evidence. Advice-only healthy reflection stays a healthy empty queue, so agents
+do not treat passive evidence as work.
+
+- =cargo test -p marlin-rust-project-harness-policy config --test unit_test=: 5 passed, 15 filtered.
+- =cargo test -p marlin-rust-project-harness-policy verification_policy --test unit_test=: 5 passed, 16 filtered.
+- =cargo test -p marlin-rust-project-harness-policy quality_findings --test unit_test=: 2 passed, 19 filtered.
+- =cargo test -p marlin-rust-project-harness-policy reflection --test unit_test=: 2 passed, 22 filtered.
+- =cargo test -p marlin-rust-project-harness-policy --test unit_test=: 24 passed.
+- =cargo check --workspace --all-targets=: 32 crates compiled.
+
+If artifact locks interfere, use an isolated target dir:
+
+#+begin_example
+direnv exec . cargo test --target-dir /tmp/marlin-agent-core-codex-verify -p <crate> <filter>
+#+end_example
+
+** Done Criteria
+P0 runtime is done when:
+
+- graph query requires =GraphQueryContext=;
+- project memory is strong across worktrees;
+- sibling root transcripts remain hidden by default;
+- child sessions can fork from content anchors with bounded visibility;
+- project tool capability cards are queryable;
+- all output carries source spans and match reasons;
+- replay evidence proves the read model without live LLM or sandbox execution.

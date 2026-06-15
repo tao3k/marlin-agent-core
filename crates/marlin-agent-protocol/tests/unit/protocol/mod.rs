@@ -3,6 +3,7 @@ mod graph;
 mod hook;
 mod model_gateway;
 mod model_route;
+mod project_runtime;
 mod runtime_environment;
 mod scenario;
 mod sub_agent;

@@ -14,7 +14,6 @@ serde_json.workspace = true
 
 [build-dependencies]
 marlin-rust-project-harness-policy.workspace = true
-rust-lang-project-harness.workspace = true
 
 [dev-dependencies]
 marlin-org-model.workspace = true

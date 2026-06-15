@@ -6,11 +6,13 @@ use std::{
 };
 
 use marlin_agent_protocol::{
-    AgentExecutionTrace, GraphId, GraphLoopEvidencePolicy, GraphLoopExecutionResult,
-    GraphLoopExecutionStatus, GraphLoopIterationReport, GraphLoopNextAction, GraphLoopRunRequest,
-    LoopGraph, RunId,
+    AgentExecutionTrace, GraphId, GraphLoopEventId, GraphLoopEvidencePolicy,
+    GraphLoopExecutionResult, GraphLoopExecutionStatus, GraphLoopIterationId,
+    GraphLoopIterationReport, GraphLoopNextAction, GraphLoopRunRequest, LoopGraph, RunId,
 };
-use marlin_agent_runtime::{RuntimeFuture, RuntimeTask, TokioAgentRuntime};
+use marlin_agent_runtime::{
+    GraphLoopRunProgressUpdate, RuntimeFuture, RuntimeTask, TokioAgentRuntime,
+};
 
 use crate::driver::{GraphLoopKernel, TokioGraphLoopKernel};
 
@@ -89,9 +91,11 @@ impl TokioGraphLoopController {
         let iteration_budget = request.iteration_budget;
         let stop_policy = request.stop_policy;
         let base_run_id = request.initial_request.run_id.clone();
+        let initial_graph_id = request.initial_request.graph.graph_id.clone();
         let mut captured_events = captured_events;
         let mut execution_request = request.initial_request;
         let mut reports = Vec::new();
+        record_loop_started(runtime, &base_run_id, &initial_graph_id);
 
         loop {
             let iteration = reports.len() as u64;
@@ -103,6 +107,8 @@ impl TokioGraphLoopController {
                 .next_iteration_action(iteration, &execution_result, &stop_policy, started_at)
                 .await;
             let next_graph = continued_graph(&next_action);
+            let observed_at_ms = elapsed_loop_ms(started_at);
+            record_loop_progress(runtime, &base_run_id, iteration, observed_at_ms);
 
             reports.push(iteration_report(
                 iteration,
@@ -113,6 +119,16 @@ impl TokioGraphLoopController {
             ));
 
             let Some(next_graph) = next_graph else {
+                let terminal_report = reports
+                    .last()
+                    .expect("terminal report should exist before loop stop");
+                record_loop_completed(
+                    runtime,
+                    &base_run_id,
+                    terminal_report.iteration,
+                    &terminal_report.execution_result,
+                    elapsed_loop_ms(started_at),
+                );
                 break;
             };
             execution_request =
@@ -181,6 +197,54 @@ impl TokioGraphLoopController {
             planned
         }
     }
+}
+
+fn record_loop_started(runtime: &TokioAgentRuntime, run_id: &str, graph_id: &str) {
+    runtime.graph_loop_runs().with_registry(|registry| {
+        let _ = registry.start_run(RunId::new(run_id), GraphId::new(graph_id), 0);
+    });
+}
+
+fn record_loop_progress(
+    runtime: &TokioAgentRuntime,
+    run_id: &str,
+    iteration: u64,
+    observed_at_ms: u64,
+) {
+    runtime.graph_loop_runs().with_registry(|registry| {
+        let _ = registry.record_progress(GraphLoopRunProgressUpdate::new(
+            RunId::new(run_id),
+            GraphLoopIterationId::new(iteration),
+            observed_at_ms,
+            loop_event_id(iteration, "progress"),
+        ));
+    });
+}
+
+fn record_loop_completed(
+    runtime: &TokioAgentRuntime,
+    run_id: &str,
+    iteration: u64,
+    execution_result: &GraphLoopExecutionResult,
+    observed_at_ms: u64,
+) {
+    runtime.graph_loop_runs().with_registry(|registry| {
+        let _ = registry.complete_run(
+            &RunId::new(run_id),
+            execution_result.status.clone(),
+            observed_at_ms,
+            loop_event_id(iteration, "terminal"),
+        );
+    });
+}
+
+fn loop_event_id(iteration: u64, kind: &str) -> GraphLoopEventId {
+    GraphLoopEventId::new(format!("loop.iteration.{iteration}.{kind}"))
+}
+
+fn elapsed_loop_ms(started_at: Instant) -> u64 {
+    let elapsed_ms = started_at.elapsed().as_millis();
+    elapsed_ms.min(u128::from(u64::MAX)) as u64
 }
 
 impl GraphLoopController for TokioGraphLoopController {

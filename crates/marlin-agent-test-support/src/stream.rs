@@ -143,10 +143,14 @@ impl ScriptedModelStream {
         let mut emitted_events = Vec::with_capacity(self.events.len());
         let mut chunk_count = 0;
         let mut gate_sequences = Vec::new();
+        let mut transports = Vec::new();
         let mut completed = false;
         let mut failed = false;
 
         for event in self.events {
+            if let ScriptedModelStreamEvent::Started { transport } = &event {
+                transports.push(transport.clone());
+            }
             if matches!(event, ScriptedModelStreamEvent::Chunk(_)) {
                 if let Some(chunk_gate) = &self.chunk_gate {
                     gate_sequences.push(chunk_gate.wait_for_next().await.sequence());
@@ -162,6 +166,7 @@ impl ScriptedModelStream {
             events: emitted_events,
             chunk_count,
             gate_sequences,
+            transports,
             completed,
             failed,
         }
@@ -177,10 +182,19 @@ pub struct ScriptedStreamReceipt {
     pub chunk_count: usize,
     /// Gate permit sequences observed while releasing chunk events.
     pub gate_sequences: Vec<u64>,
+    /// Transport policies observed at stream start.
+    pub transports: Vec<ModelGatewayTransport>,
     /// Whether the script emitted a completion event.
     pub completed: bool,
     /// Whether the script emitted a failure event.
     pub failed: bool,
+}
+
+impl ScriptedStreamReceipt {
+    /// Number of emitted stream events.
+    pub fn event_count(&self) -> usize {
+        self.events.len()
+    }
 }
 
 /// Project a scripted stream gate receipt into runtime evidence for harness tests.
@@ -196,10 +210,18 @@ pub fn scripted_stream_gate_evidence(
         .map(u64::to_string)
         .collect::<Vec<_>>()
         .join(",");
+    let transports = receipt
+        .transports
+        .iter()
+        .map(|transport| format!("{transport:?}"))
+        .collect::<Vec<_>>()
+        .join(",");
     let detail = format!(
-        "stream_id={} chunk_count={} gate_sequences=[{}] admitted_chunks={} completed={} failed={} live_llm=false",
+        "stream_id={} event_count={} chunk_count={} transports=[{}] gate_sequences=[{}] admitted_chunks={} completed={} failed={} live_llm=false",
         stream_id,
+        receipt.event_count(),
         receipt.chunk_count,
+        transports,
         gate_sequences,
         gate.admitted_chunks(),
         receipt.completed,

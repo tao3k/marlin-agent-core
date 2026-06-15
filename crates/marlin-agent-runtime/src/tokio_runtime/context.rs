@@ -20,6 +20,7 @@ pub struct RuntimeContext {
     pub(super) session: AgentSessionContext,
     pub(super) active_working_copy: Option<WorkingCopyActiveBinding>,
     pub(super) working_copy_receipts: Vec<WorkingCopyIsolationReceipt>,
+    pub(super) graph_loop_runs: crate::GraphLoopRunRegistryHandle,
     pub(super) process_registry: observability::RuntimeProcessRegistryHandle,
     pub(super) process_cleanup_policy: observability::RuntimeProcessCleanupPolicy,
 }
@@ -51,6 +52,10 @@ impl RuntimeContext {
 
     pub fn execution_identity(&self) -> Option<&RuntimeExecutionIdentity> {
         self.execution.as_ref()
+    }
+
+    pub fn graph_loop_runs(&self) -> crate::GraphLoopRunRegistryHandle {
+        self.graph_loop_runs.clone()
     }
 
     pub fn process_registry(&self) -> observability::RuntimeProcessRegistryHandle {
@@ -93,6 +98,7 @@ impl RuntimeContext {
             session: self.session.clone(),
             active_working_copy: self.active_working_copy.clone(),
             working_copy_receipts: self.working_copy_receipts.clone(),
+            graph_loop_runs: self.graph_loop_runs.clone(),
             process_registry: self.process_registry.clone(),
             process_cleanup_policy: self.process_cleanup_policy.clone(),
         }
@@ -107,6 +113,7 @@ impl RuntimeContext {
             session: self.session.clone(),
             active_working_copy: self.active_working_copy.clone(),
             working_copy_receipts: self.working_copy_receipts.clone(),
+            graph_loop_runs: self.graph_loop_runs.clone(),
             process_registry: self.process_registry.clone(),
             process_cleanup_policy: self.process_cleanup_policy.clone(),
         }
@@ -130,6 +137,7 @@ impl RuntimeContext {
                 session,
                 active_working_copy: self.active_working_copy.clone(),
                 working_copy_receipts: self.working_copy_receipts.clone(),
+                graph_loop_runs: self.graph_loop_runs.clone(),
                 process_registry: self.process_registry.clone(),
                 process_cleanup_policy: self.process_cleanup_policy.clone(),
             },

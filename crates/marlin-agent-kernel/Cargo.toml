@@ -13,7 +13,6 @@ tracing.workspace = true
 
 [build-dependencies]
 marlin-rust-project-harness-policy.workspace = true
-rust-lang-project-harness.workspace = true
 
 [dev-dependencies]
 tokio.workspace = true

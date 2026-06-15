@@ -35,8 +35,10 @@ pub use replay::{
     load_no_llm_runtime_replay_artifact, no_llm_runtime_replay_artifact_fixture,
 };
 pub use runtime_environment::{
-    RuntimeEnvironmentFixture, ScriptedDirenvCommandRunner, assert_custom_sub_agent_environment,
+    DirenvActivationFixture, RuntimeEnvironmentFixture, ScriptedDirenvCommandRunner,
+    assert_custom_sub_agent_environment, assert_direnv_activation_fixture,
     assert_hook_environment_uses_root_home, custom_home_runtime_environment_fixture,
+    direnv_activation_fixtures,
 };
 pub use stability::{
     RuntimeStabilityEvidenceInput, runtime_stability_budget_diagnostics,

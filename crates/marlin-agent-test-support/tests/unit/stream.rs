@@ -18,7 +18,9 @@ async fn scripted_model_stream_collects_text_delta_receipt() {
         .await;
 
     assert_eq!(receipt.events.len(), 3);
+    assert_eq!(receipt.event_count(), 3);
     assert_eq!(receipt.chunk_count, 1);
+    assert_eq!(receipt.transports, vec![ModelGatewayTransport::Auto]);
     assert!(receipt.completed);
     assert!(!receipt.failed);
     assert!(matches!(
@@ -53,6 +55,26 @@ async fn scripted_model_stream_waits_for_chunk_gate() {
 }
 
 #[tokio::test]
+async fn scripted_model_stream_records_explicit_transports() {
+    for transport in [ModelGatewayTransport::Sse, ModelGatewayTransport::WebSocket] {
+        let receipt = ScriptedModelStream::new([
+            ScriptedModelStreamEvent::Started {
+                transport: transport.clone(),
+            },
+            ScriptedModelStreamEvent::Chunk(
+                marlin_agent_test_support::ScriptedModelStreamChunk::new(1, "hello"),
+            ),
+            ScriptedModelStreamEvent::Completed { stop_reason: None },
+        ])
+        .collect()
+        .await;
+
+        assert_eq!(receipt.transports, vec![transport]);
+        assert_eq!(receipt.event_count(), 3);
+    }
+}
+
+#[tokio::test]
 async fn scripted_model_stream_gate_projects_runtime_evidence() {
     let gate = ScriptedChunkGate::closed();
     let collection = tokio::spawn(
@@ -72,6 +94,8 @@ async fn scripted_model_stream_gate_projects_runtime_evidence() {
     assert_eq!(evidence.kind, AgentHarnessEvidenceKind::Runtime);
     assert_eq!(evidence.subject, "scripted-stream-gate:review-stream");
     assert!(detail.contains("chunk_count=1"));
+    assert!(detail.contains("event_count=3"));
+    assert!(detail.contains("transports=[Auto]"));
     assert!(detail.contains("gate_sequences=[1]"));
     assert!(detail.contains("admitted_chunks=1"));
     assert!(detail.contains("completed=true"));

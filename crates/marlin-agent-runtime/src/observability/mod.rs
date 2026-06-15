@@ -2,6 +2,7 @@
 
 pub mod process;
 mod spans;
+mod subscriber;
 
 pub use process::{
     AsyncManagedChildProcess, ManagedChildProcessSpec, RuntimeCommandCleanupEntry,
@@ -45,4 +46,8 @@ pub use spans::{
     runtime_hook_span, runtime_hook_span_name, runtime_provider_span, runtime_provider_span_name,
     runtime_sub_agent_span, runtime_sub_agent_span_name, runtime_task_span, runtime_task_span_name,
     runtime_tool_span, runtime_tool_span_name,
+};
+pub use subscriber::{
+    RuntimeTracingSubscriberConfig, RuntimeTracingSubscriberConfigError,
+    RuntimeTracingSubscriberFormat, RuntimeTracingSubscriberReceipt, RuntimeTracingSubscriberScope,
 };

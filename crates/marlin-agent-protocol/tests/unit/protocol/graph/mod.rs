@@ -10,6 +10,7 @@ use marlin_agent_protocol::{
 mod controller;
 mod execution;
 mod gerbil_policy;
+mod loop_event;
 mod native_abi;
 
 #[test]

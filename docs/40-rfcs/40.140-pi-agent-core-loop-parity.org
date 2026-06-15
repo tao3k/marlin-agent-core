@@ -57,6 +57,8 @@ Add a runtime-owned run registry:
 
 P1 is complete when =marlin loop run=, =marlin loop inspect=, and a cancellation fixture share the same run id and replayable receipt path.
 
+The debug CLI split is intentional: =marlin loop run= may expose the live runtime registry observation for the run it just executed, while =marlin loop inspect= reads stored replay artifacts. A separate live-runtime inspect API can exist inside the runtime/harness boundary, but a fresh CLI process must not blur that with store-backed replay inspection.
+
 *** P2 Queue And Continuation Semantics
 Implement steering/follow-up queues in the graph loop:
 - steering drains before the next proposal/provider request;
@@ -96,8 +98,8 @@ P5 is complete when a POO-driven no-live-LLM fixture chooses different hook/mode
 ** Immediate Next Work
 1. Add P0 protocol types and event taxonomy in =marlin-agent-protocol=.
 2. Extend kernel controller tests from terminal status to event/decision receipts.
-3. Add runtime run registry skeleton with inspect/cancel/wait receipts.
-4. Extend the debug CLI fixtures so =loop run=, =loop inspect=, =loop replay=, and =graph query= operate on the same receipt family.
+3. Extend runtime run registry fixtures from skeleton coverage to live controller lifecycle observation.
+4. Extend the debug CLI fixtures so =loop run=, =loop inspect=, =loop replay=, and =graph query= operate on the same receipt family while preserving the live-registry versus store-artifact boundary.
 5. Add one pi-parity fixture that exercises steering, follow-up, one tool call, and graceful stop without a live LLM.
 
 ** Non-goals

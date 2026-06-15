@@ -2131,6 +2131,7 @@ dependencies = [
  "marlin-agent-test-support",
  "marlin-gerbil-ir",
  "marlin-gerbil-scheme",
+ "marlin-org-memory",
  "marlin-org-model",
  "marlin-org-patch",
  "marlin-org-store",
@@ -2138,7 +2139,6 @@ dependencies = [
  "marlin-org-workspace",
  "marlin-rust-project-harness-policy",
  "marlin-workspace-protocol",
- "rust-lang-project-harness",
  "serde",
  "serde_json",
  "tempfile",
@@ -2156,7 +2156,6 @@ dependencies = [
  "marlin-git-utils",
  "marlin-rust-project-harness-policy",
  "marlin-workspace-protocol",
- "rust-lang-project-harness",
  "serde_json",
  "thiserror",
  "tokio",
@@ -2176,7 +2175,6 @@ dependencies = [
  "marlin-gerbil-ir",
  "marlin-gerbil-scheme",
  "marlin-rust-project-harness-policy",
- "rust-lang-project-harness",
  "serde",
  "tempfile",
  "tokio",
@@ -2190,7 +2188,6 @@ version = "0.1.0"
 dependencies = [
  "marlin-agent-protocol",
  "marlin-rust-project-harness-policy",
- "rust-lang-project-harness",
  "serde",
 ]
 
@@ -2203,7 +2200,6 @@ dependencies = [
  "marlin-agent-protocol",
  "marlin-agent-runtime",
  "marlin-rust-project-harness-policy",
- "rust-lang-project-harness",
  "serde",
  "tokio",
  "toml 1.1.2+spec-1.1.0",
@@ -2218,7 +2214,6 @@ dependencies = [
  "marlin-agent-protocol",
  "marlin-agent-runtime",
  "marlin-rust-project-harness-policy",
- "rust-lang-project-harness",
  "tokio",
  "tokio-stream",
  "tracing",
@@ -2230,7 +2225,6 @@ version = "0.1.0"
 dependencies = [
  "marlin-gerbil-ir",
  "marlin-rust-project-harness-policy",
- "rust-lang-project-harness",
  "serde",
  "serde_json",
  "toml 1.1.2+spec-1.1.0",
@@ -2250,7 +2244,6 @@ dependencies = [
  "marlin-rust-project-harness-policy",
  "parking_lot",
  "process-wrap",
- "rust-lang-project-harness",
  "serde",
  "sysinfo 0.39.3",
  "tempfile",
@@ -2258,7 +2251,9 @@ dependencies = [
  "tokio-stream",
  "tokio-util",
  "toml 1.1.2+spec-1.1.0",
+ "tower",
  "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -2266,7 +2261,6 @@ name = "marlin-agent-sessions"
 version = "0.1.0"
 dependencies = [
  "marlin-rust-project-harness-policy",
- "rust-lang-project-harness",
  "serde",
 ]
 
@@ -2277,7 +2271,6 @@ dependencies = [
  "litellm-rs",
  "marlin-agent-protocol",
  "marlin-rust-project-harness-policy",
- "rust-lang-project-harness",
  "serde",
  "serde_json",
  "tokio",
@@ -2295,7 +2288,6 @@ dependencies = [
  "marlin-agent-sessions",
  "marlin-gerbil-ir",
  "marlin-rust-project-harness-policy",
- "rust-lang-project-harness",
  "serde_json",
  "tokio",
 ]
@@ -2310,7 +2302,6 @@ dependencies = [
  "marlin-deck-runtime-native-build",
  "marlin-gerbil-scheme",
  "marlin-rust-project-harness-policy",
- "rust-lang-project-harness",
 ]
 
 [[package]]
@@ -2322,7 +2313,6 @@ dependencies = [
  "marlin-gerbil-scheme",
  "marlin-rust-project-harness-policy",
  "object",
- "rust-lang-project-harness",
 ]
 
 [[package]]
@@ -2333,7 +2323,6 @@ dependencies = [
  "marlin-rust-project-harness-policy",
  "marlin-workspace-patch",
  "marlin-workspace-view",
- "rust-lang-project-harness",
  "serde",
 ]
 
@@ -2356,7 +2345,6 @@ dependencies = [
  "marlin-workspace-view",
  "memoffset",
  "object",
- "rust-lang-project-harness",
  "serde",
  "serde_json",
  "static_assertions",
@@ -2369,7 +2357,6 @@ name = "marlin-git-utils"
 version = "0.1.0"
 dependencies = [
  "marlin-rust-project-harness-policy",
- "rust-lang-project-harness",
  "tempfile",
  "thiserror",
  "tokio",
@@ -2381,8 +2368,10 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "futures-executor",
+ "marlin-agent-protocol",
  "marlin-gerbil-ir",
  "marlin-org-model",
+ "marlin-org-store",
  "marlin-org-workspace",
  "marlin-rust-project-harness-policy",
  "marlin-workspace-patch",
@@ -2391,7 +2380,6 @@ dependencies = [
  "marlin-workspace-status",
  "marlin-workspace-view",
  "parking_lot",
- "rust-lang-project-harness",
 ]
 
 [[package]]
@@ -2399,7 +2387,6 @@ name = "marlin-org-model"
 version = "0.1.0"
 dependencies = [
  "marlin-rust-project-harness-policy",
- "rust-lang-project-harness",
  "serde",
 ]
 
@@ -2410,7 +2397,6 @@ dependencies = [
  "marlin-org-model",
  "marlin-rust-project-harness-policy",
  "marlin-workspace-patch",
- "rust-lang-project-harness",
  "serde",
 ]
 
@@ -2424,7 +2410,6 @@ dependencies = [
  "marlin-rust-project-harness-policy",
  "marlin-workspace-patch",
  "marlin-workspace-status",
- "rust-lang-project-harness",
  "serde",
  "serde_json",
 ]
@@ -2443,7 +2428,6 @@ dependencies = [
  "marlin-rust-project-harness-policy",
  "marlin-workspace-patch",
  "marlin-workspace-status",
- "rust-lang-project-harness",
  "serde",
 ]
 
@@ -2455,7 +2439,6 @@ dependencies = [
  "marlin-rust-project-harness-policy",
  "marlin-workspace-protocol",
  "orgize",
- "rust-lang-project-harness",
 ]
 
 [[package]]
@@ -2474,7 +2457,6 @@ version = "0.1.0"
 dependencies = [
  "marlin-org-model",
  "marlin-rust-project-harness-policy",
- "rust-lang-project-harness",
  "serde",
 ]
 
@@ -2490,7 +2472,6 @@ dependencies = [
  "marlin-workspace-query",
  "marlin-workspace-status",
  "marlin-workspace-view",
- "rust-lang-project-harness",
  "serde",
  "thiserror",
 ]
@@ -2501,7 +2482,6 @@ version = "0.1.0"
 dependencies = [
  "marlin-org-model",
  "marlin-rust-project-harness-policy",
- "rust-lang-project-harness",
  "serde",
 ]
 
@@ -2513,7 +2493,6 @@ dependencies = [
  "marlin-gerbil-ir",
  "marlin-org-model",
  "marlin-rust-project-harness-policy",
- "rust-lang-project-harness",
  "serde",
  "serde_json",
 ]
@@ -2524,7 +2503,6 @@ version = "0.1.0"
 dependencies = [
  "marlin-org-model",
  "marlin-rust-project-harness-policy",
- "rust-lang-project-harness",
  "serde",
  "serde_json",
 ]
@@ -4575,8 +4553,10 @@ dependencies = [
  "pin-project-lite",
  "sync_wrapper",
  "tokio",
+ "tokio-util",
  "tower-layer",
  "tower-service",
+ "tracing",
 ]
 
 [[package]]

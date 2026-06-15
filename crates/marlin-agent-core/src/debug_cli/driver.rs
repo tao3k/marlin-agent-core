@@ -88,7 +88,7 @@ pub(in crate::debug_cli) fn usage() -> String {
 }
 
 pub(in crate::debug_cli) fn graph_usage() -> &'static str {
-    "Graph commands:\n  marlin graph query --input <graph-or-proposal.json>\n  marlin graph propose --strategy static|gerbil --input <graph-or-gerbil-request.json>\n  marlin graph validate --input <proposal.json>\n  marlin graph run --input <graph-or-request.json> [--run-id <id>] [--catalog <catalog.toml|json>]"
+    "Graph commands:\n  marlin graph query --input <graph-or-proposal-or-receipt.json>\n  marlin graph query --input <graph-query-request.json> --org-memory <memory.org> [--org-memory <memory.org> ...] [--receipt-id <id>]\n  marlin graph propose --strategy static|gerbil --input <graph-or-gerbil-request.json>\n  marlin graph validate --input <proposal.json>\n  marlin graph run --input <graph-or-request.json> [--run-id <id>] [--catalog <catalog.toml|json>]"
 }
 
 pub(in crate::debug_cli) fn loop_usage() -> &'static str {

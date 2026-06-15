@@ -58,7 +58,9 @@ thiserror = "2.0.18"
 tokio = { version = "1", features = ["rt", "macros", "sync", "time", "process"] }
 tokio-stream = "0.1"
 tokio-util = { version = "0.7", features = ["rt"] }
+tower = { version = "0.5.3", features = ["limit", "load-shed", "timeout", "util"] }
 tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter", "fmt", "json"] }
 rust-lang-project-harness = { git = "https://github.com/tao3k/rust-lang-project-harness", rev = "7811ab03e815a3eca76d2a2cd25a4ee4c442db30", version = "=0.1.2" }
 marlin-rust-project-harness-policy = { path = "build-support/marlin-rust-project-harness-policy", version = "0.1.0" }
 marlin-agent-environment = { path = "crates/marlin-agent-environment", version = "0.1.0" }

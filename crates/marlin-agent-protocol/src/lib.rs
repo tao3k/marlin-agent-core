@@ -5,6 +5,7 @@ mod graph;
 mod hook;
 mod model_gateway;
 mod model_route;
+mod project_runtime;
 mod runtime_environment;
 mod scenario;
 mod sub_agent;
@@ -16,15 +17,21 @@ pub use graph::{
     GERBIL_LOOP_GRAPH_POLICY_COMPILATION_SCHEMA_ID, GRAPH_POLICY_PROPOSAL_SCHEMA_ID,
     GerbilLoopGraphContinuationAction, GerbilLoopGraphContinuationCompileError,
     GerbilLoopGraphContinuationRequest, GerbilLoopGraphPolicyCompilationRequest, GraphId,
-    GraphLoopEvidencePolicy, GraphLoopExecutionBudget, GraphLoopExecutionRequest,
-    GraphLoopExecutionResult, GraphLoopExecutionStatus, GraphLoopIterationReport,
-    GraphLoopNextAction, GraphLoopRunRequest, GraphLoopStopPolicy, GraphLoopStrategy,
+    GraphLoopContinuationAction, GraphLoopContinuationDecision, GraphLoopContinuationReceipt,
+    GraphLoopEvent, GraphLoopEventEnvelope, GraphLoopEventId, GraphLoopEvidencePolicy,
+    GraphLoopExecutionBudget, GraphLoopExecutionRequest, GraphLoopExecutionResult,
+    GraphLoopExecutionStatus, GraphLoopInputDrainPolicy, GraphLoopInputLane,
+    GraphLoopInputQueueReceipt, GraphLoopIterationId, GraphLoopIterationReport,
+    GraphLoopMessageRole, GraphLoopNextAction, GraphLoopQueuedInput, GraphLoopRunRequest,
+    GraphLoopStopPolicy, GraphLoopStopReason, GraphLoopStopReceipt, GraphLoopStrategy,
     GraphLoopStrategyId, GraphLoopStrategyRuntime, GraphLoopStrategyVersion, GraphNativeAbiId,
     GraphNativeAbiReadinessReceipt, GraphNativeAbiReadinessStatus, GraphNativeAbiRequirement,
-    GraphNativeSymbol, GraphNodeExecutionReceipt, GraphNodeExecutionStatus, GraphNodeInvocation,
-    GraphPolicyDigest, GraphPolicyProposal, GraphPolicyProposalReceipt, GraphPolicyProposalStatus,
-    GraphPolicyProposalValidationReport, LoopEdgeSpec, LoopGraph, LoopNodeSpec, NodeId, RunId,
-    RuntimePlanSnapshot, compile_gerbil_loop_graph, compile_gerbil_loop_graph_continuation,
+    GraphNativeSymbol, GraphNodeExecutionId, GraphNodeExecutionReceipt, GraphNodeExecutionStatus,
+    GraphNodeInvocation, GraphPolicyDigest, GraphPolicyProposal, GraphPolicyProposalReceipt,
+    GraphPolicyProposalStatus, GraphPolicyProposalValidationReport, GraphToolBatchDecision,
+    GraphToolBatchExecutionMode, GraphToolBatchExecutionReceipt, GraphToolCallId,
+    GraphToolCallReceipt, GraphToolCallStatus, LoopEdgeSpec, LoopGraph, LoopNodeSpec, NodeId,
+    RunId, RuntimePlanSnapshot, compile_gerbil_loop_graph, compile_gerbil_loop_graph_continuation,
     compile_gerbil_loop_graph_policy, validate_graph_policy_proposal,
 };
 pub use hook::{
@@ -56,6 +63,23 @@ pub use model_route::{
     ModelRouteDecision, ModelRouteReceipt, ModelRouteRequest, ModelRouteRule, ModelRouteRuleId,
     ModelRouteSessionId, ModelSessionLifecycle, ModelSessionPersistenceKey, ModelSessionPolicy,
     ModelSessionPoolId,
+};
+pub use project_runtime::{
+    AgentContentCompressionState, AgentContentNode, AgentContentNodeInput, AgentContentRole,
+    AgentSessionFact, AgentSessionHistoryLimit, AgentSessionKind, ContentCompressionReceipt,
+    ContentCompressionStatus, ContentTokenBudget, ContentTokenCount, ContentUsageKind,
+    ContentUsageReceipt, ContentUsageReceiptInput, ContextPackReceipt, GraphQueryContext,
+    GraphQueryExternalProjectPolicy, GraphQueryFallbackPolicy, GraphQueryFallbackScope,
+    GraphQueryFamily, GraphQueryLimit, GraphQueryMatch, GraphQueryMatchRelationship,
+    GraphQueryRelationshipFact, GraphQueryRequest, GraphQueryResponse, GraphQueryScoreBasisPoints,
+    GraphQuerySecretVisibility, GraphQueryVisibility, GraphQueryVisibleSurface,
+    MemoryTriggerReceipt, MemoryTriggerStatus, ProjectMemoryContextFact, ProjectMemoryContextPack,
+    ProjectMemoryRecallIntent, ProjectMemoryRecallRequest, ProjectMemoryRecallTerm,
+    ProjectRuntimeAgentId, ProjectRuntimeBranchRef, ProjectRuntimeContentBodyRef,
+    ProjectRuntimeContentId, ProjectRuntimeContextPackId, ProjectRuntimeEvidenceId,
+    ProjectRuntimeMemoryId, ProjectRuntimeProjectId, ProjectRuntimeReceiptId,
+    ProjectRuntimeRootSessionId, ProjectRuntimeSessionId, ProjectRuntimeSourceSpanRef,
+    ProjectRuntimeToolCapabilityId, ProjectRuntimeWorkspaceId, ProjectRuntimeWorktreeId,
 };
 pub use runtime_environment::{
     RuntimeConfigLayer, RuntimeConfigLayerSource, RuntimeEnvironment, RuntimeEnvironmentActivation,

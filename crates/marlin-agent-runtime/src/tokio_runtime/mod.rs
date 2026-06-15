@@ -30,10 +30,18 @@ pub use marlin_agent_protocol::{
     SubAgentSpawnStrategy,
 };
 pub use marlin_agent_sessions::{
-    AgentSessionContext, ContextExpansionPolicy, ContextNamespace, ContextVisibility, SessionId,
-    SessionIdError, SessionIdentity, SessionIsolationPolicy, SessionIsolationReceipt, SessionKind,
+    AgentSessionContext, ContextExpansionPolicy, ContextNamespace, ContextVisibility,
+    RuntimeBlockingBridgePolicy, RuntimeBlockingBridgeStrategy, RuntimeFanoutJoinPolicy,
+    RuntimeTaskTrackerPolicy, SessionId, SessionIdError, SessionIdentity, SessionIsolationPolicy,
+    SessionIsolationReceipt, SessionKind, SessionRuntimeSnapshot, TokioRuntimeDiagnosticsPolicy,
+    TokioRuntimeFlavor, TokioRuntimePolicy, TokioRuntimePolicyReceipt,
 };
-pub use receipt::SubAgentSpawnReceipt;
-pub use task::{RuntimeTask, RuntimeTaskOutcome};
+pub use receipt::{
+    RuntimeFanoutOutput, RuntimeFanoutReceipt, RuntimeFanoutResult, RuntimeFanoutTaskReceipt,
+    RuntimeFanoutTaskStatus, RuntimeTaskShutdownReceipt, RuntimeTaskShutdownReceiptInput,
+    RuntimeTaskShutdownRequest, RuntimeTaskShutdownStatus, RuntimeTaskTrackerShutdownState,
+    SubAgentSpawnReceipt,
+};
+pub use task::{RuntimeTask, RuntimeTaskOutcome, RuntimeTaskTracker};
 pub use tokio_util::sync::CancellationToken;
 pub use traits::{HookRuntime, ProviderRuntime, RuntimeFuture, SubAgentRuntime, ToolRuntime};

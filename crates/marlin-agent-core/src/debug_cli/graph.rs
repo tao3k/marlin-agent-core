@@ -3,20 +3,26 @@
 use std::{collections::BTreeSet, path::Path};
 
 use crate::{
-    GerbilLoopGraphPolicyCompilationRequest, GraphId, GraphLoopExecutionRequest,
-    GraphLoopExecutionResult, GraphLoopIterationReport, GraphLoopKernel, GraphLoopStrategy,
-    GraphLoopStrategyRuntime, GraphPolicyProposal, LoopGraph, RunId, TokioAgentRuntime,
-    compile_gerbil_loop_graph_policy,
+    GerbilLoopGraphPolicyCompilationRequest, GraphId, GraphLoopEvent, GraphLoopEventEnvelope,
+    GraphLoopExecutionRequest, GraphLoopExecutionResult, GraphLoopIterationReport, GraphLoopKernel,
+    GraphLoopStrategy, GraphLoopStrategyRuntime, GraphPolicyProposal, LoopGraph, RunId,
+    TokioAgentRuntime, compile_gerbil_loop_graph_policy,
+    protocol::{GraphQueryRequest, GraphQueryResponse},
 };
+use marlin_org_memory::MemoryOrgWorkspace;
+use marlin_org_workspace::OrgDocument;
 
 use super::{
     MarlinCliResult,
-    args::{ArgCursor, CommonOptions, GraphProposeOptions, GraphRunOptions},
+    args::{ArgCursor, CommonOptions, GraphProposeOptions, GraphQueryOptions, GraphRunOptions},
     catalog::DebugExecutorCatalog,
     executor::{debug_kernel, read_debug_executor_catalog},
     graph_usage,
     io::{block_on, read_input, read_json_input},
-    receipts::{GraphQueryOutput, GraphQuerySummary, LoopQuerySummary, LoopRunReceipt},
+    receipts::{
+        GraphQueryOutput, GraphQuerySummary, LoopEventQuerySummary, LoopQuerySummary,
+        LoopRunReceipt, ProjectRuntimeQuerySummary,
+    },
 };
 
 pub(super) fn dispatch_graph(cursor: &mut ArgCursor) -> Result<MarlinCliResult, String> {
@@ -26,9 +32,8 @@ pub(super) fn dispatch_graph(cursor: &mut ArgCursor) -> Result<MarlinCliResult, 
 
     match command.as_str() {
         "query" => {
-            let options = CommonOptions::parse(cursor)?;
-            let input = read_input(options.input.as_deref())?;
-            let summary = graph_query_output(&input)?;
+            let options = GraphQueryOptions::parse(cursor)?;
+            let summary = run_graph_query(options)?;
             Ok(MarlinCliResult::success_json(&summary))
         }
         "propose" => {
@@ -55,6 +60,34 @@ pub(super) fn dispatch_graph(cursor: &mut ArgCursor) -> Result<MarlinCliResult, 
             graph_usage()
         )),
     }
+}
+
+fn run_graph_query(options: GraphQueryOptions) -> Result<GraphQueryOutput, String> {
+    if options.org_memory_fixtures.is_empty() {
+        let input = read_input(options.input.as_deref())?;
+        return graph_query_output(&input);
+    }
+
+    let request: GraphQueryRequest = read_json_input(options.input.as_deref())?;
+    let workspace = MemoryOrgWorkspace::new();
+    for org_memory in &options.org_memory_fixtures {
+        let memory_body = read_input(Some(org_memory.as_path()))?;
+        let document_id = org_memory.display().to_string();
+        workspace
+            .load_document(OrgDocument::new(document_id, memory_body))
+            .map_err(|error| {
+                format!(
+                    "failed to load Org memory document {}: {error}",
+                    org_memory.display()
+                )
+            })?;
+    }
+    let response = workspace
+        .query_project_memory_graph(options.receipt_id, request)
+        .map_err(|error| format!("failed to query project memory graph: {error}"))?;
+    Ok(GraphQueryOutput::ProjectRuntime(
+        project_runtime_query_summary_from_response(response),
+    ))
 }
 
 fn graph_query_summary(input: &str) -> Result<GraphQuerySummary, String> {
@@ -91,10 +124,18 @@ fn graph_query_output(input: &str) -> Result<GraphQueryOutput, String> {
         Ok(summary) => Ok(GraphQueryOutput::Graph(summary)),
         Err(graph_error) => loop_query_summary(input)
             .map(GraphQueryOutput::Loop)
-            .map_err(|loop_error| {
-                format!(
-                    "expected graph/proposal JSON or loop report JSON: graph parse failed: {graph_error}; loop parse failed: {loop_error}"
-                )
+            .or_else(|loop_error| {
+                loop_event_query_summary(input)
+                    .map(GraphQueryOutput::LoopEvents)
+                    .or_else(|event_error| {
+                        project_runtime_query_summary(input)
+                            .map(GraphQueryOutput::ProjectRuntime)
+                            .map_err(|project_error| {
+                                format!(
+                                    "expected graph/proposal JSON, loop report JSON, graph-loop event JSON, or project-runtime graph query JSON: graph parse failed: {graph_error}; loop parse failed: {loop_error}; event parse failed: {event_error}; project-runtime parse failed: {project_error}"
+                                )
+                            })
+                    })
             }),
     }
 }
@@ -140,6 +181,162 @@ fn loop_query_summary(input: &str) -> Result<LoopQuerySummary, String> {
             .map(|trace| trace.events.len())
             .sum(),
     })
+}
+
+fn loop_event_query_summary(input: &str) -> Result<LoopEventQuerySummary, String> {
+    let events = parse_loop_event_input(input)?;
+    let terminal_status = events.iter().rev().find_map(|event| match &event.event {
+        GraphLoopEvent::AgentEnd { status } => Some(status.clone()),
+        _ => None,
+    });
+    let run_ids = events
+        .iter()
+        .map(|event| event.run_id.clone())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    let iteration_ids = events
+        .iter()
+        .filter_map(|event| event.iteration_id.map(|iteration_id| iteration_id.get()))
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    let node_ids = events
+        .iter()
+        .filter_map(|event| {
+            event
+                .node_id
+                .as_ref()
+                .map(|node_id| node_id.as_str().to_string())
+        })
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    let trace_ids = events
+        .iter()
+        .filter_map(|event| event.trace_id.clone())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    let event_types = events
+        .iter()
+        .map(|event| graph_loop_event_type(&event.event).to_string())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    let tool_event_count = events
+        .iter()
+        .filter(|event| graph_loop_event_is_tool_event(&event.event))
+        .count();
+    Ok(LoopEventQuerySummary {
+        run_ids,
+        event_count: events.len(),
+        iteration_ids,
+        node_ids,
+        trace_ids,
+        event_types,
+        tool_event_count,
+        terminal_status,
+    })
+}
+
+fn project_runtime_query_summary(input: &str) -> Result<ProjectRuntimeQuerySummary, String> {
+    let response = serde_json::from_str::<GraphQueryResponse>(input)
+        .map_err(|error| format!("expected GraphQueryResponse JSON: {error}"))?;
+    Ok(project_runtime_query_summary_from_response(response))
+}
+
+fn project_runtime_query_summary_from_response(
+    response: GraphQueryResponse,
+) -> ProjectRuntimeQuerySummary {
+    ProjectRuntimeQuerySummary {
+        receipt_id: response.receipt_id,
+        family: response.request.family,
+        query: response.request.query,
+        match_count: response.matches.len(),
+        source_project_ids: response
+            .matches
+            .iter()
+            .map(|query_match| query_match.source_project_id.clone())
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect(),
+        source_root_session_ids: response
+            .matches
+            .iter()
+            .filter_map(|query_match| query_match.source_root_session_id.clone())
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect(),
+        source_session_ids: response
+            .matches
+            .iter()
+            .filter_map(|query_match| query_match.source_session_id.clone())
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect(),
+        memory_ids: response
+            .matches
+            .iter()
+            .filter_map(|query_match| query_match.memory_id.clone())
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect(),
+        content_ids: response
+            .matches
+            .iter()
+            .filter_map(|query_match| query_match.content_id.clone())
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect(),
+        relationship_facts: response
+            .matches
+            .iter()
+            .flat_map(|query_match| query_match.relationship.facts.iter().copied())
+            .fold(Vec::new(), |mut facts, fact| {
+                if !facts.contains(&fact) {
+                    facts.push(fact);
+                }
+                facts
+            }),
+        score_basis_points: response
+            .matches
+            .iter()
+            .map(|query_match| query_match.score_basis_points.as_u16())
+            .collect(),
+    }
+}
+
+fn parse_loop_event_input(input: &str) -> Result<Vec<GraphLoopEventEnvelope>, String> {
+    serde_json::from_str::<Vec<GraphLoopEventEnvelope>>(input)
+        .or_else(|_| serde_json::from_str::<GraphLoopEventEnvelope>(input).map(|event| vec![event]))
+        .map_err(|error| {
+            format!("expected GraphLoopEventEnvelope or GraphLoopEventEnvelope array JSON: {error}")
+        })
+}
+
+fn graph_loop_event_type(event: &GraphLoopEvent) -> &'static str {
+    match event {
+        GraphLoopEvent::AgentStart { .. } => "agent_start",
+        GraphLoopEvent::TurnStart => "turn_start",
+        GraphLoopEvent::MessageStart { .. } => "message_start",
+        GraphLoopEvent::MessageUpdate { .. } => "message_update",
+        GraphLoopEvent::MessageEnd { .. } => "message_end",
+        GraphLoopEvent::ToolExecutionStart { .. } => "tool_execution_start",
+        GraphLoopEvent::ToolExecutionUpdate { .. } => "tool_execution_update",
+        GraphLoopEvent::ToolExecutionEnd { .. } => "tool_execution_end",
+        GraphLoopEvent::TurnEnd { .. } => "turn_end",
+        GraphLoopEvent::AgentEnd { .. } => "agent_end",
+    }
+}
+
+fn graph_loop_event_is_tool_event(event: &GraphLoopEvent) -> bool {
+    matches!(
+        event,
+        GraphLoopEvent::ToolExecutionStart { .. }
+            | GraphLoopEvent::ToolExecutionUpdate { .. }
+            | GraphLoopEvent::ToolExecutionEnd { .. }
+    )
 }
 
 fn parse_loop_report_input(input: &str) -> Result<Vec<GraphLoopIterationReport>, String> {

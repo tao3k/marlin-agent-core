@@ -32,7 +32,7 @@ fn rust_project_harness_policy_stays_on_build_dependency_plane() {
             "build-dependencies",
             "marlin-rust-project-harness-policy",
         );
-        assert_dependency_present(package, "build-dependencies", "rust-lang-project-harness");
+        assert_dependency_absent(package, "build-dependencies", "rust-lang-project-harness");
     }
 }
 

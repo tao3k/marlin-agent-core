@@ -1,0 +1,284 @@
+* 40.150 Tokio Runtime Advanced Capability Research
+:PROPERTIES:
+:STATUS: Active
+:OWNER_CRATES: marlin-agent-runtime, marlin-agent-protocol, marlin-agent-test-support
+:EVIDENCE: cargo metadata, ASP rust search, Tokio 1.52.3 docs, tokio-util 0.7.18 docs
+:END:
+
+This RFC is a research and calibration document for bringing advanced Tokio
+runtime capabilities into Marlin's runtime layer in a controlled way. The goal
+is not to expose Tokio details throughout the workspace. The goal is to make
+Tokio a stronger implementation substrate behind Marlin-owned typed protocols,
+receipts, runtime policy, and test gates.
+
+** Current Dependency Baseline
+- The workspace currently resolves =tokio= to =1.52.3=.
+- The workspace currently resolves =tokio-util= to =0.7.18=.
+- The workspace currently resolves =tokio-stream= to =0.1.18=.
+- Direct Tokio usage is concentrated in =marlin-agent-runtime= and related
+  runtime-facing crates.
+
+** Current Marlin Runtime Usage
+- =crates/marlin-agent-runtime/src/tokio_runtime/handle.rs= owns the
+  runtime facade for provider, tool, hook, sub-agent, and working-copy fanout
+  spawning.
+- =TokioAgentRuntime= already propagates =CancellationToken::child_token()=
+  into child runtimes and child contexts.
+- =spawn_cancellable= already uses =tokio::select!= against cancellation.
+- Working-copy sub-agent fanout already uses =tokio::task::JoinSet= with a
+  bounded =max_parallelism= loop.
+- =RuntimeTask= currently wraps a =JoinHandle= and exposes =abort=,
+  =is_finished=, and =join=.
+- Runtime observability already has span boundaries for generic, provider,
+  tool, hook, sub-agent, cancellable, and blocking work.
+
+** External Capability Survey
+*** Graceful shutdown
+Tokio's recommended shutdown shape has three parts: determine shutdown, signal
+tasks to stop, then wait for tasks to finish. The official Tokio topic guide
+uses =CancellationToken= for signalling and =tokio_util::task::TaskTracker= for
+waiting.
+
+Implication for Marlin:
+- Keep =CancellationToken= as the runtime tree cancellation primitive.
+- Add a Marlin-owned =RuntimeTaskTracker= wrapper around =TaskTracker=.
+- Make shutdown receipts explicit: =cancel_requested=, =tracker_closed=,
+  =wait_completed=, =elapsed_ms=, =timed_out=.
+
+Sources:
+- https://tokio.rs/tokio/topics/shutdown
+- https://docs.rs/tokio-util/0.7.18/tokio_util/task/task_tracker/struct.TaskTracker.html
+- https://docs.rs/tokio-util/0.7.18/tokio_util/sync/struct.CancellationToken.html
+
+*** JoinSet and fanout control
+=JoinSet= is a strong fit for bounded concurrent fanout, but its error surface
+must be owned by Marlin. Tokio's docs expose =join_next_with_id=, =abort_all=,
+=shutdown=, and note that =join_all= will panic on a join error.
+
+Implication for Marlin:
+- Continue using =JoinSet= for fanout.
+- Replace fanout =panic!= paths with typed receipts.
+- Prefer =join_next_with_id= where task identity matters.
+- Use =abort_all= plus =join_next=, or =shutdown=, when cancellation has already
+  been requested and the fanout must be drained.
+- Preserve input ordering in the success vector, but separately retain
+  completion order in evidence.
+
+Source:
+- https://docs.rs/tokio/1.52.3/tokio/task/struct.JoinSet.html
+
+*** Blocking and sync bridge policy
+Tokio exposes =spawn_blocking= and =block_in_place=. =block_in_place= is only
+available for multi-thread runtimes and panics on a current-thread runtime.
+Blocking work behind =block_in_place= also cannot be cancelled.
+
+Implication for Marlin:
+- Do not call =block_in_place= directly from business crates.
+- Add =RuntimeBlockingBridge= in =marlin-agent-runtime=.
+- Use =Handle::try_current()= and =Handle::runtime_flavor()= before selecting a
+  bridge strategy.
+- Allow =block_in_place= only on =RuntimeFlavor::MultiThread=.
+- Use helper thread or =spawn_blocking= when running under a current-thread
+  runtime or outside runtime context.
+- Record a receipt for the selected strategy and whether cancellation was
+  cooperative, impossible, or timeout-bound.
+
+Sources:
+- https://docs.rs/tokio/1.52.3/tokio/task/fn.block_in_place.html
+- https://docs.rs/tokio/1.52.3/tokio/runtime/struct.Handle.html
+
+*** Runtime identity and stable diagnostics
+Tokio =Handle= exposes runtime =id=, optional =name=, runtime =metrics=, and
+=runtime_flavor=. These are stable enough to wrap behind Marlin diagnostics
+without enabling =tokio_unstable=.
+
+Implication for Marlin:
+- Add =TokioRuntimeDiagnosticsReceipt= with =runtime_id=, =runtime_name=,
+  =runtime_flavor=, selected metrics snapshot, and collection timestamp.
+- Attach diagnostics to runtime evidence, graph-loop receipts, and long-running
+  fanout receipts.
+- Avoid storing raw high-cardinality metrics in normal receipts; keep compact
+  summaries and only emit raw metrics in explicit diagnostics mode.
+
+Source:
+- https://docs.rs/tokio/1.52.3/tokio/runtime/struct.Handle.html
+
+*** Runtime builder policy
+Tokio =Builder= controls runtime flavor, worker threads, blocking thread pool,
+thread naming, keep-alive, event interval, global queue interval, and time/I/O
+driver setup. Some tuning knobs are stable; metrics histograms, RNG seed, LIFO
+slot control, panic behavior, and task hooks are =tokio_unstable=.
+
+Implication for Marlin:
+- Add =TokioRuntimePolicy= as a typed config envelope.
+- Keep stable knobs in normal TOML.
+- Put =tokio_unstable= knobs behind an explicit diagnostics or test feature.
+- Record the effective policy in a receipt whenever Marlin constructs a runtime.
+- Do not use Tokio unstable APIs in production defaults.
+
+Sources:
+- https://docs.rs/tokio/1.52.3/tokio/runtime/struct.Builder.html
+- https://docs.rs/tokio/1.52.3/tokio/runtime/index.html
+
+*** Task dumps and poll-time histograms
+Tokio task dumps and poll-time histograms are useful for hard runtime
+diagnostics, but they require =tokio_unstable= and platform/configuration
+care. Task dump docs recommend wrapping =Handle::dump()= in a timeout so the
+diagnostic cannot turn one blocked runtime thread into a fully blocked runtime.
+
+Implication for Marlin:
+- Treat taskdump as a diagnostic feature, not normal runtime behavior.
+- Add a =tokio-diagnostics= feature before using it.
+- Gate taskdump CI to supported platforms only.
+- Store taskdump output as an explicit debug artifact, not as normal evidence
+  graph payload.
+
+Sources:
+- https://docs.rs/tokio/1.52.3/tokio/runtime/struct.Handle.html
+- https://docs.rs/tokio/1.52.3/tokio/runtime/dump/index.html
+
+** Proposed Marlin-owned Surfaces
+*** =RuntimeTaskTracker=
+Purpose:
+- Track tasks spawned through =TokioAgentRuntime=.
+- Support graceful shutdown: cancel, close tracker, wait, timeout, receipt.
+
+Initial API shape:
+- =RuntimeTaskTracker::new()=
+- =track(future)=
+- =spawn(runtime_handle, future)=
+- =close()=
+- =wait()=
+- =shutdown_with_timeout(duration)= -> =RuntimeTaskShutdownReceipt=
+
+Receipts:
+- =RuntimeTaskSpawnReceipt=
+- =RuntimeTaskJoinReceipt=
+- =RuntimeTaskShutdownReceipt=
+
+*** =RuntimeFanoutJoinPolicy=
+Purpose:
+- Replace ad hoc =JoinSet= loops with a policy-driven fanout helper.
+
+Initial policy fields:
+- =max_parallelism=
+- =cancel_on_first_error=
+- =preserve_input_order=
+- =retain_completion_order=
+- =shutdown_timeout_ms=
+
+Receipts:
+- =RuntimeFanoutReceipt=
+- =RuntimeFanoutTaskReceipt=
+
+*** =RuntimeBlockingBridge=
+Purpose:
+- Centralize safe sync/async bridging.
+- Prevent current-thread runtime =block_in_place= panics.
+- Make blocking non-cancellability visible to agents.
+
+Initial strategy values:
+- =MultiThreadBlockInPlace=
+- =SpawnBlocking=
+- =HelperThread=
+- =OutsideRuntimeDirect=
+
+Receipts:
+- =RuntimeBlockingBridgeReceipt=
+
+*** =TokioRuntimePolicy=
+Purpose:
+- Own runtime construction and tuning in Marlin.
+- Keep Tokio builder details out of business crates.
+
+Initial fields:
+- =flavor=: =multi_thread= or =current_thread=
+- =worker_threads=
+- =max_blocking_threads=
+- =thread_name_prefix=
+- =thread_keep_alive_ms=
+- =event_interval=
+- =global_queue_interval=
+- =shutdown_timeout_ms=
+- =diagnostics=
+
+*** =TokioRuntimeDiagnosticsReceipt=
+Purpose:
+- Capture stable runtime identity and selected metrics.
+- Optionally capture taskdump under diagnostics feature.
+
+Stable fields:
+- =runtime_id=
+- =runtime_name=
+- =runtime_flavor=
+- =metrics_snapshot=
+- =collection_elapsed_ms=
+
+Feature-gated fields:
+- =taskdump_artifact=
+- =poll_time_histogram_enabled=
+- =rng_seed=
+
+** Implementation Order
+*** P0 Runtime lifecycle receipts
+1. Add =RuntimeTaskTracker= wrapper in =marlin-agent-runtime=.
+2. Register tasks spawned by =TokioAgentRuntime::spawn_with_span=.
+3. Add shutdown receipt tests that prove =cancel -> close -> wait=.
+4. Keep existing =RuntimeTask= API as the thin join handle wrapper.
+
+*** P1 Fanout error and shutdown semantics
+1. Add =RuntimeFanoutJoinPolicy= and receipts.
+2. Replace working-copy sub-agent fanout =panic!= with typed join receipts.
+3. Add tests for normal completion, panic join error, cancellation, and
+   preserved input order.
+
+*** P1 Blocking bridge safety
+1. Add =RuntimeBlockingBridge=.
+2. Test multi-thread and current-thread runtime behavior separately.
+3. Explicitly verify that current-thread runtime never calls =block_in_place=.
+
+*** P2 Runtime policy envelope
+1. Add =TokioRuntimePolicy= to protocol/runtime config.
+2. Implement builder projection in =marlin-agent-runtime=.
+3. Emit effective policy receipt.
+
+*** P2 Diagnostics receipts
+1. Add stable =TokioRuntimeDiagnosticsReceipt= using =Handle= identity and
+   metrics.
+2. Add optional =tokio-diagnostics= feature for taskdump.
+3. Keep taskdump out of normal CI unless the platform/config explicitly enables
+   it.
+
+*** P3 Deterministic test profile
+1. Explore =rng_seed= only behind =tokio_unstable= and test-only cfg.
+2. Use it for fanout/cancellation race tests if it materially improves
+   determinism.
+
+** Verification Plan
+- =cargo test -p marlin-agent-runtime --locked=
+- =cargo clippy -p marlin-agent-runtime --all-targets --locked -- -D warnings=
+- New unit tests under =crates/marlin-agent-runtime/tests/unit/runtime=.
+- Evidence receipts checked through =marlin-agent-test-support= fixtures.
+- No production dependency on =tokio_unstable=.
+- Diagnostics feature must compile separately before taskdump support is
+  considered accepted.
+
+** Acceptance Criteria
+- Every runtime-spawned task can be associated with a Marlin receipt.
+- Runtime shutdown has typed evidence rather than log-only behavior.
+- Fanout join errors are typed and testable.
+- Blocking bridge strategy is selected by runtime flavor and recorded.
+- Runtime policy and diagnostics are Marlin-owned surfaces, not direct Tokio
+  details leaking into higher crates.
+- Tokio advanced features are split into stable production surfaces and
+  explicit diagnostics/test-only surfaces.
+
+** Open Questions
+- Should =TaskTracker= be per =TokioAgentRuntime=, per graph-loop run, or both?
+- Should fanout cancellation cancel sibling tasks on first error by default?
+- Which runtime metrics are stable enough for normal receipts without high
+  cardinality or performance cost?
+- Should runtime policy live in =marlin-agent-protocol= first, or begin as an
+  internal =marlin-agent-runtime= config type?
+- Should taskdump artifacts be persisted under debug CLI output, test support
+  fixtures, or runtime receipts?

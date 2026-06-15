@@ -4,7 +4,15 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{GraphId, GraphLoopExecutionStatus, GraphLoopIterationReport, RunId};
+use crate::{
+    GraphId, GraphLoopExecutionStatus, GraphLoopIterationReport, RunId,
+    protocol::{
+        GraphQueryFamily, GraphQueryRelationshipFact, ProjectRuntimeContentId,
+        ProjectRuntimeMemoryId, ProjectRuntimeProjectId, ProjectRuntimeReceiptId,
+        ProjectRuntimeRootSessionId, ProjectRuntimeSessionId,
+    },
+    runtime::GraphLoopRunObservation,
+};
 
 /// Summary returned by `marlin graph query`.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -32,12 +40,43 @@ pub struct LoopQuerySummary {
     pub trace_event_count: usize,
 }
 
+/// Summary returned by `marlin graph query` for graph-loop events.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct LoopEventQuerySummary {
+    pub run_ids: Vec<RunId>,
+    pub event_count: usize,
+    pub iteration_ids: Vec<u64>,
+    pub node_ids: Vec<String>,
+    pub trace_ids: Vec<String>,
+    pub event_types: Vec<String>,
+    pub tool_event_count: usize,
+    pub terminal_status: Option<GraphLoopExecutionStatus>,
+}
+
+/// Summary returned by `marlin graph query` for project-runtime graph receipts.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct ProjectRuntimeQuerySummary {
+    pub receipt_id: ProjectRuntimeReceiptId,
+    pub family: GraphQueryFamily,
+    pub query: String,
+    pub match_count: usize,
+    pub source_project_ids: Vec<ProjectRuntimeProjectId>,
+    pub source_root_session_ids: Vec<ProjectRuntimeRootSessionId>,
+    pub source_session_ids: Vec<ProjectRuntimeSessionId>,
+    pub memory_ids: Vec<ProjectRuntimeMemoryId>,
+    pub content_ids: Vec<ProjectRuntimeContentId>,
+    pub relationship_facts: Vec<GraphQueryRelationshipFact>,
+    pub score_basis_points: Vec<u16>,
+}
+
 /// Read-only graph query output.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum GraphQueryOutput {
     Graph(GraphQuerySummary),
     Loop(LoopQuerySummary),
+    LoopEvents(LoopEventQuerySummary),
+    ProjectRuntime(ProjectRuntimeQuerySummary),
 }
 
 /// Run receipt returned by `marlin loop run`.
@@ -47,6 +86,8 @@ pub struct LoopRunReceipt {
     pub report_path: Option<PathBuf>,
     pub iteration_count: usize,
     pub terminal_status: Option<GraphLoopExecutionStatus>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub runtime_observation: Option<GraphLoopRunObservation>,
     pub replayable: bool,
     pub missing_trace_count: usize,
     pub reports: Vec<GraphLoopIterationReport>,

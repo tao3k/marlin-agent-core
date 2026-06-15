@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use crate::{
     GraphId, GraphLoopController, GraphLoopEvidencePolicy, GraphLoopExecutionRequest,
     GraphLoopIterationReport, GraphLoopRunRequest, GraphLoopStopPolicy, RunId, TokioAgentRuntime,
-    TokioGraphLoopController,
+    TokioGraphLoopController, runtime::GraphLoopRunObservation,
 };
 
 use super::{
@@ -33,14 +33,19 @@ pub(super) fn dispatch_loop(cursor: &mut ArgCursor) -> Result<MarlinCliResult, S
             let request = read_loop_run_request(options.input.as_deref(), options.max_iterations)?;
             let catalog = read_debug_executor_catalog(options.catalog.as_deref())?;
             let requested_run_id = request.initial_request.run_id.clone();
-            let reports = block_on(run_loop_controller(request, catalog))?;
+            let output = block_on(run_loop_controller(request, catalog))?;
             let report_path = options
                 .store
                 .as_deref()
-                .map(|store| write_loop_reports(store, &reports))
+                .map(|store| write_loop_reports(store, &output.reports))
                 .transpose()?
                 .flatten();
-            let receipt = loop_run_receipt(requested_run_id, reports, report_path);
+            let receipt = loop_run_receipt(
+                requested_run_id,
+                output.reports,
+                report_path,
+                output.runtime_observation,
+            );
             Ok(MarlinCliResult::success_json(&receipt))
         }
         "replay" => {
@@ -82,28 +87,46 @@ fn read_loop_run_request(
     Ok(request)
 }
 
+struct LoopRunControllerOutput {
+    reports: Vec<GraphLoopIterationReport>,
+    runtime_observation: Option<GraphLoopRunObservation>,
+}
+
 async fn run_loop_controller(
     request: GraphLoopRunRequest,
     catalog: DebugExecutorCatalog,
-) -> Result<Vec<GraphLoopIterationReport>, String> {
+) -> Result<LoopRunControllerOutput, String> {
     let (runtime, _events) = TokioAgentRuntime::new(64);
+    let requested_run_id = request.initial_request.run_id.clone();
     let kernel = debug_kernel(
         &request.initial_request.run_id,
         &request.initial_request.graph,
         catalog,
     )?;
     let controller = TokioGraphLoopController::new(kernel);
-    controller
+    let reports = controller
         .spawn_loop(request, &runtime)
         .join()
         .await
-        .map_err(|error| format!("loop controller task failed to join: {error}"))
+        .map_err(|error| format!("loop controller task failed to join: {error}"))?;
+    let runtime_observation = runtime.graph_loop_runs().read_registry(|registry| {
+        registry
+            .snapshot(0)
+            .runs
+            .into_iter()
+            .find(|observation| observation.run_id.as_str() == requested_run_id)
+    });
+    Ok(LoopRunControllerOutput {
+        reports,
+        runtime_observation,
+    })
 }
 
 fn loop_run_receipt(
     requested_run_id: String,
     reports: Vec<GraphLoopIterationReport>,
     report_path: Option<PathBuf>,
+    runtime_observation: Option<GraphLoopRunObservation>,
 ) -> LoopRunReceipt {
     let terminal = reports.last();
     LoopRunReceipt {
@@ -115,6 +138,7 @@ fn loop_run_receipt(
         report_path,
         iteration_count: reports.len(),
         terminal_status: terminal.map(|report| report.execution_result.status.clone()),
+        runtime_observation,
         replayable: reports_are_replayable(&reports),
         missing_trace_count: missing_trace_count(&reports),
         reports,

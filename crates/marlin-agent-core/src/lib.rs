@@ -4,8 +4,9 @@ mod debug_cli;
 mod release;
 
 pub use debug_cli::{
-    GraphQueryOutput, GraphQuerySummary, LoopInspectReceipt, LoopQuerySummary, LoopReplayReceipt,
-    LoopRunReceipt, MarlinCliResult, run_marlin_cli, run_marlin_cli_from_args,
+    GraphQueryOutput, GraphQuerySummary, LoopEventQuerySummary, LoopInspectReceipt,
+    LoopQuerySummary, LoopReplayReceipt, LoopRunReceipt, MarlinCliResult,
+    ProjectRuntimeQuerySummary, run_marlin_cli, run_marlin_cli_from_args,
 };
 pub use marlin_agent_environment as environment;
 pub use marlin_agent_environment::{
@@ -61,12 +62,18 @@ pub use marlin_agent_protocol::{
     AgentTraceSpanRecord, GERBIL_LOOP_GRAPH_CONTINUATION_SCHEMA_ID,
     GERBIL_LOOP_GRAPH_POLICY_COMPILATION_SCHEMA_ID, GRAPH_POLICY_PROPOSAL_SPAN_NAME,
     GerbilLoopGraphContinuationAction, GerbilLoopGraphContinuationRequest,
-    GerbilLoopGraphPolicyCompilationRequest, GraphLoopEvidencePolicy, GraphLoopIterationReport,
-    GraphLoopNextAction, GraphLoopRunRequest, GraphLoopStopPolicy, GraphNativeAbiId,
+    GerbilLoopGraphPolicyCompilationRequest, GraphLoopContinuationAction,
+    GraphLoopContinuationDecision, GraphLoopContinuationReceipt, GraphLoopEvent,
+    GraphLoopEventEnvelope, GraphLoopEventId, GraphLoopEvidencePolicy, GraphLoopInputDrainPolicy,
+    GraphLoopInputLane, GraphLoopInputQueueReceipt, GraphLoopIterationId, GraphLoopIterationReport,
+    GraphLoopMessageRole, GraphLoopNextAction, GraphLoopQueuedInput, GraphLoopRunRequest,
+    GraphLoopStopPolicy, GraphLoopStopReason, GraphLoopStopReceipt, GraphNativeAbiId,
     GraphNativeAbiReadinessReceipt, GraphNativeAbiReadinessStatus, GraphNativeAbiRequirement,
-    GraphNativeSymbol, HookAgentScope, HookDispatchPolicyReceipt, HookDispatchPolicyReceiptInput,
-    HookDurationMs, HookEventName, HookExecutionMode, HookHandlerType, HookOutputEntry,
-    HookOutputEntryKind, HookPolicyDecision, HookPolicyDecisionReason, HookPolicyDynamicAction,
+    GraphNativeSymbol, GraphNodeExecutionId, GraphToolBatchDecision, GraphToolBatchExecutionMode,
+    GraphToolBatchExecutionReceipt, GraphToolCallId, GraphToolCallReceipt, GraphToolCallStatus,
+    HookAgentScope, HookDispatchPolicyReceipt, HookDispatchPolicyReceiptInput, HookDurationMs,
+    HookEventName, HookExecutionMode, HookHandlerType, HookOutputEntry, HookOutputEntryKind,
+    HookPolicyDecision, HookPolicyDecisionReason, HookPolicyDynamicAction,
     HookPolicyDynamicActionApplicationEffect, HookPolicyDynamicActionApplicationReason,
     HookPolicyDynamicActionApplicationReceipt, HookPolicyDynamicActionApplicationStatus,
     HookPolicyDynamicActionKind, HookPolicyDynamicActionReason, HookPolicyDynamicActionReplacement,

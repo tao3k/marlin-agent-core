@@ -1,9 +1,10 @@
 use marlin_agent_harness_types::AgentHarnessEvidenceKind;
 use marlin_agent_protocol::{
-    ModelCommandMatcher, ModelContextForkMode, ModelEndpoint, ModelGateway, ModelGatewayError,
-    ModelRouteDecision, ModelRouteRequest, ModelRouteRule, ModelSessionPolicy,
-    RuntimeEnvironmentActivationPolicy, RuntimeEnvironmentActivationReceipt,
-    RuntimeEnvironmentActivationStatus,
+    AgentSessionKind, GraphQueryVisibleSurface, ModelCommandMatcher, ModelContextForkMode,
+    ModelEndpoint, ModelGateway, ModelGatewayError, ModelRouteDecision, ModelRouteRequest,
+    ModelRouteRule, ModelSessionPolicy, ProjectRuntimeContextPackId, ProjectRuntimeProjectId,
+    ProjectRuntimeReceiptId, RuntimeEnvironmentActivationPolicy,
+    RuntimeEnvironmentActivationReceipt, RuntimeEnvironmentActivationStatus,
 };
 use marlin_agent_runtime::{
     AgentSessionContext, CancellationToken, CompiledModelRouteResolver, ContextNamespace,
@@ -85,6 +86,26 @@ fn model_route_session_binding_projects_memory_visibility_evidence_without_live_
         "history_limit_applied={}",
         binding.isolation_receipt().history_limit_applied()
     )));
+
+    let session_fact = binding.agent_session_fact(
+        ProjectRuntimeProjectId::new("project-alpha"),
+        child_runtime.session(),
+    );
+    assert_eq!(session_fact.project_id.as_str(), "project-alpha");
+    assert_eq!(session_fact.kind, AgentSessionKind::SubAgent);
+    assert_eq!(
+        session_fact.session_id.as_str(),
+        fixture.expected_route_child_session_id()
+    );
+    assert_eq!(
+        session_fact.root_session_id.as_str(),
+        child_runtime.session().root_session_id().as_str()
+    );
+    assert!(
+        session_fact
+            .visibility
+            .allows_surface(GraphQueryVisibleSurface::Memory)
+    );
 }
 
 #[test]
@@ -233,6 +254,29 @@ fn model_route_session_binding_isolated_context_requests_system_only() {
         "history_limit_applied={}",
         binding.isolation_receipt().history_limit_applied()
     )));
+
+    let session_fact = binding.agent_session_fact(
+        ProjectRuntimeProjectId::new("project-alpha"),
+        child_runtime.session(),
+    );
+    assert_eq!(session_fact.kind, AgentSessionKind::SubAgent);
+    assert_eq!(
+        session_fact
+            .history_limit
+            .expect("isolated child records zero history")
+            .as_u16(),
+        0
+    );
+    assert!(
+        !session_fact
+            .visibility
+            .allows_surface(GraphQueryVisibleSurface::Memory)
+    );
+    assert!(
+        !session_fact
+            .visibility
+            .allows_surface(GraphQueryVisibleSurface::Content)
+    );
 }
 
 #[test]
@@ -287,6 +331,19 @@ fn model_route_session_binding_honors_requested_session_id() {
         "root_session_id={}",
         child_runtime.session().root_session_id().as_str()
     )));
+
+    let pack = binding.context_pack_receipt(
+        ProjectRuntimeReceiptId::new("receipt-pack-1"),
+        ProjectRuntimeContextPackId::new("context-pack-1"),
+        child_runtime.session(),
+    );
+    assert_eq!(pack.receipt_id.as_str(), "receipt-pack-1");
+    assert_eq!(pack.context_pack_id.as_str(), "context-pack-1");
+    assert_eq!(pack.session_id.as_str(), "session:tester");
+    assert_eq!(
+        pack.root_session_id.as_str(),
+        child_runtime.session().root_session_id().as_str()
+    );
 }
 
 #[test]

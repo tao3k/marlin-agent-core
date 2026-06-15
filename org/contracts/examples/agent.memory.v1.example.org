@@ -6,7 +6,7 @@
 :ID: agent-memory-recall-boundary-20260615
 :MEMORY_KIND: architecture-boundary
 :SOURCE_REF: docs/20-workspace/20.10-org-native-agent-workspace.org
-:RECALL_QUERY: memory recall org native workspace candidate dispatch intent
+:RECALL_QUERY: memory recall org native workspace candidate dispatch intent hybrid frontier evidence graph
 :SALIENCE: high
 :TRUST: internal-doc
 :RETENTION: project-lifecycle
@@ -34,6 +34,9 @@ and dispatch receipts downstream.
 - Recall when a contract only stores =Source/Trust/Retention= and does not tell
   an agent what claim should be remembered or how to retrieve it.
 - Use query terms from =RECALL_QUERY= before broad workspace search.
+- Treat =RECALL_QUERY= as a hybrid recall frontier index. =fd=, =rg=, and Org
+  query may use it to find candidates, but graph recall must rerank by typed
+  project/session/content relationship facts and evidence.
 
 ** Evidence
 
@@ -42,6 +45,8 @@ and dispatch receipts downstream.
   receipts.
 - The memory backend can query typed nodes, render compact views, apply typed
   patches in memory, and emit receipts.
+- Evidence entries should be precise enough to support a compact context pack
+  without reopening an entire session transcript or memory shard.
 
 ** Trust
 

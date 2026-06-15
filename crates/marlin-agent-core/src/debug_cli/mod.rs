@@ -13,6 +13,6 @@ mod receipts;
 pub use driver::{MarlinCliResult, run_marlin_cli, run_marlin_cli_from_args};
 pub(in crate::debug_cli) use driver::{graph_usage, loop_usage, usage};
 pub use receipts::{
-    GraphQueryOutput, GraphQuerySummary, LoopInspectReceipt, LoopQuerySummary, LoopReplayReceipt,
-    LoopRunReceipt,
+    GraphQueryOutput, GraphQuerySummary, LoopEventQuerySummary, LoopInspectReceipt,
+    LoopQuerySummary, LoopReplayReceipt, LoopRunReceipt, ProjectRuntimeQuerySummary,
 };

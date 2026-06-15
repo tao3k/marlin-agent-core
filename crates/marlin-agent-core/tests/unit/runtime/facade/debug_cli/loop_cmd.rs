@@ -1,6 +1,6 @@
 use marlin_agent_core::{
     GraphLoopExecutionStatus, LoopInspectReceipt, LoopReplayReceipt, LoopRunReceipt, RunId,
-    run_marlin_cli_from_args,
+    run_marlin_cli_from_args, runtime::GraphLoopRunStatus,
 };
 use std::fs;
 use tempfile::tempdir;
@@ -36,6 +36,24 @@ fn debug_cli_loop_run_writes_store_and_inspect_reads_run_id() {
     assert_eq!(
         run_receipt.terminal_status,
         Some(GraphLoopExecutionStatus::Completed)
+    );
+    let runtime_observation = run_receipt
+        .runtime_observation
+        .as_ref()
+        .expect("loop run receipt should include runtime observation");
+    assert_eq!(runtime_observation.run_id.as_str(), "marlin-loop-run");
+    assert_eq!(runtime_observation.graph_id.as_str(), "graph");
+    assert_eq!(runtime_observation.status, GraphLoopRunStatus::Completed);
+    assert_eq!(
+        runtime_observation.terminal_status,
+        Some(GraphLoopExecutionStatus::Completed)
+    );
+    assert_eq!(
+        runtime_observation
+            .current_iteration_id
+            .expect("current iteration id")
+            .get(),
+        0
     );
     let report_path = run_receipt.report_path.expect("stored report path");
     assert!(

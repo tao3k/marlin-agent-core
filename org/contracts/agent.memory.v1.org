@@ -18,9 +18,16 @@ The intended output is a recallable Org record with:
 - a stable identity and memory kind;
 - a source reference back to durable workspace evidence;
 - explicit recall query terms and salience hints;
+- contract-indexable frontier keys for hybrid recall;
 - a short claim that says what should be remembered;
 - source, evidence, trust, and retention sections for downstream memory
-  backends.
+  backends and graph rerank.
+
+=RECALL_QUERY= and the =Evidence= section are not prompt text dumps. They are the
+contracted inputs that let =fd=, =rg=, and Org element query find a narrow
+candidate frontier quickly, while the graph layer applies project, session,
+content, evidence, trust, retention, backlink, salience, and validation facts to
+return only a compact context pack.
 
 See =org/contracts/examples/agent.memory.v1.example.org= for the concrete
 memory candidate shape this contract accepts.

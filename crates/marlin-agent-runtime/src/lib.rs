@@ -2,9 +2,17 @@
 
 pub mod observability;
 
+mod graph_loop;
 mod model_route;
+mod resilience;
 mod tokio_runtime;
 
+pub use graph_loop::{
+    GraphLoopRunCancelReceipt, GraphLoopRunCancelStatus, GraphLoopRunInspectReceipt,
+    GraphLoopRunObservation, GraphLoopRunProgressUpdate, GraphLoopRunRegistry,
+    GraphLoopRunRegistryError, GraphLoopRunRegistryHandle, GraphLoopRunRegistrySnapshot,
+    GraphLoopRunStartReceipt, GraphLoopRunStatus, GraphLoopRunWaitReceipt, GraphLoopRunWaitStatus,
+};
 pub use model_route::{
     ActivatedModelRouteProfileSpawnRequest, CompiledModelRouteResolver, ModelGateway,
     ModelGatewayCompletionChoice, ModelGatewayCompletionOptions, ModelGatewayCompletionResponse,
@@ -21,16 +29,26 @@ pub use observability::process::{
     RuntimeProcessOutput, RuntimeProcessRegistryHandle, RuntimeProcessTerminator,
     SysinfoRuntimeProcessController,
 };
+pub use resilience::{
+    RuntimeEdgeLayer, RuntimeEdgePolicy, RuntimeEdgePolicyError, RuntimeEdgePolicyReceipt,
+    RuntimeEdgeService,
+};
 pub use tokio_runtime::{
     AgentSessionContext, CancellationToken, ContextExpansionPolicy, ContextNamespace,
-    ContextVisibility, EventStream, HookRuntime, ProviderRuntime, RuntimeContext,
-    RuntimeEnvironment, RuntimeEvent, RuntimeEventSink, RuntimeEventStream,
-    RuntimeExecutionIdentity, RuntimeFuture, RuntimeTask, RuntimeTaskOutcome, SessionId,
-    SessionIdError, SessionIdentity, SessionIsolationPolicy, SessionIsolationReceipt, SessionKind,
+    ContextVisibility, EventStream, HookRuntime, ProviderRuntime, RuntimeBlockingBridgePolicy,
+    RuntimeBlockingBridgeStrategy, RuntimeContext, RuntimeEnvironment, RuntimeEvent,
+    RuntimeEventSink, RuntimeEventStream, RuntimeExecutionIdentity, RuntimeFanoutJoinPolicy,
+    RuntimeFanoutOutput, RuntimeFanoutReceipt, RuntimeFanoutResult, RuntimeFanoutTaskReceipt,
+    RuntimeFanoutTaskStatus, RuntimeFuture, RuntimeTask, RuntimeTaskOutcome,
+    RuntimeTaskShutdownReceipt, RuntimeTaskShutdownReceiptInput, RuntimeTaskShutdownRequest,
+    RuntimeTaskShutdownStatus, RuntimeTaskTracker, RuntimeTaskTrackerPolicy,
+    RuntimeTaskTrackerShutdownState, SessionId, SessionIdError, SessionIdentity,
+    SessionIsolationPolicy, SessionIsolationReceipt, SessionKind, SessionRuntimeSnapshot,
     SubAgentConfigSurface, SubAgentContextPolicy, SubAgentContextVisibility,
     SubAgentPerformanceBudget, SubAgentPermissionSet, SubAgentRuntime, SubAgentSpawnConfig,
     SubAgentSpawnPolicy, SubAgentSpawnProfile, SubAgentSpawnReceipt, SubAgentSpawnStrategy,
-    TokioAgentRuntime, ToolRuntime, WorkingCopyActiveBinding, WorkingCopyBaseRef,
+    TokioAgentRuntime, TokioRuntimeDiagnosticsPolicy, TokioRuntimeFlavor, TokioRuntimePolicy,
+    TokioRuntimePolicyReceipt, ToolRuntime, WorkingCopyActiveBinding, WorkingCopyBaseRef,
     WorkingCopyBranchName, WorkingCopyCommandInvocation, WorkingCopyCommandProgram,
     WorkingCopyCommandProjection, WorkingCopyCommandReceipt, WorkingCopyCommandStatus,
     WorkingCopyCreateRequest, WorkingCopyFanoutBenchmarkReceipt, WorkingCopyFinalizeBranchRequest,

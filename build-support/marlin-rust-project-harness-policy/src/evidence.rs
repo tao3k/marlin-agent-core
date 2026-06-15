@@ -5,15 +5,13 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use serde::Serialize;
-
 use rust_lang_project_harness::{
     RustDeterminismReadiness, RustDeterminismReadinessInput, RustEvidenceGraph,
     RustEvidenceGraphInput, RustEvidenceGraphSummary, RustHarnessConfig, RustHarnessReport,
     RustReviewPacket, RustReviewPacketInput, RustVerificationPerformanceIndex,
     RustVerificationPlan, RustVerificationStabilityIndex, RustVerificationStabilityPicture,
-    RustVerificationTaskIndex, RustVerificationTaskKind, build_rust_determinism_readiness,
-    build_rust_evidence_graph, build_rust_review_packet, build_rust_verification_performance_index,
+    RustVerificationTaskIndex, build_rust_determinism_readiness, build_rust_evidence_graph,
+    build_rust_review_packet, build_rust_verification_performance_index,
     build_rust_verification_stability_index, build_rust_verification_stability_picture_from_index,
     build_rust_verification_task_index, plan_rust_project_verification_with_config,
     render_rust_determinism_readiness_json, render_rust_evidence_graph_json,
@@ -22,9 +20,23 @@ use rust_lang_project_harness::{
     render_rust_verification_stability_picture_json, render_rust_verification_task_index_json,
 };
 
-use crate::gerbil_runtime_assets::{
-    GerbilRuntimeAssetManifestReceipt, GerbilRuntimeAssetManifestStatus,
-    inspect_gerbil_runtime_assets,
+use crate::{
+    gerbil_runtime_assets::{
+        GerbilRuntimeAssetManifestReceipt, GerbilRuntimeAssetManifestStatus,
+        inspect_gerbil_runtime_assets,
+    },
+    improvement_queue::{
+        RustProjectHarnessImprovementQueueReceipt, build_improvement_queue_receipt,
+    },
+    quality_findings::{
+        RustProjectHarnessFindingSeverity, RustProjectHarnessQualityFinding,
+        RustProjectHarnessQualityFindingEvidencePaths, RustProjectHarnessQualityFindingsInput,
+        RustProjectHarnessQualityFindingsReceipt, evaluate_quality_findings_for_gate,
+    },
+    quality_gate::{RustProjectHarnessGateReceipt, evaluate_performance_and_stability_gate},
+    verification_policy::{
+        RustProjectHarnessVerificationPolicyReceipt, build_verification_policy_receipt,
+    },
 };
 
 /// Receipt for `rust-lang-project-harness` evidence emitted from `build.rs`.
@@ -48,8 +60,12 @@ pub struct RustProjectHarnessEvidenceReceipt {
     pub stability_index_path: PathBuf,
     /// Path to the stability-picture JSON artifact, when configured.
     pub stability_picture_path: Option<PathBuf>,
+    /// Path to the Marlin crate-role verification policy JSON artifact.
+    pub verification_policy_path: PathBuf,
     /// Path to the agent-actionable quality findings JSON artifact.
     pub quality_findings_path: PathBuf,
+    /// Path to the reflection-derived improvement queue JSON artifact.
+    pub improvement_queue_path: PathBuf,
     /// Path to the Gerbil runtime asset manifest receipt JSON artifact.
     pub gerbil_runtime_assets_path: PathBuf,
     /// Path to the compact text summary artifact.
@@ -58,199 +74,14 @@ pub struct RustProjectHarnessEvidenceReceipt {
     pub evidence_graph_summary: RustEvidenceGraphSummary,
     /// Package-level performance and stability gate receipt.
     pub gate_receipt: RustProjectHarnessGateReceipt,
+    /// Agent-readable crate-role verification policy receipt.
+    pub verification_policy_receipt: RustProjectHarnessVerificationPolicyReceipt,
     /// Agent-actionable quality findings derived from Marlin's package gate.
     pub quality_findings_receipt: RustProjectHarnessQualityFindingsReceipt,
+    /// Reflection-derived improvement queue for engineering repair.
+    pub improvement_queue_receipt: RustProjectHarnessImprovementQueueReceipt,
     /// Gerbil runtime asset manifest observed at build time.
     pub gerbil_runtime_assets_receipt: GerbilRuntimeAssetManifestReceipt,
-}
-
-/// Structured package-level gate receipt for required Rust harness evidence.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct RustProjectHarnessGateReceipt {
-    /// Cargo package name evaluated by the build gate.
-    pub package_name: String,
-    /// Whether an active performance verification task is configured.
-    pub performance_gate: bool,
-    /// Whether an active stability verification task is configured.
-    pub stability_gate: bool,
-    /// Whether the performance report obligation is configured.
-    pub performance_report_obligation: bool,
-    /// Whether the stability report obligation is configured.
-    pub stability_report_obligation: bool,
-}
-
-impl RustProjectHarnessGateReceipt {
-    /// Returns true when all required package-level quality gates are present.
-    pub fn is_success(&self) -> bool {
-        self.performance_gate
-            && self.stability_gate
-            && self.performance_report_obligation
-            && self.stability_report_obligation
-    }
-}
-
-/// Severity taxonomy for agent-actionable quality findings.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum RustProjectHarnessFindingSeverity {
-    HardError,
-    Warning,
-    Advice,
-}
-
-/// One structured finding that an agent can reason over without parsing prose.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-pub struct RustProjectHarnessQualityFinding {
-    pub finding_id: String,
-    pub severity: RustProjectHarnessFindingSeverity,
-    pub rule_id: String,
-    pub owner: String,
-    pub evidence: Vec<String>,
-    pub why: String,
-    pub agent_next_action: String,
-    pub verification_command: String,
-    pub source_authority: String,
-}
-
-/// JSON receipt containing hard errors, warnings, and advice for the package gate.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-pub struct RustProjectHarnessQualityFindingsReceipt {
-    pub schema_id: String,
-    pub schema_version: String,
-    pub package_name: String,
-    pub findings: Vec<RustProjectHarnessQualityFinding>,
-}
-
-/// Named input for evaluating package-level gate state into structured findings.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct RustProjectHarnessQualityFindingsInput {
-    pub package_name: String,
-    pub gate_receipt: RustProjectHarnessGateReceipt,
-    pub evidence_paths: RustProjectHarnessQualityFindingEvidencePaths,
-}
-
-/// Artifact paths exposed to agents as structured evidence handles.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct RustProjectHarnessQualityFindingEvidencePaths {
-    evidence_graph_path: PathBuf,
-    verification_plan_path: PathBuf,
-    task_index_path: PathBuf,
-}
-
-impl RustProjectHarnessQualityFindingEvidencePaths {
-    pub fn new(
-        evidence_graph_path: impl Into<PathBuf>,
-        verification_plan_path: impl Into<PathBuf>,
-        task_index_path: impl Into<PathBuf>,
-    ) -> Self {
-        Self {
-            evidence_graph_path: evidence_graph_path.into(),
-            verification_plan_path: verification_plan_path.into(),
-            task_index_path: task_index_path.into(),
-        }
-    }
-
-    pub fn agent_evidence(&self) -> Vec<String> {
-        vec![
-            self.evidence_graph_path.display().to_string(),
-            self.verification_plan_path.display().to_string(),
-            self.task_index_path.display().to_string(),
-        ]
-    }
-}
-
-impl RustProjectHarnessQualityFindingsReceipt {
-    pub fn hard_error_count(&self) -> usize {
-        self.findings
-            .iter()
-            .filter(|finding| finding.severity == RustProjectHarnessFindingSeverity::HardError)
-            .count()
-    }
-
-    pub fn warning_count(&self) -> usize {
-        self.findings
-            .iter()
-            .filter(|finding| finding.severity == RustProjectHarnessFindingSeverity::Warning)
-            .count()
-    }
-
-    pub fn advice_count(&self) -> usize {
-        self.findings
-            .iter()
-            .filter(|finding| finding.severity == RustProjectHarnessFindingSeverity::Advice)
-            .count()
-    }
-}
-
-/// Evaluates package-level gate state into structured findings for agent repair.
-pub fn evaluate_quality_findings_for_gate(
-    input: RustProjectHarnessQualityFindingsInput,
-) -> RustProjectHarnessQualityFindingsReceipt {
-    let RustProjectHarnessQualityFindingsInput {
-        package_name,
-        gate_receipt,
-        evidence_paths,
-    } = input;
-    let mut findings = Vec::new();
-
-    push_gate_finding(
-        &mut findings,
-        &package_name,
-        gate_receipt.performance_gate,
-        "MARLIN-QUALITY-GATE-PERF",
-        "performance-gate",
-        "active performance verification task",
-        "add or enable a performance verification task for this package policy",
-    );
-    push_gate_finding(
-        &mut findings,
-        &package_name,
-        gate_receipt.stability_gate,
-        "MARLIN-QUALITY-GATE-STABILITY",
-        "stability-gate",
-        "active stability verification task",
-        "add or enable a stability verification task for this package policy",
-    );
-    push_gate_finding(
-        &mut findings,
-        &package_name,
-        gate_receipt.performance_report_obligation,
-        "MARLIN-QUALITY-REPORT-PERF",
-        "performance-report-obligation",
-        "performance_index_json report obligation",
-        "add performance_index_json to the package verification report obligations",
-    );
-    push_gate_finding(
-        &mut findings,
-        &package_name,
-        gate_receipt.stability_report_obligation,
-        "MARLIN-QUALITY-REPORT-STABILITY",
-        "stability-report-obligation",
-        "stability_index_json report obligation",
-        "add stability_index_json to the package verification report obligations",
-    );
-
-    findings.push(RustProjectHarnessQualityFinding {
-        finding_id: format!("{package_name}:agent-read-evidence"),
-        severity: RustProjectHarnessFindingSeverity::Advice,
-        rule_id: "MARLIN-QUALITY-AGENT-EVIDENCE".to_owned(),
-        owner: package_name.clone(),
-        evidence: evidence_paths.agent_evidence(),
-        why: "agent repair should reason from structured evidence before editing package code"
-            .to_owned(),
-        agent_next_action:
-            "read evidence-graph.json, verification_plan.json, and task_index.json before selecting an edit boundary"
-                .to_owned(),
-        verification_command: "cargo test --workspace --no-fail-fast --quiet".to_owned(),
-        source_authority: "marlin-rust-project-harness-policy".to_owned(),
-    });
-
-    RustProjectHarnessQualityFindingsReceipt {
-        schema_id: "marlin.rust-project-harness.quality-findings".to_owned(),
-        schema_version: "1".to_owned(),
-        package_name,
-        findings,
-    }
 }
 
 /// Writes `rust-lang-project-harness` evidence artifacts using Cargo build env vars.
@@ -267,6 +98,12 @@ pub fn write_evidence_graph_from_env(
         &artifacts.verification_plan,
         &build_env.package_name,
     );
+    let verification_policy_receipt = build_verification_policy_receipt(
+        &build_env.package_name,
+        &build_env.project_root,
+        config,
+        &artifacts.verification_plan,
+    );
     let quality_findings_receipt = build_quality_findings_receipt(
         &paths,
         &build_env,
@@ -274,11 +111,15 @@ pub fn write_evidence_graph_from_env(
         &gate_receipt,
         &gerbil_runtime_assets_receipt,
     );
+    let improvement_queue_receipt =
+        build_improvement_queue_receipt(&quality_findings_receipt, &verification_policy_receipt);
     write_evidence_artifacts(
         &paths,
         &build_env,
         &artifacts,
+        &verification_policy_receipt,
         &quality_findings_receipt,
+        &improvement_queue_receipt,
         &gerbil_runtime_assets_receipt,
     );
     assert_gerbil_runtime_asset_manifest_receipt(&gerbil_runtime_assets_receipt);
@@ -287,7 +128,9 @@ pub fn write_evidence_graph_from_env(
     paths.into_receipt(
         artifacts.evidence_graph_summary,
         gate_receipt,
+        verification_policy_receipt,
         quality_findings_receipt,
+        improvement_queue_receipt,
         gerbil_runtime_assets_receipt,
     )
 }
@@ -407,21 +250,6 @@ fn build_evidence_graph(
     })
 }
 
-/// Evaluates required package-level performance and stability gates.
-pub fn evaluate_performance_and_stability_gate(
-    plan: &RustVerificationPlan,
-    package_name: impl Into<String>,
-) -> RustProjectHarnessGateReceipt {
-    let package_name = package_name.into();
-    RustProjectHarnessGateReceipt {
-        package_name,
-        performance_gate: has_active_verification_task(plan, RustVerificationTaskKind::Performance),
-        stability_gate: has_active_verification_task(plan, RustVerificationTaskKind::Stability),
-        performance_report_obligation: has_report_obligation(plan, "performance_index_json"),
-        stability_report_obligation: has_report_obligation(plan, "stability_index_json"),
-    }
-}
-
 fn assert_performance_and_stability_gate_receipt(receipt: &RustProjectHarnessGateReceipt) {
     let package_name = receipt.package_name.as_str();
     assert_verification_gate(receipt.performance_gate, package_name, "performance");
@@ -436,21 +264,6 @@ fn assert_performance_and_stability_gate_receipt(receipt: &RustProjectHarnessGat
         package_name,
         "stability_index_json",
     );
-}
-
-fn has_active_verification_task(
-    plan: &RustVerificationPlan,
-    task_kind: RustVerificationTaskKind,
-) -> bool {
-    plan.tasks
-        .iter()
-        .any(|task| task.kind == task_kind && task.is_active())
-}
-
-fn has_report_obligation(plan: &RustVerificationPlan, report_obligation_key: &str) -> bool {
-    plan.report_obligations
-        .iter()
-        .any(|obligation| obligation.key == report_obligation_key)
 }
 
 fn assert_verification_gate(gate_present: bool, package_name: &str, task_label: &str) {
@@ -482,7 +295,9 @@ struct HarnessEvidencePaths {
     performance_index_path: PathBuf,
     stability_index_path: PathBuf,
     stability_picture_path: PathBuf,
+    verification_policy_path: PathBuf,
     quality_findings_path: PathBuf,
+    improvement_queue_path: PathBuf,
     gerbil_runtime_assets_path: PathBuf,
     summary_path: PathBuf,
 }
@@ -506,7 +321,9 @@ impl HarnessEvidencePaths {
             performance_index_path: evidence_dir.join("performance_index.json"),
             stability_index_path: evidence_dir.join("stability_index.json"),
             stability_picture_path: evidence_dir.join("stability_picture.json"),
+            verification_policy_path: evidence_dir.join("verification_policy.json"),
             quality_findings_path: evidence_dir.join("quality_findings.json"),
+            improvement_queue_path: evidence_dir.join("improvement_queue.json"),
             gerbil_runtime_assets_path: evidence_dir.join("gerbil_runtime_assets.json"),
             summary_path: evidence_dir.join("summary.txt"),
             evidence_dir,
@@ -517,7 +334,9 @@ impl HarnessEvidencePaths {
         self,
         evidence_graph_summary: RustEvidenceGraphSummary,
         gate_receipt: RustProjectHarnessGateReceipt,
+        verification_policy_receipt: RustProjectHarnessVerificationPolicyReceipt,
         quality_findings_receipt: RustProjectHarnessQualityFindingsReceipt,
+        improvement_queue_receipt: RustProjectHarnessImprovementQueueReceipt,
         gerbil_runtime_assets_receipt: GerbilRuntimeAssetManifestReceipt,
     ) -> RustProjectHarnessEvidenceReceipt {
         let stability_picture_path = self
@@ -535,12 +354,16 @@ impl HarnessEvidencePaths {
             performance_index_path: self.performance_index_path,
             stability_index_path: self.stability_index_path,
             stability_picture_path,
+            verification_policy_path: self.verification_policy_path,
             quality_findings_path: self.quality_findings_path,
+            improvement_queue_path: self.improvement_queue_path,
             gerbil_runtime_assets_path: self.gerbil_runtime_assets_path,
             summary_path: self.summary_path,
             evidence_graph_summary,
             gate_receipt,
+            verification_policy_receipt,
             quality_findings_receipt,
+            improvement_queue_receipt,
             gerbil_runtime_assets_receipt,
         }
     }
@@ -550,7 +373,9 @@ fn write_evidence_artifacts(
     paths: &HarnessEvidencePaths,
     build_env: &HarnessEvidenceBuildEnv,
     artifacts: &HarnessEvidenceArtifacts,
+    verification_policy_receipt: &RustProjectHarnessVerificationPolicyReceipt,
     quality_findings_receipt: &RustProjectHarnessQualityFindingsReceipt,
+    improvement_queue_receipt: &RustProjectHarnessImprovementQueueReceipt,
     gerbil_runtime_assets_receipt: &GerbilRuntimeAssetManifestReceipt,
 ) {
     write_artifact(
@@ -596,9 +421,20 @@ fn write_evidence_artifacts(
         );
     }
     write_artifact(
+        &paths.verification_policy_path,
+        serde_json::to_string_pretty(verification_policy_receipt).unwrap_or_else(|error| {
+            panic!("failed to render verification policy receipt: {error}")
+        }),
+    );
+    write_artifact(
         &paths.quality_findings_path,
         serde_json::to_string_pretty(quality_findings_receipt)
             .unwrap_or_else(|error| panic!("failed to render quality findings receipt: {error}")),
+    );
+    write_artifact(
+        &paths.improvement_queue_path,
+        serde_json::to_string_pretty(improvement_queue_receipt)
+            .unwrap_or_else(|error| panic!("failed to render improvement queue receipt: {error}")),
     );
     write_artifact(
         &paths.gerbil_runtime_assets_path,
@@ -611,7 +447,9 @@ fn write_evidence_artifacts(
         render_summary(
             build_env,
             artifacts,
+            verification_policy_receipt,
             quality_findings_receipt,
+            improvement_queue_receipt,
             gerbil_runtime_assets_receipt,
         ),
     );
@@ -632,6 +470,7 @@ fn build_quality_findings_receipt(
             paths.evidence_graph_path.clone(),
             paths.verification_plan_path.clone(),
             paths.task_index_path.clone(),
+            paths.verification_policy_path.clone(),
         ),
     });
 
@@ -737,44 +576,24 @@ fn assert_gerbil_runtime_asset_manifest_receipt(receipt: &GerbilRuntimeAssetMani
     );
 }
 
-fn push_gate_finding(
-    findings: &mut Vec<RustProjectHarnessQualityFinding>,
-    package_name: &str,
-    gate_present: bool,
-    rule_id: &str,
-    finding_suffix: &str,
-    evidence_label: &str,
-    agent_next_action: &str,
-) {
-    if gate_present {
-        return;
-    }
-
-    findings.push(RustProjectHarnessQualityFinding {
-        finding_id: format!("{package_name}:{finding_suffix}"),
-        severity: RustProjectHarnessFindingSeverity::HardError,
-        rule_id: rule_id.to_owned(),
-        owner: package_name.to_owned(),
-        evidence: vec![evidence_label.to_owned()],
-        why: format!("package quality gate is missing {evidence_label}"),
-        agent_next_action: agent_next_action.to_owned(),
-        verification_command: "cargo test -p marlin-rust-project-harness-policy --quiet".to_owned(),
-        source_authority: "marlin-rust-project-harness-policy".to_owned(),
-    });
-}
-
 fn render_summary(
     build_env: &HarnessEvidenceBuildEnv,
     artifacts: &HarnessEvidenceArtifacts,
+    verification_policy_receipt: &RustProjectHarnessVerificationPolicyReceipt,
     quality_findings_receipt: &RustProjectHarnessQualityFindingsReceipt,
+    improvement_queue_receipt: &RustProjectHarnessImprovementQueueReceipt,
     gerbil_runtime_assets_receipt: &GerbilRuntimeAssetManifestReceipt,
 ) -> String {
     format!(
-        "package={}\nmodules={}\ndeterminism_observations={}\nevidence_graph_nodes={}\nverification_tasks={}\nactive_verification_tasks={}\nreport_obligations={}\ntask_index_records={}\nperformance_records={}\nstability_records={}\nstability_picture_records={}\ngerbil_runtime_asset_status={:?}\ngerbil_runtime_assets={}\ngerbil_runtime_missing_assets={}\nquality_findings={}\nquality_hard_errors={}\nquality_warnings={}\nquality_advice={}\n",
+        "package={}\nmodules={}\ndeterminism_observations={}\nevidence_graph_nodes={}\nverification_role={}\nverification_owner_profiles={}\nverification_policy_performance_tasks={}\nverification_policy_stability_tasks={}\nverification_tasks={}\nactive_verification_tasks={}\nreport_obligations={}\ntask_index_records={}\nperformance_records={}\nstability_records={}\nstability_picture_records={}\ngerbil_runtime_asset_status={:?}\ngerbil_runtime_assets={}\ngerbil_runtime_missing_assets={}\nquality_findings={}\nquality_hard_errors={}\nquality_warnings={}\nquality_advice={}\nimprovement_queue_status={:?}\nimprovement_action_required={}\n",
         build_env.package_name,
         artifacts.module_count,
         artifacts.determinism_observation_count,
         artifacts.evidence_graph_summary.nodes,
+        verification_policy_receipt.crate_role,
+        verification_policy_receipt.owner_profiles.len(),
+        verification_policy_receipt.performance_task_count,
+        verification_policy_receipt.stability_task_count,
         artifacts.verification_plan.tasks.len(),
         artifacts.active_verification_task_count,
         artifacts.verification_plan.report_obligations.len(),
@@ -791,7 +610,9 @@ fn render_summary(
         quality_findings_receipt.findings.len(),
         quality_findings_receipt.hard_error_count(),
         quality_findings_receipt.warning_count(),
-        quality_findings_receipt.advice_count()
+        quality_findings_receipt.advice_count(),
+        improvement_queue_receipt.status,
+        improvement_queue_receipt.action_required_count()
     )
 }
 

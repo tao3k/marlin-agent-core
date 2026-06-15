@@ -1,9 +1,14 @@
 //! `MemoryOrgWorkspace` owner for the in-memory `Org` workspace backend.
 
-use super::{contracts, patch, query, render, status};
+use super::{contracts, patch, project_graph, query, render, status};
 use async_trait::async_trait;
+use marlin_agent_protocol::{
+    GraphQueryRequest, GraphQueryResponse, ProjectMemoryContextFact, ProjectMemoryContextPack,
+    ProjectMemoryRecallRequest,
+};
 use marlin_gerbil_ir::ReleaseTopologySpec;
-use marlin_org_model::{OrgNode, OrgNodeId};
+use marlin_org_model::{OrgNode, OrgNodeId, OrgSourceSpan};
+use marlin_org_store::OrgProjectRoot;
 use marlin_org_workspace::{
     OrgDocument, OrgDocumentLoader, OrgDocumentWorkspace, standard_agent_contract_documents,
 };
@@ -175,6 +180,88 @@ impl MemoryOrgWorkspace {
         contracts::merge_contract_facts(&mut contract_facts, incoming_contract_facts);
         Ok(ids)
     }
+
+    /// Project memory graph projection over the structured in-memory `Org` nodes.
+    pub fn query_project_memory_graph(
+        &self,
+        receipt_id: impl Into<String>,
+        request: GraphQueryRequest,
+    ) -> WorkspaceResult<GraphQueryResponse> {
+        let nodes = self.read_nodes()?;
+        let matches = project_graph::project_memory_matches(nodes.values(), &request);
+        let mut response = GraphQueryResponse::new(receipt_id, request);
+        response.matches = matches;
+        Ok(response)
+    }
+
+    /// Recall project memory from discovered Org roots and pack compact facts.
+    pub fn recall_project_memory_from_roots(
+        &self,
+        context_pack_id: impl Into<String>,
+        receipt_id: impl Into<String>,
+        request: ProjectMemoryRecallRequest,
+        roots: &[OrgProjectRoot],
+    ) -> WorkspaceResult<ProjectMemoryContextPack> {
+        let documents = roots
+            .iter()
+            .map(|root| OrgDocument::new(root.document.clone(), root.body.clone()))
+            .collect::<Vec<_>>();
+        self.load_documents_with_discovered_contracts(&documents)?;
+
+        let response =
+            self.query_project_memory_graph(receipt_id, request.as_graph_query_request())?;
+        let mut pack = ProjectMemoryContextPack::new(context_pack_id, request)
+            .with_source_receipt(response.receipt_id.as_str());
+        let nodes = self.read_nodes()?;
+        for query_match in response.matches {
+            pack = pack.with_fact(project_memory_context_fact(query_match, &nodes));
+        }
+        Ok(pack)
+    }
+}
+
+fn project_memory_context_fact(
+    query_match: marlin_agent_protocol::GraphQueryMatch,
+    nodes: &BTreeMap<OrgNodeId, OrgNode>,
+) -> ProjectMemoryContextFact {
+    let claim = query_match.summary.clone();
+    let memory_id = query_match
+        .memory_id
+        .as_ref()
+        .map(|memory_id| memory_id.as_str().to_owned());
+    let source_span = memory_id
+        .as_deref()
+        .and_then(|memory_id| project_memory_source_span(nodes, memory_id));
+    let mut fact = ProjectMemoryContextFact::new(query_match, claim);
+    if let Some(source_span) = source_span {
+        fact = fact.with_source_span(source_span);
+    }
+    if let Some(memory_id) = memory_id {
+        fact = fact.with_evidence(memory_id);
+    }
+    fact
+}
+
+fn project_memory_source_span(
+    nodes: &BTreeMap<OrgNodeId, OrgNode>,
+    memory_id: &str,
+) -> Option<String> {
+    nodes
+        .values()
+        .find(|node| {
+            node.properties
+                .get(project_graph::PROJECT_MEMORY_ID_PROPERTY)
+                .is_some_and(|node_memory_id| node_memory_id == memory_id)
+        })
+        .and_then(|node| node.source.as_ref())
+        .map(render_org_source_span)
+}
+
+fn render_org_source_span(source: &OrgSourceSpan) -> String {
+    format!(
+        "{}:L{}-L{}",
+        source.document, source.start_line, source.end_line
+    )
 }
 
 impl Default for MemoryOrgWorkspace {
