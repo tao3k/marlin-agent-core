@@ -6,14 +6,14 @@ use marlin_agent_protocol::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::{HarnessEvidence, HarnessEvidenceKind};
+use crate::{AgentHarnessEvidence, AgentHarnessEvidenceKind};
 
-/// Schema identifier for evidence graphs emitted by the harness boundary.
-pub const HARNESS_EVIDENCE_GRAPH_SCHEMA_ID: &str = "marlin.agent.harness_evidence_graph.v1";
+/// Schema identifier for evidence graphs emitted by the agent harness boundary.
+pub const AGENT_HARNESS_EVIDENCE_GRAPH_SCHEMA_ID: &str = "marlin.agent.harness_evidence_graph.v1";
 
-/// Node category inside a harness evidence graph.
+/// Node category inside an agent harness evidence graph.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
-pub enum HarnessEvidenceGraphNodeKind {
+pub enum AgentHarnessEvidenceGraphNodeKind {
     HumanIntent,
     TypeInvariant,
     TestBehavior,
@@ -24,9 +24,9 @@ pub enum HarnessEvidenceGraphNodeKind {
     EvidenceFact,
 }
 
-/// Relationship between two harness evidence graph nodes.
+/// Relationship between two agent harness evidence graph nodes.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
-pub enum HarnessEvidenceGraphEdgeKind {
+pub enum AgentHarnessEvidenceGraphEdgeKind {
     Requires,
     Supports,
     Checks,
@@ -36,24 +36,24 @@ pub enum HarnessEvidenceGraphEdgeKind {
     Observes,
 }
 
-/// One typed node in a harness evidence graph.
+/// One typed node in an agent harness evidence graph.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct HarnessEvidenceGraphNode {
+pub struct AgentHarnessEvidenceGraphNode {
     pub id: String,
-    pub kind: HarnessEvidenceGraphNodeKind,
+    pub kind: AgentHarnessEvidenceGraphNodeKind,
     pub subject: String,
     pub present: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub detail: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub source_evidence_kind: Option<HarnessEvidenceKind>,
+    pub source_evidence_kind: Option<AgentHarnessEvidenceKind>,
 }
 
-impl HarnessEvidenceGraphNode {
+impl AgentHarnessEvidenceGraphNode {
     /// Creates a present graph node.
     pub fn present(
         id: impl Into<String>,
-        kind: HarnessEvidenceGraphNodeKind,
+        kind: AgentHarnessEvidenceGraphNodeKind,
         subject: impl Into<String>,
     ) -> Self {
         Self {
@@ -69,7 +69,7 @@ impl HarnessEvidenceGraphNode {
     /// Creates a missing graph node.
     pub fn missing(
         id: impl Into<String>,
-        kind: HarnessEvidenceGraphNodeKind,
+        kind: AgentHarnessEvidenceGraphNodeKind,
         subject: impl Into<String>,
     ) -> Self {
         Self {
@@ -89,23 +89,23 @@ impl HarnessEvidenceGraphNode {
     }
 
     /// Records the harness evidence kind this node was projected from.
-    pub fn with_source_evidence_kind(mut self, kind: HarnessEvidenceKind) -> Self {
+    pub fn with_source_evidence_kind(mut self, kind: AgentHarnessEvidenceKind) -> Self {
         self.source_evidence_kind = Some(kind);
         self
     }
 
-    /// Projects one harness evidence fact into a harness graph node.
-    pub fn from_harness_evidence(index: usize, evidence: &HarnessEvidence) -> Self {
+    /// Projects one agent harness evidence fact into an agent harness graph node.
+    pub fn from_agent_harness_evidence(index: usize, evidence: &AgentHarnessEvidence) -> Self {
         let node = if evidence.present {
             Self::present(
                 format!("evidence:{index}"),
-                harness_evidence_graph_node_kind(&evidence.kind),
+                agent_harness_evidence_graph_node_kind(&evidence.kind),
                 evidence.subject.clone(),
             )
         } else {
             Self::missing(
                 format!("evidence:{index}"),
-                harness_evidence_graph_node_kind(&evidence.kind),
+                agent_harness_evidence_graph_node_kind(&evidence.kind),
                 evidence.subject.clone(),
             )
         };
@@ -119,22 +119,22 @@ impl HarnessEvidenceGraphNode {
     }
 }
 
-/// One typed relationship in a harness evidence graph.
+/// One typed relationship in an agent harness evidence graph.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct HarnessEvidenceGraphEdge {
+pub struct AgentHarnessEvidenceGraphEdge {
     pub from: String,
     pub to: String,
-    pub kind: HarnessEvidenceGraphEdgeKind,
+    pub kind: AgentHarnessEvidenceGraphEdgeKind,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub detail: Option<String>,
 }
 
-impl HarnessEvidenceGraphEdge {
+impl AgentHarnessEvidenceGraphEdge {
     /// Creates a typed edge between two evidence graph nodes.
     pub fn new(
         from: impl Into<String>,
         to: impl Into<String>,
-        kind: HarnessEvidenceGraphEdgeKind,
+        kind: AgentHarnessEvidenceGraphEdgeKind,
     ) -> Self {
         Self {
             from: from.into(),
@@ -153,7 +153,7 @@ impl HarnessEvidenceGraphEdge {
 
 /// Compact receipt for evidence graph shape and risk-bearing node counts.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct HarnessEvidenceGraphSummary {
+pub struct AgentHarnessEvidenceGraphSummary {
     pub nodes: usize,
     pub edges: usize,
     pub missing_nodes: usize,
@@ -161,42 +161,42 @@ pub struct HarnessEvidenceGraphSummary {
     pub review_judgments: usize,
 }
 
-/// Evolvable evidence graph for one harness scenario or graph-loop run.
+/// Evolvable evidence graph for one agent harness scenario or graph-loop run.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct HarnessEvidenceGraph {
-    #[serde(default = "default_harness_evidence_graph_schema_id")]
+pub struct AgentHarnessEvidenceGraph {
+    #[serde(default = "default_agent_harness_evidence_graph_schema_id")]
     pub schema_id: String,
     pub graph_id: String,
-    pub nodes: Vec<HarnessEvidenceGraphNode>,
-    pub edges: Vec<HarnessEvidenceGraphEdge>,
+    pub nodes: Vec<AgentHarnessEvidenceGraphNode>,
+    pub edges: Vec<AgentHarnessEvidenceGraphEdge>,
 }
 
-impl HarnessEvidenceGraph {
+impl AgentHarnessEvidenceGraph {
     /// Creates an empty evidence graph.
     pub fn new(graph_id: impl Into<String>) -> Self {
         Self {
-            schema_id: HARNESS_EVIDENCE_GRAPH_SCHEMA_ID.to_owned(),
+            schema_id: AGENT_HARNESS_EVIDENCE_GRAPH_SCHEMA_ID.to_owned(),
             graph_id: graph_id.into(),
             nodes: Vec::new(),
             edges: Vec::new(),
         }
     }
 
-    /// Projects a list of harness evidence facts into typed graph nodes.
-    pub fn from_harness_evidence(
+    /// Projects a list of agent harness evidence facts into typed graph nodes.
+    pub fn from_agent_harness_evidence(
         graph_id: impl Into<String>,
-        evidence: &[HarnessEvidence],
+        evidence: &[AgentHarnessEvidence],
     ) -> Self {
         let nodes = evidence
             .iter()
             .enumerate()
             .map(|(index, evidence)| {
-                HarnessEvidenceGraphNode::from_harness_evidence(index, evidence)
+                AgentHarnessEvidenceGraphNode::from_agent_harness_evidence(index, evidence)
             })
             .collect();
 
         Self {
-            schema_id: HARNESS_EVIDENCE_GRAPH_SCHEMA_ID.to_owned(),
+            schema_id: AGENT_HARNESS_EVIDENCE_GRAPH_SCHEMA_ID.to_owned(),
             graph_id: graph_id.into(),
             nodes,
             edges: Vec::new(),
@@ -235,26 +235,26 @@ impl HarnessEvidenceGraph {
         );
 
         self.nodes.push(
-            HarnessEvidenceGraphNode::present(
+            AgentHarnessEvidenceGraphNode::present(
                 invariant_id.clone(),
-                HarnessEvidenceGraphNodeKind::TypeInvariant,
+                AgentHarnessEvidenceGraphNodeKind::TypeInvariant,
                 format!("graph-policy-proposal:{strategy_id}"),
             )
             .with_detail("proposal schema, native ABI, graph shape, and digest invariants"),
         );
         self.nodes.push(
-            HarnessEvidenceGraphNode::present(
+            AgentHarnessEvidenceGraphNode::present(
                 review_id.clone(),
-                HarnessEvidenceGraphNodeKind::ReviewJudgment,
+                AgentHarnessEvidenceGraphNodeKind::ReviewJudgment,
                 format!("rust-validation:{strategy_id}"),
             )
             .with_detail(detail),
         );
         self.edges.push(
-            HarnessEvidenceGraphEdge::new(
+            AgentHarnessEvidenceGraphEdge::new(
                 invariant_id.clone(),
                 review_id.clone(),
-                HarnessEvidenceGraphEdgeKind::Checks,
+                AgentHarnessEvidenceGraphEdgeKind::Checks,
             )
             .with_detail("Rust validates the proposed graph-loop policy before execution"),
         );
@@ -263,9 +263,9 @@ impl HarnessEvidenceGraph {
             GraphPolicyProposalStatus::Accepted => {
                 let proof_id = format!("proof:graph-policy-proposal:{strategy_id}");
                 self.nodes.push(
-                    HarnessEvidenceGraphNode::present(
+                    AgentHarnessEvidenceGraphNode::present(
                         proof_id.clone(),
-                        HarnessEvidenceGraphNodeKind::ProofResult,
+                        AgentHarnessEvidenceGraphNodeKind::ProofResult,
                         format!("graph-policy-accepted:{strategy_id}"),
                     )
                     .with_detail(format!(
@@ -273,10 +273,10 @@ impl HarnessEvidenceGraph {
                     )),
                 );
                 self.edges.push(
-                    HarnessEvidenceGraphEdge::new(
+                    AgentHarnessEvidenceGraphEdge::new(
                         review_id,
                         proof_id,
-                        HarnessEvidenceGraphEdgeKind::Proves,
+                        AgentHarnessEvidenceGraphEdgeKind::Proves,
                     )
                     .with_detail("accepted validation proves the proposal is executable"),
                 );
@@ -285,18 +285,18 @@ impl HarnessEvidenceGraph {
                 let counterexample_id =
                     format!("counterexample:graph-policy-proposal:{strategy_id}");
                 self.nodes.push(
-                    HarnessEvidenceGraphNode::present(
+                    AgentHarnessEvidenceGraphNode::present(
                         counterexample_id.clone(),
-                        HarnessEvidenceGraphNodeKind::Counterexample,
+                        AgentHarnessEvidenceGraphNodeKind::Counterexample,
                         format!("graph-policy-rejected:{strategy_id}"),
                     )
                     .with_detail(format!("diagnostics={}", receipt.diagnostics.join(","))),
                 );
                 self.edges.push(
-                    HarnessEvidenceGraphEdge::new(
+                    AgentHarnessEvidenceGraphEdge::new(
                         counterexample_id,
                         invariant_id,
-                        HarnessEvidenceGraphEdgeKind::Refutes,
+                        AgentHarnessEvidenceGraphEdgeKind::Refutes,
                     )
                     .with_detail("rejected validation is a counterexample to proposal readiness"),
                 );
@@ -314,9 +314,9 @@ impl HarnessEvidenceGraph {
         let status = graph_loop_execution_status_label(&result.status);
 
         self.nodes.push(
-            HarnessEvidenceGraphNode::present(
+            AgentHarnessEvidenceGraphNode::present(
                 execution_id.clone(),
-                HarnessEvidenceGraphNodeKind::ExecutionReceipt,
+                AgentHarnessEvidenceGraphNodeKind::ExecutionReceipt,
                 format!("graph-loop:{run_id}:{graph_id}"),
             )
             .with_detail(format!(
@@ -335,9 +335,9 @@ impl HarnessEvidenceGraph {
             );
             let node_status = graph_node_execution_status_label(&receipt.status);
             self.nodes.push(
-                HarnessEvidenceGraphNode::present(
+                AgentHarnessEvidenceGraphNode::present(
                     node_receipt_id.clone(),
-                    HarnessEvidenceGraphNodeKind::ExecutionReceipt,
+                    AgentHarnessEvidenceGraphNodeKind::ExecutionReceipt,
                     format!("graph-loop-node:{run_id}:{}", receipt.node_id.as_str()),
                 )
                 .with_detail(format!(
@@ -349,10 +349,10 @@ impl HarnessEvidenceGraph {
                 )),
             );
             self.edges.push(
-                HarnessEvidenceGraphEdge::new(
+                AgentHarnessEvidenceGraphEdge::new(
                     execution_id.clone(),
                     node_receipt_id,
-                    HarnessEvidenceGraphEdgeKind::Observes,
+                    AgentHarnessEvidenceGraphEdgeKind::Observes,
                 )
                 .with_detail("graph-loop execution observes this node receipt"),
             );
@@ -362,18 +362,18 @@ impl HarnessEvidenceGraph {
             GraphLoopExecutionStatus::Completed => {
                 let proof_id = format!("proof:graph-loop-completed:{run_id}");
                 self.nodes.push(
-                    HarnessEvidenceGraphNode::present(
+                    AgentHarnessEvidenceGraphNode::present(
                         proof_id.clone(),
-                        HarnessEvidenceGraphNodeKind::ProofResult,
+                        AgentHarnessEvidenceGraphNodeKind::ProofResult,
                         format!("graph-loop-completed:{run_id}"),
                     )
                     .with_detail(format!("visited_nodes={}", result.visited_nodes.join(","))),
                 );
                 self.edges.push(
-                    HarnessEvidenceGraphEdge::new(
+                    AgentHarnessEvidenceGraphEdge::new(
                         execution_id,
                         proof_id,
-                        HarnessEvidenceGraphEdgeKind::Observes,
+                        AgentHarnessEvidenceGraphEdgeKind::Observes,
                     )
                     .with_detail("completed execution observes the accepted runtime behavior"),
                 );
@@ -381,18 +381,18 @@ impl HarnessEvidenceGraph {
             GraphLoopExecutionStatus::Cancelled | GraphLoopExecutionStatus::Failed => {
                 let counterexample_id = format!("counterexample:graph-loop:{run_id}");
                 self.nodes.push(
-                    HarnessEvidenceGraphNode::present(
+                    AgentHarnessEvidenceGraphNode::present(
                         counterexample_id.clone(),
-                        HarnessEvidenceGraphNodeKind::Counterexample,
+                        AgentHarnessEvidenceGraphNodeKind::Counterexample,
                         format!("graph-loop-{status}:{run_id}"),
                     )
                     .with_detail(format!("diagnostics={}", result.diagnostics.join(","))),
                 );
                 self.edges.push(
-                    HarnessEvidenceGraphEdge::new(
+                    AgentHarnessEvidenceGraphEdge::new(
                         counterexample_id,
                         execution_id,
-                        HarnessEvidenceGraphEdgeKind::Refutes,
+                        AgentHarnessEvidenceGraphEdgeKind::Refutes,
                     )
                     .with_detail("failed or cancelled execution is a counterexample to readiness"),
                 );
@@ -403,37 +403,37 @@ impl HarnessEvidenceGraph {
     }
 
     /// Adds one typed evidence graph node.
-    pub fn with_node(mut self, node: HarnessEvidenceGraphNode) -> Self {
+    pub fn with_node(mut self, node: AgentHarnessEvidenceGraphNode) -> Self {
         self.nodes.push(node);
         self
     }
 
     /// Adds one typed evidence graph edge.
-    pub fn with_edge(mut self, edge: HarnessEvidenceGraphEdge) -> Self {
+    pub fn with_edge(mut self, edge: AgentHarnessEvidenceGraphEdge) -> Self {
         self.edges.push(edge);
         self
     }
 
     /// Returns true when the graph contains at least one node with the requested kind.
-    pub fn has_node_kind(&self, kind: HarnessEvidenceGraphNodeKind) -> bool {
+    pub fn has_node_kind(&self, kind: AgentHarnessEvidenceGraphNodeKind) -> bool {
         self.nodes.iter().any(|node| node.kind == kind)
     }
 
     /// Builds a compact graph-shape receipt.
-    pub fn summary(&self) -> HarnessEvidenceGraphSummary {
-        HarnessEvidenceGraphSummary {
+    pub fn summary(&self) -> AgentHarnessEvidenceGraphSummary {
+        AgentHarnessEvidenceGraphSummary {
             nodes: self.nodes.len(),
             edges: self.edges.len(),
             missing_nodes: self.nodes.iter().filter(|node| !node.present).count(),
             counterexamples: self
                 .nodes
                 .iter()
-                .filter(|node| node.kind == HarnessEvidenceGraphNodeKind::Counterexample)
+                .filter(|node| node.kind == AgentHarnessEvidenceGraphNodeKind::Counterexample)
                 .count(),
             review_judgments: self
                 .nodes
                 .iter()
-                .filter(|node| node.kind == HarnessEvidenceGraphNodeKind::ReviewJudgment)
+                .filter(|node| node.kind == AgentHarnessEvidenceGraphNodeKind::ReviewJudgment)
                 .count(),
         }
     }
@@ -461,24 +461,26 @@ fn graph_node_execution_status_label(status: &GraphNodeExecutionStatus) -> &'sta
     }
 }
 
-fn harness_evidence_graph_node_kind(kind: &HarnessEvidenceKind) -> HarnessEvidenceGraphNodeKind {
+fn agent_harness_evidence_graph_node_kind(
+    kind: &AgentHarnessEvidenceKind,
+) -> AgentHarnessEvidenceGraphNodeKind {
     match kind {
-        HarnessEvidenceKind::RunLog
-        | HarnessEvidenceKind::Workflow
-        | HarnessEvidenceKind::Runtime => HarnessEvidenceGraphNodeKind::ExecutionReceipt,
-        HarnessEvidenceKind::Content
-        | HarnessEvidenceKind::Safety
-        | HarnessEvidenceKind::Budget
-        | HarnessEvidenceKind::Registry
-        | HarnessEvidenceKind::Provider
-        | HarnessEvidenceKind::Tool
-        | HarnessEvidenceKind::SubAgent
-        | HarnessEvidenceKind::Visibility
-        | HarnessEvidenceKind::Performance
-        | HarnessEvidenceKind::Stability => HarnessEvidenceGraphNodeKind::EvidenceFact,
+        AgentHarnessEvidenceKind::RunLog
+        | AgentHarnessEvidenceKind::Workflow
+        | AgentHarnessEvidenceKind::Runtime => AgentHarnessEvidenceGraphNodeKind::ExecutionReceipt,
+        AgentHarnessEvidenceKind::Content
+        | AgentHarnessEvidenceKind::Safety
+        | AgentHarnessEvidenceKind::Budget
+        | AgentHarnessEvidenceKind::Registry
+        | AgentHarnessEvidenceKind::Provider
+        | AgentHarnessEvidenceKind::Tool
+        | AgentHarnessEvidenceKind::SubAgent
+        | AgentHarnessEvidenceKind::Visibility
+        | AgentHarnessEvidenceKind::Performance
+        | AgentHarnessEvidenceKind::Stability => AgentHarnessEvidenceGraphNodeKind::EvidenceFact,
     }
 }
 
-fn default_harness_evidence_graph_schema_id() -> String {
-    HARNESS_EVIDENCE_GRAPH_SCHEMA_ID.to_owned()
+fn default_agent_harness_evidence_graph_schema_id() -> String {
+    AGENT_HARNESS_EVIDENCE_GRAPH_SCHEMA_ID.to_owned()
 }

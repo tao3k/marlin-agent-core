@@ -1,4 +1,6 @@
-use marlin_agent_harness::{AgentHarness, HarnessEvidenceKind, HarnessRuntime, HarnessScenario};
+use marlin_agent_harness::{
+    AgentHarness, AgentHarnessEvidenceKind, AgentHarnessRuntime, AgentHarnessScenario,
+};
 use marlin_agent_hooks::HookInvocation;
 use marlin_agent_protocol::{HookAgentScope, HookEventName};
 use marlin_agent_runtime::{
@@ -33,9 +35,9 @@ fn harness_consumes_sub_agent_memory_session_visibility_without_live_llm() {
             &isolation_receipt,
         );
 
-        let scenario = HarnessScenario::new("sub-agent-memory-session")
-            .expecting_evidence(HarnessEvidenceKind::Visibility);
-        let mut harness = HarnessRuntime::new(8);
+        let scenario = AgentHarnessScenario::new("sub-agent-memory-session")
+            .expecting_evidence(AgentHarnessEvidenceKind::Visibility);
+        let mut harness = AgentHarnessRuntime::new(8);
         harness.record_evidence(sub_agent_memory_session_visibility_evidence(
             &child_session,
             &isolation_receipt,
@@ -85,9 +87,9 @@ fn harness_consumes_sub_agent_memory_session_replay_without_live_llm() {
             &isolation_receipt,
         );
 
-        let scenario = HarnessScenario::new("sub-agent-memory-session-replay")
-            .expecting_evidence(HarnessEvidenceKind::Visibility);
-        let mut harness = HarnessRuntime::new(8);
+        let scenario = AgentHarnessScenario::new("sub-agent-memory-session-replay")
+            .expecting_evidence(AgentHarnessEvidenceKind::Visibility);
+        let mut harness = AgentHarnessRuntime::new(8);
         harness.record_evidence(sub_agent_memory_session_replay_evidence(
             &child_session,
             &isolation_receipt,
@@ -152,9 +154,9 @@ fn harness_consumes_model_route_sub_agent_memory_visibility_without_live_llm() {
         binding.isolation_receipt(),
     );
 
-    let scenario = HarnessScenario::new("model-route-sub-agent-memory-session")
-        .expecting_evidence(HarnessEvidenceKind::Visibility);
-    let mut harness = HarnessRuntime::new(8);
+    let scenario = AgentHarnessScenario::new("model-route-sub-agent-memory-session")
+        .expecting_evidence(AgentHarnessEvidenceKind::Visibility);
+    let mut harness = AgentHarnessRuntime::new(8);
     harness.record_evidence(sub_agent_memory_session_visibility_evidence(
         child_runtime.session(),
         binding.isolation_receipt(),
@@ -202,9 +204,9 @@ fn harness_projects_model_route_child_session_into_hook_policy_context_without_l
         .with_runtime_context(&child_runtime.context());
     let policy =
         complex_gerbil_hook_policy_receipt_with_decision_context(invocation.decision_context);
-    let scenario = HarnessScenario::new("model-route-hook-policy-context")
-        .expecting_evidence(HarnessEvidenceKind::Runtime);
-    let mut harness = HarnessRuntime::new(8);
+    let scenario = AgentHarnessScenario::new("model-route-hook-policy-context")
+        .expecting_evidence(AgentHarnessEvidenceKind::Runtime);
+    let mut harness = AgentHarnessRuntime::new(8);
     harness.record_evidence(hook_dispatch_replay_evidence(
         &custom_sub_agent_start_hook_summary_fixture(),
         &sub_agent_hook_dispatch_selection_fixture(),

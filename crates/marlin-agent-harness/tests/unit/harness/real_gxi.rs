@@ -1,8 +1,8 @@
 use std::path::PathBuf;
 
 use marlin_agent_harness::{
-    AgentHarness, HarnessEvidence, HarnessEvidenceKind, HarnessGraphBuilder, HarnessRuntime,
-    HarnessScenario,
+    AgentHarness, AgentHarnessEvidence, AgentHarnessEvidenceKind, AgentHarnessGraphBuilder,
+    AgentHarnessRuntime, AgentHarnessScenario,
 };
 use marlin_agent_kernel::{
     GraphLoopExecutionBudget, GraphLoopExecutionRequest, GraphLoopExecutionStatus,
@@ -46,14 +46,14 @@ async fn harness_executes_graph_with_real_gxi_runtime_asset_plan() {
         Some(loadpath.to_string_lossy().as_ref())
     );
 
-    let scenario = HarnessScenario::new("real-gxi-runtime-asset-plan")
+    let scenario = AgentHarnessScenario::new("real-gxi-runtime-asset-plan")
         .with_step(
             AgentScenarioStep::new("run")
                 .expecting_event_topic(observability::TOPIC_KERNEL_EXECUTION)
                 .expecting_span_name(observability::harness_execution_span_name()),
         )
-        .expecting_evidence(HarnessEvidenceKind::Runtime);
-    let graph = HarnessGraphBuilder::new("real-gxi-runtime-assets")
+        .expecting_evidence(AgentHarnessEvidenceKind::Runtime);
+    let graph = AgentHarnessGraphBuilder::new("real-gxi-runtime-assets")
         .linear([("rank", "gerbil-rank"), ("dispatch", "kernel-dispatch")])
         .build();
     let request = GraphLoopExecutionRequest::new("real-gxi-harness-run", graph)
@@ -61,9 +61,9 @@ async fn harness_executes_graph_with_real_gxi_runtime_asset_plan() {
     let kernel = TokioGraphLoopKernel::new("real-gxi-harness-run", "real-gxi-runtime-assets")
         .with_executor("gerbil-rank", RealGxiHarnessExecutor)
         .with_executor("kernel-dispatch", RealGxiHarnessExecutor);
-    let mut harness = HarnessRuntime::new(64);
+    let mut harness = AgentHarnessRuntime::new(64);
     harness.record_evidence(
-        HarnessEvidence::present(HarnessEvidenceKind::Runtime, "real-gxi-runtime-assets")
+        AgentHarnessEvidence::present(AgentHarnessEvidenceKind::Runtime, "real-gxi-runtime-assets")
             .with_detail(format!(
                 "gxi={} adapter_module={} loadpath={} written_asset_count={}",
                 gxi.display(),

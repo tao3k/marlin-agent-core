@@ -1,6 +1,7 @@
+use marlin_agent_harness_types::AgentHarnessEvidenceKind;
 use marlin_agent_protocol::{
-    LoopEvidenceKind, ModelCommandMatcher, ModelContextForkMode, ModelEndpoint, ModelGateway,
-    ModelGatewayError, ModelRouteDecision, ModelRouteRequest, ModelRouteRule, ModelSessionPolicy,
+    ModelCommandMatcher, ModelContextForkMode, ModelEndpoint, ModelGateway, ModelGatewayError,
+    ModelRouteDecision, ModelRouteRequest, ModelRouteRule, ModelSessionPolicy,
     RuntimeEnvironmentActivationPolicy, RuntimeEnvironmentActivationReceipt,
     RuntimeEnvironmentActivationStatus,
 };
@@ -70,7 +71,7 @@ fn model_route_session_binding_projects_memory_visibility_evidence_without_live_
     let detail = evidence.detail.as_deref().expect("visibility detail");
 
     assert!(evidence.present);
-    assert_eq!(evidence.kind, LoopEvidenceKind::Visibility);
+    assert_eq!(evidence.kind, AgentHarnessEvidenceKind::Visibility);
     assert_eq!(
         evidence.subject,
         format!(
@@ -107,7 +108,7 @@ fn model_route_session_binding_projects_replay_visibility_evidence_without_live_
     let detail = evidence.detail.as_deref().expect("replay detail");
 
     assert!(evidence.present);
-    assert_eq!(evidence.kind, LoopEvidenceKind::Visibility);
+    assert_eq!(evidence.kind, AgentHarnessEvidenceKind::Visibility);
     assert_eq!(
         evidence.subject,
         format!(
@@ -225,7 +226,7 @@ fn model_route_session_binding_isolated_context_requests_system_only() {
     let detail = evidence.detail.as_deref().expect("visibility detail");
 
     assert!(evidence.present);
-    assert_eq!(evidence.kind, LoopEvidenceKind::Visibility);
+    assert_eq!(evidence.kind, AgentHarnessEvidenceKind::Visibility);
     assert!(detail.contains("memory_visible=false"));
     assert!(detail.contains("max_history_items=Some(0)"));
     assert!(detail.contains(&format!(

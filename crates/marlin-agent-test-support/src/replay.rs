@@ -3,7 +3,8 @@
 use std::{error::Error, fmt};
 
 use marlin_agent_harness_types::{
-    HARNESS_SCENARIO_CONTRACT_SCHEMA_ID, HarnessEvidence, HarnessScenario, HarnessScenarioContract,
+    AGENT_HARNESS_SCENARIO_CONTRACT_SCHEMA_ID, AgentHarnessEvidence, AgentHarnessScenario,
+    AgentHarnessScenarioContract,
 };
 use marlin_agent_sessions::SessionKind;
 
@@ -40,8 +41,8 @@ pub const NO_LLM_RUNTIME_REPLAY_CONTRACT_JSON: &str = r#"{
 /// Typed replay artifact loaded by harness tests without touching live LLMs.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct NoLlmRuntimeReplayArtifact {
-    contract: HarnessScenarioContract,
-    replay_evidence: Vec<HarnessEvidence>,
+    contract: AgentHarnessScenarioContract,
+    replay_evidence: Vec<AgentHarnessEvidence>,
 }
 
 /// Error returned while loading a serialized no-LLM replay artifact contract.
@@ -59,7 +60,7 @@ impl fmt::Display for NoLlmRuntimeReplayArtifactLoadError {
             }
             Self::UnsupportedSchema { schema_id } => write!(
                 f,
-                "unsupported no-LLM replay scenario schema: {schema_id} (expected {HARNESS_SCENARIO_CONTRACT_SCHEMA_ID})"
+                "unsupported no-LLM replay scenario schema: {schema_id} (expected {AGENT_HARNESS_SCENARIO_CONTRACT_SCHEMA_ID})"
             ),
         }
     }
@@ -82,22 +83,22 @@ impl From<serde_json::Error> for NoLlmRuntimeReplayArtifactLoadError {
 
 impl NoLlmRuntimeReplayArtifact {
     /// Serialized scenario contract represented by this artifact.
-    pub fn contract(&self) -> &HarnessScenarioContract {
+    pub fn contract(&self) -> &AgentHarnessScenarioContract {
         &self.contract
     }
 
     /// Scenario used by harness validation.
-    pub fn scenario(&self) -> &HarnessScenario {
+    pub fn scenario(&self) -> &AgentHarnessScenario {
         &self.contract.scenario
     }
 
     /// Evidence replayed before dynamic harness execution.
-    pub fn replay_evidence(&self) -> &[HarnessEvidence] {
+    pub fn replay_evidence(&self) -> &[AgentHarnessEvidence] {
         &self.replay_evidence
     }
 
     /// Consume the artifact into its scenario contract and replay evidence.
-    pub fn into_parts(self) -> (HarnessScenarioContract, Vec<HarnessEvidence>) {
+    pub fn into_parts(self) -> (AgentHarnessScenarioContract, Vec<AgentHarnessEvidence>) {
         (self.contract, self.replay_evidence)
     }
 }
@@ -106,7 +107,7 @@ impl NoLlmRuntimeReplayArtifact {
 pub fn load_no_llm_runtime_replay_artifact(
     serialized_contract: &str,
 ) -> Result<NoLlmRuntimeReplayArtifact, NoLlmRuntimeReplayArtifactLoadError> {
-    let contract: HarnessScenarioContract = serde_json::from_str(serialized_contract)?;
+    let contract: AgentHarnessScenarioContract = serde_json::from_str(serialized_contract)?;
     if !contract.is_supported_schema() {
         return Err(NoLlmRuntimeReplayArtifactLoadError::UnsupportedSchema {
             schema_id: contract.schema_id,
@@ -125,7 +126,7 @@ pub fn no_llm_runtime_replay_artifact_fixture() -> NoLlmRuntimeReplayArtifact {
         .expect("no-LLM runtime replay contract fixture should load")
 }
 
-fn deterministic_no_llm_runtime_replay_evidence() -> Vec<HarnessEvidence> {
+fn deterministic_no_llm_runtime_replay_evidence() -> Vec<AgentHarnessEvidence> {
     let memory_fixture = sub_agent_memory_denied_fixture();
     let (child_session, isolation_receipt) = memory_fixture.parent_session().child_session(
         SessionKind::SubAgent,

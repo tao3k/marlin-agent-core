@@ -1,4 +1,6 @@
-use marlin_agent_harness::{AgentHarness, HarnessEvidenceKind, HarnessRuntime, HarnessScenario};
+use marlin_agent_harness::{
+    AgentHarness, AgentHarnessEvidenceKind, AgentHarnessRuntime, AgentHarnessScenario,
+};
 use marlin_agent_test_support::{
     ScriptedChunkGate, ScriptedModelStream, scripted_stream_gate_evidence,
 };
@@ -16,9 +18,9 @@ async fn harness_consumes_scripted_stream_gate_evidence_without_live_llm() {
     let receipt = collection
         .await
         .expect("scripted stream task should complete");
-    let scenario = HarnessScenario::new("scripted-stream-gate")
-        .expecting_evidence(HarnessEvidenceKind::Runtime);
-    let mut harness = HarnessRuntime::new(4);
+    let scenario = AgentHarnessScenario::new("scripted-stream-gate")
+        .expecting_evidence(AgentHarnessEvidenceKind::Runtime);
+    let mut harness = AgentHarnessRuntime::new(4);
     harness.record_evidence(scripted_stream_gate_evidence(
         "review-stream",
         &receipt,

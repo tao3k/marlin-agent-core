@@ -1,12 +1,13 @@
 use std::time::Duration;
 
-use marlin_agent_harness_types::HarnessEvidenceKind;
+use marlin_agent_harness_types::AgentHarnessEvidenceKind;
 use marlin_agent_protocol::{
     ModelEndpoint, ModelGateway, ModelGatewayError, ModelGatewayRequest, ModelGatewayTransport,
     user_gateway_message,
 };
 use marlin_agent_test_support::{
-    ScriptedChunkGate, ScriptedModelGateway, ScriptedModelStream, ScriptedModelStreamEvent,
+    NO_LIVE_LLM_GATE_DENIAL_MESSAGE, NoLiveLlmModelGateway, ScriptedChunkGate,
+    ScriptedModelGateway, ScriptedModelStream, ScriptedModelStreamEvent,
     scripted_stream_gate_evidence,
 };
 
@@ -68,7 +69,7 @@ async fn scripted_model_stream_gate_projects_runtime_evidence() {
     let detail = evidence.detail.as_deref().expect("stream gate detail");
 
     assert!(evidence.present);
-    assert_eq!(evidence.kind, HarnessEvidenceKind::Runtime);
+    assert_eq!(evidence.kind, AgentHarnessEvidenceKind::Runtime);
     assert_eq!(evidence.subject, "scripted-stream-gate:review-stream");
     assert!(detail.contains("chunk_count=1"));
     assert!(detail.contains("gate_sequences=[1]"));
@@ -119,4 +120,28 @@ async fn scripted_model_gateway_reports_missing_outcome_without_network() {
             if message == "scripted model gateway has no queued completion outcome"
     ));
     assert_eq!(gateway.requests().len(), 1);
+}
+
+#[tokio::test]
+async fn no_live_llm_gateway_denies_completion_attempt_without_network() {
+    let gateway = NoLiveLlmModelGateway::new();
+    let request = ModelGatewayRequest::new(
+        ModelEndpoint::new("anthropic", "claude-opus-4-8"),
+        vec![user_gateway_message("hello")],
+    )
+    .with_transport(ModelGatewayTransport::Sse);
+
+    let result = gateway.complete(request).await;
+
+    assert!(matches!(
+        result,
+        Err(ModelGatewayError::Completion(message))
+            if message == NO_LIVE_LLM_GATE_DENIAL_MESSAGE
+    ));
+
+    let denied = gateway.denied_requests();
+    assert_eq!(denied.len(), 1);
+    assert_eq!(denied[0].litellm_model_id, "anthropic/claude-opus-4-8");
+    assert_eq!(denied[0].message_count, 1);
+    assert_eq!(denied[0].transport, ModelGatewayTransport::Sse);
 }

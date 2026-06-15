@@ -3,7 +3,7 @@
 
 package: marlin
 
-(import :clan/poo/object
+(import (only-in :clan/poo/object .get .o)
         :marlin/deck-runtime-extension
         :marlin/deck-runtime-native-projection)
 

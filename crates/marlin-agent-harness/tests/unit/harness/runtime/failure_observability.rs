@@ -1,4 +1,6 @@
-use marlin_agent_harness::{AgentHarness, HarnessGraphBuilder, HarnessRuntime, HarnessScenario};
+use marlin_agent_harness::{
+    AgentHarness, AgentHarnessGraphBuilder, AgentHarnessRuntime, AgentHarnessScenario,
+};
 use marlin_agent_kernel::{
     GraphLoopExecutionRequest, GraphLoopExecutionStatus, TokioGraphLoopKernel,
 };
@@ -9,19 +11,19 @@ use super::support::FailingExecutor;
 
 #[tokio::test]
 async fn harness_execution_report_captures_failed_result_observability() {
-    let scenario = HarnessScenario::new("failing").with_step(
+    let scenario = AgentHarnessScenario::new("failing").with_step(
         AgentScenarioStep::new("run")
             .expecting_event_topic(observability::TOPIC_KERNEL_EXECUTION)
             .expecting_span_name(observability::runtime_task_span_name())
             .expecting_span_name(observability::harness_result_span_name()),
     );
-    let graph = HarnessGraphBuilder::new("graph")
+    let graph = AgentHarnessGraphBuilder::new("graph")
         .node("node-1", "failing")
         .build();
     let request = GraphLoopExecutionRequest::new("run-fail", graph);
     let kernel =
         TokioGraphLoopKernel::new("run", "graph").with_executor("failing", FailingExecutor);
-    let mut harness = HarnessRuntime::new(16);
+    let mut harness = AgentHarnessRuntime::new(16);
 
     let report = harness.execute_graph(&scenario, &kernel, request).await;
     let evaluated = AgentHarness::evaluate_execution_report(&scenario, &report);

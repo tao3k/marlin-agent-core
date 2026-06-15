@@ -1,6 +1,7 @@
 use marlin_agent_harness::{
-    HarnessEvidence, HarnessEvidenceGraph, HarnessEvidenceGraphEdge, HarnessEvidenceGraphEdgeKind,
-    HarnessEvidenceGraphNode, HarnessEvidenceGraphNodeKind, HarnessEvidenceKind,
+    AgentHarnessEvidence, AgentHarnessEvidenceGraph, AgentHarnessEvidenceGraphEdge,
+    AgentHarnessEvidenceGraphEdgeKind, AgentHarnessEvidenceGraphNode,
+    AgentHarnessEvidenceGraphNodeKind, AgentHarnessEvidenceKind,
 };
 use marlin_agent_protocol::{
     GraphLoopExecutionResult, GraphLoopExecutionStatus, GraphLoopStrategy,
@@ -12,74 +13,75 @@ use std::collections::BTreeMap;
 #[test]
 fn harness_evidence_graph_projects_harness_evidence_facts() {
     let evidence = vec![
-        HarnessEvidence::present(HarnessEvidenceKind::Runtime, "runtime:tokio"),
-        HarnessEvidence::missing(HarnessEvidenceKind::Safety, "safety:missing-review"),
+        AgentHarnessEvidence::present(AgentHarnessEvidenceKind::Runtime, "runtime:tokio"),
+        AgentHarnessEvidence::missing(AgentHarnessEvidenceKind::Safety, "safety:missing-review"),
     ];
 
-    let graph = HarnessEvidenceGraph::from_harness_evidence("harness:evidence-facts", &evidence);
+    let graph =
+        AgentHarnessEvidenceGraph::from_agent_harness_evidence("harness:evidence-facts", &evidence);
     let summary = graph.summary();
 
-    assert!(graph.has_node_kind(HarnessEvidenceGraphNodeKind::ExecutionReceipt));
-    assert!(graph.has_node_kind(HarnessEvidenceGraphNodeKind::EvidenceFact));
+    assert!(graph.has_node_kind(AgentHarnessEvidenceGraphNodeKind::ExecutionReceipt));
+    assert!(graph.has_node_kind(AgentHarnessEvidenceGraphNodeKind::EvidenceFact));
     assert_eq!(summary.nodes, 2);
     assert_eq!(summary.missing_nodes, 1);
     assert_eq!(
         graph.nodes[0].source_evidence_kind,
-        Some(HarnessEvidenceKind::Runtime)
+        Some(AgentHarnessEvidenceKind::Runtime)
     );
 }
 
 #[test]
 fn harness_evidence_graph_accepts_reliability_core_nodes() {
-    let graph = HarnessEvidenceGraph::new("harness:reliability-core")
-        .with_node(HarnessEvidenceGraphNode::present(
+    let graph = AgentHarnessEvidenceGraph::new("harness:reliability-core")
+        .with_node(AgentHarnessEvidenceGraphNode::present(
             "intent:ship-runtime",
-            HarnessEvidenceGraphNodeKind::HumanIntent,
+            AgentHarnessEvidenceGraphNodeKind::HumanIntent,
             "ship runtime safely",
         ))
-        .with_node(HarnessEvidenceGraphNode::present(
+        .with_node(AgentHarnessEvidenceGraphNode::present(
             "invariant:typed-native-abi",
-            HarnessEvidenceGraphNodeKind::TypeInvariant,
+            AgentHarnessEvidenceGraphNodeKind::TypeInvariant,
             "typed native ABI",
         ))
-        .with_node(HarnessEvidenceGraphNode::present(
+        .with_node(AgentHarnessEvidenceGraphNode::present(
             "test:no-llm-loop",
-            HarnessEvidenceGraphNodeKind::TestBehavior,
+            AgentHarnessEvidenceGraphNodeKind::TestBehavior,
             "no LLM deterministic loop",
         ))
-        .with_node(HarnessEvidenceGraphNode::present(
+        .with_node(AgentHarnessEvidenceGraphNode::present(
             "proof:acyclic-loop",
-            HarnessEvidenceGraphNodeKind::ProofResult,
+            AgentHarnessEvidenceGraphNodeKind::ProofResult,
             "acyclic loop validation",
         ))
-        .with_node(HarnessEvidenceGraphNode::missing(
+        .with_node(AgentHarnessEvidenceGraphNode::missing(
             "counterexample:budget-overrun",
-            HarnessEvidenceGraphNodeKind::Counterexample,
+            AgentHarnessEvidenceGraphNodeKind::Counterexample,
             "budget overrun",
         ))
-        .with_node(HarnessEvidenceGraphNode::present(
+        .with_node(AgentHarnessEvidenceGraphNode::present(
             "review:maintainer-accepted",
-            HarnessEvidenceGraphNodeKind::ReviewJudgment,
+            AgentHarnessEvidenceGraphNodeKind::ReviewJudgment,
             "maintainer accepted",
         ))
-        .with_edge(HarnessEvidenceGraphEdge::new(
+        .with_edge(AgentHarnessEvidenceGraphEdge::new(
             "invariant:typed-native-abi",
             "proof:acyclic-loop",
-            HarnessEvidenceGraphEdgeKind::Proves,
+            AgentHarnessEvidenceGraphEdgeKind::Proves,
         ))
-        .with_edge(HarnessEvidenceGraphEdge::new(
+        .with_edge(AgentHarnessEvidenceGraphEdge::new(
             "counterexample:budget-overrun",
             "intent:ship-runtime",
-            HarnessEvidenceGraphEdgeKind::Refutes,
+            AgentHarnessEvidenceGraphEdgeKind::Refutes,
         ));
     let summary = graph.summary();
 
-    assert!(graph.has_node_kind(HarnessEvidenceGraphNodeKind::HumanIntent));
-    assert!(graph.has_node_kind(HarnessEvidenceGraphNodeKind::TypeInvariant));
-    assert!(graph.has_node_kind(HarnessEvidenceGraphNodeKind::TestBehavior));
-    assert!(graph.has_node_kind(HarnessEvidenceGraphNodeKind::ProofResult));
-    assert!(graph.has_node_kind(HarnessEvidenceGraphNodeKind::Counterexample));
-    assert!(graph.has_node_kind(HarnessEvidenceGraphNodeKind::ReviewJudgment));
+    assert!(graph.has_node_kind(AgentHarnessEvidenceGraphNodeKind::HumanIntent));
+    assert!(graph.has_node_kind(AgentHarnessEvidenceGraphNodeKind::TypeInvariant));
+    assert!(graph.has_node_kind(AgentHarnessEvidenceGraphNodeKind::TestBehavior));
+    assert!(graph.has_node_kind(AgentHarnessEvidenceGraphNodeKind::ProofResult));
+    assert!(graph.has_node_kind(AgentHarnessEvidenceGraphNodeKind::Counterexample));
+    assert!(graph.has_node_kind(AgentHarnessEvidenceGraphNodeKind::ReviewJudgment));
     assert_eq!(summary.nodes, 6);
     assert_eq!(summary.edges, 2);
     assert_eq!(summary.missing_nodes, 1);
@@ -113,22 +115,26 @@ fn harness_evidence_graph_projects_policy_receipts_into_review_and_outcome_nodes
         vec!["graph_policy_proposal.node_executor_empty:plan".to_owned()],
     );
 
-    let accepted_graph =
-        HarnessEvidenceGraph::from_graph_policy_proposal_receipt("proposal:accepted", &accepted);
-    let rejected_graph =
-        HarnessEvidenceGraph::from_graph_policy_proposal_receipt("proposal:rejected", &rejected);
+    let accepted_graph = AgentHarnessEvidenceGraph::from_graph_policy_proposal_receipt(
+        "proposal:accepted",
+        &accepted,
+    );
+    let rejected_graph = AgentHarnessEvidenceGraph::from_graph_policy_proposal_receipt(
+        "proposal:rejected",
+        &rejected,
+    );
 
-    assert!(accepted_graph.has_node_kind(HarnessEvidenceGraphNodeKind::ReviewJudgment));
-    assert!(accepted_graph.has_node_kind(HarnessEvidenceGraphNodeKind::ProofResult));
+    assert!(accepted_graph.has_node_kind(AgentHarnessEvidenceGraphNodeKind::ReviewJudgment));
+    assert!(accepted_graph.has_node_kind(AgentHarnessEvidenceGraphNodeKind::ProofResult));
     assert!(accepted_graph.edges.iter().any(|edge| {
-        edge.kind == HarnessEvidenceGraphEdgeKind::Proves
+        edge.kind == AgentHarnessEvidenceGraphEdgeKind::Proves
             && edge.from == "review:graph-policy-proposal:static-loop-policy"
     }));
-    assert!(rejected_graph.has_node_kind(HarnessEvidenceGraphNodeKind::ReviewJudgment));
-    assert!(rejected_graph.has_node_kind(HarnessEvidenceGraphNodeKind::Counterexample));
+    assert!(rejected_graph.has_node_kind(AgentHarnessEvidenceGraphNodeKind::ReviewJudgment));
+    assert!(rejected_graph.has_node_kind(AgentHarnessEvidenceGraphNodeKind::Counterexample));
     assert_eq!(rejected_graph.summary().counterexamples, 1);
     assert!(rejected_graph.edges.iter().any(|edge| {
-        edge.kind == HarnessEvidenceGraphEdgeKind::Refutes
+        edge.kind == AgentHarnessEvidenceGraphEdgeKind::Refutes
             && edge.to == "invariant:graph-policy-proposal:static-loop-policy"
     }));
 }
@@ -161,13 +167,13 @@ fn harness_evidence_graph_projects_execution_results_into_receipts_and_outcomes(
         vec!["budget exceeded".to_owned()],
     )]);
 
-    let completed_graph =
-        HarnessEvidenceGraph::new("execution:completed").with_graph_execution_result(&completed);
+    let completed_graph = AgentHarnessEvidenceGraph::new("execution:completed")
+        .with_graph_execution_result(&completed);
     let failed_graph =
-        HarnessEvidenceGraph::new("execution:failed").with_graph_execution_result(&failed);
+        AgentHarnessEvidenceGraph::new("execution:failed").with_graph_execution_result(&failed);
 
-    assert!(completed_graph.has_node_kind(HarnessEvidenceGraphNodeKind::ExecutionReceipt));
-    assert!(completed_graph.has_node_kind(HarnessEvidenceGraphNodeKind::ProofResult));
+    assert!(completed_graph.has_node_kind(AgentHarnessEvidenceGraphNodeKind::ExecutionReceipt));
+    assert!(completed_graph.has_node_kind(AgentHarnessEvidenceGraphNodeKind::ProofResult));
     assert!(completed_graph.nodes.iter().any(|node| {
         node.subject == "graph-loop-node:run-ok:plan"
             && node.detail.as_deref().is_some_and(|detail| {
@@ -175,11 +181,11 @@ fn harness_evidence_graph_projects_execution_results_into_receipts_and_outcomes(
             })
     }));
     assert!(completed_graph.edges.iter().any(|edge| {
-        edge.kind == HarnessEvidenceGraphEdgeKind::Observes
+        edge.kind == AgentHarnessEvidenceGraphEdgeKind::Observes
             && edge.from == "execution:graph-loop:run-ok"
     }));
-    assert!(failed_graph.has_node_kind(HarnessEvidenceGraphNodeKind::ExecutionReceipt));
-    assert!(failed_graph.has_node_kind(HarnessEvidenceGraphNodeKind::Counterexample));
+    assert!(failed_graph.has_node_kind(AgentHarnessEvidenceGraphNodeKind::ExecutionReceipt));
+    assert!(failed_graph.has_node_kind(AgentHarnessEvidenceGraphNodeKind::Counterexample));
     assert_eq!(failed_graph.summary().counterexamples, 1);
     assert!(failed_graph.nodes.iter().any(|node| {
         node.subject == "graph-loop-node:run-fail:plan"

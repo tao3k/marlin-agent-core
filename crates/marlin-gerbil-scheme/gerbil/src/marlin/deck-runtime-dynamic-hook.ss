@@ -4,7 +4,7 @@
 
 package: marlin
 
-(import :clan/poo/object
+(import (only-in :clan/poo/object .get .o)
         :marlin/deck-runtime-condition-policy
         :marlin/deck-runtime-matcher)
 

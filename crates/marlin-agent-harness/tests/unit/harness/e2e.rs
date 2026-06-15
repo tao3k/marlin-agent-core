@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use marlin_agent_harness::{
-    AgentHarness, HarnessEvidence, HarnessEvidenceKind, HarnessExecutionReport,
-    HarnessGraphBuilder, HarnessRuntime, HarnessScenario,
+    AgentHarness, AgentHarnessEvidence, AgentHarnessEvidenceKind, AgentHarnessExecutionReport,
+    AgentHarnessGraphBuilder, AgentHarnessRuntime, AgentHarnessScenario,
 };
 use marlin_agent_hooks::{HookDispatcher, HookInvocation, HookRegistration, HookRegistry};
 use marlin_agent_kernel::{
@@ -36,7 +36,7 @@ async fn harness_runs_provider_tool_sub_agent_scenario_with_hooks_and_environmen
     let environment = RuntimeEnvironment::default()
         .with_home(RuntimeHome::custom("/tmp/marlin-e2e-home").with_profile("e2e"))
         .with_cwd("/tmp/marlin-e2e-workspace");
-    let scenario = HarnessScenario::new("provider-tool-sub-agent")
+    let scenario = AgentHarnessScenario::new("provider-tool-sub-agent")
         .with_step(
             AgentScenarioStep::new("run")
                 .expecting_event_topic(observability::TOPIC_KERNEL_EXECUTION)
@@ -52,7 +52,7 @@ async fn harness_runs_provider_tool_sub_agent_scenario_with_hooks_and_environmen
                 .expecting_span_name(observability::harness_execution_span_name())
                 .expecting_span_name(observability::harness_result_span_name()),
         )
-        .expecting_evidence(HarnessEvidenceKind::Runtime);
+        .expecting_evidence(AgentHarnessEvidenceKind::Runtime);
     let hook_dispatcher = e2e_hook_dispatcher();
     let kernel = TokioGraphLoopKernel::new("run", "graph")
         .with_executor(
@@ -76,7 +76,7 @@ async fn harness_runs_provider_tool_sub_agent_scenario_with_hooks_and_environmen
             })
             .with_hook_dispatcher(hook_dispatcher),
         );
-    let graph = HarnessGraphBuilder::new("graph")
+    let graph = AgentHarnessGraphBuilder::new("graph")
         .linear([
             ("plan", "provider"),
             ("apply", "tool"),
@@ -84,9 +84,9 @@ async fn harness_runs_provider_tool_sub_agent_scenario_with_hooks_and_environmen
         ])
         .build();
     let request = GraphLoopExecutionRequest::new("run-e2e", graph);
-    let mut harness = HarnessRuntime::with_environment(64, environment);
-    harness.record_evidence(HarnessEvidence::present(
-        HarnessEvidenceKind::Runtime,
+    let mut harness = AgentHarnessRuntime::with_environment(64, environment);
+    harness.record_evidence(AgentHarnessEvidence::present(
+        AgentHarnessEvidenceKind::Runtime,
         "tokio",
     ));
 
@@ -176,7 +176,7 @@ async fn harness_e2e_combines_graph_policy_environment_hooks_and_sub_agent_sessi
     let environment = RuntimeEnvironment::default()
         .with_home(RuntimeHome::custom("/tmp/marlin-policy-e2e-home").with_profile("policy-e2e"))
         .with_cwd("/tmp/marlin-policy-e2e-workspace");
-    let scenario = HarnessScenario::new("graph-policy-provider-tool-sub-agent")
+    let scenario = AgentHarnessScenario::new("graph-policy-provider-tool-sub-agent")
         .with_step(
             AgentScenarioStep::new("run")
                 .expecting_event_topic(observability::TOPIC_KERNEL_EXECUTION)
@@ -192,11 +192,11 @@ async fn harness_e2e_combines_graph_policy_environment_hooks_and_sub_agent_sessi
                 .expecting_span_name(observability::harness_execution_span_name())
                 .expecting_span_name(observability::harness_result_span_name()),
         )
-        .expecting_evidence(HarnessEvidenceKind::Runtime)
-        .expecting_evidence(HarnessEvidenceKind::Visibility);
+        .expecting_evidence(AgentHarnessEvidenceKind::Runtime)
+        .expecting_evidence(AgentHarnessEvidenceKind::Visibility);
     let request = GraphLoopExecutionRequest::new(
         "run-policy-e2e",
-        HarnessGraphBuilder::new("policy-e2e-graph")
+        AgentHarnessGraphBuilder::new("policy-e2e-graph")
             .linear([
                 ("plan", "provider"),
                 ("apply", "tool"),
@@ -228,9 +228,9 @@ async fn harness_e2e_combines_graph_policy_environment_hooks_and_sub_agent_sessi
             })
             .with_hook_dispatcher(hook_dispatcher),
         );
-    let mut harness = HarnessRuntime::with_environment(64, environment);
-    harness.record_evidence(HarnessEvidence::present(
-        HarnessEvidenceKind::Runtime,
+    let mut harness = AgentHarnessRuntime::with_environment(64, environment);
+    harness.record_evidence(AgentHarnessEvidence::present(
+        AgentHarnessEvidenceKind::Runtime,
         "tokio",
     ));
     harness.record_graph_policy_proposal_visibility(&graph_policy.compilation().receipt);
@@ -270,7 +270,7 @@ async fn harness_e2e_combines_graph_policy_environment_hooks_and_sub_agent_sessi
         report
             .evidence
             .iter()
-            .filter(|evidence| evidence.kind == HarnessEvidenceKind::Visibility)
+            .filter(|evidence| evidence.kind == AgentHarnessEvidenceKind::Visibility)
             .count(),
         3
     );
@@ -278,7 +278,7 @@ async fn harness_e2e_combines_graph_policy_environment_hooks_and_sub_agent_sessi
         report
             .evidence
             .iter()
-            .filter(|evidence| evidence.kind == HarnessEvidenceKind::Runtime)
+            .filter(|evidence| evidence.kind == AgentHarnessEvidenceKind::Runtime)
             .count(),
         3
     );
@@ -361,13 +361,13 @@ async fn harness_e2e_preserves_graph_policy_visibility_when_budget_gate_fails_wi
     assert_accepted_gerbil_ir_graph_policy_proposal_fixture(&graph_policy);
     assert_budgeted_graph_policy_execution_request(&request, 1);
 
-    let scenario = HarnessScenario::new("graph-policy-budget-failure")
+    let scenario = AgentHarnessScenario::new("graph-policy-budget-failure")
         .with_step(
             AgentScenarioStep::new("run")
                 .expecting_event_topic(observability::TOPIC_KERNEL_EXECUTION)
                 .expecting_span_name(observability::harness_result_span_name()),
         )
-        .expecting_evidence(HarnessEvidenceKind::Visibility);
+        .expecting_evidence(AgentHarnessEvidenceKind::Visibility);
     let kernel = TokioGraphLoopKernel::new(
         graph_policy.expected_run_id(),
         graph_policy.proposal().proposed_graph.graph_id.clone(),
@@ -384,7 +384,7 @@ async fn harness_e2e_preserves_graph_policy_visibility_when_budget_gate_fails_wi
             invocation.node_id.into_string()
         }),
     );
-    let mut harness = HarnessRuntime::new(16);
+    let mut harness = AgentHarnessRuntime::new(16);
     harness.record_graph_policy_proposal_visibility(&graph_policy.compilation().receipt);
 
     let report = harness.execute_graph(&scenario, &kernel, request).await;
@@ -425,7 +425,7 @@ async fn harness_e2e_preserves_graph_policy_visibility_when_budget_gate_fails_wi
     );
 }
 
-fn evidence_detail_contains(report: &HarnessExecutionReport, needle: &str) -> bool {
+fn evidence_detail_contains(report: &AgentHarnessExecutionReport, needle: &str) -> bool {
     report
         .evidence
         .iter()
@@ -433,7 +433,7 @@ fn evidence_detail_contains(report: &HarnessExecutionReport, needle: &str) -> bo
         .any(|detail| detail.contains(needle))
 }
 
-fn assert_agent_core_trace_spans(report: &HarnessExecutionReport) {
+fn assert_agent_core_trace_spans(report: &AgentHarnessExecutionReport) {
     let span_names = report
         .span_names
         .iter()

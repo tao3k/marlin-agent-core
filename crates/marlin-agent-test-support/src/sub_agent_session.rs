@@ -1,6 +1,6 @@
 //! Reusable sub-agent session and memory visibility fixtures.
 
-use marlin_agent_harness_types::{HarnessEvidence, HarnessEvidenceKind};
+use marlin_agent_harness_types::{AgentHarnessEvidence, AgentHarnessEvidenceKind};
 use marlin_agent_protocol::{SubAgentContextVisibility, SubAgentSpawnConfig};
 use marlin_agent_sessions::{
     AgentSessionContext, ContextNamespace, ContextVisibility, SessionIsolationReceipt, SessionKind,
@@ -181,7 +181,7 @@ pub fn assert_sub_agent_memory_session_fixture(
 pub fn sub_agent_memory_session_visibility_evidence(
     child_session: &AgentSessionContext,
     isolation_receipt: &SessionIsolationReceipt,
-) -> HarnessEvidence {
+) -> AgentHarnessEvidence {
     let parent_session_id = child_session
         .parent_session_id()
         .map(|session_id| session_id.as_str())
@@ -204,8 +204,8 @@ pub fn sub_agent_memory_session_visibility_evidence(
         isolation_receipt.history_limit_applied(),
     );
 
-    HarnessEvidence::present(
-        HarnessEvidenceKind::Visibility,
+    AgentHarnessEvidence::present(
+        AgentHarnessEvidenceKind::Visibility,
         format!(
             "sub-agent-memory-session:{}",
             child_session.session_id().as_str()
@@ -218,7 +218,7 @@ pub fn sub_agent_memory_session_visibility_evidence(
 pub fn sub_agent_memory_session_replay_evidence(
     child_session: &AgentSessionContext,
     isolation_receipt: &SessionIsolationReceipt,
-) -> HarnessEvidence {
+) -> AgentHarnessEvidence {
     let parent_session_id = child_session
         .parent_session_id()
         .map(|session_id| session_id.as_str())
@@ -247,8 +247,8 @@ pub fn sub_agent_memory_session_replay_evidence(
         visibility_contracted,
     );
 
-    HarnessEvidence::present(
-        HarnessEvidenceKind::Visibility,
+    AgentHarnessEvidence::present(
+        AgentHarnessEvidenceKind::Visibility,
         format!(
             "sub-agent-session-replay:{}",
             child_session.session_id().as_str()

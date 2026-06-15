@@ -1,8 +1,8 @@
 use std::time::Duration;
 
 use marlin_agent_harness::{
-    AgentHarness, HarnessEvidence, HarnessEvidenceKind, HarnessGraphBuilder, HarnessRuntime,
-    HarnessScenario,
+    AgentHarness, AgentHarnessEvidence, AgentHarnessEvidenceKind, AgentHarnessGraphBuilder,
+    AgentHarnessRuntime, AgentHarnessScenario,
 };
 use marlin_agent_kernel::{GraphLoopExecutionRequest, TokioGraphLoopKernel};
 use marlin_agent_protocol::GraphLoopExecutionStatus;
@@ -35,18 +35,18 @@ async fn harness_execution_report_composes_no_llm_runtime_evidence_chain() {
     let stream_evidence =
         scripted_stream_gate_evidence("composite-review-stream", &stream_receipt, &gate);
 
-    let execution_scenario = HarnessScenario::new("composite-runtime-evidence");
+    let execution_scenario = AgentHarnessScenario::new("composite-runtime-evidence");
     let validation_scenario = replay_artifact
         .scenario()
         .clone()
-        .expecting_evidence(HarnessEvidenceKind::Stability);
-    let graph = HarnessGraphBuilder::new("graph")
+        .expecting_evidence(AgentHarnessEvidenceKind::Stability);
+    let graph = AgentHarnessGraphBuilder::new("graph")
         .node("node-1", "eventful")
         .build();
     let request = GraphLoopExecutionRequest::new("run", graph);
     let kernel =
         TokioGraphLoopKernel::new("run", "graph").with_executor("eventful", EventfulExecutor);
-    let mut harness = HarnessRuntime::new(16);
+    let mut harness = AgentHarnessRuntime::new(16);
     for evidence in replay_artifact.replay_evidence().iter().cloned() {
         harness.record_evidence(evidence);
     }
@@ -94,7 +94,7 @@ async fn harness_execution_report_composes_no_llm_runtime_evidence_chain() {
         report
             .evidence
             .iter()
-            .filter(|evidence| evidence.kind == HarnessEvidenceKind::Visibility)
+            .filter(|evidence| evidence.kind == AgentHarnessEvidenceKind::Visibility)
             .count(),
         3
     );
@@ -102,7 +102,7 @@ async fn harness_execution_report_composes_no_llm_runtime_evidence_chain() {
         report
             .evidence
             .iter()
-            .filter(|evidence| evidence.kind == HarnessEvidenceKind::Runtime)
+            .filter(|evidence| evidence.kind == AgentHarnessEvidenceKind::Runtime)
             .count(),
         2
     );
@@ -110,7 +110,7 @@ async fn harness_execution_report_composes_no_llm_runtime_evidence_chain() {
         report
             .evidence
             .iter()
-            .filter(|evidence| evidence.kind == HarnessEvidenceKind::Stability)
+            .filter(|evidence| evidence.kind == AgentHarnessEvidenceKind::Stability)
             .count(),
         1
     );
@@ -128,7 +128,7 @@ async fn harness_execution_report_composes_no_llm_runtime_evidence_chain() {
     assert!(detail_contains(&report.evidence, "custom_event_count=1"));
 }
 
-fn detail_contains(evidence: &[HarnessEvidence], needle: &str) -> bool {
+fn detail_contains(evidence: &[AgentHarnessEvidence], needle: &str) -> bool {
     evidence
         .iter()
         .filter_map(|evidence| evidence.detail.as_deref())

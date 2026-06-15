@@ -1,4 +1,4 @@
-use marlin_agent_harness::{HarnessGraphBuilder, HarnessRuntime, HarnessScenario};
+use marlin_agent_harness::{AgentHarnessGraphBuilder, AgentHarnessRuntime, AgentHarnessScenario};
 use marlin_agent_kernel::{
     GraphLoopExecutionRequest, GraphLoopExecutionStatus, TokioGraphLoopKernel,
 };
@@ -22,11 +22,11 @@ async fn harness_result_spans_correlate_many_runs_by_run_id() {
     let mut failed_run_ids = Vec::new();
 
     for (run_id, should_fail) in cases {
-        let scenario = HarnessScenario::new(format!("scenario-{run_id}")).with_step(
+        let scenario = AgentHarnessScenario::new(format!("scenario-{run_id}")).with_step(
             AgentScenarioStep::new("run")
                 .expecting_span_name(observability::harness_result_span_name()),
         );
-        let graph = HarnessGraphBuilder::new("graph")
+        let graph = AgentHarnessGraphBuilder::new("graph")
             .node("node-1", "executor")
             .build();
         let request = GraphLoopExecutionRequest::new(run_id, graph);
@@ -35,7 +35,7 @@ async fn harness_result_spans_correlate_many_runs_by_run_id() {
         } else {
             TokioGraphLoopKernel::new(run_id, "graph").with_executor("executor", EventfulExecutor)
         };
-        let mut harness = HarnessRuntime::new(16);
+        let mut harness = AgentHarnessRuntime::new(16);
 
         let report = harness.execute_graph(&scenario, &kernel, request).await;
         let expected_status = if should_fail {

@@ -3,7 +3,7 @@
 use marlin_agent_protocol::{GraphNativeAbiReadinessReceipt, GraphNativeAbiReadinessStatus};
 use marlin_gerbil_ir::{ReleaseGateSpec, ReleaseTopologySpec, ReleaseVisibilitySpec};
 
-use crate::{HarnessEvidence, HarnessEvidenceKind};
+use crate::{AgentHarnessEvidence, AgentHarnessEvidenceKind};
 
 /// Execution status captured for one release gate receipt.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -27,7 +27,7 @@ pub struct ReleaseGateExecutionReceipt {
     pub evidence_keys: Vec<String>,
     pub artifact_paths: Vec<String>,
     pub diagnostics: Vec<String>,
-    pub visibility_evidence: Vec<HarnessEvidence>,
+    pub visibility_evidence: Vec<AgentHarnessEvidence>,
 }
 
 impl ReleaseGateExecutionReceipt {
@@ -43,7 +43,7 @@ pub fn release_visibility_evidence(
     topology: &ReleaseTopologySpec,
     gate: &ReleaseGateSpec,
     visibility: &ReleaseVisibilitySpec,
-) -> HarnessEvidence {
+) -> AgentHarnessEvidence {
     let detail = format!(
         "topology_id={} crate_name={} gate_id={} report_key={} evidence_keys=[{}] artifact_paths=[{}]",
         topology.topology_id,
@@ -54,8 +54,8 @@ pub fn release_visibility_evidence(
         visibility.artifact_paths.join(","),
     );
 
-    HarnessEvidence::present(
-        HarnessEvidenceKind::Visibility,
+    AgentHarnessEvidence::present(
+        AgentHarnessEvidenceKind::Visibility,
         format!(
             "release-visibility:{}:{}:{}",
             topology.topology_id, gate.gate_id, visibility.report_key
@@ -68,7 +68,7 @@ pub fn release_visibility_evidence(
 pub fn release_gate_visibility_evidence(
     topology: &ReleaseTopologySpec,
     gate: &ReleaseGateSpec,
-) -> Vec<HarnessEvidence> {
+) -> Vec<AgentHarnessEvidence> {
     gate.visibility
         .iter()
         .map(|visibility| release_visibility_evidence(topology, gate, visibility))
@@ -148,7 +148,7 @@ pub fn native_abi_readiness_release_gate_execution_receipt(
 /// Convert all release gate visibility declarations in a topology into harness evidence.
 pub fn release_topology_visibility_evidence(
     topology: &ReleaseTopologySpec,
-) -> Vec<HarnessEvidence> {
+) -> Vec<AgentHarnessEvidence> {
     topology
         .gates
         .iter()

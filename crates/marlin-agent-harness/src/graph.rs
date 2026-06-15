@@ -2,15 +2,15 @@
 
 use marlin_agent_protocol::{LoopEdgeSpec, LoopGraph, LoopNodeSpec};
 
-/// Builder for compact graph-loop fixtures used by harness scenarios.
+/// Builder for compact graph-loop fixtures used by agent harness scenarios.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct HarnessGraphBuilder {
+pub struct AgentHarnessGraphBuilder {
     graph_id: String,
     nodes: Vec<LoopNodeSpec>,
     edges: Vec<LoopEdgeSpec>,
 }
 
-impl HarnessGraphBuilder {
+impl AgentHarnessGraphBuilder {
     pub fn new(graph_id: impl Into<String>) -> Self {
         Self {
             graph_id: graph_id.into(),

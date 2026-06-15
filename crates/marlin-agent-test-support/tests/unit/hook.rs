@@ -1,4 +1,4 @@
-use marlin_agent_harness_types::HarnessEvidenceKind;
+use marlin_agent_harness_types::AgentHarnessEvidenceKind;
 use marlin_agent_test_support::{
     assert_complex_gerbil_hook_policy_receipt, assert_custom_hook_policy_receipt,
     assert_custom_sub_agent_start_hook_summary, assert_sub_agent_hook_dispatch_selection,
@@ -45,7 +45,7 @@ fn hook_dispatch_replay_fixture_projects_runtime_evidence() {
     let detail = evidence.detail.as_deref().expect("hook replay detail");
 
     assert!(evidence.present);
-    assert_eq!(evidence.kind, HarnessEvidenceKind::Runtime);
+    assert_eq!(evidence.kind, AgentHarnessEvidenceKind::Runtime);
     assert_eq!(
         evidence.subject,
         "hook-dispatch-replay:custom-sub-agent-start",
@@ -76,7 +76,7 @@ fn complex_gerbil_hook_policy_replay_projects_dynamic_action_evidence() {
     let detail = evidence.detail.as_deref().expect("hook replay detail");
 
     assert!(evidence.present);
-    assert_eq!(evidence.kind, HarnessEvidenceKind::Runtime);
+    assert_eq!(evidence.kind, AgentHarnessEvidenceKind::Runtime);
     assert!(detail.contains("policy_decisions=1"));
     assert!(detail.contains("policy_mode=ObserveOnly"));
     assert!(detail.contains("policy_agent_scope=CustomerAgent"));

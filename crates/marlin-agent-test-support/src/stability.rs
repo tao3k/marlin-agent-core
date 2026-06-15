@@ -2,7 +2,7 @@
 
 use std::time::Duration;
 
-use marlin_agent_harness_types::{HarnessEvidence, HarnessStabilityEvidence};
+use marlin_agent_harness_types::{AgentHarnessEvidence, AgentHarnessStabilityEvidence};
 
 /// Input for projecting one no-LLM runtime stability gate into typed evidence.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -23,13 +23,15 @@ pub struct RuntimeStabilityEvidenceInput {
 }
 
 /// Project runtime summary counters into stability evidence consumed by harness tests.
-pub fn runtime_stability_budget_evidence(input: RuntimeStabilityEvidenceInput) -> HarnessEvidence {
+pub fn runtime_stability_budget_evidence(
+    input: RuntimeStabilityEvidenceInput,
+) -> AgentHarnessEvidence {
     let custom_event_detail = input
         .custom_event_count
         .map(|count| format!(",custom_event_count={count}"))
         .unwrap_or_default();
 
-    HarnessStabilityEvidence {
+    AgentHarnessStabilityEvidence {
         subject: input.subject,
         stability_command: input.stability_command,
         iteration_window: "single-run,no-llm".to_owned(),

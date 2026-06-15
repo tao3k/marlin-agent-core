@@ -1,4 +1,4 @@
-use marlin_agent_harness_types::{HarnessEvidence, HarnessEvidenceKind};
+use marlin_agent_harness_types::{AgentHarnessEvidence, AgentHarnessEvidenceKind};
 use marlin_agent_test_support::{
     NO_LLM_RUNTIME_REPLAY_ARTIFACT_ID, NO_LLM_RUNTIME_REPLAY_CONTRACT_JSON,
     NoLlmRuntimeReplayArtifactLoadError, load_no_llm_runtime_replay_artifact,
@@ -22,22 +22,22 @@ fn no_llm_runtime_replay_artifact_loads_graph_session_and_hook_evidence() {
     assert_eq!(
         scenario.expected_evidence,
         vec![
-            HarnessEvidenceKind::Visibility,
-            HarnessEvidenceKind::Runtime
+            AgentHarnessEvidenceKind::Visibility,
+            AgentHarnessEvidenceKind::Runtime
         ]
     );
     assert_eq!(evidence.len(), 4);
     assert_eq!(
         evidence
             .iter()
-            .filter(|entry| entry.kind == HarnessEvidenceKind::Visibility)
+            .filter(|entry| entry.kind == AgentHarnessEvidenceKind::Visibility)
             .count(),
         3
     );
     assert_eq!(
         evidence
             .iter()
-            .filter(|entry| entry.kind == HarnessEvidenceKind::Runtime)
+            .filter(|entry| entry.kind == AgentHarnessEvidenceKind::Runtime)
             .count(),
         1
     );
@@ -82,7 +82,7 @@ fn no_llm_runtime_replay_artifact_rejects_unsupported_schema() {
     ));
 }
 
-fn detail_contains(evidence: &[HarnessEvidence], needle: &str) -> bool {
+fn detail_contains(evidence: &[AgentHarnessEvidence], needle: &str) -> bool {
     evidence
         .iter()
         .filter_map(|entry| entry.detail.as_deref())

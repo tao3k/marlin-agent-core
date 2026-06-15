@@ -1,6 +1,6 @@
 //! Deterministic sub-agent scenario fixtures spanning routing, session, and hooks.
 
-use marlin_agent_harness_types::{HarnessEvidence, HarnessEvidenceKind};
+use marlin_agent_harness_types::{AgentHarnessEvidence, AgentHarnessEvidenceKind};
 use marlin_agent_protocol::{
     HookDispatchPolicyReceipt, HookDispatchSelectionReceipt, HookRunSummary, ModelCommandMatcher,
     ModelContextForkMode, ModelEndpoint, ModelGatewayRequest, ModelGatewayTransport,
@@ -194,7 +194,7 @@ pub fn deterministic_reviewer_applied_environment_activation_receipt_fixture()
 }
 
 /// Runtime evidence replaying the routed reviewer receipt family without live LLMs.
-pub fn deterministic_reviewer_routed_receipt_family_evidence() -> HarnessEvidence {
+pub fn deterministic_reviewer_routed_receipt_family_evidence() -> AgentHarnessEvidence {
     let fixture = deterministic_reviewer_sub_agent_scenario_fixture();
     let environment = deterministic_reviewer_applied_environment_activation_receipt_fixture();
     let detail = format!(
@@ -210,8 +210,8 @@ pub fn deterministic_reviewer_routed_receipt_family_evidence() -> HarnessEvidenc
         environment.delta.removed.join(","),
     );
 
-    HarnessEvidence::present(
-        HarnessEvidenceKind::Runtime,
+    AgentHarnessEvidence::present(
+        AgentHarnessEvidenceKind::Runtime,
         "routed-sub-agent-receipt-family:reviewer",
     )
     .with_detail(detail)

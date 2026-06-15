@@ -2,7 +2,17 @@
 ;;; Boundary: Module owns Marlin Gerbil policy and runtime contracts for agent edits.
 ;;; Gerbil native C ABI for the Marlin Deck runtime model-route selector.
 
-(import :std/foreign)
+(import (only-in :std/foreign
+                 begin-ffi
+                 begin-foreign
+                 c-define
+                 c-define-type
+                 c-declare
+                 char-string
+                 define-c-lambda
+                 extern
+                 int
+                 pointer))
 
 (declare
   (block)

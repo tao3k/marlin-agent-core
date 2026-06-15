@@ -1,8 +1,9 @@
 use std::{path::PathBuf, sync::Arc};
 
 use marlin_agent_harness::{
-    AgentHarness, HarnessEvidenceKind, HarnessRuntime, HarnessScenario,
-    runtime_environment_visibility_evidence, working_copy_isolation_visibility_evidence,
+    AgentHarness, AgentHarnessEvidenceKind, AgentHarnessRuntime, AgentHarnessScenario,
+    agent_harness_runtime_environment_visibility_evidence,
+    agent_harness_working_copy_isolation_visibility_evidence,
 };
 use marlin_agent_runtime::{
     WorkingCopyCommandInvocation, WorkingCopyCommandProgram, WorkingCopyCommandReceipt,
@@ -19,10 +20,10 @@ use super::support::{EnvironmentEchoHook, EnvironmentEchoSubAgent};
 
 #[tokio::test]
 async fn harness_runtime_preserves_custom_environment_for_hooks_and_sub_agents() {
-    let scenario =
-        HarnessScenario::new("environment").expecting_evidence(HarnessEvidenceKind::Visibility);
+    let scenario = AgentHarnessScenario::new("environment")
+        .expecting_evidence(AgentHarnessEvidenceKind::Visibility);
     let fixture = custom_home_runtime_environment_fixture();
-    let mut harness = HarnessRuntime::with_environment(4, fixture.root_environment().clone());
+    let mut harness = AgentHarnessRuntime::with_environment(4, fixture.root_environment().clone());
     harness.record_environment_visibility();
 
     let hook_environment = harness
@@ -49,11 +50,11 @@ async fn harness_runtime_preserves_custom_environment_for_hooks_and_sub_agents()
     let evidence = harness
         .evidence()
         .iter()
-        .find(|evidence| evidence.kind == HarnessEvidenceKind::Visibility)
+        .find(|evidence| evidence.kind == AgentHarnessEvidenceKind::Visibility)
         .expect("expected runtime environment visibility evidence");
     assert_eq!(
         evidence,
-        &runtime_environment_visibility_evidence(fixture.root_environment())
+        &agent_harness_runtime_environment_visibility_evidence(fixture.root_environment())
     );
     assert_eq!(evidence.subject, "runtime-environment");
     assert_eq!(
@@ -67,8 +68,8 @@ async fn harness_runtime_preserves_custom_environment_for_hooks_and_sub_agents()
 
 #[test]
 fn harness_runtime_records_working_copy_isolation_visibility() {
-    let scenario =
-        HarnessScenario::new("working-copy").expecting_evidence(HarnessEvidenceKind::Visibility);
+    let scenario = AgentHarnessScenario::new("working-copy")
+        .expecting_evidence(AgentHarnessEvidenceKind::Visibility);
     let request = WorkingCopyIsolationRequest::Create(WorkingCopyCreateRequest::new(
         "marlin-core",
         WorkingCopyIsolationProvider::GitWorktree,
@@ -92,7 +93,7 @@ fn harness_runtime_records_working_copy_isolation_visibility() {
                 "",
                 "path already exists",
             )]);
-    let mut harness = HarnessRuntime::new(16);
+    let mut harness = AgentHarnessRuntime::new(16);
 
     harness.record_working_copy_isolation_visibility(&passed);
     harness.record_working_copy_isolation_visibility(&failed);
@@ -100,7 +101,7 @@ fn harness_runtime_records_working_copy_isolation_visibility() {
     assert_eq!(passed.status, WorkingCopyIsolationStatus::Applied);
     assert_eq!(
         harness.evidence()[0],
-        working_copy_isolation_visibility_evidence(&passed)
+        agent_harness_working_copy_isolation_visibility_evidence(&passed)
     );
     assert!(
         harness.evidence()[0]

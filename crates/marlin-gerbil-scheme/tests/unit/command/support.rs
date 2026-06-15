@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use marlin_gerbil_ir::CompiledLoopGraph;
 use marlin_gerbil_scheme::{GerbilCompiledArtifact, default_gerbil_gxi_program};
 use marlin_org_model::TodoState;

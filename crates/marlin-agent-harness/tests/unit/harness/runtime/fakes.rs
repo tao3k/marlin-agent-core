@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use marlin_agent_harness::{
-    AgentHarness, HarnessEvidence, HarnessEvidenceKind, HarnessRuntime, HarnessScenario,
-    StaticProviderRuntime,
+    AgentHarness, AgentHarnessEvidence, AgentHarnessEvidenceKind, AgentHarnessRuntime,
+    AgentHarnessScenario, StaticProviderRuntime,
 };
 use marlin_agent_runtime::TokioAgentRuntime;
 
@@ -18,14 +18,17 @@ async fn static_provider_runtime_feeds_harness_turn_evidence_without_live_llm() 
         .join()
         .await
         .expect("provider task should finish");
-    let scenario =
-        HarnessScenario::new("fake-provider-turn").expecting_evidence(HarnessEvidenceKind::Runtime);
-    let mut harness = HarnessRuntime::new(4);
+    let scenario = AgentHarnessScenario::new("fake-provider-turn")
+        .expecting_evidence(AgentHarnessEvidenceKind::Runtime);
+    let mut harness = AgentHarnessRuntime::new(4);
     harness.record_evidence(
-        HarnessEvidence::present(HarnessEvidenceKind::Runtime, "fake-provider-turn:static")
-            .with_detail(format!(
-                "request=turn input response={output} live_llm=false"
-            )),
+        AgentHarnessEvidence::present(
+            AgentHarnessEvidenceKind::Runtime,
+            "fake-provider-turn:static",
+        )
+        .with_detail(format!(
+            "request=turn input response={output} live_llm=false"
+        )),
     );
 
     let report = AgentHarness::evaluate(&scenario, &[], harness.evidence());

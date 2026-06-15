@@ -6,8 +6,7 @@ use serde::{Deserialize, Serialize};
 use crate::AgentHarnessEvidenceKind;
 
 /// Stable schema id for serialized agent-harness scenario contracts.
-pub const AGENT_HARNESS_SCENARIO_CONTRACT_SCHEMA_ID: &str =
-    "marlin.agent.harness_scenario.v1";
+pub const AGENT_HARNESS_SCENARIO_CONTRACT_SCHEMA_ID: &str = "marlin.agent.harness_scenario.v1";
 
 /// Serializable fixture contract carrying one agent-harness scenario.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]

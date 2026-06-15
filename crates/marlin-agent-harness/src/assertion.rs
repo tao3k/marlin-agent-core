@@ -2,15 +2,15 @@
 
 use std::{collections::BTreeSet, error::Error, fmt};
 
-use crate::{HarnessEvidence, HarnessEvidenceKind};
+use crate::{AgentHarnessEvidence, AgentHarnessEvidenceKind};
 
-/// Assertion failure emitted by harness evidence checks.
+/// Assertion failure emitted by agent harness evidence checks.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct HarnessAssertionError {
+pub struct AgentHarnessAssertionError {
     message: String,
 }
 
-impl HarnessAssertionError {
+impl AgentHarnessAssertionError {
     pub fn new(message: impl Into<String>) -> Self {
         Self {
             message: message.into(),
@@ -22,19 +22,19 @@ impl HarnessAssertionError {
     }
 }
 
-impl fmt::Display for HarnessAssertionError {
+impl fmt::Display for AgentHarnessAssertionError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(self.message.as_str())
     }
 }
 
-impl Error for HarnessAssertionError {}
+impl Error for AgentHarnessAssertionError {}
 
-/// Validate that all expected evidence kinds are present in a harness capture.
-pub fn assert_evidence_kinds(
-    evidence: &[HarnessEvidence],
-    expected: &[HarnessEvidenceKind],
-) -> Result<(), HarnessAssertionError> {
+/// Validate that all expected evidence kinds are present in an agent harness capture.
+pub fn assert_agent_harness_evidence_kinds(
+    evidence: &[AgentHarnessEvidence],
+    expected: &[AgentHarnessEvidenceKind],
+) -> Result<(), AgentHarnessAssertionError> {
     let present: BTreeSet<_> = evidence
         .iter()
         .filter(|fact| fact.present)
@@ -51,7 +51,7 @@ pub fn assert_evidence_kinds(
         return Ok(());
     }
 
-    Err(HarnessAssertionError::new(format!(
+    Err(AgentHarnessAssertionError::new(format!(
         "missing harness evidence kinds: {missing:?}"
     )))
 }

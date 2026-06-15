@@ -4,7 +4,7 @@
 
 package: marlin
 
-(import :clan/poo/object)
+(import (only-in :clan/poo/object .get .o))
 
 (export marlin-deck-runtime-strategy-context-kind
         marlin-deck-runtime-strategy-capability-names

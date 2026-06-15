@@ -2241,6 +2241,7 @@ dependencies = [
  "aho-corasick",
  "globset",
  "marlin-agent-environment",
+ "marlin-agent-harness-types",
  "marlin-agent-protocol",
  "marlin-agent-sessions",
  "marlin-agent-test-support",

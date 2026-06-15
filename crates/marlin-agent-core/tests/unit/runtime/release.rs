@@ -1,6 +1,6 @@
 use marlin_agent_core::gerbil_ir::{ReleaseGateSpec, ReleaseTopologySpec, ReleaseVisibilitySpec};
 use marlin_agent_core::{
-    FileSystemReleaseStatusStore, HarnessEvidenceKind, ReleaseGateCommandOutput,
+    AgentHarnessEvidenceKind, FileSystemReleaseStatusStore, ReleaseGateCommandOutput,
     ReleaseGateCommandRunner, ReleaseGateExecutionStatus, ReleaseGateRecordRequest,
     ReleaseGateRunOptions, ReleaseGateState, ReleaseLandingReport,
     commit_release_gate_execution_receipts, execute_and_record_release_gate_with_runner,
@@ -41,7 +41,7 @@ fn core_facade_exposes_release_visibility_contract() {
     let status_receipt = release_gate_status_receipt(&receipt);
 
     assert_eq!(evidence.len(), 1);
-    assert_eq!(evidence[0].kind, HarnessEvidenceKind::Visibility);
+    assert_eq!(evidence[0].kind, AgentHarnessEvidenceKind::Visibility);
     assert_eq!(receipt.status, ReleaseGateExecutionStatus::Passed);
     assert_eq!(receipt.visibility_evidence, evidence);
     assert_eq!(

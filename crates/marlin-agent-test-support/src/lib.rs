@@ -17,8 +17,8 @@ pub use graph_policy::{
     assert_accepted_gerbil_ir_graph_policy_proposal_fixture,
     assert_accepted_graph_policy_proposal_fixture, assert_budgeted_graph_policy_execution_request,
     assert_rejected_graph_policy_proposal_fixture, budgeted_graph_policy_execution_request_fixture,
-    complex_gerbil_graph_policy_replay_fixture, graph_native_abi_requirement_fixture,
-    rejected_graph_policy_proposal_fixture,
+    complex_gerbil_graph_policy_replay_fixture, graph_native_abi_readiness_receipt_fixture,
+    graph_native_abi_requirement_fixture, rejected_graph_policy_proposal_fixture,
 };
 pub use hook::{
     assert_complex_gerbil_hook_policy_receipt, assert_custom_hook_policy_receipt,
@@ -43,9 +43,10 @@ pub use stability::{
     runtime_stability_budget_evidence,
 };
 pub use stream::{
-    ScriptedChunkGate, ScriptedChunkGatePermit, ScriptedGatewayRequestReceipt,
-    ScriptedModelGateway, ScriptedModelStream, ScriptedModelStreamChunk, ScriptedModelStreamEvent,
-    ScriptedStreamReceipt, scripted_stream_gate_evidence,
+    NO_LIVE_LLM_GATE_DENIAL_MESSAGE, NoLiveLlmModelGateway, ScriptedChunkGate,
+    ScriptedChunkGatePermit, ScriptedGatewayRequestReceipt, ScriptedModelGateway,
+    ScriptedModelStream, ScriptedModelStreamChunk, ScriptedModelStreamEvent, ScriptedStreamReceipt,
+    scripted_stream_gate_evidence,
 };
 pub use sub_agent_scenario::{
     DeterministicRoutedSubAgentExecutionReceipt, DeterministicSubAgentScenarioFixture,

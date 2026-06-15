@@ -5,12 +5,16 @@ use std::fmt::{self, Formatter};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
-use marlin_agent_harness_types::{HarnessEvidence, HarnessEvidenceKind};
+use marlin_agent_harness_types::{AgentHarnessEvidence, AgentHarnessEvidenceKind};
 use marlin_agent_protocol::{
     ModelGateway, ModelGatewayCompletionResponse, ModelGatewayError, ModelGatewayFuture,
     ModelGatewayRequest, ModelGatewayResult, ModelGatewayTransport,
 };
 use tokio::sync::Semaphore;
+
+/// Stable denial returned when no-LLM tests attempt to cross the live gateway boundary.
+pub const NO_LIVE_LLM_GATE_DENIAL_MESSAGE: &str =
+    "live LLM gateway disabled by no-LLM runtime replay policy";
 
 /// Deterministic test gate for scripted stream chunk delivery.
 #[derive(Clone, Debug)]
@@ -184,7 +188,7 @@ pub fn scripted_stream_gate_evidence(
     stream_id: impl Into<String>,
     receipt: &ScriptedStreamReceipt,
     gate: &ScriptedChunkGate,
-) -> HarnessEvidence {
+) -> AgentHarnessEvidence {
     let stream_id = stream_id.into();
     let gate_sequences = receipt
         .gate_sequences
@@ -202,8 +206,8 @@ pub fn scripted_stream_gate_evidence(
         receipt.failed,
     );
 
-    HarnessEvidence::present(
-        HarnessEvidenceKind::Runtime,
+    AgentHarnessEvidence::present(
+        AgentHarnessEvidenceKind::Runtime,
         format!("scripted-stream-gate:{stream_id}"),
     )
     .with_detail(detail)
@@ -230,6 +234,54 @@ impl ScriptedGatewayRequestReceipt {
             has_options: request.options().is_some(),
             transport: request.transport().clone(),
         }
+    }
+}
+
+/// Explicit no-LLM `ModelGateway` guard for replay and harness tests.
+#[derive(Clone, Default)]
+pub struct NoLiveLlmModelGateway {
+    denied_requests: Arc<Mutex<Vec<ScriptedGatewayRequestReceipt>>>,
+}
+
+impl fmt::Debug for NoLiveLlmModelGateway {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("NoLiveLlmModelGateway")
+            .field("denied_request_count", &self.denied_requests().len())
+            .finish()
+    }
+}
+
+impl NoLiveLlmModelGateway {
+    /// Creates a no-LLM gateway guard with no denied requests yet.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Returns captured request receipts denied by this guard.
+    pub fn denied_requests(&self) -> Vec<ScriptedGatewayRequestReceipt> {
+        self.denied_requests
+            .lock()
+            .expect("no-live-LLM gateway request lock poisoned")
+            .clone()
+    }
+}
+
+impl ModelGateway for NoLiveLlmModelGateway {
+    fn complete(
+        &self,
+        request: ModelGatewayRequest,
+    ) -> ModelGatewayFuture<ModelGatewayResult<ModelGatewayCompletionResponse>> {
+        self.denied_requests
+            .lock()
+            .expect("no-live-LLM gateway request lock poisoned")
+            .push(ScriptedGatewayRequestReceipt::from_request(&request));
+
+        Box::pin(async {
+            Err(ModelGatewayError::Completion(
+                NO_LIVE_LLM_GATE_DENIAL_MESSAGE.to_owned(),
+            ))
+        })
     }
 }
 

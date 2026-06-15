@@ -3,7 +3,7 @@
 
 package: marlin
 
-(import :clan/poo/object
+(import (only-in :clan/poo/object .get .o)
         :marlin/deck-runtime-extension-catalog
         :marlin/deck-runtime-script
         :marlin/deck-runtime-user-option)

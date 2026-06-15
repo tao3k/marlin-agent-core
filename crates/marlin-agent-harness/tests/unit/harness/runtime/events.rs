@@ -1,6 +1,8 @@
 use std::time::Duration;
 
-use marlin_agent_harness::{AgentHarness, HarnessGraphBuilder, HarnessRuntime, HarnessScenario};
+use marlin_agent_harness::{
+    AgentHarness, AgentHarnessGraphBuilder, AgentHarnessRuntime, AgentHarnessScenario,
+};
 use marlin_agent_kernel::{
     GraphLoopExecutionRequest, GraphLoopExecutionStatus, TokioGraphLoopKernel,
 };
@@ -10,15 +12,15 @@ use super::support::{EventfulExecutor, QuietExecutor};
 
 #[tokio::test]
 async fn harness_execution_report_captures_runtime_events() {
-    let scenario = HarnessScenario::new("eventful")
+    let scenario = AgentHarnessScenario::new("eventful")
         .with_step(AgentScenarioStep::new("run").expecting_event_topic("test.harness"));
-    let graph = HarnessGraphBuilder::new("graph")
+    let graph = AgentHarnessGraphBuilder::new("graph")
         .node("node-1", "eventful")
         .build();
     let request = GraphLoopExecutionRequest::new("run", graph);
     let kernel =
         TokioGraphLoopKernel::new("run", "graph").with_executor("eventful", EventfulExecutor);
-    let mut harness = HarnessRuntime::new(16);
+    let mut harness = AgentHarnessRuntime::new(16);
 
     let report = harness.execute_graph(&scenario, &kernel, request).await;
     let evaluated = AgentHarness::evaluate_execution_report(&scenario, &report);
@@ -39,13 +41,13 @@ async fn harness_execution_report_drain_has_no_idle_timeout_floor() {
     const RUN_COUNT: u32 = 128;
     const PER_RUN_DURATION_BUDGET: Duration = Duration::from_millis(2);
 
-    let scenario = HarnessScenario::new("event-drain-no-idle-timeout");
-    let mut harness = HarnessRuntime::new(16);
+    let scenario = AgentHarnessScenario::new("event-drain-no-idle-timeout");
+    let mut harness = AgentHarnessRuntime::new(16);
     let mut total_duration = Duration::ZERO;
 
     for run_index in 0..RUN_COUNT {
         let run_id = format!("run-{run_index}");
-        let graph = HarnessGraphBuilder::new("graph")
+        let graph = AgentHarnessGraphBuilder::new("graph")
             .node("node-1", "quiet")
             .build();
         let request = GraphLoopExecutionRequest::new(run_id.clone(), graph);

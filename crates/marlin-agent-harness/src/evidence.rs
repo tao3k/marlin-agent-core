@@ -5,17 +5,18 @@ use std::collections::BTreeSet;
 use marlin_agent_protocol::{AgentEvent, AgentEventTopic, AgentSpanName};
 
 use crate::{
-    HarnessEvidence, HarnessEvidenceGraph, HarnessEvidenceGraphEdge, HarnessEvidenceGraphEdgeKind,
-    HarnessEvidenceGraphNode, HarnessEvidenceGraphNodeKind, HarnessEvidenceKind, HarnessScenario,
-    HarnessScenarioContract, runtime::HarnessExecutionReport,
+    AgentHarnessEvidence, AgentHarnessEvidenceGraph, AgentHarnessEvidenceGraphEdge,
+    AgentHarnessEvidenceGraphEdgeKind, AgentHarnessEvidenceGraphNode,
+    AgentHarnessEvidenceGraphNodeKind, AgentHarnessEvidenceKind, AgentHarnessScenario,
+    AgentHarnessScenarioContract, runtime::AgentHarnessExecutionReport,
 };
 
 /// Result of validating a scenario transcript and evidence set.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AgentHarnessReport {
     pub scenario_id: String,
-    pub evidence: Vec<HarnessEvidence>,
-    pub evidence_graph: HarnessEvidenceGraph,
+    pub evidence: Vec<AgentHarnessEvidence>,
+    pub evidence_graph: AgentHarnessEvidenceGraph,
     pub diagnostics: Vec<String>,
 }
 
@@ -31,26 +32,26 @@ pub struct AgentHarness;
 
 impl AgentHarness {
     pub fn evaluate(
-        scenario: &HarnessScenario,
+        scenario: &AgentHarnessScenario,
         events: &[AgentEvent],
-        evidence: &[HarnessEvidence],
+        evidence: &[AgentHarnessEvidence],
     ) -> AgentHarnessReport {
         Self::evaluate_with_span_names(scenario, events, evidence, &BTreeSet::new())
     }
 
     pub fn evaluate_contract(
-        contract: &HarnessScenarioContract,
+        contract: &AgentHarnessScenarioContract,
         events: &[AgentEvent],
-        evidence: &[HarnessEvidence],
+        evidence: &[AgentHarnessEvidence],
     ) -> AgentHarnessReport {
         let report = Self::evaluate(&contract.scenario, events, evidence);
         append_contract_schema_diagnostic(contract, report)
     }
 
     fn evaluate_with_span_names(
-        scenario: &HarnessScenario,
+        scenario: &AgentHarnessScenario,
         events: &[AgentEvent],
-        evidence: &[HarnessEvidence],
+        evidence: &[AgentHarnessEvidence],
         span_names: &BTreeSet<AgentSpanName>,
     ) -> AgentHarnessReport {
         let present_evidence = evidence
@@ -70,14 +71,14 @@ impl AgentHarness {
         AgentHarnessReport {
             scenario_id: scenario.id().to_owned(),
             evidence: evidence.to_vec(),
-            evidence_graph: build_harness_evidence_graph(scenario, evidence),
+            evidence_graph: build_agent_harness_evidence_graph(scenario, evidence),
             diagnostics,
         }
     }
 
     pub fn evaluate_execution_report(
-        scenario: &HarnessScenario,
-        report: &HarnessExecutionReport,
+        scenario: &AgentHarnessScenario,
+        report: &AgentHarnessExecutionReport,
     ) -> AgentHarnessReport {
         let span_names = report
             .span_names
@@ -89,31 +90,31 @@ impl AgentHarness {
     }
 
     pub fn evaluate_contract_execution_report(
-        contract: &HarnessScenarioContract,
-        report: &HarnessExecutionReport,
+        contract: &AgentHarnessScenarioContract,
+        report: &AgentHarnessExecutionReport,
     ) -> AgentHarnessReport {
         let report = Self::evaluate_execution_report(&contract.scenario, report);
         append_contract_schema_diagnostic(contract, report)
     }
 }
 
-fn build_harness_evidence_graph(
-    scenario: &HarnessScenario,
-    evidence: &[HarnessEvidence],
-) -> HarnessEvidenceGraph {
+fn build_agent_harness_evidence_graph(
+    scenario: &AgentHarnessScenario,
+    evidence: &[AgentHarnessEvidence],
+) -> AgentHarnessEvidenceGraph {
     let intent_node_id = "intent:scenario".to_owned();
     let intent_detail = scenario
         .description()
         .map(str::to_owned)
         .unwrap_or_else(|| "scenario contract".to_owned());
-    let mut graph = HarnessEvidenceGraph::from_harness_evidence(
+    let mut graph = AgentHarnessEvidenceGraph::from_agent_harness_evidence(
         format!("scenario:{}", scenario.id()),
         evidence,
     )
     .with_node(
-        HarnessEvidenceGraphNode::present(
+        AgentHarnessEvidenceGraphNode::present(
             intent_node_id.clone(),
-            HarnessEvidenceGraphNodeKind::HumanIntent,
+            AgentHarnessEvidenceGraphNodeKind::HumanIntent,
             scenario.id(),
         )
         .with_detail(intent_detail),
@@ -122,19 +123,19 @@ fn build_harness_evidence_graph(
     for (index, fact) in evidence.iter().enumerate() {
         let evidence_node_id = format!("evidence:{index}");
         graph = graph.with_edge(
-            HarnessEvidenceGraphEdge::new(
+            AgentHarnessEvidenceGraphEdge::new(
                 intent_node_id.clone(),
                 evidence_node_id.clone(),
-                HarnessEvidenceGraphEdgeKind::Requires,
+                AgentHarnessEvidenceGraphEdgeKind::Requires,
             )
             .with_detail("scenario intent requires this evidence fact"),
         );
         if fact.present {
             graph = graph.with_edge(
-                HarnessEvidenceGraphEdge::new(
+                AgentHarnessEvidenceGraphEdge::new(
                     evidence_node_id,
                     intent_node_id.clone(),
-                    HarnessEvidenceGraphEdgeKind::Supports,
+                    AgentHarnessEvidenceGraphEdgeKind::Supports,
                 )
                 .with_detail("present evidence supports the scenario intent"),
             );
@@ -145,7 +146,7 @@ fn build_harness_evidence_graph(
 }
 
 fn append_contract_schema_diagnostic(
-    contract: &HarnessScenarioContract,
+    contract: &AgentHarnessScenarioContract,
     mut report: AgentHarnessReport,
 ) -> AgentHarnessReport {
     if !contract.is_supported_schema() {
@@ -162,8 +163,8 @@ fn append_contract_schema_diagnostic(
 }
 
 fn missing_evidence_diagnostics(
-    scenario: &HarnessScenario,
-    present_evidence: &BTreeSet<HarnessEvidenceKind>,
+    scenario: &AgentHarnessScenario,
+    present_evidence: &BTreeSet<AgentHarnessEvidenceKind>,
 ) -> Vec<String> {
     scenario
         .expected_evidence
@@ -174,7 +175,7 @@ fn missing_evidence_diagnostics(
 }
 
 fn missing_event_diagnostics(
-    scenario: &HarnessScenario,
+    scenario: &AgentHarnessScenario,
     event_topics: &BTreeSet<AgentEventTopic>,
 ) -> Vec<String> {
     scenario
@@ -195,7 +196,7 @@ fn missing_event_diagnostics(
 }
 
 fn missing_span_diagnostics(
-    scenario: &HarnessScenario,
+    scenario: &AgentHarnessScenario,
     span_names: &BTreeSet<AgentSpanName>,
 ) -> Vec<String> {
     scenario

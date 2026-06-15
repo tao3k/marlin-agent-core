@@ -10,8 +10,7 @@ pub const AGENT_HARNESS_PERFORMANCE_EVIDENCE_BASELINE: &str = "baseline";
 /// Detail key for the accepted regression threshold.
 pub const AGENT_HARNESS_PERFORMANCE_EVIDENCE_REGRESSION_THRESHOLD: &str = "regression_threshold";
 /// Detail key for latency or throughput observations.
-pub const AGENT_HARNESS_PERFORMANCE_EVIDENCE_LATENCY_OR_THROUGHPUT: &str =
-    "latency_or_throughput";
+pub const AGENT_HARNESS_PERFORMANCE_EVIDENCE_LATENCY_OR_THROUGHPUT: &str = "latency_or_throughput";
 /// Detail key for allocation profile observations.
 pub const AGENT_HARNESS_PERFORMANCE_EVIDENCE_ALLOCATION_PROFILE: &str = "allocation_profile";
 /// Detail key for the durable performance profile artifact.

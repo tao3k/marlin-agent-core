@@ -1,4 +1,6 @@
-use marlin_agent_harness::{AgentHarness, HarnessEvidenceKind, HarnessRuntime, HarnessScenario};
+use marlin_agent_harness::{
+    AgentHarness, AgentHarnessEvidenceKind, AgentHarnessRuntime, AgentHarnessScenario,
+};
 use marlin_agent_kernel::{
     GraphLoopExecutionStatus, GraphNodeExecutionReceipt, GraphNodeExecutor, GraphNodeInvocation,
     TokioGraphLoopKernel,
@@ -22,9 +24,9 @@ fn harness_consumes_test_support_graph_policy_proposal_compilation() {
     assert!(accepted.compilation().request.is_some());
     assert!(rejected.compilation().request.is_none());
 
-    let scenario = HarnessScenario::new("graph-policy-proposal")
-        .expecting_evidence(HarnessEvidenceKind::Visibility);
-    let mut harness = HarnessRuntime::new(16);
+    let scenario = AgentHarnessScenario::new("graph-policy-proposal")
+        .expecting_evidence(AgentHarnessEvidenceKind::Visibility);
+    let mut harness = AgentHarnessRuntime::new(16);
 
     harness.record_graph_policy_proposal_visibility(&accepted.compilation().receipt);
     harness.record_graph_policy_proposal_visibility(&rejected.compilation().receipt);
@@ -52,8 +54,8 @@ fn harness_consumes_test_support_graph_policy_proposal_compilation() {
 async fn harness_execution_report_carries_graph_policy_visibility_evidence() {
     let fixture = accepted_graph_policy_proposal_fixture();
     assert_accepted_graph_policy_proposal_fixture(&fixture);
-    let scenario = HarnessScenario::new("graph-policy-proposal-execution")
-        .expecting_evidence(HarnessEvidenceKind::Visibility);
+    let scenario = AgentHarnessScenario::new("graph-policy-proposal-execution")
+        .expecting_evidence(AgentHarnessEvidenceKind::Visibility);
     let request = fixture
         .compilation()
         .request
@@ -64,7 +66,7 @@ async fn harness_execution_report_carries_graph_policy_visibility_evidence() {
         fixture.proposal().proposed_graph.graph_id.clone(),
     )
     .with_executor("provider.stream", QuietGraphPolicyExecutor);
-    let mut harness = HarnessRuntime::new(16);
+    let mut harness = AgentHarnessRuntime::new(16);
 
     harness.record_graph_policy_proposal_visibility(&fixture.compilation().receipt);
 
@@ -97,8 +99,8 @@ async fn harness_executes_gerbil_ir_graph_policy_with_budget_without_live_llm() 
     let fixture = accepted_gerbil_ir_graph_policy_proposal_fixture();
     assert_accepted_gerbil_ir_graph_policy_proposal_fixture(&fixture);
 
-    let scenario = HarnessScenario::new("gerbil-ir-graph-policy-execution")
-        .expecting_evidence(HarnessEvidenceKind::Visibility);
+    let scenario = AgentHarnessScenario::new("gerbil-ir-graph-policy-execution")
+        .expecting_evidence(AgentHarnessEvidenceKind::Visibility);
     let request = budgeted_graph_policy_execution_request_fixture(&fixture, 2);
     assert_budgeted_graph_policy_execution_request(&request, 2);
 
@@ -108,7 +110,7 @@ async fn harness_executes_gerbil_ir_graph_policy_with_budget_without_live_llm() 
     )
     .with_executor("gerbil.rank", QuietGraphPolicyExecutor)
     .with_executor("kernel.dispatch", QuietGraphPolicyExecutor);
-    let mut harness = HarnessRuntime::new(16);
+    let mut harness = AgentHarnessRuntime::new(16);
     harness.record_graph_policy_proposal_visibility(&fixture.compilation().receipt);
 
     let report = harness.execute_graph(&scenario, &kernel, request).await;
@@ -129,8 +131,8 @@ async fn harness_preserves_gerbil_ir_graph_policy_visibility_when_budget_fails_w
     let fixture = accepted_gerbil_ir_graph_policy_proposal_fixture();
     assert_accepted_gerbil_ir_graph_policy_proposal_fixture(&fixture);
 
-    let scenario = HarnessScenario::new("gerbil-ir-graph-policy-budget-failure")
-        .expecting_evidence(HarnessEvidenceKind::Visibility);
+    let scenario = AgentHarnessScenario::new("gerbil-ir-graph-policy-budget-failure")
+        .expecting_evidence(AgentHarnessEvidenceKind::Visibility);
     let request = budgeted_graph_policy_execution_request_fixture(&fixture, 1);
     assert_budgeted_graph_policy_execution_request(&request, 1);
 
@@ -140,7 +142,7 @@ async fn harness_preserves_gerbil_ir_graph_policy_visibility_when_budget_fails_w
     )
     .with_executor("gerbil.rank", QuietGraphPolicyExecutor)
     .with_executor("kernel.dispatch", QuietGraphPolicyExecutor);
-    let mut harness = HarnessRuntime::new(16);
+    let mut harness = AgentHarnessRuntime::new(16);
     harness.record_graph_policy_proposal_visibility(&fixture.compilation().receipt);
 
     let report = harness.execute_graph(&scenario, &kernel, request).await;

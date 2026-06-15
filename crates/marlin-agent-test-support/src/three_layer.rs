@@ -5,7 +5,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use marlin_agent_harness_types::HarnessEvidenceKind;
+use marlin_agent_harness_types::AgentHarnessEvidenceKind;
 use marlin_agent_protocol::{
     ModelEndpoint, ModelGateway, ModelGatewayError, ModelGatewayRequest, ModelGatewayTransport,
     user_gateway_message,
@@ -279,7 +279,10 @@ fn assert_graph_policy_runtime_boundary() -> String {
     let graph_policy = accepted_graph_policy_proposal_fixture();
     assert_accepted_graph_policy_proposal_fixture(&graph_policy);
     let graph_policy_evidence = graph_policy.visibility_evidence();
-    assert_eq!(graph_policy_evidence.kind, HarnessEvidenceKind::Visibility);
+    assert_eq!(
+        graph_policy_evidence.kind,
+        AgentHarnessEvidenceKind::Visibility
+    );
 
     graph_policy_evidence.subject
 }

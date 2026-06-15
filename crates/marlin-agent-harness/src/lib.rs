@@ -18,30 +18,34 @@ mod release_visibility;
 mod runtime;
 mod trace;
 
-pub use assertion::{HarnessAssertionError, assert_evidence_kinds};
+pub use assertion::{AgentHarnessAssertionError, assert_agent_harness_evidence_kinds};
 pub use evidence::{AgentHarness, AgentHarnessReport};
 pub use evidence_graph::{
-    HARNESS_EVIDENCE_GRAPH_SCHEMA_ID, HarnessEvidenceGraph, HarnessEvidenceGraphEdge,
-    HarnessEvidenceGraphEdgeKind, HarnessEvidenceGraphNode, HarnessEvidenceGraphNodeKind,
-    HarnessEvidenceGraphSummary,
+    AGENT_HARNESS_EVIDENCE_GRAPH_SCHEMA_ID, AgentHarnessEvidenceGraph,
+    AgentHarnessEvidenceGraphEdge, AgentHarnessEvidenceGraphEdgeKind,
+    AgentHarnessEvidenceGraphNode, AgentHarnessEvidenceGraphNodeKind,
+    AgentHarnessEvidenceGraphSummary,
 };
 pub use fakes::{
     StaticHookRuntime, StaticProviderRuntime, StaticSubAgentRuntime, StaticToolRuntime,
 };
-pub use graph::HarnessGraphBuilder;
+pub use graph::AgentHarnessGraphBuilder;
 pub use marlin_agent_harness_types::{
-    GRAPH_POLICY_PROPOSAL_VISIBILITY_SUBJECT_PREFIX,
-    HARNESS_PERFORMANCE_EVIDENCE_ALLOCATION_PROFILE, HARNESS_PERFORMANCE_EVIDENCE_BASELINE,
-    HARNESS_PERFORMANCE_EVIDENCE_BENCHMARK_COMMAND, HARNESS_PERFORMANCE_EVIDENCE_KEYS,
-    HARNESS_PERFORMANCE_EVIDENCE_LATENCY_OR_THROUGHPUT,
-    HARNESS_PERFORMANCE_EVIDENCE_PROFILE_ARTIFACT,
-    HARNESS_PERFORMANCE_EVIDENCE_REGRESSION_THRESHOLD, HARNESS_SCENARIO_CONTRACT_SCHEMA_ID,
-    HARNESS_STABILITY_EVIDENCE_ARTIFACT, HARNESS_STABILITY_EVIDENCE_COMMAND,
-    HARNESS_STABILITY_EVIDENCE_DETERMINISM, HARNESS_STABILITY_EVIDENCE_ITERATION_WINDOW,
-    HARNESS_STABILITY_EVIDENCE_KEYS, HARNESS_STABILITY_EVIDENCE_LATENCY_DISTRIBUTION,
-    HARNESS_STABILITY_EVIDENCE_RESOURCE_DELTA, HARNESS_STABILITY_EVIDENCE_STATE_GROWTH,
-    HarnessEvidence, HarnessEvidenceKind, HarnessPerformanceEvidence, HarnessScenario,
-    HarnessScenarioContract, HarnessStabilityEvidence, graph_policy_proposal_visibility_evidence,
+    AGENT_HARNESS_GRAPH_POLICY_PROPOSAL_VISIBILITY_SUBJECT_PREFIX,
+    AGENT_HARNESS_PERFORMANCE_EVIDENCE_ALLOCATION_PROFILE,
+    AGENT_HARNESS_PERFORMANCE_EVIDENCE_BASELINE,
+    AGENT_HARNESS_PERFORMANCE_EVIDENCE_BENCHMARK_COMMAND, AGENT_HARNESS_PERFORMANCE_EVIDENCE_KEYS,
+    AGENT_HARNESS_PERFORMANCE_EVIDENCE_LATENCY_OR_THROUGHPUT,
+    AGENT_HARNESS_PERFORMANCE_EVIDENCE_PROFILE_ARTIFACT,
+    AGENT_HARNESS_PERFORMANCE_EVIDENCE_REGRESSION_THRESHOLD,
+    AGENT_HARNESS_SCENARIO_CONTRACT_SCHEMA_ID, AGENT_HARNESS_STABILITY_EVIDENCE_ARTIFACT,
+    AGENT_HARNESS_STABILITY_EVIDENCE_COMMAND, AGENT_HARNESS_STABILITY_EVIDENCE_DETERMINISM,
+    AGENT_HARNESS_STABILITY_EVIDENCE_ITERATION_WINDOW, AGENT_HARNESS_STABILITY_EVIDENCE_KEYS,
+    AGENT_HARNESS_STABILITY_EVIDENCE_LATENCY_DISTRIBUTION,
+    AGENT_HARNESS_STABILITY_EVIDENCE_RESOURCE_DELTA, AGENT_HARNESS_STABILITY_EVIDENCE_STATE_GROWTH,
+    AgentHarnessEvidence, AgentHarnessEvidenceKind, AgentHarnessPerformanceEvidence,
+    AgentHarnessScenario, AgentHarnessScenarioContract, AgentHarnessStabilityEvidence,
+    agent_harness_graph_policy_proposal_visibility_evidence,
 };
 pub use release_visibility::{
     ReleaseGateExecutionReceipt, ReleaseGateExecutionStatus,
@@ -50,7 +54,8 @@ pub use release_visibility::{
     release_topology_visibility_evidence, release_visibility_evidence,
 };
 pub use runtime::{
-    HarnessExecutionReport, HarnessRuntime, runtime_environment_visibility_evidence,
-    working_copy_isolation_visibility_evidence,
+    AgentHarnessExecutionReport, AgentHarnessExecutionSummary, AgentHarnessRuntime,
+    agent_harness_runtime_environment_visibility_evidence,
+    agent_harness_working_copy_isolation_visibility_evidence,
 };
 pub use trace::TraceRecorder;

@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use marlin_agent_harness_types::{HARNESS_STABILITY_EVIDENCE_KEYS, HarnessEvidenceKind};
+use marlin_agent_harness_types::{AGENT_HARNESS_STABILITY_EVIDENCE_KEYS, AgentHarnessEvidenceKind};
 use marlin_agent_test_support::{
     RuntimeStabilityEvidenceInput, runtime_stability_budget_diagnostics,
     runtime_stability_budget_evidence,
@@ -12,12 +12,12 @@ fn runtime_stability_budget_helper_projects_stability_evidence() {
     let detail = evidence.detail.as_deref().expect("stability detail");
 
     assert!(evidence.present);
-    assert_eq!(evidence.kind, HarnessEvidenceKind::Stability);
+    assert_eq!(evidence.kind, AgentHarnessEvidenceKind::Stability);
     assert_eq!(
         evidence.subject,
         "crates/marlin-agent-harness/src/runtime.rs"
     );
-    for key in HARNESS_STABILITY_EVIDENCE_KEYS {
+    for key in AGENT_HARNESS_STABILITY_EVIDENCE_KEYS {
         assert!(detail.contains(key), "missing stability evidence key {key}");
     }
     for observation in [

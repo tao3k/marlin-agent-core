@@ -1,4 +1,4 @@
-use marlin_agent_harness::HarnessEvidenceKind;
+use marlin_agent_harness::AgentHarnessEvidenceKind;
 use marlin_agent_test_support::{
     LibtestCommandSpec, LibtestTextImportConfig, TestRunLayer,
     assert_deterministic_test_run_evidence, capture_workspace_libtest_commands,
@@ -13,7 +13,7 @@ fn harness_consumes_test_support_test_run_evidence_receipt() {
     assert_eq!(receipt.non_live_failed_count(), 0);
     assert_eq!(receipt.ignored_live_external_count(), 1);
     assert_eq!(
-        receipt.evidence_count_by_kind(HarnessEvidenceKind::Visibility),
+        receipt.evidence_count_by_kind(AgentHarnessEvidenceKind::Visibility),
         2
     );
     assert!(receipt.render_summary().contains("non_live_integration"));

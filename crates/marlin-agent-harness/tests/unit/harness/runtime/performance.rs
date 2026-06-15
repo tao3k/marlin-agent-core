@@ -1,9 +1,9 @@
 use std::time::Duration;
 
 use marlin_agent_harness::{
-    AgentHarness, HARNESS_PERFORMANCE_EVIDENCE_KEYS, HARNESS_STABILITY_EVIDENCE_KEYS,
-    HarnessEvidence, HarnessEvidenceKind, HarnessGraphBuilder, HarnessPerformanceEvidence,
-    HarnessRuntime, HarnessScenario,
+    AGENT_HARNESS_PERFORMANCE_EVIDENCE_KEYS, AGENT_HARNESS_STABILITY_EVIDENCE_KEYS, AgentHarness,
+    AgentHarnessEvidence, AgentHarnessEvidenceKind, AgentHarnessGraphBuilder,
+    AgentHarnessPerformanceEvidence, AgentHarnessRuntime, AgentHarnessScenario,
 };
 use marlin_agent_kernel::{GraphLoopExecutionRequest, TokioGraphLoopKernel};
 use marlin_agent_protocol::GraphLoopExecutionStatus;
@@ -24,16 +24,16 @@ use tempfile::Builder;
 
 #[tokio::test]
 async fn harness_execution_report_carries_performance_benchmark_evidence() {
-    let scenario =
-        HarnessScenario::new("bench").expecting_evidence(HarnessEvidenceKind::Performance);
-    let graph = HarnessGraphBuilder::new("graph")
+    let scenario = AgentHarnessScenario::new("bench")
+        .expecting_evidence(AgentHarnessEvidenceKind::Performance);
+    let graph = AgentHarnessGraphBuilder::new("graph")
         .node("node-1", "eventful")
         .build();
     let request = GraphLoopExecutionRequest::new("run", graph);
     let kernel =
         TokioGraphLoopKernel::new("run", "graph").with_executor("eventful", EventfulExecutor);
-    let mut harness = HarnessRuntime::new(16);
-    let performance_evidence: HarnessEvidence = HarnessPerformanceEvidence {
+    let mut harness = AgentHarnessRuntime::new(16);
+    let performance_evidence: AgentHarnessEvidence = AgentHarnessPerformanceEvidence {
         subject: "src/runtime.rs".to_owned(),
         benchmark_command: "cargo bench -p marlin-agent-harness".to_owned(),
         baseline: "p95=10ms".to_owned(),
@@ -54,9 +54,12 @@ async fn harness_execution_report_carries_performance_benchmark_evidence() {
         .expect("performance detail");
 
     assert!(report.assertion.is_none());
-    assert_eq!(report.evidence[0].kind, HarnessEvidenceKind::Performance);
+    assert_eq!(
+        report.evidence[0].kind,
+        AgentHarnessEvidenceKind::Performance
+    );
     assert!(evaluated.is_success());
-    for key in HARNESS_PERFORMANCE_EVIDENCE_KEYS {
+    for key in AGENT_HARNESS_PERFORMANCE_EVIDENCE_KEYS {
         assert!(
             detail.contains(key),
             "missing performance evidence key {key}"
@@ -89,7 +92,7 @@ fn harness_performance_evidence_covers_resident_gerbil_runtime_process_plan() {
     let shutdown = resident
         .shutdown()
         .expect("resident runtime graceful shutdown");
-    let performance_evidence: HarnessEvidence = HarnessPerformanceEvidence {
+    let performance_evidence: AgentHarnessEvidence = AgentHarnessPerformanceEvidence {
         subject: "crates/marlin-gerbil-scheme/src/resident_runtime.rs".to_owned(),
         benchmark_command: "cargo test -p marlin-gerbil-scheme --test unit_test resident_runtime"
             .to_owned(),
@@ -133,7 +136,7 @@ fn harness_performance_evidence_covers_resident_gerbil_runtime_process_plan() {
         GerbilResidentRuntimeShutdownStatus::AlreadyExited
             | GerbilResidentRuntimeShutdownStatus::Terminated
     ));
-    for key in HARNESS_PERFORMANCE_EVIDENCE_KEYS {
+    for key in AGENT_HARNESS_PERFORMANCE_EVIDENCE_KEYS {
         assert!(
             detail.contains(key),
             "missing performance evidence key {key}"
@@ -146,16 +149,16 @@ fn harness_performance_evidence_covers_resident_gerbil_runtime_process_plan() {
 
 #[tokio::test]
 async fn harness_execution_report_reports_missing_runtime_stability_evidence() {
-    let execution_scenario = HarnessScenario::new("runtime-stability-missing-evidence");
-    let validation_scenario = HarnessScenario::new("runtime-stability-missing-evidence")
-        .expecting_evidence(HarnessEvidenceKind::Stability);
-    let graph = HarnessGraphBuilder::new("graph")
+    let execution_scenario = AgentHarnessScenario::new("runtime-stability-missing-evidence");
+    let validation_scenario = AgentHarnessScenario::new("runtime-stability-missing-evidence")
+        .expecting_evidence(AgentHarnessEvidenceKind::Stability);
+    let graph = AgentHarnessGraphBuilder::new("graph")
         .node("node-1", "eventful")
         .build();
     let request = GraphLoopExecutionRequest::new("run", graph);
     let kernel =
         TokioGraphLoopKernel::new("run", "graph").with_executor("eventful", EventfulExecutor);
-    let mut harness = HarnessRuntime::new(16);
+    let mut harness = AgentHarnessRuntime::new(16);
 
     let report = harness
         .execute_graph(&execution_scenario, &kernel, request)
@@ -206,16 +209,16 @@ async fn harness_execution_report_carries_runtime_stability_budget_evidence() {
     const EVENT_BUDGET: usize = 5;
     const SPAN_BUDGET: usize = 32;
 
-    let execution_scenario = HarnessScenario::new("runtime-stability-gate");
-    let validation_scenario = HarnessScenario::new("runtime-stability-gate")
-        .expecting_evidence(HarnessEvidenceKind::Stability);
-    let graph = HarnessGraphBuilder::new("graph")
+    let execution_scenario = AgentHarnessScenario::new("runtime-stability-gate");
+    let validation_scenario = AgentHarnessScenario::new("runtime-stability-gate")
+        .expecting_evidence(AgentHarnessEvidenceKind::Stability);
+    let graph = AgentHarnessGraphBuilder::new("graph")
         .node("node-1", "eventful")
         .build();
     let request = GraphLoopExecutionRequest::new("run", graph);
     let kernel =
         TokioGraphLoopKernel::new("run", "graph").with_executor("eventful", EventfulExecutor);
-    let mut harness = HarnessRuntime::new(16);
+    let mut harness = AgentHarnessRuntime::new(16);
 
     let mut report = harness
         .execute_graph(&execution_scenario, &kernel, request)
@@ -276,12 +279,12 @@ async fn harness_execution_report_carries_runtime_stability_budget_evidence() {
     let detail = report
         .evidence
         .iter()
-        .find(|evidence| evidence.kind == HarnessEvidenceKind::Stability)
+        .find(|evidence| evidence.kind == AgentHarnessEvidenceKind::Stability)
         .and_then(|evidence| evidence.detail.as_deref())
         .expect("stability detail");
 
     assert!(evaluated.is_success());
-    for key in HARNESS_STABILITY_EVIDENCE_KEYS {
+    for key in AGENT_HARNESS_STABILITY_EVIDENCE_KEYS {
         assert!(detail.contains(key), "missing stability evidence key {key}");
     }
     for expected_observation in [

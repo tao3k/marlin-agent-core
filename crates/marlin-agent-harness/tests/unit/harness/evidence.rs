@@ -1,27 +1,28 @@
 use marlin_agent_harness::{
-    AgentHarness, HarnessEvidence, HarnessEvidenceGraphEdgeKind, HarnessEvidenceGraphNodeKind,
-    HarnessEvidenceKind, HarnessScenario, HarnessScenarioContract,
+    AgentHarness, AgentHarnessEvidence, AgentHarnessEvidenceGraphEdgeKind,
+    AgentHarnessEvidenceGraphNodeKind, AgentHarnessEvidenceKind, AgentHarnessScenario,
+    AgentHarnessScenarioContract,
 };
 use marlin_agent_protocol::{AgentEvent, AgentScenarioStep};
 use marlin_agent_runtime::observability;
 
 #[test]
 fn harness_accepts_present_evidence_and_event_topics() {
-    let scenario = HarnessScenario::new("loop")
+    let scenario = AgentHarnessScenario::new("loop")
         .with_step(
             AgentScenarioStep::new("run")
                 .expecting_event_topic(observability::TOPIC_KERNEL_EXECUTION),
         )
-        .expecting_evidence(HarnessEvidenceKind::Runtime);
+        .expecting_evidence(AgentHarnessEvidenceKind::Runtime);
     let events = vec![AgentEvent::new(
         observability::TOPIC_KERNEL_EXECUTION,
         "run started",
     )];
-    let evidence = vec![HarnessEvidence::present(
-        HarnessEvidenceKind::Runtime,
+    let evidence = vec![AgentHarnessEvidence::present(
+        AgentHarnessEvidenceKind::Runtime,
         "tokio",
     )];
-    let contract = HarnessScenarioContract::new(scenario);
+    let contract = AgentHarnessScenarioContract::new(scenario);
 
     let report = AgentHarness::evaluate_contract(&contract, &events, &evidence);
 
@@ -30,20 +31,20 @@ fn harness_accepts_present_evidence_and_event_topics() {
     assert!(
         report
             .evidence_graph
-            .has_node_kind(HarnessEvidenceGraphNodeKind::HumanIntent)
+            .has_node_kind(AgentHarnessEvidenceGraphNodeKind::HumanIntent)
     );
     assert!(
         report
             .evidence_graph
-            .has_node_kind(HarnessEvidenceGraphNodeKind::ExecutionReceipt)
+            .has_node_kind(AgentHarnessEvidenceGraphNodeKind::ExecutionReceipt)
     );
     assert!(report.evidence_graph.edges.iter().any(|edge| {
-        edge.kind == HarnessEvidenceGraphEdgeKind::Requires
+        edge.kind == AgentHarnessEvidenceGraphEdgeKind::Requires
             && edge.from == "intent:scenario"
             && edge.to == "evidence:0"
     }));
     assert!(report.evidence_graph.edges.iter().any(|edge| {
-        edge.kind == HarnessEvidenceGraphEdgeKind::Supports
+        edge.kind == AgentHarnessEvidenceGraphEdgeKind::Supports
             && edge.from == "evidence:0"
             && edge.to == "intent:scenario"
     }));
@@ -51,8 +52,8 @@ fn harness_accepts_present_evidence_and_event_topics() {
 
 #[test]
 fn harness_reports_unsupported_scenario_contract_schema() {
-    let scenario = HarnessScenario::new("loop");
-    let mut contract = HarnessScenarioContract::new(scenario);
+    let scenario = AgentHarnessScenario::new("loop");
+    let mut contract = AgentHarnessScenarioContract::new(scenario);
     contract.schema_id = "marlin.agent.scenario.v0".to_owned();
 
     let report = AgentHarness::evaluate_contract(&contract, &[], &[]);
@@ -65,13 +66,13 @@ fn harness_reports_unsupported_scenario_contract_schema() {
 
 #[test]
 fn harness_reports_missing_evidence_and_event_topics() {
-    let scenario = HarnessScenario::new("loop")
+    let scenario = AgentHarnessScenario::new("loop")
         .with_step(
             AgentScenarioStep::new("run")
                 .expecting_event_topic(observability::TOPIC_KERNEL_EXECUTION)
                 .expecting_span_name(observability::SPAN_HARNESS_EXECUTION),
         )
-        .expecting_evidence(HarnessEvidenceKind::Runtime);
+        .expecting_evidence(AgentHarnessEvidenceKind::Runtime);
 
     let report = AgentHarness::evaluate(&scenario, &[], &[]);
 
@@ -87,6 +88,6 @@ fn harness_reports_missing_evidence_and_event_topics() {
     assert!(
         report
             .evidence_graph
-            .has_node_kind(HarnessEvidenceGraphNodeKind::HumanIntent)
+            .has_node_kind(AgentHarnessEvidenceGraphNodeKind::HumanIntent)
     );
 }

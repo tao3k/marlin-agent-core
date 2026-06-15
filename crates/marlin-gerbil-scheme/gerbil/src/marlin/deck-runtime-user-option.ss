@@ -16,7 +16,7 @@ package: marlin
                  raise-type-error
                  sexp<-)
         (only-in :clan/poo/type String List)
-        :clan/poo/brace)
+        (only-in :clan/poo/brace @method @@method))
 
 (export marlin-deck-runtime-option-schema-kind
         marlin-deck-runtime-option-config-kind
@@ -178,7 +178,7 @@ package: marlin
   table-method-surface:
   '(.ref .foldl .foldr)
   derived-protocol-capability:
-  '(typed-validation sexp-conversion json-conversion equality)
+  '(typed-validation sexp-conversion equality)
   .ref:
   marlin-deck-runtime-option-schema-table-ref
   .foldl:
@@ -200,18 +200,6 @@ package: marlin
       constant: ,(.get x constant)
       owner: ,(.get x owner)
       metadata: ,(.get x metadata)))
-  .json<-:
-  (lambda (x)
-    `((kind . ,(.get x kind))
-      (id . ,(.get x id))
-      (valueType . ,(marlin-deck-runtime-option-type-label (.get x value-type)))
-      (optional . ,(.get x optional?))
-      (hasDefault . ,(.get x has-default?))
-      (default . ,(.get x default))
-      (hasConstant . ,(.get x has-constant?))
-      (constant . ,(.get x constant))
-      (owner . ,(.get x owner))
-      (metadata . ,(.get x metadata))))
   .=?:
   (lambda (left right)
     (and (string=? (.get left id) (.get right id))
@@ -237,7 +225,7 @@ package: marlin
   table-method-surface:
   '(.ref .foldl .foldr)
   derived-protocol-capability:
-  '(typed-validation sexp-conversion json-conversion equality)
+  '(typed-validation sexp-conversion equality)
   .ref:
   marlin-deck-runtime-option-config-table-ref
   .foldl:
@@ -254,13 +242,6 @@ package: marlin
       value: ,(.get x value)
       source-module-id: ,(.get x source-module-id)
       metadata: ,(.get x metadata)))
-  .json<-:
-  (lambda (x)
-    `((kind . ,(.get x kind))
-      (id . ,(.get x id))
-      (value . ,(.get x value))
-      (sourceModuleId . ,(.get x source-module-id))
-      (metadata . ,(.get x metadata))))
   .=?:
   (lambda (left right)
     (and (string=? (.get left id) (.get right id))
@@ -284,7 +265,7 @@ package: marlin
   table-method-surface:
   '(.ref .foldl .foldr)
   derived-protocol-capability:
-  '(typed-validation sexp-conversion json-conversion equality)
+  '(typed-validation sexp-conversion equality)
   .ref:
   marlin-deck-runtime-option-validation-receipt-table-ref
   .foldl:
@@ -302,14 +283,6 @@ package: marlin
       valid?: ,(.get x valid?)
       errors: ,(.get x errors)
       metadata: ,(.get x metadata)))
-  .json<-:
-  (lambda (x)
-    `((kind . ,(.get x kind))
-      (optionId . ,(.get x option-id))
-      (sourceModuleId . ,(.get x source-module-id))
-      (valid . ,(.get x valid?))
-      (errors . ,(.get x errors))
-      (metadata . ,(.get x metadata))))
   .=?:
   (lambda (left right)
     (and (string=? (.get left option-id) (.get right option-id))
