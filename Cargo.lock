@@ -2139,6 +2139,8 @@ dependencies = [
  "marlin-rust-project-harness-policy",
  "marlin-workspace-protocol",
  "rust-lang-project-harness",
+ "serde",
+ "serde_json",
  "tempfile",
  "tokio",
  "tokio-stream",

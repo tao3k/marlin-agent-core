@@ -24,3 +24,32 @@ async fn runtime_event_capture_tees_child_events_to_parent_and_capture_streams()
     assert_eq!(parent_event, RuntimeEvent::new("runtime.test", "observed"));
     assert_eq!(captured_event, parent_event);
 }
+
+#[tokio::test]
+async fn runtime_event_capture_survives_closed_parent_stream() {
+    let (runtime, mut parent_events) = TokioAgentRuntime::new(4);
+    let (capture_runtime, mut captured_events) = runtime.child_runtime_with_event_capture(4);
+
+    parent_events.close();
+    let emit_result = capture_runtime
+        .context()
+        .emit(RuntimeEvent::new(
+            "runtime.test",
+            "captured-after-parent-close",
+        ))
+        .await;
+
+    assert!(
+        emit_result.is_err(),
+        "primary stream closure should remain observable to the emitter"
+    );
+    let captured_event = captured_events
+        .next()
+        .await
+        .expect("capture stream should still receive event");
+
+    assert_eq!(
+        captured_event,
+        RuntimeEvent::new("runtime.test", "captured-after-parent-close")
+    );
+}

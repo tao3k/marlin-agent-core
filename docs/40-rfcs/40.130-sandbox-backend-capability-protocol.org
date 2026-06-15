@@ -1,0 +1,323 @@
+#+TITLE: 40.130 Sandbox Backend Capability Protocol
+#+FILETAGS: :marlin:rfc:sandbox:backend:capability:
+
+* 40.130 Sandbox Backend Capability Protocol
+:PROPERTIES:
+:status: Active
+:owner-crates: marlin-agent-protocol, marlin-agent-runtime, marlin-agent-environment, marlin-agent-harness, marlin-agent-core, marlin-workspace-protocol
+:END:
+
+** Purpose
+Marlin must not hard-code one sandbox implementation. It needs a typed sandbox backend protocol that can switch between local OS sandboxes, Nono, CubeSandbox, and future external sandbox services while preserving fine-grained policy, runtime evidence, and replayable receipts.
+
+This RFC extends [[file:40.70-codex-engineering-baseline.org][40.70 Codex Engineering Lessons Baseline]] and [[file:40.120-project-scoped-agent-graph-runtime.org][40.120 Project-scoped Agent Graph Runtime]]. The design goal is backend choice without semantic drift:
+
+#+begin_example
+Graph/tool execution requirement
+  -> sandbox backend capability query
+  -> backend readiness receipt
+  -> typed policy projection
+  -> sandbox lifecycle or process execution
+  -> denial/resource/network/output receipts
+  -> graph-loop evidence and Org-backed recovery point
+#+end_example
+
+** Source Baseline
+Current upstream evidence as of 2026-06-15:
+
+- Nono advertises zero-setup, zero-latency agent sandboxing with no daemon, container, VM, or disk-space overhead; it supports macOS, Linux, and Windows through WSL2. Its profiles include filesystem scope, network allowlists, hooks, skills, and related policy assets. It also exposes Rust, Python, TypeScript, and Go bindings.
+- CubeSandbox advertises a RustVMM/KVM sandbox service with hardware isolation, E2B SDK compatibility, single-node and cluster deployment, under-60ms sandbox creation, and less-than-5MB memory overhead. Its documented deployment target is x86_64 Linux with KVM/PVM and glibc >= 2.31; CubeCoW snapshot/clone/rollback relies on reflink-based storage, with XFS called out for the writable layer path.
+
+These projects are examples, not normative dependencies. Marlin's contract must support both:
+
+- local kernel-enforced developer sandboxes such as Nono, macOS Seatbelt, Linux Landlock/seccomp, and Windows native backends;
+- server-side hardware-isolated sandboxes such as CubeSandbox, where lifecycle, snapshot, clone, rollback, and density matter more than local zero-setup ergonomics.
+
+** Backend Families
+The initial backend taxonomy is:
+
+#+begin_example
+NativeOsSandbox
+  macOS Seatbelt
+  Linux Landlock/seccomp/bubblewrap
+  Windows restricted/elevated sandbox
+
+NonoLocalSandbox
+  local kernel-enforced profile runner
+  agent-oriented policy/profile registry
+  low-latency local developer default when available
+
+CubeSandboxService
+  remote or local service API
+  RustVMM/KVM microVM isolation
+  snapshot/clone/rollback lifecycle
+  high-density server workload target
+
+ExternalSandboxService
+  user-provided adapter
+  must pass capability/readiness/receipt contracts before use
+#+end_example
+
+No backend family is allowed to become the agent-facing API. The agent-facing API is Marlin's typed sandbox capability protocol.
+
+** Capability Matrix
+Every backend must publish a typed capability matrix before Marlin can select it:
+
+#+begin_example
+SandboxBackendCapabilities
+  backend_id
+  backend_kind
+  adapter_version
+  supported_platforms
+  supported_architectures
+  isolation_kind
+  lifecycle_capabilities
+  filesystem_policy_capabilities
+  network_policy_capabilities
+  process_policy_capabilities
+  secret_policy_capabilities
+  resource_policy_capabilities
+  output_policy_capabilities
+  snapshot_capabilities
+  observability_capabilities
+  denial_receipt_capabilities
+  performance_profile
+  trust_level
+#+end_example
+
+Required matrix dimensions:
+
+- =supported_platforms=: macOS, Linux, WSL2, Windows, remote service, cluster.
+- =supported_architectures=: x86_64, aarch64, or backend-specific constraints.
+- =isolation_kind=: process-kernel, namespace/container, microVM, remote service, hybrid.
+- =lifecycle_capabilities=: spawn, attach, detach, pause, resume, terminate, snapshot, rollback, clone.
+- =filesystem_policy_capabilities=: read roots, write roots, deny read, deny write, read-only subpaths, symlink escape prevention, mount projection, copy-on-write layers.
+- =network_policy_capabilities=: deny, allowlist, proxy route, egress filter, per-sandbox network namespace, inter-sandbox isolation.
+- =process_policy_capabilities=: process group cleanup, seccomp/syscall filters, ptrace/process-VM restrictions, no-new-privs, private desktop/session identity.
+- =secret_policy_capabilities=: explicit injection, deny-by-default secrets, credential broker, audit of secret exposure.
+- =resource_policy_capabilities=: CPU, memory, disk, wall-clock, process count, file descriptor, and network budgets.
+- =output_policy_capabilities=: retained byte caps, streaming delta caps, drain timeout, binary/text output handling.
+- =snapshot_capabilities=: filesystem snapshot, memory snapshot, incremental snapshot, clone, rollback, checkpoint labels.
+- =observability_capabilities=: syscall/path/network denial reasons, lifecycle events, resource usage, backend logs, trace correlation.
+- =denial_receipt_capabilities=: backend-owned denial receipt, inferred denial receipt, unsupported policy receipt.
+
+** Policy Projection
+Marlin owns a backend-neutral policy AST:
+
+#+begin_example
+SandboxPolicy
+  filesystem
+  network
+  process
+  secrets
+  resources
+  output
+  lifecycle
+  observability
+#+end_example
+
+Backends receive projection requests:
+
+#+begin_example
+SandboxPolicyProjectionRequest
+  backend_id
+  project_id
+  workspace_id
+  worktree_id
+  session_id
+  content_anchor
+  policy
+  required_capabilities
+  fallback_policy
+#+end_example
+
+The backend returns a projection receipt:
+
+#+begin_example
+SandboxPolicyProjectionReceipt
+  backend_id
+  supported
+  unsupported_requirements
+  weakened_requirements
+  backend_native_policy_ref
+  trust_level
+  reason
+#+end_example
+
+Policy weakening is never silent. If a backend cannot enforce deny-read, network egress filtering, snapshot rollback, or typed denial receipts, the receipt must say so before execution starts.
+
+** Readiness And Selection
+Backend selection is a graph decision, not an =if platform == linux= branch inside the executor.
+
+#+begin_example
+SandboxBackendReadinessReceipt
+  backend_id
+  ready
+  detected_platform
+  detected_architecture
+  service_endpoint
+  version
+  missing_binaries
+  missing_kernel_features
+  missing_permissions
+  storage_requirements
+  degraded_capabilities
+  performance_profile
+  reason
+#+end_example
+
+The selection planner receives:
+
+#+begin_example
+SandboxSelectionRequest
+  required_capabilities
+  preferred_backends
+  denied_backends
+  project_policy
+  session_policy
+  workload_shape
+#+end_example
+
+Example selection outcomes:
+
+- local macOS developer workflow can prefer =NonoLocalSandbox= or =NativeOsSandbox= with Seatbelt.
+- Linux developer workflow can prefer =NonoLocalSandbox= or =NativeOsSandbox= with Landlock/seccomp/bubblewrap.
+- server workload requiring hardware isolation, clone, and rollback can prefer =CubeSandboxService=.
+- missing x86_64 KVM or XFS requirements must produce a readiness failure, not an opaque spawn error.
+
+** Execution Envelope
+The sandboxed execution envelope is typed and backend-neutral:
+
+#+begin_example
+SandboxExecutionEnvelope
+  execution_id
+  backend_id
+  project_id
+  workspace_id
+  worktree_id
+  branch
+  root_session_id
+  session_id
+  agent_id
+  content_anchor
+  command_or_handler
+  environment
+  policy_projection
+  capture_policy
+  cancellation_policy
+  expected_receipts
+#+end_example
+
+This envelope extends the Codex =ExecRequest= lesson without copying Codex's product shape. Marlin adds project/worktree/session/content provenance and expected receipt contracts up front.
+
+** Receipts
+Every backend execution must emit stable receipts:
+
+#+begin_example
+SandboxBackendSelectionReceipt
+SandboxBackendReadinessReceipt
+SandboxPolicyProjectionReceipt
+SandboxLifecycleReceipt
+SandboxExecutionReceipt
+SandboxDenialReceipt
+SandboxResourceUsageReceipt
+SandboxOutputReceipt
+SandboxSnapshotReceipt
+#+end_example
+
+=SandboxDenialReceipt= is especially important:
+
+#+begin_example
+SandboxDenialReceipt
+  backend_id
+  denial_kind
+  syscall
+  path
+  network_target
+  process_id
+  policy_rule_id
+  backend_evidence_ref
+  trust_level
+  fallback_inference
+#+end_example
+
+Text-based inference is allowed only as lower-trust fallback evidence. Backends with native knowledge must return backend-owned denial reasons.
+
+** Backend Examples
+Nono adapter target:
+
+- local profile runner;
+- macOS/Linux/WSL2-oriented readiness checks;
+- profile registry and profile extension support;
+- filesystem scope, network allowlist, hooks, skills, and credential policy as project-local capability facts;
+- low-latency local default when it can satisfy the policy.
+
+CubeSandbox adapter target:
+
+- service endpoint readiness and version checks;
+- x86_64 Linux/KVM/PVM readiness;
+- glibc and storage requirements;
+- template/image availability;
+- E2B-compatible command/file/network API mapping;
+- CubeCoW snapshot, clone, and rollback capabilities;
+- hardware-isolation trust level and cluster/resource scheduling receipts.
+
+Native OS adapter target:
+
+- macOS Seatbelt policy projection;
+- Linux Landlock/seccomp/bubblewrap policy projection;
+- Windows restricted/elevated backend projection;
+- explicit backend limitations when a platform cannot enforce a requested policy.
+
+** Ownership
+=marlin-agent-protocol= owns the backend ids, capability matrix, readiness receipts, policy projection receipts, execution envelope, and sandbox receipt contracts.
+
+=marlin-agent-runtime= owns backend adapter invocation, cancellation, process lifecycle, resource observation, and receipt emission.
+
+=marlin-agent-environment= owns local environment and service endpoint resolution, including binary discovery and host readiness checks.
+
+=marlin-workspace-protocol= owns project/workspace/worktree provenance that sandbox receipts attach to.
+
+=marlin-agent-harness= owns no-live-LLM replay scenarios for backend selection, readiness failure, policy weakening, denial receipts, and snapshot lifecycle.
+
+=marlin-agent-core= may expose debug CLI commands, but it does not own backend semantics.
+
+Gerbil/POO may rank backend choices or produce strategy projections, but Rust owns validation and execution.
+
+** P0 Plan
+P0.1 define the protocol data contracts for capability matrix, readiness receipt, policy projection receipt, execution envelope, and denial/resource/output receipts.
+
+P0.2 define backend registry TOML that maps backend ids to adapter families and service endpoints without embedding backend-specific policy text in session config.
+
+P0.3 implement read-only readiness probes for native OS, Nono, and CubeSandbox. These probes must not execute untrusted commands.
+
+P0.4 implement a policy projection dry-run that reports unsupported or weakened requirements before execution.
+
+P0.5 add harness replay fixtures for backend selection:
+
+- local developer policy selects Nono or native OS when available;
+- server hardware-isolation policy selects CubeSandbox when ready;
+- CubeSandbox missing x86_64/KVM/storage requirements emits readiness failure;
+- a backend without typed denial receipts marks text inference as lower-trust evidence.
+
+P0.6 wire graph query/tool capability cards so a tool can declare required sandbox capabilities and expected receipts.
+
+P0.7 only after P0.1-P0.6 land, introduce execution adapters for the first backend.
+
+** Non-goals
+Do not vendor Nono or CubeSandbox code into Marlin.
+
+Do not expose Nono, CubeSandbox, Seatbelt, Landlock, or Windows sandbox flags as the public Marlin API.
+
+Do not allow backend fallback to silently weaken policy.
+
+Do not make Docker/shared-kernel containers the default answer for high-trust execution unless their isolation limits are explicit in the capability matrix.
+
+** Open Questions
+Should backend selection be purely declarative TOML in P0, or should Gerbil/POO be allowed to rank equivalent ready backends from the first implementation?
+
+Should E2B-compatible APIs be represented as a first-class backend family or as a protocol dialect under =ExternalSandboxService=?
+
+How should Marlin cache readiness receipts for backends whose service state changes quickly?
+
+Which receipt fields are mandatory for a backend to be allowed in high-trust agent execution?

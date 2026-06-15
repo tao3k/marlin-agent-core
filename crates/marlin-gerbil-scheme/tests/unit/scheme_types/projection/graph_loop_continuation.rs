@@ -27,7 +27,7 @@ fn gerbil_poo_continuation_projection_drives_graph_loop_next_action() {
     let projection = decode_gerbil_loop_graph_continuation_projection(&registry, &envelope)
         .expect("Gerbil continuation projection decodes");
     assert!(projection.has_current_schema());
-    assert_eq!(projection.diagnostics, vec!["poo_continuation=continue"]);
+    assert!(projection.diagnostics.is_empty());
     assert!(matches!(
         projection.action,
         GerbilLoopGraphContinuationAction::ContinueWithGraph { .. }
@@ -100,6 +100,29 @@ fn gerbil_poo_continuation_terminal_projection_stays_typed() {
 }
 
 #[test]
+fn gerbil_poo_continuation_projection_rejects_unpreserved_diagnostics() {
+    let registry = continuation_registry();
+    let envelope = GerbilSchemeTypedValue::new(
+        continuation_type_id(),
+        diagnostic_continuation_payload(continue_with_graph_action_payload()),
+    )
+    .with_schema_id(continuation_schema_id());
+
+    let projection = decode_gerbil_loop_graph_continuation_projection(&registry, &envelope)
+        .expect("diagnostic-bearing projection still decodes");
+    assert_eq!(projection.diagnostics, vec!["poo_continuation=continue"]);
+
+    let error = project_gerbil_loop_graph_continuation_action(&registry, &envelope).expect_err(
+        "diagnostic-bearing projection should not compile without receipt preservation",
+    );
+    assert!(
+        error
+            .to_string()
+            .contains("DiagnosticRejected([\"poo_continuation=continue\"])")
+    );
+}
+
+#[test]
 fn gerbil_poo_continuation_projection_rejects_wrong_schema_before_payload_decode() {
     let registry = continuation_registry();
     let envelope = GerbilSchemeTypedValue::new(
@@ -147,6 +170,13 @@ fn continuation_manifest() -> marlin_gerbil_scheme::GerbilSchemeTypeManifest {
 }
 
 fn continuation_payload(action: GerbilSchemeValue) -> GerbilSchemeValue {
+    GerbilSchemeValue::record([
+        ("schema_id", GERBIL_LOOP_GRAPH_CONTINUATION_SCHEMA_ID.into()),
+        ("action", action),
+    ])
+}
+
+fn diagnostic_continuation_payload(action: GerbilSchemeValue) -> GerbilSchemeValue {
     GerbilSchemeValue::record([
         ("schema_id", GERBIL_LOOP_GRAPH_CONTINUATION_SCHEMA_ID.into()),
         ("action", action),

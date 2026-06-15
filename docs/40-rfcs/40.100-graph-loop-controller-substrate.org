@@ -36,6 +36,10 @@ harness, and test-support remain the owning crates.
 - Gerbil Scheme owns strategy composition and POO control-plane authoring.
   It produces typed proposals and native projections; it does not own runtime
   execution, JSON serialization, process cleanup, or Rust catalog mutation.
+  Continuation projections must carry the current continuation schema id before
+  Rust compiles them into controller actions. Until continuation receipts
+  preserve diagnostic-bearing projections, Gerbil continuation diagnostics are
+  rejected rather than silently dropped.
 
 ** Controller Contract
 The first controller contract is intentionally small. It wraps one-shot graph
@@ -65,12 +69,46 @@ GraphLoopNextAction
 The first implementation evidence is protocol-only. Kernel execution remains
 one-shot until the controller runner is introduced in a later pass.
 
+** Continuation Receipt Path
+Continuation planning must become receipt-bearing before Gerbil/native
+continuation diagnostics can be accepted as non-fatal evidence. The intended
+Rust-owned shape is:
+
+#+begin_example
+GraphLoopContinuationDecision
+  next_action: GraphLoopNextAction
+  receipt: Option<GraphLoopContinuationReceipt>
+
+GraphLoopContinuationReceipt
+  source: static | gerbil_native_projection | harness_projector
+  status: accepted | rejected | escalated
+  action_kind: stop_completed | stop_failed | continue_with_graph | escalate_to_human
+  diagnostics: Vec<String>
+  projection_evidence: Option<GraphLoopContinuationProjectionEvidence>
+
+GraphLoopIterationReport
+  continuation_receipt: Option<GraphLoopContinuationReceipt>
+#+end_example
+
+The protocol receipt should store protocol-owned projection evidence such as
+ABI id, symbol, type id, schema id, and projection status. It must not embed
+=marlin-gerbil-scheme= receipt types directly into =marlin-agent-protocol=.
+Once this receipt path lands, diagnostic-bearing Gerbil continuation projections
+can be preserved in the receipt instead of being rejected before execution.
+
 ** Stop Policy
 The initial stop policy is deterministic:
 - =max_iterations=
 - =max_duration_ms=
 - =stop_on_failed_execution=
 - =human_gate_required=
+
+When =stop_on_failed_execution= is true, a failed or cancelled iteration stops
+immediately with =StopFailed=. When it is false, the controller may pass the
+failed execution result to the continuation planner if iteration and duration
+budgets still allow another step. The default terminal planner still maps failed
+or cancelled results to =StopFailed=, so one-shot behavior is preserved unless a
+typed continuation planner explicitly chooses a repair or recovery graph.
 
 AI judgment, model routing, or Gerbil strategy selection must not be hidden in
 the stop policy. Those decisions have to arrive as typed proposals, receipts,
@@ -87,7 +125,9 @@ Runtime events are captured through a runtime-owned tee sink. The controller mus
 not steal or drain the caller's external event stream; when
 =capture_runtime_events= is enabled, the execution child runtime emits to both
 the parent event stream and a capture stream used to populate the iteration
-trace.
+trace. Capture delivery must not depend on the parent event stream remaining
+open: a closed parent stream is still reported to the emitter, but capture
+streams continue receiving replay evidence when possible.
 
 The no-live-LLM replay path is a substrate requirement. It proves that a loop
 can be inspected and replayed without a provider call.

@@ -1,0 +1,98 @@
+#+TITLE: 40.110 Marlin Graph Loop Debug API
+#+FILETAGS: :marlin:rfc:graph:loop:cli:
+
+40.110 Marlin Graph Loop Debug API
+:PROPERTIES:
+:status: Active
+:owner-crates: marlin-agent-core, marlin-agent-protocol, marlin-agent-kernel, marlin-agent-runtime
+:END:
+
+** Purpose
+The =marlin= binary exposes a small harness/dev/debug API for the graph-loop
+substrate. It is not a terminal-user product layer. Its job is to make typed
+graph proposals, graph execution, loop execution, replay, and inspection
+available from a stable command surface while preserving the crate ownership
+described in [[file:40.100-graph-loop-controller-substrate.org][40.100 Graph Loop Controller Substrate]].
+
+** Command Surface
+The current command family is:
+
+#+begin_example
+marlin graph query --input <graph-or-proposal.json>
+marlin graph propose --strategy static|gerbil --input <graph-or-gerbil-request.json>
+marlin graph validate --input <proposal.json>
+marlin graph run --input <graph-or-request.json> [--run-id <id>] [--catalog <catalog.toml|json>]
+marlin loop run --input <graph-or-run-request.json> [--max-iterations N] [--store <dir>|--no-store] [--catalog <catalog.toml|json>]
+marlin loop replay <trace-or-report.json>
+marlin loop inspect <run-id> [--store <dir>]
+#+end_example
+
+=graph run= accepts either a =GraphLoopExecutionRequest= or a bare =LoopGraph=.
+=loop run= accepts either a =GraphLoopRunRequest= or a bare =LoopGraph=. Bare
+graphs are wrapped with deterministic debug run IDs so tests and local tooling
+can exercise the substrate without hand-authoring full request envelopes.
+
+=graph query= is read-only. For graph/proposal input it returns graph shape
+facts such as graph id, node count, edge count, executors, and root nodes. For
+loop run receipts or iteration reports it returns loop read-model facts such as
+run ids, graph ids, iteration count, statuses, visited nodes by iteration,
+diagnostic count, node receipt count, replayability, missing trace count, and
+trace event count.
+
+** Debug Executor Catalog
+The debug executor catalog is a typed =TOML= or =JSON= envelope. It registers
+existing graph executor names to an adapter family and runtime binding.
+
+#+begin_example
+[[executors]]
+executor = "custom.process.echo"
+adapter = "tool"
+runtime = "process-command"
+command = "/bin/echo"
+args = ["marlin"]
+#+end_example
+
+Supported adapter names are =tool=, =provider=, and =sub-agent=. The
+=debug-echo= runtime may be registered through any adapter. The
+=process-command= runtime must use =adapter = "tool"=.
+
+** Process Command Boundary
+=process-command= is intentionally explicit argv, never shell text. This keeps
+the debug API suitable for harnesses and local repro cases without introducing a
+general shell language into the graph protocol.
+
+The runtime records process evidence in the node execution receipt diagnostics:
+
+- =process-command.exit_status:<code>= for exited processes.
+- =process-command.exit_status:unknown= when the process could not be spawned.
+- =process-command.stdout:<trimmed-output>= when stdout is non-empty.
+- =process-command.stderr:<trimmed-output>= when stderr is non-empty.
+- =process-command.spawn_failed:<error>= when spawn fails.
+- =process-command.node:<node-id>= for the invocation node.
+
+This is still a debug-layer projection over the current protocol receipt. A
+future protocol pass may promote process exit status and captured streams into
+dedicated typed receipt fields if downstream consumers need structured process
+facts outside diagnostics.
+
+** Implementation Evidence
+=crates/marlin-agent-core/src/bin/marlin.rs= provides the binary entry point.
+=crates/marlin-agent-core/src/debug_cli/= owns the harness/dev/debug command
+implementation.
+=crates/marlin-agent-core/src/debug_cli/process_command.rs= owns the
+=process-command= runtime and receipt projection.
+=crates/marlin-agent-core/examples/debug-cli/process-command/= is the
+downstream workspace-style example consumed directly by tests.
+=crates/marlin-agent-core/tests/unit/runtime/facade/debug_cli/= proves command
+parsing, catalog loading, graph execution, loop execution, replay, inspect, and
+process-command success/failure evidence. The graph query tests also prove the
+read-only loop report fact model by querying a real =LoopRunReceipt= produced by
+=marlin loop run=.
+
+** Next Gaps
+Add a native Gerbil strategy smoke path for =marlin graph propose --strategy
+gerbil= once the resident Gerbil projection is wired into the runtime-backed
+invocation path.
+
+Decide whether process execution evidence should stay as debug diagnostics or
+become protocol-owned typed process receipt fields.

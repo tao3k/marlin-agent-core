@@ -201,18 +201,45 @@ pub fn compile_gerbil_loop_graph_policy(
     Ok(proposal)
 }
 
+/// Rust-owned compile errors for Gerbil-emitted continuation requests.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum GerbilLoopGraphContinuationCompileError {
+    SchemaMismatch { expected: String, actual: String },
+    DiagnosticRejected(Vec<String>),
+    GraphCompile(marlin_gerbil_ir::LoopGraphCompileError),
+}
+
+impl From<marlin_gerbil_ir::LoopGraphCompileError> for GerbilLoopGraphContinuationCompileError {
+    fn from(error: marlin_gerbil_ir::LoopGraphCompileError) -> Self {
+        Self::GraphCompile(error)
+    }
+}
+
 /// Compiles a Gerbil-emitted continuation request into a controller next action.
 pub fn compile_gerbil_loop_graph_continuation(
     request: GerbilLoopGraphContinuationRequest,
-) -> Result<GraphLoopNextAction, marlin_gerbil_ir::LoopGraphCompileError> {
+) -> Result<GraphLoopNextAction, GerbilLoopGraphContinuationCompileError> {
+    if !request.has_current_schema() {
+        return Err(GerbilLoopGraphContinuationCompileError::SchemaMismatch {
+            expected: GERBIL_LOOP_GRAPH_CONTINUATION_SCHEMA_ID.to_owned(),
+            actual: request.schema_id,
+        });
+    }
+    if !request.diagnostics.is_empty() {
+        return Err(GerbilLoopGraphContinuationCompileError::DiagnosticRejected(
+            request.diagnostics,
+        ));
+    }
+
     match request.action {
         GerbilLoopGraphContinuationAction::StopCompleted => Ok(GraphLoopNextAction::StopCompleted),
         GerbilLoopGraphContinuationAction::StopFailed => Ok(GraphLoopNextAction::StopFailed),
         GerbilLoopGraphContinuationAction::ContinueWithGraph {
             compiled_graph,
             compile_limits,
-        } => compile_gerbil_loop_graph_with_limits(compiled_graph, compile_limits)
-            .map(GraphLoopNextAction::ContinueWithGraph),
+        } => Ok(GraphLoopNextAction::ContinueWithGraph(
+            compile_gerbil_loop_graph_with_limits(compiled_graph, compile_limits)?,
+        )),
         GerbilLoopGraphContinuationAction::EscalateToHuman { reason } => {
             Ok(GraphLoopNextAction::EscalateToHuman { reason })
         }

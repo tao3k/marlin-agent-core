@@ -21,6 +21,10 @@ marlin-org-store.workspace = true
 marlin-org-workflow.workspace = true
 marlin-org-workspace.workspace = true
 marlin-workspace-protocol.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+toml.workspace = true
 
 [build-dependencies]
 marlin-rust-project-harness-policy.workspace = true

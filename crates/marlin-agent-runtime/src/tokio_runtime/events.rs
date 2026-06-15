@@ -47,11 +47,11 @@ impl RuntimeEventSink {
             return Err(mpsc::error::SendError(event));
         };
 
-        primary.send(event.clone()).await?;
+        let primary_result = primary.send(event.clone()).await;
         for capture in captures {
             let _ = capture.send(event.clone()).await;
         }
-        Ok(())
+        primary_result
     }
 }
 

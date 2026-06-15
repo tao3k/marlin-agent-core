@@ -39,6 +39,50 @@ roots, trust gates, GitHub operation families, optional Org-native metadata
 files, runtime project import, and typed working-copy isolation stay separate
 facts.
 
+** Selector-scoped Isolation And Performance Audit
+The project-scoped graph runtime work in [[file:40.120-project-scoped-agent-graph-runtime.org][40.120 Project-scoped Agent Graph Runtime]] must first pass through a narrower Codex audit focused on execution isolation, session envelopes, sandbox robustness, and output performance.
+
+The current selector-scoped evidence from =.data/codex/codex-rs= shows these useful boundaries:
+
+- =core/src/session/session.rs:46-108= keeps session-level provider, collaboration mode, approval policy, permission profile state, environment selections, workspace roots, =codex_home=, fork/parent thread ids, dynamic tools, inherited shell snapshot, and shell override in one session configuration envelope.
+- =core/src/session/session.rs:436-457= warms plugin and skill state during session initialization using resolved environment selections, avoiding a cold capability lookup on the first turn.
+- =core/src/config/resolved_permission_profile.rs:36-54= makes a resolved permission profile snapshot a bridge over already-resolved config state, not an ad hoc resolver.
+- =core/src/sandboxing/mod.rs:42-61= defines a typed =ExecRequest= carrying command, cwd, env, network proxy, expiration, capture policy, sandbox type, Windows roots, permission profile, filesystem/network runtime policies, Windows overrides, and =arg0=.
+- =core/src/sandboxing/mod.rs:158-171= routes execution through a small =execute_env= / =execute_exec_request_with_after_spawn= boundary rather than scattering process spawning through callers.
+- =core/src/landlock.rs:14-70= launches the Linux sandbox helper with a canonical permission profile and lets the helper derive filesystem/network policy. Core does not embed Linux policy text directly.
+- =linux-sandbox/src/landlock.rs:34-88= applies restrictions to the current thread so only the child inherits them, enables =PR_SET_NO_NEW_PRIVS= when needed, installs network seccomp when network is restricted, and keeps filesystem restrictions primarily in bubblewrap.
+- =linux-sandbox/src/landlock.rs:119-163= keeps legacy Landlock filesystem rules as a fallback/reference path and treats non-enforced rulesets as sandbox errors.
+- =linux-sandbox/src/landlock.rs:165-268= denies ptrace, process VM access, io_uring setup/enter/register, and network syscalls under restricted mode while allowing necessary process-local Unix socket behavior.
+- =core/src/exec.rs:1-120= caps retained exec output bytes, caps live output delta events, and sets an I/O drain timeout so inherited stdout/stderr pipes from grandchildren cannot hang the agent indefinitely.
+- =core/src/exec.rs:120-320= models timeout and cancellation as typed =ExecExpiration= variants and combines cancellation tokens without widening the process API.
+- =core/src/exec.rs:320-780= transforms portable exec params into a sandbox-specific request and records Windows sandbox spawn failures as metrics rather than losing platform failure shape in text.
+- =core/src/exec.rs:780-1440= explicitly maps timeout, sandbox-denied, and output aggregation behavior; it also admits that sandbox-denied classification is heuristic when backend receipts are not decisive.
+- =core/src/exec.rs:1440-1660= drains stdout/stderr with bounded wait, aborts output tasks on drain timeout, streams at most =MAX_EXEC_OUTPUT_DELTAS_PER_CALL= deltas, and keeps reading to EOF to avoid pipe back-pressure while retaining only capped bytes.
+
+Marlin should keep these lessons:
+
+- Use typed execution envelopes. A graph/tool execution request should carry permissions, visibility, network policy, output capture policy, cancellation, working-copy provenance, and expected receipt shape as fields, not comments or shell text.
+- Keep platform sandbox backends replaceable. Linux helper, macOS Seatbelt, Windows restricted/elevated backends, and future container backends should sit behind typed backend adapters with capability/readiness receipts.
+- Apply sandbox policy in the narrowest inheritance boundary. If a restriction is process/thread inherited, the receipt must say so.
+- Treat output volume and process lifetime as safety properties. Every tool path needs retained-output caps, live-stream caps, cancellation semantics, process-group cleanup, and drain timeouts.
+- Prewarm capability metadata deliberately. Tool cards, skills, plugins, and environment selections should have a session-init warming path with receipts.
+- Preserve session permission state atomically. Active permission profile id, concrete profile, workspace roots, and per-turn grants must update together.
+
+Marlin should improve on these Codex weak spots:
+
+- Replace heuristic sandbox-denied detection with backend-owned denial receipts wherever the backend can know the syscall, path, or network reason. Text inference should be marked as lower-trust fallback evidence.
+- Avoid compatibility shims that preserve ambiguous behavior. Legacy sandbox projections may be migration aids, but old/new semantics must not stay active together.
+- Avoid making a broad session configuration object the public contract. Split protocol-visible session scope, permission scope, content scope, tool scope, shell snapshot, and runtime config into typed sub-receipts.
+- Keep platform-specific complexity out of the shared executor. Backend-specific validation, readiness checks, and failure receipts belong in backend modules.
+- Keep product-specific fixed policy out of execution code. Policy should arrive through typed TOML and Gerbil/POO strategy projections, with Rust owning validation and execution.
+** External Sandbox Backend Baseline
+[[file:40.130-sandbox-backend-capability-protocol.org][40.130 Sandbox Backend Capability Protocol]] records the first external sandbox backend direction. The immediate lesson from Nono and CubeSandbox is that Marlin needs backend polymorphism, not a single baked-in sandbox.
+
+Nono is useful evidence for a local developer backend: zero-setup local execution, macOS/Linux/WSL2 support, profile-based filesystem and network policy, and language bindings for adapter integration.
+
+CubeSandbox is useful evidence for a server backend: RustVMM/KVM hardware isolation, E2B-compatible service APIs, high-density deployment, sub-60ms sandbox creation claims, x86_64 Linux/KVM/PVM readiness constraints, and snapshot/clone/rollback through CubeCoW.
+
+Marlin should model both behind the same capability/readiness/receipt protocol. A backend may be excellent for one workload and invalid for another; that decision belongs in graph policy and typed readiness receipts, not in hard-coded executor branches.
 ** Mature Capabilities To Learn
 
 - Protocol/schema ownership: public capabilities are named operations with

@@ -155,11 +155,13 @@ impl TokioGraphLoopController {
         stop_policy: &marlin_agent_protocol::GraphLoopStopPolicy,
         started_at: Instant,
     ) -> GraphLoopNextAction {
-        if execution_result.status != GraphLoopExecutionStatus::Completed {
+        if execution_result.status != GraphLoopExecutionStatus::Completed
+            && stop_policy.stop_on_failed_execution
+        {
             return GraphLoopNextAction::StopFailed;
         }
         if !allows_another_iteration(stop_policy, iteration, started_at) {
-            return GraphLoopNextAction::StopCompleted;
+            return next_action_for_execution_result(execution_result);
         }
 
         let planned = self

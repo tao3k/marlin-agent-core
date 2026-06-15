@@ -1,10 +1,10 @@
 use std::collections::BTreeMap;
 
 use marlin_agent_protocol::{
-    GERBIL_LOOP_GRAPH_CONTINUATION_SCHEMA_ID, GerbilLoopGraphContinuationRequest,
-    GerbilLoopGraphPolicyCompilationRequest, GraphLoopNextAction, GraphLoopStrategy,
-    GraphLoopStrategyRuntime, GraphNativeAbiRequirement, GraphNativeSymbol,
-    compile_gerbil_loop_graph_continuation, compile_gerbil_loop_graph_policy,
+    GERBIL_LOOP_GRAPH_CONTINUATION_SCHEMA_ID, GerbilLoopGraphContinuationCompileError,
+    GerbilLoopGraphContinuationRequest, GerbilLoopGraphPolicyCompilationRequest,
+    GraphLoopNextAction, GraphLoopStrategy, GraphLoopStrategyRuntime, GraphNativeAbiRequirement,
+    GraphNativeSymbol, compile_gerbil_loop_graph_continuation, compile_gerbil_loop_graph_policy,
 };
 
 #[test]
@@ -70,8 +70,7 @@ fn gerbil_loop_graph_ir_compiles_into_graph_policy_proposal() {
 #[test]
 fn gerbil_loop_graph_continuation_compiles_into_next_action() {
     let action = compile_gerbil_loop_graph_continuation(
-        GerbilLoopGraphContinuationRequest::continue_with_graph(valid_compiled_gerbil_graph())
-            .with_diagnostic("poo_continuation=continue"),
+        GerbilLoopGraphContinuationRequest::continue_with_graph(valid_compiled_gerbil_graph()),
     )
     .expect("Gerbil continuation should compile into a controller next action");
 
@@ -83,9 +82,40 @@ fn gerbil_loop_graph_continuation_compiles_into_next_action() {
 }
 
 #[test]
+fn gerbil_loop_graph_continuation_rejects_schema_mismatch() {
+    let mut request = GerbilLoopGraphContinuationRequest::stop_completed();
+    request.schema_id = "marlin.agent.gerbil_loop_graph_continuation.v0".to_owned();
+
+    let error = compile_gerbil_loop_graph_continuation(request)
+        .expect_err("schema mismatch should not compile");
+
+    assert_eq!(
+        error,
+        GerbilLoopGraphContinuationCompileError::SchemaMismatch {
+            expected: GERBIL_LOOP_GRAPH_CONTINUATION_SCHEMA_ID.to_owned(),
+            actual: "marlin.agent.gerbil_loop_graph_continuation.v0".to_owned(),
+        }
+    );
+}
+
+#[test]
+fn gerbil_loop_graph_continuation_rejects_unpreserved_diagnostics() {
+    let error = compile_gerbil_loop_graph_continuation(
+        GerbilLoopGraphContinuationRequest::stop_completed().with_diagnostic("poo=terminal"),
+    )
+    .expect_err("diagnostic-bearing continuation requires a receipt before execution");
+
+    assert_eq!(
+        error,
+        GerbilLoopGraphContinuationCompileError::DiagnosticRejected(vec![
+            "poo=terminal".to_owned()
+        ])
+    );
+}
+
+#[test]
 fn gerbil_loop_graph_continuation_terminal_actions_remain_typed() {
-    let stop_completed =
-        GerbilLoopGraphContinuationRequest::stop_completed().with_diagnostic("poo=terminal");
+    let stop_completed = GerbilLoopGraphContinuationRequest::stop_completed();
     assert!(stop_completed.has_current_schema());
 
     let encoded = serde_json::to_value(&stop_completed).expect("continuation action serializes");

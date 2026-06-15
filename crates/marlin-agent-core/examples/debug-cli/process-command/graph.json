@@ -1,0 +1,11 @@
+{
+  "graph_id": "debug-cli-process-command-example",
+  "nodes": [
+    {
+      "id": "plan",
+      "executor": "example.process.echo",
+      "config": {}
+    }
+  ],
+  "edges": []
+}

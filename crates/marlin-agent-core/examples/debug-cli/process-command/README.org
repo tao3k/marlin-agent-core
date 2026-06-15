@@ -1,0 +1,12 @@
+#+TITLE: Marlin Debug CLI Process Command Example
+
+This folder is a minimal downstream workspace-style example for the =marlin=
+harness/dev/debug API.
+
+#+begin_example
+marlin graph run --input graph.json --catalog catalog.toml --run-id example-process-command
+marlin loop run --input graph.json --catalog catalog.toml --max-iterations 1 --no-store
+#+end_example
+
+The catalog uses =process-command= with explicit argv. It does not invoke a
+shell.

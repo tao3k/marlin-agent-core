@@ -1,7 +1,12 @@
 //! Lean `marlin-agent-core` facade for graph-loop runtime boundaries.
 
+mod debug_cli;
 mod release;
 
+pub use debug_cli::{
+    GraphQueryOutput, GraphQuerySummary, LoopInspectReceipt, LoopQuerySummary, LoopReplayReceipt,
+    LoopRunReceipt, MarlinCliResult, run_marlin_cli, run_marlin_cli_from_args,
+};
 pub use marlin_agent_environment as environment;
 pub use marlin_agent_environment::{
     PROJECT_CONFIG_PRECEDENCE, RuntimeEnvironmentError, RuntimeEnvironmentRequest,

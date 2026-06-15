@@ -22,9 +22,10 @@ pub use controller::{
 pub use execution_budget::GraphLoopExecutionBudget;
 pub use gerbil_policy::{
     GERBIL_LOOP_GRAPH_CONTINUATION_SCHEMA_ID, GERBIL_LOOP_GRAPH_POLICY_COMPILATION_SCHEMA_ID,
-    GerbilLoopGraphContinuationAction, GerbilLoopGraphContinuationRequest,
-    GerbilLoopGraphPolicyCompilationRequest, compile_gerbil_loop_graph,
-    compile_gerbil_loop_graph_continuation, compile_gerbil_loop_graph_policy,
+    GerbilLoopGraphContinuationAction, GerbilLoopGraphContinuationCompileError,
+    GerbilLoopGraphContinuationRequest, GerbilLoopGraphPolicyCompilationRequest,
+    compile_gerbil_loop_graph, compile_gerbil_loop_graph_continuation,
+    compile_gerbil_loop_graph_policy,
 };
 pub use native_abi::{
     GraphNativeAbiId, GraphNativeAbiReadinessReceipt, GraphNativeAbiReadinessStatus,

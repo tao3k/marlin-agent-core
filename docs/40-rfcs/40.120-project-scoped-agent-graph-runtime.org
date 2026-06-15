@@ -1,0 +1,307 @@
+#+TITLE: 40.120 Project-scoped Agent Graph Runtime
+#+FILETAGS: :marlin:rfc:graph:scope:memory:session:
+
+40.120 Project-scoped Agent Graph Runtime
+:PROPERTIES:
+:status: Active
+:owner-crates: marlin-workspace-protocol, marlin-org-memory, marlin-org-store, marlin-agent-protocol, marlin-agent-runtime, marlin-agent-core
+:END:
+
+** Purpose
+Marlin is not a single-workspace, single-session, single-agent tool shell. It is a project-scoped semantic graph runtime spanning workspaces, worktrees, sessions, agents, content, memory, tool capabilities, and typed execution receipts.
+
+This RFC fixes the first scope topology for that runtime:
+
+#+begin_example
+Project
+  Workspace / repository / package scope
+    Worktree / branch execution provenance
+  Project memory graph
+  Tool capability graph
+  Root sessions
+    Child and sub-agent sessions
+  Content graph
+    Turns, summaries, memory candidates, fork points, receipts
+#+end_example
+
+The target workflow is the user-interface continuation case:
+
+#+begin_example
+agent continues a user-interface workflow
+  -> graph query finds current task, memory, session, tool cards, and recovery point
+  -> Gerbil/POO composes strategy, hook, sub-agent, and continuation policy from facts
+  -> Rust receives a typed projection, validates scope, visibility, budgets, and graph shape
+  -> graph-loop execution emits receipts
+  -> Org stores content usage, compression, memory candidates, tool receipts, and recovery points
+#+end_example
+
+The differentiator is not that the model reads more context. The differentiator is that the model receives a small, source-spanned, contract-validated fact view and calls tools with typed receipt expectations.
+
+** Scope Semantics
+The first runtime scope model uses explicit domain identifiers:
+
+#+begin_example
+ProjectId
+WorkspaceId
+WorktreeId
+BranchRef
+RootSessionId
+SessionId
+AgentId
+ContentId
+MemoryId
+ToolCapabilityId
+ReceiptId
+#+end_example
+
+=ProjectId= is the strong default memory scope. Memory produced from the same project remains strongly related across branches and worktrees.
+
+=WorktreeId= is execution provenance, not a memory namespace. It records where evidence was produced and which isolated working copy ran a command, but it must not split project memory by default.
+
+=SessionId= is transcript isolation scope. Sibling root sessions do not share raw turns, temporary reasoning context, or session-local notes unless an explicit policy links or promotes them.
+
+=ContentId= is the anchor for fork, compression, memory trigger, and replay edges. Child sessions and sub-agents should fork from content nodes or compact context packs instead of inheriting an entire raw transcript.
+
+** Graph Nodes And Edges
+The scoped graph read model projects Org facts, protocol receipts, and runtime evidence into typed graph nodes:
+
+#+begin_example
+ProjectNode
+WorkspaceNode
+WorktreeNode
+BranchNode
+RootSessionNode
+ChildSessionNode
+AgentNode
+ContentNode
+MemoryNode
+ToolCapabilityNode
+ReceiptNode
+#+end_example
+
+The initial edge vocabulary is:
+
+#+begin_example
+WORKSPACE_OF
+WORKTREE_OF
+BRANCH_OF
+SESSION_OF_PROJECT
+CHILD_SESSION_OF
+FORKED_FROM_CONTENT
+EMITTED_MEMORY
+PROMOTED_TO_PROJECT_MEMORY
+PRODUCED_RECEIPT
+REFERENCES_TOOL
+LINKS_TO
+#+end_example
+
+Org stores these facts through properties, links, backlinks, and source spans. Rust owns the typed projection and validation boundary. Gerbil Scheme may compose policy over projected facts, but it does not own outer text serialization, Rust handler construction, or runtime authority.
+
+** Project Memory Graph
+Project memory may live in multiple Org shards, for example:
+
+#+begin_example
+.marlin/memory/project-memory.org
+.marlin/memory/decisions.org
+.marlin/memory/tool-usage.org
+.marlin/sessions/session-abc.org
+.marlin/worktrees/worktree-feature-x.org
+.marlin/capabilities/tools.org
+#+end_example
+
+Query sees those shards as one project memory graph. A memory record should preserve project identity, source workspace, source worktree, source session, source content, recall query, salience, retention, backlinks, and contract validation state.
+
+Default memory recall ranking is scope-aware:
+
+#+begin_example
+same project                         strong
+same workspace                       boost
+same root session                    boost
+same child or parent session lineage boost
+same content ancestry                boost
+same worktree                        provenance boost only
+explicit backlink                    boost
+contract validated                   boost
+high salience                        boost
+external project                     excluded unless explicit or imported
+#+end_example
+
+This rule lets session B recall a validated memory promoted by session A in the same project, while still hiding session A's raw transcript.
+
+** Session And Content Graph
+Root sessions share project memory, project tool cards, contract facts, and status receipts. They do not share raw transcript by default.
+
+Child sessions are policy-scoped forks from a parent session. They may inherit selected namespaces, bounded history, a content ancestry path, and compact context packs. Existing session visibility concepts remain the right boundary: System, User, Workspace, Memory, Tools, Hooks, SubAgents, and Secrets must stay explicit.
+
+The first content node shape is:
+
+#+begin_example
+ContentNode
+  content_id
+  project_id
+  workspace_id
+  root_session_id
+  session_id
+  parent_content_id
+  forked_from_content_id
+  role
+  body_ref
+  token_count
+  compression_state
+  source_receipts
+#+end_example
+
+Content compression and memory promotion are graph-loop nodes, not hidden provider-adapter side effects:
+
+#+begin_example
+provider.chat
+  -> content.account
+  -> content.compress?
+  -> memory.candidate?
+  -> memory.validate
+  -> memory.commit-or-defer
+  -> next_action
+#+end_example
+
+The corresponding typed receipts are:
+
+#+begin_example
+ContentUsageReceipt
+ContentCompressionReceipt
+ContextPackReceipt
+MemoryTriggerReceipt
+#+end_example
+
+Those receipts are persisted back into Org as contract facts so replay and later graph query do not depend on full chat history.
+
+** Tool Capability Graph
+Tool usage should be resolved through queryable capability cards instead of long skill documents. A tool card is a contract fact, not a prose hint:
+
+#+begin_example
+ToolCapabilityCard
+  capability_id
+  project_id
+  command_template or runtime_handler_id
+  input_schema
+  safety_constraints
+  required_receipts
+  examples
+  source_span
+#+end_example
+
+Lookup order is scoped:
+
+#+begin_example
+session-local tool hints
+project or workspace tool cards
+repo-specific wrapper cards
+global tool capability cards
+external imported cards only when explicit
+#+end_example
+
+For example, a project card for Rust tests may resolve to =direnv exec . cargo test --workspace= even when the global card only says =cargo test=. Tool capability query must return the command shape and the receipt shape the agent should expect after execution.
+
+** Scoped Graph Query
+All graph query entrypoints require a context envelope:
+
+#+begin_example
+GraphQueryContext
+  project_id
+  workspace_id
+  worktree_id
+  branch
+  root_session_id
+  session_id
+  agent_lineage
+  content_anchor
+  visibility
+  fallback_policy
+#+end_example
+
+The fallback policy is explicit:
+
+#+begin_example
+include_session_local
+include_project
+include_workspace
+include_worktree_provenance
+include_global
+include_external_projects
+external_project_threshold
+#+end_example
+
+Defaults:
+
+- memory query includes session-local summaries, current project memory, and current project tool cards; external projects are excluded.
+- tool query includes project overrides and global cards; external project cards require an explicit import or query flag.
+- session query sees the current root session and child sessions; sibling root transcript requires an explicit link or policy grant.
+- content query sees the current session content graph; promoted summaries and project memory are separate graph facts.
+
+S-expression query and DataFusion/Arrow backends must not bypass scope policy. Rust compiles an agent-facing query into a restricted query AST, injects scope and visibility guards, then lowers it to =WorkspaceQuery=, DataFusion, Arrow, or an Org in-memory index. DataFusion is a backend, not the agent-facing API.
+
+** CLI And Read Model
+The first agent-facing read model should extend the existing graph/debug direction without making the debug API the owner of semantics:
+
+#+begin_example
+marlin graph query org --contract agent.plan.v1 --context <context.toml>
+marlin graph query memory --recall <query> --context <context.toml>
+marlin graph query tool --capability <id> --context <context.toml>
+marlin graph query session --session <id> --context <context.toml>
+marlin graph query content --anchor <content-id> --context <context.toml>
+#+end_example
+
+The command output is a compact rendered view with typed facts, source spans, match reasons, relationship strength, and receipt expectations. It must not be a raw grep result or a whole-document dump.
+
+** Ownership
+=marlin-workspace-protocol= owns project, workspace, worktree, and branch identity contracts.
+
+=marlin-org-memory= owns the first in-memory query read model over Org nodes, properties, links, source ranges, memory dispatch, evidence links, and scoped result ranking.
+
+=marlin-org-store= owns loading and storing Org-backed memory/session/capability shards.
+
+=marlin-agent-protocol= owns graph query request/response envelopes, content receipts, memory trigger receipts, tool capability card contracts, and scope/fallback policy types.
+
+=marlin-agent-runtime= owns runtime visibility, session forking, event emission, content accounting integration points, and execution provenance.
+
+=marlin-agent-core= remains a thin facade and debug CLI surface. It may expose stable graph query commands, but it does not own protocol semantics.
+
+Gerbil Scheme owns policy composition and continuation profiles over typed facts. Rust owns typed validation, runtime execution, receipts, TOML envelopes, and any cross-process encoding.
+
+** P0 Plan
+P0.0 complete the Codex isolation/performance audit in [[file:40.70-codex-engineering-baseline.org][40.70 Codex Engineering Lessons Baseline]] and the sandbox backend capability protocol in [[file:40.130-sandbox-backend-capability-protocol.org][40.130 Sandbox Backend Capability Protocol]] before introducing graph-runtime execution code. The implementation plan must explicitly preserve the useful lessons from Codex's session envelope, typed exec request, sandbox helper boundary, output caps, cancellation/drain behavior, and permission-profile snapshot while adding backend-polymorphic readiness/capability receipts for Nono, CubeSandbox, native OS, and external service adapters.
+
+P0.1 define scope identifiers and =GraphQueryContext= with project memory as the strong default scope.
+
+P0.2 project multiple Org memory/session/capability shards into an Org-backed =MemoryGraph= with backlinks, source spans, salience, retention, and contract validation state.
+
+P0.3 introduce =agent.session.v1= facts for root sessions, child sessions, visibility, history limit, forked content, and shared memory scope.
+
+P0.4 introduce =ContentNode= and content receipts for usage accounting, compression summaries, context packs, memory candidates, and memory promotion.
+
+P0.5 introduce scoped graph query commands for org, memory, tool, session, and content families. The first backend may reuse =WorkspaceQuery= before DataFusion or Arrow is introduced.
+
+P0.6 introduce =agent.tool.v1= capability cards with project override ranking and required receipt expectations.
+
+P0.7 require no-live-LLM replay evidence for each P0 feature: scope ranking, session isolation, content fork, memory promotion, tool card lookup, and graph query output.
+
+** Implementation Evidence To Add
+=crates/marlin-workspace-protocol= should expose typed project/workspace/worktree/branch identifiers that can be reused by graph query context.
+
+=crates/marlin-org-memory/src/memory/query.rs= should evolve from node filtering into the first scoped project memory graph read model.
+
+=crates/marlin-org-store/src/memory.rs= should load multiple project memory shards without making file layout the semantic boundary.
+
+=crates/marlin-agent-runtime/src/model_route/session.rs= should connect child session visibility and history bounds to content anchors and project memory scope.
+
+=crates/marlin-agent-protocol= should define the scope context, content receipts, memory trigger receipts, session facts, and tool capability card contracts.
+
+=docs/40-rfcs/40.100-graph-loop-controller-substrate.org= and =docs/40-rfcs/40.110-marlin-graph-loop-debug-api.org= remain upstream substrate references. This RFC adds the project-scoped read model those layers can consume.
+
+** Open Questions
+Should =ProjectId= be derived from an explicit project manifest before falling back to repository identity, or should repository identity be the first P0 source of truth?
+
+Which Org shard paths are mandatory for P0, and which should remain conventions discovered through project configuration?
+
+Should =agent.tool.v1= cards start in =marlin-agent-protocol= as pure contracts, or should a small =marlin-tool-capability= crate own card indexing once multiple backends exist?
+
+How much of content body storage belongs in Org source versus external blobs referenced by =body_ref=?
