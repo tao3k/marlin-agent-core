@@ -42,4 +42,7 @@ pub use tool_graph::{
     TOOL_CAPABILITY_ROOT_SESSION_ID_PROPERTY, TOOL_CAPABILITY_SESSION_ID_PROPERTY,
     TOOL_CAPABILITY_WORKSPACE_ID_PROPERTY, TOOL_CAPABILITY_WORKTREE_ID_PROPERTY,
 };
-pub use workspace::{MemoryOrgWorkspace, ProjectMemoryGraphStoreQuery, ProjectMemoryStoreRecall};
+pub use workspace::{
+    MemoryOrgWorkspace, ProjectMemoryGraphStoreQuery, ProjectMemoryStoreRecall,
+    ToolCapabilityGraphStoreQuery,
+};

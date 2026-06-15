@@ -14,18 +14,18 @@ use marlin_org_model::{LinkKind, OrgLink, OrgNode, OrgNodeId, OrgSourceSpan};
 
 #[test]
 fn content_graph_matches_exact_anchor_and_parent_ancestry() {
-    let mut node = content_node(
-        "content-node:summary-a",
-        "Packed summary for UI audit",
-        "content:summary-a",
-        "project-alpha",
-        "workspace-a",
-        "worktree-a",
-        "root-a",
-        "session-a",
-        "agent:reviewer",
-        true,
-    );
+    let mut node = content_node(ContentNodeFixture {
+        id: "content-node:summary-a",
+        title: "Packed summary for UI audit",
+        content_id: "content:summary-a",
+        project_id: "project-alpha",
+        workspace_id: "workspace-a",
+        worktree_id: "worktree-a",
+        root_session_id: "root-a",
+        session_id: "session-a",
+        agent_id: "agent:reviewer",
+        contract_validated: true,
+    });
     node.properties.insert(
         CONTENT_NODE_PARENT_CONTENT_ID_PROPERTY.to_string(),
         "content:turn-7".to_string(),
@@ -104,18 +104,18 @@ fn content_graph_matches_exact_anchor_and_parent_ancestry() {
 
 #[test]
 fn content_graph_requires_external_project_policy() {
-    let workspace = MemoryOrgWorkspace::from_nodes(vec![content_node(
-        "content-node:external",
-        "External packed summary",
-        "content:external",
-        "project-beta",
-        "workspace-z",
-        "worktree-z",
-        "root-z",
-        "session-z",
-        "agent:external",
-        false,
-    )]);
+    let workspace = MemoryOrgWorkspace::from_nodes(vec![content_node(ContentNodeFixture {
+        id: "content-node:external",
+        title: "External packed summary",
+        content_id: "content:external",
+        project_id: "project-beta",
+        workspace_id: "workspace-z",
+        worktree_id: "worktree-z",
+        root_session_id: "root-z",
+        session_id: "session-z",
+        agent_id: "agent:external",
+        contract_validated: false,
+    })]);
 
     let request = GraphQueryRequest::new(
         GraphQueryContext::new("project-alpha"),
@@ -130,46 +130,48 @@ fn content_graph_requires_external_project_policy() {
     assert!(response.matches.is_empty());
 }
 
-fn content_node(
-    id: &str,
-    title: &str,
-    content_id: &str,
-    project_id: &str,
-    workspace_id: &str,
-    worktree_id: &str,
-    root_session_id: &str,
-    session_id: &str,
-    agent_id: &str,
+struct ContentNodeFixture<'a> {
+    id: &'a str,
+    title: &'a str,
+    content_id: &'a str,
+    project_id: &'a str,
+    workspace_id: &'a str,
+    worktree_id: &'a str,
+    root_session_id: &'a str,
+    session_id: &'a str,
+    agent_id: &'a str,
     contract_validated: bool,
-) -> OrgNode {
-    let mut node = OrgNode::heading(OrgNodeId::from(id), title);
+}
+
+fn content_node(fixture: ContentNodeFixture<'_>) -> OrgNode {
+    let mut node = OrgNode::heading(OrgNodeId::from(fixture.id), fixture.title);
     node.properties.insert(
         CONTENT_NODE_CONTENT_ID_PROPERTY.to_string(),
-        content_id.to_string(),
+        fixture.content_id.to_string(),
     );
     node.properties.insert(
         CONTENT_NODE_PROJECT_ID_PROPERTY.to_string(),
-        project_id.to_string(),
+        fixture.project_id.to_string(),
     );
     node.properties.insert(
         CONTENT_NODE_WORKSPACE_ID_PROPERTY.to_string(),
-        workspace_id.to_string(),
+        fixture.workspace_id.to_string(),
     );
     node.properties.insert(
         CONTENT_NODE_WORKTREE_ID_PROPERTY.to_string(),
-        worktree_id.to_string(),
+        fixture.worktree_id.to_string(),
     );
     node.properties.insert(
         CONTENT_NODE_ROOT_SESSION_ID_PROPERTY.to_string(),
-        root_session_id.to_string(),
+        fixture.root_session_id.to_string(),
     );
     node.properties.insert(
         CONTENT_NODE_SESSION_ID_PROPERTY.to_string(),
-        session_id.to_string(),
+        fixture.session_id.to_string(),
     );
     node.properties.insert(
         CONTENT_NODE_AGENT_ID_PROPERTY.to_string(),
-        agent_id.to_string(),
+        fixture.agent_id.to_string(),
     );
     node.properties.insert(
         CONTENT_NODE_ROLE_PROPERTY.to_string(),
@@ -189,7 +191,7 @@ fn content_node(
     );
     node.properties.insert(
         CONTENT_NODE_CONTRACT_VALIDATED_PROPERTY.to_string(),
-        contract_validated.to_string(),
+        fixture.contract_validated.to_string(),
     );
     node
 }

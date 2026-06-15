@@ -61,6 +61,17 @@ where
     pub candidates: Vec<OrgProjectRootCandidate>,
 }
 
+/// Store-backed tool capability graph query request with named call-site fields.
+pub struct ToolCapabilityGraphStoreQuery<'a, S>
+where
+    S: OrgSourceStore,
+{
+    pub receipt_id: String,
+    pub request: GraphQueryRequest,
+    pub store: &'a S,
+    pub candidates: Vec<OrgProjectRootCandidate>,
+}
+
 impl MemoryOrgWorkspace {
     /// Create an empty in-memory workspace.
     pub fn new() -> Self {
@@ -326,6 +337,29 @@ impl MemoryOrgWorkspace {
             .collect::<Vec<_>>();
         self.load_documents_with_discovered_contracts(&documents)?;
         self.query_project_memory_graph(receipt_id, request)
+    }
+
+    /// Discover tool capability roots from a store and run a compact graph query.
+    pub fn query_tool_capability_graph_from_store<S>(
+        &self,
+        query: ToolCapabilityGraphStoreQuery<'_, S>,
+    ) -> WorkspaceResult<GraphQueryResponse>
+    where
+        S: OrgSourceStore,
+    {
+        let ToolCapabilityGraphStoreQuery {
+            receipt_id,
+            request,
+            store,
+            candidates,
+        } = query;
+        let roots = discover_project_roots(store, candidates);
+        let documents = roots
+            .iter()
+            .map(|root| OrgDocument::new(root.document.clone(), root.body.clone()))
+            .collect::<Vec<_>>();
+        self.load_documents_with_discovered_contracts(&documents)?;
+        self.query_tool_capability_graph(receipt_id, request)
     }
 }
 

@@ -9,8 +9,10 @@ use crate::{
     TokioAgentRuntime, compile_gerbil_loop_graph_policy,
     protocol::{GraphQueryFamily, GraphQueryRequest, GraphQueryResponse},
 };
-use marlin_org_memory::{MemoryOrgWorkspace, ProjectMemoryGraphStoreQuery};
-use marlin_org_store::{FileSystemOrgSourceStore, OrgProjectRootCandidate};
+use marlin_org_memory::{
+    MemoryOrgWorkspace, ProjectMemoryGraphStoreQuery, ToolCapabilityGraphStoreQuery,
+};
+use marlin_org_store::{FileSystemOrgSourceStore, OrgProjectRootCandidate, OrgSourceStore};
 use marlin_org_workspace::OrgDocument;
 
 use super::{
@@ -64,6 +66,46 @@ pub(super) fn dispatch_graph(cursor: &mut ArgCursor) -> Result<MarlinCliResult, 
 }
 
 fn run_graph_query(options: GraphQueryOptions) -> Result<GraphQueryOutput, String> {
+    if !options.org_tool_roots.is_empty() {
+        if !options.org_memory_roots.is_empty() {
+            return Err("--org-tool-root cannot be combined with --org-memory-root".to_string());
+        }
+        if !options.org_memory_fixtures.is_empty() {
+            return Err("--org-tool-root cannot be combined with --org-memory-fixture".to_string());
+        }
+        if options.org_memory_store_root.is_some() {
+            return Err(
+                "--org-memory-store-root cannot be combined with --org-tool-root".to_string(),
+            );
+        }
+
+        let request: GraphQueryRequest = read_json_input(options.input.as_deref())?;
+        let workspace = MemoryOrgWorkspace::new();
+        let store_root = options.org_tool_store_root.unwrap_or_else(|| ".".into());
+        let store = FileSystemOrgSourceStore::new(store_root);
+        ensure_store_roots_exist(&store, &options.org_tool_roots, "--org-tool-root")?;
+        let candidates = options
+            .org_tool_roots
+            .into_iter()
+            .map(OrgProjectRootCandidate::tool_capability)
+            .collect::<Vec<_>>();
+        let response = workspace
+            .query_tool_capability_graph_from_store(ToolCapabilityGraphStoreQuery {
+                receipt_id: options.receipt_id,
+                request,
+                store: &store,
+                candidates,
+            })
+            .map_err(|error| format!("failed to query tool capability graph: {error}"))?;
+        return Ok(GraphQueryOutput::ProjectRuntime(
+            project_runtime_query_summary_from_response(response),
+        ));
+    }
+
+    if options.org_tool_store_root.is_some() {
+        return Err("--org-tool-store-root requires --org-tool-root".to_string());
+    }
+
     if !options.org_memory_roots.is_empty() {
         if !options.org_memory_fixtures.is_empty() {
             return Err(
@@ -75,6 +117,7 @@ fn run_graph_query(options: GraphQueryOptions) -> Result<GraphQueryOutput, Strin
         let workspace = MemoryOrgWorkspace::new();
         let store_root = options.org_memory_store_root.unwrap_or_else(|| ".".into());
         let store = FileSystemOrgSourceStore::new(store_root);
+        ensure_store_roots_exist(&store, &options.org_memory_roots, "--org-memory-root")?;
         let candidates = options
             .org_memory_roots
             .into_iter()
@@ -120,6 +163,26 @@ fn run_graph_query(options: GraphQueryOptions) -> Result<GraphQueryOutput, Strin
     Ok(GraphQueryOutput::ProjectRuntime(
         project_runtime_query_summary_from_response(response),
     ))
+}
+
+fn ensure_store_roots_exist<S: OrgSourceStore>(
+    store: &S,
+    roots: &[String],
+    option_name: &str,
+) -> Result<(), String> {
+    let missing = roots
+        .iter()
+        .filter(|root| store.read_document(root).is_none())
+        .cloned()
+        .collect::<Vec<_>>();
+    if missing.is_empty() {
+        Ok(())
+    } else {
+        Err(format!(
+            "{option_name} points at missing Org root(s): {}",
+            missing.join(", ")
+        ))
+    }
 }
 
 fn query_loaded_org_graph(

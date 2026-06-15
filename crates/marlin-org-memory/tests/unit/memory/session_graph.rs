@@ -12,17 +12,17 @@ use marlin_org_model::{OrgNode, OrgNodeId, OrgSourceSpan};
 
 #[test]
 fn session_graph_matches_session_local_boundary_card() {
-    let mut node = session_node(
-        "session-node:child-a",
-        "Child session keeps UI audit context pack",
-        "project-alpha",
-        "workspace-a",
-        "worktree-a",
-        "root-a",
-        "session-a",
-        "agent:reviewer",
-        true,
-    );
+    let mut node = session_node(SessionNodeFixture {
+        id: "session-node:child-a",
+        title: "Child session keeps UI audit context pack",
+        project_id: "project-alpha",
+        workspace_id: "workspace-a",
+        worktree_id: "worktree-a",
+        root_session_id: "root-a",
+        session_id: "session-a",
+        agent_id: "agent:reviewer",
+        contract_validated: true,
+    });
     node.properties.insert(
         SESSION_FACT_FORKED_FROM_CONTENT_ID_PROPERTY.to_string(),
         "content:turn-7".to_string(),
@@ -105,17 +105,17 @@ fn session_graph_matches_session_local_boundary_card() {
 
 #[test]
 fn session_graph_requires_external_project_policy() {
-    let workspace = MemoryOrgWorkspace::from_nodes(vec![session_node(
-        "session-node:external",
-        "External child session",
-        "project-beta",
-        "workspace-z",
-        "worktree-z",
-        "root-z",
-        "session-z",
-        "agent:external",
-        false,
-    )]);
+    let workspace = MemoryOrgWorkspace::from_nodes(vec![session_node(SessionNodeFixture {
+        id: "session-node:external",
+        title: "External child session",
+        project_id: "project-beta",
+        workspace_id: "workspace-z",
+        worktree_id: "worktree-z",
+        root_session_id: "root-z",
+        session_id: "session-z",
+        agent_id: "agent:external",
+        contract_validated: false,
+    })]);
 
     let request = GraphQueryRequest::new(
         GraphQueryContext::new("project-alpha"),
@@ -130,47 +130,49 @@ fn session_graph_requires_external_project_policy() {
     assert!(response.matches.is_empty());
 }
 
-fn session_node(
-    id: &str,
-    title: &str,
-    project_id: &str,
-    workspace_id: &str,
-    worktree_id: &str,
-    root_session_id: &str,
-    session_id: &str,
-    agent_id: &str,
+struct SessionNodeFixture<'a> {
+    id: &'a str,
+    title: &'a str,
+    project_id: &'a str,
+    workspace_id: &'a str,
+    worktree_id: &'a str,
+    root_session_id: &'a str,
+    session_id: &'a str,
+    agent_id: &'a str,
     contract_validated: bool,
-) -> OrgNode {
-    let mut node = OrgNode::heading(OrgNodeId::from(id), title);
+}
+
+fn session_node(fixture: SessionNodeFixture<'_>) -> OrgNode {
+    let mut node = OrgNode::heading(OrgNodeId::from(fixture.id), fixture.title);
     node.properties.insert(
         SESSION_FACT_PROJECT_ID_PROPERTY.to_string(),
-        project_id.to_string(),
+        fixture.project_id.to_string(),
     );
     node.properties.insert(
         SESSION_FACT_WORKSPACE_ID_PROPERTY.to_string(),
-        workspace_id.to_string(),
+        fixture.workspace_id.to_string(),
     );
     node.properties.insert(
         SESSION_FACT_WORKTREE_ID_PROPERTY.to_string(),
-        worktree_id.to_string(),
+        fixture.worktree_id.to_string(),
     );
     node.properties.insert(
         SESSION_FACT_ROOT_SESSION_ID_PROPERTY.to_string(),
-        root_session_id.to_string(),
+        fixture.root_session_id.to_string(),
     );
     node.properties.insert(
         SESSION_FACT_SESSION_ID_PROPERTY.to_string(),
-        session_id.to_string(),
+        fixture.session_id.to_string(),
     );
     node.properties.insert(
         SESSION_FACT_AGENT_ID_PROPERTY.to_string(),
-        agent_id.to_string(),
+        fixture.agent_id.to_string(),
     );
     node.properties
         .insert(SESSION_FACT_KIND_PROPERTY.to_string(), "child".to_string());
     node.properties.insert(
         SESSION_FACT_CONTRACT_VALIDATED_PROPERTY.to_string(),
-        contract_validated.to_string(),
+        fixture.contract_validated.to_string(),
     );
     node
 }
