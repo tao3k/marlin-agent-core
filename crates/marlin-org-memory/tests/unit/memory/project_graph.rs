@@ -7,7 +7,7 @@ use marlin_org_memory::{
     PROJECT_MEMORY_PROJECT_ID_PROPERTY, PROJECT_MEMORY_RECALL_QUERY_PROPERTY,
     PROJECT_MEMORY_ROOT_SESSION_ID_PROPERTY, PROJECT_MEMORY_WORKTREE_ID_PROPERTY,
 };
-use marlin_org_model::{OrgNode, OrgNodeId};
+use marlin_org_model::{LinkKind, OrgLink, OrgNode, OrgNodeId, OrgSourceSpan};
 
 #[test]
 fn project_memory_graph_matches_same_project_across_worktrees_without_sibling_transcript() {
@@ -154,6 +154,57 @@ fn project_memory_graph_matches_contract_recall_query_frontier_terms() {
     assert_eq!(query_match.summary, "Org memory candidate boundary");
     assert!(
         query_match
+            .relationship
+            .has_fact(GraphQueryRelationshipFact::ContractValidated)
+    );
+}
+
+#[test]
+fn project_memory_graph_matches_contract_indexed_frontier_terms() {
+    let mut node = memory_node(
+        "memory:contract-indexed-frontier",
+        "Quiet memory candidate",
+        "project-alpha",
+        "worktree-a",
+        "root-a",
+        true,
+    );
+    node.tags.push("graph_frontier".to_string());
+    node.properties.insert(
+        "EVIDENCE_FACT".to_string(),
+        "contract-evidence-alpha".to_string(),
+    );
+    node.links.push(OrgLink {
+        kind: LinkKind::Id,
+        target: "policy-shard-beta".to_string(),
+        description: Some("evidence backlink".to_string()),
+    });
+    node.source = Some(OrgSourceSpan {
+        document: ".data/memory/session-alpha.org".to_string(),
+        start_byte: 10,
+        end_byte: 80,
+        start_line: 7,
+        end_line: 12,
+    });
+    let workspace = MemoryOrgWorkspace::from_nodes(vec![node]);
+
+    let request = GraphQueryRequest::new(
+        GraphQueryContext::new("project-alpha"),
+        GraphQueryFamily::Memory,
+        "graph_frontier contract-evidence-alpha policy-shard-beta session-alpha.org",
+    );
+
+    let response = workspace
+        .query_project_memory_graph("receipt:contract-indexed-frontier", request)
+        .expect("project memory query succeeds");
+
+    assert_eq!(response.matches.len(), 1);
+    assert_eq!(
+        response.matches[0].memory_id.as_ref().map(|id| id.as_str()),
+        Some("memory:contract-indexed-frontier")
+    );
+    assert!(
+        response.matches[0]
             .relationship
             .has_fact(GraphQueryRelationshipFact::ContractValidated)
     );

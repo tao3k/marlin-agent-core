@@ -1,6 +1,9 @@
 //! `MemoryOrgWorkspace` owner for the in-memory `Org` workspace backend.
 
-use super::{contracts, patch, project_graph, query, render, status};
+use super::{
+    content_graph, contracts, patch, project_graph, query, render, session_graph, status,
+    tool_graph,
+};
 use async_trait::async_trait;
 use marlin_agent_protocol::{
     GraphQueryRequest, GraphQueryResponse, ProjectMemoryContextFact, ProjectMemoryContextPack,
@@ -8,7 +11,9 @@ use marlin_agent_protocol::{
 };
 use marlin_gerbil_ir::ReleaseTopologySpec;
 use marlin_org_model::{OrgNode, OrgNodeId, OrgSourceSpan};
-use marlin_org_store::OrgProjectRoot;
+use marlin_org_store::{
+    OrgProjectRoot, OrgProjectRootCandidate, OrgSourceStore, discover_project_roots,
+};
 use marlin_org_workspace::{
     OrgDocument, OrgDocumentLoader, OrgDocumentWorkspace, standard_agent_contract_documents,
 };
@@ -31,6 +36,29 @@ pub struct MemoryOrgWorkspace {
     contract_facts: RwLock<RenderedContractFacts>,
     last_patch_receipt: RwLock<Option<WorkspacePatchReceipt>>,
     release_status: RwLock<Option<ReleaseStatus>>,
+}
+
+/// Store-backed project memory recall request with named call-site fields.
+pub struct ProjectMemoryStoreRecall<'a, S>
+where
+    S: OrgSourceStore,
+{
+    pub context_pack_id: String,
+    pub receipt_id: String,
+    pub request: ProjectMemoryRecallRequest,
+    pub store: &'a S,
+    pub candidates: Vec<OrgProjectRootCandidate>,
+}
+
+/// Store-backed project memory graph query request with named call-site fields.
+pub struct ProjectMemoryGraphStoreQuery<'a, S>
+where
+    S: OrgSourceStore,
+{
+    pub receipt_id: String,
+    pub request: GraphQueryRequest,
+    pub store: &'a S,
+    pub candidates: Vec<OrgProjectRootCandidate>,
 }
 
 impl MemoryOrgWorkspace {
@@ -194,6 +222,45 @@ impl MemoryOrgWorkspace {
         Ok(response)
     }
 
+    /// Query compact tool capability cards from loaded Org nodes.
+    pub fn query_tool_capability_graph(
+        &self,
+        receipt_id: impl Into<String>,
+        request: GraphQueryRequest,
+    ) -> WorkspaceResult<GraphQueryResponse> {
+        let nodes = self.read_nodes()?;
+        let matches = tool_graph::tool_capability_matches(nodes.values(), &request);
+        let mut response = GraphQueryResponse::new(receipt_id, request);
+        response.matches = matches;
+        Ok(response)
+    }
+
+    /// Query compact session boundary facts from loaded Org nodes.
+    pub fn query_session_graph(
+        &self,
+        receipt_id: impl Into<String>,
+        request: GraphQueryRequest,
+    ) -> WorkspaceResult<GraphQueryResponse> {
+        let nodes = self.read_nodes()?;
+        let matches = session_graph::session_matches(nodes.values(), &request);
+        let mut response = GraphQueryResponse::new(receipt_id, request);
+        response.matches = matches;
+        Ok(response)
+    }
+
+    /// Query compact content cards from loaded Org nodes.
+    pub fn query_content_graph(
+        &self,
+        receipt_id: impl Into<String>,
+        request: GraphQueryRequest,
+    ) -> WorkspaceResult<GraphQueryResponse> {
+        let nodes = self.read_nodes()?;
+        let matches = content_graph::content_matches(nodes.values(), &request);
+        let mut response = GraphQueryResponse::new(receipt_id, request);
+        response.matches = matches;
+        Ok(response)
+    }
+
     /// Recall project memory from discovered Org roots and pack compact facts.
     pub fn recall_project_memory_from_roots(
         &self,
@@ -218,6 +285,48 @@ impl MemoryOrgWorkspace {
         }
         Ok(pack)
     }
+
+    /// Discover project memory roots from a store and pack compact recall facts.
+    pub fn recall_project_memory_from_store<S>(
+        &self,
+        recall: ProjectMemoryStoreRecall<'_, S>,
+    ) -> WorkspaceResult<ProjectMemoryContextPack>
+    where
+        S: OrgSourceStore,
+    {
+        let ProjectMemoryStoreRecall {
+            context_pack_id,
+            receipt_id,
+            request,
+            store,
+            candidates,
+        } = recall;
+        let roots = discover_project_roots(store, candidates);
+        self.recall_project_memory_from_roots(context_pack_id, receipt_id, request, &roots)
+    }
+
+    /// Discover project memory roots from a store and run a compact graph query.
+    pub fn query_project_memory_graph_from_store<S>(
+        &self,
+        query: ProjectMemoryGraphStoreQuery<'_, S>,
+    ) -> WorkspaceResult<GraphQueryResponse>
+    where
+        S: OrgSourceStore,
+    {
+        let ProjectMemoryGraphStoreQuery {
+            receipt_id,
+            request,
+            store,
+            candidates,
+        } = query;
+        let roots = discover_project_roots(store, candidates);
+        let documents = roots
+            .iter()
+            .map(|root| OrgDocument::new(root.document.clone(), root.body.clone()))
+            .collect::<Vec<_>>();
+        self.load_documents_with_discovered_contracts(&documents)?;
+        self.query_project_memory_graph(receipt_id, request)
+    }
 }
 
 fn project_memory_context_fact(
@@ -229,9 +338,10 @@ fn project_memory_context_fact(
         .memory_id
         .as_ref()
         .map(|memory_id| memory_id.as_str().to_owned());
-    let source_span = memory_id
-        .as_deref()
-        .and_then(|memory_id| project_memory_source_span(nodes, memory_id));
+    let source_span = query_match
+        .source_anchor_id
+        .as_ref()
+        .and_then(|source_anchor_id| project_memory_source_span(nodes, source_anchor_id.as_str()));
     let mut fact = ProjectMemoryContextFact::new(query_match, claim);
     if let Some(source_span) = source_span {
         fact = fact.with_source_span(source_span);
@@ -244,15 +354,10 @@ fn project_memory_context_fact(
 
 fn project_memory_source_span(
     nodes: &BTreeMap<OrgNodeId, OrgNode>,
-    memory_id: &str,
+    source_anchor_id: &str,
 ) -> Option<String> {
     nodes
-        .values()
-        .find(|node| {
-            node.properties
-                .get(project_graph::PROJECT_MEMORY_ID_PROPERTY)
-                .is_some_and(|node_memory_id| node_memory_id == memory_id)
-        })
+        .get(&OrgNodeId::new(source_anchor_id))
         .and_then(|node| node.source.as_ref())
         .map(render_org_source_span)
 }

@@ -6,8 +6,9 @@ use super::ids::{
     GraphQueryLimit, GraphQueryScoreBasisPoints, ProjectRuntimeAgentId, ProjectRuntimeBranchRef,
     ProjectRuntimeContentId, ProjectRuntimeContextPackId, ProjectRuntimeEvidenceId,
     ProjectRuntimeMemoryId, ProjectRuntimeProjectId, ProjectRuntimeReceiptId,
-    ProjectRuntimeRootSessionId, ProjectRuntimeSessionId, ProjectRuntimeSourceSpanRef,
-    ProjectRuntimeToolCapabilityId, ProjectRuntimeWorkspaceId, ProjectRuntimeWorktreeId,
+    ProjectRuntimeRootSessionId, ProjectRuntimeSessionId, ProjectRuntimeSourceAnchorId,
+    ProjectRuntimeSourceSpanRef, ProjectRuntimeToolCapabilityId, ProjectRuntimeWorkspaceId,
+    ProjectRuntimeWorktreeId,
 };
 
 /// Project graph surface visible to a query.
@@ -492,6 +493,7 @@ pub struct GraphQueryMatch {
     pub content_id: Option<ProjectRuntimeContentId>,
     pub memory_id: Option<ProjectRuntimeMemoryId>,
     pub tool_capability_id: Option<ProjectRuntimeToolCapabilityId>,
+    pub source_anchor_id: Option<ProjectRuntimeSourceAnchorId>,
     pub relationship: GraphQueryMatchRelationship,
     pub score_basis_points: GraphQueryScoreBasisPoints,
     pub summary: String,
@@ -513,6 +515,7 @@ impl GraphQueryMatch {
             content_id: None,
             memory_id: None,
             tool_capability_id: None,
+            source_anchor_id: None,
             relationship: GraphQueryMatchRelationship::default(),
             score_basis_points: score_basis_points.into(),
             summary: summary.into(),
@@ -556,6 +559,11 @@ impl GraphQueryMatch {
 
     pub fn with_tool_capability(mut self, capability_id: impl Into<String>) -> Self {
         self.tool_capability_id = Some(ProjectRuntimeToolCapabilityId::new(capability_id));
+        self
+    }
+
+    pub fn with_source_anchor(mut self, source_anchor_id: impl Into<String>) -> Self {
+        self.source_anchor_id = Some(ProjectRuntimeSourceAnchorId::new(source_anchor_id));
         self
     }
 

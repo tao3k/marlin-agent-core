@@ -10,7 +10,7 @@ mod traits;
 
 pub use context::{RuntimeContext, RuntimeExecutionIdentity};
 pub use events::{EventStream, RuntimeEventSink, RuntimeEventStream};
-pub use handle::{TokioAgentRuntime, WorkingCopySubAgentFanoutItem};
+pub use handle::{TokioAgentRuntime, TokioAgentRuntimeBuildRequest, WorkingCopySubAgentFanoutItem};
 pub use marlin_agent_environment::{
     WorkingCopyActiveBinding, WorkingCopyBaseRef, WorkingCopyBranchName,
     WorkingCopyCommandInvocation, WorkingCopyCommandProgram, WorkingCopyCommandProjection,

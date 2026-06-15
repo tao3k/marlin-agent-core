@@ -11,6 +11,21 @@
 The agent-system harness is a first-class agent validation boundary. It is
 unrelated to the Rust project harness gate used by per-crate =build.rs= files.
 
+Rust project harness quality belongs to the Rust engineering plane, not to the
+agent harness API. The =rust-lang-project-harness= dependency is an upstream
+engineering library consumed only through =marlin-rust-project-harness-policy=.
+Leaf crates receive that policy through their =build.rs= wrappers. Agent graph,
+loop, and CLI protocols must not expose Rust project harness quality as
+=marlin graph query quality=, =marlin loop inspect --quality=, or any equivalent
+agent-facing command.
+
+Agents may read the structured receipts produced by the Rust project harness
+policy as repair evidence, but that does not transfer ownership. The Rust
+project harness policy owns engineering quality findings, verification
+obligations, improvement queues, and per-crate build enforcement. The agent
+harness owns runtime scenarios, fake providers, transcript replay, loop
+evidence, and assertions over agent protocol receipts.
+
 The harness crate owns controlled execution scenarios, fake providers and tools,
 transcript replay, loop evidence capture, and assertions over protocol receipts.
 It depends on =marlin-agent-protocol=, =marlin-agent-kernel=, and

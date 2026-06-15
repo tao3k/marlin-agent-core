@@ -1,4 +1,4 @@
-//! Project-scoped memory graph projection over structured `Org` nodes.
+//! Project-scoped session graph projection over structured `Org` nodes.
 
 use marlin_agent_protocol::{
     GraphQueryExternalProjectPolicy, GraphQueryFallbackScope, GraphQueryFamily, GraphQueryMatch,
@@ -7,61 +7,61 @@ use marlin_agent_protocol::{
 };
 use marlin_org_model::{LinkKind, OrgNode, OrgSourceSpan};
 
-/// `Org` property carrying the project scope for a projected memory fact.
-pub const PROJECT_MEMORY_PROJECT_ID_PROPERTY: &str = "PROJECT_ID";
-/// `Org` property carrying the source workspace for a projected memory fact.
-pub const PROJECT_MEMORY_WORKSPACE_ID_PROPERTY: &str = "WORKSPACE_ID";
-/// `Org` property carrying the worktree provenance for a projected memory fact.
-pub const PROJECT_MEMORY_WORKTREE_ID_PROPERTY: &str = "WORKTREE_ID";
-/// `Org` property carrying the root session that produced a memory fact.
-pub const PROJECT_MEMORY_ROOT_SESSION_ID_PROPERTY: &str = "ROOT_SESSION_ID";
-/// `Org` property carrying the runtime session that produced a memory fact.
-pub const PROJECT_MEMORY_SESSION_ID_PROPERTY: &str = "SESSION_ID";
-/// `Org` property carrying the content anchor for a projected memory fact.
-pub const PROJECT_MEMORY_CONTENT_ID_PROPERTY: &str = "CONTENT_ID";
-/// `Org` property carrying the stable project memory identifier.
-pub const PROJECT_MEMORY_ID_PROPERTY: &str = "MEMORY_ID";
-/// `Org` property carrying recall terms for hybrid memory frontier generation.
-pub const PROJECT_MEMORY_RECALL_QUERY_PROPERTY: &str = "RECALL_QUERY";
-/// `Org` property indicating that the memory fact passed contract validation.
-pub const PROJECT_MEMORY_CONTRACT_VALIDATED_PROPERTY: &str = "CONTRACT_VALIDATED";
+/// `Org` property key that stores the stable runtime session id.
+pub const SESSION_FACT_SESSION_ID_PROPERTY: &str = "SESSION_ID";
+/// `Org` property key that scopes a session fact to a project.
+pub const SESSION_FACT_PROJECT_ID_PROPERTY: &str = "PROJECT_ID";
+/// `Org` property key that scopes a session fact to a workspace.
+pub const SESSION_FACT_WORKSPACE_ID_PROPERTY: &str = "WORKSPACE_ID";
+/// `Org` property key that scopes a session fact to a worktree.
+pub const SESSION_FACT_WORKTREE_ID_PROPERTY: &str = "WORKTREE_ID";
+/// `Org` property key that scopes a session fact to a root session.
+pub const SESSION_FACT_ROOT_SESSION_ID_PROPERTY: &str = "ROOT_SESSION_ID";
+/// `Org` property key that records a session parent.
+pub const SESSION_FACT_PARENT_SESSION_ID_PROPERTY: &str = "PARENT_SESSION_ID";
+/// `Org` property key that records the agent associated with a session.
+pub const SESSION_FACT_AGENT_ID_PROPERTY: &str = "AGENT_ID";
+/// `Org` property key that records the session kind.
+pub const SESSION_FACT_KIND_PROPERTY: &str = "SESSION_KIND";
+/// `Org` property key that records the content anchor a session forked from.
+pub const SESSION_FACT_FORKED_FROM_CONTENT_ID_PROPERTY: &str = "FORKED_FROM_CONTENT_ID";
+/// `Org` property key that records the compact context pack handed to a session.
+pub const SESSION_FACT_CONTEXT_PACK_ID_PROPERTY: &str = "CONTEXT_PACK_ID";
+/// `Org` property key that records the history limit used for a session.
+pub const SESSION_FACT_HISTORY_LIMIT_PROPERTY: &str = "HISTORY_LIMIT";
+/// `Org` property key that records whether the session contract is validated.
+pub const SESSION_FACT_CONTRACT_VALIDATED_PROPERTY: &str = "CONTRACT_VALIDATED";
 
-const MEMORY_DISPATCH_PROPERTY: &str = "MEMORY_DISPATCH";
 const EXPLICIT_BACKLINK_PROPERTY: &str = "EXPLICIT_BACKLINK";
-const PROJECT_MEMORY_FRONTIER_PROPERTY_KEYS: &[&str] = &[
-    PROJECT_MEMORY_RECALL_QUERY_PROPERTY,
-    PROJECT_MEMORY_ID_PROPERTY,
-    MEMORY_DISPATCH_PROPERTY,
-    EXPLICIT_BACKLINK_PROPERTY,
-    PROJECT_MEMORY_CONTRACT_VALIDATED_PROPERTY,
-];
-const PROJECT_MEMORY_SCOPE_PROPERTY_KEYS: &[&str] = &[
-    PROJECT_MEMORY_PROJECT_ID_PROPERTY,
-    PROJECT_MEMORY_WORKSPACE_ID_PROPERTY,
-    PROJECT_MEMORY_WORKTREE_ID_PROPERTY,
-    PROJECT_MEMORY_ROOT_SESSION_ID_PROPERTY,
-    PROJECT_MEMORY_SESSION_ID_PROPERTY,
-    PROJECT_MEMORY_CONTENT_ID_PROPERTY,
+const SESSION_FACT_SCOPE_PROPERTY_KEYS: &[&str] = &[
+    SESSION_FACT_PROJECT_ID_PROPERTY,
+    SESSION_FACT_WORKSPACE_ID_PROPERTY,
+    SESSION_FACT_WORKTREE_ID_PROPERTY,
+    SESSION_FACT_ROOT_SESSION_ID_PROPERTY,
+    SESSION_FACT_SESSION_ID_PROPERTY,
+    SESSION_FACT_PARENT_SESSION_ID_PROPERTY,
+    SESSION_FACT_AGENT_ID_PROPERTY,
 ];
 
-pub(super) fn project_memory_matches<'a>(
+pub(super) fn session_matches<'a>(
     nodes: impl IntoIterator<Item = &'a OrgNode>,
     request: &GraphQueryRequest,
 ) -> Vec<GraphQueryMatch> {
-    if request.family != GraphQueryFamily::Memory
+    if request.family != GraphQueryFamily::Session
         || !request
             .context
             .visibility
-            .allows_surface(GraphQueryVisibleSurface::Memory)
+            .allows_surface(GraphQueryVisibleSurface::Sessions)
     {
         return Vec::new();
     }
 
     let mut matches = nodes
         .into_iter()
-        .filter(|node| is_project_memory_node(node))
+        .filter(|node| is_session_node(node))
+        .filter(|node| matches_content_anchor(node, request))
         .filter(|node| matches_query(node, &request.query))
-        .filter_map(|node| project_memory_match(node, request))
+        .filter_map(|node| session_match(node, request))
         .collect::<Vec<_>>();
 
     matches.sort_by(|left, right| {
@@ -79,8 +79,9 @@ pub(super) fn project_memory_matches<'a>(
     matches
 }
 
-fn project_memory_match(node: &OrgNode, request: &GraphQueryRequest) -> Option<GraphQueryMatch> {
-    let source_project_id = property(node, PROJECT_MEMORY_PROJECT_ID_PROPERTY)?;
+fn session_match(node: &OrgNode, request: &GraphQueryRequest) -> Option<GraphQueryMatch> {
+    let source_project_id = property(node, SESSION_FACT_PROJECT_ID_PROPERTY)?;
+    let session_id = property(node, SESSION_FACT_SESSION_ID_PROPERTY)?;
     let mut relationship = Vec::new();
 
     if source_project_id == request.context.project_id.as_str() {
@@ -92,19 +93,19 @@ fn project_memory_match(node: &OrgNode, request: &GraphQueryRequest) -> Option<G
     push_if_same(
         &mut relationship,
         GraphQueryRelationshipFact::SameWorkspace,
-        property(node, PROJECT_MEMORY_WORKSPACE_ID_PROPERTY),
+        property(node, SESSION_FACT_WORKSPACE_ID_PROPERTY),
         request.context.workspace_id.as_ref().map(|id| id.as_str()),
     );
     push_if_same(
         &mut relationship,
         GraphQueryRelationshipFact::SameWorktreeProvenance,
-        property(node, PROJECT_MEMORY_WORKTREE_ID_PROPERTY),
+        property(node, SESSION_FACT_WORKTREE_ID_PROPERTY),
         request.context.worktree_id.as_ref().map(|id| id.as_str()),
     );
     push_if_same(
         &mut relationship,
         GraphQueryRelationshipFact::SameRootSession,
-        property(node, PROJECT_MEMORY_ROOT_SESSION_ID_PROPERTY),
+        property(node, SESSION_FACT_ROOT_SESSION_ID_PROPERTY),
         request
             .context
             .root_session_id
@@ -114,13 +115,13 @@ fn project_memory_match(node: &OrgNode, request: &GraphQueryRequest) -> Option<G
     push_if_same(
         &mut relationship,
         GraphQueryRelationshipFact::SameSessionLineage,
-        property(node, PROJECT_MEMORY_SESSION_ID_PROPERTY),
+        Some(session_id),
         request.context.session_id.as_ref().map(|id| id.as_str()),
     );
     push_if_same(
         &mut relationship,
         GraphQueryRelationshipFact::SameContentAncestry,
-        property(node, PROJECT_MEMORY_CONTENT_ID_PROPERTY),
+        property(node, SESSION_FACT_FORKED_FROM_CONTENT_ID_PROPERTY),
         request
             .context
             .content_anchor
@@ -131,7 +132,7 @@ fn project_memory_match(node: &OrgNode, request: &GraphQueryRequest) -> Option<G
     if property_is_truthy(node, EXPLICIT_BACKLINK_PROPERTY) {
         relationship.push(GraphQueryRelationshipFact::ExplicitBacklink);
     }
-    if property_is_truthy(node, PROJECT_MEMORY_CONTRACT_VALIDATED_PROPERTY) {
+    if property_is_truthy(node, SESSION_FACT_CONTRACT_VALIDATED_PROPERTY) {
         relationship.push(GraphQueryRelationshipFact::ContractValidated);
     }
 
@@ -141,26 +142,24 @@ fn project_memory_match(node: &OrgNode, request: &GraphQueryRequest) -> Option<G
     }
 
     let mut query_match = GraphQueryMatch::new(source_project_id, compact_summary(node), score)
+        .with_source_session(session_id)
         .with_source_anchor(node.id.as_str())
         .with_relationship(GraphQueryMatchRelationship::new(relationship));
 
-    if let Some(workspace_id) = property(node, PROJECT_MEMORY_WORKSPACE_ID_PROPERTY) {
+    if let Some(workspace_id) = property(node, SESSION_FACT_WORKSPACE_ID_PROPERTY) {
         query_match = query_match.with_source_workspace(workspace_id);
     }
-    if let Some(worktree_id) = property(node, PROJECT_MEMORY_WORKTREE_ID_PROPERTY) {
+    if let Some(worktree_id) = property(node, SESSION_FACT_WORKTREE_ID_PROPERTY) {
         query_match = query_match.with_source_worktree(worktree_id);
     }
-    if let Some(root_session_id) = property(node, PROJECT_MEMORY_ROOT_SESSION_ID_PROPERTY) {
+    if let Some(root_session_id) = property(node, SESSION_FACT_ROOT_SESSION_ID_PROPERTY) {
         query_match = query_match.with_source_root_session(root_session_id);
     }
-    if let Some(session_id) = property(node, PROJECT_MEMORY_SESSION_ID_PROPERTY) {
-        query_match = query_match.with_source_session(session_id);
+    if let Some(agent_id) = property(node, SESSION_FACT_AGENT_ID_PROPERTY) {
+        query_match = query_match.with_source_agent(agent_id);
     }
-    if let Some(content_id) = property(node, PROJECT_MEMORY_CONTENT_ID_PROPERTY) {
+    if let Some(content_id) = property(node, SESSION_FACT_FORKED_FROM_CONTENT_ID_PROPERTY) {
         query_match = query_match.with_content(content_id);
-    }
-    if let Some(memory_id) = property(node, PROJECT_MEMORY_ID_PROPERTY) {
-        query_match = query_match.with_memory(memory_id);
     }
 
     Some(query_match)
@@ -220,9 +219,18 @@ fn relationship_score_bonus(fact: &GraphQueryRelationshipFact) -> u16 {
     }
 }
 
-fn is_project_memory_node(node: &OrgNode) -> bool {
-    node.properties.contains_key(PROJECT_MEMORY_ID_PROPERTY)
-        || node.properties.contains_key(MEMORY_DISPATCH_PROPERTY)
+fn is_session_node(node: &OrgNode) -> bool {
+    node.properties
+        .contains_key(SESSION_FACT_PROJECT_ID_PROPERTY)
+        && node
+            .properties
+            .contains_key(SESSION_FACT_SESSION_ID_PROPERTY)
+}
+
+fn matches_content_anchor(node: &OrgNode, request: &GraphQueryRequest) -> bool {
+    request.content_id.as_ref().is_none_or(|content_id| {
+        property(node, SESSION_FACT_FORKED_FROM_CONTENT_ID_PROPERTY) == Some(content_id.as_str())
+    })
 }
 
 fn matches_query(node: &OrgNode, query: &str) -> bool {
@@ -251,7 +259,7 @@ fn compact_search_text(node: &OrgNode) -> String {
     }
 
     for (key, value) in &node.properties {
-        if is_frontier_property(key) {
+        if !SESSION_FACT_SCOPE_PROPERTY_KEYS.contains(&key.as_str()) {
             push_search_text(&mut text, key);
             push_search_text(&mut text, value);
             push_search_text(&mut text, &format!("{key}:{value}"));
@@ -277,11 +285,6 @@ fn compact_search_text(node: &OrgNode) -> String {
     text.to_lowercase()
 }
 
-fn is_frontier_property(key: &str) -> bool {
-    PROJECT_MEMORY_FRONTIER_PROPERTY_KEYS.contains(&key)
-        || !PROJECT_MEMORY_SCOPE_PROPERTY_KEYS.contains(&key)
-}
-
 fn push_search_text(text: &mut String, value: &str) {
     text.push_str(value);
     text.push('\n');
@@ -302,22 +305,17 @@ fn push_source_span_text(text: &mut String, source: &OrgSourceSpan) {
     push_search_text(text, &source.document);
     push_search_text(text, &source.start_line.to_string());
     push_search_text(text, &source.end_line.to_string());
-    push_search_text(
-        text,
-        &format!(
-            "{}:{}-{}",
-            source.document, source.start_line, source.end_line
-        ),
-    );
 }
 
 fn compact_summary(node: &OrgNode) -> String {
     node.title
-        .as_ref()
-        .or(node.body.as_ref())
-        .map(|text| text.lines().next().unwrap_or_default().trim())
-        .filter(|text| !text.is_empty())
+        .as_deref()
+        .or(node.body.as_deref())
         .unwrap_or_else(|| node.id.as_str())
+        .lines()
+        .next()
+        .unwrap_or_else(|| node.id.as_str())
+        .trim()
         .to_string()
 }
 
@@ -326,24 +324,16 @@ fn property<'a>(node: &'a OrgNode, key: &str) -> Option<&'a str> {
 }
 
 fn property_is_truthy(node: &OrgNode, key: &str) -> bool {
-    property(node, key).is_some_and(|value| {
-        matches!(
-            value.to_ascii_lowercase().as_str(),
-            "true" | "yes" | "accepted" | "validated"
-        )
-    })
+    property(node, key).is_some_and(|value| matches!(value, "true" | "yes" | "1"))
 }
 
 fn push_if_same(
     relationship: &mut Vec<GraphQueryRelationshipFact>,
     fact: GraphQueryRelationshipFact,
-    source_value: Option<&str>,
-    context_value: Option<&str>,
+    left: Option<&str>,
+    right: Option<&str>,
 ) {
-    if source_value
-        .zip(context_value)
-        .is_some_and(|(left, right)| left == right)
-    {
+    if left.zip(right).is_some_and(|(left, right)| left == right) {
         relationship.push(fact);
     }
 }

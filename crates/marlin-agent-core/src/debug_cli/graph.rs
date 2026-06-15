@@ -7,9 +7,10 @@ use crate::{
     GraphLoopExecutionRequest, GraphLoopExecutionResult, GraphLoopIterationReport, GraphLoopKernel,
     GraphLoopStrategy, GraphLoopStrategyRuntime, GraphPolicyProposal, LoopGraph, RunId,
     TokioAgentRuntime, compile_gerbil_loop_graph_policy,
-    protocol::{GraphQueryRequest, GraphQueryResponse},
+    protocol::{GraphQueryFamily, GraphQueryRequest, GraphQueryResponse},
 };
-use marlin_org_memory::MemoryOrgWorkspace;
+use marlin_org_memory::{MemoryOrgWorkspace, ProjectMemoryGraphStoreQuery};
+use marlin_org_store::{FileSystemOrgSourceStore, OrgProjectRootCandidate};
 use marlin_org_workspace::OrgDocument;
 
 use super::{
@@ -63,6 +64,39 @@ pub(super) fn dispatch_graph(cursor: &mut ArgCursor) -> Result<MarlinCliResult, 
 }
 
 fn run_graph_query(options: GraphQueryOptions) -> Result<GraphQueryOutput, String> {
+    if !options.org_memory_roots.is_empty() {
+        if !options.org_memory_fixtures.is_empty() {
+            return Err(
+                "--org-memory-root cannot be combined with --org-memory-fixture".to_string(),
+            );
+        }
+
+        let request: GraphQueryRequest = read_json_input(options.input.as_deref())?;
+        let workspace = MemoryOrgWorkspace::new();
+        let store_root = options.org_memory_store_root.unwrap_or_else(|| ".".into());
+        let store = FileSystemOrgSourceStore::new(store_root);
+        let candidates = options
+            .org_memory_roots
+            .into_iter()
+            .map(OrgProjectRootCandidate::project_memory)
+            .collect::<Vec<_>>();
+        let response = workspace
+            .query_project_memory_graph_from_store(ProjectMemoryGraphStoreQuery {
+                receipt_id: options.receipt_id,
+                request,
+                store: &store,
+                candidates,
+            })
+            .map_err(|error| format!("failed to query project memory graph: {error}"))?;
+        return Ok(GraphQueryOutput::ProjectRuntime(
+            project_runtime_query_summary_from_response(response),
+        ));
+    }
+
+    if options.org_memory_store_root.is_some() {
+        return Err("--org-memory-store-root requires --org-memory-root".to_string());
+    }
+
     if options.org_memory_fixtures.is_empty() {
         let input = read_input(options.input.as_deref())?;
         return graph_query_output(&input);
@@ -82,12 +116,35 @@ fn run_graph_query(options: GraphQueryOptions) -> Result<GraphQueryOutput, Strin
                 )
             })?;
     }
-    let response = workspace
-        .query_project_memory_graph(options.receipt_id, request)
-        .map_err(|error| format!("failed to query project memory graph: {error}"))?;
+    let response = query_loaded_org_graph(&workspace, options.receipt_id, request)?;
     Ok(GraphQueryOutput::ProjectRuntime(
         project_runtime_query_summary_from_response(response),
     ))
+}
+
+fn query_loaded_org_graph(
+    workspace: &MemoryOrgWorkspace,
+    receipt_id: impl Into<String>,
+    request: GraphQueryRequest,
+) -> Result<GraphQueryResponse, String> {
+    match request.family.clone() {
+        GraphQueryFamily::Memory => workspace
+            .query_project_memory_graph(receipt_id, request)
+            .map_err(|error| format!("failed to query project memory graph: {error}")),
+        GraphQueryFamily::Tool => workspace
+            .query_tool_capability_graph(receipt_id, request)
+            .map_err(|error| format!("failed to query tool capability graph: {error}")),
+        GraphQueryFamily::Session => workspace
+            .query_session_graph(receipt_id, request)
+            .map_err(|error| format!("failed to query session graph: {error}")),
+        GraphQueryFamily::Content => workspace
+            .query_content_graph(receipt_id, request)
+            .map_err(|error| format!("failed to query content graph: {error}")),
+        GraphQueryFamily::Org => Err(
+            "--org-memory-fixture does not execute GraphQueryFamily::Org; use a concrete read family"
+                .to_string(),
+        ),
+    }
 }
 
 fn graph_query_summary(input: &str) -> Result<GraphQuerySummary, String> {
@@ -275,6 +332,20 @@ fn project_runtime_query_summary_from_response(
             .collect::<BTreeSet<_>>()
             .into_iter()
             .collect(),
+        source_agent_ids: response
+            .matches
+            .iter()
+            .filter_map(|query_match| query_match.source_agent_id.clone())
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect(),
+        source_anchor_ids: response
+            .matches
+            .iter()
+            .filter_map(|query_match| query_match.source_anchor_id.clone())
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect(),
         memory_ids: response
             .matches
             .iter()
@@ -286,6 +357,13 @@ fn project_runtime_query_summary_from_response(
             .matches
             .iter()
             .filter_map(|query_match| query_match.content_id.clone())
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect(),
+        tool_capability_ids: response
+            .matches
+            .iter()
+            .filter_map(|query_match| query_match.tool_capability_id.clone())
             .collect::<BTreeSet<_>>()
             .into_iter()
             .collect(),

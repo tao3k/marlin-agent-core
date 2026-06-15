@@ -12,8 +12,9 @@ use super::{
     RuntimeContext, RuntimeEnvironment, RuntimeEventSink, RuntimeEventStream,
     RuntimeExecutionIdentity, RuntimeTask, RuntimeTaskOutcome, RuntimeTaskShutdownReceipt,
     RuntimeTaskShutdownRequest, RuntimeTaskTracker, RuntimeTaskTrackerPolicy, SessionId,
-    SessionIsolationReceipt, SessionKind, SubAgentRuntime, SubAgentSpawnConfig,
-    SubAgentSpawnReceipt, ToolRuntime, WorkingCopyIsolationReceipt,
+    SessionIsolationReceipt, SessionKind, SessionRuntimeSnapshot, SubAgentRuntime,
+    SubAgentSpawnConfig, SubAgentSpawnReceipt, TokioRuntimePolicy, TokioRuntimePolicyReceipt,
+    ToolRuntime, WorkingCopyIsolationReceipt,
 };
 use crate::tokio_runtime::context::context_visibility_from_sub_agent_policy;
 use crate::tokio_runtime::receipt::{
@@ -33,6 +34,68 @@ pub struct TokioAgentRuntime {
     process_registry: observability::RuntimeProcessRegistryHandle,
     process_cleanup_policy: observability::RuntimeProcessCleanupPolicy,
     task_tracker: RuntimeTaskTracker,
+    runtime_snapshot: SessionRuntimeSnapshot,
+}
+
+/// Named request for constructing a Tokio-backed agent runtime.
+#[derive(Clone, Debug)]
+pub struct TokioAgentRuntimeBuildRequest {
+    event_buffer: usize,
+    cancellation: CancellationToken,
+    environment: RuntimeEnvironment,
+    session: AgentSessionContext,
+    runtime_snapshot: SessionRuntimeSnapshot,
+}
+
+impl TokioAgentRuntimeBuildRequest {
+    pub fn runtime_root(event_buffer: usize) -> Self {
+        let session = AgentSessionContext::runtime_root();
+        let runtime_snapshot = SessionRuntimeSnapshot::new(
+            session.session_id().clone(),
+            TokioRuntimePolicy::default(),
+        );
+        Self {
+            event_buffer,
+            cancellation: CancellationToken::new(),
+            environment: RuntimeEnvironment::default(),
+            session,
+            runtime_snapshot,
+        }
+    }
+
+    pub fn with_cancellation(mut self, cancellation: CancellationToken) -> Self {
+        self.cancellation = cancellation;
+        self
+    }
+
+    pub fn with_environment(mut self, environment: RuntimeEnvironment) -> Self {
+        self.environment = environment;
+        self
+    }
+
+    pub fn with_session(mut self, session: AgentSessionContext) -> Self {
+        self.runtime_snapshot = runtime_snapshot_for_session(&session, &self.runtime_snapshot);
+        self.session = session;
+        self
+    }
+
+    pub fn with_runtime_snapshot(mut self, runtime_snapshot: SessionRuntimeSnapshot) -> Self {
+        self.runtime_snapshot = runtime_snapshot_for_session(&self.session, &runtime_snapshot);
+        self
+    }
+}
+
+fn runtime_snapshot_for_session(
+    session: &AgentSessionContext,
+    snapshot: &SessionRuntimeSnapshot,
+) -> SessionRuntimeSnapshot {
+    SessionRuntimeSnapshot::new(
+        session.session_id().clone(),
+        snapshot.tokio_policy().clone(),
+    )
+    .with_task_tracker(snapshot.task_tracker().clone())
+    .with_fanout_join(snapshot.fanout_join().clone())
+    .with_blocking_bridge(snapshot.blocking_bridge().clone())
 }
 
 /// One working-copy-bound sub-agent spawn in a runtime fanout.
@@ -75,14 +138,17 @@ impl<I> WorkingCopySubAgentFanoutItem<I> {
 
 impl TokioAgentRuntime {
     pub fn new(event_buffer: usize) -> (Self, RuntimeEventStream) {
-        Self::with_cancellation(event_buffer, CancellationToken::new())
+        Self::from_build_request(TokioAgentRuntimeBuildRequest::runtime_root(event_buffer))
     }
 
     pub fn with_cancellation(
         event_buffer: usize,
         cancellation: CancellationToken,
     ) -> (Self, RuntimeEventStream) {
-        Self::with_environment(event_buffer, cancellation, RuntimeEnvironment::default())
+        Self::from_build_request(
+            TokioAgentRuntimeBuildRequest::runtime_root(event_buffer)
+                .with_cancellation(cancellation),
+        )
     }
 
     pub fn with_environment(
@@ -90,11 +156,10 @@ impl TokioAgentRuntime {
         cancellation: CancellationToken,
         environment: RuntimeEnvironment,
     ) -> (Self, RuntimeEventStream) {
-        Self::with_session(
-            event_buffer,
-            cancellation,
-            environment,
-            AgentSessionContext::runtime_root(),
+        Self::from_build_request(
+            TokioAgentRuntimeBuildRequest::runtime_root(event_buffer)
+                .with_cancellation(cancellation)
+                .with_environment(environment),
         )
     }
 
@@ -104,18 +169,30 @@ impl TokioAgentRuntime {
         environment: RuntimeEnvironment,
         session: AgentSessionContext,
     ) -> (Self, RuntimeEventStream) {
-        let (events, stream) = RuntimeEventSink::channel(event_buffer);
+        Self::from_build_request(
+            TokioAgentRuntimeBuildRequest::runtime_root(event_buffer)
+                .with_cancellation(cancellation)
+                .with_environment(environment)
+                .with_session(session),
+        )
+    }
+
+    pub fn from_build_request(
+        request: TokioAgentRuntimeBuildRequest,
+    ) -> (Self, RuntimeEventStream) {
+        let (events, stream) = RuntimeEventSink::channel(request.event_buffer);
         (
             Self {
-                cancellation,
+                cancellation: request.cancellation,
                 events,
-                environment,
+                environment: request.environment,
                 execution: None,
-                session,
+                session: request.session,
                 graph_loop_runs: crate::GraphLoopRunRegistryHandle::new(),
                 process_registry: observability::RuntimeProcessRegistryHandle::new(),
                 process_cleanup_policy: observability::RuntimeProcessCleanupPolicy::default(),
                 task_tracker: RuntimeTaskTracker::new(),
+                runtime_snapshot: request.runtime_snapshot,
             },
             stream,
         )
@@ -164,6 +241,14 @@ impl TokioAgentRuntime {
         self.task_tracker.clone()
     }
 
+    pub fn runtime_snapshot(&self) -> &SessionRuntimeSnapshot {
+        &self.runtime_snapshot
+    }
+
+    pub fn runtime_policy_receipt(&self) -> TokioRuntimePolicyReceipt {
+        TokioRuntimePolicyReceipt::from_snapshot(&self.runtime_snapshot)
+    }
+
     pub fn event_sink(&self) -> RuntimeEventSink {
         self.events.clone()
     }
@@ -187,6 +272,7 @@ impl TokioAgentRuntime {
             process_registry: self.process_registry.clone(),
             process_cleanup_policy: self.process_cleanup_policy.clone(),
             task_tracker: self.task_tracker.clone(),
+            runtime_snapshot: self.runtime_snapshot.clone(),
         }
     }
 
@@ -206,6 +292,7 @@ impl TokioAgentRuntime {
                 process_registry: self.process_registry.clone(),
                 process_cleanup_policy: self.process_cleanup_policy.clone(),
                 task_tracker: self.task_tracker.clone(),
+                runtime_snapshot: self.runtime_snapshot.clone(),
             },
             stream,
         )
@@ -222,6 +309,7 @@ impl TokioAgentRuntime {
             process_registry: self.process_registry.clone(),
             process_cleanup_policy: self.process_cleanup_policy.clone(),
             task_tracker: self.task_tracker.clone(),
+            runtime_snapshot: self.runtime_snapshot.clone(),
         }
     }
 
@@ -239,6 +327,7 @@ impl TokioAgentRuntime {
         let (session, receipt) =
             self.session
                 .child_session(kind, child_session_id, requested_visibility);
+        let runtime_snapshot = runtime_snapshot_for_session(&session, &self.runtime_snapshot);
         (
             Self {
                 cancellation: self.cancellation.child_token(),
@@ -250,6 +339,7 @@ impl TokioAgentRuntime {
                 process_registry: self.process_registry.clone(),
                 process_cleanup_policy: self.process_cleanup_policy.clone(),
                 task_tracker: self.task_tracker.clone(),
+                runtime_snapshot,
             },
             receipt,
         )
@@ -314,6 +404,11 @@ impl TokioAgentRuntime {
         };
         self.task_tracker
             .close_and_wait(policy.shutdown_timeout_duration(), request)
+            .await
+    }
+
+    pub async fn shutdown_session_tasks(&self) -> RuntimeTaskShutdownReceipt {
+        self.shutdown_tasks(self.runtime_snapshot.task_tracker())
             .await
     }
 

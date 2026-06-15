@@ -8,8 +8,9 @@ pub use ids::{
     GraphQueryLimit, GraphQueryScoreBasisPoints, ProjectRuntimeAgentId, ProjectRuntimeBranchRef,
     ProjectRuntimeContentId, ProjectRuntimeContextPackId, ProjectRuntimeEvidenceId,
     ProjectRuntimeMemoryId, ProjectRuntimeProjectId, ProjectRuntimeReceiptId,
-    ProjectRuntimeRootSessionId, ProjectRuntimeSessionId, ProjectRuntimeSourceSpanRef,
-    ProjectRuntimeToolCapabilityId, ProjectRuntimeWorkspaceId, ProjectRuntimeWorktreeId,
+    ProjectRuntimeRootSessionId, ProjectRuntimeSessionId, ProjectRuntimeSourceAnchorId,
+    ProjectRuntimeSourceSpanRef, ProjectRuntimeToolCapabilityId, ProjectRuntimeWorkspaceId,
+    ProjectRuntimeWorktreeId,
 };
 pub use query::{
     GraphQueryContext, GraphQueryExternalProjectPolicy, GraphQueryFallbackPolicy,

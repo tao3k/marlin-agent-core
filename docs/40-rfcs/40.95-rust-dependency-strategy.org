@@ -11,6 +11,25 @@ This is not a rule to add dependencies casually. Dependencies must enter through
 an owner crate and solve a named runtime, protocol, configuration, search,
 observability, or performance problem.
 
+** Rust Project Harness Quality Boundary
+
+Rust project quality is an engineering harness concern. It is not a Marlin
+agent graph, loop, or CLI protocol concern.
+
+=rust-lang-project-harness= is an upstream Rust engineering library. In this
+workspace it must be hidden behind =marlin-rust-project-harness-policy=, which
+owns the Marlin-specific build policy, quality findings, verification
+obligations, improvement queue, and evidence artifacts. Downstream crates must
+depend on =marlin-rust-project-harness-policy= from their build-dependency plane
+and call its wrapper from =build.rs=; they must not depend on
+=rust-lang-project-harness= directly.
+
+The =marlin= debug CLI may consume generated receipts as external evidence when
+an agent is repairing this repository, but it must not add command surface such
+as =marlin graph query quality= or =marlin loop inspect --quality= for Rust
+project harness findings. Those findings belong to the Rust project harness
+policy, not to the agent runtime protocol.
+
 ** Codex Dependency Lessons
 
 The local Codex workspace under =.data/codex/codex-rs= is useful as an

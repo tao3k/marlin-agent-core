@@ -13,12 +13,36 @@ fn crate_verification_role_classification_tracks_marlin_boundaries() {
     let root = workspace_root();
 
     assert_eq!(
+        marlin_crate_verification_role_for_project(&root.join("crates/marlin-agent-core")),
+        MarlinCrateVerificationRole::AgentRuntime
+    );
+    assert_eq!(
+        marlin_crate_verification_role_for_project(&root.join("crates/marlin-agent-stream")),
+        MarlinCrateVerificationRole::AgentRuntime
+    );
+    assert_eq!(
+        marlin_crate_verification_role_for_project(&root.join("crates/marlin-agent-harness")),
+        MarlinCrateVerificationRole::AgentHarness
+    );
+    assert_eq!(
+        marlin_crate_verification_role_for_project(&root.join("crates/marlin-agent-test-support")),
+        MarlinCrateVerificationRole::AgentHarness
+    );
+    assert_eq!(
         marlin_crate_verification_role_for_project(&root.join("crates/marlin-agent-runtime")),
         MarlinCrateVerificationRole::AgentRuntime
     );
     assert_eq!(
         marlin_crate_verification_role_for_project(&root.join("crates/marlin-agent-protocol")),
         MarlinCrateVerificationRole::ProtocolContract
+    );
+    assert_eq!(
+        marlin_crate_verification_role_for_project(&root.join("crates/marlin-agent-sessions")),
+        MarlinCrateVerificationRole::ProtocolContract
+    );
+    assert_eq!(
+        marlin_crate_verification_role_for_project(&root.join("crates/marlin-workspace-view")),
+        MarlinCrateVerificationRole::OrgWorkspace
     );
     assert_eq!(
         marlin_crate_verification_role_for_project(&root.join("crates/marlin-org-memory")),
@@ -30,9 +54,19 @@ fn crate_verification_role_classification_tracks_marlin_boundaries() {
     );
     assert_eq!(
         marlin_crate_verification_role_for_project(
+            &root.join("build-support/marlin-deck-runtime-native-build"),
+        ),
+        MarlinCrateVerificationRole::NativeBuildSupport
+    );
+    assert_eq!(
+        marlin_crate_verification_role_for_project(
             &root.join("build-support/marlin-rust-project-harness-policy"),
         ),
         MarlinCrateVerificationRole::BuildHarnessPolicy
+    );
+    assert_eq!(
+        marlin_crate_verification_role_for_project(&root.join("crates/marlin-agent-environment")),
+        MarlinCrateVerificationRole::GitOrEnvironmentBoundary
     );
 }
 
@@ -81,6 +115,87 @@ fn protocol_crate_receives_protocol_contract_verification_policy() {
             .iter()
             .any(|hint| hint.owner_path == Path::new("src/project_runtime/mod.rs"))
     );
+}
+
+#[test]
+fn session_crate_receives_protocol_contract_verification_policy() {
+    let root = workspace_root().join("crates/marlin-agent-sessions");
+    let config = rust_project_harness_config_for_project(&root);
+    let root_hint = profile_hint(&config.verification_policy.profile_hints, "src/lib.rs");
+
+    assert_responsibilities(
+        root_hint,
+        [
+            RustOwnerResponsibility::PublicApi,
+            RustOwnerResponsibility::PureDomainLogic,
+        ],
+    );
+    assert_performance_and_stability_tasks(root_hint);
+}
+
+#[test]
+fn agent_harness_crate_receives_harness_verification_policy() {
+    let root = workspace_root().join("crates/marlin-agent-harness");
+    let config = rust_project_harness_config_for_project(&root);
+    let root_hint = profile_hint(&config.verification_policy.profile_hints, "src/lib.rs");
+
+    assert_responsibilities(
+        root_hint,
+        [
+            RustOwnerResponsibility::PublicApi,
+            RustOwnerResponsibility::LatencySensitive,
+            RustOwnerResponsibility::AvailabilityCritical,
+            RustOwnerResponsibility::ExternalDependency,
+        ],
+    );
+    assert_performance_and_stability_tasks(root_hint);
+    assert!(
+        config
+            .verification_policy
+            .profile_hints
+            .iter()
+            .any(|hint| hint.owner_path == Path::new("src/runtime.rs"))
+    );
+}
+
+#[test]
+fn environment_crate_receives_git_environment_boundary_policy() {
+    let root = workspace_root().join("crates/marlin-agent-environment");
+    let config = rust_project_harness_config_for_project(&root);
+    let root_hint = profile_hint(&config.verification_policy.profile_hints, "src/lib.rs");
+
+    assert_responsibilities(
+        root_hint,
+        [
+            RustOwnerResponsibility::ExternalDependency,
+            RustOwnerResponsibility::SecurityBoundary,
+            RustOwnerResponsibility::AvailabilityCritical,
+        ],
+    );
+    assert_performance_and_stability_tasks(root_hint);
+    assert!(
+        config
+            .verification_policy
+            .profile_hints
+            .iter()
+            .any(|hint| hint.owner_path == Path::new("src/working_copy.rs"))
+    );
+}
+
+#[test]
+fn native_build_crate_receives_external_build_policy() {
+    let root = workspace_root().join("build-support/marlin-deck-runtime-native-build");
+    let config = rust_project_harness_config_for_project(&root);
+    let root_hint = profile_hint(&config.verification_policy.profile_hints, "src/lib.rs");
+
+    assert_responsibilities(
+        root_hint,
+        [
+            RustOwnerResponsibility::ExternalDependency,
+            RustOwnerResponsibility::SecurityBoundary,
+        ],
+    );
+    assert_performance_and_stability_tasks(root_hint);
 }
 
 #[test]

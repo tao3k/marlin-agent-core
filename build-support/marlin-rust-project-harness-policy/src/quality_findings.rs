@@ -15,11 +15,54 @@ pub enum RustProjectHarnessFindingSeverity {
     Advice,
 }
 
+/// Engineering domain for one Rust project harness quality finding.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum RustProjectHarnessQualityDomain {
+    VerificationGate,
+    ReportObligation,
+    RepairEvidence,
+}
+
+/// Whether the finding blocks the Rust engineering gate.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum RustProjectHarnessQualityBlockingLevel {
+    BuildBlocking,
+    NonBlockingAdvice,
+}
+
+/// How the finding should be repaired by the Rust engineering plane.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum RustProjectHarnessQualityAutofixability {
+    ManualPolicyEdit,
+    EvidenceReadOnly,
+}
+
+/// Expected artifact that closes one quality finding.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum RustProjectHarnessExpectedArtifact {
+    PerformanceVerificationTask,
+    StabilityVerificationTask,
+    PerformanceReportObligation,
+    StabilityReportObligation,
+    EvidenceGraph,
+    DeterminismObservation,
+    GerbilRuntimeAssets,
+    StructuredEvidenceReview,
+}
+
 /// One structured finding that an agent can reason over without parsing prose.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct RustProjectHarnessQualityFinding {
     pub finding_id: String,
     pub severity: RustProjectHarnessFindingSeverity,
+    pub domain: RustProjectHarnessQualityDomain,
+    pub blocking_level: RustProjectHarnessQualityBlockingLevel,
+    pub autofixability: RustProjectHarnessQualityAutofixability,
+    pub expected_artifact: RustProjectHarnessExpectedArtifact,
     pub rule_id: String,
     pub owner: String,
     pub evidence: Vec<String>,
@@ -118,42 +161,62 @@ pub fn evaluate_quality_findings_for_gate(
         &mut findings,
         &package_name,
         gate_receipt.performance_gate,
-        "MARLIN-QUALITY-GATE-PERF",
-        "performance-gate",
-        "active performance verification task",
-        "add or enable a performance verification task for this package policy",
+        GateFindingSpec {
+            rule_id: "MARLIN-QUALITY-GATE-PERF",
+            finding_suffix: "performance-gate",
+            evidence_label: "active performance verification task",
+            agent_next_action: "add or enable a performance verification task for this package policy",
+            domain: RustProjectHarnessQualityDomain::VerificationGate,
+            expected_artifact: RustProjectHarnessExpectedArtifact::PerformanceVerificationTask,
+        },
     );
     push_gate_finding(
         &mut findings,
         &package_name,
         gate_receipt.stability_gate,
-        "MARLIN-QUALITY-GATE-STABILITY",
-        "stability-gate",
-        "active stability verification task",
-        "add or enable a stability verification task for this package policy",
+        GateFindingSpec {
+            rule_id: "MARLIN-QUALITY-GATE-STABILITY",
+            finding_suffix: "stability-gate",
+            evidence_label: "active stability verification task",
+            agent_next_action: "add or enable a stability verification task for this package policy",
+            domain: RustProjectHarnessQualityDomain::VerificationGate,
+            expected_artifact: RustProjectHarnessExpectedArtifact::StabilityVerificationTask,
+        },
     );
     push_gate_finding(
         &mut findings,
         &package_name,
         gate_receipt.performance_report_obligation,
-        "MARLIN-QUALITY-REPORT-PERF",
-        "performance-report-obligation",
-        "performance_index_json report obligation",
-        "add performance_index_json to the package verification report obligations",
+        GateFindingSpec {
+            rule_id: "MARLIN-QUALITY-REPORT-PERF",
+            finding_suffix: "performance-report-obligation",
+            evidence_label: "performance_index_json report obligation",
+            agent_next_action: "add performance_index_json to the package verification report obligations",
+            domain: RustProjectHarnessQualityDomain::ReportObligation,
+            expected_artifact: RustProjectHarnessExpectedArtifact::PerformanceReportObligation,
+        },
     );
     push_gate_finding(
         &mut findings,
         &package_name,
         gate_receipt.stability_report_obligation,
-        "MARLIN-QUALITY-REPORT-STABILITY",
-        "stability-report-obligation",
-        "stability_index_json report obligation",
-        "add stability_index_json to the package verification report obligations",
+        GateFindingSpec {
+            rule_id: "MARLIN-QUALITY-REPORT-STABILITY",
+            finding_suffix: "stability-report-obligation",
+            evidence_label: "stability_index_json report obligation",
+            agent_next_action: "add stability_index_json to the package verification report obligations",
+            domain: RustProjectHarnessQualityDomain::ReportObligation,
+            expected_artifact: RustProjectHarnessExpectedArtifact::StabilityReportObligation,
+        },
     );
 
     findings.push(RustProjectHarnessQualityFinding {
         finding_id: format!("{package_name}:agent-read-evidence"),
         severity: RustProjectHarnessFindingSeverity::Advice,
+        domain: RustProjectHarnessQualityDomain::RepairEvidence,
+        blocking_level: RustProjectHarnessQualityBlockingLevel::NonBlockingAdvice,
+        autofixability: RustProjectHarnessQualityAutofixability::EvidenceReadOnly,
+        expected_artifact: RustProjectHarnessExpectedArtifact::StructuredEvidenceReview,
         rule_id: "MARLIN-QUALITY-AGENT-EVIDENCE".to_owned(),
         owner: package_name.clone(),
         evidence: evidence_paths.agent_evidence(),
@@ -174,27 +237,37 @@ pub fn evaluate_quality_findings_for_gate(
     }
 }
 
+struct GateFindingSpec<'a> {
+    rule_id: &'a str,
+    finding_suffix: &'a str,
+    evidence_label: &'a str,
+    agent_next_action: &'a str,
+    domain: RustProjectHarnessQualityDomain,
+    expected_artifact: RustProjectHarnessExpectedArtifact,
+}
+
 fn push_gate_finding(
     findings: &mut Vec<RustProjectHarnessQualityFinding>,
     package_name: &str,
     gate_present: bool,
-    rule_id: &str,
-    finding_suffix: &str,
-    evidence_label: &str,
-    agent_next_action: &str,
+    spec: GateFindingSpec<'_>,
 ) {
     if gate_present {
         return;
     }
 
     findings.push(RustProjectHarnessQualityFinding {
-        finding_id: format!("{package_name}:{finding_suffix}"),
+        finding_id: format!("{}:{}", package_name, spec.finding_suffix),
         severity: RustProjectHarnessFindingSeverity::HardError,
-        rule_id: rule_id.to_owned(),
+        domain: spec.domain,
+        blocking_level: RustProjectHarnessQualityBlockingLevel::BuildBlocking,
+        autofixability: RustProjectHarnessQualityAutofixability::ManualPolicyEdit,
+        expected_artifact: spec.expected_artifact,
+        rule_id: spec.rule_id.to_owned(),
         owner: package_name.to_owned(),
-        evidence: vec![evidence_label.to_owned()],
-        why: format!("package quality gate is missing {evidence_label}"),
-        agent_next_action: agent_next_action.to_owned(),
+        evidence: vec![spec.evidence_label.to_owned()],
+        why: format!("package quality gate is missing {}", spec.evidence_label),
+        agent_next_action: spec.agent_next_action.to_owned(),
         verification_command: "cargo test -p marlin-rust-project-harness-policy --quiet".to_owned(),
         source_authority: "marlin-rust-project-harness-policy".to_owned(),
     });

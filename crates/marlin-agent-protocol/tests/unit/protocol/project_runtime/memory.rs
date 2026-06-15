@@ -58,6 +58,7 @@ fn project_memory_context_pack_preserves_compact_facts_not_shards() {
         GraphQueryMatch::new("project-alpha", "Org-first runtime design", 9_400)
             .with_memory("memory-org-first-runtime")
             .with_content("content-node-42")
+            .with_source_anchor("org-node-memory-42")
             .with_relationship(GraphQueryMatchRelationship::new([
                 GraphQueryRelationshipFact::SameProject,
                 GraphQueryRelationshipFact::ContractValidated,
@@ -87,6 +88,10 @@ fn project_memory_context_pack_preserves_compact_facts_not_shards() {
     assert_eq!(
         value["facts"][0]["evidence_ids"][0],
         "evidence:org-first-runtime-design"
+    );
+    assert_eq!(
+        value["facts"][0]["graph_match"]["source_anchor_id"],
+        "org-node-memory-42"
     );
     assert_eq!(value["source_receipts"][0], "receipt-query-1");
     assert!(value.get("raw_transcript").is_none());

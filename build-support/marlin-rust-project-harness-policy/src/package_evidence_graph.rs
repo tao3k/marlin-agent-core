@@ -10,9 +10,14 @@ use rust_lang_project_harness::{
 };
 
 use crate::{
-    RustProjectHarnessFindingSeverity, RustProjectHarnessGateReceipt,
+    RustProjectHarnessExpectedArtifact, RustProjectHarnessFindingSeverity,
+    RustProjectHarnessGateReceipt, RustProjectHarnessImprovementPlanReceipt,
+    RustProjectHarnessImprovementQueueReceipt, RustProjectHarnessQualityAutofixability,
+    RustProjectHarnessQualityBlockingLevel, RustProjectHarnessQualityDomain,
     RustProjectHarnessQualityFinding, RustProjectHarnessQualityFindingEvidencePaths,
     RustProjectHarnessQualityFindingsInput, RustProjectHarnessQualityFindingsReceipt,
+    RustProjectHarnessVerificationPolicyReceipt, build_improvement_plan_receipt,
+    build_improvement_queue_receipt, build_verification_policy_receipt,
     evaluate_performance_and_stability_gate, evaluate_quality_findings_for_gate,
 };
 
@@ -32,7 +37,10 @@ pub struct RustProjectHarnessPackageEvidenceGraphReceipt {
     pub package_name: String,
     pub evidence_graph_summary: RustEvidenceGraphSummary,
     pub gate_receipt: RustProjectHarnessGateReceipt,
+    pub verification_policy_receipt: RustProjectHarnessVerificationPolicyReceipt,
     pub quality_findings_receipt: RustProjectHarnessQualityFindingsReceipt,
+    pub improvement_queue_receipt: RustProjectHarnessImprovementQueueReceipt,
+    pub improvement_plan_receipt: RustProjectHarnessImprovementPlanReceipt,
 }
 
 impl RustProjectHarnessPackageEvidenceGraphReceipt {
@@ -41,6 +49,8 @@ impl RustProjectHarnessPackageEvidenceGraphReceipt {
         self.evidence_graph_summary.nodes > 0
             && self.gate_receipt.is_success()
             && self.quality_findings_receipt.hard_error_count() == 0
+            && self.improvement_queue_receipt.is_healthy()
+            && self.improvement_plan_receipt.is_noop()
     }
 }
 
@@ -86,11 +96,24 @@ pub fn build_package_evidence_graph_receipt(
         determinism_observation_count,
     );
 
+    let verification_policy_receipt = build_verification_policy_receipt(
+        request.package_name.clone(),
+        &request.project_root,
+        request.config,
+        &verification_plan,
+    );
+    let improvement_queue_receipt =
+        build_improvement_queue_receipt(&quality_findings_receipt, &verification_policy_receipt);
+    let improvement_plan_receipt = build_improvement_plan_receipt(&improvement_queue_receipt);
+
     RustProjectHarnessPackageEvidenceGraphReceipt {
         package_name: request.package_name,
         evidence_graph_summary: evidence_graph.summary,
         gate_receipt,
+        verification_policy_receipt,
         quality_findings_receipt,
+        improvement_queue_receipt,
+        improvement_plan_receipt,
     }
 }
 
@@ -108,6 +131,7 @@ fn append_artifact_findings(
             "evidence-graph",
             "the emitted evidence graph has no nodes for the agent to inspect",
             "inspect upstream rust-harness graph inputs before editing Marlin policy",
+            RustProjectHarnessExpectedArtifact::EvidenceGraph,
         ));
     }
     if determinism_observation_count == 0 {
@@ -118,6 +142,7 @@ fn append_artifact_findings(
             "determinism-readiness",
             "the determinism readiness packet contains no observations",
             "inspect language harness determinism inputs and package ownership boundaries",
+            RustProjectHarnessExpectedArtifact::DeterminismObservation,
         ));
     }
 }
@@ -129,10 +154,15 @@ fn artifact_warning(
     evidence: &str,
     why: &str,
     agent_next_action: &str,
+    expected_artifact: RustProjectHarnessExpectedArtifact,
 ) -> RustProjectHarnessQualityFinding {
     RustProjectHarnessQualityFinding {
         finding_id: format!("{package_name}:{finding_suffix}"),
         severity: RustProjectHarnessFindingSeverity::Warning,
+        domain: RustProjectHarnessQualityDomain::RepairEvidence,
+        blocking_level: RustProjectHarnessQualityBlockingLevel::NonBlockingAdvice,
+        autofixability: RustProjectHarnessQualityAutofixability::EvidenceReadOnly,
+        expected_artifact,
         rule_id: rule_id.to_owned(),
         owner: package_name.to_owned(),
         evidence: vec![evidence.to_owned()],

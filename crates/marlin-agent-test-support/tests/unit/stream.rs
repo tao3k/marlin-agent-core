@@ -6,8 +6,8 @@ use marlin_agent_protocol::{
     user_gateway_message,
 };
 use marlin_agent_test_support::{
-    NO_LIVE_LLM_GATE_DENIAL_MESSAGE, NoLiveLlmModelGateway, ScriptedChunkGate,
-    ScriptedModelGateway, ScriptedModelStream, ScriptedModelStreamEvent,
+    NO_LIVE_LLM_GATE_DENIAL_MESSAGE, NoLiveHttpModelGatewayFixture, NoLiveLlmModelGateway,
+    ScriptedChunkGate, ScriptedModelGateway, ScriptedModelStream, ScriptedModelStreamEvent,
     no_live_llm_gateway_denial_evidence, scripted_stream_gate_evidence,
 };
 
@@ -177,4 +177,27 @@ async fn no_live_llm_gateway_denies_completion_attempt_without_network() {
     assert!(detail.contains("denied_models=[anthropic/claude-opus-4-8]"));
     assert!(detail.contains("no_live_llm_gateway_denied=true"));
     assert!(detail.contains("live_llm=false"));
+}
+
+#[tokio::test]
+async fn no_live_http_model_gateway_fixture_denies_provider_posts() {
+    let fixture = NoLiveHttpModelGatewayFixture::start().await;
+    let response = reqwest::Client::new()
+        .post(fixture.chat_completions_url())
+        .json(&serde_json::json!({
+            "model": "anthropic/claude-opus-4-8",
+            "messages": [{"role": "user", "content": "must not cross live boundary"}]
+        }))
+        .send()
+        .await
+        .expect("no-live fixture should return a denial response");
+
+    assert_eq!(response.status().as_u16(), fixture.denial_status());
+    assert_eq!(
+        response
+            .text()
+            .await
+            .expect("denial response body should be readable"),
+        NO_LIVE_LLM_GATE_DENIAL_MESSAGE
+    );
 }

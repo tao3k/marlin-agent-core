@@ -78,8 +78,9 @@ pub use project_runtime::{
     ProjectRuntimeAgentId, ProjectRuntimeBranchRef, ProjectRuntimeContentBodyRef,
     ProjectRuntimeContentId, ProjectRuntimeContextPackId, ProjectRuntimeEvidenceId,
     ProjectRuntimeMemoryId, ProjectRuntimeProjectId, ProjectRuntimeReceiptId,
-    ProjectRuntimeRootSessionId, ProjectRuntimeSessionId, ProjectRuntimeSourceSpanRef,
-    ProjectRuntimeToolCapabilityId, ProjectRuntimeWorkspaceId, ProjectRuntimeWorktreeId,
+    ProjectRuntimeRootSessionId, ProjectRuntimeSessionId, ProjectRuntimeSourceAnchorId,
+    ProjectRuntimeSourceSpanRef, ProjectRuntimeToolCapabilityId, ProjectRuntimeWorkspaceId,
+    ProjectRuntimeWorktreeId,
 };
 pub use runtime_environment::{
     RuntimeConfigLayer, RuntimeConfigLayerSource, RuntimeEnvironment, RuntimeEnvironmentActivation,

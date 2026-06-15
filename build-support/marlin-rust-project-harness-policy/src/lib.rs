@@ -34,8 +34,11 @@ pub use gerbil_runtime_assets::{
     generate_gerbil_runtime_assets, inspect_gerbil_runtime_assets,
 };
 pub use improvement_queue::{
-    RustProjectHarnessImprovementItem, RustProjectHarnessImprovementPriority,
+    RustProjectHarnessImprovementId, RustProjectHarnessImprovementItem,
+    RustProjectHarnessImprovementPlanReceipt, RustProjectHarnessImprovementPlanStatus,
+    RustProjectHarnessImprovementPlanStep, RustProjectHarnessImprovementPriority,
     RustProjectHarnessImprovementQueueReceipt, RustProjectHarnessImprovementQueueStatus,
+    RustProjectHarnessImprovementStepId, RustProjectHarnessRuleId, build_improvement_plan_receipt,
     build_improvement_queue_receipt,
 };
 pub use package_evidence_graph::{
@@ -43,7 +46,9 @@ pub use package_evidence_graph::{
     build_package_evidence_graph_receipt,
 };
 pub use quality_findings::{
-    RustProjectHarnessFindingSeverity, RustProjectHarnessQualityFinding,
+    RustProjectHarnessExpectedArtifact, RustProjectHarnessFindingSeverity,
+    RustProjectHarnessQualityAutofixability, RustProjectHarnessQualityBlockingLevel,
+    RustProjectHarnessQualityDomain, RustProjectHarnessQualityFinding,
     RustProjectHarnessQualityFindingEvidencePaths, RustProjectHarnessQualityFindingsInput,
     RustProjectHarnessQualityFindingsReceipt, evaluate_quality_findings_for_gate,
 };

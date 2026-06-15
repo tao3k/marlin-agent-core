@@ -40,6 +40,18 @@ diagnostic count, node receipt count, replayability, missing trace count, and
 trace event count.
 
 =loop run= owns the in-process runtime observation boundary. Its receipt may include a =runtime_observation= captured from the runtime run registry for the just-executed run. =loop inspect= remains a run-store inspection command: it reads stored replay artifacts by run id and does not pretend to inspect a live runtime in a fresh CLI process. This keeps live observability, replay artifacts, and user-facing debug commands separate while preserving one typed receipt family.
+** Non-Goal: Rust Project Harness Quality
+This command surface must not absorb Rust project harness quality.
+
+Quality findings produced by =marlin-rust-project-harness-policy= are
+engineering receipts for this Rust workspace. They support per-crate build
+enforcement, verification obligations, and agent repair evidence. They are not
+graph-loop facts and must not become =marlin graph query quality=,
+=marlin loop inspect --quality=, or any other agent runtime protocol command.
+
+If a graph-loop debug workflow needs to reference those receipts, it should
+treat them as external build-support evidence selected by the caller, not as
+protocol-owned loop state.
 ** Debug Executor Catalog
 The debug executor catalog is a typed =TOML= or =JSON= envelope. It registers
 existing graph executor names to an adapter family and runtime binding.

@@ -1,7 +1,10 @@
 use marlin_rust_project_harness_policy::{
-    RustProjectHarnessFindingSeverity, RustProjectHarnessImprovementPriority,
-    RustProjectHarnessImprovementQueueStatus, RustProjectHarnessQualityFindingEvidencePaths,
-    RustProjectHarnessQualityFindingsInput, build_improvement_queue_receipt,
+    RustProjectHarnessExpectedArtifact, RustProjectHarnessFindingSeverity,
+    RustProjectHarnessImprovementPlanStatus, RustProjectHarnessImprovementPriority,
+    RustProjectHarnessImprovementQueueStatus, RustProjectHarnessQualityAutofixability,
+    RustProjectHarnessQualityBlockingLevel, RustProjectHarnessQualityDomain,
+    RustProjectHarnessQualityFindingEvidencePaths, RustProjectHarnessQualityFindingsInput,
+    build_improvement_plan_receipt, build_improvement_queue_receipt,
     build_verification_policy_receipt, evaluate_quality_findings_for_gate,
     rust_project_harness_config_for_project,
 };
@@ -64,6 +67,11 @@ fn quality_findings_turn_missing_gates_into_agent_actionable_hard_errors() {
     assert_eq!(findings.advice_count(), 1);
     assert!(findings.findings.iter().any(|finding| {
         finding.severity == RustProjectHarnessFindingSeverity::HardError
+            && finding.domain == RustProjectHarnessQualityDomain::VerificationGate
+            && finding.blocking_level == RustProjectHarnessQualityBlockingLevel::BuildBlocking
+            && finding.autofixability == RustProjectHarnessQualityAutofixability::ManualPolicyEdit
+            && finding.expected_artifact
+                == RustProjectHarnessExpectedArtifact::PerformanceVerificationTask
             && finding.rule_id == "MARLIN-QUALITY-GATE-PERF"
             && finding.agent_next_action.contains("performance")
     }));
@@ -108,9 +116,57 @@ fn reflection_turns_quality_findings_into_improvement_queue() {
     );
     assert!(queue.items.iter().all(|item| {
         item.priority == RustProjectHarnessImprovementPriority::Critical
+            && item.blocking_level == RustProjectHarnessQualityBlockingLevel::BuildBlocking
+            && item.autofixability == RustProjectHarnessQualityAutofixability::ManualPolicyEdit
             && item.next_action.contains("agent-runtime")
             && item.verification_command.contains("cargo test")
     }));
+    assert!(queue.items.iter().any(|item| {
+        item.quality_domain == RustProjectHarnessQualityDomain::ReportObligation
+            && item.expected_artifact
+                == RustProjectHarnessExpectedArtifact::PerformanceReportObligation
+    }));
+
+    let plan = build_improvement_plan_receipt(&queue);
+
+    assert_eq!(plan.status, RustProjectHarnessImprovementPlanStatus::Ready);
+    assert_eq!(plan.step_count(), 4);
+    assert_eq!(plan.crate_role, "agent-runtime");
+    assert!(
+        plan.plan_sources
+            .contains(&"improvement_queue.json".to_owned())
+    );
+    assert_eq!(
+        plan.steps[0].expected_artifact,
+        RustProjectHarnessExpectedArtifact::PerformanceVerificationTask
+    );
+    assert!(plan.steps.iter().all(|step| {
+        step.patch_boundary.contains("rust-project-harness")
+            && step.skip_reason.contains(step.source_rule_id.as_str())
+            && step.rollback_reason.contains(&step.verification_command)
+    }));
+
+    let performance_gate_step = plan
+        .steps
+        .iter()
+        .find(|step| {
+            step.expected_artifact
+                == RustProjectHarnessExpectedArtifact::PerformanceVerificationTask
+        })
+        .expect("plan should include performance verification task step");
+    let performance_report_step = plan
+        .steps
+        .iter()
+        .find(|step| {
+            step.expected_artifact
+                == RustProjectHarnessExpectedArtifact::PerformanceReportObligation
+        })
+        .expect("plan should include performance report obligation step");
+    assert!(
+        performance_report_step
+            .depends_on
+            .contains(&performance_gate_step.improvement_id)
+    );
 }
 
 #[test]
@@ -140,6 +196,22 @@ fn quality_findings_keep_successful_gate_as_agent_evidence_advice() {
     assert_eq!(
         findings.findings[0].severity,
         RustProjectHarnessFindingSeverity::Advice
+    );
+    assert_eq!(
+        findings.findings[0].domain,
+        RustProjectHarnessQualityDomain::RepairEvidence
+    );
+    assert_eq!(
+        findings.findings[0].blocking_level,
+        RustProjectHarnessQualityBlockingLevel::NonBlockingAdvice
+    );
+    assert_eq!(
+        findings.findings[0].autofixability,
+        RustProjectHarnessQualityAutofixability::EvidenceReadOnly
+    );
+    assert_eq!(
+        findings.findings[0].expected_artifact,
+        RustProjectHarnessExpectedArtifact::StructuredEvidenceReview
     );
     assert!(
         findings.findings[0]
@@ -177,4 +249,10 @@ fn reflection_keeps_successful_quality_findings_as_healthy_queue() {
     assert!(queue.is_healthy());
     assert_eq!(queue.action_required_count(), 0);
     assert!(queue.items.is_empty());
+
+    let plan = build_improvement_plan_receipt(&queue);
+
+    assert!(plan.is_noop());
+    assert_eq!(plan.step_count(), 0);
+    assert!(plan.steps.is_empty());
 }

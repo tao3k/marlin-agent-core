@@ -36,7 +36,17 @@ fn package_evidence_graph_receipt_is_owned_by_build_support() {
     assert_eq!(receipt.package_name, package_name);
     assert!(receipt.evidence_graph_summary.nodes > 0);
     assert!(receipt.gate_receipt.is_success());
+    assert_eq!(
+        receipt.verification_policy_receipt.package_name,
+        package_name
+    );
+    assert!(receipt.verification_policy_receipt.performance_task_count > 0);
+    assert!(receipt.verification_policy_receipt.stability_task_count > 0);
     assert_eq!(receipt.quality_findings_receipt.hard_error_count(), 0);
+    assert!(receipt.improvement_queue_receipt.is_healthy());
+    assert_eq!(receipt.improvement_queue_receipt.action_required_count(), 0);
+    assert!(receipt.improvement_plan_receipt.is_noop());
+    assert_eq!(receipt.improvement_plan_receipt.step_count(), 0);
     assert!(receipt.is_success());
 }
 

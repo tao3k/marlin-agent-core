@@ -49,6 +49,7 @@ memoffset = "0.9.1"
 object = "0.39.1"
 orgize = { git = "https://github.com/tao3k/orgize", branch = "main" }
 parking_lot = "0.12.5"
+reqwest = { version = "0.13.4", default-features = false, features = ["json", "rustls"] }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.145"
 static_assertions = "1.1.0"
@@ -61,6 +62,7 @@ tokio-util = { version = "0.7", features = ["rt"] }
 tower = { version = "0.5.3", features = ["limit", "load-shed", "timeout", "util"] }
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter", "fmt", "json"] }
+wiremock = "0.6.5"
 rust-lang-project-harness = { git = "https://github.com/tao3k/rust-lang-project-harness", rev = "7811ab03e815a3eca76d2a2cd25a4ee4c442db30", version = "=0.1.2" }
 marlin-rust-project-harness-policy = { path = "build-support/marlin-rust-project-harness-policy", version = "0.1.0" }
 marlin-agent-environment = { path = "crates/marlin-agent-environment", version = "0.1.0" }

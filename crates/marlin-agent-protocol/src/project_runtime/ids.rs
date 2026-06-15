@@ -81,6 +81,11 @@ project_runtime_id! {
 }
 
 project_runtime_id! {
+    /// Opaque source anchor for the matched graph node.
+    ProjectRuntimeSourceAnchorId
+}
+
+project_runtime_id! {
     /// Typed tool capability identifier addressable by the project graph.
     ProjectRuntimeToolCapabilityId
 }

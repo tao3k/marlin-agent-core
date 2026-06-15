@@ -7,9 +7,10 @@ use serde::{Deserialize, Serialize};
 use crate::{
     GraphId, GraphLoopExecutionStatus, GraphLoopIterationReport, RunId,
     protocol::{
-        GraphQueryFamily, GraphQueryRelationshipFact, ProjectRuntimeContentId,
-        ProjectRuntimeMemoryId, ProjectRuntimeProjectId, ProjectRuntimeReceiptId,
-        ProjectRuntimeRootSessionId, ProjectRuntimeSessionId,
+        GraphQueryFamily, GraphQueryRelationshipFact, ProjectRuntimeAgentId,
+        ProjectRuntimeContentId, ProjectRuntimeMemoryId, ProjectRuntimeProjectId,
+        ProjectRuntimeReceiptId, ProjectRuntimeRootSessionId, ProjectRuntimeSessionId,
+        ProjectRuntimeSourceAnchorId, ProjectRuntimeToolCapabilityId,
     },
     runtime::GraphLoopRunObservation,
 };
@@ -63,8 +64,11 @@ pub struct ProjectRuntimeQuerySummary {
     pub source_project_ids: Vec<ProjectRuntimeProjectId>,
     pub source_root_session_ids: Vec<ProjectRuntimeRootSessionId>,
     pub source_session_ids: Vec<ProjectRuntimeSessionId>,
+    pub source_agent_ids: Vec<ProjectRuntimeAgentId>,
+    pub source_anchor_ids: Vec<ProjectRuntimeSourceAnchorId>,
     pub memory_ids: Vec<ProjectRuntimeMemoryId>,
     pub content_ids: Vec<ProjectRuntimeContentId>,
+    pub tool_capability_ids: Vec<ProjectRuntimeToolCapabilityId>,
     pub relationship_facts: Vec<GraphQueryRelationshipFact>,
     pub score_basis_points: Vec<u16>,
 }

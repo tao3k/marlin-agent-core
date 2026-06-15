@@ -1,6 +1,9 @@
+mod content_graph;
 mod contracts;
 mod contracts_accumulation;
 mod document;
 mod project_graph;
 mod project_recall;
 mod release;
+mod session_graph;
+mod tool_graph;

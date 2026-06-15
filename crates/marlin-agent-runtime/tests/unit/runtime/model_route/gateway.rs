@@ -1,9 +1,11 @@
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use marlin_agent_protocol::ModelEndpoint;
 use marlin_agent_runtime::{
-    ModelGateway, ModelGatewayCompletionChoice, ModelGatewayCompletionResponse, ModelGatewayFuture,
-    ModelGatewayMessageRole, ModelGatewayRequest, ModelGatewayResult, assistant_gateway_message,
+    ModelGateway, ModelGatewayCompletionChoice, ModelGatewayCompletionResponse, ModelGatewayError,
+    ModelGatewayFuture, ModelGatewayMessageRole, ModelGatewayRequest, ModelGatewayResult,
+    RuntimeEdgeLayer, RuntimeEdgeModelGateway, RuntimeEdgePolicy, assistant_gateway_message,
     system_gateway_message, user_gateway_message,
 };
 
@@ -35,6 +37,29 @@ impl ModelGateway for RecordingGateway {
                 vec![ModelGatewayCompletionChoice::new(
                     0,
                     assistant_gateway_message("runtime used the protocol gateway"),
+                    Some("stop".to_string()),
+                )],
+            ))
+        })
+    }
+}
+
+#[derive(Clone, Default)]
+struct SlowGateway;
+
+impl ModelGateway for SlowGateway {
+    fn complete(
+        &self,
+        request: ModelGatewayRequest,
+    ) -> ModelGatewayFuture<ModelGatewayResult<ModelGatewayCompletionResponse>> {
+        Box::pin(async move {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+            Ok(ModelGatewayCompletionResponse::new(
+                "slow-runtime-test-completion",
+                request.endpoint().litellm_model_id().as_str(),
+                vec![ModelGatewayCompletionChoice::new(
+                    0,
+                    assistant_gateway_message("slow provider finished"),
                     Some("stop".to_string()),
                 )],
             ))
@@ -76,4 +101,71 @@ async fn runtime_completes_through_provider_neutral_model_gateway() {
     assert_eq!(seen[0].endpoint().provider.as_str(), "openai");
     assert_eq!(seen[0].endpoint().model.as_str(), "gpt-5-mini");
     assert_eq!(seen[0].messages().len(), 2);
+}
+
+#[tokio::test]
+async fn runtime_edge_model_gateway_applies_policy_receipt_and_delegates_request() {
+    let gateway = RecordingGateway::default();
+    let observed_gateway = gateway.clone();
+    let edge_gateway = RuntimeEdgeModelGateway::new(
+        gateway,
+        RuntimeEdgePolicy::new()
+            .with_concurrency_limit(1)
+            .with_load_shed(true)
+            .with_timeout_ms(100),
+    )
+    .expect("runtime edge policy should compile");
+
+    let receipt = edge_gateway.edge_policy_receipt();
+    assert_eq!(receipt.concurrency_limit(), Some(1));
+    assert!(receipt.load_shed());
+    assert_eq!(receipt.timeout_ms(), Some(100));
+    assert_eq!(
+        receipt.layers(),
+        &[
+            RuntimeEdgeLayer::ConcurrencyLimit,
+            RuntimeEdgeLayer::LoadShed,
+            RuntimeEdgeLayer::Timeout,
+        ]
+    );
+
+    let response = edge_gateway
+        .complete(ModelGatewayRequest::new(
+            ModelEndpoint::new("openai", "gpt-5-mini"),
+            vec![user_gateway_message("route through the runtime edge")],
+        ))
+        .await
+        .expect("edge gateway should delegate to wrapped gateway");
+
+    assert_eq!(response.id, "runtime-test-completion");
+    let seen = observed_gateway.seen_requests();
+    assert_eq!(seen.len(), 1);
+    assert_eq!(
+        seen[0].endpoint().litellm_model_id().as_str(),
+        "openai/gpt-5-mini"
+    );
+}
+
+#[tokio::test]
+async fn runtime_edge_model_gateway_times_out_slow_provider() {
+    let edge_gateway = RuntimeEdgeModelGateway::new(
+        SlowGateway,
+        RuntimeEdgePolicy::new()
+            .with_concurrency_limit(1)
+            .with_timeout_ms(1),
+    )
+    .expect("runtime edge policy should compile");
+
+    let result = edge_gateway
+        .complete(ModelGatewayRequest::new(
+            ModelEndpoint::new("openai", "gpt-5-mini"),
+            vec![user_gateway_message("timeout slow provider")],
+        ))
+        .await;
+
+    assert!(matches!(
+        result,
+        Err(ModelGatewayError::Completion(message))
+            if message.contains("runtime edge policy rejected model gateway request")
+    ));
 }

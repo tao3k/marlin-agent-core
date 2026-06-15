@@ -187,6 +187,58 @@ fn debug_cli_graph_query_reads_project_runtime_graph_query_facts() {
 }
 
 #[test]
+fn debug_cli_graph_query_reads_tool_capability_query_facts() {
+    let dir = tempdir().expect("tempdir");
+    let input = dir.path().join("tool-query.json");
+    let request = GraphQueryRequest::new(
+        GraphQueryContext::new("project-alpha"),
+        GraphQueryFamily::Tool,
+        "rustfmt",
+    )
+    .with_tool_capability("tool:rustfmt");
+    let response = GraphQueryResponse::new("receipt:tool-query", request).with_match(
+        GraphQueryMatch::new("project-alpha", "Rust formatter capability", 9_000)
+            .with_tool_capability("tool:rustfmt")
+            .with_relationship(GraphQueryMatchRelationship::new([
+                GraphQueryRelationshipFact::SameProject,
+                GraphQueryRelationshipFact::ContractValidated,
+            ])),
+    );
+    fs::write(
+        &input,
+        serde_json::to_string(&response).expect("response JSON"),
+    )
+    .expect("write response");
+
+    let query = run_marlin_cli_from_args([
+        "graph",
+        "query",
+        "--input",
+        input.to_str().expect("utf8 path"),
+    ]);
+
+    assert_eq!(query.status, 0, "{}", query.stderr);
+    let summary: ProjectRuntimeQuerySummary =
+        serde_json::from_str(&query.stdout).expect("project runtime query summary");
+    assert_eq!(summary.receipt_id.as_str(), "receipt:tool-query");
+    assert_eq!(summary.family, GraphQueryFamily::Tool);
+    assert_eq!(summary.match_count, 1);
+    assert_eq!(
+        summary
+            .tool_capability_ids
+            .iter()
+            .map(|capability_id| capability_id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["tool:rustfmt"]
+    );
+    assert!(
+        summary
+            .relationship_facts
+            .contains(&GraphQueryRelationshipFact::ContractValidated)
+    );
+}
+
+#[test]
 fn debug_cli_graph_query_executes_project_memory_query_across_session_shards() {
     let dir = tempdir().expect("tempdir");
     let request_path = dir.path().join("project-runtime-request.json");
@@ -285,6 +337,77 @@ fn debug_cli_graph_query_executes_project_memory_query_across_session_shards() {
         summary
             .relationship_facts
             .contains(&GraphQueryRelationshipFact::SameProject)
+    );
+    assert!(
+        summary
+            .relationship_facts
+            .contains(&GraphQueryRelationshipFact::ContractValidated)
+    );
+}
+
+#[test]
+fn debug_cli_graph_query_executes_store_backed_project_memory_query() {
+    let dir = tempdir().expect("tempdir");
+    let request_path = dir.path().join("project-runtime-request.json");
+    let memory_root = dir.path().join("store-frontier.org");
+    let request = GraphQueryRequest::new(
+        GraphQueryContext::new("project-alpha")
+            .with_worktree("worktree-b")
+            .with_root_session("root-b"),
+        GraphQueryFamily::Memory,
+        "graph_frontier contract-evidence-alpha policy-shard-beta store-frontier.org",
+    )
+    .with_limit(5);
+    fs::write(
+        &request_path,
+        serde_json::to_string(&request).expect("request JSON"),
+    )
+    .expect("write request");
+    fs::write(
+        &memory_root,
+        "* Memory: Store-backed contract frontier :graph_frontier:\n\
+         :PROPERTIES:\n\
+         :MEMORY_ID: memory:store-backed-frontier\n\
+         :PROJECT_ID: project-alpha\n\
+         :WORKTREE_ID: worktree-a\n\
+         :ROOT_SESSION_ID: root-a\n\
+         :SESSION_ID: session-a\n\
+         :EVIDENCE_FACT: contract-evidence-alpha\n\
+         :CONTRACT_VALIDATED: true\n\
+         :END:\n\
+         [[id:policy-shard-beta][evidence backlink]]\n",
+    )
+    .expect("write memory root");
+
+    let query = run_marlin_cli_from_args([
+        "graph",
+        "query",
+        "--input",
+        request_path.to_str().expect("utf8 path"),
+        "--org-memory-store-root",
+        dir.path().to_str().expect("utf8 path"),
+        "--org-memory-root",
+        "store-frontier.org",
+        "--receipt-id",
+        "receipt:cli-store-project-memory",
+    ]);
+
+    assert_eq!(query.status, 0, "{}", query.stderr);
+    let summary: ProjectRuntimeQuerySummary =
+        serde_json::from_str(&query.stdout).expect("project runtime query summary");
+    assert_eq!(
+        summary.receipt_id.as_str(),
+        "receipt:cli-store-project-memory"
+    );
+    assert_eq!(summary.family, GraphQueryFamily::Memory);
+    assert_eq!(summary.match_count, 1);
+    assert_eq!(
+        summary
+            .memory_ids
+            .iter()
+            .map(|memory_id| memory_id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["memory:store-backed-frontier"]
     );
     assert!(
         summary

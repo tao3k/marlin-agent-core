@@ -11,6 +11,10 @@ use marlin_agent_protocol::{
     ModelGatewayRequest, ModelGatewayResult, ModelGatewayTransport,
 };
 use tokio::sync::Semaphore;
+use wiremock::{
+    Mock, MockServer, ResponseTemplate,
+    matchers::{method, path_regex},
+};
 
 /// Stable denial returned when no-LLM tests attempt to cross the live gateway boundary.
 pub const NO_LIVE_LLM_GATE_DENIAL_MESSAGE: &str =
@@ -311,6 +315,62 @@ impl ModelGateway for NoLiveLlmModelGateway {
     ) -> ModelGatewayFuture<ModelGatewayResult<ModelGatewayCompletionResponse>> {
         let outcome = self.deny_completion_attempt(request);
         Box::pin(async move { outcome })
+    }
+}
+
+/// HTTP fixture that denies provider POSTs before they can reach a live LLM.
+pub struct NoLiveHttpModelGatewayFixture {
+    server: MockServer,
+    denial_status: u16,
+}
+
+impl fmt::Debug for NoLiveHttpModelGatewayFixture {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("NoLiveHttpModelGatewayFixture")
+            .field("uri", &self.uri())
+            .field("denial_status", &self.denial_status)
+            .finish()
+    }
+}
+
+impl NoLiveHttpModelGatewayFixture {
+    /// Starts a no-live fixture that rejects provider POSTs with HTTP 503.
+    pub async fn start() -> Self {
+        Self::start_with_status(503).await
+    }
+
+    /// Starts a no-live fixture that rejects provider POSTs with a custom status.
+    pub async fn start_with_status(denial_status: u16) -> Self {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path_regex(".*"))
+            .respond_with(
+                ResponseTemplate::new(denial_status)
+                    .set_body_string(NO_LIVE_LLM_GATE_DENIAL_MESSAGE),
+            )
+            .mount(&server)
+            .await;
+
+        Self {
+            server,
+            denial_status,
+        }
+    }
+
+    /// Base URI for clients under test.
+    pub fn uri(&self) -> String {
+        self.server.uri()
+    }
+
+    /// Canonical chat completions endpoint exposed by this no-live fixture.
+    pub fn chat_completions_url(&self) -> String {
+        format!("{}/v1/chat/completions", self.uri())
+    }
+
+    /// HTTP status returned for denied provider calls.
+    pub fn denial_status(&self) -> u16 {
+        self.denial_status
     }
 }
 

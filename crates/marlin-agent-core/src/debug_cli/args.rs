@@ -56,6 +56,8 @@ impl CommonOptions {
 pub(super) struct GraphQueryOptions {
     pub(super) input: Option<PathBuf>,
     pub(super) org_memory_fixtures: Vec<PathBuf>,
+    pub(super) org_memory_roots: Vec<String>,
+    pub(super) org_memory_store_root: Option<PathBuf>,
     pub(super) receipt_id: String,
 }
 
@@ -63,11 +65,17 @@ impl GraphQueryOptions {
     pub(super) fn parse(cursor: &mut ArgCursor) -> Result<Self, String> {
         let mut input = None;
         let mut org_memory_fixtures = Vec::new();
+        let mut org_memory_roots = Vec::new();
+        let mut org_memory_store_root = None;
         let mut receipt_id = "debug-project-memory-query".to_owned();
         while let Some(arg) = cursor.next() {
             match arg.as_str() {
                 "--input" | "-i" => input = Some(cursor.required_path(&arg)?),
                 "--org-memory-fixture" => org_memory_fixtures.push(cursor.required_path(&arg)?),
+                "--org-memory-root" => org_memory_roots.push(cursor.required_value(&arg)?),
+                "--org-memory-store-root" => {
+                    org_memory_store_root = Some(cursor.required_path(&arg)?)
+                }
                 "--receipt-id" => receipt_id = cursor.required_value(&arg)?,
                 "-h" | "--help" => return Err(super::usage()),
                 unknown => return Err(format!("unknown option `{unknown}`")),
@@ -76,6 +84,8 @@ impl GraphQueryOptions {
         Ok(Self {
             input,
             org_memory_fixtures,
+            org_memory_roots,
+            org_memory_store_root,
             receipt_id,
         })
     }

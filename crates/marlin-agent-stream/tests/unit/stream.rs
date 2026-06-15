@@ -9,6 +9,7 @@ use marlin_agent_stream::{
     ModelGatewayMessageRole, ModelStreamChunk, ModelStreamEvent, ModelStreamGateway,
     ModelStreamRequest, ModelStreamTransport, system_gateway_message, user_gateway_message,
 };
+use marlin_agent_test_support::{NO_LIVE_LLM_GATE_DENIAL_MESSAGE, NoLiveHttpModelGatewayFixture};
 use tokio::time::timeout;
 
 const LIVE_LLM_GATE_ENV: &str = "MARLIN_LIVE_LLM_GATE";
@@ -86,6 +87,35 @@ async fn litellm_stream_gateway_validates_endpoint_contract_before_network_call(
             ModelEndpointContractError::CodexIsNotModelName { .. }
         ))
     ));
+}
+
+#[tokio::test]
+async fn no_live_http_fixture_denies_stream_provider_posts() {
+    let fixture = NoLiveHttpModelGatewayFixture::start().await;
+    let response = reqwest::Client::new()
+        .post(fixture.chat_completions_url())
+        .json(&serde_json::json!({
+            "model": "anthropic/claude-opus-4-8",
+            "stream": true,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": "stream crate must not cross live provider boundary"
+                }
+            ]
+        }))
+        .send()
+        .await
+        .expect("no-live fixture should deny stream provider request");
+
+    assert_eq!(response.status().as_u16(), fixture.denial_status());
+    assert_eq!(
+        response
+            .text()
+            .await
+            .expect("no-live denial body should be readable"),
+        NO_LIVE_LLM_GATE_DENIAL_MESSAGE
+    );
 }
 
 #[tokio::test]
