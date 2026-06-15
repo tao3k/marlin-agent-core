@@ -1,0 +1,107 @@
+* 40.140 Pi Agent Core Loop Parity Plan
+:status: Active
+:owner-crates: marlin-agent-protocol, marlin-agent-kernel, marlin-agent-runtime, marlin-agent-core, marlin-agent-harness, marlin-gerbil-scheme
+
+** Purpose
+The first graph-loop hardening target is functional parity with the loop behavior demonstrated by =.data/pi/packages/agent=. Marlin should learn the proven runtime shape, but not copy the transcript-first implementation model.
+
+Marlin's loop remains a typed graph runtime:
+- Rust owns protocol types, runtime handles, receipts, provider request projection, replay artifacts, CLI/debug surfaces, and execution envelopes.
+- Gerbil Scheme owns policy composition over typed facts and continuation profiles.
+- The provider boundary receives projected request messages; it does not own loop semantics, session semantics, or replay semantics.
+
+** Pi Source Evidence
+The parity baseline was taken from these selector-scoped pi owners:
+- =.data/pi/packages/agent/src/agent-loop.ts:120-269= for continuation entrypoints, two-level loop structure, steering/follow-up queues, =prepareNextTurn=, and =shouldStopAfterTurn=.
+- =.data/pi/packages/agent/src/agent-loop.ts:275-368= for assistant response streaming, partial message updates, context transform, LLM conversion, and dynamic API-key resolution.
+- =.data/pi/packages/agent/src/agent-loop.ts:373-760= for sequential/parallel tool execution, before/after tool hooks, update events, ordered tool-result messages, and batch termination.
+- =.data/pi/packages/agent/src/agent.ts:250-430= for user-facing control methods: =steer=, =followUp=, queue modes, =abort=, =waitForIdle=, =prompt=, =continue=, and reset.
+- =.data/pi/packages/agent/src/agent.ts:430-570= for active-run lifecycle, failure event synthesis, state reduction, pending tool calls, and listener dispatch.
+- =.data/pi/packages/agent/src/harness/session/session.ts:82-266= for session tree entries, branch movement, labels, model/tool/thinking changes, compaction records, and custom entries.
+- =.data/pi/packages/agent/src/types.ts:36-310= for queue mode, tool execution mode, hook contexts, turn-update contracts, transform/convert contracts, and follow-up/steering config.
+
+These files are evidence for behavior. They are not a dependency and do not define Marlin's public API.
+
+** Parity Matrix
+| Pi behavior | Marlin target | First proof |
+| Lifecycle event stream: =agent_start=, =turn_start=, =message_start=, =message_update=, =message_end=, =tool_execution_start=, =tool_execution_update=, =tool_execution_end=, =turn_end=, =agent_end=. | =GraphLoopEvent= taxonomy with run id, iteration id, node id, trace id, timestamp, and typed payload. | No-live-LLM fixture asserting event order and replayed query output. |
+| Continue from existing context; reject invalid assistant-tail continuation unless queued input can drive a new prompt. | Readiness-aware =GraphLoopContinuationDecision= with explicit accept/deny/defer receipt. | Kernel/controller tests for accepted continuation, assistant-tail denial, and queued steering fallback. |
+| Steering messages inject before the next assistant response; follow-up messages run only after the loop would stop. Queue mode can drain all or one at a time. | =GraphLoopInputQueue= with =Steering= and =FollowUp= lanes plus =DrainAll= and =DrainOne= policies. | Runtime tests showing deterministic queue drain order across multiple turns. |
+| Assistant response streaming keeps partial state, emits updates, then finalizes one message. | Provider request projection returns typed assistant-stream events, which runtime reduces into graph message receipts. | Harness stream fixture with partial/final receipts and no unstructured log dependency. |
+| Tool calls can execute sequentially or parallel; a sequential tool forces batch sequential mode. | =GraphNodeExecutionMode= and =GraphToolBatchExecutionReceipt= over graph node frontier execution. | Tool fixture comparing sequential ordering, parallel completion ordering, and source-order result artifacts. |
+| =beforeToolCall= can block; =afterToolCall= can rewrite content, details, error state, and terminate hint. | Rust catalog resolves hook handlers; Gerbil policy can produce typed hook actions but never manufactures Rust handlers. | Hook receipt tests for allow, block, rewrite, error, and terminate. |
+| Tool update callback emits =tool_execution_update=. | Runtime event stream emits bounded update receipts with capture tee reliability. | Event tee test plus replay query counting update events. |
+| Batch termination only stops the loop when every finalized tool result requests termination. | =GraphToolBatchDecision= records =continue= or =terminate= with per-tool evidence. | Mixed terminate/non-terminate fixture. |
+| =prepareNextTurn= may replace context/model/thinking before another provider request. | Continuation planner returns typed next-turn update over graph context, model route, and reasoning policy. | Controller test proving update is applied before next graph proposal. |
+| =shouldStopAfterTurn= exits after the current turn, before polling more queues. | Stop policy receipt distinguishes graceful stop, budget stop, planner stop, and failure stop. | Kernel stop-policy fixture with queue still pending. |
+| =abort= and =waitForIdle= are runtime handles, not protocol guesses. | Runtime run registry exposes cancel, wait, inspect, and active-state receipts. | CLI =marlin loop inspect= and cancellation fixture. |
+| Session storage is a typed tree with branch movement, metadata, labels, compaction, model/tool/thinking changes, and custom entries. | Project/session/content graph stores typed entries and source spans; raw transcript is not the semantic root. | Org-backed session/content graph fixture with branch replay. |
+
+** P0-P5 Implementation Plan
+*** P0 Protocol And Receipt Surface
+Define the minimum graph-loop parity protocol:
+- =GraphLoopRunId=, =GraphLoopIterationId=, =GraphLoopEventId=, and =GraphNodeExecutionId= newtypes.
+- =GraphLoopEvent= lifecycle taxonomy matching the parity matrix.
+- =GraphLoopContinuationDecision= with receipt-bearing =accept=, =deny=, =defer=, and =rewrite= actions.
+- =GraphLoopInputQueue= with steering/follow-up lanes and explicit drain policy.
+- =GraphToolBatchExecutionReceipt=, =GraphToolCallReceipt=, =GraphToolBatchDecision=, and =GraphLoopStopReceipt=.
+
+P0 is complete only when no-live-LLM protocol fixtures can serialize, replay, query, and reject invalid continuation requests without provider calls.
+
+*** P1 Runtime Run Registry And Loop Handle
+Add a runtime-owned run registry:
+- start, cancel, wait, inspect, and complete handles;
+- active run state with current iteration, pending node/tool ids, last event id, and terminal status;
+- event stream tee that preserves capture subscribers even if primary output closes;
+- cancellation and idle semantics that mirror pi's =abort= and =waitForIdle=, but return typed receipts.
+
+P1 is complete when =marlin loop run=, =marlin loop inspect=, and a cancellation fixture share the same run id and replayable receipt path.
+
+*** P2 Queue And Continuation Semantics
+Implement steering/follow-up queues in the graph loop:
+- steering drains before the next proposal/provider request;
+- follow-up drains only after the loop would otherwise stop;
+- drain-all and drain-one policies are explicit;
+- assistant-tail continuation denial is a typed readiness receipt, not a thrown string.
+
+P2 is complete when deterministic fixtures prove queue ordering across at least three turns.
+
+*** P3 Tool Batch Execution Semantics
+Lift the current debug process-command executor into a typed graph tool batch executor:
+- sequential and parallel modes;
+- per-tool forced sequential override;
+- before/after hook receipts;
+- bounded update events;
+- source-order result artifacts even when parallel completion order differs;
+- batch termination only when every finalized tool requests terminate.
+
+P3 is complete when sequential, parallel, block, rewrite, error, update, and mixed-terminate fixtures all replay through =marlin graph query=.
+
+*** P4 Session And Content Graph Integration
+Map loop output into the project/session/content graph:
+- content nodes for prompt, assistant partial/final, tool result, compaction, custom entry, branch summary, model change, tool activation change, and thinking-level change;
+- session tree branch movement and labels;
+- project/worktree/session/content provenance on every event and receipt.
+
+P4 is complete when one fake user workspace can run, branch, compact, replay, and query without raw transcript sharing.
+
+*** P5 Gerbil/POO Policy Plane
+Expose the parity surface to Gerbil through native ABI projections:
+- Gerbil POO profiles can decide continuation, stop, hook, model route, and queue policy over typed facts;
+- Rust validates readiness and resolves handler catalogs;
+- Scheme never owns JSON/protocol serialization and never constructs Rust handlers.
+
+P5 is complete when a POO-driven no-live-LLM fixture chooses different hook/model/queue behavior for two agent classes and the replay artifact preserves typed Rust receipts.
+
+** Immediate Next Work
+1. Add P0 protocol types and event taxonomy in =marlin-agent-protocol=.
+2. Extend kernel controller tests from terminal status to event/decision receipts.
+3. Add runtime run registry skeleton with inspect/cancel/wait receipts.
+4. Extend the debug CLI fixtures so =loop run=, =loop inspect=, =loop replay=, and =graph query= operate on the same receipt family.
+5. Add one pi-parity fixture that exercises steering, follow-up, one tool call, and graceful stop without a live LLM.
+
+** Non-goals
+- Do not copy pi's transcript-first public API.
+- Do not make the debug CLI the semantic owner of loop behavior.
+- Do not add a Rust hook DSL for complex policy.
+- Do not let Scheme own cross-process JSON or runtime handler construction.
