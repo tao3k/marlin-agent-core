@@ -1,7 +1,9 @@
 #![allow(dead_code)]
 
 use marlin_gerbil_ir::CompiledLoopGraph;
-use marlin_gerbil_scheme::{GerbilCompiledArtifact, default_gerbil_gxi_program};
+use marlin_gerbil_scheme::{
+    GerbilCompiledArtifact, default_gerbil_gxi_program, resolve_gerbil_executable,
+};
 use marlin_org_model::TodoState;
 use marlin_workspace_patch::WorkspacePatchOp;
 use std::path::PathBuf;
@@ -68,12 +70,12 @@ pub const RELEASE_TOPOLOGY_SOURCE: &str = r#"(release-topology "release:gerbil"
       (artifact-paths "gerbil/src/marlin/adapter.ss"))))"#;
 
 pub fn local_gxi() -> Option<PathBuf> {
-    let gxi = default_gerbil_gxi_program();
+    let configured_gxi = default_gerbil_gxi_program();
 
-    if !gxi.exists() {
+    let Some(gxi) = resolve_gerbil_executable(&configured_gxi) else {
         let message = format!(
             "skipping real gxi test because {} is missing",
-            gxi.display()
+            configured_gxi.display()
         );
         if std::env::var_os(MARLIN_REQUIRE_REAL_GXI_ENV).is_some() {
             panic!(
@@ -82,7 +84,7 @@ pub fn local_gxi() -> Option<PathBuf> {
         }
         eprintln!("{message}");
         return None;
-    }
+    };
 
     Some(gxi)
 }

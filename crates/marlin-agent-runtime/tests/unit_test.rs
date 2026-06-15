@@ -4,6 +4,8 @@ mod runtime;
 mod runtime_cleanup;
 #[path = "unit/runtime/dependency_boundary.rs"]
 mod runtime_dependency_boundary;
+#[path = "unit/runtime/events.rs"]
+mod runtime_events;
 #[path = "unit/runtime/model_route/mod.rs"]
 mod runtime_model_route;
 #[path = "unit/runtime/observability.rs"]

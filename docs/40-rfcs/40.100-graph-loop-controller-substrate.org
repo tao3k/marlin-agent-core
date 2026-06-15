@@ -1,0 +1,139 @@
+* 40.100 Graph Loop Controller Substrate
+:PROPERTIES:
+:status: Active
+:owner-crates: marlin-agent-protocol, marlin-agent-kernel, marlin-agent-runtime, marlin-agent-harness, marlin-agent-test-support
+:END:
+
+** Purpose
+This RFC fixes the first graph loop substrate boundary:
+
+#+begin_example
+Strategy or Gerbil proposal
+-> typed GraphPolicyProposal / LoopGraph
+-> Rust validation and native ABI readiness
+-> TokioGraphLoopKernel execution
+-> HarnessExecutionReport / receipts / trace
+-> controller next action
+#+end_example
+
+The controller is not a product layer and is not owned by =marlin-agent-core=.
+The facade may re-export stable contracts, but protocol, kernel, runtime,
+harness, and test-support remain the owning crates.
+
+** Ownership
+- =marlin-agent-protocol= owns controller data contracts:
+  =GraphLoopRunRequest=, =GraphLoopStopPolicy=,
+  =GraphLoopEvidencePolicy=, =GraphLoopIterationReport=, and
+  =GraphLoopNextAction=.
+- =marlin-agent-kernel= owns one-shot graph execution through
+  =GraphLoopKernel= and =TokioGraphLoopKernel=.
+- =marlin-agent-runtime= owns Tokio runtime, cancellation, event sinks,
+  process visibility, providers, tools, and sub-agent execution substrate.
+- =marlin-agent-harness= owns scenario execution and evaluation over typed
+  evidence.
+- =marlin-agent-test-support= owns deterministic no-live-LLM replay fixtures,
+  fake gateways, denied gateway evidence, and graph node receipt fixtures.
+- Gerbil Scheme owns strategy composition and POO control-plane authoring.
+  It produces typed proposals and native projections; it does not own runtime
+  execution, JSON serialization, process cleanup, or Rust catalog mutation.
+
+** Controller Contract
+The first controller contract is intentionally small. It wraps one-shot graph
+execution into a replayable multi-iteration envelope without inventing strategy
+semantics in Rust.
+
+#+begin_example
+GraphLoopRunRequest
+  initial_request: GraphLoopExecutionRequest
+  stop_policy: GraphLoopStopPolicy
+  iteration_budget: Option<GraphLoopExecutionBudget>
+  evidence_policy: GraphLoopEvidencePolicy
+
+GraphLoopIterationReport
+  iteration: u64
+  execution_result: GraphLoopExecutionResult
+  next_action: GraphLoopNextAction
+  trace: Option<AgentExecutionTrace>
+
+GraphLoopNextAction
+  StopCompleted
+  StopFailed
+  ContinueWithGraph(LoopGraph)
+  EscalateToHuman { reason }
+#+end_example
+
+The first implementation evidence is protocol-only. Kernel execution remains
+one-shot until the controller runner is introduced in a later pass.
+
+** Stop Policy
+The initial stop policy is deterministic:
+- =max_iterations=
+- =max_duration_ms=
+- =stop_on_failed_execution=
+- =human_gate_required=
+
+AI judgment, model routing, or Gerbil strategy selection must not be hidden in
+the stop policy. Those decisions have to arrive as typed proposals, receipts,
+or explicit next actions.
+
+** Evidence Policy
+Replayable loop runs must request typed evidence instead of text logs:
+- runtime events
+- per-node graph execution receipts
+- typed trace
+- no-live-LLM gateway denial receipts
+
+Runtime events are captured through a runtime-owned tee sink. The controller must
+not steal or drain the caller's external event stream; when
+=capture_runtime_events= is enabled, the execution child runtime emits to both
+the parent event stream and a capture stream used to populate the iteration
+trace.
+
+The no-live-LLM replay path is a substrate requirement. It proves that a loop
+can be inspected and replayed without a provider call.
+
+** Implementation Evidence
+- =crates/marlin-agent-protocol/src/graph/controller.rs= defines the substrate
+  contracts.
+- =crates/marlin-agent-protocol/tests/unit/protocol/graph/controller.rs=
+  proves JSON shape for controller requests and iteration reports.
+- =crates/marlin-agent-kernel/src/controller.rs= provides the
+  =GraphLoopController= runner, typed =GraphLoopContinuationPlanner= boundary,
+  and bounded =ContinueWithGraph= execution.
+- =crates/marlin-agent-runtime/src/tokio_runtime/events.rs= provides runtime
+  event tee capture so replayable traces do not consume the caller's event
+  stream.
+- =crates/marlin-agent-harness/src/runtime.rs= provides
+  =AgentHarnessRuntime::execute_graph_loop= and an ordered
+  =AgentHarnessGraphLoopExecutionReport= for scenario evidence.
+- =crates/marlin-agent-test-support/src/replay.rs= projects replay evidence for
+  denied no-live-LLM gateway attempts and graph node receipts.
+- =crates/marlin-agent-protocol/src/graph/gerbil_policy.rs= defines the
+  Gerbil/POO continuation request and compiles typed Scheme continuation actions
+  into =GraphLoopNextAction=.
+- =crates/marlin-gerbil-scheme/src/graph_loop_continuation.rs= projects
+  =marlin.agent.gerbil-loop-continuation= typed values into Rust controller
+  actions without Scheme-owned JSON or Rust handler construction; it also
+  declares the native projection package manifest, request, readiness plan, and
+  ABI symbol contract.
+- =crates/marlin-gerbil-scheme/gerbil/src/marlin/graph-loop-continuation-native-projection.ss=
+  provides the Gerbil POO projection module for
+  =marlin_graph_loop_continuation_next_action=, including the
+  =defmarlin-graph-loop-continuation-profile= user macro and typed action
+  builders.
+- =crates/marlin-gerbil-scheme/examples/user-interface-module-config/modules/loop-continuation.ss=
+  proves the downstream user interface can import a POO continuation profile
+  through =marlinModules= and project a =continue_with_graph= action without
+  recompiling Rust.
+- =crates/marlin-agent-harness/src/gerbil_continuation.rs= adapts an injected
+  Gerbil native projector into =GraphLoopContinuationPlanner= so controller
+  runs can consume typed POO continuation output through the harness.
+- =crates/marlin-agent-core/src/lib.rs= re-exports the contracts only as a thin
+  facade.
+
+** Next Gaps
+- Replace the current harness-injected Gerbil continuation projector with a
+  resident/runtime-backed invocation of the Gerbil projection module while
+  preserving Rust-owned typed receipts and process observability.
+- Promote the ignored real =gxtest= user-interface workspace gate into the
+  CI/manual evidence path once the runner has Gerbil plus =gerbil-poo= deps.

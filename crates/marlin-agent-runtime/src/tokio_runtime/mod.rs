@@ -10,15 +10,18 @@ mod traits;
 
 pub use context::{RuntimeContext, RuntimeExecutionIdentity};
 pub use events::{EventStream, RuntimeEventSink, RuntimeEventStream};
-pub use handle::TokioAgentRuntime;
+pub use handle::{TokioAgentRuntime, WorkingCopySubAgentFanoutItem};
 pub use marlin_agent_environment::{
-    WorkingCopyBaseRef, WorkingCopyBranchName, WorkingCopyCommandInvocation,
-    WorkingCopyCommandProgram, WorkingCopyCommandProjection, WorkingCopyCommandReceipt,
-    WorkingCopyCommandStatus, WorkingCopyCreateRequest, WorkingCopyGitTopLevel, WorkingCopyHandle,
-    WorkingCopyId, WorkingCopyIsolationOperationKind, WorkingCopyIsolationPlan,
+    WorkingCopyActiveBinding, WorkingCopyBaseRef, WorkingCopyBranchName,
+    WorkingCopyCommandInvocation, WorkingCopyCommandProgram, WorkingCopyCommandProjection,
+    WorkingCopyCommandReceipt, WorkingCopyCommandStatus, WorkingCopyCreateRequest,
+    WorkingCopyFanoutBenchmarkReceipt, WorkingCopyFinalizeBranchRequest, WorkingCopyGitTopLevel,
+    WorkingCopyHandle, WorkingCopyId, WorkingCopyIsolationOperationKind, WorkingCopyIsolationPlan,
     WorkingCopyIsolationPlanStep, WorkingCopyIsolationProvider, WorkingCopyIsolationReceipt,
-    WorkingCopyIsolationRequest, WorkingCopyIsolationStatus, WorkingCopyPullRequestCheckoutRequest,
-    WorkingCopyPullRequestNumber, WorkingCopyRepositoryDiscoveryPath,
+    WorkingCopyIsolationRequest, WorkingCopyIsolationStatus, WorkingCopyParallelIsolationReceipt,
+    WorkingCopyPullRequestCheckoutRequest, WorkingCopyPullRequestNumber,
+    WorkingCopyRepositoryDiscoveryPath, WorkingCopyRetentionPolicy,
+    WorkingCopyRetentionSweepReceipt,
 };
 pub use marlin_agent_protocol::{
     AgentEvent as RuntimeEvent, GraphId, RunId, RuntimeEnvironment, SubAgentConfigSurface,

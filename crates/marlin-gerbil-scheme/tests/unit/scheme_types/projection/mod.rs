@@ -1,5 +1,6 @@
 mod dynamic;
 mod dynamic_graph_policy;
+mod graph_loop_continuation;
 mod native_abi;
 mod performance;
 mod serde_payload;

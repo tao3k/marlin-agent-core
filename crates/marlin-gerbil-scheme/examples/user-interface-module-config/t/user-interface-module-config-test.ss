@@ -6,7 +6,9 @@
         :marlin/deck-runtime-script
         :marlin/deck-runtime-strategy
         :marlin/deck-runtime-user-module
+        :marlin/graph-loop-continuation-native-projection
         "../modules/config"
+        "../modules/loop-continuation"
         "../modules/subagent"
         :std/test)
 
@@ -59,6 +61,11 @@
 (def user-interface-extension-catalog
   (.get user-interface-workflow extension-catalog))
 
+;;; Boundary: Continuation projection is built from a downstream POO profile.
+;; UserInterfaceWorkflowResult <- UserInterfaceWorkflowContext
+(def user-interface-loop-continuation-action
+  (.get user-interface-loop-continuation-projection action))
+
 ;;; Boundary: Subagent launch policy stays an extension receipt.
 ;; UserInterfaceWorkflowResult <- UserInterfaceWorkflowContext
 (def user-interface-subagent-receipt
@@ -92,6 +99,14 @@
 (check (.get user-interface-subagent-receipt matched) => #t)
 (check (.get user-interface-subagent-receipt extension-id)
        => "user-interface-subagent-policy-extension")
+(check (.get user-interface-loop-continuation-projection type_id)
+       => marlin-graph-loop-continuation-type-id)
+(check (.get user-interface-loop-continuation-projection schema_id)
+       => marlin-graph-loop-continuation-schema-id)
+(check (.get user-interface-loop-continuation-action kind)
+       => "continue_with_graph")
+(check (.get (.get user-interface-loop-continuation-action compiled_graph) graph_id)
+       => "user-interface-continuation-graph")
 (check (.get (.get user-interface-subagent-receipt dynamic-hook-action) action)
        => "register")
 (check (.get (.get user-interface-subagent-receipt dynamic-hook-selection) source)
@@ -102,6 +117,7 @@
        => '("user-interface-hook-module"
             "user-interface-base-module"
             "user-interface-script-module"
+            "user-interface-loop-continuation-module"
             "user-interface-agent-module"
             "user-interface-workspace-module"
             "user-interface-root-module"))
@@ -127,6 +143,8 @@
        => "register")
 (check (.get (user-interface-option "hook-owner") value)
        => "user-interface-worker")
+(check (.get (user-interface-option "continuation-profile") value)
+       => "user-interface-loop-continuation")
 (check (.get (user-interface-option "layer") value)
        => "script")
 (check (map (lambda (receipt) (.get receipt valid?))
@@ -143,6 +161,9 @@
 (newline)
 (display "extension-id=")
 (display (.get user-interface-receipt extension-id))
+(newline)
+(display "continuation-kind=")
+(display (.get user-interface-loop-continuation-action kind))
 (newline)
 (display "has-interface-file=")
 (display (if (.get user-interface-result has-interface-file) "true" "false"))

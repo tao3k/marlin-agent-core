@@ -11,6 +11,7 @@ marlin-agent-harness-types.workspace = true
 marlin-agent-protocol.workspace = true
 marlin-agent-runtime.workspace = true
 marlin-gerbil-ir.workspace = true
+marlin-gerbil-scheme = { version = "0.1.0", path = "../marlin-gerbil-scheme" }
 serde.workspace = true
 tokio-stream.workspace = true
 tracing.workspace = true
@@ -23,6 +24,5 @@ rust-lang-project-harness.workspace = true
 marlin-agent-hooks.workspace = true
 marlin-agent-sessions.workspace = true
 marlin-agent-test-support.workspace = true
-marlin-gerbil-scheme.workspace = true
 tempfile.workspace = true
 tokio.workspace = true

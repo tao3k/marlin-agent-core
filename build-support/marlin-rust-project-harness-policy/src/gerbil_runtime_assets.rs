@@ -17,6 +17,7 @@ const REQUIRED_GERBIL_RUNTIME_ASSETS: &[&str] = &[
     "src/marlin/deck-runtime.ss",
     "src/marlin/deck-runtime-native.ss",
     "src/marlin/deck-runtime-native-projection.ss",
+    "src/marlin/graph-loop-continuation-native-projection.ss",
     "src/marlin/deck-runtime-script.ss",
     "src/marlin/deck-runtime-strategy.ss",
 ];

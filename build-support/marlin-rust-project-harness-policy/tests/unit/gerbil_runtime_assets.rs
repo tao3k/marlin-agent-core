@@ -31,6 +31,7 @@ fn gerbil_runtime_asset_receipt_accepts_complete_marlin_runtime_package() {
             "src/marlin/deck-runtime.ss",
             "src/marlin/deck-runtime-native.ss",
             "src/marlin/deck-runtime-native-projection.ss",
+            "src/marlin/graph-loop-continuation-native-projection.ss",
             "src/marlin/deck-runtime-script.ss",
             "src/marlin/deck-runtime-strategy.ss",
             "src/marlin/extra-policy.ss",
@@ -42,9 +43,9 @@ fn gerbil_runtime_asset_receipt_accepts_complete_marlin_runtime_package() {
     assert_eq!(receipt.status, GerbilRuntimeAssetManifestStatus::Complete);
     assert!(receipt.is_success());
     assert!(receipt.has_runtime_assets());
-    assert_eq!(receipt.asset_count, 12);
+    assert_eq!(receipt.asset_count, 13);
     assert_eq!(receipt.package_manifest_count, 1);
-    assert_eq!(receipt.scheme_source_count, 11);
+    assert_eq!(receipt.scheme_source_count, 12);
     assert!(receipt.missing_required_assets.is_empty());
 }
 
@@ -63,6 +64,7 @@ fn gerbil_runtime_asset_receipt_ignores_transient_runtime_cache_dirs() {
             "src/marlin/deck-runtime.ss",
             "src/marlin/deck-runtime-native.ss",
             "src/marlin/deck-runtime-native-projection.ss",
+            "src/marlin/graph-loop-continuation-native-projection.ss",
             "src/marlin/deck-runtime-script.ss",
             "src/marlin/deck-runtime-strategy.ss",
             ".run/marlin-harness-policy-negative/gerbil.pkg",
@@ -77,9 +79,9 @@ fn gerbil_runtime_asset_receipt_ignores_transient_runtime_cache_dirs() {
 
     assert_eq!(receipt.status, GerbilRuntimeAssetManifestStatus::Complete);
     assert!(receipt.is_success());
-    assert_eq!(receipt.asset_count, 11);
+    assert_eq!(receipt.asset_count, 12);
     assert_eq!(receipt.package_manifest_count, 1);
-    assert_eq!(receipt.scheme_source_count, 10);
+    assert_eq!(receipt.scheme_source_count, 11);
     assert!(
         receipt.asset_paths.iter().all(|path| {
             !path.starts_with(".run/")
@@ -148,6 +150,11 @@ fn gerbil_runtime_asset_receipt_accepts_real_marlin_gerbil_scheme_package() {
         receipt
             .asset_paths
             .contains(&"src/marlin/deck-runtime-native-projection.ss".to_owned())
+    );
+    assert!(
+        receipt
+            .asset_paths
+            .contains(&"src/marlin/graph-loop-continuation-native-projection.ss".to_owned())
     );
     assert!(
         receipt

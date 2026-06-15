@@ -13,6 +13,7 @@ mod assertion;
 mod evidence;
 mod evidence_graph;
 mod fakes;
+mod gerbil_continuation;
 mod graph;
 mod release_visibility;
 mod runtime;
@@ -28,6 +29,10 @@ pub use evidence_graph::{
 };
 pub use fakes::{
     StaticHookRuntime, StaticProviderRuntime, StaticSubAgentRuntime, StaticToolRuntime,
+};
+pub use gerbil_continuation::{
+    AgentHarnessGerbilLoopContinuationError, AgentHarnessGerbilLoopContinuationPlanner,
+    AgentHarnessGerbilLoopContinuationProjector,
 };
 pub use graph::AgentHarnessGraphBuilder;
 pub use marlin_agent_harness_types::{
@@ -54,8 +59,9 @@ pub use release_visibility::{
     release_topology_visibility_evidence, release_visibility_evidence,
 };
 pub use runtime::{
-    AgentHarnessExecutionReport, AgentHarnessExecutionSummary, AgentHarnessRuntime,
-    agent_harness_runtime_environment_visibility_evidence,
+    AgentHarnessExecutionReport, AgentHarnessExecutionSummary,
+    AgentHarnessGraphLoopExecutionReport, AgentHarnessGraphLoopExecutionSummary,
+    AgentHarnessRuntime, agent_harness_runtime_environment_visibility_evidence,
     agent_harness_working_copy_isolation_visibility_evidence,
 };
 pub use trace::TraceRecorder;

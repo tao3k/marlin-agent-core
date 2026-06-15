@@ -1,0 +1,54 @@
+#+TITLE: Contract agent.loop.v1
+#+PROPERTY: CONTRACT_LIBRARY marlin.agent.contracts
+
+* agent-loop-v1
+:PROPERTIES:
+:CONTRACT_ID: agent.loop.v1
+:CONTRACT_SCOPE: subtree
+:CONTRACT_KIND: org-elements
+:END:
+
+** Example
+
+See =org/contracts/examples/agent.loop.v1.example.org= for the concrete loop
+shape this contract accepts.
+
+** loop-has-graph
+:PROPERTIES:
+:ASSERT_ID: loop.has-graph
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+assert count headline where child_of($scope) and summary(title) = "Graph"
+#+END_SRC
+
+** loop-has-strategy
+:PROPERTIES:
+:ASSERT_ID: loop.has-strategy
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+assert count headline where child_of($scope) and summary(title) = "Strategy"
+#+END_SRC
+
+** loop-has-budget
+:PROPERTIES:
+:ASSERT_ID: loop.has-budget
+:SEVERITY: warning
+:END:
+
+#+BEGIN_SRC org-contract
+assert count headline where child_of($scope) and summary(title) = "Budget"
+#+END_SRC
+
+** loop-has-evidence
+:PROPERTIES:
+:ASSERT_ID: loop.has-evidence
+:SEVERITY: warning
+:END:
+
+#+BEGIN_SRC org-contract
+assert count headline where child_of($scope) and summary(title) = "Evidence"
+#+END_SRC

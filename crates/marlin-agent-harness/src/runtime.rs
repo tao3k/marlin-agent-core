@@ -1,11 +1,11 @@
 //! Controlled harness runtime for scenario execution and evidence capture.
 
-use marlin_agent_kernel::GraphLoopKernel;
+use marlin_agent_kernel::{GraphLoopController, GraphLoopKernel};
 use marlin_agent_protocol::{
     AgentEvent, AgentEventTopic, AgentExecutionTrace, AgentSpanName, AgentTraceSpanRecord,
     GraphLoopExecutionRequest, GraphLoopExecutionResult, GraphLoopExecutionStatus,
-    GraphLoopStrategyId, GraphPolicyProposalReceipt, GraphPolicyProposalStatus,
-    RuntimePlanSnapshot,
+    GraphLoopIterationReport, GraphLoopNextAction, GraphLoopRunRequest, GraphLoopStrategyId,
+    GraphPolicyProposalReceipt, GraphPolicyProposalStatus, RuntimePlanSnapshot,
 };
 use marlin_agent_runtime::{
     CancellationToken, RuntimeEnvironment, RuntimeEventStream, TokioAgentRuntime,
@@ -176,6 +176,63 @@ impl AgentHarnessRuntime {
         self.execution_report(scenario, result, events, trace_spans, duration, assertion)
     }
 
+    pub async fn execute_graph_loop<C>(
+        &mut self,
+        scenario: &AgentHarnessScenario,
+        controller: &C,
+        request: GraphLoopRunRequest,
+    ) -> AgentHarnessGraphLoopExecutionReport
+    where
+        C: GraphLoopController,
+    {
+        let started_at = Instant::now();
+        let span_recorder = TraceRecorder::new();
+        let _span_guard = span_recorder.install();
+        let _harness_span = graph_loop_harness_span(scenario, &request);
+        let iteration_reports = self.join_graph_loop_controller(controller, request).await;
+        let trace_spans = span_recorder.spans();
+
+        self.finish_graph_loop_execution(scenario, started_at, trace_spans, iteration_reports)
+    }
+
+    async fn join_graph_loop_controller<C>(
+        &self,
+        controller: &C,
+        request: GraphLoopRunRequest,
+    ) -> Vec<GraphLoopIterationReport>
+    where
+        C: GraphLoopController,
+    {
+        let (run_id, graph_id) = graph_loop_request_identity(&request);
+        let task = controller.spawn_loop(request, &self.runtime);
+        match task.join().await {
+            Ok(iteration_reports) => iteration_reports,
+            Err(error) => vec![graph_loop_join_failure_report(run_id, graph_id, error)],
+        }
+    }
+
+    fn finish_graph_loop_execution(
+        &mut self,
+        scenario: &AgentHarnessScenario,
+        started_at: Instant,
+        trace_spans: Vec<AgentTraceSpanRecord>,
+        iteration_reports: Vec<GraphLoopIterationReport>,
+    ) -> AgentHarnessGraphLoopExecutionReport {
+        let assertion = self.assert_scenario_evidence(scenario).err();
+        let events = self.drain_ready_events();
+        let duration = started_at.elapsed();
+        record_final_iteration_span(&iteration_reports, events.len(), duration);
+
+        self.graph_loop_execution_report(
+            scenario,
+            iteration_reports,
+            events,
+            trace_spans,
+            duration,
+            assertion,
+        )
+    }
+
     fn execution_report(
         &self,
         scenario: &AgentHarnessScenario,
@@ -195,6 +252,41 @@ impl AgentHarnessRuntime {
             scenario_id: scenario.id().to_owned(),
             summary: execution_summary(&result, events.len(), trace_spans.len(), duration),
             result,
+            events,
+            evidence: self.evidence.clone(),
+            evidence_graph,
+            span_names: span_names(&trace_spans),
+            trace_spans,
+            assertion,
+        }
+    }
+
+    fn graph_loop_execution_report(
+        &self,
+        scenario: &AgentHarnessScenario,
+        iteration_reports: Vec<GraphLoopIterationReport>,
+        events: Vec<AgentEvent>,
+        trace_spans: Vec<AgentTraceSpanRecord>,
+        duration: Duration,
+        assertion: Option<AgentHarnessAssertionError>,
+    ) -> AgentHarnessGraphLoopExecutionReport {
+        let evidence_graph = iteration_reports.iter().fold(
+            AgentHarnessEvidenceGraph::from_agent_harness_evidence(
+                format!("graph-loop:{}", scenario.id()),
+                &self.evidence,
+            ),
+            |graph, report| graph.with_graph_execution_result(&report.execution_result),
+        );
+
+        AgentHarnessGraphLoopExecutionReport {
+            scenario_id: scenario.id().to_owned(),
+            summary: graph_loop_execution_summary(
+                &iteration_reports,
+                events.len(),
+                trace_spans.len(),
+                duration,
+            ),
+            iteration_reports,
             events,
             evidence: self.evidence.clone(),
             evidence_graph,
@@ -266,6 +358,57 @@ pub fn agent_harness_working_copy_isolation_visibility_evidence(
     .with_detail(detail)
 }
 
+fn graph_loop_harness_span(
+    scenario: &AgentHarnessScenario,
+    request: &GraphLoopRunRequest,
+) -> tracing::Span {
+    tracing::info_span!(
+        "harness.graph_loop",
+        scenario_id = scenario.id(),
+        run_id = request.initial_request.run_id.as_str(),
+        graph_id = request.initial_request.graph.graph_id.as_str()
+    )
+}
+
+fn graph_loop_request_identity(request: &GraphLoopRunRequest) -> (String, String) {
+    (
+        request.initial_request.run_id.clone(),
+        request.initial_request.graph.graph_id.clone(),
+    )
+}
+
+fn graph_loop_join_failure_report(
+    run_id: String,
+    graph_id: String,
+    error: impl std::fmt::Display,
+) -> GraphLoopIterationReport {
+    GraphLoopIterationReport::new(
+        0,
+        GraphLoopExecutionResult::failed(
+            RuntimePlanSnapshot {
+                run_id,
+                graph_id,
+                active_node: None,
+            },
+            vec![format!("harness graph-loop task join failed: {error}")],
+        ),
+        GraphLoopNextAction::StopFailed,
+    )
+}
+
+fn record_final_iteration_span(
+    iteration_reports: &[GraphLoopIterationReport],
+    event_count: usize,
+    duration: Duration,
+) {
+    if let Some(final_result) = iteration_reports
+        .last()
+        .map(|report| &report.execution_result)
+    {
+        record_result_span(final_result, event_count, duration);
+    }
+}
+
 fn duration_ms(duration: Duration) -> u64 {
     duration.as_millis().min(u128::from(u64::MAX)) as u64
 }
@@ -299,6 +442,27 @@ fn execution_summary(
     }
 }
 
+fn graph_loop_execution_summary(
+    iteration_reports: &[GraphLoopIterationReport],
+    event_count: usize,
+    span_count: usize,
+    duration: Duration,
+) -> AgentHarnessGraphLoopExecutionSummary {
+    AgentHarnessGraphLoopExecutionSummary {
+        final_status: iteration_reports
+            .last()
+            .map(|report| report.execution_result.status.clone()),
+        iteration_count: iteration_reports.len(),
+        duration,
+        event_count,
+        span_count,
+        diagnostic_count: iteration_reports
+            .iter()
+            .map(|report| report.execution_result.diagnostics.len())
+            .sum(),
+    }
+}
+
 fn span_names(trace_spans: &[AgentTraceSpanRecord]) -> Vec<AgentSpanName> {
     trace_spans.iter().map(|span| span.name.clone()).collect()
 }
@@ -317,6 +481,20 @@ pub struct AgentHarnessExecutionReport {
     pub assertion: Option<AgentHarnessAssertionError>,
 }
 
+/// Result of running one graph-loop controller request through the harness.
+#[derive(Clone, Debug, PartialEq)]
+pub struct AgentHarnessGraphLoopExecutionReport {
+    pub scenario_id: String,
+    pub iteration_reports: Vec<GraphLoopIterationReport>,
+    pub events: Vec<AgentEvent>,
+    pub evidence: Vec<AgentHarnessEvidence>,
+    pub evidence_graph: AgentHarnessEvidenceGraph,
+    pub trace_spans: Vec<AgentTraceSpanRecord>,
+    pub span_names: Vec<AgentSpanName>,
+    pub summary: AgentHarnessGraphLoopExecutionSummary,
+    pub assertion: Option<AgentHarnessAssertionError>,
+}
+
 /// Compact execution summary for scanning many harness runs.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AgentHarnessExecutionSummary {
@@ -329,6 +507,23 @@ pub struct AgentHarnessExecutionSummary {
     /// Number of tracing spans captured in the report.
     pub span_count: usize,
     /// Number of execution diagnostics captured in the result.
+    pub diagnostic_count: usize,
+}
+
+/// Compact execution summary for scanning graph-loop controller runs.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AgentHarnessGraphLoopExecutionSummary {
+    /// Terminal status of the last iteration, when the loop ran at least once.
+    pub final_status: Option<GraphLoopExecutionStatus>,
+    /// Number of controller iteration reports captured by the harness.
+    pub iteration_count: usize,
+    /// Wall-clock duration observed by the harness.
+    pub duration: Duration,
+    /// Number of runtime events captured in the report.
+    pub event_count: usize,
+    /// Number of tracing spans captured in the report.
+    pub span_count: usize,
+    /// Number of execution diagnostics across all iteration results.
     pub diagnostic_count: usize,
 }
 
@@ -465,5 +660,38 @@ impl AgentHarnessExecutionReport {
         .with_events(self.events.clone())
         .with_spans(self.trace_spans.clone())
         .with_diagnostics(self.result.diagnostics.clone())
+    }
+}
+
+impl AgentHarnessGraphLoopExecutionReport {
+    /// Returns the last controller iteration report.
+    pub fn final_iteration(&self) -> Option<&GraphLoopIterationReport> {
+        self.iteration_reports.last()
+    }
+
+    /// Returns the last graph execution result produced by the controller.
+    pub fn final_result(&self) -> Option<&GraphLoopExecutionResult> {
+        self.final_iteration()
+            .map(|iteration| &iteration.execution_result)
+    }
+
+    /// Returns true when the report captured at least one event with this topic.
+    pub fn has_event_topic(&self, topic: &AgentEventTopic) -> bool {
+        self.events_by_topic(topic).next().is_some()
+    }
+
+    /// Returns events captured with this topic.
+    pub fn events_by_topic(&self, topic: &AgentEventTopic) -> impl Iterator<Item = &AgentEvent> {
+        let topic = topic.clone();
+        self.events
+            .iter()
+            .filter(move |event| event.topic_id() == topic)
+    }
+
+    /// Builds protocol-owned traces emitted by controller iteration reports.
+    pub fn iteration_traces(&self) -> impl Iterator<Item = &AgentExecutionTrace> {
+        self.iteration_reports
+            .iter()
+            .filter_map(|report| report.trace.as_ref())
     }
 }

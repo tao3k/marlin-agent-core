@@ -12,16 +12,20 @@ mod trace;
 
 pub use event::{AgentEvent, AgentEventTopic};
 pub use graph::{
-    ExecutorName, GERBIL_LOOP_GRAPH_POLICY_COMPILATION_SCHEMA_ID, GRAPH_POLICY_PROPOSAL_SCHEMA_ID,
-    GerbilLoopGraphPolicyCompilationRequest, GraphId, GraphLoopExecutionBudget,
-    GraphLoopExecutionRequest, GraphLoopExecutionResult, GraphLoopExecutionStatus,
-    GraphLoopStrategy, GraphLoopStrategyId, GraphLoopStrategyRuntime, GraphLoopStrategyVersion,
-    GraphNativeAbiId, GraphNativeAbiReadinessReceipt, GraphNativeAbiReadinessStatus,
-    GraphNativeAbiRequirement, GraphNativeSymbol, GraphNodeExecutionReceipt,
-    GraphNodeExecutionStatus, GraphNodeInvocation, GraphPolicyDigest, GraphPolicyProposal,
-    GraphPolicyProposalReceipt, GraphPolicyProposalStatus, GraphPolicyProposalValidationReport,
-    LoopEdgeSpec, LoopGraph, LoopNodeSpec, NodeId, RunId, RuntimePlanSnapshot,
-    compile_gerbil_loop_graph, compile_gerbil_loop_graph_policy, validate_graph_policy_proposal,
+    ExecutorName, GERBIL_LOOP_GRAPH_CONTINUATION_SCHEMA_ID,
+    GERBIL_LOOP_GRAPH_POLICY_COMPILATION_SCHEMA_ID, GRAPH_POLICY_PROPOSAL_SCHEMA_ID,
+    GerbilLoopGraphContinuationAction, GerbilLoopGraphContinuationRequest,
+    GerbilLoopGraphPolicyCompilationRequest, GraphId, GraphLoopEvidencePolicy,
+    GraphLoopExecutionBudget, GraphLoopExecutionRequest, GraphLoopExecutionResult,
+    GraphLoopExecutionStatus, GraphLoopIterationReport, GraphLoopNextAction, GraphLoopRunRequest,
+    GraphLoopStopPolicy, GraphLoopStrategy, GraphLoopStrategyId, GraphLoopStrategyRuntime,
+    GraphLoopStrategyVersion, GraphNativeAbiId, GraphNativeAbiReadinessReceipt,
+    GraphNativeAbiReadinessStatus, GraphNativeAbiRequirement, GraphNativeSymbol,
+    GraphNodeExecutionReceipt, GraphNodeExecutionStatus, GraphNodeInvocation, GraphPolicyDigest,
+    GraphPolicyProposal, GraphPolicyProposalReceipt, GraphPolicyProposalStatus,
+    GraphPolicyProposalValidationReport, LoopEdgeSpec, LoopGraph, LoopNodeSpec, NodeId, RunId,
+    RuntimePlanSnapshot, compile_gerbil_loop_graph, compile_gerbil_loop_graph_continuation,
+    compile_gerbil_loop_graph_policy, validate_graph_policy_proposal,
 };
 pub use hook::{
     HookAgentClass, HookAgentLineageNode, HookAgentScope, HookConfigurationReloadReceipt,

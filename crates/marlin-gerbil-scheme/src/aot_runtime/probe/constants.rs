@@ -1,14 +1,11 @@
 //! Constants for Gerbil AOT module and executable outputs.
 
-use crate::runtime::{
-    GERBIL_MARLIN_ADAPTER_PATH, GERBIL_MARLIN_PARSER_PATH, GERBIL_MARLIN_PROTOCOL_PATH,
-    GERBIL_MARLIN_REQUEST_PATH,
-};
+pub(super) const GERBIL_MARLIN_ADAPTER_PATH: &str = "src/marlin/adapter.ss";
 
 pub(super) const GERBIL_AOT_MODULE_SOURCES: &[&str] = &[
-    GERBIL_MARLIN_PROTOCOL_PATH,
-    GERBIL_MARLIN_REQUEST_PATH,
-    GERBIL_MARLIN_PARSER_PATH,
+    "src/marlin/protocol.ss",
+    "src/marlin/request.ss",
+    "src/marlin/parser.ss",
     GERBIL_MARLIN_ADAPTER_PATH,
 ];
 

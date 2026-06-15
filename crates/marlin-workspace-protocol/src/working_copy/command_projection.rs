@@ -176,6 +176,15 @@ impl<'a> WorkingCopyCommandProjectionBuilder<'a> {
                     mode.is_force(),
                 ));
             }
+            WorkingCopyIsolationPlanStep::GitFinalizeBranch {
+                repository_discovery_path,
+                working_copy,
+                branch,
+            } => {
+                let git_toplevel = resolve_git_toplevel(repository_discovery_path)?;
+                self.commands
+                    .push(git_finalize_branch(git_toplevel, working_copy, branch));
+            }
             WorkingCopyIsolationPlanStep::WorktrunkSwitch {
                 repository_discovery_path,
                 working_copy,
@@ -291,6 +300,22 @@ fn git_worktree_remove(
     args.push(working_copy.path.display().to_string());
     WorkingCopyCommandInvocation::new(WorkingCopyCommandProgram::Git, git_toplevel)
         .with_args(args)
+        .with_expected_working_copy(working_copy.clone())
+}
+
+fn git_finalize_branch(
+    git_toplevel: WorkingCopyGitTopLevel,
+    working_copy: &WorkingCopyHandle,
+    branch: &WorkingCopyBranchName,
+) -> WorkingCopyCommandInvocation {
+    WorkingCopyCommandInvocation::new(WorkingCopyCommandProgram::Git, git_toplevel)
+        .with_args([
+            "-C".to_owned(),
+            working_copy.path.display().to_string(),
+            "switch".to_owned(),
+            "-c".to_owned(),
+            branch.as_str().to_owned(),
+        ])
         .with_expected_working_copy(working_copy.clone())
 }
 

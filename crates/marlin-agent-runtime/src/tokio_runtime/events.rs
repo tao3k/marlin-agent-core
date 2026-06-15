@@ -2,6 +2,7 @@
 
 use std::{
     pin::Pin,
+    sync::Arc,
     task::{Context, Poll},
 };
 
@@ -12,20 +13,45 @@ use super::RuntimeEvent;
 /// Cloneable Tokio mpsc sender for runtime observations and receipts.
 #[derive(Clone, Debug)]
 pub struct RuntimeEventSink {
-    sender: mpsc::Sender<RuntimeEvent>,
+    senders: Arc<Vec<mpsc::Sender<RuntimeEvent>>>,
 }
 
 impl RuntimeEventSink {
     pub fn channel(event_buffer: usize) -> (Self, RuntimeEventStream) {
         let (sender, receiver) = mpsc::channel(event_buffer);
-        (Self { sender }, RuntimeEventStream::new(receiver))
+        (
+            Self {
+                senders: Arc::new(vec![sender]),
+            },
+            RuntimeEventStream::new(receiver),
+        )
+    }
+
+    pub fn with_capture(&self, event_buffer: usize) -> (Self, RuntimeEventStream) {
+        let (sender, receiver) = mpsc::channel(event_buffer);
+        let mut senders = self.senders.as_ref().clone();
+        senders.push(sender);
+        (
+            Self {
+                senders: Arc::new(senders),
+            },
+            RuntimeEventStream::new(receiver),
+        )
     }
 
     pub async fn emit(
         &self,
         event: RuntimeEvent,
     ) -> Result<(), mpsc::error::SendError<RuntimeEvent>> {
-        self.sender.send(event).await
+        let Some((primary, captures)) = self.senders.split_first() else {
+            return Err(mpsc::error::SendError(event));
+        };
+
+        primary.send(event.clone()).await?;
+        for capture in captures {
+            let _ = capture.send(event.clone()).await;
+        }
+        Ok(())
     }
 }
 

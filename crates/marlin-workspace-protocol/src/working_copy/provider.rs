@@ -21,6 +21,7 @@ impl WorkingCopyIsolationProvider {
                     | WorkingCopyIsolationOperationKind::Switch
                     | WorkingCopyIsolationOperationKind::List
                     | WorkingCopyIsolationOperationKind::Remove
+                    | WorkingCopyIsolationOperationKind::FinalizeBranch
             ),
             Self::Worktrunk => true,
         }
@@ -34,6 +35,7 @@ pub enum WorkingCopyIsolationOperationKind {
     Switch,
     List,
     Remove,
+    FinalizeBranch,
     Merge,
     PullRequestCheckout,
 }

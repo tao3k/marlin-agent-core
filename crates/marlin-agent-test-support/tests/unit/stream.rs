@@ -8,7 +8,7 @@ use marlin_agent_protocol::{
 use marlin_agent_test_support::{
     NO_LIVE_LLM_GATE_DENIAL_MESSAGE, NoLiveLlmModelGateway, ScriptedChunkGate,
     ScriptedModelGateway, ScriptedModelStream, ScriptedModelStreamEvent,
-    scripted_stream_gate_evidence,
+    no_live_llm_gateway_denial_evidence, scripted_stream_gate_evidence,
 };
 
 #[tokio::test]
@@ -144,4 +144,13 @@ async fn no_live_llm_gateway_denies_completion_attempt_without_network() {
     assert_eq!(denied[0].litellm_model_id, "anthropic/claude-opus-4-8");
     assert_eq!(denied[0].message_count, 1);
     assert_eq!(denied[0].transport, ModelGatewayTransport::Sse);
+
+    let evidence = no_live_llm_gateway_denial_evidence("unit-no-live", &denied);
+    let detail = evidence.detail.as_deref().expect("denial detail");
+    assert_eq!(evidence.kind, AgentHarnessEvidenceKind::Runtime);
+    assert_eq!(evidence.subject, "no-live-llm-gateway:unit-no-live");
+    assert!(detail.contains("denied_requests=1"));
+    assert!(detail.contains("denied_models=[anthropic/claude-opus-4-8]"));
+    assert!(detail.contains("no_live_llm_gateway_denied=true"));
+    assert!(detail.contains("live_llm=false"));
 }

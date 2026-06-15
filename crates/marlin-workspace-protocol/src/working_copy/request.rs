@@ -125,6 +125,47 @@ pub struct WorkingCopySwitchRequest {
     pub mode: WorkingCopySwitchMode,
 }
 
+/// Request to finalize an active working copy by creating a branch in-place.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct WorkingCopyFinalizeBranchRequest {
+    pub project_id: WorkspaceProjectId,
+    pub provider: WorkingCopyIsolationProvider,
+    pub repository_discovery_path: WorkingCopyRepositoryDiscoveryPath,
+    pub working_copy: WorkingCopyHandle,
+    pub branch: WorkingCopyBranchName,
+}
+
+impl WorkingCopyFinalizeBranchRequest {
+    /// Creates a Git-core finalization request for an active working copy.
+    pub fn new(
+        project_id: impl Into<WorkspaceProjectId>,
+        provider: WorkingCopyIsolationProvider,
+        mut working_copy: WorkingCopyHandle,
+        branch: impl Into<WorkingCopyBranchName>,
+    ) -> Self {
+        let branch = branch.into();
+        let repository_discovery_path =
+            WorkingCopyRepositoryDiscoveryPath::new(working_copy.path.clone());
+        working_copy.branch = Some(branch.clone());
+        Self {
+            project_id: project_id.into(),
+            provider,
+            repository_discovery_path,
+            working_copy,
+            branch,
+        }
+    }
+
+    /// Overrides the path used to resolve the Git repository root.
+    pub fn with_repository_discovery_path(
+        mut self,
+        repository_discovery_path: impl Into<WorkingCopyRepositoryDiscoveryPath>,
+    ) -> Self {
+        self.repository_discovery_path = repository_discovery_path.into();
+        self
+    }
+}
+
 /// Provider behavior when switching to a branch-addressed working copy.
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub enum WorkingCopySwitchMode {
@@ -312,6 +353,7 @@ pub enum WorkingCopyIsolationRequest {
     Switch(WorkingCopySwitchRequest),
     List(WorkingCopyListRequest),
     Remove(WorkingCopyRemoveRequest),
+    FinalizeBranch(WorkingCopyFinalizeBranchRequest),
     PullRequestCheckout(WorkingCopyPullRequestCheckoutRequest),
 }
 
@@ -323,6 +365,7 @@ impl WorkingCopyIsolationRequest {
             Self::Switch(_) => WorkingCopyIsolationOperationKind::Switch,
             Self::List(_) => WorkingCopyIsolationOperationKind::List,
             Self::Remove(_) => WorkingCopyIsolationOperationKind::Remove,
+            Self::FinalizeBranch(_) => WorkingCopyIsolationOperationKind::FinalizeBranch,
             Self::PullRequestCheckout(_) => WorkingCopyIsolationOperationKind::PullRequestCheckout,
         }
     }
@@ -334,6 +377,7 @@ impl WorkingCopyIsolationRequest {
             Self::Switch(request) => &request.provider,
             Self::List(request) => &request.provider,
             Self::Remove(request) => &request.provider,
+            Self::FinalizeBranch(request) => &request.provider,
             Self::PullRequestCheckout(request) => &request.provider,
         }
     }
@@ -345,6 +389,7 @@ impl WorkingCopyIsolationRequest {
             Self::Switch(request) => &request.project_id,
             Self::List(request) => &request.project_id,
             Self::Remove(request) => &request.project_id,
+            Self::FinalizeBranch(request) => &request.project_id,
             Self::PullRequestCheckout(request) => &request.project_id,
         }
     }
@@ -356,6 +401,7 @@ impl WorkingCopyIsolationRequest {
             Self::Switch(request) => Some(&request.working_copy),
             Self::List(_) => None,
             Self::Remove(request) => Some(&request.working_copy),
+            Self::FinalizeBranch(request) => Some(&request.working_copy),
             Self::PullRequestCheckout(request) => Some(&request.working_copy),
         }
     }

@@ -258,6 +258,21 @@ impl NoLiveLlmModelGateway {
         Self::default()
     }
 
+    /// Records and rejects a gateway request without crossing the live LLM boundary.
+    pub fn deny_completion_attempt(
+        &self,
+        request: ModelGatewayRequest,
+    ) -> ModelGatewayResult<ModelGatewayCompletionResponse> {
+        self.denied_requests
+            .lock()
+            .expect("no-live-LLM gateway request lock poisoned")
+            .push(ScriptedGatewayRequestReceipt::from_request(&request));
+
+        Err(ModelGatewayError::Completion(
+            NO_LIVE_LLM_GATE_DENIAL_MESSAGE.to_owned(),
+        ))
+    }
+
     /// Returns captured request receipts denied by this guard.
     pub fn denied_requests(&self) -> Vec<ScriptedGatewayRequestReceipt> {
         self.denied_requests
@@ -272,17 +287,35 @@ impl ModelGateway for NoLiveLlmModelGateway {
         &self,
         request: ModelGatewayRequest,
     ) -> ModelGatewayFuture<ModelGatewayResult<ModelGatewayCompletionResponse>> {
-        self.denied_requests
-            .lock()
-            .expect("no-live-LLM gateway request lock poisoned")
-            .push(ScriptedGatewayRequestReceipt::from_request(&request));
-
-        Box::pin(async {
-            Err(ModelGatewayError::Completion(
-                NO_LIVE_LLM_GATE_DENIAL_MESSAGE.to_owned(),
-            ))
-        })
+        let outcome = self.deny_completion_attempt(request);
+        Box::pin(async move { outcome })
     }
+}
+
+/// Project no-live-LLM gateway denials into replayable runtime evidence.
+pub fn no_live_llm_gateway_denial_evidence(
+    gateway_id: impl Into<String>,
+    denied_requests: &[ScriptedGatewayRequestReceipt],
+) -> AgentHarnessEvidence {
+    let gateway_id = gateway_id.into();
+    let denied_models = denied_requests
+        .iter()
+        .map(|request| request.litellm_model_id.as_str())
+        .collect::<Vec<_>>()
+        .join(",");
+    let detail = format!(
+        "gateway_id={} denied_requests={} denied_models=[{}] denial_message=\"{}\" live_llm=false no_live_llm_gateway_denied=true",
+        gateway_id,
+        denied_requests.len(),
+        denied_models,
+        NO_LIVE_LLM_GATE_DENIAL_MESSAGE,
+    );
+
+    AgentHarnessEvidence::present(
+        AgentHarnessEvidenceKind::Runtime,
+        format!("no-live-llm-gateway:{gateway_id}"),
+    )
+    .with_detail(detail)
 }
 
 /// Deterministic `ModelGateway` double that records requests and returns queued outcomes.

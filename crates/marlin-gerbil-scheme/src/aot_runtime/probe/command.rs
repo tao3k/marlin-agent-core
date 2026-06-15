@@ -2,11 +2,11 @@
 
 use super::{
     config::GerbilAotProbeConfig,
-    constants::{GERBIL_AOT_MODULE_SOURCES, GERBIL_AOT_OUTPUT_DIR},
+    constants::{GERBIL_AOT_MODULE_SOURCES, GERBIL_AOT_OUTPUT_DIR, GERBIL_MARLIN_ADAPTER_PATH},
     receipt::{GerbilAotCommandReceipt, GerbilAotProbeReceipt},
     status::GerbilAotProbeStatus,
 };
-use crate::runtime::{GERBIL_LOADPATH_ENV, GERBIL_MARLIN_ADAPTER_PATH, gerbil_runtime_loadpath};
+use crate::runtime::{GERBIL_LOADPATH_ENV, gerbil_runtime_loadpath};
 use std::{
     env, io,
     path::{Path, PathBuf},

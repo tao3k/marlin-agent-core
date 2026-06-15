@@ -3,14 +3,19 @@
 use std::{error::Error, fmt};
 
 use marlin_agent_harness_types::{
-    AGENT_HARNESS_SCENARIO_CONTRACT_SCHEMA_ID, AgentHarnessEvidence, AgentHarnessScenario,
-    AgentHarnessScenarioContract,
+    AGENT_HARNESS_SCENARIO_CONTRACT_SCHEMA_ID, AgentHarnessEvidence, AgentHarnessEvidenceKind,
+    AgentHarnessScenario, AgentHarnessScenarioContract,
+};
+use marlin_agent_protocol::{
+    GraphNodeExecutionReceipt, GraphNodeExecutionStatus, ModelEndpoint, ModelGatewayRequest,
+    ModelGatewayTransport, user_gateway_message,
 };
 use marlin_agent_sessions::SessionKind;
 
 use crate::{
-    complex_gerbil_graph_policy_replay_fixture, custom_hook_policy_receipt_fixture,
-    custom_sub_agent_start_hook_summary_fixture, hook_dispatch_replay_evidence,
+    NoLiveLlmModelGateway, complex_gerbil_graph_policy_replay_fixture,
+    custom_hook_policy_receipt_fixture, custom_sub_agent_start_hook_summary_fixture,
+    hook_dispatch_replay_evidence, no_live_llm_gateway_denial_evidence,
     sub_agent_hook_dispatch_selection_fixture, sub_agent_memory_denied_fixture,
     sub_agent_memory_session_replay_evidence, sub_agent_memory_session_visibility_evidence,
 };
@@ -137,11 +142,70 @@ fn deterministic_no_llm_runtime_replay_evidence() -> Vec<AgentHarnessEvidence> {
     let hook_selection = sub_agent_hook_dispatch_selection_fixture();
     let hook_policy = custom_hook_policy_receipt_fixture();
     let graph_policy = complex_gerbil_graph_policy_replay_fixture();
+    let no_live_llm_gateway = NoLiveLlmModelGateway::new();
+    let _denial = no_live_llm_gateway.deny_completion_attempt(
+        ModelGatewayRequest::new(
+            ModelEndpoint::new("anthropic", "claude-opus-4-8"),
+            vec![user_gateway_message("no live LLM replay probe")],
+        )
+        .with_transport(ModelGatewayTransport::Auto),
+    );
+    let no_live_llm_gateway_evidence = no_live_llm_gateway_denial_evidence(
+        NO_LLM_RUNTIME_REPLAY_ARTIFACT_ID,
+        &no_live_llm_gateway.denied_requests(),
+    );
 
-    vec![
+    let mut replay_evidence = vec![
         graph_policy.visibility_evidence(),
         sub_agent_memory_session_visibility_evidence(&child_session, &isolation_receipt),
         sub_agent_memory_session_replay_evidence(&child_session, &isolation_receipt),
         hook_dispatch_replay_evidence(&hook_summary, &hook_selection, &hook_policy),
-    ]
+        no_live_llm_gateway_evidence,
+    ];
+    replay_evidence.extend(graph_policy_node_receipt_replay_evidence(&graph_policy));
+    replay_evidence
+}
+
+fn graph_policy_node_receipt_replay_evidence(
+    graph_policy: &crate::DeterministicGraphPolicyProposalFixture,
+) -> Vec<AgentHarnessEvidence> {
+    let request = graph_policy
+        .compilation()
+        .request
+        .as_ref()
+        .expect("replay graph policy should produce an execution request");
+
+    request
+        .graph
+        .nodes
+        .iter()
+        .enumerate()
+        .map(|(index, node)| {
+            let receipt =
+                GraphNodeExecutionReceipt::completed(node.id.as_str(), node.executor.as_str());
+            AgentHarnessEvidence::present(
+                AgentHarnessEvidenceKind::Runtime,
+                format!(
+                    "graph-loop-node:{}:{}",
+                    request.run_id,
+                    receipt.node_id.as_str()
+                ),
+            )
+            .with_detail(format!(
+                "node_index={} node_id={} executor={} status={} diagnostic_count={} replay=true",
+                index,
+                receipt.node_id.as_str(),
+                receipt.executor.as_str(),
+                graph_node_execution_status_label(&receipt.status),
+                receipt.diagnostics.len()
+            ))
+        })
+        .collect()
+}
+
+fn graph_node_execution_status_label(status: &GraphNodeExecutionStatus) -> &'static str {
+    match status {
+        GraphNodeExecutionStatus::Completed => "Completed",
+        GraphNodeExecutionStatus::Failed => "Failed",
+    }
 }

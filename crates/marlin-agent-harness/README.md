@@ -56,6 +56,11 @@ This crate must not become a generic testing crate.
 
 - Reusable mock gateways, streaming gates, deterministic fake servers, fixture
   builders, and cross-crate assertions belong in `marlin-agent-test-support`.
+- No-live-LLM gateway guards, replay fixtures, deterministic gateway denial
+  evidence, and reusable graph-loop node receipt fixtures belong in
+  `marlin-agent-test-support`. The harness consumes those receipts as typed
+  runtime evidence; it must not replace them with ad hoc log parsing or
+  live-provider calls.
 - Package-wide three-layer testing coverage belongs in
   `marlin-agent-test-support`, with crates consuming those assertions from their
   own tests.
@@ -78,6 +83,9 @@ Use these rules before adding new code:
   belongs in `marlin-agent-harness`.
 - If the code is a reusable fake, gate, assertion, fixture, mock server, or test
   helper that multiple crates can use, it belongs in `marlin-agent-test-support`.
+- If the code models no-live-LLM replay behavior, it should emit typed runtime
+  evidence for denied gateway attempts and graph-loop node receipts before
+  harness evaluation.
 - If the code enforces package quality, crate topology, stability,
   performance, build reproducibility, or Nix-facing evidence, it belongs in the
   project harness policy layer, not here.

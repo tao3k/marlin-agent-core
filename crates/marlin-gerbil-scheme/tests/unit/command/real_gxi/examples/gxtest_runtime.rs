@@ -30,6 +30,12 @@ fn command_compiler_real_gxi_runs_all_runtime_gxtests() {
             .any(|path| path.ends_with("deck-runtime-native-projection-test.ss")),
         "runtime gxtest suite should include the native projection contract test"
     );
+    assert!(
+        tests
+            .iter()
+            .any(|path| path.ends_with("graph-loop-continuation-native-projection-test.ss")),
+        "runtime gxtest suite should include the graph-loop continuation projection contract test"
+    );
 
     for test in tests {
         let output = Command::new(&gxtest)

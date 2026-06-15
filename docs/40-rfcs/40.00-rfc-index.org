@@ -29,6 +29,8 @@ accepted decisions or crate-level implementation details.
 
 [[file:40.95-rust-dependency-strategy.org][40.95 Rust Dependency Strategy]]
 
+[[file:40.100-graph-loop-controller-substrate.org][40.100 Graph Loop Controller Substrate]]
+
 ** Acceleration Lanes
 
 | Lane | RFCs | Goal | Immediate Gate |

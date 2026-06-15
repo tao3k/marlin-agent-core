@@ -1,8 +1,7 @@
 use marlin_gerbil_scheme::{
-    GERBIL_MARLIN_DECK_RUNTIME_NATIVE_PATH, GerbilDeckRuntimeNativeAotBuildStatus,
-    GerbilDeckRuntimeNativeAotConfig, GerbilDeckRuntimeNativeAotStatus,
-    GerbilDeckRuntimeNativeCargoDirectiveKind, GerbilDeckRuntimeNativeStaticLinkStatus,
-    GerbilDeckRuntimeNativeSymbolAuditMethod, write_gerbil_runtime_assets,
+    GerbilDeckRuntimeNativeAotBuildStatus, GerbilDeckRuntimeNativeAotConfig,
+    GerbilDeckRuntimeNativeAotStatus, GerbilDeckRuntimeNativeCargoDirectiveKind,
+    GerbilDeckRuntimeNativeStaticLinkStatus, GerbilDeckRuntimeNativeSymbolAuditMethod,
 };
 use std::{fs, path::Path};
 use tempfile::Builder;
@@ -13,16 +12,15 @@ fn deck_runtime_native_aot_plan_records_link_unit_compile() {
         .prefix("marlin-gerbil-native-aot-plan-")
         .tempdir()
         .expect("create root");
-    write_gerbil_runtime_assets(root.path()).expect("write gerbil runtime assets");
-    let gxc = root.path().join("toolchain/gxc");
+    let compiled_runtime_scm = root.path().join("compiled/deck-runtime-native~0.scm");
     let gsc = root.path().join("toolchain/gsc");
     let header = root.path().join("include/marlin_deck_runtime_native.h");
-    write_empty_file(&gxc);
+    write_empty_file(&compiled_runtime_scm);
     write_empty_file(&gsc);
     write_empty_file(&header);
 
     let plan = GerbilDeckRuntimeNativeAotConfig::new(root.path())
-        .with_gxc(&gxc)
+        .with_compiled_runtime_scm(&compiled_runtime_scm)
         .with_gsc(&gsc)
         .with_header(&header)
         .with_c_compiler("clang")
@@ -32,21 +30,19 @@ fn deck_runtime_native_aot_plan_records_link_unit_compile() {
         plan.status,
         GerbilDeckRuntimeNativeAotStatus::ReadyToBuildLinkUnit
     );
-    assert_eq!(
-        plan.scheme_source,
-        root.path().join(GERBIL_MARLIN_DECK_RUNTIME_NATIVE_PATH)
-    );
+    assert_eq!(plan.compiled_runtime_scm, compiled_runtime_scm);
     assert_eq!(plan.header, header);
-    assert!(
-        plan.generated_runtime_scm
-            .ends_with("deck-runtime-native~0.scm")
+    assert_eq!(
+        plan.object,
+        root.path().join("compiled/deck-runtime-native~0.o")
     );
-    assert!(plan.object.ends_with("deck-runtime-native~0.o"));
-    assert!(plan.link_c_source.ends_with("deck-runtime-native~0_.c"));
-    assert!(plan.link_object.ends_with("deck-runtime-native~0_.o"));
-    assert!(
-        plan.static_scm
-            .ends_with("marlin-deck-runtime__src__marlin__deck-runtime-native.scm")
+    assert_eq!(
+        plan.link_c_source,
+        root.path().join("compiled/deck-runtime-native~0_.c")
+    );
+    assert_eq!(
+        plan.link_object,
+        root.path().join("compiled/deck-runtime-native~0_.o")
     );
     assert_eq!(
         plan.exported_symbols
@@ -58,10 +54,6 @@ fn deck_runtime_native_aot_plan_records_link_unit_compile() {
             "marlin_deck_runtime_select_model_route"
         ]
     );
-    assert_eq!(plan.gxc_generate_scheme.program, gxc);
-    assert!(plan.gxc_generate_scheme.args.contains(&"-S".to_string()));
-    assert!(plan.gxc_generate_scheme.args.contains(&"-s".to_string()));
-    assert!(plan.gxc_generate_scheme.args.contains(&"-O".to_string()));
     assert_eq!(plan.gsc_compile_object.program, gsc);
     assert_eq!(
         plan.gsc_compile_object.args[..4],
@@ -114,33 +106,28 @@ fn deck_runtime_native_aot_plan_records_link_unit_compile() {
 }
 
 #[test]
-fn deck_runtime_native_aot_plan_reports_missing_scheme_source() {
+fn deck_runtime_native_aot_plan_reports_missing_compiled_runtime() {
     let root = Builder::new()
-        .prefix("marlin-gerbil-native-aot-missing-source-")
+        .prefix("marlin-gerbil-native-aot-missing-compiled-runtime-")
         .tempdir()
         .expect("create root");
-    let gxc = root.path().join("toolchain/gxc");
     let gsc = root.path().join("toolchain/gsc");
     let header = root.path().join("include/marlin_deck_runtime_native.h");
-    write_empty_file(&gxc);
     write_empty_file(&gsc);
     write_empty_file(&header);
 
     let plan = GerbilDeckRuntimeNativeAotConfig::new(root.path())
-        .with_gxc(gxc)
         .with_gsc(gsc)
         .with_header(header)
         .plan();
 
     assert_eq!(
         plan.status,
-        GerbilDeckRuntimeNativeAotStatus::MissingSchemeSource
+        GerbilDeckRuntimeNativeAotStatus::MissingCompiledRuntime
     );
-    assert!(
-        plan.detail
-            .as_deref()
-            .is_some_and(|detail| detail.contains("missing native Deck runtime Scheme source"))
-    );
+    assert!(plan.detail.as_deref().is_some_and(|detail| {
+        detail.contains("missing compiled native Deck runtime Scheme artifact")
+    }));
 }
 
 #[test]
@@ -156,50 +143,11 @@ fn deck_runtime_native_aot_build_runs_link_unit_runner() {
     write_empty_file(&gerbil_prefix.join("include/gambit.h"));
     write_empty_file(&gerbil_prefix.join("lib/libgambit.a"));
 
-    let gxc = gerbil_prefix.join("bin/gxc");
     let gsc = gerbil_prefix.join("bin/gsc");
     let nm = root.path().join("toolchain/nm");
+    let compiled_runtime_scm = root.path().join(".gerbil/native/deck-runtime-native~0.scm");
     let expected_prefix = gerbil_prefix.to_string_lossy();
-    write_executable(
-        &gxc,
-        format!(
-            r#"#!/bin/sh
-set -eu
-if [ "${{GERBIL_HOME:-}}" != "{expected_prefix}" ]; then
-  echo "expected GERBIL_HOME={expected_prefix}, got ${{GERBIL_HOME:-}}" >&2
-  exit 71
-fi
-case "${{GAMBOPT:-}}" in
-  *"~~bin={expected_prefix}/bin"* ) ;;
-  * ) echo "missing ~~bin in GAMBOPT=${{GAMBOPT:-}}" >&2; exit 72 ;;
-esac
-case "${{GAMBOPT:-}}" in
-  *"~~lib={expected_prefix}/lib"* ) ;;
-  * ) echo "missing ~~lib in GAMBOPT=${{GAMBOPT:-}}" >&2; exit 73 ;;
-esac
-case "${{GAMBOPT:-}}" in
-  *"~~include={expected_prefix}/include"* ) ;;
-  * ) echo "missing ~~include in GAMBOPT=${{GAMBOPT:-}}" >&2; exit 74 ;;
-esac
-out=""
-previous=""
-for arg in "$@"; do
-  if [ "$previous" = "-d" ]; then
-    out="$arg"
-  fi
-  previous="$arg"
-done
-mkdir -p "$out/marlin-deck-runtime/src/marlin" "$out/static"
-: > "$out/marlin-deck-runtime/src/marlin/deck-runtime-native.scm"
-: > "$out/marlin-deck-runtime/src/marlin/deck-runtime-native.ssi"
-: > "$out/marlin-deck-runtime/src/marlin/deck-runtime-native.ssxi.ss"
-: > "$out/marlin-deck-runtime/src/marlin/deck-runtime-native~0.scm"
-: > "$out/static/marlin-deck-runtime__src__marlin__deck-runtime-native.scm"
-"#,
-            expected_prefix = expected_prefix
-        )
-        .as_str(),
-    );
+    write_empty_file(&compiled_runtime_scm);
     write_executable(
         &gsc,
         format!(
@@ -263,7 +211,6 @@ printf '00000000 T marlin_deck_runtime_select_model_route\n'
     );
 
     let receipt = GerbilDeckRuntimeNativeAotConfig::new(root.path())
-        .with_gxc(gxc)
         .with_gsc(gsc)
         .with_c_compiler("clang")
         .with_symbol_auditor(nm)
@@ -274,18 +221,10 @@ printf '00000000 T marlin_deck_runtime_select_model_route\n'
         receipt.status,
         GerbilDeckRuntimeNativeAotBuildStatus::LinkUnitReady
     );
-    assert!(receipt.plan.scheme_source.is_file());
-    assert!(receipt.plan.generated_runtime_scm.is_file());
+    assert!(receipt.plan.compiled_runtime_scm.is_file());
     assert!(receipt.plan.object.is_file());
     assert!(receipt.plan.link_c_source.is_file());
     assert!(receipt.plan.link_object.is_file());
-    assert_eq!(
-        receipt
-            .gxc_generate_scheme
-            .as_ref()
-            .and_then(|command| command.status_code),
-        Some(0)
-    );
     assert_eq!(
         receipt
             .gsc_compile_object
@@ -364,24 +303,9 @@ fn deck_runtime_native_aot_build_rejects_missing_link_source() {
         .prefix("marlin-gerbil-native-aot-missing-link-source-")
         .tempdir()
         .expect("create root");
-    let gxc = root.path().join("toolchain/gxc");
     let gsc = root.path().join("toolchain/gsc");
-    write_executable(
-        &gxc,
-        r#"#!/bin/sh
-set -eu
-out=""
-previous=""
-for arg in "$@"; do
-  if [ "$previous" = "-d" ]; then
-    out="$arg"
-  fi
-  previous="$arg"
-done
-mkdir -p "$out/marlin-deck-runtime/src/marlin" "$out/static"
-: > "$out/marlin-deck-runtime/src/marlin/deck-runtime-native~0.scm"
-"#,
-    );
+    let compiled_runtime_scm = root.path().join(".gerbil/native/deck-runtime-native~0.scm");
+    write_empty_file(&compiled_runtime_scm);
     write_executable(
         &gsc,
         r#"#!/bin/sh
@@ -412,7 +336,6 @@ fi
     );
 
     let receipt = GerbilDeckRuntimeNativeAotConfig::new(root.path())
-        .with_gxc(gxc)
         .with_gsc(gsc)
         .build_link_unit();
 
@@ -438,24 +361,9 @@ fn deck_runtime_native_aot_build_rejects_missing_link_object() {
         .prefix("marlin-gerbil-native-aot-missing-link-object-")
         .tempdir()
         .expect("create root");
-    let gxc = root.path().join("toolchain/gxc");
     let gsc = root.path().join("toolchain/gsc");
-    write_executable(
-        &gxc,
-        r#"#!/bin/sh
-set -eu
-out=""
-previous=""
-for arg in "$@"; do
-  if [ "$previous" = "-d" ]; then
-    out="$arg"
-  fi
-  previous="$arg"
-done
-mkdir -p "$out/marlin-deck-runtime/src/marlin" "$out/static"
-: > "$out/marlin-deck-runtime/src/marlin/deck-runtime-native~0.scm"
-"#,
-    );
+    let compiled_runtime_scm = root.path().join(".gerbil/native/deck-runtime-native~0.scm");
+    write_empty_file(&compiled_runtime_scm);
     write_executable(
         &gsc,
         r#"#!/bin/sh
@@ -489,7 +397,6 @@ fi
     );
 
     let receipt = GerbilDeckRuntimeNativeAotConfig::new(root.path())
-        .with_gxc(gxc)
         .with_gsc(gsc)
         .build_link_unit();
 
@@ -514,25 +421,10 @@ fn deck_runtime_native_aot_build_rejects_object_missing_required_symbols() {
         .prefix("marlin-gerbil-native-aot-missing-symbols-")
         .tempdir()
         .expect("create root");
-    let gxc = root.path().join("toolchain/gxc");
     let gsc = root.path().join("toolchain/gsc");
     let nm = root.path().join("toolchain/nm");
-    write_executable(
-        &gxc,
-        r#"#!/bin/sh
-set -eu
-out=""
-previous=""
-for arg in "$@"; do
-  if [ "$previous" = "-d" ]; then
-    out="$arg"
-  fi
-  previous="$arg"
-done
-mkdir -p "$out/marlin-deck-runtime/src/marlin" "$out/static"
-: > "$out/marlin-deck-runtime/src/marlin/deck-runtime-native~0.scm"
-"#,
-    );
+    let compiled_runtime_scm = root.path().join(".gerbil/native/deck-runtime-native~0.scm");
+    write_empty_file(&compiled_runtime_scm);
     write_executable(
         &gsc,
         r#"#!/bin/sh
@@ -575,7 +467,6 @@ printf '00000000 T unrelated_symbol\n'
     );
 
     let receipt = GerbilDeckRuntimeNativeAotConfig::new(root.path())
-        .with_gxc(gxc)
         .with_gsc(gsc)
         .with_symbol_auditor(nm)
         .build_link_unit();
@@ -609,7 +500,7 @@ fn deck_runtime_native_static_link_plan_rejects_non_ready_object_receipt() {
         .expect("create root");
 
     let receipt = GerbilDeckRuntimeNativeAotConfig::new(root.path())
-        .with_gxc(root.path().join("missing-gxc"))
+        .with_gsc(root.path().join("missing-gsc"))
         .build_link_unit();
     let link_plan = receipt.static_link_plan();
 

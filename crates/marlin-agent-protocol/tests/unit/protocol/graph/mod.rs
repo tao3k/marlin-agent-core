@@ -1,14 +1,15 @@
 use std::collections::BTreeMap;
 
 use marlin_agent_protocol::{
-    GRAPH_POLICY_PROPOSAL_SCHEMA_ID, GerbilLoopGraphPolicyCompilationRequest, GraphLoopStrategy,
-    GraphLoopStrategyRuntime, GraphNativeAbiId, GraphNativeAbiRequirement, GraphNativeSymbol,
-    GraphPolicyProposal, GraphPolicyProposalReceipt, GraphPolicyProposalStatus,
-    GraphPolicyProposalValidationReport, LoopEdgeSpec, LoopGraph, LoopNodeSpec,
-    compile_gerbil_loop_graph_policy,
+    GRAPH_POLICY_PROPOSAL_SCHEMA_ID, GraphLoopStrategy, GraphLoopStrategyRuntime, GraphNativeAbiId,
+    GraphNativeAbiRequirement, GraphPolicyProposal, GraphPolicyProposalReceipt,
+    GraphPolicyProposalStatus, GraphPolicyProposalValidationReport, LoopEdgeSpec, LoopGraph,
+    LoopNodeSpec,
 };
 
+mod controller;
 mod execution;
+mod gerbil_policy;
 mod native_abi;
 
 #[test]
@@ -99,66 +100,6 @@ fn graph_policy_proposal_records_native_scheme_strategy_with_abi_requirement() {
     assert!(rejected.native_abi.is_some());
     assert!(rejected.selected_graph_id.is_none());
     assert_eq!(rejected.diagnostics[0], "budget_exceeds_runtime_policy");
-}
-
-#[test]
-fn gerbil_loop_graph_ir_compiles_into_graph_policy_proposal() {
-    let compiled_graph = marlin_gerbil_ir::CompiledLoopGraph {
-        graph_id: "gerbil-graph".to_string(),
-        nodes: vec![
-            marlin_gerbil_ir::LoopNodeSpec {
-                id: "rank".to_string(),
-                executor: "gerbil.rank".to_string(),
-                config: BTreeMap::from([("mode".to_string(), "native".to_string())]),
-            },
-            marlin_gerbil_ir::LoopNodeSpec {
-                id: "dispatch".to_string(),
-                executor: "kernel.dispatch".to_string(),
-                config: BTreeMap::new(),
-            },
-        ],
-        edges: vec![marlin_gerbil_ir::LoopEdgeSpec {
-            from: "rank".to_string(),
-            to: "dispatch".to_string(),
-            condition: Some("always".to_string()),
-        }],
-    };
-
-    let proposal = compile_gerbil_loop_graph_policy(
-        GerbilLoopGraphPolicyCompilationRequest::new(
-            GraphLoopStrategy::native_gerbil("gerbil-loop-ranker", "v1"),
-            compiled_graph,
-            "sha256:gerbil-input",
-            "sha256:gerbil-output",
-        )
-        .with_native_abi_requirement(native_policy_abi_requirement())
-        .with_diagnostic("gerbil_ir=compiled"),
-    )
-    .expect("Gerbil loop graph IR should compile into graph policy proposal");
-
-    assert_eq!(
-        proposal.strategy.runtime,
-        GraphLoopStrategyRuntime::NativeGerbil
-    );
-    assert_eq!(proposal.proposed_graph.graph_id, "gerbil-graph");
-    assert_eq!(proposal.proposed_graph.nodes[0].executor, "gerbil.rank");
-    assert_eq!(
-        proposal.proposed_graph.edges[0].condition.as_deref(),
-        Some("always")
-    );
-    assert_eq!(
-        proposal
-            .native_abi
-            .as_ref()
-            .expect("native abi")
-            .required_symbols,
-        vec![
-            GraphNativeSymbol::new("marlin_graph_loop_rank"),
-            GraphNativeSymbol::new("marlin_graph_loop_select")
-        ]
-    );
-    assert_eq!(proposal.diagnostics, vec!["gerbil_ir=compiled"]);
-    assert!(proposal.validate().is_accepted());
 }
 
 #[test]

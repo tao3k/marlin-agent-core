@@ -1,0 +1,54 @@
+#+TITLE: Example - Agent Memory Candidate v1
+
+* TODO Memory candidate: Org memory recall boundary :agent:memory:recall:
+:PROPERTIES:
+:CONTRACT_ORG: agent.memory.v1
+:ID: agent-memory-recall-boundary-20260615
+:MEMORY_KIND: architecture-boundary
+:SOURCE_REF: docs/20-workspace/20.10-org-native-agent-workspace.org
+:RECALL_QUERY: memory recall org native workspace candidate dispatch intent
+:SALIENCE: high
+:TRUST: internal-doc
+:RETENTION: project-lifecycle
+:END:
+
+** Claim
+
+Org records structured work metadata and memory candidates, but it is not the
+memory algorithm. Long-term memory systems consume validated workspace records
+and dispatch receipts downstream.
+
+** Source
+
+- =docs/20-workspace/20.10-org-native-agent-workspace.org= states that Org
+  records plans, evidence, trace records, and memory candidates.
+- =docs/40-rfcs/40.10-org-native-agent-work-protocol.org= keeps memory dispatch
+  as a downstream backend concern.
+- =docs/20-workspace/20.40-org-memory-backend.org= defines
+  =marlin-org-memory= as the in-memory =AgentWorkspace= backend.
+
+** Recall
+
+- Recall when designing memory candidate records, memory dispatch receipts, or
+  agent-facing recall prompts.
+- Recall when a contract only stores =Source/Trust/Retention= and does not tell
+  an agent what claim should be remembered or how to retrieve it.
+- Use query terms from =RECALL_QUERY= before broad workspace search.
+
+** Evidence
+
+- Parser-owned Org facts expose memory candidates as workspace records.
+- Workspace patches can mark memory candidates and return memory dispatch
+  receipts.
+- The memory backend can query typed nodes, render compact views, apply typed
+  patches in memory, and emit receipts.
+
+** Trust
+
+internal-doc; backed by project architecture and RFC documents.
+
+** Retention
+
+- Keep for the project lifecycle because it defines the memory boundary.
+- Supersede only when a later RFC changes whether Org owns memory algorithms or
+  only memory candidate records.

@@ -10,6 +10,7 @@ use std::{
 };
 
 mod driver;
+mod parallel;
 mod probe;
 
 #[derive(Clone, Debug)]

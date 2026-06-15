@@ -119,18 +119,14 @@ impl<'a> OrgDocumentParser<'a> {
     fn parse(self, contract_documents: &[OrgDocument]) -> WorkspaceResult<OrgDocumentWorkspace> {
         let org = parse_org_with_workspace_todo_keywords(&self.document.text);
         let parsed_document = org.document();
-        let mut contracts =
-            project_contract_registry(parse_contracts_from_document(&parsed_document, None));
+        let mut parsed_contracts = parse_contracts_from_document(&parsed_document, None);
         for contract_document in contract_documents {
             let contract_org = parse_org_with_workspace_todo_keywords(&contract_document.text);
-            contracts.contracts.extend(
-                project_contract_registry(parse_contracts_from_document(
-                    &contract_org.document(),
-                    None,
-                ))
-                .contracts,
-            );
+            parsed_contracts
+                .contracts
+                .extend(parse_contracts_from_document(&contract_org.document(), None).contracts);
         }
+        let contracts = project_contract_registry(parsed_contracts.clone());
         let document_contract_reference = document_contract_reference(
             &parsed_document,
             self.document.id.as_str(),
@@ -150,8 +146,12 @@ impl<'a> OrgDocumentParser<'a> {
                 .collect(),
             &contracts,
         );
-        let contract_validations =
-            validate_contract_references(&nodes, &contracts, &contract_resolutions);
+        let contract_validations = validate_contract_references(
+            &parsed_document,
+            &nodes,
+            &parsed_contracts,
+            &contract_resolutions,
+        );
 
         Ok(OrgDocumentWorkspace {
             nodes,

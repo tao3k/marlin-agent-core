@@ -39,6 +39,12 @@ pub enum WorkingCopyIsolationPlanStep {
         working_copy: WorkingCopyHandle,
         mode: WorkingCopyRemovalMode,
     },
+    /// Git-core branch finalization inside an active working copy.
+    GitFinalizeBranch {
+        repository_discovery_path: WorkingCopyRepositoryDiscoveryPath,
+        working_copy: WorkingCopyHandle,
+        branch: super::WorkingCopyBranchName,
+    },
     /// Worktrunk create or switch operation for a branch-addressed working copy.
     WorktrunkSwitch {
         repository_discovery_path: WorkingCopyRepositoryDiscoveryPath,
@@ -93,6 +99,10 @@ impl WorkingCopyIsolationPlan {
                     repository_discovery_path,
                 }
                 | WorkingCopyIsolationPlanStep::GitWorktreeRemove {
+                    repository_discovery_path,
+                    ..
+                }
+                | WorkingCopyIsolationPlanStep::GitFinalizeBranch {
                     repository_discovery_path,
                     ..
                 }
@@ -215,6 +225,13 @@ fn compile_steps(request: &WorkingCopyIsolationRequest) -> Vec<WorkingCopyIsolat
                 }]
             }
         },
+        WorkingCopyIsolationRequest::FinalizeBranch(request) => {
+            vec![WorkingCopyIsolationPlanStep::GitFinalizeBranch {
+                repository_discovery_path: request.repository_discovery_path.clone(),
+                working_copy: request.working_copy.clone(),
+                branch: request.branch.clone(),
+            }]
+        }
         WorkingCopyIsolationRequest::PullRequestCheckout(request) => {
             vec![
                 WorkingCopyIsolationPlanStep::PrepareTargetPath {

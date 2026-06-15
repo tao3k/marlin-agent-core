@@ -7,13 +7,12 @@ use marlin_gerbil_scheme::{
     GERBIL_DECK_RUNTIME_SCRIPT_BATCH_METRICS_TYPE_ID, GERBIL_DECK_RUNTIME_SCRIPT_INTERFACE_KIND,
     GERBIL_DECK_RUNTIME_SCRIPT_INTERFACE_RECEIPT_SCHEMA_ID,
     GERBIL_DECK_RUNTIME_SCRIPT_INTERFACE_RECEIPT_TYPE_ID, GERBIL_DECK_RUNTIME_SCRIPT_KIND,
-    GERBIL_MARLIN_DECK_RUNTIME_SCRIPT_SOURCE, GerbilDeckRuntimeScriptBatchPerformanceBudget,
-    GerbilDeckRuntimeScriptBatchPerformanceStatus, GerbilSchemeSchemaId, GerbilSchemeTypeId,
-    GerbilSchemeTypeRegistry, GerbilSchemeTypedValue, GerbilSchemeValue,
-    decode_gerbil_deck_runtime_script_batch_metrics,
+    GerbilDeckRuntimeScriptBatchPerformanceBudget, GerbilDeckRuntimeScriptBatchPerformanceStatus,
+    GerbilSchemeSchemaId, GerbilSchemeTypeId, GerbilSchemeTypeRegistry, GerbilSchemeTypedValue,
+    GerbilSchemeValue, decode_gerbil_deck_runtime_script_batch_metrics,
     decode_gerbil_deck_runtime_script_interface_receipt,
     evaluate_gerbil_deck_runtime_script_batch_performance,
-    gerbil_deck_runtime_script_interface_type_manifest,
+    gerbil_deck_runtime_script_interface_type_manifest, gerbil_runtime_asset,
 };
 use std::time::Instant;
 
@@ -45,6 +44,9 @@ fn gerbil_deck_runtime_script_contract_matches_scheme_surface() {
             .is_some()
     );
 
+    let script_source = gerbil_runtime_asset("src/marlin/deck-runtime-script.ss")
+        .expect("generated manifest includes deck runtime script source")
+        .source;
     for expected in [
         GERBIL_DECK_RUNTIME_SCRIPT_KIND,
         GERBIL_DECK_RUNTIME_SCRIPT_INTERFACE_KIND,
@@ -55,12 +57,12 @@ fn gerbil_deck_runtime_script_contract_matches_scheme_surface() {
         "marlin-deck-runtime-script-batch-metrics",
     ] {
         assert!(
-            GERBIL_MARLIN_DECK_RUNTIME_SCRIPT_SOURCE.contains(expected),
+            script_source.contains(expected),
             "script Scheme source should contain {expected}"
         );
     }
     assert!(
-        !GERBIL_MARLIN_DECK_RUNTIME_SCRIPT_SOURCE.contains("json"),
+        !script_source.contains("json"),
         "script Scheme interface should not own JSON serialization"
     );
 }

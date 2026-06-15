@@ -220,9 +220,26 @@ commands before a real isolation driver has to modify a repository:
 - missing provider binaries are typed as =Missing= instead of being confused
   with provider command failure.
 
-This keeps installation verification separate from working-copy creation. A
-developer machine can run the real =wt= smoke once Worktrunk is installed
-globally, while default tests remain portable.
+This keeps installation verification separate from working-copy creation.
+Marlin does not re-test Worktrunk lifecycle, PR checkout, or GitHub semantics.
+Those behaviors are Worktrunk-owned; Marlin's bridge is proven through typed
+request projection, resolved Git top-level execution, provider receipts, and
+parallel isolation fanout receipts.
+
+The P0-P4 bridge closure adds five Rust-owned surfaces:
+- P0 bounded parallel isolation: =WorkingCopyIsolationDriver::isolate_parallel=
+  runs multiple typed requests with a =max_parallelism= cap and emits
+  =WorkingCopyParallelIsolationReceipt=.
+- P1 active binding: runtime contexts carry =WorkingCopyActiveBinding= derived
+  from an applied working-copy receipt.
+- P2 detached-first finalization: branch creation is represented as
+  =WorkingCopyFinalizeBranchRequest= and projects to Git core
+  =git -C <working-copy> switch -c <branch>=.
+- P3 retention policy: =WorkingCopyRetentionPolicy= plans keep,
+  snapshot-and-remove, and remove receipts from newest-first managed worktrees.
+- P4 benchmark evidence: =WorkingCopyFanoutBenchmarkReceipt= records requested
+  fanout, parallelism, outcome counts, and elapsed microseconds without adding
+  an external benchmark dependency.
 
 =jj= workspaces remain a later VCS extension. They can provide parallel working
 copies, but their value comes from change graph and rewrite policy. That policy
@@ -387,6 +404,7 @@ code owner, a validation command, and a stable boundary statement.
 - P3 compile-source native boundary: compile-source names the native projection request and receipt boundary while refusing Rust source parsing.
 - P4 Harness policy integration: real-gxi tests can run the whole =gerbil/t= gxtest suite instead of targeting one policy file.
 - P5 CI/runtime asset gate: harness required assets include =deck-runtime-native-projection.ss= and runtime asset tests expose the module constants.
+- Working-copy runtime fanout: =marlin-agent-runtime= owns =WorkingCopySubAgentFanoutItem= and =TokioAgentRuntime::spawn_sub_agents_with_working_copy_environments= so isolated working-copy receipts become active child context bindings without JSON, cwd inference, or provider shell text.
 
 | Priority | Owner | Acceptance signal | Validation |
 | P0 | Gerbil native ABI guard | Rust-side Scheme parser dependencies remain denied and compile-source reports native projection pending instead of parsing .ss text. | cargo test -p marlin-gerbil-scheme dependency_boundary compile_source_binary_requires_native_abi_projection -- --ignored |
@@ -398,7 +416,8 @@ code owner, a validation command, and a stable boundary statement.
 |----------+-------+-------------------+------------|
 | P0 | =marlin-gerbil-scheme= real Gerbil assets | =build.ss compile= succeeds, =bin/smoke.ss= runs from a written loadpath tree, and native Deck runtime source exposes the stable C ABI symbols. | =cargo test -p marlin-gerbil-scheme command_compiler_real_gxi_builds_runtime_package_and_runs_smoke_launcher -- --ignored= |
 | P1 | =marlin-gerbil-scheme::working_copy_policy= | Scheme policy selections project into Rust-owned =WorkingCopyIsolationRequest= variants for create, switch, list, remove, and pull-request checkout without text handoff. | =cargo test -p marlin-gerbil-scheme working_copy_policy= |
-| P2 | =marlin-git-utils= and =marlin-agent-environment= | Repository identity is discovered from =git rev-parse --show-toplevel= and command execution uses the resolved top-level rather than caller =cwd=. | =cargo test -p marlin-git-utils process_git_tooling_resolves_repository_root_from_nested_path= and =cargo test -p marlin-agent-environment working_copy= |
+| P2 | =marlin-git-utils=, =marlin-workspace-protocol=, and =marlin-agent-environment= | Repository identity is discovered from =git rev-parse --show-toplevel= and command execution uses the resolved top-level rather than caller =cwd=. Worktrunk lifecycle and GitHub behavior remain Worktrunk-owned; Marlin proves the bridge through typed projection and =WorkingCopyParallelIsolationReceipt= fanout scope checks. | =cargo test -p marlin-git-utils process_git_tooling_resolves_repository_root_from_nested_path=, =cargo test -p marlin-workspace-protocol parallel_isolation_receipt_summarizes_agent_worktree_fanout=, and =cargo test -p marlin-agent-environment working_copy= |
+| P2 Runtime | =marlin-agent-runtime= | Working-copy fanout binds each isolated receipt into the child sub-agent context with bounded runtime parallelism and stable output order. | =cargo test -p marlin-agent-runtime working_copy --test unit_test= |
 | P3 | =marlin-gerbil-scheme= Deck runtime strategy examples | Model routing keeps provider/company and model names separate, supports customer-agent/sub-agent policy, and keeps complex hook strategy in Scheme. | =cargo test -p marlin-gerbil-scheme command_compiler_real_gxi_deck_runtime_runs_scheme_complex_strategy -- --ignored= |
 | P4 | =marlin-org-memory= | Org-native workspace flow loads orgize-backed documents, queries nodes, applies typed patches, renders views, and reports patch/status receipts. | =cargo test -p marlin-org-memory memory_workspace_loads_document_for_query_and_view memory_workspace_queries_patches_renders_and_reports_status= |
 | P5 | RFCs 40.70, 40.71, and 40.80 | JSON is not a native-internal Gerbil/Rust boundary; JSON remains limited to configuration, trace, CLI, and explicit cross-process adapters. | =cargo check --workspace --all-targets= plus RFC review |

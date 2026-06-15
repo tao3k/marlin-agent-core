@@ -22,11 +22,14 @@ pub use marlin_agent_harness::{
     AGENT_HARNESS_STABILITY_EVIDENCE_ITERATION_WINDOW, AGENT_HARNESS_STABILITY_EVIDENCE_KEYS,
     AGENT_HARNESS_STABILITY_EVIDENCE_LATENCY_DISTRIBUTION,
     AGENT_HARNESS_STABILITY_EVIDENCE_RESOURCE_DELTA, AGENT_HARNESS_STABILITY_EVIDENCE_STATE_GROWTH,
-    AgentHarnessEvidence, AgentHarnessEvidenceKind, AgentHarnessPerformanceEvidence,
-    AgentHarnessStabilityEvidence, ReleaseGateExecutionReceipt, ReleaseGateExecutionStatus,
-    agent_harness_graph_policy_proposal_visibility_evidence, release_gate_execution_receipt,
-    release_gate_visibility_evidence, release_topology_execution_receipts,
-    release_topology_visibility_evidence, release_visibility_evidence,
+    AgentHarnessEvidence, AgentHarnessEvidenceKind, AgentHarnessGerbilLoopContinuationError,
+    AgentHarnessGerbilLoopContinuationPlanner, AgentHarnessGerbilLoopContinuationProjector,
+    AgentHarnessGraphLoopExecutionReport, AgentHarnessGraphLoopExecutionSummary,
+    AgentHarnessPerformanceEvidence, AgentHarnessStabilityEvidence, ReleaseGateExecutionReceipt,
+    ReleaseGateExecutionStatus, agent_harness_graph_policy_proposal_visibility_evidence,
+    release_gate_execution_receipt, release_gate_visibility_evidence,
+    release_topology_execution_receipts, release_topology_visibility_evidence,
+    release_visibility_evidence,
 };
 pub use marlin_agent_hooks as hooks;
 pub use marlin_agent_hooks::{
@@ -36,20 +39,25 @@ pub use marlin_agent_hooks::{
     RegisteredHookRuntime,
 };
 pub use marlin_agent_kernel::{
-    ExecutorName, GraphId, GraphLoopExecutionBudget, GraphLoopExecutionRequest,
+    ExecutorName, GraphId, GraphLoopContinuationInput, GraphLoopContinuationPlanner,
+    GraphLoopController, GraphLoopExecutionBudget, GraphLoopExecutionRequest,
     GraphLoopExecutionResult, GraphLoopExecutionStatus, GraphLoopKernel, GraphLoopStrategy,
     GraphLoopStrategyId, GraphLoopStrategyRuntime, GraphLoopStrategyVersion,
     GraphNodeExecutionReceipt, GraphNodeExecutionStatus, GraphNodeExecutor, GraphNodeInvocation,
     GraphPolicyProposal, GraphPolicyProposalCompilation, GraphPolicyProposalReceipt,
     GraphPolicyProposalStatus, LoopEdgeSpec, LoopGraph, LoopNodeSpec, NodeId, ProviderNodeAdapter,
-    RunId, RuntimePlanSnapshot, SubAgentNodeAdapter, TokioGraphLoopKernel, ToolNodeAdapter,
-    compile_graph_policy_proposal, compile_graph_policy_proposal_with_native_abi_readiness,
+    RunId, RuntimePlanSnapshot, SubAgentNodeAdapter, TerminalGraphLoopContinuationPlanner,
+    TokioGraphLoopController, TokioGraphLoopKernel, ToolNodeAdapter,
+    compile_graph_policy_proposal_with_native_abi_readiness,
 };
 pub use marlin_agent_protocol as protocol;
 pub use marlin_agent_protocol::{
     AgentEventTopic, AgentExecutionTrace, AgentExecutionTraceSummary, AgentSpanName,
-    AgentTraceSpanRecord, GERBIL_LOOP_GRAPH_POLICY_COMPILATION_SCHEMA_ID,
-    GRAPH_POLICY_PROPOSAL_SPAN_NAME, GerbilLoopGraphPolicyCompilationRequest, GraphNativeAbiId,
+    AgentTraceSpanRecord, GERBIL_LOOP_GRAPH_CONTINUATION_SCHEMA_ID,
+    GERBIL_LOOP_GRAPH_POLICY_COMPILATION_SCHEMA_ID, GRAPH_POLICY_PROPOSAL_SPAN_NAME,
+    GerbilLoopGraphContinuationAction, GerbilLoopGraphContinuationRequest,
+    GerbilLoopGraphPolicyCompilationRequest, GraphLoopEvidencePolicy, GraphLoopIterationReport,
+    GraphLoopNextAction, GraphLoopRunRequest, GraphLoopStopPolicy, GraphNativeAbiId,
     GraphNativeAbiReadinessReceipt, GraphNativeAbiReadinessStatus, GraphNativeAbiRequirement,
     GraphNativeSymbol, HookAgentScope, HookDispatchPolicyReceipt, HookDispatchPolicyReceiptInput,
     HookDurationMs, HookEventName, HookExecutionMode, HookHandlerType, HookOutputEntry,
@@ -65,7 +73,7 @@ pub use marlin_agent_protocol::{
     ModelSessionPersistenceKey, ModelSessionPolicy, ModelSessionPoolId, RuntimeConfigLayer,
     RuntimeConfigLayerSource, RuntimeHome, RuntimeHomeSource, RuntimeSandboxPolicy,
     SubAgentActivity, SubAgentActivityKind, SubAgentSource, compile_gerbil_loop_graph,
-    compile_gerbil_loop_graph_policy,
+    compile_gerbil_loop_graph_continuation, compile_gerbil_loop_graph_policy,
 };
 pub use marlin_agent_runtime as runtime;
 pub use marlin_agent_runtime::observability;
@@ -86,13 +94,34 @@ pub use marlin_agent_sessions as sessions;
 
 pub use marlin_gerbil_ir as gerbil_ir;
 pub use marlin_gerbil_scheme as gerbil_scheme;
-pub use marlin_gerbil_scheme::GerbilCommandSpec;
+pub use marlin_gerbil_scheme::{
+    GERBIL_LOOP_GRAPH_CONTINUATION_NATIVE_PROJECTION_ABI_ID,
+    GERBIL_LOOP_GRAPH_CONTINUATION_NATIVE_PROJECTION_ABI_VERSION,
+    GERBIL_LOOP_GRAPH_CONTINUATION_NATIVE_PROJECTION_PACKAGE_ID,
+    GERBIL_LOOP_GRAPH_CONTINUATION_NATIVE_SYMBOL, GERBIL_LOOP_GRAPH_CONTINUATION_TYPE_ID,
+    GerbilCommandSpec, decode_gerbil_loop_graph_continuation_native_projection,
+    decode_gerbil_loop_graph_continuation_projection,
+    gerbil_loop_graph_continuation_native_projection_abi_contract,
+    gerbil_loop_graph_continuation_native_projection_package_manifest,
+    gerbil_loop_graph_continuation_native_projection_readiness_plan,
+    gerbil_loop_graph_continuation_native_projection_request,
+    gerbil_loop_graph_continuation_projection_contract,
+    gerbil_loop_graph_continuation_type_manifest, project_gerbil_loop_graph_continuation_action,
+    project_gerbil_loop_graph_continuation_native_action,
+};
 pub use marlin_org_model as org_model;
 pub use marlin_org_patch as org_patch;
 pub use marlin_org_store as org_store;
 pub use marlin_org_store::{FileSystemReleaseStatusStore, OrgSourceStoreResult};
 pub use marlin_org_workflow as org_workflow;
 pub use marlin_org_workspace as org_workspace;
+pub use marlin_org_workspace::{
+    STANDARD_AGENT_LOOP_CONTRACT_DOCUMENT_ID, STANDARD_AGENT_LOOP_CONTRACT_ORG,
+    STANDARD_AGENT_MEMORY_CONTRACT_DOCUMENT_ID, STANDARD_AGENT_MEMORY_CONTRACT_ORG,
+    STANDARD_AGENT_PLAN_CONTRACT_DOCUMENT_ID, STANDARD_AGENT_PLAN_CONTRACT_ORG,
+    STANDARD_AGENT_TASK_CONTRACT_DOCUMENT_ID, STANDARD_AGENT_TASK_CONTRACT_ORG,
+    load_standard_agent_contract_workspace, standard_agent_contract_documents,
+};
 pub use marlin_workspace_protocol as workspace;
 pub use marlin_workspace_protocol::{
     ReleaseGateReceipt, ReleaseGateState, ReleaseGateStatus, ReleaseLandingReport, ReleaseStatus,

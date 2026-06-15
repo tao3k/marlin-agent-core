@@ -6,6 +6,7 @@
         "agent"
         "hooks"
         "interface"
+        "loop-continuation"
         "script"
         "subagent"
         "workspace")
@@ -30,6 +31,9 @@
                (marlin-imports
                 (marlin-import "./workspace.ss" user-interface-workspace-module)
                 (marlin-import "./agent.ss" user-interface-agent-module)
+                (marlin-import
+                 "./loop-continuation.ss"
+                 user-interface-loop-continuation-module)
                 (marlin-import "./script.ss" user-interface-script-module)
                 (marlin-import "./hooks.ss" hook-profile)))
       (extensions => marlin-extensions-append

@@ -26,7 +26,7 @@ fn no_llm_runtime_replay_artifact_loads_graph_session_and_hook_evidence() {
             AgentHarnessEvidenceKind::Runtime
         ]
     );
-    assert_eq!(evidence.len(), 4);
+    assert_eq!(evidence.len(), 9);
     assert_eq!(
         evidence
             .iter()
@@ -39,13 +39,19 @@ fn no_llm_runtime_replay_artifact_loads_graph_session_and_hook_evidence() {
             .iter()
             .filter(|entry| entry.kind == AgentHarnessEvidenceKind::Runtime)
             .count(),
-        1
+        6
     );
     assert!(detail_contains(evidence, "status=Accepted"));
     assert!(detail_contains(evidence, "real-gxi-complex-policy"));
     assert!(detail_contains(evidence, "denied_memory=true"));
     assert!(detail_contains(evidence, "visibility_contracted=true"));
     assert!(detail_contains(evidence, "policy_decisions=2"));
+    assert!(detail_contains(evidence, "denied_requests=1"));
+    assert!(detail_contains(evidence, "no_live_llm_gateway_denied=true"));
+    assert!(detail_contains(evidence, "node_id=rank"));
+    assert!(detail_contains(evidence, "executor=gerbil-rank"));
+    assert!(detail_contains(evidence, "status=Completed"));
+    assert!(detail_contains(evidence, "replay=true"));
     assert!(detail_contains(evidence, "live_llm=false"));
 }
 
@@ -58,8 +64,10 @@ fn no_llm_runtime_replay_artifact_loads_from_serialized_contract() {
     assert!(contract.is_supported_schema());
     assert_eq!(contract.scenario.id(), NO_LLM_RUNTIME_REPLAY_ARTIFACT_ID);
     assert_eq!(contract.scenario.expected_evidence.len(), 2);
-    assert_eq!(evidence.len(), 4);
+    assert_eq!(evidence.len(), 9);
     assert!(detail_contains(&evidence, "status=Accepted"));
+    assert!(detail_contains(&evidence, "denied_requests=1"));
+    assert!(detail_contains(&evidence, "node_id=rank"));
 }
 
 #[test]

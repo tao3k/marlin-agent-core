@@ -134,7 +134,6 @@ fn native_link_failure_detail(
             "detail={:?}",
             link_plan.detail.as_ref().or(receipt.detail.as_ref())
         ),
-        command_detail("gxc", receipt.gxc_generate_scheme.as_ref()),
         command_detail("gsc-object", receipt.gsc_compile_object.as_ref()),
         command_detail("gsc-link-source", receipt.gsc_generate_link_source.as_ref()),
         command_detail("gsc-link-object", receipt.gsc_compile_link_object.as_ref()),

@@ -4,7 +4,10 @@ use marlin_agent_core::{
     AgentTraceSpanRecord, GraphLoopExecutionStatus, HookDispatcher, HookRegistry,
     ModelContextForkMode, ModelEndpoint, ModelGatewayMessageRole, ModelGatewayRequest,
     ModelGatewayTransport, ModelRouteConfig, ModelRouteRequest, RuntimeEnvironmentRequest,
-    RuntimeEnvironmentResolver, RuntimeExecutionIdentity, system_gateway_message,
+    RuntimeEnvironmentResolver, RuntimeExecutionIdentity,
+    STANDARD_AGENT_MEMORY_CONTRACT_DOCUMENT_ID, STANDARD_AGENT_PLAN_CONTRACT_DOCUMENT_ID,
+    load_standard_agent_contract_workspace, standard_agent_contract_documents,
+    system_gateway_message,
 };
 
 #[test]
@@ -75,6 +78,39 @@ key = "core-facade"
     assert_eq!(decision.endpoint.provider.as_str(), "openai");
     assert_eq!(decision.endpoint.model.as_str(), "gpt-5-mini");
     assert_eq!(decision.receipt.context_fork, ModelContextForkMode::Minimal);
+}
+
+#[test]
+fn core_facade_exposes_standard_agent_contract_library() {
+    let documents = standard_agent_contract_documents();
+    let workspace =
+        load_standard_agent_contract_workspace().expect("standard agent contracts load");
+
+    assert_eq!(documents.len(), 4);
+    assert!(
+        documents
+            .iter()
+            .any(|document| document.id.as_str() == STANDARD_AGENT_PLAN_CONTRACT_DOCUMENT_ID)
+    );
+    assert!(
+        documents
+            .iter()
+            .any(|document| document.id.as_str() == STANDARD_AGENT_MEMORY_CONTRACT_DOCUMENT_ID)
+    );
+    assert!(
+        workspace
+            .contracts
+            .contracts
+            .iter()
+            .any(|contract| contract.id.as_str() == "agent.plan.v1")
+    );
+    assert!(
+        workspace
+            .contracts
+            .contracts
+            .iter()
+            .any(|contract| contract.id.as_str() == "agent.memory.v1")
+    );
 }
 
 #[test]

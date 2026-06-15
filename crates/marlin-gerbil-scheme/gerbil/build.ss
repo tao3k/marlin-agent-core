@@ -16,6 +16,7 @@
        "src/marlin/adapter"
        "src/marlin/deck-runtime"
        "src/marlin/deck-runtime-native-projection"
+       "src/marlin/graph-loop-continuation-native-projection"
        "src/marlin/deck-runtime-compiled-policy"
        "src/marlin/deck-runtime-compiled-policy-sample"
        "src/marlin/deck-runtime-strategy-context"

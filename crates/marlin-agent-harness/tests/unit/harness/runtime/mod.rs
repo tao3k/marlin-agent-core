@@ -4,6 +4,7 @@ mod environment;
 mod events;
 mod failure_observability;
 mod fakes;
+mod graph_loop;
 mod hooks;
 mod performance;
 mod stream;

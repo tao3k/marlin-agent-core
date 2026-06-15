@@ -19,7 +19,7 @@ fn gerbil_deps_config_describes_platform_specific_plan() {
 
     assert!(description.contains("platform=linux"));
     assert!(description.contains("homebrew_repair=false"));
-    assert!(description.contains("gerbil_bin=/usr/bin"));
+    assert!(description.contains("gerbil_bin=/tmp/marlin-home/gerbil/bin"));
 }
 
 #[test]
@@ -36,6 +36,8 @@ fn gerbil_deps_cli_prints_plan_without_running_bootstrap() {
         "env".into(),
         "--platform".into(),
         "linux".into(),
+        "--gerbil-bin".into(),
+        PathBuf::from("/tmp/marlin-gerbil-bin").into_os_string(),
         "--print-plan".into(),
     ]);
 

@@ -28,6 +28,44 @@ pub struct TokioAgentRuntime {
     process_cleanup_policy: observability::RuntimeProcessCleanupPolicy,
 }
 
+/// One working-copy-bound sub-agent spawn in a runtime fanout.
+#[derive(Clone, Debug)]
+pub struct WorkingCopySubAgentFanoutItem<I> {
+    input: I,
+    environment: RuntimeEnvironment,
+    working_copy_receipt: WorkingCopyIsolationReceipt,
+}
+
+impl<I> WorkingCopySubAgentFanoutItem<I> {
+    pub fn new(
+        input: I,
+        environment: RuntimeEnvironment,
+        working_copy_receipt: WorkingCopyIsolationReceipt,
+    ) -> Self {
+        Self {
+            input,
+            environment,
+            working_copy_receipt,
+        }
+    }
+
+    pub fn input(&self) -> &I {
+        &self.input
+    }
+
+    pub fn environment(&self) -> &RuntimeEnvironment {
+        &self.environment
+    }
+
+    pub fn working_copy_receipt(&self) -> &WorkingCopyIsolationReceipt {
+        &self.working_copy_receipt
+    }
+
+    pub fn into_parts(self) -> (I, RuntimeEnvironment, WorkingCopyIsolationReceipt) {
+        (self.input, self.environment, self.working_copy_receipt)
+    }
+}
+
 impl TokioAgentRuntime {
     pub fn new(event_buffer: usize) -> (Self, RuntimeEventStream) {
         Self::with_cancellation(event_buffer, CancellationToken::new())
@@ -81,6 +119,7 @@ impl TokioAgentRuntime {
             environment: self.environment.clone(),
             execution: self.execution.clone(),
             session: self.session.clone(),
+            active_working_copy: None,
             working_copy_receipts: Vec::new(),
             process_registry: self.process_registry.clone(),
             process_cleanup_policy: self.process_cleanup_policy.clone(),
@@ -129,6 +168,25 @@ impl TokioAgentRuntime {
             process_registry: self.process_registry.clone(),
             process_cleanup_policy: self.process_cleanup_policy.clone(),
         }
+    }
+
+    pub fn child_runtime_with_event_capture(
+        &self,
+        event_buffer: usize,
+    ) -> (Self, RuntimeEventStream) {
+        let (events, stream) = self.events.with_capture(event_buffer);
+        (
+            Self {
+                cancellation: self.cancellation.child_token(),
+                events,
+                environment: self.environment.clone(),
+                execution: self.execution.clone(),
+                session: self.session.clone(),
+                process_registry: self.process_registry.clone(),
+                process_cleanup_policy: self.process_cleanup_policy.clone(),
+            },
+            stream,
+        )
     }
 
     pub fn child_runtime_with_environment(&self, environment: RuntimeEnvironment) -> Self {
@@ -403,6 +461,57 @@ impl TokioAgentRuntime {
             .with_working_copy_receipt(working_copy_receipt);
         self.spawn_with_span(
             async move { sub_agent.run_sub_agent(input, context).await },
+            observability::runtime_sub_agent_span(),
+        )
+    }
+
+    pub fn spawn_sub_agents_with_working_copy_environments<A>(
+        &self,
+        sub_agent: Arc<A>,
+        fanout: impl IntoIterator<Item = WorkingCopySubAgentFanoutItem<A::Input>>,
+        max_parallelism: usize,
+    ) -> RuntimeTask<Vec<A::Output>>
+    where
+        A: SubAgentRuntime,
+    {
+        let runtime = self.clone();
+        let fanout = fanout.into_iter().collect::<Vec<_>>();
+        let effective_parallelism = max_parallelism.max(1);
+
+        self.spawn_with_span(
+            async move {
+                let mut pending = fanout.into_iter().enumerate();
+                let mut tasks = JoinSet::new();
+                let mut outputs = Vec::new();
+
+                loop {
+                    while tasks.len() < effective_parallelism {
+                        let Some((index, item)) = pending.next() else {
+                            break;
+                        };
+                        let sub_agent = Arc::clone(&sub_agent);
+                        let context = runtime
+                            .context()
+                            .child_context_with_environment(item.environment)
+                            .with_working_copy_receipt(item.working_copy_receipt);
+                        tasks.spawn(
+                            async move { (index, sub_agent.run_sub_agent(item.input, context).await) }
+                                .instrument(observability::runtime_sub_agent_span()),
+                        );
+                    }
+
+                    let Some(joined) = tasks.join_next().await else {
+                        break;
+                    };
+                    let (index, output) = joined.unwrap_or_else(|error| {
+                        panic!("working-copy sub-agent fanout task failed: {error}")
+                    });
+                    outputs.push((index, output));
+                }
+
+                outputs.sort_by_key(|(index, _)| *index);
+                outputs.into_iter().map(|(_, output)| output).collect()
+            },
             observability::runtime_sub_agent_span(),
         )
     }

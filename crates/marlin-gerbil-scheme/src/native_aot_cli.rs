@@ -31,7 +31,7 @@ struct GerbilNativeAotCliConfig {
     action: GerbilNativeAotCliAction,
     root: PathBuf,
     output_dir: Option<PathBuf>,
-    gxc: Option<PathBuf>,
+    compiled_runtime_scm: Option<PathBuf>,
     gsc: Option<PathBuf>,
     c_compiler: Option<String>,
     symbol_auditor: Option<PathBuf>,
@@ -52,7 +52,7 @@ impl GerbilNativeAotCliConfig {
             action,
             root: default_native_aot_root(),
             output_dir: None,
-            gxc: None,
+            compiled_runtime_scm: None,
             gsc: None,
             c_compiler: default_native_aot_c_compiler(),
             symbol_auditor: None,
@@ -67,7 +67,10 @@ impl GerbilNativeAotCliConfig {
                 "--output-dir" => {
                     config.output_dir = Some(required_path_arg(&mut args, "--output-dir")?);
                 }
-                "--gxc" => config.gxc = Some(required_path_arg(&mut args, "--gxc")?),
+                "--compiled-runtime-scm" => {
+                    config.compiled_runtime_scm =
+                        Some(required_path_arg(&mut args, "--compiled-runtime-scm")?);
+                }
                 "--gsc" => config.gsc = Some(required_path_arg(&mut args, "--gsc")?),
                 "--c-compiler" => {
                     config.c_compiler = Some(required_string_arg(&mut args, "--c-compiler")?);
@@ -96,7 +99,7 @@ impl GerbilNativeAotCliConfig {
     }
 
     fn usage() -> &'static str {
-        "Usage: marlin-gerbil-native-aot <build> [--root <path>] [--output-dir <path>] [--gxc <path>] [--gsc <path>] [--c-compiler <name>] [--symbol-auditor <path>] [--gambit-link-lib <name>] [--gambit-link-search <dir>] [--gambit-include <dir>]"
+        "Usage: marlin-gerbil-native-aot <build> [--root <path>] [--output-dir <path>] [--compiled-runtime-scm <path>] [--gsc <path>] [--c-compiler <name>] [--symbol-auditor <path>] [--gambit-link-lib <name>] [--gambit-link-search <dir>] [--gambit-include <dir>]"
     }
 
     fn build_config(&self) -> GerbilDeckRuntimeNativeAotConfig {
@@ -104,8 +107,8 @@ impl GerbilNativeAotCliConfig {
         if let Some(output_dir) = &self.output_dir {
             config = config.with_output_dir(output_dir);
         }
-        if let Some(gxc) = &self.gxc {
-            config = config.with_gxc(gxc);
+        if let Some(compiled_runtime_scm) = &self.compiled_runtime_scm {
+            config = config.with_compiled_runtime_scm(compiled_runtime_scm);
         }
         if let Some(gsc) = &self.gsc {
             config = config.with_gsc(gsc);

@@ -6,6 +6,9 @@ use marlin_gerbil_scheme::{
 };
 use std::process::Command;
 
+const MARLIN_NATIVE_AOT_COMPILED_RUNTIME_SCM_ENV: &str =
+    "MARLIN_GERBIL_NATIVE_AOT_COMPILED_RUNTIME_SCM";
+
 #[test]
 #[ignore = "requires a local Gerbil gxi executable"]
 fn command_compiler_real_gxi_build_script_compiles_runtime_assets() {
@@ -32,13 +35,22 @@ fn command_compiler_real_gxi_build_script_compiles_runtime_assets() {
 }
 
 #[test]
-#[ignore = "requires a local Gerbil gxc/gsc toolchain and C compiler"]
+#[ignore = "requires a compiled native runtime .scm, local gsc toolchain, and C compiler"]
 fn command_compiler_real_gxi_deck_runtime_native_compiles_link_unit() {
-    if local_gxi().is_none() {
+    let Some(compiled_runtime_scm) =
+        std::env::var_os(MARLIN_NATIVE_AOT_COMPILED_RUNTIME_SCM_ENV).map(std::path::PathBuf::from)
+    else {
+        let message =
+            format!("set {MARLIN_NATIVE_AOT_COMPILED_RUNTIME_SCM_ENV} to run native AOT test");
+        if std::env::var_os(MARLIN_REQUIRE_REAL_GXI_ENV).is_some() {
+            panic!("{message}");
+        }
+        eprintln!("{message}");
         return;
-    }
+    };
     let root = test_root("runtime-native-link-unit");
-    let config = GerbilDeckRuntimeNativeAotConfig::new(root.path());
+    let config = GerbilDeckRuntimeNativeAotConfig::new(root.path())
+        .with_compiled_runtime_scm(compiled_runtime_scm);
     let config = if cfg!(target_os = "macos") {
         config.with_c_compiler("clang")
     } else {
@@ -55,9 +67,9 @@ fn command_compiler_real_gxi_deck_runtime_native_compiles_link_unit() {
     }
 
     assert!(
-        receipt.plan.generated_runtime_scm.is_file(),
-        "missing generated runtime Scheme at {}",
-        receipt.plan.generated_runtime_scm.display()
+        receipt.plan.compiled_runtime_scm.is_file(),
+        "missing compiled runtime Scheme at {}",
+        receipt.plan.compiled_runtime_scm.display()
     );
     assert!(
         receipt.plan.object.is_file(),

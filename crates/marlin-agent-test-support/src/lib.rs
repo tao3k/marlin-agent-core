@@ -46,7 +46,7 @@ pub use stream::{
     NO_LIVE_LLM_GATE_DENIAL_MESSAGE, NoLiveLlmModelGateway, ScriptedChunkGate,
     ScriptedChunkGatePermit, ScriptedGatewayRequestReceipt, ScriptedModelGateway,
     ScriptedModelStream, ScriptedModelStreamChunk, ScriptedModelStreamEvent, ScriptedStreamReceipt,
-    scripted_stream_gate_evidence,
+    no_live_llm_gateway_denial_evidence, scripted_stream_gate_evidence,
 };
 pub use sub_agent_scenario::{
     DeterministicRoutedSubAgentExecutionReceipt, DeterministicSubAgentScenarioFixture,

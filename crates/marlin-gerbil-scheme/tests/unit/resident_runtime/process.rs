@@ -1,6 +1,6 @@
 use marlin_gerbil_scheme::{
-    GERBIL_ADAPTER_MODULE, GERBIL_LOADPATH_ENV, GERBIL_MARLIN_ADAPTER_PATH, GerbilCommandProfile,
-    GerbilResidentRuntimePlan, GerbilResidentRuntimeProcessStatus,
+    GERBIL_ADAPTER_MODULE, GERBIL_LOADPATH_ENV, GerbilCommandProfile, GerbilResidentRuntimePlan,
+    GerbilResidentRuntimeProcessStatus,
 };
 use tempfile::Builder;
 
@@ -44,7 +44,7 @@ fn resident_runtime_process_plan_uses_prepared_batch_launcher() {
     assert!(command_profile.env.contains_key(GERBIL_LOADPATH_ENV));
     assert_eq!(command_profile.args.len(), 1);
     assert_eq!(command_profile.args[0], GERBIL_ADAPTER_MODULE);
-    assert!(root.path().join(GERBIL_MARLIN_ADAPTER_PATH).exists());
+    assert!(root.path().join("src/marlin/adapter.ss").exists());
 
     let receipt = handle.process_receipt();
     assert_eq!(

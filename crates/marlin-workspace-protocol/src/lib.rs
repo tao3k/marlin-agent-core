@@ -16,16 +16,19 @@ pub use project::{
     WorkspaceProjectVcsExtensionKind,
 };
 pub use working_copy::{
-    WorkingCopyBaseRef, WorkingCopyBranchName, WorkingCopyCommandInvocation,
-    WorkingCopyCommandProgram, WorkingCopyCommandProjection, WorkingCopyCommandProjectionError,
-    WorkingCopyCommandReceipt, WorkingCopyCommandStatus, WorkingCopyCreateRequest,
+    WorkingCopyActiveBinding, WorkingCopyBaseRef, WorkingCopyBranchName,
+    WorkingCopyCommandInvocation, WorkingCopyCommandProgram, WorkingCopyCommandProjection,
+    WorkingCopyCommandProjectionError, WorkingCopyCommandReceipt, WorkingCopyCommandStatus,
+    WorkingCopyCreateRequest, WorkingCopyFanoutBenchmarkReceipt, WorkingCopyFinalizeBranchRequest,
     WorkingCopyGitTopLevel, WorkingCopyHandle, WorkingCopyId, WorkingCopyIsolationOperationKind,
     WorkingCopyIsolationPlan, WorkingCopyIsolationPlanError, WorkingCopyIsolationPlanStep,
     WorkingCopyIsolationProvider, WorkingCopyIsolationReceipt, WorkingCopyIsolationRequest,
     WorkingCopyIsolationStatus, WorkingCopyListOptions, WorkingCopyListRequest,
-    WorkingCopyPullRequestCheckoutRequest, WorkingCopyPullRequestNumber, WorkingCopyRemovalMode,
-    WorkingCopyRemoveRequest, WorkingCopyRepositoryDiscoveryPath, WorkingCopySwitchMode,
-    WorkingCopySwitchRequest,
+    WorkingCopyParallelIsolationReceipt, WorkingCopyPullRequestCheckoutRequest,
+    WorkingCopyPullRequestNumber, WorkingCopyRemovalMode, WorkingCopyRemoveRequest,
+    WorkingCopyRepositoryDiscoveryPath, WorkingCopyRetentionActionKind,
+    WorkingCopyRetentionActionReceipt, WorkingCopyRetentionPolicy,
+    WorkingCopyRetentionSweepReceipt, WorkingCopySwitchMode, WorkingCopySwitchRequest,
 };
 pub use workspace::AgentWorkspace;
 

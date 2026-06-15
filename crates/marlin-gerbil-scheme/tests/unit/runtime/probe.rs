@@ -1,7 +1,5 @@
 use super::support::{line_count, test_root};
-use marlin_gerbil_scheme::{
-    GERBIL_MARLIN_ADAPTER_PATH, GerbilAotProbeConfig, GerbilAotProbeStatus,
-};
+use marlin_gerbil_scheme::{GerbilAotProbeConfig, GerbilAotProbeStatus};
 use std::fs;
 
 #[cfg(unix)]
@@ -22,7 +20,7 @@ fn gerbil_aot_probe_reports_missing_gxc_without_writing_assets() {
     assert_eq!(receipt.gxc, missing_gxc);
     assert_eq!(receipt.gsc, missing_gsc);
     assert_eq!(receipt.backend_gsc, None);
-    assert!(!root.path().join(GERBIL_MARLIN_ADAPTER_PATH).exists());
+    assert!(!root.path().join("src/marlin/adapter.ss").exists());
 }
 
 #[test]

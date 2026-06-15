@@ -1,13 +1,17 @@
 //! Runtime-independent Org contract validation receipts.
 
 use marlin_org_model::{
-    OrgContract, OrgContractAssertion, OrgContractExpectation, OrgContractId, OrgContractQuery,
-    OrgContractReference, OrgContractReferenceScope, OrgContractRegistry,
-    OrgContractResolutionReport, OrgContractValidationReceipt, OrgContractValidationReport,
-    OrgContractValidationStatus, OrgContractValidationTarget, OrgNode, OrgSourceSpan, TodoState,
+    OrgContractId, OrgContractReference, OrgContractReferenceScope, OrgContractResolutionReport,
+    OrgContractSeverity, OrgContractValidationReceipt, OrgContractValidationReport,
+    OrgContractValidationStatus, OrgContractValidationTarget, OrgNode, OrgNodeId, OrgSourceSpan,
+};
+use orgize::ast::{
+    Document, OrgContract, OrgContractAssertionEvaluation, OrgContractAssertionStatus,
+    OrgContractEvaluationScope, OrgContractRegistry, ParsedAnnotation, evaluate_org_contract,
 };
 
 pub(crate) fn validate_contract_references(
+    document: &Document<ParsedAnnotation>,
     nodes: &[OrgNode],
     contracts: &OrgContractRegistry,
     resolutions: &OrgContractResolutionReport,
@@ -26,13 +30,17 @@ pub(crate) fn validate_contract_references(
         };
         let target = validation_target(&resolution.reference);
         let scoped_nodes = scoped_validation_nodes(nodes, &target);
+        let scope = evaluation_scope(nodes, &target);
+        let evaluation = evaluate_org_contract(document, contract, scope);
 
-        for assertion in &contract.assertions {
-            report.receipts.push(validate_contract_assertion(
-                contract,
+        for assertion in evaluation.assertions {
+            report.receipts.push(contract_validation_receipt(
+                contract.id.as_str(),
                 assertion,
                 &target,
                 &scoped_nodes,
+                nodes,
+                document,
             ));
         }
     }
@@ -45,7 +53,11 @@ fn contract_by_id<'a>(
     contract_id: &OrgContractId,
 ) -> Option<&'a OrgContract> {
     contracts.contracts.iter().find(|contract| {
-        &contract.id == contract_id || contract.aliases.iter().any(|alias| alias == contract_id)
+        contract.id == contract_id.as_str()
+            || contract
+                .aliases
+                .iter()
+                .any(|alias| alias == contract_id.as_str())
     })
 }
 
@@ -80,111 +92,125 @@ fn scoped_validation_nodes<'a>(
     }
 }
 
-fn validate_contract_assertion(
-    contract: &OrgContract,
-    assertion: &OrgContractAssertion,
+fn contract_validation_receipt(
+    contract_id: &str,
+    assertion: OrgContractAssertionEvaluation,
     target: &OrgContractValidationTarget,
     scoped_nodes: &[&OrgNode],
+    nodes: &[OrgNode],
+    document: &Document<ParsedAnnotation>,
 ) -> OrgContractValidationReceipt {
-    let matched_nodes = scoped_nodes
-        .iter()
-        .filter(|node| node_matches_contract_query(node, &assertion.query))
-        .map(|node| node.id.clone())
-        .collect::<Vec<_>>();
-    let matched = matched_nodes.len();
-    let evaluation = evaluate_expectation(&assertion.expectation, matched);
-    let status = evaluation
-        .map(|passed| {
-            if passed {
-                OrgContractValidationStatus::Passed
-            } else {
-                OrgContractValidationStatus::Failed
-            }
-        })
-        .unwrap_or(OrgContractValidationStatus::Skipped);
-    let skip_reason = evaluation
-        .is_none()
-        .then(|| assertion.expectation.skip_reason())
-        .flatten();
-
     OrgContractValidationReceipt {
-        contract_id: contract.id.clone(),
-        assertion_id: assertion.id.clone(),
+        contract_id: OrgContractId::from(contract_id.to_owned()),
+        assertion_id: assertion.assertion_id,
         target: target.clone(),
-        status,
-        severity: assertion.severity.clone(),
-        message: assertion.message.clone(),
-        matched_nodes,
-        skip_reason,
+        status: validation_status(assertion.status),
+        severity: OrgContractSeverity::new(format!("{:?}", assertion.severity)),
+        message: assertion.message_template,
+        matched_nodes: matched_node_ids(nodes, document, &assertion.matched_ids),
+        skip_reason: None,
         source: validation_target_source(target, scoped_nodes),
     }
 }
 
-fn evaluate_expectation(expectation: &OrgContractExpectation, actual: usize) -> Option<bool> {
-    expectation.evaluate_count(actual)
+fn validation_status(status: OrgContractAssertionStatus) -> OrgContractValidationStatus {
+    match status {
+        OrgContractAssertionStatus::Passed => OrgContractValidationStatus::Passed,
+        OrgContractAssertionStatus::Failed => OrgContractValidationStatus::Failed,
+    }
 }
 
-fn node_matches_contract_query(node: &OrgNode, query: &OrgContractQuery) -> bool {
-    node_matches_contract_category(node, query)
-        && node_matches_contract_kind(node, query)
-        && query
-            .summary_equals
+fn matched_node_ids(
+    nodes: &[OrgNode],
+    document: &Document<ParsedAnnotation>,
+    matched_ids: &[orgize::ast::OrgElementId],
+) -> Vec<OrgNodeId> {
+    let graph = document.org_elements_graph();
+    matched_ids
+        .iter()
+        .filter_map(|matched_id| graph.record(*matched_id))
+        .filter_map(|record| {
+            let start_byte = u32::from(record.ann.range.start()) as usize;
+            let end_byte = u32::from(record.ann.range.end()) as usize;
+            nodes
+                .iter()
+                .find(|node| {
+                    node.source.as_ref().is_some_and(|source| {
+                        source.start_byte == start_byte && source.end_byte == end_byte
+                    })
+                })
+                .map(|node| node.id.clone())
+        })
+        .collect()
+}
+
+fn evaluation_scope(
+    nodes: &[OrgNode],
+    target: &OrgContractValidationTarget,
+) -> OrgContractEvaluationScope {
+    match target {
+        OrgContractValidationTarget::Document => OrgContractEvaluationScope::document(),
+        OrgContractValidationTarget::Node(root) => nodes
             .iter()
-            .all(|(key, value)| node_summary_value(node, key).is_some_and(|actual| actual == value))
-        && query.summary_contains.iter().all(|(key, value)| {
-            node_summary_value(node, key).is_some_and(|actual| actual.contains(value))
-        })
-        && query.property_equals.iter().all(|(key, value)| {
-            node.properties
-                .get(key)
-                .is_some_and(|actual| actual == value)
-        })
-        && query.property_contains.iter().all(|(key, value)| {
-            node.properties
-                .get(key)
-                .is_some_and(|actual| actual.contains(value))
-        })
-}
-
-fn node_matches_contract_category(node: &OrgNode, query: &OrgContractQuery) -> bool {
-    query.category.as_ref().is_none_or(|category| {
-        let category = category.as_str().to_ascii_lowercase();
-        if category == "section" {
-            node.kind == marlin_org_model::OrgNodeKind::Heading
-        } else {
-            category == format!("{:?}", node.kind).to_ascii_lowercase()
-        }
-    })
-}
-
-fn node_matches_contract_kind(node: &OrgNode, query: &OrgContractQuery) -> bool {
-    query.kind.as_ref().is_none_or(|kind| {
-        let kind = kind.as_str().to_ascii_lowercase();
-        if kind.contains("headline") || kind.contains("heading") {
-            node.kind == marlin_org_model::OrgNodeKind::Heading
-        } else {
-            kind == format!("{:?}", node.kind).to_ascii_lowercase()
-        }
-    })
-}
-
-fn node_summary_value<'a>(node: &'a OrgNode, key: &str) -> Option<&'a str> {
-    match key {
-        "title" => node.title.as_deref(),
-        "todo" => node.todo.as_ref().map(todo_state_value),
-        _ => None,
+            .find(|node| node.id == *root)
+            .and_then(|node| {
+                let source = node.source.as_ref()?;
+                Some(OrgContractEvaluationScope::section(
+                    node.title.clone().unwrap_or_default(),
+                    outline_path_for_node(nodes, root),
+                    orgize::TextRange::new(
+                        (source.start_byte as u32).into(),
+                        (source.end_byte as u32).into(),
+                    ),
+                ))
+            })
+            .unwrap_or_else(OrgContractEvaluationScope::document),
     }
 }
 
-fn todo_state_value(state: &TodoState) -> &str {
-    match state {
-        TodoState::Todo => "TODO",
-        TodoState::Next => "NEXT",
-        TodoState::Wait => "WAIT",
-        TodoState::Blocked => "BLOCKED",
-        TodoState::Done => "DONE",
-        TodoState::Custom(value) => value.as_str(),
+fn outline_path_for_node(nodes: &[OrgNode], root: &OrgNodeId) -> Vec<String> {
+    let mut path = Vec::new();
+    for node in root_nodes(nodes) {
+        if collect_outline_path_from(nodes, &node.id, root, &mut path) {
+            return path;
+        }
     }
+    Vec::new()
+}
+
+fn root_nodes(nodes: &[OrgNode]) -> Vec<&OrgNode> {
+    nodes
+        .iter()
+        .filter(|node| {
+            !nodes
+                .iter()
+                .any(|candidate| candidate.children.iter().any(|child| child == &node.id))
+        })
+        .collect()
+}
+
+fn collect_outline_path_from(
+    nodes: &[OrgNode],
+    current: &OrgNodeId,
+    target: &OrgNodeId,
+    path: &mut Vec<String>,
+) -> bool {
+    let Some(node) = nodes.iter().find(|node| node.id == *current) else {
+        return false;
+    };
+    path.push(node.title.clone().unwrap_or_default());
+    if node.id == *target {
+        return true;
+    }
+    if node
+        .children
+        .iter()
+        .any(|child| collect_outline_path_from(nodes, child, target, path))
+    {
+        return true;
+    }
+    path.pop();
+    false
 }
 
 fn validation_target_source(

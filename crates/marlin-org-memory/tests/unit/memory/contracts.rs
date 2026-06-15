@@ -289,6 +289,70 @@ count == 1
 }
 
 #[test]
+fn memory_workspace_loads_document_with_standard_agent_contracts() {
+    let workspace = MemoryOrgWorkspace::new();
+    let document = OrgDocument::new(
+        "doc:standard-memory",
+        r#"* Agent memory candidate
+:PROPERTIES:
+:CONTRACT_ORG: agent.memory.v1
+:ID: standard-memory-candidate
+:MEMORY_KIND: workspace-status
+:SOURCE_REF: crates/marlin-org-memory/tests/unit/memory/contracts.rs
+:RECALL_QUERY: memory workspace standard contract status receipt
+:SALIENCE: medium
+:END:
+
+** Claim
+Memory workspace status should include standard contract validation receipts.
+
+** Source
+Workspace status receipt.
+
+** Recall
+- Recall when validating standard agent memory contract loading.
+
+** Evidence
+- MemoryOrgWorkspace loads standard contract documents and validates receipts.
+
+** Trust
+internal
+
+** Retention
+- Keep for project tests while standard memory contract loading exists.
+"#,
+    );
+
+    let ids = workspace
+        .load_document_with_standard_agent_contracts(document)
+        .expect("document inserted with standard agent contracts");
+    let status = block_on(workspace.status(
+        WorkspaceTarget::Goal(ids[0].clone()),
+        WorkspaceCtx::new("unit-test"),
+    ))
+    .expect("status includes standard agent contract facts");
+    let contracts = status.contracts.expect("contract status");
+
+    assert_eq!(contracts.resolved_references, 1);
+    assert_eq!(contracts.unresolved_references, 0);
+    assert_eq!(contracts.contract_assertions, 44);
+    assert_eq!(contracts.validation_receipts, 14);
+    assert_eq!(contracts.validation_passed, 14);
+    assert_eq!(
+        contracts.reference_resolutions[0]
+            .resolved_contract_id
+            .as_ref()
+            .map(|contract_id| contract_id.as_str()),
+        Some("agent.memory.v1")
+    );
+    assert!(
+        contracts
+            .contract_expectation_summaries
+            .contains(&"agent.memory.v1/memory.has-retention: count >= 1".to_owned())
+    );
+}
+
+#[test]
 fn memory_workspace_status_reports_unresolved_contract_diagnostics() {
     let workspace = MemoryOrgWorkspace::new();
     let document = OrgDocument::new(

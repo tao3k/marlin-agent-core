@@ -11,8 +11,8 @@ use marlin_agent_kernel::{
 use marlin_agent_protocol::AgentScenarioStep;
 use marlin_agent_runtime::{RuntimeContext, RuntimeFuture, observability};
 use marlin_gerbil_scheme::{
-    GERBIL_ADAPTER_MODULE, GERBIL_LOADPATH_ENV, GERBIL_MARLIN_ADAPTER_PATH, GerbilCommandProfile,
-    MARLIN_GERBIL_GXI_ENV, default_gerbil_gxi_program, gerbil_runtime_loadpath,
+    GERBIL_ADAPTER_MODULE, GERBIL_LOADPATH_ENV, GerbilCommandProfile, MARLIN_GERBIL_GXI_ENV,
+    default_gerbil_gxi_program, gerbil_runtime_loadpath, resolve_gerbil_executable,
     write_gerbil_runtime_assets,
 };
 use tempfile::Builder;
@@ -34,7 +34,7 @@ async fn harness_executes_graph_with_real_gxi_runtime_asset_plan() {
     let command_profile =
         GerbilCommandProfile::marlin_runtime_module(gxi.to_string_lossy(), root.path());
     let loadpath = gerbil_runtime_loadpath(root.path());
-    let adapter_path = root.path().join(GERBIL_MARLIN_ADAPTER_PATH);
+    let adapter_path = root.path().join("src/marlin/adapter.ss");
 
     assert!(adapter_path.exists());
     assert_eq!(command_profile.args, vec![GERBIL_ADAPTER_MODULE.to_owned()]);
@@ -94,18 +94,18 @@ async fn harness_executes_graph_with_real_gxi_runtime_asset_plan() {
 }
 
 fn local_gxi() -> Option<PathBuf> {
-    let gxi = default_gerbil_gxi_program();
-    if !gxi.exists() {
+    let configured_gxi = default_gerbil_gxi_program();
+    let Some(gxi) = resolve_gerbil_executable(&configured_gxi) else {
         let message = format!(
             "skipping real gxi harness test because {} is missing",
-            gxi.display()
+            configured_gxi.display()
         );
         if std::env::var_os(MARLIN_REQUIRE_REAL_GXI_ENV).is_some() {
             panic!("{message}; unset {MARLIN_REQUIRE_REAL_GXI_ENV} or set {MARLIN_GERBIL_GXI_ENV}");
         }
         eprintln!("{message}");
         return None;
-    }
+    };
 
     Some(gxi)
 }

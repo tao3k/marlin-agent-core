@@ -1,0 +1,33 @@
+#+TITLE: Example - Agent Loop Contract v1
+
+* Agent Loop Contract Example :agent:loop:contract:
+:PROPERTIES:
+:CONTRACT_ORG: agent.loop.v1
+:ID: agent-loop-contract-example-20260615
+:END:
+
+** Graph
+
+#+begin_src text
+plan -> task -> validation -> evidence -> recovery
+task -> memory
+memory -> plan
+#+end_src
+
+** Strategy
+
+Use the configured graph loop as the control shape. Rust owns typed execution
+receipts and Gerbil Scheme can own complex policy decisions after the native ABI
+readiness gate.
+
+** Budget
+
+max-node-executions = 5
+max-recovery-attempts = 1
+
+** Evidence
+
+- The loop document exposes a graph, strategy, budget, and replayable evidence
+  section.
+- A downstream runtime can use this record to explain why the loop continued,
+  stopped, or requested recovery.

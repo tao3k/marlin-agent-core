@@ -1,6 +1,6 @@
 use std::{
     env, fs,
-    path::Path,
+    path::{Path, PathBuf},
     process::Command,
     slice, str,
     time::{Duration, Instant},
@@ -13,7 +13,7 @@ use marlin_gerbil_scheme::{
     GerbilDeckRuntimeNativeAotConfig, GerbilDeckRuntimeNativeModelRouteRequest,
     GerbilDeckRuntimeNativeModelRouteSelection, GerbilDeckRuntimeNativeModelRouteSelector,
     GerbilDeckRuntimeNativeStatus, GerbilDeckRuntimeNativeUtf8, default_gerbil_gsc_program,
-    default_gerbil_gxc_program, default_gerbil_gxi_program, gerbil_runtime_loadpath,
+    default_gerbil_gxi_program, gerbil_runtime_loadpath, resolve_gerbil_executable,
     write_gerbil_runtime_assets,
 };
 
@@ -21,6 +21,8 @@ const REAL_PACKAGE_BENCH_ENV: &str = "MARLIN_GERBIL_REAL_PACKAGE_BENCH";
 const REAL_STRATEGY_BENCH_ENV: &str = "MARLIN_GERBIL_REAL_STRATEGY_BENCH";
 const REAL_COMPILED_POLICY_BENCH_ENV: &str = "MARLIN_GERBIL_REAL_COMPILED_POLICY_BENCH";
 const REAL_NATIVE_AOT_BENCH_ENV: &str = "MARLIN_GERBIL_NATIVE_AOT_BENCH";
+const REAL_NATIVE_AOT_COMPILED_RUNTIME_SCM_ENV: &str =
+    "MARLIN_GERBIL_NATIVE_AOT_COMPILED_RUNTIME_SCM";
 const COMPILED_POLICY_BATCH_ITERATIONS: usize = 10_000;
 
 fn bench_native_selector(c: &mut Criterion) {
@@ -55,11 +57,10 @@ fn bench_real_scheme_strategy_selector(c: &mut Criterion) {
         return;
     }
 
-    let gxi = default_gerbil_gxi_program();
-    assert!(
-        executable_exists(&gxi),
-        "real Scheme strategy benchmark requires gxi at {}; set MARLIN_GERBIL_GXI to override",
-        gxi.display()
+    let gxi = resolve_real_bench_program(
+        "real Scheme strategy benchmark",
+        "MARLIN_GERBIL_GXI",
+        default_gerbil_gxi_program(),
     );
 
     let loadpath_root = tempfile::Builder::new()
@@ -102,11 +103,10 @@ fn bench_real_scheme_compiled_policy_selector(c: &mut Criterion) {
         return;
     }
 
-    let gxi = default_gerbil_gxi_program();
-    assert!(
-        executable_exists(&gxi),
-        "real Scheme compiled policy benchmark requires gxi at {}; set MARLIN_GERBIL_GXI to override",
-        gxi.display()
+    let gxi = resolve_real_bench_program(
+        "real Scheme compiled policy benchmark",
+        "MARLIN_GERBIL_GXI",
+        default_gerbil_gxi_program(),
     );
 
     let loadpath_root = tempfile::Builder::new()
@@ -186,11 +186,10 @@ fn bench_real_scheme_package_build(c: &mut Criterion) {
         return;
     }
 
-    let gxi = default_gerbil_gxi_program();
-    assert!(
-        executable_exists(&gxi),
-        "real Scheme package build benchmark requires gxi at {}; set MARLIN_GERBIL_GXI to override",
-        gxi.display()
+    let gxi = resolve_real_bench_program(
+        "real Scheme package build benchmark",
+        "MARLIN_GERBIL_GXI",
+        default_gerbil_gxi_program(),
     );
 
     let mut group = c.benchmark_group("deck_runtime_real_scheme_package_build");
@@ -217,17 +216,20 @@ fn bench_real_native_aot_link_unit_build(c: &mut Criterion) {
         return;
     }
 
-    let gxc = default_gerbil_gxc_program();
-    let gsc = default_gerbil_gsc_program();
-    assert!(
-        executable_exists(&gxc),
-        "real native AOT benchmark requires gxc at {}; set MARLIN_GERBIL_GXC to override",
-        gxc.display()
+    let _gsc = resolve_real_bench_program(
+        "real native AOT benchmark",
+        "MARLIN_GERBIL_GSC",
+        default_gerbil_gsc_program(),
     );
+    let compiled_runtime_scm = env::var_os(REAL_NATIVE_AOT_COMPILED_RUNTIME_SCM_ENV)
+        .map(PathBuf::from)
+        .unwrap_or_else(|| {
+            panic!("real native AOT benchmark requires {REAL_NATIVE_AOT_COMPILED_RUNTIME_SCM_ENV}")
+        });
     assert!(
-        executable_exists(&gsc),
-        "real native AOT benchmark requires gsc at {}; set MARLIN_GERBIL_GSC to override",
-        gsc.display()
+        compiled_runtime_scm.is_file(),
+        "{REAL_NATIVE_AOT_COMPILED_RUNTIME_SCM_ENV} must point to a compiled runtime .scm file: {}",
+        compiled_runtime_scm.display()
     );
 
     let mut group = c.benchmark_group("deck_runtime_real_native_aot_link_unit_build");
@@ -238,7 +240,7 @@ fn bench_real_native_aot_link_unit_build(c: &mut Criterion) {
         bencher.iter_custom(|iterations| {
             let started = Instant::now();
             for _ in 0..iterations {
-                run_real_native_aot_link_unit_build();
+                run_real_native_aot_link_unit_build(&compiled_runtime_scm);
             }
             started.elapsed()
         });
@@ -255,6 +257,15 @@ fn run_real_scheme_package_build(gxi: &Path) {
         .expect("write real Scheme package build benchmark assets");
 
     run_real_scheme_package_build_in_root(gxi, loadpath_root.path());
+}
+
+fn resolve_real_bench_program(label: &str, env_name: &str, configured: PathBuf) -> PathBuf {
+    resolve_gerbil_executable(&configured).unwrap_or_else(|| {
+        panic!(
+            "{label} requires executable at {}; set {env_name} to override",
+            configured.display()
+        )
+    })
 }
 
 fn run_real_scheme_package_build_in_root(gxi: &Path, loadpath_root: &Path) {
@@ -407,12 +418,13 @@ fn parse_compiled_policy_batch_elapsed_us(output: &str, field_prefix: &str) -> u
         })
 }
 
-fn run_real_native_aot_link_unit_build() {
+fn run_real_native_aot_link_unit_build(compiled_runtime_scm: &Path) {
     let root = tempfile::Builder::new()
         .prefix("marlin-gerbil-native-aot-build-bench-")
         .tempdir()
         .expect("create real native AOT benchmark root");
-    let mut config = GerbilDeckRuntimeNativeAotConfig::new(root.path());
+    let mut config = GerbilDeckRuntimeNativeAotConfig::new(root.path())
+        .with_compiled_runtime_scm(compiled_runtime_scm);
     if cfg!(target_os = "macos") {
         config = config.with_c_compiler("clang");
     }
@@ -460,10 +472,6 @@ fn real_compiled_policy_bench_enabled() -> bool {
 
 fn real_native_aot_bench_enabled() -> bool {
     env::var_os(REAL_NATIVE_AOT_BENCH_ENV).as_deref() == Some(std::ffi::OsStr::new("1"))
-}
-
-fn executable_exists(path: &Path) -> bool {
-    path.is_file()
 }
 
 unsafe extern "C" fn fake_select_model_route_fast(

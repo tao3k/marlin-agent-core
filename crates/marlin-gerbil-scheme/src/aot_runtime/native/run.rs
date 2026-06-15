@@ -9,7 +9,6 @@ use super::{
     },
     status::{GerbilDeckRuntimeNativeAotBuildStatus, GerbilDeckRuntimeNativeAotStatus},
 };
-use crate::runtime::{GERBIL_LOADPATH_ENV, gerbil_runtime_loadpath, write_gerbil_runtime_assets};
 use object::{Object, ObjectSymbol};
 use std::{
     collections::HashSet,
@@ -25,7 +24,6 @@ const GERBIL_HOME_ENV: &str = "GERBIL_HOME";
 
 #[derive(Default)]
 struct NativeBuildCommandReceipts {
-    gxc_generate_scheme: Option<GerbilDeckRuntimeNativeAotCommandReceipt>,
     gsc_compile_object: Option<GerbilDeckRuntimeNativeAotCommandReceipt>,
     gsc_generate_link_source: Option<GerbilDeckRuntimeNativeAotCommandReceipt>,
     gsc_compile_link_object: Option<GerbilDeckRuntimeNativeAotCommandReceipt>,
@@ -37,15 +35,6 @@ pub(super) fn build_gerbil_deck_runtime_native_link_unit(
     config: &GerbilDeckRuntimeNativeAotConfig,
 ) -> GerbilDeckRuntimeNativeAotBuildReceipt {
     let initial_plan = config.plan();
-    if initial_plan.status == GerbilDeckRuntimeNativeAotStatus::MissingGxc {
-        return native_build_receipt(
-            GerbilDeckRuntimeNativeAotBuildStatus::MissingGxc,
-            initial_plan,
-            None,
-            NativeBuildCommandReceipts::default(),
-            Vec::new(),
-        );
-    }
     if initial_plan.status == GerbilDeckRuntimeNativeAotStatus::MissingGsc {
         return native_build_receipt(
             GerbilDeckRuntimeNativeAotBuildStatus::MissingGsc,
@@ -55,11 +44,12 @@ pub(super) fn build_gerbil_deck_runtime_native_link_unit(
             Vec::new(),
         );
     }
-    if let Err(error) = write_gerbil_runtime_assets(&initial_plan.root) {
+    if initial_plan.status == GerbilDeckRuntimeNativeAotStatus::MissingCompiledRuntime {
+        let detail = initial_plan.detail.clone();
         return native_build_receipt(
-            GerbilDeckRuntimeNativeAotBuildStatus::AssetWriteFailed,
+            GerbilDeckRuntimeNativeAotBuildStatus::MissingCompiledRuntime,
             initial_plan,
-            Some(error.to_string()),
+            detail,
             NativeBuildCommandReceipts::default(),
             Vec::new(),
         );
@@ -86,35 +76,6 @@ pub(super) fn build_gerbil_deck_runtime_native_link_unit(
         );
     }
 
-    let gxc_generate_scheme = run_native_aot_command(&plan, &plan.gxc_generate_scheme);
-    if gxc_generate_scheme
-        .status_code
-        .is_none_or(|status| status != 0)
-    {
-        return native_build_receipt(
-            GerbilDeckRuntimeNativeAotBuildStatus::GxcGenerateSchemeFailed,
-            plan,
-            None,
-            NativeBuildCommandReceipts {
-                gxc_generate_scheme: Some(gxc_generate_scheme),
-                ..Default::default()
-            },
-            Vec::new(),
-        );
-    }
-    if !plan.generated_runtime_scm.is_file() {
-        return native_build_receipt(
-            GerbilDeckRuntimeNativeAotBuildStatus::GeneratedSchemeMissing,
-            plan,
-            Some("gxc completed without producing deck-runtime-native~0.scm".to_string()),
-            NativeBuildCommandReceipts {
-                gxc_generate_scheme: Some(gxc_generate_scheme),
-                ..Default::default()
-            },
-            Vec::new(),
-        );
-    }
-
     let gsc_compile_object = run_native_aot_command(&plan, &plan.gsc_compile_object);
     if gsc_compile_object
         .status_code
@@ -125,7 +86,6 @@ pub(super) fn build_gerbil_deck_runtime_native_link_unit(
             plan,
             None,
             NativeBuildCommandReceipts {
-                gxc_generate_scheme: Some(gxc_generate_scheme),
                 gsc_compile_object: Some(gsc_compile_object),
                 ..Default::default()
             },
@@ -138,7 +98,6 @@ pub(super) fn build_gerbil_deck_runtime_native_link_unit(
             plan,
             Some("gsc completed without producing deck-runtime-native~0.o".to_string()),
             NativeBuildCommandReceipts {
-                gxc_generate_scheme: Some(gxc_generate_scheme),
                 gsc_compile_object: Some(gsc_compile_object),
                 ..Default::default()
             },
@@ -156,7 +115,6 @@ pub(super) fn build_gerbil_deck_runtime_native_link_unit(
             plan,
             None,
             NativeBuildCommandReceipts {
-                gxc_generate_scheme: Some(gxc_generate_scheme),
                 gsc_compile_object: Some(gsc_compile_object),
                 gsc_generate_link_source: Some(gsc_generate_link_source),
                 ..Default::default()
@@ -170,7 +128,6 @@ pub(super) fn build_gerbil_deck_runtime_native_link_unit(
             plan,
             Some("gsc -link completed without producing deck-runtime-native~0_.c".to_string()),
             NativeBuildCommandReceipts {
-                gxc_generate_scheme: Some(gxc_generate_scheme),
                 gsc_compile_object: Some(gsc_compile_object),
                 gsc_generate_link_source: Some(gsc_generate_link_source),
                 ..Default::default()
@@ -189,7 +146,6 @@ pub(super) fn build_gerbil_deck_runtime_native_link_unit(
             plan,
             None,
             NativeBuildCommandReceipts {
-                gxc_generate_scheme: Some(gxc_generate_scheme),
                 gsc_compile_object: Some(gsc_compile_object),
                 gsc_generate_link_source: Some(gsc_generate_link_source),
                 gsc_compile_link_object: Some(gsc_compile_link_object),
@@ -204,7 +160,6 @@ pub(super) fn build_gerbil_deck_runtime_native_link_unit(
             plan,
             Some("gsc completed without producing deck-runtime-native~0_.o".to_string()),
             NativeBuildCommandReceipts {
-                gxc_generate_scheme: Some(gxc_generate_scheme),
                 gsc_compile_object: Some(gsc_compile_object),
                 gsc_generate_link_source: Some(gsc_generate_link_source),
                 gsc_compile_link_object: Some(gsc_compile_link_object),
@@ -221,7 +176,6 @@ pub(super) fn build_gerbil_deck_runtime_native_link_unit(
                 plan,
                 Some("native object is missing required Deck runtime ABI symbols".to_string()),
                 NativeBuildCommandReceipts {
-                    gxc_generate_scheme: Some(gxc_generate_scheme),
                     gsc_compile_object: Some(gsc_compile_object),
                     gsc_generate_link_source: Some(gsc_generate_link_source),
                     gsc_compile_link_object: Some(gsc_compile_link_object),
@@ -239,7 +193,6 @@ pub(super) fn build_gerbil_deck_runtime_native_link_unit(
             plan,
             None,
             NativeBuildCommandReceipts {
-                gxc_generate_scheme: Some(gxc_generate_scheme),
                 gsc_compile_object: Some(gsc_compile_object),
                 gsc_generate_link_source: Some(gsc_generate_link_source),
                 gsc_compile_link_object: Some(gsc_compile_link_object),
@@ -257,7 +210,6 @@ pub(super) fn build_gerbil_deck_runtime_native_link_unit(
             plan,
             None,
             NativeBuildCommandReceipts {
-                gxc_generate_scheme: Some(gxc_generate_scheme),
                 gsc_compile_object: Some(gsc_compile_object),
                 gsc_generate_link_source: Some(gsc_generate_link_source),
                 gsc_compile_link_object: Some(gsc_compile_link_object),
@@ -276,7 +228,6 @@ pub(super) fn build_gerbil_deck_runtime_native_link_unit(
             plan,
             Some("native object is missing required Deck runtime ABI symbols".to_string()),
             NativeBuildCommandReceipts {
-                gxc_generate_scheme: Some(gxc_generate_scheme),
                 gsc_compile_object: Some(gsc_compile_object),
                 gsc_generate_link_source: Some(gsc_generate_link_source),
                 gsc_compile_link_object: Some(gsc_compile_link_object),
@@ -294,7 +245,6 @@ pub(super) fn build_gerbil_deck_runtime_native_link_unit(
         plan,
         None,
         NativeBuildCommandReceipts {
-            gxc_generate_scheme: Some(gxc_generate_scheme),
             gsc_compile_object: Some(gsc_compile_object),
             gsc_generate_link_source: Some(gsc_generate_link_source),
             gsc_compile_link_object: Some(gsc_compile_link_object),
@@ -309,14 +259,11 @@ fn non_ready_plan_build_status(
     status: GerbilDeckRuntimeNativeAotStatus,
 ) -> Option<GerbilDeckRuntimeNativeAotBuildStatus> {
     match status {
-        GerbilDeckRuntimeNativeAotStatus::MissingGxc => {
-            Some(GerbilDeckRuntimeNativeAotBuildStatus::MissingGxc)
-        }
         GerbilDeckRuntimeNativeAotStatus::MissingGsc => {
             Some(GerbilDeckRuntimeNativeAotBuildStatus::MissingGsc)
         }
-        GerbilDeckRuntimeNativeAotStatus::MissingSchemeSource => {
-            Some(GerbilDeckRuntimeNativeAotBuildStatus::AssetWriteFailed)
+        GerbilDeckRuntimeNativeAotStatus::MissingCompiledRuntime => {
+            Some(GerbilDeckRuntimeNativeAotBuildStatus::MissingCompiledRuntime)
         }
         GerbilDeckRuntimeNativeAotStatus::MissingHeader => {
             Some(GerbilDeckRuntimeNativeAotBuildStatus::MissingHeader)
@@ -330,10 +277,7 @@ fn run_native_aot_command(
     command_plan: &GerbilDeckRuntimeNativeAotCommandPlan,
 ) -> GerbilDeckRuntimeNativeAotCommandReceipt {
     let mut command = Command::new(&command_plan.program);
-    command
-        .current_dir(&plan.root)
-        .env(GERBIL_LOADPATH_ENV, gerbil_runtime_loadpath(&plan.root))
-        .args(&command_plan.args);
+    command.current_dir(&plan.root).args(&command_plan.args);
     configure_native_tool_environment(&mut command, &command_plan.program);
 
     let output = command.output();
@@ -467,7 +411,6 @@ fn native_build_receipt(
         status,
         plan,
         detail,
-        gxc_generate_scheme: commands.gxc_generate_scheme,
         gsc_compile_object: commands.gsc_compile_object,
         gsc_generate_link_source: commands.gsc_generate_link_source,
         gsc_compile_link_object: commands.gsc_compile_link_object,

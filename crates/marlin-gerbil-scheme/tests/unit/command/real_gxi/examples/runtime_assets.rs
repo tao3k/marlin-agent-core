@@ -1,9 +1,7 @@
 use super::support::{local_gxi, test_root, write_deck_runtime_handshake_example};
 use marlin_gerbil_scheme::{
-    GERBIL_LOADPATH_ENV, GERBIL_MARLIN_DECK_RUNTIME_NATIVE_PATH, GERBIL_PACKAGE_MANIFEST_PATH,
-    GERBIL_POO_MOP_MODULE, GERBIL_POO_OBJECT_MODULE, GERBIL_POO_PACKAGE_NAME,
-    GERBIL_POO_PROTO_MODULE, GERBIL_SMOKE_PATH, gerbil_runtime_loadpath,
-    write_gerbil_runtime_assets,
+    GERBIL_LOADPATH_ENV, GERBIL_POO_MOP_MODULE, GERBIL_POO_OBJECT_MODULE, GERBIL_POO_PACKAGE_NAME,
+    GERBIL_POO_PROTO_MODULE, gerbil_runtime_loadpath, write_gerbil_runtime_assets,
 };
 use std::{
     fs,
@@ -38,7 +36,7 @@ fn command_compiler_real_gxi_builds_runtime_package_and_runs_smoke_launcher() {
     let smoke_output = Command::new(gxi)
         .env(GERBIL_LOADPATH_ENV, gerbil_runtime_loadpath(root.path()))
         .current_dir(root.path())
-        .arg(root.path().join(GERBIL_SMOKE_PATH))
+        .arg(root.path().join("bin/smoke.ss"))
         .output()
         .expect("run real gxi runtime smoke launcher");
 
@@ -53,14 +51,15 @@ fn command_compiler_real_gxi_builds_runtime_package_and_runs_smoke_launcher() {
         "marlin-gerbil-smoke\n"
     );
 
-    let manifest = fs::read_to_string(root.path().join(GERBIL_PACKAGE_MANIFEST_PATH))
-        .expect("read package manifest");
+    let manifest =
+        fs::read_to_string(root.path().join("gerbil.pkg")).expect("read package manifest");
     assert!(manifest.contains("(package: marlin-deck-runtime"));
     assert!(manifest.contains("git.cons.io/mighty-gerbils/gerbil-poo"));
+    assert!(manifest.contains("github.com/tao3k/gerbil-scheme-language-project-harness"));
+    assert!(!manifest.contains("/Users/"));
 
-    let native_source =
-        fs::read_to_string(root.path().join(GERBIL_MARLIN_DECK_RUNTIME_NATIVE_PATH))
-            .expect("read native runtime source");
+    let native_source = fs::read_to_string(root.path().join("src/marlin/deck-runtime-native.ss"))
+        .expect("read native runtime source");
     assert!(native_source.contains("marlin_deck_runtime_initialize"));
     assert!(native_source.contains("marlin_deck_runtime_select_model_route"));
 }

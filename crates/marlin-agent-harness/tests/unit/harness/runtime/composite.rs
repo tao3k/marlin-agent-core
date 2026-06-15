@@ -104,7 +104,7 @@ async fn harness_execution_report_composes_no_llm_runtime_evidence_chain() {
             .iter()
             .filter(|evidence| evidence.kind == AgentHarnessEvidenceKind::Runtime)
             .count(),
-        2
+        7
     );
     assert_eq!(
         report

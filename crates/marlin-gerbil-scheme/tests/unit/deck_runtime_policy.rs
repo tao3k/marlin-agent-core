@@ -4,13 +4,12 @@ use marlin_gerbil_scheme::{
     GERBIL_DECK_RUNTIME_NATIVE_PROJECTION_ABI_VERSION,
     GERBIL_DECK_RUNTIME_POO_POLICY_PROJECTION_SCHEMA_ID,
     GERBIL_DECK_RUNTIME_POO_POLICY_PROJECTION_TYPE_ID,
-    GERBIL_DECK_RUNTIME_PROJECT_POO_POLICY_SYMBOL,
-    GERBIL_MARLIN_DECK_RUNTIME_NATIVE_PROJECTION_SOURCE, GerbilDeckRuntimeContextMode,
+    GERBIL_DECK_RUNTIME_PROJECT_POO_POLICY_SYMBOL, GerbilDeckRuntimeContextMode,
     GerbilDeckRuntimeIsolationMode, GerbilDeckRuntimeModelRoutePolicy,
     GerbilDeckRuntimeModelRoutePolicyRequest, GerbilDeckRuntimeModelRouteSelectedPolicy,
     GerbilDeckRuntimeModelRouteSelectionReceipt, GerbilDeckRuntimeSelectedPolicyKind,
     gerbil_deck_runtime_native_projection_readiness_plan,
-    gerbil_deck_runtime_poo_policy_projection_request,
+    gerbil_deck_runtime_poo_policy_projection_request, gerbil_runtime_asset,
 };
 
 #[test]
@@ -93,6 +92,10 @@ fn gerbil_deck_runtime_poo_policy_projection_request_matches_scheme_module_contr
     assert_eq!(readiness_plan.version, request.abi_version);
     assert_eq!(readiness_plan.exported_symbols, [request.symbol]);
 
+    let native_projection_source =
+        gerbil_runtime_asset("src/marlin/deck-runtime-native-projection.ss")
+            .expect("generated manifest includes native projection source")
+            .source;
     for expected in [
         GERBIL_DECK_RUNTIME_NATIVE_PROJECTION_ABI_ID,
         GERBIL_DECK_RUNTIME_PROJECT_POO_POLICY_SYMBOL,
@@ -100,7 +103,7 @@ fn gerbil_deck_runtime_poo_policy_projection_request_matches_scheme_module_contr
         GERBIL_DECK_RUNTIME_POO_POLICY_PROJECTION_SCHEMA_ID,
     ] {
         assert!(
-            GERBIL_MARLIN_DECK_RUNTIME_NATIVE_PROJECTION_SOURCE.contains(expected),
+            native_projection_source.contains(expected),
             "native projection Scheme source should contain {expected}"
         );
     }

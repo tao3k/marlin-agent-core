@@ -4,7 +4,9 @@ use super::{contracts, patch, query, render, status};
 use async_trait::async_trait;
 use marlin_gerbil_ir::ReleaseTopologySpec;
 use marlin_org_model::{OrgNode, OrgNodeId};
-use marlin_org_workspace::{OrgDocument, OrgDocumentLoader, OrgDocumentWorkspace};
+use marlin_org_workspace::{
+    OrgDocument, OrgDocumentLoader, OrgDocumentWorkspace, standard_agent_contract_documents,
+};
 use marlin_workspace_patch::{WorkspacePatch, WorkspacePatchReceipt, WorkspaceValidationReport};
 use marlin_workspace_protocol::{AgentWorkspace, WorkspaceCtx, WorkspaceError, WorkspaceResult};
 use marlin_workspace_query::{QueryMatch, WorkspaceQuery, WorkspaceQueryResult, WorkspaceScope};
@@ -102,12 +104,31 @@ impl MemoryOrgWorkspace {
         self.load_workspace(workspace)
     }
 
+    /// Load a raw `Org` document with the built-in agent Contract Org library.
+    pub fn load_document_with_standard_agent_contracts(
+        &self,
+        document: OrgDocument,
+    ) -> WorkspaceResult<Vec<OrgNodeId>> {
+        let contract_documents = standard_agent_contract_documents();
+        self.load_document_with_contracts(document, &contract_documents)
+    }
+
     /// Load multiple `Org` documents and discover contract registry documents from the batch.
     pub fn load_documents_with_discovered_contracts(
         &self,
         documents: &[OrgDocument],
     ) -> WorkspaceResult<Vec<OrgNodeId>> {
         let contract_documents = OrgDocumentLoader::discover_contract_documents(documents);
+        self.load_documents_with_contracts(documents, &contract_documents)
+    }
+
+    /// Load multiple `Org` documents with discovered contracts plus built-in agent contracts.
+    pub fn load_documents_with_standard_agent_contracts(
+        &self,
+        documents: &[OrgDocument],
+    ) -> WorkspaceResult<Vec<OrgNodeId>> {
+        let mut contract_documents = OrgDocumentLoader::discover_contract_documents(documents);
+        contract_documents.extend(standard_agent_contract_documents());
         self.load_documents_with_contracts(documents, &contract_documents)
     }
 

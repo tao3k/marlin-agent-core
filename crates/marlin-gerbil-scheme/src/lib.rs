@@ -10,6 +10,7 @@ mod deck_runtime_native;
 mod deck_runtime_policy;
 mod deck_runtime_script;
 mod deps;
+mod graph_loop_continuation;
 mod native_aot_cli;
 mod real_gxi_gate;
 mod resident_runtime;
@@ -90,6 +91,21 @@ pub use deps::{
     GerbilDepsAction, GerbilDepsConfig, GerbilDepsError, run_gerbil_deps_cli,
     run_gerbil_deps_from_args,
 };
+pub use graph_loop_continuation::{
+    GERBIL_LOOP_GRAPH_CONTINUATION_NATIVE_PROJECTION_ABI_ID,
+    GERBIL_LOOP_GRAPH_CONTINUATION_NATIVE_PROJECTION_ABI_VERSION,
+    GERBIL_LOOP_GRAPH_CONTINUATION_NATIVE_PROJECTION_PACKAGE_ID,
+    GERBIL_LOOP_GRAPH_CONTINUATION_NATIVE_SYMBOL, GERBIL_LOOP_GRAPH_CONTINUATION_TYPE_ID,
+    decode_gerbil_loop_graph_continuation_native_projection,
+    decode_gerbil_loop_graph_continuation_projection,
+    gerbil_loop_graph_continuation_native_projection_abi_contract,
+    gerbil_loop_graph_continuation_native_projection_package_manifest,
+    gerbil_loop_graph_continuation_native_projection_readiness_plan,
+    gerbil_loop_graph_continuation_native_projection_request,
+    gerbil_loop_graph_continuation_projection_contract,
+    gerbil_loop_graph_continuation_type_manifest, project_gerbil_loop_graph_continuation_action,
+    project_gerbil_loop_graph_continuation_native_action,
+};
 pub use marlin_gerbil_ir::GerbilWorkspaceContractFacts;
 pub use native_aot_cli::run_gerbil_native_aot_cli;
 pub use real_gxi_gate::{
@@ -105,24 +121,12 @@ pub use resident_runtime::{
     GerbilResidentRuntimeShutdownStatus,
 };
 pub use runtime::{
-    DEFAULT_GERBIL_GSC_PROGRAM, DEFAULT_GERBIL_GXC_PROGRAM, DEFAULT_GERBIL_GXI_PROGRAM,
-    GERBIL_ADAPTER_MODULE, GERBIL_BUILD_SOURCE, GERBIL_LOADPATH_ENV, GERBIL_MARLIN_ADAPTER_PATH,
-    GERBIL_MARLIN_ADAPTER_SOURCE, GERBIL_MARLIN_DECK_RUNTIME_COMPILED_POLICY_PATH,
-    GERBIL_MARLIN_DECK_RUNTIME_COMPILED_POLICY_SAMPLE_PATH,
-    GERBIL_MARLIN_DECK_RUNTIME_COMPILED_POLICY_SAMPLE_SOURCE,
-    GERBIL_MARLIN_DECK_RUNTIME_COMPILED_POLICY_SOURCE, GERBIL_MARLIN_DECK_RUNTIME_NATIVE_PATH,
-    GERBIL_MARLIN_DECK_RUNTIME_NATIVE_PROJECTION_PATH,
-    GERBIL_MARLIN_DECK_RUNTIME_NATIVE_PROJECTION_SOURCE, GERBIL_MARLIN_DECK_RUNTIME_NATIVE_SOURCE,
-    GERBIL_MARLIN_DECK_RUNTIME_PATH, GERBIL_MARLIN_DECK_RUNTIME_SCRIPT_PATH,
-    GERBIL_MARLIN_DECK_RUNTIME_SCRIPT_SOURCE, GERBIL_MARLIN_DECK_RUNTIME_SOURCE,
-    GERBIL_MARLIN_PARSER_PATH, GERBIL_MARLIN_PARSER_SOURCE, GERBIL_MARLIN_PROTOCOL_PATH,
-    GERBIL_MARLIN_PROTOCOL_SOURCE, GERBIL_MARLIN_REQUEST_PATH, GERBIL_MARLIN_REQUEST_SOURCE,
-    GERBIL_PACKAGE_MANIFEST_PATH, GERBIL_PACKAGE_MANIFEST_SOURCE, GERBIL_PACKAGE_SOURCE_PATH,
-    GERBIL_POO_DEPENDENCY, GERBIL_POO_MOP_MODULE, GERBIL_POO_OBJECT_MODULE,
-    GERBIL_POO_PACKAGE_NAME, GERBIL_POO_PROTO_MODULE, GERBIL_RUNTIME_ASSETS, GERBIL_SMOKE_PATH,
-    GERBIL_SMOKE_SOURCE, GerbilRuntimeAsset, MARLIN_GERBIL_GSC_ENV, MARLIN_GERBIL_GXC_ENV,
-    MARLIN_GERBIL_GXI_ENV, default_gerbil_gsc_program, default_gerbil_gxc_program,
-    default_gerbil_gxi_program, gerbil_runtime_assets, gerbil_runtime_loadpath,
+    GERBIL_ADAPTER_MODULE, GERBIL_LOADPATH_ENV, GERBIL_PACKAGE_SOURCE_PATH, GERBIL_POO_DEPENDENCY,
+    GERBIL_POO_MOP_MODULE, GERBIL_POO_OBJECT_MODULE, GERBIL_POO_PACKAGE_NAME,
+    GERBIL_POO_PROTO_MODULE, GERBIL_RUNTIME_ASSETS, GerbilRuntimeAsset, MARLIN_GERBIL_GSC_ENV,
+    MARLIN_GERBIL_GXC_ENV, MARLIN_GERBIL_GXI_ENV, default_gerbil_gsc_program,
+    default_gerbil_gxc_program, default_gerbil_gxi_program, gerbil_runtime_asset,
+    gerbil_runtime_assets, gerbil_runtime_loadpath, resolve_gerbil_executable,
     write_gerbil_runtime_assets,
 };
 pub use scheme_types::{

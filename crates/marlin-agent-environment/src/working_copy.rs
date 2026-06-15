@@ -8,15 +8,23 @@ use marlin_workspace_protocol::{
     WorkingCopyCommandInvocation, WorkingCopyCommandProgram, WorkingCopyCommandProjection,
     WorkingCopyCommandProjectionError, WorkingCopyCommandReceipt, WorkingCopyCommandStatus,
     WorkingCopyGitTopLevel, WorkingCopyIsolationPlan, WorkingCopyIsolationPlanError,
-    WorkingCopyIsolationReceipt, WorkingCopyIsolationRequest, WorkingCopyRepositoryDiscoveryPath,
+    WorkingCopyIsolationProvider, WorkingCopyIsolationReceipt, WorkingCopyIsolationRequest,
+    WorkingCopyParallelIsolationReceipt, WorkingCopyRepositoryDiscoveryPath, WorkspaceProjectId,
 };
 use thiserror::Error;
 use tokio::process::Command;
+use tokio::task::JoinSet;
 
 /// Result of applying working-copy isolation.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct WorkingCopyIsolationResult {
     pub receipt: WorkingCopyIsolationReceipt,
+}
+
+/// Result of applying a bounded parallel working-copy fanout.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WorkingCopyParallelIsolationResult {
+    pub receipt: WorkingCopyParallelIsolationReceipt,
 }
 
 /// Process output captured by a working-copy command runner.
@@ -294,6 +302,50 @@ where
         WorkingCopyIsolationResult {
             receipt: WorkingCopyIsolationReceipt::applied(&request)
                 .with_command_receipts(command_receipts),
+        }
+    }
+}
+
+impl<R, G> WorkingCopyIsolationDriver<R, G>
+where
+    R: WorkingCopyCommandRunner + Clone + Send + Sync + 'static,
+    G: WorkingCopyGitRepositoryResolver + Clone + Send + Sync + 'static,
+{
+    /// Applies multiple working-copy isolation requests with bounded fanout.
+    pub async fn isolate_parallel(
+        &self,
+        project_id: impl Into<WorkspaceProjectId>,
+        provider: WorkingCopyIsolationProvider,
+        max_parallelism: usize,
+        requests: impl IntoIterator<Item = WorkingCopyIsolationRequest>,
+    ) -> WorkingCopyParallelIsolationResult {
+        let effective_parallelism = max_parallelism.max(1);
+        let mut pending = requests.into_iter();
+        let mut tasks = JoinSet::new();
+        let mut receipts = Vec::new();
+
+        loop {
+            while tasks.len() < effective_parallelism {
+                let Some(request) = pending.next() else {
+                    break;
+                };
+                let driver = self.clone();
+                tasks.spawn(async move { driver.isolate(request).await.receipt });
+            }
+
+            let Some(joined) = tasks.join_next().await else {
+                break;
+            };
+            receipts.push(joined.expect("working-copy isolation task should not panic"));
+        }
+
+        WorkingCopyParallelIsolationResult {
+            receipt: WorkingCopyParallelIsolationReceipt::from_receipts(
+                project_id,
+                provider,
+                effective_parallelism,
+                receipts,
+            ),
         }
     }
 }

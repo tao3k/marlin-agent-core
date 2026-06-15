@@ -20,12 +20,15 @@ pub use plan::{
 };
 pub use provider::{WorkingCopyIsolationOperationKind, WorkingCopyIsolationProvider};
 pub use receipt::{
-    WorkingCopyCommandReceipt, WorkingCopyCommandStatus, WorkingCopyIsolationReceipt,
-    WorkingCopyIsolationStatus,
+    WorkingCopyActiveBinding, WorkingCopyCommandReceipt, WorkingCopyCommandStatus,
+    WorkingCopyFanoutBenchmarkReceipt, WorkingCopyIsolationReceipt, WorkingCopyIsolationStatus,
+    WorkingCopyParallelIsolationReceipt, WorkingCopyRetentionActionKind,
+    WorkingCopyRetentionActionReceipt, WorkingCopyRetentionPolicy,
+    WorkingCopyRetentionSweepReceipt,
 };
 pub use request::{
-    WorkingCopyCreateRequest, WorkingCopyHandle, WorkingCopyIsolationRequest,
-    WorkingCopyListOptions, WorkingCopyListRequest, WorkingCopyPullRequestCheckoutRequest,
-    WorkingCopyRemovalMode, WorkingCopyRemoveRequest, WorkingCopySwitchMode,
-    WorkingCopySwitchRequest,
+    WorkingCopyCreateRequest, WorkingCopyFinalizeBranchRequest, WorkingCopyHandle,
+    WorkingCopyIsolationRequest, WorkingCopyListOptions, WorkingCopyListRequest,
+    WorkingCopyPullRequestCheckoutRequest, WorkingCopyRemovalMode, WorkingCopyRemoveRequest,
+    WorkingCopySwitchMode, WorkingCopySwitchRequest,
 };

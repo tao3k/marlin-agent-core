@@ -49,7 +49,7 @@ impl GerbilNativeSymbolAuditor {
 pub struct GerbilDeckRuntimeNativeAotConfig {
     pub(super) root: PathBuf,
     pub(super) output_dir: PathBuf,
-    pub(super) gxc: PathBuf,
+    pub(super) compiled_runtime_scm: PathBuf,
     pub(super) gsc: PathBuf,
     pub(super) header: PathBuf,
     pub(super) c_compiler: Option<GerbilNativeCCompiler>,

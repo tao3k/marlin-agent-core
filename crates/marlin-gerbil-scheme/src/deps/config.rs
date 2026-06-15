@@ -55,13 +55,11 @@ impl GerbilDepsConfig {
             .clone()
             .or_else(|| env::var_os(GERBIL_BIN_ENV).map(PathBuf::from))
             .or_else(|| find_program("gxi").and_then(|path| path.parent().map(Path::to_path_buf)))
-            .unwrap_or_else(|| {
-                if platform == "macos" {
-                    PathBuf::from("/opt/homebrew/opt/gerbil-scheme/bin")
-                } else {
-                    PathBuf::from("/usr/bin")
-                }
-            });
+            .ok_or_else(|| {
+                GerbilDepsError::message(format!(
+                    "Gerbil bin directory is required; pass --gerbil-bin, set {GERBIL_BIN_ENV}, or put gxi on PATH"
+                ))
+            })?;
         let gxi = gerbil_bin.join("gxi");
         let gerbil_cellar = request
             .gerbil_cellar
@@ -124,6 +122,7 @@ impl GerbilDepsConfig {
     /// Creates a test configuration without reading host environment defaults.
     pub fn for_test(platform: impl Into<String>, home_dir: impl Into<PathBuf>) -> Self {
         let home_dir = home_dir.into();
+        let gerbil_bin = home_dir.join("gerbil").join("bin");
         Self {
             platform: platform.into(),
             cache_dir: home_dir
@@ -131,7 +130,7 @@ impl GerbilDepsConfig {
                 .join("marlin-agent-core")
                 .join("gerbil-pkgs"),
             home_dir,
-            gerbil_bin: PathBuf::from("/usr/bin"),
+            gerbil_bin,
             gerbil_cellar: None,
             gerbil_prefix: None,
             gerbil_gsc: None,

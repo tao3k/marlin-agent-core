@@ -1,0 +1,114 @@
+#+TITLE: Contract agent.task.v1
+#+PROPERTY: CONTRACT_LIBRARY marlin.agent.contracts
+
+* agent-task-v1
+:PROPERTIES:
+:CONTRACT_ID: agent.task.v1
+:CONTRACT_SCOPE: subtree
+:CONTRACT_KIND: org-elements
+:END:
+
+** Example
+
+See =org/contracts/examples/agent.task.v1.example.org= for the concrete task
+shape this contract accepts.
+
+** task-has-workflow-state
+:PROPERTIES:
+:ASSERT_ID: task.has-workflow-state
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+assert count headline where at($scope) and property(:todo-type) = "todo" or property(:todo-type) = "done"
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+Task `{{ scope.title }}` must be represented by an Org TODO workflow state.
+#+END_SRC
+
+** task-has-goal
+:PROPERTIES:
+:ASSERT_ID: task.has-goal
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+assert count headline where child_of($scope) and summary(title) = "Goal"
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+Task `{{ scope.title }}` must include a direct Goal section.
+#+END_SRC
+
+** task-has-acceptance
+:PROPERTIES:
+:ASSERT_ID: task.has-acceptance
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+assert count headline where child_of($scope) and summary(title) = "Acceptance"
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+Task `{{ scope.title }}` must include a direct Acceptance section.
+#+END_SRC
+
+** task-acceptance-has-checklist
+:PROPERTIES:
+:ASSERT_ID: task.acceptance-has-checklist
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+let acceptance = headline where child_of($scope) and summary(title) = "Acceptance"
+assert count item where descendant_of(acceptance) and summary(checkbox) = "off" or summary(checkbox) = "on" or summary(checkbox) = "trans"
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+Task `{{ scope.title }}` Acceptance section must include checkbox criteria.
+#+END_SRC
+
+** task-has-progress
+:PROPERTIES:
+:ASSERT_ID: task.has-progress
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+assert count headline where child_of($scope) and summary(title) = "Progress"
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+Task `{{ scope.title }}` must include a direct Progress section.
+#+END_SRC
+
+** task-progress-has-checklist
+:PROPERTIES:
+:ASSERT_ID: task.progress-has-checklist
+:SEVERITY: warning
+:END:
+
+#+BEGIN_SRC org-contract
+let progress = headline where child_of($scope) and summary(title) = "Progress"
+assert count item where descendant_of(progress) and summary(checkbox) = "off" or summary(checkbox) = "on" or summary(checkbox) = "trans"
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+Task `{{ scope.title }}` Progress section should include checklist state.
+#+END_SRC
+
+** task-has-evidence
+:PROPERTIES:
+:ASSERT_ID: task.has-evidence
+:SEVERITY: warning
+:END:
+
+#+BEGIN_SRC org-contract
+assert count headline where child_of($scope) and summary(title) = "Evidence"
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+Task `{{ scope.title }}` should include Evidence linking work to receipts, tests, or review notes.
+#+END_SRC

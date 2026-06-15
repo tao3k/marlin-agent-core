@@ -1,0 +1,299 @@
+* agent-plan-v1
+:PROPERTIES:
+:CONTRACT_ID: agent.plan.v1
+:TITLE: Agent Plan Ledger v1
+:END:
+
+** What This Produces
+
+This contract is not a prose plan template. It validates the Org ledger an agent
+leaves behind after doing work.
+
+The intended output is a single recoverable task heading with:
+
+- a native Org workflow state and progress cookies;
+- identity and recovery properties for later agents;
+- a lifecycle checklist that shows where the slice stands;
+- Context, Checkpoints, Validation, Evidence, and Recovery sections;
+- concrete command/evidence records that can be replayed without a live LLM.
+
+See =org/contracts/examples/agent.plan.v1.example.org= for the concrete shape.
+
+** plan-has-workflow-state
+:PROPERTIES:
+:ASSERT_ID: plan.has-workflow-state
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+let plan = headline where at($scope)
+assert count headline where at($scope) and property(:todo-type) = "todo" or property(:todo-type) = "done"
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+Plan `{{ scope.title }}` must be an Org task heading with a TODO/DONE workflow state.
+#+END_SRC
+
+** plan-has-progress-cookie
+:PROPERTIES:
+:ASSERT_ID: plan.has-progress-cookie
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+assert count headline where at($scope) and summary(title) contains "[" and summary(title) contains "%"
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+Plan `{{ scope.title }}` must expose native Org progress cookies such as [5/5] and [100%].
+#+END_SRC
+
+** plan-has-id-property
+:PROPERTIES:
+:ASSERT_ID: plan.has-id-property
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+let plan = headline where at($scope)
+assert count node-property where descendant_of(plan) and summary(key) = "ID"
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+Plan `{{ scope.title }}` must carry a stable ID property.
+#+END_SRC
+
+** plan-has-sdd-property
+:PROPERTIES:
+:ASSERT_ID: plan.has-sdd-property
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+let plan = headline where at($scope)
+assert count node-property where descendant_of(plan) and summary(key) = "SDD"
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+Plan `{{ scope.title }}` must link its SDD property.
+#+END_SRC
+
+** plan-has-stable-ref-property
+:PROPERTIES:
+:ASSERT_ID: plan.has-stable-ref-property
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+let plan = headline where at($scope)
+assert count node-property where descendant_of(plan) and summary(key) = "STABLE_REF"
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+Plan `{{ scope.title }}` must name a stable source reference.
+#+END_SRC
+
+** plan-has-package-property
+:PROPERTIES:
+:ASSERT_ID: plan.has-package-property
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+let plan = headline where at($scope)
+assert count node-property where descendant_of(plan) and summary(key) = "PACKAGE"
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+Plan `{{ scope.title }}` must identify the affected package.
+#+END_SRC
+
+** plan-has-slice-property
+:PROPERTIES:
+:ASSERT_ID: plan.has-slice-property
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+let plan = headline where at($scope)
+assert count node-property where descendant_of(plan) and summary(key) = "SLICE"
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+Plan `{{ scope.title }}` must identify the active slice.
+#+END_SRC
+
+** plan-has-next-action-property
+:PROPERTIES:
+:ASSERT_ID: plan.has-next-action-property
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+let plan = headline where at($scope)
+assert count node-property where descendant_of(plan) and summary(key) = "NEXT_ACTION"
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+Plan `{{ scope.title }}` must declare a NEXT_ACTION recovery hint.
+#+END_SRC
+
+** plan-has-resume-query-property
+:PROPERTIES:
+:ASSERT_ID: plan.has-resume-query-property
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+let plan = headline where at($scope)
+assert count node-property where descendant_of(plan) and summary(key) = "RESUME_QUERY"
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+Plan `{{ scope.title }}` must declare a RESUME_QUERY for agent recovery.
+#+END_SRC
+
+** plan-has-evidence-property
+:PROPERTIES:
+:ASSERT_ID: plan.has-evidence-property
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+let plan = headline where at($scope)
+assert count node-property where descendant_of(plan) and summary(key) = "EVIDENCE"
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+Plan `{{ scope.title }}` must summarize evidence in the EVIDENCE property.
+#+END_SRC
+
+** plan-has-lifecycle-checklist
+:PROPERTIES:
+:ASSERT_ID: plan.has-lifecycle-checklist
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+let plan = headline where at($scope)
+assert count item where descendant_of(plan) and summary(checkbox) = "on" or summary(checkbox) = "off" or summary(checkbox) = "trans" and >= 5
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+Plan `{{ scope.title }}` must expose a lifecycle checklist with at least five checkbox items.
+#+END_SRC
+
+** plan-has-context
+:PROPERTIES:
+:ASSERT_ID: plan.has-context
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+assert count headline where child_of($scope) and summary(title) = "Context"
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+Plan `{{ scope.title }}` must contain a Context section.
+#+END_SRC
+
+** plan-has-checkpoints
+:PROPERTIES:
+:ASSERT_ID: plan.has-checkpoints
+:SEVERITY: warning
+:END:
+
+#+BEGIN_SRC org-contract
+assert count headline where child_of($scope) and summary(title) = "Checkpoints"
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+Plan `{{ scope.title }}` should contain a Checkpoints section for resumable execution.
+#+END_SRC
+
+** plan-has-validation
+:PROPERTIES:
+:ASSERT_ID: plan.has-validation
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+assert count headline where child_of($scope) and summary(title) = "Validation"
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+Plan `{{ scope.title }}` must contain a Validation section.
+#+END_SRC
+
+** plan-validation-has-checked-item
+:PROPERTIES:
+:ASSERT_ID: plan.validation-has-checked-item
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+let validation = headline where child_of($scope) and summary(title) = "Validation"
+assert count item where descendant_of(validation) and summary(checkbox) = "on"
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+Plan `{{ scope.title }}` must record at least one checked validation item.
+#+END_SRC
+
+** plan-has-evidence-section
+:PROPERTIES:
+:ASSERT_ID: plan.has-evidence-section
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+assert count headline where child_of($scope) and summary(title) = "Evidence"
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+Plan `{{ scope.title }}` must contain an Evidence section.
+#+END_SRC
+
+** plan-evidence-has-content
+:PROPERTIES:
+:ASSERT_ID: plan.evidence-has-content
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+let evidence = headline where child_of($scope) and summary(title) = "Evidence"
+assert count item where descendant_of(evidence)
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+Plan `{{ scope.title }}` must attach concrete evidence entries.
+#+END_SRC
+
+** plan-has-recovery
+:PROPERTIES:
+:ASSERT_ID: plan.has-recovery
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+assert count headline where child_of($scope) and summary(title) = "Recovery"
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+Plan `{{ scope.title }}` must contain a Recovery section.
+#+END_SRC
+
+** plan-recovery-has-content
+:PROPERTIES:
+:ASSERT_ID: plan.recovery-has-content
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+let recovery = headline where child_of($scope) and summary(title) = "Recovery"
+assert count src-block where descendant_of(recovery)
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+Plan `{{ scope.title }}` must include a source-preserved recovery block.
+#+END_SRC

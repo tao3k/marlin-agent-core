@@ -1,0 +1,62 @@
+#+TITLE: Example - Agent Plan Ledger v1
+
+* DONE Contract Org Plan Example [5/5] [100%] :agent:org:contract:achievement:
+CLOSED: [2026-06-14 Sun]
+:PROPERTIES:
+:CONTRACT_ORG: agent.plan.v1
+:ID: agent-plan-ledger-example-20260614
+:SDD: docs/40-rfcs/40.71-workspace-project-protocol.org
+:STABLE_REF: org/contracts/agent.plan.v1.org
+:PACKAGE: marlin-org-workspace
+:SLICE: contract-org-plan-ledger-example
+:COOKIE_DATA: direct
+:NEXT_ACTION: Reuse this file as the reference shape when generating agent plan ledgers.
+:RESUME_QUERY: marlin-org-workspace contract org plan ledger example
+:EVIDENCE: Example validates the agent.plan.v1 contract and shows recoverable agent evidence.
+:END:
+
+- [X] Scope and recovery anchor confirmed.
+- [X] Task-local research complete.
+- [X] Implementation complete.
+- [X] Validation complete.
+- [X] Evidence and archive state updated.
+
+** Context
+
+An agent needs a plan record that is useful after the conversation is gone. The
+record must tell the next agent what was changed, why it was changed, how it was
+validated, and how to resume without guessing.
+
+This example is the final effect of =agent.plan.v1=: an agent-authored Org task
+ledger, not a free-form project plan.
+
+** Checkpoints
+
+- 2026-06-14: Inspected real agent Org ledgers under a populated
+  =.cache/agent/org= workspace.
+- 2026-06-14: Mapped the recurring ledger shape to =agent.plan.v1= assertions.
+- 2026-06-14: Added this example so the contract has a concrete target shape.
+
+** Validation
+
+- [X] =direnv exec . rtk cargo fmt --all= passed.
+- [X] =direnv exec . rtk --ultra-compact cargo test -p marlin-org-workspace -p marlin-org-memory --locked= passed.
+- [X] =direnv exec . rtk --ultra-compact cargo clippy -p marlin-org-workspace -p marlin-org-memory --all-targets --locked -- -D warnings= passed.
+
+** Evidence
+
+- The root heading carries =CONTRACT_ORG: agent.plan.v1=, so the workspace loader
+  can resolve this ledger against the standard contract library.
+- The property drawer gives a future agent a stable identity, package, slice,
+  next action, resume query, and evidence summary.
+- The validation section records command receipts instead of relying on memory.
+- The recovery section below preserves the exact restart handle.
+
+** Recovery
+
+#+begin_src text
+resume-query: marlin-org-workspace contract org plan ledger example
+read-first: org/contracts/examples/agent.plan.v1.example.org
+contract: agent.plan.v1
+next-action: reuse this file as the reference shape when generating agent plan ledgers
+#+end_src

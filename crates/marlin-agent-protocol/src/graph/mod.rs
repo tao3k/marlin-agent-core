@@ -1,6 +1,7 @@
 //! Graph-loop owner interface.
 
 mod contract;
+mod controller;
 mod execution_budget;
 mod gerbil_policy;
 mod native_abi;
@@ -14,10 +15,16 @@ pub use contract::{
     LoopEdgeSpec, LoopGraph, LoopNodeSpec, NodeId, RunId, RuntimePlanSnapshot,
     validate_graph_policy_proposal,
 };
+pub use controller::{
+    GraphLoopEvidencePolicy, GraphLoopIterationReport, GraphLoopNextAction, GraphLoopRunRequest,
+    GraphLoopStopPolicy,
+};
 pub use execution_budget::GraphLoopExecutionBudget;
 pub use gerbil_policy::{
-    GERBIL_LOOP_GRAPH_POLICY_COMPILATION_SCHEMA_ID, GerbilLoopGraphPolicyCompilationRequest,
-    compile_gerbil_loop_graph, compile_gerbil_loop_graph_policy,
+    GERBIL_LOOP_GRAPH_CONTINUATION_SCHEMA_ID, GERBIL_LOOP_GRAPH_POLICY_COMPILATION_SCHEMA_ID,
+    GerbilLoopGraphContinuationAction, GerbilLoopGraphContinuationRequest,
+    GerbilLoopGraphPolicyCompilationRequest, compile_gerbil_loop_graph,
+    compile_gerbil_loop_graph_continuation, compile_gerbil_loop_graph_policy,
 };
 pub use native_abi::{
     GraphNativeAbiId, GraphNativeAbiReadinessReceipt, GraphNativeAbiReadinessStatus,

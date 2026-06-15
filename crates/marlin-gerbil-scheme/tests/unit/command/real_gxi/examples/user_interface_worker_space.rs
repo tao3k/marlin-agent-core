@@ -54,6 +54,7 @@ fn command_compiler_real_gxtest_runs_user_interface_module_config_example() {
     assert!(stdout.contains("user-interface-script-workflow-ok"));
     assert!(stdout.contains("script-id=user-interface-worker-script"));
     assert!(stdout.contains("extension-id=user-interface-worker-extension"));
+    assert!(stdout.contains("continuation-kind=continue_with_graph"));
     assert!(stdout.contains("has-interface-file=true"));
 
     let metrics = decode_gerbil_deck_runtime_script_batch_metrics(
