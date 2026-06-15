@@ -10,9 +10,14 @@ use serde::Serialize;
 const REQUIRED_GERBIL_RUNTIME_ASSETS: &[&str] = &[
     "gerbil.pkg",
     "build.ss",
-    "bin/command-adapter-batch.ss",
+    "src/marlin/protocol-types.ss",
+    "src/marlin/protocol.ss",
+    "src/marlin/request.ss",
+    "src/marlin/adapter.ss",
     "src/marlin/deck-runtime.ss",
     "src/marlin/deck-runtime-native.ss",
+    "src/marlin/deck-runtime-native-projection.ss",
+    "src/marlin/deck-runtime-script.ss",
     "src/marlin/deck-runtime-strategy.ss",
 ];
 
@@ -170,6 +175,9 @@ fn collect_gerbil_runtime_asset_paths(
     for entry in entries {
         let path = entry.path();
         if path.is_dir() {
+            if is_transient_gerbil_runtime_asset_dir(&path) {
+                continue;
+            }
             collect_gerbil_runtime_asset_paths(root, &path, paths)?;
             continue;
         }
@@ -185,6 +193,12 @@ fn collect_gerbil_runtime_asset_paths(
     }
 
     Ok(())
+}
+
+fn is_transient_gerbil_runtime_asset_dir(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| matches!(name, ".cache" | ".devenv" | ".direnv" | ".git" | ".run"))
 }
 
 fn is_gerbil_runtime_asset(path: &Path) -> bool {

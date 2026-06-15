@@ -1,0 +1,412 @@
+#+TITLE: 30.90 POO Module System
+#+FILETAGS: :marlin:gerbil:poo:module_system:
+
+* 30.90 POO Module System
+:PROPERTIES:
+:ID: docs-30-90-poo-module-system
+:KIND: gerbil_design
+:STATUS: active
+:END:
+
+This document is the landing plan for Marlin's Gerbil ModuleSystem. It exists
+to keep code work aligned while the user-facing extension plane moves from
+individual POO extension/script objects to a composable module system.
+
+The design borrows module-system lessons from NixOS modules and Nickel modules,
+especially import graphs, option schemas, local consistency, merge semantics,
+and typed validation. The implementation is not Nickel and not a Rust-side
+module evaluator. Marlin's ModuleSystem is POO-driven: Gerbil Scheme owns
+module objects, option schema objects, config objects, hygienic macros, import
+evaluation, and policy composition. Rust receives typed native projections,
+receipts, metrics, and catalog decisions only after Scheme has produced Scheme
+values.
+
+Reference reading:
+
+- https://www.tweag.io/blog/2024-06-20-nickel-modules/
+- [[file:../40-rfcs/40.80-marlin-architecture-principles.org][40.80 Marlin Architecture Principles]]
+
+** Controlling Difference
+
+The only intentional difference from Nickel/NixOS-style module systems is the
+execution substrate: Marlin modules are POO objects and macros in Gerbil
+Scheme. Schema, config, defaults, imports, merge decisions, extension exports,
+script exports, and evaluation receipts all live in the Scheme extension
+plane.
+
+Rust must not:
+
+- parse Gerbil module source;
+- own a second module DSL;
+- resolve user module imports;
+- evaluate option merge semantics;
+- manufacture hook handlers from Scheme text;
+- accept ad hoc JSON/text as the Gerbil module boundary.
+
+Rust may:
+
+- validate typed projections;
+- decode typed receipts;
+- enforce performance budgets;
+- supervise native/runtime execution;
+- look up existing runtime catalog handlers by typed id.
+
+Dynamic hook selectors are part of the Scheme extension plane. A dynamic
+strategy rule may carry either a direct dynamic hook action or a POO selector
+object. The policy engine must evaluate selector cases in Scheme, produce a
+=dynamic-hook-selection= receipt with selector/case/source provenance, and
+project only the final typed =dynamic-hook-action= toward Rust. Rust must never
+parse selector source, reimplement selector matching, or treat a selector object
+as a runtime hook handler.
+
+LoopGraph follows the same split. Gerbil Scheme owns the POO control plane that
+declares loop graph intent: graph ids, node ids, executor names, node config, and
+edge conditions. The compiled graph projection uses Rust IR field names
+=graph_id=, =nodes=, and =edges= so Rust can validate it as a typed
+=CompiledLoopGraph=. Scheme must not schedule loop execution, own process
+lifecycle, or implement runtime cleanup. Rust owns graph validation, execution,
+observability, timeouts, and process cleanup.
+
+** Current Baseline
+
+The first implementation steps exist:
+
+- =:marlin/deck-runtime-user-module= defines user module POO objects.
+- =defmarlin-deck-runtime-user-module= defines user modules through the macro
+- =:marlin/deck-runtime-modules-lib= defines the public =marlinModules= POO
+  interface that downstream users extend with =imports=, =options=, and
+  =schemas=. Runtime constructors remain behind =marlin-module-apply= and
+  =marlin-module-evaluate=.
+- user modules currently compose =imports=, =extensions=, =scripts=,
+  =options=, and =metadata=.
+- =:marlin/deck-runtime-user-option= defines typed option schema, config, and
+  validation receipt descriptors.
+- =deck-runtime-user-module= now treats =options= as typed POO option objects
+  and merges direct module options before inherited ones by option id.
+- the evaluator linearizes imports first, deduplicates extension/script
+  exports by id, builds extension catalogs, returns script interface receipts,
+  and can run scripts by id.
+- the maintained downstream user interface example lives in
+  =crates/marlin-gerbil-scheme/examples/user-interface-module-config/= and is
+  split into real workspace modules.
+
+This baseline proves the shape. The module evaluator must stay aligned with
+gerbil-poo semantics: imports are POO supers, module/export/config collections
+are lazy computed slots, and merge behavior is implemented through slot methods
+such as => rather than a parallel Rust or Scheme record walker.
+
+** Gerbil POO Source Lessons
+
+The upstream gerbil-poo implementation is the semantic base for this work:
+
+- =object.ss= implements objects as prototypes with =supers=, direct slot
+  specs, defaults, cached instance values, C3 precedence lists, slot functions,
+  and lazy =.ref= evaluation.
+- =.o= and =.def= are not record constructors. They normalize slot specs into
+  constant, thunk, self, or computed slot methods.
+- ==>= means the slot method receives the inherited computation result and can
+  merge with direct values.
+- =?= declares defaults.
+- ==>.+= composes object-valued slots through POO mixin override.
+- =.mix= and =.+= are the native composition tools; manually walking a module
+  graph should be avoided unless the POO object model cannot express the
+  desired behavior.
+- =mop.ss= layers generic functions and type descriptors on top of POO slots;
+  future option schemas should use this direction for validation instead of
+  ad hoc predicate fields.
+
+Marlin ModuleSystem code should therefore express module composition as POO
+slot inheritance first. Helper functions may define merge behavior, but the
+inheritance graph and lazy slot resolution should remain owned by gerbil-poo.
+The user-facing extension style is native POO:
+
+#+begin_src scheme
+(.o (:: @ (list base-module))
+    (imports => marlin-imports-append
+             (marlin-imports
+              (marlin-import "./hooks.ss" hook-profile))))
+#+end_src
+
+This is intentionally not a separate =extendProfile= or =extendHook= wrapper.
+The chain is the POO prototype chain; the merge point is the =imports= slot
+method.
+
+The upstream Marlin Scheme layer should maintain extension object helpers and
+prototypes, not application-specific module wrappers. Examples include hook
+policy extensions, subagent policy extensions, high-order matcher extensions,
+and script-facing extension objects. A downstream agent can then author its own
+POO object:
+
+#+begin_src scheme
+(def agent-subagent-extension
+  (make-marlin-deck-runtime-subagent-policy-extension
+   "agent-subagent-extension"
+   agent-subagent-profile
+   agent-route-policy
+   agent-condition
+   agent-matcher
+   agent-hook-action
+   '((owner . "agent"))))
+#+end_src
+
+That object remains a normal extension object. It is composed through an
+=extensions= slot method, selected by the extension catalog, validated by the
+extension safety gate, and projected to Rust only as typed receipts. Rust still
+does not parse Scheme modules or manufacture hook handlers from Scheme text.
+
+Derived values are also upstream-owned. User config files should not define
+names such as =user-interface-root-options=, =user-interface-root-module=,
+=user-interface-evaluation=, or =user-interface-option-validation-receipts=.
+Those are projections over a config object, so they belong behind
+=marlin-module-workflow=:
+
+#+begin_src scheme
+(def workflow
+  (marlin-module-workflow user-config allowed-hook-ids))
+
+(.get workflow root-options)
+(.get workflow evaluation)
+(.get workflow validation-receipts)
+(.get workflow extension-catalog)
+#+end_src
+
+Advanced policy remains Scheme-owned and POO-native:
+
+- condition policy supports direct signal checks and composed =all=, =any=, and
+  =not= conditions over session id, agent lineage, workspace state, Org memory
+  hits, and customer/custom agent class.
+- dynamic hook policy uses ordered Scheme selector cases to decide
+  =register=, =unregister=, =defer=, =deny=, =rewrite=, or =allow= at runtime.
+- customer/custom agent policy uses agent-class templates and selectors to map
+  different agent classes to different policy, hook action, and model route
+  surfaces.
+- high-order matchers stay as Scheme POO objects and can compose command
+  prefixes, agent classes, policy names, custom lambdas, =and=, =or=, and
+  =not= logic.
+- strategy template sets are generated in Scheme modules or macros, such as
+  =defmarlin-deck-runtime-agent-policy-template-set=. Rust receives typed
+  receipts and catalog ids after Scheme has selected the policy result.
+
+One important implementation constraint follows from open recursion: inherited
+slot methods are evaluated against the final object, not the lexical super
+object. A module slot must not try to collect module objects with =(list @)=
+inside an inherited method. Evaluation receipts should collect module ids or
+other lexical direct values, while extension/script/config slots may merge
+their direct lexical values through inherited slot methods.
+
+** Target Model
+
+A Marlin user module should be equivalent to this Scheme-owned object model:
+
+- module id;
+- imports;
+- option schemas;
+- config definitions;
+- extension exports;
+- script exports;
+- metadata;
+- evaluation receipts.
+
+The user-facing shape should stay macro-driven:
+
+#+begin_src scheme
+(defmarlin-deck-runtime-user-module my-module
+  "my-module"
+  (imports base-module)
+  (options
+   (option "workspace.state" string-list
+           default: '("workspace-ready")
+           merge: append-unique))
+  (config
+   (set "workspace.state" '("interface-state-open")))
+  (extensions my-extension)
+  (scripts my-script)
+  (metadata ((owner . "customer-module"))))
+#+end_src
+
+This syntax is illustrative. The exact macro syntax should follow Gerbil
+macro-governance and must be backed by runtime-source or macro-expansion
+witness before edits.
+
+** Option Semantics
+
+Options are POO values, not TOML keys and not JSON paths.
+
+Each option schema defines:
+
+- option id;
+- value type or validator;
+- default value;
+- owner module id;
+- constant value when the option is fixed;
+- metadata.
+
+Each config definition defines:
+
+- option id;
+- value;
+- source module id;
+- metadata.
+
+Validation is a Scheme receipt. =marlin-deck-runtime-option-config-validate=
+applies gerbil-poo =element?= to the schema value type and returns a
+=MarlinDeckRuntimeOptionValidationReceipt= object with =valid?= and =errors=
+slots. This keeps invalid user config in the Scheme extension plane until Rust
+receives a typed native projection.
+
+The option descriptors are dependency protocol adapters over gerbil-poo MOP/type
+primitives. Harness policy R017 expects:
+
+- protocol slots through =define-type=;
+- table slots =.ref=, =.foldl=, and =.foldr=;
+- validation, sexp/json conversion, and equality slots;
+- =table-contract-tests= and =protocol-contract-tests= witnesses in
+  =t/deck-runtime-user-option-test.ss=.
+
+POO type descriptors are objects, not procedures. The test witness uses a
+lexical callable wrapper only so the parser-owned call graph can associate the
+adapter name with the generic contract witness; production code must keep using
+=element?=, =validate=, and the exported table functions.
+
+** Maintained Example
+
+The user interface module configuration example is maintained as an independent
+workspace directory:
+
+- =crates/marlin-gerbil-scheme/examples/user-interface-module-config/README.org=
+  documents the layout and run command.
+- =modules/base.ss= declares the base user interface extension and base module.
+- =modules/script.ss= declares the script entrypoint and script module.
+- =modules/config.ss= is the user-facing module configuration entrypoint. It
+  owns root imports, root options, option schemas, validation receipts, and the
+  root module evaluation.
+- =t/user-interface-module-config-test.ss= runs the workflow with =gxtest=.
+
+Run it from the example directory:
+
+#+begin_src sh
+GERBIL_LOADPATH=../../gerbil/src:modules:t gxtest -v t/user-interface-module-config-test.ss
+#+end_src
+
+The Rust ignored real-gxtest gate copies and executes this same directory. Do
+not reintroduce a separate hidden =tests/fixtures/user-interface-worker-space=
+source for this workflow; that would let the documented user example and the
+tested downstream behavior drift.
+
+Local consistency matters. If module =B= configures or reads an option declared
+by module =A=, =B= must import =A= directly or through an explicitly evaluated
+import chain. Missing imports should produce a Scheme receipt, not a vague
+runtime failure.
+
+** Merge Semantics
+
+Initial merge strategies should be small and explicit:
+
+- last-wins for scalar values;
+- append for ordered lists;
+- append-unique for signal/capability lists;
+- reject-duplicate for ids that must be unique;
+- custom Scheme merger for advanced policy.
+
+Custom mergers stay in Scheme and return typed POO values or typed errors.
+Rust does not evaluate custom merge functions.
+
+** Evaluation Receipt
+
+Module evaluation should return a POO receipt with:
+
+- root module id;
+- import order;
+- declared option ids;
+- configured option ids;
+- defaulted option ids;
+- merged config object;
+- extension ids;
+- script ids;
+- warnings;
+- errors;
+- native projection payloads ready for Rust-owned receipt conversion.
+
+Errors must include enough context for an agent to repair the module:
+
+- source module id;
+- option id;
+- expected type;
+- actual type summary;
+- missing import id;
+- duplicate owner ids;
+- merge strategy name.
+
+** Implementation Plan
+
+P0: Keep the current module evaluator stable.
+
+- Preserve =deck-runtime-user-module.ss= as the root module composition owner.
+- Keep downstream fixture modules real files under the user workspace fixture.
+- Keep Gerbil harness findings at zero.
+
+P1: Add typed option/schema objects.
+
+- Add =deck-runtime-user-option.ss=.
+- Add POO constructors for option schema, config definition, and option
+  validation receipt.
+- Add focused tests for defaults, type mismatch, and duplicate option ids.
+
+P2: Upgrade module objects.
+
+- Replace opaque =options= with =schemas= and =config= fields.
+- Keep compatibility only inside the same patch while tests migrate; do not
+  preserve ambiguous old/new meanings.
+- Extend =defmarlin-deck-runtime-user-module= so downstream modules can declare
+  imports, schemas, config, extensions, and scripts.
+
+P3: Add merge and local-consistency receipts.
+
+- Implement import-chain lookup for option declarations.
+- Implement merge strategies.
+- Return typed POO receipts for missing imports and type mismatches.
+- Add negative tests that fail by receipt, not by Gerbil runtime exception.
+
+P4: Project receipts to Rust-owned types.
+
+- Add Rust typed receipt structs only after Scheme receipts are stable.
+- Rust consumes typed values and validates budgets/catalog ids.
+- Rust still does not parse Scheme source or own merge semantics.
+
+P5: Harden real downstream workflow.
+
+- Extend =user-interface-worker-space= fixture so =base.ss= declares schemas,
+  =script.ss= imports base and configures values, and the root workflow only
+  composes/evaluates.
+- Keep real =gxtest= and Rust ignored workflow gates passing.
+- Record performance budget receipts for module evaluation.
+
+** Verification Gates
+
+Every ModuleSystem change should run:
+
+#+begin_src sh
+gerbil-scheme-harness check crates/marlin-gerbil-scheme/gerbil
+cd crates/marlin-gerbil-scheme/gerbil && GERBIL_LOADPATH=src:t gxtest -v t/all-test.ss
+direnv exec . rtk --ultra-compact cargo test -p marlin-gerbil-scheme --quiet
+direnv exec . rtk --ultra-compact cargo test -p marlin-gerbil-scheme command_compiler_real_gxtest_runs_user_interface_worker_space_script_interface_workflow -- --ignored --nocapture
+gerbil-scheme-harness bench --iterations 1 --max-total-ms 2000 --max-interface-ms 50 crates/marlin-gerbil-scheme/gerbil
+#+end_src
+
+When documentation changes, also run the repository doc lint command if the
+current development environment provides it. If =orgize= or =just= is missing
+from =direnv=, record that explicitly instead of treating docs as verified.
+
+** Non-Goals
+
+- No Rust-side Nickel interpreter.
+- No Rust-side Scheme reader for modules.
+- No JSON protocol in Scheme.
+- No generic Rust hook DSL for complex policy.
+- No compatibility shim that keeps ambiguous option/config meanings alive.
+
+** Next Landing Step
+
+Start with P1. Add typed option/schema POO objects and tests, then migrate the
+current opaque =options= field to explicit =schemas= and =config= only after the
+option receipt tests are passing.

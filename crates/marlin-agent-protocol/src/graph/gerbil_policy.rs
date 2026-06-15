@@ -16,6 +16,11 @@ pub struct GerbilLoopGraphPolicyCompilationRequest {
     pub strategy: GraphLoopStrategy,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub native_abi: Option<GraphNativeAbiRequirement>,
+    #[serde(
+        default,
+        skip_serializing_if = "marlin_gerbil_ir::LoopGraphCompileLimits::is_default"
+    )]
+    pub compile_limits: marlin_gerbil_ir::LoopGraphCompileLimits,
     pub compiled_graph: marlin_gerbil_ir::CompiledLoopGraph,
     pub input_digest: GraphPolicyDigest,
     pub output_digest: GraphPolicyDigest,
@@ -33,6 +38,7 @@ impl GerbilLoopGraphPolicyCompilationRequest {
         Self {
             strategy,
             native_abi: None,
+            compile_limits: marlin_gerbil_ir::LoopGraphCompileLimits::default(),
             compiled_graph,
             input_digest: input_digest.into(),
             output_digest: output_digest.into(),
@@ -51,10 +57,37 @@ impl GerbilLoopGraphPolicyCompilationRequest {
         self.native_abi = Some(native_abi);
         self
     }
+
+    /// Sets Rust-owned loop graph compile limits.
+    pub fn with_compile_limits(
+        mut self,
+        compile_limits: marlin_gerbil_ir::LoopGraphCompileLimits,
+    ) -> Self {
+        self.compile_limits = compile_limits;
+        self
+    }
 }
 
 /// Compiles Gerbil-emitted graph `IR` into the Rust protocol graph shape.
-pub fn compile_gerbil_loop_graph(compiled_graph: marlin_gerbil_ir::CompiledLoopGraph) -> LoopGraph {
+pub fn compile_gerbil_loop_graph(
+    compiled_graph: marlin_gerbil_ir::CompiledLoopGraph,
+) -> Result<LoopGraph, marlin_gerbil_ir::LoopGraphCompileError> {
+    compile_gerbil_loop_graph_with_limits(
+        compiled_graph,
+        marlin_gerbil_ir::LoopGraphCompileLimits::default(),
+    )
+}
+
+/// Compiles Gerbil-emitted graph `IR` under explicit Rust-owned limits.
+pub fn compile_gerbil_loop_graph_with_limits(
+    compiled_graph: marlin_gerbil_ir::CompiledLoopGraph,
+    compile_limits: marlin_gerbil_ir::LoopGraphCompileLimits,
+) -> Result<LoopGraph, marlin_gerbil_ir::LoopGraphCompileError> {
+    compiled_graph.compile_execution_plan(compile_limits)?;
+    Ok(project_gerbil_loop_graph(compiled_graph))
+}
+
+fn project_gerbil_loop_graph(compiled_graph: marlin_gerbil_ir::CompiledLoopGraph) -> LoopGraph {
     LoopGraph {
         graph_id: compiled_graph.graph_id,
         nodes: compiled_graph
@@ -81,14 +114,16 @@ pub fn compile_gerbil_loop_graph(compiled_graph: marlin_gerbil_ir::CompiledLoopG
 /// Compiles Gerbil-emitted graph `IR` into a Rust-validatable policy proposal.
 pub fn compile_gerbil_loop_graph_policy(
     request: GerbilLoopGraphPolicyCompilationRequest,
-) -> GraphPolicyProposal {
+) -> Result<GraphPolicyProposal, marlin_gerbil_ir::LoopGraphCompileError> {
+    let proposed_graph =
+        compile_gerbil_loop_graph_with_limits(request.compiled_graph, request.compile_limits)?;
     let mut proposal = GraphPolicyProposal::new(
         request.strategy,
-        compile_gerbil_loop_graph(request.compiled_graph),
+        proposed_graph,
         request.input_digest,
         request.output_digest,
     );
     proposal.native_abi = request.native_abi;
     proposal.diagnostics = request.diagnostics;
-    proposal
+    Ok(proposal)
 }

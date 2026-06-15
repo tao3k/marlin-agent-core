@@ -1,4 +1,5 @@
 ;;; -*- Gerbil -*-
+;;; Boundary: Module owns Marlin Gerbil policy and runtime contracts for agent edits.
 ;;; Minimal Marlin loop-graph source parser used by Gerbil-side adapters.
 
 package: marlin
@@ -11,47 +12,56 @@ package: marlin
         compile-agent-scenario-contract
         compile-release-topology)
 
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
 (define (source->form source-text)
   (let ((form (read (open-input-string source-text))))
     (if (eof-object? form)
       (error "empty loop graph source")
       form)))
 
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
 (define (atom->string value)
   (cond
     ((string? value) value)
     ((symbol? value) (symbol->string value))
     (else (error "expected symbol or string" value))))
 
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
 (define (form-tag? form tag)
   (and (pair? form)
        (symbol? (car form))
        (eq? (car form) tag)))
 
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
 (define (parse-config-entries entries)
-  (let loop ((remaining entries) (pairs '()))
-    (cond
-      ((null? remaining) (reverse pairs))
-      ((pair? (cdr remaining))
-       (loop (cddr remaining)
-             (cons (list (atom->string (car remaining))
-                         (atom->string (cadr remaining)))
-                   pairs)))
-      (else (error "config form expects key/value pairs" entries)))))
+  (cond
+   ((null? entries) '())
+   ((pair? (cdr entries))
+    (cons (list (atom->string (car entries))
+                (atom->string (cadr entries)))
+          (parse-config-entries (cddr entries))))
+   (else (error "config form expects key/value pairs" entries))))
 
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
 (define (parse-config-form form)
   (if (form-tag? form 'config)
     (parse-config-entries (cdr form))
     '()))
 
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
 (define (parse-node-config forms)
-  (let loop ((remaining forms) (config '()))
-    (cond
-      ((null? remaining) (reverse config))
-      ((form-tag? (car remaining) 'config)
-       (loop (cdr remaining) (append (reverse (parse-config-form (car remaining))) config)))
-      (else (loop (cdr remaining) config)))))
+  (apply append
+         (map parse-config-form
+              (filter (cut form-tag? <> 'config) forms))))
 
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
 (define (parse-node-form form)
   (if (and (form-tag? form 'node)
            (pair? (cdr form))
@@ -61,6 +71,8 @@ package: marlin
                            (parse-node-config (cdddr form)))
     (error "invalid node form" form)))
 
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
 (define (edge-condition-value value)
   (cond
     ((not value) #f)
@@ -70,6 +82,8 @@ package: marlin
      #f)
     (else (atom->string value))))
 
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
 (define (parse-edge-form form)
   (if (and (form-tag? form 'edge)
            (pair? (cdr form))
@@ -81,22 +95,20 @@ package: marlin
                              #f))
     (error "invalid edge form" form)))
 
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
 (define (parse-nodes forms)
-  (let loop ((remaining forms) (nodes '()))
-    (cond
-      ((null? remaining) (reverse nodes))
-      ((form-tag? (car remaining) 'node)
-       (loop (cdr remaining) (cons (parse-node-form (car remaining)) nodes)))
-      (else (loop (cdr remaining) nodes)))))
+  (map parse-node-form
+       (filter (cut form-tag? <> 'node) forms)))
 
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
 (define (parse-edges forms)
-  (let loop ((remaining forms) (edges '()))
-    (cond
-      ((null? remaining) (reverse edges))
-      ((form-tag? (car remaining) 'edge)
-       (loop (cdr remaining) (cons (parse-edge-form (car remaining)) edges)))
-      (else (loop (cdr remaining) edges)))))
+  (map parse-edge-form
+       (filter (cut form-tag? <> 'edge) forms)))
 
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
 (define (compile-loop-graph source-text)
   (let ((form (source->form source-text)))
     (if (and (form-tag? form 'loop-graph)
@@ -108,21 +120,21 @@ package: marlin
                                 (parse-edges forms)))
       (error "expected loop-graph form" form))))
 
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
 (define (atom-list->strings values)
-  (let loop ((remaining values) (strings '()))
-    (if (null? remaining)
-      (reverse strings)
-      (loop (cdr remaining) (cons (atom->string (car remaining)) strings)))))
+  (map atom->string values))
 
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
 (define (tagged-values forms tag)
-  (let loop ((remaining forms) (values '()))
-    (cond
-      ((null? remaining) (reverse values))
-      ((form-tag? (car remaining) tag)
-       (loop (cdr remaining)
-             (append (reverse (atom-list->strings (cdar remaining))) values)))
-      (else (loop (cdr remaining) values)))))
+  (apply append
+         (map (lambda (form)
+                (atom-list->strings (cdr form)))
+              (filter (cut form-tag? <> tag) forms))))
 
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
 (define (compile-workspace-schema source-text)
   (let ((form (source->form source-text)))
     (if (and (form-tag? form 'workspace-schema)
@@ -134,19 +146,21 @@ package: marlin
                                       (tagged-values forms 'todo)))
       (error "expected workspace-schema form" form))))
 
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
 (define (find-tagged-form forms tag)
-  (let loop ((remaining forms))
-    (cond
-      ((null? remaining) #f)
-      ((form-tag? (car remaining) tag) (car remaining))
-      (else (loop (cdr remaining))))))
+  (find (cut form-tag? <> tag) forms))
 
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
 (define (required-single-value forms tag)
   (let ((form (find-tagged-form forms tag)))
     (if (and form (pair? (cdr form)))
       (atom->string (cadr form))
       (error "expected single-value form" tag forms))))
 
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
 (define (optional-single-value forms tag)
   (let ((form (find-tagged-form forms tag)))
     (if form
@@ -155,6 +169,8 @@ package: marlin
         (error "expected single-value form" tag forms))
       #f)))
 
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
 (define (true-value? value)
   (cond
     ((eq? value #t) #t)
@@ -164,18 +180,24 @@ package: marlin
      #t)
     (else #f)))
 
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
 (define (required-boolean-value forms tag)
   (let ((form (find-tagged-form forms tag)))
     (if (and form (pair? (cdr form)))
       (true-value? (cadr form))
       (error "expected boolean form" tag forms))))
 
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
 (define (required-dry-run-first forms)
   (let ((form (find-tagged-form forms 'dry-run-first)))
     (if (and form (pair? (cdr form)) (true-value? (cadr form)))
       #t
       (error "workspace-patch-intent requires dry-run-first true" forms))))
 
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
 (define (parse-set-todo-op form)
   (if (and (form-tag? form 'set-todo)
            (pair? (cdr form))
@@ -184,6 +206,8 @@ package: marlin
                              (atom->string (caddr form)))
     (error "invalid set-todo form" form)))
 
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
 (define (parse-set-property-op form)
   (if (and (form-tag? form 'set-property)
            (pair? (cdr form))
@@ -194,6 +218,8 @@ package: marlin
                                  (atom->string (cadddr form)))
     (error "invalid set-property form" form)))
 
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
 (define (parse-mark-memory-candidate-op form)
   (if (and (form-tag? form 'mark-memory-candidate)
            (pair? (cdr form))
@@ -202,6 +228,8 @@ package: marlin
                                           (atom->string (caddr form)))
     (error "invalid mark-memory-candidate form" form)))
 
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
 (define (parse-workspace-patch-op form)
   (cond
     ((form-tag? form 'set-todo)
@@ -212,17 +240,18 @@ package: marlin
      (parse-mark-memory-candidate-op form))
     (else (error "unsupported workspace patch op form" form))))
 
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
 (define (parse-workspace-patch-ops forms)
-  (let loop ((remaining forms) (ops '()))
-    (cond
-      ((null? remaining) (reverse ops))
-      ((or (form-tag? (car remaining) 'reason)
-           (form-tag? (car remaining) 'source-agent))
-       (loop (cdr remaining) ops))
-      (else
-       (loop (cdr remaining)
-             (cons (parse-workspace-patch-op (car remaining)) ops))))))
+  (map parse-workspace-patch-op
+       (filter
+        (lambda (form)
+          (not (or (form-tag? form 'reason)
+                   (form-tag? form 'source-agent))))
+        forms)))
 
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
 (define (parse-workspace-patch-form form)
   (if (form-tag? form 'patch)
     (let ((forms (cdr form)))
@@ -232,6 +261,8 @@ package: marlin
        (parse-workspace-patch-ops forms)))
     (error "expected patch form" form)))
 
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
 (define (compile-workspace-patch-intent source-text)
   (let ((form (source->form source-text)))
     (if (and (form-tag? form 'workspace-patch-intent)
@@ -244,6 +275,8 @@ package: marlin
          (required-dry-run-first forms)))
       (error "expected workspace-patch-intent form" form))))
 
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
 (define (parse-scenario-input form)
   (if (and (form-tag? form 'input)
            (pair? (cdr form))
@@ -252,15 +285,14 @@ package: marlin
           (atom->string (caddr form)))
     (error "invalid scenario input form" form)))
 
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
 (define (parse-scenario-step-inputs forms)
-  (let loop ((remaining forms) (inputs '()))
-    (cond
-      ((null? remaining) (reverse inputs))
-      ((form-tag? (car remaining) 'input)
-       (loop (cdr remaining)
-             (cons (parse-scenario-input (car remaining)) inputs)))
-      (else (loop (cdr remaining) inputs)))))
+  (map parse-scenario-input
+       (filter (cut form-tag? <> 'input) forms)))
 
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
 (define (parse-scenario-step-form form)
   (if (and (form-tag? form 'step)
            (pair? (cdr form)))
@@ -273,15 +305,14 @@ package: marlin
        (tagged-values forms 'span-name)))
     (error "invalid agent scenario step form" form)))
 
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
 (define (parse-scenario-steps forms)
-  (let loop ((remaining forms) (steps '()))
-    (cond
-      ((null? remaining) (reverse steps))
-      ((form-tag? (car remaining) 'step)
-       (loop (cdr remaining)
-             (cons (parse-scenario-step-form (car remaining)) steps)))
-      (else (loop (cdr remaining) steps)))))
+  (map parse-scenario-step-form
+       (filter (cut form-tag? <> 'step) forms)))
 
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
 (define (compile-agent-scenario-contract source-text)
   (let ((form (source->form source-text)))
     (if (and (form-tag? form 'agent-scenario-contract)
@@ -296,6 +327,8 @@ package: marlin
           (tagged-values forms 'evidence))))
       (error "expected agent-scenario-contract form" form))))
 
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
 (define (parse-release-visibility-form form)
   (if (form-tag? form 'visibility)
     (let ((forms (cdr form)))
@@ -305,15 +338,14 @@ package: marlin
        (tagged-values forms 'artifact-paths)))
     (error "invalid release visibility form" form)))
 
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
 (define (parse-release-visibility forms)
-  (let loop ((remaining forms) (visibility '()))
-    (cond
-      ((null? remaining) (reverse visibility))
-      ((form-tag? (car remaining) 'visibility)
-       (loop (cdr remaining)
-             (cons (parse-release-visibility-form (car remaining)) visibility)))
-      (else (loop (cdr remaining) visibility)))))
+  (map parse-release-visibility-form
+       (filter (cut form-tag? <> 'visibility) forms)))
 
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
 (define (parse-release-gate-form form)
   (if (and (form-tag? form 'gate)
            (pair? (cdr form)))
@@ -327,15 +359,14 @@ package: marlin
        (parse-release-visibility forms)))
     (error "invalid release gate form" form)))
 
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
 (define (parse-release-gates forms)
-  (let loop ((remaining forms) (gates '()))
-    (cond
-      ((null? remaining) (reverse gates))
-      ((form-tag? (car remaining) 'gate)
-       (loop (cdr remaining)
-             (cons (parse-release-gate-form (car remaining)) gates)))
-      (else (loop (cdr remaining) gates)))))
+  (map parse-release-gate-form
+       (filter (cut form-tag? <> 'gate) forms)))
 
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
 (define (compile-release-topology source-text)
   (let ((form (source->form source-text)))
     (if (and (form-tag? form 'release-topology)

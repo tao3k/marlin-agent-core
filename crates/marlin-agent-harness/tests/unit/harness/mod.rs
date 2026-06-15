@@ -1,5 +1,7 @@
 mod e2e;
 mod evidence;
+mod evidence_fact;
+mod evidence_graph;
 mod graph_policy;
 mod real_gxi;
 mod release_visibility;

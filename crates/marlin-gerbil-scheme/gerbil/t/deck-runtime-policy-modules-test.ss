@@ -1,0 +1,462 @@
+;;; -*- Gerbil -*-
+;;; Boundary: Module owns Marlin Gerbil policy and runtime contracts for agent edits.
+
+(import :clan/poo/object
+        :marlin/deck-runtime
+        :marlin/deck-runtime-agent-policy
+        :marlin/deck-runtime-condition-policy
+        :marlin/deck-runtime-dynamic-hook
+        :marlin/deck-runtime-matcher
+        :marlin/deck-runtime-policy-engine
+        :marlin/deck-runtime-strategy-context
+        :std/test)
+
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
+(def (module-test-policy)
+  (make-marlin-deck-runtime-model-route-policy
+   "module-policy"
+   "openai"
+   "gpt-5.4"
+   '("codex")
+   '("worker")
+   "forked-context"
+   "workspace-isolated"))
+
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
+(def (module-test-context)
+  (make-marlin-deck-runtime-strategy-context
+   "session-module"
+   '("root-agent" "worker-agent")
+   '("workspace-clean")
+   '("org-memory-module")
+   "customer-worker"))
+
+;;; Boundary: Alternate workspace state drives deny/defer hook decisions.
+;; MarlinResult <- MarlinInput
+(def (module-locked-context)
+  (make-marlin-deck-runtime-strategy-context
+   "session-module"
+   '("root-agent" "worker-agent")
+   '("workspace-locked")
+   '("org-memory-module")
+   "customer-worker"))
+
+;;; Boundary: Custom agent context selects different policy templates.
+;; MarlinResult <- MarlinInput
+(def (module-custom-context)
+  (make-marlin-deck-runtime-strategy-context
+   "session-module"
+   '("root-agent" "custom-agent")
+   '("workspace-clean")
+   '("org-memory-custom")
+   "custom-auditor"))
+
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
+(def module-session-matcher
+  (make-marlin-deck-runtime-high-order-matcher
+   "module-session"
+   (lambda (context policy command agent-scope)
+     (and (string=? (.get context session-id) "session-module")
+          (string=? (.get policy model) "gpt-5.4")
+          (string=? command "codex apply")
+          (string=? agent-scope "worker")))))
+
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
+(def module-agent-template
+  (make-marlin-deck-runtime-agent-policy-template
+   "module-template"
+   "customer-worker"
+   "module-policy"
+   '("workspace-clean")
+   '("org-memory-module")
+   "register"
+   #f))
+
+;;; Boundary: Custom agent template routes a different agent class.
+;; MarlinResult <- MarlinInput
+(def module-custom-template
+  (make-marlin-deck-runtime-agent-policy-template
+   "custom-template"
+   "custom-auditor"
+   "module-policy"
+   '("workspace-clean")
+   '("org-memory-custom")
+   "rewrite"
+   "codex audit --policy custom-auditor"))
+
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
+(def module-dynamic-rule
+  (marlin-deck-runtime-agent-policy-template->dynamic-rule
+   module-agent-template
+   "module-register-hook"
+   "session-module"
+   '("root-agent" "worker-agent")
+   module-session-matcher))
+
+;;; Boundary: Macro-generated template sets manage complex Scheme config.
+;; MarlinResult <- MarlinInput
+(defmarlin-deck-runtime-agent-policy-template-set module-generated-rules
+  (module-agent-template module-custom-template)
+  "generated"
+  "session-module"
+  '("root-agent")
+  module-session-matcher)
+
+;;; Boundary: Complex condition policy combines session, workspace, and memory.
+;; MarlinResult <- MarlinInput
+(def module-clean-condition
+  (make-marlin-deck-runtime-condition-policy
+   "session-module"
+   '("root-agent")
+   '("workspace-clean")
+   '("org-memory-module")
+   "customer-worker"))
+
+;;; Boundary: Locked state is used by negative condition and defer action cases.
+;; MarlinResult <- MarlinInput
+(def module-locked-condition
+  (make-marlin-deck-runtime-condition-policy
+   "session-module"
+   '("root-agent")
+   '("workspace-locked")
+   '("org-memory-module")
+   "customer-worker"))
+
+;;; Boundary: Combined condition models multi-signal gating.
+;; MarlinResult <- MarlinInput
+(def module-combined-condition
+  (marlin-deck-runtime-all-condition-policy
+   (list module-clean-condition
+         (marlin-deck-runtime-not-condition-policy module-locked-condition))))
+
+;;; Boundary: Command matcher avoids ad hoc TOML-style string matching.
+;; MarlinResult <- MarlinInput
+(def module-command-matcher
+  (marlin-deck-runtime-command-prefix-matcher
+   "module-command-prefix"
+   '("codex apply" "codex audit")))
+
+;;; Boundary: Customer matcher composes agent class and policy name.
+;; MarlinResult <- MarlinInput
+(def module-customer-matcher
+  (marlin-deck-runtime-and-matcher
+   "module-customer-matcher"
+   (list
+    (marlin-deck-runtime-agent-class-matcher
+     "module-agent-class"
+     '("customer-worker" "custom-auditor"))
+    (marlin-deck-runtime-policy-name-matcher
+     "module-policy-name"
+     '("module-policy"))
+    module-command-matcher)))
+
+;;; Boundary: Selector rule matching stays broad; selector cases decide commands.
+;; MarlinResult <- MarlinInput
+(def module-selector-matcher
+  (marlin-deck-runtime-and-matcher
+   "module-selector-matcher"
+   (list
+    (marlin-deck-runtime-agent-class-matcher
+     "module-selector-agent-class"
+     '("customer-worker"))
+    (marlin-deck-runtime-policy-name-matcher
+     "module-selector-policy-name"
+     '("module-policy")))))
+
+;;; Boundary: Dynamic hook selector chooses action at runtime.
+;; MarlinResult <- MarlinInput
+(def module-hook-selector
+  (make-marlin-deck-runtime-dynamic-hook-selector
+   "module-hook-selector"
+   (list
+    (make-marlin-deck-runtime-dynamic-hook-case
+     "module-register"
+     module-combined-condition
+     (marlin-deck-runtime-command-prefix-matcher
+      "register-prefix"
+      '("codex apply"))
+     (make-marlin-deck-runtime-register-hook-action
+      "module-register-hook"
+      "runtime-catalog-entry"))
+    (make-marlin-deck-runtime-dynamic-hook-case
+     "module-unregister"
+     module-combined-condition
+     (marlin-deck-runtime-command-prefix-matcher
+      "unregister-prefix"
+      '("codex cleanup"))
+     (make-marlin-deck-runtime-unregister-hook-action
+      "module-register-hook"))
+    (make-marlin-deck-runtime-dynamic-hook-case
+     "module-defer"
+     module-locked-condition
+     (marlin-deck-runtime-command-prefix-matcher
+      "defer-prefix"
+      '("codex apply"))
+     (make-marlin-deck-runtime-defer-hook-action
+      "workspace locked"))
+    (make-marlin-deck-runtime-dynamic-hook-case
+     "module-deny"
+     module-combined-condition
+     (marlin-deck-runtime-command-prefix-matcher
+      "deny-prefix"
+      '("codex deny"))
+     (make-marlin-deck-runtime-deny-hook-action
+      "policy denied"))
+    (make-marlin-deck-runtime-dynamic-hook-case
+     "module-rewrite"
+     module-combined-condition
+     (marlin-deck-runtime-command-prefix-matcher
+      "rewrite-prefix"
+      '("codex rewrite"))
+     (make-marlin-deck-runtime-rewrite-hook-action
+      "codex apply --rewritten")))
+   (make-marlin-deck-runtime-allow-hook-action)))
+
+;;; Boundary: Policy engine accepts selector objects as dynamic hook decisions.
+;; MarlinResult <- MarlinInput
+(def module-selector-dynamic-rule
+  (make-marlin-deck-runtime-dynamic-strategy-rule
+   "module-selector-rule"
+   "module-policy"
+   "session-module"
+   '("root-agent")
+   '()
+   '("org-memory-module")
+   "customer-worker"
+   module-selector-matcher
+   module-hook-selector))
+
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
+(def (check-context-module)
+  (let (context (module-test-context))
+    (check (.get context kind) => marlin-deck-runtime-strategy-context-kind)
+    (check (.get context agent-class) => "customer-worker")
+    (check (strategy-all-strings-member?
+            '("workspace-clean")
+            (.get context workspace-state))
+           => #t)))
+
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
+(def (check-condition-policy-module)
+  (let ((condition
+         (marlin-deck-runtime-condition-policy-from-rule module-dynamic-rule)))
+    (check (.get condition kind)
+           => marlin-deck-runtime-condition-policy-kind)
+    (check (marlin-deck-runtime-condition-policy-match?
+            condition
+            (module-test-context))
+           => #t)
+    (check (marlin-deck-runtime-condition-policy-match?
+            module-combined-condition
+            (module-test-context))
+           => #t)
+    (check (marlin-deck-runtime-condition-policy-match?
+            module-combined-condition
+            (module-locked-context))
+           => #f)
+    (check (marlin-deck-runtime-condition-policy-match?
+            (marlin-deck-runtime-any-condition-policy
+             (list module-locked-condition module-clean-condition))
+            (module-test-context))
+           => #t)))
+
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
+(def (check-dynamic-hook-module)
+  (let ((register-action
+         (make-marlin-deck-runtime-register-hook-action
+          "module-register-hook"
+          "runtime-catalog-entry"))
+        (deny-action
+         (make-marlin-deck-runtime-deny-hook-action
+          "workspace is locked")))
+    (check (.get register-action kind)
+           => marlin-deck-runtime-dynamic-hook-action-kind)
+    (check (.get register-action action) => "register")
+    (check (.get register-action registration) => "runtime-catalog-entry")
+    (check (.get deny-action action) => "deny")
+    (check (.get deny-action deny-reason) => "workspace is locked")
+    (check (.get (marlin-deck-runtime-dynamic-hook-selector-select
+                  module-hook-selector
+                  (module-test-context)
+                  (module-test-policy)
+                  "codex apply file"
+                  "worker")
+                 action)
+           => "register")
+    (check (.get (marlin-deck-runtime-dynamic-hook-selector-select
+                  module-hook-selector
+                  (module-test-context)
+                  (module-test-policy)
+                  "codex cleanup"
+                  "worker")
+                 action)
+           => "unregister")
+    (check (.get (marlin-deck-runtime-dynamic-hook-selector-select
+                  module-hook-selector
+                  (module-locked-context)
+                  (module-test-policy)
+                  "codex apply file"
+                  "worker")
+                 action)
+           => "defer")
+    (check (.get (marlin-deck-runtime-dynamic-hook-selector-select
+                  module-hook-selector
+                  (module-test-context)
+                  (module-test-policy)
+                  "codex deny"
+                  "worker")
+                 action)
+           => "deny")
+    (check (.get (marlin-deck-runtime-dynamic-hook-selector-select
+                  module-hook-selector
+                  (module-test-context)
+                  (module-test-policy)
+                  "codex rewrite"
+                  "worker")
+                 action)
+           => "rewrite")
+    (let ((selection
+           (marlin-deck-runtime-dynamic-hook-selector-selection
+            module-hook-selector
+            (module-test-context)
+            (module-test-policy)
+            "codex rewrite"
+            "worker")))
+      (check (.get selection kind)
+             => marlin-deck-runtime-dynamic-hook-selection-kind)
+      (check (.get selection source) => "selector-case")
+      (check (.get selection selector) => "module-hook-selector")
+      (check (.get selection matched) => #t)
+      (check (.get selection matched-case) => "module-rewrite")
+      (check (.get (.get selection dynamic-hook-action) action)
+             => "rewrite"))))
+
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
+(def (check-matcher-module)
+  (let ((combined
+         (marlin-deck-runtime-and-matcher
+          "module-combined"
+          (list module-session-matcher))))
+    (check (marlin-deck-runtime-high-order-matcher-match?
+            combined
+            (module-test-context)
+            (module-test-policy)
+            "codex apply"
+            "worker")
+           => #t)
+    (check (marlin-deck-runtime-high-order-matcher-match?
+            module-customer-matcher
+            (module-test-context)
+            (module-test-policy)
+            "codex apply"
+            "worker")
+           => #t)
+    (check (marlin-deck-runtime-high-order-matcher-match?
+            (marlin-deck-runtime-not-matcher
+             "not-command"
+             module-command-matcher)
+            (module-test-context)
+            (module-test-policy)
+            "cargo test"
+            "worker")
+           => #t)))
+
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
+(def (check-agent-policy-module)
+  (check (.get module-agent-template kind)
+         => marlin-deck-runtime-agent-policy-template-kind)
+  (check (.get module-dynamic-rule kind)
+         => marlin-deck-runtime-dynamic-strategy-rule-kind)
+  (check (.get module-dynamic-rule required-agent-class)
+         => "customer-worker")
+  (check (.get (marlin-deck-runtime-agent-policy-template-select
+                (list module-agent-template module-custom-template)
+                (module-custom-context))
+               name)
+         => "custom-template")
+  (check (length module-generated-rules) => 2)
+  (check (.get (car module-generated-rules) name)
+         => "generated-module-template"))
+
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
+(def (check-policy-engine-module)
+  (let* ((receipt
+          (marlin-deck-runtime-dynamic-strategy-policy-receipt
+           (list (module-test-policy))
+           (list module-dynamic-rule)
+           (module-test-context)
+           "codex apply"
+           "worker"))
+         (action (.get receipt dynamic-hook-action))
+         (selection (.get receipt dynamic-hook-selection)))
+    (check (.get receipt kind)
+           => marlin-deck-runtime-strategy-policy-receipt-kind)
+    (check (.get receipt matched) => #t)
+    (check (.get action action) => "register")
+    (check (.get selection source) => "rule-action")
+    (check (.get selection selector) => #f)
+    (check (.get receipt policy-engine) => "scheme-poo")))
+
+;;; Boundary: Policy-engine user flow resolves selector objects to actions.
+;; MarlinResult <- MarlinInput
+(def (check-policy-engine-selector-module)
+  (let* ((receipt
+          (marlin-deck-runtime-dynamic-strategy-policy-receipt
+           (list (module-test-policy))
+           (list module-selector-dynamic-rule)
+           (module-test-context)
+           "codex rewrite"
+           "worker"))
+         (action (.get receipt dynamic-hook-action))
+         (selection (.get receipt dynamic-hook-selection)))
+    (check (.get receipt matched) => #t)
+    (check (.get action action) => "rewrite")
+    (check (.get selection source) => "selector-case")
+    (check (.get selection selector) => "module-hook-selector")
+    (check (.get selection matched-case) => "module-rewrite"))
+  (let* ((receipt
+          (marlin-deck-runtime-dynamic-strategy-policy-receipt
+           (list (module-test-policy))
+           (list module-selector-dynamic-rule)
+           (module-locked-context)
+           "codex apply file"
+           "worker"))
+         (action (.get receipt dynamic-hook-action))
+         (selection (.get receipt dynamic-hook-selection)))
+    (check (.get receipt matched) => #t)
+    (check (.get action action) => "defer")
+    (check (.get selection source) => "selector-case")
+    (check (.get selection matched-case) => "module-defer"))
+  (let* ((receipt
+          (marlin-deck-runtime-dynamic-strategy-policy-receipt
+           (list (module-test-policy))
+           (list module-selector-dynamic-rule)
+           (module-test-context)
+           "codex status"
+           "worker"))
+         (action (.get receipt dynamic-hook-action))
+         (selection (.get receipt dynamic-hook-selection)))
+    (check (.get receipt matched) => #t)
+    (check (.get action action) => "allow")
+    (check (.get selection source) => "selector-default")
+    (check (.get selection matched) => #f)
+    (check (.get selection matched-case) => #f)))
+
+(check-context-module)
+(check-condition-policy-module)
+(check-dynamic-hook-module)
+(check-matcher-module)
+(check-agent-policy-module)
+(check-policy-engine-module)
+(check-policy-engine-selector-module)

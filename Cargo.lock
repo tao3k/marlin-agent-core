@@ -2164,6 +2164,7 @@ dependencies = [
 name = "marlin-agent-harness"
 version = "0.1.0"
 dependencies = [
+ "marlin-agent-harness-types",
  "marlin-agent-hooks",
  "marlin-agent-kernel",
  "marlin-agent-protocol",
@@ -2174,10 +2175,21 @@ dependencies = [
  "marlin-gerbil-scheme",
  "marlin-rust-project-harness-policy",
  "rust-lang-project-harness",
+ "serde",
  "tempfile",
  "tokio",
  "tokio-stream",
  "tracing",
+]
+
+[[package]]
+name = "marlin-agent-harness-types"
+version = "0.1.0"
+dependencies = [
+ "marlin-agent-protocol",
+ "marlin-rust-project-harness-policy",
+ "rust-lang-project-harness",
+ "serde",
 ]
 
 [[package]]
@@ -2274,6 +2286,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "marlin-agent-environment",
+ "marlin-agent-harness-types",
  "marlin-agent-kernel",
  "marlin-agent-protocol",
  "marlin-agent-sessions",
@@ -2417,6 +2430,7 @@ dependencies = [
 name = "marlin-org-workflow"
 version = "0.1.0"
 dependencies = [
+ "marlin-agent-harness-types",
  "marlin-agent-protocol",
  "marlin-gerbil-ir",
  "marlin-org-model",
@@ -2795,17 +2809,23 @@ dependencies = [
 [[package]]
 name = "orgize"
 version = "0.10.0-alpha.10"
-source = "git+https://github.com/tao3k/orgize?branch=main#7173cdff248e0ce6d41d04b1ae5fcf6cf39499fe"
+source = "git+https://github.com/tao3k/orgize?branch=main#3948be733078e3b18a01f66c52c6f74eb256f551"
 dependencies = [
  "bytecount",
  "cfg-if",
  "jetscii",
  "memchr",
  "nom",
+ "orgize-build-support",
  "rowan",
  "rust-lang-project-harness",
  "serde_json",
 ]
+
+[[package]]
+name = "orgize-build-support"
+version = "0.1.0"
+source = "git+https://github.com/tao3k/orgize?branch=main#3948be733078e3b18a01f66c52c6f74eb256f551"
 
 [[package]]
 name = "ouroboros"
@@ -3457,7 +3477,7 @@ dependencies = [
 [[package]]
 name = "rust-lang-project-harness"
 version = "0.1.2"
-source = "git+https://github.com/tao3k/rust-lang-project-harness?rev=9c59588b6ada02d5c2518ca90bc22452155f2e6f#9c59588b6ada02d5c2518ca90bc22452155f2e6f"
+source = "git+https://github.com/tao3k/rust-lang-project-harness?rev=7811ab03e815a3eca76d2a2cd25a4ee4c442db30#7811ab03e815a3eca76d2a2cd25a4ee4c442db30"
 dependencies = [
  "cargo-lock",
  "cargo_toml",

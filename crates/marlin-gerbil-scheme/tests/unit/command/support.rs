@@ -1,7 +1,5 @@
 use marlin_gerbil_ir::CompiledLoopGraph;
-use marlin_gerbil_scheme::{
-    GerbilCommandCompiler, GerbilCommandSpec, GerbilCompiledArtifact, default_gerbil_gxi_program,
-};
+use marlin_gerbil_scheme::{GerbilCompiledArtifact, default_gerbil_gxi_program};
 use marlin_org_model::TodoState;
 use marlin_workspace_patch::WorkspacePatchOp;
 use std::path::PathBuf;
@@ -65,7 +63,7 @@ pub const RELEASE_TOPOLOGY_SOURCE: &str = r#"(release-topology "release:gerbil"
     (visibility
       (report-key real_gxi_release_gate)
       (evidence-keys workspace_schema workspace_patch_intent)
-      (artifact-paths "gerbil/bin/command-adapter.ss"))))"#;
+      (artifact-paths "gerbil/src/marlin/adapter.ss"))))"#;
 
 pub fn local_gxi() -> Option<PathBuf> {
     let gxi = default_gerbil_gxi_program();
@@ -89,23 +87,6 @@ pub fn local_gxi() -> Option<PathBuf> {
 
 pub fn gerbil_runtime_package_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("gerbil")
-}
-
-pub fn real_gxi_module_compiler() -> Option<GerbilCommandCompiler> {
-    let gxi = local_gxi()?;
-    let runtime_package_root = gerbil_runtime_package_root();
-    Some(GerbilCommandCompiler::from_marlin_runtime_module(
-        gxi,
-        runtime_package_root,
-    ))
-}
-
-pub fn real_gxi_command_adapter_batch_compiler() -> Option<GerbilCommandCompiler> {
-    let gxi = local_gxi()?;
-    let runtime_package_root = gerbil_runtime_package_root();
-    Some(GerbilCommandCompiler::new(
-        GerbilCommandSpec::marlin_runtime_batch_launcher(gxi, runtime_package_root),
-    ))
 }
 
 pub fn assert_rich_loop_graph_artifact(artifact: GerbilCompiledArtifact) {
@@ -227,7 +208,7 @@ pub fn assert_release_topology_artifact(artifact: GerbilCompiledArtifact) {
             );
             assert_eq!(
                 topology.gates[0].visibility[0].artifact_paths,
-                ["gerbil/bin/command-adapter.ss"]
+                ["gerbil/src/marlin/adapter.ss"]
             );
         }
         other => panic!("expected release topology artifact, got {other:?}"),
@@ -260,15 +241,6 @@ pub fn assert_agent_scenario_contract_artifact(artifact: GerbilCompiledArtifact)
                     .map(|span| span.as_str())
                     .collect::<Vec<_>>(),
                 vec!["harness.execution"]
-            );
-            assert_eq!(
-                contract
-                    .scenario
-                    .expected_evidence
-                    .iter()
-                    .map(|kind| format!("{kind:?}"))
-                    .collect::<Vec<_>>(),
-                vec!["Runtime"]
             );
         }
         other => panic!("expected agent scenario contract artifact, got {other:?}"),

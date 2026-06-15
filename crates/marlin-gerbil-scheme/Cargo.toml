@@ -36,7 +36,6 @@ marlin-workspace-patch.workspace = true
 marlin-workspace-status.workspace = true
 marlin-workspace-view.workspace = true
 memoffset.workspace = true
-rust-lang-project-harness.workspace = true
 static_assertions.workspace = true
 tempfile.workspace = true
 toml.workspace = true

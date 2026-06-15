@@ -1,7 +1,9 @@
 use std::sync::Arc;
 
-use marlin_agent_harness::{AgentHarness, HarnessRuntime, StaticHookRuntime};
-use marlin_agent_protocol::{AgentScenario, HookRunStatus, HookRunSummary, LoopEvidenceKind};
+use marlin_agent_harness::{
+    AgentHarness, HarnessEvidenceKind, HarnessRuntime, HarnessScenario, StaticHookRuntime,
+};
+use marlin_agent_protocol::{HookRunStatus, HookRunSummary};
 use marlin_agent_runtime::TokioAgentRuntime;
 use marlin_agent_test_support::{
     assert_custom_sub_agent_start_hook_summary, complex_gerbil_hook_policy_receipt_fixture,
@@ -43,8 +45,8 @@ async fn static_hook_runtime_replay_receipts_feed_harness_runtime_evidence() {
         .expect("hook task should finish");
     let selection = sub_agent_hook_dispatch_selection_fixture();
     let policy = custom_hook_policy_receipt_fixture();
-    let scenario =
-        AgentScenario::new("hook-dispatch-replay").expecting_evidence(LoopEvidenceKind::Runtime);
+    let scenario = HarnessScenario::new("hook-dispatch-replay")
+        .expecting_evidence(HarnessEvidenceKind::Runtime);
     let mut harness = HarnessRuntime::new(4);
     harness.record_evidence(hook_dispatch_replay_evidence(&output, &selection, &policy));
 
@@ -80,8 +82,8 @@ async fn static_hook_runtime_replay_records_complex_gerbil_policy_action_evidenc
         .expect("hook task should finish");
     let selection = sub_agent_hook_dispatch_selection_fixture();
     let policy = complex_gerbil_hook_policy_receipt_fixture();
-    let scenario = AgentScenario::new("complex-gerbil-hook-policy-replay")
-        .expecting_evidence(LoopEvidenceKind::Runtime);
+    let scenario = HarnessScenario::new("complex-gerbil-hook-policy-replay")
+        .expecting_evidence(HarnessEvidenceKind::Runtime);
     let mut harness = HarnessRuntime::new(4);
     harness.record_evidence(hook_dispatch_replay_evidence(&output, &selection, &policy));
 

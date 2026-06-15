@@ -1,14 +1,14 @@
 use std::collections::BTreeMap;
 
 use marlin_agent_protocol::{
-    GRAPH_POLICY_PROPOSAL_SCHEMA_ID, GerbilLoopGraphPolicyCompilationRequest,
-    GraphLoopExecutionBudget, GraphLoopExecutionRequest, GraphLoopStrategy,
+    GRAPH_POLICY_PROPOSAL_SCHEMA_ID, GerbilLoopGraphPolicyCompilationRequest, GraphLoopStrategy,
     GraphLoopStrategyRuntime, GraphNativeAbiId, GraphNativeAbiRequirement, GraphNativeSymbol,
     GraphPolicyProposal, GraphPolicyProposalReceipt, GraphPolicyProposalStatus,
     GraphPolicyProposalValidationReport, LoopEdgeSpec, LoopGraph, LoopNodeSpec,
     compile_gerbil_loop_graph_policy,
 };
 
+mod execution;
 mod native_abi;
 
 #[test]
@@ -133,7 +133,8 @@ fn gerbil_loop_graph_ir_compiles_into_graph_policy_proposal() {
         )
         .with_native_abi_requirement(native_policy_abi_requirement())
         .with_diagnostic("gerbil_ir=compiled"),
-    );
+    )
+    .expect("Gerbil loop graph IR should compile into graph policy proposal");
 
     assert_eq!(
         proposal.strategy.runtime,
@@ -158,36 +159,6 @@ fn gerbil_loop_graph_ir_compiles_into_graph_policy_proposal() {
     );
     assert_eq!(proposal.diagnostics, vec!["gerbil_ir=compiled"]);
     assert!(proposal.validate().is_accepted());
-}
-
-#[test]
-fn graph_loop_execution_request_records_optional_budget() {
-    let graph = LoopGraph {
-        graph_id: "graph".to_string(),
-        nodes: vec![LoopNodeSpec {
-            id: "plan".to_string(),
-            executor: "provider.stream".to_string(),
-            config: BTreeMap::new(),
-        }],
-        edges: Vec::new(),
-    };
-
-    let request_without_budget = GraphLoopExecutionRequest::new("run", graph.clone());
-    let value = serde_json::to_value(&request_without_budget).expect("request serializes");
-    assert!(value.get("budget").is_none());
-
-    let request = GraphLoopExecutionRequest::new("run", graph)
-        .with_budget(GraphLoopExecutionBudget::max_node_executions(1));
-    let value = serde_json::to_value(&request).expect("budgeted request serializes");
-
-    assert_eq!(
-        request
-            .budget
-            .as_ref()
-            .and_then(|budget| budget.max_node_executions),
-        Some(1)
-    );
-    assert_eq!(value["budget"]["max_node_executions"], 1);
 }
 
 #[test]

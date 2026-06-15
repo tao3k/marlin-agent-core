@@ -1,203 +1,115 @@
 ;;; -*- Gerbil -*-
-;;; Complex strategy plane for Deck runtime policy decisions.
+;;; Boundary: Module owns Marlin Gerbil policy and runtime contracts for agent edits.
+;;; Facade for the modular Scheme-owned Deck runtime policy plane.
 
 package: marlin
 
-(import :clan/poo/object
-        :marlin/deck-runtime)
+(import :marlin/deck-runtime-agent-policy
+        :marlin/deck-runtime-condition-policy
+        :marlin/deck-runtime-dynamic-hook
+        :marlin/deck-runtime-extension
+        :marlin/deck-runtime-extension-catalog
+        :marlin/deck-runtime-extension-receipt
+        :marlin/deck-runtime-extension-safety
+        :marlin/deck-runtime-extension-template
+        :marlin/deck-runtime-loop-graph
+        :marlin/deck-runtime-matcher
+        :marlin/deck-runtime-policy-engine
+        :marlin/deck-runtime-strategy-context)
 
 (export marlin-deck-runtime-strategy-rule-kind
         marlin-deck-runtime-strategy-context-kind
+        marlin-deck-runtime-condition-policy-kind
+        marlin-deck-runtime-condition-combinator-kind
         marlin-deck-runtime-strategy-selection-kind
+        marlin-deck-runtime-dynamic-hook-action-kind
+        marlin-deck-runtime-dynamic-hook-case-kind
+        marlin-deck-runtime-dynamic-hook-selector-kind
+        marlin-deck-runtime-dynamic-hook-selection-kind
+        marlin-deck-runtime-extension-kind
+        marlin-deck-runtime-extension-catalog-kind
+        marlin-deck-runtime-extension-receipt-kind
+        marlin-deck-runtime-extension-safety-report-kind
+        marlin-deck-runtime-loop-node-kind
+        marlin-deck-runtime-loop-edge-kind
+        marlin-deck-runtime-loop-graph-kind
+        marlin-deck-runtime-compiled-loop-graph-type-id
+        marlin-deck-runtime-compiled-loop-graph-schema-id
+        marlin-deck-runtime-high-order-matcher-kind
+        marlin-deck-runtime-dynamic-strategy-rule-kind
+        marlin-deck-runtime-agent-policy-template-kind
+        marlin-deck-runtime-strategy-policy-receipt-kind
         marlin-deck-runtime-strategy-capability-names
+        marlin-deck-runtime-dynamic-hook-action-names
         make-marlin-deck-runtime-strategy-context
+        make-marlin-deck-runtime-condition-policy
+        marlin-deck-runtime-all-condition-policy
+        marlin-deck-runtime-any-condition-policy
+        marlin-deck-runtime-not-condition-policy
+        marlin-deck-runtime-condition-policy-from-rule
+        marlin-deck-runtime-condition-policy-match?
+        marlin-deck-runtime-condition-policy-signal-names
         make-marlin-deck-runtime-strategy-rule
+        make-marlin-deck-runtime-dynamic-hook-action
+        make-marlin-deck-runtime-dynamic-hook-case
+        make-marlin-deck-runtime-dynamic-hook-selector
+        marlin-deck-runtime-dynamic-hook-selector-selection
+        marlin-deck-runtime-dynamic-hook-selector-select
+        marlin-deck-runtime-dynamic-hook-decision-selection
+        make-marlin-deck-runtime-register-hook-action
+        make-marlin-deck-runtime-unregister-hook-action
+        make-marlin-deck-runtime-defer-hook-action
+        make-marlin-deck-runtime-deny-hook-action
+        make-marlin-deck-runtime-rewrite-hook-action
+        make-marlin-deck-runtime-allow-hook-action
+        make-marlin-deck-runtime-extension
+        make-marlin-deck-runtime-subagent-policy-extension
+        make-marlin-deck-runtime-extension-catalog
+        make-marlin-deck-runtime-extension-receipt
+        make-marlin-deck-runtime-extension-safety-report
+        make-marlin-deck-runtime-loop-node
+        make-marlin-deck-runtime-loop-edge
+        make-marlin-deck-runtime-loop-graph
+        make-marlin-deck-runtime-compiled-loop-graph
+        defmarlin-deck-runtime-extension
+        defmarlin-deck-runtime-loop-graph
+        marlin-deck-runtime-extension-match?
+        marlin-deck-runtime-extension-safe?
+        marlin-deck-runtime-validate-extension
+        marlin-deck-runtime-extension-catalog-add
+        marlin-deck-runtime-extension-catalog-find
+        marlin-deck-runtime-extension-catalog-select
+        marlin-deck-runtime-extension-action-selection
+        marlin-deck-runtime-extension-policy-receipt
+        marlin-deck-runtime-loop-node-shape-valid?
+        marlin-deck-runtime-loop-edge-shape-valid?
+        marlin-deck-runtime-loop-graph-shape-valid?
+        marlin-deck-runtime-loop-node->compiled
+        marlin-deck-runtime-loop-edge->compiled
+        marlin-deck-runtime-compile-loop-graph
+        make-marlin-deck-runtime-high-order-matcher
+        marlin-deck-runtime-and-matcher
+        marlin-deck-runtime-or-matcher
+        make-marlin-deck-runtime-dynamic-strategy-rule
+        make-marlin-deck-runtime-agent-policy-template
         defmarlin-deck-runtime-strategy-rule
+        defmarlin-deck-runtime-agent-policy-template
+        defmarlin-deck-runtime-agent-policy-template-set
+        marlin-deck-runtime-agent-policy-template-select
+        marlin-deck-runtime-agent-policy-templates->dynamic-rules
+        marlin-deck-runtime-high-order-matcher-match?
+        marlin-deck-runtime-not-matcher
+        marlin-deck-runtime-command-prefix-matcher
+        marlin-deck-runtime-agent-class-matcher
+        marlin-deck-runtime-policy-name-matcher
         marlin-deck-runtime-strategy-rule-match?
+        marlin-deck-runtime-dynamic-strategy-rule-match?
         marlin-deck-runtime-select-model-route-policy/strategy
+        marlin-deck-runtime-select-dynamic-strategy-rule
+        marlin-deck-runtime-agent-policy-template->dynamic-rule
+        marlin-deck-runtime-dynamic-strategy-rule-action-selection
+        marlin-deck-runtime-dynamic-strategy-rule-action
+        marlin-deck-runtime-dynamic-strategy-policy-receipt
         marlin-deck-runtime-strategy-rule-signal-names
+        marlin-deck-runtime-dynamic-strategy-rule-signal-names
         marlin-deck-runtime-strategy-selection)
-
-(def marlin-deck-runtime-strategy-rule-kind
-  "marlin-deck-runtime.strategy-rule.v1")
-(def marlin-deck-runtime-strategy-context-kind
-  "marlin-deck-runtime.strategy-context.v1")
-(def marlin-deck-runtime-strategy-selection-kind
-  "marlin-deck-runtime.strategy-selection.v1")
-
-(def (marlin-deck-runtime-strategy-capability-names)
-  '("session-policy"
-    "agent-lineage-policy"
-    "workspace-state-policy"
-    "org-memory-policy"
-    "dynamic-hook-action"
-    "customer-agent-policy"
-    "high-order-matcher"
-    "strategy-template-macro"))
-
-(def (make-marlin-deck-runtime-strategy-context
-      session-id-value
-      agent-lineage-values
-      workspace-state-values
-      org-memory-hit-values
-      agent-class-value)
-  (.o kind: marlin-deck-runtime-strategy-context-kind
-      session-id: session-id-value
-      agent-lineage: agent-lineage-values
-      workspace-state: workspace-state-values
-      org-memory-hits: org-memory-hit-values
-      agent-class: agent-class-value))
-
-(def (make-marlin-deck-runtime-strategy-rule
-      rule-name-value
-      policy-name-value
-      required-session-id-value
-      required-agent-lineage-values
-      required-workspace-state-values
-      required-org-memory-hit-values
-      required-agent-class-value
-      hook-action-value
-      rewrite-command-value)
-  (.o kind: marlin-deck-runtime-strategy-rule-kind
-      name: rule-name-value
-      policy-name: policy-name-value
-      required-session-id: required-session-id-value
-      required-agent-lineage: required-agent-lineage-values
-      required-workspace-state: required-workspace-state-values
-      required-org-memory-hits: required-org-memory-hit-values
-      required-agent-class: required-agent-class-value
-      hook-action: hook-action-value
-      rewrite-command: rewrite-command-value))
-
-(defrules defmarlin-deck-runtime-strategy-rule ()
-  ((_ binding
-      rule-name
-      policy-name
-      required-session-id
-      required-agent-lineage
-      required-workspace-state
-      required-org-memory-hits
-      required-agent-class
-      hook-action
-      rewrite-command)
-   (def binding
-     (make-marlin-deck-runtime-strategy-rule
-      rule-name
-      policy-name
-      required-session-id
-      required-agent-lineage
-      required-workspace-state
-      required-org-memory-hits
-      required-agent-class
-      hook-action
-      rewrite-command))))
-
-(def (strategy-string-active? value)
-  (and value (not (string=? value ""))))
-
-(def (strategy-required-string-match? required actual)
-  (if (strategy-string-active? required)
-    (string=? required actual)
-    #t))
-
-(def (strategy-string-member? value values)
-  (if (member value values) #t #f))
-
-(def (strategy-all-strings-member? required actual)
-  (let loop ((remaining required))
-    (cond
-      ((null? remaining) #t)
-      ((strategy-string-member? (car remaining) actual) (loop (cdr remaining)))
-      (else #f))))
-
-(def (marlin-deck-runtime-find-policy-by-name policies policy-name)
-  (let loop ((remaining policies))
-    (cond
-      ((null? remaining) #f)
-      ((string=? (.get (car remaining) name) policy-name) (car remaining))
-      (else (loop (cdr remaining))))))
-
-(def (marlin-deck-runtime-strategy-rule-match?
-      rule context policy command agent-scope)
-  (and policy
-       (string=? (.get rule kind) marlin-deck-runtime-strategy-rule-kind)
-       (marlin-deck-runtime-route-policy-match? policy command agent-scope)
-       (strategy-required-string-match?
-        (.get rule required-session-id)
-        (.get context session-id))
-       (strategy-all-strings-member?
-        (.get rule required-agent-lineage)
-        (.get context agent-lineage))
-       (strategy-all-strings-member?
-        (.get rule required-workspace-state)
-        (.get context workspace-state))
-       (strategy-all-strings-member?
-        (.get rule required-org-memory-hits)
-        (.get context org-memory-hits))
-       (strategy-required-string-match?
-        (.get rule required-agent-class)
-        (.get context agent-class))))
-
-(def (marlin-deck-runtime-select-model-route-policy/strategy
-      policies rules context command agent-scope)
-  (let loop ((remaining rules))
-    (cond
-      ((null? remaining) #f)
-      (else
-       (let ((rule (car remaining)))
-         (let ((policy
-                (marlin-deck-runtime-find-policy-by-name
-                 policies
-                 (.get rule policy-name))))
-           (if (marlin-deck-runtime-strategy-rule-match?
-                rule context policy command agent-scope)
-             (.o selected-rule: rule selected-policy: policy)
-             (loop (cdr remaining)))))))))
-
-(def (marlin-deck-runtime-strategy-rule-signal-names rule)
-  (append
-   '("model-route" "command-prefix" "agent-scope" "high-order-matcher")
-   (if (strategy-string-active? (.get rule required-session-id))
-     '("session")
-     '())
-   (if (null? (.get rule required-agent-lineage))
-     '()
-     '("agent-lineage"))
-   (if (null? (.get rule required-workspace-state))
-     '()
-     '("workspace-state"))
-   (if (null? (.get rule required-org-memory-hits))
-     '()
-     '("org-memory"))
-   (if (strategy-string-active? (.get rule required-agent-class))
-     '("customer-agent")
-     '())))
-
-(def (marlin-deck-runtime-strategy-selection
-      policies rules context command agent-scope)
-  (let ((selection
-         (marlin-deck-runtime-select-model-route-policy/strategy
-          policies rules context command agent-scope)))
-    (if selection
-      (let ((matched-rule (.get selection selected-rule))
-            (matched-policy (.get selection selected-policy)))
-        (.o kind: marlin-deck-runtime-strategy-selection-kind
-            command: command
-            agent-scope: agent-scope
-            matched: #t
-            strategy-rule: (.get matched-rule name)
-            hook-action: (.get matched-rule hook-action)
-            rewrite-command: (.get matched-rule rewrite-command)
-            matched-signals: (marlin-deck-runtime-strategy-rule-signal-names matched-rule)
-            capabilities: (marlin-deck-runtime-strategy-capability-names)
-            policy: matched-policy))
-      (.o kind: marlin-deck-runtime-strategy-selection-kind
-          command: command
-          agent-scope: agent-scope
-          matched: #f
-          strategy-rule: #f
-          hook-action: #f
-          rewrite-command: #f
-          matched-signals: '()
-          capabilities: (marlin-deck-runtime-strategy-capability-names)
-          policy: #f))))

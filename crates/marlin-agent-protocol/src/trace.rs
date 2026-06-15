@@ -6,7 +6,6 @@ use std::fmt;
 use serde::{Deserialize, Serialize};
 
 use crate::event::AgentEvent;
-use crate::evidence::{LoopEvidence, LoopEvidenceKind};
 use crate::graph::{
     GraphId, GraphLoopExecutionStatus, GraphLoopStrategyId, GraphPolicyProposalReceipt,
     GraphPolicyProposalStatus, RunId,
@@ -14,9 +13,6 @@ use crate::graph::{
 
 /// Span name for Rust-side graph policy proposal validation and compilation.
 pub const GRAPH_POLICY_PROPOSAL_SPAN_NAME: &str = "graph.policy_proposal";
-
-/// Subject prefix for visibility evidence derived from graph policy proposal spans.
-pub const GRAPH_POLICY_PROPOSAL_VISIBILITY_SUBJECT_PREFIX: &str = "graph-policy-proposal";
 
 /// Stable tracing span name identifier.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
@@ -119,28 +115,6 @@ impl AgentTraceSpanRecord {
             .get("selected_graph_id")
             .map(|graph_id| GraphId::new(graph_id.clone()))
     }
-
-    /// Projects a graph policy proposal span into harness visibility evidence.
-    pub fn graph_policy_proposal_visibility_evidence(&self) -> Option<LoopEvidence> {
-        if !self.is_graph_policy_proposal() {
-            return None;
-        }
-
-        let schema_id = self.fields.get("schema_id")?;
-        let strategy_id = self.fields.get("strategy_id")?;
-        let status = self.fields.get("status")?;
-        let diagnostic_count = self.fields.get("diagnostic_count")?;
-        let subject = format!("{GRAPH_POLICY_PROPOSAL_VISIBILITY_SUBJECT_PREFIX}:{strategy_id}");
-        let mut detail = format!(
-            "schema_id={schema_id} strategy_id={strategy_id} status={status} diagnostic_count={diagnostic_count}",
-        );
-        if let Some(selected_graph_id) = self.fields.get("selected_graph_id") {
-            detail.push_str(" selected_graph_id=");
-            detail.push_str(selected_graph_id);
-        }
-
-        Some(LoopEvidence::present(LoopEvidenceKind::Visibility, subject).with_detail(detail))
-    }
 }
 
 fn graph_policy_proposal_status_name(status: &GraphPolicyProposalStatus) -> &'static str {
@@ -225,14 +199,6 @@ impl AgentExecutionTrace {
     pub fn with_diagnostics(mut self, diagnostics: Vec<String>) -> Self {
         self.diagnostics = diagnostics;
         self
-    }
-
-    /// Returns visibility evidence derived from graph policy proposal spans.
-    pub fn graph_policy_proposal_visibility_evidence(&self) -> Vec<LoopEvidence> {
-        self.spans
-            .iter()
-            .filter_map(AgentTraceSpanRecord::graph_policy_proposal_visibility_evidence)
-            .collect()
     }
 
     /// Returns spans that record Rust-side graph policy proposal receipts.

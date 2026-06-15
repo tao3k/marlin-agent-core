@@ -1,43 +1,11 @@
-use super::support::{assert_workspace_patch_intent_artifact, local_gxi, test_root};
-use marlin_gerbil_scheme::{
-    GerbilArtifactKind, GerbilCommandCompiler, GerbilCompiledArtifact, GerbilCompiler, GerbilSource,
-};
 use std::{
-    fs,
     path::{Path, PathBuf},
     process::Command,
 };
 
 #[test]
-#[ignore = "requires a local Gerbil gxi executable"]
-fn command_compiler_real_gxi_reads_workspace_patch_intent_source_file() {
-    if local_gxi().is_none() {
-        return;
-    };
-    let root = test_root("runtime-source-file");
-    let compiler = GerbilCommandCompiler::from_default_marlin_runtime_module(root.path())
-        .expect("write gerbil runtime assets");
-    let source_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("examples")
-        .join("workspace-patch-intent-source.ss");
-    let source = fs::read_to_string(&source_path).expect("read gerbil source example");
-
-    let artifact = compiler
-        .compile(
-            GerbilSource::new(source_path.to_string_lossy(), source),
-            GerbilArtifactKind::WorkspacePatchIntent,
-        )
-        .expect("compile gerbil source file with real gxi");
-
-    assert_workspace_patch_intent_artifact(artifact);
-}
-
-#[test]
-#[ignore = "requires a local Gerbil gxi executable"]
-fn command_compiler_real_gxi_runs_compile_source_binary() {
-    if local_gxi().is_none() {
-        return;
-    };
+#[ignore = "runs the compile-source binary"]
+fn compile_source_binary_requires_native_abi_projection() {
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let workspace_root = manifest_dir
         .parent()
@@ -55,14 +23,33 @@ fn command_compiler_real_gxi_runs_compile_source_binary() {
         .expect("run Gerbil compile-source binary");
 
     assert!(
-        output.status.success(),
-        "compile-source binary failed\nstdout:\n{}\nstderr:\n{}",
+        !output.status.success(),
+        "compile-source must not project Gerbil source text in Rust\nstdout:\n{}\nstderr:\n{}",
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
-    let artifact: GerbilCompiledArtifact =
-        serde_json::from_slice(&output.stdout).expect("decode compile-source artifact");
-    assert_workspace_patch_intent_artifact(artifact);
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("waiting on the native ABI typed projection"),
+        "compile-source stderr should name the pending native ABI projection\nstderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("Rust must not parse Gerbil source text"),
+        "compile-source stderr should reject Rust-side Gerbil source parsing\nstderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("Scheme types -> native ABI -> Rust types"),
+        "compile-source stderr should preserve the architecture path\nstderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("GerbilSchemeNativeProjectionRequest"),
+        "compile-source stderr should name the Rust request boundary\nstderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("GerbilSchemeNativeProjectionReceipt"),
+        "compile-source stderr should name the Rust receipt boundary\nstderr:\n{stderr}"
+    );
 }
 
 fn compile_source_command(workspace_root: &Path) -> Command {

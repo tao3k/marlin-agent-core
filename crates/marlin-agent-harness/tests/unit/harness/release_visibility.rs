@@ -1,17 +1,15 @@
 use marlin_agent_harness::{
-    AgentHarness, HarnessRuntime, ReleaseGateExecutionStatus,
+    AgentHarness, HarnessEvidenceKind, HarnessRuntime, HarnessScenario, ReleaseGateExecutionStatus,
     native_abi_readiness_release_gate_execution_receipt, release_gate_execution_receipt,
     release_topology_execution_receipts,
 };
-use marlin_agent_protocol::{
-    AgentScenario, GraphNativeAbiReadinessReceipt, GraphNativeAbiRequirement, LoopEvidenceKind,
-};
+use marlin_agent_protocol::{GraphNativeAbiReadinessReceipt, GraphNativeAbiRequirement};
 use marlin_gerbil_ir::{ReleaseGateSpec, ReleaseTopologySpec, ReleaseVisibilitySpec};
 
 #[test]
 fn harness_runtime_records_release_visibility_evidence() {
-    let scenario =
-        AgentScenario::new("release-visibility").expecting_evidence(LoopEvidenceKind::Visibility);
+    let scenario = HarnessScenario::new("release-visibility")
+        .expecting_evidence(HarnessEvidenceKind::Visibility);
     let topology = ReleaseTopologySpec {
         topology_id: "release:gerbil".to_owned(),
         crate_name: "marlin-gerbil-scheme".to_owned(),
@@ -62,7 +60,7 @@ fn harness_runtime_records_release_visibility_evidence() {
     let evidence = harness
         .evidence()
         .iter()
-        .find(|evidence| evidence.kind == LoopEvidenceKind::Visibility)
+        .find(|evidence| evidence.kind == HarnessEvidenceKind::Visibility)
         .expect("expected release visibility evidence");
     let detail = evidence.detail.as_deref().expect("visibility detail");
     assert_eq!(

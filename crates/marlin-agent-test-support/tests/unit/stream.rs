@@ -1,8 +1,9 @@
 use std::time::Duration;
 
+use marlin_agent_harness_types::HarnessEvidenceKind;
 use marlin_agent_protocol::{
-    LoopEvidenceKind, ModelEndpoint, ModelGateway, ModelGatewayError, ModelGatewayRequest,
-    ModelGatewayTransport, user_gateway_message,
+    ModelEndpoint, ModelGateway, ModelGatewayError, ModelGatewayRequest, ModelGatewayTransport,
+    user_gateway_message,
 };
 use marlin_agent_test_support::{
     ScriptedChunkGate, ScriptedModelGateway, ScriptedModelStream, ScriptedModelStreamEvent,
@@ -67,7 +68,7 @@ async fn scripted_model_stream_gate_projects_runtime_evidence() {
     let detail = evidence.detail.as_deref().expect("stream gate detail");
 
     assert!(evidence.present);
-    assert_eq!(evidence.kind, LoopEvidenceKind::Runtime);
+    assert_eq!(evidence.kind, HarnessEvidenceKind::Runtime);
     assert_eq!(evidence.subject, "scripted-stream-gate:review-stream");
     assert!(detail.contains("chunk_count=1"));
     assert!(detail.contains("gate_sequences=[1]"));

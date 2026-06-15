@@ -200,7 +200,7 @@ impl TokioGraphLoopKernel {
         run_id: &'a str,
         graph_id: &'a str,
         context: RuntimeContext,
-        visited_nodes: Vec<String>,
+        node_receipts: Vec<GraphNodeExecutionReceipt>,
     ) -> KernelFuture<'a, GraphLoopExecutionResult> {
         Box::pin(async move {
             if next_index >= nodes.len() {
@@ -212,12 +212,14 @@ impl TokioGraphLoopKernel {
                     )),
                 )
                 .await;
-                return GraphLoopExecutionResult::completed(self.snapshot(), visited_nodes);
+                let visited_nodes = completed_node_ids(&node_receipts);
+                return GraphLoopExecutionResult::completed(self.snapshot(), visited_nodes)
+                    .with_node_receipts(node_receipts);
             }
 
             if context.is_cancelled() {
                 return self
-                    .cancelled_result(&context, run_id, graph_id, visited_nodes)
+                    .cancelled_result(&context, run_id, graph_id, node_receipts)
                     .await;
             }
 
@@ -238,7 +240,7 @@ impl TokioGraphLoopKernel {
                     node.executor, node.id
                 );
                 return self
-                    .failed_result(&context, run_id, graph_id, visited_nodes, vec![diagnostic])
+                    .failed_result(&context, run_id, graph_id, node_receipts, vec![diagnostic])
                     .await;
             };
 
@@ -262,25 +264,28 @@ impl TokioGraphLoopKernel {
                         )),
                     )
                     .await;
-                    let mut next_visited = visited_nodes;
-                    next_visited.push(receipt.node_id.into_string());
+                    let mut next_node_receipts = node_receipts;
+                    next_node_receipts.push(receipt);
                     self.drive_graph_nodes_from(
                         nodes,
                         next_index + 1,
                         run_id,
                         graph_id,
                         context,
-                        next_visited,
+                        next_node_receipts,
                     )
                     .await
                 }
                 GraphNodeExecutionStatus::Failed => {
+                    let diagnostics = receipt.diagnostics.clone();
+                    let mut failed_node_receipts = node_receipts;
+                    failed_node_receipts.push(receipt);
                     self.failed_result(
                         &context,
                         run_id,
                         graph_id,
-                        visited_nodes,
-                        receipt.diagnostics,
+                        failed_node_receipts,
+                        diagnostics,
                     )
                     .await
                 }
@@ -293,7 +298,7 @@ impl TokioGraphLoopKernel {
         context: &RuntimeContext,
         run_id: &str,
         graph_id: &str,
-        visited_nodes: Vec<String>,
+        node_receipts: Vec<GraphNodeExecutionReceipt>,
     ) -> GraphLoopExecutionResult {
         self.store_snapshot(run_id, graph_id, None);
         emit(
@@ -303,7 +308,9 @@ impl TokioGraphLoopKernel {
             )),
         )
         .await;
+        let visited_nodes = completed_node_ids(&node_receipts);
         GraphLoopExecutionResult::cancelled(self.snapshot(), visited_nodes)
+            .with_node_receipts(node_receipts)
     }
 
     async fn failed_result(
@@ -311,7 +318,7 @@ impl TokioGraphLoopKernel {
         context: &RuntimeContext,
         run_id: &str,
         graph_id: &str,
-        visited_nodes: Vec<String>,
+        node_receipts: Vec<GraphNodeExecutionReceipt>,
         diagnostics: Vec<String>,
     ) -> GraphLoopExecutionResult {
         self.store_snapshot(run_id, graph_id, None);
@@ -320,7 +327,9 @@ impl TokioGraphLoopKernel {
             observability::kernel_execution_event(format!("run {run_id} failed graph {graph_id}")),
         )
         .await;
+        let visited_nodes = completed_node_ids(&node_receipts);
         GraphLoopExecutionResult::failed_with_visited(self.snapshot(), visited_nodes, diagnostics)
+            .with_node_receipts(node_receipts)
     }
 
     fn store_snapshot(
@@ -340,6 +349,14 @@ impl TokioGraphLoopKernel {
             .expect("runtime plan snapshot lock should not be poisoned") = snapshot.clone();
         snapshot
     }
+}
+
+fn completed_node_ids(node_receipts: &[GraphNodeExecutionReceipt]) -> Vec<String> {
+    node_receipts
+        .iter()
+        .filter(|receipt| receipt.status == GraphNodeExecutionStatus::Completed)
+        .map(|receipt| receipt.node_id.as_str().to_owned())
+        .collect()
 }
 
 impl GraphLoopKernel for TokioGraphLoopKernel {

@@ -1,4 +1,5 @@
 ;;; -*- Gerbil -*-
+;;; Boundary: Module owns Marlin Gerbil policy and runtime contracts for agent edits.
 ;;; Macro-specialized Deck runtime policy selectors.
 
 package: marlin
@@ -12,9 +13,13 @@ package: marlin
         defmarlin-deck-runtime-cached-compiled-route-index-selector
         defmarlin-deck-runtime-direct-compiled-route-index-selector)
 
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
 (def marlin-deck-runtime-compiled-policy-kind
   "marlin-deck-runtime.compiled-policy.v1")
 
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
 (def (marlin-deck-runtime-compiled-policy-capability-names)
   '("compiled-macro-selector"
     "ahead-of-time-policy-shape"
@@ -23,19 +28,23 @@ package: marlin
     "policy-index-selector"
     "direct-policy-index-selector"))
 
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
 (def (compiled-policy-string-prefix? prefix value)
   (string-prefix? prefix value))
 
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
 (def (compiled-policy-any-prefix? prefixes value)
-  (let loop ((remaining prefixes))
-    (cond
-      ((null? remaining) #f)
-      ((compiled-policy-string-prefix? (car remaining) value) #t)
-      (else (loop (cdr remaining))))))
+  (ormap (cut compiled-policy-string-prefix? <> value) prefixes))
 
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
 (def (compiled-policy-string-member? value values)
   (if (member value values) #t #f))
 
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
 (defrules defmarlin-deck-runtime-compiled-route-selector ()
   ((_ binding
       (policy-name provider model
@@ -61,6 +70,8 @@ package: marlin
        ...
        (else #f)))))
 
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
 (defrules defmarlin-deck-runtime-cached-compiled-route-selector ()
   ((_ binding
       (policy-name provider model
@@ -84,17 +95,19 @@ package: marlin
                isolation-mode))
              ...)))
        (lambda (request-command request-agent-scope)
-         (let loop ((remaining compiled-routes))
-           (cond
-             ((null? remaining) #f)
-             ((and
-               (compiled-policy-any-prefix? (car (car remaining)) request-command)
-               (compiled-policy-string-member?
-                request-agent-scope
-                (cadr (car remaining))))
-              (caddr (car remaining)))
-             (else (loop (cdr remaining))))))))))
+         (let ((matched-route
+                (find
+                 (lambda (route)
+                   (and
+                    (compiled-policy-any-prefix? (car route) request-command)
+                    (compiled-policy-string-member?
+                     request-agent-scope
+                     (cadr route))))
+                 compiled-routes)))
+           (if matched-route (caddr matched-route) #f)))))))
 
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
 (defrules defmarlin-deck-runtime-cached-compiled-route-index-selector ()
   ((_ binding
       (policy-index
@@ -110,17 +123,19 @@ package: marlin
               policy-index)
              ...)))
        (lambda (request-command request-agent-scope)
-         (let loop ((remaining compiled-routes))
-           (cond
-             ((null? remaining) #f)
-             ((and
-               (compiled-policy-any-prefix? (car (car remaining)) request-command)
-               (compiled-policy-string-member?
-                request-agent-scope
-                (cadr (car remaining))))
-              (caddr (car remaining)))
-             (else (loop (cdr remaining))))))))))
+         (let ((matched-route
+                (find
+                 (lambda (route)
+                   (and
+                    (compiled-policy-any-prefix? (car route) request-command)
+                    (compiled-policy-string-member?
+                     request-agent-scope
+                     (cadr route))))
+                 compiled-routes)))
+           (if matched-route (caddr matched-route) #f)))))))
 
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
 (defrules defmarlin-deck-runtime-direct-compiled-route-index-selector ()
   ((_ binding
       (policy-index

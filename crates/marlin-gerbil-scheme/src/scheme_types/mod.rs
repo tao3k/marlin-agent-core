@@ -3,6 +3,7 @@
 mod error;
 mod ids;
 mod manifest;
+mod native_projection;
 mod package;
 mod projection;
 mod registry;
@@ -18,6 +19,11 @@ pub use manifest::{
     GerbilSchemeTypeFieldSpec, GerbilSchemeTypeManifest, GerbilSchemeTypeManifestValidationReceipt,
     GerbilSchemeTypeSpec, GerbilSchemeTypedValueValidationReceipt,
     decode_gerbil_scheme_type_manifest_fixture,
+};
+pub use native_projection::{
+    GerbilSchemeNativeProjectionReceipt, GerbilSchemeNativeProjectionRequest,
+    GerbilSchemeNativeProjectionStatus, decode_gerbil_scheme_native_projection,
+    validate_gerbil_scheme_native_projection,
 };
 pub use package::{
     GerbilSchemeNativeAbiContract, GerbilSchemeNativeAbiReadinessPlan, GerbilSchemePackageManifest,

@@ -1,7 +1,6 @@
-//! Agent protocol contracts for graph loops, scenarios, transcripts, and evidence.
+//! Agent protocol contracts for graph loops, scenarios, and transcripts.
 
 mod event;
-mod evidence;
 mod graph;
 mod hook;
 mod model_gateway;
@@ -12,17 +11,6 @@ mod sub_agent;
 mod trace;
 
 pub use event::{AgentEvent, AgentEventTopic};
-pub use evidence::{
-    LoopEvidence, LoopEvidenceKind, LoopPerformanceEvidence, LoopStabilityEvidence,
-    PERFORMANCE_EVIDENCE_ALLOCATION_PROFILE, PERFORMANCE_EVIDENCE_BASELINE,
-    PERFORMANCE_EVIDENCE_BENCHMARK_COMMAND, PERFORMANCE_EVIDENCE_KEYS,
-    PERFORMANCE_EVIDENCE_LATENCY_OR_THROUGHPUT, PERFORMANCE_EVIDENCE_PROFILE_ARTIFACT,
-    PERFORMANCE_EVIDENCE_REGRESSION_THRESHOLD, STABILITY_EVIDENCE_ARTIFACT,
-    STABILITY_EVIDENCE_COMMAND, STABILITY_EVIDENCE_DETERMINISM,
-    STABILITY_EVIDENCE_ITERATION_WINDOW, STABILITY_EVIDENCE_KEYS,
-    STABILITY_EVIDENCE_LATENCY_DISTRIBUTION, STABILITY_EVIDENCE_RESOURCE_DELTA,
-    STABILITY_EVIDENCE_STATE_GROWTH,
-};
 pub use graph::{
     ExecutorName, GERBIL_LOOP_GRAPH_POLICY_COMPILATION_SCHEMA_ID, GRAPH_POLICY_PROPOSAL_SCHEMA_ID,
     GerbilLoopGraphPolicyCompilationRequest, GraphId, GraphLoopExecutionBudget,
@@ -92,5 +80,5 @@ pub use sub_agent::{
 };
 pub use trace::{
     AgentExecutionTrace, AgentExecutionTraceSummary, AgentSpanName, AgentTraceSpanRecord,
-    GRAPH_POLICY_PROPOSAL_SPAN_NAME, GRAPH_POLICY_PROPOSAL_VISIBILITY_SUBJECT_PREFIX,
+    GRAPH_POLICY_PROPOSAL_SPAN_NAME,
 };

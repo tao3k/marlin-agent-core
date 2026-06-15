@@ -1,16 +1,16 @@
 use std::time::Duration;
 
-use marlin_agent_harness::{AgentHarness, HarnessGraphBuilder, HarnessRuntime};
+use marlin_agent_harness::{AgentHarness, HarnessGraphBuilder, HarnessRuntime, HarnessScenario};
 use marlin_agent_kernel::{
     GraphLoopExecutionRequest, GraphLoopExecutionStatus, TokioGraphLoopKernel,
 };
-use marlin_agent_protocol::{AgentScenario, AgentScenarioStep};
+use marlin_agent_protocol::AgentScenarioStep;
 
 use super::support::{EventfulExecutor, QuietExecutor};
 
 #[tokio::test]
 async fn harness_execution_report_captures_runtime_events() {
-    let scenario = AgentScenario::new("eventful")
+    let scenario = HarnessScenario::new("eventful")
         .with_step(AgentScenarioStep::new("run").expecting_event_topic("test.harness"));
     let graph = HarnessGraphBuilder::new("graph")
         .node("node-1", "eventful")
@@ -39,7 +39,7 @@ async fn harness_execution_report_drain_has_no_idle_timeout_floor() {
     const RUN_COUNT: u32 = 128;
     const PER_RUN_DURATION_BUDGET: Duration = Duration::from_millis(2);
 
-    let scenario = AgentScenario::new("event-drain-no-idle-timeout");
+    let scenario = HarnessScenario::new("event-drain-no-idle-timeout");
     let mut harness = HarnessRuntime::new(16);
     let mut total_duration = Duration::ZERO;
 

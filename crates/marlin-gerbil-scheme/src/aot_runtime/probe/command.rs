@@ -6,7 +6,7 @@ use super::{
     receipt::{GerbilAotCommandReceipt, GerbilAotProbeReceipt},
     status::GerbilAotProbeStatus,
 };
-use crate::runtime::{GERBIL_COMMAND_ADAPTER_PATH, GERBIL_LOADPATH_ENV, gerbil_runtime_loadpath};
+use crate::runtime::{GERBIL_LOADPATH_ENV, GERBIL_MARLIN_ADAPTER_PATH, gerbil_runtime_loadpath};
 use std::{
     env, io,
     path::{Path, PathBuf},
@@ -37,7 +37,7 @@ pub(super) fn run_gerbil_aot_executable_compile(
         .arg("-O")
         .arg("-o")
         .arg(executable)
-        .arg(GERBIL_COMMAND_ADAPTER_PATH);
+        .arg(GERBIL_MARLIN_ADAPTER_PATH);
     gerbil_aot_command_receipt(command.output())
 }
 

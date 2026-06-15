@@ -8,6 +8,7 @@ repository.workspace = true
 [dependencies]
 async-trait.workspace = true
 marlin-agent-environment.workspace = true
+marlin-agent-harness-types.workspace = true
 marlin-agent-kernel.workspace = true
 marlin-agent-protocol.workspace = true
 marlin-agent-sessions.workspace = true

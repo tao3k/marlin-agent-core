@@ -54,7 +54,9 @@ pub(super) fn gerbil_backend_failure_receipt(
         gsc: gsc.to_path_buf(),
         backend_gsc: Some(backend_gsc.to_path_buf()),
         root: root.join("probe-root"),
-        executable: root.join("probe-root").join("command-adapter-aot"),
+        executable: root
+            .join("probe-root")
+            .join("marlin-gerbil-typed-runtime-aot"),
         detail: None,
         module_compile: None,
         executable_compile: None,

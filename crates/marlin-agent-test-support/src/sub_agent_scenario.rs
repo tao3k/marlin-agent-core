@@ -1,13 +1,14 @@
 //! Deterministic sub-agent scenario fixtures spanning routing, session, and hooks.
 
+use marlin_agent_harness_types::{HarnessEvidence, HarnessEvidenceKind};
 use marlin_agent_protocol::{
-    HookDispatchPolicyReceipt, HookDispatchSelectionReceipt, HookRunSummary, LoopEvidence,
-    LoopEvidenceKind, ModelCommandMatcher, ModelContextForkMode, ModelEndpoint,
-    ModelGatewayRequest, ModelGatewayTransport, ModelRouteDecision, ModelRouteRequest,
-    ModelRouteRule, ModelSessionLifecycle, ModelSessionPolicy, RuntimeEnvironmentActivation,
-    RuntimeEnvironmentActivationReceipt, RuntimeEnvironmentActivationStatus,
-    RuntimeEnvironmentDelta, RuntimeEnvrcPolicy, RuntimeShellIsolationPolicy, SubAgentSpawnConfig,
-    SubAgentSpawnConfigSet, SubAgentSpawnProfile, SubAgentSpawnProfileId, user_gateway_message,
+    HookDispatchPolicyReceipt, HookDispatchSelectionReceipt, HookRunSummary, ModelCommandMatcher,
+    ModelContextForkMode, ModelEndpoint, ModelGatewayRequest, ModelGatewayTransport,
+    ModelRouteDecision, ModelRouteRequest, ModelRouteRule, ModelSessionLifecycle,
+    ModelSessionPolicy, RuntimeEnvironmentActivation, RuntimeEnvironmentActivationReceipt,
+    RuntimeEnvironmentActivationStatus, RuntimeEnvironmentDelta, RuntimeEnvrcPolicy,
+    RuntimeShellIsolationPolicy, SubAgentSpawnConfig, SubAgentSpawnConfigSet, SubAgentSpawnProfile,
+    SubAgentSpawnProfileId, user_gateway_message,
 };
 use marlin_agent_sessions::{AgentSessionContext, ContextNamespace, SessionIsolationReceipt};
 
@@ -193,7 +194,7 @@ pub fn deterministic_reviewer_applied_environment_activation_receipt_fixture()
 }
 
 /// Runtime evidence replaying the routed reviewer receipt family without live LLMs.
-pub fn deterministic_reviewer_routed_receipt_family_evidence() -> LoopEvidence {
+pub fn deterministic_reviewer_routed_receipt_family_evidence() -> HarnessEvidence {
     let fixture = deterministic_reviewer_sub_agent_scenario_fixture();
     let environment = deterministic_reviewer_applied_environment_activation_receipt_fixture();
     let detail = format!(
@@ -209,8 +210,8 @@ pub fn deterministic_reviewer_routed_receipt_family_evidence() -> LoopEvidence {
         environment.delta.removed.join(","),
     );
 
-    LoopEvidence::present(
-        LoopEvidenceKind::Runtime,
+    HarnessEvidence::present(
+        HarnessEvidenceKind::Runtime,
         "routed-sub-agent-receipt-family:reviewer",
     )
     .with_detail(detail)

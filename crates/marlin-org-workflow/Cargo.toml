@@ -6,6 +6,7 @@ authors.workspace = true
 repository.workspace = true
 
 [dependencies]
+marlin-agent-harness-types.workspace = true
 marlin-agent-protocol.workspace = true
 marlin-gerbil-ir.workspace = true
 marlin-org-model.workspace = true
@@ -21,4 +22,3 @@ marlin-rust-project-harness-policy.workspace = true
 rust-lang-project-harness.workspace = true
 
 [dev-dependencies]
-rust-lang-project-harness.workspace = true

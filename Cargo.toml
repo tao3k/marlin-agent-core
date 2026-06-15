@@ -4,6 +4,7 @@ members = [
     "crates/marlin-agent-core",
     "crates/marlin-agent-environment",
     "crates/marlin-agent-harness",
+    "crates/marlin-agent-harness-types",
     "crates/marlin-agent-hooks",
     "crates/marlin-agent-kernel",
     "crates/marlin-agent-protocol",
@@ -58,20 +59,17 @@ tokio = { version = "1", features = ["rt", "macros", "sync", "time", "process"] 
 tokio-stream = "0.1"
 tokio-util = { version = "0.7", features = ["rt"] }
 tracing = "0.1.44"
-rust-lang-project-harness = { git = "https://github.com/tao3k/rust-lang-project-harness", rev = "9c59588b6ada02d5c2518ca90bc22452155f2e6f", version = "=0.1.2" }
+rust-lang-project-harness = { git = "https://github.com/tao3k/rust-lang-project-harness", rev = "7811ab03e815a3eca76d2a2cd25a4ee4c442db30", version = "=0.1.2" }
 marlin-rust-project-harness-policy = { path = "build-support/marlin-rust-project-harness-policy", version = "0.1.0" }
-
-marlin-agent-core = { path = "crates/marlin-agent-core", version = "0.1.0" }
 marlin-agent-environment = { path = "crates/marlin-agent-environment", version = "0.1.0" }
 marlin-agent-harness = { path = "crates/marlin-agent-harness", version = "0.1.0" }
+marlin-agent-harness-types = { path = "crates/marlin-agent-harness-types", version = "0.1.0" }
 marlin-agent-hooks = { path = "crates/marlin-agent-hooks", version = "0.1.0" }
 marlin-agent-kernel = { path = "crates/marlin-agent-kernel", version = "0.1.0" }
 marlin-agent-protocol = { path = "crates/marlin-agent-protocol", version = "0.1.0" }
 marlin-agent-runtime = { path = "crates/marlin-agent-runtime", version = "0.1.0" }
 marlin-agent-sessions = { path = "crates/marlin-agent-sessions", version = "0.1.0" }
-marlin-agent-stream = { path = "crates/marlin-agent-stream", version = "0.1.0" }
 marlin-agent-test-support = { path = "crates/marlin-agent-test-support", version = "0.1.0" }
-marlin-deck-runtime-native = { path = "crates/marlin-deck-runtime-native", version = "0.1.0" }
 marlin-gerbil-ir = { path = "crates/marlin-gerbil-ir", version = "0.1.0" }
 marlin-gerbil-scheme = { path = "crates/marlin-gerbil-scheme", version = "0.1.0" }
 marlin-git-utils = { path = "crates/marlin-git-utils", version = "0.1.0" }

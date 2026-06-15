@@ -523,6 +523,8 @@ pub struct GraphLoopExecutionResult {
     pub status: GraphLoopExecutionStatus,
     pub snapshot: RuntimePlanSnapshot,
     pub visited_nodes: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub node_receipts: Vec<GraphNodeExecutionReceipt>,
     pub diagnostics: Vec<String>,
 }
 
@@ -532,6 +534,7 @@ impl GraphLoopExecutionResult {
             status: GraphLoopExecutionStatus::Completed,
             snapshot,
             visited_nodes,
+            node_receipts: Vec::new(),
             diagnostics: Vec::new(),
         }
     }
@@ -541,6 +544,7 @@ impl GraphLoopExecutionResult {
             status: GraphLoopExecutionStatus::Cancelled,
             snapshot,
             visited_nodes,
+            node_receipts: Vec::new(),
             diagnostics: Vec::new(),
         }
     }
@@ -558,12 +562,18 @@ impl GraphLoopExecutionResult {
             status: GraphLoopExecutionStatus::Failed,
             snapshot,
             visited_nodes,
+            node_receipts: Vec::new(),
             diagnostics,
         }
     }
 
     pub fn with_diagnostics(mut self, diagnostics: Vec<String>) -> Self {
         self.diagnostics = diagnostics;
+        self
+    }
+
+    pub fn with_node_receipts(mut self, node_receipts: Vec<GraphNodeExecutionReceipt>) -> Self {
+        self.node_receipts = node_receipts;
         self
     }
 }

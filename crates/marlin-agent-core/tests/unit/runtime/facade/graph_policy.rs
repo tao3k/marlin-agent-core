@@ -2,8 +2,9 @@ use marlin_agent_core::{
     AgentTraceSpanRecord, GERBIL_LOOP_GRAPH_POLICY_COMPILATION_SCHEMA_ID,
     GRAPH_POLICY_PROPOSAL_SPAN_NAME, GRAPH_POLICY_PROPOSAL_VISIBILITY_SUBJECT_PREFIX,
     GerbilLoopGraphPolicyCompilationRequest, GraphLoopExecutionBudget, GraphLoopStrategy,
-    GraphLoopStrategyId, GraphPolicyProposal, GraphPolicyProposalStatus, LoopEvidenceKind,
+    GraphLoopStrategyId, GraphPolicyProposal, GraphPolicyProposalStatus, HarnessEvidenceKind,
     LoopGraph, LoopNodeSpec, compile_gerbil_loop_graph_policy, compile_graph_policy_proposal,
+    graph_policy_proposal_visibility_evidence,
 };
 use marlin_agent_test_support::graph_native_abi_requirement_fixture;
 use std::collections::BTreeMap;
@@ -53,14 +54,13 @@ fn core_facade_compiles_policy_proposal_before_kernel_execution() {
         span.graph_policy_proposal_status(),
         Some(GraphPolicyProposalStatus::Accepted)
     );
-    let evidence = span
-        .graph_policy_proposal_visibility_evidence()
+    let evidence = graph_policy_proposal_visibility_evidence(&span)
         .expect("core facade should expose proposal visibility evidence projection");
     let detail = evidence
         .detail
         .as_deref()
         .expect("proposal visibility detail");
-    assert_eq!(evidence.kind, LoopEvidenceKind::Visibility);
+    assert_eq!(evidence.kind, HarnessEvidenceKind::Visibility);
     assert_eq!(
         evidence.subject,
         format!("{GRAPH_POLICY_PROPOSAL_VISIBILITY_SUBJECT_PREFIX}:scheme-loop-ranker")
@@ -87,7 +87,8 @@ fn core_facade_exposes_gerbil_graph_policy_and_budget_contracts() {
         )
         .with_native_abi_requirement(graph_native_abi_requirement_fixture())
         .with_diagnostic(GERBIL_LOOP_GRAPH_POLICY_COMPILATION_SCHEMA_ID),
-    );
+    )
+    .expect("core Gerbil loop graph should compile");
     let compilation = compile_graph_policy_proposal("core-gerbil-run", &proposal);
 
     assert!(compilation.is_accepted());
@@ -126,7 +127,12 @@ fn core_facade_rejects_invalid_gerbil_loop_graph_shapes_before_execution() {
                     condition: Some("always".to_owned()),
                 }],
             },
-            "graph_policy_proposal.edge_to_unknown:missing",
+            marlin_agent_core::gerbil_ir::LoopGraphCompileError::Validation(
+                marlin_agent_core::gerbil_ir::LoopGraphValidationError::UnknownEdgeTarget {
+                    edge_index: 0,
+                    node_id: "missing".to_owned(),
+                },
+            ),
         ),
         (
             "core-gerbil-cycle",
@@ -157,12 +163,14 @@ fn core_facade_rejects_invalid_gerbil_loop_graph_shapes_before_execution() {
                     },
                 ],
             },
-            "graph_policy_proposal.graph_cycle_detected",
+            marlin_agent_core::gerbil_ir::LoopGraphCompileError::CycleDetected {
+                remaining_node_ids: vec!["rank".to_owned(), "dispatch".to_owned()],
+            },
         ),
     ];
 
-    for (strategy_id, graph, expected_diagnostic) in cases {
-        let proposal = compile_gerbil_loop_graph_policy(
+    for (strategy_id, graph, expected_error) in cases {
+        let error = compile_gerbil_loop_graph_policy(
             GerbilLoopGraphPolicyCompilationRequest::new(
                 GraphLoopStrategy::native_gerbil(strategy_id, "v1"),
                 graph,
@@ -171,23 +179,9 @@ fn core_facade_rejects_invalid_gerbil_loop_graph_shapes_before_execution() {
             )
             .with_native_abi_requirement(graph_native_abi_requirement_fixture())
             .with_diagnostic(GERBIL_LOOP_GRAPH_POLICY_COMPILATION_SCHEMA_ID),
-        );
-        let compilation = compile_graph_policy_proposal("core-gerbil-invalid-run", &proposal);
+        )
+        .expect_err("invalid Gerbil loop graph should fail before proposal execution");
 
-        assert!(!compilation.is_accepted());
-        assert_eq!(
-            compilation.receipt.status,
-            GraphPolicyProposalStatus::Rejected
-        );
-        assert!(compilation.request.is_none());
-        assert!(
-            compilation
-                .receipt
-                .diagnostics
-                .iter()
-                .any(|diagnostic| diagnostic == expected_diagnostic),
-            "missing diagnostic {expected_diagnostic:?}: {:?}",
-            compilation.receipt.diagnostics
-        );
+        assert_eq!(error, expected_error);
     }
 }

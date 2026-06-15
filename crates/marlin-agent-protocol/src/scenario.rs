@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{AgentEventTopic, AgentSpanName, LoopEvidenceKind};
+use crate::{AgentEventTopic, AgentSpanName};
 
 /// Stable schema id for serialized agent scenario contracts.
 pub const AGENT_SCENARIO_CONTRACT_SCHEMA_ID: &str = "marlin.agent.scenario.v1";
@@ -41,8 +41,6 @@ pub struct AgentScenario {
     pub description: Option<String>,
     #[serde(default)]
     pub steps: Vec<AgentScenarioStep>,
-    #[serde(default)]
-    pub expected_evidence: Vec<LoopEvidenceKind>,
 }
 
 impl AgentScenario {
@@ -51,7 +49,6 @@ impl AgentScenario {
             id: id.into(),
             description: None,
             steps: Vec::new(),
-            expected_evidence: Vec::new(),
         }
     }
 
@@ -62,11 +59,6 @@ impl AgentScenario {
 
     pub fn with_step(mut self, step: AgentScenarioStep) -> Self {
         self.steps.push(step);
-        self
-    }
-
-    pub fn expecting_evidence(mut self, kind: LoopEvidenceKind) -> Self {
-        self.expected_evidence.push(kind);
         self
     }
 }

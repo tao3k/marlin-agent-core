@@ -1,0 +1,4 @@
+* Worker State
+
+The user interface script checks that this state file exists from the workspace
+root.

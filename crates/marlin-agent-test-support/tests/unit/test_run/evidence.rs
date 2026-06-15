@@ -1,4 +1,4 @@
-use marlin_agent_protocol::LoopEvidenceKind;
+use marlin_agent_harness_types::HarnessEvidenceKind;
 use marlin_agent_test_support::{
     TestRunCaseRecord, TestRunCaseStatus, TestRunEvidenceReceipt, TestRunLayer,
     assert_deterministic_test_run_evidence,
@@ -12,7 +12,7 @@ fn counts_no_live_layers_and_ignored_external_gates() {
     assert_eq!(receipt.case_count(), 5);
     assert_eq!(receipt.evidence_count(), 2);
     assert_eq!(
-        receipt.evidence_count_by_kind(LoopEvidenceKind::Visibility),
+        receipt.evidence_count_by_kind(HarnessEvidenceKind::Visibility),
         2
     );
     assert_eq!(receipt.failed_count(), 0);

@@ -1,140 +1,25 @@
-use super::{
-    RICH_LOOP_GRAPH_SOURCE, assert_agent_scenario_contract_artifact,
-    assert_release_topology_artifact, assert_rich_loop_graph_artifact,
-    assert_workspace_patch_intent_artifact, assert_workspace_schema_artifact,
-    command_adapter_batch_artifacts, real_gxi_module_compiler,
-};
-use marlin_gerbil_scheme::{GerbilArtifactKind, GerbilCompiler, GerbilSource};
+use super::assert_release_topology_artifact;
+use marlin_gerbil_scheme::GerbilCompiledArtifact;
 use marlin_org_store::FileSystemReleaseStatusStore;
 use marlin_workspace_protocol::{
     ReleaseGateReceipt, ReleaseGateState, ReleaseLandingReport, ReleaseStatus,
 };
+use serde_json::json;
 use std::{fs, path::Path};
 use tempfile::{Builder, TempDir};
 
 const RELEASE_STATUS_ARTIFACT_DIR_ENV: &str = "MARLIN_RELEASE_STATUS_ARTIFACT_DIR";
+const TYPED_ADAPTER_ASSET_PATH: &str = "gerbil/src/marlin/adapter.ss";
 
 #[test]
-#[ignore = "requires a local Gerbil gxi executable"]
-fn command_compiler_can_call_real_gxi_command_adapter_launcher_with_contract_facts() {
-    let Some(artifacts) = command_adapter_batch_artifacts() else {
-        return;
-    };
+fn release_topology_fixture_persists_landing_status_sidecar() {
+    let root = test_root("release-topology-status");
+    let artifact = release_topology_artifact();
+    assert_release_topology_artifact(artifact.clone());
 
-    assert_rich_loop_graph_artifact(artifacts[0].clone());
-}
-
-#[test]
-#[ignore = "requires a local Gerbil gxi executable"]
-fn command_compiler_can_call_real_gxi_command_adapter_launcher_workspace_schema() {
-    let Some(artifacts) = command_adapter_batch_artifacts() else {
-        return;
-    };
-
-    assert_workspace_schema_artifact(artifacts[1].clone());
-}
-
-#[test]
-#[ignore = "requires a local Gerbil gxi executable"]
-fn command_compiler_can_call_real_gxi_command_adapter_launcher_workspace_patch_intent() {
-    let Some(artifacts) = command_adapter_batch_artifacts() else {
-        return;
-    };
-
-    assert_workspace_patch_intent_artifact(artifacts[2].clone());
-}
-
-#[test]
-#[ignore = "requires a local Gerbil gxi executable"]
-fn command_compiler_can_call_real_gxi_command_adapter_launcher_agent_scenario_contract() {
-    let Some(artifacts) = command_adapter_batch_artifacts() else {
-        return;
-    };
-
-    assert_agent_scenario_contract_artifact(artifacts[3].clone());
-}
-
-#[test]
-#[ignore = "requires a local Gerbil gxi executable"]
-fn command_compiler_can_call_real_gxi_command_adapter_launcher_release_topology() {
-    let Some(artifacts) = command_adapter_batch_artifacts() else {
-        return;
-    };
-
-    assert_release_topology_artifact(artifacts[4].clone());
-}
-
-#[test]
-#[ignore = "requires a local Gerbil gxi executable"]
-fn command_compiler_can_call_real_gxi_module_entry() {
-    let Some(compiler) = real_gxi_module_compiler() else {
-        return;
-    };
-
-    let artifact = compiler
-        .compile(
-            GerbilSource::new("audit/control-plane", RICH_LOOP_GRAPH_SOURCE),
-            GerbilArtifactKind::LoopGraph,
-        )
-        .expect(
-            "real gxi module entry should compile source text into a typed loop graph artifact",
-        );
-
-    assert_rich_loop_graph_artifact(artifact);
-}
-
-#[test]
-#[ignore = "requires a local Gerbil gxi executable"]
-fn command_compiler_can_call_real_gxi_workspace_schema() {
-    let Some(artifacts) = command_adapter_batch_artifacts() else {
-        return;
-    };
-
-    assert_workspace_schema_artifact(artifacts[1].clone());
-}
-
-#[test]
-#[ignore = "requires a local Gerbil gxi executable"]
-fn command_compiler_can_call_real_gxi_workspace_patch_intent() {
-    let Some(artifacts) = command_adapter_batch_artifacts() else {
-        return;
-    };
-
-    assert_workspace_patch_intent_artifact(artifacts[2].clone());
-}
-
-#[test]
-#[ignore = "requires a local Gerbil gxi executable"]
-fn command_compiler_can_call_real_gxi_agent_scenario_contract() {
-    let Some(artifacts) = command_adapter_batch_artifacts() else {
-        return;
-    };
-
-    assert_agent_scenario_contract_artifact(artifacts[3].clone());
-}
-
-#[test]
-#[ignore = "requires a local Gerbil gxi executable"]
-fn command_compiler_can_call_real_gxi_release_topology() {
-    let Some(artifacts) = command_adapter_batch_artifacts() else {
-        return;
-    };
-
-    assert_release_topology_artifact(artifacts[4].clone());
-}
-
-#[test]
-#[ignore = "requires a local Gerbil gxi executable"]
-fn command_compiler_real_gxi_release_topology_persists_landing_status_sidecar() {
-    let Some(artifacts) = command_adapter_batch_artifacts() else {
-        return;
-    };
-    let root = test_root("real-gxi-release-topology-status");
-
-    let artifact = artifacts[4].clone();
     let topology = artifact
         .release_topology()
-        .expect("real gxi should produce a release topology artifact");
+        .expect("fixture should produce a release topology artifact");
     let store = FileSystemReleaseStatusStore::new(root.path());
 
     let pending = store
@@ -154,7 +39,7 @@ fn command_compiler_real_gxi_release_topology_persists_landing_status_sidecar() 
                     "workspace_schema".to_owned(),
                     "workspace_patch_intent".to_owned()
                 ],
-                vec!["gerbil/bin/command-adapter.ss".to_owned()],
+                vec![TYPED_ADAPTER_ASSET_PATH.to_owned()],
             ))
             .expect("real gxi gate receipt should update sidecar")
     );
@@ -178,13 +63,36 @@ fn command_compiler_real_gxi_release_topology_persists_landing_status_sidecar() 
         report.observed_evidence_keys,
         ["workspace_patch_intent", "workspace_schema"]
     );
-    assert_eq!(
-        report.observed_artifact_paths,
-        ["gerbil/bin/command-adapter.ss"]
-    );
+    assert_eq!(report.observed_artifact_paths, [TYPED_ADAPTER_ASSET_PATH]);
     assert!(report.missing_artifact_paths.is_empty());
 
     persist_release_status_artifacts(&store, &report);
+}
+
+fn release_topology_artifact() -> GerbilCompiledArtifact {
+    serde_json::from_value(json!({
+        "ReleaseTopology": {
+            "topology_id": "release:gerbil",
+            "crate_name": "marlin-gerbil-scheme",
+            "publish_enabled": false,
+            "asset_audit_command": "cargo package -p marlin-gerbil-scheme --allow-dirty --no-verify --list",
+            "package_assets": ["README.md", "gerbil"],
+            "runtime_dependency_chain": ["marlin-gerbil-ir", "marlin-workspace-patch"],
+            "workflow_dependency_chain": ["marlin-org-workflow", "marlin-org-store"],
+            "gates": [{
+                "gate_id": "real-gxi",
+                "command": "cargo test -p marlin-gerbil-scheme --test unit_test command::real_gxi -- --ignored",
+                "requires_local_gerbil": true,
+                "required_artifacts": ["workspace_schema", "workspace_patch_intent"],
+                "visibility": [{
+                    "report_key": "real_gxi_release_gate",
+                    "evidence_keys": ["workspace_schema", "workspace_patch_intent"],
+                    "artifact_paths": [TYPED_ADAPTER_ASSET_PATH]
+                }]
+            }]
+        }
+    }))
+    .expect("release topology fixture should decode")
 }
 
 fn persist_release_status_artifacts(
@@ -233,10 +141,7 @@ fn assert_release_status_artifacts(artifact_dir: &Path) {
         report.observed_evidence_keys,
         ["workspace_patch_intent", "workspace_schema"]
     );
-    assert_eq!(
-        report.observed_artifact_paths,
-        ["gerbil/bin/command-adapter.ss"]
-    );
+    assert_eq!(report.observed_artifact_paths, [TYPED_ADAPTER_ASSET_PATH]);
     assert!(report.missing_artifact_paths.is_empty());
     assert!(report.missing_visibility_reports.is_empty());
 }

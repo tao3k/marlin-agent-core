@@ -1,22 +1,18 @@
-;;; -*- Gerbil -*-
-;;; Run with:
-;;;   GERBIL_LOADPATH=<runtime-asset-root> gxi workspace-patch-intent.ss
+(import :marlin/protocol)
 
-(import :marlin/parser :marlin/protocol)
+(def patch
+  (make-marlin-workspace-patch
+   "gerbil intent"
+   "gerbil"
+   (list (make-marlin-set-todo-op "memory.org:1:goal" "Done")
+         (make-marlin-set-property-op "memory.org:1:goal" "OWNER" "gerbil")
+         (make-marlin-mark-memory-candidate-op "memory.org:1:goal" "long-term"))))
 
-(def workspace-patch-intent-source
-  "(workspace-patch-intent \"intent:memory\"
-     (dry-run-first #t)
-     (patch
-       (reason \"gerbil intent\")
-       (source-agent \"gerbil\")
-       (set-todo \"memory.org:1:goal\" DONE)
-       (set-property \"memory.org:1:goal\" OWNER \"gerbil\")
-       (mark-memory-candidate \"memory.org:1:goal\" \"long-term\")))")
+(def intent
+  (make-marlin-workspace-patch-intent "intent:memory" patch #t))
 
 (def artifact
-  (compile-workspace-patch-intent workspace-patch-intent-source))
+  (make-marlin-workspace-patch-intent-artifact intent))
 
-(display-marlin-compile-response
- (make-marlin-workspace-patch-intent-artifact artifact))
+(display "workspace-patch-intent-artifact")
 (newline)

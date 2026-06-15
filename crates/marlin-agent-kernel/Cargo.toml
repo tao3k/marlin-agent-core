@@ -16,6 +16,5 @@ marlin-rust-project-harness-policy.workspace = true
 rust-lang-project-harness.workspace = true
 
 [dev-dependencies]
-rust-lang-project-harness.workspace = true
 tokio.workspace = true
 tokio-stream.workspace = true

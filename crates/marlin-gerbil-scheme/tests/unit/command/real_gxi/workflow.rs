@@ -1,25 +1,17 @@
-use super::{WORKSPACE_PATCH_INTENT_SOURCE, command_adapter_batch_artifacts, local_gxi};
-use marlin_gerbil_scheme::{
-    GERBIL_MARLIN_PROTOCOL_PATH, GerbilArtifactKind, GerbilCompiledArtifact, GerbilCompiler,
-    GerbilRuntimeBinding, GerbilSource,
-};
+use marlin_gerbil_scheme::GerbilCompiledArtifact;
 use marlin_org_store::{FileSystemOrgSourceStore, OrgSourceWritePolicy};
 use marlin_org_workflow::{
     GerbilWorkspacePatchIntentCommit, GerbilWorkspacePatchIntentDryRunner,
     OrgWorkspaceSourceCommitter,
 };
 use marlin_workspace_patch::PatchId;
+use serde_json::json;
 use std::fs;
 use tempfile::{Builder, TempDir};
 
 #[test]
-#[ignore = "requires a local Gerbil gxi executable"]
-fn command_compiler_real_gxi_workspace_patch_intent_dry_runs_through_workflow() {
-    let Some(artifacts) = command_adapter_batch_artifacts() else {
-        return;
-    };
-
-    let artifact = artifacts[2].clone();
+fn workspace_patch_intent_fixture_dry_runs_through_workflow() {
+    let artifact = workspace_patch_intent_artifact();
     let GerbilCompiledArtifact::WorkspacePatchIntent(intent) = artifact else {
         panic!("expected workspace patch intent artifact");
     };
@@ -39,50 +31,8 @@ fn command_compiler_real_gxi_workspace_patch_intent_dry_runs_through_workflow() 
 }
 
 #[test]
-#[ignore = "requires a local Gerbil gxi executable"]
-fn runtime_binding_real_gxi_workspace_patch_intent_dry_runs_through_workflow() {
-    let Some(gxi) = local_gxi() else {
-        return;
-    };
-    let root = test_root("runtime-binding-workflow");
-    let binding = GerbilRuntimeBinding::new(gxi, root.path())
-        .expect("runtime binding should write assets for real gxi workflow execution");
-
-    let artifact = binding
-        .compiler()
-        .compile(
-            GerbilSource::new(
-                "audit/runtime-binding-workspace-patch-intent",
-                WORKSPACE_PATCH_INTENT_SOURCE,
-            ),
-            GerbilArtifactKind::WorkspacePatchIntent,
-        )
-        .expect("real gxi runtime binding should compile a workspace patch intent");
-
-    assert!(
-        binding
-            .written_assets()
-            .iter()
-            .any(|asset| asset.ends_with(GERBIL_MARLIN_PROTOCOL_PATH))
-    );
-    let GerbilCompiledArtifact::WorkspacePatchIntent(intent) = artifact else {
-        panic!("expected workspace patch intent artifact");
-    };
-    let receipt = GerbilWorkspacePatchIntentDryRunner::dry_run(&intent);
-
-    assert_eq!(receipt.patch_id, PatchId::new("intent:memory"));
-    assert!(receipt.validation.accepted);
-    assert_eq!(receipt.memory_dispatch.len(), 1);
-    assert_eq!(receipt.memory_dispatch[0].target, "long-term");
-}
-
-#[test]
-#[ignore = "requires a local Gerbil gxi executable"]
-fn command_compiler_real_gxi_workspace_patch_intent_commits_with_policy() {
-    let Some(artifacts) = command_adapter_batch_artifacts() else {
-        return;
-    };
-    let root = test_root("real-gxi-gerbil-intent-commit");
+fn workspace_patch_intent_fixture_commits_with_policy() {
+    let root = test_root("gerbil-intent-commit");
     fs::create_dir_all(root.path()).expect("create temp root");
     fs::write(
         root.path().join("memory.org"),
@@ -91,7 +41,7 @@ fn command_compiler_real_gxi_workspace_patch_intent_commits_with_policy() {
     .expect("seed document");
     let mut store = FileSystemOrgSourceStore::new(root.path());
 
-    let artifact = artifacts[5].clone();
+    let artifact = workspace_source_commit_intent_artifact();
     let GerbilCompiledArtifact::WorkspacePatchIntent(intent) = artifact else {
         panic!("expected workspace patch intent artifact");
     };
@@ -108,6 +58,43 @@ fn command_compiler_real_gxi_workspace_patch_intent_commits_with_policy() {
         fs::read_to_string(root.path().join("memory.org")).expect("read committed document"),
         "* DONE Goal\n:PROPERTIES:\n:OWNER: gerbil\n:END:\n",
     );
+}
+
+fn workspace_patch_intent_artifact() -> GerbilCompiledArtifact {
+    serde_json::from_value(json!({
+        "WorkspacePatchIntent": {
+            "intent_id": "intent:memory",
+            "patch": {
+                "reason": "gerbil intent",
+                "source_agent": "gerbil",
+                "ops": [
+                    {"SetTodo": {"node": "memory.org:1:goal", "state": "Done"}},
+                    {"SetProperty": {"node": "memory.org:1:goal", "key": "OWNER", "value": "gerbil"}},
+                    {"MarkMemoryCandidate": {"node": "memory.org:1:goal", "dispatch": "long-term"}}
+                ]
+            },
+            "dry_run_first": true
+        }
+    }))
+    .expect("workspace patch intent fixture should decode")
+}
+
+fn workspace_source_commit_intent_artifact() -> GerbilCompiledArtifact {
+    serde_json::from_value(json!({
+        "WorkspacePatchIntent": {
+            "intent_id": "intent:source-commit",
+            "patch": {
+                "reason": "gerbil source commit",
+                "source_agent": "gerbil",
+                "ops": [
+                    {"SetTodo": {"node": "memory.org:1:goal", "state": "Done"}},
+                    {"SetProperty": {"node": "memory.org:1:goal", "key": "OWNER", "value": "gerbil"}}
+                ]
+            },
+            "dry_run_first": true
+        }
+    }))
+    .expect("workspace source commit intent fixture should decode")
 }
 
 fn test_root(name: &str) -> TempDir {

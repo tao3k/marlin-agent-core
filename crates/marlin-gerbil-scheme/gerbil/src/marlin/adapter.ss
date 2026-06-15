@@ -1,12 +1,17 @@
 ;;; -*- Gerbil -*-
-;;; Library-module entry point for the Marlin Gerbil command adapter.
+;;; Boundary: Module owns Marlin Gerbil policy and runtime contracts for agent edits.
+;;; Typed Gerbil artifact compiler used behind Rust-owned runtime boundaries.
 
 package: marlin
 
 (import ./request ./parser ./protocol)
 
-(export run-marlin-command-adapter run-marlin-command-adapter-batch main)
+(export compile-requested-marlin-artifact
+        compile-gerbil-compile-request
+        compile-marlin-command-request-result)
 
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
 (def marlin-artifact-compilers
   (list (list marlin-loop-graph-artifact-kind compile-loop-graph)
         (list marlin-workspace-schema-artifact-kind compile-workspace-schema)
@@ -17,52 +22,66 @@ package: marlin
         (list marlin-release-topology-artifact-kind
               compile-release-topology)))
 
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
 (def (marlin-artifact-compiler-kind entry)
   (car entry))
 
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
 (def (marlin-artifact-compiler-procedure entry)
   (cadr entry))
 
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
 (def (find-marlin-artifact-compiler expected)
-  (let loop ((remaining marlin-artifact-compilers))
-    (cond
-      ((null? remaining) #f)
-      ((equal? expected (marlin-artifact-compiler-kind (car remaining)))
-       (marlin-artifact-compiler-procedure (car remaining)))
-      (else (loop (cdr remaining))))))
+  (let (entry
+        (find (lambda (candidate)
+                (equal? expected (marlin-artifact-compiler-kind candidate)))
+              marlin-artifact-compilers))
+    (and entry (marlin-artifact-compiler-procedure entry))))
 
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
 (def (ensure-marlin-supported-kind-has-compiler artifact-kind)
   (unless (find-marlin-artifact-compiler artifact-kind)
     (error "marlin gerbil adapter missing compiler for supported artifact kind"
            artifact-kind
            marlin-supported-artifact-kinds)))
 
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
 (def (ensure-marlin-compiler-kind-is-supported artifact-kind)
   (unless (marlin-supported-artifact-kind? artifact-kind)
     (error "marlin gerbil adapter compiler table contains unsupported artifact kind"
            artifact-kind
            marlin-supported-artifact-kinds)))
 
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
 (def (ensure-marlin-artifact-compiler-table)
-  (let loop-supported ((remaining marlin-supported-artifact-kinds))
-    (unless (null? remaining)
-      (ensure-marlin-supported-kind-has-compiler (car remaining))
-      (loop-supported (cdr remaining))))
-  (let loop-compilers ((remaining marlin-artifact-compilers))
-    (unless (null? remaining)
-      (ensure-marlin-compiler-kind-is-supported
-       (marlin-artifact-compiler-kind (car remaining)))
-      (loop-compilers (cdr remaining)))))
+  (for-each ensure-marlin-supported-kind-has-compiler
+            marlin-supported-artifact-kinds)
+  (for-each (lambda (compiler)
+              (ensure-marlin-compiler-kind-is-supported
+               (marlin-artifact-compiler-kind compiler)))
+            marlin-artifact-compilers))
 
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
 (def (compile-requested-artifact expected source-text)
   (let ((compiler (find-marlin-artifact-compiler expected)))
     (if compiler
       (compiler source-text)
       (error "marlin gerbil adapter cannot compile artifact kind" expected))))
 
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
 (def (compile-requested-marlin-artifact expected source-text)
   (make-marlin-artifact expected (compile-requested-artifact expected source-text)))
 
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
 (def (ensure-marlin-contract-facts-shape contract-facts)
   (when contract-facts
     (unless (hash-ref contract-facts "registry" #f)
@@ -72,6 +91,8 @@ package: marlin
     (unless (hash-ref contract-facts "validations" #f)
       (error "marlin gerbil adapter contract_facts missing validations"))))
 
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
 (def (compile-gerbil-compile-request request)
   (let* ((expected (gerbil-compile-request-expected-kind request))
          (_ (ensure-marlin-supported-artifact-kind expected))
@@ -82,28 +103,7 @@ package: marlin
          (artifact (compile-requested-marlin-artifact expected source-text)))
     artifact))
 
-(def (marlin-error->string error)
-  (call-with-output-string "" (lambda (port) (write error port))))
-
-(def (display-marlin-compile-request-result request)
-  (with-catch
-   (lambda (error)
-     (display-marlin-compile-error-response (marlin-error->string error)))
-   (lambda ()
-     (display-marlin-compile-response
-      (compile-gerbil-compile-request request)))))
-
-(def (run-marlin-command-adapter)
-  (let ((artifact (compile-gerbil-compile-request (read-gerbil-compile-request))))
-    (display-marlin-compile-response artifact)
-    (newline)))
-
-(def (run-marlin-command-adapter-batch)
-  (let loop ((requests (read-gerbil-compile-request-lines)))
-    (unless (null? requests)
-      (display-marlin-compile-request-result (car requests))
-      (newline)
-      (loop (cdr requests)))))
-
-(def (main . _args)
-  (run-marlin-command-adapter))
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
+(def (compile-marlin-command-request-result request)
+  (compile-gerbil-compile-request request))

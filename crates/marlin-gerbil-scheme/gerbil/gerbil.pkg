@@ -1,2 +1,7 @@
 (package: marlin-deck-runtime
- depend: ("git.cons.io/mighty-gerbils/gerbil-poo"))
+ depend: ("git.cons.io/mighty-gerbils/gerbil-poo"
+          "/Users/guangtao/ghq/github.com/tao3k/agent-semantic-protocols/languages/gerbil-scheme-language-project-harness")
+ policy: ((macro-governance
+          allow-generated: #t
+          explanation: "Marlin Gerbil runtime macro edits must cite runtime-source and macro-expansion evidence before changing transformers."
+           witness: "search runtime-source macro sugar module-sugar")))

@@ -2,8 +2,8 @@
 
 use std::{error::Error, fmt};
 
-use marlin_agent_protocol::{
-    AGENT_SCENARIO_CONTRACT_SCHEMA_ID, AgentScenario, AgentScenarioContract, LoopEvidence,
+use marlin_agent_harness_types::{
+    HARNESS_SCENARIO_CONTRACT_SCHEMA_ID, HarnessEvidence, HarnessScenario, HarnessScenarioContract,
 };
 use marlin_agent_sessions::SessionKind;
 
@@ -19,18 +19,20 @@ pub const NO_LLM_RUNTIME_REPLAY_ARTIFACT_ID: &str = "no-llm-runtime-replay";
 
 /// Serialized scenario contract used by the deterministic no-LLM replay fixture.
 pub const NO_LLM_RUNTIME_REPLAY_CONTRACT_JSON: &str = r#"{
-  "schema_id": "marlin.agent.scenario.v1",
+  "schema_id": "marlin.agent.harness_scenario.v1",
   "scenario": {
-    "id": "no-llm-runtime-replay",
-    "description": "replays graph, sub-agent session, and hook receipts without live LLMs",
-    "steps": [
-      {
-        "name": "load-replay-artifact",
-        "input": {
-          "artifact": "no-llm-runtime-replay"
+    "agent_scenario": {
+      "id": "no-llm-runtime-replay",
+      "description": "replays graph, sub-agent session, and hook receipts without live LLMs",
+      "steps": [
+        {
+          "name": "load-replay-artifact",
+          "input": {
+            "artifact": "no-llm-runtime-replay"
+          }
         }
-      }
-    ],
+      ]
+    },
     "expected_evidence": ["Visibility", "Runtime"]
   }
 }"#;
@@ -38,8 +40,8 @@ pub const NO_LLM_RUNTIME_REPLAY_CONTRACT_JSON: &str = r#"{
 /// Typed replay artifact loaded by harness tests without touching live LLMs.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct NoLlmRuntimeReplayArtifact {
-    contract: AgentScenarioContract,
-    replay_evidence: Vec<LoopEvidence>,
+    contract: HarnessScenarioContract,
+    replay_evidence: Vec<HarnessEvidence>,
 }
 
 /// Error returned while loading a serialized no-LLM replay artifact contract.
@@ -57,7 +59,7 @@ impl fmt::Display for NoLlmRuntimeReplayArtifactLoadError {
             }
             Self::UnsupportedSchema { schema_id } => write!(
                 f,
-                "unsupported no-LLM replay scenario schema: {schema_id} (expected {AGENT_SCENARIO_CONTRACT_SCHEMA_ID})"
+                "unsupported no-LLM replay scenario schema: {schema_id} (expected {HARNESS_SCENARIO_CONTRACT_SCHEMA_ID})"
             ),
         }
     }
@@ -80,22 +82,22 @@ impl From<serde_json::Error> for NoLlmRuntimeReplayArtifactLoadError {
 
 impl NoLlmRuntimeReplayArtifact {
     /// Serialized scenario contract represented by this artifact.
-    pub fn contract(&self) -> &AgentScenarioContract {
+    pub fn contract(&self) -> &HarnessScenarioContract {
         &self.contract
     }
 
     /// Scenario used by harness validation.
-    pub fn scenario(&self) -> &AgentScenario {
+    pub fn scenario(&self) -> &HarnessScenario {
         &self.contract.scenario
     }
 
     /// Evidence replayed before dynamic harness execution.
-    pub fn replay_evidence(&self) -> &[LoopEvidence] {
+    pub fn replay_evidence(&self) -> &[HarnessEvidence] {
         &self.replay_evidence
     }
 
     /// Consume the artifact into its scenario contract and replay evidence.
-    pub fn into_parts(self) -> (AgentScenarioContract, Vec<LoopEvidence>) {
+    pub fn into_parts(self) -> (HarnessScenarioContract, Vec<HarnessEvidence>) {
         (self.contract, self.replay_evidence)
     }
 }
@@ -104,7 +106,7 @@ impl NoLlmRuntimeReplayArtifact {
 pub fn load_no_llm_runtime_replay_artifact(
     serialized_contract: &str,
 ) -> Result<NoLlmRuntimeReplayArtifact, NoLlmRuntimeReplayArtifactLoadError> {
-    let contract: AgentScenarioContract = serde_json::from_str(serialized_contract)?;
+    let contract: HarnessScenarioContract = serde_json::from_str(serialized_contract)?;
     if !contract.is_supported_schema() {
         return Err(NoLlmRuntimeReplayArtifactLoadError::UnsupportedSchema {
             schema_id: contract.schema_id,
@@ -123,7 +125,7 @@ pub fn no_llm_runtime_replay_artifact_fixture() -> NoLlmRuntimeReplayArtifact {
         .expect("no-LLM runtime replay contract fixture should load")
 }
 
-fn deterministic_no_llm_runtime_replay_evidence() -> Vec<LoopEvidence> {
+fn deterministic_no_llm_runtime_replay_evidence() -> Vec<HarnessEvidence> {
     let memory_fixture = sub_agent_memory_denied_fixture();
     let (child_session, isolation_receipt) = memory_fixture.parent_session().child_session(
         SessionKind::SubAgent,

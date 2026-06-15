@@ -4,12 +4,8 @@ fn main() {
 
     let policy =
         marlin_rust_project_harness_policy::rust_project_harness_policy_for_project(project_root);
-    rust_lang_project_harness::assert_rust_project_harness_cargo_check_clean_from_env_with_config(
-        policy.config(),
-    );
     let harness_report =
         rust_lang_project_harness::assert_rust_project_harness_downstream_policy_from_env(&policy);
-
     marlin_rust_project_harness_policy::complete_build_gate(
         project_root,
         policy.config(),

@@ -90,6 +90,56 @@ The runtime must therefore be designed around:
    results, receipts, and next commands. Raw source scans and prose heuristics
    are fallback evidence, not the primary design surface.
 
+9. Native ABI boundaries carry typed projections, not language readers.
+
+** Gerbil Native ABI Boundary
+
+Gerbil integration crosses the core boundary as Gerbil-built Scheme values,
+native ABI projection, then Rust domain types and receipts. Gerbil owns Scheme
+parsing, macro expansion, POO object construction, policy composition, and
+dynamic hook strategy. Rust owns ABI status codes, typed protocol receipts,
+runtime catalogs for existing handlers, runtime envelopes, CLI/TOML
+configuration, and explicit cross-process serialization.
+
+Do not implement Gerbil artifact compilation by adding Rust-side Scheme readers,
+S-expression parsers, or source codecs to =marlin-gerbil-scheme=. Parser crates
+such as =lexpr=, =serde-lexpr=, =pest=, =nom=, =chumsky=, or =winnow= are not
+the Marlin-native path for Gerbil source. =marlin-gerbil-compile-source= must
+either call the native ABI typed projection or fail with an explicit pending
+message. If Rust validates a policy artifact, the input must already be a typed
+Gerbil projection or Rust protocol type, not raw =.ss= text.
+
+The acceptable Rust work at this boundary is validation, enum/newtype
+conversion, receipt construction, runtime catalog lookup, ABI status handling,
+and UTF-8 safety. Parsing Gerbil source text in Rust is architecture drift and
+must be removed in the same change that discovers it.
+
+The same split applies to quick script interfaces. Gerbil Scheme owns the
+user-facing POO objects, macros, script templates, and low-frequency policy
+composition. Rust owns typed script interface receipts, native projection
+contracts, batch performance budgets, runtime observation, process
+supervision, and concurrency or locking decisions. A script interface may enter
+through a Gerbil POO extension object or through a fast =gxi= script, but the
+runtime gate that decides whether the interface is ready for hot-path use must
+consume Scheme-built typed values and produce Rust-owned receipts. It must not
+parse =.ss= text, reinterpret POO source, or add a Rust hook DSL.
+
+Downstream user interface worker spaces must be driven by upstream-maintained
+Gerbil POO prototypes and hygienic macros. A downstream workspace should define
+extension objects and script objects through exported macros such as
+=defmarlin-deck-runtime-extension= and =defmarlin-deck-runtime-script=, then
+pass the resulting Scheme values through the native API projection path. It
+must not bypass the extension plane by directly manufacturing Rust handlers,
+serializing ad hoc protocol text in Scheme, or requiring Rust to read Scheme
+source as policy input.
+
+User-facing extension configuration should follow a NixOS-style module model:
+each downstream Scheme module declares imports and exports POO extension/script
+objects, and upstream Gerbil evaluates the import graph into typed Scheme
+values before Rust sees receipts. Module composition is a Scheme concern; Rust
+receives only native API projections, script receipts, performance metrics, and
+catalog decisions.
+
 ** Codex Learning Boundary
 
 When learning from Codex, use this translation rule:
@@ -231,6 +281,8 @@ Any architecture or implementation change that cites Codex must answer:
 
 7. Which focused tests guard the contract?
 
+8. Does the change preserve the Gerbil native ABI boundary without adding Rust-side Scheme readers, parsers, or source codecs?
+
 ** Non-goals
 
 - Do not copy Codex workspace shape.
@@ -257,6 +309,12 @@ Any architecture or implementation change that cites Codex must answer:
 
 - Codex audit notes are framed as engineering lessons, not clone instructions.
 
+- Gerbil artifact paths cross as Scheme types -> native ABI -> Rust types; Rust does not parse raw Gerbil source text.
+
+- Gerbil quick script interfaces expose POO/macros to users, while Rust owns
+  typed script receipts, batch performance budgets, observability, and native
+  projection readiness.
+
 ** Next Work Items
 
 - Classify current local changes into model routing, observability, and
@@ -272,3 +330,9 @@ Any architecture or implementation change that cites Codex must answer:
 
 - Specify and implement configurable model routing and environment isolation
   from [[file:40.90-configurable-model-routing-and-environment.org][40.90]].
+** P0-P5 Execution Checklist
+
+The concrete P0-P5 execution checklist lives in
+[[file:40.71-workspace-project-protocol.org::*P0-P5 Implementation Matrix][40.71 P0-P5 Implementation Matrix]].
+Architecture changes in this workstream should update that matrix when they add
+or change validation commands.

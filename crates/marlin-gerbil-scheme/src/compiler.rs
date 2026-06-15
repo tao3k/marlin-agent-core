@@ -1,9 +1,13 @@
-//! Compiler trait for translating `Gerbil Scheme` into typed `IR`.
+//! Compiler trait for delegating `Gerbil Scheme` projection to Gerbil-owned code.
 
 use crate::{GerbilArtifactKind, GerbilCompiledArtifact};
 use serde::{Deserialize, Serialize};
 
-/// Source unit submitted to the `Gerbil` compiler boundary.
+/// Opaque source unit submitted to the `Gerbil` compiler boundary.
+///
+/// Rust may transport this text to Gerbil-owned code, but it must not parse it
+/// into artifacts. Artifact projection crosses as Scheme types -> native ABI ->
+/// Rust types.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct GerbilSource {
     pub module: String,
@@ -20,6 +24,9 @@ impl GerbilSource {
 }
 
 /// Compiler boundary that returns typed artifacts for Rust validation.
+///
+/// Implementations must delegate to Gerbil/native ABI projection instead of
+/// acting as Rust-side Scheme readers.
 pub trait GerbilCompiler: Send + Sync {
     fn compile(
         &self,

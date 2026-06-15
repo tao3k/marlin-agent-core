@@ -1,5 +1,6 @@
 mod dynamic;
 mod dynamic_graph_policy;
+mod native_abi;
 mod performance;
 mod serde_payload;
 mod typed_contract;

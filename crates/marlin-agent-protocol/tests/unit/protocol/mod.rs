@@ -1,5 +1,4 @@
 mod event;
-mod evidence;
 mod graph;
 mod hook;
 mod model_gateway;

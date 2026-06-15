@@ -1,17 +1,7 @@
-//! CLI adapter for compiling Gerbil source files into typed `marlin` artifacts.
+//! CLI adapter for requesting Gerbil native ABI typed artifact projection.
 
-use crate::{
-    GerbilArtifactKind, GerbilCommandCompiler, GerbilCompiler, GerbilSource, MARLIN_GERBIL_GXI_ENV,
-    default_gerbil_gxi_program,
-};
-use std::{
-    env,
-    error::Error,
-    fs, io,
-    path::{Path, PathBuf},
-    process::ExitCode,
-    time::{SystemTime, UNIX_EPOCH},
-};
+use crate::GerbilArtifactKind;
+use std::{env, error::Error, io, path::PathBuf, process::ExitCode};
 
 const ARTIFACT_KIND_USAGE: &str = "loop-graph, workspace-schema, workspace-view-policy, \
 workspace-validation-policy, memory-dispatch-policy, workspace-patch-intent, \
@@ -40,25 +30,16 @@ fn run_compile_source_from_args(
 fn compile_source_request(
     request: &CompileSourceRequest,
 ) -> Result<crate::GerbilCompiledArtifact, Box<dyn Error>> {
-    let source = fs::read_to_string(&request.source_path)?;
-    let gxi = default_gerbil_gxi_program();
-    if !gxi.exists() {
-        return Err(format!(
-            "missing gxi executable at {}; set {MARLIN_GERBIL_GXI_ENV} to override",
-            gxi.display()
-        )
-        .into());
-    }
-
-    let runtime_root = RuntimeRoot::new("compile-source");
-    let compiler = GerbilCommandCompiler::from_default_marlin_runtime_module(runtime_root.path())?;
-    compiler
-        .compile(
-            GerbilSource::new(request.source_path.display().to_string(), source),
-            request.kind,
-        )
-        .map_err(io::Error::other)
-        .map_err(Into::into)
+    Err(format!(
+        "marlin-gerbil-compile-source is waiting on the native ABI typed projection; \
+         Rust must not parse Gerbil source text. Build a \
+         GerbilSchemeNativeProjectionRequest for {} as {:?}, then route \
+         Gerbil-built Scheme types -> native ABI -> Rust types with a \
+         GerbilSchemeNativeProjectionReceipt.",
+        request.source_path.display(),
+        request.kind
+    )
+    .into())
 }
 
 struct CompileSourceRequest {
@@ -118,33 +99,4 @@ fn normalized_artifact_kind(value: &str) -> String {
         .filter(|character| !matches!(character, '-' | '_') && !character.is_whitespace())
         .flat_map(char::to_lowercase)
         .collect()
-}
-
-struct RuntimeRoot {
-    path: PathBuf,
-}
-
-impl RuntimeRoot {
-    fn new(name: &str) -> Self {
-        let suffix = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|duration| duration.as_nanos())
-            .unwrap_or_default();
-        Self {
-            path: env::temp_dir().join(format!(
-                "marlin-gerbil-scheme-{name}-{}-{suffix}",
-                std::process::id()
-            )),
-        }
-    }
-
-    fn path(&self) -> &Path {
-        &self.path
-    }
-}
-
-impl Drop for RuntimeRoot {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.path);
-    }
 }

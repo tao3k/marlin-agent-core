@@ -49,6 +49,7 @@ Detected from provider binaries plus `asp.toml`; only activated languages are li
 | typescript | `asp typescript` | ts-harness | external-process | `ts-harness` |
 | python | `asp python` | py-harness | external-process | `py-harness` |
 | julia | `asp julia` | julia-lang-project-harness | external-process | `asp-julia-harness` |
+| gerbil-scheme | `asp gerbil-scheme` | gerbil-scheme-harness | external-process | `gerbil-scheme-harness` |
 | org | `asp org` | orgize | embedded | `asp` |
 | md | `asp md` | orgize | embedded | `asp` |
 
@@ -72,6 +73,42 @@ same explicit query should print the matched element content instead of
 metadata. Source-preserved document reads are only a hook recovery surface
 through `--from-hook direct-source-read`. `check`, `ast-patch`, and `evidence`
 are intentionally unsupported for document files.
+
+## Provider Knowledge Axes
+
+Provider `guide` output is the interface contract for language-specific
+knowledge axes. Do not assume that an axis supported by one provider is
+available in another provider; run `asp <language> guide .` and follow only the
+`|cmd` rows it advertises.
+
+Gerbil Scheme, TypeScript, Python, and Julia currently expose provider
+knowledge axes for agent questions where generic web-trained memory is risky.
+Use the active provider guide as the source of truth for exact availability and
+depth:
+
+```sh
+asp gerbil-scheme search env [term ...] --view seeds .
+asp gerbil-scheme search runtime-source [term ...] --view seeds .
+asp gerbil-scheme search lang [term ...] --view seeds .
+asp gerbil-scheme search std [term ...] --view seeds .
+asp gerbil-scheme search capability [term ...] --view seeds .
+asp gerbil-scheme search extension <extension> [term ...] --view seeds .
+asp gerbil-scheme search pattern <feature-or-extension> [term ...] --view seeds .
+asp gerbil-scheme search compare <axis> [left right] --view seeds .
+```
+
+Replace `gerbil-scheme` with `typescript`, `python`, or `julia` when that
+provider guide advertises the same command rows. Gerbil has richer
+runtime-source and extension facts today; other providers expose the same
+namespaces as baseline environment, language, standard-library, extension,
+pattern, comparison, and explicit frontier-gap evidence.
+
+Treat `evidenceGrade=unknown`, `|missing`, or `witness pending` as a real
+frontier gap. Do not fill it from memory or inline examples; refine the axis
+query, route to runtime-source/pattern evidence, or record the provider gap.
+For providers that do not advertise these axes, use the axes their own guides
+declare, such as `deps`, `policy`, `reasoning`, tree-sitter locate, owner
+items, and read-plan.
 
 ## Rules
 

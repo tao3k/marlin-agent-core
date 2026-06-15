@@ -2,11 +2,10 @@
 
 use marlin_agent_kernel::GraphLoopKernel;
 use marlin_agent_protocol::{
-    AgentEvent, AgentEventTopic, AgentExecutionTrace, AgentScenario, AgentSpanName,
-    AgentTraceSpanRecord, GRAPH_POLICY_PROPOSAL_VISIBILITY_SUBJECT_PREFIX,
+    AgentEvent, AgentEventTopic, AgentExecutionTrace, AgentSpanName, AgentTraceSpanRecord,
     GraphLoopExecutionRequest, GraphLoopExecutionResult, GraphLoopExecutionStatus,
-    GraphLoopStrategyId, GraphPolicyProposalReceipt, GraphPolicyProposalStatus, LoopEvidence,
-    LoopEvidenceKind, RuntimePlanSnapshot,
+    GraphLoopStrategyId, GraphPolicyProposalReceipt, GraphPolicyProposalStatus,
+    RuntimePlanSnapshot,
 };
 use marlin_agent_runtime::{
     CancellationToken, RuntimeEnvironment, RuntimeEventStream, TokioAgentRuntime,
@@ -16,8 +15,10 @@ use marlin_gerbil_ir::{ReleaseGateSpec, ReleaseTopologySpec};
 use std::time::{Duration, Instant};
 
 use crate::{
-    HarnessAssertionError, TraceRecorder, assert_evidence_kinds, release_gate_visibility_evidence,
-    release_topology_visibility_evidence,
+    GRAPH_POLICY_PROPOSAL_VISIBILITY_SUBJECT_PREFIX, HarnessAssertionError, HarnessEvidence,
+    HarnessEvidenceGraph, HarnessEvidenceKind, HarnessScenario, TraceRecorder,
+    assert_evidence_kinds, graph_policy_proposal_visibility_evidence,
+    release_gate_visibility_evidence, release_topology_visibility_evidence,
 };
 
 /// Controlled runtime plus typed evidence captured for one harness scenario.
@@ -25,7 +26,7 @@ use crate::{
 pub struct HarnessRuntime {
     runtime: TokioAgentRuntime,
     events: RuntimeEventStream,
-    evidence: Vec<LoopEvidence>,
+    evidence: Vec<HarnessEvidence>,
 }
 
 impl HarnessRuntime {
@@ -65,8 +66,8 @@ impl HarnessRuntime {
         &mut self.events
     }
 
-    pub fn record_evidence(&mut self, evidence: LoopEvidence) {
-        self.evidence.push(evidence);
+    pub fn record_evidence(&mut self, evidence: impl Into<HarnessEvidence>) {
+        self.evidence.push(evidence.into());
     }
 
     /// Record evidence describing the runtime environment visible to harness work.
@@ -88,8 +89,8 @@ impl HarnessRuntime {
         &mut self,
         receipt: &GraphPolicyProposalReceipt,
     ) {
-        let evidence = AgentTraceSpanRecord::graph_policy_proposal_receipt(receipt)
-            .graph_policy_proposal_visibility_evidence()
+        let span = AgentTraceSpanRecord::graph_policy_proposal_receipt(receipt);
+        let evidence = graph_policy_proposal_visibility_evidence(&span)
             .expect("graph policy proposal receipt span should project visibility evidence");
         self.record_evidence(evidence);
     }
@@ -112,24 +113,24 @@ impl HarnessRuntime {
         }
     }
 
-    pub fn evidence(&self) -> &[LoopEvidence] {
+    pub fn evidence(&self) -> &[HarnessEvidence] {
         self.evidence.as_slice()
     }
 
-    pub fn into_parts(self) -> (TokioAgentRuntime, RuntimeEventStream, Vec<LoopEvidence>) {
+    pub fn into_parts(self) -> (TokioAgentRuntime, RuntimeEventStream, Vec<HarnessEvidence>) {
         (self.runtime, self.events, self.evidence)
     }
 
     pub fn assert_scenario_evidence(
         &self,
-        scenario: &AgentScenario,
+        scenario: &HarnessScenario,
     ) -> Result<(), HarnessAssertionError> {
         assert_evidence_kinds(self.evidence(), scenario.expected_evidence.as_slice())
     }
 
     pub async fn execute_graph<K>(
         &mut self,
-        scenario: &AgentScenario,
+        scenario: &HarnessScenario,
         kernel: &K,
         request: GraphLoopExecutionRequest,
     ) -> HarnessExecutionReport
@@ -141,7 +142,7 @@ impl HarnessRuntime {
         let _span_guard = span_recorder.install();
         let _harness_span = tracing::info_span!(
             "harness.execution",
-            scenario_id = scenario.id.as_str(),
+            scenario_id = scenario.id(),
             run_id = request.run_id.as_str(),
             graph_id = request.graph.graph_id.as_str()
         );
@@ -150,7 +151,7 @@ impl HarnessRuntime {
             Ok(result) => result,
             Err(error) => GraphLoopExecutionResult::failed(
                 RuntimePlanSnapshot {
-                    run_id: scenario.id.clone(),
+                    run_id: scenario.id().to_owned(),
                     graph_id: "harness".to_owned(),
                     active_node: None,
                 },
@@ -168,19 +169,26 @@ impl HarnessRuntime {
 
     fn execution_report(
         &self,
-        scenario: &AgentScenario,
+        scenario: &HarnessScenario,
         result: GraphLoopExecutionResult,
         events: Vec<AgentEvent>,
         trace_spans: Vec<AgentTraceSpanRecord>,
         duration: Duration,
         assertion: Option<HarnessAssertionError>,
     ) -> HarnessExecutionReport {
+        let evidence_graph = HarnessEvidenceGraph::from_harness_evidence(
+            format!("execution:{}", scenario.id()),
+            &self.evidence,
+        )
+        .with_graph_execution_result(&result);
+
         HarnessExecutionReport {
-            scenario_id: scenario.id.clone(),
+            scenario_id: scenario.id().to_owned(),
             summary: execution_summary(&result, events.len(), trace_spans.len(), duration),
             result,
             events,
             evidence: self.evidence.clone(),
+            evidence_graph,
             span_names: span_names(&trace_spans),
             trace_spans,
             assertion,
@@ -199,7 +207,9 @@ impl HarnessRuntime {
 }
 
 /// Build evidence summarizing the runtime environment visible to harness work.
-pub fn runtime_environment_visibility_evidence(environment: &RuntimeEnvironment) -> LoopEvidence {
+pub fn runtime_environment_visibility_evidence(
+    environment: &RuntimeEnvironment,
+) -> HarnessEvidence {
     let detail = format!(
         "home={} cwd={} config_layers={} writable_roots={} network_access={}",
         environment.home.is_some(),
@@ -209,13 +219,14 @@ pub fn runtime_environment_visibility_evidence(environment: &RuntimeEnvironment)
         environment.sandbox.network_access,
     );
 
-    LoopEvidence::present(LoopEvidenceKind::Visibility, "runtime-environment").with_detail(detail)
+    HarnessEvidence::present(HarnessEvidenceKind::Visibility, "runtime-environment")
+        .with_detail(detail)
 }
 
 /// Build evidence summarizing a working-copy isolation receipt.
 pub fn working_copy_isolation_visibility_evidence(
     receipt: &WorkingCopyIsolationReceipt,
-) -> LoopEvidence {
+) -> HarnessEvidence {
     let failed_commands = receipt
         .command_receipts
         .iter()
@@ -239,8 +250,8 @@ pub fn working_copy_isolation_visibility_evidence(
         reason,
     );
 
-    LoopEvidence::present(
-        LoopEvidenceKind::Visibility,
+    HarnessEvidence::present(
+        HarnessEvidenceKind::Visibility,
         format!("working-copy-isolation:{}", receipt.project_id.as_str()),
     )
     .with_detail(detail)
@@ -289,7 +300,8 @@ pub struct HarnessExecutionReport {
     pub scenario_id: String,
     pub result: GraphLoopExecutionResult,
     pub events: Vec<AgentEvent>,
-    pub evidence: Vec<LoopEvidence>,
+    pub evidence: Vec<HarnessEvidence>,
+    pub evidence_graph: HarnessEvidenceGraph,
     pub trace_spans: Vec<AgentTraceSpanRecord>,
     pub span_names: Vec<AgentSpanName>,
     pub summary: HarnessExecutionSummary,
@@ -313,15 +325,20 @@ pub struct HarnessExecutionSummary {
 
 impl HarnessExecutionReport {
     /// Returns evidence facts captured with this kind.
-    pub fn evidence_by_kind(&self, kind: LoopEvidenceKind) -> impl Iterator<Item = &LoopEvidence> {
+    pub fn evidence_by_kind(
+        &self,
+        kind: HarnessEvidenceKind,
+    ) -> impl Iterator<Item = &HarnessEvidence> {
         self.evidence
             .iter()
             .filter(move |evidence| evidence.kind == kind)
     }
 
     /// Returns visibility evidence derived from graph policy proposal receipts.
-    pub fn graph_policy_proposal_visibility_evidence(&self) -> impl Iterator<Item = &LoopEvidence> {
-        self.evidence_by_kind(LoopEvidenceKind::Visibility)
+    pub fn graph_policy_proposal_visibility_evidence(
+        &self,
+    ) -> impl Iterator<Item = &HarnessEvidence> {
+        self.evidence_by_kind(HarnessEvidenceKind::Visibility)
             .filter(|evidence| {
                 evidence
                     .subject
@@ -333,7 +350,7 @@ impl HarnessExecutionReport {
     pub fn find_graph_policy_proposal_visibility_evidence(
         &self,
         strategy_id: &GraphLoopStrategyId,
-    ) -> Option<&LoopEvidence> {
+    ) -> Option<&HarnessEvidence> {
         let expected_subject = format!(
             "{}:{}",
             GRAPH_POLICY_PROPOSAL_VISIBILITY_SUBJECT_PREFIX,

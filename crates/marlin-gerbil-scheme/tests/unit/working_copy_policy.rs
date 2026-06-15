@@ -9,6 +9,40 @@ use marlin_workspace_protocol::{
 use std::path::PathBuf;
 
 #[test]
+fn gerbil_working_copy_policy_projects_create_into_typed_git_worktree_request() {
+    let request = GerbilWorkingCopyPolicySelection::new(
+        "marlin-core",
+        WorkingCopyIsolationProvider::GitWorktree,
+        "/repo/nested/crate",
+        GerbilWorkingCopyPolicyOperation::Create {
+            working_copy: WorkingCopyHandle::new("feature-a", "/repo.worktrees/feature-a")
+                .with_branch(WorkingCopyBranchName::new("feature/a")),
+            base_ref: Some(WorkingCopyBaseRef::new("refs/remotes/origin/main")),
+        },
+    )
+    .into_working_copy_request();
+
+    let WorkingCopyIsolationRequest::Create(create) = request else {
+        panic!("expected typed create request");
+    };
+    assert_eq!(create.project_id.as_str(), "marlin-core");
+    assert_eq!(create.provider, WorkingCopyIsolationProvider::GitWorktree);
+    assert_eq!(
+        create.repository_discovery_path.as_path(),
+        PathBuf::from("/repo/nested/crate").as_path()
+    );
+    assert_eq!(create.working_copy.id.as_str(), "feature-a");
+    assert_eq!(
+        create.working_copy.path.as_path(),
+        PathBuf::from("/repo.worktrees/feature-a").as_path()
+    );
+    assert_eq!(
+        create.base_ref.as_ref().expect("base ref").as_str(),
+        "refs/remotes/origin/main"
+    );
+}
+
+#[test]
 fn gerbil_working_copy_policy_projects_worktrunk_switch_into_typed_request() {
     let selection = GerbilWorkingCopyPolicySelection::new(
         "marlin-core",

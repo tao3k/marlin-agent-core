@@ -1,9 +1,8 @@
 use marlin_agent_protocol::{
     AgentEvent, AgentExecutionTrace, AgentSpanName, AgentTraceSpanRecord,
-    GRAPH_POLICY_PROPOSAL_SCHEMA_ID, GRAPH_POLICY_PROPOSAL_SPAN_NAME,
-    GRAPH_POLICY_PROPOSAL_VISIBILITY_SUBJECT_PREFIX, GraphId, GraphLoopExecutionStatus,
-    GraphLoopStrategy, GraphLoopStrategyId, GraphPolicyProposal, GraphPolicyProposalReceipt,
-    GraphPolicyProposalStatus, LoopEvidenceKind, LoopGraph,
+    GRAPH_POLICY_PROPOSAL_SPAN_NAME, GraphId, GraphLoopExecutionStatus, GraphLoopStrategy,
+    GraphLoopStrategyId, GraphPolicyProposal, GraphPolicyProposalReceipt,
+    GraphPolicyProposalStatus, LoopGraph,
 };
 
 #[test]
@@ -92,46 +91,6 @@ fn agent_trace_span_record_projects_graph_policy_proposal_receipts() {
     );
     assert!(!rejected_span.fields.contains_key("selected_graph_id"));
 
-    let accepted_evidence = accepted_span
-        .graph_policy_proposal_visibility_evidence()
-        .expect("accepted proposal span should project visibility evidence");
-    let accepted_detail = accepted_evidence
-        .detail
-        .as_deref()
-        .expect("accepted visibility detail");
-    assert_eq!(accepted_evidence.kind, LoopEvidenceKind::Visibility);
-    assert_eq!(
-        accepted_evidence.subject,
-        format!("{GRAPH_POLICY_PROPOSAL_VISIBILITY_SUBJECT_PREFIX}:scheme-loop-ranker")
-    );
-    assert!(accepted_evidence.present);
-    assert!(accepted_detail.contains(&format!("schema_id={GRAPH_POLICY_PROPOSAL_SCHEMA_ID}")));
-    assert!(accepted_detail.contains("strategy_id=scheme-loop-ranker"));
-    assert!(accepted_detail.contains("status=Accepted"));
-    assert!(accepted_detail.contains("diagnostic_count=0"));
-    assert!(accepted_detail.contains("selected_graph_id=turn-frontier-1"));
-
-    let rejected_evidence = rejected_span
-        .graph_policy_proposal_visibility_evidence()
-        .expect("rejected proposal span should project visibility evidence");
-    let rejected_detail = rejected_evidence
-        .detail
-        .as_deref()
-        .expect("rejected visibility detail");
-    assert_eq!(rejected_evidence.kind, LoopEvidenceKind::Visibility);
-    assert_eq!(
-        rejected_evidence.subject,
-        format!("{GRAPH_POLICY_PROPOSAL_VISIBILITY_SUBJECT_PREFIX}:scheme-loop-ranker")
-    );
-    assert!(rejected_evidence.present);
-    assert!(rejected_detail.contains("status=Rejected"));
-    assert!(rejected_detail.contains("diagnostic_count=1"));
-    assert!(!rejected_detail.contains("selected_graph_id="));
-    assert!(
-        AgentTraceSpanRecord::new("agent.provider")
-            .graph_policy_proposal_visibility_evidence()
-            .is_none()
-    );
     assert!(!AgentTraceSpanRecord::new("agent.provider").is_graph_policy_proposal());
 }
 
@@ -170,7 +129,6 @@ fn agent_execution_trace_packages_run_facts() {
         Some(&result_span)
     );
     assert_eq!(trace.graph_policy_proposal_spans().count(), 0);
-    assert!(trace.graph_policy_proposal_visibility_evidence().is_empty());
 
     let summary = trace.summary();
     assert_eq!(summary.run_id.as_str(), "run-1");

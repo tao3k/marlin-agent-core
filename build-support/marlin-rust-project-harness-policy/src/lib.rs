@@ -1,4 +1,10 @@
 //! Build-script helper for Marlin's Rust project harness policy.
+//!
+//! This crate belongs to the Rust project harness boundary. It is responsible
+//! for package-level engineering quality gates, build-script receipts,
+//! performance/stability gates, CI evidence, and Rust project evidence graphs.
+//! It must not model agent runtime loops, sub-agents, hook replay, sessions, or
+//! agent harness scenarios.
 
 mod config;
 mod dependency_topology;

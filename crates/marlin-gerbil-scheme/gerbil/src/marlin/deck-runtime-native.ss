@@ -1,4 +1,5 @@
 ;;; -*- Gerbil -*-
+;;; Boundary: Module owns Marlin Gerbil policy and runtime contracts for agent edits.
 ;;; Gerbil native C ABI for the Marlin Deck runtime model-route selector.
 
 (import :std/foreign)
@@ -318,25 +319,34 @@ END-C
   (define-c-lambda native-set-selection! (deck-runtime-selection* int int) int
     "marlin_deck_runtime_set_selection"))
 
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
 (define marlin-deck-runtime-native-abi-version 1)
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
 (define marlin-deck-runtime-native-status-abi-mismatch 3)
 
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
 (define (native-string-list len ref)
-  (let loop ((index 0) (acc '()))
-    (if (= index len)
-      (reverse acc)
-      (loop (+ index 1) (cons (ref index) acc)))))
+  (map ref (list-tabulate len identity)))
 
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
 (define (native-policy-command-prefixes policy)
   (native-string-list
    (native-policy-command-prefixes-len policy)
    (lambda (index) (native-policy-command-prefix-at policy index))))
 
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
 (define (native-policy-agent-scopes policy)
   (native-string-list
    (native-policy-agent-scopes-len policy)
    (lambda (index) (native-policy-agent-scope-at policy index))))
 
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
 (define (native-policy->policy policy)
   (list (native-policy-name policy)
         (native-policy-provider policy)
@@ -346,59 +356,75 @@ END-C
         (native-policy-context-mode policy)
         (native-policy-isolation-mode policy)))
 
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
 (define (native-request-policies request)
-  (let loop ((index 0)
-             (len (native-request-policies-len request))
-             (acc '()))
-    (if (= index len)
-      (reverse acc)
-      (loop (+ index 1)
-            len
-            (cons (native-policy->policy
-                   (native-request-policy-at request index))
-                  acc)))))
+  (map (lambda (index)
+         (native-policy->policy
+          (native-request-policy-at request index)))
+       (list-tabulate (native-request-policies-len request) identity)))
 
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
 (define (policy-name policy) (list-ref policy 0))
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
 (define (policy-provider policy) (list-ref policy 1))
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
 (define (policy-model policy) (list-ref policy 2))
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
 (define (policy-command-prefixes policy) (list-ref policy 3))
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
 (define (policy-agent-scopes policy) (list-ref policy 4))
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
 (define (policy-context-mode policy) (list-ref policy 5))
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
 (define (policy-isolation-mode policy) (list-ref policy 6))
 
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
 (define (string-prefix? prefix value)
   (let ((prefix-length (string-length prefix))
         (value-length (string-length value)))
-    (if (> prefix-length value-length)
-      #f
-      (let loop ((index 0))
-        (cond
-          ((= index prefix-length) #t)
-          ((char=? (string-ref prefix index) (string-ref value index))
-           (loop (+ index 1)))
-          (else #f))))))
+    (and (<= prefix-length value-length)
+         (andmap
+          (lambda (index)
+            (char=? (string-ref prefix index)
+                    (string-ref value index)))
+          (list-tabulate prefix-length identity)))))
 
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
 (define (string-member? value values)
   (if (member value values) #t #f))
 
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
 (define (any-string-prefix? prefixes value)
-  (let loop ((remaining prefixes))
-    (cond
-      ((null? remaining) #f)
-      ((string-prefix? (car remaining) value) #t)
-      (else (loop (cdr remaining))))))
+  (ormap (cut string-prefix? <> value) prefixes))
 
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
 (define (policy-match? policy command agent-scope)
   (and (any-string-prefix? (policy-command-prefixes policy) command)
        (string-member? agent-scope (policy-agent-scopes policy))))
 
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
 (define (select-policy-index policies command agent-scope)
-  (let loop ((remaining policies) (index 0))
-    (cond
-      ((null? remaining) #f)
-      ((policy-match? (car remaining) command agent-scope)
-       index)
-      (else (loop (cdr remaining) (+ index 1))))))
+  (let ((match
+         (find
+          (lambda (entry)
+            (policy-match? (cdr entry) command agent-scope))
+          (map cons
+               (list-tabulate (length policies) identity)
+               policies))))
+    (if match (car match) #f)))
 
 (extern marlin-deck-runtime-select-model-route)
 (begin-foreign

@@ -7,6 +7,6 @@ pub use report::{
     ChecklistStatus, ContractStatus, DecisionTrace, EvidenceStatus, GoalState, GoalStatus,
     MetricTrace, PatchExecutionMode, PatchStatus, ReleaseGateReceipt, ReleaseGateState,
     ReleaseGateStatus, ReleaseLandingReport, ReleaseStatus, ReleaseVisibilityStatus, SddStatus,
-    WorkspaceStatusReport,
+    WorkspaceStatusEvidence, WorkspaceStatusEvidenceKind, WorkspaceStatusReport,
 };
 pub use target::WorkspaceTarget;

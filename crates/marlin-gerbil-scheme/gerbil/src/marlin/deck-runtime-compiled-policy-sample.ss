@@ -1,4 +1,5 @@
 ;;; -*- Gerbil -*-
+;;; Boundary: Module owns Marlin Gerbil policy and runtime contracts for agent edits.
 ;;; Package-compiled sample policy template for Deck runtime selector benchmarks.
 
 package: marlin
@@ -15,6 +16,8 @@ package: marlin
         display-marlin-deck-runtime-sample-compiled-policy-batch-metrics
         display-marlin-deck-runtime-sample-compiled-policy-index-batch-metrics)
 
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
 (defmarlin-deck-runtime-cached-compiled-route-selector
   select-marlin-deck-runtime-sample-compiled-policy
   ("compiled-cheap-test-runner"
@@ -32,6 +35,8 @@ package: marlin
    "shared-context"
    "isolated-session"))
 
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
 (defmarlin-deck-runtime-direct-compiled-route-index-selector
   select-marlin-deck-runtime-sample-compiled-policy-index
   (0
@@ -41,35 +46,43 @@ package: marlin
    ("codex customer-review" "cargo clippy")
    ("reviewer")))
 
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
 (def (marlin-deck-runtime-sample-compiled-policy-match? command agent-scope)
   (if (select-marlin-deck-runtime-sample-compiled-policy command agent-scope) #t #f))
 
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
 (def (marlin-deck-runtime-sample-compiled-policy-index-match? command agent-scope)
   (if (select-marlin-deck-runtime-sample-compiled-policy-index command agent-scope) #t #f))
 
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
 (def (count-marlin-deck-runtime-sample-compiled-policy-matches iterations command agent-scope)
-  (let loop ((remaining iterations) (matches 0))
-    (if (= remaining 0)
-      matches
-      (loop
-       (- remaining 1)
-       (if (marlin-deck-runtime-sample-compiled-policy-match? command agent-scope)
-         (+ matches 1)
-         matches)))))
+  (foldl (lambda (_ matches)
+           (if (marlin-deck-runtime-sample-compiled-policy-match? command agent-scope)
+             (+ matches 1)
+             matches))
+         0
+         (list-tabulate iterations identity)))
 
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
 (def (count-marlin-deck-runtime-sample-compiled-policy-index-matches iterations command agent-scope)
-  (let loop ((remaining iterations) (matches 0))
-    (if (= remaining 0)
-      matches
-      (loop
-       (- remaining 1)
-       (if (marlin-deck-runtime-sample-compiled-policy-index-match? command agent-scope)
-         (+ matches 1)
-         matches)))))
+  (foldl (lambda (_ matches)
+           (if (marlin-deck-runtime-sample-compiled-policy-index-match? command agent-scope)
+             (+ matches 1)
+             matches))
+         0
+         (list-tabulate iterations identity)))
 
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
 (def (marlin-deck-runtime-sample-compiled-policy-elapsed-us start-jiffy end-jiffy)
   (quotient (* (- end-jiffy start-jiffy) 1000000) (jiffies-per-second)))
 
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
 (def (display-marlin-deck-runtime-sample-compiled-policy-batch-metrics iterations command agent-scope)
   (let ((start-jiffy (current-jiffy)))
     (let ((matches
@@ -91,6 +104,8 @@ package: marlin
           end-jiffy))
         (newline)))))
 
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
 (def (display-marlin-deck-runtime-sample-compiled-policy-index-batch-metrics iterations command agent-scope)
   (let ((start-jiffy (current-jiffy)))
     (let ((matches

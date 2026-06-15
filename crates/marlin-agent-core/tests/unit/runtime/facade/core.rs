@@ -1,10 +1,10 @@
 use marlin_agent_core::{
     AgentExecutionTrace, AgentExecutionTraceSummary, AgentSpanName, AgentTraceSpanRecord,
-    GraphLoopExecutionStatus, HookDispatcher, HookRegistry, LoopEvidence, LoopEvidenceKind,
-    LoopPerformanceEvidence, ModelContextForkMode, ModelEndpoint, ModelGatewayMessageRole,
-    ModelGatewayRequest, ModelGatewayTransport, ModelRouteConfig, ModelRouteRequest,
-    PERFORMANCE_EVIDENCE_KEYS, RuntimeEnvironmentRequest, RuntimeEnvironmentResolver,
-    RuntimeExecutionIdentity, system_gateway_message,
+    GraphLoopExecutionStatus, HARNESS_PERFORMANCE_EVIDENCE_KEYS, HarnessEvidence,
+    HarnessEvidenceKind, HarnessPerformanceEvidence, HookDispatcher, HookRegistry,
+    ModelContextForkMode, ModelEndpoint, ModelGatewayMessageRole, ModelGatewayRequest,
+    ModelGatewayTransport, ModelRouteConfig, ModelRouteRequest, RuntimeEnvironmentRequest,
+    RuntimeEnvironmentResolver, RuntimeExecutionIdentity, system_gateway_message,
 };
 
 #[test]
@@ -110,7 +110,7 @@ fn core_facade_exposes_execution_trace_summary() {
 
 #[test]
 fn core_facade_exposes_performance_evidence_contract() {
-    let evidence: LoopEvidence = LoopPerformanceEvidence {
+    let evidence: HarnessEvidence = HarnessPerformanceEvidence {
         subject: "core-runtime".to_owned(),
         benchmark_command: "cargo bench -p marlin-agent-core".to_owned(),
         baseline: "p95=10ms".to_owned(),
@@ -122,9 +122,9 @@ fn core_facade_exposes_performance_evidence_contract() {
     .into();
     let detail = evidence.detail.as_deref().expect("performance detail");
 
-    assert_eq!(evidence.kind, LoopEvidenceKind::Performance);
+    assert_eq!(evidence.kind, HarnessEvidenceKind::Performance);
     assert_eq!(evidence.subject, "core-runtime");
-    for key in PERFORMANCE_EVIDENCE_KEYS {
+    for key in HARNESS_PERFORMANCE_EVIDENCE_KEYS {
         assert!(
             detail.contains(key),
             "missing performance evidence key {key}"

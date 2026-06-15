@@ -2,6 +2,7 @@ mod dynamic_graph_policy;
 mod dynamic_runtime_bridge;
 mod failures;
 mod happy_path;
+mod native_projection;
 
 use super::support::strategy_selection_manifest;
 use marlin_gerbil_scheme::{

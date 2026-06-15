@@ -1,5 +1,6 @@
 //! Reusable hook fixtures for custom sub-agent runtime tests.
 
+use marlin_agent_harness_types::{HarnessEvidence, HarnessEvidenceKind};
 use marlin_agent_protocol::{
     HookAgentScope, HookDecisionContext, HookDispatchPolicyReceipt, HookDispatchPolicyReceiptInput,
     HookDispatchSelectionInput, HookDispatchSelectionReceipt, HookEventName, HookHandlerType,
@@ -8,8 +9,7 @@ use marlin_agent_protocol::{
     HookPolicyDynamicAction, HookPolicyDynamicActionKind, HookPolicyExtension,
     HookPolicyExtensionKind, HookPolicyMode, HookRunId, HookRunStatus, HookRunSummary, HookScope,
     HookSelectedCandidateInput, HookSelectionCandidateReceipt, HookSelectionSkipReason,
-    HookSkippedCandidateInput, HookSource, HookSourcePath, HookTrustStatus, LoopEvidence,
-    LoopEvidenceKind,
+    HookSkippedCandidateInput, HookSource, HookSourcePath, HookTrustStatus,
 };
 
 /// Hook run summary fixture for a configured custom sub-agent startup hook.
@@ -302,7 +302,7 @@ pub fn hook_dispatch_replay_evidence(
     summary: &HookRunSummary,
     selection: &HookDispatchSelectionReceipt,
     policy: &HookDispatchPolicyReceipt,
-) -> LoopEvidence {
+) -> HarnessEvidence {
     let rejected_decisions = policy
         .decisions
         .iter()
@@ -393,8 +393,8 @@ pub fn hook_dispatch_replay_evidence(
         policy.invocation_agent_scope,
     );
 
-    LoopEvidence::present(
-        LoopEvidenceKind::Runtime,
+    HarnessEvidence::present(
+        HarnessEvidenceKind::Runtime,
         format!("hook-dispatch-replay:{}", summary.id.as_str()),
     )
     .with_detail(detail)

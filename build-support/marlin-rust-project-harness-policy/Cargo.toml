@@ -6,12 +6,12 @@ authors = ["marlin contributors"]
 repository = "https://github.com/tao3k/marlin-agent-core"
 
 [dependencies]
-rust-lang-project-harness = { git = "https://github.com/tao3k/rust-lang-project-harness", rev = "9c59588b6ada02d5c2518ca90bc22452155f2e6f", version = "=0.1.2" }
+rust-lang-project-harness.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 
 [build-dependencies]
-rust-lang-project-harness = { git = "https://github.com/tao3k/rust-lang-project-harness", rev = "9c59588b6ada02d5c2518ca90bc22452155f2e6f", version = "=0.1.2" }
+rust-lang-project-harness.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

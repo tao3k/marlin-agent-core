@@ -2,10 +2,10 @@ use std::collections::BTreeMap;
 
 use marlin_agent_core::{
     ExecutorName, GraphLoopExecutionRequest, GraphLoopExecutionStatus, GraphLoopKernel,
-    GraphNodeExecutionReceipt, GraphNodeExecutor, GraphNodeInvocation, LoopGraph, LoopNodeSpec,
-    NodeId, ProviderNodeAdapter, ProviderRuntime, RuntimeContext, RuntimeEvent, RuntimeFuture,
-    SubAgentNodeAdapter, SubAgentRuntime, TokioAgentRuntime, TokioGraphLoopKernel, ToolNodeAdapter,
-    ToolRuntime,
+    GraphNodeExecutionReceipt, GraphNodeExecutionStatus, GraphNodeExecutor, GraphNodeInvocation,
+    LoopGraph, LoopNodeSpec, NodeId, ProviderNodeAdapter, ProviderRuntime, RuntimeContext,
+    RuntimeEvent, RuntimeFuture, SubAgentNodeAdapter, SubAgentRuntime, TokioAgentRuntime,
+    TokioGraphLoopKernel, ToolNodeAdapter, ToolRuntime,
 };
 use tokio::time::{Duration, timeout};
 use tokio_stream::StreamExt;
@@ -279,6 +279,22 @@ async fn tokio_kernel_driver_emits_events_and_completes() {
 
     assert_eq!(result.status, GraphLoopExecutionStatus::Completed);
     assert_eq!(result.visited_nodes, vec!["plan", "apply"]);
+    assert_eq!(result.node_receipts.len(), 2);
+    assert_eq!(
+        result
+            .node_receipts
+            .iter()
+            .map(|receipt| (
+                receipt.node_id.as_str(),
+                receipt.executor.as_str(),
+                receipt.status.clone()
+            ))
+            .collect::<Vec<_>>(),
+        vec![
+            ("plan", "provider", GraphNodeExecutionStatus::Completed),
+            ("apply", "tool", GraphNodeExecutionStatus::Completed)
+        ]
+    );
     assert_eq!(result.snapshot.run_id, "run-1");
     assert_eq!(result.snapshot.graph_id, "graph-1");
     assert_eq!(result.snapshot.active_node, None);
@@ -333,6 +349,7 @@ async fn tokio_kernel_driver_observes_parent_cancellation() {
 
     assert_eq!(result.status, GraphLoopExecutionStatus::Cancelled);
     assert!(result.visited_nodes.is_empty());
+    assert!(result.node_receipts.is_empty());
     assert_eq!(result.snapshot.active_node, None);
     assert_eq!(kernel.snapshot(), result.snapshot);
 
@@ -360,6 +377,7 @@ async fn tokio_kernel_driver_fails_missing_executor() {
 
     assert_eq!(result.status, GraphLoopExecutionStatus::Failed);
     assert!(result.visited_nodes.is_empty());
+    assert!(result.node_receipts.is_empty());
     assert_eq!(
         result.diagnostics,
         vec!["missing graph node executor `provider` for node plan"]
@@ -393,6 +411,18 @@ async fn tokio_kernel_driver_runs_provider_tool_and_subagent_adapters() {
 
     assert_eq!(result.status, GraphLoopExecutionStatus::Completed);
     assert_eq!(result.visited_nodes, vec!["plan", "apply", "review"]);
+    assert_eq!(
+        result
+            .node_receipts
+            .iter()
+            .map(|receipt| receipt.status.clone())
+            .collect::<Vec<_>>(),
+        vec![
+            GraphNodeExecutionStatus::Completed,
+            GraphNodeExecutionStatus::Completed,
+            GraphNodeExecutionStatus::Completed
+        ]
+    );
 
     assert_eq!(
         next_event(&mut events).await,
@@ -482,6 +512,17 @@ async fn provider_adapter_failure_fails_graph_execution() {
     assert_eq!(result.status, GraphLoopExecutionStatus::Failed);
     assert!(result.visited_nodes.is_empty());
     assert_eq!(result.diagnostics, vec!["provider failed plan"]);
+    assert_eq!(result.node_receipts.len(), 1);
+    assert_eq!(result.node_receipts[0].node_id.as_str(), "plan");
+    assert_eq!(result.node_receipts[0].executor.as_str(), "provider");
+    assert_eq!(
+        result.node_receipts[0].status,
+        GraphNodeExecutionStatus::Failed
+    );
+    assert_eq!(
+        result.node_receipts[0].diagnostics,
+        vec!["provider failed plan"]
+    );
 
     assert_eq!(
         next_event(&mut events).await,
@@ -534,6 +575,21 @@ async fn tool_adapter_failure_fails_graph_execution() {
     assert_eq!(result.status, GraphLoopExecutionStatus::Failed);
     assert_eq!(result.visited_nodes, vec!["plan"]);
     assert_eq!(result.diagnostics, vec!["tool failed apply"]);
+    assert_eq!(result.node_receipts.len(), 2);
+    assert_eq!(result.node_receipts[0].node_id.as_str(), "plan");
+    assert_eq!(
+        result.node_receipts[0].status,
+        GraphNodeExecutionStatus::Completed
+    );
+    assert_eq!(result.node_receipts[1].node_id.as_str(), "apply");
+    assert_eq!(
+        result.node_receipts[1].status,
+        GraphNodeExecutionStatus::Failed
+    );
+    assert_eq!(
+        result.node_receipts[1].diagnostics,
+        vec!["tool failed apply"]
+    );
 
     assert_eq!(
         next_event(&mut events).await,
@@ -602,6 +658,17 @@ async fn subagent_adapter_failure_fails_graph_execution() {
     assert_eq!(result.status, GraphLoopExecutionStatus::Failed);
     assert_eq!(result.visited_nodes, vec!["plan", "apply"]);
     assert_eq!(result.diagnostics, vec!["sub-agent failed review"]);
+    assert_eq!(result.node_receipts.len(), 3);
+    assert_eq!(result.node_receipts[2].node_id.as_str(), "review");
+    assert_eq!(result.node_receipts[2].executor.as_str(), "sub-agent");
+    assert_eq!(
+        result.node_receipts[2].status,
+        GraphNodeExecutionStatus::Failed
+    );
+    assert_eq!(
+        result.node_receipts[2].diagnostics,
+        vec!["sub-agent failed review"]
+    );
 
     assert_eq!(
         next_event(&mut events).await,

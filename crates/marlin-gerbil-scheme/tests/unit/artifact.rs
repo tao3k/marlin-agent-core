@@ -1,6 +1,4 @@
-use marlin_agent_protocol::{
-    AgentScenario, AgentScenarioContract, AgentScenarioStep, LoopEvidenceKind,
-};
+use marlin_agent_protocol::{AgentScenario, AgentScenarioContract, AgentScenarioStep};
 use marlin_gerbil_ir::{CompiledLoopGraph, ReleaseTopologySpec, WorkspacePatchIntentSpec};
 use marlin_gerbil_ir::{ReleaseGateSpec, ReleaseVisibilitySpec};
 use marlin_gerbil_scheme::{GerbilArtifactKind, GerbilCompiledArtifact};
@@ -58,8 +56,7 @@ fn artifact_reports_workspace_patch_intent_kind() {
 #[test]
 fn artifact_reports_agent_scenario_contract_kind() {
     let scenario = AgentScenario::new("gerbil-scenario")
-        .with_step(AgentScenarioStep::new("run").expecting_event_topic("kernel.execution"))
-        .expecting_evidence(LoopEvidenceKind::Runtime);
+        .with_step(AgentScenarioStep::new("run").expecting_event_topic("kernel.execution"));
     let artifact =
         GerbilCompiledArtifact::AgentScenarioContract(AgentScenarioContract::new(scenario));
 

@@ -1,6 +1,6 @@
 //! Typed no-live-LLM test run evidence receipts.
 
-use marlin_agent_protocol::{LoopEvidence, LoopEvidenceKind};
+use marlin_agent_harness_types::{HarnessEvidence, HarnessEvidenceKind};
 
 use crate::graph_policy::{
     accepted_graph_policy_proposal_fixture, rejected_graph_policy_proposal_fixture,
@@ -131,7 +131,7 @@ impl TestRunLayerSummary {
 pub struct TestRunEvidenceReceipt {
     pub schema_version: u32,
     pub cases: Vec<TestRunCaseRecord>,
-    pub evidence: Vec<LoopEvidence>,
+    pub evidence: Vec<HarnessEvidence>,
 }
 
 impl TestRunEvidenceReceipt {
@@ -145,7 +145,7 @@ impl TestRunEvidenceReceipt {
     }
 
     /// Adds typed harness evidence facts to this test-run receipt.
-    pub fn with_evidence(mut self, evidence: impl IntoIterator<Item = LoopEvidence>) -> Self {
+    pub fn with_evidence(mut self, evidence: impl IntoIterator<Item = HarnessEvidence>) -> Self {
         self.evidence.extend(evidence);
         self
     }
@@ -161,7 +161,7 @@ impl TestRunEvidenceReceipt {
     }
 
     /// Number of evidence facts recorded with this kind.
-    pub fn evidence_count_by_kind(&self, kind: LoopEvidenceKind) -> usize {
+    pub fn evidence_count_by_kind(&self, kind: HarnessEvidenceKind) -> usize {
         self.evidence
             .iter()
             .filter(|evidence| evidence.kind == kind)
@@ -333,7 +333,7 @@ pub fn assert_deterministic_test_run_evidence() -> TestRunEvidenceReceipt {
     receipt
 }
 
-fn graph_policy_visibility_evidence() -> Vec<LoopEvidence> {
+fn graph_policy_visibility_evidence() -> Vec<HarnessEvidence> {
     vec![
         accepted_graph_policy_proposal_fixture().visibility_evidence(),
         rejected_graph_policy_proposal_fixture().visibility_evidence(),

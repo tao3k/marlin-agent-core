@@ -2,14 +2,17 @@
 
 use std::collections::BTreeMap;
 
+use marlin_agent_harness_types::{
+    GRAPH_POLICY_PROPOSAL_VISIBILITY_SUBJECT_PREFIX, HarnessEvidence, HarnessEvidenceKind,
+    graph_policy_proposal_visibility_evidence,
+};
 use marlin_agent_kernel::{GraphPolicyProposalCompilation, compile_graph_policy_proposal};
 use marlin_agent_protocol::{
     AgentTraceSpanRecord, GERBIL_LOOP_GRAPH_POLICY_COMPILATION_SCHEMA_ID,
-    GRAPH_POLICY_PROPOSAL_SPAN_NAME, GRAPH_POLICY_PROPOSAL_VISIBILITY_SUBJECT_PREFIX,
-    GerbilLoopGraphPolicyCompilationRequest, GraphLoopExecutionBudget, GraphLoopExecutionRequest,
-    GraphLoopStrategy, GraphLoopStrategyRuntime, GraphNativeAbiRequirement, GraphPolicyProposal,
-    GraphPolicyProposalStatus, LoopEvidence, LoopEvidenceKind, LoopGraph, LoopNodeSpec,
-    compile_gerbil_loop_graph_policy,
+    GRAPH_POLICY_PROPOSAL_SPAN_NAME, GerbilLoopGraphPolicyCompilationRequest,
+    GraphLoopExecutionBudget, GraphLoopExecutionRequest, GraphLoopStrategy,
+    GraphLoopStrategyRuntime, GraphNativeAbiRequirement, GraphPolicyProposal,
+    GraphPolicyProposalStatus, LoopGraph, LoopNodeSpec, compile_gerbil_loop_graph_policy,
 };
 
 const ACCEPTED_RUN_ID: &str = "test-support/graph-policy/accepted";
@@ -47,9 +50,8 @@ impl DeterministicGraphPolicyProposalFixture {
     }
 
     /// Visibility evidence projected from the Rust proposal compilation receipt span.
-    pub fn visibility_evidence(&self) -> LoopEvidence {
-        self.trace_span()
-            .graph_policy_proposal_visibility_evidence()
+    pub fn visibility_evidence(&self) -> HarnessEvidence {
+        graph_policy_proposal_visibility_evidence(&self.trace_span())
             .expect("graph policy proposal trace span should project visibility evidence")
     }
 
@@ -97,7 +99,8 @@ pub fn accepted_gerbil_ir_graph_policy_proposal_fixture() -> DeterministicGraphP
         )
         .with_native_abi_requirement(graph_native_abi_requirement_fixture())
         .with_diagnostic(GERBIL_LOOP_GRAPH_POLICY_COMPILATION_SCHEMA_ID),
-    );
+    )
+    .expect("test-support Gerbil IR graph should compile");
     let compilation = compile_graph_policy_proposal(GERBIL_IR_RUN_ID, &proposal);
 
     DeterministicGraphPolicyProposalFixture {
@@ -119,7 +122,8 @@ pub fn complex_gerbil_graph_policy_replay_fixture() -> DeterministicGraphPolicyP
         .with_native_abi_requirement(graph_native_abi_requirement_fixture())
         .with_diagnostic(GERBIL_LOOP_GRAPH_POLICY_COMPILATION_SCHEMA_ID)
         .with_diagnostic("source=real-gxi complex scheme policy replay"),
-    );
+    )
+    .expect("complex Gerbil graph policy replay should compile");
     let compilation = compile_graph_policy_proposal(COMPLEX_GERBIL_POLICY_RUN_ID, &proposal);
 
     DeterministicGraphPolicyProposalFixture {
@@ -396,10 +400,10 @@ fn assert_rejected_visibility_evidence(fixture: &DeterministicGraphPolicyProposa
 }
 
 fn assert_graph_policy_visibility_evidence_shape(
-    evidence: &LoopEvidence,
+    evidence: &HarnessEvidence,
     fixture: &DeterministicGraphPolicyProposalFixture,
 ) {
-    assert_eq!(evidence.kind, LoopEvidenceKind::Visibility);
+    assert_eq!(evidence.kind, HarnessEvidenceKind::Visibility);
     assert_eq!(evidence.subject, expected_visibility_subject(fixture));
     assert!(evidence.present);
 }
@@ -412,7 +416,7 @@ fn expected_visibility_subject(fixture: &DeterministicGraphPolicyProposalFixture
     )
 }
 
-fn visibility_detail<'a>(evidence: &'a LoopEvidence, label: &str) -> &'a str {
+fn visibility_detail<'a>(evidence: &'a HarnessEvidence, label: &str) -> &'a str {
     evidence
         .detail
         .as_deref()

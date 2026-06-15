@@ -1,20 +1,16 @@
 //! Typed plan and preparation receipt for resident `Gerbil Scheme` runtime sessions.
 
 use std::{
-    fmt,
-    io::{self, BufRead, BufReader, Write},
+    fmt, io,
     path::PathBuf,
-    process::{Child, ChildStdin, ChildStdout, Command, ExitStatus, Stdio},
+    process::{Child, Command, ExitStatus, Stdio},
 };
 
 use serde::{Deserialize, Serialize};
 
-use crate::runtime::{
-    GERBIL_COMMAND_ADAPTER_BATCH_PATH, GERBIL_LOADPATH_ENV, gerbil_runtime_loadpath,
-};
+use crate::runtime::{GERBIL_ADAPTER_MODULE, GERBIL_LOADPATH_ENV, gerbil_runtime_loadpath};
 use crate::{
-    GerbilArtifactKind, GerbilCommandCompiler, GerbilCommandProfile, GerbilCompileRequest,
-    GerbilCompiledArtifact, GerbilSource,
+    GerbilCommandProfile,
     runtime::{default_gerbil_gxi_program, write_gerbil_runtime_assets},
 };
 
@@ -150,9 +146,6 @@ pub struct GerbilResidentRuntimeShutdownReceipt {
 pub struct GerbilResidentRuntimeProcess {
     plan: GerbilResidentRuntimeProcessPlan,
     child: Child,
-    stdin: Option<ChildStdin>,
-    stdout: BufReader<ChildStdout>,
-    request_count: usize,
 }
 
 /// Prepared resident runtime handle. Process ownership is layered on top of this.
@@ -252,13 +245,12 @@ fn default_command_profile(loadpath_root: impl Into<PathBuf>) -> GerbilCommandPr
 
 fn resident_process_command_profile(plan: &GerbilResidentRuntimePlan) -> GerbilCommandProfile {
     let loadpath = gerbil_runtime_loadpath(&plan.loadpath_root);
-    let launcher = plan.loadpath_root.join(GERBIL_COMMAND_ADAPTER_BATCH_PATH);
     let mut profile = plan.command_profile.clone();
     profile.env.insert(
         GERBIL_LOADPATH_ENV.to_owned(),
         loadpath.to_string_lossy().into_owned(),
     );
-    profile.args = vec![launcher.to_string_lossy().into_owned()];
+    profile.args = vec![GERBIL_ADAPTER_MODULE.to_owned()];
     profile
 }
 
@@ -342,9 +334,9 @@ impl GerbilResidentRuntimeProcessPlan {
             let mut command = Command::new(&command_profile.program);
             command
                 .args(&command_profile.args)
-                .stdin(Stdio::piped())
-                .stdout(Stdio::piped())
-                .stderr(Stdio::piped());
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null());
 
             if let Some(current_dir) = &command_profile.current_dir {
                 command.current_dir(current_dir);
@@ -354,29 +346,7 @@ impl GerbilResidentRuntimeProcessPlan {
             command.spawn()?
         };
 
-        let mut child = child;
-        let stdin = child.stdin.take().ok_or_else(|| {
-            terminate_child_after_spawn_failure(&mut child);
-            io::Error::new(
-                io::ErrorKind::BrokenPipe,
-                "resident Gerbil runtime process did not expose stdin",
-            )
-        })?;
-        let stdout = child.stdout.take().ok_or_else(|| {
-            terminate_child_after_spawn_failure(&mut child);
-            io::Error::new(
-                io::ErrorKind::BrokenPipe,
-                "resident Gerbil runtime process did not expose stdout",
-            )
-        })?;
-
-        Ok(GerbilResidentRuntimeProcess {
-            plan: self,
-            child,
-            stdin: Some(stdin),
-            stdout: BufReader::new(stdout),
-            request_count: 0,
-        })
+        Ok(GerbilResidentRuntimeProcess { plan: self, child })
     }
 }
 
@@ -412,85 +382,6 @@ impl GerbilResidentRuntimeProcess {
         })
     }
 
-    pub fn compile(
-        &mut self,
-        source: GerbilSource,
-        expected: GerbilArtifactKind,
-    ) -> Result<GerbilCompiledArtifact, String> {
-        self.compile_request_result(GerbilCompileRequest::new(source, expected))?
-            .and_then(|artifact| {
-                artifact
-                    .ensure_kind(expected)
-                    .map_err(|error| error.to_string())
-            })
-    }
-
-    pub fn compile_request_result(
-        &mut self,
-        request: GerbilCompileRequest,
-    ) -> Result<Result<GerbilCompiledArtifact, String>, String> {
-        self.compile_request_results(vec![request])
-            .map(|mut results| results.remove(0))
-    }
-
-    pub fn compile_requests(
-        &mut self,
-        requests: Vec<GerbilCompileRequest>,
-    ) -> Result<Vec<GerbilCompiledArtifact>, String> {
-        self.compile_request_results(requests)?
-            .into_iter()
-            .collect::<Result<Vec<_>, _>>()
-    }
-
-    pub fn compile_request_results(
-        &mut self,
-        requests: Vec<GerbilCompileRequest>,
-    ) -> Result<Vec<Result<GerbilCompiledArtifact, String>>, String> {
-        let mut results = Vec::with_capacity(requests.len());
-        for request in requests {
-            let expected = request.expected;
-            self.write_compile_request(&request)?;
-            results.push(self.read_compile_response(expected)?);
-        }
-        Ok(results)
-    }
-
-    fn write_compile_request(&mut self, request: &GerbilCompileRequest) -> Result<(), String> {
-        let mut line = serde_json::to_vec(request).map_err(|error| {
-            format!("failed to encode resident gerbil compile request: {error}")
-        })?;
-        line.push(b'\n');
-        let stdin = self
-            .stdin
-            .as_mut()
-            .ok_or_else(|| "resident Gerbil runtime process stdin is closed".to_owned())?;
-        stdin
-            .write_all(&line)
-            .map_err(|error| format!("failed to write resident gerbil compile request: {error}"))?;
-        stdin
-            .flush()
-            .map_err(|error| format!("failed to flush resident gerbil compile request: {error}"))
-    }
-
-    fn read_compile_response(
-        &mut self,
-        expected: GerbilArtifactKind,
-    ) -> Result<Result<GerbilCompiledArtifact, String>, String> {
-        let mut line = String::new();
-        let bytes = self
-            .stdout
-            .read_line(&mut line)
-            .map_err(|error| format!("failed to read resident gerbil compile response: {error}"))?;
-        if bytes == 0 {
-            return Err("resident Gerbil runtime process exited before response".to_owned());
-        }
-
-        let index = self.request_count;
-        self.request_count += 1;
-        let expected = vec![expected; index + 1];
-        GerbilCommandCompiler::decode_compile_batch_response_line(index, line.trim_end(), &expected)
-    }
-
     pub fn wait(&mut self) -> io::Result<ExitStatus> {
         self.child.wait()
     }
@@ -505,11 +396,11 @@ impl GerbilResidentRuntimeProcess {
             ));
         }
 
-        drop(self.stdin.take());
+        self.child.kill()?;
         let status = self.child.wait()?;
         Ok(self.shutdown_receipt(
             child_id,
-            GerbilResidentRuntimeShutdownStatus::GracefulExit,
+            GerbilResidentRuntimeShutdownStatus::Terminated,
             status,
         ))
     }
@@ -519,7 +410,6 @@ impl GerbilResidentRuntimeProcess {
             return Ok(status);
         }
 
-        drop(self.stdin.take());
         self.child.kill()?;
         self.child.wait()
     }
@@ -534,7 +424,6 @@ impl GerbilResidentRuntimeProcess {
             ));
         }
 
-        drop(self.stdin.take());
         self.child.kill()?;
         let status = self.child.wait()?;
         Ok(self.shutdown_receipt(
@@ -566,22 +455,15 @@ impl fmt::Debug for GerbilResidentRuntimeProcess {
         f.debug_struct("GerbilResidentRuntimeProcess")
             .field("plan", &self.plan)
             .field("child_id", &self.child.id())
-            .field("request_count", &self.request_count)
             .finish_non_exhaustive()
     }
 }
 
 impl Drop for GerbilResidentRuntimeProcess {
     fn drop(&mut self) {
-        drop(self.stdin.take());
         if matches!(self.child.try_wait(), Ok(None)) {
             let _ = self.child.kill();
             let _ = self.child.wait();
         }
     }
-}
-
-fn terminate_child_after_spawn_failure(child: &mut Child) {
-    let _ = child.kill();
-    let _ = child.wait();
 }

@@ -1,0 +1,14 @@
+[package]
+name = "marlin-agent-harness-types"
+edition.workspace = true
+version.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+marlin-agent-protocol.workspace = true
+serde.workspace = true
+
+[build-dependencies]
+marlin-rust-project-harness-policy.workspace = true
+rust-lang-project-harness.workspace = true

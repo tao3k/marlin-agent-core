@@ -1,0 +1,150 @@
+* User Interface Module Config Example
+
+This directory is the maintained downstream example for Gerbil POO user module
+configuration. It is intentionally separate from =tests/fixtures= so users and
+agents can inspect the workflow as a real workspace.
+
+** Layout
+
+- =modules/base.ss= declares the base user interface extension and base module.
+- =modules/script.ss= declares the script entrypoint and script module.
+- =modules/interface.ss= declares the imported typed interface for user config.
+- =modules/workspace.ss= declares a workspace preset module.
+- =modules/agent.ss= declares an agent profile module.
+- =modules/hooks.ss= declares a runtime hook catalog module.
+- =modules/subagent.ss= declares an agent-authored subagent policy extension
+  object.
+- =modules/config.ss= is the user-facing module configuration entrypoint. It
+  applies =marlinModules= to the imported interface and a small POO config
+  record. Users should not declare inline schemas or call low-level
+  =make-marlin-deck-runtime-*= constructors from this config layer.
+- =t/user-interface-module-config-test.ss= runs the workflow with =gxtest=.
+- =interface.org= and =state/worker-state.org= are workspace files consumed by
+  the script.
+
+** User Interface
+
+The public configuration surface mirrors Nickel's typed record shape:
+import an interface, then provide only config values.
+
+#+begin_src scheme
+(import :clan/poo/object
+        :marlin/deck-runtime-modules-lib
+        "agent"
+        "hooks"
+        "interface"
+        "script"
+        "subagent"
+        "workspace")
+
+(def user-interface-module-base-config
+  (marlinModules
+   UserInterfaceModuleConfig
+   (.o id: "user-interface-root-module"
+       config:
+       (.o surface: "downstream-user-interface"
+           entry: "interface-workflow"))))
+
+(def user-interface-module-config
+  (.o (:: @ (list user-interface-module-base-config))
+      (imports => marlin-imports-append
+               (marlin-imports
+                (marlin-import "./workspace.ss" user-interface-workspace-module)
+                (marlin-import "./agent.ss" user-interface-agent-module)
+                (marlin-import "./script.ss" user-interface-script-module)
+                (marlin-import "./hooks.ss" hook-profile)))
+      (extensions => marlin-extensions-append
+                  (marlin-extensions
+                   user-interface-subagent-policy-extension))))
+#+end_src
+
+The =UserInterfaceModuleConfig= interface owns schemas. The user-facing config
+object owns only id, lazy =imports= and =extensions= slot composition, and config
+values. Runtime projections such as root options, schemas, validation receipts,
+extension catalogs, and evaluation are upstream utilities exposed through
+=marlin-module-workflow=:
+
+#+begin_src scheme
+(def user-interface-workflow
+  (marlin-module-workflow
+   user-interface-module-config
+   '("runtime-catalog-user-interface-hook")))
+
+(.get user-interface-workflow evaluation)
+(.get user-interface-workflow validation-receipts)
+(.get user-interface-workflow extension-catalog)
+#+end_src
+
+** Module Examples
+
+The example keeps common downstream concerns in small importable modules:
+
+- =user-interface-workspace-module= owns workspace file paths such as
+  =workspace-root=, =interface-file=, and =state-file=.
+- =user-interface-agent-module= owns agent defaults such as =agent-scope=,
+  =agent-class=, and =model-profile=.
+- =hook-profile= from =./hooks.ss= owns runtime catalog names such as =hook-id=,
+  =hook-action=, and =hook-owner=.
+- =user-interface-subagent-policy-extension= from =./subagent.ss= is an
+  agent-authored POO extension object that combines a subagent profile, route
+  policy, matcher, and catalog-owned hook action.
+
+Each module follows the same user-facing pattern:
+
+#+begin_src scheme
+(def user-interface-agent-module
+  (marlinModules
+   UserInterfaceAgentProfile
+   (.o id: "user-interface-agent-module"
+       config:
+       (.o agent-scope: "user-interface-agent"
+           agent-class: "customer-user-interface"
+           model-profile: "interactive"))))
+#+end_src
+
+Root configs load these modules through native POO slot methods. The =imports=
+method receives inherited imports lazily and appends direct user imports:
+
+#+begin_src scheme
+(.o (:: @ (list module))
+    (imports => marlin-imports-append
+             (marlin-imports
+              (marlin-import "./hooks.ss" hook-profile))))
+#+end_src
+
+When source metadata needs to be explicit, the lower-level POO object remains
+available:
+
+#+begin_src scheme
+(marlin-import
+ (marlin-source-ref (marlin-local-source "./hooks.ss"))
+ hook-profile)
+#+end_src
+
+Agents can also write extension objects directly. The upstream layer maintains
+the object helpers; the agent owns the concrete subagent and policy slots:
+
+#+begin_src scheme
+(def user-interface-subagent-policy-extension
+  (make-marlin-deck-runtime-subagent-policy-extension
+   "user-interface-subagent-policy-extension"
+   user-interface-subagent-profile
+   user-interface-subagent-route-policy
+   user-interface-subagent-condition
+   user-interface-subagent-matcher
+   (make-marlin-deck-runtime-register-hook-action
+    "runtime-catalog-user-interface-hook"
+    "runtime-catalog-user-interface-hook")
+   '((owner . "user-interface-worker"))))
+#+end_src
+
+** Run
+
+From this directory:
+
+#+begin_src sh
+GERBIL_LOADPATH=../../gerbil/src:modules:t gxtest -v t/user-interface-module-config-test.ss
+#+end_src
+
+The Rust ignored real-gxtest gate copies and runs this same directory, so the
+example and the executable downstream test stay aligned.

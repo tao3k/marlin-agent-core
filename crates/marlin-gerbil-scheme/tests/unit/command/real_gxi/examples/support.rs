@@ -1,7 +1,8 @@
-pub(super) use crate::command::real_gxi::{
-    MARLIN_REQUIRE_REAL_GXI_ENV, assert_workspace_patch_intent_artifact, local_gxi,
+pub(super) use crate::command::real_gxi::{MARLIN_REQUIRE_REAL_GXI_ENV, local_gxi};
+use std::{
+    fs,
+    path::{Path, PathBuf},
 };
-use std::{fs, path::Path};
 use tempfile::{Builder, TempDir};
 
 pub(super) fn test_root(name: &str) -> TempDir {
@@ -9,6 +10,29 @@ pub(super) fn test_root(name: &str) -> TempDir {
         .prefix(&format!("marlin-gerbil-scheme-{name}-"))
         .tempdir()
         .unwrap_or_else(|error| panic!("creates {name} test root: {error}"))
+}
+
+pub(super) fn local_gxtest_for_gxi(gxi: &Path) -> Option<PathBuf> {
+    let Some(parent) = gxi.parent() else {
+        return missing_gxtest(gxi.with_file_name("gxtest"));
+    };
+    let gxtest = parent.join("gxtest");
+    if gxtest.exists() {
+        return Some(gxtest);
+    }
+    missing_gxtest(gxtest)
+}
+
+fn missing_gxtest(gxtest: PathBuf) -> Option<PathBuf> {
+    let message = format!(
+        "skipping real gxtest because {} is missing",
+        gxtest.display()
+    );
+    if std::env::var_os(MARLIN_REQUIRE_REAL_GXI_ENV).is_some() {
+        panic!("{message}; unset {MARLIN_REQUIRE_REAL_GXI_ENV} or install matching gxtest");
+    }
+    eprintln!("{message}");
+    None
 }
 
 pub(super) fn write_protocol_bindings_example(example: &Path) {
@@ -27,8 +51,10 @@ pub(super) fn write_protocol_bindings_example(example: &Path) {
 (def intent
   (make-marlin-workspace-patch-intent "intent:memory" patch #t))
 
-(display-marlin-compile-response
- (make-marlin-workspace-patch-intent-artifact intent))
+(def artifact
+  (make-marlin-workspace-patch-intent-artifact intent))
+
+(display "workspace-patch-intent-artifact")
 (newline)
 "#,
     )

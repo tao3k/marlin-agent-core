@@ -1,10 +1,9 @@
 use std::{path::PathBuf, sync::Arc};
 
 use marlin_agent_harness::{
-    AgentHarness, HarnessRuntime, runtime_environment_visibility_evidence,
-    working_copy_isolation_visibility_evidence,
+    AgentHarness, HarnessEvidenceKind, HarnessRuntime, HarnessScenario,
+    runtime_environment_visibility_evidence, working_copy_isolation_visibility_evidence,
 };
-use marlin_agent_protocol::{AgentScenario, LoopEvidenceKind};
 use marlin_agent_runtime::{
     WorkingCopyCommandInvocation, WorkingCopyCommandProgram, WorkingCopyCommandReceipt,
     WorkingCopyCreateRequest, WorkingCopyGitTopLevel, WorkingCopyHandle,
@@ -21,7 +20,7 @@ use super::support::{EnvironmentEchoHook, EnvironmentEchoSubAgent};
 #[tokio::test]
 async fn harness_runtime_preserves_custom_environment_for_hooks_and_sub_agents() {
     let scenario =
-        AgentScenario::new("environment").expecting_evidence(LoopEvidenceKind::Visibility);
+        HarnessScenario::new("environment").expecting_evidence(HarnessEvidenceKind::Visibility);
     let fixture = custom_home_runtime_environment_fixture();
     let mut harness = HarnessRuntime::with_environment(4, fixture.root_environment().clone());
     harness.record_environment_visibility();
@@ -50,7 +49,7 @@ async fn harness_runtime_preserves_custom_environment_for_hooks_and_sub_agents()
     let evidence = harness
         .evidence()
         .iter()
-        .find(|evidence| evidence.kind == LoopEvidenceKind::Visibility)
+        .find(|evidence| evidence.kind == HarnessEvidenceKind::Visibility)
         .expect("expected runtime environment visibility evidence");
     assert_eq!(
         evidence,
@@ -69,7 +68,7 @@ async fn harness_runtime_preserves_custom_environment_for_hooks_and_sub_agents()
 #[test]
 fn harness_runtime_records_working_copy_isolation_visibility() {
     let scenario =
-        AgentScenario::new("working-copy").expecting_evidence(LoopEvidenceKind::Visibility);
+        HarnessScenario::new("working-copy").expecting_evidence(HarnessEvidenceKind::Visibility);
     let request = WorkingCopyIsolationRequest::Create(WorkingCopyCreateRequest::new(
         "marlin-core",
         WorkingCopyIsolationProvider::GitWorktree,

@@ -1,13 +1,13 @@
-use marlin_agent_protocol::{
-    LoopEvidence, LoopEvidenceKind, LoopPerformanceEvidence, LoopStabilityEvidence,
-    PERFORMANCE_EVIDENCE_KEYS, STABILITY_EVIDENCE_KEYS,
+use marlin_agent_harness::{
+    HARNESS_PERFORMANCE_EVIDENCE_KEYS, HARNESS_STABILITY_EVIDENCE_KEYS, HarnessEvidence,
+    HarnessEvidenceKind, HarnessPerformanceEvidence, HarnessStabilityEvidence,
 };
 
 #[test]
-fn evidence_distinguishes_present_and_missing_facts() {
-    let present =
-        LoopEvidence::present(LoopEvidenceKind::Safety, "safety-doc").with_detail("parser-owned");
-    let missing = LoopEvidence::missing(LoopEvidenceKind::Budget, "loop-budget");
+fn harness_evidence_distinguishes_present_and_missing_facts() {
+    let present = HarnessEvidence::present(HarnessEvidenceKind::Safety, "safety-doc")
+        .with_detail("parser-owned");
+    let missing = HarnessEvidence::missing(HarnessEvidenceKind::Budget, "loop-budget");
 
     assert!(present.present);
     assert_eq!(present.detail.as_deref(), Some("parser-owned"));
@@ -15,8 +15,8 @@ fn evidence_distinguishes_present_and_missing_facts() {
 }
 
 #[test]
-fn performance_evidence_carries_benchmark_contract_keys() {
-    let evidence: LoopEvidence = LoopPerformanceEvidence {
+fn harness_performance_evidence_carries_benchmark_contract_keys() {
+    let evidence: HarnessEvidence = HarnessPerformanceEvidence {
         subject: "src/runtime.rs".to_owned(),
         benchmark_command: "cargo bench -p marlin-agent-harness".to_owned(),
         baseline: "p95=10ms".to_owned(),
@@ -29,10 +29,10 @@ fn performance_evidence_carries_benchmark_contract_keys() {
 
     let detail = evidence.detail.as_deref().expect("performance detail");
 
-    assert_eq!(evidence.kind, LoopEvidenceKind::Performance);
+    assert_eq!(evidence.kind, HarnessEvidenceKind::Performance);
     assert_eq!(evidence.subject, "src/runtime.rs");
     assert!(evidence.present);
-    for key in PERFORMANCE_EVIDENCE_KEYS {
+    for key in HARNESS_PERFORMANCE_EVIDENCE_KEYS {
         assert!(
             detail.contains(key),
             "missing performance evidence key {key}"
@@ -41,8 +41,8 @@ fn performance_evidence_carries_benchmark_contract_keys() {
 }
 
 #[test]
-fn stability_evidence_carries_long_run_contract_keys() {
-    let evidence: LoopEvidence = LoopStabilityEvidence {
+fn harness_stability_evidence_carries_long_run_contract_keys() {
+    let evidence: HarnessEvidence = HarnessStabilityEvidence {
         subject: "src/runtime.rs".to_owned(),
         stability_command: "cargo test -p marlin-agent-runtime stability".to_owned(),
         iteration_window: "iterations=1000 duration=60s".to_owned(),
@@ -56,10 +56,10 @@ fn stability_evidence_carries_long_run_contract_keys() {
 
     let detail = evidence.detail.as_deref().expect("stability detail");
 
-    assert_eq!(evidence.kind, LoopEvidenceKind::Stability);
+    assert_eq!(evidence.kind, HarnessEvidenceKind::Stability);
     assert_eq!(evidence.subject, "src/runtime.rs");
     assert!(evidence.present);
-    for key in STABILITY_EVIDENCE_KEYS {
+    for key in HARNESS_STABILITY_EVIDENCE_KEYS {
         assert!(detail.contains(key), "missing stability evidence key {key}");
     }
 }

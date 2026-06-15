@@ -1,0 +1,3 @@
+* User Interface
+
+This file is intentionally read by the user interface module config example.

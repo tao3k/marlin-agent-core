@@ -8,6 +8,7 @@ mod compile_source;
 mod compiler;
 mod deck_runtime_native;
 mod deck_runtime_policy;
+mod deck_runtime_script;
 mod deps;
 mod native_aot_cli;
 mod real_gxi_gate;
@@ -33,8 +34,7 @@ pub use aot_runtime::{
 };
 pub use artifact::{GerbilArtifactKind, GerbilArtifactKindMismatch, GerbilCompiledArtifact};
 pub use command::{
-    GERBIL_COMMAND_PROFILE_ENV, GerbilCommandCompiler, GerbilCommandProfile, GerbilCommandSpec,
-    GerbilCompileRequest, GerbilCompileResponse, GerbilRuntimeBinding,
+    GERBIL_COMMAND_PROFILE_ENV, GerbilCommandProfile, GerbilCommandSpec, GerbilCompileRequest,
 };
 pub use compile_source::run_compile_source_cli;
 pub use compiler::{GerbilCompiler, GerbilSource, compile_checked};
@@ -50,10 +50,41 @@ pub use deck_runtime_native::{
     GerbilDeckRuntimeNativeStatus, GerbilDeckRuntimeNativeUtf8, GerbilDeckRuntimeNativeUtf8List,
 };
 pub use deck_runtime_policy::{
-    GerbilDeckRuntimeContextMode, GerbilDeckRuntimeIsolationMode,
-    GerbilDeckRuntimeModelRoutePolicy, GerbilDeckRuntimeModelRoutePolicyRequest,
-    GerbilDeckRuntimeModelRouteSelectedPolicy, GerbilDeckRuntimeModelRouteSelectionReceipt,
-    GerbilDeckRuntimeSelectedPolicyKind,
+    GERBIL_DECK_RUNTIME_NATIVE_PROJECTION_ABI_ID,
+    GERBIL_DECK_RUNTIME_NATIVE_PROJECTION_ABI_VERSION,
+    GERBIL_DECK_RUNTIME_NATIVE_PROJECTION_PACKAGE_ID,
+    GERBIL_DECK_RUNTIME_POO_POLICY_PROJECTION_SCHEMA_ID,
+    GERBIL_DECK_RUNTIME_POO_POLICY_PROJECTION_TYPE_ID,
+    GERBIL_DECK_RUNTIME_PROJECT_POO_POLICY_SYMBOL, GerbilDeckRuntimeContextMode,
+    GerbilDeckRuntimeIsolationMode, GerbilDeckRuntimeModelRoutePolicy,
+    GerbilDeckRuntimeModelRoutePolicyRequest, GerbilDeckRuntimeModelRouteSelectedPolicy,
+    GerbilDeckRuntimeModelRouteSelectionReceipt, GerbilDeckRuntimePooPolicyProjection,
+    GerbilDeckRuntimeSelectedPolicyKind, decode_gerbil_deck_runtime_poo_policy_projection,
+    gerbil_deck_runtime_native_projection_abi_contract,
+    gerbil_deck_runtime_native_projection_package_manifest,
+    gerbil_deck_runtime_native_projection_readiness_plan,
+    gerbil_deck_runtime_poo_policy_projection_contract,
+    gerbil_deck_runtime_poo_policy_projection_request,
+    gerbil_deck_runtime_poo_policy_projection_type_manifest,
+};
+pub use deck_runtime_script::{
+    GERBIL_DECK_RUNTIME_SCRIPT_BATCH_DEFAULT_ITERATIONS,
+    GERBIL_DECK_RUNTIME_SCRIPT_BATCH_MAX_ELAPSED_US,
+    GERBIL_DECK_RUNTIME_SCRIPT_BATCH_METRICS_SCHEMA_ID,
+    GERBIL_DECK_RUNTIME_SCRIPT_BATCH_METRICS_TYPE_ID, GERBIL_DECK_RUNTIME_SCRIPT_INTERFACE_KIND,
+    GERBIL_DECK_RUNTIME_SCRIPT_INTERFACE_RECEIPT_SCHEMA_ID,
+    GERBIL_DECK_RUNTIME_SCRIPT_INTERFACE_RECEIPT_TYPE_ID, GERBIL_DECK_RUNTIME_SCRIPT_KIND,
+    GerbilDeckRuntimeScriptAction, GerbilDeckRuntimeScriptBatchMetrics,
+    GerbilDeckRuntimeScriptBatchMetricsKind, GerbilDeckRuntimeScriptBatchPerformanceBudget,
+    GerbilDeckRuntimeScriptBatchPerformanceReceipt, GerbilDeckRuntimeScriptBatchPerformanceStatus,
+    GerbilDeckRuntimeScriptExtensionId, GerbilDeckRuntimeScriptId,
+    GerbilDeckRuntimeScriptInterfaceKind, GerbilDeckRuntimeScriptInterfaceReceipt,
+    GerbilDeckRuntimeScriptInterfaceReceiptKind, decode_gerbil_deck_runtime_script_batch_metrics,
+    decode_gerbil_deck_runtime_script_interface_receipt,
+    evaluate_gerbil_deck_runtime_script_batch_performance,
+    gerbil_deck_runtime_script_batch_metrics_contract,
+    gerbil_deck_runtime_script_interface_receipt_contract,
+    gerbil_deck_runtime_script_interface_type_manifest,
 };
 pub use deps::{
     GerbilDepsAction, GerbilDepsConfig, GerbilDepsError, run_gerbil_deps_cli,
@@ -75,34 +106,38 @@ pub use resident_runtime::{
 };
 pub use runtime::{
     DEFAULT_GERBIL_GSC_PROGRAM, DEFAULT_GERBIL_GXC_PROGRAM, DEFAULT_GERBIL_GXI_PROGRAM,
-    GERBIL_ADAPTER_MODULE, GERBIL_BUILD_SOURCE, GERBIL_COMMAND_ADAPTER_BATCH_PATH,
-    GERBIL_COMMAND_ADAPTER_BATCH_SOURCE, GERBIL_COMMAND_ADAPTER_PATH,
-    GERBIL_COMMAND_ADAPTER_SOURCE, GERBIL_LOADPATH_ENV, GERBIL_MARLIN_ADAPTER_PATH,
+    GERBIL_ADAPTER_MODULE, GERBIL_BUILD_SOURCE, GERBIL_LOADPATH_ENV, GERBIL_MARLIN_ADAPTER_PATH,
     GERBIL_MARLIN_ADAPTER_SOURCE, GERBIL_MARLIN_DECK_RUNTIME_COMPILED_POLICY_PATH,
     GERBIL_MARLIN_DECK_RUNTIME_COMPILED_POLICY_SAMPLE_PATH,
     GERBIL_MARLIN_DECK_RUNTIME_COMPILED_POLICY_SAMPLE_SOURCE,
     GERBIL_MARLIN_DECK_RUNTIME_COMPILED_POLICY_SOURCE, GERBIL_MARLIN_DECK_RUNTIME_NATIVE_PATH,
-    GERBIL_MARLIN_DECK_RUNTIME_NATIVE_SOURCE, GERBIL_MARLIN_DECK_RUNTIME_PATH,
-    GERBIL_MARLIN_DECK_RUNTIME_SOURCE, GERBIL_MARLIN_PARSER_PATH, GERBIL_MARLIN_PARSER_SOURCE,
-    GERBIL_MARLIN_PROTOCOL_PATH, GERBIL_MARLIN_PROTOCOL_SOURCE, GERBIL_MARLIN_REQUEST_PATH,
-    GERBIL_MARLIN_REQUEST_SOURCE, GERBIL_PACKAGE_BIN_PATH, GERBIL_PACKAGE_MANIFEST_PATH,
-    GERBIL_PACKAGE_MANIFEST_SOURCE, GERBIL_PACKAGE_SOURCE_PATH, GERBIL_POO_DEPENDENCY,
-    GERBIL_POO_MOP_MODULE, GERBIL_POO_OBJECT_MODULE, GERBIL_POO_PACKAGE_NAME,
-    GERBIL_POO_PROTO_MODULE, GERBIL_RUNTIME_ASSETS, GERBIL_SMOKE_PATH, GERBIL_SMOKE_SOURCE,
-    GerbilRuntimeAsset, MARLIN_GERBIL_GSC_ENV, MARLIN_GERBIL_GXC_ENV, MARLIN_GERBIL_GXI_ENV,
-    default_gerbil_gsc_program, default_gerbil_gxc_program, default_gerbil_gxi_program,
-    gerbil_runtime_assets, gerbil_runtime_loadpath, write_gerbil_runtime_assets,
+    GERBIL_MARLIN_DECK_RUNTIME_NATIVE_PROJECTION_PATH,
+    GERBIL_MARLIN_DECK_RUNTIME_NATIVE_PROJECTION_SOURCE, GERBIL_MARLIN_DECK_RUNTIME_NATIVE_SOURCE,
+    GERBIL_MARLIN_DECK_RUNTIME_PATH, GERBIL_MARLIN_DECK_RUNTIME_SCRIPT_PATH,
+    GERBIL_MARLIN_DECK_RUNTIME_SCRIPT_SOURCE, GERBIL_MARLIN_DECK_RUNTIME_SOURCE,
+    GERBIL_MARLIN_PARSER_PATH, GERBIL_MARLIN_PARSER_SOURCE, GERBIL_MARLIN_PROTOCOL_PATH,
+    GERBIL_MARLIN_PROTOCOL_SOURCE, GERBIL_MARLIN_REQUEST_PATH, GERBIL_MARLIN_REQUEST_SOURCE,
+    GERBIL_PACKAGE_MANIFEST_PATH, GERBIL_PACKAGE_MANIFEST_SOURCE, GERBIL_PACKAGE_SOURCE_PATH,
+    GERBIL_POO_DEPENDENCY, GERBIL_POO_MOP_MODULE, GERBIL_POO_OBJECT_MODULE,
+    GERBIL_POO_PACKAGE_NAME, GERBIL_POO_PROTO_MODULE, GERBIL_RUNTIME_ASSETS, GERBIL_SMOKE_PATH,
+    GERBIL_SMOKE_SOURCE, GerbilRuntimeAsset, MARLIN_GERBIL_GSC_ENV, MARLIN_GERBIL_GXC_ENV,
+    MARLIN_GERBIL_GXI_ENV, default_gerbil_gsc_program, default_gerbil_gxc_program,
+    default_gerbil_gxi_program, gerbil_runtime_assets, gerbil_runtime_loadpath,
+    write_gerbil_runtime_assets,
 };
 pub use scheme_types::{
     GerbilSchemeFieldName, GerbilSchemeNativeAbiContract, GerbilSchemeNativeAbiId,
-    GerbilSchemeNativeAbiReadinessPlan, GerbilSchemeNativeSymbol, GerbilSchemePackageId,
-    GerbilSchemePackageManifest, GerbilSchemePackageManifestValidationReceipt,
-    GerbilSchemePackageNativeReadinessReceipt, GerbilSchemeProjectionContract,
-    GerbilSchemeSchemaId, GerbilSchemeTypeDecodeError, GerbilSchemeTypeFieldSpec,
-    GerbilSchemeTypeId, GerbilSchemeTypeManifest, GerbilSchemeTypeManifestValidationReceipt,
-    GerbilSchemeTypeRegistry, GerbilSchemeTypeSpec, GerbilSchemeTypedProjection,
-    GerbilSchemeTypedValue, GerbilSchemeTypedValueValidationReceipt, GerbilSchemeValue,
-    validate_gerbil_scheme_package_manifest, validate_gerbil_scheme_package_native_readiness,
-    validate_gerbil_scheme_type_manifest, validate_gerbil_scheme_typed_value,
+    GerbilSchemeNativeAbiReadinessPlan, GerbilSchemeNativeProjectionReceipt,
+    GerbilSchemeNativeProjectionRequest, GerbilSchemeNativeProjectionStatus,
+    GerbilSchemeNativeSymbol, GerbilSchemePackageId, GerbilSchemePackageManifest,
+    GerbilSchemePackageManifestValidationReceipt, GerbilSchemePackageNativeReadinessReceipt,
+    GerbilSchemeProjectionContract, GerbilSchemeSchemaId, GerbilSchemeTypeDecodeError,
+    GerbilSchemeTypeFieldSpec, GerbilSchemeTypeId, GerbilSchemeTypeManifest,
+    GerbilSchemeTypeManifestValidationReceipt, GerbilSchemeTypeRegistry, GerbilSchemeTypeSpec,
+    GerbilSchemeTypedProjection, GerbilSchemeTypedValue, GerbilSchemeTypedValueValidationReceipt,
+    GerbilSchemeValue, decode_gerbil_scheme_native_projection,
+    validate_gerbil_scheme_native_projection, validate_gerbil_scheme_package_manifest,
+    validate_gerbil_scheme_package_native_readiness, validate_gerbil_scheme_type_manifest,
+    validate_gerbil_scheme_typed_value,
 };
 pub use working_copy_policy::{GerbilWorkingCopyPolicyOperation, GerbilWorkingCopyPolicySelection};

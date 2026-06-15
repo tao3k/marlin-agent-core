@@ -1,8 +1,8 @@
-use marlin_agent_harness::{HarnessGraphBuilder, HarnessRuntime};
+use marlin_agent_harness::{HarnessGraphBuilder, HarnessRuntime, HarnessScenario};
 use marlin_agent_kernel::{
     GraphLoopExecutionRequest, GraphLoopExecutionStatus, TokioGraphLoopKernel,
 };
-use marlin_agent_protocol::{AgentScenario, AgentScenarioStep};
+use marlin_agent_protocol::AgentScenarioStep;
 use marlin_agent_runtime::observability;
 
 use super::support::{EventfulExecutor, FailingExecutor};
@@ -22,7 +22,7 @@ async fn harness_result_spans_correlate_many_runs_by_run_id() {
     let mut failed_run_ids = Vec::new();
 
     for (run_id, should_fail) in cases {
-        let scenario = AgentScenario::new(format!("scenario-{run_id}")).with_step(
+        let scenario = HarnessScenario::new(format!("scenario-{run_id}")).with_step(
             AgentScenarioStep::new("run")
                 .expecting_span_name(observability::harness_result_span_name()),
         );

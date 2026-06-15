@@ -40,9 +40,6 @@ pub const GERBIL_POO_PROTO_MODULE: &str = ":clan/poo/proto";
 pub const GERBIL_PACKAGE_MANIFEST_SOURCE: &str = include_str!("../gerbil/gerbil.pkg");
 /// Source directory inside the crate-shipped `Gerbil` runtime package.
 pub const GERBIL_PACKAGE_SOURCE_PATH: &str = "src";
-/// Executable launcher directory inside the crate-shipped `Gerbil` runtime package.
-pub const GERBIL_PACKAGE_BIN_PATH: &str = "bin";
-
 /// Runtime source asset that can be written into a `gxi` loadpath root.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct GerbilRuntimeAsset {
@@ -50,24 +47,15 @@ pub struct GerbilRuntimeAsset {
     pub source: &'static str,
 }
 
-/// Source-file launcher that runs the `:marlin/adapter` command adapter.
-pub const GERBIL_COMMAND_ADAPTER_PATH: &str = "bin/command-adapter.ss";
-/// Source text for the `:marlin/adapter` command adapter launcher.
-pub const GERBIL_COMMAND_ADAPTER_SOURCE: &str = include_str!("../gerbil/bin/command-adapter.ss");
-/// Source-file launcher that runs newline-delimited command adapter requests.
-pub const GERBIL_COMMAND_ADAPTER_BATCH_PATH: &str = "bin/command-adapter-batch.ss";
-/// Source text for the newline-delimited command adapter launcher.
-pub const GERBIL_COMMAND_ADAPTER_BATCH_SOURCE: &str =
-    include_str!("../gerbil/bin/command-adapter-batch.ss");
 /// Build script for compiling the crate-shipped Gerbil runtime assets.
 pub const GERBIL_BUILD_SOURCE: &str = include_str!("../gerbil/build.ss");
 /// Smoke launcher path inside the crate-shipped `Gerbil` runtime package.
 pub const GERBIL_SMOKE_PATH: &str = "bin/smoke.ss";
 /// Standalone smoke source used to verify `Gerbil` module loading.
 pub const GERBIL_SMOKE_SOURCE: &str = include_str!("../gerbil/bin/smoke.ss");
-/// Library module that reads a compile request and emits a compile response.
+/// Library module that compiles typed Gerbil request values into typed artifacts.
 pub const GERBIL_MARLIN_ADAPTER_PATH: &str = "src/marlin/adapter.ss";
-/// Source text for the `:marlin/adapter` library module.
+/// Source text for the typed `:marlin/adapter` library module.
 pub const GERBIL_MARLIN_ADAPTER_SOURCE: &str = include_str!("../gerbil/src/marlin/adapter.ss");
 /// Library module that exposes the Deck runtime capability bridge.
 pub const GERBIL_MARLIN_DECK_RUNTIME_PATH: &str = "src/marlin/deck-runtime.ss";
@@ -91,17 +79,28 @@ pub const GERBIL_MARLIN_DECK_RUNTIME_NATIVE_PATH: &str = "src/marlin/deck-runtim
 /// Source text for the native C ABI Deck runtime selector.
 pub const GERBIL_MARLIN_DECK_RUNTIME_NATIVE_SOURCE: &str =
     include_str!("../gerbil/src/marlin/deck-runtime-native.ss");
+/// Library module that exposes Gerbil POO typed projections for the Rust native ABI.
+pub const GERBIL_MARLIN_DECK_RUNTIME_NATIVE_PROJECTION_PATH: &str =
+    "src/marlin/deck-runtime-native-projection.ss";
+/// Source text for Gerbil POO typed projections used by the Rust native ABI.
+pub const GERBIL_MARLIN_DECK_RUNTIME_NATIVE_PROJECTION_SOURCE: &str =
+    include_str!("../gerbil/src/marlin/deck-runtime-native-projection.ss");
+/// Library module that exposes quick Gerbil script interfaces for downstream POO extensions.
+pub const GERBIL_MARLIN_DECK_RUNTIME_SCRIPT_PATH: &str = "src/marlin/deck-runtime-script.ss";
+/// Source text for quick Gerbil script interfaces.
+pub const GERBIL_MARLIN_DECK_RUNTIME_SCRIPT_SOURCE: &str =
+    include_str!("../gerbil/src/marlin/deck-runtime-script.ss");
 /// Reader-backed source parser for `marlin` smoke artifact forms.
 pub const GERBIL_MARLIN_PARSER_PATH: &str = "src/marlin/parser.ss";
 /// Source text for the reader-backed source parser.
 pub const GERBIL_MARLIN_PARSER_SOURCE: &str = include_str!("../gerbil/src/marlin/parser.ss");
-/// Protocol binding constructors and JSON serializers for `marlin` artifacts.
+/// Protocol binding constructors for `marlin` artifacts.
 pub const GERBIL_MARLIN_PROTOCOL_PATH: &str = "src/marlin/protocol.ss";
-/// Source text for protocol binding constructors and JSON serializers.
+/// Source text for protocol binding constructors.
 pub const GERBIL_MARLIN_PROTOCOL_SOURCE: &str = include_str!("../gerbil/src/marlin/protocol.ss");
-/// JSON request decoder for the Rust-to-`Gerbil` command protocol.
+/// Typed request value accessors for Rust-owned Gerbil runtime boundaries.
 pub const GERBIL_MARLIN_REQUEST_PATH: &str = "src/marlin/request.ss";
-/// Source text for the Rust-to-`Gerbil` command protocol request decoder.
+/// Source text for typed request value accessors.
 pub const GERBIL_MARLIN_REQUEST_SOURCE: &str = include_str!("../gerbil/src/marlin/request.ss");
 
 include!(concat!(env!("OUT_DIR"), "/gerbil_runtime_assets.rs"));

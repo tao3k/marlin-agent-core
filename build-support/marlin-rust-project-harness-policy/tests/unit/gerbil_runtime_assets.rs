@@ -24,9 +24,14 @@ fn gerbil_runtime_asset_receipt_accepts_complete_marlin_runtime_package() {
         &[
             "gerbil.pkg",
             "build.ss",
-            "bin/command-adapter-batch.ss",
+            "src/marlin/protocol-types.ss",
+            "src/marlin/protocol.ss",
+            "src/marlin/request.ss",
+            "src/marlin/adapter.ss",
             "src/marlin/deck-runtime.ss",
             "src/marlin/deck-runtime-native.ss",
+            "src/marlin/deck-runtime-native-projection.ss",
+            "src/marlin/deck-runtime-script.ss",
             "src/marlin/deck-runtime-strategy.ss",
             "src/marlin/extra-policy.ss",
         ],
@@ -37,10 +42,54 @@ fn gerbil_runtime_asset_receipt_accepts_complete_marlin_runtime_package() {
     assert_eq!(receipt.status, GerbilRuntimeAssetManifestStatus::Complete);
     assert!(receipt.is_success());
     assert!(receipt.has_runtime_assets());
-    assert_eq!(receipt.asset_count, 7);
+    assert_eq!(receipt.asset_count, 12);
     assert_eq!(receipt.package_manifest_count, 1);
-    assert_eq!(receipt.scheme_source_count, 6);
+    assert_eq!(receipt.scheme_source_count, 11);
     assert!(receipt.missing_required_assets.is_empty());
+}
+
+#[test]
+fn gerbil_runtime_asset_receipt_ignores_transient_runtime_cache_dirs() {
+    let tempdir = tempfile::tempdir().expect("create temp project");
+    write_runtime_assets(
+        tempdir.path(),
+        &[
+            "gerbil.pkg",
+            "build.ss",
+            "src/marlin/protocol-types.ss",
+            "src/marlin/protocol.ss",
+            "src/marlin/request.ss",
+            "src/marlin/adapter.ss",
+            "src/marlin/deck-runtime.ss",
+            "src/marlin/deck-runtime-native.ss",
+            "src/marlin/deck-runtime-native-projection.ss",
+            "src/marlin/deck-runtime-script.ss",
+            "src/marlin/deck-runtime-strategy.ss",
+            ".run/marlin-harness-policy-negative/gerbil.pkg",
+            ".run/marlin-harness-policy-negative/src/macros/core.ss",
+            ".direnv/cache.ss",
+            ".devenv/cache.ss",
+            ".cache/cache.ss",
+        ],
+    );
+
+    let receipt = inspect_gerbil_runtime_assets(tempdir.path());
+
+    assert_eq!(receipt.status, GerbilRuntimeAssetManifestStatus::Complete);
+    assert!(receipt.is_success());
+    assert_eq!(receipt.asset_count, 11);
+    assert_eq!(receipt.package_manifest_count, 1);
+    assert_eq!(receipt.scheme_source_count, 10);
+    assert!(
+        receipt.asset_paths.iter().all(|path| {
+            !path.starts_with(".run/")
+                && !path.starts_with(".direnv/")
+                && !path.starts_with(".devenv/")
+                && !path.starts_with(".cache/")
+        }),
+        "transient cache paths should not be embedded as runtime assets: {:?}",
+        receipt.asset_paths
+    );
 }
 
 #[test]
@@ -67,7 +116,7 @@ fn gerbil_runtime_asset_receipt_rejects_missing_required_runtime_package_files()
     assert!(
         receipt
             .missing_required_assets
-            .contains(&"bin/command-adapter-batch.ss".to_owned())
+            .contains(&"src/marlin/adapter.ss".to_owned())
     );
 }
 
@@ -88,12 +137,22 @@ fn gerbil_runtime_asset_receipt_accepts_real_marlin_gerbil_scheme_package() {
     assert!(
         receipt
             .asset_paths
-            .contains(&"bin/command-adapter-batch.ss".to_owned())
+            .contains(&"src/marlin/adapter.ss".to_owned())
     );
     assert!(
         receipt
             .asset_paths
             .contains(&"src/marlin/deck-runtime-native.ss".to_owned())
+    );
+    assert!(
+        receipt
+            .asset_paths
+            .contains(&"src/marlin/deck-runtime-native-projection.ss".to_owned())
+    );
+    assert!(
+        receipt
+            .asset_paths
+            .contains(&"src/marlin/deck-runtime-script.ss".to_owned())
     );
 }
 

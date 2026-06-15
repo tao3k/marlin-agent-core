@@ -262,6 +262,32 @@ current Scheme compiled-macro promotion gate: complex policy shape remains in
 Gerbil Scheme, while the hot selector can avoid object projection and runtime
 rule interpretation.
 
+Quick downstream script interfaces add a separate user-facing tier. The
+=:marlin/deck-runtime-script= module exposes
+=defmarlin-deck-runtime-script= for Gerbil POO extension objects and fast =gxi=
+scripts. Scheme owns the macro surface, script runner, POO extension object,
+and low-frequency composition logic. Rust owns the typed script interface
+receipt, the nested POO native projection contract, and the batch performance
+receipt.
+
+The current script batch gate is:
+
+#+begin_src sh
+gerbil-scheme-harness bench --iterations 1 --max-total-ms 2000 --max-interface-ms 50 crates/marlin-gerbil-scheme/gerbil
+#+end_src
+
+On 2026-06-14 the local harness benchmark measured =totalMs=243,
+=collect-project=223, =type-check=18, and =structural-interface-packet=2. The
+Scheme unit gate also exercises =marlin-deck-runtime-script-batch-metrics= with
+128 script calls. That proves the macro/user interface shape, not the hot-path
+runtime budget. The Rust-side promotion gate is therefore a typed batch metrics
+projection: 128 or more script runs must fit within the default 50,000
+microsecond budget, and Rust produces a
+=GerbilDeckRuntimeScriptBatchPerformanceReceipt= with =WithinBudget=,
+=UnderSampled=, or =OverBudget=. This keeps expensive supervision,
+observability, locking, and final budget decisions on the Rust side while
+leaving Scheme responsible for POO and macro expressiveness.
+
 A later same-day rerun of the linked native ABI selector provides the current
 hot-path control sample for this audit:
 

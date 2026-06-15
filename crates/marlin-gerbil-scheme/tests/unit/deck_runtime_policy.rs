@@ -1,9 +1,16 @@
 use marlin_agent_protocol::{ModelRouteAgentScope, ModelRouteRequest};
 use marlin_gerbil_scheme::{
-    GerbilDeckRuntimeContextMode, GerbilDeckRuntimeIsolationMode,
-    GerbilDeckRuntimeModelRoutePolicy, GerbilDeckRuntimeModelRoutePolicyRequest,
-    GerbilDeckRuntimeModelRouteSelectedPolicy, GerbilDeckRuntimeModelRouteSelectionReceipt,
-    GerbilDeckRuntimeSelectedPolicyKind,
+    GERBIL_DECK_RUNTIME_NATIVE_PROJECTION_ABI_ID,
+    GERBIL_DECK_RUNTIME_NATIVE_PROJECTION_ABI_VERSION,
+    GERBIL_DECK_RUNTIME_POO_POLICY_PROJECTION_SCHEMA_ID,
+    GERBIL_DECK_RUNTIME_POO_POLICY_PROJECTION_TYPE_ID,
+    GERBIL_DECK_RUNTIME_PROJECT_POO_POLICY_SYMBOL,
+    GERBIL_MARLIN_DECK_RUNTIME_NATIVE_PROJECTION_SOURCE, GerbilDeckRuntimeContextMode,
+    GerbilDeckRuntimeIsolationMode, GerbilDeckRuntimeModelRoutePolicy,
+    GerbilDeckRuntimeModelRoutePolicyRequest, GerbilDeckRuntimeModelRouteSelectedPolicy,
+    GerbilDeckRuntimeModelRouteSelectionReceipt, GerbilDeckRuntimeSelectedPolicyKind,
+    gerbil_deck_runtime_native_projection_readiness_plan,
+    gerbil_deck_runtime_poo_policy_projection_request,
 };
 
 #[test]
@@ -51,4 +58,50 @@ fn gerbil_deck_runtime_policy_receipt_preserves_provider_model_identity() {
     assert_eq!(policy.provider, "openai");
     assert_eq!(policy.model, "gpt-5-mini");
     assert_eq!(policy.context_mode.as_str(), "forked-context");
+}
+
+#[test]
+fn gerbil_deck_runtime_poo_policy_projection_request_matches_scheme_module_contract() {
+    let request = gerbil_deck_runtime_poo_policy_projection_request();
+    let readiness_plan = gerbil_deck_runtime_native_projection_readiness_plan();
+
+    assert_eq!(
+        request.abi_id.as_str(),
+        GERBIL_DECK_RUNTIME_NATIVE_PROJECTION_ABI_ID
+    );
+    assert_eq!(
+        request.abi_version,
+        GERBIL_DECK_RUNTIME_NATIVE_PROJECTION_ABI_VERSION
+    );
+    assert_eq!(
+        request.symbol.as_str(),
+        GERBIL_DECK_RUNTIME_PROJECT_POO_POLICY_SYMBOL
+    );
+    assert_eq!(
+        request.contract.type_id.as_str(),
+        GERBIL_DECK_RUNTIME_POO_POLICY_PROJECTION_TYPE_ID
+    );
+    assert_eq!(
+        request
+            .contract
+            .schema_id
+            .as_ref()
+            .map(|schema| schema.as_str()),
+        Some(GERBIL_DECK_RUNTIME_POO_POLICY_PROJECTION_SCHEMA_ID)
+    );
+    assert_eq!(readiness_plan.abi_id, request.abi_id);
+    assert_eq!(readiness_plan.version, request.abi_version);
+    assert_eq!(readiness_plan.exported_symbols, [request.symbol]);
+
+    for expected in [
+        GERBIL_DECK_RUNTIME_NATIVE_PROJECTION_ABI_ID,
+        GERBIL_DECK_RUNTIME_PROJECT_POO_POLICY_SYMBOL,
+        GERBIL_DECK_RUNTIME_POO_POLICY_PROJECTION_TYPE_ID,
+        GERBIL_DECK_RUNTIME_POO_POLICY_PROJECTION_SCHEMA_ID,
+    ] {
+        assert!(
+            GERBIL_MARLIN_DECK_RUNTIME_NATIVE_PROJECTION_SOURCE.contains(expected),
+            "native projection Scheme source should contain {expected}"
+        );
+    }
 }

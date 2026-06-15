@@ -1,6 +1,6 @@
 //! Dry-run workflow for Gerbil-emitted workspace patch intents.
 
-use marlin_agent_protocol::{LoopEvidence, LoopEvidenceKind};
+use marlin_agent_harness_types::{HarnessEvidence, HarnessEvidenceKind};
 use marlin_gerbil_ir::{GerbilWorkspaceContractFacts, WorkspacePatchIntentSpec};
 use marlin_org_model::{OrgContractDiagnosticSeverity, OrgContractValidationStatus, OrgNodeId};
 use marlin_org_store::OrgSourceWritePolicy;
@@ -18,7 +18,7 @@ const DRY_RUN_BEFORE_HASH: &str = "dry-run:no-workspace-read";
 const DRY_RUN_AFTER_HASH: &str = "dry-run:no-workspace-write";
 
 /// Projects a Gerbil workspace patch receipt into harness-visible workflow evidence.
-pub fn gerbil_workspace_patch_receipt_evidence(receipt: &WorkspacePatchReceipt) -> LoopEvidence {
+pub fn gerbil_workspace_patch_receipt_evidence(receipt: &WorkspacePatchReceipt) -> HarnessEvidence {
     let subject = format!("workspace-patch:{}", receipt.patch_id.as_str());
     let detail = format!(
         "accepted={} mode={:?} policy_accepted={} affected_nodes={} affected_sources={} memory_dispatch={} diagnostics={}",
@@ -32,9 +32,9 @@ pub fn gerbil_workspace_patch_receipt_evidence(receipt: &WorkspacePatchReceipt) 
     );
 
     if receipt.validation.accepted {
-        LoopEvidence::present(LoopEvidenceKind::Workflow, subject).with_detail(detail)
+        HarnessEvidence::present(HarnessEvidenceKind::Workflow, subject).with_detail(detail)
     } else {
-        LoopEvidence::missing(LoopEvidenceKind::Workflow, subject).with_detail(detail)
+        HarnessEvidence::missing(HarnessEvidenceKind::Workflow, subject).with_detail(detail)
     }
 }
 

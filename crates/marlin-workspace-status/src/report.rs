@@ -1,6 +1,5 @@
 //! Status report structures derived from workspace records.
 
-use marlin_agent_protocol::{LoopEvidence, LoopEvidenceKind};
 use marlin_gerbil_ir::ReleaseTopologySpec;
 use marlin_org_model::{
     OrgContractDiagnostic, OrgContractRegistry, OrgContractResolution, OrgContractTemplate,
@@ -8,6 +7,46 @@ use marlin_org_model::{
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
+
+/// Evidence category consumed by workspace status projections.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+pub enum WorkspaceStatusEvidenceKind {
+    Visibility,
+}
+
+/// Typed evidence fact consumed by workspace status projections.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct WorkspaceStatusEvidence {
+    pub kind: WorkspaceStatusEvidenceKind,
+    pub subject: String,
+    pub present: bool,
+    pub detail: Option<String>,
+}
+
+impl WorkspaceStatusEvidence {
+    pub fn present(kind: WorkspaceStatusEvidenceKind, subject: impl Into<String>) -> Self {
+        Self {
+            kind,
+            subject: subject.into(),
+            present: true,
+            detail: None,
+        }
+    }
+
+    pub fn missing(kind: WorkspaceStatusEvidenceKind, subject: impl Into<String>) -> Self {
+        Self {
+            kind,
+            subject: subject.into(),
+            present: false,
+            detail: None,
+        }
+    }
+
+    pub fn with_detail(mut self, detail: impl Into<String>) -> Self {
+        self.detail = Some(detail.into());
+        self
+    }
+}
 
 /// Combined status projection for a workspace target.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -218,7 +257,7 @@ impl ReleaseStatus {
     /// Build a release status projection and attach already-captured visibility evidence.
     pub fn from_topology_and_evidence(
         topology: &ReleaseTopologySpec,
-        evidence: &[LoopEvidence],
+        evidence: &[WorkspaceStatusEvidence],
     ) -> Self {
         let mut status = Self::pending_from_topology(topology);
         status.apply_visibility_evidence(evidence);
@@ -226,7 +265,7 @@ impl ReleaseStatus {
     }
 
     /// Mark release visibility reports from harness-visible evidence subjects.
-    pub fn apply_visibility_evidence(&mut self, evidence: &[LoopEvidence]) {
+    pub fn apply_visibility_evidence(&mut self, evidence: &[WorkspaceStatusEvidence]) {
         let failed_gates = mark_visibility_reports_observed(
             self.topology_id.as_str(),
             &mut self.visibility_reports,
@@ -417,7 +456,7 @@ fn missing_visibility_artifact_paths(reports: &[ReleaseVisibilityStatus]) -> Vec
 fn mark_visibility_reports_observed(
     topology_id: &str,
     reports: &mut [ReleaseVisibilityStatus],
-    evidence: &[LoopEvidence],
+    evidence: &[WorkspaceStatusEvidence],
 ) -> BTreeSet<String> {
     let mut failed_gates = BTreeSet::new();
 
@@ -431,7 +470,7 @@ fn mark_visibility_reports_observed(
 fn mark_visibility_report_observed(
     topology_id: &str,
     report: &mut ReleaseVisibilityStatus,
-    evidence: &[LoopEvidence],
+    evidence: &[WorkspaceStatusEvidence],
     failed_gates: &mut BTreeSet<String>,
 ) {
     let subject = release_visibility_subject(
@@ -450,11 +489,11 @@ fn mark_visibility_report_observed(
 }
 
 fn matching_visibility_evidence<'a>(
-    evidence: &'a [LoopEvidence],
+    evidence: &'a [WorkspaceStatusEvidence],
     subject: &'a str,
-) -> impl Iterator<Item = &'a LoopEvidence> {
+) -> impl Iterator<Item = &'a WorkspaceStatusEvidence> {
     evidence.iter().filter(move |evidence| {
-        evidence.kind == LoopEvidenceKind::Visibility && evidence.subject == subject
+        evidence.kind == WorkspaceStatusEvidenceKind::Visibility && evidence.subject == subject
     })
 }
 

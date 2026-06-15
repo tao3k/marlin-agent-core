@@ -184,6 +184,28 @@ provider-neutral =ModelGateway= protocol contract. The real LiteLLM adapter and
 prove model routing without pulling a live provider gateway into the runtime
 crate.
 
+** Live Provider Gate
+The live LLM gate is an explicit integration proof, not a default CI path. It
+lives beside the LiteLLM adapter in =marlin-agent-stream= and is guarded by both
+Rust's ignored-test mechanism and =MARLIN_LIVE_LLM_GATE=1=.
+
+The gate is intentionally =.env=-file agnostic. Project shells may use =direnv=,
+=devenv=, or another trusted activation mechanism, but the Rust test only reads
+process environment variables that have already been exported:
+- =MARLIN_LIVE_LLM_PROVIDER= names the provider segment used by =ModelEndpoint=.
+- =MARLIN_LIVE_LLM_MODEL= names the concrete provider model.
+- =MARLIN_LIVE_LLM_TIMEOUT_MS= optionally bounds the live request.
+- =MARLIN_LIVE_LLM_PROVIDER_API_KEY_ENV= optionally names the provider-specific credential variable when the default provider key name is not enough.
+
+For DeepSeek, use =MARLIN_LIVE_LLM_PROVIDER=deepseek= and a DeepSeek model
+such as =deepseek-chat=. Even when a local toolchain exposes a
+DeepSeek-compatible endpoint through =ANTHROPIC_BASE_URL=, Marlin's provider
+field remains the semantic provider id, not the compatibility transport
+variable.
+
+Runtime crates must continue to test against provider-neutral fake gateways.
+They may consume live-gate receipts later, but they must not depend on
+=marlin-agent-stream=, =litellm-rs=, or provider credentials.
 ** Observability
 
 Every routed execution should produce stable evidence:

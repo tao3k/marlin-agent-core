@@ -5,10 +5,10 @@ use std::fmt::{self, Formatter};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
+use marlin_agent_harness_types::{HarnessEvidence, HarnessEvidenceKind};
 use marlin_agent_protocol::{
-    LoopEvidence, LoopEvidenceKind, ModelGateway, ModelGatewayCompletionResponse,
-    ModelGatewayError, ModelGatewayFuture, ModelGatewayRequest, ModelGatewayResult,
-    ModelGatewayTransport,
+    ModelGateway, ModelGatewayCompletionResponse, ModelGatewayError, ModelGatewayFuture,
+    ModelGatewayRequest, ModelGatewayResult, ModelGatewayTransport,
 };
 use tokio::sync::Semaphore;
 
@@ -184,7 +184,7 @@ pub fn scripted_stream_gate_evidence(
     stream_id: impl Into<String>,
     receipt: &ScriptedStreamReceipt,
     gate: &ScriptedChunkGate,
-) -> LoopEvidence {
+) -> HarnessEvidence {
     let stream_id = stream_id.into();
     let gate_sequences = receipt
         .gate_sequences
@@ -202,8 +202,8 @@ pub fn scripted_stream_gate_evidence(
         receipt.failed,
     );
 
-    LoopEvidence::present(
-        LoopEvidenceKind::Runtime,
+    HarnessEvidence::present(
+        HarnessEvidenceKind::Runtime,
         format!("scripted-stream-gate:{stream_id}"),
     )
     .with_detail(detail)

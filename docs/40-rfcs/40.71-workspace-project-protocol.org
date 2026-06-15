@@ -375,4 +375,31 @@ and GitHub remains the collaboration and operations plane.
   families, trust filtering, and project context.
 
 - RFC 40.70 and 40.80 cite this RFC when applying Codex workspace/project
+
+** P0-P5 Implementation Matrix
+
+This RFC is considered implementation-backed only when every row below has a
+code owner, a validation command, and a stable boundary statement.
+
+- P0 Gerbil native ABI guard: Rust-side Scheme parser dependencies remain denied and compile-source reports native projection pending instead of parsing =.ss= text.
+- P1 Scheme typed projection bridge: Rust owns =GerbilSchemeNativeProjectionRequest= and =GerbilSchemeNativeProjectionReceipt= for ABI symbol, type, and schema validation.
+- P2 Gerbil POO projection module: Scheme constructs =marlin.deck-runtime.poo-policy-projection.v1= with POO objects before Rust decodes the typed value.
+- P3 compile-source native boundary: compile-source names the native projection request and receipt boundary while refusing Rust source parsing.
+- P4 Harness policy integration: real-gxi tests can run the whole =gerbil/t= gxtest suite instead of targeting one policy file.
+- P5 CI/runtime asset gate: harness required assets include =deck-runtime-native-projection.ss= and runtime asset tests expose the module constants.
+
+| Priority | Owner | Acceptance signal | Validation |
+| P0 | Gerbil native ABI guard | Rust-side Scheme parser dependencies remain denied and compile-source reports native projection pending instead of parsing .ss text. | cargo test -p marlin-gerbil-scheme dependency_boundary compile_source_binary_requires_native_abi_projection -- --ignored |
+| P1 | Scheme typed projection bridge | Rust owns GerbilSchemeNativeProjectionRequest and GerbilSchemeNativeProjectionReceipt for ABI symbol, type, and schema validation. | cargo test -p marlin-gerbil-scheme scheme_types::projection::native_abi --quiet |
+| P2 | Gerbil POO projection module | Scheme constructs marlin.deck-runtime.poo-policy-projection.v1 with POO objects before Rust decodes the typed value. | cd crates/marlin-gerbil-scheme/gerbil && GERBIL_LOADPATH=$PWD/src gxtest t/deck-runtime-native-projection-test.ss |
+| P3 | compile-source native boundary | compile-source names the native projection request and receipt boundary while refusing Rust source parsing. | cargo test -p marlin-gerbil-scheme compile_source_binary_requires_native_abi_projection -- --ignored |
+| P4 | Harness policy integration | real-gxi tests can run the whole gerbil/t gxtest suite instead of targeting one policy file. | cargo test -p marlin-gerbil-scheme command_compiler_real_gxi_runs_all_runtime_gxtests -- --ignored |
+| P5 | CI/runtime asset gate | Harness required assets include deck-runtime-native-projection.ss and runtime asset tests expose the module constants. | cargo test -p marlin-rust-project-harness-policy gerbil_runtime_asset --quiet && cargo test -p marlin-gerbil-scheme gerbil_runtime_assets --quiet |
+|----------+-------+-------------------+------------|
+| P0 | =marlin-gerbil-scheme= real Gerbil assets | =build.ss compile= succeeds, =bin/smoke.ss= runs from a written loadpath tree, and native Deck runtime source exposes the stable C ABI symbols. | =cargo test -p marlin-gerbil-scheme command_compiler_real_gxi_builds_runtime_package_and_runs_smoke_launcher -- --ignored= |
+| P1 | =marlin-gerbil-scheme::working_copy_policy= | Scheme policy selections project into Rust-owned =WorkingCopyIsolationRequest= variants for create, switch, list, remove, and pull-request checkout without text handoff. | =cargo test -p marlin-gerbil-scheme working_copy_policy= |
+| P2 | =marlin-git-utils= and =marlin-agent-environment= | Repository identity is discovered from =git rev-parse --show-toplevel= and command execution uses the resolved top-level rather than caller =cwd=. | =cargo test -p marlin-git-utils process_git_tooling_resolves_repository_root_from_nested_path= and =cargo test -p marlin-agent-environment working_copy= |
+| P3 | =marlin-gerbil-scheme= Deck runtime strategy examples | Model routing keeps provider/company and model names separate, supports customer-agent/sub-agent policy, and keeps complex hook strategy in Scheme. | =cargo test -p marlin-gerbil-scheme command_compiler_real_gxi_deck_runtime_runs_scheme_complex_strategy -- --ignored= |
+| P4 | =marlin-org-memory= | Org-native workspace flow loads orgize-backed documents, queries nodes, applies typed patches, renders views, and reports patch/status receipts. | =cargo test -p marlin-org-memory memory_workspace_loads_document_for_query_and_view memory_workspace_queries_patches_renders_and_reports_status= |
+| P5 | RFCs 40.70, 40.71, and 40.80 | JSON is not a native-internal Gerbil/Rust boundary; JSON remains limited to configuration, trace, CLI, and explicit cross-process adapters. | =cargo check --workspace --all-targets= plus RFC review |
   lessons.

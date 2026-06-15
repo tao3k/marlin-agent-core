@@ -1,10 +1,8 @@
-use super::support::{
-    assert_workspace_patch_intent_artifact, local_gxi, test_root,
-    write_deck_runtime_handshake_example,
-};
+use super::support::{local_gxi, test_root, write_deck_runtime_handshake_example};
 use marlin_gerbil_scheme::{
-    GERBIL_LOADPATH_ENV, GERBIL_POO_MOP_MODULE, GERBIL_POO_OBJECT_MODULE, GERBIL_POO_PACKAGE_NAME,
-    GERBIL_POO_PROTO_MODULE, GerbilCompileResponse, gerbil_runtime_loadpath,
+    GERBIL_LOADPATH_ENV, GERBIL_MARLIN_DECK_RUNTIME_NATIVE_PATH, GERBIL_PACKAGE_MANIFEST_PATH,
+    GERBIL_POO_MOP_MODULE, GERBIL_POO_OBJECT_MODULE, GERBIL_POO_PACKAGE_NAME,
+    GERBIL_POO_PROTO_MODULE, GERBIL_SMOKE_PATH, gerbil_runtime_loadpath,
     write_gerbil_runtime_assets,
 };
 use std::{
@@ -12,6 +10,60 @@ use std::{
     path::{Path, PathBuf},
     process::Command,
 };
+
+#[test]
+#[ignore = "requires a local Gerbil gxi executable"]
+fn command_compiler_real_gxi_builds_runtime_package_and_runs_smoke_launcher() {
+    let Some(gxi) = local_gxi() else {
+        return;
+    };
+    let root = test_root("runtime-package-smoke");
+    write_gerbil_runtime_assets(root.path()).expect("write gerbil runtime assets");
+
+    let build_output = Command::new(&gxi)
+        .env(GERBIL_LOADPATH_ENV, gerbil_runtime_loadpath(root.path()))
+        .current_dir(root.path())
+        .arg(root.path().join("build.ss"))
+        .arg("compile")
+        .output()
+        .expect("run real gxi build script");
+
+    assert!(
+        build_output.status.success(),
+        "gxi runtime package build failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&build_output.stdout),
+        String::from_utf8_lossy(&build_output.stderr)
+    );
+
+    let smoke_output = Command::new(gxi)
+        .env(GERBIL_LOADPATH_ENV, gerbil_runtime_loadpath(root.path()))
+        .current_dir(root.path())
+        .arg(root.path().join(GERBIL_SMOKE_PATH))
+        .output()
+        .expect("run real gxi runtime smoke launcher");
+
+    assert!(
+        smoke_output.status.success(),
+        "gxi runtime smoke launcher failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&smoke_output.stdout),
+        String::from_utf8_lossy(&smoke_output.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(smoke_output.stdout).expect("smoke stdout is UTF-8"),
+        "marlin-gerbil-smoke\n"
+    );
+
+    let manifest = fs::read_to_string(root.path().join(GERBIL_PACKAGE_MANIFEST_PATH))
+        .expect("read package manifest");
+    assert!(manifest.contains("(package: marlin-deck-runtime"));
+    assert!(manifest.contains("git.cons.io/mighty-gerbils/gerbil-poo"));
+
+    let native_source =
+        fs::read_to_string(root.path().join(GERBIL_MARLIN_DECK_RUNTIME_NATIVE_PATH))
+            .expect("read native runtime source");
+    assert!(native_source.contains("marlin_deck_runtime_initialize"));
+    assert!(native_source.contains("marlin_deck_runtime_select_model_route"));
+}
 
 #[test]
 #[ignore = "requires a local Gerbil gxi executable"]
@@ -37,9 +89,9 @@ fn command_compiler_real_gxi_runs_workspace_patch_intent_example_from_runtime_as
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
-    let response: GerbilCompileResponse =
-        serde_json::from_slice(&output.stdout).expect("decode example response");
-    assert_workspace_patch_intent_artifact(response.artifact);
+    let stdout = String::from_utf8(output.stdout).expect("workspace patch intent stdout is UTF-8");
+    assert_eq!(stdout, "workspace-patch-intent-artifact\n");
+    assert!(!stdout.contains("{\""));
 }
 
 #[test]
@@ -247,12 +299,7 @@ fn command_compiler_real_gxi_deck_runtime_runs_compiled_policy_macro_selector_ba
 }
 
 fn assert_no_json_handoff(stdout: &str) {
-    for forbidden in [
-        "json-handshake",
-        "display-json-string",
-        "display-marlin-deck-runtime-strategy-selection-json",
-        "{\"",
-    ] {
+    for forbidden in ["json-handshake", "selection-json", "{\""] {
         assert!(
             !stdout.contains(forbidden),
             "real gxi output leaked serialized handoff marker {forbidden}: {stdout}"

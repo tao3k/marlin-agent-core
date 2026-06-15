@@ -6,8 +6,8 @@ use crate::scheme_types::support::{strategy_selection_schema_id, strategy_select
 use marlin_gerbil_scheme::{
     GERBIL_DECK_RUNTIME_NATIVE_ABI_ID, GERBIL_DECK_RUNTIME_NATIVE_ABI_VERSION,
     GerbilSchemeNativeAbiContract, GerbilSchemeNativeAbiId, GerbilSchemeNativeAbiReadinessPlan,
-    GerbilSchemeNativeSymbol, GerbilSchemeProjectionContract, GerbilSchemeTypeDecodeError,
-    GerbilSchemeTypeId, validate_gerbil_scheme_package_manifest,
+    GerbilSchemeNativeSymbol, GerbilSchemePackageId, GerbilSchemeProjectionContract,
+    GerbilSchemeTypeDecodeError, GerbilSchemeTypeId, validate_gerbil_scheme_package_manifest,
     validate_gerbil_scheme_package_native_readiness,
 };
 
@@ -80,6 +80,24 @@ fn scheme_package_manifest_rejects_duplicate_native_abi_exports() {
         error,
         GerbilSchemeTypeDecodeError::DuplicateNativeSymbol {
             symbol: GerbilSchemeNativeSymbol::new("marlin_deck_runtime_select_model_route"),
+        }
+    );
+}
+
+#[test]
+fn scheme_package_native_readiness_rejects_missing_native_abi_contract() {
+    let manifest = downstream_strategy_package();
+
+    let error = validate_gerbil_scheme_package_native_readiness(
+        &manifest,
+        &deck_runtime_native_readiness_plan(),
+    )
+    .expect_err("readiness should fail when package has no native ABI contract");
+
+    assert_eq!(
+        error,
+        GerbilSchemeTypeDecodeError::MissingNativeAbi {
+            package_id: GerbilSchemePackageId::new("marlin.downstream.strategy-package"),
         }
     );
 }

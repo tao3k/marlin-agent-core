@@ -1,4 +1,4 @@
-use marlin_agent_protocol::{LoopEvidence, LoopEvidenceKind};
+use marlin_agent_harness_types::{HarnessEvidence, HarnessEvidenceKind};
 use marlin_agent_test_support::{
     NO_LLM_RUNTIME_REPLAY_ARTIFACT_ID, NO_LLM_RUNTIME_REPLAY_CONTRACT_JSON,
     NoLlmRuntimeReplayArtifactLoadError, load_no_llm_runtime_replay_artifact,
@@ -13,28 +13,31 @@ fn no_llm_runtime_replay_artifact_loads_graph_session_and_hook_evidence() {
     let evidence = artifact.replay_evidence();
 
     assert!(contract.is_supported_schema());
-    assert_eq!(scenario.id, NO_LLM_RUNTIME_REPLAY_ARTIFACT_ID);
-    assert_eq!(scenario.steps.len(), 1);
+    assert_eq!(scenario.id(), NO_LLM_RUNTIME_REPLAY_ARTIFACT_ID);
+    assert_eq!(scenario.steps().len(), 1);
     assert_eq!(
-        scenario.steps[0].input["artifact"],
+        scenario.steps()[0].input["artifact"],
         NO_LLM_RUNTIME_REPLAY_ARTIFACT_ID
     );
     assert_eq!(
         scenario.expected_evidence,
-        vec![LoopEvidenceKind::Visibility, LoopEvidenceKind::Runtime]
+        vec![
+            HarnessEvidenceKind::Visibility,
+            HarnessEvidenceKind::Runtime
+        ]
     );
     assert_eq!(evidence.len(), 4);
     assert_eq!(
         evidence
             .iter()
-            .filter(|entry| entry.kind == LoopEvidenceKind::Visibility)
+            .filter(|entry| entry.kind == HarnessEvidenceKind::Visibility)
             .count(),
         3
     );
     assert_eq!(
         evidence
             .iter()
-            .filter(|entry| entry.kind == LoopEvidenceKind::Runtime)
+            .filter(|entry| entry.kind == HarnessEvidenceKind::Runtime)
             .count(),
         1
     );
@@ -53,7 +56,7 @@ fn no_llm_runtime_replay_artifact_loads_from_serialized_contract() {
     let (contract, evidence) = artifact.into_parts();
 
     assert!(contract.is_supported_schema());
-    assert_eq!(contract.scenario.id, NO_LLM_RUNTIME_REPLAY_ARTIFACT_ID);
+    assert_eq!(contract.scenario.id(), NO_LLM_RUNTIME_REPLAY_ARTIFACT_ID);
     assert_eq!(contract.scenario.expected_evidence.len(), 2);
     assert_eq!(evidence.len(), 4);
     assert!(detail_contains(&evidence, "status=Accepted"));
@@ -65,7 +68,9 @@ fn no_llm_runtime_replay_artifact_rejects_unsupported_schema() {
         r#"{
   "schema_id": "marlin.agent.scenario.v0",
   "scenario": {
-    "id": "no-llm-runtime-replay"
+    "agent_scenario": {
+      "id": "no-llm-runtime-replay"
+    }
   }
 }"#,
     )
@@ -77,7 +82,7 @@ fn no_llm_runtime_replay_artifact_rejects_unsupported_schema() {
     ));
 }
 
-fn detail_contains(evidence: &[LoopEvidence], needle: &str) -> bool {
+fn detail_contains(evidence: &[HarnessEvidence], needle: &str) -> bool {
     evidence
         .iter()
         .filter_map(|entry| entry.detail.as_deref())

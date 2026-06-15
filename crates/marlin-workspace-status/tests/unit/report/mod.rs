@@ -1,4 +1,3 @@
-use marlin_agent_protocol::{LoopEvidence, LoopEvidenceKind};
 use marlin_gerbil_ir::{ReleaseGateSpec, ReleaseTopologySpec, ReleaseVisibilitySpec};
 use marlin_org_model::{
     OrgContract, OrgContractAssertion, OrgContractCompareOp, OrgContractExpectation, OrgContractId,
@@ -7,7 +6,8 @@ use marlin_org_model::{
     OrgContractValidationStatus, OrgContractValidationTarget,
 };
 use marlin_workspace_status::{
-    ContractStatus, ReleaseGateReceipt, ReleaseGateState, ReleaseStatus,
+    ContractStatus, ReleaseGateReceipt, ReleaseGateState, ReleaseStatus, WorkspaceStatusEvidence,
+    WorkspaceStatusEvidenceKind,
 };
 use serde_json::json;
 
@@ -313,8 +313,8 @@ fn release_status_marks_visibility_evidence_as_passed_gate() {
             }],
         }],
     };
-    let evidence = vec![LoopEvidence::present(
-        LoopEvidenceKind::Visibility,
+    let evidence = vec![WorkspaceStatusEvidence::present(
+        WorkspaceStatusEvidenceKind::Visibility,
         "release-visibility:release:gerbil:real-gxi:real_gxi_release_gate",
     )];
 

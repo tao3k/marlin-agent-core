@@ -24,4 +24,3 @@ rust-lang-project-harness.workspace = true
 
 [dev-dependencies]
 criterion.workspace = true
-rust-lang-project-harness.workspace = true

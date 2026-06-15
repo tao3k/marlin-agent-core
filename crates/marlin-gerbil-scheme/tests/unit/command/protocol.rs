@@ -1,10 +1,8 @@
 use super::support::loop_graph_artifact;
-use marlin_agent_protocol::{
-    AGENT_SCENARIO_CONTRACT_SCHEMA_ID, AgentEventTopic, AgentSpanName, LoopEvidenceKind,
-};
+use marlin_agent_protocol::{AGENT_SCENARIO_CONTRACT_SCHEMA_ID, AgentEventTopic, AgentSpanName};
 use marlin_gerbil_scheme::{
-    GerbilArtifactKind, GerbilCompileRequest, GerbilCompileResponse, GerbilCompiledArtifact,
-    GerbilSource, GerbilWorkspaceContractFacts,
+    GerbilArtifactKind, GerbilCompileRequest, GerbilCompiledArtifact, GerbilSource,
+    GerbilWorkspaceContractFacts,
 };
 use marlin_org_model::{
     OrgContract, OrgContractAssertion, OrgContractCompareOp, OrgContractExpectation, OrgContractId,
@@ -18,7 +16,7 @@ use marlin_workspace_view::{RenderedContractFacts, RenderedContractFactsInput};
 use serde_json::json;
 
 #[test]
-fn command_protocol_round_trips_json_contract() {
+fn rust_compile_request_round_trips_contract_facts() {
     let request = GerbilCompileRequest {
         source: GerbilSource::new("audit/control-plane", "(module audit/control-plane)"),
         expected: GerbilArtifactKind::LoopGraph,
@@ -29,21 +27,21 @@ fn command_protocol_round_trips_json_contract() {
         }),
     };
 
-    let encoded = serde_json::to_string(&request).expect("request should encode as json");
+    let encoded = serde_json::to_string(&request).expect("request should encode");
     assert!(encoded.contains("\"expected\":\"LoopGraph\""));
     assert!(encoded.contains("\"kind\":\"count\""));
     assert!(encoded.contains("\"op\":\"Ge\""));
     assert!(encoded.contains("\"expected\":1"));
 
     let decoded: GerbilCompileRequest =
-        serde_json::from_str(&encoded).expect("request should decode from json");
+        serde_json::from_str(&encoded).expect("request should decode");
 
     assert_eq!(decoded, request);
     assert!(decoded.contract_facts.is_some());
 }
 
 #[test]
-fn command_request_json_preserves_view_status_contract_facts() {
+fn rust_compile_request_preserves_view_status_contract_facts() {
     let rendered = RenderedContractFacts::from_input(RenderedContractFactsInput {
         registry: contract_registry(),
         validations: validation_report_with_skip_reason(),
@@ -97,7 +95,7 @@ fn command_request_json_preserves_view_status_contract_facts() {
         }),
     };
 
-    let encoded = serde_json::to_value(&request).expect("request should encode as json");
+    let encoded = serde_json::to_value(&request).expect("request should encode");
     assert_eq!(
         encoded["contract_facts"]["registry"]["contracts"][0]["assertions"][0]["expectation"],
         json!({
@@ -115,23 +113,22 @@ fn command_request_json_preserves_view_status_contract_facts() {
     );
 
     let decoded: GerbilCompileRequest =
-        serde_json::from_value(encoded).expect("request should decode from json");
+        serde_json::from_value(encoded).expect("request should decode");
     let contract_facts = decoded.contract_facts.expect("contract facts");
     assert_eq!(contract_facts.registry, status.registry);
     assert_eq!(contract_facts.validations, status.validation_report);
 }
 
 #[test]
-fn command_response_decodes_agent_scenario_contract_and_ensures_kind() {
-    let response: GerbilCompileResponse = serde_json::from_str(
-        r#"{"artifact":{"AgentScenarioContract":{"schema_id":"marlin.agent.scenario.v1","scenario":{"id":"gerbil-scenario","description":"from gerbil","steps":[{"name":"run","input":{"path":"LOOP.org"},"expected_event_topics":["kernel.execution"],"expected_span_names":["harness.execution"]}],"expected_evidence":["Runtime"]}}}}"#,
+fn compiled_artifact_decodes_agent_scenario_contract_and_ensures_kind() {
+    let artifact: GerbilCompiledArtifact = serde_json::from_str(
+        r#"{"AgentScenarioContract":{"schema_id":"marlin.agent.scenario.v1","scenario":{"id":"gerbil-scenario","description":"from gerbil","steps":[{"name":"run","input":{"path":"LOOP.org"},"expected_event_topics":["kernel.execution"],"expected_span_names":["harness.execution"]}],"expected_evidence":["Runtime"]}}}"#,
     )
-    .expect("agent scenario contract response should decode");
+    .expect("agent scenario contract artifact should decode");
 
-    let artifact = response
-        .artifact
+    let artifact = artifact
         .ensure_kind(GerbilArtifactKind::AgentScenarioContract)
-        .expect("agent scenario contract response should match requested kind");
+        .expect("agent scenario contract artifact should match requested kind");
 
     match artifact {
         GerbilCompiledArtifact::AgentScenarioContract(contract) => {
@@ -157,35 +154,28 @@ fn command_response_decodes_agent_scenario_contract_and_ensures_kind() {
                 contract.scenario.steps[0].expected_span_names,
                 vec![AgentSpanName::new("harness.execution")]
             );
-            assert_eq!(
-                contract.scenario.expected_evidence,
-                vec![LoopEvidenceKind::Runtime]
-            );
         }
         other => panic!("expected agent scenario contract artifact, got {other:?}"),
     }
 }
 
 #[test]
-fn command_response_carries_typed_artifact() {
-    let response = GerbilCompileResponse {
-        artifact: loop_graph_artifact("response-loop"),
-    };
+fn compiled_artifact_carries_typed_kind() {
+    let artifact = loop_graph_artifact("response-loop");
 
-    assert_eq!(response.artifact.kind(), GerbilArtifactKind::LoopGraph);
+    assert_eq!(artifact.kind(), GerbilArtifactKind::LoopGraph);
 }
 
 #[test]
-fn command_response_decodes_workspace_schema_and_ensures_kind() {
-    let response: GerbilCompileResponse = serde_json::from_str(
-        r#"{"artifact":{"WorkspaceSchema":{"schema_id":"workspace-record","required_properties":["ID","TITLE"],"todo_states":["TODO","DONE"]}}}"#,
+fn compiled_artifact_decodes_workspace_schema_and_ensures_kind() {
+    let artifact: GerbilCompiledArtifact = serde_json::from_str(
+        r#"{"WorkspaceSchema":{"schema_id":"workspace-record","required_properties":["ID","TITLE"],"todo_states":["TODO","DONE"]}}"#,
     )
-    .expect("workspace schema response should decode");
+    .expect("workspace schema artifact should decode");
 
-    let artifact = response
-        .artifact
+    let artifact = artifact
         .ensure_kind(GerbilArtifactKind::WorkspaceSchema)
-        .expect("workspace schema response should match requested kind");
+        .expect("workspace schema artifact should match requested kind");
 
     match artifact {
         GerbilCompiledArtifact::WorkspaceSchema(schema) => {

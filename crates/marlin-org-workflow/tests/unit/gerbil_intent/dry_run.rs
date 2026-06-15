@@ -1,4 +1,4 @@
-use marlin_agent_protocol::LoopEvidenceKind;
+use marlin_agent_harness_types::HarnessEvidenceKind;
 use marlin_org_workflow::{
     GerbilWorkspacePatchIntentDryRunner, gerbil_workspace_patch_receipt_evidence,
 };
@@ -30,7 +30,7 @@ fn gerbil_patch_intent_dry_run_returns_receipt_without_workspace_write() {
     );
 
     let evidence = gerbil_workspace_patch_receipt_evidence(&receipt);
-    assert_eq!(evidence.kind, LoopEvidenceKind::Workflow);
+    assert_eq!(evidence.kind, HarnessEvidenceKind::Workflow);
     assert_eq!(evidence.subject, "workspace-patch:intent:memory");
     assert!(evidence.present);
     assert_eq!(
@@ -63,7 +63,7 @@ fn gerbil_patch_intent_dry_run_rejects_missing_dry_run_first() {
     assert!(receipt.memory_dispatch.is_empty());
 
     let evidence = gerbil_workspace_patch_receipt_evidence(&receipt);
-    assert_eq!(evidence.kind, LoopEvidenceKind::Workflow);
+    assert_eq!(evidence.kind, HarnessEvidenceKind::Workflow);
     assert_eq!(evidence.subject, "workspace-patch:intent:memory");
     assert!(!evidence.present);
     assert_eq!(

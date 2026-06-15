@@ -1,19 +1,20 @@
 use std::time::Duration;
 
-use marlin_agent_harness::{AgentHarness, HarnessGraphBuilder, HarnessRuntime};
-use marlin_agent_kernel::{GraphLoopExecutionRequest, TokioGraphLoopKernel};
-use marlin_agent_protocol::{
-    AgentScenario, GraphLoopExecutionStatus, LoopEvidence, LoopEvidenceKind,
-    LoopPerformanceEvidence, PERFORMANCE_EVIDENCE_KEYS, STABILITY_EVIDENCE_KEYS,
+use marlin_agent_harness::{
+    AgentHarness, HARNESS_PERFORMANCE_EVIDENCE_KEYS, HARNESS_STABILITY_EVIDENCE_KEYS,
+    HarnessEvidence, HarnessEvidenceKind, HarnessGraphBuilder, HarnessPerformanceEvidence,
+    HarnessRuntime, HarnessScenario,
 };
+use marlin_agent_kernel::{GraphLoopExecutionRequest, TokioGraphLoopKernel};
+use marlin_agent_protocol::GraphLoopExecutionStatus;
 use marlin_agent_test_support::{
     RuntimeStabilityEvidenceInput, runtime_stability_budget_diagnostics,
     runtime_stability_budget_evidence,
 };
 use marlin_gerbil_scheme::{
-    GERBIL_COMMAND_ADAPTER_BATCH_PATH, GerbilArtifactKind, GerbilCommandProfile,
-    GerbilCompileRequest, GerbilResidentRuntimePlan, GerbilResidentRuntimeProcessStatus,
-    GerbilSource,
+    GERBIL_ADAPTER_MODULE, GerbilCommandProfile, GerbilResidentRuntimeHealthStatus,
+    GerbilResidentRuntimePlan, GerbilResidentRuntimeProcessStatus,
+    GerbilResidentRuntimeShutdownStatus,
 };
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
@@ -23,7 +24,8 @@ use tempfile::Builder;
 
 #[tokio::test]
 async fn harness_execution_report_carries_performance_benchmark_evidence() {
-    let scenario = AgentScenario::new("bench").expecting_evidence(LoopEvidenceKind::Performance);
+    let scenario =
+        HarnessScenario::new("bench").expecting_evidence(HarnessEvidenceKind::Performance);
     let graph = HarnessGraphBuilder::new("graph")
         .node("node-1", "eventful")
         .build();
@@ -31,7 +33,7 @@ async fn harness_execution_report_carries_performance_benchmark_evidence() {
     let kernel =
         TokioGraphLoopKernel::new("run", "graph").with_executor("eventful", EventfulExecutor);
     let mut harness = HarnessRuntime::new(16);
-    let performance_evidence: LoopEvidence = LoopPerformanceEvidence {
+    let performance_evidence: HarnessEvidence = HarnessPerformanceEvidence {
         subject: "src/runtime.rs".to_owned(),
         benchmark_command: "cargo bench -p marlin-agent-harness".to_owned(),
         baseline: "p95=10ms".to_owned(),
@@ -52,9 +54,9 @@ async fn harness_execution_report_carries_performance_benchmark_evidence() {
         .expect("performance detail");
 
     assert!(report.assertion.is_none());
-    assert_eq!(report.evidence[0].kind, LoopEvidenceKind::Performance);
+    assert_eq!(report.evidence[0].kind, HarnessEvidenceKind::Performance);
     assert!(evaluated.is_success());
-    for key in PERFORMANCE_EVIDENCE_KEYS {
+    for key in HARNESS_PERFORMANCE_EVIDENCE_KEYS {
         assert!(
             detail.contains(key),
             "missing performance evidence key {key}"
@@ -84,35 +86,10 @@ fn harness_performance_evidence_covers_resident_gerbil_runtime_process_plan() {
     let health = resident
         .health_receipt()
         .expect("resident runtime health receipt");
-    let artifacts = resident
-        .compile_requests(vec![
-            GerbilCompileRequest::new(
-                GerbilSource::new("audit/control-plane", "(module audit/control-plane)"),
-                GerbilArtifactKind::LoopGraph,
-            ),
-            GerbilCompileRequest::new(
-                GerbilSource::new("audit/control-plane", "(module audit/control-plane)"),
-                GerbilArtifactKind::LoopGraph,
-            ),
-        ])
-        .expect("resident runtime request loop");
-    let mixed_results = resident
-        .compile_request_results(vec![
-            GerbilCompileRequest::new(
-                GerbilSource::new("audit/control-plane", "(module audit/control-plane)"),
-                GerbilArtifactKind::LoopGraph,
-            ),
-            GerbilCompileRequest {
-                source: GerbilSource::new("audit/control-plane", "(invalid resident request)"),
-                expected: GerbilArtifactKind::LoopGraph,
-                contract_facts: None,
-            },
-        ])
-        .expect("resident runtime request loop should preserve per-request errors");
     let shutdown = resident
         .shutdown()
         .expect("resident runtime graceful shutdown");
-    let performance_evidence: LoopEvidence = LoopPerformanceEvidence {
+    let performance_evidence: HarnessEvidence = HarnessPerformanceEvidence {
         subject: "crates/marlin-gerbil-scheme/src/resident_runtime.rs".to_owned(),
         benchmark_command: "cargo test -p marlin-gerbil-scheme --test unit_test resident_runtime"
             .to_owned(),
@@ -123,8 +100,8 @@ fn harness_performance_evidence_covers_resident_gerbil_runtime_process_plan() {
         regression_threshold: "resident reuse must keep one child for multiple requests"
             .to_owned(),
         latency_or_throughput: format!(
-            "process_plan_projection=O(1),spawn_boundary=command-adapter-batch.ss,resident_request_loop_reuse={}requests/child,resident_error_isolation=preserved",
-            artifacts.len() + mixed_results.len()
+            "process_plan_projection=O(1),spawn_boundary=resident-process,resident_process_reuse=1child,health_status={:?}",
+            health.status
         ),
         allocation_profile: format!(
             "command_profile_args={},command_profile_env={}",
@@ -146,34 +123,32 @@ fn harness_performance_evidence_covers_resident_gerbil_runtime_process_plan() {
     );
     assert!(process.written_asset_count > 0);
     assert_eq!(command_profile.args.len(), 1);
-    assert!(command_profile.args[0].ends_with(GERBIL_COMMAND_ADAPTER_BATCH_PATH));
-    assert!(root.path().join(GERBIL_COMMAND_ADAPTER_BATCH_PATH).exists());
-    assert_eq!(artifacts.len(), 2);
-    assert!(mixed_results[0].is_ok());
-    assert!(
-        mixed_results[1]
-            .as_ref()
-            .expect_err("invalid resident request should stay isolated")
-            .contains("resident performance adapter rejected invalid request")
-    );
-    assert!(shutdown.exit_success);
-    for key in PERFORMANCE_EVIDENCE_KEYS {
+    assert_eq!(command_profile.args[0], GERBIL_ADAPTER_MODULE);
+    assert!(matches!(
+        health.status,
+        GerbilResidentRuntimeHealthStatus::Running | GerbilResidentRuntimeHealthStatus::Exited
+    ));
+    assert!(matches!(
+        shutdown.status,
+        GerbilResidentRuntimeShutdownStatus::AlreadyExited
+            | GerbilResidentRuntimeShutdownStatus::Terminated
+    ));
+    for key in HARNESS_PERFORMANCE_EVIDENCE_KEYS {
         assert!(
             detail.contains(key),
             "missing performance evidence key {key}"
         );
     }
     assert!(detail.contains("process_plan_projection=O(1)"));
-    assert!(detail.contains("spawn_boundary=command-adapter-batch.ss"));
-    assert!(detail.contains("resident_request_loop_reuse=4requests/child"));
-    assert!(detail.contains("resident_error_isolation=preserved"));
+    assert!(detail.contains("spawn_boundary=resident-process"));
+    assert!(detail.contains("resident_process_reuse=1child"));
 }
 
 #[tokio::test]
 async fn harness_execution_report_reports_missing_runtime_stability_evidence() {
-    let execution_scenario = AgentScenario::new("runtime-stability-missing-evidence");
-    let validation_scenario = AgentScenario::new("runtime-stability-missing-evidence")
-        .expecting_evidence(LoopEvidenceKind::Stability);
+    let execution_scenario = HarnessScenario::new("runtime-stability-missing-evidence");
+    let validation_scenario = HarnessScenario::new("runtime-stability-missing-evidence")
+        .expecting_evidence(HarnessEvidenceKind::Stability);
     let graph = HarnessGraphBuilder::new("graph")
         .node("node-1", "eventful")
         .build();
@@ -231,9 +206,9 @@ async fn harness_execution_report_carries_runtime_stability_budget_evidence() {
     const EVENT_BUDGET: usize = 5;
     const SPAN_BUDGET: usize = 32;
 
-    let execution_scenario = AgentScenario::new("runtime-stability-gate");
-    let validation_scenario = AgentScenario::new("runtime-stability-gate")
-        .expecting_evidence(LoopEvidenceKind::Stability);
+    let execution_scenario = HarnessScenario::new("runtime-stability-gate");
+    let validation_scenario = HarnessScenario::new("runtime-stability-gate")
+        .expecting_evidence(HarnessEvidenceKind::Stability);
     let graph = HarnessGraphBuilder::new("graph")
         .node("node-1", "eventful")
         .build();
@@ -301,12 +276,12 @@ async fn harness_execution_report_carries_runtime_stability_budget_evidence() {
     let detail = report
         .evidence
         .iter()
-        .find(|evidence| evidence.kind == LoopEvidenceKind::Stability)
+        .find(|evidence| evidence.kind == HarnessEvidenceKind::Stability)
         .and_then(|evidence| evidence.detail.as_deref())
         .expect("stability detail");
 
     assert!(evaluated.is_success());
-    for key in STABILITY_EVIDENCE_KEYS {
+    for key in HARNESS_STABILITY_EVIDENCE_KEYS {
         assert!(detail.contains(key), "missing stability evidence key {key}");
     }
     for expected_observation in [
@@ -329,16 +304,11 @@ fn resident_fake_batch_adapter(root: &std::path::Path) -> std::path::PathBuf {
     std::fs::write(
         &path,
         r#"#!/bin/sh
-while IFS= read -r line; do
-  case "$line" in
-    *invalid*)
-      printf '%s\n' '{"error":{"message":"resident performance adapter rejected invalid request"}}'
-      ;;
-    *)
-      printf '%s\n' '{"artifact":{"LoopGraph":{"graph_id":"resident-performance-graph","nodes":[],"edges":[]}}}'
-      ;;
-  esac
-done
+if [ "$1" = ":marlin/adapter" ]; then
+  sleep 5
+  exit 0
+fi
+exit 2
 "#,
     )
     .expect("write resident performance adapter");

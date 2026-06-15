@@ -1,4 +1,4 @@
-use marlin_agent_protocol::LoopEvidenceKind;
+use marlin_agent_harness_types::HarnessEvidenceKind;
 use marlin_agent_protocol::SubAgentConfigSurface;
 use marlin_agent_test_support::{
     DeterministicRoutedSubAgentExecutionReceipt,
@@ -67,7 +67,7 @@ fn deterministic_sub_agent_receipt_family_evidence_records_org_metadata_and_envi
     let evidence = deterministic_reviewer_routed_receipt_family_evidence();
     let detail = evidence.detail.as_deref().expect("receipt family detail");
 
-    assert_eq!(evidence.kind, LoopEvidenceKind::Runtime);
+    assert_eq!(evidence.kind, HarnessEvidenceKind::Runtime);
     assert_eq!(evidence.subject, "routed-sub-agent-receipt-family:reviewer");
     assert!(detail.contains("route_rule_id=reviewer-opus"));
     assert!(detail.contains("session_child_id=model-route/persistent/workspace:reviewer"));

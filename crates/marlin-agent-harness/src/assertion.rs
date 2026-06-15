@@ -2,7 +2,7 @@
 
 use std::{collections::BTreeSet, error::Error, fmt};
 
-use marlin_agent_protocol::{LoopEvidence, LoopEvidenceKind};
+use crate::{HarnessEvidence, HarnessEvidenceKind};
 
 /// Assertion failure emitted by harness evidence checks.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -32,8 +32,8 @@ impl Error for HarnessAssertionError {}
 
 /// Validate that all expected evidence kinds are present in a harness capture.
 pub fn assert_evidence_kinds(
-    evidence: &[LoopEvidence],
-    expected: &[LoopEvidenceKind],
+    evidence: &[HarnessEvidence],
+    expected: &[HarnessEvidenceKind],
 ) -> Result<(), HarnessAssertionError> {
     let present: BTreeSet<_> = evidence
         .iter()
