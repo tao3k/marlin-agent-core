@@ -10,16 +10,29 @@ package: marlin
 
 (export marlin-modules-kind
         marlin-module-workflow-kind
+        marlin-module-catalog-kind
+        marlin-eval-modules-result-kind
+        marlin-policy-extension-kind
+        marlin-policy-module-kind
+        marlin-policy-module-workflow-kind
+        marlin-policy-substrate-gate-kind
         marlin-module-import-kind
         marlin-import-source-ref-kind
         marlin-import-local-source-kind
         marlinModules
+        marlinPolicyExtension
+        defmarlin-policy-extension
+        marlinPolicyModule
+        defmarlin-policy-module
+        marlinModuleCatalog
         marlin-import
         marlin-imports
         marlin-imports-append
         marlin-extensions
         marlin-extensions-append
         marlin-import?
+        marlin-policy-extension?
+        marlin-policy-module?
         marlin-module-import-source-ref?
         marlin-module-import-local-source?
         marlin-module-import-normalize-source
@@ -39,7 +52,13 @@ package: marlin
         marlin-module-validation-receipts
         marlin-module-apply
         marlin-module-evaluate
-        marlin-module-workflow)
+        marlin-module-workflow
+        marlin-module-catalog-find
+        marlin-module-catalog-root
+        marlinEvalModules
+        marlin-policy-extension-object-count
+        marlin-policy-module-substrate-gate
+        marlin-policy-module-workflow)
 
 ;;; Boundary: Public user module kind is stable across module-lib helpers.
 ;; MarlinResult <- MarlinInput
@@ -50,6 +69,36 @@ package: marlin
 ;; MarlinResult <- MarlinInput
 (def marlin-module-workflow-kind
   "marlin.modules.workflow.v1")
+
+;;; Boundary: Catalogs are Scheme values, not path/evaluator conventions.
+;; MarlinResult <- MarlinInput
+(def marlin-module-catalog-kind
+  "marlin.modules.catalog.v1")
+
+;;; Boundary: evalModules returns a receipt bundle, not raw runtime config.
+;; MarlinResult <- MarlinInput
+(def marlin-eval-modules-result-kind
+  "marlin.modules.eval-result.v1")
+
+;;; Boundary: User .ss files export POO extension objects managed by modules.
+;; MarlinResult <- MarlinInput
+(def marlin-policy-extension-kind
+  "marlin.modules.policy-extension-object.v1")
+
+;;; Boundary: Policy modules are Scheme-owned POO modules, not Rust DSLs.
+;; MarlinResult <- MarlinInput
+(def marlin-policy-module-kind
+  "marlin.modules.policy-module.v1")
+
+;;; Boundary: Policy workflows add policy substrate metadata to module workflow.
+;; MarlinResult <- MarlinInput
+(def marlin-policy-module-workflow-kind
+  "marlin.modules.policy-workflow.v1")
+
+;;; Boundary: The substrate gate is a stable receipt for Rust validation.
+;; MarlinResult <- MarlinInput
+(def marlin-policy-substrate-gate-kind
+  "marlin.modules.policy-substrate-gate.v1")
 
 ;;; Boundary: Public import specs name user files and exported profiles.
 ;; MarlinResult <- MarlinInput
@@ -145,6 +194,130 @@ package: marlin
          'metadata
          (.get interface metadata)))))
 
+;;; Boundary: Policy extensions are POO objects authored by .ss files.
+;; MarlinResult <- MarlinInput
+(def (marlinPolicyExtension extension-value source-value . maybe-metadata-value)
+  (let (metadata-value
+        (if (null? maybe-metadata-value)
+          '()
+          (car maybe-metadata-value)))
+    (.o (:: @ (list extension-value))
+        policy-extension-kind: marlin-policy-extension-kind
+        policy-extension-object: #t
+        policy-extension-source: source-value
+        policy-extension-managed-by: "gerbil-module-system"
+        policy-extension-projection-owner: "gerbil-poo"
+        policy-extension-runtime-owner: "rust"
+        policy-extension-metadata: metadata-value)))
+
+;;; Boundary: Level-1 user API names exported POO extension objects directly.
+;; MarlinResult <- MarlinInput
+(defrules defmarlin-policy-extension ()
+  ((_ binding
+      (source source-value)
+      (object extension-object)
+      (metadata metadata-value))
+   (def binding
+     (marlinPolicyExtension
+      extension-object
+      source-value
+      metadata-value)))
+  ((_ binding
+      (source source-value)
+      (object extension-object))
+   (def binding
+     (marlinPolicyExtension
+      extension-object
+      source-value
+      '()))))
+
+;;; Boundary: Predicate identifies module-managed policy extension objects.
+;; MarlinResult <- MarlinInput
+(def (marlin-policy-extension? value)
+  (and (object? value)
+       (marlin-module-object-has-slot? value 'policy-extension-kind)
+       (string=? (.get value policy-extension-kind)
+                 marlin-policy-extension-kind)))
+
+;;; Boundary: Receipts count extension objects without inspecting policy internals.
+;; MarlinResult <- MarlinInput
+(def (marlin-policy-extension-object-count extension-values)
+  (let loop ((remaining extension-values)
+             (count 0))
+    (if (null? remaining)
+      count
+      (loop (cdr remaining)
+            (if (marlin-policy-extension? (car remaining))
+              (+ count 1)
+              count)))))
+
+;;; Boundary: Policy modules keep policy composition in Scheme/POO.
+;; MarlinResult <- MarlinInput
+(def (marlinPolicyModule interface module-config)
+  (let (module-value (marlinModules interface module-config))
+    (.o (:: @ (list module-value))
+        kind: marlin-policy-module-kind
+        module-kind: marlin-modules-kind
+        id: (.get module-value id)
+        policy-family:
+        (marlin-module-object-ref/default
+         module-config
+         'policy-family
+         "extension-policy")
+        projection-target:
+        (marlin-module-object-ref/default
+         module-config
+         'projection-target
+         "extension-policy-receipt")
+        receipt-kind:
+        (marlin-module-object-ref/default
+         module-config
+         'receipt-kind
+         "marlin-deck-runtime.extension-receipt.v1")
+        gate-profile:
+        (marlin-module-object-ref/default
+         module-config
+         'gate-profile
+         "policy-substrate")
+        rust-kernel-owner: "rust"
+        scheme-policy-owner: "gerbil-poo"
+        replayable: #t)))
+
+;;; Boundary: Level-1 user API expands to the POO policy module object.
+;; MarlinResult <- MarlinInput
+(defrules defmarlin-policy-module ()
+  ((_ binding
+      interface
+      (id module-id)
+      (imports import-value ...)
+      (config config-object)
+      (extensions extension-value ...)
+      (scripts script-value ...)
+      (policy-family policy-family-value)
+      (projection-target projection-target-value)
+      (receipt-kind receipt-kind-value)
+      (gate-profile gate-profile-value)
+      (metadata metadata-value))
+   (def binding
+     (marlinPolicyModule
+      interface
+      (.o id: module-id
+          imports: (marlin-imports import-value ...)
+          config: config-object
+          extensions: (marlin-extensions extension-value ...)
+          scripts: (list script-value ...)
+          policy-family: policy-family-value
+          projection-target: projection-target-value
+          receipt-kind: receipt-kind-value
+          gate-profile: gate-profile-value
+          metadata: metadata-value)))))
+
+;;; Boundary: Public catalogs collect typed module values for evaluation.
+;; MarlinResult <- MarlinInput
+(def (marlinModuleCatalog . module-values)
+  (.o kind: marlin-module-catalog-kind
+      modules: module-values))
+
 ;;; Boundary: Local source objects mirror Jsonnet-style structured config.
 ;; MarlinResult <- MarlinInput
 (def (marlin-local-source source-path)
@@ -235,7 +408,15 @@ package: marlin
 (def (marlin-module-config? value)
   (and (object? value)
        (.has? value kind)
-       (string=? (.get value kind) marlin-modules-kind)))
+       (or (string=? (.get value kind) marlin-modules-kind)
+           (string=? (.get value kind) marlin-policy-module-kind))))
+
+;;; Boundary: Policy module detection is typed, not based on source syntax.
+;; MarlinResult <- MarlinInput
+(def (marlin-policy-module? value)
+  (and (object? value)
+       (.has? value kind)
+       (string=? (.get value kind) marlin-policy-module-kind)))
 
 ;;; Boundary: Slot names are the user-facing option ids.
 ;; MarlinResult <- MarlinInput
@@ -377,7 +558,8 @@ package: marlin
     (marlin-module-runtime-import (.get module profile)))
    ((and (object? module)
          (.has? module kind)
-         (string=? (.get module kind) marlin-modules-kind))
+         (or (string=? (.get module kind) marlin-modules-kind)
+             (string=? (.get module kind) marlin-policy-module-kind)))
     (marlin-module-apply module))
    (else module)))
 
@@ -424,3 +606,139 @@ package: marlin
         (marlin-module-option-validation-receipts module)
         validation-receipts:
         (marlin-module-validation-receipts module))))
+
+;;; Boundary: Catalog lookup is explicit and deterministic.
+;; MarlinResult <- MarlinInput
+(def (marlin-module-catalog-find catalog module-id-value)
+  (find (lambda (module)
+          (string=? (.get module id) module-id-value))
+        (.get catalog modules)))
+
+;;; Boundary: A missing root id means the first catalog module is the root.
+;; MarlinResult <- MarlinInput
+(def (marlin-module-catalog-root catalog module-id-value)
+  (cond
+   (module-id-value
+    (or (marlin-module-catalog-find catalog module-id-value)
+        (error "marlin module root not found" module-id-value)))
+   ((pair? (.get catalog modules))
+    (car (.get catalog modules)))
+   (else
+    (error "marlin module catalog is empty"))))
+
+;;; Boundary: evalModules is the Nix-like user entry backed by POO workflow.
+;; MarlinResult <- MarlinInput
+(def (marlinEvalModules catalog . eval-options)
+  (let* ((root-module-id-value
+          (if (null? eval-options) #f (car eval-options)))
+         (allowed-hook-id-values
+          (if (or (null? eval-options)
+                  (null? (cdr eval-options)))
+            '()
+            (cadr eval-options)))
+         (root-module
+          (marlin-module-catalog-root catalog root-module-id-value)))
+    (if (marlin-policy-module? root-module)
+      (let* ((workflow
+              (marlin-policy-module-workflow
+               root-module
+               allowed-hook-id-values))
+             (substrate-gate (.get workflow substrate-gate)))
+        (.o kind: marlin-eval-modules-result-kind
+            catalog-kind: (.get catalog kind)
+            root-module-id: (.get root-module id)
+            root-module-kind: (.get root-module kind)
+            workflow-kind: (.get workflow kind)
+            substrate-gate-kind: (.get substrate-gate kind)
+            gate-profile: (.get substrate-gate gate-profile)
+            projection-target: (.get substrate-gate projection-target)
+            receipt-kind: (.get substrate-gate receipt-kind)
+            module-evaluation-kind:
+            (.get substrate-gate module-evaluation-kind)
+            module-count: (.get substrate-gate module-count)
+            extension-count: (.get substrate-gate extension-count)
+            policy-extension-object-count:
+            (.get substrate-gate policy-extension-object-count)
+            script-count: (.get substrate-gate script-count)
+            option-count: (.get substrate-gate option-count)
+            validation-receipt-count:
+            (.get substrate-gate validation-receipt-count)
+            rust-kernel-owner: (.get substrate-gate rust-kernel-owner)
+            scheme-policy-owner: (.get substrate-gate scheme-policy-owner)
+            replayable: (.get substrate-gate replayable)))
+      (let* ((workflow
+              (marlin-module-workflow
+               root-module
+               allowed-hook-id-values))
+             (evaluation-value (.get workflow evaluation)))
+        (.o kind: marlin-eval-modules-result-kind
+            catalog-kind: (.get catalog kind)
+            root-module-id: (.get root-module id)
+            root-module-kind: (.get root-module kind)
+            workflow-kind: (.get workflow kind)
+            substrate-gate-kind: #f
+            gate-profile: #f
+            projection-target: #f
+            receipt-kind: #f
+            module-evaluation-kind: (.get evaluation-value kind)
+            module-count: (length (.get evaluation-value module-ids))
+            extension-count: (length (.get evaluation-value extensions))
+            policy-extension-object-count:
+            (marlin-policy-extension-object-count
+             (.get evaluation-value extensions))
+            script-count: (length (.get evaluation-value scripts))
+            option-count: (length (.get evaluation-value options))
+            validation-receipt-count:
+            (length (.get workflow validation-receipts))
+            rust-kernel-owner: "rust"
+            scheme-policy-owner: "gerbil-poo"
+            replayable: #t)))))
+
+;;; Boundary: Policy substrate gates prove module evaluation before Rust runtime.
+;; MarlinResult <- MarlinInput
+(def (marlin-policy-module-substrate-gate policy-module workflow)
+  (let (evaluation-value (.get workflow evaluation))
+    (.o kind: marlin-policy-substrate-gate-kind
+        module-id: (.get policy-module id)
+        policy-module-kind: (.get policy-module kind)
+        policy-family: (.get policy-module policy-family)
+        projection-target: (.get policy-module projection-target)
+        receipt-kind: (.get policy-module receipt-kind)
+        gate-profile: (.get policy-module gate-profile)
+        module-evaluation-kind: (.get evaluation-value kind)
+        module-count: (length (.get evaluation-value module-ids))
+        extension-count: (length (.get evaluation-value extensions))
+        policy-extension-object-count:
+        (marlin-policy-extension-object-count
+         (.get evaluation-value extensions))
+        script-count: (length (.get evaluation-value scripts))
+        option-count: (length (.get evaluation-value options))
+        validation-receipt-count:
+        (length (.get workflow validation-receipts))
+        rust-kernel-owner: (.get policy-module rust-kernel-owner)
+        scheme-policy-owner: (.get policy-module scheme-policy-owner)
+        replayable: (.get policy-module replayable))))
+
+;;; Boundary: Policy workflow wraps the normal module workflow with gate receipt.
+;; MarlinResult <- MarlinInput
+(def (marlin-policy-module-workflow
+      policy-module
+      . maybe-allowed-hook-id-values)
+  (let (workflow
+        (if (null? maybe-allowed-hook-id-values)
+          (marlin-module-workflow policy-module)
+          (marlin-module-workflow
+           policy-module
+           (car maybe-allowed-hook-id-values))))
+    (.o kind: marlin-policy-module-workflow-kind
+        module-id: (.get policy-module id)
+        policy-family: (.get policy-module policy-family)
+        projection-target: (.get policy-module projection-target)
+        policy-extension-object-count:
+        (marlin-policy-extension-object-count
+         (.get (.get workflow evaluation) extensions))
+        extension-catalog: (.get workflow extension-catalog)
+        validation-receipt-count:
+        (length (.get workflow validation-receipts))
+        substrate-gate:
+        (marlin-policy-module-substrate-gate policy-module workflow))))

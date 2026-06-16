@@ -6,6 +6,8 @@ use crate::protocol::GraphQueryFamily;
 
 pub(super) const DEFAULT_RUN_STORE: &str = ".marlin/runs";
 pub(super) const DEFAULT_GERBIL_PACKAGE_ROOT: &str = "crates/marlin-gerbil-scheme/gerbil";
+pub(super) const DEFAULT_GERBIL_POLICY_RECEIPT_ENTRYPOINT: &str =
+    "src/marlin/deck-runtime-policy-receipt-gate-cli.ss";
 
 #[derive(Clone, Debug)]
 pub(super) struct ArgCursor {
@@ -57,6 +59,7 @@ impl CommonOptions {
 
 #[derive(Clone, Debug)]
 pub(super) struct GerbilPolicyReceiptOptions {
+    pub(super) entrypoint: PathBuf,
     pub(super) gxi: PathBuf,
     pub(super) iterations: u64,
     pub(super) loadpath: Option<String>,
@@ -68,6 +71,9 @@ impl GerbilPolicyReceiptOptions {
         let mut gxi = std::env::var_os("GERBIL")
             .map(PathBuf::from)
             .unwrap_or_else(|| PathBuf::from("/usr/local/bin/gxi"));
+        let mut entrypoint = std::env::var_os("MARLIN_GERBIL_POLICY_RECEIPT_ENTRYPOINT")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from(DEFAULT_GERBIL_POLICY_RECEIPT_ENTRYPOINT));
         let mut iterations = 1;
         let mut loadpath = None;
         let mut package_root = std::env::var_os("MARLIN_GERBIL_PACKAGE_ROOT")
@@ -75,6 +81,7 @@ impl GerbilPolicyReceiptOptions {
             .unwrap_or_else(|| PathBuf::from(DEFAULT_GERBIL_PACKAGE_ROOT));
         while let Some(arg) = cursor.next() {
             match arg.as_str() {
+                "--entrypoint" => entrypoint = cursor.required_path(&arg)?,
                 "--gxi" => gxi = cursor.required_path(&arg)?,
                 "--iterations" => {
                     iterations = parse_positive_u64(&arg, &cursor.required_value(&arg)?)?
@@ -86,6 +93,7 @@ impl GerbilPolicyReceiptOptions {
             }
         }
         Ok(Self {
+            entrypoint,
             gxi,
             iterations,
             loadpath,

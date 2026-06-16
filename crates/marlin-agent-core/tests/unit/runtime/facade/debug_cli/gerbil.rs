@@ -26,6 +26,10 @@ fn debug_cli_gerbil_policy_receipt_runs_scheme_policy_engine() {
     assert_eq!(summary["status"], "ok");
     assert_eq!(summary["command"], "gerbil policy-receipt");
     assert_eq!(
+        summary["entrypoint"],
+        "src/marlin/deck-runtime-policy-receipt-gate-cli.ss"
+    );
+    assert_eq!(
         summary["extension_kind"],
         "marlin-deck-runtime.extension.v1"
     );
@@ -36,6 +40,63 @@ fn debug_cli_gerbil_policy_receipt_runs_scheme_policy_engine() {
     );
     assert_eq!(summary["extension_surface"], "poo-extension-object");
     assert_eq!(summary["extension_capability_count"], 4);
+    assert_eq!(
+        summary["policy_extension_object_kind"],
+        "marlin.modules.policy-extension-object.v1"
+    );
+    assert_eq!(summary["policy_extension_object"], true);
+    assert_eq!(
+        summary["policy_extension_source"],
+        ":marlin/deck-runtime-debug-policy-extension"
+    );
+    assert_eq!(
+        summary["policy_extension_managed_by"],
+        "gerbil-module-system"
+    );
+    assert_eq!(summary["policy_extension_projection_owner"], "gerbil-poo");
+    assert_eq!(summary["policy_extension_runtime_owner"], "rust");
+    assert_eq!(
+        summary["policy_module_kind"],
+        "marlin.modules.policy-module.v1"
+    );
+    assert_eq!(summary["policy_module_id"], "debug-policy-extension-module");
+    assert_eq!(summary["policy_module_family"], "subagent-policy-extension");
+    assert_eq!(
+        summary["policy_projection_target"],
+        "extension-policy-receipt"
+    );
+    assert_eq!(summary["module_catalog_kind"], "marlin.modules.catalog.v1");
+    assert_eq!(summary["module_catalog_count"], 1);
+    assert_eq!(
+        summary["module_eval_result_kind"],
+        "marlin.modules.eval-result.v1"
+    );
+    assert_eq!(
+        summary["module_eval_workflow_kind"],
+        "marlin.modules.policy-workflow.v1"
+    );
+    assert_eq!(
+        summary["policy_substrate_gate_kind"],
+        "marlin.modules.policy-substrate-gate.v1"
+    );
+    assert_eq!(summary["policy_substrate_gate_profile"], "policy-substrate");
+    assert_eq!(
+        summary["policy_substrate_gate_receipt_kind"],
+        "marlin-deck-runtime.extension-receipt.v1"
+    );
+    assert_eq!(
+        summary["policy_module_evaluation_kind"],
+        "marlin-deck-runtime.user-module-evaluation.v1"
+    );
+    assert_eq!(summary["policy_module_count"], 1);
+    assert_eq!(summary["policy_extension_count"], 1);
+    assert_eq!(summary["policy_extension_object_count"], 1);
+    assert_eq!(summary["policy_script_count"], 0);
+    assert_eq!(summary["policy_option_count"], 2);
+    assert_eq!(summary["policy_validation_receipt_count"], 2);
+    assert_eq!(summary["policy_substrate_gate_replayable"], true);
+    assert_eq!(summary["scheme_policy_owner"], "gerbil-poo");
+    assert_eq!(summary["rust_kernel_owner"], "rust");
     assert_eq!(
         summary["catalog_kind"],
         "marlin-deck-runtime.extension-catalog.v1"

@@ -10,60 +10,11 @@ use super::{
     gerbil_usage,
 };
 
-fn policy_receipt_probe(iterations: u64) -> String {
-    format!(
-        r#"
-(begin
-  (import :clan/poo/object
-          :marlin/deck-runtime-debug-policy-extension)
-  (def (emit key value)
-    (display key)
-    (display "\t")
-    (display value)
-    (newline))
-  (def iterations {iterations})
-  (def extension marlin-deck-runtime-debug-policy-extension)
-  (def catalog (marlin-deck-runtime-debug-policy-extension-catalog))
-  (def scheme-policy-loop-started (time->seconds (current-time)))
-  (def receipt
-    (marlin-deck-runtime-debug-policy-extension-receipt-loop iterations))
-  (def scheme-policy-loop-elapsed-micros
-    (inexact->exact
-     (floor
-      (* 1000000
-         (- (time->seconds (current-time)) scheme-policy-loop-started)))))
-  (def action (.get receipt dynamic-hook-action))
-  (def selection (.get receipt dynamic-hook-selection))
-  (emit "extension_kind" (.get extension kind))
-  (emit "extension_id" (.get extension id))
-  (emit "extension_source" marlin-deck-runtime-debug-policy-extension-source)
-  (emit "extension_surface" "poo-extension-object")
-  (emit "extension_capability_count" (length (.get extension capabilities)))
-  (emit "catalog_kind" (.get catalog kind))
-  (emit "scheme_catalog_role" "extension-object-selection")
-  (emit "runtime_catalog_owner" "rust")
-  (emit "catalog_resolved_by_scheme" #f)
-  (emit "iterations" iterations)
-  (emit "scheme_policy_loop_elapsed_micros" scheme-policy-loop-elapsed-micros)
-  (emit "avg_scheme_policy_micros_per_iteration"
-        (quotient scheme-policy-loop-elapsed-micros iterations))
-  (emit "receipt_kind" (.get receipt kind))
-  (emit "matched" (.get receipt matched))
-  (emit "policy_engine" (.get receipt policy-engine))
-  (emit "extension_receipt_id" (.get receipt extension-id))
-  (emit "dynamic_hook_action" (.get action action))
-  (emit "dynamic_hook_hook_id" (.get action hook-id))
-  (emit "dynamic_hook_registration" (.get action registration))
-  (emit "dynamic_hook_selection_source" (.get selection source))
-  (emit "dynamic_hook_selection_selector" (.get selection selector)))
-"#
-    )
-}
-
 #[derive(Clone, Debug, Serialize)]
 struct GerbilPolicyReceiptDebugSummary {
     status: &'static str,
     command: &'static str,
+    entrypoint: PathBuf,
     gxi: PathBuf,
     package_root: PathBuf,
     loadpath: String,
@@ -72,6 +23,33 @@ struct GerbilPolicyReceiptDebugSummary {
     extension_source: String,
     extension_surface: String,
     extension_capability_count: u64,
+    policy_extension_object_kind: String,
+    policy_extension_object: bool,
+    policy_extension_source: String,
+    policy_extension_managed_by: String,
+    policy_extension_projection_owner: String,
+    policy_extension_runtime_owner: String,
+    policy_module_kind: String,
+    policy_module_id: String,
+    policy_module_family: String,
+    policy_projection_target: String,
+    module_catalog_kind: String,
+    module_catalog_count: u64,
+    module_eval_result_kind: String,
+    module_eval_workflow_kind: String,
+    policy_substrate_gate_kind: String,
+    policy_substrate_gate_profile: String,
+    policy_substrate_gate_receipt_kind: String,
+    policy_module_evaluation_kind: String,
+    policy_module_count: u64,
+    policy_extension_count: u64,
+    policy_extension_object_count: u64,
+    policy_script_count: u64,
+    policy_option_count: u64,
+    policy_validation_receipt_count: u64,
+    policy_substrate_gate_replayable: bool,
+    scheme_policy_owner: String,
+    rust_kernel_owner: String,
     catalog_kind: String,
     scheme_catalog_role: String,
     runtime_catalog_owner: String,
@@ -116,18 +94,19 @@ fn run_policy_receipt(
     options: GerbilPolicyReceiptOptions,
 ) -> Result<GerbilPolicyReceiptDebugSummary, String> {
     let loadpath = options.loadpath.unwrap_or_else(|| "src:t".to_owned());
-    let probe = policy_receipt_probe(options.iterations);
+    let iterations = options.iterations.to_string();
     let started_at = Instant::now();
     let output = Command::new(&options.gxi)
-        .arg("-e")
-        .arg(probe)
+        .arg(&options.entrypoint)
         .current_dir(&options.package_root)
         .env("GERBIL_LOADPATH", &loadpath)
+        .env("MARLIN_POLICY_RECEIPT_ITERATIONS", iterations)
         .output()
         .map_err(|error| {
             format!(
-                "failed to run gxi `{}` in `{}`: {error}",
+                "failed to run gxi `{}` entrypoint `{}` in `{}`: {error}",
                 options.gxi.display(),
+                options.entrypoint.display(),
                 options.package_root.display()
             )
         })?;
@@ -135,18 +114,19 @@ fn run_policy_receipt(
 
     if !output.status.success() {
         return Err(format!(
-            "gerbil policy receipt probe failed with status {}: stdout:\n{}\nstderr:\n{}",
+            "gerbil policy receipt entrypoint failed with status {}: stdout:\n{}\nstderr:\n{}",
             output.status,
             String::from_utf8_lossy(&output.stdout),
             String::from_utf8_lossy(&output.stderr)
         ));
     }
 
-    let facts = parse_policy_receipt_probe(&String::from_utf8_lossy(&output.stdout))?;
+    let facts = parse_policy_receipt_facts(&String::from_utf8_lossy(&output.stdout))?;
     let iterations = required_u64_fact(&facts, "iterations")?;
     Ok(GerbilPolicyReceiptDebugSummary {
         status: "ok",
         command: "gerbil policy-receipt",
+        entrypoint: options.entrypoint,
         gxi: options.gxi,
         package_root: options.package_root,
         loadpath,
@@ -155,6 +135,45 @@ fn run_policy_receipt(
         extension_source: required_fact(&facts, "extension_source")?,
         extension_surface: required_fact(&facts, "extension_surface")?,
         extension_capability_count: required_u64_fact(&facts, "extension_capability_count")?,
+        policy_extension_object_kind: required_fact(&facts, "policy_extension_object_kind")?,
+        policy_extension_object: required_bool_fact(&facts, "policy_extension_object")?,
+        policy_extension_source: required_fact(&facts, "policy_extension_source")?,
+        policy_extension_managed_by: required_fact(&facts, "policy_extension_managed_by")?,
+        policy_extension_projection_owner: required_fact(
+            &facts,
+            "policy_extension_projection_owner",
+        )?,
+        policy_extension_runtime_owner: required_fact(&facts, "policy_extension_runtime_owner")?,
+        policy_module_kind: required_fact(&facts, "policy_module_kind")?,
+        policy_module_id: required_fact(&facts, "policy_module_id")?,
+        policy_module_family: required_fact(&facts, "policy_module_family")?,
+        policy_projection_target: required_fact(&facts, "policy_projection_target")?,
+        module_catalog_kind: required_fact(&facts, "module_catalog_kind")?,
+        module_catalog_count: required_u64_fact(&facts, "module_catalog_count")?,
+        module_eval_result_kind: required_fact(&facts, "module_eval_result_kind")?,
+        module_eval_workflow_kind: required_fact(&facts, "module_eval_workflow_kind")?,
+        policy_substrate_gate_kind: required_fact(&facts, "policy_substrate_gate_kind")?,
+        policy_substrate_gate_profile: required_fact(&facts, "policy_substrate_gate_profile")?,
+        policy_substrate_gate_receipt_kind: required_fact(
+            &facts,
+            "policy_substrate_gate_receipt_kind",
+        )?,
+        policy_module_evaluation_kind: required_fact(&facts, "policy_module_evaluation_kind")?,
+        policy_module_count: required_u64_fact(&facts, "policy_module_count")?,
+        policy_extension_count: required_u64_fact(&facts, "policy_extension_count")?,
+        policy_extension_object_count: required_u64_fact(&facts, "policy_extension_object_count")?,
+        policy_script_count: required_u64_fact(&facts, "policy_script_count")?,
+        policy_option_count: required_u64_fact(&facts, "policy_option_count")?,
+        policy_validation_receipt_count: required_u64_fact(
+            &facts,
+            "policy_validation_receipt_count",
+        )?,
+        policy_substrate_gate_replayable: required_bool_fact(
+            &facts,
+            "policy_substrate_gate_replayable",
+        )?,
+        scheme_policy_owner: required_fact(&facts, "scheme_policy_owner")?,
+        rust_kernel_owner: required_fact(&facts, "rust_kernel_owner")?,
         catalog_kind: required_fact(&facts, "catalog_kind")?,
         scheme_catalog_role: required_fact(&facts, "scheme_catalog_role")?,
         runtime_catalog_owner: required_fact(&facts, "runtime_catalog_owner")?,
@@ -183,7 +202,7 @@ fn run_policy_receipt(
     })
 }
 
-fn parse_policy_receipt_probe(output: &str) -> Result<BTreeMap<String, String>, String> {
+fn parse_policy_receipt_facts(output: &str) -> Result<BTreeMap<String, String>, String> {
     let mut facts = BTreeMap::new();
     for line in output.lines().filter(|line| !line.trim().is_empty()) {
         let (key, value) = line

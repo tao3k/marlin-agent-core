@@ -12,10 +12,15 @@ package: marlin
         :marlin/deck-runtime-extension-catalog
         :marlin/deck-runtime-extension-receipt
         :marlin/deck-runtime-matcher
+        :marlin/deck-runtime-modules-lib
         :marlin/deck-runtime-strategy-context)
 
 (export marlin-deck-runtime-debug-policy-extension-source
         marlin-deck-runtime-debug-policy-extension
+        marlin-deck-runtime-debug-policy-module
+        marlin-deck-runtime-debug-policy-module-catalog
+        marlin-deck-runtime-debug-policy-module-evaluation
+        marlin-deck-runtime-debug-policy-module-workflow
         marlin-deck-runtime-debug-policy-extension-catalog
         marlin-deck-runtime-debug-policy-extension-receipt
         marlin-deck-runtime-debug-policy-extension-receipt-loop)
@@ -76,34 +81,85 @@ package: marlin
           (string=? command "codex extension apply")
           (string=? agent-scope "extension-agent")))))
 
-;;; Boundary: This is the user-authored POO extension object.
+;;; Boundary: This .ss exports the user-authored POO extension object.
 ;; MarlinResult <- MarlinInput
-(def marlin-deck-runtime-debug-policy-extension
-  (make-marlin-deck-runtime-subagent-policy-extension
-   "debug-policy-extension"
-   debug-policy-extension-subagent-profile
-   debug-policy-extension-policy
-   debug-policy-extension-condition
-   debug-policy-extension-matcher
-   (make-marlin-deck-runtime-register-hook-action
-    "debug-runtime-catalog-hook"
-    "debug-runtime-catalog-hook")
-   '((owner . "debug-cli") (surface . "poo-extension-object"))))
+(defmarlin-policy-extension marlin-deck-runtime-debug-policy-extension
+  (source marlin-deck-runtime-debug-policy-extension-source)
+  (object
+   (make-marlin-deck-runtime-subagent-policy-extension
+    "debug-policy-extension"
+    debug-policy-extension-subagent-profile
+    debug-policy-extension-policy
+    debug-policy-extension-condition
+    debug-policy-extension-matcher
+    (make-marlin-deck-runtime-register-hook-action
+     "debug-runtime-catalog-hook"
+     "debug-runtime-catalog-hook")
+    '((owner . "debug-cli") (surface . "poo-extension-object"))))
+  (metadata '((owner . "debug-cli") (surface . "policy-extension-object"))))
+
+;;; Boundary: Policy module is the user-facing module object around extensions.
+;; MarlinResult <- MarlinInput
+(def marlin-deck-runtime-debug-policy-module-interface
+  (marlin-module-interface
+   "DebugPolicyExtensionModule"
+   (.o extension-surface: (marlin-string-constant "poo-extension-object")
+       projection-target: (marlin-string-constant "extension-policy-receipt"))
+   '((owner . "debug-cli") (surface . "policy-substrate-gate"))))
+
+;;; Boundary: Level-1 user API owns imports/config/extensions composition.
+;; MarlinResult <- MarlinInput
+(defmarlin-policy-module marlin-deck-runtime-debug-policy-module
+  marlin-deck-runtime-debug-policy-module-interface
+  (id "debug-policy-extension-module")
+  (imports)
+  (config (.o extension-surface: "poo-extension-object"
+              projection-target: "extension-policy-receipt"))
+  (extensions marlin-deck-runtime-debug-policy-extension)
+  (scripts)
+  (policy-family "subagent-policy-extension")
+  (projection-target "extension-policy-receipt")
+  (receipt-kind marlin-deck-runtime-extension-receipt-kind)
+  (gate-profile "policy-substrate")
+  (metadata '((owner . "debug-cli") (surface . "policy-substrate-gate"))))
+
+;;; Boundary: Module catalog is a first-class Scheme value.
+;; MarlinResult <- MarlinInput
+(def (marlin-deck-runtime-debug-policy-module-catalog)
+  (marlinModuleCatalog marlin-deck-runtime-debug-policy-module))
+
+;;; Boundary: evalModules is the user-facing evaluation entrypoint.
+;; MarlinResult <- MarlinInput
+(def (marlin-deck-runtime-debug-policy-module-evaluation)
+  (marlinEvalModules
+   (marlin-deck-runtime-debug-policy-module-catalog)
+   "debug-policy-extension-module"
+   '("debug-runtime-catalog-hook")))
+
+;;; Boundary: Policy workflow adds the substrate gate around module evaluation.
+;; MarlinResult <- MarlinInput
+(def (marlin-deck-runtime-debug-policy-module-workflow)
+  (marlin-policy-module-workflow
+   marlin-deck-runtime-debug-policy-module
+   '("debug-runtime-catalog-hook")))
 
 ;;; Boundary: Module management registers extension objects into a Scheme catalog.
 ;; MarlinResult <- MarlinInput
 (def (marlin-deck-runtime-debug-policy-extension-catalog)
-  (marlin-deck-runtime-extension-catalog-add
-   (make-marlin-deck-runtime-extension-catalog
-    '("debug-runtime-catalog-hook")
-    '())
-   marlin-deck-runtime-debug-policy-extension))
+  (.get (marlin-deck-runtime-debug-policy-module-workflow)
+        extension-catalog))
 
 ;;; Boundary: Debug CLI runs the extension policy receipt through typed projection.
 ;; MarlinResult <- MarlinInput
 (def (marlin-deck-runtime-debug-policy-extension-receipt)
+  (marlin-deck-runtime-debug-policy-extension-receipt-from-catalog
+   (marlin-deck-runtime-debug-policy-extension-catalog)))
+
+;;; Boundary: A caller may reuse a catalog across high-frequency receipt loops.
+;; MarlinResult <- MarlinInput
+(def (marlin-deck-runtime-debug-policy-extension-receipt-from-catalog catalog)
   (marlin-deck-runtime-extension-policy-receipt
-   (marlin-deck-runtime-debug-policy-extension-catalog)
+   catalog
    debug-policy-extension-context
    debug-policy-extension-policy
    "codex extension apply"
@@ -112,9 +168,11 @@ package: marlin
 ;;; Boundary: Performance smoke loops extension policy evaluation in one gxi process.
 ;; MarlinResult <- MarlinInput
 (def (marlin-deck-runtime-debug-policy-extension-receipt-loop iterations)
-  (let loop ((remaining iterations)
-             (receipt #f))
-    (if (<= remaining 0)
-      receipt
-      (loop (- remaining 1)
-            (marlin-deck-runtime-debug-policy-extension-receipt)))))
+  (let ((catalog (marlin-deck-runtime-debug-policy-extension-catalog)))
+    (let loop ((remaining iterations)
+               (receipt #f))
+      (if (<= remaining 0)
+        receipt
+        (loop (- remaining 1)
+              (marlin-deck-runtime-debug-policy-extension-receipt-from-catalog
+               catalog))))))

@@ -9,9 +9,12 @@
         :marlin/deck-runtime-dynamic-hook
         :marlin/deck-runtime-extension
         :marlin/deck-runtime-extension-catalog
+        :marlin/deck-runtime-extension-receipt
         :marlin/deck-runtime-matcher
+        :marlin/deck-runtime-modules-lib
         :marlin/deck-runtime-policy-engine
         :marlin/deck-runtime-strategy-context
+        :marlin/deck-runtime-user-module
         :std/test)
 
 ;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
@@ -524,6 +527,14 @@
 ;; MarlinResult <- MarlinInput
 (def (check-debug-policy-extension-module)
   (let* ((extension marlin-deck-runtime-debug-policy-extension)
+         (policy-module marlin-deck-runtime-debug-policy-module)
+         (module-catalog
+          (marlin-deck-runtime-debug-policy-module-catalog))
+         (module-evaluation
+          (marlin-deck-runtime-debug-policy-module-evaluation))
+         (policy-workflow
+          (marlin-deck-runtime-debug-policy-module-workflow))
+         (substrate-gate (.get policy-workflow substrate-gate))
          (catalog (marlin-deck-runtime-debug-policy-extension-catalog))
          (receipt (marlin-deck-runtime-debug-policy-extension-receipt))
          (loop-receipt
@@ -531,8 +542,50 @@
     (check (.get extension kind)
            => marlin-deck-runtime-extension-kind)
     (check (.get extension id) => "debug-policy-extension")
+    (check (.get extension policy-extension-kind)
+           => marlin-policy-extension-kind)
+    (check (.get extension policy-extension-object) => #t)
+    (check (.get extension policy-extension-source)
+           => marlin-deck-runtime-debug-policy-extension-source)
+    (check (.get extension policy-extension-managed-by)
+           => "gerbil-module-system")
+    (check (.get extension policy-extension-projection-owner)
+           => "gerbil-poo")
+    (check (.get extension policy-extension-runtime-owner)
+           => "rust")
     (check marlin-deck-runtime-debug-policy-extension-source
            => ":marlin/deck-runtime-debug-policy-extension")
+    (check (.get policy-module kind)
+           => marlin-policy-module-kind)
+    (check (.get policy-module id)
+           => "debug-policy-extension-module")
+    (check (.get policy-module policy-family)
+           => "subagent-policy-extension")
+    (check (.get module-catalog kind)
+           => marlin-module-catalog-kind)
+    (check (length (.get module-catalog modules)) => 1)
+    (check (.get module-evaluation kind)
+           => marlin-eval-modules-result-kind)
+    (check (.get module-evaluation workflow-kind)
+           => marlin-policy-module-workflow-kind)
+    (check (.get module-evaluation projection-target)
+           => "extension-policy-receipt")
+    (check (.get module-evaluation policy-extension-object-count)
+           => 1)
+    (check (.get substrate-gate kind)
+           => marlin-policy-substrate-gate-kind)
+    (check (.get substrate-gate projection-target)
+           => "extension-policy-receipt")
+    (check (.get substrate-gate receipt-kind)
+           => marlin-deck-runtime-extension-receipt-kind)
+    (check (.get substrate-gate module-evaluation-kind)
+           => marlin-deck-runtime-user-module-evaluation-kind)
+    (check (.get substrate-gate extension-count) => 1)
+    (check (.get substrate-gate policy-extension-object-count) => 1)
+    (check (.get substrate-gate script-count) => 0)
+    (check (.get substrate-gate option-count) => 2)
+    (check (.get substrate-gate validation-receipt-count) => 2)
+    (check (.get substrate-gate replayable) => #t)
     (check (.get catalog kind)
            => marlin-deck-runtime-extension-catalog-kind)
     (check (.get receipt matched) => #t)

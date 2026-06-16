@@ -90,7 +90,7 @@ pub(in crate::debug_cli) fn usage() -> String {
 }
 
 pub(in crate::debug_cli) fn gerbil_usage() -> &'static str {
-    "Gerbil commands:\n  marlin gerbil policy-receipt [--iterations N] [--gxi <gxi>] [--package-root <gerbil-package-dir>] [--loadpath <loadpath>]"
+    "Gerbil commands:\n  marlin gerbil policy-receipt [--iterations N] [--entrypoint <scheme-file>] [--gxi <gxi>] [--package-root <gerbil-package-dir>] [--loadpath <loadpath>]"
 }
 
 pub(in crate::debug_cli) fn graph_usage() -> &'static str {
