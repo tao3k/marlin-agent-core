@@ -2,7 +2,7 @@
 
 use super::{
     content_graph, contracts, patch, project_graph, query, render, session_graph, status,
-    tool_graph,
+    tool_graph, topology_graph,
 };
 use async_trait::async_trait;
 use marlin_agent_protocol::{
@@ -63,6 +63,17 @@ where
 
 /// Store-backed tool capability graph query request with named call-site fields.
 pub struct ToolCapabilityGraphStoreQuery<'a, S>
+where
+    S: OrgSourceStore,
+{
+    pub receipt_id: String,
+    pub request: GraphQueryRequest,
+    pub store: &'a S,
+    pub candidates: Vec<OrgProjectRootCandidate>,
+}
+
+/// Store-backed project topology graph query request with named call-site fields.
+pub struct TopologyGraphStoreQuery<'a, S>
 where
     S: OrgSourceStore,
 {
@@ -272,6 +283,19 @@ impl MemoryOrgWorkspace {
         Ok(response)
     }
 
+    /// Query compact project topology overview facts from loaded Org nodes.
+    pub fn query_topology_graph(
+        &self,
+        receipt_id: impl Into<String>,
+        request: GraphQueryRequest,
+    ) -> WorkspaceResult<GraphQueryResponse> {
+        let nodes = self.read_nodes()?;
+        let matches = topology_graph::topology_matches(nodes.values(), &request);
+        let mut response = GraphQueryResponse::new(receipt_id, request);
+        response.matches = matches;
+        Ok(response)
+    }
+
     /// Recall project memory from discovered Org roots and pack compact facts.
     pub fn recall_project_memory_from_roots(
         &self,
@@ -360,6 +384,29 @@ impl MemoryOrgWorkspace {
             .collect::<Vec<_>>();
         self.load_documents_with_discovered_contracts(&documents)?;
         self.query_tool_capability_graph(receipt_id, request)
+    }
+
+    /// Discover topology roots from a store and run a compact graph query.
+    pub fn query_topology_graph_from_store<S>(
+        &self,
+        query: TopologyGraphStoreQuery<'_, S>,
+    ) -> WorkspaceResult<GraphQueryResponse>
+    where
+        S: OrgSourceStore,
+    {
+        let TopologyGraphStoreQuery {
+            receipt_id,
+            request,
+            store,
+            candidates,
+        } = query;
+        let roots = discover_project_roots(store, candidates);
+        let documents = roots
+            .iter()
+            .map(|root| OrgDocument::new(root.document.clone(), root.body.clone()))
+            .collect::<Vec<_>>();
+        self.load_documents_with_discovered_contracts(&documents)?;
+        self.query_topology_graph(receipt_id, request)
     }
 }
 

@@ -19,6 +19,9 @@ pub enum GraphQueryVisibleSurface {
     Tools,
     Sessions,
     Content,
+    Topology,
+    Evidence,
+    Failures,
 }
 
 /// Secret visibility gate for project graph reads.
@@ -36,6 +39,9 @@ fn default_graph_query_visible_surfaces() -> Vec<GraphQueryVisibleSurface> {
         GraphQueryVisibleSurface::Tools,
         GraphQueryVisibleSurface::Sessions,
         GraphQueryVisibleSurface::Content,
+        GraphQueryVisibleSurface::Topology,
+        GraphQueryVisibleSurface::Evidence,
+        GraphQueryVisibleSurface::Failures,
     ]
 }
 
@@ -224,6 +230,9 @@ pub enum GraphQueryFamily {
     Tool,
     Session,
     Content,
+    Topology,
+    Evidence,
+    Failure,
 }
 
 /// Project runtime graph query request.
@@ -493,6 +502,8 @@ pub struct GraphQueryMatch {
     pub content_id: Option<ProjectRuntimeContentId>,
     pub memory_id: Option<ProjectRuntimeMemoryId>,
     pub tool_capability_id: Option<ProjectRuntimeToolCapabilityId>,
+    pub evidence_id: Option<ProjectRuntimeEvidenceId>,
+    pub receipt_id: Option<ProjectRuntimeReceiptId>,
     pub source_anchor_id: Option<ProjectRuntimeSourceAnchorId>,
     pub relationship: GraphQueryMatchRelationship,
     pub score_basis_points: GraphQueryScoreBasisPoints,
@@ -515,6 +526,8 @@ impl GraphQueryMatch {
             content_id: None,
             memory_id: None,
             tool_capability_id: None,
+            evidence_id: None,
+            receipt_id: None,
             source_anchor_id: None,
             relationship: GraphQueryMatchRelationship::default(),
             score_basis_points: score_basis_points.into(),
@@ -559,6 +572,16 @@ impl GraphQueryMatch {
 
     pub fn with_tool_capability(mut self, capability_id: impl Into<String>) -> Self {
         self.tool_capability_id = Some(ProjectRuntimeToolCapabilityId::new(capability_id));
+        self
+    }
+
+    pub fn with_evidence(mut self, evidence_id: impl Into<String>) -> Self {
+        self.evidence_id = Some(ProjectRuntimeEvidenceId::new(evidence_id));
+        self
+    }
+
+    pub fn with_receipt(mut self, receipt_id: impl Into<String>) -> Self {
+        self.receipt_id = Some(ProjectRuntimeReceiptId::new(receipt_id));
         self
     }
 

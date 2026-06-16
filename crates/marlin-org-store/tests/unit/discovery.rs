@@ -16,6 +16,10 @@ fn discovers_existing_typed_project_roots_without_returning_missing_candidates()
             "* Contract registry\n".to_string(),
         ),
         (
+            ".marlin/topology/project.org".to_string(),
+            "* Project topology\n".to_string(),
+        ),
+        (
             ".marlin/evidence/receipts.org".to_string(),
             "* Evidence receipts\n".to_string(),
         ),
@@ -27,16 +31,18 @@ fn discovers_existing_typed_project_roots_without_returning_missing_candidates()
             OrgProjectRootCandidate::project_memory(".marlin/memory/project.org"),
             OrgProjectRootCandidate::session_summary(".marlin/sessions/root-a.org"),
             OrgProjectRootCandidate::contract_registry(".marlin/contracts/agent.memory.v1.org"),
+            OrgProjectRootCandidate::topology(".marlin/topology/project.org"),
             OrgProjectRootCandidate::evidence_receipt(".marlin/evidence/receipts.org"),
         ],
     );
 
-    assert_eq!(roots.len(), 3);
+    assert_eq!(roots.len(), 4);
     assert_eq!(roots[0].document, ".marlin/memory/project.org");
     assert_eq!(roots[0].kind, OrgProjectRootKind::ProjectMemory);
     assert_eq!(roots[0].body, "* Project memory\n");
     assert_eq!(roots[1].kind, OrgProjectRootKind::ContractRegistry);
-    assert_eq!(roots[2].kind, OrgProjectRootKind::EvidenceReceipt);
+    assert_eq!(roots[2].kind, OrgProjectRootKind::Topology);
+    assert_eq!(roots[3].kind, OrgProjectRootKind::EvidenceReceipt);
     assert!(
         roots
             .iter()

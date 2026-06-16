@@ -1,0 +1,164 @@
+* agent-topology-v1
+:PROPERTIES:
+:CONTRACT_ID: agent.topology.v1
+:CONTRACT_SCOPE: subtree
+:CONTRACT_KIND: org-elements
+:TITLE: Agent Project Topology v1
+:END:
+
+** What This Produces
+This contract validates the coarse navigation layer for an imported project, not
+the detailed Org memory/session ledger.
+
+The intended output is a project topology root that records:
+- the imported project identity;
+- the topology scope and durable topology id;
+- a coarse node kind such as project, root session, child session, content
+  anchor, context pack, or sub-agent route;
+- a coarse edge kind such as imports-project, opens-session,
+  branches-from-session, forks-from-content, compresses-to-context-pack, or
+  routes-to-subagent;
+- a source anchor back to the detailed Org fact layer;
+- Overview, Navigation, and Visibility Boundaries sections.
+
+Topology is the route map. Detailed content, claims, source spans, and session
+records remain in the Org memory/session contracts and are reached through the
+source anchor.
+
+See =org/contracts/examples/agent.topology.v1.example.org= for the concrete
+topology shape this contract accepts.
+
+** topology-has-id-property
+:PROPERTIES:
+:ASSERT_ID: topology.has-id-property
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+let topology = headline where at($scope)
+assert count node-property where descendant_of(topology) and summary(key) = "TOPOLOGY_ID"
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+Topology `{{ scope.title }}` must carry a stable TOPOLOGY_ID property.
+#+END_SRC
+
+** topology-has-project-property
+:PROPERTIES:
+:ASSERT_ID: topology.has-project-property
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+let topology = headline where at($scope)
+assert count node-property where descendant_of(topology) and summary(key) = "PROJECT_ID"
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+Topology `{{ scope.title }}` must carry PROJECT_ID so it can be imported with the project.
+#+END_SRC
+
+** topology-has-scope-property
+:PROPERTIES:
+:ASSERT_ID: topology.has-scope-property
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+let topology = headline where at($scope)
+assert count node-property where descendant_of(topology) and summary(key) = "TOPOLOGY_SCOPE"
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+Topology `{{ scope.title }}` must declare TOPOLOGY_SCOPE, usually project-overview.
+#+END_SRC
+
+** topology-has-node-kind-property
+:PROPERTIES:
+:ASSERT_ID: topology.has-node-kind-property
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+let topology = headline where at($scope)
+assert count node-property where descendant_of(topology) and summary(key) = "TOPOLOGY_NODE_KIND"
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+Topology `{{ scope.title }}` must declare the coarse TOPOLOGY_NODE_KIND it represents.
+#+END_SRC
+
+** topology-has-edge-kind-property
+:PROPERTIES:
+:ASSERT_ID: topology.has-edge-kind-property
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+let topology = headline where at($scope)
+assert count node-property where descendant_of(topology) and summary(key) = "TOPOLOGY_EDGE_KIND"
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+Topology `{{ scope.title }}` must declare a coarse TOPOLOGY_EDGE_KIND.
+#+END_SRC
+
+** topology-has-source-anchor-property
+:PROPERTIES:
+:ASSERT_ID: topology.has-source-anchor-property
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+let topology = headline where at($scope)
+assert count node-property where descendant_of(topology) and summary(key) = "SOURCE_ANCHOR"
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+Topology `{{ scope.title }}` must carry SOURCE_ANCHOR back to the detailed Org fact layer.
+#+END_SRC
+
+** topology-has-overview-section
+:PROPERTIES:
+:ASSERT_ID: topology.has-overview-section
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+let topology = headline where at($scope)
+assert count headline where descendant_of(topology) and summary(title) = "Overview"
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+Topology `{{ scope.title }}` must include an Overview section.
+#+END_SRC
+
+** topology-has-navigation-section
+:PROPERTIES:
+:ASSERT_ID: topology.has-navigation-section
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+let topology = headline where at($scope)
+assert count headline where descendant_of(topology) and summary(title) = "Navigation"
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+Topology `{{ scope.title }}` must include a Navigation section.
+#+END_SRC
+
+** topology-has-boundaries-section
+:PROPERTIES:
+:ASSERT_ID: topology.has-boundaries-section
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+let topology = headline where at($scope)
+assert count headline where descendant_of(topology) and summary(title) = "Visibility Boundaries"
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+Topology `{{ scope.title }}` must include a Visibility Boundaries section.
+#+END_SRC

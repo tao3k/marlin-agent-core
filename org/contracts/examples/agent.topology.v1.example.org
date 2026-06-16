@@ -1,0 +1,35 @@
+* Project topology: marlin-agent-core import :agent:topology:overview:
+:PROPERTIES:
+:CONTRACT_ORG: agent.topology.v1
+:TOPOLOGY_ID: topology.marlin-agent-core.import
+:PROJECT_ID: marlin-agent-core
+:TOPOLOGY_SCOPE: project-overview
+:TOPOLOGY_NODE_KIND: project
+:TOPOLOGY_EDGE_KIND: imports-project
+:SOURCE_ANCHOR: docs/40-rfcs/40.120-project-scoped-agent-graph-runtime.org
+:END:
+
+** Overview
+This topology root is the navigation layer created when the project is imported.
+It does not duplicate session transcripts, memory claims, or raw source spans.
+It points an agent toward the coarse project/session/content routes that can be
+expanded through Org memory and session contracts.
+
+** Navigation
+- =project= imports =marlin-agent-core=.
+- =root_session= opens from the imported project topology.
+- =child_session= branches from a parent session only through an explicit edge.
+- =content_anchor= is the fork point for child sessions and compact context
+  packs.
+- =context_pack= is a compressed view, not a raw transcript copy.
+
+** Visibility Boundaries
+- Sibling root sessions are visible as topology neighbors but their raw turns
+  remain hidden by default.
+- Detailed claims, evidence, and source spans stay in Org memory/session nodes.
+- A topology edge may carry a =SOURCE_ANCHOR=, but it must not inline the target
+  content.
+
+** Source Detail
+- Runtime scope semantics are defined by =40.120 Project-scoped Agent Graph Runtime=.
+- Implementation closure receipts are tracked by =40.121 Project-scoped Runtime Implementation Plan=.

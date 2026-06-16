@@ -6,7 +6,8 @@ use std::{
 };
 
 use marlin_agent_kernel::{
-    GraphLoopContinuationInput, GraphLoopContinuationPlanner, GraphLoopNextAction,
+    GraphLoopContinuationAction, GraphLoopContinuationDecision, GraphLoopContinuationInput,
+    GraphLoopContinuationPlanner, GraphLoopContinuationReceipt, GraphLoopNextAction,
 };
 use marlin_agent_runtime::RuntimeFuture;
 use marlin_gerbil_scheme::{
@@ -95,28 +96,79 @@ impl AgentHarnessGerbilLoopContinuationPlanner {
             .map(|registry| Self::new(registry, projector))
     }
 
-    async fn next_action_result(
+    async fn decision_result(
         registry: GerbilSchemeTypeRegistry,
         projector: Arc<dyn AgentHarnessGerbilLoopContinuationProjector>,
         input: GraphLoopContinuationInput,
-    ) -> Result<GraphLoopNextAction, AgentHarnessGerbilLoopContinuationError> {
+    ) -> Result<GraphLoopContinuationDecision, AgentHarnessGerbilLoopContinuationError> {
+        let run_id = input.run_id.clone();
+        let iteration_id = input.iteration_id;
         let typed_value = projector.project_continuation(input).await?;
         project_gerbil_loop_graph_continuation_native_action(&registry, &typed_value)
             .map(|(_receipt, next_action)| next_action)
+            .map(|next_action| {
+                GraphLoopContinuationDecision::new(
+                    GraphLoopContinuationReceipt::new(
+                        run_id,
+                        iteration_id,
+                        continuation_action_from_next_action(next_action),
+                    )
+                    .with_diagnostic("gerbil_continuation.native_projection"),
+                )
+            })
             .map_err(AgentHarnessGerbilLoopContinuationError::from)
     }
 }
 
 impl GraphLoopContinuationPlanner for AgentHarnessGerbilLoopContinuationPlanner {
-    fn next_action(&self, input: GraphLoopContinuationInput) -> RuntimeFuture<GraphLoopNextAction> {
+    fn decide(
+        &self,
+        input: GraphLoopContinuationInput,
+    ) -> RuntimeFuture<GraphLoopContinuationDecision> {
         let registry = self.registry.clone();
         let projector = Arc::clone(&self.projector);
         Box::pin(async move {
-            Self::next_action_result(registry, projector, input)
+            let run_id = input.run_id.clone();
+            let iteration_id = input.iteration_id;
+            Self::decision_result(registry, projector, input)
                 .await
-                .unwrap_or_else(|error| GraphLoopNextAction::EscalateToHuman {
-                    reason: error.to_string(),
-                })
+                .unwrap_or_else(|error| fallback_decision(run_id, iteration_id.get(), error))
         })
     }
+}
+
+fn continuation_action_from_next_action(
+    next_action: GraphLoopNextAction,
+) -> GraphLoopContinuationAction {
+    match next_action {
+        GraphLoopNextAction::StopCompleted => GraphLoopContinuationAction::Accept,
+        GraphLoopNextAction::StopFailed => GraphLoopContinuationAction::Deny {
+            reason: "gerbil_continuation.stop_failed".to_owned(),
+        },
+        GraphLoopNextAction::ContinueWithGraph(graph) => GraphLoopContinuationAction::Rewrite {
+            graph,
+            reason: "gerbil_continuation.native_projection".to_owned(),
+        },
+        GraphLoopNextAction::EscalateToHuman { reason } => {
+            GraphLoopContinuationAction::Defer { reason }
+        }
+    }
+}
+
+fn fallback_decision(
+    run_id: impl Into<marlin_agent_kernel::RunId>,
+    iteration_id: u64,
+    error: AgentHarnessGerbilLoopContinuationError,
+) -> GraphLoopContinuationDecision {
+    let reason = error.to_string();
+    GraphLoopContinuationDecision::new(
+        GraphLoopContinuationReceipt::new(
+            run_id,
+            iteration_id,
+            GraphLoopContinuationAction::Defer {
+                reason: reason.clone(),
+            },
+        )
+        .with_diagnostic(reason),
+    )
 }

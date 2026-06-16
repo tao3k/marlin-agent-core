@@ -9,6 +9,7 @@ pub enum OrgProjectRootKind {
     SessionSummary,
     WorktreeProvenance,
     ToolCapability,
+    Topology,
     ContractRegistry,
     EvidenceReceipt,
 }
@@ -42,6 +43,10 @@ impl OrgProjectRootCandidate {
 
     pub fn tool_capability(document: impl Into<String>) -> Self {
         Self::new(document, OrgProjectRootKind::ToolCapability)
+    }
+
+    pub fn topology(document: impl Into<String>) -> Self {
+        Self::new(document, OrgProjectRootKind::Topology)
     }
 
     pub fn contract_registry(document: impl Into<String>) -> Self {

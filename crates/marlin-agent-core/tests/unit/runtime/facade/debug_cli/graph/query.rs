@@ -1,10 +1,13 @@
 use marlin_agent_core::{
-    GraphLoopEvent, GraphLoopEventEnvelope, GraphLoopExecutionStatus, GraphLoopMessageRole,
-    GraphToolCallReceipt, GraphToolCallStatus, LoopEventQuerySummary, LoopQuerySummary,
-    ProjectRuntimeQuerySummary,
+    GraphLoopContinuationAction, GraphLoopContinuationReceipt, GraphLoopEvent,
+    GraphLoopEventEnvelope, GraphLoopExecutionResult, GraphLoopExecutionStatus,
+    GraphLoopFailureKind, GraphLoopIterationReport, GraphLoopMessageRole, GraphLoopNextAction,
+    GraphToolCallReceipt, GraphToolCallStatus, HumanGateReceipt, HumanReviewKind,
+    LoopEventQuerySummary, LoopQuerySummary, ProjectRuntimeQuerySummary, RuntimePlanSnapshot,
     protocol::{
-        GraphQueryContext, GraphQueryFamily, GraphQueryMatch, GraphQueryMatchRelationship,
-        GraphQueryRelationshipFact, GraphQueryRequest, GraphQueryResponse,
+        FailureClassificationReceipt, GraphQueryContext, GraphQueryFamily, GraphQueryMatch,
+        GraphQueryMatchRelationship, GraphQueryRelationshipFact, GraphQueryRequest,
+        GraphQueryResponse,
     },
     run_marlin_cli_from_args,
 };
@@ -56,7 +59,89 @@ fn debug_cli_graph_query_reads_loop_run_receipt_facts() {
     assert_eq!(summary.statuses, vec![GraphLoopExecutionStatus::Completed]);
     assert_eq!(summary.visited_nodes_by_iteration, vec![vec!["plan"]]);
     assert_eq!(summary.node_receipt_count, 1);
+    assert_eq!(summary.continuation_receipt_count, 1);
+    assert_eq!(summary.human_gate_receipt_count, 0);
+    assert_eq!(summary.human_decision_receipt_count, 0);
+    assert_eq!(summary.failure_classification_receipt_count, 0);
+    assert!(summary.failure_kinds.is_empty());
     assert!(summary.trace_event_count > 0);
+}
+
+#[test]
+fn debug_cli_graph_query_reads_loop_recovery_receipt_facts() {
+    let dir = tempdir().expect("tempdir");
+    let input = dir.path().join("loop-recovery.json");
+    let report = GraphLoopIterationReport::new(
+        0,
+        GraphLoopExecutionResult::failed(
+            RuntimePlanSnapshot {
+                run_id: "run".to_owned(),
+                graph_id: "graph-initial".to_owned(),
+                active_node: None,
+            },
+            vec!["sandbox.denied".to_owned()],
+        ),
+        GraphLoopNextAction::EscalateToHuman {
+            reason: "graph_loop.human_gate_required".to_owned(),
+        },
+    )
+    .with_continuation_receipt(GraphLoopContinuationReceipt::new(
+        "run",
+        0,
+        GraphLoopContinuationAction::Defer {
+            reason: "graph_loop.human_gate_required".to_owned(),
+        },
+    ))
+    .with_human_gate_receipt(
+        HumanGateReceipt::new(
+            "human-gate:run:0",
+            "run",
+            0,
+            "graph_loop.human_gate_required",
+        )
+        .with_required_review(HumanReviewKind::General)
+        .with_proposed_next_action(GraphLoopNextAction::StopFailed),
+    )
+    .with_failure_classification_receipt(
+        FailureClassificationReceipt::new(
+            "failure:run:0",
+            "run",
+            0,
+            GraphLoopFailureKind::PolicyFailure,
+        )
+        .with_requires_human(true)
+        .with_diagnostic("sandbox.denied"),
+    );
+    fs::write(
+        &input,
+        serde_json::to_string(&vec![report]).expect("loop report JSON"),
+    )
+    .expect("write loop recovery report");
+
+    let query = run_marlin_cli_from_args([
+        "graph",
+        "query",
+        "--input",
+        input.to_str().expect("utf8 path"),
+    ]);
+
+    assert_eq!(query.status, 0, "{}", query.stderr);
+    let summary: LoopQuerySummary =
+        serde_json::from_str(&query.stdout).expect("loop query summary");
+    assert_eq!(summary.iteration_count, 1);
+    assert_eq!(
+        summary.terminal_status,
+        Some(GraphLoopExecutionStatus::Failed)
+    );
+    assert_eq!(summary.diagnostic_count, 1);
+    assert_eq!(summary.continuation_receipt_count, 1);
+    assert_eq!(summary.human_gate_receipt_count, 1);
+    assert_eq!(summary.human_decision_receipt_count, 0);
+    assert_eq!(summary.failure_classification_receipt_count, 1);
+    assert_eq!(
+        summary.failure_kinds,
+        vec![GraphLoopFailureKind::PolicyFailure]
+    );
 }
 
 #[test]

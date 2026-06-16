@@ -3,9 +3,9 @@ mod continuation;
 mod evidence;
 
 use marlin_agent_kernel::{
-    GraphLoopContinuationInput, GraphLoopContinuationPlanner, GraphLoopExecutionStatus,
-    GraphLoopNextAction, LoopEdgeSpec, LoopGraph, LoopNodeSpec, TokioGraphLoopController,
-    TokioGraphLoopKernel,
+    GraphLoopContinuationAction, GraphLoopContinuationDecision, GraphLoopContinuationInput,
+    GraphLoopContinuationPlanner, GraphLoopContinuationReceipt, GraphLoopExecutionStatus,
+    LoopEdgeSpec, LoopGraph, LoopNodeSpec, TokioGraphLoopController, TokioGraphLoopKernel,
 };
 use marlin_agent_runtime::RuntimeFuture;
 
@@ -37,16 +37,30 @@ fn edge(from: &str, to: &str) -> LoopEdgeSpec {
 struct ContinueOncePlanner;
 
 impl GraphLoopContinuationPlanner for ContinueOncePlanner {
-    fn next_action(&self, input: GraphLoopContinuationInput) -> RuntimeFuture<GraphLoopNextAction> {
+    fn decide(
+        &self,
+        input: GraphLoopContinuationInput,
+    ) -> RuntimeFuture<GraphLoopContinuationDecision> {
         Box::pin(async move {
-            if input.iteration == 0 {
-                GraphLoopNextAction::ContinueWithGraph(LoopGraph {
-                    graph_id: "graph-next".to_owned(),
-                    nodes: vec![node("review")],
-                    edges: Vec::new(),
-                })
+            if input.iteration_id.get() == 0 {
+                GraphLoopContinuationDecision::new(GraphLoopContinuationReceipt::new(
+                    input.run_id,
+                    input.iteration_id,
+                    GraphLoopContinuationAction::Rewrite {
+                        graph: LoopGraph {
+                            graph_id: "graph-next".to_owned(),
+                            nodes: vec![node("review")],
+                            edges: Vec::new(),
+                        },
+                        reason: "test.continue_once".to_owned(),
+                    },
+                ))
             } else {
-                GraphLoopNextAction::StopCompleted
+                GraphLoopContinuationDecision::new(GraphLoopContinuationReceipt::new(
+                    input.run_id,
+                    input.iteration_id,
+                    GraphLoopContinuationAction::Accept,
+                ))
             }
         })
     }
@@ -56,16 +70,30 @@ impl GraphLoopContinuationPlanner for ContinueOncePlanner {
 struct RepairFailurePlanner;
 
 impl GraphLoopContinuationPlanner for RepairFailurePlanner {
-    fn next_action(&self, input: GraphLoopContinuationInput) -> RuntimeFuture<GraphLoopNextAction> {
+    fn decide(
+        &self,
+        input: GraphLoopContinuationInput,
+    ) -> RuntimeFuture<GraphLoopContinuationDecision> {
         Box::pin(async move {
             if input.execution_result.status == GraphLoopExecutionStatus::Failed {
-                GraphLoopNextAction::ContinueWithGraph(LoopGraph {
-                    graph_id: "graph-repair".to_owned(),
-                    nodes: vec![node("repair")],
-                    edges: Vec::new(),
-                })
+                GraphLoopContinuationDecision::new(GraphLoopContinuationReceipt::new(
+                    input.run_id,
+                    input.iteration_id,
+                    GraphLoopContinuationAction::Rewrite {
+                        graph: LoopGraph {
+                            graph_id: "graph-repair".to_owned(),
+                            nodes: vec![node("repair")],
+                            edges: Vec::new(),
+                        },
+                        reason: "test.repair_failure".to_owned(),
+                    },
+                ))
             } else {
-                GraphLoopNextAction::StopCompleted
+                GraphLoopContinuationDecision::new(GraphLoopContinuationReceipt::new(
+                    input.run_id,
+                    input.iteration_id,
+                    GraphLoopContinuationAction::Accept,
+                ))
             }
         })
     }

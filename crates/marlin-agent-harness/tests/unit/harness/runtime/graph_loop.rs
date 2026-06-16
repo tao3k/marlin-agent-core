@@ -4,7 +4,8 @@ use marlin_agent_harness::{
     AgentHarnessScenario,
 };
 use marlin_agent_kernel::{
-    GraphLoopContinuationInput, GraphLoopContinuationPlanner, GraphLoopEvidencePolicy,
+    GraphLoopContinuationAction, GraphLoopContinuationDecision, GraphLoopContinuationInput,
+    GraphLoopContinuationPlanner, GraphLoopContinuationReceipt, GraphLoopEvidencePolicy,
     GraphLoopExecutionRequest, GraphLoopExecutionStatus, GraphLoopNextAction, GraphLoopRunRequest,
     GraphLoopStopPolicy, LoopGraph, LoopNodeSpec, TokioGraphLoopController, TokioGraphLoopKernel,
 };
@@ -154,20 +155,34 @@ async fn harness_graph_loop_can_continue_from_gerbil_native_projection() {
 struct ContinueWithSecondGraphPlanner;
 
 impl GraphLoopContinuationPlanner for ContinueWithSecondGraphPlanner {
-    fn next_action(&self, input: GraphLoopContinuationInput) -> RuntimeFuture<GraphLoopNextAction> {
+    fn decide(
+        &self,
+        input: GraphLoopContinuationInput,
+    ) -> RuntimeFuture<GraphLoopContinuationDecision> {
         Box::pin(async move {
-            if input.iteration == 0 {
-                GraphLoopNextAction::ContinueWithGraph(LoopGraph {
-                    graph_id: "graph-second".to_owned(),
-                    nodes: vec![LoopNodeSpec {
-                        id: "node-2".to_owned(),
-                        executor: "eventful".to_owned(),
-                        config: Default::default(),
-                    }],
-                    edges: Vec::new(),
-                })
+            if input.iteration_id.get() == 0 {
+                GraphLoopContinuationDecision::new(GraphLoopContinuationReceipt::new(
+                    input.run_id,
+                    input.iteration_id,
+                    GraphLoopContinuationAction::Rewrite {
+                        graph: LoopGraph {
+                            graph_id: "graph-second".to_owned(),
+                            nodes: vec![LoopNodeSpec {
+                                id: "node-2".to_owned(),
+                                executor: "eventful".to_owned(),
+                                config: Default::default(),
+                            }],
+                            edges: Vec::new(),
+                        },
+                        reason: "test.continue_with_second_graph".to_owned(),
+                    },
+                ))
             } else {
-                GraphLoopNextAction::StopCompleted
+                GraphLoopContinuationDecision::new(GraphLoopContinuationReceipt::new(
+                    input.run_id,
+                    input.iteration_id,
+                    GraphLoopContinuationAction::Accept,
+                ))
             }
         })
     }
@@ -183,7 +198,7 @@ impl AgentHarnessGerbilLoopContinuationProjector for StaticGerbilContinuationPro
     ) -> RuntimeFuture<Result<GerbilSchemeTypedValue, AgentHarnessGerbilLoopContinuationError>>
     {
         Box::pin(async move {
-            if input.iteration == 0 {
+            if input.iteration_id.get() == 0 {
                 Ok(continuation_envelope(continue_with_second_graph_action()))
             } else {
                 Ok(continuation_envelope(GerbilSchemeValue::record([(

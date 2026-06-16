@@ -68,6 +68,25 @@ ReceiptId
 
 =ContentId= is the anchor for fork, compression, memory trigger, and replay edges. Child sessions and sub-agents should fork from content nodes or compact context packs instead of inheriting an entire raw transcript.
 
+** Topology Overview Layer
+Project import creates a coarse topology root beside the detailed Org fact
+layer. This topology is a navigation map: it records project import, root
+session creation, child session branching, content-anchor forks, context-pack
+compression, memory promotion, and sub-agent routing as overview nodes and
+edges. It does not inline raw transcripts, memory claims, detailed source spans,
+or full Org shards.
+
+The durable contract is =agent.topology.v1=. Its required properties, such as
+=TOPOLOGY_ID=, =PROJECT_ID=, =TOPOLOGY_SCOPE=, =TOPOLOGY_NODE_KIND=,
+=TOPOLOGY_EDGE_KIND=, and =SOURCE_ANCHOR=, give the runtime an overview entry
+point while preserving the detailed facts in Org memory/session contracts.
+
+Topology is projected into ontology as typed node and edge kinds. Ontology owns
+what the coarse relationship means; Org owns the metadata and source anchors;
+Rust owns typed projection, visibility filtering, and receipt boundaries. The
+first read-model behavior should let an agent ask "where should I enter this
+project graph?" before asking for detailed session, memory, or content facts.
+
 ** Graph Nodes And Edges
 The scoped graph read model projects Org facts, protocol receipts, and runtime evidence into typed graph nodes:
 

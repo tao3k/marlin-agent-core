@@ -228,13 +228,14 @@ Focused verification: =cargo test -p marlin-org-memory --test unit_test= passed 
 
 ** Slice D: Scoped Graph Query Read Model
 Owners: =marlin-agent-protocol=, =marlin-org-memory=, =marlin-agent-core=.
-Status: Partially implemented on 2026-06-15 for the first debug CLI receipt
-reader, explicit-file Org memory fixture execution path, production recall
-context pack, source/evidence projection, node-identity-preserving frontier
-projection, a store-backed project-memory recall entrypoint, and a debug CLI
-store-backed project-memory graph query path, tool capability cards, and the
-session/content read families. Store-backed tool capability root discovery
-remains pending.
+Status: Implemented through the P0-P2 runtime-read slice on 2026-06-15 for the
+first debug CLI receipt reader, explicit-file Org memory fixture execution
+path, production recall context pack, source/evidence projection,
+node-identity-preserving frontier projection, store-backed project-memory
+recall/query entrypoints, store-backed tool capability graph query, tool
+capability cards, session/content read families, and negative-path CLI gates
+for missing store roots and unsupported =GraphQueryFamily::Org= fixture
+execution.
 
 Implement read-only query families:
 
@@ -266,17 +267,53 @@ Tests:
 - tool capability query returns project-local card before global fallback;
 - query output includes source span and reason.
 
-Implementation note: =marlin graph query= now accepts typed =GraphQueryResponse= JSON and returns a compact =ProjectRuntimeQuerySummary= with receipt id, query family, query text, match count, source project ids, source root/session ids, memory/content ids, relationship facts, and score basis points. For debug fixtures, it can execute a local memory query with =--input <GraphQueryRequest.json> --org-memory-fixture <memory.org> [--org-memory-fixture <memory.org> ...] [--receipt-id <id>]=. That path loads explicit Org memory fixture files into =MemoryOrgWorkspace=, runs =query_project_memory_graph=, and returns the same compact summary without exposing whole documents. Store-backed debug graph query now uses =--org-memory-store-root <dir> --org-memory-root <relative-memory.org> [--org-memory-root <relative-memory.org> ...]=. That path discovers typed project memory roots through =FileSystemOrgSourceStore= and =OrgProjectRootCandidate= before running =ProjectMemoryGraphStoreQuery=, so it exercises the production root-discovery boundary while keeping =--org-memory-fixture= as an explicit fixture-only lane. Production recall now starts from =ProjectMemoryRecallRequest=, discovers typed roots through =marlin-org-store=, builds a contract-indexed frontier in =marlin-org-memory=, then returns a bounded =ProjectMemoryContextPack=. Each returned =ProjectMemoryContextFact= now carries the matched Org source span and stable =MEMORY_ID= evidence handle when the source node provides them.
+Implementation note: =marlin graph query= now accepts typed =GraphQueryResponse=
+JSON and returns a compact =ProjectRuntimeQuerySummary= with receipt id, query
+family, query text, match count, source project/root/session/agent ids, source
+anchors, memory/content/tool ids, relationship facts, and score basis points.
+For debug fixtures, it can execute a local read-family query with
+=--input <GraphQueryRequest.json> --org-memory-fixture <memory.org>
+[--org-memory-fixture <memory.org> ...] [--receipt-id <id>]=. That path loads
+explicit Org fixture files into =MemoryOrgWorkspace= and routes
+=GraphQueryFamily::Memory=, =Tool=, =Session=, and =Content= through the
+matching read family without exposing whole documents. Store-backed project
+memory graph query uses =--org-memory-store-root <dir> --org-memory-root
+<relative-memory.org> [--org-memory-root <relative-memory.org> ...]=.
+Store-backed tool capability graph query uses =--org-tool-store-root <dir>
+--org-tool-root <relative-tools.org> [--org-tool-root <relative-tools.org>
+...]=. Both lanes discover typed roots through =FileSystemOrgSourceStore= and
+=OrgProjectRootCandidate= before running the matching store query entrypoint.
+Production recall starts from =ProjectMemoryRecallRequest=, discovers typed
+roots through =marlin-org-store=, builds a contract-indexed frontier in
+=marlin-org-memory=, then returns a bounded =ProjectMemoryContextPack=. Each
+returned =ProjectMemoryContextFact= carries the matched Org source span and
+stable =MEMORY_ID= evidence handle when the source node provides them.
+
+Read-family IFC:
+
+| Family | Store root option | Root kind | Anchor request | Identity output | Frontier fields | Scope-only fields |
+|--------+-------------------+-----------+----------------+-----------------+-----------------+-------------------|
+| =Memory= | =--org-memory-root= | =ProjectMemory= | =memory_id=, =content_id= | =memory_id=, =content_id=, =source_anchor_id= | =RECALL_QUERY=, =MEMORY_ID=, non-scope facts, tags, links, source spans | =PROJECT_ID=, =WORKSPACE_ID=, =WORKTREE_ID=, =ROOT_SESSION_ID=, =SESSION_ID=, =CONTENT_ID= |
+| =Tool= | =--org-tool-root= | =ToolCapability= | =capability_id= | =tool_capability_id=, =source_anchor_id= | =TOOL_CAPABILITY_ID=, =REQUIRED_RECEIPTS=, non-scope facts, tags, links, source spans | =PROJECT_ID=, =WORKSPACE_ID=, =WORKTREE_ID=, =ROOT_SESSION_ID=, =SESSION_ID= |
+| =Session= | fixture/read-family only | =SessionSummary= | =content_id= | =source_session_id=, =source_agent_id=, =content_id=, =source_anchor_id= | =SESSION_KIND=, =FORKED_FROM_CONTENT_ID=, =CONTEXT_PACK_ID=, =HISTORY_LIMIT=, tags, links, source spans | =PROJECT_ID=, =WORKSPACE_ID=, =WORKTREE_ID=, =ROOT_SESSION_ID=, =SESSION_ID=, =PARENT_SESSION_ID=, =AGENT_ID= |
+| =Content= | fixture/read-family only | =SessionSummary= | =content_id= | =content_id=, =source_session_id=, =source_agent_id=, =source_anchor_id= | =CONTENT_ROLE=, =BODY_REF=, =TOKEN_COUNT=, =COMPRESSION_STATE=, tags, links, source spans | =PROJECT_ID=, =WORKSPACE_ID=, =WORKTREE_ID=, =ROOT_SESSION_ID=, =SESSION_ID=, =AGENT_ID=, =CONTENT_ID=, =PARENT_CONTENT_ID=, =FORKED_FROM_CONTENT_ID= |
 
 Verification:
 #+begin_example
 rtk run 'direnv exec . cargo test -p marlin-agent-core debug_cli_graph_query'
 #+end_example
-Result: debug graph query, repeated fixture projection, store-backed graph query, and production recall now have focused coverage. Production context packs assert source anchors, source spans, and =MEMORY_ID= evidence handles.
-Focused verification: =cargo test -p marlin-agent-core debug_cli_graph_query --test unit_test= passed 5 tests, =cargo test -p marlin-agent-core debug_cli --test unit_test= passed 18 tests, and =cargo test -p marlin-org-memory --test unit_test= passed 17 tests.
+Result: debug graph query, repeated fixture projection, store-backed memory/tool
+graph query, production recall, and negative-path CLI gates now have focused
+coverage. Production context packs assert source anchors, source spans, and
+=MEMORY_ID= evidence handles. Latest P0 closure verification:
+=cargo test -p marlin-org-memory -p marlin-agent-core= passed 89 tests, and
+the touched package combination passed 334 tests with 1 ignored live gate.
 
 ** Slice E: Tool Capability Cards
-Owners: =marlin-agent-protocol= and =marlin-org-memory=. Status: Partially implemented on 2026-06-15 for the first Org-backed =GraphQueryFamily::Tool= read family, typed tool capability id projection, required receipt frontier matching, and debug CLI summary projection.
+Owners: =marlin-agent-protocol= and =marlin-org-memory=. Status: Implemented
+on 2026-06-15 for the first Org-backed =GraphQueryFamily::Tool= read family,
+typed tool capability id projection, required receipt frontier matching, debug
+CLI summary projection, and store-backed tool capability root query.
 
 Add =agent.tool.v1= protocol shape:
 
@@ -300,16 +337,36 @@ Tests:
 - card includes required receipt expectations;
 - query by capability id returns compact view and source span.
 
-Implementation note: =GraphQueryFamily::Tool= and =GraphQueryRequest::with_tool_capability= are now backed by =MemoryOrgWorkspace::query_tool_capability_graph=. Tool capability cards are discovered from structured Org nodes with =TOOL_CAPABILITY_ID=, =PROJECT_ID=, optional workspace/worktree/session provenance, =REQUIRED_RECEIPTS=, links, tags, source spans, and =CONTRACT_VALIDATED=. The first implementation returns compact =GraphQueryMatch= values with =tool_capability_id=, source anchor, relationship facts, and score basis points; it does not execute the tool or select a sandbox backend.
+Implementation note: =GraphQueryFamily::Tool= and
+=GraphQueryRequest::with_tool_capability= are now backed by
+=MemoryOrgWorkspace::query_tool_capability_graph= and
+=query_tool_capability_graph_from_store=. Tool capability cards are discovered
+from structured Org nodes with =TOOL_CAPABILITY_ID=, =PROJECT_ID=, optional
+workspace/worktree/session provenance, =REQUIRED_RECEIPTS=, links, tags, source
+spans, and =CONTRACT_VALIDATED=. The implementation returns compact
+=GraphQueryMatch= values with =tool_capability_id=, source anchor, relationship
+facts, and score basis points; it does not execute the tool or select a sandbox
+backend.
 
 Verification:
 #+begin_example
 rtk run 'direnv exec . cargo test -p marlin-org-memory tool_graph --test unit_test'
 #+end_example
-Result: =tool_graph= focused coverage passed 2 tests. =marlin-org-memory= unit tests passed 19 tests.
+Result: =tool_graph= focused coverage includes in-memory and store-backed tool
+roots. The latest =marlin-org-memory= and =marlin-agent-core= closure gate
+passed 89 tests, covering memory, tool, session, content, and debug CLI graph
+query lanes.
 
 ** Slice F: Harness Replay Gate
-Owner: =marlin-agent-harness=.
+Owner: =marlin-agent-harness=. Status: Implemented through the first dedicated
+read-model replay wrapper on 2026-06-15. The debug CLI replay/receipt lane
+proves project memory visibility, session transcript isolation, child content
+fork projection, tool capability lookup, debug graph query readout, missing
+store root errors, fixture/store option conflicts, and unsupported
+=GraphQueryFamily::Org= fixture execution without live LLM calls or sandbox
+execution. =marlin-agent-test-support= now exposes a project-runtime read-model
+replay artifact, and =marlin-agent-harness= evaluates that artifact as a
+no-live-LLM/no-sandbox scenario contract.
 
 Add no-live-LLM harness scenarios for:
 
@@ -320,17 +377,73 @@ Add no-live-LLM harness scenarios for:
 - tool capability lookup;
 - debug graph query readout.
 
-These tests should prove the runtime read model works without provider calls, sandbox execution, or live command execution.
+The landed wrapper proves the runtime read model works without provider calls,
+sandbox execution, or live command execution. Memory trigger receipt shape
+remains a focused follow-up because trigger promotion is still outside the
+graph-query fixture envelope.
 
-** First Code PR Shape
-The first code PR should include only Slice A:
+** Slice G: Project Topology Overview Contract
+Owner: =marlin-agent-protocol=, =marlin-org-store=, =marlin-org-workspace=,
+and =marlin-org-memory=. Status: P2 store-backed read model and debug CLI root
+implemented on 2026-06-15 for =agent.topology.v1=,
+=GraphQueryFamily::Topology=, topology visibility, compact topology graph
+query, typed topology root discovery, and CLI store-backed query execution.
 
-- add =project_runtime.rs= protocol types;
-- export the module;
-- add protocol JSON tests;
-- update =40.120= implementation evidence once tests pass.
+Topology is the project/session/content navigation layer. It records coarse
+overview nodes and edges such as project import, root session creation, child
+session branch, content-anchor fork, context-pack compression, memory promotion,
+and sub-agent route. It must not duplicate raw transcripts, memory claims, or
+whole Org shards; it carries source anchors into the detailed Org fact layer.
 
-Do not combine Slice A with Org memory graph or debug CLI changes. The protocol surface needs to stabilize first.
+Implemented:
+- =agent.topology.v1= is a standard agent contract with a concrete example;
+- =GraphQueryFamily::Topology= and =GraphQueryVisibleSurface::Topology= are
+  protocol-visible;
+- =MemoryOrgWorkspace::query_topology_graph= projects compact topology overview
+  matches from loaded Org nodes;
+- =MemoryOrgWorkspace::query_topology_graph_from_store= executes topology graph
+  requests over =MemoryOrgSourceStore= roots discovered as =Topology= roots;
+- debug CLI graph query exposes =--org-topology-store-root= plus
+  =--org-topology-root= as a topology-only read lane, separate from memory and
+  tool capability roots;
+- topology nodes must carry =TOPOLOGY_ID=, =PROJECT_ID=, =TOPOLOGY_NODE_KIND=,
+  =TOPOLOGY_EDGE_KIND=, and =SOURCE_ANCHOR= before they enter the read model.
+
+Tests:
+- standard contract library exposes =agent.topology.v1= with contract ids and
+  assertion ids;
+- standard contract examples validate the topology shape;
+- memory workspace standard contract status includes the topology assertions
+  without forcing a topology validation receipt on a memory-only document.
+- protocol JSON coverage proves topology family serialization and default
+  topology surface visibility;
+- Org memory coverage proves same-project topology query and external-project
+  denial;
+- Org store discovery coverage proves =.marlin/topology/project.org= is a typed
+  =Topology= project root candidate;
+- debug CLI coverage proves store-backed topology query execution, missing-root
+  denial, and option conflict rejection for mixed topology/tool lanes.
+
+Next:
+1. Wire imported project/session topology writers to emit real topology shards
+   under the discovered root layout.
+2. Keep topology readout compact: node id, edge kind, source anchor, visibility
+   boundary, and relationship reason. Detailed Org facts remain behind their
+   source anchors.
+** Landing Shape After P0-P3
+The first Slice A-only PR shape has been superseded by the 2026-06-15 P0-P3
+landing batch. Keep review and commits split by semantic boundary even when the
+staged workspace contains the full batch:
+
+- protocol request/receipt contracts and JSON tests;
+- Org memory read families for project memory, tool capability, session, and content graphs;
+- debug CLI graph query/readout over fixture and typed store roots;
+- runtime/session projection and no-live model/stream gateway tests;
+- Rust project harness policy evidence and improvement queue artifacts.
+
+Do not collapse these into one undifferentiated runtime change. The review
+packet should explain which slice owns each behavior and which verification
+receipt proves it.
 
 ** Verification Commands
 Use repository-native wrappers:
@@ -339,8 +452,13 @@ Use repository-native wrappers:
 direnv exec . cargo test -p marlin-agent-protocol project_runtime
 direnv exec . cargo test -p marlin-agent-protocol --test unit_test
 direnv exec . cargo test -p marlin-org-memory project_memory
+direnv exec . cargo test -p marlin-org-memory tool_graph --test unit_test
 direnv exec . cargo test -p marlin-agent-core debug_cli_graph_query
-direnv exec . cargo test -p marlin-agent-harness project_scoped_runtime
+direnv exec . cargo test -p marlin-agent-core debug_cli_graph_query_rejects --test unit_test
+direnv exec . cargo test -p marlin-agent-test-support project_runtime_read_model --test unit_test
+direnv exec . cargo test -p marlin-agent-harness harness_accepts_project_runtime_read_model_replay_artifact --test unit_test
+direnv exec . cargo test -p marlin-agent-test-support --test unit_test
+direnv exec . cargo test -p marlin-agent-harness --test unit_test
 #+end_example
 
 Focused verification receipt for the 2026-06-15 project-scoped runtime slice:
@@ -352,11 +470,33 @@ Focused verification receipt for the 2026-06-15 project-scoped runtime slice:
 - =cargo test -p marlin-agent-runtime --test unit_test=: 80 passed.
 - =cargo test -p marlin-org-memory project_graph --test unit_test=: 4 passed, 13 filtered.
 - =cargo test -p marlin-org-memory project_recall --test unit_test=: 3 passed, 14 filtered.
-- =cargo test -p marlin-org-memory tool_graph --test unit_test=: 2 passed, 17 filtered.
-- =cargo test -p marlin-org-memory --test unit_test=: 19 passed.
-- =cargo test -p marlin-agent-core debug_cli_graph_query --test unit_test=: 6 passed, 52 filtered.
-- =cargo test -p marlin-agent-core debug_cli --test unit_test=: 19 passed, 39 filtered.
+- =cargo test -p marlin-org-memory tool_graph --test unit_test=: 3 passed, 21 filtered.
+- =cargo test -p marlin-org-memory --test unit_test=: 24 passed.
+- =cargo test -p marlin-agent-core debug_cli_graph_query --test unit_test=: 14 passed, 52 filtered.
+- =cargo test -p marlin-agent-core debug_cli_graph_query_executes_store_backed_tool_capability_query --test unit_test=: 1 passed, 65 filtered.
+- =cargo test -p marlin-agent-core debug_cli_graph_query_rejects --test unit_test=: 4 passed, 62 filtered.
+- =cargo test -p marlin-agent-core debug_cli --test unit_test=: 27 passed, 39 filtered.
+- =cargo test -p marlin-agent-test-support project_runtime_read_model --test unit_test=: 3 passed, 41 filtered.
+- =cargo test -p marlin-agent-harness harness_accepts_project_runtime_read_model_replay_artifact --test unit_test=: 1 passed, 48 filtered.
+- =cargo test -p marlin-agent-test-support --test unit_test=: 49 passed.
+- =cargo test -p marlin-agent-harness --test unit_test=: 48 passed, 1 ignored.
 - =cargo test -p marlin-agent-test-support runtime_environment --test unit_test=: 2 passed, 42 filtered.
+- =cargo test -p marlin-agent-protocol topology_query --test unit_test=: 1 passed, 70 filtered.
+- =cargo test -p marlin-org-memory topology_graph --test unit_test=: 2 passed, 25 filtered.
+- =cargo test -p marlin-agent-protocol -p marlin-org-memory -p marlin-agent-core -p marlin-agent-harness -p marlin-agent-kernel --test unit_test=: 237 passed, 1 ignored.
+- =cargo clippy -p marlin-agent-protocol -p marlin-org-memory -p marlin-agent-core -p marlin-agent-harness -p marlin-agent-kernel --all-targets -- -D warnings=: no issues found.
+- =cargo test -p marlin-org-store discovery --test unit_test=: 1 passed, 12 filtered.
+- =cargo test -p marlin-org-memory topology_graph --test unit_test=: 3 passed, 25 filtered.
+- =cargo test -p marlin-agent-core query_topology --test unit_test=: 4 passed, 67 filtered.
+- =cargo test -p marlin-org-store -p marlin-org-memory -p marlin-agent-core --test unit_test=: 112 passed.
+- =cargo clippy -p marlin-org-store -p marlin-org-memory -p marlin-agent-core --all-targets -- -D warnings=: no issues found.
+
+Latest staged closure receipt:
+
+- =cargo test -p marlin-org-memory -p marlin-agent-core=: 89 passed.
+- =cargo clippy -p marlin-org-memory -p marlin-agent-core --all-targets -- -D warnings=: no issues found.
+- =cargo test -p marlin-rust-project-harness-policy -p marlin-agent-protocol -p marlin-org-memory -p marlin-agent-core -p marlin-agent-runtime -p marlin-agent-stream -p marlin-agent-test-support=: 334 passed, 1 ignored.
+- =cargo clippy= over the same package set with =--all-targets -- -D warnings=: no issues found.
 
 Rust harness verification policy is crate-role aware. The build-support policy
 classifies packages as agent runtime, agent harness, protocol contract, Org
@@ -405,12 +545,16 @@ Audit result on 2026-06-15:
 - Contract-indexed frontier construction has landed for memory recall and graph query. The frontier covers =RECALL_QUERY=, tags, non-scope properties, evidence links, source spans, and source line anchors before typed relationship scoring.
 - Debug CLI graph query now has two explicit lanes: =--org-memory-fixture= remains a fixture-only shard path, while =--org-memory-store-root= plus =--org-memory-root= exercises typed store-backed root discovery.
 - Session and content read families now land beside the memory/tool graph families. They use =GraphQueryContext= visibility, scoped relationship scoring, exact content anchors, source-anchor projection, and compact source agent/session/content ids instead of exposing raw sibling transcripts or whole session shards.
+- Store-backed tool capability root discovery now uses a separate =--org-tool-root= lane and =ToolCapability= root kind, so memory roots and tool roots no longer share one CLI option meaning.
+- Debug CLI replay/receipt gates now cover missing memory/tool store roots, fixture/store option conflicts, unsupported =GraphQueryFamily::Org= fixture execution, and no-live-LLM readout for memory/tool/session/content family receipts.
+- Dedicated harness replay coverage now wraps the read-model proof in a reusable =marlin-agent-test-support= artifact and an explicit =marlin-agent-harness= contract evaluation, so harness owners can verify the project-runtime read model without depending on debug CLI fixture details.
 
 Next landing order:
 
-1. Add store-backed tool capability root discovery and CLI coverage once the root-candidate vocabulary for tool cards is fixed. Keep =--org-memory-root= memory-specific.
-2. Add harness replay gates for project memory visibility, session transcript isolation, child content forks, memory trigger receipts, tool capability lookup, and debug graph query readout. These should run without live LLM calls or sandbox execution.
-3. Add negative-path regressions around stale loaded nodes, missing source spans, missing store roots, fixture/store option conflicts, and unsupported =GraphQueryFamily::Org= fixture execution so agents can distinguish fixture failures from production recall failures.
+1. Add memory trigger receipt shape coverage once the trigger envelope is promoted beyond graph-query fixtures.
+2. Add stale loaded-node and missing-source-span regressions at the =marlin-org-memory= layer so failures distinguish source projection bugs from store discovery errors.
+3. Promote the harness replay artifact into any higher-level runtime-read smoke that should consume the same contract/evidence bundle.
+4. Keep sandbox backend selection out of this lane until tool cards carry enough typed receipt requirements for a backend policy to consume.
 
 ** Done Criteria
 P0 runtime is done when:

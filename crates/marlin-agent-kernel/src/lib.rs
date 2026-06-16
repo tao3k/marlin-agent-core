@@ -14,11 +14,17 @@ pub use driver::{
     compile_graph_policy_proposal, compile_graph_policy_proposal_with_native_abi_readiness,
 };
 pub use marlin_agent_protocol::{
-    ExecutorName, GraphId, GraphLoopEvidencePolicy, GraphLoopExecutionBudget,
-    GraphLoopExecutionRequest, GraphLoopExecutionResult, GraphLoopExecutionStatus,
+    ExecutorName, FailureClassificationId, FailureClassificationReceipt, GraphId,
+    GraphLoopContinuationAction, GraphLoopContinuationDecision, GraphLoopContinuationReceipt,
+    GraphLoopEvidencePolicy, GraphLoopExecutionBudget, GraphLoopExecutionRequest,
+    GraphLoopExecutionResult, GraphLoopExecutionStatus, GraphLoopFailureKind,
     GraphLoopIterationReport, GraphLoopNextAction, GraphLoopRunRequest, GraphLoopStopPolicy,
     GraphLoopStrategy, GraphLoopStrategyId, GraphLoopStrategyRuntime, GraphLoopStrategyVersion,
     GraphNodeExecutionReceipt, GraphNodeExecutionStatus, GraphNodeInvocation, GraphPolicyProposal,
-    GraphPolicyProposalReceipt, GraphPolicyProposalStatus, LoopEdgeSpec, LoopGraph, LoopNodeSpec,
-    NodeId, RunId, RuntimePlanSnapshot,
+    GraphPolicyProposalReceipt, GraphPolicyProposalStatus, HumanDecision, HumanDecisionReceipt,
+    HumanGateId, HumanGateReceipt, HumanReviewKind, HumanReviewerId, LoopContinuationCapability,
+    LoopContinuationPolicy, LoopEdgeSpec, LoopEvidenceCapturePolicy, LoopFailurePolicy, LoopGraph,
+    LoopHumanGatePolicy, LoopMemoryPolicy, LoopModelRoutePolicy, LoopNodeSpec, LoopPolicyProfile,
+    LoopPolicyProfileId, LoopQueuePolicy, LoopSelfEvolutionPolicy, LoopToolBatchPolicy, NodeId,
+    RunId, RuntimePlanSnapshot,
 };

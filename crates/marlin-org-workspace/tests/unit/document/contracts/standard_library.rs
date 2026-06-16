@@ -2,8 +2,8 @@ use marlin_org_model::OrgContractValidationStatus;
 use marlin_org_workspace::{
     OrgDocument, OrgDocumentLoader, OrgDocumentWorkspace, STANDARD_AGENT_LOOP_CONTRACT_DOCUMENT_ID,
     STANDARD_AGENT_MEMORY_CONTRACT_DOCUMENT_ID, STANDARD_AGENT_PLAN_CONTRACT_DOCUMENT_ID,
-    STANDARD_AGENT_TASK_CONTRACT_DOCUMENT_ID, load_standard_agent_contract_workspace,
-    standard_agent_contract_documents,
+    STANDARD_AGENT_TASK_CONTRACT_DOCUMENT_ID, STANDARD_AGENT_TOPOLOGY_CONTRACT_DOCUMENT_ID,
+    load_standard_agent_contract_workspace, standard_agent_contract_documents,
 };
 use std::collections::BTreeSet;
 
@@ -19,17 +19,19 @@ fn org_document_loader_loads_standard_agent_contract_library_from_org_folder() {
             "agent.memory.v1".to_owned(),
             "agent.plan.v1".to_owned(),
             "agent.task.v1".to_owned(),
+            "agent.topology.v1".to_owned(),
         ])
     );
     assert!(workspace.contract_resolutions.references.is_empty());
     assert!(workspace.contract_validations.receipts.is_empty());
-    assert_eq!(assertion_ids(&workspace).len(), 44);
+    assert_eq!(assertion_ids(&workspace).len(), 53);
     assert!(assertion_ids(&workspace).contains("plan.has-workflow-state"));
     assert!(assertion_ids(&workspace).contains("plan.has-next-action-property"));
     assert!(assertion_ids(&workspace).contains("plan.validation-has-checked-item"));
     assert!(assertion_ids(&workspace).contains("task.acceptance-has-checklist"));
     assert!(assertion_ids(&workspace).contains("loop.has-strategy"));
     assert!(assertion_ids(&workspace).contains("memory.has-retention"));
+    assert!(assertion_ids(&workspace).contains("topology.has-source-anchor-property"));
     assert_eq!(
         standard_document_ids(),
         BTreeSet::from([
@@ -37,12 +39,13 @@ fn org_document_loader_loads_standard_agent_contract_library_from_org_folder() {
             STANDARD_AGENT_MEMORY_CONTRACT_DOCUMENT_ID.to_owned(),
             STANDARD_AGENT_PLAN_CONTRACT_DOCUMENT_ID.to_owned(),
             STANDARD_AGENT_TASK_CONTRACT_DOCUMENT_ID.to_owned(),
+            STANDARD_AGENT_TOPOLOGY_CONTRACT_DOCUMENT_ID.to_owned(),
         ])
     );
 }
 
 #[test]
-fn org_document_loader_validates_standard_agent_plan_task_loop_memory_contracts() {
+fn org_document_loader_validates_standard_agent_plan_task_loop_memory_topology_contracts() {
     let contract_documents = standard_agent_contract_documents();
     let work_document = OrgDocument::new(
         "doc:agent-contract-workspace",
@@ -148,6 +151,30 @@ internal
 
 ** Retention
 - Keep for project lifecycle while standard Contract Org examples are maintained.
+
+* Agent topology contract
+:PROPERTIES:
+:CONTRACT_ORG: agent.topology.v1
+:TOPOLOGY_ID: topology.standard-contract-workspace
+:PROJECT_ID: marlin-agent-core
+:TOPOLOGY_SCOPE: project-overview
+:TOPOLOGY_NODE_KIND: project
+:TOPOLOGY_EDGE_KIND: imports-project
+:SOURCE_ANCHOR: crates/marlin-org-workspace/tests/unit/document/contracts/standard_library.rs
+:END:
+
+** Overview
+The imported project topology gives agents a coarse route map before they open
+detailed Org memory or session facts.
+
+** Navigation
+- project imports standard contract workspace.
+- root session opens from the project topology.
+- child session branches from a content anchor.
+
+** Visibility Boundaries
+- Sibling sessions stay topology-visible but transcript-hidden by default.
+- Detailed evidence remains in the linked Org fact layer.
 "#,
     );
 
@@ -157,7 +184,7 @@ internal
     let workspace = OrgDocumentLoader::load_workspace_with_contracts(&work_document, &discovered)
         .expect("workspace loads with standard contracts");
 
-    assert_eq!(discovered.len(), 4);
+    assert_eq!(discovered.len(), 5);
     assert!(workspace.contract_resolutions.diagnostics.is_empty());
     assert!(workspace.contract_validations.diagnostics.is_empty());
     assert_eq!(
@@ -167,9 +194,10 @@ internal
             "agent.memory.v1".to_owned(),
             "agent.plan.v1".to_owned(),
             "agent.task.v1".to_owned(),
+            "agent.topology.v1".to_owned(),
         ])
     );
-    assert_eq!(workspace.contract_validations.receipts.len(), 44);
+    assert_eq!(workspace.contract_validations.receipts.len(), 53);
     let failed_receipts = workspace
         .contract_validations
         .receipts
@@ -213,6 +241,12 @@ fn org_document_loader_validates_standard_agent_contract_examples() {
         include_str!("../../../../../../org/contracts/examples/agent.memory.v1.example.org"),
         "agent.memory.v1",
         14,
+    );
+    assert_standard_contract_example_passes(
+        "doc:agent-topology-v1-example",
+        include_str!("../../../../../../org/contracts/examples/agent.topology.v1.example.org"),
+        "agent.topology.v1",
+        9,
     );
 }
 

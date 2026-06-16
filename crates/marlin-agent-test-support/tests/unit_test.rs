@@ -2,6 +2,8 @@
 mod graph_policy;
 #[path = "unit/hook.rs"]
 mod hook;
+#[path = "unit/project_runtime_read_model.rs"]
+mod project_runtime_read_model;
 #[path = "unit/replay.rs"]
 mod replay;
 #[path = "unit/runtime_environment.rs"]

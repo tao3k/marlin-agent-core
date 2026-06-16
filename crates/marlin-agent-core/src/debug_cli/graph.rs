@@ -7,10 +7,11 @@ use crate::{
     GraphLoopExecutionRequest, GraphLoopExecutionResult, GraphLoopIterationReport, GraphLoopKernel,
     GraphLoopStrategy, GraphLoopStrategyRuntime, GraphPolicyProposal, LoopGraph, RunId,
     TokioAgentRuntime, compile_gerbil_loop_graph_policy,
-    protocol::{GraphQueryFamily, GraphQueryRequest, GraphQueryResponse},
+    protocol::{GraphQueryContext, GraphQueryFamily, GraphQueryRequest, GraphQueryResponse},
 };
 use marlin_org_memory::{
     MemoryOrgWorkspace, ProjectMemoryGraphStoreQuery, ToolCapabilityGraphStoreQuery,
+    TopologyGraphStoreQuery,
 };
 use marlin_org_store::{FileSystemOrgSourceStore, OrgProjectRootCandidate, OrgSourceStore};
 use marlin_org_workspace::OrgDocument;
@@ -66,6 +67,75 @@ pub(super) fn dispatch_graph(cursor: &mut ArgCursor) -> Result<MarlinCliResult, 
 }
 
 fn run_graph_query(options: GraphQueryOptions) -> Result<GraphQueryOutput, String> {
+    if options.family.is_some()
+        && (!options.org_memory_fixtures.is_empty()
+            || !options.org_memory_roots.is_empty()
+            || options.org_memory_store_root.is_some()
+            || !options.org_tool_roots.is_empty()
+            || options.org_tool_store_root.is_some()
+            || !options.org_topology_roots.is_empty()
+            || options.org_topology_store_root.is_some())
+    {
+        return Err(
+            "--family cannot be combined with Org-backed graph query options; set family in GraphQueryRequest JSON"
+                .to_string(),
+        );
+    }
+
+    if !options.org_topology_roots.is_empty() {
+        if !options.org_memory_roots.is_empty() {
+            return Err(
+                "--org-topology-root cannot be combined with --org-memory-root".to_string(),
+            );
+        }
+        if !options.org_tool_roots.is_empty() {
+            return Err("--org-topology-root cannot be combined with --org-tool-root".to_string());
+        }
+        if !options.org_memory_fixtures.is_empty() {
+            return Err(
+                "--org-topology-root cannot be combined with --org-memory-fixture".to_string(),
+            );
+        }
+        if options.org_memory_store_root.is_some() {
+            return Err(
+                "--org-memory-store-root cannot be combined with --org-topology-root".to_string(),
+            );
+        }
+        if options.org_tool_store_root.is_some() {
+            return Err(
+                "--org-tool-store-root cannot be combined with --org-topology-root".to_string(),
+            );
+        }
+
+        let request: GraphQueryRequest = read_json_input(options.input.as_deref())?;
+        let workspace = MemoryOrgWorkspace::new();
+        let store_root = options
+            .org_topology_store_root
+            .unwrap_or_else(|| ".".into());
+        let store = FileSystemOrgSourceStore::new(store_root);
+        ensure_store_roots_exist(&store, &options.org_topology_roots, "--org-topology-root")?;
+        let candidates = options
+            .org_topology_roots
+            .into_iter()
+            .map(OrgProjectRootCandidate::topology)
+            .collect::<Vec<_>>();
+        let response = workspace
+            .query_topology_graph_from_store(TopologyGraphStoreQuery {
+                receipt_id: options.receipt_id,
+                request,
+                store: &store,
+                candidates,
+            })
+            .map_err(|error| format!("failed to query topology graph: {error}"))?;
+        return Ok(GraphQueryOutput::ProjectRuntime(
+            project_runtime_query_summary_from_response(response),
+        ));
+    }
+
+    if options.org_topology_store_root.is_some() {
+        return Err("--org-topology-store-root requires --org-topology-root".to_string());
+    }
+
     if !options.org_tool_roots.is_empty() {
         if !options.org_memory_roots.is_empty() {
             return Err("--org-tool-root cannot be combined with --org-memory-root".to_string());
@@ -142,6 +212,9 @@ fn run_graph_query(options: GraphQueryOptions) -> Result<GraphQueryOutput, Strin
 
     if options.org_memory_fixtures.is_empty() {
         let input = read_input(options.input.as_deref())?;
+        if let Some(family) = options.family {
+            return graph_query_family_projection_output(&input, options.receipt_id, family);
+        }
         return graph_query_output(&input);
     }
 
@@ -203,10 +276,17 @@ fn query_loaded_org_graph(
         GraphQueryFamily::Content => workspace
             .query_content_graph(receipt_id, request)
             .map_err(|error| format!("failed to query content graph: {error}")),
+        GraphQueryFamily::Topology => workspace
+            .query_topology_graph(receipt_id, request)
+            .map_err(|error| format!("failed to query topology graph: {error}")),
         GraphQueryFamily::Org => Err(
             "--org-memory-fixture does not execute GraphQueryFamily::Org; use a concrete read family"
                 .to_string(),
         ),
+        GraphQueryFamily::Evidence | GraphQueryFamily::Failure => Err(format!(
+            "--org-memory-fixture does not execute GraphQueryFamily::{:?}; use a typed evidence/failure response receipt",
+            request.family
+        )),
     }
 }
 
@@ -260,6 +340,38 @@ fn graph_query_output(input: &str) -> Result<GraphQueryOutput, String> {
     }
 }
 
+fn graph_query_family_projection_output(
+    input: &str,
+    receipt_id: impl Into<String>,
+    family: GraphQueryFamily,
+) -> Result<GraphQueryOutput, String> {
+    let receipt_id = receipt_id.into();
+    let context = GraphQueryContext::new("debug-loop-report");
+    let response = match family {
+        GraphQueryFamily::Evidence => GraphQueryResponse::from_iteration_reports_evidence(
+            receipt_id,
+            context,
+            "loop report evidence",
+            parse_loop_report_input(input)?,
+        ),
+        GraphQueryFamily::Failure => GraphQueryResponse::from_iteration_reports_failure(
+            receipt_id,
+            context,
+            "loop report failures",
+            parse_loop_report_input(input)?,
+        ),
+        unsupported => {
+            return Err(format!(
+                "--family {:?} is not supported for raw graph query input; use evidence or failure for loop-report projection, or pass a typed GraphQueryResponse JSON",
+                unsupported
+            ));
+        }
+    };
+    Ok(GraphQueryOutput::ProjectRuntime(
+        project_runtime_query_summary_from_response(response),
+    ))
+}
+
 fn loop_query_summary(input: &str) -> Result<LoopQuerySummary, String> {
     let reports = parse_loop_report_input(input)?;
     let terminal = reports.last();
@@ -295,6 +407,32 @@ fn loop_query_summary(input: &str) -> Result<LoopQuerySummary, String> {
             .iter()
             .map(|report| report.execution_result.node_receipts.len())
             .sum(),
+        continuation_receipt_count: reports
+            .iter()
+            .filter(|report| report.continuation_receipt.is_some())
+            .count(),
+        human_gate_receipt_count: reports
+            .iter()
+            .filter(|report| report.human_gate_receipt.is_some())
+            .count(),
+        human_decision_receipt_count: reports
+            .iter()
+            .filter(|report| report.human_decision_receipt.is_some())
+            .count(),
+        failure_classification_receipt_count: reports
+            .iter()
+            .filter(|report| report.failure_classification_receipt.is_some())
+            .count(),
+        failure_kinds: reports
+            .iter()
+            .filter_map(|report| report.failure_classification_receipt.as_ref())
+            .map(|receipt| receipt.failure_kind.clone())
+            .fold(Vec::new(), |mut kinds, kind| {
+                if !kinds.contains(&kind) {
+                    kinds.push(kind);
+                }
+                kinds
+            }),
         trace_event_count: reports
             .iter()
             .filter_map(|report| report.trace.as_ref())
@@ -427,6 +565,20 @@ fn project_runtime_query_summary_from_response(
             .matches
             .iter()
             .filter_map(|query_match| query_match.tool_capability_id.clone())
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect(),
+        evidence_ids: response
+            .matches
+            .iter()
+            .filter_map(|query_match| query_match.evidence_id.clone())
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect(),
+        match_receipt_ids: response
+            .matches
+            .iter()
+            .filter_map(|query_match| query_match.receipt_id.clone())
             .collect::<BTreeSet<_>>()
             .into_iter()
             .collect(),

@@ -81,6 +81,12 @@ also carries the typed contract registry, reference resolutions, diagnostic
 records, template records, skip-reason summaries, and the full
 =OrgContractValidationReport= so agents do not need to parse rendered text.
 
+** Standard Agent Contracts
+The standard agent contract library ships independent Org files for
+=agent.plan.v1=, =agent.task.v1=, =agent.loop.v1=, =agent.memory.v1=, and
+=agent.topology.v1=. =agent.topology.v1= is the coarse project/session/content
+navigation layer: it validates topology roots and source anchors while leaving
+detailed content in memory, session, and source-span contracts.
 ** Current Limits
 
 The first projection preserves orgize query, expectation, message, fix,

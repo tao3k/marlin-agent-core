@@ -7,5 +7,6 @@ mod fakes;
 mod graph_loop;
 mod hooks;
 mod performance;
+mod project_read_model;
 mod stream;
 mod support;

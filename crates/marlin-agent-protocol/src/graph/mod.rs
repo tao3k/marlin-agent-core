@@ -6,6 +6,7 @@ mod execution_budget;
 mod gerbil_policy;
 mod loop_event;
 mod native_abi;
+mod policy_profile;
 
 pub use contract::{
     ExecutorName, GRAPH_POLICY_PROPOSAL_SCHEMA_ID, GraphId, GraphLoopExecutionRequest,
@@ -17,8 +18,10 @@ pub use contract::{
     validate_graph_policy_proposal,
 };
 pub use controller::{
-    GraphLoopEvidencePolicy, GraphLoopIterationReport, GraphLoopNextAction, GraphLoopRunRequest,
-    GraphLoopStopPolicy,
+    FailureClassificationId, FailureClassificationReceipt, GraphLoopEvidencePolicy,
+    GraphLoopFailureKind, GraphLoopIterationReport, GraphLoopNextAction, GraphLoopRunRequest,
+    GraphLoopStopPolicy, HumanDecision, HumanDecisionReceipt, HumanGateId, HumanGateReceipt,
+    HumanReviewKind, HumanReviewerId,
 };
 pub use execution_budget::GraphLoopExecutionBudget;
 pub use gerbil_policy::{
@@ -39,4 +42,10 @@ pub use loop_event::{
 pub use native_abi::{
     GraphNativeAbiId, GraphNativeAbiReadinessReceipt, GraphNativeAbiReadinessStatus,
     GraphNativeAbiRequirement, GraphNativeSymbol,
+};
+pub use policy_profile::{
+    LoopContinuationCapability, LoopContinuationPolicy, LoopEvidenceCapturePolicy,
+    LoopFailurePolicy, LoopHumanGatePolicy, LoopMemoryPolicy, LoopModelRoutePolicy,
+    LoopPolicyProfile, LoopPolicyProfileId, LoopQueuePolicy, LoopSelfEvolutionPolicy,
+    LoopToolBatchPolicy,
 };

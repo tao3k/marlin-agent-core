@@ -45,13 +45,18 @@ pub use marlin_agent_hooks::{
     RegisteredHookRuntime,
 };
 pub use marlin_agent_kernel::{
-    ExecutorName, GraphId, GraphLoopContinuationInput, GraphLoopContinuationPlanner,
-    GraphLoopController, GraphLoopExecutionBudget, GraphLoopExecutionRequest,
-    GraphLoopExecutionResult, GraphLoopExecutionStatus, GraphLoopKernel, GraphLoopStrategy,
+    ExecutorName, FailureClassificationId, FailureClassificationReceipt, GraphId,
+    GraphLoopContinuationInput, GraphLoopContinuationPlanner, GraphLoopController,
+    GraphLoopExecutionBudget, GraphLoopExecutionRequest, GraphLoopExecutionResult,
+    GraphLoopExecutionStatus, GraphLoopFailureKind, GraphLoopKernel, GraphLoopStrategy,
     GraphLoopStrategyId, GraphLoopStrategyRuntime, GraphLoopStrategyVersion,
     GraphNodeExecutionReceipt, GraphNodeExecutionStatus, GraphNodeExecutor, GraphNodeInvocation,
     GraphPolicyProposal, GraphPolicyProposalCompilation, GraphPolicyProposalReceipt,
-    GraphPolicyProposalStatus, LoopEdgeSpec, LoopGraph, LoopNodeSpec, NodeId, ProviderNodeAdapter,
+    GraphPolicyProposalStatus, HumanDecision, HumanDecisionReceipt, HumanGateId, HumanGateReceipt,
+    HumanReviewKind, HumanReviewerId, LoopContinuationCapability, LoopContinuationPolicy,
+    LoopEdgeSpec, LoopEvidenceCapturePolicy, LoopFailurePolicy, LoopGraph, LoopHumanGatePolicy,
+    LoopMemoryPolicy, LoopModelRoutePolicy, LoopNodeSpec, LoopPolicyProfile, LoopPolicyProfileId,
+    LoopQueuePolicy, LoopSelfEvolutionPolicy, LoopToolBatchPolicy, NodeId, ProviderNodeAdapter,
     RunId, RuntimePlanSnapshot, SubAgentNodeAdapter, TerminalGraphLoopContinuationPlanner,
     TokioGraphLoopController, TokioGraphLoopKernel, ToolNodeAdapter,
     compile_graph_policy_proposal_with_native_abi_readiness,
@@ -132,6 +137,7 @@ pub use marlin_org_workspace::{
     STANDARD_AGENT_MEMORY_CONTRACT_DOCUMENT_ID, STANDARD_AGENT_MEMORY_CONTRACT_ORG,
     STANDARD_AGENT_PLAN_CONTRACT_DOCUMENT_ID, STANDARD_AGENT_PLAN_CONTRACT_ORG,
     STANDARD_AGENT_TASK_CONTRACT_DOCUMENT_ID, STANDARD_AGENT_TASK_CONTRACT_ORG,
+    STANDARD_AGENT_TOPOLOGY_CONTRACT_DOCUMENT_ID, STANDARD_AGENT_TOPOLOGY_CONTRACT_ORG,
     load_standard_agent_contract_workspace, standard_agent_contract_documents,
 };
 pub use marlin_workspace_protocol as workspace;

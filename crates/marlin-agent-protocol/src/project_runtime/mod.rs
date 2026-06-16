@@ -2,6 +2,7 @@
 
 mod ids;
 mod query;
+mod query_projection;
 mod session_content;
 
 pub use ids::{

@@ -141,6 +141,74 @@ fn tool_capability_query_uses_project_fallback_without_backend_fields() {
 }
 
 #[test]
+fn topology_query_defaults_to_visible_overview_surface() {
+    let request = GraphQueryRequest::new(
+        GraphQueryContext::new("project-alpha"),
+        GraphQueryFamily::Topology,
+        "imports-project project-overview",
+    );
+
+    let value = serde_json::to_value(&request).expect("topology query should serialize");
+    assert_eq!(value["family"], "Topology");
+    assert!(
+        request
+            .context
+            .visibility
+            .allows_surface(GraphQueryVisibleSurface::Topology)
+    );
+
+    let decoded: GraphQueryRequest =
+        serde_json::from_value(value).expect("topology query should deserialize");
+    assert_eq!(decoded.family, GraphQueryFamily::Topology);
+}
+
+#[test]
+fn evidence_and_failure_queries_preserve_typed_receipt_anchors() {
+    let evidence_request = GraphQueryRequest::new(
+        GraphQueryContext::new("project-alpha"),
+        GraphQueryFamily::Evidence,
+        "no-live replay receipts",
+    );
+    let evidence_response = GraphQueryResponse::new("receipt:evidence-query", evidence_request)
+        .with_match(
+            GraphQueryMatch::new("project-alpha", "replay evidence captured", 9_300)
+                .with_evidence("evidence:replay:run-1")
+                .with_receipt("receipt:loop:run-1")
+                .with_relationship(GraphQueryMatchRelationship::new([
+                    GraphQueryRelationshipFact::SameProject,
+                    GraphQueryRelationshipFact::ContractValidated,
+                ])),
+        );
+
+    let value = serde_json::to_value(&evidence_response).expect("evidence response serializes");
+    assert_eq!(value["request"]["family"], "Evidence");
+    assert_eq!(value["matches"][0]["evidence_id"], "evidence:replay:run-1");
+    assert_eq!(value["matches"][0]["receipt_id"], "receipt:loop:run-1");
+
+    let decoded: GraphQueryResponse =
+        serde_json::from_value(value).expect("evidence response deserializes");
+    assert_eq!(decoded, evidence_response);
+
+    let failure_request = GraphQueryRequest::new(
+        GraphQueryContext::new("project-alpha"),
+        GraphQueryFamily::Failure,
+        "policy failure root cause",
+    );
+    let failure_response = GraphQueryResponse::new("receipt:failure-query", failure_request)
+        .with_match(
+            GraphQueryMatch::new("project-alpha", "sandbox denied policy failure", 8_800)
+                .with_evidence("failure:run-1:0")
+                .with_receipt("receipt:failure:run-1:0")
+                .with_source_anchor("source:diagnostic:sandbox-denied"),
+        );
+
+    let value = serde_json::to_value(&failure_response).expect("failure response serializes");
+    assert_eq!(value["request"]["family"], "Failure");
+    assert_eq!(value["matches"][0]["evidence_id"], "failure:run-1:0");
+    assert_eq!(value["matches"][0]["receipt_id"], "receipt:failure:run-1:0");
+}
+
+#[test]
 fn response_receipt_preserves_typed_sources_and_relationships() {
     let request = GraphQueryRequest::new(
         GraphQueryContext::new("project-alpha").with_root_session("root-session-1"),

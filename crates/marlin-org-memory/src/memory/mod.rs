@@ -10,6 +10,7 @@ mod render;
 mod session_graph;
 mod status;
 mod tool_graph;
+mod topology_graph;
 mod workspace;
 
 pub use content_graph::{
@@ -42,7 +43,14 @@ pub use tool_graph::{
     TOOL_CAPABILITY_ROOT_SESSION_ID_PROPERTY, TOOL_CAPABILITY_SESSION_ID_PROPERTY,
     TOOL_CAPABILITY_WORKSPACE_ID_PROPERTY, TOOL_CAPABILITY_WORKTREE_ID_PROPERTY,
 };
+pub use topology_graph::{
+    TOPOLOGY_AGENT_ID_PROPERTY, TOPOLOGY_CONTENT_ID_PROPERTY, TOPOLOGY_CONTRACT_VALIDATED_PROPERTY,
+    TOPOLOGY_EDGE_KIND_PROPERTY, TOPOLOGY_ID_PROPERTY, TOPOLOGY_NODE_KIND_PROPERTY,
+    TOPOLOGY_PROJECT_ID_PROPERTY, TOPOLOGY_ROOT_SESSION_ID_PROPERTY, TOPOLOGY_SCOPE_PROPERTY,
+    TOPOLOGY_SESSION_ID_PROPERTY, TOPOLOGY_SOURCE_ANCHOR_PROPERTY, TOPOLOGY_WORKSPACE_ID_PROPERTY,
+    TOPOLOGY_WORKTREE_ID_PROPERTY,
+};
 pub use workspace::{
     MemoryOrgWorkspace, ProjectMemoryGraphStoreQuery, ProjectMemoryStoreRecall,
-    ToolCapabilityGraphStoreQuery,
+    ToolCapabilityGraphStoreQuery, TopologyGraphStoreQuery,
 };

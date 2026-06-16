@@ -2,6 +2,7 @@
 
 mod graph_policy;
 mod hook;
+mod project_runtime_read_model;
 mod replay;
 mod runtime_environment;
 mod stability;
@@ -28,6 +29,12 @@ pub use hook::{
     complex_gerbil_hook_policy_receipt_with_decision_context, custom_hook_policy_receipt_fixture,
     custom_sub_agent_start_hook_summary_fixture, hook_dispatch_replay_evidence,
     sub_agent_hook_dispatch_selection_fixture,
+};
+pub use project_runtime_read_model::{
+    PROJECT_RUNTIME_READ_MODEL_REPLAY_ARTIFACT_ID, PROJECT_RUNTIME_READ_MODEL_REPLAY_CONTRACT_JSON,
+    ProjectRuntimeReadModelReplayArtifact, ProjectRuntimeReadModelReplayArtifactLoadError,
+    load_project_runtime_read_model_replay_artifact,
+    project_runtime_read_model_replay_artifact_fixture,
 };
 pub use replay::{
     NO_LLM_RUNTIME_REPLAY_ARTIFACT_ID, NO_LLM_RUNTIME_REPLAY_CONTRACT_JSON,

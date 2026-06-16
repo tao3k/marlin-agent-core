@@ -7,10 +7,10 @@ use serde::{Deserialize, Serialize};
 use crate::{
     GraphId, GraphLoopExecutionStatus, GraphLoopIterationReport, RunId,
     protocol::{
-        GraphQueryFamily, GraphQueryRelationshipFact, ProjectRuntimeAgentId,
-        ProjectRuntimeContentId, ProjectRuntimeMemoryId, ProjectRuntimeProjectId,
-        ProjectRuntimeReceiptId, ProjectRuntimeRootSessionId, ProjectRuntimeSessionId,
-        ProjectRuntimeSourceAnchorId, ProjectRuntimeToolCapabilityId,
+        GraphLoopFailureKind, GraphQueryFamily, GraphQueryRelationshipFact, ProjectRuntimeAgentId,
+        ProjectRuntimeContentId, ProjectRuntimeEvidenceId, ProjectRuntimeMemoryId,
+        ProjectRuntimeProjectId, ProjectRuntimeReceiptId, ProjectRuntimeRootSessionId,
+        ProjectRuntimeSessionId, ProjectRuntimeSourceAnchorId, ProjectRuntimeToolCapabilityId,
     },
     runtime::GraphLoopRunObservation,
 };
@@ -38,6 +38,11 @@ pub struct LoopQuerySummary {
     pub visited_nodes_by_iteration: Vec<Vec<String>>,
     pub diagnostic_count: usize,
     pub node_receipt_count: usize,
+    pub continuation_receipt_count: usize,
+    pub human_gate_receipt_count: usize,
+    pub human_decision_receipt_count: usize,
+    pub failure_classification_receipt_count: usize,
+    pub failure_kinds: Vec<GraphLoopFailureKind>,
     pub trace_event_count: usize,
 }
 
@@ -69,6 +74,8 @@ pub struct ProjectRuntimeQuerySummary {
     pub memory_ids: Vec<ProjectRuntimeMemoryId>,
     pub content_ids: Vec<ProjectRuntimeContentId>,
     pub tool_capability_ids: Vec<ProjectRuntimeToolCapabilityId>,
+    pub evidence_ids: Vec<ProjectRuntimeEvidenceId>,
+    pub match_receipt_ids: Vec<ProjectRuntimeReceiptId>,
     pub relationship_facts: Vec<GraphQueryRelationshipFact>,
     pub score_basis_points: Vec<u16>,
 }

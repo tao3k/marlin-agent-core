@@ -7,17 +7,19 @@ use marlin_agent_harness_types::{
     AgentHarnessScenario, AgentHarnessScenarioContract,
 };
 use marlin_agent_protocol::{
-    GraphNodeExecutionReceipt, GraphNodeExecutionStatus, ModelEndpoint, ModelGatewayRequest,
-    ModelGatewayTransport, user_gateway_message,
+    FailureClassificationReceipt, GraphLoopContinuationAction, GraphLoopContinuationReceipt,
+    GraphLoopFailureKind, GraphNodeExecutionReceipt, GraphNodeExecutionStatus, ModelEndpoint,
+    ModelGatewayRequest, ModelGatewayTransport, user_gateway_message,
 };
 use marlin_agent_sessions::SessionKind;
 
 use crate::{
-    NoLiveLlmModelGateway, complex_gerbil_graph_policy_replay_fixture,
-    custom_hook_policy_receipt_fixture, custom_sub_agent_start_hook_summary_fixture,
-    hook_dispatch_replay_evidence, no_live_llm_gateway_denial_evidence,
-    sub_agent_hook_dispatch_selection_fixture, sub_agent_memory_denied_fixture,
-    sub_agent_memory_session_replay_evidence, sub_agent_memory_session_visibility_evidence,
+    NO_LIVE_LLM_GATE_DENIAL_MESSAGE, NoLiveLlmModelGateway, ScriptedGatewayRequestReceipt,
+    complex_gerbil_graph_policy_replay_fixture, custom_hook_policy_receipt_fixture,
+    custom_sub_agent_start_hook_summary_fixture, hook_dispatch_replay_evidence,
+    no_live_llm_gateway_denial_evidence, sub_agent_hook_dispatch_selection_fixture,
+    sub_agent_memory_denied_fixture, sub_agent_memory_session_replay_evidence,
+    sub_agent_memory_session_visibility_evidence,
 };
 
 /// Stable fixture id for the no-LLM runtime replay artifact.
@@ -44,10 +46,19 @@ pub const NO_LLM_RUNTIME_REPLAY_CONTRACT_JSON: &str = r#"{
 }"#;
 
 /// Typed replay artifact loaded by harness tests without touching live LLMs.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct NoLlmRuntimeReplayArtifact {
     contract: AgentHarnessScenarioContract,
     replay_evidence: Vec<AgentHarnessEvidence>,
+    receipts: NoLlmRuntimeReplayReceipts,
+}
+
+/// Runtime receipts replayed by the deterministic no-LLM artifact.
+#[derive(Clone, Debug, PartialEq)]
+pub struct NoLlmRuntimeReplayReceipts {
+    continuation_receipt: GraphLoopContinuationReceipt,
+    failure_classification_receipt: FailureClassificationReceipt,
+    node_receipts: Vec<GraphNodeExecutionReceipt>,
 }
 
 /// Error returned while loading a serialized no-LLM replay artifact contract.
@@ -102,9 +113,31 @@ impl NoLlmRuntimeReplayArtifact {
         &self.replay_evidence
     }
 
+    /// Typed runtime receipts preserved by this replay artifact.
+    pub fn receipts(&self) -> &NoLlmRuntimeReplayReceipts {
+        &self.receipts
+    }
+
     /// Consume the artifact into its scenario contract and replay evidence.
     pub fn into_parts(self) -> (AgentHarnessScenarioContract, Vec<AgentHarnessEvidence>) {
         (self.contract, self.replay_evidence)
+    }
+}
+
+impl NoLlmRuntimeReplayReceipts {
+    /// Continuation decision receipt replayed for the accepted graph policy.
+    pub fn continuation_receipt(&self) -> &GraphLoopContinuationReceipt {
+        &self.continuation_receipt
+    }
+
+    /// Failure classification receipt replayed for the no-live-LLM gateway denial.
+    pub fn failure_classification_receipt(&self) -> &FailureClassificationReceipt {
+        &self.failure_classification_receipt
+    }
+
+    /// Per-node execution receipts replayed for the compiled graph.
+    pub fn node_receipts(&self) -> &[GraphNodeExecutionReceipt] {
+        &self.node_receipts
     }
 }
 
@@ -119,9 +152,12 @@ pub fn load_no_llm_runtime_replay_artifact(
         });
     }
 
+    let deterministic_replay = deterministic_no_llm_runtime_replay();
+
     Ok(NoLlmRuntimeReplayArtifact {
         contract,
-        replay_evidence: deterministic_no_llm_runtime_replay_evidence(),
+        replay_evidence: deterministic_replay.replay_evidence,
+        receipts: deterministic_replay.receipts,
     })
 }
 
@@ -131,7 +167,12 @@ pub fn no_llm_runtime_replay_artifact_fixture() -> NoLlmRuntimeReplayArtifact {
         .expect("no-LLM runtime replay contract fixture should load")
 }
 
-fn deterministic_no_llm_runtime_replay_evidence() -> Vec<AgentHarnessEvidence> {
+struct DeterministicNoLlmRuntimeReplay {
+    replay_evidence: Vec<AgentHarnessEvidence>,
+    receipts: NoLlmRuntimeReplayReceipts,
+}
+
+fn deterministic_no_llm_runtime_replay() -> DeterministicNoLlmRuntimeReplay {
     let memory_fixture = sub_agent_memory_denied_fixture();
     let (child_session, isolation_receipt) = memory_fixture.parent_session().child_session(
         SessionKind::SubAgent,
@@ -150,11 +191,11 @@ fn deterministic_no_llm_runtime_replay_evidence() -> Vec<AgentHarnessEvidence> {
         )
         .with_transport(ModelGatewayTransport::Auto),
     );
-    let no_live_llm_gateway_evidence = no_live_llm_gateway_denial_evidence(
-        NO_LLM_RUNTIME_REPLAY_ARTIFACT_ID,
-        &no_live_llm_gateway.denied_requests(),
-    );
+    let denied_requests = no_live_llm_gateway.denied_requests();
+    let no_live_llm_gateway_evidence =
+        no_live_llm_gateway_denial_evidence(NO_LLM_RUNTIME_REPLAY_ARTIFACT_ID, &denied_requests);
 
+    let receipts = graph_policy_loop_replay_receipts(&graph_policy, &denied_requests);
     let mut replay_evidence = vec![
         graph_policy.visibility_evidence(),
         sub_agent_memory_session_visibility_evidence(&child_session, &isolation_receipt),
@@ -162,13 +203,114 @@ fn deterministic_no_llm_runtime_replay_evidence() -> Vec<AgentHarnessEvidence> {
         hook_dispatch_replay_evidence(&hook_summary, &hook_selection, &hook_policy),
         no_live_llm_gateway_evidence,
     ];
-    replay_evidence.extend(graph_policy_node_receipt_replay_evidence(&graph_policy));
-    replay_evidence
+    replay_evidence.extend(graph_policy_loop_receipt_replay_evidence(&receipts));
+    replay_evidence.extend(graph_policy_node_receipt_replay_evidence(&receipts));
+    DeterministicNoLlmRuntimeReplay {
+        replay_evidence,
+        receipts,
+    }
 }
 
-fn graph_policy_node_receipt_replay_evidence(
+fn graph_policy_loop_replay_receipts(
     graph_policy: &crate::DeterministicGraphPolicyProposalFixture,
+    denied_requests: &[ScriptedGatewayRequestReceipt],
+) -> NoLlmRuntimeReplayReceipts {
+    let request = graph_policy
+        .compilation()
+        .request
+        .as_ref()
+        .expect("replay graph policy should produce an execution request");
+    let iteration_id = 0_u64;
+    let continuation_reason = "native Gerbil graph policy replay accepted runtime graph";
+    let continuation_receipt = GraphLoopContinuationReceipt::new(
+        request.run_id.clone(),
+        iteration_id,
+        GraphLoopContinuationAction::Rewrite {
+            graph: request.graph.clone(),
+            reason: continuation_reason.to_owned(),
+        },
+    )
+    .with_diagnostic("replay=true")
+    .with_diagnostic("live_llm=false");
+
+    let denied_models = denied_models_summary(denied_requests);
+    let failure_classification_receipt = FailureClassificationReceipt::new(
+        format!("{}:no-live-llm-denial", request.run_id),
+        request.run_id.clone(),
+        iteration_id,
+        GraphLoopFailureKind::PolicyFailure,
+    )
+    .with_retryable(false)
+    .with_requires_human(false)
+    .with_diagnostic(format!("denied_requests={}", denied_requests.len()))
+    .with_diagnostic(format!("denied_models=[{denied_models}]"))
+    .with_diagnostic(format!(
+        "denial_message=\"{NO_LIVE_LLM_GATE_DENIAL_MESSAGE}\""
+    ));
+
+    NoLlmRuntimeReplayReceipts {
+        continuation_receipt,
+        failure_classification_receipt,
+        node_receipts: graph_policy_node_receipts(graph_policy),
+    }
+}
+
+fn graph_policy_loop_receipt_replay_evidence(
+    receipts: &NoLlmRuntimeReplayReceipts,
 ) -> Vec<AgentHarnessEvidence> {
+    let (continuation_action, continuation_graph_id, continuation_node_count) =
+        match &receipts.continuation_receipt.action {
+            GraphLoopContinuationAction::Rewrite { graph, .. } => {
+                ("Rewrite", graph.graph_id.as_str(), graph.nodes.len())
+            }
+            GraphLoopContinuationAction::Accept => ("Accept", "", 0),
+            GraphLoopContinuationAction::Deny { .. } => ("Deny", "", 0),
+            GraphLoopContinuationAction::Defer { .. } => ("Defer", "", 0),
+        };
+    let continuation_evidence = AgentHarnessEvidence::present(
+        AgentHarnessEvidenceKind::Runtime,
+        format!(
+            "graph-loop-continuation:{}:{}",
+            receipts.continuation_receipt.run_id.as_str(),
+            receipts.continuation_receipt.iteration_id.get()
+        ),
+    )
+    .with_detail(format!(
+        "continuation_receipt=true run_id={} iteration_id={} action={} graph_id={} node_count={} diagnostic_count={} replay=true live_llm=false",
+        receipts.continuation_receipt.run_id.as_str(),
+        receipts.continuation_receipt.iteration_id.get(),
+        continuation_action,
+        continuation_graph_id,
+        continuation_node_count,
+        receipts.continuation_receipt.diagnostics.len(),
+    ));
+
+    let failure_classification_evidence = AgentHarnessEvidence::present(
+        AgentHarnessEvidenceKind::Runtime,
+        format!(
+            "graph-loop-failure-classification:{}:{}",
+            receipts.failure_classification_receipt.run_id.as_str(),
+            receipts.failure_classification_receipt.iteration_id.get()
+        ),
+    )
+    .with_detail(format!(
+        "failure_classification_receipt=true classification_id={} run_id={} iteration_id={} failure_kind={} retryable={} requires_human={} source_node_count={} diagnostic_count={} replay=true live_llm=false",
+        receipts.failure_classification_receipt.classification_id.as_str(),
+        receipts.failure_classification_receipt.run_id.as_str(),
+        receipts.failure_classification_receipt.iteration_id.get(),
+        graph_loop_failure_kind_label(&receipts.failure_classification_receipt.failure_kind),
+        receipts.failure_classification_receipt.retryable,
+        receipts.failure_classification_receipt.requires_human,
+        receipts.failure_classification_receipt.source_nodes.len(),
+        receipts.failure_classification_receipt.diagnostics.len(),
+    ));
+
+    vec![continuation_evidence, failure_classification_evidence]
+}
+
+fn graph_policy_node_receipts(
+    graph_policy: &crate::DeterministicGraphPolicyProposalFixture,
+) -> Vec<GraphNodeExecutionReceipt> {
     let request = graph_policy
         .compilation()
         .request
@@ -179,15 +321,23 @@ fn graph_policy_node_receipt_replay_evidence(
         .graph
         .nodes
         .iter()
+        .map(|node| GraphNodeExecutionReceipt::completed(node.id.as_str(), node.executor.as_str()))
+        .collect()
+}
+
+fn graph_policy_node_receipt_replay_evidence(
+    receipts: &NoLlmRuntimeReplayReceipts,
+) -> Vec<AgentHarnessEvidence> {
+    receipts
+        .node_receipts
+        .iter()
         .enumerate()
-        .map(|(index, node)| {
-            let receipt =
-                GraphNodeExecutionReceipt::completed(node.id.as_str(), node.executor.as_str());
+        .map(|(index, receipt)| {
             AgentHarnessEvidence::present(
                 AgentHarnessEvidenceKind::Runtime,
                 format!(
                     "graph-loop-node:{}:{}",
-                    request.run_id,
+                    receipts.continuation_receipt.run_id.as_str(),
                     receipt.node_id.as_str()
                 ),
             )
@@ -201,6 +351,26 @@ fn graph_policy_node_receipt_replay_evidence(
             ))
         })
         .collect()
+}
+
+fn denied_models_summary(denied_requests: &[ScriptedGatewayRequestReceipt]) -> String {
+    denied_requests
+        .iter()
+        .map(|request| request.litellm_model_id.as_str())
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
+fn graph_loop_failure_kind_label(kind: &GraphLoopFailureKind) -> &'static str {
+    match kind {
+        GraphLoopFailureKind::TransientFailure => "TransientFailure",
+        GraphLoopFailureKind::ToolUsageFailure => "ToolUsageFailure",
+        GraphLoopFailureKind::VerificationFailure => "VerificationFailure",
+        GraphLoopFailureKind::ContextFailure => "ContextFailure",
+        GraphLoopFailureKind::PolicyFailure => "PolicyFailure",
+        GraphLoopFailureKind::StrategyFailure => "StrategyFailure",
+        GraphLoopFailureKind::Unknown => "Unknown",
+    }
 }
 
 fn graph_node_execution_status_label(status: &GraphNodeExecutionStatus) -> &'static str {

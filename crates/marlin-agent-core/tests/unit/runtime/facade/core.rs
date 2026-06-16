@@ -6,8 +6,8 @@ use marlin_agent_core::{
     ModelGatewayTransport, ModelRouteConfig, ModelRouteRequest, RuntimeEnvironmentRequest,
     RuntimeEnvironmentResolver, RuntimeExecutionIdentity,
     STANDARD_AGENT_MEMORY_CONTRACT_DOCUMENT_ID, STANDARD_AGENT_PLAN_CONTRACT_DOCUMENT_ID,
-    load_standard_agent_contract_workspace, standard_agent_contract_documents,
-    system_gateway_message,
+    STANDARD_AGENT_TOPOLOGY_CONTRACT_DOCUMENT_ID, load_standard_agent_contract_workspace,
+    standard_agent_contract_documents, system_gateway_message,
 };
 
 #[test]
@@ -86,7 +86,7 @@ fn core_facade_exposes_standard_agent_contract_library() {
     let workspace =
         load_standard_agent_contract_workspace().expect("standard agent contracts load");
 
-    assert_eq!(documents.len(), 4);
+    assert_eq!(documents.len(), 5);
     assert!(
         documents
             .iter()
@@ -98,11 +98,23 @@ fn core_facade_exposes_standard_agent_contract_library() {
             .any(|document| document.id.as_str() == STANDARD_AGENT_MEMORY_CONTRACT_DOCUMENT_ID)
     );
     assert!(
+        documents
+            .iter()
+            .any(|document| document.id.as_str() == STANDARD_AGENT_TOPOLOGY_CONTRACT_DOCUMENT_ID)
+    );
+    assert!(
         workspace
             .contracts
             .contracts
             .iter()
             .any(|contract| contract.id.as_str() == "agent.plan.v1")
+    );
+    assert!(
+        workspace
+            .contracts
+            .contracts
+            .iter()
+            .any(|contract| contract.id.as_str() == "agent.topology.v1")
     );
     assert!(
         workspace

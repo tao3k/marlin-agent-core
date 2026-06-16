@@ -16,6 +16,9 @@ pub const STANDARD_AGENT_LOOP_CONTRACT_DOCUMENT_ID: &str = "org:contracts/agent.
 /// Stable document id for the built-in agent memory contract.
 pub const STANDARD_AGENT_MEMORY_CONTRACT_DOCUMENT_ID: &str = "org:contracts/agent.memory.v1";
 
+/// Stable document id for the built-in agent topology contract.
+pub const STANDARD_AGENT_TOPOLOGY_CONTRACT_DOCUMENT_ID: &str = "org:contracts/agent.topology.v1";
+
 /// Built-in Contract Org for agent plans.
 pub const STANDARD_AGENT_PLAN_CONTRACT_ORG: &str =
     include_str!("../../../org/contracts/agent.plan.v1.org");
@@ -31,6 +34,10 @@ pub const STANDARD_AGENT_LOOP_CONTRACT_ORG: &str =
 /// Built-in Contract Org for agent memory records.
 pub const STANDARD_AGENT_MEMORY_CONTRACT_ORG: &str =
     include_str!("../../../org/contracts/agent.memory.v1.org");
+
+/// Built-in Contract Org for agent project topology records.
+pub const STANDARD_AGENT_TOPOLOGY_CONTRACT_ORG: &str =
+    include_str!("../../../org/contracts/agent.topology.v1.org");
 
 /// Returns the built-in agent Contract Org documents, one document per contract.
 pub fn standard_agent_contract_documents() -> Vec<OrgDocument> {
@@ -50,6 +57,10 @@ pub fn standard_agent_contract_documents() -> Vec<OrgDocument> {
         OrgDocument::new(
             STANDARD_AGENT_MEMORY_CONTRACT_DOCUMENT_ID,
             STANDARD_AGENT_MEMORY_CONTRACT_ORG,
+        ),
+        OrgDocument::new(
+            STANDARD_AGENT_TOPOLOGY_CONTRACT_DOCUMENT_ID,
+            STANDARD_AGENT_TOPOLOGY_CONTRACT_ORG,
         ),
     ]
 }

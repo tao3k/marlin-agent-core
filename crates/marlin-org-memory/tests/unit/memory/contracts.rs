@@ -335,7 +335,7 @@ internal
 
     assert_eq!(contracts.resolved_references, 1);
     assert_eq!(contracts.unresolved_references, 0);
-    assert_eq!(contracts.contract_assertions, 44);
+    assert_eq!(contracts.contract_assertions, 53);
     assert_eq!(contracts.validation_receipts, 14);
     assert_eq!(contracts.validation_passed, 14);
     assert_eq!(
@@ -349,6 +349,64 @@ internal
         contracts
             .contract_expectation_summaries
             .contains(&"agent.memory.v1/memory.has-retention: count >= 1".to_owned())
+    );
+}
+
+#[test]
+fn memory_workspace_validates_standard_topology_contract() {
+    let workspace = MemoryOrgWorkspace::new();
+    let document = OrgDocument::new(
+        "doc:standard-topology",
+        r#"* Project topology: marlin-agent-core import
+:PROPERTIES:
+:CONTRACT_ORG: agent.topology.v1
+:TOPOLOGY_ID: topology.standard-memory-workspace
+:PROJECT_ID: marlin-agent-core
+:TOPOLOGY_SCOPE: project-overview
+:TOPOLOGY_NODE_KIND: project
+:TOPOLOGY_EDGE_KIND: imports-project
+:SOURCE_ANCHOR: crates/marlin-org-memory/tests/unit/memory/contracts.rs
+:END:
+
+** Overview
+The topology root gives agents a coarse route map for the imported project.
+
+** Navigation
+- project imports marlin-agent-core.
+- root session opens from the topology root.
+- child session branches from a content anchor.
+
+** Visibility Boundaries
+- Sibling sessions remain topology-visible but transcript-hidden by default.
+- Detailed evidence stays in the linked Org fact layer.
+"#,
+    );
+
+    let ids = workspace
+        .load_document_with_standard_agent_contracts(document)
+        .expect("document inserted with standard topology contracts");
+    let status = block_on(workspace.status(
+        WorkspaceTarget::Goal(ids[0].clone()),
+        WorkspaceCtx::new("unit-test"),
+    ))
+    .expect("status includes standard topology contract facts");
+    let contracts = status.contracts.expect("contract status");
+
+    assert_eq!(contracts.resolved_references, 1);
+    assert_eq!(contracts.unresolved_references, 0);
+    assert_eq!(contracts.validation_receipts, 9);
+    assert_eq!(contracts.validation_passed, 9);
+    assert_eq!(
+        contracts.reference_resolutions[0]
+            .resolved_contract_id
+            .as_ref()
+            .map(|contract_id| contract_id.as_str()),
+        Some("agent.topology.v1")
+    );
+    assert!(
+        contracts.contract_expectation_summaries.contains(
+            &"agent.topology.v1/topology.has-source-anchor-property: count >= 1".to_owned()
+        )
     );
 }
 

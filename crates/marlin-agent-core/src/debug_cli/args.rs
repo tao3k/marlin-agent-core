@@ -2,6 +2,8 @@
 
 use std::path::PathBuf;
 
+use crate::protocol::GraphQueryFamily;
+
 pub(super) const DEFAULT_RUN_STORE: &str = ".marlin/runs";
 
 #[derive(Clone, Debug)]
@@ -54,26 +56,35 @@ impl CommonOptions {
 
 #[derive(Clone, Debug)]
 pub(super) struct GraphQueryOptions {
+    pub(super) family: Option<GraphQueryFamily>,
     pub(super) input: Option<PathBuf>,
     pub(super) org_memory_fixtures: Vec<PathBuf>,
     pub(super) org_memory_roots: Vec<String>,
     pub(super) org_memory_store_root: Option<PathBuf>,
     pub(super) org_tool_roots: Vec<String>,
     pub(super) org_tool_store_root: Option<PathBuf>,
+    pub(super) org_topology_roots: Vec<String>,
+    pub(super) org_topology_store_root: Option<PathBuf>,
     pub(super) receipt_id: String,
 }
 
 impl GraphQueryOptions {
     pub(super) fn parse(cursor: &mut ArgCursor) -> Result<Self, String> {
+        let mut family = None;
         let mut input = None;
         let mut org_memory_fixtures = Vec::new();
         let mut org_memory_roots = Vec::new();
         let mut org_memory_store_root = None;
         let mut org_tool_roots = Vec::new();
         let mut org_tool_store_root = None;
+        let mut org_topology_roots = Vec::new();
+        let mut org_topology_store_root = None;
         let mut receipt_id = "debug-project-memory-query".to_owned();
         while let Some(arg) = cursor.next() {
             match arg.as_str() {
+                "--family" => {
+                    family = Some(parse_graph_query_family(&cursor.required_value(&arg)?)?)
+                }
                 "--input" | "-i" => input = Some(cursor.required_path(&arg)?),
                 "--org-memory-fixture" => org_memory_fixtures.push(cursor.required_path(&arg)?),
                 "--org-memory-root" => org_memory_roots.push(cursor.required_value(&arg)?),
@@ -82,20 +93,43 @@ impl GraphQueryOptions {
                 }
                 "--org-tool-root" => org_tool_roots.push(cursor.required_value(&arg)?),
                 "--org-tool-store-root" => org_tool_store_root = Some(cursor.required_path(&arg)?),
+                "--org-topology-root" => org_topology_roots.push(cursor.required_value(&arg)?),
+                "--org-topology-store-root" => {
+                    org_topology_store_root = Some(cursor.required_path(&arg)?)
+                }
                 "--receipt-id" => receipt_id = cursor.required_value(&arg)?,
                 "-h" | "--help" => return Err(super::usage()),
                 unknown => return Err(format!("unknown option `{unknown}`")),
             }
         }
         Ok(Self {
+            family,
             input,
             org_memory_fixtures,
             org_memory_roots,
             org_memory_store_root,
             org_tool_roots,
             org_tool_store_root,
+            org_topology_roots,
+            org_topology_store_root,
             receipt_id,
         })
+    }
+}
+
+fn parse_graph_query_family(value: &str) -> Result<GraphQueryFamily, String> {
+    match value.to_ascii_lowercase().as_str() {
+        "org" => Ok(GraphQueryFamily::Org),
+        "memory" => Ok(GraphQueryFamily::Memory),
+        "tool" => Ok(GraphQueryFamily::Tool),
+        "session" => Ok(GraphQueryFamily::Session),
+        "content" => Ok(GraphQueryFamily::Content),
+        "topology" => Ok(GraphQueryFamily::Topology),
+        "evidence" => Ok(GraphQueryFamily::Evidence),
+        "failure" | "failures" => Ok(GraphQueryFamily::Failure),
+        unknown => Err(format!(
+            "unsupported graph query family `{unknown}`; expected org, memory, tool, session, content, topology, evidence, or failure"
+        )),
     }
 }
 

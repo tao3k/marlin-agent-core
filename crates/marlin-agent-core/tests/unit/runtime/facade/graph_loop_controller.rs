@@ -1,5 +1,6 @@
 use marlin_agent_core::{
-    GraphLoopContinuationInput, GraphLoopContinuationPlanner, GraphLoopController,
+    GraphLoopContinuationAction, GraphLoopContinuationDecision, GraphLoopContinuationInput,
+    GraphLoopContinuationPlanner, GraphLoopContinuationReceipt, GraphLoopController,
     GraphLoopExecutionRequest, GraphLoopExecutionStatus, GraphLoopNextAction, GraphLoopRunRequest,
     GraphNodeExecutionReceipt, GraphNodeExecutor, GraphNodeInvocation, LoopGraph, LoopNodeSpec,
     RuntimeContext, RuntimeFuture, TokioAgentRuntime, TokioGraphLoopController,
@@ -81,10 +82,16 @@ fn graph() -> LoopGraph {
 struct CoreFacadeStopPlanner;
 
 impl GraphLoopContinuationPlanner for CoreFacadeStopPlanner {
-    fn next_action(
+    fn decide(
         &self,
-        _input: GraphLoopContinuationInput,
-    ) -> RuntimeFuture<GraphLoopNextAction> {
-        Box::pin(async move { GraphLoopNextAction::StopCompleted })
+        input: GraphLoopContinuationInput,
+    ) -> RuntimeFuture<GraphLoopContinuationDecision> {
+        Box::pin(async move {
+            GraphLoopContinuationDecision::new(GraphLoopContinuationReceipt::new(
+                input.run_id,
+                input.iteration_id,
+                GraphLoopContinuationAction::Accept,
+            ))
+        })
     }
 }
