@@ -21,6 +21,84 @@ This complements [[file:30.90-poo-module-system.org][30.90 POO Module System]], 
 plan for the underlying =marlinModules=, =marlinEvalModules=, POO slot merge,
 and typed projection machinery.
 
+** Mental Model: Furnished House, Furniture, And Catalog
+
+The core user-facing metaphor is important and should be preserved in every
+implementation discussion:
+
+#+begin_quote
+Marlin should not ask users to pour concrete, lay wires, and build a house from
+raw materials. Upstream Marlin should hand users a furnished house.
+#+end_quote
+
+The "house" is the upstream module pack. It already has rooms, wiring, plumbing,
+doors, default furniture, and working appliances:
+
+- rooms are module boundaries;
+- wiring is the import graph;
+- plumbing is the runtime/projection path;
+- furniture is policy objects such as hook policies, model routes, matchers,
+  subagent profiles, continuation profiles, scripts, and recovery strategies;
+- appliances are Rust-owned runtime/catalog handlers that already exist;
+- inspection reports are typed receipts.
+
+The user should normally start from the furnished house:
+
+#+begin_src scheme
+(def workspace
+  (CustomerAgentWorkspace
+   (.o project-root: "."
+       model-profile: "interactive")))
+#+end_src
+
+That should be enough to run. The user is not "writing a module system"; the
+user is moving into an upstream prefab.
+
+When the user wants a different chair, table, lamp, route policy, matcher, hook
+selector, or subagent profile, the interface should let them replace that object
+directly. They should not have to learn an option-priority game or search for a
+hidden =disabledModules= key. Changing furniture should be object surgery:
+
+#+begin_src scheme
+(marlin-replace-object
+ 'model-route
+ "default-model-route"
+ my-model-route)
+#+end_src
+
+If a user really wants an unfurnished room, Marlin can also expose a "rough
+house" or "毛坯房" layer: low-level =marlinModules=, =marlinPolicyModule=,
+=marlinPolicyExtension=, and explicit catalog/evaluation calls. That layer is
+for framework authors and advanced users, not the default teaching interface.
+
+This is the practical difference from simply saying "users write modules and the
+system evaluates them." The upstream system supplies a whole object graph first.
+The user edits that graph.
+
+** Why This Is Not Just A Metaphor
+
+The house/furniture model should shape the API:
+
+- A prefab is a furnished house, not a loose bag of modules.
+- A policy object is furniture with identity, family, owner, and receipt trail.
+- A pack catalog is the furniture showroom and house catalog.
+- Remove means removing a specific object from the house.
+- Disable means leaving the object in the plan but marking it inactive.
+- Replace means swapping one object for another object of the same family.
+- Add means putting a new object into a named room/object family.
+- A receipt is the inspection report that says what changed and who owns it.
+
+This keeps the interface intuitive for users and precise for agents. A human can
+say "replace the default review chair" while the system records
+=family=hook-policy=, =target-id=default-human-review-hook=, and
+=replacement-id=my-human-review-hook= in a typed receipt.
+
+The "furniture" must not be untyped text. It should be a POO object. That is why
+small lambdas are useful but should not stay naked: a matcher lambda, ranker
+lambda, transformer lambda, or hook selector function should be wrapped as a
+named policy object so receipts can track identity and Rust never has to parse
+Scheme source.
+
 ** Goal
 
 Marlin should expose a simple interface at the top, while preserving a precise
@@ -89,10 +167,13 @@ has produced Scheme values.
 
 ** Four User Levels
 
-*** Level 0: Prefab
+These levels are easiest to explain with the house model. They are not just
+implementation tiers; they are how the project should teach the API.
+
+*** Level 0: 精装房 Prefab
 
 The user imports an upstream furnished module pack and supplies only a small
-config object.
+config object. This is the normal user path.
 
 #+begin_src scheme
 (def workspace
@@ -101,10 +182,14 @@ config object.
        agent-class: "customer-worker")))
 #+end_src
 
-The prefab already contains imports, schemas, defaults, extension objects,
-policy profiles, scripts, and projection receipts.
+This should feel like receiving the keys to a furnished house. The pack already
+contains imports, schemas, defaults, extension objects, policy profiles, scripts,
+and projection receipts.
 
-*** Level 1: Normal Config
+The user should not need to know how the walls are framed. They should know
+where the rooms are and which knobs are intended for normal use.
+
+*** Level 1: 常规配置 Normal Config
 
 The user overrides ordinary values without touching the object graph.
 
@@ -118,11 +203,18 @@ The user overrides ordinary values without touching the object graph.
 This maps to the current =marlin-module-interface= plus =marlinModules= pattern:
 schemas live in the interface; user config is a small POO object.
 
-*** Level 2: Object Surgery
+In the house model, this is changing thermostat settings, choosing a model
+profile, or setting the workspace root. The furniture layout stays the same.
+
+*** Level 2: 换家具 Object Surgery
 
 The user adds, removes, disables, or replaces typed objects inside the prefab.
 This is the main reason to use Gerbil POO instead of copying a Nix-like
 =disabledModules= mechanism.
+
+This level is where Gerbil POO is stronger than a classic module system. Users
+can say "remove this chair", "replace this table", or "add this lamp" as object
+operations. They should not have to encode those changes as priority fights.
 
 Core operations should become first-class typed objects:
 
@@ -159,7 +251,20 @@ object_surgery_receipt
   rust_handler_manufactured = false
 #+end_src
 
-*** Level 3: Advanced POO Extension
+Replace is often more important than remove. Many real customizations are not
+"delete default behavior" but "use my default behavior instead":
+
+#+begin_src scheme
+(marlin-replace-object
+ 'human-review-policy
+ "default-human-review-policy"
+ customer-human-review-policy)
+#+end_src
+
+This is clearer than =mkForce= style priority: the receipt says which object was
+replaced, by which replacement, in which family.
+
+*** Level 3: 自己做家具 Advanced POO Extension
 
 Advanced users write new objects directly.
 
@@ -181,9 +286,27 @@ Small lambdas should not remain naked. Matchers, transformers, rankers, and
 hook selectors should be wrapped as policy objects so receipts can name object
 identity, source, owner, and projection target.
 
+In the house model, this is not just moving furniture. It is building a custom
+desk or installing a new appliance. The object can still enter the same catalog
+and produce the same receipts, because it is a POO extension object rather than
+untracked Scheme text.
+
 ** Prefab Catalog Model
 
-Upstream should provide object catalogs, not scattered modules.
+Upstream should provide object catalogs, not scattered modules. A user should
+not be handed a pile of boards, screws, and disconnected furniture. The catalog
+should expose coherent prefab packs:
+
+- a complete customer-agent workspace;
+- a review-heavy workspace;
+- a failure-recovery profile;
+- a human-review profile;
+- a memory-trigger profile;
+- a model-routing profile;
+- a context-compression profile.
+
+Each catalog entry is a complete object graph with defaults. Users can take the
+whole entry, configure it, or perform object surgery on it.
 
 A policy pack is a complete object graph:
 
@@ -258,17 +381,36 @@ module evaluator.
 
 ** Nix And Grafonnix Lessons
 
-The Nix module system is useful because it gives users a simple canonical
-surface: imports, options, and config. Marlin should keep that simplicity.
+Nix is still an important reference because its user surface is successful:
+users learn =imports=, =options=, and =config=, then build large systems from a
+small vocabulary. Marlin should keep that success. The top-level interface
+should be easy enough that a user can say "use the customer-agent prefab, change
+these values" without learning Marlin internals.
 
-Marlin should not copy Nix's harder escape hatches as-is. Disabling, replacing,
-and priority-forcing behavior should not be string/path hacks or priority races.
-They should be typed operations over POO object identity.
+Marlin should not copy Nix's harder escape hatches as-is. In Nix, disabling a
+module, replacing a default, or forcing a value often routes through
+=disabledModules=, =mkForce=, =mkOverride=, priorities, module keys, path keys,
+and ambiguity checks. That is understandable for Nix, but it is the wrong mental
+model for Gerbil POO.
+
+In the house model, Nix often makes users find the hidden breaker box to disable
+a lamp. Marlin should let the user point at the lamp object and remove, disable,
+or replace it. The operation is not "win a priority fight"; the operation is
+"replace this typed object with that typed object".
 
 Grafonnix points at the better shape for Marlin: upstream functions return
-extendable objects, and users customize the returned object through extension
-methods. For Marlin, the object is not a dashboard row; it is a policy pack or
-module pack with typed receipts and Rust-owned runtime projection.
+extendable POP objects, and users customize the returned object through
+extension methods. The lesson is not about Grafana dashboards. The lesson is the
+interface shape:
+
+#+begin_src text
+upstream returns object -> user extends object -> object remains typed
+#+end_src
+
+For Marlin, the returned object is a furnished policy pack, not a dashboard row.
+The extension methods operate on policy objects, module objects, catalog entries,
+and projection receipts. This is how Marlin gets Nix-level usability without
+Nix-style escape-hatch complexity.
 
 ** Implementation Map
 
