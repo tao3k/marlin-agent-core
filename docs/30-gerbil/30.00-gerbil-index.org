@@ -27,3 +27,5 @@
 [[file:30.80-native-aot-link-unit.org][30.80 Native AOT Link Unit]]
 
 [[file:30.90-poo-module-system.org][30.90 POO Module System]]
+
+[[file:gerbil-poo-modules-system-desgin.org][Gerbil POO Modules System Design]]

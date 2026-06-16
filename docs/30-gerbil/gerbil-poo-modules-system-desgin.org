@@ -1,0 +1,313 @@
+#+title: Gerbil POO Modules System Design
+
+* Gerbil POO Modules System Design
+:PROPERTIES:
+:ID: docs-30-gerbil-poo-modules-system-desgin
+:KIND: gerbil_design
+:STATUS: active
+:END:
+
+This document records the higher-level user model for Marlin's Gerbil POO
+module system. The filename keeps the requested spelling, but the design term is
+"modules system design".
+
+The important distinction is that users should not assemble a module system from
+zero. Upstream Marlin should provide a furnished policy surface: prefab modules,
+policy packs, object catalogs, default imports, default profiles, typed options,
+and projection receipts. Users then make small, explicit changes to that object
+graph.
+
+This complements [[file:30.90-poo-module-system.org][30.90 POO Module System]], which is the implementation landing
+plan for the underlying =marlinModules=, =marlinEvalModules=, POO slot merge,
+and typed projection machinery.
+
+** Goal
+
+Marlin should expose a simple interface at the top, while preserving a precise
+object graph underneath.
+
+The desired user experience is:
+
+#+begin_src scheme
+(import :marlin/prefabs/customer-agent)
+
+(def workspace
+  (CustomerAgentWorkspace
+   (.o project-root: "."
+       model-profile: "interactive")))
+#+end_src
+
+That prefab should already contain the normal workspace, agent, hook, model
+route, continuation, review, failure recovery, and catalog projection defaults.
+The user can run it without learning the internal module plumbing.
+
+When the user needs customization, they should extend or replace typed POO
+objects:
+
+#+begin_src scheme
+(def workspace
+  (.o (:: @ (list (CustomerAgentWorkspace default-customer-config)))
+      (extensions => marlin-extensions-append
+                  (marlin-extensions my-review-extension))
+      (policy-objects => marlin-policy-objects-replace
+                      (marlin-replace-object
+                       'model-route
+                       "default-model-route"
+                       my-model-route))))
+#+end_src
+
+The point is object-level surgery, not option-priority tricks.
+
+** Ownership Boundary
+
+Rust remains the core execution engine:
+
+- engine and runtime lifecycle;
+- graph validation;
+- typed ABI/projection validation;
+- process/tool execution;
+- receipts and replay;
+- performance budgets;
+- runtime catalog handler lookup.
+
+Gerbil Scheme plus POO owns the policy/module control plane:
+
+- module imports;
+- option schema, config, default, and merge;
+- policy composition;
+- continuation profiles;
+- subagent policies;
+- hook selection policy;
+- model routing policy;
+- condition and matcher objects;
+- module evaluation receipts.
+
+Rust must not parse Gerbil source, implement a second module DSL, resolve user
+imports, evaluate option merge semantics, or manufacture hook handlers from
+Scheme text. Rust receives typed projections and receipt facts only after Scheme
+has produced Scheme values.
+
+** Four User Levels
+
+*** Level 0: Prefab
+
+The user imports an upstream furnished module pack and supplies only a small
+config object.
+
+#+begin_src scheme
+(def workspace
+  (CustomerAgentWorkspace
+   (.o project-root: "."
+       agent-class: "customer-worker")))
+#+end_src
+
+The prefab already contains imports, schemas, defaults, extension objects,
+policy profiles, scripts, and projection receipts.
+
+*** Level 1: Normal Config
+
+The user overrides ordinary values without touching the object graph.
+
+#+begin_src scheme
+(def workspace
+  (CustomerAgentWorkspace
+   (.o model-profile: "review-heavy"
+       hook-owner: "customer-worker")))
+#+end_src
+
+This maps to the current =marlin-module-interface= plus =marlinModules= pattern:
+schemas live in the interface; user config is a small POO object.
+
+*** Level 2: Object Surgery
+
+The user adds, removes, disables, or replaces typed objects inside the prefab.
+This is the main reason to use Gerbil POO instead of copying a Nix-like
+=disabledModules= mechanism.
+
+Core operations should become first-class typed objects:
+
+- =marlin-add-object= adds an object to a named object family.
+- =marlin-remove-object= removes by typed identity.
+- =marlin-disable-object= keeps identity and records a disabled receipt.
+- =marlin-replace-object= replaces one object with another object of the same family.
+
+Example:
+
+#+begin_src scheme
+(def workspace
+  (.o (:: @ (list default-workspace))
+      (policy-objects => marlin-policy-objects-remove
+                      (marlin-remove-object
+                       'hook-policy
+                       "default-human-review-hook"))
+      (policy-objects => marlin-policy-objects-replace
+                      (marlin-replace-object
+                       'failure-recovery-policy
+                       "default-retry-policy"
+                       my-retry-policy))))
+#+end_src
+
+The operation should produce a typed receipt:
+
+#+begin_src text
+object_surgery_receipt
+  operation = replace
+  family = failure-recovery-policy
+  target_id = default-retry-policy
+  replacement_id = my-retry-policy
+  owner = gerbil-poo
+  rust_handler_manufactured = false
+#+end_src
+
+*** Level 3: Advanced POO Extension
+
+Advanced users write new objects directly.
+
+#+begin_src scheme
+(defmarlin-policy-extension my-review-extension
+  (source ":customer/review")
+  (object
+   (make-marlin-deck-runtime-subagent-policy-extension
+    "my-review-extension"
+    my-subagent-profile
+    my-route-policy
+    my-condition
+    my-matcher
+    my-dynamic-hook-action
+    '((owner . "customer")))))
+#+end_src
+
+Small lambdas should not remain naked. Matchers, transformers, rankers, and
+hook selectors should be wrapped as policy objects so receipts can name object
+identity, source, owner, and projection target.
+
+** Prefab Catalog Model
+
+Upstream should provide object catalogs, not scattered modules.
+
+A policy pack is a complete object graph:
+
+#+begin_src text
+PolicyPack
+  interface schema
+  default config
+  imports
+  extension exports
+  policy objects
+  option merge strategy
+  validation receipts
+  native projection payload
+  catalog ids
+#+end_src
+
+The public Scheme shape should be close to:
+
+#+begin_src scheme
+(def CustomerAgentWorkspace
+  (marlinPolicyPack
+   (.o id: "customer-agent-workspace"
+       interface: CustomerAgentWorkspaceInterface
+       defaults: customer-agent-defaults
+       imports: customer-agent-imports
+       policy-objects: customer-agent-policy-objects
+       projections: customer-agent-projections)))
+#+end_src
+
+The current implementation already has the lower-level pieces:
+
+- =marlinModules= creates POO module objects.
+- =marlinPolicyExtension= and =defmarlin-policy-extension= mark .ss exports as
+  module-managed POO extension objects.
+- =marlinPolicyModule= and =defmarlin-policy-module= wrap policy modules.
+- =marlinModuleCatalog= collects modules.
+- =marlinEvalModules= returns scalar evaluation receipts.
+- =marlinModuleSystemPresentation= returns the current complete user-facing
+  presentation receipt.
+
+The next layer should package those pieces as named prefabs.
+
+** Required Receipts
+
+Every module pack evaluation should expose the same receipt pattern:
+
+#+begin_src text
+module_evaluation_receipt
+policy_projection_receipt
+native_projection_payload
+budget_receipt
+catalog_resolution_receipt
+object_surgery_receipt
+module_system_presentation_receipt
+#+end_src
+
+The current debug CLI already proves the presentation boundary with scalar
+facts such as:
+
+- =module_system_presentation_kind=;
+- =module_system_projection_chain_kind=;
+- =module_system_import_graph_owner=;
+- =module_system_option_merge_owner=;
+- =module_system_extension_composition_owner=;
+- =module_system_native_projection_payload_owner=;
+- =module_system_catalog_resolution_receipt_owner=;
+- =module_system_rust_parses_scheme_source=;
+- =module_system_scheme_manufactures_rust_handlers=.
+
+The prefab layer should add object surgery facts without changing Rust into a
+module evaluator.
+
+** Nix And Grafonnix Lessons
+
+The Nix module system is useful because it gives users a simple canonical
+surface: imports, options, and config. Marlin should keep that simplicity.
+
+Marlin should not copy Nix's harder escape hatches as-is. Disabling, replacing,
+and priority-forcing behavior should not be string/path hacks or priority races.
+They should be typed operations over POO object identity.
+
+Grafonnix points at the better shape for Marlin: upstream functions return
+extendable objects, and users customize the returned object through extension
+methods. For Marlin, the object is not a dashboard row; it is a policy pack or
+module pack with typed receipts and Rust-owned runtime projection.
+
+** Implementation Map
+
+Current implementation:
+
+- =crates/marlin-gerbil-scheme/gerbil/src/marlin/deck-runtime-modules-lib.ss=
+  owns =marlinModules=, =marlinModuleCatalog=, =marlinEvalModules=, and
+  =marlinModuleSystemPresentation=.
+- =crates/marlin-gerbil-scheme/gerbil/src/marlin/deck-runtime-debug-policy-extension.ss=
+  owns the debug policy extension object and debug policy module presentation.
+- =crates/marlin-gerbil-scheme/gerbil/src/marlin/deck-runtime-policy-receipt-gate-cli.ss=
+  is the Scheme-owned debug entrypoint that emits scalar facts for Rust.
+- =crates/marlin-gerbil-scheme/examples/user-interface-module-config/=
+  is the maintained downstream example that now exposes catalog, evalModules,
+  presentation, workflow, policy extension object, script, and LoopGraph
+  continuation surfaces.
+- =crates/marlin-agent-core/src/debug_cli/gerbil_cmd.rs= launches the Scheme
+  entrypoint and decodes facts; it does not generate Scheme source.
+
+** Next Implementation Slice
+
+The next code slice should implement the prefab layer on top of the current
+module system:
+
+- =marlinPolicyPack= constructor.
+- =defmarlin-policy-pack= macro for upstream packs.
+- =marlinPackCatalog= for named pack discovery.
+- =marlin-add-object=, =marlin-remove-object=, =marlin-disable-object=, and
+  =marlin-replace-object= typed operation objects.
+- =marlinPolicyPackPresentation= receipt extending
+  =marlinModuleSystemPresentation= with object surgery facts.
+- A maintained prefab example, likely
+  =examples/user-interface-policy-pack=, that starts from an upstream pack and
+  demonstrates Level 0 through Level 3 customization.
+
+The acceptance gate should include:
+
+- direct =gxi= tests for pack construction and object surgery;
+- the existing =user-interface-module-config= example;
+- =marlin gerbil policy-receipt= showing the pack presentation facts through
+  the real debug CLI;
+- =asp gerbil-scheme check --changed .= and full provider check.
