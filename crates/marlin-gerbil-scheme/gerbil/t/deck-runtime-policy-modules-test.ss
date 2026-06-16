@@ -5,7 +5,10 @@
         :marlin/deck-runtime
         :marlin/deck-runtime-agent-policy
         :marlin/deck-runtime-condition-policy
+        :marlin/deck-runtime-debug-policy-extension
         :marlin/deck-runtime-dynamic-hook
+        :marlin/deck-runtime-extension
+        :marlin/deck-runtime-extension-catalog
         :marlin/deck-runtime-matcher
         :marlin/deck-runtime-policy-engine
         :marlin/deck-runtime-strategy-context
@@ -399,14 +402,78 @@
            "codex apply"
            "worker"))
          (action (.get receipt dynamic-hook-action))
-         (selection (.get receipt dynamic-hook-selection)))
+         (selection (.get receipt dynamic-hook-selection))
+         (projection-chain (.get receipt policy-projection-chain))
+         (module-receipt (.get receipt module-evaluation-receipt))
+         (projection-receipt (.get receipt policy-projection-receipt))
+         (native-payload (.get receipt native-projection-payload))
+         (budget-receipt (.get receipt budget-receipt))
+         (catalog-receipt (.get receipt catalog-resolution-receipt)))
     (check (.get receipt kind)
            => marlin-deck-runtime-strategy-policy-receipt-kind)
     (check (.get receipt matched) => #t)
     (check (.get action action) => "register")
+    (check (.get action registration) => "module-register-hook")
     (check (.get selection source) => "rule-action")
     (check (.get selection selector) => #f)
-    (check (.get receipt policy-engine) => "scheme-poo")))
+    (check (.get projection-chain kind)
+           => marlin-deck-runtime-policy-projection-chain-kind)
+    (check (.get projection-chain module-evaluation-receipt)
+           => module-receipt)
+    (check (.get projection-chain policy-projection-receipt)
+           => projection-receipt)
+    (check (.get projection-chain native-projection-payload)
+           => native-payload)
+    (check (.get projection-chain budget-receipt)
+           => budget-receipt)
+    (check (.get projection-chain catalog-resolution-receipt)
+           => catalog-receipt)
+    (check (.get module-receipt kind)
+           => marlin-deck-runtime-module-evaluation-receipt-kind)
+    (check (.get module-receipt evaluator) => "gerbil-poo")
+    (check (.get projection-receipt kind)
+           => marlin-deck-runtime-policy-projection-receipt-kind)
+    (check (.get projection-receipt projection)
+           => "dynamic-strategy-policy")
+    (check (.get projection-receipt target-receipt-kind)
+           => marlin-deck-runtime-strategy-policy-receipt-kind)
+    (check (.get native-payload kind)
+           => marlin-deck-runtime-native-projection-payload-kind)
+    (check (.get native-payload owner) => "rust")
+    (check (.get native-payload action) => "register")
+    (check (.get native-payload hook-id) => "module-register-hook")
+    (check (.get budget-receipt kind)
+           => marlin-deck-runtime-policy-budget-receipt-kind)
+    (check (.get budget-receipt budget-owner) => "rust")
+    (check (.get budget-receipt scheme-budget-enforced) => #f)
+    (check (.get catalog-receipt kind)
+           => marlin-deck-runtime-catalog-resolution-receipt-kind)
+    (check (.get catalog-receipt catalog-owner) => "rust")
+    (check (.get catalog-receipt registration-source)
+           => "dynamic-hook-action.registration")
+    (check (.get catalog-receipt resolved-by-scheme) => #f)
+    (check (.get receipt policy-engine) => "scheme-poo"))
+  (let* ((receipt
+          (marlin-deck-runtime-dynamic-strategy-policy-receipt
+           (list (module-test-policy))
+           '()
+           (module-test-context)
+           "codex apply"
+           "worker"))
+         (projection-chain (.get receipt policy-projection-chain))
+         (module-receipt (.get receipt module-evaluation-receipt))
+         (projection-receipt (.get receipt policy-projection-receipt))
+         (native-payload (.get receipt native-projection-payload))
+         (catalog-receipt (.get receipt catalog-resolution-receipt)))
+    (check (.get receipt matched) => #f)
+    (check (.get receipt strategy-rule) => #f)
+    (check (.get projection-chain kind)
+           => marlin-deck-runtime-policy-projection-chain-kind)
+    (check (.get module-receipt matched) => #f)
+    (check (.get projection-receipt matched) => #f)
+    (check (.get native-payload action) => #f)
+    (check (.get native-payload hook-id) => #f)
+    (check (.get catalog-receipt resolved-by-scheme) => #f)))
 
 ;;; Boundary: Policy-engine user flow resolves selector objects to actions.
 ;; MarlinResult <- MarlinInput
@@ -453,6 +520,30 @@
     (check (.get selection matched) => #f)
     (check (.get selection matched-case) => #f)))
 
+;;; Boundary: Debug .ss exports a POO extension object consumed by the Rust CLI.
+;; MarlinResult <- MarlinInput
+(def (check-debug-policy-extension-module)
+  (let* ((extension marlin-deck-runtime-debug-policy-extension)
+         (catalog (marlin-deck-runtime-debug-policy-extension-catalog))
+         (receipt (marlin-deck-runtime-debug-policy-extension-receipt))
+         (loop-receipt
+          (marlin-deck-runtime-debug-policy-extension-receipt-loop 3)))
+    (check (.get extension kind)
+           => marlin-deck-runtime-extension-kind)
+    (check (.get extension id) => "debug-policy-extension")
+    (check marlin-deck-runtime-debug-policy-extension-source
+           => ":marlin/deck-runtime-debug-policy-extension")
+    (check (.get catalog kind)
+           => marlin-deck-runtime-extension-catalog-kind)
+    (check (.get receipt matched) => #t)
+    (check (.get receipt extension-id) => "debug-policy-extension")
+    (check (.get (.get receipt dynamic-hook-action) action)
+           => "register")
+    (check (.get (.get receipt dynamic-hook-action) hook-id)
+           => "debug-runtime-catalog-hook")
+    (check (.get loop-receipt matched) => #t)
+    (check (.get loop-receipt extension-id) => "debug-policy-extension")))
+
 (check-context-module)
 (check-condition-policy-module)
 (check-dynamic-hook-module)
@@ -460,3 +551,4 @@
 (check-agent-policy-module)
 (check-policy-engine-module)
 (check-policy-engine-selector-module)
+(check-debug-policy-extension-module)

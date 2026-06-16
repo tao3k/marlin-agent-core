@@ -2,7 +2,7 @@
 
 use std::env;
 
-use super::{args::ArgCursor, graph, loop_cmd};
+use super::{args::ArgCursor, gerbil_cmd, graph, loop_cmd};
 
 /// Process-shaped result returned by the `marlin` debug CLI facade.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -72,6 +72,7 @@ fn dispatch(args: Vec<String>) -> Result<MarlinCliResult, String> {
     };
 
     match command.as_str() {
+        "gerbil" => gerbil_cmd::dispatch_gerbil(&mut cursor),
         "graph" => graph::dispatch_graph(&mut cursor),
         "loop" => loop_cmd::dispatch_loop(&mut cursor),
         "-h" | "--help" | "help" => Ok(MarlinCliResult::success_text(usage())),
@@ -81,10 +82,15 @@ fn dispatch(args: Vec<String>) -> Result<MarlinCliResult, String> {
 
 pub(in crate::debug_cli) fn usage() -> String {
     format!(
-        "Usage:\n  marlin graph <query|propose|validate|run> [options]\n  marlin loop <run|replay|inspect> [options]\n\n{}\n{}",
+        "Usage:\n  marlin gerbil <policy-receipt> [options]\n  marlin graph <query|propose|validate|run> [options]\n  marlin loop <run|replay|inspect> [options]\n\n{}\n{}\n{}",
+        gerbil_usage(),
         graph_usage(),
         loop_usage()
     )
+}
+
+pub(in crate::debug_cli) fn gerbil_usage() -> &'static str {
+    "Gerbil commands:\n  marlin gerbil policy-receipt [--iterations N] [--gxi <gxi>] [--package-root <gerbil-package-dir>] [--loadpath <loadpath>]"
 }
 
 pub(in crate::debug_cli) fn graph_usage() -> &'static str {

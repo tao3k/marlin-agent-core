@@ -1,6 +1,11 @@
 ;;; -*- Gerbil -*-
 ;;; Boundary: Module owns Gerbil POO continuation projections for the Rust graph-loop controller.
-;;; Scheme chooses policy data; Rust validates and schedules the resulting loop action.
+;;; Responsibility: keep continuation profiles as Scheme-owned policy objects until the final
+;;; native projection payload is requested by Rust.
+;;; Runtime boundary: this module may import POO helpers and LoopGraph constructors, but it must
+;;; not schedule graph execution, resolve Rust handlers, or serialize native runtime requests.
+;;; Agent trust: downstream repairs should trust only the exported ABI ids, schema ids, profile
+;;; constructors, action constructors, and `marlin-graph-loop-continuation-next-action` projection.
 
 package: marlin
 
@@ -93,7 +98,9 @@ package: marlin
   (.o kind: "continue_with_graph"
       compiled_graph: compiled-graph-value))
 
-;;; Boundary: Projection shape mirrors Rust GerbilLoopGraphContinuationRequest.
+;;; Boundary: Projection is the handoff packet from Scheme policy to Rust control.
+;;; Keeping action and diagnostics as POO fields lets Rust reject schema or action
+;;; mismatches before graph execution without parsing Gerbil source text.
 ;; MarlinResult <- MarlinInput
 (def (make-marlin-graph-loop-continuation-projection
       action-value

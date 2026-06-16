@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use crate::protocol::GraphQueryFamily;
 
 pub(super) const DEFAULT_RUN_STORE: &str = ".marlin/runs";
+pub(super) const DEFAULT_GERBIL_PACKAGE_ROOT: &str = "crates/marlin-gerbil-scheme/gerbil";
 
 #[derive(Clone, Debug)]
 pub(super) struct ArgCursor {
@@ -52,6 +53,55 @@ impl CommonOptions {
         }
         Ok(Self { input })
     }
+}
+
+#[derive(Clone, Debug)]
+pub(super) struct GerbilPolicyReceiptOptions {
+    pub(super) gxi: PathBuf,
+    pub(super) iterations: u64,
+    pub(super) loadpath: Option<String>,
+    pub(super) package_root: PathBuf,
+}
+
+impl GerbilPolicyReceiptOptions {
+    pub(super) fn parse(cursor: &mut ArgCursor) -> Result<Self, String> {
+        let mut gxi = std::env::var_os("GERBIL")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from("/usr/local/bin/gxi"));
+        let mut iterations = 1;
+        let mut loadpath = None;
+        let mut package_root = std::env::var_os("MARLIN_GERBIL_PACKAGE_ROOT")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from(DEFAULT_GERBIL_PACKAGE_ROOT));
+        while let Some(arg) = cursor.next() {
+            match arg.as_str() {
+                "--gxi" => gxi = cursor.required_path(&arg)?,
+                "--iterations" => {
+                    iterations = parse_positive_u64(&arg, &cursor.required_value(&arg)?)?
+                }
+                "--loadpath" => loadpath = Some(cursor.required_value(&arg)?),
+                "--package-root" => package_root = cursor.required_path(&arg)?,
+                "-h" | "--help" => return Err(super::usage()),
+                unknown => return Err(format!("unknown option `{unknown}`")),
+            }
+        }
+        Ok(Self {
+            gxi,
+            iterations,
+            loadpath,
+            package_root,
+        })
+    }
+}
+
+fn parse_positive_u64(option: &str, value: &str) -> Result<u64, String> {
+    let parsed = value
+        .parse::<u64>()
+        .map_err(|_| format!("{option} requires a positive unsigned integer"))?;
+    if parsed == 0 {
+        return Err(format!("{option} requires a positive unsigned integer"));
+    }
+    Ok(parsed)
 }
 
 #[derive(Clone, Debug)]
