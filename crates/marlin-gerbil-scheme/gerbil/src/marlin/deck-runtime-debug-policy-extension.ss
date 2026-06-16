@@ -20,6 +20,7 @@ package: marlin
         marlin-deck-runtime-debug-policy-module
         marlin-deck-runtime-debug-policy-module-catalog
         marlin-deck-runtime-debug-policy-module-evaluation
+        marlin-deck-runtime-debug-policy-module-system-presentation
         marlin-deck-runtime-debug-policy-module-workflow
         marlin-deck-runtime-debug-policy-extension-catalog
         marlin-deck-runtime-debug-policy-extension-receipt
@@ -132,6 +133,14 @@ package: marlin
 ;; MarlinResult <- MarlinInput
 (def (marlin-deck-runtime-debug-policy-module-evaluation)
   (marlinEvalModules
+   (marlin-deck-runtime-debug-policy-module-catalog)
+   "debug-policy-extension-module"
+   '("debug-runtime-catalog-hook")))
+
+;;; Boundary: Full module-system presentation stays Scheme-owned.
+;; MarlinResult <- MarlinInput
+(def (marlin-deck-runtime-debug-policy-module-system-presentation)
+  (marlinModuleSystemPresentation
    (marlin-deck-runtime-debug-policy-module-catalog)
    "debug-policy-extension-module"
    '("debug-runtime-catalog-hook")))

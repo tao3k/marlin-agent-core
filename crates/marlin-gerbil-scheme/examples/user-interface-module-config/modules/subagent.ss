@@ -3,12 +3,19 @@
 
 (import :clan/poo/object
         :marlin/deck-runtime
+        :marlin/deck-runtime-modules-lib
         :marlin/deck-runtime-strategy)
 
-(export user-interface-subagent-profile
+(export user-interface-subagent-policy-extension-source
+        user-interface-subagent-profile
         user-interface-subagent-route-policy
         user-interface-subagent-context
         user-interface-subagent-policy-extension)
+
+;;; Boundary: Source identity is owned by the Gerbil module system.
+;; UserInterfaceWorkflowResult <- UserInterfaceWorkflowContext
+(def user-interface-subagent-policy-extension-source
+  "../modules/subagent")
 
 ;;; Boundary: The agent-authored subagent profile is a plain POO object.
 ;; UserInterfaceWorkflowResult <- UserInterfaceWorkflowContext
@@ -65,15 +72,19 @@
 
 ;;; Boundary: The extension object combines subagent, hook, and policy slots.
 ;; UserInterfaceWorkflowResult <- UserInterfaceWorkflowContext
-(def user-interface-subagent-policy-extension
-  (make-marlin-deck-runtime-subagent-policy-extension
-   "user-interface-subagent-policy-extension"
-   user-interface-subagent-profile
-   user-interface-subagent-route-policy
-   user-interface-subagent-condition
-   user-interface-subagent-matcher
-   (make-marlin-deck-runtime-register-hook-action
-    "runtime-catalog-user-interface-hook"
-    "runtime-catalog-user-interface-hook")
-   '((owner . "user-interface-worker")
-     (surface . "agent-authored-subagent-policy"))))
+(defmarlin-policy-extension user-interface-subagent-policy-extension
+  (source user-interface-subagent-policy-extension-source)
+  (object
+   (make-marlin-deck-runtime-subagent-policy-extension
+    "user-interface-subagent-policy-extension"
+    user-interface-subagent-profile
+    user-interface-subagent-route-policy
+    user-interface-subagent-condition
+    user-interface-subagent-matcher
+    (make-marlin-deck-runtime-register-hook-action
+     "runtime-catalog-user-interface-hook"
+     "runtime-catalog-user-interface-hook")
+    '((owner . "user-interface-worker")
+      (surface . "agent-authored-subagent-policy"))))
+  (metadata '((owner . "user-interface-worker")
+              (surface . "module-managed-policy-extension"))))

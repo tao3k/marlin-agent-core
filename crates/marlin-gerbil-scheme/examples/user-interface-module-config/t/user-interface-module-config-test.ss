@@ -22,9 +22,22 @@
 ;;; Boundary: Upstream workflow utility owns projections from user config.
 ;; UserInterfaceWorkflowResult <- UserInterfaceWorkflowContext
 (def user-interface-workflow
-  (marlin-module-workflow
-   user-interface-module-config
-   '("runtime-catalog-user-interface-hook")))
+  (user-interface-module-workflow))
+
+;;; Boundary: Public catalog entrypoint is visible to downstream users.
+;; UserInterfaceWorkflowResult <- UserInterfaceWorkflowContext
+(def user-interface-catalog
+  (user-interface-module-catalog))
+
+;;; Boundary: evalModules is the public module-system evaluation entrypoint.
+;; UserInterfaceWorkflowResult <- UserInterfaceWorkflowContext
+(def user-interface-eval-result
+  (user-interface-module-evaluation))
+
+;;; Boundary: Presentation receipt summarizes the complete module-system surface.
+;; UserInterfaceWorkflowResult <- UserInterfaceWorkflowContext
+(def user-interface-presentation
+  (user-interface-module-system-presentation))
 
 ;;; Boundary: Evaluation is projected by the upstream workflow utility.
 ;; UserInterfaceWorkflowResult <- UserInterfaceWorkflowContext
@@ -87,6 +100,46 @@
 (check (.get user-interface-result agent-scope) => "user-interface-agent")
 (check (.get user-interface-result has-interface-file) => #t)
 (check (.get user-interface-result has-worker-state-file) => #t)
+(check (.get user-interface-catalog kind) => marlin-module-catalog-kind)
+(check (length (.get user-interface-catalog modules)) => 1)
+(check (.get user-interface-eval-result kind)
+       => marlin-eval-modules-result-kind)
+(check (.get user-interface-eval-result root-module-id)
+       => "user-interface-root-module")
+(check (.get user-interface-eval-result workflow-kind)
+       => marlin-module-workflow-kind)
+(check (.get user-interface-eval-result module-count)
+       => (length (.get user-interface-evaluation module-ids)))
+(check (.get user-interface-eval-result extension-count)
+       => (length (.get user-interface-evaluation extensions)))
+(check (.get user-interface-eval-result policy-extension-object-count)
+       => 1)
+(check (.get user-interface-eval-result script-count)
+       => (length (.get user-interface-evaluation scripts)))
+(check (.get user-interface-eval-result option-count)
+       => (length (.get user-interface-evaluation options)))
+(check (.get user-interface-presentation kind)
+       => marlin-module-system-presentation-kind)
+(check (.get user-interface-presentation root-import-count) => 5)
+(check (.get user-interface-presentation root-extension-count) => 1)
+(check (.get user-interface-presentation root-policy-extension-object-count)
+       => 1)
+(check (.get user-interface-presentation projection-chain-kind)
+       => marlin-module-projection-chain-kind)
+(check (.get user-interface-presentation module-evaluation-receipt-kind)
+       => marlin-deck-runtime-user-module-evaluation-kind)
+(check (.get user-interface-presentation import-graph-owner)
+       => "gerbil-module-system")
+(check (.get user-interface-presentation extension-composition-owner)
+       => "gerbil-poo")
+(check (.get user-interface-presentation native-projection-payload-owner)
+       => "rust")
+(check (.get user-interface-presentation catalog-resolution-receipt-owner)
+       => "rust")
+(check (.get user-interface-presentation rust-parses-scheme-source)
+       => #f)
+(check (.get user-interface-presentation scheme-manufactures-rust-handlers)
+       => #f)
 (check (.get user-interface-receipt script-id) => "user-interface-worker-script")
 (check (.get user-interface-receipt extension-id) => "user-interface-worker-extension")
 (check (.get user-interface-metrics iterations) => 128)
@@ -96,6 +149,12 @@
               "user-interface-subagent-policy-extension")
              id)
        => "user-interface-subagent-policy-extension")
+(check (.get user-interface-subagent-policy-extension policy-extension-kind)
+       => marlin-policy-extension-kind)
+(check (.get user-interface-subagent-policy-extension policy-extension-object)
+       => #t)
+(check (.get user-interface-subagent-policy-extension policy-extension-source)
+       => user-interface-subagent-policy-extension-source)
 (check (.get user-interface-subagent-receipt matched) => #t)
 (check (.get user-interface-subagent-receipt extension-id)
        => "user-interface-subagent-policy-extension")

@@ -37,6 +37,19 @@ struct GerbilPolicyReceiptDebugSummary {
     module_catalog_count: u64,
     module_eval_result_kind: String,
     module_eval_workflow_kind: String,
+    module_system_presentation_kind: String,
+    module_system_projection_chain_kind: String,
+    module_system_root_import_count: u64,
+    module_system_root_extension_count: u64,
+    module_system_root_policy_extension_object_count: u64,
+    module_system_import_graph_owner: String,
+    module_system_option_merge_owner: String,
+    module_system_extension_composition_owner: String,
+    module_system_native_projection_payload_owner: String,
+    module_system_budget_receipt_owner: String,
+    module_system_catalog_resolution_receipt_owner: String,
+    module_system_rust_parses_scheme_source: bool,
+    module_system_scheme_manufactures_rust_handlers: bool,
     policy_substrate_gate_kind: String,
     policy_substrate_gate_profile: String,
     policy_substrate_gate_receipt_kind: String,
@@ -152,6 +165,55 @@ fn run_policy_receipt(
         module_catalog_count: required_u64_fact(&facts, "module_catalog_count")?,
         module_eval_result_kind: required_fact(&facts, "module_eval_result_kind")?,
         module_eval_workflow_kind: required_fact(&facts, "module_eval_workflow_kind")?,
+        module_system_presentation_kind: required_fact(&facts, "module_system_presentation_kind")?,
+        module_system_projection_chain_kind: required_fact(
+            &facts,
+            "module_system_projection_chain_kind",
+        )?,
+        module_system_root_import_count: required_u64_fact(
+            &facts,
+            "module_system_root_import_count",
+        )?,
+        module_system_root_extension_count: required_u64_fact(
+            &facts,
+            "module_system_root_extension_count",
+        )?,
+        module_system_root_policy_extension_object_count: required_u64_fact(
+            &facts,
+            "module_system_root_policy_extension_object_count",
+        )?,
+        module_system_import_graph_owner: required_fact(
+            &facts,
+            "module_system_import_graph_owner",
+        )?,
+        module_system_option_merge_owner: required_fact(
+            &facts,
+            "module_system_option_merge_owner",
+        )?,
+        module_system_extension_composition_owner: required_fact(
+            &facts,
+            "module_system_extension_composition_owner",
+        )?,
+        module_system_native_projection_payload_owner: required_fact(
+            &facts,
+            "module_system_native_projection_payload_owner",
+        )?,
+        module_system_budget_receipt_owner: required_fact(
+            &facts,
+            "module_system_budget_receipt_owner",
+        )?,
+        module_system_catalog_resolution_receipt_owner: required_fact(
+            &facts,
+            "module_system_catalog_resolution_receipt_owner",
+        )?,
+        module_system_rust_parses_scheme_source: required_bool_fact(
+            &facts,
+            "module_system_rust_parses_scheme_source",
+        )?,
+        module_system_scheme_manufactures_rust_handlers: required_bool_fact(
+            &facts,
+            "module_system_scheme_manufactures_rust_handlers",
+        )?,
         policy_substrate_gate_kind: required_fact(&facts, "policy_substrate_gate_kind")?,
         policy_substrate_gate_profile: required_fact(&facts, "policy_substrate_gate_profile")?,
         policy_substrate_gate_receipt_kind: required_fact(

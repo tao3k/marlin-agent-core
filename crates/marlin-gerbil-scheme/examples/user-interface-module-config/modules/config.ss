@@ -11,7 +11,11 @@
         "subagent"
         "workspace")
 
-(export user-interface-module-config)
+(export user-interface-module-config
+        user-interface-module-catalog
+        user-interface-module-evaluation
+        user-interface-module-system-presentation
+        user-interface-module-workflow)
 
 ;;; Boundary: User interface config is a POO module object, not runtime plumbing.
 ;; UserInterfaceWorkflowResult <- UserInterfaceWorkflowContext
@@ -39,3 +43,31 @@
       (extensions => marlin-extensions-append
                   (marlin-extensions
                    user-interface-subagent-policy-extension))))
+
+;;; Boundary: Catalog is the user-facing module-system collection boundary.
+;; UserInterfaceWorkflowResult <- UserInterfaceWorkflowContext
+(def (user-interface-module-catalog)
+  (marlinModuleCatalog user-interface-module-config))
+
+;;; Boundary: evalModules is the public evaluation entrypoint for this example.
+;; UserInterfaceWorkflowResult <- UserInterfaceWorkflowContext
+(def (user-interface-module-evaluation)
+  (marlinEvalModules
+   (user-interface-module-catalog)
+   "user-interface-root-module"
+   '("runtime-catalog-user-interface-hook")))
+
+;;; Boundary: Presentation receipt is the complete scalar module-system view.
+;; UserInterfaceWorkflowResult <- UserInterfaceWorkflowContext
+(def (user-interface-module-system-presentation)
+  (marlinModuleSystemPresentation
+   (user-interface-module-catalog)
+   "user-interface-root-module"
+   '("runtime-catalog-user-interface-hook")))
+
+;;; Boundary: Workflow materializes runtime projections for scripts/extensions.
+;; UserInterfaceWorkflowResult <- UserInterfaceWorkflowContext
+(def (user-interface-module-workflow)
+  (marlin-module-workflow
+   user-interface-module-config
+   '("runtime-catalog-user-interface-hook")))

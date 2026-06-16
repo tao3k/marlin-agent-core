@@ -76,6 +76,43 @@ fn debug_cli_gerbil_policy_receipt_runs_scheme_policy_engine() {
         "marlin.modules.policy-workflow.v1"
     );
     assert_eq!(
+        summary["module_system_presentation_kind"],
+        "marlin.modules.system-presentation.v1"
+    );
+    assert_eq!(
+        summary["module_system_projection_chain_kind"],
+        "marlin.modules.projection-chain.v1"
+    );
+    assert_eq!(summary["module_system_root_import_count"], 0);
+    assert_eq!(summary["module_system_root_extension_count"], 1);
+    assert_eq!(
+        summary["module_system_root_policy_extension_object_count"],
+        1
+    );
+    assert_eq!(
+        summary["module_system_import_graph_owner"],
+        "gerbil-module-system"
+    );
+    assert_eq!(summary["module_system_option_merge_owner"], "gerbil-poo");
+    assert_eq!(
+        summary["module_system_extension_composition_owner"],
+        "gerbil-poo"
+    );
+    assert_eq!(
+        summary["module_system_native_projection_payload_owner"],
+        "rust"
+    );
+    assert_eq!(summary["module_system_budget_receipt_owner"], "rust");
+    assert_eq!(
+        summary["module_system_catalog_resolution_receipt_owner"],
+        "rust"
+    );
+    assert_eq!(summary["module_system_rust_parses_scheme_source"], false);
+    assert_eq!(
+        summary["module_system_scheme_manufactures_rust_handlers"],
+        false
+    );
+    assert_eq!(
         summary["policy_substrate_gate_kind"],
         "marlin.modules.policy-substrate-gate.v1"
     );

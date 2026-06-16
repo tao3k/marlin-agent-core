@@ -23,6 +23,8 @@
 (def module-catalog (marlin-deck-runtime-debug-policy-module-catalog))
 (def policy-workflow (marlin-deck-runtime-debug-policy-module-workflow))
 (def module-evaluation (marlin-deck-runtime-debug-policy-module-evaluation))
+(def module-system-presentation
+  (marlin-deck-runtime-debug-policy-module-system-presentation))
 (def substrate-gate (.get policy-workflow substrate-gate))
 (def catalog (marlin-deck-runtime-debug-policy-extension-catalog))
 
@@ -59,6 +61,32 @@
 (emit "module_catalog_count" (length (.get module-catalog modules)))
 (emit "module_eval_result_kind" (.get module-evaluation kind))
 (emit "module_eval_workflow_kind" (.get module-evaluation workflow-kind))
+(emit "module_system_presentation_kind"
+      (.get module-system-presentation kind))
+(emit "module_system_projection_chain_kind"
+      (.get module-system-presentation projection-chain-kind))
+(emit "module_system_root_import_count"
+      (.get module-system-presentation root-import-count))
+(emit "module_system_root_extension_count"
+      (.get module-system-presentation root-extension-count))
+(emit "module_system_root_policy_extension_object_count"
+      (.get module-system-presentation root-policy-extension-object-count))
+(emit "module_system_import_graph_owner"
+      (.get module-system-presentation import-graph-owner))
+(emit "module_system_option_merge_owner"
+      (.get module-system-presentation option-merge-owner))
+(emit "module_system_extension_composition_owner"
+      (.get module-system-presentation extension-composition-owner))
+(emit "module_system_native_projection_payload_owner"
+      (.get module-system-presentation native-projection-payload-owner))
+(emit "module_system_budget_receipt_owner"
+      (.get module-system-presentation budget-receipt-owner))
+(emit "module_system_catalog_resolution_receipt_owner"
+      (.get module-system-presentation catalog-resolution-receipt-owner))
+(emit "module_system_rust_parses_scheme_source"
+      (.get module-system-presentation rust-parses-scheme-source))
+(emit "module_system_scheme_manufactures_rust_handlers"
+      (.get module-system-presentation scheme-manufactures-rust-handlers))
 (emit "policy_substrate_gate_kind" (.get substrate-gate kind))
 (emit "policy_substrate_gate_profile" (.get substrate-gate gate-profile))
 (emit "policy_substrate_gate_receipt_kind" (.get substrate-gate receipt-kind))

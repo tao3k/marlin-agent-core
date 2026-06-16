@@ -55,6 +55,24 @@
 (def modules-lib-workflow
   (marlin-module-workflow modules-lib-root))
 
+;;; Boundary: Catalog is the public collection input for evalModules.
+;; MarlinResult <- MarlinInput
+(def modules-lib-catalog
+  (marlinModuleCatalog modules-lib-root))
+
+;;; Boundary: evalModules returns scalar receipts for Rust projection.
+;; MarlinResult <- MarlinInput
+(def modules-lib-eval-result
+  (marlinEvalModules modules-lib-catalog "modules-lib-root" '()))
+
+;;; Boundary: Presentation shows the complete module-system contract.
+;; MarlinResult <- MarlinInput
+(def modules-lib-presentation
+  (marlinModuleSystemPresentation
+   modules-lib-catalog
+   "modules-lib-root"
+   '()))
+
 ;;; Boundary: Tests inspect workflow slots instead of user-facing config helpers.
 ;; MarlinResult <- MarlinInput
 (def modules-lib-root-options
@@ -94,6 +112,32 @@
 
 (check (.get modules-lib-root kind) => marlin-modules-kind)
 (check (.get modules-lib-workflow kind) => marlin-module-workflow-kind)
+(check (.get modules-lib-catalog kind) => marlin-module-catalog-kind)
+(check (length (.get modules-lib-catalog modules)) => 1)
+(check (.get modules-lib-eval-result kind)
+       => marlin-eval-modules-result-kind)
+(check (.get modules-lib-eval-result root-module-id)
+       => "modules-lib-root")
+(check (.get modules-lib-eval-result workflow-kind)
+       => marlin-module-workflow-kind)
+(check (.get modules-lib-eval-result module-count) => 2)
+(check (.get modules-lib-eval-result option-count) => 3)
+(check (.get modules-lib-eval-result validation-receipt-count) => 4)
+(check (.get modules-lib-eval-result policy-extension-object-count) => 0)
+(check (.get modules-lib-presentation kind)
+       => marlin-module-system-presentation-kind)
+(check (.get modules-lib-presentation projection-chain-kind)
+       => marlin-module-projection-chain-kind)
+(check (.get modules-lib-presentation import-graph-owner)
+       => "gerbil-module-system")
+(check (.get modules-lib-presentation option-merge-owner)
+       => "gerbil-poo")
+(check (.get modules-lib-presentation native-projection-payload-owner)
+       => "rust")
+(check (.get modules-lib-presentation rust-parses-scheme-source)
+       => #f)
+(check (.get modules-lib-presentation scheme-manufactures-rust-handlers)
+       => #f)
 (check (.get (car (.get modules-lib-root imports)) kind)
        => marlin-module-import-kind)
 (check (.get (.get (car (.get modules-lib-root imports)) source-ref) kind)

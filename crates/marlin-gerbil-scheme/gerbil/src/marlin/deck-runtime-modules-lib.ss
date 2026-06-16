@@ -12,6 +12,8 @@ package: marlin
         marlin-module-workflow-kind
         marlin-module-catalog-kind
         marlin-eval-modules-result-kind
+        marlin-module-system-presentation-kind
+        marlin-module-projection-chain-kind
         marlin-policy-extension-kind
         marlin-policy-module-kind
         marlin-policy-module-workflow-kind
@@ -56,6 +58,7 @@ package: marlin
         marlin-module-catalog-find
         marlin-module-catalog-root
         marlinEvalModules
+        marlinModuleSystemPresentation
         marlin-policy-extension-object-count
         marlin-policy-module-substrate-gate
         marlin-policy-module-workflow)
@@ -79,6 +82,16 @@ package: marlin
 ;; MarlinResult <- MarlinInput
 (def marlin-eval-modules-result-kind
   "marlin.modules.eval-result.v1")
+
+;;; Boundary: Presentations are scalar receipts for the whole user module surface.
+;; MarlinResult <- MarlinInput
+(def marlin-module-system-presentation-kind
+  "marlin.modules.system-presentation.v1")
+
+;;; Boundary: Projection chains name stable Rust-owned receipt handoff points.
+;; MarlinResult <- MarlinInput
+(def marlin-module-projection-chain-kind
+  "marlin.modules.projection-chain.v1")
 
 ;;; Boundary: User .ss files export POO extension objects managed by modules.
 ;; MarlinResult <- MarlinInput
@@ -693,6 +706,76 @@ package: marlin
             rust-kernel-owner: "rust"
             scheme-policy-owner: "gerbil-poo"
             replayable: #t)))))
+
+;;; Boundary: Full presentation receipt keeps the module system user-facing.
+;; MarlinResult <- MarlinInput
+(def (marlinModuleSystemPresentation catalog . eval-options)
+  (let* ((root-module-id-value
+          (if (null? eval-options) #f (car eval-options)))
+         (allowed-hook-id-values
+          (if (or (null? eval-options)
+                  (null? (cdr eval-options)))
+            '()
+            (cadr eval-options)))
+         (root-module
+          (marlin-module-catalog-root catalog root-module-id-value))
+         (eval-result
+          (cond
+           ((null? eval-options)
+            (marlinEvalModules catalog))
+           ((null? (cdr eval-options))
+            (marlinEvalModules catalog root-module-id-value))
+           (else
+            (marlinEvalModules
+             catalog
+             root-module-id-value
+             allowed-hook-id-values)))))
+    (.o kind: marlin-module-system-presentation-kind
+        catalog-kind: (.get catalog kind)
+        catalog-module-count: (length (.get catalog modules))
+        root-module-id: (.get root-module id)
+        root-module-kind: (.get root-module kind)
+        root-import-count: (length (.get root-module imports))
+        root-extension-count: (length (.get root-module extensions))
+        root-policy-extension-object-count:
+        (marlin-policy-extension-object-count
+         (.get root-module extensions))
+        root-script-count: (length (.get root-module scripts))
+        allowed-hook-count: (length allowed-hook-id-values)
+        user-entrypoints:
+        '("marlinModules"
+          "marlinModuleCatalog"
+          "marlinEvalModules"
+          "marlinModuleSystemPresentation")
+        module-eval-result-kind: (.get eval-result kind)
+        workflow-kind: (.get eval-result workflow-kind)
+        substrate-gate-kind: (.get eval-result substrate-gate-kind)
+        projection-target: (.get eval-result projection-target)
+        receipt-kind: (.get eval-result receipt-kind)
+        module-evaluation-receipt-kind:
+        (.get eval-result module-evaluation-kind)
+        module-count: (.get eval-result module-count)
+        extension-count: (.get eval-result extension-count)
+        policy-extension-object-count:
+        (.get eval-result policy-extension-object-count)
+        script-count: (.get eval-result script-count)
+        option-count: (.get eval-result option-count)
+        validation-receipt-count:
+        (.get eval-result validation-receipt-count)
+        projection-chain-kind: marlin-module-projection-chain-kind
+        policy-projection-receipt-kind: (.get eval-result kind)
+        native-projection-payload-owner: "rust"
+        budget-receipt-owner: "rust"
+        catalog-resolution-receipt-owner: "rust"
+        import-graph-owner: "gerbil-module-system"
+        option-merge-owner: "gerbil-poo"
+        extension-composition-owner: "gerbil-poo"
+        scheme-policy-owner: (.get eval-result scheme-policy-owner)
+        rust-kernel-owner: (.get eval-result rust-kernel-owner)
+        runtime-lifecycle-owner: "rust"
+        rust-parses-scheme-source: #f
+        scheme-manufactures-rust-handlers: #f
+        replayable: (.get eval-result replayable))))
 
 ;;; Boundary: Policy substrate gates prove module evaluation before Rust runtime.
 ;; MarlinResult <- MarlinInput
