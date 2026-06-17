@@ -11,7 +11,7 @@ use implementation::find_gambit_link_search_dir_from_gsc;
 
 #[test]
 fn finds_gambit_library_from_gsc_prefix_lib() {
-    let root = unique_temp_dir("marlin-deck-runtime-native-build-gambit-prefix");
+    let root = unique_temp_dir("marlin-gerbil-native-build-gambit-prefix");
     let bin = root.join("bin");
     let lib = root.join("lib");
     fs::create_dir_all(&bin).expect("create fake bin");
@@ -30,7 +30,7 @@ fn finds_gambit_library_from_gsc_prefix_lib() {
 
 #[test]
 fn discovers_versioned_linux_shared_library() {
-    let root = unique_temp_dir("marlin-deck-runtime-native-build-gambit-so");
+    let root = unique_temp_dir("marlin-gerbil-native-build-gambit-so");
     let bin = root.join("bin");
     let lib = root.join("lib");
     fs::create_dir_all(&bin).expect("create fake bin");

@@ -8,7 +8,7 @@ use std::{
 
 use crate::{
     GerbilDeckRuntimeNativeAotBuildStatus, GerbilDeckRuntimeNativeAotConfig,
-    GerbilDeckRuntimeNativeAotPlan, GerbilNativeLinkLibrary,
+    GerbilDeckRuntimeNativeAotPlan, GerbilDeckRuntimeNativeAotProfile, GerbilNativeLinkLibrary,
 };
 
 const DEFAULT_NATIVE_AOT_ROOT: &str = "target/marlin-gerbil-native-aot";
@@ -29,6 +29,7 @@ pub fn run_gerbil_native_aot_cli() -> ExitCode {
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct GerbilNativeAotCliConfig {
     action: GerbilNativeAotCliAction,
+    profile: GerbilDeckRuntimeNativeAotProfile,
     root: PathBuf,
     output_dir: Option<PathBuf>,
     compiled_runtime_scm: Option<PathBuf>,
@@ -50,6 +51,7 @@ impl GerbilNativeAotCliConfig {
         };
         let mut config = Self {
             action,
+            profile: GerbilDeckRuntimeNativeAotProfile::DeckRuntime,
             root: default_native_aot_root(),
             output_dir: None,
             compiled_runtime_scm: None,
@@ -63,6 +65,9 @@ impl GerbilNativeAotCliConfig {
 
         while let Some(arg) = args.next() {
             match arg.as_str() {
+                "--profile" => {
+                    config.profile = required_profile_arg(&mut args, "--profile")?;
+                }
                 "--root" => config.root = required_path_arg(&mut args, "--root")?,
                 "--output-dir" => {
                     config.output_dir = Some(required_path_arg(&mut args, "--output-dir")?);
@@ -99,11 +104,12 @@ impl GerbilNativeAotCliConfig {
     }
 
     fn usage() -> &'static str {
-        "Usage: marlin-gerbil-native-aot <build> [--root <path>] [--output-dir <path>] [--compiled-runtime-scm <path>] [--gsc <path>] [--c-compiler <name>] [--symbol-auditor <path>] [--gambit-link-lib <name>] [--gambit-link-search <dir>] [--gambit-include <dir>]"
+        "Usage: marlin-gerbil-native-aot <build> [--profile <deck-runtime|agent-policy-routing>] [--root <path>] [--output-dir <path>] [--compiled-runtime-scm <path>] [--gsc <path>] [--c-compiler <name>] [--symbol-auditor <path>] [--gambit-link-lib <name>] [--gambit-link-search <dir>] [--gambit-include <dir>]"
     }
 
     fn build_config(&self) -> GerbilDeckRuntimeNativeAotConfig {
-        let mut config = GerbilDeckRuntimeNativeAotConfig::new(&self.root);
+        let mut config =
+            GerbilDeckRuntimeNativeAotConfig::new_for_profile(&self.root, self.profile);
         if let Some(output_dir) = &self.output_dir {
             config = config.with_output_dir(output_dir);
         }
@@ -208,6 +214,20 @@ fn required_string_arg(
 ) -> Result<String, String> {
     args.next()
         .ok_or_else(|| format!("{option} requires a value"))
+}
+
+fn required_profile_arg(
+    args: &mut impl Iterator<Item = String>,
+    option: &str,
+) -> Result<GerbilDeckRuntimeNativeAotProfile, String> {
+    let value = required_string_arg(args, option)?;
+    match value.as_str() {
+        "deck-runtime" => Ok(GerbilDeckRuntimeNativeAotProfile::DeckRuntime),
+        "agent-policy-routing" => Ok(GerbilDeckRuntimeNativeAotProfile::AgentPolicyRouting),
+        _ => Err(format!(
+            "{option} must be `deck-runtime` or `agent-policy-routing`, got `{value}`"
+        )),
+    }
 }
 
 fn default_native_aot_root() -> PathBuf {

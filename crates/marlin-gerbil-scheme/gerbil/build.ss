@@ -9,6 +9,8 @@
    (defbuild-script
      '((gsc: "src/marlin/deck-runtime-native")
        (ssi: "src/marlin/deck-runtime-native")
+       (gsc: "src/marlin/agent-policy-routing-native")
+       (ssi: "src/marlin/agent-policy-routing-native")
        "src/marlin/protocol-types"
        "src/marlin/protocol"
        "src/marlin/request"
@@ -40,9 +42,17 @@
        "src/modules/policy-extension"
        "src/modules/policy-module"
        "src/modules/policy-object"
+       "src/modules/workspace-policy"
+       "src/modules/session-policy"
+       "src/modules/agent-policy"
+       "src/modules/hook-selection-policy"
+       "src/modules/model-route-policy"
+       "src/modules/continuation-profile-policy"
+       "src/modules/human-review-policy"
        "src/modules/evidence-policy"
        "src/modules/failure-policy"
        "src/modules/memory-policy"
+       "src/modules/catalog-projection-policy"
        "src/modules/evaluation"
        "src/modules/policy-pack"
        "src/modules/lib"

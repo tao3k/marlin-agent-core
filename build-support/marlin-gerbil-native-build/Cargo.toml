@@ -1,0 +1,15 @@
+[package]
+name = "marlin-gerbil-native-build"
+edition.workspace = true
+version.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+cc.workspace = true
+cbindgen.workspace = true
+marlin-gerbil-scheme.workspace = true
+object.workspace = true
+
+[build-dependencies]
+marlin-rust-project-harness-policy.workspace = true

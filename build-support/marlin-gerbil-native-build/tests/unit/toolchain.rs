@@ -1,4 +1,4 @@
-use marlin_deck_runtime_native_build::discover_native_c_compiler;
+use marlin_gerbil_native_build::discover_native_c_compiler;
 
 #[test]
 fn discovers_native_c_compiler_when_toolchain_is_available() {

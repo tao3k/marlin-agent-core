@@ -53,16 +53,16 @@
 ;;; Boundary: Object surgery keeps custom pack inventory deterministic.
 ;; MarlinResult <- MarlinInput
 (def route-object
-  (marlinPolicyObject "model-route-policy" "route" (.o route: "normal")))
+  (marlinModelRoutePolicy "route" (.o route: "normal")))
 
 (def review-object
-  (marlinPolicyObject "human-review-policy" "review" (.o reviewer: "root")))
+  (marlinHumanReviewPolicy "review" (.o reviewer: "root")))
 
 (def hook-object
-  (marlinPolicyObject "hook-selection-policy" "hook" (.o hook-id: "hook")))
+  (marlinHookSelectionPolicy "hook" (.o hook-id: "hook")))
 
 (def memory-object
-  (marlinPolicyObject "memory-trigger-policy" "memory" (.o action: "compact")))
+  (marlinMemoryTriggerPolicy "memory" (.o action: "compact")))
 
 (def evidence-object
   (marlinEvidenceGraphPolicy
@@ -80,8 +80,32 @@
 (def default-failure-object
   (marlinDefaultFailureRecoveryPolicy))
 
+(def default-workspace-object
+  (marlinDefaultWorkspacePolicy))
+
+(def default-session-object
+  (marlinDefaultSessionPolicy))
+
+(def default-agent-object
+  (marlinDefaultAgentPolicy))
+
+(def default-hook-object
+  (marlinDefaultHookSelectionPolicy))
+
+(def default-route-object
+  (marlinDefaultModelRoutePolicy))
+
+(def default-continuation-object
+  (marlinDefaultContinuationProfilePolicy))
+
+(def default-review-object
+  (marlinDefaultHumanReviewPolicy))
+
+(def default-catalog-object
+  (marlinDefaultCatalogProjectionPolicy))
+
 (def fast-route-object
-  (marlinPolicyObject "model-route-policy" "fast-route" (.o route: "fast")))
+  (marlinModelRoutePolicy "fast-route" (.o route: "fast")))
 
 (def custom-pack
   (marlinPolicyPack
@@ -210,6 +234,38 @@
        => "failure-recovery-policy")
 (check (marlin-policy-object-id default-failure-object)
        => "default-failure-recovery")
+(check (marlin-policy-object-family default-workspace-object)
+       => "workspace-policy")
+(check (marlin-policy-object-id default-workspace-object)
+       => "default-workspace")
+(check (marlin-policy-object-family default-session-object)
+       => "session-policy")
+(check (marlin-policy-object-id default-session-object)
+       => "default-session")
+(check (marlin-policy-object-family default-agent-object)
+       => "agent-policy")
+(check (marlin-policy-object-id default-agent-object)
+       => "default-agent")
+(check (marlin-policy-object-family default-hook-object)
+       => "hook-selection-policy")
+(check (marlin-policy-object-id default-hook-object)
+       => "default-hook")
+(check (marlin-policy-object-family default-route-object)
+       => "model-route-policy")
+(check (marlin-policy-object-id default-route-object)
+       => "default-model-route")
+(check (marlin-policy-object-family default-continuation-object)
+       => "continuation-profile-policy")
+(check (marlin-policy-object-id default-continuation-object)
+       => "default-continuation")
+(check (marlin-policy-object-family default-review-object)
+       => "human-review-policy")
+(check (marlin-policy-object-id default-review-object)
+       => "default-human-review")
+(check (marlin-policy-object-family default-catalog-object)
+       => "catalog-projection-policy")
+(check (marlin-policy-object-id default-catalog-object)
+       => "default-catalog-projection")
 (check (.get custom-inventory policy-object-ids)
        => '("fast-route" "review" "evidence" "failure" "memory"))
 (check (.get custom-inventory policy-families)

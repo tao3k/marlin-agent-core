@@ -7,9 +7,17 @@ package: modules
         :modules/kinds
         :modules/core
         :modules/policy-object
+        :modules/workspace-policy
+        :modules/session-policy
+        :modules/agent-policy
+        :modules/hook-selection-policy
+        :modules/model-route-policy
+        :modules/continuation-profile-policy
+        :modules/human-review-policy
         :modules/evidence-policy
         :modules/failure-policy
         :modules/memory-policy
+        :modules/catalog-projection-policy
         :modules/evaluation)
 
 (export marlinPolicyPack
@@ -323,66 +331,21 @@ package: modules
 
 ;;; Boundary: Upstream prefab objects are policy furniture, not Rust handlers.
 ;; MarlinResult <- MarlinInput
-(def (marlin-default-policy-pack-object
-      family-value
-      object-id-value
-      object-value)
-  (marlinPolicyObject
-   family-value
-   object-id-value
-   object-value
-   '((owner . "marlin") (surface . "default-prefab-object"))))
-
 ;;; Boundary: The furnished default pack starts from coherent policy families.
 ;; MarlinResult <- MarlinInput
 (def (marlin-default-policy-pack-objects)
   (list
-   (marlin-default-policy-pack-object
-    "workspace-policy"
-    "default-workspace"
-    (.o isolation: "shared-worktree"
-        branch-mode: "policy-branch"
-        snapshot-mode: "typed-receipt-snapshot"))
-   (marlin-default-policy-pack-object
-    "session-policy"
-    "default-session"
-    (.o sharing: "shared"
-        isolation: "branch-isolated"
-        snapshot: "enabled"))
-   (marlin-default-policy-pack-object
-    "agent-policy"
-    "default-agent"
-    (.o root-agent: "root-agent"
-        subagent-policy: "module-managed"))
-   (marlin-default-policy-pack-object
-    "hook-selection-policy"
-    "default-hook"
-    (.o hook-id: "runtime-catalog-default-hook"
-        action: "register"))
-   (marlin-default-policy-pack-object
-    "model-route-policy"
-    "default-model-route"
-    (.o provider: "openai"
-        model: "gpt-5.4"
-        route: "interactive"))
-   (marlin-default-policy-pack-object
-    "continuation-profile-policy"
-    "default-continuation"
-    (.o profile: "balanced"
-        graph-intent: "loop-graph"))
-   (marlin-default-policy-pack-object
-    "human-review-policy"
-    "default-human-review"
-    (.o trigger: "high-risk-tool"
-        reviewer: "root-agent"))
+   (marlinDefaultWorkspacePolicy)
+   (marlinDefaultSessionPolicy)
+   (marlinDefaultAgentPolicy)
+   (marlinDefaultHookSelectionPolicy)
+   (marlinDefaultModelRoutePolicy)
+   (marlinDefaultContinuationProfilePolicy)
+   (marlinDefaultHumanReviewPolicy)
    (marlinDefaultEvidenceGraphPolicy)
    (marlinDefaultFailureRecoveryPolicy)
    (marlinDefaultMemoryTriggerPolicy)
-   (marlin-default-policy-pack-object
-    "catalog-projection-policy"
-    "default-catalog-projection"
-    (.o projection-target: "rust-catalog-handlers"
-        resolution-owner: "rust"))))
+   (marlinDefaultCatalogProjectionPolicy)))
 
 ;;; Boundary: Default packs are furnished entrypoints over an existing module.
 ;; MarlinResult <- MarlinInput

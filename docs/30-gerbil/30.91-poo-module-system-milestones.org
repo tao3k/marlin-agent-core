@@ -154,28 +154,43 @@ Exit condition:
 
 *** M4 Policy Family Expansion
 
-Status: partial, with memory-trigger, evidence-graph, and failure-recovery
-helpers landed.
+Status: landed for the furnished default pack families; broader domain packs
+such as tool batch, self-evolution, and context compression remain future
+extensions.
 
 Purpose:
 - Turn the design examples into concrete upstream module packs instead of
   scattered hand-built objects.
 
 Policy families:
+- workspace policy; current surface: =marlinWorkspacePolicy= and
+  =marlinDefaultWorkspacePolicy=;
+- session policy; current surface: =marlinSessionPolicy= and
+  =marlinDefaultSessionPolicy=;
+- agent policy; current surface: =marlinAgentPolicy= and
+  =marlinDefaultAgentPolicy=;
+- hook selection policy; current surface: =marlinHookSelectionPolicy= and
+  =marlinDefaultHookSelectionPolicy=;
+- model route policy; current surface: =marlinModelRoutePolicy= and
+  =marlinDefaultModelRoutePolicy=;
+- continuation profile policy; current surface:
+  =marlinContinuationProfilePolicy=, =marlinContinuationProfile=, and
+  =marlinDefaultContinuationProfilePolicy=;
+- human review policy; current surface: =marlinHumanReviewPolicy= and
+  =marlinDefaultHumanReviewPolicy=;
 - evidence graph policy; current surface: =marlinEvidenceGraphPolicy= and
   =marlinDefaultEvidenceGraphPolicy=;
 - failure recovery policy; current surface: =marlinFailureRecoveryPolicy= and
   =marlinDefaultFailureRecoveryPolicy=;
-- human review policy;
 - memory trigger policy; current surface: =marlinMemoryTriggerPolicy= and
   =marlinDefaultMemoryTriggerPolicy=;
+- catalog projection policy; current surface: =marlinCatalogProjectionPolicy=
+  and =marlinDefaultCatalogProjectionPolicy=.
+Future family candidates:
 - tool batch policy;
 - self-evolution policy;
-- model route policy;
 - context compression policy;
-- hook selection policy;
-- subagent policy;
-- continuation profile policy.
+- subagent policy.
 
 Deliverables:
 - One module or object family per policy family.
@@ -183,12 +198,14 @@ Deliverables:
 - A minimal override example for each family.
 
 Required evidence:
-- Unit tests for each family object constructor and receipt projection.
-- One downstream example that composes at least four families through one prefab
-  pack.
+- Unit tests for default family object constructors and receipt projection.
+- One downstream example that composes the default furnished families plus
+  user-interface object surgery through one prefab pack.
 
 Exit condition:
-- The default pack reads like a real policy surface, not a single debug fixture.
+- The default pack reads like a real policy surface, not a single debug fixture;
+  its default objects are produced by upstream family constructors rather than
+  anonymous inline =marlinPolicyObject= furniture.
 
 *** M5 Rust Projection And Debug CLI Gate
 
@@ -317,6 +334,7 @@ The next three implementation slices should be:
    Add Rust typed structs for pack inventory, object surgery receipts, projection
    chain facts, owner split, replayability, and timing.
 
-3. Furnished example:
-   Add =examples/user-interface-policy-pack= so users start from the prefab path
-   before seeing lower-level module and object surgery extension points.
+3. Family override examples:
+   Add maintained examples that replace model route, hook selection,
+   continuation profile, human review, and memory trigger objects through
+   family constructors instead of raw =marlinPolicyObject= calls.

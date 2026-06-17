@@ -7,11 +7,11 @@ pub use native::{
     GerbilDeckRuntimeNativeAotBuildReceipt, GerbilDeckRuntimeNativeAotBuildStatus,
     GerbilDeckRuntimeNativeAotCommandPlan, GerbilDeckRuntimeNativeAotCommandReceipt,
     GerbilDeckRuntimeNativeAotConfig, GerbilDeckRuntimeNativeAotPlan,
-    GerbilDeckRuntimeNativeAotStatus, GerbilDeckRuntimeNativeCargoDirective,
-    GerbilDeckRuntimeNativeCargoDirectiveKind, GerbilDeckRuntimeNativeStaticLinkPlan,
-    GerbilDeckRuntimeNativeStaticLinkStatus, GerbilDeckRuntimeNativeSymbol,
-    GerbilDeckRuntimeNativeSymbolAuditMethod, GerbilNativeCCompiler, GerbilNativeLinkLibrary,
-    GerbilNativeSymbolAuditor,
+    GerbilDeckRuntimeNativeAotProfile, GerbilDeckRuntimeNativeAotStatus,
+    GerbilDeckRuntimeNativeCargoDirective, GerbilDeckRuntimeNativeCargoDirectiveKind,
+    GerbilDeckRuntimeNativeStaticLinkPlan, GerbilDeckRuntimeNativeStaticLinkStatus,
+    GerbilDeckRuntimeNativeSymbol, GerbilDeckRuntimeNativeSymbolAuditMethod, GerbilNativeCCompiler,
+    GerbilNativeLinkLibrary, GerbilNativeSymbolAuditor,
 };
 pub use probe::{
     GerbilAotBackendRepairReceipt, GerbilAotBackendRepairStatus, GerbilAotBackendShimReceipt,

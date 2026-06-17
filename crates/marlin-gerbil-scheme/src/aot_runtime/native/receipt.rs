@@ -1,11 +1,13 @@
-//! Receipt types for native Gerbil Deck runtime AOT artifact planning.
+//! Receipt types for native Gerbil runtime AOT artifact planning.
 
 use super::{
-    config::{GerbilNativeCCompiler, GerbilNativeLinkLibrary, GerbilNativeSymbolAuditor},
+    config::{
+        GerbilDeckRuntimeNativeAotProfile, GerbilNativeCCompiler, GerbilNativeLinkLibrary,
+        GerbilNativeSymbolAuditor,
+    },
     status::{GerbilDeckRuntimeNativeAotBuildStatus, GerbilDeckRuntimeNativeAotStatus},
 };
 use crate::{
-    GERBIL_DECK_RUNTIME_NATIVE_ABI_ID, GERBIL_DECK_RUNTIME_NATIVE_ABI_VERSION,
     GerbilSchemeNativeAbiContract, GerbilSchemeNativeAbiId, GerbilSchemeNativeAbiReadinessPlan,
     GerbilSchemeNativeSymbol,
 };
@@ -54,9 +56,10 @@ pub enum GerbilDeckRuntimeNativeSymbolAuditMethod {
     SymbolTableCommand,
 }
 
-/// Typed plan for producing a Rust-linkable native Deck runtime link unit.
+/// Typed plan for producing a Rust-linkable native Gerbil runtime link unit.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct GerbilDeckRuntimeNativeAotPlan {
+    pub profile: GerbilDeckRuntimeNativeAotProfile,
     pub status: GerbilDeckRuntimeNativeAotStatus,
     pub root: PathBuf,
     pub output_dir: PathBuf,
@@ -81,8 +84,8 @@ impl GerbilDeckRuntimeNativeAotPlan {
     /// Convert this native build plan into a Scheme package native ABI contract.
     pub fn scheme_native_abi_contract(&self) -> GerbilSchemeNativeAbiContract {
         GerbilSchemeNativeAbiContract::new(
-            GerbilSchemeNativeAbiId::new(GERBIL_DECK_RUNTIME_NATIVE_ABI_ID),
-            GERBIL_DECK_RUNTIME_NATIVE_ABI_VERSION,
+            GerbilSchemeNativeAbiId::new(self.profile.abi_id()),
+            self.profile.abi_version(),
         )
         .with_exported_symbols(self.scheme_native_symbols())
     }
@@ -96,8 +99,8 @@ impl GerbilDeckRuntimeNativeAotPlan {
     /// Convert this native build plan into a Scheme package readiness plan.
     pub fn scheme_native_abi_readiness_plan(&self) -> GerbilSchemeNativeAbiReadinessPlan {
         GerbilSchemeNativeAbiReadinessPlan::new(
-            GerbilSchemeNativeAbiId::new(GERBIL_DECK_RUNTIME_NATIVE_ABI_ID),
-            GERBIL_DECK_RUNTIME_NATIVE_ABI_VERSION,
+            GerbilSchemeNativeAbiId::new(self.profile.abi_id()),
+            self.profile.abi_version(),
         )
         .with_exported_symbols(self.scheme_native_symbols())
     }

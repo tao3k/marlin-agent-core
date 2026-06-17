@@ -1,4 +1,4 @@
-//! Native AOT artifact planning for the Gerbil Deck runtime C ABI.
+//! Native AOT artifact planning for Gerbil runtime C ABI link units.
 
 mod api;
 mod config;
@@ -9,8 +9,8 @@ mod run;
 mod status;
 
 pub use config::{
-    GerbilDeckRuntimeNativeAotConfig, GerbilNativeCCompiler, GerbilNativeLinkLibrary,
-    GerbilNativeSymbolAuditor,
+    GerbilDeckRuntimeNativeAotConfig, GerbilDeckRuntimeNativeAotProfile, GerbilNativeCCompiler,
+    GerbilNativeLinkLibrary, GerbilNativeSymbolAuditor,
 };
 pub use link::{
     GerbilDeckRuntimeNativeCargoDirective, GerbilDeckRuntimeNativeCargoDirectiveKind,

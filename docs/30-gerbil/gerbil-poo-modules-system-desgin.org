@@ -473,6 +473,12 @@ Current implementation:
 - =crates/marlin-gerbil-scheme/gerbil/src/modules/policy-pack.ss=
   owns the furnished pack constructor, default pack, pack catalog, inventory,
   presentation payload, and projection envelope.
+- =crates/marlin-gerbil-scheme/gerbil/src/modules/*-policy.ss=
+  owns the upstream policy furniture families for workspace, session, agent,
+  hook selection, model route, continuation profile, human review, evidence
+  graph, failure recovery, memory trigger, and catalog projection. The default
+  pack now calls those family constructors instead of embedding anonymous
+  objects.
 - =crates/marlin-gerbil-scheme/gerbil/src/marlin/deck-runtime-debug-policy-extension.ss=
   owns the debug policy extension object and debug policy module presentation.
 - =crates/marlin-gerbil-scheme/gerbil/src/marlin/deck-runtime-policy-receipt-gate-cli.ss=
@@ -486,10 +492,10 @@ Current implementation:
 
 ** Next Implementation Slice
 
-The prefab layer, debug prefab projection path, and user-authored =.ss=
-entrypoint loader are now present. The next code slice should make the loaded
-file carry a complete custom policy-pack fact set instead of wrapping the debug
-prefab emission:
+The prefab layer, debug prefab projection path, family policy constructors, and
+user-authored =.ss= entrypoint loader are now present. The next code slice
+should make the loaded file carry a complete custom policy-pack fact set
+instead of wrapping the debug prefab emission:
 
 - a fixture/example where the loaded =.ss= defines and emits its own pack id,
   object ids, operation receipts, projection chain, owner split, and timing;
@@ -499,7 +505,9 @@ prefab emission:
   custom-pack receipt shape is stable;
 - A maintained prefab example, likely
   =examples/user-interface-policy-pack=, that starts from an upstream pack and
-  demonstrates Level 0 through Level 3 customization.
+  demonstrates Level 0 through Level 3 customization using family constructors
+  for model route, hook selection, continuation profile, human review, and
+  memory trigger overrides.
 
 The acceptance gate should include:
 

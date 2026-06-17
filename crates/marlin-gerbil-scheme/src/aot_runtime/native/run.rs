@@ -1,4 +1,4 @@
-//! Runner for native Gerbil Deck runtime AOT link-unit builds.
+//! Runner for native Gerbil runtime AOT link-unit builds.
 
 use super::{
     config::GerbilDeckRuntimeNativeAotConfig,
@@ -93,10 +93,14 @@ pub(super) fn build_gerbil_deck_runtime_native_link_unit(
         );
     }
     if !plan.object.is_file() {
+        let detail = Some(format!(
+            "gsc completed without producing {}",
+            plan.object.display()
+        ));
         return native_build_receipt(
             GerbilDeckRuntimeNativeAotBuildStatus::ObjectMissing,
             plan,
-            Some("gsc completed without producing deck-runtime-native~0.o".to_string()),
+            detail,
             NativeBuildCommandReceipts {
                 gsc_compile_object: Some(gsc_compile_object),
                 ..Default::default()
@@ -123,10 +127,14 @@ pub(super) fn build_gerbil_deck_runtime_native_link_unit(
         );
     }
     if !plan.link_c_source.is_file() {
+        let detail = Some(format!(
+            "gsc -link completed without producing {}",
+            plan.link_c_source.display()
+        ));
         return native_build_receipt(
             GerbilDeckRuntimeNativeAotBuildStatus::LinkSourceMissing,
             plan,
-            Some("gsc -link completed without producing deck-runtime-native~0_.c".to_string()),
+            detail,
             NativeBuildCommandReceipts {
                 gsc_compile_object: Some(gsc_compile_object),
                 gsc_generate_link_source: Some(gsc_generate_link_source),
@@ -155,10 +163,14 @@ pub(super) fn build_gerbil_deck_runtime_native_link_unit(
         );
     }
     if !plan.link_object.is_file() {
+        let detail = Some(format!(
+            "gsc completed without producing {}",
+            plan.link_object.display()
+        ));
         return native_build_receipt(
             GerbilDeckRuntimeNativeAotBuildStatus::LinkObjectMissing,
             plan,
-            Some("gsc completed without producing deck-runtime-native~0_.o".to_string()),
+            detail,
             NativeBuildCommandReceipts {
                 gsc_compile_object: Some(gsc_compile_object),
                 gsc_generate_link_source: Some(gsc_generate_link_source),
@@ -171,10 +183,14 @@ pub(super) fn build_gerbil_deck_runtime_native_link_unit(
 
     if let Ok(missing_symbols) = missing_exported_symbols_from_object_files(&plan) {
         if !missing_symbols.is_empty() {
+            let detail = Some(format!(
+                "native object is missing required {} ABI symbols",
+                plan.profile.label()
+            ));
             return native_build_receipt(
                 GerbilDeckRuntimeNativeAotBuildStatus::RequiredSymbolsMissing,
                 plan,
-                Some("native object is missing required Deck runtime ABI symbols".to_string()),
+                detail,
                 NativeBuildCommandReceipts {
                     gsc_compile_object: Some(gsc_compile_object),
                     gsc_generate_link_source: Some(gsc_generate_link_source),
@@ -223,10 +239,14 @@ pub(super) fn build_gerbil_deck_runtime_native_link_unit(
     }
     let missing_symbols = missing_exported_symbols(&plan, &symbol_audit.stdout);
     if !missing_symbols.is_empty() {
+        let detail = Some(format!(
+            "native object is missing required {} ABI symbols",
+            plan.profile.label()
+        ));
         return native_build_receipt(
             GerbilDeckRuntimeNativeAotBuildStatus::RequiredSymbolsMissing,
             plan,
-            Some("native object is missing required Deck runtime ABI symbols".to_string()),
+            detail,
             NativeBuildCommandReceipts {
                 gsc_compile_object: Some(gsc_compile_object),
                 gsc_generate_link_source: Some(gsc_generate_link_source),

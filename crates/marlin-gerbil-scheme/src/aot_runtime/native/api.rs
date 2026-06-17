@@ -1,12 +1,11 @@
-//! Public method implementations for native Deck runtime AOT artifact planning.
+//! Public method implementations for native Gerbil runtime AOT artifact planning.
 
 use super::{
     config::{
-        GerbilDeckRuntimeNativeAotConfig, GerbilNativeCCompiler, GerbilNativeLinkLibrary,
-        GerbilNativeSymbolAuditor,
+        GerbilDeckRuntimeNativeAotConfig, GerbilDeckRuntimeNativeAotProfile, GerbilNativeCCompiler,
+        GerbilNativeLinkLibrary, GerbilNativeSymbolAuditor,
     },
     paths::{
-        GERBIL_DECK_RUNTIME_NATIVE_INITIALIZE_SYMBOL, GERBIL_DECK_RUNTIME_NATIVE_SELECT_SYMBOL,
         compiled_runtime_link_c_source, compiled_runtime_link_object, compiled_runtime_object,
         default_compiled_runtime_scm, native_output_dir,
     },
@@ -17,24 +16,32 @@ use super::{
     run::build_gerbil_deck_runtime_native_link_unit,
     status::GerbilDeckRuntimeNativeAotStatus,
 };
-use crate::{
-    deck_runtime_native::GERBIL_DECK_RUNTIME_NATIVE_HEADER_PATH,
-    runtime::default_gerbil_gsc_program,
-};
+use crate::runtime::default_gerbil_gsc_program;
 use std::path::{Path, PathBuf};
 
 impl GerbilDeckRuntimeNativeAotConfig {
     /// Builds a native AOT plan rooted at a writable runtime asset directory.
     pub fn new(root: impl Into<PathBuf>) -> Self {
+        Self::new_for_profile(root, GerbilDeckRuntimeNativeAotProfile::DeckRuntime)
+    }
+
+    /// Builds a native AOT plan for an explicit Gerbil native ABI profile.
+    pub fn new_for_profile(
+        root: impl Into<PathBuf>,
+        profile: GerbilDeckRuntimeNativeAotProfile,
+    ) -> Self {
         let root = root.into();
         let output_dir = native_output_dir(&root);
         Self {
+            profile,
             root,
-            compiled_runtime_scm: default_compiled_runtime_scm(&output_dir),
+            compiled_runtime_scm: default_compiled_runtime_scm(
+                &output_dir,
+                profile.artifact_stem(),
+            ),
             output_dir,
             gsc: default_gerbil_gsc_program(),
-            header: PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                .join(GERBIL_DECK_RUNTIME_NATIVE_HEADER_PATH),
+            header: PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(profile.header_path()),
             c_compiler: None,
             symbol_auditor: GerbilNativeSymbolAuditor::new("nm"),
             gambit_link_library: GerbilNativeLinkLibrary::new("gambit"),
@@ -42,10 +49,16 @@ impl GerbilDeckRuntimeNativeAotConfig {
         }
     }
 
+    /// Builds a native AOT plan for the AgentGraph policy-routing C ABI profile.
+    pub fn agent_policy_routing(root: impl Into<PathBuf>) -> Self {
+        Self::new_for_profile(root, GerbilDeckRuntimeNativeAotProfile::AgentPolicyRouting)
+    }
+
     /// Overrides the native AOT output directory.
     pub fn with_output_dir(mut self, output_dir: impl Into<PathBuf>) -> Self {
         let output_dir = output_dir.into();
-        self.compiled_runtime_scm = default_compiled_runtime_scm(&output_dir);
+        self.compiled_runtime_scm =
+            default_compiled_runtime_scm(&output_dir, self.profile.artifact_stem());
         self.output_dir = output_dir;
         self
     }
@@ -101,6 +114,7 @@ impl GerbilDeckRuntimeNativeAotConfig {
         let detail = native_plan_detail(status, self);
 
         GerbilDeckRuntimeNativeAotPlan {
+            profile: self.profile,
             status,
             root: self.root.clone(),
             output_dir: self.output_dir.clone(),
@@ -110,8 +124,8 @@ impl GerbilDeckRuntimeNativeAotConfig {
             link_c_source: link_c_source.clone(),
             link_object: link_object.clone(),
             exported_symbols: vec![
-                GerbilDeckRuntimeNativeSymbol::new(GERBIL_DECK_RUNTIME_NATIVE_INITIALIZE_SYMBOL),
-                GerbilDeckRuntimeNativeSymbol::new(GERBIL_DECK_RUNTIME_NATIVE_SELECT_SYMBOL),
+                GerbilDeckRuntimeNativeSymbol::new(self.profile.initialize_symbol()),
+                GerbilDeckRuntimeNativeSymbol::new(self.profile.select_symbol()),
             ],
             c_compiler: self.c_compiler.clone(),
             symbol_auditor: self.symbol_auditor.clone(),
@@ -168,11 +182,13 @@ fn native_plan_detail(
             config.gsc.display()
         )),
         GerbilDeckRuntimeNativeAotStatus::MissingCompiledRuntime => Some(format!(
-            "missing compiled native Deck runtime Scheme artifact at {}",
+            "missing compiled native {} Scheme artifact at {}",
+            config.profile.label(),
             config.compiled_runtime_scm.display()
         )),
         GerbilDeckRuntimeNativeAotStatus::MissingHeader => Some(format!(
-            "missing native Deck runtime C ABI header at {}",
+            "missing native {} C ABI header at {}",
+            config.profile.label(),
             config.header.display()
         )),
         GerbilDeckRuntimeNativeAotStatus::ReadyToBuildLinkUnit => None,

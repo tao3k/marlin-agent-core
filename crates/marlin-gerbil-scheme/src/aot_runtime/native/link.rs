@@ -1,4 +1,4 @@
-//! Rust static-link planning for generated Gerbil Deck runtime link units.
+//! Rust static-link planning for generated Gerbil runtime link units.
 
 use super::{
     config::GerbilNativeLinkLibrary,
@@ -45,7 +45,7 @@ impl GerbilDeckRuntimeNativeCargoDirective {
     }
 }
 
-/// Static-link inputs for a generated native Deck runtime link unit.
+/// Static-link inputs for a generated native Gerbil runtime link unit.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct GerbilDeckRuntimeNativeStaticLinkPlan {
     pub status: GerbilDeckRuntimeNativeStaticLinkStatus,
@@ -73,8 +73,9 @@ impl GerbilDeckRuntimeNativeAotBuildReceipt {
                 link_search_dirs: Vec::new(),
                 cargo_directives: Vec::new(),
                 detail: Some(format!(
-                    "native Deck runtime link unit is not ready: {:?}",
-                    self.status
+                    "native {} link unit is not ready: {:?}",
+                    self.plan.profile.label(),
+                    self.status,
                 )),
             };
         }

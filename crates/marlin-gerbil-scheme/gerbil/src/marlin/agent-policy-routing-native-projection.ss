@@ -12,6 +12,7 @@ package: marlin
         marlin-agent-policy-routing-projection-symbol
         make-marlin-agent-policy-routing-evidence
         make-marlin-agent-policy-routing-projection
+        marlin-agent-policy-routing-projection-decision
         marlin-agent-policy-routing-select-edges
         marlin-agent-policy-routing-deny
         marlin-agent-policy-routing-defer
@@ -44,7 +45,7 @@ package: marlin
 ;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
 ;; MarlinResult <- MarlinInput
 (def (make-marlin-agent-policy-routing-evidence kind evidence-id)
-  (.o kind: kind
+  (.o evidence_kind: kind
       evidence_id: evidence-id))
 
 ;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
@@ -56,9 +57,14 @@ package: marlin
       graph_id: graph-id
       policy_scope: policy-scope
       root_node: root-node
-      decision: decision
+      routing_decision: decision
       candidate_edges: candidate-edges
-      evidence: evidence))
+      routing_evidence: evidence))
+
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
+(def (marlin-agent-policy-routing-projection-decision projection)
+  (.get projection routing_decision))
 
 ;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
 ;; MarlinResult <- MarlinInput

@@ -1,4 +1,4 @@
-//! Static archive packaging for generated Gerbil Deck runtime link units.
+//! Static archive packaging for generated Gerbil native link units.
 
 use marlin_gerbil_scheme::{
     GerbilDeckRuntimeNativeCargoDirective, GerbilDeckRuntimeNativeCargoDirectiveKind,
@@ -8,6 +8,8 @@ use std::path::{Path, PathBuf};
 
 /// Cargo/rustc link name for the generated Deck runtime native archive.
 pub const DECK_RUNTIME_NATIVE_ARCHIVE_NAME: &str = "marlin_deck_runtime_native";
+/// Cargo/rustc link name for the generated AgentGraph policy-routing native archive.
+pub const AGENT_POLICY_ROUTING_NATIVE_ARCHIVE_NAME: &str = "marlin_agent_policy_routing_native";
 
 /// Receipt emitted after the generated Gerbil object pair is packaged as one archive.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -17,8 +19,29 @@ pub struct NativeArchiveLinkReceipt {
     pub cargo_directives: Vec<GerbilDeckRuntimeNativeCargoDirective>,
 }
 
-/// Packages the `gsc`-produced module and link objects into a static archive.
+/// Packages the Deck runtime `gsc`-produced object pair into a static archive.
+pub fn build_deck_runtime_static_archive_from_link_plan(
+    link_plan: &GerbilDeckRuntimeNativeStaticLinkPlan,
+    out_dir: &Path,
+) -> Result<NativeArchiveLinkReceipt, String> {
+    build_static_archive_from_link_plan(DECK_RUNTIME_NATIVE_ARCHIVE_NAME, link_plan, out_dir)
+}
+
+/// Packages the AgentGraph policy-routing `gsc` object pair into a static archive.
+pub fn build_agent_policy_routing_static_archive_from_link_plan(
+    link_plan: &GerbilDeckRuntimeNativeStaticLinkPlan,
+    out_dir: &Path,
+) -> Result<NativeArchiveLinkReceipt, String> {
+    build_static_archive_from_link_plan(
+        AGENT_POLICY_ROUTING_NATIVE_ARCHIVE_NAME,
+        link_plan,
+        out_dir,
+    )
+}
+
+/// Packages a `gsc`-produced module and link object pair into a named static archive.
 pub fn build_static_archive_from_link_plan(
+    archive_name: &str,
     link_plan: &GerbilDeckRuntimeNativeStaticLinkPlan,
     out_dir: &Path,
 ) -> Result<NativeArchiveLinkReceipt, String> {
@@ -31,9 +54,9 @@ pub fn build_static_archive_from_link_plan(
         .object(&link_plan.module_object)
         .object(&link_plan.link_object);
     build
-        .try_compile(DECK_RUNTIME_NATIVE_ARCHIVE_NAME)
+        .try_compile(archive_name)
         .map_err(|error| error.to_string())?;
-    let archive_file = out_dir.join(static_archive_file_name(DECK_RUNTIME_NATIVE_ARCHIVE_NAME));
+    let archive_file = out_dir.join(static_archive_file_name(archive_name));
     if !archive_file.is_file() {
         return Err(format!(
             "static archive was not produced at {}",
@@ -42,13 +65,9 @@ pub fn build_static_archive_from_link_plan(
     }
 
     Ok(NativeArchiveLinkReceipt {
-        archive_name: DECK_RUNTIME_NATIVE_ARCHIVE_NAME.to_string(),
+        archive_name: archive_name.to_string(),
         archive_file,
-        cargo_directives: static_archive_cargo_directives(
-            DECK_RUNTIME_NATIVE_ARCHIVE_NAME,
-            out_dir,
-            link_plan,
-        ),
+        cargo_directives: static_archive_cargo_directives(archive_name, out_dir, link_plan),
     })
 }
 

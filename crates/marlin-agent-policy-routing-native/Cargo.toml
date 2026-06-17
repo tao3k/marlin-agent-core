@@ -1,15 +1,16 @@
 [package]
-name = "marlin-deck-runtime-native-build"
+name = "marlin-agent-policy-routing-native"
 edition.workspace = true
 version.workspace = true
 authors.workspace = true
 repository.workspace = true
 
+[features]
+default = []
+linked-native = []
+
 [dependencies]
-cc.workspace = true
-cbindgen.workspace = true
 marlin-gerbil-scheme.workspace = true
-object.workspace = true
 
 [build-dependencies]
-marlin-rust-project-harness-policy.workspace = true
+marlin-gerbil-native-build.workspace = true

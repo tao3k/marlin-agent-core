@@ -471,8 +471,7 @@ package: modules/prefabs
 ;;; Boundary: Continuation policy stays a POO object before Rust projection.
 ;; MarlinResult <- MarlinInput
 (def user-interface-continuation-policy-object
-  (marlinPolicyObject
-   "continuation-profile"
+  (marlinContinuationProfile
    "user-interface-loop-continuation"
    user-interface-loop-continuation-profile
    '((owner . "marlin") (surface . "user-interface-prefab-object"))))
@@ -480,8 +479,7 @@ package: modules/prefabs
 ;;; Boundary: Hook selector object only names an existing Rust catalog handler.
 ;; MarlinResult <- MarlinInput
 (def user-interface-hook-policy-object
-  (marlinPolicyObject
-   "hook-selection-policy"
+  (marlinHookSelectionPolicy
    "runtime-catalog-user-interface-hook"
    (.o hook-id: "runtime-catalog-user-interface-hook"
        action: "register")
@@ -499,8 +497,7 @@ package: modules/prefabs
 ;;; Boundary: Replacement object keeps typed projection separate from merge.
 ;; MarlinResult <- MarlinInput
 (def user-interface-continuation-projection-object
-  (marlinPolicyObject
-   "continuation-profile"
+  (marlinContinuationProfile
    "user-interface-continuation-projection"
    user-interface-loop-continuation-projection
    '((owner . "marlin") (surface . "user-interface-prefab-object"))))

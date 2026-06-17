@@ -3,5 +3,5 @@ fn main() {
     marlin_rust_project_harness_policy::complete_marlin_rust_project_harness_gate_from_env(
         project_root,
     );
-    marlin_deck_runtime_native_build::emit_deck_runtime_native_link_directives();
+    marlin_gerbil_native_build::emit_deck_runtime_native_link_directives();
 }

@@ -4,8 +4,9 @@ use marlin_gerbil_scheme::{
     GERBIL_DECK_RUNTIME_NATIVE_ABI_ID, GERBIL_DECK_RUNTIME_NATIVE_ABI_VERSION,
     GerbilDeckRuntimeNativeAotBuildReceipt, GerbilDeckRuntimeNativeAotBuildStatus,
     GerbilDeckRuntimeNativeAotCommandPlan, GerbilDeckRuntimeNativeAotPlan,
-    GerbilDeckRuntimeNativeAotStatus, GerbilDeckRuntimeNativeModelRouteSelector,
-    GerbilDeckRuntimeNativeSymbol, GerbilNativeLinkLibrary, GerbilNativeSymbolAuditor,
+    GerbilDeckRuntimeNativeAotProfile, GerbilDeckRuntimeNativeAotStatus,
+    GerbilDeckRuntimeNativeModelRouteSelector, GerbilDeckRuntimeNativeSymbol,
+    GerbilNativeLinkLibrary, GerbilNativeSymbolAuditor,
 };
 use std::path::PathBuf;
 
@@ -126,6 +127,7 @@ fn native_build_receipt(
 
 fn native_aot_plan() -> GerbilDeckRuntimeNativeAotPlan {
     GerbilDeckRuntimeNativeAotPlan {
+        profile: GerbilDeckRuntimeNativeAotProfile::DeckRuntime,
         status: GerbilDeckRuntimeNativeAotStatus::ReadyToBuildLinkUnit,
         root: PathBuf::from("/tmp/marlin-native"),
         output_dir: PathBuf::from("/tmp/marlin-native/out"),

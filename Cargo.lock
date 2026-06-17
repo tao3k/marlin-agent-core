@@ -2442,6 +2442,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "marlin-agent-policy-routing-native"
+version = "0.1.0"
+dependencies = [
+ "marlin-gerbil-native-build",
+ "marlin-gerbil-scheme",
+]
+
+[[package]]
 name = "marlin-agent-protocol"
 version = "0.1.0"
 dependencies = [
@@ -2543,20 +2551,9 @@ dependencies = [
  "criterion",
  "marlin-agent-protocol",
  "marlin-agent-runtime",
- "marlin-deck-runtime-native-build",
+ "marlin-gerbil-native-build",
  "marlin-gerbil-scheme",
  "marlin-rust-project-harness-policy",
-]
-
-[[package]]
-name = "marlin-deck-runtime-native-build"
-version = "0.1.0"
-dependencies = [
- "cbindgen",
- "cc",
- "marlin-gerbil-scheme",
- "marlin-rust-project-harness-policy",
- "object",
 ]
 
 [[package]]
@@ -2568,6 +2565,17 @@ dependencies = [
  "marlin-workspace-patch",
  "marlin-workspace-view",
  "serde",
+]
+
+[[package]]
+name = "marlin-gerbil-native-build"
+version = "0.1.0"
+dependencies = [
+ "cbindgen",
+ "cc",
+ "marlin-gerbil-scheme",
+ "marlin-rust-project-harness-policy",
+ "object",
 ]
 
 [[package]]
@@ -2691,7 +2699,7 @@ dependencies = [
 name = "marlin-rust-project-harness-policy"
 version = "0.1.0"
 dependencies = [
- "rust-lang-project-harness",
+ "rust-lang-project-harness 0.1.2 (git+https://github.com/tao3k/rust-lang-project-harness?rev=7811ab03e815a3eca76d2a2cd25a4ee4c442db30)",
  "serde",
  "serde_json",
  "tempfile",
@@ -2780,9 +2788,9 @@ dependencies = [
 
 [[package]]
 name = "memchr"
-version = "2.8.1"
+version = "2.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6b947ae49db0d222b1dbc6b113ce7248a3fc3a6ca21b696717bfc000ba4484d8"
+checksum = "88904434abc2901f197fe8cc55f0445e7ded921dba5911dad2e2b39b48e663c4"
 
 [[package]]
 name = "memoffset"
@@ -3058,23 +3066,17 @@ dependencies = [
 [[package]]
 name = "orgize"
 version = "0.10.0-alpha.10"
-source = "git+https://github.com/tao3k/orgize?branch=main#3948be733078e3b18a01f66c52c6f74eb256f551"
+source = "git+https://github.com/tao3k/orgize?branch=main#7173cdff248e0ce6d41d04b1ae5fcf6cf39499fe"
 dependencies = [
  "bytecount",
  "cfg-if",
  "jetscii",
  "memchr",
  "nom",
- "orgize-build-support",
  "rowan",
- "rust-lang-project-harness",
+ "rust-lang-project-harness 0.1.2 (git+https://github.com/tao3k/rust-lang-project-harness?rev=9c59588b6ada02d5c2518ca90bc22452155f2e6f)",
  "serde_json",
 ]
-
-[[package]]
-name = "orgize-build-support"
-version = "0.1.0"
-source = "git+https://github.com/tao3k/orgize?branch=main#3948be733078e3b18a01f66c52c6f74eb256f551"
 
 [[package]]
 name = "ouroboros"
@@ -3765,6 +3767,22 @@ dependencies = [
 name = "rust-lang-project-harness"
 version = "0.1.2"
 source = "git+https://github.com/tao3k/rust-lang-project-harness?rev=7811ab03e815a3eca76d2a2cd25a4ee4c442db30#7811ab03e815a3eca76d2a2cd25a4ee4c442db30"
+dependencies = [
+ "cargo-lock",
+ "cargo_toml",
+ "proc-macro2",
+ "quote",
+ "regex",
+ "serde",
+ "serde_json",
+ "syn",
+ "toml 1.1.2+spec-1.1.0",
+]
+
+[[package]]
+name = "rust-lang-project-harness"
+version = "0.1.2"
+source = "git+https://github.com/tao3k/rust-lang-project-harness?rev=9c59588b6ada02d5c2518ca90bc22452155f2e6f#9c59588b6ada02d5c2518ca90bc22452155f2e6f"
 dependencies = [
  "cargo-lock",
  "cargo_toml",

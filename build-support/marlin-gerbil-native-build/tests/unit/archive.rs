@@ -5,9 +5,10 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use marlin_deck_runtime_native_build::{
-    DECK_RUNTIME_NATIVE_ARCHIVE_NAME, build_static_archive_from_link_plan,
-    discover_native_c_compiler, static_archive_cargo_directives, static_archive_file_name,
+use marlin_gerbil_native_build::{
+    AGENT_POLICY_ROUTING_NATIVE_ARCHIVE_NAME, DECK_RUNTIME_NATIVE_ARCHIVE_NAME,
+    build_static_archive_from_link_plan, discover_native_c_compiler,
+    static_archive_cargo_directives, static_archive_file_name,
 };
 use marlin_gerbil_scheme::{
     GerbilDeckRuntimeNativeStaticLinkPlan, GerbilDeckRuntimeNativeStaticLinkStatus,
@@ -17,11 +18,14 @@ use marlin_gerbil_scheme::{
 #[test]
 fn static_archive_filename_matches_target_family() {
     let file_name = static_archive_file_name(DECK_RUNTIME_NATIVE_ARCHIVE_NAME);
+    let agent_file_name = static_archive_file_name(AGENT_POLICY_ROUTING_NATIVE_ARCHIVE_NAME);
 
     if cfg!(target_env = "msvc") {
         assert_eq!(file_name, "marlin_deck_runtime_native.lib");
+        assert_eq!(agent_file_name, "marlin_agent_policy_routing_native.lib");
     } else {
         assert_eq!(file_name, "libmarlin_deck_runtime_native.a");
+        assert_eq!(agent_file_name, "libmarlin_agent_policy_routing_native.a");
     }
 }
 
@@ -65,7 +69,7 @@ fn static_archive_packaging_consumes_real_object_files() {
     let Ok(compiler) = discover_native_c_compiler() else {
         return;
     };
-    let root = unique_temp_dir("marlin-deck-runtime-native-build-archive");
+    let root = unique_temp_dir("marlin-gerbil-native-build-archive");
     let objects = root.join("objects");
     let archive_dir = root.join("archive");
     fs::create_dir_all(&objects).expect("create object dir");
@@ -97,8 +101,9 @@ fn static_archive_packaging_consumes_real_object_files() {
         detail: None,
     };
 
-    let receipt = build_static_archive_from_link_plan(&plan, &archive_dir)
-        .expect("package object files into a static archive");
+    let receipt =
+        build_static_archive_from_link_plan(DECK_RUNTIME_NATIVE_ARCHIVE_NAME, &plan, &archive_dir)
+            .expect("package object files into a static archive");
 
     assert_eq!(receipt.archive_name, DECK_RUNTIME_NATIVE_ARCHIVE_NAME);
     assert!(receipt.archive_file.is_file());

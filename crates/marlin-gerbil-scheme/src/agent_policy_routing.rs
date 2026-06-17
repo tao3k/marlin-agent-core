@@ -45,8 +45,10 @@ pub struct GerbilAgentPolicyRoutingProjection {
     pub graph_id: String,
     pub policy_scope: String,
     pub root_node: String,
+    #[serde(rename = "routing_decision")]
     pub decision: GerbilAgentPolicyRoutingDecision,
     pub candidate_edges: Vec<String>,
+    #[serde(rename = "routing_evidence")]
     pub evidence: Vec<GerbilAgentPolicyRoutingEvidence>,
 }
 
@@ -88,6 +90,7 @@ pub enum GerbilAgentPolicyRoutingDecision {
 /// Evidence reference returned by the Gerbil AgentGraph policy routing projection.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct GerbilAgentPolicyRoutingEvidence {
+    #[serde(rename = "evidence_kind")]
     pub kind: GerbilAgentPolicyRoutingEvidenceKind,
     pub evidence_id: String,
 }
@@ -127,9 +130,9 @@ pub fn gerbil_agent_policy_routing_type_manifest() -> GerbilSchemeTypeManifest {
                 required_policy_routing_field("graph_id", "string", None),
                 required_policy_routing_field("policy_scope", "string", None),
                 required_policy_routing_field("root_node", "string", None),
-                required_policy_routing_field("decision", "string", None),
+                required_policy_routing_field("routing_decision", "string", None),
                 required_policy_routing_field("candidate_edges", "array", Some("string")),
-                required_policy_routing_field("evidence", "array", Some("object")),
+                required_policy_routing_field("routing_evidence", "array", Some("object")),
             ],
         }],
     }

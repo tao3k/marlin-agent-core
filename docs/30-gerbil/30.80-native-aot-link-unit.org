@@ -3,23 +3,33 @@
 The native AOT path for =marlin-deck-runtime= is a Gerbil/Gambit build
 boundary, not a default Cargo build-script side effect.
 
-The Scheme crate owns the Gerbil package assets, the C ABI types, and the typed
-Rust plan for producing a native link unit. The crate does not link that unit
-from its own =build.rs=. Runtime or real LLM integration crates must opt in to
-linking the native unit so normal Scheme package builds, tests, and docs do not
-inherit native compiler and Gambit linker costs.
+The Scheme crate owns the Gerbil package assets, the package build targets, the
+C ABI types, and the typed Rust plan for producing a native link unit. The crate
+does not link that unit from its own =build.rs=. Runtime or real LLM integration
+crates must opt in to linking the native unit so normal Scheme package builds,
+tests, and docs do not inherit native compiler and Gambit linker costs.
 
 ** Artifact Shape
 
-The native AOT build has four ordered compiler phases:
+The end-to-end native AOT build has four ordered compiler phases:
 
-1. =gxc -target C -s -S -O= emits the generated Gambit Scheme file.
+1. the Gerbil package target declared by =gerbil.pkg= and =build.ss= runs
+   =gxc -target C -s -S -O= and emits the generated Gambit Scheme file.
 
-2. =gsc -target C -obj= compiles the generated Scheme module object.
+2. the Rust-owned native AOT runner consumes that explicit generated file and
+   runs =gsc -target C -obj= to compile the generated Scheme module object.
 
-3. =gsc -target C -link= emits the non-flat Gambit link C source.
+3. the Rust-owned native AOT runner runs =gsc -target C -link= to emit the
+   non-flat Gambit link C source.
 
-4. =gsc -target C -cc-options -D___LIBRARY -obj= compiles the link C source.
+4. the Rust-owned native AOT runner runs
+   =gsc -target C -cc-options -D___LIBRARY -obj= to compile the link C source.
+
+Rust must not infer Gerbil package layout, hard-code =gerbil/src= paths, run
+=gxc= against source modules, or manufacture =GERBIL_LOADPATH= from package
+roots. The only Rust input for the hot native link path is the package-staged
+generated Gambit Scheme artifact, such as =deck-runtime-native~0.scm= or
+=agent-policy-routing-native~0.scm=.
 
 The link source must stay non-flat. =gsc -link -flat= avoids emitting =main=,
 but it also drags Gambit base globals into the link object and collides with
@@ -50,13 +60,16 @@ linkable binary that crashes or fails at the first selector call.
 ** Cargo Boundary
 
 =GerbilDeckRuntimeNativeAotConfig::build_link_unit= is the Rust entrypoint for
-producing the link unit. =GerbilDeckRuntimeNativeAotBuildReceipt::static_link_plan=
-projects a successful build into Cargo linker directives.
+producing the link unit from an explicit =compiled_runtime_scm= artifact. It is
+not a source-module compiler and does not discover Gerbil source targets.
+=GerbilDeckRuntimeNativeAotBuildReceipt::static_link_plan= projects a successful
+build into Cargo linker directives.
 
 =marlin-deck-runtime-native= owns the opt-in Cargo integration. Its
-=linked-native= feature runs a build script that emits the two generated object
-files and the Gambit link directives. The default crate build remains pure Rust
-and does not invoke =gxc=, =gsc=, a C compiler, or the Gambit linker.
+=linked-native= feature consumes the package-staged generated Scheme artifact,
+emits the two generated object files, and emits the Gambit link directives. The
+default crate build remains pure Rust and does not invoke =gxc=, =gsc=, a C
+compiler, or the Gambit linker.
 
 The feature build accepts these environment overrides:
 
@@ -316,13 +329,19 @@ direnv exec . cargo test -p marlin-gerbil-scheme --tests -- --nocapture
 
 #+begin_src sh
 direnv exec . cargo test -p marlin-gerbil-scheme --test unit_test aot_runtime
-direnv exec . cargo test -p marlin-deck-runtime-native-build
+direnv exec . cargo test -p marlin-gerbil-native-build
 direnv exec . cargo test -p marlin-deck-runtime-native
+direnv exec . cargo test -p marlin-agent-policy-routing-native
 direnv exec . env \
   MARLIN_DECK_RUNTIME_NATIVE_C_COMPILER=clang \
   MARLIN_GERBIL_GSC="$PWD/.data/gerbil/build/bin/gsc" \
   MARLIN_GERBIL_GXC="$PWD/.data/gerbil/build/bin/gxc" \
   cargo test -p marlin-deck-runtime-native --features linked-native --no-run
+direnv exec . env \
+  MARLIN_AGENT_POLICY_ROUTING_NATIVE_C_COMPILER=clang \
+  MARLIN_GERBIL_GSC="$PWD/.data/gerbil/build/bin/gsc" \
+  MARLIN_GERBIL_GXC="$PWD/.data/gerbil/build/bin/gxc" \
+  cargo test -p marlin-agent-policy-routing-native --features linked-native --no-run
 #+end_src
 
 The real linked typed ABI smoke used the current Scheme source and the linked

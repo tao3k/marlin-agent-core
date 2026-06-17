@@ -1,7 +1,7 @@
 #[path = "unit/artifact.rs"]
 mod artifact;
 
-#[path = "unit/aot_runtime.rs"]
+#[path = "unit/aot_runtime/mod.rs"]
 mod aot_runtime;
 
 #[path = "unit/compiler.rs"]
@@ -24,6 +24,9 @@ mod working_copy_policy;
 
 #[path = "unit/deck_runtime_native/mod.rs"]
 mod deck_runtime_native;
+
+#[path = "unit/agent_policy_routing_native/mod.rs"]
+mod agent_policy_routing_native;
 
 #[path = "unit/command/mod.rs"]
 mod command;

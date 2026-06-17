@@ -52,10 +52,11 @@ pub fn marlin_crate_verification_role_for_project(
         | "marlin-workspace-query"
         | "marlin-workspace-status"
         | "marlin-workspace-view" => MarlinCrateVerificationRole::OrgWorkspace,
-        "marlin-deck-runtime-native" | "marlin-gerbil-ir" | "marlin-gerbil-scheme" => {
-            MarlinCrateVerificationRole::GerbilRuntime
-        }
-        "marlin-deck-runtime-native-build" => MarlinCrateVerificationRole::NativeBuildSupport,
+        "marlin-agent-policy-routing-native"
+        | "marlin-deck-runtime-native"
+        | "marlin-gerbil-ir"
+        | "marlin-gerbil-scheme" => MarlinCrateVerificationRole::GerbilRuntime,
+        "marlin-gerbil-native-build" => MarlinCrateVerificationRole::NativeBuildSupport,
         "marlin-rust-project-harness-policy" => MarlinCrateVerificationRole::BuildHarnessPolicy,
         "marlin-agent-environment" | "marlin-agent-hooks" | "marlin-git-utils" => {
             MarlinCrateVerificationRole::GitOrEnvironmentBoundary

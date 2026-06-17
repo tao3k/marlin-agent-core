@@ -139,15 +139,15 @@ fn policy_routing_payload_with_schema(schema_id: &str) -> GerbilSchemeValue {
         ("graph_id", "agent-graph.policy".into()),
         ("policy_scope", "gerbil.scope.agent-topology".into()),
         ("root_node", "planner".into()),
-        ("decision", "select_edges".into()),
+        ("routing_decision", "select_edges".into()),
         (
             "candidate_edges",
             GerbilSchemeValue::vector(["planner-to-custom".into()]),
         ),
         (
-            "evidence",
+            "routing_evidence",
             GerbilSchemeValue::vector([GerbilSchemeValue::record([
-                ("kind", "gerbil_policy_receipt".into()),
+                ("evidence_kind", "gerbil_policy_receipt".into()),
                 ("evidence_id", "gerbil.policy.receipt.1".into()),
             ])]),
         ),

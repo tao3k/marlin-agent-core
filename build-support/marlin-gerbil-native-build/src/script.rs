@@ -1,33 +1,58 @@
-//! Build-script implementation for the native Deck runtime integration crate.
+//! Build-script implementation for Gerbil native integration crates.
 
 use std::{env, path::PathBuf};
 
 use crate::{
-    archive::build_static_archive_from_link_plan,
+    archive::{
+        AGENT_POLICY_ROUTING_NATIVE_ARCHIVE_NAME, DECK_RUNTIME_NATIVE_ARCHIVE_NAME,
+        build_static_archive_from_link_plan,
+    },
     discovery::{GambitLinkSearchDiscovery, find_gambit_link_search_dir_from_gsc},
     toolchain::discover_native_c_compiler,
 };
 use marlin_gerbil_scheme::{
     GerbilDeckRuntimeNativeAotBuildReceipt, GerbilDeckRuntimeNativeAotCommandReceipt,
-    GerbilDeckRuntimeNativeAotConfig, GerbilDeckRuntimeNativeStaticLinkPlan,
-    GerbilDeckRuntimeNativeStaticLinkStatus, default_gerbil_gsc_program,
+    GerbilDeckRuntimeNativeAotConfig, GerbilDeckRuntimeNativeAotProfile,
+    GerbilDeckRuntimeNativeStaticLinkPlan, GerbilDeckRuntimeNativeStaticLinkStatus,
+    default_gerbil_gsc_program,
 };
 
-const GAMBIT_LINK_SEARCH_DIR_ENV: &str = "MARLIN_DECK_RUNTIME_NATIVE_GAMBIT_LINK_SEARCH_DIR";
+const DECK_C_COMPILER_ENV: &str = "MARLIN_DECK_RUNTIME_NATIVE_C_COMPILER";
+const DECK_GAMBIT_LINK_LIBRARY_ENV: &str = "MARLIN_DECK_RUNTIME_NATIVE_GAMBIT_LINK_LIBRARY";
+const DECK_GAMBIT_LINK_SEARCH_DIR_ENV: &str = "MARLIN_DECK_RUNTIME_NATIVE_GAMBIT_LINK_SEARCH_DIR";
+const AGENT_C_COMPILER_ENV: &str = "MARLIN_AGENT_POLICY_ROUTING_NATIVE_C_COMPILER";
+const AGENT_GAMBIT_LINK_LIBRARY_ENV: &str =
+    "MARLIN_AGENT_POLICY_ROUTING_NATIVE_GAMBIT_LINK_LIBRARY";
+const AGENT_GAMBIT_LINK_SEARCH_DIR_ENV: &str =
+    "MARLIN_AGENT_POLICY_ROUTING_NATIVE_GAMBIT_LINK_SEARCH_DIR";
 
 /// Emits native Deck runtime link directives when the explicit feature is enabled.
 pub fn emit_deck_runtime_native_link_directives() {
-    emit_native_link_rerun_inputs();
+    emit_native_link_directives_for_target(NativeLinkTarget::deck_runtime());
+}
+
+/// Emits native AgentGraph policy-routing link directives when the explicit feature is enabled.
+pub fn emit_agent_policy_routing_native_link_directives() {
+    emit_native_link_directives_for_target(NativeLinkTarget::agent_policy_routing());
+}
+
+fn emit_native_link_directives_for_target(target: NativeLinkTarget) {
+    emit_native_link_rerun_inputs(target);
     if env::var_os("CARGO_FEATURE_LINKED_NATIVE").is_some() {
-        emit_native_link_directives();
+        emit_native_link_directives(target);
     }
 }
 
-fn emit_native_link_rerun_inputs() {
+fn emit_native_link_rerun_inputs(target: NativeLinkTarget) {
     for name in [
-        "MARLIN_DECK_RUNTIME_NATIVE_C_COMPILER",
-        "MARLIN_DECK_RUNTIME_NATIVE_GAMBIT_LINK_LIBRARY",
-        GAMBIT_LINK_SEARCH_DIR_ENV,
+        target.c_compiler_env,
+        target.gambit_link_library_env,
+        target.gambit_link_search_dir_env,
+    ] {
+        println!("cargo:rerun-if-env-changed={name}");
+    }
+
+    for name in [
         "AR",
         "CC",
         "CFLAGS",
@@ -44,18 +69,18 @@ fn emit_native_link_rerun_inputs() {
     }
 }
 
-fn emit_native_link_directives() {
-    let root = out_dir().join("deck-runtime-native-link-root");
-    let mut config = GerbilDeckRuntimeNativeAotConfig::new(&root);
-    if let Some(c_compiler) = env::var_os("MARLIN_DECK_RUNTIME_NATIVE_C_COMPILER") {
+fn emit_native_link_directives(target: NativeLinkTarget) {
+    let root = out_dir().join(target.link_root_dir);
+    let mut config = GerbilDeckRuntimeNativeAotConfig::new_for_profile(&root, target.profile);
+    if let Some(c_compiler) = env::var_os(target.c_compiler_env) {
         config = config.with_c_compiler(c_compiler.to_string_lossy());
     } else if let Ok(c_compiler) = discover_native_c_compiler() {
         config = config.with_c_compiler(c_compiler.program.to_string_lossy());
     }
-    if let Some(link_library) = env::var_os("MARLIN_DECK_RUNTIME_NATIVE_GAMBIT_LINK_LIBRARY") {
+    if let Some(link_library) = env::var_os(target.gambit_link_library_env) {
         config = config.with_gambit_link_library(link_library.to_string_lossy());
     }
-    if let Some(search_dir) = env::var_os(GAMBIT_LINK_SEARCH_DIR_ENV) {
+    if let Some(search_dir) = env::var_os(target.gambit_link_search_dir_env) {
         config = config.with_gambit_link_search_dir(search_dir);
     } else if let Some(discovery) = discover_gambit_link_search_dir() {
         println!(
@@ -70,19 +95,21 @@ fn emit_native_link_directives() {
     if link_plan.status != GerbilDeckRuntimeNativeStaticLinkStatus::Ready {
         if running_under_clippy() {
             println!(
-                "cargo:warning=native Deck runtime link unit skipped during Clippy: {}",
+                "cargo:warning=native {} link unit skipped during Clippy: {}",
+                target.label,
                 native_link_failure_detail(&receipt, &link_plan)
             );
             return;
         }
         panic!(
-            "native Deck runtime link unit is not ready: {}",
+            "native {} link unit is not ready: {}",
+            target.label,
             native_link_failure_detail(&receipt, &link_plan)
         );
     }
 
-    let archive_dir = out_dir().join("deck-runtime-native-link-archive");
-    match build_static_archive_from_link_plan(&link_plan, &archive_dir) {
+    let archive_dir = out_dir().join(target.archive_dir);
+    match build_static_archive_from_link_plan(target.archive_name, &link_plan, &archive_dir) {
         Ok(archive) => {
             println!("cargo:rerun-if-changed={}", archive.archive_file.display());
             for directive in archive.cargo_directives {
@@ -91,11 +118,52 @@ fn emit_native_link_directives() {
         }
         Err(error) => {
             println!(
-                "cargo:warning=native Deck runtime archive packaging failed; falling back to object link args: {error}"
+                "cargo:warning=native {} archive packaging failed; falling back to object link args: {error}",
+                target.label
             );
             for directive in link_plan.cargo_directives {
                 println!("{}", directive.line());
             }
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct NativeLinkTarget {
+    profile: GerbilDeckRuntimeNativeAotProfile,
+    label: &'static str,
+    link_root_dir: &'static str,
+    archive_dir: &'static str,
+    archive_name: &'static str,
+    c_compiler_env: &'static str,
+    gambit_link_library_env: &'static str,
+    gambit_link_search_dir_env: &'static str,
+}
+
+impl NativeLinkTarget {
+    const fn deck_runtime() -> Self {
+        Self {
+            profile: GerbilDeckRuntimeNativeAotProfile::DeckRuntime,
+            label: "Deck runtime",
+            link_root_dir: "deck-runtime-native-link-root",
+            archive_dir: "deck-runtime-native-link-archive",
+            archive_name: DECK_RUNTIME_NATIVE_ARCHIVE_NAME,
+            c_compiler_env: DECK_C_COMPILER_ENV,
+            gambit_link_library_env: DECK_GAMBIT_LINK_LIBRARY_ENV,
+            gambit_link_search_dir_env: DECK_GAMBIT_LINK_SEARCH_DIR_ENV,
+        }
+    }
+
+    const fn agent_policy_routing() -> Self {
+        Self {
+            profile: GerbilDeckRuntimeNativeAotProfile::AgentPolicyRouting,
+            label: "AgentGraph policy-routing",
+            link_root_dir: "agent-policy-routing-native-link-root",
+            archive_dir: "agent-policy-routing-native-link-archive",
+            archive_name: AGENT_POLICY_ROUTING_NATIVE_ARCHIVE_NAME,
+            c_compiler_env: AGENT_C_COMPILER_ENV,
+            gambit_link_library_env: AGENT_GAMBIT_LINK_LIBRARY_ENV,
+            gambit_link_search_dir_env: AGENT_GAMBIT_LINK_SEARCH_DIR_ENV,
         }
     }
 }

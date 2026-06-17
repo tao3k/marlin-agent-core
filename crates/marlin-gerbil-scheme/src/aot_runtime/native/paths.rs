@@ -1,20 +1,26 @@
-//! Path derivation for native Gerbil Deck runtime AOT artifacts.
+//! Path derivation for native Gerbil runtime AOT artifacts.
 
 use std::path::{Path, PathBuf};
 
 pub(super) const GERBIL_DECK_RUNTIME_NATIVE_AOT_OUTPUT_DIR: &str = ".gerbil/native";
-const GERBIL_DECK_RUNTIME_NATIVE_ARTIFACT_STEM: &str = "deck-runtime-native~0";
+pub(super) const GERBIL_DECK_RUNTIME_NATIVE_ARTIFACT_STEM: &str = "deck-runtime-native~0";
+pub(super) const GERBIL_AGENT_POLICY_ROUTING_NATIVE_ARTIFACT_STEM: &str =
+    "agent-policy-routing-native~0";
 pub(super) const GERBIL_DECK_RUNTIME_NATIVE_SELECT_SYMBOL: &str =
     "marlin_deck_runtime_select_model_route";
 pub(super) const GERBIL_DECK_RUNTIME_NATIVE_INITIALIZE_SYMBOL: &str =
     "marlin_deck_runtime_initialize";
+pub(super) const GERBIL_AGENT_POLICY_ROUTING_NATIVE_SELECT_SYMBOL: &str =
+    "marlin_agent_policy_routing_select_edges";
+pub(super) const GERBIL_AGENT_POLICY_ROUTING_NATIVE_INITIALIZE_SYMBOL: &str =
+    "marlin_agent_policy_routing_initialize";
 
 pub(super) fn native_output_dir(root: &Path) -> PathBuf {
     root.join(GERBIL_DECK_RUNTIME_NATIVE_AOT_OUTPUT_DIR)
 }
 
-pub(super) fn default_compiled_runtime_scm(output_dir: &Path) -> PathBuf {
-    output_dir.join(format!("{GERBIL_DECK_RUNTIME_NATIVE_ARTIFACT_STEM}.scm"))
+pub(super) fn default_compiled_runtime_scm(output_dir: &Path, artifact_stem: &str) -> PathBuf {
+    output_dir.join(format!("{artifact_stem}.scm"))
 }
 
 pub(super) fn compiled_runtime_object(compiled_runtime_scm: &Path) -> PathBuf {

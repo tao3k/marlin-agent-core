@@ -198,6 +198,51 @@ the Scheme type manifest, projection contract, native ABI readiness plan, and
 native projection request, then projects Scheme values into typed
 =AgentGraphId=, =GerbilPolicyScopeRef=, =AgentNodeId=, =AgentEdgeId=, and
 evidence refs before =PolicyScoped= planning can consume them.
+- =crates/marlin-gerbil-scheme/gerbil/src/marlin/agent-policy-routing-native-projection.ss=
+owns the Gerbil-side POO projection producer for AgentGraph policy routing.
+The Scheme module emits the same ABI id, type id, schema id, native symbol, and
+POO slots that Rust consumes, while avoiding POO-reserved generic slot names by
+projecting =routing_decision=, =routing_evidence=, and =evidence_kind= into
+Rust-owned typed fields.
+- =crates/marlin-gerbil-scheme/gerbil/src/marlin/agent-policy-routing-native.ss=
+owns the Gerbil-side native C export for AgentGraph policy routing. It maps the
+native request into the existing POO projection producer and writes only the
+native slot projection consumed by Rust. The module is a =gsc:= target in
+=gerbil/build.ss= because ordinary =gxtest= interpretation cannot load
+=c-declare= forms.
+- =crates/marlin-gerbil-scheme/src/agent_policy_routing_native.rs= owns the
+Rust-side native C ABI wrapper for AgentGraph policy routing. The ABI passes
+borrowed UTF-8 slot projections and evidence refs, never JSON or owned byte
+protocol frames, then Rust constructs the typed =GerbilSchemeTypedValue= and
+projects it through the existing
+=project_gerbil_agent_policy_routing_native_receipt= path into
+=AgentPolicyRoutingReceipt=.
+- =crates/marlin-gerbil-scheme/tests/unit/agent_policy_routing_native= covers
+header/layout stability, native status handling, initializer failure, invalid
+UTF-8 rejection, and a fake linked selector smoke from native slot projection
+to typed AgentGraph routing receipt.
+- =crates/marlin-gerbil-scheme/src/aot_runtime/native= now carries an explicit
+native AOT profile boundary. The default profile remains Deck runtime, while
+=GerbilDeckRuntimeNativeAotProfile::AgentPolicyRouting= derives the
+=agent-policy-routing-native~0= artifact stem, AgentGraph policy-routing C ABI
+header, required =marlin_agent_policy_routing_initialize= and
+=marlin_agent_policy_routing_select_edges= symbols, and
+=marlin.agent.policy-routing.native= readiness ABI. The
+=marlin-gerbil-native-aot= CLI exposes the same boundary through
+=--profile agent-policy-routing=.
+- =crates/marlin-gerbil-scheme/tests/unit/aot_runtime= is split into a
+folder-first suite and covers both the Deck default profile and AgentGraph
+policy-routing profile without mixing the two symbol contracts.
+- =build-support/marlin-gerbil-native-build= is now the shared Gerbil native
+build-script support crate. It exposes explicit Deck runtime and AgentGraph
+policy-routing link entrypoints, profile-specific archive names, and shared
+cc/Gambit discovery without making AgentGraph depend on a Deck-named build
+support boundary.
+- =crates/marlin-agent-policy-routing-native= is the dedicated AgentGraph
+policy-routing linked-native crate. Its default build is a no-link typed Rust
+crate; the =linked-native= feature calls the AgentGraph policy-routing native
+build entrypoint and exposes a linked selector only after the real symbols are
+available.
 - =marlin-agent-runtime= owns =project_agent_graph_planning_receipt= so
 planning receipts can become runtime admission receipts without giving the
 runtime layer topology selection authority, including malformed planning
@@ -239,19 +284,40 @@ before it can produce candidate edges.
 7. =marlin-gerbil-scheme= validates the AgentGraph policy routing native ABI
 projection before converting Scheme values into Rust =AgentPolicyRoutingReceipt=
 data.
+8. Gerbil now has a real POO producer module for AgentGraph policy routing
+projections, with a focused =gxtest= contract.
+9. Rust now has the AgentGraph policy routing native C ABI wrapper plus focused
+layout/error/projection tests proving the native slot projection enters the
+typed receipt path without text serialization.
+10. Gerbil now has a compiled native C export module for AgentGraph policy
+routing wired into =gxi build.ss= as =gsc:= and =ssi:= targets.
+11. Rust native AOT planning now supports an AgentGraph policy-routing profile
+and CLI selection via =--profile agent-policy-routing=.
+12. AgentGraph policy-routing now has a dedicated linked-native Rust crate and
+the old Deck-only build-support package has been replaced with
+=marlin-gerbil-native-build= profile-aware support.
 ** Remaining Gaps
-1. Wire the actual Gerbil Scheme package symbol that emits
-=GerbilAgentPolicyRoutingProjection= from live POO policy objects; keep the
-Rust-side native projection contract as the admission gate and do not let
-Gerbil manufacture Rust handlers or runtime requests.
-2. Add a future =marlin-agent-graph= to =GraphLoopController= execution
+1. Run the live object symbol audit for the AgentGraph policy-routing profile
+against the gsc/gxi-generated =agent-policy-routing-native~0= artifact.
+2. Generate or stage the =agent-policy-routing-native~0.scm= compiled runtime
+artifact from the Gerbil package target declared by =gerbil.pkg= and =build.ss=.
+=marlin-agent-policy-routing-native --features linked-native= should consume
+that staged artifact to build the real object/archive instead of compiling only
+the no-link default crate. A local =--features linked-native --no-run= check with
+explicit =MARLIN_GERBIL_GSC= now reaches =MissingCompiledRuntime=, which
+confirms the next blocker is package-owned artifact staging rather than Cargo
+dependency wiring or Rust-side source discovery.
+3. Link the audited gsc/gxi-generated AgentGraph policy-routing object through
+=marlin-agent-policy-routing-native= and record the live object smoke
+separately from the fake linked C selector smoke.
+4. Add a future =marlin-agent-graph= to =GraphLoopController= execution
 handoff only after readiness receipts are replayable in harness evidence.
 ** Acceptance Criteria
 - =GraphLoopController= gains no team, scheduling, election, or delegation
   ownership.
 - =marlin-agent-core= remains a facade and does not become the orchestration
   crate.
-- The first implementation crate exposes typed topology contracts and serde
-  tests only.
+- The first implementation crate exposes typed topology contracts and planning
+receipts without owning execution.
 - Symphony-specific algorithms stay deferred behind stable =AgentGraph=
   receipts.

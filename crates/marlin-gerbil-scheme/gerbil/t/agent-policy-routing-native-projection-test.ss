@@ -47,10 +47,10 @@
     (check (.get projection graph_id) => "agent-graph.policy")
     (check (.get projection policy_scope) => "gerbil.scope.agent-topology")
     (check (.get projection root_node) => "planner")
-    (check (.get projection decision) => "select_edges")
+    (check (.get projection routing_decision) => "select_edges")
     (check (.get projection candidate_edges) => '("planner-to-custom"))
-    (let (evidence (car (.get projection evidence)))
-      (check (.get evidence kind) => "gerbil_policy_receipt")
+    (let (evidence (car (.get projection routing_evidence)))
+      (check (.get evidence evidence_kind) => "gerbil_policy_receipt")
       (check (.get evidence evidence_id) => "gerbil.policy.receipt.1"))))
 
 (check-agent-policy-routing-native-projection-contract)

@@ -14,4 +14,5 @@
         "marlin-policy-pack-inventory-test"
         "deck-runtime-script-interface-test"
         "deck-runtime-script-performance-test"
+        "agent-policy-routing-native-projection-test"
         "harness-policy-test")

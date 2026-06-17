@@ -4,17 +4,17 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use marlin_deck_runtime_native_build::write_native_c_header;
+use marlin_gerbil_native_build::write_native_c_header;
 
 #[test]
 fn cbindgen_generates_minimal_c_header() {
-    let root = unique_temp_dir("marlin-deck-runtime-native-build-cbindgen");
+    let root = unique_temp_dir("marlin-gerbil-native-build-cbindgen");
     let src = root.join("src");
     fs::create_dir_all(&src).expect("create temp crate src");
     fs::write(
         root.join("Cargo.toml"),
         r#"[package]
-name = "marlin-deck-runtime-native-cbindgen-smoke"
+name = "marlin-gerbil-native-cbindgen-smoke"
 version = "0.0.0"
 edition = "2024"
 

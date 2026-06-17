@@ -14,7 +14,7 @@ use super::resolver::CompiledModelRouteResolver;
 /// Error raised when model route admission cannot produce a decision.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ModelRouteAdmissionError {
-    NoMatchingRoute { intent: ModelRouteIntent },
+    NoMatchingRoute { intent: Box<ModelRouteIntent> },
 }
 
 impl Display for ModelRouteAdmissionError {
@@ -39,7 +39,7 @@ pub fn admit_model_route_with_resolver(
     let intent = request.intent();
     let decision = resolver.resolve(&request.route_request).ok_or_else(|| {
         ModelRouteAdmissionError::NoMatchingRoute {
-            intent: intent.clone(),
+            intent: Box::new(intent.clone()),
         }
     })?;
 

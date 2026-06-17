@@ -1,6 +1,6 @@
 use std::ffi::OsStr;
 
-use marlin_deck_runtime_native_build::rustc_wrapper_is_clippy;
+use marlin_gerbil_native_build::rustc_wrapper_is_clippy;
 
 #[test]
 fn detects_clippy_driver_from_rustc_workspace_wrapper() {

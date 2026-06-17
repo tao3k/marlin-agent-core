@@ -1,4 +1,4 @@
-#[path = "unit/config.rs"]
+#[path = "unit/config/mod.rs"]
 mod config;
 #[path = "unit/dependency_topology.rs"]
 mod dependency_topology;

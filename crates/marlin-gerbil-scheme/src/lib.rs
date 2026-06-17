@@ -1,6 +1,7 @@
 //! `Gerbil Scheme` compiler boundary for typed `marlin` artifacts.
 
 mod agent_policy_routing;
+mod agent_policy_routing_native;
 mod aot_repair_cli;
 mod aot_runtime;
 mod artifact;
@@ -38,6 +39,21 @@ pub use agent_policy_routing::{
     project_gerbil_agent_policy_routing_native_receipt,
     project_gerbil_agent_policy_routing_receipt,
 };
+pub use agent_policy_routing_native::{
+    GERBIL_AGENT_POLICY_ROUTING_NATIVE_ABI_ID, GERBIL_AGENT_POLICY_ROUTING_NATIVE_ABI_VERSION,
+    GERBIL_AGENT_POLICY_ROUTING_NATIVE_HEADER_PATH,
+    GERBIL_AGENT_POLICY_ROUTING_NATIVE_HEADER_SOURCE,
+    GERBIL_AGENT_POLICY_ROUTING_NATIVE_STATUS_ABI_MISMATCH,
+    GERBIL_AGENT_POLICY_ROUTING_NATIVE_STATUS_INVALID_PROJECTION,
+    GERBIL_AGENT_POLICY_ROUTING_NATIVE_STATUS_NULL_POINTER,
+    GERBIL_AGENT_POLICY_ROUTING_NATIVE_STATUS_OK, GerbilAgentPolicyRoutingNativeAbiError,
+    GerbilAgentPolicyRoutingNativeEvidence, GerbilAgentPolicyRoutingNativeEvidenceList,
+    GerbilAgentPolicyRoutingNativeEvidenceRef, GerbilAgentPolicyRoutingNativeInitializeFn,
+    GerbilAgentPolicyRoutingNativeProjection, GerbilAgentPolicyRoutingNativeRequest,
+    GerbilAgentPolicyRoutingNativeSelectEdgesFn, GerbilAgentPolicyRoutingNativeSelectEdgesRequest,
+    GerbilAgentPolicyRoutingNativeSelector, GerbilAgentPolicyRoutingNativeStatus,
+    GerbilAgentPolicyRoutingNativeUtf8, GerbilAgentPolicyRoutingNativeUtf8List,
+};
 pub use aot_repair_cli::run_gerbil_aot_repair_cli;
 pub use aot_runtime::{
     GerbilAotBackendRepairReceipt, GerbilAotBackendRepairStatus, GerbilAotBackendShimReceipt,
@@ -45,11 +61,12 @@ pub use aot_runtime::{
     GerbilAotProbeReceipt, GerbilAotProbeStatus, GerbilDeckRuntimeNativeAotBuildReceipt,
     GerbilDeckRuntimeNativeAotBuildStatus, GerbilDeckRuntimeNativeAotCommandPlan,
     GerbilDeckRuntimeNativeAotCommandReceipt, GerbilDeckRuntimeNativeAotConfig,
-    GerbilDeckRuntimeNativeAotPlan, GerbilDeckRuntimeNativeAotStatus,
-    GerbilDeckRuntimeNativeCargoDirective, GerbilDeckRuntimeNativeCargoDirectiveKind,
-    GerbilDeckRuntimeNativeStaticLinkPlan, GerbilDeckRuntimeNativeStaticLinkStatus,
-    GerbilDeckRuntimeNativeSymbol, GerbilDeckRuntimeNativeSymbolAuditMethod, GerbilNativeCCompiler,
-    GerbilNativeLinkLibrary, GerbilNativeSymbolAuditor,
+    GerbilDeckRuntimeNativeAotPlan, GerbilDeckRuntimeNativeAotProfile,
+    GerbilDeckRuntimeNativeAotStatus, GerbilDeckRuntimeNativeCargoDirective,
+    GerbilDeckRuntimeNativeCargoDirectiveKind, GerbilDeckRuntimeNativeStaticLinkPlan,
+    GerbilDeckRuntimeNativeStaticLinkStatus, GerbilDeckRuntimeNativeSymbol,
+    GerbilDeckRuntimeNativeSymbolAuditMethod, GerbilNativeCCompiler, GerbilNativeLinkLibrary,
+    GerbilNativeSymbolAuditor,
 };
 pub use artifact::{GerbilArtifactKind, GerbilArtifactKindMismatch, GerbilCompiledArtifact};
 pub use command::{

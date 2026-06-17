@@ -8,9 +8,17 @@ package: modules
         :modules/policy-extension
         :modules/policy-module
         :modules/policy-object
+        :modules/workspace-policy
+        :modules/session-policy
+        :modules/agent-policy
+        :modules/hook-selection-policy
+        :modules/model-route-policy
+        :modules/continuation-profile-policy
+        :modules/human-review-policy
         :modules/evidence-policy
         :modules/failure-policy
         :modules/memory-policy
+        :modules/catalog-projection-policy
         :modules/evaluation
         :modules/policy-pack)
 
@@ -57,6 +65,29 @@ package: modules
         marlin-replace-object
         marlin-policy-object-operation?
         marlin-policy-pack-apply-operations
+        marlin-workspace-policy-family
+        marlinWorkspacePolicy
+        marlinDefaultWorkspacePolicy
+        marlin-session-policy-family
+        marlinSessionPolicy
+        marlinDefaultSessionPolicy
+        marlin-agent-policy-family
+        marlinAgentPolicy
+        marlinDefaultAgentPolicy
+        marlin-hook-selection-policy-family
+        marlinHookSelectionPolicy
+        marlinDefaultHookSelectionPolicy
+        marlin-model-route-policy-family
+        marlinModelRoutePolicy
+        marlinDefaultModelRoutePolicy
+        marlin-continuation-profile-policy-family
+        marlin-continuation-profile-family
+        marlinContinuationProfilePolicy
+        marlinContinuationProfile
+        marlinDefaultContinuationProfilePolicy
+        marlin-human-review-policy-family
+        marlinHumanReviewPolicy
+        marlinDefaultHumanReviewPolicy
         marlin-evidence-graph-policy-family
         marlinEvidenceGraphPolicy
         marlinDefaultEvidenceGraphPolicy
@@ -66,6 +97,9 @@ package: modules
         marlin-memory-trigger-policy-family
         marlinMemoryTriggerPolicy
         marlinDefaultMemoryTriggerPolicy
+        marlin-catalog-projection-policy-family
+        marlinCatalogProjectionPolicy
+        marlinDefaultCatalogProjectionPolicy
         marlinPolicyPack
         defmarlin-policy-pack
         marlinDefaultPolicyPack

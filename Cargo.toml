@@ -1,6 +1,6 @@
 [workspace]
 members = [
-    "build-support/marlin-deck-runtime-native-build",
+    "build-support/marlin-gerbil-native-build",
     "crates/marlin-agent-core",
     "crates/marlin-agent-environment",
     "crates/marlin-agent-graph",
@@ -8,6 +8,7 @@ members = [
     "crates/marlin-agent-harness-types",
     "crates/marlin-agent-hooks",
     "crates/marlin-agent-kernel",
+    "crates/marlin-agent-policy-routing-native",
     "crates/marlin-agent-protocol",
     "crates/marlin-agent-route",
     "crates/marlin-agent-runtime",
@@ -74,6 +75,7 @@ marlin-agent-harness = { path = "crates/marlin-agent-harness", version = "0.1.0"
 marlin-agent-harness-types = { path = "crates/marlin-agent-harness-types", version = "0.1.0" }
 marlin-agent-hooks = { path = "crates/marlin-agent-hooks", version = "0.1.0" }
 marlin-agent-kernel = { path = "crates/marlin-agent-kernel", version = "0.1.0" }
+marlin-agent-policy-routing-native = { path = "crates/marlin-agent-policy-routing-native", version = "0.1.0" }
 marlin-agent-protocol = { path = "crates/marlin-agent-protocol", version = "0.1.0" }
 marlin-agent-route = { path = "crates/marlin-agent-route", version = "0.1.0" }
 marlin-agent-runtime = { path = "crates/marlin-agent-runtime", version = "0.1.0" }
@@ -93,7 +95,7 @@ marlin-workspace-protocol = { path = "crates/marlin-workspace-protocol", version
 marlin-workspace-query = { path = "crates/marlin-workspace-query", version = "0.1.0" }
 marlin-workspace-status = { path = "crates/marlin-workspace-status", version = "0.1.0" }
 marlin-workspace-view = { path = "crates/marlin-workspace-view", version = "0.1.0" }
-marlin-deck-runtime-native-build = { path = "build-support/marlin-deck-runtime-native-build", version = "0.1.0" }
+marlin-gerbil-native-build = { path = "build-support/marlin-gerbil-native-build", version = "0.1.0" }
 
 [profile.release]
 # Thin LTO keeps useful cross-crate optimization without the full monolithic
