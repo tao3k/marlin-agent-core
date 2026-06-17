@@ -18,6 +18,9 @@ package: marlin
 (export marlin-deck-runtime-debug-policy-extension-source
         marlin-deck-runtime-debug-policy-extension
         marlin-deck-runtime-debug-policy-module
+        marlin-deck-runtime-debug-policy-pack
+        marlin-deck-runtime-debug-policy-pack-catalog
+        marlin-deck-runtime-debug-policy-pack-presentation
         marlin-deck-runtime-debug-policy-module-catalog
         marlin-deck-runtime-debug-policy-module-evaluation
         marlin-deck-runtime-debug-policy-module-system-presentation
@@ -123,6 +126,94 @@ package: marlin
   (receipt-kind marlin-deck-runtime-extension-receipt-kind)
   (gate-profile "policy-substrate")
   (metadata '((owner . "debug-cli") (surface . "policy-substrate-gate"))))
+
+;;; Boundary: The extension itself is a prefab policy object.
+;; MarlinResult <- MarlinInput
+(def debug-policy-extension-object
+  (marlinPolicyObject
+   "subagent-policy-extension"
+   "debug-policy-extension"
+   marlin-deck-runtime-debug-policy-extension
+   '((owner . "debug-cli") (surface . "prefab-object"))))
+
+;;; Boundary: A debug review policy shows disabled furniture in receipts.
+;; MarlinResult <- MarlinInput
+(def debug-policy-review-object
+  (marlinPolicyObject
+   "human-review-policy"
+   "debug-human-review"
+   (.o reviewer: "root-agent"
+       trigger: "dangerous-tool")
+   '((owner . "debug-cli") (surface . "prefab-object"))))
+
+;;; Boundary: A debug hook selector object names an existing Rust handler id.
+;; MarlinResult <- MarlinInput
+(def debug-policy-hook-object
+  (marlinPolicyObject
+   "hook-selection-policy"
+   "debug-runtime-catalog-hook"
+   (.o hook-id: "debug-runtime-catalog-hook"
+       action: "register")
+   '((owner . "debug-cli") (surface . "prefab-object"))))
+
+;;; Boundary: Replacement model route remains Scheme policy data only.
+;; MarlinResult <- MarlinInput
+(def debug-policy-fast-route-object
+  (marlinPolicyObject
+   "model-route-policy"
+   "debug-fast-route"
+   (.o provider: "openai"
+       model: "gpt-5.4-mini"
+       route: "debug-fast")
+   '((owner . "debug-cli") (surface . "prefab-object"))))
+
+;;; Boundary: Added memory object demonstrates extension by object surgery.
+;; MarlinResult <- MarlinInput
+(def debug-policy-memory-object
+  (marlinPolicyObject
+   "memory-trigger-policy"
+   "debug-memory-trigger"
+   (.o trigger: "context-pressure"
+       action: "compact")
+   '((owner . "debug-cli") (surface . "prefab-object"))))
+
+;;; Boundary: Debug pack is the prefab/policy-pack surface for the CLI.
+;; MarlinResult <- MarlinInput
+(defmarlin-policy-pack marlin-deck-runtime-debug-policy-pack
+  (id "debug-policy-prefab-pack")
+  (module marlin-deck-runtime-debug-policy-module)
+  (policy-objects debug-policy-extension-object
+                  debug-policy-review-object
+                  debug-policy-hook-object)
+  (object-operations
+   (marlin-add-object
+    debug-policy-memory-object
+    "add debug memory policy object")
+   (marlin-remove-object
+    "hook-selection-policy"
+    "debug-runtime-catalog-hook"
+    "Rust catalog owns hook handler lookup")
+   (marlin-disable-object
+    "human-review-policy"
+    "debug-human-review"
+    "disabled by debug prefab surgery")
+   (marlin-replace-object
+    "subagent-policy-extension"
+    "debug-policy-extension"
+    debug-policy-fast-route-object
+    "replace extension object with route policy data in pack only"))
+  (allowed-hook-ids "debug-runtime-catalog-hook")
+  (metadata '((owner . "debug-cli") (surface . "policy-prefab-pack"))))
+
+;;; Boundary: Debug pack catalogs keep pack selection first-class.
+;; MarlinResult <- MarlinInput
+(def (marlin-deck-runtime-debug-policy-pack-catalog)
+  (marlinPackCatalog marlin-deck-runtime-debug-policy-pack))
+
+;;; Boundary: Debug CLI reads pack presentation as scalar facts.
+;; MarlinResult <- MarlinInput
+(def (marlin-deck-runtime-debug-policy-pack-presentation)
+  (marlinPolicyPackPresentation marlin-deck-runtime-debug-policy-pack))
 
 ;;; Boundary: Module catalog is a first-class Scheme value.
 ;; MarlinResult <- MarlinInput

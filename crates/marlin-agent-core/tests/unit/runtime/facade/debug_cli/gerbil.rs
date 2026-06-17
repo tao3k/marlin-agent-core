@@ -112,6 +112,41 @@ fn debug_cli_gerbil_policy_receipt_runs_scheme_policy_engine() {
         summary["module_system_scheme_manufactures_rust_handlers"],
         false
     );
+    assert_eq!(summary["policy_pack_kind"], "marlin.modules.policy-pack.v1");
+    assert_eq!(summary["policy_pack_id"], "debug-policy-prefab-pack");
+    assert_eq!(
+        summary["policy_pack_presentation_kind"],
+        "marlin.modules.policy-pack-presentation.v1"
+    );
+    assert_eq!(
+        summary["policy_pack_module_system_presentation_kind"],
+        "marlin.modules.system-presentation.v1"
+    );
+    assert_eq!(summary["policy_pack_object_count"], 3);
+    assert_eq!(summary["policy_pack_disabled_object_count"], 1);
+    assert_eq!(summary["policy_pack_operation_count"], 4);
+    assert_eq!(summary["policy_pack_surgery_receipt_count"], 4);
+    assert_eq!(summary["policy_pack_add_count"], 1);
+    assert_eq!(summary["policy_pack_remove_count"], 1);
+    assert_eq!(summary["policy_pack_disable_count"], 1);
+    assert_eq!(summary["policy_pack_replace_count"], 1);
+    assert_eq!(summary["policy_pack_matched_surgery_receipt_count"], 4);
+    assert_eq!(summary["policy_pack_allowed_hook_count"], 1);
+    assert_eq!(
+        summary["policy_pack_import_graph_owner"],
+        "gerbil-module-system"
+    );
+    assert_eq!(summary["policy_pack_option_merge_owner"], "gerbil-poo");
+    assert_eq!(
+        summary["policy_pack_extension_composition_owner"],
+        "gerbil-poo"
+    );
+    assert_eq!(
+        summary["policy_pack_native_projection_payload_owner"],
+        "rust"
+    );
+    assert_eq!(summary["policy_pack_rust_parses_scheme_source"], false);
+    assert_eq!(summary["policy_pack_rust_handler_manufactured"], false);
     assert_eq!(
         summary["policy_substrate_gate_kind"],
         "marlin.modules.policy-substrate-gate.v1"

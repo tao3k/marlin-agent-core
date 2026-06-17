@@ -39,6 +39,11 @@
 (def user-interface-presentation
   (user-interface-module-system-presentation))
 
+;;; Boundary: Prefab presentation shows module-pack object surgery to users.
+;; UserInterfaceWorkflowResult <- UserInterfaceWorkflowContext
+(def user-interface-pack-presentation
+  (user-interface-policy-pack-presentation))
+
 ;;; Boundary: Evaluation is projected by the upstream workflow utility.
 ;; UserInterfaceWorkflowResult <- UserInterfaceWorkflowContext
 (def user-interface-evaluation
@@ -139,6 +144,48 @@
 (check (.get user-interface-presentation rust-parses-scheme-source)
        => #f)
 (check (.get user-interface-presentation scheme-manufactures-rust-handlers)
+       => #f)
+(check (.get user-interface-policy-pack kind)
+       => marlin-policy-pack-kind)
+(check (.get user-interface-policy-pack id)
+       => "user-interface-prefab-pack")
+(check (.get (user-interface-policy-pack-catalog) kind)
+       => marlin-pack-catalog-kind)
+(check (.get user-interface-pack-presentation kind)
+       => marlin-policy-pack-presentation-kind)
+(check (.get user-interface-pack-presentation pack-id)
+       => "user-interface-prefab-pack")
+(check (.get user-interface-pack-presentation
+             module-system-presentation-kind)
+       => marlin-module-system-presentation-kind)
+(check (.get user-interface-pack-presentation policy-object-count) => 3)
+(check (.get user-interface-pack-presentation object-operation-count) => 4)
+(check (.get user-interface-pack-presentation
+             object-surgery-receipt-count)
+       => 4)
+(check (.get user-interface-pack-presentation add-operation-count) => 1)
+(check (.get user-interface-pack-presentation remove-operation-count) => 1)
+(check (.get user-interface-pack-presentation disable-operation-count) => 1)
+(check (.get user-interface-pack-presentation replace-operation-count) => 1)
+(check (.get user-interface-pack-presentation
+             matched-surgery-receipt-count)
+       => 4)
+(check (.get user-interface-pack-presentation
+             disabled-policy-object-count)
+       => 1)
+(check (.get user-interface-pack-presentation allowed-hook-count) => 1)
+(check (.get user-interface-pack-presentation import-graph-owner)
+       => "gerbil-module-system")
+(check (.get user-interface-pack-presentation option-merge-owner)
+       => "gerbil-poo")
+(check (.get user-interface-pack-presentation
+             native-projection-payload-owner)
+       => "rust")
+(check (.get user-interface-pack-presentation
+             rust-parses-scheme-source)
+       => #f)
+(check (.get user-interface-pack-presentation
+             rust-handler-manufactured)
        => #f)
 (check (.get user-interface-receipt script-id) => "user-interface-worker-script")
 (check (.get user-interface-receipt extension-id) => "user-interface-worker-extension")

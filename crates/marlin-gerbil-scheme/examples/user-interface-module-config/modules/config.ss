@@ -15,7 +15,10 @@
         user-interface-module-catalog
         user-interface-module-evaluation
         user-interface-module-system-presentation
-        user-interface-module-workflow)
+        user-interface-module-workflow
+        user-interface-policy-pack
+        user-interface-policy-pack-catalog
+        user-interface-policy-pack-presentation)
 
 ;;; Boundary: User interface config is a POO module object, not runtime plumbing.
 ;; UserInterfaceWorkflowResult <- UserInterfaceWorkflowContext
@@ -71,3 +74,88 @@
   (marlin-module-workflow
    user-interface-module-config
    '("runtime-catalog-user-interface-hook")))
+
+;;; Boundary: Prefab pack object wraps the exported subagent extension.
+;; UserInterfaceWorkflowResult <- UserInterfaceWorkflowContext
+(def user-interface-subagent-policy-object
+  (marlinPolicyObject
+   "subagent-policy-extension"
+   "user-interface-subagent-policy-extension"
+   user-interface-subagent-policy-extension
+   '((owner . "user-interface-worker") (surface . "prefab-object"))))
+
+;;; Boundary: Continuation policy stays a POO object before Rust projection.
+;; UserInterfaceWorkflowResult <- UserInterfaceWorkflowContext
+(def user-interface-continuation-policy-object
+  (marlinPolicyObject
+   "continuation-profile"
+   "user-interface-loop-continuation"
+   user-interface-loop-continuation-profile
+   '((owner . "user-interface-worker") (surface . "prefab-object"))))
+
+;;; Boundary: Hook selector object only names an existing Rust catalog handler.
+;; UserInterfaceWorkflowResult <- UserInterfaceWorkflowContext
+(def user-interface-hook-policy-object
+  (marlinPolicyObject
+   "hook-selection-policy"
+   "runtime-catalog-user-interface-hook"
+   (.o hook-id: "runtime-catalog-user-interface-hook"
+       action: "register")
+   '((owner . "user-interface-worker") (surface . "prefab-object"))))
+
+;;; Boundary: Added memory trigger is normal policy furniture.
+;; UserInterfaceWorkflowResult <- UserInterfaceWorkflowContext
+(def user-interface-memory-policy-object
+  (marlinPolicyObject
+   "memory-trigger-policy"
+   "user-interface-memory-trigger"
+   (.o trigger: "context-pressure"
+       action: "compact")
+   '((owner . "user-interface-worker") (surface . "prefab-object"))))
+
+;;; Boundary: Replacement object keeps typed projection separate from merge rules.
+;; UserInterfaceWorkflowResult <- UserInterfaceWorkflowContext
+(def user-interface-continuation-projection-object
+  (marlinPolicyObject
+   "continuation-profile"
+   "user-interface-continuation-projection"
+   user-interface-loop-continuation-projection
+   '((owner . "user-interface-worker") (surface . "prefab-object"))))
+
+;;; Boundary: User-facing prefab pack composes modules plus policy objects.
+;; UserInterfaceWorkflowResult <- UserInterfaceWorkflowContext
+(defmarlin-policy-pack user-interface-policy-pack
+  (id "user-interface-prefab-pack")
+  (module user-interface-module-config)
+  (policy-objects user-interface-subagent-policy-object
+                  user-interface-continuation-policy-object
+                  user-interface-hook-policy-object)
+  (object-operations
+   (marlin-add-object
+    user-interface-memory-policy-object
+    "add memory trigger furniture")
+   (marlin-remove-object
+    "hook-selection-policy"
+    "runtime-catalog-user-interface-hook"
+    "Rust catalog owns hook handlers")
+   (marlin-disable-object
+    "subagent-policy-extension"
+    "user-interface-subagent-policy-extension"
+    "disabled by downstream object surgery")
+   (marlin-replace-object
+    "continuation-profile"
+    "user-interface-loop-continuation"
+    user-interface-continuation-projection-object
+    "replace profile object with typed projection object"))
+  (allowed-hook-ids "runtime-catalog-user-interface-hook")
+  (metadata '((owner . "user-interface-worker") (surface . "prefab-pack"))))
+
+;;; Boundary: Pack catalog is the prefab collection entrypoint.
+;; UserInterfaceWorkflowResult <- UserInterfaceWorkflowContext
+(def (user-interface-policy-pack-catalog)
+  (marlinPackCatalog user-interface-policy-pack))
+
+;;; Boundary: Presentation gives Rust/debug tools a scalar prefab receipt.
+;; UserInterfaceWorkflowResult <- UserInterfaceWorkflowContext
+(def (user-interface-policy-pack-presentation)
+  (marlinPolicyPackPresentation user-interface-policy-pack))

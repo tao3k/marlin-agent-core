@@ -25,6 +25,8 @@
 (def module-evaluation (marlin-deck-runtime-debug-policy-module-evaluation))
 (def module-system-presentation
   (marlin-deck-runtime-debug-policy-module-system-presentation))
+(def policy-pack-presentation
+  (marlin-deck-runtime-debug-policy-pack-presentation))
 (def substrate-gate (.get policy-workflow substrate-gate))
 (def catalog (marlin-deck-runtime-debug-policy-extension-catalog))
 
@@ -87,6 +89,43 @@
       (.get module-system-presentation rust-parses-scheme-source))
 (emit "module_system_scheme_manufactures_rust_handlers"
       (.get module-system-presentation scheme-manufactures-rust-handlers))
+(emit "policy_pack_kind" (.get policy-pack-presentation pack-kind))
+(emit "policy_pack_id" (.get policy-pack-presentation pack-id))
+(emit "policy_pack_presentation_kind" (.get policy-pack-presentation kind))
+(emit "policy_pack_module_system_presentation_kind"
+      (.get policy-pack-presentation module-system-presentation-kind))
+(emit "policy_pack_object_count"
+      (.get policy-pack-presentation policy-object-count))
+(emit "policy_pack_disabled_object_count"
+      (.get policy-pack-presentation disabled-policy-object-count))
+(emit "policy_pack_operation_count"
+      (.get policy-pack-presentation object-operation-count))
+(emit "policy_pack_surgery_receipt_count"
+      (.get policy-pack-presentation object-surgery-receipt-count))
+(emit "policy_pack_add_count"
+      (.get policy-pack-presentation add-operation-count))
+(emit "policy_pack_remove_count"
+      (.get policy-pack-presentation remove-operation-count))
+(emit "policy_pack_disable_count"
+      (.get policy-pack-presentation disable-operation-count))
+(emit "policy_pack_replace_count"
+      (.get policy-pack-presentation replace-operation-count))
+(emit "policy_pack_matched_surgery_receipt_count"
+      (.get policy-pack-presentation matched-surgery-receipt-count))
+(emit "policy_pack_allowed_hook_count"
+      (.get policy-pack-presentation allowed-hook-count))
+(emit "policy_pack_import_graph_owner"
+      (.get policy-pack-presentation import-graph-owner))
+(emit "policy_pack_option_merge_owner"
+      (.get policy-pack-presentation option-merge-owner))
+(emit "policy_pack_extension_composition_owner"
+      (.get policy-pack-presentation extension-composition-owner))
+(emit "policy_pack_native_projection_payload_owner"
+      (.get policy-pack-presentation native-projection-payload-owner))
+(emit "policy_pack_rust_parses_scheme_source"
+      (.get policy-pack-presentation rust-parses-scheme-source))
+(emit "policy_pack_rust_handler_manufactured"
+      (.get policy-pack-presentation rust-handler-manufactured))
 (emit "policy_substrate_gate_kind" (.get substrate-gate kind))
 (emit "policy_substrate_gate_profile" (.get substrate-gate gate-profile))
 (emit "policy_substrate_gate_receipt_kind" (.get substrate-gate receipt-kind))
