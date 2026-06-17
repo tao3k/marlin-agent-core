@@ -13,7 +13,8 @@ pub use ids::{
 };
 pub use planning::{
     AgentGraphPlanningReceipt, AgentGraphPlanningRejection, AgentGraphPlanningStatus,
-    AgentGraphPlanningTarget, plan_agent_coordination, plan_agent_coordination_with_policy_receipt,
+    AgentGraphPlanningTarget, AgentGraphRoutingProjectionRejection, plan_agent_coordination,
+    plan_agent_coordination_with_policy_receipt, project_agent_candidate_routing_receipts,
 };
 pub use receipt::{
     AgentCoordinationDecision, AgentCoordinationEvidenceKind, AgentCoordinationEvidenceRef,

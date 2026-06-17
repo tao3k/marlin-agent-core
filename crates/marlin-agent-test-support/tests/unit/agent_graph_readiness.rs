@@ -31,6 +31,7 @@ fn agent_graph_readiness_replay_artifact_loads_no_execution_evidence() {
     assert!(detail_contains(evidence, "projection_status=Projected"));
     assert!(detail_contains(evidence, "readiness_status=Ready"));
     assert!(detail_contains(evidence, "root_loop_entry=loop.planner"));
+    assert!(detail_contains(evidence, "execution_request=false"));
     assert!(detail_contains(evidence, "graph_loop_execution=false"));
     assert!(detail_contains(evidence, "controller_execution=false"));
     assert!(detail_contains(evidence, "tool_execution=false"));

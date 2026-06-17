@@ -1,0 +1,113 @@
+* 40.161 AgentGraph P0-P5 Closure
+:PROPERTIES:
+:ID: marlin-rfc-agent-graph-p0-p5-closure
+:END:
+
+** Purpose
+This note records the P0-P5 closure slice for the AgentGraph topology protocol.
+It keeps AgentGraph as the topology layer above GraphLoop and below any future
+Symphony-style orchestration crate.
+
+** P0 Current Tree Closure
+The current closure keeps the protocol split explicit:
+- =marlin-agent-graph= owns topology planning and coordination receipts.
+- =marlin-agent-runtime= owns readiness projection and the no-execution handoff
+  boundary.
+- =marlin-gerbil-scheme= owns the Scheme package assets and native ABI typed
+  projection surface.
+- =marlin-agent-policy-routing-native= owns opt-in linked native policy-routing
+  tests and benchmarks.
+
+No compatibility shim is added. The native path remains Scheme types to Rust
+types; JSON is not part of the native AgentGraph routing hot path.
+
+** P1-P2 Verification Gate
+The linked native AOT workflow now includes AgentGraph policy-routing native
+coverage in addition to Deck runtime coverage:
+- compile linked-native tests for =marlin-agent-policy-routing-native=;
+- run linked-native tests for =marlin-agent-policy-routing-native=;
+- compile the =linked_selector= benchmark;
+- run the benchmark and upload =target/criterion= as the linked-native
+  benchmark artifact.
+
+This gives Linux-capable runners the same gate shape as local real AOT runs:
+the workflow bootstraps Gerbil/Gambit from source, resolves =gxi=, =gxc=, and
+=gsc=, and lets the Rust build script stage =agent-policy-routing= through
+=build.ss stage-native-aot=.
+
+The 2026-06-17 local linked selector benchmark was run through:
+#+begin_src sh
+direnv exec . cargo bench -p marlin-agent-policy-routing-native --features linked-native --bench linked_selector
+#+end_src
+
+The observed midpoint latencies were:
+#+begin_src text
+agent_policy_routing_linked_native_selector/1_candidate_edge:   18.149 us
+agent_policy_routing_linked_native_selector/8_candidate_edge:   19.834 us
+agent_policy_routing_linked_native_selector/64_candidate_edge:  44.712 us
+agent_policy_routing_linked_native_selector/256_candidate_edge: 70.596 us
+#+end_src
+
+Criterion reported no statistically significant local regression for these
+samples. Linux CI should be treated as the authoritative portability baseline
+after the workflow gate runs on a Linux runner.
+
+** P3 Replay Evidence
+=marlin-agent-test-support= keeps the deterministic AgentGraph readiness replay
+artifact. The runtime evidence now explicitly records:
+- =execution_request=false=
+- =graph_loop_execution=false=
+- =controller_execution=false=
+- =tool_execution=false=
+- =live_llm=false=
+
+The runtime crate owns the executable proof. Its AgentGraph readiness tests load
+the replay artifact, run =check_agent_graph_execution_readiness=, and assert that
+the serialized readiness receipt does not expose execution, controller, or tool
+surfaces.
+
+** P4 Handoff Boundary
+The runtime handoff remains readiness-only. A ready receipt may expose a
+=GraphLoopEntryRef=, but it still does not create a graph-loop execution request,
+controller execution, tool execution, session binding, worktree binding, or live
+LLM call.
+
+This preserves the intended sequence:
+#+begin_src text
+AgentGraph planning
+  -> Runtime readiness projection
+  -> typed readiness receipt
+  -> later execution request boundary
+#+end_src
+
+The last step is intentionally outside this closure.
+
+** P5 Coordination Receipt Strengthening
+AgentGraph now projects candidate edge sets into typed next-hop
+=AgentRoutingReceipt= values. The projection consumes an existing
+=AgentCoordinationPlan= and emits route receipts for candidate edges from the
+plan root node.
+
+The projection rejects invalid topology before any execution boundary:
+- graph validation failure;
+- graph id mismatch;
+- missing plan root node;
+- missing candidate edge;
+- candidate edge source mismatch.
+
+This strengthens AgentGraph as a reusable topology substrate without creating
+=marlin-symphony=. Symphony remains deferred until AgentGraph can represent
+topology, planning, replay evidence, runtime readiness, and next-hop receipts
+without orchestration-specific policy.
+
+** Local Verification Commands
+The current local closure should be verified with:
+#+begin_src sh
+direnv exec . cargo fmt --all -- --check
+direnv exec . cargo test -p marlin-agent-graph
+direnv exec . cargo test -p marlin-agent-runtime
+direnv exec . cargo test -p marlin-agent-test-support
+direnv exec . cargo test -p marlin-agent-policy-routing-native --features linked-native
+direnv exec . cargo bench -p marlin-agent-policy-routing-native --features linked-native --bench linked_selector --no-run
+asp org lint docs/40-rfcs/40.160-agent-graph-topology-protocol.org docs/40-rfcs/40.161-agent-graph-p0-p5-closure.org
+#+end_src

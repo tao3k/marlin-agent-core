@@ -76,6 +76,26 @@
        => marlin-policy-budget-receipt-kind)
 (check (.get ui-prefab-delivery-receipt catalog-resolution-receipt-kind)
        => marlin-policy-catalog-resolution-receipt-kind)
+(check (.get ui-prefab-delivery-receipt projection-receipt-family-count)
+       => 5)
+(check (.get ui-prefab-delivery-receipt projection-receipt-family-ids)
+       => '("module_evaluation_receipt"
+            "policy_projection_receipt"
+            "native_projection_payload"
+            "budget_receipt"
+            "catalog_resolution_receipt"))
+(check (.get ui-prefab-delivery-receipt module-evaluation-receipt-owner)
+       => "gerbil-module-system")
+(check (.get ui-prefab-delivery-receipt policy-projection-receipt-owner)
+       => "gerbil-poo")
+(check (.get ui-prefab-delivery-receipt native-projection-payload-owner)
+       => "rust")
+(check (.get ui-prefab-delivery-receipt budget-receipt-owner)
+       => "rust")
+(check (.get ui-prefab-delivery-receipt catalog-resolution-receipt-owner)
+       => "rust")
+(check (.get ui-prefab-delivery-receipt catalog-resolution-allowed-hook-count)
+       => 2)
 (check (.get ui-prefab-delivery-receipt root-module-id)
        => "user-interface-root-module")
 (check (.get ui-prefab-delivery-receipt root-module-kind)
@@ -88,8 +108,8 @@
 (check (.get ui-prefab-delivery-receipt option-contract-count) => 12)
 (check (.get ui-prefab-delivery-receipt pack-id)
        => "user-interface-prefab-pack")
-(check (.get ui-prefab-delivery-receipt policy-object-count) => 17)
-(check (.get ui-prefab-delivery-receipt default-policy-object-count) => 17)
+(check (.get ui-prefab-delivery-receipt policy-object-count) => 21)
+(check (.get ui-prefab-delivery-receipt default-policy-object-count) => 21)
 (check (.get ui-prefab-delivery-receipt disabled-policy-object-count) => 1)
 (check (.get ui-prefab-delivery-receipt object-operation-count) => 4)
 (check (.get ui-prefab-delivery-receipt object-surgery-receipt-count) => 4)
@@ -109,6 +129,10 @@
             "default-memory-trigger"
             "default-memory-retention"
             "default-memory-visibility"
+            "default-subagent"
+            "default-context-compression"
+            "default-tool-batch"
+            "default-self-evolution"
             "default-catalog-projection"
             "user-interface-subagent-policy-extension"
             "user-interface-continuation-projection"
@@ -127,6 +151,10 @@
             "default-memory-trigger"
             "default-memory-retention"
             "default-memory-visibility"
+            "default-subagent"
+            "default-context-compression"
+            "default-tool-batch"
+            "default-self-evolution"
             "default-catalog-projection"
             "user-interface-subagent-policy-extension"
             "user-interface-loop-continuation"
@@ -147,8 +175,11 @@
             "memory-trigger-policy"
             "memory-retention-policy"
             "memory-visibility-policy"
+            "subagent-policy"
+            "context-compression-policy"
+            "tool-batch-policy"
+            "self-evolution-policy"
             "catalog-projection-policy"
-            "subagent-policy-extension"
             "continuation-profile"))
 (check (.get ui-prefab-delivery-receipt allowed-hook-ids)
        => '("runtime-catalog-default-hook"

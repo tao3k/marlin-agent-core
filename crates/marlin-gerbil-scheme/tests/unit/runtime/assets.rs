@@ -36,7 +36,12 @@ fn gerbil_runtime_assets_expose_loadpath_contract() {
     assert_eq!(MARLIN_GERBIL_GSC_ENV, "MARLIN_GERBIL_GSC");
     assert_eq!(default_gerbil_gxi_program(), Path::new("gxi"));
     assert_eq!(default_gerbil_gxc_program(), Path::new("gxc"));
-    assert_eq!(default_gerbil_gsc_program(), Path::new("gsc"));
+    assert_eq!(
+        default_gerbil_gsc_program()
+            .file_name()
+            .and_then(|file_name| file_name.to_str()),
+        Some("gsc")
+    );
     assert_eq!(GERBIL_PACKAGE_SOURCE_PATH, "src");
     assert!(package_manifest_source.contains("marlin-deck-runtime"));
     assert_eq!(
@@ -57,7 +62,8 @@ fn gerbil_runtime_assets_expose_loadpath_contract() {
     );
     assert!(build_source.contains("stage-native-aot"));
     assert!(build_source.contains("marlin-build-stage-native-aot"));
-    assert!(build_has_target("src/marlin/deck-runtime-native"));
+    assert!(build_source.contains("\"src/marlin/deck-runtime-native.ss\""));
+    assert!(build_source.contains("\"src/marlin/agent-policy-routing-native.ss\""));
     assert!(build_has_target(
         "src/marlin/deck-runtime-native-projection"
     ));

@@ -92,6 +92,18 @@
 (def default-memory-visibility-object
   (marlinDefaultMemoryVisibilityPolicy))
 
+(def default-subagent-object
+  (marlinDefaultSubagentPolicy))
+
+(def default-context-compression-object
+  (marlinDefaultContextCompressionPolicy))
+
+(def default-tool-batch-object
+  (marlinDefaultToolBatchPolicy))
+
+(def default-self-evolution-object
+  (marlinDefaultSelfEvolutionPolicy))
+
 (def default-workspace-object
   (marlinDefaultWorkspacePolicy))
 
@@ -166,13 +178,16 @@
 (def conflict-projection
   (marlinPolicyProjection conflict-pack))
 
+(def conflict-chain-receipt
+  (marlinPolicyProjectionChainReceipt conflict-pack))
+
 (def conflict-receipts
   (.get conflict-pack object-surgery-receipts))
 
 (check (.get default-pack id) => "marlin-default-policy-pack")
 (check (.get default-inventory kind) => marlin-policy-pack-inventory-kind)
-(check (.get default-inventory policy-object-count) => 14)
-(check (.get default-inventory default-policy-object-count) => 14)
+(check (.get default-inventory policy-object-count) => 18)
+(check (.get default-inventory default-policy-object-count) => 18)
 (check (.get default-inventory object-operation-count) => 0)
 (check (.get default-inventory allowed-hook-ids)
        => '("runtime-catalog-default-hook"))
@@ -183,9 +198,9 @@
 (check (.get default-catalog-presentation pack-count) => 1)
 (check (.get default-catalog-presentation pack-ids)
        => '("marlin-default-policy-pack"))
-(check (.get default-catalog-presentation policy-object-count) => 14)
+(check (.get default-catalog-presentation policy-object-count) => 18)
 (check (.get default-catalog-presentation default-policy-object-count)
-       => 14)
+       => 18)
 (check (.get default-catalog-presentation allowed-hook-ids)
        => '("runtime-catalog-default-hook"))
 (check (.get default-delivery kind)
@@ -194,8 +209,8 @@
        => marlin-pack-catalog-presentation-kind)
 (check (.get default-delivery pack-ids)
        => '("marlin-default-policy-pack"))
-(check (.get default-delivery policy-object-count) => 14)
-(check (.get default-delivery default-policy-object-count) => 14)
+(check (.get default-delivery policy-object-count) => 18)
+(check (.get default-delivery default-policy-object-count) => 18)
 (check (.get default-delivery object-operation-count) => 0)
 (check (.get default-delivery policy-projection-kind)
        => marlin-policy-projection-kind)
@@ -205,6 +220,25 @@
        => marlin-policy-budget-receipt-kind)
 (check (.get default-delivery catalog-resolution-receipt-kind)
        => marlin-policy-catalog-resolution-receipt-kind)
+(check (.get default-delivery projection-receipt-family-count) => 5)
+(check (.get default-delivery projection-receipt-family-ids)
+       => '("module_evaluation_receipt"
+            "policy_projection_receipt"
+            "native_projection_payload"
+            "budget_receipt"
+            "catalog_resolution_receipt"))
+(check (.get default-delivery module-evaluation-receipt-owner)
+       => "gerbil-module-system")
+(check (.get default-delivery policy-projection-receipt-owner)
+       => "gerbil-poo")
+(check (.get default-delivery native-projection-payload-owner)
+       => "rust")
+(check (.get default-delivery budget-receipt-owner)
+       => "rust")
+(check (.get default-delivery catalog-resolution-receipt-owner)
+       => "rust")
+(check (.get default-delivery catalog-resolution-allowed-hook-count)
+       => 1)
 (check (.get default-delivery user-entrypoints)
        => '("DefaultPolicyPack"
             "DefaultPolicyPackCatalog"
@@ -228,6 +262,10 @@
             "memory-trigger-policy"
             "memory-retention-policy"
             "memory-visibility-policy"
+            "subagent-policy"
+            "context-compression-policy"
+            "tool-batch-policy"
+            "self-evolution-policy"
             "catalog-projection-policy"))
 (check (.get default-inventory policy-object-ids)
        => '("default-workspace"
@@ -243,6 +281,10 @@
             "default-memory-trigger"
             "default-memory-retention"
             "default-memory-visibility"
+            "default-subagent"
+            "default-context-compression"
+            "default-tool-batch"
+            "default-self-evolution"
             "default-catalog-projection"))
 (check (marlin-policy-object-family default-evidence-object)
        => "evidence-graph-policy")
@@ -268,6 +310,22 @@
        => "memory-visibility-policy")
 (check (marlin-policy-object-id default-memory-visibility-object)
        => "default-memory-visibility")
+(check (marlin-policy-object-family default-subagent-object)
+       => "subagent-policy")
+(check (marlin-policy-object-id default-subagent-object)
+       => "default-subagent")
+(check (marlin-policy-object-family default-context-compression-object)
+       => "context-compression-policy")
+(check (marlin-policy-object-id default-context-compression-object)
+       => "default-context-compression")
+(check (marlin-policy-object-family default-tool-batch-object)
+       => "tool-batch-policy")
+(check (marlin-policy-object-id default-tool-batch-object)
+       => "default-tool-batch")
+(check (marlin-policy-object-family default-self-evolution-object)
+       => "self-evolution-policy")
+(check (marlin-policy-object-id default-self-evolution-object)
+       => "default-self-evolution")
 (check (marlin-policy-object-family default-workspace-object)
        => "workspace-policy")
 (check (marlin-policy-object-id default-workspace-object)
@@ -372,6 +430,11 @@
        => #f)
 (check (.get conflict-projection rust-handler-manufactured)
        => #f)
+(check (.get conflict-chain-receipt kind)
+       => marlin-policy-projection-chain-receipt-kind)
+(check (.get conflict-chain-receipt receipt-family-count) => 5)
+(check (.get conflict-chain-receipt catalog-resolution-allowed-hook-count)
+       => 0)
 (check (map (lambda (receipt) (.get receipt conflict-reasons)) conflict-receipts)
        => '(("duplicate-object")
             ("missing-target")

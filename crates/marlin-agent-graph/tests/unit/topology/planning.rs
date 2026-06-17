@@ -1,9 +1,10 @@
 use marlin_agent_graph::{
     AgentCoordinationDecision, AgentCoordinationEvidenceKind, AgentEdge, AgentEdgeCondition,
     AgentEdgeKind, AgentGraph, AgentGraphPlanningRejection, AgentGraphPlanningStatus,
-    AgentGraphPlanningTarget, AgentPolicyDecisionRef, AgentPolicyRoutingDecision,
-    AgentPolicyRoutingReceipt, AgentTopologyPolicy, GerbilPolicyScopeRef, plan_agent_coordination,
-    plan_agent_coordination_with_policy_receipt,
+    AgentGraphPlanningTarget, AgentGraphRoutingProjectionRejection, AgentPolicyDecisionRef,
+    AgentPolicyRoutingDecision, AgentPolicyRoutingReceipt, AgentRoutingReason, AgentTopologyPolicy,
+    GerbilPolicyScopeRef, plan_agent_coordination, plan_agent_coordination_with_policy_receipt,
+    project_agent_candidate_routing_receipts,
 };
 
 use super::support::{capability, edge_id, evidence, graph_id, node, node_id};
@@ -206,6 +207,104 @@ fn policy_scoped_planning_consumes_typed_gerbil_policy_receipt() {
             .evidence
             .len(),
         1
+    );
+}
+
+#[test]
+fn candidate_routing_projection_emits_next_hop_receipts_without_execution_fields() {
+    let graph = AgentGraph {
+        graph_id: graph_id("agent-graph.routing"),
+        nodes: vec![
+            node("planner", "planner", "loop.plan", "entry"),
+            node(
+                "implementation",
+                "implementer",
+                "loop.implementation",
+                "entry",
+            ),
+            node("verification", "verifier", "loop.verify", "entry"),
+        ],
+        edges: vec![
+            AgentEdge {
+                edge_id: edge_id("planner-to-implementation"),
+                from: node_id("planner"),
+                to: node_id("implementation"),
+                kind: AgentEdgeKind::Handoff,
+                condition: AgentEdgeCondition::Always,
+            },
+            AgentEdge {
+                edge_id: edge_id("planner-to-verification"),
+                from: node_id("planner"),
+                to: node_id("verification"),
+                kind: AgentEdgeKind::Review,
+                condition: AgentEdgeCondition::Always,
+            },
+        ],
+        topology_policy: AgentTopologyPolicy::Deterministic,
+    };
+    let target = AgentGraphPlanningTarget::new(graph_id("agent-graph.routing"), node_id("planner"))
+        .with_evidence(vec![evidence(
+            AgentCoordinationEvidenceKind::OrgMemoryReceipt,
+            "memory.receipt.routing",
+        )]);
+    let planning = plan_agent_coordination(&graph, target);
+    let plan = planning.plan.as_ref().expect("coordination plan");
+    let coordination = planning
+        .coordination
+        .as_ref()
+        .expect("coordination receipt");
+
+    let routing = project_agent_candidate_routing_receipts(
+        &graph,
+        plan,
+        AgentRoutingReason::new("planning.candidate_edges").unwrap(),
+        coordination.evidence.clone(),
+    )
+    .expect("candidate routing receipts should project");
+    let encoded = serde_json::to_string(&routing).expect("routing receipts serialize");
+
+    assert_eq!(routing.len(), 2);
+    assert_eq!(routing[0].from, node_id("planner"));
+    assert_eq!(routing[0].to, node_id("implementation"));
+    assert_eq!(routing[0].via_edge, edge_id("planner-to-implementation"));
+    assert_eq!(
+        routing[0].reason,
+        AgentRoutingReason::new("planning.candidate_edges").unwrap()
+    );
+    assert_eq!(routing[0].evidence.len(), 1);
+    assert!(!encoded.contains("execution_request"));
+    assert!(!encoded.contains("controller"));
+    assert!(!encoded.contains("tool"));
+}
+
+#[test]
+fn candidate_routing_projection_rejects_graph_mismatch_before_execution() {
+    let graph = AgentGraph {
+        graph_id: graph_id("agent-graph.actual"),
+        nodes: vec![node("planner", "planner", "loop.plan", "entry")],
+        edges: Vec::new(),
+        topology_policy: AgentTopologyPolicy::Deterministic,
+    };
+    let plan = marlin_agent_graph::AgentCoordinationPlan {
+        graph_id: graph_id("agent-graph.expected"),
+        root_node: node_id("planner"),
+        candidate_edges: Vec::new(),
+    };
+
+    let rejection = project_agent_candidate_routing_receipts(
+        &graph,
+        &plan,
+        AgentRoutingReason::new("planning.candidate_edges").unwrap(),
+        Vec::new(),
+    )
+    .expect_err("graph mismatch should reject");
+
+    assert_eq!(
+        rejection,
+        AgentGraphRoutingProjectionRejection::GraphMismatch {
+            plan_graph_id: graph_id("agent-graph.expected"),
+            graph_id: graph_id("agent-graph.actual")
+        }
     );
 }
 

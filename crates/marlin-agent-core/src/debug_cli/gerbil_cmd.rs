@@ -107,6 +107,14 @@ struct GerbilPolicyReceiptDebugSummary {
     policy_projection_chain_native_projection_payload_kind: String,
     policy_projection_chain_budget_receipt_kind: String,
     policy_projection_chain_catalog_resolution_receipt_kind: String,
+    policy_projection_chain_receipt_family_count: u64,
+    policy_projection_chain_receipt_family_ids: Vec<String>,
+    policy_projection_chain_module_evaluation_receipt_owner: String,
+    policy_projection_chain_policy_projection_receipt_owner: String,
+    policy_projection_chain_native_projection_payload_owner: String,
+    policy_projection_chain_budget_receipt_owner: String,
+    policy_projection_chain_catalog_resolution_receipt_owner: String,
+    policy_projection_chain_catalog_allowed_hook_count: u64,
     policy_projection_chain_replayable: bool,
     default_policy_delivery_kind: String,
     default_policy_pack_id: String,
@@ -460,6 +468,38 @@ fn run_policy_receipt(
         policy_projection_chain_catalog_resolution_receipt_kind: required_fact(
             &facts,
             "policy_projection_chain_catalog_resolution_receipt_kind",
+        )?,
+        policy_projection_chain_receipt_family_count: required_u64_fact(
+            &facts,
+            "policy_projection_chain_receipt_family_count",
+        )?,
+        policy_projection_chain_receipt_family_ids: required_csv_fact(
+            &facts,
+            "policy_projection_chain_receipt_family_ids",
+        )?,
+        policy_projection_chain_module_evaluation_receipt_owner: required_fact(
+            &facts,
+            "policy_projection_chain_module_evaluation_receipt_owner",
+        )?,
+        policy_projection_chain_policy_projection_receipt_owner: required_fact(
+            &facts,
+            "policy_projection_chain_policy_projection_receipt_owner",
+        )?,
+        policy_projection_chain_native_projection_payload_owner: required_fact(
+            &facts,
+            "policy_projection_chain_native_projection_payload_owner",
+        )?,
+        policy_projection_chain_budget_receipt_owner: required_fact(
+            &facts,
+            "policy_projection_chain_budget_receipt_owner",
+        )?,
+        policy_projection_chain_catalog_resolution_receipt_owner: required_fact(
+            &facts,
+            "policy_projection_chain_catalog_resolution_receipt_owner",
+        )?,
+        policy_projection_chain_catalog_allowed_hook_count: required_u64_fact(
+            &facts,
+            "policy_projection_chain_catalog_allowed_hook_count",
         )?,
         policy_projection_chain_replayable: required_bool_fact(
             &facts,

@@ -17,6 +17,18 @@ The milestone model is a trophy-gate flow. A milestone is complete only when it
 has user-facing API shape, Scheme receipts, Rust projection behavior, debug CLI
 evidence, and docs that tell agents what not to infer.
 
+** 2026-06-17 Module-System Checkpoint
+This checkpoint keeps the package/module layer separate from native AOT staging:
+- =build.ss compile= runs the ordinary Gerbil package modules and prefab module system. It no longer lists native C ABI modules as =gsc:= entries that force =std/make= to look for =*.scm= sources during package compile.
+- =build.ss stage-native-aot <deck-runtime|agent-policy-routing> <link-root>= remains the only profile-specific native AOT source mapping.
+- The package checkpoint was verified with:
+#+begin_src sh
+GERBIL_LOADPATH=src gxi build.ss compile
+GERBIL_LOADPATH=src gxtest t/marlin-policy-pack-inventory-test.ss
+GERBIL_LOADPATH=src gxtest t/marlin-user-interface-prefab-test.ss
+GERBIL_LOADPATH=../../gerbil/src:. gxtest t/user-interface-module-config-test.ss
+#+end_src
+- The downstream user-interface module-config test emits =user-interface-script-workflow-ok=, continuation kind =continue_with_graph=, script metrics, and interface-file/state-file checks. That is the current real test that prefab module evaluation, policy-pack object surgery, script execution, continuation projection, and Rust-facing projection receipts stay aligned.
 ** Operating Rule
 
 Every milestone must preserve this boundary:

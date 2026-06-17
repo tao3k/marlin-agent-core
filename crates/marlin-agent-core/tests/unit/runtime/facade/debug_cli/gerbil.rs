@@ -280,6 +280,41 @@ fn debug_cli_gerbil_policy_receipt_runs_scheme_policy_engine() {
         summary["policy_projection_chain_catalog_resolution_receipt_kind"],
         "marlin.runtime.policy-catalog-resolution-receipt.v1"
     );
+    assert_eq!(summary["policy_projection_chain_receipt_family_count"], 5);
+    assert_eq!(
+        summary["policy_projection_chain_receipt_family_ids"],
+        json!([
+            "module_evaluation_receipt",
+            "policy_projection_receipt",
+            "native_projection_payload",
+            "budget_receipt",
+            "catalog_resolution_receipt"
+        ])
+    );
+    assert_eq!(
+        summary["policy_projection_chain_module_evaluation_receipt_owner"],
+        "gerbil-module-system"
+    );
+    assert_eq!(
+        summary["policy_projection_chain_policy_projection_receipt_owner"],
+        "gerbil-poo"
+    );
+    assert_eq!(
+        summary["policy_projection_chain_native_projection_payload_owner"],
+        "rust"
+    );
+    assert_eq!(
+        summary["policy_projection_chain_budget_receipt_owner"],
+        "rust"
+    );
+    assert_eq!(
+        summary["policy_projection_chain_catalog_resolution_receipt_owner"],
+        "rust"
+    );
+    assert_eq!(
+        summary["policy_projection_chain_catalog_allowed_hook_count"],
+        1
+    );
     assert_eq!(summary["policy_projection_chain_replayable"], true);
     assert_eq!(
         summary["default_policy_delivery_kind"],
@@ -294,8 +329,8 @@ fn debug_cli_gerbil_policy_receipt_runs_scheme_policy_engine() {
         summary["default_policy_pack_ids"],
         json!(["marlin-default-policy-pack"])
     );
-    assert_eq!(summary["default_policy_object_count"], 11);
-    assert_eq!(summary["default_policy_default_object_count"], 11);
+    assert_eq!(summary["default_policy_object_count"], 18);
+    assert_eq!(summary["default_policy_default_object_count"], 18);
     assert_eq!(summary["default_policy_allowed_hook_count"], 1);
     assert_eq!(
         summary["default_policy_allowed_hook_ids"],

@@ -99,10 +99,24 @@ package: modules/prefabs
           (.get policy-projection policy-projection-receipt-kind))
          (projection-chain-receipt-kind-value
           (.get projection-chain-receipt kind))
+         (projection-receipt-family-count-value
+         (.get projection-chain-receipt receipt-family-count))
+         (projection-receipt-family-ids-value
+          '("module_evaluation_receipt"
+            "policy_projection_receipt"
+            "native_projection_payload"
+            "budget_receipt"
+            "catalog_resolution_receipt"))
+         (module-evaluation-receipt-owner-value
+          "gerbil-module-system")
+         (policy-projection-receipt-owner-value
+          "gerbil-poo")
+         (catalog-resolution-allowed-hook-count-value
+          (.get projection-chain-receipt catalog-resolution-allowed-hook-count))
          (budget-receipt-kind-value
-          (.get projection-chain-receipt budget-receipt-kind))
+          marlin-policy-budget-receipt-kind)
          (catalog-resolution-receipt-kind-value
-          (.get projection-chain-receipt catalog-resolution-receipt-kind))
+          marlin-policy-catalog-resolution-receipt-kind)
          (native-projection-payload-kind-value
           (.get policy-projection native-projection-payload-kind))
          (root-module-id-value (.get pack-presentation root-module-id))
@@ -172,6 +186,16 @@ package: modules/prefabs
         policy-projection-receipt-kind: policy-projection-receipt-kind-value
         policy-projection-chain-receipt-kind:
         projection-chain-receipt-kind-value
+        projection-receipt-family-count:
+        projection-receipt-family-count-value
+        projection-receipt-family-ids:
+        projection-receipt-family-ids-value
+        module-evaluation-receipt-owner:
+        module-evaluation-receipt-owner-value
+        policy-projection-receipt-owner:
+        policy-projection-receipt-owner-value
+        catalog-resolution-allowed-hook-count:
+        catalog-resolution-allowed-hook-count-value
         native-projection-payload-kind: native-projection-payload-kind-value
         budget-receipt-kind: budget-receipt-kind-value
         catalog-resolution-receipt-kind:

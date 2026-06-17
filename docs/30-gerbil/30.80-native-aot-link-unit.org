@@ -621,6 +621,36 @@ cargo check --workspace --all-targets
 cargo bench -p marlin-deck-runtime-native --features linked-native --bench linked_selector --no-run
 #+end_src
 
+** 2026-06-17 AgentGraph Native Policy-Routing Receipt
+This pass closes the AgentGraph policy-routing native AOT slice against the real linked ABI:
+- P0 adds an AgentGraph policy-routing AOT build receipt that projects to =GraphNativeAbiReadinessStatus::Ready= when =marlin_agent_policy_routing_initialize= and =marlin_agent_policy_routing_select_edges= are both present in the generated object/link unit.
+- P1 adds the =marlin-agent-policy-routing-native= Criterion benchmark for the linked selector path. The 2026-06-17 local run measured:
+#+begin_src text
+agent_policy_routing_linked_native_selector/1_candidate_edge:
+  [13.483 us 21.151 us 29.562 us]
+agent_policy_routing_linked_native_selector/8_candidate_edge:
+  [10.780 us 19.292 us 31.846 us]
+agent_policy_routing_linked_native_selector/64_candidate_edge:
+  [17.672 us 39.042 us 75.553 us]
+agent_policy_routing_linked_native_selector/256_candidate_edge:
+  [76.258 us 144.91 us 230.75 us]
+#+end_src
+- P2 keeps ordinary Gerbil package compile separate from native staging. =build.ss compile= does not list native C ABI modules as =gsc:= targets; =build.ss stage-native-aot <profile> <link-root>= is the only profile-to-source native compiler entrypoint.
+- P3 keeps AgentGraph handoff readiness/replay-only. Runtime readiness receipts project topology and root loop entry metadata without constructing or executing a =GraphLoopExecutionRequest=.
+- P4 adds local justfile gates for Gerbil package/module smoke, AgentGraph linked-native smoke, and benchmark build checks.
+The focused validation commands for this pass are:
+#+begin_src sh
+GERBIL_LOADPATH=src gxi build.ss compile
+GERBIL_LOADPATH=src gxtest t/marlin-policy-pack-inventory-test.ss
+GERBIL_LOADPATH=src gxtest t/marlin-user-interface-prefab-test.ss
+GERBIL_LOADPATH=../../gerbil/src:. gxtest t/user-interface-module-config-test.ss
+gxi build.ss stage-native-aot agent-policy-routing /tmp/marlin-agent-policy-routing-link-set
+direnv exec . cargo test -p marlin-gerbil-scheme aot_runtime
+direnv exec . cargo test -p marlin-gerbil-native-build
+direnv exec . cargo test -p marlin-agent-policy-routing-native --features linked-native
+direnv exec . cargo bench -p marlin-agent-policy-routing-native --features linked-native --bench linked_selector
+#+end_src
+The build-support discovery path now handles Gerbil shell wrappers that export =GERBIL_HOME= or exec a real =.../bin/gsc=, so linked-native builds do not accidentally pick a Ghostscript =gsc= or miss =libgambit.a= when the public wrapper lives outside the Gerbil prefix.
 ** Next Work
 
 The next implementation step is to run the linked selector benchmark under a

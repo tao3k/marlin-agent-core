@@ -313,7 +313,15 @@ hot path. The native C ABI module is self-contained for linked execution: the
 public Scheme POO projection module remains available for policy-plane tests,
 while the linked native ABI writes only the routing decision slot and lets Rust
 construct the typed receipt from the request plus native projection.
-** Remaining Gaps
+** 2026-06-17 P0-P4 Landing Evidence
+- AgentGraph policy-routing now has a real linked selector benchmark in
+=crates/marlin-agent-policy-routing-native/benches/linked_selector.rs=. The local 2026-06-17 baseline is 21.151 us midpoint for one candidate edge, 19.292 us midpoint for eight candidate edges, 39.042 us midpoint for 64 candidate edges, and 144.91 us midpoint for 256 candidate edges.
+- =marlin-gerbil-scheme/tests/unit/aot_runtime/build.rs= now proves the AgentGraph policy-routing AOT build receipt projects a =GraphNativeAbiReadinessStatus::Ready= receipt after the generated object/link unit exposes both =marlin_agent_policy_routing_initialize= and =marlin_agent_policy_routing_select_edges=.
+- =build.ss compile= is now an ordinary Gerbil package/module compile gate. Native C ABI modules are staged only through =build.ss stage-native-aot <profile> <link-root>=, which prevents package compile from treating the native =.ss= modules as missing =.scm= sources.
+- This supersedes the earlier landing-status wording that described the native export module as a =gsc:= package compile target. Native C export modules are package-staged AOT inputs, not ordinary package compile entries.
+- =build-support/marlin-gerbil-native-build= now discovers =libgambit= from Gerbil shell wrappers that export =GERBIL_HOME= or exec a real =.../bin/gsc=, so linked-native builds do not accidentally resolve Ghostscript =gsc= or miss the runtime library path.
+- The local gate map now includes =gerbil-package-module-gate=, =agent-policy-routing-native-gate=, =agent-policy-routing-native-bench-build=, and =agent-graph-native-routing-gate= in the root justfile.
+** Superseded 2026-06-17 Gaps
 1. Run the live object symbol audit for the AgentGraph policy-routing profile
 against the gsc/gxi-generated =agent-policy-routing-native~0= artifact.
 2. Add a native AgentGraph policy-routing performance baseline comparable to
@@ -321,6 +329,10 @@ the Deck linked selector benchmark, then track regression thresholds separately
 from process-level Gerbil policy benchmarks.
 3. Add a future =marlin-agent-graph= to =GraphLoopController= execution
 handoff only after readiness receipts are replayable in harness evidence.
+** Remaining Gaps
+1. Repeat the AgentGraph linked selector benchmark on Linux CI before setting a stable regression threshold; the 2026-06-17 local macOS run is a baseline, not a release threshold.
+2. Promote the new local justfile gates into CI/manual workflow entries once the runner image has a pinned Gerbil/Gambit toolchain.
+3. Add a future =marlin-agent-graph= to =GraphLoopController= execution handoff only after readiness receipts are replayable in harness evidence.
 ** Acceptance Criteria
 - =GraphLoopController= gains no team, scheduling, election, or delegation
   ownership.

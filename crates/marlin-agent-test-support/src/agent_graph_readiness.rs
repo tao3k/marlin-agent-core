@@ -127,7 +127,7 @@ fn deterministic_agent_graph_readiness_evidence() -> Vec<AgentHarnessEvidence> {
             "agent-graph:planning-projection-readiness",
         )
         .with_detail(
-            "graph_id=agent-graph.p1 planning_status=Planned projection_status=Projected readiness_status=Ready root_loop_entry=loop.planner graph_loop_execution=false controller_execution=false tool_execution=false live_llm=false",
+            "graph_id=agent-graph.p1 planning_status=Planned projection_status=Projected readiness_status=Ready root_loop_entry=loop.planner execution_request=false graph_loop_execution=false controller_execution=false tool_execution=false live_llm=false",
         ),
         AgentHarnessEvidence::present(
             AgentHarnessEvidenceKind::Visibility,

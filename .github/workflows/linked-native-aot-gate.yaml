@@ -19,6 +19,9 @@ env:
   MARLIN_DECK_RUNTIME_NATIVE_C_COMPILER: clang
   MARLIN_DECK_RUNTIME_NATIVE_GAMBIT_LINK_LIBRARY: ${{ vars.MARLIN_DECK_RUNTIME_NATIVE_GAMBIT_LINK_LIBRARY }}
   MARLIN_DECK_RUNTIME_NATIVE_GAMBIT_LINK_SEARCH_DIR: ${{ vars.MARLIN_DECK_RUNTIME_NATIVE_GAMBIT_LINK_SEARCH_DIR }}
+  MARLIN_AGENT_POLICY_ROUTING_NATIVE_C_COMPILER: clang
+  MARLIN_AGENT_POLICY_ROUTING_NATIVE_GAMBIT_LINK_LIBRARY: ${{ vars.MARLIN_AGENT_POLICY_ROUTING_NATIVE_GAMBIT_LINK_LIBRARY }}
+  MARLIN_AGENT_POLICY_ROUTING_NATIVE_GAMBIT_LINK_SEARCH_DIR: ${{ vars.MARLIN_AGENT_POLICY_ROUTING_NATIVE_GAMBIT_LINK_SEARCH_DIR }}
   MARLIN_GERBIL_GSC: ${{ vars.MARLIN_GERBIL_GSC }}
   MARLIN_GERBIL_GXC: ${{ vars.MARLIN_GERBIL_GXC }}
   MARLIN_GERBIL_GXI: ${{ vars.MARLIN_GERBIL_GXI }}
@@ -118,10 +121,29 @@ jobs:
           done
 
       - name: Compile linked-native tests
-        run: cargo test --locked -p marlin-deck-runtime-native --features linked-native --no-run
+        run: |
+          cargo test --locked -p marlin-deck-runtime-native --features linked-native --no-run
+          cargo test --locked -p marlin-agent-policy-routing-native --features linked-native --no-run
 
       - name: Run linked-native tests
-        run: cargo test --locked -p marlin-deck-runtime-native --features linked-native
+        run: |
+          cargo test --locked -p marlin-deck-runtime-native --features linked-native
+          cargo test --locked -p marlin-agent-policy-routing-native --features linked-native
+
+      - name: Compile linked selector benchmarks
+        run: |
+          cargo bench --locked -p marlin-deck-runtime-native --features linked-native --bench linked_selector --no-run
+          cargo bench --locked -p marlin-agent-policy-routing-native --features linked-native --bench linked_selector --no-run
 
       - name: Benchmark linked selector
-        run: cargo bench --locked -p marlin-deck-runtime-native --features linked-native --bench linked_selector
+        run: |
+          cargo bench --locked -p marlin-deck-runtime-native --features linked-native --bench linked_selector
+          cargo bench --locked -p marlin-agent-policy-routing-native --features linked-native --bench linked_selector
+
+      - name: Upload linked native benchmark artifacts
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: linked-native-criterion-${{ runner.os }}
+          path: target/criterion
+          if-no-files-found: warn

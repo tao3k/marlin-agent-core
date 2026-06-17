@@ -1,4 +1,5 @@
 use super::support::{write_empty_file, write_executable};
+use marlin_agent_protocol::GraphNativeAbiReadinessStatus;
 use marlin_gerbil_scheme::{
     GerbilDeckRuntimeNativeAotBuildStatus, GerbilDeckRuntimeNativeAotConfig,
     GerbilDeckRuntimeNativeCargoDirectiveKind, GerbilDeckRuntimeNativeStaticLinkStatus,
@@ -171,6 +172,83 @@ printf '00000000 T marlin_deck_runtime_select_model_route\n'
             .iter()
             .any(|directive| directive.line().contains("cargo:rustc-link-lib=gambit"))
     );
+}
+
+#[test]
+#[cfg(unix)]
+fn agent_policy_routing_native_aot_build_projects_graph_readiness_receipt() {
+    let root = Builder::new()
+        .prefix("marlin-gerbil-agent-policy-routing-native-aot-build-")
+        .tempdir()
+        .expect("create root");
+    let gsc = root.path().join("toolchain/gsc");
+    let nm = root.path().join("toolchain/nm");
+    let compiled_runtime_scm = root
+        .path()
+        .join(".gerbil/native/agent-policy-routing-native~0.scm");
+    write_empty_file(&compiled_runtime_scm);
+    write_executable(
+        &gsc,
+        r#"#!/bin/sh
+set -eu
+mode=""
+source=""
+skip_next=0
+for arg in "$@"; do
+  if [ "$skip_next" = "1" ]; then
+    skip_next=0
+    continue
+  fi
+  if [ "$arg" = "-cc" ] || [ "$arg" = "-cc-options" ] || [ "$arg" = "-target" ]; then
+    skip_next=1
+    continue
+  fi
+  if [ "$arg" = "-obj" ] || [ "$arg" = "-link" ]; then
+    mode="$arg"
+  else
+    source="$arg"
+  fi
+done
+dir=$(dirname "$source")
+base=$(basename "$source")
+if [ "$mode" = "-link" ]; then
+  : > "$dir/agent-policy-routing-native~0_.c"
+elif [ "$base" = "agent-policy-routing-native~0_.c" ]; then
+  : > "$dir/agent-policy-routing-native~0_.o"
+else
+  : > "$dir/agent-policy-routing-native~0.o"
+fi
+"#,
+    );
+    write_executable(
+        &nm,
+        r#"#!/bin/sh
+set -eu
+printf '00000000 T marlin_agent_policy_routing_initialize\n'
+printf '00000000 T marlin_agent_policy_routing_select_edges\n'
+"#,
+    );
+
+    let receipt = GerbilDeckRuntimeNativeAotConfig::agent_policy_routing(root.path())
+        .with_gsc(gsc)
+        .with_symbol_auditor(nm)
+        .build_link_unit();
+
+    assert_eq!(
+        receipt.status,
+        GerbilDeckRuntimeNativeAotBuildStatus::LinkUnitReady
+    );
+    assert!(receipt.plan.object.is_file());
+    assert!(receipt.plan.link_c_source.is_file());
+    assert!(receipt.plan.link_object.is_file());
+    assert!(receipt.missing_symbols.is_empty());
+
+    let readiness = receipt.graph_native_abi_readiness_receipt();
+    assert_eq!(readiness.status, GraphNativeAbiReadinessStatus::Ready);
+    assert_eq!(readiness.required_symbol_count, 2);
+    assert_eq!(readiness.available_symbol_count, 2);
+    assert_eq!(readiness.matched_symbol_count, 2);
+    assert!(readiness.missing_symbols.is_empty());
 }
 
 #[test]

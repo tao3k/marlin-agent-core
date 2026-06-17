@@ -2445,6 +2445,7 @@ dependencies = [
 name = "marlin-agent-policy-routing-native"
 version = "0.1.0"
 dependencies = [
+ "criterion",
  "marlin-agent-graph",
  "marlin-gerbil-native-build",
  "marlin-gerbil-scheme",

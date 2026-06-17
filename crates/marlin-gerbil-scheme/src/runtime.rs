@@ -85,8 +85,13 @@ pub fn default_gerbil_gxc_program() -> PathBuf {
 
 /// Returns the configured `Gerbil` Gambit compiler path or PATH program name.
 pub fn default_gerbil_gsc_program() -> PathBuf {
-    env::var_os(MARLIN_GERBIL_GSC_ENV)
-        .map(PathBuf::from)
+    if let Some(program) = env::var_os(MARLIN_GERBIL_GSC_ENV) {
+        return PathBuf::from(program);
+    }
+
+    resolve_gerbil_executable(default_gerbil_gxi_program())
+        .and_then(|gxi| gxi.parent().map(|bin| bin.join("gsc")))
+        .filter(|candidate| candidate.is_file())
         .unwrap_or_else(|| PathBuf::from("gsc"))
 }
 

@@ -18,6 +18,7 @@ package: modules
         :modules/evidence-policy
         :modules/failure-policy
         :modules/memory-policy
+        :modules/domain-policy
         :modules/catalog-projection-policy
         :modules/evaluation
         :modules/policy-pack)
@@ -106,6 +107,18 @@ package: modules
         marlinDefaultMemoryTriggerPolicy
         marlinDefaultMemoryRetentionPolicy
         marlinDefaultMemoryVisibilityPolicy
+        marlin-subagent-policy-family
+        marlin-context-compression-policy-family
+        marlin-tool-batch-policy-family
+        marlin-self-evolution-policy-family
+        marlinSubagentPolicy
+        marlinContextCompressionPolicy
+        marlinToolBatchPolicy
+        marlinSelfEvolutionPolicy
+        marlinDefaultSubagentPolicy
+        marlinDefaultContextCompressionPolicy
+        marlinDefaultToolBatchPolicy
+        marlinDefaultSelfEvolutionPolicy
         marlin-catalog-projection-policy-family
         marlinCatalogProjectionPolicy
         marlinDefaultCatalogProjectionPolicy
@@ -119,6 +132,10 @@ package: modules
         marlinPolicyPackInventory
         marlinPolicyPackPresentation
         marlinPolicyProjection
+        marlinPolicyModuleEvaluationReceipt
+        marlinPolicyBudgetReceipt
+        marlinPolicyCatalogResolutionReceipt
+        marlinPolicyProjectionReceipts
         marlinPolicyProjectionChainReceipt
         marlinModuleCatalog
         marlin-import

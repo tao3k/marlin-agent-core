@@ -9,10 +9,15 @@ repository.workspace = true
 default = []
 linked-native = []
 
+[[bench]]
+name = "linked_selector"
+harness = false
+
 [dependencies]
 marlin-gerbil-scheme.workspace = true
 
 [dev-dependencies]
+criterion.workspace = true
 marlin-agent-graph.workspace = true
 
 [build-dependencies]

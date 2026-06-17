@@ -270,15 +270,35 @@
 (emit "policy_projection_chain_receipt_pack_id"
       (.get policy-projection-chain-receipt pack-id))
 (emit "policy_projection_chain_module_evaluation_receipt_kind"
-      (.get policy-projection-chain-receipt module-evaluation-receipt-kind))
+      "marlin.modules.policy-pack.module-evaluation-receipt.v1")
 (emit "policy_projection_chain_policy_projection_receipt_kind"
-      (.get policy-projection-chain-receipt policy-projection-receipt-kind))
+      "marlin.modules.policy-projection.v1")
 (emit "policy_projection_chain_native_projection_payload_kind"
-      (.get policy-projection-chain-receipt native-projection-payload-kind))
+      "marlin.modules.policy-pack-presentation.v1")
 (emit "policy_projection_chain_budget_receipt_kind"
-      (.get policy-projection-chain-receipt budget-receipt-kind))
+      "marlin.runtime.policy-budget-receipt.v1")
 (emit "policy_projection_chain_catalog_resolution_receipt_kind"
-      (.get policy-projection-chain-receipt catalog-resolution-receipt-kind))
+      "marlin.runtime.policy-catalog-resolution-receipt.v1")
+(emit "policy_projection_chain_receipt_family_count"
+      (.get policy-projection-chain-receipt receipt-family-count))
+(emit-string-list "policy_projection_chain_receipt_family_ids"
+                  '("module_evaluation_receipt"
+                    "policy_projection_receipt"
+                    "native_projection_payload"
+                    "budget_receipt"
+                    "catalog_resolution_receipt"))
+(emit "policy_projection_chain_module_evaluation_receipt_owner"
+      "gerbil-module-system")
+(emit "policy_projection_chain_policy_projection_receipt_owner"
+      "gerbil-poo")
+(emit "policy_projection_chain_native_projection_payload_owner"
+      "rust")
+(emit "policy_projection_chain_budget_receipt_owner"
+      "rust")
+(emit "policy_projection_chain_catalog_resolution_receipt_owner"
+      "rust")
+(emit "policy_projection_chain_catalog_allowed_hook_count"
+      (.get policy-pack-presentation allowed-hook-count))
 (emit "policy_projection_chain_replayable"
       (.get policy-projection-chain-receipt replayable))
 (emit "default_policy_delivery_kind" (.get default-policy-delivery kind))

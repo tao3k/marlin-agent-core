@@ -1,0 +1,42 @@
+* 40.162 Gerbil Policy Pack P0-P5 Evidence
+:PROPERTIES:
+:ID: 40.162-gerbil-policy-pack-p0-p5-evidence
+:END:
+** Purpose
+This note records the Gerbil policy-pack evidence used by the AgentGraph P0-P5 closure. It keeps complex policy composition in Scheme while preserving the native Scheme types to Rust types boundary.
+** Native Receipt Boundary
+The policy-pack projection chain is represented as POO receipts, not JSON:
+- =module_evaluation_receipt=
+- =policy_projection_receipt=
+- =native_projection_payload=
+- =budget_receipt=
+- =catalog_resolution_receipt=
+The direct projection helper exposes receipt family ids, nested receipt values, and owner fields as Scheme values that Rust can later consume through typed native projections.
+** Real Package Smoke
+The downstream user-interface module-config smoke ran the real Scheme package and returned:
+#+begin_src text
+user-interface-script-workflow-ok
+script-id=user-interface-worker-script
+extension-id=user-interface-worker-extension
+continuation-kind=continue_with_graph
+has-interface-file=true
+metrics-kind=marlin-deck-runtime.script-batch-metrics.v1
+metrics-interface=poo-native-api-or-gxi-script
+iterations=128
+runs=128
+elapsed_us=264
+OK
+#+end_src
+** Verification Commands
+The Gerbil package evidence was checked with:
+#+begin_src sh
+GERBIL_LOADPATH=src gxc -d ~/.gerbil/lib src/modules/policy-pack.ss
+GERBIL_LOADPATH=src gxc -d ~/.gerbil/lib src/modules/lib.ss
+GERBIL_LOADPATH=src gxtest t/marlin-policy-pack-inventory-test.ss
+GERBIL_LOADPATH=src gxtest t/marlin-user-interface-prefab-test.ss
+GERBIL_LOADPATH=../../gerbil/src gxtest t/user-interface-module-config-test.ss
+#+end_src
+The full package compile gate is:
+#+begin_src sh
+GERBIL_LOADPATH=src gxi build.ss compile
+#+end_src

@@ -462,8 +462,7 @@ package: modules/prefabs
 ;;; Boundary: The subagent extension is policy furniture inside the prefab.
 ;; MarlinResult <- MarlinInput
 (def user-interface-subagent-policy-object
-  (marlinPolicyObject
-   "subagent-policy-extension"
+  (marlinSubagentPolicy
    "user-interface-subagent-policy-extension"
    user-interface-subagent-policy-extension
    '((owner . "marlin") (surface . "user-interface-prefab-object"))))
@@ -529,7 +528,7 @@ package: modules/prefabs
            "runtime-catalog-user-interface-hook"
            "Rust catalog owns hook handlers")
           (marlin-disable-object
-           "subagent-policy-extension"
+           "subagent-policy"
            "user-interface-subagent-policy-extension"
            "disabled by downstream object surgery")
           (marlin-replace-object

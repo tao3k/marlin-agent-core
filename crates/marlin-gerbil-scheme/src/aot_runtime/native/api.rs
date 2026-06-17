@@ -16,7 +16,7 @@ use super::{
     run::build_gerbil_deck_runtime_native_link_unit,
     status::GerbilDeckRuntimeNativeAotStatus,
 };
-use crate::runtime::default_gerbil_gsc_program;
+use crate::runtime::{default_gerbil_gsc_program, resolve_gerbil_executable};
 use std::path::{Path, PathBuf};
 
 impl GerbilDeckRuntimeNativeAotConfig {
@@ -204,7 +204,7 @@ impl GerbilDeckRuntimeNativeAotConfig {
 fn native_plan_status(
     config: &GerbilDeckRuntimeNativeAotConfig,
 ) -> GerbilDeckRuntimeNativeAotStatus {
-    if !config.gsc.is_file() {
+    if resolve_gerbil_executable(&config.gsc).is_none() {
         return GerbilDeckRuntimeNativeAotStatus::MissingGsc;
     }
     if !config.compiled_runtime_scm.is_file() {

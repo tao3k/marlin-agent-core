@@ -1,0 +1,51 @@
+* 30.92 POO Module System M2-M6 Checkpoint
+:PROPERTIES:
+:ID: docs-30-92-poo-module-system-m2-m6-checkpoint
+:KIND: implementation_checkpoint
+:STATUS: active
+:END:
+
+Native AOT staging is intentionally out of scope here. This checkpoint records
+the interpreted/debug-path module-system work for M2-M6.
+
+** Landed Shape
+- M2 object surgery remains the customization surface. The furnished
+  user-interface pack exercises add/remove/disable/replace operations while
+  keeping disabled objects visible in receipts.
+- M3 projection-chain receipts are fixed at five receipt families:
+  =module_evaluation_receipt=, =policy_projection_receipt=,
+  =native_projection_payload=, =budget_receipt=, and
+  =catalog_resolution_receipt=.
+- The shared chain helper is intentionally minimal: it exposes the chain kind,
+  pack id, family count, catalog allowed-hook count, and replayability.
+  Delivery receipts and the debug CLI project the stable family ids, kind ids,
+  and owner facts as scalar ABI facts instead of embedding full POO receipt
+  objects.
+- M4 domain family expansion now includes upstream default policy objects for
+  subagent, context compression, tool batch, and self-evolution alongside
+  evidence, failure, and memory families.
+- M5 debug CLI proof is real: =marlin gerbil policy-receipt= runs the Scheme
+  POO policy path through =gxi= and emits all five receipt-family facts, owner
+  boundaries, catalog hook counts, and loop timing.
+- M6 downstream user proof is real: =examples/user-interface-module-config=
+  keeps the user entrypoint small while =framework-authoring/custom-policy-pack.ss=
+  demonstrates the advanced raw pack-authoring layer.
+
+** Validation
+#+begin_src sh
+GERBIL_LOADPATH=src:t /usr/local/bin/gxi t/marlin-policy-pack-inventory-test.ss
+GERBIL_LOADPATH=src:t /usr/local/bin/gxi t/marlin-user-interface-prefab-test.ss
+GERBIL_LOADPATH=../../gerbil/src:user-interface-modules:t /usr/local/bin/gxtest -v t/user-interface-module-config-test.ss
+direnv exec . cargo run -p marlin-agent-core --locked -- gerbil policy-receipt --gxi /usr/local/bin/gxi --package-root crates/marlin-gerbil-scheme/gerbil --iterations 3
+direnv exec . cargo test -p marlin-agent-core --locked --test unit_test runtime::facade::debug_cli::gerbil -- --nocapture
+#+end_src
+
+** Performance Reading
+The debug CLI reports two separate timings. The process wall clock includes
+single =gxi= startup, load, and module construction. The Scheme policy loop
+timing measures the actual policy loop once the process is alive.
+
+In the current real debug CLI run, =process_elapsed_micros= was dominated by
+startup/load, while =scheme_policy_loop_elapsed_micros= for three iterations
+was in the low hundreds of microseconds. Do not report process wall clock as
+policy merge performance.

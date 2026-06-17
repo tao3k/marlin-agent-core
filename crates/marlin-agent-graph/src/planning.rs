@@ -4,10 +4,13 @@ use std::collections::{HashMap, HashSet};
 
 use serde::{Deserialize, Serialize};
 
-use crate::ids::{AgentCapability, AgentEdgeId, AgentGraphId, AgentNodeId, GerbilPolicyScopeRef};
+use crate::ids::{
+    AgentCapability, AgentEdgeId, AgentGraphId, AgentNodeId, AgentRoutingReason,
+    GerbilPolicyScopeRef,
+};
 use crate::receipt::{
     AgentCoordinationDecision, AgentCoordinationEvidenceRef, AgentCoordinationReceipt,
-    AgentPolicyRoutingDecision, AgentPolicyRoutingReceipt,
+    AgentPolicyRoutingDecision, AgentPolicyRoutingReceipt, AgentRoutingReceipt,
 };
 use crate::topology::{
     AgentCoordinationPlan, AgentEdge, AgentEdgeCondition, AgentGraph, AgentTopologyPolicy,
@@ -159,6 +162,42 @@ pub enum AgentGraphPlanningRejection {
     },
 }
 
+/// Typed reason for rejecting candidate routing receipt projection.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum AgentGraphRoutingProjectionRejection {
+    /// The graph failed topology validation.
+    InvalidGraph {
+        /// Validation failure rendered at the routing projection boundary.
+        message: String,
+    },
+    /// The plan targets a different graph than the supplied graph.
+    GraphMismatch {
+        /// Graph id from the plan.
+        plan_graph_id: AgentGraphId,
+        /// Graph id from the supplied graph.
+        graph_id: AgentGraphId,
+    },
+    /// The plan root node does not exist in the supplied graph.
+    MissingRootNode {
+        /// Missing root node.
+        node_id: AgentNodeId,
+    },
+    /// The plan references a candidate edge that does not exist in the supplied graph.
+    MissingCandidateEdge {
+        /// Missing candidate edge.
+        edge_id: AgentEdgeId,
+    },
+    /// The plan references an edge that does not leave the plan root node.
+    CandidateEdgeSourceMismatch {
+        /// Invalid candidate edge.
+        edge_id: AgentEdgeId,
+        /// Source node on the edge.
+        edge_source: AgentNodeId,
+        /// Root node selected by the plan.
+        root_node: AgentNodeId,
+    },
+}
+
 /// Produces a runtime-consumable `AgentCoordinationPlan` without executing it.
 pub fn plan_agent_coordination(
     graph: &AgentGraph,
@@ -174,6 +213,73 @@ pub fn plan_agent_coordination_with_policy_receipt(
     policy_receipt: AgentPolicyRoutingReceipt,
 ) -> AgentGraphPlanningReceipt {
     plan_agent_coordination_internal(graph, target, Some(policy_receipt))
+}
+
+/// Projects a planned candidate edge set into typed next-hop routing receipts.
+///
+/// This is still an AgentGraph topology boundary: it does not execute a
+/// graph-loop controller, tool, session, or downstream agent.
+pub fn project_agent_candidate_routing_receipts(
+    graph: &AgentGraph,
+    plan: &AgentCoordinationPlan,
+    reason: AgentRoutingReason,
+    evidence: Vec<AgentCoordinationEvidenceRef>,
+) -> Result<Vec<AgentRoutingReceipt>, AgentGraphRoutingProjectionRejection> {
+    if let Err(error) = graph.validate() {
+        return Err(AgentGraphRoutingProjectionRejection::InvalidGraph {
+            message: error.to_string(),
+        });
+    }
+
+    if plan.graph_id != graph.graph_id {
+        return Err(AgentGraphRoutingProjectionRejection::GraphMismatch {
+            plan_graph_id: plan.graph_id.clone(),
+            graph_id: graph.graph_id.clone(),
+        });
+    }
+
+    if !graph
+        .nodes
+        .iter()
+        .any(|node| node.node_id == plan.root_node)
+    {
+        return Err(AgentGraphRoutingProjectionRejection::MissingRootNode {
+            node_id: plan.root_node.clone(),
+        });
+    }
+
+    let edges_by_id = graph
+        .edges
+        .iter()
+        .map(|edge| (edge.edge_id.clone(), edge))
+        .collect::<HashMap<_, _>>();
+    let mut receipts = Vec::with_capacity(plan.candidate_edges.len());
+    for edge_id in &plan.candidate_edges {
+        let Some(edge) = edges_by_id.get(edge_id) else {
+            return Err(AgentGraphRoutingProjectionRejection::MissingCandidateEdge {
+                edge_id: edge_id.clone(),
+            });
+        };
+        if edge.from != plan.root_node {
+            return Err(
+                AgentGraphRoutingProjectionRejection::CandidateEdgeSourceMismatch {
+                    edge_id: edge.edge_id.clone(),
+                    edge_source: edge.from.clone(),
+                    root_node: plan.root_node.clone(),
+                },
+            );
+        }
+        receipts.push(AgentRoutingReceipt {
+            graph_id: plan.graph_id.clone(),
+            from: plan.root_node.clone(),
+            to: edge.to.clone(),
+            via_edge: edge.edge_id.clone(),
+            reason: reason.clone(),
+            evidence: evidence.clone(),
+        });
+    }
+
+    Ok(receipts)
 }
 
 fn plan_agent_coordination_internal(

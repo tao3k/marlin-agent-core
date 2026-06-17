@@ -10,6 +10,7 @@
         :marlin/deck-runtime-user-module
         :marlin/graph-loop-continuation-native-projection
         "../user-interface-modules/config"
+        "../framework-authoring/custom-policy-pack"
         :std/test)
 
 ;;; Boundary: Fixture context models a downstream user command.
@@ -181,10 +182,10 @@
 (check (.get user-interface-pack-presentation
              module-system-presentation-kind)
        => marlin-module-system-presentation-kind)
-(check (.get user-interface-pack-presentation policy-object-count) => 17)
+(check (.get user-interface-pack-presentation policy-object-count) => 21)
 (check (.get user-interface-pack-presentation
              default-policy-object-count)
-       => 17)
+       => 21)
 (check (.get user-interface-pack-presentation object-operation-count) => 4)
 (check (.get user-interface-pack-presentation
              object-surgery-receipt-count)
@@ -236,11 +237,47 @@
        => marlin-policy-budget-receipt-kind)
 (check (.get user-interface-delivery catalog-resolution-receipt-kind)
        => marlin-policy-catalog-resolution-receipt-kind)
+(check (.get user-interface-delivery projection-receipt-family-count) => 5)
+(check (.get user-interface-delivery projection-receipt-family-ids)
+       => '("module_evaluation_receipt"
+            "policy_projection_receipt"
+            "native_projection_payload"
+            "budget_receipt"
+            "catalog_resolution_receipt"))
+(check (.get user-interface-delivery module-evaluation-receipt-owner)
+       => "gerbil-module-system")
+(check (.get user-interface-delivery policy-projection-receipt-owner)
+       => "gerbil-poo")
+(check (.get user-interface-delivery native-projection-payload-owner)
+       => "rust")
+(check (.get user-interface-delivery budget-receipt-owner)
+       => "rust")
+(check (.get user-interface-delivery catalog-resolution-receipt-owner)
+       => "rust")
+(check (.get user-interface-delivery catalog-resolution-allowed-hook-count)
+       => 2)
 (check (.get user-interface-delivery user-entrypoints)
        => '("UserInterfaceWorkspace"
             "UserInterfaceDeliveryReceipt"
             "UserInterfaceApply"
             "UserInterfacePolicyProjection"))
+(check (.get framework-authoring-policy-pack kind)
+       => marlin-policy-pack-kind)
+(check (.get framework-authoring-policy-pack id)
+       => "framework-authoring-custom-pack")
+(check (.get (marlinPolicyPackInventory framework-authoring-policy-pack)
+             policy-object-count)
+       => 4)
+(check (.get (marlinPolicyPackInventory framework-authoring-policy-pack)
+             disabled-policy-object-ids)
+       => '("framework-self-evolution"))
+(check (.get framework-authoring-policy-projection kind)
+       => marlin-policy-projection-kind)
+(check (.get framework-authoring-projection-chain receipt-family-count)
+       => 5)
+(check (.get framework-authoring-projection-chain
+             catalog-resolution-allowed-hook-count)
+       => 1)
 (check (.get user-interface-apply kind)
        => user-interface-delivery-receipt-kind)
 (check (.get user-interface-projection kind)

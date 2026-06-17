@@ -17,8 +17,8 @@ package: modules
         :modules/evidence-policy
         :modules/failure-policy
         :modules/memory-policy
-        :modules/catalog-projection-policy
-        :modules/evaluation)
+        :modules/domain-policy
+        :modules/catalog-projection-policy)
 
 (export marlinPolicyPack
         defmarlin-policy-pack
@@ -30,7 +30,30 @@ package: modules
         marlinPolicyPackInventory
         marlinPolicyPackPresentation
         marlinPolicyProjection
+        marlinPolicyModuleEvaluationReceipt
+        marlinPolicyBudgetReceipt
+        marlinPolicyCatalogResolutionReceipt
+        marlinPolicyProjectionReceipts
         marlinPolicyProjectionChainReceipt)
+
+;;; Boundary: Policy packs build catalog metadata without importing evalModules.
+;; MarlinResult <- MarlinInput
+(def (marlin-policy-pack-module-catalog module-value)
+  (.o kind: marlin-module-catalog-kind
+      modules: (list module-value)))
+
+;;; Boundary: Pack presentations summarize module metadata without evalModules.
+;; MarlinResult <- MarlinInput
+(def (marlin-policy-pack-root-module-kind policy-pack)
+  (let (module-value (.get policy-pack module))
+    (if module-value
+      (.get module-value kind)
+      #f)))
+
+;;; Boundary: Policy pack projection keeps runtime evaluation out of facade load.
+;; MarlinResult <- MarlinInput
+(def marlin-policy-pack-module-evaluation-receipt-kind
+  "marlin.modules.policy-pack.module-evaluation-receipt.v1")
 
 ;;; Boundary: Policy packs are upstream prefab bundles over POO modules.
 ;; MarlinResult <- MarlinInput
@@ -42,7 +65,7 @@ package: modules
            pack-config
            'catalog
            (if module-value
-             (marlinModuleCatalog module-value)
+             (marlin-policy-pack-module-catalog module-value)
              #f)))
          (root-module-id-value
           (marlin-module-object-ref/default
@@ -348,6 +371,10 @@ package: modules
    (marlinDefaultMemoryTriggerPolicy)
    (marlinDefaultMemoryRetentionPolicy)
    (marlinDefaultMemoryVisibilityPolicy)
+   (marlinDefaultSubagentPolicy)
+   (marlinDefaultContextCompressionPolicy)
+   (marlinDefaultToolBatchPolicy)
+   (marlinDefaultSelfEvolutionPolicy)
    (marlinDefaultCatalogProjectionPolicy)))
 
 ;;; Boundary: Default packs are furnished entrypoints over an existing module.
@@ -456,12 +483,7 @@ package: modules
 ;;; Boundary: Pack presentation is the stable projection pattern for Rust.
 ;; MarlinResult <- MarlinInput
 (def (marlinPolicyPackPresentation policy-pack)
-  (let* ((module-system-presentation
-          (marlinModuleSystemPresentation
-           (.get policy-pack catalog)
-           (.get policy-pack root-module-id)
-           (.get policy-pack allowed-hook-ids)))
-         (pack-inventory
+  (let* ((pack-inventory
           (marlinPolicyPackInventory policy-pack))
          (allowed-hook-ids-value (.get policy-pack allowed-hook-ids))
          (policy-object-count-value (.get policy-pack policy-object-count))
@@ -506,11 +528,12 @@ package: modules
         pack-catalog-kind: marlin-pack-catalog-kind
         policy-pack-inventory-kind: (.get pack-inventory kind)
         module-system-presentation-kind:
-        (.get module-system-presentation kind)
+        marlin-module-system-presentation-kind
         module-system-projection-chain-kind:
-        (.get module-system-presentation projection-chain-kind)
+        marlin-module-projection-chain-kind
         root-module-id: (.get policy-pack root-module-id)
-        root-module-kind: (.get module-system-presentation root-module-kind)
+        root-module-kind:
+        (marlin-policy-pack-root-module-kind policy-pack)
         policy-object-count: policy-object-count-value
         default-policy-object-count: default-policy-object-count-value
         disabled-policy-object-count: disabled-policy-object-count-value
@@ -545,27 +568,21 @@ package: modules
           "marlinPolicyPackInventory"
           "marlinPolicyPackPresentation"
           "marlinPolicyProjection"
+          "marlinPolicyProjectionReceipts"
           "marlinPolicyProjectionChainReceipt")
         module-evaluation-receipt-kind:
-        (.get module-system-presentation module-evaluation-receipt-kind)
+        marlin-policy-pack-module-evaluation-receipt-kind
         projection-chain-kind:
-        (.get module-system-presentation projection-chain-kind)
+        marlin-module-projection-chain-kind
         policy-projection-receipt-kind: marlin-policy-projection-kind
-        import-graph-owner:
-        (.get module-system-presentation import-graph-owner)
-        option-merge-owner:
-        (.get module-system-presentation option-merge-owner)
-        extension-composition-owner:
-        (.get module-system-presentation extension-composition-owner)
+        import-graph-owner: "gerbil-module-system"
+        option-merge-owner: "gerbil-poo"
+        extension-composition-owner: "gerbil-poo"
         policy-composition-owner: "gerbil-poo"
-        native-projection-payload-owner:
-        (.get module-system-presentation native-projection-payload-owner)
-        budget-receipt-owner:
-        (.get module-system-presentation budget-receipt-owner)
-        catalog-resolution-receipt-owner:
-        (.get module-system-presentation catalog-resolution-receipt-owner)
-        runtime-lifecycle-owner:
-        (.get module-system-presentation runtime-lifecycle-owner)
+        native-projection-payload-owner: "rust"
+        budget-receipt-owner: "rust"
+        catalog-resolution-receipt-owner: "rust"
+        runtime-lifecycle-owner: "rust"
         rust-parses-scheme-source:
         rust-parses-scheme-source-value
         rust-handler-manufactured: rust-handler-manufactured-value
@@ -576,16 +593,46 @@ package: modules
 ;;; Boundary: PolicyProjection<T> fixes the Scheme->Rust handoff envelope.
 ;; MarlinResult <- MarlinInput
 (def (marlinPolicyProjection policy-pack . maybe-native-payload)
-  (let* ((native-payload
+  (let* ((native-payload-input
           (if (pair? maybe-native-payload)
             (car maybe-native-payload)
             (marlinPolicyPackPresentation policy-pack)))
          (presentation
-          (if (equal? (.get native-payload kind)
+          (if (equal? (.get native-payload-input kind)
                       marlin-policy-pack-presentation-kind)
-            native-payload
-            (marlinPolicyPackPresentation policy-pack))))
+            native-payload-input
+            (marlinPolicyPackPresentation policy-pack)))
+         (native-payload-kind
+          (.get native-payload-input kind))
+         (native-payload
+          (.o kind: native-payload-kind
+              pack-id: (.get policy-pack id)
+              owner: (.get presentation native-projection-payload-owner)
+              payload-owner:
+              (.get presentation native-projection-payload-owner)
+              policy-object-count:
+              (.get presentation policy-object-count)
+              policy-families:
+              (.get presentation policy-families)
+              policy-object-ids:
+              (.get presentation policy-object-ids)
+              disabled-policy-object-ids:
+              (.get presentation disabled-policy-object-ids)
+              allowed-hook-ids:
+              (.get presentation allowed-hook-ids)
+              allowed-hook-count:
+              (.get presentation allowed-hook-count)
+              object-operation-count:
+              (.get presentation object-operation-count)
+              object-surgery-receipt-count:
+              (.get presentation object-surgery-receipt-count)
+              conflict-surgery-receipt-count:
+              (.get presentation conflict-surgery-receipt-count)
+              rust-handler-manufactured:
+              (.get presentation rust-handler-manufactured)
+              replayable: (.get presentation replayable))))
     (.o kind: marlin-policy-projection-kind
+        owner: (.get presentation policy-composition-owner)
         pack-kind: (.get policy-pack kind)
         pack-id: (.get policy-pack id)
         pack-owner: (.get policy-pack owner)
@@ -597,8 +644,7 @@ package: modules
         module-evaluation-receipt-kind:
         (.get presentation module-evaluation-receipt-kind)
         policy-projection-receipt-kind: marlin-policy-projection-kind
-        native-projection-payload-kind:
-        (.get native-payload kind)
+        native-projection-payload-kind: native-payload-kind
         native-projection-payload-owner:
         (.get presentation native-projection-payload-owner)
         native-projection-payload: native-payload
@@ -626,51 +672,76 @@ package: modules
         (.get presentation rust-handler-manufactured)
         replayable: (.get presentation replayable))))
 
+;;; Boundary: Module evaluation receipt summarizes Scheme-owned composition.
+;; MarlinResult <- MarlinInput
+(def (marlinPolicyModuleEvaluationReceipt policy-projection)
+  (.o kind: (.get policy-projection module-evaluation-receipt-kind)
+      pack-id: (.get policy-projection pack-id)
+      owner: (.get policy-projection import-graph-owner)
+      import-graph-owner: (.get policy-projection import-graph-owner)
+      option-merge-owner: (.get policy-projection option-merge-owner)
+      extension-composition-owner:
+      (.get policy-projection extension-composition-owner)
+      policy-composition-owner:
+      (.get policy-projection policy-composition-owner)
+      replayable: (.get policy-projection replayable)))
+
+;;; Boundary: Budget receipt is Rust-owned validation metadata.
+;; MarlinResult <- MarlinInput
+(def (marlinPolicyBudgetReceipt policy-projection)
+  (.o kind: marlin-policy-budget-receipt-kind
+      pack-id: (.get policy-projection pack-id)
+      owner: (.get policy-projection budget-receipt-owner)
+      budget-owner: (.get policy-projection budget-receipt-owner)
+      runtime-lifecycle-owner:
+      (.get policy-projection runtime-lifecycle-owner)
+      policy-composition-owner:
+      (.get policy-projection policy-composition-owner)
+      replayable: (.get policy-projection replayable)))
+
+;;; Boundary: Catalog receipt names Rust handler lookup without creating one.
+;; MarlinResult <- MarlinInput
+(def (marlinPolicyCatalogResolutionReceipt policy-projection)
+  (let (native-payload
+        (.get policy-projection native-projection-payload))
+    (.o kind: marlin-policy-catalog-resolution-receipt-kind
+        pack-id: (.get policy-projection pack-id)
+        owner: (.get policy-projection catalog-resolution-receipt-owner)
+        catalog-handler-lookup-owner:
+        (.get policy-projection catalog-resolution-receipt-owner)
+        allowed-hook-ids: (.get native-payload allowed-hook-ids)
+        allowed-hook-count: (.get native-payload allowed-hook-count)
+        rust-handler-manufactured:
+        (.get policy-projection rust-handler-manufactured)
+        scheme-manufactures-rust-handlers: #f
+        replayable: (.get policy-projection replayable))))
+
+;;; Boundary: Fixed five-family chain for prefab and custom policy packs.
+;; MarlinResult <- MarlinInput
+(def (marlin-policy-projection-receipts/direct policy-pack . maybe-native-payload)
+  (let ((catalog-resolution-allowed-hook-count-value
+         (length (.get policy-pack allowed-hook-ids))))
+    (.o kind: marlin-policy-projection-chain-receipt-kind
+        pack-id: (.get policy-pack id)
+        receipt-family-count: 5
+        catalog-resolution-allowed-hook-count:
+        catalog-resolution-allowed-hook-count-value
+        replayable: #t)))
+
+;;; Boundary: Public receipt helper keeps a stable varargs API.
+;; MarlinResult <- MarlinInput
+(def (marlinPolicyProjectionReceipts policy-pack . maybe-native-payload)
+  (if (pair? maybe-native-payload)
+    (marlin-policy-projection-receipts/direct
+     policy-pack
+     (car maybe-native-payload))
+    (marlin-policy-projection-receipts/direct policy-pack)))
+
 ;;; Boundary: Fixed receipt chain for module -> policy -> Rust validation.
 ;; MarlinResult <- MarlinInput
 (def (marlinPolicyProjectionChainReceipt policy-pack . maybe-native-payload)
-  (let* ((policy-projection
-          (if (pair? maybe-native-payload)
-            (marlinPolicyProjection policy-pack (car maybe-native-payload))
-            (marlinPolicyProjection policy-pack)))
-         (native-payload
-          (.get policy-projection native-projection-payload)))
-    (.o kind: marlin-policy-projection-chain-receipt-kind
-        pack-id: (.get policy-projection pack-id)
-        pack-kind: (.get policy-projection pack-kind)
-        module-evaluation-receipt-kind:
-        (.get policy-projection module-evaluation-receipt-kind)
-        policy-projection-receipt-kind:
-        (.get policy-projection policy-projection-receipt-kind)
-        policy-projection-receipt: policy-projection
-        native-projection-payload-kind:
-        (.get policy-projection native-projection-payload-kind)
-        native-projection-payload-owner:
-        (.get policy-projection native-projection-payload-owner)
-        native-projection-payload: native-payload
-        budget-receipt-kind: marlin-policy-budget-receipt-kind
-        budget-receipt-owner:
-        (.get policy-projection budget-receipt-owner)
-        catalog-resolution-receipt-kind:
-        marlin-policy-catalog-resolution-receipt-kind
-        catalog-resolution-receipt-owner:
-        (.get policy-projection catalog-resolution-receipt-owner)
-        runtime-lifecycle-owner:
-        (.get policy-projection runtime-lifecycle-owner)
-        import-graph-owner:
-        (.get policy-projection import-graph-owner)
-        option-merge-owner:
-        (.get policy-projection option-merge-owner)
-        extension-composition-owner:
-        (.get policy-projection extension-composition-owner)
-        policy-composition-owner:
-        (.get policy-projection policy-composition-owner)
-        scheme-policy-owner:
-        (.get policy-projection scheme-policy-owner)
-        rust-kernel-owner:
-        (.get policy-projection rust-kernel-owner)
-        rust-parses-scheme-source:
-        (.get policy-projection rust-parses-scheme-source)
-        rust-handler-manufactured:
-        (.get policy-projection rust-handler-manufactured)
-        replayable: (.get policy-projection replayable))))
+  (if (pair? maybe-native-payload)
+    (marlin-policy-projection-receipts/direct
+     policy-pack
+     (car maybe-native-payload))
+    (marlin-policy-projection-receipts/direct policy-pack)))
