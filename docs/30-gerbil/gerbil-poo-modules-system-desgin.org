@@ -20,6 +20,7 @@ graph.
 This complements [[file:30.90-poo-module-system.org][30.90 POO Module System]], which is the implementation landing
 plan for the underlying =marlinModules=, =marlinEvalModules=, POO slot merge,
 and typed projection machinery.
+The milestone flow lives in [[file:30.91-poo-module-system-milestones.org][30.91 POO Module System Milestones]].
 
 ** Mental Model: Furnished House, Furniture, And Catalog
 

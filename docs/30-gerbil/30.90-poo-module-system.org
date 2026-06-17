@@ -26,6 +26,7 @@ Reference reading:
 - https://www.tweag.io/blog/2024-06-20-nickel-user-interface-modules/
 - [[file:../40-rfcs/40.80-marlin-architecture-principles.org][40.80 Marlin Architecture Principles]]
 - [[file:gerbil-poo-modules-system-desgin.org][Gerbil POO Modules System Design]]
+- [[file:30.91-poo-module-system-milestones.org][30.91 POO Module System Milestones]]
 
 ** Controlling Difference
 

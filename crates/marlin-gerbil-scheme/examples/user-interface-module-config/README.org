@@ -6,15 +6,15 @@ agents can inspect the workflow as a real workspace.
 
 ** Layout
 
-- =modules/base.ss= declares the base user interface extension and base module.
-- =modules/script.ss= declares the script entrypoint and script module.
-- =modules/interface.ss= declares the imported typed interface for user config.
-- =modules/workspace.ss= declares a workspace preset module.
-- =modules/agent.ss= declares an agent profile module.
-- =modules/hooks.ss= declares a runtime hook catalog module.
-- =modules/subagent.ss= declares an agent-authored subagent policy extension
+- =user-interface-modules/base.ss= declares the base user interface extension and base module.
+- =user-interface-modules/script.ss= declares the script entrypoint and script module.
+- =user-interface-modules/interface.ss= declares the imported typed interface for user config.
+- =user-interface-modules/workspace.ss= declares a workspace preset module.
+- =user-interface-modules/agent.ss= declares an agent profile module.
+- =user-interface-modules/hooks.ss= declares a runtime hook catalog module.
+- =user-interface-modules/subagent.ss= declares an agent-authored subagent policy extension
   object.
-- =modules/config.ss= is the user-facing module configuration entrypoint. It
+- =user-interface-modules/config.ss= is the user-facing module configuration entrypoint. It
   applies =marlinModules= to the imported interface and a small POO config
   record. Users should not declare inline schemas or call low-level
   =make-marlin-deck-runtime-*= constructors from this config layer.

@@ -1,0 +1,294 @@
+* 30.91 POO Module System Milestones
+:PROPERTIES:
+:ID: docs-30-91-poo-module-system-milestones
+:KIND: implementation_plan
+:STATUS: active
+:END:
+
+This document turns [[file:gerbil-poo-modules-system-desgin.org][Gerbil POO Modules System Design]] and
+[[file:30.90-poo-module-system.org][30.90 POO Module System]] into an executable milestone flow.
+The current implementation proves the shape, but it is still thin: it has a
+module library, policy pack presentation, object surgery receipts, a downstream
+example, and a debug CLI proof, but it does not yet provide the full furnished
+policy surface promised by the design.
+
+The milestone model is a trophy-gate flow. A milestone is complete only when it
+has user-facing API shape, Scheme receipts, Rust projection behavior, debug CLI
+evidence, and docs that tell agents what not to infer.
+
+** Operating Rule
+
+Every milestone must preserve this boundary:
+
+- Scheme owns module imports, POO object composition, option merge, policy
+  objects, prefab packs, matcher/selector logic, and module evaluation receipts.
+- Rust owns typed projection validation, runtime lifecycle, process/tool
+  execution, performance budgets, replay, and runtime catalog handler lookup.
+- Rust does not parse Scheme source, evaluate imports, merge options, or
+  manufacture hook handlers.
+- Scheme does not serialize native runtime internals or create Rust handlers
+  from text.
+
+** Milestone Map
+
+*** M0 Baseline: Module System Skeleton
+
+Status: landed, but should remain guarded.
+
+Purpose:
+- Keep =:marlin/modules/lib= as the public module-system library under
+  =crates/marlin-gerbil-scheme/gerbil/modules/marlin/modules/lib.ss=.
+- Keep =src/marlin= focused on runtime, debug, policy primitives, and projection
+  glue.
+- Keep downstream examples on semantic local names such as
+  =user-interface-modules= instead of a second ambiguous =modules= directory.
+
+Required evidence:
+- =GERBIL_LOADPATH=src:modules:t /usr/local/bin/gxi t/all-test.ss=
+- =marlin gerbil policy-receipt= debug CLI output includes =loadpath:
+  "src:modules:t"=.
+- =asp gerbil-scheme check --changed .=
+
+Exit condition:
+- Existing tests and docs no longer refer to the module-system implementation as
+  =deck-runtime-modules-lib=.
+
+*** M1 Furnished Prefab Pack
+
+Status: next implementation priority.
+
+Purpose:
+- Make the default path a furnished house: users import a prefab pack and
+  provide only a small config object.
+- The pack should include default workspace, agent, hook, model route,
+  continuation, review, failure recovery, and catalog projection defaults.
+- Users should not start by assembling raw =marlinPolicyModule= objects.
+
+Deliverables:
+- =marlinDefaultPolicyPack= or equivalent upstream prefab constructor.
+- A pack catalog that can list available pack ids, policy families, default
+  objects, disabled objects, and allowed Rust catalog ids.
+- A receipt that shows the pack id, imported modules, object ids, operation ids,
+  and projection target.
+
+Required evidence:
+- Gerbil unit tests for pack catalog listing and default object inventory.
+- Debug CLI fields for default pack id, object count, and receipt replayability.
+- User-interface example updated to start from the prefab path before showing
+  low-level construction.
+
+Exit condition:
+- A new user can run a default policy pack without directly calling
+  =marlinPolicyModule=, =marlinModuleCatalog=, or raw evaluation helpers.
+
+*** M2 Object Surgery As First-Class User API
+
+Status: partially landed.
+
+Purpose:
+- Make add/remove/disable/replace policy object operations the normal
+  customization surface.
+- Treat policy objects as furniture: they have family, id, owner, metadata, and
+  receipt trail.
+
+Deliverables:
+- Stable operation constructors for add/remove/disable/replace.
+- Conflict receipts for duplicate object ids, missing target ids, invalid family
+  replacement, and forbidden Rust catalog ids.
+- A simple public example that replaces a model route and disables human review.
+
+Required evidence:
+- Tests proving operation order is deterministic.
+- Tests proving disabled objects remain visible in presentation receipts.
+- Tests proving Rust catalog ids are checked against an allowed list but not
+  resolved by Scheme.
+
+Exit condition:
+- Users can customize a prefab pack by object identity without editing option
+  priority rules or rewriting module imports.
+
+*** M3 Projection Chain Receipts
+
+Status: partially landed.
+
+Purpose:
+- Make the module -> policy projection -> native payload chain fixed and
+  inspectable for every policy family.
+
+Deliverables:
+- Standard receipt names for module evaluation, policy projection, native
+  projection payload, budget receipt, and catalog resolution receipt.
+- A helper that builds this chain for every prefab and custom policy pack.
+- Tests for replayable receipts when no live LLM or runtime catalog lookup is
+  allowed.
+
+Required evidence:
+- Debug CLI emits all five receipt families.
+- Gerbil tests assert owner fields: Gerbil/POO for composition, Rust for native
+  projection, budget, and catalog resolution.
+
+Exit condition:
+- Adding a new policy family does not require a new Rust-side policy DSL or
+  custom text decoder.
+
+*** M4 Policy Family Expansion
+
+Status: thin.
+
+Purpose:
+- Turn the design examples into concrete upstream module packs instead of
+  scattered hand-built objects.
+
+Policy families:
+- failure recovery policy;
+- human review policy;
+- memory trigger policy;
+- tool batch policy;
+- self-evolution policy;
+- model route policy;
+- context compression policy;
+- hook selection policy;
+- subagent policy;
+- continuation profile policy.
+
+Deliverables:
+- One module or object family per policy family.
+- A default object for each family in the furnished prefab.
+- A minimal override example for each family.
+
+Required evidence:
+- Unit tests for each family object constructor and receipt projection.
+- One downstream example that composes at least four families through one prefab
+  pack.
+
+Exit condition:
+- The default pack reads like a real policy surface, not a single debug fixture.
+
+*** M5 Rust Projection And Debug CLI Gate
+
+Status: partially landed.
+
+Purpose:
+- Keep Rust as the proof boundary: it validates typed projections and reports
+  performance/receipt facts without learning Scheme merge semantics.
+
+Deliverables:
+- Debug CLI subcommands for pack inventory, object surgery preview, projection
+  chain, receipt replay smoke, and performance loop metrics.
+- Typed Rust structs for the stable debug/projection facts.
+
+Required evidence:
+- =cargo test -p marlin-agent-core --test unit_test runtime::facade::debug_cli
+  --locked=
+- Real =marlin gerbil policy-receipt= invocation.
+- Output includes scheme loop timing and Rust-owned catalog/budget fields.
+
+Exit condition:
+- Debug CLI is useful for verifying a newly written =.ss= policy object without
+  asking users to inspect internal Scheme values.
+
+*** M6 Downstream Example And Documentation Gate
+
+Status: partially landed.
+
+Purpose:
+- Keep the user-facing example aligned with how users should actually write
+  policy modules.
+
+Deliverables:
+- =user-interface-module-config= starts from the furnished prefab path.
+- A second example shows advanced rough-house construction for framework
+  authors.
+- Docs explain the four user levels: prefab, normal config, object surgery, and
+  framework authoring.
+
+Required evidence:
+- Example test with semantic loadpath:
+  =../../gerbil/src:../../gerbil/modules:user-interface-modules:t=.
+- README and design docs use the same directory names and ownership terms.
+
+Exit condition:
+- The example teaches the preferred API first and the low-level API second.
+
+*** M7 CI And Release Gate
+
+Status: missing.
+
+Purpose:
+- Make the milestone flow enforceable.
+
+Deliverables:
+- A stable Gerbil test command set for local and CI runs.
+- A debug CLI smoke that runs with real =gxi= when available.
+- A release checklist for module-pack compatibility.
+
+Required evidence:
+- =gxi build.ss=
+- =gxi build.ss compile=
+- =gxi t/all-test.ss=
+- =asp gerbil-scheme check --changed .=
+- Rust debug CLI tests.
+
+Exit condition:
+- A milestone cannot be marked complete without commands that agents can rerun.
+
+** Working Flow
+
+1. Start from the design boundary.
+   Check whether the change belongs to Scheme policy/module composition or Rust
+   projection/runtime validation.
+
+2. Write the user-facing shape first.
+   A milestone must state what the user writes in =.ss= before adding helper
+   internals.
+
+3. Add the POO object or module surface.
+   Prefer native POO slot composition, =.+=, =.mix=, and inherited slot methods.
+   Do not add a second module evaluator.
+
+4. Add receipts before runtime behavior.
+   Every merge, object surgery operation, projection, budget decision, and
+   catalog decision needs a receipt path.
+
+5. Add Rust only at the typed boundary.
+   Rust gets typed facts and projections. It validates, budgets, decodes,
+   supervises, and resolves catalog ids.
+
+6. Prove through debug CLI.
+   Every milestone should have at least one command that shows the chain from
+   Scheme policy object to Rust-consumable facts.
+
+7. Update docs and examples in the same slice.
+   A milestone that changes user API must update the furnished-house story,
+   example command, and agent-facing "do not infer" boundary.
+
+** Slice Template
+
+Each implementation slice should record:
+
+- Milestone:
+- User-facing API:
+- Scheme owner:
+- Rust owner:
+- Receipts added or changed:
+- Debug CLI evidence:
+- Gerbil tests:
+- Rust tests:
+- Documentation touched:
+- Known gaps carried forward:
+
+** Near-Term Priority
+
+The next three implementation slices should be:
+
+1. M1 pack inventory:
+   Add an upstream default prefab pack and a catalog/presentation test that lists
+   policy families and default object ids.
+
+2. M2 conflict receipts:
+   Add deterministic object surgery conflict receipts for duplicate, missing,
+   disabled, and invalid replacement cases.
+
+3. M5 debug CLI pack view:
+   Add a debug CLI surface that can run a newly written =.ss= prefab/object and
+   print pack inventory, operation receipts, projection chain, and timing.
