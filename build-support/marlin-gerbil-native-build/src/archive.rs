@@ -48,11 +48,11 @@ pub fn build_static_archive_from_link_plan(
     std::fs::create_dir_all(out_dir).map_err(|error| error.to_string())?;
 
     let mut build = cc::Build::new();
-    build
-        .cargo_metadata(false)
-        .out_dir(out_dir)
-        .object(&link_plan.module_object)
-        .object(&link_plan.link_object);
+    build.cargo_metadata(false).out_dir(out_dir);
+    for object in &link_plan.module_objects {
+        build.object(object);
+    }
+    build.object(&link_plan.link_object);
     build
         .try_compile(archive_name)
         .map_err(|error| error.to_string())?;

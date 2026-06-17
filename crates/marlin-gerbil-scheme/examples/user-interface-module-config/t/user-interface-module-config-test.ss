@@ -50,6 +50,11 @@
 (def user-interface-delivery
   (user-interface-delivery-receipt))
 
+;;; Boundary: Downstream can use one furnished entrypoint without plumbing.
+;; UserInterfaceWorkflowResult <- UserInterfaceWorkflowContext
+(def user-interface-thin-entrypoint
+  (user-interface))
+
 ;;; Boundary: Downstream user-facing apply is the delivery action.
 ;; UserInterfaceWorkflowResult <- UserInterfaceWorkflowContext
 (def user-interface-apply
@@ -176,10 +181,10 @@
 (check (.get user-interface-pack-presentation
              module-system-presentation-kind)
        => marlin-module-system-presentation-kind)
-(check (.get user-interface-pack-presentation policy-object-count) => 14)
+(check (.get user-interface-pack-presentation policy-object-count) => 17)
 (check (.get user-interface-pack-presentation
              default-policy-object-count)
-       => 14)
+       => 17)
 (check (.get user-interface-pack-presentation object-operation-count) => 4)
 (check (.get user-interface-pack-presentation
              object-surgery-receipt-count)
@@ -209,6 +214,8 @@
              rust-handler-manufactured)
        => #f)
 (check (.get user-interface-delivery kind)
+       => user-interface-delivery-receipt-kind)
+(check (.get user-interface-thin-entrypoint kind)
        => user-interface-delivery-receipt-kind)
 (check (.get user-interface-delivery root-module-id)
        => "user-interface-root-module")

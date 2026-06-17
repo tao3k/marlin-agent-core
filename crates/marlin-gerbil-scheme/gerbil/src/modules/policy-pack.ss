@@ -344,7 +344,10 @@ package: modules
    (marlinDefaultHumanReviewPolicy)
    (marlinDefaultEvidenceGraphPolicy)
    (marlinDefaultFailureRecoveryPolicy)
+   (marlinDefaultMemoryRecallPolicy)
    (marlinDefaultMemoryTriggerPolicy)
+   (marlinDefaultMemoryRetentionPolicy)
+   (marlinDefaultMemoryVisibilityPolicy)
    (marlinDefaultCatalogProjectionPolicy)))
 
 ;;; Boundary: Default packs are furnished entrypoints over an existing module.

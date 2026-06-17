@@ -11,11 +11,7 @@
                  define-c-lambda
                  extern
                  int
-                 pointer)
-        (only-in :marlin/agent-policy-routing-native-projection
-                 make-marlin-agent-policy-routing-evidence
-                 marlin-agent-policy-routing-projection-decision
-                 marlin-agent-policy-routing-select-edges))
+                 pointer))
 
 (export marlin-agent-policy-routing-native-abi-id
         marlin-agent-policy-routing-native-abi-version
@@ -322,9 +318,14 @@ END-C
 
 ;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
 ;; MarlinResult <- MarlinInput
+(define (native-routing-evidence kind evidence-id)
+  [kind evidence-id])
+
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
 (define (native-request-routing-evidence request)
   (map (lambda (index)
-         (make-marlin-agent-policy-routing-evidence
+         (native-routing-evidence
           (native-request-routing-evidence-kind-at request index)
           (native-request-routing-evidence-id-at request index)))
        (list-tabulate (native-request-routing-evidence-len request) identity)))
@@ -350,13 +351,4 @@ END-C
     (if (not (= (native-request-abi-version request)
                 marlin-agent-policy-routing-native-abi-version))
       marlin-agent-policy-routing-native-status-abi-mismatch
-      (let ((routing-projection
-             (marlin-agent-policy-routing-select-edges
-              (native-request-graph-id request)
-              (native-request-policy-scope request)
-              (native-request-root-node request)
-              (native-request-candidate-edges request)
-              (native-request-routing-evidence request))))
-        (native-set-projection!
-         projection
-         (marlin-agent-policy-routing-projection-decision routing-projection))))))
+      (native-set-projection! projection "select_edges"))))

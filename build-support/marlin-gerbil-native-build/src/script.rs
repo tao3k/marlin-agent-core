@@ -1,6 +1,10 @@
 //! Build-script implementation for Gerbil native integration crates.
 
-use std::{env, path::PathBuf};
+use std::{
+    env,
+    path::{Path, PathBuf},
+    process::Command,
+};
 
 use crate::{
     archive::{
@@ -14,7 +18,8 @@ use marlin_gerbil_scheme::{
     GerbilDeckRuntimeNativeAotBuildReceipt, GerbilDeckRuntimeNativeAotCommandReceipt,
     GerbilDeckRuntimeNativeAotConfig, GerbilDeckRuntimeNativeAotProfile,
     GerbilDeckRuntimeNativeStaticLinkPlan, GerbilDeckRuntimeNativeStaticLinkStatus,
-    default_gerbil_gsc_program,
+    default_gerbil_gsc_program, default_gerbil_gxi_program, gerbil_package_build_script,
+    gerbil_package_root,
 };
 
 const DECK_C_COMPILER_ENV: &str = "MARLIN_DECK_RUNTIME_NATIVE_C_COMPILER";
@@ -71,6 +76,23 @@ fn emit_native_link_rerun_inputs(target: NativeLinkTarget) {
 
 fn emit_native_link_directives(target: NativeLinkTarget) {
     let root = out_dir().join(target.link_root_dir);
+    let stage_receipt = stage_native_aot_artifact(target, &root);
+    if stage_receipt.status_code != Some(0) {
+        if running_under_clippy() {
+            println!(
+                "cargo:warning=native {} package stage skipped during Clippy: {}",
+                target.label,
+                command_detail("stage-native-aot", Some(&stage_receipt))
+            );
+            return;
+        }
+        panic!(
+            "native {} package stage failed: {}",
+            target.label,
+            command_detail("stage-native-aot", Some(&stage_receipt))
+        );
+    }
+
     let mut config = GerbilDeckRuntimeNativeAotConfig::new_for_profile(&root, target.profile);
     if let Some(c_compiler) = env::var_os(target.c_compiler_env) {
         config = config.with_c_compiler(c_compiler.to_string_lossy());
@@ -131,6 +153,7 @@ fn emit_native_link_directives(target: NativeLinkTarget) {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct NativeLinkTarget {
     profile: GerbilDeckRuntimeNativeAotProfile,
+    package_stage_profile: &'static str,
     label: &'static str,
     link_root_dir: &'static str,
     archive_dir: &'static str,
@@ -144,6 +167,7 @@ impl NativeLinkTarget {
     const fn deck_runtime() -> Self {
         Self {
             profile: GerbilDeckRuntimeNativeAotProfile::DeckRuntime,
+            package_stage_profile: "deck-runtime",
             label: "Deck runtime",
             link_root_dir: "deck-runtime-native-link-root",
             archive_dir: "deck-runtime-native-link-archive",
@@ -157,6 +181,7 @@ impl NativeLinkTarget {
     const fn agent_policy_routing() -> Self {
         Self {
             profile: GerbilDeckRuntimeNativeAotProfile::AgentPolicyRouting,
+            package_stage_profile: "agent-policy-routing",
             label: "AgentGraph policy-routing",
             link_root_dir: "agent-policy-routing-native-link-root",
             archive_dir: "agent-policy-routing-native-link-archive",
@@ -165,6 +190,40 @@ impl NativeLinkTarget {
             gambit_link_library_env: AGENT_GAMBIT_LINK_LIBRARY_ENV,
             gambit_link_search_dir_env: AGENT_GAMBIT_LINK_SEARCH_DIR_ENV,
         }
+    }
+}
+
+fn stage_native_aot_artifact(
+    target: NativeLinkTarget,
+    root: &Path,
+) -> GerbilDeckRuntimeNativeAotCommandReceipt {
+    let build_script = gerbil_package_build_script();
+    let package_root = gerbil_package_root();
+    println!("cargo:rerun-if-changed={}", build_script.display());
+    println!(
+        "cargo:rerun-if-changed={}",
+        package_root.join("gerbil.pkg").display()
+    );
+
+    let output = Command::new(default_gerbil_gxi_program())
+        .current_dir(package_root)
+        .arg(build_script)
+        .arg("stage-native-aot")
+        .arg(target.package_stage_profile)
+        .arg(root)
+        .output();
+
+    match output {
+        Ok(output) => GerbilDeckRuntimeNativeAotCommandReceipt {
+            status_code: output.status.code(),
+            stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
+            stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+        },
+        Err(error) => GerbilDeckRuntimeNativeAotCommandReceipt {
+            status_code: None,
+            stdout: String::new(),
+            stderr: error.to_string(),
+        },
     }
 }
 

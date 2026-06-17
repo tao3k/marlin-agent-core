@@ -94,9 +94,18 @@ package: modules
         marlin-failure-recovery-policy-family
         marlinFailureRecoveryPolicy
         marlinDefaultFailureRecoveryPolicy
+        marlin-memory-recall-policy-family
         marlin-memory-trigger-policy-family
+        marlin-memory-retention-policy-family
+        marlin-memory-visibility-policy-family
+        marlinMemoryRecallPolicy
         marlinMemoryTriggerPolicy
+        marlinMemoryRetentionPolicy
+        marlinMemoryVisibilityPolicy
+        marlinDefaultMemoryRecallPolicy
         marlinDefaultMemoryTriggerPolicy
+        marlinDefaultMemoryRetentionPolicy
+        marlinDefaultMemoryVisibilityPolicy
         marlin-catalog-projection-policy-family
         marlinCatalogProjectionPolicy
         marlinDefaultCatalogProjectionPolicy

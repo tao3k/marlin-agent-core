@@ -12,5 +12,8 @@ linked-native = []
 [dependencies]
 marlin-gerbil-scheme.workspace = true
 
+[dev-dependencies]
+marlin-agent-graph.workspace = true
+
 [build-dependencies]
 marlin-gerbil-native-build.workspace = true

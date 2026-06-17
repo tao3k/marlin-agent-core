@@ -86,6 +86,13 @@ impl GerbilDeckRuntimeNativeAotProfile {
         }
     }
 
+    pub(super) const fn dependency_artifact_stems(self) -> &'static [&'static str] {
+        match self {
+            Self::DeckRuntime => &[],
+            Self::AgentPolicyRouting => &[],
+        }
+    }
+
     pub(super) const fn header_path(self) -> &'static str {
         match self {
             Self::DeckRuntime => GERBIL_DECK_RUNTIME_NATIVE_HEADER_PATH,
@@ -122,6 +129,7 @@ pub struct GerbilDeckRuntimeNativeAotConfig {
     pub(super) root: PathBuf,
     pub(super) output_dir: PathBuf,
     pub(super) compiled_runtime_scm: PathBuf,
+    pub(super) compiled_runtime_dependency_scms: Vec<PathBuf>,
     pub(super) gsc: PathBuf,
     pub(super) header: PathBuf,
     pub(super) c_compiler: Option<GerbilNativeCCompiler>,

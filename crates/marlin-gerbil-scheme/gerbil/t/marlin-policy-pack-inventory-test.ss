@@ -80,6 +80,18 @@
 (def default-failure-object
   (marlinDefaultFailureRecoveryPolicy))
 
+(def default-memory-recall-object
+  (marlinDefaultMemoryRecallPolicy))
+
+(def default-memory-trigger-object
+  (marlinDefaultMemoryTriggerPolicy))
+
+(def default-memory-retention-object
+  (marlinDefaultMemoryRetentionPolicy))
+
+(def default-memory-visibility-object
+  (marlinDefaultMemoryVisibilityPolicy))
+
 (def default-workspace-object
   (marlinDefaultWorkspacePolicy))
 
@@ -159,8 +171,8 @@
 
 (check (.get default-pack id) => "marlin-default-policy-pack")
 (check (.get default-inventory kind) => marlin-policy-pack-inventory-kind)
-(check (.get default-inventory policy-object-count) => 11)
-(check (.get default-inventory default-policy-object-count) => 11)
+(check (.get default-inventory policy-object-count) => 14)
+(check (.get default-inventory default-policy-object-count) => 14)
 (check (.get default-inventory object-operation-count) => 0)
 (check (.get default-inventory allowed-hook-ids)
        => '("runtime-catalog-default-hook"))
@@ -171,9 +183,9 @@
 (check (.get default-catalog-presentation pack-count) => 1)
 (check (.get default-catalog-presentation pack-ids)
        => '("marlin-default-policy-pack"))
-(check (.get default-catalog-presentation policy-object-count) => 11)
+(check (.get default-catalog-presentation policy-object-count) => 14)
 (check (.get default-catalog-presentation default-policy-object-count)
-       => 11)
+       => 14)
 (check (.get default-catalog-presentation allowed-hook-ids)
        => '("runtime-catalog-default-hook"))
 (check (.get default-delivery kind)
@@ -182,8 +194,8 @@
        => marlin-pack-catalog-presentation-kind)
 (check (.get default-delivery pack-ids)
        => '("marlin-default-policy-pack"))
-(check (.get default-delivery policy-object-count) => 11)
-(check (.get default-delivery default-policy-object-count) => 11)
+(check (.get default-delivery policy-object-count) => 14)
+(check (.get default-delivery default-policy-object-count) => 14)
 (check (.get default-delivery object-operation-count) => 0)
 (check (.get default-delivery policy-projection-kind)
        => marlin-policy-projection-kind)
@@ -212,7 +224,10 @@
             "human-review-policy"
             "evidence-graph-policy"
             "failure-recovery-policy"
+            "memory-recall-policy"
             "memory-trigger-policy"
+            "memory-retention-policy"
+            "memory-visibility-policy"
             "catalog-projection-policy"))
 (check (.get default-inventory policy-object-ids)
        => '("default-workspace"
@@ -224,7 +239,10 @@
             "default-human-review"
             "default-evidence-graph"
             "default-failure-recovery"
+            "default-memory-recall"
             "default-memory-trigger"
+            "default-memory-retention"
+            "default-memory-visibility"
             "default-catalog-projection"))
 (check (marlin-policy-object-family default-evidence-object)
        => "evidence-graph-policy")
@@ -234,6 +252,22 @@
        => "failure-recovery-policy")
 (check (marlin-policy-object-id default-failure-object)
        => "default-failure-recovery")
+(check (marlin-policy-object-family default-memory-recall-object)
+       => "memory-recall-policy")
+(check (marlin-policy-object-id default-memory-recall-object)
+       => "default-memory-recall")
+(check (marlin-policy-object-family default-memory-trigger-object)
+       => "memory-trigger-policy")
+(check (marlin-policy-object-id default-memory-trigger-object)
+       => "default-memory-trigger")
+(check (marlin-policy-object-family default-memory-retention-object)
+       => "memory-retention-policy")
+(check (marlin-policy-object-id default-memory-retention-object)
+       => "default-memory-retention")
+(check (marlin-policy-object-family default-memory-visibility-object)
+       => "memory-visibility-policy")
+(check (marlin-policy-object-id default-memory-visibility-object)
+       => "default-memory-visibility")
 (check (marlin-policy-object-family default-workspace-object)
        => "workspace-policy")
 (check (marlin-policy-object-id default-workspace-object)

@@ -106,6 +106,7 @@ Marlin should expose a simple interface at the top, while preserving a precise
 object graph underneath.
 
 The desired user experience is:
+The current maintained user-interface delivery path makes that even thinner: downstream authors define a small config object and call the upstream =UserInterface= entrypoint. The lower-level =UserInterfaceApply=, =UserInterfaceDeliveryReceipt=, and =UserInterfacePolicyProjection= functions remain available for debugging and framework authors, but ordinary downstream files should call one maintained upstream entrypoint.
 
 #+begin_src scheme
 (import :marlin/prefabs/customer-agent)
@@ -302,7 +303,10 @@ should expose coherent prefab packs:
 - a review-heavy workspace;
 - a failure-recovery profile;
 - a human-review profile;
+- a memory-recall profile;
 - a memory-trigger profile;
+- a memory-retention profile;
+- a memory-visibility profile;
 - a model-routing profile;
 - a context-compression profile.
 
@@ -517,3 +521,16 @@ The acceptance gate should include:
   =policy_projection_*= facts through the real debug CLI, including the
   =--entrypoint= / =--call= path;
 - =asp gerbil-scheme check --changed .= and full provider check.
+* Current User-Facing Module-System Checkpoint
+This checkpoint pins the current design intent for the 1-6 landing slice.
+
+The downstream user interface is a furnished prefab, not a raw module-system construction exercise. The normal user writes a small POO config object and calls the upstream =UserInterface= entrypoint. The apply, delivery receipt, projection, catalog, and evaluation helpers stay available as debug/framework surfaces.
+
+Memory policy is a furnished object family pack. Recall, trigger, retention, and visibility are separate POO policy families so users can replace the chair they mean to replace. Rust still owns memory graph reads, snapshots, session visibility validation, persistence, budget checks, typed projection validation, and replay receipts.
+
+The user-facing rule stays simple:
+- upstream Marlin ships the furnished house;
+- user .ss files configure or perform typed object surgery;
+- policy furniture is named by family/id/owner metadata;
+- Scheme/POO owns composition and option merge;
+- Rust receives typed projections and receipts only.

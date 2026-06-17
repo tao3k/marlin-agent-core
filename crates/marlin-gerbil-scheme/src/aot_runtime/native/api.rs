@@ -32,6 +32,11 @@ impl GerbilDeckRuntimeNativeAotConfig {
     ) -> Self {
         let root = root.into();
         let output_dir = native_output_dir(&root);
+        let compiled_runtime_dependency_scms = profile
+            .dependency_artifact_stems()
+            .iter()
+            .map(|stem| default_compiled_runtime_scm(&output_dir, stem))
+            .collect();
         Self {
             profile,
             root,
@@ -39,6 +44,7 @@ impl GerbilDeckRuntimeNativeAotConfig {
                 &output_dir,
                 profile.artifact_stem(),
             ),
+            compiled_runtime_dependency_scms,
             output_dir,
             gsc: default_gerbil_gsc_program(),
             header: PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(profile.header_path()),
@@ -59,6 +65,12 @@ impl GerbilDeckRuntimeNativeAotConfig {
         let output_dir = output_dir.into();
         self.compiled_runtime_scm =
             default_compiled_runtime_scm(&output_dir, self.profile.artifact_stem());
+        self.compiled_runtime_dependency_scms = self
+            .profile
+            .dependency_artifact_stems()
+            .iter()
+            .map(|stem| default_compiled_runtime_scm(&output_dir, stem))
+            .collect();
         self.output_dir = output_dir;
         self
     }
@@ -66,6 +78,18 @@ impl GerbilDeckRuntimeNativeAotConfig {
     /// Overrides the compiled Gambit Scheme input consumed by the native ABI builder.
     pub fn with_compiled_runtime_scm(mut self, compiled_runtime_scm: impl Into<PathBuf>) -> Self {
         self.compiled_runtime_scm = compiled_runtime_scm.into();
+        self
+    }
+
+    /// Overrides additional compiled Gambit Scheme modules required by this native ABI profile.
+    pub fn with_compiled_runtime_dependency_scms(
+        mut self,
+        compiled_runtime_dependency_scms: impl IntoIterator<Item = impl Into<PathBuf>>,
+    ) -> Self {
+        self.compiled_runtime_dependency_scms = compiled_runtime_dependency_scms
+            .into_iter()
+            .map(Into::into)
+            .collect();
         self
     }
 
@@ -108,6 +132,13 @@ impl GerbilDeckRuntimeNativeAotConfig {
     /// Produces a typed, auditable native AOT link-unit build plan.
     pub fn plan(&self) -> GerbilDeckRuntimeNativeAotPlan {
         let object = compiled_runtime_object(&self.compiled_runtime_scm);
+        let dependency_objects = self
+            .compiled_runtime_dependency_scms
+            .iter()
+            .map(|source| compiled_runtime_object(source))
+            .collect::<Vec<_>>();
+        let mut module_objects = dependency_objects.clone();
+        module_objects.push(object.clone());
         let link_c_source = compiled_runtime_link_c_source(&self.compiled_runtime_scm);
         let link_object = compiled_runtime_link_object(&self.compiled_runtime_scm);
         let status = native_plan_status(self);
@@ -119,8 +150,11 @@ impl GerbilDeckRuntimeNativeAotConfig {
             root: self.root.clone(),
             output_dir: self.output_dir.clone(),
             compiled_runtime_scm: self.compiled_runtime_scm.clone(),
+            compiled_runtime_dependency_scms: self.compiled_runtime_dependency_scms.clone(),
             header: self.header.clone(),
             object: object.clone(),
+            dependency_objects: dependency_objects.clone(),
+            module_objects: module_objects.clone(),
             link_c_source: link_c_source.clone(),
             link_object: link_object.clone(),
             exported_symbols: vec![
@@ -136,9 +170,15 @@ impl GerbilDeckRuntimeNativeAotConfig {
                 self.c_compiler.as_ref(),
                 &self.compiled_runtime_scm,
             ),
+            gsc_compile_dependency_objects: self
+                .compiled_runtime_dependency_scms
+                .iter()
+                .map(|source| gsc_compile_object_plan(&self.gsc, self.c_compiler.as_ref(), source))
+                .collect(),
             gsc_generate_link_source: gsc_generate_link_source_plan(
                 &self.gsc,
                 self.c_compiler.as_ref(),
+                &self.compiled_runtime_dependency_scms,
                 &self.compiled_runtime_scm,
             ),
             gsc_compile_link_object: gsc_compile_link_object_plan(
@@ -146,7 +186,11 @@ impl GerbilDeckRuntimeNativeAotConfig {
                 self.c_compiler.as_ref(),
                 &link_c_source,
             ),
-            audit_symbols: audit_symbols_plan(self.symbol_auditor.as_path(), &object, &link_object),
+            audit_symbols: audit_symbols_plan(
+                self.symbol_auditor.as_path(),
+                &module_objects,
+                &link_object,
+            ),
             detail,
         }
     }
@@ -166,6 +210,13 @@ fn native_plan_status(
     if !config.compiled_runtime_scm.is_file() {
         return GerbilDeckRuntimeNativeAotStatus::MissingCompiledRuntime;
     }
+    if config
+        .compiled_runtime_dependency_scms
+        .iter()
+        .any(|source| !source.is_file())
+    {
+        return GerbilDeckRuntimeNativeAotStatus::MissingCompiledRuntime;
+    }
     if !config.header.is_file() {
         return GerbilDeckRuntimeNativeAotStatus::MissingHeader;
     }
@@ -181,11 +232,19 @@ fn native_plan_detail(
             "missing Gerbil Gambit compiler at {}",
             config.gsc.display()
         )),
-        GerbilDeckRuntimeNativeAotStatus::MissingCompiledRuntime => Some(format!(
-            "missing compiled native {} Scheme artifact at {}",
-            config.profile.label(),
-            config.compiled_runtime_scm.display()
-        )),
+        GerbilDeckRuntimeNativeAotStatus::MissingCompiledRuntime => {
+            let missing = std::iter::once(&config.compiled_runtime_scm)
+                .chain(config.compiled_runtime_dependency_scms.iter())
+                .filter(|source| !source.is_file())
+                .map(|source| source.display().to_string())
+                .collect::<Vec<_>>()
+                .join(", ");
+            Some(format!(
+                "missing compiled native {} Scheme artifact at {}",
+                config.profile.label(),
+                missing
+            ))
+        }
         GerbilDeckRuntimeNativeAotStatus::MissingHeader => Some(format!(
             "missing native {} C ABI header at {}",
             config.profile.label(),
@@ -238,6 +297,7 @@ fn gsc_compile_link_object_plan(
 fn gsc_generate_link_source_plan(
     gsc: &Path,
     c_compiler: Option<&GerbilNativeCCompiler>,
+    dependency_sources: &[PathBuf],
     generated_runtime_scm: &Path,
 ) -> GerbilDeckRuntimeNativeAotCommandPlan {
     let mut args = vec!["-target".to_string(), "C".to_string()];
@@ -246,6 +306,11 @@ fn gsc_generate_link_source_plan(
         args.push(c_compiler.as_str().to_string());
     }
     args.push("-link".to_string());
+    args.extend(
+        dependency_sources
+            .iter()
+            .map(|source| source.to_string_lossy().into_owned()),
+    );
     args.push(generated_runtime_scm.to_string_lossy().into_owned());
 
     GerbilDeckRuntimeNativeAotCommandPlan {
@@ -256,14 +321,16 @@ fn gsc_generate_link_source_plan(
 
 fn audit_symbols_plan(
     symbol_auditor: &Path,
-    object: &Path,
+    module_objects: &[PathBuf],
     link_object: &Path,
 ) -> GerbilDeckRuntimeNativeAotCommandPlan {
     GerbilDeckRuntimeNativeAotCommandPlan {
         program: symbol_auditor.to_path_buf(),
-        args: vec![
-            object.to_string_lossy().into_owned(),
-            link_object.to_string_lossy().into_owned(),
-        ],
+        args: module_objects
+            .iter()
+            .map(PathBuf::as_path)
+            .chain(std::iter::once(link_object))
+            .map(|path| path.to_string_lossy().into_owned())
+            .collect(),
     }
 }

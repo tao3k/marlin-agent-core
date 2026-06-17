@@ -29,6 +29,10 @@ pub const GERBIL_POO_MOP_MODULE: &str = ":clan/poo/mop";
 pub const GERBIL_POO_PROTO_MODULE: &str = ":clan/poo/proto";
 /// Source directory inside the crate-shipped `Gerbil` runtime package.
 pub const GERBIL_PACKAGE_SOURCE_PATH: &str = "src";
+/// Directory that contains the crate-shipped `Gerbil` runtime package.
+pub const GERBIL_PACKAGE_ROOT_PATH: &str = "gerbil";
+/// Package-owned build script for crate-shipped `Gerbil` runtime assets.
+pub const GERBIL_PACKAGE_BUILD_SCRIPT: &str = "build.ss";
 /// Runtime source asset that can be written into a `gxi` loadpath root.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct GerbilRuntimeAsset {
@@ -53,6 +57,16 @@ pub fn gerbil_runtime_asset(path: &str) -> Option<&'static GerbilRuntimeAsset> {
 /// Returns the package source path that must be exposed through `GERBIL_LOADPATH`.
 pub fn gerbil_runtime_loadpath(root: impl AsRef<Path>) -> PathBuf {
     root.as_ref().join(GERBIL_PACKAGE_SOURCE_PATH)
+}
+
+/// Returns the crate-owned `Gerbil` package root.
+pub fn gerbil_package_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(GERBIL_PACKAGE_ROOT_PATH)
+}
+
+/// Returns the crate-owned package build script.
+pub fn gerbil_package_build_script() -> PathBuf {
+    gerbil_package_root().join(GERBIL_PACKAGE_BUILD_SCRIPT)
 }
 
 /// Returns the configured `gxi` executable path or PATH program name.

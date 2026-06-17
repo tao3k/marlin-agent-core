@@ -36,20 +36,31 @@ but it also drags Gambit base globals into the link object and collides with
 =libgambit.a=. The upstream Gambit embedding shape is ordinary =gsc -link= plus
 =-D___LIBRARY= when compiling the generated link C source.
 
-The Rust static-link plan must consume both objects:
+The Rust static-link plan must consume the full module object set plus the
+generated link object. The current Deck and AgentGraph profiles each produce one
+module object, but the plan is allowed to carry dependency module objects when a
+future package-owned profile stages more than one generated Scheme artifact.
 
 - module object: =deck-runtime-native~0.o=
 
 - link object: =deck-runtime-native~0_.o=
 
-Linking only =deck-runtime-native~0.o= is incomplete. It misses the Gambit
-link-unit symbols that initialize the generated module set.
+Linking only the primary module object is incomplete. It misses the Gambit
+link-unit symbols that initialize the generated module set, and it would also
+miss any package-owned dependency module objects declared by a profile.
 
 The required native ABI exports are:
 
 - =marlin_deck_runtime_initialize=
 
 - =marlin_deck_runtime_select_model_route=
+
+The AgentGraph policy-routing profile uses the same link-unit shape and
+requires:
+
+- =marlin_agent_policy_routing_initialize=
+
+- =marlin_agent_policy_routing_select_edges=
 
 The initializer is part of the hot ABI contract. It calls Gambit =___setup= with
 =setup_params.version = ___VERSION= and the generated linkfile linker
@@ -71,6 +82,17 @@ emits the two generated object files, and emits the Gambit link directives. The
 default crate build remains pure Rust and does not invoke =gxc=, =gsc=, a C
 compiler, or the Gambit linker.
 
+Profile-specific linked crates call the package-owned staging command before
+building the link unit:
+
+#+begin_src sh
+gxi build.ss stage-native-aot <deck-runtime|agent-policy-routing> <link-root>
+#+end_src
+
+That command is the only place that maps a native AOT profile to Gerbil source
+modules and package-cache output. Rust passes only the requested profile and
+link root, then consumes =<link-root>/.gerbil/native/<artifact-stem>.scm=.
+
 The feature build accepts these environment overrides:
 
 - =MARLIN_DECK_RUNTIME_NATIVE_C_COMPILER=
@@ -78,6 +100,12 @@ The feature build accepts these environment overrides:
 - =MARLIN_DECK_RUNTIME_NATIVE_GAMBIT_LINK_LIBRARY=
 
 - =MARLIN_DECK_RUNTIME_NATIVE_GAMBIT_LINK_SEARCH_DIR=
+
+- =MARLIN_AGENT_POLICY_ROUTING_NATIVE_C_COMPILER=
+
+- =MARLIN_AGENT_POLICY_ROUTING_NATIVE_GAMBIT_LINK_LIBRARY=
+
+- =MARLIN_AGENT_POLICY_ROUTING_NATIVE_GAMBIT_LINK_SEARCH_DIR=
 
 When =MARLIN_DECK_RUNTIME_NATIVE_GAMBIT_LINK_SEARCH_DIR= is absent, the build
 support crate derives candidate =lib= directories from =default_gerbil_gsc_program=
@@ -95,8 +123,16 @@ required ABI symbols from real object files before falling back to shell =nm=.
 The native AOT build receipt records this audit path through
 =GerbilDeckRuntimeNativeSymbolAuditMethod= so harnesses can distinguish the
 object-file parser path from the shell symbol-table fallback.
-Both audit paths inspect the module object and the generated Gambit link object,
-because the native link unit is not complete unless both objects are consumed.
+Both audit paths inspect every module object and the generated Gambit link
+object, because the native link unit is not complete unless the full module set
+is consumed.
+
+For AgentGraph policy routing, the linked native C ABI module is intentionally
+self-contained. The public Gerbil POO projection module remains available for
+policy-plane Scheme tests, while the native C ABI writes only the routing
+decision slot. Rust owns construction of the typed =AgentPolicyRoutingReceipt=
+from the request plus native projection, so the hot ABI path stays Scheme types
+to Rust types and does not introduce JSON or text receipts.
 
 The helper CLI prints explicit metadata for downstream consumers:
 

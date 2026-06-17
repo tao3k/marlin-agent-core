@@ -7,7 +7,8 @@ package: modules/prefabs
         :modules/lib
         :modules/prefabs/user-interface)
 
-(export UserInterfaceWorkspace
+(export UserInterface
+        UserInterfaceWorkspace
         UserInterfaceDeliveryReceipt
         UserInterfaceApply
         UserInterfacePolicyProjection
@@ -217,4 +218,9 @@ package: modules/prefabs
 ;;; Boundary: Apply means build the user-facing delivery receipt.
 ;; MarlinResult <- MarlinInput
 (def (UserInterfaceApply module-config)
+  (UserInterfaceDeliveryReceipt module-config))
+
+;;; Boundary: Thinnest user-facing entrypoint returns the delivery receipt.
+;; MarlinResult <- MarlinInput
+(def (UserInterface module-config)
   (UserInterfaceDeliveryReceipt module-config))

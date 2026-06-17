@@ -338,3 +338,19 @@ The next three implementation slices should be:
    Add maintained examples that replace model route, hook selection,
    continuation profile, human review, and memory trigger objects through
    family constructors instead of raw =marlinPolicyObject= calls.
+* Current 1-6 Implementation Checkpoint
+Status: active landing slice.
+Scope:
+- M1 now includes the thin =UserInterface= downstream entrypoint on top of =UserInterfaceWorkspace=, apply, delivery receipt, and policy projection.
+- M2 remains the object-surgery API: users add, remove, disable, and replace named POO policy furniture instead of fighting option priorities.
+- M3 remains the fixed module -> projection -> Rust receipt chain; user-authored =.ss= files must emit typed facts instead of Scheme source text.
+- M4 now treats memory as four policy families: recall, trigger, retention, and visibility.
+- M5 must prove the slice with the real =marlin gerbil policy-receipt= debug CLI, not just direct Scheme tests.
+- M6 must keep =user-interface-module-config= thin: the user file starts with a small config and the upstream prefab does the furnished work.
+
+Evidence gate:
+- =GERBIL_LOADPATH=src:t gxi build.ss compile=
+- =GERBIL_LOADPATH=src:t gxi t/marlin-policy-pack-inventory-test.ss=
+- =GERBIL_LOADPATH=src:t gxi t/marlin-user-interface-prefab-test.ss=
+- =GERBIL_LOADPATH=../../gerbil/src:user-interface-modules:t gxtest -v t/user-interface-module-config-test.ss=
+- =marlin gerbil policy-receipt= with a real =gxi=.

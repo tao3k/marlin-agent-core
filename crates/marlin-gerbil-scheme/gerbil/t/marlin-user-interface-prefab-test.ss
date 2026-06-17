@@ -29,6 +29,11 @@
 (def ui-prefab-delivery-receipt
   (UserInterfaceDeliveryReceipt ui-prefab-config))
 
+;;; Boundary: UserInterface is the thinnest furnished entrypoint.
+;; MarlinResult <- MarlinInput
+(def ui-prefab-user-interface
+  (UserInterface ui-prefab-config))
+
 ;;; Boundary: Apply is the user-facing delivery action.
 ;; MarlinResult <- MarlinInput
 (def ui-prefab-policy-apply
@@ -41,6 +46,8 @@
 
 (check (.get ui-prefab-config kind) => marlin-modules-kind)
 (check (.get ui-prefab-delivery-receipt kind)
+       => user-interface-delivery-receipt-kind)
+(check (.get ui-prefab-user-interface kind)
        => user-interface-delivery-receipt-kind)
 (check (.get ui-prefab-delivery-receipt workspace-kind)
        => marlin-modules-kind)
@@ -81,8 +88,8 @@
 (check (.get ui-prefab-delivery-receipt option-contract-count) => 12)
 (check (.get ui-prefab-delivery-receipt pack-id)
        => "user-interface-prefab-pack")
-(check (.get ui-prefab-delivery-receipt policy-object-count) => 14)
-(check (.get ui-prefab-delivery-receipt default-policy-object-count) => 14)
+(check (.get ui-prefab-delivery-receipt policy-object-count) => 17)
+(check (.get ui-prefab-delivery-receipt default-policy-object-count) => 17)
 (check (.get ui-prefab-delivery-receipt disabled-policy-object-count) => 1)
 (check (.get ui-prefab-delivery-receipt object-operation-count) => 4)
 (check (.get ui-prefab-delivery-receipt object-surgery-receipt-count) => 4)
@@ -98,7 +105,10 @@
             "default-human-review"
             "default-evidence-graph"
             "default-failure-recovery"
+            "default-memory-recall"
             "default-memory-trigger"
+            "default-memory-retention"
+            "default-memory-visibility"
             "default-catalog-projection"
             "user-interface-subagent-policy-extension"
             "user-interface-continuation-projection"
@@ -113,7 +123,10 @@
             "default-human-review"
             "default-evidence-graph"
             "default-failure-recovery"
+            "default-memory-recall"
             "default-memory-trigger"
+            "default-memory-retention"
+            "default-memory-visibility"
             "default-catalog-projection"
             "user-interface-subagent-policy-extension"
             "user-interface-loop-continuation"
@@ -130,7 +143,10 @@
             "human-review-policy"
             "evidence-graph-policy"
             "failure-recovery-policy"
+            "memory-recall-policy"
             "memory-trigger-policy"
+            "memory-retention-policy"
+            "memory-visibility-policy"
             "catalog-projection-policy"
             "subagent-policy-extension"
             "continuation-profile"))

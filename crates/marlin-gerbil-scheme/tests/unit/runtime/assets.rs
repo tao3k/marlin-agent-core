@@ -1,11 +1,12 @@
 use super::support::test_root;
 use marlin_gerbil_scheme::{
-    GERBIL_ADAPTER_MODULE, GERBIL_LOADPATH_ENV, GERBIL_PACKAGE_SOURCE_PATH, GERBIL_POO_DEPENDENCY,
+    GERBIL_ADAPTER_MODULE, GERBIL_LOADPATH_ENV, GERBIL_PACKAGE_BUILD_SCRIPT,
+    GERBIL_PACKAGE_ROOT_PATH, GERBIL_PACKAGE_SOURCE_PATH, GERBIL_POO_DEPENDENCY,
     GERBIL_POO_MOP_MODULE, GERBIL_POO_OBJECT_MODULE, GERBIL_POO_PACKAGE_NAME,
     GERBIL_POO_PROTO_MODULE, MARLIN_GERBIL_GSC_ENV, MARLIN_GERBIL_GXC_ENV, MARLIN_GERBIL_GXI_ENV,
     default_gerbil_gsc_program, default_gerbil_gxc_program, default_gerbil_gxi_program,
-    gerbil_runtime_asset, gerbil_runtime_assets, gerbil_runtime_loadpath,
-    write_gerbil_runtime_assets,
+    gerbil_package_build_script, gerbil_package_root, gerbil_runtime_asset, gerbil_runtime_assets,
+    gerbil_runtime_loadpath, write_gerbil_runtime_assets,
 };
 use std::{fs, path::Path};
 
@@ -54,7 +55,8 @@ fn gerbil_runtime_assets_expose_loadpath_contract() {
         !package_manifest_source.contains("/Users/"),
         "crate-shipped gerbil.pkg must not lock runtime deps to a local checkout"
     );
-    assert!(build_source.contains("defmarlin-runtime-build-script"));
+    assert!(build_source.contains("stage-native-aot"));
+    assert!(build_source.contains("marlin-build-stage-native-aot"));
     assert!(build_has_target("src/marlin/deck-runtime-native"));
     assert!(build_has_target(
         "src/marlin/deck-runtime-native-projection"
@@ -272,6 +274,18 @@ fn gerbil_runtime_assets_write_loadpath_tree() {
             .expect("read protocol")
             .contains("marlin-workspace-patch-intent-artifact-kind")
     );
+}
+
+#[test]
+fn gerbil_runtime_package_path_points_at_owned_build_script() {
+    let package_root = gerbil_package_root();
+    let build_script = gerbil_package_build_script();
+
+    assert_eq!(GERBIL_PACKAGE_ROOT_PATH, "gerbil");
+    assert_eq!(GERBIL_PACKAGE_BUILD_SCRIPT, "build.ss");
+    assert_eq!(build_script, package_root.join(GERBIL_PACKAGE_BUILD_SCRIPT));
+    assert!(package_root.join("gerbil.pkg").is_file());
+    assert!(build_script.is_file());
 }
 
 fn runtime_asset_source(path: &str) -> &'static str {

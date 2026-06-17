@@ -4,7 +4,8 @@
 (import :clan/poo/object
         :modules/prefabs/user-interface-delivery)
 
-(export user-interface-module-config
+(export user-interface
+        user-interface-module-config
         user-interface-delivery-receipt
         user-interface-policy-apply
         user-interface-policy-projection)
@@ -17,6 +18,11 @@
        interface-file: "interface.org"
        state-file: "state/worker-state.org"
        model-profile: "interactive")))
+
+;;; Boundary: One furnished entrypoint is enough for downstream users.
+;; UserInterfaceWorkflowResult <- UserInterfaceWorkflowContext
+(def (user-interface)
+  (UserInterface user-interface-module-config))
 
 ;;; Boundary: Delivery receipt is the user-facing handoff to Rust/debug tools.
 ;; UserInterfaceWorkflowResult <- UserInterfaceWorkflowContext

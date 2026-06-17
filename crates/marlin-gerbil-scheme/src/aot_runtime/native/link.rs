@@ -50,6 +50,7 @@ impl GerbilDeckRuntimeNativeCargoDirective {
 pub struct GerbilDeckRuntimeNativeStaticLinkPlan {
     pub status: GerbilDeckRuntimeNativeStaticLinkStatus,
     pub module_object: PathBuf,
+    pub module_objects: Vec<PathBuf>,
     pub link_object: PathBuf,
     pub header: PathBuf,
     pub required_symbols: Vec<GerbilDeckRuntimeNativeSymbol>,
@@ -66,6 +67,7 @@ impl GerbilDeckRuntimeNativeAotBuildReceipt {
             return GerbilDeckRuntimeNativeStaticLinkPlan {
                 status: GerbilDeckRuntimeNativeStaticLinkStatus::LinkUnitNotReady,
                 module_object: self.plan.object.clone(),
+                module_objects: self.plan.module_objects.clone(),
                 link_object: self.plan.link_object.clone(),
                 header: self.plan.header.clone(),
                 required_symbols: self.plan.exported_symbols.clone(),
@@ -81,16 +83,21 @@ impl GerbilDeckRuntimeNativeAotBuildReceipt {
         }
 
         let mut link_search_dirs = Vec::new();
-        let mut cargo_directives = vec![
-            GerbilDeckRuntimeNativeCargoDirective::new(
-                GerbilDeckRuntimeNativeCargoDirectiveKind::RustcLinkArg,
-                self.plan.object.to_string_lossy().into_owned(),
-            ),
-            GerbilDeckRuntimeNativeCargoDirective::new(
-                GerbilDeckRuntimeNativeCargoDirectiveKind::RustcLinkArg,
-                self.plan.link_object.to_string_lossy().into_owned(),
-            ),
-        ];
+        let mut cargo_directives = self
+            .plan
+            .module_objects
+            .iter()
+            .map(|object| {
+                GerbilDeckRuntimeNativeCargoDirective::new(
+                    GerbilDeckRuntimeNativeCargoDirectiveKind::RustcLinkArg,
+                    object.to_string_lossy().into_owned(),
+                )
+            })
+            .collect::<Vec<_>>();
+        cargo_directives.push(GerbilDeckRuntimeNativeCargoDirective::new(
+            GerbilDeckRuntimeNativeCargoDirectiveKind::RustcLinkArg,
+            self.plan.link_object.to_string_lossy().into_owned(),
+        ));
         if let Some(search_dir) = &self.plan.gambit_link_search_dir {
             link_search_dirs.push(search_dir.clone());
             cargo_directives.push(GerbilDeckRuntimeNativeCargoDirective::new(
@@ -106,6 +113,7 @@ impl GerbilDeckRuntimeNativeAotBuildReceipt {
         GerbilDeckRuntimeNativeStaticLinkPlan {
             status: GerbilDeckRuntimeNativeStaticLinkStatus::Ready,
             module_object: self.plan.object.clone(),
+            module_objects: self.plan.module_objects.clone(),
             link_object: self.plan.link_object.clone(),
             header: self.plan.header.clone(),
             required_symbols: self.plan.exported_symbols.clone(),

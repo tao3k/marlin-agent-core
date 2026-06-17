@@ -36,6 +36,7 @@ fn static_archive_directives_keep_archive_before_gambit_runtime() {
     let plan = GerbilDeckRuntimeNativeStaticLinkPlan {
         status: GerbilDeckRuntimeNativeStaticLinkStatus::Ready,
         module_object: PathBuf::from("deck-runtime-native~0.o"),
+        module_objects: vec![PathBuf::from("deck-runtime-native~0.o")],
         link_object: PathBuf::from("deck-runtime-native~0_.o"),
         header: PathBuf::from("marlin_deck_runtime_native.h"),
         required_symbols: Vec::new(),
@@ -91,7 +92,8 @@ fn static_archive_packaging_consumes_real_object_files() {
 
     let plan = GerbilDeckRuntimeNativeStaticLinkPlan {
         status: GerbilDeckRuntimeNativeStaticLinkStatus::Ready,
-        module_object,
+        module_object: module_object.clone(),
+        module_objects: vec![module_object],
         link_object,
         header: PathBuf::from("marlin_deck_runtime_native.h"),
         required_symbols: Vec::new(),

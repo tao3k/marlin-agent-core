@@ -25,10 +25,17 @@ const GERBIL_HOME_ENV: &str = "GERBIL_HOME";
 #[derive(Default)]
 struct NativeBuildCommandReceipts {
     gsc_compile_object: Option<GerbilDeckRuntimeNativeAotCommandReceipt>,
+    gsc_compile_dependency_objects: Vec<GerbilDeckRuntimeNativeAotCommandReceipt>,
     gsc_generate_link_source: Option<GerbilDeckRuntimeNativeAotCommandReceipt>,
     gsc_compile_link_object: Option<GerbilDeckRuntimeNativeAotCommandReceipt>,
     symbol_audit_method: Option<GerbilDeckRuntimeNativeSymbolAuditMethod>,
     symbol_audit: Option<GerbilDeckRuntimeNativeAotCommandReceipt>,
+}
+
+struct NativeDependencyObjectBuildFailure {
+    status: GerbilDeckRuntimeNativeAotBuildStatus,
+    detail: Option<String>,
+    receipts: Vec<GerbilDeckRuntimeNativeAotCommandReceipt>,
 }
 
 pub(super) fn build_gerbil_deck_runtime_native_link_unit(
@@ -76,6 +83,22 @@ pub(super) fn build_gerbil_deck_runtime_native_link_unit(
         );
     }
 
+    let gsc_compile_dependency_objects = match compile_native_dependency_objects(&plan) {
+        Ok(receipts) => receipts,
+        Err(failure) => {
+            return native_build_receipt(
+                failure.status,
+                plan,
+                failure.detail,
+                NativeBuildCommandReceipts {
+                    gsc_compile_dependency_objects: failure.receipts,
+                    ..Default::default()
+                },
+                Vec::new(),
+            );
+        }
+    };
+
     let gsc_compile_object = run_native_aot_command(&plan, &plan.gsc_compile_object);
     if gsc_compile_object
         .status_code
@@ -86,6 +109,7 @@ pub(super) fn build_gerbil_deck_runtime_native_link_unit(
             plan,
             None,
             NativeBuildCommandReceipts {
+                gsc_compile_dependency_objects,
                 gsc_compile_object: Some(gsc_compile_object),
                 ..Default::default()
             },
@@ -102,6 +126,7 @@ pub(super) fn build_gerbil_deck_runtime_native_link_unit(
             plan,
             detail,
             NativeBuildCommandReceipts {
+                gsc_compile_dependency_objects,
                 gsc_compile_object: Some(gsc_compile_object),
                 ..Default::default()
             },
@@ -119,6 +144,7 @@ pub(super) fn build_gerbil_deck_runtime_native_link_unit(
             plan,
             None,
             NativeBuildCommandReceipts {
+                gsc_compile_dependency_objects,
                 gsc_compile_object: Some(gsc_compile_object),
                 gsc_generate_link_source: Some(gsc_generate_link_source),
                 ..Default::default()
@@ -136,6 +162,7 @@ pub(super) fn build_gerbil_deck_runtime_native_link_unit(
             plan,
             detail,
             NativeBuildCommandReceipts {
+                gsc_compile_dependency_objects,
                 gsc_compile_object: Some(gsc_compile_object),
                 gsc_generate_link_source: Some(gsc_generate_link_source),
                 ..Default::default()
@@ -154,6 +181,7 @@ pub(super) fn build_gerbil_deck_runtime_native_link_unit(
             plan,
             None,
             NativeBuildCommandReceipts {
+                gsc_compile_dependency_objects,
                 gsc_compile_object: Some(gsc_compile_object),
                 gsc_generate_link_source: Some(gsc_generate_link_source),
                 gsc_compile_link_object: Some(gsc_compile_link_object),
@@ -172,6 +200,7 @@ pub(super) fn build_gerbil_deck_runtime_native_link_unit(
             plan,
             detail,
             NativeBuildCommandReceipts {
+                gsc_compile_dependency_objects,
                 gsc_compile_object: Some(gsc_compile_object),
                 gsc_generate_link_source: Some(gsc_generate_link_source),
                 gsc_compile_link_object: Some(gsc_compile_link_object),
@@ -209,6 +238,7 @@ pub(super) fn build_gerbil_deck_runtime_native_link_unit(
             plan,
             None,
             NativeBuildCommandReceipts {
+                gsc_compile_dependency_objects,
                 gsc_compile_object: Some(gsc_compile_object),
                 gsc_generate_link_source: Some(gsc_generate_link_source),
                 gsc_compile_link_object: Some(gsc_compile_link_object),
@@ -226,6 +256,7 @@ pub(super) fn build_gerbil_deck_runtime_native_link_unit(
             plan,
             None,
             NativeBuildCommandReceipts {
+                gsc_compile_dependency_objects,
                 gsc_compile_object: Some(gsc_compile_object),
                 gsc_generate_link_source: Some(gsc_generate_link_source),
                 gsc_compile_link_object: Some(gsc_compile_link_object),
@@ -248,6 +279,7 @@ pub(super) fn build_gerbil_deck_runtime_native_link_unit(
             plan,
             detail,
             NativeBuildCommandReceipts {
+                gsc_compile_dependency_objects,
                 gsc_compile_object: Some(gsc_compile_object),
                 gsc_generate_link_source: Some(gsc_generate_link_source),
                 gsc_compile_link_object: Some(gsc_compile_link_object),
@@ -265,6 +297,7 @@ pub(super) fn build_gerbil_deck_runtime_native_link_unit(
         plan,
         None,
         NativeBuildCommandReceipts {
+            gsc_compile_dependency_objects,
             gsc_compile_object: Some(gsc_compile_object),
             gsc_generate_link_source: Some(gsc_generate_link_source),
             gsc_compile_link_object: Some(gsc_compile_link_object),
@@ -273,6 +306,38 @@ pub(super) fn build_gerbil_deck_runtime_native_link_unit(
         },
         Vec::new(),
     )
+}
+
+fn compile_native_dependency_objects(
+    plan: &GerbilDeckRuntimeNativeAotPlan,
+) -> Result<Vec<GerbilDeckRuntimeNativeAotCommandReceipt>, NativeDependencyObjectBuildFailure> {
+    plan.gsc_compile_dependency_objects
+        .iter()
+        .zip(&plan.dependency_objects)
+        .try_fold(Vec::new(), |mut receipts, (command_plan, object)| {
+            let receipt = run_native_aot_command(plan, command_plan);
+            if receipt.status_code.is_none_or(|status| status != 0) {
+                receipts.push(receipt);
+                return Err(NativeDependencyObjectBuildFailure {
+                    status: GerbilDeckRuntimeNativeAotBuildStatus::GscCompileObjectFailed,
+                    detail: None,
+                    receipts,
+                });
+            }
+            receipts.push(receipt);
+
+            if !object.is_file() {
+                return Err(NativeDependencyObjectBuildFailure {
+                    status: GerbilDeckRuntimeNativeAotBuildStatus::ObjectMissing,
+                    detail: Some(format!(
+                        "gsc completed without producing {}",
+                        object.display()
+                    )),
+                    receipts,
+                });
+            }
+            Ok(receipts)
+        })
 }
 
 fn non_ready_plan_build_status(
@@ -379,7 +444,11 @@ fn missing_exported_symbols_from_object_files(
     plan: &GerbilDeckRuntimeNativeAotPlan,
 ) -> Result<Vec<GerbilDeckRuntimeNativeSymbol>, String> {
     let mut symbol_names = HashSet::new();
-    for path in [&plan.object, &plan.link_object] {
+    for path in plan
+        .module_objects
+        .iter()
+        .chain(std::iter::once(&plan.link_object))
+    {
         for name in object_file_symbol_names(path)? {
             symbol_names.insert(name);
         }
@@ -432,6 +501,7 @@ fn native_build_receipt(
         plan,
         detail,
         gsc_compile_object: commands.gsc_compile_object,
+        gsc_compile_dependency_objects: commands.gsc_compile_dependency_objects,
         gsc_generate_link_source: commands.gsc_generate_link_source,
         gsc_compile_link_object: commands.gsc_compile_link_object,
         symbol_audit_method: commands.symbol_audit_method,
