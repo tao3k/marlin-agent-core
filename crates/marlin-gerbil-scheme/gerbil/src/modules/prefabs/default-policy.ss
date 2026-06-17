@@ -113,15 +113,11 @@ package: modules/prefabs
          (projection-receipt-family-count-value
          (.get projection-chain-receipt receipt-family-count))
          (projection-receipt-family-ids-value
-          '("module_evaluation_receipt"
-            "policy_projection_receipt"
-            "native_projection_payload"
-            "budget_receipt"
-            "catalog_resolution_receipt"))
+          (.get projection-chain-receipt receipt-family-ids))
          (module-evaluation-receipt-owner-value
-          "gerbil-module-system")
+          (.get projection-chain-receipt module-evaluation-receipt-owner))
          (policy-projection-receipt-owner-value
-          "gerbil-poo")
+          (.get projection-chain-receipt policy-projection-receipt-owner))
          (catalog-resolution-allowed-hook-count-value
           (.get projection-chain-receipt catalog-resolution-allowed-hook-count))
          (budget-receipt-kind-value
@@ -138,11 +134,11 @@ package: modules/prefabs
          (policy-composition-owner-value
           (.get pack-presentation policy-composition-owner))
          (native-projection-payload-owner-value
-          (.get pack-presentation native-projection-payload-owner))
+          (.get projection-chain-receipt native-projection-payload-owner))
          (budget-receipt-owner-value
-          (.get pack-presentation budget-receipt-owner))
+          (.get projection-chain-receipt budget-receipt-owner))
          (catalog-resolution-receipt-owner-value
-          (.get pack-presentation catalog-resolution-receipt-owner))
+          (.get projection-chain-receipt catalog-resolution-receipt-owner))
          (runtime-lifecycle-owner-value
           (.get pack-presentation runtime-lifecycle-owner))
          (rust-parses-scheme-source-value

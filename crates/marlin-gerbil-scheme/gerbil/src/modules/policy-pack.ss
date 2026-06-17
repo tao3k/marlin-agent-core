@@ -719,11 +719,46 @@ package: modules
 ;;; Boundary: Fixed five-family chain for prefab and custom policy packs.
 ;; MarlinResult <- MarlinInput
 (def (marlin-policy-projection-receipts/direct policy-pack . maybe-native-payload)
-  (let ((catalog-resolution-allowed-hook-count-value
-         (length (.get policy-pack allowed-hook-ids))))
+  (let* ((policy-projection-value
+          (if (pair? maybe-native-payload)
+            (marlinPolicyProjection policy-pack (car maybe-native-payload))
+            (marlinPolicyProjection policy-pack)))
+         (module-evaluation-receipt-value
+          (marlinPolicyModuleEvaluationReceipt policy-projection-value))
+         (native-payload-value
+          (.get policy-projection-value native-projection-payload))
+         (budget-receipt-value
+          (marlinPolicyBudgetReceipt policy-projection-value))
+         (catalog-resolution-receipt-value
+          (marlinPolicyCatalogResolutionReceipt policy-projection-value))
+         (receipt-family-id-values
+          '("module_evaluation_receipt"
+            "policy_projection_receipt"
+            "native_projection_payload"
+            "budget_receipt"
+            "catalog_resolution_receipt"))
+         (catalog-resolution-allowed-hook-count-value
+          (.get catalog-resolution-receipt-value allowed-hook-count)))
     (.o kind: marlin-policy-projection-chain-receipt-kind
         pack-id: (.get policy-pack id)
         receipt-family-count: 5
+        receipt-family-ids: receipt-family-id-values
+        module-evaluation-receipt: module-evaluation-receipt-value
+        policy-projection-receipt: policy-projection-value
+        native-payload: native-payload-value
+        native-projection-payload: native-payload-value
+        budget-receipt: budget-receipt-value
+        catalog-resolution-receipt: catalog-resolution-receipt-value
+        module-evaluation-receipt-owner:
+        (.get module-evaluation-receipt-value owner)
+        policy-projection-receipt-owner:
+        (.get policy-projection-value owner)
+        native-projection-payload-owner:
+        (.get policy-projection-value native-projection-payload-owner)
+        budget-receipt-owner:
+        (.get budget-receipt-value owner)
+        catalog-resolution-receipt-owner:
+        (.get catalog-resolution-receipt-value owner)
         catalog-resolution-allowed-hook-count:
         catalog-resolution-allowed-hook-count-value
         replayable: #t)))

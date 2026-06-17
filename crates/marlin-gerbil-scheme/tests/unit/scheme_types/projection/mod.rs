@@ -4,6 +4,7 @@ mod dynamic_graph_policy;
 mod graph_loop_continuation;
 mod native_abi;
 mod performance;
+mod policy_pack_projection;
 mod serde_payload;
 mod typed_contract;
 

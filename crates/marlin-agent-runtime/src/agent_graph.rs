@@ -235,6 +235,62 @@ pub enum RuntimeAgentGraphExecutionReadinessRejection {
     MissingRootLoopEntry,
 }
 
+/// Explicit next-stage request produced only after AgentGraph readiness succeeds.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct RuntimeAgentGraphExecutionRequest {
+    /// Protocol request that was admitted by the runtime readiness gate.
+    pub request: AgentGraphProjectionRequest,
+    /// Runtime projection/admission receipt that justified this request.
+    pub projection: RuntimeAgentGraphProjectionReceipt,
+    /// Root graph-loop entrypoint selected for later execution.
+    pub root_loop_entry: GraphLoopEntryRef,
+    /// Runtime observation timestamp for the execution request boundary.
+    pub observed_at_ms: u64,
+}
+
+/// Typed reason an execution request could not be built from readiness evidence.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum RuntimeAgentGraphExecutionRequestRejection {
+    /// Readiness has not accepted this AgentGraph projection.
+    ReadinessNotReady {
+        /// Readiness status observed by the request builder.
+        status: RuntimeAgentGraphExecutionReadinessStatus,
+        /// Typed rejection carried by the readiness receipt.
+        rejection: Option<RuntimeAgentGraphExecutionReadinessRejection>,
+    },
+    /// A ready receipt was malformed and did not carry its root loop entry.
+    MissingRootLoopEntry,
+}
+
+/// Build an explicit execution request from a ready AgentGraph runtime receipt.
+///
+/// This function is the boundary after readiness. It still does not execute a
+/// graph-loop controller, bind a session/worktree, call tools, or contact an LLM.
+pub fn build_agent_graph_execution_request(
+    readiness: RuntimeAgentGraphExecutionReadinessReceipt,
+    observed_at_ms: u64,
+) -> Result<RuntimeAgentGraphExecutionRequest, RuntimeAgentGraphExecutionRequestRejection> {
+    if readiness.status != RuntimeAgentGraphExecutionReadinessStatus::Ready {
+        return Err(
+            RuntimeAgentGraphExecutionRequestRejection::ReadinessNotReady {
+                status: readiness.status,
+                rejection: readiness.rejection,
+            },
+        );
+    }
+
+    let Some(root_loop_entry) = readiness.root_loop_entry else {
+        return Err(RuntimeAgentGraphExecutionRequestRejection::MissingRootLoopEntry);
+    };
+
+    Ok(RuntimeAgentGraphExecutionRequest {
+        request: readiness.request,
+        projection: readiness.projection,
+        root_loop_entry,
+        observed_at_ms,
+    })
+}
+
 /// Projects an AgentGraph protocol request into runtime admission evidence.
 pub fn project_agent_graph_projection_request(
     graph: &AgentGraph,

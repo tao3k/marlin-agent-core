@@ -1,0 +1,48 @@
+* 40.163 AgentGraph P1-P4 Execution Request And Policy-Pack Typed Consumption
+:PROPERTIES:
+:ID: 40.163-agent-graph-p1-p4-execution-request-and-policy-pack-typed-consumption
+:END:
+** Purpose
+This note records the follow-up implementation after the P0-P5 closure. The work keeps the runtime, loop, Gerbil strategy, and typed native projection boundaries separate.
+** P1 Linux Linked-Native Gate
+The linked-native AOT workflow now defaults to =ubuntu-latest=. macOS and self-hosted runners remain explicit =workflow_dispatch= inputs, but the default validation path is Linux.
+This makes Linux portability the normal CI path for:
+- =marlin-deck-runtime-native= linked-native tests and benchmark compile;
+- =marlin-agent-policy-routing-native= linked-native tests and benchmark compile;
+- Gerbil/Gambit source bootstrap when toolchain variables are not provided.
+** P2 Gerbil Policy-Pack Load Cost
+=src/modules/policy-pack.ss= continues to avoid importing =:modules/evaluation= for presentation metadata. The policy-pack projection-chain helper now consumes the existing lightweight constructors for module evaluation, policy projection, native payload, budget, and catalog resolution receipts.
+The delivery prefabs consume receipt family ids and owner fields from the chain receipt instead of hard-coded local lists.
+** P3 Explicit Execution Request Boundary
+=marlin-agent-runtime= now has an explicit =RuntimeAgentGraphExecutionRequest= and =build_agent_graph_execution_request=.
+The new boundary accepts only a =Ready= =RuntimeAgentGraphExecutionReadinessReceipt=. It rejects =NotReady= receipts with a typed =RuntimeAgentGraphExecutionRequestRejection=.
+This preserves the staged sequence:
+#+begin_src text
+AgentGraph projection request
+  -> runtime readiness receipt
+  -> explicit execution request
+  -> later graph-loop controller execution
+#+end_src
+The execution request is still not a controller run, tool execution, worktree/session binding, or live LLM call.
+** P4 Typed Policy-Pack Receipt Consumption
+=marlin-gerbil-scheme= now exposes a focused Rust projection for policy-pack projection-chain receipts:
+- =GerbilPolicyPackProjectionChainReceipt=
+- =GerbilPolicyPackReceiptSummary=
+- =GerbilPolicyPackReceiptKind=
+- =decode_gerbil_policy_pack_projection_chain_receipt=
+The projection is registered through the existing =GerbilSchemeTypeRegistry= and =GerbilSchemeTypedValue= path. It does not introduce JSON, and it does not declare a fake native C symbol before one exists.
+Rust validates:
+- current receipt kind;
+- exact five receipt family ids;
+- receipt family count;
+- top-level owner fields matching nested receipt owners.
+** Verification
+Focused verification for this slice:
+#+begin_src sh
+direnv exec . cargo fmt --all -- --check
+direnv exec . cargo test -p marlin-gerbil-scheme scheme_types::projection::policy_pack_projection
+direnv exec . cargo test -p marlin-gerbil-scheme scheme_types::package::policy_pack_projection
+GERBIL_LOADPATH=src gxc -d ~/.gerbil/lib src/modules/policy-pack.ss
+GERBIL_LOADPATH=src gxtest t/marlin-policy-pack-inventory-test.ss
+GERBIL_LOADPATH=src gxtest t/marlin-user-interface-prefab-test.ss
+#+end_src

@@ -2,7 +2,8 @@ use marlin_agent_graph::{AgentGraphPlanningTarget, plan_agent_coordination};
 use marlin_agent_protocol::AgentGraphProjectionRequest;
 use marlin_agent_runtime::{
     RuntimeAgentGraphExecutionReadinessRejection, RuntimeAgentGraphExecutionReadinessStatus,
-    RuntimeAgentGraphProjectionRejection, check_agent_graph_execution_readiness,
+    RuntimeAgentGraphExecutionRequestRejection, RuntimeAgentGraphProjectionRejection,
+    build_agent_graph_execution_request, check_agent_graph_execution_readiness,
 };
 use marlin_agent_test_support::agent_graph_readiness_replay_artifact_fixture;
 
@@ -27,6 +28,7 @@ fn runtime_readiness_projects_root_loop_entry_without_execution_request() {
     assert_eq!(
         readiness
             .root_loop_entry
+            .as_ref()
             .expect("root loop entry")
             .graph
             .as_str(),
@@ -36,6 +38,24 @@ fn runtime_readiness_projects_root_loop_entry_without_execution_request() {
     assert!(encoded.get("execution_request").is_none());
     assert!(encoded.get("controller").is_none());
     assert!(encoded.get("tool").is_none());
+
+    let execution_request = build_agent_graph_execution_request(readiness, 56)
+        .expect("ready receipt builds an explicit execution request");
+    let encoded_request =
+        serde_json::to_value(&execution_request).expect("execution request serializes");
+
+    assert_eq!(execution_request.observed_at_ms, 56);
+    assert_eq!(
+        execution_request.root_loop_entry.graph.as_str(),
+        "loop.planner"
+    );
+    assert_eq!(
+        execution_request.projection.status,
+        marlin_agent_runtime::RuntimeAgentGraphProjectionStatus::Projected
+    );
+    assert!(encoded_request.get("controller").is_none());
+    assert!(encoded_request.get("tool").is_none());
+    assert!(encoded_request.get("live_llm").is_none());
 }
 
 #[test]
@@ -94,6 +114,20 @@ fn runtime_readiness_preserves_projection_rejection() {
         )
     );
     assert!(readiness.root_loop_entry.is_none());
+
+    let rejection = build_agent_graph_execution_request(readiness, 57)
+        .expect_err("not-ready receipts must not build execution requests");
+    assert_eq!(
+        rejection,
+        RuntimeAgentGraphExecutionRequestRejection::ReadinessNotReady {
+            status: RuntimeAgentGraphExecutionReadinessStatus::NotReady,
+            rejection: Some(
+                RuntimeAgentGraphExecutionReadinessRejection::ProjectionRejected(
+                    RuntimeAgentGraphProjectionRejection::PlanningRejected
+                )
+            )
+        }
+    );
 }
 
 fn detail_contains(

@@ -12,10 +12,11 @@ pub use agent_graph::{
     RuntimeAgentCoordinationAdmissionReceipt, RuntimeAgentCoordinationAdmissionStatus,
     RuntimeAgentCoordinationRejection, RuntimeAgentGraphExecutionReadinessReceipt,
     RuntimeAgentGraphExecutionReadinessRejection, RuntimeAgentGraphExecutionReadinessStatus,
+    RuntimeAgentGraphExecutionRequest, RuntimeAgentGraphExecutionRequestRejection,
     RuntimeAgentGraphProjectionReceipt, RuntimeAgentGraphProjectionRejection,
     RuntimeAgentGraphProjectionStatus, admit_agent_coordination_plan,
-    check_agent_graph_execution_readiness, project_agent_graph_planning_receipt,
-    project_agent_graph_projection_request,
+    build_agent_graph_execution_request, check_agent_graph_execution_readiness,
+    project_agent_graph_planning_receipt, project_agent_graph_projection_request,
 };
 pub use graph_loop::{
     GraphLoopRunCancelReceipt, GraphLoopRunCancelStatus, GraphLoopRunInspectReceipt,

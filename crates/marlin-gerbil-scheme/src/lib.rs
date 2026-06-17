@@ -14,6 +14,7 @@ mod deck_runtime_script;
 mod deps;
 mod graph_loop_continuation;
 mod native_aot_cli;
+mod policy_pack_projection;
 mod real_gxi_gate;
 mod resident_runtime;
 mod runtime;
@@ -143,6 +144,15 @@ pub use graph_loop_continuation::{
 };
 pub use marlin_gerbil_ir::GerbilWorkspaceContractFacts;
 pub use native_aot_cli::run_gerbil_native_aot_cli;
+pub use policy_pack_projection::{
+    GERBIL_POLICY_PACK_PROJECTION_CHAIN_PACKAGE_ID, GERBIL_POLICY_PACK_PROJECTION_CHAIN_SCHEMA_ID,
+    GERBIL_POLICY_PACK_PROJECTION_CHAIN_TYPE_ID, GerbilPolicyPackProjectionChainReceipt,
+    GerbilPolicyPackReceiptKind, GerbilPolicyPackReceiptSummary,
+    decode_gerbil_policy_pack_projection_chain_receipt,
+    gerbil_policy_pack_projection_chain_contract,
+    gerbil_policy_pack_projection_chain_package_manifest,
+    gerbil_policy_pack_projection_chain_type_manifest,
+};
 pub use real_gxi_gate::{
     RealGxiGateCommand, RealGxiGateError, run_real_gxi_gate_cli, run_real_gxi_gate_from_args,
 };

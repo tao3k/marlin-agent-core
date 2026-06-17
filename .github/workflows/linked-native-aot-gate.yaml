@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       linked_native_runner:
-        description: JSON runs-on labels, for example ["macos-latest"] or ["self-hosted","Linux"].
+        description: JSON runs-on labels, for example ["ubuntu-latest"], ["macos-latest"], or ["self-hosted","Linux"].
         required: false
-        default: '["macos-latest"]'
+        default: '["ubuntu-latest"]'
         type: string
 
 permissions:
