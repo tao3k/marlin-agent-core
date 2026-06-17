@@ -2,7 +2,7 @@
 ;;; Boundary: Module tests the public marlinModules user interface.
 
 (import :clan/poo/object
-        :marlin/deck-runtime-modules-lib)
+        :marlin/modules/lib)
 
 ;;; Boundary: Local checks stay silent around POO-heavy values.
 ;; MarlinResult <- MarlinInput

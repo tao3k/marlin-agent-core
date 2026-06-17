@@ -416,7 +416,7 @@ Nix-style escape-hatch complexity.
 
 Current implementation:
 
-- =crates/marlin-gerbil-scheme/gerbil/src/marlin/deck-runtime-modules-lib.ss=
+- =crates/marlin-gerbil-scheme/gerbil/modules/marlin/modules/lib.ss=
   owns =marlinModules=, =marlinModuleCatalog=, =marlinEvalModules=, and
   =marlinModuleSystemPresentation=.
 - =crates/marlin-gerbil-scheme/gerbil/src/marlin/deck-runtime-debug-policy-extension.ss=

@@ -29,7 +29,7 @@ import an interface, then provide only config values.
 
 #+begin_src scheme
 (import :clan/poo/object
-        :marlin/deck-runtime-modules-lib
+        :marlin/modules/lib
         "agent"
         "hooks"
         "interface"
@@ -143,7 +143,7 @@ the object helpers; the agent owns the concrete subagent and policy slots:
 From this directory:
 
 #+begin_src sh
-GERBIL_LOADPATH=../../gerbil/src:modules:t gxtest -v t/user-interface-module-config-test.ss
+GERBIL_LOADPATH=../../gerbil/src:../../gerbil/modules:modules:t gxtest -v t/user-interface-module-config-test.ss
 #+end_src
 
 The Rust ignored real-gxtest gate copies and runs this same directory, so the

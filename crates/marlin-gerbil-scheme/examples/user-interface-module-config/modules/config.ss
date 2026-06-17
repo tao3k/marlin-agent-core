@@ -2,7 +2,7 @@
 ;;; Boundary: Downstream example owns the user interface module configuration.
 
 (import :clan/poo/object
-        :marlin/deck-runtime-modules-lib
+        :marlin/modules/lib
         "agent"
         "hooks"
         "interface"

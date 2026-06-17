@@ -11,7 +11,7 @@
         :marlin/deck-runtime-extension-catalog
         :marlin/deck-runtime-extension-receipt
         :marlin/deck-runtime-matcher
-        :marlin/deck-runtime-modules-lib
+        :marlin/modules/lib
         :marlin/deck-runtime-policy-engine
         :marlin/deck-runtime-strategy-context
         :marlin/deck-runtime-user-module

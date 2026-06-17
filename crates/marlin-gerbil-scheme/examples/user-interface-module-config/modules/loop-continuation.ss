@@ -3,7 +3,7 @@
 
 (import :clan/poo/object
         :marlin/deck-runtime-loop-graph
-        :marlin/deck-runtime-modules-lib
+        :marlin/modules/lib
         :marlin/graph-loop-continuation-native-projection)
 
 (export UserInterfaceLoopContinuationProfile

@@ -2,7 +2,7 @@
 ;;; Boundary: Downstream example module owns workspace-facing config.
 
 (import :clan/poo/object
-        :marlin/deck-runtime-modules-lib)
+        :marlin/modules/lib)
 
 (export UserInterfaceWorkspaceProfile
         user-interface-workspace-module)

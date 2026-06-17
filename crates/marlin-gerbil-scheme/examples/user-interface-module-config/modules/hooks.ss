@@ -2,7 +2,7 @@
 ;;; Boundary: Downstream example module owns runtime-hook catalog config.
 
 (import :clan/poo/object
-        :marlin/deck-runtime-modules-lib)
+        :marlin/modules/lib)
 
 (export UserInterfaceHookProfile
         hook-profile)

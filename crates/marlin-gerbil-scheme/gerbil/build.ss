@@ -34,7 +34,7 @@
        "src/marlin/deck-runtime-loop-graph"
        "src/marlin/deck-runtime-user-option"
        "src/marlin/deck-runtime-user-module"
-       "src/marlin/deck-runtime-modules-lib"
+       "modules/marlin/modules/lib"
        "src/marlin/deck-runtime-strategy"
        extra-target ...))))
 

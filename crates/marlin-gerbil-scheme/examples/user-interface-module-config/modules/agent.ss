@@ -2,7 +2,7 @@
 ;;; Boundary: Downstream example module owns agent-facing config.
 
 (import :clan/poo/object
-        :marlin/deck-runtime-modules-lib)
+        :marlin/modules/lib)
 
 (export UserInterfaceAgentProfile
         user-interface-agent-module)

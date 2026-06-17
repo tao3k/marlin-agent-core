@@ -1,7 +1,7 @@
 ;;; -*- Gerbil -*-
 ;;; Boundary: Module owns the public POO module interface for downstream users.
 
-package: marlin
+package: marlin/modules
 
 (import (only-in :clan/poo/object .all-slots .get .has? .o .ref object?)
         (only-in :clan/poo/type String)

@@ -126,7 +126,9 @@ pub(super) fn dispatch_gerbil(cursor: &mut ArgCursor) -> Result<MarlinCliResult,
 fn run_policy_receipt(
     options: GerbilPolicyReceiptOptions,
 ) -> Result<GerbilPolicyReceiptDebugSummary, String> {
-    let loadpath = options.loadpath.unwrap_or_else(|| "src:t".to_owned());
+    let loadpath = options
+        .loadpath
+        .unwrap_or_else(|| "src:modules:t".to_owned());
     let iterations = options.iterations.to_string();
     let started_at = Instant::now();
     let output = Command::new(&options.gxi)

@@ -12,7 +12,7 @@ package: marlin
         :marlin/deck-runtime-extension-catalog
         :marlin/deck-runtime-extension-receipt
         :marlin/deck-runtime-matcher
-        :marlin/deck-runtime-modules-lib
+        :marlin/modules/lib
         :marlin/deck-runtime-strategy-context)
 
 (export marlin-deck-runtime-debug-policy-extension-source
