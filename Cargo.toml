@@ -3,6 +3,7 @@ members = [
     "build-support/marlin-deck-runtime-native-build",
     "crates/marlin-agent-core",
     "crates/marlin-agent-environment",
+    "crates/marlin-agent-graph",
     "crates/marlin-agent-harness",
     "crates/marlin-agent-harness-types",
     "crates/marlin-agent-hooks",
@@ -68,6 +69,7 @@ wiremock = "0.6.5"
 rust-lang-project-harness = { git = "https://github.com/tao3k/rust-lang-project-harness", rev = "7811ab03e815a3eca76d2a2cd25a4ee4c442db30", version = "=0.1.2" }
 marlin-rust-project-harness-policy = { path = "build-support/marlin-rust-project-harness-policy", version = "0.1.0" }
 marlin-agent-environment = { path = "crates/marlin-agent-environment", version = "0.1.0" }
+marlin-agent-graph = { path = "crates/marlin-agent-graph", version = "0.1.0" }
 marlin-agent-harness = { path = "crates/marlin-agent-harness", version = "0.1.0" }
 marlin-agent-harness-types = { path = "crates/marlin-agent-harness-types", version = "0.1.0" }
 marlin-agent-hooks = { path = "crates/marlin-agent-hooks", version = "0.1.0" }

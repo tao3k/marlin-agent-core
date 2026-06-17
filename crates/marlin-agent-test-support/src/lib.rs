@@ -1,5 +1,6 @@
 //! Shared test support for Marlin agent runtime and stream contracts.
 
+mod agent_graph_readiness;
 mod graph_policy;
 mod hook;
 mod project_runtime_read_model;
@@ -12,6 +13,11 @@ mod sub_agent_session;
 mod test_run;
 mod three_layer;
 
+pub use agent_graph_readiness::{
+    AGENT_GRAPH_READINESS_REPLAY_ARTIFACT_ID, AGENT_GRAPH_READINESS_REPLAY_CONTRACT_JSON,
+    AgentGraphReadinessReplayArtifact, AgentGraphReadinessReplayArtifactLoadError,
+    agent_graph_readiness_replay_artifact_fixture, load_agent_graph_readiness_replay_artifact,
+};
 pub use graph_policy::{
     DeterministicGraphPolicyProposalFixture, accepted_gerbil_ir_graph_policy_proposal_fixture,
     accepted_graph_policy_proposal_fixture,

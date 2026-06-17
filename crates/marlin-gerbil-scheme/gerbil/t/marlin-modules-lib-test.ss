@@ -152,8 +152,7 @@
 ;;; Boundary: Added objects are regular POO values wrapped by policy metadata.
 ;; MarlinResult <- MarlinInput
 (def modules-lib-memory-trigger-object
-  (marlinPolicyObject
-   "memory-trigger-policy"
+  (marlinMemoryTriggerPolicy
    "memory-trigger"
    (.o trigger: "context-pressure"
        action: "compact")
@@ -278,6 +277,12 @@
 (unless (string=? (car (.get modules-lib-missing-schema-receipt errors))
                   "option schema is not declared")
   (error "unexpected missing schema error"))
+(check (.get modules-lib-missing-schema-receipt contract-kind)
+       => "missing-schema")
+(check (.get modules-lib-missing-schema-receipt value-type-label)
+       => 'unknown-type)
+(check (.get modules-lib-missing-schema-receipt schema-owner)
+       => "unknown")
 
 ;;; Boundary: POO-heavy assertions stay scalar to avoid verbose object printing.
 ;; MarlinResult <- MarlinInput
@@ -322,6 +327,10 @@
  (marlin-policy-object-families (.get modules-lib-policy-pack policy-objects))
  '("model-route-policy" "human-review-policy" "memory-trigger-policy")
  "post-surgery object family inventory mismatch")
+(modules-lib-assert-equal
+ marlin-memory-trigger-policy-family
+ "memory-trigger-policy"
+ "memory trigger family mismatch")
 (modules-lib-assert-equal
  (marlin-policy-object-disabled-ids
   (.get modules-lib-policy-pack policy-objects))

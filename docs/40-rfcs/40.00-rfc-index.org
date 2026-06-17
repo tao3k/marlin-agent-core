@@ -20,6 +20,7 @@ RFC documents define proposed or active protocol contracts before they become ac
 [[file:40.130-sandbox-backend-capability-protocol.org][40.130 Sandbox Backend Capability Protocol]]
 [[file:40.140-pi-agent-core-loop-parity.org][40.140 Pi Agent Core Loop Parity Plan]]
 [[file:40.150-tokio-runtime-advanced-capability-research.org][40.150 Tokio Runtime Advanced Capability Research]]
+[[file:40.160-agent-graph-topology-protocol.org][40.160 Agent Graph Topology Protocol]]
 ** Acceleration Lanes
 | Lane | RFCs | Goal | Immediate Gate |
 ** Progress Rules

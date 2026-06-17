@@ -3,13 +3,13 @@
 
 (import :clan/poo/object
         :modules/lib
+        :modules/prefabs/user-interface
+        :modules/prefabs/user-interface-delivery
         :marlin/deck-runtime-script
         :marlin/deck-runtime-strategy
         :marlin/deck-runtime-user-module
         :marlin/graph-loop-continuation-native-projection
         "../user-interface-modules/config"
-        "../user-interface-modules/loop-continuation"
-        "../user-interface-modules/subagent"
         :std/test)
 
 ;;; Boundary: Fixture context models a downstream user command.
@@ -22,27 +22,43 @@
 ;;; Boundary: Upstream workflow utility owns projections from user config.
 ;; UserInterfaceWorkflowResult <- UserInterfaceWorkflowContext
 (def user-interface-workflow
-  (user-interface-module-workflow))
+  (UserInterfaceWorkspaceWorkflow user-interface-module-config))
 
 ;;; Boundary: Public catalog entrypoint is visible to downstream users.
 ;; UserInterfaceWorkflowResult <- UserInterfaceWorkflowContext
 (def user-interface-catalog
-  (user-interface-module-catalog))
+  (UserInterfaceWorkspaceCatalog user-interface-module-config))
 
 ;;; Boundary: evalModules is the public module-system evaluation entrypoint.
 ;; UserInterfaceWorkflowResult <- UserInterfaceWorkflowContext
 (def user-interface-eval-result
-  (user-interface-module-evaluation))
+  (UserInterfaceWorkspaceEvaluation user-interface-module-config))
 
 ;;; Boundary: Presentation receipt summarizes the complete module-system surface.
 ;; UserInterfaceWorkflowResult <- UserInterfaceWorkflowContext
 (def user-interface-presentation
-  (user-interface-module-system-presentation))
+  (UserInterfaceWorkspaceSystemPresentation user-interface-module-config))
 
 ;;; Boundary: Prefab presentation shows module-pack object surgery to users.
 ;; UserInterfaceWorkflowResult <- UserInterfaceWorkflowContext
 (def user-interface-pack-presentation
-  (user-interface-policy-pack-presentation))
+  (UserInterfacePolicyPackPresentation
+   (UserInterfacePolicyPack user-interface-module-config)))
+
+;;; Boundary: Downstream user-facing handoff is a single delivery receipt.
+;; UserInterfaceWorkflowResult <- UserInterfaceWorkflowContext
+(def user-interface-delivery
+  (user-interface-delivery-receipt))
+
+;;; Boundary: Downstream user-facing apply is the delivery action.
+;; UserInterfaceWorkflowResult <- UserInterfaceWorkflowContext
+(def user-interface-apply
+  (user-interface-policy-apply))
+
+;;; Boundary: Downstream user-facing projection is the Rust envelope.
+;; UserInterfaceWorkflowResult <- UserInterfaceWorkflowContext
+(def user-interface-projection
+  (user-interface-policy-projection))
 
 ;;; Boundary: Evaluation is projected by the upstream workflow utility.
 ;; UserInterfaceWorkflowResult <- UserInterfaceWorkflowContext
@@ -145,11 +161,13 @@
        => #f)
 (check (.get user-interface-presentation scheme-manufactures-rust-handlers)
        => #f)
-(check (.get user-interface-policy-pack kind)
+(check (.get (UserInterfacePolicyPack user-interface-module-config) kind)
        => marlin-policy-pack-kind)
-(check (.get user-interface-policy-pack id)
+(check (.get (UserInterfacePolicyPack user-interface-module-config) id)
        => "user-interface-prefab-pack")
-(check (.get (user-interface-policy-pack-catalog) kind)
+(check (.get (UserInterfacePolicyPackCatalog
+              (UserInterfacePolicyPack user-interface-module-config))
+             kind)
        => marlin-pack-catalog-kind)
 (check (.get user-interface-pack-presentation kind)
        => marlin-policy-pack-presentation-kind)
@@ -158,7 +176,10 @@
 (check (.get user-interface-pack-presentation
              module-system-presentation-kind)
        => marlin-module-system-presentation-kind)
-(check (.get user-interface-pack-presentation policy-object-count) => 3)
+(check (.get user-interface-pack-presentation policy-object-count) => 14)
+(check (.get user-interface-pack-presentation
+             default-policy-object-count)
+       => 14)
 (check (.get user-interface-pack-presentation object-operation-count) => 4)
 (check (.get user-interface-pack-presentation
              object-surgery-receipt-count)
@@ -173,7 +194,7 @@
 (check (.get user-interface-pack-presentation
              disabled-policy-object-count)
        => 1)
-(check (.get user-interface-pack-presentation allowed-hook-count) => 1)
+(check (.get user-interface-pack-presentation allowed-hook-count) => 2)
 (check (.get user-interface-pack-presentation import-graph-owner)
        => "gerbil-module-system")
 (check (.get user-interface-pack-presentation option-merge-owner)
@@ -187,6 +208,40 @@
 (check (.get user-interface-pack-presentation
              rust-handler-manufactured)
        => #f)
+(check (.get user-interface-delivery kind)
+       => user-interface-delivery-receipt-kind)
+(check (.get user-interface-delivery root-module-id)
+       => "user-interface-root-module")
+(check (.get user-interface-delivery module-count)
+       => (length (.get user-interface-evaluation module-ids)))
+(check (.get user-interface-delivery option-contract-count) => 12)
+(check (.get user-interface-delivery pack-id)
+       => "user-interface-prefab-pack")
+(check (.get user-interface-delivery pack-catalog-presentation-kind)
+       => marlin-pack-catalog-presentation-kind)
+(check (.get user-interface-delivery pack-ids)
+       => '("user-interface-prefab-pack"))
+(check (.get user-interface-delivery policy-projection-kind)
+       => marlin-policy-projection-kind)
+(check (.get user-interface-delivery policy-projection-chain-receipt-kind)
+       => marlin-policy-projection-chain-receipt-kind)
+(check (.get user-interface-delivery budget-receipt-kind)
+       => marlin-policy-budget-receipt-kind)
+(check (.get user-interface-delivery catalog-resolution-receipt-kind)
+       => marlin-policy-catalog-resolution-receipt-kind)
+(check (.get user-interface-delivery user-entrypoints)
+       => '("UserInterfaceWorkspace"
+            "UserInterfaceDeliveryReceipt"
+            "UserInterfaceApply"
+            "UserInterfacePolicyProjection"))
+(check (.get user-interface-apply kind)
+       => user-interface-delivery-receipt-kind)
+(check (.get user-interface-projection kind)
+       => marlin-policy-projection-kind)
+(check (.get user-interface-projection pack-id)
+       => "user-interface-prefab-pack")
+(check (.get user-interface-projection native-projection-payload-kind)
+       => marlin-policy-pack-presentation-kind)
 (check (.get user-interface-receipt script-id) => "user-interface-worker-script")
 (check (.get user-interface-receipt extension-id) => "user-interface-worker-extension")
 (check (.get user-interface-metrics iterations) => 128)

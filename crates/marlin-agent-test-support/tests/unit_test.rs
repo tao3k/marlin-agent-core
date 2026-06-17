@@ -1,3 +1,5 @@
+#[path = "unit/agent_graph_readiness.rs"]
+mod agent_graph_readiness;
 #[path = "unit/graph_policy.rs"]
 mod graph_policy;
 #[path = "unit/hook.rs"]

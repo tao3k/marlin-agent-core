@@ -2331,6 +2331,7 @@ name = "marlin-agent-core"
 version = "0.1.0"
 dependencies = [
  "marlin-agent-environment",
+ "marlin-agent-graph",
  "marlin-agent-harness",
  "marlin-agent-hooks",
  "marlin-agent-kernel",
@@ -2369,6 +2370,15 @@ dependencies = [
  "serde_json",
  "thiserror",
  "tokio",
+]
+
+[[package]]
+name = "marlin-agent-graph"
+version = "0.1.0"
+dependencies = [
+ "marlin-rust-project-harness-policy",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -2435,6 +2445,7 @@ dependencies = [
 name = "marlin-agent-protocol"
 version = "0.1.0"
 dependencies = [
+ "marlin-agent-graph",
  "marlin-gerbil-ir",
  "marlin-rust-project-harness-policy",
  "serde",
@@ -2464,6 +2475,7 @@ dependencies = [
  "aho-corasick",
  "globset",
  "marlin-agent-environment",
+ "marlin-agent-graph",
  "marlin-agent-harness-types",
  "marlin-agent-protocol",
  "marlin-agent-sessions",
@@ -2472,6 +2484,7 @@ dependencies = [
  "parking_lot",
  "process-wrap",
  "serde",
+ "serde_json",
  "sysinfo 0.39.3",
  "tempfile",
  "tokio",
@@ -2563,6 +2576,7 @@ version = "0.1.0"
 dependencies = [
  "criterion",
  "futures-executor",
+ "marlin-agent-graph",
  "marlin-agent-protocol",
  "marlin-gerbil-ir",
  "marlin-org-memory",
@@ -2599,6 +2613,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "futures-executor",
+ "marlin-agent-graph",
  "marlin-agent-protocol",
  "marlin-gerbil-ir",
  "marlin-org-model",

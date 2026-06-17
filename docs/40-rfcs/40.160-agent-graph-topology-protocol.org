@@ -1,0 +1,257 @@
+* 40.160 Agent Graph Topology Protocol
+:PROPERTIES:
+:STATUS: Active
+:OWNER_CRATES: marlin-agent-graph, marlin-org-memory, marlin-agent-protocol, marlin-agent-runtime, marlin-agent-core, marlin-gerbil-scheme
+:END:
+** Purpose
+This RFC establishes =AgentGraph= as the topology layer between single-agent
+graph-loop execution and future multi-agent orchestration systems.
+
+The immediate goal is not to implement Symphony. The immediate goal is to
+define the typed graph protocol that future Symphony-like orchestration can use
+without turning =GraphLoopController=, sessions, Org memory, Gerbil policy,
+worktrees, sub-agents, hooks, and evidence into one god controller.
+** Layer Boundary
+Marlin should keep these layers separate:
+
+| Layer | Owns | Must Not Own |
+| Runtime | Tokio, cancellation, process, session, worktree, task receipts | topology, delegation policy |
+| Loop | =LoopGraph=, =GraphLoopController=, continuation, retry, repair, next action | teams, scheduling, agent election |
+| Knowledge | Org, memory, contracts, evidence, reflection receipts | execution policy, topology mutation |
+| Strategy | Gerbil POO, policy, continuation, dynamic hook decisions | runtime storage, process/session ownership |
+| Agent Graph | agent nodes, edges, capabilities, delegation, coordination receipts | direct tool execution, raw memory bodies |
+| Symphony | decentralized coordination algorithms over =AgentGraph= | core runtime, session, loop contracts |
+
+The critical separation is:
+
+#+begin_example
+AgentGraph
+  -> GraphLoopController
+       -> LoopGraph
+            -> Runtime
+#+end_example
+
+An =AgentNode= may execute a graph loop through a controller. It must not
+execute tools directly.
+
+An =AgentEdge= may describe delegation, review, fanout, fanin, voting, or
+handoff. It must not own runtime process state.
+** Why Now
+The current system already has multiple dimensions that imply topology:
+
+- multiple sessions;
+- multiple sub-agents;
+- multiple worktrees;
+- multiple projects;
+- graph-loop controller receipts;
+- Org memory graph recall;
+- Gerbil policy and continuation logic;
+- hook and model routing policy.
+
+Without an =AgentGraph= layer, these concerns will drift into
+=GraphLoopController= or =marlin-agent-core=. That would couple topology,
+strategy, knowledge, and runtime substrate in the same place.
+** Symphony Position
+Symphony-style systems are useful as orchestration algorithms, not as the core
+Marlin substrate.
+
+Public Symphony material frames the system around decentralized multi-agent
+coordination with capability records, dynamic task allocation, and result
+voting. Marlin should treat that as future =marlin-symphony= behavior built on
+top of =AgentGraph=, not as logic embedded inside =marlin-agent-core=.
+
+External reference:
+
+- https://arxiv.org/abs/2508.20019
+** Proposed Crates
+*** =marlin-agent-graph=
+Owns topology contracts:
+
+- =AgentGraphId=
+- =AgentNodeId=
+- =AgentEdgeId=
+- =AgentRole=
+- =AgentCapability=
+- =AgentNode=
+- =AgentEdge=
+- =AgentGraph=
+- =AgentDelegation=
+- =AgentCoordinationReceipt=
+- =AgentElectionReceipt=
+- =AgentRoutingReceipt=
+
+This crate should be protocol-first and execution-free.
+*** =marlin-symphony= (deferred)
+Owns higher-level orchestration algorithms after =AgentGraph= stabilizes:
+
+- dynamic coordinator selection;
+- capability ledger strategy;
+- team formation;
+- agent election;
+- weighted result aggregation;
+- distributed/decentralized scheduling experiments.
+
+This crate should not exist until =AgentGraph= can represent topology and emit
+coordination receipts without requiring Symphony-specific policy.
+** Core Types
+Initial protocol sketch:
+
+#+begin_src rust
+pub struct AgentGraph {
+    pub graph_id: AgentGraphId,
+    pub nodes: Vec<AgentNode>,
+    pub edges: Vec<AgentEdge>,
+    pub topology_policy: AgentTopologyPolicy,
+}
+
+pub struct AgentNode {
+    pub node_id: AgentNodeId,
+    pub role: AgentRole,
+    pub capabilities: Vec<AgentCapability>,
+    pub loop_entry: GraphLoopEntryRef,
+    pub memory_scope: Option<OrgMemoryScopeRef>,
+    pub policy_scope: Option<GerbilPolicyScopeRef>,
+}
+
+pub struct AgentEdge {
+    pub edge_id: AgentEdgeId,
+    pub from: AgentNodeId,
+    pub to: AgentNodeId,
+    pub kind: AgentEdgeKind,
+    pub condition: AgentEdgeCondition,
+}
+
+pub enum AgentEdgeKind {
+    Handoff,
+    Delegate,
+    Review,
+    Fanout,
+    Fanin,
+    Vote,
+    Escalate,
+}
+
+pub struct AgentCoordinationReceipt {
+    pub graph_id: AgentGraphId,
+    pub selected_node: AgentNodeId,
+    pub selected_edge: Option<AgentEdgeId>,
+    pub decision: AgentCoordinationDecision,
+    pub evidence: Vec<AgentCoordinationEvidenceRef>,
+}
+#+end_src
+** Relationship To Existing Graphs
+=LoopGraph= is a single loop execution graph.
+
+=Org/Memory Graph= is a knowledge graph.
+
+=AgentGraph= is a topology graph over agents. Its nodes can reference
+=LoopGraph= entrypoints, memory scopes, capabilities, and policy metadata, but
+it does not inline any of those bodies.
+** Non-goals
+- Do not move session creation into =AgentGraph=.
+- Do not move worktree creation into =AgentGraph=.
+- Do not execute tools directly from =AgentGraph=.
+- Do not store Org memory bodies in =AgentGraph=.
+- Do not evaluate Gerbil policy inside =AgentGraph=.
+- Do not create =marlin-symphony= until the AgentGraph contract has focused
+  tests and receipts.
+** P0 Implementation Plan
+1. Add =crates/marlin-agent-graph= as a protocol-first crate.
+2. Define ids, nodes, edges, roles, capabilities, and receipt types.
+3. Add serde contract tests for:
+   - linear handoff topology;
+   - fanout/fanin verification topology;
+   - reviewer/election topology;
+   - node referencing a graph-loop entry without owning execution.
+4. Add a harness policy role for agent topology contracts.
+5. Update RFC index and implementation evidence.
+** Implementation Evidence
+- =crates/marlin-agent-graph= owns the P0 topology contracts and is
+  execution-free.
+- =crates/marlin-agent-graph/tests/unit/topology/contracts.rs= covers linear
+handoff, fanout/fanin, reviewer election, graph-loop entry references, and
+typed coordination receipts. It also proves Org memory and Gerbil policy
+scopes stay typed metadata refs instead of becoming memory queries, policy
+programs, tools, commands, sessions, or worktrees.
+- =crates/marlin-agent-graph/tests/unit/topology/planning.rs= covers
+deterministic, capability-first, and policy-scoped planning before runtime
+admission.
+- =crates/marlin-agent-graph/tests/unit/topology/planning_rejections.rs=
+covers invalid graph and missing-root rejection before runtime admission.
+- =build-support/marlin-rust-project-harness-policy= classifies
+  =marlin-agent-graph= as =AgentTopology= instead of falling through to a
+  generic library role.
+- =marlin-agent-runtime= consumes =AgentCoordinationPlan= through
+  =admit_agent_coordination_plan=, validates references, and projects the root
+  =GraphLoopEntryRef= without selecting agents or executing graph loops.
+- =marlin-agent-graph= owns =plan_agent_coordination= so deterministic,
+  capability-first, and policy-scoped topology planning produce typed
+  =AgentCoordinationPlan= and coordination receipts before runtime admission.
+- =marlin-agent-graph= owns =AgentPolicyRoutingReceipt= and
+=plan_agent_coordination_with_policy_receipt= as the Rust-side adapter for
+=PolicyScoped= routing. A policy-scoped graph without a typed Gerbil policy
+receipt is rejected before runtime admission; Gerbil cannot manufacture
+runtime requests or handlers through this path.
+- =marlin-gerbil-scheme= owns the Rust-side native typed projection boundary
+for =AgentPolicyRoutingReceipt=. =GerbilAgentPolicyRoutingProjection= declares
+the Scheme type manifest, projection contract, native ABI readiness plan, and
+native projection request, then projects Scheme values into typed
+=AgentGraphId=, =GerbilPolicyScopeRef=, =AgentNodeId=, =AgentEdgeId=, and
+evidence refs before =PolicyScoped= planning can consume them.
+- =marlin-agent-runtime= owns =project_agent_graph_planning_receipt= so
+planning receipts can become runtime admission receipts without giving the
+runtime layer topology selection authority, including malformed planning
+receipts that report success without carrying a plan.
+- =marlin-agent-protocol= owns =AgentGraphProjectionRequest= as the protocol
+bridge from topology planning into runtime projection. The request carries a
+typed =AgentGraphId=, an =AgentGraphPlanningReceipt=, and an observation
+timestamp; it does not carry a controller, tool call, or execution request.
+- =marlin-agent-runtime= owns =project_agent_graph_projection_request= and
+=check_agent_graph_execution_readiness=. Readiness is a dry-run receipt: it
+proves a root =GraphLoopEntryRef= can be projected, but it does not construct
+or execute a =GraphLoopExecutionRequest=. The runtime projection request
+boundary rejects unsupported request schema ids before graph admission.
+- =marlin-agent-test-support= owns the
+=agent_graph_readiness_replay_artifact_fixture= evidence row for
+=AgentGraph -> planning -> runtime projection -> readiness= with
+=graph_loop_execution=false=, =controller_execution=false=, and
+=tool_execution=false=.
+- =marlin-org-memory= owns =AgentGraphOrgProjectionRequest= and
+=AgentGraphOrgProjectionReceipt= for projecting contract-validated Org
+topology metadata into a typed =AgentGraph=. The projection uses explicit
+=AGENT_GRAPH_*= properties, emits typed memory and Gerbil policy scope refs,
+and rejects unvalidated or invalid topology before runtime admission.
+- =marlin-agent-core= re-exports the AgentGraph protocol and runtime
+projection boundary through its lean facade, with focused facade contract tests
+proving Org projection, planning, protocol request construction, and readiness
+projection are reachable without moving topology logic into core.
+** Landing Status
+1. =marlin-agent-graph= is the dedicated protocol-first topology crate.
+2. =marlin-agent-protocol= provides the projection request envelope.
+3. =marlin-agent-runtime= consumes projection requests and emits admission plus
+readiness receipts without executing graph loops.
+4. =marlin-agent-core= exposes the protocol and runtime boundary as a facade
+only.
+5. Org memory projects contract-validated topology metadata into =AgentGraph=
+through typed refs; it does not own runtime execution.
+6. =PolicyScoped= planning now requires a typed Gerbil policy routing receipt
+before it can produce candidate edges.
+7. =marlin-gerbil-scheme= validates the AgentGraph policy routing native ABI
+projection before converting Scheme values into Rust =AgentPolicyRoutingReceipt=
+data.
+** Remaining Gaps
+1. Wire the actual Gerbil Scheme package symbol that emits
+=GerbilAgentPolicyRoutingProjection= from live POO policy objects; keep the
+Rust-side native projection contract as the admission gate and do not let
+Gerbil manufacture Rust handlers or runtime requests.
+2. Add a future =marlin-agent-graph= to =GraphLoopController= execution
+handoff only after readiness receipts are replayable in harness evidence.
+** Acceptance Criteria
+- =GraphLoopController= gains no team, scheduling, election, or delegation
+  ownership.
+- =marlin-agent-core= remains a facade and does not become the orchestration
+  crate.
+- The first implementation crate exposes typed topology contracts and serde
+  tests only.
+- Symphony-specific algorithms stay deferred behind stable =AgentGraph=
+  receipts.

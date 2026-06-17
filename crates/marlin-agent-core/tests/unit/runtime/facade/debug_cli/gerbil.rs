@@ -253,6 +253,76 @@ fn debug_cli_gerbil_policy_receipt_runs_scheme_policy_engine() {
     );
     assert_eq!(summary["policy_projection_replayable"], true);
     assert_eq!(
+        summary["policy_projection_chain_receipt_kind"],
+        "marlin.modules.policy-projection-chain-receipt.v1"
+    );
+    assert_eq!(
+        summary["policy_projection_chain_receipt_pack_id"],
+        "debug-policy-prefab-pack"
+    );
+    assert_eq!(
+        summary["policy_projection_chain_module_evaluation_receipt_kind"],
+        "marlin-deck-runtime.user-module-evaluation.v1"
+    );
+    assert_eq!(
+        summary["policy_projection_chain_policy_projection_receipt_kind"],
+        "marlin.modules.policy-projection.v1"
+    );
+    assert_eq!(
+        summary["policy_projection_chain_native_projection_payload_kind"],
+        "marlin.modules.policy-pack-presentation.v1"
+    );
+    assert_eq!(
+        summary["policy_projection_chain_budget_receipt_kind"],
+        "marlin.runtime.policy-budget-receipt.v1"
+    );
+    assert_eq!(
+        summary["policy_projection_chain_catalog_resolution_receipt_kind"],
+        "marlin.runtime.policy-catalog-resolution-receipt.v1"
+    );
+    assert_eq!(summary["policy_projection_chain_replayable"], true);
+    assert_eq!(
+        summary["default_policy_delivery_kind"],
+        "marlin.modules.prefabs.default-policy.delivery-receipt.v1"
+    );
+    assert_eq!(
+        summary["default_policy_pack_id"],
+        "marlin-default-policy-pack"
+    );
+    assert_eq!(summary["default_policy_pack_count"], 1);
+    assert_eq!(
+        summary["default_policy_pack_ids"],
+        json!(["marlin-default-policy-pack"])
+    );
+    assert_eq!(summary["default_policy_object_count"], 11);
+    assert_eq!(summary["default_policy_default_object_count"], 11);
+    assert_eq!(summary["default_policy_allowed_hook_count"], 1);
+    assert_eq!(
+        summary["default_policy_allowed_hook_ids"],
+        json!(["runtime-catalog-default-hook"])
+    );
+    assert_eq!(
+        summary["default_policy_catalog_presentation_kind"],
+        "marlin.modules.policy-pack-catalog-presentation.v1"
+    );
+    assert_eq!(
+        summary["default_policy_projection_kind"],
+        "marlin.modules.policy-projection.v1"
+    );
+    assert_eq!(
+        summary["default_policy_projection_chain_receipt_kind"],
+        "marlin.modules.policy-projection-chain-receipt.v1"
+    );
+    assert_eq!(
+        summary["default_policy_budget_receipt_kind"],
+        "marlin.runtime.policy-budget-receipt.v1"
+    );
+    assert_eq!(
+        summary["default_policy_catalog_resolution_receipt_kind"],
+        "marlin.runtime.policy-catalog-resolution-receipt.v1"
+    );
+    assert_eq!(summary["default_policy_replayable"], true);
+    assert_eq!(
         summary["policy_substrate_gate_kind"],
         "marlin.modules.policy-substrate-gate.v1"
     );

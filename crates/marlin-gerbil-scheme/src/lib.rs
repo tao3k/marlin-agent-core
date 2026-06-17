@@ -1,5 +1,6 @@
 //! `Gerbil Scheme` compiler boundary for typed `marlin` artifacts.
 
+mod agent_policy_routing;
 mod aot_repair_cli;
 mod aot_runtime;
 mod artifact;
@@ -20,6 +21,23 @@ pub mod scheme_type_fixtures;
 mod scheme_types;
 mod working_copy_policy;
 
+pub use agent_policy_routing::{
+    GERBIL_AGENT_POLICY_ROUTING_NATIVE_PROJECTION_ABI_ID,
+    GERBIL_AGENT_POLICY_ROUTING_NATIVE_PROJECTION_ABI_VERSION,
+    GERBIL_AGENT_POLICY_ROUTING_NATIVE_PROJECTION_PACKAGE_ID,
+    GERBIL_AGENT_POLICY_ROUTING_NATIVE_SYMBOL, GERBIL_AGENT_POLICY_ROUTING_SCHEMA_ID,
+    GERBIL_AGENT_POLICY_ROUTING_TYPE_ID, GerbilAgentPolicyRoutingDecision,
+    GerbilAgentPolicyRoutingEvidence, GerbilAgentPolicyRoutingEvidenceKind,
+    GerbilAgentPolicyRoutingProjection, decode_gerbil_agent_policy_routing_native_projection,
+    decode_gerbil_agent_policy_routing_projection,
+    gerbil_agent_policy_routing_native_projection_abi_contract,
+    gerbil_agent_policy_routing_native_projection_package_manifest,
+    gerbil_agent_policy_routing_native_projection_readiness_plan,
+    gerbil_agent_policy_routing_native_projection_request,
+    gerbil_agent_policy_routing_projection_contract, gerbil_agent_policy_routing_type_manifest,
+    project_gerbil_agent_policy_routing_native_receipt,
+    project_gerbil_agent_policy_routing_receipt,
+};
 pub use aot_repair_cli::run_gerbil_aot_repair_cli;
 pub use aot_runtime::{
     GerbilAotBackendRepairReceipt, GerbilAotBackendRepairStatus, GerbilAotBackendShimReceipt,

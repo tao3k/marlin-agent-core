@@ -129,7 +129,7 @@
               (lambda (_slot-name _slot-value count) (+ count 1))
               0
               receipt)
-             => 6))))
+             => 15))))
 
 ;;; Boundary: Parser-visible call witness links the schema adapter to t/ tests.
 ;; MarlinResult <- MarlinInput
@@ -181,6 +181,15 @@
        => marlin-deck-runtime-option-validation-receipt-kind)
 (check (.get user-option-valid-receipt valid?) => #t)
 (check (.get user-option-valid-receipt errors) => '())
+(check (.get user-option-valid-receipt contract-kind) => "default")
+(check (.get user-option-valid-receipt value-type-label) => 'String)
+(check (.get user-option-valid-receipt required?) => #f)
+(check (.get user-option-valid-receipt optional?) => #t)
+(check (.get user-option-valid-receipt has-default?) => #t)
+(check (.get user-option-valid-receipt default) => "user-interface-agent")
+(check (.get user-option-valid-receipt has-constant?) => #f)
+(check (.get user-option-valid-receipt schema-owner)
+       => "user-module-option-test")
 (check (.get user-option-invalid-receipt valid?) => #f)
 (check (.get user-option-invalid-receipt errors)
        => '("option value does not satisfy schema type"))
@@ -193,6 +202,11 @@
 (check (.get user-option-constant-invalid-receipt valid?) => #f)
 (check (.get user-option-constant-invalid-receipt errors)
        => '("option value does not match schema constant"))
+(check (.get user-option-constant-invalid-receipt contract-kind)
+       => "constant")
+(check (.get user-option-constant-invalid-receipt required?) => #t)
+(check (.get user-option-constant-invalid-receipt has-constant?) => #t)
+(check (.get user-option-constant-invalid-receipt constant) => "script")
 (check (element? MarlinDeckRuntimeOptionSchema user-option-agent-scope-schema)
        => #t)
 (check (element? MarlinDeckRuntimeOptionConfig user-option-agent-scope-config)

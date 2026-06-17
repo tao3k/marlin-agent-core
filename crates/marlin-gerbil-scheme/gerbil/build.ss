@@ -17,6 +17,7 @@
        "src/marlin/deck-runtime"
        "src/marlin/deck-runtime-native-projection"
        "src/marlin/graph-loop-continuation-native-projection"
+       "src/marlin/agent-policy-routing-native-projection"
        "src/marlin/deck-runtime-compiled-policy"
        "src/marlin/deck-runtime-compiled-policy-sample"
        "src/marlin/deck-runtime-strategy-context"
@@ -39,9 +40,15 @@
        "src/modules/policy-extension"
        "src/modules/policy-module"
        "src/modules/policy-object"
+       "src/modules/evidence-policy"
+       "src/modules/failure-policy"
+       "src/modules/memory-policy"
        "src/modules/evaluation"
        "src/modules/policy-pack"
        "src/modules/lib"
+       "src/modules/prefabs/default-policy"
+       "src/modules/prefabs/user-interface"
+       "src/modules/prefabs/user-interface-delivery"
        "src/marlin/deck-runtime-strategy"
        extra-target ...))))
 

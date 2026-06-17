@@ -33,6 +33,10 @@ fn crate_verification_role_classification_tracks_marlin_boundaries() {
         MarlinCrateVerificationRole::AgentRuntime
     );
     assert_eq!(
+        marlin_crate_verification_role_for_project(&root.join("crates/marlin-agent-graph")),
+        MarlinCrateVerificationRole::AgentTopology
+    );
+    assert_eq!(
         marlin_crate_verification_role_for_project(&root.join("crates/marlin-agent-protocol")),
         MarlinCrateVerificationRole::ProtocolContract
     );

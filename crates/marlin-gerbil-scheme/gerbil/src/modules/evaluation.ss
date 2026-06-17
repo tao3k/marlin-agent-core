@@ -129,6 +129,15 @@ package: modules
    (.get config source-module-id)
    #f
    '("option schema is not declared")
+   "missing-schema"
+   'unknown-type
+   #f
+   #f
+   #f
+   (void)
+   #f
+   (void)
+   "unknown"
    '()))
 
 ;;; Boundary: Validation receipts remain Scheme typed values before Rust projection.

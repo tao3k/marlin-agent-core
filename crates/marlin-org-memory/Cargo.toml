@@ -7,6 +7,7 @@ repository.workspace = true
 
 [dependencies]
 async-trait.workspace = true
+marlin-agent-graph.workspace = true
 marlin-agent-protocol.workspace = true
 marlin-gerbil-ir.workspace = true
 marlin-org-model.workspace = true

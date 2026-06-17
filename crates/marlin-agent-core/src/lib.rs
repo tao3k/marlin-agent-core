@@ -15,6 +15,18 @@ pub use marlin_agent_environment::{
     RuntimeEnvironmentResolver, SESSION_FLAGS_CONFIG_PRECEDENCE, SUB_AGENT_CONFIG_PRECEDENCE,
     SYSTEM_CONFIG_PRECEDENCE, SubAgentEnvironmentRequest, USER_CONFIG_PRECEDENCE,
 };
+pub use marlin_agent_graph::{
+    self as agent_graph, AgentCapability, AgentCoordinationDecision, AgentCoordinationEvidenceKind,
+    AgentCoordinationEvidenceRef, AgentCoordinationPlan, AgentCoordinationReceipt, AgentDelegation,
+    AgentDelegationReason, AgentEdge, AgentEdgeCondition, AgentEdgeId, AgentEdgeKind,
+    AgentElectionReason, AgentElectionReceipt, AgentEvidenceId, AgentGraph, AgentGraphId,
+    AgentGraphPlanningReceipt, AgentGraphPlanningRejection, AgentGraphPlanningStatus,
+    AgentGraphPlanningTarget, AgentGraphTopologyError, AgentNode, AgentNodeId,
+    AgentPolicyDecisionRef, AgentPolicyRoutingDecision, AgentPolicyRoutingReceipt, AgentRole,
+    AgentRoutingReason, AgentRoutingReceipt, AgentTopologyPolicy, AgentTopologyPolicyId,
+    GerbilPolicyScopeRef, GraphLoopEntryRef, GraphLoopGraphRef, GraphLoopNodeRef,
+    OrgMemoryScopeRef, plan_agent_coordination, plan_agent_coordination_with_policy_receipt,
+};
 pub use marlin_agent_harness as harness;
 pub use marlin_agent_harness::{
     AGENT_HARNESS_GRAPH_POLICY_PROPOSAL_VISIBILITY_SUBJECT_PREFIX,
@@ -64,18 +76,19 @@ pub use marlin_agent_kernel::{
 };
 pub use marlin_agent_protocol as protocol;
 pub use marlin_agent_protocol::{
-    AgentEventTopic, AgentExecutionTrace, AgentExecutionTraceSummary, AgentSpanName,
-    AgentTraceSpanRecord, GERBIL_LOOP_GRAPH_CONTINUATION_SCHEMA_ID,
-    GERBIL_LOOP_GRAPH_POLICY_COMPILATION_SCHEMA_ID, GRAPH_POLICY_PROPOSAL_SPAN_NAME,
-    GerbilLoopGraphContinuationAction, GerbilLoopGraphContinuationRequest,
-    GerbilLoopGraphPolicyCompilationRequest, GraphLoopContinuationAction,
-    GraphLoopContinuationDecision, GraphLoopContinuationReceipt, GraphLoopEvent,
-    GraphLoopEventEnvelope, GraphLoopEventId, GraphLoopEvidencePolicy, GraphLoopInputDrainPolicy,
-    GraphLoopInputLane, GraphLoopInputQueueReceipt, GraphLoopIterationId, GraphLoopIterationReport,
-    GraphLoopMessageRole, GraphLoopNextAction, GraphLoopQueuedInput, GraphLoopRunRequest,
-    GraphLoopStopPolicy, GraphLoopStopReason, GraphLoopStopReceipt, GraphNativeAbiId,
-    GraphNativeAbiReadinessReceipt, GraphNativeAbiReadinessStatus, GraphNativeAbiRequirement,
-    GraphNativeSymbol, GraphNodeExecutionId, GraphToolBatchDecision, GraphToolBatchExecutionMode,
+    AGENT_GRAPH_PROJECTION_REQUEST_SCHEMA_ID, AgentEventTopic, AgentExecutionTrace,
+    AgentExecutionTraceSummary, AgentGraphProjectionRequest, AgentSpanName, AgentTraceSpanRecord,
+    GERBIL_LOOP_GRAPH_CONTINUATION_SCHEMA_ID, GERBIL_LOOP_GRAPH_POLICY_COMPILATION_SCHEMA_ID,
+    GRAPH_POLICY_PROPOSAL_SPAN_NAME, GerbilLoopGraphContinuationAction,
+    GerbilLoopGraphContinuationRequest, GerbilLoopGraphPolicyCompilationRequest,
+    GraphLoopContinuationAction, GraphLoopContinuationDecision, GraphLoopContinuationReceipt,
+    GraphLoopEvent, GraphLoopEventEnvelope, GraphLoopEventId, GraphLoopEvidencePolicy,
+    GraphLoopInputDrainPolicy, GraphLoopInputLane, GraphLoopInputQueueReceipt,
+    GraphLoopIterationId, GraphLoopIterationReport, GraphLoopMessageRole, GraphLoopNextAction,
+    GraphLoopQueuedInput, GraphLoopRunRequest, GraphLoopStopPolicy, GraphLoopStopReason,
+    GraphLoopStopReceipt, GraphNativeAbiId, GraphNativeAbiReadinessReceipt,
+    GraphNativeAbiReadinessStatus, GraphNativeAbiRequirement, GraphNativeSymbol,
+    GraphNodeExecutionId, GraphToolBatchDecision, GraphToolBatchExecutionMode,
     GraphToolBatchExecutionReceipt, GraphToolCallId, GraphToolCallReceipt, GraphToolCallStatus,
     HookAgentScope, HookDispatchPolicyReceipt, HookDispatchPolicyReceiptInput, HookDurationMs,
     HookEventName, HookExecutionMode, HookHandlerType, HookOutputEntry, HookOutputEntryKind,
@@ -103,19 +116,24 @@ pub use marlin_agent_route::{
     model_route_router_from_config, model_route_router_from_toml_path,
     model_route_router_from_toml_str,
 };
-pub use marlin_agent_runtime as runtime;
-pub use marlin_agent_runtime::observability;
 pub use marlin_agent_runtime::{
-    AgentSessionContext, CancellationToken, CompiledModelRouteResolver, ContextExpansionPolicy,
-    ContextNamespace, ContextVisibility, EventStream, HookRuntime, ModelGateway,
-    ModelGatewayCompletionChoice, ModelGatewayCompletionOptions, ModelGatewayCompletionResponse,
-    ModelGatewayError, ModelGatewayFuture, ModelGatewayMessage, ModelGatewayMessageRole,
-    ModelGatewayRequest, ModelGatewayResult, ModelGatewayTransport, ModelRouteCompileError,
-    ModelRouteConfig, ModelRouteConfigError, ModelRouteSessionBinding, ProviderRuntime,
-    RoutedSubAgentSpawn, RuntimeContext, RuntimeEnvironment, RuntimeEvent, RuntimeEventSink,
-    RuntimeEventStream, RuntimeExecutionIdentity, RuntimeFuture, RuntimeTask, RuntimeTaskOutcome,
-    SessionId, SessionIdError, SessionIdentity, SessionIsolationPolicy, SessionIsolationReceipt,
-    SessionKind, SubAgentRuntime, TokioAgentRuntime, ToolRuntime, assistant_gateway_message,
+    self as runtime, AgentSessionContext, CancellationToken, CompiledModelRouteResolver,
+    ContextExpansionPolicy, ContextNamespace, ContextVisibility, EventStream, HookRuntime,
+    ModelGateway, ModelGatewayCompletionChoice, ModelGatewayCompletionOptions,
+    ModelGatewayCompletionResponse, ModelGatewayError, ModelGatewayFuture, ModelGatewayMessage,
+    ModelGatewayMessageRole, ModelGatewayRequest, ModelGatewayResult, ModelGatewayTransport,
+    ModelRouteCompileError, ModelRouteConfig, ModelRouteConfigError, ModelRouteSessionBinding,
+    ProviderRuntime, RoutedSubAgentSpawn, RuntimeAgentCoordinationAdmissionReceipt,
+    RuntimeAgentCoordinationAdmissionStatus, RuntimeAgentCoordinationRejection,
+    RuntimeAgentGraphExecutionReadinessReceipt, RuntimeAgentGraphExecutionReadinessRejection,
+    RuntimeAgentGraphExecutionReadinessStatus, RuntimeAgentGraphProjectionReceipt,
+    RuntimeAgentGraphProjectionRejection, RuntimeAgentGraphProjectionStatus, RuntimeContext,
+    RuntimeEnvironment, RuntimeEvent, RuntimeEventSink, RuntimeEventStream,
+    RuntimeExecutionIdentity, RuntimeFuture, RuntimeTask, RuntimeTaskOutcome, SessionId,
+    SessionIdError, SessionIdentity, SessionIsolationPolicy, SessionIsolationReceipt, SessionKind,
+    SubAgentRuntime, TokioAgentRuntime, ToolRuntime, admit_agent_coordination_plan,
+    assistant_gateway_message, check_agent_graph_execution_readiness, observability,
+    project_agent_graph_planning_receipt, project_agent_graph_projection_request,
     system_gateway_message, user_gateway_message,
 };
 pub use marlin_agent_sessions as sessions;
@@ -137,6 +155,7 @@ pub use marlin_gerbil_scheme::{
     gerbil_loop_graph_continuation_type_manifest, project_gerbil_loop_graph_continuation_action,
     project_gerbil_loop_graph_continuation_native_action,
 };
+pub use marlin_org_memory as org_memory;
 pub use marlin_org_model as org_model;
 pub use marlin_org_patch as org_patch;
 pub use marlin_org_store as org_store;

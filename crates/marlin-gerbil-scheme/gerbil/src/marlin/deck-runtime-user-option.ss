@@ -41,6 +41,7 @@ package: marlin
         marlin-deck-runtime-option-config-table-ref
         marlin-deck-runtime-option-config-table-alist
         marlin-deck-runtime-option-config-table-fold
+        marlin-deck-runtime-option-schema-contract-kind
         marlin-deck-runtime-option-validation-receipt-table-keys
         marlin-deck-runtime-option-validation-receipt-table-ref
         marlin-deck-runtime-option-validation-receipt-table-alist
@@ -135,7 +136,9 @@ package: marlin
 ;;; Boundary: Receipt keys expose validation protocol slots.
 ;; MarlinResult <- MarlinInput
 (def (marlin-deck-runtime-option-validation-receipt-table-keys _receipt)
-  '(kind option-id source-module-id valid? errors metadata))
+  '(kind option-id source-module-id valid? errors contract-kind
+         value-type-label required? optional? has-default? default
+         has-constant? constant schema-owner metadata))
 
 ;;; Boundary: Table ref is the dynamic lookup surface for receipt protocol slots.
 ;; MarlinResult <- MarlinInput
@@ -150,6 +153,15 @@ package: marlin
     (source-module-id . ,(.get receipt source-module-id))
     (valid? . ,(.get receipt valid?))
     (errors . ,(.get receipt errors))
+    (contract-kind . ,(.get receipt contract-kind))
+    (value-type-label . ,(.get receipt value-type-label))
+    (required? . ,(.get receipt required?))
+    (optional? . ,(.get receipt optional?))
+    (has-default? . ,(.get receipt has-default?))
+    (default . ,(.get receipt default))
+    (has-constant? . ,(.get receipt has-constant?))
+    (constant . ,(.get receipt constant))
+    (schema-owner . ,(.get receipt schema-owner))
     (metadata . ,(.get receipt metadata))))
 
 ;;; Boundary: Receipt fold keeps table traversal typed and deterministic.
@@ -276,9 +288,20 @@ package: marlin
    source-module-id: {type: String}
    valid?: {type: Bool}
    errors: {type: (List String)}
+   contract-kind: {type: String default: "unknown"}
+   value-type-label: {type: Any default: 'unknown-type}
+   required?: {type: Bool default: #f}
+   optional?: {type: Bool default: #f}
+   has-default?: {type: Bool default: #f}
+   default: {type: Any optional: #t}
+   has-constant?: {type: Bool default: #f}
+   constant: {type: Any optional: #t}
+   schema-owner: {type: String default: "unknown"}
    metadata: {type: Any default: '()}}
   protocol-slot-surface:
-  '(kind option-id source-module-id valid? errors metadata)
+  '(kind option-id source-module-id valid? errors contract-kind
+         value-type-label required? optional? has-default? default
+         has-constant? constant schema-owner metadata)
   table-method-surface:
   '(.ref .foldl .foldr)
   derived-protocol-capability:
@@ -306,6 +329,15 @@ package: marlin
       source-module-id: ,(.get x source-module-id)
       valid?: ,(.get x valid?)
       errors: ,(.get x errors)
+      contract-kind: ,(.get x contract-kind)
+      value-type-label: ,(.get x value-type-label)
+      required?: ,(.get x required?)
+      optional?: ,(.get x optional?)
+      has-default?: ,(.get x has-default?)
+      default: ,(.get x default)
+      has-constant?: ,(.get x has-constant?)
+      constant: ,(.get x constant)
+      schema-owner: ,(.get x schema-owner)
       metadata: ,(.get x metadata)))
   .=?:
   (lambda (left right)
@@ -313,7 +345,16 @@ package: marlin
          (string=? (.get left source-module-id)
                    (.get right source-module-id))
          (equal? (.get left valid?) (.get right valid?))
-         (equal? (.get left errors) (.get right errors))))
+         (equal? (.get left errors) (.get right errors))
+         (string=? (.get left contract-kind) (.get right contract-kind))
+         (equal? (.get left value-type-label) (.get right value-type-label))
+         (equal? (.get left required?) (.get right required?))
+         (equal? (.get left optional?) (.get right optional?))
+         (equal? (.get left has-default?) (.get right has-default?))
+         (equal? (.get left default) (.get right default))
+         (equal? (.get left has-constant?) (.get right has-constant?))
+         (equal? (.get left constant) (.get right constant))
+         (string=? (.get left schema-owner) (.get right schema-owner))))
   sealed: #t)
 
 ;;; Boundary: Schema constructor validates the schema descriptor itself.
@@ -479,6 +520,15 @@ package: marlin
       source-module-id-value
       valid-value
       error-values
+      contract-kind-value
+      value-type-label-value
+      required-value
+      optional-value
+      has-default-value
+      default-value
+      has-constant-value
+      constant-value
+      schema-owner-value
       metadata-value)
   (let (receipt
         (.new MarlinDeckRuntimeOptionValidationReceipt
@@ -486,6 +536,15 @@ package: marlin
               (source-module-id source-module-id-value)
               (valid? valid-value)
               (errors error-values)
+              (contract-kind contract-kind-value)
+              (value-type-label value-type-label-value)
+              (required? required-value)
+              (optional? optional-value)
+              (has-default? has-default-value)
+              (default default-value)
+              (has-constant? has-constant-value)
+              (constant constant-value)
+              (schema-owner schema-owner-value)
               (metadata metadata-value)))
     (validate MarlinDeckRuntimeOptionValidationReceipt receipt)
     receipt))
@@ -581,6 +640,15 @@ package: marlin
 (def (marlin-deck-runtime-option-schema-match? schema config)
   (string=? (.get schema id) (.get config id)))
 
+;;; Boundary: Contract kind names the user-visible schema semantics.
+;; MarlinResult <- MarlinInput
+(def (marlin-deck-runtime-option-schema-contract-kind schema)
+  (cond
+   ((.get schema has-constant?) "constant")
+   ((.get schema has-default?) "default")
+   ((.get schema optional?) "optional")
+   (else "required")))
+
 ;;; Boundary: Config matching is the module merge identity.
 ;; MarlinResult <- MarlinInput
 (def (marlin-deck-runtime-option-config-match? left right)
@@ -593,10 +661,14 @@ package: marlin
          (source-module-id-value (.get config source-module-id))
          (value (.get config value))
          (value-type (.get schema value-type))
+         (has-default-value (.get schema has-default?))
+         (has-constant-value (.get schema has-constant?))
+         (optional-value (.get schema optional?))
          (type-valid? (element? value-type value))
          (constant-valid?
-          (or (not (.get schema has-constant?))
+          (or (not has-constant-value)
               (equal? value (.get schema constant))))
+         (required-value (not (or optional-value has-default-value)))
          (valid? (and (marlin-deck-runtime-option-schema-match? schema config)
                       type-valid?
                       constant-valid?))
@@ -616,4 +688,13 @@ package: marlin
      source-module-id-value
      valid?
      errors
+     (marlin-deck-runtime-option-schema-contract-kind schema)
+     (marlin-deck-runtime-option-type-label value-type)
+     required-value
+     optional-value
+     has-default-value
+     (.get schema default)
+     has-constant-value
+     (.get schema constant)
+     (.get schema owner)
      '())))

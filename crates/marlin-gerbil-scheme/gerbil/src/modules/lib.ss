@@ -8,6 +8,9 @@ package: modules
         :modules/policy-extension
         :modules/policy-module
         :modules/policy-object
+        :modules/evidence-policy
+        :modules/failure-policy
+        :modules/memory-policy
         :modules/evaluation
         :modules/policy-pack)
 
@@ -23,6 +26,10 @@ package: modules
         marlin-policy-substrate-gate-kind
         marlin-policy-pack-kind
         marlin-pack-catalog-kind
+        marlin-pack-catalog-presentation-kind
+        marlin-policy-projection-chain-receipt-kind
+        marlin-policy-budget-receipt-kind
+        marlin-policy-catalog-resolution-receipt-kind
         marlin-policy-projection-kind
         marlin-policy-pack-presentation-kind
         marlin-policy-pack-inventory-kind
@@ -50,15 +57,26 @@ package: modules
         marlin-replace-object
         marlin-policy-object-operation?
         marlin-policy-pack-apply-operations
+        marlin-evidence-graph-policy-family
+        marlinEvidenceGraphPolicy
+        marlinDefaultEvidenceGraphPolicy
+        marlin-failure-recovery-policy-family
+        marlinFailureRecoveryPolicy
+        marlinDefaultFailureRecoveryPolicy
+        marlin-memory-trigger-policy-family
+        marlinMemoryTriggerPolicy
+        marlinDefaultMemoryTriggerPolicy
         marlinPolicyPack
         defmarlin-policy-pack
         marlinDefaultPolicyPack
         marlinPackCatalog
         marlin-pack-catalog-find
         marlin-pack-catalog-root
+        marlinPackCatalogPresentation
         marlinPolicyPackInventory
         marlinPolicyPackPresentation
         marlinPolicyProjection
+        marlinPolicyProjectionChainReceipt
         marlinModuleCatalog
         marlin-import
         marlin-imports

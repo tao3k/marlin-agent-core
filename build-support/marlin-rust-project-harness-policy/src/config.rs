@@ -15,6 +15,7 @@ use rust_lang_project_harness::{
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum MarlinCrateVerificationRole {
     AgentRuntime,
+    AgentTopology,
     AgentHarness,
     ProtocolContract,
     OrgWorkspace,
@@ -34,6 +35,7 @@ pub fn marlin_crate_verification_role_for_project(
         | "marlin-agent-kernel"
         | "marlin-agent-runtime"
         | "marlin-agent-stream" => MarlinCrateVerificationRole::AgentRuntime,
+        "marlin-agent-graph" => MarlinCrateVerificationRole::AgentTopology,
         "marlin-agent-harness" | "marlin-agent-harness-types" | "marlin-agent-test-support" => {
             MarlinCrateVerificationRole::AgentHarness
         }
@@ -118,6 +120,7 @@ impl MarlinCrateVerificationRole {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::AgentRuntime => "agent-runtime",
+            Self::AgentTopology => "agent-topology",
             Self::AgentHarness => "agent-harness",
             Self::ProtocolContract => "protocol-contract",
             Self::OrgWorkspace => "org-workspace",
@@ -168,6 +171,10 @@ impl MarlinCrateVerificationRole {
                 RustOwnerResponsibility::PublicApi,
                 RustOwnerResponsibility::LatencySensitive,
                 RustOwnerResponsibility::AvailabilityCritical,
+            ],
+            Self::AgentTopology => &[
+                RustOwnerResponsibility::PublicApi,
+                RustOwnerResponsibility::PureDomainLogic,
             ],
             Self::AgentHarness => &[
                 RustOwnerResponsibility::PublicApi,
@@ -232,6 +239,13 @@ impl MarlinCrateVerificationRole {
                     ],
                 ),
             ],
+            Self::AgentTopology => vec![MarlinVerificationOwnerProfile::new(
+                "src/lib.rs",
+                &[
+                    RustOwnerResponsibility::PublicApi,
+                    RustOwnerResponsibility::PureDomainLogic,
+                ],
+            )],
             Self::AgentHarness => vec![
                 MarlinVerificationOwnerProfile::new(
                     "src/runtime.rs",
@@ -309,6 +323,7 @@ impl MarlinCrateVerificationRole {
     fn agent_label(self) -> &'static str {
         match self {
             Self::AgentRuntime => "agent runtime",
+            Self::AgentTopology => "agent topology",
             Self::AgentHarness => "agent harness",
             Self::ProtocolContract => "protocol contract",
             Self::OrgWorkspace => "Org workspace",

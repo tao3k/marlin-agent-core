@@ -1,14 +1,18 @@
 use marlin_agent_core::{
     AGENT_HARNESS_PERFORMANCE_EVIDENCE_KEYS, AgentExecutionTrace, AgentExecutionTraceSummary,
-    AgentHarnessEvidence, AgentHarnessEvidenceKind, AgentHarnessPerformanceEvidence, AgentSpanName,
-    AgentTraceSpanRecord, GraphLoopExecutionStatus, HookDispatcher, HookRegistry,
-    MODEL_ROUTE_CHAT_PATH, ModelContextForkMode, ModelEndpoint, ModelGatewayMessageRole,
-    ModelGatewayRequest, ModelGatewayTransport, ModelRouteArtifactProjection, ModelRouteConfig,
-    ModelRouteHttpErrorBody, ModelRouteRequest, ModelRouteSourceKind, RuntimeEnvironmentRequest,
-    RuntimeEnvironmentResolver, RuntimeExecutionIdentity,
+    AgentGraph, AgentGraphPlanningStatus, AgentGraphPlanningTarget, AgentHarnessEvidence,
+    AgentHarnessEvidenceKind, AgentHarnessPerformanceEvidence, AgentNode, AgentSpanName,
+    AgentTopologyPolicy, AgentTraceSpanRecord, GraphLoopEntryRef, GraphLoopExecutionStatus,
+    GraphLoopGraphRef, GraphLoopNodeRef, HookDispatcher, HookRegistry, MODEL_ROUTE_CHAT_PATH,
+    ModelContextForkMode, ModelEndpoint, ModelGatewayMessageRole, ModelGatewayRequest,
+    ModelGatewayTransport, ModelRouteArtifactProjection, ModelRouteConfig, ModelRouteHttpErrorBody,
+    ModelRouteRequest, ModelRouteSourceKind, RuntimeAgentGraphExecutionReadinessStatus,
+    RuntimeEnvironmentRequest, RuntimeEnvironmentResolver, RuntimeExecutionIdentity,
     STANDARD_AGENT_MEMORY_CONTRACT_DOCUMENT_ID, STANDARD_AGENT_PLAN_CONTRACT_DOCUMENT_ID,
-    STANDARD_AGENT_TOPOLOGY_CONTRACT_DOCUMENT_ID, load_standard_agent_contract_workspace,
-    model_route_router_from_toml_str, standard_agent_contract_documents, system_gateway_message,
+    STANDARD_AGENT_TOPOLOGY_CONTRACT_DOCUMENT_ID, agent_graph,
+    check_agent_graph_execution_readiness, load_standard_agent_contract_workspace,
+    model_route_router_from_toml_str, plan_agent_coordination, standard_agent_contract_documents,
+    system_gateway_message,
 };
 
 #[test]
@@ -189,6 +193,54 @@ fn core_facade_exposes_standard_agent_contract_library() {
             .contracts
             .iter()
             .any(|contract| contract.id.as_str() == "agent.memory.v1")
+    );
+}
+
+#[test]
+fn core_facade_exposes_agent_graph_planning_and_runtime_projection() {
+    let graph = AgentGraph {
+        graph_id: agent_graph::AgentGraphId::new("core.agent-graph").unwrap(),
+        nodes: vec![AgentNode {
+            node_id: agent_graph::AgentNodeId::new("planner").unwrap(),
+            role: agent_graph::AgentRole::new("planner").unwrap(),
+            capabilities: vec![agent_graph::AgentCapability::new("planning").unwrap()],
+            loop_entry: GraphLoopEntryRef {
+                graph: GraphLoopGraphRef::new("loop.planner").unwrap(),
+                entry_node: GraphLoopNodeRef::new("entry").unwrap(),
+            },
+            memory_scope: None,
+            policy_scope: None,
+        }],
+        edges: Vec::new(),
+        topology_policy: AgentTopologyPolicy::Deterministic,
+    };
+
+    let planning = plan_agent_coordination(
+        &graph,
+        AgentGraphPlanningTarget::new(
+            agent_graph::AgentGraphId::new("core.agent-graph").unwrap(),
+            agent_graph::AgentNodeId::new("planner").unwrap(),
+        ),
+    );
+    let request = marlin_agent_core::AgentGraphProjectionRequest::new(
+        agent_graph::AgentGraphId::new("core.agent-graph").unwrap(),
+        planning.clone(),
+        7,
+    );
+    let readiness = check_agent_graph_execution_readiness(&graph, request);
+
+    assert_eq!(planning.status, AgentGraphPlanningStatus::Planned);
+    assert_eq!(
+        readiness.status,
+        RuntimeAgentGraphExecutionReadinessStatus::Ready
+    );
+    assert_eq!(
+        readiness
+            .root_loop_entry
+            .expect("root loop entry")
+            .graph
+            .as_str(),
+        "loop.planner"
     );
 }
 

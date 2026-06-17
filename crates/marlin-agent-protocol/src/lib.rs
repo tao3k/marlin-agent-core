@@ -1,5 +1,6 @@
 //! Agent protocol contracts for graph loops, scenarios, and transcripts.
 
+mod agent_graph;
 mod event;
 mod graph;
 mod hook;
@@ -12,6 +13,7 @@ mod scenario;
 mod sub_agent;
 mod trace;
 
+pub use agent_graph::{AGENT_GRAPH_PROJECTION_REQUEST_SCHEMA_ID, AgentGraphProjectionRequest};
 pub use event::{AgentEvent, AgentEventTopic};
 pub use graph::{
     ExecutorName, FailureClassificationId, FailureClassificationReceipt,

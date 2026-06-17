@@ -1,5 +1,6 @@
 //! In-memory Org workspace backend for protocol tests and local agents.
 
+mod agent_graph_projection;
 mod content_graph;
 mod contracts;
 mod format;
@@ -13,6 +14,17 @@ mod tool_graph;
 mod topology_graph;
 mod workspace;
 
+pub use agent_graph_projection::{
+    AGENT_GRAPH_CAPABILITIES_PROPERTY, AGENT_GRAPH_CONTRACT_VALIDATED_PROPERTY,
+    AGENT_GRAPH_EDGE_CONDITION_PROPERTY, AGENT_GRAPH_EDGE_FROM_PROPERTY,
+    AGENT_GRAPH_EDGE_ID_PROPERTY, AGENT_GRAPH_EDGE_KIND_PROPERTY, AGENT_GRAPH_EDGE_TO_PROPERTY,
+    AGENT_GRAPH_ID_PROPERTY, AGENT_GRAPH_LOOP_ENTRY_NODE_PROPERTY, AGENT_GRAPH_LOOP_GRAPH_PROPERTY,
+    AGENT_GRAPH_MEMORY_SCOPE_REF_PROPERTY, AGENT_GRAPH_NODE_ID_PROPERTY,
+    AGENT_GRAPH_POLICY_SCOPE_REF_PROPERTY, AGENT_GRAPH_ROLE_PROPERTY,
+    AGENT_GRAPH_TOPOLOGY_POLICY_PROPERTY, AgentGraphOrgProjectionReceipt,
+    AgentGraphOrgProjectionRejection, AgentGraphOrgProjectionRequest,
+    AgentGraphOrgProjectionStatus,
+};
 pub use content_graph::{
     CONTENT_NODE_AGENT_ID_PROPERTY, CONTENT_NODE_BODY_REF_PROPERTY,
     CONTENT_NODE_COMPRESSION_STATE_PROPERTY, CONTENT_NODE_CONTENT_ID_PROPERTY,

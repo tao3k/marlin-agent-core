@@ -1,3 +1,4 @@
+mod agent_graph_projection;
 mod content_graph;
 mod contracts;
 mod contracts_accumulation;

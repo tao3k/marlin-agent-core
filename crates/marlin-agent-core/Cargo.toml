@@ -8,6 +8,7 @@ repository.workspace = true
 [dependencies]
 marlin-gerbil-scheme.workspace = true
 marlin-agent-environment.workspace = true
+marlin-agent-graph.workspace = true
 marlin-agent-harness.workspace = true
 marlin-agent-hooks.workspace = true
 marlin-agent-kernel.workspace = true

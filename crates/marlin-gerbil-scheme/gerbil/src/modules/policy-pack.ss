@@ -3,10 +3,13 @@
 
 package: modules
 
-(import (only-in :clan/poo/object .get .o)
+(import (only-in :clan/poo/object .get .o .ref)
         :modules/kinds
         :modules/core
         :modules/policy-object
+        :modules/evidence-policy
+        :modules/failure-policy
+        :modules/memory-policy
         :modules/evaluation)
 
 (export marlinPolicyPack
@@ -15,9 +18,11 @@ package: modules
         marlinPackCatalog
         marlin-pack-catalog-find
         marlin-pack-catalog-root
+        marlinPackCatalogPresentation
         marlinPolicyPackInventory
         marlinPolicyPackPresentation
-        marlinPolicyProjection)
+        marlinPolicyProjection
+        marlinPolicyProjectionChainReceipt)
 
 ;;; Boundary: Policy packs are upstream prefab bundles over POO modules.
 ;; MarlinResult <- MarlinInput
@@ -182,6 +187,107 @@ package: modules
    (else
     (error "marlin policy pack catalog is empty"))))
 
+;;; Boundary: Catalog presentation flattens available prefab pack facts.
+;; MarlinResult <- MarlinInput
+(def (marlin-pack-catalog-append-field pack-presentations field-name)
+  (if (null? pack-presentations)
+    '()
+    (apply append
+           (map (lambda (pack-presentation)
+                  (.ref pack-presentation field-name))
+                pack-presentations))))
+
+;;; Boundary: Catalog presentation is the user/debug listing surface.
+;; MarlinResult <- MarlinInput
+(def (marlinPackCatalogPresentation catalog)
+  (let* ((pack-values (.get catalog packs))
+         (pack-presentations (map marlinPolicyPackPresentation pack-values))
+         (pack-id-values
+          (map (lambda (pack-value)
+                 (.get pack-value id))
+               pack-values))
+         (policy-object-count-value
+          (apply +
+                 (cons 0
+                       (map (lambda (pack-presentation)
+                              (.get pack-presentation policy-object-count))
+                            pack-presentations))))
+         (default-policy-object-count-value
+          (apply +
+                 (cons 0
+                       (map (lambda (pack-presentation)
+                              (.get pack-presentation default-policy-object-count))
+                            pack-presentations))))
+         (disabled-policy-object-count-value
+          (apply +
+                 (cons 0
+                       (map (lambda (pack-presentation)
+                              (.get pack-presentation disabled-policy-object-count))
+                            pack-presentations))))
+         (object-operation-count-value
+          (apply +
+                 (cons 0
+                       (map (lambda (pack-presentation)
+                              (.get pack-presentation object-operation-count))
+                            pack-presentations))))
+         (object-surgery-receipt-count-value
+          (apply +
+                 (cons 0
+                       (map (lambda (pack-presentation)
+                              (.get pack-presentation object-surgery-receipt-count))
+                            pack-presentations))))
+         (conflict-surgery-receipt-count-value
+          (apply +
+                 (cons 0
+                       (map (lambda (pack-presentation)
+                              (.get pack-presentation conflict-surgery-receipt-count))
+                            pack-presentations)))))
+    (.o kind: marlin-pack-catalog-presentation-kind
+        catalog-kind: (.get catalog kind)
+        pack-count: (length pack-values)
+        pack-ids: pack-id-values
+        policy-object-count: policy-object-count-value
+        default-policy-object-count: default-policy-object-count-value
+        disabled-policy-object-count: disabled-policy-object-count-value
+        policy-families:
+        (marlin-pack-catalog-append-field
+         pack-presentations
+         'policy-families)
+        policy-object-ids:
+        (marlin-pack-catalog-append-field
+         pack-presentations
+         'policy-object-ids)
+        default-policy-object-ids:
+        (marlin-pack-catalog-append-field
+         pack-presentations
+         'default-policy-object-ids)
+        disabled-policy-object-ids:
+        (marlin-pack-catalog-append-field
+         pack-presentations
+         'disabled-policy-object-ids)
+        allowed-hook-ids:
+        (marlin-pack-catalog-append-field
+         pack-presentations
+         'allowed-hook-ids)
+        object-operation-count: object-operation-count-value
+        object-surgery-receipt-count: object-surgery-receipt-count-value
+        conflict-surgery-receipt-count: conflict-surgery-receipt-count-value
+        import-graph-owner: "gerbil-module-system"
+        option-merge-owner: "gerbil-poo"
+        policy-composition-owner: "gerbil-poo"
+        native-projection-payload-owner: "rust"
+        budget-receipt-owner: "rust"
+        catalog-resolution-receipt-owner: "rust"
+        runtime-lifecycle-owner: "rust"
+        rust-parses-scheme-source: #f
+        rust-handler-manufactured: #f
+        replayable: #t
+        user-entrypoints:
+        '("marlinPackCatalog"
+          "marlinPackCatalogPresentation"
+          "marlin-pack-catalog-find"
+          "marlin-pack-catalog-root"))))
+
 ;;; Boundary: Operation counts stay scalar for debug CLI projections.
 ;; MarlinResult <- MarlinInput
 (def (marlin-policy-operation-count operation-values operation-name)
@@ -269,11 +375,9 @@ package: modules
     "default-human-review"
     (.o trigger: "high-risk-tool"
         reviewer: "root-agent"))
-   (marlin-default-policy-pack-object
-    "failure-recovery-policy"
-    "default-failure-recovery"
-    (.o retry-budget: "bounded"
-        recovery: "receipt-driven"))
+   (marlinDefaultEvidenceGraphPolicy)
+   (marlinDefaultFailureRecoveryPolicy)
+   (marlinDefaultMemoryTriggerPolicy)
    (marlin-default-policy-pack-object
     "catalog-projection-policy"
     "default-catalog-projection"
@@ -474,7 +578,8 @@ package: modules
           "marlin-replace-object"
           "marlinPolicyPackInventory"
           "marlinPolicyPackPresentation"
-          "marlinPolicyProjection")
+          "marlinPolicyProjection"
+          "marlinPolicyProjectionChainReceipt")
         module-evaluation-receipt-kind:
         (.get module-system-presentation module-evaluation-receipt-kind)
         projection-chain-kind:
@@ -554,3 +659,52 @@ package: modules
         rust-handler-manufactured:
         (.get presentation rust-handler-manufactured)
         replayable: (.get presentation replayable))))
+
+;;; Boundary: Fixed receipt chain for module -> policy -> Rust validation.
+;; MarlinResult <- MarlinInput
+(def (marlinPolicyProjectionChainReceipt policy-pack . maybe-native-payload)
+  (let* ((policy-projection
+          (if (pair? maybe-native-payload)
+            (marlinPolicyProjection policy-pack (car maybe-native-payload))
+            (marlinPolicyProjection policy-pack)))
+         (native-payload
+          (.get policy-projection native-projection-payload)))
+    (.o kind: marlin-policy-projection-chain-receipt-kind
+        pack-id: (.get policy-projection pack-id)
+        pack-kind: (.get policy-projection pack-kind)
+        module-evaluation-receipt-kind:
+        (.get policy-projection module-evaluation-receipt-kind)
+        policy-projection-receipt-kind:
+        (.get policy-projection policy-projection-receipt-kind)
+        policy-projection-receipt: policy-projection
+        native-projection-payload-kind:
+        (.get policy-projection native-projection-payload-kind)
+        native-projection-payload-owner:
+        (.get policy-projection native-projection-payload-owner)
+        native-projection-payload: native-payload
+        budget-receipt-kind: marlin-policy-budget-receipt-kind
+        budget-receipt-owner:
+        (.get policy-projection budget-receipt-owner)
+        catalog-resolution-receipt-kind:
+        marlin-policy-catalog-resolution-receipt-kind
+        catalog-resolution-receipt-owner:
+        (.get policy-projection catalog-resolution-receipt-owner)
+        runtime-lifecycle-owner:
+        (.get policy-projection runtime-lifecycle-owner)
+        import-graph-owner:
+        (.get policy-projection import-graph-owner)
+        option-merge-owner:
+        (.get policy-projection option-merge-owner)
+        extension-composition-owner:
+        (.get policy-projection extension-composition-owner)
+        policy-composition-owner:
+        (.get policy-projection policy-composition-owner)
+        scheme-policy-owner:
+        (.get policy-projection scheme-policy-owner)
+        rust-kernel-owner:
+        (.get policy-projection rust-kernel-owner)
+        rust-parses-scheme-source:
+        (.get policy-projection rust-parses-scheme-source)
+        rust-handler-manufactured:
+        (.get policy-projection rust-handler-manufactured)
+        replayable: (.get policy-projection replayable))))

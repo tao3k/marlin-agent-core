@@ -15,6 +15,7 @@ harness = false
 
 [dependencies]
 marlin-agent-protocol.workspace = true
+marlin-agent-graph.workspace = true
 marlin-gerbil-ir.workspace = true
 marlin-org-model.workspace = true
 marlin-workspace-protocol.workspace = true

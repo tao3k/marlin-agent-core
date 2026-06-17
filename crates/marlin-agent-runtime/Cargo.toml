@@ -9,6 +9,7 @@ repository.workspace = true
 aho-corasick.workspace = true
 globset.workspace = true
 marlin-agent-environment.workspace = true
+marlin-agent-graph.workspace = true
 marlin-agent-protocol.workspace = true
 marlin-agent-sessions.workspace = true
 parking_lot.workspace = true
@@ -29,4 +30,5 @@ marlin-rust-project-harness-policy.workspace = true
 [dev-dependencies]
 marlin-agent-harness-types.workspace = true
 marlin-agent-test-support.workspace = true
+serde_json.workspace = true
 tempfile.workspace = true

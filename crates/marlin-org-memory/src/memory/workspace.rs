@@ -1,8 +1,9 @@
 //! `MemoryOrgWorkspace` owner for the in-memory `Org` workspace backend.
 
+use super::{AgentGraphOrgProjectionReceipt, AgentGraphOrgProjectionRequest};
 use super::{
-    content_graph, contracts, patch, project_graph, query, render, session_graph, status,
-    tool_graph, topology_graph,
+    agent_graph_projection, content_graph, contracts, patch, project_graph, query, render,
+    session_graph, status, tool_graph, topology_graph,
 };
 use async_trait::async_trait;
 use marlin_agent_protocol::{
@@ -309,6 +310,18 @@ impl MemoryOrgWorkspace {
         let mut response = GraphQueryResponse::new(receipt_id, request);
         response.matches = matches;
         Ok(response)
+    }
+
+    /// Project loaded Org AgentGraph contract nodes into a typed `AgentGraph` receipt.
+    pub fn project_agent_graph_from_loaded_nodes(
+        &self,
+        request: AgentGraphOrgProjectionRequest,
+    ) -> WorkspaceResult<AgentGraphOrgProjectionReceipt> {
+        let nodes = self.read_nodes()?;
+        Ok(agent_graph_projection::project_agent_graph_from_org_nodes(
+            nodes.values(),
+            &request,
+        ))
     }
 
     /// Recall project memory from discovered Org roots and pack compact facts.

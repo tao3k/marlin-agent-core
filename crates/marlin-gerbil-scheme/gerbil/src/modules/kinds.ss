@@ -17,6 +17,10 @@ package: modules
         marlin-policy-substrate-gate-kind
         marlin-policy-pack-kind
         marlin-pack-catalog-kind
+        marlin-pack-catalog-presentation-kind
+        marlin-policy-projection-chain-receipt-kind
+        marlin-policy-budget-receipt-kind
+        marlin-policy-catalog-resolution-receipt-kind
         marlin-policy-projection-kind
         marlin-policy-pack-presentation-kind
         marlin-policy-pack-inventory-kind
@@ -88,10 +92,30 @@ package: modules
 (def marlin-pack-catalog-kind
   "marlin.modules.policy-pack-catalog.v1")
 
+;;; Boundary: Pack catalog presentations summarize prefab availability.
+;; MarlinResult <- MarlinInput
+(def marlin-pack-catalog-presentation-kind
+  "marlin.modules.policy-pack-catalog-presentation.v1")
+
 ;;; Boundary: Policy projections are fixed envelopes over Scheme POO output.
 ;; MarlinResult <- MarlinInput
 (def marlin-policy-projection-kind
   "marlin.modules.policy-projection.v1")
+
+;;; Boundary: Projection chain receipts make each handoff stage explicit.
+;; MarlinResult <- MarlinInput
+(def marlin-policy-projection-chain-receipt-kind
+  "marlin.modules.policy-projection-chain-receipt.v1")
+
+;;; Boundary: Budget receipts are Rust-owned validation envelopes.
+;; MarlinResult <- MarlinInput
+(def marlin-policy-budget-receipt-kind
+  "marlin.runtime.policy-budget-receipt.v1")
+
+;;; Boundary: Catalog receipts are Rust-owned handler lookup evidence.
+;; MarlinResult <- MarlinInput
+(def marlin-policy-catalog-resolution-receipt-kind
+  "marlin.runtime.policy-catalog-resolution-receipt.v1")
 
 ;;; Boundary: Pack presentations are scalar receipts for Rust/debug tooling.
 ;; MarlinResult <- MarlinInput

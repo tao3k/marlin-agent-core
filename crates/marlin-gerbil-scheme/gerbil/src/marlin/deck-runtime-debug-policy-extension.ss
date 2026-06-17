@@ -30,6 +30,7 @@ package: marlin
         marlin-deck-runtime-debug-policy-pack-catalog
         marlin-deck-runtime-debug-policy-pack-presentation
         marlin-deck-runtime-debug-policy-projection
+        marlin-deck-runtime-debug-policy-projection-chain-receipt
         marlin-deck-runtime-debug-policy-module-catalog
         marlin-deck-runtime-debug-policy-module-evaluation
         marlin-deck-runtime-debug-policy-module-system-presentation
@@ -235,6 +236,15 @@ package: marlin
 ;; MarlinResult <- MarlinInput
 (def (marlin-deck-runtime-debug-policy-projection)
   (marlinPolicyProjection marlin-deck-runtime-debug-policy-pack))
+
+;;; Boundary: Debug CLI probes the fixed projection receipt chain.
+;; MarlinResult <- MarlinInput
+(def (marlin-deck-runtime-debug-policy-projection-chain-receipt)
+  (let (pack-presentation
+        (marlinPolicyPackPresentation marlin-deck-runtime-debug-policy-pack))
+    (marlinPolicyProjectionChainReceipt
+     marlin-deck-runtime-debug-policy-pack
+     pack-presentation)))
 
 ;;; Boundary: Module catalog is a first-class Scheme value.
 ;; MarlinResult <- MarlinInput

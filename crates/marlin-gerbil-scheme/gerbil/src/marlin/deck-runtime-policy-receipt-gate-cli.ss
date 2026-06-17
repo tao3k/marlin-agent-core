@@ -3,7 +3,8 @@
 ;;; Rust may invoke this file, but it must not construct Scheme policy text.
 
 (import (only-in :clan/poo/object .get)
-        :marlin/deck-runtime-debug-policy-extension)
+        :marlin/deck-runtime-debug-policy-extension
+        :modules/prefabs/default-policy)
 
 (export emit-policy-receipt-gate-cli-report)
 
@@ -69,6 +70,21 @@
 ;; MarlinResult <- MarlinInput
 (def policy-projection
   (marlin-deck-runtime-debug-policy-projection))
+
+;;; Boundary: Projection chain receipt exposes each typed handoff stage.
+;; MarlinResult <- MarlinInput
+(def policy-projection-chain-receipt
+  (marlin-deck-runtime-debug-policy-projection-chain-receipt))
+
+;;; Boundary: Shared default prefab pack is also visible to debug CLI facts.
+;; MarlinResult <- MarlinInput
+(def default-policy-delivery
+  (DefaultPolicyDeliveryReceipt policy-module))
+
+;;; Boundary: Default policy projection proves the shared prefab handoff.
+;; MarlinResult <- MarlinInput
+(def default-policy-projection
+  (DefaultPolicyProjection policy-module))
 
 ;;; Boundary: Substrate gate proves policy evaluation before Rust runtime use.
 ;; MarlinResult <- MarlinInput
@@ -249,6 +265,47 @@
       (.get policy-projection rust-handler-manufactured))
 (emit "policy_projection_replayable"
       (.get policy-projection replayable))
+(emit "policy_projection_chain_receipt_kind"
+      (.get policy-projection-chain-receipt kind))
+(emit "policy_projection_chain_receipt_pack_id"
+      (.get policy-projection-chain-receipt pack-id))
+(emit "policy_projection_chain_module_evaluation_receipt_kind"
+      (.get policy-projection-chain-receipt module-evaluation-receipt-kind))
+(emit "policy_projection_chain_policy_projection_receipt_kind"
+      (.get policy-projection-chain-receipt policy-projection-receipt-kind))
+(emit "policy_projection_chain_native_projection_payload_kind"
+      (.get policy-projection-chain-receipt native-projection-payload-kind))
+(emit "policy_projection_chain_budget_receipt_kind"
+      (.get policy-projection-chain-receipt budget-receipt-kind))
+(emit "policy_projection_chain_catalog_resolution_receipt_kind"
+      (.get policy-projection-chain-receipt catalog-resolution-receipt-kind))
+(emit "policy_projection_chain_replayable"
+      (.get policy-projection-chain-receipt replayable))
+(emit "default_policy_delivery_kind" (.get default-policy-delivery kind))
+(emit "default_policy_pack_id" (.get default-policy-delivery pack-id))
+(emit "default_policy_pack_count" (.get default-policy-delivery pack-count))
+(emit-string-list "default_policy_pack_ids"
+                  (.get default-policy-delivery pack-ids))
+(emit "default_policy_object_count"
+      (.get default-policy-delivery policy-object-count))
+(emit "default_policy_default_object_count"
+      (.get default-policy-delivery default-policy-object-count))
+(emit "default_policy_allowed_hook_count"
+      (length (.get default-policy-delivery allowed-hook-ids)))
+(emit-string-list "default_policy_allowed_hook_ids"
+                  (.get default-policy-delivery allowed-hook-ids))
+(emit "default_policy_catalog_presentation_kind"
+      (.get default-policy-delivery pack-catalog-presentation-kind))
+(emit "default_policy_projection_kind"
+      (.get default-policy-projection kind))
+(emit "default_policy_projection_chain_receipt_kind"
+      (.get default-policy-delivery policy-projection-chain-receipt-kind))
+(emit "default_policy_budget_receipt_kind"
+      (.get default-policy-delivery budget-receipt-kind))
+(emit "default_policy_catalog_resolution_receipt_kind"
+      (.get default-policy-delivery catalog-resolution-receipt-kind))
+(emit "default_policy_replayable"
+      (.get default-policy-delivery replayable))
 (emit "policy_substrate_gate_kind" (.get substrate-gate kind))
 (emit "policy_substrate_gate_profile" (.get substrate-gate gate-profile))
 (emit "policy_substrate_gate_receipt_kind" (.get substrate-gate receipt-kind))

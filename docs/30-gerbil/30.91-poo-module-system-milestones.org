@@ -7,10 +7,11 @@
 
 This document turns [[file:gerbil-poo-modules-system-desgin.org][Gerbil POO Modules System Design]] and
 [[file:30.90-poo-module-system.org][30.90 POO Module System]] into an executable milestone flow.
-The current implementation proves the shape, but it is still thin: it has a
-module library, policy pack presentation, object surgery receipts, a downstream
-example, and a debug CLI proof, but it does not yet provide the full furnished
-policy surface promised by the design.
+The current implementation proves the shape and now includes an upstream
+=:modules/prefabs/default-policy= pack surface plus a
+=:modules/prefabs/user-interface= furnished path with apply, delivery receipt,
+catalog presentation, and policy projection handoff. The broader policy surface
+still needs more domain prefab packs and custom debug fact emission.
 
 The milestone model is a trophy-gate flow. A milestone is complete only when it
 has user-facing API shape, Scheme receipts, Rust projection behavior, debug CLI
@@ -55,7 +56,9 @@ Exit condition:
 
 *** M1 Furnished Prefab Pack
 
-Status: next implementation priority.
+Status: landed for the shared =:modules/prefabs/default-policy= pack and the
+=:modules/prefabs/user-interface= delivery path; additional domain packs remain
+an implementation priority.
 
 Purpose:
 - Make the default path a furnished house: users import a prefab pack and
@@ -65,11 +68,15 @@ Purpose:
 - Users should not start by assembling raw =marlinPolicyModule= objects.
 
 Deliverables:
-- =marlinDefaultPolicyPack= or equivalent upstream prefab constructor.
-- A pack catalog that can list available pack ids, policy families, default
-  objects, disabled objects, and allowed Rust catalog ids.
-- A receipt that shows the pack id, imported modules, object ids, operation ids,
-  and projection target.
+- =marlinDefaultPolicyPack= and =:modules/prefabs/default-policy= as the shared
+upstream prefab constructor.
+- =UserInterfaceWorkspace= from =:modules/prefabs/user-interface= as the first
+concrete furnished-house user API.
+- A pack catalog presentation that can list available pack ids, policy
+families, default objects, disabled objects, and allowed Rust catalog ids.
+- =UserInterfaceDeliveryReceipt= shows the pack id, imported module summary,
+object ids, option contracts, operation counts, owner boundaries, and projection
+target.
 
 Required evidence:
 - Gerbil unit tests for pack catalog listing and default object inventory.
@@ -78,8 +85,11 @@ Required evidence:
   low-level construction.
 
 Exit condition:
-- A new user can run a default policy pack without directly calling
-  =marlinPolicyModule=, =marlinModuleCatalog=, or raw evaluation helpers.
+- A new user can run the furnished user-interface path with only
+=UserInterfaceWorkspace=, =UserInterfaceApply=,
+=UserInterfaceDeliveryReceipt=, and =UserInterfacePolicyProjection=, without
+directly calling =marlinPolicyModule=, =marlinModuleCatalog=, or raw evaluation
+helpers.
 
 *** M2 Object Surgery As First-Class User API
 
@@ -110,8 +120,9 @@ Exit condition:
 
 *** M3 Projection Chain Receipts
 
-Status: landed for the debug policy path and the user-authored =.ss=
-entrypoint/call loader; custom pack-specific fact emission is still a follow-up.
+Status: landed for the debug policy path, the user-interface delivery receipt,
+the user-authored =.ss= entrypoint/call loader, and the shared
+=marlinPolicyProjectionChainReceipt= helper.
 
 Purpose:
 - Make the module -> policy projection -> native payload chain fixed and
@@ -121,7 +132,8 @@ Deliverables:
 - Standard receipt names for module evaluation, policy projection, native
   projection payload, budget receipt, and catalog resolution receipt.
 - A helper that builds this chain for every prefab and custom policy pack.
-  Current Gerbil surface: =marlinPolicyProjection=.
+Current Gerbil surface: =marlinPolicyProjection= and
+=marlinPolicyProjectionChainReceipt=.
 - Tests for replayable receipts when no live LLM or runtime catalog lookup is
   allowed.
 
@@ -130,7 +142,8 @@ Required evidence:
 - Gerbil tests assert owner fields: Gerbil/POO for composition, Rust for native
   projection, budget, and catalog resolution.
 - Current proof command: =marlin gerbil policy-receipt= emits
-  =policy_projection_*= facts for the debug prefab pack.
+=policy_projection_*= and =policy_projection_chain_*= facts for the debug
+prefab pack.
 - Current loader proof: the same command accepts =--entrypoint <scheme-file>=
   and =--call <scheme-expr>=, so a newly written =.ss= file can define POO
   objects before delegating or emitting projection facts.
@@ -141,16 +154,21 @@ Exit condition:
 
 *** M4 Policy Family Expansion
 
-Status: thin.
+Status: partial, with memory-trigger, evidence-graph, and failure-recovery
+helpers landed.
 
 Purpose:
 - Turn the design examples into concrete upstream module packs instead of
   scattered hand-built objects.
 
 Policy families:
-- failure recovery policy;
+- evidence graph policy; current surface: =marlinEvidenceGraphPolicy= and
+  =marlinDefaultEvidenceGraphPolicy=;
+- failure recovery policy; current surface: =marlinFailureRecoveryPolicy= and
+  =marlinDefaultFailureRecoveryPolicy=;
 - human review policy;
-- memory trigger policy;
+- memory trigger policy; current surface: =marlinMemoryTriggerPolicy= and
+  =marlinDefaultMemoryTriggerPolicy=;
 - tool batch policy;
 - self-evolution policy;
 - model route policy;
@@ -174,7 +192,8 @@ Exit condition:
 
 *** M5 Rust Projection And Debug CLI Gate
 
-Status: partially landed.
+Status: partially landed, with typed Rust decoding for default policy delivery
+facts and projection-chain facts.
 
 Purpose:
 - Keep Rust as the proof boundary: it validates typed projections and reports

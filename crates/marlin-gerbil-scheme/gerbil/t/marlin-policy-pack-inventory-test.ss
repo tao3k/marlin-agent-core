@@ -2,7 +2,8 @@
 ;;; Boundary: Module tests prefab pack inventories without full runtime fixtures.
 
 (import :clan/poo/object
-        :modules/lib)
+        :modules/lib
+        :modules/prefabs/default-policy)
 
 ;;; Boundary: Local assertions stay scalar around POO values.
 ;; MarlinResult <- MarlinInput
@@ -37,6 +38,18 @@
 (def default-inventory
   (marlinPolicyPackInventory default-pack))
 
+(def default-catalog
+  (DefaultPolicyPackCatalog default-pack))
+
+(def default-catalog-presentation
+  (DefaultPolicyPackCatalogPresentation default-pack))
+
+(def default-delivery
+  (DefaultPolicyDeliveryReceipt inventory-module))
+
+(def default-apply
+  (DefaultPolicyApply inventory-module))
+
 ;;; Boundary: Object surgery keeps custom pack inventory deterministic.
 ;; MarlinResult <- MarlinInput
 (def route-object
@@ -51,6 +64,22 @@
 (def memory-object
   (marlinPolicyObject "memory-trigger-policy" "memory" (.o action: "compact")))
 
+(def evidence-object
+  (marlinEvidenceGraphPolicy
+   "evidence"
+   (.o query-family: "test-evidence-query")))
+
+(def failure-object
+  (marlinFailureRecoveryPolicy
+   "failure"
+   (.o query-family: "test-failure-query")))
+
+(def default-evidence-object
+  (marlinDefaultEvidenceGraphPolicy))
+
+(def default-failure-object
+  (marlinDefaultFailureRecoveryPolicy))
+
 (def fast-route-object
   (marlinPolicyObject "model-route-policy" "fast-route" (.o route: "fast")))
 
@@ -58,7 +87,8 @@
   (marlinPolicyPack
    (.o id: "inventory-custom-pack"
        module: inventory-module
-       policy-objects: (list route-object review-object hook-object)
+       policy-objects:
+       (list route-object review-object hook-object evidence-object failure-object)
        object-operations:
        (list
         (marlin-add-object memory-object)
@@ -105,11 +135,49 @@
 
 (check (.get default-pack id) => "marlin-default-policy-pack")
 (check (.get default-inventory kind) => marlin-policy-pack-inventory-kind)
-(check (.get default-inventory policy-object-count) => 9)
-(check (.get default-inventory default-policy-object-count) => 9)
+(check (.get default-inventory policy-object-count) => 11)
+(check (.get default-inventory default-policy-object-count) => 11)
 (check (.get default-inventory object-operation-count) => 0)
 (check (.get default-inventory allowed-hook-ids)
        => '("runtime-catalog-default-hook"))
+(check (.get default-catalog kind)
+       => marlin-pack-catalog-kind)
+(check (.get default-catalog-presentation kind)
+       => marlin-pack-catalog-presentation-kind)
+(check (.get default-catalog-presentation pack-count) => 1)
+(check (.get default-catalog-presentation pack-ids)
+       => '("marlin-default-policy-pack"))
+(check (.get default-catalog-presentation policy-object-count) => 11)
+(check (.get default-catalog-presentation default-policy-object-count)
+       => 11)
+(check (.get default-catalog-presentation allowed-hook-ids)
+       => '("runtime-catalog-default-hook"))
+(check (.get default-delivery kind)
+       => default-policy-delivery-receipt-kind)
+(check (.get default-delivery pack-catalog-presentation-kind)
+       => marlin-pack-catalog-presentation-kind)
+(check (.get default-delivery pack-ids)
+       => '("marlin-default-policy-pack"))
+(check (.get default-delivery policy-object-count) => 11)
+(check (.get default-delivery default-policy-object-count) => 11)
+(check (.get default-delivery object-operation-count) => 0)
+(check (.get default-delivery policy-projection-kind)
+       => marlin-policy-projection-kind)
+(check (.get default-delivery policy-projection-chain-receipt-kind)
+       => marlin-policy-projection-chain-receipt-kind)
+(check (.get default-delivery budget-receipt-kind)
+       => marlin-policy-budget-receipt-kind)
+(check (.get default-delivery catalog-resolution-receipt-kind)
+       => marlin-policy-catalog-resolution-receipt-kind)
+(check (.get default-delivery user-entrypoints)
+       => '("DefaultPolicyPack"
+            "DefaultPolicyPackCatalog"
+            "DefaultPolicyPackCatalogPresentation"
+            "DefaultPolicyDeliveryReceipt"
+            "DefaultPolicyApply"
+            "DefaultPolicyProjection"))
+(check (.get default-apply kind)
+       => default-policy-delivery-receipt-kind)
 (check (.get default-inventory policy-families)
        => '("workspace-policy"
             "session-policy"
@@ -118,7 +186,9 @@
             "model-route-policy"
             "continuation-profile-policy"
             "human-review-policy"
+            "evidence-graph-policy"
             "failure-recovery-policy"
+            "memory-trigger-policy"
             "catalog-projection-policy"))
 (check (.get default-inventory policy-object-ids)
        => '("default-workspace"
@@ -128,14 +198,28 @@
             "default-model-route"
             "default-continuation"
             "default-human-review"
+            "default-evidence-graph"
             "default-failure-recovery"
+            "default-memory-trigger"
             "default-catalog-projection"))
+(check (marlin-policy-object-family default-evidence-object)
+       => "evidence-graph-policy")
+(check (marlin-policy-object-id default-evidence-object)
+       => "default-evidence-graph")
+(check (marlin-policy-object-family default-failure-object)
+       => "failure-recovery-policy")
+(check (marlin-policy-object-id default-failure-object)
+       => "default-failure-recovery")
 (check (.get custom-inventory policy-object-ids)
-       => '("fast-route" "review" "memory"))
+       => '("fast-route" "review" "evidence" "failure" "memory"))
 (check (.get custom-inventory policy-families)
-       => '("model-route-policy" "human-review-policy" "memory-trigger-policy"))
+       => '("model-route-policy"
+            "human-review-policy"
+            "evidence-graph-policy"
+            "failure-recovery-policy"
+            "memory-trigger-policy"))
 (check (.get custom-inventory default-policy-object-ids)
-       => '("route" "review" "hook"))
+       => '("route" "review" "hook" "evidence" "failure"))
 (check (.get custom-inventory disabled-policy-object-ids)
        => '("review"))
 (check (.get conflict-inventory policy-object-ids)

@@ -1,5 +1,7 @@
 #[path = "unit/runtime.rs"]
 mod runtime;
+#[path = "unit/runtime/agent_graph/mod.rs"]
+mod runtime_agent_graph;
 #[path = "unit/runtime/cleanup.rs"]
 mod runtime_cleanup;
 #[path = "unit/runtime/dependency_boundary.rs"]

@@ -2,11 +2,21 @@
 
 pub mod observability;
 
+mod agent_graph;
 mod graph_loop;
 mod model_route;
 mod resilience;
 mod tokio_runtime;
 
+pub use agent_graph::{
+    RuntimeAgentCoordinationAdmissionReceipt, RuntimeAgentCoordinationAdmissionStatus,
+    RuntimeAgentCoordinationRejection, RuntimeAgentGraphExecutionReadinessReceipt,
+    RuntimeAgentGraphExecutionReadinessRejection, RuntimeAgentGraphExecutionReadinessStatus,
+    RuntimeAgentGraphProjectionReceipt, RuntimeAgentGraphProjectionRejection,
+    RuntimeAgentGraphProjectionStatus, admit_agent_coordination_plan,
+    check_agent_graph_execution_readiness, project_agent_graph_planning_receipt,
+    project_agent_graph_projection_request,
+};
 pub use graph_loop::{
     GraphLoopRunCancelReceipt, GraphLoopRunCancelStatus, GraphLoopRunInspectReceipt,
     GraphLoopRunObservation, GraphLoopRunProgressUpdate, GraphLoopRunRegistry,
