@@ -10,7 +10,7 @@
         "deck-runtime-script-test"
         "deck-runtime-user-option-test"
         "deck-runtime-user-module-test"
-        "deck-runtime-modules-lib-test"
+        "marlin-modules-lib-test"
         "deck-runtime-script-interface-test"
         "deck-runtime-script-performance-test"
         "harness-policy-test")
