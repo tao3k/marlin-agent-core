@@ -53,8 +53,14 @@
 
 ;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
 ;; MarlinResult <- MarlinInput
+(def default-marlin-workspace-root
+  (string-append (current-directory) "/../../.."))
+
+;;; Boundary: Harness policy checks run from the Marlin workspace root so
+;;; local package tests and repo-level provider checks use the same policy view.
+;; MarlinResult <- MarlinInput
 (def harness-package-root
-  (env-or "MARLIN_GERBIL_PACKAGE_ROOT" (current-directory)))
+  (env-or "MARLIN_GERBIL_PACKAGE_ROOT" default-marlin-workspace-root))
 
 ;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
 ;; MarlinResult <- MarlinInput

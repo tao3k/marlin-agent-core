@@ -5,6 +5,8 @@
 (import (only-in :clan/poo/object .get)
         :marlin/deck-runtime-debug-policy-extension)
 
+(export emit-policy-receipt-gate-cli-report)
+
 ;;; Boundary: Facts are the stable text envelope decoded by Rust debug CLI.
 ;; MarlinResult <- MarlinInput
 (def (emit key value)
@@ -42,7 +44,12 @@
 (def action (.get receipt dynamic-hook-action))
 (def selection (.get receipt dynamic-hook-selection))
 
-(emit "extension_kind" (.get extension kind))
+;;; Boundary: keep executable CLI output behind a named entrypoint so the
+;;; harness can analyze this file as a module without treating every field
+;;; emission as independent top-level execution.
+;; Void <- Void
+(def (emit-policy-receipt-gate-cli-report)
+  (emit "extension_kind" (.get extension kind))
 (emit "extension_id" (.get extension id))
 (emit "extension_source" marlin-deck-runtime-debug-policy-extension-source)
 (emit "extension_surface" "poo-extension-object")
@@ -157,4 +164,4 @@
 (emit "dynamic_hook_hook_id" (.get action hook-id))
 (emit "dynamic_hook_registration" (.get action registration))
 (emit "dynamic_hook_selection_source" (.get selection source))
-(emit "dynamic_hook_selection_selector" (.get selection selector))
+(emit "dynamic_hook_selection_selector" (.get selection selector)))

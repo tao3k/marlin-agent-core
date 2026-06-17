@@ -10,6 +10,10 @@ use super::{
     gerbil_usage,
 };
 
+const GERBIL_POLICY_RECEIPT_IMPORT_EXPR: &str =
+    "(import :marlin/deck-runtime-policy-receipt-gate-cli)";
+const GERBIL_POLICY_RECEIPT_CALL_EXPR: &str = "(emit-policy-receipt-gate-cli-report)";
+
 #[derive(Clone, Debug, Serialize)]
 struct GerbilPolicyReceiptDebugSummary {
     status: &'static str,
@@ -132,7 +136,10 @@ fn run_policy_receipt(
     let iterations = options.iterations.to_string();
     let started_at = Instant::now();
     let output = Command::new(&options.gxi)
-        .arg(&options.entrypoint)
+        .arg("-e")
+        .arg(GERBIL_POLICY_RECEIPT_IMPORT_EXPR)
+        .arg("-e")
+        .arg(GERBIL_POLICY_RECEIPT_CALL_EXPR)
         .current_dir(&options.package_root)
         .env("GERBIL_LOADPATH", &loadpath)
         .env("MARLIN_POLICY_RECEIPT_ITERATIONS", iterations)

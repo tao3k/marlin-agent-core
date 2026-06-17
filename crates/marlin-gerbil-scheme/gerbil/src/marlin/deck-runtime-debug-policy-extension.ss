@@ -178,6 +178,9 @@ package: marlin
    '((owner . "debug-cli") (surface . "prefab-object"))))
 
 ;;; Boundary: Debug pack is the prefab/policy-pack surface for the CLI.
+;;; Engineering note: object surgery models prefab customization:
+;;; Scheme composes add/remove/disable/replace policy objects, while Rust only
+;;; validates the projected receipts and resolves existing catalog handlers.
 ;; MarlinResult <- MarlinInput
 (defmarlin-policy-pack marlin-deck-runtime-debug-policy-pack
   (id "debug-policy-prefab-pack")
@@ -266,13 +269,13 @@ package: marlin
    "extension-agent"))
 
 ;;; Boundary: Performance smoke loops extension policy evaluation in one gxi process.
+;;; Optimization boundary: reuse one catalog so timing tracks policy selection
+;;; and typed receipt projection rather than module workflow construction.
 ;; MarlinResult <- MarlinInput
 (def (marlin-deck-runtime-debug-policy-extension-receipt-loop iterations)
   (let ((catalog (marlin-deck-runtime-debug-policy-extension-catalog)))
-    (let loop ((remaining iterations)
-               (receipt #f))
-      (if (<= remaining 0)
-        receipt
-        (loop (- remaining 1)
-              (marlin-deck-runtime-debug-policy-extension-receipt-from-catalog
-               catalog))))))
+    (foldl (lambda (_ receipt)
+             (marlin-deck-runtime-debug-policy-extension-receipt-from-catalog
+              catalog))
+           #f
+           (list-tabulate iterations identity))))
