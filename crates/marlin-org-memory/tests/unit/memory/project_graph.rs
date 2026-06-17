@@ -210,6 +210,79 @@ fn project_memory_graph_matches_contract_indexed_frontier_terms() {
     );
 }
 
+#[test]
+fn project_memory_graph_source_anchor_follows_matched_node_not_memory_id() {
+    let mut first = memory_node(
+        "memory-node:duplicate-a",
+        "Duplicate A",
+        "project-alpha",
+        "worktree-a",
+        "root-a",
+        true,
+    );
+    first.properties.insert(
+        PROJECT_MEMORY_ID_PROPERTY.to_string(),
+        "memory:duplicated".to_string(),
+    );
+    first.properties.insert(
+        PROJECT_MEMORY_RECALL_QUERY_PROPERTY.to_string(),
+        "duplicate frontier".to_string(),
+    );
+    let mut second = memory_node(
+        "memory-node:duplicate-b",
+        "Duplicate B",
+        "project-alpha",
+        "worktree-b",
+        "root-b",
+        true,
+    );
+    second.properties.insert(
+        PROJECT_MEMORY_ID_PROPERTY.to_string(),
+        "memory:duplicated".to_string(),
+    );
+    second.properties.insert(
+        PROJECT_MEMORY_RECALL_QUERY_PROPERTY.to_string(),
+        "duplicate frontier".to_string(),
+    );
+    let workspace = MemoryOrgWorkspace::from_nodes(vec![first, second]);
+
+    let request = GraphQueryRequest::new(
+        GraphQueryContext::new("project-alpha"),
+        GraphQueryFamily::Memory,
+        "duplicate frontier",
+    )
+    .with_limit(5);
+
+    let response = workspace
+        .query_project_memory_graph("receipt:duplicate-anchor", request)
+        .expect("project memory query succeeds");
+
+    assert_eq!(response.matches.len(), 2);
+    assert!(response.matches.iter().all(|query_match| {
+        query_match
+            .memory_id
+            .as_ref()
+            .is_some_and(|memory_id| memory_id.as_str() == "memory:duplicated")
+    }));
+    let mut source_anchor_ids = response
+        .matches
+        .iter()
+        .map(|query_match| {
+            query_match
+                .source_anchor_id
+                .as_ref()
+                .expect("source anchor")
+                .as_str()
+                .to_owned()
+        })
+        .collect::<Vec<_>>();
+    source_anchor_ids.sort();
+    assert_eq!(
+        source_anchor_ids,
+        ["memory-node:duplicate-a", "memory-node:duplicate-b"]
+    );
+}
+
 fn memory_node(
     id: &str,
     title: &str,

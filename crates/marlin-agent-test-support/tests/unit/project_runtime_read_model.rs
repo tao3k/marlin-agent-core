@@ -29,7 +29,7 @@ fn project_runtime_read_model_replay_artifact_loads_read_family_evidence() {
             AgentHarnessEvidenceKind::Content,
         ]
     );
-    assert_eq!(evidence.len(), 6);
+    assert_eq!(evidence.len(), 11);
     assert_eq!(
         evidence
             .iter()
@@ -49,14 +49,14 @@ fn project_runtime_read_model_replay_artifact_loads_read_family_evidence() {
             .iter()
             .filter(|entry| entry.kind == AgentHarnessEvidenceKind::Tool)
             .count(),
-        1
+        2
     );
     assert_eq!(
         evidence
             .iter()
             .filter(|entry| entry.kind == AgentHarnessEvidenceKind::Content)
             .count(),
-        1
+        5
     );
     assert!(detail_contains(evidence, "sibling_transcript_hidden=true"));
     assert!(detail_contains(evidence, "context_pack_bounded=true"));
@@ -65,6 +65,51 @@ fn project_runtime_read_model_replay_artifact_loads_read_family_evidence() {
         "parent_content_id=content:turn-7"
     ));
     assert!(detail_contains(evidence, "root_kind=ToolCapability"));
+    assert!(detail_contains(
+        evidence,
+        "backend_requirement_ids=[backend:process-sandbox,backend:macos-compatible]"
+    ));
+    assert!(detail_contains(
+        evidence,
+        "isolation_requirement_ids=[isolation:write-worktree]"
+    ));
+    assert!(detail_contains(evidence, "sandbox_backend_selection=false"));
+    assert!(detail_contains(evidence, "turn_id=turn:review-8"));
+    assert!(detail_contains(evidence, "status=Committed"));
+    assert!(detail_contains(evidence, "candidate_score=8700"));
+    assert!(detail_contains(
+        evidence,
+        "steering_receipt_id=receipt:steer-review"
+    ));
+    assert!(detail_contains(
+        evidence,
+        "memory_citation_ids=[citation:memory-runtime-1]"
+    ));
+    assert!(detail_contains(
+        evidence,
+        "memory_citation_id=citation:memory-runtime-1"
+    ));
+    assert!(detail_contains(
+        evidence,
+        "context_pack_id=context-pack:loaded-node-memory"
+    ));
+    assert!(detail_contains(evidence, "receipt_id=receipt:item-view"));
+    assert!(detail_contains(
+        evidence,
+        "item_kinds=[ProjectMemory,ToolCapability]"
+    ));
+    assert!(detail_contains(
+        evidence,
+        "required_receipt_ids=[receipt:format-check,receipt:workspace-clean]"
+    ));
+    assert!(detail_contains(evidence, "source_span_absent=true"));
+    assert!(detail_contains(evidence, "explicit_shard_plumbing=false"));
+    assert!(detail_contains(
+        evidence,
+        "missing_source_span_regression=covered"
+    ));
+    assert!(detail_contains(evidence, "whole_memory_shard=false"));
+    assert!(detail_contains(evidence, "raw_transcript=false"));
     assert!(detail_contains(evidence, "live_llm=false"));
     assert!(detail_contains(evidence, "sandbox_execution=false"));
     assert!(detail_contains(evidence, "unsupported_org_fixture=true"));
@@ -84,9 +129,17 @@ fn project_runtime_read_model_replay_artifact_loads_from_serialized_contract() {
         PROJECT_RUNTIME_READ_MODEL_REPLAY_ARTIFACT_ID
     );
     assert_eq!(contract.scenario.expected_evidence.len(), 4);
-    assert_eq!(evidence.len(), 6);
+    assert_eq!(evidence.len(), 11);
     assert!(detail_contains(&evidence, "family=Memory"));
     assert!(detail_contains(&evidence, "family=Tool"));
+    assert!(detail_contains(
+        &evidence,
+        "required_capability_ids=[tool:workspace-status]"
+    ));
+    assert!(detail_contains(&evidence, "turn_id=turn:review-8"));
+    assert!(detail_contains(&evidence, "status=Committed"));
+    assert!(detail_contains(&evidence, "receipt_id=receipt:item-view"));
+    assert!(detail_contains(&evidence, "source_span_absent=true"));
 }
 
 #[test]

@@ -4,36 +4,12 @@ use std::{collections::BTreeMap, path::PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-/// Root directory used by runtime-owned agent state.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct RuntimeHome {
-    pub path: PathBuf,
-    pub source: RuntimeHomeSource,
-    pub profile: Option<String>,
-}
-
-impl RuntimeHome {
-    pub fn custom(path: impl Into<PathBuf>) -> Self {
-        Self {
-            path: path.into(),
-            source: RuntimeHomeSource::Custom,
-            profile: None,
-        }
-    }
-
-    pub fn with_profile(mut self, profile: impl Into<String>) -> Self {
-        self.profile = Some(profile.into());
-        self
-    }
-}
-
-/// Source of a runtime home path.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub enum RuntimeHomeSource {
-    Default,
-    Custom,
-    InheritedSubAgent { parent_home: PathBuf },
-}
+pub use crate::runtime_state_home::{
+    MARLIN_DEFAULT_HOME_DIR_NAME, MARLIN_HOME_ENV_VAR, RuntimeHome, RuntimeHomeSource,
+    RuntimeStateDirectory, RuntimeStateDirectoryKind, RuntimeStateLayout,
+    RuntimeStateObjectFileStem, RuntimeStateObjectKey, RuntimeStateObjectKind,
+    RuntimeStateObjectPath, RuntimeStateStorageReceipt, RuntimeStateStorageStatus,
+};
 
 /// Layered configuration source visible to the runtime.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -699,6 +675,8 @@ impl RuntimeEnvironmentRefreshReceipt {
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct RuntimeEnvironment {
     pub home: Option<RuntimeHome>,
+    #[serde(default)]
+    pub state_layout: Option<RuntimeStateLayout>,
     pub cwd: Option<PathBuf>,
     pub sandbox: RuntimeSandboxPolicy,
     pub config_layers: Vec<RuntimeConfigLayer>,
@@ -712,7 +690,14 @@ pub struct RuntimeEnvironment {
 
 impl RuntimeEnvironment {
     pub fn with_home(mut self, home: RuntimeHome) -> Self {
+        self.state_layout = Some(home.state_layout());
         self.home = Some(home);
+        self
+    }
+
+    pub fn with_state_layout(mut self, layout: RuntimeStateLayout) -> Self {
+        self.home = Some(layout.home.clone());
+        self.state_layout = Some(layout);
         self
     }
 
@@ -752,6 +737,8 @@ impl RuntimeEnvironment {
 pub struct RuntimeEnvironmentResolution {
     pub environment: RuntimeEnvironment,
     pub activation_receipt: RuntimeEnvironmentActivationReceipt,
+    #[serde(default)]
+    pub state_storage_receipt: Option<RuntimeStateStorageReceipt>,
     #[serde(default)]
     pub project_import_receipts: Vec<RuntimeWorkspaceProjectImportReceipt>,
 }

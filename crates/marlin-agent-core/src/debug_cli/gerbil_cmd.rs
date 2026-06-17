@@ -10,14 +10,11 @@ use super::{
     gerbil_usage,
 };
 
-const GERBIL_POLICY_RECEIPT_IMPORT_EXPR: &str =
-    "(import :marlin/deck-runtime-policy-receipt-gate-cli)";
-const GERBIL_POLICY_RECEIPT_CALL_EXPR: &str = "(emit-policy-receipt-gate-cli-report)";
-
 #[derive(Clone, Debug, Serialize)]
 struct GerbilPolicyReceiptDebugSummary {
     status: &'static str,
     command: &'static str,
+    call_expr: String,
     entrypoint: PathBuf,
     gxi: PathBuf,
     package_root: PathBuf,
@@ -86,6 +83,23 @@ struct GerbilPolicyReceiptDebugSummary {
     policy_pack_native_projection_payload_owner: String,
     policy_pack_rust_parses_scheme_source: bool,
     policy_pack_rust_handler_manufactured: bool,
+    policy_projection_kind: String,
+    policy_projection_pack_id: String,
+    policy_projection_chain_kind: String,
+    policy_projection_module_evaluation_receipt_kind: String,
+    policy_projection_policy_projection_receipt_kind: String,
+    policy_projection_native_projection_payload_kind: String,
+    policy_projection_native_projection_payload_owner: String,
+    policy_projection_budget_receipt_owner: String,
+    policy_projection_catalog_resolution_receipt_owner: String,
+    policy_projection_import_graph_owner: String,
+    policy_projection_option_merge_owner: String,
+    policy_projection_extension_composition_owner: String,
+    policy_projection_policy_composition_owner: String,
+    policy_projection_runtime_lifecycle_owner: String,
+    policy_projection_rust_parses_scheme_source: bool,
+    policy_projection_rust_handler_manufactured: bool,
+    policy_projection_replayable: bool,
     policy_substrate_gate_kind: String,
     policy_substrate_gate_profile: String,
     policy_substrate_gate_receipt_kind: String,
@@ -144,12 +158,16 @@ fn run_policy_receipt(
 ) -> Result<GerbilPolicyReceiptDebugSummary, String> {
     let loadpath = options.loadpath.unwrap_or_else(|| "src:t".to_owned());
     let iterations = options.iterations.to_string();
+    let entrypoint_load_expr = format!(
+        "(load {})",
+        scheme_string_literal(options.entrypoint.to_string_lossy().as_ref())
+    );
     let started_at = Instant::now();
     let output = Command::new(&options.gxi)
         .arg("-e")
-        .arg(GERBIL_POLICY_RECEIPT_IMPORT_EXPR)
+        .arg(&entrypoint_load_expr)
         .arg("-e")
-        .arg(GERBIL_POLICY_RECEIPT_CALL_EXPR)
+        .arg(&options.call_expr)
         .current_dir(&options.package_root)
         .env("GERBIL_LOADPATH", &loadpath)
         .env("MARLIN_POLICY_RECEIPT_ITERATIONS", iterations)
@@ -178,6 +196,7 @@ fn run_policy_receipt(
     Ok(GerbilPolicyReceiptDebugSummary {
         status: "ok",
         command: "gerbil policy-receipt",
+        call_expr: options.call_expr,
         entrypoint: options.entrypoint,
         gxi: options.gxi,
         package_root: options.package_root,
@@ -336,6 +355,62 @@ fn run_policy_receipt(
             &facts,
             "policy_pack_rust_handler_manufactured",
         )?,
+        policy_projection_kind: required_fact(&facts, "policy_projection_kind")?,
+        policy_projection_pack_id: required_fact(&facts, "policy_projection_pack_id")?,
+        policy_projection_chain_kind: required_fact(&facts, "policy_projection_chain_kind")?,
+        policy_projection_module_evaluation_receipt_kind: required_fact(
+            &facts,
+            "policy_projection_module_evaluation_receipt_kind",
+        )?,
+        policy_projection_policy_projection_receipt_kind: required_fact(
+            &facts,
+            "policy_projection_policy_projection_receipt_kind",
+        )?,
+        policy_projection_native_projection_payload_kind: required_fact(
+            &facts,
+            "policy_projection_native_projection_payload_kind",
+        )?,
+        policy_projection_native_projection_payload_owner: required_fact(
+            &facts,
+            "policy_projection_native_projection_payload_owner",
+        )?,
+        policy_projection_budget_receipt_owner: required_fact(
+            &facts,
+            "policy_projection_budget_receipt_owner",
+        )?,
+        policy_projection_catalog_resolution_receipt_owner: required_fact(
+            &facts,
+            "policy_projection_catalog_resolution_receipt_owner",
+        )?,
+        policy_projection_import_graph_owner: required_fact(
+            &facts,
+            "policy_projection_import_graph_owner",
+        )?,
+        policy_projection_option_merge_owner: required_fact(
+            &facts,
+            "policy_projection_option_merge_owner",
+        )?,
+        policy_projection_extension_composition_owner: required_fact(
+            &facts,
+            "policy_projection_extension_composition_owner",
+        )?,
+        policy_projection_policy_composition_owner: required_fact(
+            &facts,
+            "policy_projection_policy_composition_owner",
+        )?,
+        policy_projection_runtime_lifecycle_owner: required_fact(
+            &facts,
+            "policy_projection_runtime_lifecycle_owner",
+        )?,
+        policy_projection_rust_parses_scheme_source: required_bool_fact(
+            &facts,
+            "policy_projection_rust_parses_scheme_source",
+        )?,
+        policy_projection_rust_handler_manufactured: required_bool_fact(
+            &facts,
+            "policy_projection_rust_handler_manufactured",
+        )?,
+        policy_projection_replayable: required_bool_fact(&facts, "policy_projection_replayable")?,
         policy_substrate_gate_kind: required_fact(&facts, "policy_substrate_gate_kind")?,
         policy_substrate_gate_profile: required_fact(&facts, "policy_substrate_gate_profile")?,
         policy_substrate_gate_receipt_kind: required_fact(
@@ -399,6 +474,22 @@ fn parse_policy_receipt_facts(output: &str) -> Result<BTreeMap<String, String>, 
 
 fn duration_micros_u64(duration: std::time::Duration) -> u64 {
     duration.as_micros().try_into().unwrap_or(u64::MAX)
+}
+
+fn scheme_string_literal(value: &str) -> String {
+    let mut escaped = String::from("\"");
+    for character in value.chars() {
+        match character {
+            '\\' => escaped.push_str("\\\\"),
+            '"' => escaped.push_str("\\\""),
+            '\n' => escaped.push_str("\\n"),
+            '\r' => escaped.push_str("\\r"),
+            '\t' => escaped.push_str("\\t"),
+            other => escaped.push(other),
+        }
+    }
+    escaped.push('"');
+    escaped
 }
 
 fn required_fact(facts: &BTreeMap<String, String>, key: &str) -> Result<String, String> {

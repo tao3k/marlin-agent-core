@@ -17,12 +17,12 @@ pub use model_route::{
     ActivatedModelRouteProfileSpawnRequest, CompiledModelRouteResolver, ModelGateway,
     ModelGatewayCompletionChoice, ModelGatewayCompletionOptions, ModelGatewayCompletionResponse,
     ModelGatewayError, ModelGatewayFuture, ModelGatewayMessage, ModelGatewayMessageRole,
-    ModelGatewayRequest, ModelGatewayResult, ModelGatewayTransport, ModelRouteCompileError,
-    ModelRouteConfig, ModelRouteConfigError, ModelRouteSelectionProjectionError,
-    ModelRouteSelectionProjectionReceipt, ModelRouteSelectionProjectionSource,
-    ModelRouteSessionBinding, ProjectedModelRouteDecision, RoutedSubAgentSpawn,
-    RuntimeEdgeModelGateway, assistant_gateway_message, system_gateway_message,
-    user_gateway_message,
+    ModelGatewayRequest, ModelGatewayResult, ModelGatewayTransport, ModelRouteAdmissionError,
+    ModelRouteCompileError, ModelRouteConfig, ModelRouteConfigError,
+    ModelRouteSelectionProjectionError, ModelRouteSelectionProjectionReceipt,
+    ModelRouteSelectionProjectionSource, ModelRouteSessionBinding, ProjectedModelRouteDecision,
+    RoutedSubAgentSpawn, RuntimeEdgeModelGateway, admit_model_route_with_resolver,
+    assistant_gateway_message, system_gateway_message, user_gateway_message,
 };
 pub use observability::process::{
     AsyncManagedChildProcess, ManagedChildProcessSpec, RuntimeProcessCleanupController,

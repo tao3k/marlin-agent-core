@@ -23,5 +23,7 @@ marlin-rust-project-harness-policy.workspace = true
 marlin-agent-hooks.workspace = true
 marlin-agent-sessions.workspace = true
 marlin-agent-test-support.workspace = true
+marlin-org-memory.workspace = true
+marlin-org-model.workspace = true
 tempfile.workspace = true
 tokio.workspace = true

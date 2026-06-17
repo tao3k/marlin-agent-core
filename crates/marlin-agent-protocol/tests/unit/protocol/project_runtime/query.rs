@@ -2,7 +2,7 @@ use marlin_agent_protocol::{
     GraphQueryContext, GraphQueryExternalProjectPolicy, GraphQueryFallbackPolicy,
     GraphQueryFallbackScope, GraphQueryFamily, GraphQueryMatch, GraphQueryMatchRelationship,
     GraphQueryRelationshipFact, GraphQueryRequest, GraphQueryResponse, GraphQuerySecretVisibility,
-    GraphQueryVisibleSurface,
+    GraphQueryVisibleSurface, ProjectRuntimeToolCapabilityCard,
 };
 
 #[test]
@@ -138,6 +138,45 @@ fn tool_capability_query_uses_project_fallback_without_backend_fields() {
     );
     assert!(value["context"].get("sandbox").is_none());
     assert!(value["context"].get("backend").is_none());
+}
+
+#[test]
+fn tool_capability_card_carries_typed_backend_requirements() {
+    let card = ProjectRuntimeToolCapabilityCard::new(
+        GraphQueryMatch::new("project-alpha", "Rust formatter capability", 9_100)
+            .with_tool_capability("tool:rustfmt")
+            .with_source_anchor("tool-node:rustfmt")
+            .with_relationship(GraphQueryMatchRelationship::new([
+                GraphQueryRelationshipFact::SameProject,
+                GraphQueryRelationshipFact::ContractValidated,
+            ])),
+    )
+    .with_required_receipt("receipt:format-check")
+    .with_required_capability("tool:workspace-clean")
+    .with_isolation_requirement("isolation:write-worktree")
+    .with_backend_requirement("backend:process-sandbox");
+
+    let value = serde_json::to_value(&card).expect("tool card should serialize");
+
+    assert_eq!(value["graph_match"]["tool_capability_id"], "tool:rustfmt");
+    assert_eq!(
+        value["graph_match"]["source_anchor_id"],
+        "tool-node:rustfmt"
+    );
+    assert_eq!(value["required_receipt_ids"][0], "receipt:format-check");
+    assert_eq!(value["required_capability_ids"][0], "tool:workspace-clean");
+    assert_eq!(
+        value["isolation_requirement_ids"][0],
+        "isolation:write-worktree"
+    );
+    assert_eq!(
+        value["backend_requirement_ids"][0],
+        "backend:process-sandbox"
+    );
+
+    let decoded: ProjectRuntimeToolCapabilityCard =
+        serde_json::from_value(value).expect("tool card should deserialize");
+    assert_eq!(decoded, card);
 }
 
 #[test]

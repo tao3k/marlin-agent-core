@@ -4,10 +4,11 @@ use std::path::PathBuf;
 
 use crate::protocol::GraphQueryFamily;
 
-pub(super) const DEFAULT_RUN_STORE: &str = ".marlin/runs";
 pub(super) const DEFAULT_GERBIL_PACKAGE_ROOT: &str = "crates/marlin-gerbil-scheme/gerbil";
 pub(super) const DEFAULT_GERBIL_POLICY_RECEIPT_ENTRYPOINT: &str =
     "src/marlin/deck-runtime-policy-receipt-gate-cli.ss";
+pub(super) const DEFAULT_GERBIL_POLICY_RECEIPT_CALL_EXPR: &str =
+    "(emit-policy-receipt-gate-cli-report)";
 
 #[derive(Clone, Debug)]
 pub(super) struct ArgCursor {
@@ -58,7 +59,27 @@ impl CommonOptions {
 }
 
 #[derive(Clone, Debug)]
+pub(super) struct StateHomeOptions {
+    pub(super) home: Option<PathBuf>,
+}
+
+impl StateHomeOptions {
+    pub(super) fn parse(cursor: &mut ArgCursor) -> Result<Self, String> {
+        let mut home = None;
+        while let Some(arg) = cursor.next() {
+            match arg.as_str() {
+                "--home" => home = Some(cursor.required_path(&arg)?),
+                "-h" | "--help" => return Err(super::state_usage().to_owned()),
+                unknown => return Err(format!("unknown option `{unknown}`")),
+            }
+        }
+        Ok(Self { home })
+    }
+}
+
+#[derive(Clone, Debug)]
 pub(super) struct GerbilPolicyReceiptOptions {
+    pub(super) call_expr: String,
     pub(super) entrypoint: PathBuf,
     pub(super) gxi: PathBuf,
     pub(super) iterations: u64,
@@ -74,6 +95,8 @@ impl GerbilPolicyReceiptOptions {
         let mut entrypoint = std::env::var_os("MARLIN_GERBIL_POLICY_RECEIPT_ENTRYPOINT")
             .map(PathBuf::from)
             .unwrap_or_else(|| PathBuf::from(DEFAULT_GERBIL_POLICY_RECEIPT_ENTRYPOINT));
+        let mut call_expr = std::env::var("MARLIN_GERBIL_POLICY_RECEIPT_CALL")
+            .unwrap_or_else(|_| DEFAULT_GERBIL_POLICY_RECEIPT_CALL_EXPR.to_owned());
         let mut iterations = 1;
         let mut loadpath = None;
         let mut package_root = std::env::var_os("MARLIN_GERBIL_PACKAGE_ROOT")
@@ -81,6 +104,7 @@ impl GerbilPolicyReceiptOptions {
             .unwrap_or_else(|| PathBuf::from(DEFAULT_GERBIL_PACKAGE_ROOT));
         while let Some(arg) = cursor.next() {
             match arg.as_str() {
+                "--call" => call_expr = cursor.required_value(&arg)?,
                 "--entrypoint" => entrypoint = cursor.required_path(&arg)?,
                 "--gxi" => gxi = cursor.required_path(&arg)?,
                 "--iterations" => {
@@ -93,6 +117,7 @@ impl GerbilPolicyReceiptOptions {
             }
         }
         Ok(Self {
+            call_expr,
             entrypoint,
             gxi,
             iterations,
@@ -259,6 +284,8 @@ pub(super) struct LoopRunOptions {
     pub(super) input: Option<PathBuf>,
     pub(super) max_iterations: Option<u64>,
     pub(super) store: Option<PathBuf>,
+    pub(super) home: Option<PathBuf>,
+    pub(super) no_store: bool,
     pub(super) catalog: Option<PathBuf>,
 }
 
@@ -266,7 +293,9 @@ impl LoopRunOptions {
     pub(super) fn parse(cursor: &mut ArgCursor) -> Result<Self, String> {
         let mut input = None;
         let mut max_iterations = None;
-        let mut store = Some(PathBuf::from(DEFAULT_RUN_STORE));
+        let mut store = None;
+        let mut home = None;
+        let mut no_store = false;
         let mut catalog = None;
         while let Some(arg) = cursor.next() {
             match arg.as_str() {
@@ -280,7 +309,8 @@ impl LoopRunOptions {
                     );
                 }
                 "--store" => store = Some(cursor.required_path(&arg)?),
-                "--no-store" => store = None,
+                "--home" => home = Some(cursor.required_path(&arg)?),
+                "--no-store" => no_store = true,
                 "--catalog" => catalog = Some(cursor.required_path(&arg)?),
                 unknown => return Err(format!("unknown option `{unknown}`")),
             }
@@ -289,6 +319,8 @@ impl LoopRunOptions {
             input,
             max_iterations,
             store,
+            home,
+            no_store,
             catalog,
         })
     }
@@ -316,7 +348,8 @@ impl LoopReplayOptions {
 #[derive(Clone, Debug)]
 pub(super) struct LoopInspectOptions {
     pub(super) run_id: String,
-    pub(super) store: PathBuf,
+    pub(super) store: Option<PathBuf>,
+    pub(super) home: Option<PathBuf>,
 }
 
 impl LoopInspectOptions {
@@ -324,13 +357,19 @@ impl LoopInspectOptions {
         let Some(run_id) = cursor.next() else {
             return Err("loop inspect requires <run-id>".to_owned());
         };
-        let mut store = PathBuf::from(DEFAULT_RUN_STORE);
+        let mut store = None;
+        let mut home = None;
         while let Some(arg) = cursor.next() {
             match arg.as_str() {
-                "--store" => store = cursor.required_path(&arg)?,
+                "--store" => store = Some(cursor.required_path(&arg)?),
+                "--home" => home = Some(cursor.required_path(&arg)?),
                 unknown => return Err(format!("unknown option `{unknown}`")),
             }
         }
-        Ok(Self { run_id, store })
+        Ok(Self {
+            run_id,
+            store,
+            home,
+        })
     }
 }

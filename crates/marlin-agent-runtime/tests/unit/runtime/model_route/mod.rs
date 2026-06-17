@@ -1,3 +1,4 @@
+mod admission;
 mod client;
 mod config;
 mod gateway;

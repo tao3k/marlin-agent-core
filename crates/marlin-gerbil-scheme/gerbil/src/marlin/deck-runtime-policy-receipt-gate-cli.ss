@@ -18,14 +18,12 @@
 ;;; Boundary: List facts stay simple TSV values for Rust debug parsing.
 ;; MarlinResult <- MarlinInput
 (def (string-list->csv values)
-  (let loop ((remaining values)
-             (result ""))
-    (if (null? remaining)
-      result
-      (loop (cdr remaining)
-            (if (string=? result "")
-              (car remaining)
-              (string-append result "," (car remaining)))))))
+  (foldl (lambda (value result)
+           (if (string=? result "")
+             value
+             (string-append result "," value)))
+         ""
+         values))
 
 ;;; Boundary: Rust receives scalar fact values, not Scheme list syntax.
 ;; MarlinResult <- MarlinInput
@@ -37,28 +35,73 @@
 (def policy-receipt-iterations
   (string->number (getenv "MARLIN_POLICY_RECEIPT_ITERATIONS")))
 
+;;; Boundary: Debug extension is imported as a typed POO value.
+;; MarlinResult <- MarlinInput
 (def extension marlin-deck-runtime-debug-policy-extension)
+
+;;; Boundary: Policy module evidence stays Scheme-owned until projection.
+;; MarlinResult <- MarlinInput
 (def policy-module marlin-deck-runtime-debug-policy-module)
+
+;;; Boundary: Module catalog is a Scheme value, not a Rust source parser result.
+;; MarlinResult <- MarlinInput
 (def module-catalog (marlin-deck-runtime-debug-policy-module-catalog))
+
+;;; Boundary: Policy workflow owns the substrate gate receipt.
+;; MarlinResult <- MarlinInput
 (def policy-workflow (marlin-deck-runtime-debug-policy-module-workflow))
+
+;;; Boundary: Module evaluation is emitted as typed receipt facts.
+;; MarlinResult <- MarlinInput
 (def module-evaluation (marlin-deck-runtime-debug-policy-module-evaluation))
+
+;;; Boundary: Module presentation is the Rust-readable scalar view.
+;; MarlinResult <- MarlinInput
 (def module-system-presentation
   (marlin-deck-runtime-debug-policy-module-system-presentation))
+
+;;; Boundary: Policy pack presentation exposes prefab object surgery receipts.
+;; MarlinResult <- MarlinInput
 (def policy-pack-presentation
   (marlin-deck-runtime-debug-policy-pack-presentation))
+
+;;; Boundary: Policy projection fixes the Scheme -> Rust handoff envelope.
+;; MarlinResult <- MarlinInput
+(def policy-projection
+  (marlin-deck-runtime-debug-policy-projection))
+
+;;; Boundary: Substrate gate proves policy evaluation before Rust runtime use.
+;; MarlinResult <- MarlinInput
 (def substrate-gate (.get policy-workflow substrate-gate))
+
+;;; Boundary: Runtime catalog stays Scheme-selected but Rust-owned by id.
+;; MarlinResult <- MarlinInput
 (def catalog (marlin-deck-runtime-debug-policy-extension-catalog))
 
+;;; Boundary: Timing starts after module construction to isolate policy looping.
+;; MarlinResult <- MarlinInput
 (def scheme-policy-loop-started (time->seconds (current-time)))
+
+;;; Boundary: Receipt loop returns the last typed policy receipt.
+;; MarlinResult <- MarlinInput
 (def receipt
   (marlin-deck-runtime-debug-policy-extension-receipt-loop
    policy-receipt-iterations))
+
+;;; Boundary: Elapsed micros are scalar debug facts for Rust parsing.
+;; MarlinResult <- MarlinInput
 (def scheme-policy-loop-elapsed-micros
   (inexact->exact
    (floor
     (* 1000000
        (- (time->seconds (current-time)) scheme-policy-loop-started)))))
+
+;;; Boundary: Dynamic hook action is decoded from the typed Scheme receipt.
+;; MarlinResult <- MarlinInput
 (def action (.get receipt dynamic-hook-action))
+
+;;; Boundary: Selection evidence records how Scheme policy matched.
+;; MarlinResult <- MarlinInput
 (def selection (.get receipt dynamic-hook-selection))
 
 ;;; Boundary: keep executable CLI output behind a named entrypoint so the
@@ -174,6 +217,38 @@
       (.get policy-pack-presentation rust-parses-scheme-source))
 (emit "policy_pack_rust_handler_manufactured"
       (.get policy-pack-presentation rust-handler-manufactured))
+(emit "policy_projection_kind" (.get policy-projection kind))
+(emit "policy_projection_pack_id" (.get policy-projection pack-id))
+(emit "policy_projection_chain_kind"
+      (.get policy-projection projection-chain-kind))
+(emit "policy_projection_module_evaluation_receipt_kind"
+      (.get policy-projection module-evaluation-receipt-kind))
+(emit "policy_projection_policy_projection_receipt_kind"
+      (.get policy-projection policy-projection-receipt-kind))
+(emit "policy_projection_native_projection_payload_kind"
+      (.get policy-projection native-projection-payload-kind))
+(emit "policy_projection_native_projection_payload_owner"
+      (.get policy-projection native-projection-payload-owner))
+(emit "policy_projection_budget_receipt_owner"
+      (.get policy-projection budget-receipt-owner))
+(emit "policy_projection_catalog_resolution_receipt_owner"
+      (.get policy-projection catalog-resolution-receipt-owner))
+(emit "policy_projection_import_graph_owner"
+      (.get policy-projection import-graph-owner))
+(emit "policy_projection_option_merge_owner"
+      (.get policy-projection option-merge-owner))
+(emit "policy_projection_extension_composition_owner"
+      (.get policy-projection extension-composition-owner))
+(emit "policy_projection_policy_composition_owner"
+      (.get policy-projection policy-composition-owner))
+(emit "policy_projection_runtime_lifecycle_owner"
+      (.get policy-projection runtime-lifecycle-owner))
+(emit "policy_projection_rust_parses_scheme_source"
+      (.get policy-projection rust-parses-scheme-source))
+(emit "policy_projection_rust_handler_manufactured"
+      (.get policy-projection rust-handler-manufactured))
+(emit "policy_projection_replayable"
+      (.get policy-projection replayable))
 (emit "policy_substrate_gate_kind" (.get substrate-gate kind))
 (emit "policy_substrate_gate_profile" (.get substrate-gate gate-profile))
 (emit "policy_substrate_gate_receipt_kind" (.get substrate-gate receipt-kind))

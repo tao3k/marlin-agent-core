@@ -148,6 +148,41 @@ in these areas:
 - Configuration baseline: TOML declares policy; Scheme/Gerbil may optimize
   strategy only after policy is typed.
 
+** Steered Conversation Learning
+
+The steered-conversation lesson from =.data/codex= is not a single runtime
+object. Selector-scoped evidence shows a small typed turn payload:
+=codex-rs/app-server-protocol/schema/typescript/v2/Turn.ts:9-33= models a
+turn with =items=, =itemsView=, =status=, typed error, start/completion
+timestamps, and duration. The ASP frontier for the same question also selected
+=sdk/typescript/src/turnOptions.ts=, =v2/AdditionalContextEntry.ts=,
+=v2/MemoryCitation.ts=, =ConversationSummary.ts=, and rollout-trace owners.
+
+Keep these lessons:
+
+- Conversation steering is per-turn context assembly, not full transcript
+  sharing. The payload says which thread items are included now.
+- Partial materialization is a first-class contract. A turn needs an item-view
+  receipt so callers know whether they received a full, filtered, windowed, or
+  otherwise bounded projection.
+- Additional context, memory citations, and summaries should be typed protocol
+  objects with source anchors. They should not be hidden in prompt text.
+- Status, typed error, and timing belong beside the turn payload so replay,
+  UI, and audit code can explain how a steering decision affected the turn.
+
+Marlin should adapt the structure, not clone the product shape:
+
+- Project-runtime turns should consume an explicit context pack assembled from
+  Org graph recall, source spans, tool cards, and session/content facts.
+- Memory shards should be referenced through citations and relationship facts,
+  never sent as whole shard bodies.
+- The landed steering receipt records selected item ids, omitted item reasons,
+  source anchors, memory citation ids, and graph-query receipt ids while
+  keeping raw transcripts and whole memory shards out of the protocol payload.
+- The current 40.120/40.121 runtime line should treat this as the next
+  conversation-layer contract after read-model evidence, before sandbox backend
+  execution becomes the focus.
+
 ** Non-goals
 
 - Do not vendor Codex code into Marlin.

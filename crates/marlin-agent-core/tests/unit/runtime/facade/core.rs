@@ -2,12 +2,13 @@ use marlin_agent_core::{
     AGENT_HARNESS_PERFORMANCE_EVIDENCE_KEYS, AgentExecutionTrace, AgentExecutionTraceSummary,
     AgentHarnessEvidence, AgentHarnessEvidenceKind, AgentHarnessPerformanceEvidence, AgentSpanName,
     AgentTraceSpanRecord, GraphLoopExecutionStatus, HookDispatcher, HookRegistry,
-    ModelContextForkMode, ModelEndpoint, ModelGatewayMessageRole, ModelGatewayRequest,
-    ModelGatewayTransport, ModelRouteConfig, ModelRouteRequest, RuntimeEnvironmentRequest,
+    MODEL_ROUTE_CHAT_PATH, ModelContextForkMode, ModelEndpoint, ModelGatewayMessageRole,
+    ModelGatewayRequest, ModelGatewayTransport, ModelRouteArtifactProjection, ModelRouteConfig,
+    ModelRouteHttpErrorBody, ModelRouteRequest, ModelRouteSourceKind, RuntimeEnvironmentRequest,
     RuntimeEnvironmentResolver, RuntimeExecutionIdentity,
     STANDARD_AGENT_MEMORY_CONTRACT_DOCUMENT_ID, STANDARD_AGENT_PLAN_CONTRACT_DOCUMENT_ID,
     STANDARD_AGENT_TOPOLOGY_CONTRACT_DOCUMENT_ID, load_standard_agent_contract_workspace,
-    standard_agent_contract_documents, system_gateway_message,
+    model_route_router_from_toml_str, standard_agent_contract_documents, system_gateway_message,
 };
 
 #[test]
@@ -78,6 +79,72 @@ key = "core-facade"
     assert_eq!(decision.endpoint.provider.as_str(), "openai");
     assert_eq!(decision.endpoint.model.as_str(), "gpt-5-mini");
     assert_eq!(decision.receipt.context_fork, ModelContextForkMode::Minimal);
+}
+
+#[test]
+fn core_facade_exposes_model_route_http_adapter() {
+    let _router = model_route_router_from_toml_str(
+        r#"
+[[rules]]
+rule_id = "core-route-adapter"
+priority = 20
+
+[rules.matcher]
+command_kind_globs = ["chat"]
+
+[rules.endpoint]
+provider = "openai"
+model = "gpt-5-mini"
+"#,
+    )
+    .expect("HTTP route adapter builds through core facade");
+
+    assert_eq!(MODEL_ROUTE_CHAT_PATH, "/api/model-route/chat");
+
+    let body = ModelRouteHttpErrorBody {
+        code: "MODEL_ROUTE_NOT_FOUND".to_owned(),
+        message: "missing route".to_owned(),
+    };
+    assert_eq!(body.code, "MODEL_ROUTE_NOT_FOUND");
+}
+
+#[test]
+fn core_facade_exposes_artifact_model_route_source_kind() {
+    let source_kind = ModelRouteSourceKind::new("attachment");
+
+    assert_eq!(source_kind.as_str(), "attachment");
+}
+
+#[test]
+fn core_facade_exposes_artifact_model_route_projection() {
+    let request = ModelRouteArtifactProjection::image_document_extract(
+        ModelRouteRequest::command(["marlin", "extract"]).with_command_kind("attachment-extract"),
+    )
+    .with_source_sha256_ref("abc123")
+    .with_source_suffix_ref("png")
+    .with_backend_profile_ref("hosted-vlm-image")
+    .into_admission_request();
+
+    let intent = request.intent();
+
+    assert_eq!(intent.task_kind.as_str(), "attachment-extract");
+    assert_eq!(intent.modality.as_str(), "image");
+    assert_eq!(
+        intent.source_kind.as_ref().expect("source kind").as_str(),
+        "attachment"
+    );
+    assert_eq!(
+        intent
+            .artifact_refs
+            .iter()
+            .map(|reference| reference.as_str())
+            .collect::<Vec<_>>(),
+        vec![
+            "source-sha256:abc123",
+            "source-suffix:png",
+            "backend-profile:hosted-vlm-image",
+        ]
+    );
 }
 
 #[test]

@@ -4,8 +4,10 @@ use serde::{Deserialize, Serialize};
 
 use super::ids::{
     GraphQueryScoreBasisPoints, ProjectRuntimeContentId, ProjectRuntimeContextPackId,
-    ProjectRuntimeMemoryId, ProjectRuntimeProjectId, ProjectRuntimeReceiptId,
-    ProjectRuntimeRootSessionId, ProjectRuntimeSessionId, ProjectRuntimeWorkspaceId,
+    ProjectRuntimeMemoryCitationId, ProjectRuntimeMemoryId, ProjectRuntimeProjectId,
+    ProjectRuntimeReceiptId, ProjectRuntimeRootSessionId, ProjectRuntimeSessionId,
+    ProjectRuntimeSourceAnchorId, ProjectRuntimeSteeringItemId, ProjectRuntimeTurnId,
+    ProjectRuntimeWorkspaceId,
 };
 use super::query::GraphQueryVisibility;
 
@@ -459,6 +461,181 @@ impl ContextPackReceipt {
     }
 }
 
+/// Item family selected or omitted while steering a turn context pack.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum TurnContextItemKind {
+    SessionContent,
+    ProjectMemory,
+    ToolCapability,
+    AdditionalContext,
+    Summary,
+}
+
+/// Reason an otherwise eligible item was omitted from a steered turn.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum TurnContextOmissionReason {
+    TokenBudgetExceeded,
+    VisibilityDenied,
+    Duplicate,
+    LowerRanked,
+    MissingSourceAnchor,
+    ExternalProjectDenied,
+    PolicyDenied,
+}
+
+/// Typed selected item id in a bounded turn context pack.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct TurnContextSelectedItem {
+    pub kind: TurnContextItemKind,
+    pub item_id: ProjectRuntimeSteeringItemId,
+}
+
+impl TurnContextSelectedItem {
+    pub fn new(kind: TurnContextItemKind, item_id: impl Into<String>) -> Self {
+        Self {
+            kind,
+            item_id: ProjectRuntimeSteeringItemId::new(item_id),
+        }
+    }
+}
+
+/// Typed omitted item id and omission reason for a bounded turn context pack.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct TurnContextOmittedItem {
+    pub kind: TurnContextItemKind,
+    pub item_id: ProjectRuntimeSteeringItemId,
+    pub reason: TurnContextOmissionReason,
+}
+
+impl TurnContextOmittedItem {
+    pub fn new(
+        kind: TurnContextItemKind,
+        item_id: impl Into<String>,
+        reason: TurnContextOmissionReason,
+    ) -> Self {
+        Self {
+            kind,
+            item_id: ProjectRuntimeSteeringItemId::new(item_id),
+            reason,
+        }
+    }
+}
+
+/// Project memory citation included in a steered turn.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct ProjectRuntimeMemoryCitation {
+    pub citation_id: ProjectRuntimeMemoryCitationId,
+    pub memory_id: ProjectRuntimeMemoryId,
+    pub source_anchor_id: Option<ProjectRuntimeSourceAnchorId>,
+    pub graph_query_receipt_id: Option<ProjectRuntimeReceiptId>,
+}
+
+impl ProjectRuntimeMemoryCitation {
+    pub fn new(citation_id: impl Into<String>, memory_id: impl Into<String>) -> Self {
+        Self {
+            citation_id: ProjectRuntimeMemoryCitationId::new(citation_id),
+            memory_id: ProjectRuntimeMemoryId::new(memory_id),
+            source_anchor_id: None,
+            graph_query_receipt_id: None,
+        }
+    }
+
+    pub fn with_source_anchor(mut self, source_anchor_id: impl Into<String>) -> Self {
+        self.source_anchor_id = Some(ProjectRuntimeSourceAnchorId::new(source_anchor_id));
+        self
+    }
+
+    pub fn with_graph_query_receipt(mut self, receipt_id: impl Into<String>) -> Self {
+        self.graph_query_receipt_id = Some(ProjectRuntimeReceiptId::new(receipt_id));
+        self
+    }
+}
+
+/// Named input for building a turn context steering receipt.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct TurnContextSteeringReceiptInput {
+    pub receipt_id: ProjectRuntimeReceiptId,
+    pub turn_id: ProjectRuntimeTurnId,
+    pub root_session_id: ProjectRuntimeRootSessionId,
+    pub session_id: ProjectRuntimeSessionId,
+    pub context_pack_id: ProjectRuntimeContextPackId,
+}
+
+/// Receipt describing how a turn context pack was steered without exposing raw shards.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct TurnContextSteeringReceipt {
+    pub receipt_id: ProjectRuntimeReceiptId,
+    pub turn_id: ProjectRuntimeTurnId,
+    pub root_session_id: ProjectRuntimeRootSessionId,
+    pub session_id: ProjectRuntimeSessionId,
+    pub context_pack_id: ProjectRuntimeContextPackId,
+    #[serde(default)]
+    pub selected_items: Vec<TurnContextSelectedItem>,
+    #[serde(default)]
+    pub omitted_items: Vec<TurnContextOmittedItem>,
+    #[serde(default)]
+    pub memory_citations: Vec<ProjectRuntimeMemoryCitation>,
+    #[serde(default)]
+    pub source_anchor_ids: Vec<ProjectRuntimeSourceAnchorId>,
+    #[serde(default)]
+    pub graph_query_receipt_ids: Vec<ProjectRuntimeReceiptId>,
+}
+
+impl TurnContextSteeringReceipt {
+    pub fn from_input(input: TurnContextSteeringReceiptInput) -> Self {
+        Self {
+            receipt_id: input.receipt_id,
+            turn_id: input.turn_id,
+            root_session_id: input.root_session_id,
+            session_id: input.session_id,
+            context_pack_id: input.context_pack_id,
+            selected_items: Vec::new(),
+            omitted_items: Vec::new(),
+            memory_citations: Vec::new(),
+            source_anchor_ids: Vec::new(),
+            graph_query_receipt_ids: Vec::new(),
+        }
+    }
+
+    pub fn with_selected_item(
+        mut self,
+        kind: TurnContextItemKind,
+        item_id: impl Into<String>,
+    ) -> Self {
+        self.selected_items
+            .push(TurnContextSelectedItem::new(kind, item_id));
+        self
+    }
+
+    pub fn with_omitted_item(
+        mut self,
+        kind: TurnContextItemKind,
+        item_id: impl Into<String>,
+        reason: TurnContextOmissionReason,
+    ) -> Self {
+        self.omitted_items
+            .push(TurnContextOmittedItem::new(kind, item_id, reason));
+        self
+    }
+
+    pub fn with_memory_citation(mut self, citation: ProjectRuntimeMemoryCitation) -> Self {
+        self.memory_citations.push(citation);
+        self
+    }
+
+    pub fn with_source_anchor(mut self, source_anchor_id: impl Into<String>) -> Self {
+        self.source_anchor_ids
+            .push(ProjectRuntimeSourceAnchorId::new(source_anchor_id));
+        self
+    }
+
+    pub fn with_graph_query_receipt(mut self, receipt_id: impl Into<String>) -> Self {
+        self.graph_query_receipt_ids
+            .push(ProjectRuntimeReceiptId::new(receipt_id));
+        self
+    }
+}
+
 /// Memory promotion decision for content-derived memory.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum MemoryTriggerStatus {
@@ -474,8 +651,16 @@ pub struct MemoryTriggerReceipt {
     pub receipt_id: ProjectRuntimeReceiptId,
     pub content_id: ProjectRuntimeContentId,
     pub memory_id: Option<ProjectRuntimeMemoryId>,
+    pub turn_id: Option<ProjectRuntimeTurnId>,
+    pub context_pack_id: Option<ProjectRuntimeContextPackId>,
+    pub steering_receipt_id: Option<ProjectRuntimeReceiptId>,
+    pub memory_citation_id: Option<ProjectRuntimeMemoryCitationId>,
     pub status: MemoryTriggerStatus,
     pub candidate_score: Option<GraphQueryScoreBasisPoints>,
+    #[serde(default)]
+    pub source_anchor_ids: Vec<ProjectRuntimeSourceAnchorId>,
+    #[serde(default)]
+    pub graph_query_receipt_ids: Vec<ProjectRuntimeReceiptId>,
     #[serde(default)]
     pub source_receipts: Vec<ProjectRuntimeReceiptId>,
 }
@@ -490,8 +675,14 @@ impl MemoryTriggerReceipt {
             receipt_id: ProjectRuntimeReceiptId::new(receipt_id),
             content_id: ProjectRuntimeContentId::new(content_id),
             memory_id: None,
+            turn_id: None,
+            context_pack_id: None,
+            steering_receipt_id: None,
+            memory_citation_id: None,
             status,
             candidate_score: None,
+            source_anchor_ids: Vec::new(),
+            graph_query_receipt_ids: Vec::new(),
             source_receipts: Vec::new(),
         }
     }
@@ -506,6 +697,38 @@ impl MemoryTriggerReceipt {
         candidate_score: impl Into<GraphQueryScoreBasisPoints>,
     ) -> Self {
         self.candidate_score = Some(candidate_score.into());
+        self
+    }
+
+    pub fn with_turn(mut self, turn_id: impl Into<String>) -> Self {
+        self.turn_id = Some(ProjectRuntimeTurnId::new(turn_id));
+        self
+    }
+
+    pub fn with_context_pack(mut self, context_pack_id: impl Into<String>) -> Self {
+        self.context_pack_id = Some(ProjectRuntimeContextPackId::new(context_pack_id));
+        self
+    }
+
+    pub fn with_steering_receipt(mut self, receipt_id: impl Into<String>) -> Self {
+        self.steering_receipt_id = Some(ProjectRuntimeReceiptId::new(receipt_id));
+        self
+    }
+
+    pub fn with_memory_citation(mut self, citation_id: impl Into<String>) -> Self {
+        self.memory_citation_id = Some(ProjectRuntimeMemoryCitationId::new(citation_id));
+        self
+    }
+
+    pub fn with_source_anchor(mut self, source_anchor_id: impl Into<String>) -> Self {
+        self.source_anchor_ids
+            .push(ProjectRuntimeSourceAnchorId::new(source_anchor_id));
+        self
+    }
+
+    pub fn with_graph_query_receipt(mut self, receipt_id: impl Into<String>) -> Self {
+        self.graph_query_receipt_ids
+            .push(ProjectRuntimeReceiptId::new(receipt_id));
         self
     }
 

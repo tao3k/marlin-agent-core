@@ -8,6 +8,7 @@ members = [
     "crates/marlin-agent-hooks",
     "crates/marlin-agent-kernel",
     "crates/marlin-agent-protocol",
+    "crates/marlin-agent-route",
     "crates/marlin-agent-runtime",
     "crates/marlin-agent-sessions",
     "crates/marlin-agent-stream",
@@ -39,6 +40,7 @@ repository = "https://github.com/tao3k/marlin-agent-core"
 [workspace.dependencies]
 aho-corasick = "1.1.4"
 async-trait = "0.1.89"
+axum = { version = "0.8", features = ["json"] }
 cc = "1.2.64"
 cbindgen = "0.29.4"
 criterion = "0.8.2"
@@ -71,6 +73,7 @@ marlin-agent-harness-types = { path = "crates/marlin-agent-harness-types", versi
 marlin-agent-hooks = { path = "crates/marlin-agent-hooks", version = "0.1.0" }
 marlin-agent-kernel = { path = "crates/marlin-agent-kernel", version = "0.1.0" }
 marlin-agent-protocol = { path = "crates/marlin-agent-protocol", version = "0.1.0" }
+marlin-agent-route = { path = "crates/marlin-agent-route", version = "0.1.0" }
 marlin-agent-runtime = { path = "crates/marlin-agent-runtime", version = "0.1.0" }
 marlin-agent-sessions = { path = "crates/marlin-agent-sessions", version = "0.1.0" }
 marlin-agent-test-support = { path = "crates/marlin-agent-test-support", version = "0.1.0" }
@@ -91,13 +94,136 @@ marlin-workspace-view = { path = "crates/marlin-workspace-view", version = "0.1.
 marlin-deck-runtime-native-build = { path = "build-support/marlin-deck-runtime-native-build", version = "0.1.0" }
 
 [profile.release]
+# Thin LTO keeps useful cross-crate optimization without the full monolithic
+# link cost of fat LTO. This is the right default for CI and open-source
+# release builds where rebuild time matters.
 opt-level = 3
 lto = "thin"
-strip = true
+codegen-units = 4
+strip = "symbols"
 panic = "abort"
 
+[profile.release-fast]
+inherits = "release"
+# Fast optimized local build: keep opt-level=3 and abort-on-panic, but avoid
+# workspace-wide thin LTO when iteration speed matters more than final runtime.
+lto = false
+codegen-units = 16
+
+[profile.release-max]
+inherits = "release"
+# Explicit distribution/profile-gated build. Do not make this the default: fat
+# LTO and one codegen unit can improve hot-path runtime but are expensive.
+lto = "fat"
+codegen-units = 1
+
+[profile.release-size]
+inherits = "release"
+# Size-oriented build for CLI artifacts where startup and distribution footprint
+# matter more than peak throughput.
+opt-level = "z"
+lto = "fat"
+codegen-units = 1
+strip = "symbols"
+
+[profile.profiling]
+inherits = "release"
+# Keep release-like codegen while preserving enough symbols for perf/flamegraph
+# source attribution. Use with `cargo build --profile profiling`.
+debug = "line-tables-only"
+strip = "none"
+
+[profile.bench]
+debug = "line-tables-only"
+strip = "none"
+
 [profile.dev]
+incremental = true
 debug = "line-tables-only"
 split-debuginfo = "unpacked"
-strip = "debuginfo"
-incremental = true
+
+# Keep dependency debuginfo out of dev builds. Workspace crates still keep the
+# light line-table debug info from [profile.dev], which is enough for useful
+# backtraces without paying the full dependency linker cost.
+[profile.dev.package."*"]
+debug = false
+
+# Build scripts and proc macros run during compilation. A small amount of
+# optimization here improves compile-time execution without making cold builds
+# expensive.
+[profile.dev.build-override]
+opt-level = 1
+debug = false
+
+# Dev-mode hot paths for this workspace: async runtime, gateway/streaming HTTP,
+# Org parsing, graph/query matching, compression, and native artifact scanning.
+[profile.dev.package.aho-corasick]
+opt-level = 2
+[profile.dev.package.axum]
+opt-level = 2
+[profile.dev.package.bytes]
+opt-level = 2
+[profile.dev.package.flate2]
+opt-level = 2
+[profile.dev.package.globset]
+opt-level = 2
+[profile.dev.package.h2]
+opt-level = 2
+[profile.dev.package.http]
+opt-level = 2
+[profile.dev.package.http-body]
+opt-level = 2
+[profile.dev.package.hyper]
+opt-level = 2
+[profile.dev.package.litellm-rs]
+opt-level = 2
+[profile.dev.package.memchr]
+opt-level = 2
+[profile.dev.package.miniz_oxide]
+opt-level = 2
+[profile.dev.package.mio]
+opt-level = 2
+[profile.dev.package.object]
+opt-level = 2
+[profile.dev.package.orgize]
+opt-level = 2
+[profile.dev.package.parking_lot]
+opt-level = 2
+[profile.dev.package.rayon]
+opt-level = 2
+[profile.dev.package.regex]
+opt-level = 2
+[profile.dev.package.regex-automata]
+opt-level = 2
+[profile.dev.package.reqwest]
+opt-level = 2
+[profile.dev.package.rustls]
+opt-level = 2
+[profile.dev.package.rustls-native-certs]
+opt-level = 2
+[profile.dev.package.same-file]
+opt-level = 2
+[profile.dev.package.serde_json]
+opt-level = 2
+[profile.dev.package.socket2]
+opt-level = 2
+[profile.dev.package.tokio]
+opt-level = 2
+[profile.dev.package.tokio-stream]
+opt-level = 2
+[profile.dev.package.tokio-util]
+opt-level = 2
+[profile.dev.package.toml]
+opt-level = 2
+[profile.dev.package.tower]
+opt-level = 2
+[profile.dev.package.tracing]
+opt-level = 2
+[profile.dev.package.tracing-subscriber]
+opt-level = 2
+[profile.dev.package.walkdir]
+opt-level = 2
+[profile.dev.package.webpki-roots]
+opt-level = 2
+[profile.dev.package.zstd]
+opt-level = 2

@@ -51,6 +51,11 @@ project_runtime_id! {
 }
 
 project_runtime_id! {
+    /// Turn identifier for one bounded conversation step.
+    ProjectRuntimeTurnId
+}
+
+project_runtime_id! {
     /// Agent identity within a runtime session lineage.
     ProjectRuntimeAgentId
 }
@@ -71,6 +76,16 @@ project_runtime_id! {
 }
 
 project_runtime_id! {
+    /// Citation identifier for a project memory fact included in a turn.
+    ProjectRuntimeMemoryCitationId
+}
+
+project_runtime_id! {
+    /// Generic item identifier for a selected or omitted turn context item.
+    ProjectRuntimeSteeringItemId
+}
+
+project_runtime_id! {
     /// Typed evidence identifier carried by project memory context packs.
     ProjectRuntimeEvidenceId
 }
@@ -88,6 +103,16 @@ project_runtime_id! {
 project_runtime_id! {
     /// Typed tool capability identifier addressable by the project graph.
     ProjectRuntimeToolCapabilityId
+}
+
+project_runtime_id! {
+    /// Backend requirement identifier declared by a tool capability card.
+    ProjectRuntimeBackendRequirementId
+}
+
+project_runtime_id! {
+    /// Isolation requirement identifier declared by a tool capability card.
+    ProjectRuntimeIsolationRequirementId
 }
 
 project_runtime_id! {

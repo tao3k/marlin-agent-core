@@ -148,11 +148,46 @@ fn deterministic_project_runtime_read_model_evidence() -> Vec<AgentHarnessEviden
             "family=Content content_id=content:summary-a parent_content_id=content:turn-7 source_agent_id=agent:reviewer source_anchor_projection=true",
         ),
         AgentHarnessEvidence::present(
+            AgentHarnessEvidenceKind::Content,
+            "project-runtime:turn-context-steering",
+        )
+        .with_detail(
+            "turn_id=turn:review-8 context_pack_id=context-pack:review selected_item_ids=[content:summary-a,memory:runtime-1] omitted_reasons=[VisibilityDenied,LowerRanked] memory_citation_ids=[citation:memory-runtime-1] source_anchor_ids=[anchor:summary-a,anchor:memory-runtime-1] graph_query_receipt_ids=[receipt:memory-query-1] whole_memory_shard=false raw_transcript=false",
+        ),
+        AgentHarnessEvidence::present(
+            AgentHarnessEvidenceKind::Content,
+            "project-runtime:memory-trigger-receipt",
+        )
+        .with_detail(
+            "content_id=content:summary-a memory_id=memory:runtime-1 status=Committed candidate_score=8700 turn_id=turn:review-8 context_pack_id=context-pack:review steering_receipt_id=receipt:steer-review memory_citation_id=citation:memory-runtime-1 source_anchor_ids=[anchor:memory-runtime-1] graph_query_receipt_ids=[receipt:memory-query-1] whole_memory_shard=false raw_transcript=false",
+        ),
+        AgentHarnessEvidence::present(
+            AgentHarnessEvidenceKind::Content,
+            "project-runtime:loaded-node-memory-context-pack",
+        )
+        .with_detail(
+            "context_pack_id=context-pack:loaded-node-memory memory_id=memory:missing-source source_anchor_id=memory-node:missing-source source_span_absent=true store_discovery=false explicit_shard_plumbing=false whole_memory_shard=false",
+        ),
+        AgentHarnessEvidence::present(
+            AgentHarnessEvidenceKind::Content,
+            "project-runtime:turn-context-item-view",
+        )
+        .with_detail(
+            "receipt_id=receipt:item-view context_pack_id=context-pack:loaded-node-memory item_kinds=[ProjectMemory,ToolCapability] memory_citation_ids=[citation:memory-runtime-1] source_anchor_ids=[memory-node:missing-source,tool-node:rustfmt-card] required_receipt_ids=[receipt:format-check,receipt:workspace-clean] backend_requirement_ids=[backend:process-sandbox,backend:macos-compatible] raw_transcript=false whole_memory_shard=false sandbox_backend_selection=false",
+        ),
+        AgentHarnessEvidence::present(
             AgentHarnessEvidenceKind::Tool,
             "project-runtime:tool-capability-store",
         )
         .with_detail(
             "family=Tool root_kind=ToolCapability cli_root=--org-tool-root capability_id=tool:rustfmt required_receipts=receipt:format-check",
+        ),
+        AgentHarnessEvidence::present(
+            AgentHarnessEvidenceKind::Tool,
+            "project-runtime:tool-capability-card-requirements",
+        )
+        .with_detail(
+            "capability_id=tool:rustfmt required_receipt_ids=[receipt:format-check,receipt:workspace-clean] required_capability_ids=[tool:workspace-status] isolation_requirement_ids=[isolation:write-worktree] backend_requirement_ids=[backend:process-sandbox,backend:macos-compatible] sandbox_backend_selection=false",
         ),
         AgentHarnessEvidence::present(
             AgentHarnessEvidenceKind::Runtime,
@@ -166,7 +201,7 @@ fn deterministic_project_runtime_read_model_evidence() -> Vec<AgentHarnessEviden
             "project-runtime:negative-cli-gates",
         )
         .with_detail(
-            "missing_store_roots=true fixture_store_conflicts=true unsupported_org_fixture=true stale_root_disambiguation=follow_up missing_source_span_regression=follow_up",
+            "missing_store_roots=true fixture_store_conflicts=true unsupported_org_fixture=true stale_root_disambiguation=covered missing_source_span_regression=covered loaded_node_recall=true",
         ),
     ]
 }

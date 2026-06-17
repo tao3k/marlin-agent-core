@@ -3,7 +3,13 @@ use std::collections::BTreeMap;
 use marlin_agent_protocol::{
     GraphQueryContext, ProjectMemoryRecallIntent, ProjectMemoryRecallRequest,
 };
-use marlin_org_memory::{MemoryOrgWorkspace, ProjectMemoryStoreRecall};
+use marlin_org_memory::{
+    MemoryOrgWorkspace, PROJECT_MEMORY_CONTRACT_VALIDATED_PROPERTY, PROJECT_MEMORY_ID_PROPERTY,
+    PROJECT_MEMORY_PROJECT_ID_PROPERTY, PROJECT_MEMORY_RECALL_QUERY_PROPERTY,
+    PROJECT_MEMORY_ROOT_SESSION_ID_PROPERTY, PROJECT_MEMORY_WORKTREE_ID_PROPERTY,
+    ProjectMemoryStoreRecall,
+};
+use marlin_org_model::{OrgNode, OrgNodeId};
 use marlin_org_store::{MemoryOrgSourceStore, OrgProjectRootCandidate, discover_project_roots};
 
 #[test]
@@ -231,4 +237,93 @@ fn recalls_project_memory_from_store_with_contract_indexed_frontier() {
             .as_str(),
         ".marlin/memory/store-frontier.org:L1-L10"
     );
+}
+
+#[test]
+fn recall_from_loaded_nodes_keeps_fact_when_source_span_is_missing() {
+    let workspace = MemoryOrgWorkspace::from_nodes([loaded_memory_node_without_source(
+        "memory-node:missing-source",
+        "memory:missing-source",
+        "Missing source span recall",
+        "missing-source frontier",
+    )]);
+    let request = ProjectMemoryRecallRequest::new(
+        GraphQueryContext::new("project-alpha")
+            .with_worktree("worktree-a")
+            .with_root_session("root-session-1"),
+        ProjectMemoryRecallIntent::ExplainEvidence,
+    )
+    .with_query_term("missing-source")
+    .with_query_term("frontier")
+    .with_limit(5);
+
+    let pack = workspace
+        .recall_project_memory_from_loaded_nodes(
+            "context-pack-missing-source",
+            "receipt-recall-missing-source",
+            request,
+        )
+        .expect("recall succeeds");
+
+    assert_eq!(pack.context_pack_id.as_str(), "context-pack-missing-source");
+    assert_eq!(
+        pack.source_receipts[0].as_str(),
+        "receipt-recall-missing-source"
+    );
+    assert_eq!(pack.facts.len(), 1);
+    let fact = &pack.facts[0];
+    assert_eq!(fact.claim, "Missing source span recall");
+    assert!(fact.source_span.is_none());
+    assert_eq!(
+        fact.graph_match
+            .source_anchor_id
+            .as_ref()
+            .expect("source anchor")
+            .as_str(),
+        "memory-node:missing-source"
+    );
+    assert_eq!(
+        fact.graph_match
+            .memory_id
+            .as_ref()
+            .expect("memory id")
+            .as_str(),
+        "memory:missing-source"
+    );
+    assert_eq!(fact.evidence_ids.len(), 1);
+    assert_eq!(fact.evidence_ids[0].as_str(), "memory:missing-source");
+}
+
+fn loaded_memory_node_without_source(
+    node_id: &str,
+    memory_id: &str,
+    title: &str,
+    recall_query: &str,
+) -> OrgNode {
+    let mut node = OrgNode::heading(OrgNodeId::from(node_id), title);
+    node.properties.insert(
+        PROJECT_MEMORY_ID_PROPERTY.to_string(),
+        memory_id.to_string(),
+    );
+    node.properties.insert(
+        PROJECT_MEMORY_PROJECT_ID_PROPERTY.to_string(),
+        "project-alpha".to_string(),
+    );
+    node.properties.insert(
+        PROJECT_MEMORY_WORKTREE_ID_PROPERTY.to_string(),
+        "worktree-a".to_string(),
+    );
+    node.properties.insert(
+        PROJECT_MEMORY_ROOT_SESSION_ID_PROPERTY.to_string(),
+        "root-session-1".to_string(),
+    );
+    node.properties.insert(
+        PROJECT_MEMORY_RECALL_QUERY_PROPERTY.to_string(),
+        recall_query.to_string(),
+    );
+    node.properties.insert(
+        PROJECT_MEMORY_CONTRACT_VALIDATED_PROPERTY.to_string(),
+        "true".to_string(),
+    );
+    node
 }

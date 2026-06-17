@@ -83,6 +83,59 @@ fn debug_cli_loop_run_writes_store_and_inspect_reads_run_id() {
 }
 
 #[test]
+fn debug_cli_loop_run_defaults_to_runtime_state_home_receipt_path() {
+    let dir = tempdir().expect("tempdir");
+    let input = dir.path().join("graph.json");
+    let home = dir.path().join("runtime-home");
+    fs::write(
+        &input,
+        serde_json::to_string(&single_node_graph()).expect("graph JSON"),
+    )
+    .expect("write graph");
+
+    let run = run_marlin_cli_from_args([
+        "loop",
+        "run",
+        "--input",
+        input.to_str().expect("utf8 path"),
+        "--max-iterations",
+        "1",
+        "--home",
+        home.to_str().expect("utf8 runtime home"),
+    ]);
+
+    assert_eq!(run.status, 0, "{}", run.stderr);
+    let run_receipt: LoopRunReceipt = serde_json::from_str(&run.stdout).expect("loop run receipt");
+    let report_path = run_receipt.report_path.expect("state-home report path");
+    assert_eq!(
+        report_path,
+        home.join("receipts").join("marlin-loop-run.json")
+    );
+    assert!(
+        report_path.exists(),
+        "state-home receipt should exist at {}",
+        report_path.display()
+    );
+
+    let inspect = run_marlin_cli_from_args([
+        "loop",
+        "inspect",
+        "marlin-loop-run",
+        "--home",
+        home.to_str().expect("utf8 runtime home"),
+    ]);
+    assert_eq!(inspect.status, 0, "{}", inspect.stderr);
+    let receipt: LoopInspectReceipt =
+        serde_json::from_str(&inspect.stdout).expect("inspect receipt");
+    assert_eq!(receipt.report_path, report_path);
+    assert_eq!(receipt.iteration_count, 1);
+    assert_eq!(
+        receipt.terminal_status,
+        Some(GraphLoopExecutionStatus::Completed)
+    );
+}
+
+#[test]
 fn debug_cli_loop_run_accepts_catalog_config() {
     let dir = tempdir().expect("tempdir");
     let input = dir.path().join("graph.json");

@@ -21,6 +21,12 @@ pub const TOOL_CAPABILITY_ROOT_SESSION_ID_PROPERTY: &str = "ROOT_SESSION_ID";
 pub const TOOL_CAPABILITY_SESSION_ID_PROPERTY: &str = "SESSION_ID";
 /// `Org` property key that lists receipts required before using a capability.
 pub const TOOL_CAPABILITY_REQUIRED_RECEIPTS_PROPERTY: &str = "REQUIRED_RECEIPTS";
+/// `Org` property key that lists dependent tool capabilities.
+pub const TOOL_CAPABILITY_REQUIRED_CAPABILITIES_PROPERTY: &str = "REQUIRED_CAPABILITIES";
+/// `Org` property key that lists isolation requirements before tool use.
+pub const TOOL_CAPABILITY_ISOLATION_REQUIREMENTS_PROPERTY: &str = "ISOLATION_REQUIREMENTS";
+/// `Org` property key that lists backend requirements before tool use.
+pub const TOOL_CAPABILITY_BACKEND_REQUIREMENTS_PROPERTY: &str = "BACKEND_REQUIREMENTS";
 /// `Org` property key that records whether the capability contract is validated.
 pub const TOOL_CAPABILITY_CONTRACT_VALIDATED_PROPERTY: &str = "CONTRACT_VALIDATED";
 

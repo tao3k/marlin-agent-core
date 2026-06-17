@@ -330,6 +330,9 @@
 (def modules-lib-policy-pack-presentation-now
   (marlinPolicyPackPresentation modules-lib-policy-pack))
 
+(def modules-lib-policy-projection-now
+  (marlinPolicyProjection modules-lib-policy-pack))
+
 (modules-lib-assert-equal
  (.get modules-lib-policy-pack-presentation-now kind)
  marlin-policy-pack-presentation-kind
@@ -390,6 +393,26 @@
  (.get modules-lib-policy-pack-presentation-now module-system-presentation-kind)
  marlin-module-system-presentation-kind
  "presentation module-system kind mismatch")
+(modules-lib-assert-equal
+ (.get modules-lib-policy-pack-presentation-now policy-projection-receipt-kind)
+ marlin-policy-projection-kind
+ "presentation projection receipt kind mismatch")
+(modules-lib-assert-equal
+ (.get modules-lib-policy-projection-now kind)
+ marlin-policy-projection-kind
+ "policy projection kind mismatch")
+(modules-lib-assert-equal
+ (.get modules-lib-policy-projection-now native-projection-payload-kind)
+ marlin-policy-pack-presentation-kind
+ "policy projection native payload kind mismatch")
+(modules-lib-assert-equal
+ (.get modules-lib-policy-projection-now budget-receipt-owner)
+ "rust"
+ "policy projection budget owner mismatch")
+(modules-lib-assert-equal
+ (.get modules-lib-policy-projection-now policy-composition-owner)
+ "gerbil-poo"
+ "policy projection composition owner mismatch")
 (modules-lib-assert-equal
  (.get modules-lib-policy-pack-presentation-now rust-parses-scheme-source)
  #f

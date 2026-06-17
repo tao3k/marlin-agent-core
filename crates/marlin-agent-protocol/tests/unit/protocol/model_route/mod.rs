@@ -1,8 +1,13 @@
+mod admission;
+mod artifact;
+
 use marlin_agent_protocol::{
-    ModelCommandMatcher, ModelContextForkMode, ModelEndpoint, ModelEndpointContractError,
-    ModelRouteAgentScope, ModelRouteDecision, ModelRouteReceipt, ModelRouteRequest, ModelRouteRule,
-    ModelSessionLifecycle, ModelSessionPolicy, RuntimeEnvironmentActivationPolicy,
-    RuntimeEnvironmentActivationReceipt, RuntimeEnvironmentActivationStatus,
+    MODEL_ROUTE_ADMISSION_SCHEMA_ID, ModelCommandMatcher, ModelContextForkMode, ModelEndpoint,
+    ModelEndpointContractError, ModelRouteAdmissionMode, ModelRouteAdmissionRequest,
+    ModelRouteAdmissionResponse, ModelRouteAgentScope, ModelRouteDecision, ModelRouteReceipt,
+    ModelRouteRequest, ModelRouteRule, ModelSessionLifecycle, ModelSessionPolicy,
+    RuntimeEnvironmentActivationPolicy, RuntimeEnvironmentActivationReceipt,
+    RuntimeEnvironmentActivationStatus,
 };
 
 #[test]
@@ -214,4 +219,64 @@ fn model_route_decision_receipt_records_context_and_lifecycle() {
         decision.receipt.agent_scope,
         Some(ModelRouteAgentScope::SubAgent)
     );
+}
+
+#[test]
+fn model_route_admission_request_normalizes_chat_intent_defaults() {
+    let request = ModelRouteAdmissionRequest::chat(
+        ModelRouteRequest::command(["marlin", "chat"]).with_command_kind("chat"),
+    )
+    .with_precision_tier(" ")
+    .with_privacy_tier("")
+    .with_evidence_profile("\t")
+    .with_latency_budget_ms(45_000)
+    .with_artifact_ref("artifact://evidence-pack/001");
+
+    let intent = request.intent();
+
+    assert_eq!(intent.task_kind.as_str(), "chat");
+    assert_eq!(intent.modality.as_str(), "text");
+    assert_eq!(intent.precision_tier.as_str(), "high");
+    assert_eq!(intent.privacy_tier.as_str(), "private");
+    assert_eq!(intent.latency_budget_ms, 45_000);
+    assert_eq!(intent.evidence_profile.as_str(), "local-knowledge-chat");
+    assert_eq!(
+        intent.artifact_refs[0].as_str(),
+        "artifact://evidence-pack/001"
+    );
+}
+
+#[test]
+fn model_route_admission_response_serializes_schema_and_mode() {
+    let request = ModelRouteAdmissionRequest::chat(ModelRouteRequest::command(["marlin", "chat"]));
+    let receipt = ModelRouteReceipt {
+        rule_id: "chat-default".into(),
+        matched_globs: vec!["command_kind:chat".to_owned()],
+        command_line: "marlin chat".to_owned(),
+        litellm_model_id: "openai/gpt-5-mini".into(),
+        session_lifecycle: ModelSessionLifecycle::Ephemeral,
+        context_fork: ModelContextForkMode::ForkSnapshot,
+        requested_session_id: None,
+        agent_scope: None,
+        environment_activation: None,
+        fallback_reason: None,
+    };
+    let decision = ModelRouteDecision {
+        endpoint: ModelEndpoint::new("openai", "gpt-5-mini"),
+        session: ModelSessionPolicy::default(),
+        receipt,
+    };
+    let response = ModelRouteAdmissionResponse::deterministic(request.intent(), decision);
+    let value = serde_json::to_value(&response).expect("response serializes");
+
+    assert_eq!(value["schema_id"], MODEL_ROUTE_ADMISSION_SCHEMA_ID);
+    assert_eq!(value["model_routing_mode"], "Deterministic");
+
+    let decoded: ModelRouteAdmissionResponse =
+        serde_json::from_value(value).expect("response deserializes");
+    assert_eq!(
+        decoded.model_routing_mode,
+        ModelRouteAdmissionMode::Deterministic
+    );
+    assert_eq!(decoded.schema_id, MODEL_ROUTE_ADMISSION_SCHEMA_ID);
 }

@@ -34,6 +34,13 @@
        "src/marlin/deck-runtime-loop-graph"
        "src/marlin/deck-runtime-user-option"
        "src/marlin/deck-runtime-user-module"
+       "src/modules/kinds"
+       "src/modules/core"
+       "src/modules/policy-extension"
+       "src/modules/policy-module"
+       "src/modules/policy-object"
+       "src/modules/evaluation"
+       "src/modules/policy-pack"
        "src/modules/lib"
        "src/marlin/deck-runtime-strategy"
        extra-target ...))))

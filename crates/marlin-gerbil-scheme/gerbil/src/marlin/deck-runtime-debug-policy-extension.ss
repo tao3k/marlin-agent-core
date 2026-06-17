@@ -1,6 +1,14 @@
 ;;; -*- Gerbil -*-
-;;; Boundary: Debug policy extension is a user-authored POO extension object.
-;;; The Gerbil module system loads this .ss file; the exported POO object drives policy.
+;;; Boundary:
+;;; - Owns the debug CLI miniature downstream policy pack.
+;;; - Exports user-authored POO policy objects through the Gerbil module system.
+;;; - Keeps module imports, config defaults, extension objects, and pack surgery in Scheme.
+;;; Invariant:
+;;; - Rust does not parse this source file or manufacture handlers from it.
+;;; - Rust only validates projected receipts and resolves existing handler ids.
+;;; Parser evidence:
+;;; - Trust this owner for policy extension objects, module catalogs, pack presentations,
+;;;   and the receipt-loop benchmark used by the debug CLI.
 
 package: marlin
 
@@ -21,6 +29,7 @@ package: marlin
         marlin-deck-runtime-debug-policy-pack
         marlin-deck-runtime-debug-policy-pack-catalog
         marlin-deck-runtime-debug-policy-pack-presentation
+        marlin-deck-runtime-debug-policy-projection
         marlin-deck-runtime-debug-policy-module-catalog
         marlin-deck-runtime-debug-policy-module-evaluation
         marlin-deck-runtime-debug-policy-module-system-presentation
@@ -103,6 +112,8 @@ package: marlin
   (metadata '((owner . "debug-cli") (surface . "policy-extension-object"))))
 
 ;;; Boundary: Policy module is the user-facing module object around extensions.
+;;; Engineering note: this is the "prefab room" shell. Imports/config/extensions
+;;; are composed by Gerbil POO here; Rust only receives the projected receipt.
 ;; MarlinResult <- MarlinInput
 (def marlin-deck-runtime-debug-policy-module-interface
   (marlin-module-interface
@@ -128,6 +139,8 @@ package: marlin
   (metadata '((owner . "debug-cli") (surface . "policy-substrate-gate"))))
 
 ;;; Boundary: The extension itself is a prefab policy object.
+;;; Engineering note: the object is furniture inside the policy pack. Surgery
+;;; may add/remove/disable/replace it, but cannot manufacture Rust handlers.
 ;; MarlinResult <- MarlinInput
 (def debug-policy-extension-object
   (marlinPolicyObject
@@ -217,6 +230,11 @@ package: marlin
 ;; MarlinResult <- MarlinInput
 (def (marlin-deck-runtime-debug-policy-pack-presentation)
   (marlinPolicyPackPresentation marlin-deck-runtime-debug-policy-pack))
+
+;;; Boundary: Debug CLI reads the fixed PolicyProjection<T> envelope.
+;; MarlinResult <- MarlinInput
+(def (marlin-deck-runtime-debug-policy-projection)
+  (marlinPolicyProjection marlin-deck-runtime-debug-policy-pack))
 
 ;;; Boundary: Module catalog is a first-class Scheme value.
 ;; MarlinResult <- MarlinInput

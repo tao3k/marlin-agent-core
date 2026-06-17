@@ -87,6 +87,19 @@ impl DebugExecutorCatalog {
         self
     }
 
+    /// Registers a process-command tool executor without going through a catalog file.
+    pub(super) fn register_process_command_tool(
+        self,
+        executor: impl Into<ExecutorName>,
+        binding: ProcessCommandBinding,
+    ) -> Self {
+        self.register_runtime_binding(
+            executor,
+            DebugExecutorAdapter::Tool,
+            DebugRuntimeRegistration::ProcessCommand(binding),
+        )
+    }
+
     /// Installs the registered executors into a graph-loop kernel.
     pub(super) fn install_into(
         self,

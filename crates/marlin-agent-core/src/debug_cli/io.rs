@@ -55,6 +55,28 @@ pub(super) fn write_loop_reports(
     Ok(Some(path))
 }
 
+pub(super) fn write_loop_reports_to_path(
+    path: &Path,
+    reports: &[GraphLoopIterationReport],
+) -> Result<Option<PathBuf>, String> {
+    if reports.is_empty() {
+        return Ok(None);
+    }
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|error| {
+            format!(
+                "failed to create run report directory {}: {error}",
+                parent.display()
+            )
+        })?;
+    }
+    let json = serde_json::to_string_pretty(reports)
+        .map_err(|error| format!("failed to encode run report: {error}"))?;
+    fs::write(path, json)
+        .map_err(|error| format!("failed to write run report {}: {error}", path.display()))?;
+    Ok(Some(path.to_path_buf()))
+}
+
 pub(super) fn read_reports_from_store(
     store: &Path,
     run_id: &str,

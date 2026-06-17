@@ -5,7 +5,8 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    GraphId, GraphLoopExecutionStatus, GraphLoopIterationReport, RunId,
+    GraphId, GraphLoopExecutionResult, GraphLoopExecutionStatus, GraphLoopIterationReport, RunId,
+    RuntimeHomeSource,
     protocol::{
         GraphLoopFailureKind, GraphQueryFamily, GraphQueryRelationshipFact, ProjectRuntimeAgentId,
         ProjectRuntimeContentId, ProjectRuntimeEvidenceId, ProjectRuntimeMemoryId,
@@ -128,4 +129,57 @@ pub struct LoopInspectReceipt {
     pub replayable: bool,
     pub missing_trace_count: usize,
     pub diagnostics: Vec<String>,
+}
+
+/// Runtime smoke scenario executed by `marlin smoke runtime`.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum SmokeRuntimeScenario {
+    BuiltinAdapters,
+    ProcessCommandFanout,
+    StateHomeEnv,
+}
+
+/// LLM mode used by a smoke scenario.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum SmokeLlmMode {
+    NoLiveLlm,
+}
+
+/// Runtime smoke receipt returned by `marlin smoke runtime`.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct SmokeRuntimeReceipt {
+    pub scenario: SmokeRuntimeScenario,
+    pub llm_mode: SmokeLlmMode,
+    pub run_id: String,
+    pub graph_id: String,
+    pub terminal_status: GraphLoopExecutionStatus,
+    pub passed: bool,
+    pub node_count: usize,
+    pub visited_nodes: Vec<String>,
+    pub node_receipt_count: usize,
+    pub completed_node_receipt_count: usize,
+    pub failed_node_receipt_count: usize,
+    pub tool_spawn_count: usize,
+    pub provider_spawn_count: usize,
+    pub subagent_spawn_count: usize,
+    pub process_spawn_count: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub state_home: Option<SmokeRuntimeStateHome>,
+    pub diagnostics: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub execution_result: Option<GraphLoopExecutionResult>,
+}
+
+/// State-home paths resolved by a runtime smoke scenario.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct SmokeRuntimeStateHome {
+    pub home: PathBuf,
+    pub source: RuntimeHomeSource,
+    pub directory_count: usize,
+    pub session_path: PathBuf,
+    pub memory_shard_path: PathBuf,
+    pub receipt_path: PathBuf,
+    pub graph_cache_path: PathBuf,
 }

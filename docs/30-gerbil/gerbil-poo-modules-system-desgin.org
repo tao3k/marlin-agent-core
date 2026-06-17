@@ -347,8 +347,57 @@ The current implementation already has the lower-level pieces:
 - =marlinEvalModules= returns scalar evaluation receipts.
 - =marlinModuleSystemPresentation= returns the current complete user-facing
   presentation receipt.
+- =marlinPolicyPack= and =marlinDefaultPolicyPack= package a furnished policy
+  object graph.
+- =marlinPolicyPackInventory= lists the furniture: family ids, object ids,
+  disabled ids, hook ids, and surgery conflict counts.
+- =marlinPolicyPackPresentation= turns the furnished pack into a stable native
+  projection payload.
+- =marlinPolicyProjection= wraps that payload in the fixed Scheme -> Rust
+  =PolicyProjection<T>= envelope.
 
-The next layer should package those pieces as named prefabs.
+The real debug CLI now exposes this for the debug prefab path through
+=marlin gerbil policy-receipt=. It can also load a user-authored =.ss= entrypoint
+with =--entrypoint= and call a user-selected emission expression with =--call=,
+while Rust still only decodes typed projection facts.
+
+** PolicyProjection<T>
+
+The fixed handoff model is:
+
+#+begin_src text
+Scheme module output:
+  PolicyProjection<T>
+
+Rust receives:
+  T = typed protocol struct
+  receipt = validation/evaluation receipt
+  catalog ids = existing Rust handlers only
+#+end_src
+
+The key boundary is that Rust does not know how the policy was merged. Rust only
+knows whether the typed projection is valid, whether the handler ids exist,
+whether the budget is acceptable, whether the graph is valid, and whether the
+receipt is replayable.
+
+=marlinPolicyProjection= is the Gerbil-side envelope for this contract. It names:
+
+- =module_evaluation_receipt_kind=;
+- =policy_projection_receipt_kind=;
+- =native_projection_payload_kind=;
+- =budget_receipt_owner=;
+- =catalog_resolution_receipt_owner=;
+- =import_graph_owner=;
+- =option_merge_owner=;
+- =extension_composition_owner=;
+- =policy_composition_owner=;
+- =runtime_lifecycle_owner=.
+
+In the furnished-house model, =marlinPolicyPackPresentation= is the inspection
+report for the house and its furniture, while =marlinPolicyProjection= is the
+sealed folder handed to Rust. Rust can inspect the folder, validate typed facts,
+and look up existing catalog handlers. It still cannot parse Scheme source or
+manufacture handlers from Scheme text.
 
 ** Required Receipts
 
@@ -418,8 +467,12 @@ Nix-style escape-hatch complexity.
 Current implementation:
 
 - =crates/marlin-gerbil-scheme/gerbil/src/modules/lib.ss=
-  owns =marlinModules=, =marlinModuleCatalog=, =marlinEvalModules=, and
-  =marlinModuleSystemPresentation=.
+  owns the public facade for =marlinModules=, =marlinModuleCatalog=,
+  =marlinEvalModules=, =marlinModuleSystemPresentation=, prefab packs, policy
+  object surgery, and =marlinPolicyProjection=.
+- =crates/marlin-gerbil-scheme/gerbil/src/modules/policy-pack.ss=
+  owns the furnished pack constructor, default pack, pack catalog, inventory,
+  presentation payload, and projection envelope.
 - =crates/marlin-gerbil-scheme/gerbil/src/marlin/deck-runtime-debug-policy-extension.ss=
   owns the debug policy extension object and debug policy module presentation.
 - =crates/marlin-gerbil-scheme/gerbil/src/marlin/deck-runtime-policy-receipt-gate-cli.ss=
@@ -433,16 +486,17 @@ Current implementation:
 
 ** Next Implementation Slice
 
-The next code slice should implement the prefab layer on top of the current
-module system:
+The prefab layer, debug prefab projection path, and user-authored =.ss=
+entrypoint loader are now present. The next code slice should make the loaded
+file carry a complete custom policy-pack fact set instead of wrapping the debug
+prefab emission:
 
-- =marlinPolicyPack= constructor.
-- =defmarlin-policy-pack= macro for upstream packs.
-- =marlinPackCatalog= for named pack discovery.
-- =marlin-add-object=, =marlin-remove-object=, =marlin-disable-object=, and
-  =marlin-replace-object= typed operation objects.
-- =marlinPolicyPackPresentation= receipt extending
-  =marlinModuleSystemPresentation= with object surgery facts.
+- a fixture/example where the loaded =.ss= defines and emits its own pack id,
+  object ids, operation receipts, projection chain, owner split, and timing;
+- a performance receipt that separates process startup, file load, module
+  evaluation, projection construction, and policy loop time;
+- Rust typed structs for the loaded =PolicyProjection<T>= facts after the
+  custom-pack receipt shape is stable;
 - A maintained prefab example, likely
   =examples/user-interface-policy-pack=, that starts from an upstream pack and
   demonstrates Level 0 through Level 3 customization.
@@ -451,6 +505,7 @@ The acceptance gate should include:
 
 - direct =gxi= tests for pack construction and object surgery;
 - the existing =user-interface-module-config= example;
-- =marlin gerbil policy-receipt= showing the pack presentation facts through
-  the real debug CLI;
+- =marlin gerbil policy-receipt= showing the pack presentation and
+  =policy_projection_*= facts through the real debug CLI, including the
+  =--entrypoint= / =--call= path;
 - =asp gerbil-scheme check --changed .= and full provider check.

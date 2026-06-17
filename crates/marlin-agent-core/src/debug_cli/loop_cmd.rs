@@ -16,10 +16,11 @@ use super::{
     graph::parse_graph_input,
     io::{
         block_on, read_input, read_iteration_reports_from_path, read_reports_from_store,
-        write_loop_reports,
+        write_loop_reports, write_loop_reports_to_path,
     },
     loop_usage,
     receipts::{LoopInspectReceipt, LoopReplayReceipt, LoopRunReceipt},
+    state_home::resolve_runtime_state_layout,
 };
 
 pub(super) fn dispatch_loop(cursor: &mut ArgCursor) -> Result<MarlinCliResult, String> {
@@ -32,14 +33,10 @@ pub(super) fn dispatch_loop(cursor: &mut ArgCursor) -> Result<MarlinCliResult, S
             let options = LoopRunOptions::parse(cursor)?;
             let request = read_loop_run_request(options.input.as_deref(), options.max_iterations)?;
             let catalog = read_debug_executor_catalog(options.catalog.as_deref())?;
-            let requested_run_id = request.initial_request.run_id.clone();
+            let requested_run_id = RunId::new(request.initial_request.run_id.clone());
             let output = block_on(run_loop_controller(request, catalog))?;
-            let report_path = options
-                .store
-                .as_deref()
-                .map(|store| write_loop_reports(store, &output.reports))
-                .transpose()?
-                .flatten();
+            let report_path =
+                write_loop_reports_for_options(&options, &requested_run_id, &output.reports)?;
             let receipt = loop_run_receipt(
                 requested_run_id,
                 output.reports,
@@ -56,7 +53,7 @@ pub(super) fn dispatch_loop(cursor: &mut ArgCursor) -> Result<MarlinCliResult, S
         }
         "inspect" => {
             let options = LoopInspectOptions::parse(cursor)?;
-            let (report_path, reports) = read_reports_from_store(&options.store, &options.run_id)?;
+            let (report_path, reports) = read_reports_for_options(&options)?;
             let receipt = inspect_reports(&options.run_id, &report_path, &reports);
             Ok(MarlinCliResult::success_json(&receipt))
         }
@@ -66,6 +63,41 @@ pub(super) fn dispatch_loop(cursor: &mut ArgCursor) -> Result<MarlinCliResult, S
             loop_usage()
         )),
     }
+}
+
+fn write_loop_reports_for_options(
+    options: &LoopRunOptions,
+    run_id: &RunId,
+    reports: &[GraphLoopIterationReport],
+) -> Result<Option<PathBuf>, String> {
+    if options.no_store {
+        return Ok(None);
+    }
+    if let Some(store) = options.store.as_deref() {
+        return write_loop_reports(store, reports);
+    }
+
+    let layout = resolve_runtime_state_layout(options.home.clone())?;
+    let path = layout
+        .receipt_path(run_id.as_str())
+        .ok_or_else(|| "runtime state home does not include receipts directory".to_owned())?
+        .path;
+    write_loop_reports_to_path(&path, reports)
+}
+
+fn read_reports_for_options(
+    options: &LoopInspectOptions,
+) -> Result<(PathBuf, Vec<GraphLoopIterationReport>), String> {
+    if let Some(store) = options.store.as_deref() {
+        return read_reports_from_store(store, &options.run_id);
+    }
+
+    let layout = resolve_runtime_state_layout(options.home.clone())?;
+    let path = layout
+        .receipt_path(options.run_id.as_str())
+        .ok_or_else(|| "runtime state home does not include receipts directory".to_owned())?
+        .path;
+    read_iteration_reports_from_path(&path).map(|reports| (path, reports))
 }
 
 fn read_loop_run_request(
@@ -123,7 +155,7 @@ async fn run_loop_controller(
 }
 
 fn loop_run_receipt(
-    requested_run_id: String,
+    requested_run_id: RunId,
     reports: Vec<GraphLoopIterationReport>,
     report_path: Option<PathBuf>,
     runtime_observation: Option<GraphLoopRunObservation>,
@@ -133,7 +165,7 @@ fn loop_run_receipt(
         run_id: RunId::new(
             terminal
                 .map(|report| report.execution_result.snapshot.run_id.clone())
-                .unwrap_or(requested_run_id),
+                .unwrap_or_else(|| requested_run_id.into_string()),
         ),
         report_path,
         iteration_count: reports.len(),

@@ -7,7 +7,7 @@ use super::{
 use async_trait::async_trait;
 use marlin_agent_protocol::{
     GraphQueryRequest, GraphQueryResponse, ProjectMemoryContextFact, ProjectMemoryContextPack,
-    ProjectMemoryRecallRequest,
+    ProjectMemoryRecallRequest, ProjectRuntimeToolCapabilityCard,
 };
 use marlin_gerbil_ir::ReleaseTopologySpec;
 use marlin_org_model::{OrgNode, OrgNodeId, OrgSourceSpan};
@@ -257,6 +257,21 @@ impl MemoryOrgWorkspace {
         Ok(response)
     }
 
+    /// Query typed tool capability context cards from loaded Org nodes.
+    pub fn query_tool_capability_cards(
+        &self,
+        receipt_id: impl Into<String>,
+        request: GraphQueryRequest,
+    ) -> WorkspaceResult<Vec<ProjectRuntimeToolCapabilityCard>> {
+        let response = self.query_tool_capability_graph(receipt_id, request)?;
+        let nodes = self.read_nodes()?;
+        Ok(response
+            .matches
+            .into_iter()
+            .map(|query_match| tool_capability_context_card(query_match, &nodes))
+            .collect())
+    }
+
     /// Query compact session boundary facts from loaded Org nodes.
     pub fn query_session_graph(
         &self,
@@ -310,6 +325,16 @@ impl MemoryOrgWorkspace {
             .collect::<Vec<_>>();
         self.load_documents_with_discovered_contracts(&documents)?;
 
+        self.recall_project_memory_from_loaded_nodes(context_pack_id, receipt_id, request)
+    }
+
+    /// Recall project memory from the currently loaded Org nodes.
+    pub fn recall_project_memory_from_loaded_nodes(
+        &self,
+        context_pack_id: impl Into<String>,
+        receipt_id: impl Into<String>,
+        request: ProjectMemoryRecallRequest,
+    ) -> WorkspaceResult<ProjectMemoryContextPack> {
         let response =
             self.query_project_memory_graph(receipt_id, request.as_graph_query_request())?;
         let mut pack = ProjectMemoryContextPack::new(context_pack_id, request)
@@ -386,6 +411,29 @@ impl MemoryOrgWorkspace {
         self.query_tool_capability_graph(receipt_id, request)
     }
 
+    /// Discover tool capability roots from a store and return typed cards.
+    pub fn query_tool_capability_cards_from_store<S>(
+        &self,
+        query: ToolCapabilityGraphStoreQuery<'_, S>,
+    ) -> WorkspaceResult<Vec<ProjectRuntimeToolCapabilityCard>>
+    where
+        S: OrgSourceStore,
+    {
+        let ToolCapabilityGraphStoreQuery {
+            receipt_id,
+            request,
+            store,
+            candidates,
+        } = query;
+        let roots = discover_project_roots(store, candidates);
+        let documents = roots
+            .iter()
+            .map(|root| OrgDocument::new(root.document.clone(), root.body.clone()))
+            .collect::<Vec<_>>();
+        self.load_documents_with_discovered_contracts(&documents)?;
+        self.query_tool_capability_cards(receipt_id, request)
+    }
+
     /// Discover topology roots from a store and run a compact graph query.
     pub fn query_topology_graph_from_store<S>(
         &self,
@@ -441,6 +489,56 @@ fn project_memory_source_span(
         .get(&OrgNodeId::new(source_anchor_id))
         .and_then(|node| node.source.as_ref())
         .map(render_org_source_span)
+}
+
+fn tool_capability_context_card(
+    query_match: marlin_agent_protocol::GraphQueryMatch,
+    nodes: &BTreeMap<OrgNodeId, OrgNode>,
+) -> ProjectRuntimeToolCapabilityCard {
+    let mut card = ProjectRuntimeToolCapabilityCard::new(query_match.clone());
+    if let Some(node) = query_match
+        .source_anchor_id
+        .as_ref()
+        .and_then(|source_anchor_id| nodes.get(&OrgNodeId::new(source_anchor_id.as_str())))
+    {
+        for receipt_id in
+            requirement_values(node, tool_graph::TOOL_CAPABILITY_REQUIRED_RECEIPTS_PROPERTY)
+        {
+            card = card.with_required_receipt(receipt_id);
+        }
+        for capability_id in requirement_values(
+            node,
+            tool_graph::TOOL_CAPABILITY_REQUIRED_CAPABILITIES_PROPERTY,
+        ) {
+            card = card.with_required_capability(capability_id);
+        }
+        for requirement_id in requirement_values(
+            node,
+            tool_graph::TOOL_CAPABILITY_ISOLATION_REQUIREMENTS_PROPERTY,
+        ) {
+            card = card.with_isolation_requirement(requirement_id);
+        }
+        for requirement_id in requirement_values(
+            node,
+            tool_graph::TOOL_CAPABILITY_BACKEND_REQUIREMENTS_PROPERTY,
+        ) {
+            card = card.with_backend_requirement(requirement_id);
+        }
+    }
+    card
+}
+
+fn requirement_values(node: &OrgNode, property_key: &str) -> Vec<String> {
+    node.properties
+        .get(property_key)
+        .into_iter()
+        .flat_map(|value| {
+            value.split(|character: char| character.is_whitespace() || character == ',')
+        })
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
+        .collect()
 }
 
 fn render_org_source_span(source: &OrgSourceSpan) -> String {

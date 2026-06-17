@@ -3,8 +3,9 @@
 use serde::{Deserialize, Serialize};
 
 use super::ids::{
-    GraphQueryLimit, GraphQueryScoreBasisPoints, ProjectRuntimeAgentId, ProjectRuntimeBranchRef,
-    ProjectRuntimeContentId, ProjectRuntimeContextPackId, ProjectRuntimeEvidenceId,
+    GraphQueryLimit, GraphQueryScoreBasisPoints, ProjectRuntimeAgentId,
+    ProjectRuntimeBackendRequirementId, ProjectRuntimeBranchRef, ProjectRuntimeContentId,
+    ProjectRuntimeContextPackId, ProjectRuntimeEvidenceId, ProjectRuntimeIsolationRequirementId,
     ProjectRuntimeMemoryId, ProjectRuntimeProjectId, ProjectRuntimeReceiptId,
     ProjectRuntimeRootSessionId, ProjectRuntimeSessionId, ProjectRuntimeSourceAnchorId,
     ProjectRuntimeSourceSpanRef, ProjectRuntimeToolCapabilityId, ProjectRuntimeWorkspaceId,
@@ -616,6 +617,56 @@ impl GraphQueryResponse {
 
     pub fn with_match(mut self, query_match: GraphQueryMatch) -> Self {
         self.matches.push(query_match);
+        self
+    }
+}
+
+/// Tool-specific context card consumed before backend policy selection.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct ProjectRuntimeToolCapabilityCard {
+    pub graph_match: GraphQueryMatch,
+    #[serde(default)]
+    pub required_receipt_ids: Vec<ProjectRuntimeReceiptId>,
+    #[serde(default)]
+    pub required_capability_ids: Vec<ProjectRuntimeToolCapabilityId>,
+    #[serde(default)]
+    pub isolation_requirement_ids: Vec<ProjectRuntimeIsolationRequirementId>,
+    #[serde(default)]
+    pub backend_requirement_ids: Vec<ProjectRuntimeBackendRequirementId>,
+}
+
+impl ProjectRuntimeToolCapabilityCard {
+    pub fn new(graph_match: GraphQueryMatch) -> Self {
+        Self {
+            graph_match,
+            required_receipt_ids: Vec::new(),
+            required_capability_ids: Vec::new(),
+            isolation_requirement_ids: Vec::new(),
+            backend_requirement_ids: Vec::new(),
+        }
+    }
+
+    pub fn with_required_receipt(mut self, receipt_id: impl Into<String>) -> Self {
+        self.required_receipt_ids
+            .push(ProjectRuntimeReceiptId::new(receipt_id));
+        self
+    }
+
+    pub fn with_required_capability(mut self, capability_id: impl Into<String>) -> Self {
+        self.required_capability_ids
+            .push(ProjectRuntimeToolCapabilityId::new(capability_id));
+        self
+    }
+
+    pub fn with_isolation_requirement(mut self, requirement_id: impl Into<String>) -> Self {
+        self.isolation_requirement_ids
+            .push(ProjectRuntimeIsolationRequirementId::new(requirement_id));
+        self
+    }
+
+    pub fn with_backend_requirement(mut self, requirement_id: impl Into<String>) -> Self {
+        self.backend_requirement_ids
+            .push(ProjectRuntimeBackendRequirementId::new(requirement_id));
         self
     }
 }

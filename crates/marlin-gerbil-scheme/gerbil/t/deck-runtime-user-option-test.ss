@@ -131,6 +131,21 @@
               receipt)
              => 6))))
 
+;;; Boundary: Parser-visible call witness links the schema adapter to t/ tests.
+;; MarlinResult <- MarlinInput
+(def (marlin-deck-runtime-option-schema-adapter-call-witness value)
+  (MarlinDeckRuntimeOptionSchema value))
+
+;;; Boundary: Parser-visible call witness links the config adapter to t/ tests.
+;; MarlinResult <- MarlinInput
+(def (marlin-deck-runtime-option-config-adapter-call-witness value)
+  (MarlinDeckRuntimeOptionConfig value))
+
+;;; Boundary: Parser-visible call witness links the receipt adapter to t/ tests.
+;; MarlinResult <- MarlinInput
+(def (marlin-deck-runtime-option-validation-receipt-adapter-call-witness value)
+  (MarlinDeckRuntimeOptionValidationReceipt value))
+
 ;;; Boundary: Adapter types are intentionally mentioned in the generic witness owner.
 ;; MarlinResult <- MarlinInput
 (table-contract-tests

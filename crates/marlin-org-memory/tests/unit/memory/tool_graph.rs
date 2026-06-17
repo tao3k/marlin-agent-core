@@ -4,8 +4,10 @@ use marlin_agent_protocol::{
     GraphQueryContext, GraphQueryFamily, GraphQueryRelationshipFact, GraphQueryRequest,
 };
 use marlin_org_memory::{
-    MemoryOrgWorkspace, TOOL_CAPABILITY_CONTRACT_VALIDATED_PROPERTY, TOOL_CAPABILITY_ID_PROPERTY,
-    TOOL_CAPABILITY_PROJECT_ID_PROPERTY, TOOL_CAPABILITY_REQUIRED_RECEIPTS_PROPERTY,
+    MemoryOrgWorkspace, TOOL_CAPABILITY_BACKEND_REQUIREMENTS_PROPERTY,
+    TOOL_CAPABILITY_CONTRACT_VALIDATED_PROPERTY, TOOL_CAPABILITY_ID_PROPERTY,
+    TOOL_CAPABILITY_ISOLATION_REQUIREMENTS_PROPERTY, TOOL_CAPABILITY_PROJECT_ID_PROPERTY,
+    TOOL_CAPABILITY_REQUIRED_CAPABILITIES_PROPERTY, TOOL_CAPABILITY_REQUIRED_RECEIPTS_PROPERTY,
     TOOL_CAPABILITY_ROOT_SESSION_ID_PROPERTY, TOOL_CAPABILITY_WORKSPACE_ID_PROPERTY,
     TOOL_CAPABILITY_WORKTREE_ID_PROPERTY, ToolCapabilityGraphStoreQuery,
 };
@@ -150,6 +152,94 @@ Source path marker: rustfmt.org
         query_match
             .relationship
             .has_fact(GraphQueryRelationshipFact::ContractValidated)
+    );
+}
+
+#[test]
+fn tool_capability_cards_project_typed_backend_requirements() {
+    let mut node = tool_node(ToolNodeFixture {
+        id: "tool-node:rustfmt-card",
+        title: "Rust formatter card",
+        capability_id: "tool:rustfmt",
+        project_id: "project-alpha",
+        workspace_id: "workspace-a",
+        worktree_id: "worktree-a",
+        root_session_id: "root-a",
+        contract_validated: true,
+    });
+    node.properties.insert(
+        TOOL_CAPABILITY_REQUIRED_RECEIPTS_PROPERTY.to_string(),
+        "receipt:format-check, receipt:workspace-clean".to_string(),
+    );
+    node.properties.insert(
+        TOOL_CAPABILITY_REQUIRED_CAPABILITIES_PROPERTY.to_string(),
+        "tool:workspace-status".to_string(),
+    );
+    node.properties.insert(
+        TOOL_CAPABILITY_ISOLATION_REQUIREMENTS_PROPERTY.to_string(),
+        "isolation:write-worktree".to_string(),
+    );
+    node.properties.insert(
+        TOOL_CAPABILITY_BACKEND_REQUIREMENTS_PROPERTY.to_string(),
+        "backend:process-sandbox backend:macos-compatible".to_string(),
+    );
+    let workspace = MemoryOrgWorkspace::from_nodes([node]);
+
+    let request = GraphQueryRequest::new(
+        GraphQueryContext::new("project-alpha").with_workspace("workspace-a"),
+        GraphQueryFamily::Tool,
+        "rust formatter card",
+    )
+    .with_tool_capability("tool:rustfmt")
+    .with_limit(5);
+
+    let cards = workspace
+        .query_tool_capability_cards("receipt:tool-card-query", request)
+        .expect("tool card query succeeds");
+
+    assert_eq!(cards.len(), 1);
+    let card = &cards[0];
+    assert_eq!(
+        card.graph_match
+            .tool_capability_id
+            .as_ref()
+            .expect("tool capability")
+            .as_str(),
+        "tool:rustfmt"
+    );
+    assert_eq!(
+        card.graph_match
+            .source_anchor_id
+            .as_ref()
+            .expect("source anchor")
+            .as_str(),
+        "tool-node:rustfmt-card"
+    );
+    let required_receipts = card
+        .required_receipt_ids
+        .iter()
+        .map(|receipt_id| receipt_id.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        required_receipts,
+        ["receipt:format-check", "receipt:workspace-clean"]
+    );
+    assert_eq!(
+        card.required_capability_ids[0].as_str(),
+        "tool:workspace-status"
+    );
+    assert_eq!(
+        card.isolation_requirement_ids[0].as_str(),
+        "isolation:write-worktree"
+    );
+    let backend_requirements = card
+        .backend_requirement_ids
+        .iter()
+        .map(|requirement_id| requirement_id.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        backend_requirements,
+        ["backend:process-sandbox", "backend:macos-compatible"]
     );
 }
 

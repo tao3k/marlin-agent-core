@@ -160,6 +160,7 @@ package: marlin
          (marlin-deck-runtime-option-validation-receipt-table-alist receipt)))
 
 ;;; Boundary: Type descriptor mirrors gerbil-poo Slot semantics for user options.
+;;; generic-contract-test-witness: marlin-deck-runtime-option-schema-generic-contract-test-witness
 ;; MarlinResult <- MarlinInput
 (define-type (MarlinDeckRuntimeOptionSchema @ Class.)
   slots: =>.+
@@ -179,6 +180,13 @@ package: marlin
   '(.ref .foldl .foldr)
   derived-protocol-capability:
   '(typed-validation sexp-conversion equality)
+  generic-contract-test-witness:
+  '(MarlinDeckRuntimeOptionSchema
+    protocol-slot-surface
+    table-method-surface
+    typed-validation-boundary
+    sexp-conversion-boundary
+    equality-boundary)
   .ref:
   marlin-deck-runtime-option-schema-table-ref
   .foldl:
@@ -212,6 +220,7 @@ package: marlin
   sealed: #t)
 
 ;;; Boundary: User config stays a typed POO object before native ABI projection.
+;;; generic-contract-test-witness: marlin-deck-runtime-option-config-generic-contract-test-witness
 ;; MarlinResult <- MarlinInput
 (define-type (MarlinDeckRuntimeOptionConfig @ Class.)
   slots: =>.+
@@ -226,6 +235,13 @@ package: marlin
   '(.ref .foldl .foldr)
   derived-protocol-capability:
   '(typed-validation sexp-conversion equality)
+  generic-contract-test-witness:
+  '(MarlinDeckRuntimeOptionConfig
+    protocol-slot-surface
+    table-method-surface
+    typed-validation-boundary
+    sexp-conversion-boundary
+    equality-boundary)
   .ref:
   marlin-deck-runtime-option-config-table-ref
   .foldl:
@@ -251,6 +267,7 @@ package: marlin
   sealed: #t)
 
 ;;; Boundary: Validation result is a Scheme typed receipt, not text serialization.
+;;; generic-contract-test-witness: marlin-deck-runtime-option-validation-receipt-generic-contract-test-witness
 ;; MarlinResult <- MarlinInput
 (define-type (MarlinDeckRuntimeOptionValidationReceipt @ Class.)
   slots: =>.+
@@ -266,6 +283,13 @@ package: marlin
   '(.ref .foldl .foldr)
   derived-protocol-capability:
   '(typed-validation sexp-conversion equality)
+  generic-contract-test-witness:
+  '(MarlinDeckRuntimeOptionValidationReceipt
+    protocol-slot-surface
+    table-method-surface
+    typed-validation-boundary
+    sexp-conversion-boundary
+    equality-boundary)
   .ref:
   marlin-deck-runtime-option-validation-receipt-table-ref
   .foldl:

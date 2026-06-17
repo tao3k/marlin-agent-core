@@ -26,6 +26,10 @@ fn debug_cli_gerbil_policy_receipt_runs_scheme_policy_engine() {
     assert_eq!(summary["status"], "ok");
     assert_eq!(summary["command"], "gerbil policy-receipt");
     assert_eq!(
+        summary["call_expr"],
+        "(emit-policy-receipt-gate-cli-report)"
+    );
+    assert_eq!(
         summary["entrypoint"],
         "src/marlin/deck-runtime-policy-receipt-gate-cli.ss"
     );
@@ -190,6 +194,65 @@ fn debug_cli_gerbil_policy_receipt_runs_scheme_policy_engine() {
     assert_eq!(summary["policy_pack_rust_parses_scheme_source"], false);
     assert_eq!(summary["policy_pack_rust_handler_manufactured"], false);
     assert_eq!(
+        summary["policy_projection_kind"],
+        "marlin.modules.policy-projection.v1"
+    );
+    assert_eq!(
+        summary["policy_projection_pack_id"],
+        "debug-policy-prefab-pack"
+    );
+    assert_eq!(
+        summary["policy_projection_chain_kind"],
+        "marlin.modules.projection-chain.v1"
+    );
+    assert_eq!(
+        summary["policy_projection_module_evaluation_receipt_kind"],
+        "marlin-deck-runtime.user-module-evaluation.v1"
+    );
+    assert_eq!(
+        summary["policy_projection_policy_projection_receipt_kind"],
+        "marlin.modules.policy-projection.v1"
+    );
+    assert_eq!(
+        summary["policy_projection_native_projection_payload_kind"],
+        "marlin.modules.policy-pack-presentation.v1"
+    );
+    assert_eq!(
+        summary["policy_projection_native_projection_payload_owner"],
+        "rust"
+    );
+    assert_eq!(summary["policy_projection_budget_receipt_owner"], "rust");
+    assert_eq!(
+        summary["policy_projection_catalog_resolution_receipt_owner"],
+        "rust"
+    );
+    assert_eq!(
+        summary["policy_projection_import_graph_owner"],
+        "gerbil-module-system"
+    );
+    assert_eq!(
+        summary["policy_projection_option_merge_owner"],
+        "gerbil-poo"
+    );
+    assert_eq!(
+        summary["policy_projection_extension_composition_owner"],
+        "gerbil-poo"
+    );
+    assert_eq!(
+        summary["policy_projection_policy_composition_owner"],
+        "gerbil-poo"
+    );
+    assert_eq!(summary["policy_projection_runtime_lifecycle_owner"], "rust");
+    assert_eq!(
+        summary["policy_projection_rust_parses_scheme_source"],
+        false
+    );
+    assert_eq!(
+        summary["policy_projection_rust_handler_manufactured"],
+        false
+    );
+    assert_eq!(summary["policy_projection_replayable"], true);
+    assert_eq!(
         summary["policy_substrate_gate_kind"],
         "marlin.modules.policy-substrate-gate.v1"
     );
@@ -267,4 +330,59 @@ fn debug_cli_gerbil_policy_receipt_runs_scheme_policy_engine() {
     );
     assert_eq!(summary["dynamic_hook_selection_source"], "extension-action");
     assert_eq!(summary["dynamic_hook_selection_selector"], "#f");
+}
+
+#[test]
+fn debug_cli_gerbil_policy_receipt_loads_user_entrypoint_call() {
+    let gxi = Path::new("/usr/local/bin/gxi");
+    let package_root = Path::new("crates/marlin-gerbil-scheme/gerbil");
+    if !gxi.exists() || !package_root.exists() {
+        return;
+    }
+
+    let result = run_marlin_cli_from_args([
+        "gerbil",
+        "policy-receipt",
+        "--gxi",
+        gxi.to_str().expect("gxi path"),
+        "--package-root",
+        package_root.to_str().expect("package root"),
+        "--entrypoint",
+        "t/fixtures/custom-policy-receipt-entrypoint.ss",
+        "--call",
+        "(emit-user-authored-policy-receipt-gate-cli-report)",
+        "--iterations",
+        "3",
+    ]);
+
+    assert_eq!(result.status, 0, "{}", result.stderr);
+    let summary: Value = serde_json::from_str(&result.stdout).expect("gerbil policy summary");
+    assert_eq!(summary["status"], "ok");
+    assert_eq!(
+        summary["entrypoint"],
+        "t/fixtures/custom-policy-receipt-entrypoint.ss"
+    );
+    assert_eq!(
+        summary["call_expr"],
+        "(emit-user-authored-policy-receipt-gate-cli-report)"
+    );
+    assert_eq!(
+        summary["policy_projection_kind"],
+        "marlin.modules.policy-projection.v1"
+    );
+    assert_eq!(
+        summary["policy_projection_native_projection_payload_kind"],
+        "marlin.modules.policy-pack-presentation.v1"
+    );
+    assert_eq!(
+        summary["policy_projection_policy_composition_owner"],
+        "gerbil-poo"
+    );
+    assert_eq!(summary["policy_projection_budget_receipt_owner"], "rust");
+    assert_eq!(
+        summary["policy_projection_catalog_resolution_receipt_owner"],
+        "rust"
+    );
+    assert_eq!(summary["policy_projection_replayable"], true);
+    assert_eq!(summary["iterations"], 3);
 }

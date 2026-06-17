@@ -6,6 +6,7 @@ mod activation;
 mod import;
 mod refresh;
 mod resolver;
+mod state_storage;
 mod working_copy;
 
 pub use activation::{
@@ -21,10 +22,12 @@ pub use refresh::{
     RuntimeEnvironmentRefreshRequest, RuntimeEnvironmentRefreshResult, RuntimeEnvironmentRefresher,
 };
 pub use resolver::{
-    PROJECT_CONFIG_PRECEDENCE, RuntimeEnvironmentError, RuntimeEnvironmentRequest,
-    RuntimeEnvironmentResolver, SESSION_FLAGS_CONFIG_PRECEDENCE, SUB_AGENT_CONFIG_PRECEDENCE,
-    SYSTEM_CONFIG_PRECEDENCE, SubAgentEnvironmentRequest, USER_CONFIG_PRECEDENCE,
+    HOST_HOME_ENV_VAR, PROJECT_CONFIG_PRECEDENCE, RuntimeEnvironmentError,
+    RuntimeEnvironmentRequest, RuntimeEnvironmentResolver, SESSION_FLAGS_CONFIG_PRECEDENCE,
+    SUB_AGENT_CONFIG_PRECEDENCE, SYSTEM_CONFIG_PRECEDENCE, SubAgentEnvironmentRequest,
+    USER_CONFIG_PRECEDENCE,
 };
+pub use state_storage::RuntimeStateStorageInitializer;
 pub use working_copy::{
     ProcessWorkingCopyCommandRunner, ProcessWorkingCopyGitRepositoryResolver,
     WorkingCopyCommandOutput, WorkingCopyCommandRunner, WorkingCopyGitRepositoryResolver,

@@ -156,17 +156,19 @@ Focused graph-loop verification: =cargo test -p marlin-agent-runtime graph_loop 
 
 ** Slice C: Org-backed Project Memory Graph
 Owners: =marlin-org-memory= and =marlin-org-store=.
-Status: Partially implemented on 2026-06-15 for the first in-memory Org
+Status: Partially implemented on 2026-06-16 for the first in-memory Org
 node projection in =marlin-org-memory=. Typed root discovery,
 =ProjectMemoryContextFact= source/evidence projection, matched source-anchor
-propagation, and the first contract-indexed frontier over tags, non-scope
-properties, evidence links, and source spans have landed. =MemoryOrgWorkspace=
-now has a named =ProjectMemoryStoreRecall= store-backed recall entrypoint that
-discovers typed roots before building the frontier, plus a named
-=ProjectMemoryGraphStoreQuery= entrypoint used by the debug CLI for
-store-backed graph query execution. The remaining gap is migrating any remaining
-higher-level callers away from debug-style explicit shard plumbing where they
-intend production recall.
+propagation, duplicate-memory-id source-anchor regressions, and the first
+contract-indexed frontier over tags, non-scope properties, evidence links, and
+source spans have landed. =MemoryOrgWorkspace= now has named
+=ProjectMemoryStoreRecall= and =recall_project_memory_from_loaded_nodes=
+entrypoints: store-backed recall discovers typed roots before building the
+frontier, while loaded-node recall bypasses store discovery so source projection
+failures can be tested separately. =ProjectMemoryGraphStoreQuery= remains the
+named entrypoint used by the debug CLI for store-backed graph query execution.
+The remaining gap is migrating any remaining higher-level callers away from
+debug-style explicit shard plumbing where they intend production recall.
 
 Add an internal read model over existing Org nodes:
 
@@ -216,15 +218,19 @@ fixture shape, and use =--org-memory-store-root= plus =--org-memory-root= for
 store-backed graph query checks. Production recall should continue carrying
 matched Org node identity from graph projection into context-pack assembly, then
 use that identity to project source spans, evidence handles, and backlinks
-without searching all loaded nodes by =MEMORY_ID=.
+without searching all loaded nodes by =MEMORY_ID=. Missing source spans are a
+loaded-node projection state: the fact and source anchor remain present while
+=source_span= stays empty, so tests can distinguish source projection gaps from
+store discovery failures.
 
 Verification:
 #+begin_example
 rtk run 'direnv exec . cargo test -p marlin-org-memory'
 #+end_example
-Result: 17 =marlin-org-memory= unit tests passed, including
-=project_memory_graph= and =project_recall= coverage.
-Focused verification: =cargo test -p marlin-org-memory --test unit_test= passed 17 tests.
+Result: 30 =marlin-org-memory= unit tests passed, including
+=project_memory_graph= source-anchor coverage and =project_recall=
+missing-source-span coverage.
+Focused verification: =cargo test -p marlin-org-memory --test unit_test= passed 30 tests.
 
 ** Slice D: Scoped Graph Query Read Model
 Owners: =marlin-agent-protocol=, =marlin-org-memory=, =marlin-agent-core=.
@@ -311,9 +317,11 @@ the touched package combination passed 334 tests with 1 ignored live gate.
 
 ** Slice E: Tool Capability Cards
 Owners: =marlin-agent-protocol= and =marlin-org-memory=. Status: Implemented
-on 2026-06-15 for the first Org-backed =GraphQueryFamily::Tool= read family,
-typed tool capability id projection, required receipt frontier matching, debug
-CLI summary projection, and store-backed tool capability root query.
+through the typed tool-card requirement envelope on 2026-06-16. The first
+Org-backed =GraphQueryFamily::Tool= read family, typed tool capability id
+projection, required receipt frontier matching, debug CLI summary projection,
+store-backed tool capability root query, and =ProjectRuntimeToolCapabilityCard=
+requirement projection have landed.
 
 Add =agent.tool.v1= protocol shape:
 
@@ -329,7 +337,11 @@ ToolCapabilityCard
   source_span
 #+end_example
 
-Sandbox requirements should be represented only as future =required_receipts= or capability tags in this slice. Do not invoke sandbox backend selection.
+Sandbox requirements are represented as typed tool-card requirements in this
+slice. Do not invoke sandbox backend selection here: later sandbox policy
+consumes =required_receipt_ids=, =required_capability_ids=,
+=isolation_requirement_ids=, and =backend_requirement_ids= from the card
+envelope.
 
 Tests:
 
@@ -342,11 +354,15 @@ Implementation note: =GraphQueryFamily::Tool= and
 =MemoryOrgWorkspace::query_tool_capability_graph= and
 =query_tool_capability_graph_from_store=. Tool capability cards are discovered
 from structured Org nodes with =TOOL_CAPABILITY_ID=, =PROJECT_ID=, optional
-workspace/worktree/session provenance, =REQUIRED_RECEIPTS=, links, tags, source
-spans, and =CONTRACT_VALIDATED=. The implementation returns compact
-=GraphQueryMatch= values with =tool_capability_id=, source anchor, relationship
-facts, and score basis points; it does not execute the tool or select a sandbox
-backend.
+workspace/worktree/session provenance, =REQUIRED_RECEIPTS=,
+=REQUIRED_CAPABILITIES=, =ISOLATION_REQUIREMENTS=, =BACKEND_REQUIREMENTS=,
+links, tags, source spans, and =CONTRACT_VALIDATED=. The graph query still
+returns compact =GraphQueryMatch= values with =tool_capability_id=, source
+anchor, relationship facts, and score basis points; =query_tool_capability_cards=
+and =query_tool_capability_cards_from_store= wrap those matches in
+=ProjectRuntimeToolCapabilityCard= values for runtime-read and later sandbox
+policy consumption. The implementation does not execute the tool or select a
+sandbox backend.
 
 Verification:
 #+begin_example
@@ -455,6 +471,8 @@ direnv exec . cargo test -p marlin-org-memory project_memory
 direnv exec . cargo test -p marlin-org-memory tool_graph --test unit_test
 direnv exec . cargo test -p marlin-agent-core debug_cli_graph_query
 direnv exec . cargo test -p marlin-agent-core debug_cli_graph_query_rejects --test unit_test
+direnv exec . cargo test -p marlin-agent-protocol turn_context_steering_receipt --test unit_test
+direnv exec . cargo test -p marlin-agent-protocol session_content --test unit_test
 direnv exec . cargo test -p marlin-agent-test-support project_runtime_read_model --test unit_test
 direnv exec . cargo test -p marlin-agent-harness harness_accepts_project_runtime_read_model_replay_artifact --test unit_test
 direnv exec . cargo test -p marlin-agent-test-support --test unit_test
@@ -490,6 +508,47 @@ Focused verification receipt for the 2026-06-15 project-scoped runtime slice:
 - =cargo test -p marlin-agent-core query_topology --test unit_test=: 4 passed, 67 filtered.
 - =cargo test -p marlin-org-store -p marlin-org-memory -p marlin-agent-core --test unit_test=: 112 passed.
 - =cargo clippy -p marlin-org-store -p marlin-org-memory -p marlin-agent-core --all-targets -- -D warnings=: no issues found.
+
+Latest steering receipt closure:
+
+- =cargo test -p marlin-agent-protocol turn_context_steering_receipt --test unit_test=: 1 passed, 76 filtered.
+- =cargo test -p marlin-agent-protocol --test unit_test=: 77 passed.
+- =cargo test -p marlin-agent-test-support project_runtime_read_model --test unit_test=: 3 passed, 46 filtered.
+- =cargo test -p marlin-agent-harness harness_accepts_project_runtime_read_model_replay_artifact --test unit_test=: 1 passed, 48 filtered.
+- =cargo test -p marlin-agent-test-support --test unit_test=: 49 passed.
+- =cargo test -p marlin-agent-harness --test unit_test=: 48 passed, 1 ignored.
+
+Latest memory trigger envelope closure:
+
+- =cargo test -p marlin-agent-protocol session_content --test unit_test=: 5 passed, 72 filtered.
+- =cargo test -p marlin-agent-test-support project_runtime_read_model --test unit_test=: 3 passed, 46 filtered.
+- =cargo test -p marlin-agent-harness harness_accepts_project_runtime_read_model_replay_artifact --test unit_test=: 1 passed, 48 filtered.
+
+Latest =marlin-org-memory= source projection closure:
+
+- =cargo test -p marlin-org-memory project_memory_graph_source_anchor_follows_matched_node_not_memory_id --test unit_test --target-dir /tmp/marlin-agent-core-codex-verify=: 1 passed, 29 filtered.
+- =cargo test -p marlin-org-memory recall_from_loaded_nodes_keeps_fact_when_source_span_is_missing --test unit_test --target-dir /tmp/marlin-agent-core-codex-verify=: 1 passed, 29 filtered.
+- =cargo test -p marlin-org-memory --test unit_test --target-dir /tmp/marlin-agent-core-codex-verify=: 30 passed.
+
+Latest runtime-read smoke closure:
+
+- =cargo test -p marlin-agent-test-support project_runtime_read_model --test unit_test --target-dir /tmp/marlin-agent-core-codex-verify=: 3 passed, 46 filtered.
+- =cargo test -p marlin-agent-harness project_read_model --test unit_test --target-dir /tmp/marlin-agent-core-codex-verify=: 2 passed, 48 filtered.
+- =cargo test -p marlin-agent-test-support --test unit_test --target-dir /tmp/marlin-agent-core-codex-verify=: 49 passed.
+- =cargo test -p marlin-agent-harness --test unit_test --target-dir /tmp/marlin-agent-core-codex-verify=: 49 passed, 1 ignored.
+- =cargo clippy -p marlin-agent-test-support -p marlin-agent-harness --all-targets --target-dir /tmp/marlin-agent-core-codex-verify -- -D warnings=: no issues found.
+
+Latest typed tool-card requirement closure:
+
+- =cargo test -p marlin-agent-protocol tool_capability_card_carries_typed_backend_requirements --test unit_test --target-dir /tmp/marlin-agent-core-codex-verify=: 1 passed, 77 filtered.
+- =cargo test -p marlin-org-memory tool_capability_cards_project_typed_backend_requirements --test unit_test --target-dir /tmp/marlin-agent-core-codex-verify=: 1 passed, 30 filtered.
+- =cargo test -p marlin-agent-test-support project_runtime_read_model --test unit_test --target-dir /tmp/marlin-agent-core-codex-verify=: 3 passed, 46 filtered.
+- =cargo test -p marlin-agent-harness project_read_model --test unit_test --target-dir /tmp/marlin-agent-core-codex-verify=: 3 passed, 48 filtered.
+- =cargo test -p marlin-agent-protocol --test unit_test --target-dir /tmp/marlin-agent-core-codex-verify=: 78 passed.
+- =cargo test -p marlin-org-memory --test unit_test --target-dir /tmp/marlin-agent-core-codex-verify=: 31 passed.
+- =cargo test -p marlin-agent-test-support --test unit_test --target-dir /tmp/marlin-agent-core-codex-verify=: 49 passed.
+- =cargo test -p marlin-agent-harness --test unit_test --target-dir /tmp/marlin-agent-core-codex-verify=: 50 passed, 1 ignored.
+- =cargo clippy -p marlin-agent-protocol -p marlin-org-memory -p marlin-agent-test-support -p marlin-agent-harness --all-targets --target-dir /tmp/marlin-agent-core-codex-verify -- -D warnings=: no issues found.
 
 Latest staged closure receipt:
 
@@ -548,13 +607,19 @@ Audit result on 2026-06-15:
 - Store-backed tool capability root discovery now uses a separate =--org-tool-root= lane and =ToolCapability= root kind, so memory roots and tool roots no longer share one CLI option meaning.
 - Debug CLI replay/receipt gates now cover missing memory/tool store roots, fixture/store option conflicts, unsupported =GraphQueryFamily::Org= fixture execution, and no-live-LLM readout for memory/tool/session/content family receipts.
 - Dedicated harness replay coverage now wraps the read-model proof in a reusable =marlin-agent-test-support= artifact and an explicit =marlin-agent-harness= contract evaluation, so harness owners can verify the project-runtime read model without depending on debug CLI fixture details.
+- The Codex steered-conversation baseline in [[file:40.70-codex-engineering-baseline.org][40.70 Codex Engineering Lessons Baseline]] now points the next conversation layer at per-turn context-pack assembly, item-view receipts, memory citations, source anchors, and graph-query receipt ids instead of whole transcript or whole memory shard transfer.
+- =TurnContextSteeringReceipt= now lands that conversation layer as typed protocol: selected items and omitted items use typed item/reason rows, memory citations use citation ids plus source anchors and graph-query receipts, and the harness replay artifact proves no raw transcript or whole memory shard transfer.
+- =MemoryTriggerReceipt= now carries the promoted trigger envelope beyond graph-query fixtures: turn id, context pack id, steering receipt id, memory citation id, source anchors, graph-query receipt ids, candidate score, and committed/deferred/rejected status remain typed and replayable without raw transcript or whole memory shard transfer.
+- The =marlin-org-memory= source-projection regressions now separate loaded-node projection from store discovery: duplicate =MEMORY_ID= graph matches keep the matched Org node id as =source_anchor_id=, and loaded-node recall preserves a fact plus source anchor when =source_span= is absent instead of returning a discovery-style failure.
+- The higher-level runtime-read smoke now consumes that same contract/evidence bundle: =marlin-agent-test-support= emits a loaded-node memory context-pack evidence row, and =marlin-agent-harness= has a focused smoke that constructs a real =ProjectMemoryContextPack= through =recall_project_memory_from_loaded_nodes= instead of passing explicit shards.
+- Typed tool-card requirements now land before sandbox selection: =ProjectRuntimeToolCapabilityCard= wraps =GraphQueryMatch= with required receipt, required capability, isolation, and backend requirement ids; =marlin-org-memory= projects those values from Org tool nodes; the replay artifact and harness smoke consume the envelope while keeping =sandbox_backend_selection=false=.
+- =TurnContextItemViewReceipt= now lands the runtime-read consumer layer: memory context packs and tool capability cards are projected into selected item views with citation/source/requirement ids, while the replay artifact and harness smoke prove =raw_transcript=false=, =whole_memory_shard=false=, and =sandbox_backend_selection=false=.
 
 Next landing order:
 
-1. Add memory trigger receipt shape coverage once the trigger envelope is promoted beyond graph-query fixtures.
-2. Add stale loaded-node and missing-source-span regressions at the =marlin-org-memory= layer so failures distinguish source projection bugs from store discovery errors.
-3. Promote the harness replay artifact into any higher-level runtime-read smoke that should consume the same contract/evidence bundle.
-4. Keep sandbox backend selection out of this lane until tool cards carry enough typed receipt requirements for a backend policy to consume.
+1. Add a sandbox-policy dry-run consumer that reads =ProjectRuntimeToolCapabilityCard= backend/isolation requirements and emits a no-selection readiness receipt.
+2. Add readiness replay/harness evidence for that dry-run receipt.
+3. Only after the dry-run receipt exists and is replayable, implement backend selection against concrete sandbox adapters.
 
 ** Done Criteria
 P0 runtime is done when:
@@ -566,3 +631,169 @@ P0 runtime is done when:
 - project tool capability cards are queryable;
 - all output carries source spans and match reasons;
 - replay evidence proves the read model without live LLM or sandbox execution.
+** Latest Turn Context Item-view Closure
+Runtime-read now has a typed consumer layer: =TurnContextItemViewReceipt= projects =ProjectMemoryContextPack= facts and =ProjectRuntimeToolCapabilityCard= values into compact agent-facing item views. The receipt preserves item kind, typed item id, summary, memory citation id, source anchors, graph-query receipts, required receipt ids, required capability ids, isolation requirement ids, and backend requirement ids.
+
+This keeps the runtime-read line aligned with the Org-first memory contract: callers receive selected item views and evidence ids, not raw transcripts or whole memory shard bodies. The harness replay row keeps =raw_transcript=false=, =whole_memory_shard=false=, and =sandbox_backend_selection=false= so backend selection remains a later readiness gate.
+
+Focused verification:
+
+- =cargo test -p marlin-agent-protocol turn_context_item_view --test unit_test --target-dir /tmp/marlin-agent-core-codex-verify=: 1 passed, 78 filtered.
+- =cargo test -p marlin-agent-test-support project_runtime_read_model --test unit_test --target-dir /tmp/marlin-agent-core-codex-verify=: 3 passed, 46 filtered.
+- =cargo test -p marlin-agent-harness project_read_model --test unit_test --target-dir /tmp/marlin-agent-core-codex-verify=: 4 passed, 48 filtered.
+- =cargo test -p marlin-agent-protocol --test unit_test --target-dir /tmp/marlin-agent-core-codex-verify=: 79 passed.
+- =cargo test -p marlin-agent-test-support --test unit_test --target-dir /tmp/marlin-agent-core-codex-verify=: 49 passed.
+- =cargo test -p marlin-agent-harness --test unit_test --target-dir /tmp/marlin-agent-core-codex-verify=: 51 passed, 1 ignored.
+- =cargo clippy -p marlin-agent-protocol -p marlin-agent-test-support -p marlin-agent-harness --all-targets --target-dir /tmp/marlin-agent-core-codex-verify -- -D warnings=: no issues found.
+- =cargo fmt --check -p marlin-agent-protocol -p marlin-agent-test-support -p marlin-agent-harness=: passed.
+- =git diff --check=: passed.
+
+Next landing order after this closure:
+Add a sandbox-policy dry-run consumer that reads =ProjectRuntimeToolCapabilityCard= backend/isolation requirements and emits a no-selection readiness receipt.
+Add readiness replay/harness evidence for that dry-run receipt.
+Only after the dry-run receipt exists and is replayable, implement backend selection against concrete sandbox adapters.
+
+** Latest Unified Runtime State-home Closure
+Marlin now has the first Codex-style unified runtime state-home lane. =RuntimeHome= moved behind the dedicated =runtime_state_home= owner together with =RuntimeStateLayout=, =RuntimeStateDirectoryKind=, and =RuntimeStateStorageReceipt=. The default user-home layout resolves to =<user-home>/.marlin= and carries standard directories for =config=, =cache=, =sessions=, =workspaces=, =projects=, =memory=, =receipts=, =logs=, and =tmp=. =MARLIN_HOME= is the explicit override environment variable name for host/CLI layers, while protocol tests stay deterministic by passing paths instead of reading host environment directly.
+
+=RuntimeEnvironment::with_home= now derives =state_layout= automatically, and =RuntimeEnvironmentResolution= carries a planned =state_storage_receipt= whenever a home is resolved. =marlin-agent-environment= adds =RuntimeEnvironmentRequest::with_default_marlin_home(user_home)= so callers can resolve the default =.marlin= home without hardcoding string joins across the codebase. It also adds =RuntimeStateStorageInitializer::ensure_layout=, which creates the standard directories and returns an initialized or failed typed receipt without embedding any state file bodies.
+
+Focused verification:
+
+- =cargo test -p marlin-agent-protocol runtime_home_builds_default_state_layout_and_storage_receipt --test unit_test --target-dir /tmp/marlin-agent-core-codex-verify=: 1 passed, 79 filtered.
+- =cargo test -p marlin-agent-environment resolver_builds_default_marlin_home_state_layout_and_receipt --test unit_test --target-dir /tmp/marlin-agent-core-codex-verify=: 1 passed, 37 filtered.
+- =cargo test -p marlin-agent-environment state_storage_initializer_creates_standard_runtime_home_directories --test unit_test --target-dir /tmp/marlin-agent-core-codex-verify=: 1 passed, 37 filtered.
+- =cargo test -p marlin-agent-protocol --test unit_test --target-dir /tmp/marlin-agent-core-codex-verify=: 80 passed.
+- =cargo test -p marlin-agent-environment --test unit_test --target-dir /tmp/marlin-agent-core-codex-verify=: 37 passed, 1 ignored.
+- =cargo clippy -p marlin-agent-protocol -p marlin-agent-environment --all-targets --target-dir /tmp/marlin-agent-core-codex-verify -- -D warnings=: no issues found.
+- =cargo fmt --check -p marlin-agent-protocol -p marlin-agent-environment=: passed.
+- =git diff --check=: passed.
+
+Next state-home landing order:
+
+** Latest Host Environment State-home Resolution Closure
+=marlin-agent-environment= now has a deterministic host environment resolver for runtime state homes. =RuntimeEnvironmentRequest::with_home_from_host_env= accepts environment key/value pairs, resolves =MARLIN_HOME= as a custom runtime home, and falls back to =HOME/.marlin= when =MARLIN_HOME= is absent. Empty values are ignored. This keeps the host/CLI policy outside protocol structs while giving CLI callers a single path for translating host environment into typed runtime state layout.
+
+The resolver tests were split into a folder-first suite so state-home, activation, and sub-agent coverage can grow independently without creating another oversized test leaf.
+
+Focused verification:
+
+- =cargo test -p marlin-agent-environment resolver_prefers_marlin_home_env_over_home_default --test unit_test --target-dir /tmp/marlin-agent-core-codex-verify=: 1 passed, 39 filtered.
+- =cargo test -p marlin-agent-environment resolver_uses_home_env_for_default_marlin_home --test unit_test --target-dir /tmp/marlin-agent-core-codex-verify=: 1 passed, 39 filtered.
+- =cargo test -p marlin-agent-environment sub_agent_environment_inherits_parent_home_and_layers --test unit_test --target-dir /tmp/marlin-agent-core-codex-verify=: 1 passed, 39 filtered.
+- =cargo test -p marlin-agent-environment --test unit_test --target-dir /tmp/marlin-agent-core-codex-verify=: 39 passed, 1 ignored.
+- =cargo test -p marlin-agent-protocol --test unit_test --target-dir /tmp/marlin-agent-core-codex-verify=: 82 passed.
+- =cargo clippy -p marlin-agent-protocol -p marlin-agent-environment --all-targets --target-dir /tmp/marlin-agent-core-codex-verify -- -D warnings=: no issues found.
+- =cargo fmt --check -p marlin-agent-protocol -p marlin-agent-environment=: passed.
+- =git diff --check=: passed.
+
+Next state-home landing order:
+
+1. Wire the actual CLI/runtime entrypoint to call =with_home_from_host_env= using real host env pairs before resolving =RuntimeEnvironment=.
+2. Move session, memory, receipt, and graph-cache writers onto =RuntimeStateLayout= paths instead of ad hoc project or temp paths.
+3. Add a CLI smoke fixture for default host environment resolution, with =MARLIN_HOME= and =HOME= controlled by process test isolation.
+** Latest Runtime State Object Path Closure
+=RuntimeStateLayout= now resolves object-level state paths instead of only declaring top-level directories. The protocol adds typed =RuntimeStateObjectKind=, =RuntimeStateObjectKey=, =RuntimeStateObjectFileStem=, and =RuntimeStateObjectPath= surfaces, with helpers for =session_path=, =memory_shard_path=, =receipt_path=, and =graph_cache_path=. Object keys are normalized into filesystem-safe stems before any path is produced, so separators, dots, spaces, colons, and other non-ASCII/unsafe characters cannot become path traversal semantics.
+
+=RuntimeStateDirectoryKind= now includes the stable =GraphCache= directory at =cache/graph=. Because graph cache is part of the standard state layout, =RuntimeStateStorageInitializer::ensure_layout= creates it with the rest of the Codex-style runtime home directories. This gives future session, memory shard, receipt, and graph-cache writers one shared protocol path instead of each writer inventing its own project-local or temporary filesystem convention.
+
+Focused verification:
+- =cargo test -p marlin-agent-protocol runtime_state_layout_resolves_object_paths_without_path_traversal --test unit_test --target-dir /tmp/marlin-agent-core-codex-verify=: 1 passed, 82 filtered.
+- =cargo test -p marlin-agent-environment state_storage_initializer_creates_standard_runtime_home_directories --test unit_test --target-dir /tmp/marlin-agent-core-codex-verify=: 1 passed, 39 filtered.
+- =cargo test -p marlin-agent-protocol --test unit_test --target-dir /tmp/marlin-agent-core-codex-verify=: 83 passed.
+- =cargo test -p marlin-agent-environment --test unit_test --target-dir /tmp/marlin-agent-core-codex-verify=: 39 passed, 1 ignored.
+- =cargo clippy -p marlin-agent-protocol -p marlin-agent-environment --all-targets --target-dir /tmp/marlin-agent-core-codex-verify -- -D warnings=: no issues found.
+- =cargo fmt --check -p marlin-agent-protocol -p marlin-agent-environment=: passed.
+- =git diff --check=: passed.
+
+Next state-home landing order:
+1. Wire the actual CLI/runtime entrypoint to call =with_home_from_host_env= using real host env pairs before resolving =RuntimeEnvironment=.
+2. Migrate the first real writer to =RuntimeStateLayout::{session_path,memory_shard_path,receipt_path,graph_cache_path}= instead of ad hoc path joins.
+3. Add a CLI smoke fixture for default host environment resolution, with =MARLIN_HOME= and =HOME= controlled by process test isolation.
+** Latest Runtime State CLI Init Closure
+=marlin-agent-core= now exposes the first actual runtime entrypoint for the Codex-style state home. =marlin state init= resolves the runtime home through =RuntimeEnvironmentRequest::with_home_from_host_env(std::env::vars())= by default, initializes the resolved =RuntimeStateLayout= through =RuntimeStateStorageInitializer::ensure_layout=, and returns the typed =RuntimeStateStorageReceipt= as JSON. For deterministic harness use, =marlin state init --home <runtime-state-home>= maps to the same typed custom-home path without reading process-global environment variables in tests.
+
+The command is intentionally a top-level =state= debug CLI command instead of being hidden under =graph= or =loop=. This keeps state-home initialization separate from graph execution and makes the storage boundary explicit for agents. Its focused CLI test verifies creation of =config=, =cache=, =cache/graph=, =sessions=, =memory=, and =receipts= under one runtime home, and asserts the receipt does not serialize state file bodies.
+
+Workspace verification also exposed that the dirty workspace already listed =crates/marlin-agent-route= as a workspace member while the crate directory was missing, which blocked =cargo metadata= before this slice could be checked. A minimal route crate skeleton was added so package-scoped gates can run again without removing the workspace member.
+
+Focused verification:
+- =cargo test -p marlin-agent-core debug_cli_state_init_creates_unified_runtime_home_directories --test unit_test --target-dir /tmp/marlin-agent-core-codex-verify=: 1 passed, 78 filtered.
+- =cargo test -p marlin-agent-core --test unit_test --target-dir /tmp/marlin-agent-core-codex-verify=: 79 passed.
+- =cargo test -p marlin-agent-protocol --test unit_test --target-dir /tmp/marlin-agent-core-codex-verify=: 83 passed.
+- =cargo test -p marlin-agent-environment --test unit_test --target-dir /tmp/marlin-agent-core-codex-verify=: 39 passed, 1 ignored.
+- =cargo test -p marlin-agent-route --target-dir /tmp/marlin-agent-core-codex-verify=: 2 passed.
+- =cargo clippy -p marlin-agent-core --all-targets --no-deps --target-dir /tmp/marlin-agent-core-codex-verify -- -D warnings=: no issues found.
+- =cargo clippy -p marlin-agent-protocol -p marlin-agent-environment --all-targets --no-deps --target-dir /tmp/marlin-agent-core-codex-verify -- -D warnings=: no issues found.
+- =cargo clippy -p marlin-agent-route --all-targets --no-deps --target-dir /tmp/marlin-agent-core-codex-verify -- -D warnings=: no issues found.
+- =cargo fmt --check -p marlin-agent-core -p marlin-agent-protocol -p marlin-agent-environment -p marlin-agent-route=: passed.
+- =git diff --check=: passed.
+
+Known verification blocker:
+- The broader dependency-inclusive clippy command is currently blocked by an unrelated =clippy::result_large_err= finding in =crates/marlin-agent-runtime/src/model_route/admission.rs=, which is outside this state-home CLI slice.
+
+Next state-home landing order:
+1. Migrate the first real writer to =RuntimeStateLayout::{session_path,memory_shard_path,receipt_path,graph_cache_path}= instead of ad hoc path joins.
+2. Add a CLI smoke fixture for default host environment resolution, with =MARLIN_HOME= and =HOME= controlled by process test isolation.
+3. Extend =marlin state= with an inspect command that reports current home, directories, and object path previews without touching state file bodies.
+** Latest Runtime State CLI Inspect Closure
+=marlin state inspect= now provides a read-only visibility surface for the unified runtime state home. It resolves the same state-home request path as =marlin state init=, reports the resolved =RuntimeHome=, lists each standard directory with =exists= and =is_dir= booleans, and returns object path previews for the canonical session, memory shard, receipt, and graph-cache writers. The command does not create directories and does not read or serialize any state file bodies.
+
+This closes the immediate agent-facing ambiguity after adding =state init=: agents can now ask the runtime where state would live before initialization, verify that initialization created the expected directories, and see the typed writer paths without guessing filesystem joins. =state inspect --home <runtime-state-home>= remains deterministic for tests; the default command path still resolves from host environment through =RuntimeEnvironmentRequest::with_home_from_host_env(std::env::vars())=.
+
+Focused verification:
+- =cargo test -p marlin-agent-core debug_cli_state_inspect_reports_directories_and_object_path_previews --test unit_test --target-dir /tmp/marlin-agent-core-codex-verify=: 1 passed, 79 filtered.
+- =cargo test -p marlin-agent-core debug_cli_state_init_creates_unified_runtime_home_directories --test unit_test --target-dir /tmp/marlin-agent-core-codex-verify=: 1 passed, 79 filtered.
+- =cargo test -p marlin-agent-core --test unit_test --target-dir /tmp/marlin-agent-core-codex-verify=: 80 passed.
+- =cargo test -p marlin-agent-protocol --test unit_test --target-dir /tmp/marlin-agent-core-codex-verify=: 83 passed.
+- =cargo test -p marlin-agent-environment --test unit_test --target-dir /tmp/marlin-agent-core-codex-verify=: 39 passed, 1 ignored.
+- =cargo test -p marlin-agent-route --target-dir /tmp/marlin-agent-core-codex-verify=: 3 passed.
+- =cargo clippy -p marlin-agent-core --all-targets --no-deps --target-dir /tmp/marlin-agent-core-codex-verify -- -D warnings=: no issues found.
+- =cargo fmt --check -p marlin-agent-core -p marlin-agent-protocol -p marlin-agent-environment -p marlin-agent-route=: passed.
+- =git diff --check=: passed.
+
+Next state-home landing order:
+1. Migrate the first real writer to =RuntimeStateLayout::{session_path,memory_shard_path,receipt_path,graph_cache_path}= instead of ad hoc path joins.
+2. Move subsequent state writers onto =RuntimeStateLayout= before adding any import path.
+3. Add a CLI smoke fixture for default host environment resolution, with =MARLIN_HOME= and =HOME= controlled by process test isolation rather than implicit developer-machine state.
+** Latest Runtime State Loop Receipt Writer Closure
+The first real writer has been moved onto the unified runtime state-home path. =marlin loop run= still honors explicit =--store <dir>= and =--no-store=, but when no explicit store override is provided it now resolves the runtime state layout and writes loop reports through =RuntimeStateLayout::receipt_path(<run-id>)=. The default loop report path is therefore =<runtime-home>/receipts/<run-id>.json=, with no project-local default run-store convention kept in the main CLI.
+
+=marlin loop inspect <run-id>= follows the same rule: explicit =--store <dir>= remains supported, while the default path is resolved from =RuntimeStateLayout::receipt_path(<run-id>)=. Both =loop run= and =loop inspect= now accept =--home <runtime-state-home>= for deterministic CLI harness tests; without =--home= they use the same host environment resolution shared by =marlin state init= and =marlin state inspect=.
+
+This preserves explicit store override behavior while making the default writer path state-home owned. It also removes a duplicate ad hoc run-id filename sanitizer from the default path: runtime-home defaults now use the protocol-owned object-key normalization.
+
+Focused verification:
+- =cargo test -p marlin-agent-core debug_cli_loop_run_defaults_to_runtime_state_home_receipt_path --test unit_test --target-dir /tmp/marlin-agent-core-codex-verify=: 1 passed, 80 filtered.
+- =cargo test -p marlin-agent-core debug_cli_loop_run_writes_store_and_inspect_reads_run_id --test unit_test --target-dir /tmp/marlin-agent-core-codex-verify=: 1 passed, 80 filtered.
+- =cargo test -p marlin-agent-core --test unit_test --target-dir /tmp/marlin-agent-core-codex-verify=: 81 passed.
+- =cargo test -p marlin-agent-protocol --test unit_test --target-dir /tmp/marlin-agent-core-codex-verify=: 83 passed.
+- =cargo test -p marlin-agent-environment --test unit_test --target-dir /tmp/marlin-agent-core-codex-verify=: 39 passed, 1 ignored.
+- =cargo test -p marlin-agent-route --target-dir /tmp/marlin-agent-core-codex-verify=: 5 passed.
+- =cargo clippy -p marlin-agent-core --all-targets --no-deps --target-dir /tmp/marlin-agent-core-codex-verify -- -D warnings=: no issues found.
+- =cargo fmt --check -p marlin-agent-core -p marlin-agent-protocol -p marlin-agent-environment -p marlin-agent-route=: passed.
+- =git diff --check=: passed.
+
+Next state-home landing order:
+1. Move the next writer class, likely memory shard or graph-cache output, onto =RuntimeStateLayout::{memory_shard_path,graph_cache_path}=.
+2. Add a CLI smoke fixture for default host environment resolution, with =MARLIN_HOME= and =HOME= controlled by process test isolation rather than implicit developer-machine state.
+3. Tighten remaining project-local default storage assumptions after explicit override policy is reviewed.
+** Latest Runtime Smoke CLI Closure
+=marlin smoke runtime= now provides the first headless runtime smoke interface. This is intentionally separate from TUI work: the smoke command runs through the debug CLI facade, builds typed scenarios internally, and emits a typed =SmokeRuntimeReceipt= with scenario id, =NoLiveLlm= mode, run id, graph id, terminal status, visited nodes, node receipt counts, adapter spawn counts, process spawn counts, optional state-home summary, diagnostics, and optional full =GraphLoopExecutionResult=.
+
+Three no-live-LLM scenarios have landed. =--scenario builtin-adapters= exercises the built-in tool, provider, and subagent adapters in one graph, proving that subagent adapter dispatch is covered without a TUI. =--scenario process-command-fanout= builds a multi-node process-command graph and verifies real OS process spawn, stdout/stderr diagnostics, per-node receipts, and fanout stability through the same graph-loop execution path. =--scenario state-home-env= resolves a runtime state layout from explicit =--marlin-home= and =--host-home= inputs, proving =MARLIN_HOME= precedence, =HOME/.marlin= fallback, and object path previews without reading or mutating process-global developer-machine environment.
+
+This answers the testing boundary for now: TUI is not the primary correctness harness. Debug CLI is the stable smoke entrypoint; real model access should enter later as an explicit gated =live-llm= scenario under the same receipt shape, not as an accidental side effect of command tests.
+
+Focused verification:
+- =cargo test -p marlin-agent-core debug_cli_smoke_runtime --test unit_test --target-dir /tmp/marlin-agent-core-codex-verify=: 4 passed, 83 filtered.
+- =cargo test -p marlin-agent-core --test unit_test --target-dir /tmp/marlin-agent-core-codex-verify=: 85 passed.
+- =cargo test -p marlin-agent-protocol --test unit_test --target-dir /tmp/marlin-agent-core-codex-verify=: 84 passed.
+- =cargo clippy -p marlin-agent-core --all-targets --no-deps --target-dir /tmp/marlin-agent-core-codex-verify -- -D warnings=: no issues found.
+- =cargo fmt --check -p marlin-agent-core -p marlin-agent-protocol -p marlin-agent-environment -p marlin-agent-route=: passed.
+- =git diff --check=: passed.
+
+Next smoke landing order:
+1. Add a gated real-LLM scenario that requires explicit environment opt-in and emits route/session/model receipts without running in default CI.
+2. Add model-route dry-run smoke coverage before live provider calls, so route/session receipts can be validated without network.
+3. Add TUI driver coverage only after the headless smoke receipts are stable, so UI tests assert presentation and input wiring rather than runtime correctness.

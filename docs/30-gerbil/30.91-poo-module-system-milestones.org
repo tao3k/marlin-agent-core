@@ -83,7 +83,8 @@ Exit condition:
 
 *** M2 Object Surgery As First-Class User API
 
-Status: partially landed.
+Status: partially landed; operation constructors, conflict receipts, and
+presentation tests are present for the pack path.
 
 Purpose:
 - Make add/remove/disable/replace policy object operations the normal
@@ -109,7 +110,8 @@ Exit condition:
 
 *** M3 Projection Chain Receipts
 
-Status: partially landed.
+Status: landed for the debug policy path and the user-authored =.ss=
+entrypoint/call loader; custom pack-specific fact emission is still a follow-up.
 
 Purpose:
 - Make the module -> policy projection -> native payload chain fixed and
@@ -119,6 +121,7 @@ Deliverables:
 - Standard receipt names for module evaluation, policy projection, native
   projection payload, budget receipt, and catalog resolution receipt.
 - A helper that builds this chain for every prefab and custom policy pack.
+  Current Gerbil surface: =marlinPolicyProjection=.
 - Tests for replayable receipts when no live LLM or runtime catalog lookup is
   allowed.
 
@@ -126,6 +129,11 @@ Required evidence:
 - Debug CLI emits all five receipt families.
 - Gerbil tests assert owner fields: Gerbil/POO for composition, Rust for native
   projection, budget, and catalog resolution.
+- Current proof command: =marlin gerbil policy-receipt= emits
+  =policy_projection_*= facts for the debug prefab pack.
+- Current loader proof: the same command accepts =--entrypoint <scheme-file>=
+  and =--call <scheme-expr>=, so a newly written =.ss= file can define POO
+  objects before delegating or emitting projection facts.
 
 Exit condition:
 - Adding a new policy family does not require a new Rust-side policy DSL or
@@ -281,14 +289,15 @@ Each implementation slice should record:
 
 The next three implementation slices should be:
 
-1. M1 pack inventory:
-   Add an upstream default prefab pack and a catalog/presentation test that lists
-   policy families and default object ids.
+1. Custom pack projection facts:
+   Extend the user-authored =.ss= loader so the loaded file defines a full custom
+   pack and emits its own pack id, object ids, operation receipts, projection
+   chain, owner split, and replayability facts.
 
-2. M2 conflict receipts:
-   Add deterministic object surgery conflict receipts for duplicate, missing,
-   disabled, and invalid replacement cases.
+2. M5 typed decode:
+   Add Rust typed structs for pack inventory, object surgery receipts, projection
+   chain facts, owner split, replayability, and timing.
 
-3. M5 debug CLI pack view:
-   Add a debug CLI surface that can run a newly written =.ss= prefab/object and
-   print pack inventory, operation receipts, projection chain, and timing.
+3. Furnished example:
+   Add =examples/user-interface-policy-pack= so users start from the prefab path
+   before seeing lower-level module and object surgery extension points.

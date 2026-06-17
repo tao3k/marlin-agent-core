@@ -3,11 +3,11 @@
 use std::path::PathBuf;
 
 use marlin_agent_protocol::{
-    RuntimeConfigLayer, RuntimeConfigLayerSource, RuntimeEnvironment, RuntimeEnvironmentActivation,
-    RuntimeEnvironmentActivationPolicy, RuntimeEnvironmentActivationReceipt,
-    RuntimeEnvironmentResolution, RuntimeHome, RuntimeHomeSource, RuntimeSandboxPolicy,
-    RuntimeWorkspaceProject, RuntimeWorkspaceProjectId, RuntimeWorkspaceProjectImportReceipt,
-    RuntimeWorkspaceProjectTrust,
+    MARLIN_HOME_ENV_VAR, RuntimeConfigLayer, RuntimeConfigLayerSource, RuntimeEnvironment,
+    RuntimeEnvironmentActivation, RuntimeEnvironmentActivationPolicy,
+    RuntimeEnvironmentActivationReceipt, RuntimeEnvironmentResolution, RuntimeHome,
+    RuntimeHomeSource, RuntimeSandboxPolicy, RuntimeStateStorageReceipt, RuntimeWorkspaceProject,
+    RuntimeWorkspaceProjectId, RuntimeWorkspaceProjectImportReceipt, RuntimeWorkspaceProjectTrust,
 };
 use thiserror::Error;
 
@@ -25,6 +25,9 @@ pub const SUB_AGENT_CONFIG_PRECEDENCE: i16 = 90;
 
 /// Precedence used for explicit session flags.
 pub const SESSION_FLAGS_CONFIG_PRECEDENCE: i16 = 100;
+
+/// Host environment variable used to derive the default Marlin state home.
+pub const HOST_HOME_ENV_VAR: &str = "HOME";
 
 /// Resolves runtime environment inputs into immutable protocol snapshots.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -132,10 +135,15 @@ impl RuntimeEnvironmentResolver {
 
         sort_config_layers(&mut environment.config_layers);
         let activation_receipt = activation_receipt_for_policy(&environment.activation);
+        let state_storage_receipt = environment
+            .state_layout
+            .as_ref()
+            .map(RuntimeStateStorageReceipt::planned);
 
         RuntimeEnvironmentResolution {
             environment,
             activation_receipt,
+            state_storage_receipt,
             project_import_receipts,
         }
     }
@@ -248,6 +256,43 @@ impl RuntimeEnvironmentRequest {
     /// Sets the default runtime home path.
     pub fn with_default_home(mut self, path: impl Into<PathBuf>) -> Self {
         self.default_home = Some(path.into());
+        self
+    }
+
+    /// Sets the default runtime home to `<user_home>/.marlin`.
+    pub fn with_default_marlin_home(mut self, user_home: impl Into<PathBuf>) -> Self {
+        self.default_home = Some(RuntimeHome::default_for_user_home(user_home).path);
+        self
+    }
+
+    /// Resolves runtime home from host environment pairs.
+    ///
+    /// `MARLIN_HOME` wins as a custom home. If it is absent, `HOME` resolves
+    /// the default `<HOME>/.marlin` runtime state home.
+    pub fn with_home_from_host_env<I, K, V>(mut self, env: I) -> Self
+    where
+        I: IntoIterator<Item = (K, V)>,
+        K: AsRef<str>,
+        V: AsRef<str>,
+    {
+        let mut marlin_home = None;
+        let mut user_home = None;
+        for (key, value) in env {
+            let value = value.as_ref();
+            if value.is_empty() {
+                continue;
+            }
+            match key.as_ref() {
+                MARLIN_HOME_ENV_VAR => marlin_home = Some(PathBuf::from(value)),
+                HOST_HOME_ENV_VAR => user_home = Some(PathBuf::from(value)),
+                _ => {}
+            }
+        }
+        if let Some(path) = marlin_home {
+            self.custom_home = Some(path);
+        } else if let Some(path) = user_home {
+            self.default_home = Some(RuntimeHome::default_for_user_home(path).path);
+        }
         self
     }
 

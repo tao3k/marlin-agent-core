@@ -7,6 +7,7 @@ mod model_gateway;
 mod model_route;
 mod project_runtime;
 mod runtime_environment;
+mod runtime_state_home;
 mod scenario;
 mod sub_agent;
 mod trace;
@@ -63,10 +64,14 @@ pub use model_gateway::{
     assistant_gateway_message, system_gateway_message, user_gateway_message,
 };
 pub use model_route::{
-    LiteLlmModelId, ModelAlias, ModelCommandKind, ModelCommandMatcher, ModelContextForkMode,
-    ModelEndpoint, ModelEndpointContractError, ModelName, ModelProviderId, ModelRouteAgentScope,
-    ModelRouteDecision, ModelRouteReceipt, ModelRouteRequest, ModelRouteRule, ModelRouteRuleId,
-    ModelRouteSessionId, ModelSessionLifecycle, ModelSessionPersistenceKey, ModelSessionPolicy,
+    LiteLlmModelId, MODEL_ROUTE_ADMISSION_SCHEMA_ID, ModelAlias, ModelCommandKind,
+    ModelCommandMatcher, ModelContextForkMode, ModelEndpoint, ModelEndpointContractError,
+    ModelName, ModelProviderId, ModelRouteAdmissionMode, ModelRouteAdmissionRequest,
+    ModelRouteAdmissionResponse, ModelRouteAgentScope, ModelRouteArtifactProjection,
+    ModelRouteArtifactRef, ModelRouteDecision, ModelRouteEvidenceProfile, ModelRouteIntent,
+    ModelRouteModality, ModelRoutePrecisionTier, ModelRoutePrivacyTier, ModelRouteReceipt,
+    ModelRouteRequest, ModelRouteRule, ModelRouteRuleId, ModelRouteSessionId, ModelRouteSourceKind,
+    ModelRouteTaskKind, ModelSessionLifecycle, ModelSessionPersistenceKey, ModelSessionPolicy,
     ModelSessionPoolId,
 };
 pub use project_runtime::{
@@ -80,15 +85,20 @@ pub use project_runtime::{
     GraphQuerySecretVisibility, GraphQueryVisibility, GraphQueryVisibleSurface,
     MemoryTriggerReceipt, MemoryTriggerStatus, ProjectMemoryContextFact, ProjectMemoryContextPack,
     ProjectMemoryRecallIntent, ProjectMemoryRecallRequest, ProjectMemoryRecallTerm,
-    ProjectRuntimeAgentId, ProjectRuntimeBranchRef, ProjectRuntimeContentBodyRef,
-    ProjectRuntimeContentId, ProjectRuntimeContextPackId, ProjectRuntimeEvidenceId,
-    ProjectRuntimeMemoryId, ProjectRuntimeProjectId, ProjectRuntimeReceiptId,
-    ProjectRuntimeRootSessionId, ProjectRuntimeSessionId, ProjectRuntimeSourceAnchorId,
-    ProjectRuntimeSourceSpanRef, ProjectRuntimeToolCapabilityId, ProjectRuntimeWorkspaceId,
-    ProjectRuntimeWorktreeId,
+    ProjectRuntimeAgentId, ProjectRuntimeBackendRequirementId, ProjectRuntimeBranchRef,
+    ProjectRuntimeContentBodyRef, ProjectRuntimeContentId, ProjectRuntimeContextPackId,
+    ProjectRuntimeEvidenceId, ProjectRuntimeIsolationRequirementId, ProjectRuntimeMemoryCitation,
+    ProjectRuntimeMemoryCitationId, ProjectRuntimeMemoryId, ProjectRuntimeProjectId,
+    ProjectRuntimeReceiptId, ProjectRuntimeRootSessionId, ProjectRuntimeSessionId,
+    ProjectRuntimeSourceAnchorId, ProjectRuntimeSourceSpanRef, ProjectRuntimeSteeringItemId,
+    ProjectRuntimeToolCapabilityCard, ProjectRuntimeToolCapabilityId, ProjectRuntimeTurnId,
+    ProjectRuntimeWorkspaceId, ProjectRuntimeWorktreeId, TurnContextItemKind, TurnContextItemView,
+    TurnContextItemViewReceipt, TurnContextOmissionReason, TurnContextOmittedItem,
+    TurnContextSelectedItem, TurnContextSteeringReceipt, TurnContextSteeringReceiptInput,
 };
 pub use runtime_environment::{
-    RuntimeConfigLayer, RuntimeConfigLayerSource, RuntimeEnvironment, RuntimeEnvironmentActivation,
+    MARLIN_DEFAULT_HOME_DIR_NAME, MARLIN_HOME_ENV_VAR, RuntimeConfigLayer,
+    RuntimeConfigLayerSource, RuntimeEnvironment, RuntimeEnvironmentActivation,
     RuntimeEnvironmentActivationAction, RuntimeEnvironmentActivationActionReceipt,
     RuntimeEnvironmentActivationActionStatus, RuntimeEnvironmentActivationPolicy,
     RuntimeEnvironmentActivationReceipt, RuntimeEnvironmentActivationStatus,
@@ -96,7 +106,10 @@ pub use runtime_environment::{
     RuntimeEnvironmentRefreshExecution, RuntimeEnvironmentRefreshReceipt,
     RuntimeEnvironmentRefreshStatus, RuntimeEnvironmentRefreshTimeout,
     RuntimeEnvironmentResolution, RuntimeEnvrcPolicy, RuntimeHome, RuntimeHomeSource,
-    RuntimeSandboxPolicy, RuntimeShellIsolationPolicy, RuntimeWorkspaceProject,
+    RuntimeSandboxPolicy, RuntimeShellIsolationPolicy, RuntimeStateDirectory,
+    RuntimeStateDirectoryKind, RuntimeStateLayout, RuntimeStateObjectFileStem,
+    RuntimeStateObjectKey, RuntimeStateObjectKind, RuntimeStateObjectPath,
+    RuntimeStateStorageReceipt, RuntimeStateStorageStatus, RuntimeWorkspaceProject,
     RuntimeWorkspaceProjectId, RuntimeWorkspaceProjectImportAction,
     RuntimeWorkspaceProjectImportActionReceipt, RuntimeWorkspaceProjectImportActionStatus,
     RuntimeWorkspaceProjectImportReceipt, RuntimeWorkspaceProjectImportStatus,

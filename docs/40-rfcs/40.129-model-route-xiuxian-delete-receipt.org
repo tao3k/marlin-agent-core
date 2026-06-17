@@ -1,0 +1,105 @@
+#+title: 40.129 Model Route Xiuxian Delete Receipt
+
+* Purpose
+
+Record the deletion safety boundary for the xiuxian =model_route= implementation
+after the generic Marlin model route protocol, runtime admission, and Axum route
+adapter landed.
+
+This receipt is not a compatibility shim.  The replacement surface is the
+Marlin-owned typed protocol:
+
+- =marlin-agent-protocol::model_route::ModelRouteAdmissionRequest=
+- =marlin-agent-runtime::model_route::admit_model_route_with_resolver=
+- =marlin-agent-route::MODEL_ROUTE_CHAT_PATH=
+
+* Xiuxian Source Owners
+
+The xiuxian code that is now replaceable is limited to these owners:
+
+- =packages/rust/crates/xiuxian-wendao-studio/src/studio/router/handlers/model_route.rs=
+- =packages/rust/crates/xiuxian-wendao-studio/src/studio/router/handlers/analysis/document_extract/provider/model_route.rs=
+
+Deletion in xiuxian must also update the local call sites discovered from the
+source frontier:
+
+- =packages/rust/crates/xiuxian-wendao-studio/src/studio/router/handlers/analysis/document_extract/provider/jobs.rs=
+- =packages/rust/crates/xiuxian-wendao-studio/src/studio/router/handlers/analysis/document_extract/provider/mod.rs=
+- =packages/rust/crates/xiuxian-wendao-studio/src/studio/router/handlers/analysis/document_extract/provider/transport.rs=
+- =packages/rust/crates/xiuxian-wendao-studio/tests/unit/gateway/studio/router/model_route.rs=
+- =scripts/runtime/smoke_wendao_chat_model_route.py=
+- =scripts/runtime/test_smoke_wendao_chat_model_route.py=
+- =packages/python/xiuxian-wendao-analyzer/tests/unit/document_service/test_document_service_model_route_metadata.py=
+
+* Parity Evidence
+
+Xiuxian chat routing projected HTTP input into route input fields:
+=precision_tier=, =privacy_tier=, =latency_budget_ms=, =evidence_profile=, and
+=artifact_refs=.
+
+Marlin replaces this with =ChatModelRouteRequest::into_admission_request= in
+=crates/marlin-agent-route/src/http.rs=, which projects the same fields into
+=ModelRouteAdmissionRequest::chat= and then calls
+=admit_model_route_with_resolver=.
+
+Xiuxian artifact routing projected image document extract inputs into:
+
+- =task_kind=: =attachment-extract=
+- =modality=: =image=
+- =source_kind=: =attachment=
+- =precision_tier=: =high=
+- =privacy_tier=: =private=
+- =latency_budget_ms=: =60000=
+- =evidence_profile=: =image-document-markdown=
+- =artifact_refs=: =source-sha256:*=, =source-suffix:*=, =backend-profile:*=
+
+Marlin replaces this with
+=ModelRouteAdmissionRequest::artifact(...).with_artifact_refs(...)=.  The
+protocol test
+=model_route_admission_request_projects_artifact_source_intent= locks this
+projection.
+
+Marlin also provides =ModelRouteArtifactProjection::image_document_extract= as
+the direct typed replacement for xiuxian's local =image_route_input= helper.
+Downstream code still owns file existence checks, source hashing, suffix
+normalization, and workspace-specific backend profile selection.  The Marlin
+helper only turns those already-admitted facts into a
+=ModelRouteAdmissionRequest=.
+
+The same projection is re-exported through =marlin-agent-core=, so downstreams
+can upgrade through the core facade instead of depending directly on
+=marlin-agent-protocol=.
+
+* Delete Gate
+
+Before deleting the xiuxian owners, Marlin must pass:
+
+#+begin_src sh
+direnv exec . rtk --ultra-compact cargo test -p marlin-agent-protocol --test unit_test protocol::model_route::admission
+direnv exec . rtk --ultra-compact cargo test -p marlin-agent-runtime --test unit_test runtime_model_route::admission
+direnv exec . rtk --ultra-compact cargo test -p marlin-agent-route
+#+end_src
+
+After deleting the xiuxian owners, the xiuxian worktree should fail only on
+remaining local imports/call sites.  Replace those local calls with Marlin's
+generic typed admission surface or remove xiuxian-specific smoke tests that
+only covered the old local adapter.
+
+* Current Verification
+
+On 2026-06-17, the Marlin gate passed:
+
+- =marlin-agent-protocol= admission: 1 passed
+- =marlin-agent-protocol= artifact projection: 1 passed
+- =marlin-agent-core= facade: 11 passed
+- =marlin-agent-runtime= admission: 2 passed
+- =marlin-agent-route=: 5 passed
+
+The Marlin source frontier also returned no candidates for xiuxian/Wendao
+implementation symbols such as =WendaoChatRouteInput=,
+=WendaoAttachmentRouteInput=, =DocumentExtractModelRoute=,
+=ImageDocumentExtractRouteConfig=, or =admit_chat_model_route_with_config=.
+
+Deletion readiness: ready from the Marlin side after downstream code upgrades to
+the staged Marlin revision containing =ModelRouteArtifactProjection= and the
+core facade re-export.

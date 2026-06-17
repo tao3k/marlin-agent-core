@@ -6,7 +6,8 @@ mod release;
 pub use debug_cli::{
     GraphQueryOutput, GraphQuerySummary, LoopEventQuerySummary, LoopInspectReceipt,
     LoopQuerySummary, LoopReplayReceipt, LoopRunReceipt, MarlinCliResult,
-    ProjectRuntimeQuerySummary, run_marlin_cli, run_marlin_cli_from_args,
+    ProjectRuntimeQuerySummary, SmokeLlmMode, SmokeRuntimeReceipt, SmokeRuntimeScenario,
+    SmokeRuntimeStateHome, run_marlin_cli, run_marlin_cli_from_args,
 };
 pub use marlin_agent_environment as environment;
 pub use marlin_agent_environment::{
@@ -84,13 +85,23 @@ pub use marlin_agent_protocol::{
     HookPolicyDynamicActionKind, HookPolicyDynamicActionReason, HookPolicyDynamicActionReplacement,
     HookPolicyDynamicActionTarget, HookPolicyExtension, HookRunId, HookRunStatus, HookRunSummary,
     HookScope, HookSource, HookSourcePath, HookTimestampMs, HookTrustStatus, LiteLlmModelId,
-    ModelAlias, ModelCommandKind, ModelCommandMatcher, ModelContextForkMode, ModelEndpoint,
-    ModelName, ModelProviderId, ModelRouteDecision, ModelRouteReceipt, ModelRouteRequest,
-    ModelRouteRule, ModelRouteRuleId, ModelRouteSessionId, ModelSessionLifecycle,
+    MODEL_ROUTE_ADMISSION_SCHEMA_ID, ModelAlias, ModelCommandKind, ModelCommandMatcher,
+    ModelContextForkMode, ModelEndpoint, ModelEndpointContractError, ModelName, ModelProviderId,
+    ModelRouteAdmissionMode, ModelRouteAdmissionRequest, ModelRouteAdmissionResponse,
+    ModelRouteAgentScope, ModelRouteArtifactProjection, ModelRouteArtifactRef, ModelRouteDecision,
+    ModelRouteEvidenceProfile, ModelRouteIntent, ModelRouteModality, ModelRoutePrecisionTier,
+    ModelRoutePrivacyTier, ModelRouteReceipt, ModelRouteRequest, ModelRouteRule, ModelRouteRuleId,
+    ModelRouteSessionId, ModelRouteSourceKind, ModelRouteTaskKind, ModelSessionLifecycle,
     ModelSessionPersistenceKey, ModelSessionPolicy, ModelSessionPoolId, RuntimeConfigLayer,
     RuntimeConfigLayerSource, RuntimeHome, RuntimeHomeSource, RuntimeSandboxPolicy,
     SubAgentActivity, SubAgentActivityKind, SubAgentSource, compile_gerbil_loop_graph,
     compile_gerbil_loop_graph_continuation, compile_gerbil_loop_graph_policy,
+};
+pub use marlin_agent_route::{
+    self as route, ChatModelRouteRequest, MODEL_ROUTE_CHAT_PATH, ModelRouteHttpError,
+    ModelRouteHttpErrorBody, ModelRouteHttpState, admit_chat_route, model_route_router,
+    model_route_router_from_config, model_route_router_from_toml_path,
+    model_route_router_from_toml_str,
 };
 pub use marlin_agent_runtime as runtime;
 pub use marlin_agent_runtime::observability;

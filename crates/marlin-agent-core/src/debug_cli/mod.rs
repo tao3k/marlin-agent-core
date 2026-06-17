@@ -10,10 +10,16 @@ mod io;
 mod loop_cmd;
 mod process_command;
 mod receipts;
+mod smoke_cmd;
+mod state_cmd;
+mod state_home;
 
 pub use driver::{MarlinCliResult, run_marlin_cli, run_marlin_cli_from_args};
-pub(in crate::debug_cli) use driver::{gerbil_usage, graph_usage, loop_usage, usage};
+pub(in crate::debug_cli) use driver::{
+    gerbil_usage, graph_usage, loop_usage, smoke_usage, state_usage, usage,
+};
 pub use receipts::{
     GraphQueryOutput, GraphQuerySummary, LoopEventQuerySummary, LoopInspectReceipt,
-    LoopQuerySummary, LoopReplayReceipt, LoopRunReceipt, ProjectRuntimeQuerySummary,
+    LoopQuerySummary, LoopReplayReceipt, LoopRunReceipt, ProjectRuntimeQuerySummary, SmokeLlmMode,
+    SmokeRuntimeReceipt, SmokeRuntimeScenario, SmokeRuntimeStateHome,
 };
