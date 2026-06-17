@@ -23,7 +23,7 @@ values.
 
 Reference reading:
 
-- https://www.tweag.io/blog/2024-06-20-nickel-modules/
+- https://www.tweag.io/blog/2024-06-20-nickel-user-interface-modules/
 - [[file:../40-rfcs/40.80-marlin-architecture-principles.org][40.80 Marlin Architecture Principles]]
 - [[file:gerbil-poo-modules-system-desgin.org][Gerbil POO Modules System Design]]
 
@@ -276,9 +276,9 @@ workspace directory:
 
 - =crates/marlin-gerbil-scheme/examples/user-interface-module-config/README.org=
   documents the layout and run command.
-- =modules/base.ss= declares the base user interface extension and base module.
-- =modules/script.ss= declares the script entrypoint and script module.
-- =modules/config.ss= is the user-facing module configuration entrypoint. It
+- =user-interface-modules/base.ss= declares the base user interface extension and base module.
+- =user-interface-modules/script.ss= declares the script entrypoint and script module.
+- =user-interface-modules/config.ss= is the user-facing module configuration entrypoint. It
   owns root imports, root options, option schemas, validation receipts, and the
   root module evaluation.
 - =t/user-interface-module-config-test.ss= runs the workflow with =gxtest=.
@@ -286,7 +286,7 @@ workspace directory:
 Run it from the example directory:
 
 #+begin_src sh
-GERBIL_LOADPATH=../../gerbil/src:../../gerbil/modules:modules:t gxtest -v t/user-interface-module-config-test.ss
+GERBIL_LOADPATH=../../gerbil/src:../../gerbil/modules:user-interface-modules:t gxtest -v t/user-interface-module-config-test.ss
 #+end_src
 
 The Rust ignored real-gxtest gate copies and executes this same directory. Do

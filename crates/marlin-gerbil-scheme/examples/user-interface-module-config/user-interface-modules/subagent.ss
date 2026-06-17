@@ -15,7 +15,7 @@
 ;;; Boundary: Source identity is owned by the Gerbil module system.
 ;; UserInterfaceWorkflowResult <- UserInterfaceWorkflowContext
 (def user-interface-subagent-policy-extension-source
-  "../modules/subagent")
+  "../user-interface-modules/subagent")
 
 ;;; Boundary: The agent-authored subagent profile is a plain POO object.
 ;; UserInterfaceWorkflowResult <- UserInterfaceWorkflowContext

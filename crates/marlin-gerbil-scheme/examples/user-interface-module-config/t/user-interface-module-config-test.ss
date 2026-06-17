@@ -7,9 +7,9 @@
         :marlin/deck-runtime-strategy
         :marlin/deck-runtime-user-module
         :marlin/graph-loop-continuation-native-projection
-        "../modules/config"
-        "../modules/loop-continuation"
-        "../modules/subagent"
+        "../user-interface-modules/config"
+        "../user-interface-modules/loop-continuation"
+        "../user-interface-modules/subagent"
         :std/test)
 
 ;;; Boundary: Fixture context models a downstream user command.
