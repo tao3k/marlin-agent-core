@@ -1,7 +1,14 @@
 (package: marlin-deck-runtime
  depend: ("git.cons.io/mighty-gerbils/gerbil-poo"
           "github.com/tao3k/gerbil-scheme-language-project-harness")
- policy: ((macro-governance
-          allow-generated: #t
-          explanation: "Marlin Gerbil runtime macro edits must cite runtime-source and macro-expansion evidence before changing transformers."
+ policy: ((source-scope
+           roots: ("src")
+           runtime-roots: ("src")
+           explanation: "Runtime and POO module-system implementations live under gerbil/src; legacy gerbil/modules loadpath roots are intentionally retired.")
+          (modularity-policy
+           config: "harness-policy/gerbil.ss"
+           explanation: "Marlin applies modularity thresholds through a package-owned Gerbil policy file so policy can evolve without Rust harness changes.")
+          (macro-governance
+           allow-generated: #t
+           explanation: "Marlin Gerbil runtime macro edits must cite runtime-source and macro-expansion evidence before changing transformers."
            witness: "search runtime-source macro sugar module-sugar")))

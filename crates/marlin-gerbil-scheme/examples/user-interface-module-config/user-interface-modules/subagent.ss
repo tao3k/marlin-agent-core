@@ -3,7 +3,7 @@
 
 (import :clan/poo/object
         :marlin/deck-runtime
-        :marlin/modules/lib
+        :modules/lib
         :marlin/deck-runtime-strategy)
 
 (export user-interface-subagent-policy-extension-source

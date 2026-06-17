@@ -1,7 +1,7 @@
 ;;; -*- Gerbil -*-
 ;;; Boundary: Module owns the public POO module interface for downstream users.
 
-package: marlin/modules
+package: modules
 
 (import (only-in :clan/poo/object .all-slots .get .has? .o .ref object?)
         (only-in :clan/poo/type String)
@@ -21,6 +21,7 @@ package: marlin/modules
         marlin-policy-pack-kind
         marlin-pack-catalog-kind
         marlin-policy-pack-presentation-kind
+        marlin-policy-pack-inventory-kind
         marlin-policy-object-kind
         marlin-policy-object-operation-kind
         marlin-policy-object-surgery-receipt-kind
@@ -36,6 +37,9 @@ package: marlin/modules
         marlin-policy-object?
         marlin-policy-object-id
         marlin-policy-object-family
+        marlin-policy-object-ids
+        marlin-policy-object-families
+        marlin-policy-object-disabled-ids
         marlin-add-object
         marlin-remove-object
         marlin-disable-object
@@ -44,9 +48,11 @@ package: marlin/modules
         marlin-policy-pack-apply-operations
         marlinPolicyPack
         defmarlin-policy-pack
+        marlinDefaultPolicyPack
         marlinPackCatalog
         marlin-pack-catalog-find
         marlin-pack-catalog-root
+        marlinPolicyPackInventory
         marlinPolicyPackPresentation
         marlinModuleCatalog
         marlin-import
@@ -149,6 +155,11 @@ package: marlin/modules
 ;; MarlinResult <- MarlinInput
 (def marlin-policy-pack-presentation-kind
   "marlin.modules.policy-pack-presentation.v1")
+
+;;; Boundary: Pack inventories list prefab furniture as a typed projection.
+;; MarlinResult <- MarlinInput
+(def marlin-policy-pack-inventory-kind
+  "marlin.modules.policy-pack-inventory.v1")
 
 ;;; Boundary: Policy objects are the POO "furniture" inside prefab packs.
 ;; MarlinResult <- MarlinInput
@@ -417,6 +428,35 @@ package: marlin/modules
 (def (marlin-policy-object-family value)
   (.get value policy-object-family))
 
+;;; Boundary: Object id inventory stays stable across payload shapes.
+;; MarlinResult <- MarlinInput
+(def (marlin-policy-object-ids object-values)
+  (map marlin-policy-object-id
+       (filter marlin-policy-object? object-values)))
+
+;;; Boundary: Family inventory is ordered by first appearance in the pack.
+;; MarlinResult <- MarlinInput
+(def (marlin-policy-object-families object-values)
+  (foldl (lambda (object-value family-values)
+           (if (marlin-policy-object? object-value)
+             (let (family-value
+                   (marlin-policy-object-family object-value))
+               (if (member family-value family-values)
+                 family-values
+                 (append family-values (list family-value))))
+             family-values))
+         '()
+         object-values))
+
+;;; Boundary: Disabled object ids make surgery visible without dropping payloads.
+;; MarlinResult <- MarlinInput
+(def (marlin-policy-object-disabled-ids object-values)
+  (map marlin-policy-object-id
+       (filter (lambda (object-value)
+                 (and (marlin-policy-object? object-value)
+                      (.get object-value policy-object-disabled)))
+               object-values)))
+
 ;;; Boundary: Disabled objects remain visible in presentations and receipts.
 ;; MarlinResult <- MarlinInput
 (def (marlin-policy-object-disable object-value reason-value)
@@ -532,9 +572,42 @@ package: marlin/modules
     (marlin-policy-object-id object-value)
     default-value))
 
+;;; Boundary: Target lookup is shared by object surgery and conflict receipts.
+;; MarlinResult <- MarlinInput
+(def (marlin-policy-object-targets object-values family-value target-id-value)
+  (filter (lambda (candidate)
+            (marlin-policy-object-matches?
+             candidate
+             family-value
+             target-id-value))
+          object-values))
+
+;;; Boundary: Disabled targets are conflicts, not silent surgery targets.
+;; MarlinResult <- MarlinInput
+(def (marlin-policy-object-targets-disabled? object-values)
+  (> (length
+      (filter (lambda (object-value)
+                (and (marlin-policy-object? object-value)
+                     (.get object-value policy-object-disabled)))
+              object-values))
+     0))
+
+;;; Boundary: Conflict reasons stay deterministic scalar receipt values.
+;; MarlinResult <- MarlinInput
+(def (marlin-policy-conflict-append
+      condition-value
+      reason-value
+      conflict-reasons-value)
+  (if condition-value
+    (append conflict-reasons-value (list reason-value))
+    conflict-reasons-value))
+
 ;;; Boundary: Surgery receipts prove Scheme object composition decisions.
 ;; MarlinResult <- MarlinInput
-(def (marlin-policy-object-surgery-receipt operation-value matched-count-value)
+(def (marlin-policy-object-surgery-receipt
+      operation-value
+      matched-count-value
+      conflict-reasons-value)
   (.o kind: marlin-policy-object-surgery-receipt-kind
       operation: (.get operation-value operation)
       family: (.get operation-value family)
@@ -549,6 +622,9 @@ package: marlin/modules
        #f)
       matched?: (> matched-count-value 0)
       matched-count: matched-count-value
+      valid?: (null? conflict-reasons-value)
+      conflict?: (not (null? conflict-reasons-value))
+      conflict-reasons: conflict-reasons-value
       owner: "gerbil-poo"
       rust-handler-manufactured: #f))
 
@@ -560,66 +636,116 @@ package: marlin/modules
          (target-id-value (.get operation-value target-id)))
     (cond
      ((string=? operation-name "add")
-      (.o policy-objects:
-          (append object-values
-                  (list (.get operation-value operation-object)))
-          matched-count: 1))
+      (let* ((operation-object-value
+              (.get operation-value operation-object))
+             (duplicate-values
+              (marlin-policy-object-targets
+               object-values
+               (marlin-policy-object-family operation-object-value)
+               (marlin-policy-object-id operation-object-value)))
+             (conflict-reasons-value
+              (marlin-policy-conflict-append
+               (pair? duplicate-values)
+               "duplicate-object"
+               '())))
+        (.o policy-objects:
+            (if (null? conflict-reasons-value)
+              (append object-values (list operation-object-value))
+              object-values)
+            matched-count:
+            (if (pair? duplicate-values)
+              (length duplicate-values)
+              1)
+            conflict-reasons: conflict-reasons-value)))
      ((string=? operation-name "remove")
-      (let ((matched
-             (filter (lambda (candidate)
-                       (marlin-policy-object-matches?
-                        candidate
-                        family-value
-                        target-id-value))
-                     object-values))
+      (let* ((matched
+              (marlin-policy-object-targets
+               object-values
+               family-value
+               target-id-value))
+             (conflict-reasons-value
+              (marlin-policy-conflict-append
+               (marlin-policy-object-targets-disabled? matched)
+               "disabled-target"
+               (marlin-policy-conflict-append
+                (null? matched)
+                "missing-target"
+                '())))
             (kept
              (filter (lambda (candidate)
                        (not
                         (marlin-policy-object-matches?
                          candidate
-                         family-value
-                         target-id-value)))
+                        family-value
+                        target-id-value)))
                      object-values)))
-        (.o policy-objects: kept
-            matched-count: (length matched))))
+        (.o policy-objects:
+            (if (null? conflict-reasons-value)
+              kept
+              object-values)
+            matched-count: (length matched)
+            conflict-reasons: conflict-reasons-value)))
      ((string=? operation-name "disable")
-      (let (matched
-            (filter (lambda (candidate)
-                      (marlin-policy-object-matches?
-                       candidate
-                       family-value
-                       target-id-value))
-                    object-values))
+      (let* ((matched
+              (marlin-policy-object-targets
+               object-values
+               family-value
+               target-id-value))
+             (conflict-reasons-value
+              (marlin-policy-conflict-append
+               (marlin-policy-object-targets-disabled? matched)
+               "disabled-target"
+               (marlin-policy-conflict-append
+                (null? matched)
+                "missing-target"
+                '()))))
         (.o policy-objects:
-            (map (lambda (candidate)
-                   (if (marlin-policy-object-matches?
+            (if (null? conflict-reasons-value)
+              (map (lambda (candidate)
+                     (if (marlin-policy-object-matches?
+                          candidate
+                          family-value
+                          target-id-value)
+                       (marlin-policy-object-disable
                         candidate
-                        family-value
-                        target-id-value)
-                     (marlin-policy-object-disable
-                      candidate
-                      (.get operation-value reason))
-                     candidate))
-                 object-values)
-            matched-count: (length matched))))
+                        (.get operation-value reason))
+                       candidate))
+                   object-values)
+              object-values)
+            matched-count: (length matched)
+            conflict-reasons: conflict-reasons-value)))
      ((string=? operation-name "replace")
-      (let (matched
-            (filter (lambda (candidate)
-                      (marlin-policy-object-matches?
-                       candidate
-                       family-value
-                       target-id-value))
-                    object-values))
+      (let* ((matched
+              (marlin-policy-object-targets
+               object-values
+               family-value
+               target-id-value))
+             (replacement-value
+              (.get operation-value operation-replacement))
+             (conflict-reasons-value
+              (marlin-policy-conflict-append
+               (not (marlin-policy-object? replacement-value))
+               "invalid-replacement"
+               (marlin-policy-conflict-append
+                (marlin-policy-object-targets-disabled? matched)
+                "disabled-target"
+                (marlin-policy-conflict-append
+                 (null? matched)
+                 "missing-target"
+                 '())))))
         (.o policy-objects:
-            (map (lambda (candidate)
-                   (if (marlin-policy-object-matches?
-                        candidate
-                        family-value
-                        target-id-value)
-                     (.get operation-value operation-replacement)
-                     candidate))
-                 object-values)
-            matched-count: (length matched))))
+            (if (null? conflict-reasons-value)
+              (map (lambda (candidate)
+                     (if (marlin-policy-object-matches?
+                          candidate
+                          family-value
+                          target-id-value)
+                       replacement-value
+                       candidate))
+                   object-values)
+              object-values)
+            matched-count: (length matched)
+            conflict-reasons: conflict-reasons-value)))
      (else
       (error "unknown marlin policy object operation" operation-name)))))
 
@@ -633,7 +759,8 @@ package: marlin/modules
              (remove-count 0)
              (disable-count 0)
              (replace-count 0)
-             (matched-receipt-count 0))
+             (matched-receipt-count 0)
+             (conflict-receipt-count 0))
     (if (null? remaining)
       (.o policy-objects: current
           surgery-receipts: (reverse receipts)
@@ -641,7 +768,8 @@ package: marlin/modules
           remove-operation-count: remove-count
           disable-operation-count: disable-count
           replace-operation-count: replace-count
-          matched-surgery-receipt-count: matched-receipt-count)
+          matched-surgery-receipt-count: matched-receipt-count
+          conflict-surgery-receipt-count: conflict-receipt-count)
       (let* ((operation-value (car remaining))
              (operation-name (.get operation-value operation))
              (operation-result
@@ -649,7 +777,10 @@ package: marlin/modules
              (receipt
               (marlin-policy-object-surgery-receipt
                operation-value
-               (.get operation-result matched-count))))
+               (.get operation-result matched-count)
+               (.get operation-result conflict-reasons)))
+             (operation-conflict?
+              (not (null? (.get operation-result conflict-reasons)))))
         (loop (cdr remaining)
               (.get operation-result policy-objects)
               (cons receipt receipts)
@@ -662,7 +793,9 @@ package: marlin/modules
               (+ replace-count
                  (if (string=? operation-name "replace") 1 0))
               (+ matched-receipt-count
-                 (if (> (.get operation-result matched-count) 0) 1 0)))))))
+                 (if (> (.get operation-result matched-count) 0) 1 0))
+              (+ conflict-receipt-count
+                 (if operation-conflict? 1 0)))))))
 
 ;;; Boundary: Policy packs are upstream prefab bundles over POO modules.
 ;; MarlinResult <- MarlinInput
@@ -683,20 +816,22 @@ package: marlin/modules
            (if module-value
              (.get module-value id)
              #f)))
-         (default-policy-objects
+         (default-policy-objects-value
           (marlin-module-object-ref/default
            pack-config
            'policy-objects
            '()))
-         (object-operations
+         (object-operations-value
           (marlin-module-object-ref/default
            pack-config
            'object-operations
            '()))
          (operation-result
           (marlin-policy-pack-apply-operations
-           default-policy-objects
-           object-operations)))
+           default-policy-objects-value
+           object-operations-value))
+         (surgery-receipts-value
+          (.get operation-result surgery-receipts)))
     (.o kind: marlin-policy-pack-kind
         id:
         (marlin-module-object-ref/default
@@ -711,10 +846,10 @@ package: marlin/modules
          pack-config
          'allowed-hook-ids
          '())
-        default-policy-objects: default-policy-objects
+        default-policy-objects: default-policy-objects-value
         policy-objects: (.get operation-result policy-objects)
-        object-operations: object-operations
-        object-surgery-receipts: (.get operation-result surgery-receipts)
+        object-operations: object-operations-value
+        object-surgery-receipts: surgery-receipts-value
         policy-object-count:
         (length (.get operation-result policy-objects))
         object-operation-count:
@@ -736,6 +871,24 @@ package: marlin/modules
         replace-operation-count: (.get operation-result replace-operation-count)
         matched-surgery-receipt-count:
         (.get operation-result matched-surgery-receipt-count)
+        conflict-surgery-receipt-count:
+        (.get operation-result conflict-surgery-receipt-count)
+        duplicate-object-conflict-count:
+        (marlin-policy-surgery-conflict-reason-count
+         surgery-receipts-value
+         "duplicate-object")
+        missing-target-conflict-count:
+        (marlin-policy-surgery-conflict-reason-count
+         surgery-receipts-value
+         "missing-target")
+        disabled-target-conflict-count:
+        (marlin-policy-surgery-conflict-reason-count
+         surgery-receipts-value
+         "disabled-target")
+        invalid-replacement-conflict-count:
+        (marlin-policy-surgery-conflict-reason-count
+         surgery-receipts-value
+         "invalid-replacement")
         metadata:
         (marlin-module-object-ref/default
          pack-config
@@ -823,6 +976,14 @@ package: marlin/modules
              (.get receipt-value matched?))
            receipt-values)))
 
+;;; Boundary: Conflict reason family counts are typed projection scalars.
+;; MarlinResult <- MarlinInput
+(def (marlin-policy-surgery-conflict-reason-count receipt-values reason-value)
+  (length
+   (filter (lambda (receipt-value)
+             (member reason-value (.get receipt-value conflict-reasons)))
+           receipt-values)))
+
 ;;; Boundary: Disabled object counts keep object surgery auditable.
 ;; MarlinResult <- MarlinInput
 (def (marlin-policy-disabled-object-count object-values)
@@ -832,6 +993,174 @@ package: marlin/modules
                   (.get object-value policy-object-disabled)))
            object-values)))
 
+;;; Boundary: Upstream prefab objects are policy furniture, not Rust handlers.
+;; MarlinResult <- MarlinInput
+(def (marlin-default-policy-pack-object
+      family-value
+      object-id-value
+      object-value)
+  (marlinPolicyObject
+   family-value
+   object-id-value
+   object-value
+   '((owner . "marlin") (surface . "default-prefab-object"))))
+
+;;; Boundary: The furnished default pack starts from coherent policy families.
+;; MarlinResult <- MarlinInput
+(def (marlin-default-policy-pack-objects)
+  (list
+   (marlin-default-policy-pack-object
+    "workspace-policy"
+    "default-workspace"
+    (.o isolation: "shared-worktree"
+        branch-mode: "policy-branch"
+        snapshot-mode: "typed-receipt-snapshot"))
+   (marlin-default-policy-pack-object
+    "session-policy"
+    "default-session"
+    (.o sharing: "shared"
+        isolation: "branch-isolated"
+        snapshot: "enabled"))
+   (marlin-default-policy-pack-object
+    "agent-policy"
+    "default-agent"
+    (.o root-agent: "root-agent"
+        subagent-policy: "module-managed"))
+   (marlin-default-policy-pack-object
+    "hook-selection-policy"
+    "default-hook"
+    (.o hook-id: "runtime-catalog-default-hook"
+        action: "register"))
+   (marlin-default-policy-pack-object
+    "model-route-policy"
+    "default-model-route"
+    (.o provider: "openai"
+        model: "gpt-5.4"
+        route: "interactive"))
+   (marlin-default-policy-pack-object
+    "continuation-profile-policy"
+    "default-continuation"
+    (.o profile: "balanced"
+        graph-intent: "loop-graph"))
+   (marlin-default-policy-pack-object
+    "human-review-policy"
+    "default-human-review"
+    (.o trigger: "high-risk-tool"
+        reviewer: "root-agent"))
+   (marlin-default-policy-pack-object
+    "failure-recovery-policy"
+    "default-failure-recovery"
+    (.o retry-budget: "bounded"
+        recovery: "receipt-driven"))
+   (marlin-default-policy-pack-object
+    "catalog-projection-policy"
+    "default-catalog-projection"
+    (.o projection-target: "rust-catalog-handlers"
+        resolution-owner: "rust"))))
+
+;;; Boundary: Default packs are furnished entrypoints over an existing module.
+;; MarlinResult <- MarlinInput
+(def (marlinDefaultPolicyPack module-value . maybe-pack-config)
+  (let (pack-config
+        (if (null? maybe-pack-config)
+          (.o)
+          (car maybe-pack-config)))
+    (marlinPolicyPack
+     (.o id:
+         (marlin-module-object-ref/default
+          pack-config
+          'id
+          "marlin-default-policy-pack")
+         module: module-value
+         policy-objects:
+         (marlin-module-object-ref/default
+          pack-config
+          'policy-objects
+          (marlin-default-policy-pack-objects))
+         object-operations:
+         (marlin-module-object-ref/default
+          pack-config
+          'object-operations
+          '())
+         allowed-hook-ids:
+         (marlin-module-object-ref/default
+          pack-config
+          'allowed-hook-ids
+          '("runtime-catalog-default-hook"))
+         metadata:
+         (marlin-module-object-ref/default
+          pack-config
+          'metadata
+          '((owner . "marlin") (surface . "default-prefab-pack")))))))
+
+;;; Boundary: Pack inventories are Rust-readable receipt payloads.
+;; MarlinResult <- MarlinInput
+(def (marlinPolicyPackInventory policy-pack)
+  (let* ((policy-objects-value (.get policy-pack policy-objects))
+         (default-policy-objects
+          (.get policy-pack default-policy-objects))
+         (allowed-hook-ids-value (.get policy-pack allowed-hook-ids))
+         (policy-families-value
+          (marlin-policy-object-families policy-objects-value))
+         (policy-object-ids-value
+          (marlin-policy-object-ids policy-objects-value))
+         (default-policy-object-ids-value
+          (marlin-policy-object-ids default-policy-objects))
+         (disabled-policy-object-ids-value
+          (marlin-policy-object-disabled-ids policy-objects-value))
+         (policy-object-count-value (.get policy-pack policy-object-count))
+         (default-policy-object-count-value
+          (length default-policy-objects))
+         (disabled-policy-object-count-value
+          (.get policy-pack disabled-policy-object-count))
+         (object-operation-count-value
+         (.get policy-pack object-operation-count))
+         (object-surgery-receipt-count-value
+         (.get policy-pack object-surgery-receipt-count))
+         (conflict-surgery-receipt-count-value
+          (.get policy-pack conflict-surgery-receipt-count))
+         (duplicate-object-conflict-count-value
+          (.get policy-pack duplicate-object-conflict-count))
+         (missing-target-conflict-count-value
+          (.get policy-pack missing-target-conflict-count))
+         (disabled-target-conflict-count-value
+          (.get policy-pack disabled-target-conflict-count))
+         (invalid-replacement-conflict-count-value
+          (.get policy-pack invalid-replacement-conflict-count))
+         (rust-parses-scheme-source-value
+          (.get policy-pack rust-parses-scheme-source))
+         (rust-handler-manufactured-value
+          (.get policy-pack rust-handler-manufactured)))
+    (.o kind: marlin-policy-pack-inventory-kind
+        pack-kind: (.get policy-pack kind)
+        pack-id: (.get policy-pack id)
+        pack-owner: (.get policy-pack owner)
+        pack-runtime-owner: (.get policy-pack runtime-owner)
+        root-module-id: (.get policy-pack root-module-id)
+        policy-object-kind: marlin-policy-object-kind
+        policy-object-count: policy-object-count-value
+        default-policy-object-count: default-policy-object-count-value
+        disabled-policy-object-count: disabled-policy-object-count-value
+        policy-families: policy-families-value
+        policy-object-ids: policy-object-ids-value
+        default-policy-object-ids: default-policy-object-ids-value
+        disabled-policy-object-ids: disabled-policy-object-ids-value
+        allowed-hook-ids: allowed-hook-ids-value
+        allowed-hook-count: (length allowed-hook-ids-value)
+        object-operation-count: object-operation-count-value
+        object-surgery-receipt-count: object-surgery-receipt-count-value
+        conflict-surgery-receipt-count: conflict-surgery-receipt-count-value
+        duplicate-object-conflict-count: duplicate-object-conflict-count-value
+        missing-target-conflict-count: missing-target-conflict-count-value
+        disabled-target-conflict-count: disabled-target-conflict-count-value
+        invalid-replacement-conflict-count:
+        invalid-replacement-conflict-count-value
+        replayable: #t
+        scheme-policy-owner: "gerbil-poo"
+        rust-kernel-owner: "rust"
+        rust-parses-scheme-source: rust-parses-scheme-source-value
+        rust-handler-manufactured: rust-handler-manufactured-value)))
+
 ;;; Boundary: Pack presentation is the stable projection pattern for Rust.
 ;; MarlinResult <- MarlinInput
 (def (marlinPolicyPackPresentation policy-pack)
@@ -839,40 +1168,89 @@ package: marlin/modules
           (marlinModuleSystemPresentation
            (.get policy-pack catalog)
            (.get policy-pack root-module-id)
-           (.get policy-pack allowed-hook-ids))))
+           (.get policy-pack allowed-hook-ids)))
+         (pack-inventory
+          (marlinPolicyPackInventory policy-pack))
+         (allowed-hook-ids-value (.get policy-pack allowed-hook-ids))
+         (policy-object-count-value (.get policy-pack policy-object-count))
+         (default-policy-object-count-value
+          (.get pack-inventory default-policy-object-count))
+         (disabled-policy-object-count-value
+          (.get policy-pack disabled-policy-object-count))
+         (policy-families-value (.get pack-inventory policy-families))
+         (policy-object-ids-value (.get pack-inventory policy-object-ids))
+         (default-policy-object-ids-value
+          (.get pack-inventory default-policy-object-ids))
+         (disabled-policy-object-ids-value
+          (.get pack-inventory disabled-policy-object-ids))
+         (object-operation-count-value (.get policy-pack object-operation-count))
+        (object-surgery-receipt-count-value
+         (.get policy-pack object-surgery-receipt-count))
+         (conflict-surgery-receipt-count-value
+          (.get policy-pack conflict-surgery-receipt-count))
+         (duplicate-object-conflict-count-value
+          (.get policy-pack duplicate-object-conflict-count))
+         (missing-target-conflict-count-value
+          (.get policy-pack missing-target-conflict-count))
+         (disabled-target-conflict-count-value
+          (.get policy-pack disabled-target-conflict-count))
+         (invalid-replacement-conflict-count-value
+          (.get policy-pack invalid-replacement-conflict-count))
+         (add-operation-count-value (.get policy-pack add-operation-count))
+         (remove-operation-count-value (.get policy-pack remove-operation-count))
+         (disable-operation-count-value (.get policy-pack disable-operation-count))
+         (replace-operation-count-value (.get policy-pack replace-operation-count))
+         (matched-surgery-receipt-count-value
+          (.get policy-pack matched-surgery-receipt-count))
+         (rust-parses-scheme-source-value
+          (.get policy-pack rust-parses-scheme-source))
+         (rust-handler-manufactured-value
+          (.get policy-pack rust-handler-manufactured)))
     (.o kind: marlin-policy-pack-presentation-kind
         pack-kind: (.get policy-pack kind)
         pack-id: (.get policy-pack id)
         pack-owner: (.get policy-pack owner)
         pack-runtime-owner: (.get policy-pack runtime-owner)
         pack-catalog-kind: marlin-pack-catalog-kind
+        policy-pack-inventory-kind: (.get pack-inventory kind)
         module-system-presentation-kind:
         (.get module-system-presentation kind)
         module-system-projection-chain-kind:
         (.get module-system-presentation projection-chain-kind)
         root-module-id: (.get policy-pack root-module-id)
         root-module-kind: (.get module-system-presentation root-module-kind)
-        policy-object-count: (.get policy-pack policy-object-count)
-        disabled-policy-object-count:
-        (.get policy-pack disabled-policy-object-count)
-        object-operation-count: (.get policy-pack object-operation-count)
-        object-surgery-receipt-count:
-        (.get policy-pack object-surgery-receipt-count)
-        add-operation-count: (.get policy-pack add-operation-count)
-        remove-operation-count: (.get policy-pack remove-operation-count)
-        disable-operation-count: (.get policy-pack disable-operation-count)
-        replace-operation-count: (.get policy-pack replace-operation-count)
-        matched-surgery-receipt-count:
-        (.get policy-pack matched-surgery-receipt-count)
-        allowed-hook-count: (length (.get policy-pack allowed-hook-ids))
+        policy-object-count: policy-object-count-value
+        default-policy-object-count: default-policy-object-count-value
+        disabled-policy-object-count: disabled-policy-object-count-value
+        policy-families: policy-families-value
+        policy-object-ids: policy-object-ids-value
+        default-policy-object-ids: default-policy-object-ids-value
+        disabled-policy-object-ids: disabled-policy-object-ids-value
+        object-operation-count: object-operation-count-value
+        object-surgery-receipt-count: object-surgery-receipt-count-value
+        conflict-surgery-receipt-count: conflict-surgery-receipt-count-value
+        duplicate-object-conflict-count: duplicate-object-conflict-count-value
+        missing-target-conflict-count: missing-target-conflict-count-value
+        disabled-target-conflict-count: disabled-target-conflict-count-value
+        invalid-replacement-conflict-count:
+        invalid-replacement-conflict-count-value
+        add-operation-count: add-operation-count-value
+        remove-operation-count: remove-operation-count-value
+        disable-operation-count: disable-operation-count-value
+        replace-operation-count: replace-operation-count-value
+        matched-surgery-receipt-count: matched-surgery-receipt-count-value
+        allowed-hook-ids: allowed-hook-ids-value
+        allowed-hook-count: (length allowed-hook-ids-value)
         user-entrypoints:
         '("marlinPolicyPack"
           "defmarlin-policy-pack"
+          "marlinDefaultPolicyPack"
           "marlinPolicyObject"
           "marlin-add-object"
           "marlin-remove-object"
           "marlin-disable-object"
           "marlin-replace-object"
+          "marlinPolicyPackInventory"
           "marlinPolicyPackPresentation")
         module-evaluation-receipt-kind:
         (.get module-system-presentation module-evaluation-receipt-kind)
@@ -889,9 +1267,8 @@ package: marlin/modules
         catalog-resolution-receipt-owner:
         (.get module-system-presentation catalog-resolution-receipt-owner)
         rust-parses-scheme-source:
-        (.get policy-pack rust-parses-scheme-source)
-        rust-handler-manufactured:
-        (.get policy-pack rust-handler-manufactured)
+        rust-parses-scheme-source-value
+        rust-handler-manufactured: rust-handler-manufactured-value
         scheme-policy-owner: "gerbil-poo"
         rust-kernel-owner: "rust"
         replayable: #t)))

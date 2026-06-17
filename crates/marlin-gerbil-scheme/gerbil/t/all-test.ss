@@ -11,6 +11,7 @@
         "deck-runtime-user-option-test"
         "deck-runtime-user-module-test"
         "marlin-modules-lib-test"
+        "marlin-policy-pack-inventory-test"
         "deck-runtime-script-interface-test"
         "deck-runtime-script-performance-test"
         "harness-policy-test")

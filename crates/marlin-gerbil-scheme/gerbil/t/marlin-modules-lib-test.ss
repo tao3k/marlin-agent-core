@@ -2,7 +2,7 @@
 ;;; Boundary: Module tests the public marlinModules user interface.
 
 (import :clan/poo/object
-        :marlin/modules/lib)
+        :modules/lib)
 
 ;;; Boundary: Local checks stay silent around POO-heavy values.
 ;; MarlinResult <- MarlinInput
@@ -203,11 +203,6 @@
 (def modules-lib-policy-pack-catalog
   (marlinPackCatalog modules-lib-policy-pack))
 
-;;; Boundary: Presentation is the scalar proof Rust/debug tooling consumes.
-;; MarlinResult <- MarlinInput
-(def modules-lib-policy-pack-presentation
-  (marlinPolicyPackPresentation modules-lib-policy-pack))
-
 ;;; Boundary: Tests find post-surgery policy objects by family-local id.
 ;; MarlinResult <- MarlinInput
 (def (modules-lib-policy-pack-object object-id-value)
@@ -319,6 +314,19 @@
  (.get modules-lib-policy-pack id)
  "modules-lib-prefab-pack"
  "pack id mismatch")
+(modules-lib-assert-equal
+ (marlin-policy-object-ids (.get modules-lib-policy-pack policy-objects))
+ '("fast-route" "human-review" "memory-trigger")
+ "post-surgery object id inventory mismatch")
+(modules-lib-assert-equal
+ (marlin-policy-object-families (.get modules-lib-policy-pack policy-objects))
+ '("model-route-policy" "human-review-policy" "memory-trigger-policy")
+ "post-surgery object family inventory mismatch")
+(modules-lib-assert-equal
+ (marlin-policy-object-disabled-ids
+  (.get modules-lib-policy-pack policy-objects))
+ '("human-review")
+ "post-surgery disabled object id mismatch")
 (def modules-lib-policy-pack-presentation-now
   (marlinPolicyPackPresentation modules-lib-policy-pack))
 
@@ -335,9 +343,17 @@
  "modules-lib-prefab-pack"
  "pack presentation id mismatch")
 (modules-lib-assert-equal
+ (.get modules-lib-policy-pack-presentation-now policy-pack-inventory-kind)
+ marlin-policy-pack-inventory-kind
+ "pack presentation inventory kind mismatch")
+(modules-lib-assert-equal
  (.get modules-lib-policy-pack-presentation-now policy-object-count)
  3
  "presentation object count mismatch")
+(modules-lib-assert-equal
+ (.get modules-lib-policy-pack-presentation-now default-policy-object-count)
+ 3
+ "presentation default object count mismatch")
 (modules-lib-assert-equal
  (.get modules-lib-policy-pack-presentation-now object-operation-count)
  4

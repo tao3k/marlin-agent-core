@@ -15,6 +15,23 @@
   (display value)
   (newline))
 
+;;; Boundary: List facts stay simple TSV values for Rust debug parsing.
+;; MarlinResult <- MarlinInput
+(def (string-list->csv values)
+  (let loop ((remaining values)
+             (result ""))
+    (if (null? remaining)
+      result
+      (loop (cdr remaining)
+            (if (string=? result "")
+              (car remaining)
+              (string-append result "," (car remaining)))))))
+
+;;; Boundary: Rust receives scalar fact values, not Scheme list syntax.
+;; MarlinResult <- MarlinInput
+(def (emit-string-list key values)
+  (emit key (string-list->csv values)))
+
 ;;; Boundary: Runtime parameters arrive through the process environment.
 ;; MarlinResult <- MarlinInput
 (def policy-receipt-iterations
@@ -99,16 +116,38 @@
 (emit "policy_pack_kind" (.get policy-pack-presentation pack-kind))
 (emit "policy_pack_id" (.get policy-pack-presentation pack-id))
 (emit "policy_pack_presentation_kind" (.get policy-pack-presentation kind))
+(emit "policy_pack_inventory_kind"
+      (.get policy-pack-presentation policy-pack-inventory-kind))
 (emit "policy_pack_module_system_presentation_kind"
       (.get policy-pack-presentation module-system-presentation-kind))
 (emit "policy_pack_object_count"
       (.get policy-pack-presentation policy-object-count))
+(emit "policy_pack_default_object_count"
+      (.get policy-pack-presentation default-policy-object-count))
 (emit "policy_pack_disabled_object_count"
       (.get policy-pack-presentation disabled-policy-object-count))
+(emit-string-list "policy_pack_policy_families"
+                  (.get policy-pack-presentation policy-families))
+(emit-string-list "policy_pack_policy_object_ids"
+                  (.get policy-pack-presentation policy-object-ids))
+(emit-string-list "policy_pack_default_policy_object_ids"
+                  (.get policy-pack-presentation default-policy-object-ids))
+(emit-string-list "policy_pack_disabled_policy_object_ids"
+                  (.get policy-pack-presentation disabled-policy-object-ids))
 (emit "policy_pack_operation_count"
       (.get policy-pack-presentation object-operation-count))
 (emit "policy_pack_surgery_receipt_count"
       (.get policy-pack-presentation object-surgery-receipt-count))
+(emit "policy_pack_conflict_surgery_receipt_count"
+      (.get policy-pack-presentation conflict-surgery-receipt-count))
+(emit "policy_pack_duplicate_object_conflict_count"
+      (.get policy-pack-presentation duplicate-object-conflict-count))
+(emit "policy_pack_missing_target_conflict_count"
+      (.get policy-pack-presentation missing-target-conflict-count))
+(emit "policy_pack_disabled_target_conflict_count"
+      (.get policy-pack-presentation disabled-target-conflict-count))
+(emit "policy_pack_invalid_replacement_conflict_count"
+      (.get policy-pack-presentation invalid-replacement-conflict-count))
 (emit "policy_pack_add_count"
       (.get policy-pack-presentation add-operation-count))
 (emit "policy_pack_remove_count"
@@ -121,6 +160,8 @@
       (.get policy-pack-presentation matched-surgery-receipt-count))
 (emit "policy_pack_allowed_hook_count"
       (.get policy-pack-presentation allowed-hook-count))
+(emit-string-list "policy_pack_allowed_hook_ids"
+                  (.get policy-pack-presentation allowed-hook-ids))
 (emit "policy_pack_import_graph_owner"
       (.get policy-pack-presentation import-graph-owner))
 (emit "policy_pack_option_merge_owner"

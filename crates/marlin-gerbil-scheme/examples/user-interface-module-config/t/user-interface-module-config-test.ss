@@ -2,7 +2,7 @@
 ;;; Boundary: Example test runs the user interface module configuration workflow.
 
 (import :clan/poo/object
-        :marlin/modules/lib
+        :modules/lib
         :marlin/deck-runtime-script
         :marlin/deck-runtime-strategy
         :marlin/deck-runtime-user-module

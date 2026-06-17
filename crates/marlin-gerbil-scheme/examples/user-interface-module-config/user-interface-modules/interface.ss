@@ -2,7 +2,7 @@
 ;;; Boundary: Downstream example interface owns the typed user config surface.
 
 (import :clan/poo/object
-        :marlin/modules/lib)
+        :modules/lib)
 
 (export UserInterfaceModuleConfig)
 

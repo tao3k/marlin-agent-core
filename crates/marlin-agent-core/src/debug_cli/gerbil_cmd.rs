@@ -57,17 +57,29 @@ struct GerbilPolicyReceiptDebugSummary {
     policy_pack_kind: String,
     policy_pack_id: String,
     policy_pack_presentation_kind: String,
+    policy_pack_inventory_kind: String,
     policy_pack_module_system_presentation_kind: String,
     policy_pack_object_count: u64,
+    policy_pack_default_object_count: u64,
     policy_pack_disabled_object_count: u64,
+    policy_pack_policy_families: Vec<String>,
+    policy_pack_policy_object_ids: Vec<String>,
+    policy_pack_default_policy_object_ids: Vec<String>,
+    policy_pack_disabled_policy_object_ids: Vec<String>,
     policy_pack_operation_count: u64,
     policy_pack_surgery_receipt_count: u64,
+    policy_pack_conflict_surgery_receipt_count: u64,
+    policy_pack_duplicate_object_conflict_count: u64,
+    policy_pack_missing_target_conflict_count: u64,
+    policy_pack_disabled_target_conflict_count: u64,
+    policy_pack_invalid_replacement_conflict_count: u64,
     policy_pack_add_count: u64,
     policy_pack_remove_count: u64,
     policy_pack_disable_count: u64,
     policy_pack_replace_count: u64,
     policy_pack_matched_surgery_receipt_count: u64,
     policy_pack_allowed_hook_count: u64,
+    policy_pack_allowed_hook_ids: Vec<String>,
     policy_pack_import_graph_owner: String,
     policy_pack_option_merge_owner: String,
     policy_pack_extension_composition_owner: String,
@@ -130,9 +142,7 @@ pub(super) fn dispatch_gerbil(cursor: &mut ArgCursor) -> Result<MarlinCliResult,
 fn run_policy_receipt(
     options: GerbilPolicyReceiptOptions,
 ) -> Result<GerbilPolicyReceiptDebugSummary, String> {
-    let loadpath = options
-        .loadpath
-        .unwrap_or_else(|| "src:modules:t".to_owned());
+    let loadpath = options.loadpath.unwrap_or_else(|| "src:t".to_owned());
     let iterations = options.iterations.to_string();
     let started_at = Instant::now();
     let output = Command::new(&options.gxi)
@@ -246,19 +256,54 @@ fn run_policy_receipt(
         policy_pack_kind: required_fact(&facts, "policy_pack_kind")?,
         policy_pack_id: required_fact(&facts, "policy_pack_id")?,
         policy_pack_presentation_kind: required_fact(&facts, "policy_pack_presentation_kind")?,
+        policy_pack_inventory_kind: required_fact(&facts, "policy_pack_inventory_kind")?,
         policy_pack_module_system_presentation_kind: required_fact(
             &facts,
             "policy_pack_module_system_presentation_kind",
         )?,
         policy_pack_object_count: required_u64_fact(&facts, "policy_pack_object_count")?,
+        policy_pack_default_object_count: required_u64_fact(
+            &facts,
+            "policy_pack_default_object_count",
+        )?,
         policy_pack_disabled_object_count: required_u64_fact(
             &facts,
             "policy_pack_disabled_object_count",
+        )?,
+        policy_pack_policy_families: required_csv_fact(&facts, "policy_pack_policy_families")?,
+        policy_pack_policy_object_ids: required_csv_fact(&facts, "policy_pack_policy_object_ids")?,
+        policy_pack_default_policy_object_ids: required_csv_fact(
+            &facts,
+            "policy_pack_default_policy_object_ids",
+        )?,
+        policy_pack_disabled_policy_object_ids: required_csv_fact(
+            &facts,
+            "policy_pack_disabled_policy_object_ids",
         )?,
         policy_pack_operation_count: required_u64_fact(&facts, "policy_pack_operation_count")?,
         policy_pack_surgery_receipt_count: required_u64_fact(
             &facts,
             "policy_pack_surgery_receipt_count",
+        )?,
+        policy_pack_conflict_surgery_receipt_count: required_u64_fact(
+            &facts,
+            "policy_pack_conflict_surgery_receipt_count",
+        )?,
+        policy_pack_duplicate_object_conflict_count: required_u64_fact(
+            &facts,
+            "policy_pack_duplicate_object_conflict_count",
+        )?,
+        policy_pack_missing_target_conflict_count: required_u64_fact(
+            &facts,
+            "policy_pack_missing_target_conflict_count",
+        )?,
+        policy_pack_disabled_target_conflict_count: required_u64_fact(
+            &facts,
+            "policy_pack_disabled_target_conflict_count",
+        )?,
+        policy_pack_invalid_replacement_conflict_count: required_u64_fact(
+            &facts,
+            "policy_pack_invalid_replacement_conflict_count",
         )?,
         policy_pack_add_count: required_u64_fact(&facts, "policy_pack_add_count")?,
         policy_pack_remove_count: required_u64_fact(&facts, "policy_pack_remove_count")?,
@@ -272,6 +317,7 @@ fn run_policy_receipt(
             &facts,
             "policy_pack_allowed_hook_count",
         )?,
+        policy_pack_allowed_hook_ids: required_csv_fact(&facts, "policy_pack_allowed_hook_ids")?,
         policy_pack_import_graph_owner: required_fact(&facts, "policy_pack_import_graph_owner")?,
         policy_pack_option_merge_owner: required_fact(&facts, "policy_pack_option_merge_owner")?,
         policy_pack_extension_composition_owner: required_fact(
@@ -360,6 +406,15 @@ fn required_fact(facts: &BTreeMap<String, String>, key: &str) -> Result<String, 
         .get(key)
         .cloned()
         .ok_or_else(|| format!("missing gerbil policy receipt fact `{key}`"))
+}
+
+fn required_csv_fact(facts: &BTreeMap<String, String>, key: &str) -> Result<Vec<String>, String> {
+    let value = required_fact(facts, key)?;
+    if value.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    Ok(value.split(',').map(ToOwned::to_owned).collect())
 }
 
 fn required_bool_fact(facts: &BTreeMap<String, String>, key: &str) -> Result<bool, String> {

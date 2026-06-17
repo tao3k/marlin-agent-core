@@ -36,17 +36,17 @@ Every milestone must preserve this boundary:
 Status: landed, but should remain guarded.
 
 Purpose:
-- Keep =:marlin/modules/lib= as the public module-system library under
-  =crates/marlin-gerbil-scheme/gerbil/modules/marlin/modules/lib.ss=.
+- Keep =:modules/lib= as the public module-system library under
+  =crates/marlin-gerbil-scheme/gerbil/src/modules/lib.ss=.
 - Keep =src/marlin= focused on runtime, debug, policy primitives, and projection
   glue.
 - Keep downstream examples on semantic local names such as
   =user-interface-modules= instead of a second ambiguous =modules= directory.
 
 Required evidence:
-- =GERBIL_LOADPATH=src:modules:t /usr/local/bin/gxi t/all-test.ss=
+- =GERBIL_LOADPATH=src:t /usr/local/bin/gxi t/all-test.ss=
 - =marlin gerbil policy-receipt= debug CLI output includes =loadpath:
-  "src:modules:t"=.
+  "src:t"=.
 - =asp gerbil-scheme check --changed .=
 
 Exit condition:
@@ -204,7 +204,7 @@ Deliverables:
 
 Required evidence:
 - Example test with semantic loadpath:
-  =../../gerbil/src:../../gerbil/modules:user-interface-modules:t=.
+  =../../gerbil/src:user-interface-modules:t=.
 - README and design docs use the same directory names and ownership terms.
 
 Exit condition:

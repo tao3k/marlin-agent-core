@@ -1,5 +1,5 @@
 use marlin_agent_core::run_marlin_cli_from_args;
-use serde_json::Value;
+use serde_json::{Value, json};
 use std::path::Path;
 
 #[test]
@@ -119,19 +119,61 @@ fn debug_cli_gerbil_policy_receipt_runs_scheme_policy_engine() {
         "marlin.modules.policy-pack-presentation.v1"
     );
     assert_eq!(
+        summary["policy_pack_inventory_kind"],
+        "marlin.modules.policy-pack-inventory.v1"
+    );
+    assert_eq!(
         summary["policy_pack_module_system_presentation_kind"],
         "marlin.modules.system-presentation.v1"
     );
     assert_eq!(summary["policy_pack_object_count"], 3);
+    assert_eq!(summary["policy_pack_default_object_count"], 3);
     assert_eq!(summary["policy_pack_disabled_object_count"], 1);
+    assert_eq!(
+        summary["policy_pack_policy_families"],
+        json!([
+            "model-route-policy",
+            "human-review-policy",
+            "memory-trigger-policy"
+        ])
+    );
+    assert_eq!(
+        summary["policy_pack_policy_object_ids"],
+        json!([
+            "debug-fast-route",
+            "debug-human-review",
+            "debug-memory-trigger"
+        ])
+    );
+    assert_eq!(
+        summary["policy_pack_default_policy_object_ids"],
+        json!([
+            "debug-policy-extension",
+            "debug-human-review",
+            "debug-runtime-catalog-hook"
+        ])
+    );
+    assert_eq!(
+        summary["policy_pack_disabled_policy_object_ids"],
+        json!(["debug-human-review"])
+    );
     assert_eq!(summary["policy_pack_operation_count"], 4);
     assert_eq!(summary["policy_pack_surgery_receipt_count"], 4);
+    assert_eq!(summary["policy_pack_conflict_surgery_receipt_count"], 0);
+    assert_eq!(summary["policy_pack_duplicate_object_conflict_count"], 0);
+    assert_eq!(summary["policy_pack_missing_target_conflict_count"], 0);
+    assert_eq!(summary["policy_pack_disabled_target_conflict_count"], 0);
+    assert_eq!(summary["policy_pack_invalid_replacement_conflict_count"], 0);
     assert_eq!(summary["policy_pack_add_count"], 1);
     assert_eq!(summary["policy_pack_remove_count"], 1);
     assert_eq!(summary["policy_pack_disable_count"], 1);
     assert_eq!(summary["policy_pack_replace_count"], 1);
     assert_eq!(summary["policy_pack_matched_surgery_receipt_count"], 4);
     assert_eq!(summary["policy_pack_allowed_hook_count"], 1);
+    assert_eq!(
+        summary["policy_pack_allowed_hook_ids"],
+        json!(["debug-runtime-catalog-hook"])
+    );
     assert_eq!(
         summary["policy_pack_import_graph_owner"],
         "gerbil-module-system"

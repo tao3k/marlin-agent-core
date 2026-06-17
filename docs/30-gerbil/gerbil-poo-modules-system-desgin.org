@@ -67,8 +67,8 @@ hidden =disabledModules= key. Changing furniture should be object surgery:
  my-model-route)
 #+end_src
 
-If a user really wants an unfurnished room, Marlin can also expose a "rough
-house" or "毛坯房" layer: low-level =marlinModules=, =marlinPolicyModule=,
+If a user really wants an unfurnished room, Marlin can also expose an
+"unfinished shell" layer: low-level =marlinModules=, =marlinPolicyModule=,
 =marlinPolicyExtension=, and explicit catalog/evaluation calls. That layer is
 for framework authors and advanced users, not the default teaching interface.
 
@@ -171,7 +171,7 @@ has produced Scheme values.
 These levels are easiest to explain with the house model. They are not just
 implementation tiers; they are how the project should teach the API.
 
-*** Level 0: 精装房 Prefab
+*** Level 0: Furnished Prefab
 
 The user imports an upstream furnished module pack and supplies only a small
 config object. This is the normal user path.
@@ -190,7 +190,7 @@ and projection receipts.
 The user should not need to know how the walls are framed. They should know
 where the rooms are and which knobs are intended for normal use.
 
-*** Level 1: 常规配置 Normal Config
+*** Level 1: Normal Configuration
 
 The user overrides ordinary values without touching the object graph.
 
@@ -207,7 +207,7 @@ schemas live in the interface; user config is a small POO object.
 In the house model, this is changing thermostat settings, choosing a model
 profile, or setting the workspace root. The furniture layout stays the same.
 
-*** Level 2: 换家具 Object Surgery
+*** Level 2: Object Surgery
 
 The user adds, removes, disables, or replaces typed objects inside the prefab.
 This is the main reason to use Gerbil POO instead of copying a Nix-like
@@ -265,7 +265,7 @@ Replace is often more important than remove. Many real customizations are not
 This is clearer than =mkForce= style priority: the receipt says which object was
 replaced, by which replacement, in which family.
 
-*** Level 3: 自己做家具 Advanced POO Extension
+*** Level 3: Advanced POO Extension
 
 Advanced users write new objects directly.
 
@@ -417,7 +417,7 @@ Nix-style escape-hatch complexity.
 
 Current implementation:
 
-- =crates/marlin-gerbil-scheme/gerbil/modules/marlin/modules/lib.ss=
+- =crates/marlin-gerbil-scheme/gerbil/src/modules/lib.ss=
   owns =marlinModules=, =marlinModuleCatalog=, =marlinEvalModules=, and
   =marlinModuleSystemPresentation=.
 - =crates/marlin-gerbil-scheme/gerbil/src/marlin/deck-runtime-debug-policy-extension.ss=

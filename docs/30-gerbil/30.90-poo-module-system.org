@@ -75,7 +75,7 @@ The first implementation steps exist:
 
 - =:marlin/deck-runtime-user-module= defines user module POO objects.
 - =defmarlin-deck-runtime-user-module= defines user modules through the macro
-- =:marlin/modules/lib= defines the public =marlinModules= POO
+- =:modules/lib= defines the public =marlinModules= POO
   interface that downstream users extend with =imports=, =options=, and
   =schemas=. Runtime constructors remain behind =marlin-module-apply= and
   =marlin-module-evaluate=.
@@ -287,7 +287,7 @@ workspace directory:
 Run it from the example directory:
 
 #+begin_src sh
-GERBIL_LOADPATH=../../gerbil/src:../../gerbil/modules:user-interface-modules:t gxtest -v t/user-interface-module-config-test.ss
+GERBIL_LOADPATH=../../gerbil/src:user-interface-modules:t gxtest -v t/user-interface-module-config-test.ss
 #+end_src
 
 The Rust ignored real-gxtest gate copies and executes this same directory. Do
@@ -389,7 +389,7 @@ Every ModuleSystem change should run:
 
 #+begin_src sh
 gerbil-scheme-harness check crates/marlin-gerbil-scheme/gerbil
-cd crates/marlin-gerbil-scheme/gerbil && GERBIL_LOADPATH=src:modules:t gxtest -v t/all-test.ss
+cd crates/marlin-gerbil-scheme/gerbil && GERBIL_LOADPATH=src:t gxtest -v t/all-test.ss
 direnv exec . rtk --ultra-compact cargo test -p marlin-gerbil-scheme --quiet
 direnv exec . rtk --ultra-compact cargo test -p marlin-gerbil-scheme command_compiler_real_gxtest_runs_user_interface_worker_space_script_interface_workflow -- --ignored --nocapture
 gerbil-scheme-harness bench --iterations 1 --max-total-ms 2000 --max-interface-ms 50 crates/marlin-gerbil-scheme/gerbil

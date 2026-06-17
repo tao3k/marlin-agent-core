@@ -71,6 +71,22 @@
       (string-append root suffix)
       (string-append root "/" suffix))))
 
+;;; Boundary: Project policy fixtures stay rooted at the workspace package.
+;; MarlinResult <- MarlinInput
+(def harness-gerbil-pkg
+  (path-join harness-package-root "crates/marlin-gerbil-scheme/gerbil/gerbil.pkg"))
+
+;;; Boundary: Build target checks keep loadpath layout under harness policy.
+;; MarlinResult <- MarlinInput
+(def harness-gerbil-build-script
+  (path-join harness-package-root "crates/marlin-gerbil-scheme/gerbil/build.ss"))
+
+;;; Boundary: Modular policy config is applied by the Gerbil language harness.
+;; MarlinResult <- MarlinInput
+(def harness-gerbil-modularity-policy
+  (path-join harness-package-root
+             "crates/marlin-gerbil-scheme/gerbil/harness-policy/gerbil.ss"))
+
 ;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
 ;; MarlinResult <- MarlinInput
 (def harness-loadpath
@@ -218,12 +234,65 @@
    " "
    (shell-quote policy-negative-output)))
 
+;;; Boundary: Text assertions pin gerbil.pkg policy and build layout.
+;; MarlinResult <- MarlinInput
+(def (file-contains-command path text)
+  (string-append
+   "grep -F -q "
+   (shell-quote text)
+   " "
+   (shell-quote path)))
+
+;;; Boundary: Text assertions pin gerbil.pkg policy and build layout.
+;; MarlinResult <- MarlinInput
+(def (file-lacks-command path text)
+  (string-append
+   "if grep -F -q "
+   (shell-quote text)
+   " "
+   (shell-quote path)
+   "; then exit 1; else exit 0; fi"))
+
 ;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
 ;; MarlinResult <- MarlinInput
 (def (check-harness-policy-paths)
   (check (file-exists? harness-package-root) => #t)
   (check (file-exists? harness-src) => #t)
-  (check (file-exists? harness-main) => #t))
+  (check (file-exists? harness-main) => #t)
+  (check (file-exists? harness-gerbil-pkg) => #t)
+  (check (file-exists? harness-gerbil-build-script) => #t)
+  (check (file-exists? harness-gerbil-modularity-policy) => #t))
+
+;;; Boundary: Gerbil language harness owns package policy, not Rust asset gates.
+;; MarlinResult <- MarlinInput
+(def (check-harness-policy-declares-module-layout)
+  (check (shell-command
+          (file-contains-command harness-gerbil-pkg "source-scope"))
+         => 0)
+  (check (shell-command
+          (file-contains-command harness-gerbil-pkg "runtime-roots: (\"src\")"))
+         => 0)
+  (check (shell-command
+          (file-contains-command
+           harness-gerbil-pkg
+           "modularity-policy"))
+         => 0)
+  (check (shell-command
+          (file-contains-command
+           harness-gerbil-pkg
+           "config: \"harness-policy/gerbil.ss\""))
+         => 0)
+  (check (shell-command
+          (file-contains-command
+           harness-gerbil-modularity-policy
+           "(modularity-policy"))
+         => 0)
+  (check (shell-command
+          (file-contains-command harness-gerbil-build-script "\"src/modules/lib\""))
+         => 0)
+  (check (shell-command
+          (file-lacks-command harness-gerbil-build-script "\"modules/marlin/modules/lib\""))
+         => 0))
 
 ;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
 ;; MarlinResult <- MarlinInput
@@ -244,5 +313,6 @@
   (reset-negative-policy-fixture))
 
 (check-harness-policy-paths)
+(check-harness-policy-declares-module-layout)
 (check-harness-policy)
 (check-harness-policy-applies-rules)
