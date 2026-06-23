@@ -19,9 +19,11 @@ pub use contract::{
 };
 pub use controller::{
     FailureClassificationId, FailureClassificationReceipt, GraphLoopEvidencePolicy,
-    GraphLoopFailureKind, GraphLoopIterationReport, GraphLoopNextAction, GraphLoopRunRequest,
-    GraphLoopStopPolicy, HumanDecision, HumanDecisionReceipt, HumanGateId, HumanGateReceipt,
-    HumanReviewKind, HumanReviewerId,
+    GraphLoopFailureKind, GraphLoopGovernancePolicy, GraphLoopGovernedContextNamespace,
+    GraphLoopGovernedSessionKind, GraphLoopIterationReport, GraphLoopNextAction,
+    GraphLoopRunRequest, GraphLoopSandboxBackend, GraphLoopSandboxPolicy, GraphLoopSessionPolicy,
+    GraphLoopStatePolicy, GraphLoopStopPolicy, GraphLoopVerifierPolicy, HumanDecision,
+    HumanDecisionReceipt, HumanGateId, HumanGateReceipt, HumanReviewKind, HumanReviewerId,
 };
 pub use execution_budget::GraphLoopExecutionBudget;
 pub use gerbil_policy::{

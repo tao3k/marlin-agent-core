@@ -79,6 +79,40 @@
       "allow_policy_update": false
     }
   },
+  "governance_policy": {
+    "state_policy": {
+      "read_before_run": true,
+      "write_receipt_on_pass": true,
+      "state_ref": "state/marline-failure-retry-loop-state.org"
+    },
+    "sandbox_policy": {
+      "backend": "nono",
+      "profile_ref": "nono-profile",
+      "filesystem_scope": "runtime",
+      "network_access": false
+    },
+    "session_policy": {
+      "session_kind": "sub-agent",
+      "child_session_id": "govern-loop:marlin-failure-retry-real-llm",
+      "visible_namespaces": [
+        "system",
+        "workspace",
+        "tools"
+      ],
+      "max_history_items": 64
+    },
+    "verifier_policy": {
+      "pass_statuses": [
+        "Completed"
+      ],
+      "retry_statuses": [
+        "Failed"
+      ],
+      "human_audit_statuses": [
+        "Cancelled"
+      ]
+    }
+  },
   "stop_policy": {
     "max_iterations": 3,
     "stop_on_failed_execution": false,

@@ -101,9 +101,70 @@ pub struct LoopRunReceipt {
     pub terminal_status: Option<GraphLoopExecutionStatus>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub runtime_observation: Option<GraphLoopRunObservation>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub governance_receipt: Option<LoopGovernanceReceipt>,
     pub replayable: bool,
     pub missing_trace_count: usize,
     pub reports: Vec<GraphLoopIterationReport>,
+}
+
+/// Governance receipt returned by `marlin loop run` when a request carries governance policy.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct LoopGovernanceReceipt {
+    pub run_id: RunId,
+    pub state: LoopGovernanceStateReceipt,
+    pub sandbox: LoopGovernanceSandboxReceipt,
+    pub session: LoopGovernanceSessionReceipt,
+    pub verifier: LoopGovernanceVerifierReceipt,
+}
+
+/// State receipt for one governed loop request.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct LoopGovernanceStateReceipt {
+    pub read_before_run: bool,
+    pub write_receipt_on_pass: bool,
+    pub state_ref: Option<String>,
+}
+
+/// Sandbox materialization receipt for one governed loop request.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct LoopGovernanceSandboxReceipt {
+    pub backend: String,
+    pub profile_ref: String,
+    pub filesystem_scope: Option<String>,
+    pub network_access: bool,
+    pub runtime_owner: String,
+    pub materialized_by: String,
+}
+
+/// Session isolation receipt projection for one governed loop request.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct LoopGovernanceSessionReceipt {
+    pub parent_session_id: String,
+    pub child_session_id: String,
+    pub requested_namespaces: Vec<String>,
+    pub granted_namespaces: Vec<String>,
+    pub denied_namespaces: Vec<String>,
+    pub max_history_items: Option<usize>,
+}
+
+/// Verifier decision receipt for one governed loop request.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct LoopGovernanceVerifierReceipt {
+    pub decision: LoopGovernanceVerifierDecision,
+    pub terminal_status: Option<GraphLoopExecutionStatus>,
+    pub retryable: bool,
+    pub human_audit_required: bool,
+    pub diagnostics: Vec<String>,
+}
+
+/// State machine outcome selected by the governed loop verifier.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum LoopGovernanceVerifierDecision {
+    Passed,
+    Retry,
+    HumanAudit,
 }
 
 /// File-mode replay receipt returned by `marlin loop replay`.

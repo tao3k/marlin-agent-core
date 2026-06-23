@@ -148,6 +148,7 @@ impl TokioGraphLoopController {
         let GraphLoopRunRequest {
             initial_request,
             policy_profile,
+            governance_policy: _,
             stop_policy,
             iteration_budget,
             evidence_policy,

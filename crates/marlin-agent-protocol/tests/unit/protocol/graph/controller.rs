@@ -4,12 +4,13 @@ use marlin_agent_protocol::{
     AgentExecutionTrace, FailureClassificationReceipt, GraphLoopContinuationAction,
     GraphLoopContinuationReceipt, GraphLoopEvidencePolicy, GraphLoopExecutionBudget,
     GraphLoopExecutionRequest, GraphLoopExecutionResult, GraphLoopExecutionStatus,
-    GraphLoopFailureKind, GraphLoopInputDrainPolicy, GraphLoopIterationReport, GraphLoopNextAction,
-    GraphLoopRunRequest, GraphLoopStopPolicy, GraphToolBatchExecutionMode, HumanDecision,
-    HumanDecisionReceipt, HumanGateReceipt, HumanReviewKind, LoopContinuationCapability,
-    LoopContinuationPolicy, LoopEvidenceCapturePolicy, LoopFailurePolicy, LoopGraph,
-    LoopHumanGatePolicy, LoopMemoryPolicy, LoopNodeSpec, LoopPolicyProfile, LoopQueuePolicy,
-    LoopSelfEvolutionPolicy, LoopToolBatchPolicy, RuntimePlanSnapshot,
+    GraphLoopFailureKind, GraphLoopGovernancePolicy, GraphLoopInputDrainPolicy,
+    GraphLoopIterationReport, GraphLoopNextAction, GraphLoopRunRequest, GraphLoopStopPolicy,
+    GraphToolBatchExecutionMode, HumanDecision, HumanDecisionReceipt, HumanGateReceipt,
+    HumanReviewKind, LoopContinuationCapability, LoopContinuationPolicy, LoopEvidenceCapturePolicy,
+    LoopFailurePolicy, LoopGraph, LoopHumanGatePolicy, LoopMemoryPolicy, LoopNodeSpec,
+    LoopPolicyProfile, LoopQueuePolicy, LoopSelfEvolutionPolicy, LoopToolBatchPolicy,
+    RuntimePlanSnapshot,
 };
 
 #[test]
@@ -49,6 +50,58 @@ fn graph_loop_run_request_records_stop_budget_and_replayable_evidence_policy() {
     assert_eq!(value["evidence_policy"]["capture_node_receipts"], true);
     assert_eq!(value["evidence_policy"]["capture_trace"], true);
     assert_eq!(value["evidence_policy"]["replayable"], true);
+}
+
+#[test]
+fn graph_loop_run_request_records_governance_policy_handoff() {
+    let request = GraphLoopRunRequest::new(GraphLoopExecutionRequest::new(
+        "governed-loop-run",
+        loop_graph(),
+    ))
+    .with_governance_policy(GraphLoopGovernancePolicy::nono("nono-profile"));
+
+    let value = serde_json::to_value(&request).expect("loop run request serializes");
+
+    assert_eq!(
+        value["governance_policy"]["state_policy"]["read_before_run"],
+        true
+    );
+    assert_eq!(
+        value["governance_policy"]["state_policy"]["write_receipt_on_pass"],
+        true
+    );
+    assert_eq!(
+        value["governance_policy"]["sandbox_policy"]["backend"],
+        "nono"
+    );
+    assert_eq!(
+        value["governance_policy"]["sandbox_policy"]["profile_ref"],
+        "nono-profile"
+    );
+    assert_eq!(
+        value["governance_policy"]["sandbox_policy"]["filesystem_scope"],
+        "runtime"
+    );
+    assert_eq!(
+        value["governance_policy"]["session_policy"]["session_kind"],
+        "sub-agent"
+    );
+    assert_eq!(
+        value["governance_policy"]["session_policy"]["visible_namespaces"],
+        serde_json::json!(["system", "workspace", "tools"])
+    );
+    assert_eq!(
+        value["governance_policy"]["verifier_policy"]["pass_statuses"],
+        serde_json::json!(["Completed"])
+    );
+    assert_eq!(
+        value["governance_policy"]["verifier_policy"]["retry_statuses"],
+        serde_json::json!(["Failed"])
+    );
+    assert_eq!(
+        value["governance_policy"]["verifier_policy"]["human_audit_statuses"],
+        serde_json::json!(["Cancelled"])
+    );
 }
 
 #[test]

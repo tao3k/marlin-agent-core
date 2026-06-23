@@ -25,6 +25,20 @@
     path: "state/marline-failure-retry-loop-state.org"
     acting-on: 'marlin-runtime-kernel)
 
+  (.def (marlin-failure-retry-sandbox @ loop-engine-sandbox
+                                      profile isolation profile-refs entries)
+    profile: 'nono-profile
+    isolation: 'runtime-owned
+    profile-refs: '(nono-profile)
+    entries: '((backend . nono)
+               (filesystem-scope . runtime)
+               (network-access . #f)
+               (session-kind . sub-agent)
+               (visible-namespaces . (system workspace tools))
+               (verifier-pass-statuses . (Completed))
+               (verifier-retry-statuses . (Failed))
+               (verifier-human-audit-statuses . (Cancelled))))
+
   (.def (marlin-failure-retry-budget @ loop-engine-budget
                                      max-actionable max-attempts weekly-runs)
     max-actionable: 1
@@ -45,13 +59,14 @@
 
   (.def (marlin-failure-retry-profile @ loop-engine-profile
                                       profile-id use-cases governor result
-                                      state budget runtime capability-policy
-                                      real-llm-case)
+                                      state sandbox budget runtime
+                                      capability-policy real-llm-case)
     profile-id: 'marlin-failure-retry-profile
     use-cases: (list marlin-failure-retry-loop)
     governor: marlin-failure-retry-governor
     result: marlin-failure-retry-result
     state: marlin-failure-retry-state
+    sandbox: marlin-failure-retry-sandbox
     budget: marlin-failure-retry-budget
     runtime: marlin-failure-retry-runtime
     capability-policy: marlin-failure-retry-capability-policy

@@ -158,6 +158,18 @@ fn command_compiler_real_llm_loop_cases_run_through_debug_cli_when_enabled() {
                 stdout.contains("\"failure_classification_receipt\""),
                 "failure retry loop case {case_file} did not emit failure classification receipt:\n{stdout}"
             );
+            assert!(
+                stdout.contains("\"governance_receipt\""),
+                "failure retry loop case {case_file} did not emit governance receipt:\n{stdout}"
+            );
+            assert!(
+                stdout.contains("\"backend\": \"nono\""),
+                "failure retry loop case {case_file} did not materialize nono sandbox:\n{stdout}"
+            );
+            assert!(
+                stdout.contains("\"decision\": \"human-audit\""),
+                "failure retry loop case {case_file} did not escalate exhausted retries to human audit:\n{stdout}"
+            );
         }
         eprintln!(
             "real-llm-case-summary case={case_id} controller_iterations=3 planner={continuation_planner} terminal_status={terminal_status} rounds_used={} result={}",
@@ -262,6 +274,11 @@ fn assert_marline_loop_real_llm_case_assets() {
         assert!(case_config.contains("\"policy_profile\""));
         assert!(case_config.contains("\"failure_policy\""));
         assert!(case_config.contains("\"max_iterations\": 3"));
+        if case_file == "failure-retry-llm.loop.json" {
+            assert!(case_config.contains("\"governance_policy\""));
+            assert!(case_config.contains("\"backend\": \"nono\""));
+            assert!(case_config.contains("\"profile_ref\": \"nono-profile\""));
+        }
     }
 }
 

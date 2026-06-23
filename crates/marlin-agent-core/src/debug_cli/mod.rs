@@ -19,7 +19,9 @@ pub(in crate::debug_cli) use driver::{
     gerbil_usage, graph_usage, loop_usage, smoke_usage, state_usage, usage,
 };
 pub use receipts::{
-    GraphQueryOutput, GraphQuerySummary, LoopEventQuerySummary, LoopInspectReceipt,
+    GraphQueryOutput, GraphQuerySummary, LoopEventQuerySummary, LoopGovernanceReceipt,
+    LoopGovernanceSandboxReceipt, LoopGovernanceSessionReceipt, LoopGovernanceStateReceipt,
+    LoopGovernanceVerifierDecision, LoopGovernanceVerifierReceipt, LoopInspectReceipt,
     LoopQuerySummary, LoopReplayReceipt, LoopRunReceipt, ProjectRuntimeQuerySummary, SmokeLlmMode,
     SmokeRuntimeModelRouteDryRun, SmokeRuntimeReceipt, SmokeRuntimeScenario, SmokeRuntimeStateHome,
 };

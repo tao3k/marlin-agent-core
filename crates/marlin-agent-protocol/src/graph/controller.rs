@@ -6,8 +6,8 @@ use crate::trace::AgentExecutionTrace;
 
 use super::loop_event::{GraphLoopContinuationReceipt, GraphLoopIterationId};
 use super::{
-    GraphLoopExecutionBudget, GraphLoopExecutionRequest, GraphLoopExecutionResult, LoopGraph,
-    LoopPolicyProfile, NodeId, RunId,
+    GraphLoopExecutionBudget, GraphLoopExecutionRequest, GraphLoopExecutionResult,
+    GraphLoopExecutionStatus, LoopGraph, LoopPolicyProfile, NodeId, RunId,
 };
 
 /// Policy that bounds a multi-iteration graph-loop run.
@@ -84,12 +84,155 @@ impl GraphLoopEvidencePolicy {
     }
 }
 
+/// Governance policy that wraps one graph-loop execution request.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct GraphLoopGovernancePolicy {
+    pub state_policy: GraphLoopStatePolicy,
+    pub sandbox_policy: GraphLoopSandboxPolicy,
+    pub session_policy: GraphLoopSessionPolicy,
+    pub verifier_policy: GraphLoopVerifierPolicy,
+}
+
+impl GraphLoopGovernancePolicy {
+    /// Creates a governance policy using a `nono` sandbox profile.
+    pub fn nono(profile_ref: impl Into<String>) -> Self {
+        Self {
+            state_policy: GraphLoopStatePolicy::default(),
+            sandbox_policy: GraphLoopSandboxPolicy::nono(profile_ref),
+            session_policy: GraphLoopSessionPolicy::default(),
+            verifier_policy: GraphLoopVerifierPolicy::default(),
+        }
+    }
+}
+
+/// State access policy around one govern-loop run.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct GraphLoopStatePolicy {
+    #[serde(default)]
+    pub read_before_run: bool,
+    #[serde(default)]
+    pub write_receipt_on_pass: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub state_ref: Option<String>,
+}
+
+impl Default for GraphLoopStatePolicy {
+    fn default() -> Self {
+        Self {
+            read_before_run: true,
+            write_receipt_on_pass: true,
+            state_ref: None,
+        }
+    }
+}
+
+/// Sandbox backend selected by a govern-loop policy.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum GraphLoopSandboxBackend {
+    Nono,
+}
+
+/// Sandbox profile Marlin must materialize before graph-loop execution.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct GraphLoopSandboxPolicy {
+    pub backend: GraphLoopSandboxBackend,
+    pub profile_ref: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub filesystem_scope: Option<String>,
+    #[serde(default)]
+    pub network_access: bool,
+}
+
+impl GraphLoopSandboxPolicy {
+    /// Creates a `nono` sandbox profile handoff.
+    pub fn nono(profile_ref: impl Into<String>) -> Self {
+        Self {
+            backend: GraphLoopSandboxBackend::Nono,
+            profile_ref: profile_ref.into(),
+            filesystem_scope: Some("runtime".to_owned()),
+            network_access: false,
+        }
+    }
+}
+
+/// Session policy Marlin applies before executing governed work.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct GraphLoopSessionPolicy {
+    pub session_kind: GraphLoopGovernedSessionKind,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub child_session_id: Option<String>,
+    #[serde(default)]
+    pub visible_namespaces: Vec<GraphLoopGovernedContextNamespace>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_history_items: Option<usize>,
+}
+
+impl Default for GraphLoopSessionPolicy {
+    fn default() -> Self {
+        Self {
+            session_kind: GraphLoopGovernedSessionKind::SubAgent,
+            child_session_id: None,
+            visible_namespaces: vec![
+                GraphLoopGovernedContextNamespace::System,
+                GraphLoopGovernedContextNamespace::Workspace,
+                GraphLoopGovernedContextNamespace::Tools,
+            ],
+            max_history_items: Some(64),
+        }
+    }
+}
+
+/// Runtime session kind requested by governance policy.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum GraphLoopGovernedSessionKind {
+    SubAgent,
+    Tool,
+}
+
+/// Context namespace requested by governance policy.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum GraphLoopGovernedContextNamespace {
+    System,
+    User,
+    Workspace,
+    Memory,
+    Tools,
+    Hooks,
+    SubAgents,
+}
+
+/// Verification policy used after governed work completes.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct GraphLoopVerifierPolicy {
+    #[serde(default)]
+    pub pass_statuses: Vec<GraphLoopExecutionStatus>,
+    #[serde(default)]
+    pub retry_statuses: Vec<GraphLoopExecutionStatus>,
+    #[serde(default)]
+    pub human_audit_statuses: Vec<GraphLoopExecutionStatus>,
+}
+
+impl Default for GraphLoopVerifierPolicy {
+    fn default() -> Self {
+        Self {
+            pass_statuses: vec![GraphLoopExecutionStatus::Completed],
+            retry_statuses: vec![GraphLoopExecutionStatus::Failed],
+            human_audit_statuses: vec![GraphLoopExecutionStatus::Cancelled],
+        }
+    }
+}
+
 /// Request to run a bounded multi-iteration graph loop.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct GraphLoopRunRequest {
     pub initial_request: GraphLoopExecutionRequest,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub policy_profile: Option<LoopPolicyProfile>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub governance_policy: Option<GraphLoopGovernancePolicy>,
     pub stop_policy: GraphLoopStopPolicy,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub iteration_budget: Option<GraphLoopExecutionBudget>,
@@ -102,6 +245,7 @@ impl GraphLoopRunRequest {
         Self {
             initial_request,
             policy_profile: None,
+            governance_policy: None,
             stop_policy: GraphLoopStopPolicy::new(),
             iteration_budget: None,
             evidence_policy: GraphLoopEvidencePolicy::default(),
@@ -111,6 +255,12 @@ impl GraphLoopRunRequest {
     /// Attaches a typed configurable loop policy profile to this run request.
     pub fn with_policy_profile(mut self, policy_profile: LoopPolicyProfile) -> Self {
         self.policy_profile = Some(policy_profile);
+        self
+    }
+
+    /// Attaches a typed governance policy around this run request.
+    pub fn with_governance_policy(mut self, governance_policy: GraphLoopGovernancePolicy) -> Self {
+        self.governance_policy = Some(governance_policy);
         self
     }
 

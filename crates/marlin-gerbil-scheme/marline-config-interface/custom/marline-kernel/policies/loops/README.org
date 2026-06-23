@@ -37,6 +37,7 @@ marlin loop run --input failure-retry-llm.loop.json --catalog real-llm-catalog.t
 Each =*.loop.json= is a full =GraphLoopRunRequest= carrying:
 
 - =policy_profile= for the loop profile under test;
+- =governance_policy= for state read/write intent, =nono= sandbox profile handoff, child session visibility, and verifier pass/retry/human-audit status mapping;
 - =stop_policy.max_iterations= set to =3=;
 - a simulated failing loop state;
 - an acceptance rule for the live LLM repair.
@@ -61,3 +62,6 @@ retries up to =MARLIN_REAL_LLM_MAX_ROUNDS= rounds, and emits:
 - =marlin-real-llm-case.result=pass=
 - =marlin-real-llm-case.rounds_used=N=
 - =marlin-real-llm-case.policy_observation=...=
+* Governance Handoff
+The =nono= sandbox field is a typed handoff from Scheme/poo-flow policy to Marlin.
+The Scheme side selects the profile; the Rust runtime creates the child session, enforces visibility, runs the graph, and emits the governance receipt.

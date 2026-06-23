@@ -6,9 +6,10 @@ use crate::{
     GraphId, GraphLoopContinuationAction, GraphLoopContinuationDecision,
     GraphLoopContinuationInput, GraphLoopContinuationPlanner, GraphLoopContinuationReceipt,
     GraphLoopController, GraphLoopEvidencePolicy, GraphLoopExecutionRequest,
-    GraphLoopExecutionStatus, GraphLoopIterationReport, GraphLoopRunRequest, GraphLoopStopPolicy,
-    LoopGraph, RunId, RuntimeFuture, TokioAgentRuntime, TokioGraphLoopController,
-    runtime::GraphLoopRunObservation,
+    GraphLoopExecutionStatus, GraphLoopGovernancePolicy, GraphLoopGovernedContextNamespace,
+    GraphLoopGovernedSessionKind, GraphLoopIterationReport, GraphLoopRunRequest,
+    GraphLoopSandboxBackend, GraphLoopStopPolicy, LoopGraph, RunId, RuntimeFuture,
+    TokioAgentRuntime, TokioGraphLoopController, runtime::GraphLoopRunObservation,
 };
 
 use super::{
@@ -25,9 +26,14 @@ use super::{
         write_loop_reports, write_loop_reports_to_path,
     },
     loop_usage,
-    receipts::{LoopInspectReceipt, LoopReplayReceipt, LoopRunReceipt},
+    receipts::{
+        LoopGovernanceReceipt, LoopGovernanceSandboxReceipt, LoopGovernanceSessionReceipt,
+        LoopGovernanceStateReceipt, LoopGovernanceVerifierDecision, LoopGovernanceVerifierReceipt,
+        LoopInspectReceipt, LoopReplayReceipt, LoopRunReceipt,
+    },
     state_home::resolve_runtime_state_layout,
 };
+use crate::{ContextNamespace, ContextVisibility, SessionKind};
 
 pub(super) fn dispatch_loop(cursor: &mut ArgCursor) -> Result<MarlinCliResult, String> {
     let Some(command) = cursor.next() else {
@@ -52,6 +58,7 @@ pub(super) fn dispatch_loop(cursor: &mut ArgCursor) -> Result<MarlinCliResult, S
                 output.reports,
                 report_path,
                 output.runtime_observation,
+                output.governance_receipt,
             );
             Ok(MarlinCliResult::success_json(&receipt))
         }
@@ -132,6 +139,7 @@ fn read_loop_run_request(
 struct LoopRunControllerOutput {
     reports: Vec<GraphLoopIterationReport>,
     runtime_observation: Option<GraphLoopRunObservation>,
+    governance_receipt: Option<LoopGovernanceReceipt>,
 }
 
 async fn run_loop_controller(
@@ -141,6 +149,15 @@ async fn run_loop_controller(
 ) -> Result<LoopRunControllerOutput, String> {
     let (runtime, _events) = TokioAgentRuntime::new(64);
     let requested_run_id = request.initial_request.run_id.clone();
+    let requested_max_iterations = request.stop_policy.max_iterations;
+    let governance_policy = request.governance_policy.clone();
+    let governance_materialization = governance_policy
+        .as_ref()
+        .map(|policy| materialize_governed_runtime(&runtime, &requested_run_id, policy));
+    let execution_runtime = governance_materialization
+        .as_ref()
+        .map(|materialization| materialization.runtime.clone())
+        .unwrap_or_else(|| runtime.clone());
     let continuation_graph = request.initial_request.graph.clone();
     let kernel = debug_kernel(
         &request.initial_request.run_id,
@@ -162,7 +179,7 @@ async fn run_loop_controller(
         }
     }
     let reports = controller
-        .spawn_loop(request, &runtime)
+        .spawn_loop(request, &execution_runtime)
         .join()
         .await
         .map_err(|error| format!("loop controller task failed to join: {error}"))?;
@@ -173,10 +190,247 @@ async fn run_loop_controller(
             .into_iter()
             .find(|observation| observation.run_id.as_str() == requested_run_id)
     });
+    let governance_receipt = governance_policy.and_then(|policy| {
+        governance_materialization.map(|materialization| {
+            governance_receipt_from_reports(
+                requested_run_id.clone(),
+                materialization,
+                policy,
+                requested_max_iterations,
+                &reports,
+            )
+        })
+    });
     Ok(LoopRunControllerOutput {
         reports,
         runtime_observation,
+        governance_receipt,
     })
+}
+
+struct GovernedRuntimeMaterialization {
+    runtime: TokioAgentRuntime,
+    state: LoopGovernanceStateReceipt,
+    sandbox: LoopGovernanceSandboxReceipt,
+    session: LoopGovernanceSessionReceipt,
+}
+
+fn materialize_governed_runtime(
+    runtime: &TokioAgentRuntime,
+    run_id: &str,
+    policy: &GraphLoopGovernancePolicy,
+) -> GovernedRuntimeMaterialization {
+    let requested_visibility = context_visibility_from_governance_policy(policy);
+    let child_session_id = policy
+        .session_policy
+        .child_session_id
+        .clone()
+        .unwrap_or_else(|| format!("govern-loop:{run_id}"));
+    let (governed_runtime, isolation_receipt) = runtime.child_runtime_for_session(
+        session_kind_from_governance_policy(&policy.session_policy.session_kind),
+        child_session_id,
+        requested_visibility,
+    );
+    GovernedRuntimeMaterialization {
+        runtime: governed_runtime,
+        state: LoopGovernanceStateReceipt {
+            read_before_run: policy.state_policy.read_before_run,
+            write_receipt_on_pass: policy.state_policy.write_receipt_on_pass,
+            state_ref: policy.state_policy.state_ref.clone(),
+        },
+        sandbox: LoopGovernanceSandboxReceipt {
+            backend: sandbox_backend_name(&policy.sandbox_policy.backend).to_owned(),
+            profile_ref: policy.sandbox_policy.profile_ref.clone(),
+            filesystem_scope: policy.sandbox_policy.filesystem_scope.clone(),
+            network_access: policy.sandbox_policy.network_access,
+            runtime_owner: "marlin-agent-core".to_owned(),
+            materialized_by: "debug_cli.govern_loop".to_owned(),
+        },
+        session: LoopGovernanceSessionReceipt {
+            parent_session_id: isolation_receipt.parent_session_id().as_str().to_owned(),
+            child_session_id: isolation_receipt.child_session_id().as_str().to_owned(),
+            requested_namespaces: policy
+                .session_policy
+                .visible_namespaces
+                .iter()
+                .map(governed_context_namespace_name)
+                .map(str::to_owned)
+                .collect(),
+            granted_namespaces: isolation_receipt
+                .granted_visibility()
+                .namespaces()
+                .map(context_namespace_name)
+                .map(str::to_owned)
+                .collect(),
+            denied_namespaces: isolation_receipt
+                .denied_namespaces()
+                .iter()
+                .map(context_namespace_name)
+                .map(str::to_owned)
+                .collect(),
+            max_history_items: isolation_receipt.granted_visibility().max_history_items(),
+        },
+    }
+}
+
+fn governance_receipt_from_reports(
+    run_id: String,
+    materialization: GovernedRuntimeMaterialization,
+    policy: GraphLoopGovernancePolicy,
+    max_iterations: Option<u64>,
+    reports: &[GraphLoopIterationReport],
+) -> LoopGovernanceReceipt {
+    let terminal_status = reports
+        .last()
+        .map(|report| report.execution_result.status.clone());
+    let iteration_count = reports.len() as u64;
+    let decision = governance_verifier_decision(
+        &policy,
+        terminal_status.as_ref(),
+        iteration_count,
+        max_iterations,
+    );
+    let retryable = decision == LoopGovernanceVerifierDecision::Retry;
+    let human_audit_required = decision == LoopGovernanceVerifierDecision::HumanAudit;
+    LoopGovernanceReceipt {
+        run_id: RunId::new(run_id),
+        state: materialization.state,
+        sandbox: materialization.sandbox,
+        session: materialization.session,
+        verifier: LoopGovernanceVerifierReceipt {
+            decision,
+            terminal_status,
+            retryable,
+            human_audit_required,
+            diagnostics: governance_verifier_diagnostics(&policy, reports),
+        },
+    }
+}
+
+fn governance_verifier_decision(
+    policy: &GraphLoopGovernancePolicy,
+    terminal_status: Option<&GraphLoopExecutionStatus>,
+    iteration_count: u64,
+    max_iterations: Option<u64>,
+) -> LoopGovernanceVerifierDecision {
+    let Some(terminal_status) = terminal_status else {
+        return LoopGovernanceVerifierDecision::HumanAudit;
+    };
+    if policy
+        .verifier_policy
+        .pass_statuses
+        .contains(terminal_status)
+    {
+        return LoopGovernanceVerifierDecision::Passed;
+    }
+    if policy
+        .verifier_policy
+        .human_audit_statuses
+        .contains(terminal_status)
+    {
+        return LoopGovernanceVerifierDecision::HumanAudit;
+    }
+    if policy
+        .verifier_policy
+        .retry_statuses
+        .contains(terminal_status)
+    {
+        let retry_budget_remaining = max_iterations
+            .map(|max_iterations| iteration_count < max_iterations)
+            .unwrap_or(true);
+        return if retry_budget_remaining {
+            LoopGovernanceVerifierDecision::Retry
+        } else {
+            LoopGovernanceVerifierDecision::HumanAudit
+        };
+    }
+    LoopGovernanceVerifierDecision::HumanAudit
+}
+
+fn governance_verifier_diagnostics(
+    policy: &GraphLoopGovernancePolicy,
+    reports: &[GraphLoopIterationReport],
+) -> Vec<String> {
+    let mut diagnostics = vec![
+        format!(
+            "sandbox_backend={}",
+            sandbox_backend_name(&policy.sandbox_policy.backend)
+        ),
+        format!("sandbox_profile={}", policy.sandbox_policy.profile_ref),
+        format!("governance_iterations={}", reports.len()),
+    ];
+    if let Some(report) = reports.last() {
+        diagnostics.push(format!(
+            "terminal_status={:?}",
+            report.execution_result.status
+        ));
+    }
+    diagnostics
+}
+
+fn context_visibility_from_governance_policy(
+    policy: &GraphLoopGovernancePolicy,
+) -> ContextVisibility {
+    ContextVisibility::from_namespaces(
+        policy
+            .session_policy
+            .visible_namespaces
+            .iter()
+            .map(context_namespace_from_governance_policy),
+    )
+    .with_max_history_items(policy.session_policy.max_history_items)
+}
+
+fn context_namespace_from_governance_policy(
+    namespace: &GraphLoopGovernedContextNamespace,
+) -> ContextNamespace {
+    match namespace {
+        GraphLoopGovernedContextNamespace::System => ContextNamespace::System,
+        GraphLoopGovernedContextNamespace::User => ContextNamespace::User,
+        GraphLoopGovernedContextNamespace::Workspace => ContextNamespace::Workspace,
+        GraphLoopGovernedContextNamespace::Memory => ContextNamespace::Memory,
+        GraphLoopGovernedContextNamespace::Tools => ContextNamespace::Tools,
+        GraphLoopGovernedContextNamespace::Hooks => ContextNamespace::Hooks,
+        GraphLoopGovernedContextNamespace::SubAgents => ContextNamespace::SubAgents,
+    }
+}
+
+fn session_kind_from_governance_policy(kind: &GraphLoopGovernedSessionKind) -> SessionKind {
+    match kind {
+        GraphLoopGovernedSessionKind::SubAgent => SessionKind::SubAgent,
+        GraphLoopGovernedSessionKind::Tool => SessionKind::Tool,
+    }
+}
+
+fn sandbox_backend_name(backend: &GraphLoopSandboxBackend) -> &'static str {
+    match backend {
+        GraphLoopSandboxBackend::Nono => "nono",
+    }
+}
+
+fn governed_context_namespace_name(namespace: &GraphLoopGovernedContextNamespace) -> &'static str {
+    match namespace {
+        GraphLoopGovernedContextNamespace::System => "system",
+        GraphLoopGovernedContextNamespace::User => "user",
+        GraphLoopGovernedContextNamespace::Workspace => "workspace",
+        GraphLoopGovernedContextNamespace::Memory => "memory",
+        GraphLoopGovernedContextNamespace::Tools => "tools",
+        GraphLoopGovernedContextNamespace::Hooks => "hooks",
+        GraphLoopGovernedContextNamespace::SubAgents => "sub-agents",
+    }
+}
+
+fn context_namespace_name(namespace: &ContextNamespace) -> &'static str {
+    match namespace {
+        ContextNamespace::System => "system",
+        ContextNamespace::User => "user",
+        ContextNamespace::Workspace => "workspace",
+        ContextNamespace::Memory => "memory",
+        ContextNamespace::Tools => "tools",
+        ContextNamespace::Hooks => "hooks",
+        ContextNamespace::SubAgents => "sub-agents",
+        ContextNamespace::Secrets => "secrets",
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -261,6 +515,7 @@ fn loop_run_receipt(
     reports: Vec<GraphLoopIterationReport>,
     report_path: Option<PathBuf>,
     runtime_observation: Option<GraphLoopRunObservation>,
+    governance_receipt: Option<LoopGovernanceReceipt>,
 ) -> LoopRunReceipt {
     let terminal = reports.last();
     LoopRunReceipt {
@@ -273,6 +528,7 @@ fn loop_run_receipt(
         iteration_count: reports.len(),
         terminal_status: terminal.map(|report| report.execution_result.status.clone()),
         runtime_observation,
+        governance_receipt,
         replayable: reports_are_replayable(&reports),
         missing_trace_count: missing_trace_count(&reports),
         reports,

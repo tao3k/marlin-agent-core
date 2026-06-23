@@ -4,7 +4,9 @@ mod debug_cli;
 mod release;
 
 pub use debug_cli::{
-    GraphQueryOutput, GraphQuerySummary, LoopEventQuerySummary, LoopInspectReceipt,
+    GraphQueryOutput, GraphQuerySummary, LoopEventQuerySummary, LoopGovernanceReceipt,
+    LoopGovernanceSandboxReceipt, LoopGovernanceSessionReceipt, LoopGovernanceStateReceipt,
+    LoopGovernanceVerifierDecision, LoopGovernanceVerifierReceipt, LoopInspectReceipt,
     LoopQuerySummary, LoopReplayReceipt, LoopRunReceipt, MarlinCliResult,
     ProjectRuntimeQuerySummary, SmokeLlmMode, SmokeRuntimeModelRouteDryRun, SmokeRuntimeReceipt,
     SmokeRuntimeScenario, SmokeRuntimeStateHome, run_marlin_cli, run_marlin_cli_from_args,
@@ -61,18 +63,20 @@ pub use marlin_agent_kernel::{
     ExecutorName, FailureClassificationId, FailureClassificationReceipt, GraphId,
     GraphLoopContinuationInput, GraphLoopContinuationPlanner, GraphLoopController,
     GraphLoopExecutionBudget, GraphLoopExecutionRequest, GraphLoopExecutionResult,
-    GraphLoopExecutionStatus, GraphLoopFailureKind, GraphLoopKernel, GraphLoopStrategy,
-    GraphLoopStrategyId, GraphLoopStrategyRuntime, GraphLoopStrategyVersion,
-    GraphNodeExecutionReceipt, GraphNodeExecutionStatus, GraphNodeExecutor, GraphNodeInvocation,
-    GraphPolicyProposal, GraphPolicyProposalCompilation, GraphPolicyProposalReceipt,
-    GraphPolicyProposalStatus, HumanDecision, HumanDecisionReceipt, HumanGateId, HumanGateReceipt,
-    HumanReviewKind, HumanReviewerId, LoopContinuationCapability, LoopContinuationPolicy,
-    LoopEdgeSpec, LoopEvidenceCapturePolicy, LoopFailurePolicy, LoopGraph, LoopHumanGatePolicy,
-    LoopMemoryPolicy, LoopModelRoutePolicy, LoopNodeSpec, LoopPolicyProfile, LoopPolicyProfileId,
-    LoopQueuePolicy, LoopSelfEvolutionPolicy, LoopToolBatchPolicy, NodeId, ProviderNodeAdapter,
-    RunId, RuntimePlanSnapshot, SubAgentNodeAdapter, TerminalGraphLoopContinuationPlanner,
-    TokioGraphLoopController, TokioGraphLoopKernel, ToolNodeAdapter,
-    compile_graph_policy_proposal_with_native_abi_readiness,
+    GraphLoopExecutionStatus, GraphLoopFailureKind, GraphLoopGovernancePolicy,
+    GraphLoopGovernedContextNamespace, GraphLoopGovernedSessionKind, GraphLoopKernel,
+    GraphLoopSandboxBackend, GraphLoopSandboxPolicy, GraphLoopSessionPolicy, GraphLoopStatePolicy,
+    GraphLoopStrategy, GraphLoopStrategyId, GraphLoopStrategyRuntime, GraphLoopStrategyVersion,
+    GraphLoopVerifierPolicy, GraphNodeExecutionReceipt, GraphNodeExecutionStatus,
+    GraphNodeExecutor, GraphNodeInvocation, GraphPolicyProposal, GraphPolicyProposalCompilation,
+    GraphPolicyProposalReceipt, GraphPolicyProposalStatus, HumanDecision, HumanDecisionReceipt,
+    HumanGateId, HumanGateReceipt, HumanReviewKind, HumanReviewerId, LoopContinuationCapability,
+    LoopContinuationPolicy, LoopEdgeSpec, LoopEvidenceCapturePolicy, LoopFailurePolicy, LoopGraph,
+    LoopHumanGatePolicy, LoopMemoryPolicy, LoopModelRoutePolicy, LoopNodeSpec, LoopPolicyProfile,
+    LoopPolicyProfileId, LoopQueuePolicy, LoopSelfEvolutionPolicy, LoopToolBatchPolicy, NodeId,
+    ProviderNodeAdapter, RunId, RuntimePlanSnapshot, SubAgentNodeAdapter,
+    TerminalGraphLoopContinuationPlanner, TokioGraphLoopController, TokioGraphLoopKernel,
+    ToolNodeAdapter, compile_graph_policy_proposal_with_native_abi_readiness,
 };
 pub use marlin_agent_protocol as protocol;
 pub use marlin_agent_protocol::{
