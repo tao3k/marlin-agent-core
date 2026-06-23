@@ -29,6 +29,7 @@ marlin-rust-project-harness-policy.workspace = true
 [dev-dependencies]
 criterion.workspace = true
 futures-executor.workspace = true
+marlin-git-utils.workspace = true
 marlin-org-memory.workspace = true
 marlin-org-store.workspace = true
 marlin-org-workflow.workspace = true
@@ -38,4 +39,5 @@ marlin-workspace-view.workspace = true
 memoffset.workspace = true
 static_assertions.workspace = true
 tempfile.workspace = true
+tokio.workspace = true
 toml.workspace = true

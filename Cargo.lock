@@ -2589,6 +2589,7 @@ dependencies = [
  "marlin-agent-graph",
  "marlin-agent-protocol",
  "marlin-gerbil-ir",
+ "marlin-git-utils",
  "marlin-org-memory",
  "marlin-org-model",
  "marlin-org-store",
@@ -2604,6 +2605,7 @@ dependencies = [
  "serde_json",
  "static_assertions",
  "tempfile",
+ "tokio",
  "toml 1.1.2+spec-1.1.0",
 ]
 

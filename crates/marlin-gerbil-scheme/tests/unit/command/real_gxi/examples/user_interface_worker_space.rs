@@ -9,6 +9,7 @@ use marlin_gerbil_scheme::{
     gerbil_deck_runtime_script_interface_type_manifest, gerbil_runtime_dependency_loadpath,
     gerbil_runtime_loadpath, write_gerbil_runtime_assets,
 };
+use marlin_git_utils::ProcessGitTooling;
 use std::{
     env, fs,
     path::{Path, PathBuf},
@@ -358,9 +359,16 @@ fn write_marline_real_llm_loop_case_request(prj_cache_home: &Path, case_file: &s
 }
 
 fn prj_cache_home() -> PathBuf {
-    env::var_os("PRJ_CACHE_HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| repo_root().join(".cache"))
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("build Tokio runtime for Git top-level discovery")
+        .block_on(ProcessGitTooling::resolve_repository_root(Path::new(
+            MARLINE_CONFIG_INTERFACE_WORKSPACE,
+        )))
+        .expect("resolve Git top-level for runtime loop case cache")
+        .into_path_buf()
+        .join(".cache")
 }
 
 fn repo_root() -> PathBuf {
