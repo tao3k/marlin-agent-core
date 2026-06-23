@@ -6,8 +6,8 @@ mod release;
 pub use debug_cli::{
     GraphQueryOutput, GraphQuerySummary, LoopEventQuerySummary, LoopInspectReceipt,
     LoopQuerySummary, LoopReplayReceipt, LoopRunReceipt, MarlinCliResult,
-    ProjectRuntimeQuerySummary, SmokeLlmMode, SmokeRuntimeReceipt, SmokeRuntimeScenario,
-    SmokeRuntimeStateHome, run_marlin_cli, run_marlin_cli_from_args,
+    ProjectRuntimeQuerySummary, SmokeLlmMode, SmokeRuntimeModelRouteDryRun, SmokeRuntimeReceipt,
+    SmokeRuntimeScenario, SmokeRuntimeStateHome, run_marlin_cli, run_marlin_cli_from_args,
 };
 pub use marlin_agent_environment as environment;
 pub use marlin_agent_environment::{

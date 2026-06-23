@@ -12,6 +12,7 @@
 .cache/
 .data/
 .bin/
+**/.gerbil/
 
 
 .env

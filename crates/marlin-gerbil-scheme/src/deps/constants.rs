@@ -7,10 +7,4 @@ pub(crate) const GERBIL_GSC_ENV: &str = "GERBIL_GSC";
 pub(crate) const GERBIL_GCC_ENV: &str = "GERBIL_GCC";
 pub(crate) const GERBIL_MACOS_SDK_ENV: &str = "GERBIL_MACOS_SDK";
 pub(crate) const MARLIN_GERBIL_PKG_CACHE_ENV: &str = "MARLIN_GERBIL_PKG_CACHE";
-
-pub(crate) const GERBIL_UTILS_PROVIDER_PACKAGE: &str = "git.cons.io/mighty-gerbils/gerbil-utils";
-pub(crate) const GERBIL_UTILS_MODULE_PACKAGE: &str = "clan";
-pub(crate) const GERBIL_POO_PROVIDER_URL: &str = "https://git.cons.io/mighty-gerbils/gerbil-poo";
-pub(crate) const GERBIL_UTILS_PROVIDER_URL: &str =
-    "https://git.cons.io/mighty-gerbils/gerbil-utils";
-pub(crate) const GERBIL_POO_PACKAGE: &str = "clan/poo";
+pub(crate) const MARLIN_GERBIL_PACKAGE_ROOT_ENV: &str = "MARLIN_GERBIL_PACKAGE_ROOT";

@@ -1,0 +1,171 @@
+#+TITLE: RFC 40.164: POO Flow Agent-Flow Loop Substrate
+#+DATE: 2026-06-22
+#+STATUS: Implementing
+
+* 40.164.00 Decision
+
+Marlin's loop substrate adopts the POO Flow Agent-Flow model as the
+canonical bottom step:
+
+#+begin_src text
+Session
+-> SessionTransform
+-> ToolIntent / MemoryIntent / PlacementIntent
+-> RuntimeHandoff
+-> Receipt
+-> DerivedSession
+#+end_src
+
+This is a substrate contract, not orchestration.  It must remain below
+GraphLoopController, AgentGraph, Gerbil policy packs, and future Symphony-style
+agent topology layers.
+
+* 40.164.10 Evidence
+
+** 40.164.10.10 POO Flow Agent Session Boundary
+
+The POO Flow session design treats an agent session as continuing state under a
+harness.  It is not a workflow run.  Operations occur inside the session and
+own runtime handoff intent, status, and receipt pointers.  Delegation may derive
+child session facts, but the child fact is still session state rather than a
+new workflow-run abstraction.
+
+** 40.164.10.20 pi-agent-core Loop Boundary
+
+The pi-agent-core loop is useful as an event-loop reference: it keeps current
+context, accepts pending messages, streams model output, executes tool calls,
+records tool results, prepares the next turn, and then decides whether to stop
+or continue.
+
+Marlin should not copy that shape directly into controller state.  The durable
+bottom contract should be the typed transform chain above, so message turns,
+tool execution, memory recall, placement, and later sub-agent topology all
+produce receipts through the same substrate step.
+
+* 40.164.20 Protocol Shape
+
+** 40.164.20.10 Session
+
+~AgentFlowSession~ is continuing state.  It owns:
+
+- ~session_id~
+- optional ~parent_session_id~
+- ~generation~
+- lifecycle ~status~
+
+The first implementation keeps parent and identity stable while incrementing
+generation on each derived session.
+
+** 40.164.20.20 Transform
+
+~AgentFlowSessionTransform~ names the source session and carries at least one
+typed intent.  Empty transforms are rejected before a runtime handoff is
+admitted.
+
+** 40.164.20.30 Intent Families
+
+The first substrate exposes three intent families:
+
+- ~AgentFlowToolIntent~
+- ~AgentFlowMemoryIntent~
+- ~AgentFlowPlacementIntent~
+
+This is intentionally smaller than the controller surface.  It gives the
+runtime the bottom vocabulary needed for tool work, Org memory work, and
+workspace/session placement without embedding policy logic.
+
+** 40.164.20.40 Runtime Handoff
+
+~AgentFlowRuntimeHandoff~ is produced only after the transform source session
+matches the current session and the intent set is non-empty.
+
+This is the readiness gate between pure session transform and runtime-owned
+execution.  Later Gerbil policy and native ABI projections must enter through
+this gate rather than bypassing it.
+
+** 40.164.20.50 Receipt and Derived Session
+
+~AgentFlowReceipt~ records the admitted handoff and the derived session.  The
+derived session is typed runtime evidence, not unstructured log text.
+
+* 40.164.30 Crate Placement
+
+** 40.164.30.10 marlin-agent-protocol
+
+Owns the public typed protocol:
+
+- Agent-Flow identifiers
+- session, transform, intent, handoff, receipt, and derived session structs
+- rejection reasons
+- pure handoff and derived-session builders
+
+** 40.164.30.20 marlin-agent-runtime
+
+Owns ~AgentFlowLoopStepRequest~ and ~project_agent_flow_loop_step~.  The
+function composes the protocol handoff gate with derived session receipt
+creation.  It does not mutate the graph-loop run registry and does not execute
+controller logic.
+
+** 40.164.30.30 marlin-agent-core
+
+Remains a facade and debug surface.  It should consume this substrate only
+through the protocol/runtime public APIs.
+
+** 40.164.30.40 Gerbil Scheme
+
+Gerbil Scheme may produce policy decisions and higher-order transform
+proposals, but native-internal runtime paths must cross as Scheme types to Rust
+types and native ABI projections.  JSON is not part of this substrate.
+
+* 40.164.40 Non-Goals
+
+- Do not model this as a workflow run.
+- Do not store controller state in the Agent-Flow receipt.
+- Do not let Scheme own text serialization for this path.
+- Do not add JSON to native-internal Agent-Flow APIs.
+- Do not introduce compatibility shims for older ambiguous loop meanings.
+
+* 40.164.50 Implementation Receipts
+
+Initial implementation adds:
+
+- ~crates/marlin-agent-protocol/src/agent_flow.rs~
+- protocol exports from ~crates/marlin-agent-protocol/src/lib.rs~
+- ~AgentFlowLoopStepRequest~ and ~project_agent_flow_loop_step~ in
+  ~crates/marlin-agent-runtime/src/graph_loop.rs~
+- protocol unit tests for handoff, receipt, mismatch rejection, and empty
+  transform rejection
+- runtime unit tests for the single loop step
+
+* 40.164.60 Verification Plan
+
+#+begin_src sh
+direnv exec . rtk --ultra-compact cargo fmt --all -- --check
+direnv exec . rtk --ultra-compact cargo test -p marlin-agent-protocol
+direnv exec . rtk --ultra-compact cargo test -p marlin-agent-runtime
+asp org lint docs/40-rfcs/40.164-poo-flow-agent-flow-loop-substrate.org
+asp rust check changed --view seeds .
+direnv exec . rtk --ultra-compact git diff --check
+#+end_src
+
+* 40.164.70 Next Work
+
+** 40.164.70.10 P1 Runtime Receipts
+
+Add richer receipt statuses once runtime execution begins to distinguish
+admitted, denied, deferred, executed, and repaired handoffs.
+
+** 40.164.70.20 P2 Gerbil Bridge
+
+Teach Gerbil policy packs to produce typed transform proposals that lower into
+~AgentFlowSessionTransform~ through native ABI readiness gates.
+
+** 40.164.70.30 P3 Controller Integration
+
+Let GraphLoopController consume receipts from the Agent-Flow substrate instead
+of constructing execution requests directly from policy proposals.
+
+** 40.164.70.40 P4 AgentGraph Integration
+
+Use placement intents as the first stable bridge from a session transform into
+AgentGraph delegation and worktree/session placement.

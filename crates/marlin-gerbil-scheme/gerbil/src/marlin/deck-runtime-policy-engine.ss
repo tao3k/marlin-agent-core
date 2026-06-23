@@ -5,6 +5,8 @@
 package: marlin
 
 (import (only-in :clan/poo/object .get .o)
+        (only-in :poo-flow/src/module-system/facade
+                 poo-flow-scheme-owner)
         :marlin/deck-runtime
         :marlin/deck-runtime-condition-policy
         :marlin/deck-runtime-dynamic-hook
@@ -81,7 +83,7 @@ package: marlin
 (def (make-marlin-deck-runtime-module-evaluation-receipt matched-value)
   (.o kind: marlin-deck-runtime-module-evaluation-receipt-kind
       module: ":marlin/deck-runtime-policy-engine"
-      evaluator: "gerbil-poo"
+      evaluator: poo-flow-scheme-owner
       matched: matched-value
       imports: '(":marlin/deck-runtime"
                  ":marlin/deck-runtime-condition-policy"

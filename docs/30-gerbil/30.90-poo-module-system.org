@@ -25,7 +25,7 @@ Reference reading:
 
 - https://www.tweag.io/blog/2024-06-20-nickel-user-interface-modules/
 - [[file:../40-rfcs/40.80-marlin-architecture-principles.org][40.80 Marlin Architecture Principles]]
-- [[file:gerbil-poo-modules-system-desgin.org][Gerbil POO Modules System Design]]
+- [[file:gerbil-poo-modules-system-desgin.org][Gerbil POO Flow Modules System Design]]
 - [[file:30.91-poo-module-system-milestones.org][30.91 POO Module System Milestones]]
 
 ** Controlling Difference
@@ -73,33 +73,32 @@ observability, timeouts, and process cleanup.
 
 The first implementation steps exist:
 
-- =:marlin/deck-runtime-user-module= defines user module POO objects.
-- =defmarlin-deck-runtime-user-module= defines user modules through the macro
-- =:modules/lib= defines the public =marlinModules= POO
-  interface that downstream users extend with =imports=, =options=, and
-  =schemas=. Runtime constructors remain behind =marlin-module-apply= and
-  =marlin-module-evaluate=.
+- =:poo-flow/src/module-system/facade= from poo-flow owns the =poo-flow-modules=
+  descriptor interface that framework authors extend with =imports=,
+  =options=, and =schemas=.
+- Marlin no longer keeps a parallel evaluator or user-module macro. It adapts
+  poo-flow workflow receipts into Marlin policy projections.
 - user modules currently compose =imports=, =extensions=, =scripts=,
-  =options=, and =metadata=.
+  =options=, and =metadata= through poo-flow descriptors.
 - =:marlin/deck-runtime-user-option= defines typed option schema, config, and
   validation receipt descriptors.
-- =deck-runtime-user-module= now treats =options= as typed POO option objects
+- poo-flow treats =options= as typed POO option objects
   and merges direct module options before inherited ones by option id.
-- the evaluator linearizes imports first, deduplicates extension/script
-  exports by id, builds extension catalogs, returns script interface receipts,
-  and can run scripts by id.
+- the dependency-owned workflow linearizes imports, deduplicates
+  extension/script exports by id, and returns the graph that Marlin projects
+  into extension catalogs, script interface receipts, and policy receipts.
 - the maintained downstream user interface example lives in
   =crates/marlin-gerbil-scheme/examples/user-interface-module-config/= and is
   split into real workspace modules.
 
-This baseline proves the shape. The module evaluator must stay aligned with
-gerbil-poo semantics: imports are POO supers, module/export/config collections
-are lazy computed slots, and merge behavior is implemented through slot methods
-such as => rather than a parallel Rust or Scheme record walker.
+This baseline proves the shape. The module evaluator is dependency-owned by
+poo-flow: imports are POO supers, module/export/config collections are lazy
+computed slots, and merge behavior is implemented through slot methods such as
+=> rather than a parallel Rust or Marlin Scheme record walker.
 
 ** Gerbil POO Source Lessons
 
-The upstream gerbil-poo implementation is the semantic base for this work:
+The upstream poo-flow implementation is the semantic base for this work:
 
 - =object.ss= implements objects as prototypes with =supers=, direct slot
   specs, defaults, cached instance values, C3 precedence lists, slot functions,
@@ -118,15 +117,16 @@ The upstream gerbil-poo implementation is the semantic base for this work:
   ad hoc predicate fields.
 
 Marlin ModuleSystem code should therefore express module composition as POO
-slot inheritance first. Helper functions may define merge behavior, but the
-inheritance graph and lazy slot resolution should remain owned by gerbil-poo.
-The user-facing extension style is native POO:
+slot inheritance first. Helper functions may define Marlin-specific projection
+behavior, but the inheritance graph, workflow evaluation, and lazy slot
+resolution remain owned by poo-flow. The user-facing extension style is native
+POO:
 
 #+begin_src scheme
 (.o (:: @ (list base-module))
-    (imports => marlin-imports-append
-             (marlin-imports
-              (marlin-import "./hooks.ss" hook-profile))))
+    (imports => poo-flow-imports-append
+             (poo-flow-imports
+              (poo-flow-import "./hooks.ss" hook-profile))))
 #+end_src
 
 This is intentionally not a separate =extendProfile= or =extendHook= wrapper.
@@ -209,26 +209,26 @@ A Marlin user module should be equivalent to this Scheme-owned object model:
 - metadata;
 - evaluation receipts.
 
-The user-facing shape should stay macro-driven:
+The user-facing shape should stay POO object descriptor driven. Each =.ss= file
+defines extension objects and module descriptors; poo-flow manages the module
+system graph:
 
 #+begin_src scheme
-(defmarlin-deck-runtime-user-module my-module
-  "my-module"
-  (imports base-module)
-  (options
-   (option "workspace.state" string-list
-           default: '("workspace-ready")
-           merge: append-unique))
-  (config
-   (set "workspace.state" '("interface-state-open")))
-  (extensions my-extension)
-  (scripts my-script)
-  (metadata ((owner . "customer-module"))))
+(def my-module
+  (poo-flow-modules MyModule
+    id: "my-module"
+    imports: (poo-flow-imports
+              (poo-flow-import "./base.ss" base-module))
+    options: (poo-flow-options
+              (poo-flow-option "workspace.state"
+                               '("workspace-ready")))
+    extensions: (poo-flow-extensions my-extension)
+    scripts: (poo-flow-scripts my-script)
+    metadata: '((owner . "customer-module"))))
 #+end_src
 
-This syntax is illustrative. The exact macro syntax should follow Gerbil
-macro-governance and must be backed by runtime-source or macro-expansion
-witness before edits.
+This syntax is illustrative. The concrete descriptor surface is owned by
+poo-flow =:poo-flow/src/module-system/facade= and imported through =gerbil.pkg=.
 
 ** Option Semantics
 
@@ -251,13 +251,13 @@ Each config definition defines:
 - metadata.
 
 Validation is a Scheme receipt. =marlin-deck-runtime-option-config-validate=
-applies gerbil-poo =element?= to the schema value type and returns a
+applies the POO/MOP =element?= contract to the schema value type and returns a
 =MarlinDeckRuntimeOptionValidationReceipt= object with =valid?= and =errors=
 slots. This keeps invalid user config in the Scheme extension plane until Rust
 receives a typed native projection.
 
-The option descriptors are dependency protocol adapters over gerbil-poo MOP/type
-primitives. Harness policy R017 expects:
+The option descriptors are dependency protocol adapters over poo-flow POO/MOP
+type primitives. Harness policy R017 expects:
 
 - protocol slots through =define-type=;
 - table slots =.ref=, =.foldl=, and =.foldr=;
@@ -341,9 +341,10 @@ Errors must include enough context for an agent to repair the module:
 
 ** Implementation Plan
 
-P0: Keep the current module evaluator stable.
+P0: Keep the dependency-owned module evaluator stable.
 
-- Preserve =deck-runtime-user-module.ss= as the root module composition owner.
+- Remove the old Marlin composition owner and route Marlin evaluation through
+  poo-flow =poo-flow-module-workflow=.
 - Keep downstream fixture modules real files under the user workspace fixture.
 - Keep Gerbil harness findings at zero.
 
@@ -359,8 +360,9 @@ P2: Upgrade module objects.
 - Replace opaque =options= with =schemas= and =config= fields.
 - Keep compatibility only inside the same patch while tests migrate; do not
   preserve ambiguous old/new meanings.
-- Extend =defmarlin-deck-runtime-user-module= so downstream modules can declare
-  imports, schemas, config, extensions, and scripts.
+- Adapt downstream modules to =poo-flow-modules= descriptors so imports,
+  schemas, config, extensions, and scripts are declared by the dependency-owned
+  module system.
 
 P3: Add merge and local-consistency receipts.
 
@@ -389,7 +391,9 @@ Every ModuleSystem change should run:
 
 #+begin_src sh
 gerbil-scheme-harness check crates/marlin-gerbil-scheme/gerbil
-cd crates/marlin-gerbil-scheme/gerbil && GERBIL_LOADPATH=src:t gxtest -v t/all-test.ss
+cd crates/marlin-gerbil-scheme/gerbil && gxpkg deps -i
+cd crates/marlin-gerbil-scheme/gerbil && gxi build.ss compile
+cd crates/marlin-gerbil-scheme/gerbil && gxtest -v t/all-test.ss
 direnv exec . rtk --ultra-compact cargo test -p marlin-gerbil-scheme --quiet
 direnv exec . rtk --ultra-compact cargo test -p marlin-gerbil-scheme command_compiler_real_gxtest_runs_user_interface_worker_space_script_interface_workflow -- --ignored --nocapture
 gerbil-scheme-harness bench --iterations 1 --max-total-ms 2000 --max-interface-ms 50 crates/marlin-gerbil-scheme/gerbil

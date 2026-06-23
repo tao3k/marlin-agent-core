@@ -1,5 +1,6 @@
 //! Agent protocol contracts for graph loops, scenarios, and transcripts.
 
+mod agent_flow;
 mod agent_graph;
 mod event;
 mod graph;
@@ -13,6 +14,15 @@ mod scenario;
 mod sub_agent;
 mod trace;
 
+pub use agent_flow::{
+    AgentFlowDerivedSession, AgentFlowIntent, AgentFlowIntentId, AgentFlowMemoryIntent,
+    AgentFlowMemoryOperation, AgentFlowMemoryTarget, AgentFlowPlacementIntent,
+    AgentFlowPlacementOperation, AgentFlowPlacementTarget, AgentFlowReceipt, AgentFlowReceiptId,
+    AgentFlowReceiptStatus, AgentFlowRuntimeHandoff, AgentFlowRuntimeHandoffId, AgentFlowSession,
+    AgentFlowSessionId, AgentFlowSessionStatus, AgentFlowSessionTransform, AgentFlowToolIntent,
+    AgentFlowToolName, AgentFlowTransformId, AgentFlowTransformRejection,
+    build_agent_flow_runtime_handoff, derive_agent_flow_session,
+};
 pub use agent_graph::{AGENT_GRAPH_PROJECTION_REQUEST_SCHEMA_ID, AgentGraphProjectionRequest};
 pub use event::{AgentEvent, AgentEventTopic};
 pub use graph::{

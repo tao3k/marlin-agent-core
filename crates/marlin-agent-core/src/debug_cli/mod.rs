@@ -21,5 +21,5 @@ pub(in crate::debug_cli) use driver::{
 pub use receipts::{
     GraphQueryOutput, GraphQuerySummary, LoopEventQuerySummary, LoopInspectReceipt,
     LoopQuerySummary, LoopReplayReceipt, LoopRunReceipt, ProjectRuntimeQuerySummary, SmokeLlmMode,
-    SmokeRuntimeReceipt, SmokeRuntimeScenario, SmokeRuntimeStateHome,
+    SmokeRuntimeModelRouteDryRun, SmokeRuntimeReceipt, SmokeRuntimeScenario, SmokeRuntimeStateHome,
 };

@@ -94,7 +94,7 @@ pub(in crate::debug_cli) fn usage() -> String {
 }
 
 pub(in crate::debug_cli) fn gerbil_usage() -> &'static str {
-    "Gerbil commands:\n  marlin gerbil policy-receipt [--iterations N] [--entrypoint <scheme-file>] [--call <scheme-expr>] [--gxi <gxi>] [--package-root <gerbil-package-dir>] [--loadpath <loadpath>]"
+    "Gerbil commands:\n  marlin gerbil policy-receipt [--iterations N] [--entrypoint <scheme-file>] [--call <scheme-expr>] [--gxi <gxi>] [--package-root <gerbil-package-dir>] [--loadpath <loadpath>]\n  dependencies: install package dependencies with gerbil.pkg/gxpkg; --loadpath is an explicit debug override"
 }
 
 pub(in crate::debug_cli) fn graph_usage() -> &'static str {
@@ -102,11 +102,11 @@ pub(in crate::debug_cli) fn graph_usage() -> &'static str {
 }
 
 pub(in crate::debug_cli) fn loop_usage() -> &'static str {
-    "Loop commands:\n  marlin loop run --input <graph-or-run-request.json> [--max-iterations N] [--home <runtime-state-home>] [--store <dir>|--no-store] [--catalog <catalog.toml|json>]\n  marlin loop replay <trace-or-report.json>\n  marlin loop inspect <run-id> [--home <runtime-state-home>] [--store <dir>]"
+    "Loop commands:\n  marlin loop run --input <graph-or-run-request.json> [--max-iterations N] [--continuation-planner terminal|repeat-graph|retry-on-failure] [--home <runtime-state-home>] [--store <dir>|--no-store] [--catalog <catalog.toml|json>]\n  marlin loop replay <trace-or-report.json>\n  marlin loop inspect <run-id> [--home <runtime-state-home>] [--store <dir>]"
 }
 
 pub(in crate::debug_cli) fn smoke_usage() -> &'static str {
-    "Smoke commands:\n  marlin smoke runtime [--scenario builtin-adapters|process-command-fanout|state-home-env] [--node-count N] [--command <program>] [--arg <value> ...] [--marlin-home <dir>] [--host-home <dir>]"
+    "Smoke commands:\n  marlin smoke runtime [--scenario builtin-adapters|model-route-dry-run|process-command-fanout|state-home-env] [--node-count N] [--command <program>] [--arg <value> ...] [--marlin-home <dir>] [--host-home <dir>]"
 }
 
 pub(in crate::debug_cli) fn state_usage() -> &'static str {

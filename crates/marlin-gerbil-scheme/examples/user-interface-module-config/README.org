@@ -1,82 +1,94 @@
-* User Interface Module Config Example
+* User Interface Workspace Example
+This directory is the downstream user-facing example for Marlin policy handoff through the poo-flow user-interface style.
 
-This directory is the downstream user-facing example for the furnished Gerbil
-POO module system. The default path is intentionally small: users import the
-upstream prefab, provide a tiny POO config object, and run the workflow.
+The user path mirrors =poo-flow/user-interface=: a tiny =init.ss= selects module categories, and the custom module body is split into small =use-module= fragments. Marlin keeps the furnished policy pack, delivery receipt, option contracts, projection chain, loop governor handoff, and Rust runtime boundary upstream.
 
 ** Layout
-
-- =user-interface-modules/config.ss= is the user entrypoint. It only chooses
-workspace files and a model profile.
-- =../../gerbil/src/modules/prefabs/user-interface.ss= is the upstream
-furnished policy surface. It owns default imports, extensions, script wiring,
-continuation profile, subagent policy, and policy-pack object surgery.
-- =../../gerbil/src/modules/prefabs/user-interface-delivery.ss= is the upstream
-delivery surface. It owns the user-facing receipt, option contract projection,
-and Rust policy projection handoff.
-- =../../gerbil/src/modules/prefabs/default-policy.ss= is the shared default
-policy pack surface inherited by furnished prefabs.
-- =t/user-interface-module-config-test.ss= runs the workflow with =gxtest=.
-- =interface.org= and =state/worker-state.org= are workspace files consumed by
-the prefab script.
+- =init.ss= is the user entrypoint. It is the Marlin equivalent of poo-flow's Doom-style =user-interface/init.ss=.
+- =custom/marlin-user-interface/config.ss= is the custom module body. It only calls =load!= for profile and case fragments.
+- =custom/marlin-user-interface/profiles/*.ss= and =custom/marlin-user-interface/cases/*.ss= are downstream declarations. They use poo-flow =use-module= selections and POO =.def= objects where the upstream module family supports native config.
+- =../../gerbil/src/marlin/modules/prefabs/user-interface.ss= is the upstream furnished policy surface. It owns default imports, extensions, script wiring, continuation profile, subagent policy, and policy-pack object surgery.
+- =../../gerbil/src/marlin/modules/prefabs/user-interface-delivery.ss= is the upstream delivery surface. It owns the delivery receipt, option contract projection, poo-flow loop governor manifest, and Rust policy projection handoff.
+- =t/user-interface-module-config-test.ss= runs the downstream selections and Marlin adapter with real Gerbil.
+- =interface.org= and =state/worker-state.org= are workspace files consumed by the prefab script.
 
 ** User Interface
-
-The public surface is the furnished-house API from the design document: import
-a prefab and provide only config values.
+The public surface is the poo-flow user-interface style: users select module categories and keep custom behavior in small fragments.
 
 #+begin_src scheme
-(import :clan/poo/object
-        :modules/prefabs/user-interface-delivery)
+(import :poo-flow/src/module-system/root-profile)
 
-(def user-interface-module-config
-  (UserInterfaceWorkspace
-   (.o workspace-root: "user-interface-module-config"
-       interface-file: "interface.org"
-       state-file: "state/worker-state.org"
-       model-profile: "interactive")))
+(poo-flow!
+ :workflow
+ (funflow)
+ (loop-engine)
+ :sandbox
+ (nono-sandbox +nono +doctor)
+ :custom
+ (marlin-user-interface "./custom/marlin-user-interface" +private +doctor))
 #+end_src
 
-Users do not assemble =marlinModules=, import graphs, extension catalogs,
-policy-pack object lists, runtime projection helpers, or option contract
-receipts in this layer. The prefab already contains the normal workspace,
-agent, hook, continuation, subagent, script, memory trigger, catalog projection
-defaults, and a single delivery receipt for debug/Rust handoff.
+The custom module fragments stay declarative. This example is not installed as a Gerbil package, so its =config.ss= uses module-root-qualified =load!= paths when run directly from the examples directory. The adapter test handles the generated fallback binding names, projects =init.ss= through poo-flow's root-profile lib, and passes the POPflow module bundle to Marlin's furnished =UserInterfaceWorkspaceFromModuleBundle= bridge; the user still edits small fragments with =use-module=, matching poo-flow's =custom/my-module= shape.
 
-The example keeps only the handoff helpers a downstream user should expose:
+The loop smoke follows poo-flow's loop profile shape: the downstream
+=loop-engine= object declares =+manifest-handoff= and =+l1-receipts=, and the
+=funflow= pipeline keeps =runtime-executed= as =#f=. This keeps the default test
+as a no-live-LLM handoff proof before a separately gated real-LLM exercise is
+enabled.
+
+The live exercise is the stream gateway gate, not the default smoke:
+
+#+begin_src sh
+MARLIN_LIVE_LLM_GATE=1 \
+MARLIN_LIVE_LLM_PROVIDER="$PROVIDER" \
+MARLIN_LIVE_LLM_MODEL="$MODEL" \
+cargo test -p marlin-agent-stream --locked \
+  live_litellm_stream_gateway_completes_provider_neutral_request \
+  -- --ignored --nocapture
+#+end_src
+
+Provider credentials stay outside the module config. Use the provider's normal
+API-key environment variable, or set =MARLIN_LIVE_LLM_PROVIDER_API_KEY_ENV= to
+the variable name that should be checked.
+
+For example, with =DEEPSEEK_API_KEY= available, use =PROVIDER=deepseek= and
+=MODEL=deepseek-chat=.
+
+Generic Marlin workspace values are symbol-keyed flags:
 
 #+begin_src scheme
-(def (user-interface-delivery-receipt)
-  (UserInterfaceDeliveryReceipt user-interface-module-config))
-(def (user-interface-policy-apply)
-  (UserInterfaceApply user-interface-module-config))
-
-(def (user-interface-policy-projection)
-  (UserInterfacePolicyProjection user-interface-module-config))
+(use-module marlin-user-interface
+  (workspace-root . "user-interface-workspace")
+  (interface-file . "interface.org")
+  (state-file . "state/worker-state.org")
+  (model-profile . "interactive"))
 #+end_src
 
-** Customization
+Loop, sandbox, and verification declarations use upstream poo-flow module families:
 
-Customization should be object-level surgery against the furnished prefab, not
-manual module-system construction. Advanced callers can replace or add typed
-policy objects with the =marlin-add-object=, =marlin-remove-object=,
-=marlin-disable-object=, and =marlin-replace-object= helpers exported by
-=:modules/lib=.
+#+begin_src scheme
+(use-module loop-engine
+  :config
+  (.def (marlin-ui-loop @ loop-engine-use-case name level mode goal)
+    name: 'marlin-user-interface
+    level: 'l1
+    mode: 'report-only
+    goal: 'produce-policy-delivery-receipt))
+#+end_src
 
-The furnished user-interface pack inherits the upstream default policy pack and
-then applies object surgery for the user-interface-specific subagent,
-continuation, hook, and memory policy objects. The low-level =marlinModules=,
-=marlinModuleCatalog=, =UserInterfaceWorkspaceWorkflow=, and
-=UserInterfacePolicyPack= APIs still exist for framework authors and tests, but
-they are not the default user interface.
+Users do not assemble raw poo-flow descriptors, import graphs, extension catalogs, policy-pack object lists, runtime projection helpers, loop-governor constructors, or option contract receipts in this layer. The test/adapter layer reads the selections and then calls the Marlin furnished prefab to produce the delivery receipt.
 
 ** Run
-
 From this directory:
 
 #+begin_src sh
-GERBIL_LOADPATH=../../gerbil/src:user-interface-modules:t gxtest -v t/user-interface-module-config-test.ss
+GERBIL_LOADPATH=../../gerbil/src:../../gerbil/.gerbil/lib:.:t /usr/local/bin/gxi t/user-interface-module-config-test.ss
 #+end_src
 
-The Rust ignored real-gxtest gate copies and runs this same directory, so the
-example and the executable downstream test stay aligned.
+The minimal user entrypoint can also be loaded directly:
+
+#+begin_src sh
+GERBIL_LOADPATH=../../gerbil/src:../../gerbil/.gerbil/lib:. /usr/local/bin/gxi init.ss
+#+end_src
+
+The Rust ignored real-Gerbil gate copies and runs this same directory, so the example and the executable downstream test stay aligned.

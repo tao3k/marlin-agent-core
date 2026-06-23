@@ -1,10 +1,7 @@
 //! Filesystem helpers for Gerbil package state and local toolchain repair.
 
 use super::GerbilDepsError;
-use std::{
-    fs, io,
-    path::{Path, PathBuf},
-};
+use std::{fs, io, path::Path};
 
 pub(super) fn require_dir(path: &Path, label: impl AsRef<str>) -> Result<(), GerbilDepsError> {
     if path.is_dir() {
@@ -49,24 +46,6 @@ pub(super) fn ensure_symlink(source: &Path, destination: &Path) -> Result<(), Ge
     })
 }
 
-pub(super) fn remove_existing_symlink(path: &Path) -> Result<(), GerbilDepsError> {
-    if is_symlink(path)? {
-        fs::remove_file(path).map_err(|error| {
-            GerbilDepsError::message(format!(
-                "failed to remove existing symlink {}: {error}",
-                path.display()
-            ))
-        })
-    } else if path.exists() {
-        Err(GerbilDepsError::message(format!(
-            "refusing to replace non-symlink Gerbil package path: {}",
-            path.display()
-        )))
-    } else {
-        Ok(())
-    }
-}
-
 fn is_symlink(path: &Path) -> Result<bool, GerbilDepsError> {
     match fs::symlink_metadata(path) {
         Ok(metadata) => Ok(metadata.file_type().is_symlink()),
@@ -90,8 +69,4 @@ fn create_symlink(source: &Path, destination: &Path) -> io::Result<()> {
     } else {
         std::os::windows::fs::symlink_file(source, destination)
     }
-}
-
-pub(super) fn package_destination(home_dir: &Path, package: &str) -> PathBuf {
-    home_dir.join(".gerbil").join("pkg").join(package)
 }

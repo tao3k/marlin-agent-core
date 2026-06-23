@@ -1,50 +1,118 @@
 ;;; -*- Gerbil -*-
-;;; Boundary: Example test runs the user interface module configuration workflow.
+;;; Boundary: Example test runs the user-interface workspace workflow.
 
 (import :clan/poo/object
-        :modules/lib
-        :modules/prefabs/user-interface
-        :modules/prefabs/user-interface-delivery
+        (only-in :poo-flow/src/module-system/facade
+                 poo-flow-module-option-config-id
+                 poo-flow-module-option-config-value
+                 poo-flow-user-module-selection-key
+                 poo-flow-user-module-selection-flags
+                 poo-flow-module-system-owner
+                 poo-flow-sandbox-profile-by-name
+                 poo-flow-sandbox-profile-capabilities
+                 poo-flow-scheme-owner)
+        :marlin/modules/lib
+        :marlin/modules/prefabs/user-interface
+        :marlin/modules/prefabs/user-interface-delivery
         :marlin/deck-runtime-script
         :marlin/deck-runtime-strategy
-        :marlin/deck-runtime-user-module
         :marlin/graph-loop-continuation-native-projection
-        "../user-interface-modules/config"
-        "../framework-authoring/custom-policy-pack"
+        (only-in :custom/marlin-user-interface/config
+                 poo-flow-custom-module-workspace-module
+                 poo-flow-custom-module-session-module
+                 poo-flow-custom-module-loops-module
+                 poo-flow-custom-module-user-interface-case
+                 poo-flow-custom-module-funflow-case)
+        (only-in "../init"
+                 poo-flow-user-module-bundles)
         :std/test)
+
+;;; Boundary: The example is not installed as a Gerbil package, so poo-flow
+;;; load! falls back to generic generated names. The adapter owns semantic
+;;; aliases; the user config remains only load! declarations.
+(def poo-flow-custom-marlin-user-interface-workspace-module
+  poo-flow-custom-module-workspace-module)
+(def poo-flow-custom-marlin-user-interface-session-module
+  poo-flow-custom-module-session-module)
+(def poo-flow-custom-marlin-user-interface-loop-engine-module
+  poo-flow-custom-module-loops-module)
+(def poo-flow-custom-marlin-user-interface-user-interface-case
+  poo-flow-custom-module-user-interface-case)
+(def poo-flow-custom-marlin-user-interface-funflow-case
+  poo-flow-custom-module-funflow-case)
+
+(def user-interface-init-selection-keys
+  (UserInterfaceRootSelectionKeys poo-flow-user-module-bundles))
+
+;;; Boundary: User-owned selections mirror poo-flow/user-interface/custom.
+;; UserInterfaceWorkflowResult <- UserInterfaceWorkflowContext
+(def user-interface-workspace-selection
+  (UserInterfaceModuleBundleSelection
+   poo-flow-custom-marlin-user-interface-workspace-module))
+
+;;; Boundary: Adapter layer turns the generic selection into a Marlin prefab.
+;; UserInterfaceWorkflowResult <- UserInterfaceWorkflowContext
+(def user-interface-workspace
+  (UserInterfaceWorkspaceFromModuleBundle
+   poo-flow-custom-marlin-user-interface-workspace-module))
+
+;;; Boundary: One furnished entrypoint remains the adapter output.
+;; UserInterfaceWorkflowResult <- UserInterfaceWorkflowContext
+(def (user-interface)
+  (UserInterface user-interface-workspace))
+
+;;; Boundary: Delivery receipt is the Rust/debug handoff.
+;; UserInterfaceWorkflowResult <- UserInterfaceWorkflowContext
+(def (user-interface-delivery-receipt)
+  (UserInterfaceDeliveryReceipt user-interface-workspace))
+
+;;; Boundary: Policy apply is the delivery action.
+;; UserInterfaceWorkflowResult <- UserInterfaceWorkflowContext
+(def (user-interface-policy-apply)
+  (UserInterfaceApply user-interface-workspace))
+
+;;; Boundary: Policy projection is the fixed Rust envelope.
+;; UserInterfaceWorkflowResult <- UserInterfaceWorkflowContext
+(def (user-interface-policy-projection)
+  (UserInterfacePolicyProjection user-interface-workspace))
+
+;;; Boundary: Loop control-plane stays a poo-flow handoff manifest.
+;; UserInterfaceWorkflowResult <- UserInterfaceWorkflowContext
+(def (user-interface-loop-governor-runtime-manifest)
+  (UserInterfaceLoopGovernorRuntimeManifest user-interface-workspace))
 
 ;;; Boundary: Fixture context models a downstream user command.
 ;; UserInterfaceWorkflowResult <- UserInterfaceWorkflowContext
 (def user-interface-context
   (.o command: "codex user-interface workflow apply"
       agent-scope: "user-interface-agent"
-      workspace-root: "user-interface-module-config"))
+      workspace-root: "user-interface-workspace"))
 
 ;;; Boundary: Upstream workflow utility owns projections from user config.
 ;; UserInterfaceWorkflowResult <- UserInterfaceWorkflowContext
 (def user-interface-workflow
-  (UserInterfaceWorkspaceWorkflow user-interface-module-config))
+  (UserInterfaceWorkspaceWorkflow user-interface-workspace))
 
 ;;; Boundary: Public catalog entrypoint is visible to downstream users.
 ;; UserInterfaceWorkflowResult <- UserInterfaceWorkflowContext
 (def user-interface-catalog
-  (UserInterfaceWorkspaceCatalog user-interface-module-config))
+  (UserInterfaceWorkspaceCatalog user-interface-workspace))
 
 ;;; Boundary: evalModules is the public module-system evaluation entrypoint.
 ;; UserInterfaceWorkflowResult <- UserInterfaceWorkflowContext
 (def user-interface-eval-result
-  (UserInterfaceWorkspaceEvaluation user-interface-module-config))
+  (UserInterfaceWorkspaceEvaluation user-interface-workspace))
 
 ;;; Boundary: Presentation receipt summarizes the complete module-system surface.
 ;; UserInterfaceWorkflowResult <- UserInterfaceWorkflowContext
 (def user-interface-presentation
-  (UserInterfaceWorkspaceSystemPresentation user-interface-module-config))
+  (UserInterfaceWorkspaceSystemPresentation user-interface-workspace))
 
 ;;; Boundary: Prefab presentation shows module-pack object surgery to users.
 ;; UserInterfaceWorkflowResult <- UserInterfaceWorkflowContext
 (def user-interface-pack-presentation
   (UserInterfacePolicyPackPresentation
-   (UserInterfacePolicyPack user-interface-module-config)))
+   (UserInterfacePolicyPack user-interface-workspace)))
 
 ;;; Boundary: Downstream user-facing handoff is a single delivery receipt.
 ;; UserInterfaceWorkflowResult <- UserInterfaceWorkflowContext
@@ -66,15 +134,39 @@
 (def user-interface-projection
   (user-interface-policy-projection))
 
+;;; Boundary: Downstream sees the loop handoff as a furnished manifest.
+;; UserInterfaceWorkflowResult <- UserInterfaceWorkflowContext
+(def user-interface-loop-governor-manifest
+  (user-interface-loop-governor-runtime-manifest))
+
+;;; Boundary: Marlin owns the loop policy; poo-flow projects the handoff.
+;; UserInterfaceWorkflowResult <- UserInterfaceWorkflowContext
+(def user-interface-marlin-loops-policy
+  (UserInterfaceMarlinLoopsPolicy user-interface-workspace))
+
 ;;; Boundary: Evaluation is projected by the upstream workflow utility.
 ;; UserInterfaceWorkflowResult <- UserInterfaceWorkflowContext
 (def user-interface-evaluation
   (.get user-interface-workflow evaluation))
 
+(def (user-interface-find-script evaluation script-id)
+  (find (lambda (script)
+          (string=? (.get script id) script-id))
+        (.get evaluation scripts)))
+
+(def (user-interface-run-script evaluation script-id context)
+  (let (script (user-interface-find-script evaluation script-id))
+    (and script
+         (marlin-deck-runtime-script-run script context))))
+
+(def (user-interface-script-interface-receipts evaluation)
+  (map marlin-deck-runtime-script-interface-receipt
+       (.get evaluation scripts)))
+
 ;;; Boundary: The script is executed by real gxtest from the workspace cwd.
 ;; UserInterfaceWorkflowResult <- UserInterfaceWorkflowContext
 (def user-interface-result
-  (marlin-deck-runtime-user-module-run-script
+  (user-interface-run-script
    user-interface-evaluation
    "user-interface-worker-script"
    user-interface-context))
@@ -83,14 +175,13 @@
 ;; UserInterfaceWorkflowResult <- UserInterfaceWorkflowContext
 (def user-interface-receipt
   (car
-   (marlin-deck-runtime-user-module-script-interface-receipts
-    user-interface-evaluation)))
+   (user-interface-script-interface-receipts user-interface-evaluation)))
 
 ;;; Boundary: Batch metrics are measured in Scheme and budgeted by Rust.
 ;; UserInterfaceWorkflowResult <- UserInterfaceWorkflowContext
 (def user-interface-metrics
   (marlin-deck-runtime-script-batch-metrics
-   (marlin-deck-runtime-user-module-find-script
+   (user-interface-find-script
     user-interface-evaluation
     "user-interface-worker-script")
    128
@@ -120,9 +211,120 @@
 ;; UserInterfaceWorkflowResult <- UserInterfaceWorkflowContext
 (def (user-interface-option option-id)
   (find (lambda (option)
-          (string=? (.get option id) option-id))
+          (string=? (poo-flow-module-option-config-id option) option-id))
         (.get user-interface-evaluation options)))
 
+(def user-interface-session-selection
+  (UserInterfaceModuleBundleSelection
+   poo-flow-custom-marlin-user-interface-session-module))
+
+(def user-interface-session-profiles
+  (UserInterfaceModuleBundleConfig
+   poo-flow-custom-marlin-user-interface-session-module))
+
+(def user-interface-session-profile
+  (poo-flow-sandbox-profile-by-name
+   user-interface-session-profiles
+   'marlin-user-interface/session))
+
+(def user-interface-loop-engine-selection
+  (UserInterfaceModuleBundleSelection
+   poo-flow-custom-marlin-user-interface-loop-engine-module))
+
+(def user-interface-loop-engine-config
+  (UserInterfaceModuleBundleConfig
+   poo-flow-custom-marlin-user-interface-loop-engine-module))
+
+(def user-interface-loop-engine-profile
+  (car user-interface-loop-engine-config))
+
+(def user-interface-loop-engine-runtime
+  (.get user-interface-loop-engine-profile runtime))
+
+(def user-interface-loop-engine-budget
+  (.get user-interface-loop-engine-profile budget))
+
+(def user-interface-loop-profile-source
+  "custom/marlin-user-interface/profiles/loops.ss")
+
+(def user-interface-case-selection
+  (UserInterfaceModuleBundleSelection
+   poo-flow-custom-marlin-user-interface-user-interface-case))
+
+(def user-interface-funflow-selection
+  (UserInterfaceModuleBundleSelection
+   poo-flow-custom-marlin-user-interface-funflow-case))
+
+(def user-interface-funflow-config
+  (UserInterfaceModuleBundleConfig
+   poo-flow-custom-marlin-user-interface-funflow-case))
+
+(def user-interface-funflow-map
+  (car user-interface-funflow-config))
+
+(check user-interface-init-selection-keys
+       => '((flow . funflow)
+            (loop . governor)
+            (sandbox . nono-sandbox)
+            (sandbox . cubeSandbox)
+            (sandbox . docker-sandbox)
+            (flow . loop-engine)
+            (custom . marlin-user-interface)))
+(check (poo-flow-user-module-selection-key
+        (UserInterfaceRootSelection
+         poo-flow-user-module-bundles
+         '(custom . marlin-user-interface)))
+       => '(custom . marlin-user-interface))
+(check (length
+        (UserInterfaceModuleBundleSelections
+         poo-flow-custom-marlin-user-interface-workspace-module))
+       => 1)
+(check (poo-flow-user-module-selection-key user-interface-workspace-selection)
+       => '(custom . marlin-user-interface))
+(check (poo-flow-user-module-selection-flags user-interface-workspace-selection)
+       => '((workspace-root . "user-interface-workspace")
+            (interface-file . "interface.org")
+            (state-file . "state/worker-state.org")
+            (model-profile . "interactive")
+            (hook-id . "runtime-catalog-user-interface-hook")
+            (hook-action . "register")
+            (hook-owner . "user-interface-worker")
+            (continuation-profile . "user-interface-loop-continuation")))
+(check (poo-flow-user-module-selection-key user-interface-session-selection)
+       => '(sandbox . nono-sandbox))
+(check (length user-interface-session-profiles) => 1)
+(check (poo-flow-sandbox-profile-capabilities user-interface-session-profile)
+       => '(process-run filesystem-read tmpdir cache-mount))
+(check (poo-flow-user-module-selection-key user-interface-loop-engine-selection)
+       => '(flow . loop-engine))
+(check (length user-interface-loop-engine-config) => 1)
+(check (.get user-interface-loop-engine-runtime capabilities)
+       => '(+manifest-handoff +l1-receipts))
+(check (.get user-interface-loop-engine-runtime handoff)
+       => 'loop-governor-marlin-runtime-manifest)
+(check (.get user-interface-loop-engine-runtime owner)
+       => "marlin-agent-core")
+(check (.get user-interface-loop-engine-runtime runtime-executed)
+       => #f)
+(check user-interface-loop-profile-source
+       => "custom/marlin-user-interface/profiles/loops.ss")
+(check (.get user-interface-loop-engine-budget max-actionable) => 1)
+(check (.get user-interface-loop-engine-budget max-attempts) => 1)
+(check (poo-flow-user-module-selection-key user-interface-case-selection)
+       => '(custom . marlin-user-interface))
+(check (UserInterfaceModuleBundleFlag
+        poo-flow-custom-marlin-user-interface-user-interface-case
+        'policy-pack)
+       => "user-interface-prefab-pack")
+(check (poo-flow-user-module-selection-key user-interface-funflow-selection)
+       => '(flow . funflow))
+(check (length user-interface-funflow-config) => 1)
+(check (.get user-interface-funflow-map map-name)
+       => 'marlin-ui-policy-handoff)
+(check (.get user-interface-funflow-map runtime-executed) => #f)
+(check (cdr (assq 'execution-owner
+                  (.get user-interface-funflow-map metadata)))
+       => 'marlin-agent-core)
 (check (.get user-interface-result command) => "codex user-interface workflow apply")
 (check (.get user-interface-result agent-scope) => "user-interface-agent")
 (check (.get user-interface-result has-interface-file) => #t)
@@ -135,16 +337,12 @@
        => "user-interface-root-module")
 (check (.get user-interface-eval-result workflow-kind)
        => marlin-module-workflow-kind)
-(check (.get user-interface-eval-result module-count)
-       => (length (.get user-interface-evaluation module-ids)))
-(check (.get user-interface-eval-result extension-count)
-       => (length (.get user-interface-evaluation extensions)))
+(check (.get user-interface-eval-result module-count) => 7)
+(check (.get user-interface-eval-result extension-count) => 2)
 (check (.get user-interface-eval-result policy-extension-object-count)
        => 1)
-(check (.get user-interface-eval-result script-count)
-       => (length (.get user-interface-evaluation scripts)))
-(check (.get user-interface-eval-result option-count)
-       => (length (.get user-interface-evaluation options)))
+(check (.get user-interface-eval-result script-count) => 1)
+(check (.get user-interface-eval-result option-count) => 16)
 (check (.get user-interface-presentation kind)
        => marlin-module-system-presentation-kind)
 (check (.get user-interface-presentation root-import-count) => 5)
@@ -154,11 +352,11 @@
 (check (.get user-interface-presentation projection-chain-kind)
        => marlin-module-projection-chain-kind)
 (check (.get user-interface-presentation module-evaluation-receipt-kind)
-       => marlin-deck-runtime-user-module-evaluation-kind)
+       => "poo-flow.modules.runtime-evaluation.v1")
 (check (.get user-interface-presentation import-graph-owner)
-       => "gerbil-module-system")
+       => poo-flow-module-system-owner)
 (check (.get user-interface-presentation extension-composition-owner)
-       => "gerbil-poo")
+       => poo-flow-module-system-owner)
 (check (.get user-interface-presentation native-projection-payload-owner)
        => "rust")
 (check (.get user-interface-presentation catalog-resolution-receipt-owner)
@@ -167,12 +365,12 @@
        => #f)
 (check (.get user-interface-presentation scheme-manufactures-rust-handlers)
        => #f)
-(check (.get (UserInterfacePolicyPack user-interface-module-config) kind)
+(check (.get (UserInterfacePolicyPack user-interface-workspace) kind)
        => marlin-policy-pack-kind)
-(check (.get (UserInterfacePolicyPack user-interface-module-config) id)
+(check (.get (UserInterfacePolicyPack user-interface-workspace) id)
        => "user-interface-prefab-pack")
 (check (.get (UserInterfacePolicyPackCatalog
-              (UserInterfacePolicyPack user-interface-module-config))
+              (UserInterfacePolicyPack user-interface-workspace))
              kind)
        => marlin-pack-catalog-kind)
 (check (.get user-interface-pack-presentation kind)
@@ -182,10 +380,10 @@
 (check (.get user-interface-pack-presentation
              module-system-presentation-kind)
        => marlin-module-system-presentation-kind)
-(check (.get user-interface-pack-presentation policy-object-count) => 21)
+(check (.get user-interface-pack-presentation policy-object-count) => 22)
 (check (.get user-interface-pack-presentation
              default-policy-object-count)
-       => 21)
+       => 22)
 (check (.get user-interface-pack-presentation object-operation-count) => 4)
 (check (.get user-interface-pack-presentation
              object-surgery-receipt-count)
@@ -200,11 +398,16 @@
 (check (.get user-interface-pack-presentation
              disabled-policy-object-count)
        => 1)
+(check (if (member "loop-engine-policy"
+                   (.get user-interface-pack-presentation policy-families))
+         #t
+         #f)
+       => #t)
 (check (.get user-interface-pack-presentation allowed-hook-count) => 2)
 (check (.get user-interface-pack-presentation import-graph-owner)
-       => "gerbil-module-system")
+       => poo-flow-module-system-owner)
 (check (.get user-interface-pack-presentation option-merge-owner)
-       => "gerbil-poo")
+       => poo-flow-module-system-owner)
 (check (.get user-interface-pack-presentation
              native-projection-payload-owner)
        => "rust")
@@ -222,7 +425,7 @@
        => "user-interface-root-module")
 (check (.get user-interface-delivery module-count)
        => (length (.get user-interface-evaluation module-ids)))
-(check (.get user-interface-delivery option-contract-count) => 12)
+(check (.get user-interface-delivery option-contract-count) => 16)
 (check (.get user-interface-delivery pack-id)
        => "user-interface-prefab-pack")
 (check (.get user-interface-delivery pack-catalog-presentation-kind)
@@ -245,9 +448,9 @@
             "budget_receipt"
             "catalog_resolution_receipt"))
 (check (.get user-interface-delivery module-evaluation-receipt-owner)
-       => "gerbil-module-system")
+       => poo-flow-module-system-owner)
 (check (.get user-interface-delivery policy-projection-receipt-owner)
-       => "gerbil-poo")
+       => poo-flow-scheme-owner)
 (check (.get user-interface-delivery native-projection-payload-owner)
        => "rust")
 (check (.get user-interface-delivery budget-receipt-owner)
@@ -256,28 +459,68 @@
        => "rust")
 (check (.get user-interface-delivery catalog-resolution-allowed-hook-count)
        => 2)
+(check (.get user-interface-delivery loop-control-plane-owner)
+       => "poo-flow")
+(check (.get user-interface-delivery
+             loop-control-plane-runtime-manifest-schema)
+       => 'poo-flow.loop-governor.marlin-runtime-manifest.v1)
+(check (.get user-interface-delivery loop-control-plane-request-schema)
+       => 'poo-flow.loop-governor.marlin-request.v1)
+(check (.get user-interface-delivery loop-control-plane-operation)
+       => 'govern-loop)
+(check (.get user-interface-delivery loop-control-plane-target)
+       => 'marlin-agent-core)
+(check (.get user-interface-delivery loop-control-plane-execution-owner)
+       => 'marlin-agent-core)
+(check (.get user-interface-delivery loop-control-plane-open-patterns)
+       => '(user-interface-policy-loop))
+(check (.get user-interface-delivery loop-control-plane-status)
+       => 'handoff-ready)
+(check (.get user-interface-marlin-loops-policy kind)
+       => user-interface-marlin-loops-policy-kind)
+(check (.get user-interface-marlin-loops-policy owner)
+       => "marlin")
+(check (.get user-interface-marlin-loops-policy source)
+       => "marlin/modules/prefabs/user-interface#loops-policy")
+(check (.get user-interface-marlin-loops-policy control-plane-owner)
+       => "poo-flow")
+(check (.get user-interface-marlin-loops-policy runtime-execution-owner)
+       => "marlin-agent-core")
+(check (.get user-interface-delivery marlin-loops-policy-owner)
+       => "marlin")
+(check (.get user-interface-delivery marlin-loops-policy-source)
+       => "marlin/modules/prefabs/user-interface#loops-policy")
+(check (.get user-interface-delivery
+             marlin-loops-policy-receipt-family-count)
+       => 8)
+(check (.get user-interface-delivery
+             marlin-loops-policy-receipt-contract-count)
+       => 8)
+(check (.get user-interface-delivery
+             marlin-loops-policy-receipt-schema-ids)
+       => '(poo-flow.loop-engine.lineage-receipt.v1
+            poo-flow.loop-engine.selector-receipt.v1
+            poo-flow.loop-engine.resource-dispatch-receipt.v1
+            poo-flow.loop-engine.capability-receipt.v1
+            poo-flow.loop-engine.memory-receipt.v1
+            poo-flow.loop-engine.compression-receipt.v1
+            poo-flow.loop-engine.policy-extension-receipt.v1
+            poo-flow.loop-engine.sandbox-handoff-agreement.v1))
+(check (.get user-interface-delivery
+             marlin-loops-policy-receipt-contract-owners)
+       => '("poo-flow"))
 (check (.get user-interface-delivery user-entrypoints)
        => '("UserInterfaceWorkspace"
+            "UserInterfaceLoopGovernorRuntimeManifest"
             "UserInterfaceDeliveryReceipt"
             "UserInterfaceApply"
             "UserInterfacePolicyProjection"))
-(check (.get framework-authoring-policy-pack kind)
-       => marlin-policy-pack-kind)
-(check (.get framework-authoring-policy-pack id)
-       => "framework-authoring-custom-pack")
-(check (.get (marlinPolicyPackInventory framework-authoring-policy-pack)
-             policy-object-count)
-       => 4)
-(check (.get (marlinPolicyPackInventory framework-authoring-policy-pack)
-             disabled-policy-object-ids)
-       => '("framework-self-evolution"))
-(check (.get framework-authoring-policy-projection kind)
-       => marlin-policy-projection-kind)
-(check (.get framework-authoring-projection-chain receipt-family-count)
-       => 5)
-(check (.get framework-authoring-projection-chain
-             catalog-resolution-allowed-hook-count)
-       => 1)
+(check (cdr (assq 'schema user-interface-loop-governor-manifest))
+       => 'poo-flow.loop-governor.marlin-runtime-manifest.v1)
+(check (cdr (assq 'producer user-interface-loop-governor-manifest))
+       => 'poo-flow)
+(check (cdr (assq 'consumer user-interface-loop-governor-manifest))
+       => 'marlin-agent-core)
 (check (.get user-interface-apply kind)
        => user-interface-delivery-receipt-kind)
 (check (.get user-interface-projection kind)
@@ -319,38 +562,38 @@
 (check (.get (.get user-interface-subagent-receipt dynamic-hook-selection) selector)
        => #f)
 (check (.get user-interface-evaluation module-ids)
-       => '("user-interface-hook-module"
-            "user-interface-base-module"
-            "user-interface-script-module"
-            "user-interface-loop-continuation-module"
-            "user-interface-agent-module"
+       => '("user-interface-root-module"
             "user-interface-workspace-module"
-            "user-interface-root-module"))
-(check (.get (user-interface-option "surface") value)
+            "user-interface-agent-module"
+            "user-interface-loop-continuation-module"
+            "user-interface-script-module"
+            "user-interface-base-module"
+            "user-interface-hook-module"))
+(check (poo-flow-module-option-config-value (user-interface-option "surface"))
        => "downstream-user-interface")
-(check (.get (user-interface-option "entry") value)
+(check (poo-flow-module-option-config-value (user-interface-option "entry"))
        => "interface-workflow")
-(check (.get (user-interface-option "workspace-root") value)
-       => "user-interface-module-config")
-(check (.get (user-interface-option "interface-file") value)
+(check (poo-flow-module-option-config-value (user-interface-option "workspace-root"))
+       => "user-interface-workspace")
+(check (poo-flow-module-option-config-value (user-interface-option "interface-file"))
        => "interface.org")
-(check (.get (user-interface-option "state-file") value)
+(check (poo-flow-module-option-config-value (user-interface-option "state-file"))
        => "state/worker-state.org")
-(check (.get (user-interface-option "agent-scope") value)
+(check (poo-flow-module-option-config-value (user-interface-option "agent-scope"))
        => "user-interface-agent")
-(check (.get (user-interface-option "agent-class") value)
+(check (poo-flow-module-option-config-value (user-interface-option "agent-class"))
        => "customer-user-interface")
-(check (.get (user-interface-option "model-profile") value)
+(check (poo-flow-module-option-config-value (user-interface-option "model-profile"))
        => "interactive")
-(check (.get (user-interface-option "hook-id") value)
+(check (poo-flow-module-option-config-value (user-interface-option "hook-id"))
        => "runtime-catalog-user-interface-hook")
-(check (.get (user-interface-option "hook-action") value)
+(check (poo-flow-module-option-config-value (user-interface-option "hook-action"))
        => "register")
-(check (.get (user-interface-option "hook-owner") value)
+(check (poo-flow-module-option-config-value (user-interface-option "hook-owner"))
        => "user-interface-worker")
-(check (.get (user-interface-option "continuation-profile") value)
+(check (poo-flow-module-option-config-value (user-interface-option "continuation-profile"))
        => "user-interface-loop-continuation")
-(check (.get (user-interface-option "layer") value)
+(check (poo-flow-module-option-config-value (user-interface-option "layer"))
        => "script")
 (check (map (lambda (receipt) (.get receipt valid?))
             (.get user-interface-workflow root-validation-receipts))
@@ -369,6 +612,25 @@
 (newline)
 (display "continuation-kind=")
 (display (.get user-interface-loop-continuation-action kind))
+(newline)
+(display "loop-profile-source=")
+(display user-interface-loop-profile-source)
+(newline)
+(display "runtime-handoff-status=")
+(display (.get user-interface-delivery loop-control-plane-status))
+(newline)
+(display "runtime-execution-owner=")
+(display (.get user-interface-delivery loop-control-plane-execution-owner))
+(newline)
+(display "loops-policy-owner=")
+(display (.get user-interface-delivery marlin-loops-policy-owner))
+(newline)
+(display "loops-policy-source=")
+(display (.get user-interface-delivery marlin-loops-policy-source))
+(newline)
+(display "loops-policy-receipt-contract-count=")
+(display (.get user-interface-delivery
+               marlin-loops-policy-receipt-contract-count))
 (newline)
 (display "has-interface-file=")
 (display (if (.get user-interface-result has-interface-file) "true" "false"))

@@ -1,0 +1,15 @@
+#+title: Marlin Gerbil Scheme Examples
+
+* Boundary
+
+This directory contains downstream-facing examples and fixtures only.
+
+It must not contain =marline-config-interface=. The real Marlin-maintained
+policy authoring entrypoint for AGENT and human operators lives at:
+
+#+begin_src text
+../marline-config-interface
+#+end_src
+
+Use =user-interface-module-config/= as the downstream user-interface example.
+Use =../marline-config-interface/= when editing Marlin kernel policy packs.

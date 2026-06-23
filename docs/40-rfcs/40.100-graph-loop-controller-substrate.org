@@ -161,10 +161,10 @@ can be inspected and replayed without a provider call.
   =marlin_graph_loop_continuation_next_action=, including the
   =defmarlin-graph-loop-continuation-profile= user macro and typed action
   builders.
-- =crates/marlin-gerbil-scheme/examples/user-interface-module-config/modules/loop-continuation.ss=
-  proves the downstream user interface can import a POO continuation profile
-  through =marlinModules= and project a =continue_with_graph= action without
-  recompiling Rust.
+- =crates/marlin-gerbil-scheme/examples/user-interface-module-config/user-interface-modules/config.ss=
+  proves the downstream user interface can consume an upstream prefab backed by
+  poo-flow module descriptors and still project a =continue_with_graph= action
+  without recompiling Rust.
 - =crates/marlin-agent-harness/src/gerbil_continuation.rs= adapts an injected
   Gerbil native projector into =GraphLoopContinuationPlanner= so controller
   runs can consume typed POO continuation output through the harness.

@@ -8,7 +8,7 @@
         (only-in :std/sugar ignore-errors)
         :std/test)
 
-;;; Boundary: Schema object mirrors gerbil-poo Slot type/default semantics.
+;;; Boundary: Schema object mirrors POO Flow slot type/default semantics.
 ;; MarlinResult <- MarlinInput
 (defmarlin-deck-runtime-option-schema user-option-agent-scope-schema
   "agent-scope"
@@ -29,7 +29,7 @@
   "user-module-option-test"
   '((owner . "option-test")))
 
-;;; Boundary: Invalid config proves type checks use gerbil-poo Type descriptors.
+;;; Boundary: Invalid config proves type checks use POO Flow type descriptors.
 ;; MarlinResult <- MarlinInput
 (def user-option-invalid-config
   (make-marlin-deck-runtime-option-config

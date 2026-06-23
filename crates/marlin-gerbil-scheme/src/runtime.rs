@@ -1,7 +1,9 @@
 //! Crate-shipped `Gerbil` runtime assets for the `marlin` adapter loadpath.
 
 use std::{
-    env, fs, io,
+    env,
+    ffi::OsString,
+    fs, io,
     path::{Component, Path, PathBuf},
 };
 
@@ -17,15 +19,13 @@ pub const GERBIL_LOADPATH_ENV: &str = "GERBIL_LOADPATH";
 
 /// Module entry point for the crate-shipped Marlin command adapter.
 pub const GERBIL_ADAPTER_MODULE: &str = ":marlin/adapter";
-/// Object-system package dependency used by the crate-shipped runtime package.
-pub const GERBIL_POO_DEPENDENCY: &str = "git.cons.io/mighty-gerbils/gerbil-poo";
-/// Gerbil package name provided by the `gerbil-poo` dependency.
+/// Gerbil package name provided by the `poo-flow` dependency.
 pub const GERBIL_POO_PACKAGE_NAME: &str = "clan/poo";
-/// Object prototype module provided by the `gerbil-poo` dependency.
+/// Object prototype module provided by the `poo-flow` dependency.
 pub const GERBIL_POO_OBJECT_MODULE: &str = ":clan/poo/object";
-/// Meta-object protocol module provided by the `gerbil-poo` dependency.
+/// Meta-object protocol module provided by the `poo-flow` dependency.
 pub const GERBIL_POO_MOP_MODULE: &str = ":clan/poo/mop";
-/// Prototype composition module provided by the `gerbil-poo` dependency.
+/// Prototype composition module provided by the `poo-flow` dependency.
 pub const GERBIL_POO_PROTO_MODULE: &str = ":clan/poo/proto";
 /// Source directory inside the crate-shipped `Gerbil` runtime package.
 pub const GERBIL_PACKAGE_SOURCE_PATH: &str = "src";
@@ -57,6 +57,20 @@ pub fn gerbil_runtime_asset(path: &str) -> Option<&'static GerbilRuntimeAsset> {
 /// Returns the package source path that must be exposed through `GERBIL_LOADPATH`.
 pub fn gerbil_runtime_loadpath(root: impl AsRef<Path>) -> PathBuf {
     root.as_ref().join(GERBIL_PACKAGE_SOURCE_PATH)
+}
+
+/// Returns the package-local dependency library path populated by `gxpkg deps -i`.
+pub fn gerbil_runtime_dependency_loadpath() -> PathBuf {
+    gerbil_package_root().join(".gerbil").join("lib")
+}
+
+/// Returns a `GERBIL_LOADPATH` value for runtime assets plus package dependencies.
+pub fn gerbil_runtime_loadpath_with_dependencies(root: impl AsRef<Path>) -> OsString {
+    env::join_paths([
+        gerbil_runtime_loadpath(root),
+        gerbil_runtime_dependency_loadpath(),
+    ])
+    .expect("Gerbil loadpath entries should be joinable")
 }
 
 /// Returns the crate-owned `Gerbil` package root.

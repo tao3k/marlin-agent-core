@@ -171,7 +171,7 @@ package: marlin
          seed
          (marlin-deck-runtime-option-validation-receipt-table-alist receipt)))
 
-;;; Boundary: Type descriptor mirrors gerbil-poo Slot semantics for user options.
+;;; Boundary: Type descriptor mirrors POO Flow slot semantics for user options.
 ;;; generic-contract-test-witness: marlin-deck-runtime-option-schema-generic-contract-test-witness
 ;; MarlinResult <- MarlinInput
 (define-type (MarlinDeckRuntimeOptionSchema @ Class.)
@@ -401,7 +401,7 @@ package: marlin
    owner-value
    metadata-value))
 
-;;; Boundary: Optional schema records gerbil-poo optional slot semantics.
+;;; Boundary: Optional schema records POO Flow optional slot semantics.
 ;; MarlinResult <- MarlinInput
 (def (make-marlin-deck-runtime-optional-option-schema
       option-id-value
@@ -438,7 +438,7 @@ package: marlin
    owner-value
    metadata-value))
 
-;;; Boundary: Constant schema mirrors gerbil-poo Slot constant semantics.
+;;; Boundary: Constant schema mirrors POO Flow slot constant semantics.
 ;; MarlinResult <- MarlinInput
 (def (make-marlin-deck-runtime-constant-option-schema
       option-id-value
@@ -654,7 +654,7 @@ package: marlin
 (def (marlin-deck-runtime-option-config-match? left right)
   (string=? (.get left id) (.get right id)))
 
-;;; Boundary: Validation applies gerbil-poo Type semantics to user values.
+;;; Boundary: Validation applies POO Flow type semantics to user values.
 ;; MarlinResult <- MarlinInput
 (def (marlin-deck-runtime-option-config-validate schema config)
   (let* ((option-id-value (.get config id))

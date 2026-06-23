@@ -167,13 +167,14 @@ pub use resident_runtime::{
 };
 pub use runtime::{
     GERBIL_ADAPTER_MODULE, GERBIL_LOADPATH_ENV, GERBIL_PACKAGE_BUILD_SCRIPT,
-    GERBIL_PACKAGE_ROOT_PATH, GERBIL_PACKAGE_SOURCE_PATH, GERBIL_POO_DEPENDENCY,
-    GERBIL_POO_MOP_MODULE, GERBIL_POO_OBJECT_MODULE, GERBIL_POO_PACKAGE_NAME,
-    GERBIL_POO_PROTO_MODULE, GERBIL_RUNTIME_ASSETS, GerbilRuntimeAsset, MARLIN_GERBIL_GSC_ENV,
-    MARLIN_GERBIL_GXC_ENV, MARLIN_GERBIL_GXI_ENV, default_gerbil_gsc_program,
-    default_gerbil_gxc_program, default_gerbil_gxi_program, gerbil_package_build_script,
-    gerbil_package_root, gerbil_runtime_asset, gerbil_runtime_assets, gerbil_runtime_loadpath,
-    resolve_gerbil_executable, write_gerbil_runtime_assets,
+    GERBIL_PACKAGE_ROOT_PATH, GERBIL_PACKAGE_SOURCE_PATH, GERBIL_POO_MOP_MODULE,
+    GERBIL_POO_OBJECT_MODULE, GERBIL_POO_PACKAGE_NAME, GERBIL_POO_PROTO_MODULE,
+    GERBIL_RUNTIME_ASSETS, GerbilRuntimeAsset, MARLIN_GERBIL_GSC_ENV, MARLIN_GERBIL_GXC_ENV,
+    MARLIN_GERBIL_GXI_ENV, default_gerbil_gsc_program, default_gerbil_gxc_program,
+    default_gerbil_gxi_program, gerbil_package_build_script, gerbil_package_root,
+    gerbil_runtime_asset, gerbil_runtime_assets, gerbil_runtime_dependency_loadpath,
+    gerbil_runtime_loadpath, gerbil_runtime_loadpath_with_dependencies, resolve_gerbil_executable,
+    write_gerbil_runtime_assets,
 };
 pub use scheme_types::{
     GerbilSchemeFieldName, GerbilSchemeNativeAbiContract, GerbilSchemeNativeAbiId,

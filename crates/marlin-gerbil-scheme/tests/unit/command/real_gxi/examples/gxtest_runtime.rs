@@ -7,7 +7,7 @@ use std::{
 };
 
 #[test]
-#[ignore = "requires local Gerbil gxi/gxtest executables and installed gerbil-poo dependency"]
+#[ignore = "requires local Gerbil gxi/gxtest executables and installed poo-flow package dependency"]
 fn command_compiler_real_gxi_runs_all_runtime_gxtests() {
     let Some(gxi) = local_gxi() else {
         return;

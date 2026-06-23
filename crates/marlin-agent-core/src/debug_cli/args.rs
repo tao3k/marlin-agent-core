@@ -287,6 +287,7 @@ pub(super) struct LoopRunOptions {
     pub(super) home: Option<PathBuf>,
     pub(super) no_store: bool,
     pub(super) catalog: Option<PathBuf>,
+    pub(super) continuation_planner: LoopContinuationPlannerOption,
 }
 
 impl LoopRunOptions {
@@ -297,6 +298,7 @@ impl LoopRunOptions {
         let mut home = None;
         let mut no_store = false;
         let mut catalog = None;
+        let mut continuation_planner = LoopContinuationPlannerOption::Terminal;
         while let Some(arg) = cursor.next() {
             match arg.as_str() {
                 "--input" | "-i" => input = Some(cursor.required_path(&arg)?),
@@ -312,6 +314,10 @@ impl LoopRunOptions {
                 "--home" => home = Some(cursor.required_path(&arg)?),
                 "--no-store" => no_store = true,
                 "--catalog" => catalog = Some(cursor.required_path(&arg)?),
+                "--continuation-planner" => {
+                    continuation_planner =
+                        LoopContinuationPlannerOption::parse(&cursor.required_value(&arg)?)?
+                }
                 unknown => return Err(format!("unknown option `{unknown}`")),
             }
         }
@@ -322,7 +328,28 @@ impl LoopRunOptions {
             home,
             no_store,
             catalog,
+            continuation_planner,
         })
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum LoopContinuationPlannerOption {
+    Terminal,
+    RepeatGraph,
+    RetryOnFailure,
+}
+
+impl LoopContinuationPlannerOption {
+    fn parse(value: &str) -> Result<Self, String> {
+        match value {
+            "terminal" => Ok(Self::Terminal),
+            "repeat-graph" => Ok(Self::RepeatGraph),
+            "retry-on-failure" => Ok(Self::RetryOnFailure),
+            unknown => Err(format!(
+                "unknown loop continuation planner `{unknown}`; expected terminal, repeat-graph, or retry-on-failure"
+            )),
+        }
     }
 }
 

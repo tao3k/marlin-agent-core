@@ -36,7 +36,7 @@ package: marlin
 ;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
 ;; MarlinResult <- MarlinInput
 (def marlin-deck-runtime-poo-dependency
-  "git.cons.io/mighty-gerbils/gerbil-poo")
+  "github.com/tao3k/poo-flow")
 ;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
 ;; MarlinResult <- MarlinInput
 (def marlin-deck-runtime-poo-package-name "clan/poo")
@@ -67,7 +67,7 @@ package: marlin
     ".defgeneric"
     "defmethod"
     "compose-proto"
-    "defmarlin-deck-runtime-user-module"))
+    "poo-flow-modules"))
 
 ;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
 ;; MarlinResult <- MarlinInput
@@ -80,7 +80,7 @@ package: marlin
     "scheme-complex-strategy"
     "dynamic-hook-policy"
     "subagent-policy"
-    "scheme-user-module"
+    "poo-flow-module-system"
     "scheme-loop-graph-control-plane"
     "model-route-policy"
     "poo-object-system"))

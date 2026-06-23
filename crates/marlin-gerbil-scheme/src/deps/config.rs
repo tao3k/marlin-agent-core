@@ -2,7 +2,8 @@
 
 use super::{
     GERBIL_BIN_ENV, GERBIL_CELLAR_ENV, GERBIL_GCC_ENV, GERBIL_GSC_ENV, GERBIL_MACOS_SDK_ENV,
-    GERBIL_PREFIX_ENV, GerbilDepsError, MARLIN_GERBIL_PKG_CACHE_ENV,
+    GERBIL_PREFIX_ENV, GerbilDepsError, MARLIN_GERBIL_PACKAGE_ROOT_ENV,
+    MARLIN_GERBIL_PKG_CACHE_ENV,
     cli::GerbilDepsRequest,
     process::{command_stdout, command_stdout_path, find_program},
 };
@@ -17,6 +18,7 @@ pub struct GerbilDepsConfig {
     pub(super) platform: String,
     pub(super) home_dir: PathBuf,
     pub(super) cache_dir: PathBuf,
+    pub(super) package_root: PathBuf,
     pub(super) gerbil_bin: PathBuf,
     pub(super) gerbil_cellar: Option<PathBuf>,
     pub(super) gerbil_prefix: Option<PathBuf>,
@@ -50,6 +52,9 @@ impl GerbilDepsConfig {
                     .join("marlin-agent-core")
                     .join("gerbil-pkgs")
             });
+        let package_root = env::var_os(MARLIN_GERBIL_PACKAGE_ROOT_ENV)
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("gerbil"));
         let gerbil_bin = request
             .gerbil_bin
             .clone()
@@ -110,6 +115,7 @@ impl GerbilDepsConfig {
             platform,
             home_dir,
             cache_dir,
+            package_root,
             gerbil_bin,
             gerbil_cellar,
             gerbil_prefix,
@@ -129,6 +135,7 @@ impl GerbilDepsConfig {
                 .join(".cache")
                 .join("marlin-agent-core")
                 .join("gerbil-pkgs"),
+            package_root: home_dir.join("marlin-gerbil-scheme").join("gerbil"),
             home_dir,
             gerbil_bin,
             gerbil_cellar: None,
@@ -150,6 +157,7 @@ impl GerbilDepsConfig {
             format!("platform={}", self.platform),
             format!("home_dir={}", self.home_dir.display()),
             format!("cache_dir={}", self.cache_dir.display()),
+            format!("package_root={}", self.package_root.display()),
             format!("gerbil_bin={}", self.gerbil_bin.display()),
         ];
         push_optional_path(&mut lines, "gerbil_cellar", &self.gerbil_cellar);

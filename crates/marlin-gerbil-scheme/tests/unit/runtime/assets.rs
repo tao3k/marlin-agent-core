@@ -1,9 +1,9 @@
 use super::support::test_root;
 use marlin_gerbil_scheme::{
     GERBIL_ADAPTER_MODULE, GERBIL_LOADPATH_ENV, GERBIL_PACKAGE_BUILD_SCRIPT,
-    GERBIL_PACKAGE_ROOT_PATH, GERBIL_PACKAGE_SOURCE_PATH, GERBIL_POO_DEPENDENCY,
-    GERBIL_POO_MOP_MODULE, GERBIL_POO_OBJECT_MODULE, GERBIL_POO_PACKAGE_NAME,
-    GERBIL_POO_PROTO_MODULE, MARLIN_GERBIL_GSC_ENV, MARLIN_GERBIL_GXC_ENV, MARLIN_GERBIL_GXI_ENV,
+    GERBIL_PACKAGE_ROOT_PATH, GERBIL_PACKAGE_SOURCE_PATH, GERBIL_POO_MOP_MODULE,
+    GERBIL_POO_OBJECT_MODULE, GERBIL_POO_PACKAGE_NAME, GERBIL_POO_PROTO_MODULE,
+    MARLIN_GERBIL_GSC_ENV, MARLIN_GERBIL_GXC_ENV, MARLIN_GERBIL_GXI_ENV,
     default_gerbil_gsc_program, default_gerbil_gxc_program, default_gerbil_gxi_program,
     gerbil_package_build_script, gerbil_package_root, gerbil_runtime_asset, gerbil_runtime_assets,
     gerbil_runtime_loadpath, write_gerbil_runtime_assets,
@@ -27,8 +27,6 @@ fn gerbil_runtime_assets_expose_loadpath_contract() {
     let continuation_projection_source =
         runtime_asset_source("src/marlin/graph-loop-continuation-native-projection.ss");
     let script_source = runtime_asset_source("src/marlin/deck-runtime-script.ss");
-    let build_has_target = |target: &str| build_source.contains(&format!("\"{target}\""));
-
     assert_eq!(GERBIL_LOADPATH_ENV, "GERBIL_LOADPATH");
     assert_eq!(GERBIL_ADAPTER_MODULE, ":marlin/adapter");
     assert_eq!(MARLIN_GERBIL_GXI_ENV, "MARLIN_GERBIL_GXI");
@@ -44,15 +42,11 @@ fn gerbil_runtime_assets_expose_loadpath_contract() {
     );
     assert_eq!(GERBIL_PACKAGE_SOURCE_PATH, "src");
     assert!(package_manifest_source.contains("marlin-deck-runtime"));
-    assert_eq!(
-        GERBIL_POO_DEPENDENCY,
-        "git.cons.io/mighty-gerbils/gerbil-poo"
-    );
     assert_eq!(GERBIL_POO_PACKAGE_NAME, "clan/poo");
     assert_eq!(GERBIL_POO_OBJECT_MODULE, ":clan/poo/object");
     assert_eq!(GERBIL_POO_MOP_MODULE, ":clan/poo/mop");
     assert_eq!(GERBIL_POO_PROTO_MODULE, ":clan/poo/proto");
-    assert!(package_manifest_source.contains(GERBIL_POO_DEPENDENCY));
+    assert!(package_manifest_source.contains("github.com/tao3k/poo-flow"));
     assert!(
         package_manifest_source.contains("github.com/tao3k/gerbil-scheme-language-project-harness")
     );
@@ -62,24 +56,15 @@ fn gerbil_runtime_assets_expose_loadpath_contract() {
     );
     assert!(build_source.contains("stage-native-aot"));
     assert!(build_source.contains("marlin-build-stage-native-aot"));
-    assert!(build_source.contains("\"src/marlin/deck-runtime-native.ss\""));
-    assert!(build_source.contains("\"src/marlin/agent-policy-routing-native.ss\""));
-    assert!(build_has_target(
-        "src/marlin/deck-runtime-native-projection"
-    ));
-    assert!(build_has_target(
-        "src/marlin/graph-loop-continuation-native-projection"
-    ));
-    assert!(build_has_target("src/marlin/deck-runtime-script"));
-    assert!(build_has_target("src/marlin/deck-runtime"));
-    assert!(build_has_target("src/marlin/deck-runtime-compiled-policy"));
-    assert!(build_has_target(
-        "src/marlin/deck-runtime-compiled-policy-sample"
-    ));
-    assert!(build_has_target("src/marlin/deck-runtime-strategy"));
-    assert!(build_has_target("src/marlin/deck-runtime-policy-engine"));
-    assert!(!build_has_target("src/marlin/deck-runtime-policy"));
-    assert!(!build_has_target("src/marlin/hook-policy"));
+    assert!(build_source.contains(":clan/building"));
+    assert!(build_source.contains("all-gerbil-modules"));
+    assert!(build_source.contains("marlin-package-module?"));
+    assert!(build_source.contains("+marlin-native-aot-only-modules+"));
+    assert!(build_source.contains("\"marlin/deck-runtime-native.ss\""));
+    assert!(build_source.contains("\"marlin/agent-policy-routing-native.ss\""));
+    assert!(build_source.contains("deps: '(\"poo-flow\")"));
+    assert!(!build_source.contains("git.cons.io/mighty-gerbils/gerbil-poo"));
+    assert!(!build_source.contains("github.com/tao3k/poo-flow"));
     assert!(request_source.contains("gerbil-compile-request-contract-facts"));
     assert!(adapter_source.contains("ensure-marlin-contract-facts-shape"));
     assert!(deck_runtime_source.contains("poo-object-system"));

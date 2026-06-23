@@ -26,48 +26,13 @@ impl BootstrapCommand {
         self
     }
 
-    pub(super) fn arg<S: AsRef<OsStr>>(&mut self, arg: S) -> &mut Self {
-        self.command.arg(arg);
+    pub(super) fn current_dir<P: AsRef<Path>>(&mut self, directory: P) -> &mut Self {
+        self.command.current_dir(directory);
         self
     }
 
     pub(super) fn run(&mut self, label: impl AsRef<str>) -> Result<(), GerbilDepsError> {
         let status = self.command.status().map_err(|error| {
-            GerbilDepsError::message(format!("failed to run {}: {error}", label.as_ref()))
-        })?;
-        if status.success() {
-            Ok(())
-        } else {
-            Err(GerbilDepsError::message(format!(
-                "{} failed with status {status}",
-                label.as_ref()
-            )))
-        }
-    }
-}
-
-pub(super) fn clone_or_update(url: &str, destination: &Path) -> Result<(), GerbilDepsError> {
-    if destination.join(".git").is_dir() {
-        Command::new("git")
-            .arg("-C")
-            .arg(destination)
-            .args(["pull", "--ff-only", "--depth", "1"])
-            .run(format!("update {}", destination.display()))
-    } else {
-        Command::new("git")
-            .args(["clone", "--depth", "1", url])
-            .arg(destination)
-            .run(format!("clone {url}"))
-    }
-}
-
-pub(super) trait CommandStatusExt {
-    fn run(&mut self, label: impl AsRef<str>) -> Result<(), GerbilDepsError>;
-}
-
-impl CommandStatusExt for Command {
-    fn run(&mut self, label: impl AsRef<str>) -> Result<(), GerbilDepsError> {
-        let status = self.status().map_err(|error| {
             GerbilDepsError::message(format!("failed to run {}: {error}", label.as_ref()))
         })?;
         if status.success() {

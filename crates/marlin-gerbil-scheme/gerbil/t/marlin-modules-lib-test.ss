@@ -1,8 +1,22 @@
 ;;; -*- Gerbil -*-
-;;; Boundary: Module tests the public marlinModules user interface.
+;;; Boundary: Module tests the Marlin adapter over upstream poo-flow modules.
 
 (import :clan/poo/object
-        :modules/lib)
+        (only-in :poo-flow/src/module-system/facade
+                 poo-flow-module-interface
+                 poo-flow-module-name
+                 poo-flow-string-constant
+                 poo-flow-modules
+                 poo-flow-import
+                 poo-flow-imports
+                 poo-flow-imports-append
+                 poo-flow-module-option-config-id
+                 poo-flow-module-system-owner
+                 poo-flow-module-source-ref-kind
+                 poo-flow-module-source-ref-metadata
+                 poo-flow-module-source-ref-value)
+        :marlin/modules/evaluation
+        :marlin/modules/lib)
 
 ;;; Boundary: Local checks stay silent around POO-heavy values.
 ;; MarlinResult <- MarlinInput
@@ -16,15 +30,15 @@
 ;;; Boundary: User config stays concise and POO-driven like a module attrset.
 ;; MarlinResult <- MarlinInput
 (def modules-lib-base-interface
-  (marlin-module-interface
+  (poo-flow-module-interface
    "ModulesLibBase"
-   (.o layer: (marlin-string-constant "base"))
+   (.o layer: (poo-flow-string-constant "base"))
    '((owner . "modules-lib-test"))))
 
 ;;; Boundary: User config references an imported interface instead of schemas.
 ;; MarlinResult <- MarlinInput
 (def modules-lib-base
-  (marlinModules
+  (poo-flow-modules
    modules-lib-base-interface
    (.o id: "modules-lib-base"
        config:
@@ -33,16 +47,16 @@
 ;;; Boundary: Root interface is separate from the user config record.
 ;; MarlinResult <- MarlinInput
 (def modules-lib-root-interface
-  (marlin-module-interface
+  (poo-flow-module-interface
    "ModulesLibRoot"
-   (.o surface: (marlin-string-constant "example")
-       entry: (marlin-string-constant "workflow"))
+   (.o surface: (poo-flow-string-constant "example")
+       entry: (poo-flow-string-constant "workflow"))
    '((owner . "modules-lib-test"))))
 
-;;; Boundary: Root config imports another marlinModules object directly.
+;;; Boundary: Root config imports another poo-flow module object directly.
 ;; MarlinResult <- MarlinInput
 (def modules-lib-root-base
-  (marlinModules
+  (poo-flow-modules
    modules-lib-root-interface
    (.o id: "modules-lib-root"
        config:
@@ -53,10 +67,10 @@
 ;; MarlinResult <- MarlinInput
 (def modules-lib-root
   (.o (:: @ (list modules-lib-root-base))
-      (imports => marlin-imports-append
-               (marlin-imports
-                (marlin-import "./base.ss" modules-lib-base)
-                (marlin-import modules-lib-base)))))
+      (imports => poo-flow-imports-append
+               (poo-flow-imports
+                (poo-flow-import "./base.ss" modules-lib-base)
+                (poo-flow-import modules-lib-base)))))
 
 ;;; Boundary: Workflow helper owns common runtime projections.
 ;; MarlinResult <- MarlinInput
@@ -91,7 +105,7 @@
 (def modules-lib-runtime-module
   (.get modules-lib-workflow runtime-module))
 
-;;; Boundary: Evaluation proves imported marlinModules are applied recursively.
+;;; Boundary: Evaluation proves imported poo-flow modules are applied recursively.
 ;; MarlinResult <- MarlinInput
 (def modules-lib-evaluation
   (.get modules-lib-workflow evaluation))
@@ -99,7 +113,7 @@
 ;;; Boundary: Missing schemas return typed receipts instead of runtime failures.
 ;; MarlinResult <- MarlinInput
 (def modules-lib-empty-interface
-  (marlin-module-interface
+  (poo-flow-module-interface
    "ModulesLibEmpty"
    (.o)
    '((owner . "modules-lib-test"))))
@@ -107,7 +121,7 @@
 ;;; Boundary: Missing schemas return typed receipts instead of runtime failures.
 ;; MarlinResult <- MarlinInput
 (def modules-lib-missing-schema
-  (marlinModules
+  (poo-flow-modules
    modules-lib-empty-interface
    (.o id: "modules-lib-missing-schema"
        config:
@@ -227,16 +241,18 @@
        => marlin-module-workflow-kind)
 (check (.get modules-lib-eval-result module-count) => 2)
 (check (.get modules-lib-eval-result option-count) => 3)
-(check (.get modules-lib-eval-result validation-receipt-count) => 4)
+(check (.get modules-lib-eval-result validation-receipt-count) => 3)
 (check (.get modules-lib-eval-result policy-extension-object-count) => 0)
 (check (.get modules-lib-presentation kind)
        => marlin-module-system-presentation-kind)
 (check (.get modules-lib-presentation projection-chain-kind)
        => marlin-module-projection-chain-kind)
 (check (.get modules-lib-presentation import-graph-owner)
-       => "gerbil-module-system")
-(check (.get modules-lib-presentation option-merge-owner)
-       => "gerbil-poo")
+       => poo-flow-module-system-owner)
+(check (.get modules-lib-presentation option-policy-owner)
+       => poo-flow-module-system-owner)
+(check (.get modules-lib-presentation extension-composition-owner)
+       => poo-flow-module-system-owner)
 (check (.get modules-lib-presentation native-projection-payload-owner)
        => "rust")
 (check (.get modules-lib-presentation rust-parses-scheme-source)
@@ -245,16 +261,20 @@
        => #f)
 (check (.get (car (.get modules-lib-root imports)) kind)
        => marlin-module-import-kind)
-(check (.get (.get (car (.get modules-lib-root imports)) source-ref) kind)
-       => marlin-import-source-ref-kind)
-(check (.get (.get (.get (car (.get modules-lib-root imports)) source-ref) source)
-             kind)
+(check (poo-flow-module-source-ref-kind
+        (.get (car (.get modules-lib-root imports)) source-ref))
+       => 'local)
+(check (cdr
+        (assq 'kind
+              (poo-flow-module-source-ref-metadata
+               (.get (car (.get modules-lib-root imports)) source-ref))))
        => marlin-import-local-source-kind)
-(check (.get (.get (.get (car (.get modules-lib-root imports)) source-ref) source)
-             path)
+(check (poo-flow-module-source-ref-value
+        (.get (car (.get modules-lib-root imports)) source-ref))
        => "./base.ss")
 (check (.get (cadr (.get modules-lib-root imports)) source-ref) => #f)
-(check (.get (.get (cadr (.get modules-lib-root imports)) profile) id)
+(check (poo-flow-module-name
+        (.get (cadr (.get modules-lib-root imports)) profile))
        => "modules-lib-base")
 (check (map (lambda (option) (.get option id))
             modules-lib-root-options)
@@ -267,8 +287,8 @@
        => '(#t #t))
 (check (.get modules-lib-runtime-module id) => "modules-lib-root")
 (check (.get modules-lib-evaluation module-ids)
-       => '("modules-lib-base" "modules-lib-root"))
-(check (map (lambda (option) (.get option id))
+       => '("modules-lib-root" "modules-lib-base"))
+(check (map poo-flow-module-option-config-id
             (.get modules-lib-evaluation options))
        => '("surface" "entry" "layer"))
 (check (.get modules-lib-missing-schema-receipt valid?) => #f)
@@ -420,7 +440,7 @@
  "policy projection budget owner mismatch")
 (modules-lib-assert-equal
  (.get modules-lib-policy-projection-now policy-composition-owner)
- "gerbil-poo"
+ "poo-flow.scheme"
  "policy projection composition owner mismatch")
 (modules-lib-assert-equal
  (.get modules-lib-policy-pack-presentation-now rust-parses-scheme-source)

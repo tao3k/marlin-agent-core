@@ -5,13 +5,15 @@
 :STATUS: active
 :END:
 
-This document turns [[file:gerbil-poo-modules-system-desgin.org][Gerbil POO Modules System Design]] and
+This document turns [[file:gerbil-poo-modules-system-desgin.org][Gerbil POO Flow Modules System Design]] and
 [[file:30.90-poo-module-system.org][30.90 POO Module System]] into an executable milestone flow.
-The current implementation proves the shape and now includes an upstream
-=:modules/prefabs/default-policy= pack surface plus a
-=:modules/prefabs/user-interface= furnished path with apply, delivery receipt,
-catalog presentation, and policy projection handoff. The broader policy surface
-still needs more domain prefab packs and custom debug fact emission.
+The current implementation proves the shape and now treats poo-flow
+=:poo-flow/src/module-system/facade= as the dependency-owned module system. Marlin provides
+=:marlin/modules/prefabs/default-policy= and
+=:marlin/modules/prefabs/user-interface= furnished adapter paths with apply,
+delivery receipt, catalog presentation, and policy projection handoff. The
+broader policy surface still needs more domain prefab packs and custom debug
+fact emission.
 
 The milestone model is a trophy-gate flow. A milestone is complete only when it
 has user-facing API shape, Scheme receipts, Rust projection behavior, debug CLI
@@ -19,14 +21,18 @@ evidence, and docs that tell agents what not to infer.
 
 ** 2026-06-17 Module-System Checkpoint
 This checkpoint keeps the package/module layer separate from native AOT staging:
-- =build.ss compile= runs the ordinary Gerbil package modules and prefab module system. It no longer lists native C ABI modules as =gsc:= entries that force =std/make= to look for =*.scm= sources during package compile.
+- =build.ss compile= runs the ordinary Gerbil package modules and Marlin prefab
+  adapters while resolving the module-system implementation from the poo-flow
+  dependency. It no longer lists native C ABI modules as =gsc:= entries that
+  force =std/make= to look for =*.scm= sources during package compile.
 - =build.ss stage-native-aot <deck-runtime|agent-policy-routing> <link-root>= remains the only profile-specific native AOT source mapping.
 - The package checkpoint was verified with:
 #+begin_src sh
-GERBIL_LOADPATH=src gxi build.ss compile
-GERBIL_LOADPATH=src gxtest t/marlin-policy-pack-inventory-test.ss
-GERBIL_LOADPATH=src gxtest t/marlin-user-interface-prefab-test.ss
-GERBIL_LOADPATH=../../gerbil/src:. gxtest t/user-interface-module-config-test.ss
+gxpkg deps -i
+gxi build.ss compile
+gxtest t/marlin-policy-pack-inventory-test.ss
+gxtest t/marlin-user-interface-prefab-test.ss
+cd ../examples/user-interface-module-config && GERBIL_LOADPATH=../../gerbil/src:../../gerbil/.gerbil/lib:.:t gxtest t/user-interface-module-config-test.ss
 #+end_src
 - The downstream user-interface module-config test emits =user-interface-script-workflow-ok=, continuation kind =continue_with_graph=, script metrics, and interface-file/state-file checks. That is the current real test that prefab module evaluation, policy-pack object surgery, script execution, continuation projection, and Rust-facing projection receipts stay aligned.
 ** Operating Rule
@@ -49,28 +55,28 @@ Every milestone must preserve this boundary:
 Status: landed, but should remain guarded.
 
 Purpose:
-- Keep =:modules/lib= as the public module-system library under
-  =crates/marlin-gerbil-scheme/gerbil/src/modules/lib.ss=.
-- Keep =src/marlin= focused on runtime, debug, policy primitives, and projection
-  glue.
+- Keep poo-flow =:poo-flow/src/module-system/facade= as the dependency-owned module-system
+  library.
+- Keep =src/marlin= focused on runtime, debug, policy primitives, prefab
+  adapters, and projection glue.
 - Keep downstream examples on semantic local names such as
   =user-interface-modules= instead of a second ambiguous =modules= directory.
 
 Required evidence:
-- =GERBIL_LOADPATH=src:t /usr/local/bin/gxi t/all-test.ss=
-- =marlin gerbil policy-receipt= debug CLI output includes =loadpath:
-  "src:t"=.
+- =/usr/local/bin/gxi t/all-test.ss=
+- =marlin gerbil policy-receipt= debug CLI output includes =.gerbil/lib=
+  between =src= and =t=, proving poo-flow is resolved through =gerbil.pkg=.
 - =asp gerbil-scheme check --changed .=
 
 Exit condition:
-- Existing tests and docs no longer refer to the module-system implementation as
-  =deck-runtime-modules-lib=.
+- Existing tests and docs no longer describe Marlin as owning the module-system
+  implementation.
 
 *** M1 Furnished Prefab Pack
 
-Status: landed for the shared =:modules/prefabs/default-policy= pack and the
-=:modules/prefabs/user-interface= delivery path; additional domain packs remain
-an implementation priority.
+Status: landed for the shared =:marlin/modules/prefabs/default-policy= pack and
+the =:marlin/modules/prefabs/user-interface= delivery path; additional domain
+packs remain an implementation priority.
 
 Purpose:
 - Make the default path a furnished house: users import a prefab pack and
@@ -80,9 +86,9 @@ Purpose:
 - Users should not start by assembling raw =marlinPolicyModule= objects.
 
 Deliverables:
-- =marlinDefaultPolicyPack= and =:modules/prefabs/default-policy= as the shared
+- =marlinDefaultPolicyPack= and =:marlin/modules/prefabs/default-policy= as the shared
 upstream prefab constructor.
-- =UserInterfaceWorkspace= from =:modules/prefabs/user-interface= as the first
+- =UserInterfaceWorkspace= from =:marlin/modules/prefabs/user-interface= as the first
 concrete furnished-house user API.
 - A pack catalog presentation that can list available pack ids, policy
 families, default objects, disabled objects, and allowed Rust catalog ids.
@@ -93,8 +99,9 @@ target.
 Required evidence:
 - Gerbil unit tests for pack catalog listing and default object inventory.
 - Debug CLI fields for default pack id, object count, and receipt replayability.
-- User-interface example updated to start from the prefab path before showing
-  low-level construction.
+- User-interface example updated to start from =init.ss= plus
+  =custom/marlin-user-interface/config.ss= before showing low-level
+  construction.
 
 Exit condition:
 - A new user can run the furnished user-interface path with only
@@ -252,7 +259,7 @@ Purpose:
   policy modules.
 
 Deliverables:
-- =user-interface-module-config= starts from the furnished prefab path.
+- =custom/marlin-user-interface/config.ss= starts from the poo-flow =load!= user-interface path.
 - A second example shows advanced rough-house construction for framework
   authors.
 - Docs explain the four user levels: prefab, normal config, object surgery, and
@@ -260,7 +267,7 @@ Deliverables:
 
 Required evidence:
 - Example test with semantic loadpath:
-  =../../gerbil/src:user-interface-modules:t=.
+  =../../gerbil/src:../../gerbil/.gerbil/lib:t=.
 - README and design docs use the same directory names and ownership terms.
 
 Exit condition:
@@ -358,11 +365,13 @@ Scope:
 - M3 remains the fixed module -> projection -> Rust receipt chain; user-authored =.ss= files must emit typed facts instead of Scheme source text.
 - M4 now treats memory as four policy families: recall, trigger, retention, and visibility.
 - M5 must prove the slice with the real =marlin gerbil policy-receipt= debug CLI, not just direct Scheme tests.
-- M6 must keep =user-interface-module-config= thin: the user file starts with a small config and the upstream prefab does the furnished work.
+- M6 must keep =user-interface-workspace= thin: the user file starts with a small config and the upstream prefab does the furnished work.
 
 Evidence gate:
-- =GERBIL_LOADPATH=src:t gxi build.ss compile=
-- =GERBIL_LOADPATH=src:t gxi t/marlin-policy-pack-inventory-test.ss=
-- =GERBIL_LOADPATH=src:t gxi t/marlin-user-interface-prefab-test.ss=
-- =GERBIL_LOADPATH=../../gerbil/src:user-interface-modules:t gxtest -v t/user-interface-module-config-test.ss=
-- =marlin gerbil policy-receipt= with a real =gxi=.
+- =gxpkg deps -i=
+- =gxi build.ss compile=
+- =gxi t/marlin-policy-pack-inventory-test.ss=
+- =gxi t/marlin-user-interface-prefab-test.ss=
+- =cd ../examples/user-interface-module-config && GERBIL_LOADPATH=../../gerbil/src:t gxtest -v t/user-interface-module-config-test.ss=
+- =marlin gerbil policy-receipt= with a real =gxi= and a package-local
+  =.gerbil/lib= dependency loadpath entry.

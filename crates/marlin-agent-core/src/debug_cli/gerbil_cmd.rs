@@ -1,6 +1,11 @@
 //! `marlin gerbil ...` command implementations.
 
-use std::{collections::BTreeMap, path::PathBuf, process::Command, time::Instant};
+use std::{
+    collections::BTreeMap,
+    path::{Path, PathBuf},
+    process::Command,
+    time::Instant,
+};
 
 use serde::Serialize;
 
@@ -186,7 +191,9 @@ pub(super) fn dispatch_gerbil(cursor: &mut ArgCursor) -> Result<MarlinCliResult,
 fn run_policy_receipt(
     options: GerbilPolicyReceiptOptions,
 ) -> Result<GerbilPolicyReceiptDebugSummary, String> {
-    let loadpath = options.loadpath.unwrap_or_else(|| "src:t".to_owned());
+    let loadpath = options
+        .loadpath
+        .unwrap_or_else(|| default_policy_receipt_loadpath(&options.package_root));
     let iterations = options.iterations.to_string();
     let entrypoint_load_expr = format!(
         "(load {})",
@@ -588,6 +595,11 @@ fn run_policy_receipt(
         dynamic_hook_selection_source: required_fact(&facts, "dynamic_hook_selection_source")?,
         dynamic_hook_selection_selector: required_fact(&facts, "dynamic_hook_selection_selector")?,
     })
+}
+
+fn default_policy_receipt_loadpath(package_root: &Path) -> String {
+    let _ = package_root;
+    "src:.gerbil/lib:t".to_owned()
 }
 
 fn parse_policy_receipt_facts(output: &str) -> Result<BTreeMap<String, String>, String> {

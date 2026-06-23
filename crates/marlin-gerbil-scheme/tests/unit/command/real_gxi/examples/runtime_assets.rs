@@ -54,7 +54,7 @@ fn command_compiler_real_gxi_builds_runtime_package_and_runs_smoke_launcher() {
     let manifest =
         fs::read_to_string(root.path().join("gerbil.pkg")).expect("read package manifest");
     assert!(manifest.contains("(package: marlin-deck-runtime"));
-    assert!(manifest.contains("git.cons.io/mighty-gerbils/gerbil-poo"));
+    assert!(manifest.contains("github.com/tao3k/poo-flow"));
     assert!(manifest.contains("github.com/tao3k/gerbil-scheme-language-project-harness"));
     assert!(!manifest.contains("/Users/"));
 
@@ -119,7 +119,7 @@ fn command_compiler_real_gxi_deck_runtime_capability_handshake() {
     let stdout = String::from_utf8(output.stdout).expect("handshake output should be UTF-8");
     assert!(stdout.contains("marlin-deck-runtime"));
     assert!(stdout.contains(":marlin/deck-runtime"));
-    assert!(stdout.contains("git.cons.io/mighty-gerbils/gerbil-poo"));
+    assert!(stdout.contains("github.com/tao3k/poo-flow"));
     assert!(stdout.contains(GERBIL_POO_PACKAGE_NAME));
     assert!(stdout.contains(GERBIL_POO_OBJECT_MODULE));
     assert!(stdout.contains(GERBIL_POO_MOP_MODULE));
@@ -134,7 +134,7 @@ fn command_compiler_real_gxi_deck_runtime_capability_handshake() {
 }
 
 #[test]
-#[ignore = "requires a local Gerbil gxi executable and installed gerbil-poo dependency"]
+#[ignore = "requires a local Gerbil gxi executable and installed poo-flow package dependency"]
 fn command_compiler_real_gxi_deck_runtime_selects_scheme_model_route_policy() {
     let Some(gxi) = local_gxi() else {
         return;

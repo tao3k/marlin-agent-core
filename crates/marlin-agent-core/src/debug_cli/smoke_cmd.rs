@@ -3,9 +3,11 @@
 use std::{collections::BTreeMap, path::PathBuf};
 
 use crate::{
-    GraphLoopExecutionRequest, GraphLoopExecutionResult, GraphLoopExecutionStatus, GraphLoopKernel,
-    LoopGraph, LoopNodeSpec, RuntimeEnvironmentRequest, RuntimeEnvironmentResolver,
-    TokioAgentRuntime,
+    CompiledModelRouteResolver, GraphLoopExecutionRequest, GraphLoopExecutionResult,
+    GraphLoopExecutionStatus, GraphLoopKernel, LoopGraph, LoopNodeSpec, ModelCommandMatcher,
+    ModelContextForkMode, ModelEndpoint, ModelRouteAdmissionRequest, ModelRouteAgentScope,
+    ModelRouteRequest, ModelRouteRule, ModelSessionPolicy, RuntimeEnvironmentRequest,
+    RuntimeEnvironmentResolver, TokioAgentRuntime, runtime::admit_model_route_with_resolver,
 };
 
 use super::{
@@ -15,11 +17,15 @@ use super::{
     executor::debug_kernel,
     io::block_on,
     process_command::ProcessCommandBinding,
-    receipts::{SmokeLlmMode, SmokeRuntimeReceipt, SmokeRuntimeScenario, SmokeRuntimeStateHome},
+    receipts::{
+        SmokeLlmMode, SmokeRuntimeModelRouteDryRun, SmokeRuntimeReceipt, SmokeRuntimeScenario,
+        SmokeRuntimeStateHome,
+    },
     smoke_usage,
 };
 
 const BUILTIN_ADAPTER_RUN_ID: &str = "marlin-smoke-builtin-adapters";
+const MODEL_ROUTE_DRY_RUN_ID: &str = "marlin-smoke-model-route-dry-run";
 const PROCESS_COMMAND_RUN_ID: &str = "marlin-smoke-process-command-fanout";
 const PROCESS_COMMAND_EXECUTOR: &str = "smoke.process.command";
 const STATE_HOME_ENV_RUN_ID: &str = "marlin-smoke-state-home-env";
@@ -46,6 +52,7 @@ pub(super) fn dispatch_smoke(cursor: &mut ArgCursor) -> Result<MarlinCliResult, 
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum SmokeScenarioOption {
     BuiltinAdapters,
+    ModelRouteDryRun,
     ProcessCommandFanout,
     StateHomeEnv,
 }
@@ -54,10 +61,11 @@ impl SmokeScenarioOption {
     fn parse(value: &str) -> Result<Self, String> {
         match value {
             "builtin-adapters" => Ok(Self::BuiltinAdapters),
+            "model-route-dry-run" => Ok(Self::ModelRouteDryRun),
             "process-command-fanout" => Ok(Self::ProcessCommandFanout),
             "state-home-env" => Ok(Self::StateHomeEnv),
             unknown => Err(format!(
-                "unsupported smoke runtime scenario `{unknown}`; expected builtin-adapters, process-command-fanout, or state-home-env"
+                "unsupported smoke runtime scenario `{unknown}`; expected builtin-adapters, model-route-dry-run, process-command-fanout, or state-home-env"
             )),
         }
     }
@@ -65,6 +73,7 @@ impl SmokeScenarioOption {
     fn receipt_scenario(&self) -> SmokeRuntimeScenario {
         match self {
             Self::BuiltinAdapters => SmokeRuntimeScenario::BuiltinAdapters,
+            Self::ModelRouteDryRun => SmokeRuntimeScenario::ModelRouteDryRun,
             Self::ProcessCommandFanout => SmokeRuntimeScenario::ProcessCommandFanout,
             Self::StateHomeEnv => SmokeRuntimeScenario::StateHomeEnv,
         }
@@ -169,6 +178,9 @@ fn run_runtime_smoke(options: SmokeRuntimeOptions) -> Result<SmokeRuntimeReceipt
     if options.scenario == SmokeScenarioOption::StateHomeEnv {
         return run_state_home_env_smoke(options);
     }
+    if options.scenario == SmokeScenarioOption::ModelRouteDryRun {
+        return run_model_route_dry_run_smoke();
+    }
 
     let (run_id, graph, catalog) = match options.scenario {
         SmokeScenarioOption::BuiltinAdapters => (
@@ -189,6 +201,7 @@ fn run_runtime_smoke(options: SmokeRuntimeOptions) -> Result<SmokeRuntimeReceipt
                 ),
             ),
         ),
+        SmokeScenarioOption::ModelRouteDryRun => unreachable!("model-route-dry-run handled above"),
         SmokeScenarioOption::StateHomeEnv => unreachable!("state-home-env handled above"),
     };
 
@@ -264,6 +277,69 @@ fn run_state_home_env_smoke(options: SmokeRuntimeOptions) -> Result<SmokeRuntime
         subagent_spawn_count: 0,
         process_spawn_count: 0,
         state_home: Some(state_home),
+        model_route: None,
+        diagnostics: Vec::new(),
+        execution_result: None,
+    })
+}
+
+fn run_model_route_dry_run_smoke() -> Result<SmokeRuntimeReceipt, String> {
+    let rule = ModelRouteRule::new(
+        "smoke-root-chat",
+        100,
+        ModelCommandMatcher::new()
+            .with_command_kind_glob("chat")
+            .with_agent_scope_glob("RootAgent")
+            .with_workspace_glob("smoke://project/marlin-agent-core"),
+        ModelEndpoint::new("openai", "gpt-5-mini"),
+    )
+    .with_session(
+        ModelSessionPolicy::persistent(
+            "smoke-root-chat-session",
+            ModelContextForkMode::ForkSnapshot,
+        )
+        .with_requested_session_id("smoke-route-session"),
+    );
+    rule.validate_endpoint_contract()
+        .map_err(|error| format!("model-route-dry-run endpoint contract failed: {error}"))?;
+    let resolver = CompiledModelRouteResolver::new(vec![rule])
+        .map_err(|error| format!("model-route-dry-run route compile failed: {error}"))?;
+    let request = ModelRouteAdmissionRequest::chat(
+        ModelRouteRequest::command(["marlin", "chat", "--dry-run"])
+            .with_command_kind("chat")
+            .with_agent_scope(ModelRouteAgentScope::RootAgent)
+            .with_workspace("smoke://project/marlin-agent-core")
+            .with_cwd("/workspace/marlin-agent-core"),
+    )
+    .with_latency_budget_ms(30_000)
+    .with_evidence_profile("smoke-model-route-dry-run")
+    .with_artifact_ref("marlin://smoke/model-route-dry-run");
+    let response = admit_model_route_with_resolver(&resolver, request.clone())
+        .map_err(|error| format!("model-route-dry-run admission failed: {error}"))?;
+    let model_route = SmokeRuntimeModelRouteDryRun {
+        rule_count: 1,
+        request,
+        response,
+    };
+
+    Ok(SmokeRuntimeReceipt {
+        scenario: SmokeRuntimeScenario::ModelRouteDryRun,
+        llm_mode: SmokeLlmMode::NoLiveLlm,
+        run_id: MODEL_ROUTE_DRY_RUN_ID.to_owned(),
+        graph_id: "model-route-dry-run".to_owned(),
+        terminal_status: GraphLoopExecutionStatus::Completed,
+        passed: true,
+        node_count: 0,
+        visited_nodes: Vec::new(),
+        node_receipt_count: 0,
+        completed_node_receipt_count: 0,
+        failed_node_receipt_count: 0,
+        tool_spawn_count: 0,
+        provider_spawn_count: 0,
+        subagent_spawn_count: 0,
+        process_spawn_count: 0,
+        state_home: None,
+        model_route: Some(model_route),
         diagnostics: Vec::new(),
         execution_result: None,
     })
@@ -384,6 +460,7 @@ fn runtime_smoke_receipt(
         subagent_spawn_count,
         process_spawn_count,
         state_home: None,
+        model_route: None,
         diagnostics,
         execution_result: Some(result),
     }

@@ -2,6 +2,33 @@ use marlin_agent_core::run_marlin_cli_from_args;
 use serde_json::{Value, json};
 use std::path::Path;
 
+fn assert_package_owned_debug_loadpath(summary: &Value) {
+    let loadpath = summary["loadpath"]
+        .as_str()
+        .expect("gerbil policy receipt loadpath");
+    let entries = loadpath.split(':').collect::<Vec<_>>();
+    assert!(
+        entries.iter().any(|entry| *entry == "src"),
+        "expected marlin package src in loadpath: {loadpath}"
+    );
+    assert!(
+        entries.iter().any(|entry| *entry == ".gerbil/lib"),
+        "expected gerbil.pkg dependency library in loadpath: {loadpath}"
+    );
+    assert!(
+        entries.iter().any(|entry| *entry == "t"),
+        "expected marlin package t in loadpath: {loadpath}"
+    );
+    assert!(
+        !entries.iter().any(|entry| entry.ends_with("poo-flow/src")),
+        "poo-flow must be resolved through gerbil.pkg/gxpkg, not a local checkout loadpath: {loadpath}"
+    );
+    assert!(
+        !loadpath.contains("/Users/"),
+        "default debug loadpath must not capture a developer-local checkout: {loadpath}"
+    );
+}
+
 #[test]
 fn debug_cli_gerbil_policy_receipt_runs_scheme_policy_engine() {
     let gxi = Path::new("/usr/local/bin/gxi");
@@ -23,6 +50,7 @@ fn debug_cli_gerbil_policy_receipt_runs_scheme_policy_engine() {
 
     assert_eq!(result.status, 0, "{}", result.stderr);
     let summary: Value = serde_json::from_str(&result.stdout).expect("gerbil policy summary");
+    assert_package_owned_debug_loadpath(&summary);
     assert_eq!(summary["status"], "ok");
     assert_eq!(summary["command"], "gerbil policy-receipt");
     assert_eq!(
@@ -53,27 +81,27 @@ fn debug_cli_gerbil_policy_receipt_runs_scheme_policy_engine() {
         summary["policy_extension_source"],
         ":marlin/deck-runtime-debug-policy-extension"
     );
+    assert_eq!(summary["policy_extension_managed_by"], "poo-flow.modules");
     assert_eq!(
-        summary["policy_extension_managed_by"],
-        "gerbil-module-system"
+        summary["policy_extension_projection_owner"],
+        "poo-flow.scheme"
     );
-    assert_eq!(summary["policy_extension_projection_owner"], "gerbil-poo");
     assert_eq!(summary["policy_extension_runtime_owner"], "rust");
-    assert_eq!(
-        summary["policy_module_kind"],
-        "marlin.modules.policy-module.v1"
-    );
+    assert_eq!(summary["policy_module_kind"], "poo-flow-module");
     assert_eq!(summary["policy_module_id"], "debug-policy-extension-module");
     assert_eq!(summary["policy_module_family"], "subagent-policy-extension");
     assert_eq!(
         summary["policy_projection_target"],
         "extension-policy-receipt"
     );
-    assert_eq!(summary["module_catalog_kind"], "marlin.modules.catalog.v1");
+    assert_eq!(
+        summary["module_catalog_kind"],
+        "poo-flow.modules.value-catalog.v1"
+    );
     assert_eq!(summary["module_catalog_count"], 1);
     assert_eq!(
         summary["module_eval_result_kind"],
-        "marlin.modules.eval-result.v1"
+        "poo-flow.modules.eval-result.v1"
     );
     assert_eq!(
         summary["module_eval_workflow_kind"],
@@ -81,7 +109,7 @@ fn debug_cli_gerbil_policy_receipt_runs_scheme_policy_engine() {
     );
     assert_eq!(
         summary["module_system_presentation_kind"],
-        "marlin.modules.system-presentation.v1"
+        "poo-flow.modules.system-presentation.v1"
     );
     assert_eq!(
         summary["module_system_projection_chain_kind"],
@@ -95,12 +123,15 @@ fn debug_cli_gerbil_policy_receipt_runs_scheme_policy_engine() {
     );
     assert_eq!(
         summary["module_system_import_graph_owner"],
-        "gerbil-module-system"
+        "poo-flow.modules"
     );
-    assert_eq!(summary["module_system_option_merge_owner"], "gerbil-poo");
+    assert_eq!(
+        summary["module_system_option_merge_owner"],
+        "poo-flow.modules"
+    );
     assert_eq!(
         summary["module_system_extension_composition_owner"],
-        "gerbil-poo"
+        "poo-flow.modules"
     );
     assert_eq!(
         summary["module_system_native_projection_payload_owner"],
@@ -128,7 +159,7 @@ fn debug_cli_gerbil_policy_receipt_runs_scheme_policy_engine() {
     );
     assert_eq!(
         summary["policy_pack_module_system_presentation_kind"],
-        "marlin.modules.system-presentation.v1"
+        "poo-flow.modules.system-presentation.v1"
     );
     assert_eq!(summary["policy_pack_object_count"], 3);
     assert_eq!(summary["policy_pack_default_object_count"], 3);
@@ -180,12 +211,15 @@ fn debug_cli_gerbil_policy_receipt_runs_scheme_policy_engine() {
     );
     assert_eq!(
         summary["policy_pack_import_graph_owner"],
-        "gerbil-module-system"
+        "poo-flow.modules"
     );
-    assert_eq!(summary["policy_pack_option_merge_owner"], "gerbil-poo");
+    assert_eq!(
+        summary["policy_pack_option_merge_owner"],
+        "poo-flow.modules"
+    );
     assert_eq!(
         summary["policy_pack_extension_composition_owner"],
-        "gerbil-poo"
+        "poo-flow.modules"
     );
     assert_eq!(
         summary["policy_pack_native_projection_payload_owner"],
@@ -207,7 +241,7 @@ fn debug_cli_gerbil_policy_receipt_runs_scheme_policy_engine() {
     );
     assert_eq!(
         summary["policy_projection_module_evaluation_receipt_kind"],
-        "marlin-deck-runtime.user-module-evaluation.v1"
+        "marlin.modules.policy-pack.module-evaluation-receipt.v1"
     );
     assert_eq!(
         summary["policy_projection_policy_projection_receipt_kind"],
@@ -228,19 +262,19 @@ fn debug_cli_gerbil_policy_receipt_runs_scheme_policy_engine() {
     );
     assert_eq!(
         summary["policy_projection_import_graph_owner"],
-        "gerbil-module-system"
+        "poo-flow.modules"
     );
     assert_eq!(
         summary["policy_projection_option_merge_owner"],
-        "gerbil-poo"
+        "poo-flow.modules"
     );
     assert_eq!(
         summary["policy_projection_extension_composition_owner"],
-        "gerbil-poo"
+        "poo-flow.modules"
     );
     assert_eq!(
         summary["policy_projection_policy_composition_owner"],
-        "gerbil-poo"
+        "poo-flow.scheme"
     );
     assert_eq!(summary["policy_projection_runtime_lifecycle_owner"], "rust");
     assert_eq!(
@@ -262,7 +296,7 @@ fn debug_cli_gerbil_policy_receipt_runs_scheme_policy_engine() {
     );
     assert_eq!(
         summary["policy_projection_chain_module_evaluation_receipt_kind"],
-        "marlin-deck-runtime.user-module-evaluation.v1"
+        "marlin.modules.policy-pack.module-evaluation-receipt.v1"
     );
     assert_eq!(
         summary["policy_projection_chain_policy_projection_receipt_kind"],
@@ -293,11 +327,11 @@ fn debug_cli_gerbil_policy_receipt_runs_scheme_policy_engine() {
     );
     assert_eq!(
         summary["policy_projection_chain_module_evaluation_receipt_owner"],
-        "gerbil-module-system"
+        "poo-flow.modules"
     );
     assert_eq!(
         summary["policy_projection_chain_policy_projection_receipt_owner"],
-        "gerbil-poo"
+        "poo-flow.scheme"
     );
     assert_eq!(
         summary["policy_projection_chain_native_projection_payload_owner"],
@@ -368,7 +402,7 @@ fn debug_cli_gerbil_policy_receipt_runs_scheme_policy_engine() {
     );
     assert_eq!(
         summary["policy_module_evaluation_kind"],
-        "marlin-deck-runtime.user-module-evaluation.v1"
+        "poo-flow.modules.runtime-evaluation.v1"
     );
     assert_eq!(summary["policy_module_count"], 1);
     assert_eq!(summary["policy_extension_count"], 1);
@@ -377,7 +411,7 @@ fn debug_cli_gerbil_policy_receipt_runs_scheme_policy_engine() {
     assert_eq!(summary["policy_option_count"], 2);
     assert_eq!(summary["policy_validation_receipt_count"], 2);
     assert_eq!(summary["policy_substrate_gate_replayable"], true);
-    assert_eq!(summary["scheme_policy_owner"], "gerbil-poo");
+    assert_eq!(summary["scheme_policy_owner"], "poo-flow.scheme");
     assert_eq!(summary["rust_kernel_owner"], "rust");
     assert_eq!(
         summary["catalog_kind"],
@@ -462,6 +496,7 @@ fn debug_cli_gerbil_policy_receipt_loads_user_entrypoint_call() {
 
     assert_eq!(result.status, 0, "{}", result.stderr);
     let summary: Value = serde_json::from_str(&result.stdout).expect("gerbil policy summary");
+    assert_package_owned_debug_loadpath(&summary);
     assert_eq!(summary["status"], "ok");
     assert_eq!(
         summary["entrypoint"],
@@ -481,7 +516,7 @@ fn debug_cli_gerbil_policy_receipt_loads_user_entrypoint_call() {
     );
     assert_eq!(
         summary["policy_projection_policy_composition_owner"],
-        "gerbil-poo"
+        "poo-flow.scheme"
     );
     assert_eq!(summary["policy_projection_budget_receipt_owner"], "rust");
     assert_eq!(

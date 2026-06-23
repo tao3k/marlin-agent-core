@@ -1,0 +1,47 @@
+#+title: Marline Config Interface
+
+* Purpose
+
+This directory is the real Marlin-maintained policy authoring entrypoint for
+AGENT and human operators.
+
+It is not an example workspace. It is where Marlin's kernel-facing Scheme
+policy selection starts before Rust validates projections, receipts, catalog
+resolution, budgets, and runtime ownership.
+
+* Entry Point
+
+- =init.ss= is the first file to edit when selecting Marlin-owned policy packs.
+- =custom/= contains Marlin-maintained policy extensions.
+- =custom/marline-kernel/policies/= contains the concrete kernel policy entrypoints.
+- =custom/marline-kernel/policies/loops/profiles/= contains one loop profile per
+  file, so AGENT and human authors can extend a profile without editing the
+  entire loop family.
+- =custom/marline-kernel/policies/loops/cases/= contains one real-LLM case
+  manifest per loop profile. Default smoke tests validate the manifests; live
+  provider execution remains an explicit opt-in runtime gate.
+- =t/= contains the smoke checks that prove this interface can be loaded by the
+  real Gerbil toolchain.
+
+* Authoring Rule
+
+AGENT and human authors should keep this layer declarative:
+
+- select policy packs with =use-module= style composition;
+- define policy intent, options, contracts, and receipt requirements in Scheme;
+- let poo-flow own the module/user-interface mechanics;
+- let Rust own runtime execution, validation, typed projection, catalog handler
+  lookup, and receipts.
+
+Do not move this workspace under =examples/=. Downstream user-interface examples
+belong in =examples/=; this directory is Marlin's maintained policy interface.
+
+* Boundary
+
+This interface is the handoff surface between policy authors and the Marlin
+runtime:
+
+- Scheme/POO owns policy composition and option selection.
+- poo-flow owns module flow and user-interface primitives.
+- Marlin owns the kernel policy pack hosted here.
+- Rust owns execution, replay evidence, and typed runtime guarantees.

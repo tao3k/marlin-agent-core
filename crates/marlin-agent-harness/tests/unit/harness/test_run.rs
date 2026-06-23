@@ -1,8 +1,8 @@
 use marlin_agent_harness::AgentHarnessEvidenceKind;
 use marlin_agent_test_support::{
     LibtestCommandSpec, LibtestTextImportConfig, TestRunLayer,
-    assert_deterministic_test_run_evidence, capture_workspace_libtest_commands,
-    deterministic_test_run_evidence_fixture,
+    assert_deterministic_test_run_evidence, assert_user_interface_loop_live_llm_gate_evidence,
+    capture_workspace_libtest_commands, deterministic_test_run_evidence_fixture,
 };
 
 #[test]
@@ -27,6 +27,23 @@ fn harness_can_project_test_run_receipt_into_layer_summaries() {
     assert_eq!(live_external.passed, 0);
     assert_eq!(live_external.failed, 0);
     assert_eq!(live_external.ignored, 1);
+}
+
+#[test]
+fn harness_consumes_user_interface_loop_live_llm_gate_receipt() {
+    let receipt = assert_user_interface_loop_live_llm_gate_evidence();
+    let non_live_integration = receipt.summary_for_layer(TestRunLayer::NonLiveIntegration);
+    let live_external = receipt.summary_for_layer(TestRunLayer::LiveExternal);
+
+    assert!(receipt.is_non_live_success());
+    assert_eq!(receipt.case_count(), 3);
+    assert_eq!(receipt.ignored_live_external_count(), 1);
+    assert_eq!(non_live_integration.passed, 1);
+    assert_eq!(live_external.ignored, 1);
+    assert_eq!(
+        receipt.evidence_count_by_kind(AgentHarnessEvidenceKind::Runtime),
+        2
+    );
 }
 
 #[cfg(unix)]

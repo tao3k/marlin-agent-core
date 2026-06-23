@@ -1,5 +1,7 @@
 #[path = "unit/runtime.rs"]
 mod runtime;
+#[path = "unit/runtime/agent_flow_loop.rs"]
+mod runtime_agent_flow_loop;
 #[path = "unit/runtime/agent_graph/mod.rs"]
 mod runtime_agent_graph;
 #[path = "unit/runtime/cleanup.rs"]

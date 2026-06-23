@@ -6,7 +6,7 @@ use marlin_gerbil_scheme::{
 use std::{fs, path::Path, process::Command};
 
 #[test]
-#[ignore = "requires a local Gerbil gxi executable and installed gerbil-poo dependency"]
+#[ignore = "requires a local Gerbil gxi executable and poo-flow-provided clan/poo dependency"]
 fn command_compiler_real_gxi_deck_runtime_can_execute_poo_object_probe_when_dependency_installed() {
     let Some(gxi) = local_gxi() else {
         return;

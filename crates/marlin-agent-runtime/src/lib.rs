@@ -19,10 +19,11 @@ pub use agent_graph::{
     project_agent_graph_planning_receipt, project_agent_graph_projection_request,
 };
 pub use graph_loop::{
-    GraphLoopRunCancelReceipt, GraphLoopRunCancelStatus, GraphLoopRunInspectReceipt,
-    GraphLoopRunObservation, GraphLoopRunProgressUpdate, GraphLoopRunRegistry,
-    GraphLoopRunRegistryError, GraphLoopRunRegistryHandle, GraphLoopRunRegistrySnapshot,
-    GraphLoopRunStartReceipt, GraphLoopRunStatus, GraphLoopRunWaitReceipt, GraphLoopRunWaitStatus,
+    AgentFlowLoopStepRequest, GraphLoopRunCancelReceipt, GraphLoopRunCancelStatus,
+    GraphLoopRunInspectReceipt, GraphLoopRunObservation, GraphLoopRunProgressUpdate,
+    GraphLoopRunRegistry, GraphLoopRunRegistryError, GraphLoopRunRegistryHandle,
+    GraphLoopRunRegistrySnapshot, GraphLoopRunStartReceipt, GraphLoopRunStatus,
+    GraphLoopRunWaitReceipt, GraphLoopRunWaitStatus, project_agent_flow_loop_step,
 };
 pub use model_route::{
     ActivatedModelRouteProfileSpawnRequest, CompiledModelRouteResolver, ModelGateway,

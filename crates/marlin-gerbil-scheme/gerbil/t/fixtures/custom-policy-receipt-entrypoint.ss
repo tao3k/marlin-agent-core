@@ -3,7 +3,7 @@
 
 (import (only-in :clan/poo/object .o)
         :marlin/deck-runtime-policy-receipt-gate-cli
-        :modules/lib)
+        :marlin/modules/lib)
 
 ;;; Boundary: The loaded file can define POO policy furniture before emission.
 ;; MarlinResult <- MarlinInput

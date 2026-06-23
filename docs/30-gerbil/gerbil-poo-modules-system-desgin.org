@@ -18,8 +18,8 @@ and projection receipts. Users then make small, explicit changes to that object
 graph.
 
 This complements [[file:30.90-poo-module-system.org][30.90 POO Module System]], which is the implementation landing
-plan for the underlying =marlinModules=, =marlinEvalModules=, POO slot merge,
-and typed projection machinery.
+plan for poo-flow =poo-flow-modules= descriptors, Marlin =marlinEvalModules=
+adapters, POO slot merge, and typed projection machinery.
 The milestone flow lives in [[file:30.91-poo-module-system-milestones.org][30.91 POO Module System Milestones]].
 
 ** Mental Model: Furnished House, Furniture, And Catalog
@@ -68,9 +68,10 @@ hidden =disabledModules= key. Changing furniture should be object surgery:
 #+end_src
 
 If a user really wants an unfurnished room, Marlin can also expose an
-"unfinished shell" layer: low-level =marlinModules=, =marlinPolicyModule=,
-=marlinPolicyExtension=, and explicit catalog/evaluation calls. That layer is
-for framework authors and advanced users, not the default teaching interface.
+"unfinished shell" layer: low-level poo-flow =poo-flow-modules= descriptors,
+Marlin =marlinPolicyModule= / =marlinPolicyExtension= wrappers, and explicit
+catalog/evaluation calls. That layer is for framework authors and advanced
+users, not the default teaching interface.
 
 This is the practical difference from simply saying "users write modules and the
 system evaluates them." The upstream system supplies a whole object graph first.
@@ -127,8 +128,8 @@ objects:
 #+begin_src scheme
 (def workspace
   (.o (:: @ (list (CustomerAgentWorkspace default-customer-config)))
-      (extensions => marlin-extensions-append
-                  (marlin-extensions my-review-extension))
+      (extensions => poo-flow-extensions-append
+                  (poo-flow-extensions my-review-extension))
       (policy-objects => marlin-policy-objects-replace
                       (marlin-replace-object
                        'model-route
@@ -202,8 +203,8 @@ The user overrides ordinary values without touching the object graph.
        hook-owner: "customer-worker")))
 #+end_src
 
-This maps to the current =marlin-module-interface= plus =marlinModules= pattern:
-schemas live in the interface; user config is a small POO object.
+This maps to the current =poo-flow-module-interface= plus =poo-flow-modules=
+pattern: schemas live in the interface; user config is a small POO object.
 
 In the house model, this is changing thermostat settings, choosing a model
 profile, or setting the workspace root. The furniture layout stays the same.
@@ -249,7 +250,7 @@ object_surgery_receipt
   family = failure-recovery-policy
   target_id = default-retry-policy
   replacement_id = my-retry-policy
-  owner = gerbil-poo
+  owner = poo-flow.scheme
   rust_handler_manufactured = false
 #+end_src
 
@@ -343,7 +344,7 @@ The public Scheme shape should be close to:
 
 The current implementation already has the lower-level pieces:
 
-- =marlinModules= creates POO module objects.
+- =poo-flow-modules= creates POO module descriptor objects.
 - =marlinPolicyExtension= and =defmarlin-policy-extension= mark .ss exports as
   module-managed POO extension objects.
 - =marlinPolicyModule= and =defmarlin-policy-module= wrap policy modules.
@@ -470,14 +471,14 @@ Nix-style escape-hatch complexity.
 
 Current implementation:
 
-- =crates/marlin-gerbil-scheme/gerbil/src/modules/lib.ss=
-  owns the public facade for =marlinModules=, =marlinModuleCatalog=,
-  =marlinEvalModules=, =marlinModuleSystemPresentation=, prefab packs, policy
-  object surgery, and =marlinPolicyProjection=.
-- =crates/marlin-gerbil-scheme/gerbil/src/modules/policy-pack.ss=
+- =crates/marlin-gerbil-scheme/gerbil/src/marlin/modules/lib.ss=
+  owns the Marlin public facade for policy modules, policy packs, policy object
+  surgery, evaluation receipts, and =marlinPolicyProjection=. Raw module
+  descriptor construction stays in poo-flow's =:poo-flow/src/module-system/facade=.
+- =crates/marlin-gerbil-scheme/gerbil/src/marlin/modules/policy-pack.ss=
   owns the furnished pack constructor, default pack, pack catalog, inventory,
   presentation payload, and projection envelope.
-- =crates/marlin-gerbil-scheme/gerbil/src/modules/*-policy.ss=
+- =crates/marlin-gerbil-scheme/gerbil/src/marlin/modules/*-policy.ss=
   owns the upstream policy furniture families for workspace, session, agent,
   hook selection, model route, continuation profile, human review, evidence
   graph, failure recovery, memory trigger, and catalog projection. The default
@@ -516,7 +517,7 @@ instead of wrapping the debug prefab emission:
 The acceptance gate should include:
 
 - direct =gxi= tests for pack construction and object surgery;
-- the existing =user-interface-module-config= example;
+- the existing user-interface workspace example;
 - =marlin gerbil policy-receipt= showing the pack presentation and
   =policy_projection_*= facts through the real debug CLI, including the
   =--entrypoint= / =--call= path;

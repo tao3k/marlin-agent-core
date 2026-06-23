@@ -1,4 +1,4 @@
-use marlin_agent_core::{LoopGraph, LoopNodeSpec};
+use marlin_agent_core::{LoopEdgeSpec, LoopGraph, LoopNodeSpec};
 
 pub(super) fn single_node_graph() -> LoopGraph {
     single_node_graph_with_executor("debug.echo")
@@ -13,6 +13,29 @@ pub(super) fn single_node_graph_with_executor(executor: &str) -> LoopGraph {
             config: Default::default(),
         }],
         edges: Vec::new(),
+    }
+}
+
+pub(super) fn two_step_graph() -> LoopGraph {
+    LoopGraph {
+        graph_id: "graph".to_owned(),
+        nodes: vec![
+            LoopNodeSpec {
+                id: "plan".to_owned(),
+                executor: "debug.echo".to_owned(),
+                config: Default::default(),
+            },
+            LoopNodeSpec {
+                id: "apply".to_owned(),
+                executor: "debug.echo".to_owned(),
+                config: Default::default(),
+            },
+        ],
+        edges: vec![LoopEdgeSpec {
+            from: "plan".to_owned(),
+            to: "apply".to_owned(),
+            condition: None,
+        }],
     }
 }
 

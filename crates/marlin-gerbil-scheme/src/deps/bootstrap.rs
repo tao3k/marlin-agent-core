@@ -1,13 +1,12 @@
 //! Bootstrap actions for fetching, linking, building, and verifying Gerbil packages.
 
 use super::{
-    GERBIL_CELLAR_ENV, GERBIL_GCC_ENV, GERBIL_GSC_ENV, GERBIL_MACOS_SDK_ENV, GERBIL_POO_PACKAGE,
-    GERBIL_POO_PROVIDER_URL, GERBIL_UTILS_MODULE_PACKAGE, GERBIL_UTILS_PROVIDER_PACKAGE,
-    GERBIL_UTILS_PROVIDER_URL, GerbilDepsConfig, GerbilDepsError,
-    fs::{ensure_symlink, package_destination, remove_existing_symlink, require_dir, require_file},
-    process::{BootstrapCommand, clone_or_update, prepend_library_path, prepend_path},
+    GERBIL_CELLAR_ENV, GERBIL_GCC_ENV, GERBIL_GSC_ENV, GERBIL_MACOS_SDK_ENV, GerbilDepsConfig,
+    GerbilDepsError,
+    fs::{ensure_symlink, require_dir, require_file},
+    process::{BootstrapCommand, prepend_library_path, prepend_path},
 };
-use std::{fs, path::Path, path::PathBuf, process::Command};
+use std::{fs, path::PathBuf, process::Command};
 
 impl GerbilDepsConfig {
     pub(super) fn repair_homebrew_layout(&self) -> Result<(), GerbilDepsError> {
@@ -68,39 +67,21 @@ impl GerbilDepsConfig {
     }
 
     pub(super) fn fetch_packages(&self) -> Result<(), GerbilDepsError> {
-        fs::create_dir_all(&self.cache_dir).map_err(|error| {
-            GerbilDepsError::message(format!(
-                "failed to create {}: {error}",
-                self.cache_dir.display()
-            ))
-        })?;
-        clone_or_update(
-            GERBIL_UTILS_PROVIDER_URL,
-            &self.cache_dir.join("gerbil-utils"),
-        )?;
-        clone_or_update(GERBIL_POO_PROVIDER_URL, &self.cache_dir.join("gerbil-poo"))?;
-        Ok(())
+        require_dir(&self.package_root, "Gerbil package root")?;
+        require_file(&self.package_root.join("gerbil.pkg"), "gerbil.pkg")?;
+        self.gxpkg_command()
+            .args(["deps", "-i"])
+            .run("install gerbil.pkg dependencies")
     }
 
     pub(super) fn link_packages(&self) -> Result<(), GerbilDepsError> {
-        let gerbil_utils = self.cache_dir.join("gerbil-utils");
-        let gerbil_poo = self.cache_dir.join("gerbil-poo");
-        require_dir(&gerbil_utils, "gerbil-utils checkout")?;
-        require_dir(&gerbil_poo, "gerbil-poo checkout")?;
-
-        self.link_package(GERBIL_UTILS_MODULE_PACKAGE, &gerbil_utils)?;
-        self.link_package(GERBIL_UTILS_PROVIDER_PACKAGE, &gerbil_utils)?;
-        self.link_package(GERBIL_POO_PACKAGE, &gerbil_poo)?;
         Ok(())
     }
 
     pub(super) fn build_packages(&self) -> Result<(), GerbilDepsError> {
         self.gxpkg_command()
-            .args(["build", "--global-env", GERBIL_UTILS_PROVIDER_PACKAGE])
-            .run("build gerbil-utils")?;
-        self.gxpkg_command()
-            .args(["build", "--global-env", GERBIL_POO_PACKAGE])
-            .run("build clan/poo")
+            .args(["build", "-d"])
+            .run("build gerbil.pkg dependencies and package")
     }
 
     pub(super) fn verify_packages(&self) -> Result<(), GerbilDepsError> {
@@ -124,35 +105,20 @@ impl GerbilDepsConfig {
                 "(newline)",
             ])
             .run("verify clan/poo imports")?;
+        self.gxi_command()
+            .args([
+                "-e",
+                "(import :poo-flow/src/module-system/facade :poo-flow/src/loops/agent)",
+                "-e",
+                "(display \"poo-flow-import-ok\")",
+                "-e",
+                "(newline)",
+            ])
+            .run("verify poo-flow imports")?;
         self.verify_package_files()
     }
 
-    fn link_package(&self, package: &str, source: &Path) -> Result<(), GerbilDepsError> {
-        let destination = package_destination(&self.home_dir, package);
-        remove_existing_symlink(&destination)?;
-        self.gxpkg_command()
-            .args(["link", "-g", package])
-            .arg(source)
-            .run(format!("link {package}"))
-    }
-
     fn verify_package_files(&self) -> Result<(), GerbilDepsError> {
-        require_file(
-            &package_destination(
-                &self.home_dir,
-                &format!("{GERBIL_UTILS_PROVIDER_PACKAGE}.manifest"),
-            ),
-            "gerbil-utils manifest",
-        )?;
-        require_file(
-            &self
-                .home_dir
-                .join(".gerbil")
-                .join("pkg")
-                .join("clan")
-                .join("poo.manifest"),
-            "clan/poo manifest",
-        )?;
         require_file(
             &self.home_dir.join(".gerbil").join("bin").join("random-run"),
             "random-run",
@@ -169,11 +135,35 @@ impl GerbilDepsConfig {
                 format!("clan/poo/{module}.o1"),
             )?;
         }
+        require_file(
+            &self
+                .home_dir
+                .join(".gerbil")
+                .join("lib")
+                .join("poo-flow")
+                .join("src")
+                .join("module-system")
+                .join("facade.o1"),
+            "poo-flow module-system facade",
+        )?;
+        require_file(
+            &self
+                .home_dir
+                .join(".gerbil")
+                .join("lib")
+                .join("poo-flow")
+                .join("src")
+                .join("loops")
+                .join("agent.o1"),
+            "poo-flow loops/agent",
+        )?;
         Ok(())
     }
 
     fn gxpkg_command(&self) -> BootstrapCommand {
-        self.gerbil_command(self.gerbil_bin.join("gxpkg"))
+        let mut command = self.gerbil_command(self.gerbil_bin.join("gxpkg"));
+        command.current_dir(&self.package_root);
+        command
     }
 
     fn gxi_command(&self) -> BootstrapCommand {

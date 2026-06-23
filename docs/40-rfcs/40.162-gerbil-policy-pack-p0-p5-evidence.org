@@ -30,13 +30,13 @@ OK
 ** Verification Commands
 The Gerbil package evidence was checked with:
 #+begin_src sh
-GERBIL_LOADPATH=src gxc -d ~/.gerbil/lib src/modules/policy-pack.ss
-GERBIL_LOADPATH=src gxc -d ~/.gerbil/lib src/modules/lib.ss
-GERBIL_LOADPATH=src gxtest t/marlin-policy-pack-inventory-test.ss
-GERBIL_LOADPATH=src gxtest t/marlin-user-interface-prefab-test.ss
-GERBIL_LOADPATH=../../gerbil/src gxtest t/user-interface-module-config-test.ss
+gxpkg deps -i
+gxi build.ss compile
+gxtest t/marlin-policy-pack-inventory-test.ss
+gxtest t/marlin-user-interface-prefab-test.ss
+cd ../examples/user-interface-module-config && GERBIL_LOADPATH=../../gerbil/src:t gxtest t/user-interface-module-config-test.ss
 #+end_src
 The full package compile gate is:
 #+begin_src sh
-GERBIL_LOADPATH=src gxi build.ss compile
+gxi build.ss compile
 #+end_src

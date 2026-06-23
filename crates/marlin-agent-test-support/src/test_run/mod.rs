@@ -18,5 +18,6 @@ pub use import::{
 pub use model::{
     TEST_RUN_EVIDENCE_SCHEMA_VERSION, TestRunCaseRecord, TestRunCaseStatus, TestRunEvidenceReceipt,
     TestRunLayer, TestRunLayerSummary, assert_deterministic_test_run_evidence,
-    deterministic_test_run_evidence_fixture,
+    assert_user_interface_loop_live_llm_gate_evidence, deterministic_test_run_evidence_fixture,
+    user_interface_loop_live_llm_gate_evidence_fixture,
 };

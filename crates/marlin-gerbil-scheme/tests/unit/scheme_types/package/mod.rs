@@ -8,10 +8,10 @@ mod policy_pack_projection;
 
 use super::support::strategy_selection_manifest;
 use marlin_gerbil_scheme::{
+    GERBIL_DECK_RUNTIME_NATIVE_ABI_ID, GERBIL_DECK_RUNTIME_NATIVE_ABI_VERSION,
     GerbilDeckRuntimeNativeAotConfig, GerbilSchemeNativeAbiContract, GerbilSchemeNativeAbiId,
     GerbilSchemeNativeAbiReadinessPlan, GerbilSchemeNativeSymbol, GerbilSchemePackageId,
-    GerbilSchemePackageManifest, GERBIL_DECK_RUNTIME_NATIVE_ABI_ID,
-    GERBIL_DECK_RUNTIME_NATIVE_ABI_VERSION,
+    GerbilSchemePackageManifest,
 };
 
 fn downstream_strategy_package() -> GerbilSchemePackageManifest {

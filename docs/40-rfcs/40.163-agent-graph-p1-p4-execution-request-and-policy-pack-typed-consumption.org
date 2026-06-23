@@ -11,7 +11,11 @@ This makes Linux portability the normal CI path for:
 - =marlin-agent-policy-routing-native= linked-native tests and benchmark compile;
 - Gerbil/Gambit source bootstrap when toolchain variables are not provided.
 ** P2 Gerbil Policy-Pack Load Cost
-=src/modules/policy-pack.ss= continues to avoid importing =:modules/evaluation= for presentation metadata. The policy-pack projection-chain helper now consumes the existing lightweight constructors for module evaluation, policy projection, native payload, budget, and catalog resolution receipts.
+=src/marlin/modules/policy-pack.ss= continues to avoid importing Marlin
+=:marlin/modules/evaluation= for presentation metadata while accepting
+poo-flow module descriptors as input. The policy-pack projection-chain helper
+now consumes the existing lightweight constructors for module evaluation,
+policy projection, native payload, budget, and catalog resolution receipts.
 The delivery prefabs consume receipt family ids and owner fields from the chain receipt instead of hard-coded local lists.
 ** P3 Explicit Execution Request Boundary
 =marlin-agent-runtime= now has an explicit =RuntimeAgentGraphExecutionRequest= and =build_agent_graph_execution_request=.
@@ -42,7 +46,8 @@ Focused verification for this slice:
 direnv exec . cargo fmt --all -- --check
 direnv exec . cargo test -p marlin-gerbil-scheme scheme_types::projection::policy_pack_projection
 direnv exec . cargo test -p marlin-gerbil-scheme scheme_types::package::policy_pack_projection
-GERBIL_LOADPATH=src gxc -d ~/.gerbil/lib src/modules/policy-pack.ss
-GERBIL_LOADPATH=src gxtest t/marlin-policy-pack-inventory-test.ss
-GERBIL_LOADPATH=src gxtest t/marlin-user-interface-prefab-test.ss
+cd crates/marlin-gerbil-scheme/gerbil && gxpkg deps -i
+cd crates/marlin-gerbil-scheme/gerbil && gxi build.ss compile
+cd crates/marlin-gerbil-scheme/gerbil && gxtest t/marlin-policy-pack-inventory-test.ss
+cd crates/marlin-gerbil-scheme/gerbil && gxtest t/marlin-user-interface-prefab-test.ss
 #+end_src

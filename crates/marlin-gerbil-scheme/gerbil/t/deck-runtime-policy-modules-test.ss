@@ -2,6 +2,8 @@
 ;;; Boundary: Module owns Marlin Gerbil policy and runtime contracts for agent edits.
 
 (import :clan/poo/object
+        (only-in :poo-flow/src/module-system/facade
+                 poo-flow-module-system-owner)
         :marlin/deck-runtime
         :marlin/deck-runtime-agent-policy
         :marlin/deck-runtime-condition-policy
@@ -11,10 +13,9 @@
         :marlin/deck-runtime-extension-catalog
         :marlin/deck-runtime-extension-receipt
         :marlin/deck-runtime-matcher
-        :modules/lib
+        :marlin/modules/lib
         :marlin/deck-runtime-policy-engine
         :marlin/deck-runtime-strategy-context
-        :marlin/deck-runtime-user-module
         :std/test)
 
 ;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
@@ -433,7 +434,7 @@
            => catalog-receipt)
     (check (.get module-receipt kind)
            => marlin-deck-runtime-module-evaluation-receipt-kind)
-    (check (.get module-receipt evaluator) => "gerbil-poo")
+    (check (.get module-receipt evaluator) => "poo-flow.scheme")
     (check (.get projection-receipt kind)
            => marlin-deck-runtime-policy-projection-receipt-kind)
     (check (.get projection-receipt projection)
@@ -550,14 +551,14 @@
     (check (.get extension policy-extension-source)
            => marlin-deck-runtime-debug-policy-extension-source)
     (check (.get extension policy-extension-managed-by)
-           => "gerbil-module-system")
+           => poo-flow-module-system-owner)
     (check (.get extension policy-extension-projection-owner)
-           => "gerbil-poo")
+           => "poo-flow.scheme")
     (check (.get extension policy-extension-runtime-owner)
            => "rust")
     (check marlin-deck-runtime-debug-policy-extension-source
            => ":marlin/deck-runtime-debug-policy-extension")
-    (check (.get policy-module kind)
+    (check (.get policy-module policy-module-kind)
            => marlin-policy-module-kind)
     (check (.get policy-module id)
            => "debug-policy-extension-module")
@@ -582,9 +583,9 @@
     (check (.get module-presentation root-policy-extension-object-count)
            => 1)
     (check (.get module-presentation import-graph-owner)
-           => "gerbil-module-system")
-    (check (.get module-presentation option-merge-owner)
-           => "gerbil-poo")
+           => poo-flow-module-system-owner)
+    (check (.get module-presentation option-policy-owner)
+           => poo-flow-module-system-owner)
     (check (.get module-presentation native-projection-payload-owner)
            => "rust")
     (check (.get module-presentation rust-parses-scheme-source)
@@ -598,7 +599,7 @@
     (check (.get substrate-gate receipt-kind)
            => marlin-deck-runtime-extension-receipt-kind)
     (check (.get substrate-gate module-evaluation-kind)
-           => marlin-deck-runtime-user-module-evaluation-kind)
+           => "poo-flow.modules.runtime-evaluation.v1")
     (check (.get substrate-gate extension-count) => 1)
     (check (.get substrate-gate policy-extension-object-count) => 1)
     (check (.get substrate-gate script-count) => 0)

@@ -2,8 +2,9 @@
 ;;; Boundary: Module tests prefab pack inventories without full runtime fixtures.
 
 (import :clan/poo/object
-        :modules/lib
-        :modules/prefabs/default-policy)
+        :poo-flow/src/module-system/facade
+        :marlin/modules/lib
+        :marlin/modules/prefabs/default-policy)
 
 ;;; Boundary: Local assertions stay scalar around POO values.
 ;; MarlinResult <- MarlinInput
@@ -17,15 +18,15 @@
 ;;; Boundary: Minimal module keeps inventory tests focused on prefab objects.
 ;; MarlinResult <- MarlinInput
 (def inventory-module-interface
-  (marlin-module-interface
+  (poo-flow-module-interface
    "InventoryModule"
-   (.o surface: (marlin-string-constant "inventory"))
+   (.o surface: (poo-flow-string-constant "inventory"))
    '((owner . "policy-pack-inventory-test"))))
 
-;;; Boundary: Inventory packs still wrap a real marlinModules value.
+;;; Boundary: Inventory packs now accept a real poo-flow module descriptor.
 ;; MarlinResult <- MarlinInput
 (def inventory-module
-  (marlinModules
+  (poo-flow-modules
    inventory-module-interface
    (.o id: "inventory-module"
        config: (.o surface: "inventory"))))
@@ -228,9 +229,9 @@
             "budget_receipt"
             "catalog_resolution_receipt"))
 (check (.get default-delivery module-evaluation-receipt-owner)
-       => "gerbil-module-system")
+       => poo-flow-module-system-owner)
 (check (.get default-delivery policy-projection-receipt-owner)
-       => "gerbil-poo")
+       => poo-flow-scheme-owner)
 (check (.get default-delivery native-projection-payload-owner)
        => "rust")
 (check (.get default-delivery budget-receipt-owner)
@@ -391,7 +392,7 @@
 (check (.get conflict-presentation policy-projection-receipt-kind)
        => marlin-policy-projection-kind)
 (check (.get conflict-presentation policy-composition-owner)
-       => "gerbil-poo")
+       => "poo-flow.scheme")
 (check (.get conflict-presentation runtime-lifecycle-owner)
        => "rust")
 (check (.get conflict-projection kind)
@@ -417,13 +418,13 @@
 (check (.get conflict-projection catalog-resolution-receipt-owner)
        => "rust")
 (check (.get conflict-projection import-graph-owner)
-       => "gerbil-module-system")
+       => poo-flow-module-system-owner)
 (check (.get conflict-projection option-merge-owner)
-       => "gerbil-poo")
+       => poo-flow-module-system-owner)
 (check (.get conflict-projection extension-composition-owner)
-       => "gerbil-poo")
+       => poo-flow-module-system-owner)
 (check (.get conflict-projection policy-composition-owner)
-       => "gerbil-poo")
+       => poo-flow-scheme-owner)
 (check (.get conflict-projection runtime-lifecycle-owner)
        => "rust")
 (check (.get conflict-projection rust-parses-scheme-source)
@@ -440,9 +441,9 @@
             "budget_receipt"
             "catalog_resolution_receipt"))
 (check (.get conflict-chain-receipt module-evaluation-receipt-owner)
-       => "gerbil-module-system")
+       => poo-flow-module-system-owner)
 (check (.get conflict-chain-receipt policy-projection-receipt-owner)
-       => "gerbil-poo")
+       => poo-flow-scheme-owner)
 (check (.get conflict-chain-receipt native-projection-payload-owner)
        => "rust")
 (check (.get conflict-chain-receipt budget-receipt-owner)
@@ -450,9 +451,9 @@
 (check (.get conflict-chain-receipt catalog-resolution-receipt-owner)
        => "rust")
 (check (.get (.get conflict-chain-receipt module-evaluation-receipt) owner)
-       => "gerbil-module-system")
+       => poo-flow-module-system-owner)
 (check (.get (.get conflict-chain-receipt policy-projection-receipt) owner)
-       => "gerbil-poo")
+       => poo-flow-scheme-owner)
 (check (.get (.get conflict-chain-receipt native-projection-payload) owner)
        => "rust")
 (check (.get (.get conflict-chain-receipt budget-receipt) owner)

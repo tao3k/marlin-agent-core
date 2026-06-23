@@ -781,19 +781,18 @@ Next state-home landing order:
 ** Latest Runtime Smoke CLI Closure
 =marlin smoke runtime= now provides the first headless runtime smoke interface. This is intentionally separate from TUI work: the smoke command runs through the debug CLI facade, builds typed scenarios internally, and emits a typed =SmokeRuntimeReceipt= with scenario id, =NoLiveLlm= mode, run id, graph id, terminal status, visited nodes, node receipt counts, adapter spawn counts, process spawn counts, optional state-home summary, diagnostics, and optional full =GraphLoopExecutionResult=.
 
-Three no-live-LLM scenarios have landed. =--scenario builtin-adapters= exercises the built-in tool, provider, and subagent adapters in one graph, proving that subagent adapter dispatch is covered without a TUI. =--scenario process-command-fanout= builds a multi-node process-command graph and verifies real OS process spawn, stdout/stderr diagnostics, per-node receipts, and fanout stability through the same graph-loop execution path. =--scenario state-home-env= resolves a runtime state layout from explicit =--marlin-home= and =--host-home= inputs, proving =MARLIN_HOME= precedence, =HOME/.marlin= fallback, and object path previews without reading or mutating process-global developer-machine environment.
+Four no-live-LLM scenarios have landed. =--scenario builtin-adapters= exercises the built-in tool, provider, and subagent adapters in one graph, proving that subagent adapter dispatch is covered without a TUI. =--scenario process-command-fanout= builds a multi-node process-command graph and verifies real OS process spawn, stdout/stderr diagnostics, per-node receipts, and fanout stability through the same graph-loop execution path. =--scenario state-home-env= resolves a runtime state layout from explicit =--marlin-home= and =--host-home= inputs, proving =MARLIN_HOME= precedence, =HOME/.marlin= fallback, and object path previews without reading or mutating process-global developer-machine environment. =--scenario model-route-dry-run= compiles a deterministic typed route rule, admits a chat request through =CompiledModelRouteResolver=, and emits the full =ModelRouteAdmissionResponse= so route, session, matched-glob, provider/model, and LiteLLM selector receipts can be validated without network access.
 
-This answers the testing boundary for now: TUI is not the primary correctness harness. Debug CLI is the stable smoke entrypoint; real model access should enter later as an explicit gated =live-llm= scenario under the same receipt shape, not as an accidental side effect of command tests.
+This answers the testing boundary for now: TUI is not the primary correctness harness. Debug CLI is the stable smoke entrypoint; real model access should enter later as an explicit gated =live-llm= scenario after the deterministic route/session/model receipt path is already proven, not as an accidental side effect of command tests.
 
 Focused verification:
-- =cargo test -p marlin-agent-core debug_cli_smoke_runtime --test unit_test --target-dir /tmp/marlin-agent-core-codex-verify=: 4 passed, 83 filtered.
-- =cargo test -p marlin-agent-core --test unit_test --target-dir /tmp/marlin-agent-core-codex-verify=: 85 passed.
+- =cargo test -p marlin-agent-core debug_cli_smoke_runtime --test unit_test --target-dir /tmp/marlin-agent-core-codex-verify=: 5 passed, 87 filtered.
+- =cargo test -p marlin-agent-core --test unit_test --target-dir /tmp/marlin-agent-core-codex-verify=: 92 passed.
 - =cargo test -p marlin-agent-protocol --test unit_test --target-dir /tmp/marlin-agent-core-codex-verify=: 84 passed.
 - =cargo clippy -p marlin-agent-core --all-targets --no-deps --target-dir /tmp/marlin-agent-core-codex-verify -- -D warnings=: no issues found.
 - =cargo fmt --check -p marlin-agent-core -p marlin-agent-protocol -p marlin-agent-environment -p marlin-agent-route=: passed.
 - =git diff --check=: passed.
 
 Next smoke landing order:
-1. Add a gated real-LLM scenario that requires explicit environment opt-in and emits route/session/model receipts without running in default CI.
-2. Add model-route dry-run smoke coverage before live provider calls, so route/session receipts can be validated without network.
-3. Add TUI driver coverage only after the headless smoke receipts are stable, so UI tests assert presentation and input wiring rather than runtime correctness.
+1. Add a gated real-LLM scenario that requires explicit environment opt-in and emits live gateway receipts without running in default CI.
+2. Add TUI driver coverage only after the headless smoke receipts are stable, so UI tests assert presentation and input wiring rather than runtime correctness.

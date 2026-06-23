@@ -88,9 +88,10 @@ pub use test_run::{
     TestRunLayerSummary, WorkspaceLibtestCommandImportReport, WorkspaceLibtestCommandPackageReport,
     WorkspaceLibtestTextImportInput, WorkspaceLibtestTextImportReport,
     WorkspaceLibtestTextPackageReport, assert_deterministic_test_run_evidence,
-    capture_libtest_command_output, capture_workspace_libtest_commands,
-    deterministic_test_run_evidence_fixture, import_libtest_text_output,
-    import_workspace_libtest_text_outputs,
+    assert_user_interface_loop_live_llm_gate_evidence, capture_libtest_command_output,
+    capture_workspace_libtest_commands, deterministic_test_run_evidence_fixture,
+    import_libtest_text_output, import_workspace_libtest_text_outputs,
+    user_interface_loop_live_llm_gate_evidence_fixture,
 };
 pub use three_layer::{
     DEFAULT_THREE_LAYER_PACKAGES, DeterministicAgentRuntimeScenarioReceipt,

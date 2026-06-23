@@ -6,7 +6,8 @@
 :END:
 
 Native AOT staging is intentionally out of scope here. This checkpoint records
-the interpreted/debug-path module-system work for M2-M6.
+the interpreted/debug-path work for M2-M6 after the module-system owner moved to
+the poo-flow dependency and Marlin became the policy/projection adapter.
 
 ** Landed Shape
 - M2 object surgery remains the customization surface. The furnished
@@ -26,16 +27,18 @@ the interpreted/debug-path module-system work for M2-M6.
   evidence, failure, and memory families.
 - M5 debug CLI proof is real: =marlin gerbil policy-receipt= runs the Scheme
   POO policy path through =gxi= and emits all five receipt-family facts, owner
-  boundaries, catalog hook counts, and loop timing.
+  boundaries, catalog hook counts, loop timing, and a loadpath that includes
+  package-local =.gerbil/lib= dependencies.
 - M6 downstream user proof is real: =examples/user-interface-module-config=
   keeps the user entrypoint small while =framework-authoring/custom-policy-pack.ss=
   demonstrates the advanced raw pack-authoring layer.
 
 ** Validation
 #+begin_src sh
-GERBIL_LOADPATH=src:t /usr/local/bin/gxi t/marlin-policy-pack-inventory-test.ss
-GERBIL_LOADPATH=src:t /usr/local/bin/gxi t/marlin-user-interface-prefab-test.ss
-GERBIL_LOADPATH=../../gerbil/src:user-interface-modules:t /usr/local/bin/gxtest -v t/user-interface-module-config-test.ss
+cd crates/marlin-gerbil-scheme/gerbil && gxpkg deps -i
+cd crates/marlin-gerbil-scheme/gerbil && /usr/local/bin/gxi t/marlin-policy-pack-inventory-test.ss
+cd crates/marlin-gerbil-scheme/gerbil && /usr/local/bin/gxi t/marlin-user-interface-prefab-test.ss
+cd crates/marlin-gerbil-scheme/examples/user-interface-module-config && GERBIL_LOADPATH=../../gerbil/src:../../gerbil/.gerbil/lib:.:t /usr/local/bin/gxtest -v t/user-interface-module-config-test.ss
 direnv exec . cargo run -p marlin-agent-core --locked -- gerbil policy-receipt --gxi /usr/local/bin/gxi --package-root crates/marlin-gerbil-scheme/gerbil --iterations 3
 direnv exec . cargo test -p marlin-agent-core --locked --test unit_test runtime::facade::debug_cli::gerbil -- --nocapture
 #+end_src

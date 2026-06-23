@@ -49,7 +49,7 @@
 ;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
 ;; MarlinResult <- MarlinInput
 (def harness-main
-  (string-append harness-root "/bin/gerbil-scheme-harness.ss"))
+  (string-append harness-src "/cli-launcher.ss"))
 
 ;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
 ;; MarlinResult <- MarlinInput
@@ -221,9 +221,7 @@
   (string-append
    (harness-check-command-for policy-negative-root)
    " > " (shell-quote policy-negative-output)
-   " 2>&1; status=$?; cat "
-   (shell-quote policy-negative-output)
-   "; exit $status"))
+   " 2>&1; status=$?; exit $status"))
 
 ;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
 ;; MarlinResult <- MarlinInput
@@ -288,7 +286,17 @@
            "(modularity-policy"))
          => 0)
   (check (shell-command
-          (file-contains-command harness-gerbil-build-script "\"src/modules/lib\""))
+          (file-contains-command harness-gerbil-build-script ":clan/building"))
+         => 0)
+  (check (shell-command
+          (file-contains-command harness-gerbil-build-script "all-gerbil-modules"))
+         => 0)
+  (check (shell-command
+          (file-contains-command harness-gerbil-build-script
+                                 "+marlin-native-aot-only-modules+"))
+         => 0)
+  (check (shell-command
+          (file-lacks-command harness-gerbil-build-script "\"src/marlin/modules/lib\""))
          => 0)
   (check (shell-command
           (file-lacks-command harness-gerbil-build-script "\"modules/marlin/modules/lib\""))

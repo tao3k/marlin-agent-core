@@ -4,7 +4,7 @@
 
 (import (only-in :clan/poo/object .get)
         :marlin/deck-runtime-debug-policy-extension
-        :modules/prefabs/default-policy)
+        :marlin/modules/prefabs/default-policy)
 
 (export emit-policy-receipt-gate-cli-report)
 
@@ -159,7 +159,7 @@
 (emit "module_system_import_graph_owner"
       (.get module-system-presentation import-graph-owner))
 (emit "module_system_option_merge_owner"
-      (.get module-system-presentation option-merge-owner))
+      (.get module-system-presentation option-policy-owner))
 (emit "module_system_extension_composition_owner"
       (.get module-system-presentation extension-composition-owner))
 (emit "module_system_native_projection_payload_owner"
@@ -288,15 +288,19 @@
                     "budget_receipt"
                     "catalog_resolution_receipt"))
 (emit "policy_projection_chain_module_evaluation_receipt_owner"
-      "gerbil-module-system")
+      (.get policy-projection-chain-receipt
+            module-evaluation-receipt-owner))
 (emit "policy_projection_chain_policy_projection_receipt_owner"
-      "gerbil-poo")
+      (.get policy-projection-chain-receipt
+            policy-projection-receipt-owner))
 (emit "policy_projection_chain_native_projection_payload_owner"
-      "rust")
+      (.get policy-projection-chain-receipt
+            native-projection-payload-owner))
 (emit "policy_projection_chain_budget_receipt_owner"
-      "rust")
+      (.get policy-projection-chain-receipt budget-receipt-owner))
 (emit "policy_projection_chain_catalog_resolution_receipt_owner"
-      "rust")
+      (.get policy-projection-chain-receipt
+            catalog-resolution-receipt-owner))
 (emit "policy_projection_chain_catalog_allowed_hook_count"
       (.get policy-pack-presentation allowed-hook-count))
 (emit "policy_projection_chain_replayable"

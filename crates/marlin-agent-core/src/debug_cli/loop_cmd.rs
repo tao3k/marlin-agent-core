@@ -3,14 +3,20 @@
 use std::path::{Path, PathBuf};
 
 use crate::{
-    GraphId, GraphLoopController, GraphLoopEvidencePolicy, GraphLoopExecutionRequest,
-    GraphLoopIterationReport, GraphLoopRunRequest, GraphLoopStopPolicy, RunId, TokioAgentRuntime,
-    TokioGraphLoopController, runtime::GraphLoopRunObservation,
+    GraphId, GraphLoopContinuationAction, GraphLoopContinuationDecision,
+    GraphLoopContinuationInput, GraphLoopContinuationPlanner, GraphLoopContinuationReceipt,
+    GraphLoopController, GraphLoopEvidencePolicy, GraphLoopExecutionRequest,
+    GraphLoopExecutionStatus, GraphLoopIterationReport, GraphLoopRunRequest, GraphLoopStopPolicy,
+    LoopGraph, RunId, RuntimeFuture, TokioAgentRuntime, TokioGraphLoopController,
+    runtime::GraphLoopRunObservation,
 };
 
 use super::{
     MarlinCliResult,
-    args::{ArgCursor, LoopInspectOptions, LoopReplayOptions, LoopRunOptions},
+    args::{
+        ArgCursor, LoopContinuationPlannerOption, LoopInspectOptions, LoopReplayOptions,
+        LoopRunOptions,
+    },
     catalog::DebugExecutorCatalog,
     executor::{debug_kernel, read_debug_executor_catalog},
     graph::parse_graph_input,
@@ -34,7 +40,11 @@ pub(super) fn dispatch_loop(cursor: &mut ArgCursor) -> Result<MarlinCliResult, S
             let request = read_loop_run_request(options.input.as_deref(), options.max_iterations)?;
             let catalog = read_debug_executor_catalog(options.catalog.as_deref())?;
             let requested_run_id = RunId::new(request.initial_request.run_id.clone());
-            let output = block_on(run_loop_controller(request, catalog))?;
+            let output = block_on(run_loop_controller(
+                request,
+                catalog,
+                options.continuation_planner,
+            ))?;
             let report_path =
                 write_loop_reports_for_options(&options, &requested_run_id, &output.reports)?;
             let receipt = loop_run_receipt(
@@ -127,15 +137,30 @@ struct LoopRunControllerOutput {
 async fn run_loop_controller(
     request: GraphLoopRunRequest,
     catalog: DebugExecutorCatalog,
+    continuation_planner: LoopContinuationPlannerOption,
 ) -> Result<LoopRunControllerOutput, String> {
     let (runtime, _events) = TokioAgentRuntime::new(64);
     let requested_run_id = request.initial_request.run_id.clone();
+    let continuation_graph = request.initial_request.graph.clone();
     let kernel = debug_kernel(
         &request.initial_request.run_id,
         &request.initial_request.graph,
         catalog,
     )?;
-    let controller = TokioGraphLoopController::new(kernel);
+    let mut controller = TokioGraphLoopController::new(kernel);
+    match continuation_planner {
+        LoopContinuationPlannerOption::Terminal => {}
+        LoopContinuationPlannerOption::RepeatGraph => {
+            controller = controller.with_continuation_planner(
+                DebugRepeatGraphContinuationPlanner::new(continuation_graph),
+            );
+        }
+        LoopContinuationPlannerOption::RetryOnFailure => {
+            controller = controller.with_continuation_planner(
+                DebugRetryOnFailureContinuationPlanner::new(continuation_graph),
+            );
+        }
+    }
     let reports = controller
         .spawn_loop(request, &runtime)
         .join()
@@ -152,6 +177,83 @@ async fn run_loop_controller(
         reports,
         runtime_observation,
     })
+}
+
+#[derive(Clone, Debug)]
+struct DebugRepeatGraphContinuationPlanner {
+    graph: LoopGraph,
+}
+
+impl DebugRepeatGraphContinuationPlanner {
+    fn new(graph: LoopGraph) -> Self {
+        Self { graph }
+    }
+}
+
+impl GraphLoopContinuationPlanner for DebugRepeatGraphContinuationPlanner {
+    fn decide(
+        &self,
+        input: GraphLoopContinuationInput,
+    ) -> RuntimeFuture<GraphLoopContinuationDecision> {
+        let graph = self.graph.clone();
+        Box::pin(async move {
+            let action = if input.execution_result.status == GraphLoopExecutionStatus::Completed {
+                GraphLoopContinuationAction::Rewrite {
+                    graph,
+                    reason: "debug_cli.repeat_graph_continuation_planner".to_owned(),
+                }
+            } else {
+                GraphLoopContinuationAction::Deny {
+                    reason: "debug_cli.repeat_graph_requires_completed_iteration".to_owned(),
+                }
+            };
+            GraphLoopContinuationDecision::new(
+                GraphLoopContinuationReceipt::new(input.run_id, input.iteration_id, action)
+                    .with_diagnostic("continuation_planner=repeat-graph"),
+            )
+        })
+    }
+}
+
+#[derive(Clone, Debug)]
+struct DebugRetryOnFailureContinuationPlanner {
+    graph: LoopGraph,
+}
+
+impl DebugRetryOnFailureContinuationPlanner {
+    fn new(graph: LoopGraph) -> Self {
+        Self { graph }
+    }
+}
+
+impl GraphLoopContinuationPlanner for DebugRetryOnFailureContinuationPlanner {
+    fn decide(
+        &self,
+        input: GraphLoopContinuationInput,
+    ) -> RuntimeFuture<GraphLoopContinuationDecision> {
+        let graph = self.graph.clone();
+        Box::pin(async move {
+            let status = input.execution_result.status.clone();
+            let action = match status {
+                GraphLoopExecutionStatus::Completed => GraphLoopContinuationAction::Rewrite {
+                    graph,
+                    reason: "debug_cli.retry_on_failure_completed_repeat".to_owned(),
+                },
+                GraphLoopExecutionStatus::Failed => GraphLoopContinuationAction::Rewrite {
+                    graph,
+                    reason: "debug_cli.retry_on_failure_failed_retry".to_owned(),
+                },
+                GraphLoopExecutionStatus::Cancelled => GraphLoopContinuationAction::Deny {
+                    reason: "debug_cli.retry_on_failure_cancelled_not_retryable".to_owned(),
+                },
+            };
+            GraphLoopContinuationDecision::new(
+                GraphLoopContinuationReceipt::new(input.run_id, input.iteration_id, action)
+                    .with_diagnostic("continuation_planner=retry-on-failure")
+                    .with_diagnostic(format!("execution_status={status:?}")),
+            )
+        })
+    }
 }
 
 fn loop_run_receipt(

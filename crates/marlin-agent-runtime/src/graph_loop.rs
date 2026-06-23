@@ -3,7 +3,10 @@
 use std::{collections::BTreeMap, sync::Arc};
 
 use marlin_agent_protocol::{
-    GraphId, GraphLoopEventId, GraphLoopExecutionStatus, GraphLoopIterationId, NodeId, RunId,
+    AgentFlowReceipt, AgentFlowReceiptId, AgentFlowRuntimeHandoffId, AgentFlowSession,
+    AgentFlowSessionTransform, AgentFlowTransformRejection, GraphId, GraphLoopEventId,
+    GraphLoopExecutionStatus, GraphLoopIterationId, NodeId, RunId,
+    build_agent_flow_runtime_handoff, derive_agent_flow_session,
 };
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
@@ -33,6 +36,41 @@ impl From<GraphLoopExecutionStatus> for GraphLoopRunStatus {
             GraphLoopExecutionStatus::Cancelled => Self::Cancelled,
         }
     }
+}
+
+/// Projects one Agent-Flow session transform through the runtime handoff gate.
+///
+/// This is the loop substrate step for the POO Flow model:
+/// Session -> SessionTransform -> RuntimeHandoff -> Receipt -> DerivedSession.
+pub fn project_agent_flow_loop_step(
+    request: AgentFlowLoopStepRequest,
+) -> Result<AgentFlowReceipt, AgentFlowTransformRejection> {
+    let handoff = build_agent_flow_runtime_handoff(
+        &request.session,
+        request.transform,
+        request.handoff_id,
+        request.admitted_at_ms,
+    )?;
+    Ok(derive_agent_flow_session(
+        &request.session,
+        handoff,
+        request.receipt_id,
+    ))
+}
+
+/// Named request for projecting one Agent-Flow loop substrate step.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct AgentFlowLoopStepRequest {
+    /// Source Agent-Flow session being transformed.
+    pub session: AgentFlowSession,
+    /// Typed session transform proposed by the Agent-Flow policy plane.
+    pub transform: AgentFlowSessionTransform,
+    /// Stable runtime handoff identifier to assign to the admitted transform.
+    pub handoff_id: AgentFlowRuntimeHandoffId,
+    /// Stable receipt identifier for the derived session receipt.
+    pub receipt_id: AgentFlowReceiptId,
+    /// Runtime admission timestamp in milliseconds.
+    pub admitted_at_ms: u64,
 }
 
 /// Point-in-time runtime observation for one graph-loop run.

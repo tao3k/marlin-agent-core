@@ -1,0 +1,63 @@
+#+title: Marline Kernel Loop Policies
+
+* Boundary
+
+This directory owns Marlin's kernel loop policy family.
+
+- =profiles/= contains one =loop-engine= profile module per loop intent.
+- =cases/= contains one real-LLM =funflow= case manifest per profile.
+- =custom/marline-kernel/config.ss= loads these files at top level so each
+  =.ss= remains a module-system managed POP/POO extension object.
+
+Do not reintroduce a nested =load!= trampoline here. The Gerbil module-system
+macros generate top-level definitions, so profile and case files must be loaded
+from the package config boundary.
+
+* Real LLM Gate
+
+Each loop profile owns one real-LLM case:
+
+- =marlin-runtime-handoff-profile= -> =marlin-runtime-handoff-real-llm=
+- =marlin-policy-receipt-gate-profile= -> =marlin-policy-receipt-gate-real-llm=
+- =marlin-loop-contract-profile= -> =marlin-loop-contract-real-llm=
+- =marlin-failure-retry-profile= -> =marlin-failure-retry-real-llm=
+
+The case manifests point at the real debug CLI shape:
+
+#+begin_src sh
+marlin loop run --input <case>.loop.json --catalog real-llm-catalog.toml --continuation-planner repeat-graph --no-store
+#+end_src
+
+The failure retry case uses the failure-aware planner:
+
+#+begin_src sh
+marlin loop run --input failure-retry-llm.loop.json --catalog real-llm-catalog.toml --continuation-planner retry-on-failure --no-store
+#+end_src
+
+Each =*.loop.json= is a full =GraphLoopRunRequest= carrying:
+
+- =policy_profile= for the loop profile under test;
+- =stop_policy.max_iterations= set to =3=;
+- a simulated failing loop state;
+- an acceptance rule for the live LLM repair.
+- a debug continuation planner that repeats the graph until the stop policy
+  reaches the configured iteration budget.
+- for =failure-retry-llm.loop.json=, the real LLM script emits the required
+  policy markers and then returns a retryable non-zero process exit status, so
+  Rust records a real failed iteration after the live LLM observation and the
+  planner must emit a typed retry continuation receipt.
+
+Default smoke tests validate the profiles, case manifests, and catalog assets.
+Live provider execution is an explicit opt-in by setting:
+
+#+begin_src sh
+MARLIN_RUN_REAL_LLM_CASES=1
+#+end_src
+
+When enabled, the process-command catalog runs
+=run-real-llm-case.sh=. That script calls =codex exec= for real LLM work,
+retries up to =MARLIN_REAL_LLM_MAX_ROUNDS= rounds, and emits:
+
+- =marlin-real-llm-case.result=pass=
+- =marlin-real-llm-case.rounds_used=N=
+- =marlin-real-llm-case.policy_observation=...=

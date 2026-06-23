@@ -13,6 +13,9 @@
 package: marlin
 
 (import (only-in :clan/poo/object .get .o)
+        (only-in :poo-flow/src/module-system/facade
+                 poo-flow-module-interface
+                 poo-flow-string-constant)
         :marlin/deck-runtime
         :marlin/deck-runtime-condition-policy
         :marlin/deck-runtime-dynamic-hook
@@ -20,7 +23,8 @@ package: marlin
         :marlin/deck-runtime-extension-catalog
         :marlin/deck-runtime-extension-receipt
         :marlin/deck-runtime-matcher
-        :modules/lib
+        :marlin/modules/evaluation
+        :marlin/modules/lib
         :marlin/deck-runtime-strategy-context)
 
 (export marlin-deck-runtime-debug-policy-extension-source
@@ -117,10 +121,10 @@ package: marlin
 ;;; are composed by Gerbil POO here; Rust only receives the projected receipt.
 ;; MarlinResult <- MarlinInput
 (def marlin-deck-runtime-debug-policy-module-interface
-  (marlin-module-interface
+  (poo-flow-module-interface
    "DebugPolicyExtensionModule"
-   (.o extension-surface: (marlin-string-constant "poo-extension-object")
-       projection-target: (marlin-string-constant "extension-policy-receipt"))
+   (.o extension-surface: (poo-flow-string-constant "poo-extension-object")
+       projection-target: (poo-flow-string-constant "extension-policy-receipt"))
    '((owner . "debug-cli") (surface . "policy-substrate-gate"))))
 
 ;;; Boundary: Level-1 user API owns imports/config/extensions composition.

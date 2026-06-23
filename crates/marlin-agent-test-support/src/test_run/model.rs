@@ -336,9 +336,68 @@ pub fn assert_deterministic_test_run_evidence() -> TestRunEvidenceReceipt {
     receipt
 }
 
+/// Fixture connecting the Marlin user-interface loop smoke to the live LLM gate.
+pub fn user_interface_loop_live_llm_gate_evidence_fixture() -> TestRunEvidenceReceipt {
+    TestRunEvidenceReceipt::new(vec![
+        TestRunCaseRecord::passed(
+            "marlin-agent-stream",
+            "stream::no_live_http_fixture_denies_stream_provider_posts",
+            TestRunLayer::NonLiveUnit,
+        ),
+        TestRunCaseRecord::passed(
+            "marlin-gerbil-scheme",
+            "command::real_gxi::examples::user_interface_worker_space::command_compiler_real_gxtest_runs_user_interface_module_config_example",
+            TestRunLayer::NonLiveIntegration,
+        ),
+        TestRunCaseRecord::ignored(
+            "marlin-agent-stream",
+            "stream::live_litellm_stream_gateway_completes_provider_neutral_request",
+            TestRunLayer::LiveExternal,
+            "requires MARLIN_LIVE_LLM_GATE=1 and live LiteLLM provider credentials",
+        ),
+    ])
+    .with_evidence(user_interface_loop_live_llm_gate_evidence())
+}
+
+/// Asserts that the user-interface loop has a no-live baseline and live gate.
+pub fn assert_user_interface_loop_live_llm_gate_evidence() -> TestRunEvidenceReceipt {
+    let receipt = user_interface_loop_live_llm_gate_evidence_fixture();
+    assert!(
+        receipt.is_non_live_success(),
+        "user-interface loop live LLM gate lacks no-live baseline: {}",
+        receipt.render_summary(),
+    );
+    assert_eq!(
+        receipt.ignored_live_external_count(),
+        1,
+        "user-interface loop live LLM gate should preserve exactly one live external test: {}",
+        receipt.render_summary(),
+    );
+    receipt
+}
+
 fn graph_policy_visibility_evidence() -> Vec<AgentHarnessEvidence> {
     vec![
         accepted_graph_policy_proposal_fixture().visibility_evidence(),
         rejected_graph_policy_proposal_fixture().visibility_evidence(),
+    ]
+}
+
+fn user_interface_loop_live_llm_gate_evidence() -> Vec<AgentHarnessEvidence> {
+    vec![
+        AgentHarnessEvidence::present(
+            AgentHarnessEvidenceKind::Runtime,
+            "user-interface-loop:no-live-manifest-handoff",
+        )
+        .with_detail(
+            "loop_engine_capabilities=[+manifest-handoff,+l1-receipts] runtime_executed=false",
+        ),
+        AgentHarnessEvidence::present(
+            AgentHarnessEvidenceKind::Runtime,
+            "user-interface-loop:live-litellm-gate",
+        )
+        .with_detail(
+            "env_gate=MARLIN_LIVE_LLM_GATE provider_env=MARLIN_LIVE_LLM_PROVIDER model_env=MARLIN_LIVE_LLM_MODEL",
+        ),
     ]
 }

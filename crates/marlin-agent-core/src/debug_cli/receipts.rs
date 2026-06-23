@@ -8,7 +8,8 @@ use crate::{
     GraphId, GraphLoopExecutionResult, GraphLoopExecutionStatus, GraphLoopIterationReport, RunId,
     RuntimeHomeSource,
     protocol::{
-        GraphLoopFailureKind, GraphQueryFamily, GraphQueryRelationshipFact, ProjectRuntimeAgentId,
+        GraphLoopFailureKind, GraphQueryFamily, GraphQueryRelationshipFact,
+        ModelRouteAdmissionRequest, ModelRouteAdmissionResponse, ProjectRuntimeAgentId,
         ProjectRuntimeContentId, ProjectRuntimeEvidenceId, ProjectRuntimeMemoryId,
         ProjectRuntimeProjectId, ProjectRuntimeReceiptId, ProjectRuntimeRootSessionId,
         ProjectRuntimeSessionId, ProjectRuntimeSourceAnchorId, ProjectRuntimeToolCapabilityId,
@@ -136,6 +137,7 @@ pub struct LoopInspectReceipt {
 #[serde(rename_all = "kebab-case")]
 pub enum SmokeRuntimeScenario {
     BuiltinAdapters,
+    ModelRouteDryRun,
     ProcessCommandFanout,
     StateHomeEnv,
 }
@@ -167,6 +169,8 @@ pub struct SmokeRuntimeReceipt {
     pub process_spawn_count: usize,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub state_home: Option<SmokeRuntimeStateHome>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_route: Option<SmokeRuntimeModelRouteDryRun>,
     pub diagnostics: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub execution_result: Option<GraphLoopExecutionResult>,
@@ -182,4 +186,12 @@ pub struct SmokeRuntimeStateHome {
     pub memory_shard_path: PathBuf,
     pub receipt_path: PathBuf,
     pub graph_cache_path: PathBuf,
+}
+
+/// Deterministic model-route dry-run facts resolved by a runtime smoke scenario.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct SmokeRuntimeModelRouteDryRun {
+    pub rule_count: usize,
+    pub request: ModelRouteAdmissionRequest,
+    pub response: ModelRouteAdmissionResponse,
 }

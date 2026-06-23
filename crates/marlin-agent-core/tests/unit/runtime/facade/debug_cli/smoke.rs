@@ -1,6 +1,7 @@
 use marlin_agent_core::{
-    GraphLoopExecutionStatus, RuntimeHomeSource, SmokeLlmMode, SmokeRuntimeReceipt,
-    SmokeRuntimeScenario, run_marlin_cli_from_args,
+    GraphLoopExecutionStatus, MODEL_ROUTE_ADMISSION_SCHEMA_ID, ModelContextForkMode,
+    ModelRouteAdmissionMode, ModelSessionLifecycle, RuntimeHomeSource, SmokeLlmMode,
+    SmokeRuntimeReceipt, SmokeRuntimeScenario, run_marlin_cli_from_args,
 };
 use tempfile::tempdir;
 
@@ -72,6 +73,103 @@ fn debug_cli_smoke_runtime_process_command_fanout_reports_spawn_diagnostics() {
             .diagnostics
             .iter()
             .any(|diagnostic| diagnostic == "process-command.node:process-2")
+    );
+}
+
+#[test]
+fn debug_cli_smoke_runtime_model_route_dry_run_reports_typed_route_receipt() {
+    let result =
+        run_marlin_cli_from_args(["smoke", "runtime", "--scenario", "model-route-dry-run"]);
+
+    assert_eq!(result.status, 0, "{}", result.stderr);
+    let receipt: SmokeRuntimeReceipt =
+        serde_json::from_str(&result.stdout).expect("runtime smoke receipt");
+    assert_eq!(receipt.scenario, SmokeRuntimeScenario::ModelRouteDryRun);
+    assert_eq!(receipt.llm_mode, SmokeLlmMode::NoLiveLlm);
+    assert!(receipt.passed);
+    assert_eq!(receipt.terminal_status, GraphLoopExecutionStatus::Completed);
+    assert_eq!(receipt.node_count, 0);
+    assert_eq!(receipt.provider_spawn_count, 0);
+    assert_eq!(receipt.subagent_spawn_count, 0);
+    assert_eq!(receipt.process_spawn_count, 0);
+    assert!(receipt.execution_result.is_none());
+    assert!(receipt.state_home.is_none());
+
+    let dry_run = receipt.model_route.expect("model route dry-run summary");
+    assert_eq!(dry_run.rule_count, 1);
+    assert_eq!(dry_run.request.task_kind.as_str(), "chat");
+    assert_eq!(
+        dry_run.request.route_request.command_line(),
+        "marlin chat --dry-run"
+    );
+    let response = dry_run.response;
+    assert_eq!(response.schema_id, MODEL_ROUTE_ADMISSION_SCHEMA_ID);
+    assert_eq!(
+        response.model_routing_mode,
+        ModelRouteAdmissionMode::Deterministic
+    );
+    assert_eq!(
+        response.intent.evidence_profile.as_str(),
+        "smoke-model-route-dry-run"
+    );
+    assert_eq!(response.decision.endpoint.provider.as_str(), "openai");
+    assert_eq!(response.decision.endpoint.model.as_str(), "gpt-5-mini");
+    assert_eq!(
+        response.decision.receipt.litellm_model_id.as_str(),
+        "openai/gpt-5-mini"
+    );
+    assert_eq!(
+        response.decision.receipt.rule_id.as_str(),
+        "smoke-root-chat"
+    );
+    assert_eq!(
+        response
+            .decision
+            .receipt
+            .agent_scope
+            .expect("agent scope")
+            .as_str(),
+        "RootAgent"
+    );
+    assert_eq!(
+        response.decision.receipt.context_fork,
+        ModelContextForkMode::ForkSnapshot
+    );
+    assert_eq!(
+        response.decision.receipt.session_lifecycle,
+        ModelSessionLifecycle::Persistent {
+            key: "smoke-root-chat-session".into()
+        }
+    );
+    assert_eq!(
+        response
+            .decision
+            .receipt
+            .requested_session_id
+            .expect("requested session id")
+            .as_str(),
+        "smoke-route-session"
+    );
+    assert!(
+        response
+            .decision
+            .receipt
+            .matched_globs
+            .contains(&"command_kind:chat".to_owned())
+    );
+    assert!(
+        response
+            .decision
+            .receipt
+            .matched_globs
+            .contains(&"agent_scope:RootAgent".to_owned())
+    );
+    assert!(
+        response
+            .decision
+            .receipt
+            .matched_globs
+            .contains(&"workspace:smoke://project/marlin-agent-core".to_owned())
     );
 }
 

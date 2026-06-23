@@ -1,7 +1,7 @@
 #+TITLE: 30.00 Gerbil Index
 #+FILETAGS: :marlin:gerbil:johnny_decimal:
 
-30.00 Gerbil Index
+* 30.00 Gerbil Index
 :PROPERTIES:
 :ID: docs-30-00-gerbil-index
 :KIND: docs_index
@@ -29,4 +29,4 @@
 [[file:30.90-poo-module-system.org][30.90 POO Module System]]
 [[file:30.91-poo-module-system-milestones.org][30.91 POO Module System Milestones]]
 
-[[file:gerbil-poo-modules-system-desgin.org][Gerbil POO Modules System Design]]
+[[file:gerbil-poo-modules-system-desgin.org][Gerbil POO Flow Modules System Design]]

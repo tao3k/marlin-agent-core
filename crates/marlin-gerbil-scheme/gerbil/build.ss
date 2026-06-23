@@ -3,9 +3,38 @@
 ;;; Build script for the Marlin Gerbil runtime assets.
 
 (import :std/make
+        :std/source
+        :clan/building
         :gerbil/gambit)
 
 (def +marlin-gerbil-package-name+ "marlin-deck-runtime")
+
+(def package-root (path-normalize (path-directory (this-source-file))))
+(def source-root (path-expand "src" package-root))
+
+(def +marlin-native-aot-only-modules+
+  '("marlin/deck-runtime-native.ss"
+    "marlin/agent-policy-routing-native.ss"))
+
+(def (marlin-package-module? module-path)
+  (not (member module-path +marlin-native-aot-only-modules+)))
+
+;;; Boundary:
+;;; - gerbil.pkg owns dependency declarations.
+;;; - gxpkg owns dependency installation and package context.
+;;; - clan/building owns source discovery under src/.
+(def (marlin-runtime-build-spec)
+  (let (previous-directory (current-directory))
+    (dynamic-wind
+      (lambda () (current-directory source-root))
+      (lambda () (filter marlin-package-module? (all-gerbil-modules)))
+      (lambda () (current-directory previous-directory)))))
+
+(%set-build-environment!
+ (path-expand "build.ss" source-root)
+ name: +marlin-gerbil-package-name+
+ deps: '("poo-flow")
+ spec: marlin-runtime-build-spec)
 
 (def (marlin-build-parse-options opts)
   (let lp ((rest opts) (options []))
@@ -84,76 +113,22 @@
    (marlin-build-profile profile)))
 
 (def (marlin-runtime-build-main args build-spec that-file)
-  (def srcdir
-    (path-normalize (path-directory that-file)))
   (def (build options)
-    (add-load-path! (path-expand "src" srcdir))
-    (apply make build-spec srcdir: srcdir options))
+    (add-load-path! source-root)
+    (apply make (build-spec) srcdir: source-root options))
   (def (clean)
-    (make-clean build-spec srcdir: srcdir))
+    (make-clean (build-spec) srcdir: source-root))
 
   (match args
     (["meta"] (write '("spec" "compile" "clean" "stage-native-aot")) (newline))
-    (["spec"] (pretty-print build-spec))
+    (["spec"] (pretty-print (build-spec)))
     (["compile" . options] (build (marlin-build-parse-options options)))
     (["clean"] (clean))
     (["stage-native-aot" profile output-root]
-     (marlin-build-stage-native-aot srcdir profile output-root))
+     (marlin-build-stage-native-aot package-root profile output-root))
     ([] (build []))
     (else
      (error "Unexpected build command" args))))
-
-(def marlin-runtime-build-spec
-  '("src/marlin/protocol-types"
-    "src/marlin/protocol"
-    "src/marlin/request"
-    "src/marlin/parser"
-    "src/marlin/adapter"
-    "src/marlin/deck-runtime"
-    "src/marlin/deck-runtime-native-projection"
-    "src/marlin/graph-loop-continuation-native-projection"
-    "src/marlin/agent-policy-routing-native-projection"
-    "src/marlin/deck-runtime-compiled-policy"
-    "src/marlin/deck-runtime-compiled-policy-sample"
-    "src/marlin/deck-runtime-strategy-context"
-    "src/marlin/deck-runtime-condition-policy"
-    "src/marlin/deck-runtime-dynamic-hook"
-    "src/marlin/deck-runtime-matcher"
-    "src/marlin/deck-runtime-policy-engine"
-    "src/marlin/deck-runtime-agent-policy"
-    "src/marlin/deck-runtime-extension"
-    "src/marlin/deck-runtime-extension-safety"
-    "src/marlin/deck-runtime-extension-catalog"
-    "src/marlin/deck-runtime-extension-receipt"
-    "src/marlin/deck-runtime-extension-template"
-    "src/marlin/deck-runtime-script"
-    "src/marlin/deck-runtime-loop-graph"
-    "src/marlin/deck-runtime-user-option"
-    "src/marlin/deck-runtime-user-module"
-    "src/modules/kinds"
-    "src/modules/core"
-    "src/modules/policy-extension"
-    "src/modules/policy-module"
-    "src/modules/policy-object"
-    "src/modules/workspace-policy"
-    "src/modules/session-policy"
-    "src/modules/agent-policy"
-    "src/modules/hook-selection-policy"
-    "src/modules/model-route-policy"
-    "src/modules/continuation-profile-policy"
-    "src/modules/human-review-policy"
-    "src/modules/evidence-policy"
-    "src/modules/failure-policy"
-    "src/modules/memory-policy"
-    "src/modules/domain-policy"
-    "src/modules/catalog-projection-policy"
-    "src/modules/evaluation"
-    "src/modules/policy-pack"
-    "src/modules/lib"
-    "src/modules/prefabs/default-policy"
-    "src/modules/prefabs/user-interface"
-    "src/modules/prefabs/user-interface-delivery"
-    "src/marlin/deck-runtime-strategy"))
 
 (def (main . args)
   (marlin-runtime-build-main args marlin-runtime-build-spec (this-source-file)))
