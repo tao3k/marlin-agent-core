@@ -11,7 +11,7 @@
     check-name: 'marlin-runtime-handoff-real-llm
     profile-ref: 'marlin-runtime-handoff-profile
     command-vector: '("marlin" "loop" "run"
-                      "--input" "custom/marline-kernel/policies/loops/cases/runtime-handoff-llm.loop.json"
+                      "--input" "../../../.cache/marlin/loop-cases/runtime-handoff-llm.loop.json"
                       "--catalog" "custom/marline-kernel/policies/loops/cases/real-llm-catalog.toml"
                       "--continuation-planner" "repeat-graph"
                       "--no-store")

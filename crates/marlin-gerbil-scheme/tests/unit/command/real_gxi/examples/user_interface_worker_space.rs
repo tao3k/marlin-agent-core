@@ -9,7 +9,11 @@ use marlin_gerbil_scheme::{
     gerbil_deck_runtime_script_interface_type_manifest, gerbil_runtime_dependency_loadpath,
     gerbil_runtime_loadpath, write_gerbil_runtime_assets,
 };
-use std::{env, fs, path::Path, process::Command};
+use std::{
+    env, fs,
+    path::{Path, PathBuf},
+    process::Command,
+};
 
 const USER_INTERFACE_MODULE_CONFIG_EXAMPLE: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),
@@ -238,14 +242,25 @@ fn assert_marline_loop_real_llm_case_assets() {
         .join("loops")
         .join("cases");
     for case_file in [
+        "runtime-handoff-llm.ss",
+        "policy-receipt-gate-llm.ss",
+        "loop-contract-llm.ss",
+        "failure-retry-llm.ss",
+    ] {
+        assert!(
+            case_root.join(case_file).is_file(),
+            "missing real LLM loop case asset {case_file}"
+        );
+    }
+    for runtime_artifact in [
         "runtime-handoff-llm.loop.json",
         "policy-receipt-gate-llm.loop.json",
         "loop-contract-llm.loop.json",
         "failure-retry-llm.loop.json",
     ] {
         assert!(
-            case_root.join(case_file).is_file(),
-            "missing real LLM loop case asset {case_file}"
+            !case_root.join(runtime_artifact).exists(),
+            "runtime loop request artifact must not live in source cases/: {runtime_artifact}"
         );
     }
     let catalog = fs::read_to_string(case_root.join("real-llm-catalog.toml"))
@@ -263,14 +278,18 @@ fn assert_marline_loop_real_llm_case_assets() {
     }
     assert!(catalog.contains("command = \"sh\""));
     assert!(catalog.contains("run-real-llm-case.sh"));
+    let cache_home = prj_cache_home();
     for case_file in [
         "runtime-handoff-llm.loop.json",
         "policy-receipt-gate-llm.loop.json",
         "loop-contract-llm.loop.json",
         "failure-retry-llm.loop.json",
     ] {
-        let case_config =
-            fs::read_to_string(case_root.join(case_file)).expect("read real LLM loop case");
+        let case_config = fs::read_to_string(write_marline_real_llm_loop_case_request(
+            &cache_home,
+            case_file,
+        ))
+        .expect("read generated real LLM loop case");
         assert!(case_config.contains("\"policy_profile\""));
         assert!(case_config.contains("\"failure_policy\""));
         assert!(case_config.contains("\"max_iterations\": 3"));
@@ -289,13 +308,9 @@ fn run_marline_real_llm_loop_case(case_file: &str, continuation_planner: &str) -
         .join("policies")
         .join("loops")
         .join("cases");
-    let input = case_root.join(case_file);
+    let input = write_marline_real_llm_loop_case_request(&prj_cache_home(), case_file);
     let catalog = case_root.join("real-llm-catalog.toml");
-    let repo_root = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .and_then(Path::parent)
-        .expect("crate should live under workspace/crates");
-    let manifest_path = repo_root.join("Cargo.toml");
+    let manifest_path = repo_root().join("Cargo.toml");
 
     let output = Command::new("cargo")
         .current_dir(Path::new(MARLINE_CONFIG_INTERFACE_WORKSPACE))
@@ -327,6 +342,194 @@ fn run_marline_real_llm_loop_case(case_file: &str, continuation_planner: &str) -
         String::from_utf8_lossy(&output.stderr)
     );
     String::from_utf8(output.stdout).expect("real LLM loop stdout should be UTF-8")
+}
+
+fn write_marline_real_llm_loop_case_request(prj_cache_home: &Path, case_file: &str) -> PathBuf {
+    let cache_root = prj_cache_home.join("marlin").join("loop-cases");
+    fs::create_dir_all(&cache_root).expect("create runtime loop case cache");
+    let input = cache_root.join(case_file);
+    fs::write(
+        &input,
+        serde_json::to_string_pretty(&marline_real_llm_loop_case_request(case_file))
+            .expect("serialize real LLM loop case request"),
+    )
+    .expect("write runtime loop case request");
+    input
+}
+
+fn prj_cache_home() -> PathBuf {
+    env::var_os("PRJ_CACHE_HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| repo_root().join(".cache"))
+}
+
+fn repo_root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(Path::parent)
+        .expect("crate should live under workspace/crates")
+        .to_path_buf()
+}
+
+fn marline_real_llm_loop_case_request(case_file: &str) -> serde_json::Value {
+    let (profile, case_id, executor, task_goal, failure_fixture, acceptance, governance) =
+        match case_file {
+            "runtime-handoff-llm.loop.json" => (
+                "marlin-runtime-handoff-profile",
+                "marlin-runtime-handoff-real-llm",
+                "marlin.real-llm.runtime-handoff",
+                "recover a failed runtime handoff by producing a typed receipt repair plan",
+                "runtime handoff was missing a typed receipt for catalog resolution",
+                "LLM must produce a runtime handoff repair plan with typed receipt evidence",
+                None,
+            ),
+            "policy-receipt-gate-llm.loop.json" => (
+                "marlin-policy-receipt-gate-profile",
+                "marlin-policy-receipt-gate-real-llm",
+                "marlin.real-llm.policy-receipt-gate",
+                "recover a policy receipt validation failure by identifying missing typed evidence",
+                "policy projection failed because a required typed receipt was missing",
+                "LLM must identify the missing typed evidence and keep policy receipt validation explicit",
+                None,
+            ),
+            "loop-contract-llm.loop.json" => (
+                "marlin-loop-contract-profile",
+                "marlin-loop-contract-real-llm",
+                "marlin.real-llm.loop-contract",
+                "recover a loop contract publication failure by producing the missing contract summary",
+                "loop contract publication failed because the contract summary was absent",
+                "LLM must produce the missing contract summary and keep typed receipt evidence",
+                None,
+            ),
+            "failure-retry-llm.loop.json" => (
+                "marlin-failure-retry-profile",
+                "marlin-failure-retry-real-llm",
+                "marlin.real-llm.failure-retry",
+                "recover a failed loop iteration by observing the failure and retrying under typed budget",
+                "loop iteration failed after the live LLM observation because the runtime tool returned a retryable non-zero exit status",
+                "LLM must observe the failed iteration, propose retry, and keep typed failure evidence",
+                Some(serde_json::json!({
+                    "state_policy": {
+                        "read_before_run": true,
+                        "write_receipt_on_pass": true,
+                        "state_ref": "state/marline-failure-retry-loop-state.org"
+                    },
+                    "sandbox_policy": {
+                        "backend": "nono",
+                        "profile_ref": "nono-profile",
+                        "filesystem_scope": "runtime",
+                        "network_access": false
+                    },
+                    "session_policy": {
+                        "session_kind": "sub-agent",
+                        "child_session_id": "govern-loop:marlin-failure-retry-real-llm",
+                        "visible_namespaces": ["system", "workspace", "tools"],
+                        "max_history_items": 64
+                    },
+                    "verifier_policy": {
+                        "pass_statuses": ["Completed"],
+                        "retry_statuses": ["Failed"],
+                        "human_audit_statuses": ["Cancelled"]
+                    }
+                })),
+            ),
+            unknown => panic!("unknown real LLM loop case {unknown}"),
+        };
+    let mut request = serde_json::json!({
+        "initial_request": {
+            "run_id": case_id,
+            "graph": {
+                "graph_id": case_id,
+                "nodes": [{
+                    "id": case_id,
+                    "executor": executor,
+                    "config": {
+                        "profile": profile,
+                        "case": case_id,
+                        "task_goal": task_goal,
+                        "failure_fixture": failure_fixture,
+                        "acceptance": acceptance
+                    }
+                }],
+                "edges": []
+            }
+        },
+        "policy_profile": {
+            "profile_id": profile,
+            "queue_policy": {
+                "steering_drain_policy": "DrainOne",
+                "follow_up_drain_policy": "DrainOne",
+                "prioritize_steering": true
+            },
+            "continuation_policy": {
+                "allow_accept": true,
+                "allow_deny": true,
+                "allow_defer": true,
+                "allow_rewrite": true,
+                "require_decision_receipt": true
+            },
+            "tool_batch_policy": {
+                "execution_mode": "Sequential",
+                "force_sequential": true,
+                "require_all_tools_to_terminate": true,
+                "require_before_after_hook_receipts": true
+            },
+            "model_route_policy": {
+                "allow_model_override": false,
+                "require_route_receipt": true,
+                "require_no_live_llm_receipt": false,
+                "allow_context_transform": true
+            },
+            "evidence_policy": {
+                "capture_events": true,
+                "capture_node_receipts": true,
+                "capture_tool_receipts": true,
+                "capture_content_receipts": true,
+                "capture_trace": true,
+                "replayable": true
+            },
+            "failure_policy": {
+                "classify_failure": true,
+                "allow_retry": true,
+                "allow_repair_graph": true,
+                "escalate_unknown_to_human": false
+            },
+            "memory_policy": {
+                "allow_project_promotion": false,
+                "require_contract_validated": true,
+                "allow_cross_project_memory": false,
+                "require_source_anchor": true
+            },
+            "human_gate_policy": {
+                "require_for_permission_escalation": true,
+                "require_for_policy_change": true,
+                "require_for_cross_project_memory": true,
+                "require_for_unverified_root_cause": false
+            },
+            "self_evolution_policy": {
+                "require_failure_observation_receipt": true,
+                "require_root_cause_receipt": false,
+                "require_intervention_receipt": true,
+                "require_progress_receipt": true,
+                "allow_policy_update": false
+            }
+        },
+        "stop_policy": {
+            "max_iterations": 3,
+            "stop_on_failed_execution": false,
+            "human_gate_required": false
+        },
+        "evidence_policy": {
+            "capture_runtime_events": true,
+            "capture_node_receipts": true,
+            "capture_trace": true,
+            "replayable": true
+        }
+    });
+    if let Some(governance) = governance {
+        request["governance_policy"] = governance;
+    }
+    request
 }
 
 fn real_llm_marker_value(stdout: &str, marker: &str) -> String {

@@ -25,16 +25,16 @@ Each loop profile owns one real-LLM case:
 The case manifests point at the real debug CLI shape:
 
 #+begin_src sh
-marlin loop run --input <case>.loop.json --catalog real-llm-catalog.toml --continuation-planner repeat-graph --no-store
+marlin loop run --input $PRJ_CACHE_HOME/marlin/loop-cases/<case>.loop.json --catalog custom/marline-kernel/policies/loops/cases/real-llm-catalog.toml --continuation-planner repeat-graph --no-store
 #+end_src
 
 The failure retry case uses the failure-aware planner:
 
 #+begin_src sh
-marlin loop run --input failure-retry-llm.loop.json --catalog real-llm-catalog.toml --continuation-planner retry-on-failure --no-store
+marlin loop run --input $PRJ_CACHE_HOME/marlin/loop-cases/failure-retry-llm.loop.json --catalog custom/marline-kernel/policies/loops/cases/real-llm-catalog.toml --continuation-planner retry-on-failure --no-store
 #+end_src
 
-Each =*.loop.json= is a full =GraphLoopRunRequest= carrying:
+Each runtime-generated =$PRJ_CACHE_HOME/marlin/loop-cases/*.loop.json= is a full =GraphLoopRunRequest= carrying:
 
 - =policy_profile= for the loop profile under test;
 - =governance_policy= for state read/write intent, =nono= sandbox profile handoff, child session visibility, and verifier pass/retry/human-audit status mapping;
@@ -65,3 +65,6 @@ retries up to =MARLIN_REAL_LLM_MAX_ROUNDS= rounds, and emits:
 * Governance Handoff
 The =nono= sandbox field is a typed handoff from Scheme/poo-flow policy to Marlin.
 The Scheme side selects the profile; the Rust runtime creates the child session, enforces visibility, runs the graph, and emits the governance receipt.
+* Runtime Cache
+Do not commit =*.loop.json= request files under =cases/=.
+They are runtime cache artifacts and belong under the Git top-level =.cache/marlin/loop-cases/= directory, normally addressed through =PRJ_CACHE_HOME=.

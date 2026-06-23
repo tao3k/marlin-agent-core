@@ -14,5 +14,7 @@
 .bin/
 **/.gerbil/
 
+crates/marlin-gerbil-scheme/marline-config-interface/custom/marline-kernel/policies/loops/cases/*.loop.json
+
 
 .env

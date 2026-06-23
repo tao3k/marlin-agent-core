@@ -11,7 +11,7 @@
     check-name: 'marlin-loop-contract-real-llm
     profile-ref: 'marlin-loop-contract-profile
     command-vector: '("marlin" "loop" "run"
-                      "--input" "custom/marline-kernel/policies/loops/cases/loop-contract-llm.loop.json"
+                      "--input" "../../../.cache/marlin/loop-cases/loop-contract-llm.loop.json"
                       "--catalog" "custom/marline-kernel/policies/loops/cases/real-llm-catalog.toml"
                       "--continuation-planner" "repeat-graph"
                       "--no-store")
