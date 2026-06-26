@@ -3,9 +3,8 @@ use super::support::{MARLIN_REQUIRE_REAL_GXI_ENV, local_gxi};
 use marlin_gerbil_scheme::{
     GERBIL_LOADPATH_ENV, GerbilDeckRuntimeNativeAotBuildStatus, GerbilDeckRuntimeNativeAotConfig,
     GerbilDeckRuntimeNativeStaticLinkStatus, default_gerbil_gxc_program,
-    default_gerbil_gxpkg_program, gerbil_runtime_loadpath,
-    gerbil_runtime_loadpath_with_dependencies, resolve_gerbil_executable,
-    write_gerbil_runtime_assets,
+    default_gerbil_gxpkg_program, gerbil_runtime_loadpath_with_dependencies,
+    resolve_gerbil_executable, write_gerbil_runtime_assets,
 };
 use std::{
     fs,
