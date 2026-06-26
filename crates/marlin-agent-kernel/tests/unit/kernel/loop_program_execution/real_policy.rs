@@ -9,10 +9,11 @@ use super::{
     LoopProgramRuntimeOwner, LoopProgramToolProcessProgram, LoopProgramToolProcessSpawnRequest,
     MemoryRecallDecisionMapper, PolicyCombinationDecisionMapper, RetryBudgetToolHandler,
     ScriptedLoopProgramEventMapper, TokioAgentRuntime, handled_by,
-    policy_combination_matrix_loop_program, real_policy_002_retry_budget_loop_program,
-    real_policy_003_maker_checker_loop_program, real_policy_004_dynamic_rewrite_loop_program,
-    real_policy_005_memory_recall_loop_program, real_tool_sandbox_loop_program,
-    spawn_loop_program_tool_process, tool_error_loop_program,
+    policy_combination_matrix_loop_program, real_policy_001_sandbox_denylist_loop_program,
+    real_policy_002_retry_budget_loop_program, real_policy_003_maker_checker_loop_program,
+    real_policy_004_dynamic_rewrite_loop_program, real_policy_005_memory_recall_loop_program,
+    real_policy_experiment_receipt, real_tool_sandbox_loop_program,
+    spawn_loop_program_tool_process,
 };
 
 #[test]
@@ -28,8 +29,9 @@ fn real_policy_001_sandbox_denylist_blocks_dispatch_tool_intent() {
     let driver = LoopProgramExecutionDriver::new(LoopProgramRuntimeHandoffRouter::new(handlers))
         .with_event_mapper(ScriptedLoopProgramEventMapper::default());
 
+    let loop_program = real_policy_001_sandbox_denylist_loop_program();
     let receipt = driver.run(LoopProgramExecutionRequest::new(
-        tool_error_loop_program(),
+        loop_program.clone(),
         vec![LoopProgramEventKind::Start],
     ));
 
@@ -51,6 +53,27 @@ fn real_policy_001_sandbox_denylist_blocks_dispatch_tool_intent() {
     assert_eq!(
         tool_intent.tool_name.as_str(),
         "loop-program.dispatch-tools"
+    );
+
+    let experiment_receipt =
+        real_policy_experiment_receipt("real-policy-001", &loop_program, &receipt);
+    assert_eq!(
+        experiment_receipt.program_id,
+        "real-policy-001-sandbox-denylist"
+    );
+    assert_eq!(
+        experiment_receipt.policy_ids[0],
+        "real-policy-001-sandbox-denylist"
+    );
+    assert_eq!(experiment_receipt.denied_handoff_count, 1);
+    assert!(
+        experiment_receipt
+            .improvement_recommendations
+            .iter()
+            .any(
+                |recommendation| recommendation.target == "runtime.sandbox.denylist"
+                    && recommendation.priority == "P0"
+            )
     );
 }
 
@@ -358,8 +381,9 @@ fn policy_combination_matrix_runs_memory_rewrite_checker_path() {
     let driver = LoopProgramExecutionDriver::new(LoopProgramRuntimeHandoffRouter::new(handlers))
         .with_event_mapper(PolicyCombinationDecisionMapper);
 
+    let loop_program = policy_combination_matrix_loop_program();
     let receipt = driver.run(LoopProgramExecutionRequest::new(
-        policy_combination_matrix_loop_program(),
+        loop_program.clone(),
         vec![LoopProgramEventKind::Start],
     ));
 
@@ -400,4 +424,50 @@ fn policy_combination_matrix_runs_memory_rewrite_checker_path() {
         panic!("memory combination case should preserve typed memory intent");
     };
     assert_eq!(memory_intent.operation, AgentFlowMemoryOperation::Recall);
+
+    let experiment_receipt =
+        real_policy_experiment_receipt("policy-combination-matrix-001", &loop_program, &receipt);
+    assert_eq!(
+        experiment_receipt.program_id,
+        "policy-combination-memory-rewrite-checker"
+    );
+    assert_eq!(
+        experiment_receipt.policy_ids,
+        vec![
+            "real-policy-003-maker-checker".to_owned(),
+            "real-policy-004-dynamic-rewrite".to_owned(),
+            "real-policy-005-memory-recall".to_owned(),
+        ]
+        .into_boxed_slice()
+    );
+    assert_eq!(experiment_receipt.agent_flow_intent_count, 2);
+    assert_eq!(experiment_receipt.memory_projection_count, 0);
+    assert_eq!(experiment_receipt.tool_projection_count, 0);
+    assert!(
+        experiment_receipt
+            .improvement_recommendations
+            .iter()
+            .any(
+                |recommendation| recommendation.target == "runtime.agent-flow.memory-projection"
+                    && recommendation.priority == "P1"
+            )
+    );
+    assert!(
+        experiment_receipt
+            .improvement_recommendations
+            .iter()
+            .any(
+                |recommendation| recommendation.target == "runtime.tool-sandbox.spawn"
+                    && recommendation.priority == "P1"
+            )
+    );
+    assert!(
+        experiment_receipt
+            .improvement_recommendations
+            .iter()
+            .any(
+                |recommendation| recommendation.target == "gerbil.config-interface.policy-pack"
+                    && recommendation.priority == "P2"
+            )
+    );
 }

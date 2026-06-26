@@ -47,11 +47,12 @@ pub use loop_program_handoff_executor::{
     StaticLoopProgramRuntimeHandoffHandler, spawn_loop_program_tool_process,
 };
 pub use loop_program_side_effects::{
-    LoopProgramDerivedSessionPolicyStatus, LoopProgramRuntimeReplayBundleReceipt,
-    LoopProgramRuntimeSideEffectExecutor, LoopProgramRuntimeSideEffectReceipt,
-    LoopProgramRuntimeSideEffectStatus, LoopProgramToolProcessCommandTemplate,
-    LoopProgramToolProcessResolver, LoopProgramToolProcessSideEffectReceipt,
-    LoopProgramToolProcessSideEffectStatus, StaticLoopProgramToolProcessResolver,
+    LoopProgramDerivedSessionPolicyStatus, LoopProgramExecutionReplayBundleReceipt,
+    LoopProgramRuntimeReplayBundleReceipt, LoopProgramRuntimeSideEffectExecutor,
+    LoopProgramRuntimeSideEffectReceipt, LoopProgramRuntimeSideEffectStatus,
+    LoopProgramToolProcessCommandTemplate, LoopProgramToolProcessResolver,
+    LoopProgramToolProcessSideEffectReceipt, LoopProgramToolProcessSideEffectStatus,
+    StaticLoopProgramToolProcessResolver,
 };
 pub use marlin_agent_protocol::{
     ExecutorName, FailureClassificationId, FailureClassificationReceipt, GraphId,

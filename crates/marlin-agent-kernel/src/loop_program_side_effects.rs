@@ -6,6 +6,7 @@ use marlin_agent_protocol::{AgentFlowReceipt, LoopProgramId};
 use marlin_agent_runtime::RuntimeContext;
 
 use crate::{
+    LoopProgramExecutionReceipt, LoopProgramExecutionStatus,
     LoopProgramRuntimeHandoffExecutionReceipt, LoopProgramToolProcessProgram,
     LoopProgramToolProcessProjectionReceipt, LoopProgramToolProcessSpawnReceipt,
     LoopProgramToolProcessSpawnRequest, spawn_loop_program_tool_process,
@@ -165,6 +166,43 @@ impl LoopProgramRuntimeReplayBundleReceipt {
     }
 }
 
+/// Replay bundle for side effects derived from a full event-pumped loop execution.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LoopProgramExecutionReplayBundleReceipt {
+    pub program_id: LoopProgramId,
+    pub execution_status: LoopProgramExecutionStatus,
+    pub policy_status: LoopProgramDerivedSessionPolicyStatus,
+    pub step_replay_bundles: Box<[LoopProgramRuntimeReplayBundleReceipt]>,
+}
+
+impl LoopProgramExecutionReplayBundleReceipt {
+    fn new(
+        program_id: LoopProgramId,
+        execution_status: LoopProgramExecutionStatus,
+        step_replay_bundles: Vec<LoopProgramRuntimeReplayBundleReceipt>,
+    ) -> Self {
+        let policy_status = execution_replay_policy_status(&step_replay_bundles);
+        Self {
+            program_id,
+            execution_status,
+            policy_status,
+            step_replay_bundles: step_replay_bundles.into_boxed_slice(),
+        }
+    }
+
+    pub fn allows_replay(&self) -> bool {
+        self.policy_status.allows_replay()
+    }
+
+    pub fn requires_follow_up(&self) -> bool {
+        self.policy_status.requires_follow_up()
+    }
+
+    pub fn blocks_replay(&self) -> bool {
+        self.policy_status.blocks_replay()
+    }
+}
+
 /// Resolves a typed tool projection into an explicit runtime process request.
 pub trait LoopProgramToolProcessResolver: Send + Sync + 'static {
     fn resolve(
@@ -308,6 +346,32 @@ impl LoopProgramRuntimeSideEffectExecutor {
 
         LoopProgramRuntimeSideEffectReceipt::new(execution.program_id.clone(), tool_processes)
     }
+
+    pub async fn execute_loop_execution(
+        &self,
+        context: &RuntimeContext,
+        execution: &LoopProgramExecutionReceipt,
+    ) -> LoopProgramExecutionReplayBundleReceipt {
+        let mut step_replay_bundles = Vec::new();
+        for step in execution.steps.iter() {
+            if !has_projected_runtime_side_effects(&step.runtime_handoff_execution) {
+                continue;
+            }
+            let side_effects = self.execute(context, &step.runtime_handoff_execution).await;
+            step_replay_bundles.push(
+                LoopProgramRuntimeReplayBundleReceipt::from_runtime_receipts(
+                    step.runtime_handoff_execution.clone(),
+                    side_effects,
+                ),
+            );
+        }
+
+        LoopProgramExecutionReplayBundleReceipt::new(
+            execution.program_id.clone(),
+            execution.status.clone(),
+            step_replay_bundles,
+        )
+    }
 }
 
 impl Default for LoopProgramRuntimeSideEffectExecutor {
@@ -369,4 +433,30 @@ fn derived_session_policy_status(
             LoopProgramDerivedSessionPolicyStatus::Blocked
         }
     }
+}
+
+fn has_projected_runtime_side_effects(
+    execution: &LoopProgramRuntimeHandoffExecutionReceipt,
+) -> bool {
+    execution.agent_flow_receipt.is_some()
+        || !execution.tool_process_projections.is_empty()
+        || !execution.memory_projections.is_empty()
+}
+
+fn execution_replay_policy_status(
+    step_replay_bundles: &[LoopProgramRuntimeReplayBundleReceipt],
+) -> LoopProgramDerivedSessionPolicyStatus {
+    if step_replay_bundles
+        .iter()
+        .any(|bundle| bundle.blocks_replay())
+    {
+        return LoopProgramDerivedSessionPolicyStatus::Blocked;
+    }
+    if step_replay_bundles
+        .iter()
+        .any(|bundle| bundle.requires_follow_up())
+    {
+        return LoopProgramDerivedSessionPolicyStatus::Deferred;
+    }
+    LoopProgramDerivedSessionPolicyStatus::Ready
 }

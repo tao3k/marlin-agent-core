@@ -122,6 +122,9 @@ package: config-interface
         marlinRealRepair001ResolvedPolicyPack
         marlinRealRepair001LoopProgram
         marlinRealRepair001LoopProgramCompilerReceipt
+        marlinPolicyCombinationMatrixResolvedPolicyPack
+        marlinPolicyCombinationMatrixLoopProgram
+        marlinPolicyCombinationMatrixLoopProgramCompilerReceipt
         marlinPolicyModuleEvaluationReceipt
         marlinPolicyBudgetReceipt
         marlinPolicyCatalogResolutionReceipt

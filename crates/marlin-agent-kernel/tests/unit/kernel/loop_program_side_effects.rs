@@ -1,15 +1,17 @@
 use marlin_agent_kernel::{
     AgentFlowLoopProgramRuntimeHandoffExecutor, GenericLoopMachineReceipt,
-    GenericLoopMachineStepIndex, LoopProgramDerivedSessionPolicyStatus,
-    LoopProgramRuntimeHandoffExecutor, LoopProgramRuntimeHandoffPlan, LoopProgramRuntimeOwner,
-    LoopProgramRuntimeReplayBundleReceipt, LoopProgramRuntimeSideEffectExecutor,
-    LoopProgramRuntimeSideEffectReceipt, LoopProgramRuntimeSideEffectStatus,
-    LoopProgramToolProcessCommandTemplate, LoopProgramToolProcessProgram,
-    LoopProgramToolProcessSideEffectStatus, StaticLoopProgramToolProcessResolver,
+    GenericLoopMachineStepIndex, LoopProgramDerivedSessionPolicyStatus, LoopProgramExecutionDriver,
+    LoopProgramExecutionRequest, LoopProgramExecutionStatus, LoopProgramRuntimeHandoffExecutor,
+    LoopProgramRuntimeHandoffPlan, LoopProgramRuntimeOwner, LoopProgramRuntimeReplayBundleReceipt,
+    LoopProgramRuntimeSideEffectExecutor, LoopProgramRuntimeSideEffectReceipt,
+    LoopProgramRuntimeSideEffectStatus, LoopProgramToolProcessCommandTemplate,
+    LoopProgramToolProcessProgram, LoopProgramToolProcessSideEffectStatus,
+    ScriptedLoopProgramEventMapper, StaticLoopProgramToolProcessResolver,
 };
 use marlin_agent_protocol::{
-    LoopProgramActionKind, LoopProgramEventKind, LoopProgramId, LoopProgramStateId,
-    LoopProgramTransitionId,
+    LoopMechanismPolicyId, LoopPolicyDigest, LoopPolicyEpoch, LoopProgram, LoopProgramActionKind,
+    LoopProgramEventKind, LoopProgramId, LoopProgramInput, LoopProgramStateId,
+    LoopProgramTransition, LoopProgramTransitionId,
 };
 use marlin_agent_runtime::TokioAgentRuntime;
 
@@ -45,6 +47,77 @@ async fn side_effect_executor_spawns_resolved_tool_projection_through_runtime_re
     assert_eq!(
         String::from_utf8_lossy(&spawn_receipt.output.stdout),
         "loop-side-effect"
+    );
+    assert!(
+        runtime
+            .context()
+            .process_registry()
+            .get(spawn_receipt.pid)
+            .is_none()
+    );
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn side_effect_executor_replays_projected_steps_from_pumped_loop_execution() {
+    let (runtime, _events) = TokioAgentRuntime::new(4);
+    let driver = LoopProgramExecutionDriver::new(AgentFlowLoopProgramRuntimeHandoffExecutor::new(
+        LoopProgramRuntimeOwner::new("agent-flow-runtime"),
+    ))
+    .with_event_mapper(ScriptedLoopProgramEventMapper::new(vec![(
+        LoopProgramActionKind::DispatchTools,
+        LoopProgramEventKind::ToolReceipt,
+    )]))
+    .with_max_steps(8);
+
+    let execution = driver.run(LoopProgramExecutionRequest::new(
+        tool_side_effect_loop_program(),
+        vec![LoopProgramEventKind::Start],
+    ));
+    let side_effect_executor =
+        LoopProgramRuntimeSideEffectExecutor::new(tool_resolver("printf pumped-side-effect"));
+
+    let bundle = side_effect_executor
+        .execute_loop_execution(&runtime.context(), &execution)
+        .await;
+
+    assert_eq!(execution.status, LoopProgramExecutionStatus::Stopped);
+    assert_eq!(execution.steps.len(), 2);
+    assert_eq!(
+        bundle.program_id,
+        LoopProgramId::new("tool-side-effect-loop")
+    );
+    assert_eq!(bundle.execution_status, LoopProgramExecutionStatus::Stopped);
+    assert_eq!(
+        bundle.policy_status,
+        LoopProgramDerivedSessionPolicyStatus::Ready
+    );
+    assert!(bundle.allows_replay());
+    assert!(!bundle.requires_follow_up());
+    assert!(!bundle.blocks_replay());
+    assert_eq!(bundle.step_replay_bundles.len(), 1);
+
+    let step_bundle = &bundle.step_replay_bundles[0];
+    assert_eq!(
+        step_bundle.policy_status,
+        LoopProgramDerivedSessionPolicyStatus::Ready
+    );
+    assert_eq!(
+        step_bundle.side_effects.status,
+        LoopProgramRuntimeSideEffectStatus::Completed
+    );
+    let tool_process = &step_bundle.side_effects.tool_processes[0];
+    assert_eq!(
+        tool_process.status,
+        LoopProgramToolProcessSideEffectStatus::Completed
+    );
+    let spawn_receipt = tool_process
+        .spawn_receipt
+        .as_ref()
+        .expect("pumped loop should spawn resolved tool projection");
+    assert_eq!(
+        String::from_utf8_lossy(&spawn_receipt.output.stdout),
+        "pumped-side-effect"
     );
     assert!(
         runtime
@@ -277,6 +350,34 @@ fn tool_resolver(script: &'static str) -> StaticLoopProgramToolProcessResolver {
         ]
         .into_boxed_slice(),
     )
+}
+
+fn tool_side_effect_loop_program() -> LoopProgram {
+    LoopProgram::new(LoopProgramInput {
+        program_id: LoopProgramId::new("tool-side-effect-loop"),
+        policy_epoch: LoopPolicyEpoch::new(3),
+        policy_digest: LoopPolicyDigest::from_bytes([3_u8; 32]),
+        mechanism_policies: vec![LoopMechanismPolicyId::new("reactive-tool-loop-side-effect")]
+            .into_boxed_slice(),
+        initial_state: LoopProgramStateId::new("start"),
+        transitions: vec![
+            LoopProgramTransition {
+                transition_id: LoopProgramTransitionId::new("start-tool"),
+                from: LoopProgramStateId::new("start"),
+                event: LoopProgramEventKind::Start,
+                action: LoopProgramActionKind::DispatchTools,
+                to: LoopProgramStateId::new("await-tool"),
+            },
+            LoopProgramTransition {
+                transition_id: LoopProgramTransitionId::new("tool-stop"),
+                from: LoopProgramStateId::new("await-tool"),
+                event: LoopProgramEventKind::ToolReceipt,
+                action: LoopProgramActionKind::Stop,
+                to: LoopProgramStateId::new("stopped"),
+            },
+        ]
+        .into_boxed_slice(),
+    })
 }
 
 fn receipt(step: u64, action: LoopProgramActionKind) -> GenericLoopMachineReceipt {

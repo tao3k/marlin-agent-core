@@ -10,13 +10,13 @@ use std::{
 use marlin_agent_kernel::{
     AgentFlowLoopProgramRuntimeHandoffExecutor, DenylistedLoopProgramToolDispatchHandler,
     GenericLoopMachineReceipt, LoopProgramEventMapper, LoopProgramExecutionDriver,
-    LoopProgramExecutionRequest, LoopProgramExecutionStatus, LoopProgramRuntimeHandoff,
-    LoopProgramRuntimeHandoffExecution, LoopProgramRuntimeHandoffExecutionReceipt,
-    LoopProgramRuntimeHandoffExecutionReportStatus, LoopProgramRuntimeHandoffExecutionStatus,
-    LoopProgramRuntimeHandoffExecutor, LoopProgramRuntimeHandoffHandler,
-    LoopProgramRuntimeHandoffPlan, LoopProgramRuntimeHandoffRouter,
-    LoopProgramRuntimeHandoffRouterHandlers, LoopProgramRuntimeOwner,
-    LoopProgramToolProcessProgram, LoopProgramToolProcessSpawnRequest,
+    LoopProgramExecutionReceipt, LoopProgramExecutionRequest, LoopProgramExecutionStatus,
+    LoopProgramRuntimeHandoff, LoopProgramRuntimeHandoffExecution,
+    LoopProgramRuntimeHandoffExecutionReceipt, LoopProgramRuntimeHandoffExecutionReportStatus,
+    LoopProgramRuntimeHandoffExecutionStatus, LoopProgramRuntimeHandoffExecutor,
+    LoopProgramRuntimeHandoffHandler, LoopProgramRuntimeHandoffPlan,
+    LoopProgramRuntimeHandoffRouter, LoopProgramRuntimeHandoffRouterHandlers,
+    LoopProgramRuntimeOwner, LoopProgramToolProcessProgram, LoopProgramToolProcessSpawnRequest,
     ScriptedLoopProgramEventMapper, StaticLoopProgramRuntimeHandoffHandler,
     spawn_loop_program_tool_process,
 };
@@ -339,6 +339,172 @@ impl LoopProgramEventMapper for PolicyCombinationDecisionMapper {
     }
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct RealPolicyImprovementRecommendation {
+    priority: &'static str,
+    target: &'static str,
+    evidence: &'static str,
+    action: &'static str,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct RealPolicyExperimentReceipt {
+    case_id: &'static str,
+    program_id: String,
+    policy_ids: Box<[String]>,
+    status: LoopProgramExecutionStatus,
+    action_path: Box<[LoopProgramActionKind]>,
+    owner_path: Box<[String]>,
+    generated_events: Box<[Option<LoopProgramEventKind>]>,
+    denied_handoff_count: usize,
+    handled_handoff_count: usize,
+    agent_flow_intent_count: usize,
+    tool_projection_count: usize,
+    memory_projection_count: usize,
+    improvement_recommendations: Box<[RealPolicyImprovementRecommendation]>,
+}
+
+fn real_policy_experiment_receipt(
+    case_id: &'static str,
+    loop_program: &LoopProgram,
+    execution_receipt: &LoopProgramExecutionReceipt,
+) -> RealPolicyExperimentReceipt {
+    let mut receipt = RealPolicyExperimentReceipt {
+        case_id,
+        program_id: execution_receipt.program_id.as_str().to_owned(),
+        policy_ids: loop_program
+            .mechanism_policies
+            .iter()
+            .map(|policy| policy.as_str().to_owned())
+            .collect::<Vec<_>>()
+            .into_boxed_slice(),
+        status: execution_receipt.status.clone(),
+        action_path: execution_receipt
+            .steps
+            .iter()
+            .map(|step| step.machine_receipt.action.clone())
+            .collect::<Vec<_>>()
+            .into_boxed_slice(),
+        owner_path: execution_receipt
+            .steps
+            .iter()
+            .flat_map(|step| {
+                step.runtime_handoff_execution
+                    .executions
+                    .iter()
+                    .map(|execution| execution.owner.as_str().to_owned())
+            })
+            .collect::<Vec<_>>()
+            .into_boxed_slice(),
+        generated_events: execution_receipt
+            .steps
+            .iter()
+            .map(|step| step.generated_event.clone())
+            .collect::<Vec<_>>()
+            .into_boxed_slice(),
+        denied_handoff_count: execution_receipt
+            .steps
+            .iter()
+            .flat_map(|step| step.runtime_handoff_execution.executions.iter())
+            .filter(|execution| {
+                execution.status == LoopProgramRuntimeHandoffExecutionStatus::Denied
+            })
+            .count(),
+        handled_handoff_count: execution_receipt
+            .steps
+            .iter()
+            .flat_map(|step| step.runtime_handoff_execution.executions.iter())
+            .filter(|execution| {
+                execution.status == LoopProgramRuntimeHandoffExecutionStatus::Handled
+            })
+            .count(),
+        agent_flow_intent_count: execution_receipt
+            .steps
+            .iter()
+            .flat_map(|step| step.runtime_handoff_execution.executions.iter())
+            .filter(|execution| execution.agent_flow_intent.is_some())
+            .count(),
+        tool_projection_count: execution_receipt
+            .steps
+            .iter()
+            .map(|step| {
+                step.runtime_handoff_execution
+                    .tool_process_projections
+                    .len()
+            })
+            .sum(),
+        memory_projection_count: execution_receipt
+            .steps
+            .iter()
+            .map(|step| step.runtime_handoff_execution.memory_projections.len())
+            .sum(),
+        improvement_recommendations: Box::new([]),
+    };
+    receipt.improvement_recommendations =
+        real_policy_improvement_recommendations(&receipt).into_boxed_slice();
+    receipt
+}
+
+fn real_policy_improvement_recommendations(
+    receipt: &RealPolicyExperimentReceipt,
+) -> Vec<RealPolicyImprovementRecommendation> {
+    let mut recommendations = Vec::new();
+
+    if receipt.denied_handoff_count > 0 {
+        recommendations.push(RealPolicyImprovementRecommendation {
+            priority: "P0",
+            target: "runtime.sandbox.denylist",
+            evidence: "denied handoff receipt crossed the event pump",
+            action: "preserve deny receipt details when promoting this case into policy reflection",
+        });
+    }
+
+    if receipt
+        .policy_ids
+        .iter()
+        .any(|policy| policy == "real-policy-005-memory-recall")
+        && receipt.memory_projection_count == 0
+    {
+        recommendations.push(RealPolicyImprovementRecommendation {
+            priority: "P1",
+            target: "runtime.agent-flow.memory-projection",
+            evidence: "memory recall survived as a typed intent but did not emit a memory projection receipt",
+            action: "route the memory leg through the Agent-Flow executor before treating recall as closed",
+        });
+    }
+
+    if receipt
+        .action_path
+        .iter()
+        .any(|action| action == &LoopProgramActionKind::DispatchTools)
+        && receipt.tool_projection_count == 0
+        && receipt.denied_handoff_count == 0
+    {
+        recommendations.push(RealPolicyImprovementRecommendation {
+            priority: "P1",
+            target: "runtime.tool-sandbox.spawn",
+            evidence: "tool dispatch was handled without a tool-process projection receipt",
+            action: "promote the case to a real tool+sandbox spawn before using it as full-loop evidence",
+        });
+    }
+
+    if receipt.policy_ids.len() > 1
+        && !receipt
+            .policy_ids
+            .iter()
+            .any(|policy| policy.contains("poo"))
+    {
+        recommendations.push(RealPolicyImprovementRecommendation {
+            priority: "P2",
+            target: "gerbil.config-interface.policy-pack",
+            evidence: "policy combination is still assembled as a Rust test fixture",
+            action: "derive the same LoopProgram from a Gerbil POO profile and resolved policy pack",
+        });
+    }
+
+    recommendations
+}
+
 fn has_memory_recall_intent(
     runtime_handoff_execution: &LoopProgramRuntimeHandoffExecutionReceipt,
 ) -> bool {
@@ -498,6 +664,37 @@ fn unique_temp_repair_file() -> PathBuf {
         "marlin-real-repair-001-{}-{nanos}.rs",
         std::process::id()
     ))
+}
+
+fn real_policy_001_sandbox_denylist_loop_program() -> LoopProgram {
+    LoopProgram::new(LoopProgramInput {
+        program_id: LoopProgramId::new("real-policy-001-sandbox-denylist"),
+        policy_epoch: LoopPolicyEpoch::new(10),
+        policy_digest: LoopPolicyDigest::from_bytes([10_u8; 32]),
+        mechanism_policies: vec![
+            LoopMechanismPolicyId::new("real-policy-001-sandbox-denylist"),
+            LoopMechanismPolicyId::new("agent-flow-tool-projection"),
+        ]
+        .into_boxed_slice(),
+        initial_state: LoopProgramStateId::new("start"),
+        transitions: vec![
+            transition(
+                "start-tool",
+                "start",
+                LoopProgramEventKind::Start,
+                LoopProgramActionKind::DispatchTools,
+                "await-tool",
+            ),
+            transition(
+                "tool-denied-stop",
+                "await-tool",
+                LoopProgramEventKind::Error,
+                LoopProgramActionKind::Stop,
+                "stopped",
+            ),
+        ]
+        .into_boxed_slice(),
+    })
 }
 
 fn real_tool_sandbox_loop_program() -> LoopProgram {

@@ -227,6 +227,89 @@ fn poo_loop_program_compiler_receipt_runs_scripted_loop_through_kernel_driver() 
 }
 
 #[test]
+fn poo_loop_program_compiler_receipt_runs_policy_combination_matrix_through_kernel_driver() {
+    let registry = poo_loop_program_compiler_registry();
+    let envelope = poo_loop_program_compiler_envelope(
+        policy_combination_matrix_poo_loop_program_compiler_payload(),
+    );
+    let compiler_receipt = decode_gerbil_poo_loop_program_compiler_receipt(&registry, &envelope)
+        .expect("policy-combination POO compiler receipt decodes");
+
+    assert_eq!(
+        compiler_receipt.profile_id.as_str(),
+        "policy-combination/memory-rewrite-checker"
+    );
+    assert_eq!(
+        compiler_receipt.loop_program.program_id.as_str(),
+        "policy-combination-memory-rewrite-checker"
+    );
+    assert_eq!(compiler_receipt.loop_program.mechanism_policies.len(), 3);
+    assert_eq!(compiler_receipt.loop_program.transitions.len(), 6);
+    assert_eq!(
+        compiler_receipt.loop_program.policy_epoch,
+        compiler_receipt.resolved_policy_pack.policy_epoch
+    );
+    assert_eq!(
+        compiler_receipt.loop_program.policy_digest,
+        compiler_receipt.resolved_policy_pack.policy_digest
+    );
+
+    let handlers = LoopProgramRuntimeHandoffRouterHandlers {
+        memory_handler: handled_by("runtime.memory.recall"),
+        control_handler: handled_by("runtime.control"),
+        model_handler: handled_by("runtime.model.maker"),
+        tool_handler: handled_by("runtime.tool.repair"),
+        graph_handler: handled_by("runtime.graph.dynamic-rewrite"),
+        verification_handler: handled_by("runtime.verification.checker"),
+        ..LoopProgramRuntimeHandoffRouterHandlers::default()
+    };
+    let driver = LoopProgramExecutionDriver::new(LoopProgramRuntimeHandoffRouter::new(handlers))
+        .with_event_mapper(policy_combination_matrix_script())
+        .with_max_steps(16);
+
+    let execution_receipt = driver.run(LoopProgramExecutionRequest::new(
+        compiler_receipt.loop_program,
+        vec![LoopProgramEventKind::Start],
+    ));
+
+    assert_eq!(
+        execution_receipt.status,
+        LoopProgramExecutionStatus::Stopped
+    );
+    assert!(execution_receipt.error.is_none());
+    assert_eq!(
+        execution_receipt
+            .steps
+            .iter()
+            .map(|step| step.machine_receipt.action.clone())
+            .collect::<Vec<_>>(),
+        vec![
+            LoopProgramActionKind::ReadMemory,
+            LoopProgramActionKind::InvokeModel,
+            LoopProgramActionKind::RewriteGraph,
+            LoopProgramActionKind::DispatchTools,
+            LoopProgramActionKind::Verify,
+            LoopProgramActionKind::Stop,
+        ]
+    );
+    assert_eq!(
+        execution_receipt
+            .steps
+            .iter()
+            .map(|step| step.runtime_handoff_execution.executions[0].owner.as_str())
+            .collect::<Vec<_>>(),
+        vec![
+            "runtime.memory.recall",
+            "runtime.model.maker",
+            "runtime.graph.dynamic-rewrite",
+            "runtime.tool.repair",
+            "runtime.verification.checker",
+            "runtime.control",
+        ]
+    );
+}
+
+#[test]
 fn poo_loop_program_compiler_receipt_rejects_digest_drift() {
     let registry = poo_loop_program_compiler_registry();
     let envelope = poo_loop_program_compiler_envelope(poo_loop_program_compiler_payload([8; 32]));
@@ -401,6 +484,133 @@ fn poo_loop_program_compiler_payload_with_resolved_policy_pack(
     ])
 }
 
+fn policy_combination_matrix_poo_loop_program_compiler_payload() -> GerbilSchemeValue {
+    GerbilSchemeValue::record([
+        ("kind", GERBIL_POO_LOOP_PROGRAM_COMPILER_SCHEMA_ID.into()),
+        (
+            "profile-id",
+            "policy-combination/memory-rewrite-checker".into(),
+        ),
+        ("compiler-owner", "gerbil-poo-flow".into()),
+        (
+            "resolved-policy-pack",
+            policy_combination_matrix_resolved_policy_pack_payload(),
+        ),
+        (
+            "loop-program",
+            policy_combination_matrix_loop_program_payload(),
+        ),
+        ("scheme-boundary", "scheme-types-to-rust-types".into()),
+        (
+            "serialization-boundary",
+            "rust-owned-cli-trace-cross-process".into(),
+        ),
+    ])
+}
+
+fn policy_combination_matrix_resolved_policy_pack_payload() -> GerbilSchemeValue {
+    GerbilSchemeValue::record([
+        ("schema_version", 1_i64.into()),
+        ("policy_epoch", 15_i64.into()),
+        (
+            "policy_digest",
+            GerbilSchemeValue::vector((0..32).map(|_| GerbilSchemeValue::from(15_i64))),
+        ),
+        ("hot", resolved_loop_policy_hot_payload()),
+        (
+            "audit",
+            resolved_loop_policy_audit_payload_with_merge_receipts(GerbilSchemeValue::vector([
+                GerbilSchemeValue::record([
+                    ("slot_id", 31_i64.into()),
+                    ("merge", "ordered_append".into()),
+                    ("status", "applied".into()),
+                ]),
+                GerbilSchemeValue::record([
+                    ("slot_id", 32_i64.into()),
+                    ("merge", "ordered_append".into()),
+                    ("status", "applied".into()),
+                ]),
+                GerbilSchemeValue::record([
+                    ("slot_id", 33_i64.into()),
+                    ("merge", "ordered_append".into()),
+                    ("status", "applied".into()),
+                ]),
+            ])),
+        ),
+    ])
+}
+
+fn policy_combination_matrix_loop_program_payload() -> GerbilSchemeValue {
+    GerbilSchemeValue::record([
+        ("schema_version", 1_i64.into()),
+        (
+            "program_id",
+            "policy-combination-memory-rewrite-checker".into(),
+        ),
+        ("policy_epoch", 15_i64.into()),
+        (
+            "policy_digest",
+            GerbilSchemeValue::vector((0..32).map(|_| GerbilSchemeValue::from(15_i64))),
+        ),
+        (
+            "mechanism_policies",
+            GerbilSchemeValue::vector([
+                "real-policy-003-maker-checker".into(),
+                "real-policy-004-dynamic-rewrite".into(),
+                "real-policy-005-memory-recall".into(),
+            ]),
+        ),
+        ("initial_state", "start".into()),
+        (
+            "transitions",
+            GerbilSchemeValue::vector([
+                GerbilSchemeValue::record([
+                    ("transition_id", "start-memory".into()),
+                    ("from", "start".into()),
+                    ("event", "start".into()),
+                    ("action", "read_memory".into()),
+                    ("to", "memory-ready".into()),
+                ]),
+                GerbilSchemeValue::record([
+                    ("transition_id", "memory-maker".into()),
+                    ("from", "memory-ready".into()),
+                    ("event", "runtime_receipt".into()),
+                    ("action", "invoke_model".into()),
+                    ("to", "await-maker".into()),
+                ]),
+                GerbilSchemeValue::record([
+                    ("transition_id", "maker-rewrite".into()),
+                    ("from", "await-maker".into()),
+                    ("event", "model_event".into()),
+                    ("action", "rewrite_graph".into()),
+                    ("to", "rewritten".into()),
+                ]),
+                GerbilSchemeValue::record([
+                    ("transition_id", "rewrite-tool".into()),
+                    ("from", "rewritten".into()),
+                    ("event", "runtime_receipt".into()),
+                    ("action", "dispatch_tools".into()),
+                    ("to", "await-tool".into()),
+                ]),
+                GerbilSchemeValue::record([
+                    ("transition_id", "tool-checker".into()),
+                    ("from", "await-tool".into()),
+                    ("event", "tool_receipt".into()),
+                    ("action", "verify".into()),
+                    ("to", "await-checker".into()),
+                ]),
+                GerbilSchemeValue::record([
+                    ("transition_id", "checker-stop".into()),
+                    ("from", "await-checker".into()),
+                    ("event", "verification_receipt".into()),
+                    ("action", "stop".into()),
+                    ("to", "stopped".into()),
+                ]),
+            ]),
+        ),
+    ])
+}
+
 fn loop_program_payload(policy_digest: [u8; 32]) -> GerbilSchemeValue {
     GerbilSchemeValue::record([
         ("schema_version", 1_i64.into()),
@@ -492,6 +702,34 @@ fn real_repair_script() -> ScriptedLoopProgramEventMapper {
             (
                 LoopProgramActionKind::RewriteGraph,
                 LoopProgramEventKind::RuntimeReceipt,
+            ),
+            (
+                LoopProgramActionKind::Verify,
+                LoopProgramEventKind::VerificationReceipt,
+            ),
+        ]
+        .into_boxed_slice(),
+    )
+}
+
+fn policy_combination_matrix_script() -> ScriptedLoopProgramEventMapper {
+    ScriptedLoopProgramEventMapper::new(
+        vec![
+            (
+                LoopProgramActionKind::ReadMemory,
+                LoopProgramEventKind::RuntimeReceipt,
+            ),
+            (
+                LoopProgramActionKind::InvokeModel,
+                LoopProgramEventKind::ModelEvent,
+            ),
+            (
+                LoopProgramActionKind::RewriteGraph,
+                LoopProgramEventKind::RuntimeReceipt,
+            ),
+            (
+                LoopProgramActionKind::DispatchTools,
+                LoopProgramEventKind::ToolReceipt,
             ),
             (
                 LoopProgramActionKind::Verify,

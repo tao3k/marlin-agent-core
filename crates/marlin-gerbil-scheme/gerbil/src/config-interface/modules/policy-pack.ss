@@ -39,6 +39,9 @@ package: config-interface/modules
         marlinRealRepair001ResolvedPolicyPack
         marlinRealRepair001LoopProgram
         marlinRealRepair001LoopProgramCompilerReceipt
+        marlinPolicyCombinationMatrixResolvedPolicyPack
+        marlinPolicyCombinationMatrixLoopProgram
+        marlinPolicyCombinationMatrixLoopProgramCompilerReceipt
         marlinPolicyModuleEvaluationReceipt
         marlinPolicyBudgetReceipt
         marlinPolicyCatalogResolutionReceipt
@@ -846,6 +849,179 @@ package: config-interface/modules
    "real-repair-001/reactive-tool-loop"
    (marlinRealRepair001ResolvedPolicyPack)
    (marlinRealRepair001LoopProgram)))
+
+;;; Boundary: Policy combination profile exercises memory, maker, rewrite, tool, checker.
+;; MarlinResult <- MarlinInput
+(def (marlin-policy-combination-matrix-policy-digest)
+  (make-vector 32 15))
+
+;;; Boundary: Combination transitions stay in Rust-owned LoopProgram IR names.
+;; MarlinResult <- MarlinInput
+(def (marlin-policy-combination-matrix-transition transition-id-value
+                                                   from-value
+                                                   event-value
+                                                   action-value
+                                                   to-value)
+  (.o transition_id: transition-id-value
+      from: from-value
+      event: event-value
+      action: action-value
+      to: to-value))
+
+;;; Boundary: Real policy combination pack preserves hot and audit evidence.
+;; MarlinResult <- MarlinInput
+(def (marlinPolicyCombinationMatrixResolvedPolicyPack)
+  (.o schema_version: 1
+      policy_epoch: 15
+      policy_digest: (marlin-policy-combination-matrix-policy-digest)
+      hot:
+      (.o capability_mask: 7
+          human_gate_mask: 1
+          budget_caps:
+          (.o max_attempts: 3
+              max_cost_units: 1000
+              max_wall_time_ms: 30000)
+          graph_nodes:
+          (vector
+           (.o node_id: 1
+               executor_id: 21
+               capability_mask: 1
+               resource_class_id: 4)
+           (.o node_id: 2
+               executor_id: 22
+               capability_mask: 2
+               resource_class_id: 4)
+           (.o node_id: 3
+               executor_id: 23
+               capability_mask: 4
+               resource_class_id: 4))
+          graph_edges:
+          (vector
+           (.o from: 1
+               to: 2)
+           (.o from: 2
+               to: 3))
+          route_index:
+          (.o buckets:
+              (vector
+               (.o bucket_id: 1
+                   scope_mask: 255
+                   target_id: 3)))
+          resource_classes:
+          (vector
+           (.o resource_class_id: 4
+               exclusive: #t))
+          continuation_table:
+          (vector
+           (.o op: "memory_rewrite_checker_stop"))
+          maker_profiles: (vector 21)
+          checker_profiles: (vector 22))
+      audit:
+      (.o provenance:
+          (vector
+           (.o slot_id: 31
+               winner_role: "memory"
+               source_role_order: (vector "memory" "maker" "checker")
+               merge: "ordered_append")
+           (.o slot_id: 32
+               winner_role: "maker"
+               source_role_order: (vector "memory" "maker" "checker")
+               merge: "ordered_append")
+           (.o slot_id: 33
+               winner_role: "checker"
+               source_role_order: (vector "memory" "maker" "checker")
+               merge: "ordered_append"))
+          linearization: (vector "memory" "maker" "rewrite" "tool" "checker")
+          diagnostics:
+          (vector
+           (.o code: "policy-combination-matrix-ok"
+               severity: "info"))
+          source_locations:
+          (vector
+           (.o source_location_id: 2
+               path: "gerbil/src/config-interface/modules/policy-pack.ss"
+               line: 1
+               column: 1))
+          explanation_strings:
+          (vector "policy combination matrix lowers memory, maker, rewrite, tool, checker into Rust loop IR")
+          forced_slots:
+          (vector
+           (.o slot_id: 31
+               hotness: "hot")
+           (.o slot_id: 32
+               hotness: "hot")
+           (.o slot_id: 33
+               hotness: "hot"))
+          merge_receipts:
+          (vector
+           (.o slot_id: 31
+               merge: "ordered_append"
+               status: "applied")
+           (.o slot_id: 32
+               merge: "ordered_append"
+               status: "applied")
+           (.o slot_id: 33
+               merge: "ordered_append"
+               status: "applied")))))
+
+;;; Boundary: Policy combination LoopProgram is emitted by the Scheme compiler surface.
+;; MarlinResult <- MarlinInput
+(def (marlinPolicyCombinationMatrixLoopProgram)
+  (.o schema_version: 1
+      program_id: "policy-combination-memory-rewrite-checker"
+      policy_epoch: 15
+      policy_digest: (marlin-policy-combination-matrix-policy-digest)
+      mechanism_policies:
+      (vector "real-policy-003-maker-checker"
+              "real-policy-004-dynamic-rewrite"
+              "real-policy-005-memory-recall")
+      initial_state: "start"
+      transitions:
+      (vector
+       (marlin-policy-combination-matrix-transition
+        "start-memory"
+        "start"
+        "start"
+        "read_memory"
+        "memory-ready")
+       (marlin-policy-combination-matrix-transition
+        "memory-maker"
+        "memory-ready"
+        "runtime_receipt"
+        "invoke_model"
+        "await-maker")
+       (marlin-policy-combination-matrix-transition
+        "maker-rewrite"
+        "await-maker"
+        "model_event"
+        "rewrite_graph"
+        "rewritten")
+       (marlin-policy-combination-matrix-transition
+        "rewrite-tool"
+        "rewritten"
+        "runtime_receipt"
+        "dispatch_tools"
+        "await-tool")
+       (marlin-policy-combination-matrix-transition
+        "tool-checker"
+        "await-tool"
+        "tool_receipt"
+        "verify"
+        "await-checker")
+       (marlin-policy-combination-matrix-transition
+        "checker-stop"
+        "await-checker"
+        "verification_receipt"
+        "stop"
+        "stopped"))))
+
+;;; Boundary: Public compiler entrypoint for the first policy combination case.
+;; MarlinResult <- MarlinInput
+(def (marlinPolicyCombinationMatrixLoopProgramCompilerReceipt)
+  (marlinPooLoopProgramCompilerReceipt
+   "policy-combination/memory-rewrite-checker"
+   (marlinPolicyCombinationMatrixResolvedPolicyPack)
+   (marlinPolicyCombinationMatrixLoopProgram)))
 
 ;;; Boundary: Module evaluation receipt summarizes Scheme-owned composition.
 ;; MarlinResult <- MarlinInput
