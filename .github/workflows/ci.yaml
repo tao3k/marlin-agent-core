@@ -230,8 +230,8 @@ jobs:
         run: |
           set -euxo pipefail
           gxi --version
-          gxpkg version
-          gxi -e '(displayln "gerbil-ready")'
+          gxpkg help >/dev/null
+          gxi -e '(begin (display "gerbil-ready") (newline))'
           gxpkg list || true
 
       - name: Install Gerbil package dependencies
