@@ -40,8 +40,18 @@ fn gerbil_runtime_assets_expose_loadpath_contract() {
     assert_eq!(MARLIN_GERBIL_GXI_ENV, "MARLIN_GERBIL_GXI");
     assert_eq!(MARLIN_GERBIL_GXC_ENV, "MARLIN_GERBIL_GXC");
     assert_eq!(MARLIN_GERBIL_GSC_ENV, "MARLIN_GERBIL_GSC");
-    assert_eq!(default_gerbil_gxi_program(), Path::new("gxi"));
-    assert_eq!(default_gerbil_gxc_program(), Path::new("gxc"));
+    assert_eq!(
+        default_gerbil_gxi_program()
+            .file_name()
+            .and_then(|file_name| file_name.to_str()),
+        Some("gxi")
+    );
+    assert_eq!(
+        default_gerbil_gxc_program()
+            .file_name()
+            .and_then(|file_name| file_name.to_str()),
+        Some("gxc")
+    );
     assert_eq!(
         default_gerbil_gsc_program()
             .file_name()
