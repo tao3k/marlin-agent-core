@@ -29,6 +29,7 @@ marlin-rust-project-harness-policy.workspace = true
 [dev-dependencies]
 criterion.workspace = true
 futures-executor.workspace = true
+marlin-agent-kernel.workspace = true
 marlin-git-utils.workspace = true
 marlin-org-memory.workspace = true
 marlin-org-store.workspace = true

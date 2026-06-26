@@ -35,6 +35,10 @@ package: config-interface/modules
         marlinPolicyPackInventory
         marlinPolicyPackPresentation
         marlinPolicyProjection
+        marlinPooLoopProgramCompilerReceipt
+        marlinRealRepair001ResolvedPolicyPack
+        marlinRealRepair001LoopProgram
+        marlinRealRepair001LoopProgramCompilerReceipt
         marlinPolicyModuleEvaluationReceipt
         marlinPolicyBudgetReceipt
         marlinPolicyCatalogResolutionReceipt
@@ -686,6 +690,162 @@ package: config-interface/modules
         rust-handler-manufactured:
         (.get presentation rust-handler-manufactured)
         replayable: (.get presentation replayable))))
+
+;;; Boundary: POO Flow compiles policy profiles into Rust-owned loop IR.
+;; MarlinResult <- MarlinInput
+(def (marlinPooLoopProgramCompilerReceipt profile-id resolved-policy-pack loop-program)
+  (.o kind: marlin-poo-loop-program-compiler-receipt-kind
+      profile-id: profile-id
+      compiler-owner: "gerbil-poo-flow"
+      resolved-policy-pack: resolved-policy-pack
+      loop-program: loop-program
+      scheme-boundary: "scheme-types-to-rust-types"
+      serialization-boundary: "rust-owned-cli-trace-cross-process"))
+
+;;; Boundary: Minimal real repair profile compiled as Scheme types for Rust.
+;; MarlinResult <- MarlinInput
+(def (marlin-real-repair-001-policy-digest)
+  (make-vector 32 7))
+
+;;; Boundary: Loop transition values use Rust-owned IR field names.
+;; MarlinResult <- MarlinInput
+(def (marlin-real-repair-001-transition transition-id-value
+                                       from-value
+                                       event-value
+                                       action-value
+                                       to-value)
+  (.o transition_id: transition-id-value
+      from: from-value
+      event: event-value
+      action: action-value
+      to: to-value))
+
+;;; Boundary: First real policy pack projection for the vertical loop mainline.
+;; MarlinResult <- MarlinInput
+(def (marlinRealRepair001ResolvedPolicyPack)
+  (.o schema_version: 1
+      policy_epoch: 42
+      policy_digest: (marlin-real-repair-001-policy-digest)
+      hot:
+      (.o capability_mask: 5
+          human_gate_mask: 1
+          budget_caps:
+          (.o max_attempts: 3
+              max_cost_units: 1000
+              max_wall_time_ms: 30000)
+          graph_nodes:
+          (vector
+           (.o node_id: 1
+               executor_id: 2
+               capability_mask: 5
+               resource_class_id: 4))
+          graph_edges:
+          (vector
+           (.o from: 1
+               to: 2))
+          route_index:
+          (.o buckets:
+              (vector
+               (.o bucket_id: 1
+                   scope_mask: 255
+                   target_id: 3)))
+          resource_classes:
+          (vector
+           (.o resource_class_id: 4
+               exclusive: #t))
+          continuation_table:
+          (vector
+           (.o op: "stop_completed"))
+          maker_profiles: (vector 11)
+          checker_profiles: (vector 12))
+      audit:
+      (.o provenance:
+          (vector
+           (.o slot_id: 9
+               winner_role: "planner"
+               source_role_order: (vector "planner" "reviewer")
+               merge: "union"))
+          linearization: (vector "planner" "reviewer")
+          diagnostics:
+          (vector
+           (.o code: "real-repair-001-policy-pack-ok"
+               severity: "info"))
+          source_locations:
+          (vector
+           (.o source_location_id: 1
+               path: "gerbil/src/config-interface/modules/policy-pack.ss"
+               line: 1
+               column: 1))
+          explanation_strings:
+          (vector "real-repair-001 lowers POO profile into Rust loop IR")
+          forced_slots:
+          (vector
+           (.o slot_id: 9
+               hotness: "hot"))
+          merge_receipts:
+          (vector
+           (.o slot_id: 9
+               merge: "union"
+               status: "applied")))))
+
+;;; Boundary: First real LoopProgram emitted by the Scheme compiler surface.
+;; MarlinResult <- MarlinInput
+(def (marlinRealRepair001LoopProgram)
+  (.o schema_version: 1
+      program_id: "real-repair-001-scripted-loop"
+      policy_epoch: 42
+      policy_digest: (marlin-real-repair-001-policy-digest)
+      mechanism_policies:
+      (vector "reactive-tool-loop-base"
+              "dynamic-graph-rewrite"
+              "verification-gate")
+      initial_state: "start"
+      transitions:
+      (vector
+       (marlin-real-repair-001-transition
+        "start-model"
+        "start"
+        "start"
+        "invoke_model"
+        "await-model")
+       (marlin-real-repair-001-transition
+        "model-tools"
+        "await-model"
+        "tool_request"
+        "dispatch_tools"
+        "await-tools")
+       (marlin-real-repair-001-transition
+        "tools-continue"
+        "await-tools"
+        "tool_receipt"
+        "continue"
+        "await-model")
+       (marlin-real-repair-001-transition
+        "dynamic-rewrite"
+        "await-model"
+        "model_event"
+        "rewrite_graph"
+        "rewritten")
+       (marlin-real-repair-001-transition
+        "verify-rewrite"
+        "rewritten"
+        "runtime_receipt"
+        "verify"
+        "verifying")
+       (marlin-real-repair-001-transition
+        "verification-stop"
+        "verifying"
+        "verification_receipt"
+        "stop"
+        "stopped"))))
+
+;;; Boundary: Public compiler entrypoint for the first vertical loop case.
+;; MarlinResult <- MarlinInput
+(def (marlinRealRepair001LoopProgramCompilerReceipt)
+  (marlinPooLoopProgramCompilerReceipt
+   "real-repair-001/reactive-tool-loop"
+   (marlinRealRepair001ResolvedPolicyPack)
+   (marlinRealRepair001LoopProgram)))
 
 ;;; Boundary: Module evaluation receipt summarizes Scheme-owned composition.
 ;; MarlinResult <- MarlinInput

@@ -1,3 +1,5 @@
+#[path = "unit/real_repair_loop.rs"]
+mod real_repair_loop;
 #[path = "unit/stream.rs"]
 mod stream;
 

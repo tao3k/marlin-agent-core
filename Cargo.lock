@@ -2576,7 +2576,9 @@ name = "marlin-agent-stream"
 version = "0.1.0"
 dependencies = [
  "litellm-rs",
+ "marlin-agent-kernel",
  "marlin-agent-protocol",
+ "marlin-agent-runtime",
  "marlin-agent-test-support",
  "marlin-rust-project-harness-policy",
  "reqwest 0.13.4",
@@ -2644,6 +2646,7 @@ dependencies = [
  "criterion",
  "futures-executor",
  "marlin-agent-graph",
+ "marlin-agent-kernel",
  "marlin-agent-protocol",
  "marlin-gerbil-ir",
  "marlin-git-utils",

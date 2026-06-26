@@ -376,6 +376,45 @@ impl LoopProgramRuntimeHandoffHandler for StaticLoopProgramRuntimeHandoffHandler
     }
 }
 
+/// Typed sandbox/policy handler that denies selected tool dispatch intents.
+#[derive(Clone, Debug)]
+pub struct DenylistedLoopProgramToolDispatchHandler {
+    owner: LoopProgramRuntimeOwner,
+    denylisted_tool_names: Box<[String]>,
+}
+
+impl DenylistedLoopProgramToolDispatchHandler {
+    pub fn new<I, S>(owner: LoopProgramRuntimeOwner, denylisted_tool_names: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        Self {
+            owner,
+            denylisted_tool_names: denylisted_tool_names.into_iter().map(Into::into).collect(),
+        }
+    }
+
+    fn denies(&self, handoff: &LoopProgramRuntimeHandoff) -> bool {
+        let Some(AgentFlowIntent::Tool(tool_intent)) = &handoff.agent_flow_intent else {
+            return false;
+        };
+        self.denylisted_tool_names
+            .iter()
+            .any(|tool_name| tool_name == tool_intent.tool_name.as_str())
+    }
+}
+
+impl LoopProgramRuntimeHandoffHandler for DenylistedLoopProgramToolDispatchHandler {
+    fn handle(&self, handoff: &LoopProgramRuntimeHandoff) -> LoopProgramRuntimeHandoffExecution {
+        if self.denies(handoff) {
+            LoopProgramRuntimeHandoffExecution::denied(self.owner.clone(), handoff)
+        } else {
+            LoopProgramRuntimeHandoffExecution::handled(self.owner.clone(), handoff)
+        }
+    }
+}
+
 /// Named handler slots for fine-grained runtime handoff policy injection.
 #[derive(Clone)]
 pub struct LoopProgramRuntimeHandoffRouterHandlers {

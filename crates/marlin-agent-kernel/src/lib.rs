@@ -36,15 +36,15 @@ pub use loop_program_handoff::{
 };
 pub use loop_program_handoff_executor::{
     AgentFlowLoopProgramRuntimeHandoffExecutor, DeferredLoopProgramRuntimeHandoffHandler,
-    LoopProgramAgentFlowRuntimeHandoffRequest, LoopProgramMemoryProjectionReceipt,
-    LoopProgramRuntimeHandoffExecution, LoopProgramRuntimeHandoffExecutionReceipt,
-    LoopProgramRuntimeHandoffExecutionReportStatus, LoopProgramRuntimeHandoffExecutionStatus,
-    LoopProgramRuntimeHandoffExecutor, LoopProgramRuntimeHandoffHandler,
-    LoopProgramRuntimeHandoffRouter, LoopProgramRuntimeHandoffRouterHandlers,
-    LoopProgramRuntimeOwner, LoopProgramToolProcessProgram,
-    LoopProgramToolProcessProjectionReceipt, LoopProgramToolProcessSpawnReceipt,
-    LoopProgramToolProcessSpawnRequest, StaticLoopProgramRuntimeHandoffHandler,
-    spawn_loop_program_tool_process,
+    DenylistedLoopProgramToolDispatchHandler, LoopProgramAgentFlowRuntimeHandoffRequest,
+    LoopProgramMemoryProjectionReceipt, LoopProgramRuntimeHandoffExecution,
+    LoopProgramRuntimeHandoffExecutionReceipt, LoopProgramRuntimeHandoffExecutionReportStatus,
+    LoopProgramRuntimeHandoffExecutionStatus, LoopProgramRuntimeHandoffExecutor,
+    LoopProgramRuntimeHandoffHandler, LoopProgramRuntimeHandoffRouter,
+    LoopProgramRuntimeHandoffRouterHandlers, LoopProgramRuntimeOwner,
+    LoopProgramToolProcessProgram, LoopProgramToolProcessProjectionReceipt,
+    LoopProgramToolProcessSpawnReceipt, LoopProgramToolProcessSpawnRequest,
+    StaticLoopProgramRuntimeHandoffHandler, spawn_loop_program_tool_process,
 };
 pub use loop_program_side_effects::{
     LoopProgramDerivedSessionPolicyStatus, LoopProgramRuntimeReplayBundleReceipt,

@@ -31,6 +31,7 @@ package: config-interface/modules
         marlin-policy-budget-receipt-kind
         marlin-policy-catalog-resolution-receipt-kind
         marlin-policy-projection-kind
+        marlin-poo-loop-program-compiler-receipt-kind
         marlin-policy-pack-presentation-kind
         marlin-policy-pack-inventory-kind
         marlin-policy-object-kind
@@ -93,6 +94,9 @@ package: config-interface/modules
 
 (def marlin-policy-catalog-resolution-receipt-kind
   "marlin.runtime.policy-catalog-resolution-receipt.v1")
+
+(def marlin-poo-loop-program-compiler-receipt-kind
+  "marlin.config-interface.poo.loop-program-compiler-receipt.v1")
 
 (def marlin-policy-pack-presentation-kind
   "marlin.config-interface.policy-pack-presentation.v1")

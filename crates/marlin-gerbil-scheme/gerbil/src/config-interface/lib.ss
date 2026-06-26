@@ -22,6 +22,7 @@ package: config-interface
         marlin-policy-budget-receipt-kind
         marlin-policy-catalog-resolution-receipt-kind
         marlin-policy-projection-kind
+        marlin-poo-loop-program-compiler-receipt-kind
         marlin-policy-pack-presentation-kind
         marlin-policy-pack-inventory-kind
         marlin-policy-object-kind
@@ -117,6 +118,10 @@ package: config-interface
         marlinPolicyPackInventory
         marlinPolicyPackPresentation
         marlinPolicyProjection
+        marlinPooLoopProgramCompilerReceipt
+        marlinRealRepair001ResolvedPolicyPack
+        marlinRealRepair001LoopProgram
+        marlinRealRepair001LoopProgramCompilerReceipt
         marlinPolicyModuleEvaluationReceipt
         marlinPolicyBudgetReceipt
         marlinPolicyCatalogResolutionReceipt
