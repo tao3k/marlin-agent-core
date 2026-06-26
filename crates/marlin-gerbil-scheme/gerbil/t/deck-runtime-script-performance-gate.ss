@@ -9,7 +9,7 @@
                  benchmark-run)
         (only-in :marlin/deck-runtime-script
                  marlin-deck-runtime-script-batch-metrics-kind)
-        (only-in :marlin-deck-runtime/src/marlin/deck-runtime-script-performance
+        (only-in :marlin/deck-runtime-script-performance
                  deck-runtime-script-performance-context
                  deck-runtime-script-performance-run-batch))
 

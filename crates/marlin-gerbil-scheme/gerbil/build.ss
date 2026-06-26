@@ -12,6 +12,8 @@
                  __available-cores))
 
 (def +marlin-gerbil-package-name+ "marlin-deck-runtime")
+(def +marlin-build-phase-receipt-schema+
+  "marlin-gerbil.build.phase-receipt.v1")
 
 (def package-root (path-normalize (path-directory (this-source-file))))
 (def source-root (path-expand "src" package-root))
@@ -22,6 +24,17 @@
 
 (def +marlin-excluded-package-source-files+
   +marlin-special-source-files+)
+
+(def +marlin-build-cache-root+
+  (path-expand ".cache" package-root))
+
+(def +marlin-build-stamp-file+
+  (path-expand "marlin-gerbil-build.stamp" +marlin-build-cache-root+))
+
+(def +marlin-build-config-files+
+  (list (this-source-file)
+        (path-expand "gerbil.pkg" package-root)
+        (path-expand "harness-policy/gerbil.ss" package-root)))
 
 
 (gslph-source-coverage
@@ -86,17 +99,70 @@
   (append (marlin-build-make-options options)
           [parallelize: (marlin-sync-build-worker-count!)]))
 
-(def (marlin-build-message action label stage)
-  (display "... marlin-gerbil ")
-  (display action)
-  (display " ")
-  (display label)
-  (display " targets=")
-  (display (length stage))
-  (display " parallelize=")
-  (display (marlin-build-worker-count))
+(def (marlin-build-source-file module-path)
+  (path-expand module-path source-root))
+
+(def (marlin-build-input-files stage)
+  (append (map marlin-build-source-file stage)
+          +marlin-build-config-files+))
+
+(def (marlin-file-mtime path)
+  (time->seconds
+   (file-info-last-modification-time
+    (file-info path))))
+
+(def (marlin-any-input-newer-than-stamp? input-files stamp-time)
+  (match input-files
+    ([] #f)
+    ([path . rest]
+     (or (> (marlin-file-mtime path) stamp-time)
+         (marlin-any-input-newer-than-stamp? rest stamp-time)))))
+
+(def (marlin-build-cache-fresh? stage)
+  (and (file-exists? +marlin-build-stamp-file+)
+       (not
+        (marlin-any-input-newer-than-stamp?
+         (marlin-build-input-files stage)
+         (marlin-file-mtime +marlin-build-stamp-file+)))))
+
+(def (marlin-ensure-build-cache!)
+  (unless (file-exists? +marlin-build-cache-root+)
+    (create-directory +marlin-build-cache-root+)))
+
+(def (marlin-build-phase-receipt event action label stage)
+  `((schemaId . ,+marlin-build-phase-receipt-schema+)
+    (schemaVersion . 1)
+    (package . ,+marlin-gerbil-package-name+)
+    (event . ,event)
+    (action . ,action)
+    (label . ,label)
+    (targets . ,(length stage))
+    (parallelize . ,(marlin-build-worker-count))
+    (sourceRoot . ,source-root)
+    (cacheStamp . ,+marlin-build-stamp-file+)))
+
+(def (marlin-build-emit-phase-receipt event action label stage)
+  (write (marlin-build-phase-receipt event action label stage))
   (newline)
   (force-output))
+
+(def (marlin-write-build-stamp! stage)
+  (marlin-ensure-build-cache!)
+  (when (file-exists? +marlin-build-stamp-file+)
+    (delete-file +marlin-build-stamp-file+))
+  (call-with-output-file +marlin-build-stamp-file+
+    (lambda (port)
+      (write (marlin-build-phase-receipt
+              "phase-complete"
+              "compile"
+              "package"
+              stage)
+             port)
+      (newline port))))
+
+(def (marlin-delete-build-stamp!)
+  (when (file-exists? +marlin-build-stamp-file+)
+    (delete-file +marlin-build-stamp-file+)))
 
 (def (marlin-build-parse-options opts)
   (let lp ((rest opts) (options []))
@@ -112,23 +178,29 @@
        (error "Unexpected " rest)))))
 
 (def (marlin-make label stage options)
-  (marlin-build-message "compile" label stage)
+  (marlin-build-emit-phase-receipt "phase-start" "compile" label stage)
   (apply make stage
          srcdir: source-root
          (marlin-package-options options)))
 
 (def (marlin-make-clean label stage)
-  (marlin-build-message "clean" label stage)
+  (marlin-build-emit-phase-receipt "phase-start" "clean" label stage)
   (apply make-clean stage
          srcdir: source-root
          (marlin-package-options [])))
 
 (def (marlin-package-compile options)
-  (marlin-make "package"
-               (marlin-package-build-spec options)
-               options))
+  (let (stage (marlin-package-build-spec options))
+    (if (and (null? options)
+             (marlin-build-cache-fresh? stage))
+      (marlin-build-emit-phase-receipt "phase-skip" "compile" "package" stage)
+      (begin
+        (marlin-make "package" stage options)
+        (when (null? options)
+          (marlin-write-build-stamp! stage))))))
 
 (def (marlin-package-clean)
+  (marlin-delete-build-stamp!)
   (marlin-make-clean "package"
                      (marlin-package-build-spec [])))
 

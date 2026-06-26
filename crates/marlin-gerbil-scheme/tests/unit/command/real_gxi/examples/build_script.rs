@@ -3,7 +3,8 @@ use super::support::{MARLIN_REQUIRE_REAL_GXI_ENV, local_gxi};
 use marlin_gerbil_scheme::{
     GERBIL_LOADPATH_ENV, GerbilDeckRuntimeNativeAotBuildStatus, GerbilDeckRuntimeNativeAotConfig,
     GerbilDeckRuntimeNativeStaticLinkStatus, default_gerbil_gxc_program,
-    default_gerbil_gxpkg_program, gerbil_runtime_loadpath, resolve_gerbil_executable,
+    default_gerbil_gxpkg_program, gerbil_runtime_loadpath,
+    gerbil_runtime_loadpath_with_dependencies, resolve_gerbil_executable,
     write_gerbil_runtime_assets,
 };
 use std::{
@@ -21,6 +22,20 @@ fn command_compiler_real_gxi_build_script_compiles_runtime_assets() {
     let root = test_root("runtime-build-script");
     write_gerbil_runtime_assets(root.path()).expect("write gerbil runtime assets");
     run_gerbil_build_script_compile(&gxi, root.path());
+}
+
+#[test]
+#[ignore = "requires a local Gerbil gxi executable and installed package dependencies"]
+fn command_compiler_real_gxi_build_script_runs_scheme_to_rust_bridge_smoke() {
+    let Some(gxi) = local_gxi() else {
+        return;
+    };
+    let root = test_root("runtime-scheme-to-rust-bridge");
+    write_gerbil_runtime_assets(root.path()).expect("write gerbil runtime assets");
+    run_gerbil_build_script_compile(&gxi, root.path());
+
+    let stdout = run_scheme_to_rust_bridge_smoke(&gxi, root.path(), 8);
+    assert_scheme_to_rust_bridge_smoke(&stdout, 8);
 }
 
 #[test]
@@ -114,6 +129,77 @@ fn run_gerbil_build_script_compile(gxi: &Path, root: &Path) {
         "gxi build script failed\nstdout:\n{}\nstderr:\n{}",
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+fn run_scheme_to_rust_bridge_smoke(gxi: &Path, root: &Path, iterations: u64) -> String {
+    let expression = format!(
+        r#"(begin
+  (import :clan/poo/object
+          (only-in :marlin/deck-runtime-script-performance
+                   deck-runtime-script-performance-context
+                   deck-runtime-script-performance-count-runs
+                   deck-runtime-script-performance-run-batch))
+  (def iterations {iterations})
+  (def context (deck-runtime-script-performance-context))
+  (def metrics (deck-runtime-script-performance-run-batch iterations context))
+  (display "schema=marlin-gerbil.scheme-to-rust-bridge-smoke.v1") (newline)
+  (display "kind=") (display (.get metrics kind)) (newline)
+  (display "script-id=") (display (.get metrics script-id)) (newline)
+  (display "iterations=") (display (.get metrics iterations)) (newline)
+  (display "runs=") (display (.get metrics runs)) (newline)
+  (display "count=") (display (deck-runtime-script-performance-count-runs iterations context)) (newline)
+  (display "elapsed-us=") (display (.get metrics elapsed-us)) (newline))"#
+    );
+    let output = Command::new(gxi)
+        .env(
+            GERBIL_LOADPATH_ENV,
+            gerbil_runtime_loadpath_with_dependencies(root),
+        )
+        .current_dir(root)
+        .arg("-e")
+        .arg(expression)
+        .output()
+        .expect("run real gxi Scheme-to-Rust bridge smoke");
+
+    assert!(
+        output.status.success(),
+        "gxi Scheme-to-Rust bridge smoke failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    String::from_utf8(output.stdout).expect("Scheme-to-Rust bridge stdout is UTF-8")
+}
+
+fn assert_scheme_to_rust_bridge_smoke(stdout: &str, iterations: u64) {
+    let expected_lines = [
+        "schema=marlin-gerbil.scheme-to-rust-bridge-smoke.v1".to_string(),
+        "kind=marlin-deck-runtime.script-batch-metrics.v1".to_string(),
+        "script-id=performance-script".to_string(),
+        format!("iterations={iterations}"),
+        format!("runs={iterations}"),
+        format!("count={iterations}"),
+    ];
+    let lines = stdout.lines().collect::<Vec<_>>();
+    for expected in expected_lines {
+        assert!(
+            lines.contains(&expected.as_str()),
+            "missing Scheme-to-Rust bridge receipt line `{expected}` in stdout:\n{stdout}"
+        );
+    }
+    let elapsed_us = lines
+        .iter()
+        .find_map(|line| line.strip_prefix("elapsed-us="))
+        .expect("Scheme-to-Rust bridge receipt should include elapsed-us")
+        .parse::<u64>()
+        .expect("elapsed-us should be an unsigned integer");
+    assert!(
+        elapsed_us < 1_000_000,
+        "Scheme-to-Rust bridge smoke should stay below 1s for {iterations} iterations, got {elapsed_us}us"
+    );
+    assert!(
+        !stdout.contains("{\""),
+        "Scheme-to-Rust bridge smoke must not use JSON output:\n{stdout}"
     );
 }
 

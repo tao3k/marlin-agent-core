@@ -104,6 +104,32 @@
 (def harness-gerbil-modularity-policy
   (path-join harness-gerbil-root "harness-policy/gerbil.ss"))
 
+;;; Boundary: Performance source owns a marlin package namespace, not a
+;;; package-root shadow namespace.
+;; : String
+(def harness-gerbil-script-performance-source
+  (path-join harness-gerbil-root
+             "src/marlin/deck-runtime-script-performance.ss"))
+
+;;; Boundary: Receipt CLI source owns a marlin package namespace, not a
+;;; package-root shadow namespace.
+;; : String
+(def harness-gerbil-policy-receipt-gate-cli-source
+  (path-join harness-gerbil-root
+             "src/marlin/deck-runtime-policy-receipt-gate-cli.ss"))
+
+;;; Boundary: Performance tests import through the same runtime namespace as
+;;; package-declared sources.
+;; : String
+(def harness-gerbil-performance-test
+  (path-join harness-gerbil-root "t/deck-runtime-script-performance-test.ss"))
+
+;;; Boundary: Performance gates import through the same runtime namespace as
+;;; package-declared sources.
+;; : String
+(def harness-gerbil-performance-gate
+  (path-join harness-gerbil-root "t/deck-runtime-script-performance-gate.ss"))
+
 ;;; Boundary: The harness library smoke checks this policy test owner without
 ;;; turning import-time gxtest into a full workspace policy scan.
 ;; : (List String)
@@ -147,7 +173,11 @@
   (check (file-exists? harness-gerbil-root) => #t)
   (check (file-exists? harness-gerbil-pkg) => #t)
   (check (file-exists? harness-gerbil-build-script) => #t)
-  (check (file-exists? harness-gerbil-modularity-policy) => #t))
+  (check (file-exists? harness-gerbil-modularity-policy) => #t)
+  (check (file-exists? harness-gerbil-script-performance-source) => #t)
+  (check (file-exists? harness-gerbil-policy-receipt-gate-cli-source) => #t)
+  (check (file-exists? harness-gerbil-performance-test) => #t)
+  (check (file-exists? harness-gerbil-performance-gate) => #t))
 
 ;;; Boundary: Gerbil language harness owns package policy, not Rust asset gates.
 ;; : (-> Unit)
@@ -164,6 +194,22 @@
   (check (file-contains? harness-gerbil-build-script
                          "+marlin-special-source-files+")
          => #t)
+  (check (file-contains? harness-gerbil-build-script
+                         "+marlin-build-phase-receipt-schema+")
+         => #t)
+  (check (file-contains? harness-gerbil-build-script
+                         "marlin-build-emit-phase-receipt")
+         => #t)
+  (check (file-contains? harness-gerbil-build-script
+                         "marlin-build-cache-fresh?")
+         => #t)
+  (check (file-contains? harness-gerbil-build-script "phase-skip") => #t)
+  (check (file-contains? harness-gerbil-build-script "cacheStamp") => #t)
+  (check (file-contains? harness-gerbil-build-script "\"GERBIL_BUILD_CORES\"")
+         => #t)
+  (check (file-contains? harness-gerbil-build-script "##cpu-count") => #t)
+  (check (file-lacks? harness-gerbil-build-script "GSLPH_TEST_JOBS") => #t)
+  (check (file-lacks? harness-gerbil-build-script "(* 2") => #t)
   (check (file-lacks? harness-gerbil-build-script "stage-native-aot") => #t)
   (check (file-lacks? harness-gerbil-build-script "check-main") => #t)
   (check (file-lacks? harness-gerbil-build-script
@@ -173,6 +219,28 @@
   (check (file-lacks? harness-gerbil-build-script "\"src/config-interface/modules/lib\"")
          => #t)
   (check (file-lacks? harness-gerbil-build-script "\"modules/config-interface/modules/lib\"")
+         => #t))
+
+;;; Boundary: Source and tests share one marlin module namespace.
+;; : (-> Unit)
+(def (check-harness-module-namespace)
+  (check (file-contains? harness-gerbil-script-performance-source
+                         "package: marlin")
+         => #t)
+  (check (file-contains? harness-gerbil-policy-receipt-gate-cli-source
+                         "package: marlin")
+         => #t)
+  (check (file-contains? harness-gerbil-performance-test
+                         ":marlin/deck-runtime-script-performance")
+         => #t)
+  (check (file-contains? harness-gerbil-performance-gate
+                         ":marlin/deck-runtime-script-performance")
+         => #t)
+  (check (file-lacks? harness-gerbil-performance-test
+                      ":marlin-deck-runtime/src")
+         => #t)
+  (check (file-lacks? harness-gerbil-performance-gate
+                      ":marlin-deck-runtime/src")
          => #t))
 
 ;;; Boundary: Policy execution goes through the Gerbil harness library API.
@@ -190,4 +258,5 @@
 
 (check-harness-policy-paths)
 (check-harness-policy-declares-module-layout)
+(check-harness-module-namespace)
 (check-harness-policy)

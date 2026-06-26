@@ -12,7 +12,8 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
-  MARLIN_GERBIL_SOURCE_TAG: v0.18.2
+  MARLIN_GERBIL_SOURCE_REF: add922481cec81d05431db014bcb91b30485cf21
+  MARLIN_GERBIL_SOURCE_VERSION: v0.18.2-4-gadd92248
 
 jobs:
   format:
@@ -120,9 +121,10 @@ jobs:
   gerbil:
     name: Gerbil gates
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 180
     env:
       CARGO_INCREMENTAL: "0"
+      MARLIN_REQUIRE_REAL_GXI: "1"
     steps:
       - uses: actions/checkout@v6
         with:
@@ -137,8 +139,80 @@ jobs:
           shared-key: marlin-agent-core-gerbil-${{ runner.os }}
           cache-on-failure: true
 
+      - name: Cache Gerbil source build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/marlin/gerbil-source/${{ env.MARLIN_GERBIL_SOURCE_REF }}
+            ~/.local/opt/gerbil
+          key: marlin-gerbil-source-${{ runner.os }}-${{ runner.arch }}-${{ env.MARLIN_GERBIL_SOURCE_REF }}-v1
+
+      - name: Cache Gerbil package dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gerbil
+            crates/marlin-gerbil-scheme/gerbil/.gerbil
+          key: marlin-gerbil-package-deps-${{ runner.os }}-${{ runner.arch }}-${{ env.MARLIN_GERBIL_SOURCE_REF }}-${{ hashFiles('crates/marlin-gerbil-scheme/gerbil/gerbil.pkg') }}-v1
+          restore-keys: |
+            marlin-gerbil-package-deps-${{ runner.os }}-${{ runner.arch }}-${{ env.MARLIN_GERBIL_SOURCE_REF }}-
+
       - name: Fetch workspace dependencies
         run: cargo fetch --locked
+
+      - name: Install Gerbil from source
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            ca-certificates \
+            git \
+            jq \
+            libsqlite3-dev \
+            libssl-dev \
+            openssl \
+            pkg-config \
+            sqlite3 \
+            zlib1g-dev
+
+          build_jobs="$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 2)"
+          gerbil_install_base="$HOME/.local/opt/gerbil"
+          gerbil_source_root="$HOME/.cache/marlin/gerbil-source/$MARLIN_GERBIL_SOURCE_REF"
+          if [ ! -x "$gerbil_install_base/bin/gxi" ]; then
+            rm -rf "$gerbil_source_root" "$gerbil_install_base"
+            mkdir -p "$gerbil_source_root"
+            git -C "$gerbil_source_root" init
+            git -C "$gerbil_source_root" remote add origin https://github.com/mighty-gerbils/gerbil.git
+            git -C "$gerbil_source_root" fetch --depth 1 origin "$MARLIN_GERBIL_SOURCE_REF"
+            git -C "$gerbil_source_root" checkout --detach FETCH_HEAD
+            cd "$gerbil_source_root"
+            ./configure --prefix="$gerbil_install_base" --version-string="$MARLIN_GERBIL_SOURCE_VERSION"
+            make -j"$build_jobs"
+            make install
+          fi
+
+          echo "$gerbil_install_base/bin" >> "$GITHUB_PATH"
+          echo "MARLIN_GERBIL_GXI=$gerbil_install_base/bin/gxi" >> "$GITHUB_ENV"
+          echo "MARLIN_GERBIL_GXPKG=$gerbil_install_base/bin/gxpkg" >> "$GITHUB_ENV"
+          echo "MARLIN_GERBIL_GXC=$gerbil_install_base/bin/gxc" >> "$GITHUB_ENV"
+          echo "GERBIL_BUILD_CORES=$build_jobs" >> "$GITHUB_ENV"
+          echo "CARGO_BUILD_JOBS=$build_jobs" >> "$GITHUB_ENV"
+
+      - name: Verify Gerbil toolchain
+        run: |
+          set -euxo pipefail
+          gxi --version
+          gxpkg version
+          gxi -e '(displayln "gerbil-ready")'
+          gxpkg list || true
+
+      - name: Install Gerbil package dependencies
+        working-directory: crates/marlin-gerbil-scheme/gerbil
+        run: |
+          set -euxo pipefail
+          gxpkg dir --add git.cons.io/mighty-gerbils/gerbil-directory || true
+          gxpkg deps --install
 
       - name: Test Gerbil workflow surface
         run: |
@@ -147,6 +221,21 @@ jobs:
 
       - name: Check Gerbil binaries and examples
         run: cargo check -p marlin-gerbil-scheme --bins --examples --locked
+
+      - name: Build Gerbil package assets
+        working-directory: crates/marlin-gerbil-scheme/gerbil
+        run: gxpkg env ./build.ss compile
+
+      - name: Run Gerbil package tests
+        working-directory: crates/marlin-gerbil-scheme/gerbil
+        run: |
+          GERBIL_LOADPATH="$PWD/src:$PWD/.gerbil/lib" gxpkg env gxi t/all-test.ss
+
+      - name: Run Rust-driven Gerbil bridge smoke
+        run: |
+          cargo test --locked -p marlin-gerbil-scheme --test unit_test \
+            command::real_gxi::examples::build_script::command_compiler_real_gxi_build_script_runs_scheme_to_rust_bridge_smoke \
+            -- --ignored --exact --nocapture
 
       - name: Audit Gerbil package assets
         run: |

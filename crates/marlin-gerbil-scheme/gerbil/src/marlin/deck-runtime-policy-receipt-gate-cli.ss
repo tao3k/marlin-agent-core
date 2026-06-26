@@ -2,6 +2,8 @@
 ;;; Boundary: Scheme-owned debug entrypoint for policy substrate gate receipts.
 ;;; Rust may invoke this file, but it must not construct Scheme policy text.
 
+package: marlin
+
 (import (only-in :clan/poo/object .get)
         :marlin/deck-runtime-debug-policy-extension
         :config-interface/modules/prefabs/default-policy)

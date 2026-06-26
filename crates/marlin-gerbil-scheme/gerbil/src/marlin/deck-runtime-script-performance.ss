@@ -1,6 +1,8 @@
 ;;; -*- Gerbil -*-
 ;;; Boundary: Package-visible helpers for deck runtime script performance gates.
 
+package: marlin
+
 (import :clan/poo/object
         :marlin/deck-runtime-condition-policy
         :marlin/deck-runtime-dynamic-hook
