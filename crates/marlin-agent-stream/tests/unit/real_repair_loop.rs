@@ -38,6 +38,7 @@ const BUGGY_FIXTURE: &str =
     "fn answer() -> i32 { 40 }\n\n#[test]\nfn answer_is_41() {\n    assert_eq!(answer(), 41);\n}\n";
 const FIXED_FIXTURE: &str =
     "fn answer() -> i32 { 41 }\n\n#[test]\nfn answer_is_41() {\n    assert_eq!(answer(), 41);\n}\n";
+const REAL_REPAIR_001_CASE_ID: &str = "real-repair-001";
 const BASELINE_TEST_SCRIPT: &str = "printf 'SOURCE_BEGIN\\n'; cat \"$1\"; printf '\\nSOURCE_END\\n'; rustc --test \"$1\" -o \"$2\" && \"$2\"";
 const APPLY_PATCH_AND_TEST_SCRIPT: &str = r#"cat > "$1" <<'EOF'
 fn answer() -> i32 { 41 }
@@ -53,14 +54,25 @@ rustc --test "$1" -o "$2" && "$2""#;
 #[test]
 #[ignore = "requires MARLIN_LIVE_LLM_GATE=1 and live LiteLLM provider credentials"]
 fn live_real_repair_001_single_file_bug_fix_runs_llm_tool_and_verifier_loop() {
-    if !live_llm_gate_enabled() {
-        eprintln!("skipping live repair loop: set {LIVE_LLM_GATE_ENV}=1 to enable");
+    let gate_receipt = live_repair_001_gate_receipt();
+    if gate_receipt.status == LiveRepair001GateStatus::Disabled {
+        eprintln!("skipping live repair loop: {gate_receipt:?}");
         return;
     }
+    assert_eq!(
+        gate_receipt.status,
+        LiveRepair001GateStatus::Enabled,
+        "live repair gate configured but not ready: {gate_receipt:?}"
+    );
 
-    let provider = required_live_llm_env(LIVE_LLM_PROVIDER_ENV);
-    let model = required_live_llm_env(LIVE_LLM_MODEL_ENV);
-    require_live_provider_key(&provider);
+    let provider = gate_receipt
+        .provider
+        .clone()
+        .expect("enabled gate receipt must include provider");
+    let model = gate_receipt
+        .model
+        .clone()
+        .expect("enabled gate receipt must include model");
     let repair_workspace = unique_temp_repair_workspace();
     fs::create_dir_all(&repair_workspace).expect("create repair workspace");
     let bug_file = repair_workspace.join("lib.rs");
@@ -220,6 +232,219 @@ fn live_real_repair_001_single_file_bug_fix_runs_llm_tool_and_verifier_loop() {
         live_receipt.verification_success
     );
     fs::remove_dir_all(&repair_workspace).expect("remove repair workspace");
+}
+
+#[test]
+fn live_real_repair_001_gate_receipt_reports_disabled_without_gate() {
+    let receipt = live_repair_001_gate_receipt_from_lookup(|name| match name {
+        LIVE_LLM_PROVIDER_ENV => Some("anthropic".to_owned()),
+        LIVE_LLM_MODEL_ENV => Some("claude-sonnet-4".to_owned()),
+        "ANTHROPIC_API_KEY" => Some("redacted".to_owned()),
+        _ => None,
+    });
+
+    assert_eq!(receipt.case_id, REAL_REPAIR_001_CASE_ID);
+    assert_eq!(receipt.status, LiveRepair001GateStatus::Disabled);
+    assert_eq!(receipt.gate_env, LIVE_LLM_GATE_ENV);
+    assert_eq!(
+        receipt.denial_reason.as_deref(),
+        Some("live LLM gate is disabled")
+    );
+    assert!(receipt.required_provider_key_envs.is_empty());
+    assert!(!receipt.provider_api_key_present);
+}
+
+#[test]
+fn live_real_repair_001_gate_receipt_reports_missing_provider_and_model() {
+    let missing_provider = live_repair_001_gate_receipt_from_lookup(|name| match name {
+        LIVE_LLM_GATE_ENV => Some("1".to_owned()),
+        LIVE_LLM_MODEL_ENV => Some("claude-sonnet-4".to_owned()),
+        _ => None,
+    });
+    assert_eq!(
+        missing_provider.status,
+        LiveRepair001GateStatus::MissingProvider
+    );
+    assert_eq!(
+        missing_provider.denial_reason.as_deref(),
+        Some("MARLIN_LIVE_LLM_PROVIDER is required when live LLM gate is enabled")
+    );
+
+    let missing_model = live_repair_001_gate_receipt_from_lookup(|name| match name {
+        LIVE_LLM_GATE_ENV => Some("1".to_owned()),
+        LIVE_LLM_PROVIDER_ENV => Some("anthropic".to_owned()),
+        _ => None,
+    });
+    assert_eq!(missing_model.status, LiveRepair001GateStatus::MissingModel);
+    assert_eq!(
+        missing_model.denial_reason.as_deref(),
+        Some("MARLIN_LIVE_LLM_MODEL is required when live LLM gate is enabled")
+    );
+}
+
+#[test]
+fn live_real_repair_001_gate_receipt_reports_missing_provider_key() {
+    let receipt = live_repair_001_gate_receipt_from_lookup(|name| match name {
+        LIVE_LLM_GATE_ENV => Some("1".to_owned()),
+        LIVE_LLM_PROVIDER_ENV => Some("anthropic".to_owned()),
+        LIVE_LLM_MODEL_ENV => Some("claude-sonnet-4".to_owned()),
+        _ => None,
+    });
+
+    assert_eq!(receipt.status, LiveRepair001GateStatus::MissingProviderKey);
+    assert_eq!(
+        receipt.required_provider_key_envs,
+        vec!["ANTHROPIC_API_KEY".to_owned()]
+    );
+    assert!(!receipt.provider_api_key_present);
+    assert_eq!(
+        receipt.denial_reason.as_deref(),
+        Some("live LLM provider credentials are missing")
+    );
+}
+
+#[test]
+fn live_real_repair_001_gate_receipt_reports_enabled_with_override_key() {
+    let receipt = live_repair_001_gate_receipt_from_lookup(|name| match name {
+        LIVE_LLM_GATE_ENV => Some("yes".to_owned()),
+        LIVE_LLM_PROVIDER_ENV => Some("deepseek".to_owned()),
+        LIVE_LLM_MODEL_ENV => Some("deepseek-chat".to_owned()),
+        LIVE_LLM_PROVIDER_API_KEY_ENV => Some("MARLIN_TEST_DEEPSEEK_KEY".to_owned()),
+        "MARLIN_TEST_DEEPSEEK_KEY" => Some("redacted".to_owned()),
+        _ => None,
+    });
+
+    assert_eq!(receipt.status, LiveRepair001GateStatus::Enabled);
+    assert_eq!(receipt.provider.as_deref(), Some("deepseek"));
+    assert_eq!(receipt.model.as_deref(), Some("deepseek-chat"));
+    assert_eq!(
+        receipt.provider_api_key_env_override.as_deref(),
+        Some("MARLIN_TEST_DEEPSEEK_KEY")
+    );
+    assert_eq!(
+        receipt.required_provider_key_envs,
+        vec!["MARLIN_TEST_DEEPSEEK_KEY".to_owned()]
+    );
+    assert!(receipt.provider_api_key_present);
+    assert!(receipt.denial_reason.is_none());
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct LiveRepair001GateReceipt {
+    case_id: &'static str,
+    gate_env: &'static str,
+    gate_value: Option<String>,
+    provider_env: &'static str,
+    provider: Option<String>,
+    model_env: &'static str,
+    model: Option<String>,
+    provider_api_key_env: &'static str,
+    provider_api_key_env_override: Option<String>,
+    required_provider_key_envs: Vec<String>,
+    provider_api_key_present: bool,
+    status: LiveRepair001GateStatus,
+    denial_reason: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum LiveRepair001GateStatus {
+    Disabled,
+    MissingProvider,
+    MissingModel,
+    MissingProviderKey,
+    Enabled,
+}
+
+fn live_repair_001_gate_receipt() -> LiveRepair001GateReceipt {
+    live_repair_001_gate_receipt_from_lookup(|name| env::var(name).ok())
+}
+
+fn live_repair_001_gate_receipt_from_lookup(
+    mut get_env: impl FnMut(&str) -> Option<String>,
+) -> LiveRepair001GateReceipt {
+    let gate_value = clean_env_value(get_env(LIVE_LLM_GATE_ENV));
+    let provider = clean_env_value(get_env(LIVE_LLM_PROVIDER_ENV));
+    let model = clean_env_value(get_env(LIVE_LLM_MODEL_ENV));
+    let provider_api_key_env_override = clean_env_value(get_env(LIVE_LLM_PROVIDER_API_KEY_ENV));
+    let mut required_provider_key_envs = Vec::new();
+    let mut provider_api_key_present = false;
+    let mut status = LiveRepair001GateStatus::Enabled;
+    let mut denial_reason = None;
+
+    if !live_llm_gate_value_enabled(gate_value.as_deref()) {
+        status = LiveRepair001GateStatus::Disabled;
+        denial_reason = Some("live LLM gate is disabled".to_owned());
+    } else if provider.is_none() {
+        status = LiveRepair001GateStatus::MissingProvider;
+        denial_reason = Some(format!(
+            "{LIVE_LLM_PROVIDER_ENV} is required when live LLM gate is enabled"
+        ));
+    } else if model.is_none() {
+        status = LiveRepair001GateStatus::MissingModel;
+        denial_reason = Some(format!(
+            "{LIVE_LLM_MODEL_ENV} is required when live LLM gate is enabled"
+        ));
+    } else if let Some(override_env) = provider_api_key_env_override.as_deref() {
+        required_provider_key_envs.push(override_env.to_owned());
+        provider_api_key_present = clean_env_value(get_env(override_env)).is_some();
+    } else {
+        required_provider_key_envs.extend(
+            default_provider_key_envs(provider.as_deref().expect("provider checked"))
+                .iter()
+                .map(|name| (*name).to_owned()),
+        );
+        provider_api_key_present = required_provider_key_envs
+            .iter()
+            .any(|name| clean_env_value(get_env(name)).is_some());
+    }
+
+    if status == LiveRepair001GateStatus::Enabled
+        && !required_provider_key_envs.is_empty()
+        && !provider_api_key_present
+    {
+        status = LiveRepair001GateStatus::MissingProviderKey;
+        denial_reason = Some("live LLM provider credentials are missing".to_owned());
+    }
+
+    LiveRepair001GateReceipt {
+        case_id: REAL_REPAIR_001_CASE_ID,
+        gate_env: LIVE_LLM_GATE_ENV,
+        gate_value,
+        provider_env: LIVE_LLM_PROVIDER_ENV,
+        provider,
+        model_env: LIVE_LLM_MODEL_ENV,
+        model,
+        provider_api_key_env: LIVE_LLM_PROVIDER_API_KEY_ENV,
+        provider_api_key_env_override,
+        required_provider_key_envs,
+        provider_api_key_present,
+        status,
+        denial_reason,
+    }
+}
+
+fn clean_env_value(value: Option<String>) -> Option<String> {
+    value.and_then(|value| {
+        let trimmed = value.trim();
+        (!trimmed.is_empty()).then(|| trimmed.to_owned())
+    })
+}
+
+fn live_llm_gate_value_enabled(value: Option<&str>) -> bool {
+    matches!(
+        value,
+        Some("1" | "true" | "TRUE" | "yes" | "YES" | "on" | "ON")
+    )
+}
+
+fn default_provider_key_envs(provider: &str) -> &'static [&'static str] {
+    match provider {
+        "anthropic" => &["ANTHROPIC_API_KEY"],
+        "deepseek" => &["DEEPSEEK_API_KEY"],
+        "openai" => &["OPENAI_API_KEY"],
+        "openrouter" => &["OPENROUTER_API_KEY"],
+        _ => &[],
+    }
 }
 
 #[derive(Debug)]
@@ -644,48 +869,6 @@ fn unique_temp_repair_workspace() -> PathBuf {
         "marlin-live-real-repair-001-{}-{nanos}",
         std::process::id()
     ))
-}
-
-fn live_llm_gate_enabled() -> bool {
-    matches!(
-        env::var(LIVE_LLM_GATE_ENV).as_deref(),
-        Ok("1" | "true" | "TRUE" | "yes" | "YES" | "on" | "ON")
-    )
-}
-
-fn required_live_llm_env(name: &str) -> String {
-    env::var(name).unwrap_or_else(|_| panic!("{name} must be set when {LIVE_LLM_GATE_ENV}=1"))
-}
-
-fn require_live_provider_key(provider: &str) {
-    if let Ok(env_name) = env::var(LIVE_LLM_PROVIDER_API_KEY_ENV) {
-        if env::var(&env_name).is_ok_and(|value| !value.trim().is_empty()) {
-            return;
-        }
-        panic!(
-            "{env_name} must be set when {LIVE_LLM_PROVIDER_API_KEY_ENV}={env_name} and {LIVE_LLM_GATE_ENV}=1"
-        );
-    }
-
-    let expected_env_names: &[&str] = match provider {
-        "anthropic" => &["ANTHROPIC_API_KEY"],
-        "deepseek" => &["DEEPSEEK_API_KEY"],
-        "openai" => &["OPENAI_API_KEY"],
-        "openrouter" => &["OPENROUTER_API_KEY"],
-        _ => return,
-    };
-
-    if expected_env_names
-        .iter()
-        .any(|name| env::var(name).is_ok_and(|value| !value.trim().is_empty()))
-    {
-        return;
-    }
-
-    panic!(
-        "{provider} live LLM gate requires one of {:?}, or set {LIVE_LLM_PROVIDER_API_KEY_ENV} to a provider-specific key env name",
-        expected_env_names
-    );
 }
 
 fn live_llm_timeout() -> Duration {
