@@ -14,6 +14,7 @@
   packages = [
     pkgs.pkg-config
     pkgs.protobuf
+    pkgs.just
   ];
 
   languages.rust = {
@@ -58,10 +59,6 @@
   git-hooks.hooks = {
     shellcheck.enable = true;
     nixfmt.enable = true;
-    clippy.enable = true;
-    clippy.packageOverrides.cargo = config.languages.rust.toolchain.cargo;
-    clippy.packageOverrides.clippy = config.languages.rust.toolchainPackage;
-    clippy.settings.allFeatures = true;
   };
   # See full reference at https://devenv.sh/reference/options/
 }
