@@ -152,9 +152,8 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
-            ~/.cache/marlin/gerbil-source/${{ env.MARLIN_GERBIL_SOURCE_REF }}
             ~/.local/opt/gerbil
-          key: marlin-gerbil-source-${{ runner.os }}-${{ runner.arch }}-${{ env.MARLIN_GERBIL_SOURCE_REF }}-v1
+          key: marlin-gerbil-source-${{ runner.os }}-${{ runner.arch }}-${{ env.MARLIN_GERBIL_SOURCE_REF }}-v2
 
       - name: Cache Gerbil package dependencies
         uses: actions/cache@v4
@@ -201,10 +200,17 @@ jobs:
           build_jobs="$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 2)"
           gerbil_install_base="$HOME/.local/opt/gerbil"
           gerbil_source_root="$HOME/.cache/marlin/gerbil-source/$MARLIN_GERBIL_SOURCE_REF"
-          export CC="ccache cc"
-          export CXX="ccache c++"
+          gerbil_toolchain_ready() {
+            test -x "$gerbil_install_base/bin/gxi" \
+              && test -x "$gerbil_install_base/bin/gxc" \
+              && test -x "$gerbil_install_base/bin/gxpkg" \
+              && test -x "$gerbil_install_base/bin/gsi" \
+              && test -x "$gerbil_install_base/bin/gsc"
+          }
+          export CC="cc"
+          export CXX="c++"
           ccache --zero-stats || true
-          if [ ! -x "$gerbil_install_base/bin/gxi" ]; then
+          if ! gerbil_toolchain_ready; then
             rm -rf "$gerbil_source_root" "$gerbil_install_base"
             mkdir -p "$gerbil_source_root"
             git -C "$gerbil_source_root" init
@@ -213,9 +219,12 @@ jobs:
             git -C "$gerbil_source_root" checkout --detach FETCH_HEAD
             cd "$gerbil_source_root"
             ./configure --prefix="$gerbil_install_base" --version-string="$MARLIN_GERBIL_SOURCE_VERSION"
-            make -j"$build_jobs"
+            # The Gerbil/Gambit bootstrap has a parallel make race on hosted CI
+            # once ccache turns C compilation into near-instant cache hits.
+            make -j1
             make install
           fi
+          gerbil_toolchain_ready
 
           echo "$gerbil_install_base/bin" >> "$GITHUB_PATH"
           echo "MARLIN_GERBIL_GXI=$gerbil_install_base/bin/gxi" >> "$GITHUB_ENV"
@@ -223,15 +232,18 @@ jobs:
           echo "MARLIN_GERBIL_GXC=$gerbil_install_base/bin/gxc" >> "$GITHUB_ENV"
           echo "GERBIL_BUILD_CORES=$build_jobs" >> "$GITHUB_ENV"
           echo "CARGO_BUILD_JOBS=$build_jobs" >> "$GITHUB_ENV"
-          echo "CC=ccache cc" >> "$GITHUB_ENV"
-          echo "CXX=ccache c++" >> "$GITHUB_ENV"
+          echo "CC=cc" >> "$GITHUB_ENV"
+          echo "CXX=c++" >> "$GITHUB_ENV"
           ccache --show-stats || true
 
       - name: Verify Gerbil toolchain
         run: |
           set -euxo pipefail
+          command -v gsi
+          command -v gsc
           gxi --version
           gxpkg help >/dev/null
+          gxc --help >/dev/null
           gxi -e '(begin (display "gerbil-ready") (newline))'
           gxpkg list || true
 
