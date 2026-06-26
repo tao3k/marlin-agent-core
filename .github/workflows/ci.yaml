@@ -238,6 +238,7 @@ jobs:
         working-directory: crates/marlin-gerbil-scheme/gerbil
         run: |
           set -euxo pipefail
+          mkdir -p "$HOME/.gerbil/pkg" "$PWD/.gerbil"
           gxpkg dir --add git.cons.io/mighty-gerbils/gerbil-directory || true
           gxpkg deps --install
 
