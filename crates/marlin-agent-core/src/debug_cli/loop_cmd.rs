@@ -2,6 +2,14 @@
 
 use std::path::{Path, PathBuf};
 
+use marlin_agent_kernel::{
+    AgentFlowLoopProgramRuntimeHandoffExecutor, LoopProgramDerivedSessionPolicyStatus,
+    LoopProgramRunReceipt as KernelLoopProgramRunReceipt, LoopProgramRunRequest,
+    LoopProgramRunStatus, LoopProgramRuntimeHandoffExecutionReportStatus, LoopProgramRuntimeOwner,
+    LoopProgramRuntimeSideEffectStatus,
+};
+use serde::Deserialize;
+
 use crate::{
     GraphId, GraphLoopContinuationAction, GraphLoopContinuationDecision,
     GraphLoopContinuationInput, GraphLoopContinuationPlanner, GraphLoopContinuationReceipt,
@@ -9,14 +17,16 @@ use crate::{
     GraphLoopExecutionStatus, GraphLoopGovernancePolicy, GraphLoopGovernedContextNamespace,
     GraphLoopGovernedSessionKind, GraphLoopIterationReport, GraphLoopRunRequest,
     GraphLoopSandboxBackend, GraphLoopStopPolicy, LoopGraph, RunId, RuntimeFuture,
-    TokioAgentRuntime, TokioGraphLoopController, runtime::GraphLoopRunObservation,
+    TokioAgentRuntime, TokioGraphLoopController,
+    protocol::{LoopProgram, LoopProgramActionKind, LoopProgramEventKind},
+    runtime::GraphLoopRunObservation,
 };
 
 use super::{
     MarlinCliResult,
     args::{
-        ArgCursor, LoopContinuationPlannerOption, LoopInspectOptions, LoopReplayOptions,
-        LoopRunOptions,
+        ArgCursor, LoopContinuationPlannerOption, LoopInspectOptions, LoopProgramRunOptions,
+        LoopReplayOptions, LoopRunOptions,
     },
     catalog::DebugExecutorCatalog,
     executor::{debug_kernel, read_debug_executor_catalog},
@@ -29,7 +39,10 @@ use super::{
     receipts::{
         LoopGovernanceReceipt, LoopGovernanceSandboxReceipt, LoopGovernanceSessionReceipt,
         LoopGovernanceStateReceipt, LoopGovernanceVerifierDecision, LoopGovernanceVerifierReceipt,
-        LoopInspectReceipt, LoopReplayReceipt, LoopRunReceipt,
+        LoopInspectReceipt, LoopProgramDerivedSessionPolicyStatusReceipt, LoopProgramRunReceipt,
+        LoopProgramRunStatusReceipt, LoopProgramRuntimeHandoffStatusReceipt,
+        LoopProgramRuntimeHandoffSummary, LoopProgramRuntimeReplaySummary,
+        LoopProgramRuntimeSideEffectStatusReceipt, LoopReplayReceipt, LoopRunReceipt,
     },
     state_home::resolve_runtime_state_layout,
 };
@@ -62,6 +75,7 @@ pub(super) fn dispatch_loop(cursor: &mut ArgCursor) -> Result<MarlinCliResult, S
             );
             Ok(MarlinCliResult::success_json(&receipt))
         }
+        "program" => dispatch_loop_program(cursor),
         "replay" => {
             let options = LoopReplayOptions::parse(cursor)?;
             let reports = read_iteration_reports_from_path(&options.trace_or_report)?;
@@ -77,6 +91,26 @@ pub(super) fn dispatch_loop(cursor: &mut ArgCursor) -> Result<MarlinCliResult, S
         "-h" | "--help" | "help" => Ok(MarlinCliResult::success_text(loop_usage())),
         unknown => Err(format!(
             "unknown loop command `{unknown}`\n{}",
+            loop_usage()
+        )),
+    }
+}
+
+fn dispatch_loop_program(cursor: &mut ArgCursor) -> Result<MarlinCliResult, String> {
+    let Some(command) = cursor.next() else {
+        return Err(format!("missing loop program command\n{}", loop_usage()));
+    };
+
+    match command.as_str() {
+        "run" => {
+            let options = LoopProgramRunOptions::parse(cursor)?;
+            let request = read_loop_program_run_request(options.input.as_deref())?;
+            let receipt = block_on(run_loop_program_controller(request))?;
+            Ok(MarlinCliResult::success_json(&receipt))
+        }
+        "-h" | "--help" | "help" => Ok(MarlinCliResult::success_text(loop_usage())),
+        unknown => Err(format!(
+            "unknown loop program command `{unknown}`\n{}",
             loop_usage()
         )),
     }
@@ -134,6 +168,20 @@ fn read_loop_run_request(
         request = request.with_evidence_policy(GraphLoopEvidencePolicy::replayable_runtime());
     }
     Ok(request)
+}
+
+#[derive(Deserialize)]
+struct LoopProgramRunInput {
+    program: LoopProgram,
+    #[serde(default)]
+    events: Vec<LoopProgramEventKind>,
+}
+
+fn read_loop_program_run_request(input: Option<&Path>) -> Result<LoopProgramRunRequest, String> {
+    let raw = read_input(input)?;
+    let request: LoopProgramRunInput = serde_json::from_str(&raw)
+        .map_err(|error| format!("failed to parse loop program run JSON: {error}"))?;
+    Ok(LoopProgramRunRequest::new(request.program, request.events))
 }
 
 struct LoopRunControllerOutput {
@@ -206,6 +254,30 @@ async fn run_loop_controller(
         runtime_observation,
         governance_receipt,
     })
+}
+
+async fn run_loop_program_controller(
+    request: LoopProgramRunRequest,
+) -> Result<LoopProgramRunReceipt, String> {
+    let (runtime, _events) = TokioAgentRuntime::new(64);
+    let program_id = request.program.program_id.clone();
+    let graph = LoopGraph {
+        graph_id: format!("loop-program:{}", program_id.as_str()),
+        nodes: Vec::new(),
+        edges: Vec::new(),
+    };
+    let kernel = debug_kernel(program_id.as_str(), &graph, DebugExecutorCatalog::default())?;
+    let controller = TokioGraphLoopController::new(kernel).with_loop_program_handoff_executor(
+        AgentFlowLoopProgramRuntimeHandoffExecutor::new(LoopProgramRuntimeOwner::new(
+            "debug-cli.agent-flow-runtime",
+        )),
+    );
+    let receipt = controller
+        .spawn_loop_program(request, &runtime)
+        .join()
+        .await
+        .map_err(|error| format!("loop program controller task failed to join: {error}"))?;
+    Ok(loop_program_run_receipt(receipt))
 }
 
 struct GovernedRuntimeMaterialization {
@@ -507,6 +579,151 @@ impl GraphLoopContinuationPlanner for DebugRetryOnFailureContinuationPlanner {
                     .with_diagnostic(format!("execution_status={status:?}")),
             )
         })
+    }
+}
+
+fn loop_program_run_receipt(receipt: KernelLoopProgramRunReceipt) -> LoopProgramRunReceipt {
+    let agent_flow_receipt = receipt.runtime_replay_bundle.agent_flow_receipt();
+    LoopProgramRunReceipt {
+        program_id: receipt.program_id.as_str().to_owned(),
+        status: loop_program_run_status(&receipt.status),
+        action_receipt_count: receipt.action_receipts.len(),
+        last_action: receipt
+            .last_action
+            .as_ref()
+            .map(loop_program_action_name)
+            .map(str::to_owned),
+        error: receipt.error.as_ref().map(|error| format!("{error:?}")),
+        runtime_handoff: LoopProgramRuntimeHandoffSummary {
+            status: runtime_handoff_status(&receipt.runtime_handoff_execution.status),
+            execution_count: receipt.runtime_handoff_execution.executions.len(),
+            agent_flow_receipt_present: receipt
+                .runtime_handoff_execution
+                .agent_flow_receipt
+                .is_some(),
+            tool_process_projection_count: receipt
+                .runtime_handoff_execution
+                .tool_process_projections
+                .len(),
+            memory_projection_count: receipt.runtime_handoff_execution.memory_projections.len(),
+        },
+        runtime_replay_bundle: LoopProgramRuntimeReplaySummary {
+            policy_status: derived_session_policy_status(
+                &receipt.runtime_replay_bundle.policy_status,
+            ),
+            allows_replay: receipt.runtime_replay_bundle.allows_replay(),
+            requires_follow_up: receipt.runtime_replay_bundle.requires_follow_up(),
+            blocks_replay: receipt.runtime_replay_bundle.blocks_replay(),
+            side_effect_status: runtime_side_effect_status(
+                &receipt.runtime_replay_bundle.side_effects.status,
+            ),
+            tool_process_side_effect_count: receipt
+                .runtime_replay_bundle
+                .side_effects
+                .tool_processes
+                .len(),
+            agent_flow_handoff_id: agent_flow_receipt
+                .map(|receipt| receipt.handoff.handoff_id.as_str().to_owned()),
+            agent_flow_derived_session_id: agent_flow_receipt.map(|receipt| {
+                receipt
+                    .derived_session
+                    .session
+                    .session_id
+                    .as_str()
+                    .to_owned()
+            }),
+        },
+    }
+}
+
+fn loop_program_run_status(status: &LoopProgramRunStatus) -> LoopProgramRunStatusReceipt {
+    match status {
+        LoopProgramRunStatus::Completed => LoopProgramRunStatusReceipt::Completed,
+        LoopProgramRunStatus::Stopped => LoopProgramRunStatusReceipt::Stopped,
+        LoopProgramRunStatus::Rejected => LoopProgramRunStatusReceipt::Rejected,
+    }
+}
+
+fn loop_program_action_name(action: &LoopProgramActionKind) -> &'static str {
+    match action {
+        LoopProgramActionKind::Continue => "continue",
+        LoopProgramActionKind::InvokeModel => "invoke_model",
+        LoopProgramActionKind::DispatchTools => "dispatch_tools",
+        LoopProgramActionKind::ReadMemory => "read_memory",
+        LoopProgramActionKind::WriteMemory => "write_memory",
+        LoopProgramActionKind::RequestPlacement => "request_placement",
+        LoopProgramActionKind::RuntimeHandoff => "runtime_handoff",
+        LoopProgramActionKind::RewriteGraph => "rewrite_graph",
+        LoopProgramActionKind::ForkSession => "fork_session",
+        LoopProgramActionKind::DelegateAgent => "delegate_agent",
+        LoopProgramActionKind::Verify => "verify",
+        LoopProgramActionKind::HumanGate => "human_gate",
+        LoopProgramActionKind::CompactContext => "compact_context",
+        LoopProgramActionKind::EmitReceipt => "emit_receipt",
+        LoopProgramActionKind::Stop => "stop",
+    }
+}
+
+fn runtime_handoff_status(
+    status: &LoopProgramRuntimeHandoffExecutionReportStatus,
+) -> LoopProgramRuntimeHandoffStatusReceipt {
+    match status {
+        LoopProgramRuntimeHandoffExecutionReportStatus::Empty => {
+            LoopProgramRuntimeHandoffStatusReceipt::Empty
+        }
+        LoopProgramRuntimeHandoffExecutionReportStatus::Completed => {
+            LoopProgramRuntimeHandoffStatusReceipt::Completed
+        }
+        LoopProgramRuntimeHandoffExecutionReportStatus::Deferred => {
+            LoopProgramRuntimeHandoffStatusReceipt::Deferred
+        }
+        LoopProgramRuntimeHandoffExecutionReportStatus::Denied => {
+            LoopProgramRuntimeHandoffStatusReceipt::Denied
+        }
+    }
+}
+
+fn derived_session_policy_status(
+    status: &LoopProgramDerivedSessionPolicyStatus,
+) -> LoopProgramDerivedSessionPolicyStatusReceipt {
+    match status {
+        LoopProgramDerivedSessionPolicyStatus::Ready => {
+            LoopProgramDerivedSessionPolicyStatusReceipt::Ready
+        }
+        LoopProgramDerivedSessionPolicyStatus::Deferred => {
+            LoopProgramDerivedSessionPolicyStatusReceipt::Deferred
+        }
+        LoopProgramDerivedSessionPolicyStatus::Blocked => {
+            LoopProgramDerivedSessionPolicyStatusReceipt::Blocked
+        }
+        LoopProgramDerivedSessionPolicyStatus::MissingDerivedSession => {
+            LoopProgramDerivedSessionPolicyStatusReceipt::MissingDerivedSession
+        }
+        LoopProgramDerivedSessionPolicyStatus::ReceiptMismatch => {
+            LoopProgramDerivedSessionPolicyStatusReceipt::ReceiptMismatch
+        }
+    }
+}
+
+fn runtime_side_effect_status(
+    status: &LoopProgramRuntimeSideEffectStatus,
+) -> LoopProgramRuntimeSideEffectStatusReceipt {
+    match status {
+        LoopProgramRuntimeSideEffectStatus::Empty => {
+            LoopProgramRuntimeSideEffectStatusReceipt::Empty
+        }
+        LoopProgramRuntimeSideEffectStatus::Completed => {
+            LoopProgramRuntimeSideEffectStatusReceipt::Completed
+        }
+        LoopProgramRuntimeSideEffectStatus::Partial => {
+            LoopProgramRuntimeSideEffectStatusReceipt::Partial
+        }
+        LoopProgramRuntimeSideEffectStatus::Skipped => {
+            LoopProgramRuntimeSideEffectStatusReceipt::Skipped
+        }
+        LoopProgramRuntimeSideEffectStatus::Failed => {
+            LoopProgramRuntimeSideEffectStatusReceipt::Failed
+        }
     }
 }
 

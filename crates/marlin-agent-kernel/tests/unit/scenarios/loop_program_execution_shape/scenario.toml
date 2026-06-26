@@ -1,0 +1,6 @@
+id = "marlin-agent-kernel.loop-program-execution-shape"
+title = "LoopProgram execution driver shape"
+policy_ids = ["MARLIN-LOOP-PROGRAM", "RUST-SCENARIO-BENCHMARK"]
+agent_goal = "Keep provider-neutral LoopProgram execution bounded across repeated runtime handoff cycles."
+inputs = "inputs"
+expected = "expected"

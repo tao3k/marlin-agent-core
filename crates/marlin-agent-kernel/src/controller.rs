@@ -23,6 +23,7 @@ use crate::{
     loop_program_handoff_executor::{
         LoopProgramRuntimeHandoffExecutor, LoopProgramRuntimeHandoffRouter,
     },
+    loop_program_side_effects::LoopProgramRuntimeSideEffectExecutor,
 };
 
 const CONTROLLER_EVENT_CAPTURE_BUFFER: usize = 64;
@@ -119,6 +120,7 @@ pub struct TokioGraphLoopController {
     kernel: TokioGraphLoopKernel,
     continuation_planner: Arc<dyn GraphLoopContinuationPlanner>,
     loop_program_handoff_executor: Arc<dyn LoopProgramRuntimeHandoffExecutor>,
+    loop_program_side_effect_executor: LoopProgramRuntimeSideEffectExecutor,
 }
 
 impl TokioGraphLoopController {
@@ -127,6 +129,7 @@ impl TokioGraphLoopController {
             kernel,
             continuation_planner: Arc::new(TerminalGraphLoopContinuationPlanner),
             loop_program_handoff_executor: Arc::new(LoopProgramRuntimeHandoffRouter::default()),
+            loop_program_side_effect_executor: LoopProgramRuntimeSideEffectExecutor::default(),
         }
     }
 
@@ -154,6 +157,18 @@ impl TokioGraphLoopController {
         &self,
     ) -> Arc<dyn LoopProgramRuntimeHandoffExecutor> {
         Arc::clone(&self.loop_program_handoff_executor)
+    }
+
+    pub fn with_loop_program_side_effect_executor(
+        mut self,
+        executor: LoopProgramRuntimeSideEffectExecutor,
+    ) -> Self {
+        self.loop_program_side_effect_executor = executor;
+        self
+    }
+
+    pub(crate) fn loop_program_side_effect_executor(&self) -> LoopProgramRuntimeSideEffectExecutor {
+        self.loop_program_side_effect_executor.clone()
     }
 
     async fn run_loop(

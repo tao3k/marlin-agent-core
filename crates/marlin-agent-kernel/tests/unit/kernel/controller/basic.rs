@@ -3,11 +3,12 @@ use std::sync::Arc;
 use marlin_agent_kernel::{
     AgentFlowLoopProgramRuntimeHandoffExecutor, GraphLoopController, GraphLoopExecutionBudget,
     GraphLoopExecutionRequest, GraphLoopExecutionStatus, GraphLoopNextAction, GraphLoopRunRequest,
-    GraphLoopStopPolicy, LoopGraph, LoopProgramRunRequest, LoopProgramRunStatus,
-    LoopProgramRuntimeHandoffExecutionReportStatus, LoopProgramRuntimeHandoffExecutionStatus,
-    LoopProgramRuntimeHandoffHandler, LoopProgramRuntimeHandoffKind,
-    LoopProgramRuntimeHandoffRouter, LoopProgramRuntimeHandoffRouterHandlers,
-    LoopProgramRuntimeOwner, StaticLoopProgramRuntimeHandoffHandler,
+    GraphLoopStopPolicy, LoopGraph, LoopProgramDerivedSessionPolicyStatus, LoopProgramRunRequest,
+    LoopProgramRunStatus, LoopProgramRuntimeHandoffExecutionReportStatus,
+    LoopProgramRuntimeHandoffExecutionStatus, LoopProgramRuntimeHandoffHandler,
+    LoopProgramRuntimeHandoffKind, LoopProgramRuntimeHandoffRouter,
+    LoopProgramRuntimeHandoffRouterHandlers, LoopProgramRuntimeOwner,
+    LoopProgramRuntimeSideEffectStatus, StaticLoopProgramRuntimeHandoffHandler,
 };
 use marlin_agent_protocol::{
     AgentFlowIntent, LoopMechanismPolicyId, LoopPolicyDigest, LoopPolicyEpoch, LoopProgram,
@@ -255,6 +256,25 @@ async fn controller_can_project_agent_flow_runtime_receipt_from_loop_program() {
             .command_kind
             .as_str(),
         "agent-flow.tool-intent"
+    );
+    assert_eq!(
+        receipt.runtime_replay_bundle.policy_status,
+        LoopProgramDerivedSessionPolicyStatus::Deferred
+    );
+    assert!(receipt.runtime_replay_bundle.requires_follow_up());
+    assert_eq!(
+        receipt.runtime_replay_bundle.side_effects.status,
+        LoopProgramRuntimeSideEffectStatus::Skipped
+    );
+    assert_eq!(
+        receipt
+            .runtime_replay_bundle
+            .agent_flow_receipt()
+            .expect("replay bundle should retain Agent-Flow receipt")
+            .handoff
+            .handoff_id
+            .as_str(),
+        "loop-program:controller-loop-program:agent-flow-handoff"
     );
 }
 

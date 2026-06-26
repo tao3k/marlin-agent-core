@@ -2490,6 +2490,7 @@ dependencies = [
  "marlin-agent-protocol",
  "marlin-agent-runtime",
  "marlin-rust-project-harness-policy",
+ "tempfile",
  "tokio",
  "tokio-stream",
  "tracing",

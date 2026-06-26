@@ -3,12 +3,13 @@
 use marlin_agent_protocol::{
     LoopProgram, LoopProgramActionKind, LoopProgramEventKind, LoopProgramId,
 };
-use marlin_agent_runtime::{RuntimeTask, TokioAgentRuntime};
+use marlin_agent_runtime::{RuntimeContext, RuntimeTask, TokioAgentRuntime};
 
 use crate::{
     GenericLoopMachine, GenericLoopMachineError, GenericLoopMachineReceipt,
     LoopProgramRuntimeHandoffExecutionReceipt, LoopProgramRuntimeHandoffExecutor,
-    LoopProgramRuntimeHandoffPlan, TokioGraphLoopController,
+    LoopProgramRuntimeHandoffPlan, LoopProgramRuntimeReplayBundleReceipt,
+    LoopProgramRuntimeSideEffectExecutor, TokioGraphLoopController,
 };
 
 /// Explicit controller request for running a compiled `LoopProgram`.
@@ -35,6 +36,7 @@ pub struct LoopProgramRunReceipt {
     pub action_receipts: Box<[GenericLoopMachineReceipt]>,
     pub runtime_handoff_plan: LoopProgramRuntimeHandoffPlan,
     pub runtime_handoff_execution: LoopProgramRuntimeHandoffExecutionReceipt,
+    pub runtime_replay_bundle: LoopProgramRuntimeReplayBundleReceipt,
     pub last_action: Option<LoopProgramActionKind>,
     pub error: Option<GenericLoopMachineError>,
 }
@@ -55,13 +57,25 @@ impl TokioGraphLoopController {
     ) -> RuntimeTask<LoopProgramRunReceipt> {
         let controller_runtime = runtime.child_runtime();
         let handoff_executor = self.loop_program_handoff_executor();
-        controller_runtime.spawn(async move { run_loop_program(request, handoff_executor).await })
+        let side_effect_executor = self.loop_program_side_effect_executor();
+        let runtime_context = runtime.context().clone();
+        controller_runtime.spawn(async move {
+            run_loop_program(
+                request,
+                handoff_executor,
+                side_effect_executor,
+                runtime_context,
+            )
+            .await
+        })
     }
 }
 
 async fn run_loop_program(
     request: LoopProgramRunRequest,
     handoff_executor: std::sync::Arc<dyn LoopProgramRuntimeHandoffExecutor>,
+    side_effect_executor: LoopProgramRuntimeSideEffectExecutor,
+    runtime_context: RuntimeContext,
 ) -> LoopProgramRunReceipt {
     let program_id = request.program.program_id.clone();
     let mut machine = GenericLoopMachine::new(request.program);
@@ -81,7 +95,10 @@ async fn run_loop_program(
                         last_action,
                         None,
                         handoff_executor.as_ref(),
-                    );
+                        &side_effect_executor,
+                        &runtime_context,
+                    )
+                    .await;
                 }
             }
             Err(error) => {
@@ -92,7 +109,10 @@ async fn run_loop_program(
                     last_action,
                     Some(error),
                     handoff_executor.as_ref(),
-                );
+                    &side_effect_executor,
+                    &runtime_context,
+                )
+                .await;
             }
         }
     }
@@ -104,26 +124,39 @@ async fn run_loop_program(
         last_action,
         None,
         handoff_executor.as_ref(),
+        &side_effect_executor,
+        &runtime_context,
     )
+    .await
 }
 
-fn build_run_receipt(
+async fn build_run_receipt(
     program_id: LoopProgramId,
     status: LoopProgramRunStatus,
     action_receipts: Vec<GenericLoopMachineReceipt>,
     last_action: Option<LoopProgramActionKind>,
     error: Option<GenericLoopMachineError>,
     handoff_executor: &dyn LoopProgramRuntimeHandoffExecutor,
+    side_effect_executor: &LoopProgramRuntimeSideEffectExecutor,
+    runtime_context: &RuntimeContext,
 ) -> LoopProgramRunReceipt {
     let runtime_handoff_plan =
         LoopProgramRuntimeHandoffPlan::from_receipts(program_id.clone(), &action_receipts);
     let runtime_handoff_execution = handoff_executor.execute_plan(&runtime_handoff_plan);
+    let side_effects = side_effect_executor
+        .execute(runtime_context, &runtime_handoff_execution)
+        .await;
+    let runtime_replay_bundle = LoopProgramRuntimeReplayBundleReceipt::from_runtime_receipts(
+        runtime_handoff_execution.clone(),
+        side_effects,
+    );
     LoopProgramRunReceipt {
         program_id,
         status,
         action_receipts: action_receipts.into_boxed_slice(),
         runtime_handoff_plan,
         runtime_handoff_execution,
+        runtime_replay_bundle,
         last_action,
         error,
     }

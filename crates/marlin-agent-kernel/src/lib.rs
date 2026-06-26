@@ -5,8 +5,10 @@ mod controller;
 mod driver;
 mod loop_machine;
 mod loop_program_controller;
+mod loop_program_execution;
 mod loop_program_handoff;
 mod loop_program_handoff_executor;
+mod loop_program_side_effects;
 
 pub use adapters::{ProviderNodeAdapter, SubAgentNodeAdapter, ToolNodeAdapter};
 pub use controller::{
@@ -24,19 +26,32 @@ pub use loop_machine::{
 pub use loop_program_controller::{
     LoopProgramRunReceipt, LoopProgramRunRequest, LoopProgramRunStatus,
 };
+pub use loop_program_execution::{
+    LoopProgramEventMapper, LoopProgramExecutionDriver, LoopProgramExecutionReceipt,
+    LoopProgramExecutionRequest, LoopProgramExecutionStatus, LoopProgramExecutionStepReceipt,
+    ScriptedLoopProgramEventMapper, TerminalLoopProgramEventMapper,
+};
 pub use loop_program_handoff::{
     LoopProgramRuntimeHandoff, LoopProgramRuntimeHandoffKind, LoopProgramRuntimeHandoffPlan,
 };
 pub use loop_program_handoff_executor::{
     AgentFlowLoopProgramRuntimeHandoffExecutor, DeferredLoopProgramRuntimeHandoffHandler,
-    LoopProgramMemoryProjectionReceipt, LoopProgramRuntimeHandoffExecution,
-    LoopProgramRuntimeHandoffExecutionReceipt, LoopProgramRuntimeHandoffExecutionReportStatus,
-    LoopProgramRuntimeHandoffExecutionStatus, LoopProgramRuntimeHandoffExecutor,
-    LoopProgramRuntimeHandoffHandler, LoopProgramRuntimeHandoffRouter,
-    LoopProgramRuntimeHandoffRouterHandlers, LoopProgramRuntimeOwner,
-    LoopProgramToolProcessProgram, LoopProgramToolProcessProjectionReceipt,
-    LoopProgramToolProcessSpawnReceipt, LoopProgramToolProcessSpawnRequest,
-    StaticLoopProgramRuntimeHandoffHandler, spawn_loop_program_tool_process,
+    LoopProgramAgentFlowRuntimeHandoffRequest, LoopProgramMemoryProjectionReceipt,
+    LoopProgramRuntimeHandoffExecution, LoopProgramRuntimeHandoffExecutionReceipt,
+    LoopProgramRuntimeHandoffExecutionReportStatus, LoopProgramRuntimeHandoffExecutionStatus,
+    LoopProgramRuntimeHandoffExecutor, LoopProgramRuntimeHandoffHandler,
+    LoopProgramRuntimeHandoffRouter, LoopProgramRuntimeHandoffRouterHandlers,
+    LoopProgramRuntimeOwner, LoopProgramToolProcessProgram,
+    LoopProgramToolProcessProjectionReceipt, LoopProgramToolProcessSpawnReceipt,
+    LoopProgramToolProcessSpawnRequest, StaticLoopProgramRuntimeHandoffHandler,
+    spawn_loop_program_tool_process,
+};
+pub use loop_program_side_effects::{
+    LoopProgramDerivedSessionPolicyStatus, LoopProgramRuntimeReplayBundleReceipt,
+    LoopProgramRuntimeSideEffectExecutor, LoopProgramRuntimeSideEffectReceipt,
+    LoopProgramRuntimeSideEffectStatus, LoopProgramToolProcessCommandTemplate,
+    LoopProgramToolProcessResolver, LoopProgramToolProcessSideEffectReceipt,
+    LoopProgramToolProcessSideEffectStatus, StaticLoopProgramToolProcessResolver,
 };
 pub use marlin_agent_protocol::{
     ExecutorName, FailureClassificationId, FailureClassificationReceipt, GraphId,

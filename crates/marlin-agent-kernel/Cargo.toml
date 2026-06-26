@@ -18,4 +18,9 @@ marlin-rust-project-harness-policy.workspace = true
 [dev-dependencies]
 tokio.workspace = true
 tokio-stream.workspace = true
+tempfile.workspace = true
 marlin-rust-project-harness-policy.workspace = true
+
+[[bench]]
+name = "loop_program_execution_shape"
+harness = false

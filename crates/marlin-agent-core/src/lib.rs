@@ -7,9 +7,13 @@ pub use debug_cli::{
     GraphQueryOutput, GraphQuerySummary, LoopEventQuerySummary, LoopGovernanceReceipt,
     LoopGovernanceSandboxReceipt, LoopGovernanceSessionReceipt, LoopGovernanceStateReceipt,
     LoopGovernanceVerifierDecision, LoopGovernanceVerifierReceipt, LoopInspectReceipt,
-    LoopQuerySummary, LoopReplayReceipt, LoopRunReceipt, MarlinCliResult,
-    ProjectRuntimeQuerySummary, SmokeLlmMode, SmokeRuntimeModelRouteDryRun, SmokeRuntimeReceipt,
-    SmokeRuntimeScenario, SmokeRuntimeStateHome, run_marlin_cli, run_marlin_cli_from_args,
+    LoopProgramDerivedSessionPolicyStatusReceipt, LoopProgramRunReceipt,
+    LoopProgramRunStatusReceipt, LoopProgramRuntimeHandoffStatusReceipt,
+    LoopProgramRuntimeHandoffSummary, LoopProgramRuntimeReplaySummary,
+    LoopProgramRuntimeSideEffectStatusReceipt, LoopQuerySummary, LoopReplayReceipt, LoopRunReceipt,
+    MarlinCliResult, ProjectRuntimeQuerySummary, SmokeLlmMode, SmokeRuntimeModelRouteDryRun,
+    SmokeRuntimeReceipt, SmokeRuntimeScenario, SmokeRuntimeStateHome, run_marlin_cli,
+    run_marlin_cli_from_args,
 };
 pub use marlin_agent_environment as environment;
 pub use marlin_agent_environment::{

@@ -108,6 +108,82 @@ pub struct LoopRunReceipt {
     pub reports: Vec<GraphLoopIterationReport>,
 }
 
+/// Run receipt returned by `marlin loop program run`.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct LoopProgramRunReceipt {
+    pub program_id: String,
+    pub status: LoopProgramRunStatusReceipt,
+    pub action_receipt_count: usize,
+    pub last_action: Option<String>,
+    pub error: Option<String>,
+    pub runtime_handoff: LoopProgramRuntimeHandoffSummary,
+    pub runtime_replay_bundle: LoopProgramRuntimeReplaySummary,
+}
+
+/// Terminal status for a loop-program debug run.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LoopProgramRunStatusReceipt {
+    Completed,
+    Stopped,
+    Rejected,
+}
+
+/// Runtime handoff summary for one loop-program debug run.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct LoopProgramRuntimeHandoffSummary {
+    pub status: LoopProgramRuntimeHandoffStatusReceipt,
+    pub execution_count: usize,
+    pub agent_flow_receipt_present: bool,
+    pub tool_process_projection_count: usize,
+    pub memory_projection_count: usize,
+}
+
+/// Aggregate runtime handoff status for one loop-program debug run.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LoopProgramRuntimeHandoffStatusReceipt {
+    Empty,
+    Completed,
+    Deferred,
+    Denied,
+}
+
+/// Runtime replay summary for one loop-program debug run.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct LoopProgramRuntimeReplaySummary {
+    pub policy_status: LoopProgramDerivedSessionPolicyStatusReceipt,
+    pub allows_replay: bool,
+    pub requires_follow_up: bool,
+    pub blocks_replay: bool,
+    pub side_effect_status: LoopProgramRuntimeSideEffectStatusReceipt,
+    pub tool_process_side_effect_count: usize,
+    pub agent_flow_handoff_id: Option<String>,
+    pub agent_flow_derived_session_id: Option<String>,
+}
+
+/// Derived-session replay policy status for one loop-program debug run.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LoopProgramDerivedSessionPolicyStatusReceipt {
+    Ready,
+    Deferred,
+    Blocked,
+    MissingDerivedSession,
+    ReceiptMismatch,
+}
+
+/// Runtime side-effect aggregate status for one loop-program debug run.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LoopProgramRuntimeSideEffectStatusReceipt {
+    Empty,
+    Completed,
+    Partial,
+    Skipped,
+    Failed,
+}
+
 /// Governance receipt returned by `marlin loop run` when a request carries governance policy.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct LoopGovernanceReceipt {

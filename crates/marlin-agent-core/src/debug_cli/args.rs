@@ -333,6 +333,25 @@ impl LoopRunOptions {
     }
 }
 
+#[derive(Clone, Debug)]
+pub(super) struct LoopProgramRunOptions {
+    pub(super) input: Option<PathBuf>,
+}
+
+impl LoopProgramRunOptions {
+    pub(super) fn parse(cursor: &mut ArgCursor) -> Result<Self, String> {
+        let mut input = None;
+        while let Some(arg) = cursor.next() {
+            match arg.as_str() {
+                "--input" | "-i" => input = Some(cursor.required_path(&arg)?),
+                "-h" | "--help" => return Err(super::loop_usage().to_owned()),
+                unknown => return Err(format!("unknown option `{unknown}`")),
+            }
+        }
+        Ok(Self { input })
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum LoopContinuationPlannerOption {
     Terminal,

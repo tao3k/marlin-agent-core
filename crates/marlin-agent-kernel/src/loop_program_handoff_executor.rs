@@ -494,12 +494,27 @@ impl AgentFlowLoopProgramRuntimeHandoffExecutor {
         self.admitted_at_ms = admitted_at_ms;
         self
     }
-}
 
-impl LoopProgramRuntimeHandoffExecutor for AgentFlowLoopProgramRuntimeHandoffExecutor {
-    fn execute_plan(
+    pub fn execute_agent_flow_request(
+        &self,
+        request: LoopProgramAgentFlowRuntimeHandoffRequest,
+    ) -> LoopProgramRuntimeHandoffExecutionReceipt {
+        self.execute_agent_flow_plan(
+            &request.plan,
+            request.session,
+            request.transform_id,
+            request.handoff_id,
+            request.receipt_id,
+        )
+    }
+
+    fn execute_agent_flow_plan(
         &self,
         plan: &LoopProgramRuntimeHandoffPlan,
+        session: AgentFlowSession,
+        transform_id: AgentFlowTransformId,
+        handoff_id: AgentFlowRuntimeHandoffId,
+        receipt_id: AgentFlowReceiptId,
     ) -> LoopProgramRuntimeHandoffExecutionReceipt {
         let agent_flow_intents = plan.agent_flow_intents();
         if agent_flow_intents.is_empty() {
@@ -538,29 +553,16 @@ impl LoopProgramRuntimeHandoffExecutor for AgentFlowLoopProgramRuntimeHandoffExe
             })
             .collect::<Vec<_>>();
 
-        let session = AgentFlowSession::root(format!(
-            "loop-program:{}:agent-flow-session",
-            plan.program_id.as_str()
-        ));
         let transform = AgentFlowSessionTransform::new(
-            AgentFlowTransformId::new(format!(
-                "loop-program:{}:agent-flow-transform",
-                plan.program_id.as_str()
-            )),
+            transform_id,
             session.session_id.clone(),
             agent_flow_intents,
         );
         let agent_flow_receipt = match project_agent_flow_loop_step(AgentFlowLoopStepRequest {
             session,
             transform,
-            handoff_id: AgentFlowRuntimeHandoffId::new(format!(
-                "loop-program:{}:agent-flow-handoff",
-                plan.program_id.as_str()
-            )),
-            receipt_id: AgentFlowReceiptId::new(format!(
-                "loop-program:{}:agent-flow-receipt",
-                plan.program_id.as_str()
-            )),
+            handoff_id,
+            receipt_id,
             admitted_at_ms: self.admitted_at_ms,
         }) {
             Ok(receipt) => receipt,
@@ -606,6 +608,76 @@ impl LoopProgramRuntimeHandoffExecutor for AgentFlowLoopProgramRuntimeHandoffExe
         .with_agent_flow_receipt(agent_flow_receipt)
         .with_tool_process_projections(tool_process_projections)
         .with_memory_projections(memory_projections)
+    }
+}
+
+/// Explicit Agent-Flow request for projecting loop-program handoffs from a real source session.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LoopProgramAgentFlowRuntimeHandoffRequest {
+    pub plan: LoopProgramRuntimeHandoffPlan,
+    pub session: AgentFlowSession,
+    pub transform_id: AgentFlowTransformId,
+    pub handoff_id: AgentFlowRuntimeHandoffId,
+    pub receipt_id: AgentFlowReceiptId,
+}
+
+impl LoopProgramAgentFlowRuntimeHandoffRequest {
+    pub fn for_session(plan: LoopProgramRuntimeHandoffPlan, session: AgentFlowSession) -> Self {
+        let program_id = plan.program_id.as_str().to_owned();
+        Self {
+            plan,
+            session,
+            transform_id: AgentFlowTransformId::new(format!(
+                "loop-program:{program_id}:agent-flow-transform"
+            )),
+            handoff_id: AgentFlowRuntimeHandoffId::new(format!(
+                "loop-program:{program_id}:agent-flow-handoff"
+            )),
+            receipt_id: AgentFlowReceiptId::new(format!(
+                "loop-program:{program_id}:agent-flow-receipt"
+            )),
+        }
+    }
+
+    pub fn with_transform_id(mut self, transform_id: impl Into<AgentFlowTransformId>) -> Self {
+        self.transform_id = transform_id.into();
+        self
+    }
+
+    pub fn with_handoff_id(mut self, handoff_id: impl Into<AgentFlowRuntimeHandoffId>) -> Self {
+        self.handoff_id = handoff_id.into();
+        self
+    }
+
+    pub fn with_receipt_id(mut self, receipt_id: impl Into<AgentFlowReceiptId>) -> Self {
+        self.receipt_id = receipt_id.into();
+        self
+    }
+}
+
+impl LoopProgramRuntimeHandoffExecutor for AgentFlowLoopProgramRuntimeHandoffExecutor {
+    fn execute_plan(
+        &self,
+        plan: &LoopProgramRuntimeHandoffPlan,
+    ) -> LoopProgramRuntimeHandoffExecutionReceipt {
+        let session = AgentFlowSession::root(format!(
+            "loop-program:{}:agent-flow-session",
+            plan.program_id.as_str()
+        ));
+        let request = LoopProgramAgentFlowRuntimeHandoffRequest::for_session(plan.clone(), session)
+            .with_transform_id(AgentFlowTransformId::new(format!(
+                "loop-program:{}:agent-flow-transform",
+                plan.program_id.as_str()
+            )))
+            .with_handoff_id(AgentFlowRuntimeHandoffId::new(format!(
+                "loop-program:{}:agent-flow-handoff",
+                plan.program_id.as_str()
+            )))
+            .with_receipt_id(AgentFlowReceiptId::new(format!(
+                "loop-program:{}:agent-flow-receipt",
+                plan.program_id.as_str()
+            )));
+        self.execute_agent_flow_request(request)
     }
 }
 

@@ -102,7 +102,7 @@ pub(in crate::debug_cli) fn graph_usage() -> &'static str {
 }
 
 pub(in crate::debug_cli) fn loop_usage() -> &'static str {
-    "Loop commands:\n  marlin loop run --input <graph-or-run-request.json> [--max-iterations N] [--continuation-planner terminal|repeat-graph|retry-on-failure] [--home <runtime-state-home>] [--store <dir>|--no-store] [--catalog <catalog.toml|json>]\n  marlin loop replay <trace-or-report.json>\n  marlin loop inspect <run-id> [--home <runtime-state-home>] [--store <dir>]"
+    "Loop commands:\n  marlin loop run --input <graph-or-run-request.json> [--max-iterations N] [--continuation-planner terminal|repeat-graph|retry-on-failure] [--home <runtime-state-home>] [--store <dir>|--no-store] [--catalog <catalog.toml|json>]\n  marlin loop program run --input <loop-program-run.json>\n  marlin loop replay <trace-or-report.json>\n  marlin loop inspect <run-id> [--home <runtime-state-home>] [--store <dir>]"
 }
 
 pub(in crate::debug_cli) fn smoke_usage() -> &'static str {

@@ -22,6 +22,10 @@ pub use receipts::{
     GraphQueryOutput, GraphQuerySummary, LoopEventQuerySummary, LoopGovernanceReceipt,
     LoopGovernanceSandboxReceipt, LoopGovernanceSessionReceipt, LoopGovernanceStateReceipt,
     LoopGovernanceVerifierDecision, LoopGovernanceVerifierReceipt, LoopInspectReceipt,
-    LoopQuerySummary, LoopReplayReceipt, LoopRunReceipt, ProjectRuntimeQuerySummary, SmokeLlmMode,
-    SmokeRuntimeModelRouteDryRun, SmokeRuntimeReceipt, SmokeRuntimeScenario, SmokeRuntimeStateHome,
+    LoopProgramDerivedSessionPolicyStatusReceipt, LoopProgramRunReceipt,
+    LoopProgramRunStatusReceipt, LoopProgramRuntimeHandoffStatusReceipt,
+    LoopProgramRuntimeHandoffSummary, LoopProgramRuntimeReplaySummary,
+    LoopProgramRuntimeSideEffectStatusReceipt, LoopQuerySummary, LoopReplayReceipt, LoopRunReceipt,
+    ProjectRuntimeQuerySummary, SmokeLlmMode, SmokeRuntimeModelRouteDryRun, SmokeRuntimeReceipt,
+    SmokeRuntimeScenario, SmokeRuntimeStateHome,
 };

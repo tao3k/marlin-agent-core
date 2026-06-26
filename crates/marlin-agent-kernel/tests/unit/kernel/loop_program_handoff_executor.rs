@@ -2,16 +2,17 @@ use std::sync::Arc;
 
 use marlin_agent_kernel::{
     AgentFlowLoopProgramRuntimeHandoffExecutor, GenericLoopMachineReceipt,
-    GenericLoopMachineStepIndex, LoopProgramRuntimeHandoffExecutionReportStatus,
-    LoopProgramRuntimeHandoffExecutionStatus, LoopProgramRuntimeHandoffExecutor,
-    LoopProgramRuntimeHandoffHandler, LoopProgramRuntimeHandoffPlan,
-    LoopProgramRuntimeHandoffRouter, LoopProgramRuntimeHandoffRouterHandlers,
-    LoopProgramRuntimeOwner, LoopProgramToolProcessProgram, LoopProgramToolProcessSpawnRequest,
+    GenericLoopMachineStepIndex, LoopProgramAgentFlowRuntimeHandoffRequest,
+    LoopProgramRuntimeHandoffExecutionReportStatus, LoopProgramRuntimeHandoffExecutionStatus,
+    LoopProgramRuntimeHandoffExecutor, LoopProgramRuntimeHandoffHandler,
+    LoopProgramRuntimeHandoffPlan, LoopProgramRuntimeHandoffRouter,
+    LoopProgramRuntimeHandoffRouterHandlers, LoopProgramRuntimeOwner,
+    LoopProgramToolProcessProgram, LoopProgramToolProcessSpawnRequest,
     StaticLoopProgramRuntimeHandoffHandler, spawn_loop_program_tool_process,
 };
 use marlin_agent_protocol::{
-    AgentFlowMemoryOperation, LoopProgramActionKind, LoopProgramEventKind, LoopProgramId,
-    LoopProgramStateId, LoopProgramTransitionId,
+    AgentFlowMemoryOperation, AgentFlowSession, LoopProgramActionKind, LoopProgramEventKind,
+    LoopProgramId, LoopProgramStateId, LoopProgramTransitionId,
 };
 use marlin_agent_runtime::TokioAgentRuntime;
 
@@ -201,6 +202,51 @@ fn agent_flow_executor_projects_intents_through_runtime_receipt() {
         memory_projection.intent.operation,
         AgentFlowMemoryOperation::Recall
     );
+}
+
+#[test]
+fn agent_flow_executor_accepts_explicit_source_session_request() {
+    let plan = LoopProgramRuntimeHandoffPlan::from_receipts(
+        LoopProgramId::new("explicit-session-program"),
+        &[
+            receipt(1, LoopProgramActionKind::DispatchTools),
+            receipt(2, LoopProgramActionKind::RequestPlacement),
+        ],
+    );
+    let source_session = AgentFlowSession::root("real-agent-session");
+    let request = LoopProgramAgentFlowRuntimeHandoffRequest::for_session(plan, source_session)
+        .with_transform_id("real-transform")
+        .with_handoff_id("real-handoff")
+        .with_receipt_id("real-receipt");
+
+    let execution = AgentFlowLoopProgramRuntimeHandoffExecutor::new(LoopProgramRuntimeOwner::new(
+        "agent-flow-runtime",
+    ))
+    .with_admitted_at_ms(900)
+    .execute_agent_flow_request(request);
+
+    assert_eq!(
+        execution.status,
+        LoopProgramRuntimeHandoffExecutionReportStatus::Completed
+    );
+    let receipt = execution
+        .agent_flow_receipt
+        .as_ref()
+        .expect("Agent-Flow receipt");
+    assert_eq!(receipt.handoff.handoff_id.as_str(), "real-handoff");
+    assert_eq!(
+        receipt.handoff.source_session_id.as_str(),
+        "real-agent-session"
+    );
+    assert_eq!(receipt.handoff.transform_id.as_str(), "real-transform");
+    assert_eq!(receipt.handoff.admitted_at_ms, 900);
+    assert_eq!(receipt.receipt_id.as_str(), "real-receipt");
+    assert_eq!(
+        receipt.derived_session.session.session_id.as_str(),
+        "real-agent-session"
+    );
+    assert_eq!(receipt.derived_session.session.generation, 1);
+    assert_eq!(execution.tool_process_projections.len(), 1);
 }
 
 #[test]
