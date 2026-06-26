@@ -2,7 +2,9 @@
 ;;; Boundary: Module owns Marlin Gerbil policy and runtime contracts for agent edits.
 ;;; Aggregated Gerbil runtime test entrypoint.
 
-(import "deck-runtime-condition-policy-test"
+(import (only-in :gslph/src/policy/gxtest
+                 make-gxtest-policy-test)
+        "deck-runtime-condition-policy-test"
         "deck-runtime-strategy-test"
         "deck-runtime-policy-modules-smoke-test"
         "deck-runtime-extension-test"
@@ -17,3 +19,5 @@
         "deck-runtime-script-performance-test"
         "agent-policy-routing-native-projection-test"
         "harness-policy-test")
+
+(make-gxtest-policy-test ".")

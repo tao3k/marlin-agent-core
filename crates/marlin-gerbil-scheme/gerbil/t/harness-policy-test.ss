@@ -6,8 +6,7 @@
         :std/test
         (only-in :std/misc/ports read-file-lines)
         (only-in :std/srfi/13 string-contains)
-        (only-in :std/sugar ormap)
-        :gslph/src/policy/gxtest)
+        (only-in :std/sugar ormap))
 
 ;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
 ;; : (-> (U #f String) Boolean)
@@ -99,6 +98,11 @@
 (def harness-gerbil-build-script
   (path-join harness-gerbil-root "build.ss"))
 
+;;; Boundary: The normal gxtest entrypoint owns package policy execution.
+;; : String
+(def harness-gerbil-all-test
+  (path-join harness-gerbil-root "t/all-test.ss"))
+
 ;;; Boundary: Modular policy config is applied by the Gerbil language harness.
 ;; : String
 (def harness-gerbil-modularity-policy
@@ -129,12 +133,6 @@
 ;; : String
 (def harness-gerbil-performance-gate
   (path-join harness-gerbil-root "t/deck-runtime-script-performance-gate.ss"))
-
-;;; Boundary: The harness library smoke checks this policy test owner without
-;;; turning import-time gxtest into a full workspace policy scan.
-;; : (List String)
-(def harness-policy-scope-files
-  '("t/harness-policy-test.ss"))
 
 ;;; Boundary: Text assertions pin declarative package/build layout without
 ;;; shelling out to grep.
@@ -173,6 +171,7 @@
   (check (file-exists? harness-gerbil-root) => #t)
   (check (file-exists? harness-gerbil-pkg) => #t)
   (check (file-exists? harness-gerbil-build-script) => #t)
+  (check (file-exists? harness-gerbil-all-test) => #t)
   (check (file-exists? harness-gerbil-modularity-policy) => #t)
   (check (file-exists? harness-gerbil-script-performance-source) => #t)
   (check (file-exists? harness-gerbil-policy-receipt-gate-cli-source) => #t)
@@ -189,25 +188,31 @@
          => #t)
   (check (file-contains? harness-gerbil-modularity-policy "(modularity-policy")
          => #t)
+  (check (file-contains? harness-gerbil-build-script
+                         ":gslph/src/build-api/source-coverage")
+         => #t)
+  (check (file-contains? harness-gerbil-build-script
+                         "gslph-source-coverage")
+         => #t)
   (check (file-contains? harness-gerbil-build-script ":clan/building") => #t)
   (check (file-contains? harness-gerbil-build-script "all-gerbil-modules") => #t)
   (check (file-contains? harness-gerbil-build-script
                          "+marlin-special-source-files+")
          => #t)
-  (check (file-contains? harness-gerbil-build-script
-                         "+marlin-build-phase-receipt-schema+")
-         => #t)
-  (check (file-contains? harness-gerbil-build-script
-                         "marlin-build-emit-phase-receipt")
-         => #t)
-  (check (file-contains? harness-gerbil-build-script
-                         "marlin-build-cache-fresh?")
-         => #t)
-  (check (file-contains? harness-gerbil-build-script "phase-skip") => #t)
-  (check (file-contains? harness-gerbil-build-script "cacheStamp") => #t)
   (check (file-contains? harness-gerbil-build-script "\"GERBIL_BUILD_CORES\"")
          => #t)
   (check (file-contains? harness-gerbil-build-script "##cpu-count") => #t)
+  (check (file-lacks? harness-gerbil-build-script
+                      "+marlin-build-phase-receipt-schema+")
+         => #t)
+  (check (file-lacks? harness-gerbil-build-script
+                      "marlin-build-emit-phase-receipt")
+         => #t)
+  (check (file-lacks? harness-gerbil-build-script
+                      "marlin-build-cache-fresh?")
+         => #t)
+  (check (file-lacks? harness-gerbil-build-script "phase-skip") => #t)
+  (check (file-lacks? harness-gerbil-build-script "cacheStamp") => #t)
   (check (file-lacks? harness-gerbil-build-script "GSLPH_TEST_JOBS") => #t)
   (check (file-lacks? harness-gerbil-build-script "(* 2") => #t)
   (check (file-lacks? harness-gerbil-build-script "stage-native-aot") => #t)
@@ -215,7 +220,12 @@
   (check (file-lacks? harness-gerbil-build-script
                       "+marlin-native-aot-only-modules+")
          => #t)
-  (check (file-lacks? harness-gerbil-build-script "marlin-package-test") => #t)
+  (check (file-contains? harness-gerbil-build-script
+                         "\"test\"")
+         => #t)
+  (check (file-contains? harness-gerbil-build-script
+                         "t/all-test.ss")
+         => #t)
   (check (file-lacks? harness-gerbil-build-script "\"src/config-interface/modules/lib\"")
          => #t)
   (check (file-lacks? harness-gerbil-build-script "\"modules/config-interface/modules/lib\"")
@@ -243,20 +253,26 @@
                       ":marlin-deck-runtime/src")
          => #t))
 
-;;; Boundary: Policy execution goes through the Gerbil harness library API.
+;;; Boundary: Policy execution goes through the Gerbil harness gxtest API.
 ;; : (-> Unit)
-(def (check-harness-policy)
-  (let (report (gslph/src/policy/gxtest#policy-report
-                harness-gerbil-root
-                harness-policy-scope-files))
-    (when (not (equal? (hash-get report 'status) "pass"))
-      (gslph/src/policy/gxtest#display-project-policy-report report))
-    (check (hash-get report 'scope) => "files")
-    (check (> (hash-get report 'files) 0) => #t)
-    (check (hash-get report 'status) => "pass")
-    (check (hash-get report 'findings) => [])))
+(def (check-harness-policy-api-entrypoint)
+  (check (file-contains? harness-gerbil-all-test
+                         ":gslph/src/policy/gxtest")
+         => #t)
+  (check (file-contains? harness-gerbil-all-test
+                         "make-gxtest-policy-test")
+         => #t)
+  (check (file-contains? harness-gerbil-all-test
+                         "(make-gxtest-policy-test \".\")")
+         => #t)
+  (check (file-lacks? harness-gerbil-build-script
+                      "policy-report")
+         => #t)
+  (check (file-lacks? harness-gerbil-build-script
+                      "make-gxtest-policy-test")
+         => #t))
 
 (check-harness-policy-paths)
 (check-harness-policy-declares-module-layout)
 (check-harness-module-namespace)
-(check-harness-policy)
+(check-harness-policy-api-entrypoint)

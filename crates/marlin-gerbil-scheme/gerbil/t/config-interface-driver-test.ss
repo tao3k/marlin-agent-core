@@ -30,7 +30,7 @@
 (def build-driver-spec
   (build-driver "spec"))
 
-(check build-driver-meta => '("spec" "compile" "clean"))
+(check build-driver-meta => '("spec" "compile" "clean" "test"))
 (check (contains? build-driver-spec "config-interface/init.ss") => #t)
 (check (contains? build-driver-spec "config-interface/lib.ss") => #t)
 (check (contains? build-driver-spec "config-interface/modules/lib.ss") => #t)
