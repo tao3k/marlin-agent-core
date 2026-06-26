@@ -1,6 +1,6 @@
 (package: marlin-deck-runtime
  depend: ("github.com/tao3k/poo-flow"
-          "github.com/tao3k/gerbil-scheme-language-project-harness")
+          "github.com/tao3k/gerbil-scheme-language-project-harness@0fae8ba32ab1b13dba3917960cd1cd79d2ae0406")
  policy: ((source-scope
            roots: ("src")
            runtime-roots: ("src")
