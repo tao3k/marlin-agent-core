@@ -9,5 +9,8 @@ repository.workspace = true
 marlin-agent-protocol.workspace = true
 serde.workspace = true
 
+[dev-dependencies]
+
+marlin-rust-project-harness-policy.workspace = true
 [build-dependencies]
 marlin-rust-project-harness-policy.workspace = true

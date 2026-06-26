@@ -1,0 +1,32 @@
+#+CONTRACT_ORG: agent.adversarial-review.v1
+
+* Adversarial Review
+:PROPERTIES:
+:REVIEW_SUBJECT: skills/ASP_ORG.org
+:REVIEW_MODE: adversarial-reflection
+:END:
+
+** Challenge
+Does the target skill contain only instructions that help an agent operate the
+covered ASP Org workflow, or does it hide redundant, out-of-scope, or unclear
+content behind a valid structure?
+
+** Criteria
+- redundancy: every paragraph or command should serve a distinct operational
+  purpose.
+- out of scope: content must stay within the skill's declared trigger and
+  provider boundary.
+- command clarity: each command family must be named and tied to its use.
+- mechanism clarity: the skill must explain how query results change the next
+  action.
+- structure: headings and resource links must follow the governing contract.
+
+** Findings
+- No finding: the receipt example is intentionally minimal.
+
+** Evidence
+- Subject selector: =skills/ASP_ORG.org:4-112=.
+- Contract: =agent.adversarial-review.v1=.
+
+** Verdict
+Pass for fixture coverage.

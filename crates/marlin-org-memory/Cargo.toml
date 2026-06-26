@@ -25,3 +25,4 @@ marlin-rust-project-harness-policy.workspace = true
 
 [dev-dependencies]
 futures-executor.workspace = true
+marlin-rust-project-harness-policy.workspace = true

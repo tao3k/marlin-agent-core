@@ -1,0 +1,6 @@
+id = "marlin-org-workflow.scenario-performance"
+title = "marlin-org-workflow scenario performance baseline"
+policy_ids = ["MARLIN-SCENARIO-PERFORMANCE"]
+agent_goal = "Keep marlin-org-workflow crate-local scenario performance contracts stable and replayable."
+inputs = "inputs"
+expected = "expected"

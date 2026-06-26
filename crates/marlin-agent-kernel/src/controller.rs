@@ -18,7 +18,12 @@ use marlin_agent_runtime::{
     GraphLoopRunProgressUpdate, RuntimeFuture, RuntimeTask, TokioAgentRuntime,
 };
 
-use crate::driver::{GraphLoopKernel, TokioGraphLoopKernel};
+use crate::{
+    driver::{GraphLoopKernel, TokioGraphLoopKernel},
+    loop_program_handoff_executor::{
+        LoopProgramRuntimeHandoffExecutor, LoopProgramRuntimeHandoffRouter,
+    },
+};
 
 const CONTROLLER_EVENT_CAPTURE_BUFFER: usize = 64;
 
@@ -113,6 +118,7 @@ impl EffectiveGraphLoopPolicy {
 pub struct TokioGraphLoopController {
     kernel: TokioGraphLoopKernel,
     continuation_planner: Arc<dyn GraphLoopContinuationPlanner>,
+    loop_program_handoff_executor: Arc<dyn LoopProgramRuntimeHandoffExecutor>,
 }
 
 impl TokioGraphLoopController {
@@ -120,6 +126,7 @@ impl TokioGraphLoopController {
         Self {
             kernel,
             continuation_planner: Arc::new(TerminalGraphLoopContinuationPlanner),
+            loop_program_handoff_executor: Arc::new(LoopProgramRuntimeHandoffRouter::default()),
         }
     }
 
@@ -133,6 +140,20 @@ impl TokioGraphLoopController {
     {
         self.continuation_planner = Arc::new(continuation_planner);
         self
+    }
+
+    pub fn with_loop_program_handoff_executor<E>(mut self, executor: E) -> Self
+    where
+        E: LoopProgramRuntimeHandoffExecutor,
+    {
+        self.loop_program_handoff_executor = Arc::new(executor);
+        self
+    }
+
+    pub(crate) fn loop_program_handoff_executor(
+        &self,
+    ) -> Arc<dyn LoopProgramRuntimeHandoffExecutor> {
+        Arc::clone(&self.loop_program_handoff_executor)
     }
 
     async fn run_loop(

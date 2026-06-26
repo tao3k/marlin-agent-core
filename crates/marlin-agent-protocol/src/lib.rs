@@ -5,6 +5,7 @@ mod agent_graph;
 mod event;
 mod graph;
 mod hook;
+mod loop_policy_ir;
 mod model_gateway;
 mod model_route;
 mod project_runtime;
@@ -71,6 +72,20 @@ pub use hook::{
     HookSelectionCandidateReceipt, HookSelectionSkipReason, HookSessionId,
     HookSkippedCandidateInput, HookSource, HookSourcePath, HookTimestampMs, HookTrustStatus,
     HookWorkspaceStateFact,
+};
+pub use loop_policy_ir::{
+    AuditLoopPolicyPack, BudgetCaps, CompiledLoopEdge, CompiledLoopNode, CompiledRouteBucket,
+    CompiledRouteIndex, ContinuationOp, ForcedSlot, HotLoopPolicyPack, LOOP_PROGRAM_SCHEMA_VERSION,
+    LoopMechanismPolicyId, LoopPolicyAgentProfileId, LoopPolicyConditionId,
+    LoopPolicyDeltaTemplateId, LoopPolicyDiagnostic, LoopPolicyDiagnosticCode,
+    LoopPolicyDiagnosticSeverity, LoopPolicyDigest, LoopPolicyEpoch, LoopPolicyExecutorId,
+    LoopPolicyExplanation, LoopPolicyGateId, LoopPolicyGraphTemplateId, LoopPolicyNodeId,
+    LoopPolicyReasonCode, LoopPolicyResourceClassId, LoopPolicyRoleId, LoopPolicyRouteBucketId,
+    LoopPolicyRouteTargetId, LoopPolicySlotId, LoopPolicySourceLocationId, LoopPolicySourcePath,
+    LoopProgram, LoopProgramActionKind, LoopProgramEventKind, LoopProgramId, LoopProgramInput,
+    LoopProgramStateId, LoopProgramTransition, LoopProgramTransitionId,
+    RESOLVED_LOOP_POLICY_PACK_SCHEMA_VERSION, ResolvedLoopPolicyPack, ResourceClass, SlotHotness,
+    SlotMergeAlgebra, SlotMergeReceipt, SlotMergeStatus, SlotProvenance, SourceLocation,
 };
 pub use model_gateway::{
     ModelGateway, ModelGatewayCompletionChoice, ModelGatewayCompletionOptions,

@@ -1,7 +1,7 @@
 //! Build-script implementation for Gerbil native integration crates.
 
 use std::{
-    env,
+    env, fs,
     path::{Path, PathBuf},
     process::Command,
 };
@@ -18,7 +18,7 @@ use marlin_gerbil_scheme::{
     GerbilDeckRuntimeNativeAotBuildReceipt, GerbilDeckRuntimeNativeAotCommandReceipt,
     GerbilDeckRuntimeNativeAotConfig, GerbilDeckRuntimeNativeAotProfile,
     GerbilDeckRuntimeNativeStaticLinkPlan, GerbilDeckRuntimeNativeStaticLinkStatus,
-    default_gerbil_gsc_program, default_gerbil_gxi_program, gerbil_package_build_script,
+    default_gerbil_gsc_program, default_gerbil_gxc_program, default_gerbil_gxpkg_program,
     gerbil_package_root,
 };
 
@@ -76,20 +76,20 @@ fn emit_native_link_rerun_inputs(target: NativeLinkTarget) {
 
 fn emit_native_link_directives(target: NativeLinkTarget) {
     let root = out_dir().join(target.link_root_dir);
-    let stage_receipt = stage_native_aot_artifact(target, &root);
-    if stage_receipt.status_code != Some(0) {
+    let compile_receipt = compile_native_aot_artifact(target, &root);
+    if compile_receipt.status_code != Some(0) {
         if running_under_clippy() {
             println!(
-                "cargo:warning=native {} package stage skipped during Clippy: {}",
+                "cargo:warning=native {} package native compile skipped during Clippy: {}",
                 target.label,
-                command_detail("stage-native-aot", Some(&stage_receipt))
+                command_detail("native-aot-compile", Some(&compile_receipt))
             );
             return;
         }
         panic!(
-            "native {} package stage failed: {}",
+            "native {} package native compile failed: {}",
             target.label,
-            command_detail("stage-native-aot", Some(&stage_receipt))
+            command_detail("native-aot-compile", Some(&compile_receipt))
         );
     }
 
@@ -153,7 +153,8 @@ fn emit_native_link_directives(target: NativeLinkTarget) {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct NativeLinkTarget {
     profile: GerbilDeckRuntimeNativeAotProfile,
-    package_stage_profile: &'static str,
+    source_path: &'static str,
+    staged_scm_file: &'static str,
     label: &'static str,
     link_root_dir: &'static str,
     archive_dir: &'static str,
@@ -167,7 +168,8 @@ impl NativeLinkTarget {
     const fn deck_runtime() -> Self {
         Self {
             profile: GerbilDeckRuntimeNativeAotProfile::DeckRuntime,
-            package_stage_profile: "deck-runtime",
+            source_path: "src/marlin/deck-runtime-native.ss",
+            staged_scm_file: "deck-runtime-native~0.scm",
             label: "Deck runtime",
             link_root_dir: "deck-runtime-native-link-root",
             archive_dir: "deck-runtime-native-link-archive",
@@ -181,7 +183,8 @@ impl NativeLinkTarget {
     const fn agent_policy_routing() -> Self {
         Self {
             profile: GerbilDeckRuntimeNativeAotProfile::AgentPolicyRouting,
-            package_stage_profile: "agent-policy-routing",
+            source_path: "src/marlin/agent-policy-routing-native.ss",
+            staged_scm_file: "agent-policy-routing-native~0.scm",
             label: "AgentGraph policy-routing",
             link_root_dir: "agent-policy-routing-native-link-root",
             archive_dir: "agent-policy-routing-native-link-archive",
@@ -193,37 +196,134 @@ impl NativeLinkTarget {
     }
 }
 
-fn stage_native_aot_artifact(
+fn compile_native_aot_artifact(
     target: NativeLinkTarget,
     root: &Path,
 ) -> GerbilDeckRuntimeNativeAotCommandReceipt {
-    let build_script = gerbil_package_build_script();
-    let package_root = gerbil_package_root();
-    println!("cargo:rerun-if-changed={}", build_script.display());
-    println!(
-        "cargo:rerun-if-changed={}",
-        package_root.join("gerbil.pkg").display()
-    );
+    let gerbil_pkg_dir = gerbil_package_root();
+    let gerbil_pkg = gerbil_pkg_dir.join("gerbil.pkg");
+    let source_path = gerbil_pkg_dir.join(target.source_path);
+    println!("cargo:rerun-if-changed={}", source_path.display());
+    println!("cargo:rerun-if-changed={}", gerbil_pkg.display());
 
-    let output = Command::new(default_gerbil_gxi_program())
-        .current_dir(package_root)
-        .arg(build_script)
-        .arg("stage-native-aot")
-        .arg(target.package_stage_profile)
-        .arg(root)
+    let output = Command::new(default_gerbil_gxpkg_program())
+        .current_dir(&gerbil_pkg_dir)
+        .arg("env")
+        .arg(default_gerbil_gxc_program())
+        .arg("-target")
+        .arg("C")
+        .arg("-s")
+        .arg("-S")
+        .arg("-O")
+        .arg(target.source_path)
         .output();
 
     match output {
-        Ok(output) => GerbilDeckRuntimeNativeAotCommandReceipt {
-            status_code: output.status.code(),
-            stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
-            stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
-        },
+        Ok(output) => {
+            if !output.status.success() {
+                return GerbilDeckRuntimeNativeAotCommandReceipt {
+                    status_code: output.status.code(),
+                    stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
+                    stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+                };
+            }
+            stage_local_builder_compiled_scm(target, root, &gerbil_pkg, &output)
+        }
         Err(error) => GerbilDeckRuntimeNativeAotCommandReceipt {
             status_code: None,
             stdout: String::new(),
             stderr: error.to_string(),
         },
+    }
+}
+
+fn stage_local_builder_compiled_scm(
+    target: NativeLinkTarget,
+    root: &Path,
+    gerbil_pkg: &Path,
+    output: &std::process::Output,
+) -> GerbilDeckRuntimeNativeAotCommandReceipt {
+    let builder_scm = match find_local_builder_artifact(gerbil_pkg, target.staged_scm_file) {
+        Ok(path) => path,
+        Err(error) => {
+            return GerbilDeckRuntimeNativeAotCommandReceipt {
+                status_code: Some(66),
+                stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
+                stderr: format!(
+                    "native AOT compile succeeded but Gerbil local builder artifact is unavailable: {error}"
+                ),
+            };
+        }
+    };
+    let stage_dir = root.join(".gerbil/native");
+    let staged_scm = stage_dir.join(target.staged_scm_file);
+    if let Err(error) =
+        fs::create_dir_all(&stage_dir).and_then(|_| fs::copy(&builder_scm, &staged_scm).map(|_| ()))
+    {
+        return GerbilDeckRuntimeNativeAotCommandReceipt {
+            status_code: Some(67),
+            stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
+            stderr: format!(
+                "failed to stage Gerbil local builder artifact from {} to {}: {error}",
+                builder_scm.display(),
+                staged_scm.display()
+            ),
+        };
+    }
+    GerbilDeckRuntimeNativeAotCommandReceipt {
+        status_code: Some(0),
+        stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
+        stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+    }
+}
+
+fn find_local_builder_artifact(
+    gerbil_pkg: &Path,
+    staged_scm_file: &str,
+) -> Result<PathBuf, String> {
+    let Some(gerbil_pkg_dir) = gerbil_pkg.parent() else {
+        return Err(format!(
+            "Gerbil package manifest has no parent directory: {}",
+            gerbil_pkg.display()
+        ));
+    };
+    let builder_root = gerbil_pkg_dir.join(".gerbil");
+    if !builder_root.is_dir() {
+        return Err(format!(
+            "missing Gerbil local builder root {}",
+            builder_root.display()
+        ));
+    }
+
+    let mut stack = vec![builder_root.clone()];
+    let mut matches = Vec::new();
+    while let Some(dir) = stack.pop() {
+        let entries = fs::read_dir(&dir)
+            .map_err(|error| format!("failed to read {}: {error}", dir.display()))?;
+        for entry in entries {
+            let path = entry
+                .map_err(|error| format!("failed to read entry under {}: {error}", dir.display()))?
+                .path();
+            if path.is_dir() {
+                stack.push(path);
+                continue;
+            }
+            if path.file_name().and_then(|name| name.to_str()) == Some(staged_scm_file) {
+                matches.push(path);
+            }
+        }
+    }
+    matches.sort();
+    match matches.as_slice() {
+        [path] => Ok(path.clone()),
+        [] => Err(format!(
+            "missing {staged_scm_file} under Gerbil local builder root {}",
+            builder_root.display()
+        )),
+        _ => Err(format!(
+            "ambiguous {staged_scm_file} under Gerbil local builder root {}: {matches:?}",
+            builder_root.display()
+        )),
     }
 }
 

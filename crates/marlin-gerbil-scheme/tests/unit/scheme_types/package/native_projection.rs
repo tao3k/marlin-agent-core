@@ -5,10 +5,12 @@ use marlin_gerbil_scheme::{
     GERBIL_DECK_RUNTIME_POO_POLICY_PROJECTION_SCHEMA_ID,
     GERBIL_DECK_RUNTIME_POO_POLICY_PROJECTION_TYPE_ID,
     GERBIL_DECK_RUNTIME_PROJECT_POO_POLICY_SYMBOL,
+    GERBIL_DECK_RUNTIME_PROJECT_RESOLVED_LOOP_POLICY_PACK_SYMBOL,
     GERBIL_LOOP_GRAPH_CONTINUATION_NATIVE_PROJECTION_ABI_ID,
     GERBIL_LOOP_GRAPH_CONTINUATION_NATIVE_PROJECTION_ABI_VERSION,
     GERBIL_LOOP_GRAPH_CONTINUATION_NATIVE_PROJECTION_PACKAGE_ID,
     GERBIL_LOOP_GRAPH_CONTINUATION_NATIVE_SYMBOL, GERBIL_LOOP_GRAPH_CONTINUATION_TYPE_ID,
+    GERBIL_RESOLVED_LOOP_POLICY_PACK_SCHEMA_ID, GERBIL_RESOLVED_LOOP_POLICY_PACK_TYPE_ID,
     GerbilSchemeNativeAbiId, GerbilSchemeNativeSymbol, GerbilSchemePackageId, GerbilSchemeTypeId,
     gerbil_deck_runtime_native_projection_package_manifest,
     gerbil_deck_runtime_native_projection_readiness_plan,
@@ -28,30 +30,43 @@ fn deck_runtime_native_projection_package_manifest_connects_poo_type_contract_an
         receipt.package_id,
         GerbilSchemePackageId::new(GERBIL_DECK_RUNTIME_NATIVE_PROJECTION_PACKAGE_ID)
     );
-    assert_eq!(receipt.type_count, 1);
-    assert_eq!(receipt.field_count, 6);
-    assert_eq!(receipt.projection_contract_count, 1);
+    assert_eq!(receipt.type_count, 2);
+    assert_eq!(receipt.field_count, 11);
+    assert_eq!(receipt.projection_contract_count, 2);
     assert_eq!(
         receipt.native_abi_version,
         Some(GERBIL_DECK_RUNTIME_NATIVE_PROJECTION_ABI_VERSION)
     );
-    assert_eq!(receipt.native_symbol_count, 1);
+    assert_eq!(receipt.native_symbol_count, 2);
 
-    let projection_type = manifest
-        .type_manifest
-        .types
-        .first()
+    let projection_types = &manifest.type_manifest.types;
+    let projection_type = projection_types
+        .iter()
+        .find(|type_spec| {
+            type_spec.type_id
+                == GerbilSchemeTypeId::new(GERBIL_DECK_RUNTIME_POO_POLICY_PROJECTION_TYPE_ID)
+        })
         .expect("POO projection type manifest entry");
-    assert_eq!(
-        projection_type.type_id,
-        GerbilSchemeTypeId::new(GERBIL_DECK_RUNTIME_POO_POLICY_PROJECTION_TYPE_ID)
-    );
     assert_eq!(
         projection_type
             .schema_id
             .as_ref()
             .map(|schema| schema.as_str()),
         Some(GERBIL_DECK_RUNTIME_POO_POLICY_PROJECTION_SCHEMA_ID)
+    );
+
+    let resolved_type = projection_types
+        .iter()
+        .find(|type_spec| {
+            type_spec.type_id == GerbilSchemeTypeId::new(GERBIL_RESOLVED_LOOP_POLICY_PACK_TYPE_ID)
+        })
+        .expect("resolved loop policy pack type manifest entry");
+    assert_eq!(
+        resolved_type
+            .schema_id
+            .as_ref()
+            .map(|schema| schema.as_str()),
+        Some(GERBIL_RESOLVED_LOOP_POLICY_PACK_SCHEMA_ID)
     );
 
     let native_abi = manifest
@@ -68,9 +83,12 @@ fn deck_runtime_native_projection_package_manifest_connects_poo_type_contract_an
     );
     assert_eq!(
         native_abi.exported_symbols,
-        vec![GerbilSchemeNativeSymbol::new(
-            GERBIL_DECK_RUNTIME_PROJECT_POO_POLICY_SYMBOL
-        )]
+        vec![
+            GerbilSchemeNativeSymbol::new(GERBIL_DECK_RUNTIME_PROJECT_POO_POLICY_SYMBOL),
+            GerbilSchemeNativeSymbol::new(
+                GERBIL_DECK_RUNTIME_PROJECT_RESOLVED_LOOP_POLICY_PACK_SYMBOL
+            ),
+        ]
     );
 
     let readiness = validate_gerbil_scheme_package_native_readiness(
@@ -79,9 +97,9 @@ fn deck_runtime_native_projection_package_manifest_connects_poo_type_contract_an
     )
     .expect("Deck runtime POO native projection package should match readiness plan");
 
-    assert_eq!(readiness.required_symbol_count, 1);
-    assert_eq!(readiness.available_symbol_count, 1);
-    assert_eq!(readiness.matched_symbol_count, 1);
+    assert_eq!(readiness.required_symbol_count, 2);
+    assert_eq!(readiness.available_symbol_count, 2);
+    assert_eq!(readiness.matched_symbol_count, 2);
 }
 
 #[test]

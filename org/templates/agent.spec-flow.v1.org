@@ -1,0 +1,49 @@
+#+TITLE: SpecFlow Title
+#+CONTRACT_ORG: agent.spec-flow.v1
+
+* SpecFlow: Specification Family Title
+:PROPERTIES:
+:TEMPLATE_ID: agent.spec-flow.v1
+:TEMPLATE_KIND: spec-flow
+:TEMPLATE_CONTRACT: agent.spec-flow.v1
+:CONTRACT_ORG: [[../contracts/agent.spec-flow.v1.org][agent.spec-flow.v1]]
+:SPEC_FLOW_ID: spec-flow-id
+:SPEC_FAMILY_ID: agent.example.v1
+:SPEC_STATUS: draft
+:END:
+
+** Definition
+Define the theory this specification family represents, what it governs, and
+what it explicitly does not govern.
+
+** Contract
+- [ ] Create =../contracts/<spec-family>.org=.
+- [ ] Declare =CONTRACT_ID=, =CONTRACT_KIND=, and =CONTRACT_SCOPE=.
+- [ ] Add structural assertions that a parser can verify.
+- [ ] Keep subjective quality checks for adversarial review instead of hidden prose.
+
+** Template
+- [ ] Create =<spec-family>.org=.
+- [ ] Include =TEMPLATE_ID=, =TEMPLATE_KIND=, =TEMPLATE_CONTRACT=, and
+  =CONTRACT_ORG=.
+- [ ] Include only reusable authoring shape, not client-local state paths.
+
+** Example
+- [ ] Create =../contracts/examples/<spec-family>.example.org=.
+- [ ] Make the example pass the contract trace.
+- [ ] Use realistic content that demonstrates the intended boundary.
+
+** Skill Integration
+- [ ] Register the contract and template in =skills/ASP_ORG.org=.
+- [ ] Register the template family in =README.org=.
+- [ ] Explain when an agent should choose this governing contract.
+
+** Validation
+- [ ] Run contract trace for the template.
+- [ ] Run contract trace for the example.
+- [ ] Run =orgize lint= over the contract, template, example, and skill.
+
+** Adversarial Review
+- [ ] Check that the spec family is not duplicating Plan or ExecPlan.
+- [ ] Check that the skill contains workflow routing, not copied specification body.
+- [ ] Check that evidence and validation commands are explicit.

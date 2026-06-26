@@ -11,8 +11,8 @@ This makes Linux portability the normal CI path for:
 - =marlin-agent-policy-routing-native= linked-native tests and benchmark compile;
 - Gerbil/Gambit source bootstrap when toolchain variables are not provided.
 ** P2 Gerbil Policy-Pack Load Cost
-=src/marlin/modules/policy-pack.ss= continues to avoid importing Marlin
-=:marlin/modules/evaluation= for presentation metadata while accepting
+=src/config-interface/modules/policy-pack.ss= continues to avoid importing Marlin
+=:config-interface/modules/evaluation= for presentation metadata while accepting
 poo-flow module descriptors as input. The policy-pack projection-chain helper
 now consumes the existing lightweight constructors for module evaluation,
 policy projection, native payload, budget, and catalog resolution receipts.

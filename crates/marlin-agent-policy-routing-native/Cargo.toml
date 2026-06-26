@@ -13,6 +13,10 @@ linked-native = []
 name = "linked_selector"
 harness = false
 
+[[bench]]
+name = "allocation_shape"
+harness = false
+
 [dependencies]
 marlin-gerbil-scheme.workspace = true
 
@@ -20,5 +24,7 @@ marlin-gerbil-scheme.workspace = true
 criterion.workspace = true
 marlin-agent-graph.workspace = true
 
+marlin-rust-project-harness-policy.workspace = true
 [build-dependencies]
 marlin-gerbil-native-build.workspace = true
+marlin-rust-project-harness-policy.workspace = true

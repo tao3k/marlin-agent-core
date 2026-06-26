@@ -9,6 +9,7 @@ repository.workspace = true
 marlin-agent-hooks.workspace = true
 marlin-agent-protocol.workspace = true
 marlin-agent-runtime.workspace = true
+tokio.workspace = true
 tracing.workspace = true
 
 [build-dependencies]
@@ -17,3 +18,4 @@ marlin-rust-project-harness-policy.workspace = true
 [dev-dependencies]
 tokio.workspace = true
 tokio-stream.workspace = true
+marlin-rust-project-harness-policy.workspace = true

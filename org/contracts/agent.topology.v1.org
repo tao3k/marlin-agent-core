@@ -35,8 +35,10 @@ topology shape this contract accepts.
 :END:
 
 #+BEGIN_SRC org-contract
-let topology = headline where at($scope)
-assert count node-property where descendant_of(topology) and summary(key) = "TOPOLOGY_ID"
+(let ((topology
+       (headline :at $scope)))
+  (assert count >= 1
+    (node-property :descendant-of topology :summary (key "TOPOLOGY_ID"))))
 #+END_SRC
 
 #+BEGIN_SRC jinja2 :name message
@@ -50,8 +52,10 @@ Topology `{{ scope.title }}` must carry a stable TOPOLOGY_ID property.
 :END:
 
 #+BEGIN_SRC org-contract
-let topology = headline where at($scope)
-assert count node-property where descendant_of(topology) and summary(key) = "PROJECT_ID"
+(let ((topology
+       (headline :at $scope)))
+  (assert count >= 1
+    (node-property :descendant-of topology :summary (key "PROJECT_ID"))))
 #+END_SRC
 
 #+BEGIN_SRC jinja2 :name message
@@ -65,8 +69,10 @@ Topology `{{ scope.title }}` must carry PROJECT_ID so it can be imported with th
 :END:
 
 #+BEGIN_SRC org-contract
-let topology = headline where at($scope)
-assert count node-property where descendant_of(topology) and summary(key) = "TOPOLOGY_SCOPE"
+(let ((topology
+       (headline :at $scope)))
+  (assert count >= 1
+    (node-property :descendant-of topology :summary (key "TOPOLOGY_SCOPE"))))
 #+END_SRC
 
 #+BEGIN_SRC jinja2 :name message
@@ -80,8 +86,10 @@ Topology `{{ scope.title }}` must declare TOPOLOGY_SCOPE, usually project-overvi
 :END:
 
 #+BEGIN_SRC org-contract
-let topology = headline where at($scope)
-assert count node-property where descendant_of(topology) and summary(key) = "TOPOLOGY_NODE_KIND"
+(let ((topology
+       (headline :at $scope)))
+  (assert count >= 1
+    (node-property :descendant-of topology :summary (key "TOPOLOGY_NODE_KIND"))))
 #+END_SRC
 
 #+BEGIN_SRC jinja2 :name message
@@ -95,8 +103,10 @@ Topology `{{ scope.title }}` must declare the coarse TOPOLOGY_NODE_KIND it repre
 :END:
 
 #+BEGIN_SRC org-contract
-let topology = headline where at($scope)
-assert count node-property where descendant_of(topology) and summary(key) = "TOPOLOGY_EDGE_KIND"
+(let ((topology
+       (headline :at $scope)))
+  (assert count >= 1
+    (node-property :descendant-of topology :summary (key "TOPOLOGY_EDGE_KIND"))))
 #+END_SRC
 
 #+BEGIN_SRC jinja2 :name message
@@ -110,8 +120,10 @@ Topology `{{ scope.title }}` must declare a coarse TOPOLOGY_EDGE_KIND.
 :END:
 
 #+BEGIN_SRC org-contract
-let topology = headline where at($scope)
-assert count node-property where descendant_of(topology) and summary(key) = "SOURCE_ANCHOR"
+(let ((topology
+       (headline :at $scope)))
+  (assert count >= 1
+    (node-property :descendant-of topology :summary (key "SOURCE_ANCHOR"))))
 #+END_SRC
 
 #+BEGIN_SRC jinja2 :name message
@@ -125,8 +137,10 @@ Topology `{{ scope.title }}` must carry SOURCE_ANCHOR back to the detailed Org f
 :END:
 
 #+BEGIN_SRC org-contract
-let topology = headline where at($scope)
-assert count headline where descendant_of(topology) and summary(title) = "Overview"
+(let ((topology
+       (headline :at $scope)))
+  (assert count >= 1
+    (headline :descendant-of topology :summary (title "Overview"))))
 #+END_SRC
 
 #+BEGIN_SRC jinja2 :name message
@@ -140,8 +154,10 @@ Topology `{{ scope.title }}` must include an Overview section.
 :END:
 
 #+BEGIN_SRC org-contract
-let topology = headline where at($scope)
-assert count headline where descendant_of(topology) and summary(title) = "Navigation"
+(let ((topology
+       (headline :at $scope)))
+  (assert count >= 1
+    (headline :descendant-of topology :summary (title "Navigation"))))
 #+END_SRC
 
 #+BEGIN_SRC jinja2 :name message
@@ -155,8 +171,10 @@ Topology `{{ scope.title }}` must include a Navigation section.
 :END:
 
 #+BEGIN_SRC org-contract
-let topology = headline where at($scope)
-assert count headline where descendant_of(topology) and summary(title) = "Visibility Boundaries"
+(let ((topology
+       (headline :at $scope)))
+  (assert count >= 1
+    (headline :descendant-of topology :summary (title "Visibility Boundaries"))))
 #+END_SRC
 
 #+BEGIN_SRC jinja2 :name message

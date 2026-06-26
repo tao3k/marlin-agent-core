@@ -1,0 +1,150 @@
+#+TITLE: Agent TDD Contract v1
+
+* agent-tdd-v1
+:PROPERTIES:
+:CONTRACT_ID: agent.tdd.v1
+:CONTRACT_KIND: org-elements
+:CONTRACT_SCOPE: document
+:END:
+
+** What This Produces
+This contract validates a test-driven development specification. A TDD record
+captures the target under test, the expected failure-first test, the
+red-green-refactor loop, and regression evidence. Use it as a governing contract
+when a plan is mainly about test-first implementation, regression protection, or
+executable test contracts.
+
+** tdd-has-root
+:PROPERTIES:
+:ASSERT_ID: tdd-has-root
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+(assert exists
+  (headline :summary-contains (title "TDD")))
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+TDD files must have a TDD root heading.
+#+END_SRC
+
+** tdd-has-id-property
+:PROPERTIES:
+:ASSERT_ID: tdd-has-id-property
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+(assert exists
+  (node-property :summary (key "TDD_ID")))
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+TDD files must declare TDD_ID.
+#+END_SRC
+
+** tdd-has-status-property
+:PROPERTIES:
+:ASSERT_ID: tdd-has-status-property
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+(assert exists
+  (node-property :summary (key "TDD_STATUS")))
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+TDD files must declare TDD_STATUS.
+#+END_SRC
+
+** tdd-has-test-scope-property
+:PROPERTIES:
+:ASSERT_ID: tdd-has-test-scope-property
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+(assert exists
+  (node-property :summary (key "TEST_SCOPE")))
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+TDD files must declare TEST_SCOPE.
+#+END_SRC
+
+** tdd-has-target-ref-property
+:PROPERTIES:
+:ASSERT_ID: tdd-has-target-ref-property
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+(assert exists
+  (node-property :summary (key "TARGET_REF")))
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+TDD files must declare TARGET_REF.
+#+END_SRC
+
+** tdd-has-test-intent
+:PROPERTIES:
+:ASSERT_ID: tdd-has-test-intent
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+(assert exists
+  (headline :summary-contains (title "Test Intent")))
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+TDD files must contain Test Intent.
+#+END_SRC
+
+** tdd-has-red-green-refactor-loop
+:PROPERTIES:
+:ASSERT_ID: tdd-has-red-green-refactor-loop
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+(assert exists
+  (headline :summary-contains (title "Red Green Refactor Loop")))
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+TDD files must contain Red Green Refactor Loop.
+#+END_SRC
+
+** tdd-has-test-cases
+:PROPERTIES:
+:ASSERT_ID: tdd-has-test-cases
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+(assert exists
+  (headline :summary-contains (title "Test Cases")))
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+TDD files must contain Test Cases.
+#+END_SRC
+
+** tdd-has-regression-evidence
+:PROPERTIES:
+:ASSERT_ID: tdd-has-regression-evidence
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+(assert exists
+  (headline :summary-contains (title "Regression Evidence")))
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+TDD files must contain Regression Evidence.
+#+END_SRC

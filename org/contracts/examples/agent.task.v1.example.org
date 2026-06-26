@@ -2,7 +2,7 @@
 
 * TODO Contract Org Task Example :agent:org:contract:
 :PROPERTIES:
-:CONTRACT_ORG: agent.task.v1
+:CONTRACT_ORG: [[../agent.task.v1.org][agent.task.v1]]
 :ID: agent-task-template-example-20260615
 :END:
 

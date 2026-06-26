@@ -20,7 +20,8 @@ shape this contract accepts.
 :END:
 
 #+BEGIN_SRC org-contract
-assert count headline where child_of($scope) and summary(title) = "Graph"
+(assert count >= 1
+  (headline :child-of $scope :summary (title "Graph")))
 #+END_SRC
 
 ** loop-has-strategy
@@ -30,7 +31,8 @@ assert count headline where child_of($scope) and summary(title) = "Graph"
 :END:
 
 #+BEGIN_SRC org-contract
-assert count headline where child_of($scope) and summary(title) = "Strategy"
+(assert count >= 1
+  (headline :child-of $scope :summary (title "Strategy")))
 #+END_SRC
 
 ** loop-has-budget
@@ -40,7 +42,8 @@ assert count headline where child_of($scope) and summary(title) = "Strategy"
 :END:
 
 #+BEGIN_SRC org-contract
-assert count headline where child_of($scope) and summary(title) = "Budget"
+(assert count >= 1
+  (headline :child-of $scope :summary (title "Budget")))
 #+END_SRC
 
 ** loop-has-evidence
@@ -50,5 +53,6 @@ assert count headline where child_of($scope) and summary(title) = "Budget"
 :END:
 
 #+BEGIN_SRC org-contract
-assert count headline where child_of($scope) and summary(title) = "Evidence"
+(assert count >= 1
+  (headline :child-of $scope :summary (title "Evidence")))
 #+END_SRC

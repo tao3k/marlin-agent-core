@@ -3,13 +3,13 @@
 * Boundary
 
 This directory contains downstream-facing examples and fixtures only.
-
-It must not contain =marline-config-interface=. The real Marlin-maintained
-policy authoring entrypoint for AGENT and human operators lives at:
+It must not contain the Marlin-owned config interface. The real
+Marlin-maintained policy authoring entrypoint for AGENT and human operators
+lives at:
 
 #+begin_src text
-../marline-config-interface
+../gerbil/src/config-interface
 #+end_src
 
 Use =user-interface-module-config/= as the downstream user-interface example.
-Use =../marline-config-interface/= when editing Marlin kernel policy packs.
+Use =../gerbil/src/config-interface/= when editing Marlin kernel policy packs.

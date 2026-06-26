@@ -1,0 +1,148 @@
+#+TITLE: Agent BDD Contract v1
+
+* agent-bdd-v1
+:PROPERTIES:
+:CONTRACT_ID: agent.bdd.v1
+:CONTRACT_KIND: org-elements
+:CONTRACT_SCOPE: document
+:END:
+
+** What This Produces
+This contract validates a behavior specification. A BDD record captures a
+feature, actors, scenarios, and acceptance evidence. Use it as a governing
+contract when a plan is mainly about user-visible behavior or acceptance tests.
+
+** bdd-has-feature-root
+:PROPERTIES:
+:ASSERT_ID: bdd-has-feature-root
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+(assert exists
+  (headline :summary-contains (title "Feature")))
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+BDD files must have a Feature root heading.
+#+END_SRC
+
+** bdd-has-id-property
+:PROPERTIES:
+:ASSERT_ID: bdd-has-id-property
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+(assert exists
+  (node-property :summary (key "BDD_ID")))
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+BDD files must declare BDD_ID.
+#+END_SRC
+
+** bdd-has-status-property
+:PROPERTIES:
+:ASSERT_ID: bdd-has-status-property
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+(assert exists
+  (node-property :summary (key "BDD_STATUS")))
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+BDD files must declare BDD_STATUS.
+#+END_SRC
+
+** bdd-has-actor-property
+:PROPERTIES:
+:ASSERT_ID: bdd-has-actor-property
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+(assert exists
+  (node-property :summary (key "BDD_ACTOR")))
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+BDD files must declare BDD_ACTOR.
+#+END_SRC
+
+** bdd-has-scenario
+:PROPERTIES:
+:ASSERT_ID: bdd-has-scenario
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+(assert exists
+  (headline :summary-contains (title "Scenario")))
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+BDD files must contain a Scenario section.
+#+END_SRC
+
+** bdd-has-given
+:PROPERTIES:
+:ASSERT_ID: bdd-has-given
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+(assert exists
+  (headline :summary-contains (title "Given")))
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+BDD files must contain a Given section.
+#+END_SRC
+
+** bdd-has-when
+:PROPERTIES:
+:ASSERT_ID: bdd-has-when
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+(assert exists
+  (headline :summary-contains (title "When")))
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+BDD files must contain a When section.
+#+END_SRC
+
+** bdd-has-then
+:PROPERTIES:
+:ASSERT_ID: bdd-has-then
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+(assert exists
+  (headline :summary-contains (title "Then")))
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+BDD files must contain a Then section.
+#+END_SRC
+
+** bdd-has-acceptance-evidence
+:PROPERTIES:
+:ASSERT_ID: bdd-has-acceptance-evidence
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+(assert exists
+  (headline :summary-contains (title "Acceptance Evidence")))
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+BDD files must contain Acceptance Evidence.
+#+END_SRC

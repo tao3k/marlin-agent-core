@@ -3,10 +3,13 @@ use marlin_gerbil_scheme::{
     GERBIL_ADAPTER_MODULE, GERBIL_LOADPATH_ENV, GERBIL_PACKAGE_BUILD_SCRIPT,
     GERBIL_PACKAGE_ROOT_PATH, GERBIL_PACKAGE_SOURCE_PATH, GERBIL_POO_MOP_MODULE,
     GERBIL_POO_OBJECT_MODULE, GERBIL_POO_PACKAGE_NAME, GERBIL_POO_PROTO_MODULE,
+    GERBIL_RUNTIME_BUILD_DEPS, GERBIL_RUNTIME_BUILD_STAGES, GERBIL_RUNTIME_BUILD_WORKER_ENV,
+    GERBIL_RUNTIME_COVERAGE_ROOTS, GERBIL_RUNTIME_EXCLUDED_PACKAGE_SOURCE_FILES,
+    GERBIL_RUNTIME_PACKAGE_NAME, GERBIL_RUNTIME_SOURCE_ROOTS, GERBIL_RUNTIME_SPECIAL_SOURCE_FILES,
     MARLIN_GERBIL_GSC_ENV, MARLIN_GERBIL_GXC_ENV, MARLIN_GERBIL_GXI_ENV,
     default_gerbil_gsc_program, default_gerbil_gxc_program, default_gerbil_gxi_program,
     gerbil_package_build_script, gerbil_package_root, gerbil_runtime_asset, gerbil_runtime_assets,
-    gerbil_runtime_loadpath, write_gerbil_runtime_assets,
+    gerbil_runtime_build_script_contract, gerbil_runtime_loadpath, write_gerbil_runtime_assets,
 };
 use std::{fs, path::Path};
 
@@ -18,6 +21,8 @@ fn gerbil_runtime_assets_expose_loadpath_contract() {
     let adapter_source = runtime_asset_source("src/marlin/adapter.ss");
     let request_source = runtime_asset_source("src/marlin/request.ss");
     let deck_runtime_source = runtime_asset_source("src/marlin/deck-runtime.ss");
+    let resident_strategy_source =
+        runtime_asset_source("src/marlin/deck-runtime-resident-strategy.ss");
     let compiled_policy_source = runtime_asset_source("src/marlin/deck-runtime-compiled-policy.ss");
     let compiled_policy_sample_source =
         runtime_asset_source("src/marlin/deck-runtime-compiled-policy-sample.ss");
@@ -27,6 +32,9 @@ fn gerbil_runtime_assets_expose_loadpath_contract() {
     let continuation_projection_source =
         runtime_asset_source("src/marlin/graph-loop-continuation-native-projection.ss");
     let script_source = runtime_asset_source("src/marlin/deck-runtime-script.ss");
+    let script_performance_source =
+        runtime_asset_source("src/marlin/deck-runtime-script-performance.ss");
+    let build_contract = gerbil_runtime_build_script_contract();
     assert_eq!(GERBIL_LOADPATH_ENV, "GERBIL_LOADPATH");
     assert_eq!(GERBIL_ADAPTER_MODULE, ":marlin/adapter");
     assert_eq!(MARLIN_GERBIL_GXI_ENV, "MARLIN_GERBIL_GXI");
@@ -46,6 +54,24 @@ fn gerbil_runtime_assets_expose_loadpath_contract() {
     assert_eq!(GERBIL_POO_OBJECT_MODULE, ":clan/poo/object");
     assert_eq!(GERBIL_POO_MOP_MODULE, ":clan/poo/mop");
     assert_eq!(GERBIL_POO_PROTO_MODULE, ":clan/poo/proto");
+    assert_eq!(build_contract.package_name, GERBIL_RUNTIME_PACKAGE_NAME);
+    assert_eq!(build_contract.stages, GERBIL_RUNTIME_BUILD_STAGES);
+    assert_eq!(build_contract.deps, GERBIL_RUNTIME_BUILD_DEPS);
+    assert_eq!(build_contract.source_roots, GERBIL_RUNTIME_SOURCE_ROOTS);
+    assert_eq!(build_contract.coverage_roots, GERBIL_RUNTIME_COVERAGE_ROOTS);
+    assert_eq!(
+        build_contract.special_source_files,
+        GERBIL_RUNTIME_SPECIAL_SOURCE_FILES
+    );
+    assert_eq!(
+        build_contract.excluded_package_source_files,
+        GERBIL_RUNTIME_EXCLUDED_PACKAGE_SOURCE_FILES
+    );
+    assert_eq!(build_contract.worker_env, GERBIL_RUNTIME_BUILD_WORKER_ENV);
+    assert_eq!(
+        build_contract.special_source_files,
+        build_contract.excluded_package_source_files
+    );
     assert!(package_manifest_source.contains("github.com/tao3k/poo-flow"));
     assert!(
         package_manifest_source.contains("github.com/tao3k/gerbil-scheme-language-project-harness")
@@ -54,15 +80,57 @@ fn gerbil_runtime_assets_expose_loadpath_contract() {
         !package_manifest_source.contains("/Users/"),
         "crate-shipped gerbil.pkg must not lock runtime deps to a local checkout"
     );
-    assert!(build_source.contains("stage-native-aot"));
-    assert!(build_source.contains("marlin-build-stage-native-aot"));
+    assert!(build_source.contains(":std/make"));
+    assert!(build_source.contains(":std/source"));
     assert!(build_source.contains(":clan/building"));
+    assert!(build_source.contains("gslph-source-coverage"));
+    assert!(build_source.contains(build_contract.package_name));
+    assert!(build_source.contains("+marlin-special-source-files+"));
+    assert!(build_source.contains("+marlin-excluded-package-source-files+"));
+    assert!(build_source.contains("marlin-package-source-file?"));
+    assert!(build_source.contains("marlin-runtime-build-spec"));
+    assert!(build_source.contains("marlin-package-build-spec"));
+    for root in build_contract.coverage_roots {
+        assert!(
+            build_source.contains(&format!("runtime-roots: '(\"{root}\")")),
+            "build script should activate runtime coverage root {root}"
+        );
+    }
+    for dep in build_contract.deps {
+        assert!(
+            build_source.contains(&format!("\"{dep}\"")),
+            "build script should declare package dependency {dep}"
+        );
+    }
+    for stage in build_contract.stages {
+        assert!(
+            build_source.contains(&format!("\"{stage}\"")),
+            "build script should expose build stage {stage}"
+        );
+    }
+    assert!(!build_source.contains("stage-native-aot"));
+    assert!(!build_source.contains("marlin-build-stage-native-aot"));
+    assert!(build_source.contains(":gerbil/compiler/base"));
+    assert!(build_source.contains("__available-cores"));
+    for env_var in build_contract.worker_env {
+        assert!(
+            build_source.contains(env_var),
+            "build script should consume worker env {env_var}"
+        );
+    }
+    assert!(build_source.contains("##cpu-count"));
+    assert!(build_source.contains("marlin-build-worker-count"));
+    assert!(build_source.contains("marlin-sync-build-worker-count!"));
+    assert!(build_source.contains("parallelize:"));
     assert!(build_source.contains("all-gerbil-modules"));
-    assert!(build_source.contains("marlin-package-module?"));
-    assert!(build_source.contains("+marlin-native-aot-only-modules+"));
-    assert!(build_source.contains("\"marlin/deck-runtime-native.ss\""));
-    assert!(build_source.contains("\"marlin/agent-policy-routing-native.ss\""));
-    assert!(build_source.contains("deps: '(\"poo-flow\")"));
+    for source_file in build_contract.special_source_files {
+        assert!(
+            build_source.contains(&format!("\"{source_file}\"")),
+            "build script should list special native source {source_file}"
+        );
+    }
+    assert!(!build_source.contains("marlin-package-module?"));
+    assert!(!build_source.contains("+marlin-native-aot-only-modules+"));
     assert!(!build_source.contains("git.cons.io/mighty-gerbils/gerbil-poo"));
     assert!(!build_source.contains("github.com/tao3k/poo-flow"));
     assert!(request_source.contains("gerbil-compile-request-contract-facts"));
@@ -79,6 +147,9 @@ fn gerbil_runtime_assets_expose_loadpath_contract() {
     assert!(deck_runtime_source.contains("typed-native-abi"));
     assert!(!deck_runtime_source.contains("json-handshake"));
     assert!(!deck_runtime_source.contains("selection-json"));
+    assert!(resident_strategy_source.contains("marlin.resident.strategy.procedure-response.v1"));
+    assert!(resident_strategy_source.contains("\"status\" \"executed\""));
+    assert!(!resident_strategy_source.contains("selection-json"));
     assert!(compiled_policy_source.contains("defmarlin-deck-runtime-compiled-route-selector"));
     assert!(
         compiled_policy_source
@@ -115,6 +186,11 @@ fn gerbil_runtime_assets_expose_loadpath_contract() {
             .source
             .contains("marlin-deck-runtime-strategy-selection")
     );
+    assert!(
+        strategy_asset
+            .source
+            .contains("marlin-deck-runtime-resident-strategy-execute")
+    );
     assert!(!strategy_asset.source.contains("selection-json"));
     assert!(native_source.contains("c-define"));
     assert!(native_source.contains("begin-ffi"));
@@ -141,6 +217,9 @@ fn gerbil_runtime_assets_expose_loadpath_contract() {
     assert!(script_source.contains("make-marlin-deck-runtime-poo-policy-projection"));
     assert!(script_source.contains("poo-native-api-or-gxi-script"));
     assert!(!script_source.contains("selection-json"));
+    assert!(script_performance_source.contains("deck-runtime-script-performance-run-batch"));
+    assert!(script_performance_source.contains("deck-runtime-script-performance-count-runs"));
+    assert!(script_performance_source.contains("performance-script-extension"));
 
     let mut asset_paths = assets
         .iter()
@@ -206,7 +285,7 @@ fn gerbil_runtime_assets_write_loadpath_tree() {
     assert!(
         fs::read_to_string(root.path().join("build.ss"))
             .expect("read build script")
-            .contains("src/marlin/deck-runtime")
+            .contains("marlin-runtime-build-spec")
     );
     assert!(
         fs::read_to_string(root.path().join("src/marlin/deck-runtime-native.ss"))
@@ -233,6 +312,14 @@ fn gerbil_runtime_assets_write_loadpath_tree() {
         fs::read_to_string(root.path().join("src/marlin/deck-runtime-script.ss"))
             .expect("read quick script deck runtime")
             .contains("defmarlin-deck-runtime-script")
+    );
+    assert!(
+        fs::read_to_string(
+            root.path()
+                .join("src/marlin/deck-runtime-script-performance.ss")
+        )
+        .expect("read quick script performance helper")
+        .contains("deck-runtime-script-performance-run-batch")
     );
     assert!(
         fs::read_to_string(root.path().join("src/marlin/deck-runtime.ss"))

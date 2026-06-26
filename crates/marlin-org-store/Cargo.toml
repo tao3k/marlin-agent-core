@@ -18,3 +18,4 @@ marlin-rust-project-harness-policy.workspace = true
 [dev-dependencies]
 marlin-org-model.workspace = true
 marlin-workspace-patch.workspace = true
+marlin-rust-project-harness-policy.workspace = true

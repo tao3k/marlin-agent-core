@@ -13,3 +13,4 @@ serde.workspace = true
 marlin-rust-project-harness-policy.workspace = true
 
 [dev-dependencies]
+marlin-rust-project-harness-policy.workspace = true

@@ -6,19 +6,73 @@
 
 ** What This Produces
 
-This contract is not a prose plan template. It validates the Org ledger an agent
-leaves behind after doing work.
+This contract validates a recoverable plan ledger. It defines the theory of a
+plan record: a bounded objective, a scope, optional specification references,
+recoverable state, evidence, and a next action. Runtime commands and
+client-specific workflows are out of scope for this contract; storage placement
+and filename shape are part of the contract because agents can create several
+plan ledgers during one session.
 
 The intended output is a single recoverable task heading with:
 
 - a native Org workflow state and progress cookies;
-- identity and recovery properties for later agents;
-- a lifecycle checklist that shows where the slice stands;
-- Context, Checkpoints, Validation, Evidence, and Recovery sections;
-- concrete command/evidence records that can be replayed without a live LLM.
+- identity, objective, scope, status, recovery properties, and only relevant specification references for later agents;
+- a lifecycle checklist that shows where the plan stands;
+- Context, Checkpoints, Validation, Evidence, Evidence Loop, Reflection, and Recovery sections;
+- concrete evidence, reflection answers, and recovery anchors that can be inspected without a live LLM.
 
-See =org/contracts/examples/agent.plan.v1.example.org= for the concrete shape.
+** Definition
 
+A Plan is a durable ledger of work state. It is written after or during work so
+another agent can recover the objective, current status, relevant specification
+references, evidence, and next action without relying on conversation history.
+
+A Plan is not the governing product, behavior, decision, architecture, test, or
+business-development specification. Those records live under purpose-specific
+contracts such as =agent.prd.v1=, =agent.bdd.v1=, =agent.adr.v1=, =agent.sdd.v1=,
+=agent.tdd.v1=, or =agent.bdr.v1= and are linked only when relevant.
+
+A Plan may link to governing specifications when they are relevant. Agents decide whether SDD, BDD, TDD, or BDR applies before writing the plan, but unused specification families must be omitted instead of recorded as placeholder =none= rows or properties.
+** Specification Choice Reasoning
+Use this contract-owned choice window before creating or updating a Plan. The
+choice is transient: select one specification or ask for details, then render
+only the plan content and references that are materially needed by the task.
+
+#+BEGIN_SRC org-contract :type agent-interactive
+id: specification
+method: choice
+stage: pre-capture
+group: SPEC
+create: deferred
+target: agent.plan.v1
+info: Select one specification if you already know the terms. If not, choose ? to expand details before selecting.
+categories: 1=SDD,2=BDD,3=TDD,4=BDR,5=TASK,?=detail
+details:
+|n|id|contract|full|use-if|
+|1|SDD|agent.sdd.v1|Specification-Driven Development|scope/design/API/schema boundary changes|
+|2|BDD|agent.bdd.v1|Behavior-Driven Development|behavior/scenario/acceptance unclear|
+|3|TDD|agent.tdd.v1|Test-Driven Development|failing test/regression gate drives work|
+|4|BDR|agent.bdr.v1|Business Development Representative|market/customer/revenue/outreach hypothesis|
+|5|TASK||Task Plan|plain checklist/reflection is enough|
+#+END_SRC
+** Filename And Placement
+
+Plan files must live under =artifacts/org/flow/plans/= or a project-local
+equivalent ending in =org/flow/plans/=. A plan filename must match
+=agent-plan-*.org= and should be derived from the task title that a future agent
+can recall, for example =agent-plan-tighten-asp-org-recall-flow.org=. A client
+session id may be appended as a disambiguating suffix, but it is not the recall
+key. The capture command materializer enforces this placement for
+=agent.plan.v1= when =--target-file= is provided. This keeps temporary task
+placeholders such as =current-agent-task.org= out of the durable plan ledger
+namespace.
+
+The template root heading uses a placeholder title. Agents must pass
+=--title "<task title>"= when materializing =agent.plan.v1= so the rendered plan
+heading and =ID= property can be recovered by the =asp org recall plans= flow
+after chat compaction. Rust owns Org discovery and contract filtering; Python
+=asp-memory-engine= owns plan ranking, including memory/scoring math, but it
+does not scan Org files.
 ** plan-has-workflow-state
 :PROPERTIES:
 :ASSERT_ID: plan.has-workflow-state
@@ -26,8 +80,12 @@ See =org/contracts/examples/agent.plan.v1.example.org= for the concrete shape.
 :END:
 
 #+BEGIN_SRC org-contract
-let plan = headline where at($scope)
-assert count headline where at($scope) and property(:todo-type) = "todo" or property(:todo-type) = "done"
+(assert count >= 1
+  (and
+    (headline :at $scope)
+    (or
+      (= (property :todo-type) "todo")
+      (= (property :todo-type) "done"))))
 #+END_SRC
 
 #+BEGIN_SRC jinja2 :name message
@@ -41,7 +99,11 @@ Plan `{{ scope.title }}` must be an Org task heading with a TODO/DONE workflow s
 :END:
 
 #+BEGIN_SRC org-contract
-assert count headline where at($scope) and summary(title) contains "[" and summary(title) contains "%"
+(assert count >= 1
+  (and
+    (headline :at $scope)
+    (contains (summary title) "[")
+    (contains (summary title) "%")))
 #+END_SRC
 
 #+BEGIN_SRC jinja2 :name message
@@ -55,27 +117,31 @@ Plan `{{ scope.title }}` must expose native Org progress cookies such as [5/5] a
 :END:
 
 #+BEGIN_SRC org-contract
-let plan = headline where at($scope)
-assert count node-property where descendant_of(plan) and summary(key) = "ID"
+(let ((plan
+       (headline :at $scope)))
+  (assert count >= 1
+    (node-property :descendant-of plan :summary (key "ID"))))
 #+END_SRC
 
 #+BEGIN_SRC jinja2 :name message
 Plan `{{ scope.title }}` must carry a stable ID property.
 #+END_SRC
 
-** plan-has-sdd-property
+** plan-has-objective-property
 :PROPERTIES:
-:ASSERT_ID: plan.has-sdd-property
+:ASSERT_ID: plan.has-objective-property
 :SEVERITY: error
 :END:
 
 #+BEGIN_SRC org-contract
-let plan = headline where at($scope)
-assert count node-property where descendant_of(plan) and summary(key) = "SDD"
+(let ((plan
+       (headline :at $scope)))
+  (assert count >= 1
+    (node-property :descendant-of plan :summary (key "OBJECTIVE"))))
 #+END_SRC
 
 #+BEGIN_SRC jinja2 :name message
-Plan `{{ scope.title }}` must link its SDD property.
+Plan `{{ scope.title }}` must declare the objective it records.
 #+END_SRC
 
 ** plan-has-stable-ref-property
@@ -85,42 +151,48 @@ Plan `{{ scope.title }}` must link its SDD property.
 :END:
 
 #+BEGIN_SRC org-contract
-let plan = headline where at($scope)
-assert count node-property where descendant_of(plan) and summary(key) = "STABLE_REF"
+(let ((plan
+       (headline :at $scope)))
+  (assert count >= 1
+    (node-property :descendant-of plan :summary (key "STABLE_REF"))))
 #+END_SRC
 
 #+BEGIN_SRC jinja2 :name message
 Plan `{{ scope.title }}` must name a stable source reference.
 #+END_SRC
 
-** plan-has-package-property
+** plan-has-scope-ref-property
 :PROPERTIES:
-:ASSERT_ID: plan.has-package-property
+:ASSERT_ID: plan.has-scope-ref-property
 :SEVERITY: error
 :END:
 
 #+BEGIN_SRC org-contract
-let plan = headline where at($scope)
-assert count node-property where descendant_of(plan) and summary(key) = "PACKAGE"
+(let ((plan
+       (headline :at $scope)))
+  (assert count >= 1
+    (node-property :descendant-of plan :summary (key "SCOPE_REF"))))
 #+END_SRC
 
 #+BEGIN_SRC jinja2 :name message
-Plan `{{ scope.title }}` must identify the affected package.
+Plan `{{ scope.title }}` must name the scope or design reference that bounds the plan.
 #+END_SRC
 
-** plan-has-slice-property
+** plan-has-status-property
 :PROPERTIES:
-:ASSERT_ID: plan.has-slice-property
+:ASSERT_ID: plan.has-status-property
 :SEVERITY: error
 :END:
 
 #+BEGIN_SRC org-contract
-let plan = headline where at($scope)
-assert count node-property where descendant_of(plan) and summary(key) = "SLICE"
+(let ((plan
+       (headline :at $scope)))
+  (assert count >= 1
+    (node-property :descendant-of plan :summary (key "STATUS"))))
 #+END_SRC
 
 #+BEGIN_SRC jinja2 :name message
-Plan `{{ scope.title }}` must identify the active slice.
+Plan `{{ scope.title }}` must expose a STATUS property.
 #+END_SRC
 
 ** plan-has-next-action-property
@@ -130,27 +202,31 @@ Plan `{{ scope.title }}` must identify the active slice.
 :END:
 
 #+BEGIN_SRC org-contract
-let plan = headline where at($scope)
-assert count node-property where descendant_of(plan) and summary(key) = "NEXT_ACTION"
+(let ((plan
+       (headline :at $scope)))
+  (assert count >= 1
+    (node-property :descendant-of plan :summary (key "NEXT_ACTION"))))
 #+END_SRC
 
 #+BEGIN_SRC jinja2 :name message
 Plan `{{ scope.title }}` must declare a NEXT_ACTION recovery hint.
 #+END_SRC
 
-** plan-has-resume-query-property
+** plan-has-recovery-ref-property
 :PROPERTIES:
-:ASSERT_ID: plan.has-resume-query-property
+:ASSERT_ID: plan.has-recovery-ref-property
 :SEVERITY: error
 :END:
 
 #+BEGIN_SRC org-contract
-let plan = headline where at($scope)
-assert count node-property where descendant_of(plan) and summary(key) = "RESUME_QUERY"
+(let ((plan
+       (headline :at $scope)))
+  (assert count >= 1
+    (node-property :descendant-of plan :summary (key "RECOVERY_REF"))))
 #+END_SRC
 
 #+BEGIN_SRC jinja2 :name message
-Plan `{{ scope.title }}` must declare a RESUME_QUERY for agent recovery.
+Plan `{{ scope.title }}` must declare a RECOVERY_REF anchor for agent recovery.
 #+END_SRC
 
 ** plan-has-evidence-property
@@ -160,14 +236,44 @@ Plan `{{ scope.title }}` must declare a RESUME_QUERY for agent recovery.
 :END:
 
 #+BEGIN_SRC org-contract
-let plan = headline where at($scope)
-assert count node-property where descendant_of(plan) and summary(key) = "EVIDENCE"
+(let ((plan
+       (headline :at $scope)))
+  (assert count >= 1
+    (node-property :descendant-of plan :summary (key "EVIDENCE"))))
 #+END_SRC
 
 #+BEGIN_SRC jinja2 :name message
 Plan `{{ scope.title }}` must summarize evidence in the EVIDENCE property.
 #+END_SRC
 
+** plan-has-evidence-status-property
+:PROPERTIES:
+:ASSERT_ID: plan.has-evidence-status-property
+:SEVERITY: error
+:END:
+#+BEGIN_SRC org-contract
+(let ((plan
+       (headline :at $scope)))
+  (assert count >= 1
+    (node-property :descendant-of plan :summary (key "EVIDENCE_STATUS"))))
+#+END_SRC
+#+BEGIN_SRC jinja2 :name message
+Plan `{{ scope.title }}` must expose an EVIDENCE_STATUS property so closure can distinguish pending from validated evidence.
+#+END_SRC
+** plan-has-review-status-property
+:PROPERTIES:
+:ASSERT_ID: plan.has-review-status-property
+:SEVERITY: error
+:END:
+#+BEGIN_SRC org-contract
+(let ((plan
+       (headline :at $scope)))
+  (assert count >= 1
+    (node-property :descendant-of plan :summary (key "REVIEW_STATUS"))))
+#+END_SRC
+#+BEGIN_SRC jinja2 :name message
+Plan `{{ scope.title }}` must expose a REVIEW_STATUS property so reflection answers are part of closure.
+#+END_SRC
 ** plan-has-lifecycle-checklist
 :PROPERTIES:
 :ASSERT_ID: plan.has-lifecycle-checklist
@@ -175,14 +281,77 @@ Plan `{{ scope.title }}` must summarize evidence in the EVIDENCE property.
 :END:
 
 #+BEGIN_SRC org-contract
-let plan = headline where at($scope)
-assert count item where descendant_of(plan) and summary(checkbox) = "on" or summary(checkbox) = "off" or summary(checkbox) = "trans" and >= 5
+(let ((plan
+       (headline :at $scope)))
+  (assert count >= 5
+    (and
+      (item :descendant-of plan)
+      (or
+        (= (summary checkbox) "on")
+        (= (summary checkbox) "off")
+        (= (summary checkbox) "trans")))))
 #+END_SRC
 
 #+BEGIN_SRC jinja2 :name message
 Plan `{{ scope.title }}` must expose a lifecycle checklist with at least five checkbox items.
 #+END_SRC
 
+** plan-status-is-lifecycle-state
+:PROPERTIES:
+:ASSERT_ID: plan.status-is-lifecycle-state
+:SEVERITY: error
+:END:
+#+BEGIN_SRC org-contract
+(assert count >= 1
+  (or
+    (node-property :descendant-of $scope :summary (key "STATUS") :summary (value "active"))
+    (node-property :descendant-of $scope :summary (key "STATUS") :summary (value "complete"))))
+#+END_SRC
+#+BEGIN_SRC jinja2 :name message
+Plan `{{ scope.title }}` must keep STATUS in the lifecycle set: active or complete.
+#+END_SRC
+** plan-next-action-is-lifecycle-state
+:PROPERTIES:
+:ASSERT_ID: plan.next-action-is-lifecycle-state
+:SEVERITY: error
+:END:
+#+BEGIN_SRC org-contract
+(assert count >= 1
+  (or
+    (node-property :descendant-of $scope :summary (key "NEXT_ACTION") :summary-contains (value "continue"))
+    (node-property :descendant-of $scope :summary (key "NEXT_ACTION") :summary-contains (value "archive-ready"))))
+#+END_SRC
+#+BEGIN_SRC jinja2 :name message
+Plan `{{ scope.title }}` must keep NEXT_ACTION either resumable or archive-ready.
+#+END_SRC
+** plan-evidence-status-is-lifecycle-state
+:PROPERTIES:
+:ASSERT_ID: plan.evidence-status-is-lifecycle-state
+:SEVERITY: error
+:END:
+#+BEGIN_SRC org-contract
+(assert count >= 1
+  (or
+    (node-property :descendant-of $scope :summary (key "EVIDENCE_STATUS") :summary (value "pending"))
+    (node-property :descendant-of $scope :summary (key "EVIDENCE_STATUS") :summary (value "validated"))))
+#+END_SRC
+#+BEGIN_SRC jinja2 :name message
+Plan `{{ scope.title }}` must keep EVIDENCE_STATUS pending while active or validated before archive readiness.
+#+END_SRC
+** plan-review-status-is-lifecycle-state
+:PROPERTIES:
+:ASSERT_ID: plan.review-status-is-lifecycle-state
+:SEVERITY: error
+:END:
+#+BEGIN_SRC org-contract
+(assert count >= 1
+  (or
+    (node-property :descendant-of $scope :summary (key "REVIEW_STATUS") :summary (value "pending"))
+    (node-property :descendant-of $scope :summary (key "REVIEW_STATUS") :summary (value "passed"))))
+#+END_SRC
+#+BEGIN_SRC jinja2 :name message
+Plan `{{ scope.title }}` must keep REVIEW_STATUS pending while active or passed after reflection answers are accepted.
+#+END_SRC
 ** plan-has-context
 :PROPERTIES:
 :ASSERT_ID: plan.has-context
@@ -190,7 +359,8 @@ Plan `{{ scope.title }}` must expose a lifecycle checklist with at least five ch
 :END:
 
 #+BEGIN_SRC org-contract
-assert count headline where child_of($scope) and summary(title) = "Context"
+(assert count >= 1
+  (headline :child-of $scope :summary (title "Context")))
 #+END_SRC
 
 #+BEGIN_SRC jinja2 :name message
@@ -204,7 +374,8 @@ Plan `{{ scope.title }}` must contain a Context section.
 :END:
 
 #+BEGIN_SRC org-contract
-assert count headline where child_of($scope) and summary(title) = "Checkpoints"
+(assert count >= 1
+  (headline :child-of $scope :summary (title "Checkpoints")))
 #+END_SRC
 
 #+BEGIN_SRC jinja2 :name message
@@ -218,7 +389,8 @@ Plan `{{ scope.title }}` should contain a Checkpoints section for resumable exec
 :END:
 
 #+BEGIN_SRC org-contract
-assert count headline where child_of($scope) and summary(title) = "Validation"
+(assert count >= 1
+  (headline :child-of $scope :summary (title "Validation")))
 #+END_SRC
 
 #+BEGIN_SRC jinja2 :name message
@@ -232,8 +404,10 @@ Plan `{{ scope.title }}` must contain a Validation section.
 :END:
 
 #+BEGIN_SRC org-contract
-let validation = headline where child_of($scope) and summary(title) = "Validation"
-assert count item where descendant_of(validation) and summary(checkbox) = "on"
+(let ((validation
+       (headline :child-of $scope :summary (title "Validation"))))
+  (assert count >= 1
+    (item :descendant-of validation :summary (checkbox "on"))))
 #+END_SRC
 
 #+BEGIN_SRC jinja2 :name message
@@ -247,7 +421,8 @@ Plan `{{ scope.title }}` must record at least one checked validation item.
 :END:
 
 #+BEGIN_SRC org-contract
-assert count headline where child_of($scope) and summary(title) = "Evidence"
+(assert count >= 1
+  (headline :child-of $scope :summary (title "Evidence")))
 #+END_SRC
 
 #+BEGIN_SRC jinja2 :name message
@@ -261,14 +436,82 @@ Plan `{{ scope.title }}` must contain an Evidence section.
 :END:
 
 #+BEGIN_SRC org-contract
-let evidence = headline where child_of($scope) and summary(title) = "Evidence"
-assert count item where descendant_of(evidence)
+(let ((evidence
+       (headline :child-of $scope :summary (title "Evidence"))))
+  (assert count >= 1
+    (item :descendant-of evidence)))
 #+END_SRC
 
 #+BEGIN_SRC jinja2 :name message
 Plan `{{ scope.title }}` must attach concrete evidence entries.
 #+END_SRC
 
+** plan-has-evidence-loop
+:PROPERTIES:
+:ASSERT_ID: plan.has-evidence-loop
+:SEVERITY: error
+:END:
+#+BEGIN_SRC org-contract
+(assert count >= 1
+  (headline :child-of $scope :summary (title "Evidence Loop")))
+#+END_SRC
+#+BEGIN_SRC jinja2 :name message
+Plan `{{ scope.title }}` must contain an Evidence Loop section tying claims to replayable commands and results.
+#+END_SRC
+** plan-evidence-loop-has-result
+:PROPERTIES:
+:ASSERT_ID: plan.evidence-loop-has-result
+:SEVERITY: error
+:END:
+#+BEGIN_SRC org-contract
+(let ((evidence-loop
+       (headline :child-of $scope :summary (title "Evidence Loop"))))
+  (assert count >= 1
+    (table-cell :descendant-of evidence-loop :column "Result" :header nil :nonempty t)))
+#+END_SRC
+#+BEGIN_SRC jinja2 :name message
+Plan `{{ scope.title }}` must keep a non-empty Evidence Loop result cell.
+#+END_SRC
+** plan-has-reflection
+:PROPERTIES:
+:ASSERT_ID: plan.has-reflection
+:SEVERITY: error
+:END:
+#+BEGIN_SRC org-contract
+(assert count >= 1
+  (headline :child-of $scope :summary (title "Reflection")))
+#+END_SRC
+#+BEGIN_SRC jinja2 :name message
+Plan `{{ scope.title }}` must contain a Reflection section before it can be closed.
+#+END_SRC
+** plan-reflection-has-required-questions
+:PROPERTIES:
+:ASSERT_ID: plan.reflection-has-required-questions
+:SEVERITY: error
+:END:
+#+BEGIN_SRC org-contract
+(let ((reflection
+       (headline :child-of $scope :summary (title "Reflection"))))
+  (assert count >= 5
+    (table-cell :descendant-of reflection :column "Question" :header nil :nonempty t)))
+#+END_SRC
+#+BEGIN_SRC jinja2 :name message
+Plan `{{ scope.title }}` must ask closure reflection questions for completion, drift, checklist state, evidence, and archive readiness.
+#+END_SRC
+** plan-reflection-has-answer-values
+:PROPERTIES:
+:ASSERT_ID: plan.reflection-has-answer-values
+:SEVERITY: error
+:END:
+#+BEGIN_SRC org-contract
+(let ((reflection
+       (headline :child-of $scope :summary (title "Reflection"))))
+  (assert count >= 5
+    (table-cell :descendant-of reflection :column "Value" :header nil :nonempty t)))
+#+END_SRC
+#+BEGIN_SRC jinja2 :name message
+Plan `{{ scope.title }}` must answer every closure reflection question before it is marked complete.
+#+END_SRC
 ** plan-has-recovery
 :PROPERTIES:
 :ASSERT_ID: plan.has-recovery
@@ -276,7 +519,8 @@ Plan `{{ scope.title }}` must attach concrete evidence entries.
 :END:
 
 #+BEGIN_SRC org-contract
-assert count headline where child_of($scope) and summary(title) = "Recovery"
+(assert count >= 1
+  (headline :child-of $scope :summary (title "Recovery")))
 #+END_SRC
 
 #+BEGIN_SRC jinja2 :name message
@@ -290,8 +534,10 @@ Plan `{{ scope.title }}` must contain a Recovery section.
 :END:
 
 #+BEGIN_SRC org-contract
-let recovery = headline where child_of($scope) and summary(title) = "Recovery"
-assert count src-block where descendant_of(recovery)
+(let ((recovery
+       (headline :child-of $scope :summary (title "Recovery"))))
+  (assert count >= 1
+    (src-block :descendant-of recovery)))
 #+END_SRC
 
 #+BEGIN_SRC jinja2 :name message

@@ -24,3 +24,4 @@ marlin-rust-project-harness-policy.workspace = true
 
 [dev-dependencies]
 criterion.workspace = true
+marlin-rust-project-harness-policy.workspace = true

@@ -32,3 +32,4 @@ marlin-agent-harness-types.workspace = true
 marlin-agent-test-support.workspace = true
 serde_json.workspace = true
 tempfile.workspace = true
+marlin-rust-project-harness-policy.workspace = true

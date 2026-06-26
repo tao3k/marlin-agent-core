@@ -11,7 +11,7 @@ fn core_facade_does_not_depend_on_stream_or_litellm_gateway_crates() {
 }
 
 #[test]
-fn rust_project_harness_policy_stays_on_build_dependency_plane() {
+fn rust_project_harness_policy_stays_on_build_and_test_dependency_planes() {
     for package in [
         "crates/marlin-agent-core",
         "crates/marlin-agent-harness",
@@ -22,7 +22,7 @@ fn rust_project_harness_policy_stays_on_build_dependency_plane() {
             "dependencies",
             "marlin-rust-project-harness-policy",
         );
-        assert_dependency_absent(
+        assert_dependency_present(
             package,
             "dev-dependencies",
             "marlin-rust-project-harness-policy",
@@ -32,6 +32,7 @@ fn rust_project_harness_policy_stays_on_build_dependency_plane() {
             "build-dependencies",
             "marlin-rust-project-harness-policy",
         );
+        assert_dependency_absent(package, "dev-dependencies", "rust-lang-project-harness");
         assert_dependency_absent(package, "build-dependencies", "rust-lang-project-harness");
     }
 }

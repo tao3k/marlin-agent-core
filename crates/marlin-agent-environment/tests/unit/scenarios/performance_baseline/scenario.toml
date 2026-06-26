@@ -1,0 +1,6 @@
+id = "marlin-agent-environment.scenario-performance"
+title = "marlin-agent-environment scenario performance baseline"
+policy_ids = ["MARLIN-SCENARIO-PERFORMANCE"]
+agent_goal = "Keep marlin-agent-environment crate-local scenario performance contracts stable and replayable."
+inputs = "inputs"
+expected = "expected"

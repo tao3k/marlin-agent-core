@@ -1,0 +1,148 @@
+#+TITLE: Agent PRD Contract v1
+
+* agent-prd-v1
+:PROPERTIES:
+:CONTRACT_ID: agent.prd.v1
+:CONTRACT_KIND: org-elements
+:CONTRACT_SCOPE: document
+:END:
+
+** What This Produces
+This contract validates a product requirements document. A PRD records the
+problem, users, requirements, non-goals, and success metrics. Use it as a
+governing contract when a plan is mainly about product intent or user value.
+
+** prd-has-root
+:PROPERTIES:
+:ASSERT_ID: prd-has-root
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+(assert exists
+  (headline :summary-contains (title "PRD")))
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+PRD files must have a PRD root heading.
+#+END_SRC
+
+** prd-has-id-property
+:PROPERTIES:
+:ASSERT_ID: prd-has-id-property
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+(assert exists
+  (node-property :summary (key "PRD_ID")))
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+PRD files must declare PRD_ID.
+#+END_SRC
+
+** prd-has-status-property
+:PROPERTIES:
+:ASSERT_ID: prd-has-status-property
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+(assert exists
+  (node-property :summary (key "PRD_STATUS")))
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+PRD files must declare PRD_STATUS.
+#+END_SRC
+
+** prd-has-product-area
+:PROPERTIES:
+:ASSERT_ID: prd-has-product-area
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+(assert exists
+  (node-property :summary (key "PRODUCT_AREA")))
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+PRD files must declare PRODUCT_AREA.
+#+END_SRC
+
+** prd-has-problem
+:PROPERTIES:
+:ASSERT_ID: prd-has-problem
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+(assert exists
+  (headline :summary-contains (title "Problem")))
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+PRD files must contain a Problem section.
+#+END_SRC
+
+** prd-has-users
+:PROPERTIES:
+:ASSERT_ID: prd-has-users
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+(assert exists
+  (headline :summary-contains (title "Users")))
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+PRD files must contain a Users section.
+#+END_SRC
+
+** prd-has-requirements
+:PROPERTIES:
+:ASSERT_ID: prd-has-requirements
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+(assert exists
+  (headline :summary-contains (title "Requirements")))
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+PRD files must contain a Requirements section.
+#+END_SRC
+
+** prd-has-success-metrics
+:PROPERTIES:
+:ASSERT_ID: prd-has-success-metrics
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+(assert exists
+  (headline :summary-contains (title "Success Metrics")))
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+PRD files must contain Success Metrics.
+#+END_SRC
+
+** prd-has-out-of-scope
+:PROPERTIES:
+:ASSERT_ID: prd-has-out-of-scope
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+(assert exists
+  (headline :summary-contains (title "Out of Scope")))
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+PRD files must contain Out of Scope.
+#+END_SRC

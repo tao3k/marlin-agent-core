@@ -1,0 +1,171 @@
+#+TITLE: Agent Specification Authoring Flow Contract v1
+
+* agent-spec-flow-v1
+:PROPERTIES:
+:CONTRACT_ID: agent.spec-flow.v1
+:CONTRACT_KIND: org-elements
+:CONTRACT_SCOPE: document
+:END:
+
+** What This Produces
+This contract validates a specification authoring flow. The flow is used when a
+new theory or governing specification family must be introduced under
+=languages/org=.
+
+The flow keeps creation order explicit:
+- define the theory and boundary;
+- create the contract;
+- create the template;
+- create at least one example;
+- register the contract and template in the skill and template index;
+- run contract trace, lint, and adversarial review.
+
+** spec-flow-has-root
+:PROPERTIES:
+:ASSERT_ID: spec-flow-has-root
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+(assert exists
+  (headline :summary-contains (title "SpecFlow")))
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+Spec authoring flow files must have a SpecFlow root heading.
+#+END_SRC
+
+** spec-flow-has-id-property
+:PROPERTIES:
+:ASSERT_ID: spec-flow-has-id-property
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+(assert exists
+  (node-property :summary (key "SPEC_FLOW_ID")))
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+Spec authoring flow files must declare SPEC_FLOW_ID.
+#+END_SRC
+
+** spec-flow-has-family-property
+:PROPERTIES:
+:ASSERT_ID: spec-flow-has-family-property
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+(assert exists
+  (node-property :summary (key "SPEC_FAMILY_ID")))
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+Spec authoring flow files must declare SPEC_FAMILY_ID.
+#+END_SRC
+
+** spec-flow-has-definition
+:PROPERTIES:
+:ASSERT_ID: spec-flow-has-definition
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+(assert exists
+  (headline :summary-contains (title "Definition")))
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+Spec authoring flow files must define the theory and boundary.
+#+END_SRC
+
+** spec-flow-has-contract-stage
+:PROPERTIES:
+:ASSERT_ID: spec-flow-has-contract-stage
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+(assert exists
+  (headline :summary-contains (title "Contract")))
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+Spec authoring flow files must include the Contract stage.
+#+END_SRC
+
+** spec-flow-has-template-stage
+:PROPERTIES:
+:ASSERT_ID: spec-flow-has-template-stage
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+(assert exists
+  (headline :summary-contains (title "Template")))
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+Spec authoring flow files must include the Template stage.
+#+END_SRC
+
+** spec-flow-has-example-stage
+:PROPERTIES:
+:ASSERT_ID: spec-flow-has-example-stage
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+(assert exists
+  (headline :summary-contains (title "Example")))
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+Spec authoring flow files must include the Example stage.
+#+END_SRC
+
+** spec-flow-has-skill-stage
+:PROPERTIES:
+:ASSERT_ID: spec-flow-has-skill-stage
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+(assert exists
+  (headline :summary-contains (title "Skill Integration")))
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+Spec authoring flow files must include Skill Integration.
+#+END_SRC
+
+** spec-flow-has-validation
+:PROPERTIES:
+:ASSERT_ID: spec-flow-has-validation
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+(assert exists
+  (headline :summary-contains (title "Validation")))
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+Spec authoring flow files must include Validation.
+#+END_SRC
+
+** spec-flow-has-adversarial-review
+:PROPERTIES:
+:ASSERT_ID: spec-flow-has-adversarial-review
+:SEVERITY: warning
+:END:
+
+#+BEGIN_SRC org-contract
+(assert exists
+  (headline :summary-contains (title "Adversarial Review")))
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+Spec authoring flow files should include Adversarial Review.
+#+END_SRC

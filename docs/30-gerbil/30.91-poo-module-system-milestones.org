@@ -9,8 +9,8 @@ This document turns [[file:gerbil-poo-modules-system-desgin.org][Gerbil POO Flow
 [[file:30.90-poo-module-system.org][30.90 POO Module System]] into an executable milestone flow.
 The current implementation proves the shape and now treats poo-flow
 =:poo-flow/src/module-system/facade= as the dependency-owned module system. Marlin provides
-=:marlin/modules/prefabs/default-policy= and
-=:marlin/modules/prefabs/user-interface= furnished adapter paths with apply,
+=:config-interface/modules/prefabs/default-policy= and
+=:config-interface/modules/prefabs/user-interface= furnished adapter paths with apply,
 delivery receipt, catalog presentation, and policy projection handoff. The
 broader policy surface still needs more domain prefab packs and custom debug
 fact emission.
@@ -25,7 +25,7 @@ This checkpoint keeps the package/module layer separate from native AOT staging:
   adapters while resolving the module-system implementation from the poo-flow
   dependency. It no longer lists native C ABI modules as =gsc:= entries that
   force =std/make= to look for =*.scm= sources during package compile.
-- =build.ss stage-native-aot <deck-runtime|agent-policy-routing> <link-root>= remains the only profile-specific native AOT source mapping.
+- The older native-AOT staging action is retired; profile-specific native AOT source mapping is Rust-owned native build support plus dedicated native crates.
 - The package checkpoint was verified with:
 #+begin_src sh
 gxpkg deps -i
@@ -74,8 +74,8 @@ Exit condition:
 
 *** M1 Furnished Prefab Pack
 
-Status: landed for the shared =:marlin/modules/prefabs/default-policy= pack and
-the =:marlin/modules/prefabs/user-interface= delivery path; additional domain
+Status: landed for the shared =:config-interface/modules/prefabs/default-policy= pack and
+the =:config-interface/modules/prefabs/user-interface= delivery path; additional domain
 packs remain an implementation priority.
 
 Purpose:
@@ -86,9 +86,9 @@ Purpose:
 - Users should not start by assembling raw =marlinPolicyModule= objects.
 
 Deliverables:
-- =marlinDefaultPolicyPack= and =:marlin/modules/prefabs/default-policy= as the shared
+- =marlinDefaultPolicyPack= and =:config-interface/modules/prefabs/default-policy= as the shared
 upstream prefab constructor.
-- =UserInterfaceWorkspace= from =:marlin/modules/prefabs/user-interface= as the first
+- =UserInterfaceWorkspace= from =:config-interface/modules/prefabs/user-interface= as the first
 concrete furnished-house user API.
 - A pack catalog presentation that can list available pack ids, policy
 families, default objects, disabled objects, and allowed Rust catalog ids.

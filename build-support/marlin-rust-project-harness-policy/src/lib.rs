@@ -15,6 +15,7 @@ mod improvement_queue;
 mod package_evidence_graph;
 mod quality_findings;
 mod quality_gate;
+mod scenario_benchmark;
 mod verification_policy;
 
 pub use config::{
@@ -28,7 +29,7 @@ pub use dependency_topology::{
     observe_rust_harness_dependency_topology_receipt_from_env,
 };
 pub use evidence::{RustProjectHarnessEvidenceReceipt, write_evidence_graph_from_env};
-pub use gate::{complete_build_gate, complete_marlin_rust_project_harness_gate_from_env};
+pub use gate::{assert_marlin_rust_project_harness_gate_from_env, complete_build_gate};
 pub use gerbil_runtime_assets::{
     GerbilRuntimeAssetManifestReceipt, GerbilRuntimeAssetManifestStatus,
     generate_gerbil_runtime_assets, inspect_gerbil_runtime_assets,
@@ -53,6 +54,17 @@ pub use quality_findings::{
     RustProjectHarnessQualityFindingsReceipt, evaluate_quality_findings_for_gate,
 };
 pub use quality_gate::{RustProjectHarnessGateReceipt, evaluate_performance_and_stability_gate};
+pub use scenario_benchmark::{
+    RustScenarioPerformanceCrateName, RustScenarioPerformanceDurationMs,
+    RustScenarioPerformanceMemoryBytes, RustScenarioPerformanceOptimizationFinding,
+    RustScenarioPerformanceOptimizationFindingKind, RustScenarioPerformanceOptimizationPriority,
+    RustScenarioPerformanceOptimizationReceipt, RustScenarioPerformanceOptimizationScore,
+    RustScenarioPerformanceOptimizationStatus, RustScenarioPerformanceScenarioId,
+    assert_crate_scenario_performance_baseline_receipt_is_stable,
+    assert_crate_scenario_performance_contract_gate_accepts_crate_scenarios,
+    assert_crate_scenario_performance_first_batch_optimization_frontier_is_clear,
+    crate_scenario_performance_optimization_receipt, optimization_receipt_from_benchmark_receipt,
+};
 pub use verification_policy::{
     RustProjectHarnessVerificationOwnerProfileReceipt, RustProjectHarnessVerificationPolicyReceipt,
     build_verification_policy_receipt,

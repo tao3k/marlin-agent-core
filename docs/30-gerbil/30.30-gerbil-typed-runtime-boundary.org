@@ -1,0 +1,168 @@
+#+title: 30.30 Gerbil Typed Runtime Boundary
+
+* 30.30 Gerbil Typed Runtime Boundary
+:PROPERTIES:
+:ID: docs-30-30-gerbil-typed-runtime-boundary
+:KIND: architecture
+:STATUS: active
+:END:
+
+** Contract
+
+=marlin-gerbil-scheme= owns the Rust-side Gerbil command profile and typed
+projection boundary. The crate may start a configured =gxi= command for debug
+and smoke gates, but Gerbil code must not own a JSON stdin/stdout protocol.
+Gerbil modules construct Scheme values and typed artifact records; Rust owns
+outer command configuration, debug output, trace serialization, and projection
+into concrete Rust types.
+
+The boundary is intentionally data-only:
+
+- Gerbil receives Scheme values or Rust-owned typed request projections, not ad
+  hoc text packets.
+
+- =contract_facts= remain parser-owned Rust data that can be projected into
+  typed Gerbil accessors when a compiler gate needs them.
+- Gerbil returns typed artifact values through named module functions. Rust owns
+  outer receipt and CLI JSON emission.
+- =LoopGraph= artifacts carry graph ids, node executor/config maps, and optional
+  edge conditions through the typed Rust IR.
+- workspace patch intent is represented as =WorkspacePatchIntentSpec= inside
+  =GerbilCompiledArtifact=, not as direct mutation authority.
+- agent scenario fixtures are represented as =AgentScenarioContract= inside
+  =GerbilCompiledArtifact=, with =schema_id= owned by =marlin-agent-protocol=.
+- stderr/stdout remain process diagnostics for debug gates, not a runtime
+  protocol that Gerbil modules must serialize.
+- The adapter rejects any artifact whose actual kind differs from the requested
+  =expected= kind.
+
+Rust callers that need contract-aware Gerbil compilation use
+=GerbilCommandCompiler::compile_with_contract_facts= when they need to pass
+explicit parser-owned Org contract facts. The default =GerbilCompiler::compile=
+path uses =GerbilCompileRequest= protocol defaults, so workspace patch-intent
+requests include the default =contract_facts= payload while other artifact
+kinds keep omitting it.
+
+** Gerbil-Side Bindings
+
+The first binding layer is protocol binding, not native VM embedding. This
+follows the shape audited from =gerbil-mysql=: keep low-level bindings behind a
+dedicated Gerbil interface, then wrap them in a public Gerbil API. Gerbil code
+owns constructors, accessors, policy/module composition, and typed artifact
+construction. It does not own JSON serializers for Marlin runtime APIs. The
+adapter resolves =package: marlin= modules through =GERBIL_LOADPATH=. The Rust
+crate owns the runtime asset manifest through =GERBIL_RUNTIME_ASSETS= and can
+write the Gerbil loadpath tree with =write_gerbil_runtime_assets=.
+=marlin/request.ss= keeps typed request accessors, =marlin/parser.ss= owns
+reader-backed source-to-=LoopGraph=, source-to-=WorkspaceSchema=,
+source-to-=WorkspacePatchIntent=, and source-to-=AgentScenarioContract= steps,
+and =marlin/adapter.ss= dispatches through an artifact compiler table with
+table/registry consistency checks. The protocol binding currently exports
+=LoopGraph=, =WorkspaceSchema=, =WorkspacePatchIntent=, and
+=AgentScenarioContract= artifact kinds through a supported-kind registry and
+rejects other =expected= artifact kinds inside the Gerbil process before source
+text reaches the parser.
+
+Native Rust/Gerbil bindings are a later layer. They should live behind this
+same typed protocol after the command boundary proves the IR shape, because
+embedding the Gerbil/Gambit runtime would add ABI, GC, threading, linker, and
+packaging constraints to the crate before the control-plane IR is stable.
+
+** Workspace Patch Intent Boundary
+
+The workspace-facing Gerbil artifact is a DSL that compiles to
+=WorkspacePatchIntentSpec=. It is not a native binding and it is not workspace
+mutation authority. Gerbil only emits typed data with the Rust-owned fields
+=intent_id=, =patch=, and =dry_run_first=. The =patch= value is the existing
+=WorkspacePatch= shape: =reason=, optional =source_agent=, and typed
+=WorkspacePatchOp= entries.
+
+A proposed Gerbil source form is:
+
+#+begin_src scheme
+(workspace-patch-intent "intent:memory"
+  (dry-run-first #t)
+  (patch
+    (reason "gerbil intent")
+    (source-agent "gerbil")
+    (set-todo "memory.org:1:goal" DONE)
+    (set-property "memory.org:1:goal" OWNER "gerbil")
+    (mark-memory-candidate "memory.org:1:goal" "long-term")))
+#+end_src
+
+The first landing requires =dry_run_first= to be true. Rust workflow code
+owns validation, dry-run, receipt production, and any later durable write
+decision. Gerbil code must not call filesystem APIs, =marlin-org-patch=,
+=marlin-org-workflow=, or any workspace persistence boundary.
+
+The first Rust consumer is
+=marlin_org_workflow::GerbilWorkspacePatchIntentDryRunner=. It validates the
+=dry_run_first= gate, projects affected =OrgNodeId= values from the typed patch
+ops, emits deterministic dry-run hashes, and records memory dispatch requests as
+rejected dry-run receipts. It deliberately does not load Org documents or plan
+source edits.
+
+Durable source mutation requires a second Rust-owned request:
+=GerbilWorkspacePatchIntentCommit=. That request pairs the typed Gerbil intent
+with an explicit document and =OrgSourceWritePolicy= before
+=OrgWorkspaceSourceCommitter::commit_gerbil_intent= may load, plan, and commit
+Org source edits. A missing =dry_run_first= gate returns a diagnostic receipt
+before any Org document is loaded. =OrgSourceWritePolicy::dry_run= still plans
+and applies edits in memory for receipt evidence, but it does not write
+documents. Missing target documents return a diagnostic receipt without
+creating source files.
+
+The current Gerbil modules support the =set-todo=, =set-property=, and
+=mark-memory-candidate= =WorkspacePatchOp= surface. Additional patch operations
+need explicit parser clauses, typed projection coverage, Rust validation, and
+real =gxi= tests before they enter the DSL. =WorkspacePatchIntent= is
+registered only because =protocol.ss= defines typed constructors/accessors,
+=parser.ss= reads it, =adapter.ss= dispatches it through the compiler table,
+and real =gxi= tests prove the typed artifact can be projected by Rust. The
+table/registry self-check is the gate that prevents Rust from asking Gerbil for
+a half-registered artifact.
+
+** Boundary
+
+The command adapter does not select or bundle a Gerbil runtime. Runtime
+selection remains configuration owned by the caller. This keeps the Marlin
+kernel dependent on typed IR rather than on the Gerbil implementation.
+Contract facts are read-side command inputs. Durable mutation remains a typed
+=WorkspacePatchIntentSpec= output that must pass through the Rust workspace
+patch pipeline.
+
+** Profile Configuration
+
+The portable configuration shape is =GerbilCommandProfile=. Its environment
+encoding is Rust-owned outer configuration and can be supplied through
+=MARLIN_GERBIL_COMMAND_PROFILE=:
+
+#+begin_src json
+{"program":"/opt/gerbil/bin/gxi","args":[":marlin/adapter"],"current_dir":".data/gerbil"}
+#+end_src
+
+The profile is converted into an execution spec without shell parsing. Each
+=args= entry is passed as one process argument. Callers that need shell
+behavior must opt into it explicitly by setting =program= to a shell and
+providing shell flags themselves.
+
+=env= entries are passed directly to the spawned process through
+=std::process::Command::envs=. This makes runtime module resolution, such as
+=GERBIL_LOADPATH= for =package: marlin= fixture modules, part of the typed
+command profile instead of shell wrapper state.
+
+Rust callers can construct a compiler from the same profile shape with
+=GerbilCommandCompiler::from_profile_json= or
+=GerbilCommandCompiler::from_env=. The environment entry point reads
+=MARLIN_GERBIL_COMMAND_PROFILE= and returns no compiler when the variable is
+absent.
+
+For the crate-shipped Gerbil runtime assets, callers do not need to hand-build
+the =GERBIL_LOADPATH= and =:marlin/adapter= arguments. Use
+=GerbilCommandProfile::marlin_runtime_module= when a serializable profile is
+needed, =GerbilCommandSpec::marlin_runtime_module= or
+=GerbilCommandSpec::marlin_runtime_launcher= when constructing a process spec
+directly, and =GerbilCommandCompiler::from_marlin_runtime_module= when the
+caller already has a =gxi= executable path and a loadpath root. The default
+local =gxi= path is resolved by =default_gerbil_gxi_program= from
+=MARLIN_GERBIL_GXI=, falling back to the Homebrew =gerbil-scheme= path.

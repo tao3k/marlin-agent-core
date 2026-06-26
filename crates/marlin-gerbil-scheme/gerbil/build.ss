@@ -5,36 +5,98 @@
 (import :std/make
         :std/source
         :clan/building
-        :gerbil/gambit)
+        (only-in :gslph/src/build-api/source-coverage
+                 gslph-source-coverage)
+        :gerbil/gambit
+        (only-in :gerbil/compiler/base
+                 __available-cores))
 
 (def +marlin-gerbil-package-name+ "marlin-deck-runtime")
 
 (def package-root (path-normalize (path-directory (this-source-file))))
 (def source-root (path-expand "src" package-root))
 
-(def +marlin-native-aot-only-modules+
+(def +marlin-special-source-files+
   '("marlin/deck-runtime-native.ss"
     "marlin/agent-policy-routing-native.ss"))
 
-(def (marlin-package-module? module-path)
-  (not (member module-path +marlin-native-aot-only-modules+)))
+(def +marlin-excluded-package-source-files+
+  +marlin-special-source-files+)
+
+
+(gslph-source-coverage
+ roots: '("src")
+ runtime-roots: '("src")
+ explanation: "Marlin Gerbil runtime adapters live under gerbil/src; build.ss owns the Scheme harness source coverage activation while gerbil.pkg owns package dependencies and policy.")
 
 ;;; Boundary:
 ;;; - gerbil.pkg owns dependency declarations.
 ;;; - gxpkg owns dependency installation and package context.
 ;;; - clan/building owns source discovery under src/.
+(def (marlin-package-source-file? module-path)
+  (not (member module-path +marlin-excluded-package-source-files+)))
+
 (def (marlin-runtime-build-spec)
   (let (previous-directory (current-directory))
     (dynamic-wind
       (lambda () (current-directory source-root))
-      (lambda () (filter marlin-package-module? (all-gerbil-modules)))
+      (lambda () (filter marlin-package-source-file? (all-gerbil-modules)))
       (lambda () (current-directory previous-directory)))))
+
+(def (marlin-package-build-spec options)
+  (marlin-runtime-build-spec))
+
+(def (spec)
+  (marlin-package-build-spec []))
 
 (%set-build-environment!
  (path-expand "build.ss" source-root)
  name: +marlin-gerbil-package-name+
- deps: '("poo-flow")
+ deps: '("poo-flow" "gslph")
  spec: marlin-runtime-build-spec)
+
+(def (marlin-build-positive-integer-from-env name)
+  (let* ((raw (getenv name #f))
+         (configured (and raw (string->number raw))))
+    (and configured
+         (integer? configured)
+         (> configured 0)
+         configured)))
+
+(def (marlin-build-worker-count)
+  (or (marlin-build-positive-integer-from-env "GERBIL_BUILD_CORES")
+      (marlin-build-positive-integer-from-env "CARGO_BUILD_JOBS")
+      (marlin-build-positive-integer-from-env "NUM_JOBS")
+      (max 1 (##cpu-count))))
+
+(def (marlin-sync-build-worker-count!)
+  (let (worker-count (marlin-build-worker-count))
+    (set! __available-cores worker-count)
+    worker-count))
+
+(def (marlin-build-make-options options)
+  (match options
+    ([key value . rest]
+     (cons key
+           (cons value
+                 (marlin-build-make-options rest))))
+    ([] [])))
+
+(def (marlin-package-options options)
+  (append (marlin-build-make-options options)
+          [parallelize: (marlin-sync-build-worker-count!)]))
+
+(def (marlin-build-message action label stage)
+  (display "... marlin-gerbil ")
+  (display action)
+  (display " ")
+  (display label)
+  (display " targets=")
+  (display (length stage))
+  (display " parallelize=")
+  (display (marlin-build-worker-count))
+  (newline)
+  (force-output))
 
 (def (marlin-build-parse-options opts)
   (let lp ((rest opts) (options []))
@@ -49,86 +111,37 @@
       (else
        (error "Unexpected " rest)))))
 
-(def (marlin-build-shell-quote value)
-  (let lp ((rest (string->list value)) (out "'"))
-    (match rest
-      ([] (string-append out "'"))
-      ([#\' . rest]
-       (lp rest (string-append out "'\"'\"'")))
-      ([char . rest]
-       (lp rest (string-append out (string char)))))))
+(def (marlin-make label stage options)
+  (marlin-build-message "compile" label stage)
+  (apply make stage
+         srcdir: source-root
+         (marlin-package-options options)))
 
-(def (marlin-build-gxc-program)
-  (or (with-catch (lambda (_) #f)
-        (lambda () (getenv "MARLIN_GERBIL_GXC")))
-      "gxc"))
+(def (marlin-make-clean label stage)
+  (marlin-build-message "clean" label stage)
+  (apply make-clean stage
+         srcdir: source-root
+         (marlin-package-options [])))
 
-(def (marlin-build-gxc-native-target srcdir source-path)
-  (let* ((command
-          (string-append
-           "cd " (marlin-build-shell-quote srcdir)
-           " && GERBIL_LOADPATH=src "
-           (marlin-build-shell-quote (marlin-build-gxc-program))
-           " -target C -s -S -O "
-           (marlin-build-shell-quote source-path)))
-         (status (shell-command command)))
-    (unless (zero? status)
-      (error "native AOT gxc target failed" source-path status))))
+(def (marlin-package-compile options)
+  (marlin-make "package"
+               (marlin-package-build-spec options)
+               options))
 
-(def (marlin-build-profile profile)
-  (match profile
-    ("deck-runtime"
-     [["src/marlin/deck-runtime-native.ss"
-       "src/marlin/deck-runtime-native~0.scm"
-       "deck-runtime-native~0.scm"]])
-    ("agent-policy-routing"
-     [["src/marlin/agent-policy-routing-native.ss"
-       "src/marlin/agent-policy-routing-native~0.scm"
-       "agent-policy-routing-native~0.scm"]])
-    (else
-     (error "Unknown native AOT profile" profile))))
-
-(def (marlin-build-stage-native-aot-unit srcdir output-root unit)
-  (match unit
-    ([source-path cache-relative staged-file]
-     (marlin-build-gxc-native-target srcdir source-path)
-     (let* ((cache-file
-             (path-expand
-              (string-append "~/.gerbil/lib/" +marlin-gerbil-package-name+ "/"
-                             cache-relative)))
-            (stage-dir (path-expand (path-expand ".gerbil/native" output-root)))
-            (stage-file (path-expand staged-file stage-dir)))
-       (unless (file-exists? cache-file)
-         (error "native AOT compiled runtime artifact missing" cache-file))
-       (create-directory* stage-dir)
-       (when (file-exists? stage-file)
-         (delete-file stage-file))
-       (copy-file cache-file stage-file)
-       (displayln stage-file)))))
-
-(def (marlin-build-stage-native-aot srcdir profile output-root)
-  (for-each
-   (lambda (unit)
-     (marlin-build-stage-native-aot-unit srcdir output-root unit))
-   (marlin-build-profile profile)))
-
-(def (marlin-runtime-build-main args build-spec that-file)
-  (def (build options)
-    (add-load-path! source-root)
-    (apply make (build-spec) srcdir: source-root options))
-  (def (clean)
-    (make-clean (build-spec) srcdir: source-root))
-
-  (match args
-    (["meta"] (write '("spec" "compile" "clean" "stage-native-aot")) (newline))
-    (["spec"] (pretty-print (build-spec)))
-    (["compile" . options] (build (marlin-build-parse-options options)))
-    (["clean"] (clean))
-    (["stage-native-aot" profile output-root]
-     (marlin-build-stage-native-aot package-root profile output-root))
-    ([] (build []))
-    (else
-     (error "Unexpected build command" args))))
+(def (marlin-package-clean)
+  (marlin-make-clean "package"
+                     (marlin-package-build-spec [])))
 
 (def (main . args)
-  (marlin-runtime-build-main args marlin-runtime-build-spec (this-source-file)))
+  (match args
+    (["meta"] (write '("spec" "compile" "clean")) (newline))
+    (["spec" . options]
+     (pretty-print
+      (marlin-package-build-spec
+       (marlin-build-parse-options options))))
+    (["compile" . options]
+     (marlin-package-compile (marlin-build-parse-options options)))
+    (["clean"] (marlin-package-clean))
+    ([] (marlin-package-compile []))
+    (else
+     (error "Unexpected build command" args))))

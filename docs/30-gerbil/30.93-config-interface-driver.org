@@ -1,0 +1,67 @@
+* 30.93.00 Decision
+The canonical Marlin Scheme policy driver lives under:
+
+#+begin_src text
+crates/marlin-gerbil-scheme/gerbil/src/config-interface
+#+end_src
+
+This directory is part of the =marlin-deck-runtime= Gerbil package. It is not a
+fixture tree, not a downstream example, and not a second Rust protocol layer.
+Downstream workspaces may consume the exported facade, but Marlin-owned kernel
+policy composition starts here.
+
+* 30.93.10 Driver Boundary
+- =gerbil/build.ss= owns package target discovery, =meta/spec/compile/clean=,
+  and build parallelism synchronized from =GERBIL_BUILD_CORES=,
+  =CARGO_BUILD_JOBS=, =NUM_JOBS=, or CPU count.
+- =src/config-interface/init.ss= owns compact policy-pack selection.
+- =src/config-interface/lib.ss= is the public Scheme facade for AGENT and human
+  operators.
+- =src/config-interface/modules/lib.ss= is the internal aggregate facade for
+  stable Marlin-owned policy modules.
+- =src/config-interface/custom/marline-kernel= owns concrete Marlin kernel
+  policy packs and real-LLM case manifests.
+
+Examples remain downstream consumers. They must not define a competing Marlin
+policy API.
+
+* 30.93.20 Runtime Boundary
+Scheme/POO owns high-order policy composition, prefab bundles, object surgery,
+loop profile selection, and projection receipt values. Rust owns native ABI
+projection, runtime execution, catalog handler lookup, receipts, and any
+explicit trace, CLI, or cross-process encoding.
+
+The config interface must not serialize native-internal runtime payloads. It
+emits typed Scheme policy/projection values for Rust-owned projection and
+validation.
+
+Rust also owns the build-driver contract facts exposed by =GerbilRuntimeBuildScriptContract=: package name, build stages, dependencies, source roots, special native source exclusions, and build worker env precedence. Scheme =build.ss= remains the executable package driver; Rust validates its embedded asset contract before runtime handoff.
+* 30.93.30 Public Surface
+The current public facade includes:
+- policy objects and object surgery operations;
+- policy packs, pack catalogs, inventory, presentation, and projection receipts;
+- loop engine, memory, model route, hook selection, continuation, human review,
+  workspace, session, agent, and evidence policy families;
+- prefab user-interface policy and delivery surfaces through the package target
+  set.
+
+New policy families should first land as typed modules under
+=src/config-interface/modules/=, be aggregated by =modules/lib.ss=, and only then
+be re-exported by =lib.ss= when they are stable.
+
+* 30.93.40 Verification
+The driver smoke is now a Scheme test, not only a shell receipt:
+
+#+begin_src sh
+cd crates/marlin-gerbil-scheme/gerbil
+gxi t/config-interface-driver-test.ss
+gxi t/deck-runtime-script-performance-gate.ss
+gxi t/all-test.ss
+#+end_src
+
+The driver test uses Gerbil's process library to execute =gxi build.ss meta= and
+=gxi build.ss spec=. It verifies that the package driver exposes
+=spec/compile/clean= and that =build.ss spec= includes the canonical
+=config-interface= modules while excluding downstream example workspaces from
+the package target set.
+The performance gate imports the package-visible =src/marlin/deck-runtime-script-performance.ss= helper and validates Scenario benchmark receipts without treating =t/= as a Gerbil package library.

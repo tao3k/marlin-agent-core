@@ -54,6 +54,17 @@ fn debug_cli_gerbil_policy_receipt_runs_scheme_policy_engine() {
     assert_eq!(summary["status"], "ok");
     assert_eq!(summary["command"], "gerbil policy-receipt");
     assert_eq!(
+        summary["policy_boundary_contract"]["kind"],
+        "marlin.debug.policy-boundary-contract.v1"
+    );
+    assert_eq!(summary["policy_boundary_contract"]["status"], "passed");
+    assert_eq!(
+        summary["policy_boundary_contract"]["checked_fact_count"],
+        39
+    );
+    assert_eq!(summary["policy_boundary_contract"]["violation_count"], 0);
+    assert_eq!(summary["policy_boundary_contract"]["violations"], json!([]));
+    assert_eq!(
         summary["call_expr"],
         "(emit-policy-receipt-gate-cli-report)"
     );
@@ -74,7 +85,7 @@ fn debug_cli_gerbil_policy_receipt_runs_scheme_policy_engine() {
     assert_eq!(summary["extension_capability_count"], 4);
     assert_eq!(
         summary["policy_extension_object_kind"],
-        "marlin.modules.policy-extension-object.v1"
+        "marlin.config-interface.policy-extension-object.v1"
     );
     assert_eq!(summary["policy_extension_object"], true);
     assert_eq!(
@@ -105,60 +116,63 @@ fn debug_cli_gerbil_policy_receipt_runs_scheme_policy_engine() {
     );
     assert_eq!(
         summary["module_eval_workflow_kind"],
-        "marlin.modules.policy-workflow.v1"
+        "marlin.config-interface.policy-workflow.v1"
     );
     assert_eq!(
-        summary["module_system_presentation_kind"],
+        summary["policy_facade_presentation_kind"],
         "poo-flow.modules.system-presentation.v1"
     );
     assert_eq!(
-        summary["module_system_projection_chain_kind"],
-        "marlin.modules.projection-chain.v1"
+        summary["policy_facade_projection_chain_kind"],
+        "marlin.config-interface.projection-chain.v1"
     );
-    assert_eq!(summary["module_system_root_import_count"], 0);
-    assert_eq!(summary["module_system_root_extension_count"], 1);
+    assert_eq!(summary["policy_facade_root_import_count"], 0);
+    assert_eq!(summary["policy_facade_root_extension_count"], 1);
     assert_eq!(
-        summary["module_system_root_policy_extension_object_count"],
+        summary["policy_facade_root_policy_extension_object_count"],
         1
     );
     assert_eq!(
-        summary["module_system_import_graph_owner"],
+        summary["policy_facade_import_graph_owner"],
         "poo-flow.modules"
     );
     assert_eq!(
-        summary["module_system_option_merge_owner"],
+        summary["policy_facade_option_merge_owner"],
         "poo-flow.modules"
     );
     assert_eq!(
-        summary["module_system_extension_composition_owner"],
+        summary["policy_facade_extension_composition_owner"],
         "poo-flow.modules"
     );
     assert_eq!(
-        summary["module_system_native_projection_payload_owner"],
+        summary["policy_facade_native_projection_payload_owner"],
         "rust"
     );
-    assert_eq!(summary["module_system_budget_receipt_owner"], "rust");
+    assert_eq!(summary["policy_facade_budget_receipt_owner"], "rust");
     assert_eq!(
-        summary["module_system_catalog_resolution_receipt_owner"],
+        summary["policy_facade_catalog_resolution_receipt_owner"],
         "rust"
     );
-    assert_eq!(summary["module_system_rust_parses_scheme_source"], false);
+    assert_eq!(summary["policy_facade_rust_parses_scheme_source"], false);
     assert_eq!(
-        summary["module_system_scheme_manufactures_rust_handlers"],
+        summary["policy_facade_scheme_manufactures_rust_handlers"],
         false
     );
-    assert_eq!(summary["policy_pack_kind"], "marlin.modules.policy-pack.v1");
+    assert_eq!(
+        summary["policy_pack_kind"],
+        "marlin.config-interface.policy-pack.v1"
+    );
     assert_eq!(summary["policy_pack_id"], "debug-policy-prefab-pack");
     assert_eq!(
         summary["policy_pack_presentation_kind"],
-        "marlin.modules.policy-pack-presentation.v1"
+        "marlin.config-interface.policy-pack-presentation.v1"
     );
     assert_eq!(
         summary["policy_pack_inventory_kind"],
-        "marlin.modules.policy-pack-inventory.v1"
+        "marlin.config-interface.policy-pack-inventory.v1"
     );
     assert_eq!(
-        summary["policy_pack_module_system_presentation_kind"],
+        summary["policy_pack_policy_facade_presentation_kind"],
         "poo-flow.modules.system-presentation.v1"
     );
     assert_eq!(summary["policy_pack_object_count"], 3);
@@ -229,7 +243,7 @@ fn debug_cli_gerbil_policy_receipt_runs_scheme_policy_engine() {
     assert_eq!(summary["policy_pack_rust_handler_manufactured"], false);
     assert_eq!(
         summary["policy_projection_kind"],
-        "marlin.modules.policy-projection.v1"
+        "marlin.config-interface.policy-projection.v1"
     );
     assert_eq!(
         summary["policy_projection_pack_id"],
@@ -237,19 +251,19 @@ fn debug_cli_gerbil_policy_receipt_runs_scheme_policy_engine() {
     );
     assert_eq!(
         summary["policy_projection_chain_kind"],
-        "marlin.modules.projection-chain.v1"
+        "marlin.config-interface.projection-chain.v1"
     );
     assert_eq!(
         summary["policy_projection_module_evaluation_receipt_kind"],
-        "marlin.modules.policy-pack.module-evaluation-receipt.v1"
+        "marlin.config-interface.policy-pack.module-evaluation-receipt.v1"
     );
     assert_eq!(
         summary["policy_projection_policy_projection_receipt_kind"],
-        "marlin.modules.policy-projection.v1"
+        "marlin.config-interface.policy-projection.v1"
     );
     assert_eq!(
         summary["policy_projection_native_projection_payload_kind"],
-        "marlin.modules.policy-pack-presentation.v1"
+        "marlin.config-interface.policy-pack-presentation.v1"
     );
     assert_eq!(
         summary["policy_projection_native_projection_payload_owner"],
@@ -288,7 +302,7 @@ fn debug_cli_gerbil_policy_receipt_runs_scheme_policy_engine() {
     assert_eq!(summary["policy_projection_replayable"], true);
     assert_eq!(
         summary["policy_projection_chain_receipt_kind"],
-        "marlin.modules.policy-projection-chain-receipt.v1"
+        "marlin.config-interface.policy-projection-chain-receipt.v1"
     );
     assert_eq!(
         summary["policy_projection_chain_receipt_pack_id"],
@@ -296,15 +310,15 @@ fn debug_cli_gerbil_policy_receipt_runs_scheme_policy_engine() {
     );
     assert_eq!(
         summary["policy_projection_chain_module_evaluation_receipt_kind"],
-        "marlin.modules.policy-pack.module-evaluation-receipt.v1"
+        "marlin.config-interface.policy-pack.module-evaluation-receipt.v1"
     );
     assert_eq!(
         summary["policy_projection_chain_policy_projection_receipt_kind"],
-        "marlin.modules.policy-projection.v1"
+        "marlin.config-interface.policy-projection.v1"
     );
     assert_eq!(
         summary["policy_projection_chain_native_projection_payload_kind"],
-        "marlin.modules.policy-pack-presentation.v1"
+        "marlin.config-interface.policy-pack-presentation.v1"
     );
     assert_eq!(
         summary["policy_projection_chain_budget_receipt_kind"],
@@ -352,7 +366,7 @@ fn debug_cli_gerbil_policy_receipt_runs_scheme_policy_engine() {
     assert_eq!(summary["policy_projection_chain_replayable"], true);
     assert_eq!(
         summary["default_policy_delivery_kind"],
-        "marlin.modules.prefabs.default-policy.delivery-receipt.v1"
+        "marlin.config-interface.prefabs.default-policy.delivery-receipt.v1"
     );
     assert_eq!(
         summary["default_policy_pack_id"],
@@ -372,15 +386,15 @@ fn debug_cli_gerbil_policy_receipt_runs_scheme_policy_engine() {
     );
     assert_eq!(
         summary["default_policy_catalog_presentation_kind"],
-        "marlin.modules.policy-pack-catalog-presentation.v1"
+        "marlin.config-interface.policy-pack-catalog-presentation.v1"
     );
     assert_eq!(
         summary["default_policy_projection_kind"],
-        "marlin.modules.policy-projection.v1"
+        "marlin.config-interface.policy-projection.v1"
     );
     assert_eq!(
         summary["default_policy_projection_chain_receipt_kind"],
-        "marlin.modules.policy-projection-chain-receipt.v1"
+        "marlin.config-interface.policy-projection-chain-receipt.v1"
     );
     assert_eq!(
         summary["default_policy_budget_receipt_kind"],
@@ -393,7 +407,7 @@ fn debug_cli_gerbil_policy_receipt_runs_scheme_policy_engine() {
     assert_eq!(summary["default_policy_replayable"], true);
     assert_eq!(
         summary["policy_substrate_gate_kind"],
-        "marlin.modules.policy-substrate-gate.v1"
+        "marlin.config-interface.policy-substrate-gate.v1"
     );
     assert_eq!(summary["policy_substrate_gate_profile"], "policy-substrate");
     assert_eq!(
@@ -420,33 +434,33 @@ fn debug_cli_gerbil_policy_receipt_runs_scheme_policy_engine() {
     assert_eq!(summary["scheme_catalog_role"], "extension-object-selection");
     assert_eq!(summary["runtime_catalog_owner"], "rust");
     assert_eq!(summary["catalog_resolved_by_scheme"], false);
-    assert_eq!(summary["iterations"], 7);
+    assert_eq!(summary["timing"]["iterations"], 7);
     assert_eq!(
-        summary["timing_scope"],
+        summary["timing"]["scope"],
         "single-gxi-process-wall-clock-includes-startup"
     );
     assert!(
-        summary["process_elapsed_micros"]
+        summary["timing"]["process_elapsed_micros"]
             .as_u64()
             .expect("elapsed micros")
             > 0,
         "{summary}"
     );
     assert!(
-        summary["avg_process_micros_per_iteration"]
+        summary["timing"]["avg_process_micros_per_iteration"]
             .as_u64()
             .expect("avg micros")
             > 0,
         "{summary}"
     );
     assert!(
-        summary["scheme_policy_loop_elapsed_micros"]
+        summary["timing"]["scheme_policy_loop_elapsed_micros"]
             .as_u64()
             .is_some(),
         "{summary}"
     );
     assert!(
-        summary["avg_scheme_policy_micros_per_iteration"]
+        summary["timing"]["avg_scheme_policy_micros_per_iteration"]
             .as_u64()
             .is_some(),
         "{summary}"
@@ -498,6 +512,8 @@ fn debug_cli_gerbil_policy_receipt_loads_user_entrypoint_call() {
     let summary: Value = serde_json::from_str(&result.stdout).expect("gerbil policy summary");
     assert_package_owned_debug_loadpath(&summary);
     assert_eq!(summary["status"], "ok");
+    assert_eq!(summary["policy_boundary_contract"]["status"], "passed");
+    assert_eq!(summary["policy_boundary_contract"]["violation_count"], 0);
     assert_eq!(
         summary["entrypoint"],
         "t/fixtures/custom-policy-receipt-entrypoint.ss"
@@ -508,11 +524,11 @@ fn debug_cli_gerbil_policy_receipt_loads_user_entrypoint_call() {
     );
     assert_eq!(
         summary["policy_projection_kind"],
-        "marlin.modules.policy-projection.v1"
+        "marlin.config-interface.policy-projection.v1"
     );
     assert_eq!(
         summary["policy_projection_native_projection_payload_kind"],
-        "marlin.modules.policy-pack-presentation.v1"
+        "marlin.config-interface.policy-pack-presentation.v1"
     );
     assert_eq!(
         summary["policy_projection_policy_composition_owner"],
@@ -524,5 +540,5 @@ fn debug_cli_gerbil_policy_receipt_loads_user_entrypoint_call() {
         "rust"
     );
     assert_eq!(summary["policy_projection_replayable"], true);
-    assert_eq!(summary["iterations"], 3);
+    assert_eq!(summary["timing"]["iterations"], 3);
 }

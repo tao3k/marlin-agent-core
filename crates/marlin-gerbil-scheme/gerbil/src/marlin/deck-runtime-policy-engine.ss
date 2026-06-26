@@ -175,12 +175,28 @@ package: marlin
       dynamic-hook-action-value
       dynamic-hook-selection-value
       matched-signals-value)
-  (let (projection-chain
-        (make-marlin-deck-runtime-policy-projection-chain
-         matched-value
-         strategy-rule-value
-         dynamic-hook-action-value
-         dynamic-hook-selection-value))
+  (let* ((module-evaluation-receipt
+          (make-marlin-deck-runtime-module-evaluation-receipt matched-value))
+         (policy-projection-receipt
+          (make-marlin-deck-runtime-policy-projection-receipt
+           matched-value
+           strategy-rule-value))
+         (native-projection-payload
+          (make-marlin-deck-runtime-native-projection-payload
+           dynamic-hook-action-value
+           dynamic-hook-selection-value))
+         (budget-receipt
+          (make-marlin-deck-runtime-policy-budget-receipt))
+         (catalog-resolution-receipt
+          (make-marlin-deck-runtime-catalog-resolution-receipt
+           dynamic-hook-action-value))
+         (projection-chain
+          (.o kind: marlin-deck-runtime-policy-projection-chain-kind
+              module-evaluation-receipt: module-evaluation-receipt
+              policy-projection-receipt: policy-projection-receipt
+              native-projection-payload: native-projection-payload
+              budget-receipt: budget-receipt
+              catalog-resolution-receipt: catalog-resolution-receipt)))
     (.o kind: marlin-deck-runtime-strategy-policy-receipt-kind
         matched: matched-value
         command: command-value
@@ -190,11 +206,11 @@ package: marlin
         dynamic-hook-action: dynamic-hook-action-value
         dynamic-hook-selection: dynamic-hook-selection-value
         policy-projection-chain: projection-chain
-        module-evaluation-receipt: (.get projection-chain module-evaluation-receipt)
-        policy-projection-receipt: (.get projection-chain policy-projection-receipt)
-        native-projection-payload: (.get projection-chain native-projection-payload)
-        budget-receipt: (.get projection-chain budget-receipt)
-        catalog-resolution-receipt: (.get projection-chain catalog-resolution-receipt)
+        module-evaluation-receipt: module-evaluation-receipt
+        policy-projection-receipt: policy-projection-receipt
+        native-projection-payload: native-projection-payload
+        budget-receipt: budget-receipt
+        catalog-resolution-receipt: catalog-resolution-receipt
         matched-signals: matched-signals-value
         capabilities: (marlin-deck-runtime-strategy-capability-names)
         policy-engine: "scheme-poo")))

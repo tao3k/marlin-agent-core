@@ -5,9 +5,9 @@
         (only-in :poo-flow/src/module-system/facade
                  poo-flow-module-system-owner
                  poo-flow-scheme-owner)
-        :marlin/modules/lib
-        :marlin/modules/prefabs/user-interface
-        :marlin/modules/prefabs/user-interface-delivery)
+        :config-interface/lib
+        :config-interface/modules/prefabs/user-interface
+        :config-interface/modules/prefabs/user-interface-delivery)
 
 ;;; Boundary: Local assertions stay scalar around POO-heavy values.
 ;; MarlinResult <- MarlinInput
@@ -52,16 +52,16 @@
 (def ui-prefab-loop-governor-manifest
   (UserInterfaceLoopGovernorRuntimeManifest ui-prefab-workspace))
 
-(check (.get ui-prefab-workspace kind) => marlin-modules-kind)
+(check (.get ui-prefab-workspace kind) => marlin-config-interface-kind)
 (check (.get ui-prefab-delivery-receipt kind)
        => user-interface-delivery-receipt-kind)
 (check (.get ui-prefab-user-interface kind)
        => user-interface-delivery-receipt-kind)
 (check (.get ui-prefab-delivery-receipt workspace-kind)
-       => marlin-modules-kind)
-(check (.get ui-prefab-delivery-receipt module-system-presentation-kind)
-       => marlin-module-system-presentation-kind)
-(check (.get ui-prefab-delivery-receipt module-system-projection-chain-kind)
+       => marlin-config-interface-kind)
+(check (.get ui-prefab-delivery-receipt policy-facade-presentation-kind)
+       => marlin-policy-facade-presentation-kind)
+(check (.get ui-prefab-delivery-receipt policy-facade-projection-chain-kind)
        => marlin-module-projection-chain-kind)
 (check (.get ui-prefab-delivery-receipt policy-pack-presentation-kind)
        => marlin-policy-pack-presentation-kind)
@@ -107,7 +107,7 @@
 (check (.get ui-prefab-delivery-receipt root-module-id)
        => "user-interface-root-module")
 (check (.get ui-prefab-delivery-receipt root-module-kind)
-       => marlin-modules-kind)
+       => marlin-config-interface-kind)
 (check (.get ui-prefab-delivery-receipt module-count) => 7)
 (check (.get ui-prefab-delivery-receipt extension-count) => 2)
 (check (.get ui-prefab-delivery-receipt script-count) => 1)
@@ -284,7 +284,7 @@
 (check (.get ui-prefab-delivery-receipt marlin-loops-policy-owner)
        => "marlin")
 (check (.get ui-prefab-delivery-receipt marlin-loops-policy-source)
-       => "marlin/modules/prefabs/user-interface#loops-policy")
+       => "config-interface/modules/prefabs/user-interface#loops-policy")
 (check (.get ui-prefab-delivery-receipt
              marlin-loops-policy-control-plane-owner)
        => "poo-flow")

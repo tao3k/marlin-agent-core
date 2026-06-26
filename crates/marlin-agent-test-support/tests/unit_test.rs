@@ -22,3 +22,5 @@ mod sub_agent_session;
 mod test_run;
 #[path = "unit/three_layer.rs"]
 mod three_layer;
+
+marlin_rust_project_harness_policy::scenario_performance_tests!();

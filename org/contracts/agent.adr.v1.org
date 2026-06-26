@@ -1,0 +1,118 @@
+#+TITLE: Agent ADR Contract v1
+
+* agent-adr-v1
+:PROPERTIES:
+:CONTRACT_ID: agent.adr.v1
+:CONTRACT_KIND: org-elements
+:CONTRACT_SCOPE: document
+:END:
+
+** What This Produces
+This contract validates an architecture decision record. An ADR captures one
+decision, its context, consequences, and evidence. Use it as a governing
+contract when a plan is mainly about choosing or revising a technical decision.
+
+** adr-has-root
+:PROPERTIES:
+:ASSERT_ID: adr-has-root
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+(assert exists
+  (headline :summary-contains (title "ADR")))
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+ADR files must have an ADR root heading.
+#+END_SRC
+
+** adr-has-id-property
+:PROPERTIES:
+:ASSERT_ID: adr-has-id-property
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+(assert exists
+  (node-property :summary (key "ADR_ID")))
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+ADR files must declare ADR_ID.
+#+END_SRC
+
+** adr-has-status-property
+:PROPERTIES:
+:ASSERT_ID: adr-has-status-property
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+(assert exists
+  (node-property :summary (key "ADR_STATUS")))
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+ADR files must declare ADR_STATUS.
+#+END_SRC
+
+** adr-has-context
+:PROPERTIES:
+:ASSERT_ID: adr-has-context
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+(assert exists
+  (headline :summary-contains (title "Context")))
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+ADR files must contain a Context section.
+#+END_SRC
+
+** adr-has-decision
+:PROPERTIES:
+:ASSERT_ID: adr-has-decision
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+(assert exists
+  (headline :summary-contains (title "Decision")))
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+ADR files must contain a Decision section.
+#+END_SRC
+
+** adr-has-consequences
+:PROPERTIES:
+:ASSERT_ID: adr-has-consequences
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+(assert exists
+  (headline :summary-contains (title "Consequences")))
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+ADR files must contain a Consequences section.
+#+END_SRC
+
+** adr-has-evidence
+:PROPERTIES:
+:ASSERT_ID: adr-has-evidence
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+(assert exists
+  (headline :summary-contains (title "Evidence")))
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+ADR files must contain an Evidence section.
+#+END_SRC

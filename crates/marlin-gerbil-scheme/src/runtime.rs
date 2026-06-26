@@ -9,6 +9,8 @@ use std::{
 
 /// Environment variable that overrides the `gxi` executable path.
 pub const MARLIN_GERBIL_GXI_ENV: &str = "MARLIN_GERBIL_GXI";
+/// Environment variable that overrides the `gxpkg` executable path.
+pub const MARLIN_GERBIL_GXPKG_ENV: &str = "MARLIN_GERBIL_GXPKG";
 /// Environment variable that overrides the `gxc` executable path.
 pub const MARLIN_GERBIL_GXC_ENV: &str = "MARLIN_GERBIL_GXC";
 /// Environment variable that identifies the paired `Gerbil` Gambit compiler.
@@ -33,6 +35,54 @@ pub const GERBIL_PACKAGE_SOURCE_PATH: &str = "src";
 pub const GERBIL_PACKAGE_ROOT_PATH: &str = "gerbil";
 /// Package-owned build script for crate-shipped `Gerbil` runtime assets.
 pub const GERBIL_PACKAGE_BUILD_SCRIPT: &str = "build.ss";
+/// Gerbil package name owned by the crate-shipped runtime package.
+pub const GERBIL_RUNTIME_PACKAGE_NAME: &str = "marlin-deck-runtime";
+/// Build stages exposed by the crate-shipped Gerbil package driver.
+pub const GERBIL_RUNTIME_BUILD_STAGES: &[&str] = &["spec", "compile", "clean"];
+/// Gerbil package dependencies declared by the crate-shipped package driver.
+pub const GERBIL_RUNTIME_BUILD_DEPS: &[&str] = &["poo-flow", "gslph"];
+/// Source roots scanned by the crate-shipped package driver.
+pub const GERBIL_RUNTIME_SOURCE_ROOTS: &[&str] = &["src"];
+/// Runtime roots activated through the Scheme harness source coverage API.
+pub const GERBIL_RUNTIME_COVERAGE_ROOTS: &[&str] = &["src"];
+/// Native sources compiled through dedicated native-link lanes, not package make.
+pub const GERBIL_RUNTIME_SPECIAL_SOURCE_FILES: &[&str] = &[
+    "marlin/deck-runtime-native.ss",
+    "marlin/agent-policy-routing-native.ss",
+];
+/// Sources excluded from the generic package make spec.
+pub const GERBIL_RUNTIME_EXCLUDED_PACKAGE_SOURCE_FILES: &[&str] =
+    GERBIL_RUNTIME_SPECIAL_SOURCE_FILES;
+/// Environment variables accepted by the Gerbil package build worker selector.
+pub const GERBIL_RUNTIME_BUILD_WORKER_ENV: &[&str] =
+    &["GERBIL_BUILD_CORES", "CARGO_BUILD_JOBS", "NUM_JOBS"];
+
+/// Rust-owned contract facts for the crate-shipped Gerbil package driver.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct GerbilRuntimeBuildScriptContract {
+    pub package_name: &'static str,
+    pub stages: &'static [&'static str],
+    pub deps: &'static [&'static str],
+    pub source_roots: &'static [&'static str],
+    pub coverage_roots: &'static [&'static str],
+    pub special_source_files: &'static [&'static str],
+    pub excluded_package_source_files: &'static [&'static str],
+    pub worker_env: &'static [&'static str],
+}
+
+/// Returns the Rust-owned contract facts expected from `gerbil/build.ss`.
+pub const fn gerbil_runtime_build_script_contract() -> GerbilRuntimeBuildScriptContract {
+    GerbilRuntimeBuildScriptContract {
+        package_name: GERBIL_RUNTIME_PACKAGE_NAME,
+        stages: GERBIL_RUNTIME_BUILD_STAGES,
+        deps: GERBIL_RUNTIME_BUILD_DEPS,
+        source_roots: GERBIL_RUNTIME_SOURCE_ROOTS,
+        coverage_roots: GERBIL_RUNTIME_COVERAGE_ROOTS,
+        special_source_files: GERBIL_RUNTIME_SPECIAL_SOURCE_FILES,
+        excluded_package_source_files: GERBIL_RUNTIME_EXCLUDED_PACKAGE_SOURCE_FILES,
+        worker_env: GERBIL_RUNTIME_BUILD_WORKER_ENV,
+    }
+}
 /// Runtime source asset that can be written into a `gxi` loadpath root.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct GerbilRuntimeAsset {
@@ -59,7 +109,7 @@ pub fn gerbil_runtime_loadpath(root: impl AsRef<Path>) -> PathBuf {
     root.as_ref().join(GERBIL_PACKAGE_SOURCE_PATH)
 }
 
-/// Returns the package-local dependency library path populated by `gxpkg deps -i`.
+/// Returns the dependency loadpath managed by `gxpkg` next to `gerbil.pkg`.
 pub fn gerbil_runtime_dependency_loadpath() -> PathBuf {
     gerbil_package_root().join(".gerbil").join("lib")
 }
@@ -88,6 +138,13 @@ pub fn default_gerbil_gxi_program() -> PathBuf {
     env::var_os(MARLIN_GERBIL_GXI_ENV)
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("gxi"))
+}
+
+/// Returns the configured `gxpkg` executable path or PATH program name.
+pub fn default_gerbil_gxpkg_program() -> PathBuf {
+    env::var_os(MARLIN_GERBIL_GXPKG_ENV)
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("gxpkg"))
 }
 
 /// Returns the configured `gxc` executable path or PATH program name.

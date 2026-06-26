@@ -39,8 +39,10 @@ memory candidate shape this contract accepts.
 :END:
 
 #+BEGIN_SRC org-contract
-let memory = headline where at($scope)
-assert count node-property where descendant_of(memory) and summary(key) = "ID"
+(let ((memory
+       (headline :at $scope)))
+  (assert count >= 1
+    (node-property :descendant-of memory :summary (key "ID"))))
 #+END_SRC
 
 ** memory-has-kind-property
@@ -50,8 +52,10 @@ assert count node-property where descendant_of(memory) and summary(key) = "ID"
 :END:
 
 #+BEGIN_SRC org-contract
-let memory = headline where at($scope)
-assert count node-property where descendant_of(memory) and summary(key) = "MEMORY_KIND"
+(let ((memory
+       (headline :at $scope)))
+  (assert count >= 1
+    (node-property :descendant-of memory :summary (key "MEMORY_KIND"))))
 #+END_SRC
 
 ** memory-has-source-ref-property
@@ -61,8 +65,10 @@ assert count node-property where descendant_of(memory) and summary(key) = "MEMOR
 :END:
 
 #+BEGIN_SRC org-contract
-let memory = headline where at($scope)
-assert count node-property where descendant_of(memory) and summary(key) = "SOURCE_REF"
+(let ((memory
+       (headline :at $scope)))
+  (assert count >= 1
+    (node-property :descendant-of memory :summary (key "SOURCE_REF"))))
 #+END_SRC
 
 ** memory-has-recall-query-property
@@ -72,8 +78,10 @@ assert count node-property where descendant_of(memory) and summary(key) = "SOURC
 :END:
 
 #+BEGIN_SRC org-contract
-let memory = headline where at($scope)
-assert count node-property where descendant_of(memory) and summary(key) = "RECALL_QUERY"
+(let ((memory
+       (headline :at $scope)))
+  (assert count >= 1
+    (node-property :descendant-of memory :summary (key "RECALL_QUERY"))))
 #+END_SRC
 
 ** memory-has-salience-property
@@ -83,8 +91,10 @@ assert count node-property where descendant_of(memory) and summary(key) = "RECAL
 :END:
 
 #+BEGIN_SRC org-contract
-let memory = headline where at($scope)
-assert count node-property where descendant_of(memory) and summary(key) = "SALIENCE"
+(let ((memory
+       (headline :at $scope)))
+  (assert count >= 1
+    (node-property :descendant-of memory :summary (key "SALIENCE"))))
 #+END_SRC
 
 ** memory-has-claim
@@ -94,7 +104,8 @@ assert count node-property where descendant_of(memory) and summary(key) = "SALIE
 :END:
 
 #+BEGIN_SRC org-contract
-assert count headline where child_of($scope) and summary(title) = "Claim"
+(assert count >= 1
+  (headline :child-of $scope :summary (title "Claim")))
 #+END_SRC
 
 ** memory-has-source
@@ -104,7 +115,8 @@ assert count headline where child_of($scope) and summary(title) = "Claim"
 :END:
 
 #+BEGIN_SRC org-contract
-assert count headline where child_of($scope) and summary(title) = "Source"
+(assert count >= 1
+  (headline :child-of $scope :summary (title "Source")))
 #+END_SRC
 
 ** memory-has-recall
@@ -114,7 +126,8 @@ assert count headline where child_of($scope) and summary(title) = "Source"
 :END:
 
 #+BEGIN_SRC org-contract
-assert count headline where child_of($scope) and summary(title) = "Recall"
+(assert count >= 1
+  (headline :child-of $scope :summary (title "Recall")))
 #+END_SRC
 
 ** memory-recall-has-trigger
@@ -124,8 +137,10 @@ assert count headline where child_of($scope) and summary(title) = "Recall"
 :END:
 
 #+BEGIN_SRC org-contract
-let recall = headline where child_of($scope) and summary(title) = "Recall"
-assert count item where descendant_of(recall)
+(let ((recall
+       (headline :child-of $scope :summary (title "Recall"))))
+  (assert count >= 1
+    (item :descendant-of recall)))
 #+END_SRC
 
 ** memory-has-evidence
@@ -135,7 +150,8 @@ assert count item where descendant_of(recall)
 :END:
 
 #+BEGIN_SRC org-contract
-assert count headline where child_of($scope) and summary(title) = "Evidence"
+(assert count >= 1
+  (headline :child-of $scope :summary (title "Evidence")))
 #+END_SRC
 
 ** memory-evidence-has-entry
@@ -145,8 +161,10 @@ assert count headline where child_of($scope) and summary(title) = "Evidence"
 :END:
 
 #+BEGIN_SRC org-contract
-let evidence = headline where child_of($scope) and summary(title) = "Evidence"
-assert count item where descendant_of(evidence)
+(let ((evidence
+       (headline :child-of $scope :summary (title "Evidence"))))
+  (assert count >= 1
+    (item :descendant-of evidence)))
 #+END_SRC
 
 ** memory-has-trust
@@ -156,7 +174,8 @@ assert count item where descendant_of(evidence)
 :END:
 
 #+BEGIN_SRC org-contract
-assert count headline where child_of($scope) and summary(title) = "Trust"
+(assert count >= 1
+  (headline :child-of $scope :summary (title "Trust")))
 #+END_SRC
 
 ** memory-has-retention
@@ -166,7 +185,8 @@ assert count headline where child_of($scope) and summary(title) = "Trust"
 :END:
 
 #+BEGIN_SRC org-contract
-assert count headline where child_of($scope) and summary(title) = "Retention"
+(assert count >= 1
+  (headline :child-of $scope :summary (title "Retention")))
 #+END_SRC
 
 ** memory-retention-has-policy
@@ -176,6 +196,8 @@ assert count headline where child_of($scope) and summary(title) = "Retention"
 :END:
 
 #+BEGIN_SRC org-contract
-let retention = headline where child_of($scope) and summary(title) = "Retention"
-assert count item where descendant_of(retention)
+(let ((retention
+       (headline :child-of $scope :summary (title "Retention"))))
+  (assert count >= 1
+    (item :descendant-of retention)))
 #+END_SRC

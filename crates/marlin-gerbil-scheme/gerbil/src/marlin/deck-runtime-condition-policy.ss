@@ -97,46 +97,57 @@ package: marlin
 
 ;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
 ;; MarlinResult <- MarlinInput
+(def (marlin-deck-runtime-atomic-condition-policy-match? condition context)
+  (and (condition-required-string-match?
+        (.get condition required-session-id)
+        (.get context session-id))
+       (condition-all-strings-member?
+        (.get condition required-agent-lineage)
+        (.get context agent-lineage))
+       (condition-all-strings-member?
+        (.get condition required-workspace-state)
+        (.get context workspace-state))
+       (condition-all-strings-member?
+        (.get condition required-org-memory-hits)
+        (.get context org-memory-hits))
+       (condition-required-string-match?
+        (.get condition required-agent-class)
+        (.get context agent-class))))
+
+;;; Boundary: Combinator matching owns recursive policy composition; atomic
+;;; field matching remains in marlin-deck-runtime-atomic-condition-policy-match?.
+;; MarlinResult <- MarlinInput
+(def (marlin-deck-runtime-combinator-condition-policy-match? condition context)
+  (let ((operator (.get condition operator))
+        (conditions (.get condition conditions)))
+    (cond
+     ((string=? operator "all")
+      (andmap (lambda (child-condition)
+                (marlin-deck-runtime-condition-policy-match?
+                 child-condition
+                 context))
+              conditions))
+     ((string=? operator "any")
+      (ormap (lambda (child-condition)
+               (marlin-deck-runtime-condition-policy-match?
+                child-condition
+                context))
+             conditions))
+     ((string=? operator "not")
+      (not
+       (marlin-deck-runtime-condition-policy-match?
+        (car conditions)
+        context)))
+     (else #f))))
+
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
 (def (marlin-deck-runtime-condition-policy-match? condition context)
   (cond
    ((string=? (.get condition kind) marlin-deck-runtime-condition-policy-kind)
-    (and (condition-required-string-match?
-          (.get condition required-session-id)
-          (.get context session-id))
-         (condition-all-strings-member?
-          (.get condition required-agent-lineage)
-          (.get context agent-lineage))
-         (condition-all-strings-member?
-          (.get condition required-workspace-state)
-          (.get context workspace-state))
-         (condition-all-strings-member?
-          (.get condition required-org-memory-hits)
-          (.get context org-memory-hits))
-         (condition-required-string-match?
-          (.get condition required-agent-class)
-          (.get context agent-class))))
+    (marlin-deck-runtime-atomic-condition-policy-match? condition context))
    ((string=? (.get condition kind) marlin-deck-runtime-condition-combinator-kind)
-    (let ((operator (.get condition operator))
-          (conditions (.get condition conditions)))
-      (cond
-       ((string=? operator "all")
-        (andmap (lambda (child-condition)
-                  (marlin-deck-runtime-condition-policy-match?
-                   child-condition
-                   context))
-                conditions))
-       ((string=? operator "any")
-        (ormap (lambda (child-condition)
-                 (marlin-deck-runtime-condition-policy-match?
-                  child-condition
-                  context))
-               conditions))
-       ((string=? operator "not")
-        (not
-         (marlin-deck-runtime-condition-policy-match?
-          (car conditions)
-          context)))
-       (else #f))))
+    (marlin-deck-runtime-combinator-condition-policy-match? condition context))
    (else #f)))
 
 ;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.

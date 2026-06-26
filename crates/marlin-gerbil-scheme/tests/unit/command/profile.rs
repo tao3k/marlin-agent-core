@@ -5,7 +5,7 @@ use marlin_gerbil_scheme::{
 #[test]
 fn command_profile_round_trips_json_configuration() {
     let profile = GerbilCommandProfile::new("/opt/gerbil/bin/gxi")
-        .arg("--stdio-json")
+        .arg(GERBIL_ADAPTER_MODULE)
         .current_dir(".data/gerbil")
         .env("GERBIL_LOADPATH", "gerbil/src");
 
@@ -18,14 +18,14 @@ fn command_profile_round_trips_json_configuration() {
 #[test]
 fn command_profile_builds_exec_spec_without_shell_parsing() {
     let profile = GerbilCommandProfile::new("/opt/gerbil/bin/gxi")
-        .arg("--stdio-json")
+        .arg(GERBIL_ADAPTER_MODULE)
         .arg("(import :marlin/compiler)")
         .env("GERBIL_LOADPATH", "gerbil/src");
     let spec: GerbilCommandSpec = profile.into();
 
     assert_eq!(spec.program.to_string_lossy(), "/opt/gerbil/bin/gxi");
     assert_eq!(spec.args.len(), 2);
-    assert_eq!(spec.args[0].to_string_lossy(), "--stdio-json");
+    assert_eq!(spec.args[0].to_string_lossy(), GERBIL_ADAPTER_MODULE);
     assert_eq!(spec.args[1].to_string_lossy(), "(import :marlin/compiler)");
     assert_eq!(
         spec.env

@@ -1,0 +1,404 @@
+* agent-sdd-v1
+:PROPERTIES:
+:CONTRACT_ID: agent.sdd.v1
+:CONTRACT_SCOPE: document
+:CONTRACT_KIND: org-elements
+:END:
+** What This Produces
+This contract validates a software design description. An SDD records durable
+architecture knowledge: system boundaries, stakeholders, requirements,
+quality attributes, design concerns, architecture views, interfaces,
+invariants, decisions, traceability, evidence anchors, review anchors, and
+links that execution plans can use as governing context.
+
+An SDD is not an implementation ledger. It does not track implementation
+progress, command transcripts, or agent session state. Those records belong in
+a Plan, ExecPlan, evidence-loop receipt, or adversarial-review receipt that
+links back to the SDD.
+
+Templates for this contract are projections of the required structure below.
+Do not add SDD-only template sections unless this contract also defines them.
+** sdd-has-root
+:PROPERTIES:
+:ASSERT_ID: sdd-has-root
+:SEVERITY: error
+:END:
+#+BEGIN_SRC org-contract
+(assert exists
+  (headline :summary-contains (title "SDD")))
+#+END_SRC
+#+BEGIN_SRC jinja2 :name message
+SDD files must have an SDD root heading.
+#+END_SRC
+** sdd-has-id-property
+:PROPERTIES:
+:ASSERT_ID: sdd-has-id-property
+:SEVERITY: error
+:END:
+#+BEGIN_SRC org-contract
+(assert exists
+  (node-property :summary (key "ID")))
+#+END_SRC
+#+BEGIN_SRC jinja2 :name message
+SDD files must declare a stable ID.
+#+END_SRC
+** sdd-has-kind-property
+:PROPERTIES:
+:ASSERT_ID: sdd-has-kind-property
+:SEVERITY: error
+:END:
+#+BEGIN_SRC org-contract
+(assert exists
+  (node-property :summary (key "SDD_KIND")))
+#+END_SRC
+#+BEGIN_SRC jinja2 :name message
+SDD files must declare SDD_KIND.
+#+END_SRC
+** sdd-has-status-property
+:PROPERTIES:
+:ASSERT_ID: sdd-has-status-property
+:SEVERITY: error
+:END:
+#+BEGIN_SRC org-contract
+(assert exists
+  (node-property :summary (key "SDD_STATUS")))
+#+END_SRC
+#+BEGIN_SRC jinja2 :name message
+SDD files must declare SDD_STATUS.
+#+END_SRC
+** sdd-has-concern-property
+:PROPERTIES:
+:ASSERT_ID: sdd-has-concern-property
+:SEVERITY: error
+:END:
+#+BEGIN_SRC org-contract
+(assert exists
+  (node-property :summary (key "SDD_CONCERN")))
+#+END_SRC
+#+BEGIN_SRC jinja2 :name message
+SDD files must declare the design concern being governed.
+#+END_SRC
+** sdd-has-scope-property
+:PROPERTIES:
+:ASSERT_ID: sdd-has-scope-property
+:SEVERITY: error
+:END:
+#+BEGIN_SRC org-contract
+(assert exists
+  (node-property :summary (key "SDD_SCOPE")))
+#+END_SRC
+#+BEGIN_SRC jinja2 :name message
+SDD files must declare the scope covered by the design.
+#+END_SRC
+** sdd-has-owner-property
+:PROPERTIES:
+:ASSERT_ID: sdd-has-owner-property
+:SEVERITY: error
+:END:
+#+BEGIN_SRC org-contract
+(assert exists
+  (node-property :summary (key "SDD_OWNER")))
+#+END_SRC
+#+BEGIN_SRC jinja2 :name message
+SDD files must declare the owner responsible for the design record.
+#+END_SRC
+** sdd-has-traceability-status-property
+:PROPERTIES:
+:ASSERT_ID: sdd-has-traceability-status-property
+:SEVERITY: error
+:END:
+#+BEGIN_SRC org-contract
+(assert exists
+  (node-property :summary (key "TRACEABILITY_STATUS")))
+#+END_SRC
+#+BEGIN_SRC jinja2 :name message
+SDD files must declare TRACEABILITY_STATUS.
+#+END_SRC
+** sdd-has-evidence-status-property
+:PROPERTIES:
+:ASSERT_ID: sdd-has-evidence-status-property
+:SEVERITY: error
+:END:
+#+BEGIN_SRC org-contract
+(assert exists
+  (node-property :summary (key "EVIDENCE_STATUS")))
+#+END_SRC
+#+BEGIN_SRC jinja2 :name message
+SDD files must declare EVIDENCE_STATUS.
+#+END_SRC
+** sdd-has-review-status-property
+:PROPERTIES:
+:ASSERT_ID: sdd-has-review-status-property
+:SEVERITY: error
+:END:
+#+BEGIN_SRC org-contract
+(assert exists
+  (node-property :summary (key "REVIEW_STATUS")))
+#+END_SRC
+#+BEGIN_SRC jinja2 :name message
+SDD files must declare REVIEW_STATUS.
+#+END_SRC
+** sdd-has-purpose-and-non-goals
+:PROPERTIES:
+:ASSERT_ID: sdd-has-purpose-and-non-goals
+:SEVERITY: error
+:END:
+#+BEGIN_SRC org-contract
+(assert exists
+  (headline :summary-contains (title "Purpose And Non-Goals")))
+#+END_SRC
+#+BEGIN_SRC jinja2 :name message
+SDD files must state purpose and non-goals.
+#+END_SRC
+** sdd-has-system-boundary
+:PROPERTIES:
+:ASSERT_ID: sdd-has-system-boundary
+:SEVERITY: error
+:END:
+#+BEGIN_SRC org-contract
+(assert exists
+  (headline :summary-contains (title "System Boundary")))
+#+END_SRC
+#+BEGIN_SRC jinja2 :name message
+SDD files must describe the system boundary.
+#+END_SRC
+** sdd-has-stakeholders-and-consumers
+:PROPERTIES:
+:ASSERT_ID: sdd-has-stakeholders-and-consumers
+:SEVERITY: error
+:END:
+#+BEGIN_SRC org-contract
+(assert exists
+  (headline :summary-contains (title "Stakeholders And Consumers")))
+#+END_SRC
+#+BEGIN_SRC jinja2 :name message
+SDD files must name stakeholders or consumers affected by the design.
+#+END_SRC
+** sdd-has-requirements-and-constraints
+:PROPERTIES:
+:ASSERT_ID: sdd-has-requirements-and-constraints
+:SEVERITY: error
+:END:
+#+BEGIN_SRC org-contract
+(assert exists
+  (headline :summary-contains (title "Requirements And Constraints")))
+#+END_SRC
+#+BEGIN_SRC jinja2 :name message
+SDD files must capture requirements and constraints.
+#+END_SRC
+** sdd-has-quality-attributes
+:PROPERTIES:
+:ASSERT_ID: sdd-has-quality-attributes
+:SEVERITY: error
+:END:
+#+BEGIN_SRC org-contract
+(assert exists
+  (headline :summary-contains (title "Quality Attributes")))
+#+END_SRC
+#+BEGIN_SRC jinja2 :name message
+SDD files must describe quality attributes.
+#+END_SRC
+** sdd-has-design-concerns
+:PROPERTIES:
+:ASSERT_ID: sdd-has-design-concerns
+:SEVERITY: error
+:END:
+#+BEGIN_SRC org-contract
+(assert exists
+  (headline :summary-contains (title "Design Concerns")))
+#+END_SRC
+#+BEGIN_SRC jinja2 :name message
+SDD files must describe design concerns.
+#+END_SRC
+** sdd-has-architecture-views
+:PROPERTIES:
+:ASSERT_ID: sdd-has-architecture-views
+:SEVERITY: error
+:END:
+#+BEGIN_SRC org-contract
+(assert exists
+  (headline :summary-contains (title "Architecture Views")))
+#+END_SRC
+#+BEGIN_SRC jinja2 :name message
+SDD files must describe architecture views.
+#+END_SRC
+** sdd-has-runtime-view
+:PROPERTIES:
+:ASSERT_ID: sdd-has-runtime-view
+:SEVERITY: error
+:END:
+#+BEGIN_SRC org-contract
+(assert exists
+  (headline :summary-contains (title "Runtime View")))
+#+END_SRC
+#+BEGIN_SRC jinja2 :name message
+SDD files must include a runtime view.
+#+END_SRC
+** sdd-has-data-and-state-view
+:PROPERTIES:
+:ASSERT_ID: sdd-has-data-and-state-view
+:SEVERITY: error
+:END:
+#+BEGIN_SRC org-contract
+(assert exists
+  (headline :summary-contains (title "Data And State View")))
+#+END_SRC
+#+BEGIN_SRC jinja2 :name message
+SDD files must include a data and state view.
+#+END_SRC
+** sdd-has-dependency-and-integration-view
+:PROPERTIES:
+:ASSERT_ID: sdd-has-dependency-and-integration-view
+:SEVERITY: error
+:END:
+#+BEGIN_SRC org-contract
+(assert exists
+  (headline :summary-contains (title "Dependency And Integration View")))
+#+END_SRC
+#+BEGIN_SRC jinja2 :name message
+SDD files must describe dependency and integration ownership.
+#+END_SRC
+** sdd-has-interfaces-and-contracts
+:PROPERTIES:
+:ASSERT_ID: sdd-has-interfaces-and-contracts
+:SEVERITY: error
+:END:
+#+BEGIN_SRC org-contract
+(assert exists
+  (headline :summary-contains (title "Interfaces And Contracts")))
+#+END_SRC
+#+BEGIN_SRC jinja2 :name message
+SDD files must expose interfaces and contracts.
+#+END_SRC
+** sdd-has-data-model-and-invariants
+:PROPERTIES:
+:ASSERT_ID: sdd-has-data-model-and-invariants
+:SEVERITY: error
+:END:
+#+BEGIN_SRC org-contract
+(assert exists
+  (headline :summary-contains (title "Data Model And Invariants")))
+#+END_SRC
+#+BEGIN_SRC jinja2 :name message
+SDD files must record data model and invariant expectations.
+#+END_SRC
+** sdd-has-decisions
+:PROPERTIES:
+:ASSERT_ID: sdd-has-decisions
+:SEVERITY: error
+:END:
+#+BEGIN_SRC org-contract
+(assert exists
+  (headline :summary-contains (title "Decisions")))
+#+END_SRC
+#+BEGIN_SRC jinja2 :name message
+SDD files must record design decisions.
+#+END_SRC
+** sdd-has-traceability-matrix
+:PROPERTIES:
+:ASSERT_ID: sdd-has-traceability-matrix
+:SEVERITY: error
+:END:
+#+BEGIN_SRC org-contract
+(assert exists
+  (headline :summary-contains (title "Traceability Matrix")))
+#+END_SRC
+#+BEGIN_SRC jinja2 :name message
+SDD files must contain a Traceability Matrix section.
+#+END_SRC
+** sdd-has-evidence-loop
+:PROPERTIES:
+:ASSERT_ID: sdd-has-evidence-loop
+:SEVERITY: error
+:END:
+#+BEGIN_SRC org-contract
+(assert exists
+  (headline :summary-contains (title "Evidence Loop")))
+#+END_SRC
+#+BEGIN_SRC jinja2 :name message
+SDD files must contain an Evidence Loop section.
+#+END_SRC
+** sdd-has-evidence-link
+:PROPERTIES:
+:ASSERT_ID: sdd-has-evidence-link
+:SEVERITY: error
+:END:
+#+BEGIN_SRC org-contract
+(assert exists
+  (link))
+#+END_SRC
+#+BEGIN_SRC jinja2 :name message
+SDD files must contain at least one parser-visible evidence or contract link.
+#+END_SRC
+** sdd-has-fitness-criteria
+:PROPERTIES:
+:ASSERT_ID: sdd-has-fitness-criteria
+:SEVERITY: error
+:END:
+#+BEGIN_SRC org-contract
+(assert exists
+  (headline :summary-contains (title "Fitness Criteria")))
+#+END_SRC
+#+BEGIN_SRC jinja2 :name message
+SDD files must define fitness criteria.
+#+END_SRC
+** sdd-has-failure-modes-and-recovery
+:PROPERTIES:
+:ASSERT_ID: sdd-has-failure-modes-and-recovery
+:SEVERITY: error
+:END:
+#+BEGIN_SRC org-contract
+(assert exists
+  (headline :summary-contains (title "Failure Modes And Recovery")))
+#+END_SRC
+#+BEGIN_SRC jinja2 :name message
+SDD files must define failure modes and recovery paths.
+#+END_SRC
+** sdd-has-rollout-and-migration
+:PROPERTIES:
+:ASSERT_ID: sdd-has-rollout-and-migration
+:SEVERITY: error
+:END:
+#+BEGIN_SRC org-contract
+(assert exists
+  (headline :summary-contains (title "Rollout And Migration")))
+#+END_SRC
+#+BEGIN_SRC jinja2 :name message
+SDD files must define rollout and migration expectations.
+#+END_SRC
+** sdd-has-adversarial-review
+:PROPERTIES:
+:ASSERT_ID: sdd-has-adversarial-review
+:SEVERITY: error
+:END:
+#+BEGIN_SRC org-contract
+(assert exists
+  (headline :summary-contains (title "Adversarial Review")))
+#+END_SRC
+#+BEGIN_SRC jinja2 :name message
+SDD files must contain an Adversarial Review section.
+#+END_SRC
+** sdd-has-open-questions
+:PROPERTIES:
+:ASSERT_ID: sdd-has-open-questions
+:SEVERITY: error
+:END:
+#+BEGIN_SRC org-contract
+(assert exists
+  (headline :summary-contains (title "Open Questions")))
+#+END_SRC
+#+BEGIN_SRC jinja2 :name message
+SDD files must make open questions explicit, even when there are none.
+#+END_SRC
+** sdd-has-linked-implementation
+:PROPERTIES:
+:ASSERT_ID: sdd-has-linked-implementation
+:SEVERITY: error
+:END:
+#+BEGIN_SRC org-contract
+(assert exists
+  (headline :summary-contains (title "Linked Implementation")))
+#+END_SRC
+#+BEGIN_SRC jinja2 :name message
+SDD files must expose where implementation plans link back to this design.
+#+END_SRC

@@ -20,9 +20,8 @@ const USER_INTERFACE_MODULE_CONFIG_EXAMPLE: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/examples/user-interface-module-config"
 );
-const MARLINE_CONFIG_INTERFACE_WORKSPACE: &str =
-    concat!(env!("CARGO_MANIFEST_DIR"), "/marline-config-interface");
-const MARLINE_REAL_LLM_CASE_ENV: &str = "MARLIN_RUN_REAL_LLM_CASES";
+const CONFIG_INTERFACE_WORKSPACE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/gerbil");
+const MARLIN_REAL_LLM_CASE_ENV: &str = "MARLIN_RUN_REAL_LLM_CASES";
 
 #[test]
 #[ignore = "requires local Gerbil gxtest executable and installed poo-flow package dependency"]
@@ -45,9 +44,9 @@ fn command_compiler_real_gxtest_runs_user_interface_module_config_example() {
     assert!(stdout.contains("runtime-handoff-status=handoff-ready"));
     assert!(stdout.contains("runtime-execution-owner=marlin-agent-core"));
     assert!(stdout.contains("loops-policy-owner=marlin"));
-    assert!(
-        stdout.contains("loops-policy-source=marlin/modules/prefabs/user-interface#loops-policy")
-    );
+    assert!(stdout.contains(
+        "loops-policy-source=config-interface/modules/prefabs/user-interface#loops-policy"
+    ));
     assert!(stdout.contains("loops-policy-receipt-contract-count=8"));
     assert!(stdout.contains("has-interface-file=true"));
 
@@ -70,30 +69,30 @@ fn command_compiler_real_gxtest_runs_user_interface_module_config_example() {
 
 #[test]
 #[ignore = "requires local Gerbil gxtest executable and installed poo-flow package dependency"]
-fn command_compiler_real_gxtest_runs_marline_config_interface() {
+fn command_compiler_real_gxtest_runs_config_interface() {
     let Some(stdout) = run_real_gxtest_workspace(
-        "marline-config-interface",
-        Path::new(MARLINE_CONFIG_INTERFACE_WORKSPACE),
-        "t/marline-config-interface-test.ss",
-        "run real gxtest marline config interface workflow",
+        "config-interface",
+        Path::new(CONFIG_INTERFACE_WORKSPACE),
+        "t/config-interface-test.ss",
+        "run real gxtest config interface workflow",
     ) else {
         return;
     };
 
     assert_no_json_handoff(&stdout);
-    assert!(stdout.contains("marline-config-interface-ok"));
+    assert!(stdout.contains("config-interface-ok"));
     assert!(stdout.contains("loop-policy-owner=marlin"));
     assert!(stdout.contains("loop-receipt-contract-count=8"));
     assert!(stdout.contains("kernel-loop-use-cases=4"));
     assert!(stdout.contains("kernel-loop-profiles=4"));
     assert!(stdout.contains("kernel-loop-llm-cases=4"));
-    assert_marline_loop_real_llm_case_assets();
+    assert_config_interface_loop_real_llm_case_assets();
 }
 
 #[test]
 #[ignore = "requires MARLIN_RUN_REAL_LLM_CASES=1 and live Codex CLI access"]
 fn command_compiler_real_llm_loop_cases_run_through_debug_cli_when_enabled() {
-    if env::var(MARLINE_REAL_LLM_CASE_ENV).ok().as_deref() != Some("1") {
+    if env::var(MARLIN_REAL_LLM_CASE_ENV).ok().as_deref() != Some("1") {
         return;
     }
 
@@ -127,7 +126,7 @@ fn command_compiler_real_llm_loop_cases_run_through_debug_cli_when_enabled() {
             "17",
         ),
     ] {
-        let stdout = run_marline_real_llm_loop_case(case_file, continuation_planner);
+        let stdout = run_config_interface_real_llm_loop_case(case_file, continuation_planner);
         assert!(
             stdout.contains(&format!("\"terminal_status\": \"{terminal_status}\"")),
             "real LLM loop case {case_file} ended with unexpected terminal status:\n{stdout}"
@@ -206,6 +205,7 @@ fn run_real_gxtest_workspace(
         gerbil_runtime_loadpath(&runtime_root),
         gerbil_runtime_dependency_loadpath(),
         workspace_root.clone(),
+        workspace_root.join("src"),
         workspace_root.join("t"),
     ])
     .expect("Gerbil loadpath entries should be joinable");
@@ -235,8 +235,10 @@ fn assert_no_json_handoff(stdout: &str) {
     }
 }
 
-fn assert_marline_loop_real_llm_case_assets() {
-    let case_root = Path::new(MARLINE_CONFIG_INTERFACE_WORKSPACE)
+fn assert_config_interface_loop_real_llm_case_assets() {
+    let case_root = Path::new(CONFIG_INTERFACE_WORKSPACE)
+        .join("src")
+        .join("config-interface")
         .join("custom")
         .join("marline-kernel")
         .join("policies")
@@ -286,7 +288,7 @@ fn assert_marline_loop_real_llm_case_assets() {
         "loop-contract-llm.loop.json",
         "failure-retry-llm.loop.json",
     ] {
-        let case_config = fs::read_to_string(write_marline_real_llm_loop_case_request(
+        let case_config = fs::read_to_string(write_config_interface_real_llm_loop_case_request(
             &cache_home,
             case_file,
         ))
@@ -302,19 +304,21 @@ fn assert_marline_loop_real_llm_case_assets() {
     }
 }
 
-fn run_marline_real_llm_loop_case(case_file: &str, continuation_planner: &str) -> String {
-    let case_root = Path::new(MARLINE_CONFIG_INTERFACE_WORKSPACE)
+fn run_config_interface_real_llm_loop_case(case_file: &str, continuation_planner: &str) -> String {
+    let case_root = Path::new(CONFIG_INTERFACE_WORKSPACE)
+        .join("src")
+        .join("config-interface")
         .join("custom")
         .join("marline-kernel")
         .join("policies")
         .join("loops")
         .join("cases");
-    let input = write_marline_real_llm_loop_case_request(&prj_cache_home(), case_file);
+    let input = write_config_interface_real_llm_loop_case_request(&prj_cache_home(), case_file);
     let catalog = case_root.join("real-llm-catalog.toml");
     let manifest_path = repo_root().join("Cargo.toml");
 
     let output = Command::new("cargo")
-        .current_dir(Path::new(MARLINE_CONFIG_INTERFACE_WORKSPACE))
+        .current_dir(Path::new(CONFIG_INTERFACE_WORKSPACE))
         .args([
             "run",
             "--manifest-path",
@@ -345,13 +349,16 @@ fn run_marline_real_llm_loop_case(case_file: &str, continuation_planner: &str) -
     String::from_utf8(output.stdout).expect("real LLM loop stdout should be UTF-8")
 }
 
-fn write_marline_real_llm_loop_case_request(prj_cache_home: &Path, case_file: &str) -> PathBuf {
+fn write_config_interface_real_llm_loop_case_request(
+    prj_cache_home: &Path,
+    case_file: &str,
+) -> PathBuf {
     let cache_root = prj_cache_home.join("marlin").join("loop-cases");
     fs::create_dir_all(&cache_root).expect("create runtime loop case cache");
     let input = cache_root.join(case_file);
     fs::write(
         &input,
-        serde_json::to_string_pretty(&marline_real_llm_loop_case_request(case_file))
+        serde_json::to_string_pretty(&config_interface_real_llm_loop_case_request(case_file))
             .expect("serialize real LLM loop case request"),
     )
     .expect("write runtime loop case request");
@@ -364,7 +371,7 @@ fn prj_cache_home() -> PathBuf {
         .build()
         .expect("build Tokio runtime for Git top-level discovery")
         .block_on(ProcessGitTooling::resolve_repository_root(Path::new(
-            MARLINE_CONFIG_INTERFACE_WORKSPACE,
+            CONFIG_INTERFACE_WORKSPACE,
         )))
         .expect("resolve Git top-level for runtime loop case cache")
         .into_path_buf()
@@ -379,7 +386,7 @@ fn repo_root() -> PathBuf {
         .to_path_buf()
 }
 
-fn marline_real_llm_loop_case_request(case_file: &str) -> serde_json::Value {
+fn config_interface_real_llm_loop_case_request(case_file: &str) -> serde_json::Value {
     let (profile, case_id, executor, task_goal, failure_fixture, acceptance, governance) =
         match case_file {
             "runtime-handoff-llm.loop.json" => (

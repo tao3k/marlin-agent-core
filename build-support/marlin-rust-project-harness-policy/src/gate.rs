@@ -15,7 +15,7 @@ use crate::{
 /// Downstream crates should call this wrapper from `build.rs` instead of
 /// depending on `rust-lang-project-harness` directly. This keeps the
 /// rust-project-harness boundary owned by `marlin-rust-project-harness-policy`.
-pub fn complete_marlin_rust_project_harness_gate_from_env(
+pub fn assert_marlin_rust_project_harness_gate_from_env(
     project_root: &Path,
 ) -> RustProjectHarnessEvidenceReceipt {
     let policy = config::rust_project_harness_policy_for_project(project_root);

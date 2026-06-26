@@ -32,8 +32,7 @@ coverage in addition to Deck runtime coverage:
 
 This gives Linux-capable runners the same gate shape as local real AOT runs:
 the workflow bootstraps Gerbil/Gambit from source, resolves =gxi=, =gxc=, and
-=gsc=, and lets the Rust build script stage =agent-policy-routing= through
-=build.ss stage-native-aot=.
+=gsc=, and lets Rust-owned native build support stage =agent-policy-routing=.
 
 The 2026-06-17 local linked selector benchmark was run through:
 #+begin_src sh

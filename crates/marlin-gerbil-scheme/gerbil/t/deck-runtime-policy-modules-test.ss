@@ -13,7 +13,7 @@
         :marlin/deck-runtime-extension-catalog
         :marlin/deck-runtime-extension-receipt
         :marlin/deck-runtime-matcher
-        :marlin/modules/lib
+        :config-interface/lib
         :marlin/deck-runtime-policy-engine
         :marlin/deck-runtime-strategy-context
         :std/test)
@@ -277,64 +277,47 @@
 ;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
 ;; MarlinResult <- MarlinInput
 (def (check-dynamic-hook-module)
-  (let ((register-action
-         (make-marlin-deck-runtime-register-hook-action
-          "module-register-hook"
-          "runtime-catalog-entry"))
-        (deny-action
-         (make-marlin-deck-runtime-deny-hook-action
-          "workspace is locked")))
+  (let* ((context (module-test-context))
+         (locked-context (module-locked-context))
+         (policy (module-test-policy))
+         (register-action
+          (make-marlin-deck-runtime-register-hook-action
+           "module-register-hook"
+           "runtime-catalog-entry"))
+         (deny-action
+          (make-marlin-deck-runtime-deny-hook-action
+           "workspace is locked"))
+         (register-selection
+          (marlin-deck-runtime-dynamic-hook-selector-select
+           module-hook-selector context policy "codex apply file" "worker"))
+         (cleanup-selection
+          (marlin-deck-runtime-dynamic-hook-selector-select
+           module-hook-selector context policy "codex cleanup" "worker"))
+         (defer-selection
+          (marlin-deck-runtime-dynamic-hook-selector-select
+           module-hook-selector locked-context policy "codex apply file" "worker"))
+         (deny-selection
+          (marlin-deck-runtime-dynamic-hook-selector-select
+           module-hook-selector context policy "codex deny" "worker"))
+         (rewrite-selection
+          (marlin-deck-runtime-dynamic-hook-selector-select
+           module-hook-selector context policy "codex rewrite" "worker")))
     (check (.get register-action kind)
            => marlin-deck-runtime-dynamic-hook-action-kind)
     (check (.get register-action action) => "register")
     (check (.get register-action registration) => "runtime-catalog-entry")
     (check (.get deny-action action) => "deny")
     (check (.get deny-action deny-reason) => "workspace is locked")
-    (check (.get (marlin-deck-runtime-dynamic-hook-selector-select
-                  module-hook-selector
-                  (module-test-context)
-                  (module-test-policy)
-                  "codex apply file"
-                  "worker")
-                 action)
-           => "register")
-    (check (.get (marlin-deck-runtime-dynamic-hook-selector-select
-                  module-hook-selector
-                  (module-test-context)
-                  (module-test-policy)
-                  "codex cleanup"
-                  "worker")
-                 action)
-           => "unregister")
-    (check (.get (marlin-deck-runtime-dynamic-hook-selector-select
-                  module-hook-selector
-                  (module-locked-context)
-                  (module-test-policy)
-                  "codex apply file"
-                  "worker")
-                 action)
-           => "defer")
-    (check (.get (marlin-deck-runtime-dynamic-hook-selector-select
-                  module-hook-selector
-                  (module-test-context)
-                  (module-test-policy)
-                  "codex deny"
-                  "worker")
-                 action)
-           => "deny")
-    (check (.get (marlin-deck-runtime-dynamic-hook-selector-select
-                  module-hook-selector
-                  (module-test-context)
-                  (module-test-policy)
-                  "codex rewrite"
-                  "worker")
-                 action)
-           => "rewrite")
+    (check (.get register-selection action) => "register")
+    (check (.get cleanup-selection action) => "unregister")
+    (check (.get defer-selection action) => "defer")
+    (check (.get deny-selection action) => "deny")
+    (check (.get rewrite-selection action) => "rewrite")
     (let ((selection
            (marlin-deck-runtime-dynamic-hook-selector-selection
             module-hook-selector
-            (module-test-context)
-            (module-test-policy)
+            context
+            policy
             "codex rewrite"
             "worker")))
       (check (.get selection kind)
@@ -349,51 +332,55 @@
 ;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
 ;; MarlinResult <- MarlinInput
 (def (check-matcher-module)
-  (let ((combined
-         (marlin-deck-runtime-and-matcher
-          "module-combined"
-          (list module-session-matcher))))
-    (check (marlin-deck-runtime-high-order-matcher-match?
-            combined
-            (module-test-context)
-            (module-test-policy)
-            "codex apply"
-            "worker")
-           => #t)
-    (check (marlin-deck-runtime-high-order-matcher-match?
-            module-customer-matcher
-            (module-test-context)
-            (module-test-policy)
-            "codex apply"
-            "worker")
-           => #t)
-    (check (marlin-deck-runtime-high-order-matcher-match?
-            (marlin-deck-runtime-not-matcher
-             "not-command"
-             module-command-matcher)
-            (module-test-context)
-            (module-test-policy)
-            "cargo test"
-            "worker")
-           => #t)))
+  (let* ((context (module-test-context))
+         (policy (module-test-policy))
+         (combined
+          (marlin-deck-runtime-and-matcher
+           "module-combined"
+           (list module-session-matcher)))
+         (not-command-matcher
+          (marlin-deck-runtime-not-matcher
+           "not-command"
+           module-command-matcher))
+         (combined-matched?
+          (marlin-deck-runtime-high-order-matcher-match?
+           combined context policy "codex apply" "worker"))
+         (customer-matched?
+          (marlin-deck-runtime-high-order-matcher-match?
+           module-customer-matcher context policy "codex apply" "worker"))
+         (not-command-matched?
+          (marlin-deck-runtime-high-order-matcher-match?
+           not-command-matcher context policy "cargo test" "worker")))
+    (unless combined-matched?
+      (error "expected combined matcher to match"))
+    (unless customer-matched?
+      (error "expected customer matcher to match"))
+    (unless not-command-matched?
+      (error "expected negated command matcher to match"))))
 
 ;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
 ;; MarlinResult <- MarlinInput
 (def (check-agent-policy-module)
-  (check (.get module-agent-template kind)
-         => marlin-deck-runtime-agent-policy-template-kind)
-  (check (.get module-dynamic-rule kind)
-         => marlin-deck-runtime-dynamic-strategy-rule-kind)
-  (check (.get module-dynamic-rule required-agent-class)
-         => "customer-worker")
-  (check (.get (marlin-deck-runtime-agent-policy-template-select
-                (list module-agent-template module-custom-template)
-                (module-custom-context))
-               name)
-         => "custom-template")
-  (check (length module-generated-rules) => 2)
-  (check (.get (car module-generated-rules) name)
-         => "generated-module-template"))
+  (unless (equal? (.get module-agent-template kind)
+                  marlin-deck-runtime-agent-policy-template-kind)
+    (error "unexpected agent policy template kind"))
+  (unless (equal? (.get module-dynamic-rule kind)
+                  marlin-deck-runtime-dynamic-strategy-rule-kind)
+    (error "unexpected dynamic rule kind"))
+  (unless (equal? (.get module-dynamic-rule required-agent-class)
+                  "customer-worker")
+    (error "unexpected dynamic rule agent class"))
+  (let (selected-template
+        (marlin-deck-runtime-agent-policy-template-select
+         (list module-agent-template module-custom-template)
+         (module-custom-context)))
+    (unless (equal? (.get selected-template name) "custom-template")
+      (error "unexpected selected agent policy template")))
+  (unless (= (length module-generated-rules) 2)
+    (error "unexpected generated rule count"))
+  (unless (equal? (.get (car module-generated-rules) name)
+                  "generated-module-template")
+    (error "unexpected generated rule name")))
 
 ;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
 ;; MarlinResult <- MarlinInput
@@ -534,7 +521,7 @@
          (module-evaluation
           (marlin-deck-runtime-debug-policy-module-evaluation))
          (module-presentation
-          (marlin-deck-runtime-debug-policy-module-system-presentation))
+          (marlin-deck-runtime-debug-policy-policy-facade-presentation))
          (policy-workflow
           (marlin-deck-runtime-debug-policy-module-workflow))
          (substrate-gate (.get policy-workflow substrate-gate))
@@ -576,7 +563,7 @@
     (check (.get module-evaluation policy-extension-object-count)
            => 1)
     (check (.get module-presentation kind)
-           => marlin-module-system-presentation-kind)
+           => marlin-policy-facade-presentation-kind)
     (check (.get module-presentation projection-chain-kind)
            => marlin-module-projection-chain-kind)
     (check (.get module-presentation root-extension-count) => 1)

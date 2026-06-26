@@ -2,7 +2,7 @@
 
 * Agent Loop Contract Example :agent:loop:contract:
 :PROPERTIES:
-:CONTRACT_ORG: agent.loop.v1
+:CONTRACT_ORG: [[../agent.loop.v1.org][agent.loop.v1]]
 :ID: agent-loop-contract-example-20260615
 :END:
 

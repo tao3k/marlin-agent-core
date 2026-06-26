@@ -83,6 +83,8 @@ package: marlin
     "poo-flow-module-system"
     "scheme-loop-graph-control-plane"
     "model-route-policy"
+    "resolved-loop-policy-pack"
+    "native-loop-policy-pack-projection"
     "poo-object-system"))
 
 ;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
@@ -90,7 +92,8 @@ package: marlin
 (def (marlin-deck-runtime-rust-contract-names)
   '("runtime-assets"
     "real-gxi"
-    "typed-native-abi"))
+    "typed-native-abi"
+    "resolved-loop-policy-pack-native-projection"))
 
 ;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
 ;; MarlinResult <- MarlinInput

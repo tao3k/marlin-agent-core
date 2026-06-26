@@ -1,0 +1,23 @@
+#+TITLE: Example - Agent TDD Contract v1
+#+CONTRACT_ORG: agent.tdd.v1
+
+* TDD: Preserve plan applicability contract
+:PROPERTIES:
+:CONTRACT_ORG: [[../agent.tdd.v1.org][agent.tdd.v1]]
+:TDD_ID: tdd-plan-applicability-window
+:TDD_STATUS: accepted
+:TEST_SCOPE: agent.plan.v1 contract trace
+:TARGET_REF: languages/org/contracts/agent.plan.v1.org
+:END:
+
+** Test Intent
+The plan contract should fail when the SDD/BDD/TDD/BDR applicability window is missing.
+** Red Green Refactor Loop
+- Red :: remove the Specification Applicability table and observe contract trace failure
+- Green :: restore the four-row table and required reference properties
+- Refactor :: keep the window wording concise and contract-owned
+** Test Cases
+| Case | Expected Failure | Passing Evidence |
+| missing applicability window | plan.has-spec-applicability fails | contract trace passes after table is restored |
+** Regression Evidence
+- Contract trace verifies the TDD structure.

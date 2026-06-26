@@ -21,27 +21,27 @@ package: marlin
         defmarlin-deck-runtime-script)
 
 ;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
-;; MarlinResult <- MarlinInput
+;; : String
 (def marlin-deck-runtime-script-kind
   "marlin-deck-runtime.script.v1")
 
 ;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
-;; MarlinResult <- MarlinInput
+;; : String
 (def marlin-deck-runtime-script-interface-kind
   "poo-native-api-or-gxi-script")
 
 ;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
-;; MarlinResult <- MarlinInput
+;; : String
 (def marlin-deck-runtime-script-interface-receipt-kind
   "marlin-deck-runtime.script-interface-receipt.v1")
 
 ;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
-;; MarlinResult <- MarlinInput
+;; : String
 (def marlin-deck-runtime-script-batch-metrics-kind
   "marlin-deck-runtime.script-batch-metrics.v1")
 
 ;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
-;; MarlinResult <- MarlinInput
+;; : (-> String Extension String Procedure Alist ScriptObject)
 (def (make-marlin-deck-runtime-script
       script-id-value
       extension-value
@@ -61,17 +61,17 @@ package: marlin
        action-value)))
 
 ;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
-;; MarlinResult <- MarlinInput
+;; : (-> ScriptObject Extension)
 (def (marlin-deck-runtime-script-extension script)
   (.get script extension))
 
 ;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
-;; MarlinResult <- MarlinInput
+;; : (-> ScriptObject Projection)
 (def (marlin-deck-runtime-script-native-projection script)
   (.get script native-projection))
 
 ;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
-;; MarlinResult <- MarlinInput
+;; : (-> ScriptObject ReceiptObject)
 (def (marlin-deck-runtime-script-interface-receipt script)
   (.o kind: marlin-deck-runtime-script-interface-receipt-kind
       script-id: (.get script id)
@@ -83,26 +83,42 @@ package: marlin
       (marlin-deck-runtime-script-native-projection script)))
 
 ;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
-;; MarlinResult <- MarlinInput
+;; : (-> ScriptObject Context Value)
 (def (marlin-deck-runtime-script-run script context)
   ((.get script runner) context))
 
 ;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
-;; MarlinResult <- MarlinInput
+;; count-marlin-deck-runtime-script-runs
+;;   : (-> ScriptObject Integer Context Integer)
+;;   | doc m%
+;;       Execute a script runner `iterations` times and return the number of
+;;       completed calls. The tail loop deliberately invokes the runner before
+;;       incrementing the receipt count, so performance tests exercise the same
+;;       POO extension path as runtime scripts without allocating an iteration
+;;       list for each batch.
+;;
+;;       # Examples
+;;
+;;       ```scheme
+;;       (count-marlin-deck-runtime-script-runs script 2 context)
+;;       ;; => 2
+;;       ```
+;;     %
 (def (count-marlin-deck-runtime-script-runs script iterations context)
-  (foldl (lambda (_ runs)
-           (marlin-deck-runtime-script-run script context)
-           (+ runs 1))
-         0
-         (list-tabulate iterations identity)))
+  (let loop ((remaining iterations) (run-count 0))
+    (if (<= remaining 0)
+      run-count
+      (begin
+        (marlin-deck-runtime-script-run script context)
+        (loop (- remaining 1) (+ run-count 1))))))
 
 ;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
-;; MarlinResult <- MarlinInput
+;; : (-> Integer Integer Integer)
 (def (marlin-deck-runtime-script-elapsed-us start-jiffy end-jiffy)
   (quotient (* (- end-jiffy start-jiffy) 1000000) (jiffies-per-second)))
 
 ;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
-;; MarlinResult <- MarlinInput
+;; : (-> ScriptObject Integer Context MetricsObject)
 (def (marlin-deck-runtime-script-batch-metrics script iteration-count context)
   (let ((start-jiffy (current-jiffy)))
     (let ((run-count
@@ -119,10 +135,23 @@ package: marlin
             elapsed-us:
             (marlin-deck-runtime-script-elapsed-us
              start-jiffy
-             end-jiffy))))))
+            end-jiffy))))))
 
 ;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
-;; MarlinResult <- MarlinInput
+;; defmarlin-deck-runtime-script
+;;   : Macro
+;;   | doc m%
+;;       Define a script object by wrapping a policy extension and a
+;;       context-accepting runner procedure.
+;;
+;;       # Examples
+;;
+;;       ```scheme
+;;       (defmarlin-deck-runtime-script sample-script
+;;         "sample" extension "allow" '() (context) "ok")
+;;       ;; => binds sample-script
+;;       ```
+;;     %
 (defrules defmarlin-deck-runtime-script ()
   ((_ binding
       script-id

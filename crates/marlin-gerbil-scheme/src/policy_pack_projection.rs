@@ -1,5 +1,6 @@
 //! Typed Rust projection for Gerbil policy-pack receipt chains.
 
+use marlin_agent_protocol::{RESOLVED_LOOP_POLICY_PACK_SCHEMA_VERSION, ResolvedLoopPolicyPack};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -12,15 +13,25 @@ use crate::{
 
 /// Package id for the policy-pack typed projection manifest.
 pub const GERBIL_POLICY_PACK_PROJECTION_CHAIN_PACKAGE_ID: &str =
-    "marlin.modules.policy-pack.projection-chain";
+    "marlin.config-interface.policy-pack.projection-chain";
 
 /// Type id for Gerbil policy-pack projection-chain receipts.
 pub const GERBIL_POLICY_PACK_PROJECTION_CHAIN_TYPE_ID: &str =
-    "marlin.modules.policy-projection-chain-receipt";
+    "marlin.config-interface.policy-projection-chain-receipt";
 
 /// Schema id carried by Gerbil policy-pack projection-chain receipts.
 pub const GERBIL_POLICY_PACK_PROJECTION_CHAIN_SCHEMA_ID: &str =
-    "marlin.modules.policy-projection-chain-receipt.v1";
+    "marlin.config-interface.policy-projection-chain-receipt.v1";
+
+/// Package id for the resolved loop policy pack typed projection manifest.
+pub const GERBIL_RESOLVED_LOOP_POLICY_PACK_PACKAGE_ID: &str =
+    "marlin.config-interface.policy-pack.resolved-loop-policy-pack";
+
+/// Type id for Gerbil-resolved loop policy packs.
+pub const GERBIL_RESOLVED_LOOP_POLICY_PACK_TYPE_ID: &str = "marlin.loop-policy.resolved-pack";
+
+/// Schema id carried by Gerbil-resolved loop policy packs.
+pub const GERBIL_RESOLVED_LOOP_POLICY_PACK_SCHEMA_ID: &str = "marlin.loop-policy.resolved-pack.v1";
 
 const POLICY_PACK_RECEIPT_FAMILY_IDS: [&str; 5] = [
     "module_evaluation_receipt",
@@ -197,6 +208,12 @@ impl GerbilSchemeTypedProjection for GerbilPolicyPackProjectionChainReceipt {
     }
 }
 
+impl GerbilSchemeTypedProjection for ResolvedLoopPolicyPack {
+    fn scheme_projection_contract() -> GerbilSchemeProjectionContract {
+        gerbil_resolved_loop_policy_pack_contract()
+    }
+}
+
 /// Contract expected for the Gerbil policy-pack projection-chain receipt.
 pub fn gerbil_policy_pack_projection_chain_contract() -> GerbilSchemeProjectionContract {
     GerbilSchemeProjectionContract::new(GerbilSchemeTypeId::new(
@@ -255,6 +272,45 @@ pub fn gerbil_policy_pack_projection_chain_package_manifest() -> GerbilSchemePac
     .with_projection_contracts([gerbil_policy_pack_projection_chain_contract()])
 }
 
+/// Contract expected for a Gerbil-resolved loop policy pack.
+pub fn gerbil_resolved_loop_policy_pack_contract() -> GerbilSchemeProjectionContract {
+    GerbilSchemeProjectionContract::new(GerbilSchemeTypeId::new(
+        GERBIL_RESOLVED_LOOP_POLICY_PACK_TYPE_ID,
+    ))
+    .with_schema_id(GerbilSchemeSchemaId::new(
+        GERBIL_RESOLVED_LOOP_POLICY_PACK_SCHEMA_ID,
+    ))
+}
+
+/// Scheme type manifest for Gerbil-resolved loop policy packs.
+pub fn gerbil_resolved_loop_policy_pack_type_manifest() -> GerbilSchemeTypeManifest {
+    GerbilSchemeTypeManifest {
+        schema_id: GerbilSchemeSchemaId::new("marlin.scheme-types.manifest.v1"),
+        types: vec![GerbilSchemeTypeSpec {
+            type_id: GerbilSchemeTypeId::new(GERBIL_RESOLVED_LOOP_POLICY_PACK_TYPE_ID),
+            schema_id: Some(GerbilSchemeSchemaId::new(
+                GERBIL_RESOLVED_LOOP_POLICY_PACK_SCHEMA_ID,
+            )),
+            fields: vec![
+                required_policy_pack_chain_field("schema_version", "integer", None),
+                required_policy_pack_chain_field("policy_epoch", "integer", None),
+                required_policy_pack_chain_field("policy_digest", "array", Some("integer")),
+                required_policy_pack_chain_field("hot", "object", None),
+                required_policy_pack_chain_field("audit", "object", None),
+            ],
+        }],
+    }
+}
+
+/// Package manifest for Gerbil-resolved loop policy packs.
+pub fn gerbil_resolved_loop_policy_pack_package_manifest() -> GerbilSchemePackageManifest {
+    GerbilSchemePackageManifest::new(
+        GerbilSchemePackageId::new(GERBIL_RESOLVED_LOOP_POLICY_PACK_PACKAGE_ID),
+        gerbil_resolved_loop_policy_pack_type_manifest(),
+    )
+    .with_projection_contracts([gerbil_resolved_loop_policy_pack_contract()])
+}
+
 /// Decode a Gerbil policy-pack projection-chain receipt into Rust.
 pub fn decode_gerbil_policy_pack_projection_chain_receipt(
     registry: &GerbilSchemeTypeRegistry,
@@ -264,6 +320,24 @@ pub fn decode_gerbil_policy_pack_projection_chain_receipt(
         registry.decode_projection(typed_value)?;
     projection.ensure_current_schema()?;
     Ok(projection)
+}
+
+/// Decode a Gerbil-resolved loop policy pack into Rust's hot/audit IR.
+pub fn decode_gerbil_resolved_loop_policy_pack(
+    registry: &GerbilSchemeTypeRegistry,
+    typed_value: &GerbilSchemeTypedValue,
+) -> Result<ResolvedLoopPolicyPack, GerbilSchemeTypeDecodeError> {
+    let projection: ResolvedLoopPolicyPack = registry.decode_projection(typed_value)?;
+    if projection.schema_version == RESOLVED_LOOP_POLICY_PACK_SCHEMA_VERSION {
+        Ok(projection)
+    } else {
+        Err(GerbilSchemeTypeDecodeError::RustProjection {
+            message: format!(
+                "resolved loop policy pack schema version {} does not match {}",
+                projection.schema_version, RESOLVED_LOOP_POLICY_PACK_SCHEMA_VERSION
+            ),
+        })
+    }
 }
 
 fn required_policy_pack_chain_field(

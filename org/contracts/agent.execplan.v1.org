@@ -1,0 +1,324 @@
+#+TITLE: Agent ExecPlan Contract v1
+
+* agent-execplan-v1
+:PROPERTIES:
+:CONTRACT_ID: agent.execplan.v1
+:CONTRACT_KIND: org-elements
+:CONTRACT_SCOPE: document
+:END:
+
+** What This Produces
+This contract validates a recoverable execution plan for large, risky, or
+cross-cutting agent work. It defines the theory of an execution plan: an
+objective, bounded scope, governing specification reference, risk level, current
+status, ordered work, validation, audit, and recovery anchors. Runtime commands,
+storage paths, and
+client-specific workflows are out of scope for this contract.
+
+It is intentionally separate from =agent.plan.v1=: =agent.execplan.v1= governs
+the plan before and during execution, while =agent.plan.v1= governs the plan
+ledger an agent leaves as durable state.
+
+The intended output is an Org document with:
+- an ExecPlan root heading;
+- explicit scope and boundaries;
+- identity, objective, scope, governing specification, risk, status, next-action, and recovery properties;
+- a self-check before widening work;
+- context, work plan, concrete steps, validation, audit, and final gate sections;
+- evidence expectations without embedding client-specific behavior.
+
+** Definition
+
+An ExecPlan is a durable execution plan for work that is large, risky, or
+cross-cutting. It coordinates research, implementation, validation, audit, and
+recovery while work is active.
+
+An ExecPlan is not a product requirement, behavior scenario, architecture
+decision, or software design description. It chooses and links to the governing
+specification through =GOVERNING_CONTRACT= and =GOVERNING_REF= before it
+coordinates execution.
+
+** execplan-has-root
+:PROPERTIES:
+:ASSERT_ID: execplan-has-root
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+(assert exists
+  (headline :summary-contains (title "ExecPlan")))
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+ExecPlan files must have an ExecPlan root heading.
+#+END_SRC
+
+** execplan-has-id-property
+:PROPERTIES:
+:ASSERT_ID: execplan-has-id-property
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+(assert exists
+  (node-property :summary (key "EXECPLAN_ID")))
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+ExecPlan files must declare EXECPLAN_ID.
+#+END_SRC
+
+** execplan-has-objective-property
+:PROPERTIES:
+:ASSERT_ID: execplan-has-objective-property
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+(assert exists
+  (node-property :summary (key "OBJECTIVE")))
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+ExecPlan files must declare the objective they coordinate.
+#+END_SRC
+
+** execplan-has-scope-ref-property
+:PROPERTIES:
+:ASSERT_ID: execplan-has-scope-ref-property
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+(assert exists
+  (node-property :summary (key "SCOPE_REF")))
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+ExecPlan files must name the scope or design reference that bounds execution.
+#+END_SRC
+
+** execplan-has-risk-level-property
+:PROPERTIES:
+:ASSERT_ID: execplan-has-risk-level-property
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+(assert exists
+  (node-property :summary (key "RISK_LEVEL")))
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+ExecPlan files must declare RISK_LEVEL.
+#+END_SRC
+
+** execplan-has-governing-contract-property
+:PROPERTIES:
+:ASSERT_ID: execplan-has-governing-contract-property
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+(assert exists
+  (node-property :summary (key "GOVERNING_CONTRACT")))
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+ExecPlan files must declare the governing specification contract, or `none`.
+#+END_SRC
+
+** execplan-has-governing-ref-property
+:PROPERTIES:
+:ASSERT_ID: execplan-has-governing-ref-property
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+(assert exists
+  (node-property :summary (key "GOVERNING_REF")))
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+ExecPlan files must declare the governing specification reference, or `none`.
+#+END_SRC
+
+** execplan-has-status-property
+:PROPERTIES:
+:ASSERT_ID: execplan-has-status-property
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+(assert exists
+  (node-property :summary (key "STATUS")))
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+ExecPlan files must declare STATUS.
+#+END_SRC
+
+** execplan-has-next-action-property
+:PROPERTIES:
+:ASSERT_ID: execplan-has-next-action-property
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+(assert exists
+  (node-property :summary (key "NEXT_ACTION")))
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+ExecPlan files must declare NEXT_ACTION.
+#+END_SRC
+
+** execplan-has-recovery-ref-property
+:PROPERTIES:
+:ASSERT_ID: execplan-has-recovery-ref-property
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+(assert exists
+  (node-property :summary (key "RECOVERY_REF")))
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+ExecPlan files must declare RECOVERY_REF.
+#+END_SRC
+
+** execplan-has-purpose
+:PROPERTIES:
+:ASSERT_ID: execplan-has-purpose
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+(assert exists
+  (headline :summary-contains (title "Purpose")))
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+ExecPlan files must state the purpose or big picture.
+#+END_SRC
+
+** execplan-has-scope
+:PROPERTIES:
+:ASSERT_ID: execplan-has-scope
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+(assert exists
+  (headline :summary-contains (title "Scope")))
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+ExecPlan files must state scope and boundaries.
+#+END_SRC
+
+** execplan-has-self-check
+:PROPERTIES:
+:ASSERT_ID: execplan-has-self-check
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+(assert exists
+  (headline :summary-contains (title "Self Check")))
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+ExecPlan files must include a plan self-check section.
+#+END_SRC
+
+** execplan-has-context
+:PROPERTIES:
+:ASSERT_ID: execplan-has-context
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+(assert exists
+  (headline :summary-contains (title "Context")))
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+ExecPlan files must include context and orientation.
+#+END_SRC
+
+** execplan-has-work-plan
+:PROPERTIES:
+:ASSERT_ID: execplan-has-work-plan
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+(assert exists
+  (headline :summary-contains (title "Plan of Work")))
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+ExecPlan files must include a plan of work.
+#+END_SRC
+
+** execplan-has-steps
+:PROPERTIES:
+:ASSERT_ID: execplan-has-steps
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+(assert exists
+  (headline :summary-contains (title "Concrete Steps")))
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+ExecPlan files must include concrete steps.
+#+END_SRC
+
+** execplan-has-validation
+:PROPERTIES:
+:ASSERT_ID: execplan-has-validation
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+(assert exists
+  (headline :summary-contains (title "Validation")))
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+ExecPlan files must include validation and acceptance.
+#+END_SRC
+
+** execplan-has-audit
+:PROPERTIES:
+:ASSERT_ID: execplan-has-audit
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+(assert exists
+  (headline :summary-contains (title "Audit")))
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+ExecPlan files must include a reflection or quality audit section.
+#+END_SRC
+
+** execplan-has-final-gate
+:PROPERTIES:
+:ASSERT_ID: execplan-has-final-gate
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+(assert exists
+  (headline :summary-contains (title "Final")))
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+ExecPlan files must include a final validation gate.
+#+END_SRC

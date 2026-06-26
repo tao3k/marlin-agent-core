@@ -1,0 +1,26 @@
+#+TITLE: TDD Title
+#+CONTRACT_ORG: agent.tdd.v1
+
+* TDD: Test Design Title
+:PROPERTIES:
+:TEMPLATE_ID: agent.tdd.v1
+:TEMPLATE_KIND: tdd
+:TEMPLATE_CONTRACT: agent.tdd.v1
+:CONTRACT_ORG: [[../contracts/agent.tdd.v1.org][agent.tdd.v1]]
+:TDD_ID: tdd-id
+:TDD_STATUS: draft
+:TEST_SCOPE: target behavior or module
+:TARGET_REF: source-or-test-reference
+:END:
+
+** Test Intent
+Describe the behavior, module, or regression surface that should be proven by tests before implementation is accepted.
+** Red Green Refactor Loop
+- Red :: name the failing test or missing assertion expected first
+- Green :: name the minimal implementation path that should make the test pass
+- Refactor :: name the cleanup boundary allowed after green
+** Test Cases
+| Case | Expected Failure | Passing Evidence |
+| primary behavior | pending failing test | pending |
+** Regression Evidence
+- Record the command, status, and short result proving the test contract.

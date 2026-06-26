@@ -335,7 +335,7 @@ internal
 
     assert_eq!(contracts.resolved_references, 1);
     assert_eq!(contracts.unresolved_references, 0);
-    assert_eq!(contracts.contract_assertions, 53);
+    assert_eq!(contracts.contract_assertions, 64);
     assert_eq!(contracts.validation_receipts, 14);
     assert_eq!(contracts.validation_passed, 14);
     assert_eq!(

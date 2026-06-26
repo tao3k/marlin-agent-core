@@ -39,3 +39,5 @@ mod resident_runtime;
 
 #[path = "unit/scheme_types/mod.rs"]
 mod scheme_types;
+
+marlin_rust_project_harness_policy::scenario_performance_tests!();

@@ -8,17 +8,21 @@ use std::{
 
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use marlin_gerbil_scheme::{
-    GERBIL_DECK_RUNTIME_NATIVE_ABI_VERSION, GERBIL_LOADPATH_ENV, GerbilDeckRuntimeModelRoutePolicy,
-    GerbilDeckRuntimeModelRoutePolicyRequest, GerbilDeckRuntimeNativeAotBuildStatus,
-    GerbilDeckRuntimeNativeAotConfig, GerbilDeckRuntimeNativeModelRouteRequest,
-    GerbilDeckRuntimeNativeModelRouteSelection, GerbilDeckRuntimeNativeModelRouteSelector,
-    GerbilDeckRuntimeNativeStatus, GerbilDeckRuntimeNativeUtf8, default_gerbil_gsc_program,
-    default_gerbil_gxi_program, gerbil_runtime_loadpath, resolve_gerbil_executable,
-    write_gerbil_runtime_assets,
+    GERBIL_DECK_RUNTIME_NATIVE_ABI_VERSION, GERBIL_LOADPATH_ENV, GerbilCommandProfile,
+    GerbilDeckRuntimeModelRoutePolicy, GerbilDeckRuntimeModelRoutePolicyRequest,
+    GerbilDeckRuntimeNativeAotBuildStatus, GerbilDeckRuntimeNativeAotConfig,
+    GerbilDeckRuntimeNativeModelRouteRequest, GerbilDeckRuntimeNativeModelRouteSelection,
+    GerbilDeckRuntimeNativeModelRouteSelector, GerbilDeckRuntimeNativeStatus,
+    GerbilDeckRuntimeNativeUtf8, GerbilResidentStrategyEventKind,
+    GerbilResidentStrategyExecutionRequest, GerbilResidentStrategyExecutionStatus,
+    GerbilResidentStrategyExecutor, GerbilResidentStrategyGxiSmokeBridge, GerbilSchemeValue,
+    default_gerbil_gsc_program, default_gerbil_gxi_program, gerbil_runtime_loadpath,
+    resolve_gerbil_executable, write_gerbil_runtime_assets,
 };
 
 const REAL_PACKAGE_BENCH_ENV: &str = "MARLIN_GERBIL_REAL_PACKAGE_BENCH";
 const REAL_STRATEGY_BENCH_ENV: &str = "MARLIN_GERBIL_REAL_STRATEGY_BENCH";
+const REAL_GXI_SMOKE_STRATEGY_BENCH_ENV: &str = "MARLIN_GERBIL_REAL_GXI_SMOKE_STRATEGY_BENCH";
 const REAL_COMPILED_POLICY_BENCH_ENV: &str = "MARLIN_GERBIL_REAL_COMPILED_POLICY_BENCH";
 const REAL_NATIVE_AOT_BENCH_ENV: &str = "MARLIN_GERBIL_NATIVE_AOT_BENCH";
 const REAL_NATIVE_AOT_COMPILED_RUNTIME_SCM_ENV: &str =
@@ -175,6 +179,68 @@ fn bench_real_scheme_compiled_policy_selector(c: &mut Criterion) {
             });
         },
     );
+    group.finish();
+}
+
+fn bench_real_gxi_smoke_strategy_bridge(c: &mut Criterion) {
+    if !real_gxi_smoke_strategy_bench_enabled() {
+        eprintln!(
+            "skipping slow real gxi smoke bridge benchmark; set {REAL_GXI_SMOKE_STRATEGY_BENCH_ENV}=1 to run it"
+        );
+        return;
+    }
+
+    let gxi = resolve_real_bench_program(
+        "real gxi smoke strategy bridge benchmark",
+        "MARLIN_GERBIL_GXI",
+        default_gerbil_gxi_program(),
+    );
+    let loadpath_root = tempfile::Builder::new()
+        .prefix("marlin-gerbil-real-gxi-smoke-strategy-bench-")
+        .tempdir()
+        .expect("create real gxi smoke strategy bridge benchmark loadpath");
+    write_gerbil_runtime_assets(loadpath_root.path())
+        .expect("write real gxi smoke strategy bridge benchmark assets");
+    let profile = GerbilCommandProfile::new(gxi.to_string_lossy().into_owned()).env(
+        GERBIL_LOADPATH_ENV,
+        gerbil_runtime_loadpath(loadpath_root.path())
+            .to_string_lossy()
+            .into_owned(),
+    );
+    let request = GerbilResidentStrategyExecutionRequest::new(
+        "resident-strategy-bench",
+        GerbilResidentStrategyEventKind::DynamicReplan,
+        GerbilSchemeValue::record([
+            (
+                "command",
+                GerbilSchemeValue::text("resident strategy bench"),
+            ),
+            ("attempt", GerbilSchemeValue::integer(1)),
+        ]),
+    )
+    .with_session_id("bench-session")
+    .with_policy_epoch(34);
+    let mut bridge = GerbilResidentStrategyGxiSmokeBridge::marlin_deck_runtime(profile);
+    let warmup = bridge
+        .execute(&request)
+        .expect("real gxi smoke strategy bridge warmup should run");
+    assert_eq!(
+        warmup.status,
+        GerbilResidentStrategyExecutionStatus::Executed
+    );
+
+    let mut group = c.benchmark_group("deck_runtime_real_gxi_smoke_strategy_bridge");
+    group.sample_size(10);
+    group.warm_up_time(Duration::from_millis(100));
+    group.measurement_time(Duration::from_secs(2));
+    group.bench_function("gxi_smoke_typed_response_roundtrip", |bencher| {
+        bencher.iter(|| {
+            let response = bridge
+                .execute(std::hint::black_box(&request))
+                .expect("real gxi smoke strategy bridge benchmark should run");
+            std::hint::black_box(response);
+        });
+    });
     group.finish();
 }
 
@@ -466,6 +532,10 @@ fn real_strategy_bench_enabled() -> bool {
     env::var_os(REAL_STRATEGY_BENCH_ENV).as_deref() == Some(std::ffi::OsStr::new("1"))
 }
 
+fn real_gxi_smoke_strategy_bench_enabled() -> bool {
+    env::var_os(REAL_GXI_SMOKE_STRATEGY_BENCH_ENV).as_deref() == Some(std::ffi::OsStr::new("1"))
+}
+
 fn real_compiled_policy_bench_enabled() -> bool {
     env::var_os(REAL_COMPILED_POLICY_BENCH_ENV).as_deref() == Some(std::ffi::OsStr::new("1"))
 }
@@ -513,6 +583,6 @@ criterion_group! {
         .sample_size(20)
         .warm_up_time(Duration::from_millis(100))
         .measurement_time(Duration::from_millis(500));
-    targets = bench_native_selector, bench_real_scheme_strategy_selector, bench_real_scheme_compiled_policy_selector, bench_real_scheme_package_build, bench_real_native_aot_link_unit_build
+    targets = bench_native_selector, bench_real_scheme_strategy_selector, bench_real_gxi_smoke_strategy_bridge, bench_real_scheme_compiled_policy_selector, bench_real_scheme_package_build, bench_real_native_aot_link_unit_build
 }
 criterion_main!(deck_runtime_native);

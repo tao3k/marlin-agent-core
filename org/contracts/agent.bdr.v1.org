@@ -1,0 +1,165 @@
+#+TITLE: Agent BDR Contract v1
+
+* agent-bdr-v1
+:PROPERTIES:
+:CONTRACT_ID: agent.bdr.v1
+:CONTRACT_KIND: org-elements
+:CONTRACT_SCOPE: document
+:END:
+
+** What This Produces
+This contract validates a Business Development Representative workflow
+specification. A BDR record captures target segment context, prospect/account
+criteria, outreach hypotheses, qualification signals, and handoff evidence. Use
+it as a governing contract when a plan is mainly about business-development
+representative work rather than software behavior.
+
+** bdr-has-root
+:PROPERTIES:
+:ASSERT_ID: bdr-has-root
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+(assert exists
+  (headline :summary-contains (title "BDR")))
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+BDR files must have a BDR root heading.
+#+END_SRC
+
+** bdr-has-id-property
+:PROPERTIES:
+:ASSERT_ID: bdr-has-id-property
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+(assert exists
+  (node-property :summary (key "BDR_ID")))
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+BDR files must declare BDR_ID.
+#+END_SRC
+
+** bdr-has-status-property
+:PROPERTIES:
+:ASSERT_ID: bdr-has-status-property
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+(assert exists
+  (node-property :summary (key "BDR_STATUS")))
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+BDR files must declare BDR_STATUS.
+#+END_SRC
+
+** bdr-has-owner-property
+:PROPERTIES:
+:ASSERT_ID: bdr-has-owner-property
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+(assert exists
+  (node-property :summary (key "BDR_OWNER")))
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+BDR files must declare BDR_OWNER.
+#+END_SRC
+
+** bdr-has-target-segment-property
+:PROPERTIES:
+:ASSERT_ID: bdr-has-target-segment-property
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+(assert exists
+  (node-property :summary (key "BDR_TARGET_SEGMENT")))
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+BDR files must declare BDR_TARGET_SEGMENT.
+#+END_SRC
+
+** bdr-has-business-context
+:PROPERTIES:
+:ASSERT_ID: bdr-has-business-context
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+(assert exists
+  (headline :summary-contains (title "Business Context")))
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+BDR files must contain Business Context.
+#+END_SRC
+
+** bdr-has-account-criteria
+:PROPERTIES:
+:ASSERT_ID: bdr-has-account-criteria
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+(assert exists
+  (headline :summary-contains (title "Account Criteria")))
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+BDR files must contain Account Criteria.
+#+END_SRC
+
+** bdr-has-outreach-hypotheses
+:PROPERTIES:
+:ASSERT_ID: bdr-has-outreach-hypotheses
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+(assert exists
+  (headline :summary-contains (title "Outreach Hypotheses")))
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+BDR files must contain Outreach Hypotheses.
+#+END_SRC
+
+** bdr-has-qualification-signals
+:PROPERTIES:
+:ASSERT_ID: bdr-has-qualification-signals
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+(assert exists
+  (headline :summary-contains (title "Qualification Signals")))
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+BDR files must contain Qualification Signals.
+#+END_SRC
+
+** bdr-has-handoff-evidence
+:PROPERTIES:
+:ASSERT_ID: bdr-has-handoff-evidence
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+(assert exists
+  (headline :summary-contains (title "Handoff Evidence")))
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+BDR files must contain Handoff Evidence.
+#+END_SRC

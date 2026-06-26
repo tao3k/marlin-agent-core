@@ -24,7 +24,7 @@ fn org_document_loader_loads_standard_agent_contract_library_from_org_folder() {
     );
     assert!(workspace.contract_resolutions.references.is_empty());
     assert!(workspace.contract_validations.receipts.is_empty());
-    assert_eq!(assertion_ids(&workspace).len(), 53);
+    assert_eq!(assertion_ids(&workspace).len(), 64);
     assert!(assertion_ids(&workspace).contains("plan.has-workflow-state"));
     assert!(assertion_ids(&workspace).contains("plan.has-next-action-property"));
     assert!(assertion_ids(&workspace).contains("plan.validation-has-checked-item"));
@@ -53,14 +53,20 @@ fn org_document_loader_validates_standard_agent_plan_task_loop_memory_topology_c
 :PROPERTIES:
 :CONTRACT_ORG: agent.plan.v1
 :ID: agent-contract-plan-20260614
+:OBJECTIVE: validate the standard agent contract workspace fixture
 :SDD: org/contracts/agent.plan.v1.org
 :STABLE_REF: crates/marlin-org-workspace/tests/unit/document/contracts/standard_library.rs
+:SCOPE_REF: marlin-org-workspace standard contract loader fixture
 :PACKAGE: marlin-org-workspace
 :SLICE: standard-agent-contract-plan-ledger
 :COOKIE_DATA: direct
-:NEXT_ACTION: Continue Contract Org adoption from standard library validation receipts.
+:STATUS: active
+:NEXT_ACTION: continue: Contract Org adoption from standard library validation receipts.
+:RECOVERY_REF: marlin-org-workspace-standard-agent-contract-plan-ledger
 :RESUME_QUERY: marlin-org-workspace standard agent contract plan ledger
 :EVIDENCE: standard_library.rs validates the agent plan ledger contract.
+:EVIDENCE_STATUS: pending
+:REVIEW_STATUS: pending
 :END:
 
 - [X] Scope and recovery anchor confirmed.
@@ -83,8 +89,31 @@ Standard Contract Org needs to validate the same ledger shape agents use for rea
 - standard_library.rs validates contract receipts without a live LLM.
 - orgize owns contract query evaluation.
 
+** Evidence Loop
+:PROPERTIES:
+:EVIDENCE_LOOP_ID: marlin-org-workspace-standard-agent-contract-plan-ledger-loop
+:EVAL_STATUS: pending
+:END:
+| Claim | Evidence | Command | Result |
+| The standard contract workspace fixture validates the plan ledger shape. | standard_library.rs fixture | cargo test -p marlin-org-workspace org_document_loader_validates_standard_agent_plan_task_loop_memory_topology_contracts | pending |
+
+** Reflection
+:PROPERTIES:
+:REVIEW_MODE: active-plan-reflection
+:REVIEW_STATUS: pending
+:END:
+| Question | Value | Evidence |
+| Did the task finish? | no | active fixture state |
+| Did project scope drift? | no | SCOPE_REF property |
+| Are all checklist items done? | no | root checklist |
+| Is evidence sufficient and replayable? | pending | Evidence Loop table |
+| Is the plan archive-ready? | no | STATUS active |
+
 ** Recovery
 #+begin_src text
+recovery-ref: marlin-org-workspace-standard-agent-contract-plan-ledger
+read-first: crates/marlin-org-workspace/tests/unit/document/contracts/standard_library.rs
+contract: agent.plan.v1
 resume-query: marlin-org-workspace standard agent contract plan ledger
 next-action: continue from standard library validation receipts
 #+end_src
@@ -197,7 +226,7 @@ detailed Org memory or session facts.
             "agent.topology.v1".to_owned(),
         ])
     );
-    assert_eq!(workspace.contract_validations.receipts.len(), 53);
+    assert_eq!(workspace.contract_validations.receipts.len(), 64);
     let failed_receipts = workspace
         .contract_validations
         .receipts
@@ -222,7 +251,7 @@ fn org_document_loader_validates_standard_agent_contract_examples() {
         "doc:agent-plan-v1-example",
         include_str!("../../../../../../org/contracts/examples/agent.plan.v1.example.org"),
         "agent.plan.v1",
-        19,
+        30,
     );
     assert_standard_contract_example_passes(
         "doc:agent-task-v1-example",
@@ -352,7 +381,8 @@ Acceptance exists but has no checklist.
 
     assert_eq!(
         acceptance_checklist.status,
-        OrgContractValidationStatus::Failed
+        OrgContractValidationStatus::Failed,
+        "{acceptance_checklist:#?}"
     );
     assert_eq!(workflow.status, OrgContractValidationStatus::Passed);
 }

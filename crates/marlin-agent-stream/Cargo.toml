@@ -19,3 +19,4 @@ marlin-agent-test-support.workspace = true
 reqwest.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
+marlin-rust-project-harness-policy.workspace = true

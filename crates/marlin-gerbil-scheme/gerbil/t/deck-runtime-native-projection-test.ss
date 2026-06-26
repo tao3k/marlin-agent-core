@@ -42,4 +42,32 @@
            => ":marlin/deck-runtime-native-projection")
     (check (.get projection action) => "register")))
 
+(def (check-resolved-loop-policy-pack-contract)
+  (let* ((pack (make-marlin-deck-runtime-sample-resolved-loop-policy-pack))
+         (hot (.get pack hot))
+         (audit (.get pack audit))
+         (graph-node (car (.get hot graph_nodes)))
+         (provenance (car (.get audit provenance)))
+         (merge-receipt (car (.get audit merge_receipts))))
+    (check marlin-deck-runtime-resolved-loop-policy-pack-type-id
+           => "marlin.loop-policy.resolved-pack")
+    (check marlin-deck-runtime-resolved-loop-policy-pack-schema-id
+           => "marlin.loop-policy.resolved-pack.v1")
+    (check marlin-deck-runtime-resolved-loop-policy-pack-symbol
+           => "marlin_deck_runtime_project_resolved_loop_policy_pack")
+    (check (.get pack schema_version) => 1)
+    (check (.get pack policy_epoch) => 42)
+    (check (length (.get pack policy_digest)) => 32)
+    (check (car (.get pack policy_digest)) => 7)
+    (check (.get hot capability_mask) => 5)
+    (check (.get hot human_gate_mask) => 1)
+    (check (.get graph-node node_id) => 1)
+    (check (.get graph-node executor_id) => 2)
+    (check (.get provenance winner_role) => "planner")
+    (check (.get provenance source_role_order) => '("planner" "reviewer"))
+    (check (.get merge-receipt status) => "applied")
+    (check (marlin-deck-runtime-project-resolved-loop-policy-pack pack)
+           => pack)))
+
 (check-native-projection-contract)
+(check-resolved-loop-policy-pack-contract)

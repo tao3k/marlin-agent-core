@@ -1,0 +1,169 @@
+* asp-skill-v1
+:PROPERTIES:
+:CONTRACT_ID: asp.skill.v1
+:CONTRACT_ALIAS: ../contracts/asp.skill.v1.org#asp.skill.v1 ../contracts/asp.skill.v1.org
+:CONTRACT_KIND: org-elements
+:CONTRACT_SCOPE: subtree
+:END:
+
+** What This Produces
+This contract validates ASP Org-specific requirements for an Org skill subtree.
+Pair it with =skill.v1= by listing both contracts as =CONTRACT_ORG= properties
+on the same subtree. Shared skill quality belongs in =skill.v1=; this contract
+adds only semantic-AST query boundaries, command surfaces, state paths, and
+recovery behavior.
+
+The intended output is an ASP Org skill with:
+- state workflow steps driven by =asp org= query/trace output;
+- validation checks and pressure-scenario guidance;
+- adversarial review criteria for model-audited quality;
+- provider-boundary rules that prevent SDD, Wendao, or client planning labels
+  from becoming hidden query modes.
+
+** skill-has-org-artifacts-root
+:PROPERTIES:
+:ASSERT_ID: skill-has-org-artifacts-root
+:SEVERITY: error
+:END:
+#+BEGIN_SRC org-contract
+(assert exists
+  (plain-text :descendant-of $scope :summary-contains (value "artifacts/org")))
+#+END_SRC
+#+BEGIN_SRC jinja2 :name message
+ASP Org skills must name the agent-authored Org artifacts root under artifacts/org.
+#+END_SRC
+** skill-has-org-artifacts-path-command
+:PROPERTIES:
+:ASSERT_ID: skill-has-org-artifacts-path-command
+:SEVERITY: error
+:END:
+#+BEGIN_SRC org-contract
+(assert exists
+  (plain-text :descendant-of $scope :summary-contains (value "asp paths --get orgArtifacts")))
+#+END_SRC
+#+BEGIN_SRC jinja2 :name message
+ASP Org skills must show =asp paths --get orgArtifacts= as the canonical command for resolving the agent-authored Org artifacts root.
+#+END_SRC
+** skill-has-org-flow-layout
+:PROPERTIES:
+:ASSERT_ID: skill-has-org-flow-layout
+:SEVERITY: error
+:END:
+#+BEGIN_SRC org-contract
+(assert exists
+  (plain-text :descendant-of $scope :summary-contains (value "Flow records are artifacts/org/flow/plans, artifacts/org/flow/sdd, artifacts/org/flow/bdd, artifacts/org/flow/tdd, and artifacts/org/flow/bdr.")))
+#+END_SRC
+#+BEGIN_SRC jinja2 :name message
+ASP Org skills must expose the artifacts/org/flow directory layout for plan, SDD, BDD, TDD, and BDR records.
+#+END_SRC
+
+** skill-has-org-archives-layout
+:PROPERTIES:
+:ASSERT_ID: skill-has-org-archives-layout
+:SEVERITY: error
+:END:
+#+BEGIN_SRC org-contract
+(assert exists
+  (plain-text :descendant-of $scope :summary-contains (value "artifacts/org/archives")))
+#+END_SRC
+#+BEGIN_SRC jinja2 :name message
+ASP Org skills must expose the artifacts/org/archives directory for completed, superseded, or inactive agent-authored Org state.
+#+END_SRC
+
+** skill-has-org-archive-lane
+:PROPERTIES:
+:ASSERT_ID: skill-has-org-archive-lane
+:SEVERITY: error
+:END:
+#+BEGIN_SRC org-contract
+(assert exists
+  (plain-text :descendant-of $scope :summary-contains (value "Archive lane")))
+#+END_SRC
+#+BEGIN_SRC jinja2 :name message
+ASP Org skills must include an Archive lane that queries active Org facts before moving state into archives.
+#+END_SRC
+** skill-has-query-command
+:PROPERTIES:
+:ASSERT_ID: skill-has-query-command
+:SEVERITY: error
+:END:
+#+BEGIN_SRC org-contract
+(assert exists
+  (plain-text :descendant-of $scope :summary-contains (value "asp org query")))
+#+END_SRC
+#+BEGIN_SRC jinja2 :name message
+ASP Org skills must expose semantic AST queries through asp org query.
+#+END_SRC
+
+** skill-has-contract-trace-command
+:PROPERTIES:
+:ASSERT_ID: skill-has-contract-trace-command
+:SEVERITY: error
+:END:
+#+BEGIN_SRC org-contract
+(assert exists
+  (plain-text :descendant-of $scope :summary-contains (value "asp org contract trace")))
+#+END_SRC
+#+BEGIN_SRC jinja2 :name message
+ASP Org skills must expose contract validation through asp org contract trace.
+#+END_SRC
+
+** skill-has-simplified-capture-contract-command
+:PROPERTIES:
+:ASSERT_ID: skill-has-simplified-capture-contract-command
+:SEVERITY: error
+:END:
+#+BEGIN_SRC org-contract
+(assert exists
+  (src-block
+    :descendant-of $scope
+    :language "shell"
+    :summary-contains (value "asp org capture --contract agent.task.v1")))
+#+END_SRC
+#+BEGIN_SRC jinja2 :name message
+ASP Org skills must expose the simplified task capture command through =asp org capture --contract agent.task.v1 --title <TITLE> --target-file <ORG_FILE>= and leave task kind, tag, and scaffold defaults to the contract-aware wrapper.
+#+END_SRC
+** skill-has-provider-boundary-rule
+:PROPERTIES:
+:ASSERT_ID: skill-has-provider-boundary-rule
+:SEVERITY: error
+:END:
+#+BEGIN_SRC org-contract
+(assert exists
+  (plain-text :descendant-of $scope :summary-contains (value "semantic AST")))
+#+END_SRC
+#+BEGIN_SRC jinja2 :name message
+ASP Org skill rules must explicitly preserve the semantic AST provider boundary.
+#+END_SRC
+
+** skill-adversarial-checks-evidence-loop
+:PROPERTIES:
+:ASSERT_ID: skill-adversarial-checks-evidence-loop
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+(assert exists
+  (plain-text :descendant-of $scope :summary-contains (value "evidence loop")))
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+ASP skill adversarial criteria must require an evidence loop for evidence-backed answers.
+#+END_SRC
+
+** skill-template-filename-contract
+:PROPERTIES:
+:ASSERT_ID: skill-template-filename-contract
+:SEVERITY: error
+:END:
+#+BEGIN_SRC org-contract
+(assert exists
+  (headline
+    :at $scope
+    :path-contains "languages/org/templates/"
+    :filename-suffix "_SKILL.org"
+    :filename-stem-uppercase t))
+#+END_SRC
+#+BEGIN_SRC jinja2 :name message
+ASP Org skill templates must live under languages/org/templates and use an uppercase filename ending in _SKILL.org.
+#+END_SRC

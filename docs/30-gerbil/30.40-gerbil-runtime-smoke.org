@@ -45,16 +45,16 @@ Expected output:
 marlin-gerbil-smoke
 #+end_src
 
-** Rust Adapter Fixture
+** Gerbil Typed Runtime Fixture
 
-The first executable adapter shim lives at:
+The crate-owned Gerbil runtime modules live under:
 
 #+begin_src text
-crates/marlin-gerbil-scheme/fixtures/gerbil/command-adapter.ss
+crates/marlin-gerbil-scheme/gerbil/src/marlin/
 #+end_src
 
-It reads the JSON request from stdin, extracts the request =source.text= field,
-and recognizes the first smoke forms:
+The first smoke parser recognizes the typed source forms that Rust has already
+selected through a =GerbilCompileRequest= projection:
 
 #+begin_src scheme
 (loop-graph gerbil-source-loop
@@ -64,9 +64,10 @@ and recognizes the first smoke forms:
   (edge tool provider none))
 #+end_src
 
-The shim returns a =LoopGraph= JSON artifact whose =graph_id=, node =config=,
-and edge =condition= values are derived from that form. =none=, =null=, and
-=#f= edge conditions are emitted as JSON =null=.
+The runtime modules return a typed =LoopGraph= artifact whose =graph_id=, node
+=config=, and edge =condition= values are derived from that form. =none=,
+=null=, and =#f= edge conditions project as the typed absence of an edge
+condition; Gerbil does not own a JSON encoding for that absence.
 
 It also recognizes a minimal workspace schema smoke form:
 
@@ -76,40 +77,37 @@ It also recognizes a minimal workspace schema smoke form:
   (todo TODO DONE))
 #+end_src
 
-When =expected= is =WorkspaceSchema=, the adapter emits a =WorkspaceSchema=
-JSON artifact with =schema_id=, =required_properties=, and =todo_states=.
+When =expected= is =WorkspaceSchema=, the typed artifact carries =schema_id=,
+=required_properties=, and =todo_states=.
 
-The adapter now routes parser output through Gerbil-side modules before
-emitting JSON:
+The runtime routes parser output through Gerbil-side modules before Rust
+performs projection and receipt encoding:
 
-- =fixtures/gerbil/marlin/protocol.ss= owns constructors/accessors for
-  =LoopGraph=, =LoopNodeSpec=, =LoopEdgeSpec=, =WorkspaceSchema=, and
-  =WorkspacePatchIntent=, and =AgentScenarioContract= plus the
-  =GerbilCompileResponse= serializer and the supported artifact-kind registry.
-- =fixtures/gerbil/marlin/request.ss= owns the =GerbilCompileRequest= JSON
-  reader boundary through =:std/text/json=.
-- =fixtures/gerbil/marlin/parser.ss= owns the Gerbil reader-backed smoke DSL
+- =gerbil/src/marlin/protocol.ss= owns constructors/accessors for
+  =LoopGraph=, =LoopNodeSpec=, =LoopEdgeSpec=, =WorkspaceSchema=,
+  =WorkspacePatchIntent=, and =AgentScenarioContract=, plus the supported
+  artifact-kind registry.
+- =gerbil/src/marlin/request.ss= owns typed =GerbilCompileRequest= accessors.
+  It does not decode JSON.
+- =gerbil/src/marlin/parser.ss= owns the Gerbil reader-backed smoke DSL
   source-to-=LoopGraph=, source-to-=WorkspaceSchema=, and
   source-to-=WorkspacePatchIntent=, and source-to-=AgentScenarioContract=
   parsers.
-- =fixtures/gerbil/marlin/adapter.ss= imports the request/parser/protocol
-  modules and owns the artifact compiler table, table/registry self-check, and
-  response emission.
-- =fixtures/gerbil/command-adapter.ss= is a thin launcher that imports
-  =:marlin/adapter= and calls =run-marlin-command-adapter=.
+- =gerbil/src/marlin/adapter.ss= imports the request/parser/protocol modules
+  and owns the artifact compiler table and table/registry self-check.
 
-This validates the real =gxi= process boundary and the first Gerbil-side
-source-to-IR step before the compiler grows a full package/build boundary.
+This validates the first Gerbil-side source-to-IR step while keeping text
+serialization, CLI JSON, and durable receipts on the Rust side.
 
 ** WorkspacePatchIntent Smoke
 
-The runtime smoke includes =WorkspacePatchIntent= as a JSON artifact that can
+The runtime smoke includes =WorkspacePatchIntent= as a typed artifact that can
 enter the Rust dry-run workflow. The source form compiles through
 =protocol.ss=, =parser.ss=, and =adapter.ss= into =WorkspacePatchIntentSpec=
 with =dry_run_first= set to true. The fixture source covers =set-todo=,
 =set-property=, and =mark-memory-candidate= patch ops. The smoke proves the
-real =gxi= boundary returns the typed artifact through both the launcher file
-and module entrypoint, then proves Rust can pass the decoded intent into
+real =gxi= boundary can produce the typed artifact for Rust projection, then
+proves Rust can pass the decoded intent into
 =GerbilWorkspacePatchIntentDryRunner= and receive a =WorkspacePatchReceipt=.
 
 The dry-run smoke does not execute a workspace mutation. The dry-run receipt
@@ -177,27 +175,18 @@ production and harness loop execution stay connected.
 
 ** Launcher
 
-The launcher requires =GERBIL_LOADPATH= to point at the fixture root so the
-=package: marlin= modules resolve:
+The runtime module entrypoint requires =GERBIL_LOADPATH= to point at the
+crate-written loadpath root so the =package: marlin= modules resolve:
 
 #+begin_src sh
-GERBIL_LOADPATH=crates/marlin-gerbil-scheme/fixtures/gerbil \
-  /opt/homebrew/opt/gerbil-scheme/bin/gxi \
-  crates/marlin-gerbil-scheme/fixtures/gerbil/command-adapter.ss
-#+end_src
-
-The same adapter module can be invoked directly through Gerbil's module
-entrypoint without the launcher file:
-
-#+begin_src sh
-GERBIL_LOADPATH=crates/marlin-gerbil-scheme/fixtures/gerbil \
+GERBIL_LOADPATH=<root> \
   /opt/homebrew/opt/gerbil-scheme/bin/gxi \
   :marlin/adapter
 #+end_src
 
 The Rust boundary tests pass that value through =GerbilCommandSpec.env=, not
-through a shell wrapper. They cover the source-file launcher and module entry,
-successful =LoopGraph=, =WorkspaceSchema=, =WorkspacePatchIntent=, and
+through a shell wrapper. They cover module entry, successful typed =LoopGraph=,
+=WorkspaceSchema=, =WorkspacePatchIntent=, and
 =AgentScenarioContract= compilation, the =WorkspacePatchIntent= dry-run and
 policy-gated commit workflow receipts, plus Gerbil-side rejection of
 unsupported =expected= artifact kinds and mismatched source forms.
@@ -205,13 +194,12 @@ unsupported =expected= artifact kinds and mismatched source forms.
 ** Runtime Assets And Example Scheme
 
 =marlin-gerbil-scheme= ships the Gerbil binding sources as crate-owned runtime
-assets. =write_gerbil_runtime_assets= writes =command-adapter.ss=, =smoke.ss=,
-and the =marlin/= modules into a caller-provided loadpath root. A local runtime
-can then run the module entrypoint with =GERBIL_LOADPATH=<root> gxi
-:marlin/adapter=, or run the example source directly. Rust callers can use
+assets. =write_gerbil_runtime_assets= writes =smoke.ss= and the =marlin/=
+modules into a caller-provided loadpath root. A local runtime can then run the
+module entrypoint with =GERBIL_LOADPATH=<root> gxi :marlin/adapter=, or run the
+example source directly. Rust callers use
 =GerbilCommandCompiler::from_marlin_runtime_module= for the same module
-entrypoint, or =GerbilCommandSpec::marlin_runtime_launcher= for the source-file
-launcher. Local smoke tests discover =gxi= through =MARLIN_GERBIL_GXI= before
+entrypoint. Local smoke tests discover =gxi= through =MARLIN_GERBIL_GXI= before
 falling back to the Homebrew =gerbil-scheme= path.
 
 =:marlin/hook-policy= is the runtime adapter for complex hook policy modules.
@@ -242,11 +230,11 @@ dynamic action receipt.
 =examples/workspace-patch-intent.ss= is the minimal user-facing Gerbil scheme
 example. It imports =:marlin/parser= and =:marlin/protocol=, compiles a
 =WorkspacePatchIntent= source form containing =set-todo=, =set-property=, and
-=mark-memory-candidate=, and emits the same JSON =GerbilCompileResponse= shape
-that Rust decodes from the command adapter. The
+=mark-memory-candidate=, and produces the same typed =WorkspacePatchIntent=
+artifact that Rust projects from the runtime module. The
 =command_compiler_real_gxi_runs_workspace_patch_intent_example_from_runtime_assets=
 smoke writes the crate assets to a temporary loadpath, runs that example through
-real =gxi=, decodes the JSON response in Rust, and verifies the typed
+real =gxi=, validates the Rust projection, and verifies the typed
 =WorkspacePatchIntent= artifact.
 
 =examples/workspace-patch-intent.rs= is the Rust-facing example. It writes the

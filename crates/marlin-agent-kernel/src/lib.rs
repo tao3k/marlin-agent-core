@@ -3,6 +3,10 @@
 mod adapters;
 mod controller;
 mod driver;
+mod loop_machine;
+mod loop_program_controller;
+mod loop_program_handoff;
+mod loop_program_handoff_executor;
 
 pub use adapters::{ProviderNodeAdapter, SubAgentNodeAdapter, ToolNodeAdapter};
 pub use controller::{
@@ -12,6 +16,27 @@ pub use controller::{
 pub use driver::{
     GraphLoopKernel, GraphNodeExecutor, GraphPolicyProposalCompilation, TokioGraphLoopKernel,
     compile_graph_policy_proposal, compile_graph_policy_proposal_with_native_abi_readiness,
+};
+pub use loop_machine::{
+    GenericLoopMachine, GenericLoopMachineError, GenericLoopMachineReceipt, GenericLoopMachineStep,
+    GenericLoopMachineStepIndex,
+};
+pub use loop_program_controller::{
+    LoopProgramRunReceipt, LoopProgramRunRequest, LoopProgramRunStatus,
+};
+pub use loop_program_handoff::{
+    LoopProgramRuntimeHandoff, LoopProgramRuntimeHandoffKind, LoopProgramRuntimeHandoffPlan,
+};
+pub use loop_program_handoff_executor::{
+    AgentFlowLoopProgramRuntimeHandoffExecutor, DeferredLoopProgramRuntimeHandoffHandler,
+    LoopProgramMemoryProjectionReceipt, LoopProgramRuntimeHandoffExecution,
+    LoopProgramRuntimeHandoffExecutionReceipt, LoopProgramRuntimeHandoffExecutionReportStatus,
+    LoopProgramRuntimeHandoffExecutionStatus, LoopProgramRuntimeHandoffExecutor,
+    LoopProgramRuntimeHandoffHandler, LoopProgramRuntimeHandoffRouter,
+    LoopProgramRuntimeHandoffRouterHandlers, LoopProgramRuntimeOwner,
+    LoopProgramToolProcessProgram, LoopProgramToolProcessProjectionReceipt,
+    LoopProgramToolProcessSpawnReceipt, LoopProgramToolProcessSpawnRequest,
+    StaticLoopProgramRuntimeHandoffHandler, spawn_loop_program_tool_process,
 };
 pub use marlin_agent_protocol::{
     ExecutorName, FailureClassificationId, FailureClassificationReceipt, GraphId,

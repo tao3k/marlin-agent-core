@@ -4,7 +4,7 @@
 
 (import (only-in :clan/poo/object .get)
         :marlin/deck-runtime-debug-policy-extension
-        :marlin/modules/prefabs/default-policy)
+        :config-interface/modules/prefabs/default-policy)
 
 (export emit-policy-receipt-gate-cli-report)
 
@@ -56,10 +56,10 @@
 ;; MarlinResult <- MarlinInput
 (def module-evaluation (marlin-deck-runtime-debug-policy-module-evaluation))
 
-;;; Boundary: Module presentation is the Rust-readable scalar view.
+;;; Boundary: Policy facade presentation is the Rust-readable scalar view.
 ;; MarlinResult <- MarlinInput
-(def module-system-presentation
-  (marlin-deck-runtime-debug-policy-module-system-presentation))
+(def policy-facade-presentation
+  (marlin-deck-runtime-debug-policy-policy-facade-presentation))
 
 ;;; Boundary: Policy pack presentation exposes prefab object surgery receipts.
 ;; MarlinResult <- MarlinInput
@@ -146,39 +146,39 @@
 (emit "module_catalog_count" (length (.get module-catalog modules)))
 (emit "module_eval_result_kind" (.get module-evaluation kind))
 (emit "module_eval_workflow_kind" (.get module-evaluation workflow-kind))
-(emit "module_system_presentation_kind"
-      (.get module-system-presentation kind))
-(emit "module_system_projection_chain_kind"
-      (.get module-system-presentation projection-chain-kind))
-(emit "module_system_root_import_count"
-      (.get module-system-presentation root-import-count))
-(emit "module_system_root_extension_count"
-      (.get module-system-presentation root-extension-count))
-(emit "module_system_root_policy_extension_object_count"
-      (.get module-system-presentation root-policy-extension-object-count))
-(emit "module_system_import_graph_owner"
-      (.get module-system-presentation import-graph-owner))
-(emit "module_system_option_merge_owner"
-      (.get module-system-presentation option-policy-owner))
-(emit "module_system_extension_composition_owner"
-      (.get module-system-presentation extension-composition-owner))
-(emit "module_system_native_projection_payload_owner"
-      (.get module-system-presentation native-projection-payload-owner))
-(emit "module_system_budget_receipt_owner"
-      (.get module-system-presentation budget-receipt-owner))
-(emit "module_system_catalog_resolution_receipt_owner"
-      (.get module-system-presentation catalog-resolution-receipt-owner))
-(emit "module_system_rust_parses_scheme_source"
-      (.get module-system-presentation rust-parses-scheme-source))
-(emit "module_system_scheme_manufactures_rust_handlers"
-      (.get module-system-presentation scheme-manufactures-rust-handlers))
+(emit "policy_facade_presentation_kind"
+      (.get policy-facade-presentation kind))
+(emit "policy_facade_projection_chain_kind"
+      (.get policy-facade-presentation projection-chain-kind))
+(emit "policy_facade_root_import_count"
+      (.get policy-facade-presentation root-import-count))
+(emit "policy_facade_root_extension_count"
+      (.get policy-facade-presentation root-extension-count))
+(emit "policy_facade_root_policy_extension_object_count"
+      (.get policy-facade-presentation root-policy-extension-object-count))
+(emit "policy_facade_import_graph_owner"
+      (.get policy-facade-presentation import-graph-owner))
+(emit "policy_facade_option_merge_owner"
+      (.get policy-facade-presentation option-policy-owner))
+(emit "policy_facade_extension_composition_owner"
+      (.get policy-facade-presentation extension-composition-owner))
+(emit "policy_facade_native_projection_payload_owner"
+      (.get policy-facade-presentation native-projection-payload-owner))
+(emit "policy_facade_budget_receipt_owner"
+      (.get policy-facade-presentation budget-receipt-owner))
+(emit "policy_facade_catalog_resolution_receipt_owner"
+      (.get policy-facade-presentation catalog-resolution-receipt-owner))
+(emit "policy_facade_rust_parses_scheme_source"
+      (.get policy-facade-presentation rust-parses-scheme-source))
+(emit "policy_facade_scheme_manufactures_rust_handlers"
+      (.get policy-facade-presentation scheme-manufactures-rust-handlers))
 (emit "policy_pack_kind" (.get policy-pack-presentation pack-kind))
 (emit "policy_pack_id" (.get policy-pack-presentation pack-id))
 (emit "policy_pack_presentation_kind" (.get policy-pack-presentation kind))
 (emit "policy_pack_inventory_kind"
       (.get policy-pack-presentation policy-pack-inventory-kind))
-(emit "policy_pack_module_system_presentation_kind"
-      (.get policy-pack-presentation module-system-presentation-kind))
+(emit "policy_pack_policy_facade_presentation_kind"
+      (.get policy-pack-presentation policy-facade-presentation-kind))
 (emit "policy_pack_object_count"
       (.get policy-pack-presentation policy-object-count))
 (emit "policy_pack_default_object_count"
@@ -270,11 +270,11 @@
 (emit "policy_projection_chain_receipt_pack_id"
       (.get policy-projection-chain-receipt pack-id))
 (emit "policy_projection_chain_module_evaluation_receipt_kind"
-      "marlin.modules.policy-pack.module-evaluation-receipt.v1")
+      "marlin.config-interface.policy-pack.module-evaluation-receipt.v1")
 (emit "policy_projection_chain_policy_projection_receipt_kind"
-      "marlin.modules.policy-projection.v1")
+      "marlin.config-interface.policy-projection.v1")
 (emit "policy_projection_chain_native_projection_payload_kind"
-      "marlin.modules.policy-pack-presentation.v1")
+      "marlin.config-interface.policy-pack-presentation.v1")
 (emit "policy_projection_chain_budget_receipt_kind"
       "marlin.runtime.policy-budget-receipt.v1")
 (emit "policy_projection_chain_catalog_resolution_receipt_kind"

@@ -82,14 +82,8 @@ emits the two generated object files, and emits the Gambit link directives. The
 default crate build remains pure Rust and does not invoke =gxc=, =gsc=, a C
 compiler, or the Gambit linker.
 
-Profile-specific linked crates call the package-owned staging command before
-building the link unit:
-
-#+begin_src sh
-gxi build.ss stage-native-aot <deck-runtime|agent-policy-routing> <link-root>
-#+end_src
-
-That command is the only place that maps a native AOT profile to Gerbil source
+Profile-specific linked crates call Rust-owned native build support before
+building the link unit. That build support is the only place that maps a native AOT profile to Gerbil source
 modules and package-cache output. Rust passes only the requested profile and
 link root, then consumes =<link-root>/.gerbil/native/<artifact-stem>.scm=.
 
@@ -200,12 +194,16 @@ know about the native ABI.
 The dedicated =marlin-deck-runtime-native= crate owns this composition boundary.
 It depends on =marlin-gerbil-scheme= and =marlin-agent-runtime=, while
 =marlin-agent-runtime= and =marlin-agent-stream= remain free of Gerbil native
-linkage. The crate feeds a priority-ordered native policy list to the Scheme
-selector, maps the returned native-list index back to the original route rule
-index, and then calls the runtime projection API. Unsupported native policy
-predicates are treated as selector candidates only when they can be represented
-as Deck command prefixes and agent-scope labels; Rust projection remains the
-final correctness gate.
+linkage. The crate compiles route rules into a priority-ordered native policy
+set and a Rust-owned matcher plan. The matcher plan streams priority-ordered
+native candidates from command prefixes and request/fixed agent-scope labels,
+sends one candidate at a time across the linked Scheme selector ABI, maps the
+returned candidate index back to the original route rule index, and then calls
+the runtime projection API. Unsupported native policy predicates are kept as
+broad selector candidates and are resolved by the Rust projection gate; if
+projection rejects one broad candidate, the resolver continues to the next
+candidate. This keeps the native AOT selector in the path while removing the
+previous per-dispatch projection of every policy into C backing storage.
 
 The current real linked typed selector benchmark uses the initialized linked
 selector directly through =select_policy_index=:
@@ -220,6 +218,25 @@ The 2026-06-13 linked selector benchmark was run through:
 #+begin_src sh
 direnv exec . cargo bench -p marlin-deck-runtime-native --features linked-native --bench linked_selector
 #+end_src
+The linked-native selector benchmark now stays in the microsecond range on the
+local native AOT path: 1 policy =2.0732 us=, 8 policies =7.2846 us=, 64
+policies =44.126 us=, and 256 policies =197.11 us= mean estimates.
+
+The 2026-06-26 candidate-plan benchmark split the direct full-request selector
+from the optimized resolver path. After the conservative candidate-stream
+correctness fix, the local =--sample-size 10 --warm-up-time 0.1
+--measurement-time 0.2= Criterion point estimates were:
+- direct =deck_runtime_linked_native_selector/256_policy=: =398.31 us=.
+- optimized =deck_runtime_linked_native_resolver_compiled_candidate/256_policy=:
+  =9.0418 us=.
+- high-level =deck_runtime_high_level_policy_request_build/256_policy=:
+  =308.69 us=.
+
+The optimized resolver still calls the linked Scheme selector, but only with
+one compiled candidate policy at a time. This makes the native ABI call validate
+a candidate instead of rebuilding the full policy array on every dispatch, while
+broad unsupported projections can fall through to the next candidate when Rust
+projection rejects them.
 
 That run measured =deck_runtime_linked_native_selector/1_policy= at
 approximately 1.2072-1.2811 microseconds, with a 1.2479 microsecond midpoint.
@@ -319,23 +336,34 @@ and low-frequency composition logic. Rust owns the typed script interface
 receipt, the nested POO native projection contract, and the batch performance
 receipt.
 
-The current script batch gate is:
+The current Scheme-side script batch performance gate is a Scenario fixture plus
+the harness =benchmark.ss= library. The replayable gate entrypoint is:
 
 #+begin_src sh
-gerbil-scheme-harness bench --iterations 1 --max-total-ms 2000 --max-interface-ms 50 crates/marlin-gerbil-scheme/gerbil
+cd crates/marlin-gerbil-scheme/gerbil
+GERBIL_LOADPATH=src:.:$GERBIL_LOADPATH \
+  gxi t/deck-runtime-script-performance-gate.ss
 #+end_src
 
-On 2026-06-14 the local harness benchmark measured =totalMs=243,
-=collect-project=223, =type-check=18, and =structural-interface-packet=2. The
-Scheme unit gate also exercises =marlin-deck-runtime-script-batch-metrics= with
-128 script calls. That proves the macro/user interface shape, not the hot-path
-runtime budget. The Rust-side promotion gate is therefore a typed batch metrics
-projection: 128 or more script runs must fit within the default 50,000
-microsecond budget, and Rust produces a
-=GerbilDeckRuntimeScriptBatchPerformanceReceipt= with =WithinBudget=,
-=UnderSampled=, or =OverBudget=. This keeps expensive supervision,
-observability, locking, and final budget decisions on the Rust side while
-leaving Scheme responsible for POO and macro expressiveness.
+The gate consumes
+=t/scenarios/performance/deck-runtime-script-batch/benchmark.ss=. That fixture
+declares =feature=deck-runtime-script-batch=, =targetTotalMs=1=,
+=regressionBudgetMs=4=, and =maxTotalMs=5= for 1024 quick script dispatches.
+The ordinary =gxtest t/deck-runtime-script-performance-test.ss= smoke remains a
+shape test with 128 calls; it intentionally does not import the benchmark
+library.
+
+On 2026-06-26 the Scenario gate receipt reported =elapsedMicros=332=,
+=elapsedMs=.332=, =maxTotalMs=5=, and =status=pass=. The measured thunk is the
+pure =marlin-deck-runtime-script-batch-metrics= path, while metrics assertions
+run outside the timed body. The hot-path repair for this gate is the
+tail-recursive implementation of =count-marlin-deck-runtime-script-runs=, which
+removes the previous =iota= list allocation from every batch. The Rust-side
+promotion gate remains a typed batch metrics projection:
+=GerbilDeckRuntimeScriptBatchPerformanceReceipt= records =WithinBudget=,
+=UnderSampled=, or =OverBudget= for downstream runtime decisions. This keeps
+expensive supervision, observability, locking, and final budget decisions on the
+Rust side while leaving Scheme responsible for POO and macro expressiveness.
 
 A later same-day rerun of the linked native ABI selector provides the current
 hot-path control sample for this audit:
@@ -380,8 +408,10 @@ direnv exec . env \
   cargo test -p marlin-agent-policy-routing-native --features linked-native --no-run
 #+end_src
 
-The real linked typed ABI smoke used the current Scheme source and the linked
-objects produced by the =marlin-deck-runtime-native= feature build:
+The real linked typed ABI smoke stages the current Scheme source through
+Rust-owned native build support, links the generated native AOT objects with
+the Rust-owned link unit, and runs a C ABI smoke over the exported Deck runtime
+selector:
 
 #+begin_src sh
 direnv exec . env \
@@ -402,7 +432,7 @@ The local real =gxi= link-unit smoke is part of the explicit Gerbil gate
 surface:
 
 #+begin_src sh
-cargo test -p marlin-gerbil-scheme --test unit_test command::real_gxi::examples::build_script::command_compiler_real_gxi_deck_runtime_native_compiles_link_unit -- --ignored --exact
+cargo test -p marlin-gerbil-scheme --test unit_test command::real_gxi::examples::build_script::command_compiler_real_gxi_deck_runtime_native_links_and_runs_abi_smoke -- --ignored --exact
 #+end_src
 
 The always-on Rust ABI projection and in-process performance gates remain:
@@ -476,7 +506,7 @@ direnv exec . cargo test -p marlin-gerbil-scheme command_compiler_real_gxi_deck_
 direnv exec . cargo test -p marlin-gerbil-scheme gerbil_hook_policy_runtime_binding_real_gxi_runs_sample_policy_module -- --ignored --nocapture
 direnv exec . cargo test -p marlin-deck-runtime-native --tests -- --nocapture
 direnv exec . cargo test -p marlin-deck-runtime-native --features linked-native --tests -- --nocapture
-direnv exec . cargo test -p marlin-gerbil-scheme command_compiler_real_gxi_deck_runtime_native_compiles_link_unit -- --ignored --nocapture
+direnv exec . cargo test -p marlin-gerbil-scheme command_compiler_real_gxi_deck_runtime_native_links_and_runs_abi_smoke -- --ignored --nocapture
 direnv exec . cargo test -p marlin-agent-runtime model_route -- --nocapture
 direnv exec . cargo test -p marlin-agent-stream --tests -- --nocapture
 direnv exec . cargo test -p marlin-agent-hooks hooks -- --nocapture
@@ -503,8 +533,8 @@ This pass closes the next typed runtime slice after the earlier P0-P4 audit:
   prepared =GerbilResidentRuntimeHandle= can emit
   =GerbilResidentRuntimeProcessPlan= and
   =GerbilResidentRuntimeProcessReceipt=. Enabled sessions point at the
-  crate-written =command-adapter-batch.ss= launcher while preserving the
-  caller's configured =gxi= program, current directory, and environment.
+  crate-written =:marlin/adapter= module entry while preserving the caller's
+  configured =gxi= program, current directory, and environment.
   =GerbilResidentRuntimeHandle::spawn_process= owns the actual child process
   and kills any still-running batch adapter on drop.
 
@@ -556,9 +586,11 @@ runtime protocol and connects its evidence back into harness release gates:
   strategy remains in the Gerbil Scheme plane; TOML stays the simple typed
   envelope.
 
-- P4 harness performance evidence now proves resident reuse: the guarded test
-  drives two compile requests through one child process and records
-  =resident_request_loop_reuse= in the latency evidence detail.
+- P4 resident execution performance evidence now carries a typed
+  =GerbilResidentStrategyExecutionPerformanceReceipt=. The focused
+  =resident_runtime= test drives two typed strategy requests through one child
+  process, records =elapsed_micros= for admission plus execution, and proves
+  =process_reuse_observed= through a stable child id.
 
 - P5 validation is split between focused crate gates and the workspace gates
   listed below. Real =gxi= and linked-native gates remain explicit local or
@@ -598,8 +630,8 @@ build-support gate:
 
 - P2 validates real Gerbil asset freshness at build-gate time. A package with no
   =gerbil/= root is =NotPresent= and non-blocking; a package with a =gerbil/=
-  root must include =gerbil.pkg=, =build.ss=,
-  =bin/command-adapter-batch.ss=, =src/marlin/deck-runtime.ss=,
+  root must include =gerbil.pkg=, =build.ss=, =src/marlin/adapter.ss=,
+  =src/marlin/request.ss=, =src/marlin/deck-runtime.ss=,
   =src/marlin/deck-runtime-native.ss=, and =src/marlin/hook-policy.ss=.
 
 - P3 projects missing Gerbil runtime assets into agent-actionable quality
@@ -635,7 +667,7 @@ agent_policy_routing_linked_native_selector/64_candidate_edge:
 agent_policy_routing_linked_native_selector/256_candidate_edge:
   [76.258 us 144.91 us 230.75 us]
 #+end_src
-- P2 keeps ordinary Gerbil package compile separate from native staging. =build.ss compile= does not list native C ABI modules as =gsc:= targets; =build.ss stage-native-aot <profile> <link-root>= is the only profile-to-source native compiler entrypoint.
+- P2 keeps ordinary Gerbil package compile separate from native linking. =build.ss compile= does not list native C ABI modules as =gsc:= targets. The older native-AOT staging build action is retired; native AOT/link orchestration is Rust-owned build support plus dedicated native crates, while =build.ss= stays the package driver.
 - P3 keeps AgentGraph handoff readiness/replay-only. Runtime readiness receipts project topology and root loop entry metadata without constructing or executing a =GraphLoopExecutionRequest=.
 - P4 adds local justfile gates for Gerbil package/module smoke, AgentGraph linked-native smoke, and benchmark build checks.
 The focused validation commands for this pass are:
@@ -644,7 +676,6 @@ GERBIL_LOADPATH=src gxi build.ss compile
 GERBIL_LOADPATH=src gxtest t/marlin-policy-pack-inventory-test.ss
 GERBIL_LOADPATH=src gxtest t/marlin-user-interface-prefab-test.ss
 GERBIL_LOADPATH=../../gerbil/src:. gxtest t/user-interface-module-config-test.ss
-gxi build.ss stage-native-aot agent-policy-routing /tmp/marlin-agent-policy-routing-link-set
 direnv exec . cargo test -p marlin-gerbil-scheme aot_runtime
 direnv exec . cargo test -p marlin-gerbil-native-build
 direnv exec . cargo test -p marlin-agent-policy-routing-native --features linked-native

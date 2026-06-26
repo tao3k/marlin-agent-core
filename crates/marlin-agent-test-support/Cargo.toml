@@ -22,3 +22,4 @@ marlin-rust-project-harness-policy.workspace = true
 
 [dev-dependencies]
 reqwest.workspace = true
+marlin-rust-project-harness-policy.workspace = true

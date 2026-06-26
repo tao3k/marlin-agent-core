@@ -1,6 +1,6 @@
 * Project topology: marlin-agent-core import :agent:topology:overview:
 :PROPERTIES:
-:CONTRACT_ORG: agent.topology.v1
+:CONTRACT_ORG: [[../agent.topology.v1.org][agent.topology.v1]]
 :TOPOLOGY_ID: topology.marlin-agent-core.import
 :PROJECT_ID: marlin-agent-core
 :TOPOLOGY_SCOPE: project-overview

@@ -240,8 +240,8 @@ cc/Gambit discovery without making AgentGraph depend on a Deck-named build
 support boundary.
 - =crates/marlin-agent-policy-routing-native= is the dedicated AgentGraph
 policy-routing linked-native crate. Its default build is a no-link typed Rust
-crate; the =linked-native= feature calls the package-owned =build.ss
-stage-native-aot agent-policy-routing <link-root>= target, consumes the staged
+crate; the =linked-native= feature uses Rust-owned native build support to
+stage =agent-policy-routing=, consumes the generated
 =agent-policy-routing-native~0.scm= artifact, then calls the AgentGraph
 policy-routing native build entrypoint and exposes a linked selector only after
 the real symbols are available.
@@ -317,7 +317,7 @@ construct the typed receipt from the request plus native projection.
 - AgentGraph policy-routing now has a real linked selector benchmark in
 =crates/marlin-agent-policy-routing-native/benches/linked_selector.rs=. The local 2026-06-17 baseline is 21.151 us midpoint for one candidate edge, 19.292 us midpoint for eight candidate edges, 39.042 us midpoint for 64 candidate edges, and 144.91 us midpoint for 256 candidate edges.
 - =marlin-gerbil-scheme/tests/unit/aot_runtime/build.rs= now proves the AgentGraph policy-routing AOT build receipt projects a =GraphNativeAbiReadinessStatus::Ready= receipt after the generated object/link unit exposes both =marlin_agent_policy_routing_initialize= and =marlin_agent_policy_routing_select_edges=.
-- =build.ss compile= is now an ordinary Gerbil package/module compile gate. Native C ABI modules are staged only through =build.ss stage-native-aot <profile> <link-root>=, which prevents package compile from treating the native =.ss= modules as missing =.scm= sources.
+- =build.ss compile= is now an ordinary Gerbil package/module compile gate. Native C ABI modules are staged through Rust-owned native build support, which prevents package compile from treating the native =.ss= modules as missing =.scm= sources.
 - This supersedes the earlier landing-status wording that described the native export module as a =gsc:= package compile target. Native C export modules are package-staged AOT inputs, not ordinary package compile entries.
 - =build-support/marlin-gerbil-native-build= now discovers =libgambit= from Gerbil shell wrappers that export =GERBIL_HOME= or exec a real =.../bin/gsc=, so linked-native builds do not accidentally resolve Ghostscript =gsc= or miss the runtime library path.
 - The local gate map now includes =gerbil-package-module-gate=, =agent-policy-routing-native-gate=, =agent-policy-routing-native-bench-build=, and =agent-graph-native-routing-gate= in the root justfile.

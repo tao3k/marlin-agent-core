@@ -1,0 +1,26 @@
+#+TITLE: Feature Title
+#+CONTRACT_ORG: agent.bdd.v1
+
+* Feature: Behavior Title
+:PROPERTIES:
+:TEMPLATE_ID: agent.bdd.v1
+:TEMPLATE_KIND: bdd
+:TEMPLATE_CONTRACT: agent.bdd.v1
+:CONTRACT_ORG: [[../contracts/agent.bdd.v1.org][agent.bdd.v1]]
+:BDD_ID: bdd-id
+:BDD_STATUS: draft
+:BDD_ACTOR: primary actor
+:END:
+
+** Scenario: successful behavior
+*** Given
+Describe the initial state and preconditions.
+
+*** When
+Describe the action or event.
+
+*** Then
+Describe the observable outcome.
+
+** Acceptance Evidence
+- Record the test, trace, or review evidence that proves the scenario.

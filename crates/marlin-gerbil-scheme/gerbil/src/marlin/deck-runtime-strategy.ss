@@ -15,6 +15,7 @@ package: marlin
         :marlin/deck-runtime-loop-graph
         :marlin/deck-runtime-matcher
         :marlin/deck-runtime-policy-engine
+        :marlin/deck-runtime-resident-strategy
         :marlin/deck-runtime-strategy-context)
 
 (export marlin-deck-runtime-strategy-rule-kind
@@ -112,4 +113,5 @@ package: marlin
         marlin-deck-runtime-dynamic-strategy-policy-receipt
         marlin-deck-runtime-strategy-rule-signal-names
         marlin-deck-runtime-dynamic-strategy-rule-signal-names
+        marlin-deck-runtime-resident-strategy-execute
         marlin-deck-runtime-strategy-selection)

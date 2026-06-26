@@ -1,6 +1,9 @@
 use marlin_gerbil_scheme::{
     GERBIL_ADAPTER_MODULE, GERBIL_LOADPATH_ENV, GerbilCommandProfile, GerbilResidentRuntimePlan,
-    GerbilResidentRuntimeProcessStatus,
+    GerbilResidentRuntimeProcessStatus, GerbilResidentRuntimeShutdownStatus,
+    GerbilResidentStrategyEventKind, GerbilResidentStrategyExecutionPerformanceScope,
+    GerbilResidentStrategyExecutionRequest, GerbilResidentStrategyExecutionResponse,
+    GerbilResidentStrategyExecutionStatus, GerbilResidentStrategyRequest, GerbilSchemeValue,
 };
 use tempfile::Builder;
 
@@ -100,4 +103,57 @@ fn resident_runtime_process_owner_spawns_configured_command() {
         GerbilResidentRuntimeProcessStatus::ReadyToSpawn
     );
     assert!(status.success());
+}
+
+#[test]
+fn resident_runtime_process_execution_receipt_preserves_typed_scheme_payload() {
+    let root = Builder::new()
+        .prefix("marlin-resident-runtime-typed-execution-")
+        .tempdir()
+        .expect("resident runtime tempdir");
+    let handle = GerbilResidentRuntimePlan::shared_context(root.path(), "typed-execution-session")
+        .with_command_profile(GerbilCommandProfile::new("yes"))
+        .prepare()
+        .expect("prepare resident runtime");
+
+    let mut process = handle
+        .spawn_process()
+        .expect("spawn typed resident runtime process");
+    let request = GerbilResidentStrategyExecutionRequest {
+        strategy_request: GerbilResidentStrategyRequest::new(
+            "policy-receipt",
+            GerbilResidentStrategyEventKind::PolicyChange,
+        ),
+        payload: GerbilSchemeValue::text("typed-policy-projection"),
+    };
+    let receipt = process
+        .strategy_execution_receipt(request, |request| {
+            GerbilResidentStrategyExecutionResponse::executed(request.payload.clone())
+        })
+        .expect("typed resident execution receipt");
+    let shutdown = process.shutdown().expect("shutdown typed resident runtime");
+
+    assert_eq!(
+        receipt.status,
+        GerbilResidentStrategyExecutionStatus::Executed
+    );
+    assert_eq!(
+        receipt.performance.scope,
+        GerbilResidentStrategyExecutionPerformanceScope::AdmissionAndExecution
+    );
+    assert!(receipt.performance.executor_invoked);
+    assert!(receipt.performance.process_reuse_required);
+    assert!(receipt.performance.process_reuse_observed);
+    assert_eq!(
+        receipt.performance.child_id,
+        receipt.request_receipt.child_id
+    );
+    assert_eq!(
+        receipt.response_payload,
+        Some(GerbilSchemeValue::text("typed-policy-projection"))
+    );
+    assert_eq!(
+        shutdown.status,
+        GerbilResidentRuntimeShutdownStatus::Terminated
+    );
 }

@@ -20,7 +20,12 @@ shape this contract accepts.
 :END:
 
 #+BEGIN_SRC org-contract
-assert count headline where at($scope) and property(:todo-type) = "todo" or property(:todo-type) = "done"
+(assert count >= 1
+  (and
+    (headline :at $scope)
+    (or
+      (= (property :todo-type) "todo")
+      (= (property :todo-type) "done"))))
 #+END_SRC
 
 #+BEGIN_SRC jinja2 :name message
@@ -34,7 +39,8 @@ Task `{{ scope.title }}` must be represented by an Org TODO workflow state.
 :END:
 
 #+BEGIN_SRC org-contract
-assert count headline where child_of($scope) and summary(title) = "Goal"
+(assert count >= 1
+  (headline :child-of $scope :summary (title "Goal")))
 #+END_SRC
 
 #+BEGIN_SRC jinja2 :name message
@@ -48,7 +54,8 @@ Task `{{ scope.title }}` must include a direct Goal section.
 :END:
 
 #+BEGIN_SRC org-contract
-assert count headline where child_of($scope) and summary(title) = "Acceptance"
+(assert count >= 1
+  (headline :child-of $scope :summary (title "Acceptance")))
 #+END_SRC
 
 #+BEGIN_SRC jinja2 :name message
@@ -62,8 +69,15 @@ Task `{{ scope.title }}` must include a direct Acceptance section.
 :END:
 
 #+BEGIN_SRC org-contract
-let acceptance = headline where child_of($scope) and summary(title) = "Acceptance"
-assert count item where descendant_of(acceptance) and summary(checkbox) = "off" or summary(checkbox) = "on" or summary(checkbox) = "trans"
+(let ((acceptance
+       (headline :child-of $scope :summary (title "Acceptance"))))
+  (assert count >= 1
+    (and
+      (item :descendant-of acceptance)
+      (or
+        (= (summary checkbox) "off")
+        (= (summary checkbox) "on")
+        (= (summary checkbox) "trans")))))
 #+END_SRC
 
 #+BEGIN_SRC jinja2 :name message
@@ -77,7 +91,8 @@ Task `{{ scope.title }}` Acceptance section must include checkbox criteria.
 :END:
 
 #+BEGIN_SRC org-contract
-assert count headline where child_of($scope) and summary(title) = "Progress"
+(assert count >= 1
+  (headline :child-of $scope :summary (title "Progress")))
 #+END_SRC
 
 #+BEGIN_SRC jinja2 :name message
@@ -91,8 +106,15 @@ Task `{{ scope.title }}` must include a direct Progress section.
 :END:
 
 #+BEGIN_SRC org-contract
-let progress = headline where child_of($scope) and summary(title) = "Progress"
-assert count item where descendant_of(progress) and summary(checkbox) = "off" or summary(checkbox) = "on" or summary(checkbox) = "trans"
+(let ((progress
+       (headline :child-of $scope :summary (title "Progress"))))
+  (assert count >= 1
+    (and
+      (item :descendant-of progress)
+      (or
+        (= (summary checkbox) "off")
+        (= (summary checkbox) "on")
+        (= (summary checkbox) "trans")))))
 #+END_SRC
 
 #+BEGIN_SRC jinja2 :name message
@@ -106,7 +128,8 @@ Task `{{ scope.title }}` Progress section should include checklist state.
 :END:
 
 #+BEGIN_SRC org-contract
-assert count headline where child_of($scope) and summary(title) = "Evidence"
+(assert count >= 1
+  (headline :child-of $scope :summary (title "Evidence")))
 #+END_SRC
 
 #+BEGIN_SRC jinja2 :name message

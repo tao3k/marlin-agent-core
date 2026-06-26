@@ -1,32 +1,18 @@
-#+TITLE: 30.00 Gerbil Index
-#+FILETAGS: :marlin:gerbil:johnny_decimal:
-
 * 30.00 Gerbil Index
 :PROPERTIES:
-:ID: docs-30-00-gerbil-index
-:KIND: docs_index
-:STATUS: active
 :END:
 
 ** Documents
-
 [[file:30.10-gerbil-control-plane.org][30.10 Gerbil Control Plane]]
-
 [[file:30.20-gerbil-upstream-audit.org][30.20 Gerbil Upstream Audit]]
-
-[[file:30.30-gerbil-command-adapter.org][30.30 Gerbil Command Adapter]]
-
+[[file:30.30-gerbil-typed-runtime-boundary.org][30.30 Gerbil Typed Runtime Boundary]]
 [[file:30.40-gerbil-runtime-smoke.org][30.40 Gerbil Runtime Smoke]]
-
 [[file:30.50-gerbil-bindings-reference.org][30.50 Gerbil Bindings Reference]]
-
 [[file:30.60-gerbil-gates.org][30.60 Gerbil Gates]]
-
 [[file:30.70-gerbil-release-topology.org][30.70 Gerbil Release Topology]]
-
 [[file:30.80-native-aot-link-unit.org][30.80 Native AOT Link Unit]]
-
 [[file:30.90-poo-module-system.org][30.90 POO Module System]]
 [[file:30.91-poo-module-system-milestones.org][30.91 POO Module System Milestones]]
-
+[[file:30.92-poo-module-system-m2-m6-checkpoint.org][30.92 POO Module System M2-M6 Checkpoint]]
+[[file:30.93-config-interface-driver.org][30.93 Config Interface Driver]]
 [[file:gerbil-poo-modules-system-desgin.org][Gerbil POO Flow Modules System Design]]

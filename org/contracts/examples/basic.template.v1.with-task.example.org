@@ -1,0 +1,26 @@
+#+TITLE: Combined Basic Task Example
+#+DATE: 2026-06-24T12:34:56Z
+#+AUTHOR: ASP Agent
+#+FILETAGS: :scope_generic_task:task:
+#+CONTRACT_ORG: basic.template.v1
+#+CONTRACT_ORG: agent.task.v1
+#+PROPERTY: TEMPLATE_ID basic.template.v1
+#+PROPERTY: TEMPLATE_KIND base
+#+PROPERTY: CREATED_AT 2026-06-24T12:34:56Z
+#+PROPERTY: SOURCE_REF examples/basic.template.v1.with-task.example.org
+
+* TODO Combined Basic Task Example :task:
+:PROPERTIES:
+:ID: combined-basic-task-example
+:END:
+
+** Goal
+Show that one Org document can satisfy reusable metadata and a purpose-specific
+task contract.
+** Acceptance
+- [X] The document carries basic metadata.
+- [X] The task contract shape is present.
+** Progress
+- [X] Combined contract example created.
+** Evidence
+- asp org contract trace with both registries

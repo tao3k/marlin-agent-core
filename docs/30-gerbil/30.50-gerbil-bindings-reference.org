@@ -38,38 +38,39 @@ For Marlin, the same pattern maps to:
 - a low-level native layer later, if we embed or link against Gerbil/Gambit
   directly;
 - a Gerbil protocol binding layer now, where Gerbil owns constructors,
-  accessors, and serializers for Marlin command protocol DTOs;
-- a Gerbil request binding layer now, where Gerbil decodes
-  =GerbilCompileRequest= JSON with =:std/text/json=;
+  accessors, and typed Marlin protocol values;
+- a Gerbil request binding layer now, where Gerbil exposes typed
+  =GerbilCompileRequest= accessors over Rust-owned projections;
 - a Gerbil reader-backed parser layer now, where Gerbil compiles source text
   into protocol values;
-- an adapter layer that reads requests, calls the parser, and emits one
-  =GerbilCompileResponse=.
+- an adapter layer that dispatches typed requests, calls the parser, and returns
+  typed artifacts for Rust projection.
 
 The current smoke implementation therefore keeps native VM bindings out of the
-Rust crate while still moving bindings out of ad hoc JSON string construction.
+Rust crate while still moving bindings out of ad hoc text or JSON protocol
+construction.
 The first binding module is:
 
 #+begin_src text
-crates/marlin-gerbil-scheme/fixtures/gerbil/marlin/protocol.ss
+crates/marlin-gerbil-scheme/gerbil/src/marlin/protocol.ss
 #+end_src
 
 The first parser module is:
 
 #+begin_src text
-crates/marlin-gerbil-scheme/fixtures/gerbil/marlin/parser.ss
+crates/marlin-gerbil-scheme/gerbil/src/marlin/parser.ss
 #+end_src
 
 The first request module is:
 
 #+begin_src text
-crates/marlin-gerbil-scheme/fixtures/gerbil/marlin/request.ss
+crates/marlin-gerbil-scheme/gerbil/src/marlin/request.ss
 #+end_src
 
 The first adapter module is:
 
 #+begin_src text
-crates/marlin-gerbil-scheme/fixtures/gerbil/marlin/adapter.ss
+crates/marlin-gerbil-scheme/gerbil/src/marlin/adapter.ss
 #+end_src
 
 These modules use =package: marlin= and resolve through =GERBIL_LOADPATH= during
@@ -77,8 +78,8 @@ the smoke test.
 
 ** Next Work
 
-- Add a Gerbil build/install script for the fixture modules once the package
-  boundary stabilizes.
+- Add a Gerbil build/install script for the crate-shipped runtime modules once
+  the package boundary stabilizes.
 - Only introduce native =.scm/.ssi= FFI bindings after the command protocol and
   typed IR have stabilized.
 - Keep the default CI gate free of local =gxi= requirements. The real runtime

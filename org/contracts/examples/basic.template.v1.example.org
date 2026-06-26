@@ -1,0 +1,13 @@
+#+TITLE: Basic Metadata Example
+#+DATE: 2026-06-24T12:34:56Z
+#+AUTHOR: ASP Agent
+#+FILETAGS: :scope_generic_task:
+#+CONTRACT_ORG: basic.template.v1
+#+PROPERTY: TEMPLATE_ID basic.template.v1
+#+PROPERTY: TEMPLATE_KIND base
+#+PROPERTY: CREATED_AT 2026-06-24T12:34:56Z
+#+PROPERTY: SOURCE_REF examples/basic.template.v1.example.org
+
+* Basic Metadata Example
+This document demonstrates reusable metadata that can be combined with another
+contract through an additional =#+CONTRACT_ORG:= keyword.

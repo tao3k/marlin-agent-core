@@ -1,0 +1,187 @@
+* agent-evidence-loop-v1
+:PROPERTIES:
+:CONTRACT_ID: agent.evidence-loop.v1
+:CONTRACT_SCOPE: subtree
+:CONTRACT_KIND: org-elements
+:END:
+
+** What This Produces
+This contract validates an evidence loop receipt. A receipt ties an agent claim or reflection answer to parser-visible evidence, a replayable command, and an evaluated result marker. The contract does not execute commands; it verifies that the Org record contains the evidence graph anchors needed for a later runner or reviewer to replay the command.
+
+The expected shape is an =Evidence Loop= subtree with:
+- an =EVIDENCE_LOOP_ID= property;
+- an =EVAL_STATUS= property set to =passed=;
+- an Org table with =Claim=, =Evidence=, =Command=, and =Result= columns;
+- at least one non-header =Evidence= cell containing a real Org link;
+- at least one non-header =Command= cell and one shell source block;
+- at least one non-header =Result= cell.
+
+** evidence-loop-has-id
+:PROPERTIES:
+:ASSERT_ID: evidence-loop-has-id
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+(assert exists
+  (node-property :descendant-of $scope :summary (key "EVIDENCE_LOOP_ID")))
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+Evidence loop receipts must declare EVIDENCE_LOOP_ID.
+#+END_SRC
+
+** evidence-loop-is-evaluated
+:PROPERTIES:
+:ASSERT_ID: evidence-loop-is-evaluated
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+(assert exists
+  (node-property
+    :descendant-of $scope
+    :summary (key "EVAL_STATUS")
+    :summary (value "passed")))
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+Evidence loop receipts must mark EVAL_STATUS as passed after evaluation.
+#+END_SRC
+
+** evidence-loop-has-table
+:PROPERTIES:
+:ASSERT_ID: evidence-loop-has-table
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+(assert exists
+  (table :descendant-of $scope))
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+Evidence loop receipts must include an Org table.
+#+END_SRC
+
+** evidence-loop-has-claim-column
+:PROPERTIES:
+:ASSERT_ID: evidence-loop-has-claim-column
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+(assert exists
+  (table-cell :descendant-of $scope :text "Claim"))
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+Evidence loop tables must include a Claim column.
+#+END_SRC
+
+** evidence-loop-has-evidence-column
+:PROPERTIES:
+:ASSERT_ID: evidence-loop-has-evidence-column
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+(assert exists
+  (table-cell :descendant-of $scope :text "Evidence"))
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+Evidence loop tables must include an Evidence column.
+#+END_SRC
+
+** evidence-loop-has-command-column
+:PROPERTIES:
+:ASSERT_ID: evidence-loop-has-command-column
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+(assert exists
+  (table-cell :descendant-of $scope :text "Command"))
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+Evidence loop tables must include a Command column.
+#+END_SRC
+
+** evidence-loop-has-result-column
+:PROPERTIES:
+:ASSERT_ID: evidence-loop-has-result-column
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+(assert exists
+  (table-cell :descendant-of $scope :text "Result"))
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+Evidence loop tables must include a Result column.
+#+END_SRC
+
+** evidence-loop-has-evidence-link
+:PROPERTIES:
+:ASSERT_ID: evidence-loop-has-evidence-link
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+(let ((evidence
+       (table-cell :descendant-of $scope :column "Evidence" :header nil :nonempty t)))
+  (assert exists
+    (link :descendant-of evidence)))
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+Evidence loop receipts must point to real Org evidence links, not just prose.
+#+END_SRC
+
+** evidence-loop-has-command-receipt
+:PROPERTIES:
+:ASSERT_ID: evidence-loop-has-command-receipt
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+(assert exists
+  (table-cell :descendant-of $scope :column "Command" :header nil :nonempty t))
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+Evidence loop receipts must record the evaluated command.
+#+END_SRC
+
+** evidence-loop-has-shell-command-block
+:PROPERTIES:
+:ASSERT_ID: evidence-loop-has-shell-command-block
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+(assert exists
+  (src-block :descendant-of $scope :language "shell"))
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+Evidence loop receipts must preserve a replayable shell command block.
+#+END_SRC
+
+** evidence-loop-has-result-receipt
+:PROPERTIES:
+:ASSERT_ID: evidence-loop-has-result-receipt
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-contract
+(assert exists
+  (table-cell :descendant-of $scope :column "Result" :header nil :nonempty t))
+#+END_SRC
+
+#+BEGIN_SRC jinja2 :name message
+Evidence loop receipts must record a non-empty evaluated result.
+#+END_SRC

@@ -67,7 +67,7 @@ tower = { version = "0.5.3", features = ["limit", "load-shed", "timeout", "util"
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter", "fmt", "json"] }
 wiremock = "0.6.5"
-rust-lang-project-harness = { git = "https://github.com/tao3k/rust-lang-project-harness", rev = "7811ab03e815a3eca76d2a2cd25a4ee4c442db30", version = "=0.1.2" }
+rust-lang-project-harness = { git = "https://github.com/tao3k/rust-lang-project-harness", rev = "bc91d78aea16b122612312ce59826c67e1740691", version = "=0.1.2" }
 marlin-rust-project-harness-policy = { path = "build-support/marlin-rust-project-harness-policy", version = "0.1.0" }
 marlin-agent-environment = { path = "crates/marlin-agent-environment", version = "0.1.0" }
 marlin-agent-graph = { path = "crates/marlin-agent-graph", version = "0.1.0" }

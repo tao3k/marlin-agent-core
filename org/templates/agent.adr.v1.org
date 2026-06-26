@@ -1,0 +1,28 @@
+#+TITLE: ADR Title
+#+CONTRACT_ORG: agent.adr.v1
+
+* ADR: Decision Title
+:PROPERTIES:
+:TEMPLATE_ID: agent.adr.v1
+:TEMPLATE_KIND: adr
+:TEMPLATE_CONTRACT: agent.adr.v1
+:CONTRACT_ORG: [[../contracts/agent.adr.v1.org][agent.adr.v1]]
+:ADR_ID: adr-id
+:ADR_STATUS: proposed
+:GOVERNING_REF: none
+:END:
+
+** Context
+Describe the forces, constraints, and alternatives that make this decision
+necessary.
+
+** Decision
+State the selected decision in one direct paragraph.
+
+** Consequences
+- Positive: describe the expected benefit.
+- Negative: describe the cost or tradeoff.
+- Follow-up: describe what future plans must preserve.
+
+** Evidence
+- Record links, validation receipts, or prior design records that support this decision.

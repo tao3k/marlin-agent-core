@@ -3,8 +3,8 @@
 
 (import :clan/poo/object
         :poo-flow/src/module-system/facade
-        :marlin/modules/lib
-        :marlin/modules/prefabs/default-policy)
+        :config-interface/lib
+        :config-interface/modules/prefabs/default-policy)
 
 ;;; Boundary: Local assertions stay scalar around POO values.
 ;; MarlinResult <- MarlinInput
@@ -401,7 +401,7 @@
        => "inventory-conflict-pack")
 (check (.get conflict-projection projection-chain-kind)
        => marlin-module-projection-chain-kind)
-(check (.get conflict-projection module-system-projection-chain-kind)
+(check (.get conflict-projection policy-facade-projection-chain-kind)
        => marlin-module-projection-chain-kind)
 (check (.get conflict-projection module-evaluation-receipt-kind)
        => (.get conflict-presentation module-evaluation-receipt-kind))

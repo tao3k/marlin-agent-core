@@ -7,8 +7,8 @@ The user path mirrors =poo-flow/user-interface=: a tiny =init.ss= selects module
 - =init.ss= is the user entrypoint. It is the Marlin equivalent of poo-flow's Doom-style =user-interface/init.ss=.
 - =custom/marlin-user-interface/config.ss= is the custom module body. It only calls =load!= for profile and case fragments.
 - =custom/marlin-user-interface/profiles/*.ss= and =custom/marlin-user-interface/cases/*.ss= are downstream declarations. They use poo-flow =use-module= selections and POO =.def= objects where the upstream module family supports native config.
-- =../../gerbil/src/marlin/modules/prefabs/user-interface.ss= is the upstream furnished policy surface. It owns default imports, extensions, script wiring, continuation profile, subagent policy, and policy-pack object surgery.
-- =../../gerbil/src/marlin/modules/prefabs/user-interface-delivery.ss= is the upstream delivery surface. It owns the delivery receipt, option contract projection, poo-flow loop governor manifest, and Rust policy projection handoff.
+- =../../gerbil/src/config-interface/modules/prefabs/user-interface.ss= is the upstream furnished policy surface. It owns default imports, extensions, script wiring, continuation profile, subagent policy, and policy-pack object surgery.
+- =../../gerbil/src/config-interface/modules/prefabs/user-interface-delivery.ss= is the upstream delivery surface. It owns the delivery receipt, option contract projection, poo-flow loop governor manifest, and Rust policy projection handoff.
 - =t/user-interface-module-config-test.ss= runs the downstream selections and Marlin adapter with real Gerbil.
 - =interface.org= and =state/worker-state.org= are workspace files consumed by the prefab script.
 

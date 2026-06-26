@@ -1,0 +1,43 @@
+* Purpose
+This directory is the real Marlin-maintained policy authoring entrypoint for AGENT and human operators.
+
+It is not an example workspace. It is where Marlin's kernel-facing Scheme policy selection starts before Rust validates projections, receipts, catalog resolution, budgets, and runtime ownership.
+
+It is the canonical Scheme driver surface inside the =marlin-deck-runtime= Gerbil package. Downstream examples consume this interface; they must not grow a second Marlin policy API under =examples/=.
+
+* Entry Point
+- =init.ss= is the first file to edit when selecting Marlin-owned policy packs.
+- =lib.ss= is the public facade for AGENT and human operators. It re-exports the supported policy object, policy pack, module evaluation, loop engine, memory, model route, and projection receipt constructors.
+- =modules/lib.ss= is the internal aggregate facade for Marlin-owned policy modules. New public Scheme policy families should first become typed modules here, then be re-exported by =lib.ss= when they are stable.
+- =custom/= contains Marlin-maintained policy extensions.
+- =custom/marline-kernel/policies/= contains the concrete kernel policy entrypoints.
+- =custom/marline-kernel/policies/loops/profiles/= contains one loop profile per file, so AGENT and human authors can extend a profile without editing the entire loop family.
+- =custom/marline-kernel/policies/loops/cases/= contains one real-LLM case manifest per loop profile. Default smoke tests validate the manifests; live provider execution remains an explicit opt-in runtime gate.
+- =../../t/config-interface-driver-test.ss= executes =gxi build.ss meta= and =gxi build.ss spec= through Gerbil's process library and checks that the package driver contains this canonical interface without pulling example workspaces into the package target set.
+- =../../t/config-interface-test.ss= contains the smoke check that proves this interface can be loaded by the real Gerbil toolchain.
+
+* Authoring Rule
+AGENT and human authors should keep this layer declarative:
+- select policy packs with =use-module= style composition;
+- define policy intent, options, contracts, and receipt requirements in Scheme;
+- let poo-flow own the module/user-interface mechanics;
+- let Rust own runtime execution, validation, typed projection, catalog handler lookup, and receipts.
+
+Do not move this workspace under =examples/=. Downstream user-interface examples belong in =examples/=; this directory is Marlin's maintained policy interface.
+
+* Boundary
+This interface is the handoff surface between policy authors and the Marlin runtime:
+- Scheme/POO owns policy composition and option selection.
+- poo-flow owns module flow and user-interface primitives.
+- Marlin owns the kernel policy pack hosted here.
+- Rust owns execution, replay evidence, and typed runtime guarantees.
+- Scheme does not serialize runtime payloads for native-internal APIs. It emits typed policy/projection values; Rust owns native ABI projection, runtime side effects, catalog handler lookup, receipts, and any outer trace/CLI encoding.
+
+* Validation
+#+begin_src sh
+cd crates/marlin-gerbil-scheme/gerbil
+gxi t/config-interface-driver-test.ss
+gxi t/config-interface-test.ss
+gxi t/marlin-config-interface-lib-test.ss
+gxi t/marlin-policy-pack-inventory-test.ss
+#+end_src

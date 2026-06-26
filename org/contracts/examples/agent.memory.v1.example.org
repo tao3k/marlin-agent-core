@@ -2,7 +2,7 @@
 
 * TODO Memory candidate: Org memory recall boundary :agent:memory:recall:
 :PROPERTIES:
-:CONTRACT_ORG: agent.memory.v1
+:CONTRACT_ORG: [[../agent.memory.v1.org][agent.memory.v1]]
 :ID: agent-memory-recall-boundary-20260615
 :MEMORY_KIND: architecture-boundary
 :SOURCE_REF: docs/20-workspace/20.10-org-native-agent-workspace.org

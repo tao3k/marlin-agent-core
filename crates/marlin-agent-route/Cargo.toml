@@ -16,5 +16,6 @@ tempfile.workspace = true
 tokio.workspace = true
 tower.workspace = true
 
+marlin-rust-project-harness-policy.workspace = true
 [build-dependencies]
 marlin-rust-project-harness-policy.workspace = true

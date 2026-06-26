@@ -1,0 +1,13 @@
+#+TITLE: <DOCUMENT_TITLE>
+#+DATE: <YYYY-MM-DDTHH:MM:SSZ>
+#+AUTHOR: <AUTHOR>
+#+FILETAGS: :<SCOPE_TAG>:
+#+CONTRACT_ORG: basic.template.v1
+#+PROPERTY: TEMPLATE_ID basic.template.v1
+#+PROPERTY: TEMPLATE_KIND base
+#+PROPERTY: CREATED_AT <YYYY-MM-DDTHH:MM:SSZ>
+#+PROPERTY: SOURCE_REF <SOURCE_REF>
+
+* <DOCUMENT_TITLE>
+Record document-specific content here, or combine this metadata block with a
+purpose-specific template by adding another =#+CONTRACT_ORG:= keyword.

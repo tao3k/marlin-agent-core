@@ -1,0 +1,188 @@
+* agent-adversarial-review-v1
+:PROPERTIES:
+:CONTRACT_ID: agent.adversarial-review.v1
+:CONTRACT_KIND: org-elements
+:CONTRACT_SCOPE: document
+:END:
+
+** What This Produces
+This contract validates a model-authored adversarial review receipt. The
+machine contract does not decide whether prose quality is good; it requires the
+reviewer to record a bounded challenge, explicit criteria, concrete findings,
+evidence, and a verdict that later agents can inspect.
+
+Use this when structural contracts pass but content quality still needs a
+reflection pass. The target may be a skill, template, plan, or other durable Org
+artifact.
+
+** adversarial-review-has-root
+:PROPERTIES:
+:ASSERT_ID: adversarial-review-has-root
+:SEVERITY: error
+:END:
+#+BEGIN_SRC org-contract
+(assert exists
+  (headline :at $scope))
+#+END_SRC
+#+BEGIN_SRC jinja2 :name message
+Adversarial review receipts must have a root heading.
+#+END_SRC
+
+** adversarial-review-has-subject
+:PROPERTIES:
+:ASSERT_ID: adversarial-review-has-subject
+:SEVERITY: error
+:END:
+#+BEGIN_SRC org-contract
+(assert exists
+  (node-property :descendant-of $scope :summary (key "REVIEW_SUBJECT")))
+#+END_SRC
+#+BEGIN_SRC jinja2 :name message
+Adversarial review receipts must declare REVIEW_SUBJECT.
+#+END_SRC
+
+** adversarial-review-has-mode
+:PROPERTIES:
+:ASSERT_ID: adversarial-review-has-mode
+:SEVERITY: error
+:END:
+#+BEGIN_SRC org-contract
+(assert exists
+  (node-property
+    :descendant-of $scope
+    :summary (key "REVIEW_MODE")
+    :summary-contains (value "adversarial")))
+#+END_SRC
+#+BEGIN_SRC jinja2 :name message
+Adversarial review receipts must declare REVIEW_MODE containing "adversarial".
+#+END_SRC
+
+** adversarial-review-has-challenge
+:PROPERTIES:
+:ASSERT_ID: adversarial-review-has-challenge
+:SEVERITY: error
+:END:
+#+BEGIN_SRC org-contract
+(assert exists
+  (headline :descendant-of $scope :summary-contains (title "Challenge")))
+#+END_SRC
+#+BEGIN_SRC jinja2 :name message
+Adversarial review receipts must include the challenge question posed to reflection.
+#+END_SRC
+
+** adversarial-review-has-criteria
+:PROPERTIES:
+:ASSERT_ID: adversarial-review-has-criteria
+:SEVERITY: error
+:END:
+#+BEGIN_SRC org-contract
+(assert exists
+  (headline :descendant-of $scope :summary-contains (title "Criteria")))
+#+END_SRC
+#+BEGIN_SRC jinja2 :name message
+Adversarial review receipts must include criteria.
+#+END_SRC
+
+** adversarial-review-checks-redundancy
+:PROPERTIES:
+:ASSERT_ID: adversarial-review-checks-redundancy
+:SEVERITY: error
+:END:
+#+BEGIN_SRC org-contract
+(assert exists
+  (plain-text :descendant-of $scope :summary-contains (value "redundancy")))
+#+END_SRC
+#+BEGIN_SRC jinja2 :name message
+Adversarial review criteria must check redundancy.
+#+END_SRC
+
+** adversarial-review-checks-out-of-scope
+:PROPERTIES:
+:ASSERT_ID: adversarial-review-checks-out-of-scope
+:SEVERITY: error
+:END:
+#+BEGIN_SRC org-contract
+(assert exists
+  (plain-text :descendant-of $scope :summary-contains (value "out of scope")))
+#+END_SRC
+#+BEGIN_SRC jinja2 :name message
+Adversarial review criteria must check out of scope content.
+#+END_SRC
+
+** adversarial-review-checks-command-clarity
+:PROPERTIES:
+:ASSERT_ID: adversarial-review-checks-command-clarity
+:SEVERITY: error
+:END:
+#+BEGIN_SRC org-contract
+(assert exists
+  (plain-text :descendant-of $scope :summary-contains (value "command clarity")))
+#+END_SRC
+#+BEGIN_SRC jinja2 :name message
+Adversarial review criteria must check command clarity.
+#+END_SRC
+
+** adversarial-review-checks-mechanism-clarity
+:PROPERTIES:
+:ASSERT_ID: adversarial-review-checks-mechanism-clarity
+:SEVERITY: error
+:END:
+#+BEGIN_SRC org-contract
+(assert exists
+  (plain-text :descendant-of $scope :summary-contains (value "mechanism clarity")))
+#+END_SRC
+#+BEGIN_SRC jinja2 :name message
+Adversarial review criteria must check mechanism clarity.
+#+END_SRC
+
+** adversarial-review-checks-structure
+:PROPERTIES:
+:ASSERT_ID: adversarial-review-checks-structure
+:SEVERITY: error
+:END:
+#+BEGIN_SRC org-contract
+(assert exists
+  (plain-text :descendant-of $scope :summary-contains (value "structure")))
+#+END_SRC
+#+BEGIN_SRC jinja2 :name message
+Adversarial review criteria must check structure.
+#+END_SRC
+
+** adversarial-review-has-findings
+:PROPERTIES:
+:ASSERT_ID: adversarial-review-has-findings
+:SEVERITY: error
+:END:
+#+BEGIN_SRC org-contract
+(assert exists
+  (headline :descendant-of $scope :summary-contains (title "Findings")))
+#+END_SRC
+#+BEGIN_SRC jinja2 :name message
+Adversarial review receipts must include findings.
+#+END_SRC
+
+** adversarial-review-has-evidence
+:PROPERTIES:
+:ASSERT_ID: adversarial-review-has-evidence
+:SEVERITY: error
+:END:
+#+BEGIN_SRC org-contract
+(assert exists
+  (headline :descendant-of $scope :summary-contains (title "Evidence")))
+#+END_SRC
+#+BEGIN_SRC jinja2 :name message
+Adversarial review receipts must include evidence selectors or facts.
+#+END_SRC
+
+** adversarial-review-has-verdict
+:PROPERTIES:
+:ASSERT_ID: adversarial-review-has-verdict
+:SEVERITY: error
+:END:
+#+BEGIN_SRC org-contract
+(assert exists
+  (headline :descendant-of $scope :summary-contains (title "Verdict")))
+#+END_SRC
+#+BEGIN_SRC jinja2 :name message
+Adversarial review receipts must include a verdict.
+#+END_SRC

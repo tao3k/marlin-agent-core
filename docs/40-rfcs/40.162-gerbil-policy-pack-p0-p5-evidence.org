@@ -27,11 +27,69 @@ runs=128
 elapsed_us=264
 OK
 #+end_src
+** Config Interface Driver Smoke
+The canonical Marlin Scheme policy driver now lives under
+=crates/marlin-gerbil-scheme/gerbil/src/config-interface=. The driver smoke is
+Scheme-owned: =t/config-interface-driver-test.ss= uses Gerbil's process library
+to execute =gxi build.ss meta= and =gxi build.ss spec=, then checks that the
+package target set includes =config-interface/init.ss=, =config-interface/lib.ss=,
+=config-interface/modules/lib.ss=, core policy modules, prefabs, and
+=config-interface/custom/marline-kernel/config.ss= without pulling downstream
+examples into the package target set.
+
+The latest local receipt reported:
+#+begin_src text
+config-interface-driver-ok
+config-interface-driver-targets=66
+#+end_src
+** Rust Build Script Contract
+Rust now owns typed contract facts for the crate-shipped Gerbil package driver through =GerbilRuntimeBuildScriptContract=. The contract records:
+- package name =marlin-deck-runtime=
+- stages =spec=, =compile=, and =clean=
+- dependencies =poo-flow= and =gslph=
+- source/coverage roots =src=
+- special native sources excluded from generic package make
+- worker env precedence =GERBIL_BUILD_CORES=, =CARGO_BUILD_JOBS=, =NUM_JOBS=
+
+The runtime asset test validates those facts against the embedded =build.ss= source. This keeps the build/package boundary Rust-owned without adding a Scheme JSON or text protocol to the native runtime path.
+** Native Projection Smoke
+The Deck runtime native projection readiness test now validates both exported symbols:
+- =marlin_deck_runtime_project_poo_policy=
+- =marlin_deck_runtime_project_resolved_loop_policy_pack=
+
+The resolved loop policy pack request is checked against =GERBIL_RESOLVED_LOOP_POLICY_PACK_TYPE_ID= and =GERBIL_RESOLVED_LOOP_POLICY_PACK_SCHEMA_ID=, and the Scheme native projection source must contain the ABI id, both symbols, and both projection contracts.
+** Performance Gate
+The script performance policy was promoted into a package-visible helper module at =src/marlin/deck-runtime-script-performance.ss=. The test and gate entrypoints now import that package module instead of treating =t/= as a package library.
+
+The Scenario benchmark gate ran with:
+#+begin_src sh
+gxi t/deck-runtime-script-performance-gate.ss
+#+end_src
+
+The latest local receipt reported:
+#+begin_src text
+benchmark-fixture-contract-pass=true
+metrics-kind=marlin-deck-runtime.script-batch-metrics.v1
+script-id=performance-script
+iterations=1024
+runs=1024
+benchmark-receipt-pass=true
+#+end_src
+** Dependency Sync
+The Gerbil dependency context was synchronized with:
+#+begin_src sh
+gxpkg deps --update github.com/tao3k/gerbil-scheme-language-project-harness github.com/tao3k/poo-flow
+#+end_src
+
+This installed the updated =gslph/src/extensions/facade= API required by the current =poo-flow= package.
 ** Verification Commands
 The Gerbil package evidence was checked with:
 #+begin_src sh
-gxpkg deps -i
+gxpkg deps --update github.com/tao3k/gerbil-scheme-language-project-harness github.com/tao3k/poo-flow
 gxi build.ss compile
+gxi t/config-interface-driver-test.ss
+gxi t/deck-runtime-script-performance-gate.ss
+gxi t/all-test.ss
 gxtest t/marlin-policy-pack-inventory-test.ss
 gxtest t/marlin-user-interface-prefab-test.ss
 cd ../examples/user-interface-module-config && GERBIL_LOADPATH=../../gerbil/src:t gxtest t/user-interface-module-config-test.ss

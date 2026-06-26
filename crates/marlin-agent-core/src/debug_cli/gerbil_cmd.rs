@@ -24,6 +24,7 @@ struct GerbilPolicyReceiptDebugSummary {
     gxi: PathBuf,
     package_root: PathBuf,
     loadpath: String,
+    policy_boundary_contract: PolicyBoundaryContractVerdict,
     extension_kind: String,
     extension_id: String,
     extension_source: String,
@@ -43,24 +44,24 @@ struct GerbilPolicyReceiptDebugSummary {
     module_catalog_count: u64,
     module_eval_result_kind: String,
     module_eval_workflow_kind: String,
-    module_system_presentation_kind: String,
-    module_system_projection_chain_kind: String,
-    module_system_root_import_count: u64,
-    module_system_root_extension_count: u64,
-    module_system_root_policy_extension_object_count: u64,
-    module_system_import_graph_owner: String,
-    module_system_option_merge_owner: String,
-    module_system_extension_composition_owner: String,
-    module_system_native_projection_payload_owner: String,
-    module_system_budget_receipt_owner: String,
-    module_system_catalog_resolution_receipt_owner: String,
-    module_system_rust_parses_scheme_source: bool,
-    module_system_scheme_manufactures_rust_handlers: bool,
+    policy_facade_presentation_kind: String,
+    policy_facade_projection_chain_kind: String,
+    policy_facade_root_import_count: u64,
+    policy_facade_root_extension_count: u64,
+    policy_facade_root_policy_extension_object_count: u64,
+    policy_facade_import_graph_owner: String,
+    policy_facade_option_merge_owner: String,
+    policy_facade_extension_composition_owner: String,
+    policy_facade_native_projection_payload_owner: String,
+    policy_facade_budget_receipt_owner: String,
+    policy_facade_catalog_resolution_receipt_owner: String,
+    policy_facade_rust_parses_scheme_source: bool,
+    policy_facade_scheme_manufactures_rust_handlers: bool,
     policy_pack_kind: String,
     policy_pack_id: String,
     policy_pack_presentation_kind: String,
     policy_pack_inventory_kind: String,
-    policy_pack_module_system_presentation_kind: String,
+    policy_pack_policy_facade_presentation_kind: String,
     policy_pack_object_count: u64,
     policy_pack_default_object_count: u64,
     policy_pack_disabled_object_count: u64,
@@ -152,12 +153,7 @@ struct GerbilPolicyReceiptDebugSummary {
     scheme_catalog_role: String,
     runtime_catalog_owner: String,
     catalog_resolved_by_scheme: bool,
-    iterations: u64,
-    timing_scope: &'static str,
-    process_elapsed_micros: u64,
-    avg_process_micros_per_iteration: u64,
-    scheme_policy_loop_elapsed_micros: u64,
-    avg_scheme_policy_micros_per_iteration: u64,
+    timing: GerbilPolicyReceiptTimingSummary,
     receipt_kind: String,
     matched: bool,
     policy_engine: String,
@@ -167,6 +163,25 @@ struct GerbilPolicyReceiptDebugSummary {
     dynamic_hook_registration: String,
     dynamic_hook_selection_source: String,
     dynamic_hook_selection_selector: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+struct PolicyBoundaryContractVerdict {
+    kind: &'static str,
+    status: &'static str,
+    checked_fact_count: u64,
+    violation_count: u64,
+    violations: Vec<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+struct GerbilPolicyReceiptTimingSummary {
+    iterations: u64,
+    scope: &'static str,
+    process_elapsed_micros: u64,
+    avg_process_micros_per_iteration: u64,
+    scheme_policy_loop_elapsed_micros: u64,
+    avg_scheme_policy_micros_per_iteration: u64,
 }
 
 pub(super) fn dispatch_gerbil(cursor: &mut ArgCursor) -> Result<MarlinCliResult, String> {
@@ -230,6 +245,7 @@ fn run_policy_receipt(
 
     let facts = parse_policy_receipt_facts(&String::from_utf8_lossy(&output.stdout))?;
     let iterations = required_u64_fact(&facts, "iterations")?;
+    let boundary_contract = validate_policy_receipt_boundary_contract(&facts)?;
     Ok(GerbilPolicyReceiptDebugSummary {
         status: "ok",
         command: "gerbil policy-receipt",
@@ -238,6 +254,7 @@ fn run_policy_receipt(
         gxi: options.gxi,
         package_root: options.package_root,
         loadpath,
+        policy_boundary_contract: boundary_contract,
         extension_kind: required_fact(&facts, "extension_kind")?,
         extension_id: required_fact(&facts, "extension_id")?,
         extension_source: required_fact(&facts, "extension_source")?,
@@ -260,62 +277,62 @@ fn run_policy_receipt(
         module_catalog_count: required_u64_fact(&facts, "module_catalog_count")?,
         module_eval_result_kind: required_fact(&facts, "module_eval_result_kind")?,
         module_eval_workflow_kind: required_fact(&facts, "module_eval_workflow_kind")?,
-        module_system_presentation_kind: required_fact(&facts, "module_system_presentation_kind")?,
-        module_system_projection_chain_kind: required_fact(
+        policy_facade_presentation_kind: required_fact(&facts, "policy_facade_presentation_kind")?,
+        policy_facade_projection_chain_kind: required_fact(
             &facts,
-            "module_system_projection_chain_kind",
+            "policy_facade_projection_chain_kind",
         )?,
-        module_system_root_import_count: required_u64_fact(
+        policy_facade_root_import_count: required_u64_fact(
             &facts,
-            "module_system_root_import_count",
+            "policy_facade_root_import_count",
         )?,
-        module_system_root_extension_count: required_u64_fact(
+        policy_facade_root_extension_count: required_u64_fact(
             &facts,
-            "module_system_root_extension_count",
+            "policy_facade_root_extension_count",
         )?,
-        module_system_root_policy_extension_object_count: required_u64_fact(
+        policy_facade_root_policy_extension_object_count: required_u64_fact(
             &facts,
-            "module_system_root_policy_extension_object_count",
+            "policy_facade_root_policy_extension_object_count",
         )?,
-        module_system_import_graph_owner: required_fact(
+        policy_facade_import_graph_owner: required_fact(
             &facts,
-            "module_system_import_graph_owner",
+            "policy_facade_import_graph_owner",
         )?,
-        module_system_option_merge_owner: required_fact(
+        policy_facade_option_merge_owner: required_fact(
             &facts,
-            "module_system_option_merge_owner",
+            "policy_facade_option_merge_owner",
         )?,
-        module_system_extension_composition_owner: required_fact(
+        policy_facade_extension_composition_owner: required_fact(
             &facts,
-            "module_system_extension_composition_owner",
+            "policy_facade_extension_composition_owner",
         )?,
-        module_system_native_projection_payload_owner: required_fact(
+        policy_facade_native_projection_payload_owner: required_fact(
             &facts,
-            "module_system_native_projection_payload_owner",
+            "policy_facade_native_projection_payload_owner",
         )?,
-        module_system_budget_receipt_owner: required_fact(
+        policy_facade_budget_receipt_owner: required_fact(
             &facts,
-            "module_system_budget_receipt_owner",
+            "policy_facade_budget_receipt_owner",
         )?,
-        module_system_catalog_resolution_receipt_owner: required_fact(
+        policy_facade_catalog_resolution_receipt_owner: required_fact(
             &facts,
-            "module_system_catalog_resolution_receipt_owner",
+            "policy_facade_catalog_resolution_receipt_owner",
         )?,
-        module_system_rust_parses_scheme_source: required_bool_fact(
+        policy_facade_rust_parses_scheme_source: required_bool_fact(
             &facts,
-            "module_system_rust_parses_scheme_source",
+            "policy_facade_rust_parses_scheme_source",
         )?,
-        module_system_scheme_manufactures_rust_handlers: required_bool_fact(
+        policy_facade_scheme_manufactures_rust_handlers: required_bool_fact(
             &facts,
-            "module_system_scheme_manufactures_rust_handlers",
+            "policy_facade_scheme_manufactures_rust_handlers",
         )?,
         policy_pack_kind: required_fact(&facts, "policy_pack_kind")?,
         policy_pack_id: required_fact(&facts, "policy_pack_id")?,
         policy_pack_presentation_kind: required_fact(&facts, "policy_pack_presentation_kind")?,
         policy_pack_inventory_kind: required_fact(&facts, "policy_pack_inventory_kind")?,
-        policy_pack_module_system_presentation_kind: required_fact(
+        policy_pack_policy_facade_presentation_kind: required_fact(
             &facts,
-            "policy_pack_module_system_presentation_kind",
+            "policy_pack_policy_facade_presentation_kind",
         )?,
         policy_pack_object_count: required_u64_fact(&facts, "policy_pack_object_count")?,
         policy_pack_default_object_count: required_u64_fact(
@@ -573,18 +590,20 @@ fn run_policy_receipt(
         scheme_catalog_role: required_fact(&facts, "scheme_catalog_role")?,
         runtime_catalog_owner: required_fact(&facts, "runtime_catalog_owner")?,
         catalog_resolved_by_scheme: required_bool_fact(&facts, "catalog_resolved_by_scheme")?,
-        iterations,
-        timing_scope: "single-gxi-process-wall-clock-includes-startup",
-        process_elapsed_micros,
-        avg_process_micros_per_iteration: process_elapsed_micros / iterations,
-        scheme_policy_loop_elapsed_micros: required_u64_fact(
-            &facts,
-            "scheme_policy_loop_elapsed_micros",
-        )?,
-        avg_scheme_policy_micros_per_iteration: required_u64_fact(
-            &facts,
-            "avg_scheme_policy_micros_per_iteration",
-        )?,
+        timing: GerbilPolicyReceiptTimingSummary {
+            iterations,
+            scope: "single-gxi-process-wall-clock-includes-startup",
+            process_elapsed_micros,
+            avg_process_micros_per_iteration: process_elapsed_micros / iterations,
+            scheme_policy_loop_elapsed_micros: required_u64_fact(
+                &facts,
+                "scheme_policy_loop_elapsed_micros",
+            )?,
+            avg_scheme_policy_micros_per_iteration: required_u64_fact(
+                &facts,
+                "avg_scheme_policy_micros_per_iteration",
+            )?,
+        },
         receipt_kind: required_fact(&facts, "receipt_kind")?,
         matched: required_bool_fact(&facts, "matched")?,
         policy_engine: required_fact(&facts, "policy_engine")?,
@@ -611,6 +630,298 @@ fn parse_policy_receipt_facts(output: &str) -> Result<BTreeMap<String, String>, 
         facts.insert(key.to_owned(), value.to_owned());
     }
     Ok(facts)
+}
+
+fn validate_policy_receipt_boundary_contract(
+    facts: &BTreeMap<String, String>,
+) -> Result<PolicyBoundaryContractVerdict, String> {
+    let mut checked_fact_count = 0;
+    let mut violations = Vec::new();
+
+    checked_fact_count += expect_fact(
+        facts,
+        "policy_extension_projection_owner",
+        "poo-flow.scheme",
+        &mut violations,
+    );
+    checked_fact_count += expect_fact(
+        facts,
+        "policy_extension_runtime_owner",
+        "rust",
+        &mut violations,
+    );
+    checked_fact_count += expect_fact(
+        facts,
+        "policy_facade_import_graph_owner",
+        "poo-flow.modules",
+        &mut violations,
+    );
+    checked_fact_count += expect_fact(
+        facts,
+        "policy_facade_option_merge_owner",
+        "poo-flow.modules",
+        &mut violations,
+    );
+    checked_fact_count += expect_fact(
+        facts,
+        "policy_facade_extension_composition_owner",
+        "poo-flow.modules",
+        &mut violations,
+    );
+    checked_fact_count += expect_fact(
+        facts,
+        "policy_facade_native_projection_payload_owner",
+        "rust",
+        &mut violations,
+    );
+    checked_fact_count += expect_fact(
+        facts,
+        "policy_facade_budget_receipt_owner",
+        "rust",
+        &mut violations,
+    );
+    checked_fact_count += expect_fact(
+        facts,
+        "policy_facade_catalog_resolution_receipt_owner",
+        "rust",
+        &mut violations,
+    );
+    checked_fact_count += expect_bool_fact(
+        facts,
+        "policy_facade_rust_parses_scheme_source",
+        false,
+        &mut violations,
+    );
+    checked_fact_count += expect_bool_fact(
+        facts,
+        "policy_facade_scheme_manufactures_rust_handlers",
+        false,
+        &mut violations,
+    );
+    checked_fact_count += expect_fact(
+        facts,
+        "policy_pack_import_graph_owner",
+        "poo-flow.modules",
+        &mut violations,
+    );
+    checked_fact_count += expect_fact(
+        facts,
+        "policy_pack_option_merge_owner",
+        "poo-flow.modules",
+        &mut violations,
+    );
+    checked_fact_count += expect_fact(
+        facts,
+        "policy_pack_extension_composition_owner",
+        "poo-flow.modules",
+        &mut violations,
+    );
+    checked_fact_count += expect_fact(
+        facts,
+        "policy_pack_native_projection_payload_owner",
+        "rust",
+        &mut violations,
+    );
+    checked_fact_count += expect_bool_fact(
+        facts,
+        "policy_pack_rust_parses_scheme_source",
+        false,
+        &mut violations,
+    );
+    checked_fact_count += expect_bool_fact(
+        facts,
+        "policy_pack_rust_handler_manufactured",
+        false,
+        &mut violations,
+    );
+    checked_fact_count += expect_fact(
+        facts,
+        "policy_projection_policy_composition_owner",
+        "poo-flow.scheme",
+        &mut violations,
+    );
+    checked_fact_count += expect_fact(
+        facts,
+        "policy_projection_runtime_lifecycle_owner",
+        "rust",
+        &mut violations,
+    );
+    checked_fact_count += expect_fact(
+        facts,
+        "policy_projection_native_projection_payload_owner",
+        "rust",
+        &mut violations,
+    );
+    checked_fact_count += expect_fact(
+        facts,
+        "policy_projection_budget_receipt_owner",
+        "rust",
+        &mut violations,
+    );
+    checked_fact_count += expect_fact(
+        facts,
+        "policy_projection_catalog_resolution_receipt_owner",
+        "rust",
+        &mut violations,
+    );
+    checked_fact_count += expect_bool_fact(
+        facts,
+        "policy_projection_rust_parses_scheme_source",
+        false,
+        &mut violations,
+    );
+    checked_fact_count += expect_bool_fact(
+        facts,
+        "policy_projection_rust_handler_manufactured",
+        false,
+        &mut violations,
+    );
+    checked_fact_count +=
+        expect_bool_fact(facts, "policy_projection_replayable", true, &mut violations);
+    checked_fact_count += expect_fact(
+        facts,
+        "policy_projection_chain_receipt_family_count",
+        "5",
+        &mut violations,
+    );
+    checked_fact_count += expect_csv_fact(
+        facts,
+        "policy_projection_chain_receipt_family_ids",
+        &[
+            "module_evaluation_receipt",
+            "policy_projection_receipt",
+            "native_projection_payload",
+            "budget_receipt",
+            "catalog_resolution_receipt",
+        ],
+        &mut violations,
+    );
+    checked_fact_count += expect_fact(
+        facts,
+        "policy_projection_chain_module_evaluation_receipt_owner",
+        "poo-flow.modules",
+        &mut violations,
+    );
+    checked_fact_count += expect_fact(
+        facts,
+        "policy_projection_chain_policy_projection_receipt_owner",
+        "poo-flow.scheme",
+        &mut violations,
+    );
+    checked_fact_count += expect_fact(
+        facts,
+        "policy_projection_chain_native_projection_payload_owner",
+        "rust",
+        &mut violations,
+    );
+    checked_fact_count += expect_fact(
+        facts,
+        "policy_projection_chain_budget_receipt_owner",
+        "rust",
+        &mut violations,
+    );
+    checked_fact_count += expect_fact(
+        facts,
+        "policy_projection_chain_catalog_resolution_receipt_owner",
+        "rust",
+        &mut violations,
+    );
+    checked_fact_count += expect_bool_fact(
+        facts,
+        "policy_projection_chain_replayable",
+        true,
+        &mut violations,
+    );
+    checked_fact_count +=
+        expect_bool_fact(facts, "default_policy_replayable", true, &mut violations);
+    checked_fact_count += expect_bool_fact(
+        facts,
+        "policy_substrate_gate_replayable",
+        true,
+        &mut violations,
+    );
+    checked_fact_count += expect_fact(
+        facts,
+        "scheme_policy_owner",
+        "poo-flow.scheme",
+        &mut violations,
+    );
+    checked_fact_count += expect_fact(facts, "rust_kernel_owner", "rust", &mut violations);
+    checked_fact_count += expect_fact(
+        facts,
+        "scheme_catalog_role",
+        "extension-object-selection",
+        &mut violations,
+    );
+    checked_fact_count += expect_fact(facts, "runtime_catalog_owner", "rust", &mut violations);
+    checked_fact_count +=
+        expect_bool_fact(facts, "catalog_resolved_by_scheme", false, &mut violations);
+
+    if !violations.is_empty() {
+        return Err(format!(
+            "gerbil policy receipt boundary contract failed: {}",
+            violations.join("; ")
+        ));
+    }
+
+    Ok(PolicyBoundaryContractVerdict {
+        kind: "marlin.debug.policy-boundary-contract.v1",
+        status: "passed",
+        checked_fact_count,
+        violation_count: 0,
+        violations,
+    })
+}
+
+fn expect_fact(
+    facts: &BTreeMap<String, String>,
+    key: &str,
+    expected: &str,
+    violations: &mut Vec<String>,
+) -> u64 {
+    match facts.get(key) {
+        Some(actual) if actual == expected => {}
+        Some(actual) => violations.push(format!(
+            "`{key}` expected `{expected}` but received `{actual}`"
+        )),
+        None => violations.push(format!("missing `{key}`")),
+    }
+    1
+}
+
+fn expect_bool_fact(
+    facts: &BTreeMap<String, String>,
+    key: &str,
+    expected: bool,
+    violations: &mut Vec<String>,
+) -> u64 {
+    expect_fact(facts, key, if expected { "#t" } else { "#f" }, violations)
+}
+
+fn expect_csv_fact(
+    facts: &BTreeMap<String, String>,
+    key: &str,
+    expected: &[&str],
+    violations: &mut Vec<String>,
+) -> u64 {
+    match facts.get(key) {
+        Some(value) => {
+            let actual = if value.is_empty() {
+                Vec::new()
+            } else {
+                value.split(',').collect::<Vec<_>>()
+            };
+            if actual != expected {
+                violations.push(format!(
+                    "`{key}` expected `{}` but received `{}`",
+                    expected.join(","),
+                    value
+                ));
+            }
+        }
+        None => violations.push(format!("missing `{key}`")),
+    }
+    1
 }
 
 fn duration_micros_u64(duration: std::time::Duration) -> u64 {

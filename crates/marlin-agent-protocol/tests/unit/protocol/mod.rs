@@ -3,6 +3,7 @@ mod agent_graph;
 mod event;
 mod graph;
 mod hook;
+mod loop_policy_ir;
 mod model_gateway;
 mod model_route;
 mod project_runtime;

@@ -402,11 +402,12 @@ END-C
   (let ((prefix-length (string-length prefix))
         (value-length (string-length value)))
     (and (<= prefix-length value-length)
-         (andmap
-          (lambda (index)
-            (char=? (string-ref prefix index)
-                    (string-ref value index)))
-          (list-tabulate prefix-length identity)))))
+         (let loop ((index 0))
+           (if (= index prefix-length)
+             #t
+             (and (char=? (string-ref prefix index)
+                          (string-ref value index))
+                  (loop (+ index 1))))))))
 
 ;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
 ;; MarlinResult <- MarlinInput
@@ -416,7 +417,37 @@ END-C
 ;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
 ;; MarlinResult <- MarlinInput
 (define (any-string-prefix? prefixes value)
-  (ormap (cut string-prefix? <> value) prefixes))
+  (let loop ((remaining prefixes))
+    (and (pair? remaining)
+         (or (string-prefix? (car remaining) value)
+             (loop (cdr remaining))))))
+
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
+(define (native-policy-command-prefix-match? policy command)
+  (let ((len (native-policy-command-prefixes-len policy)))
+    (let loop ((index 0))
+      (and (< index len)
+           (or (string-prefix?
+                (native-policy-command-prefix-at policy index)
+                command)
+               (loop (+ index 1)))))))
+
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
+(define (native-policy-agent-scope-match? policy agent-scope)
+  (let ((len (native-policy-agent-scopes-len policy)))
+    (let loop ((index 0))
+      (and (< index len)
+           (or (string=? (native-policy-agent-scope-at policy index)
+                         agent-scope)
+               (loop (+ index 1)))))))
+
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
+(define (native-policy-match? policy command agent-scope)
+  (and (native-policy-command-prefix-match? policy command)
+       (native-policy-agent-scope-match? policy agent-scope)))
 
 ;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
 ;; MarlinResult <- MarlinInput
@@ -436,6 +467,18 @@ END-C
                policies))))
     (if match (car match) #f)))
 
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
+(define (native-select-policy-index request command agent-scope)
+  (let ((len (native-request-policies-len request)))
+    (let loop ((index 0))
+      (if (= index len)
+        #f
+        (let ((policy (native-request-policy-at request index)))
+          (if (native-policy-match? policy command agent-scope)
+            index
+            (loop (+ index 1))))))))
+
 (extern marlin-deck-runtime-select-model-route)
 (begin-foreign
   (namespace ("marlin-deck-runtime/src/marlin/deck-runtime-native#"
@@ -443,6 +486,7 @@ END-C
               native-request-policies
               native-request-command
               native-request-agent-scope
+              native-select-policy-index
               select-policy-index
               native-set-selection!))
 
@@ -453,8 +497,8 @@ END-C
                 marlin-deck-runtime-native-abi-version))
       marlin-deck-runtime-native-status-abi-mismatch
       (let ((policy-index
-             (select-policy-index
-              (native-request-policies request)
+             (native-select-policy-index
+              request
               (native-request-command request)
               (native-request-agent-scope request))))
         (native-set-selection!

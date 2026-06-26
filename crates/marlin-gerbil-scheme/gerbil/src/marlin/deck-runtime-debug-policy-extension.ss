@@ -23,8 +23,8 @@ package: marlin
         :marlin/deck-runtime-extension-catalog
         :marlin/deck-runtime-extension-receipt
         :marlin/deck-runtime-matcher
-        :marlin/modules/evaluation
-        :marlin/modules/lib
+        :config-interface/modules/evaluation
+        :config-interface/modules/lib
         :marlin/deck-runtime-strategy-context)
 
 (export marlin-deck-runtime-debug-policy-extension-source
@@ -37,7 +37,7 @@ package: marlin
         marlin-deck-runtime-debug-policy-projection-chain-receipt
         marlin-deck-runtime-debug-policy-module-catalog
         marlin-deck-runtime-debug-policy-module-evaluation
-        marlin-deck-runtime-debug-policy-module-system-presentation
+        marlin-deck-runtime-debug-policy-policy-facade-presentation
         marlin-deck-runtime-debug-policy-module-workflow
         marlin-deck-runtime-debug-policy-extension-catalog
         marlin-deck-runtime-debug-policy-extension-receipt
@@ -263,10 +263,10 @@ package: marlin
    "debug-policy-extension-module"
    '("debug-runtime-catalog-hook")))
 
-;;; Boundary: Full module-system presentation stays Scheme-owned.
+;;; Boundary: Full policy facade presentation stays Scheme-owned over poo-flow.
 ;; MarlinResult <- MarlinInput
-(def (marlin-deck-runtime-debug-policy-module-system-presentation)
-  (marlinModuleSystemPresentation
+(def (marlin-deck-runtime-debug-policy-policy-facade-presentation)
+  (marlinPolicyFacadePresentation
    (marlin-deck-runtime-debug-policy-module-catalog)
    "debug-policy-extension-module"
    '("debug-runtime-catalog-hook")))

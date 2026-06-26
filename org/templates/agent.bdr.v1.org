@@ -1,0 +1,27 @@
+#+TITLE: BDR Title
+#+CONTRACT_ORG: agent.bdr.v1
+
+* BDR: Business Development Representative Workflow Title
+:PROPERTIES:
+:TEMPLATE_ID: agent.bdr.v1
+:TEMPLATE_KIND: bdr
+:TEMPLATE_CONTRACT: agent.bdr.v1
+:CONTRACT_ORG: [[../contracts/agent.bdr.v1.org][agent.bdr.v1]]
+:BDR_ID: bdr-id
+:BDR_STATUS: draft
+:BDR_OWNER: business development representative
+:BDR_TARGET_SEGMENT: target account segment
+:END:
+
+** Business Context
+Describe the business goal, target market, and why BDR work is relevant to this plan.
+** Account Criteria
+- Ideal account :: target firmographic or operational criteria
+- Exclusion :: accounts or segments intentionally skipped
+** Outreach Hypotheses
+| Hypothesis | Channel | Evidence |
+| value proposition | email or call | pending |
+** Qualification Signals
+- Record observable signals that qualify, defer, or reject the account.
+** Handoff Evidence
+- Record handoff target, status, and evidence when the BDR workflow is complete.

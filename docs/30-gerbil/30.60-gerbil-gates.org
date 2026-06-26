@@ -123,13 +123,11 @@ Expected contents include:
 - =examples/workspace-patch-intent.rs=
 - =examples/workspace-patch-intent-workflow.rs=
 - =examples/workspace-patch-intent-source.ss=
-- =fixtures/gerbil/command-adapter.ss=
-
-- =fixtures/gerbil/command-adapter-batch.ss=
-- =fixtures/gerbil/marlin/adapter.ss=
-- =fixtures/gerbil/marlin/parser.ss=
-- =fixtures/gerbil/marlin/protocol.ss=
-- =fixtures/gerbil/marlin/request.ss=
+- =examples/workspace-patch-intent.ss=
+- =gerbil/src/marlin/adapter.ss=
+- =gerbil/src/marlin/parser.ss=
+- =gerbil/src/marlin/protocol.ss=
+- =gerbil/src/marlin/request.ss=
 
 The real-gxi CI gate also writes =release-status.json= and
 =release-landing-report.json= into =MARLIN_RELEASE_STATUS_ARTIFACT_DIR= so a

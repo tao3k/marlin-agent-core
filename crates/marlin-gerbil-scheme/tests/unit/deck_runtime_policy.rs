@@ -4,12 +4,15 @@ use marlin_gerbil_scheme::{
     GERBIL_DECK_RUNTIME_NATIVE_PROJECTION_ABI_VERSION,
     GERBIL_DECK_RUNTIME_POO_POLICY_PROJECTION_SCHEMA_ID,
     GERBIL_DECK_RUNTIME_POO_POLICY_PROJECTION_TYPE_ID,
-    GERBIL_DECK_RUNTIME_PROJECT_POO_POLICY_SYMBOL, GerbilDeckRuntimeContextMode,
-    GerbilDeckRuntimeIsolationMode, GerbilDeckRuntimeModelRoutePolicy,
-    GerbilDeckRuntimeModelRoutePolicyRequest, GerbilDeckRuntimeModelRouteSelectedPolicy,
-    GerbilDeckRuntimeModelRouteSelectionReceipt, GerbilDeckRuntimeSelectedPolicyKind,
-    gerbil_deck_runtime_native_projection_readiness_plan,
-    gerbil_deck_runtime_poo_policy_projection_request, gerbil_runtime_asset,
+    GERBIL_DECK_RUNTIME_PROJECT_POO_POLICY_SYMBOL,
+    GERBIL_DECK_RUNTIME_PROJECT_RESOLVED_LOOP_POLICY_PACK_SYMBOL,
+    GERBIL_RESOLVED_LOOP_POLICY_PACK_SCHEMA_ID, GERBIL_RESOLVED_LOOP_POLICY_PACK_TYPE_ID,
+    GerbilDeckRuntimeContextMode, GerbilDeckRuntimeIsolationMode,
+    GerbilDeckRuntimeModelRoutePolicy, GerbilDeckRuntimeModelRoutePolicyRequest,
+    GerbilDeckRuntimeModelRouteSelectedPolicy, GerbilDeckRuntimeModelRouteSelectionReceipt,
+    GerbilDeckRuntimeSelectedPolicyKind, gerbil_deck_runtime_native_projection_readiness_plan,
+    gerbil_deck_runtime_poo_policy_projection_request,
+    gerbil_deck_runtime_resolved_loop_policy_pack_projection_request, gerbil_runtime_asset,
 };
 
 #[test]
@@ -62,6 +65,7 @@ fn gerbil_deck_runtime_policy_receipt_preserves_provider_model_identity() {
 #[test]
 fn gerbil_deck_runtime_poo_policy_projection_request_matches_scheme_module_contract() {
     let request = gerbil_deck_runtime_poo_policy_projection_request();
+    let resolved_request = gerbil_deck_runtime_resolved_loop_policy_pack_projection_request();
     let readiness_plan = gerbil_deck_runtime_native_projection_readiness_plan();
 
     assert_eq!(
@@ -88,9 +92,38 @@ fn gerbil_deck_runtime_poo_policy_projection_request_matches_scheme_module_contr
             .map(|schema| schema.as_str()),
         Some(GERBIL_DECK_RUNTIME_POO_POLICY_PROJECTION_SCHEMA_ID)
     );
+    assert_eq!(resolved_request.abi_id, request.abi_id);
+    assert_eq!(resolved_request.abi_version, request.abi_version);
+    assert_eq!(
+        resolved_request.symbol.as_str(),
+        GERBIL_DECK_RUNTIME_PROJECT_RESOLVED_LOOP_POLICY_PACK_SYMBOL
+    );
+    assert_eq!(
+        resolved_request.contract.type_id.as_str(),
+        GERBIL_RESOLVED_LOOP_POLICY_PACK_TYPE_ID
+    );
+    assert_eq!(
+        resolved_request
+            .contract
+            .schema_id
+            .as_ref()
+            .map(|schema| schema.as_str()),
+        Some(GERBIL_RESOLVED_LOOP_POLICY_PACK_SCHEMA_ID)
+    );
     assert_eq!(readiness_plan.abi_id, request.abi_id);
     assert_eq!(readiness_plan.version, request.abi_version);
-    assert_eq!(readiness_plan.exported_symbols, [request.symbol]);
+    let exported_symbols = readiness_plan
+        .exported_symbols
+        .iter()
+        .map(|symbol| symbol.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        exported_symbols,
+        [
+            request.symbol.as_str(),
+            GERBIL_DECK_RUNTIME_PROJECT_RESOLVED_LOOP_POLICY_PACK_SYMBOL,
+        ]
+    );
 
     let native_projection_source =
         gerbil_runtime_asset("src/marlin/deck-runtime-native-projection.ss")
@@ -99,8 +132,11 @@ fn gerbil_deck_runtime_poo_policy_projection_request_matches_scheme_module_contr
     for expected in [
         GERBIL_DECK_RUNTIME_NATIVE_PROJECTION_ABI_ID,
         GERBIL_DECK_RUNTIME_PROJECT_POO_POLICY_SYMBOL,
+        GERBIL_DECK_RUNTIME_PROJECT_RESOLVED_LOOP_POLICY_PACK_SYMBOL,
         GERBIL_DECK_RUNTIME_POO_POLICY_PROJECTION_TYPE_ID,
         GERBIL_DECK_RUNTIME_POO_POLICY_PROJECTION_SCHEMA_ID,
+        GERBIL_RESOLVED_LOOP_POLICY_PACK_TYPE_ID,
+        GERBIL_RESOLVED_LOOP_POLICY_PACK_SCHEMA_ID,
     ] {
         assert!(
             native_projection_source.contains(expected),
