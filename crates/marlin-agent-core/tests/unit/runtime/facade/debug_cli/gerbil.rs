@@ -8,15 +8,15 @@ fn assert_package_owned_debug_loadpath(summary: &Value) {
         .expect("gerbil policy receipt loadpath");
     let entries = loadpath.split(':').collect::<Vec<_>>();
     assert!(
-        entries.iter().any(|entry| *entry == "src"),
+        entries.contains(&"src"),
         "expected marlin package src in loadpath: {loadpath}"
     );
     assert!(
-        entries.iter().any(|entry| *entry == ".gerbil/lib"),
+        entries.contains(&".gerbil/lib"),
         "expected gerbil.pkg dependency library in loadpath: {loadpath}"
     );
     assert!(
-        entries.iter().any(|entry| *entry == "t"),
+        entries.contains(&"t"),
         "expected marlin package t in loadpath: {loadpath}"
     );
     assert!(

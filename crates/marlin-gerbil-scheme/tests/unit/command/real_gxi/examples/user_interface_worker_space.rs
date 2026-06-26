@@ -189,12 +189,8 @@ fn run_real_gxtest_workspace(
     test_script_relative: &str,
     failure_context: &str,
 ) -> Option<String> {
-    let Some(gxi) = local_gxi() else {
-        return None;
-    };
-    let Some(gxtest) = local_gxtest_for_gxi(&gxi) else {
-        return None;
-    };
+    let gxi = local_gxi()?;
+    let gxtest = local_gxtest_for_gxi(&gxi)?;
     let root = test_root(fixture_name);
     let runtime_root = root.path().join("runtime");
     let workspace_root = root.path().join(fixture_name);
@@ -553,9 +549,7 @@ fn real_llm_marker_value(stdout: &str, marker: &str) -> String {
         .unwrap_or_else(|| panic!("missing marker {marker} in stdout:\n{stdout}"))
         + marker.len();
     let rest = &stdout[start..];
-    let end = rest
-        .find(|character| matches!(character, '\\' | '"' | '\n' | '\r'))
-        .unwrap_or(rest.len());
+    let end = rest.find(['\\', '"', '\n', '\r']).unwrap_or(rest.len());
     rest[..end].to_owned()
 }
 

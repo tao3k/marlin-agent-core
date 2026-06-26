@@ -39,15 +39,15 @@ fn debug_cli_loop_run_materializes_nono_governance_session_receipt() {
         .as_ref()
         .expect("governance receipt");
     assert_eq!(governance.run_id.as_str(), "marlin-govern-loop-run");
-    assert_eq!(governance.state.read_before_run, true);
-    assert_eq!(governance.state.write_receipt_on_pass, true);
+    assert!(governance.state.read_before_run);
+    assert!(governance.state.write_receipt_on_pass);
     assert_eq!(governance.sandbox.backend, "nono");
     assert_eq!(governance.sandbox.profile_ref, "nono-profile");
     assert_eq!(
         governance.sandbox.filesystem_scope.as_deref(),
         Some("runtime")
     );
-    assert_eq!(governance.sandbox.network_access, false);
+    assert!(!governance.sandbox.network_access);
     assert_eq!(governance.sandbox.runtime_owner, "marlin-agent-core");
     assert_eq!(governance.sandbox.materialized_by, "debug_cli.govern_loop");
     assert_eq!(
@@ -71,6 +71,6 @@ fn debug_cli_loop_run_materializes_nono_governance_session_receipt() {
         governance.verifier.terminal_status,
         Some(GraphLoopExecutionStatus::Completed)
     );
-    assert_eq!(governance.verifier.retryable, false);
-    assert_eq!(governance.verifier.human_audit_required, false);
+    assert!(!governance.verifier.retryable);
+    assert!(!governance.verifier.human_audit_required);
 }
