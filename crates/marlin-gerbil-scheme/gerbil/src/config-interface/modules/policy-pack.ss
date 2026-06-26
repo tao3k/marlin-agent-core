@@ -39,6 +39,9 @@ package: config-interface/modules
         marlinRealRepair001ResolvedPolicyPack
         marlinRealRepair001LoopProgram
         marlinRealRepair001LoopProgramCompilerReceipt
+        marlinFailureRetryResolvedPolicyPack
+        marlinFailureRetryLoopProgram
+        marlinFailureRetryLoopProgramCompilerReceipt
         marlinPolicyCombinationMatrixResolvedPolicyPack
         marlinPolicyCombinationMatrixLoopProgram
         marlinPolicyCombinationMatrixLoopProgramCompilerReceipt
@@ -696,12 +699,14 @@ package: config-interface/modules
 
 ;;; Boundary: POO Flow compiles policy profiles into Rust-owned loop IR.
 ;; MarlinResult <- MarlinInput
-(def (marlinPooLoopProgramCompilerReceipt profile-id resolved-policy-pack loop-program)
+(def (marlinPooLoopProgramCompilerReceipt profile-id-value
+                                          resolved-policy-pack-value
+                                          loop-program-value)
   (.o kind: marlin-poo-loop-program-compiler-receipt-kind
-      profile-id: profile-id
+      profile-id: profile-id-value
       compiler-owner: "gerbil-poo-flow"
-      resolved-policy-pack: resolved-policy-pack
-      loop-program: loop-program
+      resolved-policy-pack: resolved-policy-pack-value
+      loop-program: loop-program-value
       scheme-boundary: "scheme-types-to-rust-types"
       serialization-boundary: "rust-owned-cli-trace-cross-process"))
 
@@ -849,6 +854,163 @@ package: config-interface/modules
    "real-repair-001/reactive-tool-loop"
    (marlinRealRepair001ResolvedPolicyPack)
    (marlinRealRepair001LoopProgram)))
+
+;;; Boundary: Failure-retry profile compiled as Scheme types for Rust.
+;; MarlinResult <- MarlinInput
+(def (marlin-failure-retry-policy-digest)
+  (make-vector 32 21))
+
+;;; Boundary: Failure-retry transitions use Rust-owned LoopProgram IR field names.
+;; MarlinResult <- MarlinInput
+(def (marlin-failure-retry-transition transition-id-value
+                                      from-value
+                                      event-value
+                                      action-value
+                                      to-value)
+  (.o transition_id: transition-id-value
+      from: from-value
+      event: event-value
+      action: action-value
+      to: to-value))
+
+;;; Boundary: Failure-retry resolved pack carries retry budget in hot IR.
+;; MarlinResult <- MarlinInput
+(def (marlinFailureRetryResolvedPolicyPack)
+  (.o schema_version: 1
+      policy_epoch: 21
+      policy_digest: (marlin-failure-retry-policy-digest)
+      hot:
+      (.o capability_mask: 7
+          human_gate_mask: 0
+          budget_caps:
+          (.o max_attempts: 3
+              max_cost_units: 300
+              max_wall_time_ms: 15000)
+          graph_nodes:
+          (vector
+           (.o node_id: 21
+               executor_id: 31
+               capability_mask: 7
+               resource_class_id: 41)
+           (.o node_id: 22
+               executor_id: 32
+               capability_mask: 3
+               resource_class_id: 41))
+          graph_edges:
+          (vector
+           (.o from: 21
+               to: 22))
+          route_index:
+          (.o buckets:
+              (vector
+               (.o bucket_id: 21
+                   scope_mask: 127
+                   target_id: 31)))
+          resource_classes:
+          (vector
+           (.o resource_class_id: 41
+               exclusive: #t))
+          continuation_table:
+          (vector
+           (.o op: "retry"
+               graph_template: 1
+               max_attempts: 3)
+           (.o op: "stop_failed"))
+          maker_profiles: (vector 21)
+          checker_profiles: (vector 22))
+      audit:
+      (.o provenance:
+          (vector
+           (.o slot_id: 21
+               winner_role: "retry-governor"
+               source_role_order: (vector "failure-observer" "retry-governor")
+               merge: "min")
+           (.o slot_id: 22
+               winner_role: "runtime-kernel"
+               source_role_order: (vector "retry-governor" "runtime-kernel")
+               merge: "union"))
+          linearization:
+          (vector "failure-observer" "retry-governor" "runtime-kernel")
+          diagnostics:
+          (vector
+           (.o code: "failure-retry-policy-pack-ok"
+               severity: "info"))
+          source_locations:
+          (vector
+           (.o source_location_id: 21
+               path: "gerbil/src/config-interface/custom/marline-kernel/policies/loops/profiles/failure-retry.ss"
+               line: 1
+               column: 1))
+          explanation_strings:
+          (vector
+           "failure-retry lowers POO retry budget into Rust loop IR")
+          forced_slots:
+          (vector
+           (.o slot_id: 21
+               hotness: "hot")
+           (.o slot_id: 22
+               hotness: "hot"))
+          merge_receipts:
+          (vector
+           (.o slot_id: 21
+               merge: "min"
+               status: "applied")
+           (.o slot_id: 22
+               merge: "union"
+               status: "applied")))))
+
+;;; Boundary: Failure-retry LoopProgram emits retry continuation handoff.
+;; MarlinResult <- MarlinInput
+(def (marlinFailureRetryLoopProgram)
+  (.o schema_version: 1
+      program_id: "failure-retry-typed-recovery"
+      policy_epoch: 21
+      policy_digest: (marlin-failure-retry-policy-digest)
+      mechanism_policies:
+      (vector "failure-retry-budget"
+              "typed-recovery"
+              "verification-gate")
+      initial_state: "start"
+      transitions:
+      (vector
+       (marlin-failure-retry-transition
+        "start-classify-failure"
+        "start"
+        "start"
+        "invoke_model"
+        "await-classification")
+       (marlin-failure-retry-transition
+        "classification-plan-retry"
+        "await-classification"
+        "model_event"
+        "runtime_handoff"
+        "retry-planned")
+       (marlin-failure-retry-transition
+        "retry-plan-dispatch"
+        "retry-planned"
+        "runtime_receipt"
+        "dispatch_tools"
+        "await-retry-tool")
+       (marlin-failure-retry-transition
+        "retry-tool-verify"
+        "await-retry-tool"
+        "tool_receipt"
+        "verify"
+        "await-verification")
+       (marlin-failure-retry-transition
+        "verification-stop"
+        "await-verification"
+        "verification_receipt"
+        "stop"
+        "stopped"))))
+
+;;; Boundary: Public compiler entrypoint for typed failure retry loops.
+;; MarlinResult <- MarlinInput
+(def (marlinFailureRetryLoopProgramCompilerReceipt)
+  (marlinPooLoopProgramCompilerReceipt
+   "marlin-failure-retry-profile/typed-recovery"
+   (marlinFailureRetryResolvedPolicyPack)
+   (marlinFailureRetryLoopProgram)))
 
 ;;; Boundary: Policy combination profile exercises memory, maker, rewrite, tool, checker.
 ;; MarlinResult <- MarlinInput

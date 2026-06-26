@@ -140,6 +140,9 @@ package: config-interface/modules
         marlinRealRepair001ResolvedPolicyPack
         marlinRealRepair001LoopProgram
         marlinRealRepair001LoopProgramCompilerReceipt
+        marlinFailureRetryResolvedPolicyPack
+        marlinFailureRetryLoopProgram
+        marlinFailureRetryLoopProgramCompilerReceipt
         marlinPolicyCombinationMatrixResolvedPolicyPack
         marlinPolicyCombinationMatrixLoopProgram
         marlinPolicyCombinationMatrixLoopProgramCompilerReceipt

@@ -12,6 +12,7 @@
         "deck-runtime-script-test"
         "deck-runtime-user-option-test"
         "config-interface-driver-test"
+        "config-interface-loop-policy-pack-test"
         "config-interface-case-driver-test"
         "config-interface-test"
         "marlin-config-interface-lib-test"
