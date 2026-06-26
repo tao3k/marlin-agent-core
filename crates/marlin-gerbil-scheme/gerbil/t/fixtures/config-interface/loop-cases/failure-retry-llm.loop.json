@@ -1,0 +1,14 @@
+{
+  "graph_id": "marlin-failure-retry-real-llm",
+  "nodes": [
+    {
+      "id": "retry-plan",
+      "executor": "debug.echo",
+      "config": {
+        "profile": "marlin-failure-retry-profile",
+        "case_id": "marlin-failure-retry-real-llm"
+      }
+    }
+  ],
+  "edges": []
+}

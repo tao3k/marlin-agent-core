@@ -1,11 +1,13 @@
-bench_command = "cargo bench --locked -p marlin-agent-kernel --bench loop_program_execution_shape"
-target_total_ms = 30
-max_total_ms = 250
-observed_total_ms = 30
-regression_budget_ms = 50
+harness = "criterion"
+bench = "loop_program_execution_shape"
+case = "loop_program_execution_shape"
+target_total = "30ms"
+max_total = "250ms"
+observed_total = "30ms"
+regression_budget = "50ms"
 memory_budget_bytes = 67108864
 observed_memory_bytes = 1048576
 target_rationale = "The kernel LoopProgram event pump should keep deterministic handoff loops cheap enough to run as a harness/dev/debug substrate before live LLM work is attached."
 
 [observed_timings]
-execution_shape_total_ms = 30
+execution_shape_total_ms = "30ms"

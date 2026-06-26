@@ -18,7 +18,7 @@ package: config-interface/custom/marline-kernel/policies/loops/cases
     check-name: 'marlin-failure-retry-real-llm
     profile-ref: 'marlin-failure-retry-profile
     command-vector: '("marlin" "loop" "run"
-                      "--input" "../../../.cache/marlin/loop-cases/failure-retry-llm.loop.json"
+                      "--input" "t/fixtures/config-interface/loop-cases/failure-retry-llm.loop.json"
                       "--catalog" "custom/marline-kernel/policies/loops/cases/real-llm-catalog.toml"
                       "--continuation-planner" "retry-on-failure"
                       "--no-store")

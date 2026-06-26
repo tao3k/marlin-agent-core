@@ -1,0 +1,70 @@
+{
+  "program": {
+    "schema_version": 1,
+    "program_id": "marlin-runtime-handoff-real-llm",
+    "policy_epoch": 7,
+    "policy_digest": [
+      5, 5, 5, 5, 5, 5, 5, 5,
+      5, 5, 5, 5, 5, 5, 5, 5,
+      5, 5, 5, 5, 5, 5, 5, 5,
+      5, 5, 5, 5, 5, 5, 5, 5
+    ],
+    "mechanism_policies": [
+      "reactive-tool-loop-base",
+      "dynamic-agent-flow-replay"
+    ],
+    "initial_state": "start",
+    "transitions": [
+      {
+        "transition_id": "start-model",
+        "from": "start",
+        "event": "start",
+        "action": "invoke_model",
+        "to": "await-model"
+      },
+      {
+        "transition_id": "model-tools",
+        "from": "await-model",
+        "event": "tool_request",
+        "action": "dispatch_tools",
+        "to": "await-tools"
+      },
+      {
+        "transition_id": "tools-continue",
+        "from": "await-tools",
+        "event": "tool_receipt",
+        "action": "continue",
+        "to": "await-model"
+      },
+      {
+        "transition_id": "dynamic-rewrite",
+        "from": "await-model",
+        "event": "model_event",
+        "action": "rewrite_graph",
+        "to": "rewritten"
+      },
+      {
+        "transition_id": "verify-rewrite",
+        "from": "rewritten",
+        "event": "runtime_receipt",
+        "action": "verify",
+        "to": "verifying"
+      },
+      {
+        "transition_id": "verification-stop",
+        "from": "verifying",
+        "event": "verification_receipt",
+        "action": "stop",
+        "to": "stopped"
+      }
+    ]
+  },
+  "events": [
+    "start",
+    "tool_request",
+    "tool_receipt",
+    "model_event",
+    "runtime_receipt",
+    "verification_receipt"
+  ]
+}

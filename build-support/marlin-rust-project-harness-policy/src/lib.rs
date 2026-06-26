@@ -60,12 +60,17 @@ pub use scenario_benchmark::{
     RustScenarioPerformanceOptimizationFinding, RustScenarioPerformanceOptimizationFindingKind,
     RustScenarioPerformanceOptimizationPriority, RustScenarioPerformanceOptimizationReceipt,
     RustScenarioPerformanceOptimizationScore, RustScenarioPerformanceOptimizationStatus,
-    RustScenarioPerformanceScenarioId,
+    RustScenarioPerformanceScenarioId, RustScenarioWorkspaceBenchmarkCrateReceipt,
+    RustScenarioWorkspaceBenchmarkGateReceipt, RustScenarioWorkspaceBenchmarkImprovementKind,
+    RustScenarioWorkspaceBenchmarkImprovementSuggestion, RustScenarioWorkspaceBenchmarkStatus,
     assert_crate_scenario_performance_baseline_receipt_is_stable,
     assert_crate_scenario_performance_contract_gate_accepts_crate_scenarios,
     assert_crate_scenario_performance_first_batch_optimization_frontier_is_clear,
+    assert_workspace_scenario_performance_contract_gate_accepts_all_crates,
     crate_scenario_performance_optimization_receipt, optimization_receipt_from_benchmark_receipt,
     render_rust_scenario_benchmark_snapshot, validate_rust_scenario_benchmark,
+    validate_workspace_required_scenario_benchmarks,
+    workspace_scenario_performance_optimization_receipt,
 };
 pub use verification_policy::{
     RustProjectHarnessVerificationOwnerProfileReceipt, RustProjectHarnessVerificationPolicyReceipt,

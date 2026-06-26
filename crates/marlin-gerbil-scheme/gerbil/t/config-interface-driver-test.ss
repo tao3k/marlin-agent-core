@@ -44,6 +44,8 @@
        => #t)
 (check (contains? build-driver-spec "config-interface/custom/marline-kernel/config.ss")
        => #t)
+(check (contains? build-driver-spec "config-interface/custom/marline-kernel/case-driver.ss")
+       => #t)
 (check (contains? build-driver-spec "../examples/user-interface-module-config/init.ss")
        => #f)
 

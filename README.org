@@ -1,0 +1,148 @@
+#+title: Marlin Agent Core
+
+Marlin Agent Core is a Rust workspace for an Org-native, typed agent runtime substrate: graph-loop execution, workspace/query/patch/view protocols, project memory, sandbox and process runtime visibility, Gerbil Scheme policy integration, and harness/dev/debug command surfaces.
+
+This repository is not a terminal-user product shell. The =marlin= command and the crate APIs are implementation, harness, development, and debugging surfaces for building and validating the agent runtime layers.
+
+* Purpose
+
+Marlin's core goal is to expose the agent runtime substrate itself as typed, inspectable, replayable, and user-configurable infrastructure.
+
+Other agent cores are useful engineering references, but they are not the target shape. Marlin starts from different primitives:
+
+- Org is the structured work metadata plane, not Markdown transcript blobs.
+- Queries operate over finer-grained records, spans, receipts, plans, decisions, traces, and evidence instead of opaque prompt history.
+- Rust owns typed protocols, runtime authority, catalogs, execution envelopes, sandbox/process visibility, receipts, replay, and native ABI readiness.
+- Gerbil Scheme and POO own the high-level extension plane: workflow policy, sandbox policy, loop continuation policy, hook policy, model routing, sub-agent profiles, matchers, scripts, and recovery strategy can be surfaced as composable objects.
+
+The project is deliberately lower-level than a product agent. It focuses on the control surfaces that should stay stable when model providers, UI surfaces, workspace shapes, policy packs, and sandbox backends change.
+
+* Substrate Model
+
+Marlin treats workflow, sandbox, loop, and agent policy as first-class runtime objects. Users and downstream agents should be able to configure and extend that layer directly instead of being locked behind a fixed product CLI or a hidden provider turn driver.
+
+The design target is a substrate where:
+
+- Org records goals, plans, SDD, tasks, decisions, evidence, metrics, traces, memory candidates, verification, and source spans as queryable native objects;
+- graph-loop behavior compiles into typed transitions and receipts;
+- sandbox execution is selected through typed backend capability and policy projection receipts, not hard-coded to one local implementation;
+- long-running commands, streams, subprocesses, sub-agents, and cleanup are runtime-owned observability concerns;
+- Gerbil POO extension objects let users replace or extend hook, model route, loop, sandbox, and sub-agent policy without recompiling Rust;
+- no-live-LLM scenarios remain first-class, so graph runs can be inspected, tested, and replayed without spending provider calls.
+
+* Why Kernel-Only Matters
+
+Marlin intentionally does not begin as a product UI. UI-first agent systems tend to leak product assumptions into the runtime: transcript shape becomes the data model, provider turn drivers become loop semantics, sandbox behavior becomes a CLI implementation detail, and policy surfaces stay hidden behind fixed product commands.
+
+Marlin keeps the reusable kernel separate from those product shells. That makes the substrate fit places where a UI-bound agent core is too constrained:
+
+- enterprise model gateways and internal provider routing;
+- CI, review, and release automation that needs replayable evidence;
+- regulated environments that need explicit sandbox, secret, and network receipts;
+- multi-project and multi-worktree agent systems;
+- internal tools that want to expose their own UI while reusing the same runtime, policy, and evidence kernel.
+
+The kernel boundary is the product strategy: keep execution, receipts, replay, policy projection, sandbox capability, Org query, and harness scenarios stable enough that multiple product surfaces can be built on top without rewriting the core.
+
+* Real Demand Signals
+
+The 2026 agent market is not short of coding models. Recent public reports and user issues point to a different pressure: developers and enterprises need agents whose authority, policy, and evidence keep working after the first impressive demo.
+
+- =Approvals and sandbox state must be reliable=: OpenAI's own Codex safety guidance treats sandboxing and approvals as the execution boundary ([[https://openai.com/index/running-codex-safely/][Running Codex safely]]), while May and June 2026 Codex issues report approval timeouts, approval/sandbox config write races, and outside-workspace approval failures ([[https://github.com/openai/codex/issues/24204][#24204]], [[https://github.com/openai/codex/issues/24065][#24065]], [[https://github.com/openai/codex/issues/27330][#27330]]). Marlin treats this as typed runtime state, receipts, and recovery, not only as UI settings.
+- =Hooks and user policy must survive sandbox boundaries=: Claude Code/Cowork issues show lifecycle hooks not firing inside sandboxed sessions and user-owned tooling blocked by sandbox proxy allowlists ([[https://github.com/anthropics/claude-code/issues/63360][#63360]], [[https://github.com/anthropics/claude-code/issues/52982][#52982]]). Marlin's hook and network policy planes are designed as policy projection plus receipt evidence.
+- =Users want policy systems, not one-off scripts=: a May 2026 Codex community hooks framework explicitly frames local workflow behavior as user policy, structured rules, smoke tests, rendering, and installation instead of ad hoc hook scripts ([[https://community.openai.com/t/codex-hooks-framework-letting-codex-extend-local-workflows-from-user-policy/1381486][Codex Hooks Framework]]). Marlin puts that demand in the Gerbil POO extension plane.
+- =Enterprise blockers are governance and infrastructure=: enterprise deployment writeups describe production blockers as SSO, audit logging, sandbox isolation, PR gates, data residency, and incident response rather than model quality alone ([[https://northflank.com/blog/enterprise-ai-coding-agent-deployment][Northflank 2026 deployment analysis]]). Marlin keeps those concerns inside the runtime substrate instead of leaving them to each product shell.
+- =Compliance needs evidence artifacts=: 2026 compliance analysis around AI coding tools emphasizes audit trails, technical documentation, logging, transparency, and human oversight, and notes that no tool delivers full compliance out of the box ([[https://www.augmentcode.com/tools/ai-coding-tools-eu-ai-act-compliance][EU AI Act coding-tool review]]). Marlin's Org records, graph receipts, runtime events, and replay reports are meant to be the substrate for those artifacts.
+- =Long-running orchestration needs rotation and exit controls=: Claude Code/Cowork issues report unbounded conductor context growth with no rotation/compaction, and a self-created loop that should have halted for human guidance instead of taking an irreversible action ([[https://github.com/anthropics/claude-code/issues/64084][#64084]], [[https://github.com/anthropics/claude-code/issues/67665][#67665]]). Marlin's graph loop, replay, runtime observability, and no-live-LLM scenarios target this class of inspectable long-running work.
+- =Agent-originated CI intent needs admission control=: a May 2026 GitHub Copilot coding-agent discussion asks whether agent-created PR and workflow intent should be distinguished from human, GitHub App, and bot intent before secrets, runners, or cloud roles are granted ([[https://github.com/orgs/community/discussions/159068][GitHub Community #159068]]). Marlin treats agent identity, project scope, and execution receipts as runtime protocol concerns.
+
+These signals are not a reason to copy a product agent. They are evidence that the missing layer is a durable agent kernel: policy-aware, auditable, replayable, sandbox-conscious, and configurable by downstream users.
+
+* Why This Can Solve The Kernel Gap
+
+Most agent systems in the market have become strong product loops before becoming reusable kernels. That order leaves a recurring engineering gap: the transcript becomes the source of truth, the provider driver owns loop semantics, sandbox behavior is hidden in CLI process code, policy is either hard-coded or exposed as weak text configuration, and evidence is reconstructed from logs after the fact. These are not surface bugs. Once those concerns are fused together, adding enterprise routing, replay, sub-agent cleanup, regulated sandbox receipts, or user-extensible workflow policy means cutting across the product shell.
+
+Marlin's answer is to make the agent kernel smaller, stricter, and more inspectable. The system is built around stable typed boundaries:
+
+- =Org as work substrate=: plans, tasks, decisions, spans, evidence, metrics, and memory candidates are structured records that can be queried without treating chat history as a database.
+- =Project runtime protocol=: query, patch, view, identity, content, and projection types let downstream tools ask for exact work facts instead of scraping files or replaying prompts.
+- =Typed graph loop=: providers receive projected model requests; they do not own session state, continuation policy, retry behavior, replay, or verification.
+- =Runtime-owned observability=: sandbox and process execution return backend-owned capability, readiness, denial, stream, and cleanup receipts, so failure becomes runtime evidence instead of terminal text.
+- =POO-driven policy extension=: Gerbil Scheme carries hooks, model routes, matchers, recovery, sandbox profiles, and sub-agent profiles as extension objects while Rust still owns catalogs, authority checks, ABI readiness, and receipts.
+- =Harness-first quality=: deterministic no-live-LLM scenarios, fake providers, replay reports, and performance gates validate the substrate before a UI can claim the runtime is production ready.
+
+This is why Marlin is not a duplicate product agent. It targets the layer that product agents usually hide: a reusable, auditable, policy-configurable kernel that can be embedded behind different UIs, enterprise gateways, CI systems, and internal automation surfaces without rewriting the runtime each time.
+
+* Design Bets
+
+- =Org-native substrate=: durable agent work state lives in queryable Org records, not only in chat transcripts or Markdown notes.
+- =Fine-grained query and traceability=: decisions, receipts, metrics, spans, and evidence are first-class records that can be selected, audited, and replayed.
+- =Typed graph loop first=: loops are graph executions plus continuation decisions, not transcript append loops with hidden policy.
+- =Configurable workflow engineering=: workflow, sandbox, loop, hooks, model routes, and sub-agent behavior are extension objects, not closed product internals.
+- =Policy/runtime separation=: Gerbil POO owns high-level policy composition; Rust owns execution authority, catalogs, native ABI readiness, receipts, and failure surfaces.
+- =Replayable evidence=: traces, per-node receipts, gateway denials, and runtime events are artifacts, not logs to scrape.
+- =Topology before orchestration=: agent graphs, delegation, fanout, review, and voting need a typed topology layer before higher-level orchestration systems are embedded.
+- =Harness before product polish=: scenario gates, deterministic fixtures, and debug APIs are the way this substrate becomes trustworthy before it becomes a user-facing agent product.
+- =Kernel before UI=: product surfaces can change, but runtime authority, evidence, policy projection, and sandbox capability should not be rewritten for each surface.
+
+* Repository Shape
+
+- =crates/marlin-agent-core=: facade crate and =marlin= debug CLI surface.
+- =crates/marlin-agent-protocol=: shared protocol, trace, and receipt types.
+- =crates/marlin-agent-kernel=: graph-loop machines, execution drivers, and runtime handoff plumbing.
+- =crates/marlin-agent-runtime=: runtime context, process, stream, and observability boundaries.
+- =crates/marlin-agent-environment=: agent environment and project import support.
+- =crates/marlin-agent-harness=: agent-system scenario, evidence, and release visibility harnessing.
+- =crates/marlin-gerbil-scheme=: Gerbil Scheme native integration and policy extension plane.
+- =build-support/=: build-time policy and native Gerbil build support.
+
+* Quick Start
+
+Use the repository through =direnv= so the local Rust, Gerbil, and build-support environment is loaded consistently.
+
+#+begin_src shell
+direnv allow
+direnv exec . cargo test --workspace --locked
+#+end_src
+
+Useful focused checks:
+
+#+begin_src shell
+direnv exec . cargo test -p marlin-agent-core --locked
+direnv exec . cargo test -p marlin-agent-kernel --locked
+direnv exec . cargo bench -p marlin-agent-kernel --bench loop_program_execution_shape --locked
+#+end_src
+
+Development formatting and policy details live in [[file:development.md][development.md]].
+
+* Documentation
+
+The durable project documentation is kept under =docs/= using Johnny Decimal Org files. Start with the map, then follow the area index that matches the question:
+
+- [[file:docs/00.00-index.org][docs/00.00-index.org]]: documentation map.
+- [[file:docs/10-architecture/10.00-architecture-index.org][docs/10-architecture/10.00-architecture-index.org]]: crate and boundary architecture.
+- [[file:docs/20-workspace/20.00-workspace-index.org][docs/20-workspace/20.00-workspace-index.org]]: workspace, query, patch, view, and Org memory protocols.
+- [[file:docs/30-gerbil/30.00-gerbil-index.org][docs/30-gerbil/30.00-gerbil-index.org]]: Gerbil Scheme and POO-driven policy extension work.
+- [[file:docs/40-rfcs/40.00-rfc-index.org][docs/40-rfcs/40.00-rfc-index.org]]: active RFCs and graph-loop planning.
+- [[file:docs/90-decisions/90.00-decision-index.org][docs/90-decisions/90.00-decision-index.org]]: recorded design decisions.
+
+Focused design references:
+
+- [[file:docs/40-rfcs/40.70-codex-engineering-baseline.org][docs/40-rfcs/40.70-codex-engineering-baseline.org]]
+- [[file:docs/20-workspace/20.10-org-native-agent-workspace.org][docs/20-workspace/20.10-org-native-agent-workspace.org]]
+- [[file:docs/20-workspace/20.20-query-patch-view-protocol.org][docs/20-workspace/20.20-query-patch-view-protocol.org]]
+- [[file:docs/10-architecture/10.20-kernel-boundary.org][docs/10-architecture/10.20-kernel-boundary.org]]
+- [[file:docs/10-architecture/10.30-agent-harness-boundary.org][docs/10-architecture/10.30-agent-harness-boundary.org]]
+- [[file:docs/30-gerbil/30.30-gerbil-typed-runtime-boundary.org][docs/30-gerbil/30.30-gerbil-typed-runtime-boundary.org]]
+- [[file:docs/30-gerbil/gerbil-poo-modules-system-desgin.org][docs/30-gerbil/gerbil-poo-modules-system-desgin.org]]
+- [[file:docs/30-gerbil/30.80-native-aot-link-unit.org][docs/30-gerbil/30.80-native-aot-link-unit.org]]
+- [[file:docs/40-rfcs/40.100-graph-loop-controller-substrate.org][docs/40-rfcs/40.100-graph-loop-controller-substrate.org]]
+- [[file:docs/40-rfcs/40.130-sandbox-backend-capability-protocol.org][docs/40-rfcs/40.130-sandbox-backend-capability-protocol.org]]
+- [[file:docs/40-rfcs/40.140-pi-agent-core-loop-parity.org][docs/40-rfcs/40.140-pi-agent-core-loop-parity.org]]
+- [[file:docs/40-rfcs/40.160-agent-graph-topology-protocol.org][docs/40-rfcs/40.160-agent-graph-topology-protocol.org]]
+- [[file:crates/marlin-agent-harness/README.md][crates/marlin-agent-harness/README.md]]
+- [[file:crates/marlin-gerbil-scheme/README.md][crates/marlin-gerbil-scheme/README.md]]
+
+* Project Rules
+
+Repository-specific agent and protocol-evolution rules live in [[file:AGENTS.md][AGENTS.md]]. In short: Rust owns typed protocols, receipts, runtime boundaries, and outer serialization; Gerbil Scheme owns complex policy logic and extension behavior behind the native ABI boundary.

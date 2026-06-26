@@ -1,0 +1,14 @@
+{
+  "graph_id": "marlin-policy-receipt-gate-real-llm",
+  "nodes": [
+    {
+      "id": "policy-gate",
+      "executor": "debug.echo",
+      "config": {
+        "profile": "marlin-policy-receipt-gate-profile",
+        "case_id": "marlin-policy-receipt-gate-real-llm"
+      }
+    }
+  ],
+  "edges": []
+}

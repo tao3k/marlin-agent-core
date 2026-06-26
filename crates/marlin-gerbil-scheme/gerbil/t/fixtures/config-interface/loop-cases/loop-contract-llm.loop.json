@@ -1,0 +1,14 @@
+{
+  "graph_id": "marlin-loop-contract-real-llm",
+  "nodes": [
+    {
+      "id": "contract-check",
+      "executor": "debug.echo",
+      "config": {
+        "profile": "marlin-loop-contract-profile",
+        "case_id": "marlin-loop-contract-real-llm"
+      }
+    }
+  ],
+  "edges": []
+}

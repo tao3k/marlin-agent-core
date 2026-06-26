@@ -5,8 +5,9 @@ use marlin_gerbil_scheme::{
     GerbilDeckRuntimeNativeAotBuildReceipt, GerbilDeckRuntimeNativeAotBuildStatus,
     GerbilDeckRuntimeNativeAotCommandPlan, GerbilDeckRuntimeNativeAotPlan,
     GerbilDeckRuntimeNativeAotProfile, GerbilDeckRuntimeNativeAotStatus,
+    GerbilDeckRuntimeNativeBridgeBoundary, GerbilDeckRuntimeNativeBridgeStatus,
     GerbilDeckRuntimeNativeModelRouteSelector, GerbilDeckRuntimeNativeSymbol,
-    GerbilNativeLinkLibrary, GerbilNativeSymbolAuditor,
+    GerbilDeckRuntimeSerializationBoundary, GerbilNativeLinkLibrary, GerbilNativeSymbolAuditor,
 };
 use std::path::PathBuf;
 
@@ -29,6 +30,31 @@ fn gerbil_deck_runtime_native_selector_uses_typed_c_abi_selection() {
     assert_eq!(selected.name, "cheap-test-runner");
     assert_eq!(selected.provider, "openai");
     assert_eq!(selected.model, "gpt-5-mini");
+    assert_eq!(
+        receipt.native_bridge.abi_id,
+        GERBIL_DECK_RUNTIME_NATIVE_ABI_ID
+    );
+    assert_eq!(
+        receipt.native_bridge.abi_version,
+        GERBIL_DECK_RUNTIME_NATIVE_ABI_VERSION
+    );
+    assert_eq!(
+        receipt.native_bridge.status,
+        GerbilDeckRuntimeNativeBridgeStatus::Ready
+    );
+    assert_eq!(
+        receipt.native_bridge.bridge_boundary,
+        GerbilDeckRuntimeNativeBridgeBoundary::SchemeTypesToRustTypes
+    );
+    assert_eq!(
+        receipt.native_bridge.serialization_boundary,
+        GerbilDeckRuntimeSerializationBoundary::RustOwnedCliTraceCrossProcess
+    );
+    assert!(
+        !format!("{:?}", receipt.native_bridge.bridge_boundary)
+            .to_ascii_lowercase()
+            .contains("json")
+    );
 }
 
 #[test]

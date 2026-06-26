@@ -38,6 +38,12 @@ pub const GERBIL_DECK_RUNTIME_POO_POLICY_PROJECTION_TYPE_ID: &str =
 /// Schema id returned by the Gerbil POO policy projection.
 pub const GERBIL_DECK_RUNTIME_POO_POLICY_PROJECTION_SCHEMA_ID: &str =
     "marlin.deck-runtime.poo-policy-projection.v1";
+/// Schema id returned by the Deck runtime native model-route selector.
+pub const GERBIL_DECK_RUNTIME_MODEL_ROUTE_SELECTION_SCHEMA_ID: &str =
+    "marlin-deck-runtime.model-route-selection.v1";
+/// Schema id for the Rust-owned native bridge receipt.
+pub const GERBIL_DECK_RUNTIME_NATIVE_TYPED_BRIDGE_RECEIPT_SCHEMA_ID: &str =
+    "marlin-deck-runtime.native-typed-bridge.v1";
 
 /// Context policy mode returned by the Scheme Deck runtime selector.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -234,6 +240,52 @@ pub struct GerbilDeckRuntimeModelRouteSelectedPolicy {
     pub isolation_mode: GerbilDeckRuntimeIsolationMode,
 }
 
+/// Internal native bridge boundary used by the Deck runtime selector.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum GerbilDeckRuntimeNativeBridgeBoundary {
+    SchemeTypesToRustTypes,
+}
+
+/// Serialization boundary owned by Rust for outer traces and CLI surfaces.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum GerbilDeckRuntimeSerializationBoundary {
+    RustOwnedCliTraceCrossProcess,
+}
+
+/// Native typed bridge status.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum GerbilDeckRuntimeNativeBridgeStatus {
+    Ready,
+}
+
+/// Rust-owned receipt that proves the Scheme call crossed a typed native bridge.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct GerbilDeckRuntimeNativeBridgeReceipt {
+    pub schema_id: String,
+    pub abi_id: String,
+    pub abi_version: u32,
+    pub status: GerbilDeckRuntimeNativeBridgeStatus,
+    pub bridge_boundary: GerbilDeckRuntimeNativeBridgeBoundary,
+    pub serialization_boundary: GerbilDeckRuntimeSerializationBoundary,
+}
+
+impl GerbilDeckRuntimeNativeBridgeReceipt {
+    pub fn ready(abi_id: impl Into<String>, abi_version: u32) -> Self {
+        Self {
+            schema_id: GERBIL_DECK_RUNTIME_NATIVE_TYPED_BRIDGE_RECEIPT_SCHEMA_ID.to_owned(),
+            abi_id: abi_id.into(),
+            abi_version,
+            status: GerbilDeckRuntimeNativeBridgeStatus::Ready,
+            bridge_boundary: GerbilDeckRuntimeNativeBridgeBoundary::SchemeTypesToRustTypes,
+            serialization_boundary:
+                GerbilDeckRuntimeSerializationBoundary::RustOwnedCliTraceCrossProcess,
+        }
+    }
+}
+
 /// Receipt returned by the Scheme Deck runtime policy selector.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct GerbilDeckRuntimeModelRouteSelectionReceipt {
@@ -241,6 +293,7 @@ pub struct GerbilDeckRuntimeModelRouteSelectionReceipt {
     pub command: String,
     pub agent_scope: String,
     pub matched: bool,
+    pub native_bridge: GerbilDeckRuntimeNativeBridgeReceipt,
     pub policy: Option<GerbilDeckRuntimeModelRouteSelectedPolicy>,
 }
 

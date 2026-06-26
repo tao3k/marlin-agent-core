@@ -2764,6 +2764,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
+ "toml 1.1.2+spec-1.1.0",
 ]
 
 [[package]]
@@ -3127,7 +3128,7 @@ dependencies = [
 [[package]]
 name = "orgize"
 version = "0.10.0-alpha.10"
-source = "git+https://github.com/tao3k/orgize?branch=main#683a5e350fedeb39bb86dc1d35a9edf9bc7fb391"
+source = "git+https://github.com/tao3k/orgize?branch=main#9d9ee8c66ccd222bf4379d562deeda514b475875"
 dependencies = [
  "bytecount",
  "cfg-if",
@@ -3143,7 +3144,7 @@ dependencies = [
 [[package]]
 name = "orgize-build-support"
 version = "0.1.0"
-source = "git+https://github.com/tao3k/orgize?branch=main#683a5e350fedeb39bb86dc1d35a9edf9bc7fb391"
+source = "git+https://github.com/tao3k/orgize?branch=main#9d9ee8c66ccd222bf4379d562deeda514b475875"
 
 [[package]]
 name = "ouroboros"
@@ -3833,7 +3834,7 @@ dependencies = [
 [[package]]
 name = "rust-lang-project-harness"
 version = "0.1.2"
-source = "git+https://github.com/tao3k/rust-lang-project-harness?rev=bc91d78aea16b122612312ce59826c67e1740691#bc91d78aea16b122612312ce59826c67e1740691"
+source = "git+https://github.com/tao3k/rust-lang-project-harness?rev=715c45335784bdd54110508cd4837663b913a3bc#715c45335784bdd54110508cd4837663b913a3bc"
 dependencies = [
  "cargo-lock",
  "cargo_toml",

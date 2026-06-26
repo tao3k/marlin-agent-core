@@ -13,6 +13,7 @@ mod deck_runtime_policy;
 mod deck_runtime_script;
 mod deps;
 mod graph_loop_continuation;
+mod loop_case_driver;
 mod native_aot_cli;
 mod policy_pack_projection;
 mod real_gxi_gate;
@@ -90,17 +91,21 @@ pub use deck_runtime_native::{
     GerbilDeckRuntimeNativeStatus, GerbilDeckRuntimeNativeUtf8, GerbilDeckRuntimeNativeUtf8List,
 };
 pub use deck_runtime_policy::{
+    GERBIL_DECK_RUNTIME_MODEL_ROUTE_SELECTION_SCHEMA_ID,
     GERBIL_DECK_RUNTIME_NATIVE_PROJECTION_ABI_ID,
     GERBIL_DECK_RUNTIME_NATIVE_PROJECTION_ABI_VERSION,
     GERBIL_DECK_RUNTIME_NATIVE_PROJECTION_PACKAGE_ID,
+    GERBIL_DECK_RUNTIME_NATIVE_TYPED_BRIDGE_RECEIPT_SCHEMA_ID,
     GERBIL_DECK_RUNTIME_POO_POLICY_PROJECTION_SCHEMA_ID,
     GERBIL_DECK_RUNTIME_POO_POLICY_PROJECTION_TYPE_ID,
     GERBIL_DECK_RUNTIME_PROJECT_POO_POLICY_SYMBOL,
     GERBIL_DECK_RUNTIME_PROJECT_RESOLVED_LOOP_POLICY_PACK_SYMBOL, GerbilDeckRuntimeContextMode,
     GerbilDeckRuntimeIsolationMode, GerbilDeckRuntimeModelRoutePolicy,
     GerbilDeckRuntimeModelRoutePolicyRequest, GerbilDeckRuntimeModelRouteSelectedPolicy,
-    GerbilDeckRuntimeModelRouteSelectionReceipt, GerbilDeckRuntimePooPolicyProjection,
-    GerbilDeckRuntimeSelectedPolicyKind, decode_gerbil_deck_runtime_poo_policy_projection,
+    GerbilDeckRuntimeModelRouteSelectionReceipt, GerbilDeckRuntimeNativeBridgeBoundary,
+    GerbilDeckRuntimeNativeBridgeReceipt, GerbilDeckRuntimeNativeBridgeStatus,
+    GerbilDeckRuntimePooPolicyProjection, GerbilDeckRuntimeSelectedPolicyKind,
+    GerbilDeckRuntimeSerializationBoundary, decode_gerbil_deck_runtime_poo_policy_projection,
     decode_gerbil_deck_runtime_resolved_loop_policy_pack_projection,
     gerbil_deck_runtime_native_projection_abi_contract,
     gerbil_deck_runtime_native_projection_package_manifest,
@@ -148,6 +153,14 @@ pub use graph_loop_continuation::{
     gerbil_loop_graph_continuation_projection_contract,
     gerbil_loop_graph_continuation_type_manifest, project_gerbil_loop_graph_continuation_action,
     project_gerbil_loop_graph_continuation_native_action,
+};
+pub use loop_case_driver::{
+    GERBIL_LOOP_CASE_DRIVER_RUST_LOOP_RECEIPT_SCHEMA_ID,
+    GERBIL_LOOP_CASE_DRIVER_SCHEME_RECEIPT_KIND, GerbilLoopCaseCommandKind,
+    GerbilLoopCaseDriverRustLoopReceipt, GerbilLoopCaseDriverSchemeReceipt,
+    GerbilLoopCaseDriverSchemeReceiptKind, GerbilLoopCaseRuntimeHandoffStatus,
+    GerbilLoopCaseRuntimeMode, GerbilLoopCaseSchemeBoundary, GerbilLoopCaseSerializationBoundary,
+    GerbilLoopCaseSmokeStatus, project_gerbil_loop_case_driver_rust_loop_receipt,
 };
 pub use marlin_gerbil_ir::GerbilWorkspaceContractFacts;
 pub use native_aot_cli::run_gerbil_native_aot_cli;

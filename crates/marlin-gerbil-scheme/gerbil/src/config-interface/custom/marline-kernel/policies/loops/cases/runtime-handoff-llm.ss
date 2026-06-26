@@ -17,11 +17,8 @@ package: config-interface/custom/marline-kernel/policies/loops/cases
                                          runtime-mode observability observes)
     check-name: 'marlin-runtime-handoff-real-llm
     profile-ref: 'marlin-runtime-handoff-profile
-    command-vector: '("marlin" "loop" "run"
-                      "--input" "../../../.cache/marlin/loop-cases/runtime-handoff-llm.loop.json"
-                      "--catalog" "custom/marline-kernel/policies/loops/cases/real-llm-catalog.toml"
-                      "--continuation-planner" "repeat-graph"
-                      "--no-store")
+    command-vector: '("marlin" "loop" "program" "run"
+                      "--input" "t/fixtures/config-interface/loop-cases/runtime-handoff-llm.loop-program-run.json")
     artifact-outputs: '(llm-transcript runtime-manifest typed-receipts)
     result-protocol: '(read :typed-receipt)
     runtime-mode: 'real-llm-opt-in

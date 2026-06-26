@@ -1,11 +1,12 @@
-bench_command = "cargo test -p marlin-agent-harness-types --test unit_test scenario_performance_baseline_receipt_is_stable"
-target_total_ms = 25
-max_total_ms = 45
-observed_total_ms = 25
-regression_budget_ms = 20
+harness = "libtest"
+test = "scenario_performance_baseline_receipt_is_stable"
+target_total = "25ms"
+max_total = "45ms"
+observed_total = "25ms"
+regression_budget = "20ms"
 memory_budget_bytes = 6291456
 observed_memory_bytes = 4194304
 target_rationale = "First-batch tuned scenario baseline: max_total_ms equals observed_total_ms plus the regression window; memory budget keeps 50 percent headroom over observed memory."
 
 [observed_timings]
-fixture_ms = 25
+fixture_ms = "25ms"

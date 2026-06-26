@@ -9,8 +9,9 @@ use std::{
 };
 
 use crate::{
-    GerbilDeckRuntimeModelRoutePolicyRequest, GerbilDeckRuntimeModelRouteSelectedPolicy,
-    GerbilDeckRuntimeModelRouteSelectionReceipt, GerbilDeckRuntimeSelectedPolicyKind,
+    GERBIL_DECK_RUNTIME_MODEL_ROUTE_SELECTION_SCHEMA_ID, GerbilDeckRuntimeModelRoutePolicyRequest,
+    GerbilDeckRuntimeModelRouteSelectedPolicy, GerbilDeckRuntimeModelRouteSelectionReceipt,
+    GerbilDeckRuntimeNativeBridgeReceipt, GerbilDeckRuntimeSelectedPolicyKind,
 };
 
 /// Current `Deck` runtime native ABI version accepted by Rust.
@@ -279,10 +280,14 @@ impl GerbilDeckRuntimeNativeModelRouteSelector {
             .transpose()?;
 
         Ok(GerbilDeckRuntimeModelRouteSelectionReceipt {
-            schema_id: "marlin-deck-runtime.model-route-selection.v1".to_string(),
+            schema_id: GERBIL_DECK_RUNTIME_MODEL_ROUTE_SELECTION_SCHEMA_ID.to_string(),
             command: request.command.clone(),
             agent_scope: request.agent_scope.clone(),
             matched: policy.is_some(),
+            native_bridge: GerbilDeckRuntimeNativeBridgeReceipt::ready(
+                GERBIL_DECK_RUNTIME_NATIVE_ABI_ID,
+                GERBIL_DECK_RUNTIME_NATIVE_ABI_VERSION,
+            ),
             policy,
         })
     }

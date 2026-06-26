@@ -302,11 +302,15 @@ fn observed_scenario_benchmark_root(rows: &[ExecutionShapeRow], observed_total_m
     fs::write(
         root.join("benchmark.toml"),
         observed_benchmark_toml(
-            &baseline.benchmark.bench_command,
-            baseline.benchmark.target_total_ms.as_u64(),
-            baseline.benchmark.max_total_ms.as_u64(),
+            &baseline.benchmark.harness,
+            baseline.benchmark.test.as_deref(),
+            baseline.benchmark.bench.as_deref(),
+            baseline.benchmark.case.as_deref(),
+            baseline.benchmark.snapshot.as_deref(),
+            &baseline.benchmark.target_total.to_string(),
+            &baseline.benchmark.max_total.to_string(),
             observed_total_ms,
-            baseline.benchmark.regression_budget_ms.as_u64(),
+            &baseline.benchmark.regression_budget.to_string(),
             baseline.benchmark.memory_budget_bytes.as_u64(),
             observed_memory_bytes(rows),
             &baseline.benchmark.target_rationale,
@@ -327,39 +331,63 @@ fn scenario_fixture_root() -> PathBuf {
 }
 
 fn observed_benchmark_toml(
-    bench_command: &str,
-    target_total_ms: u64,
-    max_total_ms: u64,
+    harness: &str,
+    test: Option<&str>,
+    bench: Option<&str>,
+    case: Option<&str>,
+    snapshot: Option<&str>,
+    target_total: &str,
+    max_total: &str,
     observed_total_ms: u64,
-    regression_budget_ms: u64,
+    regression_budget: &str,
     memory_budget_bytes: u64,
     observed_memory_bytes: u64,
     target_rationale: &str,
     rows: &[ExecutionShapeRow],
 ) -> String {
-    let mut observed_timings = format!("execution_shape_total_ms = {observed_total_ms}\n");
+    let benchmark_entry = benchmark_entry_toml(harness, test, bench, case, snapshot);
+    let mut observed_timings = format!("execution_shape_total_ms = \"{observed_total_ms}ms\"\n");
     for row in rows {
         observed_timings.push_str(&format!(
-            "execution_shape_{}_runs_ms = {}\n",
+            "execution_shape_{}_runs_ms = \"{}ms\"\n",
             row.run_count, row.elapsed_ms
         ));
     }
 
     format!(
-        r#"bench_command = "{}"
-target_total_ms = {target_total_ms}
-max_total_ms = {max_total_ms}
-observed_total_ms = {observed_total_ms}
-regression_budget_ms = {regression_budget_ms}
+        r#"{benchmark_entry}target_total = "{target_total}"
+max_total = "{max_total}"
+observed_total = "{observed_total_ms}ms"
+regression_budget = "{regression_budget}"
 memory_budget_bytes = {memory_budget_bytes}
 observed_memory_bytes = {observed_memory_bytes}
 target_rationale = "{}"
 
 [observed_timings]
 {observed_timings}"#,
-        toml_escape(bench_command),
         toml_escape(target_rationale)
     )
+}
+
+fn benchmark_entry_toml(
+    harness: &str,
+    test: Option<&str>,
+    bench: Option<&str>,
+    case: Option<&str>,
+    snapshot: Option<&str>,
+) -> String {
+    let mut entry = format!("harness = \"{}\"\n", toml_escape(harness));
+    push_optional_toml_string(&mut entry, "test", test);
+    push_optional_toml_string(&mut entry, "bench", bench);
+    push_optional_toml_string(&mut entry, "case", case);
+    push_optional_toml_string(&mut entry, "snapshot", snapshot);
+    entry
+}
+
+fn push_optional_toml_string(output: &mut String, key: &str, value: Option<&str>) {
+    if let Some(value) = value {
+        output.push_str(&format!("{key} = \"{}\"\n", toml_escape(value)));
+    }
 }
 
 fn toml_escape(value: &str) -> String {

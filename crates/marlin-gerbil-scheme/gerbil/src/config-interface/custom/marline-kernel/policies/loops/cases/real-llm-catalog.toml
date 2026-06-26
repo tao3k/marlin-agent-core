@@ -1,4 +1,9 @@
 [[executors]]
+executor = "debug.echo"
+adapter = "tool"
+runtime = "debug-echo"
+
+[[executors]]
 executor = "marlin.real-llm.runtime-handoff"
 adapter = "tool"
 runtime = "process-command"

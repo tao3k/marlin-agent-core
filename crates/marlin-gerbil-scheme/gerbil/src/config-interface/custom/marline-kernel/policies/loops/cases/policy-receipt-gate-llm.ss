@@ -19,7 +19,7 @@ package: config-interface/custom/marline-kernel/policies/loops/cases
     check-name: 'marlin-policy-receipt-gate-real-llm
     profile-ref: 'marlin-policy-receipt-gate-profile
     command-vector: '("marlin" "loop" "run"
-                      "--input" "../../../.cache/marlin/loop-cases/policy-receipt-gate-llm.loop.json"
+                      "--input" "t/fixtures/config-interface/loop-cases/policy-receipt-gate-llm.loop.json"
                       "--catalog" "custom/marline-kernel/policies/loops/cases/real-llm-catalog.toml"
                       "--continuation-planner" "repeat-graph"
                       "--no-store")
