@@ -1,6 +1,8 @@
 use super::{
-    ContinuationOp, LoopMechanismPolicyId, LoopProgramActionKind, LoopProgramEventKind,
-    LoopProgramExecutionDriver, LoopProgramExecutionRequest, LoopProgramExecutionStatus,
+    ContinuationOp, GerbilPooLoopProgramCompilerBoundary, GerbilPooLoopProgramCompilerOwner,
+    GerbilPooLoopProgramCompilerSerializationBoundary, LoopMechanismPolicyId,
+    LoopProgramActionKind, LoopProgramEventKind, LoopProgramExecutionDriver,
+    LoopProgramExecutionRequest, LoopProgramExecutionStatus,
     LoopProgramRuntimeHandoffExecutionReportStatus, LoopProgramRuntimeHandoffRouter,
     LoopProgramRuntimeHandoffRouterHandlers, decode_gerbil_poo_loop_program_compiler_receipt,
     failure_retry_poo_loop_program_compiler_payload, failure_retry_script, handled_by,
@@ -103,6 +105,18 @@ fn poo_loop_program_compiler_receipt_runs_policy_combination_matrix_through_kern
     assert_eq!(
         compiler_receipt.profile_id.as_str(),
         "policy-combination/memory-rewrite-checker"
+    );
+    assert_eq!(
+        compiler_receipt.compiler_owner,
+        GerbilPooLoopProgramCompilerOwner::GerbilPooFlow
+    );
+    assert_eq!(
+        compiler_receipt.scheme_boundary,
+        GerbilPooLoopProgramCompilerBoundary::SchemeTypesToRustTypes
+    );
+    assert_eq!(
+        compiler_receipt.serialization_boundary,
+        GerbilPooLoopProgramCompilerSerializationBoundary::RustOwnedCliTraceCrossProcess
     );
     assert_eq!(
         compiler_receipt.loop_program.program_id.as_str(),
