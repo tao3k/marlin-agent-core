@@ -72,9 +72,13 @@ agent-policy-routing-native-gate:
 agent-policy-routing-native-bench-build:
   direnv exec . cargo bench -p marlin-agent-policy-routing-native --features linked-native --bench linked_selector --no-run
 
+# Allocation-shape performance gate for AgentGraph policy-routing linked native selector.
+agent-policy-routing-native-performance-gate:
+  direnv exec . cargo bench --locked -p marlin-agent-policy-routing-native --features linked-native --bench allocation_shape
+
 # Full benchmark gate for AgentGraph policy-routing linked native selector.
 agent-policy-routing-native-bench:
   direnv exec . cargo bench -p marlin-agent-policy-routing-native --features linked-native --bench linked_selector
 
 # Local P0-P4 gate for AgentGraph native policy-routing and Gerbil module-system closure.
-agent-graph-native-routing-gate: gerbil-package-module-gate agent-policy-routing-native-gate agent-policy-routing-native-bench-build
+agent-graph-native-routing-gate: gerbil-package-module-gate agent-policy-routing-native-gate agent-policy-routing-native-bench-build agent-policy-routing-native-performance-gate

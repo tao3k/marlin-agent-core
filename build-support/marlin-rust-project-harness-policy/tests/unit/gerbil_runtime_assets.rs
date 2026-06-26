@@ -29,7 +29,9 @@ fn gerbil_runtime_asset_receipt_accepts_complete_marlin_runtime_package() {
             "src/marlin/request.ss",
             "src/marlin/adapter.ss",
             "src/marlin/deck-runtime.ss",
+            "src/marlin/_deck-runtime-native.ssi",
             "src/marlin/deck-runtime-native.ss",
+            "src/marlin/_agent-policy-routing-native.ssi",
             "src/marlin/deck-runtime-native-projection.ss",
             "src/marlin/graph-loop-continuation-native-projection.ss",
             "src/marlin/deck-runtime-script.ss",
@@ -43,7 +45,7 @@ fn gerbil_runtime_asset_receipt_accepts_complete_marlin_runtime_package() {
     assert_eq!(receipt.status, GerbilRuntimeAssetManifestStatus::Complete);
     assert!(receipt.is_success());
     assert!(receipt.has_runtime_assets());
-    assert_eq!(receipt.asset_count, 13);
+    assert_eq!(receipt.asset_count, 15);
     assert_eq!(receipt.package_manifest_count, 1);
     assert_eq!(receipt.scheme_source_count, 12);
     assert!(receipt.missing_required_assets.is_empty());
@@ -62,7 +64,9 @@ fn gerbil_runtime_asset_receipt_ignores_transient_runtime_cache_dirs() {
             "src/marlin/request.ss",
             "src/marlin/adapter.ss",
             "src/marlin/deck-runtime.ss",
+            "src/marlin/_deck-runtime-native.ssi",
             "src/marlin/deck-runtime-native.ss",
+            "src/marlin/_agent-policy-routing-native.ssi",
             "src/marlin/deck-runtime-native-projection.ss",
             "src/marlin/graph-loop-continuation-native-projection.ss",
             "src/marlin/deck-runtime-script.ss",
@@ -79,7 +83,7 @@ fn gerbil_runtime_asset_receipt_ignores_transient_runtime_cache_dirs() {
 
     assert_eq!(receipt.status, GerbilRuntimeAssetManifestStatus::Complete);
     assert!(receipt.is_success());
-    assert_eq!(receipt.asset_count, 12);
+    assert_eq!(receipt.asset_count, 14);
     assert_eq!(receipt.package_manifest_count, 1);
     assert_eq!(receipt.scheme_source_count, 11);
     assert!(
@@ -144,7 +148,17 @@ fn gerbil_runtime_asset_receipt_accepts_real_marlin_gerbil_scheme_package() {
     assert!(
         receipt
             .asset_paths
+            .contains(&"src/marlin/_deck-runtime-native.ssi".to_owned())
+    );
+    assert!(
+        receipt
+            .asset_paths
             .contains(&"src/marlin/deck-runtime-native.ss".to_owned())
+    );
+    assert!(
+        receipt
+            .asset_paths
+            .contains(&"src/marlin/_agent-policy-routing-native.ssi".to_owned())
     );
     assert!(
         receipt

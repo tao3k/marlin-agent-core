@@ -16,7 +16,9 @@
 (def source-root (path-expand "src" package-root))
 
 (def +marlin-special-source-files+
-  '("marlin/deck-runtime-native.ss"
+  '("marlin/_deck-runtime-native.ssi"
+    "marlin/deck-runtime-native.ss"
+    "marlin/_agent-policy-routing-native.ssi"
     "marlin/agent-policy-routing-native.ss"))
 
 (gslph-source-coverage

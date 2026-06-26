@@ -1,0 +1,11 @@
+bench_command = "cargo bench --locked -p marlin-agent-policy-routing-native --features linked-native --bench allocation_shape"
+target_total_ms = 50
+max_total_ms = 500
+observed_total_ms = 50
+regression_budget_ms = 100
+memory_budget_bytes = 67108864
+observed_memory_bytes = 1048576
+target_rationale = "The linked native allocation-shape benchmark warms the selector and checks epoch-backed request projection across five candidate counts without crossing the Rust scenario benchmark hard gate."
+
+[observed_timings]
+allocation_shape_ms = 50

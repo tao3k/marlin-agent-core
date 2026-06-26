@@ -55,15 +55,17 @@ pub use quality_findings::{
 };
 pub use quality_gate::{RustProjectHarnessGateReceipt, evaluate_performance_and_stability_gate};
 pub use scenario_benchmark::{
-    RustScenarioPerformanceCrateName, RustScenarioPerformanceDurationMs,
-    RustScenarioPerformanceMemoryBytes, RustScenarioPerformanceOptimizationFinding,
-    RustScenarioPerformanceOptimizationFindingKind, RustScenarioPerformanceOptimizationPriority,
-    RustScenarioPerformanceOptimizationReceipt, RustScenarioPerformanceOptimizationScore,
-    RustScenarioPerformanceOptimizationStatus, RustScenarioPerformanceScenarioId,
+    RustScenarioBenchmarkReceipt, RustScenarioBenchmarkStatus, RustScenarioPerformanceCrateName,
+    RustScenarioPerformanceDurationMs, RustScenarioPerformanceMemoryBytes,
+    RustScenarioPerformanceOptimizationFinding, RustScenarioPerformanceOptimizationFindingKind,
+    RustScenarioPerformanceOptimizationPriority, RustScenarioPerformanceOptimizationReceipt,
+    RustScenarioPerformanceOptimizationScore, RustScenarioPerformanceOptimizationStatus,
+    RustScenarioPerformanceScenarioId,
     assert_crate_scenario_performance_baseline_receipt_is_stable,
     assert_crate_scenario_performance_contract_gate_accepts_crate_scenarios,
     assert_crate_scenario_performance_first_batch_optimization_frontier_is_clear,
     crate_scenario_performance_optimization_receipt, optimization_receipt_from_benchmark_receipt,
+    render_rust_scenario_benchmark_snapshot, validate_rust_scenario_benchmark,
 };
 pub use verification_policy::{
     RustProjectHarnessVerificationOwnerProfileReceipt, RustProjectHarnessVerificationPolicyReceipt,

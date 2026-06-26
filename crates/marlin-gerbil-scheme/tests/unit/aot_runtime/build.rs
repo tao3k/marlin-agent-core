@@ -1,4 +1,7 @@
-use super::support::{write_empty_file, write_executable};
+use super::support::{
+    write_agent_policy_routing_native_aot_scms, write_deck_runtime_native_aot_scms,
+    write_empty_file, write_executable,
+};
 use marlin_agent_protocol::GraphNativeAbiReadinessStatus;
 use marlin_gerbil_scheme::{
     GerbilDeckRuntimeNativeAotBuildStatus, GerbilDeckRuntimeNativeAotConfig,
@@ -23,9 +26,8 @@ fn deck_runtime_native_aot_build_runs_link_unit_runner() {
 
     let gsc = gerbil_prefix.join("bin/gsc");
     let nm = root.path().join("toolchain/nm");
-    let compiled_runtime_scm = root.path().join(".gerbil/native/deck-runtime-native~0.scm");
+    let _compiled_runtime_scm = write_deck_runtime_native_aot_scms(root.path());
     let expected_prefix = gerbil_prefix.to_string_lossy();
-    write_empty_file(&compiled_runtime_scm);
     write_executable(
         &gsc,
         format!(
@@ -67,12 +69,11 @@ for arg in "$@"; do
 done
 dir=$(dirname "$source")
 base=$(basename "$source")
+stem=${{base%.*}}
 if [ "$mode" = "-link" ]; then
   : > "$dir/deck-runtime-native~0_.c"
-elif [ "$base" = "deck-runtime-native~0_.c" ]; then
-  : > "$dir/deck-runtime-native~0_.o"
 else
-  : > "$dir/deck-runtime-native~0.o"
+  : > "$dir/$stem.o"
 fi
 "#,
             expected_prefix = expected_prefix
@@ -162,6 +163,7 @@ printf '00000000 T marlin_deck_runtime_select_model_route\n'
         [
             GerbilDeckRuntimeNativeCargoDirectiveKind::RustcLinkArg,
             GerbilDeckRuntimeNativeCargoDirectiveKind::RustcLinkArg,
+            GerbilDeckRuntimeNativeCargoDirectiveKind::RustcLinkArg,
             GerbilDeckRuntimeNativeCargoDirectiveKind::RustcLinkSearch,
             GerbilDeckRuntimeNativeCargoDirectiveKind::RustcLinkLib
         ]
@@ -183,10 +185,7 @@ fn agent_policy_routing_native_aot_build_projects_graph_readiness_receipt() {
         .expect("create root");
     let gsc = root.path().join("toolchain/gsc");
     let nm = root.path().join("toolchain/nm");
-    let compiled_runtime_scm = root
-        .path()
-        .join(".gerbil/native/agent-policy-routing-native~0.scm");
-    write_empty_file(&compiled_runtime_scm);
+    let _compiled_runtime_scm = write_agent_policy_routing_native_aot_scms(root.path());
     write_executable(
         &gsc,
         r#"#!/bin/sh
@@ -211,12 +210,11 @@ for arg in "$@"; do
 done
 dir=$(dirname "$source")
 base=$(basename "$source")
+stem=${base%.*}
 if [ "$mode" = "-link" ]; then
   : > "$dir/agent-policy-routing-native~0_.c"
-elif [ "$base" = "agent-policy-routing-native~0_.c" ]; then
-  : > "$dir/agent-policy-routing-native~0_.o"
 else
-  : > "$dir/agent-policy-routing-native~0.o"
+  : > "$dir/$stem.o"
 fi
 "#,
     );
@@ -259,8 +257,7 @@ fn deck_runtime_native_aot_build_rejects_missing_link_source() {
         .tempdir()
         .expect("create root");
     let gsc = root.path().join("toolchain/gsc");
-    let compiled_runtime_scm = root.path().join(".gerbil/native/deck-runtime-native~0.scm");
-    write_empty_file(&compiled_runtime_scm);
+    let _compiled_runtime_scm = write_deck_runtime_native_aot_scms(root.path());
     write_executable(
         &gsc,
         r#"#!/bin/sh
@@ -284,8 +281,10 @@ for arg in "$@"; do
   fi
 done
 dir=$(dirname "$source")
+base=$(basename "$source")
+stem=${base%.*}
 if [ "$mode" = "-obj" ]; then
-  : > "$dir/deck-runtime-native~0.o"
+  : > "$dir/$stem.o"
 fi
 "#,
     );
@@ -317,8 +316,7 @@ fn deck_runtime_native_aot_build_rejects_missing_link_object() {
         .tempdir()
         .expect("create root");
     let gsc = root.path().join("toolchain/gsc");
-    let compiled_runtime_scm = root.path().join(".gerbil/native/deck-runtime-native~0.scm");
-    write_empty_file(&compiled_runtime_scm);
+    let _compiled_runtime_scm = write_deck_runtime_native_aot_scms(root.path());
     write_executable(
         &gsc,
         r#"#!/bin/sh
@@ -343,10 +341,11 @@ for arg in "$@"; do
 done
 dir=$(dirname "$source")
 base=$(basename "$source")
+stem=${base%.*}
 if [ "$mode" = "-link" ]; then
   : > "$dir/deck-runtime-native~0_.c"
-elif [ "$base" != "deck-runtime-native~0_.c" ]; then
-  : > "$dir/deck-runtime-native~0.o"
+elif [ "${base##*.}" != "c" ]; then
+  : > "$dir/$stem.o"
 fi
 "#,
     );
@@ -378,8 +377,7 @@ fn deck_runtime_native_aot_build_rejects_object_missing_required_symbols() {
         .expect("create root");
     let gsc = root.path().join("toolchain/gsc");
     let nm = root.path().join("toolchain/nm");
-    let compiled_runtime_scm = root.path().join(".gerbil/native/deck-runtime-native~0.scm");
-    write_empty_file(&compiled_runtime_scm);
+    let _compiled_runtime_scm = write_deck_runtime_native_aot_scms(root.path());
     write_executable(
         &gsc,
         r#"#!/bin/sh
@@ -404,12 +402,11 @@ for arg in "$@"; do
 done
 dir=$(dirname "$source")
 base=$(basename "$source")
+stem=${base%.*}
 if [ "$mode" = "-link" ]; then
   : > "$dir/deck-runtime-native~0_.c"
-elif [ "$base" = "deck-runtime-native~0_.c" ]; then
-  : > "$dir/deck-runtime-native~0_.o"
 else
-  : > "$dir/deck-runtime-native~0.o"
+  : > "$dir/$stem.o"
 fi
 "#,
     );

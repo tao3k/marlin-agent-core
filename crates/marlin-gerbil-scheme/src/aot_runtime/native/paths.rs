@@ -4,8 +4,11 @@ use std::path::{Path, PathBuf};
 
 pub(super) const GERBIL_DECK_RUNTIME_NATIVE_AOT_OUTPUT_DIR: &str = ".gerbil/native";
 pub(super) const GERBIL_DECK_RUNTIME_NATIVE_ARTIFACT_STEM: &str = "deck-runtime-native~0";
+pub(super) const GERBIL_DECK_RUNTIME_NATIVE_BINDING_ARTIFACT_STEM: &str = "_deck-runtime-native~0";
 pub(super) const GERBIL_AGENT_POLICY_ROUTING_NATIVE_ARTIFACT_STEM: &str =
     "agent-policy-routing-native~0";
+pub(super) const GERBIL_AGENT_POLICY_ROUTING_NATIVE_BINDING_ARTIFACT_STEM: &str =
+    "_agent-policy-routing-native~0";
 pub(super) const GERBIL_DECK_RUNTIME_NATIVE_SELECT_SYMBOL: &str =
     "marlin_deck_runtime_select_model_route";
 pub(super) const GERBIL_DECK_RUNTIME_NATIVE_INITIALIZE_SYMBOL: &str =

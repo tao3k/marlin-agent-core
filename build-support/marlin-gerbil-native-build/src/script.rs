@@ -154,7 +154,9 @@ fn emit_native_link_directives(target: NativeLinkTarget) {
 struct NativeLinkTarget {
     profile: GerbilDeckRuntimeNativeAotProfile,
     source_path: &'static str,
+    dependency_source_paths: &'static [&'static str],
     staged_scm_file: &'static str,
+    staged_dependency_scm_files: &'static [&'static str],
     label: &'static str,
     link_root_dir: &'static str,
     archive_dir: &'static str,
@@ -169,7 +171,9 @@ impl NativeLinkTarget {
         Self {
             profile: GerbilDeckRuntimeNativeAotProfile::DeckRuntime,
             source_path: "src/marlin/deck-runtime-native.ss",
+            dependency_source_paths: &["src/marlin/_deck-runtime-native.ssi"],
             staged_scm_file: "deck-runtime-native~0.scm",
+            staged_dependency_scm_files: &["_deck-runtime-native~0.scm"],
             label: "Deck runtime",
             link_root_dir: "deck-runtime-native-link-root",
             archive_dir: "deck-runtime-native-link-archive",
@@ -184,7 +188,9 @@ impl NativeLinkTarget {
         Self {
             profile: GerbilDeckRuntimeNativeAotProfile::AgentPolicyRouting,
             source_path: "src/marlin/agent-policy-routing-native.ss",
+            dependency_source_paths: &["src/marlin/_agent-policy-routing-native.ssi"],
             staged_scm_file: "agent-policy-routing-native~0.scm",
+            staged_dependency_scm_files: &["_agent-policy-routing-native~0.scm"],
             label: "AgentGraph policy-routing",
             link_root_dir: "agent-policy-routing-native-link-root",
             archive_dir: "agent-policy-routing-native-link-archive",
@@ -204,31 +210,56 @@ fn compile_native_aot_artifact(
     let gerbil_pkg = gerbil_pkg_dir.join("gerbil.pkg");
     let source_path = gerbil_pkg_dir.join(target.source_path);
     println!("cargo:rerun-if-changed={}", source_path.display());
+    for dependency_source_path in target.dependency_source_paths {
+        println!(
+            "cargo:rerun-if-changed={}",
+            gerbil_pkg_dir.join(dependency_source_path).display()
+        );
+    }
     println!("cargo:rerun-if-changed={}", gerbil_pkg.display());
 
-    let output = Command::new(default_gerbil_gxpkg_program())
-        .current_dir(&gerbil_pkg_dir)
-        .arg("env")
-        .arg(default_gerbil_gxc_program())
-        .arg("-target")
-        .arg("C")
-        .arg("-s")
-        .arg("-S")
-        .arg("-O")
-        .arg(target.source_path)
-        .output();
-
-    match output {
-        Ok(output) => {
-            if !output.status.success() {
-                return GerbilDeckRuntimeNativeAotCommandReceipt {
-                    status_code: output.status.code(),
-                    stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
-                    stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
-                };
-            }
-            stage_local_builder_compiled_scm(target, root, &gerbil_pkg, &output)
+    for dependency_source_path in target.dependency_source_paths {
+        let receipt = run_native_aot_compile(&gerbil_pkg_dir, dependency_source_path);
+        if receipt.status_code != Some(0) {
+            return receipt;
         }
+    }
+
+    let receipt = run_native_aot_compile(&gerbil_pkg_dir, target.source_path);
+    if receipt.status_code != Some(0) {
+        return receipt;
+    }
+    stage_local_builder_compiled_scms(target, root, &gerbil_pkg, &receipt)
+}
+
+fn run_native_aot_compile(
+    gerbil_pkg_dir: &Path,
+    source_path: &str,
+) -> GerbilDeckRuntimeNativeAotCommandReceipt {
+    command_receipt_from_output(
+        Command::new(default_gerbil_gxpkg_program())
+            .current_dir(gerbil_pkg_dir)
+            .arg("env")
+            .arg(default_gerbil_gxc_program())
+            .arg("-target")
+            .arg("C")
+            .arg("-s")
+            .arg("-S")
+            .arg("-O")
+            .arg(source_path)
+            .output(),
+    )
+}
+
+fn command_receipt_from_output(
+    output: std::io::Result<std::process::Output>,
+) -> GerbilDeckRuntimeNativeAotCommandReceipt {
+    match output {
+        Ok(output) => GerbilDeckRuntimeNativeAotCommandReceipt {
+            status_code: output.status.code(),
+            stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
+            stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+        },
         Err(error) => GerbilDeckRuntimeNativeAotCommandReceipt {
             status_code: None,
             stdout: String::new(),
@@ -237,43 +268,57 @@ fn compile_native_aot_artifact(
     }
 }
 
-fn stage_local_builder_compiled_scm(
+fn stage_local_builder_compiled_scms(
     target: NativeLinkTarget,
     root: &Path,
     gerbil_pkg: &Path,
-    output: &std::process::Output,
+    compile_receipt: &GerbilDeckRuntimeNativeAotCommandReceipt,
 ) -> GerbilDeckRuntimeNativeAotCommandReceipt {
-    let builder_scm = match find_local_builder_artifact(gerbil_pkg, target.staged_scm_file) {
-        Ok(path) => path,
-        Err(error) => {
-            return GerbilDeckRuntimeNativeAotCommandReceipt {
-                status_code: Some(66),
-                stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
-                stderr: format!(
-                    "native AOT compile succeeded but Gerbil local builder artifact is unavailable: {error}"
-                ),
-            };
-        }
-    };
     let stage_dir = root.join(".gerbil/native");
-    let staged_scm = stage_dir.join(target.staged_scm_file);
-    if let Err(error) =
-        fs::create_dir_all(&stage_dir).and_then(|_| fs::copy(&builder_scm, &staged_scm).map(|_| ()))
-    {
+    if let Err(error) = fs::create_dir_all(&stage_dir) {
         return GerbilDeckRuntimeNativeAotCommandReceipt {
             status_code: Some(67),
-            stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
+            stdout: compile_receipt.stdout.clone(),
             stderr: format!(
-                "failed to stage Gerbil local builder artifact from {} to {}: {error}",
-                builder_scm.display(),
-                staged_scm.display()
+                "failed to create native AOT staging directory {}: {error}",
+                stage_dir.display()
             ),
         };
     }
+
+    for staged_scm_file in std::iter::once(target.staged_scm_file)
+        .chain(target.staged_dependency_scm_files.iter().copied())
+    {
+        let builder_scm = match find_local_builder_artifact(gerbil_pkg, staged_scm_file) {
+            Ok(path) => path,
+            Err(error) => {
+                return GerbilDeckRuntimeNativeAotCommandReceipt {
+                    status_code: Some(66),
+                    stdout: compile_receipt.stdout.clone(),
+                    stderr: format!(
+                        "native AOT compile succeeded but Gerbil local builder artifact is unavailable: {error}"
+                    ),
+                };
+            }
+        };
+        let staged_scm = stage_dir.join(staged_scm_file);
+        if let Err(error) = fs::copy(&builder_scm, &staged_scm) {
+            return GerbilDeckRuntimeNativeAotCommandReceipt {
+                status_code: Some(67),
+                stdout: compile_receipt.stdout.clone(),
+                stderr: format!(
+                    "failed to stage Gerbil local builder artifact from {} to {}: {error}",
+                    builder_scm.display(),
+                    staged_scm.display()
+                ),
+            };
+        }
+    }
+
     GerbilDeckRuntimeNativeAotCommandReceipt {
         status_code: Some(0),
-        stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
-        stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+        stdout: compile_receipt.stdout.clone(),
+        stderr: compile_receipt.stderr.clone(),
     }
 }
 

@@ -47,7 +47,9 @@ pub const GERBIL_RUNTIME_SOURCE_ROOTS: &[&str] = &["src"];
 pub const GERBIL_RUNTIME_COVERAGE_ROOTS: &[&str] = &["src"];
 /// Native sources compiled through dedicated native-link lanes, not package make.
 pub const GERBIL_RUNTIME_SPECIAL_SOURCE_FILES: &[&str] = &[
+    "marlin/_deck-runtime-native.ssi",
     "marlin/deck-runtime-native.ss",
+    "marlin/_agent-policy-routing-native.ssi",
     "marlin/agent-policy-routing-native.ss",
 ];
 /// Sources excluded from the generic package make spec.

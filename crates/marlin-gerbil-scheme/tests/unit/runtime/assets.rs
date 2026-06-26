@@ -26,7 +26,12 @@ fn gerbil_runtime_assets_expose_loadpath_contract() {
     let compiled_policy_source = runtime_asset_source("src/marlin/deck-runtime-compiled-policy.ss");
     let compiled_policy_sample_source =
         runtime_asset_source("src/marlin/deck-runtime-compiled-policy-sample.ss");
+    let native_binding_source = runtime_asset_source("src/marlin/_deck-runtime-native.ssi");
     let native_source = runtime_asset_source("src/marlin/deck-runtime-native.ss");
+    let agent_policy_routing_native_binding_source =
+        runtime_asset_source("src/marlin/_agent-policy-routing-native.ssi");
+    let agent_policy_routing_native_source =
+        runtime_asset_source("src/marlin/agent-policy-routing-native.ss");
     let native_projection_source =
         runtime_asset_source("src/marlin/deck-runtime-native-projection.ss");
     let continuation_projection_source =
@@ -200,11 +205,32 @@ fn gerbil_runtime_assets_expose_loadpath_contract() {
             .contains("marlin-deck-runtime-resident-strategy-execute")
     );
     assert!(!strategy_asset.source.contains("selection-json"));
+    assert!(native_binding_source.contains("begin-ffi"));
+    assert!(native_binding_source.contains("define-c-lambda"));
+    assert!(native_binding_source.contains("MarlinDeckRuntimeModelRouteSelection"));
+    assert!(!native_binding_source.contains("begin-foreign"));
+    assert!(!native_binding_source.contains("(c-define "));
+    assert!(native_source.contains("./_deck-runtime-native"));
     assert!(native_source.contains("c-define"));
-    assert!(native_source.contains("begin-ffi"));
     assert!(native_source.contains("begin-foreign"));
+    assert!(!native_source.contains("begin-ffi"));
+    assert!(!native_source.contains("define-c-lambda"));
     assert!(native_source.contains("marlin_deck_runtime_select_model_route"));
-    assert!(native_source.contains("MarlinDeckRuntimeModelRouteSelection"));
+    assert!(agent_policy_routing_native_binding_source.contains("begin-ffi"));
+    assert!(agent_policy_routing_native_binding_source.contains("define-c-lambda"));
+    assert!(
+        agent_policy_routing_native_binding_source.contains("MarlinAgentPolicyRoutingProjection")
+    );
+    assert!(!agent_policy_routing_native_binding_source.contains("begin-foreign"));
+    assert!(!agent_policy_routing_native_binding_source.contains("(c-define "));
+    assert!(agent_policy_routing_native_source.contains("./_agent-policy-routing-native"));
+    assert!(agent_policy_routing_native_source.contains("c-define"));
+    assert!(agent_policy_routing_native_source.contains("begin-foreign"));
+    assert!(!agent_policy_routing_native_source.contains("begin-ffi"));
+    assert!(!agent_policy_routing_native_source.contains("define-c-lambda"));
+    assert!(
+        agent_policy_routing_native_source.contains("marlin_agent_policy_routing_select_edges")
+    );
     assert!(!native_source.contains("MarlinDeckRuntimeOwnedBytes"));
     assert!(!native_source.contains("selection-json"));
     assert!(native_projection_source.contains("marlin-deck-runtime-native-projection-abi-id"));
@@ -415,5 +441,7 @@ fn collect_gerbil_runtime_asset_paths(root: &Path, dir: &Path, paths: &mut Vec<S
 
 fn is_gerbil_runtime_asset(path: &Path) -> bool {
     path.file_name().is_some_and(|name| name == "gerbil.pkg")
-        || path.extension().is_some_and(|extension| extension == "ss")
+        || path
+            .extension()
+            .is_some_and(|extension| matches!(extension.to_str(), Some("ss" | "ssi")))
 }

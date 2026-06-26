@@ -2,10 +2,12 @@
 
 use std::path::{Path, PathBuf};
 
-use rust_lang_project_harness::{
+pub use rust_lang_project_harness::{
     RustScenarioBenchmarkReceipt, RustScenarioBenchmarkStatus,
-    assert_rule_fixture_scenario_benchmarks, render_rust_scenario_benchmark_snapshot,
-    validate_required_rust_scenario_benchmarks, validate_rust_scenario_benchmark,
+    render_rust_scenario_benchmark_snapshot, validate_rust_scenario_benchmark,
+};
+use rust_lang_project_harness::{
+    assert_rule_fixture_scenario_benchmarks, validate_required_rust_scenario_benchmarks,
 };
 use serde::Serialize;
 

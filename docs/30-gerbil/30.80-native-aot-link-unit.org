@@ -37,17 +37,26 @@ but it also drags Gambit base globals into the link object and collides with
 =-D___LIBRARY= when compiling the generated link C source.
 
 The Rust static-link plan must consume the full module object set plus the
-generated link object. The current Deck and AgentGraph profiles each produce one
-module object, but the plan is allowed to carry dependency module objects when a
-future package-owned profile stages more than one generated Scheme artifact.
+generated link object. The current Deck and AgentGraph profiles each produce a
+low-level binding dependency object and a wrapper module object. Future
+package-owned profiles may stage additional dependency module objects, but they
+must remain explicit in the typed plan.
 
-- module object: =deck-runtime-native~0.o=
+- Deck binding dependency object: =_deck-runtime-native~0.o=
 
-- link object: =deck-runtime-native~0_.o=
+- Deck wrapper module object: =deck-runtime-native~0.o=
 
-Linking only the primary module object is incomplete. It misses the Gambit
-link-unit symbols that initialize the generated module set, and it would also
-miss any package-owned dependency module objects declared by a profile.
+- Deck link object: =deck-runtime-native~0_.o=
+
+- AgentGraph binding dependency object: =_agent-policy-routing-native~0.o=
+
+- AgentGraph wrapper module object: =agent-policy-routing-native~0.o=
+
+- AgentGraph link object: =agent-policy-routing-native~0_.o=
+
+Linking only the wrapper module object is incomplete. It misses the Gambit
+link-unit symbols that initialize the generated module set, and it misses the
+package-owned binding dependency module object declared by the profile.
 
 The required native ABI exports are:
 
@@ -67,6 +76,34 @@ The initializer is part of the hot ABI contract. It calls Gambit =___setup= with
 =___LNK_deck_2d_runtime_2d_native_7e_0__=. Rust linked consumers must initialize
 the Gambit runtime before calling the selector. Omitting this produces a
 linkable binary that crashes or fails at the first selector call.
+
+** Native Binding Module Split
+
+Gerbil native ABI modules are split into two layers:
+
+- =_*native.ssi= files are low-level binding modules. They own =begin-ffi=, C
+  declarations, accessor bindings, and =define-c-lambda= imports.
+
+- =*native.ss= files are wrapper modules. They include the matching low-level
+  binding interface for Gambit C type visibility, then own Scheme projection
+  logic plus the exported =begin-foreign= / =c-define= entrypoints.
+
+This follows the =gerbil-mysql= style where SSI binding files isolate foreign
+declarations from higher-level Scheme wrappers. It also keeps the native ABI
+boundary aligned with this repository's protocol rule: Gerbil Scheme passes
+Scheme values across the native ABI projection; Rust owns typed protocols,
+headers, receipts, configuration envelopes, and any JSON or cross-process
+serialization. Scheme native ABI modules must not parse Rust protocol JSON,
+manufacture Rust handlers, or duplicate Rust-owned runtime configuration.
+
+The AOT build script explicitly compiles the low-level binding SSI and the
+wrapper SS, and the link plan must place the low-level binding SCM before the
+wrapper SCM. For the Deck profile, =_deck-runtime-native~0.scm= precedes
+=deck-runtime-native~0.scm= in =gsc -link=. For the AgentGraph policy-routing
+profile, =_agent-policy-routing-native~0.scm= precedes
+=agent-policy-routing-native~0.scm=. Runtime asset checks and AOT plan tests
+should fail if these files are merged back together or if the dependency object
+drops out of =module_objects=.
 
 ** Cargo Boundary
 
@@ -382,6 +419,36 @@ Gambit runtime library, the runner injects =GERBIL_HOME= and =GAMBOPT= for the
 compiler subprocesses. This avoids repairing a source-built Gerbil tree just to
 make Gambit resolve =~~bin=, =~~lib=, and =~~include=.
 
+** Linked Native Performance Gate
+The hard linked-native gate is a Rust-owned Scenario benchmark, not a shell
+parser. =marlin-agent-policy-routing-native= runs its =allocation_shape= bench
+with =--features linked-native=, validates the observed result through
+=marlin-rust-project-harness-policy=, and writes a normalized Scenario snapshot
+under =target/marlin/scenarios=. The downstream crate does not depend directly
+on =rust-lang-project-harness=; build-support owns that boundary for all Rust
+project harness policy APIs.
+
+The stable gate is:
+#+begin_src sh
+direnv exec . cargo bench --locked -p marlin-agent-policy-routing-native --features linked-native --bench allocation_shape
+#+end_src
+
+The committed Scenario fixture lives at
+=crates/marlin-agent-policy-routing-native/tests/unit/scenarios/linked_native_allocation_shape=.
+It fails when the epoch/native-ABI backed path allocates more objects or bytes
+than the full marshal path for request marshalling, selector execution, or
+end-to-end routing. It also requires the 1024-candidate stress row so the gate
+covers the large policy-set case, not only the one-policy smoke path.
+
+The local aggregate gate includes this performance gate:
+#+begin_src sh
+just agent-graph-native-routing-gate
+#+end_src
+
+The GitHub =Linked native AOT gate= workflow runs the same Rust bench and
+uploads both =target/criterion= and =target/marlin/scenarios= as benchmark
+artifacts. This keeps the hard failure semantics structural while preserving
+Criterion timing evidence for follow-up optimization work.
 ** Verification
 
 Current native AOT verification commands:

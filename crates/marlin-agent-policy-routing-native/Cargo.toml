@@ -23,8 +23,9 @@ marlin-gerbil-scheme.workspace = true
 [dev-dependencies]
 criterion.workspace = true
 marlin-agent-graph.workspace = true
-
 marlin-rust-project-harness-policy.workspace = true
+tempfile.workspace = true
+
 [build-dependencies]
 marlin-gerbil-native-build.workspace = true
 marlin-rust-project-harness-policy.workspace = true

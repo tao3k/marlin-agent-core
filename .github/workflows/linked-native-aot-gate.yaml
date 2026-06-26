@@ -136,6 +136,10 @@ jobs:
         run: |
           cargo bench --locked -p marlin-deck-runtime-native --features linked-native --bench linked_selector --no-run
           cargo bench --locked -p marlin-agent-policy-routing-native --features linked-native --bench linked_selector --no-run
+          cargo bench --locked -p marlin-agent-policy-routing-native --features linked-native --bench allocation_shape --no-run
+
+      - name: Run linked native allocation scenario performance gate
+        run: cargo bench --locked -p marlin-agent-policy-routing-native --features linked-native --bench allocation_shape
 
       - name: Benchmark linked selector
         run: |
@@ -147,5 +151,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: linked-native-criterion-${{ runner.os }}
-          path: target/criterion
+          path: |
+            target/criterion
+            target/marlin/scenarios
           if-no-files-found: warn

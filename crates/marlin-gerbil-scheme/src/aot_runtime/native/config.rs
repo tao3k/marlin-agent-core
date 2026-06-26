@@ -10,9 +10,11 @@ use crate::{
 
 use super::paths::{
     GERBIL_AGENT_POLICY_ROUTING_NATIVE_ARTIFACT_STEM,
+    GERBIL_AGENT_POLICY_ROUTING_NATIVE_BINDING_ARTIFACT_STEM,
     GERBIL_AGENT_POLICY_ROUTING_NATIVE_INITIALIZE_SYMBOL,
     GERBIL_AGENT_POLICY_ROUTING_NATIVE_SELECT_SYMBOL, GERBIL_DECK_RUNTIME_NATIVE_ARTIFACT_STEM,
-    GERBIL_DECK_RUNTIME_NATIVE_INITIALIZE_SYMBOL, GERBIL_DECK_RUNTIME_NATIVE_SELECT_SYMBOL,
+    GERBIL_DECK_RUNTIME_NATIVE_BINDING_ARTIFACT_STEM, GERBIL_DECK_RUNTIME_NATIVE_INITIALIZE_SYMBOL,
+    GERBIL_DECK_RUNTIME_NATIVE_SELECT_SYMBOL,
 };
 
 /// C compiler program passed through Gambit `gsc -cc`.
@@ -88,8 +90,8 @@ impl GerbilDeckRuntimeNativeAotProfile {
 
     pub(super) const fn dependency_artifact_stems(self) -> &'static [&'static str] {
         match self {
-            Self::DeckRuntime => &[],
-            Self::AgentPolicyRouting => &[],
+            Self::DeckRuntime => &[GERBIL_DECK_RUNTIME_NATIVE_BINDING_ARTIFACT_STEM],
+            Self::AgentPolicyRouting => &[GERBIL_AGENT_POLICY_ROUTING_NATIVE_BINDING_ARTIFACT_STEM],
         }
     }
 

@@ -2504,6 +2504,7 @@ dependencies = [
  "marlin-gerbil-native-build",
  "marlin-gerbil-scheme",
  "marlin-rust-project-harness-policy",
+ "tempfile",
 ]
 
 [[package]]

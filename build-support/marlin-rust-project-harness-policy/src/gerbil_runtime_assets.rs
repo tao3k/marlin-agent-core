@@ -15,7 +15,9 @@ const REQUIRED_GERBIL_RUNTIME_ASSETS: &[&str] = &[
     "src/marlin/request.ss",
     "src/marlin/adapter.ss",
     "src/marlin/deck-runtime.ss",
+    "src/marlin/_deck-runtime-native.ssi",
     "src/marlin/deck-runtime-native.ss",
+    "src/marlin/_agent-policy-routing-native.ssi",
     "src/marlin/deck-runtime-native-projection.ss",
     "src/marlin/graph-loop-continuation-native-projection.ss",
     "src/marlin/deck-runtime-script.ss",
@@ -204,7 +206,9 @@ fn is_transient_gerbil_runtime_asset_dir(path: &Path) -> bool {
 
 fn is_gerbil_runtime_asset(path: &Path) -> bool {
     path.file_name().is_some_and(|name| name == "gerbil.pkg")
-        || path.extension().is_some_and(|extension| extension == "ss")
+        || path
+            .extension()
+            .is_some_and(|extension| matches!(extension.to_str(), Some("ss" | "ssi")))
 }
 
 fn escape_rust_string(value: &str) -> String {

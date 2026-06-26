@@ -1,10 +1,55 @@
-use super::support::write_empty_file;
+use super::support::{
+    write_agent_policy_routing_native_aot_dependency_scms,
+    write_deck_runtime_native_aot_dependency_scms, write_empty_file,
+};
 use marlin_gerbil_scheme::{
     GERBIL_AGENT_POLICY_ROUTING_NATIVE_ABI_ID, GERBIL_AGENT_POLICY_ROUTING_NATIVE_ABI_VERSION,
     GerbilDeckRuntimeNativeAotConfig, GerbilDeckRuntimeNativeAotProfile,
     GerbilDeckRuntimeNativeAotStatus, GerbilSchemeNativeAbiId,
 };
 use tempfile::Builder;
+
+fn assert_single_binding_dependency(
+    plan: &marlin_gerbil_scheme::GerbilDeckRuntimeNativeAotPlan,
+    expected_dependency_scm: std::path::PathBuf,
+    expected_runtime_object: std::path::PathBuf,
+) {
+    let expected_dependency_object = expected_dependency_scm.with_extension("o");
+
+    assert_eq!(
+        plan.compiled_runtime_dependency_scms.as_slice(),
+        std::slice::from_ref(&expected_dependency_scm)
+    );
+    assert_eq!(
+        plan.dependency_objects.as_slice(),
+        std::slice::from_ref(&expected_dependency_object)
+    );
+    assert_eq!(
+        plan.module_objects,
+        vec![expected_dependency_object, expected_runtime_object]
+    );
+    assert_eq!(plan.gsc_compile_dependency_objects.len(), 1);
+    assert_eq!(
+        plan.gsc_compile_dependency_objects[0].args.last(),
+        Some(&expected_dependency_scm.to_string_lossy().into_owned())
+    );
+
+    let link_source_args = &plan.gsc_generate_link_source.args;
+    let dependency_arg = expected_dependency_scm.to_string_lossy().into_owned();
+    let runtime_arg = plan.compiled_runtime_scm.to_string_lossy().into_owned();
+    let dependency_position = link_source_args
+        .iter()
+        .position(|arg| arg == &dependency_arg)
+        .expect("dependency scm passed to gsc -link");
+    let runtime_position = link_source_args
+        .iter()
+        .position(|arg| arg == &runtime_arg)
+        .expect("runtime scm passed to gsc -link");
+    assert!(
+        dependency_position < runtime_position,
+        "binding dependency scm must precede wrapper scm in gsc -link"
+    );
+}
 
 #[test]
 fn deck_runtime_native_aot_plan_records_link_unit_compile() {
@@ -16,6 +61,7 @@ fn deck_runtime_native_aot_plan_records_link_unit_compile() {
     let gsc = root.path().join("toolchain/gsc");
     let header = root.path().join("include/marlin_deck_runtime_native.h");
     write_empty_file(&compiled_runtime_scm);
+    write_deck_runtime_native_aot_dependency_scms(root.path());
     write_empty_file(&gsc);
     write_empty_file(&header);
 
@@ -36,6 +82,12 @@ fn deck_runtime_native_aot_plan_records_link_unit_compile() {
     assert_eq!(
         plan.object,
         root.path().join("compiled/deck-runtime-native~0.o")
+    );
+    assert_single_binding_dependency(
+        &plan,
+        root.path()
+            .join(".gerbil/native/_deck-runtime-native~0.scm"),
+        root.path().join("compiled/deck-runtime-native~0.o"),
     );
     assert_eq!(
         plan.link_c_source,
@@ -99,6 +151,7 @@ fn deck_runtime_native_aot_plan_records_link_unit_compile() {
     assert_eq!(
         plan.audit_symbols.args,
         [
+            plan.dependency_objects[0].to_string_lossy().into_owned(),
             plan.object.to_string_lossy().into_owned(),
             plan.link_object.to_string_lossy().into_owned()
         ]
@@ -120,6 +173,7 @@ fn agent_policy_routing_native_aot_plan_records_profile_symbols() {
         .path()
         .join("include/marlin_agent_policy_routing_native.h");
     write_empty_file(&compiled_runtime_scm);
+    write_agent_policy_routing_native_aot_dependency_scms(root.path());
     write_empty_file(&gsc);
     write_empty_file(&header);
 
@@ -141,6 +195,12 @@ fn agent_policy_routing_native_aot_plan_records_profile_symbols() {
     assert_eq!(
         plan.object,
         root.path().join("compiled/agent-policy-routing-native~0.o")
+    );
+    assert_single_binding_dependency(
+        &plan,
+        root.path()
+            .join(".gerbil/native/_agent-policy-routing-native~0.scm"),
+        root.path().join("compiled/agent-policy-routing-native~0.o"),
     );
     assert_eq!(
         plan.link_c_source,

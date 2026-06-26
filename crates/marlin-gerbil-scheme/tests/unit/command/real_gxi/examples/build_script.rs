@@ -206,6 +206,13 @@ fn assert_scheme_to_rust_bridge_smoke(stdout: &str, iterations: u64) {
 }
 
 fn run_gerbil_compile_native_aot(gxpkg: &Path, gxc: &Path, root: &Path) -> PathBuf {
+    compile_gerbil_native_aot_source(
+        gxpkg,
+        gxc,
+        root,
+        "src/marlin/_deck-runtime-native.ssi",
+        "native AOT runtime binding artifact",
+    );
     let output = Command::new(gxpkg)
         .current_dir(root)
         .arg("env")
@@ -227,8 +234,56 @@ fn run_gerbil_compile_native_aot(gxpkg: &Path, gxc: &Path, root: &Path) -> PathB
     );
 
     let gerbil_pkg = root.join("gerbil.pkg");
-    let builder_scm = compiled_scheme_candidate(&gerbil_pkg, "deck-runtime-native~0.scm");
-    let compiled_runtime_scm = root.join(".gerbil/native/deck-runtime-native~0.scm");
+    stage_compiled_scheme(
+        root,
+        &gerbil_pkg,
+        "_deck-runtime-native~0.scm",
+        ".gerbil/native/_deck-runtime-native~0.scm",
+    );
+    stage_compiled_scheme(
+        root,
+        &gerbil_pkg,
+        "deck-runtime-native~0.scm",
+        ".gerbil/native/deck-runtime-native~0.scm",
+    )
+}
+
+fn compile_gerbil_native_aot_source(
+    gxpkg: &Path,
+    gxc: &Path,
+    root: &Path,
+    source: &str,
+    label: &str,
+) {
+    let output = Command::new(gxpkg)
+        .current_dir(root)
+        .arg("env")
+        .arg(gxc)
+        .arg("-target")
+        .arg("C")
+        .arg("-s")
+        .arg("-S")
+        .arg("-O")
+        .arg(source)
+        .output()
+        .unwrap_or_else(|error| panic!("compile {label}: {error}"));
+
+    assert!(
+        output.status.success(),
+        "{label} compile failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+fn stage_compiled_scheme(
+    root: &Path,
+    gerbil_pkg: &Path,
+    builder_file_name: &str,
+    staged_relative_path: &str,
+) -> PathBuf {
+    let builder_scm = compiled_scheme_candidate(gerbil_pkg, builder_file_name);
+    let compiled_runtime_scm = root.join(staged_relative_path);
     fs::create_dir_all(
         compiled_runtime_scm
             .parent()
@@ -240,14 +295,14 @@ fn run_gerbil_compile_native_aot(gxpkg: &Path, gxc: &Path, root: &Path) -> PathB
             "copy Gerbil local builder native AOT artifact from {} to {} failed: {error}; candidates={:?}",
             builder_scm.display(),
             compiled_runtime_scm.display(),
-            compiled_scheme_candidates(&gerbil_pkg)
+            compiled_scheme_candidates(gerbil_pkg)
         )
     });
     assert!(
         compiled_runtime_scm.is_file(),
         "missing staged native AOT artifact at {}; candidates={:?}",
         compiled_runtime_scm.display(),
-        compiled_scheme_candidates(&gerbil_pkg)
+        compiled_scheme_candidates(gerbil_pkg)
     );
     compiled_runtime_scm
 }
