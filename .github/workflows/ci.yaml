@@ -204,7 +204,6 @@ jobs:
             test -x "$gerbil_install_base/bin/gxi" \
               && test -x "$gerbil_install_base/bin/gxc" \
               && test -x "$gerbil_install_base/bin/gxpkg" \
-              && test -x "$gerbil_install_base/bin/gsi" \
               && test -x "$gerbil_install_base/bin/gsc"
           }
           # ccache-action shadows cc/c++ in /usr/local/bin. Gerbil/Gambit
@@ -240,7 +239,6 @@ jobs:
       - name: Verify Gerbil toolchain
         run: |
           set -euxo pipefail
-          command -v gsi
           command -v gsc
           gxi --version
           gxpkg help >/dev/null
