@@ -12,12 +12,10 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
-  MARLIN_GERBIL_SOURCE_REF: v0.18.2
-  MARLIN_GERBIL_SOURCE_VERSION: v0.18.2
 
 jobs:
   format:
-    name: Rust format
+    name: Rust / fmt / ubuntu-latest
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -33,7 +31,7 @@ jobs:
         run: cargo fmt --all -- --check
 
   check:
-    name: Rust check
+    name: Rust / check / ubuntu-latest
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
@@ -59,7 +57,7 @@ jobs:
         run: cargo check --workspace --all-targets --locked
 
   lint:
-    name: Rust lint
+    name: Rust / lint / ubuntu-latest
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
@@ -87,7 +85,7 @@ jobs:
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
   test:
-    name: Rust test (${{ matrix.os }})
+    name: Rust / test / ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     strategy:
@@ -119,12 +117,22 @@ jobs:
         run: cargo test --workspace --locked
 
   gerbil:
-    name: Gerbil gates
-    runs-on: ubuntu-latest
+    name: Gerbil / gate / ${{ matrix.os }} / ${{ matrix.mode }}
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            mode: native
+            gerbil-source-ref: v0.18.2
+            gerbil-source-version: v0.18.2
     env:
       CARGO_INCREMENTAL: "0"
       MARLIN_REQUIRE_REAL_GXI: "1"
+      MARLIN_GERBIL_SOURCE_REF: ${{ matrix.gerbil-source-ref }}
+      MARLIN_GERBIL_SOURCE_VERSION: ${{ matrix.gerbil-source-version }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -157,6 +165,19 @@ jobs:
           restore-keys: |
             marlin-gerbil-package-deps-${{ runner.os }}-${{ runner.arch }}-${{ env.MARLIN_GERBIL_SOURCE_REF }}-
 
+      - name: Configure C compiler cache
+        uses: hendrikmuhs/ccache-action@v1.2.23
+        with:
+          key: marlin-gerbil-ccache-${{ matrix.os }}-${{ matrix.mode }}-${{ env.MARLIN_GERBIL_SOURCE_REF }}
+          restore-keys: |
+            marlin-gerbil-ccache-${{ matrix.os }}-${{ matrix.mode }}-
+          max-size: 2G
+          variant: ccache
+          create-symlink: true
+          install: yes
+          update-package-index: true
+          job-summary: Gerbil ccache statistics
+
       - name: Fetch workspace dependencies
         run: cargo fetch --locked
 
@@ -179,6 +200,9 @@ jobs:
           build_jobs="$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 2)"
           gerbil_install_base="$HOME/.local/opt/gerbil"
           gerbil_source_root="$HOME/.cache/marlin/gerbil-source/$MARLIN_GERBIL_SOURCE_REF"
+          export CC="ccache cc"
+          export CXX="ccache c++"
+          ccache --zero-stats || true
           if [ ! -x "$gerbil_install_base/bin/gxi" ]; then
             rm -rf "$gerbil_source_root" "$gerbil_install_base"
             mkdir -p "$gerbil_source_root"
@@ -198,6 +222,9 @@ jobs:
           echo "MARLIN_GERBIL_GXC=$gerbil_install_base/bin/gxc" >> "$GITHUB_ENV"
           echo "GERBIL_BUILD_CORES=$build_jobs" >> "$GITHUB_ENV"
           echo "CARGO_BUILD_JOBS=$build_jobs" >> "$GITHUB_ENV"
+          echo "CC=ccache cc" >> "$GITHUB_ENV"
+          echo "CXX=ccache c++" >> "$GITHUB_ENV"
+          ccache --show-stats || true
 
       - name: Verify Gerbil toolchain
         run: |
