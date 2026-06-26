@@ -207,8 +207,11 @@ jobs:
               && test -x "$gerbil_install_base/bin/gsi" \
               && test -x "$gerbil_install_base/bin/gsc"
           }
-          export CC="cc"
-          export CXX="c++"
+          # ccache-action shadows cc/c++ in /usr/local/bin. Gerbil/Gambit
+          # bootstrap must use the real system compiler; restored ccache objects
+          # can leave bootstrap install artifacts such as gsi/gsc unavailable.
+          export CC="/usr/bin/cc"
+          export CXX="/usr/bin/c++"
           ccache --zero-stats || true
           if ! gerbil_toolchain_ready; then
             rm -rf "$gerbil_source_root" "$gerbil_install_base"
@@ -219,9 +222,7 @@ jobs:
             git -C "$gerbil_source_root" checkout --detach FETCH_HEAD
             cd "$gerbil_source_root"
             ./configure --prefix="$gerbil_install_base" --version-string="$MARLIN_GERBIL_SOURCE_VERSION"
-            # The Gerbil/Gambit bootstrap has a parallel make race on hosted CI
-            # once ccache turns C compilation into near-instant cache hits.
-            make -j1
+            make -j"$build_jobs"
             make install
           fi
           gerbil_toolchain_ready
