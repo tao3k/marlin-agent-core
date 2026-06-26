@@ -117,7 +117,10 @@ fn nm_output(path: &Path) -> String {
 
 fn run_gerbil_build_script_compile(gxi: &Path, root: &Path) {
     let output = Command::new(gxi)
-        .env(GERBIL_LOADPATH_ENV, gerbil_runtime_loadpath(root))
+        .env(
+            GERBIL_LOADPATH_ENV,
+            gerbil_runtime_loadpath_with_dependencies(root),
+        )
         .current_dir(root)
         .arg(root.join("build.ss"))
         .arg("compile")
