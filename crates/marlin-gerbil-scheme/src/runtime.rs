@@ -38,7 +38,7 @@ pub const GERBIL_PACKAGE_BUILD_SCRIPT: &str = "build.ss";
 /// Gerbil package name owned by the crate-shipped runtime package.
 pub const GERBIL_RUNTIME_PACKAGE_NAME: &str = "marlin-deck-runtime";
 /// Build stages exposed by the crate-shipped Gerbil package driver.
-pub const GERBIL_RUNTIME_BUILD_STAGES: &[&str] = &["spec", "compile", "clean"];
+pub const GERBIL_RUNTIME_BUILD_STAGES: &[&str] = &["spec", "compile", "clean", "test"];
 /// Gerbil package dependencies declared by the crate-shipped package driver.
 pub const GERBIL_RUNTIME_BUILD_DEPS: &[&str] = &["poo-flow", "gslph"];
 /// Source roots scanned by the crate-shipped package driver.

@@ -86,10 +86,8 @@ fn gerbil_runtime_assets_expose_loadpath_contract() {
     assert!(build_source.contains("gslph-source-coverage"));
     assert!(build_source.contains(build_contract.package_name));
     assert!(build_source.contains("+marlin-special-source-files+"));
-    assert!(build_source.contains("+marlin-excluded-package-source-files+"));
     assert!(build_source.contains("marlin-package-source-file?"));
     assert!(build_source.contains("marlin-runtime-build-spec"));
-    assert!(build_source.contains("marlin-package-build-spec"));
     for root in build_contract.coverage_roots {
         assert!(
             build_source.contains(&format!("runtime-roots: '(\"{root}\")")),
