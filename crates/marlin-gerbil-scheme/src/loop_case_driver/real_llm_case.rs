@@ -84,6 +84,7 @@ pub fn parse_gerbil_loop_case_driver_real_llm_case_receipt(
     stdout: &str,
 ) -> Result<GerbilLoopCaseDriverRealLlmCaseReceipt, GerbilLoopCaseDriverRealLlmCaseReceiptError> {
     let trace = stdout_trace_object(stdout)?;
+    let trace_root = serde_json::Value::Object(trace.clone());
 
     Ok(GerbilLoopCaseDriverRealLlmCaseReceipt {
         case_id: required_marker(stdout, "marlin-real-llm-case.case_id=")?,
@@ -93,14 +94,46 @@ pub fn parse_gerbil_loop_case_driver_real_llm_case_receipt(
         iteration_count: required_trace_u64_field(&trace, "iteration_count")?,
         process_exit_status: parse_marker(stdout, "process-command.exit_status:")?,
         continuation_planner: optional_marker(stdout, "continuation_planner="),
-        failure_classification_receipt_present: trace
-            .contains_key("failure_classification_receipt"),
-        governance_receipt_present: trace.contains_key("governance_receipt"),
-        nono_sandbox_materialized: trace.get("backend").and_then(serde_json::Value::as_str)
-            == Some("nono"),
-        human_audit_decision: trace.get("decision").and_then(serde_json::Value::as_str)
-            == Some("human-audit"),
+        failure_classification_receipt_present: trace_contains_key(
+            &trace_root,
+            "failure_classification_receipt",
+        ),
+        governance_receipt_present: trace_contains_key(&trace_root, "governance_receipt"),
+        nono_sandbox_materialized: trace_path_string_eq(&trace_root, &["backend"], "nono")
+            || trace_path_string_eq(
+                &trace_root,
+                &["governance_receipt", "sandbox", "backend"],
+                "nono",
+            ),
+        human_audit_decision: trace_path_string_eq(&trace_root, &["decision"], "human-audit")
+            || trace_path_string_eq(
+                &trace_root,
+                &["governance_receipt", "verifier", "decision"],
+                "human-audit",
+            ),
     })
+}
+
+fn trace_contains_key(value: &serde_json::Value, key: &str) -> bool {
+    match value {
+        serde_json::Value::Object(map) => {
+            map.contains_key(key) || map.values().any(|value| trace_contains_key(value, key))
+        }
+        serde_json::Value::Array(values) => {
+            values.iter().any(|value| trace_contains_key(value, key))
+        }
+        _ => false,
+    }
+}
+
+fn trace_path_string_eq(value: &serde_json::Value, path: &[&str], expected: &str) -> bool {
+    let Some((first, rest)) = path.split_first() else {
+        return value.as_str() == Some(expected);
+    };
+    let Some(next) = value.get(*first) else {
+        return false;
+    };
+    trace_path_string_eq(next, rest, expected)
 }
 
 /// Parse error for real LLM loop case runner receipts.

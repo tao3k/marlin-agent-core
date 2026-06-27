@@ -8,25 +8,25 @@ executor = "marlin.real-llm.runtime-handoff"
 adapter = "tool"
 runtime = "process-command"
 command = "sh"
-args = ["../marlin-gerbil-scheme/gerbil/t/fixtures/config-interface/loop-cases/run-real-llm-case.sh", "marlin-runtime-handoff-profile", "marlin-runtime-handoff-real-llm"]
+args = ["t/fixtures/config-interface/loop-cases/run-real-llm-case.sh", "marlin-runtime-handoff-profile", "marlin-runtime-handoff-real-llm"]
 
 [[executors]]
 executor = "marlin.real-llm.policy-receipt-gate"
 adapter = "tool"
 runtime = "process-command"
 command = "sh"
-args = ["../marlin-gerbil-scheme/gerbil/t/fixtures/config-interface/loop-cases/run-real-llm-case.sh", "marlin-policy-receipt-gate-profile", "marlin-policy-receipt-gate-real-llm"]
+args = ["t/fixtures/config-interface/loop-cases/run-real-llm-case.sh", "marlin-policy-receipt-gate-profile", "marlin-policy-receipt-gate-real-llm"]
 
 [[executors]]
 executor = "marlin.real-llm.loop-contract"
 adapter = "tool"
 runtime = "process-command"
 command = "sh"
-args = ["../marlin-gerbil-scheme/gerbil/t/fixtures/config-interface/loop-cases/run-real-llm-case.sh", "marlin-loop-contract-profile", "marlin-loop-contract-real-llm"]
+args = ["t/fixtures/config-interface/loop-cases/run-real-llm-case.sh", "marlin-loop-contract-profile", "marlin-loop-contract-real-llm"]
 
 [[executors]]
 executor = "marlin.real-llm.failure-retry"
 adapter = "tool"
 runtime = "process-command"
 command = "sh"
-args = ["../marlin-gerbil-scheme/gerbil/t/fixtures/config-interface/loop-cases/run-real-llm-case.sh", "marlin-failure-retry-profile", "marlin-failure-retry-real-llm"]
+args = ["t/fixtures/config-interface/loop-cases/run-real-llm-case.sh", "marlin-failure-retry-profile", "marlin-failure-retry-real-llm"]

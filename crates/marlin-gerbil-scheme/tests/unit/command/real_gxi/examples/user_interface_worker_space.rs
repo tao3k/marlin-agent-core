@@ -229,6 +229,54 @@ marlin-real-llm-case.rounds_used=2
     assert!(receipt.human_audit_decision());
 }
 
+#[test]
+fn real_llm_loop_case_receipt_parser_projects_nested_debug_cli_receipts() {
+    let stdout = r#"
+{
+  "terminal_status": "Failed",
+  "iteration_count": 3,
+  "governance_receipt": {
+    "sandbox": {
+      "backend": "nono",
+      "profile_ref": "nono-profile"
+    },
+    "verifier": {
+      "decision": "human-audit",
+      "terminal_status": "Failed"
+    }
+  },
+  "reports": [
+    {
+      "iteration": 2,
+      "failure_classification_receipt": {
+        "failure_kind": "ToolUsageFailure",
+        "retryable": false
+      }
+    }
+  ]
+}
+process-command.exit_status:17
+continuation_planner=retry-on-failure
+marlin-real-llm-case.case_id=marlin-failure-retry-real-llm
+marlin-real-llm-case.result=pass
+marlin-real-llm-case.rounds_used=1
+"#;
+    let receipt = parse_gerbil_loop_case_driver_real_llm_case_receipt(stdout)
+        .expect("nested debug CLI output should project to a typed receipt");
+
+    assert_eq!(receipt.case_id(), "marlin-failure-retry-real-llm");
+    assert_eq!(receipt.result(), "pass");
+    assert_eq!(receipt.rounds_used(), 1);
+    assert_eq!(receipt.terminal_status(), "Failed");
+    assert_eq!(receipt.iteration_count(), 3);
+    assert_eq!(receipt.process_exit_status(), 17);
+    assert_eq!(receipt.continuation_planner(), Some("retry-on-failure"));
+    assert!(receipt.failure_classification_receipt_present());
+    assert!(receipt.governance_receipt_present());
+    assert!(receipt.nono_sandbox_materialized());
+    assert!(receipt.human_audit_decision());
+}
+
 fn run_real_gxtest_workspace(
     fixture_name: &str,
     source: &Path,
