@@ -16,6 +16,8 @@ mod fakes;
 mod gerbil_continuation;
 mod graph;
 mod intent_case_artifact;
+mod intent_case_artifact_error;
+mod intent_case_artifact_manifest;
 mod intent_case_artifact_runtime_repair;
 mod release_visibility;
 mod runtime;
@@ -38,10 +40,10 @@ pub use gerbil_continuation::{
 };
 pub use graph::AgentHarnessGraphBuilder;
 pub use intent_case_artifact::{
-    GerbilScriptedIntentCaseArtifactBundleRequest, IntentCaseArtifactBundleMaterializationError,
-    IntentCaseArtifactBundleMaterializationReceipt, IntentCaseMaterializedArtifactReceipt,
-    materialize_gerbil_scripted_intent_case_artifact_bundle,
+    GerbilScriptedIntentCaseArtifactBundleRequest, IntentCaseArtifactBundleMaterializationReceipt,
+    IntentCaseMaterializedArtifactReceipt, materialize_gerbil_scripted_intent_case_artifact_bundle,
 };
+pub use intent_case_artifact_error::IntentCaseArtifactBundleMaterializationError;
 pub use marlin_agent_harness_types::{
     AGENT_HARNESS_GRAPH_POLICY_PROPOSAL_VISIBILITY_SUBJECT_PREFIX,
     AGENT_HARNESS_PERFORMANCE_EVIDENCE_ALLOCATION_PROFILE,
@@ -59,10 +61,11 @@ pub use marlin_agent_harness_types::{
     AgentHarnessScenario, AgentHarnessScenarioContract, AgentHarnessStabilityEvidence,
     INTENT_CASE_ARTIFACT_MANIFEST_SCHEMA_ID, INTENT_CASE_RUN_RECEIPT_SCHEMA_ID,
     IntentCaseArtifactId, IntentCaseArtifactKind, IntentCaseArtifactManifest,
-    IntentCaseArtifactManifestRequest, IntentCaseArtifactRef, IntentCaseId,
-    IntentCaseLoopProgramId, IntentCasePolicyDigest, IntentCaseRunId, IntentCaseRunReceipt,
-    IntentCaseRunStatus, IntentCaseRuntimeOwner, IntentCaseTraceEntry, IntentCaseTraceEntryId,
-    IntentCaseTraceEntryRequest, IntentCaseTraceIndex, IntentCaseTransitionId,
+    IntentCaseArtifactManifestRequest, IntentCaseArtifactRef, IntentCaseCorrelationKey,
+    IntentCaseId, IntentCaseLoopProgramId, IntentCasePolicyDigest, IntentCaseRunId,
+    IntentCaseRunReceipt, IntentCaseRunStatus, IntentCaseRuntimeOwner, IntentCaseTraceAction,
+    IntentCaseTraceEntry, IntentCaseTraceEntryId, IntentCaseTraceEntryRequest,
+    IntentCaseTraceEvent, IntentCaseTraceIndex, IntentCaseTransitionId,
     agent_harness_graph_policy_proposal_visibility_evidence,
 };
 pub use release_visibility::{

@@ -67,6 +67,13 @@ fn harness_materializes_scripted_intent_case_bundles_for_all_gerbil_vertical_cas
         assert!(bundle.bundle_root.is_dir());
         assert!(bundle.manifest_path.is_file());
         assert!(bundle.manifest.has_core_artifact_bundle());
+        assert!(bundle.manifest.has_complete_trace_correlation());
+        assert_eq!(bundle.manifest.trace_artifact_ref_missing_ids(), Vec::new());
+        assert_eq!(
+            bundle.manifest.trace_entries_without_runtime_owner(),
+            Vec::new()
+        );
+        assert!(!bundle.manifest.correlation_keys().is_empty());
         assert!(bundle.has_artifact_kind(IntentCaseArtifactKind::Intent));
         assert!(bundle.has_artifact_kind(IntentCaseArtifactKind::PolicyPack));
         assert!(bundle.has_artifact_kind(IntentCaseArtifactKind::LoopProgram));
@@ -82,6 +89,26 @@ fn harness_materializes_scripted_intent_case_bundles_for_all_gerbil_vertical_cas
                 .filter(|artifact| artifact.present)
                 .count()
         );
+        assert_eq!(
+            bundle.manifest.correlation_keys().len(),
+            bundle
+                .manifest
+                .trace_index
+                .entries
+                .iter()
+                .map(|entry| entry.artifact_refs.len())
+                .sum::<usize>()
+        );
+
+        let manifest_receipt =
+            fs::read_to_string(&bundle.manifest_path).expect("read manifest receipt");
+        assert!(manifest_receipt.contains("correlation_key_count="));
+        assert!(manifest_receipt.contains("correlation case_id="));
+        assert!(manifest_receipt.contains("run_id=scripted-bundle-"));
+        assert!(manifest_receipt.contains("policy_digest="));
+        assert!(manifest_receipt.contains("loop_program_id="));
+        assert!(manifest_receipt.contains("step_index=1"));
+        assert!(manifest_receipt.contains("runtime_owner=marlin-agent-core"));
 
         for artifact in &bundle.artifacts {
             assert!(artifact.path.is_file(), "missing artifact {artifact:?}");

@@ -32,10 +32,11 @@ pub use evidence::{
 pub use intent_case::{
     INTENT_CASE_ARTIFACT_MANIFEST_SCHEMA_ID, INTENT_CASE_RUN_RECEIPT_SCHEMA_ID,
     IntentCaseArtifactId, IntentCaseArtifactKind, IntentCaseArtifactManifest,
-    IntentCaseArtifactManifestRequest, IntentCaseArtifactRef, IntentCaseId,
-    IntentCaseLoopProgramId, IntentCasePolicyDigest, IntentCaseRunId, IntentCaseRunReceipt,
-    IntentCaseRunStatus, IntentCaseRuntimeOwner, IntentCaseTraceEntry, IntentCaseTraceEntryId,
-    IntentCaseTraceEntryRequest, IntentCaseTraceIndex, IntentCaseTransitionId,
+    IntentCaseArtifactManifestRequest, IntentCaseArtifactRef, IntentCaseCorrelationKey,
+    IntentCaseId, IntentCaseLoopProgramId, IntentCasePolicyDigest, IntentCaseRunId,
+    IntentCaseRunReceipt, IntentCaseRunStatus, IntentCaseRuntimeOwner, IntentCaseTraceAction,
+    IntentCaseTraceEntry, IntentCaseTraceEntryId, IntentCaseTraceEntryRequest,
+    IntentCaseTraceEvent, IntentCaseTraceIndex, IntentCaseTransitionId,
 };
 pub use runtime_repair::{
     RUNTIME_REPAIR_LIVE_CASE_RECEIPT_SCHEMA_ID, RUNTIME_REPAIR_NO_LIVE_CASE_RECEIPT_SCHEMA_ID,

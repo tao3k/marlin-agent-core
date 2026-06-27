@@ -1,0 +1,84 @@
+//! Manifest validation and rendering for intent-case artifact bundles.
+
+use crate::intent_case_artifact_error::IntentCaseArtifactBundleMaterializationError;
+use marlin_agent_harness_types::IntentCaseArtifactManifest;
+
+pub(crate) fn ensure_trace_correlation_integrity(
+    manifest: &IntentCaseArtifactManifest,
+) -> Result<(), IntentCaseArtifactBundleMaterializationError> {
+    if let Some(trace_id) = manifest
+        .trace_entries_without_runtime_owner()
+        .into_iter()
+        .next()
+    {
+        return Err(
+            IntentCaseArtifactBundleMaterializationError::MissingTraceRuntimeOwner { trace_id },
+        );
+    }
+
+    for entry in &manifest.trace_index.entries {
+        if let Some(artifact_id) = entry
+            .artifact_refs
+            .iter()
+            .find(|artifact_id| !manifest.has_present_artifact_id(artifact_id))
+        {
+            return Err(
+                IntentCaseArtifactBundleMaterializationError::UnknownTraceArtifactRef {
+                    trace_id: entry.trace_id.clone(),
+                    artifact_id: artifact_id.clone(),
+                },
+            );
+        }
+    }
+
+    if manifest.correlation_keys().is_empty() {
+        return Err(IntentCaseArtifactBundleMaterializationError::EmptyTraceCorrelationIndex);
+    }
+
+    Ok(())
+}
+
+pub(crate) fn render_manifest_receipt(manifest: &IntentCaseArtifactManifest) -> String {
+    let mut lines = vec![
+        "schema=marlin.intent-case.artifact-materialization.v1".to_owned(),
+        format!("manifest_schema={}", manifest.schema_id),
+        format!("case_id={}", manifest.case_id),
+        format!("run_id={}", manifest.run_id),
+        format!("policy_epoch={}", manifest.policy_epoch),
+        format!("policy_digest={}", manifest.policy_digest),
+        format!("loop_program_id={}", manifest.loop_program_id),
+        format!("artifact_count={}", manifest.artifacts.len()),
+        format!("trace_entry_count={}", manifest.trace_index.entries.len()),
+        format!(
+            "correlation_key_count={}",
+            manifest.correlation_keys().len()
+        ),
+    ];
+    lines.extend(manifest.artifacts.iter().map(|artifact| {
+        format!(
+            "artifact id={} kind={:?} present={} path={}",
+            artifact.artifact_id,
+            artifact.kind,
+            artifact.present,
+            artifact.path.as_deref().unwrap_or("none")
+        )
+    }));
+    lines.extend(manifest.correlation_keys().iter().map(|key| {
+        format!(
+            "correlation case_id={} run_id={} policy_epoch={} policy_digest={} loop_program_id={} trace_id={} step_index={} transition_id={} action={} event={} runtime_owner={} artifact_id={}",
+            key.case_id,
+            key.run_id,
+            key.policy_epoch,
+            key.policy_digest,
+            key.loop_program_id,
+            key.trace_id,
+            key.step_index,
+            key.transition_id,
+            key.action,
+            key.event,
+            key.runtime_owner,
+            key.artifact_id
+        )
+    }));
+    lines.join("\n") + "\n"
+}

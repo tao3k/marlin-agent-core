@@ -72,6 +72,14 @@ define_intent_case_string_id!(
     IntentCaseRuntimeOwner,
     "Stable runtime owner recorded for one intent-case trace entry."
 );
+define_intent_case_string_id!(
+    IntentCaseTraceAction,
+    "Stable action label recorded for one intent-case trace entry."
+);
+define_intent_case_string_id!(
+    IntentCaseTraceEvent,
+    "Stable event label recorded for one intent-case trace entry."
+);
 
 /// Artifact lane expected in a complete intent-case run bundle.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
@@ -190,6 +198,23 @@ impl IntentCaseTraceEntry {
     }
 }
 
+/// Fully qualified correlation key for one trace-step to artifact edge.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct IntentCaseCorrelationKey {
+    pub case_id: IntentCaseId,
+    pub run_id: IntentCaseRunId,
+    pub policy_epoch: u64,
+    pub policy_digest: IntentCasePolicyDigest,
+    pub loop_program_id: IntentCaseLoopProgramId,
+    pub trace_id: IntentCaseTraceEntryId,
+    pub step_index: u64,
+    pub transition_id: IntentCaseTransitionId,
+    pub action: IntentCaseTraceAction,
+    pub event: IntentCaseTraceEvent,
+    pub runtime_owner: IntentCaseRuntimeOwner,
+    pub artifact_id: IntentCaseArtifactId,
+}
+
 /// Ordered trace index for one intent-case run.
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct IntentCaseTraceIndex {
@@ -266,6 +291,85 @@ impl IntentCaseArtifactManifest {
         self.artifacts
             .iter()
             .any(|artifact| artifact.kind == kind && artifact.present)
+    }
+
+    #[must_use]
+    pub fn has_artifact_id(&self, artifact_id: &IntentCaseArtifactId) -> bool {
+        self.artifacts
+            .iter()
+            .any(|artifact| &artifact.artifact_id == artifact_id)
+    }
+
+    #[must_use]
+    pub fn has_present_artifact_id(&self, artifact_id: &IntentCaseArtifactId) -> bool {
+        self.artifacts
+            .iter()
+            .any(|artifact| &artifact.artifact_id == artifact_id && artifact.present)
+    }
+
+    #[must_use]
+    pub fn trace_artifact_ref_missing_ids(&self) -> Vec<IntentCaseArtifactId> {
+        let mut missing = self
+            .trace_index
+            .entries
+            .iter()
+            .flat_map(|entry| entry.artifact_refs.iter())
+            .filter(|artifact_id| !self.has_present_artifact_id(artifact_id))
+            .cloned()
+            .collect::<Vec<_>>();
+        missing.sort();
+        missing.dedup();
+        missing
+    }
+
+    #[must_use]
+    pub fn trace_entries_without_runtime_owner(&self) -> Vec<IntentCaseTraceEntryId> {
+        self.trace_index
+            .entries
+            .iter()
+            .filter(|entry| entry.runtime_owner.is_none())
+            .map(|entry| entry.trace_id.clone())
+            .collect()
+    }
+
+    #[must_use]
+    pub fn correlation_keys(&self) -> Vec<IntentCaseCorrelationKey> {
+        self.trace_index
+            .entries
+            .iter()
+            .filter_map(|entry| {
+                entry
+                    .runtime_owner
+                    .clone()
+                    .map(|runtime_owner| (entry, runtime_owner))
+            })
+            .flat_map(|(entry, runtime_owner)| {
+                entry.artifact_refs.iter().cloned().map(move |artifact_id| {
+                    IntentCaseCorrelationKey {
+                        case_id: self.case_id.clone(),
+                        run_id: self.run_id.clone(),
+                        policy_epoch: self.policy_epoch,
+                        policy_digest: self.policy_digest.clone(),
+                        loop_program_id: self.loop_program_id.clone(),
+                        trace_id: entry.trace_id.clone(),
+                        step_index: entry.step_index,
+                        transition_id: entry.transition_id.clone(),
+                        action: IntentCaseTraceAction::new(entry.action.clone()),
+                        event: IntentCaseTraceEvent::new(entry.event.clone()),
+                        runtime_owner: runtime_owner.clone(),
+                        artifact_id,
+                    }
+                })
+            })
+            .collect()
+    }
+
+    #[must_use]
+    pub fn has_complete_trace_correlation(&self) -> bool {
+        !self.trace_index.is_empty()
+            && !self.correlation_keys().is_empty()
+            && self.trace_artifact_ref_missing_ids().is_empty()
+            && self.trace_entries_without_runtime_owner().is_empty()
     }
 
     #[must_use]

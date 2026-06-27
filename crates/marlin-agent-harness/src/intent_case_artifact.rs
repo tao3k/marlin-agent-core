@@ -1,12 +1,15 @@
 //! Materialization of typed intent-case artifact bundles.
 
 use std::{
-    error::Error,
-    fmt, fs,
+    fs,
     path::{Component, Path, PathBuf},
 };
 
-use crate::intent_case_artifact_runtime_repair::render_runtime_repair_case_receipt;
+use crate::{
+    intent_case_artifact_error::IntentCaseArtifactBundleMaterializationError,
+    intent_case_artifact_manifest::{ensure_trace_correlation_integrity, render_manifest_receipt},
+    intent_case_artifact_runtime_repair::render_runtime_repair_case_receipt,
+};
 use marlin_agent_harness_types::{
     IntentCaseArtifactId, IntentCaseArtifactKind, IntentCaseArtifactManifest,
     IntentCaseArtifactRef, IntentCaseRunId, RuntimeRepairCaseReceipt,
@@ -56,54 +59,6 @@ pub struct IntentCaseMaterializedArtifactReceipt {
     pub bytes_written: u64,
 }
 
-/// Error returned when an intent-case artifact bundle cannot be materialized.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum IntentCaseArtifactBundleMaterializationError {
-    EmptyManifest,
-    MissingArtifactPath {
-        artifact_id: IntentCaseArtifactId,
-    },
-    UnsafeArtifactPath {
-        artifact_id: IntentCaseArtifactId,
-        path: String,
-    },
-    ExecutionTraceMismatch {
-        trace_entries: usize,
-        execution_steps: usize,
-    },
-    Io {
-        path: PathBuf,
-        message: String,
-    },
-}
-
-impl fmt::Display for IntentCaseArtifactBundleMaterializationError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::EmptyManifest => formatter.write_str("intent-case manifest has no artifacts"),
-            Self::MissingArtifactPath { artifact_id } => {
-                write!(
-                    formatter,
-                    "artifact {artifact_id} is present but has no path"
-                )
-            }
-            Self::UnsafeArtifactPath { artifact_id, path } => {
-                write!(formatter, "artifact {artifact_id} has unsafe path {path:?}")
-            }
-            Self::ExecutionTraceMismatch {
-                trace_entries,
-                execution_steps,
-            } => write!(
-                formatter,
-                "trace index has {trace_entries} entries but execution receipt has {execution_steps} steps"
-            ),
-            Self::Io { path, message } => write!(formatter, "write {}: {message}", path.display()),
-        }
-    }
-}
-
-impl Error for IntentCaseArtifactBundleMaterializationError {}
-
 /// Materialize one scripted Gerbil loop case into the Intent Case Lab artifact layout.
 pub fn materialize_gerbil_scripted_intent_case_artifact_bundle(
     request: GerbilScriptedIntentCaseArtifactBundleRequest,
@@ -139,6 +94,7 @@ fn materialize_intent_case_artifact_bundle(
 > {
     let manifest = enrich_manifest_with_side_effect_artifacts(manifest, side_effect_replay_bundle);
     ensure_execution_trace_matches(&manifest, execution_receipt)?;
+    ensure_trace_correlation_integrity(&manifest)?;
     let bundle_root = bundle_root(output_root, &manifest)?;
     create_directory(&bundle_root)?;
 
@@ -349,30 +305,6 @@ fn write_file(
         }
     })?;
     Ok(content.len() as u64)
-}
-
-fn render_manifest_receipt(manifest: &IntentCaseArtifactManifest) -> String {
-    let mut lines = vec![
-        "schema=marlin.intent-case.artifact-materialization.v1".to_owned(),
-        format!("manifest_schema={}", manifest.schema_id),
-        format!("case_id={}", manifest.case_id),
-        format!("run_id={}", manifest.run_id),
-        format!("policy_epoch={}", manifest.policy_epoch),
-        format!("policy_digest={}", manifest.policy_digest),
-        format!("loop_program_id={}", manifest.loop_program_id),
-        format!("artifact_count={}", manifest.artifacts.len()),
-        format!("trace_entry_count={}", manifest.trace_index.entries.len()),
-    ];
-    lines.extend(manifest.artifacts.iter().map(|artifact| {
-        format!(
-            "artifact id={} kind={:?} present={} path={}",
-            artifact.artifact_id,
-            artifact.kind,
-            artifact.present,
-            artifact.path.as_deref().unwrap_or("none")
-        )
-    }));
-    lines.join("\n") + "\n"
 }
 
 fn render_artifact_content(
