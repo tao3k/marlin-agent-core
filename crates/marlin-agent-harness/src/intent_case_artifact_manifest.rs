@@ -1,7 +1,9 @@
 //! Manifest validation and rendering for intent-case artifact bundles.
 
 use crate::intent_case_artifact_error::IntentCaseArtifactBundleMaterializationError;
-use marlin_agent_harness_types::IntentCaseArtifactManifest;
+use marlin_agent_harness_types::{
+    IntentCaseArtifactCompletenessReceipt, IntentCaseArtifactManifest,
+};
 
 pub(crate) fn ensure_trace_correlation_integrity(
     manifest: &IntentCaseArtifactManifest,
@@ -38,16 +40,36 @@ pub(crate) fn ensure_trace_correlation_integrity(
     Ok(())
 }
 
-pub(crate) fn render_manifest_receipt(manifest: &IntentCaseArtifactManifest) -> String {
+pub(crate) fn render_manifest_receipt(
+    manifest: &IntentCaseArtifactManifest,
+    completeness_receipt: &IntentCaseArtifactCompletenessReceipt,
+) -> String {
     let mut lines = vec![
         "schema=marlin.intent-case.artifact-materialization.v1".to_owned(),
         format!("manifest_schema={}", manifest.schema_id),
+        format!("completeness_schema={}", completeness_receipt.schema_id),
         format!("case_id={}", manifest.case_id),
         format!("run_id={}", manifest.run_id),
         format!("policy_epoch={}", manifest.policy_epoch),
         format!("policy_digest={}", manifest.policy_digest),
         format!("loop_program_id={}", manifest.loop_program_id),
         format!("artifact_count={}", manifest.artifacts.len()),
+        format!(
+            "expected_artifact_count={}",
+            completeness_receipt.expected_artifacts.len()
+        ),
+        format!(
+            "materialized_artifact_count={}",
+            completeness_receipt.materialized_artifacts.len()
+        ),
+        format!(
+            "missing_artifact_count={}",
+            completeness_receipt.missing_artifacts.len()
+        ),
+        format!(
+            "completeness_status={}",
+            completeness_receipt.status.as_str()
+        ),
         format!("trace_entry_count={}", manifest.trace_index.entries.len()),
         format!(
             "correlation_key_count={}",

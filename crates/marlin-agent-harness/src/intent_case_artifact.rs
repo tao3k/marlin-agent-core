@@ -11,8 +11,8 @@ use crate::{
     intent_case_artifact_runtime_repair::render_runtime_repair_case_receipt,
 };
 use marlin_agent_harness_types::{
-    IntentCaseArtifactId, IntentCaseArtifactKind, IntentCaseArtifactManifest,
-    IntentCaseArtifactRef, IntentCaseRunId, RuntimeRepairCaseReceipt,
+    IntentCaseArtifactCompletenessReceipt, IntentCaseArtifactId, IntentCaseArtifactKind,
+    IntentCaseArtifactManifest, IntentCaseArtifactRef, IntentCaseRunId, RuntimeRepairCaseReceipt,
 };
 use marlin_agent_kernel::{
     LoopProgramExecutionReceipt, LoopProgramExecutionReplayBundleReceipt,
@@ -40,6 +40,7 @@ pub struct IntentCaseArtifactBundleMaterializationReceipt {
     pub bundle_root: PathBuf,
     pub manifest_path: PathBuf,
     pub manifest: IntentCaseArtifactManifest,
+    pub completeness_receipt: IntentCaseArtifactCompletenessReceipt,
     pub artifacts: Box<[IntentCaseMaterializedArtifactReceipt]>,
 }
 
@@ -99,8 +100,6 @@ fn materialize_intent_case_artifact_bundle(
     create_directory(&bundle_root)?;
 
     let manifest_path = bundle_root.join("manifest.receipt");
-    write_file(&manifest_path, render_manifest_receipt(&manifest))?;
-
     let mut artifacts = Vec::new();
     for artifact in manifest
         .artifacts
@@ -125,10 +124,29 @@ fn materialize_intent_case_artifact_bundle(
         });
     }
 
+    let completeness_receipt =
+        IntentCaseArtifactCompletenessReceipt::from_manifest_and_materialized_artifacts(
+            &manifest,
+            artifacts.iter().map(|artifact| artifact.kind),
+        );
+    if !completeness_receipt.is_complete() {
+        return Err(
+            IntentCaseArtifactBundleMaterializationError::IncompleteArtifactBundle {
+                missing_artifacts: completeness_receipt.missing_artifacts.clone(),
+            },
+        );
+    }
+
+    write_file(
+        &manifest_path,
+        render_manifest_receipt(&manifest, &completeness_receipt),
+    )?;
+
     Ok(IntentCaseArtifactBundleMaterializationReceipt {
         bundle_root,
         manifest_path,
         manifest,
+        completeness_receipt,
         artifacts: artifacts.into_boxed_slice(),
     })
 }

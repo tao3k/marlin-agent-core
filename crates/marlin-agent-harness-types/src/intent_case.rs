@@ -4,6 +4,9 @@ use serde::{Deserialize, Serialize};
 
 /// Stable schema id for serialized intent-case artifact manifests.
 pub const INTENT_CASE_ARTIFACT_MANIFEST_SCHEMA_ID: &str = "marlin.intent-case.artifact-manifest.v1";
+/// Stable schema id for intent-case artifact completeness receipts.
+pub const INTENT_CASE_ARTIFACT_COMPLETENESS_RECEIPT_SCHEMA_ID: &str =
+    "marlin.intent-case.artifact-completeness-receipt.v1";
 /// Stable schema id for serialized intent-case run receipts.
 pub const INTENT_CASE_RUN_RECEIPT_SCHEMA_ID: &str = "marlin.intent-case.run-receipt.v1";
 
@@ -294,6 +297,19 @@ impl IntentCaseArtifactManifest {
     }
 
     #[must_use]
+    pub fn present_artifact_kinds(&self) -> Vec<IntentCaseArtifactKind> {
+        let mut kinds = self
+            .artifacts
+            .iter()
+            .filter(|artifact| artifact.present)
+            .map(|artifact| artifact.kind)
+            .collect::<Vec<_>>();
+        kinds.sort();
+        kinds.dedup();
+        kinds
+    }
+
+    #[must_use]
     pub fn has_artifact_id(&self, artifact_id: &IntentCaseArtifactId) -> bool {
         self.artifacts
             .iter()
@@ -391,6 +407,88 @@ impl IntentCaseArtifactManifest {
     }
 }
 
+/// Completeness status for one materialized intent-case artifact bundle.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum IntentCaseArtifactCompletenessStatus {
+    Complete,
+    Incomplete,
+}
+
+impl IntentCaseArtifactCompletenessStatus {
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Complete => "complete",
+            Self::Incomplete => "incomplete",
+        }
+    }
+}
+
+/// Receipt proving expected intent-case artifact lanes were materialized.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct IntentCaseArtifactCompletenessReceipt {
+    #[serde(default = "default_intent_case_artifact_completeness_receipt_schema_id")]
+    pub schema_id: String,
+    pub case_id: IntentCaseId,
+    pub run_id: IntentCaseRunId,
+    pub policy_digest: IntentCasePolicyDigest,
+    pub loop_program_id: IntentCaseLoopProgramId,
+    pub expected_artifacts: Vec<IntentCaseArtifactKind>,
+    pub materialized_artifacts: Vec<IntentCaseArtifactKind>,
+    pub missing_artifacts: Vec<IntentCaseArtifactKind>,
+    pub trace_entry_count: usize,
+    pub correlation_key_count: usize,
+    pub status: IntentCaseArtifactCompletenessStatus,
+}
+
+impl IntentCaseArtifactCompletenessReceipt {
+    #[must_use]
+    pub fn from_manifest_and_materialized_artifacts(
+        manifest: &IntentCaseArtifactManifest,
+        materialized_artifacts: impl IntoIterator<Item = IntentCaseArtifactKind>,
+    ) -> Self {
+        let expected_artifacts = manifest.present_artifact_kinds();
+        let mut materialized_artifacts = materialized_artifacts.into_iter().collect::<Vec<_>>();
+        materialized_artifacts.sort();
+        materialized_artifacts.dedup();
+        let missing_artifacts = expected_artifacts
+            .iter()
+            .copied()
+            .filter(|kind| !materialized_artifacts.contains(kind))
+            .collect::<Vec<_>>();
+        let status = if missing_artifacts.is_empty() && manifest.has_complete_trace_correlation() {
+            IntentCaseArtifactCompletenessStatus::Complete
+        } else {
+            IntentCaseArtifactCompletenessStatus::Incomplete
+        };
+
+        Self {
+            schema_id: INTENT_CASE_ARTIFACT_COMPLETENESS_RECEIPT_SCHEMA_ID.to_owned(),
+            case_id: manifest.case_id.clone(),
+            run_id: manifest.run_id.clone(),
+            policy_digest: manifest.policy_digest.clone(),
+            loop_program_id: manifest.loop_program_id.clone(),
+            expected_artifacts,
+            materialized_artifacts,
+            missing_artifacts,
+            trace_entry_count: manifest.trace_index.entries.len(),
+            correlation_key_count: manifest.correlation_keys().len(),
+            status,
+        }
+    }
+
+    #[must_use]
+    pub fn is_complete(&self) -> bool {
+        self.status == IntentCaseArtifactCompletenessStatus::Complete
+    }
+
+    #[must_use]
+    pub fn is_supported_schema(&self) -> bool {
+        self.schema_id == INTENT_CASE_ARTIFACT_COMPLETENESS_RECEIPT_SCHEMA_ID
+    }
+}
+
 /// Terminal status for one intent-case run receipt.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -455,6 +553,10 @@ impl IntentCaseRunReceipt {
 
 fn default_intent_case_artifact_manifest_schema_id() -> String {
     INTENT_CASE_ARTIFACT_MANIFEST_SCHEMA_ID.to_owned()
+}
+
+fn default_intent_case_artifact_completeness_receipt_schema_id() -> String {
+    INTENT_CASE_ARTIFACT_COMPLETENESS_RECEIPT_SCHEMA_ID.to_owned()
 }
 
 fn default_intent_case_run_receipt_schema_id() -> String {

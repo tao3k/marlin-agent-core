@@ -2,7 +2,9 @@
 
 use std::{error::Error, fmt, path::PathBuf};
 
-use marlin_agent_harness_types::{IntentCaseArtifactId, IntentCaseTraceEntryId};
+use marlin_agent_harness_types::{
+    IntentCaseArtifactId, IntentCaseArtifactKind, IntentCaseTraceEntryId,
+};
 
 /// Error returned when an intent-case artifact bundle cannot be materialized.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -27,6 +29,9 @@ pub enum IntentCaseArtifactBundleMaterializationError {
         artifact_id: IntentCaseArtifactId,
     },
     EmptyTraceCorrelationIndex,
+    IncompleteArtifactBundle {
+        missing_artifacts: Vec<IntentCaseArtifactKind>,
+    },
     Io {
         path: PathBuf,
         message: String,
@@ -65,6 +70,12 @@ impl fmt::Display for IntentCaseArtifactBundleMaterializationError {
             ),
             Self::EmptyTraceCorrelationIndex => {
                 formatter.write_str("intent-case trace correlation index is empty")
+            }
+            Self::IncompleteArtifactBundle { missing_artifacts } => {
+                write!(
+                    formatter,
+                    "intent-case artifact bundle is incomplete; missing artifact kinds: {missing_artifacts:?}"
+                )
             }
             Self::Io { path, message } => write!(formatter, "write {}: {message}", path.display()),
         }

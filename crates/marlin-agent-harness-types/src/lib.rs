@@ -30,13 +30,15 @@ pub use evidence::{
     AgentHarnessStabilityEvidence, agent_harness_graph_policy_proposal_visibility_evidence,
 };
 pub use intent_case::{
-    INTENT_CASE_ARTIFACT_MANIFEST_SCHEMA_ID, INTENT_CASE_RUN_RECEIPT_SCHEMA_ID,
-    IntentCaseArtifactId, IntentCaseArtifactKind, IntentCaseArtifactManifest,
-    IntentCaseArtifactManifestRequest, IntentCaseArtifactRef, IntentCaseCorrelationKey,
-    IntentCaseId, IntentCaseLoopProgramId, IntentCasePolicyDigest, IntentCaseRunId,
-    IntentCaseRunReceipt, IntentCaseRunStatus, IntentCaseRuntimeOwner, IntentCaseTraceAction,
-    IntentCaseTraceEntry, IntentCaseTraceEntryId, IntentCaseTraceEntryRequest,
-    IntentCaseTraceEvent, IntentCaseTraceIndex, IntentCaseTransitionId,
+    INTENT_CASE_ARTIFACT_COMPLETENESS_RECEIPT_SCHEMA_ID, INTENT_CASE_ARTIFACT_MANIFEST_SCHEMA_ID,
+    INTENT_CASE_RUN_RECEIPT_SCHEMA_ID, IntentCaseArtifactCompletenessReceipt,
+    IntentCaseArtifactCompletenessStatus, IntentCaseArtifactId, IntentCaseArtifactKind,
+    IntentCaseArtifactManifest, IntentCaseArtifactManifestRequest, IntentCaseArtifactRef,
+    IntentCaseCorrelationKey, IntentCaseId, IntentCaseLoopProgramId, IntentCasePolicyDigest,
+    IntentCaseRunId, IntentCaseRunReceipt, IntentCaseRunStatus, IntentCaseRuntimeOwner,
+    IntentCaseTraceAction, IntentCaseTraceEntry, IntentCaseTraceEntryId,
+    IntentCaseTraceEntryRequest, IntentCaseTraceEvent, IntentCaseTraceIndex,
+    IntentCaseTransitionId,
 };
 pub use runtime_repair::{
     RUNTIME_REPAIR_LIVE_CASE_RECEIPT_SCHEMA_ID, RUNTIME_REPAIR_NO_LIVE_CASE_RECEIPT_SCHEMA_ID,

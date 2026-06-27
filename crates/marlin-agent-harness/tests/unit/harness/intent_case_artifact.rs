@@ -68,6 +68,35 @@ fn harness_materializes_scripted_intent_case_bundles_for_all_gerbil_vertical_cas
         assert!(bundle.manifest_path.is_file());
         assert!(bundle.manifest.has_core_artifact_bundle());
         assert!(bundle.manifest.has_complete_trace_correlation());
+        assert!(bundle.completeness_receipt.is_supported_schema());
+        assert!(bundle.completeness_receipt.is_complete());
+        assert_eq!(bundle.completeness_receipt.case_id, bundle.manifest.case_id);
+        assert_eq!(bundle.completeness_receipt.run_id, bundle.manifest.run_id);
+        assert_eq!(
+            bundle.completeness_receipt.policy_digest,
+            bundle.manifest.policy_digest
+        );
+        assert_eq!(
+            bundle.completeness_receipt.loop_program_id,
+            bundle.manifest.loop_program_id
+        );
+        assert_eq!(
+            bundle.completeness_receipt.expected_artifacts,
+            bundle.manifest.present_artifact_kinds()
+        );
+        assert_eq!(
+            bundle.completeness_receipt.materialized_artifacts,
+            bundle.manifest.present_artifact_kinds()
+        );
+        assert_eq!(bundle.completeness_receipt.missing_artifacts, Vec::new());
+        assert_eq!(
+            bundle.completeness_receipt.trace_entry_count,
+            receipt.transition_count()
+        );
+        assert_eq!(
+            bundle.completeness_receipt.correlation_key_count,
+            bundle.manifest.correlation_keys().len()
+        );
         assert_eq!(bundle.manifest.trace_artifact_ref_missing_ids(), Vec::new());
         assert_eq!(
             bundle.manifest.trace_entries_without_runtime_owner(),
@@ -102,6 +131,11 @@ fn harness_materializes_scripted_intent_case_bundles_for_all_gerbil_vertical_cas
 
         let manifest_receipt =
             fs::read_to_string(&bundle.manifest_path).expect("read manifest receipt");
+        assert!(manifest_receipt.contains("completeness_schema="));
+        assert!(manifest_receipt.contains("expected_artifact_count="));
+        assert!(manifest_receipt.contains("materialized_artifact_count="));
+        assert!(manifest_receipt.contains("missing_artifact_count=0"));
+        assert!(manifest_receipt.contains("completeness_status=complete"));
         assert!(manifest_receipt.contains("correlation_key_count="));
         assert!(manifest_receipt.contains("correlation case_id="));
         assert!(manifest_receipt.contains("run_id=scripted-bundle-"));
@@ -167,6 +201,8 @@ async fn harness_materializes_real_tool_side_effect_receipts_into_tool_call_arti
     )
     .expect("tool side-effect bundle materializes");
 
+    assert!(bundle.completeness_receipt.is_complete());
+    assert_eq!(bundle.completeness_receipt.missing_artifacts, Vec::new());
     let tool_calls = artifact_content(&bundle, IntentCaseArtifactKind::ToolCalls);
     assert!(tool_calls.contains("side_effect_replay policy_status=Ready"));
     assert!(tool_calls.contains("status=Completed"));
@@ -225,6 +261,8 @@ async fn harness_materializes_sandbox_file_write_receipts_into_sandbox_and_patch
     )
     .expect("sandbox file-write bundle materializes");
 
+    assert!(bundle.completeness_receipt.is_complete());
+    assert_eq!(bundle.completeness_receipt.missing_artifacts, Vec::new());
     let sandbox = artifact_content(&bundle, IntentCaseArtifactKind::SandboxReceipts);
     let patch = artifact_content(&bundle, IntentCaseArtifactKind::DiffPatch);
     assert!(sandbox.contains("side_effect_policy_status=Ready"));

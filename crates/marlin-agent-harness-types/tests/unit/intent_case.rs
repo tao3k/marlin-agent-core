@@ -1,9 +1,10 @@
 use marlin_agent_harness_types::{
-    IntentCaseArtifactId, IntentCaseArtifactKind, IntentCaseArtifactManifest,
-    IntentCaseArtifactManifestRequest, IntentCaseArtifactRef, IntentCaseId,
-    IntentCaseLoopProgramId, IntentCasePolicyDigest, IntentCaseRunId, IntentCaseRuntimeOwner,
-    IntentCaseTraceEntry, IntentCaseTraceEntryId, IntentCaseTraceEntryRequest,
-    IntentCaseTraceIndex, IntentCaseTransitionId,
+    INTENT_CASE_ARTIFACT_COMPLETENESS_RECEIPT_SCHEMA_ID, IntentCaseArtifactCompletenessReceipt,
+    IntentCaseArtifactCompletenessStatus, IntentCaseArtifactId, IntentCaseArtifactKind,
+    IntentCaseArtifactManifest, IntentCaseArtifactManifestRequest, IntentCaseArtifactRef,
+    IntentCaseId, IntentCaseLoopProgramId, IntentCasePolicyDigest, IntentCaseRunId,
+    IntentCaseRuntimeOwner, IntentCaseTraceEntry, IntentCaseTraceEntryId,
+    IntentCaseTraceEntryRequest, IntentCaseTraceIndex, IntentCaseTransitionId,
 };
 
 #[test]
@@ -82,6 +83,78 @@ fn manifest_reports_broken_trace_correlation() {
         missing_owner_manifest.trace_entries_without_runtime_owner()[0].as_str(),
         "case-a:trace-2"
     );
+}
+
+#[test]
+fn artifact_completeness_receipt_marks_complete_materialized_bundle() {
+    let artifact_id = IntentCaseArtifactId::new("case-a:vertical-trace");
+    let manifest = base_manifest()
+        .with_artifact(IntentCaseArtifactRef::present(
+            artifact_id.clone(),
+            IntentCaseArtifactKind::VerticalTrace,
+            "artifacts/intent-cases/case-a/run-a/30-vertical-trace.receipt",
+        ))
+        .with_trace_index(IntentCaseTraceIndex::new([
+            trace_entry().with_artifact_ref(artifact_id)
+        ]));
+
+    let receipt = IntentCaseArtifactCompletenessReceipt::from_manifest_and_materialized_artifacts(
+        &manifest,
+        [IntentCaseArtifactKind::VerticalTrace],
+    );
+
+    assert!(receipt.is_supported_schema());
+    assert_eq!(
+        receipt.schema_id,
+        INTENT_CASE_ARTIFACT_COMPLETENESS_RECEIPT_SCHEMA_ID
+    );
+    assert!(receipt.is_complete());
+    assert_eq!(
+        receipt.status,
+        IntentCaseArtifactCompletenessStatus::Complete
+    );
+    assert_eq!(
+        receipt.expected_artifacts,
+        vec![IntentCaseArtifactKind::VerticalTrace]
+    );
+    assert_eq!(
+        receipt.materialized_artifacts,
+        vec![IntentCaseArtifactKind::VerticalTrace]
+    );
+    assert_eq!(receipt.missing_artifacts, Vec::new());
+    assert_eq!(receipt.trace_entry_count, 1);
+    assert_eq!(receipt.correlation_key_count, 1);
+}
+
+#[test]
+fn artifact_completeness_receipt_reports_missing_materialized_lanes() {
+    let artifact_id = IntentCaseArtifactId::new("case-a:vertical-trace");
+    let manifest = base_manifest()
+        .with_artifact(IntentCaseArtifactRef::present(
+            artifact_id.clone(),
+            IntentCaseArtifactKind::VerticalTrace,
+            "artifacts/intent-cases/case-a/run-a/30-vertical-trace.receipt",
+        ))
+        .with_trace_index(IntentCaseTraceIndex::new([
+            trace_entry().with_artifact_ref(artifact_id)
+        ]));
+
+    let receipt = IntentCaseArtifactCompletenessReceipt::from_manifest_and_materialized_artifacts(
+        &manifest,
+        [],
+    );
+
+    assert!(!receipt.is_complete());
+    assert_eq!(
+        receipt.status,
+        IntentCaseArtifactCompletenessStatus::Incomplete
+    );
+    assert_eq!(
+        receipt.missing_artifacts,
+        vec![IntentCaseArtifactKind::VerticalTrace]
+    );
+    assert_eq!(receipt.trace_entry_count, 1);
+    assert_eq!(receipt.correlation_key_count, 1);
 }
 
 fn base_manifest() -> IntentCaseArtifactManifest {
