@@ -37,7 +37,7 @@ mod runtime;
 #[path = "unit/resident_runtime/mod.rs"]
 mod resident_runtime;
 
-#[path = "unit/loop_case_driver.rs"]
+#[path = "unit/loop_case_driver/mod.rs"]
 mod loop_case_driver;
 
 #[path = "unit/scheme_types/mod.rs"]

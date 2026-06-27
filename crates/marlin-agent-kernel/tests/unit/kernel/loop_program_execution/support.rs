@@ -1,10 +1,7 @@
 use std::{
     fmt::{Debug, Write as _},
     path::PathBuf,
-    sync::{
-        Arc, Mutex,
-        atomic::{AtomicUsize, Ordering},
-    },
+    sync::{Arc, Mutex},
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -14,7 +11,6 @@ use marlin_agent_kernel::{
     LoopProgramDerivedSessionPolicyStatus, LoopProgramEventMapper, LoopProgramExecutionDriver,
     LoopProgramExecutionReceipt, LoopProgramExecutionRequest, LoopProgramExecutionStatus,
     LoopProgramFileSandbox, LoopProgramFileWriteSideEffectStatus, LoopProgramFileWriteTemplate,
-    LoopProgramRuntimeHandoff, LoopProgramRuntimeHandoffExecution,
     LoopProgramRuntimeHandoffExecutionReceipt, LoopProgramRuntimeHandoffExecutionReportStatus,
     LoopProgramRuntimeHandoffExecutionStatus, LoopProgramRuntimeHandoffExecutor,
     LoopProgramRuntimeHandoffHandler, LoopProgramRuntimeHandoffPlan,
@@ -22,10 +18,9 @@ use marlin_agent_kernel::{
     LoopProgramRuntimeOwner, LoopProgramRuntimeSideEffectExecutor,
     LoopProgramRuntimeSideEffectStatus, LoopProgramToolProcessCommandTemplate,
     LoopProgramToolProcessProgram, LoopProgramToolProcessSideEffectStatus,
-    LoopProgramToolProcessSpawnRequest, PolicyGatedAgentFlowLoopProgramRuntimeHandoffExecutor,
-    ReceiptDrivenLoopProgramEventMapper, ScriptedLoopProgramEventMapper,
-    StaticLoopProgramFileWriteResolver, StaticLoopProgramRuntimeHandoffHandler,
-    StaticLoopProgramToolProcessResolver, spawn_loop_program_tool_process,
+    PolicyGatedAgentFlowLoopProgramRuntimeHandoffExecutor, ReceiptDrivenLoopProgramEventMapper,
+    RetryBudgetToolHandler, ScriptedLoopProgramEventMapper, StaticLoopProgramFileWriteResolver,
+    StaticLoopProgramRuntimeHandoffHandler, StaticLoopProgramToolProcessResolver,
 };
 use marlin_agent_protocol::{
     AgentFlowIntent, AgentFlowMemoryOperation, LoopMechanismPolicyId, LoopPolicyDigest,
@@ -123,7 +118,7 @@ impl ModelGateway for StaticRepairGateway {
             let model = request.endpoint().litellm_model_id().as_str().to_owned();
             requests.lock().expect("gateway requests").push(request);
             Ok(ModelGatewayCompletionResponse::new(
-                "real-repair-001-completion",
+                "runtime-repair-completion",
                 model,
                 vec![ModelGatewayCompletionChoice::new(
                     0,
@@ -187,7 +182,7 @@ impl LoopProgramEventMapper for GatewayRepairDecisionMapper {
                 let request = ModelGatewayRequest::new(
                     self.endpoint.clone(),
                     vec![
-                        system_gateway_message("real-repair-001 no-write repair planner"),
+                        system_gateway_message("runtime repair no-write repair planner"),
                         user_gateway_message(
                             "Fix a single-file bug by selecting a typed patch intent.",
                         ),
@@ -263,34 +258,6 @@ impl LoopProgramRuntimeHandoffExecutor for RealRepairPolicyGatedHandoffExecutor 
     }
 }
 
-#[derive(Debug)]
-struct RetryBudgetToolHandler {
-    owner: LoopProgramRuntimeOwner,
-    denied_attempts_before_success: usize,
-    attempts: AtomicUsize,
-}
-
-impl RetryBudgetToolHandler {
-    fn new(owner: LoopProgramRuntimeOwner, denied_attempts_before_success: usize) -> Self {
-        Self {
-            owner,
-            denied_attempts_before_success,
-            attempts: AtomicUsize::new(0),
-        }
-    }
-}
-
-impl LoopProgramRuntimeHandoffHandler for RetryBudgetToolHandler {
-    fn handle(&self, handoff: &LoopProgramRuntimeHandoff) -> LoopProgramRuntimeHandoffExecution {
-        let attempt = self.attempts.fetch_add(1, Ordering::SeqCst);
-        if attempt < self.denied_attempts_before_success {
-            LoopProgramRuntimeHandoffExecution::denied(self.owner.clone(), handoff)
-        } else {
-            LoopProgramRuntimeHandoffExecution::handled(self.owner.clone(), handoff)
-        }
-    }
-}
-
 #[derive(Clone, Debug)]
 struct MemoryRecallDecisionMapper;
 
@@ -354,7 +321,7 @@ impl LoopProgramEventMapper for PolicyCombinationDecisionMapper {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-struct RealPolicyImprovementRecommendation {
+struct RuntimePolicyImprovementRecommendation {
     priority: &'static str,
     target: &'static str,
     evidence: &'static str,
@@ -362,7 +329,7 @@ struct RealPolicyImprovementRecommendation {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-struct RealPolicyExperimentReceipt {
+struct RuntimePolicyExperimentReceipt {
     case_id: &'static str,
     program_id: String,
     policy_ids: Box<[String]>,
@@ -379,15 +346,15 @@ struct RealPolicyExperimentReceipt {
     agent_flow_intent_count: usize,
     tool_projection_count: usize,
     memory_projection_count: usize,
-    improvement_recommendations: Box<[RealPolicyImprovementRecommendation]>,
+    improvement_recommendations: Box<[RuntimePolicyImprovementRecommendation]>,
 }
 
-fn real_policy_experiment_receipt(
+fn runtime_policy_experiment_receipt(
     case_id: &'static str,
     loop_program: &LoopProgram,
     execution_receipt: &LoopProgramExecutionReceipt,
-) -> RealPolicyExperimentReceipt {
-    let mut receipt = RealPolicyExperimentReceipt {
+) -> RuntimePolicyExperimentReceipt {
+    let mut receipt = RuntimePolicyExperimentReceipt {
         case_id,
         program_id: execution_receipt.program_id.as_str().to_owned(),
         policy_ids: loop_program
@@ -463,8 +430,8 @@ fn real_policy_experiment_receipt(
         improvement_recommendations: Box::new([]),
     };
     receipt.improvement_recommendations =
-        real_policy_improvement_recommendations(&receipt).into_boxed_slice();
-    receipt.receipt_digest = real_policy_receipt_digest(&receipt);
+        runtime_policy_improvement_recommendations(&receipt).into_boxed_slice();
+    receipt.receipt_digest = runtime_policy_receipt_digest(&receipt);
     receipt
 }
 
@@ -517,8 +484,8 @@ fn runtime_behavior_digest(execution_receipt: &LoopProgramExecutionReceipt) -> S
     digest.finish()
 }
 
-fn real_policy_receipt_digest(receipt: &RealPolicyExperimentReceipt) -> String {
-    let mut digest = StableReceiptDigest::new("real-policy-experiment.v1");
+fn runtime_policy_receipt_digest(receipt: &RuntimePolicyExperimentReceipt) -> String {
+    let mut digest = StableReceiptDigest::new("runtime-policy-experiment.v1");
     digest.write_str(receipt.case_id);
     digest.write_str(&receipt.program_id);
     digest.write_str(&receipt.policy_digest);
@@ -608,13 +575,13 @@ fn hex_bytes(bytes: &[u8]) -> String {
     output
 }
 
-fn real_policy_improvement_recommendations(
-    receipt: &RealPolicyExperimentReceipt,
-) -> Vec<RealPolicyImprovementRecommendation> {
+fn runtime_policy_improvement_recommendations(
+    receipt: &RuntimePolicyExperimentReceipt,
+) -> Vec<RuntimePolicyImprovementRecommendation> {
     let mut recommendations = Vec::new();
 
     if receipt.denied_handoff_count > 0 {
-        recommendations.push(RealPolicyImprovementRecommendation {
+        recommendations.push(RuntimePolicyImprovementRecommendation {
             priority: "P0",
             target: "runtime.sandbox.denylist",
             evidence: "denied handoff receipt crossed the event pump",
@@ -625,10 +592,10 @@ fn real_policy_improvement_recommendations(
     if receipt
         .policy_ids
         .iter()
-        .any(|policy| policy == "real-policy-005-memory-recall")
+        .any(|policy| policy == "runtime-memory-recall")
         && receipt.memory_projection_count == 0
     {
-        recommendations.push(RealPolicyImprovementRecommendation {
+        recommendations.push(RuntimePolicyImprovementRecommendation {
             priority: "P1",
             target: "runtime.agent-flow.memory-projection",
             evidence: "memory recall survived as a typed intent but did not emit a memory projection receipt",
@@ -643,7 +610,7 @@ fn real_policy_improvement_recommendations(
         && receipt.tool_projection_count == 0
         && receipt.denied_handoff_count == 0
     {
-        recommendations.push(RealPolicyImprovementRecommendation {
+        recommendations.push(RuntimePolicyImprovementRecommendation {
             priority: "P1",
             target: "runtime.tool-sandbox.spawn",
             evidence: "tool dispatch was handled without a tool-process projection receipt",
@@ -657,7 +624,7 @@ fn real_policy_improvement_recommendations(
             .iter()
             .any(|policy| policy.contains("poo"))
     {
-        recommendations.push(RealPolicyImprovementRecommendation {
+        recommendations.push(RuntimePolicyImprovementRecommendation {
             priority: "P2",
             target: "gerbil.config-interface.policy-pack",
             evidence: "policy combination is still assembled as a Rust test fixture",
@@ -740,13 +707,13 @@ fn sample_loop_program() -> LoopProgram {
     })
 }
 
-fn real_repair_001_no_write_llm_loop_program() -> LoopProgram {
+fn runtime_repair_no_write_llm_loop_program() -> LoopProgram {
     LoopProgram::new(LoopProgramInput {
-        program_id: LoopProgramId::new("real-repair-001-no-write-llm"),
+        program_id: LoopProgramId::new("runtime-repair-no-write-llm"),
         policy_epoch: LoopPolicyEpoch::new(16),
         policy_digest: LoopPolicyDigest::from_bytes([16_u8; 32]),
         mechanism_policies: vec![
-            LoopMechanismPolicyId::new("real-repair-001"),
+            LoopMechanismPolicyId::new("runtime-repair"),
             LoopMechanismPolicyId::new("llm-repair-no-write"),
         ]
         .into_boxed_slice(),
@@ -771,13 +738,13 @@ fn real_repair_001_no_write_llm_loop_program() -> LoopProgram {
     })
 }
 
-fn real_repair_001_single_file_loop_program() -> LoopProgram {
+fn runtime_repair_single_file_loop_program() -> LoopProgram {
     LoopProgram::new(LoopProgramInput {
-        program_id: LoopProgramId::new("real-repair-001-single-file"),
+        program_id: LoopProgramId::new("runtime-repair-single-file"),
         policy_epoch: LoopPolicyEpoch::new(17),
         policy_digest: LoopPolicyDigest::from_bytes([17_u8; 32]),
         mechanism_policies: vec![
-            LoopMechanismPolicyId::new("real-repair-001"),
+            LoopMechanismPolicyId::new("runtime-repair"),
             LoopMechanismPolicyId::new("llm-repair"),
             LoopMechanismPolicyId::new("tool-sandbox"),
             LoopMechanismPolicyId::new("verification-gate"),
@@ -818,35 +785,24 @@ fn real_repair_001_single_file_loop_program() -> LoopProgram {
     })
 }
 
-fn unique_temp_repair_file() -> PathBuf {
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system clock after epoch")
-        .as_nanos();
-    std::env::temp_dir().join(format!(
-        "marlin-real-repair-001-{}-{nanos}.rs",
-        std::process::id()
-    ))
-}
-
 fn unique_temp_repair_workspace() -> PathBuf {
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("system clock after epoch")
         .as_nanos();
     std::env::temp_dir().join(format!(
-        "marlin-real-repair-001-workspace-{}-{nanos}",
+        "marlin-runtime-repair-workspace-{}-{nanos}",
         std::process::id()
     ))
 }
 
-fn real_policy_001_sandbox_denylist_loop_program() -> LoopProgram {
+fn single_tool_dispatch_error_stop_loop_program() -> LoopProgram {
     LoopProgram::new(LoopProgramInput {
-        program_id: LoopProgramId::new("real-policy-001-sandbox-denylist"),
+        program_id: LoopProgramId::new("kernel-fixture-tool-dispatch-error-stop"),
         policy_epoch: LoopPolicyEpoch::new(10),
         policy_digest: LoopPolicyDigest::from_bytes([10_u8; 32]),
         mechanism_policies: vec![
-            LoopMechanismPolicyId::new("real-policy-001-sandbox-denylist"),
+            LoopMechanismPolicyId::new("kernel-fixture-tool-dispatch-error"),
             LoopMechanismPolicyId::new("agent-flow-tool-projection"),
         ]
         .into_boxed_slice(),
@@ -871,13 +827,13 @@ fn real_policy_001_sandbox_denylist_loop_program() -> LoopProgram {
     })
 }
 
-fn real_tool_sandbox_loop_program() -> LoopProgram {
+fn single_tool_dispatch_receipt_stop_loop_program() -> LoopProgram {
     LoopProgram::new(LoopProgramInput {
-        program_id: LoopProgramId::new("real-tool-sandbox-loop"),
+        program_id: LoopProgramId::new("kernel-fixture-tool-dispatch-receipt-stop"),
         policy_epoch: LoopPolicyEpoch::new(10),
         policy_digest: LoopPolicyDigest::from_bytes([10_u8; 32]),
         mechanism_policies: vec![
-            LoopMechanismPolicyId::new("real-policy-001-tool-sandbox"),
+            LoopMechanismPolicyId::new("kernel-fixture-tool-dispatch-receipt"),
             LoopMechanismPolicyId::new("agent-flow-tool-projection"),
         ]
         .into_boxed_slice(),
@@ -902,13 +858,13 @@ fn real_tool_sandbox_loop_program() -> LoopProgram {
     })
 }
 
-fn real_policy_002_retry_budget_loop_program() -> LoopProgram {
+fn two_attempt_tool_dispatch_loop_program() -> LoopProgram {
     LoopProgram::new(LoopProgramInput {
-        program_id: LoopProgramId::new("real-policy-002-retry-budget"),
+        program_id: LoopProgramId::new("kernel-fixture-two-attempt-tool-dispatch"),
         policy_epoch: LoopPolicyEpoch::new(11),
         policy_digest: LoopPolicyDigest::from_bytes([11_u8; 32]),
         mechanism_policies: vec![
-            LoopMechanismPolicyId::new("real-policy-002-retry-budget"),
+            LoopMechanismPolicyId::new("kernel-fixture-two-attempt-dispatch"),
             LoopMechanismPolicyId::new("agent-flow-tool-projection"),
         ]
         .into_boxed_slice(),
@@ -940,12 +896,12 @@ fn real_policy_002_retry_budget_loop_program() -> LoopProgram {
     })
 }
 
-fn real_policy_003_maker_checker_loop_program() -> LoopProgram {
+fn model_then_verify_loop_program() -> LoopProgram {
     LoopProgram::new(LoopProgramInput {
-        program_id: LoopProgramId::new("real-policy-003-maker-checker"),
+        program_id: LoopProgramId::new("kernel-fixture-model-then-verify"),
         policy_epoch: LoopPolicyEpoch::new(12),
         policy_digest: LoopPolicyDigest::from_bytes([12_u8; 32]),
-        mechanism_policies: vec![LoopMechanismPolicyId::new("real-policy-003-maker-checker")]
+        mechanism_policies: vec![LoopMechanismPolicyId::new("kernel-fixture-model-verify")]
             .into_boxed_slice(),
         initial_state: LoopProgramStateId::new("start"),
         transitions: vec![
@@ -975,13 +931,13 @@ fn real_policy_003_maker_checker_loop_program() -> LoopProgram {
     })
 }
 
-fn real_policy_004_dynamic_rewrite_loop_program() -> LoopProgram {
+fn rewrite_tool_verify_loop_program() -> LoopProgram {
     LoopProgram::new(LoopProgramInput {
-        program_id: LoopProgramId::new("real-policy-004-dynamic-rewrite"),
+        program_id: LoopProgramId::new("kernel-fixture-rewrite-tool-verify"),
         policy_epoch: LoopPolicyEpoch::new(13),
         policy_digest: LoopPolicyDigest::from_bytes([13_u8; 32]),
         mechanism_policies: vec![
-            LoopMechanismPolicyId::new("real-policy-004-dynamic-rewrite"),
+            LoopMechanismPolicyId::new("kernel-fixture-rewrite-tool"),
             LoopMechanismPolicyId::new("verification-gate"),
         ]
         .into_boxed_slice(),
@@ -1020,13 +976,13 @@ fn real_policy_004_dynamic_rewrite_loop_program() -> LoopProgram {
     })
 }
 
-fn real_policy_005_memory_recall_loop_program() -> LoopProgram {
+fn memory_recall_then_tool_loop_program() -> LoopProgram {
     LoopProgram::new(LoopProgramInput {
-        program_id: LoopProgramId::new("real-policy-005-memory-recall"),
+        program_id: LoopProgramId::new("kernel-fixture-memory-then-tool"),
         policy_epoch: LoopPolicyEpoch::new(14),
         policy_digest: LoopPolicyDigest::from_bytes([14_u8; 32]),
         mechanism_policies: vec![
-            LoopMechanismPolicyId::new("real-policy-005-memory-recall"),
+            LoopMechanismPolicyId::new("kernel-fixture-memory-recall"),
             LoopMechanismPolicyId::new("agent-flow-memory-projection"),
         ]
         .into_boxed_slice(),
@@ -1058,15 +1014,15 @@ fn real_policy_005_memory_recall_loop_program() -> LoopProgram {
     })
 }
 
-fn policy_combination_matrix_loop_program() -> LoopProgram {
+fn memory_model_rewrite_tool_verify_loop_program() -> LoopProgram {
     LoopProgram::new(LoopProgramInput {
-        program_id: LoopProgramId::new("policy-combination-memory-rewrite-checker"),
+        program_id: LoopProgramId::new("kernel-fixture-memory-model-rewrite-tool-verify"),
         policy_epoch: LoopPolicyEpoch::new(15),
         policy_digest: LoopPolicyDigest::from_bytes([15_u8; 32]),
         mechanism_policies: vec![
-            LoopMechanismPolicyId::new("real-policy-003-maker-checker"),
-            LoopMechanismPolicyId::new("real-policy-004-dynamic-rewrite"),
-            LoopMechanismPolicyId::new("real-policy-005-memory-recall"),
+            LoopMechanismPolicyId::new("kernel-fixture-model-verify"),
+            LoopMechanismPolicyId::new("kernel-fixture-rewrite-tool"),
+            LoopMechanismPolicyId::new("kernel-fixture-memory-recall"),
         ]
         .into_boxed_slice(),
         initial_state: LoopProgramStateId::new("start"),
@@ -1163,7 +1119,7 @@ fn tool_error_loop_program() -> LoopProgram {
 
 #[path = "driver.rs"]
 mod driver;
-#[path = "real_policy.rs"]
-mod real_policy;
-#[path = "real_repair.rs"]
-mod real_repair;
+#[path = "runtime_policy.rs"]
+mod runtime_policy;
+#[path = "runtime_repair.rs"]
+mod runtime_repair;

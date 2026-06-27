@@ -1,0 +1,207 @@
+//! Typed receipt projection for real LLM loop case runner diagnostics.
+
+use serde::{Deserialize, Serialize};
+
+/// Rust-owned receipt projected from the real LLM loop case CLI boundary.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct GerbilLoopCaseDriverRealLlmCaseReceipt {
+    case_id: String,
+    result: String,
+    rounds_used: u64,
+    terminal_status: String,
+    iteration_count: u64,
+    process_exit_status: i32,
+    continuation_planner: Option<String>,
+    failure_classification_receipt_present: bool,
+    governance_receipt_present: bool,
+    nono_sandbox_materialized: bool,
+    human_audit_decision: bool,
+}
+
+impl GerbilLoopCaseDriverRealLlmCaseReceipt {
+    #[must_use]
+    pub fn case_id(&self) -> &str {
+        &self.case_id
+    }
+
+    #[must_use]
+    pub fn result(&self) -> &str {
+        &self.result
+    }
+
+    #[must_use]
+    pub const fn rounds_used(&self) -> u64 {
+        self.rounds_used
+    }
+
+    #[must_use]
+    pub fn terminal_status(&self) -> &str {
+        &self.terminal_status
+    }
+
+    #[must_use]
+    pub const fn iteration_count(&self) -> u64 {
+        self.iteration_count
+    }
+
+    #[must_use]
+    pub const fn process_exit_status(&self) -> i32 {
+        self.process_exit_status
+    }
+
+    #[must_use]
+    pub fn continuation_planner(&self) -> Option<&str> {
+        self.continuation_planner.as_deref()
+    }
+
+    #[must_use]
+    pub const fn failure_classification_receipt_present(&self) -> bool {
+        self.failure_classification_receipt_present
+    }
+
+    #[must_use]
+    pub const fn governance_receipt_present(&self) -> bool {
+        self.governance_receipt_present
+    }
+
+    #[must_use]
+    pub const fn nono_sandbox_materialized(&self) -> bool {
+        self.nono_sandbox_materialized
+    }
+
+    #[must_use]
+    pub const fn human_audit_decision(&self) -> bool {
+        self.human_audit_decision
+    }
+}
+
+/// Parse the real LLM loop case runner output into a Rust-owned receipt.
+///
+/// This parser is only for the CLI/trace boundary. The Scheme config-interface
+/// policy projection remains Scheme types -> Rust types; this does not create a
+/// Scheme-internal text protocol.
+pub fn parse_gerbil_loop_case_driver_real_llm_case_receipt(
+    stdout: &str,
+) -> Result<GerbilLoopCaseDriverRealLlmCaseReceipt, GerbilLoopCaseDriverRealLlmCaseReceiptError> {
+    Ok(GerbilLoopCaseDriverRealLlmCaseReceipt {
+        case_id: required_marker(stdout, "marlin-real-llm-case.case_id=")?,
+        result: required_marker(stdout, "marlin-real-llm-case.result=")?,
+        rounds_used: parse_marker(stdout, "marlin-real-llm-case.rounds_used=")?,
+        terminal_status: required_json_string_field(stdout, "terminal_status")?,
+        iteration_count: required_json_u64_field(stdout, "iteration_count")?,
+        process_exit_status: parse_marker(stdout, "process-command.exit_status:")?,
+        continuation_planner: optional_marker(stdout, "continuation_planner="),
+        failure_classification_receipt_present: stdout
+            .contains("\"failure_classification_receipt\""),
+        governance_receipt_present: stdout.contains("\"governance_receipt\""),
+        nono_sandbox_materialized: stdout.contains("\"backend\": \"nono\""),
+        human_audit_decision: stdout.contains("\"decision\": \"human-audit\""),
+    })
+}
+
+/// Parse error for real LLM loop case runner receipts.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum GerbilLoopCaseDriverRealLlmCaseReceiptError {
+    MissingMarker {
+        marker: &'static str,
+    },
+    MissingField {
+        field: &'static str,
+    },
+    InvalidNumber {
+        field: &'static str,
+        value: String,
+        message: String,
+    },
+}
+
+impl std::fmt::Display for GerbilLoopCaseDriverRealLlmCaseReceiptError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::MissingMarker { marker } => write!(formatter, "missing marker {marker}"),
+            Self::MissingField { field } => write!(formatter, "missing field {field}"),
+            Self::InvalidNumber {
+                field,
+                value,
+                message,
+            } => write!(
+                formatter,
+                "invalid numeric field {field} value {value:?}: {message}"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for GerbilLoopCaseDriverRealLlmCaseReceiptError {}
+
+fn parse_marker<T>(
+    stdout: &str,
+    marker: &'static str,
+) -> Result<T, GerbilLoopCaseDriverRealLlmCaseReceiptError>
+where
+    T: std::str::FromStr,
+    T::Err: std::fmt::Display,
+{
+    let value = required_marker(stdout, marker)?;
+    value.parse::<T>().map_err(
+        |error| GerbilLoopCaseDriverRealLlmCaseReceiptError::InvalidNumber {
+            field: marker,
+            value,
+            message: error.to_string(),
+        },
+    )
+}
+
+fn required_marker(
+    stdout: &str,
+    marker: &'static str,
+) -> Result<String, GerbilLoopCaseDriverRealLlmCaseReceiptError> {
+    optional_marker(stdout, marker)
+        .ok_or(GerbilLoopCaseDriverRealLlmCaseReceiptError::MissingMarker { marker })
+}
+
+fn optional_marker(stdout: &str, marker: &'static str) -> Option<String> {
+    let start = stdout.find(marker)? + marker.len();
+    let rest = &stdout[start..];
+    let end = rest.find(['\\', '"', '\n', '\r']).unwrap_or(rest.len());
+    Some(rest[..end].to_owned())
+}
+
+fn required_json_string_field(
+    stdout: &str,
+    field: &'static str,
+) -> Result<String, GerbilLoopCaseDriverRealLlmCaseReceiptError> {
+    let prefix = format!("\"{field}\": \"");
+    let start = stdout
+        .find(&prefix)
+        .ok_or(GerbilLoopCaseDriverRealLlmCaseReceiptError::MissingField { field })?
+        + prefix.len();
+    let rest = &stdout[start..];
+    let end = rest
+        .find('"')
+        .ok_or(GerbilLoopCaseDriverRealLlmCaseReceiptError::MissingField { field })?;
+    Ok(rest[..end].to_owned())
+}
+
+fn required_json_u64_field(
+    stdout: &str,
+    field: &'static str,
+) -> Result<u64, GerbilLoopCaseDriverRealLlmCaseReceiptError> {
+    let prefix = format!("\"{field}\": ");
+    let start = stdout
+        .find(&prefix)
+        .ok_or(GerbilLoopCaseDriverRealLlmCaseReceiptError::MissingField { field })?
+        + prefix.len();
+    let rest = &stdout[start..];
+    let end = rest
+        .find(|character: char| !character.is_ascii_digit())
+        .unwrap_or(rest.len());
+    let value = rest[..end].to_owned();
+    value.parse::<u64>().map_err(|error| {
+        GerbilLoopCaseDriverRealLlmCaseReceiptError::InvalidNumber {
+            field,
+            value,
+            message: error.to_string(),
+        }
+    })
+}

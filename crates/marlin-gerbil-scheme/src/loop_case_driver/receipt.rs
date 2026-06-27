@@ -1,8 +1,10 @@
-//! Typed Rust projection for config-interface loop case driver receipts.
+//! Typed receipt projection for config-interface loop case driver receipts.
 
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
+
+use super::{GerbilLoopCaseDriverCaseId, GerbilLoopCaseDriverProfileRef};
 
 /// Scheme receipt kind emitted by the config-interface loop case driver.
 pub const GERBIL_LOOP_CASE_DRIVER_SCHEME_RECEIPT_KIND: &str =
@@ -40,6 +42,8 @@ impl GerbilLoopCaseDriverSchemeReceiptKind {
 #[serde(rename_all = "kebab-case")]
 pub enum GerbilLoopCaseRuntimeMode {
     LoopRuntime,
+    RealLlmOptIn,
+    TypedLoopProjection,
 }
 
 impl GerbilLoopCaseRuntimeMode {
@@ -47,6 +51,8 @@ impl GerbilLoopCaseRuntimeMode {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::LoopRuntime => "loop-runtime",
+            Self::RealLlmOptIn => "real-llm-opt-in",
+            Self::TypedLoopProjection => "typed-loop-projection",
         }
     }
 }
@@ -57,6 +63,7 @@ impl GerbilLoopCaseRuntimeMode {
 pub enum GerbilLoopCaseSmokeStatus {
     LiveEnabled,
     NoLiveLlmDenied,
+    TypedLoopProjectionReady,
 }
 
 /// Runtime handoff status after Rust receives the typed Scheme case.
@@ -74,11 +81,29 @@ pub enum GerbilLoopCaseSchemeBoundary {
     SchemeTypesToRustTypes,
 }
 
+impl GerbilLoopCaseSchemeBoundary {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::SchemeTypesToRustTypes => "scheme-types->rust-types",
+        }
+    }
+}
+
 /// External serialization boundary owned by Rust.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum GerbilLoopCaseSerializationBoundary {
     RustOwnedCliTraceCrossProcess,
+}
+
+impl GerbilLoopCaseSerializationBoundary {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::RustOwnedCliTraceCrossProcess => "rust-owned-cli-trace-cross-process",
+        }
+    }
 }
 
 /// POO Flow module projection kind carried by a Scheme case-driver receipt.
@@ -136,8 +161,8 @@ impl GerbilLoopCaseModuleSelectionTag {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct GerbilLoopCaseDriverSchemeReceipt {
     pub kind: GerbilLoopCaseDriverSchemeReceiptKind,
-    pub case_id: String,
-    pub profile_ref: String,
+    pub case_id: GerbilLoopCaseDriverCaseId,
+    pub profile_ref: GerbilLoopCaseDriverProfileRef,
     pub runtime_mode: GerbilLoopCaseRuntimeMode,
     pub live_gate_env: String,
     pub live_enabled: bool,
@@ -164,8 +189,8 @@ pub struct GerbilLoopCaseDriverSchemeReceipt {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct GerbilLoopCaseDriverRustLoopReceipt {
     pub schema_id: String,
-    pub case_id: String,
-    pub profile_ref: String,
+    pub case_id: GerbilLoopCaseDriverCaseId,
+    pub profile_ref: GerbilLoopCaseDriverProfileRef,
     pub command_kind: GerbilLoopCaseCommandKind,
     pub command_vector: Vec<String>,
     pub input_path: PathBuf,
@@ -186,13 +211,15 @@ pub struct GerbilLoopCaseDriverRustLoopReceipt {
 
 impl GerbilLoopCaseDriverSchemeReceipt {
     pub fn runtime_handoff_no_live_llm_fixture(
-        case_id: impl Into<String>,
+        case_id: impl Into<GerbilLoopCaseDriverCaseId>,
         input_path: impl Into<PathBuf>,
     ) -> Self {
         Self {
             kind: GerbilLoopCaseDriverSchemeReceiptKind::MarlineKernelLoopCaseDriverReceipt,
             case_id: case_id.into(),
-            profile_ref: "custom/marline-kernel/profiles/default-loop-runtime.ss".to_owned(),
+            profile_ref: GerbilLoopCaseDriverProfileRef::new(
+                "custom/marline-kernel/profiles/default-loop-runtime.ss",
+            ),
             runtime_mode: GerbilLoopCaseRuntimeMode::LoopRuntime,
             live_gate_env: "MARLIN_LIVE_LLM".to_owned(),
             live_enabled: false,
@@ -221,6 +248,52 @@ impl GerbilLoopCaseDriverSchemeReceipt {
                 GerbilLoopCaseSerializationBoundary::RustOwnedCliTraceCrossProcess,
         }
     }
+
+    pub fn typed_loop_projection_fixture(
+        case_id: impl Into<GerbilLoopCaseDriverCaseId>,
+        profile_ref: impl Into<GerbilLoopCaseDriverProfileRef>,
+        module_selection_tags: impl IntoIterator<Item = impl Into<String>>,
+    ) -> Self {
+        let profile_ref = profile_ref.into();
+        Self {
+            kind: GerbilLoopCaseDriverSchemeReceiptKind::MarlineKernelLoopCaseDriverReceipt,
+            case_id: case_id.into(),
+            profile_ref: profile_ref.clone(),
+            runtime_mode: GerbilLoopCaseRuntimeMode::TypedLoopProjection,
+            live_gate_env: "none".to_owned(),
+            live_enabled: false,
+            smoke_status: GerbilLoopCaseSmokeStatus::TypedLoopProjectionReady,
+            command_kind: GerbilLoopCaseCommandKind::LoopProgramRun,
+            command_vector: vec![
+                "marlin".to_owned(),
+                "loop".to_owned(),
+                "program".to_owned(),
+                "run".to_owned(),
+                "--profile".to_owned(),
+                profile_ref.as_str().to_owned(),
+            ],
+            input_path: PathBuf::from("none"),
+            stable_fixture: false,
+            result_protocol: "marlin.config-interface.poo-loop-program-compiler.v1".to_owned(),
+            policy_owner: "marlin".to_owned(),
+            control_plane_owner: "poo-flow".to_owned(),
+            runtime_execution_owner: "marlin-agent-core".to_owned(),
+            module_kind: GerbilLoopCaseModuleKind::new(
+                "marlin.config-interface.loop-policy-profile-projection.v1",
+            ),
+            module_user_module: GerbilLoopCaseModuleName::new("funflow"),
+            module_selection_tags: module_selection_tags
+                .into_iter()
+                .map(GerbilLoopCaseModuleSelectionTag::new)
+                .collect(),
+            module_source_ref: profile_ref.as_str().to_owned(),
+            module_entrypoint: "marlinLoopPolicyProfileCompilerReceipts".to_owned(),
+            module_enabled: true,
+            scheme_boundary: GerbilLoopCaseSchemeBoundary::SchemeTypesToRustTypes,
+            serialization_boundary:
+                GerbilLoopCaseSerializationBoundary::RustOwnedCliTraceCrossProcess,
+        }
+    }
 }
 
 /// Project a typed Scheme policy case into a Rust loop runtime receipt.
@@ -228,10 +301,15 @@ pub fn project_gerbil_loop_case_driver_rust_loop_receipt(
     receipt: &GerbilLoopCaseDriverSchemeReceipt,
 ) -> GerbilLoopCaseDriverRustLoopReceipt {
     let live_llm_required = matches!(receipt.smoke_status, GerbilLoopCaseSmokeStatus::LiveEnabled);
-    let runtime_handoff_status = if live_llm_required || receipt.live_enabled {
-        GerbilLoopCaseRuntimeHandoffStatus::Ready
-    } else {
-        GerbilLoopCaseRuntimeHandoffStatus::DeferredNoLiveLlm
+    let runtime_handoff_status = match receipt.smoke_status {
+        GerbilLoopCaseSmokeStatus::NoLiveLlmDenied if !receipt.live_enabled => {
+            GerbilLoopCaseRuntimeHandoffStatus::DeferredNoLiveLlm
+        }
+        GerbilLoopCaseSmokeStatus::LiveEnabled
+        | GerbilLoopCaseSmokeStatus::TypedLoopProjectionReady => {
+            GerbilLoopCaseRuntimeHandoffStatus::Ready
+        }
+        GerbilLoopCaseSmokeStatus::NoLiveLlmDenied => GerbilLoopCaseRuntimeHandoffStatus::Ready,
     };
 
     GerbilLoopCaseDriverRustLoopReceipt {

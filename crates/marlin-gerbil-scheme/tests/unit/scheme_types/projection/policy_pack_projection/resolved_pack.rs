@@ -1,12 +1,12 @@
 use super::{
     decode_gerbil_resolved_loop_policy_pack, resolved_loop_policy_pack_envelope,
-    resolved_loop_policy_pack_payload, resolved_loop_policy_pack_registry,
+    resolved_loop_policy_pack_fixture, resolved_loop_policy_pack_registry,
 };
 
 #[test]
 fn resolved_loop_policy_pack_decodes_hot_and_audit_ir_without_json_boundary() {
     let registry = resolved_loop_policy_pack_registry();
-    let envelope = resolved_loop_policy_pack_envelope(resolved_loop_policy_pack_payload(1));
+    let envelope = resolved_loop_policy_pack_envelope(resolved_loop_policy_pack_fixture(1));
 
     let pack = decode_gerbil_resolved_loop_policy_pack(&registry, &envelope)
         .expect("resolved loop policy pack decodes");
@@ -27,7 +27,7 @@ fn resolved_loop_policy_pack_decodes_hot_and_audit_ir_without_json_boundary() {
 #[test]
 fn resolved_loop_policy_pack_rejects_schema_version_drift() {
     let registry = resolved_loop_policy_pack_registry();
-    let envelope = resolved_loop_policy_pack_envelope(resolved_loop_policy_pack_payload(99));
+    let envelope = resolved_loop_policy_pack_envelope(resolved_loop_policy_pack_fixture(99));
 
     let error = decode_gerbil_resolved_loop_policy_pack(&registry, &envelope)
         .expect_err("schema drift should be rejected by Rust projection");

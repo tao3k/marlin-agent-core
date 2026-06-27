@@ -32,7 +32,9 @@ pub use evidence::{RustProjectHarnessEvidenceReceipt, write_evidence_graph_from_
 pub use gate::{assert_marlin_rust_project_harness_gate_from_env, complete_build_gate};
 pub use gerbil_runtime_assets::{
     GerbilRuntimeAssetManifestReceipt, GerbilRuntimeAssetManifestStatus,
+    GerbilRuntimeHarnessContractReceipt, GerbilRuntimeHarnessContractStatus,
     generate_gerbil_runtime_assets, inspect_gerbil_runtime_assets,
+    inspect_gerbil_runtime_harness_contract,
 };
 pub use improvement_queue::{
     RustProjectHarnessImprovementId, RustProjectHarnessImprovementItem,

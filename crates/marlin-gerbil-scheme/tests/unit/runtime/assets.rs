@@ -9,9 +9,11 @@ use marlin_gerbil_scheme::{
     MARLIN_GERBIL_GSC_ENV, MARLIN_GERBIL_GXC_ENV, MARLIN_GERBIL_GXI_ENV,
     default_gerbil_gsc_program, default_gerbil_gxc_program, default_gerbil_gxi_program,
     gerbil_package_build_script, gerbil_package_root, gerbil_runtime_asset, gerbil_runtime_assets,
-    gerbil_runtime_build_script_contract, gerbil_runtime_loadpath, write_gerbil_runtime_assets,
+    gerbil_runtime_build_script_contract, gerbil_runtime_dependency_loadpath,
+    gerbil_runtime_loadpath, gerbil_runtime_loadpath_with_dependencies,
+    write_gerbil_runtime_assets,
 };
-use std::{fs, path::Path};
+use std::{env, fs, path::Path};
 
 #[test]
 fn gerbil_runtime_assets_expose_loadpath_contract() {
@@ -64,6 +66,18 @@ fn gerbil_runtime_assets_expose_loadpath_contract() {
         Some("gsc")
     );
     assert_eq!(GERBIL_PACKAGE_SOURCE_PATH, "src");
+    let runtime_root = test_root("runtime-loadpath-order");
+    let loadpath_entries = env::split_paths(&gerbil_runtime_loadpath_with_dependencies(
+        runtime_root.path(),
+    ))
+    .collect::<Vec<_>>();
+    assert_eq!(
+        loadpath_entries.as_slice(),
+        &[
+            gerbil_runtime_dependency_loadpath(),
+            gerbil_runtime_loadpath(runtime_root.path())
+        ]
+    );
     assert!(package_manifest_source.contains("marlin-deck-runtime"));
     assert_eq!(GERBIL_POO_PACKAGE_NAME, "clan/poo");
     assert_eq!(GERBIL_POO_OBJECT_MODULE, ":clan/poo/object");

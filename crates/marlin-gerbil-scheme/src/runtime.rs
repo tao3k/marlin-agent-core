@@ -116,11 +116,14 @@ pub fn gerbil_runtime_dependency_loadpath() -> PathBuf {
     gerbil_package_root().join(".gerbil").join("lib")
 }
 
-/// Returns a `GERBIL_LOADPATH` value for runtime assets plus package dependencies.
+/// Returns a `GERBIL_LOADPATH` value for package dependencies plus runtime assets.
+///
+/// Package-local compiled dependencies come first so runtime execution uses
+/// built package modules before falling back to source assets.
 pub fn gerbil_runtime_loadpath_with_dependencies(root: impl AsRef<Path>) -> OsString {
     env::join_paths([
-        gerbil_runtime_loadpath(root),
         gerbil_runtime_dependency_loadpath(),
+        gerbil_runtime_loadpath(root),
     ])
     .expect("Gerbil loadpath entries should be joinable")
 }

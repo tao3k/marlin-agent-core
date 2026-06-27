@@ -46,7 +46,8 @@ pub use loop_program_handoff_executor::{
     LoopProgramRuntimeOwner, LoopProgramToolProcessProgram,
     LoopProgramToolProcessProjectionReceipt, LoopProgramToolProcessSpawnReceipt,
     LoopProgramToolProcessSpawnRequest, PolicyGatedAgentFlowLoopProgramRuntimeHandoffExecutor,
-    StaticLoopProgramRuntimeHandoffHandler, spawn_loop_program_tool_process,
+    RetryBudgetToolHandler, StaticLoopProgramRuntimeHandoffHandler,
+    spawn_loop_program_tool_process,
 };
 pub use loop_program_side_effects::{
     LoopProgramDerivedSessionPolicyStatus, LoopProgramExecutionReplayBundleReceipt,

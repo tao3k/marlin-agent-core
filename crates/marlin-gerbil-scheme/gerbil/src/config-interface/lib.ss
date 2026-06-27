@@ -119,9 +119,21 @@ package: config-interface
         marlinPolicyPackPresentation
         marlinPolicyProjection
         marlinPooLoopProgramCompilerReceipt
+        marlinLoopPolicyProfileProjectionDescriptor
+        marlinLoopPolicyProfileProjectionDescriptors
+        marlinLoopVerticalMainlineProjectionDescriptors
+        marlinLoopPolicyProjectionModuleFromDescriptor
+        marlinLoopPolicyProjectionModules
+        marlinLoopPolicyProfileCompilerReceipts
         marlinRealRepair001ResolvedPolicyPack
         marlinRealRepair001LoopProgram
         marlinRealRepair001LoopProgramCompilerReceipt
+        marlinRealPolicy001SandboxDenylistResolvedPolicyPack
+        marlinRealPolicy001SandboxDenylistLoopProgram
+        marlinRealPolicy001SandboxDenylistLoopProgramCompilerReceipt
+        marlinRealToolSandboxResolvedPolicyPack
+        marlinRealToolSandboxLoopProgram
+        marlinRealToolSandboxLoopProgramCompilerReceipt
         marlinFailureRetryResolvedPolicyPack
         marlinFailureRetryLoopProgram
         marlinFailureRetryLoopProgramCompilerReceipt

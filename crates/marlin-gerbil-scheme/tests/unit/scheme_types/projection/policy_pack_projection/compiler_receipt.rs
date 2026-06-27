@@ -2,25 +2,22 @@ use super::{
     GerbilPooLoopProgramCompilerBoundary, GerbilPooLoopProgramCompilerOwner,
     GerbilPooLoopProgramCompilerSerializationBoundary,
     decode_gerbil_poo_loop_program_compiler_receipt, poo_loop_program_compiler_envelope,
-    poo_loop_program_compiler_payload, poo_loop_program_compiler_payload_with_resolved_policy_pack,
-    poo_loop_program_compiler_registry, resolved_loop_policy_audit_payload_without_merge_receipts,
-    resolved_loop_policy_pack_payload_with_audit,
+    poo_loop_program_compiler_fixture, poo_loop_program_compiler_fixture_with_resolved_policy_pack,
+    poo_loop_program_compiler_registry, resolved_loop_policy_audit_fixture_without_merge_receipts,
+    resolved_loop_policy_pack_fixture_with_audit,
 };
 use std::time::{Duration, Instant};
 
 #[test]
 fn poo_loop_program_compiler_receipt_decodes_program_bound_to_resolved_pack() {
     let registry = poo_loop_program_compiler_registry();
-    let envelope = poo_loop_program_compiler_envelope(poo_loop_program_compiler_payload([7; 32]));
+    let envelope = poo_loop_program_compiler_envelope(poo_loop_program_compiler_fixture([7; 32]));
 
     let receipt = decode_gerbil_poo_loop_program_compiler_receipt(&registry, &envelope)
         .expect("POO loop program compiler receipt decodes");
 
     assert!(receipt.has_current_schema());
-    assert_eq!(
-        receipt.profile_id.as_str(),
-        "real-repair-001/reactive-tool-loop"
-    );
+    assert_eq!(receipt.profile_id.as_str(), "runtime-reactive-tool-loop");
     assert_eq!(
         receipt.compiler_owner,
         GerbilPooLoopProgramCompilerOwner::GerbilPooFlow
@@ -61,7 +58,7 @@ fn poo_loop_program_compiler_receipt_decodes_program_bound_to_resolved_pack() {
 fn poo_loop_program_compiler_receipt_projection_stays_in_process() {
     let registry = poo_loop_program_compiler_registry();
     let envelopes = (0..256)
-        .map(|_| poo_loop_program_compiler_envelope(poo_loop_program_compiler_payload([7; 32])))
+        .map(|_| poo_loop_program_compiler_envelope(poo_loop_program_compiler_fixture([7; 32])))
         .collect::<Vec<_>>();
 
     let started = Instant::now();
@@ -92,7 +89,7 @@ fn poo_loop_program_compiler_receipt_projection_stays_in_process() {
 #[test]
 fn poo_loop_program_compiler_receipt_rejects_digest_drift() {
     let registry = poo_loop_program_compiler_registry();
-    let envelope = poo_loop_program_compiler_envelope(poo_loop_program_compiler_payload([8; 32]));
+    let envelope = poo_loop_program_compiler_envelope(poo_loop_program_compiler_fixture([8; 32]));
 
     let error = decode_gerbil_poo_loop_program_compiler_receipt(&registry, &envelope)
         .expect_err("digest drift should be rejected by Rust projection");
@@ -102,11 +99,11 @@ fn poo_loop_program_compiler_receipt_rejects_digest_drift() {
 #[test]
 fn poo_loop_program_compiler_receipt_rejects_missing_merge_receipts() {
     let registry = poo_loop_program_compiler_registry();
-    let payload = poo_loop_program_compiler_payload_with_resolved_policy_pack(
+    let payload = poo_loop_program_compiler_fixture_with_resolved_policy_pack(
         [7; 32],
-        resolved_loop_policy_pack_payload_with_audit(
+        resolved_loop_policy_pack_fixture_with_audit(
             1,
-            resolved_loop_policy_audit_payload_without_merge_receipts(),
+            resolved_loop_policy_audit_fixture_without_merge_receipts(),
         ),
     );
     let envelope = poo_loop_program_compiler_envelope(payload);

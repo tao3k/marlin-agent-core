@@ -14,13 +14,17 @@ package: marlin
         marlin-deck-runtime-resolved-loop-policy-pack-type-id
         marlin-deck-runtime-resolved-loop-policy-pack-schema-id
         marlin-deck-runtime-resolved-loop-policy-pack-symbol
+        marlin-deck-runtime-loop-policy-projection-module-type-id
+        marlin-deck-runtime-loop-policy-projection-module-schema-id
+        marlin-deck-runtime-loop-policy-projection-module-symbol
         make-marlin-deck-runtime-poo-policy-projection
         marlin-deck-runtime-project-poo-policy
         make-marlin-deck-runtime-resolved-loop-policy-hot-pack
         make-marlin-deck-runtime-resolved-loop-policy-audit-pack
         make-marlin-deck-runtime-resolved-loop-policy-pack
         make-marlin-deck-runtime-sample-resolved-loop-policy-pack
-        marlin-deck-runtime-project-resolved-loop-policy-pack)
+        marlin-deck-runtime-project-resolved-loop-policy-pack
+        marlin-deck-runtime-project-loop-policy-projection-module)
 
 ;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
 ;; MarlinResult <- MarlinInput
@@ -60,6 +64,21 @@ package: marlin
 ;; MarlinResult <- MarlinInput
 (def marlin-deck-runtime-resolved-loop-policy-pack-symbol
   "marlin_deck_runtime_project_resolved_loop_policy_pack")
+
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
+(def marlin-deck-runtime-loop-policy-projection-module-type-id
+  "marlin.config-interface.loop-policy.profile-projection-module")
+
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
+(def marlin-deck-runtime-loop-policy-projection-module-schema-id
+  "marlin.config-interface.loop-policy.profile-projection-module.v1")
+
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
+(def marlin-deck-runtime-loop-policy-projection-module-symbol
+  "marlin_deck_runtime_project_loop_policy_projection_module")
 
 ;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
 ;; MarlinResult <- MarlinInput
@@ -164,3 +183,8 @@ package: marlin
 ;; MarlinResult <- MarlinInput
 (def (marlin-deck-runtime-project-resolved-loop-policy-pack pack)
   pack)
+
+;;; Boundary: Native projection symbol returns payload; Rust owns the typed envelope.
+;; MarlinResult <- MarlinInput
+(def (marlin-deck-runtime-project-loop-policy-projection-module projection-module)
+  projection-module)

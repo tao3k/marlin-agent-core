@@ -222,12 +222,12 @@ fn poo_projection_envelope_with_bad_payload() -> GerbilSchemeTypedValue {
 fn resolved_loop_policy_pack_envelope(schema_version: u32) -> GerbilSchemeTypedValue {
     GerbilSchemeTypedValue::new(
         resolved_loop_policy_pack_type_id(),
-        resolved_loop_policy_pack_payload(schema_version),
+        resolved_loop_policy_pack_fixture(schema_version),
     )
     .with_schema_id(resolved_loop_policy_pack_schema_id())
 }
 
-fn resolved_loop_policy_pack_payload(schema_version: u32) -> GerbilSchemeValue {
+fn resolved_loop_policy_pack_fixture(schema_version: u32) -> GerbilSchemeValue {
     GerbilSchemeValue::record([
         ("schema_version", i64::from(schema_version).into()),
         ("policy_epoch", 42_i64.into()),
@@ -235,12 +235,12 @@ fn resolved_loop_policy_pack_payload(schema_version: u32) -> GerbilSchemeValue {
             "policy_digest",
             GerbilSchemeValue::vector((0..32).map(|_| GerbilSchemeValue::from(7_i64))),
         ),
-        ("hot", resolved_loop_policy_hot_payload()),
-        ("audit", resolved_loop_policy_audit_payload()),
+        ("hot", resolved_loop_policy_hot_fixture()),
+        ("audit", resolved_loop_policy_audit_fixture()),
     ])
 }
 
-fn resolved_loop_policy_hot_payload() -> GerbilSchemeValue {
+fn resolved_loop_policy_hot_fixture() -> GerbilSchemeValue {
     GerbilSchemeValue::record([
         ("capability_mask", 0b101_i64.into()),
         ("human_gate_mask", 0b001_i64.into()),
@@ -304,7 +304,7 @@ fn resolved_loop_policy_hot_payload() -> GerbilSchemeValue {
     ])
 }
 
-fn resolved_loop_policy_audit_payload() -> GerbilSchemeValue {
+fn resolved_loop_policy_audit_fixture() -> GerbilSchemeValue {
     GerbilSchemeValue::record([
         (
             "provenance",

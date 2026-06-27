@@ -1,7 +1,10 @@
 //! Rust binding for the Deck runtime Scheme model-route policy selector.
 
 use crate::policy_pack_projection::{
-    gerbil_resolved_loop_policy_pack_contract, gerbil_resolved_loop_policy_pack_type_manifest,
+    GerbilLoopPolicyProjectionModule, decode_gerbil_loop_policy_projection_module,
+    gerbil_loop_policy_projection_module_contract,
+    gerbil_loop_policy_projection_module_type_manifest, gerbil_resolved_loop_policy_pack_contract,
+    gerbil_resolved_loop_policy_pack_type_manifest,
 };
 use crate::scheme_types::{
     GerbilSchemeFieldName, GerbilSchemeNativeAbiContract, GerbilSchemeNativeAbiId,
@@ -11,6 +14,7 @@ use crate::scheme_types::{
     GerbilSchemeTypeDecodeError, GerbilSchemeTypeFieldSpec, GerbilSchemeTypeId,
     GerbilSchemeTypeManifest, GerbilSchemeTypeRegistry, GerbilSchemeTypeSpec,
     GerbilSchemeTypedProjection, GerbilSchemeTypedValue, decode_gerbil_scheme_native_projection,
+    validate_gerbil_scheme_native_projection,
 };
 use marlin_agent_protocol::{
     ModelRouteAgentScope, ModelRouteRequest, RESOLVED_LOOP_POLICY_PACK_SCHEMA_VERSION,
@@ -32,6 +36,9 @@ pub const GERBIL_DECK_RUNTIME_PROJECT_POO_POLICY_SYMBOL: &str =
 /// Native ABI symbol that projects a Gerbil-resolved loop policy pack into Rust IR.
 pub const GERBIL_DECK_RUNTIME_PROJECT_RESOLVED_LOOP_POLICY_PACK_SYMBOL: &str =
     "marlin_deck_runtime_project_resolved_loop_policy_pack";
+/// Native ABI symbol that projects a Gerbil config-interface module into Rust IR.
+pub const GERBIL_DECK_RUNTIME_PROJECT_LOOP_POLICY_PROJECTION_MODULE_SYMBOL: &str =
+    "marlin_deck_runtime_project_loop_policy_projection_module";
 /// Type id returned by the Gerbil POO policy projection.
 pub const GERBIL_DECK_RUNTIME_POO_POLICY_PROJECTION_TYPE_ID: &str =
     "marlin.deck-runtime.poo-policy-projection";
@@ -361,6 +368,9 @@ pub fn gerbil_deck_runtime_native_projection_type_manifest() -> GerbilSchemeType
         .types
         .extend(gerbil_resolved_loop_policy_pack_type_manifest().types);
     manifest
+        .types
+        .extend(gerbil_loop_policy_projection_module_type_manifest().types);
+    manifest
 }
 
 /// Native ABI projection request for the Gerbil POO policy projection.
@@ -384,6 +394,19 @@ pub fn gerbil_deck_runtime_resolved_loop_policy_pack_projection_request()
     )
 }
 
+/// Native ABI projection request for a Gerbil config-interface loop policy module.
+pub fn gerbil_deck_runtime_loop_policy_projection_module_request()
+-> GerbilSchemeNativeProjectionRequest {
+    GerbilSchemeNativeProjectionRequest::new(
+        GerbilSchemeNativeAbiId::new(GERBIL_DECK_RUNTIME_NATIVE_PROJECTION_ABI_ID),
+        GERBIL_DECK_RUNTIME_NATIVE_PROJECTION_ABI_VERSION,
+        GerbilSchemeNativeSymbol::new(
+            GERBIL_DECK_RUNTIME_PROJECT_LOOP_POLICY_PROJECTION_MODULE_SYMBOL,
+        ),
+        gerbil_loop_policy_projection_module_contract(),
+    )
+}
+
 /// Native ABI contract declared by the Deck runtime projection package.
 pub fn gerbil_deck_runtime_native_projection_abi_contract() -> GerbilSchemeNativeAbiContract {
     GerbilSchemeNativeAbiContract::new(
@@ -393,6 +416,9 @@ pub fn gerbil_deck_runtime_native_projection_abi_contract() -> GerbilSchemeNativ
     .with_exported_symbols([
         GerbilSchemeNativeSymbol::new(GERBIL_DECK_RUNTIME_PROJECT_POO_POLICY_SYMBOL),
         GerbilSchemeNativeSymbol::new(GERBIL_DECK_RUNTIME_PROJECT_RESOLVED_LOOP_POLICY_PACK_SYMBOL),
+        GerbilSchemeNativeSymbol::new(
+            GERBIL_DECK_RUNTIME_PROJECT_LOOP_POLICY_PROJECTION_MODULE_SYMBOL,
+        ),
     ])
 }
 
@@ -406,6 +432,9 @@ pub fn gerbil_deck_runtime_native_projection_readiness_plan() -> GerbilSchemeNat
     .with_exported_symbols([
         GerbilSchemeNativeSymbol::new(GERBIL_DECK_RUNTIME_PROJECT_POO_POLICY_SYMBOL),
         GerbilSchemeNativeSymbol::new(GERBIL_DECK_RUNTIME_PROJECT_RESOLVED_LOOP_POLICY_PACK_SYMBOL),
+        GerbilSchemeNativeSymbol::new(
+            GERBIL_DECK_RUNTIME_PROJECT_LOOP_POLICY_PROJECTION_MODULE_SYMBOL,
+        ),
     ])
 }
 
@@ -418,6 +447,7 @@ pub fn gerbil_deck_runtime_native_projection_package_manifest() -> GerbilSchemeP
     .with_projection_contracts([
         gerbil_deck_runtime_poo_policy_projection_contract(),
         gerbil_resolved_loop_policy_pack_contract(),
+        gerbil_loop_policy_projection_module_contract(),
     ])
     .with_native_abi(gerbil_deck_runtime_native_projection_abi_contract())
 }
@@ -467,6 +497,26 @@ pub fn decode_gerbil_deck_runtime_resolved_loop_policy_pack_projection(
             ),
         })
     }
+}
+
+/// Decode a Gerbil config-interface loop policy projection module returned by the native ABI.
+pub fn decode_gerbil_deck_runtime_loop_policy_projection_module(
+    registry: &GerbilSchemeTypeRegistry,
+    typed_value: &GerbilSchemeTypedValue,
+) -> Result<
+    (
+        GerbilSchemeNativeProjectionReceipt,
+        GerbilLoopPolicyProjectionModule,
+    ),
+    GerbilSchemeTypeDecodeError,
+> {
+    let receipt = validate_gerbil_scheme_native_projection(
+        &gerbil_deck_runtime_native_projection_readiness_plan(),
+        &gerbil_deck_runtime_loop_policy_projection_module_request(),
+        typed_value,
+    )?;
+    let projection = decode_gerbil_loop_policy_projection_module(registry, typed_value)?;
+    Ok((receipt, projection))
 }
 
 fn required_projection_string_field(name: &str) -> GerbilSchemeTypeFieldSpec {

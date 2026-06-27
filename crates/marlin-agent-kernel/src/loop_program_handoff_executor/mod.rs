@@ -14,7 +14,7 @@ pub use runtime::{
     LoopProgramRuntimeHandoffExecutionReceipt, LoopProgramRuntimeHandoffExecutionReportStatus,
     LoopProgramRuntimeHandoffExecutionStatus, LoopProgramRuntimeHandoffExecutor,
     LoopProgramRuntimeHandoffHandler, LoopProgramRuntimeHandoffRouter,
-    LoopProgramRuntimeHandoffRouterHandlers, LoopProgramRuntimeOwner,
+    LoopProgramRuntimeHandoffRouterHandlers, LoopProgramRuntimeOwner, RetryBudgetToolHandler,
     StaticLoopProgramRuntimeHandoffHandler,
 };
 pub use tool_process::{

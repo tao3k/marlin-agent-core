@@ -230,7 +230,7 @@ fn config_interface_loop_case_fixture(file: &str) -> PathBuf {
 
 fn config_interface_real_llm_catalog() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(
-        "../marlin-gerbil-scheme/gerbil/src/config-interface/custom/marline-kernel/policies/loops/cases/real-llm-catalog.toml",
+        "../marlin-gerbil-scheme/gerbil/t/fixtures/config-interface/loop-cases/real-llm-catalog.toml",
     )
 }
 

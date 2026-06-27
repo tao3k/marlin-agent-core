@@ -278,7 +278,9 @@ async fn side_effect_executor_blocks_disallowed_file_projection_before_write() {
             .contains("sandbox_denied")
     );
     assert!(!workspace.join("secret.rs").exists());
-    fs::remove_dir_all(&workspace).expect("remove denied workspace");
+    if workspace.exists() {
+        fs::remove_dir_all(&workspace).expect("remove denied workspace");
+    }
 }
 
 #[tokio::test]

@@ -14,6 +14,8 @@ use crate::{
     GerbilSchemeTypedValue,
 };
 
+use super::optional_scheme::deserialize_optional_scheme_string;
+
 /// Package id for the policy-pack typed projection manifest.
 pub const GERBIL_POLICY_PACK_PROJECTION_CHAIN_PACKAGE_ID: &str =
     "marlin.config-interface.policy-pack.projection-chain";
@@ -47,6 +49,18 @@ pub const GERBIL_POO_LOOP_PROGRAM_COMPILER_TYPE_ID: &str =
 /// Schema id carried by POO compiler receipts.
 pub const GERBIL_POO_LOOP_PROGRAM_COMPILER_SCHEMA_ID: &str =
     "marlin.config-interface.poo.loop-program-compiler-receipt.v1";
+
+/// Package id for loop policy projection modules exported by config-interface.
+pub const GERBIL_LOOP_POLICY_PROJECTION_MODULE_PACKAGE_ID: &str =
+    "marlin.config-interface.loop-policy.profile-projection-module";
+
+/// Type id for loop policy projection modules exported by config-interface.
+pub const GERBIL_LOOP_POLICY_PROJECTION_MODULE_TYPE_ID: &str =
+    "marlin.config-interface.loop-policy.profile-projection-module";
+
+/// Schema id carried by loop policy projection modules.
+pub const GERBIL_LOOP_POLICY_PROJECTION_MODULE_SCHEMA_ID: &str =
+    "marlin.config-interface.loop-policy.profile-projection-module.v1";
 
 const POLICY_PACK_RECEIPT_FAMILY_IDS: [&str; 5] = [
     "module_evaluation_receipt",
@@ -181,6 +195,40 @@ pub struct GerbilPooLoopProgramCompilerReceipt {
     pub scheme_boundary: GerbilPooLoopProgramCompilerBoundary,
     #[serde(rename = "serialization-boundary")]
     pub serialization_boundary: GerbilPooLoopProgramCompilerSerializationBoundary,
+}
+
+/// Config-interface module projection that carries a typed POO compiler receipt.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct GerbilLoopPolicyProjectionModule {
+    pub kind: GerbilPolicyPackReceiptKind,
+    #[serde(rename = "module-id")]
+    pub module_id: String,
+    #[serde(rename = "profile-id")]
+    pub profile_id: GerbilPooLoopProgramProfileId,
+    pub owner: GerbilPooLoopProgramCompilerOwner,
+    #[serde(rename = "source-module")]
+    pub source_module: String,
+    #[serde(rename = "poo-flow-module")]
+    pub poo_flow_module: String,
+    #[serde(rename = "poo-flow-capability-lanes")]
+    pub poo_flow_capability_lanes: Vec<String>,
+    #[serde(
+        rename = "vertical-case-id",
+        deserialize_with = "deserialize_optional_scheme_string"
+    )]
+    pub vertical_case_id: Option<String>,
+    #[serde(rename = "vertical-capability-tags")]
+    pub vertical_capability_tags: Vec<String>,
+    #[serde(rename = "vertical-mainline?")]
+    pub vertical_mainline: bool,
+    #[serde(rename = "rust-type")]
+    pub rust_type: GerbilPolicyPackReceiptKind,
+    #[serde(rename = "scheme-boundary")]
+    pub scheme_boundary: GerbilPooLoopProgramCompilerBoundary,
+    #[serde(rename = "serialization-boundary")]
+    pub serialization_boundary: GerbilPooLoopProgramCompilerSerializationBoundary,
+    #[serde(rename = "compiler-receipt")]
+    pub compiler_receipt: GerbilPooLoopProgramCompilerReceipt,
 }
 
 impl GerbilPolicyPackProjectionChainReceipt {
@@ -372,6 +420,101 @@ impl GerbilPooLoopProgramCompilerReceipt {
     }
 }
 
+impl GerbilLoopPolicyProjectionModule {
+    /// Returns whether the module kind matches the current Rust projection.
+    pub fn has_current_schema(&self) -> bool {
+        self.kind.as_str() == GERBIL_LOOP_POLICY_PROJECTION_MODULE_SCHEMA_ID
+    }
+
+    fn ensure_current_schema(&self) -> Result<(), GerbilSchemeTypeDecodeError> {
+        if !self.has_current_schema() {
+            return Err(GerbilSchemeTypeDecodeError::RustProjection {
+                message: format!(
+                    "loop policy projection module kind {} does not match {}",
+                    self.kind.as_str(),
+                    GERBIL_LOOP_POLICY_PROJECTION_MODULE_SCHEMA_ID
+                ),
+            });
+        }
+
+        if self.owner != GerbilPooLoopProgramCompilerOwner::GerbilPooFlow {
+            return Err(GerbilSchemeTypeDecodeError::RustProjection {
+                message: "loop policy projection module owner must be gerbil-poo-flow".to_owned(),
+            });
+        }
+
+        if self.rust_type.as_str() != GERBIL_POO_LOOP_PROGRAM_COMPILER_SCHEMA_ID {
+            return Err(GerbilSchemeTypeDecodeError::RustProjection {
+                message: format!(
+                    "loop policy projection module rust type {} does not match {}",
+                    self.rust_type.as_str(),
+                    GERBIL_POO_LOOP_PROGRAM_COMPILER_SCHEMA_ID
+                ),
+            });
+        }
+
+        if self.profile_id != self.compiler_receipt.profile_id {
+            return Err(GerbilSchemeTypeDecodeError::RustProjection {
+                message: format!(
+                    "loop policy projection module profile {} does not match compiler receipt profile {}",
+                    self.profile_id.as_str(),
+                    self.compiler_receipt.profile_id.as_str()
+                ),
+            });
+        }
+
+        if self.poo_flow_module.is_empty() || self.poo_flow_capability_lanes.is_empty() {
+            return Err(GerbilSchemeTypeDecodeError::RustProjection {
+                message: "loop policy projection module must carry a POO Flow module lane"
+                    .to_owned(),
+            });
+        }
+
+        if self
+            .vertical_capability_tags
+            .iter()
+            .any(|tag| tag.trim().is_empty())
+        {
+            return Err(GerbilSchemeTypeDecodeError::RustProjection {
+                message: "loop policy projection module vertical capability tags must be non-empty"
+                    .to_owned(),
+            });
+        }
+
+        if self.vertical_mainline {
+            let Some(case_id) = self.vertical_case_id.as_deref() else {
+                return Err(GerbilSchemeTypeDecodeError::RustProjection {
+                    message: "loop policy projection module mainline requires vertical case id"
+                        .to_owned(),
+                });
+            };
+
+            if case_id.trim().is_empty() {
+                return Err(GerbilSchemeTypeDecodeError::RustProjection {
+                    message: "loop policy projection module vertical case id must be non-empty"
+                        .to_owned(),
+                });
+            }
+
+            if self.vertical_capability_tags.is_empty() {
+                return Err(GerbilSchemeTypeDecodeError::RustProjection {
+                    message:
+                        "loop policy projection module mainline requires vertical capability tags"
+                            .to_owned(),
+                });
+            }
+        } else if self.vertical_case_id.is_some() || !self.vertical_capability_tags.is_empty() {
+            return Err(GerbilSchemeTypeDecodeError::RustProjection {
+                message:
+                    "loop policy projection module non-mainline cannot carry vertical descriptor"
+                        .to_owned(),
+            });
+        }
+
+        self.compiler_receipt.ensure_current_schema()
+    }
+}
+
 impl GerbilSchemeTypedProjection for GerbilPolicyPackProjectionChainReceipt {
     fn scheme_projection_contract() -> GerbilSchemeProjectionContract {
         gerbil_policy_pack_projection_chain_contract()
@@ -387,6 +530,12 @@ impl GerbilSchemeTypedProjection for ResolvedLoopPolicyPack {
 impl GerbilSchemeTypedProjection for GerbilPooLoopProgramCompilerReceipt {
     fn scheme_projection_contract() -> GerbilSchemeProjectionContract {
         gerbil_poo_loop_program_compiler_contract()
+    }
+}
+
+impl GerbilSchemeTypedProjection for GerbilLoopPolicyProjectionModule {
+    fn scheme_projection_contract() -> GerbilSchemeProjectionContract {
+        gerbil_loop_policy_projection_module_contract()
     }
 }
 
@@ -468,6 +617,16 @@ pub fn gerbil_poo_loop_program_compiler_contract() -> GerbilSchemeProjectionCont
     ))
 }
 
+/// Contract expected for config-interface loop policy projection modules.
+pub fn gerbil_loop_policy_projection_module_contract() -> GerbilSchemeProjectionContract {
+    GerbilSchemeProjectionContract::new(GerbilSchemeTypeId::new(
+        GERBIL_LOOP_POLICY_PROJECTION_MODULE_TYPE_ID,
+    ))
+    .with_schema_id(GerbilSchemeSchemaId::new(
+        GERBIL_LOOP_POLICY_PROJECTION_MODULE_SCHEMA_ID,
+    ))
+}
+
 /// Scheme type manifest for Gerbil-resolved loop policy packs.
 pub fn gerbil_resolved_loop_policy_pack_type_manifest() -> GerbilSchemeTypeManifest {
     GerbilSchemeTypeManifest {
@@ -510,6 +669,43 @@ pub fn gerbil_poo_loop_program_compiler_type_manifest() -> GerbilSchemeTypeManif
     }
 }
 
+/// Scheme type manifest for config-interface loop policy projection modules.
+pub fn gerbil_loop_policy_projection_module_type_manifest() -> GerbilSchemeTypeManifest {
+    GerbilSchemeTypeManifest {
+        schema_id: GerbilSchemeSchemaId::new("marlin.scheme-types.manifest.v1"),
+        types: vec![GerbilSchemeTypeSpec {
+            type_id: GerbilSchemeTypeId::new(GERBIL_LOOP_POLICY_PROJECTION_MODULE_TYPE_ID),
+            schema_id: Some(GerbilSchemeSchemaId::new(
+                GERBIL_LOOP_POLICY_PROJECTION_MODULE_SCHEMA_ID,
+            )),
+            fields: vec![
+                required_policy_pack_chain_field("kind", "string", None),
+                required_policy_pack_chain_field("module-id", "string", None),
+                required_policy_pack_chain_field("profile-id", "string", None),
+                required_policy_pack_chain_field("owner", "string", None),
+                required_policy_pack_chain_field("source-module", "string", None),
+                required_policy_pack_chain_field("poo-flow-module", "string", None),
+                required_policy_pack_chain_field(
+                    "poo-flow-capability-lanes",
+                    "array",
+                    Some("string"),
+                ),
+                required_policy_pack_chain_field("vertical-case-id", "any", None),
+                required_policy_pack_chain_field(
+                    "vertical-capability-tags",
+                    "array",
+                    Some("string"),
+                ),
+                required_policy_pack_chain_field("vertical-mainline?", "boolean", None),
+                required_policy_pack_chain_field("rust-type", "string", None),
+                required_policy_pack_chain_field("scheme-boundary", "string", None),
+                required_policy_pack_chain_field("serialization-boundary", "string", None),
+                required_policy_pack_chain_field("compiler-receipt", "object", None),
+            ],
+        }],
+    }
+}
+
 /// Package manifest for Gerbil-resolved loop policy packs.
 pub fn gerbil_resolved_loop_policy_pack_package_manifest() -> GerbilSchemePackageManifest {
     GerbilSchemePackageManifest::new(
@@ -526,6 +722,15 @@ pub fn gerbil_poo_loop_program_compiler_package_manifest() -> GerbilSchemePackag
         gerbil_poo_loop_program_compiler_type_manifest(),
     )
     .with_projection_contracts([gerbil_poo_loop_program_compiler_contract()])
+}
+
+/// Package manifest for config-interface loop policy projection modules.
+pub fn gerbil_loop_policy_projection_module_package_manifest() -> GerbilSchemePackageManifest {
+    GerbilSchemePackageManifest::new(
+        GerbilSchemePackageId::new(GERBIL_LOOP_POLICY_PROJECTION_MODULE_PACKAGE_ID),
+        gerbil_loop_policy_projection_module_type_manifest(),
+    )
+    .with_projection_contracts([gerbil_loop_policy_projection_module_contract()])
 }
 
 /// Decode a Gerbil policy-pack projection-chain receipt into Rust.
@@ -564,6 +769,16 @@ pub fn decode_gerbil_poo_loop_program_compiler_receipt(
 ) -> Result<GerbilPooLoopProgramCompilerReceipt, GerbilSchemeTypeDecodeError> {
     let projection: GerbilPooLoopProgramCompilerReceipt =
         registry.decode_projection(typed_value)?;
+    projection.ensure_current_schema()?;
+    Ok(projection)
+}
+
+/// Decode a config-interface loop policy projection module into Rust.
+pub fn decode_gerbil_loop_policy_projection_module(
+    registry: &GerbilSchemeTypeRegistry,
+    typed_value: &GerbilSchemeTypedValue,
+) -> Result<GerbilLoopPolicyProjectionModule, GerbilSchemeTypeDecodeError> {
+    let projection: GerbilLoopPolicyProjectionModule = registry.decode_projection(typed_value)?;
     projection.ensure_current_schema()?;
     Ok(projection)
 }

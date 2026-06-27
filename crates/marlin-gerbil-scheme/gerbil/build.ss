@@ -177,6 +177,7 @@
   (marlin-load-test-file "t/all-test.ss"))
 
 (def (marlin-test-target full?)
+  (marlin-ensure-build-root!)
   (if full?
     (marlin-load-all-test)
     (marlin-run-top-level-tests)))

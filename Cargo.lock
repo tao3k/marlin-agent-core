@@ -2580,6 +2580,7 @@ dependencies = [
  "marlin-agent-protocol",
  "marlin-agent-runtime",
  "marlin-agent-test-support",
+ "marlin-gerbil-scheme",
  "marlin-rust-project-harness-policy",
  "reqwest 0.13.4",
  "serde",

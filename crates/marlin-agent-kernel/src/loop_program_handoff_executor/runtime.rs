@@ -1,6 +1,9 @@
 //! Runtime handoff execution receipts, routers, and typed handlers.
 
-use std::sync::Arc;
+use std::sync::{
+    Arc,
+    atomic::{AtomicUsize, Ordering},
+};
 
 use marlin_agent_protocol::{
     AgentFlowIntent, AgentFlowMemoryIntent, AgentFlowReceipt, AgentFlowReceiptId,
@@ -311,6 +314,35 @@ impl DenylistedLoopProgramToolDispatchHandler {
 impl LoopProgramRuntimeHandoffHandler for DenylistedLoopProgramToolDispatchHandler {
     fn handle(&self, handoff: &LoopProgramRuntimeHandoff) -> LoopProgramRuntimeHandoffExecution {
         if self.denies(handoff) {
+            LoopProgramRuntimeHandoffExecution::denied(self.owner.clone(), handoff)
+        } else {
+            LoopProgramRuntimeHandoffExecution::handled(self.owner.clone(), handoff)
+        }
+    }
+}
+
+/// Stateful runtime policy gate that denies the first N tool dispatch attempts.
+#[derive(Debug)]
+pub struct RetryBudgetToolHandler {
+    owner: LoopProgramRuntimeOwner,
+    denied_attempts_before_success: usize,
+    attempts: AtomicUsize,
+}
+
+impl RetryBudgetToolHandler {
+    pub fn new(owner: LoopProgramRuntimeOwner, denied_attempts_before_success: usize) -> Self {
+        Self {
+            owner,
+            denied_attempts_before_success,
+            attempts: AtomicUsize::new(0),
+        }
+    }
+}
+
+impl LoopProgramRuntimeHandoffHandler for RetryBudgetToolHandler {
+    fn handle(&self, handoff: &LoopProgramRuntimeHandoff) -> LoopProgramRuntimeHandoffExecution {
+        let attempt = self.attempts.fetch_add(1, Ordering::SeqCst);
+        if attempt < self.denied_attempts_before_success {
             LoopProgramRuntimeHandoffExecution::denied(self.owner.clone(), handoff)
         } else {
             LoopProgramRuntimeHandoffExecution::handled(self.owner.clone(), handoff)

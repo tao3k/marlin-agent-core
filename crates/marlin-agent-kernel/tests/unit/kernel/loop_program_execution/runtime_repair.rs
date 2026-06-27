@@ -9,12 +9,12 @@ use super::{
     LoopProgramRuntimeSideEffectStatus, ModelGatewayMessageRole,
     RealRepairPolicyGatedHandoffExecutor, RuntimeEdgeModelGateway, RuntimeEdgePolicy,
     StaticLoopProgramFileWriteResolver, StaticLoopProgramToolProcessResolver, StaticRepairGateway,
-    TokioAgentRuntime, handled_by, real_repair_001_no_write_llm_loop_program,
-    real_repair_001_single_file_loop_program, unique_temp_repair_workspace,
+    TokioAgentRuntime, handled_by, runtime_repair_no_write_llm_loop_program,
+    runtime_repair_single_file_loop_program, unique_temp_repair_workspace,
 };
 
 #[test]
-fn real_repair_001_no_write_llm_repair_receipt_selects_single_file_patch() {
+fn runtime_repair_no_write_llm_repair_receipt_selects_single_file_patch() {
     let gateway = StaticRepairGateway::new("PATCH_INTENT:single-file-add-one");
     let edge_gateway = RuntimeEdgeModelGateway::new(
         gateway.clone(),
@@ -34,7 +34,7 @@ fn real_repair_001_no_write_llm_repair_receipt_selects_single_file_patch() {
         .with_event_mapper(mapper);
 
     let receipt = driver.run(LoopProgramExecutionRequest::new(
-        real_repair_001_no_write_llm_loop_program(),
+        runtime_repair_no_write_llm_loop_program(),
         vec![LoopProgramEventKind::Start],
     ));
 
@@ -70,7 +70,7 @@ fn real_repair_001_no_write_llm_repair_receipt_selects_single_file_patch() {
 
 #[cfg(unix)]
 #[test]
-fn real_repair_001_single_file_bug_fix_runs_llm_tool_and_verifier_loop() {
+fn runtime_repair_single_file_bug_fix_runs_llm_tool_and_verifier_loop() {
     let workspace = unique_temp_repair_workspace();
     let bug_relative_path = PathBuf::from("src/lib.rs");
     let bug_file = workspace.join(&bug_relative_path);
@@ -94,7 +94,7 @@ fn real_repair_001_single_file_bug_fix_runs_llm_tool_and_verifier_loop() {
     let driver = LoopProgramExecutionDriver::new(executor).with_event_mapper(mapper);
 
     let receipt = driver.run(LoopProgramExecutionRequest::new(
-        real_repair_001_single_file_loop_program(),
+        runtime_repair_single_file_loop_program(),
         vec![LoopProgramEventKind::Start],
     ));
 

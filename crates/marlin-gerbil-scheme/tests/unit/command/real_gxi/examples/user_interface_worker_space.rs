@@ -7,7 +7,8 @@ use marlin_gerbil_scheme::{
     decode_gerbil_deck_runtime_script_batch_metrics,
     evaluate_gerbil_deck_runtime_script_batch_performance,
     gerbil_deck_runtime_script_interface_type_manifest, gerbil_runtime_dependency_loadpath,
-    gerbil_runtime_loadpath, write_gerbil_runtime_assets,
+    gerbil_runtime_loadpath, parse_gerbil_loop_case_driver_real_llm_case_receipt,
+    write_gerbil_runtime_assets,
 };
 use marlin_git_utils::ProcessGitTooling;
 use std::{
@@ -127,60 +128,105 @@ fn command_compiler_real_llm_loop_cases_run_through_debug_cli_when_enabled() {
         ),
     ] {
         let stdout = run_config_interface_real_llm_loop_case(case_file, continuation_planner);
-        assert!(
-            stdout.contains(&format!("\"terminal_status\": \"{terminal_status}\"")),
+        let receipt =
+            parse_gerbil_loop_case_driver_real_llm_case_receipt(&stdout).unwrap_or_else(|error| {
+                panic!("parse real LLM loop case receipt for {case_file}: {error}\n{stdout}")
+            });
+        assert_eq!(
+            receipt.terminal_status(),
+            terminal_status,
             "real LLM loop case {case_file} ended with unexpected terminal status:\n{stdout}"
         );
-        assert!(
-            stdout.contains("\"iteration_count\": 3"),
+        assert_eq!(
+            receipt.iteration_count(),
+            3,
             "real LLM loop case {case_file} should run three controller iterations:\n{stdout}"
         );
-        assert!(
-            stdout.contains(&format!(
-                "process-command.exit_status:{process_exit_status}"
-            )),
+        assert_eq!(
+            receipt.process_exit_status(),
+            process_exit_status
+                .parse::<i32>()
+                .expect("expected process status should be numeric"),
             "real LLM loop case {case_file} did not return the expected process receipt:\n{stdout}"
         );
-        assert!(
-            stdout.contains(&format!("marlin-real-llm-case.case_id={case_id}")),
+        assert_eq!(
+            receipt.case_id(),
+            case_id,
             "real LLM loop case {case_file} did not emit its case marker:\n{stdout}"
         );
-        assert!(
-            stdout.contains("marlin-real-llm-case.result=pass"),
+        assert_eq!(
+            receipt.result(),
+            "pass",
             "real LLM loop case {case_file} did not pass policy simulation:\n{stdout}"
         );
-        assert!(
-            stdout.contains("marlin-real-llm-case.rounds_used="),
-            "real LLM loop case {case_file} did not report LLM rounds used:\n{stdout}"
-        );
         if continuation_planner == "retry-on-failure" {
-            assert!(
-                stdout.contains("continuation_planner=retry-on-failure"),
+            assert_eq!(
+                receipt.continuation_planner(),
+                Some("retry-on-failure"),
                 "failure retry loop case {case_file} did not emit retry planner diagnostics:\n{stdout}"
             );
             assert!(
-                stdout.contains("\"failure_classification_receipt\""),
+                receipt.failure_classification_receipt_present(),
                 "failure retry loop case {case_file} did not emit failure classification receipt:\n{stdout}"
             );
             assert!(
-                stdout.contains("\"governance_receipt\""),
+                receipt.governance_receipt_present(),
                 "failure retry loop case {case_file} did not emit governance receipt:\n{stdout}"
             );
             assert!(
-                stdout.contains("\"backend\": \"nono\""),
+                receipt.nono_sandbox_materialized(),
                 "failure retry loop case {case_file} did not materialize nono sandbox:\n{stdout}"
             );
             assert!(
-                stdout.contains("\"decision\": \"human-audit\""),
+                receipt.human_audit_decision(),
                 "failure retry loop case {case_file} did not escalate exhausted retries to human audit:\n{stdout}"
             );
         }
         eprintln!(
             "real-llm-case-summary case={case_id} controller_iterations=3 planner={continuation_planner} terminal_status={terminal_status} rounds_used={} result={}",
-            real_llm_marker_value(&stdout, "marlin-real-llm-case.rounds_used="),
-            real_llm_marker_value(&stdout, "marlin-real-llm-case.result=")
+            receipt.rounds_used(),
+            receipt.result()
         );
     }
+}
+
+#[test]
+fn command_compiler_real_llm_loop_case_assets_are_ci_verifiable_without_live_llm() {
+    assert_config_interface_loop_real_llm_case_assets();
+    assert_config_interface_loop_real_llm_fixture_assets();
+}
+
+#[test]
+fn real_llm_loop_case_receipt_parser_projects_runner_markers() {
+    let stdout = r#"
+{
+  "terminal_status": "Failed",
+  "iteration_count": 3,
+  "failure_classification_receipt": {},
+  "governance_receipt": {},
+  "backend": "nono",
+  "decision": "human-audit"
+}
+process-command.exit_status:17
+continuation_planner=retry-on-failure
+marlin-real-llm-case.case_id=marlin-failure-retry-real-llm
+marlin-real-llm-case.result=pass
+marlin-real-llm-case.rounds_used=2
+"#;
+    let receipt = parse_gerbil_loop_case_driver_real_llm_case_receipt(stdout)
+        .expect("synthetic runner output should project to a typed receipt");
+
+    assert_eq!(receipt.case_id(), "marlin-failure-retry-real-llm");
+    assert_eq!(receipt.result(), "pass");
+    assert_eq!(receipt.rounds_used(), 2);
+    assert_eq!(receipt.terminal_status(), "Failed");
+    assert_eq!(receipt.iteration_count(), 3);
+    assert_eq!(receipt.process_exit_status(), 17);
+    assert_eq!(receipt.continuation_planner(), Some("retry-on-failure"));
+    assert!(receipt.failure_classification_receipt_present());
+    assert!(receipt.governance_receipt_present());
+    assert!(receipt.nono_sandbox_materialized());
+    assert!(receipt.human_audit_decision());
 }
 
 fn run_real_gxtest_workspace(
@@ -232,14 +278,7 @@ fn assert_no_json_handoff(stdout: &str) {
 }
 
 fn assert_config_interface_loop_real_llm_case_assets() {
-    let case_root = Path::new(CONFIG_INTERFACE_WORKSPACE)
-        .join("src")
-        .join("config-interface")
-        .join("custom")
-        .join("marline-kernel")
-        .join("policies")
-        .join("loops")
-        .join("cases");
+    let case_root = config_interface_source_loop_case_root();
     for case_file in [
         "runtime-handoff-llm.ss",
         "policy-receipt-gate-llm.ss",
@@ -262,21 +301,7 @@ fn assert_config_interface_loop_real_llm_case_assets() {
             "runtime loop request artifact must not live in source cases/: {runtime_artifact}"
         );
     }
-    let catalog = fs::read_to_string(case_root.join("real-llm-catalog.toml"))
-        .expect("read real LLM loop case catalog");
-    for executor in [
-        "marlin.real-llm.runtime-handoff",
-        "marlin.real-llm.policy-receipt-gate",
-        "marlin.real-llm.loop-contract",
-        "marlin.real-llm.failure-retry",
-    ] {
-        assert!(
-            catalog.contains(executor),
-            "real LLM catalog missing executor {executor}"
-        );
-    }
-    assert!(catalog.contains("command = \"sh\""));
-    assert!(catalog.contains("run-real-llm-case.sh"));
+    assert_real_llm_catalog_contract(&case_root.join("real-llm-catalog.toml"), "source");
     let cache_home = prj_cache_home();
     for case_file in [
         "runtime-handoff-llm.loop.json",
@@ -300,15 +325,83 @@ fn assert_config_interface_loop_real_llm_case_assets() {
     }
 }
 
-fn run_config_interface_real_llm_loop_case(case_file: &str, continuation_planner: &str) -> String {
-    let case_root = Path::new(CONFIG_INTERFACE_WORKSPACE)
+fn assert_config_interface_loop_real_llm_fixture_assets() {
+    let case_root = config_interface_fixture_loop_case_root();
+    for fixture_file in [
+        "runtime-handoff-llm.loop-program-run.json",
+        "policy-receipt-gate-llm.loop.json",
+        "loop-contract-llm.loop.json",
+        "failure-retry-llm.loop.json",
+        "real-llm-catalog.toml",
+        "run-real-llm-case.sh",
+    ] {
+        assert!(
+            case_root.join(fixture_file).is_file(),
+            "missing real LLM fixture asset {fixture_file}"
+        );
+    }
+    assert_real_llm_catalog_contract(&case_root.join("real-llm-catalog.toml"), "fixture");
+
+    let source_runner =
+        fs::read_to_string(config_interface_source_loop_case_root().join("run-real-llm-case.sh"))
+            .expect("read source real LLM runner");
+    let fixture_runner = fs::read_to_string(case_root.join("run-real-llm-case.sh"))
+        .expect("read fixture real LLM runner");
+    assert_eq!(
+        fixture_runner, source_runner,
+        "fixture runner must stay byte-for-byte aligned with the Scheme source runner"
+    );
+    for marker in [
+        "marlin-real-llm-case.case_id",
+        "marlin-real-llm-case.result",
+        "marlin-real-llm-case.rounds_used",
+    ] {
+        assert!(
+            fixture_runner.contains(marker),
+            "real LLM runner missing receipt marker {marker}"
+        );
+    }
+}
+
+fn assert_real_llm_catalog_contract(catalog_path: &Path, context: &str) {
+    let catalog = fs::read_to_string(catalog_path)
+        .unwrap_or_else(|error| panic!("read {context} real LLM loop case catalog: {error}"));
+    for executor in [
+        "marlin.real-llm.runtime-handoff",
+        "marlin.real-llm.policy-receipt-gate",
+        "marlin.real-llm.loop-contract",
+        "marlin.real-llm.failure-retry",
+    ] {
+        assert!(
+            catalog.contains(executor),
+            "{context} real LLM catalog missing executor {executor}"
+        );
+    }
+    assert!(catalog.contains("command = \"sh\""));
+    assert!(catalog.contains("run-real-llm-case.sh"));
+}
+
+fn config_interface_source_loop_case_root() -> PathBuf {
+    Path::new(CONFIG_INTERFACE_WORKSPACE)
         .join("src")
         .join("config-interface")
         .join("custom")
         .join("marline-kernel")
         .join("policies")
         .join("loops")
-        .join("cases");
+        .join("cases")
+}
+
+fn config_interface_fixture_loop_case_root() -> PathBuf {
+    Path::new(CONFIG_INTERFACE_WORKSPACE)
+        .join("t")
+        .join("fixtures")
+        .join("config-interface")
+        .join("loop-cases")
+}
+
+fn run_config_interface_real_llm_loop_case(case_file: &str, continuation_planner: &str) -> String {
+    let case_root = config_interface_source_loop_case_root();
     let input = write_config_interface_real_llm_loop_case_request(&prj_cache_home(), case_file);
     let catalog = case_root.join("real-llm-catalog.toml");
     let manifest_path = repo_root().join("Cargo.toml");
@@ -541,16 +634,6 @@ fn config_interface_real_llm_loop_case_request(case_file: &str) -> serde_json::V
         request["governance_policy"] = governance;
     }
     request
-}
-
-fn real_llm_marker_value(stdout: &str, marker: &str) -> String {
-    let start = stdout
-        .find(marker)
-        .unwrap_or_else(|| panic!("missing marker {marker} in stdout:\n{stdout}"))
-        + marker.len();
-    let rest = &stdout[start..];
-    let end = rest.find(['\\', '"', '\n', '\r']).unwrap_or(rest.len());
-    rest[..end].to_owned()
 }
 
 fn script_batch_metrics_typed_value_from_stdout(stdout: &str) -> GerbilSchemeTypedValue {

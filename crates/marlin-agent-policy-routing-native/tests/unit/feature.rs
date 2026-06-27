@@ -5,7 +5,7 @@ fn package_identity_marks_agent_policy_routing_native_bridge() {
 
 #[cfg(feature = "linked-native")]
 #[test]
-fn linked_native_selector_projects_real_policy_routing_receipt() {
+fn linked_native_selector_projects_policy_routing_receipt() {
     use marlin_agent_graph::{AgentCoordinationEvidenceKind, AgentPolicyRoutingDecision};
     use marlin_agent_policy_routing_native::linked_agent_policy_routing_native_selector;
     use marlin_gerbil_scheme::{

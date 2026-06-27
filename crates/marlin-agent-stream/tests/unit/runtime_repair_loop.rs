@@ -2,7 +2,7 @@ use std::{
     env, fs,
     path::PathBuf,
     process::Command,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, OnceLock},
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
@@ -16,14 +16,17 @@ use marlin_agent_kernel::{
     StaticLoopProgramRuntimeHandoffHandler, spawn_loop_program_tool_process,
 };
 use marlin_agent_protocol::{
-    LoopMechanismPolicyId, LoopPolicyDigest, LoopPolicyEpoch, LoopProgram, LoopProgramActionKind,
-    LoopProgramEventKind, LoopProgramId, LoopProgramInput, LoopProgramStateId,
-    LoopProgramTransition, LoopProgramTransitionId, ModelEndpoint, ModelGateway,
+    LoopProgramActionKind, LoopProgramEventKind, ModelEndpoint, ModelGateway,
     ModelGatewayCompletionOptions, ModelGatewayCompletionResponse, ModelGatewayMessageRole,
     ModelGatewayRequest, system_gateway_message, user_gateway_message,
 };
 use marlin_agent_runtime::{RuntimeEdgeModelGateway, RuntimeEdgePolicy, TokioAgentRuntime};
 use marlin_agent_stream::LiteLlmStreamGateway;
+use marlin_gerbil_scheme::{
+    GerbilLoopCaseDriverCaseId, GerbilLoopCaseDriverProfileRef,
+    GerbilLoopCaseDriverProjectedLoopProgram, GerbilLoopCaseDriverProjectedLoopProgramRequest,
+    load_gerbil_loop_case_driver_projected_loop_program,
+};
 
 const LIVE_LLM_GATE_ENV: &str = "MARLIN_LIVE_LLM_GATE";
 const LIVE_LLM_PROVIDER_ENV: &str = "MARLIN_LIVE_LLM_PROVIDER";
@@ -38,7 +41,7 @@ const BUGGY_FIXTURE: &str =
     "fn answer() -> i32 { 40 }\n\n#[test]\nfn answer_is_41() {\n    assert_eq!(answer(), 41);\n}\n";
 const FIXED_FIXTURE: &str =
     "fn answer() -> i32 { 41 }\n\n#[test]\nfn answer_is_41() {\n    assert_eq!(answer(), 41);\n}\n";
-const REAL_REPAIR_001_CASE_ID: &str = "real-repair-001";
+const RUNTIME_LIVE_REPAIR_CASE_ID: &str = "real-repair-001";
 const BASELINE_TEST_SCRIPT: &str = "printf 'SOURCE_BEGIN\\n'; cat \"$1\"; printf '\\nSOURCE_END\\n'; rustc --test \"$1\" -o \"$2\" && \"$2\"";
 const APPLY_PATCH_AND_TEST_SCRIPT: &str = r#"cat > "$1" <<'EOF'
 fn answer() -> i32 { 41 }
@@ -49,19 +52,22 @@ fn answer_is_41() {
 }
 EOF
 rustc --test "$1" -o "$2" && "$2""#;
+const SCHEME_REAL_REPAIR_CASE_ID: &str = "real-repair-001";
+const SCHEME_REAL_REPAIR_PROGRAM_ID: &str = "real-repair-001-scripted-loop";
+const SCHEME_REAL_REPAIR_PROFILE_REF: &str = "real-repair-001/reactive-tool-loop";
 
 #[cfg(unix)]
 #[test]
 #[ignore = "requires MARLIN_LIVE_LLM_GATE=1 and live LiteLLM provider credentials"]
-fn live_real_repair_001_single_file_bug_fix_runs_llm_tool_and_verifier_loop() {
-    let gate_receipt = live_repair_001_gate_receipt();
-    if gate_receipt.status == LiveRepair001GateStatus::Disabled {
+fn live_runtime_repair_single_file_bug_fix_runs_llm_tool_and_verifier_loop() {
+    let gate_receipt = runtime_live_repair_gate_receipt();
+    if gate_receipt.status == RuntimeLiveRepairGateStatus::Disabled {
         eprintln!("skipping live repair loop: {gate_receipt:?}");
         return;
     }
     assert_eq!(
         gate_receipt.status,
-        LiveRepair001GateStatus::Enabled,
+        RuntimeLiveRepairGateStatus::Enabled,
         "live repair gate configured but not ready: {gate_receipt:?}"
     );
 
@@ -100,10 +106,12 @@ fn live_real_repair_001_single_file_bug_fix_runs_llm_tool_and_verifier_loop() {
     let completion_receipts = mapper.completion_receipts();
     let tool_receipts = mapper.tool_receipts();
     let verification_receipts = mapper.verification_receipts();
-    let driver = LoopProgramExecutionDriver::new(RealRepairHybridHandoffExecutor::new())
+    let driver = LoopProgramExecutionDriver::new(RuntimeRepairHybridHandoffExecutor::new())
         .with_event_mapper(mapper);
 
-    let loop_program = real_repair_001_single_file_loop_program();
+    let scheme_case = scheme_projected_real_repair_loop_case();
+    let scheme_receipt = scheme_case.receipt();
+    let loop_program = scheme_case.loop_program().clone();
     let started_at = Instant::now();
     let execution_receipt = driver.run(LoopProgramExecutionRequest::new(
         loop_program,
@@ -121,9 +129,10 @@ fn live_real_repair_001_single_file_bug_fix_runs_llm_tool_and_verifier_loop() {
             .map(|step| step.machine_receipt.action.clone())
             .collect::<Vec<_>>(),
         vec![
-            LoopProgramActionKind::DispatchTools,
             LoopProgramActionKind::InvokeModel,
             LoopProgramActionKind::DispatchTools,
+            LoopProgramActionKind::Continue,
+            LoopProgramActionKind::RewriteGraph,
             LoopProgramActionKind::Verify,
             LoopProgramActionKind::Stop,
         ]
@@ -161,7 +170,7 @@ fn live_real_repair_001_single_file_bug_fix_runs_llm_tool_and_verifier_loop() {
         .iter()
         .filter(|step| step.machine_receipt.action == LoopProgramActionKind::DispatchTools)
         .collect::<Vec<_>>();
-    assert_eq!(tool_steps.len(), 2);
+    assert_eq!(tool_steps.len(), 1);
     assert!(tool_steps.iter().all(|step| {
         step.runtime_handoff_execution.status
             == LoopProgramRuntimeHandoffExecutionReportStatus::Completed
@@ -175,13 +184,9 @@ fn live_real_repair_001_single_file_bug_fix_runs_llm_tool_and_verifier_loop() {
 
     let repaired_content = fs::read_to_string(&bug_file).expect("read repaired fixture");
     let tool_receipts = tool_receipts.lock().expect("tool receipts").clone();
-    assert_eq!(tool_receipts.len(), 2);
-    assert_eq!(tool_receipts[0].phase, RealRepairToolPhase::BaselineTest);
-    assert!(!tool_receipts[0].success);
-    assert!(tool_receipts[0].stdout.contains("SOURCE_BEGIN"));
-    assert!(tool_receipts[0].stdout.contains(PATCH_FIND));
-    assert_eq!(tool_receipts[1].phase, RealRepairToolPhase::ApplyPatch);
-    assert!(tool_receipts[1].success);
+    assert_eq!(tool_receipts.len(), 1);
+    assert_eq!(tool_receipts[0].phase, RuntimeRepairToolPhase::ApplyPatch);
+    assert!(tool_receipts[0].success);
     let verification_receipts = verification_receipts
         .lock()
         .expect("verification receipts")
@@ -190,8 +195,9 @@ fn live_real_repair_001_single_file_bug_fix_runs_llm_tool_and_verifier_loop() {
     assert!(verification_receipts[0].success);
     assert_eq!(verification_receipts[0].repaired_source, FIXED_FIXTURE);
 
-    let live_receipt = RealRepair001LiveCaseReceipt {
-        case_id: "real-repair-001",
+    let live_receipt = RuntimeLiveRepairLiveCaseReceipt {
+        case_id: scheme_receipt.case_id().to_owned(),
+        profile_ref: scheme_receipt.profile_ref().to_owned(),
         program_id: execution_receipt.program_id.as_str().to_owned(),
         model_completion_id: model_completion.id,
         model: model_completion.model,
@@ -205,46 +211,55 @@ fn live_real_repair_001_single_file_bug_fix_runs_llm_tool_and_verifier_loop() {
                     .len()
             })
             .sum(),
-        baseline_test_success: tool_receipts[0].success,
-        patch_tool_success: tool_receipts[1].success,
+        patch_tool_success: tool_receipts[0].success,
+        graph_rewrite_projected: execution_receipt
+            .steps
+            .iter()
+            .any(|step| step.machine_receipt.action == LoopProgramActionKind::RewriteGraph),
         verification_success: verification_receipts[0].success,
         repaired_content,
     };
 
-    assert_eq!(live_receipt.case_id, "real-repair-001");
-    assert_eq!(live_receipt.program_id, "real-repair-001-live-single-file");
+    assert_eq!(live_receipt.case_id.as_str(), SCHEME_REAL_REPAIR_CASE_ID);
+    assert_eq!(
+        live_receipt.profile_ref.as_str(),
+        SCHEME_REAL_REPAIR_PROFILE_REF
+    );
+    assert_eq!(live_receipt.program_id, SCHEME_REAL_REPAIR_PROGRAM_ID);
     assert!(!live_receipt.model_completion_id.trim().is_empty());
     assert!(!live_receipt.model.trim().is_empty());
-    assert_eq!(live_receipt.action_count, 5);
-    assert_eq!(live_receipt.tool_projection_count, 2);
-    assert!(!live_receipt.baseline_test_success);
+    assert_eq!(live_receipt.action_count, 6);
+    assert_eq!(live_receipt.tool_projection_count, 1);
     assert!(live_receipt.patch_tool_success);
+    assert!(live_receipt.graph_rewrite_projected);
     assert!(live_receipt.verification_success);
     assert_eq!(live_receipt.repaired_content, FIXED_FIXTURE);
     eprintln!(
-        "live real-repair-001 receipt: model={} elapsed_ms={} actions={} tool_projections={} baseline_success={} patch_success={} verify_success={}",
+        "live runtime repair receipt: case={} profile={} model={} elapsed_ms={} actions={} tool_projections={} patch_success={} rewrite_projected={} verify_success={}",
+        live_receipt.case_id,
+        live_receipt.profile_ref,
         live_receipt.model,
         live_receipt.elapsed_ms,
         live_receipt.action_count,
         live_receipt.tool_projection_count,
-        live_receipt.baseline_test_success,
         live_receipt.patch_tool_success,
+        live_receipt.graph_rewrite_projected,
         live_receipt.verification_success
     );
     fs::remove_dir_all(&repair_workspace).expect("remove repair workspace");
 }
 
 #[test]
-fn live_real_repair_001_gate_receipt_reports_disabled_without_gate() {
-    let receipt = live_repair_001_gate_receipt_from_lookup(|name| match name {
+fn live_runtime_repair_gate_receipt_reports_disabled_without_gate() {
+    let receipt = runtime_live_repair_gate_receipt_from_lookup(|name| match name {
         LIVE_LLM_PROVIDER_ENV => Some("anthropic".to_owned()),
         LIVE_LLM_MODEL_ENV => Some("claude-sonnet-4".to_owned()),
         "ANTHROPIC_API_KEY" => Some("redacted".to_owned()),
         _ => None,
     });
 
-    assert_eq!(receipt.case_id, REAL_REPAIR_001_CASE_ID);
-    assert_eq!(receipt.status, LiveRepair001GateStatus::Disabled);
+    assert_eq!(receipt.case_id, RUNTIME_LIVE_REPAIR_CASE_ID);
+    assert_eq!(receipt.status, RuntimeLiveRepairGateStatus::Disabled);
     assert_eq!(receipt.gate_env, LIVE_LLM_GATE_ENV);
     assert_eq!(
         receipt.denial_reason.as_deref(),
@@ -255,27 +270,30 @@ fn live_real_repair_001_gate_receipt_reports_disabled_without_gate() {
 }
 
 #[test]
-fn live_real_repair_001_gate_receipt_reports_missing_provider_and_model() {
-    let missing_provider = live_repair_001_gate_receipt_from_lookup(|name| match name {
+fn live_runtime_repair_gate_receipt_reports_missing_provider_and_model() {
+    let missing_provider = runtime_live_repair_gate_receipt_from_lookup(|name| match name {
         LIVE_LLM_GATE_ENV => Some("1".to_owned()),
         LIVE_LLM_MODEL_ENV => Some("claude-sonnet-4".to_owned()),
         _ => None,
     });
     assert_eq!(
         missing_provider.status,
-        LiveRepair001GateStatus::MissingProvider
+        RuntimeLiveRepairGateStatus::MissingProvider
     );
     assert_eq!(
         missing_provider.denial_reason.as_deref(),
         Some("MARLIN_LIVE_LLM_PROVIDER is required when live LLM gate is enabled")
     );
 
-    let missing_model = live_repair_001_gate_receipt_from_lookup(|name| match name {
+    let missing_model = runtime_live_repair_gate_receipt_from_lookup(|name| match name {
         LIVE_LLM_GATE_ENV => Some("1".to_owned()),
         LIVE_LLM_PROVIDER_ENV => Some("anthropic".to_owned()),
         _ => None,
     });
-    assert_eq!(missing_model.status, LiveRepair001GateStatus::MissingModel);
+    assert_eq!(
+        missing_model.status,
+        RuntimeLiveRepairGateStatus::MissingModel
+    );
     assert_eq!(
         missing_model.denial_reason.as_deref(),
         Some("MARLIN_LIVE_LLM_MODEL is required when live LLM gate is enabled")
@@ -283,15 +301,18 @@ fn live_real_repair_001_gate_receipt_reports_missing_provider_and_model() {
 }
 
 #[test]
-fn live_real_repair_001_gate_receipt_reports_missing_provider_key() {
-    let receipt = live_repair_001_gate_receipt_from_lookup(|name| match name {
+fn live_runtime_repair_gate_receipt_reports_missing_provider_key() {
+    let receipt = runtime_live_repair_gate_receipt_from_lookup(|name| match name {
         LIVE_LLM_GATE_ENV => Some("1".to_owned()),
         LIVE_LLM_PROVIDER_ENV => Some("anthropic".to_owned()),
         LIVE_LLM_MODEL_ENV => Some("claude-sonnet-4".to_owned()),
         _ => None,
     });
 
-    assert_eq!(receipt.status, LiveRepair001GateStatus::MissingProviderKey);
+    assert_eq!(
+        receipt.status,
+        RuntimeLiveRepairGateStatus::MissingProviderKey
+    );
     assert_eq!(
         receipt.required_provider_key_envs,
         vec!["ANTHROPIC_API_KEY".to_owned()]
@@ -304,8 +325,8 @@ fn live_real_repair_001_gate_receipt_reports_missing_provider_key() {
 }
 
 #[test]
-fn live_real_repair_001_gate_receipt_reports_enabled_with_override_key() {
-    let receipt = live_repair_001_gate_receipt_from_lookup(|name| match name {
+fn live_runtime_repair_gate_receipt_reports_enabled_with_override_key() {
+    let receipt = runtime_live_repair_gate_receipt_from_lookup(|name| match name {
         LIVE_LLM_GATE_ENV => Some("yes".to_owned()),
         LIVE_LLM_PROVIDER_ENV => Some("deepseek".to_owned()),
         LIVE_LLM_MODEL_ENV => Some("deepseek-chat".to_owned()),
@@ -314,7 +335,7 @@ fn live_real_repair_001_gate_receipt_reports_enabled_with_override_key() {
         _ => None,
     });
 
-    assert_eq!(receipt.status, LiveRepair001GateStatus::Enabled);
+    assert_eq!(receipt.status, RuntimeLiveRepairGateStatus::Enabled);
     assert_eq!(receipt.provider.as_deref(), Some("deepseek"));
     assert_eq!(receipt.model.as_deref(), Some("deepseek-chat"));
     assert_eq!(
@@ -329,8 +350,84 @@ fn live_real_repair_001_gate_receipt_reports_enabled_with_override_key() {
     assert!(receipt.denial_reason.is_none());
 }
 
+#[test]
+fn runtime_live_repair_no_live_gate_denial_runs_typed_loop_receipt() {
+    let gate_receipt = runtime_live_repair_gate_receipt_from_lookup(|name| match name {
+        LIVE_LLM_PROVIDER_ENV => Some("openai".to_owned()),
+        LIVE_LLM_MODEL_ENV => Some("gpt-repair-policy".to_owned()),
+        "OPENAI_API_KEY" => Some("redacted".to_owned()),
+        _ => None,
+    });
+    assert_eq!(gate_receipt.status, RuntimeLiveRepairGateStatus::Disabled);
+    let denial_reason = gate_receipt
+        .denial_reason
+        .clone()
+        .expect("disabled no-live gate denial reason");
+
+    let driver = LoopProgramExecutionDriver::new(RuntimeRepairNoLiveHandoffExecutor::new())
+        .with_event_mapper(NoLiveRepairDecisionMapper);
+    let scheme_case = scheme_projected_real_repair_loop_case();
+    let scheme_receipt = scheme_case.receipt();
+    let execution_receipt = driver.run(LoopProgramExecutionRequest::new(
+        scheme_case.loop_program().clone(),
+        vec![LoopProgramEventKind::Start],
+    ));
+
+    assert_eq!(
+        execution_receipt
+            .steps
+            .iter()
+            .map(|step| step.machine_receipt.action.clone())
+            .collect::<Vec<_>>(),
+        vec![LoopProgramActionKind::InvokeModel]
+    );
+
+    let model_step = execution_receipt.steps.first().expect("model denial step");
+    assert_eq!(
+        model_step.machine_receipt.action,
+        LoopProgramActionKind::InvokeModel
+    );
+    assert_eq!(
+        model_step.runtime_handoff_execution.status,
+        LoopProgramRuntimeHandoffExecutionReportStatus::Denied
+    );
+    assert!(
+        execution_receipt.error.is_some(),
+        "Scheme-projected repair loop should not synthesize a Rust stop branch for denied LLM: {execution_receipt:?}"
+    );
+
+    let no_live_receipt = RuntimeRepairNoLiveCaseReceipt {
+        case_id: scheme_receipt.case_id().to_owned(),
+        profile_ref: scheme_receipt.profile_ref().to_owned(),
+        program_id: execution_receipt.program_id.as_str().to_owned(),
+        gate_status: gate_receipt.status,
+        denial_reason,
+        live_llm_allowed: false,
+        action_count: execution_receipt.steps.len(),
+        model_handoff_status: model_step.runtime_handoff_execution.status.clone(),
+    };
+
+    assert_eq!(no_live_receipt.case_id.as_str(), SCHEME_REAL_REPAIR_CASE_ID);
+    assert_eq!(
+        no_live_receipt.profile_ref.as_str(),
+        SCHEME_REAL_REPAIR_PROFILE_REF
+    );
+    assert_eq!(no_live_receipt.program_id, SCHEME_REAL_REPAIR_PROGRAM_ID);
+    assert_eq!(
+        no_live_receipt.gate_status,
+        RuntimeLiveRepairGateStatus::Disabled
+    );
+    assert_eq!(no_live_receipt.denial_reason, "live LLM gate is disabled");
+    assert!(!no_live_receipt.live_llm_allowed);
+    assert_eq!(no_live_receipt.action_count, 1);
+    assert_eq!(
+        no_live_receipt.model_handoff_status,
+        LoopProgramRuntimeHandoffExecutionReportStatus::Denied
+    );
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
-struct LiveRepair001GateReceipt {
+struct RuntimeLiveRepairGateReceipt {
     case_id: &'static str,
     gate_env: &'static str,
     gate_value: Option<String>,
@@ -342,12 +439,12 @@ struct LiveRepair001GateReceipt {
     provider_api_key_env_override: Option<String>,
     required_provider_key_envs: Vec<String>,
     provider_api_key_present: bool,
-    status: LiveRepair001GateStatus,
+    status: RuntimeLiveRepairGateStatus,
     denial_reason: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum LiveRepair001GateStatus {
+enum RuntimeLiveRepairGateStatus {
     Disabled,
     MissingProvider,
     MissingModel,
@@ -355,32 +452,32 @@ enum LiveRepair001GateStatus {
     Enabled,
 }
 
-fn live_repair_001_gate_receipt() -> LiveRepair001GateReceipt {
-    live_repair_001_gate_receipt_from_lookup(|name| env::var(name).ok())
+fn runtime_live_repair_gate_receipt() -> RuntimeLiveRepairGateReceipt {
+    runtime_live_repair_gate_receipt_from_lookup(|name| env::var(name).ok())
 }
 
-fn live_repair_001_gate_receipt_from_lookup(
+fn runtime_live_repair_gate_receipt_from_lookup(
     mut get_env: impl FnMut(&str) -> Option<String>,
-) -> LiveRepair001GateReceipt {
+) -> RuntimeLiveRepairGateReceipt {
     let gate_value = clean_env_value(get_env(LIVE_LLM_GATE_ENV));
     let provider = clean_env_value(get_env(LIVE_LLM_PROVIDER_ENV));
     let model = clean_env_value(get_env(LIVE_LLM_MODEL_ENV));
     let provider_api_key_env_override = clean_env_value(get_env(LIVE_LLM_PROVIDER_API_KEY_ENV));
     let mut required_provider_key_envs = Vec::new();
     let mut provider_api_key_present = false;
-    let mut status = LiveRepair001GateStatus::Enabled;
+    let mut status = RuntimeLiveRepairGateStatus::Enabled;
     let mut denial_reason = None;
 
     if !live_llm_gate_value_enabled(gate_value.as_deref()) {
-        status = LiveRepair001GateStatus::Disabled;
+        status = RuntimeLiveRepairGateStatus::Disabled;
         denial_reason = Some("live LLM gate is disabled".to_owned());
     } else if provider.is_none() {
-        status = LiveRepair001GateStatus::MissingProvider;
+        status = RuntimeLiveRepairGateStatus::MissingProvider;
         denial_reason = Some(format!(
             "{LIVE_LLM_PROVIDER_ENV} is required when live LLM gate is enabled"
         ));
     } else if model.is_none() {
-        status = LiveRepair001GateStatus::MissingModel;
+        status = RuntimeLiveRepairGateStatus::MissingModel;
         denial_reason = Some(format!(
             "{LIVE_LLM_MODEL_ENV} is required when live LLM gate is enabled"
         ));
@@ -398,16 +495,16 @@ fn live_repair_001_gate_receipt_from_lookup(
             .any(|name| clean_env_value(get_env(name)).is_some());
     }
 
-    if status == LiveRepair001GateStatus::Enabled
+    if status == RuntimeLiveRepairGateStatus::Enabled
         && !required_provider_key_envs.is_empty()
         && !provider_api_key_present
     {
-        status = LiveRepair001GateStatus::MissingProviderKey;
+        status = RuntimeLiveRepairGateStatus::MissingProviderKey;
         denial_reason = Some("live LLM provider credentials are missing".to_owned());
     }
 
-    LiveRepair001GateReceipt {
-        case_id: REAL_REPAIR_001_CASE_ID,
+    RuntimeLiveRepairGateReceipt {
+        case_id: RUNTIME_LIVE_REPAIR_CASE_ID,
         gate_env: LIVE_LLM_GATE_ENV,
         gate_value,
         provider_env: LIVE_LLM_PROVIDER_ENV,
@@ -448,18 +545,31 @@ fn default_provider_key_envs(provider: &str) -> &'static [&'static str] {
 }
 
 #[derive(Debug)]
-struct RealRepair001LiveCaseReceipt {
-    case_id: &'static str,
+struct RuntimeLiveRepairLiveCaseReceipt {
+    case_id: GerbilLoopCaseDriverCaseId,
+    profile_ref: GerbilLoopCaseDriverProfileRef,
     program_id: String,
     model_completion_id: String,
     model: String,
     elapsed_ms: u64,
     action_count: usize,
     tool_projection_count: usize,
-    baseline_test_success: bool,
     patch_tool_success: bool,
+    graph_rewrite_projected: bool,
     verification_success: bool,
     repaired_content: String,
+}
+
+#[derive(Debug, Eq, PartialEq)]
+struct RuntimeRepairNoLiveCaseReceipt {
+    case_id: GerbilLoopCaseDriverCaseId,
+    profile_ref: GerbilLoopCaseDriverProfileRef,
+    program_id: String,
+    gate_status: RuntimeLiveRepairGateStatus,
+    denial_reason: String,
+    live_llm_allowed: bool,
+    action_count: usize,
+    model_handoff_status: LoopProgramRuntimeHandoffExecutionReportStatus,
 }
 
 #[derive(Clone)]
@@ -469,8 +579,8 @@ struct LiveRepairDecisionMapper {
     bug_file: PathBuf,
     test_binary: PathBuf,
     completion_receipts: Arc<Mutex<Vec<ModelGatewayCompletionResponse>>>,
-    tool_receipts: Arc<Mutex<Vec<RealRepairToolReceipt>>>,
-    verification_receipts: Arc<Mutex<Vec<RealRepairVerificationReceipt>>>,
+    tool_receipts: Arc<Mutex<Vec<RuntimeRepairToolReceipt>>>,
+    verification_receipts: Arc<Mutex<Vec<RuntimeRepairVerificationReceipt>>>,
 }
 
 impl LiveRepairDecisionMapper {
@@ -502,22 +612,12 @@ impl LiveRepairDecisionMapper {
         Arc::clone(&self.completion_receipts)
     }
 
-    fn tool_receipts(&self) -> Arc<Mutex<Vec<RealRepairToolReceipt>>> {
+    fn tool_receipts(&self) -> Arc<Mutex<Vec<RuntimeRepairToolReceipt>>> {
         Arc::clone(&self.tool_receipts)
     }
 
-    fn verification_receipts(&self) -> Arc<Mutex<Vec<RealRepairVerificationReceipt>>> {
+    fn verification_receipts(&self) -> Arc<Mutex<Vec<RuntimeRepairVerificationReceipt>>> {
         Arc::clone(&self.verification_receipts)
-    }
-
-    fn baseline_receipt(&self) -> RealRepairToolReceipt {
-        self.tool_receipts
-            .lock()
-            .expect("tool receipts")
-            .iter()
-            .find(|receipt| receipt.phase == RealRepairToolPhase::BaselineTest)
-            .cloned()
-            .expect("baseline tool receipt must exist before model invocation")
     }
 
     fn model_requested_patch(&self) -> bool {
@@ -547,30 +647,35 @@ impl LiveRepairDecisionMapper {
             .first()
             .cloned()
             .expect("dispatch tools action must project a tool process");
-        let phase = if self.tool_receipts.lock().expect("tool receipts").is_empty() {
-            RealRepairToolPhase::BaselineTest
+        let phase = if self
+            .completion_receipts
+            .lock()
+            .expect("completion receipts")
+            .is_empty()
+        {
+            RuntimeRepairToolPhase::BaselineTest
         } else {
-            RealRepairToolPhase::ApplyPatch
+            RuntimeRepairToolPhase::ApplyPatch
         };
-        if phase == RealRepairToolPhase::ApplyPatch && !self.model_requested_patch() {
+        if phase == RuntimeRepairToolPhase::ApplyPatch && !self.model_requested_patch() {
             return Some(LoopProgramEventKind::Error);
         }
 
         let script = match phase {
-            RealRepairToolPhase::BaselineTest => BASELINE_TEST_SCRIPT,
-            RealRepairToolPhase::ApplyPatch => APPLY_PATCH_AND_TEST_SCRIPT,
+            RuntimeRepairToolPhase::BaselineTest => BASELINE_TEST_SCRIPT,
+            RuntimeRepairToolPhase::ApplyPatch => APPLY_PATCH_AND_TEST_SCRIPT,
         };
         let spawn_receipt = spawn_runtime_shell(
             projection,
             vec![
                 "-c".to_owned(),
                 script.to_owned(),
-                "real-repair-001-live".to_owned(),
+                "runtime-live-repair-live".to_owned(),
                 self.bug_file.to_string_lossy().into_owned(),
                 self.test_binary.to_string_lossy().into_owned(),
             ],
         );
-        let receipt = RealRepairToolReceipt {
+        let receipt = RuntimeRepairToolReceipt {
             phase,
             success: spawn_receipt.output.status.success(),
             stdout: String::from_utf8_lossy(&spawn_receipt.output.stdout).into_owned(),
@@ -579,12 +684,12 @@ impl LiveRepairDecisionMapper {
                 .expect("read repair source after tool receipt"),
         };
         let event = match receipt.phase {
-            RealRepairToolPhase::BaselineTest => (!receipt.success
+            RuntimeRepairToolPhase::BaselineTest => (!receipt.success
                 && receipt.stdout.contains("SOURCE_BEGIN")
                 && receipt.stdout.contains(PATCH_FIND))
             .then_some(LoopProgramEventKind::ToolReceipt)
             .or(Some(LoopProgramEventKind::Error)),
-            RealRepairToolPhase::ApplyPatch => (receipt.success
+            RuntimeRepairToolPhase::ApplyPatch => (receipt.success
                 && receipt.observed_source == FIXED_FIXTURE)
                 .then_some(LoopProgramEventKind::ToolReceipt)
                 .or(Some(LoopProgramEventKind::Error)),
@@ -601,13 +706,13 @@ impl LiveRepairDecisionMapper {
             .args([
                 "-c",
                 "rustc --test \"$1\" -o \"$2\" && \"$2\"",
-                "real-repair-001-verify",
+                "runtime-live-repair-verify",
                 self.bug_file.to_string_lossy().as_ref(),
                 self.test_binary.to_string_lossy().as_ref(),
             ])
             .output()
             .expect("run live repair verifier");
-        let receipt = RealRepairVerificationReceipt {
+        let receipt = RuntimeRepairVerificationReceipt {
             success: output.status.success(),
             stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
             stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
@@ -642,17 +747,17 @@ impl LoopProgramEventMapper for LiveRepairDecisionMapper {
                 self.run_next_tool_receipt(runtime_handoff_execution)
             }
             LoopProgramActionKind::InvokeModel => {
-                let baseline = self.baseline_receipt();
+                let repair_source =
+                    fs::read_to_string(&self.bug_file).expect("read repair source for model");
                 let request = ModelGatewayRequest::new(
                     self.endpoint.clone(),
                     vec![
                         system_gateway_message(
-                            "You are the real-repair-001 policy planner. Use only the tool receipt evidence. Reply with a typed patch receipt and no prose.",
+                            "You are the runtime live repair policy planner. Use only the supplied repair target. Reply with a typed patch receipt and no prose.",
                         ),
                         user_gateway_message(format!(
-                            "The baseline tool receipt observed a failing Rust test.\n\nstdout:\n{}\n\nstderr:\n{}\n\nEmit these exact lines for one allowed file repair:\n{}\nFIND:{}\nREPLACE:{}",
-                            baseline.stdout,
-                            baseline.stderr,
+                            "The repair target contains a failing Rust unit test.\n\nsource:\n{}\n\nEmit these exact lines for one allowed file repair:\n{}\nFIND:{}\nREPLACE:{}",
+                            repair_source,
                             PATCH_INTENT,
                             PATCH_FIND,
                             PATCH_REPLACE
@@ -679,24 +784,61 @@ impl LoopProgramEventMapper for LiveRepairDecisionMapper {
                 (repair_text.contains(PATCH_INTENT)
                     && repair_text.contains(PATCH_FIND)
                     && repair_text.contains(PATCH_REPLACE))
-                .then_some(LoopProgramEventKind::ModelEvent)
+                .then_some(LoopProgramEventKind::ToolRequest)
                 .or(Some(LoopProgramEventKind::Error))
             }
+            LoopProgramActionKind::Continue => self
+                .tool_receipts
+                .lock()
+                .expect("tool receipts")
+                .last()
+                .filter(|receipt| {
+                    receipt.phase == RuntimeRepairToolPhase::ApplyPatch && receipt.success
+                })
+                .map(|_| LoopProgramEventKind::ModelEvent)
+                .or(Some(LoopProgramEventKind::Error)),
+            LoopProgramActionKind::RewriteGraph => Some(LoopProgramEventKind::RuntimeReceipt),
             LoopProgramActionKind::Verify => self.run_verification_receipt(),
             _ => None,
         }
     }
 }
 
+#[derive(Clone, Copy)]
+struct NoLiveRepairDecisionMapper;
+
+impl LoopProgramEventMapper for NoLiveRepairDecisionMapper {
+    fn next_event(
+        &self,
+        machine_receipt: &GenericLoopMachineReceipt,
+        runtime_handoff_execution: &LoopProgramRuntimeHandoffExecutionReceipt,
+    ) -> Option<LoopProgramEventKind> {
+        match (
+            &machine_receipt.action,
+            runtime_handoff_execution.status.clone(),
+        ) {
+            (
+                LoopProgramActionKind::DispatchTools,
+                LoopProgramRuntimeHandoffExecutionReportStatus::Completed,
+            ) => Some(LoopProgramEventKind::ToolReceipt),
+            (
+                LoopProgramActionKind::InvokeModel,
+                LoopProgramRuntimeHandoffExecutionReportStatus::Denied,
+            ) => Some(LoopProgramEventKind::Error),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum RealRepairToolPhase {
+enum RuntimeRepairToolPhase {
     BaselineTest,
     ApplyPatch,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-struct RealRepairToolReceipt {
-    phase: RealRepairToolPhase,
+struct RuntimeRepairToolReceipt {
+    phase: RuntimeRepairToolPhase,
     success: bool,
     stdout: String,
     stderr: String,
@@ -704,7 +846,7 @@ struct RealRepairToolReceipt {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-struct RealRepairVerificationReceipt {
+struct RuntimeRepairVerificationReceipt {
     success: bool,
     stdout: String,
     stderr: String,
@@ -745,12 +887,12 @@ fn complete_gateway_synchronously(
 }
 
 #[derive(Clone)]
-struct RealRepairHybridHandoffExecutor {
+struct RuntimeRepairHybridHandoffExecutor {
     router: LoopProgramRuntimeHandoffRouter,
     agent_flow: AgentFlowLoopProgramRuntimeHandoffExecutor,
 }
 
-impl RealRepairHybridHandoffExecutor {
+impl RuntimeRepairHybridHandoffExecutor {
     fn new() -> Self {
         let handlers = LoopProgramRuntimeHandoffRouterHandlers {
             model_handler: Arc::new(StaticLoopProgramRuntimeHandoffHandler::handled(
@@ -758,6 +900,9 @@ impl RealRepairHybridHandoffExecutor {
             )),
             verification_handler: Arc::new(StaticLoopProgramRuntimeHandoffHandler::handled(
                 LoopProgramRuntimeOwner::new("runtime.verification.single-file"),
+            )),
+            graph_handler: Arc::new(StaticLoopProgramRuntimeHandoffHandler::handled(
+                LoopProgramRuntimeOwner::new("runtime.graph.rewrite"),
             )),
             control_handler: Arc::new(StaticLoopProgramRuntimeHandoffHandler::handled(
                 LoopProgramRuntimeOwner::new("runtime.control"),
@@ -773,7 +918,7 @@ impl RealRepairHybridHandoffExecutor {
     }
 }
 
-impl LoopProgramRuntimeHandoffExecutor for RealRepairHybridHandoffExecutor {
+impl LoopProgramRuntimeHandoffExecutor for RuntimeRepairHybridHandoffExecutor {
     fn execute_plan(
         &self,
         plan: &LoopProgramRuntimeHandoffPlan,
@@ -790,74 +935,68 @@ impl LoopProgramRuntimeHandoffExecutor for RealRepairHybridHandoffExecutor {
     }
 }
 
-fn real_repair_001_single_file_loop_program() -> LoopProgram {
-    LoopProgram::new(LoopProgramInput {
-        program_id: LoopProgramId::new("real-repair-001-live-single-file"),
-        policy_epoch: LoopPolicyEpoch::new(18),
-        policy_digest: LoopPolicyDigest::from_bytes([18_u8; 32]),
-        mechanism_policies: vec![
-            LoopMechanismPolicyId::new("real-repair-001"),
-            LoopMechanismPolicyId::new("live-llm-repair"),
-            LoopMechanismPolicyId::new("tool-sandbox"),
-            LoopMechanismPolicyId::new("verification-gate"),
-        ]
-        .into_boxed_slice(),
-        initial_state: LoopProgramStateId::new("start"),
-        transitions: vec![
-            transition(
-                "start-baseline-observation",
-                "start",
-                LoopProgramEventKind::Start,
-                LoopProgramActionKind::DispatchTools,
-                "baseline-observed",
-            ),
-            transition(
-                "baseline-observation-plan",
-                "baseline-observed",
-                LoopProgramEventKind::ToolReceipt,
-                LoopProgramActionKind::InvokeModel,
-                "llm-planned",
-            ),
-            transition(
-                "live-llm-plan-patch-tool",
-                "llm-planned",
-                LoopProgramEventKind::ModelEvent,
-                LoopProgramActionKind::DispatchTools,
-                "await-tool",
-            ),
-            transition(
-                "tool-verify",
-                "await-tool",
-                LoopProgramEventKind::ToolReceipt,
-                LoopProgramActionKind::Verify,
-                "await-verification",
-            ),
-            transition(
-                "verify-stop",
-                "await-verification",
-                LoopProgramEventKind::VerificationReceipt,
-                LoopProgramActionKind::Stop,
-                "stopped",
-            ),
-        ]
-        .into_boxed_slice(),
-    })
+#[derive(Clone)]
+struct RuntimeRepairNoLiveHandoffExecutor {
+    router: LoopProgramRuntimeHandoffRouter,
+    agent_flow: AgentFlowLoopProgramRuntimeHandoffExecutor,
 }
 
-fn transition(
-    transition_id: &'static str,
-    from: &'static str,
-    event: LoopProgramEventKind,
-    action: LoopProgramActionKind,
-    to: &'static str,
-) -> LoopProgramTransition {
-    LoopProgramTransition {
-        transition_id: LoopProgramTransitionId::new(transition_id),
-        from: LoopProgramStateId::new(from),
-        event,
-        action,
-        to: LoopProgramStateId::new(to),
+impl RuntimeRepairNoLiveHandoffExecutor {
+    fn new() -> Self {
+        let handlers = LoopProgramRuntimeHandoffRouterHandlers {
+            model_handler: Arc::new(StaticLoopProgramRuntimeHandoffHandler::denied(
+                LoopProgramRuntimeOwner::new("runtime.model.gateway.no-live-llm"),
+            )),
+            control_handler: Arc::new(StaticLoopProgramRuntimeHandoffHandler::handled(
+                LoopProgramRuntimeOwner::new("runtime.control"),
+            )),
+            ..LoopProgramRuntimeHandoffRouterHandlers::default()
+        };
+        Self {
+            router: LoopProgramRuntimeHandoffRouter::new(handlers),
+            agent_flow: AgentFlowLoopProgramRuntimeHandoffExecutor::new(
+                LoopProgramRuntimeOwner::new("runtime.agent-flow.repair-tool.no-live"),
+            ),
+        }
     }
+}
+
+impl LoopProgramRuntimeHandoffExecutor for RuntimeRepairNoLiveHandoffExecutor {
+    fn execute_plan(
+        &self,
+        plan: &LoopProgramRuntimeHandoffPlan,
+    ) -> LoopProgramRuntimeHandoffExecutionReceipt {
+        if plan
+            .handoffs
+            .iter()
+            .any(|handoff| handoff.agent_flow_intent.is_some())
+        {
+            self.agent_flow.execute_plan(plan)
+        } else {
+            self.router.execute_plan(plan)
+        }
+    }
+}
+
+fn scheme_projected_real_repair_loop_case() -> GerbilLoopCaseDriverProjectedLoopProgram {
+    static PROJECTED_CASE: OnceLock<GerbilLoopCaseDriverProjectedLoopProgram> = OnceLock::new();
+
+    PROJECTED_CASE
+        .get_or_init(|| {
+            let request = GerbilLoopCaseDriverProjectedLoopProgramRequest::new(
+                SCHEME_REAL_REPAIR_CASE_ID,
+                SCHEME_REAL_REPAIR_PROGRAM_ID,
+            )
+            .with_expected_vertical_trace_count(7)
+            .with_profile_ref(SCHEME_REAL_REPAIR_PROFILE_REF)
+            .with_live_llm_required(true)
+            .with_required_capability("+tool-repair")
+            .with_required_capability("+verification");
+
+            load_gerbil_loop_case_driver_projected_loop_program(&request)
+                .expect("real-repair-001 should load as a Scheme-projected LoopProgram")
+        })
+        .clone()
 }
 
 fn unique_temp_repair_workspace() -> PathBuf {
@@ -866,7 +1005,7 @@ fn unique_temp_repair_workspace() -> PathBuf {
         .expect("system clock after epoch")
         .as_nanos();
     env::temp_dir().join(format!(
-        "marlin-live-real-repair-001-{}-{nanos}",
+        "marlin-runtime-live-repair-{}-{nanos}",
         std::process::id()
     ))
 }

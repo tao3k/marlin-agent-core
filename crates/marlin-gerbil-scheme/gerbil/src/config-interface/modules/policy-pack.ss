@@ -36,9 +36,33 @@ package: config-interface/modules
         marlinPolicyPackPresentation
         marlinPolicyProjection
         marlinPooLoopProgramCompilerReceipt
+        marlinLoopPolicyProfileProjectionDescriptor
+        marlinLoopPolicyProfileProjectionDescriptors
+        marlinLoopVerticalMainlineProjectionDescriptors
+        marlinLoopPolicyProjectionModuleFromDescriptor
+        marlinLoopPolicyProjectionModules
+        marlinLoopPolicyProfileCompilerReceipts
         marlinRealRepair001ResolvedPolicyPack
         marlinRealRepair001LoopProgram
         marlinRealRepair001LoopProgramCompilerReceipt
+        marlinRealPolicy001SandboxDenylistResolvedPolicyPack
+        marlinRealPolicy001SandboxDenylistLoopProgram
+        marlinRealPolicy001SandboxDenylistLoopProgramCompilerReceipt
+        marlinRealToolSandboxResolvedPolicyPack
+        marlinRealToolSandboxLoopProgram
+        marlinRealToolSandboxLoopProgramCompilerReceipt
+        marlinRealPolicy002RetryBudgetResolvedPolicyPack
+        marlinRealPolicy002RetryBudgetLoopProgram
+        marlinRealPolicy002RetryBudgetLoopProgramCompilerReceipt
+        marlinRealPolicy003MakerCheckerResolvedPolicyPack
+        marlinRealPolicy003MakerCheckerLoopProgram
+        marlinRealPolicy003MakerCheckerLoopProgramCompilerReceipt
+        marlinRealPolicy004DynamicRewriteResolvedPolicyPack
+        marlinRealPolicy004DynamicRewriteLoopProgram
+        marlinRealPolicy004DynamicRewriteLoopProgramCompilerReceipt
+        marlinRealPolicy005MemoryRecallResolvedPolicyPack
+        marlinRealPolicy005MemoryRecallLoopProgram
+        marlinRealPolicy005MemoryRecallLoopProgramCompilerReceipt
         marlinFailureRetryResolvedPolicyPack
         marlinFailureRetryLoopProgram
         marlinFailureRetryLoopProgramCompilerReceipt
@@ -697,7 +721,7 @@ package: config-interface/modules
         (.get presentation rust-handler-manufactured)
         replayable: (.get presentation replayable))))
 
-;;; Boundary: POO Flow compiles policy profiles into Rust-owned loop IR.
+;;; Boundary: POO Flow compiles policy profiles into typed LoopProgram projections.
 ;; MarlinResult <- MarlinInput
 (def (marlinPooLoopProgramCompilerReceipt profile-id-value
                                           resolved-policy-pack-value
@@ -709,6 +733,191 @@ package: config-interface/modules
       loop-program: loop-program-value
       scheme-boundary: "scheme-types-to-rust-types"
       serialization-boundary: "rust-owned-cli-trace-cross-process"))
+
+;;; Boundary: POO Flow loop profiles are exported as projection modules.
+;; MarlinResult <- MarlinInput
+(def (marlinLoopPolicyProjectionModule module-id-value
+                                       profile-id-value
+                                       poo-flow-module-value
+                                       capability-lanes-value
+                                       vertical-case-id-value
+                                       vertical-capability-tags-value
+                                       compiler-receipt-value)
+  (.o kind: "marlin.config-interface.loop-policy.profile-projection-module.v1"
+      module-id: module-id-value
+      profile-id: profile-id-value
+      owner: "gerbil-poo-flow"
+      source-module: ":config-interface/modules/policy-pack"
+      poo-flow-module: poo-flow-module-value
+      poo-flow-capability-lanes: capability-lanes-value
+      vertical-case-id: vertical-case-id-value
+      vertical-capability-tags: vertical-capability-tags-value
+      vertical-mainline?: (if vertical-case-id-value #t #f)
+      rust-type: marlin-poo-loop-program-compiler-receipt-kind
+      scheme-boundary: "scheme-types-to-rust-types"
+      serialization-boundary: "rust-owned-cli-trace-cross-process"
+      compiler-receipt: compiler-receipt-value))
+
+;;; Boundary: Module descriptors are the Scheme-owned profile catalog.
+;; MarlinResult <- MarlinInput
+(def (marlinLoopPolicyProfileProjectionDescriptor module-id-value
+                                                  profile-id-value
+                                                  poo-flow-module-value
+                                                  capability-lanes-value
+                                                  vertical-case-id-value
+                                                  vertical-capability-tags-value
+                                                  compiler-receipt-value)
+  (.o module-id: module-id-value
+      profile-id: profile-id-value
+      poo-flow-module: poo-flow-module-value
+      poo-flow-capability-lanes: capability-lanes-value
+      vertical-case-id: vertical-case-id-value
+      vertical-capability-tags: vertical-capability-tags-value
+      vertical-mainline?: (if vertical-case-id-value #t #f)
+      compiler-receipt: compiler-receipt-value))
+
+;;; Boundary: Descriptor-to-module mapping is the only Rust projection shape.
+;; MarlinResult <- MarlinInput
+(def (marlinLoopPolicyProjectionModuleFromDescriptor descriptor-value)
+  (marlinLoopPolicyProjectionModule
+   (.get descriptor-value module-id)
+   (.get descriptor-value profile-id)
+   (.get descriptor-value poo-flow-module)
+   (.get descriptor-value poo-flow-capability-lanes)
+   (.get descriptor-value vertical-case-id)
+   (.get descriptor-value vertical-capability-tags)
+   (.get descriptor-value compiler-receipt)))
+
+;;; Boundary: Vector projection keeps module order deterministic for receipts.
+;; MarlinResult <- MarlinInput
+(def (marlin-vector-map map-procedure source-vector)
+  (let* ((count (vector-length source-vector))
+         (mapped (make-vector count)))
+    (let loop ((index 0))
+      (if (< index count)
+        (begin
+          (vector-set! mapped
+                       index
+                       (map-procedure (vector-ref source-vector index)))
+          (loop (+ index 1)))
+        mapped))))
+
+;;; Boundary: Rust consumes compiler receipts through the module projection catalog.
+;; MarlinResult <- MarlinInput
+(def (marlinLoopPolicyProjectionModuleReceipts modules)
+  (let* ((count (vector-length modules))
+         (receipts (make-vector count)))
+    (let loop ((index 0))
+      (if (< index count)
+        (begin
+          (vector-set! receipts
+                       index
+                       (.get (vector-ref modules index) compiler-receipt))
+          (loop (+ index 1)))
+        receipts))))
+
+;;; Boundary: Public profile compiler descriptors are the Scheme extension surface.
+;; MarlinResult <- MarlinInput
+(def (marlinLoopPolicyProfileProjectionDescriptors)
+  (vector
+   (marlinLoopPolicyProfileProjectionDescriptor
+    "poo-flow.loop-engine.real-repair-001"
+    "real-repair-001/reactive-tool-loop"
+    "loop-engine"
+    (vector "fun-flow" "loop-engine" "sandbox" "tool-handoff")
+    "real-repair-001"
+    (vector '+scripted-e2e '+tool-repair '+verification)
+    (marlinRealRepair001LoopProgramCompilerReceipt))
+   (marlinLoopPolicyProfileProjectionDescriptor
+    "poo-flow.loop-engine.failure-retry"
+    "marlin-failure-retry-profile/typed-recovery"
+    "loop-engine"
+    (vector "fun-flow" "loop-engine" "retry")
+    #f
+    (vector)
+    (marlinFailureRetryLoopProgramCompilerReceipt))
+   (marlinLoopPolicyProfileProjectionDescriptor
+    "poo-flow.loop-engine.policy-combination-matrix"
+    "policy-combination/memory-rewrite-checker"
+    "loop-engine"
+    (vector "fun-flow" "loop-engine" "memory" "rewrite" "checker")
+    "policy-combination/memory-rewrite-checker"
+    (vector '+policy-combination '+memory '+rewrite '+checker)
+    (marlinPolicyCombinationMatrixLoopProgramCompilerReceipt))
+   (marlinLoopPolicyProfileProjectionDescriptor
+    "poo-flow.loop-engine.real-policy-001-sandbox-denylist"
+    "real-policy-001/sandbox-denylist"
+    "loop-engine"
+    (vector "loop-engine" "sandbox" "denylist")
+    "real-policy-001/sandbox-denylist"
+    (vector '+sandbox '+denylist)
+    (marlinRealPolicy001SandboxDenylistLoopProgramCompilerReceipt))
+   (marlinLoopPolicyProfileProjectionDescriptor
+    "poo-flow.loop-engine.real-policy-001-tool-sandbox"
+    "real-policy-001/tool-sandbox"
+    "loop-engine"
+    (vector "loop-engine" "sandbox" "tool-handoff")
+    #f
+    (vector)
+    (marlinRealToolSandboxLoopProgramCompilerReceipt))
+   (marlinLoopPolicyProfileProjectionDescriptor
+    "poo-flow.loop-engine.real-policy-002-retry-budget"
+    "real-policy-002/retry-budget"
+    "loop-engine"
+    (vector "loop-engine" "retry" "tool-handoff")
+    "real-policy-002/retry-budget"
+    (vector '+retry-budget '+failure-policy)
+    (marlinRealPolicy002RetryBudgetLoopProgramCompilerReceipt))
+   (marlinLoopPolicyProfileProjectionDescriptor
+    "poo-flow.loop-engine.real-policy-003-maker-checker"
+    "real-policy-003/maker-checker"
+    "loop-engine"
+    (vector "loop-engine" "maker" "checker" "model" "verification")
+    "real-policy-003/maker-checker"
+    (vector '+maker '+checker)
+    (marlinRealPolicy003MakerCheckerLoopProgramCompilerReceipt))
+   (marlinLoopPolicyProfileProjectionDescriptor
+    "poo-flow.loop-engine.real-policy-004-dynamic-rewrite"
+    "real-policy-004/dynamic-rewrite"
+    "loop-engine"
+    (vector "loop-engine" "rewrite" "tool-handoff" "verification")
+    "real-policy-004/dynamic-rewrite"
+    (vector '+dynamic-rewrite '+repair)
+    (marlinRealPolicy004DynamicRewriteLoopProgramCompilerReceipt))
+   (marlinLoopPolicyProfileProjectionDescriptor
+    "poo-flow.loop-engine.real-policy-005-memory-recall"
+    "real-policy-005/memory-recall"
+    "loop-engine"
+    (vector "loop-engine" "memory" "tool-handoff")
+    "real-policy-005/memory-recall"
+    (vector '+memory-recall '+tool-selection)
+    (marlinRealPolicy005MemoryRecallLoopProgramCompilerReceipt))))
+
+;;; Boundary: Vertical mainline case order lives with the Scheme profile catalog.
+;; MarlinResult <- MarlinInput
+(def (marlinLoopVerticalMainlineProjectionDescriptors)
+  (let (descriptors (marlinLoopPolicyProfileProjectionDescriptors))
+    (vector
+     (vector-ref descriptors 0)
+     (vector-ref descriptors 3)
+     (vector-ref descriptors 5)
+     (vector-ref descriptors 6)
+     (vector-ref descriptors 7)
+     (vector-ref descriptors 8)
+     (vector-ref descriptors 2))))
+
+;;; Boundary: Public profile compiler projections are module-derived.
+;; MarlinResult <- MarlinInput
+(def (marlinLoopPolicyProjectionModules)
+  (marlin-vector-map
+   marlinLoopPolicyProjectionModuleFromDescriptor
+   (marlinLoopPolicyProfileProjectionDescriptors)))
+
+;;; Boundary: Public profile compiler receipts remain a Rust-facing projection view.
+;; MarlinResult <- MarlinInput
+(def (marlinLoopPolicyProfileCompilerReceipts)
+  (marlinLoopPolicyProjectionModuleReceipts
+   (marlinLoopPolicyProjectionModules)))
 
 ;;; Boundary: Minimal real repair profile compiled as Scheme types for Rust.
 ;; MarlinResult <- MarlinInput
@@ -785,7 +994,7 @@ package: config-interface/modules
                line: 1
                column: 1))
           explanation_strings:
-          (vector "real-repair-001 lowers POO profile into Rust loop IR")
+          (vector "real-repair-001 projects POO profile into typed loop program")
           forced_slots:
           (vector
            (.o slot_id: 9
@@ -854,6 +1063,518 @@ package: config-interface/modules
    "real-repair-001/reactive-tool-loop"
    (marlinRealRepair001ResolvedPolicyPack)
    (marlinRealRepair001LoopProgram)))
+
+;;; Boundary: real-policy-001 sandbox denylist profile compiled by Scheme.
+;; MarlinResult <- MarlinInput
+(def (marlin-real-policy-001-digest)
+  (make-vector 32 10))
+
+;; MarlinResult <- MarlinInput
+(def (marlin-real-policy-transition transition-id-value
+                                    from-value
+                                    event-value
+                                    action-value
+                                    to-value)
+  (.o transition_id: transition-id-value
+      from: from-value
+      event: event-value
+      action: action-value
+      to: to-value))
+
+;; MarlinResult <- MarlinInput
+(def (marlinRealPolicy001SandboxDenylistResolvedPolicyPack)
+  (.o schema_version: 1
+      policy_epoch: 10
+      policy_digest: (marlin-real-policy-001-digest)
+      hot:
+      (.o capability_mask: 3
+          human_gate_mask: 0
+          budget_caps:
+          (.o max_attempts: 1
+              max_cost_units: 100
+              max_wall_time_ms: 5000)
+          graph_nodes:
+          (vector
+           (.o node_id: 10
+               executor_id: 20
+               capability_mask: 3
+               resource_class_id: 30))
+          graph_edges: (vector)
+          route_index:
+          (.o buckets:
+              (vector
+               (.o bucket_id: 10
+                   scope_mask: 255
+                   target_id: 20)))
+          resource_classes:
+          (vector
+           (.o resource_class_id: 30
+               exclusive: #t))
+          continuation_table:
+          (vector
+           (.o op: "stop_failed"))
+          maker_profiles: (vector)
+          checker_profiles: (vector))
+      audit:
+      (.o provenance:
+          (vector
+           (.o slot_id: 10
+               winner_role: "sandbox-denylist"
+               source_role_order: (vector "sandbox-denylist" "runtime-kernel")
+               merge: "override"))
+          linearization: (vector "sandbox-denylist" "runtime-kernel")
+          diagnostics:
+          (vector
+           (.o code: "real-policy-001-sandbox-denylist-ok"
+               severity: "info"))
+          source_locations:
+          (vector
+           (.o source_location_id: 10
+               path: "gerbil/src/config-interface/modules/policy-pack.ss"
+               line: 1
+               column: 1))
+          explanation_strings:
+          (vector "real-policy-001 projects Scheme-authored sandbox denylist into typed loop program")
+          forced_slots:
+          (vector
+           (.o slot_id: 10
+               hotness: "hot"))
+          merge_receipts:
+          (vector
+           (.o slot_id: 10
+               merge: "override"
+               status: "applied")))))
+
+;; MarlinResult <- MarlinInput
+(def (marlinRealPolicy001SandboxDenylistLoopProgram)
+  (.o schema_version: 1
+      program_id: "real-policy-001-sandbox-denylist"
+      policy_epoch: 10
+      policy_digest: (marlin-real-policy-001-digest)
+      mechanism_policies:
+      (vector "real-policy-001-sandbox-denylist"
+              "agent-flow-tool-projection")
+      initial_state: "start"
+      transitions:
+      (vector
+       (marlin-real-policy-transition
+        "start-tool"
+        "start"
+        "start"
+        "dispatch_tools"
+        "await-tool")
+       (marlin-real-policy-transition
+        "tool-denied-stop"
+        "await-tool"
+        "error"
+        "stop"
+        "stopped"))))
+
+;; MarlinResult <- MarlinInput
+(def (marlinRealPolicy001SandboxDenylistLoopProgramCompilerReceipt)
+  (marlinPooLoopProgramCompilerReceipt
+   "real-policy-001/sandbox-denylist"
+   (marlinRealPolicy001SandboxDenylistResolvedPolicyPack)
+   (marlinRealPolicy001SandboxDenylistLoopProgram)))
+
+;;; Boundary: real-policy-001 allowed tool+sandbox profile compiled by Scheme.
+;; MarlinResult <- MarlinInput
+(def (marlinRealToolSandboxResolvedPolicyPack)
+  (.o schema_version: 1
+      policy_epoch: 10
+      policy_digest: (marlin-real-policy-001-digest)
+      hot:
+      (.o capability_mask: 3
+          human_gate_mask: 0
+          budget_caps:
+          (.o max_attempts: 1
+              max_cost_units: 100
+              max_wall_time_ms: 5000)
+          graph_nodes:
+          (vector
+           (.o node_id: 11
+               executor_id: 21
+               capability_mask: 3
+               resource_class_id: 31))
+          graph_edges: (vector)
+          route_index:
+          (.o buckets:
+              (vector
+               (.o bucket_id: 11
+                   scope_mask: 255
+                   target_id: 21)))
+          resource_classes:
+          (vector
+           (.o resource_class_id: 31
+               exclusive: #f))
+          continuation_table:
+          (vector
+           (.o op: "stop_completed"))
+          maker_profiles: (vector)
+          checker_profiles: (vector))
+      audit:
+      (.o provenance:
+          (vector
+           (.o slot_id: 11
+               winner_role: "tool-sandbox"
+               source_role_order: (vector "tool-sandbox" "runtime-kernel")
+               merge: "override"))
+          linearization: (vector "tool-sandbox" "runtime-kernel")
+          diagnostics:
+          (vector
+           (.o code: "real-policy-001-tool-sandbox-ok"
+               severity: "info"))
+          source_locations:
+          (vector
+           (.o source_location_id: 11
+               path: "gerbil/src/config-interface/modules/policy-pack.ss"
+               line: 1
+               column: 1))
+          explanation_strings:
+          (vector "real-policy-001 projects Scheme-authored tool sandbox spawn into typed loop program")
+          forced_slots:
+          (vector
+           (.o slot_id: 11
+               hotness: "hot"))
+          merge_receipts:
+          (vector
+           (.o slot_id: 11
+               merge: "override"
+               status: "applied")))))
+
+;; MarlinResult <- MarlinInput
+(def (marlinRealToolSandboxLoopProgram)
+  (.o schema_version: 1
+      program_id: "real-tool-sandbox-loop"
+      policy_epoch: 10
+      policy_digest: (marlin-real-policy-001-digest)
+      mechanism_policies:
+      (vector "real-policy-001-tool-sandbox"
+              "agent-flow-tool-projection")
+      initial_state: "start"
+      transitions:
+      (vector
+       (marlin-real-policy-transition
+        "start-tool"
+        "start"
+        "start"
+        "dispatch_tools"
+        "await-tool")
+       (marlin-real-policy-transition
+        "tool-stop"
+        "await-tool"
+        "tool_receipt"
+        "stop"
+        "stopped"))))
+
+;; MarlinResult <- MarlinInput
+(def (marlinRealToolSandboxLoopProgramCompilerReceipt)
+  (marlinPooLoopProgramCompilerReceipt
+   "real-policy-001/tool-sandbox"
+   (marlinRealToolSandboxResolvedPolicyPack)
+   (marlinRealToolSandboxLoopProgram)))
+
+;;; Boundary: real-policy-002 retry-budget profile compiled by Scheme.
+;; MarlinResult <- MarlinInput
+(def (marlin-real-policy-basic-resolved-policy-pack policy-epoch-value
+                                                     digest-byte-value
+                                                     winner-role-value
+                                                     capability-mask-value
+                                                     max-attempts-value
+                                                     exclusive-value
+                                                     continuation-table-value
+                                                     maker-profiles-value
+                                                     checker-profiles-value
+                                                     diagnostic-code-value
+                                                     explanation-value)
+  (.o schema_version: 1
+      policy_epoch: policy-epoch-value
+      policy_digest: (make-vector 32 digest-byte-value)
+      hot:
+      (.o capability_mask: capability-mask-value
+          human_gate_mask: 0
+          budget_caps:
+          (.o max_attempts: max-attempts-value
+              max_cost_units: 100
+              max_wall_time_ms: 5000)
+          graph_nodes:
+          (vector
+           (.o node_id: policy-epoch-value
+               executor_id: (+ policy-epoch-value 10)
+               capability_mask: capability-mask-value
+               resource_class_id: (+ policy-epoch-value 20)))
+          graph_edges: (vector)
+          route_index:
+          (.o buckets:
+              (vector
+               (.o bucket_id: policy-epoch-value
+                   scope_mask: 255
+                   target_id: (+ policy-epoch-value 10))))
+          resource_classes:
+          (vector
+           (.o resource_class_id: (+ policy-epoch-value 20)
+               exclusive: exclusive-value))
+          continuation_table: continuation-table-value
+          maker_profiles: maker-profiles-value
+          checker_profiles: checker-profiles-value)
+      audit:
+      (.o provenance:
+          (vector
+           (.o slot_id: policy-epoch-value
+               winner_role: winner-role-value
+               source_role_order: (vector winner-role-value "runtime-kernel")
+               merge: "override"))
+          linearization: (vector winner-role-value "runtime-kernel")
+          diagnostics:
+          (vector
+           (.o code: diagnostic-code-value
+               severity: "info"))
+          source_locations:
+          (vector
+           (.o source_location_id: policy-epoch-value
+               path: "gerbil/src/config-interface/modules/policy-pack.ss"
+               line: 1
+               column: 1))
+          explanation_strings:
+          (vector explanation-value)
+          forced_slots:
+          (vector
+           (.o slot_id: policy-epoch-value
+               hotness: "hot"))
+          merge_receipts:
+          (vector
+           (.o slot_id: policy-epoch-value
+               merge: "override"
+               status: "applied")))))
+
+;; MarlinResult <- MarlinInput
+(def (marlin-real-policy-loop-program program-id-value
+                                      policy-epoch-value
+                                      digest-byte-value
+                                      mechanism-policies-value
+                                      transitions-value)
+  (.o schema_version: 1
+      program_id: program-id-value
+      policy_epoch: policy-epoch-value
+      policy_digest: (make-vector 32 digest-byte-value)
+      mechanism_policies: mechanism-policies-value
+      initial_state: "start"
+      transitions: transitions-value))
+
+;; MarlinResult <- MarlinInput
+(def (marlinRealPolicy002RetryBudgetResolvedPolicyPack)
+  (marlin-real-policy-basic-resolved-policy-pack
+   11
+   11
+   "retry-budget"
+   3
+   2
+   #t
+   (vector
+    (.o op: "retry"
+        graph_template: 1
+        max_attempts: 2)
+    (.o op: "stop_failed"))
+   (vector)
+   (vector)
+   "real-policy-002-retry-budget-ok"
+   "real-policy-002 projects Scheme-authored retry budget into typed loop program"))
+
+;; MarlinResult <- MarlinInput
+(def (marlinRealPolicy002RetryBudgetLoopProgram)
+  (marlin-real-policy-loop-program
+   "real-policy-002-retry-budget"
+   11
+   11
+   (vector "real-policy-002-retry-budget"
+           "agent-flow-tool-projection")
+   (vector
+    (marlin-real-policy-transition
+     "start-tool"
+     "start"
+     "start"
+     "dispatch_tools"
+     "await-tool")
+    (marlin-real-policy-transition
+     "tool-error-retry"
+     "await-tool"
+     "error"
+     "dispatch_tools"
+     "await-tool-retry")
+    (marlin-real-policy-transition
+     "retry-tool-stop"
+     "await-tool-retry"
+     "tool_receipt"
+     "stop"
+     "stopped"))))
+
+;; MarlinResult <- MarlinInput
+(def (marlinRealPolicy002RetryBudgetLoopProgramCompilerReceipt)
+  (marlinPooLoopProgramCompilerReceipt
+   "real-policy-002/retry-budget"
+   (marlinRealPolicy002RetryBudgetResolvedPolicyPack)
+   (marlinRealPolicy002RetryBudgetLoopProgram)))
+
+;;; Boundary: real-policy-003 maker/checker profile compiled by Scheme.
+;; MarlinResult <- MarlinInput
+(def (marlinRealPolicy003MakerCheckerResolvedPolicyPack)
+  (marlin-real-policy-basic-resolved-policy-pack
+   12
+   12
+   "maker-checker"
+   5
+   1
+   #f
+   (vector
+    (.o op: "stop_completed"))
+   (vector 30)
+   (vector 31)
+   "real-policy-003-maker-checker-ok"
+   "real-policy-003 separates maker model and checker verification lanes"))
+
+;; MarlinResult <- MarlinInput
+(def (marlinRealPolicy003MakerCheckerLoopProgram)
+  (marlin-real-policy-loop-program
+   "real-policy-003-maker-checker"
+   12
+   12
+   (vector "real-policy-003-maker-checker")
+   (vector
+    (marlin-real-policy-transition
+     "start-maker"
+     "start"
+     "start"
+     "invoke_model"
+     "await-maker")
+    (marlin-real-policy-transition
+     "maker-checker"
+     "await-maker"
+     "model_event"
+     "verify"
+     "await-checker")
+    (marlin-real-policy-transition
+     "checker-stop"
+     "await-checker"
+     "verification_receipt"
+     "stop"
+     "stopped"))))
+
+;; MarlinResult <- MarlinInput
+(def (marlinRealPolicy003MakerCheckerLoopProgramCompilerReceipt)
+  (marlinPooLoopProgramCompilerReceipt
+   "real-policy-003/maker-checker"
+   (marlinRealPolicy003MakerCheckerResolvedPolicyPack)
+   (marlinRealPolicy003MakerCheckerLoopProgram)))
+
+;;; Boundary: real-policy-004 dynamic rewrite profile compiled by Scheme.
+;; MarlinResult <- MarlinInput
+(def (marlinRealPolicy004DynamicRewriteResolvedPolicyPack)
+  (marlin-real-policy-basic-resolved-policy-pack
+   13
+   13
+   "dynamic-rewrite"
+   7
+   1
+   #t
+   (vector
+    (.o op: "stop_completed"))
+   (vector)
+   (vector 40)
+   "real-policy-004-dynamic-rewrite-ok"
+   "real-policy-004 rewrites the graph before repair and verification"))
+
+;; MarlinResult <- MarlinInput
+(def (marlinRealPolicy004DynamicRewriteLoopProgram)
+  (marlin-real-policy-loop-program
+   "real-policy-004-dynamic-rewrite"
+   13
+   13
+   (vector "real-policy-004-dynamic-rewrite"
+           "verification-gate")
+   (vector
+    (marlin-real-policy-transition
+     "start-rewrite"
+     "start"
+     "start"
+     "rewrite_graph"
+     "rewritten")
+    (marlin-real-policy-transition
+     "rewrite-tool"
+     "rewritten"
+     "runtime_receipt"
+     "dispatch_tools"
+     "await-tool")
+    (marlin-real-policy-transition
+     "tool-verify"
+     "await-tool"
+     "tool_receipt"
+     "verify"
+     "await-verification")
+    (marlin-real-policy-transition
+     "verify-stop"
+     "await-verification"
+     "verification_receipt"
+     "stop"
+     "stopped"))))
+
+;; MarlinResult <- MarlinInput
+(def (marlinRealPolicy004DynamicRewriteLoopProgramCompilerReceipt)
+  (marlinPooLoopProgramCompilerReceipt
+   "real-policy-004/dynamic-rewrite"
+   (marlinRealPolicy004DynamicRewriteResolvedPolicyPack)
+   (marlinRealPolicy004DynamicRewriteLoopProgram)))
+
+;;; Boundary: real-policy-005 memory recall profile compiled by Scheme.
+;; MarlinResult <- MarlinInput
+(def (marlinRealPolicy005MemoryRecallResolvedPolicyPack)
+  (marlin-real-policy-basic-resolved-policy-pack
+   14
+   14
+   "memory-recall"
+   3
+   1
+   #f
+   (vector
+    (.o op: "stop_completed"))
+   (vector)
+   (vector)
+   "real-policy-005-memory-recall-ok"
+   "real-policy-005 uses memory recall to select the next tool path"))
+
+;; MarlinResult <- MarlinInput
+(def (marlinRealPolicy005MemoryRecallLoopProgram)
+  (marlin-real-policy-loop-program
+   "real-policy-005-memory-recall"
+   14
+   14
+   (vector "real-policy-005-memory-recall"
+           "agent-flow-memory-projection")
+   (vector
+    (marlin-real-policy-transition
+     "start-memory"
+     "start"
+     "start"
+     "read_memory"
+     "memory-ready")
+    (marlin-real-policy-transition
+     "memory-tool"
+     "memory-ready"
+     "tool_request"
+     "dispatch_tools"
+     "await-tool")
+    (marlin-real-policy-transition
+     "tool-stop"
+     "await-tool"
+     "tool_receipt"
+     "stop"
+     "stopped"))))
+
+;; MarlinResult <- MarlinInput
+(def (marlinRealPolicy005MemoryRecallLoopProgramCompilerReceipt)
+  (marlinPooLoopProgramCompilerReceipt
+   "real-policy-005/memory-recall"
+   (marlinRealPolicy005MemoryRecallResolvedPolicyPack)
+   (marlinRealPolicy005MemoryRecallLoopProgram)))
 
 ;;; Boundary: Failure-retry profile compiled as Scheme types for Rust.
 ;; MarlinResult <- MarlinInput
@@ -943,7 +1664,7 @@ package: config-interface/modules
                column: 1))
           explanation_strings:
           (vector
-           "failure-retry lowers POO retry budget into Rust loop IR")
+           "failure-retry projects POO retry budget into typed loop program")
           forced_slots:
           (vector
            (.o slot_id: 21
@@ -1105,7 +1826,7 @@ package: config-interface/modules
                line: 1
                column: 1))
           explanation_strings:
-          (vector "policy combination matrix lowers memory, maker, rewrite, tool, checker into Rust loop IR")
+          (vector "policy combination matrix projects memory, maker, rewrite, tool, checker into typed loop program")
           forced_slots:
           (vector
            (.o slot_id: 31

@@ -15,10 +15,10 @@ use super::{
     PolicyCombinationDecisionMapper, PolicyGatedAgentFlowLoopProgramRuntimeHandoffExecutor,
     ReceiptDrivenLoopProgramEventMapper, RetryBudgetToolHandler, ScriptedLoopProgramEventMapper,
     StaticLoopProgramToolProcessResolver, TokioAgentRuntime, handled_by, handled_by_with_event,
-    policy_combination_matrix_loop_program, real_policy_001_sandbox_denylist_loop_program,
-    real_policy_002_retry_budget_loop_program, real_policy_003_maker_checker_loop_program,
-    real_policy_004_dynamic_rewrite_loop_program, real_policy_005_memory_recall_loop_program,
-    real_policy_experiment_receipt, real_tool_sandbox_loop_program,
+    memory_model_rewrite_tool_verify_loop_program, memory_recall_then_tool_loop_program,
+    model_then_verify_loop_program, rewrite_tool_verify_loop_program,
+    runtime_policy_experiment_receipt, single_tool_dispatch_error_stop_loop_program,
+    single_tool_dispatch_receipt_stop_loop_program, two_attempt_tool_dispatch_loop_program,
 };
 
 fn dispatch_tools_shell_resolver(script: &'static str) -> StaticLoopProgramToolProcessResolver {
@@ -36,7 +36,7 @@ fn dispatch_tools_shell_resolver(script: &'static str) -> StaticLoopProgramToolP
 }
 
 #[test]
-fn real_policy_001_sandbox_denylist_blocks_dispatch_tool_intent() {
+fn runtime_policy_tool_denylist_blocks_dispatch_tool_intent() {
     let handlers = LoopProgramRuntimeHandoffRouterHandlers {
         tool_handler: Arc::new(DenylistedLoopProgramToolDispatchHandler::new(
             LoopProgramRuntimeOwner::new("runtime.sandbox.denylist"),
@@ -48,7 +48,7 @@ fn real_policy_001_sandbox_denylist_blocks_dispatch_tool_intent() {
     let driver = LoopProgramExecutionDriver::new(LoopProgramRuntimeHandoffRouter::new(handlers))
         .with_event_mapper(ScriptedLoopProgramEventMapper::default());
 
-    let loop_program = real_policy_001_sandbox_denylist_loop_program();
+    let loop_program = single_tool_dispatch_error_stop_loop_program();
     let receipt = driver.run(LoopProgramExecutionRequest::new(
         loop_program.clone(),
         vec![LoopProgramEventKind::Start],
@@ -75,14 +75,14 @@ fn real_policy_001_sandbox_denylist_blocks_dispatch_tool_intent() {
     );
 
     let experiment_receipt =
-        real_policy_experiment_receipt("real-policy-001", &loop_program, &receipt);
+        runtime_policy_experiment_receipt("runtime-tool-denylist", &loop_program, &receipt);
     assert_eq!(
         experiment_receipt.program_id,
-        "real-policy-001-sandbox-denylist"
+        "kernel-fixture-tool-dispatch-error-stop"
     );
     assert_eq!(
         experiment_receipt.policy_ids[0],
-        "real-policy-001-sandbox-denylist"
+        "kernel-fixture-tool-dispatch-error"
     );
     assert_eq!(experiment_receipt.denied_handoff_count, 1);
     assert!(
@@ -98,7 +98,7 @@ fn real_policy_001_sandbox_denylist_blocks_dispatch_tool_intent() {
 
 #[cfg(unix)]
 #[tokio::test]
-async fn real_tool_sandbox_loop_projects_and_spawns_allowed_tool_process() {
+async fn tool_sandbox_loop_projects_and_spawns_allowed_tool_process() {
     let (runtime, _events) = TokioAgentRuntime::new(4);
     let driver = LoopProgramExecutionDriver::new(AgentFlowLoopProgramRuntimeHandoffExecutor::new(
         LoopProgramRuntimeOwner::new("runtime.agent-flow.tool-sandbox"),
@@ -112,7 +112,7 @@ async fn real_tool_sandbox_loop_projects_and_spawns_allowed_tool_process() {
     ));
 
     let receipt = driver.run(LoopProgramExecutionRequest::new(
-        real_tool_sandbox_loop_program(),
+        single_tool_dispatch_receipt_stop_loop_program(),
         vec![LoopProgramEventKind::Start],
     ));
 
@@ -143,7 +143,7 @@ async fn real_tool_sandbox_loop_projects_and_spawns_allowed_tool_process() {
     );
 
     let replay_bundle = LoopProgramRuntimeSideEffectExecutor::new(dispatch_tools_shell_resolver(
-        "printf real-tool-sandbox-loop",
+        "printf runtime-tool-sandbox-loop",
     ))
     .with_started_at_ms(100)
     .with_observed_at_ms(125)
@@ -170,7 +170,7 @@ async fn real_tool_sandbox_loop_projects_and_spawns_allowed_tool_process() {
     assert!(spawn_receipt.output.status.success());
     assert_eq!(
         String::from_utf8_lossy(&spawn_receipt.output.stdout),
-        "real-tool-sandbox-loop"
+        "runtime-tool-sandbox-loop"
     );
     assert!(spawn_receipt.output.stderr.is_empty());
     assert!(
@@ -183,7 +183,7 @@ async fn real_tool_sandbox_loop_projects_and_spawns_allowed_tool_process() {
 }
 
 #[test]
-fn real_policy_002_retry_budget_replays_after_first_denied_dispatch() {
+fn runtime_policy_retry_budget_replays_after_first_denied_dispatch() {
     let handlers = LoopProgramRuntimeHandoffRouterHandlers {
         tool_handler: Arc::new(RetryBudgetToolHandler::new(
             LoopProgramRuntimeOwner::new("runtime.retry-budget.tool"),
@@ -203,7 +203,7 @@ fn real_policy_002_retry_budget_replays_after_first_denied_dispatch() {
         .with_max_steps(8);
 
     let receipt = driver.run(LoopProgramExecutionRequest::new(
-        real_policy_002_retry_budget_loop_program(),
+        two_attempt_tool_dispatch_loop_program(),
         vec![LoopProgramEventKind::Start],
     ));
 
@@ -249,7 +249,7 @@ fn real_policy_002_retry_budget_replays_after_first_denied_dispatch() {
 
 #[cfg(unix)]
 #[tokio::test]
-async fn real_policy_002_retry_budget_gates_agent_flow_tool_projection_before_spawn() {
+async fn runtime_policy_retry_budget_gates_agent_flow_tool_projection_before_spawn() {
     let (runtime, _events) = TokioAgentRuntime::new(4);
     let handlers = LoopProgramRuntimeHandoffRouterHandlers {
         tool_handler: Arc::new(RetryBudgetToolHandler::new(
@@ -271,7 +271,7 @@ async fn real_policy_002_retry_budget_gates_agent_flow_tool_projection_before_sp
     .with_max_steps(8);
 
     let receipt = driver.run(LoopProgramExecutionRequest::new(
-        real_policy_002_retry_budget_loop_program(),
+        two_attempt_tool_dispatch_loop_program(),
         vec![LoopProgramEventKind::Start],
     ));
 
@@ -371,7 +371,7 @@ async fn real_policy_002_retry_budget_gates_agent_flow_tool_projection_before_sp
 }
 
 #[test]
-fn real_policy_003_maker_checker_routes_model_and_verification_lanes_apart() {
+fn runtime_policy_maker_checker_routes_model_and_verification_lanes_apart() {
     let handlers = LoopProgramRuntimeHandoffRouterHandlers {
         model_handler: handled_by("runtime.model.maker"),
         verification_handler: handled_by("runtime.verification.checker"),
@@ -394,7 +394,7 @@ fn real_policy_003_maker_checker_routes_model_and_verification_lanes_apart() {
         ));
 
     let receipt = driver.run(LoopProgramExecutionRequest::new(
-        real_policy_003_maker_checker_loop_program(),
+        model_then_verify_loop_program(),
         vec![LoopProgramEventKind::Start],
     ));
 
@@ -426,7 +426,7 @@ fn real_policy_003_maker_checker_routes_model_and_verification_lanes_apart() {
 }
 
 #[test]
-fn real_policy_004_dynamic_rewrite_runs_before_repair_and_verification() {
+fn runtime_policy_dynamic_rewrite_runs_before_repair_and_verification() {
     let handlers = LoopProgramRuntimeHandoffRouterHandlers {
         graph_handler: handled_by("runtime.graph.dynamic-rewrite"),
         tool_handler: handled_by("runtime.tool.repair"),
@@ -454,7 +454,7 @@ fn real_policy_004_dynamic_rewrite_runs_before_repair_and_verification() {
         ));
 
     let receipt = driver.run(LoopProgramExecutionRequest::new(
-        real_policy_004_dynamic_rewrite_loop_program(),
+        rewrite_tool_verify_loop_program(),
         vec![LoopProgramEventKind::Start],
     ));
 
@@ -481,14 +481,14 @@ fn real_policy_004_dynamic_rewrite_runs_before_repair_and_verification() {
 }
 
 #[test]
-fn real_policy_005_memory_recall_receipt_changes_next_decision() {
+fn runtime_policy_memory_recall_receipt_changes_next_decision() {
     let driver = LoopProgramExecutionDriver::new(AgentFlowLoopProgramRuntimeHandoffExecutor::new(
         LoopProgramRuntimeOwner::new("runtime.agent-flow.memory-policy"),
     ))
     .with_event_mapper(MemoryRecallDecisionMapper);
 
     let receipt = driver.run(LoopProgramExecutionRequest::new(
-        real_policy_005_memory_recall_loop_program(),
+        memory_recall_then_tool_loop_program(),
         vec![LoopProgramEventKind::Start],
     ));
 
@@ -519,7 +519,7 @@ fn real_policy_005_memory_recall_receipt_changes_next_decision() {
     );
 }
 
-fn run_policy_combination_matrix_loop() -> (LoopProgram, LoopProgramExecutionReceipt) {
+fn run_memory_rewrite_checker_loop() -> (LoopProgram, LoopProgramExecutionReceipt) {
     let handlers = LoopProgramRuntimeHandoffRouterHandlers {
         model_handler: handled_by("runtime.model.maker"),
         graph_handler: handled_by("runtime.graph.dynamic-rewrite"),
@@ -535,7 +535,7 @@ fn run_policy_combination_matrix_loop() -> (LoopProgram, LoopProgramExecutionRec
     ))
     .with_event_mapper(PolicyCombinationDecisionMapper);
 
-    let loop_program = policy_combination_matrix_loop_program();
+    let loop_program = memory_model_rewrite_tool_verify_loop_program();
     let receipt = driver.run(LoopProgramExecutionRequest::new(
         loop_program.clone(),
         vec![LoopProgramEventKind::Start],
@@ -544,8 +544,7 @@ fn run_policy_combination_matrix_loop() -> (LoopProgram, LoopProgramExecutionRec
     (loop_program, receipt)
 }
 
-fn run_receipt_driven_policy_combination_matrix_loop() -> (LoopProgram, LoopProgramExecutionReceipt)
-{
+fn run_receipt_driven_memory_rewrite_checker_loop() -> (LoopProgram, LoopProgramExecutionReceipt) {
     let handlers = LoopProgramRuntimeHandoffRouterHandlers {
         model_handler: handled_by_with_event(
             "runtime.model.maker",
@@ -570,7 +569,7 @@ fn run_receipt_driven_policy_combination_matrix_loop() -> (LoopProgram, LoopProg
     ))
     .with_event_mapper(ReceiptDrivenLoopProgramEventMapper);
 
-    let loop_program = policy_combination_matrix_loop_program();
+    let loop_program = memory_model_rewrite_tool_verify_loop_program();
     let receipt = driver.run(LoopProgramExecutionRequest::new(
         loop_program.clone(),
         vec![LoopProgramEventKind::Start],
@@ -580,8 +579,8 @@ fn run_receipt_driven_policy_combination_matrix_loop() -> (LoopProgram, LoopProg
 }
 
 #[test]
-fn policy_combination_matrix_runs_memory_rewrite_checker_path() {
-    let (loop_program, receipt) = run_policy_combination_matrix_loop();
+fn memory_rewrite_checker_combination_runs_path() {
+    let (loop_program, receipt) = run_memory_rewrite_checker_loop();
 
     assert_eq!(receipt.status, LoopProgramExecutionStatus::Stopped);
     assert_eq!(
@@ -636,17 +635,17 @@ fn policy_combination_matrix_runs_memory_rewrite_checker_path() {
     );
 
     let experiment_receipt =
-        real_policy_experiment_receipt("policy-combination-matrix-001", &loop_program, &receipt);
+        runtime_policy_experiment_receipt("runtime-policy-combination", &loop_program, &receipt);
     assert_eq!(
         experiment_receipt.program_id,
-        "policy-combination-memory-rewrite-checker"
+        "kernel-fixture-memory-model-rewrite-tool-verify"
     );
     assert_eq!(
         experiment_receipt.policy_ids,
         vec![
-            "real-policy-003-maker-checker".to_owned(),
-            "real-policy-004-dynamic-rewrite".to_owned(),
-            "real-policy-005-memory-recall".to_owned(),
+            "kernel-fixture-model-verify".to_owned(),
+            "kernel-fixture-rewrite-tool".to_owned(),
+            "kernel-fixture-memory-recall".to_owned(),
         ]
         .into_boxed_slice()
     );
@@ -694,8 +693,8 @@ fn policy_combination_matrix_runs_memory_rewrite_checker_path() {
 }
 
 #[test]
-fn policy_combination_matrix_pumps_runtime_receipts_without_scripted_mapper() {
-    let (_loop_program, receipt) = run_receipt_driven_policy_combination_matrix_loop();
+fn memory_rewrite_checker_combination_pumps_runtime_receipts_without_scripted_mapper() {
+    let (_loop_program, receipt) = run_receipt_driven_memory_rewrite_checker_loop();
 
     assert_eq!(receipt.status, LoopProgramExecutionStatus::Stopped);
     assert_eq!(
@@ -765,9 +764,9 @@ fn policy_combination_matrix_pumps_runtime_receipts_without_scripted_mapper() {
 
 #[cfg(unix)]
 #[tokio::test]
-async fn policy_combination_matrix_spawns_projected_tool_process() {
+async fn memory_rewrite_checker_combination_spawns_projected_tool_process() {
     let (runtime, _events) = TokioAgentRuntime::new(4);
-    let (_loop_program, receipt) = run_policy_combination_matrix_loop();
+    let (_loop_program, receipt) = run_memory_rewrite_checker_loop();
     let tool_step = &receipt.steps[3];
 
     assert_eq!(

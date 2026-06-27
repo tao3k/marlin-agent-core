@@ -6,6 +6,8 @@ package: config-interface/custom/marline-kernel
 
 (import :clan/poo/object
         :config-interface/modules/lib
+        (only-in :config-interface/modules/policy-pack
+                 marlinLoopVerticalMainlineProjectionDescriptors)
         :config-interface/modules/prefabs/user-interface
         (only-in :config-interface/custom/marline-kernel/config
                  poo-flow-custom-module-runtime-handoff-llm-case
@@ -15,6 +17,8 @@ package: config-interface/custom/marline-kernel
 
 (export +marline-kernel-loop-case-driver-receipt-kind+
         marline-kernel-loop-case-driver-receipts
+        marline-kernel-loop-case-driver-module-receipts
+        marline-kernel-loop-case-driver-vertical-receipts
         marline-kernel-loop-case-driver-receipt
         marline-kernel-loop-case-driver-live-enabled?)
 
@@ -113,6 +117,234 @@ package: config-interface/custom/marline-kernel
 (def (marline-kernel-stable-fixture-path? path)
   (if (member path +marline-kernel-loop-case-fixture-paths+) #t #f))
 
+(def (marline-kernel-loop-case-vertical-descriptors/list)
+  (vector->list (marlinLoopVerticalMainlineProjectionDescriptors)))
+
+(def (marline-kernel-loop-case-vertical-case-id vertical-spec)
+  (.get vertical-spec vertical-case-id))
+
+(def (marline-kernel-loop-case-vertical-profile-id vertical-spec)
+  (.get vertical-spec profile-id))
+
+(def (marline-kernel-loop-case-vertical-tags vertical-spec)
+  (vector->list (.get vertical-spec vertical-capability-tags)))
+
+(def (marline-kernel-loop-case-vertical-compiler-receipt vertical-spec)
+  (.get vertical-spec compiler-receipt))
+
+(def (marline-kernel-loop-case-vertical-tag? vertical-spec tag)
+  (if (member tag (marline-kernel-loop-case-vertical-tags vertical-spec))
+    #t
+    #f))
+
+(def (marline-kernel-loop-case-live-llm-required? vertical-spec)
+  (marline-kernel-loop-case-vertical-tag? vertical-spec '+tool-repair))
+
+(def (marline-kernel-loop-case-live-gate-env vertical-spec)
+  (if (marline-kernel-loop-case-live-llm-required? vertical-spec)
+    "MARLIN_LIVE_LLM"
+    "none"))
+
+(def (marline-kernel-loop-case-live-llm-denial-receipt vertical-spec)
+  (if (marline-kernel-loop-case-live-llm-required? vertical-spec)
+    'deferred-no-live-llm
+    'not-required))
+
+(def (marline-kernel-loop-case-llm-repair-intent vertical-spec)
+  (if (marline-kernel-loop-case-live-llm-required? vertical-spec)
+    'single-file-repair
+    'none))
+
+(def (marline-kernel-loop-case-tool-intent-count vertical-spec)
+  (if (or (marline-kernel-loop-case-vertical-tag? vertical-spec '+tool-repair)
+          (marline-kernel-loop-case-vertical-tag? vertical-spec '+tool-selection)
+          (marline-kernel-loop-case-vertical-tag? vertical-spec '+sandbox)
+          (marline-kernel-loop-case-vertical-tag? vertical-spec '+denylist)
+          (marline-kernel-loop-case-vertical-tag? vertical-spec '+checker)
+          (marline-kernel-loop-case-vertical-tag? vertical-spec '+dynamic-rewrite)
+          (marline-kernel-loop-case-vertical-tag? vertical-spec '+repair)
+          (marline-kernel-loop-case-vertical-tag? vertical-spec '+rewrite))
+    1
+    0))
+
+(def (marline-kernel-loop-case-memory-intent-count vertical-spec)
+  (if (or (marline-kernel-loop-case-vertical-tag? vertical-spec '+memory)
+          (marline-kernel-loop-case-vertical-tag? vertical-spec '+memory-recall))
+    1
+    0))
+
+(def (marline-kernel-loop-case-placement-intent-count vertical-spec)
+  ;; Every vertical loop case reaches the runtime handoff lane.
+  1)
+
+(def (marline-kernel-loop-case-compiler-loop-program compiler-receipt)
+  (.get compiler-receipt loop-program))
+
+(def (marline-kernel-loop-case-compiler-resolved-policy-pack compiler-receipt)
+  (.get compiler-receipt resolved-policy-pack))
+
+(def (marline-kernel-loop-case-boundary-token value)
+  (cond
+   ((equal? value "scheme-types-to-rust-types")
+    'scheme-types->rust-types)
+   ((equal? value "rust-owned-cli-trace-cross-process")
+    'rust-owned-cli-trace-cross-process)
+   (else value)))
+
+(def (marline-kernel-loop-case-scalar->string value)
+  (cond
+   ((string? value) value)
+   ((symbol? value) (symbol->string value))
+   ((number? value) (number->string value))
+   (else
+    (error "unsupported loop case trace scalar" value))))
+
+(def (marline-kernel-loop-case-join values separator)
+  (cond
+   ((null? values) "")
+   ((null? (cdr values))
+    (marline-kernel-loop-case-scalar->string (car values)))
+   (else
+    (string-append
+     (marline-kernel-loop-case-scalar->string (car values))
+     separator
+     (marline-kernel-loop-case-join (cdr values) separator)))))
+
+(def (marline-kernel-loop-case-transition-slot transition field)
+  (cond
+   ((equal? field 'action)
+    (.get transition action))
+   ((equal? field 'event)
+    (.get transition event))
+   (else
+    (error "unsupported loop case transition field" field))))
+
+(def (marline-kernel-loop-case-transition-field-string transitions field)
+  (marline-kernel-loop-case-join
+   (map (lambda (transition)
+          (marline-kernel-loop-case-transition-slot transition field))
+        (vector->list transitions))
+   "|"))
+
+(def (marline-kernel-loop-case-policy-digest-string loop-program)
+  (marline-kernel-loop-case-join
+   (vector->list (.get loop-program policy_digest))
+   ","))
+
+(def (marline-kernel-loop-case-mechanism-policy-string mechanism-policies)
+  (marline-kernel-loop-case-join
+   (vector->list mechanism-policies)
+   "|"))
+
+(def (marline-kernel-loop-case-driver-vertical-receipt vertical-spec)
+  (let* ((case-id (marline-kernel-loop-case-vertical-case-id vertical-spec))
+         (profile-id (marline-kernel-loop-case-vertical-profile-id vertical-spec))
+         (compiler-receipt
+          (marline-kernel-loop-case-vertical-compiler-receipt vertical-spec))
+         (resolved-policy-pack
+          (marline-kernel-loop-case-compiler-resolved-policy-pack
+           compiler-receipt))
+         (loop-program
+          (marline-kernel-loop-case-compiler-loop-program compiler-receipt))
+         (hot-policy (.get resolved-policy-pack hot))
+         (budget-caps (.get hot-policy budget_caps))
+         (mechanism-policies (.get loop-program mechanism_policies))
+         (transitions (.get loop-program transitions))
+         (command-vector
+          (list "marlin" "loop" "program" "run"
+                "--profile" profile-id)))
+    `((kind . ,+marline-kernel-loop-case-driver-receipt-kind+)
+      (case-id . ,case-id)
+      (profile-ref . ,profile-id)
+      (runtime-mode . typed-loop-projection)
+      (live-gate-env . ,(marline-kernel-loop-case-live-gate-env vertical-spec))
+      (live-enabled? . #f)
+      (live-llm-required? .
+                          ,(marline-kernel-loop-case-live-llm-required?
+                            vertical-spec))
+      (live-llm-allowed? . #f)
+      (live-llm-denial-receipt .
+                                ,(marline-kernel-loop-case-live-llm-denial-receipt
+                                  vertical-spec))
+      (llm-repair-intent .
+                         ,(marline-kernel-loop-case-llm-repair-intent
+                           vertical-spec))
+      (session-transform . loop-policy-profile->loop-program)
+      (tool-intent-count .
+                         ,(marline-kernel-loop-case-tool-intent-count
+                           vertical-spec))
+      (memory-intent-count .
+                           ,(marline-kernel-loop-case-memory-intent-count
+                             vertical-spec))
+      (placement-intent-count .
+                              ,(marline-kernel-loop-case-placement-intent-count
+                                vertical-spec))
+      (runtime-handoff-kind . loop-program-runtime-handoff)
+      (runtime-receipt-kind . loop-program-runtime-receipt)
+      (derived-session-kind . derived-session/from-loop-receipt)
+      (smoke-status . typed-loop-projection-ready)
+      (command-kind . loop-program-run)
+      (command-vector . ,command-vector)
+      (input-path . none)
+      (stable-fixture? . #f)
+      (artifact-outputs . ("resolved-policy-pack" "loop-program"))
+      (result-protocol . ,(.get compiler-receipt kind))
+      (observability . ,case-id)
+      (observes . ,(marline-kernel-loop-case-vertical-tags vertical-spec))
+      (capability-tags . ,(marline-kernel-loop-case-vertical-tags vertical-spec))
+      (metadata .
+                ((owner . "marlin")
+                 (surface . "config-interface-loop-policy-profile")))
+      (policy-owner . ,+marline-kernel-loop-case-driver-policy-owner+)
+      (control-plane-owner . ,+marline-kernel-loop-case-driver-control-plane-owner+)
+      (runtime-execution-owner . ,+marline-kernel-loop-case-driver-runtime-owner+)
+      (module-kind . "marlin.config-interface.loop-policy-profile-projection.v1")
+      (module-user-module . funflow)
+      (module-selection-tags .
+                             ,(marline-kernel-loop-case-vertical-tags
+                               vertical-spec))
+      (module-source-ref . ,profile-id)
+      (module-entrypoint . marlinLoopPolicyProfileCompilerReceipts)
+      (module-enabled? . #t)
+      (vertical-mainline? . #t)
+      (compiler-owner . ,(.get compiler-receipt compiler-owner))
+      (compiler-profile-id . ,(.get compiler-receipt profile-id))
+      (resolved-policy-pack-policy-epoch .
+                                          ,(.get resolved-policy-pack
+                                                 policy_epoch))
+      (loop-program-id . ,(.get loop-program program_id))
+      (loop-program-policy-epoch . ,(.get loop-program policy_epoch))
+      (transition-count . ,(vector-length transitions))
+      (transition-actions .
+                          ,(marline-kernel-loop-case-transition-field-string
+                            transitions
+                            'action))
+      (transition-events .
+                         ,(marline-kernel-loop-case-transition-field-string
+                           transitions
+                           'event))
+      (mechanism-policy-count . ,(vector-length mechanism-policies))
+      (mechanism-policy-ids .
+                            ,(marline-kernel-loop-case-mechanism-policy-string
+                              mechanism-policies))
+      (mechanism-policies . ,(vector->list mechanism-policies))
+      (policy-digest-length . ,(vector-length
+                                (.get loop-program policy_digest)))
+      (policy-digest-octets .
+                            ,(marline-kernel-loop-case-policy-digest-string
+                              loop-program))
+      (capability-mask . ,(.get hot-policy capability_mask))
+      (budget-max-attempts . ,(.get budget-caps max_attempts))
+      (budget-max-cost-units . ,(.get budget-caps max_cost_units))
+      (budget-max-wall-time-ms . ,(.get budget-caps max_wall_time_ms))
+      (scheme-boundary .
+                       ,(marline-kernel-loop-case-boundary-token
+                         (.get compiler-receipt scheme-boundary)))
+      (serialization-boundary .
+                              ,(marline-kernel-loop-case-boundary-token
+                                (.get compiler-receipt
+                                      serialization-boundary))))))
+
 (def (marline-kernel-loop-case-driver-live-enabled? live-gate-env)
   (let (value (getenv live-gate-env #f))
     (and value
@@ -166,7 +398,15 @@ package: config-interface/custom/marline-kernel
       (scheme-boundary . scheme-types->rust-types)
       (serialization-boundary . rust-owned-cli-trace-cross-process))))
 
-(def (marline-kernel-loop-case-driver-receipts)
+(def (marline-kernel-loop-case-driver-module-receipts)
   (map (lambda (module-bundle)
          (marline-kernel-loop-case-driver-receipt module-bundle))
        +marline-kernel-loop-case-bundles+))
+
+(def (marline-kernel-loop-case-driver-vertical-receipts)
+  (map marline-kernel-loop-case-driver-vertical-receipt
+       (marline-kernel-loop-case-vertical-descriptors/list)))
+
+(def (marline-kernel-loop-case-driver-receipts)
+  (append (marline-kernel-loop-case-driver-module-receipts)
+          (marline-kernel-loop-case-driver-vertical-receipts)))

@@ -1,12 +1,12 @@
 use super::{
-    decode_gerbil_policy_pack_projection_chain_receipt, policy_pack_envelope, policy_pack_payload,
-    policy_pack_payload_with_budget_owner, policy_pack_registry,
+    decode_gerbil_policy_pack_projection_chain_receipt, policy_pack_envelope, policy_pack_fixture,
+    policy_pack_fixture_with_budget_owner, policy_pack_registry,
 };
 
 #[test]
 fn policy_pack_projection_chain_decodes_typed_poo_receipts_without_json_boundary() {
     let registry = policy_pack_registry();
-    let envelope = policy_pack_envelope(policy_pack_payload());
+    let envelope = policy_pack_envelope(policy_pack_fixture());
 
     let receipt = decode_gerbil_policy_pack_projection_chain_receipt(&registry, &envelope)
         .expect("policy-pack projection-chain receipt decodes");
@@ -39,7 +39,7 @@ fn policy_pack_projection_chain_decodes_typed_poo_receipts_without_json_boundary
 #[test]
 fn policy_pack_projection_chain_rejects_owner_drift_between_chain_and_nested_receipt() {
     let registry = policy_pack_registry();
-    let envelope = policy_pack_envelope(policy_pack_payload_with_budget_owner("gerbil-poo"));
+    let envelope = policy_pack_envelope(policy_pack_fixture_with_budget_owner("gerbil-poo"));
 
     let error = decode_gerbil_policy_pack_projection_chain_receipt(&registry, &envelope)
         .expect_err("owner drift should be rejected by Rust projection");

@@ -24,6 +24,47 @@ const REQUIRED_GERBIL_RUNTIME_ASSETS: &[&str] = &[
     "src/marlin/deck-runtime-strategy.ss",
 ];
 
+const REQUIRED_GERBIL_RUNTIME_HARNESS_CAPABILITIES: &[GerbilRuntimeHarnessCapability] = &[
+    GerbilRuntimeHarnessCapability {
+        id: "package-manifest",
+        required_asset_paths: &["gerbil.pkg"],
+    },
+    GerbilRuntimeHarnessCapability {
+        id: "build-script",
+        required_asset_paths: &["build.ss"],
+    },
+    GerbilRuntimeHarnessCapability {
+        id: "harness-policy-module",
+        required_asset_paths: &["harness-policy/gerbil.ss"],
+    },
+    GerbilRuntimeHarnessCapability {
+        id: "test-entrypoint",
+        required_asset_paths: &["t/all-test.ss"],
+    },
+    GerbilRuntimeHarnessCapability {
+        id: "script-performance-source",
+        required_asset_paths: &["src/marlin/deck-runtime-script-performance.ss"],
+    },
+    GerbilRuntimeHarnessCapability {
+        id: "policy-receipt-gate-cli-source",
+        required_asset_paths: &["src/marlin/deck-runtime-policy-receipt-gate-cli.ss"],
+    },
+    GerbilRuntimeHarnessCapability {
+        id: "script-performance-test",
+        required_asset_paths: &["t/deck-runtime-script-performance-test.ss"],
+    },
+    GerbilRuntimeHarnessCapability {
+        id: "script-performance-gate",
+        required_asset_paths: &["t/deck-runtime-script-performance-gate.ss"],
+    },
+];
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct GerbilRuntimeHarnessCapability {
+    id: &'static str,
+    required_asset_paths: &'static [&'static str],
+}
+
 /// Build-gate status for crate-shipped Gerbil runtime assets.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub enum GerbilRuntimeAssetManifestStatus {
@@ -58,6 +99,40 @@ pub struct GerbilRuntimeAssetManifestReceipt {
     pub asset_paths: Vec<String>,
 }
 
+/// Build-gate status for the structured Gerbil harness contract.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub enum GerbilRuntimeHarnessContractStatus {
+    /// The crate has no `gerbil/` runtime root.
+    NotPresent,
+    /// The runtime root failed the base asset manifest contract.
+    MissingRequiredAssets,
+    /// The runtime root passed the base manifest but lacks harness capability assets.
+    MissingRequiredCapabilities,
+    /// The runtime root satisfies the base manifest and harness capability contract.
+    Complete,
+}
+
+/// Structured receipt for Gerbil runtime harness capabilities.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct GerbilRuntimeHarnessContractReceipt {
+    /// Cargo package root inspected by the build gate.
+    pub project_root: PathBuf,
+    /// Expected Gerbil runtime root under the package.
+    pub gerbil_root: PathBuf,
+    /// Build-gate status for the structured harness contract.
+    pub status: GerbilRuntimeHarnessContractStatus,
+    /// Base runtime asset manifest status.
+    pub runtime_asset_status: GerbilRuntimeAssetManifestStatus,
+    /// Number of runtime asset files from the base manifest.
+    pub asset_count: usize,
+    /// Required harness capability ids.
+    pub required_capabilities: Vec<String>,
+    /// Capability ids satisfied by asset topology.
+    pub available_capabilities: Vec<String>,
+    /// Required capability ids missing from asset topology.
+    pub missing_capabilities: Vec<String>,
+}
+
 impl GerbilRuntimeAssetManifestReceipt {
     /// Returns true when this receipt does not block the build gate.
     pub fn is_success(&self) -> bool {
@@ -70,6 +145,19 @@ impl GerbilRuntimeAssetManifestReceipt {
     /// Returns true when the package owns a Gerbil runtime root.
     pub fn has_runtime_assets(&self) -> bool {
         !matches!(self.status, GerbilRuntimeAssetManifestStatus::NotPresent)
+    }
+}
+
+impl GerbilRuntimeHarnessContractReceipt {
+    /// Returns true when this receipt does not block the build gate.
+    pub fn is_success(&self) -> bool {
+        matches!(self.status, GerbilRuntimeHarnessContractStatus::Complete)
+            || matches!(self.status, GerbilRuntimeHarnessContractStatus::NotPresent)
+    }
+
+    /// Returns true when the package owns a Gerbil runtime root.
+    pub fn has_runtime_assets(&self) -> bool {
+        !matches!(self.status, GerbilRuntimeHarnessContractStatus::NotPresent)
     }
 }
 
@@ -129,6 +217,65 @@ pub fn inspect_gerbil_runtime_assets(project_root: &Path) -> GerbilRuntimeAssetM
         required_assets,
         missing_required_assets,
         asset_paths,
+    }
+}
+
+/// Inspects structured Gerbil runtime harness capabilities under `gerbil/`.
+pub fn inspect_gerbil_runtime_harness_contract(
+    project_root: &Path,
+) -> GerbilRuntimeHarnessContractReceipt {
+    let manifest = inspect_gerbil_runtime_assets(project_root);
+    let required_capabilities = REQUIRED_GERBIL_RUNTIME_HARNESS_CAPABILITIES
+        .iter()
+        .map(|capability| capability.id.to_owned())
+        .collect::<Vec<_>>();
+
+    let (available_capabilities, missing_capabilities): (
+        Vec<&GerbilRuntimeHarnessCapability>,
+        Vec<&GerbilRuntimeHarnessCapability>,
+    ) = REQUIRED_GERBIL_RUNTIME_HARNESS_CAPABILITIES
+        .iter()
+        .partition(|capability| {
+            capability.required_asset_paths.iter().all(|required| {
+                manifest
+                    .asset_paths
+                    .iter()
+                    .any(|asset_path| asset_path == required)
+            })
+        });
+    let available_capabilities = available_capabilities
+        .into_iter()
+        .map(|capability| capability.id.to_owned())
+        .collect::<Vec<_>>();
+    let missing_capabilities = missing_capabilities
+        .into_iter()
+        .map(|capability| capability.id.to_owned())
+        .collect::<Vec<_>>();
+
+    let status = match manifest.status {
+        GerbilRuntimeAssetManifestStatus::NotPresent => {
+            GerbilRuntimeHarnessContractStatus::NotPresent
+        }
+        GerbilRuntimeAssetManifestStatus::MissingRequiredAssets => {
+            GerbilRuntimeHarnessContractStatus::MissingRequiredAssets
+        }
+        GerbilRuntimeAssetManifestStatus::Complete if missing_capabilities.is_empty() => {
+            GerbilRuntimeHarnessContractStatus::Complete
+        }
+        GerbilRuntimeAssetManifestStatus::Complete => {
+            GerbilRuntimeHarnessContractStatus::MissingRequiredCapabilities
+        }
+    };
+
+    GerbilRuntimeHarnessContractReceipt {
+        project_root: manifest.project_root,
+        gerbil_root: manifest.gerbil_root,
+        status,
+        runtime_asset_status: manifest.status,
+        asset_count: manifest.asset_count,
+        required_capabilities,
+        available_capabilities,
+        missing_capabilities,
     }
 }
 

@@ -38,6 +38,20 @@ fn command_compiler_real_gxi_build_script_runs_scheme_to_rust_bridge_smoke() {
 }
 
 #[test]
+#[ignore = "requires a local Gerbil gxi executable and installed package dependencies"]
+fn command_compiler_real_gxi_build_script_runs_config_interface_profile_projection_smoke() {
+    let Some(gxi) = local_gxi() else {
+        return;
+    };
+    let root = test_root("runtime-config-interface-profile-projection");
+    write_gerbil_runtime_assets(root.path()).expect("write gerbil runtime assets");
+    run_gerbil_build_script_compile(&gxi, root.path());
+
+    let stdout = run_config_interface_profile_projection_smoke(&gxi, root.path());
+    assert_config_interface_profile_projection_smoke(&stdout);
+}
+
+#[test]
 #[ignore = "requires a local Gerbil gxi/gsc toolchain and C compiler"]
 fn command_compiler_real_gxi_deck_runtime_native_links_and_runs_abi_smoke() {
     let Some(gxi) = local_gxi() else {
@@ -202,6 +216,175 @@ fn assert_scheme_to_rust_bridge_smoke(stdout: &str, iterations: u64) {
     assert!(
         !stdout.contains("{\""),
         "Scheme-to-Rust bridge smoke must not use JSON output:\n{stdout}"
+    );
+}
+
+fn run_config_interface_profile_projection_smoke(gxi: &Path, root: &Path) -> String {
+    let expression = r#"(begin
+  (import :clan/poo/object
+          :config-interface/lib)
+  (def modules (marlinLoopPolicyProjectionModules))
+  (def receipts (marlinLoopPolicyProfileCompilerReceipts))
+  (def (emit key value)
+    (display key) (display "=") (display value) (newline))
+  (emit "schema" "marlin-gerbil.config-interface.profile-compiler-receipts.v1")
+  (emit "module-count" (vector-length modules))
+  (emit "count" (vector-length receipts))
+  (let loop-modules ((index 0))
+    (when (< index (vector-length modules))
+      (let* ((module (vector-ref modules index))
+             (compiler-receipt (.get module compiler-receipt))
+             (loop-program (.get compiler-receipt loop-program))
+             (capability-lanes (.get module poo-flow-capability-lanes))
+             (prefix (string-append "module." (number->string index) ".")))
+        (emit (string-append prefix "module-id") (.get module module-id))
+        (emit (string-append prefix "source-module") (.get module source-module))
+        (emit (string-append prefix "poo-flow-module") (.get module poo-flow-module))
+        (emit (string-append prefix "capability-lane-count")
+              (vector-length capability-lanes))
+        (emit (string-append prefix "primary-capability-lane")
+              (vector-ref capability-lanes 0))
+        (emit (string-append prefix "rust-type") (.get module rust-type))
+        (emit (string-append prefix "profile-id") (.get module profile-id))
+        (emit (string-append prefix "compiler-receipt-profile-id")
+              (.get compiler-receipt profile-id))
+        (emit (string-append prefix "program-id") (.get loop-program program_id))
+        (loop-modules (+ index 1)))))
+  (let loop ((index 0))
+    (when (< index (vector-length receipts))
+      (let* ((receipt (vector-ref receipts index))
+             (resolved-policy-pack (.get receipt resolved-policy-pack))
+             (loop-program (.get receipt loop-program))
+             (prefix (string-append "receipt." (number->string index) ".")))
+        (emit (string-append prefix "profile-id") (.get receipt profile-id))
+        (emit (string-append prefix "compiler-owner") (.get receipt compiler-owner))
+        (emit (string-append prefix "scheme-boundary") (.get receipt scheme-boundary))
+        (emit (string-append prefix "serialization-boundary") (.get receipt serialization-boundary))
+        (emit (string-append prefix "policy-epoch") (.get resolved-policy-pack policy_epoch))
+        (emit (string-append prefix "program-id") (.get loop-program program_id))
+        (emit (string-append prefix "transition-count")
+              (vector-length (.get loop-program transitions)))
+        (loop (+ index 1))))))"#;
+    let output = Command::new(gxi)
+        .env(
+            GERBIL_LOADPATH_ENV,
+            gerbil_runtime_loadpath_with_dependencies(root),
+        )
+        .current_dir(root)
+        .arg("-e")
+        .arg(expression)
+        .output()
+        .expect("run real gxi config-interface profile projection smoke");
+
+    assert!(
+        output.status.success(),
+        "gxi config-interface profile projection smoke failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    String::from_utf8(output.stdout).expect("config-interface profile projection stdout is UTF-8")
+}
+
+fn assert_config_interface_profile_projection_smoke(stdout: &str) {
+    let expected_lines = [
+        "schema=marlin-gerbil.config-interface.profile-compiler-receipts.v1",
+        "module-count=9",
+        "count=9",
+    ];
+    let lines = stdout.lines().collect::<Vec<_>>();
+    for expected in expected_lines {
+        assert!(
+            lines.contains(&expected),
+            "missing config-interface profile projection receipt line `{expected}` in stdout:\n{stdout}"
+        );
+    }
+    assert_eq!(
+        lines
+            .iter()
+            .filter(|line| line.starts_with("module.") && line.contains(".module-id="))
+            .count(),
+        9
+    );
+    assert_eq!(
+        lines
+            .iter()
+            .filter(|line| line.starts_with("module.") && line.contains(".profile-id="))
+            .count(),
+        9
+    );
+    assert_eq!(
+        lines
+            .iter()
+            .filter(|line| line.starts_with("module.")
+                && line.contains(".compiler-receipt-profile-id="))
+            .count(),
+        9
+    );
+    assert_eq!(
+        lines
+            .iter()
+            .filter(|line| line.starts_with("module.") && line.contains(".program-id="))
+            .count(),
+        9
+    );
+    assert_eq!(
+        lines
+            .iter()
+            .filter(|line| line.starts_with("module.")
+                && line.contains(
+                    ".rust-type=marlin.config-interface.poo.loop-program-compiler-receipt.v1"
+                ))
+            .count(),
+        9
+    );
+    assert_eq!(
+        lines
+            .iter()
+            .filter(|line| line.starts_with("receipt.") && line.contains(".profile-id="))
+            .count(),
+        9
+    );
+    assert_eq!(
+        lines
+            .iter()
+            .filter(|line| line.starts_with("receipt.")
+                && line.contains(".compiler-owner=gerbil-poo-flow"))
+            .count(),
+        9
+    );
+    assert_eq!(
+        lines
+            .iter()
+            .filter(|line| line.starts_with("receipt.")
+                && line.contains(".scheme-boundary=scheme-types-to-rust-types"))
+            .count(),
+        9
+    );
+    assert_eq!(
+        lines
+            .iter()
+            .filter(|line| line.starts_with("receipt.")
+                && line.contains(".serialization-boundary=rust-owned-cli-trace-cross-process"))
+            .count(),
+        9
+    );
+    assert_eq!(
+        lines
+            .iter()
+            .filter(|line| line.starts_with("receipt.") && line.contains(".program-id="))
+            .count(),
+        9
+    );
+    assert_eq!(
+        lines
+            .iter()
+            .filter(|line| line.starts_with("receipt.") && line.contains(".transition-count="))
+            .count(),
+        9
+    );
+    assert!(
+        !stdout.contains("{\""),
+        "config-interface profile projection smoke must not use JSON output:\n{stdout}"
     );
 }
 
