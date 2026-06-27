@@ -4,11 +4,12 @@ use super::{
     LoopProgramActionKind, LoopProgramEventKind, LoopProgramExecutionDriver,
     LoopProgramExecutionRequest, LoopProgramExecutionStatus,
     LoopProgramRuntimeHandoffExecutionReportStatus, LoopProgramRuntimeHandoffRouter,
-    LoopProgramRuntimeHandoffRouterHandlers, decode_gerbil_poo_loop_program_compiler_receipt,
+    LoopProgramRuntimeHandoffRouterHandlers, ReceiptDrivenLoopProgramEventMapper,
+    decode_gerbil_poo_loop_program_compiler_receipt,
     failure_retry_poo_loop_program_compiler_payload, failure_retry_script, handled_by,
-    policy_combination_matrix_poo_loop_program_compiler_payload, policy_combination_matrix_script,
-    poo_loop_program_compiler_envelope, poo_loop_program_compiler_payload,
-    poo_loop_program_compiler_registry, real_repair_script,
+    handled_by_with_event, policy_combination_matrix_poo_loop_program_compiler_payload,
+    policy_combination_matrix_script, poo_loop_program_compiler_envelope,
+    poo_loop_program_compiler_payload, poo_loop_program_compiler_registry, real_repair_script,
 };
 
 #[test]
@@ -89,6 +90,160 @@ fn poo_loop_program_compiler_receipt_runs_scripted_loop_through_kernel_driver() 
             "runtime.graph",
             "runtime.verification",
             "runtime.control",
+        ]
+    );
+}
+
+#[test]
+fn poo_loop_program_compiler_receipt_runs_failure_retry_profile_from_runtime_receipts() {
+    let registry = poo_loop_program_compiler_registry();
+    let envelope =
+        poo_loop_program_compiler_envelope(failure_retry_poo_loop_program_compiler_payload());
+    let compiler_receipt = decode_gerbil_poo_loop_program_compiler_receipt(&registry, &envelope)
+        .expect("failure-retry POO compiler receipt decodes");
+
+    let handlers = LoopProgramRuntimeHandoffRouterHandlers {
+        model_handler: handled_by_with_event(
+            "runtime.model.failure-classifier",
+            LoopProgramEventKind::ModelEvent,
+        ),
+        runtime_handler: handled_by_with_event(
+            "runtime.continuation.retry",
+            LoopProgramEventKind::RuntimeReceipt,
+        ),
+        tool_handler: handled_by_with_event(
+            "runtime.tool.retry",
+            LoopProgramEventKind::ToolReceipt,
+        ),
+        verification_handler: handled_by_with_event(
+            "runtime.verification.failure-retry",
+            LoopProgramEventKind::VerificationReceipt,
+        ),
+        control_handler: handled_by("runtime.control"),
+        ..LoopProgramRuntimeHandoffRouterHandlers::default()
+    };
+    let driver = LoopProgramExecutionDriver::new(LoopProgramRuntimeHandoffRouter::new(handlers))
+        .with_event_mapper(ReceiptDrivenLoopProgramEventMapper)
+        .with_max_steps(16);
+
+    let execution_receipt = driver.run(LoopProgramExecutionRequest::new(
+        compiler_receipt.loop_program,
+        vec![LoopProgramEventKind::Start],
+    ));
+
+    assert_eq!(
+        execution_receipt.status,
+        LoopProgramExecutionStatus::Stopped
+    );
+    assert!(execution_receipt.error.is_none());
+    assert_eq!(
+        execution_receipt
+            .steps
+            .iter()
+            .map(|step| step.machine_receipt.action.clone())
+            .collect::<Vec<_>>(),
+        vec![
+            LoopProgramActionKind::InvokeModel,
+            LoopProgramActionKind::RuntimeHandoff,
+            LoopProgramActionKind::DispatchTools,
+            LoopProgramActionKind::Verify,
+            LoopProgramActionKind::Stop,
+        ]
+    );
+    assert_eq!(
+        execution_receipt
+            .steps
+            .iter()
+            .map(|step| step.generated_event.clone())
+            .collect::<Vec<_>>(),
+        vec![
+            Some(LoopProgramEventKind::ModelEvent),
+            Some(LoopProgramEventKind::RuntimeReceipt),
+            Some(LoopProgramEventKind::ToolReceipt),
+            Some(LoopProgramEventKind::VerificationReceipt),
+            None,
+        ]
+    );
+}
+
+#[test]
+fn poo_loop_program_compiler_receipt_runs_real_repair_from_runtime_receipts() {
+    let registry = poo_loop_program_compiler_registry();
+    let envelope = poo_loop_program_compiler_envelope(poo_loop_program_compiler_payload([7; 32]));
+    let compiler_receipt = decode_gerbil_poo_loop_program_compiler_receipt(&registry, &envelope)
+        .expect("POO loop program compiler receipt decodes");
+
+    let handlers = LoopProgramRuntimeHandoffRouterHandlers {
+        control_handler: handled_by_with_event("runtime.control", LoopProgramEventKind::ModelEvent),
+        model_handler: handled_by_with_event("runtime.model", LoopProgramEventKind::ToolRequest),
+        tool_handler: handled_by_with_event("runtime.tool", LoopProgramEventKind::ToolReceipt),
+        graph_handler: handled_by_with_event("runtime.graph", LoopProgramEventKind::RuntimeReceipt),
+        verification_handler: handled_by_with_event(
+            "runtime.verification",
+            LoopProgramEventKind::VerificationReceipt,
+        ),
+        ..LoopProgramRuntimeHandoffRouterHandlers::default()
+    };
+    let driver = LoopProgramExecutionDriver::new(LoopProgramRuntimeHandoffRouter::new(handlers))
+        .with_event_mapper(ReceiptDrivenLoopProgramEventMapper)
+        .with_max_steps(16);
+
+    let execution_receipt = driver.run(LoopProgramExecutionRequest::new(
+        compiler_receipt.loop_program,
+        vec![LoopProgramEventKind::Start],
+    ));
+
+    assert_eq!(
+        execution_receipt.status,
+        LoopProgramExecutionStatus::Stopped
+    );
+    assert!(execution_receipt.error.is_none());
+    assert_eq!(execution_receipt.steps.len(), 6);
+    assert_eq!(
+        execution_receipt
+            .steps
+            .iter()
+            .map(|step| step.machine_receipt.action.clone())
+            .collect::<Vec<_>>(),
+        vec![
+            LoopProgramActionKind::InvokeModel,
+            LoopProgramActionKind::DispatchTools,
+            LoopProgramActionKind::Continue,
+            LoopProgramActionKind::RewriteGraph,
+            LoopProgramActionKind::Verify,
+            LoopProgramActionKind::Stop,
+        ]
+    );
+    assert_eq!(
+        execution_receipt
+            .steps
+            .iter()
+            .map(|step| step.generated_event.clone())
+            .collect::<Vec<_>>(),
+        vec![
+            Some(LoopProgramEventKind::ToolRequest),
+            Some(LoopProgramEventKind::ToolReceipt),
+            Some(LoopProgramEventKind::ModelEvent),
+            Some(LoopProgramEventKind::RuntimeReceipt),
+            Some(LoopProgramEventKind::VerificationReceipt),
+            None,
+        ]
+    );
+    assert_eq!(
+        execution_receipt
+            .steps
+            .iter()
+            .filter_map(|step| step.runtime_handoff_execution.executions[0]
+                .next_event
+                .clone())
+            .collect::<Vec<_>>(),
+        vec![
+            LoopProgramEventKind::ToolRequest,
+            LoopProgramEventKind::ToolReceipt,
+            LoopProgramEventKind::ModelEvent,
+            LoopProgramEventKind::RuntimeReceipt,
+            LoopProgramEventKind::VerificationReceipt,
+            LoopProgramEventKind::ModelEvent,
         ]
     );
 }
@@ -184,6 +339,85 @@ fn poo_loop_program_compiler_receipt_runs_policy_combination_matrix_through_kern
             "runtime.tool.repair",
             "runtime.verification.checker",
             "runtime.control",
+        ]
+    );
+}
+
+#[test]
+fn poo_loop_program_compiler_receipt_runs_policy_combination_matrix_from_runtime_receipts() {
+    let registry = poo_loop_program_compiler_registry();
+    let envelope = poo_loop_program_compiler_envelope(
+        policy_combination_matrix_poo_loop_program_compiler_payload(),
+    );
+    let compiler_receipt = decode_gerbil_poo_loop_program_compiler_receipt(&registry, &envelope)
+        .expect("policy-combination POO compiler receipt decodes");
+
+    let handlers = LoopProgramRuntimeHandoffRouterHandlers {
+        memory_handler: handled_by_with_event(
+            "runtime.memory.recall",
+            LoopProgramEventKind::RuntimeReceipt,
+        ),
+        control_handler: handled_by("runtime.control"),
+        model_handler: handled_by_with_event(
+            "runtime.model.maker",
+            LoopProgramEventKind::ModelEvent,
+        ),
+        tool_handler: handled_by_with_event(
+            "runtime.tool.repair",
+            LoopProgramEventKind::ToolReceipt,
+        ),
+        graph_handler: handled_by_with_event(
+            "runtime.graph.dynamic-rewrite",
+            LoopProgramEventKind::RuntimeReceipt,
+        ),
+        verification_handler: handled_by_with_event(
+            "runtime.verification.checker",
+            LoopProgramEventKind::VerificationReceipt,
+        ),
+        ..LoopProgramRuntimeHandoffRouterHandlers::default()
+    };
+    let driver = LoopProgramExecutionDriver::new(LoopProgramRuntimeHandoffRouter::new(handlers))
+        .with_event_mapper(ReceiptDrivenLoopProgramEventMapper)
+        .with_max_steps(16);
+
+    let execution_receipt = driver.run(LoopProgramExecutionRequest::new(
+        compiler_receipt.loop_program,
+        vec![LoopProgramEventKind::Start],
+    ));
+
+    assert_eq!(
+        execution_receipt.status,
+        LoopProgramExecutionStatus::Stopped
+    );
+    assert!(execution_receipt.error.is_none());
+    assert_eq!(
+        execution_receipt
+            .steps
+            .iter()
+            .map(|step| step.machine_receipt.action.clone())
+            .collect::<Vec<_>>(),
+        vec![
+            LoopProgramActionKind::ReadMemory,
+            LoopProgramActionKind::InvokeModel,
+            LoopProgramActionKind::RewriteGraph,
+            LoopProgramActionKind::DispatchTools,
+            LoopProgramActionKind::Verify,
+            LoopProgramActionKind::Stop,
+        ]
+    );
+    assert_eq!(
+        execution_receipt
+            .steps
+            .iter()
+            .map(|step| step.generated_event.clone())
+            .collect::<Vec<_>>(),
+        vec![
+            Some(LoopProgramEventKind::RuntimeReceipt),
+            Some(LoopProgramEventKind::ModelEvent),
+            Some(LoopProgramEventKind::RuntimeReceipt),
+            Some(LoopProgramEventKind::ToolReceipt),
+            Some(LoopProgramEventKind::VerificationReceipt),
+            None,
         ]
     );
 }

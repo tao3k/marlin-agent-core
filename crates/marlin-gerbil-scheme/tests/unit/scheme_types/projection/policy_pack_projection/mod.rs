@@ -4,7 +4,7 @@ pub(super) use marlin_agent_kernel::{
     LoopProgramExecutionDriver, LoopProgramExecutionRequest, LoopProgramExecutionStatus,
     LoopProgramRuntimeHandoffExecutionReportStatus, LoopProgramRuntimeHandoffHandler,
     LoopProgramRuntimeHandoffRouter, LoopProgramRuntimeHandoffRouterHandlers,
-    LoopProgramRuntimeOwner, ScriptedLoopProgramEventMapper,
+    LoopProgramRuntimeOwner, ReceiptDrivenLoopProgramEventMapper, ScriptedLoopProgramEventMapper,
     StaticLoopProgramRuntimeHandoffHandler,
 };
 pub(super) use marlin_agent_protocol::{
@@ -721,6 +721,18 @@ fn handled_by(owner: &'static str) -> Arc<dyn LoopProgramRuntimeHandoffHandler> 
     Arc::new(StaticLoopProgramRuntimeHandoffHandler::handled(
         LoopProgramRuntimeOwner::new(owner),
     ))
+}
+
+fn handled_by_with_event(
+    owner: &'static str,
+    next_event: LoopProgramEventKind,
+) -> Arc<dyn LoopProgramRuntimeHandoffHandler> {
+    Arc::new(
+        StaticLoopProgramRuntimeHandoffHandler::handled_with_next_event(
+            LoopProgramRuntimeOwner::new(owner),
+            next_event,
+        ),
+    )
 }
 
 fn resolved_loop_policy_hot_payload() -> GerbilSchemeValue {
