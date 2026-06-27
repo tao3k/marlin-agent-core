@@ -2,6 +2,7 @@ use super::{
     decode_gerbil_resolved_loop_policy_pack, resolved_loop_policy_pack_envelope,
     resolved_loop_policy_pack_fixture, resolved_loop_policy_pack_registry,
 };
+use marlin_agent_protocol::{LoopPolicyMixinId, SlotMergeAlgebra};
 
 #[test]
 fn resolved_loop_policy_pack_decodes_hot_and_audit_ir_without_json_boundary() {
@@ -20,8 +21,23 @@ fn resolved_loop_policy_pack_decodes_hot_and_audit_ir_without_json_boundary() {
     assert_eq!(pack.hot.continuation_table.len(), 1);
     assert_eq!(pack.audit.provenance.len(), 1);
     assert_eq!(pack.audit.provenance[0].winner_role.as_str(), "planner");
+    assert!(
+        pack.audit
+            .uses_mixin(&LoopPolicyMixinId::new("reactive-tool-loop-base"))
+    );
+    assert!(
+        pack.audit
+            .uses_mixin(&LoopPolicyMixinId::new("artifact-policy"))
+    );
+    assert!(pack.audit.covers_slot_merge_algebras([
+        SlotMergeAlgebra::Union,
+        SlotMergeAlgebra::Intersection,
+        SlotMergeAlgebra::Min,
+        SlotMergeAlgebra::OrderedAppend,
+        SlotMergeAlgebra::ConflictError,
+    ]));
     assert_eq!(pack.audit.forced_slots.len(), 1);
-    assert_eq!(pack.audit.merge_receipts.len(), 1);
+    assert_eq!(pack.audit.merge_receipts.len(), 5);
 }
 
 #[test]

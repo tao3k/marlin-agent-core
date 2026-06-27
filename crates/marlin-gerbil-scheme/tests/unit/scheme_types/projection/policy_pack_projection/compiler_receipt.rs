@@ -6,6 +6,7 @@ use super::{
     poo_loop_program_compiler_registry, resolved_loop_policy_audit_fixture_without_merge_receipts,
     resolved_loop_policy_pack_fixture_with_audit,
 };
+use marlin_agent_protocol::{LoopPolicyMixinId, SlotMergeAlgebra};
 use std::time::{Duration, Instant};
 
 #[test]
@@ -52,6 +53,24 @@ fn poo_loop_program_compiler_receipt_decodes_program_bound_to_resolved_pack() {
     assert!(!receipt.resolved_policy_pack.audit.linearization.is_empty());
     assert!(!receipt.resolved_policy_pack.audit.forced_slots.is_empty());
     assert!(!receipt.resolved_policy_pack.audit.merge_receipts.is_empty());
+    assert!(
+        receipt
+            .resolved_policy_pack
+            .audit
+            .uses_mixin(&LoopPolicyMixinId::new("artifact-policy"))
+    );
+    assert!(
+        receipt
+            .resolved_policy_pack
+            .audit
+            .covers_slot_merge_algebras([
+                SlotMergeAlgebra::Union,
+                SlotMergeAlgebra::Intersection,
+                SlotMergeAlgebra::Min,
+                SlotMergeAlgebra::OrderedAppend,
+                SlotMergeAlgebra::ConflictError,
+            ])
+    );
 }
 
 #[test]

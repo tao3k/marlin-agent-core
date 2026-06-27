@@ -4,12 +4,13 @@ use marlin_agent_protocol::{
     LoopMechanismPolicyId, LoopPolicyAgentProfileId, LoopPolicyConditionId, LoopPolicyDiagnostic,
     LoopPolicyDiagnosticCode, LoopPolicyDiagnosticSeverity, LoopPolicyDigest, LoopPolicyEpoch,
     LoopPolicyExecutorId, LoopPolicyExplanation, LoopPolicyGateId, LoopPolicyGraphTemplateId,
-    LoopPolicyNodeId, LoopPolicyReasonCode, LoopPolicyResourceClassId, LoopPolicyRoleId,
-    LoopPolicyRouteBucketId, LoopPolicyRouteTargetId, LoopPolicySlotId, LoopPolicySourceLocationId,
-    LoopPolicySourcePath, LoopProgram, LoopProgramActionKind, LoopProgramEventKind, LoopProgramId,
-    LoopProgramInput, LoopProgramStateId, LoopProgramTransition, LoopProgramTransitionId,
-    RESOLVED_LOOP_POLICY_PACK_SCHEMA_VERSION, ResolvedLoopPolicyPack, ResourceClass, SlotHotness,
-    SlotMergeAlgebra, SlotMergeReceipt, SlotMergeStatus, SlotProvenance, SourceLocation,
+    LoopPolicyMixinId, LoopPolicyNodeId, LoopPolicyReasonCode, LoopPolicyResourceClassId,
+    LoopPolicyRoleId, LoopPolicyRouteBucketId, LoopPolicyRouteTargetId, LoopPolicySlotId,
+    LoopPolicySourceLocationId, LoopPolicySourcePath, LoopProgram, LoopProgramActionKind,
+    LoopProgramEventKind, LoopProgramId, LoopProgramInput, LoopProgramStateId,
+    LoopProgramTransition, LoopProgramTransitionId, RESOLVED_LOOP_POLICY_PACK_SCHEMA_VERSION,
+    ResolvedLoopPolicyPack, ResourceClass, SlotHotness, SlotMergeAlgebra, SlotMergeReceipt,
+    SlotMergeStatus, SlotProvenance, SourceLocation,
 };
 
 #[test]
@@ -30,6 +31,22 @@ fn resolved_loop_policy_pack_splits_hot_runtime_data_from_audit_data() {
     assert_eq!(pack.hot.continuation_table.len(), 4);
     assert_eq!(pack.audit.linearization[0].as_str(), "incident-freeze");
     assert_eq!(pack.audit.provenance[0].merge, SlotMergeAlgebra::Min);
+    assert!(
+        pack.audit
+            .uses_mixin(&LoopPolicyMixinId::new("retry-budget-policy"))
+    );
+    assert!(pack.audit.has_applied_merge(SlotMergeAlgebra::Min));
+    assert!(
+        pack.audit
+            .has_conflict_merge(SlotMergeAlgebra::ConflictError)
+    );
+    assert!(pack.audit.covers_slot_merge_algebras([
+        SlotMergeAlgebra::Intersection,
+        SlotMergeAlgebra::Union,
+        SlotMergeAlgebra::Min,
+        SlotMergeAlgebra::OrderedAppend,
+        SlotMergeAlgebra::ConflictError,
+    ]));
 
     let encoded = serde_json::to_value(&pack).expect("policy pack serializes");
     assert_eq!(encoded["schema_version"], 1);
@@ -39,6 +56,10 @@ fn resolved_loop_policy_pack_splits_hot_runtime_data_from_audit_data() {
     assert!(encoded["hot"].get("provenance").is_none());
     assert!(encoded["hot"].get("source_locations").is_none());
     assert!(encoded["hot"].get("explanation_strings").is_none());
+    assert_eq!(
+        encoded["audit"]["policy_mixins"][0],
+        "reactive-tool-loop-base"
+    );
     assert_eq!(encoded["audit"]["forced_slots"][0]["hotness"], "hot");
     assert_eq!(encoded["audit"]["merge_receipts"][0]["status"], "applied");
 }
@@ -256,6 +277,14 @@ fn sample_hot_pack() -> HotLoopPolicyPack {
 
 fn sample_audit_pack() -> AuditLoopPolicyPack {
     AuditLoopPolicyPack {
+        policy_mixins: vec![
+            LoopPolicyMixinId::new("reactive-tool-loop-base"),
+            LoopPolicyMixinId::new("retry-budget-policy"),
+            LoopPolicyMixinId::new("sandbox-denylist-policy"),
+            LoopPolicyMixinId::new("trace-policy"),
+            LoopPolicyMixinId::new("artifact-policy"),
+        ]
+        .into_boxed_slice(),
         provenance: vec![SlotProvenance {
             slot_id: LoopPolicySlotId::new(1),
             winner_role: LoopPolicyRoleId::new("incident-freeze"),
@@ -296,11 +325,33 @@ fn sample_audit_pack() -> AuditLoopPolicyPack {
             hotness: SlotHotness::Hot,
         }]
         .into_boxed_slice(),
-        merge_receipts: vec![SlotMergeReceipt {
-            slot_id: LoopPolicySlotId::new(1),
-            merge: SlotMergeAlgebra::Min,
-            status: SlotMergeStatus::Applied,
-        }]
+        merge_receipts: vec![
+            SlotMergeReceipt {
+                slot_id: LoopPolicySlotId::new(1),
+                merge: SlotMergeAlgebra::Min,
+                status: SlotMergeStatus::Applied,
+            },
+            SlotMergeReceipt {
+                slot_id: LoopPolicySlotId::new(2),
+                merge: SlotMergeAlgebra::Intersection,
+                status: SlotMergeStatus::Applied,
+            },
+            SlotMergeReceipt {
+                slot_id: LoopPolicySlotId::new(3),
+                merge: SlotMergeAlgebra::Union,
+                status: SlotMergeStatus::Applied,
+            },
+            SlotMergeReceipt {
+                slot_id: LoopPolicySlotId::new(4),
+                merge: SlotMergeAlgebra::OrderedAppend,
+                status: SlotMergeStatus::Applied,
+            },
+            SlotMergeReceipt {
+                slot_id: LoopPolicySlotId::new(5),
+                merge: SlotMergeAlgebra::ConflictError,
+                status: SlotMergeStatus::Conflict,
+            },
+        ]
         .into_boxed_slice(),
     }
 }

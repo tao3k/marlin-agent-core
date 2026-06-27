@@ -79,6 +79,7 @@ u32_id!(LoopPolicySlotId);
 u32_id!(LoopPolicySourceLocationId);
 
 string_id!(LoopPolicyRoleId);
+string_id!(LoopPolicyMixinId);
 string_id!(LoopPolicyDiagnosticCode);
 string_id!(LoopPolicySourcePath);
 string_id!(LoopPolicyExplanation);
@@ -336,6 +337,8 @@ pub enum ContinuationOp {
 /// Audit-only policy data retained for provenance, explanation, and replay.
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct AuditLoopPolicyPack {
+    #[serde(default)]
+    pub policy_mixins: Box<[LoopPolicyMixinId]>,
     pub provenance: Box<[SlotProvenance]>,
     pub linearization: Box<[LoopPolicyRoleId]>,
     pub diagnostics: Box<[LoopPolicyDiagnostic]>,
@@ -343,6 +346,35 @@ pub struct AuditLoopPolicyPack {
     pub explanation_strings: Box<[LoopPolicyExplanation]>,
     pub forced_slots: Box<[ForcedSlot]>,
     pub merge_receipts: Box<[SlotMergeReceipt]>,
+}
+
+impl AuditLoopPolicyPack {
+    pub fn uses_mixin(&self, mixin_id: &LoopPolicyMixinId) -> bool {
+        self.policy_mixins
+            .iter()
+            .any(|candidate| candidate == mixin_id)
+    }
+
+    pub fn has_applied_merge(&self, merge: SlotMergeAlgebra) -> bool {
+        self.merge_receipts
+            .iter()
+            .any(|receipt| receipt.merge == merge && receipt.status == SlotMergeStatus::Applied)
+    }
+
+    pub fn has_conflict_merge(&self, merge: SlotMergeAlgebra) -> bool {
+        self.merge_receipts
+            .iter()
+            .any(|receipt| receipt.merge == merge && receipt.status == SlotMergeStatus::Conflict)
+    }
+
+    pub fn covers_slot_merge_algebras(
+        &self,
+        required: impl IntoIterator<Item = SlotMergeAlgebra>,
+    ) -> bool {
+        required
+            .into_iter()
+            .all(|merge| self.has_applied_merge(merge.clone()) || self.has_conflict_merge(merge))
+    }
 }
 
 /// Provenance for one resolved policy slot.

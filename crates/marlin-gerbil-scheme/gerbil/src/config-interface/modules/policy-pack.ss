@@ -976,7 +976,16 @@ package: config-interface/modules
           maker_profiles: (vector 11)
           checker_profiles: (vector 12))
       audit:
-      (.o provenance:
+      (.o policy_mixins:
+          (vector "reactive-tool-loop-base"
+                  "workspace-write-policy"
+                  "sandbox-denylist-policy"
+                  "retry-budget-policy"
+                  "maker-policy"
+                  "checker-policy"
+                  "artifact-policy"
+                  "trace-policy")
+          provenance:
           (vector
            (.o slot_id: 9
                winner_role: "planner"
@@ -1003,7 +1012,19 @@ package: config-interface/modules
           (vector
            (.o slot_id: 9
                merge: "union"
-               status: "applied")))))
+               status: "applied")
+           (.o slot_id: 10
+               merge: "intersection"
+               status: "applied")
+           (.o slot_id: 11
+               merge: "min"
+               status: "applied")
+           (.o slot_id: 12
+               merge: "ordered_append"
+               status: "applied")
+           (.o slot_id: 13
+               merge: "conflict_error"
+               status: "conflict")))))
 
 ;;; Boundary: First real LoopProgram emitted by the Scheme compiler surface.
 ;; MarlinResult <- MarlinInput
@@ -1116,7 +1137,11 @@ package: config-interface/modules
           maker_profiles: (vector)
           checker_profiles: (vector))
       audit:
-      (.o provenance:
+      (.o policy_mixins:
+          (vector "sandbox-denylist-policy"
+                  "artifact-policy"
+                  "trace-policy")
+          provenance:
           (vector
            (.o slot_id: 10
                winner_role: "sandbox-denylist"
@@ -1213,7 +1238,11 @@ package: config-interface/modules
           maker_profiles: (vector)
           checker_profiles: (vector))
       audit:
-      (.o provenance:
+      (.o policy_mixins:
+          (vector "tool-sandbox-policy"
+                  "artifact-policy"
+                  "trace-policy")
+          provenance:
           (vector
            (.o slot_id: 11
                winner_role: "tool-sandbox"
@@ -1318,7 +1347,11 @@ package: config-interface/modules
           maker_profiles: maker-profiles-value
           checker_profiles: checker-profiles-value)
       audit:
-      (.o provenance:
+      (.o policy_mixins:
+          (vector (string-append winner-role-value "-policy")
+                  "artifact-policy"
+                  "trace-policy")
+          provenance:
           (vector
            (.o slot_id: policy-epoch-value
                winner_role: winner-role-value

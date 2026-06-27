@@ -405,6 +405,26 @@ fn resolved_loop_policy_audit_fixture() -> GerbilSchemeValue {
             ("merge", "union".into()),
             ("status", "applied".into()),
         ]),
+        GerbilSchemeValue::record([
+            ("slot_id", 10_i64.into()),
+            ("merge", "intersection".into()),
+            ("status", "applied".into()),
+        ]),
+        GerbilSchemeValue::record([
+            ("slot_id", 11_i64.into()),
+            ("merge", "min".into()),
+            ("status", "applied".into()),
+        ]),
+        GerbilSchemeValue::record([
+            ("slot_id", 12_i64.into()),
+            ("merge", "ordered_append".into()),
+            ("status", "applied".into()),
+        ]),
+        GerbilSchemeValue::record([
+            ("slot_id", 13_i64.into()),
+            ("merge", "conflict_error".into()),
+            ("status", "conflict".into()),
+        ]),
     ]))
 }
 
@@ -416,6 +436,17 @@ fn resolved_loop_policy_audit_fixture_with_merge_receipts(
     merge_receipts: GerbilSchemeValue,
 ) -> GerbilSchemeValue {
     GerbilSchemeValue::record([
+        (
+            "policy_mixins",
+            GerbilSchemeValue::vector([
+                "reactive-tool-loop-base".into(),
+                "workspace-write-policy".into(),
+                "sandbox-denylist-policy".into(),
+                "retry-budget-policy".into(),
+                "artifact-policy".into(),
+                "trace-policy".into(),
+            ]),
+        ),
         (
             "provenance",
             GerbilSchemeValue::vector([GerbilSchemeValue::record([

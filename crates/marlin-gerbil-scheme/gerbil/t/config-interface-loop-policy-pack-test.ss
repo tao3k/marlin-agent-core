@@ -37,6 +37,15 @@
 (def real-repair-policy-pack
   (.get real-repair-compiler-receipt resolved-policy-pack))
 
+(def real-repair-audit-pack
+  (.get real-repair-policy-pack audit))
+
+(def real-repair-policy-mixins
+  (.get real-repair-audit-pack policy_mixins))
+
+(def real-repair-merge-receipts
+  (.get real-repair-audit-pack merge_receipts))
+
 (def real-repair-loop-program
   (.get real-repair-compiler-receipt loop-program))
 
@@ -340,6 +349,25 @@
 (check (.get real-repair-compiler-receipt serialization-boundary)
        => "rust-owned-cli-trace-cross-process")
 (check (.get real-repair-policy-pack policy_epoch) => 42)
+(check (vector-ref real-repair-policy-mixins 0)
+       => "reactive-tool-loop-base")
+(check (vector-ref real-repair-policy-mixins 6)
+       => "artifact-policy")
+(check (vector-ref real-repair-policy-mixins 7)
+       => "trace-policy")
+(check (vector-length real-repair-merge-receipts) => 5)
+(check (.get (vector-ref real-repair-merge-receipts 0) merge)
+       => "union")
+(check (.get (vector-ref real-repair-merge-receipts 1) merge)
+       => "intersection")
+(check (.get (vector-ref real-repair-merge-receipts 2) merge)
+       => "min")
+(check (.get (vector-ref real-repair-merge-receipts 3) merge)
+       => "ordered_append")
+(check (.get (vector-ref real-repair-merge-receipts 4) merge)
+       => "conflict_error")
+(check (.get (vector-ref real-repair-merge-receipts 4) status)
+       => "conflict")
 (check (.get real-repair-loop-program program_id)
        => "real-repair-001-scripted-loop")
 (check (vector-length (.get real-repair-loop-program transitions)) => 6)
