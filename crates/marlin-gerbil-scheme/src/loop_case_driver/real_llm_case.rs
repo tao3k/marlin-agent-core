@@ -83,19 +83,23 @@ impl GerbilLoopCaseDriverRealLlmCaseReceipt {
 pub fn parse_gerbil_loop_case_driver_real_llm_case_receipt(
     stdout: &str,
 ) -> Result<GerbilLoopCaseDriverRealLlmCaseReceipt, GerbilLoopCaseDriverRealLlmCaseReceiptError> {
+    let trace = stdout_trace_object(stdout)?;
+
     Ok(GerbilLoopCaseDriverRealLlmCaseReceipt {
         case_id: required_marker(stdout, "marlin-real-llm-case.case_id=")?,
         result: required_marker(stdout, "marlin-real-llm-case.result=")?,
         rounds_used: parse_marker(stdout, "marlin-real-llm-case.rounds_used=")?,
-        terminal_status: required_json_string_field(stdout, "terminal_status")?,
-        iteration_count: required_json_u64_field(stdout, "iteration_count")?,
+        terminal_status: required_trace_string_field(&trace, "terminal_status")?,
+        iteration_count: required_trace_u64_field(&trace, "iteration_count")?,
         process_exit_status: parse_marker(stdout, "process-command.exit_status:")?,
         continuation_planner: optional_marker(stdout, "continuation_planner="),
-        failure_classification_receipt_present: stdout
-            .contains("\"failure_classification_receipt\""),
-        governance_receipt_present: stdout.contains("\"governance_receipt\""),
-        nono_sandbox_materialized: stdout.contains("\"backend\": \"nono\""),
-        human_audit_decision: stdout.contains("\"decision\": \"human-audit\""),
+        failure_classification_receipt_present: trace
+            .contains_key("failure_classification_receipt"),
+        governance_receipt_present: trace.contains_key("governance_receipt"),
+        nono_sandbox_materialized: trace.get("backend").and_then(serde_json::Value::as_str)
+            == Some("nono"),
+        human_audit_decision: trace.get("decision").and_then(serde_json::Value::as_str)
+            == Some("human-audit"),
     })
 }
 
@@ -113,6 +117,9 @@ pub enum GerbilLoopCaseDriverRealLlmCaseReceiptError {
         value: String,
         message: String,
     },
+    InvalidTraceJson {
+        message: String,
+    },
 }
 
 impl std::fmt::Display for GerbilLoopCaseDriverRealLlmCaseReceiptError {
@@ -128,6 +135,9 @@ impl std::fmt::Display for GerbilLoopCaseDriverRealLlmCaseReceiptError {
                 formatter,
                 "invalid numeric field {field} value {value:?}: {message}"
             ),
+            Self::InvalidTraceJson { message } => {
+                write!(formatter, "invalid real LLM trace JSON: {message}")
+            }
         }
     }
 }
@@ -167,41 +177,53 @@ fn optional_marker(stdout: &str, marker: &'static str) -> Option<String> {
     Some(rest[..end].to_owned())
 }
 
-fn required_json_string_field(
+fn stdout_trace_object(
     stdout: &str,
-    field: &'static str,
-) -> Result<String, GerbilLoopCaseDriverRealLlmCaseReceiptError> {
-    let prefix = format!("\"{field}\": \"");
-    let start = stdout
-        .find(&prefix)
-        .ok_or(GerbilLoopCaseDriverRealLlmCaseReceiptError::MissingField { field })?
-        + prefix.len();
-    let rest = &stdout[start..];
-    let end = rest
-        .find('"')
-        .ok_or(GerbilLoopCaseDriverRealLlmCaseReceiptError::MissingField { field })?;
-    Ok(rest[..end].to_owned())
-}
+) -> Result<serde_json::Map<String, serde_json::Value>, GerbilLoopCaseDriverRealLlmCaseReceiptError>
+{
+    let start = stdout.find('{').ok_or_else(|| {
+        GerbilLoopCaseDriverRealLlmCaseReceiptError::InvalidTraceJson {
+            message: "missing trace object".to_owned(),
+        }
+    })?;
+    let mut values = serde_json::Deserializer::from_str(&stdout[start..]).into_iter();
+    let value: serde_json::Value = values
+        .next()
+        .ok_or_else(
+            || GerbilLoopCaseDriverRealLlmCaseReceiptError::InvalidTraceJson {
+                message: "missing trace object".to_owned(),
+            },
+        )?
+        .map_err(
+            |error| GerbilLoopCaseDriverRealLlmCaseReceiptError::InvalidTraceJson {
+                message: error.to_string(),
+            },
+        )?;
 
-fn required_json_u64_field(
-    stdout: &str,
-    field: &'static str,
-) -> Result<u64, GerbilLoopCaseDriverRealLlmCaseReceiptError> {
-    let prefix = format!("\"{field}\": ");
-    let start = stdout
-        .find(&prefix)
-        .ok_or(GerbilLoopCaseDriverRealLlmCaseReceiptError::MissingField { field })?
-        + prefix.len();
-    let rest = &stdout[start..];
-    let end = rest
-        .find(|character: char| !character.is_ascii_digit())
-        .unwrap_or(rest.len());
-    let value = rest[..end].to_owned();
-    value.parse::<u64>().map_err(|error| {
-        GerbilLoopCaseDriverRealLlmCaseReceiptError::InvalidNumber {
-            field,
-            value,
-            message: error.to_string(),
+    value.as_object().cloned().ok_or_else(|| {
+        GerbilLoopCaseDriverRealLlmCaseReceiptError::InvalidTraceJson {
+            message: "trace root is not an object".to_owned(),
         }
     })
+}
+
+fn required_trace_string_field(
+    trace: &serde_json::Map<String, serde_json::Value>,
+    field: &'static str,
+) -> Result<String, GerbilLoopCaseDriverRealLlmCaseReceiptError> {
+    trace
+        .get(field)
+        .and_then(serde_json::Value::as_str)
+        .map(ToOwned::to_owned)
+        .ok_or(GerbilLoopCaseDriverRealLlmCaseReceiptError::MissingField { field })
+}
+
+fn required_trace_u64_field(
+    trace: &serde_json::Map<String, serde_json::Value>,
+    field: &'static str,
+) -> Result<u64, GerbilLoopCaseDriverRealLlmCaseReceiptError> {
+    trace
+        .get(field)
+        .and_then(serde_json::Value::as_u64)
+        .ok_or(GerbilLoopCaseDriverRealLlmCaseReceiptError::MissingField { field })
 }
