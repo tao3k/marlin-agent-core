@@ -1,12 +1,16 @@
+use marlin_agent_harness_types::{IntentCaseArtifactKind, IntentCaseRunStatus};
 use marlin_agent_kernel::{
     LoopProgramExecutionDriver, LoopProgramExecutionRequest, LoopProgramExecutionStatus,
     LoopProgramRuntimeHandoffExecutionReportStatus,
 };
 use marlin_agent_protocol::LoopProgramEventKind;
 use marlin_gerbil_scheme::{
+    GERBIL_LOOP_CASE_DRIVER_INTENT_CASE_RUNTIME_OWNER,
     GERBIL_LOOP_CASE_DRIVER_RUST_LOOP_RECEIPT_SCHEMA_ID, GerbilLoopCaseCommandKind,
     GerbilLoopCaseRuntimeHandoffStatus, GerbilLoopCaseSchemeBoundary,
     GerbilLoopCaseSerializationBoundary,
+    project_gerbil_loop_case_driver_intent_case_artifact_manifest,
+    project_gerbil_loop_case_driver_intent_case_run_receipt,
     project_gerbil_loop_case_driver_vertical_trace_rust_loop_receipt,
     verify_gerbil_loop_case_driver_vertical_trace,
 };
@@ -288,6 +292,108 @@ fn config_interface_vertical_trace_projects_to_rust_loop_receipts() {
 }
 
 #[test]
+fn config_interface_vertical_trace_projects_to_intent_case_artifact_bundles() {
+    let stdout = run_config_interface_case_driver_smoke();
+    let vertical_receipts =
+        verify_gerbil_loop_case_driver_vertical_trace(&stdout, 7).expect("vertical trace verifies");
+
+    for receipt in &vertical_receipts {
+        let run_id = format!("scripted-smoke-{}", receipt.case_id().as_str());
+        let manifest =
+            project_gerbil_loop_case_driver_intent_case_artifact_manifest(receipt, run_id.clone());
+        let run_receipt =
+            project_gerbil_loop_case_driver_intent_case_run_receipt(receipt, run_id.clone());
+
+        assert!(manifest.is_supported_schema());
+        assert_eq!(manifest.case_id.as_str(), receipt.case_id().as_str());
+        assert_eq!(manifest.run_id.as_str(), run_id);
+        assert_eq!(manifest.policy_epoch, receipt.policy_epoch());
+        assert_eq!(
+            manifest.policy_digest.as_str().len(),
+            receipt.policy_digest_octets().len() * 2
+        );
+        assert_eq!(
+            manifest.loop_program_id.as_str(),
+            receipt.loop_program_id().as_str()
+        );
+        assert!(manifest.has_core_artifact_bundle());
+        assert!(manifest.has_artifact_kind(IntentCaseArtifactKind::Intent));
+        assert!(manifest.has_artifact_kind(IntentCaseArtifactKind::PolicyPack));
+        assert!(manifest.has_artifact_kind(IntentCaseArtifactKind::LoopProgram));
+        assert!(manifest.has_artifact_kind(IntentCaseArtifactKind::VerticalTrace));
+        assert!(manifest.has_artifact_kind(IntentCaseArtifactKind::ExecutionTrace));
+        assert!(manifest.has_artifact_kind(IntentCaseArtifactKind::PolicyExplanation));
+        assert!(manifest.has_artifact_kind(IntentCaseArtifactKind::ReplayScript));
+        if receipt.live_llm_required() {
+            assert!(manifest.has_artifact_kind(IntentCaseArtifactKind::ModelEvents));
+            assert!(manifest.has_artifact_kind(IntentCaseArtifactKind::DiffPatch));
+            assert!(manifest.has_artifact_kind(IntentCaseArtifactKind::TestBefore));
+            assert!(manifest.has_artifact_kind(IntentCaseArtifactKind::TestAfter));
+        }
+        if receipt.tool_intent_count() > 0 {
+            assert!(manifest.has_artifact_kind(IntentCaseArtifactKind::ToolCalls));
+        }
+        if receipt.memory_intent_count() > 0 {
+            assert!(manifest.has_artifact_kind(IntentCaseArtifactKind::MemoryReceipts));
+        }
+        if receipt.has_capability(&cap("+sandbox")) || receipt.has_capability(&cap("+denylist")) {
+            assert!(manifest.has_artifact_kind(IntentCaseArtifactKind::SandboxReceipts));
+        }
+        if receipt.has_capability(&cap("+verification")) {
+            assert!(manifest.has_artifact_kind(IntentCaseArtifactKind::VerifierReceipt));
+        }
+        assert_eq!(
+            manifest.trace_index.entries.len(),
+            receipt.transition_count()
+        );
+        assert!(
+            manifest
+                .artifacts
+                .iter()
+                .filter_map(|artifact| artifact.path.as_deref())
+                .all(|path| !path.ends_with(".json") && !path.ends_with(".jsonl")),
+            "intent-case artifacts should not reintroduce JSON as an internal Scheme boundary: {manifest:?}"
+        );
+
+        for (index, ((trace_entry, action), event)) in manifest
+            .trace_index
+            .entries
+            .iter()
+            .zip(receipt.transition_actions())
+            .zip(receipt.transition_events())
+            .enumerate()
+        {
+            assert_eq!(trace_entry.step_index, (index + 1) as u64);
+            assert_eq!(trace_entry.action, action);
+            assert_eq!(trace_entry.event, event);
+            assert!(
+                trace_entry
+                    .transition_id
+                    .as_str()
+                    .starts_with(receipt.loop_program_id().as_str())
+            );
+            assert_eq!(
+                trace_entry
+                    .runtime_owner
+                    .as_ref()
+                    .expect("runtime owner is recorded")
+                    .as_str(),
+                GERBIL_LOOP_CASE_DRIVER_INTENT_CASE_RUNTIME_OWNER
+            );
+            assert!(
+                trace_entry.artifact_refs.len() >= 2,
+                "trace entry should correlate vertical and execution artifacts: {trace_entry:?}"
+            );
+        }
+
+        assert!(run_receipt.is_supported_schema());
+        assert_eq!(run_receipt.status, IntentCaseRunStatus::Passed);
+        assert!(run_receipt.diagnostics.is_empty());
+        assert_eq!(run_receipt.manifest, manifest);
+    }
+}
+
+#[test]
 fn config_interface_vertical_trace_drives_kernel_loop_programs() {
     let stdout = run_config_interface_case_driver_smoke();
     let vertical_receipts =
@@ -312,6 +418,25 @@ fn config_interface_vertical_trace_drives_kernel_loop_programs() {
         );
         assert!(execution_receipt.error.is_none());
         assert_eq!(execution_receipt.steps.len(), receipt.transition_count());
+        let manifest = project_gerbil_loop_case_driver_intent_case_artifact_manifest(
+            receipt,
+            format!("kernel-execution-{}", receipt.case_id().as_str()),
+        );
+        assert_eq!(
+            manifest.trace_index.entries.len(),
+            execution_receipt.steps.len()
+        );
+        for (trace_entry, execution_step) in manifest
+            .trace_index
+            .entries
+            .iter()
+            .zip(&execution_receipt.steps)
+        {
+            assert_eq!(
+                trace_entry.step_index,
+                execution_step.machine_receipt.step_index.get()
+            );
+        }
         assert_eq!(
             execution_receipt
                 .steps

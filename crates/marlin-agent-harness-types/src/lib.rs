@@ -9,6 +9,7 @@
 //! and should use `RustProjectHarness*` names.
 
 mod evidence;
+mod intent_case;
 mod scenario;
 
 pub use evidence::{
@@ -26,6 +27,14 @@ pub use evidence::{
     AGENT_HARNESS_STABILITY_EVIDENCE_RESOURCE_DELTA, AGENT_HARNESS_STABILITY_EVIDENCE_STATE_GROWTH,
     AgentHarnessEvidence, AgentHarnessEvidenceKind, AgentHarnessPerformanceEvidence,
     AgentHarnessStabilityEvidence, agent_harness_graph_policy_proposal_visibility_evidence,
+};
+pub use intent_case::{
+    INTENT_CASE_ARTIFACT_MANIFEST_SCHEMA_ID, INTENT_CASE_RUN_RECEIPT_SCHEMA_ID,
+    IntentCaseArtifactId, IntentCaseArtifactKind, IntentCaseArtifactManifest,
+    IntentCaseArtifactManifestRequest, IntentCaseArtifactRef, IntentCaseId,
+    IntentCaseLoopProgramId, IntentCasePolicyDigest, IntentCaseRunId, IntentCaseRunReceipt,
+    IntentCaseRunStatus, IntentCaseRuntimeOwner, IntentCaseTraceEntry, IntentCaseTraceEntryId,
+    IntentCaseTraceEntryRequest, IntentCaseTraceIndex, IntentCaseTransitionId,
 };
 pub use scenario::{
     AGENT_HARNESS_SCENARIO_CONTRACT_SCHEMA_ID, AgentHarnessScenario, AgentHarnessScenarioContract,

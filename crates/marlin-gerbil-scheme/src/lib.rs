@@ -159,6 +159,7 @@ pub use graph_loop_continuation::{
     project_gerbil_loop_graph_continuation_native_action,
 };
 pub use loop_case_driver::{
+    GERBIL_LOOP_CASE_DRIVER_INTENT_CASE_RUNTIME_OWNER,
     GERBIL_LOOP_CASE_DRIVER_RUST_LOOP_RECEIPT_SCHEMA_ID,
     GERBIL_LOOP_CASE_DRIVER_SCHEME_RECEIPT_KIND, GerbilLoopCaseCommandKind,
     GerbilLoopCaseDriverCapability, GerbilLoopCaseDriverCaseId, GerbilLoopCaseDriverLoopProgramId,
@@ -171,7 +172,10 @@ pub use loop_case_driver::{
     GerbilLoopCaseSerializationBoundary, GerbilLoopCaseSmokeStatus,
     default_gerbil_config_interface_root, gerbil_config_interface_loadpath_with_src,
     load_gerbil_loop_case_driver_projected_loop_program,
-    parse_gerbil_loop_case_driver_vertical_trace, project_gerbil_loop_case_driver_loop_action_kind,
+    parse_gerbil_loop_case_driver_vertical_trace,
+    project_gerbil_loop_case_driver_intent_case_artifact_manifest,
+    project_gerbil_loop_case_driver_intent_case_run_receipt,
+    project_gerbil_loop_case_driver_loop_action_kind,
     project_gerbil_loop_case_driver_loop_event_kind, project_gerbil_loop_case_driver_loop_program,
     project_gerbil_loop_case_driver_rust_loop_receipt,
     project_gerbil_loop_case_driver_vertical_trace_rust_loop_receipt,

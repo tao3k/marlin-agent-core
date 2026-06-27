@@ -14,6 +14,7 @@ name = "deck_runtime_native"
 harness = false
 
 [dependencies]
+marlin-agent-harness-types.workspace = true
 marlin-agent-protocol.workspace = true
 marlin-agent-graph.workspace = true
 marlin-gerbil-ir.workspace = true

@@ -1,6 +1,7 @@
 //! Typed Rust projection for config-interface loop case driver receipts.
 
 mod ids;
+mod intent_case_artifact;
 mod loop_program_projection;
 mod projected_case;
 mod real_llm_case;
@@ -10,6 +11,11 @@ mod vertical_trace;
 pub use ids::{
     GerbilLoopCaseDriverCapability, GerbilLoopCaseDriverCaseId, GerbilLoopCaseDriverLoopProgramId,
     GerbilLoopCaseDriverProfileRef,
+};
+pub use intent_case_artifact::{
+    GERBIL_LOOP_CASE_DRIVER_INTENT_CASE_RUNTIME_OWNER,
+    project_gerbil_loop_case_driver_intent_case_artifact_manifest,
+    project_gerbil_loop_case_driver_intent_case_run_receipt,
 };
 pub use loop_program_projection::{
     GerbilLoopCaseDriverLoopProgramProjectionError,

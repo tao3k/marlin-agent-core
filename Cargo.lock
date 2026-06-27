@@ -2647,6 +2647,7 @@ dependencies = [
  "criterion",
  "futures-executor",
  "marlin-agent-graph",
+ "marlin-agent-harness-types",
  "marlin-agent-kernel",
  "marlin-agent-protocol",
  "marlin-agent-runtime",
