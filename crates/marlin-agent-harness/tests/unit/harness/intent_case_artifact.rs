@@ -10,8 +10,10 @@ use marlin_agent_harness::{
 };
 use marlin_agent_harness_types::{
     RuntimeRepairCaseId, RuntimeRepairCaseReceipt, RuntimeRepairContentSummary, RuntimeRepairCount,
-    RuntimeRepairDurationMillis, RuntimeRepairLiveCaseReceipt, RuntimeRepairLiveCaseReceiptRequest,
-    RuntimeRepairModelCompletionId, RuntimeRepairModelId, RuntimeRepairProfileRef,
+    RuntimeRepairDenialReason, RuntimeRepairDurationMillis, RuntimeRepairHandoffStatus,
+    RuntimeRepairLiveCaseReceipt, RuntimeRepairLiveCaseReceiptRequest, RuntimeRepairLiveGateStatus,
+    RuntimeRepairModelCompletionId, RuntimeRepairModelId, RuntimeRepairNoLiveCaseReceipt,
+    RuntimeRepairNoLiveCaseReceiptRequest, RuntimeRepairProfileRef,
 };
 use marlin_agent_kernel::{
     AgentFlowLoopProgramRuntimeHandoffExecutor, GenericLoopMachineReceipt,
@@ -398,6 +400,58 @@ fn harness_materializes_runtime_repair_receipt_into_verifier_artifact() {
         !verifier.contains("fn answer() -> i32 { 41 }"),
         "verifier artifact should keep repaired content as digest metadata, not raw source"
     );
+}
+
+#[test]
+fn harness_materializes_no_live_llm_gate_receipt_into_verifier_artifact() {
+    let receipt = gerbil_vertical_receipts()
+        .into_iter()
+        .find(|receipt| {
+            receipt.live_llm_required()
+                && receipt.has_capability(&cap("+tool-repair"))
+                && receipt.has_capability(&cap("+verification"))
+        })
+        .expect("repair case should project no-live verifier receipt lane");
+    let execution_receipt = execute_vertical_receipt(&receipt);
+    let no_live_receipt =
+        RuntimeRepairNoLiveCaseReceipt::new(RuntimeRepairNoLiveCaseReceiptRequest {
+            case_id: RuntimeRepairCaseId::new(receipt.case_id().as_str()),
+            profile_ref: RuntimeRepairProfileRef::new(receipt.profile_ref().as_str()),
+            program_id: execution_receipt.program_id.clone(),
+            gate_status: RuntimeRepairLiveGateStatus::Disabled,
+            denial_reason: RuntimeRepairDenialReason::new("live-llm-disabled"),
+            live_llm_allowed: false,
+            action_count: RuntimeRepairCount::new(execution_receipt.steps.len()),
+            model_handoff_status: RuntimeRepairHandoffStatus::Denied,
+        });
+    let output_root = tempfile::tempdir().expect("create no-live repair artifact tempdir");
+
+    let bundle = materialize_gerbil_scripted_intent_case_artifact_bundle(
+        GerbilScriptedIntentCaseArtifactBundleRequest {
+            output_root: output_root.path().to_owned(),
+            run_id: "no-live-runtime-repair-receipt".into(),
+            vertical_trace: receipt,
+            execution_receipt,
+            side_effect_replay_bundle: None,
+            runtime_repair_receipt: Some(RuntimeRepairCaseReceipt::from(no_live_receipt)),
+        },
+    )
+    .expect("no-live runtime repair receipt bundle materializes");
+
+    assert!(bundle.completeness_receipt.is_complete());
+    assert_eq!(bundle.completeness_receipt.missing_artifacts, Vec::new());
+    assert!(bundle.has_artifact_kind(IntentCaseArtifactKind::VerifierReceipt));
+    let verifier = artifact_content(&bundle, IntentCaseArtifactKind::VerifierReceipt);
+    assert!(verifier.contains("runtime_repair_receipt=present"));
+    assert!(verifier.contains("runtime_repair_kind=no-live"));
+    assert!(
+        verifier.contains("runtime_repair_schema=marlin.runtime-repair.no-live-case-receipt.v1")
+    );
+    assert!(verifier.contains("runtime_repair_gate_status=Disabled"));
+    assert!(verifier.contains("runtime_repair_denial_reason=live-llm-disabled"));
+    assert!(verifier.contains("runtime_repair_live_llm_allowed=false"));
+    assert!(verifier.contains("runtime_repair_model_handoff_status=Denied"));
+    assert!(!verifier.contains("runtime_repair_model_completion_id="));
 }
 
 fn config_interface_case_driver_stdout() -> String {
