@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+use marlin_agent_kernel::{RuntimePolicyRecommendationPriority, runtime_policy_experiment_receipt};
+
 use super::LoopProgram;
 use super::{
     AgentFlowIntent, AgentFlowLoopProgramRuntimeHandoffExecutor, AgentFlowMemoryOperation,
@@ -17,8 +19,8 @@ use super::{
     StaticLoopProgramToolProcessResolver, TokioAgentRuntime, handled_by, handled_by_with_event,
     memory_model_rewrite_tool_verify_loop_program, memory_recall_then_tool_loop_program,
     model_then_verify_loop_program, rewrite_tool_verify_loop_program,
-    runtime_policy_experiment_receipt, single_tool_dispatch_error_stop_loop_program,
-    single_tool_dispatch_receipt_stop_loop_program, two_attempt_tool_dispatch_loop_program,
+    single_tool_dispatch_error_stop_loop_program, single_tool_dispatch_receipt_stop_loop_program,
+    two_attempt_tool_dispatch_loop_program,
 };
 
 fn dispatch_tools_shell_resolver(script: &'static str) -> StaticLoopProgramToolProcessResolver {
@@ -77,21 +79,21 @@ fn runtime_policy_tool_denylist_blocks_dispatch_tool_intent() {
     let experiment_receipt =
         runtime_policy_experiment_receipt("runtime-tool-denylist", &loop_program, &receipt);
     assert_eq!(
-        experiment_receipt.program_id,
+        experiment_receipt.program_id.as_str(),
         "kernel-fixture-tool-dispatch-error-stop"
     );
     assert_eq!(
-        experiment_receipt.policy_ids[0],
+        experiment_receipt.policy_ids[0].as_str(),
         "kernel-fixture-tool-dispatch-error"
     );
-    assert_eq!(experiment_receipt.denied_handoff_count, 1);
+    assert_eq!(experiment_receipt.denied_handoff_count.get(), 1);
     assert!(
         experiment_receipt
             .improvement_recommendations
             .iter()
             .any(
-                |recommendation| recommendation.target == "runtime.sandbox.denylist"
-                    && recommendation.priority == "P0"
+                |recommendation| recommendation.target.as_str() == "runtime.sandbox.denylist"
+                    && recommendation.priority == RuntimePolicyRecommendationPriority::P0
             )
     );
 }
@@ -637,30 +639,40 @@ fn memory_rewrite_checker_combination_runs_path() {
     let experiment_receipt =
         runtime_policy_experiment_receipt("runtime-policy-combination", &loop_program, &receipt);
     assert_eq!(
-        experiment_receipt.program_id,
+        experiment_receipt.program_id.as_str(),
         "kernel-fixture-memory-model-rewrite-tool-verify"
     );
     assert_eq!(
-        experiment_receipt.policy_ids,
+        experiment_receipt
+            .policy_ids
+            .iter()
+            .map(|policy| policy.as_str())
+            .collect::<Vec<_>>(),
         vec![
-            "kernel-fixture-model-verify".to_owned(),
-            "kernel-fixture-rewrite-tool".to_owned(),
-            "kernel-fixture-memory-recall".to_owned(),
+            "kernel-fixture-model-verify",
+            "kernel-fixture-rewrite-tool",
+            "kernel-fixture-memory-recall",
         ]
-        .into_boxed_slice()
     );
-    assert_eq!(experiment_receipt.policy_digest, "0f".repeat(32));
+    assert_eq!(experiment_receipt.policy_digest.as_str(), "0f".repeat(32));
     assert!(
         experiment_receipt
             .loop_program_digest
+            .as_str()
             .starts_with("fnv1a64:")
     );
     assert!(
         experiment_receipt
             .runtime_behavior_digest
+            .as_str()
             .starts_with("fnv1a64:")
     );
-    assert!(experiment_receipt.receipt_digest.starts_with("fnv1a64:"));
+    assert!(
+        experiment_receipt
+            .receipt_digest
+            .as_str()
+            .starts_with("fnv1a64:")
+    );
     assert_ne!(
         experiment_receipt.loop_program_digest,
         experiment_receipt.runtime_behavior_digest
@@ -669,26 +681,24 @@ fn memory_rewrite_checker_combination_runs_path() {
         experiment_receipt.receipt_digest,
         experiment_receipt.runtime_behavior_digest
     );
-    assert_eq!(experiment_receipt.agent_flow_intent_count, 2);
-    assert_eq!(experiment_receipt.memory_projection_count, 1);
-    assert_eq!(experiment_receipt.tool_projection_count, 1);
+    assert_eq!(experiment_receipt.agent_flow_intent_count.get(), 2);
+    assert_eq!(experiment_receipt.memory_projection_count.get(), 1);
+    assert_eq!(experiment_receipt.tool_projection_count.get(), 1);
     assert!(
         !experiment_receipt
             .improvement_recommendations
             .iter()
-            .any(
-                |recommendation| recommendation.target == "runtime.agent-flow.memory-projection"
-                    || recommendation.target == "runtime.tool-sandbox.spawn"
-            )
+            .any(|recommendation| recommendation.target.as_str()
+                == "runtime.agent-flow.memory-projection"
+                || recommendation.target.as_str() == "runtime.tool-sandbox.spawn")
     );
     assert!(
         experiment_receipt
             .improvement_recommendations
             .iter()
-            .any(
-                |recommendation| recommendation.target == "gerbil.config-interface.policy-pack"
-                    && recommendation.priority == "P2"
-            )
+            .any(|recommendation| recommendation.target.as_str()
+                == "gerbil.config-interface.policy-pack"
+                && recommendation.priority == RuntimePolicyRecommendationPriority::P2)
     );
 }
 

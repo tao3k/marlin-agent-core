@@ -8,6 +8,7 @@ mod loop_program_controller;
 mod loop_program_execution;
 mod loop_program_handoff;
 mod loop_program_handoff_executor;
+mod loop_program_policy_matrix;
 mod loop_program_side_effects;
 
 pub use adapters::{ProviderNodeAdapter, SubAgentNodeAdapter, ToolNodeAdapter};
@@ -48,6 +49,13 @@ pub use loop_program_handoff_executor::{
     LoopProgramToolProcessSpawnRequest, PolicyGatedAgentFlowLoopProgramRuntimeHandoffExecutor,
     RetryBudgetToolHandler, StaticLoopProgramRuntimeHandoffHandler,
     spawn_loop_program_tool_process,
+};
+pub use loop_program_policy_matrix::{
+    RuntimePolicyExperimentCaseId, RuntimePolicyExperimentCount, RuntimePolicyExperimentDigest,
+    RuntimePolicyExperimentReceipt, RuntimePolicyImprovementRecommendation,
+    RuntimePolicyRecommendationAction, RuntimePolicyRecommendationEvidence,
+    RuntimePolicyRecommendationPriority, RuntimePolicyRecommendationTarget,
+    has_memory_recall_intent, runtime_policy_experiment_receipt,
 };
 pub use loop_program_side_effects::{
     LoopProgramDerivedSessionPolicyStatus, LoopProgramExecutionReplayBundleReceipt,
