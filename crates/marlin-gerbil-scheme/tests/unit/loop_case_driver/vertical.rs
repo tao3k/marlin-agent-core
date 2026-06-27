@@ -384,6 +384,49 @@ fn config_interface_vertical_trace_projects_to_intent_case_artifact_bundles() {
                 trace_entry.artifact_refs.len() >= 2,
                 "trace entry should correlate vertical and execution artifacts: {trace_entry:?}"
             );
+            if action == "invoke_model" && receipt.live_llm_required() {
+                assert!(
+                    trace_entry_has_artifact_kind(
+                        &manifest,
+                        trace_entry,
+                        IntentCaseArtifactKind::ModelEvents,
+                    ),
+                    "model transition should reference model events artifact: {trace_entry:?}"
+                );
+            }
+            if action == "dispatch_tools" && receipt.tool_intent_count() > 0 {
+                assert!(
+                    trace_entry_has_artifact_kind(
+                        &manifest,
+                        trace_entry,
+                        IntentCaseArtifactKind::ToolCalls,
+                    ),
+                    "tool transition should reference tool calls artifact: {trace_entry:?}"
+                );
+            }
+            if action == "dispatch_tools"
+                && (receipt.has_capability(&cap("+sandbox"))
+                    || receipt.has_capability(&cap("+denylist")))
+            {
+                assert!(
+                    trace_entry_has_artifact_kind(
+                        &manifest,
+                        trace_entry,
+                        IntentCaseArtifactKind::SandboxReceipts,
+                    ),
+                    "sandboxed tool transition should reference sandbox receipts artifact: {trace_entry:?}"
+                );
+            }
+            if action == "verify" && receipt.has_capability(&cap("+verification")) {
+                assert!(
+                    trace_entry_has_artifact_kind(
+                        &manifest,
+                        trace_entry,
+                        IntentCaseArtifactKind::VerifierReceipt,
+                    ),
+                    "verify transition should reference verifier artifact: {trace_entry:?}"
+                );
+            }
         }
 
         assert!(run_receipt.is_supported_schema());
@@ -391,6 +434,26 @@ fn config_interface_vertical_trace_projects_to_intent_case_artifact_bundles() {
         assert!(run_receipt.diagnostics.is_empty());
         assert_eq!(run_receipt.manifest, manifest);
     }
+}
+
+fn trace_entry_has_artifact_kind(
+    manifest: &marlin_agent_harness_types::IntentCaseArtifactManifest,
+    trace_entry: &marlin_agent_harness_types::IntentCaseTraceEntry,
+    kind: IntentCaseArtifactKind,
+) -> bool {
+    let artifact_id = manifest
+        .artifacts
+        .iter()
+        .find(|artifact| artifact.kind == kind && artifact.present)
+        .map(|artifact| &artifact.artifact_id);
+    artifact_id
+        .map(|artifact_id| {
+            trace_entry
+                .artifact_refs
+                .iter()
+                .any(|trace_artifact_id| trace_artifact_id == artifact_id)
+        })
+        .unwrap_or(false)
 }
 
 #[test]

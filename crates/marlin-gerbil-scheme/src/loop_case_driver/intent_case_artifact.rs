@@ -169,7 +169,7 @@ fn intent_case_trace_index(
             .zip(receipt.transition_events())
             .enumerate()
             .map(|(index, (action, event))| {
-                intent_case_trace_entry(index, action, event, context, artifact_ids)
+                intent_case_trace_entry(index, action, event, receipt, context, artifact_ids)
             })
             .collect::<Vec<_>>(),
     )
@@ -179,12 +179,13 @@ fn intent_case_trace_entry(
     index: usize,
     action: &str,
     event: &str,
+    receipt: &GerbilLoopCaseDriverVerticalTraceReceipt,
     context: &IntentCaseManifestContext,
     artifact_ids: &IntentCaseArtifactIds,
 ) -> IntentCaseTraceEntry {
     let step_index = (index + 1) as u64;
 
-    IntentCaseTraceEntry::from_request(IntentCaseTraceEntryRequest {
+    let mut entry = IntentCaseTraceEntry::from_request(IntentCaseTraceEntryRequest {
         trace_id: trace_entry_id(&context.case_id, step_index),
         step_index,
         transition_id: transition_id(&context.loop_program_id, step_index),
@@ -195,7 +196,53 @@ fn intent_case_trace_entry(
         GERBIL_LOOP_CASE_DRIVER_INTENT_CASE_RUNTIME_OWNER,
     ))
     .with_artifact_ref(artifact_ids.vertical_trace.clone())
-    .with_artifact_ref(artifact_ids.execution_trace.clone())
+    .with_artifact_ref(artifact_ids.execution_trace.clone());
+
+    for artifact_id in trace_entry_action_artifact_refs(action, receipt, artifact_ids) {
+        entry = entry.with_artifact_ref(artifact_id);
+    }
+    entry
+}
+
+fn trace_entry_action_artifact_refs(
+    action: &str,
+    receipt: &GerbilLoopCaseDriverVerticalTraceReceipt,
+    artifact_ids: &IntentCaseArtifactIds,
+) -> Vec<IntentCaseArtifactId> {
+    let mut artifact_refs = Vec::new();
+
+    match action {
+        "invoke_model" if receipt.live_llm_required() => {
+            artifact_refs.push(artifact_ids.model_events.clone());
+        }
+        "dispatch_tools" => {
+            if receipt.tool_intent_count() > 0 {
+                artifact_refs.push(artifact_ids.tool_calls.clone());
+            }
+            if has_capability(receipt, "+sandbox") || has_capability(receipt, "+denylist") {
+                artifact_refs.push(artifact_ids.sandbox_receipts.clone());
+            }
+            if receipt.live_llm_required() || has_capability(receipt, "+repair") {
+                artifact_refs.push(artifact_ids.diff_patch.clone());
+                artifact_refs.push(artifact_ids.test_before.clone());
+            }
+        }
+        "rewrite_graph" if receipt.live_llm_required() || has_capability(receipt, "+repair") => {
+            artifact_refs.push(artifact_ids.diff_patch.clone());
+        }
+        "verify" if has_capability(receipt, "+verification") => {
+            artifact_refs.push(artifact_ids.verifier_receipt.clone());
+            if receipt.live_llm_required() || has_capability(receipt, "+repair") {
+                artifact_refs.push(artifact_ids.test_after.clone());
+            }
+        }
+        action if action.contains("memory") && receipt.memory_intent_count() > 0 => {
+            artifact_refs.push(artifact_ids.memory_receipts.clone());
+        }
+        _ => {}
+    }
+
+    artifact_refs
 }
 
 fn intent_case_artifact_refs(
