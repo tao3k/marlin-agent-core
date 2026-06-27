@@ -3,7 +3,13 @@ use marlin_agent_kernel::{
     LoopProgramRuntimeHandoffExecutionReportStatus,
 };
 use marlin_agent_protocol::LoopProgramEventKind;
-use marlin_gerbil_scheme::verify_gerbil_loop_case_driver_vertical_trace;
+use marlin_gerbil_scheme::{
+    GERBIL_LOOP_CASE_DRIVER_RUST_LOOP_RECEIPT_SCHEMA_ID, GerbilLoopCaseCommandKind,
+    GerbilLoopCaseRuntimeHandoffStatus, GerbilLoopCaseSchemeBoundary,
+    GerbilLoopCaseSerializationBoundary,
+    project_gerbil_loop_case_driver_vertical_trace_rust_loop_receipt,
+    verify_gerbil_loop_case_driver_vertical_trace,
+};
 
 use super::support::{
     cap, loop_program_action_kind, run_config_interface_case_driver_smoke,
@@ -165,6 +171,120 @@ fn config_interface_case_driver_scheme_smoke_runs_vertical_policy_cases() {
             "Scheme vertical case matrix should cover capability {capability}: {vertical_receipts:?}"
         );
     }
+}
+
+#[test]
+fn config_interface_vertical_trace_projects_to_rust_loop_receipts() {
+    let stdout = run_config_interface_case_driver_smoke();
+    let vertical_receipts =
+        verify_gerbil_loop_case_driver_vertical_trace(&stdout, 7).expect("vertical trace verifies");
+
+    let rust_receipts = vertical_receipts
+        .iter()
+        .map(project_gerbil_loop_case_driver_vertical_trace_rust_loop_receipt)
+        .collect::<Vec<_>>();
+
+    assert_eq!(rust_receipts.len(), 7);
+    for (vertical_receipt, rust_receipt) in vertical_receipts.iter().zip(&rust_receipts) {
+        assert_eq!(
+            rust_receipt.schema_id,
+            GERBIL_LOOP_CASE_DRIVER_RUST_LOOP_RECEIPT_SCHEMA_ID
+        );
+        assert_eq!(&rust_receipt.case_id, vertical_receipt.case_id());
+        assert_eq!(&rust_receipt.profile_ref, vertical_receipt.profile_ref());
+        assert_eq!(
+            rust_receipt.command_kind,
+            GerbilLoopCaseCommandKind::LoopProgramRun
+        );
+        assert_eq!(
+            rust_receipt.command_vector,
+            vec![
+                "marlin",
+                "loop",
+                "program",
+                "run",
+                "--profile",
+                vertical_receipt.profile_ref().as_str(),
+            ]
+        );
+        assert_eq!(
+            rust_receipt.input_path.to_string_lossy(),
+            vertical_receipt.module_source_ref()
+        );
+        assert_eq!(
+            rust_receipt.runtime_handoff_status,
+            if vertical_receipt.live_llm_required() && !vertical_receipt.live_llm_allowed() {
+                GerbilLoopCaseRuntimeHandoffStatus::DeferredNoLiveLlm
+            } else {
+                GerbilLoopCaseRuntimeHandoffStatus::Ready
+            }
+        );
+        assert_eq!(rust_receipt.runtime_execution_owner, "marlin-agent-core");
+        assert_eq!(
+            rust_receipt.module_kind.as_str(),
+            vertical_receipt.module_kind()
+        );
+        assert_eq!(
+            rust_receipt.module_user_module.as_str(),
+            vertical_receipt.module_user_module()
+        );
+        assert_eq!(
+            rust_receipt
+                .module_selection_tags
+                .iter()
+                .map(|tag| tag.as_str())
+                .collect::<Vec<_>>(),
+            vertical_receipt
+                .module_selection_tags()
+                .map(|tag| tag.as_str())
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(
+            rust_receipt.module_source_ref,
+            vertical_receipt.module_source_ref()
+        );
+        assert_eq!(
+            rust_receipt.module_entrypoint,
+            vertical_receipt.module_entrypoint()
+        );
+        assert_eq!(
+            rust_receipt.module_enabled,
+            vertical_receipt.module_enabled()
+        );
+        assert_eq!(
+            rust_receipt.live_llm_required,
+            vertical_receipt.live_llm_required()
+        );
+        assert_eq!(
+            rust_receipt.live_llm_allowed,
+            vertical_receipt.live_llm_allowed()
+        );
+        assert!(!rust_receipt.stable_fixture);
+        assert_eq!(
+            rust_receipt.scheme_boundary,
+            GerbilLoopCaseSchemeBoundary::SchemeTypesToRustTypes
+        );
+        assert_eq!(
+            rust_receipt.serialization_boundary,
+            GerbilLoopCaseSerializationBoundary::RustOwnedCliTraceCrossProcess
+        );
+        assert!(
+            !format!("{:?}", rust_receipt.scheme_boundary)
+                .to_ascii_lowercase()
+                .contains("json")
+        );
+    }
+
+    let deferred_live_receipts = rust_receipts
+        .iter()
+        .filter(|receipt| receipt.live_llm_required)
+        .collect::<Vec<_>>();
+    assert_eq!(deferred_live_receipts.len(), 1);
+    assert_eq!(
+        deferred_live_receipts[0].runtime_handoff_status,
+        GerbilLoopCaseRuntimeHandoffStatus::DeferredNoLiveLlm
+    );
+    assert!(!deferred_live_receipts[0].live_llm_allowed);
 }
 
 #[test]

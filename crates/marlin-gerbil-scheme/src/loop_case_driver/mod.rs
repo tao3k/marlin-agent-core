@@ -34,6 +34,7 @@ pub use receipt::{
     GerbilLoopCaseDriverSchemeReceiptKind, GerbilLoopCaseRuntimeHandoffStatus,
     GerbilLoopCaseRuntimeMode, GerbilLoopCaseSchemeBoundary, GerbilLoopCaseSerializationBoundary,
     GerbilLoopCaseSmokeStatus, project_gerbil_loop_case_driver_rust_loop_receipt,
+    project_gerbil_loop_case_driver_vertical_trace_rust_loop_receipt,
 };
 pub use vertical_trace::{
     GerbilLoopCaseDriverVerticalTraceError, GerbilLoopCaseDriverVerticalTraceReceipt,

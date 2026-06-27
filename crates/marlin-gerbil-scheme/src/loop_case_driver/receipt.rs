@@ -4,7 +4,10 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-use super::{GerbilLoopCaseDriverCaseId, GerbilLoopCaseDriverProfileRef};
+use super::{
+    GerbilLoopCaseDriverCaseId, GerbilLoopCaseDriverProfileRef,
+    GerbilLoopCaseDriverVerticalTraceReceipt,
+};
 
 /// Scheme receipt kind emitted by the config-interface loop case driver.
 pub const GERBIL_LOOP_CASE_DRIVER_SCHEME_RECEIPT_KIND: &str =
@@ -332,5 +335,50 @@ pub fn project_gerbil_loop_case_driver_rust_loop_receipt(
         stable_fixture: receipt.stable_fixture,
         scheme_boundary: receipt.scheme_boundary,
         serialization_boundary: receipt.serialization_boundary,
+    }
+}
+
+/// Project a trusted real Scheme vertical trace into the Rust loop receipt.
+#[must_use]
+pub fn project_gerbil_loop_case_driver_vertical_trace_rust_loop_receipt(
+    receipt: &GerbilLoopCaseDriverVerticalTraceReceipt,
+) -> GerbilLoopCaseDriverRustLoopReceipt {
+    let profile_ref = receipt.profile_ref().clone();
+    let runtime_handoff_status = if receipt.live_llm_required() && !receipt.live_llm_allowed() {
+        GerbilLoopCaseRuntimeHandoffStatus::DeferredNoLiveLlm
+    } else {
+        GerbilLoopCaseRuntimeHandoffStatus::Ready
+    };
+
+    GerbilLoopCaseDriverRustLoopReceipt {
+        schema_id: GERBIL_LOOP_CASE_DRIVER_RUST_LOOP_RECEIPT_SCHEMA_ID.to_owned(),
+        case_id: receipt.case_id().clone(),
+        profile_ref: profile_ref.clone(),
+        command_kind: GerbilLoopCaseCommandKind::LoopProgramRun,
+        command_vector: vec![
+            "marlin".to_owned(),
+            "loop".to_owned(),
+            "program".to_owned(),
+            "run".to_owned(),
+            "--profile".to_owned(),
+            profile_ref.as_str().to_owned(),
+        ],
+        input_path: PathBuf::from(receipt.module_source_ref()),
+        runtime_handoff_status,
+        runtime_execution_owner: "marlin-agent-core".to_owned(),
+        module_kind: GerbilLoopCaseModuleKind::new(receipt.module_kind()),
+        module_user_module: GerbilLoopCaseModuleName::new(receipt.module_user_module()),
+        module_selection_tags: receipt
+            .module_selection_tags()
+            .map(|tag| GerbilLoopCaseModuleSelectionTag::new(tag.as_str()))
+            .collect(),
+        module_source_ref: receipt.module_source_ref().to_owned(),
+        module_entrypoint: receipt.module_entrypoint().to_owned(),
+        module_enabled: receipt.module_enabled(),
+        live_llm_required: receipt.live_llm_required(),
+        live_llm_allowed: receipt.live_llm_allowed(),
+        stable_fixture: false,
+        scheme_boundary: GerbilLoopCaseSchemeBoundary::SchemeTypesToRustTypes,
+        serialization_boundary: GerbilLoopCaseSerializationBoundary::RustOwnedCliTraceCrossProcess,
     }
 }

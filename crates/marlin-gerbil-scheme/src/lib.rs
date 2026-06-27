@@ -174,6 +174,7 @@ pub use loop_case_driver::{
     parse_gerbil_loop_case_driver_vertical_trace, project_gerbil_loop_case_driver_loop_action_kind,
     project_gerbil_loop_case_driver_loop_event_kind, project_gerbil_loop_case_driver_loop_program,
     project_gerbil_loop_case_driver_rust_loop_receipt,
+    project_gerbil_loop_case_driver_vertical_trace_rust_loop_receipt,
     run_gerbil_config_interface_case_driver_smoke,
     run_gerbil_config_interface_case_driver_smoke_in,
     verify_gerbil_loop_case_driver_vertical_trace,
