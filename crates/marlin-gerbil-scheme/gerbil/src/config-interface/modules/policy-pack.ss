@@ -802,6 +802,50 @@ package: config-interface/modules
           (loop (+ index 1)))
         mapped))))
 
+;;; Boundary: Policy digests are derived from typed policy inputs, not fixtures.
+;; MarlinResult <- MarlinInput
+(def (marlin-string-vector-fingerprint source-vector)
+  (let ((count (vector-length source-vector)))
+    (let loop ((index 0)
+               (fingerprint ""))
+      (if (< index count)
+        (loop (+ index 1)
+              (string-append fingerprint "|" (vector-ref source-vector index)))
+        fingerprint))))
+
+;; MarlinResult <- MarlinInput
+(def (marlin-policy-digest profile-id-value
+                           policy-epoch-value
+                           mechanism-policies-value
+                           policy-mixins-value
+                           hot-fingerprint-value
+                           audit-fingerprint-value)
+  (let* ((seed
+          (string-append profile-id-value
+                         ":epoch=" (number->string policy-epoch-value)
+                         ":mechanisms="
+                         (marlin-string-vector-fingerprint mechanism-policies-value)
+                         ":mixins="
+                         (marlin-string-vector-fingerprint policy-mixins-value)
+                         ":hot=" hot-fingerprint-value
+                         ":audit=" audit-fingerprint-value))
+         (seed-length (string-length seed))
+         (digest (make-vector 32 0)))
+    (let loop ((index 0)
+               (state (modulo (+ seed-length policy-epoch-value) 256)))
+      (if (< index 32)
+        (let* ((seed-byte
+                (char->integer (string-ref seed (modulo index seed-length))))
+               (next-byte
+                (modulo (+ state
+                           seed-byte
+                           (* (+ index 1) 17)
+                           (* policy-epoch-value 13))
+                        256)))
+          (vector-set! digest index next-byte)
+          (loop (+ index 1) next-byte))
+        digest))))
+
 ;;; Boundary: Rust consumes compiler receipts through the module projection catalog.
 ;; MarlinResult <- MarlinInput
 (def (marlinLoopPolicyProjectionModuleReceipts modules)
@@ -921,8 +965,31 @@ package: config-interface/modules
 
 ;;; Boundary: Minimal real repair profile compiled as Scheme types for Rust.
 ;; MarlinResult <- MarlinInput
+(def (marlin-real-repair-001-mechanism-policies)
+  (vector "reactive-tool-loop-base"
+          "dynamic-graph-rewrite"
+          "verification-gate"))
+
+;; MarlinResult <- MarlinInput
+(def (marlin-real-repair-001-policy-mixins)
+  (vector "reactive-tool-loop-base"
+          "workspace-write-policy"
+          "sandbox-denylist-policy"
+          "retry-budget-policy"
+          "maker-policy"
+          "checker-policy"
+          "artifact-policy"
+          "trace-policy"))
+
+;; MarlinResult <- MarlinInput
 (def (marlin-real-repair-001-policy-digest)
-  (make-vector 32 7))
+  (marlin-policy-digest
+   "real-repair-001/reactive-tool-loop"
+   42
+   (marlin-real-repair-001-mechanism-policies)
+   (marlin-real-repair-001-policy-mixins)
+   "capability=5;human-gate=1;attempts=3;cost=1000;wall=30000;nodes=1;edges=1;maker=11;checker=12"
+   "linearization=planner,reviewer;merges=union,intersection,min,ordered_append,conflict_error"))
 
 ;;; Boundary: Loop transition values use Rust-owned IR field names.
 ;; MarlinResult <- MarlinInput
@@ -977,14 +1044,7 @@ package: config-interface/modules
           checker_profiles: (vector 12))
       audit:
       (.o policy_mixins:
-          (vector "reactive-tool-loop-base"
-                  "workspace-write-policy"
-                  "sandbox-denylist-policy"
-                  "retry-budget-policy"
-                  "maker-policy"
-                  "checker-policy"
-                  "artifact-policy"
-                  "trace-policy")
+          (marlin-real-repair-001-policy-mixins)
           provenance:
           (vector
            (.o slot_id: 9
@@ -1034,9 +1094,7 @@ package: config-interface/modules
       policy_epoch: 42
       policy_digest: (marlin-real-repair-001-policy-digest)
       mechanism_policies:
-      (vector "reactive-tool-loop-base"
-              "dynamic-graph-rewrite"
-              "verification-gate")
+      (marlin-real-repair-001-mechanism-policies)
       initial_state: "start"
       transitions:
       (vector
@@ -1087,8 +1145,46 @@ package: config-interface/modules
 
 ;;; Boundary: real-policy-001 sandbox denylist profile compiled by Scheme.
 ;; MarlinResult <- MarlinInput
-(def (marlin-real-policy-001-digest)
-  (make-vector 32 10))
+(def (marlin-real-policy-001-sandbox-denylist-mechanism-policies)
+  (vector "real-policy-001-sandbox-denylist"
+          "agent-flow-tool-projection"))
+
+;; MarlinResult <- MarlinInput
+(def (marlin-real-policy-001-sandbox-denylist-policy-mixins)
+  (vector "sandbox-denylist-policy"
+          "artifact-policy"
+          "trace-policy"))
+
+;; MarlinResult <- MarlinInput
+(def (marlin-real-policy-001-sandbox-denylist-digest)
+  (marlin-policy-digest
+   "real-policy-001/sandbox-denylist"
+   10
+   (marlin-real-policy-001-sandbox-denylist-mechanism-policies)
+   (marlin-real-policy-001-sandbox-denylist-policy-mixins)
+   "capability=3;human-gate=0;attempts=1;exclusive=true;continuation=stop_failed"
+   "linearization=sandbox-denylist,runtime-kernel;merge=override"))
+
+;; MarlinResult <- MarlinInput
+(def (marlin-real-policy-001-tool-sandbox-mechanism-policies)
+  (vector "real-policy-001-tool-sandbox"
+          "agent-flow-tool-projection"))
+
+;; MarlinResult <- MarlinInput
+(def (marlin-real-policy-001-tool-sandbox-policy-mixins)
+  (vector "tool-sandbox-policy"
+          "artifact-policy"
+          "trace-policy"))
+
+;; MarlinResult <- MarlinInput
+(def (marlin-real-policy-001-tool-sandbox-digest)
+  (marlin-policy-digest
+   "real-policy-001/tool-sandbox"
+   10
+   (marlin-real-policy-001-tool-sandbox-mechanism-policies)
+   (marlin-real-policy-001-tool-sandbox-policy-mixins)
+   "capability=3;human-gate=0;attempts=1;exclusive=false;continuation=stop_completed"
+   "linearization=tool-sandbox,runtime-kernel;merge=override"))
 
 ;; MarlinResult <- MarlinInput
 (def (marlin-real-policy-transition transition-id-value
@@ -1106,7 +1202,7 @@ package: config-interface/modules
 (def (marlinRealPolicy001SandboxDenylistResolvedPolicyPack)
   (.o schema_version: 1
       policy_epoch: 10
-      policy_digest: (marlin-real-policy-001-digest)
+      policy_digest: (marlin-real-policy-001-sandbox-denylist-digest)
       hot:
       (.o capability_mask: 3
           human_gate_mask: 0
@@ -1138,9 +1234,7 @@ package: config-interface/modules
           checker_profiles: (vector))
       audit:
       (.o policy_mixins:
-          (vector "sandbox-denylist-policy"
-                  "artifact-policy"
-                  "trace-policy")
+          (marlin-real-policy-001-sandbox-denylist-policy-mixins)
           provenance:
           (vector
            (.o slot_id: 10
@@ -1175,10 +1269,9 @@ package: config-interface/modules
   (.o schema_version: 1
       program_id: "real-policy-001-sandbox-denylist"
       policy_epoch: 10
-      policy_digest: (marlin-real-policy-001-digest)
+      policy_digest: (marlin-real-policy-001-sandbox-denylist-digest)
       mechanism_policies:
-      (vector "real-policy-001-sandbox-denylist"
-              "agent-flow-tool-projection")
+      (marlin-real-policy-001-sandbox-denylist-mechanism-policies)
       initial_state: "start"
       transitions:
       (vector
@@ -1207,7 +1300,7 @@ package: config-interface/modules
 (def (marlinRealToolSandboxResolvedPolicyPack)
   (.o schema_version: 1
       policy_epoch: 10
-      policy_digest: (marlin-real-policy-001-digest)
+      policy_digest: (marlin-real-policy-001-tool-sandbox-digest)
       hot:
       (.o capability_mask: 3
           human_gate_mask: 0
@@ -1239,9 +1332,7 @@ package: config-interface/modules
           checker_profiles: (vector))
       audit:
       (.o policy_mixins:
-          (vector "tool-sandbox-policy"
-                  "artifact-policy"
-                  "trace-policy")
+          (marlin-real-policy-001-tool-sandbox-policy-mixins)
           provenance:
           (vector
            (.o slot_id: 11
@@ -1276,10 +1367,9 @@ package: config-interface/modules
   (.o schema_version: 1
       program_id: "real-tool-sandbox-loop"
       policy_epoch: 10
-      policy_digest: (marlin-real-policy-001-digest)
+      policy_digest: (marlin-real-policy-001-tool-sandbox-digest)
       mechanism_policies:
-      (vector "real-policy-001-tool-sandbox"
-              "agent-flow-tool-projection")
+      (marlin-real-policy-001-tool-sandbox-mechanism-policies)
       initial_state: "start"
       transitions:
       (vector
@@ -1305,8 +1395,73 @@ package: config-interface/modules
 
 ;;; Boundary: real-policy-002 retry-budget profile compiled by Scheme.
 ;; MarlinResult <- MarlinInput
+(def (marlin-real-policy-basic-policy-mixins winner-role-value)
+  (vector (string-append winner-role-value "-policy")
+          "artifact-policy"
+          "trace-policy"))
+
+;; MarlinResult <- MarlinInput
+(def (marlin-real-policy-002-mechanism-policies)
+  (vector "real-policy-002-retry-budget"
+          "agent-flow-tool-projection"))
+
+;; MarlinResult <- MarlinInput
+(def (marlin-real-policy-002-digest)
+  (marlin-policy-digest
+   "real-policy-002/retry-budget"
+   11
+   (marlin-real-policy-002-mechanism-policies)
+   (marlin-real-policy-basic-policy-mixins "retry-budget")
+   "capability=3;human-gate=0;attempts=2;exclusive=true;continuation=retry,stop_failed"
+   "linearization=retry-budget,runtime-kernel;merge=override"))
+
+;; MarlinResult <- MarlinInput
+(def (marlin-real-policy-003-mechanism-policies)
+  (vector "real-policy-003-maker-checker"))
+
+;; MarlinResult <- MarlinInput
+(def (marlin-real-policy-003-digest)
+  (marlin-policy-digest
+   "real-policy-003/maker-checker"
+   12
+   (marlin-real-policy-003-mechanism-policies)
+   (marlin-real-policy-basic-policy-mixins "maker-checker")
+   "capability=5;human-gate=0;attempts=1;exclusive=false;continuation=stop_completed;maker=30;checker=31"
+   "linearization=maker-checker,runtime-kernel;merge=override"))
+
+;; MarlinResult <- MarlinInput
+(def (marlin-real-policy-004-mechanism-policies)
+  (vector "real-policy-004-dynamic-rewrite"
+          "verification-gate"))
+
+;; MarlinResult <- MarlinInput
+(def (marlin-real-policy-004-digest)
+  (marlin-policy-digest
+   "real-policy-004/dynamic-rewrite"
+   13
+   (marlin-real-policy-004-mechanism-policies)
+   (marlin-real-policy-basic-policy-mixins "dynamic-rewrite")
+   "capability=7;human-gate=0;attempts=1;exclusive=true;continuation=stop_completed;checker=40"
+   "linearization=dynamic-rewrite,runtime-kernel;merge=override"))
+
+;; MarlinResult <- MarlinInput
+(def (marlin-real-policy-005-mechanism-policies)
+  (vector "real-policy-005-memory-recall"
+          "agent-flow-memory-projection"))
+
+;; MarlinResult <- MarlinInput
+(def (marlin-real-policy-005-digest)
+  (marlin-policy-digest
+   "real-policy-005/memory-recall"
+   14
+   (marlin-real-policy-005-mechanism-policies)
+   (marlin-real-policy-basic-policy-mixins "memory-recall")
+   "capability=3;human-gate=0;attempts=1;exclusive=false;continuation=stop_completed"
+   "linearization=memory-recall,runtime-kernel;merge=override"))
+
+;; MarlinResult <- MarlinInput
 (def (marlin-real-policy-basic-resolved-policy-pack policy-epoch-value
-                                                     digest-byte-value
+                                                     policy-digest-value
                                                      winner-role-value
                                                      capability-mask-value
                                                      max-attempts-value
@@ -1318,7 +1473,7 @@ package: config-interface/modules
                                                      explanation-value)
   (.o schema_version: 1
       policy_epoch: policy-epoch-value
-      policy_digest: (make-vector 32 digest-byte-value)
+      policy_digest: policy-digest-value
       hot:
       (.o capability_mask: capability-mask-value
           human_gate_mask: 0
@@ -1348,9 +1503,7 @@ package: config-interface/modules
           checker_profiles: checker-profiles-value)
       audit:
       (.o policy_mixins:
-          (vector (string-append winner-role-value "-policy")
-                  "artifact-policy"
-                  "trace-policy")
+          (marlin-real-policy-basic-policy-mixins winner-role-value)
           provenance:
           (vector
            (.o slot_id: policy-epoch-value
@@ -1383,13 +1536,13 @@ package: config-interface/modules
 ;; MarlinResult <- MarlinInput
 (def (marlin-real-policy-loop-program program-id-value
                                       policy-epoch-value
-                                      digest-byte-value
+                                      policy-digest-value
                                       mechanism-policies-value
                                       transitions-value)
   (.o schema_version: 1
       program_id: program-id-value
       policy_epoch: policy-epoch-value
-      policy_digest: (make-vector 32 digest-byte-value)
+      policy_digest: policy-digest-value
       mechanism_policies: mechanism-policies-value
       initial_state: "start"
       transitions: transitions-value))
@@ -1398,7 +1551,7 @@ package: config-interface/modules
 (def (marlinRealPolicy002RetryBudgetResolvedPolicyPack)
   (marlin-real-policy-basic-resolved-policy-pack
    11
-   11
+   (marlin-real-policy-002-digest)
    "retry-budget"
    3
    2
@@ -1418,9 +1571,8 @@ package: config-interface/modules
   (marlin-real-policy-loop-program
    "real-policy-002-retry-budget"
    11
-   11
-   (vector "real-policy-002-retry-budget"
-           "agent-flow-tool-projection")
+   (marlin-real-policy-002-digest)
+   (marlin-real-policy-002-mechanism-policies)
    (vector
     (marlin-real-policy-transition
      "start-tool"
@@ -1453,7 +1605,7 @@ package: config-interface/modules
 (def (marlinRealPolicy003MakerCheckerResolvedPolicyPack)
   (marlin-real-policy-basic-resolved-policy-pack
    12
-   12
+   (marlin-real-policy-003-digest)
    "maker-checker"
    5
    1
@@ -1470,8 +1622,8 @@ package: config-interface/modules
   (marlin-real-policy-loop-program
    "real-policy-003-maker-checker"
    12
-   12
-   (vector "real-policy-003-maker-checker")
+   (marlin-real-policy-003-digest)
+   (marlin-real-policy-003-mechanism-policies)
    (vector
     (marlin-real-policy-transition
      "start-maker"
@@ -1504,7 +1656,7 @@ package: config-interface/modules
 (def (marlinRealPolicy004DynamicRewriteResolvedPolicyPack)
   (marlin-real-policy-basic-resolved-policy-pack
    13
-   13
+   (marlin-real-policy-004-digest)
    "dynamic-rewrite"
    7
    1
@@ -1521,9 +1673,8 @@ package: config-interface/modules
   (marlin-real-policy-loop-program
    "real-policy-004-dynamic-rewrite"
    13
-   13
-   (vector "real-policy-004-dynamic-rewrite"
-           "verification-gate")
+   (marlin-real-policy-004-digest)
+   (marlin-real-policy-004-mechanism-policies)
    (vector
     (marlin-real-policy-transition
      "start-rewrite"
@@ -1562,7 +1713,7 @@ package: config-interface/modules
 (def (marlinRealPolicy005MemoryRecallResolvedPolicyPack)
   (marlin-real-policy-basic-resolved-policy-pack
    14
-   14
+   (marlin-real-policy-005-digest)
    "memory-recall"
    3
    1
@@ -1579,9 +1730,8 @@ package: config-interface/modules
   (marlin-real-policy-loop-program
    "real-policy-005-memory-recall"
    14
-   14
-   (vector "real-policy-005-memory-recall"
-           "agent-flow-memory-projection")
+   (marlin-real-policy-005-digest)
+   (marlin-real-policy-005-mechanism-policies)
    (vector
     (marlin-real-policy-transition
      "start-memory"
@@ -1611,8 +1761,28 @@ package: config-interface/modules
 
 ;;; Boundary: Failure-retry profile compiled as Scheme types for Rust.
 ;; MarlinResult <- MarlinInput
+(def (marlin-failure-retry-mechanism-policies)
+  (vector "failure-retry-budget"
+          "typed-recovery"
+          "verification-gate"))
+
+;; MarlinResult <- MarlinInput
+(def (marlin-failure-retry-policy-mixins)
+  (vector "failure-observer-policy"
+          "retry-governor-policy"
+          "typed-recovery-policy"
+          "artifact-policy"
+          "trace-policy"))
+
+;; MarlinResult <- MarlinInput
 (def (marlin-failure-retry-policy-digest)
-  (make-vector 32 21))
+  (marlin-policy-digest
+   "marlin-failure-retry-profile/typed-recovery"
+   21
+   (marlin-failure-retry-mechanism-policies)
+   (marlin-failure-retry-policy-mixins)
+   "capability=7;human-gate=0;attempts=3;cost=300;wall=15000;nodes=2;edges=1;maker=21;checker=22"
+   "linearization=failure-observer,retry-governor,runtime-kernel;merges=min,union"))
 
 ;;; Boundary: Failure-retry transitions use Rust-owned LoopProgram IR field names.
 ;; MarlinResult <- MarlinInput
@@ -1673,7 +1843,9 @@ package: config-interface/modules
           maker_profiles: (vector 21)
           checker_profiles: (vector 22))
       audit:
-      (.o provenance:
+      (.o policy_mixins:
+          (marlin-failure-retry-policy-mixins)
+          provenance:
           (vector
            (.o slot_id: 21
                winner_role: "retry-governor"
@@ -1721,9 +1893,7 @@ package: config-interface/modules
       policy_epoch: 21
       policy_digest: (marlin-failure-retry-policy-digest)
       mechanism_policies:
-      (vector "failure-retry-budget"
-              "typed-recovery"
-              "verification-gate")
+      (marlin-failure-retry-mechanism-policies)
       initial_state: "start"
       transitions:
       (vector
@@ -1768,8 +1938,30 @@ package: config-interface/modules
 
 ;;; Boundary: Policy combination profile exercises memory, maker, rewrite, tool, checker.
 ;; MarlinResult <- MarlinInput
+(def (marlin-policy-combination-matrix-mechanism-policies)
+  (vector "real-policy-003-maker-checker"
+          "real-policy-004-dynamic-rewrite"
+          "real-policy-005-memory-recall"))
+
+;; MarlinResult <- MarlinInput
+(def (marlin-policy-combination-matrix-policy-mixins)
+  (vector "memory-policy"
+          "maker-policy"
+          "dynamic-rewrite-policy"
+          "tool-policy"
+          "checker-policy"
+          "artifact-policy"
+          "trace-policy"))
+
+;; MarlinResult <- MarlinInput
 (def (marlin-policy-combination-matrix-policy-digest)
-  (make-vector 32 15))
+  (marlin-policy-digest
+   "policy-combination/memory-rewrite-checker"
+   15
+   (marlin-policy-combination-matrix-mechanism-policies)
+   (marlin-policy-combination-matrix-policy-mixins)
+   "capability=7;human-gate=1;attempts=3;cost=1000;wall=30000;nodes=3;edges=2;maker=21;checker=22"
+   "linearization=memory,maker,rewrite,tool,checker;merges=ordered_append,ordered_append,ordered_append"))
 
 ;;; Boundary: Combination transitions stay in Rust-owned LoopProgram IR names.
 ;; MarlinResult <- MarlinInput
@@ -1833,7 +2025,9 @@ package: config-interface/modules
           maker_profiles: (vector 21)
           checker_profiles: (vector 22))
       audit:
-      (.o provenance:
+      (.o policy_mixins:
+          (marlin-policy-combination-matrix-policy-mixins)
+          provenance:
           (vector
            (.o slot_id: 31
                winner_role: "memory"
@@ -1888,9 +2082,7 @@ package: config-interface/modules
       policy_epoch: 15
       policy_digest: (marlin-policy-combination-matrix-policy-digest)
       mechanism_policies:
-      (vector "real-policy-003-maker-checker"
-              "real-policy-004-dynamic-rewrite"
-              "real-policy-005-memory-recall")
+      (marlin-policy-combination-matrix-mechanism-policies)
       initial_state: "start"
       transitions:
       (vector

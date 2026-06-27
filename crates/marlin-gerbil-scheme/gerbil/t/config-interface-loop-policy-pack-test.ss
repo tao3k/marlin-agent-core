@@ -13,11 +13,28 @@
      (unless (equal? actual-value expected-value)
        (error "check failed" actual-value expected-value)))))
 
+;; MarlinResult <- MarlinInput
+(def (digest-varies? digest-value)
+  (let ((first-byte (vector-ref digest-value 0))
+        (count (vector-length digest-value)))
+    (let loop ((index 1))
+      (if (< index count)
+        (if (= (vector-ref digest-value index) first-byte)
+          (loop (+ index 1))
+          #t)
+        #f))))
+
 (def failure-retry-compiler-receipt
   (marlinFailureRetryLoopProgramCompilerReceipt))
 
 (def failure-retry-policy-pack
   (.get failure-retry-compiler-receipt resolved-policy-pack))
+
+(def failure-retry-audit-pack
+  (.get failure-retry-policy-pack audit))
+
+(def failure-retry-policy-digest
+  (.get failure-retry-policy-pack policy_digest))
 
 (def failure-retry-hot-pack
   (.get failure-retry-policy-pack hot))
@@ -31,11 +48,17 @@
 (def failure-retry-loop-program
   (.get failure-retry-compiler-receipt loop-program))
 
+(def failure-retry-loop-policy-digest
+  (.get failure-retry-loop-program policy_digest))
+
 (def real-repair-compiler-receipt
   (marlinRealRepair001LoopProgramCompilerReceipt))
 
 (def real-repair-policy-pack
   (.get real-repair-compiler-receipt resolved-policy-pack))
+
+(def real-repair-policy-digest
+  (.get real-repair-policy-pack policy_digest))
 
 (def real-repair-audit-pack
   (.get real-repair-policy-pack audit))
@@ -49,11 +72,17 @@
 (def real-repair-loop-program
   (.get real-repair-compiler-receipt loop-program))
 
+(def real-repair-loop-policy-digest
+  (.get real-repair-loop-program policy_digest))
+
 (def policy-combination-compiler-receipt
   (marlinPolicyCombinationMatrixLoopProgramCompilerReceipt))
 
 (def policy-combination-policy-pack
   (.get policy-combination-compiler-receipt resolved-policy-pack))
+
+(def policy-combination-policy-digest
+  (.get policy-combination-policy-pack policy_digest))
 
 (def policy-combination-hot-pack
   (.get policy-combination-policy-pack hot))
@@ -63,6 +92,9 @@
 
 (def policy-combination-loop-program
   (.get policy-combination-compiler-receipt loop-program))
+
+(def policy-combination-loop-policy-digest
+  (.get policy-combination-loop-program policy_digest))
 
 (def projection-modules
   (marlinLoopPolicyProjectionModules))
@@ -75,6 +107,30 @@
 
 (def profile-compiler-receipts
   (marlinLoopPolicyProfileCompilerReceipts))
+
+(def real-policy-001-sandbox-compiler-receipt
+  (vector-ref profile-compiler-receipts 3))
+
+(def real-policy-001-sandbox-policy-pack
+  (.get real-policy-001-sandbox-compiler-receipt resolved-policy-pack))
+
+(def real-policy-001-sandbox-loop-program
+  (.get real-policy-001-sandbox-compiler-receipt loop-program))
+
+(def real-policy-001-sandbox-policy-digest
+  (.get real-policy-001-sandbox-policy-pack policy_digest))
+
+(def real-policy-001-tool-compiler-receipt
+  (vector-ref profile-compiler-receipts 4))
+
+(def real-policy-001-tool-policy-pack
+  (.get real-policy-001-tool-compiler-receipt resolved-policy-pack))
+
+(def real-policy-001-tool-loop-program
+  (.get real-policy-001-tool-compiler-receipt loop-program))
+
+(def real-policy-001-tool-policy-digest
+  (.get real-policy-001-tool-policy-pack policy_digest))
 
 (def real-policy-003-compiler-receipt
   (vector-ref profile-compiler-receipts 6))
@@ -258,6 +314,18 @@
 (check (.get (vector-ref profile-compiler-receipts 2) serialization-boundary)
        => "rust-owned-cli-trace-cross-process")
 
+(check (vector-length real-policy-001-sandbox-policy-digest) => 32)
+(check (digest-varies? real-policy-001-sandbox-policy-digest) => #t)
+(check (.get real-policy-001-sandbox-loop-program policy_digest)
+       => real-policy-001-sandbox-policy-digest)
+(check (vector-length real-policy-001-tool-policy-digest) => 32)
+(check (digest-varies? real-policy-001-tool-policy-digest) => #t)
+(check (.get real-policy-001-tool-loop-program policy_digest)
+       => real-policy-001-tool-policy-digest)
+(check (equal? real-policy-001-sandbox-policy-digest
+               real-policy-001-tool-policy-digest)
+       => #f)
+
 (check (.get real-policy-003-compiler-receipt profile-id)
        => "real-policy-003/maker-checker")
 (check (.get real-policy-003-policy-pack policy_epoch) => 12)
@@ -328,6 +396,13 @@
 (check (.get failure-retry-compiler-receipt serialization-boundary)
        => "rust-owned-cli-trace-cross-process")
 (check (.get failure-retry-policy-pack policy_epoch) => 21)
+(check (vector-length failure-retry-policy-digest) => 32)
+(check (digest-varies? failure-retry-policy-digest) => #t)
+(check failure-retry-loop-policy-digest => failure-retry-policy-digest)
+(check (vector-ref (.get failure-retry-audit-pack policy_mixins) 0)
+       => "failure-observer-policy")
+(check (vector-ref (.get failure-retry-audit-pack policy_mixins) 4)
+       => "trace-policy")
 (check (.get failure-retry-budget-caps max_attempts) => 3)
 (check (.get (vector-ref failure-retry-continuation-table 0) op) => "retry")
 (check (.get (vector-ref failure-retry-continuation-table 0) graph_template)
@@ -349,6 +424,9 @@
 (check (.get real-repair-compiler-receipt serialization-boundary)
        => "rust-owned-cli-trace-cross-process")
 (check (.get real-repair-policy-pack policy_epoch) => 42)
+(check (vector-length real-repair-policy-digest) => 32)
+(check (digest-varies? real-repair-policy-digest) => #t)
+(check real-repair-loop-policy-digest => real-repair-policy-digest)
 (check (vector-ref real-repair-policy-mixins 0)
        => "reactive-tool-loop-base")
 (check (vector-ref real-repair-policy-mixins 6)
@@ -383,7 +461,15 @@
 (check (.get policy-combination-compiler-receipt serialization-boundary)
        => "rust-owned-cli-trace-cross-process")
 (check (.get policy-combination-policy-pack policy_epoch) => 15)
+(check (vector-length policy-combination-policy-digest) => 32)
+(check (digest-varies? policy-combination-policy-digest) => #t)
+(check policy-combination-loop-policy-digest
+       => policy-combination-policy-digest)
 (check (vector-length (.get policy-combination-hot-pack graph_nodes)) => 3)
+(check (vector-ref (.get policy-combination-audit-pack policy_mixins) 0)
+       => "memory-policy")
+(check (vector-ref (.get policy-combination-audit-pack policy_mixins) 6)
+       => "trace-policy")
 (check (vector-length (.get policy-combination-audit-pack linearization)) => 5)
 (check (.get policy-combination-loop-program program_id)
        => "policy-combination-memory-rewrite-checker")
