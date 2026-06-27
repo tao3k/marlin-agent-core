@@ -8,6 +8,11 @@ use marlin_agent_harness::{
     GerbilScriptedIntentCaseArtifactBundleRequest, IntentCaseArtifactKind,
     materialize_gerbil_scripted_intent_case_artifact_bundle,
 };
+use marlin_agent_harness_types::{
+    RuntimeRepairCaseId, RuntimeRepairCaseReceipt, RuntimeRepairContentSummary, RuntimeRepairCount,
+    RuntimeRepairDurationMillis, RuntimeRepairLiveCaseReceipt, RuntimeRepairLiveCaseReceiptRequest,
+    RuntimeRepairModelCompletionId, RuntimeRepairModelId, RuntimeRepairProfileRef,
+};
 use marlin_agent_kernel::{
     AgentFlowLoopProgramRuntimeHandoffExecutor, GenericLoopMachineReceipt,
     HybridLoopProgramRuntimeHandoffExecutor, LoopProgramEventMapper, LoopProgramExecutionDriver,
@@ -54,6 +59,7 @@ fn harness_materializes_scripted_intent_case_bundles_for_all_gerbil_vertical_cas
                 vertical_trace: receipt.clone(),
                 execution_receipt,
                 side_effect_replay_bundle: None,
+                runtime_repair_receipt: None,
             },
         )
         .expect("scripted intent-case bundle materializes");
@@ -129,6 +135,7 @@ async fn harness_materializes_real_tool_side_effect_receipts_into_tool_call_arti
             vertical_trace: receipt,
             execution_receipt,
             side_effect_replay_bundle: Some(replay_bundle),
+            runtime_repair_receipt: None,
         },
     )
     .expect("tool side-effect bundle materializes");
@@ -186,6 +193,7 @@ async fn harness_materializes_sandbox_file_write_receipts_into_sandbox_and_patch
             vertical_trace: receipt,
             execution_receipt,
             side_effect_replay_bundle: Some(replay_bundle),
+            runtime_repair_receipt: None,
         },
     )
     .expect("sandbox file-write bundle materializes");
@@ -201,6 +209,65 @@ async fn harness_materializes_sandbox_file_write_receipts_into_sandbox_and_patch
     assert_eq!(
         fs::read_to_string(&bug_file).expect("read sandbox repaired fixture"),
         "fn answer() -> i32 { 41 }\n"
+    );
+}
+
+#[test]
+fn harness_materializes_runtime_repair_receipt_into_verifier_artifact() {
+    let receipt = gerbil_vertical_receipts()
+        .into_iter()
+        .find(|receipt| {
+            receipt.live_llm_required()
+                && receipt.has_capability(&cap("+tool-repair"))
+                && receipt.has_capability(&cap("+verification"))
+        })
+        .expect("repair case should project verifier receipt lane");
+    let execution_receipt = execute_vertical_receipt(&receipt);
+    let graph_rewrite_projected = execution_receipt
+        .steps
+        .iter()
+        .any(|step| format!("{:?}", step.machine_receipt.action) == "RewriteGraph");
+    let runtime_repair_receipt =
+        RuntimeRepairLiveCaseReceipt::new(RuntimeRepairLiveCaseReceiptRequest {
+            case_id: RuntimeRepairCaseId::new(receipt.case_id().as_str()),
+            profile_ref: RuntimeRepairProfileRef::new(receipt.profile_ref().as_str()),
+            program_id: execution_receipt.program_id.clone(),
+            model_completion_id: RuntimeRepairModelCompletionId::new(
+                "fixture-live-repair-completion",
+            ),
+            model: RuntimeRepairModelId::new("gpt-repair-policy-fixture"),
+            elapsed_ms: RuntimeRepairDurationMillis::new(7),
+            action_count: RuntimeRepairCount::new(execution_receipt.steps.len()),
+            tool_projection_count: RuntimeRepairCount::new(1),
+            patch_tool_success: true,
+            graph_rewrite_projected,
+            verification_success: true,
+            repaired_content: RuntimeRepairContentSummary::from_text("fn answer() -> i32 { 41 }\n"),
+        });
+    let output_root = tempfile::tempdir().expect("create runtime repair artifact tempdir");
+
+    let bundle = materialize_gerbil_scripted_intent_case_artifact_bundle(
+        GerbilScriptedIntentCaseArtifactBundleRequest {
+            output_root: output_root.path().to_owned(),
+            run_id: "runtime-repair-receipt".into(),
+            vertical_trace: receipt,
+            execution_receipt,
+            side_effect_replay_bundle: None,
+            runtime_repair_receipt: Some(RuntimeRepairCaseReceipt::from(runtime_repair_receipt)),
+        },
+    )
+    .expect("runtime repair receipt bundle materializes");
+
+    let verifier = artifact_content(&bundle, IntentCaseArtifactKind::VerifierReceipt);
+    assert!(verifier.contains("runtime_repair_receipt=present"));
+    assert!(verifier.contains("runtime_repair_kind=live"));
+    assert!(verifier.contains("runtime_repair_schema=marlin.runtime-repair.live-case-receipt.v1"));
+    assert!(verifier.contains("runtime_repair_model=gpt-repair-policy-fixture"));
+    assert!(verifier.contains("runtime_repair_repaired_content_digest=fnv1a64:"));
+    assert!(verifier.contains("runtime_repair_repaired_content_bytes=26"));
+    assert!(
+        !verifier.contains("fn answer() -> i32 { 41 }"),
+        "verifier artifact should keep repaired content as digest metadata, not raw source"
     );
 }
 

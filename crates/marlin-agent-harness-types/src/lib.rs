@@ -39,12 +39,12 @@ pub use intent_case::{
 };
 pub use runtime_repair::{
     RUNTIME_REPAIR_LIVE_CASE_RECEIPT_SCHEMA_ID, RUNTIME_REPAIR_NO_LIVE_CASE_RECEIPT_SCHEMA_ID,
-    RuntimeRepairCaseId, RuntimeRepairContentDigest, RuntimeRepairContentSummary,
-    RuntimeRepairCount, RuntimeRepairDenialReason, RuntimeRepairDurationMillis,
-    RuntimeRepairHandoffStatus, RuntimeRepairLiveCaseReceipt, RuntimeRepairLiveCaseReceiptRequest,
-    RuntimeRepairLiveGateStatus, RuntimeRepairModelCompletionId, RuntimeRepairModelId,
-    RuntimeRepairNoLiveCaseReceipt, RuntimeRepairNoLiveCaseReceiptRequest, RuntimeRepairProfileRef,
-    RuntimeRepairSchemaId,
+    RuntimeRepairCaseId, RuntimeRepairCaseReceipt, RuntimeRepairContentDigest,
+    RuntimeRepairContentSummary, RuntimeRepairCount, RuntimeRepairDenialReason,
+    RuntimeRepairDurationMillis, RuntimeRepairHandoffStatus, RuntimeRepairLiveCaseReceipt,
+    RuntimeRepairLiveCaseReceiptRequest, RuntimeRepairLiveGateStatus,
+    RuntimeRepairModelCompletionId, RuntimeRepairModelId, RuntimeRepairNoLiveCaseReceipt,
+    RuntimeRepairNoLiveCaseReceiptRequest, RuntimeRepairProfileRef, RuntimeRepairSchemaId,
 };
 pub use scenario::{
     AGENT_HARNESS_SCENARIO_CONTRACT_SCHEMA_ID, AgentHarnessScenario, AgentHarnessScenarioContract,

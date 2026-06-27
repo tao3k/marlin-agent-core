@@ -242,6 +242,52 @@ impl RuntimeRepairNoLiveCaseReceipt {
     }
 }
 
+/// Typed runtime repair receipt attached to an intent-case verifier artifact.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case", tag = "kind", content = "receipt")]
+pub enum RuntimeRepairCaseReceipt {
+    Live(RuntimeRepairLiveCaseReceipt),
+    NoLive(RuntimeRepairNoLiveCaseReceipt),
+}
+
+impl RuntimeRepairCaseReceipt {
+    #[must_use]
+    pub fn schema_id(&self) -> &RuntimeRepairSchemaId {
+        match self {
+            Self::Live(receipt) => &receipt.schema_id,
+            Self::NoLive(receipt) => &receipt.schema_id,
+        }
+    }
+
+    #[must_use]
+    pub fn case_id(&self) -> &RuntimeRepairCaseId {
+        match self {
+            Self::Live(receipt) => &receipt.case_id,
+            Self::NoLive(receipt) => &receipt.case_id,
+        }
+    }
+
+    #[must_use]
+    pub fn profile_ref(&self) -> &RuntimeRepairProfileRef {
+        match self {
+            Self::Live(receipt) => &receipt.profile_ref,
+            Self::NoLive(receipt) => &receipt.profile_ref,
+        }
+    }
+}
+
+impl From<RuntimeRepairLiveCaseReceipt> for RuntimeRepairCaseReceipt {
+    fn from(receipt: RuntimeRepairLiveCaseReceipt) -> Self {
+        Self::Live(receipt)
+    }
+}
+
+impl From<RuntimeRepairNoLiveCaseReceipt> for RuntimeRepairCaseReceipt {
+    fn from(receipt: RuntimeRepairNoLiveCaseReceipt) -> Self {
+        Self::NoLive(receipt)
+    }
+}
+
 /// Named request for constructing a no-live runtime repair receipt.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RuntimeRepairNoLiveCaseReceiptRequest {

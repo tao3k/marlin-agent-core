@@ -16,6 +16,7 @@ mod fakes;
 mod gerbil_continuation;
 mod graph;
 mod intent_case_artifact;
+mod intent_case_artifact_runtime_repair;
 mod release_visibility;
 mod runtime;
 mod trace;

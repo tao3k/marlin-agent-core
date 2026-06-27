@@ -6,9 +6,10 @@ use std::{
     path::{Component, Path, PathBuf},
 };
 
+use crate::intent_case_artifact_runtime_repair::render_runtime_repair_case_receipt;
 use marlin_agent_harness_types::{
     IntentCaseArtifactId, IntentCaseArtifactKind, IntentCaseArtifactManifest,
-    IntentCaseArtifactRef, IntentCaseRunId,
+    IntentCaseArtifactRef, IntentCaseRunId, RuntimeRepairCaseReceipt,
 };
 use marlin_agent_kernel::{
     LoopProgramExecutionReceipt, LoopProgramExecutionReplayBundleReceipt,
@@ -27,6 +28,7 @@ pub struct GerbilScriptedIntentCaseArtifactBundleRequest {
     pub vertical_trace: GerbilLoopCaseDriverVerticalTraceReceipt,
     pub execution_receipt: LoopProgramExecutionReceipt,
     pub side_effect_replay_bundle: Option<LoopProgramExecutionReplayBundleReceipt>,
+    pub runtime_repair_receipt: Option<RuntimeRepairCaseReceipt>,
 }
 
 /// Receipt for a written intent-case artifact bundle.
@@ -120,6 +122,7 @@ pub fn materialize_gerbil_scripted_intent_case_artifact_bundle(
         &request.vertical_trace,
         &request.execution_receipt,
         request.side_effect_replay_bundle.as_ref(),
+        request.runtime_repair_receipt.as_ref(),
     )
 }
 
@@ -129,6 +132,7 @@ fn materialize_intent_case_artifact_bundle(
     vertical_trace: &GerbilLoopCaseDriverVerticalTraceReceipt,
     execution_receipt: &LoopProgramExecutionReceipt,
     side_effect_replay_bundle: Option<&LoopProgramExecutionReplayBundleReceipt>,
+    runtime_repair_receipt: Option<&RuntimeRepairCaseReceipt>,
 ) -> Result<
     IntentCaseArtifactBundleMaterializationReceipt,
     IntentCaseArtifactBundleMaterializationError,
@@ -154,6 +158,7 @@ fn materialize_intent_case_artifact_bundle(
             vertical_trace,
             execution_receipt,
             side_effect_replay_bundle,
+            runtime_repair_receipt,
         );
         let bytes_written = write_file(&path, content)?;
         artifacts.push(IntentCaseMaterializedArtifactReceipt {
@@ -376,6 +381,7 @@ fn render_artifact_content(
     vertical_trace: &GerbilLoopCaseDriverVerticalTraceReceipt,
     execution_receipt: &LoopProgramExecutionReceipt,
     side_effect_replay_bundle: Option<&LoopProgramExecutionReplayBundleReceipt>,
+    runtime_repair_receipt: Option<&RuntimeRepairCaseReceipt>,
 ) -> String {
     match artifact.kind {
         IntentCaseArtifactKind::Intent => render_intent_artifact(manifest, vertical_trace),
@@ -402,7 +408,9 @@ fn render_artifact_content(
         IntentCaseArtifactKind::TestAfter => {
             render_test_artifact(manifest, side_effect_replay_bundle, "after")
         }
-        IntentCaseArtifactKind::VerifierReceipt => render_verifier_artifact(execution_receipt),
+        IntentCaseArtifactKind::VerifierReceipt => {
+            render_verifier_artifact(execution_receipt, runtime_repair_receipt)
+        }
         IntentCaseArtifactKind::PolicyExplanation => {
             render_policy_explanation_artifact(manifest, vertical_trace)
         }
@@ -723,8 +731,15 @@ fn render_file_write_side_effects(
         .collect()
 }
 
-fn render_verifier_artifact(execution_receipt: &LoopProgramExecutionReceipt) -> String {
-    render_action_projection_artifact(execution_receipt, "verifier", "Verify")
+fn render_verifier_artifact(
+    execution_receipt: &LoopProgramExecutionReceipt,
+    runtime_repair_receipt: Option<&RuntimeRepairCaseReceipt>,
+) -> String {
+    let mut content = render_action_projection_artifact(execution_receipt, "verifier", "Verify");
+    if let Some(receipt) = runtime_repair_receipt {
+        content.push_str(&render_runtime_repair_case_receipt(receipt));
+    }
+    content
 }
 
 fn render_action_projection_artifact(
