@@ -41,6 +41,27 @@ fn config_interface_scheme_case_projects_to_rust_loop_receipt() {
         GerbilLoopCaseRuntimeHandoffStatus::DeferredNoLiveLlm
     );
     assert_eq!(rust_receipt.runtime_execution_owner, "rust-loop-runtime");
+    assert_eq!(
+        rust_receipt.module_kind.as_str(),
+        "poo-flow.modules.user-selection.v1"
+    );
+    assert_eq!(rust_receipt.module_user_module.as_str(), "funflow");
+    assert_eq!(
+        rust_receipt
+            .module_selection_tags
+            .iter()
+            .map(|tag| tag.as_str())
+            .collect::<Vec<_>>(),
+        vec![
+            "+functional",
+            "+dag",
+            "+typed-receipts",
+            "+runtime-manifest"
+        ]
+    );
+    assert_eq!(rust_receipt.module_source_ref, "none");
+    assert_eq!(rust_receipt.module_entrypoint, "none");
+    assert!(rust_receipt.module_enabled);
     assert!(!rust_receipt.live_llm_allowed);
     assert!(rust_receipt.stable_fixture);
     assert_eq!(

@@ -2,12 +2,12 @@ use std::sync::Arc;
 
 use marlin_agent_kernel::{
     AgentFlowLoopProgramRuntimeHandoffExecutor, GenericLoopMachineReceipt,
-    GenericLoopMachineStepIndex, LoopProgramAgentFlowRuntimeHandoffRequest,
-    LoopProgramRuntimeHandoffExecutionReportStatus, LoopProgramRuntimeHandoffExecutionStatus,
-    LoopProgramRuntimeHandoffExecutor, LoopProgramRuntimeHandoffHandler,
-    LoopProgramRuntimeHandoffPlan, LoopProgramRuntimeHandoffRouter,
-    LoopProgramRuntimeHandoffRouterHandlers, LoopProgramRuntimeOwner,
-    LoopProgramToolProcessProgram, LoopProgramToolProcessSpawnRequest,
+    GenericLoopMachineStepIndex, HybridLoopProgramRuntimeHandoffExecutor,
+    LoopProgramAgentFlowRuntimeHandoffRequest, LoopProgramRuntimeHandoffExecutionReportStatus,
+    LoopProgramRuntimeHandoffExecutionStatus, LoopProgramRuntimeHandoffExecutor,
+    LoopProgramRuntimeHandoffHandler, LoopProgramRuntimeHandoffPlan,
+    LoopProgramRuntimeHandoffRouter, LoopProgramRuntimeHandoffRouterHandlers,
+    LoopProgramRuntimeOwner, LoopProgramToolProcessProgram, LoopProgramToolProcessSpawnRequest,
     StaticLoopProgramRuntimeHandoffHandler, spawn_loop_program_tool_process,
 };
 use marlin_agent_protocol::{
@@ -286,6 +286,18 @@ fn agent_flow_executor_projects_each_memory_operation_as_typed_receipt() {
         projection.owner.as_str() == "agent-flow-runtime"
             && projection.intent.target.as_str() == "loop-program.memory"
     }));
+    assert_eq!(
+        execution
+            .executions
+            .iter()
+            .map(|execution| execution.next_event.clone())
+            .collect::<Vec<_>>(),
+        vec![
+            Some(LoopProgramEventKind::RuntimeReceipt),
+            Some(LoopProgramEventKind::RuntimeReceipt),
+            Some(LoopProgramEventKind::RuntimeReceipt),
+        ]
+    );
 }
 
 #[test]
@@ -316,6 +328,10 @@ fn agent_flow_executor_defers_non_agent_flow_lanes_after_runtime_projection() {
         LoopProgramRuntimeHandoffExecutionStatus::Handled
     );
     assert_eq!(
+        execution.executions[1].next_event,
+        Some(LoopProgramEventKind::ToolReceipt)
+    );
+    assert_eq!(
         execution
             .agent_flow_receipt
             .as_ref()
@@ -326,6 +342,83 @@ fn agent_flow_executor_defers_non_agent_flow_lanes_after_runtime_projection() {
         1
     );
     assert_eq!(execution.tool_process_projections.len(), 1);
+}
+
+#[test]
+fn hybrid_executor_projects_agent_flow_lanes_and_routes_runtime_lanes() {
+    let plan = LoopProgramRuntimeHandoffPlan::from_receipts(
+        LoopProgramId::new("hybrid-agent-flow-program"),
+        &[
+            receipt(1, LoopProgramActionKind::InvokeModel),
+            receipt(2, LoopProgramActionKind::ReadMemory),
+            receipt(3, LoopProgramActionKind::DispatchTools),
+            receipt(4, LoopProgramActionKind::Verify),
+        ],
+    );
+    let router = LoopProgramRuntimeHandoffRouter::new(LoopProgramRuntimeHandoffRouterHandlers {
+        model_handler: handled_by("runtime.model.maker"),
+        verification_handler: handled_by("runtime.verification.checker"),
+        ..LoopProgramRuntimeHandoffRouterHandlers::default()
+    });
+    let executor = HybridLoopProgramRuntimeHandoffExecutor::new(
+        router,
+        AgentFlowLoopProgramRuntimeHandoffExecutor::new(LoopProgramRuntimeOwner::new(
+            "runtime.agent-flow.policy-combination",
+        )),
+    );
+
+    let execution = executor.execute_plan(&plan);
+
+    assert_eq!(
+        execution.status,
+        LoopProgramRuntimeHandoffExecutionReportStatus::Completed
+    );
+    assert_eq!(
+        execution
+            .executions
+            .iter()
+            .map(|execution| execution.owner.as_str())
+            .collect::<Vec<_>>(),
+        vec![
+            "runtime.model.maker",
+            "runtime.agent-flow.policy-combination",
+            "runtime.agent-flow.policy-combination",
+            "runtime.verification.checker",
+        ]
+    );
+    assert_eq!(
+        execution
+            .agent_flow_receipt
+            .as_ref()
+            .expect("hybrid Agent-Flow receipt")
+            .handoff
+            .intents
+            .len(),
+        2
+    );
+    assert_eq!(execution.memory_projections.len(), 1);
+    assert_eq!(
+        execution.memory_projections[0].intent.operation,
+        AgentFlowMemoryOperation::Recall
+    );
+    assert_eq!(execution.tool_process_projections.len(), 1);
+    assert_eq!(
+        execution.tool_process_projections[0].command.argv,
+        vec!["loop-program.dispatch-tools"]
+    );
+    assert_eq!(
+        execution
+            .executions
+            .iter()
+            .map(|execution| execution.next_event.clone())
+            .collect::<Vec<_>>(),
+        vec![
+            None,
+            Some(LoopProgramEventKind::RuntimeReceipt),
+            Some(LoopProgramEventKind::ToolReceipt),
+            None,
+        ]
+    );
 }
 
 #[cfg(unix)]

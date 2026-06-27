@@ -1,16 +1,41 @@
 use super::{
-    ContinuationOp, GerbilPooLoopProgramCompilerBoundary, GerbilPooLoopProgramCompilerOwner,
+    AgentFlowLoopProgramRuntimeHandoffExecutor, AgentFlowMemoryOperation, ContinuationOp,
+    GerbilPooLoopProgramCompilerBoundary, GerbilPooLoopProgramCompilerOwner,
     GerbilPooLoopProgramCompilerSerializationBoundary, LoopMechanismPolicyId,
     LoopProgramActionKind, LoopProgramEventKind, LoopProgramExecutionDriver,
     LoopProgramExecutionRequest, LoopProgramExecutionStatus,
     LoopProgramRuntimeHandoffExecutionReportStatus, LoopProgramRuntimeHandoffRouter,
-    LoopProgramRuntimeHandoffRouterHandlers, ReceiptDrivenLoopProgramEventMapper,
+    LoopProgramRuntimeHandoffRouterHandlers, LoopProgramRuntimeOwner,
+    PolicyGatedAgentFlowLoopProgramRuntimeHandoffExecutor, ReceiptDrivenLoopProgramEventMapper,
     decode_gerbil_poo_loop_program_compiler_receipt,
     failure_retry_poo_loop_program_compiler_payload, failure_retry_script, handled_by,
     handled_by_with_event, policy_combination_matrix_poo_loop_program_compiler_payload,
     policy_combination_matrix_script, poo_loop_program_compiler_envelope,
     poo_loop_program_compiler_payload, poo_loop_program_compiler_registry, real_repair_script,
 };
+
+#[cfg(unix)]
+use super::{
+    LoopProgramDerivedSessionPolicyStatus, LoopProgramRuntimeSideEffectExecutor,
+    LoopProgramRuntimeSideEffectStatus, LoopProgramToolProcessCommandTemplate,
+    LoopProgramToolProcessProgram, LoopProgramToolProcessSideEffectStatus,
+    StaticLoopProgramToolProcessResolver, TokioAgentRuntime,
+};
+
+#[cfg(unix)]
+fn dispatch_tools_shell_resolver(script: &'static str) -> StaticLoopProgramToolProcessResolver {
+    StaticLoopProgramToolProcessResolver::new(
+        vec![
+            LoopProgramToolProcessCommandTemplate::new(
+                "agent-flow.tool-intent",
+                ["loop-program.dispatch-tools"],
+                LoopProgramToolProcessProgram::new("sh"),
+            )
+            .with_args(["-c", script]),
+        ]
+        .into_boxed_slice(),
+    )
+}
 
 #[test]
 fn poo_loop_program_compiler_receipt_runs_scripted_loop_through_kernel_driver() {
@@ -352,20 +377,14 @@ fn poo_loop_program_compiler_receipt_runs_policy_combination_matrix_from_runtime
     let compiler_receipt = decode_gerbil_poo_loop_program_compiler_receipt(&registry, &envelope)
         .expect("policy-combination POO compiler receipt decodes");
 
-    let handlers = LoopProgramRuntimeHandoffRouterHandlers {
-        memory_handler: handled_by_with_event(
-            "runtime.memory.recall",
-            LoopProgramEventKind::RuntimeReceipt,
-        ),
+    let router_handlers = LoopProgramRuntimeHandoffRouterHandlers {
+        memory_handler: handled_by("runtime.policy.memory-admission"),
         control_handler: handled_by("runtime.control"),
         model_handler: handled_by_with_event(
             "runtime.model.maker",
             LoopProgramEventKind::ModelEvent,
         ),
-        tool_handler: handled_by_with_event(
-            "runtime.tool.repair",
-            LoopProgramEventKind::ToolReceipt,
-        ),
+        tool_handler: handled_by("runtime.policy.tool-admission"),
         graph_handler: handled_by_with_event(
             "runtime.graph.dynamic-rewrite",
             LoopProgramEventKind::RuntimeReceipt,
@@ -376,9 +395,16 @@ fn poo_loop_program_compiler_receipt_runs_policy_combination_matrix_from_runtime
         ),
         ..LoopProgramRuntimeHandoffRouterHandlers::default()
     };
-    let driver = LoopProgramExecutionDriver::new(LoopProgramRuntimeHandoffRouter::new(handlers))
-        .with_event_mapper(ReceiptDrivenLoopProgramEventMapper)
-        .with_max_steps(16);
+    let driver = LoopProgramExecutionDriver::new(
+        PolicyGatedAgentFlowLoopProgramRuntimeHandoffExecutor::new(
+            LoopProgramRuntimeHandoffRouter::new(router_handlers),
+            AgentFlowLoopProgramRuntimeHandoffExecutor::new(LoopProgramRuntimeOwner::new(
+                "runtime.agent-flow.poo-policy-combination",
+            )),
+        ),
+    )
+    .with_event_mapper(ReceiptDrivenLoopProgramEventMapper)
+    .with_max_steps(16);
 
     let execution_receipt = driver.run(LoopProgramExecutionRequest::new(
         compiler_receipt.loop_program,
@@ -419,6 +445,145 @@ fn poo_loop_program_compiler_receipt_runs_policy_combination_matrix_from_runtime
             Some(LoopProgramEventKind::VerificationReceipt),
             None,
         ]
+    );
+    assert_eq!(
+        execution_receipt
+            .steps
+            .iter()
+            .map(|step| step.runtime_handoff_execution.executions[0].owner.as_str())
+            .collect::<Vec<_>>(),
+        vec![
+            "runtime.policy.memory-admission",
+            "runtime.model.maker",
+            "runtime.graph.dynamic-rewrite",
+            "runtime.policy.tool-admission",
+            "runtime.verification.checker",
+            "runtime.control",
+        ]
+    );
+    assert_eq!(
+        execution_receipt.steps[0]
+            .runtime_handoff_execution
+            .memory_projections
+            .len(),
+        1
+    );
+    assert_eq!(
+        execution_receipt.steps[0]
+            .runtime_handoff_execution
+            .memory_projections[0]
+            .intent
+            .operation,
+        AgentFlowMemoryOperation::Recall
+    );
+    assert_eq!(
+        execution_receipt.steps[3]
+            .runtime_handoff_execution
+            .tool_process_projections
+            .len(),
+        1
+    );
+    assert_eq!(
+        execution_receipt.steps[3]
+            .runtime_handoff_execution
+            .tool_process_projections[0]
+            .command
+            .argv,
+        vec!["loop-program.dispatch-tools"]
+    );
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn poo_loop_program_compiler_receipt_replays_policy_combination_side_effect_bundle() {
+    let (runtime, _events) = TokioAgentRuntime::new(4);
+    let registry = poo_loop_program_compiler_registry();
+    let envelope = poo_loop_program_compiler_envelope(
+        policy_combination_matrix_poo_loop_program_compiler_payload(),
+    );
+    let compiler_receipt = decode_gerbil_poo_loop_program_compiler_receipt(&registry, &envelope)
+        .expect("policy-combination POO compiler receipt decodes");
+
+    let router_handlers = LoopProgramRuntimeHandoffRouterHandlers {
+        memory_handler: handled_by("runtime.policy.memory-admission"),
+        control_handler: handled_by("runtime.control"),
+        model_handler: handled_by_with_event(
+            "runtime.model.maker",
+            LoopProgramEventKind::ModelEvent,
+        ),
+        tool_handler: handled_by("runtime.policy.tool-admission"),
+        graph_handler: handled_by_with_event(
+            "runtime.graph.dynamic-rewrite",
+            LoopProgramEventKind::RuntimeReceipt,
+        ),
+        verification_handler: handled_by_with_event(
+            "runtime.verification.checker",
+            LoopProgramEventKind::VerificationReceipt,
+        ),
+        ..LoopProgramRuntimeHandoffRouterHandlers::default()
+    };
+    let driver = LoopProgramExecutionDriver::new(
+        PolicyGatedAgentFlowLoopProgramRuntimeHandoffExecutor::new(
+            LoopProgramRuntimeHandoffRouter::new(router_handlers),
+            AgentFlowLoopProgramRuntimeHandoffExecutor::new(LoopProgramRuntimeOwner::new(
+                "runtime.agent-flow.poo-policy-combination",
+            )),
+        ),
+    )
+    .with_event_mapper(ReceiptDrivenLoopProgramEventMapper)
+    .with_max_steps(16);
+
+    let execution_receipt = driver.run(LoopProgramExecutionRequest::new(
+        compiler_receipt.loop_program,
+        vec![LoopProgramEventKind::Start],
+    ));
+    let replay_bundle = LoopProgramRuntimeSideEffectExecutor::new(dispatch_tools_shell_resolver(
+        "printf poo-policy-combination-tool-spawn",
+    ))
+    .with_started_at_ms(500)
+    .with_observed_at_ms(525)
+    .execute_loop_execution(&runtime.context(), &execution_receipt)
+    .await;
+
+    assert_eq!(
+        replay_bundle.policy_status,
+        LoopProgramDerivedSessionPolicyStatus::Ready
+    );
+    assert!(replay_bundle.allows_replay());
+    assert_eq!(replay_bundle.step_replay_bundles.len(), 2);
+
+    let memory_bundle = &replay_bundle.step_replay_bundles[0];
+    assert_eq!(
+        memory_bundle.side_effects.status,
+        LoopProgramRuntimeSideEffectStatus::Empty
+    );
+    assert_eq!(memory_bundle.handoff_execution.memory_projections.len(), 1);
+
+    let tool_bundle = &replay_bundle.step_replay_bundles[1];
+    assert_eq!(
+        tool_bundle.side_effects.status,
+        LoopProgramRuntimeSideEffectStatus::Completed
+    );
+    let tool_process = &tool_bundle.side_effects.tool_processes[0];
+    assert_eq!(
+        tool_process.status,
+        LoopProgramToolProcessSideEffectStatus::Completed
+    );
+    let spawn_receipt = tool_process
+        .spawn_receipt
+        .as_ref()
+        .expect("POO policy-combination tool projection should spawn");
+    assert!(spawn_receipt.output.status.success());
+    assert_eq!(
+        String::from_utf8_lossy(&spawn_receipt.output.stdout),
+        "poo-policy-combination-tool-spawn"
+    );
+    assert!(
+        runtime
+            .context()
+            .process_registry()
+            .get(spawn_receipt.pid)
+            .is_none()
     );
 }
 

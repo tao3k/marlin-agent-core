@@ -1,7 +1,9 @@
 ;;; -*- Gerbil -*-
 ;;; Boundary: Driver smoke for the canonical Marlin Scheme config interface.
 
-(import :std/misc/process)
+(import :std/misc/path
+        :std/misc/process
+        :std/source)
 
 ;;; Boundary: Keep build.ss verification inside Gerbil instead of shell glue.
 ;; MarlinResult <- MarlinInput
@@ -20,9 +22,22 @@
 (def (contains? values value)
   (if (member value values) #t #f))
 
+(def package-root
+  (path-normalize
+   (path-expand ".." (path-directory (this-source-file)))))
+
+(def (build-driver-environment-entry name)
+  (string-append name "=" (or (getenv name #f) "")))
+
+(def (build-driver-environment)
+  (map build-driver-environment-entry
+       '("HOME" "PATH" "GERBIL_HOME")))
+
 (def (build-driver . args)
   (driver-output->datum
-   (run-process (cons "gxi" (cons "build.ss" args)))))
+   (run-process (cons "gxi" (cons "build.ss" args))
+                directory: package-root
+                environment: (build-driver-environment))))
 
 (def build-driver-meta
   (build-driver "meta"))

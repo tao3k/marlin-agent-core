@@ -15,6 +15,7 @@
         "config-interface-loop-policy-pack-test"
         "config-interface-case-driver-test"
         "config-interface-test"
+        "marlin-poo-flow-scenario-test"
         "marlin-config-interface-lib-test"
         "marlin-policy-pack-inventory-test"
         "deck-runtime-script-interface-test"

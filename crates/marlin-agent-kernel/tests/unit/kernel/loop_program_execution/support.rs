@@ -1,4 +1,5 @@
 use std::{
+    fmt::{Debug, Write as _},
     path::PathBuf,
     sync::{
         Arc, Mutex,
@@ -9,16 +10,22 @@ use std::{
 
 use marlin_agent_kernel::{
     AgentFlowLoopProgramRuntimeHandoffExecutor, DenylistedLoopProgramToolDispatchHandler,
-    GenericLoopMachineReceipt, LoopProgramEventMapper, LoopProgramExecutionDriver,
+    GenericLoopMachineReceipt, HybridLoopProgramRuntimeHandoffExecutor,
+    LoopProgramDerivedSessionPolicyStatus, LoopProgramEventMapper, LoopProgramExecutionDriver,
     LoopProgramExecutionReceipt, LoopProgramExecutionRequest, LoopProgramExecutionStatus,
+    LoopProgramFileSandbox, LoopProgramFileWriteSideEffectStatus, LoopProgramFileWriteTemplate,
     LoopProgramRuntimeHandoff, LoopProgramRuntimeHandoffExecution,
     LoopProgramRuntimeHandoffExecutionReceipt, LoopProgramRuntimeHandoffExecutionReportStatus,
     LoopProgramRuntimeHandoffExecutionStatus, LoopProgramRuntimeHandoffExecutor,
     LoopProgramRuntimeHandoffHandler, LoopProgramRuntimeHandoffPlan,
     LoopProgramRuntimeHandoffRouter, LoopProgramRuntimeHandoffRouterHandlers,
-    LoopProgramRuntimeOwner, LoopProgramToolProcessProgram, LoopProgramToolProcessSpawnRequest,
+    LoopProgramRuntimeOwner, LoopProgramRuntimeSideEffectExecutor,
+    LoopProgramRuntimeSideEffectStatus, LoopProgramToolProcessCommandTemplate,
+    LoopProgramToolProcessProgram, LoopProgramToolProcessSideEffectStatus,
+    LoopProgramToolProcessSpawnRequest, PolicyGatedAgentFlowLoopProgramRuntimeHandoffExecutor,
     ReceiptDrivenLoopProgramEventMapper, ScriptedLoopProgramEventMapper,
-    StaticLoopProgramRuntimeHandoffHandler, spawn_loop_program_tool_process,
+    StaticLoopProgramFileWriteResolver, StaticLoopProgramRuntimeHandoffHandler,
+    StaticLoopProgramToolProcessResolver, spawn_loop_program_tool_process,
 };
 use marlin_agent_protocol::{
     AgentFlowIntent, AgentFlowMemoryOperation, LoopMechanismPolicyId, LoopPolicyDigest,
@@ -222,42 +229,37 @@ fn complete_gateway_synchronously(
 }
 
 #[derive(Clone)]
-struct RealRepairHybridHandoffExecutor {
-    router: LoopProgramRuntimeHandoffRouter,
-    agent_flow: AgentFlowLoopProgramRuntimeHandoffExecutor,
+struct RealRepairPolicyGatedHandoffExecutor {
+    inner: PolicyGatedAgentFlowLoopProgramRuntimeHandoffExecutor,
 }
 
-impl RealRepairHybridHandoffExecutor {
+impl RealRepairPolicyGatedHandoffExecutor {
     fn new() -> Self {
         let handlers = LoopProgramRuntimeHandoffRouterHandlers {
             model_handler: handled_by("runtime.model.gateway.repair-planner"),
+            tool_handler: handled_by("runtime.policy.repair-tool-admission"),
+            graph_handler: handled_by("runtime.graph.dynamic-rewrite"),
             verification_handler: handled_by("runtime.verification.single-file"),
             control_handler: handled_by("runtime.control"),
             ..LoopProgramRuntimeHandoffRouterHandlers::default()
         };
         Self {
-            router: LoopProgramRuntimeHandoffRouter::new(handlers),
-            agent_flow: AgentFlowLoopProgramRuntimeHandoffExecutor::new(
-                LoopProgramRuntimeOwner::new("runtime.agent-flow.repair-tool"),
+            inner: PolicyGatedAgentFlowLoopProgramRuntimeHandoffExecutor::new(
+                LoopProgramRuntimeHandoffRouter::new(handlers),
+                AgentFlowLoopProgramRuntimeHandoffExecutor::new(LoopProgramRuntimeOwner::new(
+                    "runtime.agent-flow.repair-tool",
+                )),
             ),
         }
     }
 }
 
-impl LoopProgramRuntimeHandoffExecutor for RealRepairHybridHandoffExecutor {
+impl LoopProgramRuntimeHandoffExecutor for RealRepairPolicyGatedHandoffExecutor {
     fn execute_plan(
         &self,
         plan: &LoopProgramRuntimeHandoffPlan,
     ) -> LoopProgramRuntimeHandoffExecutionReceipt {
-        if plan
-            .handoffs
-            .iter()
-            .any(|handoff| handoff.agent_flow_intent.is_some())
-        {
-            self.agent_flow.execute_plan(plan)
-        } else {
-            self.router.execute_plan(plan)
-        }
+        self.inner.execute_plan(plan)
     }
 }
 
@@ -364,6 +366,10 @@ struct RealPolicyExperimentReceipt {
     case_id: &'static str,
     program_id: String,
     policy_ids: Box<[String]>,
+    policy_digest: String,
+    loop_program_digest: String,
+    runtime_behavior_digest: String,
+    receipt_digest: String,
     status: LoopProgramExecutionStatus,
     action_path: Box<[LoopProgramActionKind]>,
     owner_path: Box<[String]>,
@@ -390,6 +396,10 @@ fn real_policy_experiment_receipt(
             .map(|policy| policy.as_str().to_owned())
             .collect::<Vec<_>>()
             .into_boxed_slice(),
+        policy_digest: policy_digest_hex(&loop_program.policy_digest),
+        loop_program_digest: loop_program_digest(loop_program),
+        runtime_behavior_digest: runtime_behavior_digest(execution_receipt),
+        receipt_digest: String::new(),
         status: execution_receipt.status.clone(),
         action_path: execution_receipt
             .steps
@@ -454,7 +464,148 @@ fn real_policy_experiment_receipt(
     };
     receipt.improvement_recommendations =
         real_policy_improvement_recommendations(&receipt).into_boxed_slice();
+    receipt.receipt_digest = real_policy_receipt_digest(&receipt);
     receipt
+}
+
+fn policy_digest_hex(policy_digest: &LoopPolicyDigest) -> String {
+    hex_bytes(policy_digest.as_bytes())
+}
+
+fn loop_program_digest(loop_program: &LoopProgram) -> String {
+    let mut digest = StableReceiptDigest::new("loop-program.v1");
+    digest.write_u32(loop_program.schema_version);
+    digest.write_str(loop_program.program_id.as_str());
+    digest.write_debug(&loop_program.policy_epoch);
+    digest.write_bytes(loop_program.policy_digest.as_bytes());
+    digest.write_str(loop_program.initial_state.as_str());
+    for policy in loop_program.mechanism_policies.iter() {
+        digest.write_str(policy.as_str());
+    }
+    for transition in loop_program.transitions.iter() {
+        digest.write_str(transition.transition_id.as_str());
+        digest.write_str(transition.from.as_str());
+        digest.write_debug(&transition.event);
+        digest.write_debug(&transition.action);
+        digest.write_str(transition.to.as_str());
+    }
+    digest.finish()
+}
+
+fn runtime_behavior_digest(execution_receipt: &LoopProgramExecutionReceipt) -> String {
+    let mut digest = StableReceiptDigest::new("runtime-behavior.v1");
+    digest.write_str(execution_receipt.program_id.as_str());
+    digest.write_debug(&execution_receipt.status);
+    for step in execution_receipt.steps.iter() {
+        digest.write_debug(&step.machine_receipt.action);
+        digest.write_debug(&step.generated_event);
+        digest.write_debug(&step.runtime_handoff_execution.status);
+        digest.write_usize(
+            step.runtime_handoff_execution
+                .tool_process_projections
+                .len(),
+        );
+        digest.write_usize(step.runtime_handoff_execution.memory_projections.len());
+        for execution in step.runtime_handoff_execution.executions.iter() {
+            digest.write_str(execution.owner.as_str());
+            digest.write_debug(&execution.status);
+            digest.write_debug(&execution.kind);
+            digest.write_debug(&execution.next_event);
+            digest.write_bool(execution.agent_flow_intent.is_some());
+        }
+    }
+    digest.finish()
+}
+
+fn real_policy_receipt_digest(receipt: &RealPolicyExperimentReceipt) -> String {
+    let mut digest = StableReceiptDigest::new("real-policy-experiment.v1");
+    digest.write_str(receipt.case_id);
+    digest.write_str(&receipt.program_id);
+    digest.write_str(&receipt.policy_digest);
+    digest.write_str(&receipt.loop_program_digest);
+    digest.write_str(&receipt.runtime_behavior_digest);
+    digest.write_debug(&receipt.status);
+    for policy in receipt.policy_ids.iter() {
+        digest.write_str(policy);
+    }
+    for action in receipt.action_path.iter() {
+        digest.write_debug(action);
+    }
+    for owner in receipt.owner_path.iter() {
+        digest.write_str(owner);
+    }
+    for event in receipt.generated_events.iter() {
+        digest.write_debug(event);
+    }
+    digest.write_usize(receipt.denied_handoff_count);
+    digest.write_usize(receipt.handled_handoff_count);
+    digest.write_usize(receipt.agent_flow_intent_count);
+    digest.write_usize(receipt.tool_projection_count);
+    digest.write_usize(receipt.memory_projection_count);
+    for recommendation in receipt.improvement_recommendations.iter() {
+        digest.write_str(recommendation.priority);
+        digest.write_str(recommendation.target);
+        digest.write_str(recommendation.evidence);
+        digest.write_str(recommendation.action);
+    }
+    digest.finish()
+}
+
+struct StableReceiptDigest {
+    value: u64,
+}
+
+impl StableReceiptDigest {
+    const FNV_OFFSET: u64 = 0xcbf29ce484222325;
+    const FNV_PRIME: u64 = 0x00000100000001b3;
+
+    fn new(scope: &'static str) -> Self {
+        let mut digest = Self {
+            value: Self::FNV_OFFSET,
+        };
+        digest.write_str(scope);
+        digest
+    }
+
+    fn write_bool(&mut self, value: bool) {
+        self.write_str(if value { "true" } else { "false" });
+    }
+
+    fn write_u32(&mut self, value: u32) {
+        self.write_str(&value.to_string());
+    }
+
+    fn write_usize(&mut self, value: usize) {
+        self.write_str(&value.to_string());
+    }
+
+    fn write_debug(&mut self, value: &impl Debug) {
+        self.write_str(&format!("{value:?}"));
+    }
+
+    fn write_str(&mut self, value: &str) {
+        self.write_bytes(value.as_bytes());
+        self.write_bytes(&[0]);
+    }
+
+    fn write_bytes(&mut self, bytes: &[u8]) {
+        for byte in bytes {
+            self.value ^= u64::from(*byte);
+            self.value = self.value.wrapping_mul(Self::FNV_PRIME);
+        }
+    }
+
+    fn finish(self) -> String {
+        format!("fnv1a64:{:016x}", self.value)
+    }
+}
+
+fn hex_bytes(bytes: &[u8]) -> String {
+    let mut output = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        write!(&mut output, "{byte:02x}").expect("writing to String should not fail");
+    }
+    output
 }
 
 fn real_policy_improvement_recommendations(
@@ -678,6 +829,17 @@ fn unique_temp_repair_file() -> PathBuf {
     ))
 }
 
+fn unique_temp_repair_workspace() -> PathBuf {
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock after epoch")
+        .as_nanos();
+    std::env::temp_dir().join(format!(
+        "marlin-real-repair-001-workspace-{}-{nanos}",
+        std::process::id()
+    ))
+}
+
 fn real_policy_001_sandbox_denylist_loop_program() -> LoopProgram {
     LoopProgram::new(LoopProgramInput {
         program_id: LoopProgramId::new("real-policy-001-sandbox-denylist"),
@@ -745,8 +907,11 @@ fn real_policy_002_retry_budget_loop_program() -> LoopProgram {
         program_id: LoopProgramId::new("real-policy-002-retry-budget"),
         policy_epoch: LoopPolicyEpoch::new(11),
         policy_digest: LoopPolicyDigest::from_bytes([11_u8; 32]),
-        mechanism_policies: vec![LoopMechanismPolicyId::new("real-policy-002-retry-budget")]
-            .into_boxed_slice(),
+        mechanism_policies: vec![
+            LoopMechanismPolicyId::new("real-policy-002-retry-budget"),
+            LoopMechanismPolicyId::new("agent-flow-tool-projection"),
+        ]
+        .into_boxed_slice(),
         initial_state: LoopProgramStateId::new("start"),
         transitions: vec![
             transition(

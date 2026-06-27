@@ -1,12 +1,20 @@
+use std::{
+    fs,
+    path::PathBuf,
+    time::{SystemTime, UNIX_EPOCH},
+};
+
 use marlin_agent_kernel::{
     AgentFlowLoopProgramRuntimeHandoffExecutor, GenericLoopMachineReceipt,
     GenericLoopMachineStepIndex, LoopProgramDerivedSessionPolicyStatus, LoopProgramExecutionDriver,
-    LoopProgramExecutionRequest, LoopProgramExecutionStatus, LoopProgramRuntimeHandoffExecutor,
-    LoopProgramRuntimeHandoffPlan, LoopProgramRuntimeOwner, LoopProgramRuntimeReplayBundleReceipt,
-    LoopProgramRuntimeSideEffectExecutor, LoopProgramRuntimeSideEffectReceipt,
-    LoopProgramRuntimeSideEffectStatus, LoopProgramToolProcessCommandTemplate,
-    LoopProgramToolProcessProgram, LoopProgramToolProcessSideEffectStatus,
-    ScriptedLoopProgramEventMapper, StaticLoopProgramToolProcessResolver,
+    LoopProgramExecutionRequest, LoopProgramExecutionStatus, LoopProgramFileSandbox,
+    LoopProgramFileWriteSideEffectStatus, LoopProgramFileWriteTemplate,
+    LoopProgramRuntimeHandoffExecutor, LoopProgramRuntimeHandoffPlan, LoopProgramRuntimeOwner,
+    LoopProgramRuntimeReplayBundleReceipt, LoopProgramRuntimeSideEffectExecutor,
+    LoopProgramRuntimeSideEffectReceipt, LoopProgramRuntimeSideEffectStatus,
+    LoopProgramToolProcessCommandTemplate, LoopProgramToolProcessProgram,
+    LoopProgramToolProcessSideEffectStatus, ScriptedLoopProgramEventMapper,
+    StaticLoopProgramFileWriteResolver, StaticLoopProgramToolProcessResolver,
 };
 use marlin_agent_protocol::{
     LoopMechanismPolicyId, LoopPolicyDigest, LoopPolicyEpoch, LoopProgram, LoopProgramActionKind,
@@ -185,6 +193,131 @@ async fn side_effect_executor_reports_failed_tool_process_exit() {
     );
 }
 
+#[tokio::test]
+async fn side_effect_executor_writes_allowed_file_projection_through_sandbox() {
+    let (runtime, _events) = TokioAgentRuntime::new(4);
+    let workspace = unique_side_effect_workspace();
+    let relative_path = PathBuf::from("src/lib.rs");
+    let file_path = workspace.join(&relative_path);
+    fs::create_dir_all(file_path.parent().expect("fixture parent")).expect("create fixture dir");
+    fs::write(&file_path, "fn answer() -> i32 { 40 }\n").expect("write initial fixture");
+
+    let handoff_execution = agent_flow_handoff_execution();
+    let receipt = LoopProgramRuntimeSideEffectExecutor::default()
+        .with_file_write_resolver(file_write_resolver(
+            relative_path.clone(),
+            "fn answer() -> i32 { 41 }\n",
+        ))
+        .with_file_sandbox(
+            LoopProgramFileSandbox::new(workspace.clone())
+                .with_allowed_relative_paths([relative_path.clone()]),
+        )
+        .execute(&runtime.context(), &handoff_execution)
+        .await;
+
+    assert_eq!(
+        receipt.status,
+        LoopProgramRuntimeSideEffectStatus::Completed
+    );
+    assert!(receipt.tool_processes.is_empty());
+    assert_eq!(receipt.file_writes.len(), 1);
+    let file_write = &receipt.file_writes[0];
+    assert_eq!(
+        file_write.status,
+        LoopProgramFileWriteSideEffectStatus::Completed
+    );
+    let write_receipt = file_write
+        .write_receipt
+        .as_ref()
+        .expect("file write receipt");
+    assert_eq!(write_receipt.relative_path, relative_path);
+    assert_eq!(write_receipt.path, file_path);
+    assert_eq!(
+        write_receipt.bytes_written,
+        "fn answer() -> i32 { 41 }\n".len()
+    );
+    assert_ne!(
+        write_receipt.before_hash.as_ref().expect("before hash"),
+        &write_receipt.after_hash
+    );
+    assert_eq!(
+        fs::read_to_string(workspace.join("src/lib.rs")).expect("read repaired fixture"),
+        "fn answer() -> i32 { 41 }\n"
+    );
+    fs::remove_dir_all(&workspace).expect("remove file-write workspace");
+}
+
+#[tokio::test]
+async fn side_effect_executor_blocks_disallowed_file_projection_before_write() {
+    let (runtime, _events) = TokioAgentRuntime::new(4);
+    let workspace = unique_side_effect_workspace();
+    fs::create_dir_all(&workspace).expect("create workspace");
+
+    let handoff_execution = agent_flow_handoff_execution();
+    let receipt = LoopProgramRuntimeSideEffectExecutor::default()
+        .with_file_write_resolver(file_write_resolver("secret.rs", "sealed\n"))
+        .with_file_sandbox(
+            LoopProgramFileSandbox::new(workspace.clone())
+                .with_allowed_relative_paths([PathBuf::from("src/lib.rs")]),
+        )
+        .execute(&runtime.context(), &handoff_execution)
+        .await;
+
+    assert_eq!(receipt.status, LoopProgramRuntimeSideEffectStatus::Failed);
+    assert!(receipt.tool_processes.is_empty());
+    assert_eq!(receipt.file_writes.len(), 1);
+    assert_eq!(
+        receipt.file_writes[0].status,
+        LoopProgramFileWriteSideEffectStatus::Denied
+    );
+    assert!(
+        receipt.file_writes[0]
+            .diagnostic
+            .as_deref()
+            .expect("sandbox diagnostic")
+            .contains("sandbox_denied")
+    );
+    assert!(!workspace.join("secret.rs").exists());
+    fs::remove_dir_all(&workspace).expect("remove denied workspace");
+}
+
+#[tokio::test]
+async fn side_effect_executor_blocks_traversal_file_projection_before_write() {
+    let (runtime, _events) = TokioAgentRuntime::new(4);
+    let workspace = unique_side_effect_workspace();
+    fs::create_dir_all(&workspace).expect("create workspace");
+
+    let handoff_execution = agent_flow_handoff_execution();
+    let receipt = LoopProgramRuntimeSideEffectExecutor::default()
+        .with_file_write_resolver(file_write_resolver("../escape.rs", "escape\n"))
+        .with_file_sandbox(
+            LoopProgramFileSandbox::new(workspace.clone())
+                .with_allowed_relative_paths([PathBuf::from("../escape.rs")]),
+        )
+        .execute(&runtime.context(), &handoff_execution)
+        .await;
+
+    assert_eq!(receipt.status, LoopProgramRuntimeSideEffectStatus::Failed);
+    assert_eq!(
+        receipt.file_writes[0].status,
+        LoopProgramFileWriteSideEffectStatus::Denied
+    );
+    assert!(
+        receipt.file_writes[0]
+            .diagnostic
+            .as_deref()
+            .expect("traversal diagnostic")
+            .contains("relative_path_denied")
+    );
+    assert!(
+        fs::read_dir(&workspace)
+            .expect("read traversal workspace")
+            .next()
+            .is_none()
+    );
+    fs::remove_dir_all(&workspace).expect("remove traversal workspace");
+}
+
 #[cfg(unix)]
 #[tokio::test]
 async fn replay_bundle_marks_completed_side_effects_ready_without_mutating_agent_flow_receipt() {
@@ -297,6 +430,7 @@ async fn replay_bundle_blocks_replay_when_runtime_receipts_disagree_on_program_i
         program_id: LoopProgramId::new("other-program"),
         status: LoopProgramRuntimeSideEffectStatus::Empty,
         tool_processes: Vec::new().into_boxed_slice(),
+        file_writes: Vec::new().into_boxed_slice(),
     };
 
     let bundle = LoopProgramRuntimeReplayBundleReceipt::from_runtime_receipts(
@@ -350,6 +484,32 @@ fn tool_resolver(script: &'static str) -> StaticLoopProgramToolProcessResolver {
         ]
         .into_boxed_slice(),
     )
+}
+
+fn file_write_resolver(
+    relative_path: impl Into<PathBuf>,
+    contents: &'static str,
+) -> StaticLoopProgramFileWriteResolver {
+    StaticLoopProgramFileWriteResolver::new(
+        vec![LoopProgramFileWriteTemplate::new(
+            "agent-flow.tool-intent",
+            ["loop-program.dispatch-tools"],
+            relative_path,
+            contents.as_bytes().to_vec(),
+        )]
+        .into_boxed_slice(),
+    )
+}
+
+fn unique_side_effect_workspace() -> PathBuf {
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock after epoch")
+        .as_nanos();
+    std::env::temp_dir().join(format!(
+        "marlin-loop-side-effect-{}-{nanos}",
+        std::process::id()
+    ))
 }
 
 fn tool_side_effect_loop_program() -> LoopProgram {

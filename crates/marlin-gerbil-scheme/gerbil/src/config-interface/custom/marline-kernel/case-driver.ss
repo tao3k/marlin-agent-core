@@ -45,6 +45,34 @@ package: config-interface/custom/marline-kernel
 (def (marline-kernel-module-case module-bundle)
   (car (UserInterfaceModuleBundleConfig module-bundle)))
 
+(def (marline-kernel-module-head module-bundle)
+  (car module-bundle))
+
+(def (marline-kernel-module-kind module-bundle)
+  (.get (marline-kernel-module-head module-bundle) kind))
+
+(def (marline-kernel-module-user-module module-bundle)
+  (.get (marline-kernel-module-head module-bundle) user-module))
+
+(def (marline-kernel-module-selection-flags module-bundle)
+  (.get (marline-kernel-module-head module-bundle) selection-flags))
+
+(def (marline-kernel-module-source-ref module-bundle)
+  (.get (marline-kernel-module-head module-bundle) source-ref))
+
+(def (marline-kernel-module-entrypoint module-bundle)
+  (.get (marline-kernel-module-head module-bundle) entrypoint))
+
+(def (marline-kernel-module-enabled? module-bundle)
+  (.get (marline-kernel-module-head module-bundle) enabled?))
+
+(def (marline-kernel-symbol-prefix values)
+  (cond
+   ((null? values) '())
+   ((symbol? (car values))
+    (cons (car values) (marline-kernel-symbol-prefix (cdr values))))
+   (else '())))
+
 (def (marline-kernel-case-check case)
   (car (.get case check-objects)))
 
@@ -95,8 +123,11 @@ package: config-interface/custom/marline-kernel
     'live-enabled
     'no-live-llm-denied))
 
-(def (marline-kernel-loop-case-driver-receipt case)
-  (let* ((check (marline-kernel-case-check case))
+(def (marline-kernel-loop-case-driver-receipt module-bundle)
+  (let* ((case (marline-kernel-module-case module-bundle))
+         (module-selection-flags
+          (marline-kernel-module-selection-flags module-bundle))
+         (check (marline-kernel-case-check case))
          (metadata (.get case metadata))
          (case-id (marline-kernel-metadata-ref case 'case-id))
          (profile-ref (marline-kernel-metadata-ref case 'profile-ref))
@@ -126,11 +157,16 @@ package: config-interface/custom/marline-kernel
       (policy-owner . ,+marline-kernel-loop-case-driver-policy-owner+)
       (control-plane-owner . ,+marline-kernel-loop-case-driver-control-plane-owner+)
       (runtime-execution-owner . ,+marline-kernel-loop-case-driver-runtime-owner+)
+      (module-kind . ,(marline-kernel-module-kind module-bundle))
+      (module-user-module . ,(marline-kernel-module-user-module module-bundle))
+      (module-selection-tags . ,(marline-kernel-symbol-prefix module-selection-flags))
+      (module-source-ref . ,(marline-kernel-module-source-ref module-bundle))
+      (module-entrypoint . ,(marline-kernel-module-entrypoint module-bundle))
+      (module-enabled? . ,(marline-kernel-module-enabled? module-bundle))
       (scheme-boundary . scheme-types->rust-types)
       (serialization-boundary . rust-owned-cli-trace-cross-process))))
 
 (def (marline-kernel-loop-case-driver-receipts)
   (map (lambda (module-bundle)
-         (marline-kernel-loop-case-driver-receipt
-          (marline-kernel-module-case module-bundle)))
+         (marline-kernel-loop-case-driver-receipt module-bundle))
        +marline-kernel-loop-case-bundles+))

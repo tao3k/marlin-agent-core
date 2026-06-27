@@ -1,20 +1,39 @@
 use std::sync::Arc;
 
+use super::LoopProgram;
 use super::{
     AgentFlowIntent, AgentFlowLoopProgramRuntimeHandoffExecutor, AgentFlowMemoryOperation,
-    DenylistedLoopProgramToolDispatchHandler, LoopProgramActionKind, LoopProgramEventKind,
-    LoopProgramExecutionDriver, LoopProgramExecutionRequest, LoopProgramExecutionStatus,
-    LoopProgramRuntimeHandoffExecutionReportStatus, LoopProgramRuntimeHandoffExecutionStatus,
-    LoopProgramRuntimeHandoffRouter, LoopProgramRuntimeHandoffRouterHandlers,
-    LoopProgramRuntimeOwner, LoopProgramToolProcessProgram, LoopProgramToolProcessSpawnRequest,
-    MemoryRecallDecisionMapper, PolicyCombinationDecisionMapper, RetryBudgetToolHandler,
-    ScriptedLoopProgramEventMapper, TokioAgentRuntime, handled_by,
+    DenylistedLoopProgramToolDispatchHandler, HybridLoopProgramRuntimeHandoffExecutor,
+    LoopProgramActionKind, LoopProgramDerivedSessionPolicyStatus, LoopProgramEventKind,
+    LoopProgramExecutionDriver, LoopProgramExecutionReceipt, LoopProgramExecutionRequest,
+    LoopProgramExecutionStatus, LoopProgramRuntimeHandoffExecutionReportStatus,
+    LoopProgramRuntimeHandoffExecutionStatus, LoopProgramRuntimeHandoffRouter,
+    LoopProgramRuntimeHandoffRouterHandlers, LoopProgramRuntimeOwner,
+    LoopProgramRuntimeSideEffectExecutor, LoopProgramRuntimeSideEffectStatus,
+    LoopProgramToolProcessCommandTemplate, LoopProgramToolProcessProgram,
+    LoopProgramToolProcessSideEffectStatus, MemoryRecallDecisionMapper,
+    PolicyCombinationDecisionMapper, PolicyGatedAgentFlowLoopProgramRuntimeHandoffExecutor,
+    ReceiptDrivenLoopProgramEventMapper, RetryBudgetToolHandler, ScriptedLoopProgramEventMapper,
+    StaticLoopProgramToolProcessResolver, TokioAgentRuntime, handled_by, handled_by_with_event,
     policy_combination_matrix_loop_program, real_policy_001_sandbox_denylist_loop_program,
     real_policy_002_retry_budget_loop_program, real_policy_003_maker_checker_loop_program,
     real_policy_004_dynamic_rewrite_loop_program, real_policy_005_memory_recall_loop_program,
     real_policy_experiment_receipt, real_tool_sandbox_loop_program,
-    spawn_loop_program_tool_process,
 };
+
+fn dispatch_tools_shell_resolver(script: &'static str) -> StaticLoopProgramToolProcessResolver {
+    StaticLoopProgramToolProcessResolver::new(
+        vec![
+            LoopProgramToolProcessCommandTemplate::new(
+                "agent-flow.tool-intent",
+                ["loop-program.dispatch-tools"],
+                LoopProgramToolProcessProgram::new("sh"),
+            )
+            .with_args(["-c", script]),
+        ]
+        .into_boxed_slice(),
+    )
+}
 
 #[test]
 fn real_policy_001_sandbox_denylist_blocks_dispatch_tool_intent() {
@@ -123,21 +142,31 @@ async fn real_tool_sandbox_loop_projects_and_spawns_allowed_tool_process() {
         1
     );
 
-    let spawn_receipt = spawn_loop_program_tool_process(
-        &runtime.context(),
-        LoopProgramToolProcessSpawnRequest::new(
-            tool_step.runtime_handoff_execution.tool_process_projections[0].clone(),
-            LoopProgramToolProcessProgram::new("sh"),
-        )
-        .with_args(
-            vec!["-c".to_owned(), "printf real-tool-sandbox-loop".to_owned()].into_boxed_slice(),
-        )
-        .with_started_at_ms(100)
-        .with_observed_at_ms(125),
-    )
-    .await
-    .expect("allowed tool projection should spawn");
+    let replay_bundle = LoopProgramRuntimeSideEffectExecutor::new(dispatch_tools_shell_resolver(
+        "printf real-tool-sandbox-loop",
+    ))
+    .with_started_at_ms(100)
+    .with_observed_at_ms(125)
+    .execute_loop_execution(&runtime.context(), &receipt)
+    .await;
 
+    assert_eq!(
+        replay_bundle.policy_status,
+        LoopProgramDerivedSessionPolicyStatus::Ready
+    );
+    assert!(replay_bundle.allows_replay());
+    assert_eq!(replay_bundle.step_replay_bundles.len(), 1);
+    let tool_process = &replay_bundle.step_replay_bundles[0]
+        .side_effects
+        .tool_processes[0];
+    assert_eq!(
+        tool_process.status,
+        LoopProgramToolProcessSideEffectStatus::Completed
+    );
+    let spawn_receipt = tool_process
+        .spawn_receipt
+        .as_ref()
+        .expect("allowed tool projection should spawn");
     assert!(spawn_receipt.output.status.success());
     assert_eq!(
         String::from_utf8_lossy(&spawn_receipt.output.stdout),
@@ -216,6 +245,129 @@ fn real_policy_002_retry_budget_replays_after_first_denied_dispatch() {
             None,
         ]
     );
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn real_policy_002_retry_budget_gates_agent_flow_tool_projection_before_spawn() {
+    let (runtime, _events) = TokioAgentRuntime::new(4);
+    let handlers = LoopProgramRuntimeHandoffRouterHandlers {
+        tool_handler: Arc::new(RetryBudgetToolHandler::new(
+            LoopProgramRuntimeOwner::new("runtime.retry-budget.tool"),
+            1,
+        )),
+        control_handler: handled_by("runtime.control"),
+        ..LoopProgramRuntimeHandoffRouterHandlers::default()
+    };
+    let driver = LoopProgramExecutionDriver::new(
+        PolicyGatedAgentFlowLoopProgramRuntimeHandoffExecutor::new(
+            LoopProgramRuntimeHandoffRouter::new(handlers),
+            AgentFlowLoopProgramRuntimeHandoffExecutor::new(LoopProgramRuntimeOwner::new(
+                "runtime.agent-flow.retry-budget-tool",
+            )),
+        ),
+    )
+    .with_event_mapper(ReceiptDrivenLoopProgramEventMapper)
+    .with_max_steps(8);
+
+    let receipt = driver.run(LoopProgramExecutionRequest::new(
+        real_policy_002_retry_budget_loop_program(),
+        vec![LoopProgramEventKind::Start],
+    ));
+
+    assert_eq!(receipt.status, LoopProgramExecutionStatus::Stopped);
+    assert_eq!(receipt.steps.len(), 3);
+    assert_eq!(
+        receipt
+            .steps
+            .iter()
+            .map(|step| step.runtime_handoff_execution.status.clone())
+            .collect::<Vec<_>>(),
+        vec![
+            LoopProgramRuntimeHandoffExecutionReportStatus::Denied,
+            LoopProgramRuntimeHandoffExecutionReportStatus::Completed,
+            LoopProgramRuntimeHandoffExecutionReportStatus::Completed,
+        ]
+    );
+    assert_eq!(
+        receipt
+            .steps
+            .iter()
+            .map(|step| step.generated_event.clone())
+            .collect::<Vec<_>>(),
+        vec![
+            Some(LoopProgramEventKind::Error),
+            Some(LoopProgramEventKind::ToolReceipt),
+            None,
+        ]
+    );
+    assert_eq!(
+        receipt.steps[0]
+            .runtime_handoff_execution
+            .tool_process_projections
+            .len(),
+        0
+    );
+    assert_eq!(
+        receipt.steps[1]
+            .runtime_handoff_execution
+            .tool_process_projections
+            .len(),
+        1
+    );
+    assert_eq!(
+        receipt.steps[1].runtime_handoff_execution.executions[0]
+            .owner
+            .as_str(),
+        "runtime.retry-budget.tool"
+    );
+    assert_eq!(
+        receipt.steps[1].runtime_handoff_execution.executions[0].next_event,
+        Some(LoopProgramEventKind::ToolReceipt)
+    );
+    assert_eq!(
+        receipt.steps[1]
+            .runtime_handoff_execution
+            .tool_process_projections[0]
+            .owner
+            .as_str(),
+        "runtime.agent-flow.retry-budget-tool"
+    );
+
+    let replay_bundle = LoopProgramRuntimeSideEffectExecutor::new(dispatch_tools_shell_resolver(
+        "printf retry-budget-admitted-tool-spawn",
+    ))
+    .with_started_at_ms(400)
+    .with_observed_at_ms(425)
+    .execute_loop_execution(&runtime.context(), &receipt)
+    .await;
+
+    assert_eq!(
+        replay_bundle.policy_status,
+        LoopProgramDerivedSessionPolicyStatus::Ready
+    );
+    assert!(replay_bundle.allows_replay());
+    assert_eq!(replay_bundle.step_replay_bundles.len(), 1);
+    let tool_bundle = &replay_bundle.step_replay_bundles[0];
+    assert_eq!(
+        tool_bundle.side_effects.status,
+        LoopProgramRuntimeSideEffectStatus::Completed
+    );
+    let tool_process = &tool_bundle.side_effects.tool_processes[0];
+    assert_eq!(
+        tool_process.status,
+        LoopProgramToolProcessSideEffectStatus::Completed
+    );
+    let spawn_receipt = tool_process
+        .spawn_receipt
+        .as_ref()
+        .expect("retry-admitted tool projection should spawn");
+    assert!(spawn_receipt.output.status.success());
+    assert_eq!(
+        String::from_utf8_lossy(&spawn_receipt.output.stdout),
+        "retry-budget-admitted-tool-spawn"
+    );
+    assert!(spawn_receipt.output.stderr.is_empty());
 }
 
 #[test]
@@ -367,25 +519,69 @@ fn real_policy_005_memory_recall_receipt_changes_next_decision() {
     );
 }
 
-#[test]
-fn policy_combination_matrix_runs_memory_rewrite_checker_path() {
+fn run_policy_combination_matrix_loop() -> (LoopProgram, LoopProgramExecutionReceipt) {
     let handlers = LoopProgramRuntimeHandoffRouterHandlers {
-        memory_handler: handled_by("runtime.memory.recall"),
         model_handler: handled_by("runtime.model.maker"),
         graph_handler: handled_by("runtime.graph.dynamic-rewrite"),
-        tool_handler: handled_by("runtime.tool.repair"),
         verification_handler: handled_by("runtime.verification.checker"),
         control_handler: handled_by("runtime.control"),
         ..LoopProgramRuntimeHandoffRouterHandlers::default()
     };
-    let driver = LoopProgramExecutionDriver::new(LoopProgramRuntimeHandoffRouter::new(handlers))
-        .with_event_mapper(PolicyCombinationDecisionMapper);
+    let driver = LoopProgramExecutionDriver::new(HybridLoopProgramRuntimeHandoffExecutor::new(
+        LoopProgramRuntimeHandoffRouter::new(handlers),
+        AgentFlowLoopProgramRuntimeHandoffExecutor::new(LoopProgramRuntimeOwner::new(
+            "runtime.agent-flow.policy-combination",
+        )),
+    ))
+    .with_event_mapper(PolicyCombinationDecisionMapper);
 
     let loop_program = policy_combination_matrix_loop_program();
     let receipt = driver.run(LoopProgramExecutionRequest::new(
         loop_program.clone(),
         vec![LoopProgramEventKind::Start],
     ));
+
+    (loop_program, receipt)
+}
+
+fn run_receipt_driven_policy_combination_matrix_loop() -> (LoopProgram, LoopProgramExecutionReceipt)
+{
+    let handlers = LoopProgramRuntimeHandoffRouterHandlers {
+        model_handler: handled_by_with_event(
+            "runtime.model.maker",
+            LoopProgramEventKind::ModelEvent,
+        ),
+        graph_handler: handled_by_with_event(
+            "runtime.graph.dynamic-rewrite",
+            LoopProgramEventKind::RuntimeReceipt,
+        ),
+        verification_handler: handled_by_with_event(
+            "runtime.verification.checker",
+            LoopProgramEventKind::VerificationReceipt,
+        ),
+        control_handler: handled_by("runtime.control"),
+        ..LoopProgramRuntimeHandoffRouterHandlers::default()
+    };
+    let driver = LoopProgramExecutionDriver::new(HybridLoopProgramRuntimeHandoffExecutor::new(
+        LoopProgramRuntimeHandoffRouter::new(handlers),
+        AgentFlowLoopProgramRuntimeHandoffExecutor::new(LoopProgramRuntimeOwner::new(
+            "runtime.agent-flow.policy-combination",
+        )),
+    ))
+    .with_event_mapper(ReceiptDrivenLoopProgramEventMapper);
+
+    let loop_program = policy_combination_matrix_loop_program();
+    let receipt = driver.run(LoopProgramExecutionRequest::new(
+        loop_program.clone(),
+        vec![LoopProgramEventKind::Start],
+    ));
+
+    (loop_program, receipt)
+}
+
+#[test]
+fn policy_combination_matrix_runs_memory_rewrite_checker_path() {
+    let (loop_program, receipt) = run_policy_combination_matrix_loop();
 
     assert_eq!(receipt.status, LoopProgramExecutionStatus::Stopped);
     assert_eq!(
@@ -410,10 +606,10 @@ fn policy_combination_matrix_runs_memory_rewrite_checker_path() {
             .map(|step| step.runtime_handoff_execution.executions[0].owner.as_str())
             .collect::<Vec<_>>(),
         vec![
-            "runtime.memory.recall",
+            "runtime.agent-flow.policy-combination",
             "runtime.model.maker",
             "runtime.graph.dynamic-rewrite",
-            "runtime.tool.repair",
+            "runtime.agent-flow.policy-combination",
             "runtime.verification.checker",
             "runtime.control",
         ]
@@ -424,6 +620,20 @@ fn policy_combination_matrix_runs_memory_rewrite_checker_path() {
         panic!("memory combination case should preserve typed memory intent");
     };
     assert_eq!(memory_intent.operation, AgentFlowMemoryOperation::Recall);
+    assert_eq!(
+        receipt.steps[0]
+            .runtime_handoff_execution
+            .memory_projections
+            .len(),
+        1
+    );
+    assert_eq!(
+        receipt.steps[3]
+            .runtime_handoff_execution
+            .tool_process_projections
+            .len(),
+        1
+    );
 
     let experiment_receipt =
         real_policy_experiment_receipt("policy-combination-matrix-001", &loop_program, &receipt);
@@ -440,25 +650,36 @@ fn policy_combination_matrix_runs_memory_rewrite_checker_path() {
         ]
         .into_boxed_slice()
     );
-    assert_eq!(experiment_receipt.agent_flow_intent_count, 2);
-    assert_eq!(experiment_receipt.memory_projection_count, 0);
-    assert_eq!(experiment_receipt.tool_projection_count, 0);
+    assert_eq!(experiment_receipt.policy_digest, "0f".repeat(32));
     assert!(
         experiment_receipt
+            .loop_program_digest
+            .starts_with("fnv1a64:")
+    );
+    assert!(
+        experiment_receipt
+            .runtime_behavior_digest
+            .starts_with("fnv1a64:")
+    );
+    assert!(experiment_receipt.receipt_digest.starts_with("fnv1a64:"));
+    assert_ne!(
+        experiment_receipt.loop_program_digest,
+        experiment_receipt.runtime_behavior_digest
+    );
+    assert_ne!(
+        experiment_receipt.receipt_digest,
+        experiment_receipt.runtime_behavior_digest
+    );
+    assert_eq!(experiment_receipt.agent_flow_intent_count, 2);
+    assert_eq!(experiment_receipt.memory_projection_count, 1);
+    assert_eq!(experiment_receipt.tool_projection_count, 1);
+    assert!(
+        !experiment_receipt
             .improvement_recommendations
             .iter()
             .any(
                 |recommendation| recommendation.target == "runtime.agent-flow.memory-projection"
-                    && recommendation.priority == "P1"
-            )
-    );
-    assert!(
-        experiment_receipt
-            .improvement_recommendations
-            .iter()
-            .any(
-                |recommendation| recommendation.target == "runtime.tool-sandbox.spawn"
-                    && recommendation.priority == "P1"
+                    || recommendation.target == "runtime.tool-sandbox.spawn"
             )
     );
     assert!(
@@ -469,5 +690,143 @@ fn policy_combination_matrix_runs_memory_rewrite_checker_path() {
                 |recommendation| recommendation.target == "gerbil.config-interface.policy-pack"
                     && recommendation.priority == "P2"
             )
+    );
+}
+
+#[test]
+fn policy_combination_matrix_pumps_runtime_receipts_without_scripted_mapper() {
+    let (_loop_program, receipt) = run_receipt_driven_policy_combination_matrix_loop();
+
+    assert_eq!(receipt.status, LoopProgramExecutionStatus::Stopped);
+    assert_eq!(
+        receipt
+            .steps
+            .iter()
+            .map(|step| step.machine_receipt.action.clone())
+            .collect::<Vec<_>>(),
+        vec![
+            LoopProgramActionKind::ReadMemory,
+            LoopProgramActionKind::InvokeModel,
+            LoopProgramActionKind::RewriteGraph,
+            LoopProgramActionKind::DispatchTools,
+            LoopProgramActionKind::Verify,
+            LoopProgramActionKind::Stop,
+        ]
+    );
+    assert_eq!(
+        receipt
+            .steps
+            .iter()
+            .map(|step| step.generated_event.clone())
+            .collect::<Vec<_>>(),
+        vec![
+            Some(LoopProgramEventKind::RuntimeReceipt),
+            Some(LoopProgramEventKind::ModelEvent),
+            Some(LoopProgramEventKind::RuntimeReceipt),
+            Some(LoopProgramEventKind::ToolReceipt),
+            Some(LoopProgramEventKind::VerificationReceipt),
+            None,
+        ]
+    );
+    assert_eq!(
+        receipt
+            .steps
+            .iter()
+            .map(|step| {
+                step.runtime_handoff_execution.executions[0]
+                    .next_event
+                    .clone()
+            })
+            .collect::<Vec<_>>(),
+        vec![
+            Some(LoopProgramEventKind::RuntimeReceipt),
+            Some(LoopProgramEventKind::ModelEvent),
+            Some(LoopProgramEventKind::RuntimeReceipt),
+            Some(LoopProgramEventKind::ToolReceipt),
+            Some(LoopProgramEventKind::VerificationReceipt),
+            None,
+        ]
+    );
+    assert_eq!(
+        receipt.steps[0]
+            .runtime_handoff_execution
+            .memory_projections
+            .len(),
+        1
+    );
+    assert_eq!(
+        receipt.steps[3]
+            .runtime_handoff_execution
+            .tool_process_projections
+            .len(),
+        1
+    );
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn policy_combination_matrix_spawns_projected_tool_process() {
+    let (runtime, _events) = TokioAgentRuntime::new(4);
+    let (_loop_program, receipt) = run_policy_combination_matrix_loop();
+    let tool_step = &receipt.steps[3];
+
+    assert_eq!(
+        tool_step.runtime_handoff_execution.status,
+        LoopProgramRuntimeHandoffExecutionReportStatus::Completed
+    );
+    assert_eq!(
+        tool_step
+            .runtime_handoff_execution
+            .tool_process_projections
+            .len(),
+        1
+    );
+
+    let replay_bundle = LoopProgramRuntimeSideEffectExecutor::new(dispatch_tools_shell_resolver(
+        "printf policy-combination-tool-spawn",
+    ))
+    .with_started_at_ms(300)
+    .with_observed_at_ms(325)
+    .execute_loop_execution(&runtime.context(), &receipt)
+    .await;
+
+    assert_eq!(
+        replay_bundle.policy_status,
+        LoopProgramDerivedSessionPolicyStatus::Ready
+    );
+    assert!(replay_bundle.allows_replay());
+    assert_eq!(replay_bundle.step_replay_bundles.len(), 2);
+    let memory_bundle = &replay_bundle.step_replay_bundles[0];
+    assert_eq!(
+        memory_bundle.side_effects.status,
+        LoopProgramRuntimeSideEffectStatus::Empty
+    );
+    assert_eq!(memory_bundle.handoff_execution.memory_projections.len(), 1);
+    let tool_bundle = &replay_bundle.step_replay_bundles[1];
+    assert_eq!(
+        tool_bundle.side_effects.status,
+        LoopProgramRuntimeSideEffectStatus::Completed
+    );
+    let tool_process = &tool_bundle.side_effects.tool_processes[0];
+    assert_eq!(
+        tool_process.status,
+        LoopProgramToolProcessSideEffectStatus::Completed
+    );
+    let spawn_receipt = tool_process
+        .spawn_receipt
+        .as_ref()
+        .expect("policy combination tool projection should spawn");
+    assert!(spawn_receipt.output.status.success());
+    assert_eq!(
+        String::from_utf8_lossy(&spawn_receipt.output.stdout),
+        "policy-combination-tool-spawn"
+    );
+    assert!(spawn_receipt.output.stderr.is_empty());
+    assert!(
+        runtime
+            .context()
+            .process_registry()
+            .get(spawn_receipt.pid)
+            .is_none()
     );
 }

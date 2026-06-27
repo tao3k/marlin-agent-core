@@ -2648,6 +2648,7 @@ dependencies = [
  "marlin-agent-graph",
  "marlin-agent-kernel",
  "marlin-agent-protocol",
+ "marlin-agent-runtime",
  "marlin-gerbil-ir",
  "marlin-git-utils",
  "marlin-org-memory",

@@ -81,6 +81,57 @@ pub enum GerbilLoopCaseSerializationBoundary {
     RustOwnedCliTraceCrossProcess,
 }
 
+/// POO Flow module projection kind carried by a Scheme case-driver receipt.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct GerbilLoopCaseModuleKind(String);
+
+impl GerbilLoopCaseModuleKind {
+    #[must_use]
+    pub fn new(kind: impl Into<String>) -> Self {
+        Self(kind.into())
+    }
+
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+/// POO Flow user module name that owns the projected case semantics.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct GerbilLoopCaseModuleName(String);
+
+impl GerbilLoopCaseModuleName {
+    #[must_use]
+    pub fn new(name: impl Into<String>) -> Self {
+        Self(name.into())
+    }
+
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+/// POO Flow module selection capability tag projected into the Rust receipt.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct GerbilLoopCaseModuleSelectionTag(String);
+
+impl GerbilLoopCaseModuleSelectionTag {
+    #[must_use]
+    pub fn new(tag: impl Into<String>) -> Self {
+        Self(tag.into())
+    }
+
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
 /// Typed Scheme case-driver receipt consumed by Rust.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct GerbilLoopCaseDriverSchemeReceipt {
@@ -99,6 +150,12 @@ pub struct GerbilLoopCaseDriverSchemeReceipt {
     pub policy_owner: String,
     pub control_plane_owner: String,
     pub runtime_execution_owner: String,
+    pub module_kind: GerbilLoopCaseModuleKind,
+    pub module_user_module: GerbilLoopCaseModuleName,
+    pub module_selection_tags: Vec<GerbilLoopCaseModuleSelectionTag>,
+    pub module_source_ref: String,
+    pub module_entrypoint: String,
+    pub module_enabled: bool,
     pub scheme_boundary: GerbilLoopCaseSchemeBoundary,
     pub serialization_boundary: GerbilLoopCaseSerializationBoundary,
 }
@@ -114,6 +171,12 @@ pub struct GerbilLoopCaseDriverRustLoopReceipt {
     pub input_path: PathBuf,
     pub runtime_handoff_status: GerbilLoopCaseRuntimeHandoffStatus,
     pub runtime_execution_owner: String,
+    pub module_kind: GerbilLoopCaseModuleKind,
+    pub module_user_module: GerbilLoopCaseModuleName,
+    pub module_selection_tags: Vec<GerbilLoopCaseModuleSelectionTag>,
+    pub module_source_ref: String,
+    pub module_entrypoint: String,
+    pub module_enabled: bool,
     pub live_llm_required: bool,
     pub live_llm_allowed: bool,
     pub stable_fixture: bool,
@@ -142,6 +205,17 @@ impl GerbilLoopCaseDriverSchemeReceipt {
             policy_owner: "gerbil-config-interface".to_owned(),
             control_plane_owner: "gerbil-config-interface".to_owned(),
             runtime_execution_owner: "rust-loop-runtime".to_owned(),
+            module_kind: GerbilLoopCaseModuleKind::new("poo-flow.modules.user-selection.v1"),
+            module_user_module: GerbilLoopCaseModuleName::new("funflow"),
+            module_selection_tags: vec![
+                GerbilLoopCaseModuleSelectionTag::new("+functional"),
+                GerbilLoopCaseModuleSelectionTag::new("+dag"),
+                GerbilLoopCaseModuleSelectionTag::new("+typed-receipts"),
+                GerbilLoopCaseModuleSelectionTag::new("+runtime-manifest"),
+            ],
+            module_source_ref: "none".to_owned(),
+            module_entrypoint: "none".to_owned(),
+            module_enabled: true,
             scheme_boundary: GerbilLoopCaseSchemeBoundary::SchemeTypesToRustTypes,
             serialization_boundary:
                 GerbilLoopCaseSerializationBoundary::RustOwnedCliTraceCrossProcess,
@@ -169,6 +243,12 @@ pub fn project_gerbil_loop_case_driver_rust_loop_receipt(
         input_path: receipt.input_path.clone(),
         runtime_handoff_status,
         runtime_execution_owner: receipt.runtime_execution_owner.clone(),
+        module_kind: receipt.module_kind.clone(),
+        module_user_module: receipt.module_user_module.clone(),
+        module_selection_tags: receipt.module_selection_tags.clone(),
+        module_source_ref: receipt.module_source_ref.clone(),
+        module_entrypoint: receipt.module_entrypoint.clone(),
+        module_enabled: receipt.module_enabled,
         live_llm_required,
         live_llm_allowed: receipt.live_enabled,
         stable_fixture: receipt.stable_fixture,

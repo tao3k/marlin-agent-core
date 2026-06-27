@@ -537,7 +537,14 @@ impl AgentFlowLoopProgramRuntimeHandoffExecutor {
                 .iter()
                 .map(|handoff| {
                     if handoff.agent_flow_intent.is_some() {
-                        LoopProgramRuntimeHandoffExecution::handled(self.owner.clone(), handoff)
+                        let execution = LoopProgramRuntimeHandoffExecution::handled(
+                            self.owner.clone(),
+                            handoff,
+                        );
+                        match agent_flow_next_event_for_handoff(handoff) {
+                            Some(next_event) => execution.with_next_event(next_event),
+                            None => execution,
+                        }
                     } else {
                         LoopProgramRuntimeHandoffExecution::deferred(
                             self.deferred_owner.clone(),
@@ -550,6 +557,23 @@ impl AgentFlowLoopProgramRuntimeHandoffExecutor {
         .with_agent_flow_receipt(agent_flow_receipt)
         .with_tool_process_projections(tool_process_projections)
         .with_memory_projections(memory_projections)
+    }
+}
+
+fn agent_flow_next_event_for_handoff(
+    handoff: &LoopProgramRuntimeHandoff,
+) -> Option<LoopProgramEventKind> {
+    match handoff.kind {
+        LoopProgramRuntimeHandoffKind::ToolDispatch => Some(LoopProgramEventKind::ToolReceipt),
+        LoopProgramRuntimeHandoffKind::MemoryRecall
+        | LoopProgramRuntimeHandoffKind::MemoryStore
+        | LoopProgramRuntimeHandoffKind::PlacementRequest
+        | LoopProgramRuntimeHandoffKind::SessionFork
+        | LoopProgramRuntimeHandoffKind::AgentDelegation
+        | LoopProgramRuntimeHandoffKind::ContextCompaction => {
+            Some(LoopProgramEventKind::RuntimeReceipt)
+        }
+        _ => None,
     }
 }
 

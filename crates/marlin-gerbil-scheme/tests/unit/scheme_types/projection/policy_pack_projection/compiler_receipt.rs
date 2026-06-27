@@ -6,6 +6,7 @@ use super::{
     poo_loop_program_compiler_registry, resolved_loop_policy_audit_payload_without_merge_receipts,
     resolved_loop_policy_pack_payload_with_audit,
 };
+use std::time::{Duration, Instant};
 
 #[test]
 fn poo_loop_program_compiler_receipt_decodes_program_bound_to_resolved_pack() {
@@ -54,6 +55,38 @@ fn poo_loop_program_compiler_receipt_decodes_program_bound_to_resolved_pack() {
     assert!(!receipt.resolved_policy_pack.audit.linearization.is_empty());
     assert!(!receipt.resolved_policy_pack.audit.forced_slots.is_empty());
     assert!(!receipt.resolved_policy_pack.audit.merge_receipts.is_empty());
+}
+
+#[test]
+fn poo_loop_program_compiler_receipt_projection_stays_in_process() {
+    let registry = poo_loop_program_compiler_registry();
+    let envelopes = (0..256)
+        .map(|_| poo_loop_program_compiler_envelope(poo_loop_program_compiler_payload([7; 32])))
+        .collect::<Vec<_>>();
+
+    let started = Instant::now();
+    for envelope in &envelopes {
+        let receipt = decode_gerbil_poo_loop_program_compiler_receipt(&registry, envelope)
+            .expect("POO loop program compiler receipt decodes through the Rust ABI surface");
+        assert_eq!(
+            receipt.compiler_owner,
+            GerbilPooLoopProgramCompilerOwner::GerbilPooFlow
+        );
+        assert_eq!(
+            receipt.scheme_boundary,
+            GerbilPooLoopProgramCompilerBoundary::SchemeTypesToRustTypes
+        );
+        assert_eq!(
+            receipt.serialization_boundary,
+            GerbilPooLoopProgramCompilerSerializationBoundary::RustOwnedCliTraceCrossProcess
+        );
+    }
+    let elapsed = started.elapsed();
+
+    assert!(
+        elapsed < Duration::from_millis(250),
+        "POO loop compiler receipt projection exceeded in-process ABI budget: {elapsed:?}"
+    );
 }
 
 #[test]

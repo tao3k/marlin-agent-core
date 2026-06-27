@@ -1,8 +1,12 @@
 //! Public interface for `LoopProgram` runtime handoff execution.
 
+mod hybrid;
+mod policy_gated;
 mod runtime;
 mod tool_process;
 
+pub use hybrid::HybridLoopProgramRuntimeHandoffExecutor;
+pub use policy_gated::PolicyGatedAgentFlowLoopProgramRuntimeHandoffExecutor;
 pub use runtime::{
     AgentFlowLoopProgramRuntimeHandoffExecutor, DeferredLoopProgramRuntimeHandoffHandler,
     DenylistedLoopProgramToolDispatchHandler, LoopProgramAgentFlowRuntimeHandoffRequest,

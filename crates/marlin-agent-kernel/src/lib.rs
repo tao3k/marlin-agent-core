@@ -37,23 +37,27 @@ pub use loop_program_handoff::{
 };
 pub use loop_program_handoff_executor::{
     AgentFlowLoopProgramRuntimeHandoffExecutor, DeferredLoopProgramRuntimeHandoffHandler,
-    DenylistedLoopProgramToolDispatchHandler, LoopProgramAgentFlowRuntimeHandoffRequest,
-    LoopProgramMemoryProjectionReceipt, LoopProgramRuntimeHandoffExecution,
-    LoopProgramRuntimeHandoffExecutionReceipt, LoopProgramRuntimeHandoffExecutionReportStatus,
-    LoopProgramRuntimeHandoffExecutionStatus, LoopProgramRuntimeHandoffExecutor,
-    LoopProgramRuntimeHandoffHandler, LoopProgramRuntimeHandoffRouter,
-    LoopProgramRuntimeHandoffRouterHandlers, LoopProgramRuntimeOwner,
-    LoopProgramToolProcessProgram, LoopProgramToolProcessProjectionReceipt,
-    LoopProgramToolProcessSpawnReceipt, LoopProgramToolProcessSpawnRequest,
+    DenylistedLoopProgramToolDispatchHandler, HybridLoopProgramRuntimeHandoffExecutor,
+    LoopProgramAgentFlowRuntimeHandoffRequest, LoopProgramMemoryProjectionReceipt,
+    LoopProgramRuntimeHandoffExecution, LoopProgramRuntimeHandoffExecutionReceipt,
+    LoopProgramRuntimeHandoffExecutionReportStatus, LoopProgramRuntimeHandoffExecutionStatus,
+    LoopProgramRuntimeHandoffExecutor, LoopProgramRuntimeHandoffHandler,
+    LoopProgramRuntimeHandoffRouter, LoopProgramRuntimeHandoffRouterHandlers,
+    LoopProgramRuntimeOwner, LoopProgramToolProcessProgram,
+    LoopProgramToolProcessProjectionReceipt, LoopProgramToolProcessSpawnReceipt,
+    LoopProgramToolProcessSpawnRequest, PolicyGatedAgentFlowLoopProgramRuntimeHandoffExecutor,
     StaticLoopProgramRuntimeHandoffHandler, spawn_loop_program_tool_process,
 };
 pub use loop_program_side_effects::{
     LoopProgramDerivedSessionPolicyStatus, LoopProgramExecutionReplayBundleReceipt,
+    LoopProgramFileSandbox, LoopProgramFileWriteReceipt, LoopProgramFileWriteRequest,
+    LoopProgramFileWriteResolver, LoopProgramFileWriteSideEffectReceipt,
+    LoopProgramFileWriteSideEffectStatus, LoopProgramFileWriteTemplate,
     LoopProgramRuntimeReplayBundleReceipt, LoopProgramRuntimeSideEffectExecutor,
     LoopProgramRuntimeSideEffectReceipt, LoopProgramRuntimeSideEffectStatus,
     LoopProgramToolProcessCommandTemplate, LoopProgramToolProcessResolver,
     LoopProgramToolProcessSideEffectReceipt, LoopProgramToolProcessSideEffectStatus,
-    StaticLoopProgramToolProcessResolver,
+    StaticLoopProgramFileWriteResolver, StaticLoopProgramToolProcessResolver,
 };
 pub use marlin_agent_protocol::{
     ExecutorName, FailureClassificationId, FailureClassificationReceipt, GraphId,
