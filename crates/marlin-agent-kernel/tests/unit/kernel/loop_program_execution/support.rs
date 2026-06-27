@@ -17,8 +17,8 @@ use marlin_agent_kernel::{
     LoopProgramRuntimeHandoffHandler, LoopProgramRuntimeHandoffPlan,
     LoopProgramRuntimeHandoffRouter, LoopProgramRuntimeHandoffRouterHandlers,
     LoopProgramRuntimeOwner, LoopProgramToolProcessProgram, LoopProgramToolProcessSpawnRequest,
-    ScriptedLoopProgramEventMapper, StaticLoopProgramRuntimeHandoffHandler,
-    spawn_loop_program_tool_process,
+    ReceiptDrivenLoopProgramEventMapper, ScriptedLoopProgramEventMapper,
+    StaticLoopProgramRuntimeHandoffHandler, spawn_loop_program_tool_process,
 };
 use marlin_agent_protocol::{
     AgentFlowIntent, AgentFlowMemoryOperation, LoopMechanismPolicyId, LoopPolicyDigest,
@@ -62,6 +62,18 @@ fn handled_by(owner: &'static str) -> Arc<dyn LoopProgramRuntimeHandoffHandler> 
     Arc::new(StaticLoopProgramRuntimeHandoffHandler::handled(
         LoopProgramRuntimeOwner::new(owner),
     ))
+}
+
+fn handled_by_with_event(
+    owner: &'static str,
+    next_event: LoopProgramEventKind,
+) -> Arc<dyn LoopProgramRuntimeHandoffHandler> {
+    Arc::new(
+        StaticLoopProgramRuntimeHandoffHandler::handled_with_next_event(
+            LoopProgramRuntimeOwner::new(owner),
+            next_event,
+        ),
+    )
 }
 
 fn denied_by(owner: &'static str) -> Arc<dyn LoopProgramRuntimeHandoffHandler> {

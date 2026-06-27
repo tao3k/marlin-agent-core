@@ -98,6 +98,31 @@ impl LoopProgramEventMapper for TerminalLoopProgramEventMapper {
     }
 }
 
+/// Mapper that advances the loop from runtime-owned handoff execution receipts.
+#[derive(Clone, Debug, Default)]
+pub struct ReceiptDrivenLoopProgramEventMapper;
+
+impl LoopProgramEventMapper for ReceiptDrivenLoopProgramEventMapper {
+    fn next_event(
+        &self,
+        _machine_receipt: &GenericLoopMachineReceipt,
+        runtime_handoff_execution: &LoopProgramRuntimeHandoffExecutionReceipt,
+    ) -> Option<LoopProgramEventKind> {
+        if runtime_handoff_execution.status
+            == LoopProgramRuntimeHandoffExecutionReportStatus::Denied
+        {
+            return Some(LoopProgramEventKind::Error);
+        }
+        if runtime_handoff_execution.status
+            != LoopProgramRuntimeHandoffExecutionReportStatus::Completed
+        {
+            return None;
+        }
+
+        unambiguous_receipt_next_event(runtime_handoff_execution)
+    }
+}
+
 /// Scripted mapper for tests and deterministic smoke fixtures.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct ScriptedLoopProgramEventMapper {
@@ -280,4 +305,19 @@ fn initial_event_queue(
     let mut events = VecDeque::with_capacity(initial_events.len().max(1));
     events.extend(initial_events);
     events
+}
+
+fn unambiguous_receipt_next_event(
+    runtime_handoff_execution: &LoopProgramRuntimeHandoffExecutionReceipt,
+) -> Option<LoopProgramEventKind> {
+    let mut next_events = runtime_handoff_execution
+        .executions
+        .iter()
+        .filter_map(|execution| execution.next_event.as_ref());
+    let first = next_events.next()?.clone();
+    if next_events.all(|event| event == &first) {
+        Some(first)
+    } else {
+        None
+    }
 }

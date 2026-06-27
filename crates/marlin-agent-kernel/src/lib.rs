@@ -29,7 +29,8 @@ pub use loop_program_controller::{
 pub use loop_program_execution::{
     LoopProgramEventMapper, LoopProgramExecutionDriver, LoopProgramExecutionReceipt,
     LoopProgramExecutionRequest, LoopProgramExecutionStatus, LoopProgramExecutionStepReceipt,
-    ScriptedLoopProgramEventMapper, TerminalLoopProgramEventMapper,
+    ReceiptDrivenLoopProgramEventMapper, ScriptedLoopProgramEventMapper,
+    TerminalLoopProgramEventMapper,
 };
 pub use loop_program_handoff::{
     LoopProgramRuntimeHandoff, LoopProgramRuntimeHandoffKind, LoopProgramRuntimeHandoffPlan,
