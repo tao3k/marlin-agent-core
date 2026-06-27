@@ -5,11 +5,16 @@ use std::{
 
 use marlin_agent_protocol::{ModelEndpoint, ModelEndpointContractError, ModelGatewayError};
 use marlin_agent_stream::{
-    ChunkGate, LiteLlmModelClient, LiteLlmStreamGateway, ModelGatewayCompletionOptions,
-    ModelGatewayMessageRole, ModelStreamChunk, ModelStreamEvent, ModelStreamGateway,
-    ModelStreamRequest, ModelStreamTransport, system_gateway_message, user_gateway_message,
+    ChunkGate, LiteLlmModelClient, LiteLlmStreamGateway, ModelGatewayCompletionChoice,
+    ModelGatewayCompletionOptions, ModelGatewayCompletionResponse, ModelNoWriteProbeRequest,
+    ModelNoWriteProbeStatus, ModelStreamChunk, ModelStreamEvent, ModelStreamGateway,
+    ModelStreamRequest, ModelStreamTransport, assistant_gateway_message, run_model_no_write_probe,
+    system_gateway_message, user_gateway_message,
 };
-use marlin_agent_test_support::{NO_LIVE_LLM_GATE_DENIAL_MESSAGE, NoLiveHttpModelGatewayFixture};
+use marlin_agent_test_support::{
+    NO_LIVE_LLM_GATE_DENIAL_MESSAGE, NoLiveHttpModelGatewayFixture, NoLiveLlmModelGateway,
+    ScriptedModelGateway,
+};
 use tokio::time::timeout;
 
 const LIVE_LLM_GATE_ENV: &str = "MARLIN_LIVE_LLM_GATE";
@@ -90,6 +95,109 @@ async fn litellm_stream_gateway_validates_endpoint_contract_before_network_call(
 }
 
 #[tokio::test]
+async fn model_no_write_probe_records_marker_without_tools_or_file_writes() {
+    let gateway = ScriptedModelGateway::new([Ok(ModelGatewayCompletionResponse::new(
+        "probe-marker-ok",
+        "gpt-test-probe",
+        vec![ModelGatewayCompletionChoice::new(
+            0,
+            assistant_gateway_message("marlin-no-write-ok"),
+            Some("stop".to_owned()),
+        )],
+    ))]);
+    let receipt = run_model_no_write_probe(
+        &gateway,
+        ModelNoWriteProbeRequest::new(
+            ModelEndpoint::new("openai", "gpt-test-probe"),
+            "marlin-no-write-ok",
+        ),
+    )
+    .await;
+
+    assert_eq!(receipt.status, ModelNoWriteProbeStatus::Completed);
+    assert!(receipt.marker_present);
+    assert_eq!(
+        receipt.completion_id.as_ref().map(|id| id.as_str()),
+        Some("probe-marker-ok")
+    );
+    assert_eq!(
+        receipt
+            .completion_model
+            .as_ref()
+            .map(|model| model.as_str()),
+        Some("gpt-test-probe")
+    );
+    assert_eq!(receipt.choice_count.get(), 1);
+    assert!(
+        receipt
+            .assistant_content_digest
+            .as_ref()
+            .is_some_and(|digest| digest.as_str().starts_with("fnv1a64:"))
+    );
+    assert_eq!(
+        receipt.assistant_content_bytes.get(),
+        "marlin-no-write-ok".len()
+    );
+    assert_eq!(receipt.finish_reason.as_deref(), Some("stop"));
+    assert!(!receipt.tool_handoff_allowed);
+    assert!(!receipt.filesystem_write_allowed);
+    assert_eq!(gateway.requests().len(), 1);
+}
+
+#[tokio::test]
+async fn model_no_write_probe_reports_marker_missing() {
+    let gateway = ScriptedModelGateway::new([Ok(ModelGatewayCompletionResponse::new(
+        "probe-marker-missing",
+        "gpt-test-probe",
+        vec![ModelGatewayCompletionChoice::new(
+            0,
+            assistant_gateway_message("different-marker"),
+            Some("stop".to_owned()),
+        )],
+    ))]);
+    let receipt = run_model_no_write_probe(
+        &gateway,
+        ModelNoWriteProbeRequest::new(
+            ModelEndpoint::new("openai", "gpt-test-probe"),
+            "marlin-no-write-ok",
+        ),
+    )
+    .await;
+
+    assert_eq!(receipt.status, ModelNoWriteProbeStatus::MarkerMissing);
+    assert!(!receipt.marker_present);
+    assert!(receipt.failure_message.is_none());
+    assert!(!receipt.tool_handoff_allowed);
+    assert!(!receipt.filesystem_write_allowed);
+}
+
+#[tokio::test]
+async fn model_no_write_probe_records_no_live_denial_receipt() {
+    let gateway = NoLiveLlmModelGateway::new();
+    let receipt = run_model_no_write_probe(
+        &gateway,
+        ModelNoWriteProbeRequest::new(
+            ModelEndpoint::new("openai", "gpt-test-probe"),
+            "marlin-no-write-ok",
+        ),
+    )
+    .await;
+
+    assert_eq!(receipt.status, ModelNoWriteProbeStatus::Failed);
+    assert!(!receipt.marker_present);
+    assert_eq!(receipt.choice_count.get(), 0);
+    assert!(
+        receipt
+            .failure_message
+            .as_ref()
+            .is_some_and(|message| message.as_str().contains(NO_LIVE_LLM_GATE_DENIAL_MESSAGE))
+    );
+    assert!(!receipt.tool_handoff_allowed);
+    assert!(!receipt.filesystem_write_allowed);
+    assert_eq!(gateway.denied_requests().len(), 1);
+}
+
+#[tokio::test]
 async fn no_live_http_fixture_denies_stream_provider_posts() {
     let fixture = NoLiveHttpModelGatewayFixture::start().await;
     let response = reqwest::Client::new()
@@ -130,55 +238,56 @@ async fn live_litellm_stream_gateway_completes_provider_neutral_request() {
     let model = required_live_llm_env(LIVE_LLM_MODEL_ENV);
     require_live_provider_key(&provider);
     let endpoint = ModelEndpoint::new(provider, model);
-    let request = ModelStreamRequest::new(
-        endpoint,
-        vec![
-            system_gateway_message("Reply only with the requested marker."),
-            user_gateway_message("Return exactly: marlin-live-llm-ok"),
-        ],
-    )
-    .with_options(ModelGatewayCompletionOptions {
-        max_tokens: Some(24),
-        ..Default::default()
-    });
+    let request = ModelNoWriteProbeRequest::new(endpoint, "marlin-live-llm-ok")
+        .with_system_prompt("Reply only with the requested marker.")
+        .with_user_prompt("Return exactly: marlin-live-llm-ok")
+        .with_options(ModelGatewayCompletionOptions {
+            max_tokens: Some(24),
+            ..Default::default()
+        });
 
     let timeout_duration = live_llm_timeout();
     let started_at = Instant::now();
-    let response = timeout(timeout_duration, gateway_completion(request))
-        .await
-        .unwrap_or_else(|_| {
-            panic!(
-                "live LLM completion exceeded {} ms",
-                timeout_duration.as_millis()
-            )
-        })
-        .expect("live LLM completion succeeds");
+    let receipt = timeout(
+        timeout_duration,
+        run_model_no_write_probe(&LiteLlmStreamGateway::new(), request),
+    )
+    .await
+    .unwrap_or_else(|_| {
+        panic!(
+            "live LLM completion exceeded {} ms",
+            timeout_duration.as_millis()
+        )
+    });
     let elapsed = started_at.elapsed();
 
-    assert!(!response.id.trim().is_empty(), "completion id is empty");
+    assert_eq!(receipt.status, ModelNoWriteProbeStatus::Completed);
+    assert!(receipt.marker_present);
     assert!(
-        !response.model.trim().is_empty(),
+        receipt
+            .completion_id
+            .as_ref()
+            .is_some_and(|id| !id.as_str().trim().is_empty()),
+        "completion id is empty"
+    );
+    assert!(
+        receipt
+            .completion_model
+            .as_ref()
+            .is_some_and(|model| !model.as_str().trim().is_empty()),
         "completion model is empty"
     );
-    let choice = response
-        .choices
-        .first()
-        .expect("live LLM response includes at least one choice");
-    assert_eq!(choice.message.role, ModelGatewayMessageRole::Assistant);
-    assert!(
-        choice
-            .message
-            .content
-            .to_ascii_lowercase()
-            .contains("marlin-live-llm-ok"),
-        "live LLM response did not contain expected marker: {:?}",
-        choice.message.content
-    );
+    assert!(!receipt.tool_handoff_allowed);
+    assert!(!receipt.filesystem_write_allowed);
 
     eprintln!(
         "live LLM gate completed provider-neutral response in {} ms via model {}",
         elapsed.as_millis(),
-        response.model
+        receipt
+            .completion_model
+            .as_ref()
+            .map(|model| model.as_str())
+            .unwrap_or("unknown")
     );
 }
 
@@ -231,10 +340,4 @@ fn live_llm_timeout() -> Duration {
         .filter(|millis| *millis > 0)
         .map(Duration::from_millis)
         .unwrap_or(Duration::from_millis(DEFAULT_LIVE_LLM_TIMEOUT_MS))
-}
-
-async fn gateway_completion(
-    request: ModelStreamRequest,
-) -> marlin_agent_stream::ModelGatewayResult<marlin_agent_stream::ModelGatewayCompletionResponse> {
-    LiteLlmStreamGateway::new().complete(request).await
 }
