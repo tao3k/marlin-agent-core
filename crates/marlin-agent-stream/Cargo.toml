@@ -15,6 +15,7 @@ tokio.workspace = true
 marlin-rust-project-harness-policy.workspace = true
 
 [dev-dependencies]
+marlin-agent-harness-types.workspace = true
 marlin-agent-kernel.workspace = true
 marlin-agent-runtime.workspace = true
 marlin-agent-test-support.workspace = true

@@ -2576,6 +2576,7 @@ name = "marlin-agent-stream"
 version = "0.1.0"
 dependencies = [
  "litellm-rs",
+ "marlin-agent-harness-types",
  "marlin-agent-kernel",
  "marlin-agent-protocol",
  "marlin-agent-runtime",

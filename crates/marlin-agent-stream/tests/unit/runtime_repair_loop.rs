@@ -6,6 +6,13 @@ use std::{
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
+use marlin_agent_harness_types::{
+    RuntimeRepairCaseId, RuntimeRepairContentSummary, RuntimeRepairCount,
+    RuntimeRepairDenialReason, RuntimeRepairDurationMillis, RuntimeRepairHandoffStatus,
+    RuntimeRepairLiveCaseReceipt, RuntimeRepairLiveCaseReceiptRequest, RuntimeRepairLiveGateStatus,
+    RuntimeRepairModelCompletionId, RuntimeRepairModelId, RuntimeRepairNoLiveCaseReceipt,
+    RuntimeRepairNoLiveCaseReceiptRequest, RuntimeRepairProfileRef,
+};
 use marlin_agent_kernel::{
     AgentFlowLoopProgramRuntimeHandoffExecutor, GenericLoopMachineReceipt, LoopProgramEventMapper,
     LoopProgramExecutionDriver, LoopProgramExecutionRequest, LoopProgramExecutionStatus,
@@ -23,7 +30,6 @@ use marlin_agent_protocol::{
 use marlin_agent_runtime::{RuntimeEdgeModelGateway, RuntimeEdgePolicy, TokioAgentRuntime};
 use marlin_agent_stream::LiteLlmStreamGateway;
 use marlin_gerbil_scheme::{
-    GerbilLoopCaseDriverCaseId, GerbilLoopCaseDriverProfileRef,
     GerbilLoopCaseDriverProjectedLoopProgram, GerbilLoopCaseDriverProjectedLoopProgramRequest,
     load_gerbil_loop_case_driver_projected_loop_program,
 };
@@ -195,53 +201,61 @@ fn live_runtime_repair_single_file_bug_fix_runs_llm_tool_and_verifier_loop() {
     assert!(verification_receipts[0].success);
     assert_eq!(verification_receipts[0].repaired_source, FIXED_FIXTURE);
 
-    let live_receipt = RuntimeLiveRepairLiveCaseReceipt {
-        case_id: scheme_receipt.case_id().to_owned(),
-        profile_ref: scheme_receipt.profile_ref().to_owned(),
-        program_id: execution_receipt.program_id.as_str().to_owned(),
-        model_completion_id: model_completion.id,
-        model: model_completion.model,
-        elapsed_ms: started_at.elapsed().as_millis() as u64,
-        action_count: execution_receipt.steps.len(),
-        tool_projection_count: tool_steps
-            .iter()
-            .map(|step| {
-                step.runtime_handoff_execution
-                    .tool_process_projections
-                    .len()
-            })
-            .sum(),
+    let live_receipt = RuntimeRepairLiveCaseReceipt::new(RuntimeRepairLiveCaseReceiptRequest {
+        case_id: RuntimeRepairCaseId::new(scheme_receipt.case_id().as_str()),
+        profile_ref: RuntimeRepairProfileRef::new(scheme_receipt.profile_ref().as_str()),
+        program_id: execution_receipt.program_id.clone(),
+        model_completion_id: RuntimeRepairModelCompletionId::new(model_completion.id),
+        model: RuntimeRepairModelId::new(model_completion.model),
+        elapsed_ms: RuntimeRepairDurationMillis::new(started_at.elapsed().as_millis() as u64),
+        action_count: RuntimeRepairCount::new(execution_receipt.steps.len()),
+        tool_projection_count: RuntimeRepairCount::new(
+            tool_steps
+                .iter()
+                .map(|step| {
+                    step.runtime_handoff_execution
+                        .tool_process_projections
+                        .len()
+                })
+                .sum(),
+        ),
         patch_tool_success: tool_receipts[0].success,
         graph_rewrite_projected: execution_receipt
             .steps
             .iter()
             .any(|step| step.machine_receipt.action == LoopProgramActionKind::RewriteGraph),
         verification_success: verification_receipts[0].success,
-        repaired_content,
-    };
+        repaired_content: RuntimeRepairContentSummary::from_text(&repaired_content),
+    });
 
     assert_eq!(live_receipt.case_id.as_str(), SCHEME_REAL_REPAIR_CASE_ID);
     assert_eq!(
         live_receipt.profile_ref.as_str(),
         SCHEME_REAL_REPAIR_PROFILE_REF
     );
-    assert_eq!(live_receipt.program_id, SCHEME_REAL_REPAIR_PROGRAM_ID);
-    assert!(!live_receipt.model_completion_id.trim().is_empty());
-    assert!(!live_receipt.model.trim().is_empty());
-    assert_eq!(live_receipt.action_count, 6);
-    assert_eq!(live_receipt.tool_projection_count, 1);
+    assert_eq!(
+        live_receipt.program_id.as_str(),
+        SCHEME_REAL_REPAIR_PROGRAM_ID
+    );
+    assert!(!live_receipt.model_completion_id.as_str().trim().is_empty());
+    assert!(!live_receipt.model.as_str().trim().is_empty());
+    assert_eq!(live_receipt.action_count.get(), 6);
+    assert_eq!(live_receipt.tool_projection_count.get(), 1);
     assert!(live_receipt.patch_tool_success);
     assert!(live_receipt.graph_rewrite_projected);
     assert!(live_receipt.verification_success);
-    assert_eq!(live_receipt.repaired_content, FIXED_FIXTURE);
+    assert_eq!(
+        live_receipt.repaired_content,
+        RuntimeRepairContentSummary::from_text(FIXED_FIXTURE)
+    );
     eprintln!(
         "live runtime repair receipt: case={} profile={} model={} elapsed_ms={} actions={} tool_projections={} patch_success={} rewrite_projected={} verify_success={}",
         live_receipt.case_id,
         live_receipt.profile_ref,
         live_receipt.model,
-        live_receipt.elapsed_ms,
-        live_receipt.action_count,
-        live_receipt.tool_projection_count,
+        live_receipt.elapsed_ms.get(),
+        live_receipt.action_count.get(),
+        live_receipt.tool_projection_count.get(),
         live_receipt.patch_tool_success,
         live_receipt.graph_rewrite_projected,
         live_receipt.verification_success
@@ -396,33 +410,42 @@ fn runtime_live_repair_no_live_gate_denial_runs_typed_loop_receipt() {
         "Scheme-projected repair loop should not synthesize a Rust stop branch for denied LLM: {execution_receipt:?}"
     );
 
-    let no_live_receipt = RuntimeRepairNoLiveCaseReceipt {
-        case_id: scheme_receipt.case_id().to_owned(),
-        profile_ref: scheme_receipt.profile_ref().to_owned(),
-        program_id: execution_receipt.program_id.as_str().to_owned(),
-        gate_status: gate_receipt.status,
-        denial_reason,
-        live_llm_allowed: false,
-        action_count: execution_receipt.steps.len(),
-        model_handoff_status: model_step.runtime_handoff_execution.status.clone(),
-    };
+    let no_live_receipt =
+        RuntimeRepairNoLiveCaseReceipt::new(RuntimeRepairNoLiveCaseReceiptRequest {
+            case_id: RuntimeRepairCaseId::new(scheme_receipt.case_id().as_str()),
+            profile_ref: RuntimeRepairProfileRef::new(scheme_receipt.profile_ref().as_str()),
+            program_id: execution_receipt.program_id.clone(),
+            gate_status: runtime_repair_gate_status(gate_receipt.status),
+            denial_reason: RuntimeRepairDenialReason::new(denial_reason),
+            live_llm_allowed: false,
+            action_count: RuntimeRepairCount::new(execution_receipt.steps.len()),
+            model_handoff_status: runtime_repair_handoff_status(
+                &model_step.runtime_handoff_execution.status,
+            ),
+        });
 
     assert_eq!(no_live_receipt.case_id.as_str(), SCHEME_REAL_REPAIR_CASE_ID);
     assert_eq!(
         no_live_receipt.profile_ref.as_str(),
         SCHEME_REAL_REPAIR_PROFILE_REF
     );
-    assert_eq!(no_live_receipt.program_id, SCHEME_REAL_REPAIR_PROGRAM_ID);
+    assert_eq!(
+        no_live_receipt.program_id.as_str(),
+        SCHEME_REAL_REPAIR_PROGRAM_ID
+    );
     assert_eq!(
         no_live_receipt.gate_status,
-        RuntimeLiveRepairGateStatus::Disabled
+        RuntimeRepairLiveGateStatus::Disabled
     );
-    assert_eq!(no_live_receipt.denial_reason, "live LLM gate is disabled");
+    assert_eq!(
+        no_live_receipt.denial_reason.as_str(),
+        "live LLM gate is disabled"
+    );
     assert!(!no_live_receipt.live_llm_allowed);
-    assert_eq!(no_live_receipt.action_count, 1);
+    assert_eq!(no_live_receipt.action_count.get(), 1);
     assert_eq!(
         no_live_receipt.model_handoff_status,
-        LoopProgramRuntimeHandoffExecutionReportStatus::Denied
+        RuntimeRepairHandoffStatus::Denied
     );
 }
 
@@ -544,32 +567,35 @@ fn default_provider_key_envs(provider: &str) -> &'static [&'static str] {
     }
 }
 
-#[derive(Debug)]
-struct RuntimeLiveRepairLiveCaseReceipt {
-    case_id: GerbilLoopCaseDriverCaseId,
-    profile_ref: GerbilLoopCaseDriverProfileRef,
-    program_id: String,
-    model_completion_id: String,
-    model: String,
-    elapsed_ms: u64,
-    action_count: usize,
-    tool_projection_count: usize,
-    patch_tool_success: bool,
-    graph_rewrite_projected: bool,
-    verification_success: bool,
-    repaired_content: String,
+fn runtime_repair_gate_status(status: RuntimeLiveRepairGateStatus) -> RuntimeRepairLiveGateStatus {
+    match status {
+        RuntimeLiveRepairGateStatus::Disabled => RuntimeRepairLiveGateStatus::Disabled,
+        RuntimeLiveRepairGateStatus::MissingProvider => {
+            RuntimeRepairLiveGateStatus::MissingProvider
+        }
+        RuntimeLiveRepairGateStatus::MissingModel => RuntimeRepairLiveGateStatus::MissingModel,
+        RuntimeLiveRepairGateStatus::MissingProviderKey => {
+            RuntimeRepairLiveGateStatus::MissingProviderKey
+        }
+        RuntimeLiveRepairGateStatus::Enabled => RuntimeRepairLiveGateStatus::Enabled,
+    }
 }
 
-#[derive(Debug, Eq, PartialEq)]
-struct RuntimeRepairNoLiveCaseReceipt {
-    case_id: GerbilLoopCaseDriverCaseId,
-    profile_ref: GerbilLoopCaseDriverProfileRef,
-    program_id: String,
-    gate_status: RuntimeLiveRepairGateStatus,
-    denial_reason: String,
-    live_llm_allowed: bool,
-    action_count: usize,
-    model_handoff_status: LoopProgramRuntimeHandoffExecutionReportStatus,
+fn runtime_repair_handoff_status(
+    status: &LoopProgramRuntimeHandoffExecutionReportStatus,
+) -> RuntimeRepairHandoffStatus {
+    match status {
+        LoopProgramRuntimeHandoffExecutionReportStatus::Empty => RuntimeRepairHandoffStatus::Empty,
+        LoopProgramRuntimeHandoffExecutionReportStatus::Completed => {
+            RuntimeRepairHandoffStatus::Completed
+        }
+        LoopProgramRuntimeHandoffExecutionReportStatus::Deferred => {
+            RuntimeRepairHandoffStatus::Deferred
+        }
+        LoopProgramRuntimeHandoffExecutionReportStatus::Denied => {
+            RuntimeRepairHandoffStatus::Denied
+        }
+    }
 }
 
 #[derive(Clone)]

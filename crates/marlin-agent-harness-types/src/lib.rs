@@ -10,6 +10,7 @@
 
 mod evidence;
 mod intent_case;
+mod runtime_repair;
 mod scenario;
 
 pub use evidence::{
@@ -35,6 +36,15 @@ pub use intent_case::{
     IntentCaseLoopProgramId, IntentCasePolicyDigest, IntentCaseRunId, IntentCaseRunReceipt,
     IntentCaseRunStatus, IntentCaseRuntimeOwner, IntentCaseTraceEntry, IntentCaseTraceEntryId,
     IntentCaseTraceEntryRequest, IntentCaseTraceIndex, IntentCaseTransitionId,
+};
+pub use runtime_repair::{
+    RUNTIME_REPAIR_LIVE_CASE_RECEIPT_SCHEMA_ID, RUNTIME_REPAIR_NO_LIVE_CASE_RECEIPT_SCHEMA_ID,
+    RuntimeRepairCaseId, RuntimeRepairContentDigest, RuntimeRepairContentSummary,
+    RuntimeRepairCount, RuntimeRepairDenialReason, RuntimeRepairDurationMillis,
+    RuntimeRepairHandoffStatus, RuntimeRepairLiveCaseReceipt, RuntimeRepairLiveCaseReceiptRequest,
+    RuntimeRepairLiveGateStatus, RuntimeRepairModelCompletionId, RuntimeRepairModelId,
+    RuntimeRepairNoLiveCaseReceipt, RuntimeRepairNoLiveCaseReceiptRequest, RuntimeRepairProfileRef,
+    RuntimeRepairSchemaId,
 };
 pub use scenario::{
     AGENT_HARNESS_SCENARIO_CONTRACT_SCHEMA_ID, AgentHarnessScenario, AgentHarnessScenarioContract,
