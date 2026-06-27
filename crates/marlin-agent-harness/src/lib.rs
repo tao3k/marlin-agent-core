@@ -15,6 +15,7 @@ mod evidence_graph;
 mod fakes;
 mod gerbil_continuation;
 mod graph;
+mod intent_case_artifact;
 mod release_visibility;
 mod runtime;
 mod trace;
@@ -35,6 +36,11 @@ pub use gerbil_continuation::{
     AgentHarnessGerbilLoopContinuationProjector,
 };
 pub use graph::AgentHarnessGraphBuilder;
+pub use intent_case_artifact::{
+    GerbilScriptedIntentCaseArtifactBundleRequest, IntentCaseArtifactBundleMaterializationError,
+    IntentCaseArtifactBundleMaterializationReceipt, IntentCaseMaterializedArtifactReceipt,
+    materialize_gerbil_scripted_intent_case_artifact_bundle,
+};
 pub use marlin_agent_harness_types::{
     AGENT_HARNESS_GRAPH_POLICY_PROPOSAL_VISIBILITY_SUBJECT_PREFIX,
     AGENT_HARNESS_PERFORMANCE_EVIDENCE_ALLOCATION_PROFILE,
@@ -50,6 +56,12 @@ pub use marlin_agent_harness_types::{
     AGENT_HARNESS_STABILITY_EVIDENCE_RESOURCE_DELTA, AGENT_HARNESS_STABILITY_EVIDENCE_STATE_GROWTH,
     AgentHarnessEvidence, AgentHarnessEvidenceKind, AgentHarnessPerformanceEvidence,
     AgentHarnessScenario, AgentHarnessScenarioContract, AgentHarnessStabilityEvidence,
+    INTENT_CASE_ARTIFACT_MANIFEST_SCHEMA_ID, INTENT_CASE_RUN_RECEIPT_SCHEMA_ID,
+    IntentCaseArtifactId, IntentCaseArtifactKind, IntentCaseArtifactManifest,
+    IntentCaseArtifactManifestRequest, IntentCaseArtifactRef, IntentCaseId,
+    IntentCaseLoopProgramId, IntentCasePolicyDigest, IntentCaseRunId, IntentCaseRunReceipt,
+    IntentCaseRunStatus, IntentCaseRuntimeOwner, IntentCaseTraceEntry, IntentCaseTraceEntryId,
+    IntentCaseTraceEntryRequest, IntentCaseTraceIndex, IntentCaseTransitionId,
     agent_harness_graph_policy_proposal_visibility_evidence,
 };
 pub use release_visibility::{

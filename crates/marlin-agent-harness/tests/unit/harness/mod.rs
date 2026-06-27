@@ -3,6 +3,7 @@ mod evidence;
 mod evidence_fact;
 mod evidence_graph;
 mod graph_policy;
+mod intent_case_artifact;
 mod real_gxi;
 mod release_visibility;
 mod runtime;
