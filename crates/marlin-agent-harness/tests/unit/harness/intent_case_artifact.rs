@@ -277,6 +277,70 @@ async fn harness_materializes_sandbox_file_write_receipts_into_sandbox_and_patch
     );
 }
 
+#[cfg(unix)]
+#[tokio::test]
+async fn harness_materializes_sandbox_denylist_receipts_without_writing_files() {
+    let receipt = gerbil_vertical_receipts()
+        .into_iter()
+        .find(|receipt| {
+            receipt.live_llm_required()
+                && receipt.has_capability(&cap("+tool-repair"))
+                && receipt.has_capability(&cap("+verification"))
+        })
+        .expect("repair case should project denied file-write side effects");
+    let execution_receipt = execute_vertical_receipt(&receipt);
+    let workspace = tempfile::tempdir().expect("create sandbox deny workspace");
+    let denied_relative_path = PathBuf::from("secret.rs");
+    let allowed_relative_path = PathBuf::from("src/lib.rs");
+    let (runtime, _events) = TokioAgentRuntime::new(4);
+    let replay_bundle =
+        LoopProgramRuntimeSideEffectExecutor::new(StaticLoopProgramToolProcessResolver::default())
+            .with_file_write_resolver(StaticLoopProgramFileWriteResolver::new(
+                vec![LoopProgramFileWriteTemplate::new(
+                    "agent-flow.tool-intent",
+                    ["loop-program.dispatch-tools"],
+                    denied_relative_path.clone(),
+                    b"sealed\n".to_vec(),
+                )]
+                .into_boxed_slice(),
+            ))
+            .with_file_sandbox(
+                LoopProgramFileSandbox::new(workspace.path().to_owned())
+                    .with_allowed_relative_paths([allowed_relative_path]),
+            )
+            .execute_loop_execution(&runtime.context(), &execution_receipt)
+            .await;
+    let output_root = tempfile::tempdir().expect("create sandbox deny artifact tempdir");
+
+    let bundle = materialize_gerbil_scripted_intent_case_artifact_bundle(
+        GerbilScriptedIntentCaseArtifactBundleRequest {
+            output_root: output_root.path().to_owned(),
+            run_id: "sandbox-denylist".into(),
+            vertical_trace: receipt,
+            execution_receipt,
+            side_effect_replay_bundle: Some(replay_bundle),
+            runtime_repair_receipt: None,
+        },
+    )
+    .expect("sandbox denylist bundle materializes");
+
+    assert!(bundle.completeness_receipt.is_complete());
+    assert_eq!(bundle.completeness_receipt.missing_artifacts, Vec::new());
+    assert!(bundle.has_artifact_kind(IntentCaseArtifactKind::SandboxReceipts));
+    assert!(bundle.has_artifact_kind(IntentCaseArtifactKind::DiffPatch));
+    let sandbox = artifact_content(&bundle, IntentCaseArtifactKind::SandboxReceipts);
+    let patch = artifact_content(&bundle, IntentCaseArtifactKind::DiffPatch);
+    assert!(sandbox.contains("side_effect_policy_status=Blocked"));
+    assert!(sandbox.contains("relative_path=secret.rs"));
+    assert!(sandbox.contains("status=Denied"));
+    assert!(sandbox.contains("diagnostic=loop_program.file_write.sandbox_denied:secret.rs"));
+    assert!(sandbox.contains("bytes_written=0"));
+    assert!(patch.contains(
+        "# file=secret.rs status=Denied diagnostic=loop_program.file_write.sandbox_denied:secret.rs"
+    ));
+    assert!(!workspace.path().join("secret.rs").exists());
+}
+
 #[test]
 fn harness_materializes_runtime_repair_receipt_into_verifier_artifact() {
     let receipt = gerbil_vertical_receipts()
