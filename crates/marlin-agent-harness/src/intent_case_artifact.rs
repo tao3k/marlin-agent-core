@@ -10,7 +10,10 @@ use marlin_agent_harness_types::{
     IntentCaseArtifactId, IntentCaseArtifactKind, IntentCaseArtifactManifest,
     IntentCaseArtifactRef, IntentCaseRunId,
 };
-use marlin_agent_kernel::{LoopProgramExecutionReceipt, LoopProgramRuntimeHandoffExecution};
+use marlin_agent_kernel::{
+    LoopProgramExecutionReceipt, LoopProgramExecutionReplayBundleReceipt,
+    LoopProgramRuntimeHandoffExecution, LoopProgramRuntimeReplayBundleReceipt,
+};
 use marlin_gerbil_scheme::{
     GerbilLoopCaseDriverVerticalTraceReceipt,
     project_gerbil_loop_case_driver_intent_case_artifact_manifest,
@@ -23,6 +26,7 @@ pub struct GerbilScriptedIntentCaseArtifactBundleRequest {
     pub run_id: IntentCaseRunId,
     pub vertical_trace: GerbilLoopCaseDriverVerticalTraceReceipt,
     pub execution_receipt: LoopProgramExecutionReceipt,
+    pub side_effect_replay_bundle: Option<LoopProgramExecutionReplayBundleReceipt>,
 }
 
 /// Receipt for a written intent-case artifact bundle.
@@ -115,6 +119,7 @@ pub fn materialize_gerbil_scripted_intent_case_artifact_bundle(
         manifest,
         &request.vertical_trace,
         &request.execution_receipt,
+        request.side_effect_replay_bundle.as_ref(),
     )
 }
 
@@ -123,10 +128,12 @@ fn materialize_intent_case_artifact_bundle(
     manifest: IntentCaseArtifactManifest,
     vertical_trace: &GerbilLoopCaseDriverVerticalTraceReceipt,
     execution_receipt: &LoopProgramExecutionReceipt,
+    side_effect_replay_bundle: Option<&LoopProgramExecutionReplayBundleReceipt>,
 ) -> Result<
     IntentCaseArtifactBundleMaterializationReceipt,
     IntentCaseArtifactBundleMaterializationError,
 > {
+    let manifest = enrich_manifest_with_side_effect_artifacts(manifest, side_effect_replay_bundle);
     ensure_execution_trace_matches(&manifest, execution_receipt)?;
     let bundle_root = bundle_root(output_root, &manifest)?;
     create_directory(&bundle_root)?;
@@ -141,8 +148,13 @@ fn materialize_intent_case_artifact_bundle(
         .filter(|artifact| artifact.present)
     {
         let path = materialized_artifact_path(output_root, artifact)?;
-        let content =
-            render_artifact_content(artifact, &manifest, vertical_trace, execution_receipt);
+        let content = render_artifact_content(
+            artifact,
+            &manifest,
+            vertical_trace,
+            execution_receipt,
+            side_effect_replay_bundle,
+        );
         let bytes_written = write_file(&path, content)?;
         artifacts.push(IntentCaseMaterializedArtifactReceipt {
             artifact_id: artifact.artifact_id.clone(),
@@ -158,6 +170,87 @@ fn materialize_intent_case_artifact_bundle(
         manifest,
         artifacts: artifacts.into_boxed_slice(),
     })
+}
+
+fn enrich_manifest_with_side_effect_artifacts(
+    mut manifest: IntentCaseArtifactManifest,
+    side_effect_replay_bundle: Option<&LoopProgramExecutionReplayBundleReceipt>,
+) -> IntentCaseArtifactManifest {
+    let Some(replay_bundle) = side_effect_replay_bundle else {
+        return manifest;
+    };
+    let Some(artifact_prefix) = intent_case_artifact_prefix_from_manifest(&manifest) else {
+        return manifest;
+    };
+
+    let has_tool_processes = replay_bundle
+        .step_replay_bundles
+        .iter()
+        .any(|bundle| !bundle.side_effects.tool_processes.is_empty());
+    if has_tool_processes {
+        append_runtime_artifact_if_missing(
+            &mut manifest,
+            IntentCaseArtifactKind::ToolCalls,
+            "tool-calls",
+            &artifact_prefix,
+            "51-tool-calls.receipt",
+        );
+    }
+
+    let has_file_writes = replay_bundle
+        .step_replay_bundles
+        .iter()
+        .any(|bundle| !bundle.side_effects.file_writes.is_empty());
+    if has_file_writes {
+        append_runtime_artifact_if_missing(
+            &mut manifest,
+            IntentCaseArtifactKind::SandboxReceipts,
+            "sandbox-receipts",
+            &artifact_prefix,
+            "53-sandbox-receipts.receipt",
+        );
+        append_runtime_artifact_if_missing(
+            &mut manifest,
+            IntentCaseArtifactKind::DiffPatch,
+            "diff-patch",
+            &artifact_prefix,
+            "60-diff.patch",
+        );
+    }
+
+    manifest
+}
+
+fn append_runtime_artifact_if_missing(
+    manifest: &mut IntentCaseArtifactManifest,
+    kind: IntentCaseArtifactKind,
+    lane: &str,
+    artifact_prefix: &str,
+    filename: &str,
+) {
+    if manifest.has_artifact_kind(kind) {
+        return;
+    }
+    manifest.artifacts.push(IntentCaseArtifactRef::present(
+        IntentCaseArtifactId::new(format!("{}:{lane}", manifest.case_id.as_str())),
+        kind,
+        format!("{artifact_prefix}/{filename}"),
+    ));
+}
+
+fn intent_case_artifact_prefix_from_manifest(
+    manifest: &IntentCaseArtifactManifest,
+) -> Option<String> {
+    manifest
+        .artifacts
+        .iter()
+        .filter(|artifact| artifact.present)
+        .filter_map(|artifact| artifact.path.as_deref())
+        .find_map(|path| {
+            Path::new(path)
+                .parent()
+                .map(|parent| parent.to_string_lossy().replace('\\', "/"))
+        })
 }
 
 fn ensure_execution_trace_matches(
@@ -282,6 +375,7 @@ fn render_artifact_content(
     manifest: &IntentCaseArtifactManifest,
     vertical_trace: &GerbilLoopCaseDriverVerticalTraceReceipt,
     execution_receipt: &LoopProgramExecutionReceipt,
+    side_effect_replay_bundle: Option<&LoopProgramExecutionReplayBundleReceipt>,
 ) -> String {
     match artifact.kind {
         IntentCaseArtifactKind::Intent => render_intent_artifact(manifest, vertical_trace),
@@ -292,12 +386,22 @@ fn render_artifact_content(
             render_execution_trace_artifact(execution_receipt)
         }
         IntentCaseArtifactKind::ModelEvents => render_model_events_artifact(execution_receipt),
-        IntentCaseArtifactKind::ToolCalls => render_tool_calls_artifact(execution_receipt),
-        IntentCaseArtifactKind::SandboxReceipts => render_sandbox_artifact(execution_receipt),
+        IntentCaseArtifactKind::ToolCalls => {
+            render_tool_calls_artifact(execution_receipt, side_effect_replay_bundle)
+        }
+        IntentCaseArtifactKind::SandboxReceipts => {
+            render_sandbox_artifact(execution_receipt, side_effect_replay_bundle)
+        }
         IntentCaseArtifactKind::MemoryReceipts => render_memory_artifact(execution_receipt),
-        IntentCaseArtifactKind::DiffPatch => render_scripted_diff_artifact(manifest),
-        IntentCaseArtifactKind::TestBefore => render_scripted_test_artifact(manifest, "before"),
-        IntentCaseArtifactKind::TestAfter => render_scripted_test_artifact(manifest, "after"),
+        IntentCaseArtifactKind::DiffPatch => {
+            render_diff_artifact(manifest, side_effect_replay_bundle)
+        }
+        IntentCaseArtifactKind::TestBefore => {
+            render_test_artifact(manifest, side_effect_replay_bundle, "before")
+        }
+        IntentCaseArtifactKind::TestAfter => {
+            render_test_artifact(manifest, side_effect_replay_bundle, "after")
+        }
         IntentCaseArtifactKind::VerifierReceipt => render_verifier_artifact(execution_receipt),
         IntentCaseArtifactKind::PolicyExplanation => {
             render_policy_explanation_artifact(manifest, vertical_trace)
@@ -418,7 +522,10 @@ fn render_model_events_artifact(execution_receipt: &LoopProgramExecutionReceipt)
     render_action_projection_artifact(execution_receipt, "model", "InvokeModel")
 }
 
-fn render_tool_calls_artifact(execution_receipt: &LoopProgramExecutionReceipt) -> String {
+fn render_tool_calls_artifact(
+    execution_receipt: &LoopProgramExecutionReceipt,
+    side_effect_replay_bundle: Option<&LoopProgramExecutionReplayBundleReceipt>,
+) -> String {
     let mut lines = Vec::new();
     for step in &execution_receipt.steps {
         for projection in &step.runtime_handoff_execution.tool_process_projections {
@@ -430,13 +537,27 @@ fn render_tool_calls_artifact(execution_receipt: &LoopProgramExecutionReceipt) -
             ));
         }
     }
+    if let Some(replay_bundle) = side_effect_replay_bundle {
+        lines.push(format!(
+            "side_effect_replay policy_status={:?} execution_status={:?} step_bundle_count={}",
+            replay_bundle.policy_status,
+            replay_bundle.execution_status,
+            replay_bundle.step_replay_bundles.len()
+        ));
+        for step_bundle in &replay_bundle.step_replay_bundles {
+            lines.extend(render_tool_process_side_effects(step_bundle));
+        }
+    }
     if lines.is_empty() {
         lines.push("tool_calls=none".to_owned());
     }
     lines.join("\n") + "\n"
 }
 
-fn render_sandbox_artifact(execution_receipt: &LoopProgramExecutionReceipt) -> String {
+fn render_sandbox_artifact(
+    execution_receipt: &LoopProgramExecutionReceipt,
+    side_effect_replay_bundle: Option<&LoopProgramExecutionReplayBundleReceipt>,
+) -> String {
     let mut lines = Vec::new();
     for step in &execution_receipt.steps {
         for execution in &step.runtime_handoff_execution.executions {
@@ -447,6 +568,18 @@ fn render_sandbox_artifact(execution_receipt: &LoopProgramExecutionReceipt) -> S
                 execution.status
             ));
         }
+    }
+    if let Some(replay_bundle) = side_effect_replay_bundle {
+        lines.push(format!(
+            "side_effect_policy_status={:?}",
+            replay_bundle.policy_status
+        ));
+        for step_bundle in &replay_bundle.step_replay_bundles {
+            lines.extend(render_file_write_side_effects(step_bundle));
+        }
+    }
+    if lines.is_empty() {
+        lines.push("sandbox_receipts=none".to_owned());
     }
     lines.join("\n") + "\n"
 }
@@ -469,18 +602,125 @@ fn render_memory_artifact(execution_receipt: &LoopProgramExecutionReceipt) -> St
     lines.join("\n") + "\n"
 }
 
-fn render_scripted_diff_artifact(manifest: &IntentCaseArtifactManifest) -> String {
+fn render_diff_artifact(
+    manifest: &IntentCaseArtifactManifest,
+    side_effect_replay_bundle: Option<&LoopProgramExecutionReplayBundleReceipt>,
+) -> String {
+    let Some(replay_bundle) = side_effect_replay_bundle else {
+        return format!(
+            "diff --git a/scripted-intent-case b/scripted-intent-case\n# case_id={}\n# scripted run did not apply a live model patch\n",
+            manifest.case_id
+        );
+    };
+    let mut lines = vec![format!(
+        "diff --git a/intent-case/{} b/intent-case/{}",
+        manifest.case_id, manifest.case_id
+    )];
+    for step_bundle in &replay_bundle.step_replay_bundles {
+        for file_write in &step_bundle.side_effects.file_writes {
+            if let Some(write_receipt) = file_write.write_receipt.as_ref() {
+                lines.push(format!(
+                    "# file={} status={:?} before_hash={} after_hash={} bytes_written={}",
+                    write_receipt.relative_path.display(),
+                    file_write.status,
+                    write_receipt.before_hash.as_deref().unwrap_or("none"),
+                    write_receipt.after_hash,
+                    write_receipt.bytes_written
+                ));
+            } else {
+                lines.push(format!(
+                    "# file={} status={:?} diagnostic={}",
+                    file_write.relative_path.display(),
+                    file_write.status,
+                    file_write.diagnostic.as_deref().unwrap_or("none")
+                ));
+            }
+        }
+    }
+    if lines.len() == 1 {
+        lines.push("# side-effect replay did not include file writes".to_owned());
+    }
+    lines.join("\n") + "\n"
+}
+
+fn render_test_artifact(
+    manifest: &IntentCaseArtifactManifest,
+    side_effect_replay_bundle: Option<&LoopProgramExecutionReplayBundleReceipt>,
+    phase: &str,
+) -> String {
+    let Some(replay_bundle) = side_effect_replay_bundle else {
+        return format!(
+            "case_id={}\nphase={phase}\nmode=scripted\nstatus=not-run-in-scripted-bundle\n",
+            manifest.case_id
+        );
+    };
+
+    let tool_process_count = replay_bundle
+        .step_replay_bundles
+        .iter()
+        .map(|bundle| bundle.side_effects.tool_processes.len())
+        .sum::<usize>();
     format!(
-        "diff --git a/scripted-intent-case b/scripted-intent-case\n# case_id={}\n# scripted run did not apply a live model patch\n",
-        manifest.case_id
+        "case_id={}\nphase={phase}\nmode=side-effect-replay\npolicy_status={:?}\ntool_process_count={tool_process_count}\n",
+        manifest.case_id, replay_bundle.policy_status
     )
 }
 
-fn render_scripted_test_artifact(manifest: &IntentCaseArtifactManifest, phase: &str) -> String {
-    format!(
-        "case_id={}\nphase={phase}\nmode=scripted\nstatus=not-run-in-scripted-bundle\n",
-        manifest.case_id
-    )
+fn render_tool_process_side_effects(
+    step_bundle: &LoopProgramRuntimeReplayBundleReceipt,
+) -> Vec<String> {
+    step_bundle
+        .side_effects
+        .tool_processes
+        .iter()
+        .map(|tool_process| {
+            let spawn = tool_process.spawn_receipt.as_ref();
+            format!(
+                "side_effect step={} owner={} status={:?} pid={} exit_status={:?} stdout_digest={} stderr_digest={} stdout_bytes={} stderr_bytes={} diagnostic={}",
+                tool_process.projection.step_index.get(),
+                tool_process.projection.owner.as_str(),
+                tool_process.status,
+                spawn.map(|receipt| receipt.pid).unwrap_or_default(),
+                spawn.map(|receipt| receipt.output.status.code()),
+                spawn
+                    .map(|receipt| stable_bytes_digest(&receipt.output.stdout))
+                    .unwrap_or_else(|| "none".to_owned()),
+                spawn
+                    .map(|receipt| stable_bytes_digest(&receipt.output.stderr))
+                    .unwrap_or_else(|| "none".to_owned()),
+                spawn.map(|receipt| receipt.output.stdout.len()).unwrap_or_default(),
+                spawn.map(|receipt| receipt.output.stderr.len()).unwrap_or_default(),
+                tool_process.diagnostic.as_deref().unwrap_or("none")
+            )
+        })
+        .collect()
+}
+
+fn render_file_write_side_effects(
+    step_bundle: &LoopProgramRuntimeReplayBundleReceipt,
+) -> Vec<String> {
+    step_bundle
+        .side_effects
+        .file_writes
+        .iter()
+        .map(|file_write| {
+            let write = file_write.write_receipt.as_ref();
+            format!(
+                "file_write step={} relative_path={} status={:?} before_hash={} after_hash={} bytes_written={} diagnostic={}",
+                file_write.projection.step_index.get(),
+                file_write.relative_path.display(),
+                file_write.status,
+                write
+                    .and_then(|receipt| receipt.before_hash.as_deref())
+                    .unwrap_or("none"),
+                write
+                    .map(|receipt| receipt.after_hash.as_str())
+                    .unwrap_or("none"),
+                write.map(|receipt| receipt.bytes_written).unwrap_or_default(),
+                file_write.diagnostic.as_deref().unwrap_or("none")
+            )
+        })
+        .collect()
 }
 
 fn render_verifier_artifact(execution_receipt: &LoopProgramExecutionReceipt) -> String {
@@ -530,4 +770,16 @@ fn render_replay_script_artifact(manifest: &IntentCaseArtifactManifest) -> Strin
         "#!/usr/bin/env gxi\n;; replay-intent-case\n;; case_id={}\n;; run_id={}\n;; loop_program_id={}\n",
         manifest.case_id, manifest.run_id, manifest.loop_program_id
     )
+}
+
+fn stable_bytes_digest(bytes: &[u8]) -> String {
+    const FNV_OFFSET: u64 = 0xcbf29ce484222325;
+    const FNV_PRIME: u64 = 0x00000100000001b3;
+
+    let mut value = FNV_OFFSET;
+    for byte in bytes {
+        value ^= u64::from(*byte);
+        value = value.wrapping_mul(FNV_PRIME);
+    }
+    format!("fnv1a64:{value:016x}")
 }

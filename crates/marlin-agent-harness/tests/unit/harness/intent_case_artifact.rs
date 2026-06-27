@@ -1,4 +1,8 @@
-use std::sync::{Arc, OnceLock};
+use std::{
+    fs,
+    path::PathBuf,
+    sync::{Arc, OnceLock},
+};
 
 use marlin_agent_harness::{
     GerbilScriptedIntentCaseArtifactBundleRequest, IntentCaseArtifactKind,
@@ -7,16 +11,21 @@ use marlin_agent_harness::{
 use marlin_agent_kernel::{
     AgentFlowLoopProgramRuntimeHandoffExecutor, GenericLoopMachineReceipt,
     HybridLoopProgramRuntimeHandoffExecutor, LoopProgramEventMapper, LoopProgramExecutionDriver,
-    LoopProgramExecutionRequest, LoopProgramRuntimeHandoffExecutionReceipt,
+    LoopProgramExecutionReceipt, LoopProgramExecutionRequest, LoopProgramFileSandbox,
+    LoopProgramFileWriteTemplate, LoopProgramRuntimeHandoffExecutionReceipt,
     LoopProgramRuntimeHandoffExecutionReportStatus, LoopProgramRuntimeHandoffHandler,
     LoopProgramRuntimeHandoffRouter, LoopProgramRuntimeHandoffRouterHandlers,
-    LoopProgramRuntimeOwner, StaticLoopProgramRuntimeHandoffHandler,
+    LoopProgramRuntimeOwner, LoopProgramRuntimeSideEffectExecutor,
+    LoopProgramToolProcessCommandTemplate, LoopProgramToolProcessProgram,
+    StaticLoopProgramFileWriteResolver, StaticLoopProgramRuntimeHandoffHandler,
+    StaticLoopProgramToolProcessResolver,
 };
 use marlin_agent_protocol::LoopProgramEventKind;
+use marlin_agent_runtime::TokioAgentRuntime;
 use marlin_gerbil_scheme::{
-    GerbilLoopCaseDriverVerticalTraceReceipt, project_gerbil_loop_case_driver_loop_event_kind,
-    project_gerbil_loop_case_driver_loop_program, run_gerbil_config_interface_case_driver_smoke,
-    verify_gerbil_loop_case_driver_vertical_trace,
+    GerbilLoopCaseDriverCapability, GerbilLoopCaseDriverVerticalTraceReceipt,
+    project_gerbil_loop_case_driver_loop_event_kind, project_gerbil_loop_case_driver_loop_program,
+    run_gerbil_config_interface_case_driver_smoke, verify_gerbil_loop_case_driver_vertical_trace,
 };
 
 #[test]
@@ -44,6 +53,7 @@ fn harness_materializes_scripted_intent_case_bundles_for_all_gerbil_vertical_cas
                 run_id: format!("scripted-bundle-{}", receipt.case_id().as_str()).into(),
                 vertical_trace: receipt.clone(),
                 execution_receipt,
+                side_effect_replay_bundle: None,
             },
         )
         .expect("scripted intent-case bundle materializes");
@@ -92,6 +102,108 @@ fn harness_materializes_scripted_intent_case_bundles_for_all_gerbil_vertical_cas
     }
 }
 
+#[cfg(unix)]
+#[tokio::test]
+async fn harness_materializes_real_tool_side_effect_receipts_into_tool_call_artifacts() {
+    let receipt = gerbil_vertical_receipts()
+        .into_iter()
+        .find(|receipt| {
+            receipt.has_capability(&cap("+policy-combination")) && receipt.tool_intent_count() > 0
+        })
+        .expect("policy-combination case should project tool side effects");
+    let execution_receipt = execute_vertical_receipt(&receipt);
+    let (runtime, _events) = TokioAgentRuntime::new(4);
+    let replay_bundle = LoopProgramRuntimeSideEffectExecutor::new(tool_shell_resolver(
+        "printf harness-policy-combination-tool-spawn",
+    ))
+    .with_started_at_ms(1100)
+    .with_observed_at_ms(1125)
+    .execute_loop_execution(&runtime.context(), &execution_receipt)
+    .await;
+    let output_root = tempfile::tempdir().expect("create tool side-effect artifact tempdir");
+
+    let bundle = materialize_gerbil_scripted_intent_case_artifact_bundle(
+        GerbilScriptedIntentCaseArtifactBundleRequest {
+            output_root: output_root.path().to_owned(),
+            run_id: "tool-side-effects".into(),
+            vertical_trace: receipt,
+            execution_receipt,
+            side_effect_replay_bundle: Some(replay_bundle),
+        },
+    )
+    .expect("tool side-effect bundle materializes");
+
+    let tool_calls = artifact_content(&bundle, IntentCaseArtifactKind::ToolCalls);
+    assert!(tool_calls.contains("side_effect_replay policy_status=Ready"));
+    assert!(tool_calls.contains("status=Completed"));
+    assert!(tool_calls.contains("stdout_digest=fnv1a64:"));
+    assert!(tool_calls.contains("stdout_bytes=37"));
+    assert!(!tool_calls.contains("harness-policy-combination-tool-spawn"));
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn harness_materializes_sandbox_file_write_receipts_into_sandbox_and_patch_artifacts() {
+    let receipt = gerbil_vertical_receipts()
+        .into_iter()
+        .find(|receipt| {
+            receipt.live_llm_required()
+                && receipt.has_capability(&cap("+tool-repair"))
+                && receipt.has_capability(&cap("+verification"))
+        })
+        .expect("repair case should project file-write side effects");
+    let execution_receipt = execute_vertical_receipt(&receipt);
+    let workspace = tempfile::tempdir().expect("create sandbox workspace");
+    let bug_relative_path = PathBuf::from("src/lib.rs");
+    let bug_file = workspace.path().join(&bug_relative_path);
+    fs::create_dir_all(bug_file.parent().expect("bug fixture parent"))
+        .expect("create sandbox fixture dir");
+    fs::write(&bug_file, "fn answer() -> i32 { 40 }\n").expect("write sandbox fixture");
+    let (runtime, _events) = TokioAgentRuntime::new(4);
+    let replay_bundle =
+        LoopProgramRuntimeSideEffectExecutor::new(StaticLoopProgramToolProcessResolver::default())
+            .with_file_write_resolver(StaticLoopProgramFileWriteResolver::new(
+                vec![LoopProgramFileWriteTemplate::new(
+                    "agent-flow.tool-intent",
+                    ["loop-program.dispatch-tools"],
+                    bug_relative_path.clone(),
+                    b"fn answer() -> i32 { 41 }\n".to_vec(),
+                )]
+                .into_boxed_slice(),
+            ))
+            .with_file_sandbox(
+                LoopProgramFileSandbox::new(workspace.path().to_owned())
+                    .with_allowed_relative_paths([bug_relative_path]),
+            )
+            .execute_loop_execution(&runtime.context(), &execution_receipt)
+            .await;
+    let output_root = tempfile::tempdir().expect("create sandbox artifact tempdir");
+
+    let bundle = materialize_gerbil_scripted_intent_case_artifact_bundle(
+        GerbilScriptedIntentCaseArtifactBundleRequest {
+            output_root: output_root.path().to_owned(),
+            run_id: "sandbox-file-write".into(),
+            vertical_trace: receipt,
+            execution_receipt,
+            side_effect_replay_bundle: Some(replay_bundle),
+        },
+    )
+    .expect("sandbox file-write bundle materializes");
+
+    let sandbox = artifact_content(&bundle, IntentCaseArtifactKind::SandboxReceipts);
+    let patch = artifact_content(&bundle, IntentCaseArtifactKind::DiffPatch);
+    assert!(sandbox.contains("side_effect_policy_status=Ready"));
+    assert!(sandbox.contains("file_write step="));
+    assert!(sandbox.contains("relative_path=src/lib.rs"));
+    assert!(sandbox.contains("status=Completed"));
+    assert!(sandbox.contains("after_hash=fnv1a64:"));
+    assert!(patch.contains("bytes_written=26"));
+    assert_eq!(
+        fs::read_to_string(&bug_file).expect("read sandbox repaired fixture"),
+        "fn answer() -> i32 { 41 }\n"
+    );
+}
+
 fn config_interface_case_driver_stdout() -> String {
     static STDOUT: OnceLock<String> = OnceLock::new();
 
@@ -101,6 +213,43 @@ fn config_interface_case_driver_stdout() -> String {
                 .expect("gxi case-driver smoke should produce verified stdout")
         })
         .clone()
+}
+
+fn gerbil_vertical_receipts() -> Vec<GerbilLoopCaseDriverVerticalTraceReceipt> {
+    verify_gerbil_loop_case_driver_vertical_trace(&config_interface_case_driver_stdout(), 7)
+        .expect("vertical trace verifies")
+}
+
+fn execute_vertical_receipt(
+    receipt: &GerbilLoopCaseDriverVerticalTraceReceipt,
+) -> LoopProgramExecutionReceipt {
+    let loop_program = project_gerbil_loop_case_driver_loop_program(receipt)
+        .expect("vertical trace projects into LoopProgram");
+    LoopProgramExecutionDriver::new(scheme_projected_runtime_executor())
+        .with_event_mapper(SchemeProjectedLoopProgramEventMapper::from_vertical_trace(
+            receipt,
+        ))
+        .with_max_steps(receipt.transition_count() + 2)
+        .run(LoopProgramExecutionRequest::new(
+            loop_program,
+            vec![LoopProgramEventKind::Start],
+        ))
+}
+
+fn artifact_content(
+    bundle: &marlin_agent_harness::IntentCaseArtifactBundleMaterializationReceipt,
+    kind: IntentCaseArtifactKind,
+) -> String {
+    let artifact = bundle
+        .artifacts
+        .iter()
+        .find(|artifact| artifact.kind == kind)
+        .expect("artifact kind materialized");
+    fs::read_to_string(&artifact.path).expect("read materialized artifact")
+}
+
+fn cap(tag: impl Into<String>) -> GerbilLoopCaseDriverCapability {
+    GerbilLoopCaseDriverCapability::new(tag)
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -167,4 +316,18 @@ fn handled_by(owner: &'static str) -> Arc<dyn LoopProgramRuntimeHandoffHandler> 
     Arc::new(StaticLoopProgramRuntimeHandoffHandler::handled(
         LoopProgramRuntimeOwner::new(owner),
     ))
+}
+
+fn tool_shell_resolver(script: &'static str) -> StaticLoopProgramToolProcessResolver {
+    StaticLoopProgramToolProcessResolver::new(
+        vec![
+            LoopProgramToolProcessCommandTemplate::new(
+                "agent-flow.tool-intent",
+                ["loop-program.dispatch-tools"],
+                LoopProgramToolProcessProgram::new("sh"),
+            )
+            .with_args(["-c", script]),
+        ]
+        .into_boxed_slice(),
+    )
 }
