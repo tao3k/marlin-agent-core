@@ -91,6 +91,7 @@ struct IntentCaseArtifactIds {
     verifier_receipt: IntentCaseArtifactId,
     replay_script: IntentCaseArtifactId,
     policy_explanation: IntentCaseArtifactId,
+    run_receipt: IntentCaseArtifactId,
 }
 
 fn intent_case_manifest_context(
@@ -128,6 +129,7 @@ fn intent_case_artifact_ids(case_id: &str) -> IntentCaseArtifactIds {
         verifier_receipt: artifact_id(case_id, "verifier-receipt"),
         replay_script: artifact_id(case_id, "replay-script"),
         policy_explanation: artifact_id(case_id, "policy-explanation"),
+        run_receipt: artifact_id(case_id, "run-receipt"),
     }
 }
 
@@ -316,6 +318,11 @@ fn intent_case_artifact_refs(
             artifact_ids.replay_script.clone(),
             IntentCaseArtifactKind::ReplayScript,
             format!("{artifact_prefix}/90-replay-script.ss"),
+        ),
+        IntentCaseArtifactRef::present(
+            artifact_ids.run_receipt.clone(),
+            IntentCaseArtifactKind::RunReceipt,
+            format!("{artifact_prefix}/95-run-receipt.receipt"),
         ),
     ];
     artifacts.extend(optional_intent_case_artifact_refs(

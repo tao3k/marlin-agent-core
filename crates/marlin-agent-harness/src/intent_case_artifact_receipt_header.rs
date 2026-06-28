@@ -58,6 +58,7 @@ pub(crate) fn artifact_kind_name(kind: IntentCaseArtifactKind) -> &'static str {
         IntentCaseArtifactKind::VerifierReceipt => "verifier-receipt",
         IntentCaseArtifactKind::PolicyExplanation => "policy-explanation",
         IntentCaseArtifactKind::ReplayScript => "replay-script",
+        IntentCaseArtifactKind::RunReceipt => "run-receipt",
     }
 }
 

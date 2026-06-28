@@ -10,8 +10,8 @@ use crate::{
     intent_case_artifact_manifest::{ensure_trace_correlation_integrity, render_manifest_receipt},
     intent_case_artifact_model_events::render_model_events_artifact,
     intent_case_artifact_receipt_header::{
-        render_key_value_artifact_receipt, render_org_artifact_receipt_properties,
-        render_patch_artifact_receipt_header,
+        artifact_kind_name, render_key_value_artifact_receipt,
+        render_org_artifact_receipt_properties, render_patch_artifact_receipt_header,
     },
     intent_case_artifact_replay::render_replay_script_artifact,
     intent_case_artifact_runtime_repair::render_runtime_repair_case_receipt,
@@ -20,7 +20,8 @@ use crate::{
 };
 use marlin_agent_harness_types::{
     IntentCaseArtifactCompletenessReceipt, IntentCaseArtifactId, IntentCaseArtifactKind,
-    IntentCaseArtifactManifest, IntentCaseArtifactRef, IntentCaseRunId, RuntimeRepairCaseReceipt,
+    IntentCaseArtifactManifest, IntentCaseArtifactRef, IntentCaseRunId, IntentCaseRunReceipt,
+    IntentCaseRunStatus, RuntimeRepairCaseReceipt,
 };
 use marlin_agent_kernel::{
     LoopProgramExecutionReceipt, LoopProgramExecutionReplayBundleReceipt,
@@ -399,6 +400,74 @@ fn render_artifact_content(
             render_policy_explanation_artifact(manifest, vertical_trace)
         }
         IntentCaseArtifactKind::ReplayScript => render_replay_script_artifact(manifest),
+        IntentCaseArtifactKind::RunReceipt => render_run_receipt_artifact(manifest),
+    }
+}
+
+fn render_run_receipt_artifact(manifest: &IntentCaseArtifactManifest) -> String {
+    let receipt = IntentCaseRunReceipt::passed(manifest.clone());
+    let expected_artifacts = receipt.manifest.expected_artifact_kinds();
+    let materialized_artifacts = receipt.manifest.present_artifact_kinds();
+    let expected_lanes = artifact_lane_names(&expected_artifacts);
+    let materialized_lanes = artifact_lane_names(&materialized_artifacts);
+
+    render_key_value_artifact_receipt(
+        manifest,
+        IntentCaseArtifactKind::RunReceipt,
+        [
+            format!("run_receipt_schema={}", receipt.schema_id),
+            format!("run_receipt_manifest_schema={}", receipt.manifest.schema_id),
+            format!(
+                "run_receipt_status={}",
+                run_receipt_status_name(receipt.status)
+            ),
+            format!("run_receipt_case_id={}", receipt.manifest.case_id),
+            format!("run_receipt_run_id={}", receipt.manifest.run_id),
+            format!(
+                "run_receipt_policy_digest={}",
+                receipt.manifest.policy_digest
+            ),
+            format!(
+                "run_receipt_loop_program_id={}",
+                receipt.manifest.loop_program_id
+            ),
+            format!(
+                "run_receipt_expected_artifact_count={}",
+                expected_artifacts.len()
+            ),
+            format!(
+                "run_receipt_materialized_artifact_count={}",
+                materialized_artifacts.len()
+            ),
+            format!("run_receipt_expected_artifact_lanes={expected_lanes}"),
+            format!("run_receipt_materialized_artifact_lanes={materialized_lanes}"),
+            format!(
+                "run_receipt_trace_entry_count={}",
+                receipt.manifest.trace_index.entries.len()
+            ),
+            format!(
+                "run_receipt_correlation_key_count={}",
+                receipt.manifest.correlation_keys().len()
+            ),
+            format!("run_receipt_diagnostic_count={}", receipt.diagnostics.len()),
+            "run_receipt_internal_json_boundary=false".to_owned(),
+        ],
+    )
+}
+
+fn artifact_lane_names(kinds: &[IntentCaseArtifactKind]) -> String {
+    kinds
+        .iter()
+        .map(|kind| artifact_kind_name(*kind))
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
+fn run_receipt_status_name(status: IntentCaseRunStatus) -> &'static str {
+    match status {
+        IntentCaseRunStatus::Passed => "passed",
+        IntentCaseRunStatus::Failed => "failed",
+        IntentCaseRunStatus::Incomplete => "incomplete",
     }
 }
 

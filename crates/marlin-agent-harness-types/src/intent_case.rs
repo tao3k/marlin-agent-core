@@ -3,10 +3,10 @@
 use serde::{Deserialize, Serialize};
 
 /// Stable schema id for serialized intent-case artifact manifests.
-pub const INTENT_CASE_ARTIFACT_MANIFEST_SCHEMA_ID: &str = "marlin.intent-case.artifact-manifest.v3";
+pub const INTENT_CASE_ARTIFACT_MANIFEST_SCHEMA_ID: &str = "marlin.intent-case.artifact-manifest.v4";
 /// Stable schema id for intent-case artifact completeness receipts.
 pub const INTENT_CASE_ARTIFACT_COMPLETENESS_RECEIPT_SCHEMA_ID: &str =
-    "marlin.intent-case.artifact-completeness-receipt.v3";
+    "marlin.intent-case.artifact-completeness-receipt.v4";
 /// Stable schema id for serialized intent-case run receipts.
 pub const INTENT_CASE_RUN_RECEIPT_SCHEMA_ID: &str = "marlin.intent-case.run-receipt.v1";
 
@@ -123,6 +123,7 @@ pub enum IntentCaseArtifactKind {
     VerifierReceipt,
     PolicyExplanation,
     ReplayScript,
+    RunReceipt,
 }
 
 /// Presence and location metadata for one artifact in an intent-case bundle.
@@ -581,6 +582,7 @@ impl IntentCaseArtifactManifest {
             IntentCaseArtifactKind::VerticalTrace,
             IntentCaseArtifactKind::ExecutionTrace,
             IntentCaseArtifactKind::ReplayScript,
+            IntentCaseArtifactKind::RunReceipt,
         ]
         .into_iter()
         .all(|kind| self.has_artifact_kind(kind))

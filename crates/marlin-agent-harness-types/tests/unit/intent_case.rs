@@ -1,10 +1,12 @@
 use marlin_agent_harness_types::{
-    INTENT_CASE_ARTIFACT_COMPLETENESS_RECEIPT_SCHEMA_ID, IntentCaseArtifactCompletenessReceipt,
-    IntentCaseArtifactCompletenessStatus, IntentCaseArtifactId, IntentCaseArtifactKind,
-    IntentCaseArtifactManifest, IntentCaseArtifactManifestRequest, IntentCaseArtifactRef,
-    IntentCaseId, IntentCaseLoopProgramId, IntentCasePolicyDigest, IntentCaseRunId,
-    IntentCaseRuntimeOwner, IntentCaseSpanName, IntentCaseTraceEntry, IntentCaseTraceEntryId,
-    IntentCaseTraceEntryRequest, IntentCaseTraceIndex, IntentCaseTransitionId,
+    INTENT_CASE_ARTIFACT_COMPLETENESS_RECEIPT_SCHEMA_ID, INTENT_CASE_RUN_RECEIPT_SCHEMA_ID,
+    IntentCaseArtifactCompletenessReceipt, IntentCaseArtifactCompletenessStatus,
+    IntentCaseArtifactId, IntentCaseArtifactKind, IntentCaseArtifactManifest,
+    IntentCaseArtifactManifestRequest, IntentCaseArtifactRef, IntentCaseId,
+    IntentCaseLoopProgramId, IntentCasePolicyDigest, IntentCaseRunId, IntentCaseRunReceipt,
+    IntentCaseRunStatus, IntentCaseRuntimeOwner, IntentCaseSpanName, IntentCaseTraceEntry,
+    IntentCaseTraceEntryId, IntentCaseTraceEntryRequest, IntentCaseTraceIndex,
+    IntentCaseTransitionId,
 };
 
 #[test]
@@ -328,6 +330,51 @@ fn artifact_completeness_receipt_reports_missing_materialized_lanes() {
     assert_eq!(receipt.correlation_key_count, 1);
 }
 
+#[test]
+fn core_artifact_bundle_requires_run_receipt_lane() {
+    let manifest_without_run_receipt = base_manifest()
+        .with_artifact(core_artifact_ref(
+            IntentCaseArtifactKind::PolicyPack,
+            "10-policy-pack.receipt",
+        ))
+        .with_artifact(core_artifact_ref(
+            IntentCaseArtifactKind::LoopProgram,
+            "20-loop-program.receipt",
+        ))
+        .with_artifact(core_artifact_ref(
+            IntentCaseArtifactKind::VerticalTrace,
+            "30-vertical-trace.receipt",
+        ))
+        .with_artifact(core_artifact_ref(
+            IntentCaseArtifactKind::ExecutionTrace,
+            "40-execution-trace.receipt",
+        ))
+        .with_artifact(core_artifact_ref(
+            IntentCaseArtifactKind::ReplayScript,
+            "90-replay-script.ss",
+        ));
+
+    assert!(!manifest_without_run_receipt.has_core_artifact_bundle());
+
+    let manifest_with_run_receipt = manifest_without_run_receipt.with_artifact(core_artifact_ref(
+        IntentCaseArtifactKind::RunReceipt,
+        "95-run-receipt.receipt",
+    ));
+
+    assert!(manifest_with_run_receipt.has_core_artifact_bundle());
+}
+
+#[test]
+fn run_receipt_preserves_typed_manifest_boundary() {
+    let receipt = IntentCaseRunReceipt::passed(base_manifest());
+
+    assert!(receipt.is_supported_schema());
+    assert_eq!(receipt.schema_id, INTENT_CASE_RUN_RECEIPT_SCHEMA_ID);
+    assert_eq!(receipt.status, IntentCaseRunStatus::Passed);
+    assert_eq!(receipt.manifest.case_id.as_str(), "case-a");
+    assert!(receipt.diagnostics.is_empty());
+}
+
 fn base_manifest() -> IntentCaseArtifactManifest {
     IntentCaseArtifactManifest::from_request(IntentCaseArtifactManifestRequest {
         case_id: IntentCaseId::new("case-a"),
@@ -336,6 +383,14 @@ fn base_manifest() -> IntentCaseArtifactManifest {
         policy_digest: IntentCasePolicyDigest::new("digest-a"),
         loop_program_id: IntentCaseLoopProgramId::new("program-a"),
     })
+}
+
+fn core_artifact_ref(kind: IntentCaseArtifactKind, filename: &str) -> IntentCaseArtifactRef {
+    IntentCaseArtifactRef::present(
+        IntentCaseArtifactId::new(format!("case-a:{kind:?}")),
+        kind,
+        format!("artifacts/intent-cases/case-a/run-a/{filename}"),
+    )
 }
 
 fn trace_entry() -> IntentCaseTraceEntry {

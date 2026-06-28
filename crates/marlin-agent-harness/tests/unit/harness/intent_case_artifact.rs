@@ -108,6 +108,7 @@ fn harness_materializes_scripted_intent_case_bundles_for_all_gerbil_vertical_cas
         assert!(bundle.has_artifact_kind(IntentCaseArtifactKind::VerticalTrace));
         assert!(bundle.has_artifact_kind(IntentCaseArtifactKind::ExecutionTrace));
         assert!(bundle.has_artifact_kind(IntentCaseArtifactKind::ReplayScript));
+        assert!(bundle.has_artifact_kind(IntentCaseArtifactKind::RunReceipt));
         assert_eq!(
             bundle.artifacts.len(),
             bundle
@@ -131,6 +132,7 @@ fn harness_materializes_scripted_intent_case_bundles_for_all_gerbil_vertical_cas
         let manifest_receipt =
             fs::read_to_string(&bundle.manifest_path).expect("read manifest receipt");
         let replay_script = artifact_content(&bundle, IntentCaseArtifactKind::ReplayScript);
+        let run_receipt = artifact_content(&bundle, IntentCaseArtifactKind::RunReceipt);
         assert!(manifest_receipt.contains("completeness_schema="));
         assert!(manifest_receipt.contains("expected_artifact_count="));
         assert!(manifest_receipt.contains("materialized_artifact_count="));
@@ -163,12 +165,31 @@ fn harness_materializes_scripted_intent_case_bundles_for_all_gerbil_vertical_cas
         assert!(replay_script.contains("replay_trace_entry_count="));
         assert!(replay_script.contains("replay_correlation_key_count="));
         assert!(replay_script.contains("replay_internal_json_boundary=false"));
+        assert!(run_receipt.contains("run_receipt_schema=marlin.intent-case.run-receipt.v1"));
+        assert!(
+            run_receipt
+                .contains("run_receipt_manifest_schema=marlin.intent-case.artifact-manifest.v4")
+        );
+        assert!(run_receipt.contains("run_receipt_status=passed"));
+        assert!(run_receipt.contains("run_receipt_case_id="));
+        assert!(run_receipt.contains("run_receipt_run_id=scripted-bundle-"));
+        assert!(run_receipt.contains("run_receipt_policy_digest="));
+        assert!(run_receipt.contains("run_receipt_loop_program_id="));
+        assert!(run_receipt.contains("run_receipt_expected_artifact_count="));
+        assert!(run_receipt.contains("run_receipt_materialized_artifact_count="));
+        assert!(run_receipt.contains("run_receipt_expected_artifact_lanes="));
+        assert!(run_receipt.contains("run-receipt"));
+        assert!(run_receipt.contains("run_receipt_trace_entry_count="));
+        assert!(run_receipt.contains("run_receipt_correlation_key_count="));
+        assert!(run_receipt.contains("run_receipt_diagnostic_count=0"));
+        assert!(run_receipt.contains("run_receipt_internal_json_boundary=false"));
         assert!(
             replay_script.contains(
                 "replay_command='direnv exec . rtk --ultra-compact cargo test -p marlin-agent-harness intent_case'"
             )
         );
         assert!(!replay_script.contains(".json"));
+        assert!(!run_receipt.contains(".json"));
         assert!(manifest_receipt.contains("step_index=1"));
         assert!(manifest_receipt.contains("runtime_owner=marlin-agent-core"));
         assert!(manifest_receipt.contains("model_invocation_id="));
@@ -632,5 +653,6 @@ fn artifact_kind_name(kind: IntentCaseArtifactKind) -> &'static str {
         IntentCaseArtifactKind::VerifierReceipt => "verifier-receipt",
         IntentCaseArtifactKind::PolicyExplanation => "policy-explanation",
         IntentCaseArtifactKind::ReplayScript => "replay-script",
+        IntentCaseArtifactKind::RunReceipt => "run-receipt",
     }
 }
