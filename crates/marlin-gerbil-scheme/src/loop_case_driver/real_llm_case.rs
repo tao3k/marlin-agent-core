@@ -8,6 +8,10 @@ pub struct GerbilLoopCaseDriverRealLlmCaseReceipt {
     case_id: String,
     result: String,
     rounds_used: u64,
+    mode: String,
+    tool_intent: Option<String>,
+    no_write_enforced: bool,
+    write_intent_absent: bool,
     terminal_status: String,
     iteration_count: u64,
     process_exit_status: i32,
@@ -32,6 +36,26 @@ impl GerbilLoopCaseDriverRealLlmCaseReceipt {
     #[must_use]
     pub const fn rounds_used(&self) -> u64 {
         self.rounds_used
+    }
+
+    #[must_use]
+    pub fn mode(&self) -> &str {
+        &self.mode
+    }
+
+    #[must_use]
+    pub fn tool_intent(&self) -> Option<&str> {
+        self.tool_intent.as_deref()
+    }
+
+    #[must_use]
+    pub const fn no_write_enforced(&self) -> bool {
+        self.no_write_enforced
+    }
+
+    #[must_use]
+    pub const fn write_intent_absent(&self) -> bool {
+        self.write_intent_absent
     }
 
     #[must_use]
@@ -90,6 +114,14 @@ pub fn parse_gerbil_loop_case_driver_real_llm_case_receipt(
         case_id: required_marker(stdout, "marlin-real-llm-case.case_id=")?,
         result: required_marker(stdout, "marlin-real-llm-case.result=")?,
         rounds_used: parse_marker(stdout, "marlin-real-llm-case.rounds_used=")?,
+        mode: optional_marker(stdout, "marlin-real-llm-case.mode=")
+            .unwrap_or_else(|| "marker".to_owned()),
+        tool_intent: optional_marker(stdout, "marlin-real-llm-case.tool_intent="),
+        no_write_enforced: optional_marker(stdout, "marlin-real-llm-case.no_write=").as_deref()
+            == Some("yes"),
+        write_intent_absent: optional_marker(stdout, "marlin-real-llm-case.write_intent=")
+            .as_deref()
+            == Some("none"),
         terminal_status: required_trace_string_field(&trace, "terminal_status")?,
         iteration_count: required_trace_u64_field(&trace, "iteration_count")?,
         process_exit_status: parse_marker(stdout, "process-command.exit_status:")?,

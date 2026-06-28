@@ -4,7 +4,16 @@ set -eu
 profile_id="${1:?profile id required}"
 case_id="${2:?case id required}"
 max_rounds="${MARLIN_REAL_LLM_MAX_ROUNDS:-3}"
+llm_runner="${MARLIN_REAL_LLM_RUNNER:-}"
+marker_gate="${MARLIN_LIVE_LLM_MARKER:-1}"
+tools_gate="${MARLIN_LIVE_LLM_TOOLS:-0}"
 success_exit_status=0
+
+if [ -z "$llm_runner" ]; then
+  echo "marlin-real-llm-case.result=fail"
+  echo "marlin-real-llm-case.error=missing-MARLIN_REAL_LLM_RUNNER"
+  exit 2
+fi
 
 case "$case_id" in
   marlin-runtime-handoff-real-llm)
@@ -35,19 +44,51 @@ case "$case_id" in
     ;;
 esac
 
+if [ "$marker_gate" != "1" ] && [ "$tools_gate" != "1" ]; then
+  echo "marlin-real-llm-case.result=fail"
+  echo "marlin-real-llm-case.error=no-live-llm-gate-enabled"
+  exit 2
+fi
+
+if [ "$tools_gate" = "1" ]; then
+  prompt_mode="no-write-tools"
+  tool_instruction=$(cat <<EOF
+No-write tool mode is enabled.
+Use only read-only diagnostic tool intent: read the fixture, observe the failing test, and propose the repair plan.
+Do not write files, do not apply patches, and do not claim a write action.
+The output must also include these exact keys:
+marlin-real-llm-case.mode=no-write-tools
+marlin-real-llm-case.tool_intent=read-and-test
+marlin-real-llm-case.no_write=yes
+marlin-real-llm-case.write_intent=none
+marlin-real-llm-case.test_before_observed=yes
+EOF
+)
+else
+  prompt_mode="marker"
+  tool_instruction=$(cat <<EOF
+Marker smoke mode is enabled.
+Do not call tools. Use only the information in this prompt.
+The output must also include this exact key:
+marlin-real-llm-case.mode=marker
+EOF
+)
+fi
+
 round=1
 previous_output=""
 
 while [ "$round" -le "$max_rounds" ]; do
   prompt=$(cat <<EOF
 You are the live LLM worker inside a Marlin graph-loop policy experiment.
-Do not call tools. Use only the information in this prompt.
+$tool_instruction
 
 Profile: $profile_id
 Case: $case_id
 Goal: $task_goal
 Simulated failing loop state: $failure_fixture
 Acceptance rule: $acceptance
+Live LLM gate mode: $prompt_mode
 Round: $round of $max_rounds
 $previous_output
 
@@ -61,12 +102,26 @@ marlin-real-llm-case.policy_observation=<one short sentence>
 EOF
 )
 
-  output=$(codex exec --ephemeral --ignore-rules --sandbox read-only -- "$prompt" || true)
+  output=$("$llm_runner" "$prompt" || true)
 
   if printf '%s\n' "$output" | grep -F "marlin-real-llm-case.case_id=$case_id" >/dev/null \
     && printf '%s\n' "$output" | grep -F "marlin-real-llm-case.failure_observed=yes" >/dev/null \
     && printf '%s\n' "$output" | grep -F "marlin-real-llm-case.repair_proposed=yes" >/dev/null \
-    && printf '%s\n' "$output" | grep -F "marlin-real-llm-case.verification=pass" >/dev/null; then
+    && printf '%s\n' "$output" | grep -F "marlin-real-llm-case.verification=pass" >/dev/null \
+    && printf '%s\n' "$output" | grep -F "marlin-real-llm-case.mode=$prompt_mode" >/dev/null; then
+    if [ "$tools_gate" = "1" ] \
+      && { ! printf '%s\n' "$output" | grep -F "marlin-real-llm-case.tool_intent=read-and-test" >/dev/null \
+        || ! printf '%s\n' "$output" | grep -F "marlin-real-llm-case.no_write=yes" >/dev/null \
+        || ! printf '%s\n' "$output" | grep -F "marlin-real-llm-case.write_intent=none" >/dev/null \
+        || ! printf '%s\n' "$output" | grep -F "marlin-real-llm-case.test_before_observed=yes" >/dev/null; }; then
+      previous_output=$(cat <<EOF
+Previous round failed the no-write tool marker check. Previous output:
+$output
+EOF
+)
+      round=$((round + 1))
+      continue
+    fi
     printf '%s\n' "$output"
     echo "marlin-real-llm-case.result=pass"
     echo "marlin-real-llm-case.rounds_used=$round"

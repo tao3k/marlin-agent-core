@@ -11,6 +11,8 @@ use marlin_gerbil_scheme::{
     write_gerbil_runtime_assets,
 };
 use marlin_git_utils::ProcessGitTooling;
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
 use std::{
     env, fs,
     path::{Path, PathBuf},
@@ -91,7 +93,7 @@ fn command_compiler_real_gxtest_runs_config_interface() {
 }
 
 #[test]
-#[ignore = "requires MARLIN_RUN_REAL_LLM_CASES=1 and live Codex CLI access"]
+#[ignore = "requires MARLIN_RUN_REAL_LLM_CASES=1 and live LLM runner access"]
 fn command_compiler_real_llm_loop_cases_run_through_debug_cli_when_enabled() {
     if env::var(MARLIN_REAL_LLM_CASE_ENV).ok().as_deref() != Some("1") {
         return;
@@ -219,6 +221,10 @@ marlin-real-llm-case.rounds_used=2
     assert_eq!(receipt.case_id(), "marlin-failure-retry-real-llm");
     assert_eq!(receipt.result(), "pass");
     assert_eq!(receipt.rounds_used(), 2);
+    assert_eq!(receipt.mode(), "marker");
+    assert_eq!(receipt.tool_intent(), None);
+    assert!(!receipt.no_write_enforced());
+    assert!(!receipt.write_intent_absent());
     assert_eq!(receipt.terminal_status(), "Failed");
     assert_eq!(receipt.iteration_count(), 3);
     assert_eq!(receipt.process_exit_status(), 17);
@@ -258,6 +264,10 @@ fn real_llm_loop_case_receipt_parser_projects_nested_debug_cli_receipts() {
 process-command.exit_status:17
 continuation_planner=retry-on-failure
 marlin-real-llm-case.case_id=marlin-failure-retry-real-llm
+marlin-real-llm-case.mode=no-write-tools
+marlin-real-llm-case.tool_intent=read-and-test
+marlin-real-llm-case.no_write=yes
+marlin-real-llm-case.write_intent=none
 marlin-real-llm-case.result=pass
 marlin-real-llm-case.rounds_used=1
 "#;
@@ -267,6 +277,10 @@ marlin-real-llm-case.rounds_used=1
     assert_eq!(receipt.case_id(), "marlin-failure-retry-real-llm");
     assert_eq!(receipt.result(), "pass");
     assert_eq!(receipt.rounds_used(), 1);
+    assert_eq!(receipt.mode(), "no-write-tools");
+    assert_eq!(receipt.tool_intent(), Some("read-and-test"));
+    assert!(receipt.no_write_enforced());
+    assert!(receipt.write_intent_absent());
     assert_eq!(receipt.terminal_status(), "Failed");
     assert_eq!(receipt.iteration_count(), 3);
     assert_eq!(receipt.process_exit_status(), 17);
@@ -275,6 +289,64 @@ marlin-real-llm-case.rounds_used=1
     assert!(receipt.governance_receipt_present());
     assert!(receipt.nono_sandbox_materialized());
     assert!(receipt.human_audit_decision());
+}
+
+#[cfg(unix)]
+#[test]
+fn real_llm_runner_supports_no_write_tool_gate_with_fake_runner() {
+    let root = test_root("real-llm-no-write-tool-gate");
+    let runner = root.path().join("fake-live-llm-runner.sh");
+    fs::write(
+        &runner,
+        r#"#!/bin/sh
+case "$1" in
+  *"No-write tool mode is enabled."*"Do not write files"*) ;;
+  *) echo "missing no-write tool prompt" >&2; exit 9 ;;
+esac
+cat <<'EOF'
+marlin-real-llm-case.case_id=marlin-runtime-handoff-real-llm
+marlin-real-llm-case.profile=marlin-runtime-handoff-profile
+marlin-real-llm-case.mode=no-write-tools
+marlin-real-llm-case.failure_observed=yes
+marlin-real-llm-case.repair_proposed=yes
+marlin-real-llm-case.verification=pass
+marlin-real-llm-case.tool_intent=read-and-test
+marlin-real-llm-case.no_write=yes
+marlin-real-llm-case.write_intent=none
+marlin-real-llm-case.test_before_observed=yes
+marlin-real-llm-case.policy_observation=read-only diagnostics identified the missing typed receipt
+EOF
+"#,
+    )
+    .expect("write fake live LLM runner");
+    let mut permissions = fs::metadata(&runner)
+        .expect("fake runner metadata")
+        .permissions();
+    permissions.set_mode(0o755);
+    fs::set_permissions(&runner, permissions).expect("make fake runner executable");
+
+    let output = Command::new("sh")
+        .arg(config_interface_source_loop_case_root().join("run-real-llm-case.sh"))
+        .arg("marlin-runtime-handoff-profile")
+        .arg("marlin-runtime-handoff-real-llm")
+        .env("MARLIN_REAL_LLM_RUNNER", &runner)
+        .env("MARLIN_LIVE_LLM_TOOLS", "1")
+        .env("MARLIN_LIVE_LLM_MARKER", "0")
+        .output()
+        .expect("run no-write tool live LLM gate with fake runner");
+
+    assert!(
+        output.status.success(),
+        "no-write live LLM gate failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout).expect("runner stdout should be UTF-8");
+    assert!(stdout.contains("marlin-real-llm-case.result=pass"));
+    assert!(stdout.contains("marlin-real-llm-case.mode=no-write-tools"));
+    assert!(stdout.contains("marlin-real-llm-case.tool_intent=read-and-test"));
+    assert!(stdout.contains("marlin-real-llm-case.no_write=yes"));
+    assert!(stdout.contains("marlin-real-llm-case.write_intent=none"));
 }
 
 fn run_real_gxtest_workspace(
@@ -401,8 +473,14 @@ fn assert_config_interface_loop_real_llm_fixture_assets() {
     );
     for marker in [
         "marlin-real-llm-case.case_id",
+        "marlin-real-llm-case.mode",
+        "marlin-real-llm-case.tool_intent",
+        "marlin-real-llm-case.no_write",
+        "marlin-real-llm-case.write_intent",
         "marlin-real-llm-case.result",
         "marlin-real-llm-case.rounds_used",
+        "MARLIN_LIVE_LLM_MARKER",
+        "MARLIN_LIVE_LLM_TOOLS",
     ] {
         assert!(
             fixture_runner.contains(marker),
