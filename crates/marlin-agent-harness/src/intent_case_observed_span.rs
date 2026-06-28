@@ -1,7 +1,9 @@
 //! Harness report span projection for intent-case artifact bundles.
 
 use crate::runtime::{AgentHarnessExecutionReport, AgentHarnessGraphLoopExecutionReport};
-use marlin_agent_harness_types::{IntentCaseArtifactManifest, IntentCaseSpanName};
+use marlin_agent_harness_types::{
+    IntentCaseArtifactManifest, IntentCaseSpanName, RuntimeRepairCaseReceipt,
+};
 use marlin_agent_kernel::LoopProgramExecutionReplayBundleReceipt;
 use marlin_agent_runtime::observability;
 
@@ -67,6 +69,21 @@ impl IntentCaseObservedSpanSource {
             })
         {
             manifest.with_expected_span_name(observability::runtime_tool_span_name().as_str())
+        } else {
+            manifest
+        }
+    }
+
+    #[must_use]
+    pub(crate) fn enrich_manifest_with_runtime_repair_span_expectations(
+        manifest: IntentCaseArtifactManifest,
+        runtime_repair_receipt: Option<&RuntimeRepairCaseReceipt>,
+    ) -> IntentCaseArtifactManifest {
+        if matches!(
+            runtime_repair_receipt,
+            Some(RuntimeRepairCaseReceipt::Live(_))
+        ) {
+            manifest.with_expected_span_name(observability::runtime_provider_span_name().as_str())
         } else {
             manifest
         }

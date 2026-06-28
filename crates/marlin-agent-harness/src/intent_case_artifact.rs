@@ -104,6 +104,11 @@ fn materialize_intent_case_artifact_bundle(
         manifest,
         side_effect_replay_bundle,
     );
+    let manifest =
+        IntentCaseObservedSpanSource::enrich_manifest_with_runtime_repair_span_expectations(
+            manifest,
+            runtime_repair_receipt,
+        );
     ensure_execution_trace_matches(&manifest, execution_receipt)?;
     ensure_trace_correlation_integrity(&manifest)?;
     let bundle_root = bundle_root(output_root, &manifest)?;

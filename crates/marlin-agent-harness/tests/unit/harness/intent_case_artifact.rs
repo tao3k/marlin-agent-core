@@ -3,11 +3,12 @@ use std::{fs, sync::Arc};
 use super::intent_case_artifact_support::{
     SchemeProjectedLoopProgramEventMapper, artifact_content, cap,
     config_interface_case_driver_stdout, execute_vertical_receipt, gerbil_vertical_receipts,
-    handled_by, observed_span_source_for_vertical_receipt, scheme_projected_runtime_executor,
+    handled_by, observed_span_source_for_vertical_receipt,
+    observed_span_source_for_vertical_receipt_with_trace, scheme_projected_runtime_executor,
 };
 use marlin_agent_harness::{
     GerbilScriptedIntentCaseArtifactBundleRequest, IntentCaseArtifactKind,
-    IntentCaseObservedSpanSource, IntentCaseSpanName,
+    IntentCaseObservedSpanSource, IntentCaseSpanName, StaticProviderRuntime, TraceRecorder,
     materialize_gerbil_scripted_intent_case_artifact_bundle,
 };
 use marlin_agent_harness_types::{
@@ -25,6 +26,7 @@ use marlin_agent_kernel::{
     LoopProgramRuntimeOwner,
 };
 use marlin_agent_protocol::LoopProgramEventKind;
+use marlin_agent_runtime::{TokioAgentRuntime, observability};
 use marlin_gerbil_scheme::{
     project_gerbil_loop_case_driver_loop_program, verify_gerbil_loop_case_driver_vertical_trace,
 };
@@ -336,8 +338,8 @@ fn harness_materializes_real_policy_001_sandbox_denylist_gate() {
     assert!(tool_calls.contains("tool_calls=none"));
 }
 
-#[test]
-fn harness_materializes_runtime_repair_receipt_into_verifier_artifact() {
+#[tokio::test]
+async fn harness_materializes_runtime_repair_receipt_into_verifier_artifact() {
     let receipt = gerbil_vertical_receipts()
         .into_iter()
         .find(|receipt| {
@@ -351,14 +353,27 @@ fn harness_materializes_runtime_repair_receipt_into_verifier_artifact() {
         .steps
         .iter()
         .any(|step| format!("{:?}", step.machine_receipt.action) == "RewriteGraph");
+    let (runtime, _events) = TokioAgentRuntime::new(4);
+    let trace_recorder = TraceRecorder::new();
+    let trace_guard = trace_recorder.install();
+    let model_completion_id = runtime
+        .spawn_provider(
+            Arc::new(StaticProviderRuntime::<String, String>::new(
+                "fixture-live-repair-completion".to_owned(),
+            )),
+            "repair model request".to_owned(),
+        )
+        .join()
+        .await
+        .expect("provider runtime task should finish");
+    drop(trace_guard);
+    assert!(trace_recorder.contains_span(&observability::runtime_provider_span_name()));
     let runtime_repair_receipt =
         RuntimeRepairLiveCaseReceipt::new(RuntimeRepairLiveCaseReceiptRequest {
             case_id: RuntimeRepairCaseId::new(receipt.case_id().as_str()),
             profile_ref: RuntimeRepairProfileRef::new(receipt.profile_ref().as_str()),
             program_id: execution_receipt.program_id.clone(),
-            model_completion_id: RuntimeRepairModelCompletionId::new(
-                "fixture-live-repair-completion",
-            ),
+            model_completion_id: RuntimeRepairModelCompletionId::new(model_completion_id),
             model: RuntimeRepairModelId::new("gpt-repair-policy-fixture"),
             elapsed_ms: RuntimeRepairDurationMillis::new(7),
             action_count: RuntimeRepairCount::new(execution_receipt.steps.len()),
@@ -369,7 +384,8 @@ fn harness_materializes_runtime_repair_receipt_into_verifier_artifact() {
             repaired_content: RuntimeRepairContentSummary::from_text("fn answer() -> i32 { 41 }\n"),
         });
     let output_root = tempfile::tempdir().expect("create runtime repair artifact tempdir");
-    let observed_span_source = observed_span_source_for_vertical_receipt(&receipt);
+    let observed_span_source =
+        observed_span_source_for_vertical_receipt_with_trace(&receipt, &trace_recorder);
 
     let bundle = materialize_gerbil_scripted_intent_case_artifact_bundle(
         GerbilScriptedIntentCaseArtifactBundleRequest {
@@ -385,6 +401,19 @@ fn harness_materializes_runtime_repair_receipt_into_verifier_artifact() {
     .expect("runtime repair receipt bundle materializes");
 
     let verifier = artifact_content(&bundle, IntentCaseArtifactKind::VerifierReceipt);
+    assert!(bundle.completeness_receipt.is_complete());
+    assert_eq!(bundle.completeness_receipt.missing_spans, Vec::new());
+    assert!(
+        bundle
+            .completeness_receipt
+            .expected_spans
+            .iter()
+            .any(|span_name| span_name.as_str() == observability::SPAN_RUNTIME_PROVIDER)
+    );
+    let manifest_receipt =
+        fs::read_to_string(&bundle.manifest_path).expect("read runtime repair manifest");
+    assert!(manifest_receipt.contains("expected_span name=runtime.provider"));
+    assert!(manifest_receipt.contains("observed_span name=runtime.provider"));
     assert!(verifier.contains("runtime_repair_receipt=present"));
     assert!(verifier.contains("runtime_repair_kind=live"));
     assert!(verifier.contains("runtime_repair_schema=marlin.runtime-repair.live-case-receipt.v1"));
@@ -437,6 +466,14 @@ fn harness_materializes_no_live_llm_gate_receipt_into_verifier_artifact() {
 
     assert!(bundle.completeness_receipt.is_complete());
     assert_eq!(bundle.completeness_receipt.missing_artifacts, Vec::new());
+    assert!(
+        !bundle
+            .completeness_receipt
+            .expected_spans
+            .iter()
+            .any(|span_name| span_name.as_str() == observability::SPAN_RUNTIME_PROVIDER),
+        "no-live repair denial must not claim a provider runtime span"
+    );
     assert!(bundle.has_artifact_kind(IntentCaseArtifactKind::VerifierReceipt));
     let verifier = artifact_content(&bundle, IntentCaseArtifactKind::VerifierReceipt);
     assert!(verifier.contains("runtime_repair_receipt=present"));
