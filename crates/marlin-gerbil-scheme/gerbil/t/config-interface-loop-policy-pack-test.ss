@@ -69,6 +69,13 @@
 (def real-repair-merge-receipts
   (.get real-repair-audit-pack merge_receipts))
 
+(def real-repair-slot-merge-algebra-receipts
+  (marlinRealRepair001SlotMergeAlgebraReceipts))
+
+(def real-repair-slot-merge-audit-receipts
+  (marlinPolicySlotMergeAuditReceipts
+   real-repair-slot-merge-algebra-receipts))
+
 (def real-repair-loop-program
   (.get real-repair-compiler-receipt loop-program))
 
@@ -535,6 +542,66 @@
        => "artifact-policy")
 (check (vector-ref real-repair-policy-mixins 7)
        => "trace-policy")
+(check (vector-length real-repair-slot-merge-algebra-receipts) => 5)
+(check (.get (vector-ref real-repair-slot-merge-algebra-receipts 0) kind)
+       => marlin-policy-slot-merge-receipt-kind)
+(check (.get (vector-ref real-repair-slot-merge-algebra-receipts 0) slot)
+       => "human_gates")
+(check (.get (vector-ref real-repair-slot-merge-algebra-receipts 0) merge)
+       => "union")
+(check (.get (vector-ref real-repair-slot-merge-algebra-receipts 0) status)
+       => "merged")
+(check (vector-length
+        (.get (vector-ref real-repair-slot-merge-algebra-receipts 0) result))
+       => 2)
+(check (.get (vector-ref real-repair-slot-merge-algebra-receipts 1) slot)
+       => "capability")
+(check (.get (vector-ref real-repair-slot-merge-algebra-receipts 1) merge)
+       => "intersection")
+(check (vector-ref
+        (.get (vector-ref real-repair-slot-merge-algebra-receipts 1) result)
+        0)
+       => "+read")
+(check (vector-ref
+        (.get (vector-ref real-repair-slot-merge-algebra-receipts 1) result)
+        1)
+       => "+tool")
+(check (.get (vector-ref real-repair-slot-merge-algebra-receipts 2) slot)
+       => "budget.max_attempts")
+(check (.get (vector-ref real-repair-slot-merge-algebra-receipts 2) result)
+       => 3)
+(check (.get (vector-ref real-repair-slot-merge-algebra-receipts 3) slot)
+       => "route_rules")
+(check (vector-ref
+        (.get (vector-ref real-repair-slot-merge-algebra-receipts 3) result)
+        4)
+       => "stop")
+(check (.get (vector-ref real-repair-slot-merge-algebra-receipts 4) slot)
+       => "exclusive_resource")
+(check (.get (vector-ref real-repair-slot-merge-algebra-receipts 4) status)
+       => "conflict")
+(check (vector-ref
+        (.get (vector-ref real-repair-slot-merge-algebra-receipts 4)
+              conflict-reasons)
+        0)
+       => "exclusive-resource-conflict")
+(check (vector-length real-repair-slot-merge-audit-receipts) => 5)
+(check (.get (vector-ref real-repair-slot-merge-audit-receipts 0) status)
+       => "applied")
+(check (.get (vector-ref real-repair-slot-merge-audit-receipts 4) status)
+       => "conflict")
+(check (.get (vector-ref real-repair-merge-receipts 0) slot_id)
+       => (.get (vector-ref real-repair-slot-merge-audit-receipts 0) slot_id))
+(check (.get (vector-ref real-repair-merge-receipts 0) merge)
+       => (.get (vector-ref real-repair-slot-merge-audit-receipts 0) merge))
+(check (.get (vector-ref real-repair-merge-receipts 0) status)
+       => (.get (vector-ref real-repair-slot-merge-audit-receipts 0) status))
+(check (.get (vector-ref real-repair-merge-receipts 4) slot_id)
+       => (.get (vector-ref real-repair-slot-merge-audit-receipts 4) slot_id))
+(check (.get (vector-ref real-repair-merge-receipts 4) merge)
+       => (.get (vector-ref real-repair-slot-merge-audit-receipts 4) merge))
+(check (.get (vector-ref real-repair-merge-receipts 4) status)
+       => (.get (vector-ref real-repair-slot-merge-audit-receipts 4) status))
 (check (vector-length real-repair-merge-receipts) => 5)
 (check (.get (vector-ref real-repair-merge-receipts 0) merge)
        => "union")

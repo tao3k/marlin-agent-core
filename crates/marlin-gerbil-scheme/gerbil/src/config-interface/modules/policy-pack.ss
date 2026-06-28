@@ -44,6 +44,8 @@ package: config-interface/modules
         marlinPolicySlotMergeMin
         marlinPolicySlotMergeOrderedAppend
         marlinPolicySlotMergeConflictError
+        marlinPolicySlotMergeAuditReceipt
+        marlinPolicySlotMergeAuditReceipts
         marlinPolicySlotMergeAlgebraDemoReceipt
         marlinLoopPolicyProfileProjectionDescriptor
         marlinLoopPolicyProfileProjectionDescriptors
@@ -51,6 +53,7 @@ package: config-interface/modules
         marlinLoopPolicyProjectionModuleFromDescriptor
         marlinLoopPolicyProjectionModules
         marlinLoopPolicyProfileCompilerReceipts
+        marlinRealRepair001SlotMergeAlgebraReceipts
         marlinRealRepair001ResolvedPolicyPack
         marlinRealRepair001LoopProgram
         marlinRealRepair001LoopProgramCompilerReceipt
@@ -900,6 +903,27 @@ package: config-interface/modules
      #f
      (vector "exclusive-resource-conflict"))))
 
+;; MarlinResult <- MarlinInput
+(def (marlin-policy-slot-merge-audit-status status-value)
+  (cond
+   ((string=? status-value "merged") "applied")
+   ((string=? status-value "applied") "applied")
+   ((string=? status-value "conflict") "conflict")
+   (else status-value)))
+
+;;; Boundary: Audit packs keep Rust's compact SlotMergeReceipt IR stable.
+;; MarlinResult <- MarlinInput
+(def (marlinPolicySlotMergeAuditReceipt slot-merge-receipt)
+  (.o slot_id: (.get slot-merge-receipt slot_id)
+      merge: (.get slot-merge-receipt merge)
+      status:
+      (marlin-policy-slot-merge-audit-status
+       (.get slot-merge-receipt status))))
+
+;; MarlinResult <- MarlinInput
+(def (marlinPolicySlotMergeAuditReceipts slot-merge-receipts)
+  (marlin-vector-map marlinPolicySlotMergeAuditReceipt slot-merge-receipts))
+
 ;;; Boundary: Public algebra demo is the first POO policy combination receipt.
 ;; MarlinResult <- MarlinInput
 (def (marlinPolicySlotMergeAlgebraDemoReceipt)
@@ -1217,6 +1241,35 @@ package: config-interface/modules
           "trace-policy"))
 
 ;; MarlinResult <- MarlinInput
+(def (marlinRealRepair001SlotMergeAlgebraReceipts)
+  (vector
+   (marlinPolicySlotMergeUnion
+    9
+    "human_gates"
+    (vector "planner-review")
+    (vector "checker-review"))
+   (marlinPolicySlotMergeIntersection
+    10
+    "capability"
+    (vector "+read" "+write" "+tool")
+    (vector "+read" "+tool" "+verify"))
+   (marlinPolicySlotMergeMin
+    11
+    "budget.max_attempts"
+    5
+    3)
+   (marlinPolicySlotMergeOrderedAppend
+    12
+    "route_rules"
+    (vector "invoke_model" "dispatch_tools")
+    (vector "rewrite_graph" "verify" "stop"))
+   (marlinPolicySlotMergeConflictError
+    13
+    "exclusive_resource"
+    "workspace-write"
+    "repo-admin")))
+
+;; MarlinResult <- MarlinInput
 (def (marlin-real-repair-001-policy-digest)
   (marlin-policy-digest
    "real-repair-001/reactive-tool-loop"
@@ -1304,22 +1357,8 @@ package: config-interface/modules
            (.o slot_id: 9
                hotness: "hot"))
           merge_receipts:
-          (vector
-           (.o slot_id: 9
-               merge: "union"
-               status: "applied")
-           (.o slot_id: 10
-               merge: "intersection"
-               status: "applied")
-           (.o slot_id: 11
-               merge: "min"
-               status: "applied")
-           (.o slot_id: 12
-               merge: "ordered_append"
-               status: "applied")
-           (.o slot_id: 13
-               merge: "conflict_error"
-               status: "conflict")))))
+          (marlinPolicySlotMergeAuditReceipts
+           (marlinRealRepair001SlotMergeAlgebraReceipts)))))
 
 ;;; Boundary: First real LoopProgram emitted by the Scheme compiler surface.
 ;; MarlinResult <- MarlinInput

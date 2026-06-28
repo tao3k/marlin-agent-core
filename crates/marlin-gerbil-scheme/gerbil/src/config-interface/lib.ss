@@ -127,6 +127,8 @@ package: config-interface
         marlinPolicySlotMergeMin
         marlinPolicySlotMergeOrderedAppend
         marlinPolicySlotMergeConflictError
+        marlinPolicySlotMergeAuditReceipt
+        marlinPolicySlotMergeAuditReceipts
         marlinPolicySlotMergeAlgebraDemoReceipt
         marlinLoopPolicyProfileProjectionDescriptor
         marlinLoopPolicyProfileProjectionDescriptors
@@ -134,6 +136,7 @@ package: config-interface
         marlinLoopPolicyProjectionModuleFromDescriptor
         marlinLoopPolicyProjectionModules
         marlinLoopPolicyProfileCompilerReceipts
+        marlinRealRepair001SlotMergeAlgebraReceipts
         marlinRealRepair001ResolvedPolicyPack
         marlinRealRepair001LoopProgram
         marlinRealRepair001LoopProgramCompilerReceipt
