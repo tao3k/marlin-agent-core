@@ -440,6 +440,22 @@ fn config_interface_vertical_trace_projects_to_intent_case_artifact_bundles() {
                         Some("policy-combination-tool")
                     );
                 }
+                if receipt.has_capability(&cap("+retry-budget")) {
+                    assert_eq!(
+                        trace_entry
+                            .resource_key
+                            .as_ref()
+                            .map(|resource_key| resource_key.as_str()),
+                        Some("agent-flow.retry-budget-tool")
+                    );
+                    assert_eq!(
+                        trace_entry
+                            .sandbox_profile
+                            .as_ref()
+                            .map(|sandbox_profile| sandbox_profile.as_str()),
+                        Some("retry-budget-tool")
+                    );
+                }
                 assert!(
                     trace_entry_has_artifact_kind(
                         &manifest,

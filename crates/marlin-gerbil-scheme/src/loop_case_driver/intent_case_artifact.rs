@@ -452,6 +452,8 @@ fn tool_resource_key(receipt: &GerbilLoopCaseDriverVerticalTraceReceipt) -> &'st
         "agent-flow.memory-selected-tool"
     } else if has_capability(receipt, "+tool-repair") || has_capability(receipt, "+repair") {
         "agent-flow.repair-tool"
+    } else if has_capability(receipt, "+retry-budget") {
+        "agent-flow.retry-budget-tool"
     } else if has_capability(receipt, "+sandbox") || has_capability(receipt, "+denylist") {
         "agent-flow.sandboxed-tool"
     } else {
@@ -468,6 +470,8 @@ fn tool_sandbox_profile(receipt: &GerbilLoopCaseDriverVerticalTraceReceipt) -> &
         "tool-sandbox"
     } else if has_capability(receipt, "+tool-repair") || has_capability(receipt, "+repair") {
         "workspace-file-repair"
+    } else if has_capability(receipt, "+retry-budget") {
+        "retry-budget-tool"
     } else {
         "scripted-tool"
     }

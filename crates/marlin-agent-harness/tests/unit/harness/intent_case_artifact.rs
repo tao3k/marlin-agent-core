@@ -16,16 +16,18 @@ use marlin_agent_harness_types::{
     RuntimeRepairNoLiveCaseReceiptRequest, RuntimeRepairProfileRef,
 };
 use marlin_agent_kernel::{
-    AgentFlowLoopProgramRuntimeHandoffExecutor, GenericLoopMachineReceipt,
-    HybridLoopProgramRuntimeHandoffExecutor, LoopProgramEventMapper, LoopProgramExecutionDriver,
-    LoopProgramExecutionReceipt, LoopProgramExecutionRequest, LoopProgramFileSandbox,
-    LoopProgramFileWriteTemplate, LoopProgramRuntimeHandoffExecutionReceipt,
-    LoopProgramRuntimeHandoffExecutionReportStatus, LoopProgramRuntimeHandoffHandler,
+    AgentFlowLoopProgramRuntimeHandoffExecutor, DenylistedLoopProgramToolDispatchHandler,
+    GenericLoopMachineReceipt, HybridLoopProgramRuntimeHandoffExecutor, LoopProgramEventMapper,
+    LoopProgramExecutionDriver, LoopProgramExecutionReceipt, LoopProgramExecutionRequest,
+    LoopProgramExecutionStatus, LoopProgramFileSandbox, LoopProgramFileWriteTemplate,
+    LoopProgramRuntimeHandoffExecutionReceipt, LoopProgramRuntimeHandoffExecutionReportStatus,
+    LoopProgramRuntimeHandoffExecutionStatus, LoopProgramRuntimeHandoffHandler,
     LoopProgramRuntimeHandoffRouter, LoopProgramRuntimeHandoffRouterHandlers,
     LoopProgramRuntimeOwner, LoopProgramRuntimeSideEffectExecutor,
     LoopProgramToolProcessCommandTemplate, LoopProgramToolProcessProgram,
-    StaticLoopProgramFileWriteResolver, StaticLoopProgramRuntimeHandoffHandler,
-    StaticLoopProgramToolProcessResolver,
+    PolicyGatedAgentFlowLoopProgramRuntimeHandoffExecutor, ReceiptDrivenLoopProgramEventMapper,
+    RetryBudgetToolHandler, StaticLoopProgramFileWriteResolver,
+    StaticLoopProgramRuntimeHandoffHandler, StaticLoopProgramToolProcessResolver,
 };
 use marlin_agent_protocol::LoopProgramEventKind;
 use marlin_agent_runtime::TokioAgentRuntime;
@@ -246,6 +248,206 @@ async fn harness_materializes_real_tool_side_effect_receipts_into_tool_call_arti
     assert!(tool_calls.contains("stdout_digest=fnv1a64:"));
     assert!(tool_calls.contains("stdout_bytes=37"));
     assert!(!tool_calls.contains("harness-policy-combination-tool-spawn"));
+}
+
+#[test]
+fn harness_materializes_real_policy_001_sandbox_denylist_gate() {
+    let receipt = gerbil_vertical_receipts()
+        .into_iter()
+        .find(|receipt| receipt.case_id().as_str() == "real-policy-001/sandbox-denylist")
+        .expect("real-policy-001 sandbox-denylist vertical case should exist");
+    let loop_program = project_gerbil_loop_case_driver_loop_program(&receipt)
+        .expect("sandbox-denylist vertical trace projects into LoopProgram");
+    let handlers = LoopProgramRuntimeHandoffRouterHandlers {
+        tool_handler: Arc::new(DenylistedLoopProgramToolDispatchHandler::new(
+            LoopProgramRuntimeOwner::new("runtime.sandbox.denylist"),
+            ["loop-program.dispatch-tools"],
+        )),
+        control_handler: handled_by("runtime.control"),
+        ..LoopProgramRuntimeHandoffRouterHandlers::default()
+    };
+    let execution_receipt =
+        LoopProgramExecutionDriver::new(LoopProgramRuntimeHandoffRouter::new(handlers))
+            .with_event_mapper(SchemeProjectedLoopProgramEventMapper::from_vertical_trace(
+                &receipt,
+            ))
+            .with_max_steps(receipt.transition_count() + 2)
+            .run(LoopProgramExecutionRequest::new(
+                loop_program,
+                vec![LoopProgramEventKind::Start],
+            ));
+    let output_root = tempfile::tempdir().expect("create sandbox-denylist artifact tempdir");
+
+    let bundle = materialize_gerbil_scripted_intent_case_artifact_bundle(
+        GerbilScriptedIntentCaseArtifactBundleRequest {
+            output_root: output_root.path().to_owned(),
+            run_id: "real-policy-001-sandbox-denylist-gate".into(),
+            vertical_trace: receipt,
+            execution_receipt: execution_receipt.clone(),
+            side_effect_replay_bundle: None,
+            runtime_repair_receipt: None,
+        },
+    )
+    .expect("sandbox-denylist gate bundle materializes");
+
+    assert_eq!(
+        execution_receipt.status,
+        LoopProgramExecutionStatus::Stopped
+    );
+    assert_eq!(execution_receipt.steps.len(), 2);
+    assert_eq!(
+        execution_receipt.steps[0].runtime_handoff_execution.status,
+        LoopProgramRuntimeHandoffExecutionReportStatus::Denied
+    );
+    assert_eq!(
+        execution_receipt.steps[0].generated_event,
+        Some(LoopProgramEventKind::Error)
+    );
+    assert_eq!(
+        execution_receipt.steps[0]
+            .runtime_handoff_execution
+            .executions[0]
+            .status,
+        LoopProgramRuntimeHandoffExecutionStatus::Denied
+    );
+    assert_eq!(
+        execution_receipt.steps[0]
+            .runtime_handoff_execution
+            .executions[0]
+            .owner
+            .as_str(),
+        "runtime.sandbox.denylist"
+    );
+    assert!(
+        execution_receipt.steps[0]
+            .runtime_handoff_execution
+            .tool_process_projections
+            .is_empty(),
+        "denylisted tool handoff must not project process side effects"
+    );
+    assert!(bundle.completeness_receipt.is_complete());
+    assert_eq!(bundle.completeness_receipt.missing_artifacts, Vec::new());
+    assert!(bundle.has_artifact_kind(IntentCaseArtifactKind::SandboxReceipts));
+    let sandbox = artifact_content(&bundle, IntentCaseArtifactKind::SandboxReceipts);
+    assert!(sandbox.contains("owner=runtime.sandbox.denylist"));
+    assert!(sandbox.contains("status=Denied"));
+    assert!(sandbox.contains("resource_key=agent-flow.sandboxed-tool"));
+    assert!(sandbox.contains("sandbox_profile=sandbox-denylist"));
+    let tool_calls = artifact_content(&bundle, IntentCaseArtifactKind::ToolCalls);
+    assert!(tool_calls.contains("tool_calls=none"));
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn harness_materializes_real_policy_002_retry_budget_gate() {
+    let receipt = gerbil_vertical_receipts()
+        .into_iter()
+        .find(|receipt| receipt.case_id().as_str() == "real-policy-002/retry-budget")
+        .expect("real-policy-002 retry-budget vertical case should exist");
+    let loop_program = project_gerbil_loop_case_driver_loop_program(&receipt)
+        .expect("retry-budget vertical trace projects into LoopProgram");
+    let handlers = LoopProgramRuntimeHandoffRouterHandlers {
+        tool_handler: Arc::new(RetryBudgetToolHandler::new(
+            LoopProgramRuntimeOwner::new("runtime.retry-budget.tool"),
+            1,
+        )),
+        control_handler: handled_by("runtime.control"),
+        ..LoopProgramRuntimeHandoffRouterHandlers::default()
+    };
+    let execution_receipt = LoopProgramExecutionDriver::new(
+        PolicyGatedAgentFlowLoopProgramRuntimeHandoffExecutor::new(
+            LoopProgramRuntimeHandoffRouter::new(handlers),
+            AgentFlowLoopProgramRuntimeHandoffExecutor::new(LoopProgramRuntimeOwner::new(
+                "runtime.agent-flow.retry-budget-tool",
+            )),
+        ),
+    )
+    .with_event_mapper(ReceiptDrivenLoopProgramEventMapper)
+    .with_max_steps(receipt.transition_count() + 2)
+    .run(LoopProgramExecutionRequest::new(
+        loop_program,
+        vec![LoopProgramEventKind::Start],
+    ));
+
+    assert_eq!(
+        execution_receipt.status,
+        LoopProgramExecutionStatus::Stopped
+    );
+    assert_eq!(execution_receipt.steps.len(), 3);
+    assert_eq!(
+        execution_receipt
+            .steps
+            .iter()
+            .map(|step| step.runtime_handoff_execution.status.clone())
+            .collect::<Vec<_>>(),
+        vec![
+            LoopProgramRuntimeHandoffExecutionReportStatus::Denied,
+            LoopProgramRuntimeHandoffExecutionReportStatus::Completed,
+            LoopProgramRuntimeHandoffExecutionReportStatus::Completed,
+        ]
+    );
+    assert_eq!(
+        execution_receipt
+            .steps
+            .iter()
+            .map(|step| step.generated_event.clone())
+            .collect::<Vec<_>>(),
+        vec![
+            Some(LoopProgramEventKind::Error),
+            Some(LoopProgramEventKind::ToolReceipt),
+            None,
+        ]
+    );
+    assert!(
+        execution_receipt.steps[0]
+            .runtime_handoff_execution
+            .tool_process_projections
+            .is_empty()
+    );
+    assert_eq!(
+        execution_receipt.steps[1]
+            .runtime_handoff_execution
+            .tool_process_projections
+            .len(),
+        1
+    );
+
+    let (runtime, _events) = TokioAgentRuntime::new(4);
+    let replay_bundle = LoopProgramRuntimeSideEffectExecutor::new(tool_shell_resolver(
+        "printf retry-budget-admitted-tool-spawn",
+    ))
+    .with_started_at_ms(3100)
+    .with_observed_at_ms(3130)
+    .execute_loop_execution(&runtime.context(), &execution_receipt)
+    .await;
+    let output_root = tempfile::tempdir().expect("create retry-budget artifact tempdir");
+
+    let bundle = materialize_gerbil_scripted_intent_case_artifact_bundle(
+        GerbilScriptedIntentCaseArtifactBundleRequest {
+            output_root: output_root.path().to_owned(),
+            run_id: "real-policy-002-retry-budget-gate".into(),
+            vertical_trace: receipt,
+            execution_receipt,
+            side_effect_replay_bundle: Some(replay_bundle),
+            runtime_repair_receipt: None,
+        },
+    )
+    .expect("retry-budget gate bundle materializes");
+
+    assert!(bundle.completeness_receipt.is_complete());
+    assert_eq!(bundle.completeness_receipt.missing_artifacts, Vec::new());
+    let tool_calls = artifact_content(&bundle, IntentCaseArtifactKind::ToolCalls);
+    assert!(tool_calls.contains("side_effect_replay policy_status=Ready"));
+    assert!(tool_calls.contains("tool_call_id="));
+    assert!(tool_calls.contains("resource_key=agent-flow.retry-budget-tool"));
+    assert!(tool_calls.contains("sandbox_profile=retry-budget-tool"));
+    assert!(tool_calls.contains("status=Completed"));
+    assert!(tool_calls.contains("stdout_digest=fnv1a64:"));
+    assert!(tool_calls.contains("stdout_bytes=32"));
+    assert!(
+        !tool_calls.contains("retry-budget-admitted-tool-spawn"),
+        "tool artifact should retain stdout digest metadata, not raw stdout"
+    );
 }
 
 #[cfg(unix)]
