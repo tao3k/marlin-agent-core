@@ -76,6 +76,18 @@ pub(crate) fn render_manifest_receipt(
             completeness_receipt.missing_artifacts.len()
         ),
         format!(
+            "expected_span_count={}",
+            completeness_receipt.expected_spans.len()
+        ),
+        format!(
+            "observed_span_count={}",
+            completeness_receipt.observed_spans.len()
+        ),
+        format!(
+            "missing_span_count={}",
+            completeness_receipt.missing_spans.len()
+        ),
+        format!(
             "completeness_status={}",
             completeness_receipt.status.as_str()
         ),
@@ -99,6 +111,24 @@ pub(crate) fn render_manifest_receipt(
             .expected_artifacts
             .iter()
             .map(|kind| format!("expected_artifact kind={kind:?}")),
+    );
+    lines.extend(
+        completeness_receipt
+            .expected_spans
+            .iter()
+            .map(|span_name| format!("expected_span name={span_name}")),
+    );
+    lines.extend(
+        completeness_receipt
+            .observed_spans
+            .iter()
+            .map(|span_name| format!("observed_span name={span_name}")),
+    );
+    lines.extend(
+        completeness_receipt
+            .missing_spans
+            .iter()
+            .map(|span_name| format!("missing_span name={span_name}")),
     );
     lines.extend(manifest.correlation_keys().iter().map(|key| {
         format!(

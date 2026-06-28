@@ -36,7 +36,7 @@ pub use intent_case::{
     IntentCaseArtifactManifest, IntentCaseArtifactManifestRequest, IntentCaseArtifactRef,
     IntentCaseCorrelationKey, IntentCaseId, IntentCaseLoopProgramId, IntentCasePolicyDigest,
     IntentCaseRunId, IntentCaseRunReceipt, IntentCaseRunStatus, IntentCaseRuntimeOwner,
-    IntentCaseTraceAction, IntentCaseTraceEntry, IntentCaseTraceEntryId,
+    IntentCaseSpanName, IntentCaseTraceAction, IntentCaseTraceEntry, IntentCaseTraceEntryId,
     IntentCaseTraceEntryRequest, IntentCaseTraceEvent, IntentCaseTraceIndex,
     IntentCaseTransitionId,
 };

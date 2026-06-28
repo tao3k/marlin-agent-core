@@ -139,6 +139,9 @@ fn harness_materializes_scripted_intent_case_bundles_for_all_gerbil_vertical_cas
         assert!(manifest_receipt.contains("expected_artifact_count="));
         assert!(manifest_receipt.contains("materialized_artifact_count="));
         assert!(manifest_receipt.contains("missing_artifact_count=0"));
+        assert!(manifest_receipt.contains("expected_span_count=0"));
+        assert!(manifest_receipt.contains("observed_span_count=0"));
+        assert!(manifest_receipt.contains("missing_span_count=0"));
         assert!(manifest_receipt.contains("completeness_status=complete"));
         assert!(manifest_receipt.contains("correlation_key_count="));
         assert!(manifest_receipt.contains("correlation case_id="));

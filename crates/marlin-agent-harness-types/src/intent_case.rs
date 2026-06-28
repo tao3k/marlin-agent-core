@@ -3,10 +3,10 @@
 use serde::{Deserialize, Serialize};
 
 /// Stable schema id for serialized intent-case artifact manifests.
-pub const INTENT_CASE_ARTIFACT_MANIFEST_SCHEMA_ID: &str = "marlin.intent-case.artifact-manifest.v2";
+pub const INTENT_CASE_ARTIFACT_MANIFEST_SCHEMA_ID: &str = "marlin.intent-case.artifact-manifest.v3";
 /// Stable schema id for intent-case artifact completeness receipts.
 pub const INTENT_CASE_ARTIFACT_COMPLETENESS_RECEIPT_SCHEMA_ID: &str =
-    "marlin.intent-case.artifact-completeness-receipt.v2";
+    "marlin.intent-case.artifact-completeness-receipt.v3";
 /// Stable schema id for serialized intent-case run receipts.
 pub const INTENT_CASE_RUN_RECEIPT_SCHEMA_ID: &str = "marlin.intent-case.run-receipt.v1";
 
@@ -98,6 +98,10 @@ define_intent_case_string_id!(
 define_intent_case_string_id!(
     IntentCaseTraceEvent,
     "Stable event label recorded for one intent-case trace entry."
+);
+define_intent_case_string_id!(
+    IntentCaseSpanName,
+    "Stable low-cardinality trace span name expected or observed by one intent-case run."
 );
 
 /// Artifact lane expected in a complete intent-case run bundle.
@@ -317,6 +321,8 @@ pub struct IntentCaseArtifactManifest {
     pub policy_digest: IntentCasePolicyDigest,
     pub loop_program_id: IntentCaseLoopProgramId,
     pub expected_artifacts: Vec<IntentCaseArtifactKind>,
+    pub expected_spans: Vec<IntentCaseSpanName>,
+    pub observed_spans: Vec<IntentCaseSpanName>,
     pub artifacts: Vec<IntentCaseArtifactRef>,
     pub trace_index: IntentCaseTraceIndex,
 }
@@ -332,6 +338,8 @@ impl IntentCaseArtifactManifest {
             policy_digest: request.policy_digest,
             loop_program_id: request.loop_program_id,
             expected_artifacts: Vec::new(),
+            expected_spans: Vec::new(),
+            observed_spans: Vec::new(),
             artifacts: Vec::new(),
             trace_index: IntentCaseTraceIndex::default(),
         }
@@ -367,10 +375,58 @@ impl IntentCaseArtifactManifest {
         self
     }
 
+    #[must_use]
+    pub fn with_expected_span_name(mut self, span_name: impl Into<IntentCaseSpanName>) -> Self {
+        self.record_expected_span_name(span_name.into());
+        self
+    }
+
+    #[must_use]
+    pub fn with_expected_span_names(
+        mut self,
+        span_names: impl IntoIterator<Item = impl Into<IntentCaseSpanName>>,
+    ) -> Self {
+        for span_name in span_names {
+            self.record_expected_span_name(span_name.into());
+        }
+        self
+    }
+
+    #[must_use]
+    pub fn with_observed_span_name(mut self, span_name: impl Into<IntentCaseSpanName>) -> Self {
+        self.record_observed_span_name(span_name.into());
+        self
+    }
+
+    #[must_use]
+    pub fn with_observed_span_names(
+        mut self,
+        span_names: impl IntoIterator<Item = impl Into<IntentCaseSpanName>>,
+    ) -> Self {
+        for span_name in span_names {
+            self.record_observed_span_name(span_name.into());
+        }
+        self
+    }
+
     fn record_expected_artifact_kind(&mut self, kind: IntentCaseArtifactKind) {
         if !self.expected_artifacts.contains(&kind) {
             self.expected_artifacts.push(kind);
             self.expected_artifacts.sort();
+        }
+    }
+
+    fn record_expected_span_name(&mut self, span_name: IntentCaseSpanName) {
+        if !self.expected_spans.contains(&span_name) {
+            self.expected_spans.push(span_name);
+            self.expected_spans.sort();
+        }
+    }
+
+    fn record_observed_span_name(&mut self, span_name: IntentCaseSpanName) {
+        if !self.observed_spans.contains(&span_name) {
+            self.observed_spans.push(span_name);
+            self.observed_spans.sort();
         }
     }
 
@@ -400,6 +456,22 @@ impl IntentCaseArtifactManifest {
         kinds.sort();
         kinds.dedup();
         kinds
+    }
+
+    #[must_use]
+    pub fn expected_span_names(&self) -> Vec<IntentCaseSpanName> {
+        let mut span_names = self.expected_spans.clone();
+        span_names.sort();
+        span_names.dedup();
+        span_names
+    }
+
+    #[must_use]
+    pub fn observed_span_names(&self) -> Vec<IntentCaseSpanName> {
+        let mut span_names = self.observed_spans.clone();
+        span_names.sort();
+        span_names.dedup();
+        span_names
     }
 
     #[must_use]
@@ -550,6 +622,9 @@ pub struct IntentCaseArtifactCompletenessReceipt {
     pub expected_artifacts: Vec<IntentCaseArtifactKind>,
     pub materialized_artifacts: Vec<IntentCaseArtifactKind>,
     pub missing_artifacts: Vec<IntentCaseArtifactKind>,
+    pub expected_spans: Vec<IntentCaseSpanName>,
+    pub observed_spans: Vec<IntentCaseSpanName>,
+    pub missing_spans: Vec<IntentCaseSpanName>,
     pub trace_entry_count: usize,
     pub correlation_key_count: usize,
     pub status: IntentCaseArtifactCompletenessStatus,
@@ -570,7 +645,17 @@ impl IntentCaseArtifactCompletenessReceipt {
             .copied()
             .filter(|kind| !materialized_artifacts.contains(kind))
             .collect::<Vec<_>>();
-        let status = if missing_artifacts.is_empty() && manifest.has_complete_trace_correlation() {
+        let expected_spans = manifest.expected_span_names();
+        let observed_spans = manifest.observed_span_names();
+        let missing_spans = expected_spans
+            .iter()
+            .filter(|span_name| !observed_spans.contains(span_name))
+            .cloned()
+            .collect::<Vec<_>>();
+        let status = if missing_artifacts.is_empty()
+            && missing_spans.is_empty()
+            && manifest.has_complete_trace_correlation()
+        {
             IntentCaseArtifactCompletenessStatus::Complete
         } else {
             IntentCaseArtifactCompletenessStatus::Incomplete
@@ -585,6 +670,9 @@ impl IntentCaseArtifactCompletenessReceipt {
             expected_artifacts,
             materialized_artifacts,
             missing_artifacts,
+            expected_spans,
+            observed_spans,
+            missing_spans,
             trace_entry_count: manifest.trace_index.entries.len(),
             correlation_key_count: manifest.correlation_keys().len(),
             status,

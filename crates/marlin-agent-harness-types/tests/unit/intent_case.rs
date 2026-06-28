@@ -3,7 +3,7 @@ use marlin_agent_harness_types::{
     IntentCaseArtifactCompletenessStatus, IntentCaseArtifactId, IntentCaseArtifactKind,
     IntentCaseArtifactManifest, IntentCaseArtifactManifestRequest, IntentCaseArtifactRef,
     IntentCaseId, IntentCaseLoopProgramId, IntentCasePolicyDigest, IntentCaseRunId,
-    IntentCaseRuntimeOwner, IntentCaseTraceEntry, IntentCaseTraceEntryId,
+    IntentCaseRuntimeOwner, IntentCaseSpanName, IntentCaseTraceEntry, IntentCaseTraceEntryId,
     IntentCaseTraceEntryRequest, IntentCaseTraceIndex, IntentCaseTransitionId,
 };
 
@@ -202,6 +202,9 @@ fn artifact_completeness_receipt_marks_complete_materialized_bundle() {
         vec![IntentCaseArtifactKind::VerticalTrace]
     );
     assert_eq!(receipt.missing_artifacts, Vec::new());
+    assert_eq!(receipt.expected_spans, Vec::<IntentCaseSpanName>::new());
+    assert_eq!(receipt.observed_spans, Vec::<IntentCaseSpanName>::new());
+    assert_eq!(receipt.missing_spans, Vec::<IntentCaseSpanName>::new());
     assert_eq!(receipt.trace_entry_count, 1);
     assert_eq!(receipt.correlation_key_count, 1);
 }
@@ -244,6 +247,51 @@ fn artifact_completeness_receipt_reports_missing_expected_manifest_lanes() {
     assert_eq!(
         receipt.missing_artifacts,
         vec![IntentCaseArtifactKind::VerifierReceipt]
+    );
+    assert_eq!(receipt.trace_entry_count, 1);
+    assert_eq!(receipt.correlation_key_count, 1);
+}
+
+#[test]
+fn artifact_completeness_receipt_reports_missing_expected_spans() {
+    let artifact_id = IntentCaseArtifactId::new("case-a:vertical-trace");
+    let manifest = base_manifest()
+        .with_artifact(IntentCaseArtifactRef::present(
+            artifact_id.clone(),
+            IntentCaseArtifactKind::VerticalTrace,
+            "artifacts/intent-cases/case-a/run-a/30-vertical-trace.receipt",
+        ))
+        .with_expected_span_names(["harness.execution", "runtime.tool"])
+        .with_observed_span_name("harness.execution")
+        .with_trace_index(IntentCaseTraceIndex::new([
+            trace_entry().with_artifact_ref(artifact_id)
+        ]));
+
+    let receipt = IntentCaseArtifactCompletenessReceipt::from_manifest_and_materialized_artifacts(
+        &manifest,
+        [IntentCaseArtifactKind::VerticalTrace],
+    );
+
+    assert!(!receipt.is_complete());
+    assert_eq!(
+        receipt.status,
+        IntentCaseArtifactCompletenessStatus::Incomplete
+    );
+    assert_eq!(receipt.missing_artifacts, Vec::new());
+    assert_eq!(
+        receipt.expected_spans,
+        vec![
+            IntentCaseSpanName::new("harness.execution"),
+            IntentCaseSpanName::new("runtime.tool"),
+        ]
+    );
+    assert_eq!(
+        receipt.observed_spans,
+        vec![IntentCaseSpanName::new("harness.execution")]
+    );
+    assert_eq!(
+        receipt.missing_spans,
+        vec![IntentCaseSpanName::new("runtime.tool")]
     );
     assert_eq!(receipt.trace_entry_count, 1);
     assert_eq!(receipt.correlation_key_count, 1);
