@@ -6,8 +6,12 @@ use std::{
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
+use marlin_agent_harness::{
+    GerbilScriptedIntentCaseArtifactBundleRequest, IntentCaseArtifactKind,
+    materialize_gerbil_scripted_intent_case_artifact_bundle,
+};
 use marlin_agent_harness_types::{
-    RuntimeRepairCaseId, RuntimeRepairContentSummary, RuntimeRepairCount,
+    RuntimeRepairCaseId, RuntimeRepairCaseReceipt, RuntimeRepairContentSummary, RuntimeRepairCount,
     RuntimeRepairDenialReason, RuntimeRepairDurationMillis, RuntimeRepairHandoffStatus,
     RuntimeRepairLiveCaseReceipt, RuntimeRepairLiveCaseReceiptRequest, RuntimeRepairLiveGateStatus,
     RuntimeRepairModelCompletionId, RuntimeRepairModelId, RuntimeRepairNoLiveCaseReceipt,
@@ -259,6 +263,40 @@ fn live_runtime_repair_single_file_bug_fix_runs_llm_tool_and_verifier_loop() {
         live_receipt.patch_tool_success,
         live_receipt.graph_rewrite_projected,
         live_receipt.verification_success
+    );
+
+    let artifact_root =
+        tempfile::tempdir().expect("create live runtime repair artifact bundle tempdir");
+    let bundle = materialize_gerbil_scripted_intent_case_artifact_bundle(
+        GerbilScriptedIntentCaseArtifactBundleRequest {
+            output_root: artifact_root.path().to_owned(),
+            run_id: "live-runtime-repair-receipt".into(),
+            vertical_trace: scheme_case.receipt().clone(),
+            execution_receipt,
+            side_effect_replay_bundle: None,
+            runtime_repair_receipt: Some(RuntimeRepairCaseReceipt::from(live_receipt)),
+        },
+    )
+    .expect("live runtime repair receipt materializes into intent-case artifact bundle");
+
+    assert!(bundle.manifest_path.is_file());
+    assert!(bundle.completeness_receipt.is_complete());
+    assert_eq!(bundle.completeness_receipt.missing_artifacts, Vec::new());
+    assert!(bundle.has_artifact_kind(IntentCaseArtifactKind::VerifierReceipt));
+    assert!(bundle.has_artifact_kind(IntentCaseArtifactKind::ModelEvents));
+    assert!(bundle.has_artifact_kind(IntentCaseArtifactKind::ToolCalls));
+    let verifier = intent_case_artifact_content(&bundle, IntentCaseArtifactKind::VerifierReceipt);
+    assert!(verifier.contains("runtime_repair_receipt=present"));
+    assert!(verifier.contains("runtime_repair_kind=live"));
+    assert!(verifier.contains("runtime_repair_schema=marlin.runtime-repair.live-case-receipt.v1"));
+    assert!(verifier.contains("runtime_repair_repaired_content_digest=fnv1a64:"));
+    assert!(verifier.contains(&format!(
+        "runtime_repair_repaired_content_bytes={}",
+        FIXED_FIXTURE.len()
+    )));
+    assert!(
+        !verifier.contains(FIXED_FIXTURE.trim()),
+        "live verifier artifact should keep repaired source as digest metadata, not raw source"
     );
     fs::remove_dir_all(&repair_workspace).expect("remove repair workspace");
 }
@@ -596,6 +634,18 @@ fn runtime_repair_handoff_status(
             RuntimeRepairHandoffStatus::Denied
         }
     }
+}
+
+fn intent_case_artifact_content(
+    bundle: &marlin_agent_harness::IntentCaseArtifactBundleMaterializationReceipt,
+    kind: IntentCaseArtifactKind,
+) -> String {
+    let artifact = bundle
+        .artifacts
+        .iter()
+        .find(|artifact| artifact.kind == kind)
+        .expect("artifact kind materialized");
+    fs::read_to_string(&artifact.path).expect("read materialized artifact")
 }
 
 #[derive(Clone)]

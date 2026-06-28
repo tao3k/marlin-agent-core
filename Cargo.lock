@@ -2576,6 +2576,7 @@ name = "marlin-agent-stream"
 version = "0.1.0"
 dependencies = [
  "litellm-rs",
+ "marlin-agent-harness",
  "marlin-agent-harness-types",
  "marlin-agent-kernel",
  "marlin-agent-protocol",
@@ -2586,6 +2587,7 @@ dependencies = [
  "reqwest 0.13.4",
  "serde",
  "serde_json",
+ "tempfile",
  "tokio",
 ]
 
