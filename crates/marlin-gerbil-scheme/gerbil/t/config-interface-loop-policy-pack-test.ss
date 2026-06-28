@@ -96,6 +96,33 @@
 (def policy-combination-loop-policy-digest
   (.get policy-combination-loop-program policy_digest))
 
+(def slot-merge-algebra-demo
+  (marlinPolicySlotMergeAlgebraDemoReceipt))
+
+(def slot-merge-receipts
+  (.get slot-merge-algebra-demo receipts))
+
+(def slot-merge-capability
+  (vector-ref slot-merge-receipts 0))
+
+(def slot-merge-denylist
+  (vector-ref slot-merge-receipts 1))
+
+(def slot-merge-human-gates
+  (vector-ref slot-merge-receipts 2))
+
+(def slot-merge-budget
+  (vector-ref slot-merge-receipts 3))
+
+(def slot-merge-route-rules
+  (vector-ref slot-merge-receipts 4))
+
+(def slot-merge-exclusive-resource
+  (vector-ref slot-merge-receipts 5))
+
+(def slot-merge-observability
+  (vector-ref slot-merge-receipts 6))
+
 (def projection-modules
   (marlinLoopPolicyProjectionModules))
 
@@ -313,6 +340,81 @@
        => "scheme-types-to-rust-types")
 (check (.get (vector-ref profile-compiler-receipts 2) serialization-boundary)
        => "rust-owned-cli-trace-cross-process")
+
+(check (.get slot-merge-algebra-demo kind)
+       => marlin-policy-slot-merge-algebra-demo-receipt-kind)
+(check (.get slot-merge-algebra-demo profile-id)
+       => "policy-merge-algebra-demo")
+(check (.get slot-merge-algebra-demo owner)
+       => "poo-flow.scheme")
+(check (.get slot-merge-algebra-demo receipt-count) => 7)
+(check (vector-length slot-merge-receipts) => 7)
+(check (vector-length (.get slot-merge-algebra-demo required-laws)) => 7)
+(check (.get slot-merge-algebra-demo scheme-boundary)
+       => "scheme-types-to-rust-types")
+(check (.get slot-merge-algebra-demo serialization-boundary)
+       => "rust-owned-cli-trace-cross-process")
+(check (.get slot-merge-algebra-demo rust-handler-manufactured)
+       => #f)
+
+(check (.get slot-merge-capability kind)
+       => marlin-policy-slot-merge-receipt-kind)
+(check (.get slot-merge-capability slot) => "capability")
+(check (.get slot-merge-capability merge) => "intersection")
+(check (.get slot-merge-capability status) => "merged")
+(check (vector-length (.get slot-merge-capability result)) => 2)
+(check (vector-ref (.get slot-merge-capability result) 0)
+       => "+read")
+(check (vector-ref (.get slot-merge-capability result) 1)
+       => "+tool")
+
+(check (.get slot-merge-denylist slot) => "denylist")
+(check (.get slot-merge-denylist merge) => "union")
+(check (vector-length (.get slot-merge-denylist result)) => 2)
+(check (vector-ref (.get slot-merge-denylist result) 0)
+       => "secrets/.env")
+(check (vector-ref (.get slot-merge-denylist result) 1)
+       => "target/")
+
+(check (.get slot-merge-human-gates slot) => "human_gates")
+(check (.get slot-merge-human-gates merge) => "union")
+(check (vector-length (.get slot-merge-human-gates result)) => 2)
+(check (vector-ref (.get slot-merge-human-gates result) 0)
+       => "security-review")
+(check (vector-ref (.get slot-merge-human-gates result) 1)
+       => "cost-review")
+
+(check (.get slot-merge-budget slot) => "budget.max_attempts")
+(check (.get slot-merge-budget merge) => "min")
+(check (.get slot-merge-budget result) => 2)
+
+(check (.get slot-merge-route-rules slot) => "route_rules")
+(check (.get slot-merge-route-rules merge) => "ordered_append")
+(check (vector-length (.get slot-merge-route-rules result)) => 4)
+(check (vector-ref (.get slot-merge-route-rules result) 0)
+       => "model")
+(check (vector-ref (.get slot-merge-route-rules result) 3)
+       => "stop")
+
+(check (.get slot-merge-exclusive-resource slot)
+       => "exclusive_resource")
+(check (.get slot-merge-exclusive-resource merge)
+       => "conflict_error")
+(check (.get slot-merge-exclusive-resource status)
+       => "conflict")
+(check (.get slot-merge-exclusive-resource result) => #f)
+(check (vector-ref (.get slot-merge-exclusive-resource conflict-reasons) 0)
+       => "exclusive-resource-conflict")
+
+(check (.get slot-merge-observability slot) => "observability")
+(check (.get slot-merge-observability merge) => "union")
+(check (vector-length (.get slot-merge-observability result)) => 2)
+(check (vector-ref (.get slot-merge-observability result) 0)
+       => "runtime.tool")
+(check (vector-ref (.get slot-merge-observability result) 1)
+       => "harness.execution")
+(check (.get slot-merge-observability rust-handler-manufactured)
+       => #f)
 
 (check (vector-length real-policy-001-sandbox-policy-digest) => 32)
 (check (digest-varies? real-policy-001-sandbox-policy-digest) => #t)

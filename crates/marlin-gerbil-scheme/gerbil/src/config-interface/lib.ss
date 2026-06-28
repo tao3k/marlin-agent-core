@@ -119,6 +119,15 @@ package: config-interface
         marlinPolicyPackPresentation
         marlinPolicyProjection
         marlinPooLoopProgramCompilerReceipt
+        marlin-policy-slot-merge-receipt-kind
+        marlin-policy-slot-merge-algebra-demo-receipt-kind
+        marlinPolicySlotMergeReceipt
+        marlinPolicySlotMergeUnion
+        marlinPolicySlotMergeIntersection
+        marlinPolicySlotMergeMin
+        marlinPolicySlotMergeOrderedAppend
+        marlinPolicySlotMergeConflictError
+        marlinPolicySlotMergeAlgebraDemoReceipt
         marlinLoopPolicyProfileProjectionDescriptor
         marlinLoopPolicyProfileProjectionDescriptors
         marlinLoopVerticalMainlineProjectionDescriptors
