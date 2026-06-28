@@ -2361,8 +2361,8 @@ package: config-interface/modules
    15
    (marlin-policy-combination-matrix-mechanism-policies)
    (marlin-policy-combination-matrix-policy-mixins)
-   "capability=7;human-gate=1;attempts=3;cost=1000;wall=30000;nodes=3;edges=2;maker=21;checker=22"
-   "linearization=memory,maker,rewrite,tool,checker;merges=ordered_append,union,min,intersection,union"))
+   "capability=7;human-gate=1;attempts=3;cost=1000;wall=30000;nodes=3;edges=2;maker=21;checker=22;exclusive-resource=workspace-write"
+   "linearization=memory,maker,rewrite,tool,checker;merges=ordered_append,union,min,intersection,union,conflict_error"))
 
 ;; MarlinResult <- MarlinInput
 (def (marlinPolicyCombinationMatrixSlotMergeAlgebraReceipts)
@@ -2391,7 +2391,12 @@ package: config-interface/modules
     35
     "human_gates"
     (vector "checker-review")
-    (vector "rewrite-review"))))
+    (vector "rewrite-review"))
+   (marlinPolicySlotMergeConflictError
+    36
+    "exclusive_resource"
+    "workspace-write"
+    "workspace-write")))
 
 ;;; Boundary: Combination transitions stay in Rust-owned LoopProgram IR names.
 ;; MarlinResult <- MarlinInput
@@ -2466,11 +2471,23 @@ package: config-interface/modules
            (.o slot_id: 32
                winner_role: "maker"
                source_role_order: (vector "memory" "maker" "checker")
-               merge: "ordered_append")
+               merge: "union")
            (.o slot_id: 33
                winner_role: "checker"
                source_role_order: (vector "memory" "maker" "checker")
-               merge: "ordered_append"))
+               merge: "min")
+           (.o slot_id: 34
+               winner_role: "checker"
+               source_role_order: (vector "maker" "rewrite" "tool" "checker")
+               merge: "intersection")
+           (.o slot_id: 35
+               winner_role: "checker"
+               source_role_order: (vector "rewrite" "checker")
+               merge: "union")
+           (.o slot_id: 36
+               winner_role: "tool"
+               source_role_order: (vector "tool" "checker")
+               merge: "conflict_error"))
           linearization: (vector "memory" "maker" "rewrite" "tool" "checker")
           diagnostics:
           (vector
@@ -2495,7 +2512,9 @@ package: config-interface/modules
            (.o slot_id: 34
                hotness: "hot")
            (.o slot_id: 35
-               hotness: "audit_only"))
+               hotness: "audit_only")
+           (.o slot_id: 36
+               hotness: "hot"))
           merge_receipts:
           (marlinPolicySlotMergeAuditReceipts
            (marlinPolicyCombinationMatrixSlotMergeAlgebraReceipts)))))
