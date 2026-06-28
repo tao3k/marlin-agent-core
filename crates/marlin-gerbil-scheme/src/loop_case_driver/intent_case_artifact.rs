@@ -212,7 +212,7 @@ fn trace_entry_action_artifact_refs(
     let mut artifact_refs = Vec::new();
 
     match action {
-        "invoke_model" if receipt.live_llm_required() => {
+        "invoke_model" => {
             artifact_refs.push(artifact_ids.model_events.clone());
         }
         "dispatch_tools" => {
@@ -230,7 +230,7 @@ fn trace_entry_action_artifact_refs(
         "rewrite_graph" if receipt.live_llm_required() || has_capability(receipt, "+repair") => {
             artifact_refs.push(artifact_ids.diff_patch.clone());
         }
-        "verify" if has_capability(receipt, "+verification") => {
+        "verify" => {
             artifact_refs.push(artifact_ids.verifier_receipt.clone());
             if receipt.live_llm_required() || has_capability(receipt, "+repair") {
                 artifact_refs.push(artifact_ids.test_after.clone());
@@ -307,7 +307,7 @@ fn optional_intent_case_artifact_refs(
 ) -> Vec<IntentCaseArtifactRef> {
     let mut artifacts = Vec::new();
 
-    if receipt.live_llm_required() {
+    if has_action(receipt, "invoke_model") {
         artifacts.push(optional_artifact_ref(
             artifact_ids.model_events.clone(),
             IntentCaseArtifactKind::ModelEvents,
@@ -342,7 +342,7 @@ fn optional_intent_case_artifact_refs(
     if receipt.live_llm_required() || has_capability(receipt, "+repair") {
         artifacts.extend(repair_artifact_refs(context, artifact_ids));
     }
-    if has_capability(receipt, "+verification") {
+    if has_action(receipt, "verify") {
         artifacts.push(optional_artifact_ref(
             artifact_ids.verifier_receipt.clone(),
             IntentCaseArtifactKind::VerifierReceipt,
@@ -397,6 +397,12 @@ fn has_capability(receipt: &GerbilLoopCaseDriverVerticalTraceReceipt, tag: &str)
     receipt
         .capability_tags()
         .any(|capability| capability.as_str() == tag)
+}
+
+fn has_action(receipt: &GerbilLoopCaseDriverVerticalTraceReceipt, expected: &str) -> bool {
+    receipt
+        .transition_actions()
+        .any(|action| action == expected)
 }
 
 fn artifact_id(case_id: &str, lane: &str) -> IntentCaseArtifactId {

@@ -215,6 +215,112 @@ async fn harness_materializes_real_tool_side_effect_receipts_into_tool_call_arti
 
 #[cfg(unix)]
 #[tokio::test]
+async fn harness_materializes_policy_combination_demo_artifact_bundle() {
+    let receipt = gerbil_vertical_receipts()
+        .into_iter()
+        .find(|receipt| {
+            receipt.has_capability(&cap("+policy-combination"))
+                && receipt.memory_intent_count() > 0
+                && receipt.tool_intent_count() > 0
+        })
+        .expect("policy-combination case should project memory, tool, rewrite, and checker lanes");
+    let mechanism_policy_ids = receipt
+        .mechanism_policy_ids()
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+    let execution_receipt = execute_vertical_receipt(&receipt);
+    let actions = execution_receipt
+        .steps
+        .iter()
+        .map(|step| format!("{:?}", step.machine_receipt.action))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        actions,
+        vec![
+            "ReadMemory",
+            "InvokeModel",
+            "RewriteGraph",
+            "DispatchTools",
+            "Verify",
+            "Stop"
+        ]
+    );
+
+    let (runtime, _events) = TokioAgentRuntime::new(4);
+    let replay_bundle = LoopProgramRuntimeSideEffectExecutor::new(tool_shell_resolver(
+        "printf harness-policy-combination-demo-tool",
+    ))
+    .with_started_at_ms(2100)
+    .with_observed_at_ms(2134)
+    .execute_loop_execution(&runtime.context(), &execution_receipt)
+    .await;
+    let output_root = tempfile::tempdir().expect("create policy-combination artifact tempdir");
+
+    let bundle = materialize_gerbil_scripted_intent_case_artifact_bundle(
+        GerbilScriptedIntentCaseArtifactBundleRequest {
+            output_root: output_root.path().to_owned(),
+            run_id: "policy-combination-demo".into(),
+            vertical_trace: receipt,
+            execution_receipt,
+            side_effect_replay_bundle: Some(replay_bundle),
+            runtime_repair_receipt: None,
+        },
+    )
+    .expect("policy-combination demo bundle materializes");
+
+    assert!(bundle.completeness_receipt.is_complete());
+    assert_eq!(bundle.completeness_receipt.missing_artifacts, Vec::new());
+    for kind in [
+        IntentCaseArtifactKind::Intent,
+        IntentCaseArtifactKind::PolicyPack,
+        IntentCaseArtifactKind::LoopProgram,
+        IntentCaseArtifactKind::VerticalTrace,
+        IntentCaseArtifactKind::ExecutionTrace,
+        IntentCaseArtifactKind::ModelEvents,
+        IntentCaseArtifactKind::ToolCalls,
+        IntentCaseArtifactKind::MemoryReceipts,
+        IntentCaseArtifactKind::VerifierReceipt,
+        IntentCaseArtifactKind::PolicyExplanation,
+        IntentCaseArtifactKind::ReplayScript,
+    ] {
+        assert!(
+            bundle.has_artifact_kind(kind),
+            "missing artifact kind {kind:?}"
+        );
+    }
+
+    let manifest_receipt =
+        fs::read_to_string(&bundle.manifest_path).expect("read policy-combination manifest");
+    assert!(manifest_receipt.contains("completeness_status=complete"));
+    assert!(manifest_receipt.contains("correlation case_id=policy-combination"));
+    assert!(manifest_receipt.contains("run_id=policy-combination-demo"));
+    assert!(manifest_receipt.contains("runtime_owner=marlin-agent-core"));
+
+    let memory = artifact_content(&bundle, IntentCaseArtifactKind::MemoryReceipts);
+    let model = artifact_content(&bundle, IntentCaseArtifactKind::ModelEvents);
+    let loop_program = artifact_content(&bundle, IntentCaseArtifactKind::LoopProgram);
+    let tool_calls = artifact_content(&bundle, IntentCaseArtifactKind::ToolCalls);
+    let verifier = artifact_content(&bundle, IntentCaseArtifactKind::VerifierReceipt);
+    let policy_explanation = artifact_content(&bundle, IntentCaseArtifactKind::PolicyExplanation);
+
+    assert!(memory.contains("memory_intent="));
+    assert!(model.contains("model step="));
+    assert!(loop_program.contains("action=rewrite_graph"));
+    assert!(tool_calls.contains("side_effect_replay policy_status=Ready"));
+    assert!(tool_calls.contains("status=Completed"));
+    assert!(tool_calls.contains("stdout_digest=fnv1a64:"));
+    assert!(!tool_calls.contains("harness-policy-combination-demo-tool"));
+    assert!(verifier.contains("verifier step="));
+    for policy_id in mechanism_policy_ids {
+        assert!(
+            policy_explanation.contains(&format!("- {policy_id}")),
+            "policy explanation missing mechanism policy {policy_id}"
+        );
+    }
+}
+
+#[cfg(unix)]
+#[tokio::test]
 async fn harness_materializes_sandbox_file_write_receipts_into_sandbox_and_patch_artifacts() {
     let receipt = gerbil_vertical_receipts()
         .into_iter()
