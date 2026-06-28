@@ -2,7 +2,8 @@
 
 use std::{fs, sync::Arc};
 
-use marlin_agent_runtime::RuntimeContext;
+use marlin_agent_runtime::{RuntimeContext, observability};
+use tracing::Instrument;
 
 use crate::{
     LoopProgramExecutionReceipt, LoopProgramRuntimeHandoffExecutionReceipt,
@@ -85,7 +86,10 @@ impl LoopProgramRuntimeSideEffectExecutor {
                 let request = request
                     .with_started_at_ms(self.started_at_ms)
                     .with_observed_at_ms(self.observed_at_ms);
-                match spawn_loop_program_tool_process(context, request).await {
+                match spawn_loop_program_tool_process(context, request)
+                    .instrument(observability::runtime_tool_span())
+                    .await
+                {
                     Ok(receipt) => {
                         tool_processes
                             .push(LoopProgramToolProcessSideEffectReceipt::completed(receipt));
@@ -141,6 +145,8 @@ impl LoopProgramRuntimeSideEffectExecutor {
         &self,
         request: LoopProgramFileWriteRequest,
     ) -> LoopProgramFileWriteSideEffectReceipt {
+        let runtime_tool_span = observability::runtime_tool_span();
+        let _runtime_tool_span_guard = runtime_tool_span.enter();
         let (path, normalized_relative_path) =
             match self.file_sandbox.resolve(&request.relative_path) {
                 Ok(path) => path,

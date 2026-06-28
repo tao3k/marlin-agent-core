@@ -4,6 +4,8 @@ mod evidence_fact;
 mod evidence_graph;
 mod graph_policy;
 mod intent_case_artifact;
+mod intent_case_artifact_support;
+mod intent_case_side_effect_artifact;
 mod real_gxi;
 mod release_visibility;
 mod runtime;

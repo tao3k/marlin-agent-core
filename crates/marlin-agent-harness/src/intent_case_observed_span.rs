@@ -2,6 +2,8 @@
 
 use crate::runtime::{AgentHarnessExecutionReport, AgentHarnessGraphLoopExecutionReport};
 use marlin_agent_harness_types::{IntentCaseArtifactManifest, IntentCaseSpanName};
+use marlin_agent_kernel::LoopProgramExecutionReplayBundleReceipt;
+use marlin_agent_runtime::observability;
 
 /// Harness-derived span names observed during an intent-case run.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -45,5 +47,28 @@ impl IntentCaseObservedSpanSource {
         };
 
         manifest.with_observed_span_names(observed_span_source.span_names().iter().cloned())
+    }
+
+    #[must_use]
+    pub(crate) fn enrich_manifest_with_side_effect_span_expectations(
+        manifest: IntentCaseArtifactManifest,
+        side_effect_replay_bundle: Option<&LoopProgramExecutionReplayBundleReceipt>,
+    ) -> IntentCaseArtifactManifest {
+        let Some(side_effect_replay_bundle) = side_effect_replay_bundle else {
+            return manifest;
+        };
+
+        if side_effect_replay_bundle
+            .step_replay_bundles
+            .iter()
+            .any(|bundle| {
+                !bundle.side_effects.tool_processes.is_empty()
+                    || !bundle.side_effects.file_writes.is_empty()
+            })
+        {
+            manifest.with_expected_span_name(observability::runtime_tool_span_name().as_str())
+        } else {
+            manifest
+        }
     }
 }

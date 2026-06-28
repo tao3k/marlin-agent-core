@@ -100,6 +100,10 @@ fn materialize_intent_case_artifact_bundle(
     IntentCaseArtifactBundleMaterializationError,
 > {
     let manifest = enrich_manifest_with_side_effect_artifacts(manifest, side_effect_replay_bundle);
+    let manifest = IntentCaseObservedSpanSource::enrich_manifest_with_side_effect_span_expectations(
+        manifest,
+        side_effect_replay_bundle,
+    );
     ensure_execution_trace_matches(&manifest, execution_receipt)?;
     ensure_trace_correlation_integrity(&manifest)?;
     let bundle_root = bundle_root(output_root, &manifest)?;
