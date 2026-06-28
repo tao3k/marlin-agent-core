@@ -77,6 +77,7 @@ async fn harness_materializes_real_tool_side_effect_receipts_into_tool_call_arti
     assert!(manifest_receipt.contains("expected_span name=runtime.tool"));
     assert!(manifest_receipt.contains("observed_span name=runtime.tool"));
     let tool_calls = artifact_content(&bundle, IntentCaseArtifactKind::ToolCalls);
+    let sandbox = artifact_content(&bundle, IntentCaseArtifactKind::SandboxReceipts);
     assert!(tool_calls.contains("side_effect_replay policy_status=Ready"));
     assert!(tool_calls.contains("tool_call_id="));
     assert!(tool_calls.contains(":tool-call-"));
@@ -88,6 +89,13 @@ async fn harness_materializes_real_tool_side_effect_receipts_into_tool_call_arti
     assert!(tool_calls.contains("stdout_digest=fnv1a64:"));
     assert!(tool_calls.contains("stdout_bytes=37"));
     assert!(!tool_calls.contains("harness-policy-combination-tool-spawn"));
+    assert!(sandbox.contains("side_effect_tool_process_count=1"));
+    assert!(sandbox.contains("side_effect_completed_tool_process_count=1"));
+    assert!(sandbox.contains("side_effect_file_write_count=0"));
+    assert!(sandbox.contains("side_effect_sandbox_enforcement=no-file-write-projection"));
+    assert!(sandbox.contains("tool_process_sandbox_projection step="));
+    assert!(sandbox.contains("sandbox_profile=policy-combination-tool"));
+    assert!(sandbox.contains("sandbox_scope=profile-projection"));
 }
 
 #[cfg(unix)]
@@ -435,6 +443,11 @@ async fn harness_materializes_sandbox_file_write_receipts_into_sandbox_and_patch
     let test_before = artifact_content(&bundle, IntentCaseArtifactKind::TestBefore);
     let test_after = artifact_content(&bundle, IntentCaseArtifactKind::TestAfter);
     assert!(sandbox.contains("side_effect_policy_status=Ready"));
+    assert!(sandbox.contains("side_effect_tool_process_count=0"));
+    assert!(sandbox.contains("side_effect_file_write_count=1"));
+    assert!(sandbox.contains("side_effect_completed_file_write_count=1"));
+    assert!(sandbox.contains("side_effect_denied_file_write_count=0"));
+    assert!(sandbox.contains("side_effect_sandbox_enforcement=file-write"));
     assert!(sandbox.contains("file_write step="));
     assert!(sandbox.contains("resource_key=agent-flow."));
     assert!(sandbox.contains("sandbox_profile=workspace-file-repair"));
@@ -532,6 +545,11 @@ async fn harness_materializes_sandbox_denylist_receipts_without_writing_files() 
     let patch = artifact_content(&bundle, IntentCaseArtifactKind::DiffPatch);
     let test_after = artifact_content(&bundle, IntentCaseArtifactKind::TestAfter);
     assert!(sandbox.contains("side_effect_policy_status=Blocked"));
+    assert!(sandbox.contains("side_effect_tool_process_count=0"));
+    assert!(sandbox.contains("side_effect_file_write_count=1"));
+    assert!(sandbox.contains("side_effect_completed_file_write_count=0"));
+    assert!(sandbox.contains("side_effect_denied_file_write_count=1"));
+    assert!(sandbox.contains("side_effect_sandbox_enforcement=file-write"));
     assert!(sandbox.contains("resource_key=agent-flow."));
     assert!(sandbox.contains("sandbox_profile=workspace-file-repair"));
     assert!(sandbox.contains("relative_path=secret.rs"));

@@ -16,6 +16,9 @@ use crate::{
     },
     intent_case_artifact_replay::render_replay_script_artifact,
     intent_case_artifact_runtime_repair::render_runtime_repair_case_receipt,
+    intent_case_artifact_side_effect_summary::{
+        render_side_effect_sandbox_summary_lines, render_tool_process_sandbox_projection_lines,
+    },
     intent_case_artifact_test_receipts::{IntentCaseTestArtifactPhase, render_test_artifact},
     intent_case_observed_span::IntentCaseObservedSpanSource,
 };
@@ -197,6 +200,13 @@ fn enrich_manifest_with_side_effect_artifacts(
             "tool-calls",
             &artifact_prefix,
             "51-tool-calls.receipt",
+        );
+        append_runtime_artifact_if_missing(
+            &mut manifest,
+            IntentCaseArtifactKind::SandboxReceipts,
+            "sandbox-receipts",
+            &artifact_prefix,
+            "53-sandbox-receipts.receipt",
         );
     }
 
@@ -753,7 +763,12 @@ fn render_sandbox_artifact(
             "side_effect_policy_status={:?}",
             replay_bundle.policy_status
         ));
+        lines.extend(render_side_effect_sandbox_summary_lines(replay_bundle));
         for step_bundle in &replay_bundle.step_replay_bundles {
+            lines.extend(render_tool_process_sandbox_projection_lines(
+                manifest,
+                step_bundle,
+            ));
             lines.extend(render_file_write_side_effects(manifest, step_bundle));
         }
     }

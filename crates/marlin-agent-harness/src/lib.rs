@@ -23,6 +23,7 @@ mod intent_case_artifact_policy_feedback;
 mod intent_case_artifact_receipt_header;
 mod intent_case_artifact_replay;
 mod intent_case_artifact_runtime_repair;
+mod intent_case_artifact_side_effect_summary;
 mod intent_case_artifact_test_receipts;
 mod intent_case_observed_span;
 mod release_visibility;
