@@ -78,6 +78,7 @@ package: config-interface/modules
         marlinFailureRetryResolvedPolicyPack
         marlinFailureRetryLoopProgram
         marlinFailureRetryLoopProgramCompilerReceipt
+        marlinPolicyCombinationMatrixSlotMergeAlgebraReceipts
         marlinPolicyCombinationMatrixResolvedPolicyPack
         marlinPolicyCombinationMatrixLoopProgram
         marlinPolicyCombinationMatrixLoopProgramCompilerReceipt
@@ -2235,7 +2236,36 @@ package: config-interface/modules
    (marlin-policy-combination-matrix-mechanism-policies)
    (marlin-policy-combination-matrix-policy-mixins)
    "capability=7;human-gate=1;attempts=3;cost=1000;wall=30000;nodes=3;edges=2;maker=21;checker=22"
-   "linearization=memory,maker,rewrite,tool,checker;merges=ordered_append,ordered_append,ordered_append"))
+   "linearization=memory,maker,rewrite,tool,checker;merges=ordered_append,union,min,intersection,union"))
+
+;; MarlinResult <- MarlinInput
+(def (marlinPolicyCombinationMatrixSlotMergeAlgebraReceipts)
+  (vector
+   (marlinPolicySlotMergeOrderedAppend
+    31
+    "route_rules"
+    (vector "read_memory" "invoke_model")
+    (vector "rewrite_graph" "dispatch_tools" "verify" "stop"))
+   (marlinPolicySlotMergeUnion
+    32
+    "observability"
+    (vector "runtime.memory" "runtime.model")
+    (vector "runtime.tool" "harness.execution" "runtime.model"))
+   (marlinPolicySlotMergeMin
+    33
+    "budget.max_attempts"
+    5
+    3)
+   (marlinPolicySlotMergeIntersection
+    34
+    "capability"
+    (vector "+memory" "+model" "+rewrite" "+tool" "+verify")
+    (vector "+memory" "+rewrite" "+tool" "+verify" "+audit"))
+   (marlinPolicySlotMergeUnion
+    35
+    "human_gates"
+    (vector "checker-review")
+    (vector "rewrite-review"))))
 
 ;;; Boundary: Combination transitions stay in Rust-owned LoopProgram IR names.
 ;; MarlinResult <- MarlinInput
@@ -2335,18 +2365,14 @@ package: config-interface/modules
            (.o slot_id: 32
                hotness: "hot")
            (.o slot_id: 33
-               hotness: "hot"))
+               hotness: "hot")
+           (.o slot_id: 34
+               hotness: "hot")
+           (.o slot_id: 35
+               hotness: "audit_only"))
           merge_receipts:
-          (vector
-           (.o slot_id: 31
-               merge: "ordered_append"
-               status: "applied")
-           (.o slot_id: 32
-               merge: "ordered_append"
-               status: "applied")
-           (.o slot_id: 33
-               merge: "ordered_append"
-               status: "applied")))))
+          (marlinPolicySlotMergeAuditReceipts
+           (marlinPolicyCombinationMatrixSlotMergeAlgebraReceipts)))))
 
 ;;; Boundary: Policy combination LoopProgram is emitted by the Scheme compiler surface.
 ;; MarlinResult <- MarlinInput

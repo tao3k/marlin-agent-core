@@ -167,6 +167,7 @@ package: config-interface/modules
         marlinFailureRetryResolvedPolicyPack
         marlinFailureRetryLoopProgram
         marlinFailureRetryLoopProgramCompilerReceipt
+        marlinPolicyCombinationMatrixSlotMergeAlgebraReceipts
         marlinPolicyCombinationMatrixResolvedPolicyPack
         marlinPolicyCombinationMatrixLoopProgram
         marlinPolicyCombinationMatrixLoopProgramCompilerReceipt
