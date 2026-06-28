@@ -17,6 +17,15 @@ pub(crate) fn ensure_trace_correlation_integrity(
             IntentCaseArtifactBundleMaterializationError::MissingTraceRuntimeOwner { trace_id },
         );
     }
+    if let Some(trace_id) = manifest
+        .trace_entries_without_action_identity()
+        .into_iter()
+        .next()
+    {
+        return Err(
+            IntentCaseArtifactBundleMaterializationError::MissingTraceActionIdentity { trace_id },
+        );
+    }
 
     for entry in &manifest.trace_index.entries {
         if let Some(artifact_id) = entry
@@ -87,7 +96,7 @@ pub(crate) fn render_manifest_receipt(
     }));
     lines.extend(manifest.correlation_keys().iter().map(|key| {
         format!(
-            "correlation case_id={} run_id={} policy_epoch={} policy_digest={} loop_program_id={} trace_id={} step_index={} transition_id={} action={} event={} runtime_owner={} artifact_id={}",
+            "correlation case_id={} run_id={} policy_epoch={} policy_digest={} loop_program_id={} trace_id={} step_index={} transition_id={} action={} event={} runtime_owner={} model_invocation_id={} tool_call_id={} artifact_id={}",
             key.case_id,
             key.run_id,
             key.policy_epoch,
@@ -99,6 +108,14 @@ pub(crate) fn render_manifest_receipt(
             key.action,
             key.event,
             key.runtime_owner,
+            key.model_invocation_id
+                .as_ref()
+                .map(|id| id.as_str())
+                .unwrap_or("none"),
+            key.tool_call_id
+                .as_ref()
+                .map(|id| id.as_str())
+                .unwrap_or("none"),
             key.artifact_id
         )
     }));

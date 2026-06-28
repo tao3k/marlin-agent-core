@@ -347,6 +347,10 @@ fn config_interface_vertical_trace_projects_to_intent_case_artifact_bundles() {
             receipt.transition_count()
         );
         assert!(
+            manifest.trace_entries_without_action_identity().is_empty(),
+            "model/tool trace steps must carry typed action identities: {manifest:?}"
+        );
+        assert!(
             manifest
                 .artifacts
                 .iter()
@@ -386,6 +390,13 @@ fn config_interface_vertical_trace_projects_to_intent_case_artifact_bundles() {
             );
             if action == "invoke_model" && receipt.live_llm_required() {
                 assert!(
+                    trace_entry
+                        .model_invocation_id
+                        .as_ref()
+                        .is_some_and(|id| id.as_str().contains(":model-invocation-")),
+                    "model transition should carry model invocation id: {trace_entry:?}"
+                );
+                assert!(
                     trace_entry_has_artifact_kind(
                         &manifest,
                         trace_entry,
@@ -395,6 +406,13 @@ fn config_interface_vertical_trace_projects_to_intent_case_artifact_bundles() {
                 );
             }
             if action == "dispatch_tools" && receipt.tool_intent_count() > 0 {
+                assert!(
+                    trace_entry
+                        .tool_call_id
+                        .as_ref()
+                        .is_some_and(|id| id.as_str().contains(":tool-call-")),
+                    "tool transition should carry tool call id: {trace_entry:?}"
+                );
                 assert!(
                     trace_entry_has_artifact_kind(
                         &manifest,

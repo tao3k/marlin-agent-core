@@ -39,6 +39,14 @@ fn manifest_builds_complete_correlation_keys_from_trace_artifact_refs() {
     assert_eq!(correlation_keys[0].action.as_str(), "dispatch_tools");
     assert_eq!(correlation_keys[0].event.as_str(), "tool_request");
     assert_eq!(correlation_keys[0].runtime_owner.as_str(), "runtime-a");
+    assert!(correlation_keys[0].model_invocation_id.is_none());
+    assert_eq!(
+        correlation_keys[0]
+            .tool_call_id
+            .as_ref()
+            .map(|id| id.as_str()),
+        Some("case-a:program-a:tool-call-1")
+    );
     assert_eq!(correlation_keys[0].artifact_id, artifact_id);
 }
 
@@ -82,6 +90,23 @@ fn manifest_reports_broken_trace_correlation() {
     assert_eq!(
         missing_owner_manifest.trace_entries_without_runtime_owner()[0].as_str(),
         "case-a:trace-2"
+    );
+
+    let missing_action_identity_manifest =
+        base_manifest().with_trace_index(IntentCaseTraceIndex::new([
+            IntentCaseTraceEntry::from_request(IntentCaseTraceEntryRequest {
+                trace_id: IntentCaseTraceEntryId::new("case-a:trace-3"),
+                step_index: 3,
+                transition_id: IntentCaseTransitionId::new("program-a:transition-3"),
+                action: "invoke_model".to_owned(),
+                event: "start".to_owned(),
+            })
+            .with_runtime_owner(IntentCaseRuntimeOwner::new("runtime-a")),
+        ]));
+    assert!(!missing_action_identity_manifest.has_complete_trace_correlation());
+    assert_eq!(
+        missing_action_identity_manifest.trace_entries_without_action_identity()[0].as_str(),
+        "case-a:trace-3"
     );
 }
 
@@ -176,4 +201,5 @@ fn trace_entry() -> IntentCaseTraceEntry {
         event: "tool_request".to_owned(),
     })
     .with_runtime_owner(IntentCaseRuntimeOwner::new("runtime-a"))
+    .with_tool_call_id("case-a:program-a:tool-call-1")
 }

@@ -198,6 +198,21 @@ fn intent_case_trace_entry(
     .with_artifact_ref(artifact_ids.vertical_trace.clone())
     .with_artifact_ref(artifact_ids.execution_trace.clone());
 
+    if action == "invoke_model" {
+        entry = entry.with_model_invocation_id(model_invocation_id(
+            &context.case_id,
+            &context.loop_program_id,
+            step_index,
+        ));
+    }
+    if action == "dispatch_tools" {
+        entry = entry.with_tool_call_id(tool_call_id(
+            &context.case_id,
+            &context.loop_program_id,
+            step_index,
+        ));
+    }
+
     for artifact_id in trace_entry_action_artifact_refs(action, receipt, artifact_ids) {
         entry = entry.with_artifact_ref(artifact_id);
     }
@@ -415,6 +430,14 @@ fn trace_entry_id(case_id: &str, step_index: u64) -> IntentCaseTraceEntryId {
 
 fn transition_id(loop_program_id: &str, step_index: u64) -> IntentCaseTransitionId {
     IntentCaseTransitionId::new(format!("{loop_program_id}:transition-{step_index}"))
+}
+
+fn model_invocation_id(case_id: &str, loop_program_id: &str, step_index: u64) -> String {
+    format!("{case_id}:{loop_program_id}:model-invocation-{step_index}")
+}
+
+fn tool_call_id(case_id: &str, loop_program_id: &str, step_index: u64) -> String {
+    format!("{case_id}:{loop_program_id}:tool-call-{step_index}")
 }
 
 fn intent_case_artifact_prefix(case_id: &str, run_id: &str) -> String {

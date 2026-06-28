@@ -56,6 +56,14 @@ define_intent_case_string_id!(
     "Stable id for one artifact inside an intent-case run bundle."
 );
 define_intent_case_string_id!(
+    IntentCaseModelInvocationId,
+    "Stable id for one model invocation inside an intent-case run."
+);
+define_intent_case_string_id!(
+    IntentCaseToolCallId,
+    "Stable id for one tool call inside an intent-case run."
+);
+define_intent_case_string_id!(
     IntentCasePolicyDigest,
     "Stable digest for the policy pack that produced an intent-case run."
 );
@@ -171,6 +179,8 @@ pub struct IntentCaseTraceEntry {
     pub action: String,
     pub event: String,
     pub runtime_owner: Option<IntentCaseRuntimeOwner>,
+    pub model_invocation_id: Option<IntentCaseModelInvocationId>,
+    pub tool_call_id: Option<IntentCaseToolCallId>,
     pub artifact_refs: Vec<IntentCaseArtifactId>,
 }
 
@@ -184,6 +194,8 @@ impl IntentCaseTraceEntry {
             action: request.action,
             event: request.event,
             runtime_owner: None,
+            model_invocation_id: None,
+            tool_call_id: None,
             artifact_refs: Vec::new(),
         }
     }
@@ -191,6 +203,21 @@ impl IntentCaseTraceEntry {
     #[must_use]
     pub fn with_runtime_owner(mut self, runtime_owner: impl Into<IntentCaseRuntimeOwner>) -> Self {
         self.runtime_owner = Some(runtime_owner.into());
+        self
+    }
+
+    #[must_use]
+    pub fn with_model_invocation_id(
+        mut self,
+        model_invocation_id: impl Into<IntentCaseModelInvocationId>,
+    ) -> Self {
+        self.model_invocation_id = Some(model_invocation_id.into());
+        self
+    }
+
+    #[must_use]
+    pub fn with_tool_call_id(mut self, tool_call_id: impl Into<IntentCaseToolCallId>) -> Self {
+        self.tool_call_id = Some(tool_call_id.into());
         self
     }
 
@@ -215,6 +242,8 @@ pub struct IntentCaseCorrelationKey {
     pub action: IntentCaseTraceAction,
     pub event: IntentCaseTraceEvent,
     pub runtime_owner: IntentCaseRuntimeOwner,
+    pub model_invocation_id: Option<IntentCaseModelInvocationId>,
+    pub tool_call_id: Option<IntentCaseToolCallId>,
     pub artifact_id: IntentCaseArtifactId,
 }
 
@@ -349,6 +378,19 @@ impl IntentCaseArtifactManifest {
     }
 
     #[must_use]
+    pub fn trace_entries_without_action_identity(&self) -> Vec<IntentCaseTraceEntryId> {
+        self.trace_index
+            .entries
+            .iter()
+            .filter(|entry| {
+                (entry.action == "invoke_model" && entry.model_invocation_id.is_none())
+                    || (entry.action == "dispatch_tools" && entry.tool_call_id.is_none())
+            })
+            .map(|entry| entry.trace_id.clone())
+            .collect()
+    }
+
+    #[must_use]
     pub fn correlation_keys(&self) -> Vec<IntentCaseCorrelationKey> {
         self.trace_index
             .entries
@@ -373,6 +415,8 @@ impl IntentCaseArtifactManifest {
                         action: IntentCaseTraceAction::new(entry.action.clone()),
                         event: IntentCaseTraceEvent::new(entry.event.clone()),
                         runtime_owner: runtime_owner.clone(),
+                        model_invocation_id: entry.model_invocation_id.clone(),
+                        tool_call_id: entry.tool_call_id.clone(),
                         artifact_id,
                     }
                 })
@@ -386,6 +430,7 @@ impl IntentCaseArtifactManifest {
             && !self.correlation_keys().is_empty()
             && self.trace_artifact_ref_missing_ids().is_empty()
             && self.trace_entries_without_runtime_owner().is_empty()
+            && self.trace_entries_without_action_identity().is_empty()
     }
 
     #[must_use]

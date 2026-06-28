@@ -24,6 +24,9 @@ pub enum IntentCaseArtifactBundleMaterializationError {
     MissingTraceRuntimeOwner {
         trace_id: IntentCaseTraceEntryId,
     },
+    MissingTraceActionIdentity {
+        trace_id: IntentCaseTraceEntryId,
+    },
     UnknownTraceArtifactRef {
         trace_id: IntentCaseTraceEntryId,
         artifact_id: IntentCaseArtifactId,
@@ -60,6 +63,12 @@ impl fmt::Display for IntentCaseArtifactBundleMaterializationError {
             ),
             Self::MissingTraceRuntimeOwner { trace_id } => {
                 write!(formatter, "trace entry {trace_id} has no runtime owner")
+            }
+            Self::MissingTraceActionIdentity { trace_id } => {
+                write!(
+                    formatter,
+                    "trace entry {trace_id} is missing required model/tool action identity"
+                )
             }
             Self::UnknownTraceArtifactRef {
                 trace_id,

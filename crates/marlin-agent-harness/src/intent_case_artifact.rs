@@ -341,9 +341,11 @@ fn render_artifact_content(
         IntentCaseArtifactKind::ExecutionTrace => {
             render_execution_trace_artifact(execution_receipt)
         }
-        IntentCaseArtifactKind::ModelEvents => render_model_events_artifact(execution_receipt),
+        IntentCaseArtifactKind::ModelEvents => {
+            render_model_events_artifact(manifest, execution_receipt)
+        }
         IntentCaseArtifactKind::ToolCalls => {
-            render_tool_calls_artifact(execution_receipt, side_effect_replay_bundle)
+            render_tool_calls_artifact(manifest, execution_receipt, side_effect_replay_bundle)
         }
         IntentCaseArtifactKind::SandboxReceipts => {
             render_sandbox_artifact(execution_receipt, side_effect_replay_bundle)
@@ -476,20 +478,41 @@ fn render_runtime_execution(execution: &LoopProgramRuntimeHandoffExecution) -> S
     )
 }
 
-fn render_model_events_artifact(execution_receipt: &LoopProgramExecutionReceipt) -> String {
-    render_action_projection_artifact(execution_receipt, "model", "InvokeModel")
+fn render_model_events_artifact(
+    manifest: &IntentCaseArtifactManifest,
+    execution_receipt: &LoopProgramExecutionReceipt,
+) -> String {
+    let mut lines = Vec::new();
+    for step in &execution_receipt.steps {
+        if format!("{:?}", step.machine_receipt.action) == "InvokeModel" {
+            let step_index = step.machine_receipt.step_index.get();
+            lines.push(format!(
+                "model step={} model_invocation_id={} status={:?}",
+                step_index,
+                model_invocation_id_for_step(manifest, step_index).unwrap_or("none"),
+                step.runtime_handoff_execution.status
+            ));
+        }
+    }
+    if lines.is_empty() {
+        lines.push("model=none".to_owned());
+    }
+    lines.join("\n") + "\n"
 }
 
 fn render_tool_calls_artifact(
+    manifest: &IntentCaseArtifactManifest,
     execution_receipt: &LoopProgramExecutionReceipt,
     side_effect_replay_bundle: Option<&LoopProgramExecutionReplayBundleReceipt>,
 ) -> String {
     let mut lines = Vec::new();
     for step in &execution_receipt.steps {
         for projection in &step.runtime_handoff_execution.tool_process_projections {
+            let step_index = step.machine_receipt.step_index.get();
             lines.push(format!(
-                "step={} owner={} tool_process_command={:?}",
-                step.machine_receipt.step_index.get(),
+                "step={} tool_call_id={} owner={} tool_process_command={:?}",
+                step_index,
+                tool_call_id_for_step(manifest, step_index).unwrap_or("none"),
                 projection.owner.as_str(),
                 projection.command
             ));
@@ -503,7 +526,7 @@ fn render_tool_calls_artifact(
             replay_bundle.step_replay_bundles.len()
         ));
         for step_bundle in &replay_bundle.step_replay_bundles {
-            lines.extend(render_tool_process_side_effects(step_bundle));
+            lines.extend(render_tool_process_side_effects(manifest, step_bundle));
         }
     }
     if lines.is_empty() {
@@ -625,6 +648,7 @@ fn render_test_artifact(
 }
 
 fn render_tool_process_side_effects(
+    manifest: &IntentCaseArtifactManifest,
     step_bundle: &LoopProgramRuntimeReplayBundleReceipt,
 ) -> Vec<String> {
     step_bundle
@@ -633,9 +657,11 @@ fn render_tool_process_side_effects(
         .iter()
         .map(|tool_process| {
             let spawn = tool_process.spawn_receipt.as_ref();
+            let step_index = tool_process.projection.step_index.get();
             format!(
-                "side_effect step={} owner={} status={:?} pid={} exit_status={:?} stdout_digest={} stderr_digest={} stdout_bytes={} stderr_bytes={} diagnostic={}",
-                tool_process.projection.step_index.get(),
+                "side_effect step={} tool_call_id={} owner={} status={:?} pid={} exit_status={:?} stdout_digest={} stderr_digest={} stdout_bytes={} stderr_bytes={} diagnostic={}",
+                step_index,
+                tool_call_id_for_step(manifest, step_index).unwrap_or("none"),
                 tool_process.projection.owner.as_str(),
                 tool_process.status,
                 spawn.map(|receipt| receipt.pid).unwrap_or_default(),
@@ -652,6 +678,29 @@ fn render_tool_process_side_effects(
             )
         })
         .collect()
+}
+
+fn model_invocation_id_for_step(
+    manifest: &IntentCaseArtifactManifest,
+    step_index: u64,
+) -> Option<&str> {
+    manifest
+        .trace_index
+        .entries
+        .iter()
+        .find(|entry| entry.step_index == step_index && entry.action == "invoke_model")
+        .and_then(|entry| entry.model_invocation_id.as_ref())
+        .map(|id| id.as_str())
+}
+
+fn tool_call_id_for_step(manifest: &IntentCaseArtifactManifest, step_index: u64) -> Option<&str> {
+    manifest
+        .trace_index
+        .entries
+        .iter()
+        .find(|entry| entry.step_index == step_index && entry.action == "dispatch_tools")
+        .and_then(|entry| entry.tool_call_id.as_ref())
+        .map(|id| id.as_str())
 }
 
 fn render_file_write_side_effects(

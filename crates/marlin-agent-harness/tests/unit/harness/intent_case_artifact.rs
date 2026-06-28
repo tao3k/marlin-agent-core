@@ -145,6 +145,28 @@ fn harness_materializes_scripted_intent_case_bundles_for_all_gerbil_vertical_cas
         assert!(manifest_receipt.contains("loop_program_id="));
         assert!(manifest_receipt.contains("step_index=1"));
         assert!(manifest_receipt.contains("runtime_owner=marlin-agent-core"));
+        assert!(manifest_receipt.contains("model_invocation_id="));
+        assert!(manifest_receipt.contains("tool_call_id="));
+        if receipt
+            .transition_actions()
+            .any(|action| action == "invoke_model")
+        {
+            assert!(
+                manifest_receipt.contains(":model-invocation-"),
+                "manifest receipt missing model invocation id for {}",
+                receipt.case_id()
+            );
+        }
+        if receipt
+            .transition_actions()
+            .any(|action| action == "dispatch_tools")
+        {
+            assert!(
+                manifest_receipt.contains(":tool-call-"),
+                "manifest receipt missing tool call id for {}",
+                receipt.case_id()
+            );
+        }
 
         for artifact in &bundle.artifacts {
             assert!(artifact.path.is_file(), "missing artifact {artifact:?}");
@@ -207,6 +229,8 @@ async fn harness_materializes_real_tool_side_effect_receipts_into_tool_call_arti
     assert_eq!(bundle.completeness_receipt.missing_artifacts, Vec::new());
     let tool_calls = artifact_content(&bundle, IntentCaseArtifactKind::ToolCalls);
     assert!(tool_calls.contains("side_effect_replay policy_status=Ready"));
+    assert!(tool_calls.contains("tool_call_id="));
+    assert!(tool_calls.contains(":tool-call-"));
     assert!(tool_calls.contains("status=Completed"));
     assert!(tool_calls.contains("stdout_digest=fnv1a64:"));
     assert!(tool_calls.contains("stdout_bytes=37"));
@@ -305,8 +329,12 @@ async fn harness_materializes_policy_combination_demo_artifact_bundle() {
 
     assert!(memory.contains("memory_intent="));
     assert!(model.contains("model step="));
+    assert!(model.contains("model_invocation_id="));
+    assert!(model.contains(":model-invocation-"));
     assert!(loop_program.contains("action=rewrite_graph"));
     assert!(tool_calls.contains("side_effect_replay policy_status=Ready"));
+    assert!(tool_calls.contains("tool_call_id="));
+    assert!(tool_calls.contains(":tool-call-"));
     assert!(tool_calls.contains("status=Completed"));
     assert!(tool_calls.contains("stdout_digest=fnv1a64:"));
     assert!(!tool_calls.contains("harness-policy-combination-demo-tool"));
