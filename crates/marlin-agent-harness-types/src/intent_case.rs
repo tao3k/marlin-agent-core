@@ -3,10 +3,10 @@
 use serde::{Deserialize, Serialize};
 
 /// Stable schema id for serialized intent-case artifact manifests.
-pub const INTENT_CASE_ARTIFACT_MANIFEST_SCHEMA_ID: &str = "marlin.intent-case.artifact-manifest.v4";
+pub const INTENT_CASE_ARTIFACT_MANIFEST_SCHEMA_ID: &str = "marlin.intent-case.artifact-manifest.v5";
 /// Stable schema id for intent-case artifact completeness receipts.
 pub const INTENT_CASE_ARTIFACT_COMPLETENESS_RECEIPT_SCHEMA_ID: &str =
-    "marlin.intent-case.artifact-completeness-receipt.v4";
+    "marlin.intent-case.artifact-completeness-receipt.v5";
 /// Stable schema id for serialized intent-case run receipts.
 pub const INTENT_CASE_RUN_RECEIPT_SCHEMA_ID: &str = "marlin.intent-case.run-receipt.v1";
 
@@ -110,6 +110,7 @@ define_intent_case_string_id!(
 pub enum IntentCaseArtifactKind {
     Intent,
     PolicyPack,
+    PolicyMergeReceipts,
     LoopProgram,
     VerticalTrace,
     ExecutionTrace,
@@ -578,6 +579,7 @@ impl IntentCaseArtifactManifest {
     pub fn has_core_artifact_bundle(&self) -> bool {
         [
             IntentCaseArtifactKind::PolicyPack,
+            IntentCaseArtifactKind::PolicyMergeReceipts,
             IntentCaseArtifactKind::LoopProgram,
             IntentCaseArtifactKind::VerticalTrace,
             IntentCaseArtifactKind::ExecutionTrace,

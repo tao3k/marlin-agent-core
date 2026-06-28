@@ -359,6 +359,9 @@ fn render_artifact_content(
     match artifact.kind {
         IntentCaseArtifactKind::Intent => render_intent_artifact(manifest, vertical_trace),
         IntentCaseArtifactKind::PolicyPack => render_policy_pack_artifact(manifest, vertical_trace),
+        IntentCaseArtifactKind::PolicyMergeReceipts => {
+            render_policy_merge_receipts_artifact(manifest, vertical_trace)
+        }
         IntentCaseArtifactKind::LoopProgram => render_loop_program_artifact(manifest),
         IntentCaseArtifactKind::VerticalTrace => {
             render_vertical_trace_artifact(manifest, vertical_trace)
@@ -537,8 +540,58 @@ fn render_policy_pack_artifact(
             format!("mechanism_policy_ids={mechanism_policies}"),
             format!("capability_mask={}", vertical_trace.capability_mask()),
             format!("capability_tags={capabilities}"),
+            format!(
+                "policy_merge_receipt_count={}",
+                vertical_trace.policy_merge_receipt_count()
+            ),
+            format!(
+                "policy_conflict_merge_receipt_count={}",
+                vertical_trace.policy_conflict_merge_receipt_count()
+            ),
             format!("live_llm_required={}", vertical_trace.live_llm_required()),
             format!("live_llm_allowed={}", vertical_trace.live_llm_allowed()),
+        ],
+    )
+}
+
+fn render_policy_merge_receipts_artifact(
+    manifest: &IntentCaseArtifactManifest,
+    vertical_trace: &GerbilLoopCaseDriverVerticalTraceReceipt,
+) -> String {
+    let merge_kinds = vertical_trace
+        .policy_merge_kinds()
+        .collect::<Vec<_>>()
+        .join(",");
+    let merge_statuses = vertical_trace
+        .policy_merge_statuses()
+        .collect::<Vec<_>>()
+        .join(",");
+    render_key_value_artifact_receipt(
+        manifest,
+        IntentCaseArtifactKind::PolicyMergeReceipts,
+        [
+            "policy_merge_source=gerbil-poo-flow".to_owned(),
+            format!(
+                "policy_forced_slot_count={}",
+                vertical_trace.policy_forced_slot_count()
+            ),
+            format!(
+                "policy_merge_receipt_count={}",
+                vertical_trace.policy_merge_receipt_count()
+            ),
+            format!(
+                "policy_applied_merge_receipt_count={}",
+                vertical_trace
+                    .policy_merge_receipt_count()
+                    .saturating_sub(vertical_trace.policy_conflict_merge_receipt_count())
+            ),
+            format!(
+                "policy_conflict_merge_receipt_count={}",
+                vertical_trace.policy_conflict_merge_receipt_count()
+            ),
+            format!("policy_merge_kinds={merge_kinds}"),
+            format!("policy_merge_statuses={merge_statuses}"),
+            "policy_merge_internal_json_boundary=false".to_owned(),
         ],
     )
 }

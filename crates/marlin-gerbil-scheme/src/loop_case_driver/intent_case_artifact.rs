@@ -78,6 +78,7 @@ struct IntentCaseManifestContext {
 struct IntentCaseArtifactIds {
     intent: IntentCaseArtifactId,
     policy_pack: IntentCaseArtifactId,
+    policy_merge_receipts: IntentCaseArtifactId,
     loop_program: IntentCaseArtifactId,
     vertical_trace: IntentCaseArtifactId,
     execution_trace: IntentCaseArtifactId,
@@ -116,6 +117,7 @@ fn intent_case_artifact_ids(case_id: &str) -> IntentCaseArtifactIds {
     IntentCaseArtifactIds {
         intent: artifact_id(case_id, "intent"),
         policy_pack: artifact_id(case_id, "policy-pack"),
+        policy_merge_receipts: artifact_id(case_id, "policy-merge-receipts"),
         loop_program: artifact_id(case_id, "loop-program"),
         vertical_trace: artifact_id(case_id, "vertical-trace"),
         execution_trace: artifact_id(case_id, "execution-trace"),
@@ -206,7 +208,9 @@ fn intent_case_trace_entry(
         GERBIL_LOOP_CASE_DRIVER_INTENT_CASE_RUNTIME_OWNER,
     ))
     .with_artifact_ref(artifact_ids.vertical_trace.clone())
-    .with_artifact_ref(artifact_ids.execution_trace.clone());
+    .with_artifact_ref(artifact_ids.execution_trace.clone())
+    .with_artifact_ref(artifact_ids.policy_pack.clone())
+    .with_artifact_ref(artifact_ids.policy_merge_receipts.clone());
 
     if action == "invoke_model" {
         entry = entry.with_model_invocation_id(model_invocation_id(
@@ -291,6 +295,12 @@ fn intent_case_artifact_refs(
             artifact_ids.policy_pack.clone(),
             IntentCaseArtifactKind::PolicyPack,
             format!("{artifact_prefix}/10-policy-pack.receipt"),
+        )
+        .with_content_digest(policy_digest.clone()),
+        IntentCaseArtifactRef::present(
+            artifact_ids.policy_merge_receipts.clone(),
+            IntentCaseArtifactKind::PolicyMergeReceipts,
+            format!("{artifact_prefix}/11-policy-merge-receipts.receipt"),
         )
         .with_content_digest(policy_digest.clone()),
         IntentCaseArtifactRef::present(

@@ -50,6 +50,11 @@ pub struct GerbilLoopCaseDriverVerticalTraceReceipt {
     budget_max_attempts: u64,
     budget_max_cost_units: u64,
     budget_max_wall_time_ms: u64,
+    policy_forced_slot_count: usize,
+    policy_merge_receipt_count: usize,
+    policy_conflict_merge_receipt_count: usize,
+    policy_merge_kinds: Vec<String>,
+    policy_merge_statuses: Vec<String>,
     scheme_boundary: GerbilLoopCaseSchemeBoundary,
     serialization_boundary: GerbilLoopCaseSerializationBoundary,
 }
@@ -304,6 +309,31 @@ impl GerbilLoopCaseDriverVerticalTraceReceipt {
     #[must_use]
     pub fn loop_program_id(&self) -> &GerbilLoopCaseDriverLoopProgramId {
         &self.loop_program_id
+    }
+
+    #[must_use]
+    pub fn policy_forced_slot_count(&self) -> usize {
+        self.policy_forced_slot_count
+    }
+
+    #[must_use]
+    pub fn policy_merge_receipt_count(&self) -> usize {
+        self.policy_merge_receipt_count
+    }
+
+    #[must_use]
+    pub fn policy_conflict_merge_receipt_count(&self) -> usize {
+        self.policy_conflict_merge_receipt_count
+    }
+
+    #[must_use]
+    pub fn policy_merge_kinds(&self) -> impl Iterator<Item = &str> {
+        self.policy_merge_kinds.iter().map(String::as_str)
+    }
+
+    #[must_use]
+    pub fn policy_merge_statuses(&self) -> impl Iterator<Item = &str> {
+        self.policy_merge_statuses.iter().map(String::as_str)
     }
 
     #[must_use]
@@ -581,6 +611,50 @@ impl GerbilLoopCaseDriverVerticalTraceReceipt {
                 "vertical trace {index} has an empty runtime budget"
             )));
         }
+        if self.policy_forced_slot_count == 0 {
+            return Err(GerbilLoopCaseDriverVerticalTraceError::new(format!(
+                "vertical trace {index} has no forced policy slots"
+            )));
+        }
+        if self.policy_merge_receipt_count == 0 {
+            return Err(GerbilLoopCaseDriverVerticalTraceError::new(format!(
+                "vertical trace {index} has no policy merge receipts"
+            )));
+        }
+        if self.policy_merge_kinds.len() != self.policy_merge_receipt_count {
+            return Err(GerbilLoopCaseDriverVerticalTraceError::new(format!(
+                "vertical trace {index} policy merge kind count {} does not match merge receipt count {}",
+                self.policy_merge_kinds.len(),
+                self.policy_merge_receipt_count
+            )));
+        }
+        if self.policy_merge_statuses.len() != self.policy_merge_receipt_count {
+            return Err(GerbilLoopCaseDriverVerticalTraceError::new(format!(
+                "vertical trace {index} policy merge status count {} does not match merge receipt count {}",
+                self.policy_merge_statuses.len(),
+                self.policy_merge_receipt_count
+            )));
+        }
+        let conflict_status_count = self
+            .policy_merge_statuses
+            .iter()
+            .filter(|status| status.as_str() == "conflict")
+            .count();
+        if self.policy_conflict_merge_receipt_count != conflict_status_count {
+            return Err(GerbilLoopCaseDriverVerticalTraceError::new(format!(
+                "vertical trace {index} policy conflict merge receipt count {} does not match status count {conflict_status_count}",
+                self.policy_conflict_merge_receipt_count
+            )));
+        }
+        if let Some(status) = self
+            .policy_merge_statuses
+            .iter()
+            .find(|status| !matches!(status.as_str(), "applied" | "conflict"))
+        {
+            return Err(GerbilLoopCaseDriverVerticalTraceError::new(format!(
+                "vertical trace {index} policy merge status {status} is not applied or conflict"
+            )));
+        }
         if self.scheme_boundary != GerbilLoopCaseSchemeBoundary::SchemeTypesToRustTypes {
             return Err(GerbilLoopCaseDriverVerticalTraceError::new(format!(
                 "vertical trace {index} scheme boundary {} is not native Scheme-to-Rust",
@@ -708,6 +782,33 @@ fn vertical_trace_receipt_from_row(
             index,
             row,
             "budget-max-wall-time-ms",
+        )?,
+        policy_forced_slot_count: required_vertical_trace_usize(
+            index,
+            row,
+            "policy-forced-slot-count",
+        )?,
+        policy_merge_receipt_count: required_vertical_trace_usize(
+            index,
+            row,
+            "policy-merge-receipt-count",
+        )?,
+        policy_conflict_merge_receipt_count: required_vertical_trace_usize(
+            index,
+            row,
+            "policy-conflict-merge-receipt-count",
+        )?,
+        policy_merge_kinds: required_vertical_trace_delimited_strings(
+            index,
+            row,
+            "policy-merge-kinds",
+            '|',
+        )?,
+        policy_merge_statuses: required_vertical_trace_delimited_strings(
+            index,
+            row,
+            "policy-merge-statuses",
+            '|',
         )?,
         scheme_boundary: required_vertical_trace_scheme_boundary(index, row, "scheme-boundary")?,
         serialization_boundary: required_vertical_trace_serialization_boundary(

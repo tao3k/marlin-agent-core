@@ -1355,7 +1355,23 @@ package: config-interface/modules
            (.o slot_id: 9
                winner_role: "planner"
                source_role_order: (vector "planner" "reviewer")
-               merge: "union"))
+               merge: "union")
+           (.o slot_id: 10
+               winner_role: "reviewer"
+               source_role_order: (vector "planner" "reviewer")
+               merge: "intersection")
+           (.o slot_id: 11
+               winner_role: "budget"
+               source_role_order: (vector "planner" "runtime-kernel")
+               merge: "min")
+           (.o slot_id: 12
+               winner_role: "planner"
+               source_role_order: (vector "planner" "runtime-kernel")
+               merge: "ordered_append")
+           (.o slot_id: 13
+               winner_role: "runtime-kernel"
+               source_role_order: (vector "workspace" "repo-admin")
+               merge: "conflict_error"))
           linearization: (vector "planner" "reviewer")
           diagnostics:
           (vector
@@ -1370,9 +1386,9 @@ package: config-interface/modules
           explanation_strings:
           (vector "real-repair-001 projects POO profile into typed loop program")
           forced_slots:
-          (vector
-           (.o slot_id: 9
-               hotness: "hot"))
+          (marlinPolicySlotMergeForcedSlots
+           (marlinRealRepair001SlotMergeAlgebraReceipts)
+           "hot")
           merge_receipts:
           (marlinPolicySlotMergeAuditReceipts
            (marlinRealRepair001SlotMergeAlgebraReceipts)))))

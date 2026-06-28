@@ -104,6 +104,7 @@ fn harness_materializes_scripted_intent_case_bundles_for_all_gerbil_vertical_cas
         assert!(!bundle.manifest.correlation_keys().is_empty());
         assert!(bundle.has_artifact_kind(IntentCaseArtifactKind::Intent));
         assert!(bundle.has_artifact_kind(IntentCaseArtifactKind::PolicyPack));
+        assert!(bundle.has_artifact_kind(IntentCaseArtifactKind::PolicyMergeReceipts));
         assert!(bundle.has_artifact_kind(IntentCaseArtifactKind::LoopProgram));
         assert!(bundle.has_artifact_kind(IntentCaseArtifactKind::VerticalTrace));
         assert!(bundle.has_artifact_kind(IntentCaseArtifactKind::ExecutionTrace));
@@ -131,6 +132,8 @@ fn harness_materializes_scripted_intent_case_bundles_for_all_gerbil_vertical_cas
 
         let manifest_receipt =
             fs::read_to_string(&bundle.manifest_path).expect("read manifest receipt");
+        let policy_merge_receipts =
+            artifact_content(&bundle, IntentCaseArtifactKind::PolicyMergeReceipts);
         let replay_script = artifact_content(&bundle, IntentCaseArtifactKind::ReplayScript);
         let run_receipt = artifact_content(&bundle, IntentCaseArtifactKind::RunReceipt);
         assert!(manifest_receipt.contains("completeness_schema="));
@@ -150,6 +153,18 @@ fn harness_materializes_scripted_intent_case_bundles_for_all_gerbil_vertical_cas
         assert!(manifest_receipt.contains("run_id=scripted-bundle-"));
         assert!(manifest_receipt.contains("policy_digest="));
         assert!(manifest_receipt.contains("loop_program_id="));
+        assert!(manifest_receipt.contains("artifact id="));
+        assert!(manifest_receipt.contains("kind=PolicyMergeReceipts"));
+        assert!(manifest_receipt.contains("policy-merge-receipts"));
+        assert!(policy_merge_receipts.contains("artifact_kind=policy-merge-receipts"));
+        assert!(policy_merge_receipts.contains("policy_merge_source=gerbil-poo-flow"));
+        assert!(policy_merge_receipts.contains("policy_forced_slot_count="));
+        assert!(policy_merge_receipts.contains("policy_merge_receipt_count="));
+        assert!(policy_merge_receipts.contains("policy_applied_merge_receipt_count="));
+        assert!(policy_merge_receipts.contains("policy_conflict_merge_receipt_count="));
+        assert!(policy_merge_receipts.contains("policy_merge_kinds="));
+        assert!(policy_merge_receipts.contains("policy_merge_statuses="));
+        assert!(policy_merge_receipts.contains("policy_merge_internal_json_boundary=false"));
         assert!(
             replay_script.contains("replay_receipt_schema=marlin.intent-case.replay-receipt.v1")
         );
@@ -168,7 +183,7 @@ fn harness_materializes_scripted_intent_case_bundles_for_all_gerbil_vertical_cas
         assert!(run_receipt.contains("run_receipt_schema=marlin.intent-case.run-receipt.v1"));
         assert!(
             run_receipt
-                .contains("run_receipt_manifest_schema=marlin.intent-case.artifact-manifest.v4")
+                .contains("run_receipt_manifest_schema=marlin.intent-case.artifact-manifest.v5")
         );
         assert!(run_receipt.contains("run_receipt_status=passed"));
         assert!(run_receipt.contains("run_receipt_case_id="));
@@ -178,6 +193,7 @@ fn harness_materializes_scripted_intent_case_bundles_for_all_gerbil_vertical_cas
         assert!(run_receipt.contains("run_receipt_expected_artifact_count="));
         assert!(run_receipt.contains("run_receipt_materialized_artifact_count="));
         assert!(run_receipt.contains("run_receipt_expected_artifact_lanes="));
+        assert!(run_receipt.contains("policy-merge-receipts"));
         assert!(run_receipt.contains("run-receipt"));
         assert!(run_receipt.contains("run_receipt_expected_span_count=2"));
         assert!(run_receipt.contains("run_receipt_observed_span_count=2"));
@@ -647,6 +663,7 @@ fn artifact_kind_name(kind: IntentCaseArtifactKind) -> &'static str {
     match kind {
         IntentCaseArtifactKind::Intent => "intent",
         IntentCaseArtifactKind::PolicyPack => "policy-pack",
+        IntentCaseArtifactKind::PolicyMergeReceipts => "policy-merge-receipts",
         IntentCaseArtifactKind::LoopProgram => "loop-program",
         IntentCaseArtifactKind::VerticalTrace => "vertical-trace",
         IntentCaseArtifactKind::ExecutionTrace => "execution-trace",

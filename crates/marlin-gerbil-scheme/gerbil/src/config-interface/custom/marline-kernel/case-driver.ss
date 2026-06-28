@@ -236,6 +236,19 @@ package: config-interface/custom/marline-kernel
    (vector->list mechanism-policies)
    "|"))
 
+(def (marline-kernel-loop-case-merge-receipt-field-string merge-receipts field)
+  (marline-kernel-loop-case-join
+   (map (lambda (merge-receipt)
+          (.ref merge-receipt field))
+        (vector->list merge-receipts))
+   "|"))
+
+(def (marline-kernel-loop-case-merge-receipt-status-count merge-receipts status-value)
+  (length
+   (filter (lambda (merge-receipt)
+             (equal? (.ref merge-receipt 'status) status-value))
+           (vector->list merge-receipts))))
+
 (def (marline-kernel-loop-case-driver-vertical-receipt vertical-spec)
   (let* ((case-id (marline-kernel-loop-case-vertical-case-id vertical-spec))
          (profile-id (marline-kernel-loop-case-vertical-profile-id vertical-spec))
@@ -247,7 +260,10 @@ package: config-interface/custom/marline-kernel
          (loop-program
           (marline-kernel-loop-case-compiler-loop-program compiler-receipt))
          (hot-policy (.get resolved-policy-pack hot))
+         (audit-policy (.get resolved-policy-pack audit))
          (budget-caps (.get hot-policy budget_caps))
+         (forced-slots (.get audit-policy forced_slots))
+         (merge-receipts (.get audit-policy merge_receipts))
          (mechanism-policies (.get loop-program mechanism_policies))
          (transitions (.get loop-program transitions))
          (command-vector
@@ -337,6 +353,20 @@ package: config-interface/custom/marline-kernel
       (budget-max-attempts . ,(.get budget-caps max_attempts))
       (budget-max-cost-units . ,(.get budget-caps max_cost_units))
       (budget-max-wall-time-ms . ,(.get budget-caps max_wall_time_ms))
+      (policy-forced-slot-count . ,(vector-length forced-slots))
+      (policy-merge-receipt-count . ,(vector-length merge-receipts))
+      (policy-conflict-merge-receipt-count .
+                                         ,(marline-kernel-loop-case-merge-receipt-status-count
+                                           merge-receipts
+                                           "conflict"))
+      (policy-merge-kinds .
+                          ,(marline-kernel-loop-case-merge-receipt-field-string
+                            merge-receipts
+                            'merge))
+      (policy-merge-statuses .
+                             ,(marline-kernel-loop-case-merge-receipt-field-string
+                               merge-receipts
+                               'status))
       (scheme-boundary .
                        ,(marline-kernel-loop-case-boundary-token
                          (.get compiler-receipt scheme-boundary)))

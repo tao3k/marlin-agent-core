@@ -45,6 +45,7 @@ pub(crate) fn artifact_kind_name(kind: IntentCaseArtifactKind) -> &'static str {
     match kind {
         IntentCaseArtifactKind::Intent => "intent",
         IntentCaseArtifactKind::PolicyPack => "policy-pack",
+        IntentCaseArtifactKind::PolicyMergeReceipts => "policy-merge-receipts",
         IntentCaseArtifactKind::LoopProgram => "loop-program",
         IntentCaseArtifactKind::VerticalTrace => "vertical-trace",
         IntentCaseArtifactKind::ExecutionTrace => "execution-trace",

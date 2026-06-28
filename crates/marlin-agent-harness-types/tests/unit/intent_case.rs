@@ -332,7 +332,7 @@ fn artifact_completeness_receipt_reports_missing_materialized_lanes() {
 
 #[test]
 fn core_artifact_bundle_requires_run_receipt_lane() {
-    let manifest_without_run_receipt = base_manifest()
+    let manifest_without_policy_merge = base_manifest()
         .with_artifact(core_artifact_ref(
             IntentCaseArtifactKind::PolicyPack,
             "10-policy-pack.receipt",
@@ -352,6 +352,14 @@ fn core_artifact_bundle_requires_run_receipt_lane() {
         .with_artifact(core_artifact_ref(
             IntentCaseArtifactKind::ReplayScript,
             "90-replay-script.ss",
+        ));
+
+    assert!(!manifest_without_policy_merge.has_core_artifact_bundle());
+
+    let manifest_without_run_receipt =
+        manifest_without_policy_merge.with_artifact(core_artifact_ref(
+            IntentCaseArtifactKind::PolicyMergeReceipts,
+            "11-policy-merge-receipts.receipt",
         ));
 
     assert!(!manifest_without_run_receipt.has_core_artifact_bundle());

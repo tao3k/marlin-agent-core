@@ -269,6 +269,28 @@
 (check (string? (alist-ref (car vertical-case-driver-receipts)
                            'policy-digest-octets))
        => #t)
+(check (map (lambda (receipt) (alist-ref receipt 'policy-forced-slot-count))
+            vertical-case-driver-receipts)
+       => '(5 1 3 3 3 3 6))
+(check (map (lambda (receipt) (alist-ref receipt 'policy-merge-receipt-count))
+            vertical-case-driver-receipts)
+       => '(5 1 3 3 3 3 6))
+(check (map (lambda (receipt)
+              (alist-ref receipt 'policy-conflict-merge-receipt-count))
+            vertical-case-driver-receipts)
+       => '(1 0 0 0 0 0 0))
+(check (alist-ref (car vertical-case-driver-receipts)
+                  'policy-merge-kinds)
+       => "union|intersection|min|ordered_append|conflict_error")
+(check (alist-ref (car vertical-case-driver-receipts)
+                  'policy-merge-statuses)
+       => "applied|applied|applied|applied|conflict")
+(check (alist-ref (list-ref vertical-case-driver-receipts 6)
+                  'policy-merge-kinds)
+       => "ordered_append|union|min|intersection|union|conflict_error")
+(check (alist-ref (list-ref vertical-case-driver-receipts 6)
+                  'policy-merge-statuses)
+       => "applied|applied|applied|applied|applied|applied")
 (check (map (lambda (receipt) (alist-ref receipt 'scheme-boundary))
             vertical-case-driver-receipts)
        => '(scheme-types->rust-types
@@ -326,6 +348,11 @@
     budget-max-attempts
     budget-max-cost-units
     budget-max-wall-time-ms
+    policy-forced-slot-count
+    policy-merge-receipt-count
+    policy-conflict-merge-receipt-count
+    policy-merge-kinds
+    policy-merge-statuses
     scheme-boundary
     serialization-boundary))
 

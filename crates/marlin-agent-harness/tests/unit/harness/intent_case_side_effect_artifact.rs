@@ -295,6 +295,7 @@ async fn harness_materializes_policy_combination_demo_artifact_bundle() {
     for kind in [
         IntentCaseArtifactKind::Intent,
         IntentCaseArtifactKind::PolicyPack,
+        IntentCaseArtifactKind::PolicyMergeReceipts,
         IntentCaseArtifactKind::LoopProgram,
         IntentCaseArtifactKind::VerticalTrace,
         IntentCaseArtifactKind::ExecutionTrace,
@@ -323,6 +324,8 @@ async fn harness_materializes_policy_combination_demo_artifact_bundle() {
 
     let memory = artifact_content(&bundle, IntentCaseArtifactKind::MemoryReceipts);
     let model = artifact_content(&bundle, IntentCaseArtifactKind::ModelEvents);
+    let policy_merge_receipts =
+        artifact_content(&bundle, IntentCaseArtifactKind::PolicyMergeReceipts);
     let loop_program = artifact_content(&bundle, IntentCaseArtifactKind::LoopProgram);
     let tool_calls = artifact_content(&bundle, IntentCaseArtifactKind::ToolCalls);
     let verifier = artifact_content(&bundle, IntentCaseArtifactKind::VerifierReceipt);
@@ -332,6 +335,10 @@ async fn harness_materializes_policy_combination_demo_artifact_bundle() {
     assert!(model.contains("model step="));
     assert!(model.contains("model_invocation_id="));
     assert!(model.contains(":model-invocation-"));
+    assert!(policy_merge_receipts.contains("policy_merge_source=gerbil-poo-flow"));
+    assert!(policy_merge_receipts.contains("policy_merge_kinds="));
+    assert!(policy_merge_receipts.contains("conflict_error"));
+    assert!(policy_merge_receipts.contains("policy_merge_internal_json_boundary=false"));
     assert!(loop_program.contains("action=rewrite_graph"));
     assert!(tool_calls.contains("side_effect_replay policy_status=Ready"));
     assert!(tool_calls.contains("tool_call_id="));
@@ -544,7 +551,7 @@ fn assert_run_receipt_quality_gate(bundle: &IntentCaseArtifactBundleMaterializat
     assert!(run_receipt.contains("artifact_kind=run-receipt"));
     assert!(run_receipt.contains("run_receipt_schema=marlin.intent-case.run-receipt.v1"));
     assert!(
-        run_receipt.contains("run_receipt_manifest_schema=marlin.intent-case.artifact-manifest.v4")
+        run_receipt.contains("run_receipt_manifest_schema=marlin.intent-case.artifact-manifest.v5")
     );
     assert!(run_receipt.contains("run_receipt_status=passed"));
     assert!(run_receipt.contains(&format!(
