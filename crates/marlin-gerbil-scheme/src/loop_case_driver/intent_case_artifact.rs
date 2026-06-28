@@ -206,11 +206,14 @@ fn intent_case_trace_entry(
         ));
     }
     if action == "dispatch_tools" {
-        entry = entry.with_tool_call_id(tool_call_id(
-            &context.case_id,
-            &context.loop_program_id,
-            step_index,
-        ));
+        entry = entry
+            .with_tool_call_id(tool_call_id(
+                &context.case_id,
+                &context.loop_program_id,
+                step_index,
+            ))
+            .with_resource_key(tool_resource_key(receipt))
+            .with_sandbox_profile(tool_sandbox_profile(receipt));
     }
 
     for artifact_id in trace_entry_action_artifact_refs(action, receipt, artifact_ids) {
@@ -438,6 +441,36 @@ fn model_invocation_id(case_id: &str, loop_program_id: &str, step_index: u64) ->
 
 fn tool_call_id(case_id: &str, loop_program_id: &str, step_index: u64) -> String {
     format!("{case_id}:{loop_program_id}:tool-call-{step_index}")
+}
+
+fn tool_resource_key(receipt: &GerbilLoopCaseDriverVerticalTraceReceipt) -> &'static str {
+    if has_capability(receipt, "+policy-combination") {
+        "agent-flow.policy-combination-tool"
+    } else if has_capability(receipt, "+memory-recall")
+        || has_capability(receipt, "+tool-selection")
+    {
+        "agent-flow.memory-selected-tool"
+    } else if has_capability(receipt, "+tool-repair") || has_capability(receipt, "+repair") {
+        "agent-flow.repair-tool"
+    } else if has_capability(receipt, "+sandbox") || has_capability(receipt, "+denylist") {
+        "agent-flow.sandboxed-tool"
+    } else {
+        "agent-flow.tool-intent"
+    }
+}
+
+fn tool_sandbox_profile(receipt: &GerbilLoopCaseDriverVerticalTraceReceipt) -> &'static str {
+    if has_capability(receipt, "+policy-combination") {
+        "policy-combination-tool"
+    } else if has_capability(receipt, "+denylist") {
+        "sandbox-denylist"
+    } else if has_capability(receipt, "+sandbox") {
+        "tool-sandbox"
+    } else if has_capability(receipt, "+tool-repair") || has_capability(receipt, "+repair") {
+        "workspace-file-repair"
+    } else {
+        "scripted-tool"
+    }
 }
 
 fn intent_case_artifact_prefix(case_id: &str, run_id: &str) -> String {

@@ -414,6 +414,33 @@ fn config_interface_vertical_trace_projects_to_intent_case_artifact_bundles() {
                     "tool transition should carry tool call id: {trace_entry:?}"
                 );
                 assert!(
+                    trace_entry
+                        .resource_key
+                        .as_ref()
+                        .is_some_and(|id| id.as_str().starts_with("agent-flow.")),
+                    "tool transition should carry resource key: {trace_entry:?}"
+                );
+                assert!(
+                    trace_entry.sandbox_profile.is_some(),
+                    "tool transition should carry sandbox profile: {trace_entry:?}"
+                );
+                if receipt.has_capability(&cap("+policy-combination")) {
+                    assert_eq!(
+                        trace_entry
+                            .resource_key
+                            .as_ref()
+                            .map(|resource_key| resource_key.as_str()),
+                        Some("agent-flow.policy-combination-tool")
+                    );
+                    assert_eq!(
+                        trace_entry
+                            .sandbox_profile
+                            .as_ref()
+                            .map(|sandbox_profile| sandbox_profile.as_str()),
+                        Some("policy-combination-tool")
+                    );
+                }
+                assert!(
                     trace_entry_has_artifact_kind(
                         &manifest,
                         trace_entry,
@@ -426,6 +453,17 @@ fn config_interface_vertical_trace_projects_to_intent_case_artifact_bundles() {
                 && (receipt.has_capability(&cap("+sandbox"))
                     || receipt.has_capability(&cap("+denylist")))
             {
+                assert_eq!(
+                    trace_entry
+                        .sandbox_profile
+                        .as_ref()
+                        .map(|profile| profile.as_str()),
+                    if receipt.has_capability(&cap("+denylist")) {
+                        Some("sandbox-denylist")
+                    } else {
+                        Some("tool-sandbox")
+                    }
+                );
                 assert!(
                     trace_entry_has_artifact_kind(
                         &manifest,

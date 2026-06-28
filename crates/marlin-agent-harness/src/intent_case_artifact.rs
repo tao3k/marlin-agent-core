@@ -348,7 +348,7 @@ fn render_artifact_content(
             render_tool_calls_artifact(manifest, execution_receipt, side_effect_replay_bundle)
         }
         IntentCaseArtifactKind::SandboxReceipts => {
-            render_sandbox_artifact(execution_receipt, side_effect_replay_bundle)
+            render_sandbox_artifact(manifest, execution_receipt, side_effect_replay_bundle)
         }
         IntentCaseArtifactKind::MemoryReceipts => render_memory_artifact(execution_receipt),
         IntentCaseArtifactKind::DiffPatch => {
@@ -413,8 +413,31 @@ fn render_loop_program_artifact(manifest: &IntentCaseArtifactManifest) -> String
     let mut lines = vec![format!("loop_program_id={}", manifest.loop_program_id)];
     lines.extend(manifest.trace_index.entries.iter().map(|entry| {
         format!(
-            "step={} transition={} action={} event={}",
-            entry.step_index, entry.transition_id, entry.action, entry.event
+            "step={} transition={} action={} event={} model_invocation_id={} tool_call_id={} resource_key={} sandbox_profile={}",
+            entry.step_index,
+            entry.transition_id,
+            entry.action,
+            entry.event,
+            entry
+                .model_invocation_id
+                .as_ref()
+                .map(|id| id.as_str())
+                .unwrap_or("none"),
+            entry
+                .tool_call_id
+                .as_ref()
+                .map(|id| id.as_str())
+                .unwrap_or("none"),
+            entry
+                .resource_key
+                .as_ref()
+                .map(|id| id.as_str())
+                .unwrap_or("none"),
+            entry
+                .sandbox_profile
+                .as_ref()
+                .map(|id| id.as_str())
+                .unwrap_or("none")
         )
     }));
     lines.join("\n") + "\n"
@@ -510,9 +533,11 @@ fn render_tool_calls_artifact(
         for projection in &step.runtime_handoff_execution.tool_process_projections {
             let step_index = step.machine_receipt.step_index.get();
             lines.push(format!(
-                "step={} tool_call_id={} owner={} tool_process_command={:?}",
+                "step={} tool_call_id={} resource_key={} sandbox_profile={} owner={} tool_process_command={:?}",
                 step_index,
                 tool_call_id_for_step(manifest, step_index).unwrap_or("none"),
+                resource_key_for_step(manifest, step_index).unwrap_or("none"),
+                sandbox_profile_for_step(manifest, step_index).unwrap_or("none"),
                 projection.owner.as_str(),
                 projection.command
             ));
@@ -536,15 +561,19 @@ fn render_tool_calls_artifact(
 }
 
 fn render_sandbox_artifact(
+    manifest: &IntentCaseArtifactManifest,
     execution_receipt: &LoopProgramExecutionReceipt,
     side_effect_replay_bundle: Option<&LoopProgramExecutionReplayBundleReceipt>,
 ) -> String {
     let mut lines = Vec::new();
     for step in &execution_receipt.steps {
         for execution in &step.runtime_handoff_execution.executions {
+            let step_index = step.machine_receipt.step_index.get();
             lines.push(format!(
-                "step={} owner={} status={:?}",
-                step.machine_receipt.step_index.get(),
+                "step={} resource_key={} sandbox_profile={} owner={} status={:?}",
+                step_index,
+                resource_key_for_step(manifest, step_index).unwrap_or("none"),
+                sandbox_profile_for_step(manifest, step_index).unwrap_or("none"),
                 execution.owner.as_str(),
                 execution.status
             ));
@@ -556,7 +585,7 @@ fn render_sandbox_artifact(
             replay_bundle.policy_status
         ));
         for step_bundle in &replay_bundle.step_replay_bundles {
-            lines.extend(render_file_write_side_effects(step_bundle));
+            lines.extend(render_file_write_side_effects(manifest, step_bundle));
         }
     }
     if lines.is_empty() {
@@ -659,9 +688,11 @@ fn render_tool_process_side_effects(
             let spawn = tool_process.spawn_receipt.as_ref();
             let step_index = tool_process.projection.step_index.get();
             format!(
-                "side_effect step={} tool_call_id={} owner={} status={:?} pid={} exit_status={:?} stdout_digest={} stderr_digest={} stdout_bytes={} stderr_bytes={} diagnostic={}",
+                "side_effect step={} tool_call_id={} resource_key={} sandbox_profile={} owner={} status={:?} pid={} exit_status={:?} stdout_digest={} stderr_digest={} stdout_bytes={} stderr_bytes={} diagnostic={}",
                 step_index,
                 tool_call_id_for_step(manifest, step_index).unwrap_or("none"),
+                resource_key_for_step(manifest, step_index).unwrap_or("none"),
+                sandbox_profile_for_step(manifest, step_index).unwrap_or("none"),
                 tool_process.projection.owner.as_str(),
                 tool_process.status,
                 spawn.map(|receipt| receipt.pid).unwrap_or_default(),
@@ -703,7 +734,31 @@ fn tool_call_id_for_step(manifest: &IntentCaseArtifactManifest, step_index: u64)
         .map(|id| id.as_str())
 }
 
+fn resource_key_for_step(manifest: &IntentCaseArtifactManifest, step_index: u64) -> Option<&str> {
+    manifest
+        .trace_index
+        .entries
+        .iter()
+        .find(|entry| entry.step_index == step_index && entry.action == "dispatch_tools")
+        .and_then(|entry| entry.resource_key.as_ref())
+        .map(|id| id.as_str())
+}
+
+fn sandbox_profile_for_step(
+    manifest: &IntentCaseArtifactManifest,
+    step_index: u64,
+) -> Option<&str> {
+    manifest
+        .trace_index
+        .entries
+        .iter()
+        .find(|entry| entry.step_index == step_index && entry.action == "dispatch_tools")
+        .and_then(|entry| entry.sandbox_profile.as_ref())
+        .map(|id| id.as_str())
+}
+
 fn render_file_write_side_effects(
+    manifest: &IntentCaseArtifactManifest,
     step_bundle: &LoopProgramRuntimeReplayBundleReceipt,
 ) -> Vec<String> {
     step_bundle
@@ -712,9 +767,12 @@ fn render_file_write_side_effects(
         .iter()
         .map(|file_write| {
             let write = file_write.write_receipt.as_ref();
+            let step_index = file_write.projection.step_index.get();
             format!(
-                "file_write step={} relative_path={} status={:?} before_hash={} after_hash={} bytes_written={} diagnostic={}",
-                file_write.projection.step_index.get(),
+                "file_write step={} resource_key={} sandbox_profile={} relative_path={} status={:?} before_hash={} after_hash={} bytes_written={} diagnostic={}",
+                step_index,
+                resource_key_for_step(manifest, step_index).unwrap_or("none"),
+                sandbox_profile_for_step(manifest, step_index).unwrap_or("none"),
                 file_write.relative_path.display(),
                 file_write.status,
                 write

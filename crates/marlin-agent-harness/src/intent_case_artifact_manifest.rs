@@ -96,7 +96,7 @@ pub(crate) fn render_manifest_receipt(
     }));
     lines.extend(manifest.correlation_keys().iter().map(|key| {
         format!(
-            "correlation case_id={} run_id={} policy_epoch={} policy_digest={} loop_program_id={} trace_id={} step_index={} transition_id={} action={} event={} runtime_owner={} model_invocation_id={} tool_call_id={} artifact_id={}",
+            "correlation case_id={} run_id={} policy_epoch={} policy_digest={} loop_program_id={} trace_id={} step_index={} transition_id={} action={} event={} runtime_owner={} model_invocation_id={} tool_call_id={} resource_key={} sandbox_profile={} artifact_id={}",
             key.case_id,
             key.run_id,
             key.policy_epoch,
@@ -113,6 +113,14 @@ pub(crate) fn render_manifest_receipt(
                 .map(|id| id.as_str())
                 .unwrap_or("none"),
             key.tool_call_id
+                .as_ref()
+                .map(|id| id.as_str())
+                .unwrap_or("none"),
+            key.resource_key
+                .as_ref()
+                .map(|id| id.as_str())
+                .unwrap_or("none"),
+            key.sandbox_profile
                 .as_ref()
                 .map(|id| id.as_str())
                 .unwrap_or("none"),

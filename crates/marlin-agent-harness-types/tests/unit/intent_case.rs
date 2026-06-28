@@ -47,6 +47,20 @@ fn manifest_builds_complete_correlation_keys_from_trace_artifact_refs() {
             .map(|id| id.as_str()),
         Some("case-a:program-a:tool-call-1")
     );
+    assert_eq!(
+        correlation_keys[0]
+            .resource_key
+            .as_ref()
+            .map(|id| id.as_str()),
+        Some("agent-flow.tool-intent")
+    );
+    assert_eq!(
+        correlation_keys[0]
+            .sandbox_profile
+            .as_ref()
+            .map(|id| id.as_str()),
+        Some("scripted-tool")
+    );
     assert_eq!(correlation_keys[0].artifact_id, artifact_id);
 }
 
@@ -107,6 +121,43 @@ fn manifest_reports_broken_trace_correlation() {
     assert_eq!(
         missing_action_identity_manifest.trace_entries_without_action_identity()[0].as_str(),
         "case-a:trace-3"
+    );
+
+    let missing_tool_resource_manifest =
+        base_manifest().with_trace_index(IntentCaseTraceIndex::new([
+            IntentCaseTraceEntry::from_request(IntentCaseTraceEntryRequest {
+                trace_id: IntentCaseTraceEntryId::new("case-a:trace-4"),
+                step_index: 4,
+                transition_id: IntentCaseTransitionId::new("program-a:transition-4"),
+                action: "dispatch_tools".to_owned(),
+                event: "tool_request".to_owned(),
+            })
+            .with_runtime_owner(IntentCaseRuntimeOwner::new("runtime-a"))
+            .with_tool_call_id("case-a:program-a:tool-call-4"),
+        ]));
+    assert!(!missing_tool_resource_manifest.has_complete_trace_correlation());
+    assert_eq!(
+        missing_tool_resource_manifest.trace_entries_without_action_identity()[0].as_str(),
+        "case-a:trace-4"
+    );
+
+    let missing_tool_sandbox_manifest =
+        base_manifest().with_trace_index(IntentCaseTraceIndex::new([
+            IntentCaseTraceEntry::from_request(IntentCaseTraceEntryRequest {
+                trace_id: IntentCaseTraceEntryId::new("case-a:trace-5"),
+                step_index: 5,
+                transition_id: IntentCaseTransitionId::new("program-a:transition-5"),
+                action: "dispatch_tools".to_owned(),
+                event: "tool_request".to_owned(),
+            })
+            .with_runtime_owner(IntentCaseRuntimeOwner::new("runtime-a"))
+            .with_tool_call_id("case-a:program-a:tool-call-5")
+            .with_resource_key("agent-flow.tool-intent"),
+        ]));
+    assert!(!missing_tool_sandbox_manifest.has_complete_trace_correlation());
+    assert_eq!(
+        missing_tool_sandbox_manifest.trace_entries_without_action_identity()[0].as_str(),
+        "case-a:trace-5"
     );
 }
 
@@ -202,4 +253,6 @@ fn trace_entry() -> IntentCaseTraceEntry {
     })
     .with_runtime_owner(IntentCaseRuntimeOwner::new("runtime-a"))
     .with_tool_call_id("case-a:program-a:tool-call-1")
+    .with_resource_key("agent-flow.tool-intent")
+    .with_sandbox_profile("scripted-tool")
 }

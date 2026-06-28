@@ -64,6 +64,14 @@ define_intent_case_string_id!(
     "Stable id for one tool call inside an intent-case run."
 );
 define_intent_case_string_id!(
+    IntentCaseResourceKey,
+    "Stable resource key selected by one runtime/tool action inside an intent-case run."
+);
+define_intent_case_string_id!(
+    IntentCaseSandboxProfile,
+    "Stable sandbox profile selected by one runtime/tool action inside an intent-case run."
+);
+define_intent_case_string_id!(
     IntentCasePolicyDigest,
     "Stable digest for the policy pack that produced an intent-case run."
 );
@@ -181,6 +189,8 @@ pub struct IntentCaseTraceEntry {
     pub runtime_owner: Option<IntentCaseRuntimeOwner>,
     pub model_invocation_id: Option<IntentCaseModelInvocationId>,
     pub tool_call_id: Option<IntentCaseToolCallId>,
+    pub resource_key: Option<IntentCaseResourceKey>,
+    pub sandbox_profile: Option<IntentCaseSandboxProfile>,
     pub artifact_refs: Vec<IntentCaseArtifactId>,
 }
 
@@ -196,6 +206,8 @@ impl IntentCaseTraceEntry {
             runtime_owner: None,
             model_invocation_id: None,
             tool_call_id: None,
+            resource_key: None,
+            sandbox_profile: None,
             artifact_refs: Vec::new(),
         }
     }
@@ -222,6 +234,21 @@ impl IntentCaseTraceEntry {
     }
 
     #[must_use]
+    pub fn with_resource_key(mut self, resource_key: impl Into<IntentCaseResourceKey>) -> Self {
+        self.resource_key = Some(resource_key.into());
+        self
+    }
+
+    #[must_use]
+    pub fn with_sandbox_profile(
+        mut self,
+        sandbox_profile: impl Into<IntentCaseSandboxProfile>,
+    ) -> Self {
+        self.sandbox_profile = Some(sandbox_profile.into());
+        self
+    }
+
+    #[must_use]
     pub fn with_artifact_ref(mut self, artifact_id: impl Into<IntentCaseArtifactId>) -> Self {
         self.artifact_refs.push(artifact_id.into());
         self
@@ -244,6 +271,8 @@ pub struct IntentCaseCorrelationKey {
     pub runtime_owner: IntentCaseRuntimeOwner,
     pub model_invocation_id: Option<IntentCaseModelInvocationId>,
     pub tool_call_id: Option<IntentCaseToolCallId>,
+    pub resource_key: Option<IntentCaseResourceKey>,
+    pub sandbox_profile: Option<IntentCaseSandboxProfile>,
     pub artifact_id: IntentCaseArtifactId,
 }
 
@@ -385,6 +414,8 @@ impl IntentCaseArtifactManifest {
             .filter(|entry| {
                 (entry.action == "invoke_model" && entry.model_invocation_id.is_none())
                     || (entry.action == "dispatch_tools" && entry.tool_call_id.is_none())
+                    || (entry.action == "dispatch_tools" && entry.resource_key.is_none())
+                    || (entry.action == "dispatch_tools" && entry.sandbox_profile.is_none())
             })
             .map(|entry| entry.trace_id.clone())
             .collect()
@@ -417,6 +448,8 @@ impl IntentCaseArtifactManifest {
                         runtime_owner: runtime_owner.clone(),
                         model_invocation_id: entry.model_invocation_id.clone(),
                         tool_call_id: entry.tool_call_id.clone(),
+                        resource_key: entry.resource_key.clone(),
+                        sandbox_profile: entry.sandbox_profile.clone(),
                         artifact_id,
                     }
                 })

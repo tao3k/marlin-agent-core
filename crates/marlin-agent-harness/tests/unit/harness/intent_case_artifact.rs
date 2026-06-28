@@ -147,6 +147,8 @@ fn harness_materializes_scripted_intent_case_bundles_for_all_gerbil_vertical_cas
         assert!(manifest_receipt.contains("runtime_owner=marlin-agent-core"));
         assert!(manifest_receipt.contains("model_invocation_id="));
         assert!(manifest_receipt.contains("tool_call_id="));
+        assert!(manifest_receipt.contains("resource_key="));
+        assert!(manifest_receipt.contains("sandbox_profile="));
         if receipt
             .transition_actions()
             .any(|action| action == "invoke_model")
@@ -164,6 +166,11 @@ fn harness_materializes_scripted_intent_case_bundles_for_all_gerbil_vertical_cas
             assert!(
                 manifest_receipt.contains(":tool-call-"),
                 "manifest receipt missing tool call id for {}",
+                receipt.case_id()
+            );
+            assert!(
+                manifest_receipt.contains("resource_key=agent-flow."),
+                "manifest receipt missing resource key for {}",
                 receipt.case_id()
             );
         }
@@ -231,6 +238,10 @@ async fn harness_materializes_real_tool_side_effect_receipts_into_tool_call_arti
     assert!(tool_calls.contains("side_effect_replay policy_status=Ready"));
     assert!(tool_calls.contains("tool_call_id="));
     assert!(tool_calls.contains(":tool-call-"));
+    assert!(tool_calls.contains("resource_key="));
+    assert!(tool_calls.contains("resource_key=agent-flow.policy-combination-tool"));
+    assert!(tool_calls.contains("sandbox_profile="));
+    assert!(tool_calls.contains("sandbox_profile=policy-combination-tool"));
     assert!(tool_calls.contains("status=Completed"));
     assert!(tool_calls.contains("stdout_digest=fnv1a64:"));
     assert!(tool_calls.contains("stdout_bytes=37"));
@@ -335,6 +346,8 @@ async fn harness_materializes_policy_combination_demo_artifact_bundle() {
     assert!(tool_calls.contains("side_effect_replay policy_status=Ready"));
     assert!(tool_calls.contains("tool_call_id="));
     assert!(tool_calls.contains(":tool-call-"));
+    assert!(tool_calls.contains("resource_key="));
+    assert!(tool_calls.contains("sandbox_profile="));
     assert!(tool_calls.contains("status=Completed"));
     assert!(tool_calls.contains("stdout_digest=fnv1a64:"));
     assert!(!tool_calls.contains("harness-policy-combination-demo-tool"));
@@ -403,6 +416,8 @@ async fn harness_materializes_sandbox_file_write_receipts_into_sandbox_and_patch
     let patch = artifact_content(&bundle, IntentCaseArtifactKind::DiffPatch);
     assert!(sandbox.contains("side_effect_policy_status=Ready"));
     assert!(sandbox.contains("file_write step="));
+    assert!(sandbox.contains("resource_key=agent-flow."));
+    assert!(sandbox.contains("sandbox_profile=workspace-file-repair"));
     assert!(sandbox.contains("relative_path=src/lib.rs"));
     assert!(sandbox.contains("status=Completed"));
     assert!(sandbox.contains("after_hash=fnv1a64:"));
@@ -467,6 +482,8 @@ async fn harness_materializes_sandbox_denylist_receipts_without_writing_files() 
     let sandbox = artifact_content(&bundle, IntentCaseArtifactKind::SandboxReceipts);
     let patch = artifact_content(&bundle, IntentCaseArtifactKind::DiffPatch);
     assert!(sandbox.contains("side_effect_policy_status=Blocked"));
+    assert!(sandbox.contains("resource_key=agent-flow."));
+    assert!(sandbox.contains("sandbox_profile=workspace-file-repair"));
     assert!(sandbox.contains("relative_path=secret.rs"));
     assert!(sandbox.contains("status=Denied"));
     assert!(sandbox.contains("diagnostic=loop_program.file_write.sandbox_denied:secret.rs"));
