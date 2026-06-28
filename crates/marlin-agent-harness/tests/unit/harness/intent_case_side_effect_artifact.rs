@@ -338,6 +338,11 @@ async fn harness_materializes_policy_combination_demo_artifact_bundle() {
     assert!(policy_merge_receipts.contains("policy_merge_source=gerbil-poo-flow"));
     assert!(policy_merge_receipts.contains("policy_merge_kinds="));
     assert!(policy_merge_receipts.contains("conflict_error"));
+    assert!(policy_merge_receipts.contains("policy_feedback_status=stable-resource-consensus"));
+    assert!(
+        policy_merge_receipts
+            .contains("policy_feedback_recommendation.1=keep-exclusive-resource-mixins-aligned")
+    );
     assert!(policy_merge_receipts.contains("policy_merge_internal_json_boundary=false"));
     assert!(loop_program.contains("action=rewrite_graph"));
     assert!(tool_calls.contains("side_effect_replay policy_status=Ready"));

@@ -9,6 +9,7 @@ use crate::{
     intent_case_artifact_error::IntentCaseArtifactBundleMaterializationError,
     intent_case_artifact_manifest::{ensure_trace_correlation_integrity, render_manifest_receipt},
     intent_case_artifact_model_events::render_model_events_artifact,
+    intent_case_artifact_policy_feedback::policy_merge_feedback_lines,
     intent_case_artifact_receipt_header::{
         artifact_kind_name, render_key_value_artifact_receipt,
         render_org_artifact_receipt_properties, render_patch_artifact_receipt_header,
@@ -566,34 +567,33 @@ fn render_policy_merge_receipts_artifact(
         .policy_merge_statuses()
         .collect::<Vec<_>>()
         .join(",");
-    render_key_value_artifact_receipt(
-        manifest,
-        IntentCaseArtifactKind::PolicyMergeReceipts,
-        [
-            "policy_merge_source=gerbil-poo-flow".to_owned(),
-            format!(
-                "policy_forced_slot_count={}",
-                vertical_trace.policy_forced_slot_count()
-            ),
-            format!(
-                "policy_merge_receipt_count={}",
-                vertical_trace.policy_merge_receipt_count()
-            ),
-            format!(
-                "policy_applied_merge_receipt_count={}",
-                vertical_trace
-                    .policy_merge_receipt_count()
-                    .saturating_sub(vertical_trace.policy_conflict_merge_receipt_count())
-            ),
-            format!(
-                "policy_conflict_merge_receipt_count={}",
-                vertical_trace.policy_conflict_merge_receipt_count()
-            ),
-            format!("policy_merge_kinds={merge_kinds}"),
-            format!("policy_merge_statuses={merge_statuses}"),
-            "policy_merge_internal_json_boundary=false".to_owned(),
-        ],
-    )
+    let mut lines = vec![
+        "policy_merge_source=gerbil-poo-flow".to_owned(),
+        format!(
+            "policy_forced_slot_count={}",
+            vertical_trace.policy_forced_slot_count()
+        ),
+        format!(
+            "policy_merge_receipt_count={}",
+            vertical_trace.policy_merge_receipt_count()
+        ),
+        format!(
+            "policy_applied_merge_receipt_count={}",
+            vertical_trace
+                .policy_merge_receipt_count()
+                .saturating_sub(vertical_trace.policy_conflict_merge_receipt_count())
+        ),
+        format!(
+            "policy_conflict_merge_receipt_count={}",
+            vertical_trace.policy_conflict_merge_receipt_count()
+        ),
+        format!("policy_merge_kinds={merge_kinds}"),
+        format!("policy_merge_statuses={merge_statuses}"),
+    ];
+    lines.extend(policy_merge_feedback_lines(vertical_trace));
+    lines.push("policy_merge_internal_json_boundary=false".to_owned());
+
+    render_key_value_artifact_receipt(manifest, IntentCaseArtifactKind::PolicyMergeReceipts, lines)
 }
 
 fn render_loop_program_artifact(manifest: &IntentCaseArtifactManifest) -> String {

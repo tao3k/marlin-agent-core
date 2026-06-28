@@ -19,6 +19,7 @@ mod intent_case_artifact;
 mod intent_case_artifact_error;
 mod intent_case_artifact_manifest;
 mod intent_case_artifact_model_events;
+mod intent_case_artifact_policy_feedback;
 mod intent_case_artifact_receipt_header;
 mod intent_case_artifact_replay;
 mod intent_case_artifact_runtime_repair;

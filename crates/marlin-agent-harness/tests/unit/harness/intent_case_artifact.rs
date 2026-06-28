@@ -164,6 +164,17 @@ fn harness_materializes_scripted_intent_case_bundles_for_all_gerbil_vertical_cas
         assert!(policy_merge_receipts.contains("policy_conflict_merge_receipt_count="));
         assert!(policy_merge_receipts.contains("policy_merge_kinds="));
         assert!(policy_merge_receipts.contains("policy_merge_statuses="));
+        assert!(policy_merge_receipts.contains("policy_feedback_status="));
+        assert!(policy_merge_receipts.contains("policy_feedback_recommendation_count="));
+        assert!(policy_merge_receipts.contains("policy_feedback_recommendation.1="));
+        if receipt.policy_conflict_merge_receipt_count() > 0 {
+            assert!(
+                policy_merge_receipts.contains("policy_feedback_status=requires-profile-revision")
+            );
+            assert!(policy_merge_receipts.contains(
+                "policy_feedback_recommendation.1=split-exclusive-resource-policy-before-runtime-handoff"
+            ));
+        }
         assert!(policy_merge_receipts.contains("policy_merge_internal_json_boundary=false"));
         assert!(
             replay_script.contains("replay_receipt_schema=marlin.intent-case.replay-receipt.v1")
