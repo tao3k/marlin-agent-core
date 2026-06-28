@@ -179,8 +179,15 @@ fn harness_materializes_scripted_intent_case_bundles_for_all_gerbil_vertical_cas
         assert!(run_receipt.contains("run_receipt_materialized_artifact_count="));
         assert!(run_receipt.contains("run_receipt_expected_artifact_lanes="));
         assert!(run_receipt.contains("run-receipt"));
+        assert!(run_receipt.contains("run_receipt_expected_span_count=2"));
+        assert!(run_receipt.contains("run_receipt_observed_span_count=2"));
+        assert!(run_receipt.contains("run_receipt_missing_span_count=0"));
         assert!(run_receipt.contains("run_receipt_trace_entry_count="));
         assert!(run_receipt.contains("run_receipt_correlation_key_count="));
+        assert!(run_receipt.contains("run_receipt_missing_trace_artifact_ref_count=0"));
+        assert!(run_receipt.contains("run_receipt_missing_runtime_owner_count=0"));
+        assert!(run_receipt.contains("run_receipt_missing_action_identity_count=0"));
+        assert!(run_receipt.contains("run_receipt_complete_trace_correlation=true"));
         assert!(run_receipt.contains("run_receipt_diagnostic_count=0"));
         assert!(run_receipt.contains("run_receipt_internal_json_boundary=false"));
         assert!(

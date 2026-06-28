@@ -5,8 +5,8 @@ use super::intent_case_artifact_support::{
     observed_span_source_for_vertical_receipt_with_trace, tool_shell_resolver,
 };
 use marlin_agent_harness::{
-    GerbilScriptedIntentCaseArtifactBundleRequest, IntentCaseArtifactKind, TraceRecorder,
-    materialize_gerbil_scripted_intent_case_artifact_bundle,
+    GerbilScriptedIntentCaseArtifactBundleRequest, IntentCaseArtifactBundleMaterializationReceipt,
+    IntentCaseArtifactKind, TraceRecorder, materialize_gerbil_scripted_intent_case_artifact_bundle,
 };
 use marlin_agent_kernel::{
     AgentFlowLoopProgramRuntimeHandoffExecutor, LoopProgramExecutionDriver,
@@ -64,6 +64,7 @@ async fn harness_materializes_real_tool_side_effect_receipts_into_tool_call_arti
     assert!(bundle.completeness_receipt.is_complete());
     assert_eq!(bundle.completeness_receipt.missing_artifacts, Vec::new());
     assert_eq!(bundle.completeness_receipt.missing_spans, Vec::new());
+    assert_run_receipt_quality_gate(&bundle);
     assert!(
         bundle
             .completeness_receipt
@@ -196,6 +197,7 @@ async fn harness_materializes_real_policy_002_retry_budget_gate() {
     assert!(bundle.completeness_receipt.is_complete());
     assert_eq!(bundle.completeness_receipt.missing_artifacts, Vec::new());
     assert_eq!(bundle.completeness_receipt.missing_spans, Vec::new());
+    assert_run_receipt_quality_gate(&bundle);
     assert!(
         bundle
             .completeness_receipt
@@ -282,6 +284,7 @@ async fn harness_materializes_policy_combination_demo_artifact_bundle() {
     assert!(bundle.completeness_receipt.is_complete());
     assert_eq!(bundle.completeness_receipt.missing_artifacts, Vec::new());
     assert_eq!(bundle.completeness_receipt.missing_spans, Vec::new());
+    assert_run_receipt_quality_gate(&bundle);
     assert!(
         bundle
             .completeness_receipt
@@ -301,6 +304,7 @@ async fn harness_materializes_policy_combination_demo_artifact_bundle() {
         IntentCaseArtifactKind::VerifierReceipt,
         IntentCaseArtifactKind::PolicyExplanation,
         IntentCaseArtifactKind::ReplayScript,
+        IntentCaseArtifactKind::RunReceipt,
     ] {
         assert!(
             bundle.has_artifact_kind(kind),
@@ -406,6 +410,7 @@ async fn harness_materializes_sandbox_file_write_receipts_into_sandbox_and_patch
     assert!(bundle.completeness_receipt.is_complete());
     assert_eq!(bundle.completeness_receipt.missing_artifacts, Vec::new());
     assert_eq!(bundle.completeness_receipt.missing_spans, Vec::new());
+    assert_run_receipt_quality_gate(&bundle);
     assert!(
         bundle
             .completeness_receipt
@@ -501,6 +506,7 @@ async fn harness_materializes_sandbox_denylist_receipts_without_writing_files() 
     assert!(bundle.completeness_receipt.is_complete());
     assert_eq!(bundle.completeness_receipt.missing_artifacts, Vec::new());
     assert_eq!(bundle.completeness_receipt.missing_spans, Vec::new());
+    assert_run_receipt_quality_gate(&bundle);
     assert!(
         bundle
             .completeness_receipt
@@ -530,4 +536,46 @@ async fn harness_materializes_sandbox_denylist_receipts_without_writing_files() 
     assert!(test_after.contains("test_receipt_denied_file_write_count=1"));
     assert!(test_after.contains("test_receipt_patch_bytes_written=0"));
     assert!(!workspace.path().join("secret.rs").exists());
+}
+
+fn assert_run_receipt_quality_gate(bundle: &IntentCaseArtifactBundleMaterializationReceipt) {
+    assert!(bundle.has_artifact_kind(IntentCaseArtifactKind::RunReceipt));
+    let run_receipt = artifact_content(bundle, IntentCaseArtifactKind::RunReceipt);
+    assert!(run_receipt.contains("artifact_kind=run-receipt"));
+    assert!(run_receipt.contains("run_receipt_schema=marlin.intent-case.run-receipt.v1"));
+    assert!(
+        run_receipt.contains("run_receipt_manifest_schema=marlin.intent-case.artifact-manifest.v4")
+    );
+    assert!(run_receipt.contains("run_receipt_status=passed"));
+    assert!(run_receipt.contains(&format!(
+        "run_receipt_expected_artifact_count={}",
+        bundle.manifest.expected_artifact_kinds().len()
+    )));
+    assert!(run_receipt.contains(&format!(
+        "run_receipt_materialized_artifact_count={}",
+        bundle.manifest.present_artifact_kinds().len()
+    )));
+    assert!(run_receipt.contains(&format!(
+        "run_receipt_expected_span_count={}",
+        bundle.manifest.expected_span_names().len()
+    )));
+    assert!(run_receipt.contains(&format!(
+        "run_receipt_observed_span_count={}",
+        bundle.manifest.observed_span_names().len()
+    )));
+    assert!(run_receipt.contains("run_receipt_missing_span_count=0"));
+    assert!(run_receipt.contains(&format!(
+        "run_receipt_trace_entry_count={}",
+        bundle.manifest.trace_index.entries.len()
+    )));
+    assert!(run_receipt.contains(&format!(
+        "run_receipt_correlation_key_count={}",
+        bundle.manifest.correlation_keys().len()
+    )));
+    assert!(run_receipt.contains("run_receipt_missing_trace_artifact_ref_count=0"));
+    assert!(run_receipt.contains("run_receipt_missing_runtime_owner_count=0"));
+    assert!(run_receipt.contains("run_receipt_missing_action_identity_count=0"));
+    assert!(run_receipt.contains("run_receipt_complete_trace_correlation=true"));
+    assert!(run_receipt.contains("run_receipt_internal_json_boundary=false"));
+    assert!(!run_receipt.contains(".json"));
 }
