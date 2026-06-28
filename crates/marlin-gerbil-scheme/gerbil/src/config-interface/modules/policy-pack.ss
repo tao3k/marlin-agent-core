@@ -46,6 +46,7 @@ package: config-interface/modules
         marlinPolicySlotMergeConflictError
         marlinPolicySlotMergeAuditReceipt
         marlinPolicySlotMergeAuditReceipts
+        marlinPolicySlotMergeForcedSlots
         marlinPolicySlotMergeAlgebraDemoReceipt
         marlinLoopPolicyProfileProjectionDescriptor
         marlinLoopPolicyProfileProjectionDescriptors
@@ -57,24 +58,31 @@ package: config-interface/modules
         marlinRealRepair001ResolvedPolicyPack
         marlinRealRepair001LoopProgram
         marlinRealRepair001LoopProgramCompilerReceipt
+        marlinRealPolicy001SandboxDenylistSlotMergeAlgebraReceipts
         marlinRealPolicy001SandboxDenylistResolvedPolicyPack
         marlinRealPolicy001SandboxDenylistLoopProgram
         marlinRealPolicy001SandboxDenylistLoopProgramCompilerReceipt
+        marlinRealToolSandboxSlotMergeAlgebraReceipts
         marlinRealToolSandboxResolvedPolicyPack
         marlinRealToolSandboxLoopProgram
         marlinRealToolSandboxLoopProgramCompilerReceipt
+        marlinRealPolicy002RetryBudgetSlotMergeAlgebraReceipts
         marlinRealPolicy002RetryBudgetResolvedPolicyPack
         marlinRealPolicy002RetryBudgetLoopProgram
         marlinRealPolicy002RetryBudgetLoopProgramCompilerReceipt
+        marlinRealPolicy003MakerCheckerSlotMergeAlgebraReceipts
         marlinRealPolicy003MakerCheckerResolvedPolicyPack
         marlinRealPolicy003MakerCheckerLoopProgram
         marlinRealPolicy003MakerCheckerLoopProgramCompilerReceipt
+        marlinRealPolicy004DynamicRewriteSlotMergeAlgebraReceipts
         marlinRealPolicy004DynamicRewriteResolvedPolicyPack
         marlinRealPolicy004DynamicRewriteLoopProgram
         marlinRealPolicy004DynamicRewriteLoopProgramCompilerReceipt
+        marlinRealPolicy005MemoryRecallSlotMergeAlgebraReceipts
         marlinRealPolicy005MemoryRecallResolvedPolicyPack
         marlinRealPolicy005MemoryRecallLoopProgram
         marlinRealPolicy005MemoryRecallLoopProgramCompilerReceipt
+        marlinFailureRetrySlotMergeAlgebraReceipts
         marlinFailureRetryResolvedPolicyPack
         marlinFailureRetryLoopProgram
         marlinFailureRetryLoopProgramCompilerReceipt
@@ -925,6 +933,14 @@ package: config-interface/modules
 (def (marlinPolicySlotMergeAuditReceipts slot-merge-receipts)
   (marlin-vector-map marlinPolicySlotMergeAuditReceipt slot-merge-receipts))
 
+;; MarlinResult <- MarlinInput
+(def (marlinPolicySlotMergeForcedSlots slot-merge-receipts hotness-value)
+  (marlin-vector-map
+   (lambda (slot-merge-receipt)
+     (.o slot_id: (.get slot-merge-receipt slot_id)
+         hotness: hotness-value))
+   slot-merge-receipts))
+
 ;;; Boundary: Public algebra demo is the first POO policy combination receipt.
 ;; MarlinResult <- MarlinInput
 (def (marlinPolicySlotMergeAlgebraDemoReceipt)
@@ -1438,7 +1454,7 @@ package: config-interface/modules
    (marlin-real-policy-001-sandbox-denylist-mechanism-policies)
    (marlin-real-policy-001-sandbox-denylist-policy-mixins)
    "capability=3;human-gate=0;attempts=1;exclusive=true;continuation=stop_failed"
-   "linearization=sandbox-denylist,runtime-kernel;merge=override"))
+   "linearization=sandbox-denylist,runtime-kernel;merges=union"))
 
 ;; MarlinResult <- MarlinInput
 (def (marlin-real-policy-001-tool-sandbox-mechanism-policies)
@@ -1459,7 +1475,7 @@ package: config-interface/modules
    (marlin-real-policy-001-tool-sandbox-mechanism-policies)
    (marlin-real-policy-001-tool-sandbox-policy-mixins)
    "capability=3;human-gate=0;attempts=1;exclusive=false;continuation=stop_completed"
-   "linearization=tool-sandbox,runtime-kernel;merge=override"))
+   "linearization=tool-sandbox,runtime-kernel;merges=intersection"))
 
 ;; MarlinResult <- MarlinInput
 (def (marlin-real-policy-transition transition-id-value
@@ -1472,6 +1488,24 @@ package: config-interface/modules
       event: event-value
       action: action-value
       to: to-value))
+
+;; MarlinResult <- MarlinInput
+(def (marlinRealPolicy001SandboxDenylistSlotMergeAlgebraReceipts)
+  (vector
+   (marlinPolicySlotMergeUnion
+    10
+    "sandbox.denylist"
+    (vector "secrets/.env" ".env")
+    (vector "target/" "secrets/.env"))))
+
+;; MarlinResult <- MarlinInput
+(def (marlinRealToolSandboxSlotMergeAlgebraReceipts)
+  (vector
+   (marlinPolicySlotMergeIntersection
+    11
+    "capability"
+    (vector "+tool" "+sandbox" "+spawn")
+    (vector "+tool" "+sandbox" "+runtime"))))
 
 ;; MarlinResult <- MarlinInput
 (def (marlinRealPolicy001SandboxDenylistResolvedPolicyPack)
@@ -1515,7 +1549,7 @@ package: config-interface/modules
            (.o slot_id: 10
                winner_role: "sandbox-denylist"
                source_role_order: (vector "sandbox-denylist" "runtime-kernel")
-               merge: "override"))
+               merge: "union"))
           linearization: (vector "sandbox-denylist" "runtime-kernel")
           diagnostics:
           (vector
@@ -1530,14 +1564,12 @@ package: config-interface/modules
           explanation_strings:
           (vector "real-policy-001 projects Scheme-authored sandbox denylist into typed loop program")
           forced_slots:
-          (vector
-           (.o slot_id: 10
-               hotness: "hot"))
+          (marlinPolicySlotMergeForcedSlots
+           (marlinRealPolicy001SandboxDenylistSlotMergeAlgebraReceipts)
+           "hot")
           merge_receipts:
-          (vector
-           (.o slot_id: 10
-               merge: "override"
-               status: "applied")))))
+          (marlinPolicySlotMergeAuditReceipts
+           (marlinRealPolicy001SandboxDenylistSlotMergeAlgebraReceipts)))))
 
 ;; MarlinResult <- MarlinInput
 (def (marlinRealPolicy001SandboxDenylistLoopProgram)
@@ -1613,7 +1645,7 @@ package: config-interface/modules
            (.o slot_id: 11
                winner_role: "tool-sandbox"
                source_role_order: (vector "tool-sandbox" "runtime-kernel")
-               merge: "override"))
+               merge: "intersection"))
           linearization: (vector "tool-sandbox" "runtime-kernel")
           diagnostics:
           (vector
@@ -1628,14 +1660,12 @@ package: config-interface/modules
           explanation_strings:
           (vector "real-policy-001 projects Scheme-authored tool sandbox spawn into typed loop program")
           forced_slots:
-          (vector
-           (.o slot_id: 11
-               hotness: "hot"))
+          (marlinPolicySlotMergeForcedSlots
+           (marlinRealToolSandboxSlotMergeAlgebraReceipts)
+           "hot")
           merge_receipts:
-          (vector
-           (.o slot_id: 11
-               merge: "override"
-               status: "applied")))))
+          (marlinPolicySlotMergeAuditReceipts
+           (marlinRealToolSandboxSlotMergeAlgebraReceipts)))))
 
 ;; MarlinResult <- MarlinInput
 (def (marlinRealToolSandboxLoopProgram)
@@ -1688,7 +1718,7 @@ package: config-interface/modules
    (marlin-real-policy-002-mechanism-policies)
    (marlin-real-policy-basic-policy-mixins "retry-budget")
    "capability=3;human-gate=0;attempts=2;exclusive=true;continuation=retry,stop_failed"
-   "linearization=retry-budget,runtime-kernel;merge=override"))
+   "linearization=retry-budget,runtime-kernel;merges=intersection,min,ordered_append"))
 
 ;; MarlinResult <- MarlinInput
 (def (marlin-real-policy-003-mechanism-policies)
@@ -1702,7 +1732,7 @@ package: config-interface/modules
    (marlin-real-policy-003-mechanism-policies)
    (marlin-real-policy-basic-policy-mixins "maker-checker")
    "capability=5;human-gate=0;attempts=1;exclusive=false;continuation=stop_completed;maker=30;checker=31"
-   "linearization=maker-checker,runtime-kernel;merge=override"))
+   "linearization=maker-checker,runtime-kernel;merges=intersection,min,ordered_append"))
 
 ;; MarlinResult <- MarlinInput
 (def (marlin-real-policy-004-mechanism-policies)
@@ -1717,7 +1747,7 @@ package: config-interface/modules
    (marlin-real-policy-004-mechanism-policies)
    (marlin-real-policy-basic-policy-mixins "dynamic-rewrite")
    "capability=7;human-gate=0;attempts=1;exclusive=true;continuation=stop_completed;checker=40"
-   "linearization=dynamic-rewrite,runtime-kernel;merge=override"))
+   "linearization=dynamic-rewrite,runtime-kernel;merges=intersection,min,ordered_append"))
 
 ;; MarlinResult <- MarlinInput
 (def (marlin-real-policy-005-mechanism-policies)
@@ -1732,7 +1762,97 @@ package: config-interface/modules
    (marlin-real-policy-005-mechanism-policies)
    (marlin-real-policy-basic-policy-mixins "memory-recall")
    "capability=3;human-gate=0;attempts=1;exclusive=false;continuation=stop_completed"
-   "linearization=memory-recall,runtime-kernel;merge=override"))
+   "linearization=memory-recall,runtime-kernel;merges=intersection,min,ordered_append"))
+
+;; MarlinResult <- MarlinInput
+(def (marlinRealPolicy002RetryBudgetSlotMergeAlgebraReceipts)
+  (vector
+   (marlinPolicySlotMergeIntersection
+    110
+    "capability"
+    (vector "+tool" "+retry" "+verify")
+    (vector "+tool" "+retry" "+dispatch"))
+   (marlinPolicySlotMergeMin
+    111
+    "budget.max_attempts"
+    4
+    2)
+   (marlinPolicySlotMergeOrderedAppend
+    112
+    "route_rules"
+    (vector "dispatch_tools")
+    (vector "retry" "stop_failed"))))
+
+;; MarlinResult <- MarlinInput
+(def (marlinRealPolicy003MakerCheckerSlotMergeAlgebraReceipts)
+  (vector
+   (marlinPolicySlotMergeIntersection
+    120
+    "capability"
+    (vector "+model" "+verify" "+write")
+    (vector "+model" "+verify" "+audit"))
+   (marlinPolicySlotMergeMin
+    121
+    "budget.max_attempts"
+    2
+    1)
+   (marlinPolicySlotMergeOrderedAppend
+    122
+    "route_rules"
+    (vector "invoke_model")
+    (vector "verify" "stop"))))
+
+;; MarlinResult <- MarlinInput
+(def (marlinRealPolicy004DynamicRewriteSlotMergeAlgebraReceipts)
+  (vector
+   (marlinPolicySlotMergeIntersection
+    130
+    "capability"
+    (vector "+rewrite" "+tool" "+verify" "+write")
+    (vector "+rewrite" "+tool" "+verify"))
+   (marlinPolicySlotMergeMin
+    131
+    "budget.max_attempts"
+    2
+    1)
+   (marlinPolicySlotMergeOrderedAppend
+    132
+    "route_rules"
+    (vector "rewrite_graph")
+    (vector "dispatch_tools" "verify" "stop"))))
+
+;; MarlinResult <- MarlinInput
+(def (marlinRealPolicy005MemoryRecallSlotMergeAlgebraReceipts)
+  (vector
+   (marlinPolicySlotMergeIntersection
+    140
+    "capability"
+    (vector "+memory" "+tool" "+verify")
+    (vector "+memory" "+tool"))
+   (marlinPolicySlotMergeMin
+    141
+    "budget.max_attempts"
+    2
+    1)
+   (marlinPolicySlotMergeOrderedAppend
+    142
+    "route_rules"
+    (vector "read_memory")
+    (vector "dispatch_tools" "stop"))))
+
+;; MarlinResult <- MarlinInput
+(def (marlin-real-policy-basic-slot-merge-algebra-receipts winner-role-value)
+  (cond
+   ((string=? winner-role-value "retry-budget")
+    (marlinRealPolicy002RetryBudgetSlotMergeAlgebraReceipts))
+   ((string=? winner-role-value "maker-checker")
+    (marlinRealPolicy003MakerCheckerSlotMergeAlgebraReceipts))
+   ((string=? winner-role-value "dynamic-rewrite")
+    (marlinRealPolicy004DynamicRewriteSlotMergeAlgebraReceipts))
+   ((string=? winner-role-value "memory-recall")
+    (marlinRealPolicy005MemoryRecallSlotMergeAlgebraReceipts))
+   (else
+    (error "unknown real policy slot merge algebra profile" winner-role-value))))
 
 ;; MarlinResult <- MarlinInput
 (def (marlin-real-policy-basic-resolved-policy-pack policy-epoch-value
@@ -1746,67 +1866,66 @@ package: config-interface/modules
                                                      checker-profiles-value
                                                      diagnostic-code-value
                                                      explanation-value)
-  (.o schema_version: 1
-      policy_epoch: policy-epoch-value
-      policy_digest: policy-digest-value
-      hot:
-      (.o capability_mask: capability-mask-value
-          human_gate_mask: 0
-          budget_caps:
-          (.o max_attempts: max-attempts-value
-              max_cost_units: 100
-              max_wall_time_ms: 5000)
-          graph_nodes:
-          (vector
-           (.o node_id: policy-epoch-value
-               executor_id: (+ policy-epoch-value 10)
-               capability_mask: capability-mask-value
-               resource_class_id: (+ policy-epoch-value 20)))
-          graph_edges: (vector)
-          route_index:
-          (.o buckets:
-              (vector
-               (.o bucket_id: policy-epoch-value
-                   scope_mask: 255
-                   target_id: (+ policy-epoch-value 10))))
-          resource_classes:
-          (vector
-           (.o resource_class_id: (+ policy-epoch-value 20)
-               exclusive: exclusive-value))
-          continuation_table: continuation-table-value
-          maker_profiles: maker-profiles-value
-          checker_profiles: checker-profiles-value)
-      audit:
-      (.o policy_mixins:
-          (marlin-real-policy-basic-policy-mixins winner-role-value)
-          provenance:
-          (vector
-           (.o slot_id: policy-epoch-value
-               winner_role: winner-role-value
-               source_role_order: (vector winner-role-value "runtime-kernel")
-               merge: "override"))
-          linearization: (vector winner-role-value "runtime-kernel")
-          diagnostics:
-          (vector
-           (.o code: diagnostic-code-value
-               severity: "info"))
-          source_locations:
-          (vector
-           (.o source_location_id: policy-epoch-value
-               path: "gerbil/src/config-interface/modules/policy-pack.ss"
-               line: 1
-               column: 1))
-          explanation_strings:
-          (vector explanation-value)
-          forced_slots:
-          (vector
-           (.o slot_id: policy-epoch-value
-               hotness: "hot"))
-          merge_receipts:
-          (vector
-           (.o slot_id: policy-epoch-value
-               merge: "override"
-               status: "applied")))))
+  (let (slot-merge-algebra-receipts
+        (marlin-real-policy-basic-slot-merge-algebra-receipts
+         winner-role-value))
+    (.o schema_version: 1
+        policy_epoch: policy-epoch-value
+        policy_digest: policy-digest-value
+        hot:
+        (.o capability_mask: capability-mask-value
+            human_gate_mask: 0
+            budget_caps:
+            (.o max_attempts: max-attempts-value
+                max_cost_units: 100
+                max_wall_time_ms: 5000)
+            graph_nodes:
+            (vector
+             (.o node_id: policy-epoch-value
+                 executor_id: (+ policy-epoch-value 10)
+                 capability_mask: capability-mask-value
+                 resource_class_id: (+ policy-epoch-value 20)))
+            graph_edges: (vector)
+            route_index:
+            (.o buckets:
+                (vector
+                 (.o bucket_id: policy-epoch-value
+                     scope_mask: 255
+                     target_id: (+ policy-epoch-value 10))))
+            resource_classes:
+            (vector
+             (.o resource_class_id: (+ policy-epoch-value 20)
+                 exclusive: exclusive-value))
+            continuation_table: continuation-table-value
+            maker_profiles: maker-profiles-value
+            checker_profiles: checker-profiles-value)
+        audit:
+        (.o policy_mixins:
+            (marlin-real-policy-basic-policy-mixins winner-role-value)
+            provenance:
+            (vector
+             (.o slot_id: policy-epoch-value
+                 winner_role: winner-role-value
+                 source_role_order: (vector winner-role-value "runtime-kernel")
+                 merge: "ordered_append"))
+            linearization: (vector winner-role-value "runtime-kernel")
+            diagnostics:
+            (vector
+             (.o code: diagnostic-code-value
+                 severity: "info"))
+            source_locations:
+            (vector
+             (.o source_location_id: policy-epoch-value
+                 path: "gerbil/src/config-interface/modules/policy-pack.ss"
+                 line: 1
+                 column: 1))
+            explanation_strings:
+            (vector explanation-value)
+            forced_slots:
+            (marlinPolicySlotMergeForcedSlots slot-merge-algebra-receipts "hot")
+            merge_receipts:
+            (marlinPolicySlotMergeAuditReceipts
+             slot-merge-algebra-receipts)))))
 
 ;; MarlinResult <- MarlinInput
 (def (marlin-real-policy-loop-program program-id-value
@@ -2050,6 +2169,20 @@ package: config-interface/modules
           "trace-policy"))
 
 ;; MarlinResult <- MarlinInput
+(def (marlinFailureRetrySlotMergeAlgebraReceipts)
+  (vector
+   (marlinPolicySlotMergeMin
+    21
+    "budget.max_attempts"
+    5
+    3)
+   (marlinPolicySlotMergeUnion
+    22
+    "observability"
+    (vector "runtime.failure" "runtime.retry")
+    (vector "harness.execution" "runtime.retry"))))
+
+;; MarlinResult <- MarlinInput
 (def (marlin-failure-retry-policy-digest)
   (marlin-policy-digest
    "marlin-failure-retry-profile/typed-recovery"
@@ -2146,19 +2279,12 @@ package: config-interface/modules
           (vector
            "failure-retry projects POO retry budget into typed loop program")
           forced_slots:
-          (vector
-           (.o slot_id: 21
-               hotness: "hot")
-           (.o slot_id: 22
-               hotness: "hot"))
+          (marlinPolicySlotMergeForcedSlots
+           (marlinFailureRetrySlotMergeAlgebraReceipts)
+           "hot")
           merge_receipts:
-          (vector
-           (.o slot_id: 21
-               merge: "min"
-               status: "applied")
-           (.o slot_id: 22
-               merge: "union"
-               status: "applied")))))
+          (marlinPolicySlotMergeAuditReceipts
+           (marlinFailureRetrySlotMergeAlgebraReceipts)))))
 
 ;;; Boundary: Failure-retry LoopProgram emits retry continuation handoff.
 ;; MarlinResult <- MarlinInput

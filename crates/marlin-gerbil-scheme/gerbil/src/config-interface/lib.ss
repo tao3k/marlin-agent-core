@@ -129,6 +129,7 @@ package: config-interface
         marlinPolicySlotMergeConflictError
         marlinPolicySlotMergeAuditReceipt
         marlinPolicySlotMergeAuditReceipts
+        marlinPolicySlotMergeForcedSlots
         marlinPolicySlotMergeAlgebraDemoReceipt
         marlinLoopPolicyProfileProjectionDescriptor
         marlinLoopPolicyProfileProjectionDescriptors
@@ -140,12 +141,19 @@ package: config-interface
         marlinRealRepair001ResolvedPolicyPack
         marlinRealRepair001LoopProgram
         marlinRealRepair001LoopProgramCompilerReceipt
+        marlinRealPolicy001SandboxDenylistSlotMergeAlgebraReceipts
         marlinRealPolicy001SandboxDenylistResolvedPolicyPack
         marlinRealPolicy001SandboxDenylistLoopProgram
         marlinRealPolicy001SandboxDenylistLoopProgramCompilerReceipt
+        marlinRealToolSandboxSlotMergeAlgebraReceipts
         marlinRealToolSandboxResolvedPolicyPack
         marlinRealToolSandboxLoopProgram
         marlinRealToolSandboxLoopProgramCompilerReceipt
+        marlinRealPolicy002RetryBudgetSlotMergeAlgebraReceipts
+        marlinRealPolicy003MakerCheckerSlotMergeAlgebraReceipts
+        marlinRealPolicy004DynamicRewriteSlotMergeAlgebraReceipts
+        marlinRealPolicy005MemoryRecallSlotMergeAlgebraReceipts
+        marlinFailureRetrySlotMergeAlgebraReceipts
         marlinFailureRetryResolvedPolicyPack
         marlinFailureRetryLoopProgram
         marlinFailureRetryLoopProgramCompilerReceipt

@@ -33,6 +33,16 @@
 (def failure-retry-audit-pack
   (.get failure-retry-policy-pack audit))
 
+(def failure-retry-merge-receipts
+  (.get failure-retry-audit-pack merge_receipts))
+
+(def failure-retry-slot-merge-algebra-receipts
+  (marlinFailureRetrySlotMergeAlgebraReceipts))
+
+(def failure-retry-slot-merge-audit-receipts
+  (marlinPolicySlotMergeAuditReceipts
+   failure-retry-slot-merge-algebra-receipts))
+
 (def failure-retry-policy-digest
   (.get failure-retry-policy-pack policy_digest))
 
@@ -164,6 +174,19 @@
 (def real-policy-001-sandbox-policy-digest
   (.get real-policy-001-sandbox-policy-pack policy_digest))
 
+(def real-policy-001-sandbox-audit-pack
+  (.get real-policy-001-sandbox-policy-pack audit))
+
+(def real-policy-001-sandbox-merge-receipts
+  (.get real-policy-001-sandbox-audit-pack merge_receipts))
+
+(def real-policy-001-sandbox-slot-merge-algebra-receipts
+  (marlinRealPolicy001SandboxDenylistSlotMergeAlgebraReceipts))
+
+(def real-policy-001-sandbox-slot-merge-audit-receipts
+  (marlinPolicySlotMergeAuditReceipts
+   real-policy-001-sandbox-slot-merge-algebra-receipts))
+
 (def real-policy-001-tool-compiler-receipt
   (vector-ref profile-compiler-receipts 4))
 
@@ -176,11 +199,62 @@
 (def real-policy-001-tool-policy-digest
   (.get real-policy-001-tool-policy-pack policy_digest))
 
+(def real-policy-001-tool-audit-pack
+  (.get real-policy-001-tool-policy-pack audit))
+
+(def real-policy-001-tool-merge-receipts
+  (.get real-policy-001-tool-audit-pack merge_receipts))
+
+(def real-policy-001-tool-slot-merge-algebra-receipts
+  (marlinRealToolSandboxSlotMergeAlgebraReceipts))
+
+(def real-policy-001-tool-slot-merge-audit-receipts
+  (marlinPolicySlotMergeAuditReceipts
+   real-policy-001-tool-slot-merge-algebra-receipts))
+
+(def real-policy-002-compiler-receipt
+  (vector-ref profile-compiler-receipts 5))
+
+(def real-policy-002-policy-pack
+  (.get real-policy-002-compiler-receipt resolved-policy-pack))
+
+(def real-policy-002-audit-pack
+  (.get real-policy-002-policy-pack audit))
+
+(def real-policy-002-merge-receipts
+  (.get real-policy-002-audit-pack merge_receipts))
+
+(def real-policy-002-slot-merge-algebra-receipts
+  (marlinRealPolicy002RetryBudgetSlotMergeAlgebraReceipts))
+
+(def real-policy-002-slot-merge-audit-receipts
+  (marlinPolicySlotMergeAuditReceipts
+   real-policy-002-slot-merge-algebra-receipts))
+
+(def real-policy-002-hot-pack
+  (.get real-policy-002-policy-pack hot))
+
+(def real-policy-002-loop-program
+  (.get real-policy-002-compiler-receipt loop-program))
+
 (def real-policy-003-compiler-receipt
   (vector-ref profile-compiler-receipts 6))
 
 (def real-policy-003-policy-pack
   (.get real-policy-003-compiler-receipt resolved-policy-pack))
+
+(def real-policy-003-audit-pack
+  (.get real-policy-003-policy-pack audit))
+
+(def real-policy-003-merge-receipts
+  (.get real-policy-003-audit-pack merge_receipts))
+
+(def real-policy-003-slot-merge-algebra-receipts
+  (marlinRealPolicy003MakerCheckerSlotMergeAlgebraReceipts))
+
+(def real-policy-003-slot-merge-audit-receipts
+  (marlinPolicySlotMergeAuditReceipts
+   real-policy-003-slot-merge-algebra-receipts))
 
 (def real-policy-003-hot-pack
   (.get real-policy-003-policy-pack hot))
@@ -194,6 +268,19 @@
 (def real-policy-004-policy-pack
   (.get real-policy-004-compiler-receipt resolved-policy-pack))
 
+(def real-policy-004-audit-pack
+  (.get real-policy-004-policy-pack audit))
+
+(def real-policy-004-merge-receipts
+  (.get real-policy-004-audit-pack merge_receipts))
+
+(def real-policy-004-slot-merge-algebra-receipts
+  (marlinRealPolicy004DynamicRewriteSlotMergeAlgebraReceipts))
+
+(def real-policy-004-slot-merge-audit-receipts
+  (marlinPolicySlotMergeAuditReceipts
+   real-policy-004-slot-merge-algebra-receipts))
+
 (def real-policy-004-hot-pack
   (.get real-policy-004-policy-pack hot))
 
@@ -205,6 +292,19 @@
 
 (def real-policy-005-policy-pack
   (.get real-policy-005-compiler-receipt resolved-policy-pack))
+
+(def real-policy-005-audit-pack
+  (.get real-policy-005-policy-pack audit))
+
+(def real-policy-005-merge-receipts
+  (.get real-policy-005-audit-pack merge_receipts))
+
+(def real-policy-005-slot-merge-algebra-receipts
+  (marlinRealPolicy005MemoryRecallSlotMergeAlgebraReceipts))
+
+(def real-policy-005-slot-merge-audit-receipts
+  (marlinPolicySlotMergeAuditReceipts
+   real-policy-005-slot-merge-algebra-receipts))
 
 (def real-policy-005-hot-pack
   (.get real-policy-005-policy-pack hot))
@@ -444,6 +544,96 @@
 (check (equal? real-policy-001-sandbox-policy-digest
                real-policy-001-tool-policy-digest)
        => #f)
+(check (vector-length real-policy-001-sandbox-slot-merge-algebra-receipts)
+       => 1)
+(check (.get (vector-ref real-policy-001-sandbox-slot-merge-algebra-receipts 0)
+             slot_id)
+       => 10)
+(check (.get (vector-ref real-policy-001-sandbox-slot-merge-algebra-receipts 0)
+             merge)
+       => "union")
+(check (vector-length
+        (.get (vector-ref real-policy-001-sandbox-slot-merge-algebra-receipts 0)
+              result))
+       => 3)
+(check (vector-ref
+        (.get (vector-ref real-policy-001-sandbox-slot-merge-algebra-receipts 0)
+              result)
+        2)
+       => "target/")
+(check (vector-length (.get real-policy-001-sandbox-audit-pack forced_slots))
+       => 1)
+(check (vector-length real-policy-001-sandbox-merge-receipts) => 1)
+(check (.get (vector-ref real-policy-001-sandbox-merge-receipts 0) merge)
+       => (.get (vector-ref real-policy-001-sandbox-slot-merge-audit-receipts 0)
+                merge))
+(check (.get (vector-ref real-policy-001-sandbox-merge-receipts 0) status)
+       => (.get (vector-ref real-policy-001-sandbox-slot-merge-audit-receipts 0)
+                status))
+(check (vector-length real-policy-001-tool-slot-merge-algebra-receipts)
+       => 1)
+(check (.get (vector-ref real-policy-001-tool-slot-merge-algebra-receipts 0)
+             slot_id)
+       => 11)
+(check (.get (vector-ref real-policy-001-tool-slot-merge-algebra-receipts 0)
+             merge)
+       => "intersection")
+(check (vector-length
+        (.get (vector-ref real-policy-001-tool-slot-merge-algebra-receipts 0)
+              result))
+       => 2)
+(check (vector-ref
+        (.get (vector-ref real-policy-001-tool-slot-merge-algebra-receipts 0)
+              result)
+        1)
+       => "+sandbox")
+(check (vector-length (.get real-policy-001-tool-audit-pack forced_slots))
+       => 1)
+(check (vector-length real-policy-001-tool-merge-receipts) => 1)
+(check (.get (vector-ref real-policy-001-tool-merge-receipts 0) merge)
+       => (.get (vector-ref real-policy-001-tool-slot-merge-audit-receipts 0)
+                merge))
+(check (.get (vector-ref real-policy-001-tool-merge-receipts 0) status)
+       => (.get (vector-ref real-policy-001-tool-slot-merge-audit-receipts 0)
+                status))
+
+(check (.get real-policy-002-compiler-receipt profile-id)
+       => "real-policy-002/retry-budget")
+(check (.get real-policy-002-policy-pack policy_epoch) => 11)
+(check (.get (.get real-policy-002-hot-pack budget_caps) max_attempts)
+       => 2)
+(check (vector-length real-policy-002-slot-merge-algebra-receipts) => 3)
+(check (.get (vector-ref real-policy-002-slot-merge-algebra-receipts 0) slot)
+       => "capability")
+(check (.get (vector-ref real-policy-002-slot-merge-algebra-receipts 0)
+             merge)
+       => "intersection")
+(check (vector-length
+        (.get (vector-ref real-policy-002-slot-merge-algebra-receipts 0)
+              result))
+       => 2)
+(check (.get (vector-ref real-policy-002-slot-merge-algebra-receipts 1) slot)
+       => "budget.max_attempts")
+(check (.get (vector-ref real-policy-002-slot-merge-algebra-receipts 1)
+             result)
+       => 2)
+(check (.get (vector-ref real-policy-002-slot-merge-algebra-receipts 2) slot)
+       => "route_rules")
+(check (vector-ref
+        (.get (vector-ref real-policy-002-slot-merge-algebra-receipts 2)
+              result)
+        2)
+       => "stop_failed")
+(check (vector-length (.get real-policy-002-audit-pack forced_slots)) => 3)
+(check (vector-length real-policy-002-merge-receipts) => 3)
+(check (.get (vector-ref real-policy-002-merge-receipts 0) merge)
+       => (.get (vector-ref real-policy-002-slot-merge-audit-receipts 0)
+                merge))
+(check (.get (vector-ref real-policy-002-merge-receipts 2) merge)
+       => (.get (vector-ref real-policy-002-slot-merge-audit-receipts 2)
+                merge))
+(check (.get real-policy-002-loop-program program_id)
+       => "real-policy-002-retry-budget")
 
 (check (.get real-policy-003-compiler-receipt profile-id)
        => "real-policy-003/maker-checker")
@@ -463,6 +653,24 @@
 (check (.get (vector-ref (.get real-policy-003-loop-program transitions) 2)
              action)
        => "stop")
+(check (vector-length real-policy-003-slot-merge-algebra-receipts) => 3)
+(check (.get (vector-ref real-policy-003-slot-merge-algebra-receipts 0) slot)
+       => "capability")
+(check (.get (vector-ref real-policy-003-slot-merge-algebra-receipts 1) slot)
+       => "budget.max_attempts")
+(check (.get (vector-ref real-policy-003-slot-merge-algebra-receipts 1)
+             result)
+       => 1)
+(check (.get (vector-ref real-policy-003-slot-merge-algebra-receipts 2) slot)
+       => "route_rules")
+(check (vector-length (.get real-policy-003-audit-pack forced_slots)) => 3)
+(check (vector-length real-policy-003-merge-receipts) => 3)
+(check (.get (vector-ref real-policy-003-merge-receipts 0) merge)
+       => (.get (vector-ref real-policy-003-slot-merge-audit-receipts 0)
+                merge))
+(check (.get (vector-ref real-policy-003-merge-receipts 2) merge)
+       => (.get (vector-ref real-policy-003-slot-merge-audit-receipts 2)
+                merge))
 
 (check (.get real-policy-004-compiler-receipt profile-id)
        => "real-policy-004/dynamic-rewrite")
@@ -483,6 +691,30 @@
 (check (.get (vector-ref (.get real-policy-004-loop-program transitions) 3)
              action)
        => "stop")
+(check (vector-length real-policy-004-slot-merge-algebra-receipts) => 3)
+(check (.get (vector-ref real-policy-004-slot-merge-algebra-receipts 0) slot)
+       => "capability")
+(check (vector-ref
+        (.get (vector-ref real-policy-004-slot-merge-algebra-receipts 0)
+              result)
+        0)
+       => "+rewrite")
+(check (.get (vector-ref real-policy-004-slot-merge-algebra-receipts 1)
+             result)
+       => 1)
+(check (vector-ref
+        (.get (vector-ref real-policy-004-slot-merge-algebra-receipts 2)
+              result)
+        3)
+       => "stop")
+(check (vector-length (.get real-policy-004-audit-pack forced_slots)) => 3)
+(check (vector-length real-policy-004-merge-receipts) => 3)
+(check (.get (vector-ref real-policy-004-merge-receipts 0) merge)
+       => (.get (vector-ref real-policy-004-slot-merge-audit-receipts 0)
+                merge))
+(check (.get (vector-ref real-policy-004-merge-receipts 2) merge)
+       => (.get (vector-ref real-policy-004-slot-merge-audit-receipts 2)
+                merge))
 
 (check (.get real-policy-005-compiler-receipt profile-id)
        => "real-policy-005/memory-recall")
@@ -503,6 +735,30 @@
 (check (.get (vector-ref (.get real-policy-005-loop-program transitions) 2)
              action)
        => "stop")
+(check (vector-length real-policy-005-slot-merge-algebra-receipts) => 3)
+(check (.get (vector-ref real-policy-005-slot-merge-algebra-receipts 0) slot)
+       => "capability")
+(check (vector-ref
+        (.get (vector-ref real-policy-005-slot-merge-algebra-receipts 0)
+              result)
+        0)
+       => "+memory")
+(check (.get (vector-ref real-policy-005-slot-merge-algebra-receipts 1)
+             result)
+       => 1)
+(check (vector-ref
+        (.get (vector-ref real-policy-005-slot-merge-algebra-receipts 2)
+              result)
+        2)
+       => "stop")
+(check (vector-length (.get real-policy-005-audit-pack forced_slots)) => 3)
+(check (vector-length real-policy-005-merge-receipts) => 3)
+(check (.get (vector-ref real-policy-005-merge-receipts 0) merge)
+       => (.get (vector-ref real-policy-005-slot-merge-audit-receipts 0)
+                merge))
+(check (.get (vector-ref real-policy-005-merge-receipts 2) merge)
+       => (.get (vector-ref real-policy-005-slot-merge-audit-receipts 2)
+                merge))
 
 (check (.get failure-retry-compiler-receipt kind)
        => marlin-poo-loop-program-compiler-receipt-kind)
@@ -531,6 +787,31 @@
 (check (.get failure-retry-loop-program program_id)
        => "failure-retry-typed-recovery")
 (check (vector-length (.get failure-retry-loop-program transitions)) => 5)
+(check (vector-length failure-retry-slot-merge-algebra-receipts) => 2)
+(check (.get (vector-ref failure-retry-slot-merge-algebra-receipts 0) slot)
+       => "budget.max_attempts")
+(check (.get (vector-ref failure-retry-slot-merge-algebra-receipts 0) merge)
+       => "min")
+(check (.get (vector-ref failure-retry-slot-merge-algebra-receipts 0) result)
+       => 3)
+(check (.get (vector-ref failure-retry-slot-merge-algebra-receipts 1) slot)
+       => "observability")
+(check (.get (vector-ref failure-retry-slot-merge-algebra-receipts 1) merge)
+       => "union")
+(check (vector-length (.get failure-retry-audit-pack forced_slots)) => 2)
+(check (vector-length failure-retry-merge-receipts) => 2)
+(check (.get (vector-ref failure-retry-merge-receipts 0) slot_id)
+       => (.get (vector-ref failure-retry-slot-merge-audit-receipts 0)
+                slot_id))
+(check (.get (vector-ref failure-retry-merge-receipts 0) merge)
+       => (.get (vector-ref failure-retry-slot-merge-audit-receipts 0)
+                merge))
+(check (.get (vector-ref failure-retry-merge-receipts 1) slot_id)
+       => (.get (vector-ref failure-retry-slot-merge-audit-receipts 1)
+                slot_id))
+(check (.get (vector-ref failure-retry-merge-receipts 1) merge)
+       => (.get (vector-ref failure-retry-slot-merge-audit-receipts 1)
+                merge))
 
 (check (.get real-repair-compiler-receipt kind)
        => marlin-poo-loop-program-compiler-receipt-kind)
