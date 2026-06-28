@@ -9,6 +9,10 @@ use crate::{
     intent_case_artifact_error::IntentCaseArtifactBundleMaterializationError,
     intent_case_artifact_manifest::{ensure_trace_correlation_integrity, render_manifest_receipt},
     intent_case_artifact_model_events::render_model_events_artifact,
+    intent_case_artifact_receipt_header::{
+        render_key_value_artifact_receipt, render_org_artifact_receipt_properties,
+        render_patch_artifact_receipt_header,
+    },
     intent_case_artifact_replay::render_replay_script_artifact,
     intent_case_artifact_runtime_repair::render_runtime_repair_case_receipt,
     intent_case_artifact_test_receipts::{IntentCaseTestArtifactPhase, render_test_artifact},
@@ -353,11 +357,13 @@ fn render_artifact_content(
 ) -> String {
     match artifact.kind {
         IntentCaseArtifactKind::Intent => render_intent_artifact(manifest, vertical_trace),
-        IntentCaseArtifactKind::PolicyPack => render_policy_pack_artifact(vertical_trace),
+        IntentCaseArtifactKind::PolicyPack => render_policy_pack_artifact(manifest, vertical_trace),
         IntentCaseArtifactKind::LoopProgram => render_loop_program_artifact(manifest),
-        IntentCaseArtifactKind::VerticalTrace => render_vertical_trace_artifact(vertical_trace),
+        IntentCaseArtifactKind::VerticalTrace => {
+            render_vertical_trace_artifact(manifest, vertical_trace)
+        }
         IntentCaseArtifactKind::ExecutionTrace => {
-            render_execution_trace_artifact(execution_receipt)
+            render_execution_trace_artifact(manifest, execution_receipt)
         }
         IntentCaseArtifactKind::ModelEvents => {
             render_model_events_artifact(manifest, execution_receipt, runtime_repair_receipt)
@@ -368,7 +374,9 @@ fn render_artifact_content(
         IntentCaseArtifactKind::SandboxReceipts => {
             render_sandbox_artifact(manifest, execution_receipt, side_effect_replay_bundle)
         }
-        IntentCaseArtifactKind::MemoryReceipts => render_memory_artifact(execution_receipt),
+        IntentCaseArtifactKind::MemoryReceipts => {
+            render_memory_artifact(manifest, execution_receipt)
+        }
         IntentCaseArtifactKind::DiffPatch => {
             render_diff_artifact(manifest, side_effect_replay_bundle)
         }
@@ -385,7 +393,7 @@ fn render_artifact_content(
             IntentCaseTestArtifactPhase::After,
         ),
         IntentCaseArtifactKind::VerifierReceipt => {
-            render_verifier_artifact(execution_receipt, runtime_repair_receipt)
+            render_verifier_artifact(manifest, execution_receipt, runtime_repair_receipt)
         }
         IntentCaseArtifactKind::PolicyExplanation => {
             render_policy_explanation_artifact(manifest, vertical_trace)
@@ -399,16 +407,15 @@ fn render_intent_artifact(
     vertical_trace: &GerbilLoopCaseDriverVerticalTraceReceipt,
 ) -> String {
     format!(
-        "* Intent Case {}\n:PROPERTIES:\n:RUN_ID: {}\n:LOOP_PROGRAM_ID: {}\n:POLICY_DIGEST: {}\n:PROFILE_REF: {}\n:END:\n\nScripted intent case projected from Gerbil config-interface vertical trace.\n",
+        "* Intent Case {}\n:PROPERTIES:\n{}:PROFILE_REF: {}\n:END:\n\nScripted intent case projected from Gerbil config-interface vertical trace.\n",
         manifest.case_id,
-        manifest.run_id,
-        manifest.loop_program_id,
-        manifest.policy_digest,
+        render_org_artifact_receipt_properties(manifest, IntentCaseArtifactKind::Intent),
         vertical_trace.profile_ref()
     )
 }
 
 fn render_policy_pack_artifact(
+    manifest: &IntentCaseArtifactManifest,
     vertical_trace: &GerbilLoopCaseDriverVerticalTraceReceipt,
 ) -> String {
     let mechanism_policies = vertical_trace
@@ -421,15 +428,21 @@ fn render_policy_pack_artifact(
         .collect::<Vec<_>>()
         .join(",");
 
-    format!(
-        "policy_epoch={}\nmechanism_policy_count={}\nmechanism_policy_ids={}\ncapability_mask={}\ncapability_tags={}\nlive_llm_required={}\nlive_llm_allowed={}\n",
-        vertical_trace.policy_epoch(),
-        vertical_trace.mechanism_policy_count(),
-        mechanism_policies,
-        vertical_trace.capability_mask(),
-        capabilities,
-        vertical_trace.live_llm_required(),
-        vertical_trace.live_llm_allowed()
+    render_key_value_artifact_receipt(
+        manifest,
+        IntentCaseArtifactKind::PolicyPack,
+        [
+            format!("policy_epoch={}", vertical_trace.policy_epoch()),
+            format!(
+                "mechanism_policy_count={}",
+                vertical_trace.mechanism_policy_count()
+            ),
+            format!("mechanism_policy_ids={mechanism_policies}"),
+            format!("capability_mask={}", vertical_trace.capability_mask()),
+            format!("capability_tags={capabilities}"),
+            format!("live_llm_required={}", vertical_trace.live_llm_required()),
+            format!("live_llm_allowed={}", vertical_trace.live_llm_allowed()),
+        ],
     )
 }
 
@@ -464,10 +477,11 @@ fn render_loop_program_artifact(manifest: &IntentCaseArtifactManifest) -> String
                 .unwrap_or("none")
         )
     }));
-    lines.join("\n") + "\n"
+    render_key_value_artifact_receipt(manifest, IntentCaseArtifactKind::LoopProgram, lines)
 }
 
 fn render_vertical_trace_artifact(
+    manifest: &IntentCaseArtifactManifest,
     vertical_trace: &GerbilLoopCaseDriverVerticalTraceReceipt,
 ) -> String {
     let mut lines = vec![
@@ -486,10 +500,13 @@ fn render_vertical_trace_artifact(
                 format!("transition.{} action={} event={}", index + 1, action, event)
             }),
     );
-    lines.join("\n") + "\n"
+    render_key_value_artifact_receipt(manifest, IntentCaseArtifactKind::VerticalTrace, lines)
 }
 
-fn render_execution_trace_artifact(execution_receipt: &LoopProgramExecutionReceipt) -> String {
+fn render_execution_trace_artifact(
+    manifest: &IntentCaseArtifactManifest,
+    execution_receipt: &LoopProgramExecutionReceipt,
+) -> String {
     let mut lines = vec![
         format!("program_id={:?}", execution_receipt.program_id),
         format!("status={:?}", execution_receipt.status),
@@ -512,7 +529,7 @@ fn render_execution_trace_artifact(execution_receipt: &LoopProgramExecutionRecei
                 .map(render_runtime_execution),
         );
     }
-    lines.join("\n") + "\n"
+    render_key_value_artifact_receipt(manifest, IntentCaseArtifactKind::ExecutionTrace, lines)
 }
 
 fn render_runtime_execution(execution: &LoopProgramRuntimeHandoffExecution) -> String {
@@ -559,7 +576,7 @@ fn render_tool_calls_artifact(
     if lines.is_empty() {
         lines.push("tool_calls=none".to_owned());
     }
-    lines.join("\n") + "\n"
+    render_key_value_artifact_receipt(manifest, IntentCaseArtifactKind::ToolCalls, lines)
 }
 
 fn render_sandbox_artifact(
@@ -593,10 +610,13 @@ fn render_sandbox_artifact(
     if lines.is_empty() {
         lines.push("sandbox_receipts=none".to_owned());
     }
-    lines.join("\n") + "\n"
+    render_key_value_artifact_receipt(manifest, IntentCaseArtifactKind::SandboxReceipts, lines)
 }
 
-fn render_memory_artifact(execution_receipt: &LoopProgramExecutionReceipt) -> String {
+fn render_memory_artifact(
+    manifest: &IntentCaseArtifactManifest,
+    execution_receipt: &LoopProgramExecutionReceipt,
+) -> String {
     let mut lines = Vec::new();
     for step in &execution_receipt.steps {
         for projection in &step.runtime_handoff_execution.memory_projections {
@@ -611,7 +631,7 @@ fn render_memory_artifact(execution_receipt: &LoopProgramExecutionReceipt) -> St
     if lines.is_empty() {
         lines.push("memory_receipts=none".to_owned());
     }
-    lines.join("\n") + "\n"
+    render_key_value_artifact_receipt(manifest, IntentCaseArtifactKind::MemoryReceipts, lines)
 }
 
 fn render_diff_artifact(
@@ -619,15 +639,22 @@ fn render_diff_artifact(
     side_effect_replay_bundle: Option<&LoopProgramExecutionReplayBundleReceipt>,
 ) -> String {
     let Some(replay_bundle) = side_effect_replay_bundle else {
-        return format!(
-            "diff --git a/scripted-intent-case b/scripted-intent-case\n# case_id={}\n# scripted run did not apply a live model patch\n",
-            manifest.case_id
-        );
+        let mut lines = vec!["diff --git a/scripted-intent-case b/scripted-intent-case".to_owned()];
+        lines.extend(render_patch_artifact_receipt_header(
+            manifest,
+            IntentCaseArtifactKind::DiffPatch,
+        ));
+        lines.push("# scripted run did not apply a live model patch".to_owned());
+        return format!("{}\n", lines.join("\n"));
     };
     let mut lines = vec![format!(
         "diff --git a/intent-case/{} b/intent-case/{}",
         manifest.case_id, manifest.case_id
     )];
+    lines.extend(render_patch_artifact_receipt_header(
+        manifest,
+        IntentCaseArtifactKind::DiffPatch,
+    ));
     for step_bundle in &replay_bundle.step_replay_bundles {
         for file_write in &step_bundle.side_effects.file_writes {
             if let Some(write_receipt) = file_write.write_receipt.as_ref() {
@@ -755,21 +782,26 @@ fn render_file_write_side_effects(
 }
 
 fn render_verifier_artifact(
+    manifest: &IntentCaseArtifactManifest,
     execution_receipt: &LoopProgramExecutionReceipt,
     runtime_repair_receipt: Option<&RuntimeRepairCaseReceipt>,
 ) -> String {
-    let mut content = render_action_projection_artifact(execution_receipt, "verifier", "Verify");
+    let mut content = render_key_value_artifact_receipt(
+        manifest,
+        IntentCaseArtifactKind::VerifierReceipt,
+        render_action_projection_lines(execution_receipt, "verifier", "Verify"),
+    );
     if let Some(receipt) = runtime_repair_receipt {
         content.push_str(&render_runtime_repair_case_receipt(receipt));
     }
     content
 }
 
-fn render_action_projection_artifact(
+fn render_action_projection_lines(
     execution_receipt: &LoopProgramExecutionReceipt,
     label: &str,
     action_name: &str,
-) -> String {
+) -> Vec<String> {
     let mut lines = Vec::new();
     for step in &execution_receipt.steps {
         if format!("{:?}", step.machine_receipt.action) == action_name {
@@ -784,7 +816,7 @@ fn render_action_projection_artifact(
     if lines.is_empty() {
         lines.push(format!("{label}=none"));
     }
-    lines.join("\n") + "\n"
+    lines
 }
 
 fn render_policy_explanation_artifact(
@@ -798,8 +830,10 @@ fn render_policy_explanation_artifact(
         .join("\n");
 
     format!(
-        "* Policy Explanation {}\n:PROPERTIES:\n:POLICY_EPOCH: {}\n:POLICY_DIGEST: {}\n:END:\n\nMechanism policies:\n{}\n",
-        manifest.case_id, manifest.policy_epoch, manifest.policy_digest, policies
+        "* Policy Explanation {}\n:PROPERTIES:\n{}:END:\n\nMechanism policies:\n{}\n",
+        manifest.case_id,
+        render_org_artifact_receipt_properties(manifest, IntentCaseArtifactKind::PolicyExplanation),
+        policies
     )
 }
 

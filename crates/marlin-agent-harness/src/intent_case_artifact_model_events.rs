@@ -1,6 +1,9 @@
 //! Model event artifact rendering for intent-case bundles.
 
-use marlin_agent_harness_types::{IntentCaseArtifactManifest, RuntimeRepairCaseReceipt};
+use crate::intent_case_artifact_receipt_header::render_key_value_artifact_receipt;
+use marlin_agent_harness_types::{
+    IntentCaseArtifactKind, IntentCaseArtifactManifest, RuntimeRepairCaseReceipt,
+};
 use marlin_agent_kernel::LoopProgramExecutionReceipt;
 
 pub(crate) fn render_model_events_artifact(
@@ -28,7 +31,7 @@ pub(crate) fn render_model_events_artifact(
     if lines.is_empty() {
         lines.push("model=none".to_owned());
     }
-    lines.join("\n") + "\n"
+    render_key_value_artifact_receipt(manifest, IntentCaseArtifactKind::ModelEvents, lines)
 }
 
 fn render_runtime_repair_model_event_summary(receipt: &RuntimeRepairCaseReceipt) -> Vec<String> {

@@ -1,6 +1,9 @@
 //! Test receipt artifact rendering for intent-case bundles.
 
-use marlin_agent_harness_types::{IntentCaseArtifactManifest, RuntimeRepairCaseReceipt};
+use crate::intent_case_artifact_receipt_header::render_key_value_artifact_receipt;
+use marlin_agent_harness_types::{
+    IntentCaseArtifactKind, IntentCaseArtifactManifest, RuntimeRepairCaseReceipt,
+};
 use marlin_agent_kernel::{
     LoopProgramExecutionReplayBundleReceipt, LoopProgramFileWriteSideEffectStatus,
 };
@@ -19,6 +22,13 @@ impl IntentCaseTestArtifactPhase {
         match self {
             Self::Before => "before",
             Self::After => "after",
+        }
+    }
+
+    fn artifact_kind(self) -> IntentCaseArtifactKind {
+        match self {
+            Self::Before => IntentCaseArtifactKind::TestBefore,
+            Self::After => IntentCaseArtifactKind::TestAfter,
         }
     }
 }
@@ -143,7 +153,7 @@ impl IntentCaseTestArtifactReceipt {
                 .map(|value| value.to_string())
                 .unwrap_or_else(|| "none".to_owned())
         ));
-        lines.join("\n") + "\n"
+        render_key_value_artifact_receipt(manifest, self.phase.artifact_kind(), lines)
     }
 }
 

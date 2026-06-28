@@ -7,9 +7,9 @@ use super::intent_case_artifact_support::{
     observed_span_source_for_vertical_receipt_with_trace, scheme_projected_runtime_executor,
 };
 use marlin_agent_harness::{
-    GerbilScriptedIntentCaseArtifactBundleRequest, IntentCaseArtifactKind,
-    IntentCaseObservedSpanSource, IntentCaseSpanName, StaticProviderRuntime, TraceRecorder,
-    materialize_gerbil_scripted_intent_case_artifact_bundle,
+    GerbilScriptedIntentCaseArtifactBundleRequest, IntentCaseArtifactBundleMaterializationReceipt,
+    IntentCaseArtifactKind, IntentCaseObservedSpanSource, IntentCaseSpanName,
+    StaticProviderRuntime, TraceRecorder, materialize_gerbil_scripted_intent_case_artifact_bundle,
 };
 use marlin_agent_harness_types::{
     RuntimeRepairCaseId, RuntimeRepairCaseReceipt, RuntimeRepairContentSummary, RuntimeRepairCount,
@@ -204,6 +204,8 @@ fn harness_materializes_scripted_intent_case_bundles_for_all_gerbil_vertical_cas
         for artifact in &bundle.artifacts {
             assert!(artifact.path.is_file(), "missing artifact {artifact:?}");
             assert_ne!(artifact.bytes_written, 0, "empty artifact {artifact:?}");
+            let content = fs::read_to_string(&artifact.path).expect("read materialized artifact");
+            assert_artifact_correlation_header(&content, &bundle, artifact.kind);
             let path = artifact.path.to_string_lossy();
             assert!(
                 !path.ends_with(".json") && !path.ends_with(".jsonl"),
@@ -552,4 +554,83 @@ fn harness_materializes_no_live_llm_gate_receipt_into_verifier_artifact() {
     assert!(verifier.contains("runtime_repair_live_llm_allowed=false"));
     assert!(verifier.contains("runtime_repair_model_handoff_status=Denied"));
     assert!(!verifier.contains("runtime_repair_model_completion_id="));
+}
+
+fn assert_artifact_correlation_header(
+    content: &str,
+    bundle: &IntentCaseArtifactBundleMaterializationReceipt,
+    kind: IntentCaseArtifactKind,
+) {
+    let artifact_id = bundle
+        .manifest
+        .artifacts
+        .iter()
+        .find(|artifact| artifact.kind == kind && artifact.present)
+        .expect("artifact kind should be present in manifest")
+        .artifact_id
+        .as_str();
+    assert_header_value(
+        content,
+        "artifact_receipt_schema",
+        "marlin.intent-case.artifact-receipt.v1",
+    );
+    assert_header_value(content, "artifact_kind", artifact_kind_name(kind));
+    assert_header_value(content, "artifact_id", artifact_id);
+    assert_header_value(content, "case_id", bundle.manifest.case_id.as_str());
+    assert_header_value(content, "run_id", bundle.manifest.run_id.as_str());
+    assert_header_value(
+        content,
+        "policy_epoch",
+        &bundle.manifest.policy_epoch.to_string(),
+    );
+    assert_header_value(
+        content,
+        "policy_digest",
+        bundle.manifest.policy_digest.as_str(),
+    );
+    assert_header_value(
+        content,
+        "loop_program_id",
+        bundle.manifest.loop_program_id.as_str(),
+    );
+    assert_header_value(
+        content,
+        "trace_entry_count",
+        &bundle.manifest.trace_index.entries.len().to_string(),
+    );
+    assert_header_value(
+        content,
+        "correlation_key_count",
+        &bundle.manifest.correlation_keys().len().to_string(),
+    );
+    assert_header_value(content, "internal_json_boundary", "false");
+}
+
+fn assert_header_value(content: &str, key: &str, value: &str) {
+    let key_value = format!("{key}={value}");
+    let org_property = format!(":{}: {value}", key.to_ascii_uppercase());
+    assert!(
+        content.contains(&key_value) || content.contains(&org_property),
+        "artifact missing header value {key_value}"
+    );
+}
+
+fn artifact_kind_name(kind: IntentCaseArtifactKind) -> &'static str {
+    match kind {
+        IntentCaseArtifactKind::Intent => "intent",
+        IntentCaseArtifactKind::PolicyPack => "policy-pack",
+        IntentCaseArtifactKind::LoopProgram => "loop-program",
+        IntentCaseArtifactKind::VerticalTrace => "vertical-trace",
+        IntentCaseArtifactKind::ExecutionTrace => "execution-trace",
+        IntentCaseArtifactKind::ModelEvents => "model-events",
+        IntentCaseArtifactKind::ToolCalls => "tool-calls",
+        IntentCaseArtifactKind::SandboxReceipts => "sandbox-receipts",
+        IntentCaseArtifactKind::MemoryReceipts => "memory-receipts",
+        IntentCaseArtifactKind::DiffPatch => "diff-patch",
+        IntentCaseArtifactKind::TestBefore => "test-before",
+        IntentCaseArtifactKind::TestAfter => "test-after",
+        IntentCaseArtifactKind::VerifierReceipt => "verifier-receipt",
+        IntentCaseArtifactKind::PolicyExplanation => "policy-explanation",
+        IntentCaseArtifactKind::ReplayScript => "replay-script",
+    }
 }
