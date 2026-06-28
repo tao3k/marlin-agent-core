@@ -3,10 +3,10 @@
 use serde::{Deserialize, Serialize};
 
 /// Stable schema id for serialized intent-case artifact manifests.
-pub const INTENT_CASE_ARTIFACT_MANIFEST_SCHEMA_ID: &str = "marlin.intent-case.artifact-manifest.v1";
+pub const INTENT_CASE_ARTIFACT_MANIFEST_SCHEMA_ID: &str = "marlin.intent-case.artifact-manifest.v2";
 /// Stable schema id for intent-case artifact completeness receipts.
 pub const INTENT_CASE_ARTIFACT_COMPLETENESS_RECEIPT_SCHEMA_ID: &str =
-    "marlin.intent-case.artifact-completeness-receipt.v1";
+    "marlin.intent-case.artifact-completeness-receipt.v2";
 /// Stable schema id for serialized intent-case run receipts.
 pub const INTENT_CASE_RUN_RECEIPT_SCHEMA_ID: &str = "marlin.intent-case.run-receipt.v1";
 
@@ -316,6 +316,7 @@ pub struct IntentCaseArtifactManifest {
     pub policy_epoch: u64,
     pub policy_digest: IntentCasePolicyDigest,
     pub loop_program_id: IntentCaseLoopProgramId,
+    pub expected_artifacts: Vec<IntentCaseArtifactKind>,
     pub artifacts: Vec<IntentCaseArtifactRef>,
     pub trace_index: IntentCaseTraceIndex,
 }
@@ -330,6 +331,7 @@ impl IntentCaseArtifactManifest {
             policy_epoch: request.policy_epoch,
             policy_digest: request.policy_digest,
             loop_program_id: request.loop_program_id,
+            expected_artifacts: Vec::new(),
             artifacts: Vec::new(),
             trace_index: IntentCaseTraceIndex::default(),
         }
@@ -337,7 +339,25 @@ impl IntentCaseArtifactManifest {
 
     #[must_use]
     pub fn with_artifact(mut self, artifact: IntentCaseArtifactRef) -> Self {
+        self.record_expected_artifact_kind(artifact.kind);
         self.artifacts.push(artifact);
+        self
+    }
+
+    #[must_use]
+    pub fn with_expected_artifact_kind(mut self, kind: IntentCaseArtifactKind) -> Self {
+        self.record_expected_artifact_kind(kind);
+        self
+    }
+
+    #[must_use]
+    pub fn with_expected_artifact_kinds(
+        mut self,
+        kinds: impl IntoIterator<Item = IntentCaseArtifactKind>,
+    ) -> Self {
+        for kind in kinds {
+            self.record_expected_artifact_kind(kind);
+        }
         self
     }
 
@@ -345,6 +365,13 @@ impl IntentCaseArtifactManifest {
     pub fn with_trace_index(mut self, trace_index: IntentCaseTraceIndex) -> Self {
         self.trace_index = trace_index;
         self
+    }
+
+    fn record_expected_artifact_kind(&mut self, kind: IntentCaseArtifactKind) {
+        if !self.expected_artifacts.contains(&kind) {
+            self.expected_artifacts.push(kind);
+            self.expected_artifacts.sort();
+        }
     }
 
     #[must_use]
@@ -362,6 +389,14 @@ impl IntentCaseArtifactManifest {
             .filter(|artifact| artifact.present)
             .map(|artifact| artifact.kind)
             .collect::<Vec<_>>();
+        kinds.sort();
+        kinds.dedup();
+        kinds
+    }
+
+    #[must_use]
+    pub fn expected_artifact_kinds(&self) -> Vec<IntentCaseArtifactKind> {
+        let mut kinds = self.expected_artifacts.clone();
         kinds.sort();
         kinds.dedup();
         kinds
@@ -526,7 +561,7 @@ impl IntentCaseArtifactCompletenessReceipt {
         manifest: &IntentCaseArtifactManifest,
         materialized_artifacts: impl IntoIterator<Item = IntentCaseArtifactKind>,
     ) -> Self {
-        let expected_artifacts = manifest.present_artifact_kinds();
+        let expected_artifacts = manifest.expected_artifact_kinds();
         let mut materialized_artifacts = materialized_artifacts.into_iter().collect::<Vec<_>>();
         materialized_artifacts.sort();
         materialized_artifacts.dedup();

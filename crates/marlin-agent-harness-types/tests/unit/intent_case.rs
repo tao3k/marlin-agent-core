@@ -194,10 +194,57 @@ fn artifact_completeness_receipt_marks_complete_materialized_bundle() {
         vec![IntentCaseArtifactKind::VerticalTrace]
     );
     assert_eq!(
+        manifest.expected_artifact_kinds(),
+        vec![IntentCaseArtifactKind::VerticalTrace]
+    );
+    assert_eq!(
         receipt.materialized_artifacts,
         vec![IntentCaseArtifactKind::VerticalTrace]
     );
     assert_eq!(receipt.missing_artifacts, Vec::new());
+    assert_eq!(receipt.trace_entry_count, 1);
+    assert_eq!(receipt.correlation_key_count, 1);
+}
+
+#[test]
+fn artifact_completeness_receipt_reports_missing_expected_manifest_lanes() {
+    let artifact_id = IntentCaseArtifactId::new("case-a:vertical-trace");
+    let manifest = base_manifest()
+        .with_artifact(IntentCaseArtifactRef::present(
+            artifact_id.clone(),
+            IntentCaseArtifactKind::VerticalTrace,
+            "artifacts/intent-cases/case-a/run-a/30-vertical-trace.receipt",
+        ))
+        .with_expected_artifact_kind(IntentCaseArtifactKind::VerifierReceipt)
+        .with_trace_index(IntentCaseTraceIndex::new([
+            trace_entry().with_artifact_ref(artifact_id)
+        ]));
+
+    let receipt = IntentCaseArtifactCompletenessReceipt::from_manifest_and_materialized_artifacts(
+        &manifest,
+        [IntentCaseArtifactKind::VerticalTrace],
+    );
+
+    assert!(!receipt.is_complete());
+    assert_eq!(
+        receipt.status,
+        IntentCaseArtifactCompletenessStatus::Incomplete
+    );
+    assert_eq!(
+        receipt.expected_artifacts,
+        vec![
+            IntentCaseArtifactKind::VerticalTrace,
+            IntentCaseArtifactKind::VerifierReceipt,
+        ]
+    );
+    assert_eq!(
+        receipt.materialized_artifacts,
+        vec![IntentCaseArtifactKind::VerticalTrace]
+    );
+    assert_eq!(
+        receipt.missing_artifacts,
+        vec![IntentCaseArtifactKind::VerifierReceipt]
+    );
     assert_eq!(receipt.trace_entry_count, 1);
     assert_eq!(receipt.correlation_key_count, 1);
 }

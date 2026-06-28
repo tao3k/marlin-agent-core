@@ -94,6 +94,12 @@ pub(crate) fn render_manifest_receipt(
             artifact.path.as_deref().unwrap_or("none")
         )
     }));
+    lines.extend(
+        completeness_receipt
+            .expected_artifacts
+            .iter()
+            .map(|kind| format!("expected_artifact kind={kind:?}")),
+    );
     lines.extend(manifest.correlation_keys().iter().map(|key| {
         format!(
             "correlation case_id={} run_id={} policy_epoch={} policy_digest={} loop_program_id={} trace_id={} step_index={} transition_id={} action={} event={} runtime_owner={} model_invocation_id={} tool_call_id={} resource_key={} sandbox_profile={} artifact_id={}",
