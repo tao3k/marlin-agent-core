@@ -6,6 +6,7 @@ use std::{
 
 use marlin_agent_harness::{
     GerbilScriptedIntentCaseArtifactBundleRequest, IntentCaseArtifactKind,
+    IntentCaseObservedSpanSource, IntentCaseSpanName,
     materialize_gerbil_scripted_intent_case_artifact_bundle,
 };
 use marlin_agent_harness_types::{
@@ -64,6 +65,7 @@ fn harness_materializes_scripted_intent_case_bundles_for_all_gerbil_vertical_cas
                 execution_receipt,
                 side_effect_replay_bundle: None,
                 runtime_repair_receipt: None,
+                observed_span_source: None,
             },
         )
         .expect("scripted intent-case bundle materializes");
@@ -205,6 +207,49 @@ fn harness_materializes_scripted_intent_case_bundles_for_all_gerbil_vertical_cas
     }
 }
 
+#[test]
+fn harness_materializes_observed_span_source_into_intent_case_manifest_receipt() {
+    let receipt = gerbil_vertical_receipts()
+        .into_iter()
+        .next()
+        .expect("at least one Gerbil vertical case should exist");
+    let execution_receipt = execute_vertical_receipt(&receipt);
+    let output_root = tempfile::tempdir().expect("create observed span artifact tempdir");
+    let observed_span_source = IntentCaseObservedSpanSource::new([
+        "harness.result",
+        "harness.execution",
+        "harness.result",
+    ]);
+    let expected_spans: Vec<IntentCaseSpanName> =
+        vec!["harness.execution".into(), "harness.result".into()];
+
+    let bundle = materialize_gerbil_scripted_intent_case_artifact_bundle(
+        GerbilScriptedIntentCaseArtifactBundleRequest {
+            output_root: output_root.path().to_owned(),
+            run_id: "observed-spans".into(),
+            vertical_trace: receipt,
+            execution_receipt,
+            side_effect_replay_bundle: None,
+            runtime_repair_receipt: None,
+            observed_span_source: Some(observed_span_source),
+        },
+    )
+    .expect("observed span bundle materializes");
+
+    assert_eq!(bundle.manifest.observed_span_names(), expected_spans);
+    assert_eq!(bundle.completeness_receipt.observed_spans, expected_spans);
+    assert_eq!(
+        bundle.completeness_receipt.missing_spans,
+        Vec::<IntentCaseSpanName>::new()
+    );
+    let manifest_receipt =
+        fs::read_to_string(&bundle.manifest_path).expect("read observed span manifest");
+    assert!(manifest_receipt.contains("observed_span_count=2"));
+    assert!(manifest_receipt.contains("observed_span name=harness.execution"));
+    assert!(manifest_receipt.contains("observed_span name=harness.result"));
+    assert!(manifest_receipt.contains("missing_span_count=0"));
+}
+
 #[cfg(unix)]
 #[tokio::test]
 async fn harness_materializes_real_tool_side_effect_receipts_into_tool_call_artifacts() {
@@ -233,6 +278,7 @@ async fn harness_materializes_real_tool_side_effect_receipts_into_tool_call_arti
             execution_receipt,
             side_effect_replay_bundle: Some(replay_bundle),
             runtime_repair_receipt: None,
+            observed_span_source: None,
         },
     )
     .expect("tool side-effect bundle materializes");
@@ -289,6 +335,7 @@ fn harness_materializes_real_policy_001_sandbox_denylist_gate() {
             execution_receipt: execution_receipt.clone(),
             side_effect_replay_bundle: None,
             runtime_repair_receipt: None,
+            observed_span_source: None,
         },
     )
     .expect("sandbox-denylist gate bundle materializes");
@@ -433,6 +480,7 @@ async fn harness_materializes_real_policy_002_retry_budget_gate() {
             execution_receipt,
             side_effect_replay_bundle: Some(replay_bundle),
             runtime_repair_receipt: None,
+            observed_span_source: None,
         },
     )
     .expect("retry-budget gate bundle materializes");
@@ -504,6 +552,7 @@ async fn harness_materializes_policy_combination_demo_artifact_bundle() {
             execution_receipt,
             side_effect_replay_bundle: Some(replay_bundle),
             runtime_repair_receipt: None,
+            observed_span_source: None,
         },
     )
     .expect("policy-combination demo bundle materializes");
@@ -611,6 +660,7 @@ async fn harness_materializes_sandbox_file_write_receipts_into_sandbox_and_patch
             execution_receipt,
             side_effect_replay_bundle: Some(replay_bundle),
             runtime_repair_receipt: None,
+            observed_span_source: None,
         },
     )
     .expect("sandbox file-write bundle materializes");
@@ -676,6 +726,7 @@ async fn harness_materializes_sandbox_denylist_receipts_without_writing_files() 
             execution_receipt,
             side_effect_replay_bundle: Some(replay_bundle),
             runtime_repair_receipt: None,
+            observed_span_source: None,
         },
     )
     .expect("sandbox denylist bundle materializes");
@@ -741,6 +792,7 @@ fn harness_materializes_runtime_repair_receipt_into_verifier_artifact() {
             execution_receipt,
             side_effect_replay_bundle: None,
             runtime_repair_receipt: Some(RuntimeRepairCaseReceipt::from(runtime_repair_receipt)),
+            observed_span_source: None,
         },
     )
     .expect("runtime repair receipt bundle materializes");
@@ -790,6 +842,7 @@ fn harness_materializes_no_live_llm_gate_receipt_into_verifier_artifact() {
             execution_receipt,
             side_effect_replay_bundle: None,
             runtime_repair_receipt: Some(RuntimeRepairCaseReceipt::from(no_live_receipt)),
+            observed_span_source: None,
         },
     )
     .expect("no-live runtime repair receipt bundle materializes");

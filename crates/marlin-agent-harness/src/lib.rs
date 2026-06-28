@@ -19,6 +19,7 @@ mod intent_case_artifact;
 mod intent_case_artifact_error;
 mod intent_case_artifact_manifest;
 mod intent_case_artifact_runtime_repair;
+mod intent_case_observed_span;
 mod release_visibility;
 mod runtime;
 mod trace;
@@ -44,6 +45,7 @@ pub use intent_case_artifact::{
     IntentCaseMaterializedArtifactReceipt, materialize_gerbil_scripted_intent_case_artifact_bundle,
 };
 pub use intent_case_artifact_error::IntentCaseArtifactBundleMaterializationError;
+pub use intent_case_observed_span::IntentCaseObservedSpanSource;
 pub use marlin_agent_harness_types::{
     AGENT_HARNESS_GRAPH_POLICY_PROPOSAL_VISIBILITY_SUBJECT_PREFIX,
     AGENT_HARNESS_PERFORMANCE_EVIDENCE_ALLOCATION_PROFILE,
@@ -65,7 +67,7 @@ pub use marlin_agent_harness_types::{
     IntentCaseArtifactManifest, IntentCaseArtifactManifestRequest, IntentCaseArtifactRef,
     IntentCaseCorrelationKey, IntentCaseId, IntentCaseLoopProgramId, IntentCasePolicyDigest,
     IntentCaseRunId, IntentCaseRunReceipt, IntentCaseRunStatus, IntentCaseRuntimeOwner,
-    IntentCaseTraceAction, IntentCaseTraceEntry, IntentCaseTraceEntryId,
+    IntentCaseSpanName, IntentCaseTraceAction, IntentCaseTraceEntry, IntentCaseTraceEntryId,
     IntentCaseTraceEntryRequest, IntentCaseTraceEvent, IntentCaseTraceIndex,
     IntentCaseTransitionId, agent_harness_graph_policy_proposal_visibility_evidence,
 };

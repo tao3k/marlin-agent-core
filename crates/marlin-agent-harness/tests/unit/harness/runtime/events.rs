@@ -2,6 +2,7 @@ use std::time::Duration;
 
 use marlin_agent_harness::{
     AgentHarness, AgentHarnessGraphBuilder, AgentHarnessRuntime, AgentHarnessScenario,
+    IntentCaseObservedSpanSource,
 };
 use marlin_agent_kernel::{
     GraphLoopExecutionRequest, GraphLoopExecutionStatus, TokioGraphLoopKernel,
@@ -32,6 +33,19 @@ async fn harness_execution_report_captures_runtime_events() {
             .events
             .iter()
             .any(|event| event.topic == "test.harness" && event.message == "node node-1 observed")
+    );
+    let observed_span_source =
+        IntentCaseObservedSpanSource::from_agent_harness_execution_report(&report);
+    assert!(
+        !observed_span_source.span_names().is_empty(),
+        "execution report should project at least one observed span"
+    );
+    assert!(
+        observed_span_source
+            .span_names()
+            .iter()
+            .any(|span_name| span_name.as_str() == "harness.result"),
+        "execution report should project harness result span into intent-case source"
     );
     assert!(evaluated.is_success());
 }

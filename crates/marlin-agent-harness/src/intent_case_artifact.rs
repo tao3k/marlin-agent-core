@@ -9,6 +9,7 @@ use crate::{
     intent_case_artifact_error::IntentCaseArtifactBundleMaterializationError,
     intent_case_artifact_manifest::{ensure_trace_correlation_integrity, render_manifest_receipt},
     intent_case_artifact_runtime_repair::render_runtime_repair_case_receipt,
+    intent_case_observed_span::IntentCaseObservedSpanSource,
 };
 use marlin_agent_harness_types::{
     IntentCaseArtifactCompletenessReceipt, IntentCaseArtifactId, IntentCaseArtifactKind,
@@ -32,6 +33,7 @@ pub struct GerbilScriptedIntentCaseArtifactBundleRequest {
     pub execution_receipt: LoopProgramExecutionReceipt,
     pub side_effect_replay_bundle: Option<LoopProgramExecutionReplayBundleReceipt>,
     pub runtime_repair_receipt: Option<RuntimeRepairCaseReceipt>,
+    pub observed_span_source: Option<IntentCaseObservedSpanSource>,
 }
 
 /// Receipt for a written intent-case artifact bundle.
@@ -70,6 +72,10 @@ pub fn materialize_gerbil_scripted_intent_case_artifact_bundle(
     let manifest = project_gerbil_loop_case_driver_intent_case_artifact_manifest(
         &request.vertical_trace,
         request.run_id,
+    );
+    let manifest = IntentCaseObservedSpanSource::enrich_manifest(
+        manifest,
+        request.observed_span_source.as_ref(),
     );
 
     materialize_intent_case_artifact_bundle(
