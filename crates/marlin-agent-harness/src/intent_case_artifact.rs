@@ -9,6 +9,7 @@ use crate::{
     intent_case_artifact_error::IntentCaseArtifactBundleMaterializationError,
     intent_case_artifact_manifest::{ensure_trace_correlation_integrity, render_manifest_receipt},
     intent_case_artifact_model_events::render_model_events_artifact,
+    intent_case_artifact_replay::render_replay_script_artifact,
     intent_case_artifact_runtime_repair::render_runtime_repair_case_receipt,
     intent_case_artifact_test_receipts::{IntentCaseTestArtifactPhase, render_test_artifact},
     intent_case_observed_span::IntentCaseObservedSpanSource,
@@ -799,13 +800,6 @@ fn render_policy_explanation_artifact(
     format!(
         "* Policy Explanation {}\n:PROPERTIES:\n:POLICY_EPOCH: {}\n:POLICY_DIGEST: {}\n:END:\n\nMechanism policies:\n{}\n",
         manifest.case_id, manifest.policy_epoch, manifest.policy_digest, policies
-    )
-}
-
-fn render_replay_script_artifact(manifest: &IntentCaseArtifactManifest) -> String {
-    format!(
-        "#!/usr/bin/env gxi\n;; replay-intent-case\n;; case_id={}\n;; run_id={}\n;; loop_program_id={}\n",
-        manifest.case_id, manifest.run_id, manifest.loop_program_id
     )
 }
 

@@ -130,6 +130,7 @@ fn harness_materializes_scripted_intent_case_bundles_for_all_gerbil_vertical_cas
 
         let manifest_receipt =
             fs::read_to_string(&bundle.manifest_path).expect("read manifest receipt");
+        let replay_script = artifact_content(&bundle, IntentCaseArtifactKind::ReplayScript);
         assert!(manifest_receipt.contains("completeness_schema="));
         assert!(manifest_receipt.contains("expected_artifact_count="));
         assert!(manifest_receipt.contains("materialized_artifact_count="));
@@ -147,6 +148,27 @@ fn harness_materializes_scripted_intent_case_bundles_for_all_gerbil_vertical_cas
         assert!(manifest_receipt.contains("run_id=scripted-bundle-"));
         assert!(manifest_receipt.contains("policy_digest="));
         assert!(manifest_receipt.contains("loop_program_id="));
+        assert!(
+            replay_script.contains("replay_receipt_schema=marlin.intent-case.replay-receipt.v1")
+        );
+        assert!(replay_script.contains("replay_case_id="));
+        assert!(replay_script.contains("replay_run_id=scripted-bundle-"));
+        assert!(replay_script.contains("replay_policy_digest="));
+        assert!(replay_script.contains("replay_loop_program_id="));
+        assert!(replay_script.contains("replay_expected_artifact_count="));
+        assert!(replay_script.contains("replay_expected_artifact_lanes="));
+        assert!(
+            replay_script.contains("replay_expected_span_names=harness.execution,harness.result")
+        );
+        assert!(replay_script.contains("replay_trace_entry_count="));
+        assert!(replay_script.contains("replay_correlation_key_count="));
+        assert!(replay_script.contains("replay_internal_json_boundary=false"));
+        assert!(
+            replay_script.contains(
+                "replay_command='direnv exec . rtk --ultra-compact cargo test -p marlin-agent-harness intent_case'"
+            )
+        );
+        assert!(!replay_script.contains(".json"));
         assert!(manifest_receipt.contains("step_index=1"));
         assert!(manifest_receipt.contains("runtime_owner=marlin-agent-core"));
         assert!(manifest_receipt.contains("model_invocation_id="));
