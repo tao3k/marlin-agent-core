@@ -415,6 +415,8 @@ async fn harness_materializes_sandbox_file_write_receipts_into_sandbox_and_patch
     );
     let sandbox = artifact_content(&bundle, IntentCaseArtifactKind::SandboxReceipts);
     let patch = artifact_content(&bundle, IntentCaseArtifactKind::DiffPatch);
+    let test_before = artifact_content(&bundle, IntentCaseArtifactKind::TestBefore);
+    let test_after = artifact_content(&bundle, IntentCaseArtifactKind::TestAfter);
     assert!(sandbox.contains("side_effect_policy_status=Ready"));
     assert!(sandbox.contains("file_write step="));
     assert!(sandbox.contains("resource_key=agent-flow."));
@@ -423,6 +425,19 @@ async fn harness_materializes_sandbox_file_write_receipts_into_sandbox_and_patch
     assert!(sandbox.contains("status=Completed"));
     assert!(sandbox.contains("after_hash=fnv1a64:"));
     assert!(patch.contains("bytes_written=26"));
+    assert!(
+        test_before.contains("test_receipt_schema=marlin.intent-case.test-artifact-receipt.v1")
+    );
+    assert!(test_before.contains("test_receipt_phase=before"));
+    assert!(test_before.contains("test_receipt_mode=side-effect-replay"));
+    assert!(test_before.contains("test_receipt_status=observed"));
+    assert!(test_before.contains("test_receipt_completed_file_write_count=1"));
+    assert!(test_before.contains("test_receipt_patch_bytes_written=26"));
+    assert!(test_after.contains("test_receipt_phase=after"));
+    assert!(test_after.contains("test_receipt_mode=side-effect-replay"));
+    assert!(test_after.contains("test_receipt_status=observed"));
+    assert!(test_after.contains("test_receipt_file_write_count=1"));
+    assert!(!test_after.contains("fn answer() -> i32 { 41 }"));
     assert_eq!(
         fs::read_to_string(&bug_file).expect("read sandbox repaired fixture"),
         "fn answer() -> i32 { 41 }\n"
@@ -497,6 +512,7 @@ async fn harness_materializes_sandbox_denylist_receipts_without_writing_files() 
     assert!(bundle.has_artifact_kind(IntentCaseArtifactKind::DiffPatch));
     let sandbox = artifact_content(&bundle, IntentCaseArtifactKind::SandboxReceipts);
     let patch = artifact_content(&bundle, IntentCaseArtifactKind::DiffPatch);
+    let test_after = artifact_content(&bundle, IntentCaseArtifactKind::TestAfter);
     assert!(sandbox.contains("side_effect_policy_status=Blocked"));
     assert!(sandbox.contains("resource_key=agent-flow."));
     assert!(sandbox.contains("sandbox_profile=workspace-file-repair"));
@@ -507,5 +523,11 @@ async fn harness_materializes_sandbox_denylist_receipts_without_writing_files() 
     assert!(patch.contains(
         "# file=secret.rs status=Denied diagnostic=loop_program.file_write.sandbox_denied:secret.rs"
     ));
+    assert!(test_after.contains("test_receipt_schema=marlin.intent-case.test-artifact-receipt.v1"));
+    assert!(test_after.contains("test_receipt_phase=after"));
+    assert!(test_after.contains("test_receipt_mode=side-effect-replay"));
+    assert!(test_after.contains("test_receipt_status=blocked"));
+    assert!(test_after.contains("test_receipt_denied_file_write_count=1"));
+    assert!(test_after.contains("test_receipt_patch_bytes_written=0"));
     assert!(!workspace.path().join("secret.rs").exists());
 }

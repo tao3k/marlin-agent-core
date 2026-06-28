@@ -10,6 +10,7 @@ use crate::{
     intent_case_artifact_manifest::{ensure_trace_correlation_integrity, render_manifest_receipt},
     intent_case_artifact_model_events::render_model_events_artifact,
     intent_case_artifact_runtime_repair::render_runtime_repair_case_receipt,
+    intent_case_artifact_test_receipts::{IntentCaseTestArtifactPhase, render_test_artifact},
     intent_case_observed_span::IntentCaseObservedSpanSource,
 };
 use marlin_agent_harness_types::{
@@ -370,12 +371,18 @@ fn render_artifact_content(
         IntentCaseArtifactKind::DiffPatch => {
             render_diff_artifact(manifest, side_effect_replay_bundle)
         }
-        IntentCaseArtifactKind::TestBefore => {
-            render_test_artifact(manifest, side_effect_replay_bundle, "before")
-        }
-        IntentCaseArtifactKind::TestAfter => {
-            render_test_artifact(manifest, side_effect_replay_bundle, "after")
-        }
+        IntentCaseArtifactKind::TestBefore => render_test_artifact(
+            manifest,
+            side_effect_replay_bundle,
+            runtime_repair_receipt,
+            IntentCaseTestArtifactPhase::Before,
+        ),
+        IntentCaseArtifactKind::TestAfter => render_test_artifact(
+            manifest,
+            side_effect_replay_bundle,
+            runtime_repair_receipt,
+            IntentCaseTestArtifactPhase::After,
+        ),
         IntentCaseArtifactKind::VerifierReceipt => {
             render_verifier_artifact(execution_receipt, runtime_repair_receipt)
         }
@@ -645,29 +652,6 @@ fn render_diff_artifact(
         lines.push("# side-effect replay did not include file writes".to_owned());
     }
     lines.join("\n") + "\n"
-}
-
-fn render_test_artifact(
-    manifest: &IntentCaseArtifactManifest,
-    side_effect_replay_bundle: Option<&LoopProgramExecutionReplayBundleReceipt>,
-    phase: &str,
-) -> String {
-    let Some(replay_bundle) = side_effect_replay_bundle else {
-        return format!(
-            "case_id={}\nphase={phase}\nmode=scripted\nstatus=not-run-in-scripted-bundle\n",
-            manifest.case_id
-        );
-    };
-
-    let tool_process_count = replay_bundle
-        .step_replay_bundles
-        .iter()
-        .map(|bundle| bundle.side_effects.tool_processes.len())
-        .sum::<usize>();
-    format!(
-        "case_id={}\nphase={phase}\nmode=side-effect-replay\npolicy_status={:?}\ntool_process_count={tool_process_count}\n",
-        manifest.case_id, replay_bundle.policy_status
-    )
 }
 
 fn render_tool_process_side_effects(

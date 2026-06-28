@@ -431,6 +431,14 @@ async fn harness_materializes_runtime_repair_receipt_into_verifier_artifact() {
     assert!(model_events.contains("runtime_repair_model_event_elapsed_ms=7"));
     assert!(!model_events.contains("repair model request"));
     assert!(!model_events.contains("fn answer() -> i32 { 41 }"));
+    let test_after = artifact_content(&bundle, IntentCaseArtifactKind::TestAfter);
+    assert!(test_after.contains("test_receipt_schema=marlin.intent-case.test-artifact-receipt.v1"));
+    assert!(test_after.contains("test_receipt_phase=after"));
+    assert!(test_after.contains("test_receipt_mode=runtime-repair"));
+    assert!(test_after.contains("test_receipt_status=verified"));
+    assert!(test_after.contains("test_receipt_runtime_repair_kind=live"));
+    assert!(test_after.contains("test_receipt_runtime_repair_verification_success=true"));
+    assert!(!test_after.contains("fn answer() -> i32 { 41 }"));
     assert!(verifier.contains("runtime_repair_receipt=present"));
     assert!(verifier.contains("runtime_repair_kind=live"));
     assert!(verifier.contains("runtime_repair_schema=marlin.runtime-repair.live-case-receipt.v1"));
@@ -504,6 +512,13 @@ fn harness_materializes_no_live_llm_gate_receipt_into_verifier_artifact() {
     assert!(model_events.contains("runtime_repair_model_event_live_llm_allowed=false"));
     assert!(model_events.contains("runtime_repair_model_event_handoff_status=Denied"));
     assert!(!model_events.contains("runtime_repair_model_event_completion_id="));
+    let test_after = artifact_content(&bundle, IntentCaseArtifactKind::TestAfter);
+    assert!(test_after.contains("test_receipt_schema=marlin.intent-case.test-artifact-receipt.v1"));
+    assert!(test_after.contains("test_receipt_phase=after"));
+    assert!(test_after.contains("test_receipt_mode=runtime-repair"));
+    assert!(test_after.contains("test_receipt_status=blocked"));
+    assert!(test_after.contains("test_receipt_runtime_repair_kind=no-live"));
+    assert!(test_after.contains("test_receipt_runtime_repair_verification_success=none"));
     let verifier = artifact_content(&bundle, IntentCaseArtifactKind::VerifierReceipt);
     assert!(verifier.contains("runtime_repair_receipt=present"));
     assert!(verifier.contains("runtime_repair_kind=no-live"));
