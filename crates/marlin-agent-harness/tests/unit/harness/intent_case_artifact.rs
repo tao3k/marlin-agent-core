@@ -34,6 +34,7 @@ use marlin_agent_protocol::LoopProgramEventKind;
 use marlin_agent_runtime::TokioAgentRuntime;
 use marlin_gerbil_scheme::{
     GerbilLoopCaseDriverCapability, GerbilLoopCaseDriverVerticalTraceReceipt,
+    project_gerbil_loop_case_driver_intent_case_artifact_manifest,
     project_gerbil_loop_case_driver_loop_event_kind, project_gerbil_loop_case_driver_loop_program,
     run_gerbil_config_interface_case_driver_smoke, verify_gerbil_loop_case_driver_vertical_trace,
 };
@@ -65,7 +66,7 @@ fn harness_materializes_scripted_intent_case_bundles_for_all_gerbil_vertical_cas
                 execution_receipt,
                 side_effect_replay_bundle: None,
                 runtime_repair_receipt: None,
-                observed_span_source: None,
+                observed_span_source: Some(observed_span_source_for_vertical_receipt(receipt)),
             },
         )
         .expect("scripted intent-case bundle materializes");
@@ -141,9 +142,13 @@ fn harness_materializes_scripted_intent_case_bundles_for_all_gerbil_vertical_cas
         assert!(manifest_receipt.contains("expected_artifact_count="));
         assert!(manifest_receipt.contains("materialized_artifact_count="));
         assert!(manifest_receipt.contains("missing_artifact_count=0"));
-        assert!(manifest_receipt.contains("expected_span_count=0"));
-        assert!(manifest_receipt.contains("observed_span_count=0"));
+        assert!(manifest_receipt.contains("expected_span_count=2"));
+        assert!(manifest_receipt.contains("observed_span_count=2"));
         assert!(manifest_receipt.contains("missing_span_count=0"));
+        assert!(manifest_receipt.contains("expected_span name=harness.execution"));
+        assert!(manifest_receipt.contains("expected_span name=harness.result"));
+        assert!(manifest_receipt.contains("observed_span name=harness.execution"));
+        assert!(manifest_receipt.contains("observed_span name=harness.result"));
         assert!(manifest_receipt.contains("completeness_status=complete"));
         assert!(manifest_receipt.contains("correlation_key_count="));
         assert!(manifest_receipt.contains("correlation case_id="));
@@ -236,7 +241,9 @@ fn harness_materializes_observed_span_source_into_intent_case_manifest_receipt()
     )
     .expect("observed span bundle materializes");
 
+    assert_eq!(bundle.manifest.expected_span_names(), expected_spans);
     assert_eq!(bundle.manifest.observed_span_names(), expected_spans);
+    assert_eq!(bundle.completeness_receipt.expected_spans, expected_spans);
     assert_eq!(bundle.completeness_receipt.observed_spans, expected_spans);
     assert_eq!(
         bundle.completeness_receipt.missing_spans,
@@ -269,6 +276,7 @@ async fn harness_materializes_real_tool_side_effect_receipts_into_tool_call_arti
     .execute_loop_execution(&runtime.context(), &execution_receipt)
     .await;
     let output_root = tempfile::tempdir().expect("create tool side-effect artifact tempdir");
+    let observed_span_source = observed_span_source_for_vertical_receipt(&receipt);
 
     let bundle = materialize_gerbil_scripted_intent_case_artifact_bundle(
         GerbilScriptedIntentCaseArtifactBundleRequest {
@@ -278,7 +286,7 @@ async fn harness_materializes_real_tool_side_effect_receipts_into_tool_call_arti
             execution_receipt,
             side_effect_replay_bundle: Some(replay_bundle),
             runtime_repair_receipt: None,
-            observed_span_source: None,
+            observed_span_source: Some(observed_span_source),
         },
     )
     .expect("tool side-effect bundle materializes");
@@ -326,6 +334,7 @@ fn harness_materializes_real_policy_001_sandbox_denylist_gate() {
                 vec![LoopProgramEventKind::Start],
             ));
     let output_root = tempfile::tempdir().expect("create sandbox-denylist artifact tempdir");
+    let observed_span_source = observed_span_source_for_vertical_receipt(&receipt);
 
     let bundle = materialize_gerbil_scripted_intent_case_artifact_bundle(
         GerbilScriptedIntentCaseArtifactBundleRequest {
@@ -335,7 +344,7 @@ fn harness_materializes_real_policy_001_sandbox_denylist_gate() {
             execution_receipt: execution_receipt.clone(),
             side_effect_replay_bundle: None,
             runtime_repair_receipt: None,
-            observed_span_source: None,
+            observed_span_source: Some(observed_span_source),
         },
     )
     .expect("sandbox-denylist gate bundle materializes");
@@ -471,6 +480,7 @@ async fn harness_materializes_real_policy_002_retry_budget_gate() {
     .execute_loop_execution(&runtime.context(), &execution_receipt)
     .await;
     let output_root = tempfile::tempdir().expect("create retry-budget artifact tempdir");
+    let observed_span_source = observed_span_source_for_vertical_receipt(&receipt);
 
     let bundle = materialize_gerbil_scripted_intent_case_artifact_bundle(
         GerbilScriptedIntentCaseArtifactBundleRequest {
@@ -480,7 +490,7 @@ async fn harness_materializes_real_policy_002_retry_budget_gate() {
             execution_receipt,
             side_effect_replay_bundle: Some(replay_bundle),
             runtime_repair_receipt: None,
-            observed_span_source: None,
+            observed_span_source: Some(observed_span_source),
         },
     )
     .expect("retry-budget gate bundle materializes");
@@ -543,6 +553,7 @@ async fn harness_materializes_policy_combination_demo_artifact_bundle() {
     .execute_loop_execution(&runtime.context(), &execution_receipt)
     .await;
     let output_root = tempfile::tempdir().expect("create policy-combination artifact tempdir");
+    let observed_span_source = observed_span_source_for_vertical_receipt(&receipt);
 
     let bundle = materialize_gerbil_scripted_intent_case_artifact_bundle(
         GerbilScriptedIntentCaseArtifactBundleRequest {
@@ -552,7 +563,7 @@ async fn harness_materializes_policy_combination_demo_artifact_bundle() {
             execution_receipt,
             side_effect_replay_bundle: Some(replay_bundle),
             runtime_repair_receipt: None,
-            observed_span_source: None,
+            observed_span_source: Some(observed_span_source),
         },
     )
     .expect("policy-combination demo bundle materializes");
@@ -651,6 +662,7 @@ async fn harness_materializes_sandbox_file_write_receipts_into_sandbox_and_patch
             .execute_loop_execution(&runtime.context(), &execution_receipt)
             .await;
     let output_root = tempfile::tempdir().expect("create sandbox artifact tempdir");
+    let observed_span_source = observed_span_source_for_vertical_receipt(&receipt);
 
     let bundle = materialize_gerbil_scripted_intent_case_artifact_bundle(
         GerbilScriptedIntentCaseArtifactBundleRequest {
@@ -660,7 +672,7 @@ async fn harness_materializes_sandbox_file_write_receipts_into_sandbox_and_patch
             execution_receipt,
             side_effect_replay_bundle: Some(replay_bundle),
             runtime_repair_receipt: None,
-            observed_span_source: None,
+            observed_span_source: Some(observed_span_source),
         },
     )
     .expect("sandbox file-write bundle materializes");
@@ -717,6 +729,7 @@ async fn harness_materializes_sandbox_denylist_receipts_without_writing_files() 
             .execute_loop_execution(&runtime.context(), &execution_receipt)
             .await;
     let output_root = tempfile::tempdir().expect("create sandbox deny artifact tempdir");
+    let observed_span_source = observed_span_source_for_vertical_receipt(&receipt);
 
     let bundle = materialize_gerbil_scripted_intent_case_artifact_bundle(
         GerbilScriptedIntentCaseArtifactBundleRequest {
@@ -726,7 +739,7 @@ async fn harness_materializes_sandbox_denylist_receipts_without_writing_files() 
             execution_receipt,
             side_effect_replay_bundle: Some(replay_bundle),
             runtime_repair_receipt: None,
-            observed_span_source: None,
+            observed_span_source: Some(observed_span_source),
         },
     )
     .expect("sandbox denylist bundle materializes");
@@ -783,6 +796,7 @@ fn harness_materializes_runtime_repair_receipt_into_verifier_artifact() {
             repaired_content: RuntimeRepairContentSummary::from_text("fn answer() -> i32 { 41 }\n"),
         });
     let output_root = tempfile::tempdir().expect("create runtime repair artifact tempdir");
+    let observed_span_source = observed_span_source_for_vertical_receipt(&receipt);
 
     let bundle = materialize_gerbil_scripted_intent_case_artifact_bundle(
         GerbilScriptedIntentCaseArtifactBundleRequest {
@@ -792,7 +806,7 @@ fn harness_materializes_runtime_repair_receipt_into_verifier_artifact() {
             execution_receipt,
             side_effect_replay_bundle: None,
             runtime_repair_receipt: Some(RuntimeRepairCaseReceipt::from(runtime_repair_receipt)),
-            observed_span_source: None,
+            observed_span_source: Some(observed_span_source),
         },
     )
     .expect("runtime repair receipt bundle materializes");
@@ -833,6 +847,7 @@ fn harness_materializes_no_live_llm_gate_receipt_into_verifier_artifact() {
             model_handoff_status: RuntimeRepairHandoffStatus::Denied,
         });
     let output_root = tempfile::tempdir().expect("create no-live repair artifact tempdir");
+    let observed_span_source = observed_span_source_for_vertical_receipt(&receipt);
 
     let bundle = materialize_gerbil_scripted_intent_case_artifact_bundle(
         GerbilScriptedIntentCaseArtifactBundleRequest {
@@ -842,7 +857,7 @@ fn harness_materializes_no_live_llm_gate_receipt_into_verifier_artifact() {
             execution_receipt,
             side_effect_replay_bundle: None,
             runtime_repair_receipt: Some(RuntimeRepairCaseReceipt::from(no_live_receipt)),
-            observed_span_source: None,
+            observed_span_source: Some(observed_span_source),
         },
     )
     .expect("no-live runtime repair receipt bundle materializes");
@@ -877,6 +892,16 @@ fn config_interface_case_driver_stdout() -> String {
 fn gerbil_vertical_receipts() -> Vec<GerbilLoopCaseDriverVerticalTraceReceipt> {
     verify_gerbil_loop_case_driver_vertical_trace(&config_interface_case_driver_stdout(), 7)
         .expect("vertical trace verifies")
+}
+
+fn observed_span_source_for_vertical_receipt(
+    receipt: &GerbilLoopCaseDriverVerticalTraceReceipt,
+) -> IntentCaseObservedSpanSource {
+    let manifest = project_gerbil_loop_case_driver_intent_case_artifact_manifest(
+        receipt,
+        "expected-span-probe",
+    );
+    IntentCaseObservedSpanSource::new(manifest.expected_span_names())
 }
 
 fn execute_vertical_receipt(

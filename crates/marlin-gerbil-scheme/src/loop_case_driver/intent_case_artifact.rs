@@ -6,7 +6,7 @@ use marlin_agent_harness_types::{
     IntentCaseArtifactId, IntentCaseArtifactKind, IntentCaseArtifactManifest,
     IntentCaseArtifactManifestRequest, IntentCaseArtifactRef, IntentCaseId,
     IntentCaseLoopProgramId, IntentCasePolicyDigest, IntentCaseRunId, IntentCaseRunReceipt,
-    IntentCaseRuntimeOwner, IntentCaseTraceEntry, IntentCaseTraceEntryId,
+    IntentCaseRuntimeOwner, IntentCaseSpanName, IntentCaseTraceEntry, IntentCaseTraceEntryId,
     IntentCaseTraceEntryRequest, IntentCaseTraceIndex, IntentCaseTransitionId,
 };
 
@@ -138,12 +138,20 @@ fn build_intent_case_artifact_manifest(
 ) -> IntentCaseArtifactManifest {
     let mut manifest =
         IntentCaseArtifactManifest::from_request(intent_case_manifest_request(&context))
-            .with_trace_index(intent_case_trace_index(receipt, &context, &artifact_ids));
+            .with_trace_index(intent_case_trace_index(receipt, &context, &artifact_ids))
+            .with_expected_span_names(intent_case_expected_span_names());
 
     for artifact in intent_case_artifact_refs(receipt, &context, artifact_ids) {
         manifest = manifest.with_artifact(artifact);
     }
     manifest
+}
+
+fn intent_case_expected_span_names() -> [IntentCaseSpanName; 2] {
+    [
+        IntentCaseSpanName::new("harness.execution"),
+        IntentCaseSpanName::new("harness.result"),
+    ]
 }
 
 fn intent_case_manifest_request(
