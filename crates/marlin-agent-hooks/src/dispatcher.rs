@@ -32,6 +32,22 @@ pub type RegisteredHookPolicyFinalizer = dyn HookDispatchPolicyFinalizer + Send 
 pub type RegisteredHookRegistrationCatalog =
     dyn HookRegistrationCatalog<HookRegistration> + Send + Sync + 'static;
 
+/// Runtime task boundary for hook dispatch execution.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+struct HookDispatchTaskOwner;
+
+impl HookDispatchTaskOwner {
+    /// Runtime task boundary: owns spawned hook handler execution and returns the join handle.
+    fn spawn(
+        handler: Arc<RegisteredHookRuntime>,
+        invocation: HookInvocation,
+        context: RuntimeContext,
+        span: tracing::Span,
+    ) -> tokio::task::JoinHandle<HookRunSummary> {
+        tokio::spawn(async move { handler.run_hook(invocation, context).await }.instrument(span))
+    }
+}
+
 /// Input passed to registered hook runtimes.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HookInvocation {
@@ -206,7 +222,7 @@ impl HookRegistration {
     ) -> tokio::task::JoinHandle<HookRunSummary> {
         let handler = self.handler.clone();
         let span = hook_run_span(self);
-        tokio::spawn(async move { handler.run_hook(invocation, context).await }.instrument(span))
+        HookDispatchTaskOwner::spawn(handler, invocation, context, span)
     }
 }
 

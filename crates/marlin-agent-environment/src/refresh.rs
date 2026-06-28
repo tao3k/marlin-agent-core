@@ -53,6 +53,27 @@ pub struct RuntimeEnvironmentRefreshResult {
     pub receipt: RuntimeEnvironmentRefreshReceipt,
 }
 
+/// Runtime task boundary for background environment refresh work.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct RuntimeEnvironmentRefreshTaskOwner;
+
+impl RuntimeEnvironmentRefreshTaskOwner {
+    /// Runtime task boundary: owns the background refresh task lifecycle and returns its handle.
+    pub fn spawn<R>(
+        runner: R,
+        request: RuntimeEnvironmentRefreshRequest,
+    ) -> JoinHandle<RuntimeEnvironmentRefreshResult>
+    where
+        R: Clone + DirenvCommandRunner + Send + Sync + 'static,
+    {
+        tokio::spawn(async move {
+            RuntimeEnvironmentRefresher::with_runner(runner)
+                .refresh(request.background())
+                .await
+        })
+    }
+}
+
 /// Applies refresh policy with an injectable direnv command runner.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RuntimeEnvironmentRefresher<R = ProcessDirenvCommandRunner> {
@@ -112,11 +133,6 @@ where
     where
         R: Send + Sync + 'static,
     {
-        let runner = self.runner.clone();
-        tokio::spawn(async move {
-            RuntimeEnvironmentRefresher::with_runner(runner)
-                .refresh(request.background())
-                .await
-        })
+        RuntimeEnvironmentRefreshTaskOwner::spawn(self.runner.clone(), request)
     }
 }

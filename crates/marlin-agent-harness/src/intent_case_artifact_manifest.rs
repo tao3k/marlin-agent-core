@@ -1,5 +1,7 @@
 //! Manifest validation and rendering for intent-case artifact bundles.
 
+use std::collections::BTreeSet;
+
 use crate::intent_case_artifact_error::IntentCaseArtifactBundleMaterializationError;
 use marlin_agent_harness_types::{
     IntentCaseArtifactCompletenessReceipt, IntentCaseArtifactManifest,
@@ -27,18 +29,22 @@ pub(crate) fn ensure_trace_correlation_integrity(
         );
     }
 
+    let present_artifact_ids = manifest
+        .artifacts
+        .iter()
+        .filter(|artifact| artifact.present)
+        .map(|artifact| artifact.artifact_id.clone())
+        .collect::<BTreeSet<_>>();
     for entry in &manifest.trace_index.entries {
-        if let Some(artifact_id) = entry
-            .artifact_refs
-            .iter()
-            .find(|artifact_id| !manifest.has_present_artifact_id(artifact_id))
-        {
-            return Err(
-                IntentCaseArtifactBundleMaterializationError::UnknownTraceArtifactRef {
-                    trace_id: entry.trace_id.clone(),
-                    artifact_id: artifact_id.clone(),
-                },
-            );
+        for artifact_id in &entry.artifact_refs {
+            if present_artifact_ids.get(artifact_id).is_none() {
+                return Err(
+                    IntentCaseArtifactBundleMaterializationError::UnknownTraceArtifactRef {
+                        trace_id: entry.trace_id.clone(),
+                        artifact_id: artifact_id.clone(),
+                    },
+                );
+            }
         }
     }
 

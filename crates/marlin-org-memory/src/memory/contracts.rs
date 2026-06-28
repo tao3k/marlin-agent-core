@@ -1,5 +1,7 @@
 //! Contract fact accumulation helpers for `MemoryOrgWorkspace`.
 
+use std::collections::BTreeSet;
+
 use marlin_org_model::{
     OrgContractRegistry, OrgContractResolutionReport, OrgContractTemplate,
     OrgContractValidationReport,
@@ -67,12 +69,13 @@ pub(super) fn merge_contract_facts(
 }
 
 fn append_contracts_unique(target: &mut OrgContractRegistry, incoming: OrgContractRegistry) {
+    let mut existing_contract_ids = target
+        .contracts
+        .iter()
+        .map(|contract| contract.id.clone())
+        .collect::<BTreeSet<_>>();
     for contract in incoming.contracts {
-        if !target
-            .contracts
-            .iter()
-            .any(|existing| existing.id == contract.id)
-        {
+        if existing_contract_ids.insert(contract.id.clone()) {
             target.contracts.push(contract);
         }
     }

@@ -119,6 +119,48 @@ impl WorkingCopyProviderExecutableProbe {
     }
 }
 
+/// Process command probe boundary for provider executable availability checks.
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct WorkingCopyProviderExecutableProbeCommand {
+    program: WorkingCopyCommandProgram,
+    executable: String,
+}
+
+impl WorkingCopyProviderExecutableProbeCommand {
+    fn new(program: WorkingCopyCommandProgram) -> Self {
+        Self {
+            executable: program.executable().to_owned(),
+            program,
+        }
+    }
+
+    fn executable(&self) -> &str {
+        self.executable.as_str()
+    }
+
+    fn command(&self) -> Command {
+        let mut command = Command::new(&self.executable);
+        command.arg("--version");
+        command
+    }
+
+    async fn run(&self) -> Result<std::process::Output, std::io::Error> {
+        let mut command = self.command();
+        command.output().await
+    }
+
+    fn into_probe(
+        self,
+        output: std::process::Output,
+    ) -> Result<WorkingCopyProviderExecutableProbe, WorkingCopyIsolationDriverError> {
+        WorkingCopyProviderExecutableProbe::from_output(self.program, output)
+    }
+
+    fn missing(self, message: impl Into<String>) -> WorkingCopyProviderExecutableProbe {
+        WorkingCopyProviderExecutableProbe::missing(self.program, message)
+    }
+}
+
 /// Runner used by the isolation driver to execute structured provider commands.
 #[async_trait]
 pub trait WorkingCopyCommandRunner: Send + Sync {
@@ -163,14 +205,14 @@ impl ProcessWorkingCopyCommandRunner {
     pub async fn probe_program(
         program: WorkingCopyCommandProgram,
     ) -> Result<WorkingCopyProviderExecutableProbe, WorkingCopyIsolationDriverError> {
-        let executable = program.executable().to_owned();
-        match Command::new(&executable).arg("--version").output().await {
-            Ok(output) => WorkingCopyProviderExecutableProbe::from_output(program, output),
-            Err(error) if error.kind() == ErrorKind::NotFound => Ok(
-                WorkingCopyProviderExecutableProbe::missing(program, error.to_string()),
-            ),
+        let probe_command = WorkingCopyProviderExecutableProbeCommand::new(program);
+        match probe_command.run().await {
+            Ok(output) => probe_command.into_probe(output),
+            Err(error) if error.kind() == ErrorKind::NotFound => {
+                Ok(probe_command.missing(error.to_string()))
+            }
             Err(error) => Err(WorkingCopyIsolationDriverError::CommandIo {
-                command: executable,
+                command: probe_command.executable().to_owned(),
                 message: error.to_string(),
             }),
         }
