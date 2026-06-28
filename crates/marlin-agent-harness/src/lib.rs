@@ -18,6 +18,7 @@ mod graph;
 mod intent_case_artifact;
 mod intent_case_artifact_error;
 mod intent_case_artifact_manifest;
+mod intent_case_artifact_model_events;
 mod intent_case_artifact_runtime_repair;
 mod intent_case_observed_span;
 mod release_visibility;

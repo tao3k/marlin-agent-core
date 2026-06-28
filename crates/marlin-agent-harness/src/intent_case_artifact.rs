@@ -8,6 +8,7 @@ use std::{
 use crate::{
     intent_case_artifact_error::IntentCaseArtifactBundleMaterializationError,
     intent_case_artifact_manifest::{ensure_trace_correlation_integrity, render_manifest_receipt},
+    intent_case_artifact_model_events::render_model_events_artifact,
     intent_case_artifact_runtime_repair::render_runtime_repair_case_receipt,
     intent_case_observed_span::IntentCaseObservedSpanSource,
 };
@@ -357,7 +358,7 @@ fn render_artifact_content(
             render_execution_trace_artifact(execution_receipt)
         }
         IntentCaseArtifactKind::ModelEvents => {
-            render_model_events_artifact(manifest, execution_receipt)
+            render_model_events_artifact(manifest, execution_receipt, runtime_repair_receipt)
         }
         IntentCaseArtifactKind::ToolCalls => {
             render_tool_calls_artifact(manifest, execution_receipt, side_effect_replay_bundle)
@@ -514,28 +515,6 @@ fn render_runtime_execution(execution: &LoopProgramRuntimeHandoffExecution) -> S
         execution.status,
         execution.next_event
     )
-}
-
-fn render_model_events_artifact(
-    manifest: &IntentCaseArtifactManifest,
-    execution_receipt: &LoopProgramExecutionReceipt,
-) -> String {
-    let mut lines = Vec::new();
-    for step in &execution_receipt.steps {
-        if format!("{:?}", step.machine_receipt.action) == "InvokeModel" {
-            let step_index = step.machine_receipt.step_index.get();
-            lines.push(format!(
-                "model step={} model_invocation_id={} status={:?}",
-                step_index,
-                model_invocation_id_for_step(manifest, step_index).unwrap_or("none"),
-                step.runtime_handoff_execution.status
-            ));
-        }
-    }
-    if lines.is_empty() {
-        lines.push("model=none".to_owned());
-    }
-    lines.join("\n") + "\n"
 }
 
 fn render_tool_calls_artifact(
@@ -724,19 +703,6 @@ fn render_tool_process_side_effects(
             )
         })
         .collect()
-}
-
-fn model_invocation_id_for_step(
-    manifest: &IntentCaseArtifactManifest,
-    step_index: u64,
-) -> Option<&str> {
-    manifest
-        .trace_index
-        .entries
-        .iter()
-        .find(|entry| entry.step_index == step_index && entry.action == "invoke_model")
-        .and_then(|entry| entry.model_invocation_id.as_ref())
-        .map(|id| id.as_str())
 }
 
 fn tool_call_id_for_step(manifest: &IntentCaseArtifactManifest, step_index: u64) -> Option<&str> {

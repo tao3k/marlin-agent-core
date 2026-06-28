@@ -414,6 +414,23 @@ async fn harness_materializes_runtime_repair_receipt_into_verifier_artifact() {
         fs::read_to_string(&bundle.manifest_path).expect("read runtime repair manifest");
     assert!(manifest_receipt.contains("expected_span name=runtime.provider"));
     assert!(manifest_receipt.contains("observed_span name=runtime.provider"));
+    let model_events = artifact_content(&bundle, IntentCaseArtifactKind::ModelEvents);
+    assert!(model_events.contains("model step="));
+    assert!(model_events.contains("runtime_repair_model_event=present"));
+    assert!(model_events.contains("runtime_repair_model_event_kind=live"));
+    assert!(
+        model_events.contains(
+            "runtime_repair_model_event_schema=marlin.runtime-repair.live-case-receipt.v1"
+        )
+    );
+    assert!(
+        model_events
+            .contains("runtime_repair_model_event_completion_id=fixture-live-repair-completion")
+    );
+    assert!(model_events.contains("runtime_repair_model_event_model=gpt-repair-policy-fixture"));
+    assert!(model_events.contains("runtime_repair_model_event_elapsed_ms=7"));
+    assert!(!model_events.contains("repair model request"));
+    assert!(!model_events.contains("fn answer() -> i32 { 41 }"));
     assert!(verifier.contains("runtime_repair_receipt=present"));
     assert!(verifier.contains("runtime_repair_kind=live"));
     assert!(verifier.contains("runtime_repair_schema=marlin.runtime-repair.live-case-receipt.v1"));
@@ -475,6 +492,18 @@ fn harness_materializes_no_live_llm_gate_receipt_into_verifier_artifact() {
         "no-live repair denial must not claim a provider runtime span"
     );
     assert!(bundle.has_artifact_kind(IntentCaseArtifactKind::VerifierReceipt));
+    let model_events = artifact_content(&bundle, IntentCaseArtifactKind::ModelEvents);
+    assert!(model_events.contains("model step="));
+    assert!(model_events.contains("runtime_repair_model_event=present"));
+    assert!(model_events.contains("runtime_repair_model_event_kind=no-live"));
+    assert!(model_events.contains(
+        "runtime_repair_model_event_schema=marlin.runtime-repair.no-live-case-receipt.v1"
+    ));
+    assert!(model_events.contains("runtime_repair_model_event_gate_status=Disabled"));
+    assert!(model_events.contains("runtime_repair_model_event_denial_reason=live-llm-disabled"));
+    assert!(model_events.contains("runtime_repair_model_event_live_llm_allowed=false"));
+    assert!(model_events.contains("runtime_repair_model_event_handoff_status=Denied"));
+    assert!(!model_events.contains("runtime_repair_model_event_completion_id="));
     let verifier = artifact_content(&bundle, IntentCaseArtifactKind::VerifierReceipt);
     assert!(verifier.contains("runtime_repair_receipt=present"));
     assert!(verifier.contains("runtime_repair_kind=no-live"));
