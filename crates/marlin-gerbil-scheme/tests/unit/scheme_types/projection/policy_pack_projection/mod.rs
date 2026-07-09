@@ -11,18 +11,22 @@ pub(super) use marlin_agent_protocol::{LoopProgramActionKind, LoopProgramEventKi
 pub(super) use marlin_gerbil_scheme::{
     GERBIL_DECK_RUNTIME_PROJECT_LOOP_POLICY_PROJECTION_MODULE_SYMBOL,
     GERBIL_LOOP_POLICY_PROJECTION_MODULE_SCHEMA_ID, GERBIL_LOOP_POLICY_PROJECTION_MODULE_TYPE_ID,
-    GERBIL_POLICY_PACK_PROJECTION_CHAIN_SCHEMA_ID, GERBIL_POLICY_PACK_PROJECTION_CHAIN_TYPE_ID,
+    GERBIL_POLICY_MIXIN_DEFINITION_SCHEMA_ID, GERBIL_POLICY_MIXIN_STACK_COMPILER_SCHEMA_ID,
+    GERBIL_POLICY_MIXIN_STACK_COMPILER_TYPE_ID, GERBIL_POLICY_PACK_PROJECTION_CHAIN_SCHEMA_ID,
+    GERBIL_POLICY_PACK_PROJECTION_CHAIN_TYPE_ID, GERBIL_POLICY_SLOT_MERGE_RECEIPT_SCHEMA_ID,
     GERBIL_POO_LOOP_PROGRAM_COMPILER_SCHEMA_ID, GERBIL_POO_LOOP_PROGRAM_COMPILER_TYPE_ID,
     GERBIL_RESOLVED_LOOP_POLICY_PACK_SCHEMA_ID, GERBIL_RESOLVED_LOOP_POLICY_PACK_TYPE_ID,
     GerbilPooLoopProgramCompilerBoundary, GerbilPooLoopProgramCompilerOwner,
     GerbilPooLoopProgramCompilerSerializationBoundary, GerbilSchemeNativeSymbol,
     GerbilSchemeSchemaId, GerbilSchemeTypeId, GerbilSchemeTypeRegistry, GerbilSchemeTypedValue,
     GerbilSchemeValue, decode_gerbil_loop_policy_projection_module,
+    decode_gerbil_policy_mixin_stack_compiler_receipt,
     decode_gerbil_policy_pack_projection_chain_receipt,
     decode_gerbil_poo_loop_program_compiler_receipt, decode_gerbil_resolved_loop_policy_pack,
     gerbil_deck_runtime_loop_policy_projection_module_request,
     gerbil_deck_runtime_native_projection_readiness_plan,
     gerbil_loop_policy_projection_module_type_manifest,
+    gerbil_policy_mixin_stack_compiler_type_manifest,
     gerbil_policy_pack_projection_chain_type_manifest,
     gerbil_poo_loop_program_compiler_type_manifest, gerbil_resolved_loop_policy_pack_type_manifest,
 };
@@ -32,6 +36,7 @@ mod compiler_receipt;
 mod loop_driver;
 mod projection_module;
 mod resolved_pack;
+mod storage_projection;
 
 fn assert_rust_projection_decode_error(
     error: marlin_gerbil_scheme::GerbilSchemeTypeDecodeError,
@@ -48,6 +53,11 @@ fn policy_pack_registry() -> GerbilSchemeTypeRegistry {
 fn poo_loop_program_compiler_registry() -> GerbilSchemeTypeRegistry {
     GerbilSchemeTypeRegistry::new(gerbil_poo_loop_program_compiler_type_manifest())
         .expect("POO loop program compiler manifest")
+}
+
+fn policy_mixin_stack_compiler_registry() -> GerbilSchemeTypeRegistry {
+    GerbilSchemeTypeRegistry::new(gerbil_policy_mixin_stack_compiler_type_manifest())
+        .expect("POO mixin-stack compiler manifest")
 }
 
 fn resolved_loop_policy_pack_registry() -> GerbilSchemeTypeRegistry {
@@ -73,6 +83,11 @@ fn resolved_loop_policy_pack_envelope(payload: GerbilSchemeValue) -> GerbilSchem
 fn poo_loop_program_compiler_envelope(payload: GerbilSchemeValue) -> GerbilSchemeTypedValue {
     GerbilSchemeTypedValue::new(poo_loop_program_compiler_type_id(), payload)
         .with_schema_id(poo_loop_program_compiler_schema_id())
+}
+
+fn policy_mixin_stack_compiler_envelope(payload: GerbilSchemeValue) -> GerbilSchemeTypedValue {
+    GerbilSchemeTypedValue::new(policy_mixin_stack_compiler_type_id(), payload)
+        .with_schema_id(policy_mixin_stack_compiler_schema_id())
 }
 
 fn loop_policy_projection_module_envelope(payload: GerbilSchemeValue) -> GerbilSchemeTypedValue {
@@ -214,6 +229,12 @@ fn poo_loop_program_compiler_fixture_with_profile_pack_and_program(
         ),
     ])
 }
+
+mod policy_combination_fixtures;
+pub(crate) use policy_combination_fixtures::{
+    policy_combination_mixin_stack_compiler_fixture,
+    policy_combination_mixin_stack_compiler_fixture_with_mixin_count,
+};
 
 fn loop_program_fixture(policy_digest: [u8; 32]) -> GerbilSchemeValue {
     GerbilSchemeValue::record([
@@ -513,10 +534,18 @@ fn poo_loop_program_compiler_type_id() -> GerbilSchemeTypeId {
     GerbilSchemeTypeId::new(GERBIL_POO_LOOP_PROGRAM_COMPILER_TYPE_ID)
 }
 
+fn policy_mixin_stack_compiler_type_id() -> GerbilSchemeTypeId {
+    GerbilSchemeTypeId::new(GERBIL_POLICY_MIXIN_STACK_COMPILER_TYPE_ID)
+}
+
 fn resolved_loop_policy_pack_schema_id() -> GerbilSchemeSchemaId {
     GerbilSchemeSchemaId::new(GERBIL_RESOLVED_LOOP_POLICY_PACK_SCHEMA_ID)
 }
 
 fn poo_loop_program_compiler_schema_id() -> GerbilSchemeSchemaId {
     GerbilSchemeSchemaId::new(GERBIL_POO_LOOP_PROGRAM_COMPILER_SCHEMA_ID)
+}
+
+fn policy_mixin_stack_compiler_schema_id() -> GerbilSchemeSchemaId {
+    GerbilSchemeSchemaId::new(GERBIL_POLICY_MIXIN_STACK_COMPILER_SCHEMA_ID)
 }

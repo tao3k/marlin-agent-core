@@ -29,9 +29,9 @@ fn model_endpoint_keeps_real_provider_and_model_names() {
 #[test]
 fn model_endpoint_rejects_provider_and_model_identity_confusion() {
     assert_eq!(
-        ModelEndpoint::new("openai", "codex").validate_contract(),
-        Err(ModelEndpointContractError::CodexIsNotModelName {
-            model: "codex".into()
+        ModelEndpoint::new("openai", "model-latest").validate_contract(),
+        Err(ModelEndpointContractError::OpenAiModelMustBeGpt {
+            model: "model-latest".into()
         })
     );
     assert_eq!(

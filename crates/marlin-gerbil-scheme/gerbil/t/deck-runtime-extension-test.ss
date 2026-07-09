@@ -13,7 +13,7 @@
    "extension-policy"
    "openai"
    "gpt-5.4"
-   '("codex")
+   '("marlin-extension")
    '("extension-agent")
    "shared-context"
    "workspace-isolated"))
@@ -46,7 +46,7 @@
    (lambda (context policy command agent-scope)
      (and (string=? (.get context agent-class) "customer-extension")
           (string=? (.get policy provider) "openai")
-          (string=? command "codex extension apply")
+          (string=? command "marlin extension apply")
           (string=? agent-scope "extension-agent")))))
 
 ;;; Boundary: Agent-authored subagent profiles remain POO extension slots.
@@ -55,7 +55,7 @@
   (.o id: "customer-subagent"
       agent-class: "customer-extension"
       lineage: '("root-agent" "extension-agent" "customer-subagent")
-      spawn-command: "codex subagent spawn customer-subagent"))
+      spawn-command: "marlin subagent spawn customer-subagent"))
 
 ;;; Boundary: Subagent policy matching is still an extension object matcher.
 ;; MarlinResult <- MarlinInput
@@ -65,7 +65,7 @@
    (lambda (context policy command agent-scope)
      (and (string=? (.get context agent-class) "customer-extension")
           (string=? (.get policy provider) "openai")
-          (string=? command "codex subagent apply")
+          (string=? command "marlin subagent apply")
           (string=? agent-scope "extension-agent")))))
 
 ;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
@@ -91,7 +91,7 @@
      extension-condition
      (marlin-deck-runtime-command-prefix-matcher
       "extension-register-prefix"
-      '("codex extension apply"))
+      '("marlin extension apply"))
      (make-marlin-deck-runtime-register-hook-action
       "runtime-catalog-extension-hook"
       "runtime-catalog-extension-hook")))
@@ -193,7 +193,7 @@
            catalog
            extension-test-context
            extension-test-policy
-           "codex subagent apply"
+           "marlin subagent apply"
            "extension-agent"))
          (action (.get receipt dynamic-hook-action)))
     (check (.get valid-report valid) => #t)
@@ -230,7 +230,7 @@
                   catalog
                   extension-test-context
                   extension-test-policy
-                  "codex extension apply"
+                  "marlin extension apply"
                   "extension-agent")
                  id)
            => "customer-extension")))
@@ -247,7 +247,7 @@
            catalog
            extension-test-context
            extension-test-policy
-           "codex extension apply"
+           "marlin extension apply"
            "extension-agent"))
          (miss
           (marlin-deck-runtime-extension-policy-receipt
@@ -265,7 +265,7 @@
            selector-catalog
            extension-test-context
            extension-test-policy
-           "codex extension apply"
+           "marlin extension apply"
            "extension-agent"))
          (action (.get receipt dynamic-hook-action))
          (selection (.get receipt dynamic-hook-selection))

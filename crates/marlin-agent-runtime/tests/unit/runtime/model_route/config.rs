@@ -92,7 +92,7 @@ fn model_route_config_reports_toml_parse_errors() {
 }
 
 #[test]
-fn model_route_config_rejects_codex_as_openai_model_name() {
+fn model_route_config_rejects_invalid_openai_model_name() {
     let error = ModelRouteConfig::from_toml_str(
         r#"
 [[rules]]
@@ -103,10 +103,10 @@ priority = 0
 
 [rules.endpoint]
 provider = "openai"
-model = "codex"
+model = "model-latest"
 "#,
     )
-    .expect_err("Codex product name is not an OpenAI model id");
+    .expect_err("OpenAI model ids must use the gpt-* namespace");
     let ModelRouteConfigError::EndpointContract { rule_id, source } = error else {
         panic!("expected endpoint contract error");
     };
@@ -114,8 +114,8 @@ model = "codex"
     assert_eq!(rule_id.as_str(), "bad-openai-model");
     assert_eq!(
         source,
-        ModelEndpointContractError::CodexIsNotModelName {
-            model: "codex".into()
+        ModelEndpointContractError::OpenAiModelMustBeGpt {
+            model: "model-latest".into()
         }
     );
 }

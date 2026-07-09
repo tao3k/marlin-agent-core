@@ -215,26 +215,26 @@ pub fn load_gerbil_loop_case_driver_projected_loop_program(
         ))
     })?;
 
-    if let Some(expected_profile_ref) = request.profile_ref.as_ref() {
-        if receipt.profile_ref() != expected_profile_ref {
-            return Err(GerbilLoopCaseDriverProjectedLoopProgramError::new(format!(
-                "Scheme vertical trace case={} expected profile_ref={} but got {}",
-                request.case_id,
-                expected_profile_ref,
-                receipt.profile_ref()
-            )));
-        }
+    if let Some(expected_profile_ref) = request.profile_ref.as_ref()
+        && receipt.profile_ref() != expected_profile_ref
+    {
+        return Err(GerbilLoopCaseDriverProjectedLoopProgramError::new(format!(
+            "Scheme vertical trace case={} expected profile_ref={} but got {}",
+            request.case_id,
+            expected_profile_ref,
+            receipt.profile_ref()
+        )));
     }
 
-    if let Some(expected_live_llm_required) = request.live_llm_required {
-        if receipt.live_llm_required() != expected_live_llm_required {
-            return Err(GerbilLoopCaseDriverProjectedLoopProgramError::new(format!(
-                "Scheme vertical trace case={} expected live_llm_required={} but got {}",
-                request.case_id,
-                expected_live_llm_required,
-                receipt.live_llm_required()
-            )));
-        }
+    if let Some(expected_live_llm_required) = request.live_llm_required
+        && receipt.live_llm_required() != expected_live_llm_required
+    {
+        return Err(GerbilLoopCaseDriverProjectedLoopProgramError::new(format!(
+            "Scheme vertical trace case={} expected live_llm_required={} but got {}",
+            request.case_id,
+            expected_live_llm_required,
+            receipt.live_llm_required()
+        )));
     }
 
     for capability in &request.required_capabilities {

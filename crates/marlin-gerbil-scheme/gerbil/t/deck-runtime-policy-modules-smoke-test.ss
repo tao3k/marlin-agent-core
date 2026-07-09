@@ -16,7 +16,7 @@
    "module-policy"
    "openai"
    "gpt-5.4"
-   '("codex")
+   '("marlin-apply")
    '("worker")
    "forked-context"
    "workspace-isolated"))
@@ -40,7 +40,7 @@
    (lambda (context policy command agent-scope)
      (and (string=? (.get context session-id) "session-module")
           (string=? (.get policy name) "module-policy")
-          (string=? command "codex apply")
+          (string=? command "marlin apply")
           (string=? agent-scope "worker")))))
 
 ;;; Boundary: Template expands to a typed Rust-facing dynamic strategy rule.
@@ -73,7 +73,7 @@
    (list smoke-policy)
    (list smoke-rule)
    smoke-context
-   "codex apply"
+   "marlin apply"
    "worker"))
 
 (check (.get smoke-receipt matched) => #t)

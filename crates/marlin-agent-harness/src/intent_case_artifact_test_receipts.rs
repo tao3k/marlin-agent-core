@@ -85,6 +85,11 @@ struct IntentCaseTestArtifactReceipt {
     patch_bytes_written: u64,
     runtime_repair_kind: &'static str,
     runtime_repair_verification_success: Option<bool>,
+    runtime_repair_patch_tool_success: Option<bool>,
+    runtime_repair_tool_projection_count: Option<usize>,
+    runtime_repair_graph_rewrite_projected: Option<bool>,
+    runtime_repair_repaired_content_digest: Option<String>,
+    runtime_repair_repaired_content_bytes: Option<usize>,
 }
 
 impl IntentCaseTestArtifactReceipt {
@@ -111,6 +116,11 @@ impl IntentCaseTestArtifactReceipt {
             patch_bytes_written: side_effect_summary.patch_bytes_written,
             runtime_repair_kind: runtime_repair_summary.kind,
             runtime_repair_verification_success: runtime_repair_summary.verification_success,
+            runtime_repair_patch_tool_success: runtime_repair_summary.patch_tool_success,
+            runtime_repair_tool_projection_count: runtime_repair_summary.tool_projection_count,
+            runtime_repair_graph_rewrite_projected: runtime_repair_summary.graph_rewrite_projected,
+            runtime_repair_repaired_content_digest: runtime_repair_summary.repaired_content_digest,
+            runtime_repair_repaired_content_bytes: runtime_repair_summary.repaired_content_bytes,
         }
     }
 
@@ -150,6 +160,36 @@ impl IntentCaseTestArtifactReceipt {
         lines.push(format!(
             "test_receipt_runtime_repair_verification_success={}",
             self.runtime_repair_verification_success
+                .map(|value| value.to_string())
+                .unwrap_or_else(|| "none".to_owned())
+        ));
+        lines.push(format!(
+            "test_receipt_runtime_repair_patch_tool_success={}",
+            self.runtime_repair_patch_tool_success
+                .map(|value| value.to_string())
+                .unwrap_or_else(|| "none".to_owned())
+        ));
+        lines.push(format!(
+            "test_receipt_runtime_repair_tool_projection_count={}",
+            self.runtime_repair_tool_projection_count
+                .map(|value| value.to_string())
+                .unwrap_or_else(|| "none".to_owned())
+        ));
+        lines.push(format!(
+            "test_receipt_runtime_repair_graph_rewrite_projected={}",
+            self.runtime_repair_graph_rewrite_projected
+                .map(|value| value.to_string())
+                .unwrap_or_else(|| "none".to_owned())
+        ));
+        lines.push(format!(
+            "test_receipt_runtime_repair_repaired_content_digest={}",
+            self.runtime_repair_repaired_content_digest
+                .as_deref()
+                .unwrap_or("none")
+        ));
+        lines.push(format!(
+            "test_receipt_runtime_repair_repaired_content_bytes={}",
+            self.runtime_repair_repaired_content_bytes
                 .map(|value| value.to_string())
                 .unwrap_or_else(|| "none".to_owned())
         ));
@@ -222,10 +262,15 @@ impl SideEffectTestSummary {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 struct RuntimeRepairTestSummary {
     kind: &'static str,
     verification_success: Option<bool>,
+    patch_tool_success: Option<bool>,
+    tool_projection_count: Option<usize>,
+    graph_rewrite_projected: Option<bool>,
+    repaired_content_digest: Option<String>,
+    repaired_content_bytes: Option<usize>,
 }
 
 impl RuntimeRepairTestSummary {
@@ -234,14 +279,29 @@ impl RuntimeRepairTestSummary {
             Some(RuntimeRepairCaseReceipt::Live(receipt)) => Self {
                 kind: "live",
                 verification_success: Some(receipt.verification_success),
+                patch_tool_success: Some(receipt.patch_tool_success),
+                tool_projection_count: Some(receipt.tool_projection_count.get()),
+                graph_rewrite_projected: Some(receipt.graph_rewrite_projected),
+                repaired_content_digest: Some(receipt.repaired_content.digest.as_str().to_owned()),
+                repaired_content_bytes: Some(receipt.repaired_content.byte_count.get()),
             },
             Some(RuntimeRepairCaseReceipt::NoLive(_)) => Self {
                 kind: "no-live",
                 verification_success: None,
+                patch_tool_success: None,
+                tool_projection_count: None,
+                graph_rewrite_projected: None,
+                repaired_content_digest: None,
+                repaired_content_bytes: None,
             },
             None => Self {
                 kind: "none",
                 verification_success: None,
+                patch_tool_success: None,
+                tool_projection_count: None,
+                graph_rewrite_projected: None,
+                repaired_content_digest: None,
+                repaired_content_bytes: None,
             },
         }
     }

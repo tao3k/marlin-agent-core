@@ -3,8 +3,15 @@
 use std::{error::Error, fmt, path::PathBuf};
 
 use marlin_agent_harness_types::{
-    IntentCaseArtifactId, IntentCaseArtifactKind, IntentCaseTraceEntryId,
+    IntentCaseArtifactId, IntentCaseArtifactKind, IntentCaseId, IntentCaseTraceEntryId,
 };
+
+/// Typed payload for a real LLM receipt/manifest case correlation failure.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct IntentCaseRealLlmCaseMismatch {
+    pub manifest_case_id: IntentCaseId,
+    pub receipt_case_id: IntentCaseId,
+}
 
 /// Error returned when an intent-case artifact bundle cannot be materialized.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -21,6 +28,7 @@ pub enum IntentCaseArtifactBundleMaterializationError {
         trace_entries: usize,
         execution_steps: usize,
     },
+    RealLlmCaseMismatch(IntentCaseRealLlmCaseMismatch),
     MissingTraceRuntimeOwner {
         trace_id: IntentCaseTraceEntryId,
     },
@@ -60,6 +68,12 @@ impl fmt::Display for IntentCaseArtifactBundleMaterializationError {
             } => write!(
                 formatter,
                 "trace index has {trace_entries} entries but execution receipt has {execution_steps} steps"
+            ),
+            Self::RealLlmCaseMismatch(payload) => write!(
+                formatter,
+                "real LLM case receipt {:?} does not match manifest case {:?}",
+                payload.receipt_case_id.as_str(),
+                payload.manifest_case_id.as_str()
             ),
             Self::MissingTraceRuntimeOwner { trace_id } => {
                 write!(formatter, "trace entry {trace_id} has no runtime owner")

@@ -1,6 +1,8 @@
 id = "marlin-workspace-protocol.scenario-performance"
 title = "marlin-workspace-protocol scenario performance baseline"
-policy_ids = ["MARLIN-SCENARIO-PERFORMANCE"]
+policy_ids = ["RUST-AGENT-SCENARIO-PERFORMANCE-001"]
 agent_goal = "Keep marlin-workspace-protocol crate-local scenario performance contracts stable and replayable."
+reference_repositories = ["rust-lang/rust", "tokio-rs/tokio"]
+reference_patterns = ["scenario benchmark contract", "bounded runtime performance"]
 inputs = "inputs"
 expected = "expected"

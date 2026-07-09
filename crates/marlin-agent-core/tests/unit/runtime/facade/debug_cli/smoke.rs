@@ -1,7 +1,7 @@
 use marlin_agent_core::{
     GraphLoopExecutionStatus, MODEL_ROUTE_ADMISSION_SCHEMA_ID, ModelContextForkMode,
-    ModelRouteAdmissionMode, ModelSessionLifecycle, RuntimeHomeSource, SmokeLlmMode,
-    SmokeRuntimeReceipt, SmokeRuntimeScenario, run_marlin_cli_from_args,
+    ModelRouteAdmissionMode, ModelSessionLifecycle, RuntimeHomeSource, RuntimeSessionIdSource,
+    SmokeLlmMode, SmokeRuntimeReceipt, SmokeRuntimeScenario, run_marlin_cli_from_args,
 };
 use tempfile::tempdir;
 
@@ -188,6 +188,8 @@ fn debug_cli_smoke_runtime_state_home_env_prefers_marlin_home_over_home() {
         marlin_home.to_str().expect("utf8 marlin home"),
         "--host-home",
         host_home.to_str().expect("utf8 host home"),
+        "--marlin-session-id",
+        "debug-smoke-session-1",
     ]);
 
     assert_eq!(result.status, 0, "{}", result.stderr);
@@ -203,6 +205,14 @@ fn debug_cli_smoke_runtime_state_home_env_prefers_marlin_home_over_home() {
     assert_eq!(state_home.home, marlin_home);
     assert_eq!(state_home.source, RuntimeHomeSource::Custom);
     assert_eq!(state_home.directory_count, 10);
+    assert_eq!(
+        state_home.session_id.as_deref(),
+        Some("debug-smoke-session-1")
+    );
+    assert_eq!(
+        state_home.session_source,
+        Some(RuntimeSessionIdSource::MarlinSessionEnv)
+    );
     assert_eq!(
         state_home.receipt_path,
         state_home

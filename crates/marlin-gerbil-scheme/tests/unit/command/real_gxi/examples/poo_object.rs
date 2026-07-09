@@ -3,7 +3,11 @@ use marlin_gerbil_scheme::{
     GERBIL_LOADPATH_ENV, GERBIL_POO_OBJECT_MODULE, GERBIL_POO_PACKAGE_NAME,
     gerbil_runtime_loadpath, write_gerbil_runtime_assets,
 };
-use std::{fs, path::Path, process::Command};
+use std::{
+    fs,
+    path::Path,
+    process::{Command, Output},
+};
 
 #[test]
 #[ignore = "requires a local Gerbil gxi executable and poo-flow-provided clan/poo dependency"]
@@ -23,12 +27,24 @@ fn command_compiler_real_gxi_deck_runtime_can_execute_poo_object_probe_when_depe
     let probe = root.path().join("deck-runtime-poo-object.ss");
     write_poo_object_probe(&probe);
 
-    let output = Command::new(gxi)
-        .env(GERBIL_LOADPATH_ENV, gerbil_runtime_loadpath(root.path()))
-        .arg(probe)
-        .output()
+    let output = run_poo_object_probe(build_poo_object_probe_command(&gxi, root.path(), &probe))
         .expect("run real gxi deck runtime POO object probe");
+    assert_poo_object_probe_receipt(output);
+}
 
+fn build_poo_object_probe_command(gxi: &Path, root: &Path, probe: &Path) -> Command {
+    let mut command = Command::new(gxi);
+    command
+        .env(GERBIL_LOADPATH_ENV, gerbil_runtime_loadpath(root))
+        .arg(probe);
+    command
+}
+
+fn run_poo_object_probe(mut command: Command) -> std::io::Result<Output> {
+    command.output()
+}
+
+fn assert_poo_object_probe_receipt(output: Output) {
     assert!(
         output.status.success(),
         "gxi deck runtime POO object probe failed\nstdout:\n{}\nstderr:\n{}",

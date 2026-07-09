@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     GraphId, GraphLoopExecutionResult, GraphLoopExecutionStatus, GraphLoopIterationReport, RunId,
-    RuntimeHomeSource,
+    RuntimeHomeSource, RuntimeSessionIdSource,
     protocol::{
         GraphLoopFailureKind, GraphQueryFamily, GraphQueryRelationshipFact,
         ModelRouteAdmissionRequest, ModelRouteAdmissionResponse, ProjectRuntimeAgentId,
@@ -319,6 +319,10 @@ pub struct SmokeRuntimeStateHome {
     pub home: PathBuf,
     pub source: RuntimeHomeSource,
     pub directory_count: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_source: Option<RuntimeSessionIdSource>,
     pub session_path: PathBuf,
     pub memory_shard_path: PathBuf,
     pub receipt_path: PathBuf,

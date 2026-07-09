@@ -30,7 +30,7 @@ package: marlin
   ("compiled-deep-reviewer"
    "anthropic"
    "claude-opus-4-8"
-   ("codex customer-review" "cargo clippy")
+   ("marlin review" "cargo clippy")
    ("reviewer")
    "shared-context"
    "isolated-session"))
@@ -43,7 +43,7 @@ package: marlin
    ("cargo test" "just test")
    ("sub-agent" "hook"))
   (1
-   ("codex customer-review" "cargo clippy")
+   ("marlin review" "cargo clippy")
    ("reviewer")))
 
 ;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.

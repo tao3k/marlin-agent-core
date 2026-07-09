@@ -1,14 +1,19 @@
+use std::collections::BTreeSet;
+
 use marlin_rust_project_harness_policy::{
     RustProjectHarnessExpectedArtifact, RustProjectHarnessFindingSeverity,
     RustProjectHarnessImprovementPlanStatus, RustProjectHarnessImprovementPriority,
-    RustProjectHarnessImprovementQueueStatus, RustProjectHarnessQualityAutofixability,
-    RustProjectHarnessQualityBlockingLevel, RustProjectHarnessQualityDomain,
-    RustProjectHarnessQualityFindingEvidencePaths, RustProjectHarnessQualityFindingsInput,
-    build_improvement_plan_receipt, build_improvement_queue_receipt,
-    build_verification_policy_receipt, evaluate_quality_findings_for_gate,
+    RustProjectHarnessImprovementQueueStatus, RustProjectHarnessPolicyProjectionDecision,
+    RustProjectHarnessQualityAutofixability, RustProjectHarnessQualityBlockingLevel,
+    RustProjectHarnessQualityDomain, RustProjectHarnessQualityFindingEvidencePaths,
+    RustProjectHarnessQualityFindingsInput, build_improvement_plan_receipt,
+    build_improvement_queue_receipt, build_verification_policy_receipt,
+    evaluate_quality_findings_for_gate, project_current_rust_agent_policy_catalog,
     rust_project_harness_config_for_project,
 };
-use rust_lang_project_harness::plan_rust_project_verification_with_config;
+use rust_lang_project_harness::{
+    plan_rust_project_verification_with_config, rust_agent_policy_rules,
+};
 
 use super::helpers::{runtime_verification_policy_receipt, workspace_root};
 
@@ -75,6 +80,82 @@ fn quality_findings_turn_missing_gates_into_agent_actionable_hard_errors() {
             && finding.rule_id == "MARLIN-QUALITY-GATE-PERF"
             && finding.agent_next_action.contains("performance")
     }));
+}
+
+#[test]
+fn policy_projection_covers_current_upstream_rust_agent_catalog() {
+    let gate_receipt = marlin_rust_project_harness_policy::RustProjectHarnessGateReceipt {
+        package_name: "demo".to_owned(),
+        performance_gate: false,
+        stability_gate: false,
+        performance_report_obligation: false,
+        stability_report_obligation: false,
+    };
+    let findings = evaluate_quality_findings_for_gate(RustProjectHarnessQualityFindingsInput {
+        package_name: "demo".to_owned(),
+        gate_receipt,
+        evidence_paths: RustProjectHarnessQualityFindingEvidencePaths::new(
+            "evidence-graph.json",
+            "verification_plan.json",
+            "task_index.json",
+            "verification_policy.json",
+        ),
+    });
+
+    let projection = &findings.policy_projection;
+    assert_eq!(
+        *projection,
+        project_current_rust_agent_policy_catalog("demo", &findings.findings)
+    );
+    let upstream_rule_ids = rust_agent_policy_rules()
+        .into_iter()
+        .map(|rule| rule.rule_id.to_owned())
+        .collect::<BTreeSet<_>>();
+    let projection_rule_ids = projection
+        .projections
+        .iter()
+        .map(|projection| projection.rule_id.clone())
+        .collect::<BTreeSet<_>>();
+
+    assert!(projection.has_complete_upstream_projection());
+    assert_eq!(projection.upstream_rule_count, upstream_rule_ids.len());
+    assert_eq!(projection_rule_ids, upstream_rule_ids);
+    assert_eq!(projection.emitted_count, 0);
+    assert_eq!(projection.suppressed_count, projection.upstream_rule_count);
+    assert_eq!(projection.not_applicable_count, 0);
+    assert!(
+        projection
+            .projections
+            .iter()
+            .all(|projection| projection.rule_id.starts_with("RUST-AGENT-"))
+    );
+    assert!(
+        !projection
+            .projections
+            .iter()
+            .any(|projection| projection.rule_id.starts_with("AGENT-R"))
+    );
+
+    for rule_id in [
+        "RUST-AGENT-ASYNC-BACKPRESSURE-032",
+        "RUST-AGENT-TOKIO-RUNTIME-002",
+        "RUST-AGENT-NATIVE-ABI-001",
+    ] {
+        let rule_projection = projection
+            .projections
+            .iter()
+            .find(|projection| projection.rule_id == rule_id)
+            .expect("high-value upstream policy should be projected");
+        assert_eq!(
+            rule_projection.decision,
+            RustProjectHarnessPolicyProjectionDecision::Suppressed
+        );
+        assert!(
+            rule_projection
+                .reason
+                .contains("upstream Rust agent policy catalog")
+        );
+    }
 }
 
 #[test]

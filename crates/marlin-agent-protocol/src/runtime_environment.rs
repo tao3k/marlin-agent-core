@@ -79,6 +79,76 @@ pub struct RuntimeSandboxPolicy {
     pub exclude_slash_tmp: bool,
 }
 
+/// Environment variable used to bind host execution to a Marlin runtime session.
+pub const MARLIN_SESSION_ID_ENV_VAR: &str = "MARLIN_SESSION_ID";
+
+/// Stable runtime session id visible in the resolved runtime snapshot.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
+pub struct RuntimeSessionId(String);
+
+impl RuntimeSessionId {
+    pub fn new(id: impl Into<String>) -> Self {
+        Self::try_new(id).expect("runtime session id must not be empty")
+    }
+
+    pub fn try_new(id: impl Into<String>) -> Option<Self> {
+        let id = id.into();
+        let trimmed = id.trim();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(Self(trimmed.to_owned()))
+        }
+    }
+
+    pub fn as_str(&self) -> &str {
+        self.0.as_str()
+    }
+}
+
+impl From<&str> for RuntimeSessionId {
+    fn from(value: &str) -> Self {
+        Self::new(value)
+    }
+}
+
+impl From<String> for RuntimeSessionId {
+    fn from(value: String) -> Self {
+        Self::new(value)
+    }
+}
+
+/// Source used to derive a runtime session id.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum RuntimeSessionIdSource {
+    Explicit,
+    MarlinSessionEnv,
+}
+
+/// Runtime session identity resolved from explicit input or host environment.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct RuntimeSession {
+    pub id: RuntimeSessionId,
+    pub source: RuntimeSessionIdSource,
+}
+
+impl RuntimeSession {
+    pub fn new(id: impl Into<RuntimeSessionId>, source: RuntimeSessionIdSource) -> Self {
+        Self {
+            id: id.into(),
+            source,
+        }
+    }
+
+    pub fn explicit(id: impl Into<RuntimeSessionId>) -> Self {
+        Self::new(id, RuntimeSessionIdSource::Explicit)
+    }
+
+    pub fn try_new(id: impl Into<String>, source: RuntimeSessionIdSource) -> Option<Self> {
+        RuntimeSessionId::try_new(id).map(|id| Self { id, source })
+    }
+}
+
 /// One project imported into the runtime workspace.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct RuntimeWorkspaceProject {
@@ -677,6 +747,8 @@ pub struct RuntimeEnvironment {
     pub home: Option<RuntimeHome>,
     #[serde(default)]
     pub state_layout: Option<RuntimeStateLayout>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session: Option<RuntimeSession>,
     pub cwd: Option<PathBuf>,
     pub sandbox: RuntimeSandboxPolicy,
     pub config_layers: Vec<RuntimeConfigLayer>,
@@ -698,6 +770,11 @@ impl RuntimeEnvironment {
     pub fn with_state_layout(mut self, layout: RuntimeStateLayout) -> Self {
         self.home = Some(layout.home.clone());
         self.state_layout = Some(layout);
+        self
+    }
+
+    pub fn with_session(mut self, session: RuntimeSession) -> Self {
+        self.session = Some(session);
         self
     }
 

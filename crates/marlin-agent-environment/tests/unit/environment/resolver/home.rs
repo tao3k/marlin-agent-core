@@ -6,8 +6,9 @@ use marlin_agent_environment::{
     USER_CONFIG_PRECEDENCE,
 };
 use marlin_agent_protocol::{
-    MARLIN_HOME_ENV_VAR, RuntimeConfigLayerSource, RuntimeHomeSource, RuntimeSandboxPolicy,
-    RuntimeStateDirectoryKind, RuntimeStateStorageStatus,
+    MARLIN_HOME_ENV_VAR, MARLIN_SESSION_ID_ENV_VAR, RuntimeConfigLayerSource, RuntimeHomeSource,
+    RuntimeSandboxPolicy, RuntimeSessionIdSource, RuntimeStateDirectoryKind,
+    RuntimeStateStorageStatus,
 };
 
 #[test]
@@ -90,6 +91,18 @@ fn resolver_prefers_marlin_home_env_over_home_default() {
         Some(&PathBuf::from("/state/marlin/receipts"))
     );
     assert!(resolution.state_storage_receipt.is_some());
+}
+
+#[test]
+fn resolver_uses_marlin_session_id_from_host_env() {
+    let environment = RuntimeEnvironmentResolver::new().resolve(
+        RuntimeEnvironmentRequest::default()
+            .with_home_from_host_env([(MARLIN_SESSION_ID_ENV_VAR, "marlin-session-1")]),
+    );
+
+    let session = environment.session.expect("runtime session");
+    assert_eq!(session.id.as_str(), "marlin-session-1");
+    assert_eq!(session.source, RuntimeSessionIdSource::MarlinSessionEnv);
 }
 
 #[test]

@@ -57,6 +57,7 @@ async fn harness_materializes_real_tool_side_effect_receipts_into_tool_call_arti
             side_effect_replay_bundle: Some(replay_bundle),
             runtime_repair_receipt: None,
             observed_span_source: Some(observed_span_source),
+            real_llm_case_receipt: None,
         },
     )
     .expect("tool side-effect bundle materializes");
@@ -198,6 +199,7 @@ async fn harness_materializes_real_policy_002_retry_budget_gate() {
             side_effect_replay_bundle: Some(replay_bundle),
             runtime_repair_receipt: None,
             observed_span_source: Some(observed_span_source),
+            real_llm_case_receipt: None,
         },
     )
     .expect("retry-budget gate bundle materializes");
@@ -285,6 +287,7 @@ async fn harness_materializes_policy_combination_demo_artifact_bundle() {
             side_effect_replay_bundle: Some(replay_bundle),
             runtime_repair_receipt: None,
             observed_span_source: Some(observed_span_source),
+            real_llm_case_receipt: None,
         },
     )
     .expect("policy-combination demo bundle materializes");
@@ -351,6 +354,21 @@ async fn harness_materializes_policy_combination_demo_artifact_bundle() {
         policy_merge_receipts
             .contains("policy_feedback_recommendation.1=keep-exclusive-resource-mixins-aligned")
     );
+    assert!(policy_merge_receipts.contains("policy_combination_experiment=memory-rewrite-checker"));
+    assert!(policy_merge_receipts.contains(
+        "policy_combination_expected_lanes=memory,model,rewrite,tool,tool-replay,checker"
+    ));
+    assert!(policy_merge_receipts.contains("policy_combination_memory_intent_count=1"));
+    assert!(policy_merge_receipts.contains("policy_combination_tool_intent_count=1"));
+    assert!(policy_merge_receipts.contains("policy_combination_memory_projection_count=1"));
+    assert!(policy_merge_receipts.contains("policy_combination_model_step_count=1"));
+    assert!(policy_merge_receipts.contains("policy_combination_rewrite_step_count=1"));
+    assert!(policy_merge_receipts.contains("policy_combination_tool_projection_count=1"));
+    assert!(policy_merge_receipts.contains("policy_combination_tool_replay_process_count=1"));
+    assert!(policy_merge_receipts.contains("policy_combination_checker_step_count=1"));
+    assert!(policy_merge_receipts.contains("policy_combination_side_effect_replay=true"));
+    assert!(policy_merge_receipts.contains("policy_combination_experiment_status=complete"));
+    assert!(policy_merge_receipts.contains("policy_combination_recommendation_count=0"));
     assert!(policy_merge_receipts.contains("policy_merge_internal_json_boundary=false"));
     assert!(loop_program.contains("action=rewrite_graph"));
     assert!(tool_calls.contains("side_effect_replay policy_status=Ready"));
@@ -423,6 +441,7 @@ async fn harness_materializes_sandbox_file_write_receipts_into_sandbox_and_patch
             side_effect_replay_bundle: Some(replay_bundle),
             runtime_repair_receipt: None,
             observed_span_source: Some(observed_span_source),
+            real_llm_case_receipt: None,
         },
     )
     .expect("sandbox file-write bundle materializes");
@@ -524,6 +543,7 @@ async fn harness_materializes_sandbox_denylist_receipts_without_writing_files() 
             side_effect_replay_bundle: Some(replay_bundle),
             runtime_repair_receipt: None,
             observed_span_source: Some(observed_span_source),
+            real_llm_case_receipt: None,
         },
     )
     .expect("sandbox denylist bundle materializes");

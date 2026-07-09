@@ -1,0 +1,6 @@
+[storage_pressure]
+sessions = 8
+agents = 16
+events = 128
+pointer_contention = 32
+visibility_receipts = true

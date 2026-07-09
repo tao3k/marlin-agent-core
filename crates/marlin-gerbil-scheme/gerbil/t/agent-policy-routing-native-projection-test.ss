@@ -13,7 +13,7 @@
    "gerbil.scope.agent-topology"
    "openai"
    "gpt-5.4"
-   '("codex")
+   '("marlin-review")
    '("extension-agent")
    "shared-context"
    "workspace-isolated"))

@@ -6,7 +6,8 @@ use marlin_agent_kernel::{
 use marlin_agent_protocol::LoopProgramEventKind;
 use marlin_gerbil_scheme::{
     GERBIL_LOOP_CASE_DRIVER_INTENT_CASE_RUNTIME_OWNER,
-    GERBIL_LOOP_CASE_DRIVER_RUST_LOOP_RECEIPT_SCHEMA_ID, GerbilLoopCaseCommandKind,
+    GERBIL_LOOP_CASE_DRIVER_RUST_LOOP_RECEIPT_SCHEMA_ID,
+    GERBIL_POLICY_MIXIN_STACK_COMPILER_SCHEMA_ID, GerbilLoopCaseCommandKind,
     GerbilLoopCaseRuntimeHandoffStatus, GerbilLoopCaseSchemeBoundary,
     GerbilLoopCaseSerializationBoundary,
     project_gerbil_loop_case_driver_intent_case_artifact_manifest,
@@ -76,6 +77,25 @@ fn config_interface_case_driver_scheme_smoke_runs_vertical_policy_cases() {
         assert!(receipt.module_enabled());
         assert_ne!(receipt.placement_intent_count(), 0);
         assert_ne!(receipt.capability_mask(), 0);
+        assert_ne!(receipt.policy_forced_slot_count(), 0);
+        assert_ne!(receipt.policy_merge_receipt_count(), 0);
+        assert_eq!(
+            receipt.policy_merge_kinds().count(),
+            receipt.policy_merge_receipt_count()
+        );
+        assert_eq!(
+            receipt.policy_merge_statuses().count(),
+            receipt.policy_merge_receipt_count()
+        );
+        assert!(
+            receipt
+                .policy_merge_statuses()
+                .all(|status| matches!(status, "applied" | "conflict")),
+            "policy merge statuses should be Rust-owned audit statuses: {receipt:?}"
+        );
+        assert!(
+            receipt.policy_conflict_merge_receipt_count() <= receipt.policy_merge_receipt_count()
+        );
         assert_eq!(
             receipt.mechanism_policy_ids().count(),
             receipt.mechanism_policy_count()
@@ -86,7 +106,45 @@ fn config_interface_case_driver_scheme_smoke_runs_vertical_policy_cases() {
                 .all(|policy_id| !policy_id.trim().is_empty()),
             "mechanism policy ids should be explicit Scheme-projected policy lanes: {receipt:?}"
         );
+        if receipt.has_capability(&cap("+policy-combination")) {
+            assert!(receipt.policy_mixin_stack_present());
+        } else {
+            assert!(!receipt.policy_mixin_stack_present());
+        }
     }
+    let policy_combination_receipt = vertical_receipts
+        .iter()
+        .find(|receipt| receipt.has_capability(&cap("+policy-combination")))
+        .expect("policy combination vertical receipt exists");
+    assert_eq!(
+        policy_combination_receipt.policy_mixin_stack_receipt_kind(),
+        GERBIL_POLICY_MIXIN_STACK_COMPILER_SCHEMA_ID
+    );
+    assert_eq!(
+        policy_combination_receipt.policy_mixin_stack_profile_id(),
+        policy_combination_receipt.profile_ref().as_str()
+    );
+    assert_eq!(
+        policy_combination_receipt.policy_mixin_stack_mixin_count(),
+        7
+    );
+    assert_eq!(
+        policy_combination_receipt.policy_mixin_stack_slot_merge_law_count(),
+        6
+    );
+    let policy_combination_laws = policy_combination_receipt
+        .policy_mixin_stack_slot_merge_laws()
+        .collect::<Vec<_>>();
+    assert!(policy_combination_laws.contains(&"route_rules=ordered_append"));
+    assert!(policy_combination_laws.contains(&"exclusive_resource=conflict_error"));
+    assert_eq!(
+        policy_combination_receipt.policy_mixin_stack_linearization_owner(),
+        "poo-flow.c3-c4"
+    );
+    assert_eq!(
+        policy_combination_receipt.policy_mixin_stack_slot_merge_owner(),
+        "poo-flow.slot-merge-algebra"
+    );
     let live_repair_receipts = vertical_receipts
         .iter()
         .filter(|receipt| receipt.live_llm_required())
@@ -319,6 +377,7 @@ fn config_interface_vertical_trace_projects_to_intent_case_artifact_bundles() {
         assert!(manifest.has_core_artifact_bundle());
         assert!(manifest.has_artifact_kind(IntentCaseArtifactKind::Intent));
         assert!(manifest.has_artifact_kind(IntentCaseArtifactKind::PolicyPack));
+        assert!(manifest.has_artifact_kind(IntentCaseArtifactKind::PolicyMergeReceipts));
         assert!(manifest.has_artifact_kind(IntentCaseArtifactKind::LoopProgram));
         assert!(manifest.has_artifact_kind(IntentCaseArtifactKind::VerticalTrace));
         assert!(manifest.has_artifact_kind(IntentCaseArtifactKind::ExecutionTrace));

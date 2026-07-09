@@ -18,7 +18,7 @@
    "script-policy"
    "openai"
    "gpt-5.4"
-   '("codex")
+   '("marlin-script")
    '("script-agent")
    "shared-context"
    "workspace-isolated"))
@@ -40,7 +40,7 @@
    "script-command"
    (lambda (context policy command agent-scope)
      (and (string=? (.get policy provider) "openai")
-          (string=? command "codex script apply")
+          (string=? command "marlin script apply")
           (string=? agent-scope "script-agent")))))
 
 ;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
@@ -71,7 +71,7 @@
 ;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
 ;; MarlinResult <- MarlinInput
 (def (check-deck-runtime-script)
-  (let* ((context (.o command: "codex script apply"
+  (let* ((context (.o command: "marlin script apply"
                      agent-scope: "script-agent"))
          (projection (marlin-deck-runtime-script-native-projection customer-script)))
     (check (.get customer-script kind)
@@ -87,7 +87,7 @@
     (check (.get projection policy_id) => "customer-script")
     (check (.get projection action) => "register")
     (check (marlin-deck-runtime-script-run customer-script context)
-           => '("codex script apply"
+           => '("marlin script apply"
                 "script-agent"
                 "customer-script-extension"))))
 

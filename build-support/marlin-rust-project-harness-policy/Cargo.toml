@@ -6,7 +6,7 @@ authors = ["marlin contributors"]
 repository = "https://github.com/tao3k/marlin-agent-core"
 
 [dependencies]
-rust-lang-project-harness.workspace = true
+rust-lang-project-harness = { version = "0.1.2", path = "../../../agent-semantic-protocols/languages/rust-lang-project-harness" }
 serde.workspace = true
 serde_json.workspace = true
 toml.workspace = true

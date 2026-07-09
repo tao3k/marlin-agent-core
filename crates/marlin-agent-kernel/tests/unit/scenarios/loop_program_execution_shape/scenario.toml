@@ -1,6 +1,8 @@
 id = "marlin-agent-kernel.loop-program-execution-shape"
 title = "LoopProgram execution driver shape"
-policy_ids = ["MARLIN-LOOP-PROGRAM", "RUST-SCENARIO-BENCHMARK"]
+policy_ids = ["RUST-AGENT-LOOP-PROGRAM-001", "RUST-AGENT-SCENARIO-BENCHMARK-001"]
 agent_goal = "Keep provider-neutral LoopProgram execution bounded across repeated runtime handoff cycles."
+reference_repositories = ["rust-lang/rust", "tokio-rs/tokio"]
+reference_patterns = ["scenario benchmark contract", "bounded runtime performance"]
 inputs = "inputs"
 expected = "expected"

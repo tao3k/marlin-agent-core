@@ -1,0 +1,23 @@
+#+TITLE: Storage Artifact Pointer CAS Proof Scenario
+#+PROPERTY: proof_package marlin-proof
+#+PROPERTY: proof_module MarlinProof.Storage.ArtifactPointer
+
+* Scenario
+:PROPERTIES:
+:ID: storage-artifact-pointer-cas
+:END:
+
+The artifact pointer compare-and-swap gate must never silently overwrite a
+pointer when the expected value does not match the current value.
+
+* Receipts
+:PROPERTIES:
+:PROOF_KIND: storage.cas.invariant
+:END:
+
+- committed_after_is_target
+- committed_status_when_expected_matches
+- conflict_preserves_pointer
+- conflict_status_when_expected_mismatches
+- missing_expected_commits_only_when_absent
+- missing_expected_conflicts_when_present

@@ -3,9 +3,19 @@
 //! This module exposes Rust-owned typed projection contracts while the concrete
 //! Gerbil config-interface cases stay in Scheme modules.
 
+mod mixin_stack;
 mod optional_scheme;
 mod surface;
 
+pub use mixin_stack::{
+    GERBIL_POLICY_MIXIN_DEFINITION_SCHEMA_ID, GERBIL_POLICY_MIXIN_STACK_COMPILER_PACKAGE_ID,
+    GERBIL_POLICY_MIXIN_STACK_COMPILER_SCHEMA_ID, GERBIL_POLICY_MIXIN_STACK_COMPILER_TYPE_ID,
+    GERBIL_POLICY_SLOT_MERGE_RECEIPT_SCHEMA_ID, GerbilPolicyMixinDefinition,
+    GerbilPolicyMixinStackCompilerReceipt, GerbilPolicySlotMergeReceipt,
+    decode_gerbil_policy_mixin_stack_compiler_receipt, gerbil_policy_mixin_stack_compiler_contract,
+    gerbil_policy_mixin_stack_compiler_package_manifest,
+    gerbil_policy_mixin_stack_compiler_type_manifest,
+};
 pub use surface::{
     GERBIL_LOOP_POLICY_PROJECTION_MODULE_PACKAGE_ID,
     GERBIL_LOOP_POLICY_PROJECTION_MODULE_SCHEMA_ID, GERBIL_LOOP_POLICY_PROJECTION_MODULE_TYPE_ID,

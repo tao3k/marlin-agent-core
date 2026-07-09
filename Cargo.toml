@@ -13,6 +13,7 @@ members = [
     "crates/marlin-agent-route",
     "crates/marlin-agent-runtime",
     "crates/marlin-agent-sessions",
+    "crates/marlin-agent-storage",
     "crates/marlin-agent-stream",
     "crates/marlin-agent-test-support",
     "crates/marlin-deck-runtime-native",
@@ -58,16 +59,17 @@ serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.145"
 static_assertions = "1.1.0"
 tempfile = "3"
+turso = { version = "0.7.0-pre.17", default-features = false }
 toml = "1.1.2"
 thiserror = "2.0.18"
-tokio = { version = "1", features = ["rt", "macros", "sync", "time", "process"] }
+tokio = { version = "1", features = ["full"] }
 tokio-stream = "0.1"
 tokio-util = { version = "0.7", features = ["rt"] }
 tower = { version = "0.5.3", features = ["limit", "load-shed", "timeout", "util"] }
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter", "fmt", "json"] }
 wiremock = "0.6.5"
-rust-lang-project-harness = { git = "https://github.com/tao3k/rust-lang-project-harness", rev = "715c45335784bdd54110508cd4837663b913a3bc", version = "=0.1.2" }
+rust-lang-project-harness = { path = "../agent-semantic-protocols/languages/rust-lang-project-harness", version = "0.1.2" }
 marlin-rust-project-harness-policy = { path = "build-support/marlin-rust-project-harness-policy", version = "0.1.0" }
 marlin-agent-environment = { path = "crates/marlin-agent-environment", version = "0.1.0" }
 marlin-agent-graph = { path = "crates/marlin-agent-graph", version = "0.1.0" }
@@ -80,6 +82,7 @@ marlin-agent-protocol = { path = "crates/marlin-agent-protocol", version = "0.1.
 marlin-agent-route = { path = "crates/marlin-agent-route", version = "0.1.0" }
 marlin-agent-runtime = { path = "crates/marlin-agent-runtime", version = "0.1.0" }
 marlin-agent-sessions = { path = "crates/marlin-agent-sessions", version = "0.1.0" }
+marlin-agent-storage = { path = "crates/marlin-agent-storage", version = "0.1.0" }
 marlin-agent-test-support = { path = "crates/marlin-agent-test-support", version = "0.1.0" }
 marlin-gerbil-ir = { path = "crates/marlin-gerbil-ir", version = "0.1.0" }
 marlin-gerbil-scheme = { path = "crates/marlin-gerbil-scheme", version = "0.1.0" }

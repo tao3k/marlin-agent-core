@@ -3,11 +3,12 @@
 use std::path::PathBuf;
 
 use marlin_agent_protocol::{
-    MARLIN_HOME_ENV_VAR, RuntimeConfigLayer, RuntimeConfigLayerSource, RuntimeEnvironment,
-    RuntimeEnvironmentActivation, RuntimeEnvironmentActivationPolicy,
+    MARLIN_HOME_ENV_VAR, MARLIN_SESSION_ID_ENV_VAR, RuntimeConfigLayer, RuntimeConfigLayerSource,
+    RuntimeEnvironment, RuntimeEnvironmentActivation, RuntimeEnvironmentActivationPolicy,
     RuntimeEnvironmentActivationReceipt, RuntimeEnvironmentResolution, RuntimeHome,
-    RuntimeHomeSource, RuntimeSandboxPolicy, RuntimeStateStorageReceipt, RuntimeWorkspaceProject,
-    RuntimeWorkspaceProjectId, RuntimeWorkspaceProjectImportReceipt, RuntimeWorkspaceProjectTrust,
+    RuntimeHomeSource, RuntimeSandboxPolicy, RuntimeSession, RuntimeSessionIdSource,
+    RuntimeStateStorageReceipt, RuntimeWorkspaceProject, RuntimeWorkspaceProjectId,
+    RuntimeWorkspaceProjectImportReceipt, RuntimeWorkspaceProjectTrust,
 };
 use thiserror::Error;
 
@@ -53,6 +54,10 @@ impl RuntimeEnvironmentResolver {
             .with_sandbox(request.sandbox.clone())
             .with_activation(request.activation.clone());
         let mut project_import_receipts = Vec::new();
+
+        if let Some(session) = request.session.clone() {
+            environment = environment.with_session(session);
+        }
 
         if let Some(home) = request.resolve_home() {
             environment = environment.with_home(home);
@@ -223,6 +228,11 @@ fn activation_receipt_for_policy(
     }
 }
 
+fn resolve_session_from_host_env(marlin_session_id: Option<String>) -> Option<RuntimeSession> {
+    marlin_session_id
+        .and_then(|id| RuntimeSession::try_new(id, RuntimeSessionIdSource::MarlinSessionEnv))
+}
+
 /// Input used to resolve a top-level runtime environment.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct RuntimeEnvironmentRequest {
@@ -230,6 +240,8 @@ pub struct RuntimeEnvironmentRequest {
     pub default_home: Option<PathBuf>,
     /// Optional custom runtime home path. When present, this wins over the default home.
     pub custom_home: Option<PathBuf>,
+    /// Optional runtime session identity.
+    pub session: Option<RuntimeSession>,
     /// Optional named profile used by home and user config layers.
     pub profile: Option<String>,
     /// Optional working directory attached to the runtime snapshot.
@@ -265,10 +277,11 @@ impl RuntimeEnvironmentRequest {
         self
     }
 
-    /// Resolves runtime home from host environment pairs.
+    /// Resolves runtime home and session identity from host environment pairs.
     ///
     /// `MARLIN_HOME` wins as a custom home. If it is absent, `HOME` resolves
-    /// the default `<HOME>/.marlin` runtime state home.
+    /// the default `<HOME>/.marlin` runtime state home. `MARLIN_SESSION_ID`
+    /// resolves the runtime session id when present.
     pub fn with_home_from_host_env<I, K, V>(mut self, env: I) -> Self
     where
         I: IntoIterator<Item = (K, V)>,
@@ -277,14 +290,16 @@ impl RuntimeEnvironmentRequest {
     {
         let mut marlin_home = None;
         let mut user_home = None;
+        let mut marlin_session_id = None;
         for (key, value) in env {
             let value = value.as_ref();
-            if value.is_empty() {
+            if value.trim().is_empty() {
                 continue;
             }
             match key.as_ref() {
                 MARLIN_HOME_ENV_VAR => marlin_home = Some(PathBuf::from(value)),
                 HOST_HOME_ENV_VAR => user_home = Some(PathBuf::from(value)),
+                MARLIN_SESSION_ID_ENV_VAR => marlin_session_id = Some(value.to_owned()),
                 _ => {}
             }
         }
@@ -293,6 +308,21 @@ impl RuntimeEnvironmentRequest {
         } else if let Some(path) = user_home {
             self.default_home = Some(RuntimeHome::default_for_user_home(path).path);
         }
+        if let Some(session) = resolve_session_from_host_env(marlin_session_id) {
+            self.session = Some(session);
+        }
+        self
+    }
+
+    /// Sets an explicit runtime session id.
+    pub fn with_session_id(mut self, id: impl Into<String>) -> Self {
+        self.session = Some(RuntimeSession::explicit(id.into()));
+        self
+    }
+
+    /// Sets an already typed runtime session.
+    pub fn with_session(mut self, session: RuntimeSession) -> Self {
+        self.session = Some(session);
         self
     }
 

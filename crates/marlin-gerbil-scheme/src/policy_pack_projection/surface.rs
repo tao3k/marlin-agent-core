@@ -325,7 +325,7 @@ impl GerbilPooLoopProgramCompilerReceipt {
         self.kind.as_str() == GERBIL_POO_LOOP_PROGRAM_COMPILER_SCHEMA_ID
     }
 
-    fn ensure_current_schema(&self) -> Result<(), GerbilSchemeTypeDecodeError> {
+    pub(crate) fn ensure_current_schema(&self) -> Result<(), GerbilSchemeTypeDecodeError> {
         if !self.has_current_schema() {
             return Err(GerbilSchemeTypeDecodeError::RustProjection {
                 message: format!(

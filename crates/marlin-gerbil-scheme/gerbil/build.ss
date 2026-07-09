@@ -7,6 +7,9 @@
         :clan/building
         (only-in :gslph/src/build-api/source-coverage
                  gslph-source-coverage)
+        (only-in :gslph/src/testing/build
+                 testing-build
+                 testing-build-main)
         (only-in :gerbil/tools/env
                  setup-local-pkg-env!)
         :gerbil/gambit
@@ -18,9 +21,20 @@
 (def source-root (path-expand "src" package-root))
 (def marlin-build-root-configured? #f)
 
-(def +marlin-scenario-test-files+
-  '("t/marlin-poo-flow-scenario-test.ss"
-    "t/deck-runtime-script-performance-test.ss"))
+(def +marlin-testing-project+
+  (testing-build
+   name: "marlin-deck-runtime"
+   root: "."
+   contract-root: "."
+   gxtest: [["all" "t/all-test.ss"]]
+   roots: ["src" "t"]
+   batch-size: 2
+   max-selected-files: 4
+   max-selected-sources: 8
+   max-selected-outputs: 8))
+
+(def (marlin-test-target options)
+  (testing-build-main +marlin-testing-project+ options))
 
 (def +marlin-special-source-files+
   '("marlin/_deck-runtime-native.ssi"
@@ -86,6 +100,7 @@
 (def (marlin-sync-build-worker-count!)
   (let (worker-count (marlin-build-worker-count))
     (set! __available-cores worker-count)
+    (setenv "GERBIL_BUILD_CORES" (number->string worker-count))
     worker-count))
 
 (def (marlin-compile-spec)
@@ -148,40 +163,6 @@
 (def (marlin-clean-target)
   (marlin-run-clean-request (marlin-clean-request)))
 
-(def (marlin-top-level-test-files)
-  +marlin-scenario-test-files+)
-
-(def (marlin-run-top-level-tests)
-  (let (files (marlin-top-level-test-files))
-    (display (string-append "[marlin-test-runner] files="
-                            (number->string (length files))
-                            " mode=single-process-load"
-                            "\n"))
-    (for-each
-     (lambda (file)
-       (marlin-load-test-file file)
-       (display (string-append "|test file=" file " status=pass\n")))
-     files)
-    (display "OK\n")
-    (force-output)))
-
-(def (marlin-load-test-file file)
-  (let (test-entry (path-expand file package-root))
-    (let (previous-directory (current-directory))
-      (dynamic-wind
-        (lambda () (current-directory package-root))
-        (lambda () (load test-entry))
-        (lambda () (current-directory previous-directory))))))
-
-(def (marlin-load-all-test)
-  (marlin-load-test-file "t/all-test.ss"))
-
-(def (marlin-test-target full?)
-  (marlin-ensure-build-root!)
-  (if full?
-    (marlin-load-all-test)
-    (marlin-run-top-level-tests)))
-
 (def (main . args)
   (match args
     (["meta"] (write '("spec" "compile" "clean" "test")) (newline))
@@ -190,8 +171,7 @@
     (["compile" . options]
      (marlin-compile-target (marlin-build-parse-options options)))
     (["clean"] (marlin-clean-target))
-    (["test" "--full"] (marlin-test-target #t))
-    (["test"] (marlin-test-target #f))
+    (["test" . options] (marlin-test-target options))
     ([] (marlin-compile-target []))
     (else
      (error "Unexpected build command" args))))

@@ -40,6 +40,13 @@ pub(crate) fn render_runtime_repair_case_receipt(receipt: &RuntimeRepairCaseRece
                 "runtime_repair_model_handoff_status={:?}",
                 receipt.model_handoff_status
             ));
+            lines.push("runtime_repair_diagnosis_status=blocked-live-llm".to_owned());
+            lines.push("runtime_repair_single_file_repair_ready=false".to_owned());
+            lines.push("runtime_repair_recommendation_count=1".to_owned());
+            lines.push(
+                "runtime_repair_recommendation.1=enable-live-llm-provider-before-runtime-repair"
+                    .to_owned(),
+            );
         }
     }
 
@@ -92,4 +99,52 @@ fn render_live_runtime_repair_receipt(
         "runtime_repair_repaired_content_bytes={}",
         receipt.repaired_content.byte_count.get()
     ));
+    lines.extend(live_runtime_repair_diagnosis_lines(receipt));
+}
+
+fn live_runtime_repair_diagnosis_lines(
+    receipt: &marlin_agent_harness_types::RuntimeRepairLiveCaseReceipt,
+) -> Vec<String> {
+    let single_file_ready = receipt.patch_tool_success
+        && receipt.verification_success
+        && receipt.tool_projection_count.get() == 1;
+    let mut recommendations = Vec::new();
+    if receipt.tool_projection_count.get() == 0 {
+        recommendations.push("route-tool-intent-to-dispatch-runtime");
+    }
+    if !receipt.patch_tool_success {
+        recommendations.push("repair-patch-tool-policy-or-sandbox");
+    }
+    if !receipt.verification_success {
+        recommendations.push("rerun-verifier-after-runtime-patch");
+    }
+
+    let diagnosis_status = if single_file_ready {
+        "verified-single-file-repair"
+    } else if receipt.verification_success {
+        "verified-repair-needs-shape-review"
+    } else {
+        "requires-repair-policy-review"
+    };
+
+    let mut lines = vec![
+        format!("runtime_repair_diagnosis_status={diagnosis_status}"),
+        format!("runtime_repair_single_file_repair_ready={single_file_ready}"),
+        format!(
+            "runtime_repair_recommendation_count={}",
+            recommendations.len()
+        ),
+    ];
+    lines.extend(
+        recommendations
+            .iter()
+            .enumerate()
+            .map(|(index, recommendation)| {
+                format!(
+                    "runtime_repair_recommendation.{}={recommendation}",
+                    index + 1
+                )
+            }),
+    );
+    lines
 }

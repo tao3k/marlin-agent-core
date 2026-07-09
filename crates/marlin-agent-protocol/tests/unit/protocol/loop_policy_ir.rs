@@ -102,7 +102,7 @@ fn loop_program_composes_mechanism_policies_without_provider_turn_drivers() {
     assert_eq!(program.program_id.as_str(), "repo-build-reactive-turn");
     assert!(program.uses_policy(&LoopMechanismPolicyId::new("reactive-tool-loop-base")));
     assert!(program.uses_policy(&LoopMechanismPolicyId::new(
-        "codex-style-pending-input-drain"
+        "agent-style-pending-input-drain"
     )));
     assert!(program.uses_policy(&LoopMechanismPolicyId::new(
         "openrath-style-resource-key-dispatch"
@@ -153,7 +153,7 @@ fn sample_loop_program() -> LoopProgram {
         policy_digest: LoopPolicyDigest::from_bytes([9_u8; 32]),
         mechanism_policies: vec![
             LoopMechanismPolicyId::new("reactive-tool-loop-base"),
-            LoopMechanismPolicyId::new("codex-style-pending-input-drain"),
+            LoopMechanismPolicyId::new("agent-style-pending-input-drain"),
             LoopMechanismPolicyId::new("openrath-style-resource-key-dispatch"),
             LoopMechanismPolicyId::new("claude-style-dynamic-graph-rewrite"),
         ]

@@ -31,6 +31,7 @@ impl ProcessCommandBinding {
         }
     }
 
+    /// Process command boundary: debug smoke owns argv/cwd/env shaping and typed receipt conversion.
     fn run(self, invocation: GraphNodeInvocation) -> ProcessCommandOutput {
         let mut command = Command::new(&self.command);
         command.args(&self.args);

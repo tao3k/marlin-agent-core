@@ -1,6 +1,8 @@
 id = "marlin-agent-policy-routing-native.linked-native-allocation-shape"
 title = "Linked native AgentGraph allocation shape"
-policy_ids = ["MARLIN-NATIVE-ABI", "RUST-SCENARIO-BENCHMARK"]
+policy_ids = ["RUST-AGENT-NATIVE-ABI-001", "RUST-AGENT-SCENARIO-BENCHMARK-001"]
 agent_goal = "Keep epoch-backed native ABI policy routing allocation shape bounded across candidate counts."
+reference_repositories = ["rust-lang/rust", "tokio-rs/tokio"]
+reference_patterns = ["scenario benchmark contract", "bounded runtime performance"]
 inputs = "inputs"
 expected = "expected"

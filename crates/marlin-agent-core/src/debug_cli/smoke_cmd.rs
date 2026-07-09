@@ -2,6 +2,9 @@
 
 use std::{collections::BTreeMap, path::PathBuf};
 
+use marlin_agent_environment::HOST_HOME_ENV_VAR;
+use marlin_agent_protocol::{MARLIN_HOME_ENV_VAR, MARLIN_SESSION_ID_ENV_VAR};
+
 use crate::{
     CompiledModelRouteResolver, GraphLoopExecutionRequest, GraphLoopExecutionResult,
     GraphLoopExecutionStatus, GraphLoopKernel, LoopGraph, LoopNodeSpec, ModelCommandMatcher,
@@ -88,6 +91,7 @@ struct SmokeRuntimeOptions {
     args: Vec<String>,
     marlin_home: Option<PathBuf>,
     host_home: Option<PathBuf>,
+    marlin_session_id: Option<String>,
 }
 
 impl SmokeRuntimeOptions {
@@ -98,6 +102,7 @@ impl SmokeRuntimeOptions {
         let mut args = vec!["marlin-smoke".to_owned()];
         let mut marlin_home = None;
         let mut host_home = None;
+        let mut marlin_session_id = None;
 
         while let Some(arg) = cursor.next() {
             match arg.as_str() {
@@ -140,6 +145,15 @@ impl SmokeRuntimeOptions {
                     }
                     host_home = Some(PathBuf::from(value));
                 }
+                "--marlin-session-id" => {
+                    let value = cursor
+                        .next()
+                        .ok_or_else(|| "--marlin-session-id requires a value".to_owned())?;
+                    if value.trim().is_empty() {
+                        return Err("--marlin-session-id requires a non-empty value".to_owned());
+                    }
+                    marlin_session_id = Some(value);
+                }
                 "--arg" => {
                     args.push(
                         cursor
@@ -159,6 +173,7 @@ impl SmokeRuntimeOptions {
             args,
             marlin_home,
             host_home,
+            marlin_session_id,
         })
     }
 }
@@ -222,13 +237,17 @@ fn run_state_home_env_smoke(options: SmokeRuntimeOptions) -> Result<SmokeRuntime
 
     let mut env = Vec::new();
     if let Some(path) = options.host_home {
-        env.push(("HOME".to_owned(), path.display().to_string()));
+        env.push((HOST_HOME_ENV_VAR.to_owned(), path.display().to_string()));
     }
     if let Some(path) = options.marlin_home {
-        env.push(("MARLIN_HOME".to_owned(), path.display().to_string()));
+        env.push((MARLIN_HOME_ENV_VAR.to_owned(), path.display().to_string()));
+    }
+    if let Some(session_id) = options.marlin_session_id {
+        env.push((MARLIN_SESSION_ID_ENV_VAR.to_owned(), session_id));
     }
     let request = RuntimeEnvironmentRequest::default().with_home_from_host_env(env);
     let resolution = RuntimeEnvironmentResolver::new().resolve_with_receipt(request);
+    let session = resolution.environment.session.clone();
     let layout = resolution
         .environment
         .state_layout
@@ -254,6 +273,10 @@ fn run_state_home_env_smoke(options: SmokeRuntimeOptions) -> Result<SmokeRuntime
         home: layout.home.path,
         source: layout.home.source,
         directory_count: layout.directories.len(),
+        session_id: session
+            .as_ref()
+            .map(|session| session.id.as_str().to_owned()),
+        session_source: session.map(|session| session.source),
         session_path,
         memory_shard_path,
         receipt_path,

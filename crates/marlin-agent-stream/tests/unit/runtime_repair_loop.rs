@@ -275,6 +275,7 @@ fn live_runtime_repair_single_file_bug_fix_runs_llm_tool_and_verifier_loop() {
             execution_receipt,
             side_effect_replay_bundle: None,
             runtime_repair_receipt: Some(RuntimeRepairCaseReceipt::from(live_receipt)),
+            observed_span_source: None,
         },
     )
     .expect("live runtime repair receipt materializes into intent-case artifact bundle");

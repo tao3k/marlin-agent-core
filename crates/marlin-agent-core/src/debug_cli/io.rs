@@ -28,6 +28,7 @@ pub(super) fn read_input(input: Option<&Path>) -> Result<String, String> {
     }
 }
 
+/// Tokio runtime boundary: debug CLI owns this short-lived sync facade runtime.
 pub(super) fn block_on<T>(
     future: impl std::future::Future<Output = Result<T, String>>,
 ) -> Result<T, String> {

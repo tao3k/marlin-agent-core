@@ -1,0 +1,5 @@
+[db_pressure]
+sessions = 6
+events_per_session = 12
+artifacts = 18
+visibility_receipts = 9

@@ -293,19 +293,22 @@
        => "marlin-agent-core")
 (check (.get ui-prefab-delivery-receipt
              marlin-loops-policy-receipt-family-count)
-       => 8)
+       => 11)
 (check (.get ui-prefab-delivery-receipt
              marlin-loops-policy-receipt-contract-count)
-       => 8)
+       => 11)
 (check (.get ui-prefab-delivery-receipt
              marlin-loops-policy-receipt-schema-ids)
        => '(poo-flow.loop-engine.lineage-receipt.v1
             poo-flow.loop-engine.selector-receipt.v1
+            poo-flow.modules.session.agent-graph.v1
             poo-flow.loop-engine.resource-dispatch-receipt.v1
             poo-flow.loop-engine.capability-receipt.v1
             poo-flow.loop-engine.memory-receipt.v1
             poo-flow.loop-engine.compression-receipt.v1
             poo-flow.loop-engine.policy-extension-receipt.v1
+            poo-flow.spec-evolution.review-item.v1
+            poo-flow.spec-evolution.runtime-manifest-row.v1
             poo-flow.loop-engine.sandbox-handoff-agreement.v1))
 (check (.get ui-prefab-delivery-receipt
              marlin-loops-policy-receipt-contract-owners)

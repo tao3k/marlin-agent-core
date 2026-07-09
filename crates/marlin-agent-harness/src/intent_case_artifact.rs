@@ -6,15 +6,19 @@ use std::{
 };
 
 use crate::{
-    intent_case_artifact_error::IntentCaseArtifactBundleMaterializationError,
+    intent_case_artifact_diff::render_diff_artifact,
+    intent_case_artifact_error::{
+        IntentCaseArtifactBundleMaterializationError, IntentCaseRealLlmCaseMismatch,
+    },
     intent_case_artifact_manifest::{ensure_trace_correlation_integrity, render_manifest_receipt},
     intent_case_artifact_model_events::render_model_events_artifact,
+    intent_case_artifact_policy_combination::render_policy_combination_experiment_lines,
     intent_case_artifact_policy_feedback::policy_merge_feedback_lines,
     intent_case_artifact_receipt_header::{
-        artifact_kind_name, render_key_value_artifact_receipt,
-        render_org_artifact_receipt_properties, render_patch_artifact_receipt_header,
+        render_key_value_artifact_receipt, render_org_artifact_receipt_properties,
     },
     intent_case_artifact_replay::render_replay_script_artifact,
+    intent_case_artifact_run_receipt::render_run_receipt_artifact,
     intent_case_artifact_runtime_repair::render_runtime_repair_case_receipt,
     intent_case_artifact_side_effect_summary::{
         render_side_effect_sandbox_summary_lines, render_tool_process_sandbox_projection_lines,
@@ -24,15 +28,15 @@ use crate::{
 };
 use marlin_agent_harness_types::{
     IntentCaseArtifactCompletenessReceipt, IntentCaseArtifactId, IntentCaseArtifactKind,
-    IntentCaseArtifactManifest, IntentCaseArtifactRef, IntentCaseRunId, IntentCaseRunReceipt,
-    IntentCaseRunStatus, RuntimeRepairCaseReceipt,
+    IntentCaseArtifactManifest, IntentCaseArtifactRef, IntentCaseId, IntentCaseRunId,
+    RuntimeRepairCaseReceipt,
 };
 use marlin_agent_kernel::{
     LoopProgramExecutionReceipt, LoopProgramExecutionReplayBundleReceipt,
     LoopProgramRuntimeHandoffExecution, LoopProgramRuntimeReplayBundleReceipt,
 };
 use marlin_gerbil_scheme::{
-    GerbilLoopCaseDriverVerticalTraceReceipt,
+    GerbilLoopCaseDriverRealLlmCaseReceipt, GerbilLoopCaseDriverVerticalTraceReceipt,
     project_gerbil_loop_case_driver_intent_case_artifact_manifest,
 };
 
@@ -46,6 +50,7 @@ pub struct GerbilScriptedIntentCaseArtifactBundleRequest {
     pub side_effect_replay_bundle: Option<LoopProgramExecutionReplayBundleReceipt>,
     pub runtime_repair_receipt: Option<RuntimeRepairCaseReceipt>,
     pub observed_span_source: Option<IntentCaseObservedSpanSource>,
+    pub real_llm_case_receipt: Option<GerbilLoopCaseDriverRealLlmCaseReceipt>,
 }
 
 /// Receipt for a written intent-case artifact bundle.
@@ -97,6 +102,7 @@ pub fn materialize_gerbil_scripted_intent_case_artifact_bundle(
         &request.execution_receipt,
         request.side_effect_replay_bundle.as_ref(),
         request.runtime_repair_receipt.as_ref(),
+        request.real_llm_case_receipt.as_ref(),
     )
 }
 
@@ -107,10 +113,12 @@ fn materialize_intent_case_artifact_bundle(
     execution_receipt: &LoopProgramExecutionReceipt,
     side_effect_replay_bundle: Option<&LoopProgramExecutionReplayBundleReceipt>,
     runtime_repair_receipt: Option<&RuntimeRepairCaseReceipt>,
+    real_llm_case_receipt: Option<&GerbilLoopCaseDriverRealLlmCaseReceipt>,
 ) -> Result<
     IntentCaseArtifactBundleMaterializationReceipt,
     IntentCaseArtifactBundleMaterializationError,
 > {
+    ensure_real_llm_case_matches(&manifest, real_llm_case_receipt)?;
     let manifest = enrich_manifest_with_side_effect_artifacts(manifest, side_effect_replay_bundle);
     let manifest = IntentCaseObservedSpanSource::enrich_manifest_with_side_effect_span_expectations(
         manifest,
@@ -141,6 +149,7 @@ fn materialize_intent_case_artifact_bundle(
             execution_receipt,
             side_effect_replay_bundle,
             runtime_repair_receipt,
+            real_llm_case_receipt,
         );
         let bytes_written = write_file(&path, content)?;
         artifacts.push(IntentCaseMaterializedArtifactReceipt {
@@ -176,6 +185,28 @@ fn materialize_intent_case_artifact_bundle(
         completeness_receipt,
         artifacts: artifacts.into_boxed_slice(),
     })
+}
+
+fn ensure_real_llm_case_matches(
+    manifest: &IntentCaseArtifactManifest,
+    receipt: Option<&GerbilLoopCaseDriverRealLlmCaseReceipt>,
+) -> Result<(), IntentCaseArtifactBundleMaterializationError> {
+    let Some(receipt) = receipt else {
+        return Ok(());
+    };
+
+    if receipt.case_id() == manifest.case_id.as_str() {
+        return Ok(());
+    }
+
+    Err(
+        IntentCaseArtifactBundleMaterializationError::RealLlmCaseMismatch(
+            IntentCaseRealLlmCaseMismatch {
+                manifest_case_id: manifest.case_id.clone(),
+                receipt_case_id: IntentCaseId::new(receipt.case_id()),
+            },
+        ),
+    )
 }
 
 fn enrich_manifest_with_side_effect_artifacts(
@@ -366,13 +397,17 @@ fn render_artifact_content(
     execution_receipt: &LoopProgramExecutionReceipt,
     side_effect_replay_bundle: Option<&LoopProgramExecutionReplayBundleReceipt>,
     runtime_repair_receipt: Option<&RuntimeRepairCaseReceipt>,
+    real_llm_case_receipt: Option<&GerbilLoopCaseDriverRealLlmCaseReceipt>,
 ) -> String {
     match artifact.kind {
         IntentCaseArtifactKind::Intent => render_intent_artifact(manifest, vertical_trace),
         IntentCaseArtifactKind::PolicyPack => render_policy_pack_artifact(manifest, vertical_trace),
-        IntentCaseArtifactKind::PolicyMergeReceipts => {
-            render_policy_merge_receipts_artifact(manifest, vertical_trace)
-        }
+        IntentCaseArtifactKind::PolicyMergeReceipts => render_policy_merge_receipts_artifact(
+            manifest,
+            vertical_trace,
+            execution_receipt,
+            side_effect_replay_bundle,
+        ),
         IntentCaseArtifactKind::LoopProgram => render_loop_program_artifact(manifest),
         IntentCaseArtifactKind::VerticalTrace => {
             render_vertical_trace_artifact(manifest, vertical_trace)
@@ -380,9 +415,12 @@ fn render_artifact_content(
         IntentCaseArtifactKind::ExecutionTrace => {
             render_execution_trace_artifact(manifest, execution_receipt)
         }
-        IntentCaseArtifactKind::ModelEvents => {
-            render_model_events_artifact(manifest, execution_receipt, runtime_repair_receipt)
-        }
+        IntentCaseArtifactKind::ModelEvents => render_model_events_artifact(
+            manifest,
+            execution_receipt,
+            runtime_repair_receipt,
+            real_llm_case_receipt,
+        ),
         IntentCaseArtifactKind::ToolCalls => {
             render_tool_calls_artifact(manifest, execution_receipt, side_effect_replay_bundle)
         }
@@ -393,7 +431,7 @@ fn render_artifact_content(
             render_memory_artifact(manifest, execution_receipt)
         }
         IntentCaseArtifactKind::DiffPatch => {
-            render_diff_artifact(manifest, side_effect_replay_bundle)
+            render_diff_artifact(manifest, side_effect_replay_bundle, runtime_repair_receipt)
         }
         IntentCaseArtifactKind::TestBefore => render_test_artifact(
             manifest,
@@ -414,102 +452,9 @@ fn render_artifact_content(
             render_policy_explanation_artifact(manifest, vertical_trace)
         }
         IntentCaseArtifactKind::ReplayScript => render_replay_script_artifact(manifest),
-        IntentCaseArtifactKind::RunReceipt => render_run_receipt_artifact(manifest),
-    }
-}
-
-fn render_run_receipt_artifact(manifest: &IntentCaseArtifactManifest) -> String {
-    let receipt = IntentCaseRunReceipt::passed(manifest.clone());
-    let expected_artifacts = receipt.manifest.expected_artifact_kinds();
-    let materialized_artifacts = receipt.manifest.present_artifact_kinds();
-    let expected_spans = receipt.manifest.expected_span_names();
-    let observed_spans = receipt.manifest.observed_span_names();
-    let missing_spans = expected_spans
-        .iter()
-        .filter(|span_name| !observed_spans.contains(span_name))
-        .collect::<Vec<_>>();
-    let missing_trace_artifact_refs = receipt.manifest.trace_artifact_ref_missing_ids();
-    let missing_runtime_owners = receipt.manifest.trace_entries_without_runtime_owner();
-    let missing_action_identities = receipt.manifest.trace_entries_without_action_identity();
-    let expected_lanes = artifact_lane_names(&expected_artifacts);
-    let materialized_lanes = artifact_lane_names(&materialized_artifacts);
-
-    render_key_value_artifact_receipt(
-        manifest,
-        IntentCaseArtifactKind::RunReceipt,
-        [
-            format!("run_receipt_schema={}", receipt.schema_id),
-            format!("run_receipt_manifest_schema={}", receipt.manifest.schema_id),
-            format!(
-                "run_receipt_status={}",
-                run_receipt_status_name(receipt.status)
-            ),
-            format!("run_receipt_case_id={}", receipt.manifest.case_id),
-            format!("run_receipt_run_id={}", receipt.manifest.run_id),
-            format!(
-                "run_receipt_policy_digest={}",
-                receipt.manifest.policy_digest
-            ),
-            format!(
-                "run_receipt_loop_program_id={}",
-                receipt.manifest.loop_program_id
-            ),
-            format!(
-                "run_receipt_expected_artifact_count={}",
-                expected_artifacts.len()
-            ),
-            format!(
-                "run_receipt_materialized_artifact_count={}",
-                materialized_artifacts.len()
-            ),
-            format!("run_receipt_expected_artifact_lanes={expected_lanes}"),
-            format!("run_receipt_materialized_artifact_lanes={materialized_lanes}"),
-            format!("run_receipt_expected_span_count={}", expected_spans.len()),
-            format!("run_receipt_observed_span_count={}", observed_spans.len()),
-            format!("run_receipt_missing_span_count={}", missing_spans.len()),
-            format!(
-                "run_receipt_trace_entry_count={}",
-                receipt.manifest.trace_index.entries.len()
-            ),
-            format!(
-                "run_receipt_correlation_key_count={}",
-                receipt.manifest.correlation_keys().len()
-            ),
-            format!(
-                "run_receipt_missing_trace_artifact_ref_count={}",
-                missing_trace_artifact_refs.len()
-            ),
-            format!(
-                "run_receipt_missing_runtime_owner_count={}",
-                missing_runtime_owners.len()
-            ),
-            format!(
-                "run_receipt_missing_action_identity_count={}",
-                missing_action_identities.len()
-            ),
-            format!(
-                "run_receipt_complete_trace_correlation={}",
-                receipt.manifest.has_complete_trace_correlation()
-            ),
-            format!("run_receipt_diagnostic_count={}", receipt.diagnostics.len()),
-            "run_receipt_internal_json_boundary=false".to_owned(),
-        ],
-    )
-}
-
-fn artifact_lane_names(kinds: &[IntentCaseArtifactKind]) -> String {
-    kinds
-        .iter()
-        .map(|kind| artifact_kind_name(*kind))
-        .collect::<Vec<_>>()
-        .join(",")
-}
-
-fn run_receipt_status_name(status: IntentCaseRunStatus) -> &'static str {
-    match status {
-        IntentCaseRunStatus::Passed => "passed",
-        IntentCaseRunStatus::Failed => "failed",
-        IntentCaseRunStatus::Incomplete => "incomplete",
+        IntentCaseArtifactKind::RunReceipt => {
+            render_run_receipt_artifact(manifest, real_llm_case_receipt)
+        }
     }
 }
 
@@ -568,6 +513,8 @@ fn render_policy_pack_artifact(
 fn render_policy_merge_receipts_artifact(
     manifest: &IntentCaseArtifactManifest,
     vertical_trace: &GerbilLoopCaseDriverVerticalTraceReceipt,
+    execution_receipt: &LoopProgramExecutionReceipt,
+    side_effect_replay_bundle: Option<&LoopProgramExecutionReplayBundleReceipt>,
 ) -> String {
     let merge_kinds = vertical_trace
         .policy_merge_kinds()
@@ -601,6 +548,11 @@ fn render_policy_merge_receipts_artifact(
         format!("policy_merge_statuses={merge_statuses}"),
     ];
     lines.extend(policy_merge_feedback_lines(vertical_trace));
+    lines.extend(render_policy_combination_experiment_lines(
+        vertical_trace,
+        execution_receipt,
+        side_effect_replay_bundle,
+    ));
     lines.push("policy_merge_internal_json_boundary=false".to_owned());
 
     render_key_value_artifact_receipt(manifest, IntentCaseArtifactKind::PolicyMergeReceipts, lines)
@@ -797,54 +749,6 @@ fn render_memory_artifact(
         lines.push("memory_receipts=none".to_owned());
     }
     render_key_value_artifact_receipt(manifest, IntentCaseArtifactKind::MemoryReceipts, lines)
-}
-
-fn render_diff_artifact(
-    manifest: &IntentCaseArtifactManifest,
-    side_effect_replay_bundle: Option<&LoopProgramExecutionReplayBundleReceipt>,
-) -> String {
-    let Some(replay_bundle) = side_effect_replay_bundle else {
-        let mut lines = vec!["diff --git a/scripted-intent-case b/scripted-intent-case".to_owned()];
-        lines.extend(render_patch_artifact_receipt_header(
-            manifest,
-            IntentCaseArtifactKind::DiffPatch,
-        ));
-        lines.push("# scripted run did not apply a live model patch".to_owned());
-        return format!("{}\n", lines.join("\n"));
-    };
-    let mut lines = vec![format!(
-        "diff --git a/intent-case/{} b/intent-case/{}",
-        manifest.case_id, manifest.case_id
-    )];
-    lines.extend(render_patch_artifact_receipt_header(
-        manifest,
-        IntentCaseArtifactKind::DiffPatch,
-    ));
-    for step_bundle in &replay_bundle.step_replay_bundles {
-        for file_write in &step_bundle.side_effects.file_writes {
-            if let Some(write_receipt) = file_write.write_receipt.as_ref() {
-                lines.push(format!(
-                    "# file={} status={:?} before_hash={} after_hash={} bytes_written={}",
-                    write_receipt.relative_path.display(),
-                    file_write.status,
-                    write_receipt.before_hash.as_deref().unwrap_or("none"),
-                    write_receipt.after_hash,
-                    write_receipt.bytes_written
-                ));
-            } else {
-                lines.push(format!(
-                    "# file={} status={:?} diagnostic={}",
-                    file_write.relative_path.display(),
-                    file_write.status,
-                    file_write.diagnostic.as_deref().unwrap_or("none")
-                ));
-            }
-        }
-    }
-    if lines.len() == 1 {
-        lines.push("# side-effect replay did not include file writes".to_owned());
-    }
-    lines.join("\n") + "\n"
 }
 
 fn render_tool_process_side_effects(

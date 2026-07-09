@@ -1,0 +1,10 @@
+[schema]
+id = "rfcdb-storage-schema"
+version = 1
+required_tables = [
+  "storage_schema_migrations",
+  "session_events",
+  "artifacts",
+  "artifact_pointers",
+  "visibility_receipts",
+]

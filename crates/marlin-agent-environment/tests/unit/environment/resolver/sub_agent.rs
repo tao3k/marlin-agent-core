@@ -7,7 +7,7 @@ use marlin_agent_environment::{
 };
 use marlin_agent_protocol::{
     RuntimeConfigLayerSource, RuntimeEnvironment, RuntimeEnvironmentActivationPolicy,
-    RuntimeHomeSource, RuntimeShellIsolationPolicy,
+    RuntimeHomeSource, RuntimeSessionIdSource, RuntimeShellIsolationPolicy,
 };
 
 #[test]
@@ -18,6 +18,7 @@ fn sub_agent_environment_inherits_parent_home_and_layers() {
             .with_profile("parent")
             .with_cwd("/repo")
             .with_user_config("/home/user/.marlin/config.toml")
+            .with_session_id("root-session-1")
             .with_session_flags(),
     );
     let child = RuntimeEnvironmentResolver::new()
@@ -44,6 +45,9 @@ fn sub_agent_environment_inherits_parent_home_and_layers() {
         }
     );
     assert_eq!(child.cwd, Some(PathBuf::from("/repo/sub")));
+    let child_session = child.session.as_ref().expect("child session");
+    assert_eq!(child_session.id.as_str(), "root-session-1");
+    assert_eq!(child_session.source, RuntimeSessionIdSource::Explicit);
     assert_eq!(
         child
             .config_layers

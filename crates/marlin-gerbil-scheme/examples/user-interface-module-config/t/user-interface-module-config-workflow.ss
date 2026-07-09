@@ -95,7 +95,7 @@
 (check (cdr (assq 'execution-owner
                   (.get user-interface-funflow-map metadata)))
        => 'marlin-agent-core)
-(check (.get user-interface-result command) => "codex user-interface workflow apply")
+(check (.get user-interface-result command) => "marlin user-interface workflow apply")
 (check (.get user-interface-result agent-scope) => "user-interface-agent")
 (check (.get user-interface-result has-interface-file) => #t)
 (check (.get user-interface-result has-worker-state-file) => #t)

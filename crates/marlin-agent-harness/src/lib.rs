@@ -16,12 +16,16 @@ mod fakes;
 mod gerbil_continuation;
 mod graph;
 mod intent_case_artifact;
+mod intent_case_artifact_diff;
 mod intent_case_artifact_error;
 mod intent_case_artifact_manifest;
 mod intent_case_artifact_model_events;
+mod intent_case_artifact_policy_combination;
 mod intent_case_artifact_policy_feedback;
+mod intent_case_artifact_real_llm;
 mod intent_case_artifact_receipt_header;
 mod intent_case_artifact_replay;
+mod intent_case_artifact_run_receipt;
 mod intent_case_artifact_runtime_repair;
 mod intent_case_artifact_side_effect_summary;
 mod intent_case_artifact_test_receipts;
@@ -50,7 +54,9 @@ pub use intent_case_artifact::{
     GerbilScriptedIntentCaseArtifactBundleRequest, IntentCaseArtifactBundleMaterializationReceipt,
     IntentCaseMaterializedArtifactReceipt, materialize_gerbil_scripted_intent_case_artifact_bundle,
 };
-pub use intent_case_artifact_error::IntentCaseArtifactBundleMaterializationError;
+pub use intent_case_artifact_error::{
+    IntentCaseArtifactBundleMaterializationError, IntentCaseRealLlmCaseMismatch,
+};
 pub use intent_case_observed_span::IntentCaseObservedSpanSource;
 pub use marlin_agent_harness_types::{
     AGENT_HARNESS_GRAPH_POLICY_PROPOSAL_VISIBILITY_SUBJECT_PREFIX,

@@ -1,15 +1,20 @@
 //! Model event artifact rendering for intent-case bundles.
 
-use crate::intent_case_artifact_receipt_header::render_key_value_artifact_receipt;
+use crate::{
+    intent_case_artifact_real_llm::real_llm_model_event_lines,
+    intent_case_artifact_receipt_header::render_key_value_artifact_receipt,
+};
 use marlin_agent_harness_types::{
     IntentCaseArtifactKind, IntentCaseArtifactManifest, RuntimeRepairCaseReceipt,
 };
 use marlin_agent_kernel::LoopProgramExecutionReceipt;
+use marlin_gerbil_scheme::GerbilLoopCaseDriverRealLlmCaseReceipt;
 
 pub(crate) fn render_model_events_artifact(
     manifest: &IntentCaseArtifactManifest,
     execution_receipt: &LoopProgramExecutionReceipt,
     runtime_repair_receipt: Option<&RuntimeRepairCaseReceipt>,
+    real_llm_case_receipt: Option<&GerbilLoopCaseDriverRealLlmCaseReceipt>,
 ) -> String {
     let mut lines = Vec::new();
     for step in &execution_receipt.steps {
@@ -28,6 +33,7 @@ pub(crate) fn render_model_events_artifact(
             runtime_repair_receipt,
         ));
     }
+    lines.extend(real_llm_model_event_lines(real_llm_case_receipt));
     if lines.is_empty() {
         lines.push("model=none".to_owned());
     }

@@ -55,7 +55,7 @@ package: marlin
    "debug-policy"
    "openai"
    "gpt-5.4"
-   '("codex")
+   '("marlin-debug")
    '("extension-agent")
    "forked-context"
    "workspace-isolated"))
@@ -76,7 +76,7 @@ package: marlin
   (.o id: "debug-extension-subagent"
       agent-class: "customer-extension"
       lineage: '("root-agent" "extension-agent" "debug-extension-subagent")
-      spawn-command: "codex subagent spawn debug-extension-subagent"))
+      spawn-command: "marlin subagent spawn debug-extension-subagent"))
 
 ;;; Boundary: Extension condition is composed in Scheme, not Rust.
 ;; MarlinResult <- MarlinInput
@@ -96,7 +96,7 @@ package: marlin
    (lambda (context policy command agent-scope)
      (and (string=? (.get context agent-class) "customer-extension")
           (string=? (.get policy provider) "openai")
-          (string=? command "codex extension apply")
+          (string=? command "marlin extension apply")
           (string=? agent-scope "extension-agent")))))
 
 ;;; Boundary: This .ss exports the user-authored POO extension object.
@@ -297,7 +297,7 @@ package: marlin
    catalog
    debug-policy-extension-context
    debug-policy-extension-policy
-   "codex extension apply"
+   "marlin extension apply"
    "extension-agent"))
 
 ;;; Boundary: Performance smoke loops extension policy evaluation in one gxi process.

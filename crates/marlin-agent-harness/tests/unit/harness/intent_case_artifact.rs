@@ -7,9 +7,10 @@ use super::intent_case_artifact_support::{
     observed_span_source_for_vertical_receipt_with_trace, scheme_projected_runtime_executor,
 };
 use marlin_agent_harness::{
-    GerbilScriptedIntentCaseArtifactBundleRequest, IntentCaseArtifactBundleMaterializationReceipt,
-    IntentCaseArtifactKind, IntentCaseObservedSpanSource, IntentCaseSpanName,
-    StaticProviderRuntime, TraceRecorder, materialize_gerbil_scripted_intent_case_artifact_bundle,
+    GerbilScriptedIntentCaseArtifactBundleRequest, IntentCaseArtifactBundleMaterializationError,
+    IntentCaseArtifactBundleMaterializationReceipt, IntentCaseArtifactKind,
+    IntentCaseObservedSpanSource, IntentCaseSpanName, StaticProviderRuntime, TraceRecorder,
+    materialize_gerbil_scripted_intent_case_artifact_bundle,
 };
 use marlin_agent_harness_types::{
     RuntimeRepairCaseId, RuntimeRepairCaseReceipt, RuntimeRepairContentSummary, RuntimeRepairCount,
@@ -28,6 +29,7 @@ use marlin_agent_kernel::{
 use marlin_agent_protocol::LoopProgramEventKind;
 use marlin_agent_runtime::{TokioAgentRuntime, observability};
 use marlin_gerbil_scheme::{
+    parse_gerbil_loop_case_driver_real_llm_case_receipt,
     project_gerbil_loop_case_driver_loop_program, verify_gerbil_loop_case_driver_vertical_trace,
 };
 
@@ -59,6 +61,7 @@ fn harness_materializes_scripted_intent_case_bundles_for_all_gerbil_vertical_cas
                 side_effect_replay_bundle: None,
                 runtime_repair_receipt: None,
                 observed_span_source: Some(observed_span_source_for_vertical_receipt(receipt)),
+                real_llm_case_receipt: None,
             },
         )
         .expect("scripted intent-case bundle materializes");
@@ -308,6 +311,7 @@ fn harness_materializes_observed_span_source_into_intent_case_manifest_receipt()
             side_effect_replay_bundle: None,
             runtime_repair_receipt: None,
             observed_span_source: Some(observed_span_source),
+            real_llm_case_receipt: None,
         },
     )
     .expect("observed span bundle materializes");
@@ -366,6 +370,7 @@ fn harness_materializes_real_policy_001_sandbox_denylist_gate() {
             side_effect_replay_bundle: None,
             runtime_repair_receipt: None,
             observed_span_source: Some(observed_span_source),
+            real_llm_case_receipt: None,
         },
     )
     .expect("sandbox-denylist gate bundle materializes");
@@ -475,6 +480,7 @@ async fn harness_materializes_runtime_repair_receipt_into_verifier_artifact() {
             side_effect_replay_bundle: None,
             runtime_repair_receipt: Some(RuntimeRepairCaseReceipt::from(runtime_repair_receipt)),
             observed_span_source: Some(observed_span_source),
+            real_llm_case_receipt: None,
         },
     )
     .expect("runtime repair receipt bundle materializes");
@@ -517,13 +523,30 @@ async fn harness_materializes_runtime_repair_receipt_into_verifier_artifact() {
     assert!(test_after.contains("test_receipt_status=verified"));
     assert!(test_after.contains("test_receipt_runtime_repair_kind=live"));
     assert!(test_after.contains("test_receipt_runtime_repair_verification_success=true"));
+    assert!(test_after.contains("test_receipt_runtime_repair_patch_tool_success=true"));
+    assert!(test_after.contains("test_receipt_runtime_repair_tool_projection_count=1"));
+    assert!(test_after.contains("test_receipt_runtime_repair_graph_rewrite_projected="));
+    assert!(test_after.contains("test_receipt_runtime_repair_repaired_content_digest=fnv1a64:"));
+    assert!(test_after.contains("test_receipt_runtime_repair_repaired_content_bytes=26"));
     assert!(!test_after.contains("fn answer() -> i32 { 41 }"));
+    let diff_patch = artifact_content(&bundle, IntentCaseArtifactKind::DiffPatch);
+    assert!(diff_patch.contains("runtime_repair_patch_projection=live-digest-summary"));
+    assert!(diff_patch.contains("runtime_repair_patch_tool_success=true"));
+    assert!(diff_patch.contains("runtime_repair_tool_projection_count=1"));
+    assert!(diff_patch.contains("runtime_repair_verification_success=true"));
+    assert!(diff_patch.contains("runtime_repair_repaired_content_digest=fnv1a64:"));
+    assert!(diff_patch.contains("runtime_repair_repaired_content_bytes=26"));
+    assert!(diff_patch.contains("runtime_repair_internal_json_boundary=false"));
+    assert!(!diff_patch.contains("fn answer() -> i32 { 41 }"));
     assert!(verifier.contains("runtime_repair_receipt=present"));
     assert!(verifier.contains("runtime_repair_kind=live"));
     assert!(verifier.contains("runtime_repair_schema=marlin.runtime-repair.live-case-receipt.v1"));
     assert!(verifier.contains("runtime_repair_model=gpt-repair-policy-fixture"));
     assert!(verifier.contains("runtime_repair_repaired_content_digest=fnv1a64:"));
     assert!(verifier.contains("runtime_repair_repaired_content_bytes=26"));
+    assert!(verifier.contains("runtime_repair_diagnosis_status=verified-single-file-repair"));
+    assert!(verifier.contains("runtime_repair_single_file_repair_ready=true"));
+    assert!(verifier.contains("runtime_repair_recommendation_count=0"));
     assert!(
         !verifier.contains("fn answer() -> i32 { 41 }"),
         "verifier artifact should keep repaired content as digest metadata, not raw source"
@@ -564,6 +587,7 @@ fn harness_materializes_no_live_llm_gate_receipt_into_verifier_artifact() {
             side_effect_replay_bundle: None,
             runtime_repair_receipt: Some(RuntimeRepairCaseReceipt::from(no_live_receipt)),
             observed_span_source: Some(observed_span_source),
+            real_llm_case_receipt: None,
         },
     )
     .expect("no-live runtime repair receipt bundle materializes");
@@ -598,6 +622,13 @@ fn harness_materializes_no_live_llm_gate_receipt_into_verifier_artifact() {
     assert!(test_after.contains("test_receipt_status=blocked"));
     assert!(test_after.contains("test_receipt_runtime_repair_kind=no-live"));
     assert!(test_after.contains("test_receipt_runtime_repair_verification_success=none"));
+    assert!(test_after.contains("test_receipt_runtime_repair_patch_tool_success=none"));
+    assert!(test_after.contains("test_receipt_runtime_repair_tool_projection_count=none"));
+    let diff_patch = artifact_content(&bundle, IntentCaseArtifactKind::DiffPatch);
+    assert!(diff_patch.contains("runtime_repair_patch_projection=blocked"));
+    assert!(diff_patch.contains("runtime_repair_gate_status=Disabled"));
+    assert!(diff_patch.contains("runtime_repair_denial_reason=live-llm-disabled"));
+    assert!(diff_patch.contains("runtime_repair_internal_json_boundary=false"));
     let verifier = artifact_content(&bundle, IntentCaseArtifactKind::VerifierReceipt);
     assert!(verifier.contains("runtime_repair_receipt=present"));
     assert!(verifier.contains("runtime_repair_kind=no-live"));
@@ -608,7 +639,121 @@ fn harness_materializes_no_live_llm_gate_receipt_into_verifier_artifact() {
     assert!(verifier.contains("runtime_repair_denial_reason=live-llm-disabled"));
     assert!(verifier.contains("runtime_repair_live_llm_allowed=false"));
     assert!(verifier.contains("runtime_repair_model_handoff_status=Denied"));
+    assert!(verifier.contains("runtime_repair_diagnosis_status=blocked-live-llm"));
+    assert!(verifier.contains("runtime_repair_single_file_repair_ready=false"));
+    assert!(verifier.contains("runtime_repair_recommendation_count=1"));
+    assert!(verifier.contains(
+        "runtime_repair_recommendation.1=enable-live-llm-provider-before-runtime-repair"
+    ));
     assert!(!verifier.contains("runtime_repair_model_completion_id="));
+}
+
+#[test]
+fn harness_projects_real_llm_no_write_tool_receipt_into_artifacts() {
+    let receipt = gerbil_vertical_receipts()
+        .into_iter()
+        .find(|receipt| receipt.live_llm_required() && receipt.tool_intent_count() > 0)
+        .expect("live LLM tool case should project model and tool evidence lanes");
+    let execution_receipt = execute_vertical_receipt(&receipt);
+    let manifest_case_id = receipt.case_id().as_str().to_owned();
+    let real_llm_receipt =
+        parse_gerbil_loop_case_driver_real_llm_case_receipt(real_llm_no_write_tool_stdout())
+            .expect("real LLM no-write stdout parses into typed receipt");
+    let output_root = tempfile::tempdir().expect("create real LLM no-write artifact tempdir");
+    let observed_span_source = observed_span_source_for_vertical_receipt(&receipt);
+
+    let bundle = materialize_gerbil_scripted_intent_case_artifact_bundle(
+        GerbilScriptedIntentCaseArtifactBundleRequest {
+            output_root: output_root.path().to_owned(),
+            run_id: "real-llm-no-write-tool-receipt".into(),
+            vertical_trace: receipt.clone(),
+            execution_receipt: execution_receipt.clone(),
+            side_effect_replay_bundle: None,
+            runtime_repair_receipt: None,
+            observed_span_source: Some(observed_span_source),
+            real_llm_case_receipt: Some(real_llm_receipt),
+        },
+    )
+    .expect("real LLM no-write receipt bundle materializes");
+
+    let model_events = artifact_content(&bundle, IntentCaseArtifactKind::ModelEvents);
+    assert!(model_events.contains("real_llm_case_model_event=present"));
+    assert!(model_events.contains("real_llm_case_mode=no-write-tools"));
+    assert!(model_events.contains("real_llm_case_tool_intent=read-and-test"));
+    assert!(model_events.contains("real_llm_case_no_write_enforced=true"));
+    assert!(model_events.contains("real_llm_case_write_intent_absent=true"));
+    assert!(model_events.contains("real_llm_case_governance_receipt_present=true"));
+    assert!(model_events.contains("real_llm_case_nono_sandbox_materialized=true"));
+    assert!(model_events.contains("real_llm_case_human_audit_decision=true"));
+    assert!(model_events.contains("real_llm_case_internal_json_boundary=false"));
+    assert!(!model_events.contains(".json"));
+
+    let run_receipt = artifact_content(&bundle, IntentCaseArtifactKind::RunReceipt);
+    assert!(run_receipt.contains("run_receipt_real_llm_case_receipt=present"));
+    assert!(run_receipt.contains("run_receipt_real_llm_mode=no-write-tools"));
+    assert!(run_receipt.contains("run_receipt_real_llm_tool_intent=read-and-test"));
+    assert!(run_receipt.contains("run_receipt_real_llm_no_write_enforced=true"));
+    assert!(run_receipt.contains("run_receipt_real_llm_write_intent_absent=true"));
+    assert!(
+        run_receipt.contains("run_receipt_real_llm_failure_classification_receipt_present=true")
+    );
+    assert!(run_receipt.contains("run_receipt_real_llm_governance_receipt_present=true"));
+    assert!(run_receipt.contains("run_receipt_real_llm_nono_sandbox_materialized=true"));
+    assert!(run_receipt.contains("run_receipt_real_llm_human_audit_decision=true"));
+    assert!(run_receipt.contains("run_receipt_real_llm_internal_json_boundary=false"));
+    assert!(!run_receipt.contains(".json"));
+
+    let mismatched_real_llm_receipt =
+        parse_gerbil_loop_case_driver_real_llm_case_receipt(mismatched_real_llm_stdout())
+            .expect("mismatched real LLM stdout still parses");
+    let error = materialize_gerbil_scripted_intent_case_artifact_bundle(
+        GerbilScriptedIntentCaseArtifactBundleRequest {
+            output_root: output_root.path().to_owned(),
+            run_id: "real-llm-no-write-tool-mismatch".into(),
+            vertical_trace: receipt,
+            execution_receipt,
+            side_effect_replay_bundle: None,
+            runtime_repair_receipt: None,
+            observed_span_source: None,
+            real_llm_case_receipt: Some(mismatched_real_llm_receipt),
+        },
+    )
+    .expect_err("mismatched real LLM case receipt must not materialize");
+    let IntentCaseArtifactBundleMaterializationError::RealLlmCaseMismatch(payload) = error else {
+        panic!("expected real LLM case mismatch, got {error:?}");
+    };
+    assert_eq!(payload.manifest_case_id.as_str(), manifest_case_id);
+    assert_eq!(
+        payload.receipt_case_id.as_str(),
+        "real-repair-001/wrong-case"
+    );
+}
+
+fn real_llm_no_write_tool_stdout() -> &'static str {
+    r#"marlin-real-llm-case.case_id=real-repair-001
+marlin-real-llm-case.result=ok
+marlin-real-llm-case.rounds_used=1
+marlin-real-llm-case.mode=no-write-tools
+marlin-real-llm-case.tool_intent=read-and-test
+marlin-real-llm-case.no_write=yes
+marlin-real-llm-case.write_intent=none
+process-command.exit_status:0
+continuation_planner=fixture-no-write
+{"terminal_status":"complete","iteration_count":1,"failure_classification_receipt":{"class":"fixture"},"governance_receipt":{"sandbox":{"backend":"nono"},"verifier":{"decision":"human-audit"}}}
+"#
+}
+
+fn mismatched_real_llm_stdout() -> &'static str {
+    r#"marlin-real-llm-case.case_id=real-repair-001/wrong-case
+marlin-real-llm-case.result=ok
+marlin-real-llm-case.rounds_used=1
+marlin-real-llm-case.mode=no-write-tools
+marlin-real-llm-case.tool_intent=read-and-test
+marlin-real-llm-case.no_write=yes
+marlin-real-llm-case.write_intent=none
+process-command.exit_status:0
+{"terminal_status":"complete","iteration_count":1,"governance_receipt":{"sandbox":{"backend":"nono"},"verifier":{"decision":"human-audit"}}}
+"#
 }
 
 fn assert_artifact_correlation_header(

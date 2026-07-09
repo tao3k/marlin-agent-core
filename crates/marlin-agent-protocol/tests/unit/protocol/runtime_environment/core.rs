@@ -4,10 +4,11 @@ use std::{
 };
 
 use marlin_agent_protocol::{
-    RuntimeConfigLayer, RuntimeConfigLayerSource, RuntimeEnvironment,
+    MARLIN_SESSION_ID_ENV_VAR, RuntimeConfigLayer, RuntimeConfigLayerSource, RuntimeEnvironment,
     RuntimeEnvironmentActivationPolicy, RuntimeEnvironmentDelta, RuntimeHome, RuntimeHomeSource,
-    RuntimeSandboxPolicy, RuntimeStateDirectoryKind, RuntimeStateLayout, RuntimeStateObjectKind,
-    RuntimeStateStorageReceipt, RuntimeStateStorageStatus,
+    RuntimeSandboxPolicy, RuntimeSession, RuntimeSessionIdSource, RuntimeStateDirectoryKind,
+    RuntimeStateLayout, RuntimeStateObjectKind, RuntimeStateStorageReceipt,
+    RuntimeStateStorageStatus,
 };
 
 #[test]
@@ -48,6 +49,20 @@ fn runtime_environment_records_custom_home_layers_and_sandbox() {
     assert_eq!(environment.sandbox, sandbox);
     assert_eq!(environment.config_layers.len(), 2);
     assert_eq!(environment.config_layers[1].precedence, 100);
+}
+
+#[test]
+fn runtime_environment_records_session_id_and_source() {
+    let session =
+        RuntimeSession::try_new("marlin-session-1", RuntimeSessionIdSource::MarlinSessionEnv)
+            .expect("session id");
+    let environment = RuntimeEnvironment::default().with_session(session.clone());
+    let value = serde_json::to_value(&environment).expect("environment should serialize");
+
+    assert_eq!(environment.session, Some(session));
+    assert_eq!(value["session"]["id"], "marlin-session-1");
+    assert_eq!(value["session"]["source"], "MarlinSessionEnv");
+    assert_eq!(MARLIN_SESSION_ID_ENV_VAR, "MARLIN_SESSION_ID");
 }
 
 #[test]

@@ -131,8 +131,10 @@ fn benchmark_receipt(
         root.join("scenario.toml"),
         r#"id = "marlin-example.scenario-performance"
 title = "example scenario performance baseline"
-policy_ids = ["MARLIN-SCENARIO-PERFORMANCE"]
+policy_ids = ["RUST-AGENT-SCENARIO-PERFORMANCE-001"]
 agent_goal = "Keep scenario performance contracts stable and replayable."
+reference_repositories = ["rust-lang/rust", "tokio-rs/tokio"]
+reference_patterns = ["scenario benchmark contract", "bounded runtime performance"]
 inputs = "inputs"
 expected = "expected"
 "#,
@@ -207,8 +209,10 @@ version = "0.0.0"
         format!(
             r#"id = "{crate_name}.scenario-performance"
 title = "{crate_name} scenario performance baseline"
-policy_ids = ["MARLIN-SCENARIO-PERFORMANCE"]
+policy_ids = ["RUST-AGENT-SCENARIO-PERFORMANCE-001"]
 agent_goal = "Keep scenario performance contracts stable and replayable."
+reference_repositories = ["rust-lang/rust", "tokio-rs/tokio"]
+reference_patterns = ["scenario benchmark contract", "bounded runtime performance"]
 inputs = "inputs"
 expected = "expected"
 "#

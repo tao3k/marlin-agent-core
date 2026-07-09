@@ -106,7 +106,7 @@ pub(in crate::debug_cli) fn loop_usage() -> &'static str {
 }
 
 pub(in crate::debug_cli) fn smoke_usage() -> &'static str {
-    "Smoke commands:\n  marlin smoke runtime [--scenario builtin-adapters|model-route-dry-run|process-command-fanout|state-home-env] [--node-count N] [--command <program>] [--arg <value> ...] [--marlin-home <dir>] [--host-home <dir>]"
+    "Smoke commands:\n  marlin smoke runtime [--scenario builtin-adapters|model-route-dry-run|process-command-fanout|state-home-env] [--node-count N] [--command <program>] [--arg <value> ...] [--marlin-home <dir>] [--host-home <dir>] [--marlin-session-id <id>]"
 }
 
 pub(in crate::debug_cli) fn state_usage() -> &'static str {

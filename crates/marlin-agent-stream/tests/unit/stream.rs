@@ -69,13 +69,13 @@ async fn chunk_gate_releases_chunks_in_order() {
 #[tokio::test]
 async fn litellm_client_validates_endpoint_contract_before_network_call() {
     let client = LiteLlmModelClient::new();
-    let endpoint = ModelEndpoint::new("openai", "codex");
+    let endpoint = ModelEndpoint::new("openai", "model-latest");
     let result = client.complete(&endpoint, vec![], None).await;
 
     assert!(matches!(
         result,
         Err(ModelGatewayError::EndpointContract(
-            ModelEndpointContractError::CodexIsNotModelName { .. }
+            ModelEndpointContractError::OpenAiModelMustBeGpt { .. }
         ))
     ));
 }
@@ -83,13 +83,13 @@ async fn litellm_client_validates_endpoint_contract_before_network_call() {
 #[tokio::test]
 async fn litellm_stream_gateway_validates_endpoint_contract_before_network_call() {
     let gateway = LiteLlmStreamGateway::new();
-    let request = ModelStreamRequest::new(ModelEndpoint::new("openai", "codex"), vec![]);
+    let request = ModelStreamRequest::new(ModelEndpoint::new("openai", "model-latest"), vec![]);
     let result = gateway.complete(request).await;
 
     assert!(matches!(
         result,
         Err(ModelGatewayError::EndpointContract(
-            ModelEndpointContractError::CodexIsNotModelName { .. }
+            ModelEndpointContractError::OpenAiModelMustBeGpt { .. }
         ))
     ));
 }

@@ -1,0 +1,5 @@
+[benchmark]
+name = "storage-pressure"
+duration_seconds = 10
+min_operations = 128
+max_conflict_loss = 0

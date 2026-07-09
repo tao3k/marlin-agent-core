@@ -28,7 +28,7 @@
    "ui-command"
    (lambda (context policy command agent-scope)
      (and (string=? (.get policy provider) "openai")
-          (string=? command "codex ui-script apply")
+          (string=? command "marlin ui-script apply")
           (string=? agent-scope "ui-agent")))))
 
 ;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
@@ -60,7 +60,7 @@
 ;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
 ;; MarlinResult <- MarlinInput
 (def (check-downstream-script-user-interface)
-  (let* ((request (.o command: "codex ui-script apply"
+  (let* ((request (.o command: "marlin ui-script apply"
                      agent-scope: "ui-agent"))
          (result (marlin-deck-runtime-script-run downstream-ui-script request))
          (receipt
@@ -80,7 +80,7 @@
            => marlin-deck-runtime-poo-policy-projection-schema-id)
     (check (.get projection policy_id) => "downstream-ui-script")
     (check (.get projection action) => "register")
-    (check (.get result command) => "codex ui-script apply")
+    (check (.get result command) => "marlin ui-script apply")
     (check (.get result agent-scope) => "ui-agent")
     (check (.get result extension-id) => "downstream-ui-extension")))
 

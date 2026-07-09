@@ -4,6 +4,8 @@ use std::{collections::BTreeMap, error::Error, fmt};
 
 use serde::{Deserialize, Serialize};
 
+use crate::GERBIL_POLICY_MIXIN_STACK_COMPILER_SCHEMA_ID;
+
 use super::{
     GerbilLoopCaseDriverCapability, GerbilLoopCaseDriverCaseId, GerbilLoopCaseDriverLoopProgramId,
     GerbilLoopCaseDriverProfileRef, GerbilLoopCaseSchemeBoundary,
@@ -55,6 +57,14 @@ pub struct GerbilLoopCaseDriverVerticalTraceReceipt {
     policy_conflict_merge_receipt_count: usize,
     policy_merge_kinds: Vec<String>,
     policy_merge_statuses: Vec<String>,
+    policy_mixin_stack_present: bool,
+    policy_mixin_stack_receipt_kind: String,
+    policy_mixin_stack_profile_id: String,
+    policy_mixin_stack_mixin_count: usize,
+    policy_mixin_stack_slot_merge_law_count: usize,
+    policy_mixin_stack_slot_merge_laws: Vec<String>,
+    policy_mixin_stack_linearization_owner: String,
+    policy_mixin_stack_slot_merge_owner: String,
     scheme_boundary: GerbilLoopCaseSchemeBoundary,
     serialization_boundary: GerbilLoopCaseSerializationBoundary,
 }
@@ -166,12 +176,10 @@ impl GerbilLoopCaseDriverVerticalTraceReceipt {
         self.transition_count
     }
 
-    #[must_use]
     pub fn transition_actions(&self) -> impl Iterator<Item = &str> {
         self.transition_actions.iter().map(String::as_str)
     }
 
-    #[must_use]
     pub fn transition_events(&self) -> impl Iterator<Item = &str> {
         self.transition_events.iter().map(String::as_str)
     }
@@ -181,7 +189,6 @@ impl GerbilLoopCaseDriverVerticalTraceReceipt {
         self.mechanism_policy_count
     }
 
-    #[must_use]
     pub fn mechanism_policy_ids(&self) -> impl Iterator<Item = &str> {
         self.mechanism_policy_ids.iter().map(String::as_str)
     }
@@ -211,7 +218,6 @@ impl GerbilLoopCaseDriverVerticalTraceReceipt {
         &self.policy_digest_octets
     }
 
-    #[must_use]
     pub fn capability_tags(&self) -> impl Iterator<Item = &GerbilLoopCaseDriverCapability> {
         self.capability_tags.iter()
     }
@@ -286,7 +292,6 @@ impl GerbilLoopCaseDriverVerticalTraceReceipt {
         &self.module_user_module
     }
 
-    #[must_use]
     pub fn module_selection_tags(&self) -> impl Iterator<Item = &GerbilLoopCaseDriverCapability> {
         self.module_selection_tags.iter()
     }
@@ -326,14 +331,53 @@ impl GerbilLoopCaseDriverVerticalTraceReceipt {
         self.policy_conflict_merge_receipt_count
     }
 
-    #[must_use]
     pub fn policy_merge_kinds(&self) -> impl Iterator<Item = &str> {
         self.policy_merge_kinds.iter().map(String::as_str)
     }
 
-    #[must_use]
     pub fn policy_merge_statuses(&self) -> impl Iterator<Item = &str> {
         self.policy_merge_statuses.iter().map(String::as_str)
+    }
+
+    #[must_use]
+    pub fn policy_mixin_stack_present(&self) -> bool {
+        self.policy_mixin_stack_present
+    }
+
+    #[must_use]
+    pub fn policy_mixin_stack_receipt_kind(&self) -> &str {
+        &self.policy_mixin_stack_receipt_kind
+    }
+
+    #[must_use]
+    pub fn policy_mixin_stack_profile_id(&self) -> &str {
+        &self.policy_mixin_stack_profile_id
+    }
+
+    #[must_use]
+    pub fn policy_mixin_stack_mixin_count(&self) -> usize {
+        self.policy_mixin_stack_mixin_count
+    }
+
+    #[must_use]
+    pub fn policy_mixin_stack_slot_merge_law_count(&self) -> usize {
+        self.policy_mixin_stack_slot_merge_law_count
+    }
+
+    pub fn policy_mixin_stack_slot_merge_laws(&self) -> impl Iterator<Item = &str> {
+        self.policy_mixin_stack_slot_merge_laws
+            .iter()
+            .map(String::as_str)
+    }
+
+    #[must_use]
+    pub fn policy_mixin_stack_linearization_owner(&self) -> &str {
+        &self.policy_mixin_stack_linearization_owner
+    }
+
+    #[must_use]
+    pub fn policy_mixin_stack_slot_merge_owner(&self) -> &str {
+        &self.policy_mixin_stack_slot_merge_owner
     }
 
     #[must_use]
@@ -655,6 +699,79 @@ impl GerbilLoopCaseDriverVerticalTraceReceipt {
                 "vertical trace {index} policy merge status {status} is not applied or conflict"
             )));
         }
+        if self.policy_mixin_stack_present {
+            if self.policy_mixin_stack_receipt_kind != GERBIL_POLICY_MIXIN_STACK_COMPILER_SCHEMA_ID
+            {
+                return Err(GerbilLoopCaseDriverVerticalTraceError::new(format!(
+                    "vertical trace {index} mixin-stack receipt kind {} is not {}",
+                    self.policy_mixin_stack_receipt_kind,
+                    GERBIL_POLICY_MIXIN_STACK_COMPILER_SCHEMA_ID
+                )));
+            }
+            if self.policy_mixin_stack_profile_id != self.profile_ref.as_str() {
+                return Err(GerbilLoopCaseDriverVerticalTraceError::new(format!(
+                    "vertical trace {index} mixin-stack profile {} does not match profile ref {}",
+                    self.policy_mixin_stack_profile_id, self.profile_ref
+                )));
+            }
+            if self.policy_mixin_stack_mixin_count == 0 {
+                return Err(GerbilLoopCaseDriverVerticalTraceError::new(format!(
+                    "vertical trace {index} mixin-stack has no policy mixins"
+                )));
+            }
+            if self.policy_mixin_stack_slot_merge_law_count == 0 {
+                return Err(GerbilLoopCaseDriverVerticalTraceError::new(format!(
+                    "vertical trace {index} mixin-stack has no slot merge laws"
+                )));
+            }
+            if self.policy_mixin_stack_slot_merge_laws.len()
+                != self.policy_mixin_stack_slot_merge_law_count
+            {
+                return Err(GerbilLoopCaseDriverVerticalTraceError::new(format!(
+                    "vertical trace {index} mixin-stack law count {} does not match law vector {}",
+                    self.policy_mixin_stack_slot_merge_law_count,
+                    self.policy_mixin_stack_slot_merge_laws.len()
+                )));
+            }
+            if self.policy_mixin_stack_slot_merge_law_count != self.policy_merge_receipt_count {
+                return Err(GerbilLoopCaseDriverVerticalTraceError::new(format!(
+                    "vertical trace {index} mixin-stack law count {} does not match policy merge receipt count {}",
+                    self.policy_mixin_stack_slot_merge_law_count, self.policy_merge_receipt_count
+                )));
+            }
+            if let Some(law) = self
+                .policy_mixin_stack_slot_merge_laws
+                .iter()
+                .find(|law| !law.contains('='))
+            {
+                return Err(GerbilLoopCaseDriverVerticalTraceError::new(format!(
+                    "vertical trace {index} mixin-stack law {law} is not slot=merge"
+                )));
+            }
+            if self.policy_mixin_stack_linearization_owner != "poo-flow.c3-c4" {
+                return Err(GerbilLoopCaseDriverVerticalTraceError::new(format!(
+                    "vertical trace {index} mixin-stack linearization owner {} is not poo-flow.c3-c4",
+                    self.policy_mixin_stack_linearization_owner
+                )));
+            }
+            if self.policy_mixin_stack_slot_merge_owner != "poo-flow.slot-merge-algebra" {
+                return Err(GerbilLoopCaseDriverVerticalTraceError::new(format!(
+                    "vertical trace {index} mixin-stack slot merge owner {} is not poo-flow.slot-merge-algebra",
+                    self.policy_mixin_stack_slot_merge_owner
+                )));
+            }
+        } else if self.policy_mixin_stack_receipt_kind != "none"
+            || self.policy_mixin_stack_profile_id != "none"
+            || self.policy_mixin_stack_mixin_count != 0
+            || self.policy_mixin_stack_slot_merge_law_count != 0
+            || !self.policy_mixin_stack_slot_merge_laws.is_empty()
+            || self.policy_mixin_stack_linearization_owner != "none"
+            || self.policy_mixin_stack_slot_merge_owner != "none"
+        {
+            return Err(GerbilLoopCaseDriverVerticalTraceError::new(format!(
+                "vertical trace {index} absent mixin-stack receipt still carries payload"
+            )));
+        }
         if self.scheme_boundary != GerbilLoopCaseSchemeBoundary::SchemeTypesToRustTypes {
             return Err(GerbilLoopCaseDriverVerticalTraceError::new(format!(
                 "vertical trace {index} scheme boundary {} is not native Scheme-to-Rust",
@@ -677,6 +794,16 @@ fn vertical_trace_receipt_from_row(
     index: usize,
     row: &BTreeMap<String, String>,
 ) -> Result<GerbilLoopCaseDriverVerticalTraceReceipt, GerbilLoopCaseDriverVerticalTraceError> {
+    let policy_mixin_stack_present =
+        optional_vertical_trace_bool(row, "policy-mixin-stack-present?", false)?;
+    let policy_mixin_stack_slot_merge_laws = optional_vertical_trace_delimited_strings(
+        index,
+        row,
+        "policy-mixin-stack-slot-merge-laws",
+        '|',
+        policy_mixin_stack_present,
+    )?;
+
     Ok(GerbilLoopCaseDriverVerticalTraceReceipt {
         case_id: GerbilLoopCaseDriverCaseId::new(required_vertical_trace_field(
             index, row, "case-id",
@@ -810,6 +937,44 @@ fn vertical_trace_receipt_from_row(
             "policy-merge-statuses",
             '|',
         )?,
+        policy_mixin_stack_present,
+        policy_mixin_stack_receipt_kind: optional_vertical_trace_field(
+            row,
+            "policy-mixin-stack-receipt-kind",
+            "none",
+        )
+        .to_owned(),
+        policy_mixin_stack_profile_id: optional_vertical_trace_field(
+            row,
+            "policy-mixin-stack-profile-id",
+            "none",
+        )
+        .to_owned(),
+        policy_mixin_stack_mixin_count: optional_vertical_trace_usize(
+            index,
+            row,
+            "policy-mixin-stack-mixin-count",
+            0,
+        )?,
+        policy_mixin_stack_slot_merge_law_count: optional_vertical_trace_usize(
+            index,
+            row,
+            "policy-mixin-stack-slot-merge-law-count",
+            0,
+        )?,
+        policy_mixin_stack_slot_merge_laws,
+        policy_mixin_stack_linearization_owner: optional_vertical_trace_field(
+            row,
+            "policy-mixin-stack-linearization-owner",
+            "none",
+        )
+        .to_owned(),
+        policy_mixin_stack_slot_merge_owner: optional_vertical_trace_field(
+            row,
+            "policy-mixin-stack-slot-merge-owner",
+            "none",
+        )
+        .to_owned(),
         scheme_boundary: required_vertical_trace_scheme_boundary(index, row, "scheme-boundary")?,
         serialization_boundary: required_vertical_trace_serialization_boundary(
             index,
@@ -891,6 +1056,82 @@ fn required_vertical_trace_delimited_strings(
         .filter(|value| !value.is_empty())
         .map(ToOwned::to_owned)
         .collect())
+}
+
+fn optional_vertical_trace_delimited_strings(
+    index: usize,
+    row: &BTreeMap<String, String>,
+    field: &'static str,
+    separator: char,
+    require_non_empty: bool,
+) -> Result<Vec<String>, GerbilLoopCaseDriverVerticalTraceError> {
+    let Some(raw) = row.get(field).map(|value| value.trim()) else {
+        return if require_non_empty {
+            Err(GerbilLoopCaseDriverVerticalTraceError::new(format!(
+                "vertical trace {index} is missing {field}"
+            )))
+        } else {
+            Ok(Vec::new())
+        };
+    };
+    if raw.is_empty() {
+        return if require_non_empty {
+            Err(GerbilLoopCaseDriverVerticalTraceError::new(format!(
+                "vertical trace {index} field {field} is empty"
+            )))
+        } else {
+            Ok(Vec::new())
+        };
+    }
+    Ok(raw
+        .split(separator)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
+        .collect())
+}
+
+fn optional_vertical_trace_field<'a>(
+    row: &'a BTreeMap<String, String>,
+    field: &'static str,
+    default: &'a str,
+) -> &'a str {
+    row.get(field)
+        .map(|value| value.as_str())
+        .unwrap_or(default)
+}
+
+fn optional_vertical_trace_bool(
+    row: &BTreeMap<String, String>,
+    field: &'static str,
+    default: bool,
+) -> Result<bool, GerbilLoopCaseDriverVerticalTraceError> {
+    let Some(value) = row.get(field) else {
+        return Ok(default);
+    };
+    match value.as_str() {
+        "#t" | "true" => Ok(true),
+        "#f" | "false" => Ok(false),
+        other => Err(GerbilLoopCaseDriverVerticalTraceError::new(format!(
+            "vertical trace field {field} has invalid boolean {other}"
+        ))),
+    }
+}
+
+fn optional_vertical_trace_usize(
+    index: usize,
+    row: &BTreeMap<String, String>,
+    field: &'static str,
+    default: usize,
+) -> Result<usize, GerbilLoopCaseDriverVerticalTraceError> {
+    let Some(value) = row.get(field) else {
+        return Ok(default);
+    };
+    value.parse::<usize>().map_err(|error| {
+        GerbilLoopCaseDriverVerticalTraceError::new(format!(
+            "vertical trace {index} field {field} is not usize: {error}"
+        ))
+    })
 }
 
 fn required_vertical_trace_u8_list(

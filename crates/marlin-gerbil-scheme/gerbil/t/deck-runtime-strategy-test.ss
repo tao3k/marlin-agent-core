@@ -13,7 +13,7 @@
    "customer-review-policy"
    "openai"
    "gpt-5.4"
-   '("codex review")
+   '("marlin review")
    '("customer-agent")
    "shared-context"
    "workspace-isolated"))
@@ -36,7 +36,7 @@
    (lambda (context policy command agent-scope)
      (and (string=? (.get context session-id) "session-42")
           (string=? (.get policy provider) "openai")
-          (string=? command "codex review src/marlin")
+          (string=? command "marlin review src/marlin")
           (string=? agent-scope "customer-agent")))))
 
 ;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
@@ -48,7 +48,7 @@
   '("workspace-dirty" "direnv-trusted")
   '("org-memory-hit")
   "rewrite"
-  "codex review --policy scheme-poo src/marlin")
+  "marlin review --policy scheme-poo src/marlin")
 
 ;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
 ;; MarlinResult <- MarlinInput
@@ -68,7 +68,7 @@
            (list (make-test-policy))
            (list (make-test-rule))
            (make-test-context)
-           "codex review src/marlin"
+           "marlin review src/marlin"
            "customer-agent"))
          (action (.get receipt dynamic-hook-action)))
     (check (.get receipt kind)
@@ -78,7 +78,7 @@
     (check (.get action kind) => marlin-deck-runtime-dynamic-hook-action-kind)
     (check (.get action action) => "rewrite")
     (check (.get action rewrite-command)
-           => "codex review --policy scheme-poo src/marlin")
+           => "marlin review --policy scheme-poo src/marlin")
     (check (member "scheme-high-order-matcher" (.get receipt matched-signals))
            => '("scheme-high-order-matcher" "dynamic-hook"))))
 

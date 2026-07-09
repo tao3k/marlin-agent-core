@@ -50,10 +50,12 @@ pub use package_evidence_graph::{
 };
 pub use quality_findings::{
     RustProjectHarnessExpectedArtifact, RustProjectHarnessFindingSeverity,
-    RustProjectHarnessQualityAutofixability, RustProjectHarnessQualityBlockingLevel,
-    RustProjectHarnessQualityDomain, RustProjectHarnessQualityFinding,
-    RustProjectHarnessQualityFindingEvidencePaths, RustProjectHarnessQualityFindingsInput,
-    RustProjectHarnessQualityFindingsReceipt, evaluate_quality_findings_for_gate,
+    RustProjectHarnessPolicyProjection, RustProjectHarnessPolicyProjectionDecision,
+    RustProjectHarnessPolicyProjectionReceipt, RustProjectHarnessQualityAutofixability,
+    RustProjectHarnessQualityBlockingLevel, RustProjectHarnessQualityDomain,
+    RustProjectHarnessQualityFinding, RustProjectHarnessQualityFindingEvidencePaths,
+    RustProjectHarnessQualityFindingsInput, RustProjectHarnessQualityFindingsReceipt,
+    evaluate_quality_findings_for_gate, project_current_rust_agent_policy_catalog,
 };
 pub use quality_gate::{RustProjectHarnessGateReceipt, evaluate_performance_and_stability_gate};
 pub use scenario_benchmark::{

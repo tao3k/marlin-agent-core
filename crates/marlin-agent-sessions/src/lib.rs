@@ -4,6 +4,7 @@ mod context;
 mod id;
 mod identity;
 mod runtime;
+mod storage;
 
 pub use context::{
     ContextExpansionPolicy, ContextNamespace, ContextVisibility, SessionIsolationPolicy,
@@ -14,4 +15,8 @@ pub use runtime::{
     RuntimeBlockingBridgePolicy, RuntimeBlockingBridgeStrategy, RuntimeFanoutJoinPolicy,
     RuntimeTaskTrackerPolicy, SessionRuntimeSnapshot, TokioRuntimeDiagnosticsPolicy,
     TokioRuntimeFlavor, TokioRuntimePolicy, TokioRuntimePolicyReceipt,
+};
+pub use storage::{
+    SessionStorageAdapter, SessionStorageEvent, SessionStorageEventBuilder,
+    SessionStorageProjectionError,
 };

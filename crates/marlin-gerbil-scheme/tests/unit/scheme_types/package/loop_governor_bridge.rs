@@ -11,6 +11,9 @@ const POO_FLOW_LOOP_GOVERNOR_MARLIN_REQUEST_SCHEMA: &str =
 const POO_FLOW_LOOP_GOVERNOR_RUNTIME_MANIFEST_SCHEMA: &str =
     "poo-flow.loop-governor.marlin-runtime-manifest.v1";
 const POO_FLOW_LOOP_ENGINE_DISCOVERY_SCHEMA: &str = "poo-flow.loop-engine.marlin-discovery.v1";
+const MARLIN_GERBIL_PACKAGE_MANIFEST: &str = include_str!("../../../../gerbil/gerbil.pkg");
+const POO_FLOW_PACKAGE_PIN: &str =
+    "github.com/tao3k/poo-flow@1367aff9865bcabc6cddf04cd41e157b25c7979a";
 
 #[test]
 fn loop_governor_bridge_package_manifest_declares_marlin_consumer_shape() {
@@ -22,6 +25,14 @@ fn loop_governor_bridge_package_manifest_declares_marlin_consumer_shape() {
     assert_eq!(
         receipt.package_id,
         GerbilSchemePackageId::new("marlin.deck-runtime.loop-governor-bridge")
+    );
+    assert!(
+        MARLIN_GERBIL_PACKAGE_MANIFEST.contains("package: marlin-deck-runtime"),
+        "Marlin's Gerbil package owns the consumer package boundary"
+    );
+    assert!(
+        MARLIN_GERBIL_PACKAGE_MANIFEST.contains(POO_FLOW_PACKAGE_PIN),
+        "Marlin must consume poo-flow through gerbil.pkg instead of treating poo-flow as the ABI owner"
     );
     assert_eq!(receipt.type_count, 4);
     assert_eq!(receipt.projection_contract_count, 1);
@@ -269,14 +280,20 @@ fn loop_engine_discovery_value() -> GerbilSchemeValue {
             "object_families",
             GerbilSchemeValue::vector([
                 "loop-engine-profile".into(),
+                "session-agent-graph".into(),
                 "loop-engine-policy-extension".into(),
+                "spec-evolution-review-item".into(),
+                "spec-evolution-runtime-manifest-row".into(),
             ]),
         ),
         (
             "receipt_contracts",
             GerbilSchemeValue::vector([
                 "poo-flow.loop-engine.profile-receipt.v1".into(),
+                "poo-flow.modules.session.agent-graph.v1".into(),
                 "poo-flow.loop-engine.policy-extension-receipt.v1".into(),
+                "poo-flow.spec-evolution.review-item.v1".into(),
+                "poo-flow.spec-evolution.runtime-manifest-row.v1".into(),
             ]),
         ),
         ("control_owner", "gerbil".into()),

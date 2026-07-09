@@ -6,6 +6,7 @@ authors.workspace = true
 repository.workspace = true
 
 [dependencies]
+marlin-agent-storage.workspace = true
 serde.workspace = true
 
 [build-dependencies]
@@ -13,3 +14,4 @@ marlin-rust-project-harness-policy.workspace = true
 
 [dev-dependencies]
 marlin-rust-project-harness-policy.workspace = true
+tokio.workspace = true

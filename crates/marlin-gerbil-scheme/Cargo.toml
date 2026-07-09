@@ -32,6 +32,7 @@ criterion.workspace = true
 futures-executor.workspace = true
 marlin-agent-kernel.workspace = true
 marlin-agent-runtime.workspace = true
+marlin-agent-storage = { workspace = true, features = ["turso"] }
 marlin-git-utils.workspace = true
 marlin-org-memory.workspace = true
 marlin-org-store.workspace = true

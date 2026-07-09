@@ -1,0 +1,947 @@
+#+title: Turso Agent Storage Engine Research
+#+date: 2026-07-04
+#+status: research-baseline
+
+* Thesis
+
+Marlin should adopt Turso for the parts of the agent runtime that need a
+local-first, async, transactional database. The reason is not SQLite
+compatibility. SQLite compatibility is useful for schema familiarity and query
+portability, but it is not the architectural advantage we want to optimize for.
+
+The core advantage is the Turso Database engine itself:
+
+- native Rust async/await integration through the =turso= crate
+- local embedded databases as the default read/write path
+- MVCC-based concurrent writes through =PRAGMA journal_mode = 'mvcc'= and
+  =BEGIN CONCURRENT=
+- explicit local-first sync through =push()= and =pull()=
+- checkpoint and stats APIs that can become runtime visibility signals
+- future-facing database extensions such as CDC, vector operations, incremental
+  computation, and stricter schema features
+
+This makes Turso a better fit for agent runtime state than a remote-only SQL
+gateway or an ORM-first design.
+
+* Current Source Facts
+
+Turso's Rust documentation separates two crates:
+
+- =turso=: local and embedded database, sync, Turso Database rewrite, concurrent
+  writes through MVCC, async I/O, no C compiler requirement.
+- =libsql=: remote access and existing libSQL codebases, based on the libSQL
+  SQLite fork, production-ready today, but not the engine path for concurrent
+  local writes.
+
+The official Rust quickstart recommends =turso= for local database plus cloud
+sync and describes it as a ground-up SQLite-compatible rewrite with concurrent
+writes, async I/O, and native Rust async/await support.
+
+The concurrent write documentation is explicit about the operational model:
+
+- default configuration still serializes writers
+- MVCC must be enabled with =PRAGMA journal_mode = 'mvcc'=
+- concurrent write transactions use =BEGIN CONCURRENT=
+- non-overlapping writes can proceed in parallel
+- overlapping writes can produce conflict or busy errors
+- applications must detect retryable errors, roll back, and retry
+
+This means Turso's advantage is only realized if Marlin's storage layer is
+designed around concurrent transaction shape and retry policy. Simply replacing
+an embedded SQLite file with Turso would miss the point.
+
+* Design Position
+
+Turso should enter Marlin through a storage boundary, not through protocol,
+harness, or org contract code.
+
+The target crate should be narrow and explicit, for example:
+
+- =marlin-agent-storage=
+- =marlin-agent-db=
+- =marlin-agent-storage-turso=
+
+The first implementation can be Turso-backed, but the public boundary should
+describe agent storage semantics:
+
+- sessions
+- memory shards
+- topology indexes
+- evidence indexes
+- tool/runtime event receipts
+- visibility counters
+
+The org layer remains the human-readable contract and long-lived project
+memory surface. Turso should not replace org files in P0. Turso should index,
+cache, transact, sync, and observe the runtime state that needs fast access and
+concurrent writes.
+
+* Why Turso Fits Agent Runtime State
+
+** Async-first Runtime Fit
+
+Marlin already treats the runtime as async-first. Agent work is naturally
+concurrent:
+
+- sub-agent branches write independent session events
+- hooks emit receipts during tool execution
+- memory recall updates relevance and access metadata
+- topology changes when sessions branch or merge
+- visibility counters update during loop execution
+
+A sync-first DB client would force a blocking adapter around the runtime. Turso
+lets DB operations stay in the async control plane and gives us a direct path to
+Tokio-native tests for cancellation, backpressure, timeout, and concurrent
+writer behavior.
+
+** MVCC As The Agent Concurrency Primitive
+
+MVCC is the main reason to use Turso. The design should intentionally avoid a
+single global hot row or hot table that destroys concurrent-write benefits.
+
+Preferred storage shape:
+
+- append-only event rows keyed by =project_id/session_id/turn_id/event_id=
+- memory facts partitioned by =project_id/shard_id/fact_id=
+- topology edges partitioned by =project_id/graph_id/edge_id=
+- evidence records partitioned by =package_id/gate_id/run_id=
+- rollup tables updated by periodic consolidation instead of every write
+
+This shape allows most writes from independent sessions, branches, hooks, and
+gates to be non-overlapping. That is exactly where =BEGIN CONCURRENT= should
+help.
+
+Hot paths to avoid:
+
+- one mutable project metadata row updated on every event
+- one global sequence row
+- synchronous rollup updates on every insert
+- large transaction batches that touch unrelated partitions
+
+** Conflict Handling Is Part Of The API
+
+The Marlin storage API should expose a transaction helper that owns Turso's
+retry discipline. Downstream code should not hand-roll retry loops.
+
+Required behavior:
+
+- enable MVCC on connection/bootstrap
+- start optimistic write transactions with =BEGIN CONCURRENT=
+- classify =Busy=, =BusySnapshot=, and conflict errors as retryable
+- roll back failed write transactions
+- retry with bounded exponential backoff and jitter
+- emit visibility evidence for retry count, final latency, conflict table, and
+  transaction class
+- fail closed after a configured retry budget
+
+The important API is not "execute this SQL". It is "run this agent-state write
+under the correct concurrency, retry, and observability policy".
+
+* Local-first Sync
+
+Turso sync should be treated as an explicit runtime operation, not an invisible
+background side effect.
+
+Marlin should support three modes:
+
+- =local=: local embedded DB only, default for tests and offline work
+- =sync-manual=: local DB with explicit =push()= and =pull()=
+- =remote-readonly= or =remote-bridge=: optional libSQL remote path when there
+  is no local filesystem or for admin tooling
+
+For the agent core, =sync-manual= is the natural model:
+
+- local writes should always be accepted while offline
+- sync should happen at project/session boundaries or explicit runtime ticks
+- pull should be observable because remote frames can affect local state
+- push should be observable because conflict policy matters
+
+Turso's documented sync conflict policy is last-push-wins at the remote level,
+while pull performs rollback, remote apply, and replay of local unpushed changes
+atomically. Marlin should not rely on that alone for semantic correctness. For
+memory, topology, and evidence, application-level conflict keys and merge
+policies must be explicit.
+
+* Checkpoint And Visibility
+
+Turso sync uses a WAL for local changes. The docs state that auto-checkpoint is
+disabled for sync databases and =checkpoint()= must be called explicitly to
+bound WAL growth.
+
+This maps directly to Marlin visibility:
+
+- record WAL size before and after checkpoint
+- record network bytes received/sent
+- record last push/pull timestamps
+- record sync revision
+- record checkpoint duration
+- gate large WAL growth in stability tests
+
+This should become part of the runtime visibility layer rather than an
+unstructured log line.
+
+* Suggested Storage Boundary
+
+The storage crate should expose domain-level APIs first and keep raw SQL behind
+the implementation.
+
+Example surface:
+
+#+begin_src rust
+pub struct AgentStorageConfig {
+    pub path: std::path::PathBuf,
+    pub mode: AgentStorageMode,
+    pub mvcc: MvccMode,
+    pub retry: TransactionRetryPolicy,
+}
+
+pub enum AgentStorageMode {
+    Local,
+    SyncManual {
+        remote_url: String,
+        auth_token_env: String,
+        bootstrap_if_empty: bool,
+    },
+}
+
+pub enum MvccMode {
+    Required,
+    DisabledForCompatibility,
+}
+
+pub trait AgentStorage {
+    async fn append_session_event(&self, event: SessionEventRecord) -> Result<()>;
+    async fn upsert_memory_fact(&self, fact: MemoryFactRecord) -> Result<()>;
+    async fn append_topology_edge(&self, edge: TopologyEdgeRecord) -> Result<()>;
+    async fn record_evidence(&self, evidence: EvidenceRecord) -> Result<()>;
+    async fn query_visibility(&self, scope: VisibilityScope) -> Result<VisibilitySnapshot>;
+    async fn checkpoint(&self) -> Result<CheckpointReceipt>;
+    async fn push(&self) -> Result<SyncReceipt>;
+    async fn pull(&self) -> Result<SyncReceipt>;
+}
+#+end_src
+
+Raw Turso details stay inside the Turso backend:
+
+- connection bootstrap
+- =PRAGMA journal_mode = 'mvcc'=
+- transaction begin/commit/rollback
+- retryable error classification
+- stats/checkpoint mapping
+- schema migration
+
+* Schema Direction
+
+Initial tables should be append-friendly and partitionable.
+
+#+begin_src sql
+CREATE TABLE session_events (
+  project_id TEXT NOT NULL,
+  session_id TEXT NOT NULL,
+  turn_id TEXT NOT NULL,
+  event_id TEXT NOT NULL,
+  event_kind TEXT NOT NULL,
+  body BLOB NOT NULL,
+  created_at_unix_ms INTEGER NOT NULL,
+  PRIMARY KEY (project_id, session_id, turn_id, event_id)
+);
+
+CREATE TABLE memory_facts (
+  project_id TEXT NOT NULL,
+  shard_id TEXT NOT NULL,
+  fact_id TEXT NOT NULL,
+  fact_kind TEXT NOT NULL,
+  body BLOB NOT NULL,
+  updated_at_unix_ms INTEGER NOT NULL,
+  PRIMARY KEY (project_id, shard_id, fact_id)
+);
+
+CREATE TABLE topology_edges (
+  project_id TEXT NOT NULL,
+  graph_id TEXT NOT NULL,
+  edge_id TEXT NOT NULL,
+  from_node TEXT NOT NULL,
+  to_node TEXT NOT NULL,
+  edge_kind TEXT NOT NULL,
+  body BLOB NOT NULL,
+  created_at_unix_ms INTEGER NOT NULL,
+  PRIMARY KEY (project_id, graph_id, edge_id)
+);
+
+CREATE TABLE evidence_records (
+  project_id TEXT NOT NULL,
+  package_id TEXT NOT NULL,
+  gate_id TEXT NOT NULL,
+  run_id TEXT NOT NULL,
+  evidence_kind TEXT NOT NULL,
+  body BLOB NOT NULL,
+  created_at_unix_ms INTEGER NOT NULL,
+  PRIMARY KEY (project_id, package_id, gate_id, run_id)
+);
+#+end_src
+
+The =body= column should be encoded by Rust, not by Scheme or SQL-side JSON
+machinery. Rust owns typed serialization and validation at the storage boundary.
+This keeps the native ABI principle intact: Scheme emits typed values, Rust
+decodes to Rust types, and storage persists Rust-owned records.
+
+* Test Gates
+
+Turso adoption needs tests that prove the new engine advantages are real.
+
+P0 tests:
+
+- local in-memory/open-file bootstrap
+- schema migration idempotence
+- MVCC bootstrap asserts =journal_mode= is =mvcc=
+- concurrent non-overlapping writes across many Tokio tasks
+- retry path for intentional write conflicts
+- crash/reopen persistence for committed records
+- checkpoint receipt records WAL-size movement when supported
+- stats receipt maps Turso counters into Marlin visibility
+
+P1 tests:
+
+- manual push/pull against local sync server
+- offline write then later push
+- pull with local unpushed changes and deterministic replay expectations
+- application-level merge policy for memory facts
+- topology branch/merge sync scenario
+
+P2 tests:
+
+- performance gate comparing serialized writes vs concurrent partitions
+- stability gate for long-running event ingestion
+- backpressure test when conflict retry budget is exhausted
+- Nix build gate with Turso enabled
+- feature-gated fallback when sync feature is not enabled
+
+* Risks
+
+Turso Database is still marked beta upstream. That does not disqualify it for
+Marlin, but it changes the adoption path.
+
+Mitigations:
+
+- keep Turso behind an explicit storage crate and feature gate
+- treat org files as the durable human-readable contract in P0
+- keep migration tests small and repeatable
+- keep a file-store backend for minimal bootstrap and comparison
+- require crash/reopen and concurrent writer tests before default enablement
+- record upstream version and feature assumptions in CI evidence
+
+* P0 Implementation Plan
+
+1. Add a storage RFC and keep it independent from harness and protocol crates.
+2. Add a =marlin-agent-storage= crate with domain traits and typed records.
+3. Add a =turso= feature and a Turso backend module.
+4. Implement local DB bootstrap, schema migration, and MVCC enablement.
+5. Implement a transaction helper for =BEGIN CONCURRENT= with bounded retry.
+6. Add concurrent write tests that prove non-overlapping partitions commit.
+7. Add conflict tests that prove rollback and retry behavior.
+8. Map =stats()= and =checkpoint()= into runtime visibility receipts.
+9. Keep sync behind a separate =turso-sync= feature until local semantics are
+   stable.
+
+* References
+
+- Turso Rust quickstart: https://docs.turso.tech/sdk/rust/quickstart
+- Turso Rust reference: https://docs.turso.tech/sdk/rust/reference
+- Turso concurrent writes: https://docs.turso.tech/tursodb/concurrent-writes
+- Turso sync usage: https://docs.turso.tech/sync/usage
+- Turso sync conflict resolution: https://docs.turso.tech/sync/conflict-resolution
+- Turso checkpoint: https://docs.turso.tech/sync/checkpoint
+- Turso PRAGMA reference: https://docs.turso.tech/sql-reference/pragmas
+- Turso SQLite compatibility and extensions: https://docs.turso.tech/sql-reference/compatibility
+- Turso Database source README: https://github.com/tursodatabase/turso
+- Turso agent databases: https://docs.turso.tech/guides/agent-databases
+- Turso AI memory: https://docs.turso.tech/guides/ai-memory
+- Turso content caching: https://docs.turso.tech/guides/content-caching
+- Turso code indexing: https://docs.turso.tech/guides/code-indexing
+- Turso CDC: https://docs.turso.tech/tursodb/cdc
+- Turso AgentFS sessions: https://docs.turso.tech/agentfs/guides/sessions
+- Turso AgentFS auditing: https://docs.turso.tech/agentfs/guides/auditing
+- Turso AgentFS copy-on-write overlays: https://docs.turso.tech/agentfs/guides/overlay
+
+* Agent-Native Storage Reflection
+
+The storage model should start from agent semantics instead of database tables.
+The central question is: what can multiple agents write concurrently without
+coordination, what needs optimistic conflict handling, and what must be
+serialized by policy?
+
+Marlin should split runtime state into six write domains:
+
+1. =session_log=: append-only per-session event stream.
+2. =artifact_store=: content-addressed artifacts and file/materialized outputs.
+3. =workspace_overlay=: copy-on-write file deltas, deletions, and branch views.
+4. =memory_graph=: durable lessons, corrections, preferences, facts, and recall
+   edges.
+5. =topology_graph=: project/session/agent branch, join, delegation, and
+   supervision relationships.
+6. =coordination_state=: leases, task claims, review decisions, merge decisions,
+   and conflict resolutions.
+
+Each domain needs a different conflict policy. Treating all of them as generic
+SQL rows would reproduce the same class of agent-state bugs we are trying to
+avoid: hidden overwrites, incomplete audit trail, ambiguous session state, and
+unreviewable artifact changes.
+
+** Sessions And Multi-Session Topology
+
+Session logs must be append-only. A session event should never be updated in
+place after it is committed.
+
+Primary write shape:
+
+- =project_id=
+- =session_id=
+- =agent_id=
+- =turn_id=
+- =event_id=
+- =event_kind=
+- =causality_parent_event_id=
+- =body=
+- =created_at=
+
+This is the easiest place to exploit MVCC. Different agents and sessions append
+to disjoint primary keys, so =BEGIN CONCURRENT= should allow high write
+throughput without semantic conflicts. Any derived view, such as "latest
+session status", should be a materialized/rollup view updated asynchronously or
+under a separate policy transaction.
+
+Multiple sessions should not be modeled as unrelated folders. They are branches
+in a project topology.
+
+Required relationships:
+
+- =spawned_from=: sub-agent/session forked from another session.
+- =observes=: session reads another session's output without owning it.
+- =delegates=: parent session assigns work to child session.
+- =proposes_merge=: child session proposes artifact or memory changes.
+- =accepted_merge= / =rejected_merge=: explicit review outcome.
+- =supersedes=: a newer session makes an older session obsolete.
+
+This lets Marlin answer questions that plain log storage cannot:
+
+- which session produced this artifact?
+- which parent intent authorized this sub-agent write?
+- which memory facts came from accepted work versus abandoned exploration?
+- which conflicts were resolved by policy, by reviewer, or by retry?
+
+** Multiple Agents
+
+Multiple agents should write independently by default and coordinate only at
+well-defined convergence points.
+
+Preferred pattern:
+
+- each agent writes its own append-only events and artifacts
+- each agent can claim tasks through short-lived leases
+- each agent proposes memory/topology/artifact updates
+- a merge policy promotes proposals into accepted project state
+
+This avoids a fragile shared mutable "current state" document. The current
+state is a projection over accepted events, accepted artifacts, and accepted
+memory facts.
+
+** Artifact Strategy
+
+Artifacts are not just files. For agent runtime, an artifact can be:
+
+- generated code patch
+- command output
+- benchmark result
+- test receipt
+- model response transcript
+- retrieved context bundle
+- memory snapshot
+- plan/org document
+- binary output
+- review packet
+
+Artifacts should be content-addressed and immutable once written.
+
+Minimum identity:
+
+- =artifact_hash=: hash of bytes or canonical typed payload
+- =artifact_kind=
+- =producer_session_id=
+- =producer_agent_id=
+- =producer_event_id=
+- =media_type=
+- =size_bytes=
+- =created_at=
+
+Mutable names, such as "latest test output", should be pointers to immutable
+artifact hashes. Pointer updates are conflict-prone and must carry compare and
+swap semantics:
+
+- expected old pointer
+- proposed new pointer
+- proposer
+- policy reason
+- accepted/rejected receipt
+
+This is how Marlin avoids losing evidence when two agents write "the current
+result" at nearly the same time. Both immutable artifacts survive. Only the
+pointer requires conflict resolution.
+
+** Workspace Overlay Strategy
+
+Turso's AgentFS documentation is useful because it frames agent work as a
+copy-on-write overlay: base tree is read-only, writes land in a delta layer,
+deletions are whiteouts, and sessions can be resumed or shared. Marlin should
+borrow the principle, but fit it into our own topology and evidence model.
+
+Marlin should model workspace changes as:
+
+- =base_snapshot=: git commit, content hash set, or imported project snapshot.
+- =overlay_id=: session or branch delta.
+- =file_version=: content-addressed file body.
+- =whiteout=: delete marker.
+- =rename_edge=: logical file move.
+- =patch_artifact=: generated patch representation.
+- =merge_receipt=: explicit promotion into another overlay or project state.
+
+The important design rule: agents can write freely inside their overlay, but
+promotion from overlay to parent/project state is a governed merge event. This
+turns agent experimentation into durable evidence instead of uncontrolled file
+mutation.
+
+** Conflict Policy Matrix
+
+MVCC gives us concurrent write mechanics. It does not decide which agent is
+right. Marlin needs a semantic conflict matrix.
+
+| Domain | Write Style | DB Conflict Policy | Semantic Conflict Policy |
+| session events | append-only | retry on busy/conflict | never merge by overwrite |
+| artifacts | immutable content-addressed insert | insert-or-ignore by hash | all versions preserved |
+| artifact pointers | compare-and-swap update | retry only if expected pointer still matches | reviewer or policy chooses winner |
+| memory facts | upsert by fact id or semantic key | optimistic retry | merge by confidence/source/recency, never blind last-write-wins |
+| recall counters | sharded counters | retry and fold | approximate counters are acceptable |
+| topology edges | append-only edge insert | insert-or-ignore by edge id | conflicting branch/merge decisions require review |
+| task claims | lease row update | compare-and-swap with expiry | expired leases can be reclaimed |
+| review decisions | append-only decision | no overwrite | later decision supersedes earlier one explicitly |
+| visibility stats | sharded append or counter | retry/fold | exactness depends on metric kind |
+
+This matrix should drive the Rust API. Callers should choose an operation like
+=append_artifact=, =claim_task=, or =propose_memory_fact= instead of manually
+choosing SQL conflict clauses.
+
+** Agent Memory And Recall
+
+Turso's AI memory guide uses vector search for relevant memories. That is
+useful, but Marlin should add agent reliability metadata around the vector.
+
+Memory records should include:
+
+- =memory_id=
+- =memory_kind=: user preference, correction, discovery, invariant, failure,
+  review judgment, performance observation
+- =source_session_id=
+- =source_event_id=
+- =source_artifact_hash=
+- =confidence=
+- =validity_scope=
+- =supersedes_memory_id=
+- =embedding=
+- =created_at=
+- =accepted_at=
+
+Recall should not mutate memory rows directly. Retrieval counts and last-used
+timestamps create hot rows. Instead, write recall events or sharded counters and
+fold them later. This is important for MVCC: many agents can recall the same
+memory at the same time without fighting over one row.
+
+** Code Index And Content Cache
+
+Turso's code indexing and content caching guides point in the right direction:
+content-addressed file versions, per-session read pointers, incremental index
+updates, FTS, and vector search. Marlin should turn that into a runtime service:
+
+- file content cache keyed by =path + content_hash=
+- per-session read pointer keyed by =session_id + path=
+- code chunk index keyed by =project_id + file_hash + chunk_key=
+- embeddings stored per chunk and per memory fact
+- invalidation driven by observed file hash changes, not polling
+
+This helps the agent core because context assembly becomes queryable evidence:
+we can prove which file version, chunk, memory, and artifact entered a turn.
+
+** CDC, Audit, And Visibility
+
+Turso CDC is attractive for audit and reactive projections, but current docs
+state that CDC and MVCC are mutually exclusive on the same connection. That
+means Marlin should not assume "turn on everything everywhere".
+
+Recommended split:
+
+- hot write connections use MVCC and explicit visibility receipts
+- audit/projection jobs can use append-only domain tables directly
+- CDC can be evaluated later for non-MVCC projection databases or dedicated
+  audit replicas
+
+For P0, explicit receipts are better than CDC magic:
+
+- transaction started/committed/rolled back
+- retry count
+- conflict classification
+- rows written by domain
+- WAL size/stats before and after checkpoint
+- sync push/pull receipt
+- merge decision receipt
+
+This keeps audit evidence aligned with Marlin's reliability model.
+
+* Current Crate Package Alignment
+
+This section maps the Turso storage direction onto the current Marlin crate
+boundaries observed in the workspace package layout. It is intentionally a crate
+boundary alignment, not yet a line-level implementation audit. The ASP source
+query lane was unavailable during this pass because the required
+=asp-explore= child session could not be registered with the expected host
+model/sandbox, so the next implementation pass must verify each API against the
+source selectors.
+
+** Org Memory
+
+Observed packages:
+
+- =crates/marlin-org-memory=
+- =crates/marlin-org-store=
+- =crates/marlin-org-model=
+- =crates/marlin-org-workflow=
+- =crates/marlin-org-workspace=
+- =crates/marlin-org-patch=
+
+Current design implication:
+
+The org memory family should remain the human-readable, contract-oriented memory
+surface. Turso should not replace org as the source format for plans, memory
+contracts, topology contracts, or project-readable state. Instead, Turso should
+serve as the high-performance projection and transaction layer around org:
+
+- index org documents by project/session/memory/topology identifiers
+- store parsed org nodes and backlinks as queryable projections
+- record which org version was used by an agent turn
+- map recall results back to exact org source locations
+- store materialized memory embeddings and retrieval metadata
+- store append-only memory proposal/acceptance/supersession events
+
+This gives us both properties we need:
+
+- org remains reviewable and editable by humans
+- Turso gives async query, local-first persistence, MVCC writes, vector search,
+  and visibility receipts
+
+The critical design point is that memory updates should be proposed and accepted
+as events. Directly mutating a "current memory" row would lose provenance and
+create hot-row conflicts.
+
+** Sessions And Runtime
+
+Observed packages:
+
+- =crates/marlin-agent-sessions=
+- =crates/marlin-agent-runtime=
+- =crates/marlin-agent-protocol=
+- =crates/marlin-agent-kernel=
+- =crates/marlin-agent-route=
+- =crates/marlin-agent-hooks=
+
+Current design implication:
+
+The sessions/runtime family is where Turso's MVCC should be most visible.
+Session events, hook receipts, model route decisions, tool events, and loop
+visibility should be append-oriented and partitioned by:
+
+- =project_id=
+- =session_id=
+- =agent_id=
+- =turn_id=
+- =event_id=
+
+This lets multiple sessions and sub-agents write concurrently without
+coordination. Coordination should happen only in explicit tables for leases,
+task claims, merge proposals, and accepted project-state pointers.
+
+The runtime APIs should not expose raw SQL. They should expose operations such
+as:
+
+- append session event
+- append hook receipt
+- record model route binding
+- claim task lease
+- propose artifact pointer update
+- accept/reject merge proposal
+- write visibility receipt
+
+Each operation can then choose the right Turso transaction mode and retry policy.
+
+** Workspace And Cache
+
+Observed packages:
+
+- =crates/marlin-workspace-query=
+- =crates/marlin-workspace-view=
+- =crates/marlin-workspace-patch=
+- =crates/marlin-workspace-status=
+- =crates/marlin-git-utils=
+
+Current design implication:
+
+Workspace packages should be the first consumer of a Turso content cache. The
+cache should be content-addressed and session-aware:
+
+- file versions keyed by =project_id + path + content_hash=
+- per-session read pointers keyed by =session_id + path=
+- parsed chunk indexes keyed by =project_id + file_hash + chunk_key=
+- patch artifacts keyed by content hash
+- workspace status snapshots keyed by base git commit and overlay id
+
+The cache should avoid global mutable counters in the hot path. Token savings,
+read counts, and cache hit rates should be emitted as visibility events or
+sharded counters and folded later.
+
+This design directly supports agent context correctness: every turn can record
+the exact file hashes, chunks, memory facts, and patch artifacts that entered
+the context.
+
+** Artifacts
+
+Relevant existing package families:
+
+- =crates/marlin-agent-harness-types=
+- =crates/marlin-agent-harness=
+- =crates/marlin-agent-test-support=
+- =build-support/marlin-rust-project-harness-policy=
+- runtime/session/workspace packages listed above
+
+Boundary clarification:
+
+Artifacts in the agent runtime are not the same as rust-project harness policy
+evidence. The rust-project harness can produce build/test/review evidence, but
+the agent storage layer should store runtime artifacts with provenance:
+
+- producer session
+- producer agent
+- producer event
+- artifact kind
+- content hash
+- media type
+- source package/gate when applicable
+- acceptance or rejection receipt
+
+This allows harness evidence, test receipts, benchmark outputs, model
+transcripts, org snapshots, and patches to use one content-addressed artifact
+substrate without merging their ownership boundaries.
+
+** Proposed New Storage Crate Boundary
+
+Add a dedicated crate instead of embedding Turso into existing domain crates:
+
+- =crates/marlin-agent-storage= for domain traits and typed records
+- optional =turso= feature for local Turso backend
+- optional =turso-sync= feature for explicit push/pull/checkpoint
+
+The crate should depend inward on stable domain types where needed, but domain
+crates should not learn Turso SQL. The dependency direction should be:
+
+- protocol/model crates define stable identifiers and record types
+- storage crate implements persistence and query projections
+- runtime/session/memory/workspace crates call storage traits
+- harness/build-support crates only emit artifacts/evidence through typed
+  runtime-facing APIs
+
+This prevents DB concerns from leaking into org contracts, protocol schemas, or
+harness policy code.
+
+** Maximal DB Utilization Direction
+
+To use Turso aggressively and correctly, Marlin should optimize for these
+patterns:
+
+1. Append-first writes for sessions, artifacts, topology, and visibility.
+2. Content-addressed immutable artifacts, with mutable names represented as
+   compare-and-swap pointers.
+3. Partitioned keys that avoid hot rows: session, agent, shard, graph, package,
+   and gate dimensions should be part of primary keys.
+4. MVCC transactions only around bounded semantic operations, not large mixed
+   batches.
+5. Application-level conflict policy for memory, artifact pointers, task leases,
+   and merge decisions.
+6. Sharded or event-sourced counters for cache hits, recall counts, token
+   savings, and visibility metrics.
+7. Materialized projections for fast recall/query, rebuilt from append-only
+   evidence when needed.
+8. Explicit checkpoint/stats receipts as part of the visibility layer.
+9. Sync as an explicit project/session operation, not an invisible background
+   side effect.
+10. Org remains the human-readable contract; Turso becomes the async query,
+    index, transaction, and coordination engine.
+
+The P0 success criterion is not "Turso is in Cargo.toml". The success criterion
+is that multiple sessions and agents can concurrently write real runtime state
+without losing provenance, without blind last-writer-wins, and with queryable
+evidence for every merge, cache hit, memory recall, and artifact promotion.
+
+* Phase 1 Completion Record
+
+Phase 1 is complete as the first local storage slice. The completed scope is:
+
+- =marlin-agent-storage= exists as the dedicated storage boundary.
+- The workspace uses a single V1 storage schema line; no V2 migration branch is
+  part of the current contract.
+- Local Turso storage bootstraps the V1 tables and records the schema version.
+- Session events are append-only and carry project, session, agent, turn, event,
+  causality parent, body, and timestamp fields.
+- Immutable artifacts and compare-and-swap artifact pointers are covered by
+  in-memory and Turso-backed tests.
+- Visibility receipts are persisted and queryable as storage evidence.
+- Memory proposals and topology edges have a first Turso projection gate.
+- Org memory artifacts have a persistence gate without replacing org as the
+  human-readable contract surface.
+- Crash/reopen tests cover committed events, artifact pointers, and conflict
+  state.
+- DB pressure tests cover multi-session event/artifact/visibility writes.
+- Lean proof support covers the artifact pointer compare-and-swap invariant.
+- =marlin-agent-sessions= has a storage adapter that projects session context
+  events into the storage boundary.
+- P0-P6 storage evidence is represented by an RFCDB evidence packet.
+
+Validated commands for this phase:
+
+#+begin_src text
+direnv exec . cargo clippy -p marlin-agent-sessions -p marlin-agent-storage --lib --tests --all-features --no-deps -- -D warnings
+direnv exec . cargo test -p marlin-agent-storage --all-features
+direnv exec . cargo test -p marlin-agent-sessions
+direnv exec . cargo test -p marlin-rust-project-harness-policy
+git diff --check
+#+end_src
+
+Current changed-surface snapshot at phase close:
+
+- DB/storage/session/proof/RFC line: 9 tracked-or-new entries in the focused
+  status surface.
+- IFC/config-interface/projection line: 17 tracked-or-new entries in the focused
+  status surface.
+- Rust project harness support: =scenario_benchmark= was split from one large
+  owner file into an interface module plus leaf modules so DB/session gates are
+  no longer blocked by the harness policy itself.
+
+* Phase 2 Intake: DB x IFC
+
+Phase 2 should make the storage layer useful to the agent configuration and
+policy plane. The focus is no longer proving that Turso can persist local V1
+records; the focus is connecting storage with IFC policy packs, runtime
+visibility, memory/topology projections, and second-order gates.
+
+** P0: IFC Policy Pack Evidence Projection
+
+The Gerbil =config-interface= policy-pack modules should emit typed policy-pack
+projection receipts that can be stored as immutable artifacts and visibility
+records.
+
+Initial intake gate:
+
+- =tests/ifc_policy_pack_storage_gate.rs= verifies that an IFC policy-pack
+  projection receipt can be persisted through Turso as a session-linked event,
+  immutable artifact, and visibility receipt without live LLM access.
+- =crates/marlin-gerbil-scheme/tests/unit/scheme_types/projection/policy_pack_projection/storage_projection.rs=
+  upgrades that representative gate to a real typed
+  =GerbilPolicyMixinStackCompilerReceipt= decoded from the config-interface
+  policy-combination fixture, then stores it as an artifact plus visibility
+  receipt.
+
+Required work:
+
+- define the Rust storage record shape for IFC policy-pack receipts
+- persist policy-pack compiler receipts as content-addressed artifacts
+- persist slot-merge and failure-combination receipts as visibility records
+- link every stored IFC receipt to session, agent, turn, and event identifiers
+- add a no-LLM test that compiles representative Gerbil policy packs and stores
+  the resulting receipts through =marlin-agent-storage=
+
+** P1: Runtime Visibility Storage Adapter
+
+Runtime visibility should stop being only test-local evidence and become a
+first-class storage domain.
+
+Required work:
+
+- add typed visibility scopes for runtime, hook, model route, storage, IFC, and
+  memory domains
+- expose storage APIs for appending and querying scoped visibility receipts
+- wire session/runtime tests to persist hook/model-route/loop visibility events
+- add pressure tests for many visibility writes without a hot global row
+
+** P2: Memory And Topology Acceptance Flow
+
+Phase 1 stores memory and topology projections. Phase 2 must model acceptance,
+rejection, supersession, and merge decisions.
+
+Required work:
+
+- store memory proposals as immutable proposal artifacts
+- add accepted/rejected/superseded memory decision records
+- store topology branch, observe, delegate, propose-merge, accept-merge, and
+  reject-merge edges
+- project accepted memory/topology state from append-only records
+- add tests for multi-session memory proposals where only accepted facts enter
+  recall
+
+** P3: Artifact Pointer Promotion Gates
+
+Artifacts are already immutable and pointers use compare-and-swap. Phase 2
+should turn pointer updates into governed promotions.
+
+Required work:
+
+- add typed promotion proposals for "latest result", review packets, benchmark
+  receipts, org snapshots, patches, and IFC policy outputs
+- require pointer updates to carry producer and reviewer evidence
+- preserve losing artifacts after pointer conflicts
+- add tests for two sessions racing to promote different artifacts
+
+** P4: Sync, Checkpoint, And Stats Receipts
+
+Sync remains outside the Phase 1 default path. Phase 2 can start adding the
+manual sync and checkpoint visibility surface without making sync implicit.
+
+Required work:
+
+- keep =local= as the default test mode
+- add explicit =sync-manual= configuration and feature-gated tests
+- expose checkpoint receipts with WAL/stat fields when Turso supports them
+- record push, pull, checkpoint, retry, and conflict metrics as visibility
+  receipts
+- add Nix/CI gates that prove storage builds with and without sync features
+
+** P5: Performance And Stability Gates
+
+The DB layer must prove that Turso is useful for agent concurrency rather than
+only compatible with SQLite-shaped tables.
+
+Required work:
+
+- benchmark partitioned concurrent session writes against serialized writes
+- measure artifact pointer contention and retry behavior
+- gate long-running event ingestion with bounded memory growth
+- add WAL/checkpoint growth thresholds where supported
+- record all benchmark outputs as storage artifacts and rust-project harness
+  evidence
+
+** P6: RFCDB Evidence Graph Expansion
+
+The RFCDB packet should become the authoritative second-phase evidence graph.
+
+Required work:
+
+- add Phase 2 evidence entries for IFC policy-pack storage, runtime visibility,
+  memory acceptance, topology merge, artifact promotion, sync/checkpoint, and
+  performance/stability gates
+- keep every evidence entry as a real file or test target
+- avoid putting DB-specific fixtures under =tests/unit/scenarios/= unless they
+  satisfy the upstream rust-project scenario benchmark schema
+- require every new phase gate to run without live LLM access first

@@ -1,0 +1,15 @@
+[proof]
+id = "storage-artifact-pointer-cas"
+kind = "storage.cas.invariant"
+engine = "lean"
+package = "marlin-proof"
+module = "MarlinProof.Storage.ArtifactPointer"
+build_command = "lake build"
+theorems = [
+  "committed_after_is_target",
+  "committed_status_when_expected_matches",
+  "conflict_preserves_pointer",
+  "conflict_status_when_expected_mismatches",
+  "missing_expected_commits_only_when_absent",
+  "missing_expected_conflicts_when_present",
+]

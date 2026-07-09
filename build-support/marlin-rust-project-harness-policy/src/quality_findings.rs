@@ -1,5 +1,6 @@
 //! Agent-actionable quality findings derived from Rust harness gates.
 
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
 use serde::Serialize;
@@ -79,6 +80,40 @@ pub struct RustProjectHarnessQualityFindingsReceipt {
     pub schema_version: String,
     pub package_name: String,
     pub findings: Vec<RustProjectHarnessQualityFinding>,
+    pub policy_projection: RustProjectHarnessPolicyProjectionReceipt,
+}
+
+/// How Marlin projected one upstream Rust agent policy into its package gate.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum RustProjectHarnessPolicyProjectionDecision {
+    Emitted,
+    Suppressed,
+    NotApplicable,
+}
+
+/// Projection evidence for one upstream `RUST-AGENT-*` rule.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct RustProjectHarnessPolicyProjection {
+    pub rule_id: String,
+    pub decision: RustProjectHarnessPolicyProjectionDecision,
+    pub quality_finding_id: Option<String>,
+    pub reason: String,
+    pub source_authority: String,
+}
+
+/// Complete upstream Rust policy catalog projection for one Marlin package gate.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct RustProjectHarnessPolicyProjectionReceipt {
+    pub schema_id: String,
+    pub schema_version: String,
+    pub package_name: String,
+    pub upstream_rule_count: usize,
+    pub emitted_count: usize,
+    pub suppressed_count: usize,
+    pub not_applicable_count: usize,
+    pub missing_rule_ids: Vec<String>,
+    pub projections: Vec<RustProjectHarnessPolicyProjection>,
 }
 
 /// Named input for evaluating package-level gate state into structured findings.
@@ -143,6 +178,89 @@ impl RustProjectHarnessQualityFindingsReceipt {
             .iter()
             .filter(|finding| finding.severity == RustProjectHarnessFindingSeverity::Advice)
             .count()
+    }
+}
+
+impl RustProjectHarnessPolicyProjectionReceipt {
+    pub fn has_complete_upstream_projection(&self) -> bool {
+        self.missing_rule_ids.is_empty() && self.upstream_rule_count == self.projections.len()
+    }
+}
+
+/// Projects the current upstream Rust agent policy catalog into Marlin gate evidence.
+#[must_use]
+pub fn project_current_rust_agent_policy_catalog(
+    package_name: impl Into<String>,
+    findings: &[RustProjectHarnessQualityFinding],
+) -> RustProjectHarnessPolicyProjectionReceipt {
+    let package_name = package_name.into();
+    let upstream_rules = rust_lang_project_harness::rust_agent_policy_rules();
+    let finding_by_rule_id = findings
+        .iter()
+        .map(|finding| (finding.rule_id.as_str(), finding.finding_id.as_str()))
+        .collect::<BTreeMap<_, _>>();
+
+    let mut projected_rule_ids = BTreeSet::new();
+    let projections = upstream_rules
+        .iter()
+        .map(|rule| {
+            projected_rule_ids.insert(rule.rule_id.to_owned());
+            if let Some(finding_id) = finding_by_rule_id.get(rule.rule_id) {
+                RustProjectHarnessPolicyProjection {
+                    rule_id: rule.rule_id.to_owned(),
+                    decision: RustProjectHarnessPolicyProjectionDecision::Emitted,
+                    quality_finding_id: Some((*finding_id).to_owned()),
+                    reason: "projected from an emitted Marlin quality finding".to_owned(),
+                    source_authority: "rust-lang-project-harness".to_owned(),
+                }
+            } else {
+                RustProjectHarnessPolicyProjection {
+                    rule_id: rule.rule_id.to_owned(),
+                    decision: RustProjectHarnessPolicyProjectionDecision::Suppressed,
+                    quality_finding_id: None,
+                    reason: "available in upstream Rust agent policy catalog but not emitted by the package-level Marlin gate"
+                        .to_owned(),
+                    source_authority: "rust-lang-project-harness".to_owned(),
+                }
+            }
+        })
+        .collect::<Vec<_>>();
+
+    let missing_rule_ids = upstream_rules
+        .iter()
+        .map(|rule| rule.rule_id.to_owned())
+        .filter(|rule_id| !projected_rule_ids.contains(rule_id))
+        .collect::<Vec<_>>();
+
+    let emitted_count = projections
+        .iter()
+        .filter(|projection| {
+            projection.decision == RustProjectHarnessPolicyProjectionDecision::Emitted
+        })
+        .count();
+    let suppressed_count = projections
+        .iter()
+        .filter(|projection| {
+            projection.decision == RustProjectHarnessPolicyProjectionDecision::Suppressed
+        })
+        .count();
+    let not_applicable_count = projections
+        .iter()
+        .filter(|projection| {
+            projection.decision == RustProjectHarnessPolicyProjectionDecision::NotApplicable
+        })
+        .count();
+
+    RustProjectHarnessPolicyProjectionReceipt {
+        schema_id: "marlin.rust-project-harness.policy-projection".to_owned(),
+        schema_version: "1".to_owned(),
+        package_name,
+        upstream_rule_count: upstream_rules.len(),
+        emitted_count,
+        suppressed_count,
+        not_applicable_count,
+        missing_rule_ids,
+        projections,
     }
 }
 
@@ -229,11 +347,14 @@ pub fn evaluate_quality_findings_for_gate(
         source_authority: "marlin-rust-project-harness-policy".to_owned(),
     });
 
+    let policy_projection = project_current_rust_agent_policy_catalog(&package_name, &findings);
+
     RustProjectHarnessQualityFindingsReceipt {
         schema_id: "marlin.rust-project-harness.quality-findings".to_owned(),
         schema_version: "1".to_owned(),
         package_name,
         findings,
+        policy_projection,
     }
 }
 

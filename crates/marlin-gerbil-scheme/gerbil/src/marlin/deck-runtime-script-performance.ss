@@ -17,7 +17,7 @@ package: marlin
 ;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
 ;; MarlinResult <- MarlinInput
 (def (deck-runtime-script-performance-context)
-  (.o command: "codex perf-script apply"
+  (.o command: "marlin perf-script apply"
       agent-scope: "performance-agent"))
 
 ;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
@@ -36,7 +36,7 @@ package: marlin
   (make-marlin-deck-runtime-high-order-matcher
    "performance-command"
    (lambda (_context _policy command agent-scope)
-     (and (string=? command "codex perf-script apply")
+     (and (string=? command "marlin perf-script apply")
           (string=? agent-scope "performance-agent")))))
 
 ;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.

@@ -84,10 +84,7 @@ impl ModelEndpoint {
         let provider_lower = self.provider.as_str().to_ascii_lowercase();
         let model_lower = self.model.as_str().to_ascii_lowercase();
 
-        if provider_lower.starts_with("gpt")
-            || provider_lower.starts_with("claude")
-            || provider_lower == "codex"
-        {
+        if provider_lower.starts_with("gpt") || provider_lower.starts_with("claude") {
             return Err(ModelEndpointContractError::ProviderLooksLikeModel {
                 provider: self.provider.clone(),
             });
@@ -98,12 +95,6 @@ impl ModelEndpoint {
                 model: self.model.clone(),
             });
         }
-        if model_lower.contains("codex") {
-            return Err(ModelEndpointContractError::CodexIsNotModelName {
-                model: self.model.clone(),
-            });
-        }
-
         Ok(())
     }
 
@@ -144,9 +135,6 @@ pub enum ModelEndpointContractError {
         provider: ModelProviderId,
         model: ModelName,
     },
-    CodexIsNotModelName {
-        model: ModelName,
-    },
     OpenAiModelMustBeGpt {
         model: ModelName,
     },
@@ -175,10 +163,6 @@ impl Display for ModelEndpointContractError {
             Self::ModelLooksLikeProvider { provider, model } => write!(
                 formatter,
                 "model route model `{model}` for provider `{provider}` looks like a provider id"
-            ),
-            Self::CodexIsNotModelName { model } => write!(
-                formatter,
-                "model route model `{model}` uses Codex as a product/tool name instead of a GPT model id"
             ),
             Self::OpenAiModelMustBeGpt { model } => {
                 write!(

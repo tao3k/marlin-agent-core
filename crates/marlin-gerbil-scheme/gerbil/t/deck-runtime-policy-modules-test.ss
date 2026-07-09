@@ -25,7 +25,7 @@
    "module-policy"
    "openai"
    "gpt-5.4"
-   '("codex")
+   '("marlin-worker")
    '("worker")
    "forked-context"
    "workspace-isolated"))
@@ -68,7 +68,7 @@
    (lambda (context policy command agent-scope)
      (and (string=? (.get context session-id) "session-module")
           (string=? (.get policy model) "gpt-5.4")
-          (string=? command "codex apply")
+          (string=? command "marlin apply")
           (string=? agent-scope "worker")))))
 
 ;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
@@ -93,7 +93,7 @@
    '("workspace-clean")
    '("org-memory-custom")
    "rewrite"
-   "codex audit --policy custom-auditor"))
+   "marlin audit --policy custom-auditor"))
 
 ;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
 ;; MarlinResult <- MarlinInput
@@ -146,7 +146,7 @@
 (def module-command-matcher
   (marlin-deck-runtime-command-prefix-matcher
    "module-command-prefix"
-   '("codex apply" "codex audit")))
+   '("marlin apply" "marlin audit")))
 
 ;;; Boundary: Customer matcher composes agent class and policy name.
 ;; MarlinResult <- MarlinInput
@@ -186,7 +186,7 @@
      module-combined-condition
      (marlin-deck-runtime-command-prefix-matcher
       "register-prefix"
-      '("codex apply"))
+      '("marlin apply"))
      (make-marlin-deck-runtime-register-hook-action
       "module-register-hook"
       "runtime-catalog-entry"))
@@ -195,7 +195,7 @@
      module-combined-condition
      (marlin-deck-runtime-command-prefix-matcher
       "unregister-prefix"
-      '("codex cleanup"))
+      '("marlin cleanup"))
      (make-marlin-deck-runtime-unregister-hook-action
       "module-register-hook"))
     (make-marlin-deck-runtime-dynamic-hook-case
@@ -203,7 +203,7 @@
      module-locked-condition
      (marlin-deck-runtime-command-prefix-matcher
       "defer-prefix"
-      '("codex apply"))
+      '("marlin apply"))
      (make-marlin-deck-runtime-defer-hook-action
       "workspace locked"))
     (make-marlin-deck-runtime-dynamic-hook-case
@@ -211,7 +211,7 @@
      module-combined-condition
      (marlin-deck-runtime-command-prefix-matcher
       "deny-prefix"
-      '("codex deny"))
+      '("marlin deny"))
      (make-marlin-deck-runtime-deny-hook-action
       "policy denied"))
     (make-marlin-deck-runtime-dynamic-hook-case
@@ -219,9 +219,9 @@
      module-combined-condition
      (marlin-deck-runtime-command-prefix-matcher
       "rewrite-prefix"
-      '("codex rewrite"))
+      '("marlin rewrite"))
      (make-marlin-deck-runtime-rewrite-hook-action
-      "codex apply --rewritten")))
+      "marlin apply --rewritten")))
    (make-marlin-deck-runtime-allow-hook-action)))
 
 ;;; Boundary: Policy engine accepts selector objects as dynamic hook decisions.
@@ -289,19 +289,19 @@
            "workspace is locked"))
          (register-selection
           (marlin-deck-runtime-dynamic-hook-selector-select
-           module-hook-selector context policy "codex apply file" "worker"))
+           module-hook-selector context policy "marlin apply file" "worker"))
          (cleanup-selection
           (marlin-deck-runtime-dynamic-hook-selector-select
-           module-hook-selector context policy "codex cleanup" "worker"))
+           module-hook-selector context policy "marlin cleanup" "worker"))
          (defer-selection
           (marlin-deck-runtime-dynamic-hook-selector-select
-           module-hook-selector locked-context policy "codex apply file" "worker"))
+           module-hook-selector locked-context policy "marlin apply file" "worker"))
          (deny-selection
           (marlin-deck-runtime-dynamic-hook-selector-select
-           module-hook-selector context policy "codex deny" "worker"))
+           module-hook-selector context policy "marlin deny" "worker"))
          (rewrite-selection
           (marlin-deck-runtime-dynamic-hook-selector-select
-           module-hook-selector context policy "codex rewrite" "worker")))
+           module-hook-selector context policy "marlin rewrite" "worker")))
     (check (.get register-action kind)
            => marlin-deck-runtime-dynamic-hook-action-kind)
     (check (.get register-action action) => "register")
@@ -318,7 +318,7 @@
             module-hook-selector
             context
             policy
-            "codex rewrite"
+            "marlin rewrite"
             "worker")))
       (check (.get selection kind)
              => marlin-deck-runtime-dynamic-hook-selection-kind)
@@ -344,10 +344,10 @@
            module-command-matcher))
          (combined-matched?
           (marlin-deck-runtime-high-order-matcher-match?
-           combined context policy "codex apply" "worker"))
+           combined context policy "marlin apply" "worker"))
          (customer-matched?
           (marlin-deck-runtime-high-order-matcher-match?
-           module-customer-matcher context policy "codex apply" "worker"))
+           module-customer-matcher context policy "marlin apply" "worker"))
          (not-command-matched?
           (marlin-deck-runtime-high-order-matcher-match?
            not-command-matcher context policy "cargo test" "worker")))
@@ -390,7 +390,7 @@
            (list (module-test-policy))
            (list module-dynamic-rule)
            (module-test-context)
-           "codex apply"
+           "marlin apply"
            "worker"))
          (action (.get receipt dynamic-hook-action))
          (selection (.get receipt dynamic-hook-selection))
@@ -449,7 +449,7 @@
            (list (module-test-policy))
            '()
            (module-test-context)
-           "codex apply"
+           "marlin apply"
            "worker"))
          (projection-chain (.get receipt policy-projection-chain))
          (module-receipt (.get receipt module-evaluation-receipt))
@@ -474,7 +474,7 @@
            (list (module-test-policy))
            (list module-selector-dynamic-rule)
            (module-test-context)
-           "codex rewrite"
+           "marlin rewrite"
            "worker"))
          (action (.get receipt dynamic-hook-action))
          (selection (.get receipt dynamic-hook-selection)))
@@ -488,7 +488,7 @@
            (list (module-test-policy))
            (list module-selector-dynamic-rule)
            (module-locked-context)
-           "codex apply file"
+           "marlin apply file"
            "worker"))
          (action (.get receipt dynamic-hook-action))
          (selection (.get receipt dynamic-hook-selection)))
@@ -501,7 +501,7 @@
            (list (module-test-policy))
            (list module-selector-dynamic-rule)
            (module-test-context)
-           "codex status"
+           "marlin status"
            "worker"))
          (action (.get receipt dynamic-hook-action))
          (selection (.get receipt dynamic-hook-selection)))

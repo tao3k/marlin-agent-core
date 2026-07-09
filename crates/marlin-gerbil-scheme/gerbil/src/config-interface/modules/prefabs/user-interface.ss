@@ -203,7 +203,7 @@ package: config-interface/modules/prefabs
   (make-marlin-deck-runtime-high-order-matcher
    "user-interface-command"
    (lambda (_context _policy command agent-scope)
-     (and (string=? command "codex user-interface workflow apply")
+     (and (string=? command "marlin user-interface workflow apply")
           (string=? agent-scope "user-interface-agent"))))
   (make-marlin-deck-runtime-register-hook-action
    "runtime-catalog-user-interface-hook"
@@ -334,7 +334,7 @@ package: config-interface/modules/prefabs
       lineage: '("root-agent"
                  "user-interface-agent"
                  "user-interface-review-subagent")
-      spawn-command: "codex subagent spawn user-interface-review-subagent"))
+      spawn-command: "marlin subagent spawn user-interface-review-subagent"))
 
 ;;; Boundary: Agent-authored policy stays a typed policy object.
 ;; MarlinResult <- MarlinInput
@@ -343,7 +343,7 @@ package: config-interface/modules/prefabs
    "user-interface-subagent-route"
    "openai"
    "gpt-5.4"
-   '("codex user-interface")
+   '("marlin user-interface")
    '("user-interface-agent")
    "shared-context"
    "workspace-isolated"))
@@ -376,7 +376,7 @@ package: config-interface/modules/prefabs
    (lambda (context policy command agent-scope)
      (and (string=? (.get context agent-class) "customer-user-interface")
           (string=? (.get policy provider) "openai")
-          (string=? command "codex user-interface spawn-subagent")
+          (string=? command "marlin user-interface spawn-subagent")
           (string=? agent-scope "user-interface-agent")))))
 
 ;;; Boundary: The extension object combines subagent, hook, and policy slots.

@@ -86,7 +86,7 @@
 ;;; Boundary: Fixture context models a downstream user command.
 ;; UserInterfaceWorkflowResult <- UserInterfaceWorkflowContext
 (def user-interface-context
-  (.o command: "codex user-interface workflow apply"
+  (.o command: "marlin user-interface workflow apply"
       agent-scope: "user-interface-agent"
       workspace-root: "user-interface-workspace"))
 
@@ -206,7 +206,7 @@
    user-interface-extension-catalog
    user-interface-subagent-context
    user-interface-subagent-route-policy
-   "codex user-interface spawn-subagent"
+   "marlin user-interface spawn-subagent"
    "user-interface-agent"))
 
 ;;; Boundary: Option lookup keeps assertions stable as examples grow.
@@ -263,4 +263,3 @@
 
 (def user-interface-funflow-map
   (car user-interface-funflow-config))
-
