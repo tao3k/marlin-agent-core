@@ -4,7 +4,7 @@ use std::{
     env,
     ffi::OsString,
     fs, io,
-    path::{Component, Path, PathBuf},
+    path::{Path, PathBuf},
 };
 
 /// Environment variable that overrides the `gxi` executable path.
@@ -165,38 +165,17 @@ pub fn default_gerbil_gsc_program() -> PathBuf {
         return PathBuf::from(program);
     }
 
-    resolve_gerbil_executable(default_gerbil_gxi_program())
-        .and_then(|gxi| gxi.parent().map(|bin| bin.join("gsc")))
-        .filter(|candidate| candidate.is_file())
-        .unwrap_or_else(|| PathBuf::from("gsc"))
+    gerbil_scheme::GerbilToolchain::new(
+        default_gerbil_gxi_program(),
+        default_gerbil_gxc_program(),
+        PathBuf::from("gsc"),
+    )
+    .resolved_gsc()
 }
 
 /// Resolves a configured Gerbil executable through PATH when it is a program name.
 pub fn resolve_gerbil_executable(program: impl AsRef<Path>) -> Option<PathBuf> {
-    let program = program.as_ref();
-    if should_check_gerbil_program_directly(program) {
-        return program.is_file().then(|| program.to_path_buf());
-    }
-
-    env::var_os("PATH").and_then(|paths| {
-        env::split_paths(&paths)
-            .map(|dir| dir.join(program))
-            .find(|candidate| candidate.is_file())
-    })
-}
-
-fn should_check_gerbil_program_directly(program: &Path) -> bool {
-    if program.has_root() {
-        return true;
-    }
-    let mut components = program.components();
-    let Some(first) = components.next() else {
-        return false;
-    };
-    matches!(
-        first,
-        Component::CurDir | Component::ParentDir | Component::Prefix(_)
-    ) || components.next().is_some()
+    gerbil_scheme::resolve_gerbil_executable(program)
 }
 
 /// Writes the crate-owned `Gerbil` runtime assets under a loadpath root.
