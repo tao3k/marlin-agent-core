@@ -8,6 +8,7 @@ repository.workspace = true
 [dependencies]
 cc.workspace = true
 cbindgen.workspace = true
+gerbil-scheme-native-build.workspace = true
 marlin-gerbil-scheme.workspace = true
 object.workspace = true
 
