@@ -302,19 +302,25 @@ fn observed_scenario_benchmark_root(rows: &[ExecutionShapeRow], observed_total_m
     fs::write(
         root.join("benchmark.toml"),
         observed_benchmark_toml(
-            &baseline.benchmark.harness,
-            baseline.benchmark.test.as_deref(),
-            baseline.benchmark.bench.as_deref(),
-            baseline.benchmark.case.as_deref(),
-            baseline.benchmark.snapshot.as_deref(),
-            &baseline.benchmark.target_total.to_string(),
-            &baseline.benchmark.max_total.to_string(),
-            observed_total_ms,
-            &baseline.benchmark.regression_budget.to_string(),
-            baseline.benchmark.memory_budget_bytes.as_u64(),
-            observed_memory_bytes(rows),
-            &baseline.benchmark.target_rationale,
-            rows,
+            ObservedBenchmarkIdentity {
+                harness: &baseline.benchmark.harness,
+                test: baseline.benchmark.test.as_deref(),
+                bench: baseline.benchmark.bench.as_deref(),
+                case: baseline.benchmark.case.as_deref(),
+                snapshot: baseline.benchmark.snapshot.as_deref(),
+            },
+            ObservedBenchmarkBudget {
+                target_total: &baseline.benchmark.target_total.to_string(),
+                max_total: &baseline.benchmark.max_total.to_string(),
+                regression_budget: &baseline.benchmark.regression_budget.to_string(),
+                memory_budget_bytes: baseline.benchmark.memory_budget_bytes.as_u64(),
+                target_rationale: &baseline.benchmark.target_rationale,
+            },
+            ObservedBenchmarkMeasurements {
+                total_ms: observed_total_ms,
+                memory_bytes: observed_memory_bytes(rows),
+                rows,
+            },
         ),
     )
     .expect("observed scenario benchmark contract should be written");
@@ -330,25 +336,45 @@ fn scenario_fixture_root() -> PathBuf {
         .join("loop_program_execution_shape")
 }
 
-#[allow(clippy::too_many_arguments)]
-fn observed_benchmark_toml(
-    harness: &str,
-    test: Option<&str>,
-    bench: Option<&str>,
-    case: Option<&str>,
-    snapshot: Option<&str>,
-    target_total: &str,
-    max_total: &str,
-    observed_total_ms: u64,
-    regression_budget: &str,
+struct ObservedBenchmarkIdentity<'a> {
+    harness: &'a str,
+    test: Option<&'a str>,
+    bench: Option<&'a str>,
+    case: Option<&'a str>,
+    snapshot: Option<&'a str>,
+}
+
+struct ObservedBenchmarkBudget<'a> {
+    target_total: &'a str,
+    max_total: &'a str,
+    regression_budget: &'a str,
     memory_budget_bytes: u64,
-    observed_memory_bytes: u64,
-    target_rationale: &str,
-    rows: &[ExecutionShapeRow],
+    target_rationale: &'a str,
+}
+
+struct ObservedBenchmarkMeasurements<'a> {
+    total_ms: u64,
+    memory_bytes: u64,
+    rows: &'a [ExecutionShapeRow],
+}
+
+fn observed_benchmark_toml(
+    identity: ObservedBenchmarkIdentity<'_>,
+    budget: ObservedBenchmarkBudget<'_>,
+    measurements: ObservedBenchmarkMeasurements<'_>,
 ) -> String {
-    let benchmark_entry = benchmark_entry_toml(harness, test, bench, case, snapshot);
-    let mut observed_timings = format!("execution_shape_total_ms = \"{observed_total_ms}ms\"\n");
-    for row in rows {
+    let benchmark_entry = benchmark_entry_toml(
+        identity.harness,
+        identity.test,
+        identity.bench,
+        identity.case,
+        identity.snapshot,
+    );
+    let mut observed_timings = format!(
+        "execution_shape_total_ms = \"{}ms\"\n",
+        measurements.total_ms
+    );
+    for row in measurements.rows {
         observed_timings.push_str(&format!(
             "execution_shape_{}_runs_ms = \"{}ms\"\n",
             row.run_count, row.elapsed_ms
@@ -356,17 +382,23 @@ fn observed_benchmark_toml(
     }
 
     format!(
-        r#"{benchmark_entry}target_total = "{target_total}"
-max_total = "{max_total}"
-observed_total = "{observed_total_ms}ms"
-regression_budget = "{regression_budget}"
-memory_budget_bytes = {memory_budget_bytes}
-observed_memory_bytes = {observed_memory_bytes}
+        r#"{benchmark_entry}target_total = "{}"
+max_total = "{}"
+observed_total = "{}ms"
+regression_budget = "{}"
+memory_budget_bytes = {}
+observed_memory_bytes = {}
 target_rationale = "{}"
 
 [observed_timings]
 {observed_timings}"#,
-        toml_escape(target_rationale)
+        budget.target_total,
+        budget.max_total,
+        measurements.total_ms,
+        budget.regression_budget,
+        budget.memory_budget_bytes,
+        measurements.memory_bytes,
+        toml_escape(budget.target_rationale)
     )
 }
 
