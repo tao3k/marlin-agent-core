@@ -1,12 +1,12 @@
 //! Rust-owned vertical trace validation for Scheme loop case-driver receipts.
 
-use std::{collections::BTreeMap, error::Error, fmt};
+use std::{error::Error, fmt};
 
 use serde::{Deserialize, Serialize};
 
 use crate::GERBIL_POLICY_MIXIN_STACK_COMPILER_SCHEMA_ID;
 
-use super::{
+use crate::loop_case_driver::{
     GerbilLoopCaseDriverCapability, GerbilLoopCaseDriverCaseId, GerbilLoopCaseDriverLoopProgramId,
     GerbilLoopCaseDriverProfileRef, GerbilLoopCaseSchemeBoundary,
     GerbilLoopCaseSerializationBoundary,
@@ -15,58 +15,58 @@ use super::{
 /// Rust-owned view of a Scheme-emitted vertical mainline trace.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct GerbilLoopCaseDriverVerticalTraceReceipt {
-    case_id: GerbilLoopCaseDriverCaseId,
-    profile_ref: GerbilLoopCaseDriverProfileRef,
-    compiler_owner: String,
-    compiler_profile_id: String,
-    loop_program_id: GerbilLoopCaseDriverLoopProgramId,
-    capability_tags: Vec<GerbilLoopCaseDriverCapability>,
-    live_gate_env: String,
-    live_llm_required: bool,
-    live_llm_allowed: bool,
-    live_llm_denial_receipt: String,
-    llm_repair_intent: String,
-    session_transform: String,
-    tool_intent_count: usize,
-    memory_intent_count: usize,
-    placement_intent_count: usize,
-    runtime_handoff_kind: String,
-    runtime_receipt_kind: String,
-    derived_session_kind: String,
-    module_kind: String,
-    module_user_module: String,
-    module_selection_tags: Vec<GerbilLoopCaseDriverCapability>,
-    module_source_ref: String,
-    module_entrypoint: String,
-    module_enabled: bool,
-    resolved_policy_pack_policy_epoch: u64,
-    loop_program_policy_epoch: u64,
-    transition_count: usize,
-    transition_actions: Vec<String>,
-    transition_events: Vec<String>,
-    mechanism_policy_count: usize,
-    mechanism_policy_ids: Vec<String>,
-    policy_digest_length: usize,
-    policy_digest_octets: Vec<u8>,
-    capability_mask: u64,
-    budget_max_attempts: u64,
-    budget_max_cost_units: u64,
-    budget_max_wall_time_ms: u64,
-    policy_forced_slot_count: usize,
-    policy_merge_receipt_count: usize,
-    policy_conflict_merge_receipt_count: usize,
-    policy_merge_kinds: Vec<String>,
-    policy_merge_statuses: Vec<String>,
-    policy_mixin_stack_present: bool,
-    policy_mixin_stack_receipt_kind: String,
-    policy_mixin_stack_profile_id: String,
-    policy_mixin_stack_mixin_count: usize,
-    policy_mixin_stack_slot_merge_law_count: usize,
-    policy_mixin_stack_slot_merge_laws: Vec<String>,
-    policy_mixin_stack_linearization_owner: String,
-    policy_mixin_stack_slot_merge_owner: String,
-    scheme_boundary: GerbilLoopCaseSchemeBoundary,
-    serialization_boundary: GerbilLoopCaseSerializationBoundary,
+    pub(super) case_id: GerbilLoopCaseDriverCaseId,
+    pub(super) profile_ref: GerbilLoopCaseDriverProfileRef,
+    pub(super) compiler_owner: String,
+    pub(super) compiler_profile_id: String,
+    pub(super) loop_program_id: GerbilLoopCaseDriverLoopProgramId,
+    pub(super) capability_tags: Vec<GerbilLoopCaseDriverCapability>,
+    pub(super) live_gate_env: String,
+    pub(super) live_llm_required: bool,
+    pub(super) live_llm_allowed: bool,
+    pub(super) live_llm_denial_receipt: String,
+    pub(super) llm_repair_intent: String,
+    pub(super) session_transform: String,
+    pub(super) tool_intent_count: usize,
+    pub(super) memory_intent_count: usize,
+    pub(super) placement_intent_count: usize,
+    pub(super) runtime_handoff_kind: String,
+    pub(super) runtime_receipt_kind: String,
+    pub(super) derived_session_kind: String,
+    pub(super) module_kind: String,
+    pub(super) module_user_module: String,
+    pub(super) module_selection_tags: Vec<GerbilLoopCaseDriverCapability>,
+    pub(super) module_source_ref: String,
+    pub(super) module_entrypoint: String,
+    pub(super) module_enabled: bool,
+    pub(super) resolved_policy_pack_policy_epoch: u64,
+    pub(super) loop_program_policy_epoch: u64,
+    pub(super) transition_count: usize,
+    pub(super) transition_actions: Vec<String>,
+    pub(super) transition_events: Vec<String>,
+    pub(super) mechanism_policy_count: usize,
+    pub(super) mechanism_policy_ids: Vec<String>,
+    pub(super) policy_digest_length: usize,
+    pub(super) policy_digest_octets: Vec<u8>,
+    pub(super) capability_mask: u64,
+    pub(super) budget_max_attempts: u64,
+    pub(super) budget_max_cost_units: u64,
+    pub(super) budget_max_wall_time_ms: u64,
+    pub(super) policy_forced_slot_count: usize,
+    pub(super) policy_merge_receipt_count: usize,
+    pub(super) policy_conflict_merge_receipt_count: usize,
+    pub(super) policy_merge_kinds: Vec<String>,
+    pub(super) policy_merge_statuses: Vec<String>,
+    pub(super) policy_mixin_stack_present: bool,
+    pub(super) policy_mixin_stack_receipt_kind: String,
+    pub(super) policy_mixin_stack_profile_id: String,
+    pub(super) policy_mixin_stack_mixin_count: usize,
+    pub(super) policy_mixin_stack_slot_merge_law_count: usize,
+    pub(super) policy_mixin_stack_slot_merge_laws: Vec<String>,
+    pub(super) policy_mixin_stack_linearization_owner: String,
+    pub(super) policy_mixin_stack_slot_merge_owner: String,
+    pub(super) scheme_boundary: GerbilLoopCaseSchemeBoundary,
+    pub(super) serialization_boundary: GerbilLoopCaseSerializationBoundary,
 }
 
 /// Error returned when a Scheme vertical mainline trace cannot be trusted.
@@ -76,7 +76,7 @@ pub struct GerbilLoopCaseDriverVerticalTraceError {
 }
 
 impl GerbilLoopCaseDriverVerticalTraceError {
-    fn new(message: impl Into<String>) -> Self {
+    pub(super) fn new(message: impl Into<String>) -> Self {
         Self {
             message: message.into(),
         }
@@ -95,75 +95,6 @@ impl fmt::Display for GerbilLoopCaseDriverVerticalTraceError {
 }
 
 impl Error for GerbilLoopCaseDriverVerticalTraceError {}
-
-/// Parse a Rust-owned CLI trace emitted by the Scheme case-driver smoke.
-pub fn parse_gerbil_loop_case_driver_vertical_trace(
-    stdout: &str,
-) -> Result<Vec<GerbilLoopCaseDriverVerticalTraceReceipt>, GerbilLoopCaseDriverVerticalTraceError> {
-    let mut rows: BTreeMap<usize, BTreeMap<String, String>> = BTreeMap::new();
-
-    for line in stdout.lines() {
-        let Some(rest) = line.strip_prefix("vertical-case.") else {
-            continue;
-        };
-        let Some((key, value)) = rest.split_once('=') else {
-            return Err(GerbilLoopCaseDriverVerticalTraceError::new(format!(
-                "vertical trace line missing '=': {line}"
-            )));
-        };
-        let Some((index, field)) = key.split_once('.') else {
-            return Err(GerbilLoopCaseDriverVerticalTraceError::new(format!(
-                "vertical trace key missing field: {key}"
-            )));
-        };
-        let index = index.parse::<usize>().map_err(|error| {
-            GerbilLoopCaseDriverVerticalTraceError::new(format!(
-                "vertical trace index {index:?} is invalid: {error}"
-            ))
-        })?;
-        rows.entry(index)
-            .or_default()
-            .insert(field.to_owned(), value.to_owned());
-    }
-
-    if rows.is_empty() {
-        return Err(GerbilLoopCaseDriverVerticalTraceError::new(
-            "vertical trace did not contain any vertical-case rows",
-        ));
-    }
-
-    let mut receipts = Vec::with_capacity(rows.len());
-    for (expected_index, (index, row)) in rows.into_iter().enumerate() {
-        if index != expected_index {
-            return Err(GerbilLoopCaseDriverVerticalTraceError::new(format!(
-                "vertical trace index {index} is not contiguous at {expected_index}"
-            )));
-        }
-        receipts.push(vertical_trace_receipt_from_row(index, &row)?);
-    }
-
-    Ok(receipts)
-}
-
-/// Parse and validate a complete Scheme vertical mainline trace.
-pub fn verify_gerbil_loop_case_driver_vertical_trace(
-    stdout: &str,
-    expected_count: usize,
-) -> Result<Vec<GerbilLoopCaseDriverVerticalTraceReceipt>, GerbilLoopCaseDriverVerticalTraceError> {
-    let receipts = parse_gerbil_loop_case_driver_vertical_trace(stdout)?;
-    if receipts.len() != expected_count {
-        return Err(GerbilLoopCaseDriverVerticalTraceError::new(format!(
-            "vertical trace receipt count {} does not match expected {expected_count}",
-            receipts.len()
-        )));
-    }
-
-    for (index, receipt) in receipts.iter().enumerate() {
-        receipt.ensure_trusted(index)?;
-    }
-
-    Ok(receipts)
-}
 
 impl GerbilLoopCaseDriverVerticalTraceReceipt {
     #[must_use]
@@ -387,7 +318,10 @@ impl GerbilLoopCaseDriverVerticalTraceReceipt {
             .any(|capability| capability == tag)
     }
 
-    fn ensure_trusted(&self, index: usize) -> Result<(), GerbilLoopCaseDriverVerticalTraceError> {
+    pub(super) fn ensure_trusted(
+        &self,
+        index: usize,
+    ) -> Result<(), GerbilLoopCaseDriverVerticalTraceError> {
         if self.case_id.as_str().trim().is_empty() {
             return Err(GerbilLoopCaseDriverVerticalTraceError::new(format!(
                 "vertical trace {index} has an empty case id"
@@ -787,415 +721,5 @@ impl GerbilLoopCaseDriverVerticalTraceReceipt {
             )));
         }
         Ok(())
-    }
-}
-
-fn vertical_trace_receipt_from_row(
-    index: usize,
-    row: &BTreeMap<String, String>,
-) -> Result<GerbilLoopCaseDriverVerticalTraceReceipt, GerbilLoopCaseDriverVerticalTraceError> {
-    let policy_mixin_stack_present =
-        optional_vertical_trace_bool(row, "policy-mixin-stack-present?", false)?;
-    let policy_mixin_stack_slot_merge_laws = optional_vertical_trace_delimited_strings(
-        index,
-        row,
-        "policy-mixin-stack-slot-merge-laws",
-        '|',
-        policy_mixin_stack_present,
-    )?;
-
-    Ok(GerbilLoopCaseDriverVerticalTraceReceipt {
-        case_id: GerbilLoopCaseDriverCaseId::new(required_vertical_trace_field(
-            index, row, "case-id",
-        )?),
-        profile_ref: GerbilLoopCaseDriverProfileRef::new(required_vertical_trace_field(
-            index,
-            row,
-            "profile-ref",
-        )?),
-        compiler_owner: required_vertical_trace_field(index, row, "compiler-owner")?.to_owned(),
-        compiler_profile_id: required_vertical_trace_field(index, row, "compiler-profile-id")?
-            .to_owned(),
-        loop_program_id: GerbilLoopCaseDriverLoopProgramId::new(required_vertical_trace_field(
-            index,
-            row,
-            "loop-program-id",
-        )?),
-        capability_tags: required_vertical_trace_capability_tags(index, row, "capability-tags")?,
-        live_gate_env: required_vertical_trace_field(index, row, "live-gate-env")?.to_owned(),
-        live_llm_required: required_vertical_trace_bool(index, row, "live-llm-required?")?,
-        live_llm_allowed: required_vertical_trace_bool(index, row, "live-llm-allowed?")?,
-        live_llm_denial_receipt: required_vertical_trace_field(
-            index,
-            row,
-            "live-llm-denial-receipt",
-        )?
-        .to_owned(),
-        llm_repair_intent: required_vertical_trace_field(index, row, "llm-repair-intent")?
-            .to_owned(),
-        session_transform: required_vertical_trace_field(index, row, "session-transform")?
-            .to_owned(),
-        tool_intent_count: required_vertical_trace_usize(index, row, "tool-intent-count")?,
-        memory_intent_count: required_vertical_trace_usize(index, row, "memory-intent-count")?,
-        placement_intent_count: required_vertical_trace_usize(
-            index,
-            row,
-            "placement-intent-count",
-        )?,
-        runtime_handoff_kind: required_vertical_trace_field(index, row, "runtime-handoff-kind")?
-            .to_owned(),
-        runtime_receipt_kind: required_vertical_trace_field(index, row, "runtime-receipt-kind")?
-            .to_owned(),
-        derived_session_kind: required_vertical_trace_field(index, row, "derived-session-kind")?
-            .to_owned(),
-        module_kind: required_vertical_trace_field(index, row, "module-kind")?.to_owned(),
-        module_user_module: required_vertical_trace_field(index, row, "module-user-module")?
-            .to_owned(),
-        module_selection_tags: required_vertical_trace_capability_tags(
-            index,
-            row,
-            "module-selection-tags",
-        )?,
-        module_source_ref: required_vertical_trace_field(index, row, "module-source-ref")?
-            .to_owned(),
-        module_entrypoint: required_vertical_trace_field(index, row, "module-entrypoint")?
-            .to_owned(),
-        module_enabled: required_vertical_trace_bool(index, row, "module-enabled?")?,
-        resolved_policy_pack_policy_epoch: required_vertical_trace_u64(
-            index,
-            row,
-            "resolved-policy-pack-policy-epoch",
-        )?,
-        loop_program_policy_epoch: required_vertical_trace_u64(
-            index,
-            row,
-            "loop-program-policy-epoch",
-        )?,
-        transition_count: required_vertical_trace_usize(index, row, "transition-count")?,
-        transition_actions: required_vertical_trace_delimited_strings(
-            index,
-            row,
-            "transition-actions",
-            '|',
-        )?,
-        transition_events: required_vertical_trace_delimited_strings(
-            index,
-            row,
-            "transition-events",
-            '|',
-        )?,
-        mechanism_policy_count: required_vertical_trace_usize(
-            index,
-            row,
-            "mechanism-policy-count",
-        )?,
-        mechanism_policy_ids: required_vertical_trace_delimited_strings(
-            index,
-            row,
-            "mechanism-policy-ids",
-            '|',
-        )?,
-        policy_digest_length: required_vertical_trace_usize(index, row, "policy-digest-length")?,
-        policy_digest_octets: required_vertical_trace_u8_list(
-            index,
-            row,
-            "policy-digest-octets",
-            ',',
-        )?,
-        capability_mask: required_vertical_trace_u64(index, row, "capability-mask")?,
-        budget_max_attempts: required_vertical_trace_u64(index, row, "budget-max-attempts")?,
-        budget_max_cost_units: required_vertical_trace_u64(index, row, "budget-max-cost-units")?,
-        budget_max_wall_time_ms: required_vertical_trace_u64(
-            index,
-            row,
-            "budget-max-wall-time-ms",
-        )?,
-        policy_forced_slot_count: required_vertical_trace_usize(
-            index,
-            row,
-            "policy-forced-slot-count",
-        )?,
-        policy_merge_receipt_count: required_vertical_trace_usize(
-            index,
-            row,
-            "policy-merge-receipt-count",
-        )?,
-        policy_conflict_merge_receipt_count: required_vertical_trace_usize(
-            index,
-            row,
-            "policy-conflict-merge-receipt-count",
-        )?,
-        policy_merge_kinds: required_vertical_trace_delimited_strings(
-            index,
-            row,
-            "policy-merge-kinds",
-            '|',
-        )?,
-        policy_merge_statuses: required_vertical_trace_delimited_strings(
-            index,
-            row,
-            "policy-merge-statuses",
-            '|',
-        )?,
-        policy_mixin_stack_present,
-        policy_mixin_stack_receipt_kind: optional_vertical_trace_field(
-            row,
-            "policy-mixin-stack-receipt-kind",
-            "none",
-        )
-        .to_owned(),
-        policy_mixin_stack_profile_id: optional_vertical_trace_field(
-            row,
-            "policy-mixin-stack-profile-id",
-            "none",
-        )
-        .to_owned(),
-        policy_mixin_stack_mixin_count: optional_vertical_trace_usize(
-            index,
-            row,
-            "policy-mixin-stack-mixin-count",
-            0,
-        )?,
-        policy_mixin_stack_slot_merge_law_count: optional_vertical_trace_usize(
-            index,
-            row,
-            "policy-mixin-stack-slot-merge-law-count",
-            0,
-        )?,
-        policy_mixin_stack_slot_merge_laws,
-        policy_mixin_stack_linearization_owner: optional_vertical_trace_field(
-            row,
-            "policy-mixin-stack-linearization-owner",
-            "none",
-        )
-        .to_owned(),
-        policy_mixin_stack_slot_merge_owner: optional_vertical_trace_field(
-            row,
-            "policy-mixin-stack-slot-merge-owner",
-            "none",
-        )
-        .to_owned(),
-        scheme_boundary: required_vertical_trace_scheme_boundary(index, row, "scheme-boundary")?,
-        serialization_boundary: required_vertical_trace_serialization_boundary(
-            index,
-            row,
-            "serialization-boundary",
-        )?,
-    })
-}
-
-fn required_vertical_trace_field<'a>(
-    index: usize,
-    row: &'a BTreeMap<String, String>,
-    field: &'static str,
-) -> Result<&'a str, GerbilLoopCaseDriverVerticalTraceError> {
-    row.get(field).map(String::as_str).ok_or_else(|| {
-        GerbilLoopCaseDriverVerticalTraceError::new(format!(
-            "vertical trace {index} is missing {field}"
-        ))
-    })
-}
-
-fn required_vertical_trace_u64(
-    index: usize,
-    row: &BTreeMap<String, String>,
-    field: &'static str,
-) -> Result<u64, GerbilLoopCaseDriverVerticalTraceError> {
-    required_vertical_trace_field(index, row, field)?
-        .parse::<u64>()
-        .map_err(|error| {
-            GerbilLoopCaseDriverVerticalTraceError::new(format!(
-                "vertical trace {index} field {field} is not u64: {error}"
-            ))
-        })
-}
-
-fn required_vertical_trace_usize(
-    index: usize,
-    row: &BTreeMap<String, String>,
-    field: &'static str,
-) -> Result<usize, GerbilLoopCaseDriverVerticalTraceError> {
-    required_vertical_trace_field(index, row, field)?
-        .parse::<usize>()
-        .map_err(|error| {
-            GerbilLoopCaseDriverVerticalTraceError::new(format!(
-                "vertical trace {index} field {field} is not usize: {error}"
-            ))
-        })
-}
-
-fn required_vertical_trace_bool(
-    index: usize,
-    row: &BTreeMap<String, String>,
-    field: &'static str,
-) -> Result<bool, GerbilLoopCaseDriverVerticalTraceError> {
-    match required_vertical_trace_field(index, row, field)? {
-        "#t" | "true" => Ok(true),
-        "#f" | "false" => Ok(false),
-        value => Err(GerbilLoopCaseDriverVerticalTraceError::new(format!(
-            "vertical trace {index} field {field} is not bool: {value}"
-        ))),
-    }
-}
-
-fn required_vertical_trace_delimited_strings(
-    index: usize,
-    row: &BTreeMap<String, String>,
-    field: &'static str,
-    separator: char,
-) -> Result<Vec<String>, GerbilLoopCaseDriverVerticalTraceError> {
-    let raw = required_vertical_trace_field(index, row, field)?.trim();
-    if raw.is_empty() {
-        return Err(GerbilLoopCaseDriverVerticalTraceError::new(format!(
-            "vertical trace {index} field {field} is empty"
-        )));
-    }
-    Ok(raw
-        .split(separator)
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(ToOwned::to_owned)
-        .collect())
-}
-
-fn optional_vertical_trace_delimited_strings(
-    index: usize,
-    row: &BTreeMap<String, String>,
-    field: &'static str,
-    separator: char,
-    require_non_empty: bool,
-) -> Result<Vec<String>, GerbilLoopCaseDriverVerticalTraceError> {
-    let Some(raw) = row.get(field).map(|value| value.trim()) else {
-        return if require_non_empty {
-            Err(GerbilLoopCaseDriverVerticalTraceError::new(format!(
-                "vertical trace {index} is missing {field}"
-            )))
-        } else {
-            Ok(Vec::new())
-        };
-    };
-    if raw.is_empty() {
-        return if require_non_empty {
-            Err(GerbilLoopCaseDriverVerticalTraceError::new(format!(
-                "vertical trace {index} field {field} is empty"
-            )))
-        } else {
-            Ok(Vec::new())
-        };
-    }
-    Ok(raw
-        .split(separator)
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(ToOwned::to_owned)
-        .collect())
-}
-
-fn optional_vertical_trace_field<'a>(
-    row: &'a BTreeMap<String, String>,
-    field: &'static str,
-    default: &'a str,
-) -> &'a str {
-    row.get(field)
-        .map(|value| value.as_str())
-        .unwrap_or(default)
-}
-
-fn optional_vertical_trace_bool(
-    row: &BTreeMap<String, String>,
-    field: &'static str,
-    default: bool,
-) -> Result<bool, GerbilLoopCaseDriverVerticalTraceError> {
-    let Some(value) = row.get(field) else {
-        return Ok(default);
-    };
-    match value.as_str() {
-        "#t" | "true" => Ok(true),
-        "#f" | "false" => Ok(false),
-        other => Err(GerbilLoopCaseDriverVerticalTraceError::new(format!(
-            "vertical trace field {field} has invalid boolean {other}"
-        ))),
-    }
-}
-
-fn optional_vertical_trace_usize(
-    index: usize,
-    row: &BTreeMap<String, String>,
-    field: &'static str,
-    default: usize,
-) -> Result<usize, GerbilLoopCaseDriverVerticalTraceError> {
-    let Some(value) = row.get(field) else {
-        return Ok(default);
-    };
-    value.parse::<usize>().map_err(|error| {
-        GerbilLoopCaseDriverVerticalTraceError::new(format!(
-            "vertical trace {index} field {field} is not usize: {error}"
-        ))
-    })
-}
-
-fn required_vertical_trace_u8_list(
-    index: usize,
-    row: &BTreeMap<String, String>,
-    field: &'static str,
-    separator: char,
-) -> Result<Vec<u8>, GerbilLoopCaseDriverVerticalTraceError> {
-    required_vertical_trace_delimited_strings(index, row, field, separator)?
-        .into_iter()
-        .map(|value| {
-            value.parse::<u8>().map_err(|error| {
-                GerbilLoopCaseDriverVerticalTraceError::new(format!(
-                    "vertical trace {index} field {field} contains invalid octet {value:?}: {error}"
-                ))
-            })
-        })
-        .collect()
-}
-
-fn required_vertical_trace_capability_tags(
-    index: usize,
-    row: &BTreeMap<String, String>,
-    field: &'static str,
-) -> Result<Vec<GerbilLoopCaseDriverCapability>, GerbilLoopCaseDriverVerticalTraceError> {
-    let raw = required_vertical_trace_field(index, row, field)?.trim();
-    let Some(inner) = raw
-        .strip_prefix('(')
-        .and_then(|value| value.strip_suffix(')'))
-    else {
-        return Err(GerbilLoopCaseDriverVerticalTraceError::new(format!(
-            "vertical trace {index} field {field} is not a Scheme capability list: {raw}"
-        )));
-    };
-    Ok(inner
-        .split_whitespace()
-        .map(GerbilLoopCaseDriverCapability::new)
-        .collect())
-}
-
-fn required_vertical_trace_scheme_boundary(
-    index: usize,
-    row: &BTreeMap<String, String>,
-    field: &'static str,
-) -> Result<GerbilLoopCaseSchemeBoundary, GerbilLoopCaseDriverVerticalTraceError> {
-    match required_vertical_trace_field(index, row, field)? {
-        "scheme-types->rust-types" => Ok(GerbilLoopCaseSchemeBoundary::SchemeTypesToRustTypes),
-        boundary => Err(GerbilLoopCaseDriverVerticalTraceError::new(format!(
-            "vertical trace {index} field {field} has unsupported scheme boundary {boundary}"
-        ))),
-    }
-}
-
-fn required_vertical_trace_serialization_boundary(
-    index: usize,
-    row: &BTreeMap<String, String>,
-    field: &'static str,
-) -> Result<GerbilLoopCaseSerializationBoundary, GerbilLoopCaseDriverVerticalTraceError> {
-    match required_vertical_trace_field(index, row, field)? {
-        "rust-owned-cli-trace-cross-process" => {
-            Ok(GerbilLoopCaseSerializationBoundary::RustOwnedCliTraceCrossProcess)
-        }
-        boundary => Err(GerbilLoopCaseDriverVerticalTraceError::new(format!(
-            "vertical trace {index} field {field} has unsupported serialization boundary {boundary}"
-        ))),
     }
 }
