@@ -3188,7 +3188,7 @@ dependencies = [
 name = "marlin-rust-project-harness-policy"
 version = "0.1.0"
 dependencies = [
- "rust-lang-project-harness",
+ "rust-lang-project-harness 0.1.2 (git+https://github.com/tao3k/rust-lang-project-harness?rev=0c02f4e3f7bd34782c4c070a4be65bef9fb87b61)",
  "serde",
  "serde_json",
  "tempfile",
@@ -3603,7 +3603,7 @@ dependencies = [
  "nom 8.0.0",
  "orgize-build-support",
  "rowan",
- "rust-lang-project-harness",
+ "rust-lang-project-harness 0.1.2 (git+https://github.com/tao3k/rust-lang-project-harness?rev=715c45335784bdd54110508cd4837663b913a3bc)",
  "serde_json",
 ]
 
@@ -4388,7 +4388,25 @@ dependencies = [
 [[package]]
 name = "rust-lang-project-harness"
 version = "0.1.2"
-source = "git+https://github.com/tao3k/rust-lang-project-harness?rev=715c45335784bdd54110508cd4837663b913a3bc#715c45335784bdd54110508cd4837663b913a3bc"
+source = "git+https://github.com/tao3k/rust-lang-project-harness?rev=0c02f4e3f7bd34782c4c070a4be65bef9fb87b61#0c02f4e3f7bd34782c4c070a4be65bef9fb87b61"
+dependencies = [
+ "cargo-lock",
+ "cargo_toml",
+ "proc-macro2",
+ "quote",
+ "regex",
+ "semver",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "syn",
+ "toml 1.1.2+spec-1.1.0",
+]
+
+[[package]]
+name = "rust-lang-project-harness"
+version = "0.1.2"
+source = "git+https://github.com/tao3k/rust-lang-project-harness?rev=715c45335784bdd54110508cd4837663b913a3bc#0c02f4e3f7bd34782c4c070a4be65bef9fb87b61"
 dependencies = [
  "cargo-lock",
  "cargo_toml",
