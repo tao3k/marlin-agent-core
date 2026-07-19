@@ -330,6 +330,7 @@ fn scenario_fixture_root() -> PathBuf {
         .join("loop_program_execution_shape")
 }
 
+#[allow(clippy::too_many_arguments)]
 fn observed_benchmark_toml(
     harness: &str,
     test: Option<&str>,

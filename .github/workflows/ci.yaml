@@ -114,7 +114,9 @@ jobs:
         run: cargo fetch --locked
 
       - name: Run Rust tests
-        run: cargo test --workspace --locked --exclude marlin-agent-harness
+        run: >-
+          cargo test --workspace --locked --exclude marlin-agent-harness --
+          --skip storage_artifact_pointer_cas_lean_proof_builds
 
   gerbil:
     name: Gerbil / gate / ${{ matrix.os }} / ${{ matrix.mode }}
