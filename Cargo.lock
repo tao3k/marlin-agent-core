@@ -1829,19 +1829,14 @@ dependencies = [
 [[package]]
 name = "gerbil-scheme"
 version = "0.1.0"
-source = "git+https://github.com/tao3k/gerbil-scheme-rust?branch=feat%2Fgerbil-scheme-rust-bindings#679346c43cc86a1ca442a895da2d6e7102052663"
-
-[[package]]
-name = "gerbil-scheme"
-version = "0.1.0"
-source = "git+https://github.com/tao3k/gerbil-scheme-rust?rev=64da9c8ec2ded196d2f9d63ae4f15f2ce6461be3#64da9c8ec2ded196d2f9d63ae4f15f2ce6461be3"
+source = "git+https://github.com/tao3k/gerbil-scheme-rust?rev=bd0dc9abd22a0c1c2225f854271f3615a6cc9559#bd0dc9abd22a0c1c2225f854271f3615a6cc9559"
 
 [[package]]
 name = "gerbil-scheme-build"
 version = "0.1.0"
-source = "git+https://github.com/tao3k/gerbil-scheme-rust?rev=64da9c8ec2ded196d2f9d63ae4f15f2ce6461be3#64da9c8ec2ded196d2f9d63ae4f15f2ce6461be3"
+source = "git+https://github.com/tao3k/gerbil-scheme-rust?rev=bd0dc9abd22a0c1c2225f854271f3615a6cc9559#bd0dc9abd22a0c1c2225f854271f3615a6cc9559"
 dependencies = [
- "gerbil-scheme 0.1.0 (git+https://github.com/tao3k/gerbil-scheme-rust?rev=64da9c8ec2ded196d2f9d63ae4f15f2ce6461be3)",
+ "gerbil-scheme",
 ]
 
 [[package]]
@@ -3113,7 +3108,7 @@ version = "0.1.0"
 dependencies = [
  "criterion",
  "futures-executor",
- "gerbil-scheme 0.1.0 (git+https://github.com/tao3k/gerbil-scheme-rust?branch=feat%2Fgerbil-scheme-rust-bindings)",
+ "gerbil-scheme",
  "marlin-agent-graph",
  "marlin-agent-harness-types",
  "marlin-agent-kernel",

@@ -11,7 +11,7 @@ cbindgen.workspace = true
 gerbil-scheme-native-build.workspace = true
 marlin-gerbil-scheme.workspace = true
 object.workspace = true
-gerbil-scheme-build = { git = "https://github.com/tao3k/gerbil-scheme-rust", rev = "64da9c8ec2ded196d2f9d63ae4f15f2ce6461be3", version = "0.1.0" }
+gerbil-scheme-build = { git = "https://github.com/tao3k/gerbil-scheme-rust", rev = "bd0dc9abd22a0c1c2225f854271f3615a6cc9559", version = "0.1.0" }
 
 [build-dependencies]
 marlin-rust-project-harness-policy.workspace = true

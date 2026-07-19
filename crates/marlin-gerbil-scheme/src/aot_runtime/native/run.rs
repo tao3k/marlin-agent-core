@@ -12,15 +12,10 @@ use super::{
 use object::{Object, ObjectSymbol};
 use std::{
     collections::HashSet,
-    env,
-    ffi::OsString,
     fs,
     path::{Path, PathBuf},
     process::Command,
 };
-
-const GAMBOPT_ENV: &str = "GAMBOPT";
-const GERBIL_HOME_ENV: &str = "GERBIL_HOME";
 
 #[derive(Default)]
 struct NativeBuildCommandReceipts {
@@ -364,7 +359,7 @@ fn run_native_aot_command(
     let program = gerbil_toolchain_program(&command_plan.program);
     let mut command = Command::new(&program);
     command.current_dir(&plan.root).args(&command_plan.args);
-    configure_native_tool_environment(&mut command, &program);
+    gerbil_scheme::native_environment::configure_gerbil_native_tool_command(&mut command, &program);
 
     let output = command.output();
 
@@ -401,73 +396,6 @@ fn gerbil_toolchain_program(program: &Path) -> PathBuf {
         "gsc" => toolchain.gsc().to_path_buf(),
         _ => program.to_path_buf(),
     }
-}
-
-fn configure_native_tool_environment(command: &mut Command, program: &Path) {
-    #[cfg(target_os = "macos")]
-    {
-        let resolved_program =
-            std::fs::canonicalize(program).unwrap_or_else(|_| program.to_path_buf());
-        let sdkroot = env::var_os("SDKROOT");
-        if should_isolate_nix_sdkroot(&resolved_program, sdkroot.as_deref()) {
-            command.env_remove("SDKROOT");
-        }
-    }
-
-    let Some(prefix) = infer_gerbil_tool_prefix(program) else {
-        return;
-    };
-
-    command.env(GERBIL_HOME_ENV, &prefix);
-    command.env(GAMBOPT_ENV, merged_gambopt(&prefix));
-}
-
-#[cfg(target_os = "macos")]
-fn should_isolate_nix_sdkroot(program: &Path, sdkroot: Option<&std::ffi::OsStr>) -> bool {
-    program.file_name().and_then(std::ffi::OsStr::to_str) == Some("gsc")
-        && !program.starts_with("/nix/store")
-        && sdkroot
-            .map(Path::new)
-            .is_some_and(|sdkroot| sdkroot.starts_with("/nix/store"))
-}
-
-fn infer_gerbil_tool_prefix(program: &Path) -> Option<PathBuf> {
-    let prefix = program.parent()?.parent()?;
-    let bin = prefix.join("bin");
-    let lib = prefix.join("lib");
-    let include = prefix.join("include");
-
-    if !bin.is_dir()
-        || !lib.join("gerbil").is_dir()
-        || !include.join("gambit.h").is_file()
-        || !has_gambit_runtime_library(&lib)
-    {
-        return None;
-    }
-
-    Some(prefix.to_path_buf())
-}
-
-fn has_gambit_runtime_library(lib: &Path) -> bool {
-    ["libgambit.a", "libgambit.dylib", "libgambit.so"]
-        .iter()
-        .any(|file_name| lib.join(file_name).is_file())
-}
-
-fn merged_gambopt(prefix: &Path) -> OsString {
-    let mut value = OsString::from(format!(
-        "~~bin={},~~lib={},~~include={}",
-        prefix.join("bin").display(),
-        prefix.join("lib").display(),
-        prefix.join("include").display()
-    ));
-
-    if let Some(existing) = env::var_os(GAMBOPT_ENV).filter(|existing| !existing.is_empty()) {
-        value.push(",");
-        value.push(existing);
-    }
-
-    value
 }
 
 fn missing_exported_symbols(
