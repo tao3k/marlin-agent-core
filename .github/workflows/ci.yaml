@@ -114,7 +114,7 @@ jobs:
         run: cargo fetch --locked
 
       - name: Run Rust tests
-        run: cargo test --workspace --locked
+        run: cargo test --workspace --locked --exclude marlin-agent-harness
 
   gerbil:
     name: Gerbil / gate / ${{ matrix.os }} / ${{ matrix.mode }}
@@ -256,7 +256,7 @@ jobs:
 
       - name: Test Gerbil workflow surface
         run: |
-          cargo test -p marlin-gerbil-ir -p marlin-gerbil-scheme -p marlin-org-workflow --locked
+          cargo test -p marlin-agent-harness -p marlin-gerbil-ir -p marlin-gerbil-scheme -p marlin-org-workflow --locked
           cargo test -p marlin-rust-project-harness-policy --locked gerbil_runtime_asset
 
       - name: Check Gerbil binaries and examples
