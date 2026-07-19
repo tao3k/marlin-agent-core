@@ -7,8 +7,8 @@ use std::{
 };
 
 use marlin_agent_harness::{
-    materialize_gerbil_scripted_intent_case_artifact_bundle,
     GerbilScriptedIntentCaseArtifactBundleRequest, IntentCaseArtifactKind,
+    materialize_gerbil_scripted_intent_case_artifact_bundle,
 };
 use marlin_agent_harness_types::{
     RuntimeRepairCaseId, RuntimeRepairCaseReceipt, RuntimeRepairContentSummary, RuntimeRepairCount,
@@ -18,25 +18,24 @@ use marlin_agent_harness_types::{
     RuntimeRepairNoLiveCaseReceiptRequest, RuntimeRepairProfileRef,
 };
 use marlin_agent_kernel::{
-    spawn_loop_program_tool_process, AgentFlowLoopProgramRuntimeHandoffExecutor,
-    GenericLoopMachineReceipt, LoopProgramEventMapper, LoopProgramExecutionDriver,
-    LoopProgramExecutionRequest, LoopProgramExecutionStatus,
+    AgentFlowLoopProgramRuntimeHandoffExecutor, GenericLoopMachineReceipt, LoopProgramEventMapper,
+    LoopProgramExecutionDriver, LoopProgramExecutionRequest, LoopProgramExecutionStatus,
     LoopProgramRuntimeHandoffExecutionReceipt, LoopProgramRuntimeHandoffExecutionReportStatus,
     LoopProgramRuntimeHandoffExecutor, LoopProgramRuntimeHandoffPlan,
     LoopProgramRuntimeHandoffRouter, LoopProgramRuntimeHandoffRouterHandlers,
     LoopProgramRuntimeOwner, LoopProgramToolProcessProgram, LoopProgramToolProcessSpawnRequest,
-    StaticLoopProgramRuntimeHandoffHandler,
+    StaticLoopProgramRuntimeHandoffHandler, spawn_loop_program_tool_process,
 };
 use marlin_agent_protocol::{
-    system_gateway_message, user_gateway_message, LoopProgramActionKind, LoopProgramEventKind,
-    ModelEndpoint, ModelGateway, ModelGatewayCompletionOptions, ModelGatewayCompletionResponse,
-    ModelGatewayMessageRole, ModelGatewayRequest,
+    LoopProgramActionKind, LoopProgramEventKind, ModelEndpoint, ModelGateway,
+    ModelGatewayCompletionOptions, ModelGatewayCompletionResponse, ModelGatewayMessageRole,
+    ModelGatewayRequest, system_gateway_message, user_gateway_message,
 };
 use marlin_agent_runtime::{RuntimeEdgeModelGateway, RuntimeEdgePolicy, TokioAgentRuntime};
 use marlin_agent_stream::LiteLlmStreamGateway;
 use marlin_gerbil_scheme::{
-    load_gerbil_loop_case_driver_projected_loop_program, GerbilLoopCaseDriverProjectedLoopProgram,
-    GerbilLoopCaseDriverProjectedLoopProgramRequest,
+    GerbilLoopCaseDriverProjectedLoopProgram, GerbilLoopCaseDriverProjectedLoopProgramRequest,
+    load_gerbil_loop_case_driver_projected_loop_program,
 };
 
 const LIVE_LLM_GATE_ENV: &str = "MARLIN_LIVE_LLM_GATE";

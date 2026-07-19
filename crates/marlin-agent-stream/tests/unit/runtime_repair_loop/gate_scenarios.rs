@@ -1,9 +1,9 @@
 //! Exercises typed live-LLM gate receipts independently from the repair state machine.
 
 use super::{
-    runtime_live_repair_gate_receipt_from_lookup, RuntimeLiveRepairGateStatus, LIVE_LLM_GATE_ENV,
-    LIVE_LLM_MODEL_ENV, LIVE_LLM_PROVIDER_API_KEY_ENV, LIVE_LLM_PROVIDER_ENV,
-    RUNTIME_LIVE_REPAIR_CASE_ID,
+    LIVE_LLM_GATE_ENV, LIVE_LLM_MODEL_ENV, LIVE_LLM_PROVIDER_API_KEY_ENV, LIVE_LLM_PROVIDER_ENV,
+    RUNTIME_LIVE_REPAIR_CASE_ID, RuntimeLiveRepairGateStatus,
+    runtime_live_repair_gate_receipt_from_lookup,
 };
 
 #[test]

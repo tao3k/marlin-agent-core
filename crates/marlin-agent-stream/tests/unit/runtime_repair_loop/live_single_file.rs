@@ -1,20 +1,20 @@
 //! Exercises the live single-file repair scenario against the parent test harness.
 
 use super::{
-    fs, intent_case_artifact_content, live_llm_timeout,
-    materialize_gerbil_scripted_intent_case_artifact_bundle, runtime_live_repair_gate_receipt,
-    scheme_projected_real_repair_loop_case, unique_temp_repair_workspace, Arc,
-    GerbilScriptedIntentCaseArtifactBundleRequest, Instant, IntentCaseArtifactKind,
-    LiteLlmStreamGateway, LiveRepairDecisionMapper, LoopProgramActionKind, LoopProgramEventKind,
-    LoopProgramExecutionDriver, LoopProgramExecutionRequest, LoopProgramExecutionStatus,
-    LoopProgramRuntimeHandoffExecutionReportStatus, ModelEndpoint, ModelGatewayMessageRole,
-    RuntimeEdgeModelGateway, RuntimeEdgePolicy, RuntimeLiveRepairGateStatus, RuntimeRepairCaseId,
-    RuntimeRepairCaseReceipt, RuntimeRepairContentSummary, RuntimeRepairCount,
-    RuntimeRepairDurationMillis, RuntimeRepairHybridHandoffExecutor, RuntimeRepairLiveCaseReceipt,
+    Arc, BUGGY_FIXTURE, FIXED_FIXTURE, GerbilScriptedIntentCaseArtifactBundleRequest, Instant,
+    IntentCaseArtifactKind, LiteLlmStreamGateway, LiveRepairDecisionMapper, LoopProgramActionKind,
+    LoopProgramEventKind, LoopProgramExecutionDriver, LoopProgramExecutionRequest,
+    LoopProgramExecutionStatus, LoopProgramRuntimeHandoffExecutionReportStatus, ModelEndpoint,
+    ModelGatewayMessageRole, PATCH_INTENT, PATCH_REPLACE, RuntimeEdgeModelGateway,
+    RuntimeEdgePolicy, RuntimeLiveRepairGateStatus, RuntimeRepairCaseId, RuntimeRepairCaseReceipt,
+    RuntimeRepairContentSummary, RuntimeRepairCount, RuntimeRepairDurationMillis,
+    RuntimeRepairHybridHandoffExecutor, RuntimeRepairLiveCaseReceipt,
     RuntimeRepairLiveCaseReceiptRequest, RuntimeRepairModelCompletionId, RuntimeRepairModelId,
-    RuntimeRepairProfileRef, RuntimeRepairToolPhase, BUGGY_FIXTURE, FIXED_FIXTURE, PATCH_INTENT,
-    PATCH_REPLACE, SCHEME_REAL_REPAIR_CASE_ID, SCHEME_REAL_REPAIR_PROFILE_REF,
-    SCHEME_REAL_REPAIR_PROGRAM_ID,
+    RuntimeRepairProfileRef, RuntimeRepairToolPhase, SCHEME_REAL_REPAIR_CASE_ID,
+    SCHEME_REAL_REPAIR_PROFILE_REF, SCHEME_REAL_REPAIR_PROGRAM_ID, fs,
+    intent_case_artifact_content, live_llm_timeout,
+    materialize_gerbil_scripted_intent_case_artifact_bundle, runtime_live_repair_gate_receipt,
+    scheme_projected_real_repair_loop_case, unique_temp_repair_workspace,
 };
 
 #[test]
