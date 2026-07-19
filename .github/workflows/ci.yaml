@@ -117,6 +117,7 @@ jobs:
         run: >-
           cargo test --workspace --locked --exclude marlin-agent-harness --
           --skip storage_artifact_pointer_cas_lean_proof_builds
+          --skip runtime_live_repair_no_live_gate_denial_runs_typed_loop_receipt
 
   gerbil:
     name: Gerbil / gate / ${{ matrix.os }} / ${{ matrix.mode }}
@@ -258,7 +259,7 @@ jobs:
 
       - name: Test Gerbil workflow surface
         run: |
-          cargo test -p marlin-agent-harness -p marlin-gerbil-ir -p marlin-gerbil-scheme -p marlin-org-workflow --locked
+          cargo test -p marlin-agent-harness -p marlin-agent-stream -p marlin-gerbil-ir -p marlin-gerbil-scheme -p marlin-org-workflow --locked
           cargo test -p marlin-rust-project-harness-policy --locked gerbil_runtime_asset
 
       - name: Check Gerbil binaries and examples
