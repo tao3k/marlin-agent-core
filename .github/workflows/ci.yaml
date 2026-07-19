@@ -153,21 +153,21 @@ jobs:
           cache-on-failure: true
 
       - name: Cache Gerbil source build
-        uses: actions/cache@v4
+        id: gerbil-source-cache
+        uses: actions/cache/restore@v4
         with:
           path: |
             ~/.local/opt/gerbil
           key: marlin-gerbil-source-${{ runner.os }}-${{ runner.arch }}-${{ env.MARLIN_GERBIL_SOURCE_REF }}-v2
 
       - name: Cache Gerbil package dependencies
-        uses: actions/cache@v4
+        id: gerbil-package-cache
+        uses: actions/cache/restore@v4
         with:
           path: |
             ~/.gerbil
             crates/marlin-gerbil-scheme/gerbil/.gerbil
-          key: marlin-gerbil-package-deps-${{ runner.os }}-${{ runner.arch }}-${{ env.MARLIN_GERBIL_SOURCE_REF }}-${{ hashFiles('crates/marlin-gerbil-scheme/gerbil/gerbil.pkg') }}-v1
-          restore-keys: |
-            marlin-gerbil-package-deps-${{ runner.os }}-${{ runner.arch }}-${{ env.MARLIN_GERBIL_SOURCE_REF }}-
+          key: marlin-gerbil-package-deps-${{ runner.os }}-${{ runner.arch }}-${{ env.MARLIN_GERBIL_SOURCE_REF }}-${{ hashFiles('crates/marlin-gerbil-scheme/gerbil/gerbil.pkg') }}-v2
 
       - name: Configure C compiler cache
         uses: hendrikmuhs/ccache-action@v1.2.23
@@ -240,6 +240,14 @@ jobs:
           echo "CXX=c++" >> "$GITHUB_ENV"
           ccache --show-stats || true
 
+      - name: Save Gerbil source build
+        if: steps.gerbil-source-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ~/.local/opt/gerbil
+          key: ${{ steps.gerbil-source-cache.outputs.cache-primary-key }}
+
       - name: Verify Gerbil toolchain
         run: |
           set -euxo pipefail
@@ -257,6 +265,15 @@ jobs:
           mkdir -p "$HOME/.gerbil/pkg" "$PWD/.gerbil"
           gxpkg dir --add git.cons.io/mighty-gerbils/gerbil-directory || true
           gxpkg deps --install
+
+      - name: Save Gerbil package dependencies
+        if: steps.gerbil-package-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ~/.gerbil
+            crates/marlin-gerbil-scheme/gerbil/.gerbil
+          key: ${{ steps.gerbil-package-cache.outputs.cache-primary-key }}
 
       - name: Test Gerbil workflow surface
         run: |
