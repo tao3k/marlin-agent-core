@@ -130,6 +130,7 @@ async fn run_loop_program(
     .await
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn build_run_receipt(
     program_id: LoopProgramId,
     status: LoopProgramRunStatus,
