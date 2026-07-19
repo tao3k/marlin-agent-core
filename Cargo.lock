@@ -1829,12 +1829,12 @@ dependencies = [
 [[package]]
 name = "gerbil-scheme"
 version = "0.1.0"
-source = "git+https://github.com/tao3k/gerbil-scheme-rust?rev=8b96d83aa156c9f795fb813cb30551f2011bc99a#8b96d83aa156c9f795fb813cb30551f2011bc99a"
+source = "git+https://github.com/tao3k/gerbil-scheme-rust?rev=c152161a2ef7a3fc6d9f652494e8858de09641c3#c152161a2ef7a3fc6d9f652494e8858de09641c3"
 
 [[package]]
 name = "gerbil-scheme-build"
 version = "0.1.0"
-source = "git+https://github.com/tao3k/gerbil-scheme-rust?rev=8b96d83aa156c9f795fb813cb30551f2011bc99a#8b96d83aa156c9f795fb813cb30551f2011bc99a"
+source = "git+https://github.com/tao3k/gerbil-scheme-rust?rev=c152161a2ef7a3fc6d9f652494e8858de09641c3#c152161a2ef7a3fc6d9f652494e8858de09641c3"
 dependencies = [
  "gerbil-scheme",
 ]
@@ -1842,8 +1842,9 @@ dependencies = [
 [[package]]
 name = "gerbil-scheme-native-build"
 version = "0.1.0"
-source = "git+https://github.com/tao3k/gerbil-scheme-rust?rev=74ddf20cda49059cbbe71eff48a4ae20184a3a67#74ddf20cda49059cbbe71eff48a4ae20184a3a67"
+source = "git+https://github.com/tao3k/gerbil-scheme-rust?rev=c152161a2ef7a3fc6d9f652494e8858de09641c3#c152161a2ef7a3fc6d9f652494e8858de09641c3"
 dependencies = [
+ "cbindgen",
  "cc",
  "gerbil-scheme-rust-project-harness-policy",
 ]
@@ -1851,7 +1852,7 @@ dependencies = [
 [[package]]
 name = "gerbil-scheme-rust-project-harness"
 version = "0.1.2"
-source = "git+https://github.com/tao3k/gerbil-scheme-rust?rev=74ddf20cda49059cbbe71eff48a4ae20184a3a67#74ddf20cda49059cbbe71eff48a4ae20184a3a67"
+source = "git+https://github.com/tao3k/gerbil-scheme-rust?rev=c152161a2ef7a3fc6d9f652494e8858de09641c3#c152161a2ef7a3fc6d9f652494e8858de09641c3"
 dependencies = [
  "cargo-lock",
  "cargo_toml",
@@ -1869,7 +1870,7 @@ dependencies = [
 [[package]]
 name = "gerbil-scheme-rust-project-harness-policy"
 version = "0.1.0"
-source = "git+https://github.com/tao3k/gerbil-scheme-rust?rev=74ddf20cda49059cbbe71eff48a4ae20184a3a67#74ddf20cda49059cbbe71eff48a4ae20184a3a67"
+source = "git+https://github.com/tao3k/gerbil-scheme-rust?rev=c152161a2ef7a3fc6d9f652494e8858de09641c3#c152161a2ef7a3fc6d9f652494e8858de09641c3"
 dependencies = [
  "gerbil-scheme-rust-project-harness",
 ]
@@ -3093,7 +3094,6 @@ dependencies = [
 name = "marlin-gerbil-native-build"
 version = "0.1.0"
 dependencies = [
- "cbindgen",
  "cc",
  "gerbil-scheme-build",
  "gerbil-scheme-native-build",
