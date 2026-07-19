@@ -11,9 +11,43 @@ use marlin_gerbil_scheme::{
 use std::fs;
 use tempfile::Builder;
 
+static GERBIL_TOOLCHAIN_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+struct EnvVarGuard {
+    name: &'static str,
+    previous: Option<std::ffi::OsString>,
+}
+
+impl EnvVarGuard {
+    fn set(name: &'static str, value: impl AsRef<std::ffi::OsStr>) -> Self {
+        let previous = std::env::var_os(name);
+        // SAFETY: Gerbil toolchain environment mutations in this test file are
+        // serialized by GERBIL_TOOLCHAIN_ENV_LOCK and restored by Drop.
+        unsafe {
+            std::env::set_var(name, value);
+        }
+        Self { name, previous }
+    }
+}
+
+impl Drop for EnvVarGuard {
+    fn drop(&mut self) {
+        // SAFETY: the guard is only constructed while the test holds
+        // GERBIL_TOOLCHAIN_ENV_LOCK, so restoration is serialized.
+        unsafe {
+            if let Some(previous) = &self.previous {
+                std::env::set_var(self.name, previous);
+            } else {
+                std::env::remove_var(self.name);
+            }
+        }
+    }
+}
+
 #[test]
 #[cfg(unix)]
 fn deck_runtime_native_aot_build_runs_link_unit_runner() {
+    let _env_lock = GERBIL_TOOLCHAIN_ENV_LOCK.lock().expect("lock Gerbil env");
     let root = Builder::new()
         .prefix("marlin-gerbil-native-aot-build-")
         .tempdir()
@@ -25,6 +59,7 @@ fn deck_runtime_native_aot_build_runs_link_unit_runner() {
     write_empty_file(&gerbil_prefix.join("lib/libgambit.a"));
 
     let gsc = gerbil_prefix.join("bin/gsc");
+    let _gsc_env = EnvVarGuard::set("GERBIL_GSC", &gsc);
     let nm = root.path().join("toolchain/nm");
     let _compiled_runtime_scm = write_deck_runtime_native_aot_scms(root.path());
     let expected_prefix = gerbil_prefix.to_string_lossy();
@@ -90,7 +125,7 @@ printf '00000000 T marlin_deck_runtime_select_model_route\n'
     );
 
     let receipt = GerbilDeckRuntimeNativeAotConfig::new(root.path())
-        .with_gsc(gsc)
+        .with_gsc("gsc")
         .with_c_compiler("clang")
         .with_symbol_auditor(nm)
         .with_gambit_link_search_dir(root.path().join("lib"))

@@ -31,7 +31,7 @@
        => "marlin-agent-core")
 (check (.get marline-kernel-delivery
              marlin-loops-policy-receipt-contract-count)
-       => 8)
+       => 11)
 
 (display "marlin-poo-flow-scenario-ok")
 (newline)

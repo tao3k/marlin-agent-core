@@ -317,7 +317,9 @@ async fn side_effect_executor_blocks_traversal_file_projection_before_write() {
             .next()
             .is_none()
     );
-    fs::remove_dir_all(&workspace).expect("remove traversal workspace");
+    if workspace.exists() {
+        fs::remove_dir_all(&workspace).expect("remove traversal workspace");
+    }
 }
 
 #[cfg(unix)]

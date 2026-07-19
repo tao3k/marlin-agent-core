@@ -26,18 +26,10 @@
   (path-normalize
    (path-expand ".." (path-directory (this-source-file)))))
 
-(def (build-driver-environment-entry name)
-  (string-append name "=" (or (getenv name #f) "")))
-
-(def (build-driver-environment)
-  (map build-driver-environment-entry
-       '("HOME" "PATH" "GERBIL_HOME")))
-
 (def (build-driver . args)
   (driver-output->datum
    (run-process (cons "gxi" (cons "build.ss" args))
-                directory: package-root
-                environment: (build-driver-environment))))
+                directory: package-root)))
 
 (def build-driver-meta
   (build-driver "meta"))

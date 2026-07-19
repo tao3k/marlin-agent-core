@@ -319,7 +319,7 @@ fn compile_native_dependency_objects(
             if receipt.status_code.is_none_or(|status| status != 0) {
                 receipts.push(receipt);
                 return Err(NativeDependencyObjectBuildFailure {
-                    status: GerbilDeckRuntimeNativeAotBuildStatus::GscCompileObjectFailed,
+                    status: GerbilDeckRuntimeNativeAotBuildStatus::GscCompileDependencyObjectFailed,
                     detail: None,
                     receipts,
                 });
@@ -361,9 +361,10 @@ fn run_native_aot_command(
     plan: &GerbilDeckRuntimeNativeAotPlan,
     command_plan: &GerbilDeckRuntimeNativeAotCommandPlan,
 ) -> GerbilDeckRuntimeNativeAotCommandReceipt {
-    let mut command = Command::new(&command_plan.program);
+    let program = gerbil_toolchain_program(&command_plan.program);
+    let mut command = Command::new(&program);
     command.current_dir(&plan.root).args(&command_plan.args);
-    configure_native_tool_environment(&mut command, &command_plan.program);
+    configure_native_tool_environment(&mut command, &program);
 
     let output = command.output();
 
@@ -381,13 +382,53 @@ fn run_native_aot_command(
     }
 }
 
+fn gerbil_toolchain_program(program: &Path) -> PathBuf {
+    let Some(program_name) = program.file_name().and_then(|name| name.to_str()) else {
+        return program.to_path_buf();
+    };
+
+    if program
+        .parent()
+        .is_some_and(|parent| !parent.as_os_str().is_empty())
+    {
+        return program.to_path_buf();
+    }
+
+    let toolchain = gerbil_scheme::GerbilToolchain::from_env();
+    match program_name {
+        "gxi" => toolchain.gxi().to_path_buf(),
+        "gxc" => toolchain.gxc().to_path_buf(),
+        "gsc" => toolchain.gsc().to_path_buf(),
+        _ => program.to_path_buf(),
+    }
+}
+
 fn configure_native_tool_environment(command: &mut Command, program: &Path) {
+    #[cfg(target_os = "macos")]
+    {
+        let resolved_program =
+            std::fs::canonicalize(program).unwrap_or_else(|_| program.to_path_buf());
+        let sdkroot = env::var_os("SDKROOT");
+        if should_isolate_nix_sdkroot(&resolved_program, sdkroot.as_deref()) {
+            command.env_remove("SDKROOT");
+        }
+    }
+
     let Some(prefix) = infer_gerbil_tool_prefix(program) else {
         return;
     };
 
     command.env(GERBIL_HOME_ENV, &prefix);
     command.env(GAMBOPT_ENV, merged_gambopt(&prefix));
+}
+
+#[cfg(target_os = "macos")]
+fn should_isolate_nix_sdkroot(program: &Path, sdkroot: Option<&std::ffi::OsStr>) -> bool {
+    program.file_name().and_then(std::ffi::OsStr::to_str) == Some("gsc")
+        && !program.starts_with("/nix/store")
+        && sdkroot
+            .map(Path::new)
+            .is_some_and(|sdkroot| sdkroot.starts_with("/nix/store"))
 }
 
 fn infer_gerbil_tool_prefix(program: &Path) -> Option<PathBuf> {

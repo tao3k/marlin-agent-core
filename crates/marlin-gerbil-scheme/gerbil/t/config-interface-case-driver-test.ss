@@ -291,6 +291,19 @@
 (check (alist-ref (list-ref vertical-case-driver-receipts 6)
                   'policy-merge-statuses)
        => "applied|applied|applied|applied|applied|applied")
+(check (map (lambda (receipt)
+              (alist-ref receipt 'policy-mixin-stack-present?))
+            vertical-case-driver-receipts)
+       => '(#f #f #f #f #f #f #t))
+(check (alist-ref (list-ref vertical-case-driver-receipts 6)
+                  'policy-mixin-stack-mixin-count)
+       => 7)
+(check (alist-ref (list-ref vertical-case-driver-receipts 6)
+                  'policy-mixin-stack-slot-merge-law-count)
+       => 6)
+(check (alist-ref (list-ref vertical-case-driver-receipts 6)
+                  'policy-mixin-stack-slot-merge-laws)
+       => "route_rules=ordered_append|observability=union|budget.max_attempts=min|capability=intersection|human_gates=union|exclusive_resource=conflict_error")
 (check (map (lambda (receipt) (alist-ref receipt 'scheme-boundary))
             vertical-case-driver-receipts)
        => '(scheme-types->rust-types
@@ -353,6 +366,14 @@
     policy-conflict-merge-receipt-count
     policy-merge-kinds
     policy-merge-statuses
+    policy-mixin-stack-present?
+    policy-mixin-stack-receipt-kind
+    policy-mixin-stack-profile-id
+    policy-mixin-stack-mixin-count
+    policy-mixin-stack-slot-merge-law-count
+    policy-mixin-stack-slot-merge-laws
+    policy-mixin-stack-linearization-owner
+    policy-mixin-stack-slot-merge-owner
     scheme-boundary
     serialization-boundary))
 

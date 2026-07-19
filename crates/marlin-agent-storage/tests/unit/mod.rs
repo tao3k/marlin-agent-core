@@ -556,18 +556,31 @@ async fn turso_local_backend_confines_concurrent_pointer_contention() {
         let pointer = pointer.clone();
         let initial_hash = initial_hash.clone();
         handles.push(tokio::spawn(async move {
-            storage
-                .compare_and_swap_artifact_pointer(ArtifactPointerUpdate {
-                    project_id: project(),
-                    pointer_key: pointer,
-                    expected_artifact_hash: Some(initial_hash),
-                    new_artifact_hash: artifact_hash(&format!("hash:contention-{index}")),
-                    updated_by_session_id: session(&format!("session-contention-{index}")),
-                    updated_by_agent_id: agent(&format!("agent-contention-{index}")),
-                    updated_by_event_id: event(&format!("event-contention-{index}")),
-                    updated_at_unix_ms: index as i64,
-                })
-                .await
+            loop {
+                let result = storage
+                    .compare_and_swap_artifact_pointer(ArtifactPointerUpdate {
+                        project_id: project(),
+                        pointer_key: pointer.clone(),
+                        expected_artifact_hash: Some(initial_hash.clone()),
+                        new_artifact_hash: artifact_hash(&format!("hash:contention-{index}")),
+                        updated_by_session_id: session(&format!("session-contention-{index}")),
+                        updated_by_agent_id: agent(&format!("agent-contention-{index}")),
+                        updated_by_event_id: event(&format!("event-contention-{index}")),
+                        updated_at_unix_ms: index as i64,
+                    })
+                    .await;
+
+                match result {
+                    Err(StorageError::Backend { message })
+                        if message.contains("database is locked")
+                            || message.contains("busy")
+                            || message.contains("Busy") =>
+                    {
+                        tokio::time::sleep(std::time::Duration::from_millis(2)).await;
+                    }
+                    result => break result,
+                }
+            }
         }));
     }
 

@@ -14,6 +14,7 @@ members = [
     "crates/marlin-agent-runtime",
     "crates/marlin-agent-sessions",
     "crates/marlin-agent-storage",
+    "bazel/crate-universe",
     "crates/marlin-agent-stream",
     "crates/marlin-agent-test-support",
     "crates/marlin-deck-runtime-native",
@@ -53,7 +54,7 @@ globset = "0.4.18"
 litellm-rs = { version = "0.5", default-features = false, features = ["lite", "gateway", "sqlite", "redis", "websockets"] }
 memoffset = "0.9.1"
 object = "0.39.1"
-orgize = { git = "https://github.com/tao3k/orgize", branch = "main" }
+orgize = { git = "https://github.com/tao3k/orgize", rev = "9d9ee8c66ccd222bf4379d562deeda514b475875" }
 parking_lot = "0.12.5"
 reqwest = { version = "0.13.4", default-features = false, features = ["json", "rustls"] }
 serde = { version = "1.0.228", features = ["derive"] }
@@ -70,7 +71,7 @@ tower = { version = "0.5.3", features = ["limit", "load-shed", "timeout", "util"
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter", "fmt", "json"] }
 wiremock = "0.6.5"
-rust-lang-project-harness = { git = "https://github.com/tao3k/rust-lang-project-harness", rev = "0c02f4e3f7bd34782c4c070a4be65bef9fb87b61", version = "0.1.2" }
+rust-lang-project-harness = { git = "https://github.com/tao3k/rust-lang-project-harness", rev = "124b78e1e43265255e6e761b93f6a5f0048b0c48", version = "0.1.2" }
 marlin-rust-project-harness-policy = { path = "build-support/marlin-rust-project-harness-policy", version = "0.1.0" }
 marlin-agent-environment = { path = "crates/marlin-agent-environment", version = "0.1.0" }
 marlin-agent-graph = { path = "crates/marlin-agent-graph", version = "0.1.0" }

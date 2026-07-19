@@ -7,7 +7,8 @@ package: config-interface/custom/marline-kernel
 (import :clan/poo/object
         :config-interface/modules/lib
         (only-in :config-interface/modules/policy-pack
-                 marlinLoopVerticalMainlineProjectionDescriptors)
+                 marlinLoopVerticalMainlineProjectionDescriptors
+                 marlinPolicyCombinationMatrixSlotMergeAlgebraReceipts)
         :config-interface/modules/prefabs/user-interface
         (only-in :config-interface/custom/marline-kernel/config
                  poo-flow-custom-module-runtime-handoff-llm-case
@@ -249,6 +250,19 @@ package: config-interface/custom/marline-kernel
              (equal? (.ref merge-receipt 'status) status-value))
            (vector->list merge-receipts))))
 
+(def (marline-kernel-loop-case-policy-mixin-stack-present? vertical-spec)
+  (marline-kernel-loop-case-vertical-tag? vertical-spec '+policy-combination))
+
+(def (marline-kernel-loop-case-policy-mixin-stack-law-string)
+  (marline-kernel-loop-case-join
+   (map (lambda (merge-receipt)
+          (string-append (.get merge-receipt slot)
+                         "="
+                         (.get merge-receipt merge)))
+        (vector->list
+         (marlinPolicyCombinationMatrixSlotMergeAlgebraReceipts)))
+   "|"))
+
 (def (marline-kernel-loop-case-driver-vertical-receipt vertical-spec)
   (let* ((case-id (marline-kernel-loop-case-vertical-case-id vertical-spec))
          (profile-id (marline-kernel-loop-case-vertical-profile-id vertical-spec))
@@ -264,6 +278,8 @@ package: config-interface/custom/marline-kernel
          (budget-caps (.get hot-policy budget_caps))
          (forced-slots (.get audit-policy forced_slots))
          (merge-receipts (.get audit-policy merge_receipts))
+         (policy-mixin-stack-present?
+          (marline-kernel-loop-case-policy-mixin-stack-present? vertical-spec))
          (mechanism-policies (.get loop-program mechanism_policies))
          (transitions (.get loop-program transitions))
          (command-vector
@@ -367,6 +383,36 @@ package: config-interface/custom/marline-kernel
                              ,(marline-kernel-loop-case-merge-receipt-field-string
                                merge-receipts
                                'status))
+      (policy-mixin-stack-present? . ,policy-mixin-stack-present?)
+      (policy-mixin-stack-receipt-kind .
+                                       ,(if policy-mixin-stack-present?
+                                          "marlin.config-interface.policy-pack.mixin-stack-compiler-receipt.v1"
+                                          "none"))
+      (policy-mixin-stack-profile-id .
+                                     ,(if policy-mixin-stack-present?
+                                        profile-id
+                                        "none"))
+      (policy-mixin-stack-mixin-count .
+                                     ,(if policy-mixin-stack-present?
+                                        (vector-length
+                                         (.get audit-policy policy_mixins))
+                                        0))
+      (policy-mixin-stack-slot-merge-law-count .
+                                              ,(if policy-mixin-stack-present?
+                                                 (vector-length merge-receipts)
+                                                 0))
+      (policy-mixin-stack-slot-merge-laws .
+                                         ,(if policy-mixin-stack-present?
+                                            (marline-kernel-loop-case-policy-mixin-stack-law-string)
+                                            ""))
+      (policy-mixin-stack-linearization-owner .
+                                             ,(if policy-mixin-stack-present?
+                                                "poo-flow.c3-c4"
+                                                "none"))
+      (policy-mixin-stack-slot-merge-owner .
+                                         ,(if policy-mixin-stack-present?
+                                            "poo-flow.slot-merge-algebra"
+                                            "none"))
       (scheme-boundary .
                        ,(marline-kernel-loop-case-boundary-token
                          (.get compiler-receipt scheme-boundary)))

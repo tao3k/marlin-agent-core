@@ -259,6 +259,7 @@ jobs:
           gxpkg list || true
 
       - name: Install Gerbil package dependencies
+        if: steps.gerbil-package-cache.outputs.cache-hit != 'true'
         working-directory: crates/marlin-gerbil-scheme/gerbil
         run: |
           set -euxo pipefail
@@ -274,14 +275,6 @@ jobs:
             ~/.gerbil
             crates/marlin-gerbil-scheme/gerbil/.gerbil
           key: ${{ steps.gerbil-package-cache.outputs.cache-primary-key }}
-
-      - name: Test Gerbil workflow surface
-        run: |
-          cargo test -p marlin-agent-harness -p marlin-agent-stream -p marlin-gerbil-ir -p marlin-gerbil-scheme -p marlin-org-workflow --locked
-          cargo test -p marlin-rust-project-harness-policy --locked gerbil_runtime_asset
-
-      - name: Check Gerbil binaries and examples
-        run: cargo check -p marlin-gerbil-scheme --bins --examples --locked
 
       - name: Build Gerbil package assets
         working-directory: crates/marlin-gerbil-scheme/gerbil

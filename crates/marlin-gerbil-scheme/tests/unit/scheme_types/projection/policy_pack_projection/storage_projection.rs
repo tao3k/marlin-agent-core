@@ -1,6 +1,6 @@
 use marlin_agent_storage::{
     AgentId, AgentStorage, ArtifactHash, ArtifactRecord, EventId, ProjectId, SessionEventRecord,
-    SessionId, StorageResult, TurnId, TursoAgentStorage, TursoAgentStorageConfig, TursoMvccMode,
+    SessionId, StorageResult, TurnId, TursoAgentStorage, TursoAgentStorageConfig,
     VisibilityReceipt,
 };
 use tempfile::tempdir;
@@ -56,7 +56,7 @@ async fn real_policy_pack_projection_receipt_persists_as_storage_artifact_and_vi
     let db_path = tempdir.path().join("ifc-real-policy-pack-projection.turso");
     let storage = TursoAgentStorage::open_local(TursoAgentStorageConfig {
         path: db_path.clone(),
-        mvcc: TursoMvccMode::Required,
+        mvcc: marlin_agent_storage::TursoMvccMode::Required,
     })
     .await?;
 
@@ -121,7 +121,7 @@ async fn real_policy_pack_projection_receipt_persists_as_storage_artifact_and_vi
 
     let reopened = TursoAgentStorage::open_local(TursoAgentStorageConfig {
         path: db_path,
-        mvcc: TursoMvccMode::Required,
+        mvcc: marlin_agent_storage::TursoMvccMode::Required,
     })
     .await?;
 
