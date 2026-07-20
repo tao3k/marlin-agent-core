@@ -23,7 +23,7 @@ marlin-workspace-protocol.workspace = true
 object.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-gerbil-scheme = { version = "0.1.0", git = "https://github.com/tao3k/gerbil-scheme-rust", rev = "3535c749ff1185f391149df025d6d3fef50331af" }
+gerbil-scheme = { version = "0.1.0", git = "https://github.com/tao3k/gerbil-scheme-rust", rev = "06bd6dc64d2cc3d45c2f376aa9a02375c462d1a7" }
 
 [build-dependencies]
 marlin-rust-project-harness-policy.workspace = true

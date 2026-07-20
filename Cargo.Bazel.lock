@@ -1,5 +1,5 @@
 {
-  "checksum": "17904cb539886adbb6cc3592187374e1e4572993cf94bfef629e233cb8448357",
+  "checksum": "b5bbd894ece653df3d827a4e9a9913ac02dd99801ede909a2057ab31e684ca90",
   "crates": {
     "actix-codec 0.5.2": {
       "name": "actix-codec",
@@ -2273,7 +2273,7 @@
           "selects": {
             "cfg(windows)": [
               {
-                "id": "windows-sys 0.61.2",
+                "id": "windows-sys 0.60.2",
                 "target": "windows_sys"
               }
             ]
@@ -2332,7 +2332,7 @@
                 "target": "once_cell_polyfill"
               },
               {
-                "id": "windows-sys 0.61.2",
+                "id": "windows-sys 0.60.2",
                 "target": "windows_sys"
               }
             ]
@@ -8865,7 +8865,7 @@
             ],
             "cfg(windows)": [
               {
-                "id": "windows-sys 0.61.2",
+                "id": "windows-sys 0.60.2",
                 "target": "windows_sys"
               }
             ]
@@ -9381,7 +9381,7 @@
             ],
             "cfg(windows)": [
               {
-                "id": "windows-sys 0.61.2",
+                "id": "windows-sys 0.52.0",
                 "target": "windows_sys"
               }
             ]
@@ -11088,6 +11088,105 @@
       ],
       "license_file": "LICENSE"
     },
+    "gerbil-scheme 0.1.0": {
+      "name": "gerbil-scheme",
+      "version": "0.1.0",
+      "package_url": "https://github.com/tao3k/gerbil-scheme-rust",
+      "repository": {
+        "Git": {
+          "remote": "https://github.com/tao3k/gerbil-scheme-rust",
+          "commitish": {
+            "Rev": "06bd6dc64d2cc3d45c2f376aa9a02375c462d1a7"
+          },
+          "strip_prefix": "crates/gerbil-scheme"
+        }
+      },
+      "targets": [
+        {
+          "Library": {
+            "crate_name": "gerbil_scheme",
+            "crate_root": "src/lib.rs",
+            "srcs": {
+              "allow_empty": true,
+              "include": [
+                "**/*.rs"
+              ]
+            }
+          }
+        }
+      ],
+      "library_target_name": "gerbil_scheme",
+      "common_attrs": {
+        "compile_data_glob": [
+          "**"
+        ],
+        "crate_features": {
+          "common": [
+            "default"
+          ],
+          "selects": {}
+        },
+        "edition": "2024",
+        "version": "0.1.0"
+      },
+      "license": "Apache-2.0 OR LGPL-2.1-or-later",
+      "license_ids": [
+        "Apache-2.0",
+        "LGPL-2.1"
+      ],
+      "license_file": null
+    },
+    "gerbil-scheme-build 0.1.0": {
+      "name": "gerbil-scheme-build",
+      "version": "0.1.0",
+      "package_url": "https://github.com/tao3k/gerbil-scheme-rust",
+      "repository": {
+        "Git": {
+          "remote": "https://github.com/tao3k/gerbil-scheme-rust",
+          "commitish": {
+            "Rev": "06bd6dc64d2cc3d45c2f376aa9a02375c462d1a7"
+          },
+          "strip_prefix": "crates/gerbil-scheme-build"
+        }
+      },
+      "targets": [
+        {
+          "Library": {
+            "crate_name": "gerbil_scheme_build",
+            "crate_root": "src/lib.rs",
+            "srcs": {
+              "allow_empty": true,
+              "include": [
+                "**/*.rs"
+              ]
+            }
+          }
+        }
+      ],
+      "library_target_name": "gerbil_scheme_build",
+      "common_attrs": {
+        "compile_data_glob": [
+          "**"
+        ],
+        "deps": {
+          "common": [
+            {
+              "id": "gerbil-scheme 0.1.0",
+              "target": "gerbil_scheme"
+            }
+          ],
+          "selects": {}
+        },
+        "edition": "2024",
+        "version": "0.1.0"
+      },
+      "license": "Apache-2.0 OR LGPL-2.1-or-later",
+      "license_ids": [
+        "Apache-2.0",
+        "LGPL-2.1"
+      ],
+      "license_file": null
+    },
     "gerbil-scheme-native-build 0.1.0": {
       "name": "gerbil-scheme-native-build",
       "version": "0.1.0",
@@ -11096,7 +11195,7 @@
         "Git": {
           "remote": "https://github.com/tao3k/gerbil-scheme-rust",
           "commitish": {
-            "Rev": "74ddf20cda49059cbbe71eff48a4ae20184a3a67"
+            "Rev": "06bd6dc64d2cc3d45c2f376aa9a02375c462d1a7"
           },
           "strip_prefix": "build-support/gerbil-scheme-native-build"
         }
@@ -11134,6 +11233,10 @@
         ],
         "deps": {
           "common": [
+            {
+              "id": "cbindgen 0.29.4",
+              "target": "cbindgen"
+            },
             {
               "id": "cc 1.2.64",
               "target": "cc"
@@ -11183,7 +11286,7 @@
         "Git": {
           "remote": "https://github.com/tao3k/gerbil-scheme-rust",
           "commitish": {
-            "Rev": "74ddf20cda49059cbbe71eff48a4ae20184a3a67"
+            "Rev": "06bd6dc64d2cc3d45c2f376aa9a02375c462d1a7"
           },
           "strip_prefix": "build-support/gerbil-scheme-rust-project-harness"
         }
@@ -11280,7 +11383,7 @@
         "Git": {
           "remote": "https://github.com/tao3k/gerbil-scheme-rust",
           "commitish": {
-            "Rev": "74ddf20cda49059cbbe71eff48a4ae20184a3a67"
+            "Rev": "06bd6dc64d2cc3d45c2f376aa9a02375c462d1a7"
           },
           "strip_prefix": "build-support/gerbil-scheme-rust-project-harness-policy"
         }
@@ -18865,12 +18968,12 @@
         "deps": {
           "common": [
             {
-              "id": "cbindgen 0.29.4",
-              "target": "cbindgen"
-            },
-            {
               "id": "cc 1.2.64",
               "target": "cc"
+            },
+            {
+              "id": "gerbil-scheme-build 0.1.0",
+              "target": "gerbil_scheme_build"
             },
             {
               "id": "gerbil-scheme-native-build 0.1.0",
@@ -18943,6 +19046,10 @@
         ],
         "deps": {
           "common": [
+            {
+              "id": "gerbil-scheme 0.1.0",
+              "target": "gerbil_scheme"
+            },
             {
               "id": "marlin-gerbil-scheme 0.1.0",
               "target": "build_script_build"
@@ -21023,7 +21130,7 @@
           "selects": {
             "cfg(windows)": [
               {
-                "id": "windows-sys 0.61.2",
+                "id": "windows-sys 0.60.2",
                 "target": "windows_sys",
                 "alias": "windows"
               }
@@ -27818,7 +27925,7 @@
                 "alias": "libc_errno"
               },
               {
-                "id": "windows-sys 0.61.2",
+                "id": "windows-sys 0.52.0",
                 "target": "windows_sys"
               }
             ],
@@ -28210,7 +28317,7 @@
             ],
             "cfg(windows)": [
               {
-                "id": "windows-sys 0.61.2",
+                "id": "windows-sys 0.52.0",
                 "target": "windows_sys"
               }
             ]
@@ -31304,7 +31411,7 @@
             ],
             "cfg(windows)": [
               {
-                "id": "windows-sys 0.61.2",
+                "id": "windows-sys 0.60.2",
                 "target": "windows_sys"
               }
             ]
@@ -33232,7 +33339,7 @@
             ],
             "cfg(windows)": [
               {
-                "id": "windows-sys 0.61.2",
+                "id": "windows-sys 0.52.0",
                 "target": "windows_sys"
               }
             ],
@@ -39082,7 +39189,7 @@
           "selects": {
             "cfg(windows)": [
               {
-                "id": "windows-sys 0.61.2",
+                "id": "windows-sys 0.48.0",
                 "target": "windows_sys"
               }
             ]
@@ -40156,6 +40263,19 @@
         "compile_data_glob": [
           "**"
         ],
+        "crate_features": {
+          "common": [
+            "Win32",
+            "Win32_Foundation",
+            "Win32_Storage",
+            "Win32_Storage_FileSystem",
+            "Win32_System",
+            "Win32_System_Console",
+            "Win32_System_SystemInformation",
+            "default"
+          ],
+          "selects": {}
+        },
         "deps": {
           "common": [
             {
@@ -40212,13 +40332,22 @@
             "Win32_NetworkManagement_IpHelper",
             "Win32_Networking",
             "Win32_Networking_WinSock",
+            "Win32_Security",
+            "Win32_Security_Cryptography",
+            "Win32_Storage",
+            "Win32_Storage_FileSystem",
             "Win32_System",
-            "Win32_System_IO",
+            "Win32_System_Diagnostics",
+            "Win32_System_Diagnostics_Debug",
             "Win32_System_Threading",
-            "Win32_System_WindowsProgramming",
             "default"
           ],
-          "selects": {}
+          "selects": {
+            "x86_64-pc-windows-msvc": [
+              "Win32_System_IO",
+              "Win32_System_WindowsProgramming"
+            ]
+          }
         },
         "deps": {
           "common": [
@@ -40268,6 +40397,31 @@
         "compile_data_glob": [
           "**"
         ],
+        "crate_features": {
+          "common": [
+            "Win32",
+            "Win32_Foundation",
+            "Win32_Networking",
+            "Win32_Networking_WinSock",
+            "Win32_Security",
+            "Win32_Storage",
+            "Win32_Storage_FileSystem",
+            "Win32_System",
+            "Win32_System_Console",
+            "Win32_System_IO",
+            "Win32_System_Threading",
+            "Win32_System_WindowsProgramming",
+            "default"
+          ],
+          "selects": {
+            "x86_64-pc-windows-msvc": [
+              "Win32_Globalization",
+              "Win32_System_Com",
+              "Win32_UI",
+              "Win32_UI_Shell"
+            ]
+          }
+        },
         "deps": {
           "common": [
             {
@@ -40329,7 +40483,6 @@
             "Win32_Networking",
             "Win32_Networking_WinSock",
             "Win32_Security",
-            "Win32_Security_Cryptography",
             "Win32_Storage",
             "Win32_Storage_FileSystem",
             "Win32_System",
@@ -40350,10 +40503,10 @@
           ],
           "selects": {
             "x86_64-pc-windows-msvc": [
-              "Win32_Globalization",
               "Win32_Security_Authentication",
               "Win32_Security_Authentication_Identity",
               "Win32_Security_Credentials",
+              "Win32_Security_Cryptography",
               "Win32_System_LibraryLoader"
             ]
           }
@@ -44618,8 +44771,9 @@
     "aho-corasick 1.1.4",
     "async-trait 0.1.89",
     "axum 0.8.9",
-    "cbindgen 0.29.4",
     "cc 1.2.64",
+    "gerbil-scheme 0.1.0",
+    "gerbil-scheme-build 0.1.0",
     "gerbil-scheme-native-build 0.1.0",
     "globset 0.4.18",
     "litellm-rs 0.5.0",
