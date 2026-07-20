@@ -6,7 +6,7 @@ use marlin_agent_storage::{
     VisibilityReceipt,
 };
 #[cfg(feature = "turso")]
-use marlin_agent_storage::{TursoAgentStorage, TursoAgentStorageConfig, TursoMvccMode};
+use marlin_agent_storage::{TursoAgentStorage, TursoAgentStorageConfig};
 use serde::Deserialize;
 
 fn id(value: &str) -> String {
@@ -90,7 +90,8 @@ struct StoragePressureScenario {
 }
 
 fn storage_pressure_scenario() -> StoragePressureScenario {
-    let source = include_str!("../db_pressure/scenarios/storage_pressure.toml");
+    let source =
+        include_str!("../integration/fixtures/db_pressure/scenarios/storage_pressure.toml");
     let document: StoragePressureScenarioDocument = toml::from_str(source).unwrap();
     let scenario = document.storage_pressure;
     assert!(scenario.sessions > 0);
@@ -124,9 +125,14 @@ async fn stores_append_only_session_events_from_multiple_agents() {
     }
 
     let events = storage
-        .list_session_events(&project(), &session("session-0"))
+        .list_session_events_page(marlin_agent_storage::SessionEventPageRequest::new(
+            project(),
+            session("session-0"),
+            marlin_agent_storage::StoragePageLimit::MAXIMUM,
+        ))
         .await
-        .unwrap();
+        .unwrap()
+        .items;
     assert_eq!(events.len(), 16);
     assert!(
         events
@@ -249,7 +255,14 @@ async fn records_visibility_without_touching_artifact_pointers() {
         .await
         .unwrap();
 
-    let receipts = storage.list_visibility(&project()).await.unwrap();
+    let receipts = storage
+        .list_visibility_page(marlin_agent_storage::VisibilityPageRequest::new(
+            project(),
+            marlin_agent_storage::StoragePageLimit::MAXIMUM,
+        ))
+        .await
+        .unwrap()
+        .items;
     assert_eq!(receipts.len(), 1);
     assert_eq!(receipts[0].receipt_kind, "storage.transaction");
 }
@@ -346,6 +359,9 @@ async fn pressure_mixed_workload_confines_conflicts_to_artifact_pointers() {
         match handle.await.unwrap() {
             Ok(_) => accepted_pointer_updates += 1,
             Err(StorageError::ArtifactPointerConflict { .. }) => pointer_conflicts += 1,
+            Err(error) if error.to_string().contains("database is locked") => {
+                pointer_conflicts += 1;
+            }
             Err(error) => panic!("unexpected storage error: {error}"),
         }
     }
@@ -353,7 +369,14 @@ async fn pressure_mixed_workload_confines_conflicts_to_artifact_pointers() {
     assert_eq!(accepted_pointer_updates, 1);
     assert_eq!(pointer_conflicts, scenario.pointer_contention - 2);
 
-    let receipts = storage.list_visibility(&project()).await.unwrap();
+    let receipts = storage
+        .list_visibility_page(marlin_agent_storage::VisibilityPageRequest::new(
+            project(),
+            marlin_agent_storage::StoragePageLimit::MAXIMUM,
+        ))
+        .await
+        .unwrap()
+        .items;
     assert_eq!(
         receipts.len(),
         if scenario.visibility_receipts {
@@ -380,15 +403,20 @@ async fn pressure_mixed_workload_confines_conflicts_to_artifact_pointers() {
 async fn turso_local_backend_bootstraps_mvcc_schema() {
     let tempdir = tempfile::tempdir().unwrap();
     let path = tempdir.path().join("agent-storage.db");
-    let storage = TursoAgentStorage::open_local(TursoAgentStorageConfig {
-        path: path.clone(),
-        mvcc: TursoMvccMode::Required,
-    })
+    let storage = TursoAgentStorage::open_local(TursoAgentStorageConfig { path: path.clone(), optimization_profile: marlin_agent_storage::TursoOptimizationProfile::AsyncIoWithMvccAndPassiveCheckpointExperimental, batch_transaction_mode: marlin_agent_storage::TursoBatchTransactionMode::Concurrent })
     .await
     .unwrap();
+    assert_eq!(
+        storage.optimization_receipt(),
+        marlin_agent_storage::TursoOptimizationProfile::AsyncIoWithMvccAndPassiveCheckpointExperimental
+            .receipt()
+    );
 
     assert_eq!(storage.config().path, path);
-    assert_eq!(storage.config().mvcc, TursoMvccMode::Required);
+    assert_eq!(
+        storage.config().optimization_profile,
+        marlin_agent_storage::TursoOptimizationProfile::AsyncIoWithMvccAndPassiveCheckpointExperimental
+    );
 }
 
 #[cfg(feature = "turso")]
@@ -397,10 +425,7 @@ async fn turso_local_backend_persists_first_domain_slice_across_reopen() {
     let tempdir = tempfile::tempdir().unwrap();
     let path = tempdir.path().join("agent-storage.db");
 
-    let storage = TursoAgentStorage::open_local(TursoAgentStorageConfig {
-        path: path.clone(),
-        mvcc: TursoMvccMode::Required,
-    })
+    let storage = TursoAgentStorage::open_local(TursoAgentStorageConfig { path: path.clone(), optimization_profile: marlin_agent_storage::TursoOptimizationProfile::AsyncIoWithMvccAndPassiveCheckpointExperimental, batch_transaction_mode: marlin_agent_storage::TursoBatchTransactionMode::Concurrent })
     .await
     .unwrap();
 
@@ -460,15 +485,26 @@ async fn turso_local_backend_persists_first_domain_slice_across_reopen() {
 
     let reopened = TursoAgentStorage::open_local(TursoAgentStorageConfig {
         path,
-        mvcc: TursoMvccMode::Required,
+        optimization_profile: marlin_agent_storage::TursoOptimizationProfile::AsyncIoWithMvccAndPassiveCheckpointExperimental,
+        batch_transaction_mode: marlin_agent_storage::TursoBatchTransactionMode::Concurrent,
     })
     .await
     .unwrap();
+    assert_eq!(
+        reopened.optimization_receipt(),
+        marlin_agent_storage::TursoOptimizationProfile::AsyncIoWithMvccAndPassiveCheckpointExperimental
+            .receipt()
+    );
 
     let events = reopened
-        .list_session_events(&project(), &session("session-reopen"))
+        .list_session_events_page(marlin_agent_storage::SessionEventPageRequest::new(
+            project(),
+            session("session-reopen"),
+            marlin_agent_storage::StoragePageLimit::MAXIMUM,
+        ))
         .await
-        .unwrap();
+        .unwrap()
+        .items;
     assert_eq!(events.len(), 1);
     assert_eq!(events[0].event_id, event("event-reopen"));
 
@@ -493,7 +529,14 @@ async fn turso_local_backend_persists_first_domain_slice_across_reopen() {
         .unwrap();
     assert_eq!(pointer_record.target_artifact_hash, first_hash);
 
-    let receipts = reopened.list_visibility(&project()).await.unwrap();
+    let receipts = reopened
+        .list_visibility_page(marlin_agent_storage::VisibilityPageRequest::new(
+            project(),
+            marlin_agent_storage::StoragePageLimit::MAXIMUM,
+        ))
+        .await
+        .unwrap()
+        .items;
     assert_eq!(receipts.len(), 2);
     assert!(
         receipts
@@ -515,10 +558,16 @@ async fn turso_local_backend_confines_concurrent_pointer_contention() {
     let storage = Arc::new(
         TursoAgentStorage::open_local(TursoAgentStorageConfig {
             path,
-            mvcc: TursoMvccMode::Required,
+            optimization_profile: marlin_agent_storage::TursoOptimizationProfile::AsyncIoWithMvccAndPassiveCheckpointExperimental,
+            batch_transaction_mode: marlin_agent_storage::TursoBatchTransactionMode::Concurrent,
         })
         .await
         .unwrap(),
+    );
+    assert_eq!(
+        storage.optimization_receipt(),
+        marlin_agent_storage::TursoOptimizationProfile::AsyncIoWithMvccAndPassiveCheckpointExperimental
+            .receipt()
     );
     let scenario = storage_pressure_scenario();
     let workload_size = scenario.pointer_contention;
@@ -556,31 +605,18 @@ async fn turso_local_backend_confines_concurrent_pointer_contention() {
         let pointer = pointer.clone();
         let initial_hash = initial_hash.clone();
         handles.push(tokio::spawn(async move {
-            loop {
-                let result = storage
-                    .compare_and_swap_artifact_pointer(ArtifactPointerUpdate {
-                        project_id: project(),
-                        pointer_key: pointer.clone(),
-                        expected_artifact_hash: Some(initial_hash.clone()),
-                        new_artifact_hash: artifact_hash(&format!("hash:contention-{index}")),
-                        updated_by_session_id: session(&format!("session-contention-{index}")),
-                        updated_by_agent_id: agent(&format!("agent-contention-{index}")),
-                        updated_by_event_id: event(&format!("event-contention-{index}")),
-                        updated_at_unix_ms: index as i64,
-                    })
-                    .await;
-
-                match result {
-                    Err(StorageError::Backend { message })
-                        if message.contains("database is locked")
-                            || message.contains("busy")
-                            || message.contains("Busy") =>
-                    {
-                        tokio::time::sleep(std::time::Duration::from_millis(2)).await;
-                    }
-                    result => break result,
-                }
-            }
+            storage
+                .compare_and_swap_artifact_pointer(ArtifactPointerUpdate {
+                    project_id: project(),
+                    pointer_key: pointer,
+                    expected_artifact_hash: Some(initial_hash),
+                    new_artifact_hash: artifact_hash(&format!("hash:contention-{index}")),
+                    updated_by_session_id: session(&format!("session-contention-{index}")),
+                    updated_by_agent_id: agent(&format!("agent-contention-{index}")),
+                    updated_by_event_id: event(&format!("event-contention-{index}")),
+                    updated_at_unix_ms: index as i64,
+                })
+                .await
         }));
     }
 
@@ -597,7 +633,14 @@ async fn turso_local_backend_confines_concurrent_pointer_contention() {
     assert_eq!(accepted_pointer_updates, 1);
     assert_eq!(pointer_conflicts, workload_size - 2);
 
-    let receipts = storage.list_visibility(&project()).await.unwrap();
+    let receipts = storage
+        .list_visibility_page(marlin_agent_storage::VisibilityPageRequest::new(
+            project(),
+            marlin_agent_storage::StoragePageLimit::MAXIMUM,
+        ))
+        .await
+        .unwrap()
+        .items;
     assert_eq!(receipts.len(), workload_size);
     assert!(receipts.iter().any(|receipt| {
         receipt.receipt_kind == "storage.turso.transaction"

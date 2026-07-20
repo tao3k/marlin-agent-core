@@ -1,0 +1,17 @@
+load("@marlin_crates//:defs.bzl", "crate_deps", "crate_edition")
+load("//bazel:marlin_harness.bzl", "marlin_harness_crate")
+
+marlin_harness_crate(
+    name = "marlin_agent_protocol",
+    srcs = glob(["src/**/*.rs"]),
+    build_deps = ["//build-support/marlin-rust-project-harness-policy:marlin_rust_project_harness_policy"],
+    edition = crate_edition(),
+    gate_data = glob(["tests/**/*.rs"]),
+    deps = crate_deps([
+        "serde",
+        "toml",
+    ]) + [
+        "//crates/marlin-agent-graph:marlin_agent_graph",
+        "//crates/marlin-gerbil-ir:marlin_gerbil_ir",
+    ],
+)

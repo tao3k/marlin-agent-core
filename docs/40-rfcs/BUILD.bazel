@@ -1,0 +1,5 @@
+filegroup(
+    name = "turso_agent_storage_engine_rfc",
+    srcs = ["40.160-turso-agent-storage-engine.org"],
+    visibility = ["//crates/marlin-agent-storage:__pkg__"],
+)

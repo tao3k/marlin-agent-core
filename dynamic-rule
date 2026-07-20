@@ -1,0 +1,4 @@
+[graph-route] profile=owner-query alg=typed-ppr-diverse relation=cohesive route=owner-item covered=9/11 budget=10
+owner=path(crates/marlin-gerbil-scheme/gerbil/src/marlin/deck-runtime-compiled-policy.ss) score=112702 hits=2 symbols=make-marlin-deck-runtime-model-route-policy,marlin-deck-runtime-agent-policy-template-
+next=asp gerbil-scheme search owner 'crates/marlin-gerbil-scheme/gerbil/src/marlin/deck-runtime-compiled-policy.ss' items --query 'make-marlin-deck-runtime-model-route-policy|marlin-deck-runtime-agent-policy-template-' --workspace <root> --view seeds
+avoid=frontier-dump,source-body,line-selector

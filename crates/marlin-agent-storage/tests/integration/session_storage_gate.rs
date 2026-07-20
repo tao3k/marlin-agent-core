@@ -6,8 +6,7 @@ use marlin_agent_sessions::{
 };
 use marlin_agent_storage::{
     AgentId, AgentStorage, EventId, ProjectId, SessionEventRecord, SessionId as StorageSessionId,
-    StorageResult, TurnId, TursoAgentStorage, TursoAgentStorageConfig, TursoMvccMode,
-    VisibilityReceipt,
+    StorageResult, TurnId, TursoAgentStorage, TursoAgentStorageConfig, VisibilityReceipt,
 };
 use tempfile::tempdir;
 
@@ -88,10 +87,7 @@ async fn turso_persists_session_identity_and_isolation_receipts() -> StorageResu
 
     let tempdir = tempdir().expect("tempdir should be available");
     let db_path = tempdir.path().join("sessions.turso");
-    let storage = TursoAgentStorage::open_local(TursoAgentStorageConfig {
-        path: db_path.clone(),
-        mvcc: TursoMvccMode::Required,
-    })
+    let storage = TursoAgentStorage::open_local(TursoAgentStorageConfig { path: db_path.clone(), optimization_profile: marlin_agent_storage::TursoOptimizationProfile::AsyncIoWithMvccAndPassiveCheckpointExperimental, batch_transaction_mode: marlin_agent_storage::TursoBatchTransactionMode::Concurrent })
     .await?;
 
     storage
@@ -113,21 +109,31 @@ async fn turso_persists_session_identity_and_isolation_receipts() -> StorageResu
 
     drop(storage);
 
-    let reopened = TursoAgentStorage::open_local(TursoAgentStorageConfig {
-        path: db_path,
-        mvcc: TursoMvccMode::Required,
-    })
+    let reopened = TursoAgentStorage::open_local(TursoAgentStorageConfig { path: db_path, optimization_profile: marlin_agent_storage::TursoOptimizationProfile::AsyncIoWithMvccAndPassiveCheckpointExperimental, batch_transaction_mode: marlin_agent_storage::TursoBatchTransactionMode::Concurrent })
     .await?;
     let root_events = reopened
-        .list_session_events(&project_id, &storage_session_id(root_context.session_id())?)
-        .await?;
+        .list_session_events_page(marlin_agent_storage::SessionEventPageRequest::new(
+            project_id.clone(),
+            storage_session_id(root_context.session_id())?,
+            marlin_agent_storage::StoragePageLimit::MAXIMUM,
+        ))
+        .await?
+        .items;
     let child_events = reopened
-        .list_session_events(
-            &project_id,
-            &storage_session_id(child_context.session_id())?,
-        )
-        .await?;
-    let visibility = reopened.list_visibility(&project_id).await?;
+        .list_session_events_page(marlin_agent_storage::SessionEventPageRequest::new(
+            project_id.clone(),
+            storage_session_id(child_context.session_id())?,
+            marlin_agent_storage::StoragePageLimit::MAXIMUM,
+        ))
+        .await?
+        .items;
+    let visibility = reopened
+        .list_visibility_page(marlin_agent_storage::VisibilityPageRequest::new(
+            project_id.clone(),
+            marlin_agent_storage::StoragePageLimit::MAXIMUM,
+        ))
+        .await?
+        .items;
 
     assert_eq!(root_events.len(), 1);
     assert_eq!(child_events.len(), 1);

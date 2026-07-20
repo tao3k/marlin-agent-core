@@ -2,7 +2,7 @@
 
 use marlin_agent_storage::{
     AgentId, AgentStorage, ArtifactHash, ArtifactRecord, EventId, ProjectId, SessionEventRecord,
-    SessionId, StorageResult, TurnId, TursoAgentStorage, TursoAgentStorageConfig, TursoMvccMode,
+    SessionId, StorageResult, TurnId, TursoAgentStorage, TursoAgentStorageConfig,
     VisibilityReceipt,
 };
 use tempfile::tempdir;
@@ -49,10 +49,7 @@ async fn turso_persists_ifc_policy_pack_projection_as_artifact_and_visibility() 
 {
     let tempdir = tempdir().expect("tempdir should be available");
     let db_path = tempdir.path().join("ifc-policy-pack-storage.turso");
-    let storage = TursoAgentStorage::open_local(TursoAgentStorageConfig {
-        path: db_path.clone(),
-        mvcc: TursoMvccMode::Required,
-    })
+    let storage = TursoAgentStorage::open_local(TursoAgentStorageConfig { path: db_path.clone(), optimization_profile: marlin_agent_storage::TursoOptimizationProfile::AsyncIoWithMvccAndPassiveCheckpointExperimental, batch_transaction_mode: marlin_agent_storage::TursoBatchTransactionMode::Concurrent })
     .await?;
 
     let project_id = project_id();
@@ -105,15 +102,17 @@ async fn turso_persists_ifc_policy_pack_projection_as_artifact_and_visibility() 
 
     drop(storage);
 
-    let reopened = TursoAgentStorage::open_local(TursoAgentStorageConfig {
-        path: db_path,
-        mvcc: TursoMvccMode::Required,
-    })
+    let reopened = TursoAgentStorage::open_local(TursoAgentStorageConfig { path: db_path, optimization_profile: marlin_agent_storage::TursoOptimizationProfile::AsyncIoWithMvccAndPassiveCheckpointExperimental, batch_transaction_mode: marlin_agent_storage::TursoBatchTransactionMode::Concurrent })
     .await?;
 
     let events = reopened
-        .list_session_events(&project_id, &session_id)
-        .await?;
+        .list_session_events_page(marlin_agent_storage::SessionEventPageRequest::new(
+            project_id.clone(),
+            session_id.clone(),
+            marlin_agent_storage::StoragePageLimit::MAXIMUM,
+        ))
+        .await?
+        .items;
     assert_eq!(events.len(), 1);
     assert_eq!(events[0].event_kind, "ifc.policy_pack.projection.compiled");
     assert_eq!(events[0].agent_id, agent_id);
@@ -130,7 +129,13 @@ async fn turso_persists_ifc_policy_pack_projection_as_artifact_and_visibility() 
     assert_eq!(stored_artifact.body, body);
     assert_eq!(stored_artifact.producer_session_id, session_id);
 
-    let visibility = reopened.list_visibility(&project_id).await?;
+    let visibility = reopened
+        .list_visibility_page(marlin_agent_storage::VisibilityPageRequest::new(
+            project_id.clone(),
+            marlin_agent_storage::StoragePageLimit::MAXIMUM,
+        ))
+        .await?
+        .items;
     assert!(visibility.iter().any(|receipt| {
         receipt.receipt_kind == "ifc.policy_pack.projection.stored"
             && String::from_utf8_lossy(&receipt.body).contains("schema=v1")

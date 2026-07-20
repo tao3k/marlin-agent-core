@@ -75,6 +75,287 @@ pub struct SessionEventRecord {
     pub created_at_unix_ms: i64,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SessionEventBatchWriteReceipt {
+    pub item_count: usize,
+    pub rows_affected: u64,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StoragePageLimit(u16);
+
+impl StoragePageLimit {
+    pub const MAX: u16 = 1_000;
+    pub const MAXIMUM: Self = Self(Self::MAX);
+
+    pub fn new(limit: u16) -> StorageResult<Self> {
+        if !(1..=Self::MAX).contains(&limit) {
+            return Err(StorageError::InvalidPageLimit { limit });
+        }
+        Ok(Self(limit))
+    }
+
+    pub fn get(self) -> usize {
+        usize::from(self.0)
+    }
+
+    #[cfg(feature = "turso")]
+    pub(crate) fn fetch_count(self) -> i64 {
+        i64::from(self.0) + 1
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StoragePage<T, C> {
+    pub items: Vec<T>,
+    pub next_cursor: Option<C>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SessionEventCursor {
+    turn_id: TurnId,
+    event_id: EventId,
+}
+
+impl SessionEventCursor {
+    pub fn from_record(record: &SessionEventRecord) -> Self {
+        Self {
+            turn_id: record.turn_id.clone(),
+            event_id: record.event_id.clone(),
+        }
+    }
+
+    pub fn turn_id(&self) -> &TurnId {
+        &self.turn_id
+    }
+
+    pub fn event_id(&self) -> &EventId {
+        &self.event_id
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SessionEventPageRequest {
+    project_id: ProjectId,
+    session_id: SessionId,
+    after: Option<SessionEventCursor>,
+    limit: StoragePageLimit,
+}
+
+impl SessionEventPageRequest {
+    pub fn new(project_id: ProjectId, session_id: SessionId, limit: StoragePageLimit) -> Self {
+        Self {
+            project_id,
+            session_id,
+            after: None,
+            limit,
+        }
+    }
+
+    pub fn after(mut self, cursor: SessionEventCursor) -> Self {
+        self.after = Some(cursor);
+        self
+    }
+
+    pub fn project_id(&self) -> &ProjectId {
+        &self.project_id
+    }
+
+    pub fn session_id(&self) -> &SessionId {
+        &self.session_id
+    }
+
+    pub fn cursor(&self) -> Option<&SessionEventCursor> {
+        self.after.as_ref()
+    }
+
+    pub fn limit(&self) -> StoragePageLimit {
+        self.limit
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct VisibilityCursor {
+    created_at_unix_ms: i64,
+    receipt_id: String,
+}
+
+impl VisibilityCursor {
+    pub fn from_record(record: &VisibilityReceipt) -> Self {
+        Self {
+            created_at_unix_ms: record.created_at_unix_ms,
+            receipt_id: record.receipt_id.clone(),
+        }
+    }
+
+    pub fn created_at_unix_ms(&self) -> i64 {
+        self.created_at_unix_ms
+    }
+
+    pub fn receipt_id(&self) -> &str {
+        &self.receipt_id
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct VisibilityPageRequest {
+    project_id: ProjectId,
+    after: Option<VisibilityCursor>,
+    limit: StoragePageLimit,
+}
+
+impl VisibilityPageRequest {
+    pub fn new(project_id: ProjectId, limit: StoragePageLimit) -> Self {
+        Self {
+            project_id,
+            after: None,
+            limit,
+        }
+    }
+
+    pub fn after(mut self, cursor: VisibilityCursor) -> Self {
+        self.after = Some(cursor);
+        self
+    }
+
+    pub fn project_id(&self) -> &ProjectId {
+        &self.project_id
+    }
+
+    pub fn cursor(&self) -> Option<&VisibilityCursor> {
+        self.after.as_ref()
+    }
+
+    pub fn limit(&self) -> StoragePageLimit {
+        self.limit
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MemoryProposalCursor {
+    created_at_unix_ms: i64,
+    proposal_id: MemoryProposalId,
+}
+
+impl MemoryProposalCursor {
+    pub fn from_record(record: &MemoryProposalRecord) -> Self {
+        Self {
+            created_at_unix_ms: record.created_at_unix_ms,
+            proposal_id: record.proposal_id.clone(),
+        }
+    }
+
+    pub fn created_at_unix_ms(&self) -> i64 {
+        self.created_at_unix_ms
+    }
+
+    pub fn proposal_id(&self) -> &MemoryProposalId {
+        &self.proposal_id
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MemoryProposalPageRequest {
+    project_id: ProjectId,
+    memory_key: Option<MemoryKey>,
+    after: Option<MemoryProposalCursor>,
+    limit: StoragePageLimit,
+}
+
+impl MemoryProposalPageRequest {
+    pub fn new(project_id: ProjectId, limit: StoragePageLimit) -> Self {
+        Self {
+            project_id,
+            memory_key: None,
+            after: None,
+            limit,
+        }
+    }
+
+    pub fn for_memory_key(mut self, memory_key: MemoryKey) -> Self {
+        self.memory_key = Some(memory_key);
+        self
+    }
+
+    pub fn after(mut self, cursor: MemoryProposalCursor) -> Self {
+        self.after = Some(cursor);
+        self
+    }
+
+    pub fn project_id(&self) -> &ProjectId {
+        &self.project_id
+    }
+
+    pub fn memory_key(&self) -> Option<&MemoryKey> {
+        self.memory_key.as_ref()
+    }
+
+    pub fn cursor(&self) -> Option<&MemoryProposalCursor> {
+        self.after.as_ref()
+    }
+
+    pub fn limit(&self) -> StoragePageLimit {
+        self.limit
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TopologyEdgeCursor {
+    created_at_unix_ms: i64,
+    edge_id: TopologyEdgeId,
+}
+
+impl TopologyEdgeCursor {
+    pub fn from_record(record: &TopologyEdgeRecord) -> Self {
+        Self {
+            created_at_unix_ms: record.created_at_unix_ms,
+            edge_id: record.edge_id.clone(),
+        }
+    }
+
+    pub fn created_at_unix_ms(&self) -> i64 {
+        self.created_at_unix_ms
+    }
+
+    pub fn edge_id(&self) -> &TopologyEdgeId {
+        &self.edge_id
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TopologyEdgePageRequest {
+    project_id: ProjectId,
+    after: Option<TopologyEdgeCursor>,
+    limit: StoragePageLimit,
+}
+
+impl TopologyEdgePageRequest {
+    pub fn new(project_id: ProjectId, limit: StoragePageLimit) -> Self {
+        Self {
+            project_id,
+            after: None,
+            limit,
+        }
+    }
+
+    pub fn after(mut self, cursor: TopologyEdgeCursor) -> Self {
+        self.after = Some(cursor);
+        self
+    }
+
+    pub fn project_id(&self) -> &ProjectId {
+        &self.project_id
+    }
+
+    pub fn cursor(&self) -> Option<&TopologyEdgeCursor> {
+        self.after.as_ref()
+    }
+
+    pub fn limit(&self) -> StoragePageLimit {
+        self.limit
+    }
+}
+
 impl SessionEventRecord {
     pub fn key(&self) -> SessionEventKey {
         SessionEventKey {
@@ -172,26 +453,19 @@ pub struct TopologyEdgeRecord {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StorageSchemaSnapshot {
-    pub migrations: Vec<StorageSchemaMigration>,
+    pub lifecycle: StorageSchemaLifecycle,
     pub tables: Vec<StorageSchemaTable>,
 }
 
 impl StorageSchemaSnapshot {
-    pub fn has_migration(&self, migration_id: &str) -> bool {
-        self.migrations
-            .iter()
-            .any(|migration| migration.migration_id == migration_id)
-    }
-
     pub fn has_table(&self, table_name: &str) -> bool {
         self.tables.iter().any(|table| table.name == table_name)
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct StorageSchemaMigration {
-    pub migration_id: String,
-    pub applied_at_unix_ms: i64,
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum StorageSchemaLifecycle {
+    DevelopmentBaseline,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -202,11 +476,15 @@ pub struct StorageSchemaTable {
 pub trait AgentStorage: Send + Sync {
     fn append_session_event<'a>(&'a self, record: SessionEventRecord) -> StorageFuture<'a, ()>;
 
-    fn list_session_events<'a>(
+    fn append_session_events_atomically<'a>(
         &'a self,
-        project_id: &'a ProjectId,
-        session_id: &'a SessionId,
-    ) -> StorageFuture<'a, Vec<SessionEventRecord>>;
+        records: Vec<SessionEventRecord>,
+    ) -> StorageFuture<'a, SessionEventBatchWriteReceipt>;
+
+    fn list_session_events_page<'a>(
+        &'a self,
+        request: SessionEventPageRequest,
+    ) -> StorageFuture<'a, StoragePage<SessionEventRecord, SessionEventCursor>>;
 
     fn put_artifact<'a>(&'a self, record: ArtifactRecord) -> StorageFuture<'a, ArtifactPutOutcome>;
 
@@ -229,25 +507,24 @@ pub trait AgentStorage: Send + Sync {
 
     fn record_visibility<'a>(&'a self, receipt: VisibilityReceipt) -> StorageFuture<'a, ()>;
 
-    fn list_visibility<'a>(
+    fn list_visibility_page<'a>(
         &'a self,
-        project_id: &'a ProjectId,
-    ) -> StorageFuture<'a, Vec<VisibilityReceipt>>;
+        request: VisibilityPageRequest,
+    ) -> StorageFuture<'a, StoragePage<VisibilityReceipt, VisibilityCursor>>;
 
     fn put_memory_proposal<'a>(&'a self, record: MemoryProposalRecord) -> StorageFuture<'a, ()>;
 
-    fn list_memory_proposals<'a>(
+    fn list_memory_proposals_page<'a>(
         &'a self,
-        project_id: &'a ProjectId,
-        memory_key: Option<&'a MemoryKey>,
-    ) -> StorageFuture<'a, Vec<MemoryProposalRecord>>;
+        request: MemoryProposalPageRequest,
+    ) -> StorageFuture<'a, StoragePage<MemoryProposalRecord, MemoryProposalCursor>>;
 
     fn append_topology_edge<'a>(&'a self, record: TopologyEdgeRecord) -> StorageFuture<'a, ()>;
 
-    fn list_topology_edges<'a>(
+    fn list_topology_edges_page<'a>(
         &'a self,
-        project_id: &'a ProjectId,
-    ) -> StorageFuture<'a, Vec<TopologyEdgeRecord>>;
+        request: TopologyEdgePageRequest,
+    ) -> StorageFuture<'a, StoragePage<TopologyEdgeRecord, TopologyEdgeCursor>>;
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -255,6 +532,19 @@ pub enum StorageError {
     InvalidIdentifier {
         kind: &'static str,
     },
+    InvalidEmbedding {
+        reason: &'static str,
+    },
+    InvalidMemorySearchLimit {
+        limit: u32,
+    },
+    InvalidPageLimit {
+        limit: u16,
+    },
+    InvalidSyncConfiguration {
+        reason: &'static str,
+    },
+    SyncNotConfigured,
     DuplicateSessionEvent {
         key: SessionEventKey,
     },
@@ -290,6 +580,24 @@ impl fmt::Display for StorageError {
         match self {
             StorageError::InvalidIdentifier { kind } => {
                 write!(f, "invalid empty storage identifier: {kind}")
+            }
+            StorageError::InvalidEmbedding { reason } => {
+                write!(f, "invalid memory embedding: {reason}")
+            }
+            StorageError::InvalidMemorySearchLimit { limit } => {
+                write!(
+                    f,
+                    "memory vector search limit must be between 1 and 100: {limit}"
+                )
+            }
+            StorageError::InvalidPageLimit { limit } => {
+                write!(f, "storage page limit must be between 1 and 1000: {limit}")
+            }
+            StorageError::InvalidSyncConfiguration { reason } => {
+                write!(f, "invalid Turso sync configuration: {reason}")
+            }
+            StorageError::SyncNotConfigured => {
+                f.write_str("Turso sync operation requires a sync-backed storage authority")
             }
             StorageError::DuplicateSessionEvent { key } => {
                 write!(

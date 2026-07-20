@@ -1,0 +1,17 @@
+harness = "libtest"
+test = "turso_persists_multi_session_events_artifacts_and_visibility_across_reopen"
+target_total = "206ms"
+max_total = "310ms"
+observed_total = "206ms"
+regression_budget = "104ms"
+memory_budget_bytes = 50331648
+observed_memory_bytes = 36388864
+target_rationale = "Five-run median for the fully concurrent Turso 0.7 async IO plus MVCC plus passive checkpoint DB-pressure scenario"
+
+[observed_timings]
+cold_open = "15ms"
+concurrent_event_writes = "92ms"
+concurrent_artifact_writes = "23ms"
+concurrent_visibility_writes = "10ms"
+warm_reopen = "12ms"
+indexed_reads = "26ms"

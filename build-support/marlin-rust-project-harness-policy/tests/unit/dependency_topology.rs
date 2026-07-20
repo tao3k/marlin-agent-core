@@ -1,8 +1,10 @@
-use std::{fs, path::Path};
+use std::fs;
 
 use marlin_rust_project_harness_policy::{
     ExternalDependencyTopologyReceiptStatus, consume_external_dependency_topology_receipt,
 };
+
+use crate::workspace::workspace_root;
 
 #[test]
 fn dependency_topology_receipt_is_optional_for_hermetic_builds() {
@@ -128,11 +130,4 @@ fn dependency_topology_receipt_rejects_invalid_schema() {
         receipt.status(),
         ExternalDependencyTopologyReceiptStatus::InvalidReceipt(_)
     ));
-}
-
-fn workspace_root() -> &'static Path {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .ancestors()
-        .nth(2)
-        .expect("policy crate should live under workspace/build-support")
 }

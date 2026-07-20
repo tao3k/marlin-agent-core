@@ -1,13 +1,5 @@
-use std::path::PathBuf;
+use crate::paths::workspace_root;
 use std::process::Command;
-
-fn workspace_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .and_then(|path| path.parent())
-        .expect("storage crate should live under <workspace>/crates")
-        .to_path_buf()
-}
 
 #[test]
 fn storage_artifact_pointer_cas_lean_proof_builds() {

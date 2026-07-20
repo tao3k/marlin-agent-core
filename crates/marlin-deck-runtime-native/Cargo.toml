@@ -19,8 +19,8 @@ marlin-agent-runtime.workspace = true
 marlin-gerbil-scheme.workspace = true
 
 [build-dependencies]
-marlin-gerbil-native-build.workspace = true
 marlin-rust-project-harness-policy.workspace = true
+marlin-gerbil-native-build.workspace = true
 
 [dev-dependencies]
 criterion.workspace = true

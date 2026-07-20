@@ -1,12 +1,11 @@
-use std::{
-    fs,
-    path::{Path, PathBuf},
-};
+use std::{fs, path::PathBuf};
 
 use marlin_rust_project_harness_policy::{
     build_verification_policy_receipt, rust_project_harness_config_for_project,
 };
 use rust_lang_project_harness::plan_rust_project_verification_with_config;
+
+pub(crate) use crate::workspace::workspace_root;
 
 pub(super) fn workspace_crates() -> Vec<PathBuf> {
     let crates_dir = workspace_root().join("crates");
@@ -28,12 +27,4 @@ pub(super) fn runtime_verification_policy_receipt()
         .expect("runtime crate should plan rust harness verification");
 
     build_verification_policy_receipt("marlin-agent-runtime", &project_root, &config, &plan)
-}
-
-pub(super) fn workspace_root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .ancestors()
-        .nth(2)
-        .expect("policy crate should live under workspace/build-support")
-        .to_path_buf()
 }

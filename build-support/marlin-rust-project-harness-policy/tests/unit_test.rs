@@ -6,5 +6,9 @@ mod dependency_topology;
 mod evidence;
 #[path = "unit/gerbil_runtime_assets.rs"]
 mod gerbil_runtime_assets;
+#[path = "unit/rule_boundary.rs"]
+mod rule_boundary;
 #[path = "unit/scenario_benchmark.rs"]
 mod scenario_benchmark;
+#[path = "unit/workspace.rs"]
+mod workspace;

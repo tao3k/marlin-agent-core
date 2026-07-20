@@ -2,7 +2,7 @@
 
 use marlin_agent_storage::{
     AgentId, AgentStorage, ArtifactHash, ArtifactRecord, EventId, ProjectId, SessionId,
-    StorageResult, TursoAgentStorage, TursoAgentStorageConfig, TursoMvccMode, VisibilityReceipt,
+    StorageResult, TursoAgentStorage, TursoAgentStorageConfig, VisibilityReceipt,
 };
 use marlin_org_memory::{
     PROJECT_MEMORY_CONTENT_ID_PROPERTY, PROJECT_MEMORY_ID_PROPERTY,
@@ -44,10 +44,7 @@ async fn turso_persists_org_memory_artifact_and_contract_visibility() -> Storage
 
     let tempdir = tempdir().expect("tempdir should be available");
     let db_path = tempdir.path().join("org-memory.turso");
-    let storage = TursoAgentStorage::open_local(TursoAgentStorageConfig {
-        path: db_path.clone(),
-        mvcc: TursoMvccMode::Required,
-    })
+    let storage = TursoAgentStorage::open_local(TursoAgentStorageConfig { path: db_path.clone(), optimization_profile: marlin_agent_storage::TursoOptimizationProfile::AsyncIoWithMvccAndPassiveCheckpointExperimental, batch_transaction_mode: marlin_agent_storage::TursoBatchTransactionMode::Concurrent })
     .await?;
 
     let artifact = ArtifactRecord {
@@ -81,17 +78,20 @@ async fn turso_persists_org_memory_artifact_and_contract_visibility() -> Storage
 
     drop(storage);
 
-    let reopened = TursoAgentStorage::open_local(TursoAgentStorageConfig {
-        path: db_path,
-        mvcc: TursoMvccMode::Required,
-    })
+    let reopened = TursoAgentStorage::open_local(TursoAgentStorageConfig { path: db_path, optimization_profile: marlin_agent_storage::TursoOptimizationProfile::AsyncIoWithMvccAndPassiveCheckpointExperimental, batch_transaction_mode: marlin_agent_storage::TursoBatchTransactionMode::Concurrent })
     .await?;
     let stored = reopened
         .get_artifact(&project_id, &memory_artifact_hash()?)
         .await?
         .expect("org memory artifact should persist");
     let stored_body = String::from_utf8_lossy(&stored.body);
-    let visibility = reopened.list_visibility(&project_id).await?;
+    let visibility = reopened
+        .list_visibility_page(marlin_agent_storage::VisibilityPageRequest::new(
+            project_id.clone(),
+            marlin_agent_storage::StoragePageLimit::MAXIMUM,
+        ))
+        .await?
+        .items;
 
     assert_eq!(stored, artifact);
     assert!(stored_body.contains(PROJECT_MEMORY_ID_PROPERTY));

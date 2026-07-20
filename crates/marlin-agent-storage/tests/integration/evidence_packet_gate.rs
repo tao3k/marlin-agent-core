@@ -1,6 +1,6 @@
+use crate::paths::crate_root;
 use serde::Deserialize;
 use std::collections::BTreeSet;
-use std::path::PathBuf;
 
 #[derive(Debug, Deserialize)]
 struct EvidencePacketDocument {
@@ -34,16 +34,13 @@ struct EvidenceGate {
     receipt: String,
 }
 
-fn crate_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-}
-
 #[test]
 fn rfcdb_evidence_packet_covers_p0_to_p6_receipts() {
-    let packet =
-        toml::from_str::<EvidencePacketDocument>(include_str!("evidence/rfcdb_packet.toml"))
-            .expect("RFCDB evidence packet fixture must be valid TOML")
-            .packet;
+    let packet = toml::from_str::<EvidencePacketDocument>(include_str!(
+        "fixtures/evidence/rfcdb_packet.toml"
+    ))
+    .expect("RFCDB evidence packet fixture must be valid TOML")
+    .packet;
 
     assert_eq!(packet.id, "rfcdb-storage-p0-p6");
     assert_eq!(packet.phase1.status, "complete");
@@ -65,7 +62,7 @@ fn rfcdb_evidence_packet_covers_p0_to_p6_receipts() {
             .phase2
             .evidence
             .iter()
-            .any(|receipt| receipt == "tests/ifc_policy_pack_storage_gate.rs"),
+            .any(|receipt| receipt == "tests/integration/ifc_policy_pack_storage_gate.rs"),
         "phase 2 must record the IFC policy-pack storage gate"
     );
 

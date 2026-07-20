@@ -1,13 +1,13 @@
-use std::path::Path;
-
 use marlin_rust_project_harness_policy::{
     evaluate_performance_and_stability_gate, rust_project_harness_config_for_project,
 };
 use rust_lang_project_harness::plan_rust_project_verification_with_config;
 
+use crate::workspace::policy_package_root;
+
 #[test]
 fn performance_and_stability_gate_receipt_accepts_marlin_project_policy() {
-    let project_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let project_root = policy_package_root();
     let config = rust_project_harness_config_for_project(project_root);
     let plan = plan_rust_project_verification_with_config(project_root, &config)
         .expect("build-support crate should plan rust harness verification");
@@ -24,7 +24,7 @@ fn performance_and_stability_gate_receipt_accepts_marlin_project_policy() {
 
 #[test]
 fn performance_and_stability_gate_receipt_reports_missing_package_gates() {
-    let project_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let project_root = policy_package_root();
     let config = rust_project_harness_config_for_project(project_root);
     let mut plan = plan_rust_project_verification_with_config(project_root, &config)
         .expect("build-support crate should plan rust harness verification");
