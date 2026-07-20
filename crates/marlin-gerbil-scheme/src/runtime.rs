@@ -121,11 +121,48 @@ pub fn gerbil_runtime_dependency_loadpath() -> PathBuf {
 /// Package-local compiled dependencies come first so runtime execution uses
 /// built package modules before falling back to source assets.
 pub fn gerbil_runtime_loadpath_with_dependencies(root: impl AsRef<Path>) -> OsString {
-    env::join_paths([
-        gerbil_runtime_dependency_loadpath(),
-        gerbil_runtime_loadpath(root),
-    ])
-    .expect("Gerbil loadpath entries should be joinable")
+    let mut loadpaths = vec![gerbil_runtime_dependency_loadpath()];
+    loadpaths.extend(gerbil_user_dependency_loadpaths());
+    loadpaths.push(gerbil_runtime_loadpath(root));
+    if let Some(existing_loadpath) = env::var_os(GERBIL_LOADPATH_ENV) {
+        loadpaths.extend(env::split_paths(&existing_loadpath));
+    }
+    env::join_paths(loadpaths).expect("Gerbil loadpath entries should be joinable")
+}
+
+fn gerbil_user_dependency_loadpaths() -> Vec<PathBuf> {
+    let Some(home) = env::var_os("HOME") else {
+        return Vec::new();
+    };
+    let gerbil_home = PathBuf::from(home).join(".gerbil");
+    let mut loadpaths = Vec::new();
+    let user_lib = gerbil_home.join("lib");
+    if user_lib.is_dir() {
+        loadpaths.push(user_lib);
+    }
+    let user_pkg = gerbil_home.join("pkg");
+    collect_gerbil_compiled_libs(&user_pkg, &mut loadpaths);
+    loadpaths
+}
+
+fn collect_gerbil_compiled_libs(path: &Path, loadpaths: &mut Vec<PathBuf>) {
+    let Ok(entries) = fs::read_dir(path) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+        if path.file_name().and_then(|name| name.to_str()) == Some(".gerbil") {
+            let lib = path.join("lib");
+            if lib.is_dir() {
+                loadpaths.push(lib);
+            }
+            continue;
+        }
+        collect_gerbil_compiled_libs(&path, loadpaths);
+    }
 }
 
 /// Returns the crate-owned `Gerbil` package root.

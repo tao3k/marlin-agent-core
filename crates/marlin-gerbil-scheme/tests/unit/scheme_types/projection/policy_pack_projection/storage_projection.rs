@@ -56,7 +56,9 @@ async fn real_policy_pack_projection_receipt_persists_as_storage_artifact_and_vi
     let db_path = tempdir.path().join("ifc-real-policy-pack-projection.turso");
     let storage = TursoAgentStorage::open_local(TursoAgentStorageConfig {
         path: db_path.clone(),
-        mvcc: marlin_agent_storage::TursoMvccMode::Required,
+        optimization_profile:
+            marlin_agent_storage::TursoOptimizationProfile::AsyncIoOnlyCompatibility,
+        batch_transaction_mode: marlin_agent_storage::TursoBatchTransactionMode::Immediate,
     })
     .await?;
 
@@ -121,16 +123,22 @@ async fn real_policy_pack_projection_receipt_persists_as_storage_artifact_and_vi
 
     let reopened = TursoAgentStorage::open_local(TursoAgentStorageConfig {
         path: db_path,
-        mvcc: marlin_agent_storage::TursoMvccMode::Required,
+        optimization_profile:
+            marlin_agent_storage::TursoOptimizationProfile::AsyncIoOnlyCompatibility,
+        batch_transaction_mode: marlin_agent_storage::TursoBatchTransactionMode::Immediate,
     })
     .await?;
 
     let events = reopened
-        .list_session_events(&project_id, &session_id)
+        .list_session_events_page(marlin_agent_storage::SessionEventPageRequest::new(
+            project_id.clone(),
+            session_id.clone(),
+            marlin_agent_storage::StoragePageLimit::MAXIMUM,
+        ))
         .await?;
-    assert_eq!(events.len(), 1);
+    assert_eq!(events.items.len(), 1);
     assert_eq!(
-        events[0].event_kind,
+        events.items[0].event_kind,
         "ifc.policy_pack.mixin_stack.projected"
     );
 
@@ -145,8 +153,13 @@ async fn real_policy_pack_projection_receipt_persists_as_storage_artifact_and_vi
     assert_eq!(stored_artifact.body, body);
     assert_eq!(stored_artifact.producer_event_id, event_id);
 
-    let visibility = reopened.list_visibility(&project_id).await?;
-    assert!(visibility.iter().any(|receipt| {
+    let visibility = reopened
+        .list_visibility_page(marlin_agent_storage::VisibilityPageRequest::new(
+            project_id.clone(),
+            marlin_agent_storage::StoragePageLimit::MAXIMUM,
+        ))
+        .await?;
+    assert!(visibility.items.iter().any(|receipt| {
         receipt.receipt_kind == "ifc.policy_pack.mixin_stack_projection.stored"
             && String::from_utf8_lossy(&receipt.body)
                 .contains("native_abi=scheme-types-to-rust-types")

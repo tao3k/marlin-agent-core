@@ -422,10 +422,9 @@ fn assert_live_phase_within_budget(
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 #[ignore = "manual release-only live Turso performance regression gate"]
 async fn rfcdb_turso_db_pressure_live_performance_regression_gate() -> StorageResult<()> {
-    assert!(
-        !cfg!(debug_assertions),
-        "live Turso performance gates must run with `cargo test --release`"
-    );
+    if cfg!(debug_assertions) {
+        panic!("live Turso performance gates must run with `cargo test --release`");
+    }
     const SAMPLE_COUNT: usize = 5;
 
     let scenario_root =
@@ -573,10 +572,9 @@ async fn rfcdb_turso_db_pressure_live_performance_regression_gate() -> StorageRe
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 #[ignore = "manual release-only live Turso optimization profile comparison"]
 async fn rfcdb_turso_optimization_profiles_live_comparison() -> StorageResult<()> {
-    assert!(
-        !cfg!(debug_assertions),
-        "live Turso performance gates must run with `cargo test --release`"
-    );
+    if cfg!(debug_assertions) {
+        panic!("live Turso performance gates must run with `cargo test --release`");
+    }
     const SAMPLE_COUNT: usize = 3;
     const PROFILES: [marlin_agent_storage::TursoOptimizationProfile; 3] = [
         marlin_agent_storage::TursoOptimizationProfile::AsyncIoOnlyCompatibility,

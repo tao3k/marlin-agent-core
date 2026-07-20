@@ -129,6 +129,8 @@ fn nm_output(path: &Path) -> String {
 }
 
 fn run_gerbil_build_script_compile(gxi: &Path, root: &Path) {
+    stage_gerbil_dependency_lib(root);
+
     let output = Command::new(gxi)
         .env(
             GERBIL_LOADPATH_ENV,
@@ -145,6 +147,35 @@ fn run_gerbil_build_script_compile(gxi: &Path, root: &Path) {
         "gxi build script failed\nstdout:\n{}\nstderr:\n{}",
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+fn stage_gerbil_dependency_lib(root: &Path) {
+    let dependency_lib = gerbil_runtime_dependency_loadpath();
+    let staged_lib = root.join(".gerbil").join("lib");
+    if staged_lib.exists() {
+        return;
+    }
+    fs::create_dir_all(
+        staged_lib
+            .parent()
+            .expect("staged Gerbil dependency lib has parent"),
+    )
+    .expect("create staged Gerbil dependency lib parent");
+
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(&dependency_lib, &staged_lib).unwrap_or_else(|error| {
+        panic!(
+            "stage Gerbil dependency lib from {} to {} failed: {error}",
+            dependency_lib.display(),
+            staged_lib.display()
+        )
+    });
+
+    #[cfg(not(unix))]
+    panic!(
+        "real gxi temp-root dependency staging requires Unix symlink support; dependency_lib={}",
+        dependency_lib.display()
     );
 }
 
@@ -780,3 +811,4 @@ int main(void) {
 }
 "#
 }
+use marlin_gerbil_scheme::gerbil_runtime_dependency_loadpath;
