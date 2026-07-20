@@ -1,5 +1,5 @@
 {
-  "checksum": "8a682565856872aacc415b097d3a0451e42ef2d15e30851fbc93fe52884d314e",
+  "checksum": "3a0b39e72a47f336a179d2abc11999cdbc1c187b0f811a9c47114427cc80cab4",
   "crates": {
     "actix-codec 0.5.2": {
       "name": "actix-codec",
@@ -2273,7 +2273,7 @@
           "selects": {
             "cfg(windows)": [
               {
-                "id": "windows-sys 0.61.2",
+                "id": "windows-sys 0.60.2",
                 "target": "windows_sys"
               }
             ]
@@ -2332,7 +2332,7 @@
                 "target": "once_cell_polyfill"
               },
               {
-                "id": "windows-sys 0.61.2",
+                "id": "windows-sys 0.60.2",
                 "target": "windows_sys"
               }
             ]
@@ -8865,7 +8865,7 @@
             ],
             "cfg(windows)": [
               {
-                "id": "windows-sys 0.61.2",
+                "id": "windows-sys 0.60.2",
                 "target": "windows_sys"
               }
             ]
@@ -9381,7 +9381,7 @@
             ],
             "cfg(windows)": [
               {
-                "id": "windows-sys 0.61.2",
+                "id": "windows-sys 0.52.0",
                 "target": "windows_sys"
               }
             ]
@@ -11096,7 +11096,7 @@
         "Git": {
           "remote": "https://github.com/tao3k/gerbil-scheme-rust",
           "commitish": {
-            "Rev": "06bd6dc64d2cc3d45c2f376aa9a02375c462d1a7"
+            "Rev": "ce87c298bdf547e1f5d980c1e6f80de0b29d1c14"
           },
           "strip_prefix": "crates/gerbil-scheme"
         }
@@ -11144,7 +11144,7 @@
         "Git": {
           "remote": "https://github.com/tao3k/gerbil-scheme-rust",
           "commitish": {
-            "Rev": "06bd6dc64d2cc3d45c2f376aa9a02375c462d1a7"
+            "Rev": "ce87c298bdf547e1f5d980c1e6f80de0b29d1c14"
           },
           "strip_prefix": "crates/gerbil-scheme-build"
         }
@@ -11195,7 +11195,7 @@
         "Git": {
           "remote": "https://github.com/tao3k/gerbil-scheme-rust",
           "commitish": {
-            "Rev": "06bd6dc64d2cc3d45c2f376aa9a02375c462d1a7"
+            "Rev": "ce87c298bdf547e1f5d980c1e6f80de0b29d1c14"
           },
           "strip_prefix": "build-support/gerbil-scheme-native-build"
         }
@@ -11286,7 +11286,7 @@
         "Git": {
           "remote": "https://github.com/tao3k/gerbil-scheme-rust",
           "commitish": {
-            "Rev": "06bd6dc64d2cc3d45c2f376aa9a02375c462d1a7"
+            "Rev": "ce87c298bdf547e1f5d980c1e6f80de0b29d1c14"
           },
           "strip_prefix": "build-support/gerbil-scheme-rust-project-harness"
         }
@@ -11383,7 +11383,7 @@
         "Git": {
           "remote": "https://github.com/tao3k/gerbil-scheme-rust",
           "commitish": {
-            "Rev": "06bd6dc64d2cc3d45c2f376aa9a02375c462d1a7"
+            "Rev": "ce87c298bdf547e1f5d980c1e6f80de0b29d1c14"
           },
           "strip_prefix": "build-support/gerbil-scheme-rust-project-harness-policy"
         }
@@ -21130,7 +21130,7 @@
           "selects": {
             "cfg(windows)": [
               {
-                "id": "windows-sys 0.61.2",
+                "id": "windows-sys 0.60.2",
                 "target": "windows_sys",
                 "alias": "windows"
               }
@@ -27925,7 +27925,7 @@
                 "alias": "libc_errno"
               },
               {
-                "id": "windows-sys 0.61.2",
+                "id": "windows-sys 0.52.0",
                 "target": "windows_sys"
               }
             ],
@@ -28317,7 +28317,7 @@
             ],
             "cfg(windows)": [
               {
-                "id": "windows-sys 0.61.2",
+                "id": "windows-sys 0.52.0",
                 "target": "windows_sys"
               }
             ]
@@ -31411,7 +31411,7 @@
             ],
             "cfg(windows)": [
               {
-                "id": "windows-sys 0.61.2",
+                "id": "windows-sys 0.60.2",
                 "target": "windows_sys"
               }
             ]
@@ -33339,7 +33339,7 @@
             ],
             "cfg(windows)": [
               {
-                "id": "windows-sys 0.61.2",
+                "id": "windows-sys 0.52.0",
                 "target": "windows_sys"
               }
             ],
@@ -40332,13 +40332,22 @@
             "Win32_NetworkManagement_IpHelper",
             "Win32_Networking",
             "Win32_Networking_WinSock",
+            "Win32_Security",
+            "Win32_Security_Cryptography",
+            "Win32_Storage",
+            "Win32_Storage_FileSystem",
             "Win32_System",
-            "Win32_System_IO",
+            "Win32_System_Diagnostics",
+            "Win32_System_Diagnostics_Debug",
             "Win32_System_Threading",
-            "Win32_System_WindowsProgramming",
             "default"
           ],
-          "selects": {}
+          "selects": {
+            "x86_64-pc-windows-msvc": [
+              "Win32_System_IO",
+              "Win32_System_WindowsProgramming"
+            ]
+          }
         },
         "deps": {
           "common": [
@@ -40388,6 +40397,31 @@
         "compile_data_glob": [
           "**"
         ],
+        "crate_features": {
+          "common": [
+            "Win32",
+            "Win32_Foundation",
+            "Win32_Networking",
+            "Win32_Networking_WinSock",
+            "Win32_Security",
+            "Win32_Storage",
+            "Win32_Storage_FileSystem",
+            "Win32_System",
+            "Win32_System_Console",
+            "Win32_System_IO",
+            "Win32_System_Threading",
+            "Win32_System_WindowsProgramming",
+            "default"
+          ],
+          "selects": {
+            "x86_64-pc-windows-msvc": [
+              "Win32_Globalization",
+              "Win32_System_Com",
+              "Win32_UI",
+              "Win32_UI_Shell"
+            ]
+          }
+        },
         "deps": {
           "common": [
             {
@@ -40449,7 +40483,6 @@
             "Win32_Networking",
             "Win32_Networking_WinSock",
             "Win32_Security",
-            "Win32_Security_Cryptography",
             "Win32_Storage",
             "Win32_Storage_FileSystem",
             "Win32_System",
@@ -40470,10 +40503,10 @@
           ],
           "selects": {
             "x86_64-pc-windows-msvc": [
-              "Win32_Globalization",
               "Win32_Security_Authentication",
               "Win32_Security_Authentication_Identity",
               "Win32_Security_Credentials",
+              "Win32_Security_Cryptography",
               "Win32_System_LibraryLoader"
             ]
           }
