@@ -1,0 +1,74 @@
+load("//bazel:marlin_rust.bzl", "marlin_contract_set")
+
+package(default_visibility = ["//visibility:private"])
+
+exports_files([
+    "Cargo.Bazel.lock",
+    "Cargo.lock",
+    "Cargo.toml",
+])
+
+filegroup(
+    name = "policy_unit_workspace_runtime_data",
+    srcs = [
+        "Cargo.toml",
+        "//build-support/marlin-rust-project-harness-policy:policy_unit_runtime_data",
+        "//crates/marlin-agent-graph:marlin_agent_graph_build_action_runtime_source_graph",
+        "//crates/marlin-agent-protocol:marlin_agent_protocol_build_action_runtime_source_graph",
+        "//crates/marlin-agent-sessions:marlin_agent_sessions_build_action_runtime_source_graph",
+        "//crates/marlin-agent-storage:storage_harness_runtime_source_graph",
+        "//crates/marlin-gerbil-ir:marlin_gerbil_ir_build_action_runtime_source_graph",
+        "//crates/marlin-gerbil-scheme:policy_unit_runtime_data",
+        "//crates/marlin-org-memory:marlin_org_memory_build_action_runtime_source_graph",
+        "//crates/marlin-org-model:marlin_org_model_build_action_runtime_source_graph",
+        "//crates/marlin-org-patch:marlin_org_patch_build_action_runtime_source_graph",
+        "//crates/marlin-org-store:marlin_org_store_build_action_runtime_source_graph",
+        "//crates/marlin-org-workspace:marlin_org_workspace_build_action_runtime_source_graph",
+        "//crates/marlin-workspace-patch:marlin_workspace_patch_build_action_runtime_source_graph",
+        "//crates/marlin-workspace-protocol:marlin_workspace_protocol_build_action_runtime_source_graph",
+        "//crates/marlin-workspace-query:marlin_workspace_query_build_action_runtime_source_graph",
+        "//crates/marlin-workspace-status:marlin_workspace_status_build_action_runtime_source_graph",
+        "//crates/marlin-workspace-view:marlin_workspace_view_build_action_runtime_source_graph",
+    ] + glob(
+        [
+            "crates/**/Cargo.toml",
+            "crates/**/src/**/*.rs",
+            "crates/**/tests/unit/scenarios/performance_baseline/*.toml",
+        ],
+        allow_empty = True,
+    ),
+    visibility = ["//build-support/marlin-rust-project-harness-policy:__pkg__"],
+)
+
+marlin_contract_set(
+    name = "marlin_contracts",
+    testonly = True,
+    contracts = [
+        "//build-support/marlin-rust-project-harness-policy:marlin_rust_project_harness_policy_contract",
+        "//build-support/marlin-rust-project-harness-policy:marlin_workspace_package_gate_contract",
+        "//build-support/marlin-rust-project-harness-policy:unit_test_contract",
+        "//crates/marlin-agent-storage:marlin_agent_storage_contract",
+        "//crates/marlin-agent-storage:marlin_agent_storage_turso_contract",
+        "//crates/marlin-agent-storage:marlin_agent_storage_turso_sync_contract",
+        "//crates/marlin-agent-storage:integration_default_contract",
+        "//crates/marlin-agent-storage:integration_default_perf_contract",
+        "//crates/marlin-agent-storage:integration_turso_contract",
+        "//crates/marlin-agent-storage:integration_turso_perf_contract",
+        "//crates/marlin-agent-storage:integration_turso_sync_contract",
+        "//crates/marlin-agent-storage:integration_turso_sync_perf_contract",
+        "//crates/marlin-agent-graph:marlin_agent_graph_contract",
+        "//crates/marlin-agent-protocol:marlin_agent_protocol_contract",
+        "//crates/marlin-agent-sessions:marlin_agent_sessions_contract",
+        "//crates/marlin-gerbil-ir:marlin_gerbil_ir_contract",
+        "//crates/marlin-org-memory:marlin_org_memory_contract",
+        "//crates/marlin-org-model:marlin_org_model_contract",
+        "//crates/marlin-org-patch:marlin_org_patch_contract",
+        "//crates/marlin-org-store:marlin_org_store_contract",
+        "//crates/marlin-org-workspace:marlin_org_workspace_contract",
+        "//crates/marlin-workspace-patch:marlin_workspace_patch_contract",
+        "//crates/marlin-workspace-protocol:marlin_workspace_protocol_contract",
+        "//crates/marlin-workspace-query:marlin_workspace_query_contract",
+        "//crates/marlin-workspace-status:marlin_workspace_status_contract",
+        "//crates/marlin-workspace-view:marlin_workspace_view_contract",
+    ],
+)

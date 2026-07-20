@@ -81,6 +81,11 @@ async fn run_loop_program(
     let mut machine = GenericLoopMachine::new(request.program);
     let mut action_receipts = Vec::new();
     let mut last_action = None;
+    let receipt_runtime = LoopProgramRunReceiptRuntime {
+        handoff_executor: handoff_executor.as_ref(),
+        side_effect_executor: &side_effect_executor,
+        runtime_context: &runtime_context,
+    };
 
     for event in request.events {
         match machine.apply_event(event) {
@@ -89,28 +94,28 @@ async fn run_loop_program(
                 action_receipts.push(step.receipt);
                 if machine.is_stopped() {
                     return build_run_receipt(
-                        program_id,
-                        LoopProgramRunStatus::Stopped,
-                        action_receipts,
-                        last_action,
-                        None,
-                        handoff_executor.as_ref(),
-                        &side_effect_executor,
-                        &runtime_context,
+                        LoopProgramRunOutcome {
+                            program_id,
+                            status: LoopProgramRunStatus::Stopped,
+                            action_receipts,
+                            last_action,
+                            error: None,
+                        },
+                        receipt_runtime,
                     )
                     .await;
                 }
             }
             Err(error) => {
                 return build_run_receipt(
-                    program_id,
-                    LoopProgramRunStatus::Rejected,
-                    action_receipts,
-                    last_action,
-                    Some(error),
-                    handoff_executor.as_ref(),
-                    &side_effect_executor,
-                    &runtime_context,
+                    LoopProgramRunOutcome {
+                        program_id,
+                        status: LoopProgramRunStatus::Rejected,
+                        action_receipts,
+                        last_action,
+                        error: Some(error),
+                    },
+                    receipt_runtime,
                 )
                 .await;
             }
@@ -118,33 +123,50 @@ async fn run_loop_program(
     }
 
     build_run_receipt(
-        program_id,
-        LoopProgramRunStatus::Completed,
-        action_receipts,
-        last_action,
-        None,
-        handoff_executor.as_ref(),
-        &side_effect_executor,
-        &runtime_context,
+        LoopProgramRunOutcome {
+            program_id,
+            status: LoopProgramRunStatus::Completed,
+            action_receipts,
+            last_action,
+            error: None,
+        },
+        receipt_runtime,
     )
     .await
 }
 
-async fn build_run_receipt(
+struct LoopProgramRunOutcome {
     program_id: LoopProgramId,
     status: LoopProgramRunStatus,
     action_receipts: Vec<GenericLoopMachineReceipt>,
     last_action: Option<LoopProgramActionKind>,
     error: Option<GenericLoopMachineError>,
-    handoff_executor: &dyn LoopProgramRuntimeHandoffExecutor,
-    side_effect_executor: &LoopProgramRuntimeSideEffectExecutor,
-    runtime_context: &RuntimeContext,
+}
+
+#[derive(Clone, Copy)]
+struct LoopProgramRunReceiptRuntime<'a> {
+    handoff_executor: &'a dyn LoopProgramRuntimeHandoffExecutor,
+    side_effect_executor: &'a LoopProgramRuntimeSideEffectExecutor,
+    runtime_context: &'a RuntimeContext,
+}
+
+async fn build_run_receipt(
+    outcome: LoopProgramRunOutcome,
+    runtime: LoopProgramRunReceiptRuntime<'_>,
 ) -> LoopProgramRunReceipt {
+    let LoopProgramRunOutcome {
+        program_id,
+        status,
+        action_receipts,
+        last_action,
+        error,
+    } = outcome;
     let runtime_handoff_plan =
         LoopProgramRuntimeHandoffPlan::from_receipts(program_id.clone(), &action_receipts);
-    let runtime_handoff_execution = handoff_executor.execute_plan(&runtime_handoff_plan);
-    let side_effects = side_effect_executor
-        .execute(runtime_context, &runtime_handoff_execution)
+    let runtime_handoff_execution = runtime.handoff_executor.execute_plan(&runtime_handoff_plan);
+    let side_effects = runtime
+        .side_effect_executor
+        .execute(runtime.runtime_context, &runtime_handoff_execution)
         .await;
     let runtime_replay_bundle = LoopProgramRuntimeReplayBundleReceipt::from_runtime_receipts(
         runtime_handoff_execution.clone(),

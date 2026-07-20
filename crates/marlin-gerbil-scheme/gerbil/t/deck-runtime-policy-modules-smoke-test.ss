@@ -16,7 +16,7 @@
    "module-policy"
    "openai"
    "gpt-5.4"
-   '("marlin-apply")
+   '("marlin apply")
    '("worker")
    "forked-context"
    "workspace-isolated"))

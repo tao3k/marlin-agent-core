@@ -4,9 +4,9 @@ use std::sync::{Arc, Mutex};
 
 use crate::records::{
     AgentStorage, ArtifactHash, ArtifactPointerKey, ArtifactPointerRecord, ArtifactPointerUpdate,
-    ArtifactPutOutcome, ArtifactRecord, MemoryKey, MemoryProposalId, MemoryProposalRecord,
-    ProjectId, SessionEventKey, SessionEventRecord, SessionId, StorageError, StorageFuture,
-    StorageResult, TopologyEdgeId, TopologyEdgeRecord, VisibilityReceipt,
+    ArtifactPutOutcome, ArtifactRecord, MemoryProposalId, MemoryProposalRecord, ProjectId,
+    SessionEventKey, SessionEventRecord, StorageError, StorageFuture, StorageResult,
+    TopologyEdgeId, TopologyEdgeRecord, VisibilityReceipt,
 };
 
 #[derive(Clone, Debug, Default)]
@@ -49,18 +49,65 @@ impl AgentStorage for InMemoryAgentStorage {
         })))
     }
 
-    fn list_session_events<'a>(
+    fn append_session_events_atomically<'a>(
         &'a self,
-        project_id: &'a ProjectId,
-        session_id: &'a SessionId,
-    ) -> StorageFuture<'a, Vec<SessionEventRecord>> {
+        records: Vec<SessionEventRecord>,
+    ) -> StorageFuture<'a, crate::records::SessionEventBatchWriteReceipt> {
         Box::pin(ready(self.with_state(|state| {
-            Ok(state
+            let mut keys = std::collections::HashSet::with_capacity(records.len());
+            for record in &records {
+                let key = record.key();
+                if state.session_events.contains_key(&key) || !keys.insert(key.clone()) {
+                    return Err(StorageError::DuplicateSessionEvent { key });
+                }
+            }
+
+            let item_count = records.len();
+            for record in records {
+                state.session_events.insert(record.key(), record);
+            }
+            Ok(crate::records::SessionEventBatchWriteReceipt {
+                item_count,
+                rows_affected: item_count as u64,
+            })
+        })))
+    }
+
+    fn list_session_events_page<'a>(
+        &'a self,
+        request: crate::records::SessionEventPageRequest,
+    ) -> StorageFuture<
+        'a,
+        crate::records::StoragePage<SessionEventRecord, crate::records::SessionEventCursor>,
+    > {
+        Box::pin(ready(self.with_state(|state| {
+            let limit = request.limit().get();
+            let mut items = state
                 .session_events
                 .values()
-                .filter(|event| &event.project_id == project_id && &event.session_id == session_id)
+                .filter(|event| {
+                    &event.project_id == request.project_id()
+                        && &event.session_id == request.session_id()
+                })
+                .filter(|event| {
+                    request.cursor().is_none_or(|cursor| {
+                        event.turn_id > *cursor.turn_id()
+                            || (event.turn_id == *cursor.turn_id()
+                                && event.event_id > *cursor.event_id())
+                    })
+                })
+                .take(limit + 1)
                 .cloned()
-                .collect())
+                .collect::<Vec<_>>();
+            let next_cursor = if items.len() > limit {
+                items.pop();
+                items
+                    .last()
+                    .map(crate::records::SessionEventCursor::from_record)
+            } else {
+                None
+            };
+            Ok(crate::records::StoragePage { items, next_cursor })
         })))
     }
 
@@ -165,17 +212,43 @@ impl AgentStorage for InMemoryAgentStorage {
         })))
     }
 
-    fn list_visibility<'a>(
+    fn list_visibility_page<'a>(
         &'a self,
-        project_id: &'a ProjectId,
-    ) -> StorageFuture<'a, Vec<VisibilityReceipt>> {
+        request: crate::records::VisibilityPageRequest,
+    ) -> StorageFuture<
+        'a,
+        crate::records::StoragePage<VisibilityReceipt, crate::records::VisibilityCursor>,
+    > {
         Box::pin(ready(self.with_state(|state| {
-            Ok(state
+            let limit = request.limit().get();
+            let mut items = state
                 .visibility
                 .iter()
-                .filter(|receipt| &receipt.project_id == project_id)
+                .filter(|receipt| &receipt.project_id == request.project_id())
+                .filter(|receipt| {
+                    request.cursor().is_none_or(|cursor| {
+                        receipt.created_at_unix_ms > cursor.created_at_unix_ms()
+                            || (receipt.created_at_unix_ms == cursor.created_at_unix_ms()
+                                && receipt.receipt_id.as_str() > cursor.receipt_id())
+                    })
+                })
                 .cloned()
-                .collect())
+                .collect::<Vec<_>>();
+            items.sort_by(|left, right| {
+                left.created_at_unix_ms
+                    .cmp(&right.created_at_unix_ms)
+                    .then_with(|| left.receipt_id.cmp(&right.receipt_id))
+            });
+            items.truncate(limit + 1);
+            let next_cursor = if items.len() > limit {
+                items.pop();
+                items
+                    .last()
+                    .map(crate::records::VisibilityCursor::from_record)
+            } else {
+                None
+            };
+            Ok(crate::records::StoragePage { items, next_cursor })
         })))
     }
 
@@ -204,23 +277,49 @@ impl AgentStorage for InMemoryAgentStorage {
         })))
     }
 
-    fn list_memory_proposals<'a>(
+    fn list_memory_proposals_page<'a>(
         &'a self,
-        project_id: &'a ProjectId,
-        memory_key: Option<&'a MemoryKey>,
-    ) -> StorageFuture<'a, Vec<MemoryProposalRecord>> {
+        request: crate::records::MemoryProposalPageRequest,
+    ) -> StorageFuture<
+        'a,
+        crate::records::StoragePage<MemoryProposalRecord, crate::records::MemoryProposalCursor>,
+    > {
         Box::pin(ready(self.with_state(|state| {
-            Ok(state
+            let limit = request.limit().get();
+            let mut items = state
                 .memory_proposals
                 .values()
                 .filter(|proposal| {
-                    &proposal.project_id == project_id
-                        && memory_key
+                    &proposal.project_id == request.project_id()
+                        && request
+                            .memory_key()
                             .map(|memory_key| &proposal.memory_key == memory_key)
                             .unwrap_or(true)
                 })
+                .filter(|proposal| {
+                    request.cursor().is_none_or(|cursor| {
+                        proposal.created_at_unix_ms > cursor.created_at_unix_ms()
+                            || (proposal.created_at_unix_ms == cursor.created_at_unix_ms()
+                                && proposal.proposal_id > *cursor.proposal_id())
+                    })
+                })
                 .cloned()
-                .collect())
+                .collect::<Vec<_>>();
+            items.sort_by(|left, right| {
+                left.created_at_unix_ms
+                    .cmp(&right.created_at_unix_ms)
+                    .then_with(|| left.proposal_id.cmp(&right.proposal_id))
+            });
+            items.truncate(limit + 1);
+            let next_cursor = if items.len() > limit {
+                items.pop();
+                items
+                    .last()
+                    .map(crate::records::MemoryProposalCursor::from_record)
+            } else {
+                None
+            };
+            Ok(crate::records::StoragePage { items, next_cursor })
         })))
     }
 
@@ -238,17 +337,43 @@ impl AgentStorage for InMemoryAgentStorage {
         })))
     }
 
-    fn list_topology_edges<'a>(
+    fn list_topology_edges_page<'a>(
         &'a self,
-        project_id: &'a ProjectId,
-    ) -> StorageFuture<'a, Vec<TopologyEdgeRecord>> {
+        request: crate::records::TopologyEdgePageRequest,
+    ) -> StorageFuture<
+        'a,
+        crate::records::StoragePage<TopologyEdgeRecord, crate::records::TopologyEdgeCursor>,
+    > {
         Box::pin(ready(self.with_state(|state| {
-            Ok(state
+            let limit = request.limit().get();
+            let mut items = state
                 .topology_edges
                 .values()
-                .filter(|edge| &edge.project_id == project_id)
+                .filter(|edge| &edge.project_id == request.project_id())
+                .filter(|edge| {
+                    request.cursor().is_none_or(|cursor| {
+                        edge.created_at_unix_ms > cursor.created_at_unix_ms()
+                            || (edge.created_at_unix_ms == cursor.created_at_unix_ms()
+                                && edge.edge_id > *cursor.edge_id())
+                    })
+                })
                 .cloned()
-                .collect())
+                .collect::<Vec<_>>();
+            items.sort_by(|left, right| {
+                left.created_at_unix_ms
+                    .cmp(&right.created_at_unix_ms)
+                    .then_with(|| left.edge_id.cmp(&right.edge_id))
+            });
+            items.truncate(limit + 1);
+            let next_cursor = if items.len() > limit {
+                items.pop();
+                items
+                    .last()
+                    .map(crate::records::TopologyEdgeCursor::from_record)
+            } else {
+                None
+            };
+            Ok(crate::records::StoragePage { items, next_cursor })
         })))
     }
 }

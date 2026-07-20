@@ -1,0 +1,15 @@
+[package]
+name = "marlin-bazel-scenario-resolution"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[lib]
+path = "scenario_features.rs"
+
+# This workspace member has no runtime role. It activates Cargo-owned scenario
+# features while Crate Universe renders one complete external dependency graph.
+[dependencies.marlin-agent-storage]
+path = "../../crates/marlin-agent-storage"
+default-features = false
+features = ["turso-sync"]

@@ -28,8 +28,14 @@ pub use dependency_topology::{
     consume_external_dependency_topology_receipt,
     observe_rust_harness_dependency_topology_receipt_from_env,
 };
-pub use evidence::{RustProjectHarnessEvidenceReceipt, write_evidence_graph_from_env};
-pub use gate::{assert_marlin_rust_project_harness_gate_from_env, complete_build_gate};
+pub use evidence::{
+    RustProjectHarnessEvidenceReceipt, RustProjectHarnessFindingSummary,
+    write_evidence_graph_from_env,
+};
+pub use gate::{
+    assert_marlin_rust_project_harness_build_check_from_env, complete_build_gate,
+    run_marlin_rust_project_harness_for_package,
+};
 pub use gerbil_runtime_assets::{
     GerbilRuntimeAssetManifestReceipt, GerbilRuntimeAssetManifestStatus,
     GerbilRuntimeHarnessContractReceipt, GerbilRuntimeHarnessContractStatus,
@@ -80,3 +86,4 @@ pub use verification_policy::{
     RustProjectHarnessVerificationOwnerProfileReceipt, RustProjectHarnessVerificationPolicyReceipt,
     build_verification_policy_receipt,
 };
+pub mod workspace_package_gate;

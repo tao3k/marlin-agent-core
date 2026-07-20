@@ -24,9 +24,46 @@ package: config-interface/modules/prefabs
 ;;; Boundary: Optional pack config is merged by Scheme/POO, never Rust.
 ;; MarlinResult <- MarlinInput
 (def (DefaultPolicyPack module-value . maybe-pack-config)
-  (if (null? maybe-pack-config)
-    (marlinDefaultPolicyPack module-value)
-    (marlinDefaultPolicyPack module-value (car maybe-pack-config))))
+  (let ((pack-config
+         (if (null? maybe-pack-config)
+           (.o id: (.get marlinDefaultPolicyPack id)
+               module: #f
+               policy-objects:
+               (list
+                (marlinDefaultWorkspacePolicy)
+                (marlinDefaultSessionPolicy)
+                (marlinDefaultAgentPolicy)
+                (marlinDefaultHookSelectionPolicy)
+                (marlinDefaultModelRoutePolicy)
+                (marlinDefaultContinuationProfilePolicy)
+                (marlinDefaultHumanReviewPolicy)
+                (marlinDefaultEvidenceGraphPolicy)
+                (marlinDefaultFailureRecoveryPolicy)
+                (marlinDefaultMemoryRecallPolicy)
+                (marlinDefaultMemoryTriggerPolicy)
+                (marlinDefaultMemoryRetentionPolicy)
+                (marlinDefaultMemoryVisibilityPolicy)
+                (marlinDefaultSubagentPolicy)
+                (marlinDefaultContextCompressionPolicy)
+                (marlinDefaultToolBatchPolicy)
+                (marlinDefaultSelfEvolutionPolicy)
+                (marlinDefaultCatalogProjectionPolicy))
+               object-operations: '()
+               allowed-hook-ids: '("runtime-catalog-default-hook")
+               metadata: (.get marlinDefaultPolicyPack metadata))
+           (car maybe-pack-config))))
+    (marlinPolicyPack
+     (.o id:
+         (.get pack-config id)
+         module: module-value
+         policy-objects:
+         (.get pack-config policy-objects)
+         object-operations:
+         (.get pack-config object-operations)
+         allowed-hook-ids:
+         (.get pack-config allowed-hook-ids)
+         metadata:
+         (.get pack-config metadata)))))
 
 ;;; Boundary: Catalogs collect prefab packs as Scheme values.
 ;; MarlinResult <- MarlinInput
@@ -42,7 +79,37 @@ package: config-interface/modules/prefabs
 ;;; Boundary: Inventory exposes default furniture without raw pack plumbing.
 ;; MarlinResult <- MarlinInput
 (def (DefaultPolicyPackInventory policy-pack)
-  (marlinPolicyPackInventory policy-pack))
+  (let* ((pack-catalog (marlinPackCatalog policy-pack))
+         (pack-presentation (DefaultPolicyPackPresentation policy-pack)))
+    (.o kind: (.get pack-catalog kind)
+        packs: (.get pack-catalog packs)
+        policy-object-count:
+        (.get pack-presentation policy-object-count)
+        default-policy-object-count:
+        (.get pack-presentation default-policy-object-count)
+        disabled-policy-object-count:
+        (.get pack-presentation disabled-policy-object-count)
+        policy-families: (.get pack-presentation policy-families)
+        policy-object-ids: (.get pack-presentation policy-object-ids)
+        default-policy-object-ids:
+        (.get pack-presentation default-policy-object-ids)
+        disabled-policy-object-ids:
+        (.get pack-presentation disabled-policy-object-ids)
+        allowed-hook-ids: (.get pack-presentation allowed-hook-ids)
+        duplicate-object-conflict-count:
+        (.get pack-presentation duplicate-object-conflict-count)
+        missing-target-conflict-count:
+        (.get pack-presentation missing-target-conflict-count)
+        disabled-target-conflict-count:
+        (.get pack-presentation disabled-target-conflict-count)
+        invalid-replacement-conflict-count:
+        (.get pack-presentation invalid-replacement-conflict-count)
+        object-operation-count:
+        (.get pack-presentation object-operation-count)
+        object-surgery-receipt-count:
+        (.get pack-presentation object-surgery-receipt-count)
+        conflict-surgery-receipt-count:
+        (.get pack-presentation conflict-surgery-receipt-count))))
 
 ;;; Boundary: Pack presentation is the Rust/debug scalar receipt.
 ;; MarlinResult <- MarlinInput

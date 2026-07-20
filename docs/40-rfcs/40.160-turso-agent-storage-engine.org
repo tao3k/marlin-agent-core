@@ -287,6 +287,25 @@ decodes to Rust types, and storage persists Rust-owned records.
 
 * Test Gates
 
+The accepted stable Rust SDK baseline is =turso= crate version =0.7.0=. Pre-release SDK artifacts are not an acceptance surface and must not be used to refresh scenario or performance receipts.
+
+Turso 0.7 acceptance is profile-driven.  A scenario MUST select one of the
+typed optimization profiles below; ad hoc combinations of async I/O, MVCC, and
+checkpoint flags are not part of the public test surface.
+
+| Scenario class | Required profile | Required evidence |
+|------------------+------------------+-------------------|
+| Operational storage, pressure, reopen, CAS, IFC, Org memory, session | =AsyncIoWithMvccAndPassiveCheckpointExperimental= | exact =TursoOptimizationReceipt= |
+| =turso-sync= feature composition | =AsyncIoWithMvccAndPassiveCheckpointExperimental= | local receipt plus sync/checkpoint stats receipt |
+| Schema migration compatibility control | =AsyncIoOnlyCompatibility= | exact compatibility receipt and reopen success |
+| Optimization matrix | all three legal profiles | profile-to-receipt equality |
+
+The fast acceptance lane MUST run the optimization matrix, DB pressure/reopen,
+sync feature composition, and the crate-local scenario-performance contract.
+The manual performance lane MUST additionally emit the measured benchmark
+receipt and its first-batch optimization findings.  A missing optimization
+receipt, a placeholder baseline, or a loose total/memory budget fails the gate.
+
 Turso adoption needs tests that prove the new engine advantages are real.
 
 P0 tests:
@@ -839,13 +858,15 @@ visibility, memory/topology projections, and second-order gates.
 
 ** P0: IFC Policy Pack Evidence Projection
 
+Concurrent first-open acceptance is owned by =rfcdb_turso_concurrent_bootstrap_is_idempotent=. Build, DDL, and schema-migration initialization are serialized per database path inside one process, while distinct database paths remain independent; runtime writes remain concurrent and use the shared retry policy.
+
 The Gerbil =config-interface= policy-pack modules should emit typed policy-pack
 projection receipts that can be stored as immutable artifacts and visibility
 records.
 
 Initial intake gate:
 
-- =tests/ifc_policy_pack_storage_gate.rs= verifies that an IFC policy-pack
+- =tests/integration/ifc_policy_pack_storage_gate.rs= verifies that an IFC policy-pack
   projection receipt can be persisted through Turso as a session-linked event,
   immutable artifact, and visibility receipt without live LLM access.
 - =crates/marlin-gerbil-scheme/tests/unit/scheme_types/projection/policy_pack_projection/storage_projection.rs=
@@ -878,6 +899,8 @@ Required work:
 
 ** P2: Memory And Topology Acceptance Flow
 
+The executable acceptance owner is =rfcdb_turso_memory_topology_acceptance_flow=. It must persist at least two deterministic and six concurrent memory proposals with matching topology edges, reject duplicate identities, prove key-filter isolation, reopen the Turso database, and reproduce the same ordered records under the maximized optimization profile.
+
 Phase 1 stores memory and topology projections. Phase 2 must model acceptance,
 rejection, supersession, and merge decisions.
 
@@ -893,6 +916,8 @@ Required work:
 
 ** P3: Artifact Pointer Promotion Gates
 
+The executable promotion owner is =rfcdb_turso_pointer_promotion_reopen_persistence=. It must prove the initial pointer, a typed conflict that does not mutate the pointer, a successful compare-and-swap promotion, committed/conflict/committed receipt ordering, and the promoted pointer after a second reopen.
+
 Artifacts are already immutable and pointers use compare-and-swap. Phase 2
 should turn pointer updates into governed promotions.
 
@@ -906,33 +931,137 @@ Required work:
 
 ** P4: Sync, Checkpoint, And Stats Receipts
 
-Sync remains outside the Phase 1 default path. Phase 2 can start adding the
-manual sync and checkpoint visibility surface without making sync implicit.
+The executable sync owner is =rfcdb_turso_sync_checkpoint_stats_receipt_gate=.
+
+=TursoOperationalReceipt= remains the local-only capability boundary.  It
+records the exact optimization profile, whether the =turso-sync= feature is
+compiled, and the configured local checkpoint mode.  Local-only connections do
+not manufacture checkpoint/stat counters.  A sync-backed authority now uses the
+real Turso =0.7.0= =push()=, =pull()=, =checkpoint()=, and =stats()= methods and
+projects =network_received_bytes=, =network_sent_bytes=, =main_wal_size=,
+=revision=, and last push/pull times through =TursoSyncStatsReceipt=.
+
+Artifact pointer operations emit =TursoTransactionReceipt= values with typed operation and status fields. The crash/reopen gate must verify committed and conflict bodies as typed Rust-owned visibility encodings.
+
+The 0.7 implementation uses typed local and sync configuration rather than
+independent Boolean switches.  Local optimized scenarios select four independent
+connection lanes, per-lane =prepare_cached=, =journal_mode = 'mvcc'=, and
+=BEGIN CONCURRENT= batch transactions.  Sync-backed storage selects
+=AsyncIoWithMvcc= plus logical MVCC pull; the experimental passive local
+checkpoint flag is not falsely projected onto the sync engine.
+
+Every sync/checkpoint benchmark receipt MUST embed the local
+=TursoOptimizationReceipt= before reporting push, pull, checkpoint, retry, or
+conflict statistics.  This prevents a result collected with compatibility mode
+or blocking checkpoints from being compared with the optimized 0.7 baseline.
+
+Sync remains explicit rather than a background side effect.
+=TursoSyncAgentStorageConfig= owns the local path, typed remote URL, redacted
+auth-token newtype, and bootstrap policy.  The same =TursoAgentStorage= API is
+backed by either a local or sync database authority because Turso 0.7 returns the
+same Rust =Connection= type from both builders.
 
 Required work:
 
-- keep =local= as the default test mode
-- add explicit =sync-manual= configuration and feature-gated tests
-- expose checkpoint receipts with WAL/stat fields when Turso supports them
+- keep =local= as the default fast test mode
+- run =turso_070_remote_sync_operational_scenario= only against an isolated
+  =TURSO_TEST_DATABASE_URL= / =TURSO_TEST_AUTH_TOKEN= database
 - record push, pull, checkpoint, retry, and conflict metrics as visibility
   receipts
 - add Nix/CI gates that prove storage builds with and without sync features
 
 ** P5: Performance And Stability Gates
 
+The two manual/live performance owners are release-profile gates. Debug timings are not accepted as regression evidence, and each owner rejects an explicit debug-profile run before sampling. The canonical commands are:
+
+#+begin_src sh
+cargo test --release -p marlin-agent-storage --features turso-sync --test integration_test db_pressure_gate::rfcdb_turso_db_pressure_live_performance_regression_gate -- --ignored --nocapture
+cargo test --release -p marlin-agent-storage --features turso-sync --test integration_test db_pressure_gate::rfcdb_turso_optimization_profiles_live_comparison -- --ignored --nocapture
+#+end_src
+
+The executable manual/live owner is =rfcdb_turso_db_pressure_live_performance_regression_gate=. It reads the canonical checked-in benchmark receipt, runs the real DB-pressure workload five times, verifies the maximized optimization receipt for every run, compares median total duration with =max_total=, and compares both median and peak resident memory with =memory_budget_bytes=. The phase contract distinguishes =cold_open= from =warm_reopen= and runs event, artifact, and visibility writes concurrently; every phase median must stay within its checked-in observation plus the global regression budget. Each run persists its typed performance receipt as =rfcdb.turso.performance= visibility evidence after measurement and reads that receipt back before the run is accepted. The gate remains explicitly ignored in the fast lane and is run with Cargo's ignored-test selection during a baseline refresh.
+
+=rfcdb_turso_optimization_profiles_live_comparison= executes the same concurrent workload for all three legal optimization profiles and emits typed comparison receipts. It is diagnostic evidence only: micro-benchmark ordering must not silently change the operational profile contract.
+
+=turso_070_fundamental_scenarios= adds the missing workload-specific evidence.
+The 512-event concurrent-batch matrix measured median debug-build durations of
+=138 ms= for one-lane compatibility, =84 ms= for four-lane MVCC, and =87 ms=
+for four-lane MVCC plus experimental passive checkpoint.  The separate
+256-event comparison measured =90 ms= for row-at-a-time implicit transactions
+and =48 ms= for one explicit concurrent batch.  These receipts prove the
+optimization only for the named append-heavy scenarios; they do not claim that
+MVCC is always faster for short serial workloads.
+
+Performance baseline refreshes use five independent executions of the named
+DB-pressure scenario inside the explicitly selected live-test process.
+=observed_total= and each phase observation are medians.  The tail gate requires
+at least four of five total samples to stay within =max_total=, while always
+printing the slowest sample; two outliers therefore fail even when the median is
+fast.  The memory observation is the median resident set size, and both median
+and peak RSS must satisfy the optimization-policy cap.
+
+The fast gate validates the checked-in scenario contract, typed optimization receipt, and budget policy on every acceptance run. The manual/live gate performs the five-run measurement before any baseline refresh; a single unusually fast run is never sufficient evidence for lowering the baseline.
+
+Performance work starts with one reproducible crate-local scenario named
+=marlin-agent-storage.scenario-performance=.  Its first workload is the existing
+multi-session DB pressure path: bootstrap, partitioned session-event writes,
+artifact insertion, visibility receipts, close/reopen, indexed reads, and
+receipt verification under
+=AsyncIoWithMvccAndPassiveCheckpointExperimental=.
+
+The event phase now uses one explicit transaction batch per session.  Every
+writer asserts that its =TursoBatchWriteReceipt= matches the profile's
+=batch_transaction= mode, so the DB-pressure scenario can no longer report an
+MVCC optimization while silently executing only implicit autocommit writes.
+
+The measured receipt MUST record these phases separately:
+
+- =bootstrap_ms=: Builder creation, schema bootstrap, and MVCC activation;
+- =event_writes_ms=: partitioned multi-session append workload;
+- =artifact_writes_ms= and =visibility_writes_ms=;
+- =reopen_ms= and =indexed_reads_ms=;
+- =checkpoint_ms=, =push_ms=, and =pull_ms= when =turso-sync= is enabled;
+- total elapsed time, observed memory, database bytes, operation counts, retry
+  count, CAS conflict count, and the exact optimization receipt.
+
+The initial baseline is not a placeholder.  Record the first measured value,
+set =max_total = observed_total + regression_budget=, and keep memory budget at
+or below =observed_memory_bytes * 1.5=.  The fast CI lane validates the stored
+contract; the explicit performance lane refreshes measurements.  Any regression
+must produce a typed optimization finding and a benchmark artifact rather than
+only log text.
+
 The DB layer must prove that Turso is useful for agent concurrency rather than
 only compatible with SQLite-shaped tables.
 
 Required work:
 
-- benchmark partitioned concurrent session writes against serialized writes
-- measure artifact pointer contention and retry behavior
+- keep the profile-by-concurrent-batch receipt and the typed-Immediate atomic batch latency gate
+  as explicit manual performance scenarios. Row-at-a-time timing is an
+  observation baseline only; the acceptance contract does not claim that an
+  atomic batch always beats Turso 0.7 autocommit writes.
+- keep the 16-contender CAS storm gate: exactly one pointer promotion commits
+  and fifteen return typed conflicts
 - gate long-running event ingestion with bounded memory growth
-- add WAL/checkpoint growth thresholds where supported
+
+- keep =RUST-MOD-R002= at the 1000 physical source-line boundary: 999 lines
+  pass and 1000 lines emit a Modularity Warning. Storage =build.rs= must execute
+  the harness gate; Warning/Error findings fail closed, while Info findings
+  remain visible in the typed finding summary under an explained allowance.
+
+- keep test topology non-escapable: the crate owns only canonical
+  =tests/integration_test.rs= and =tests/unit_test.rs= roots, integration
+  fixtures live under =tests/integration/fixtures=, and no repo-local
+  =rust-project-harness-rules.toml= allowlist may suppress project-policy
+  findings.
+- add remote-sync WAL/checkpoint growth thresholds using real
+  =TursoSyncStatsReceipt= fields
 - record all benchmark outputs as storage artifacts and rust-project harness
   evidence
 
 ** P6: RFCDB Evidence Graph Expansion
+
+The executable owner is =rfcdb_turso_package_evidence_graph_survives_reopen=. It builds the existing Rust package evidence-graph receipt, projects its summary as a Turso artifact and visibility receipt, links RFC =40.160= to that evidence through a topology edge, reopens the database, and verifies all three persisted projections. Runtime visibility is not misclassified as a =rust-lang-project-harness= verification-tool receipt; that external protocol remains unchanged.
 
 The RFCDB packet should become the authoritative second-phase evidence graph.
 
@@ -945,3 +1074,264 @@ Required work:
 - avoid putting DB-specific fixtures under =tests/unit/scenarios/= unless they
   satisfy the upstream rust-project scenario benchmark schema
 - require every new phase gate to run without live LLM access first
+
+* Phase 3: Turso 0.7 Fundamental Optimization Record
+
+Phase 3 changes the unit of optimization from a gate flag to a real database
+execution path.  The accepted dependency is the crates.io =turso 0.7.0=
+artifact; main-branch or prerelease APIs are not acceptance evidence.
+
+** Runtime Architecture Landed
+
+| Concern | Previous path | Turso 0.7 path |
+|---------------------+----------------------------------------+-----------------------------------------------------------|
+| Connection lifecycle | one new connection per operation | one typed authority with 1 or 4 persistent connection lanes |
+| Statement lifecycle | prepare on every =execute/query= | =prepare_cached= inside the owning connection lane |
+| Append transaction | one implicit transaction per event | one typed batch transaction selected explicitly by workload: native Turso 0.7 =Immediate=, or extension =BEGIN CONCURRENT= |
+| Conflict recovery | retry one SQL statement | rollback and retry the complete typed batch; partial writes are forbidden |
+| Read path | un-cached connection query | cached statement on a leased lane |
+| Agent memory | opaque proposal BLOB only | schema v2 =vector8= embeddings plus typed cosine search |
+| Sync | compile-status marker | sync-backed authority with typed push/pull/checkpoint/stats operations |
+
+=TursoOptimizationReceipt= reports =connection_lanes= and =statement_cache= in addition to async I/O, MVCC, and checkpoint mode. Workload transaction policy is intentionally separate: =TursoAgentStorageConfig.batch_transaction_mode= is the required input and =TursoBatchWriteReceipt.transaction_mode= records the mode actually used.
+
+** Scenario Matrix
+
+| Scenario | Executable owner | Optimization exercised | Acceptance |
+|---------------------------+-----------------------------------------------------------------------+------------------------------------------+------------------------------------------|
+| batch atomicity + reopen | =turso_070_batch_transaction_is_atomic_and_survives_reopen= | cached statement + concurrent transaction | 128 rows persist after reopen |
+| duplicate inside batch | =turso_070_duplicate_rolls_back_the_entire_batch= | complete-transaction rollback | zero partial rows |
+| non-overlapping append lanes | =turso_070_mvcc_lanes_commit_non_overlapping_batches_concurrently= | four connections + =BEGIN CONCURRENT= | 8 x 32 events |
+| pointer contention | =turso_070_cas_storm_has_one_commit_and_typed_conflicts= | CAS + retry/conflict receipts | 1 commit, 15 typed conflicts |
+| single-lane compatibility | =turso_070_single_lane_cache_does_not_deadlock_nested_artifact_validation= | lane lease ownership | duplicate validation completes without deadlock |
+| large payload | =turso_070_large_blob_round_trips_through_cached_connection_lane= | cached connection + async BLOB I/O | 1 MiB survives reopen |
+| vector memory | =turso_070_vector8_memory_search_is_project_and_dimension_bounded= | =vector8= + cosine distance | project/dimension/limit bounded ordering |
+| mixed DB pressure | =run_turso_db_pressure_once= | one batch per session plus artifact/visibility contention | counts, reopen, cached reads, persisted receipt |
+| remote sync | =turso_070_remote_sync_operational_scenario= | logical MVCC pull + push/pull/checkpoint/stats | manual isolated remote only |
+
+** Workload-Specific Profile Policy
+
+There is no honest globally-fastest profile:
+
+- =AsyncIoOnlyCompatibility= is the control and remains appropriate for short,
+  serial, migration-oriented workloads.
+- =AsyncIoWithMvcc= is the recommended steady-state profile for sustained
+  multi-agent append batches.  The measured 512-event matrix was materially
+  faster than the one-lane compatibility path.
+- =AsyncIoWithMvccAndPassiveCheckpointExperimental= is an explicit opt-in for
+  workloads that need the experimental local checkpoint behavior.  It must not
+  be called a universal performance default.
+
+Callers MUST select a typed profile.  Performance receipts MUST be compared only
+inside the same named scenario and profile; a faster compatibility control does
+not disable MVCC where concurrent transaction semantics are required.
+
+** Important Turso Feature Disposition
+
+| Turso feature | Phase 3 disposition | Reason |
+|------------------------------------+---------------------------+--------------------------------------------------------------------------|
+| async I/O | enabled | native async runtime boundary |
+| MVCC / =BEGIN CONCURRENT= | implemented | primary multi-agent append primitive |
+| prepared statement cache | implemented per connection lane | cache ownership matches Turso 0.7 =Connection= semantics |
+| vector search / =vector8= | implemented for memory recall | 75 percent smaller than float32 embeddings; bounded linear scan is acceptable for per-project stores |
+| local-first sync | implemented behind =turso-sync= | explicit operations and real stats; never hidden background sync |
+| CDC | separate future authority | Turso documents CDC and MVCC as mutually exclusive on one connection |
+| encryption at rest | separate security phase | requires typed key custody, rotation, reopen, and overhead scenarios; never place a raw key in Debug/receipts |
+| multiprocess WAL | not selected | must first prove a real multiprocess runtime owner and crash matrix |
+
+Official feature references used for this phase:
+
+- https://docs.turso.tech/tursodb/concurrent-writes
+- https://docs.turso.tech/sdk/rust/reference
+- https://docs.turso.tech/guides/ai-memory
+- https://docs.turso.tech/guides/vector-search
+- https://docs.turso.tech/tursodb/cdc
+
+** Generic Runtime Batch Protocol Landed
+- =AgentStorage::append_session_events_atomically= is the backend-neutral multi-event protocol and returns a typed =SessionEventBatchWriteReceipt=; runtime code does not need a Turso downcast
+- =InMemoryAgentStorage= preflights persisted and intra-batch duplicate keys under one state lock before inserting anything; =TursoAgentStorage= preserves whole-transaction retry with config-selected transaction mode. Engine optimization profile and workload transaction mode are separate typed fields: =Immediate= uses the Turso 0.7 native =Transaction= lifecycle, while =Concurrent= uses the Turso extension SQL path.
+- =SessionStorageAdapter::append_context_events_atomically= projects the complete vector before storage, so projection or duplicate errors cannot leave a partial batch
+
+** Superseded Gap Record
+The first item below records the pre-trait state and is closed by =Generic Runtime Batch Protocol Landed= above. The remaining items are carried forward into the active list below.
+
+- wire =append_session_events_batch= into every runtime producer that already
+  owns more than one event; the DB pressure owner is converted, but generic
+  =AgentStorage= callers still expose the single-event method
+- add cursor/limit protocols for the older list APIs; vector search is bounded,
+  but session, visibility, memory-proposal, and topology list methods still
+  materialize complete result sets
+- run the ignored remote-sync scenario against an isolated Turso database and
+  persist the real network/WAL receipt
+- add long-duration ingestion and checkpoint-growth gates
+- add an encryption RFC with secret-provider ownership and measured read/write
+  overhead before enabling experimental encryption
+- evaluate a separate CDC audit authority; never combine CDC with the MVCC
+  connection lanes used by the runtime writer
+
+** Pre-v1 Schema Authority
+- the current schema lifecycle is explicitly =StorageSchemaLifecycle::DevelopmentBaseline=; it is a mutable development baseline, not schema version 1
+- =STORAGE_SCHEMA_V1_MIGRATION_ID=, =STORAGE_SCHEMA_V2_MIGRATION_ID=, =STORAGE_SCHEMA_V3_MIGRATION_ID=, =StorageSchemaMigration=, and the =storage_schema_migrations= table are removed because no released database contract exists to migrate from
+- additive development changes update the single baseline DDL directly; destructive shape changes require rebuilding development databases instead of preserving compatibility shims for unreleased layouts
+- schema v1 may be frozen only after the public storage records, indexes, reopen behavior, and upgrade policy are accepted together; only changes after that freeze may create immutable migration IDs
+
+** Typed Keyset Pagination Landed
+- the four unbounded trait methods were replaced, not wrapped: =list_session_events_page=, =list_visibility_page=, =list_memory_proposals_page=, and =list_topology_edges_page= now require Rust-owned request/cursor types and return =StoragePage<T, C>=
+- =StoragePageLimit= rejects zero and values above =1000= with =StorageError::InvalidPageLimit=; each backend fetches at most =limit + 1= rows to determine whether a continuation cursor exists
+- every cursor follows the persisted stable order: session =(turn_id, event_id)=, visibility =(created_at_unix_ms, receipt_id)=, memory proposal =(created_at_unix_ms, proposal_id)=, and topology edge =(created_at_unix_ms, edge_id)=; no =OFFSET= path remains
+- the mutable development baseline includes covering keyset indexes for visibility, project-wide memory-proposal order, and project-wide topology order; the session primary key and existing memory-key index cover the other two query shapes, without claiming a released schema migration
+- =SessionStorageAdapter::list_context_events_page= exposes the bounded protocol to the runtime; compiler-driven migration removed all 26 storage/session legacy calls and the two downstream Gerbil policy-pack calls
+- the cross-backend contract uses page size =2= to traverse five same-timestamp records through InMemory and Turso, proving stable tie-breaks, no duplicates or omissions, session/project isolation, memory-key isolation, and typed invalid limits
+
+** Superseded Gap Record: Unbounded Lists
+The cursor/limit item below records the pre-keyset state and is closed by =Typed Keyset Pagination Landed= above. The other items are carried into the active list below.
+- add cursor/limit protocols for the older list APIs; vector search is bounded, but session, visibility, memory-proposal, and topology list methods still materialize complete result sets
+- run the ignored remote-sync scenario against an isolated Turso database and persist the real network/WAL receipt
+- add long-duration ingestion and checkpoint-growth gates
+- add an encryption RFC with secret-provider ownership and measured read/write overhead before enabling experimental encryption
+- evaluate a separate CDC audit authority; never combine CDC with the MVCC connection lanes used by the runtime writer
+
+** Remaining Optimization Gaps
+- run the ignored remote-sync scenario against an isolated Turso database and persist the real network/WAL receipt
+- add long-duration ingestion and checkpoint-growth gates
+- add an encryption RFC with secret-provider ownership and measured read/write overhead before enabling experimental encryption
+- evaluate a separate CDC audit authority; never combine CDC with the MVCC connection lanes used by the runtime writer
+
+** Bazel-Inspired Package Gate Modularity
+
+The =.data/codex= Bazel workspace is an architecture reference for gate
+granularity, not a second build truth for Marlin.  The reference graph was
+queried with the version selected by =devenv.nix=:
+
+#+begin_src text
+packages=130
+targets=817
+rust_library=122
+rust_test=248
+workspace_root_test=188
+cargo_build_script=5
+#+end_src
+
+Its =codex_rust_crate= macro projects one package declaration into a public
+library target, a package-files target, a package-private manual test binary,
+and an independently addressable workspace-root test wrapper.  Build scripts
+remain exceptional rather than carrying every quality gate.
+
+The equivalent Marlin metadata before this split was =32= workspace packages,
+=112= Cargo targets, and =32= custom-build targets.  Every downstream
+=build.rs= called the complete Harness evidence pipeline, so a normal cold
+package build also paid for dependency-topology, evidence-graph, and quality
+gate work.
+
+The typed boundary is now explicit:
+
+- =assert_marlin_rust_project_harness_build_check_from_env= is the only
+  downstream =build.rs= entry point.  It preserves the package-scoped Harness
+  scan and the 1000-source-line modularity warning.
+- =complete_build_gate= remains the explicit heavy path for dependency
+  topology and evidence graph materialization.
+- =run_marlin_rust_project_harness_for_package= parses the supplied
+  =Cargo.toml= and rejects workspace manifests before delegating to the pinned
+  Harness runner.  Package evidence cannot silently widen back to a workspace
+  scan even while the upstream dependency remains on its stable unscoped API.
+- Package evidence and performance/stability receipts are exercised by
+  independently addressable integration-test targets, including
+  =package_evidence_graph_receipt_is_owned_by_build_support=.
+- The ambiguous =assert_marlin_rust_project_harness_gate_from_env= API was
+  removed in the same migration; no compatibility shim remains.
+
+The next build-graph step is to give each package an explicit gate target in a
+workspace gate runner and then delete build scripts that contain no native
+build action.  Until that target ownership is present, the lightweight
+=build.rs= check remains the enforcement point and must not be replaced by an
+allowlist or a skipped receipt.
+
+Verification commands:
+#+begin_quote
+Correction: the workspace package-gate runner does not replace package-local Harness enforcement. The two layers have separate, permanent responsibilities. =marlin-workspace-package-gate= gives CI, Cargo, and a future Bazel projection one explicit aggregate target and receipt. Every package keeps =marlin-rust-project-harness-policy.workspace = true= and its lightweight =build.rs= hook so local builds cannot bypass the 1000-line modularity warning. Native or generated build scripts, including Gerbil runtime asset generation, compose their build action with that same check. The earlier proposal to delete policy-only package hooks is superseded by this dual-layer contract.
+#+end_quote
+
+#+begin_src sh
+direnv exec . bazelisk version
+direnv exec . cargo check -p marlin-agent-storage --all-targets --locked
+direnv exec . cargo check -p marlin-agent-storage --features turso --lib --locked
+direnv exec . cargo test -p marlin-rust-project-harness-policy package_evidence_graph_receipt_is_owned_by_build_support --locked
+#+end_src
+
+The =turso= and =turso-sync= feature boundaries are compiled separately.
+Sync-only configuration and statistics types must remain conditionally imported
+with the same =turso-sync= guard as their definitions and public re-exports;
+the base =turso= operations module must not import them unconditionally.
+
+*** Current Verification Receipts
+
+- Devenv resolves Bazelisk =v1.28.1= and selects Bazel =9.2.0= through
+  =USE_BAZEL_VERSION=.
+- =cargo check -p marlin-rust-project-harness-policy --lib --locked= passed in
+  =1m18s=.
+- The explicit package evidence gate passed =1/1= in =3.68s=.
+- The strict workspace-root rejection gate passed =1/1= in =0.04s=.
+- =cargo check -p marlin-agent-storage --all-targets --locked= passed in
+  =3m09s= after the build/evidence split.
+- The =turso= lib feature check passed in =26.83s= with zero warnings; the
+  =turso-sync= lib feature check passed in =1m00s= with zero warnings.
+- =rfcdb_turso_package_evidence_graph_survives_reopen= passed =1/1= in
+  =17.19s= with =--features turso=.
+- The Harness boundary tests passed =1/1= each: 999 source lines remain below
+  the gate, while 1000 source lines produce the modularity warning.
+
+Commands that exit successfully while selecting zero tests are not accepted as
+verification receipts.
+
+** Verification Receipt
+
+2026-07-18 release-profile receipt:
+
+- =rfcdb_turso_db_pressure_live_performance_regression_gate= passed the unchanged =4/5 <= 310 ms= contract twice after the release-only guard was added. The first run produced =[27, 104, 48, 156, 37] ms= (median =48 ms=, slowest =156 ms=, =5/5= within the cap); the post-migration run produced =[75, 53, 89, 43, 64] ms= (median =64 ms=, slowest =89 ms=, =5/5= within the cap).
+- =rfcdb_turso_optimization_profiles_live_comparison= passed in release mode. =AsyncIoOnlyCompatibility= explicitly reported =async_io=Enabled=, =mvcc=DisabledForCompatibility=, =mvcc_checkpoint=Blocking=, =connection_lanes=1=, and =statement_cache=PreparedCachedPerConnection= with samples =[23, 17, 11] ms= and median =17 ms=. =AsyncIoWithMvcc= reported =async_io=Enabled=, =mvcc=Required=, =mvcc_checkpoint=Blocking=, =connection_lanes=4=, and the same prepared-statement cache with samples =[25, 33, 33] ms= and median =33 ms=. =AsyncIoWithMvccAndPassiveCheckpointExperimental= reported the same MVCC and four-lane contract with =mvcc_checkpoint=PassiveExperimental=, samples =[113, 38, 45] ms=, and median =45 ms=.
+- The comparison is a scenario decision receipt, not a license to disable correctness features. Compatibility remains the single-lane baseline; multi-writer scenarios select required MVCC. Passive checkpoint remains experimental because this receipt shows no latency advantage over blocking checkpoint.
+- The Harness API migration is scope-explicit end to end. Workspace build gates use =run_rust_project_harness_with_config_for_scope(..., RustHarnessRunScope::ProjectWorkspace)=, while package evidence-graph callers use =RustHarnessRunScope::Package=. This prevents a single-package evidence test from expanding into the whole local dependency topology. No legacy unscoped alias remains on this path.
+- The scoped package evidence receipts are executable: the policy package-graph test passes =1/1=, and =rfcdb_turso_package_evidence_graph_survives_reopen= passes =1/1= in =230.11 s=. With the cache warm, the full storage test topology reports =35 passed, 0 failed, 5 ignored= (=integration_test=: =28 passed, 5 ignored=; =unit_test=: =7 passed=) in =223.45 s + 0.48 s=. The earlier =ProjectWorkspace= caller did not produce a terminal receipt within 15 minutes, so the explicit =Package= scope is both the correct semantic owner and a material runtime reduction.
+- Cold downstream gate execution remains the next Harness-performance target. A clean storage all-targets check passed but took =15 min 57 s= because the build-script policy performs nested cargo-check and verification work. Future work must cache a typed gate receipt by package source/config/tool digest and keep package and workspace receipts distinct; it must not skip verification or add a rules allowlist.
+- The 1,000-source-line Harness gate is also self-clean without a rules allowlist. Its original self-scan correctly rejected =src/cli/runner.rs= (1,107 lines), =src/cli/semantic_search_json.rs= (1,002 lines), and =src/search/query.rs= (1,010 lines). The canonical owner split now uses =runner/mod.rs= with =dispatch.rs= and =options.rs=, =semantic_search_json/mod.rs= with =packet.rs= and =native_syntax.rs=, and =query/mod.rs= with =render.rs= and =api_hits.rs=. A fresh full JSON self-scan reports =warnings=0=, =errors=0=, and =RUST-MOD-R002=0=; =cargo test --lib= reports =37 passed=, and the package-versus-project/workspace dependency-topology test passes. No =rust-project-harness-rules.toml= participates in the storage gate.
+- keyset contract gate: =storage_keyset_pagination_gate= reports =2 passed= across InMemory and Turso, including stable tie-break cursors, isolation, and typed limit rejection
+- development baseline gate: =schema_development_baseline_gate= reports =2 passed=, remains idempotent across concurrent open/reopen, and confirms that no =storage_schema_migrations= table exists before schema v1 is frozen
+- downstream Gerbil projection receipt test: =1 passed, 244 filtered= after migration to bounded session/visibility pages
+- current workspace all-target/all-feature check passes in =48.02 s=
+- strict lint receipts: storage =turso-sync=, storage =turso=-only, and sessions all pass =--all-targets --no-deps -- -D warnings=
+- full sessions regression: =cargo test -p marlin-agent-sessions= reports =14 passed, 0 failed=
+- current workspace compile: =cargo check --workspace --all-targets --all-features= passes in =48.40 s=
+- strict changed-owner clippy: storage with =turso-sync= and sessions both pass =--all-targets --no-deps -- -D warnings=
+- generic batch protocol compile: =cargo check -p marlin-agent-storage -p marlin-agent-sessions= passes
+- sessions producer batch scenarios: =3 passed=, covering context isolation, the typed two-event receipt, and duplicate-batch zero-partial-write behavior
+- the 128-event Turso reopen scenario now dispatches through =dyn AgentStorage=; =turso_070_fundamental_scenarios= remains =8 passed, 2 ignored=
+
+- =cargo test -p marlin-agent-storage --features turso-sync=: =35 passed, 5 ignored= across the canonical =integration_test.rs= and =unit_test.rs= owners plus library/doc-test runs
+- =turso_070_fundamental_scenarios=: =8 passed, 2 ignored= in the fast lane;
+  both manual performance scenarios pass when selected explicitly
+- =turso_sync_feature_gate=: =3 passed, 1 ignored=; the ignored test is the
+  isolated real-remote operation
+- profile-by-valid-batch-mode manual receipt: medians =142/47/99 ms= for
+  compatibility+Immediate/MVCC+Concurrent/MVCC+passive+Concurrent
+- typed-Immediate atomic-batch receipt: three repeated five-sample runs produced
+  medians =176/197/197 ms=; respectively =3/5=, =3/5=, and =5/5= samples were
+  within the =310 ms= cap. Each run wrote all 256 events, reported
+  =transaction_mode: Immediate=, and the duplicate-key scenario preserved
+  whole-batch rollback. Row-at-a-time medians =169/83/68 ms= are retained as
+  observations, not a speed-ordering assertion.
+- batch-enabled mixed DB-pressure profile receipt: median totals =116/408/402
+  ms= for compatibility/MVCC/MVCC+passive under the valid typed mode matrix;
+  this confirms that short mixed
+  workloads and sustained append workloads have different winners
+- five-sample live gate after the tail assertion: totals
+  =[284, 215, 239, 207, 621] ms=, median =239 ms=, slowest =621 ms=, and =4/5=
+  samples within the =310 ms= cap
+- no-default-feature storage check: pass
+- storage library clippy with =turso-sync= and =-D warnings=: pass
+- storage =--all-targets --no-deps= clippy with =turso-sync= and =-D warnings=:
+  pass
+- workspace =cargo check --all-targets --all-features=: pass
+- =cargo fmt --all -- --check=: pass
+- storage =--all-targets= clippy is presently blocked by the pre-existing
+  =marlin-agent-kernel::build_run_receipt= eight-argument lint, outside this DB
+  change

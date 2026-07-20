@@ -5,6 +5,8 @@ use marlin_rust_project_harness_policy::{
     inspect_gerbil_runtime_assets, inspect_gerbil_runtime_harness_contract,
 };
 
+use crate::workspace::workspace_root;
+
 #[test]
 fn gerbil_runtime_asset_receipt_reports_absent_runtime_root_as_non_blocking() {
     let tempdir = tempfile::tempdir().expect("create temp project");
@@ -242,10 +244,7 @@ fn gerbil_runtime_harness_contract_receipt_rejects_missing_capability_assets() {
 
 #[test]
 fn gerbil_runtime_asset_receipt_accepts_real_marlin_gerbil_scheme_package() {
-    let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .and_then(Path::parent)
-        .expect("build-support crate lives under workspace/build-support");
+    let workspace_root = workspace_root();
     let package_root = workspace_root.join("crates/marlin-gerbil-scheme");
 
     let receipt = inspect_gerbil_runtime_assets(&package_root);
@@ -293,10 +292,7 @@ fn gerbil_runtime_asset_receipt_accepts_real_marlin_gerbil_scheme_package() {
 
 #[test]
 fn gerbil_runtime_harness_contract_receipt_accepts_real_marlin_gerbil_scheme_package() {
-    let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .and_then(Path::parent)
-        .expect("build-support crate lives under workspace/build-support");
+    let workspace_root = workspace_root();
     let package_root = workspace_root.join("crates/marlin-gerbil-scheme");
 
     let receipt = inspect_gerbil_runtime_harness_contract(&package_root);

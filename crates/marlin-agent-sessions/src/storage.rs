@@ -151,17 +151,50 @@ where
             .map_err(SessionStorageProjectionError::Storage)
     }
 
-    pub async fn list_context_events(
+    pub async fn list_context_events_page(
         &self,
         project_id: impl Into<String>,
         context: &AgentSessionContext,
-    ) -> Result<Vec<SessionEventRecord>, SessionStorageProjectionError> {
+        limit: marlin_agent_storage::StoragePageLimit,
+        after: Option<marlin_agent_storage::SessionEventCursor>,
+    ) -> Result<
+        marlin_agent_storage::StoragePage<
+            SessionEventRecord,
+            marlin_agent_storage::SessionEventCursor,
+        >,
+        SessionStorageProjectionError,
+    > {
         let project_id = StorageProjectId::new(project_id.into())
             .map_err(SessionStorageProjectionError::Storage)?;
         let session_id = StorageSessionId::new(context.session_id().as_str())
             .map_err(SessionStorageProjectionError::Storage)?;
+        let mut request =
+            marlin_agent_storage::SessionEventPageRequest::new(project_id, session_id, limit);
+        if let Some(cursor) = after {
+            request = request.after(cursor);
+        }
         self.storage
-            .list_session_events(&project_id, &session_id)
+            .list_session_events_page(request)
+            .await
+            .map_err(SessionStorageProjectionError::Storage)
+    }
+
+    pub async fn append_context_events_atomically(
+        &self,
+        context: &AgentSessionContext,
+        events: Vec<SessionStorageEvent>,
+    ) -> Result<marlin_agent_storage::SessionEventBatchWriteReceipt, SessionStorageProjectionError>
+    {
+        let records = events
+            .into_iter()
+            .map(|event| {
+                to_session_event_record(context, event)
+                    .map_err(SessionStorageProjectionError::Storage)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+
+        self.storage
+            .append_session_events_atomically(records)
             .await
             .map_err(SessionStorageProjectionError::Storage)
     }

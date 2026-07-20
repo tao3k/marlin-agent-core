@@ -4,7 +4,7 @@ use std::{
     env,
     ffi::OsString,
     fs, io,
-    path::{Component, Path, PathBuf},
+    path::{Path, PathBuf},
 };
 
 /// Environment variable that overrides the `gxi` executable path.
@@ -121,11 +121,48 @@ pub fn gerbil_runtime_dependency_loadpath() -> PathBuf {
 /// Package-local compiled dependencies come first so runtime execution uses
 /// built package modules before falling back to source assets.
 pub fn gerbil_runtime_loadpath_with_dependencies(root: impl AsRef<Path>) -> OsString {
-    env::join_paths([
-        gerbil_runtime_dependency_loadpath(),
-        gerbil_runtime_loadpath(root),
-    ])
-    .expect("Gerbil loadpath entries should be joinable")
+    let mut loadpaths = vec![gerbil_runtime_dependency_loadpath()];
+    loadpaths.extend(gerbil_user_dependency_loadpaths());
+    loadpaths.push(gerbil_runtime_loadpath(root));
+    if let Some(existing_loadpath) = env::var_os(GERBIL_LOADPATH_ENV) {
+        loadpaths.extend(env::split_paths(&existing_loadpath));
+    }
+    env::join_paths(loadpaths).expect("Gerbil loadpath entries should be joinable")
+}
+
+fn gerbil_user_dependency_loadpaths() -> Vec<PathBuf> {
+    let Some(home) = env::var_os("HOME") else {
+        return Vec::new();
+    };
+    let gerbil_home = PathBuf::from(home).join(".gerbil");
+    let mut loadpaths = Vec::new();
+    let user_lib = gerbil_home.join("lib");
+    if user_lib.is_dir() {
+        loadpaths.push(user_lib);
+    }
+    let user_pkg = gerbil_home.join("pkg");
+    collect_gerbil_compiled_libs(&user_pkg, &mut loadpaths);
+    loadpaths
+}
+
+fn collect_gerbil_compiled_libs(path: &Path, loadpaths: &mut Vec<PathBuf>) {
+    let Ok(entries) = fs::read_dir(path) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+        if path.file_name().and_then(|name| name.to_str()) == Some(".gerbil") {
+            let lib = path.join("lib");
+            if lib.is_dir() {
+                loadpaths.push(lib);
+            }
+            continue;
+        }
+        collect_gerbil_compiled_libs(&path, loadpaths);
+    }
 }
 
 /// Returns the crate-owned `Gerbil` package root.
@@ -165,38 +202,17 @@ pub fn default_gerbil_gsc_program() -> PathBuf {
         return PathBuf::from(program);
     }
 
-    resolve_gerbil_executable(default_gerbil_gxi_program())
-        .and_then(|gxi| gxi.parent().map(|bin| bin.join("gsc")))
-        .filter(|candidate| candidate.is_file())
-        .unwrap_or_else(|| PathBuf::from("gsc"))
+    gerbil_scheme::GerbilToolchain::new(
+        default_gerbil_gxi_program(),
+        default_gerbil_gxc_program(),
+        PathBuf::from("gsc"),
+    )
+    .resolved_gsc()
 }
 
 /// Resolves a configured Gerbil executable through PATH when it is a program name.
 pub fn resolve_gerbil_executable(program: impl AsRef<Path>) -> Option<PathBuf> {
-    let program = program.as_ref();
-    if should_check_gerbil_program_directly(program) {
-        return program.is_file().then(|| program.to_path_buf());
-    }
-
-    env::var_os("PATH").and_then(|paths| {
-        env::split_paths(&paths)
-            .map(|dir| dir.join(program))
-            .find(|candidate| candidate.is_file())
-    })
-}
-
-fn should_check_gerbil_program_directly(program: &Path) -> bool {
-    if program.has_root() {
-        return true;
-    }
-    let mut components = program.components();
-    let Some(first) = components.next() else {
-        return false;
-    };
-    matches!(
-        first,
-        Component::CurDir | Component::ParentDir | Component::Prefix(_)
-    ) || components.next().is_some()
+    gerbil_scheme::resolve_gerbil_executable(program)
 }
 
 /// Writes the crate-owned `Gerbil` runtime assets under a loadpath root.

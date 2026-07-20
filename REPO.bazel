@@ -1,0 +1,8 @@
+ignore_directories([
+    ".data",
+    ".data/**",
+    ".devenv",
+    ".devenv/**",
+    "target",
+    "target/**",
+])

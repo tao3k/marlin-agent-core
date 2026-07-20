@@ -34,10 +34,36 @@
 ;;; Boundary: Default pack is the upstream furnished entrypoint.
 ;; MarlinResult <- MarlinInput
 (def default-pack
-  (marlinDefaultPolicyPack inventory-module))
+  (marlinPolicyPack
+   (.o id: "marlin-default-policy-pack"
+       module: inventory-module
+       policy-objects:
+       (list
+        (marlinDefaultWorkspacePolicy)
+        (marlinDefaultSessionPolicy)
+        (marlinDefaultAgentPolicy)
+        (marlinDefaultHookSelectionPolicy)
+        (marlinDefaultModelRoutePolicy)
+        (marlinDefaultContinuationProfilePolicy)
+        (marlinDefaultHumanReviewPolicy)
+        (marlinDefaultEvidenceGraphPolicy)
+        (marlinDefaultFailureRecoveryPolicy)
+        (marlinDefaultMemoryRecallPolicy)
+        (marlinDefaultMemoryTriggerPolicy)
+        (marlinDefaultMemoryRetentionPolicy)
+        (marlinDefaultMemoryVisibilityPolicy)
+        (marlinDefaultSubagentPolicy)
+        (marlinDefaultContextCompressionPolicy)
+        (marlinDefaultToolBatchPolicy)
+        (marlinDefaultSelfEvolutionPolicy)
+        (marlinDefaultCatalogProjectionPolicy))
+       object-operations:
+       (.get marlinDefaultPolicyPack object-operations)
+       allowed-hook-ids: '("runtime-catalog-default-hook")
+       metadata: (.get marlinDefaultPolicyPack metadata))))
 
 (def default-inventory
-  (marlinPolicyPackInventory default-pack))
+  (DefaultPolicyPackInventory default-pack))
 
 (def default-catalog
   (DefaultPolicyPackCatalog default-pack))
@@ -151,7 +177,7 @@
        metadata: '((owner . "policy-pack-inventory-test")))))
 
 (def custom-inventory
-  (marlinPolicyPackInventory custom-pack))
+  (DefaultPolicyPackInventory custom-pack))
 
 ;;; Boundary: Conflict receipts keep object surgery auditable instead of silent.
 ;; MarlinResult <- MarlinInput
@@ -171,7 +197,7 @@
        metadata: '((owner . "policy-pack-inventory-test")))))
 
 (def conflict-inventory
-  (marlinPolicyPackInventory conflict-pack))
+  (DefaultPolicyPackInventory conflict-pack))
 
 (def conflict-presentation
   (marlinPolicyPackPresentation conflict-pack))
@@ -186,7 +212,7 @@
   (.get conflict-pack object-surgery-receipts))
 
 (check (.get default-pack id) => "marlin-default-policy-pack")
-(check (.get default-inventory kind) => marlin-policy-pack-inventory-kind)
+(check (.get default-inventory kind) => marlin-pack-catalog-kind)
 (check (.get default-inventory policy-object-count) => 18)
 (check (.get default-inventory default-policy-object-count) => 18)
 (check (.get default-inventory object-operation-count) => 0)
@@ -209,7 +235,7 @@
 (check (.get default-delivery pack-catalog-presentation-kind)
        => marlin-pack-catalog-presentation-kind)
 (check (.get default-delivery pack-ids)
-       => '("marlin-default-policy-pack"))
+       => '("marlin/default-policy-pack"))
 (check (.get default-delivery policy-object-count) => 18)
 (check (.get default-delivery default-policy-object-count) => 18)
 (check (.get default-delivery object-operation-count) => 0)

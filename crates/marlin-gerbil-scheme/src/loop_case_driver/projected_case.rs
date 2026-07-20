@@ -258,10 +258,13 @@ pub fn load_gerbil_loop_case_driver_projected_loop_program(
     })
 }
 
-/// GERBIL_LOADPATH with the package src directory before any inherited paths.
+/// `GERBIL_LOADPATH` with package sources and local `gxpkg` dependencies first.
 #[must_use]
 pub fn gerbil_config_interface_loadpath_with_src(gerbil_root: &Path) -> OsString {
-    let mut paths = vec![gerbil_root.join("src")];
+    let mut paths = vec![
+        gerbil_root.join("src"),
+        gerbil_root.join(".gerbil").join("lib"),
+    ];
     if let Some(existing) = std::env::var_os("GERBIL_LOADPATH") {
         paths.extend(std::env::split_paths(&existing));
     }

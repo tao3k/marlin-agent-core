@@ -1,0 +1,46 @@
+import %workspace%/.devenv/profile/share/marlin-agent-core/bazelrc
+
+common --enable_bzlmod
+common --announce_rc
+common --repo_env=CARGO_BAZEL_ISOLATED=true
+common:repin --repo_env=CARGO_BAZEL_REPIN=true
+common:repin --repo_env=CARGO_BAZEL_ISOLATED=false
+common:repin --repo_env=CARGO_BAZEL_TIMEOUT=1800
+
+build --show_result=10
+build --@rules_rust//cargo/settings:emit_build_script_warnings=on
+build:dev --compilation_mode=fastbuild
+build:dev --disk_cache=.data/bazel/disk-cache
+build:dev --reuse_sandbox_directories
+build:dev --@rules_rust//rust/settings:pipelined_compilation
+
+# Builds and tests are offline by default. Dependency changes must pass through
+# the explicit deps_prepare configuration and refresh the committed vendor tree.
+common --lockfile_mode=error
+common --repository_disable_download
+common --repo_env=CARGO_NET_OFFLINE=true
+common --vendor_dir=bazel/vendor
+build --nofetch
+build --spawn_strategy=sandboxed
+build --worker_sandboxing
+build --nosandbox_default_allow_network
+mod --nofetch
+vendor --nofetch
+
+# Explicit, network-enabled supply-chain preparation. This configuration is
+# never selected by ordinary build/test commands.
+common:deps_prepare --lockfile_mode=update
+common:deps_prepare --norepository_disable_download
+common:deps_prepare --repo_env=CARGO_BAZEL_ISOLATED=false
+common:deps_prepare --repo_env=CARGO_NET_OFFLINE=false
+common:deps_prepare --repo_env=CARGO_HOME
+mod:deps_prepare --fetch
+vendor:deps_prepare --fetch
+common:dev --watchfs
+build:perf --compilation_mode=opt
+
+test --test_output=errors
+
+common:ci --lockfile_mode=error
+build:ci --aspects=@rules_rust//rust:defs.bzl%rust_clippy_aspect,@rules_rust//rust:defs.bzl%rustfmt_aspect
+build:ci --output_groups=+clippy_checks,+rustfmt_checks

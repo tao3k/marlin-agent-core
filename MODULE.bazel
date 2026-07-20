@@ -1,0 +1,42 @@
+module(
+    name = "marlin_agent_core",
+    version = "0.1.0",
+    compatibility_level = 1,
+)
+
+bazel_dep(name = "rules_rust", version = "0.71.3")
+
+rust = use_extension("@rules_rust//rust:extensions.bzl", "rust")
+rust.toolchain(
+    edition = "2024",
+    versions = ["1.95.0"],
+)
+use_repo(rust, "rust_toolchains")
+
+register_toolchains("@rust_toolchains//:all")
+
+crate = use_extension("@rules_rust//crate_universe:extensions.bzl", "crate")
+crate.annotation(
+    crate = "io-uring",
+    patch_args = ["-p1"],
+    patches = ["//bazel/patches:io-uring-0.7.13-linux-only.patch"],
+    version = "0.7.13",
+)
+crate.annotation(
+    build_script_env = {
+        # rules_rust models a Cargo build script as one Bazel action and
+        # otherwise exports NUM_JOBS=1. aws-lc-sys uses cc/parallel, so keep
+        # this expensive native compile bounded but genuinely parallel.
+        "NUM_JOBS": "8",
+    },
+    crate = "aws-lc-sys",
+    version = "0.41.0",
+)
+crate.from_cargo(
+    name = "marlin_crates",
+    cargo_lockfile = "//:Cargo.lock",
+    isolated = True,
+    lockfile = "//:Cargo.Bazel.lock",
+    manifests = ["//:Cargo.toml"],
+)
+use_repo(crate, "marlin_crates")

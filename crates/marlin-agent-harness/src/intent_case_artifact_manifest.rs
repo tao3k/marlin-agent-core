@@ -37,7 +37,7 @@ pub(crate) fn ensure_trace_correlation_integrity(
         .collect::<BTreeSet<_>>();
     for entry in &manifest.trace_index.entries {
         for artifact_id in &entry.artifact_refs {
-            if present_artifact_ids.get(artifact_id).is_none() {
+            if !present_artifact_ids.contains(artifact_id) {
                 return Err(
                     IntentCaseArtifactBundleMaterializationError::UnknownTraceArtifactRef {
                         trace_id: entry.trace_id.clone(),

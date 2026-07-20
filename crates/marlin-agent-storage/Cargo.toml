@@ -7,6 +7,7 @@ repository = "https://github.com/tao3k/marlin-agent-core"
 publish = false
 
 [dependencies]
+serde_json = { workspace = true }
 serde = { workspace = true }
 tokio = { workspace = true, optional = true }
 
@@ -16,18 +17,20 @@ turso = ["dep:turso", "dep:tokio"]
 turso-sync = ["turso", "turso/sync"]
 
 [dependencies.turso]
-workspace = true
 optional = true
+version = "0.7.0"
+default-features = false
 
 [dev-dependencies]
 marlin-agent-harness = { workspace = true }
 marlin-agent-harness-types = { workspace = true }
 marlin-agent-sessions = { workspace = true }
 marlin-org-memory = { workspace = true }
+marlin-rust-project-harness-policy = { path = "../../build-support/marlin-rust-project-harness-policy" }
 serde_json = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true }
 toml = { workspace = true }
 
 [build-dependencies]
-marlin-rust-project-harness-policy = { workspace = true }
+marlin-rust-project-harness-policy.workspace = true

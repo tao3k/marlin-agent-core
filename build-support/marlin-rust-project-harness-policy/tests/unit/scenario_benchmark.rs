@@ -9,6 +9,8 @@ use marlin_rust_project_harness_policy::{
 use rust_lang_project_harness::{RustScenarioBenchmarkReceipt, validate_rust_scenario_benchmark};
 use tempfile::tempdir;
 
+use crate::workspace::workspace_root;
+
 #[test]
 fn placeholder_baseline_produces_first_batch_optimization_findings() {
     let receipt = optimization_receipt_from_benchmark_receipt(
@@ -73,10 +75,7 @@ fn workspace_gate_accepts_all_crates_using_upstream_benchmark_schema() {
 
 #[test]
 fn current_workspace_gate_accepts_all_crate_scenario_benchmarks() {
-    let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .and_then(Path::parent)
-        .expect("workspace root");
+    let workspace_root = workspace_root();
 
     let receipt = validate_workspace_required_scenario_benchmarks(workspace_root);
 

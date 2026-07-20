@@ -1,0 +1,243 @@
+load("@marlin_crates//:defs.bzl", "crate_deps", "crate_edition")
+load("@rules_rust//cargo:defs.bzl", "cargo_build_script")
+load("//bazel:marlin_rust.bzl", "marlin_rust_crate", "marlin_rust_scenario")
+
+_INTEGRATION_BASE_DEPS = crate_deps([
+    "serde",
+    "toml",
+]) + [
+    "//build-support/marlin-rust-project-harness-policy:marlin_rust_project_harness_policy",
+]
+
+_INTEGRATION_TURSO_DEPS = _INTEGRATION_BASE_DEPS + crate_deps([
+    "serde_json",
+    "tempfile",
+    "tokio",
+]) + [
+    "//crates/marlin-agent-sessions:marlin_agent_sessions",
+    "//crates/marlin-org-memory:marlin_org_memory",
+]
+
+_INTEGRATION_COMPILE_DATA = [":storage_evidence_data"]
+
+_INTEGRATION_RUNTIME_DATA = [
+    ":rfcdb_evidence_runtime_files",
+    ":storage_harness_runtime_source_graph",
+    ":storage_scenario_runtime_data",
+    "//crates/marlin-gerbil-scheme:policy_pack_storage_projection_receipt",
+    "//docs/40-rfcs:turso_agent_storage_engine_rfc",
+    "//proof-support/lean:storage_artifact_pointer_cas_runtime",
+]
+
+filegroup(
+    name = "storage_evidence_data",
+    srcs = glob(["tests/integration/fixtures/evidence/*.toml"]),
+)
+
+filegroup(
+    name = "rfcdb_evidence_runtime_files",
+    srcs = [
+        "tests/integration/fixtures/db_pressure/scenarios/storage_pressure.toml",
+        "tests/integration/fixtures/evidence/rfcdb_packet.toml",
+        "tests/integration/fixtures/schema/scenario.toml",
+    ],
+)
+
+filegroup(
+    name = "storage_harness_runtime_source_graph",
+    srcs = ["Cargo.toml"] + glob([
+        "src/**/*.rs",
+        "tests/**/*.rs",
+        "tests/unit/scenarios/performance_baseline/*.toml",
+    ]),
+    visibility = ["//:__pkg__"],
+)
+
+filegroup(
+    name = "storage_scenario_runtime_data",
+    srcs = glob(["tests/unit/scenarios/performance_baseline/*.toml"]),
+)
+
+package(default_visibility = ["//visibility:private"])
+
+cargo_build_script(
+    name = "storage_build_action",
+    srcs = ["build.rs"],
+    data = ["Cargo.toml"] + glob([
+        "src/**/*.rs",
+        "tests/**/*.rs",
+        "tests/**/*.toml",
+    ]),
+    edition = crate_edition(),
+    deps = ["//build-support/marlin-rust-project-harness-policy:marlin_rust_project_harness_policy"],
+)
+
+marlin_rust_crate(
+    name = "marlin_agent_storage",
+    srcs = glob(["src/**/*.rs"]),
+    build_action = "harness",
+    build_script = ":storage_build_action",
+    crate_root = "src/lib.rs",
+    edition = crate_edition(),
+    manifest = "Cargo.toml",
+    visibility = ["//visibility:public"],
+    deps = crate_deps([
+        "serde",
+        "serde_json",
+    ]),
+)
+
+marlin_rust_crate(
+    name = "marlin_agent_storage_turso",
+    srcs = glob(["src/**/*.rs"]),
+    build_action = "harness",
+    build_script = ":storage_build_action",
+    crate_features = ["turso"],
+    crate_name = "marlin_agent_storage",
+    crate_root = "src/lib.rs",
+    edition = crate_edition(),
+    manifest = "Cargo.toml",
+    scenario = "turso",
+    visibility = ["//visibility:public"],
+    deps = crate_deps([
+        "serde",
+        "serde_json",
+        "tokio",
+        "turso",
+    ]),
+)
+
+marlin_rust_crate(
+    name = "marlin_agent_storage_turso_sync",
+    srcs = glob(["src/**/*.rs"]),
+    build_action = "harness",
+    build_script = ":storage_build_action",
+    crate_features = [
+        "turso",
+        "turso-sync",
+    ],
+    crate_name = "marlin_agent_storage",
+    crate_root = "src/lib.rs",
+    edition = crate_edition(),
+    manifest = "Cargo.toml",
+    scenario = "turso_sync",
+    visibility = ["//visibility:public"],
+    deps = crate_deps([
+        "serde",
+        "serde_json",
+        "tokio",
+        "turso",
+    ]),
+)
+
+marlin_rust_scenario(
+    name = "integration_default",
+    srcs = ["tests/integration_test.rs"] + glob(["tests/integration/**/*.rs"]),
+    build_action = "harness",
+    compile_data = _INTEGRATION_COMPILE_DATA,
+    crate_root = "tests/integration_test.rs",
+    data = _INTEGRATION_RUNTIME_DATA,
+    edition = crate_edition(),
+    manifest = "Cargo.toml",
+    optimization = "development",
+    scenario = "storage_default",
+    visibility = ["//visibility:public"],
+    deps = [":marlin_agent_storage"] + _INTEGRATION_BASE_DEPS,
+)
+
+marlin_rust_scenario(
+    name = "integration_turso",
+    srcs = ["tests/integration_test.rs"] + glob(["tests/integration/**/*.rs"]),
+    build_action = "harness",
+    compile_data = _INTEGRATION_COMPILE_DATA,
+    crate_features = ["turso"],
+    crate_root = "tests/integration_test.rs",
+    data = _INTEGRATION_RUNTIME_DATA,
+    edition = crate_edition(),
+    manifest = "Cargo.toml",
+    optimization = "development",
+    scenario = "storage_turso",
+    visibility = ["//visibility:public"],
+    deps = [":marlin_agent_storage_turso"] + _INTEGRATION_TURSO_DEPS,
+)
+
+marlin_rust_scenario(
+    name = "integration_turso_sync",
+    srcs = ["tests/integration_test.rs"] + glob(["tests/integration/**/*.rs"]),
+    build_action = "harness",
+    compile_data = _INTEGRATION_COMPILE_DATA,
+    crate_features = [
+        "turso",
+        "turso-sync",
+    ],
+    crate_root = "tests/integration_test.rs",
+    data = _INTEGRATION_RUNTIME_DATA,
+    edition = crate_edition(),
+    manifest = "Cargo.toml",
+    optimization = "development",
+    scenario = "storage_turso_sync",
+    visibility = ["//visibility:public"],
+    deps = [":marlin_agent_storage_turso_sync"] + _INTEGRATION_TURSO_DEPS,
+)
+
+marlin_rust_scenario(
+    name = "integration_default_perf",
+    srcs = ["tests/integration_test.rs"] + glob(["tests/integration/**/*.rs"]),
+    build_action = "harness",
+    compile_data = _INTEGRATION_COMPILE_DATA,
+    crate_root = "tests/integration_test.rs",
+    data = _INTEGRATION_RUNTIME_DATA,
+    edition = crate_edition(),
+    manifest = "Cargo.toml",
+    optimization = "speed",
+    scenario = "storage_default",
+    tags = [
+        "manual",
+        "performance",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [":marlin_agent_storage"] + _INTEGRATION_BASE_DEPS,
+)
+
+marlin_rust_scenario(
+    name = "integration_turso_perf",
+    srcs = ["tests/integration_test.rs"] + glob(["tests/integration/**/*.rs"]),
+    build_action = "harness",
+    compile_data = _INTEGRATION_COMPILE_DATA,
+    crate_features = ["turso"],
+    crate_root = "tests/integration_test.rs",
+    data = _INTEGRATION_RUNTIME_DATA,
+    edition = crate_edition(),
+    manifest = "Cargo.toml",
+    optimization = "speed",
+    scenario = "storage_turso",
+    tags = [
+        "manual",
+        "performance",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [":marlin_agent_storage_turso"] + _INTEGRATION_TURSO_DEPS,
+)
+
+marlin_rust_scenario(
+    name = "integration_turso_sync_perf",
+    srcs = ["tests/integration_test.rs"] + glob(["tests/integration/**/*.rs"]),
+    build_action = "harness",
+    compile_data = _INTEGRATION_COMPILE_DATA,
+    crate_features = [
+        "turso",
+        "turso-sync",
+    ],
+    crate_root = "tests/integration_test.rs",
+    data = _INTEGRATION_RUNTIME_DATA,
+    edition = crate_edition(),
+    manifest = "Cargo.toml",
+    optimization = "speed",
+    scenario = "storage_turso_sync",
+    tags = [
+        "manual",
+        "performance",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [":marlin_agent_storage_turso_sync"] + _INTEGRATION_TURSO_DEPS,
+)

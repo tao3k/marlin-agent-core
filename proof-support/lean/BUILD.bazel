@@ -1,0 +1,13 @@
+filegroup(
+    name = "storage_artifact_pointer_cas_runtime",
+    srcs = [
+        "MarlinProof.lean",
+        "MarlinProof/Storage/ArtifactPointer.lean",
+        "Scenarios/storage-artifact-pointer-cas.org",
+        "Scenarios/storage-artifact-pointer-cas.toml",
+        "lake-manifest.json",
+        "lakefile.lean",
+        "lean-toolchain",
+    ],
+    visibility = ["//visibility:public"],
+)

@@ -1,0 +1,8 @@
+id = "marlin-agent-storage.scenario-performance"
+title = "Turso 0.7 optimized storage pressure baseline"
+policy_ids = ["RUST-AGENT-SCENARIO-PERFORMANCE-001"]
+agent_goal = "Keep the maximized Turso 0.7 storage profile fast, bounded, and replayable."
+reference_repositories = ["tursodatabase/turso", "tokio-rs/tokio"]
+reference_patterns = ["MVCC passive checkpoint", "partitioned storage pressure", "typed optimization receipt"]
+inputs = "inputs"
+expected = "expected"

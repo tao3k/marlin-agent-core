@@ -1,22 +1,36 @@
-use std::path::Path;
-
 use marlin_rust_project_harness_policy::{
     RustProjectHarnessPackageEvidenceGraphRequest, RustProjectHarnessQualityFindingEvidencePaths,
     build_package_evidence_graph_receipt, evaluate_performance_and_stability_gate,
-    rust_project_harness_config_for_project,
+    run_marlin_rust_project_harness_for_package, rust_project_harness_config_for_project,
 };
-use rust_lang_project_harness::{
-    plan_rust_project_verification_with_config, run_rust_project_harness_with_config,
-};
+use rust_lang_project_harness::plan_rust_project_verification_with_config;
+
+use crate::workspace::policy_package_root;
 
 use super::helpers::{workspace_crates, workspace_root};
 
 #[test]
+fn package_harness_rejects_workspace_root() {
+    let workspace = tempfile::tempdir().expect("temporary workspace should be available");
+    std::fs::write(
+        workspace.path().join("Cargo.toml"),
+        "[workspace]\nmembers = []\nresolver = \"3\"\n",
+    )
+    .expect("workspace manifest should be writable");
+    let config = rust_project_harness_config_for_project(workspace.path());
+
+    let error = run_marlin_rust_project_harness_for_package(workspace.path(), &config)
+        .expect_err("package runner must reject a workspace root");
+
+    assert!(error.contains("non-workspace Cargo package root"));
+}
+
+#[test]
 fn package_evidence_graph_receipt_is_owned_by_build_support() {
-    let project_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let project_root = policy_package_root();
     let package_name = env!("CARGO_PKG_NAME").to_owned();
     let config = rust_project_harness_config_for_project(project_root);
-    let harness_report = run_rust_project_harness_with_config(project_root, &config)
+    let harness_report = run_marlin_rust_project_harness_for_package(project_root, &config)
         .expect("build-support crate should produce rust harness report");
 
     let receipt =

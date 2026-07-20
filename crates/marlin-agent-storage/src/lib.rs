@@ -13,12 +13,26 @@ pub use memory::InMemoryAgentStorage;
 pub use records::{
     AgentId, AgentStorage, ArtifactHash, ArtifactPointerKey, ArtifactPointerRecord,
     ArtifactPointerUpdate, ArtifactPutOutcome, ArtifactRecord, EventId, MemoryKey,
-    MemoryProposalId, MemoryProposalRecord, ProjectId, SessionEventKey, SessionEventRecord,
-    SessionId, StorageError, StorageFuture, StorageResult, StorageSchemaMigration,
-    StorageSchemaSnapshot, StorageSchemaTable, TopologyEdgeId, TopologyEdgeRecord, TopologyNodeId,
-    TurnId, VisibilityReceipt,
+    MemoryProposalCursor, MemoryProposalId, MemoryProposalPageRequest, MemoryProposalRecord,
+    ProjectId, SessionEventBatchWriteReceipt, SessionEventCursor, SessionEventKey,
+    SessionEventPageRequest, SessionEventRecord, SessionId, StorageError, StorageFuture,
+    StoragePage, StoragePageLimit, StorageResult, StorageSchemaLifecycle, StorageSchemaSnapshot,
+    StorageSchemaTable, TopologyEdgeCursor, TopologyEdgeId, TopologyEdgePageRequest,
+    TopologyEdgeRecord, TopologyNodeId, TurnId, VisibilityCursor, VisibilityPageRequest,
+    VisibilityReceipt,
 };
 #[cfg(feature = "turso")]
 pub use turso_backend::{
-    STORAGE_SCHEMA_V1_MIGRATION_ID, TursoAgentStorage, TursoAgentStorageConfig, TursoMvccMode,
+    TursoAgentStorage, TursoAgentStorageConfig, TursoAsyncIoMode, TursoBatchTransactionMode,
+    TursoBatchWriteReceipt, TursoMemoryEmbedding, TursoMemoryEmbeddingRecord,
+    TursoMemorySearchLimit, TursoMemorySearchMatch, TursoMemorySearchRequest,
+    TursoMvccCheckpointMode, TursoMvccMode, TursoOperationalReceipt, TursoOptimizationProfile,
+    TursoOptimizationReceipt, TursoSdkTelemetryStatus, TursoStatementCacheMode,
+    TursoSyncFeatureStatus, TursoTransactionOperation, TursoTransactionReceipt,
+    TursoTransactionStatus,
+};
+
+#[cfg(feature = "turso-sync")]
+pub use turso_backend::{
+    TursoSyncAgentStorageConfig, TursoSyncAuthToken, TursoSyncRemoteUrl, TursoSyncStatsReceipt,
 };

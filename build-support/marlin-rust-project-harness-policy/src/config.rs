@@ -78,6 +78,12 @@ pub fn rust_project_harness_policy_for_project(
 /// Build the Rust project harness config with Marlin's workspace verification policy.
 pub fn rust_project_harness_config_for_project(project_root: &Path) -> RustHarnessConfig {
     let mut config = rust_lang_project_harness::rust_harness_config_for_project(project_root);
+    if config.cargo_check_advice_allow_explanation.is_none() {
+        config.cargo_check_advice_allow_explanation = Some(
+            "scope=marlin-workspace; owner=marlin-rust-project-harness-policy; finding_category=info-advice; why_safe_now=Info findings remain non-blocking and are retained in typed evidence receipts while Warning and Error stay fail-closed; cleanup_trigger=remove this allowance when Marlin crates reach zero Info findings"
+                .to_string(),
+        );
+    }
     config.verification_policy =
         with_marlin_project_verification_policy(config.verification_policy, project_root);
     config

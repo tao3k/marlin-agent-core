@@ -71,12 +71,19 @@ fn gerbil_runtime_assets_expose_loadpath_contract() {
         runtime_root.path(),
     ))
     .collect::<Vec<_>>();
-    assert_eq!(
-        loadpath_entries.as_slice(),
-        &[
-            gerbil_runtime_dependency_loadpath(),
-            gerbil_runtime_loadpath(runtime_root.path())
-        ]
+    let dependency_loadpath = gerbil_runtime_dependency_loadpath();
+    let runtime_loadpath = gerbil_runtime_loadpath(runtime_root.path());
+    let dependency_index = loadpath_entries
+        .iter()
+        .position(|entry| entry == &dependency_loadpath)
+        .expect("loadpath contains runtime dependency root");
+    let runtime_index = loadpath_entries
+        .iter()
+        .position(|entry| entry == &runtime_loadpath)
+        .expect("loadpath contains runtime source root");
+    assert!(
+        dependency_index < runtime_index,
+        "runtime dependency loadpath must precede runtime source loadpath: {loadpath_entries:?}"
     );
     assert!(package_manifest_source.contains("marlin-deck-runtime"));
     assert_eq!(GERBIL_POO_PACKAGE_NAME, "clan/poo");

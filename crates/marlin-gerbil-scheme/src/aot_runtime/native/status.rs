@@ -19,6 +19,7 @@ pub enum GerbilDeckRuntimeNativeAotBuildStatus {
     MissingCompiledRuntime,
     OutputDirCreateFailed,
     GscCompileObjectFailed,
+    GscCompileDependencyObjectFailed,
     ObjectMissing,
     GscGenerateLinkSourceFailed,
     LinkSourceMissing,

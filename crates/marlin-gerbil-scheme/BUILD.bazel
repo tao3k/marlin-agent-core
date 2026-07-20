@@ -1,0 +1,35 @@
+filegroup(
+    name = "policy_pack_storage_projection_receipt",
+    srcs = ["tests/unit/scheme_types/projection/policy_pack_projection/storage_projection.rs"],
+    visibility = ["//crates/marlin-agent-storage:__pkg__"],
+)
+
+filegroup(
+    name = "policy_unit_runtime_data",
+    srcs = [
+        "Cargo.toml",
+        "gerbil/build.ss",
+        "gerbil/gerbil.pkg",
+        "gerbil/harness-policy/gerbil.ss",
+        "gerbil/src/marlin/_agent-policy-routing-native.ssi",
+        "gerbil/src/marlin/_deck-runtime-native.ssi",
+        "gerbil/src/marlin/adapter.ss",
+        "gerbil/src/marlin/deck-runtime.ss",
+        "gerbil/src/marlin/deck-runtime-native.ss",
+        "gerbil/src/marlin/deck-runtime-native-projection.ss",
+        "gerbil/src/marlin/deck-runtime-policy-receipt-gate-cli.ss",
+        "gerbil/src/marlin/deck-runtime-script.ss",
+        "gerbil/src/marlin/deck-runtime-script-performance.ss",
+        "gerbil/src/marlin/deck-runtime-strategy.ss",
+        "gerbil/src/marlin/graph-loop-continuation-native-projection.ss",
+        "gerbil/src/marlin/protocol.ss",
+        "gerbil/src/marlin/protocol-types.ss",
+        "gerbil/src/marlin/request.ss",
+        "gerbil/t/all-test.ss",
+        "gerbil/t/deck-runtime-script-performance-gate.ss",
+        "gerbil/t/deck-runtime-script-performance-test.ss",
+        "tests/unit/scenarios/performance_baseline/benchmark.toml",
+        "tests/unit/scenarios/performance_baseline/scenario.toml",
+    ] + glob(["src/**/*.rs"]),
+    visibility = ["//:__pkg__"],
+)

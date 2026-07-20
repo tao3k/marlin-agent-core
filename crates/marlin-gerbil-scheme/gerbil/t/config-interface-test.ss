@@ -187,7 +187,7 @@
        => "marlin-agent-core")
 (check (.get marline-kernel-delivery
              marlin-loops-policy-receipt-contract-count)
-       => 8)
+       => 11)
 
 (display "config-interface-ok")
 (newline)

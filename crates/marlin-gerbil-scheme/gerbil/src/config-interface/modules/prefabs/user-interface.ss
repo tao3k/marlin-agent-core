@@ -517,7 +517,16 @@ package: config-interface/modules/prefabs
 ;;; Boundary: User-facing prefab pack composes modules plus policy objects.
 ;; MarlinResult <- MarlinInput
 (def (UserInterfacePolicyPack workspace-config)
-  (let* ((default-pack (marlinDefaultPolicyPack workspace-config))
+  (let* ((default-pack
+          (marlinPolicyPack
+           (.o id: (.get marlinDefaultPolicyPack id)
+               module: workspace-config
+               policy-objects: (.get marlinDefaultPolicyPack policy-objects)
+               object-operations:
+               (.get marlinDefaultPolicyPack object-operations)
+               allowed-hook-ids:
+               (.get marlinDefaultPolicyPack allowed-hook-ids)
+               metadata: (.get marlinDefaultPolicyPack metadata))))
          (default-policy-objects
           (.get default-pack default-policy-objects))
          (default-allowed-hook-ids

@@ -1,0 +1,184 @@
+#+title: Marlin Modular Bazel Build Graph
+#+date: 2026-07-18
+#+status: implementation
+
+* Thesis
+Marlin needs a Bazel graph with its own semantics. The goal is not to reproduce Cargo targets under different labels and it is not to copy the =.data/codex= target factory. Cargo remains the dependency and package-manifest truth. Bazel becomes the hermetic, queryable graph for capabilities, explicitly selected scenarios, composed build actions, and aggregate receipts.
+
+The Cargo package-local Harness and the Bazel graph are complementary:
+- Every Cargo package keeps =marlin-rust-project-harness-policy.workspace = true= and its lightweight =build.rs= enforcement.
+- Bazel models that =build.rs= as an explicit build action dependency, including generated and native compositions.
+- =marlin-workspace-package-gate= remains an explicit Cargo aggregate gate.
+- Bazel emits its own typed contract receipts and never claims that an aggregate target replaces local enforcement.
+
+* Reflection On The Codex Reference
+The =.data/codex= graph proves that a large Rust workspace can be projected into Bazel, but its =codex_rust_crate= surface is not the Marlin design target.
+
+The reference macro creates a library, package-files target, build script, unit-test binary, workspace-root wrapper, integration variants, optional shards, and cross-platform wrappers from one call. That reduces BUILD-file repetition but hides ownership behind target fan-out. Feature selection, test shape, sharding, path remapping, environment forwarding, and visibility remain loosely related parameters instead of a queryable contract.
+
+Marlin rejects the following patterns:
+- a legacy macro that acts as a receiver-less target factory;
+- implicit creation of every test and platform variant;
+- public visibility as a macro default;
+- =manual= wrapper targets used to compensate for unclear execution ownership;
+- feature combinations represented only by strings passed through to =rustc=;
+- build-script behavior inferred from dependency count;
+- Cargo parity inferred from successful compilation rather than emitted evidence.
+
+* Marlin Contract Model
+The first implementation uses Bazel 9.2 symbolic macros. Symbolic attributes make the accepted surface explicit and protect internal targets through macro visibility semantics.
+
+Each declared Rust build target has exactly one =MarlinCrateContractInfo= provider. The provider and its JSON receipt record:
+- the owning Cargo manifest;
+- the exact feature set;
+- the explicit scenario;
+- the composed build-action class: =harness=, =generated+harness=, or =native+harness=;
+- the governed Bazel label.
+
+The workspace =marlin_contract_set= consumes those providers and emits one aggregate receipt. This is an analysis-graph contract, not a shell wrapper around =cargo test=.
+
+* Low-Fan-Out Rules
+=marlin_rust_crate= creates one library and one contract receipt. It creates no tests.
+
+=marlin_rust_binary= creates one binary and one contract receipt.
+
+=marlin_rust_scenario= creates exactly one requested test scenario and one contract receipt. Unit, integration, Turso, Turso sync, performance, stability, platform, and shard variants must be declared independently when they have a real owner and gate.
+
+This intentionally spends one receipt target per executable semantic target. It does not spend targets on generic package-file collections or wrappers whose only purpose is label indirection.
+
+* Dependency And Toolchain Model
+The root uses Bzlmod only. Bazel =9.2.0= is selected through Bazelisk, =rules_rust 0.71.3= supplies Rust and Cargo rules, and the Rust toolchain is pinned to =1.95.0= to match the active devenv.
+
+Crate Universe reads the single root Cargo workspace =Cargo.toml= and =Cargo.lock= and produces a separate =Cargo.Bazel.lock=. The resolver-only workspace member =bazel/crate-universe= activates non-default Cargo-owned scenario features during graph rendering; it does not own runtime behavior. Dependency versions and transitive feature edges are not restated in BUILD or MODULE files. BUILD owners declare only first-party edges, explicit build actions, feature/scenario variants, optimization, and visibility.
+Normal analysis keeps =isolated = True=. Only the explicit =repin= configuration may set =CARGO_BAZEL_ISOLATED=false= to reuse the host Cargo content cache while regenerating =Cargo.Bazel.lock=. A normal or =dev= command that needs repin is a failed gate, not permission to fetch or mutate dependency state.
+
+* Current Owners
+The first implementation owns deliberately different package classes:
+- =build-support/marlin-rust-project-harness-policy=: policy library, policy self-build action, workspace-gate binary, and explicit unit scenario;
+- =crates/marlin-agent-storage=: package-local Harness build action, default/Turso/Turso-sync library contracts, three development integration scenarios, and three manual performance scenarios;
+- graph and protocol owners: =marlin-agent-graph=, =marlin-agent-protocol=, =marlin-agent-sessions=, and =marlin-gerbil-ir=;
+- Org owners: =marlin-org-model=, =marlin-org-patch=, =marlin-org-store=, =marlin-org-workspace=, and =marlin-org-memory=;
+- workspace owners: =marlin-workspace-patch=, =marlin-workspace-view=, =marlin-workspace-query=, =marlin-workspace-status=, and =marlin-workspace-protocol=.
+
+Storage feature variants are separate labels because both their Rust feature set and direct dependency projection differ. The default library projects only =serde= and =serde_json=. The =turso= and =turso-sync= libraries additionally project =tokio= and =turso= through explicit dependencies. Integration scenarios depend on the matching library variant and explicitly project only the development crates they directly use. No feature or dependency variant is hidden inside a =select()= on one receiver target.
+
+Every package with Harness policy keeps =marlin-rust-project-harness-policy.workspace = true=. The =marlin_harness_crate= composition adds the explicit first-party Cargo build-script action without replacing the Cargo declaration.
+
+* Acceptance Gates
+The implementation is accepted only when all of the following have receipts:
+1. =buildifier= accepts every =BUILD.bazel=, =MODULE.bazel=, and =.bzl= owner.
+2. An effective module/configuration receipt proves that normal analysis, build, and test use =CARGO_BAZEL_ISOLATED=true=, while =--config=repin= alone sets =CARGO_BAZEL_REPIN=true=, =CARGO_BAZEL_ISOLATED=false=, and the bounded generator timeout.
+3. A repin receipt records the exact command and the before/after digests of =Cargo.lock= and =Cargo.Bazel.lock=. No normal or =dev= command may mutate either lock.
+4. A dependency-closure receipt proves that the default storage library and integration labels exclude optional =tokio= and =turso= edges, while Cargo-owned =turso-sync= resolution naturally generates Turso's six sync dependencies and Hyper-Rustls's native-certificate dependency. MODULE annotations must not duplicate those transitive semantics.
+5. A =dev= incremental receipt records =fastbuild=, the concrete disk-cache path, reusable sandbox directories, Rust pipelined compilation, =watchfs=, and a repeated-build action/cache summary.
+6. =bazel query //...= exposes the expected low-fan-out graph. Every first-party =*_contract= label appears exactly once in =//:marlin_contracts=, and the aggregate typed receipt count equals the query count; the normative gate never hard-codes a historical count.
+7. The policy and storage default/Turso/Turso-sync development labels analyze independently; the three manual performance labels preserve distinct =speed= receipts; and first-party =cargo_build_script= actions preserve Harness warnings and generated/native side effects.
+8. Harness source graphs required when a build script executes are runtime =data=, not =compile_data=. Runfile resolution must work through Bazel =TEST_SRCDIR= and =TEST_WORKSPACE= and retain the Cargo manifest fallback outside Bazel.
+9. Cargo =--locked= gates and the Bazel module lock remain reproducible, with an explicit Cargo/Bazel target, feature, dependency, and optimization parity receipt.
+10. Actual warning-free =bazel test= receipts cover default, Turso, and Turso-sync scenarios on every supported host class; analysis or compilation success alone is insufficient.
+
+* Repository Boundary Contract
+The root repository is the only first-party Bazel package-discovery authority.
+Directories containing vendored source trees, development environments, or outputs from other build systems are inputs only through an explicit toolchain, repository rule, or declared file label; recursive target discovery must not infer them as Marlin packages.
+
+=REPO.bazel= is the primary Bazel 9.2 boundary declaration and uses =ignore_directories= for =.data=, =.devenv=, and Cargo =target= roots and their descendants.
+Bazel 9.2 expands a directory symlink such as =.devenv/profile= before =ignore_directories= can reject its descendants, so =.bazelignore= repeats only those three root boundaries as a compatibility closure.
+The duplicate declaration is not a second ownership model: =REPO.bazel= owns the intended boundary, while =.bazelignore= prevents recursive-query symlink escape and may be removed when the selected Bazel release closes that traversal gap.
+
+The boundary receipt requires:
+1. =bazel query //...= completes without loading packages below ignored roots.
+2. The query graph contains only explicitly owned first-party packages plus Bzlmod repositories.
+3. Cargo and Bazel lockfiles remain the only dependency-resolution inputs; nested reference repositories must never be repaired by importing their private dependencies into Marlin.
+
+* Optimization Contract
+Optimization is a typed target dimension, not an implicit CI convention and not part of a scenario name.
+Every =marlin_rust_*= macro accepts one non-configurable =optimization= enum:
+- =development=: preserve the selected Bazel/Rust development profile;
+- =speed=: append =-Copt-level=3=;
+- =size=: append =-Copt-level=z=.
+
+The macro appends the selected flag to explicit caller =rustc_flags=, applies the same value to the concrete Rust target, and emits it through =MarlinCrateContractInfo= and the JSON receipt.
+This keeps =scenario=, Cargo =features=, =build_action=, and =optimization= orthogonal and queryable.
+
+The normal storage integration scenarios are development targets:
+1. =storage_default= uses no Cargo feature and =optimization=development=.
+2. =storage_turso= uses =turso= and =optimization=development=.
+3. =storage_turso_sync= uses =turso,turso-sync= and =optimization=development=.
+
+All three compile the existing integration harness, depend on the matching library variant, and remain compatible with the =dev= incremental configuration. Each has a separate =*_perf= performance-gate label tagged =manual,performance= and using =optimization=speed=. The macro appends =-Copt-level=3= only to those concrete performance targets. No label simultaneously owns development feedback and a performance receipt, and no macro manufactures an implicit feature or optimization matrix.
+
+* Scenario Dependency Resolution
+Cargo owns scenario feature meaning. =crates/marlin-agent-storage/Cargo.toml= declares =turso-sync = ["turso", "turso/sync"]=. The resolver-only =marlin-bazel-scenario-resolution= workspace member depends on storage with =features = ["turso-sync"]=, so Crate Universe observes the same Cargo feature composition while rendering one external dependency graph.
+
+This resolver member has no runtime API and no independent protocol meaning. It exists because Bazel first-party targets select scenario features after Crate Universe has rendered third-party targets. It activates the Cargo owner rather than restating Turso's Hyper, Tokio, TLS, or native-certificate edges in =MODULE.bazel=.
+
+The generated graph must show =turso 0.7.0= with =sync= and direct =bytes=, =http-body-util=, =hyper=, =hyper-rustls=, =hyper-util=, and =tokio= dependencies. =hyper-rustls= must carry =rustls-native-certs= as a direct dependency when its feature is enabled. The only current crate annotations are the version-pinned =io-uring= platform correction and the =aws-lc-sys= build-script execution policy.
+
+* Harness Runtime Input Contract
+=marlin_harness_crate= composes one explicit =cargo_build_script= with one Marlin Rust contract. The build action consumes the complete package source graph through runtime =data=. =compile_data= is reserved for inputs needed to compile the build script itself and must not be used to make runtime Harness inspection accidentally pass.
+
+Storage integration tests resolve the workspace through Bazel runfiles first: =TEST_SRCDIR= plus =TEST_WORKSPACE=. Cargo execution falls back to =CARGO_MANIFEST_DIR=. Package identity is the domain constant =marlin-agent-storage= rather than Bazel's scenario target name, so a renamed test label cannot corrupt Harness ownership.
+
+Harness and Bazel remain complementary gates. The Cargo dependency =marlin-rust-project-harness-policy.workspace = true= stays present; the Bazel build action exposes its execution and source-graph inputs to query/aquery and aggregate receipts.
+
+* Platform Dependency Projection
+Cargo target predicates remain authoritative when Crate Universe renders third-party targets.
+The initial Bazel 9.2 receipt exposed two macOS closure defects that contract-only builds could not reveal:
+1. the generated =turso_core 0.7.0= common graph retained the Linux-only =io-uring 0.7.13= edge even though upstream declares that dependency below =cfg(target_os = "linux")=;
+2. native build-script links required =libiconv=, but the Bazel action did not inherit the devenv library path.
+
+The first closure is owned by a version-pinned =crate.annotation= patch that makes the =io-uring= crate empty on non-Linux targets while preserving its complete implementation on Linux.
+The patch is a projection correction, not an alternate Turso implementation, and must be deleted once the selected =rules_rust= release emits the upstream target selector correctly.
+
+The second closure is owned by =devenv.nix=: =pkgs.libiconv= follows the selected nixpkgs revision, while the devenv profile Bazel rc supplies its immutable Nix store =lib= path through the rules_rust =extra_exec_rustc_flag= and =extra_rustc_flag= settings. Bazel receives the exact =-Lnative= input for host and target Rust actions; it does not inherit the entire host linker environment. The same profile exposes nixpkgs =lean4= to Harness tests without selecting a Homebrew fallback.
+
+Turso sync adds a native TLS closure. On Darwin the generated rc sets =--macos_minimum_os=10.12=, which is the Bazel 9.2 flag that changes AWS-LC's actual =CFLAGS= and =CXXFLAGS=. =--minimum_os_version=10.12= is insufficient because it leaves the Cargo build-script action at 10.11. The =aws-lc-sys 0.41.0= annotation keeps the upstream cc builder and overrides =NUM_JOBS=8=; rules_rust otherwise exports =NUM_JOBS=1= even though the =cc= build dependency enables its =parallel= feature.
+
+Crate Universe has two explicit repository modes. Normal analysis, build, and test keep =isolated = True= in the module extension and export =CARGO_BAZEL_ISOLATED=true= through the common Bazel configuration; they do not set =CARGO_BAZEL_REPIN=. The =repin= configuration alone sets =CARGO_BAZEL_REPIN=true=, =CARGO_BAZEL_ISOLATED=false=, and =CARGO_BAZEL_TIMEOUT=1800=. Host Cargo content-cache access is permitted only while regenerating =Cargo.Bazel.lock= and must not leak into a normal graph receipt.
+
+The =dev= configuration owns incremental execution rather than dependency resolution: =fastbuild=, the concrete workspace-local =.data/bazel/disk-cache=, reusable sandbox directories, Rust pipelined compilation, and =watchfs=. Development targets use =optimization=development=. Explicit performance targets use =optimization=speed= and receive =-Copt-level=3=; a performance receipt never substitutes for a development incremental receipt.
+
+Acceptance requires actual =bazel test= execution for default, Turso, and Turso-sync scenarios on every supported host class.
+A successful contract build proves analysis and compilation reachability, but cannot substitute for platform link and runtime receipts.
+
+* Current Implementation Receipt
+:PROPERTIES:
+:CUSTOM_ID: current-implementation-receipt
+:END:
+The normal and development graph uses =isolated = True= and =CARGO_BAZEL_ISOLATED=true=.
+Dependency repinning remains a separate explicit configuration; no manual =cargo fetch= is part of normal build, test, or development execution.
+
+The root policy runtime-data graph covers all =30/30= =crates/*= workspace members.
+Each member contributes =Cargo.toml= plus its required =scenario.toml= and =benchmark.toml=, producing =60/60= performance-baseline TOML inputs with no missing member or file.
+Fourteen =marlin_harness_crate= owners project their package-local manifest, Rust sources, gate inputs, and performance baseline through a generated runtime source graph.
+All =28= generated build-script and build-script-runfiles actions consume their corresponding source graph; mismatch count is zero.
+Storage remains an explicit shared build action for its default, Turso, and Turso-sync library variants and declares =34= package-local runtime inputs directly.
+
+The Harness policy unit gate passes =40/40= tests with no warning.
+The repair-changing run completed in =91.681s= with =9= actions; the immediate isolated development run was a cached pass in =2.030s= with one cache hit and no test execution.
+
+The full =bazel test --config=dev --lockfile_mode=error //...= cold receipt analyzed =91= targets and found =87= build targets plus =4= test targets.
+It passed all four test targets in =1258.706s= with =848= actions and =231= action-cache hits.
+The Rust receipts total =97 passed=, =0 failed=, and =9 ignored=: policy =40/0/0=, default storage =4/0/0=, Turso =25/0/4=, and Turso-sync =28/0/5=.
+The cold native closure emitted =15= informational =aws-lc-sys= build-script probes; it emitted no Rust compiler or test warning.
+
+A steady-state rerun with no competing Bazel client loaded =0= packages, configured =0= targets, executed =0/4= tests, and passed from cache in =3.006s= with a =0.02s= critical path and no warning.
+This is the development incremental receipt; the cold native/Turso closure cost is not used as its substitute.
+Manual performance-labelled scenarios remain a distinct opt-in gate and are not selected by the ordinary =//...= test expression.
+The explicit default, Turso, and Turso-sync performance run passed =57= tests with =0 failed= and =9 ignored= in =210.002s=; its steady-state rerun passed from cache in =1.817s= with =0/3= tests executed and no warning.
+All three configured targets and their emitted contracts use =optimization=speed=, and each actual Rust compile action contains =-Copt-level=3=.
+
+** Remaining Upstream Gate
+Status: =BLOCKED-ON-CRATE-UNIVERSE-REPIN=.
+
+The upstream owner change is complete at revision =124b78e1= in draft PR =rust-lang-project-harness#17=:
+- =RUST-MOD-R002= now keeps a single =MAX_SOURCE_LINES= owner at =1000= lines;
+- the independent =650= effective-line pressure rule remains active;
+- exact =999 -> 0=, =1000 -> 1=, and =1001 -> 1= upstream boundary scenarios pass; and
+- the exported =rust_project_harness_rule_boundary_tests!= macro lets downstream crates own fixtures and expected finding counts without configuring thresholds, severities, or disablement.
+
+Marlin now resolves the direct workspace dependency and =Cargo.lock= to =124b78e1=.  Its downstream library-only =RUST-MOD-R007= suite passes =3/3=, and the policy crate passes =43/43= plus Clippy with warnings denied.  The former process-based query workspace contracts were also moved behind typed library/parser surfaces; no =CARGO_BIN_EXE_rs-harness= dependency was added to the boundary macro path.
+
+The remaining blocker is Bazel lock materialization.  Bazelisk resolves Bazel =9.2.0=, where the removed =sync= command is replaced by unconditional module-extension evaluation through =bazel mod deps=.  Strict offline repinning reaches the =marlin_crates= cargo-bazel splice but fails because =gerbil-scheme-rust= revision =74ddf20c= is absent from the shared Cargo cache.  Therefore =Cargo.Bazel.lock= and =MODULE.bazel.lock= do not yet contain =124b78e1=, and the Bazel policy test must not be reported as closed.
+
+Closure requires either authorizing the rules_rust generator's internal network-backed Cargo source materialization or pre-populating the missing git source cache, then repinning =marlin_crates= and passing =//build-support/marlin-rust-project-harness-policy:unit_test=.  Marlin must not introduce a second local line-count rule, lower the warning severity, add a harness allow-list, or patch Cargo's cache checkout.

@@ -77,6 +77,8 @@ pub struct RustProjectHarnessEvidenceReceipt {
     pub summary_path: PathBuf,
     /// Summary copied from the emitted evidence graph.
     pub evidence_graph_summary: RustEvidenceGraphSummary,
+    /// Harness finding counts retained after the full report is compiled into review evidence.
+    pub harness_finding_summary: RustProjectHarnessFindingSummary,
     /// Package-level performance and stability gate receipt.
     pub gate_receipt: RustProjectHarnessGateReceipt,
     /// Agent-readable crate-role verification policy receipt.
@@ -89,6 +91,23 @@ pub struct RustProjectHarnessEvidenceReceipt {
     pub improvement_plan_receipt: RustProjectHarnessImprovementPlanReceipt,
     /// Gerbil runtime asset manifest observed at build time.
     pub gerbil_runtime_assets_receipt: GerbilRuntimeAssetManifestReceipt,
+}
+
+/// Compact finding summary retained by Marlin's build-gate receipt.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RustProjectHarnessFindingSummary {
+    /// Total findings produced by the parser-owned harness.
+    pub total_count: usize,
+    /// Advisory findings that do not block by default.
+    pub info_count: usize,
+    /// Warning findings that block the default assertion policy.
+    pub warning_count: usize,
+    /// Error findings produced for invalid or unsafe source structure.
+    pub error_count: usize,
+    /// Findings whose severity is included in the report's blocking severity set.
+    pub blocking_count: usize,
+    /// Stable rule ids for blocking findings, sorted and deduplicated.
+    pub blocking_rule_ids: Vec<String>,
 }
 
 /// Writes `rust-lang-project-harness` evidence artifacts using Cargo build env vars.
@@ -168,7 +187,11 @@ impl HarnessEvidencePipeline {
         assert_gerbil_runtime_asset_manifest_receipt(&receipts.gerbil_runtime_assets_receipt);
         assert_performance_and_stability_gate_receipt(&receipts.gate_receipt);
 
-        paths.into_receipt(artifacts.evidence_graph_summary, receipts)
+        paths.into_receipt(
+            artifacts.evidence_graph_summary,
+            artifacts.harness_finding_summary,
+            receipts,
+        )
     }
 }
 
@@ -200,6 +223,7 @@ struct HarnessEvidenceArtifacts {
     stability_index: RustVerificationStabilityIndex,
     stability_picture: Option<RustVerificationStabilityPicture>,
     evidence_graph_summary: RustEvidenceGraphSummary,
+    harness_finding_summary: RustProjectHarnessFindingSummary,
     module_count: usize,
     determinism_observation_count: usize,
     active_verification_task_count: usize,
@@ -221,6 +245,7 @@ fn build_evidence_artifacts(
     project_root: &Path,
 ) -> HarnessEvidenceArtifacts {
     let module_count = harness_report.modules.len();
+    let harness_finding_summary = RustProjectHarnessFindingSummary::from_report(&harness_report);
     let determinism_readiness = build_determinism_readiness(config, project_root);
     let determinism_observation_count = determinism_readiness.observations.len();
     let review_packet = build_review_packet(project_root, harness_report, &determinism_readiness);
@@ -254,9 +279,47 @@ fn build_evidence_artifacts(
         stability_index,
         stability_picture,
         evidence_graph_summary,
+        harness_finding_summary,
         module_count,
         determinism_observation_count,
         active_verification_task_count,
+    }
+}
+
+impl RustProjectHarnessFindingSummary {
+    /// Build a stable summary before the full report is moved into review evidence.
+    #[must_use]
+    pub fn from_report(harness_report: &RustHarnessReport) -> Self {
+        let (info_count, warning_count, error_count, blocking_count, blocking_rule_ids) =
+            harness_report.findings.iter().fold(
+                (0, 0, 0, 0, std::collections::BTreeSet::new()),
+                |mut summary, finding| {
+                    match finding.severity {
+                        rust_lang_project_harness::RustDiagnosticSeverity::Info => summary.0 += 1,
+                        rust_lang_project_harness::RustDiagnosticSeverity::Warning => {
+                            summary.1 += 1;
+                        }
+                        rust_lang_project_harness::RustDiagnosticSeverity::Error => summary.2 += 1,
+                    }
+                    if harness_report
+                        .blocking_severities
+                        .contains(&finding.severity)
+                    {
+                        summary.3 += 1;
+                        summary.4.insert(finding.rule_id.clone());
+                    }
+                    summary
+                },
+            );
+
+        Self {
+            total_count: harness_report.findings.len(),
+            info_count,
+            warning_count,
+            error_count,
+            blocking_count,
+            blocking_rule_ids: blocking_rule_ids.into_iter().collect(),
+        }
     }
 }
 
@@ -382,6 +445,7 @@ impl HarnessEvidencePaths {
     fn into_receipt(
         self,
         evidence_graph_summary: RustEvidenceGraphSummary,
+        harness_finding_summary: RustProjectHarnessFindingSummary,
         receipts: HarnessEvidenceReceipts,
     ) -> RustProjectHarnessEvidenceReceipt {
         let stability_picture_path = self
@@ -406,6 +470,7 @@ impl HarnessEvidencePaths {
             gerbil_runtime_assets_path: self.gerbil_runtime_assets_path,
             summary_path: self.summary_path,
             evidence_graph_summary,
+            harness_finding_summary,
             gate_receipt: receipts.gate_receipt,
             verification_policy_receipt: receipts.verification_policy_receipt,
             quality_findings_receipt: receipts.quality_findings_receipt,
