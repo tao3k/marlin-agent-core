@@ -38,6 +38,24 @@ pub fn validate_gerbil_scheme_typed_value(
     validate_typed_value_with_lookup(|type_id| manifest.type_spec(type_id), typed_value)
 }
 
+use crate::GerbilSchemeBackedBindingCatalogReceipt;
+
+/// Return the reusable Gerbil Scheme Rust binding surface Marlin can currently
+/// delegate to without treating fixture-only value shapes as upstream support.
+pub fn gerbil_scheme_backed_binding_catalog() -> GerbilSchemeBackedBindingCatalogReceipt {
+    GerbilSchemeBackedBindingCatalogReceipt {
+        upstream_crate: "gerbil-scheme".to_owned(),
+        backed_shape_selectors: GERBIL_SCHEME_RUST_BACKED_SHAPE_SELECTORS
+            .iter()
+            .map(|selector| (*selector).to_owned())
+            .collect(),
+        fixture_only_value_families: MARLIN_FIXTURE_ONLY_VALUE_FAMILIES
+            .iter()
+            .map(|family| (*family).to_owned())
+            .collect(),
+    }
+}
+
 pub(super) fn validate_typed_value_with_lookup<'a>(
     mut lookup: impl FnMut(&GerbilSchemeTypeId) -> Option<&'a GerbilSchemeTypeSpec>,
     typed_value: &GerbilSchemeTypedValue,
@@ -157,6 +175,20 @@ fn validate_field_type_reference_for_type_id(
         })
     }
 }
+
+const GERBIL_SCHEME_RUST_BACKED_SHAPE_SELECTORS: &[&str] = &[
+    "gerbil_scheme_rust_i64_shape",
+    "gerbil_scheme_rust_bool_shape",
+    "gerbil_scheme_rust_comparison_shape",
+    "gerbil_scheme_rust_utf8_shape",
+    "gerbil_scheme_rust_value_handle_shape",
+    "gerbil_scheme_rust_i64_callback_shape",
+    "gerbil_scheme_rust_native_value_shape",
+    "gerbil_scheme_rust_native_error_shape",
+    "gerbil_scheme_rust_native_result_shape",
+];
+
+const MARLIN_FIXTURE_ONLY_VALUE_FAMILIES: &[&str] = &["null-sentinel", "f64", "vector", "record"];
 
 fn validate_typed_value_schema(
     spec: &GerbilSchemeTypeSpec,

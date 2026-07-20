@@ -16,9 +16,9 @@ pub use ids::{
     GerbilSchemePackageId, GerbilSchemeSchemaId, GerbilSchemeTypeId,
 };
 pub use manifest::{
-    GerbilSchemeTypeFieldSpec, GerbilSchemeTypeManifest, GerbilSchemeTypeManifestValidationReceipt,
-    GerbilSchemeTypeSpec, GerbilSchemeTypedValueValidationReceipt,
-    decode_gerbil_scheme_type_manifest_fixture,
+    GerbilSchemeBackedBindingCatalogReceipt, GerbilSchemeTypeFieldSpec, GerbilSchemeTypeManifest,
+    GerbilSchemeTypeManifestValidationReceipt, GerbilSchemeTypeSpec,
+    GerbilSchemeTypedValueValidationReceipt, decode_gerbil_scheme_type_manifest_fixture,
 };
 pub use native_projection::{
     GerbilSchemeNativeProjectionReceipt, GerbilSchemeNativeProjectionRequest,
@@ -36,4 +36,7 @@ pub use registry::GerbilSchemeTypeRegistry;
 pub use typed_value::{
     GerbilSchemeTypedValue, GerbilSchemeValue, decode_gerbil_scheme_typed_value_fixture,
 };
-pub use validation::{validate_gerbil_scheme_type_manifest, validate_gerbil_scheme_typed_value};
+pub use validation::{
+    gerbil_scheme_backed_binding_catalog, validate_gerbil_scheme_type_manifest,
+    validate_gerbil_scheme_typed_value,
+};

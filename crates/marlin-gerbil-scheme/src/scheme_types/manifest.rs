@@ -67,6 +67,21 @@ pub struct GerbilSchemeTypedValueValidationReceipt {
     pub declared_field_count: usize,
 }
 
+/// Catalog receipt separating upstream-backed Gerbil Scheme bindings from
+/// Marlin fixture-only value shapes.
+///
+/// `GerbilSchemeValue` remains a dynamic fixture/debug carrier for Marlin test
+/// envelopes. This receipt records which Scheme value families can be delegated
+/// to the reusable `gerbil-scheme` Rust binding surface today, and which
+/// dynamic fixture families must not be treated as reusable binding coverage
+/// until the upstream ABI exposes them.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct GerbilSchemeBackedBindingCatalogReceipt {
+    pub upstream_crate: String,
+    pub backed_shape_selectors: Vec<String>,
+    pub fixture_only_value_families: Vec<String>,
+}
+
 /// Decode a serialized Scheme type manifest fixture.
 pub fn decode_gerbil_scheme_type_manifest_fixture(
     fixture: &str,
