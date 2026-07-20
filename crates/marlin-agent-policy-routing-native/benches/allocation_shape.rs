@@ -285,20 +285,20 @@ fn observed_scenario_benchmark_root(rows: &[AllocationRow], observed_total_ms: u
     .expect("scenario metadata should copy into observed scenario");
     fs::write(
         root.join("benchmark.toml"),
-        observed_benchmark_toml(
-            &baseline.benchmark.harness,
-            baseline.benchmark.test.as_deref(),
-            baseline.benchmark.bench.as_deref(),
-            baseline.benchmark.case.as_deref(),
-            baseline.benchmark.snapshot.as_deref(),
-            &baseline.benchmark.target_total.to_string(),
-            &baseline.benchmark.max_total.to_string(),
+        observed_benchmark_toml(ObservedBenchmarkToml {
+            harness: &baseline.benchmark.harness,
+            test: baseline.benchmark.test.as_deref(),
+            bench: baseline.benchmark.bench.as_deref(),
+            case: baseline.benchmark.case.as_deref(),
+            snapshot: baseline.benchmark.snapshot.as_deref(),
+            target_total: &baseline.benchmark.target_total.to_string(),
+            max_total: &baseline.benchmark.max_total.to_string(),
             observed_total_ms,
-            &baseline.benchmark.regression_budget.to_string(),
-            baseline.benchmark.memory_budget_bytes.as_u64(),
-            observed_memory_bytes(rows),
-            &baseline.benchmark.target_rationale,
-        ),
+            regression_budget: &baseline.benchmark.regression_budget.to_string(),
+            memory_budget_bytes: baseline.benchmark.memory_budget_bytes.as_u64(),
+            observed_memory_bytes: observed_memory_bytes(rows),
+            target_rationale: &baseline.benchmark.target_rationale,
+        }),
     )
     .expect("observed scenario benchmark contract should be written");
 
@@ -315,34 +315,49 @@ fn scenario_fixture_root() -> PathBuf {
 }
 
 #[cfg(feature = "linked-native")]
-fn observed_benchmark_toml(
-    harness: &str,
-    test: Option<&str>,
-    bench: Option<&str>,
-    case: Option<&str>,
-    snapshot: Option<&str>,
-    target_total: &str,
-    max_total: &str,
+struct ObservedBenchmarkToml<'a> {
+    harness: &'a str,
+    test: Option<&'a str>,
+    bench: Option<&'a str>,
+    case: Option<&'a str>,
+    snapshot: Option<&'a str>,
+    target_total: &'a str,
+    max_total: &'a str,
     observed_total_ms: u64,
-    regression_budget: &str,
+    regression_budget: &'a str,
     memory_budget_bytes: u64,
     observed_memory_bytes: u64,
-    target_rationale: &str,
-) -> String {
-    let benchmark_entry = benchmark_entry_toml(harness, test, bench, case, snapshot);
+    target_rationale: &'a str,
+}
+
+#[cfg(feature = "linked-native")]
+fn observed_benchmark_toml(config: ObservedBenchmarkToml<'_>) -> String {
+    let benchmark_entry = benchmark_entry_toml(
+        config.harness,
+        config.test,
+        config.bench,
+        config.case,
+        config.snapshot,
+    );
+    let observed_total_ms = config.observed_total_ms;
     format!(
-        r#"{benchmark_entry}target_total = "{target_total}"
-max_total = "{max_total}"
+        r#"{benchmark_entry}target_total = "{}"
+max_total = "{}"
 observed_total = "{observed_total_ms}ms"
-regression_budget = "{regression_budget}"
-memory_budget_bytes = {memory_budget_bytes}
-observed_memory_bytes = {observed_memory_bytes}
+regression_budget = "{}"
+memory_budget_bytes = {}
+observed_memory_bytes = {}
 target_rationale = "{}"
 
 [observed_timings]
 allocation_shape_ms = "{observed_total_ms}ms"
 "#,
-        toml_escape(target_rationale)
+        config.target_total,
+        config.max_total,
+        config.regression_budget,
+        config.memory_budget_bytes,
+        config.observed_memory_bytes,
+        toml_escape(config.target_rationale)
     )
 }
 

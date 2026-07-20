@@ -15,60 +15,6 @@ use super::{
 
 const MAX_DYNAMIC_VALIDATION_DEPTH: usize = 32;
 
-type GerbilSchemePredicateSurface =
-    for<'runtime> fn(gerbil_scheme::GerbilValue<'runtime>) -> gerbil_scheme::NativeResult<bool>;
-type GerbilSchemeValueProjectionSurface =
-    for<'runtime> fn(
-        gerbil_scheme::GerbilValue<'runtime>,
-    ) -> gerbil_scheme::NativeResult<gerbil_scheme::GerbilValue<'runtime>>;
-type GerbilSchemePairPartsProjectionSurface =
-    for<'runtime> fn(
-        gerbil_scheme::GerbilValue<'runtime>,
-    ) -> gerbil_scheme::NativeResult<gerbil_scheme::SchemePairParts<'runtime>>;
-
-const _: GerbilSchemePredicateSurface = gerbil_scheme_value_is_pair_surface;
-const _: GerbilSchemePredicateSurface = gerbil_scheme_value_is_list_surface;
-const _: GerbilSchemePredicateSurface = gerbil_scheme_value_is_null_surface;
-const _: GerbilSchemeValueProjectionSurface = gerbil_scheme_pair_car_surface;
-const _: GerbilSchemeValueProjectionSurface = gerbil_scheme_pair_cdr_surface;
-const _: GerbilSchemePairPartsProjectionSurface = gerbil_scheme_pair_parts_surface;
-
-fn gerbil_scheme_value_is_pair_surface<'runtime>(
-    value: gerbil_scheme::GerbilValue<'runtime>,
-) -> gerbil_scheme::NativeResult<bool> {
-    value.is_pair()
-}
-
-fn gerbil_scheme_value_is_list_surface<'runtime>(
-    value: gerbil_scheme::GerbilValue<'runtime>,
-) -> gerbil_scheme::NativeResult<bool> {
-    value.is_list()
-}
-
-fn gerbil_scheme_value_is_null_surface<'runtime>(
-    value: gerbil_scheme::GerbilValue<'runtime>,
-) -> gerbil_scheme::NativeResult<bool> {
-    value.is_null()
-}
-
-fn gerbil_scheme_pair_car_surface<'runtime>(
-    value: gerbil_scheme::GerbilValue<'runtime>,
-) -> gerbil_scheme::NativeResult<gerbil_scheme::GerbilValue<'runtime>> {
-    value.pair_car()
-}
-
-fn gerbil_scheme_pair_cdr_surface<'runtime>(
-    value: gerbil_scheme::GerbilValue<'runtime>,
-) -> gerbil_scheme::NativeResult<gerbil_scheme::GerbilValue<'runtime>> {
-    value.pair_cdr()
-}
-
-fn gerbil_scheme_pair_parts_surface<'runtime>(
-    value: gerbil_scheme::GerbilValue<'runtime>,
-) -> gerbil_scheme::NativeResult<gerbil_scheme::SchemePairParts<'runtime>> {
-    value.pair_parts()
-}
-
 /// Validate a `Gerbil` Scheme type manifest before building a registry.
 pub fn validate_gerbil_scheme_type_manifest(
     manifest: &GerbilSchemeTypeManifest,
