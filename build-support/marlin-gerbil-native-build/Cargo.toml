@@ -7,10 +7,10 @@ repository.workspace = true
 
 [dependencies]
 cc.workspace = true
-gerbil-scheme-native-build = { git = "https://github.com/tao3k/gerbil-scheme-rust", rev = "c152161a2ef7a3fc6d9f652494e8858de09641c3", version = "0.1.0" }
+gerbil-scheme-native-build = { git = "https://github.com/tao3k/gerbil-scheme-rust", rev = "fc9c965676b6636c0483e8dd86f307734f9279ae", version = "0.1.0" }
 marlin-gerbil-scheme.workspace = true
 object.workspace = true
-gerbil-scheme-build = { git = "https://github.com/tao3k/gerbil-scheme-rust", rev = "c152161a2ef7a3fc6d9f652494e8858de09641c3", version = "0.1.0" }
+gerbil-scheme-build = { git = "https://github.com/tao3k/gerbil-scheme-rust", rev = "fc9c965676b6636c0483e8dd86f307734f9279ae", version = "0.1.0" }
 
 [build-dependencies]
 marlin-rust-project-harness-policy.workspace = true

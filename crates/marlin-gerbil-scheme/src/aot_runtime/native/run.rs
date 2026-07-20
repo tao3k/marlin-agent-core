@@ -378,24 +378,7 @@ fn run_native_aot_command(
 }
 
 fn gerbil_toolchain_program(program: &Path) -> PathBuf {
-    let Some(program_name) = program.file_name().and_then(|name| name.to_str()) else {
-        return program.to_path_buf();
-    };
-
-    if program
-        .parent()
-        .is_some_and(|parent| !parent.as_os_str().is_empty())
-    {
-        return program.to_path_buf();
-    }
-
-    let toolchain = gerbil_scheme::GerbilToolchain::from_env();
-    match program_name {
-        "gxi" => toolchain.gxi().to_path_buf(),
-        "gxc" => toolchain.gxc().to_path_buf(),
-        "gsc" => toolchain.gsc().to_path_buf(),
-        _ => program.to_path_buf(),
-    }
+    gerbil_scheme::GerbilToolchain::from_env().program(program)
 }
 
 fn missing_exported_symbols(

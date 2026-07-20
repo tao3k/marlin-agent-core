@@ -1829,12 +1829,12 @@ dependencies = [
 [[package]]
 name = "gerbil-scheme"
 version = "0.1.0"
-source = "git+https://github.com/tao3k/gerbil-scheme-rust?rev=c152161a2ef7a3fc6d9f652494e8858de09641c3#c152161a2ef7a3fc6d9f652494e8858de09641c3"
+source = "git+https://github.com/tao3k/gerbil-scheme-rust?rev=fc9c965676b6636c0483e8dd86f307734f9279ae#fc9c965676b6636c0483e8dd86f307734f9279ae"
 
 [[package]]
 name = "gerbil-scheme-build"
 version = "0.1.0"
-source = "git+https://github.com/tao3k/gerbil-scheme-rust?rev=c152161a2ef7a3fc6d9f652494e8858de09641c3#c152161a2ef7a3fc6d9f652494e8858de09641c3"
+source = "git+https://github.com/tao3k/gerbil-scheme-rust?rev=fc9c965676b6636c0483e8dd86f307734f9279ae#fc9c965676b6636c0483e8dd86f307734f9279ae"
 dependencies = [
  "gerbil-scheme",
 ]
@@ -1842,7 +1842,7 @@ dependencies = [
 [[package]]
 name = "gerbil-scheme-native-build"
 version = "0.1.0"
-source = "git+https://github.com/tao3k/gerbil-scheme-rust?rev=c152161a2ef7a3fc6d9f652494e8858de09641c3#c152161a2ef7a3fc6d9f652494e8858de09641c3"
+source = "git+https://github.com/tao3k/gerbil-scheme-rust?rev=fc9c965676b6636c0483e8dd86f307734f9279ae#fc9c965676b6636c0483e8dd86f307734f9279ae"
 dependencies = [
  "cbindgen",
  "cc",
@@ -1852,7 +1852,7 @@ dependencies = [
 [[package]]
 name = "gerbil-scheme-rust-project-harness"
 version = "0.1.2"
-source = "git+https://github.com/tao3k/gerbil-scheme-rust?rev=c152161a2ef7a3fc6d9f652494e8858de09641c3#c152161a2ef7a3fc6d9f652494e8858de09641c3"
+source = "git+https://github.com/tao3k/gerbil-scheme-rust?rev=fc9c965676b6636c0483e8dd86f307734f9279ae#fc9c965676b6636c0483e8dd86f307734f9279ae"
 dependencies = [
  "cargo-lock",
  "cargo_toml",
@@ -1870,7 +1870,7 @@ dependencies = [
 [[package]]
 name = "gerbil-scheme-rust-project-harness-policy"
 version = "0.1.0"
-source = "git+https://github.com/tao3k/gerbil-scheme-rust?rev=c152161a2ef7a3fc6d9f652494e8858de09641c3#c152161a2ef7a3fc6d9f652494e8858de09641c3"
+source = "git+https://github.com/tao3k/gerbil-scheme-rust?rev=fc9c965676b6636c0483e8dd86f307734f9279ae#fc9c965676b6636c0483e8dd86f307734f9279ae"
 dependencies = [
  "gerbil-scheme-rust-project-harness",
 ]
