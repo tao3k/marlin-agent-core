@@ -1,5 +1,5 @@
 {
-  "checksum": "b5bbd894ece653df3d827a4e9a9913ac02dd99801ede909a2057ab31e684ca90",
+  "checksum": "8a682565856872aacc415b097d3a0451e42ef2d15e30851fbc93fe52884d314e",
   "crates": {
     "actix-codec 0.5.2": {
       "name": "actix-codec",
@@ -2273,7 +2273,7 @@
           "selects": {
             "cfg(windows)": [
               {
-                "id": "windows-sys 0.60.2",
+                "id": "windows-sys 0.61.2",
                 "target": "windows_sys"
               }
             ]
@@ -2332,7 +2332,7 @@
                 "target": "once_cell_polyfill"
               },
               {
-                "id": "windows-sys 0.60.2",
+                "id": "windows-sys 0.61.2",
                 "target": "windows_sys"
               }
             ]
@@ -8865,7 +8865,7 @@
             ],
             "cfg(windows)": [
               {
-                "id": "windows-sys 0.60.2",
+                "id": "windows-sys 0.61.2",
                 "target": "windows_sys"
               }
             ]
@@ -9381,7 +9381,7 @@
             ],
             "cfg(windows)": [
               {
-                "id": "windows-sys 0.52.0",
+                "id": "windows-sys 0.61.2",
                 "target": "windows_sys"
               }
             ]
@@ -21130,7 +21130,7 @@
           "selects": {
             "cfg(windows)": [
               {
-                "id": "windows-sys 0.60.2",
+                "id": "windows-sys 0.61.2",
                 "target": "windows_sys",
                 "alias": "windows"
               }
@@ -27925,7 +27925,7 @@
                 "alias": "libc_errno"
               },
               {
-                "id": "windows-sys 0.52.0",
+                "id": "windows-sys 0.61.2",
                 "target": "windows_sys"
               }
             ],
@@ -28317,7 +28317,7 @@
             ],
             "cfg(windows)": [
               {
-                "id": "windows-sys 0.52.0",
+                "id": "windows-sys 0.61.2",
                 "target": "windows_sys"
               }
             ]
@@ -31411,7 +31411,7 @@
             ],
             "cfg(windows)": [
               {
-                "id": "windows-sys 0.60.2",
+                "id": "windows-sys 0.61.2",
                 "target": "windows_sys"
               }
             ]
@@ -33339,7 +33339,7 @@
             ],
             "cfg(windows)": [
               {
-                "id": "windows-sys 0.52.0",
+                "id": "windows-sys 0.61.2",
                 "target": "windows_sys"
               }
             ],
@@ -40332,22 +40332,13 @@
             "Win32_NetworkManagement_IpHelper",
             "Win32_Networking",
             "Win32_Networking_WinSock",
-            "Win32_Security",
-            "Win32_Security_Cryptography",
-            "Win32_Storage",
-            "Win32_Storage_FileSystem",
             "Win32_System",
-            "Win32_System_Diagnostics",
-            "Win32_System_Diagnostics_Debug",
+            "Win32_System_IO",
             "Win32_System_Threading",
+            "Win32_System_WindowsProgramming",
             "default"
           ],
-          "selects": {
-            "x86_64-pc-windows-msvc": [
-              "Win32_System_IO",
-              "Win32_System_WindowsProgramming"
-            ]
-          }
+          "selects": {}
         },
         "deps": {
           "common": [
@@ -40397,31 +40388,6 @@
         "compile_data_glob": [
           "**"
         ],
-        "crate_features": {
-          "common": [
-            "Win32",
-            "Win32_Foundation",
-            "Win32_Networking",
-            "Win32_Networking_WinSock",
-            "Win32_Security",
-            "Win32_Storage",
-            "Win32_Storage_FileSystem",
-            "Win32_System",
-            "Win32_System_Console",
-            "Win32_System_IO",
-            "Win32_System_Threading",
-            "Win32_System_WindowsProgramming",
-            "default"
-          ],
-          "selects": {
-            "x86_64-pc-windows-msvc": [
-              "Win32_Globalization",
-              "Win32_System_Com",
-              "Win32_UI",
-              "Win32_UI_Shell"
-            ]
-          }
-        },
         "deps": {
           "common": [
             {
@@ -40483,6 +40449,7 @@
             "Win32_Networking",
             "Win32_Networking_WinSock",
             "Win32_Security",
+            "Win32_Security_Cryptography",
             "Win32_Storage",
             "Win32_Storage_FileSystem",
             "Win32_System",
@@ -40503,10 +40470,10 @@
           ],
           "selects": {
             "x86_64-pc-windows-msvc": [
+              "Win32_Globalization",
               "Win32_Security_Authentication",
               "Win32_Security_Authentication_Identity",
               "Win32_Security_Credentials",
-              "Win32_Security_Cryptography",
               "Win32_System_LibraryLoader"
             ]
           }
