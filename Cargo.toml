@@ -48,9 +48,9 @@ axum = { version = "0.8", features = ["json"] }
 cc = "1.2.64"
 cbindgen = "0.29.4"
 criterion = "0.8.2"
-gerbil-scheme = { git = "https://github.com/tao3k/gerbil-scheme-rust", rev = "1f28201a8de47fd40931331e81ae2f638b491095", version = "0.1.0" }
-gerbil-scheme-build = { git = "https://github.com/tao3k/gerbil-scheme-rust", rev = "1f28201a8de47fd40931331e81ae2f638b491095", version = "0.1.0" }
-gerbil-scheme-native-build = { git = "https://github.com/tao3k/gerbil-scheme-rust", rev = "1f28201a8de47fd40931331e81ae2f638b491095", version = "0.1.0" }
+gerbil-scheme = { git = "https://github.com/tao3k/gerbil-scheme-rust", rev = "fcfc56f7a7a91793d521ee3538479d173c2b1966", version = "0.1.0" }
+gerbil-scheme-build = { git = "https://github.com/tao3k/gerbil-scheme-rust", rev = "fcfc56f7a7a91793d521ee3538479d173c2b1966", version = "0.1.0" }
+gerbil-scheme-native-build = { git = "https://github.com/tao3k/gerbil-scheme-rust", rev = "fcfc56f7a7a91793d521ee3538479d173c2b1966", version = "0.1.0" }
 futures-executor = "0.3.32"
 globset = "0.4.18"
 litellm-rs = { version = "0.5", default-features = false, features = ["lite", "gateway", "sqlite", "redis", "websockets"] }
