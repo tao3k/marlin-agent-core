@@ -6,7 +6,7 @@
         "../policy/agent-routes.ss"
         "../policy/matchers.ss"
         "../policy/strategy-evaluation.ss"
-        "../policy/strategy-context.ss"
+        "../policy/strategy-facts.ss"
         :std/test)
 
 ;;; Boundary: Smoke policy keeps the user-facing module path in the fast gate.
@@ -25,7 +25,7 @@
 ;;; full policy module integration test without importing the full prefab pack.
 ;; : Object
 (def smoke-context
-  (make-marlin-deck-runtime-strategy-context
+  (make-marlin-deck-runtime-strategy-facts
    "session-module"
    '("root-agent" "worker-agent")
    '("workspace-clean")

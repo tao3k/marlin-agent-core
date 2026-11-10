@@ -11,7 +11,6 @@ const REQUIRED_GERBIL_RUNTIME_ASSETS: &[&str] = &[
     "gerbil.pkg",
     "build.ss",
     "init.ss",
-    "session/interface.ss",
     "policy/interface.ss",
     "c-abi/_deck-runtime-native.ssi",
     "c-abi/deck-runtime-native.ss",

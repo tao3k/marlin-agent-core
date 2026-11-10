@@ -5,7 +5,7 @@
 (import (only-in :clan/poo/object .get .o)
         "../extension-catalog.ss"
         "../hooks.ss"
-        "../strategy-context.ss")
+        "../strategy-facts.ss")
 
 (export marlin-deck-runtime-extension-receipt-kind
         make-marlin-deck-runtime-extension-receipt

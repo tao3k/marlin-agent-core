@@ -3,13 +3,16 @@
 #+FILETAGS: :marlin:scheme:
 
 =gerbil.pkg= declares AI Agentic Lab as the sole direct package dependency.
-Lab supplies Yuanxu and the POO contracts. =init.ss= selects the
-=session= and =policy= modules from the Scheme package root.
+Lab supplies Yuanxu, the POO contracts, and the Context and Session
+implementations. =init.ss= selects Lab's =ai-agentic-context= core profile
+under =Lab= and this package's =policy= under =Marlin=. Scheme consumers read
+the selected Context publication from =marlin-agent-core.init.exports=.
+Session operations belong to Lab's Gerbil APIs. Marlin's policy uses facts
+such as the session identifier and workspace state to make policy decisions.
 
 | Role | Responsibility |
 |------+----------------|
-| =session/= | Publish the selected session policy values. |
-| =policy/= | Publish model routing, hooks, strategies, and continuations. |
+| =policy/= | Publish model routing, hooks, and strategy policy. |
 | =policy/projection/= | Prepare typed values for the Rust adapter. |
 | =c-abi/= | Own the C entry points and their bindings. |
 | =t/= | Exercise policy composition, projections, and receipt fixtures. |
@@ -26,10 +29,10 @@ Install the package dependency with =just scheme-deps=. CI installs the SDK
 with the bridge's =setup-gerbil= action, prepares the pinned revisions with
 Lab's =runtime-dependencies.ss=, and installs them with =gxpkg=. Run
 =just scheme-package-gate= to initialize the VM and call
-=GerbilRuntime::build_package= and =GerbilRuntime::test_package=. The
+=GerbilRuntime::build_package= and =GerbilRuntime::test_package=.
 Yuanxu derives the library source closure from the selected module roles.
 =build.ss= hands the =std-make-spec= exported by =init.ss= to
-=defbuild-script=.
+=defbuild-script= and retains =init= as the package entry.
 Run =just agent-policy-routing-native-gate= for the linked C ABI selector.
 
 The recorded loop-case trace in =t/fixtures/loop-case-trace.v1= was exported

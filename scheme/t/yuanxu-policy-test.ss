@@ -1,13 +1,11 @@
 ;;; Exercise both publications through the selected package entry.
 
 (import (only-in :clan/poo/object .get)
-        "../init.ss")
+        (only-in :marlin-agent-core/init marlin-agent-core.init.exports))
 
-(let (session (.get marlin-agent-core.init.exports Marlin session))
-  (unless (and (equal? (.get session sharing) "shared")
-               (equal? (.get session isolation) "branch-isolated")
-               (equal? (.get session snapshot) "enabled"))
-    (error "unexpected Marlin session policy" session)))
+(let (context (.get marlin-agent-core.init.exports Lab ai-agentic-context))
+  (unless (equal? (.get context profile feature-ids) '(ai-agentic-context/core))
+    (error "expected Lab's core Context profile" context)))
 
 (let (policy (.get marlin-agent-core.init.exports Marlin policy))
   (unless (eq? ((.get policy select-model-route) '() '() #f "test" "local") #f)

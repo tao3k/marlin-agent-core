@@ -21,7 +21,7 @@
 ;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
 ;; MarlinResult <- MarlinInput
 (def (make-test-context)
-  (make-marlin-deck-runtime-strategy-context
+  (make-marlin-deck-runtime-strategy-facts
    "session-42"
    '("root-agent" "review-agent")
    '("workspace-dirty" "direnv-trusted")

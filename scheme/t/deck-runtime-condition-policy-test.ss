@@ -3,13 +3,13 @@
 
 (import :clan/poo/object
         "../policy/conditions.ss"
-        "../policy/strategy-context.ss"
+        "../policy/strategy-facts.ss"
         :std/test)
 
 ;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
 ;; MarlinResult <- MarlinInput
 (def matching-context
-  (make-marlin-deck-runtime-strategy-context
+  (make-marlin-deck-runtime-strategy-facts
    "session-condition"
    '("root-agent" "worker-agent")
    '("workspace-dirty" "direnv-trusted")

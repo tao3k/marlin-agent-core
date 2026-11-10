@@ -37,8 +37,9 @@ package MarlinPluginEngine {
             doc /* crates/marlin-agent-kernel/src/driver.rs owns graph compilation with ABI readiness checks. */
         }
         part <'MAR-PLG-A05'> schemePackage {
-            doc /* scheme/init.ss selects the session and policy module
-                   publications and exports the Gerbil build specification.
+            doc /* scheme/init.ss selects Lab Context and Marlin Policy.
+                   scheme/build.ss hands the resulting specification to defbuild-script.
+                   Lab owns Session and Context Session.
                    scheme/policy/projection shapes policy results. */
         }
 

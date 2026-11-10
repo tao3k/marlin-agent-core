@@ -28,7 +28,6 @@ fn gerbil_runtime_asset_receipt_accepts_complete_marlin_runtime_package() {
             "gerbil.pkg",
             "build.ss",
             "init.ss",
-            "session/interface.ss",
             "policy/interface.ss",
             "c-abi/_deck-runtime-native.ssi",
             "c-abi/deck-runtime-native.ss",
@@ -46,9 +45,9 @@ fn gerbil_runtime_asset_receipt_accepts_complete_marlin_runtime_package() {
     assert_eq!(receipt.status, GerbilRuntimeAssetManifestStatus::Complete);
     assert!(receipt.is_success());
     assert!(receipt.has_runtime_assets());
-    assert_eq!(receipt.asset_count, 13);
+    assert_eq!(receipt.asset_count, 12);
     assert_eq!(receipt.package_manifest_count, 1);
-    assert_eq!(receipt.scheme_source_count, 10);
+    assert_eq!(receipt.scheme_source_count, 9);
     assert!(receipt.missing_required_assets.is_empty());
 }
 
@@ -61,7 +60,6 @@ fn gerbil_runtime_asset_receipt_ignores_transient_runtime_cache_dirs() {
             "gerbil.pkg",
             "build.ss",
             "init.ss",
-            "session/interface.ss",
             "policy/interface.ss",
             "c-abi/_deck-runtime-native.ssi",
             "c-abi/deck-runtime-native.ss",
@@ -82,9 +80,9 @@ fn gerbil_runtime_asset_receipt_ignores_transient_runtime_cache_dirs() {
 
     assert_eq!(receipt.status, GerbilRuntimeAssetManifestStatus::Complete);
     assert!(receipt.is_success());
-    assert_eq!(receipt.asset_count, 12);
+    assert_eq!(receipt.asset_count, 11);
     assert_eq!(receipt.package_manifest_count, 1);
-    assert_eq!(receipt.scheme_source_count, 9);
+    assert_eq!(receipt.scheme_source_count, 8);
     assert!(
         receipt.asset_paths.iter().all(|path| {
             !path.starts_with(".run/")
@@ -150,7 +148,6 @@ fn gerbil_runtime_harness_contract_receipt_accepts_complete_harness_assets() {
             "gerbil.pkg",
             "build.ss",
             "init.ss",
-            "session/interface.ss",
             "policy/interface.ss",
             "c-abi/_deck-runtime-native.ssi",
             "c-abi/deck-runtime-native.ss",
@@ -198,7 +195,6 @@ fn gerbil_runtime_harness_contract_receipt_rejects_missing_capability_assets() {
             "gerbil.pkg",
             "build.ss",
             "init.ss",
-            "session/interface.ss",
             "policy/interface.ss",
             "c-abi/_deck-runtime-native.ssi",
             "c-abi/deck-runtime-native.ss",

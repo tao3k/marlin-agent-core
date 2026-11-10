@@ -13,11 +13,10 @@
         "./projection/loop-graph.ss"
         "./matchers.ss"
         "./strategy-evaluation.ss"
-        "./continuation.ss"
-        "./strategy-context.ss")
+        "./strategy-facts.ss")
 
 (export marlin-deck-runtime-strategy-rule-kind
-        marlin-deck-runtime-strategy-context-kind
+        marlin-deck-runtime-strategy-facts-kind
         marlin-deck-runtime-condition-policy-kind
         marlin-deck-runtime-condition-combinator-kind
         marlin-deck-runtime-strategy-selection-kind
@@ -40,7 +39,7 @@
         marlin-deck-runtime-strategy-policy-receipt-kind
         marlin-deck-runtime-strategy-capability-names
         marlin-deck-runtime-dynamic-hook-action-names
-        make-marlin-deck-runtime-strategy-context
+        make-marlin-deck-runtime-strategy-facts
         make-marlin-deck-runtime-condition-policy
         marlin-deck-runtime-all-condition-policy
         marlin-deck-runtime-any-condition-policy
@@ -111,5 +110,4 @@
         marlin-deck-runtime-dynamic-strategy-policy-receipt
         marlin-deck-runtime-strategy-rule-signal-names
         marlin-deck-runtime-dynamic-strategy-rule-signal-names
-        marlin-deck-runtime-resident-strategy-execute
         marlin-deck-runtime-strategy-selection)

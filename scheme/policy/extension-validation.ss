@@ -5,7 +5,7 @@
 (import (only-in :clan/poo/object .get .o)
         "./hooks.ss"
         "./extension-objects.ss"
-        "./strategy-context.ss")
+        "./strategy-facts.ss")
 
 (export marlin-deck-runtime-extension-safety-report-kind
         make-marlin-deck-runtime-extension-safety-report

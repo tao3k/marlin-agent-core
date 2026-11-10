@@ -1,12 +1,12 @@
 ;;; -*- Gerbil -*-
 ;;; Boundary: Module owns Marlin Gerbil policy and runtime contracts for agent edits.
-;;; POO context objects for Scheme-owned Deck runtime strategy decisions.
+;;; Facts supplied to Scheme-owned Deck policy decisions.
 
 (import (only-in :clan/poo/object .get .o))
 
-(export marlin-deck-runtime-strategy-context-kind
+(export marlin-deck-runtime-strategy-facts-kind
         marlin-deck-runtime-strategy-capability-names
-        make-marlin-deck-runtime-strategy-context
+        make-marlin-deck-runtime-strategy-facts
         strategy-string-active?
         strategy-required-string-match?
         strategy-string-member?
@@ -15,8 +15,8 @@
 
 ;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
 ;; MarlinResult <- MarlinInput
-(def marlin-deck-runtime-strategy-context-kind
-  "marlin-deck-runtime.strategy-context.v1")
+(def marlin-deck-runtime-strategy-facts-kind
+  "marlin-deck-runtime.strategy-facts.v1")
 
 ;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
 ;; MarlinResult <- MarlinInput
@@ -33,13 +33,13 @@
 
 ;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
 ;; MarlinResult <- MarlinInput
-(def (make-marlin-deck-runtime-strategy-context
+(def (make-marlin-deck-runtime-strategy-facts
       session-id-value
       agent-lineage-values
       workspace-state-values
       org-memory-hit-values
       agent-class-value)
-  (.o kind: marlin-deck-runtime-strategy-context-kind
+  (.o kind: marlin-deck-runtime-strategy-facts-kind
       session-id: session-id-value
       agent-lineage: agent-lineage-values
       workspace-state: workspace-state-values

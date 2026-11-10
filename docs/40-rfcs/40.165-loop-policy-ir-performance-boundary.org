@@ -260,7 +260,10 @@ Normal node, tool, token, and event processing does not call back into Scheme.
 Rust owns channels, backpressure, timeout, process health, cancellation, worker
 restart, and load shedding.
 
-Current bridge boundary:
+Historical bridge experiment:
+- The local Scheme resident strategy procedure described here was removed in
+  the Lab migration. This experiment does not establish a live Context Session
+  integration or a runtime transport.
 - =GerbilResidentStrategyExecutor= is the Rust-owned execution trait behind
   accepted resident strategy requests.
 - =GerbilResidentStrategyGxiSmokeBridge= calls the real

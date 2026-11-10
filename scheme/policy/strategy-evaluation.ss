@@ -7,7 +7,7 @@
         "./conditions.ss"
         "./hooks.ss"
         "./matchers.ss"
-        "./strategy-context.ss")
+        "./strategy-facts.ss")
 
 (export marlin-deck-runtime-strategy-rule-kind
         marlin-deck-runtime-strategy-selection-kind
@@ -85,7 +85,7 @@
                  ":marlin-agent-core/policy/conditions"
                  ":marlin-agent-core/policy/hooks"
                  ":marlin-agent-core/policy/matchers"
-                 ":marlin-agent-core/policy/strategy-context")))
+                 ":marlin-agent-core/policy/strategy-facts")))
 
 ;;; Boundary: Scheme exposes the policy projection shape, not Rust handlers.
 ;; MarlinResult <- MarlinInput

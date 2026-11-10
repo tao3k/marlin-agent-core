@@ -8,7 +8,6 @@ filegroup(
     ] + glob([
         "c-abi/*.ss",
         "c-abi/*.ssi",
-        "session/*.ss",
         "policy/**/*.ss",
         "t/**/*.ss",
     ]),
