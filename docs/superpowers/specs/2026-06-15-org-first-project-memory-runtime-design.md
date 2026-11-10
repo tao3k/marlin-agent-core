@@ -40,7 +40,7 @@ toward the full Org-first runtime.
 - `docs/20-workspace/20.60-org-contracts-and-templates.org` gives contracts a
   parser-owned projection, validation report, matched node ids, templates,
   diagnostics, and status surface.
-- `org/contracts/agent.memory.v1.org` defines memory candidates as recallable
+- `crates/marlin-org-workspace/contracts/agent.memory.v1.org` defines memory candidates as recallable
   records with source, evidence, trust, retention, salience, and recall query
   fields.
 

@@ -26,7 +26,7 @@ _INTEGRATION_RUNTIME_DATA = [
     ":storage_scenario_runtime_data",
     "//crates/marlin-gerbil-scheme:policy_pack_storage_projection_receipt",
     "//docs/40-rfcs:turso_agent_storage_engine_rfc",
-    "//proof-support/lean:storage_artifact_pointer_cas_runtime",
+    "//dev/proofs/lean:storage_artifact_pointer_cas_runtime",
 ]
 
 filegroup(

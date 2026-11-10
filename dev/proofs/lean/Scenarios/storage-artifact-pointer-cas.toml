@@ -4,7 +4,7 @@ kind = "storage.cas.invariant"
 engine = "lean"
 package = "marlin-proof"
 module = "MarlinProof.Storage.ArtifactPointer"
-build_command = "lake build"
+build_command = "lean MarlinProof/Storage/ArtifactPointer.lean"
 theorems = [
   "committed_after_is_target",
   "committed_status_when_expected_matches",

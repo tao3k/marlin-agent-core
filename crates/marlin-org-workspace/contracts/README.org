@@ -1,0 +1,5 @@
+#+TITLE: Built-in Org contracts
+
+The contracts and their examples are from
+[[https://github.com/tao3k/org/tree/2ce88df0ceaf9fa8eae665127f87479421b5f2fa/contracts][tao3k/org at 2ce88df]].
+Their license is in [[file:LICENSE][LICENSE]].

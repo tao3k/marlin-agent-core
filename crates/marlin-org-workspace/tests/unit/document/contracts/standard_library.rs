@@ -54,7 +54,7 @@ fn org_document_loader_validates_standard_agent_plan_task_loop_memory_topology_c
 :CONTRACT_ORG: agent.plan.v1
 :ID: agent-contract-plan-20260614
 :OBJECTIVE: validate the standard agent contract workspace fixture
-:SDD: org/contracts/agent.plan.v1.org
+:SDD: contracts/agent.plan.v1.org
 :STABLE_REF: crates/marlin-org-workspace/tests/unit/document/contracts/standard_library.rs
 :SCOPE_REF: marlin-org-workspace standard contract loader fixture
 :PACKAGE: marlin-org-workspace
@@ -82,7 +82,7 @@ Standard Contract Org needs to validate the same ledger shape agents use for rea
 - 2026-06-14: Real agent org samples use TODO/DONE roots, progress cookies, lifecycle checklist items, and recovery properties.
 
 ** Validation
-- [X] Standard contract documents are discovered from independent org/contracts files.
+- [X] Standard contract documents are discovered from independent contracts files.
 - [X] Plan, task, loop, and memory contracts all pass in this fixture.
 
 ** Evidence
@@ -127,7 +127,7 @@ next-action: continue from standard library validation receipts
 Implement P0-P1 for Contract Org.
 
 ** Acceptance
-- [ ] Standard contracts load from org/contracts.
+- [ ] Standard contracts load from contracts.
 
 ** Progress
 - [X] Contract documents are independent files.
@@ -249,31 +249,31 @@ detailed Org memory or session facts.
 fn org_document_loader_validates_standard_agent_contract_examples() {
     assert_standard_contract_example_passes(
         "doc:agent-plan-v1-example",
-        include_str!("../../../../../../org/contracts/examples/agent.plan.v1.example.org"),
+        include_str!("../../../../contracts/examples/agent.plan.v1.example.org"),
         "agent.plan.v1",
         30,
     );
     assert_standard_contract_example_passes(
         "doc:agent-task-v1-example",
-        include_str!("../../../../../../org/contracts/examples/agent.task.v1.example.org"),
+        include_str!("../../../../contracts/examples/agent.task.v1.example.org"),
         "agent.task.v1",
         7,
     );
     assert_standard_contract_example_passes(
         "doc:agent-loop-v1-example",
-        include_str!("../../../../../../org/contracts/examples/agent.loop.v1.example.org"),
+        include_str!("../../../../contracts/examples/agent.loop.v1.example.org"),
         "agent.loop.v1",
         4,
     );
     assert_standard_contract_example_passes(
         "doc:agent-memory-v1-example",
-        include_str!("../../../../../../org/contracts/examples/agent.memory.v1.example.org"),
+        include_str!("../../../../contracts/examples/agent.memory.v1.example.org"),
         "agent.memory.v1",
         14,
     );
     assert_standard_contract_example_passes(
         "doc:agent-topology-v1-example",
-        include_str!("../../../../../../org/contracts/examples/agent.topology.v1.example.org"),
+        include_str!("../../../../contracts/examples/agent.topology.v1.example.org"),
         "agent.topology.v1",
         9,
     );

@@ -20,24 +20,21 @@ pub const STANDARD_AGENT_MEMORY_CONTRACT_DOCUMENT_ID: &str = "org:contracts/agen
 pub const STANDARD_AGENT_TOPOLOGY_CONTRACT_DOCUMENT_ID: &str = "org:contracts/agent.topology.v1";
 
 /// Built-in Contract Org for agent plans.
-pub const STANDARD_AGENT_PLAN_CONTRACT_ORG: &str =
-    include_str!("../../../org/contracts/agent.plan.v1.org");
+pub const STANDARD_AGENT_PLAN_CONTRACT_ORG: &str = include_str!("../contracts/agent.plan.v1.org");
 
 /// Built-in Contract Org for agent tasks.
-pub const STANDARD_AGENT_TASK_CONTRACT_ORG: &str =
-    include_str!("../../../org/contracts/agent.task.v1.org");
+pub const STANDARD_AGENT_TASK_CONTRACT_ORG: &str = include_str!("../contracts/agent.task.v1.org");
 
 /// Built-in Contract Org for agent loops.
-pub const STANDARD_AGENT_LOOP_CONTRACT_ORG: &str =
-    include_str!("../../../org/contracts/agent.loop.v1.org");
+pub const STANDARD_AGENT_LOOP_CONTRACT_ORG: &str = include_str!("../contracts/agent.loop.v1.org");
 
 /// Built-in Contract Org for agent memory records.
 pub const STANDARD_AGENT_MEMORY_CONTRACT_ORG: &str =
-    include_str!("../../../org/contracts/agent.memory.v1.org");
+    include_str!("../contracts/agent.memory.v1.org");
 
 /// Built-in Contract Org for agent project topology records.
 pub const STANDARD_AGENT_TOPOLOGY_CONTRACT_ORG: &str =
-    include_str!("../../../org/contracts/agent.topology.v1.org");
+    include_str!("../contracts/agent.topology.v1.org");
 
 /// Returns the built-in agent Contract Org documents, one document per contract.
 pub fn standard_agent_contract_documents() -> Vec<OrgDocument> {

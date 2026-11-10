@@ -13,11 +13,15 @@ agent storage:
 - `missing_expected`: a create-only operation succeeds only when the pointer is
   absent.
 
-Run:
+Build the proof package with the toolchain in `lean-toolchain`.
 
 ```sh
 lake build
 ```
+
+The storage scenario gate checks its standalone proof with `lean` so it can
+run in the offline Bazel test environment. Lake manages the pinned Lean POO
+dependency for the proof package.
 
 The intended integration path is:
 

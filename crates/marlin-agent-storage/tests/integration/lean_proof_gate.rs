@@ -3,7 +3,8 @@ use std::process::Command;
 
 #[test]
 fn storage_artifact_pointer_cas_lean_proof_builds() {
-    let proof_dir = workspace_root().join("proof-support/lean");
+    let proof_dir = workspace_root().join("dev/proofs/lean");
+    let proof_source = "MarlinProof/Storage/ArtifactPointer.lean";
     let scenario = proof_dir.join("Scenarios/storage-artifact-pointer-cas.org");
     let receipt = proof_dir.join("Scenarios/storage-artifact-pointer-cas.toml");
 
@@ -49,11 +50,12 @@ fn storage_artifact_pointer_cas_lean_proof_builds() {
         "proof receipt should list the storage CAS theorem names"
     );
 
-    let output = Command::new("lake")
-        .arg("build")
+    // This standalone proof can be checked inside Bazel's offline sandbox.
+    let output = Command::new("lean")
+        .arg(proof_source)
         .current_dir(&proof_dir)
         .output()
-        .expect("lake must be installed to run storage proof gates");
+        .expect("lean must be installed to run storage proof gates");
 
     assert!(
         output.status.success(),
