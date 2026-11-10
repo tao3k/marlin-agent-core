@@ -155,7 +155,7 @@ pub use marlin_gerbil_scheme::{
     GERBIL_LOOP_GRAPH_CONTINUATION_NATIVE_PROJECTION_ABI_VERSION,
     GERBIL_LOOP_GRAPH_CONTINUATION_NATIVE_PROJECTION_PACKAGE_ID,
     GERBIL_LOOP_GRAPH_CONTINUATION_NATIVE_SYMBOL, GERBIL_LOOP_GRAPH_CONTINUATION_TYPE_ID,
-    GerbilCommandSpec, decode_gerbil_loop_graph_continuation_native_projection,
+    decode_gerbil_loop_graph_continuation_native_projection,
     decode_gerbil_loop_graph_continuation_projection,
     gerbil_loop_graph_continuation_native_projection_abi_contract,
     gerbil_loop_graph_continuation_native_projection_package_manifest,

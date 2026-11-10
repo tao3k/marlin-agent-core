@@ -1,0 +1,17 @@
+filegroup(
+    name = "policy_unit_runtime_data",
+    srcs = [
+        "build.ss",
+        "gerbil.pkg",
+        "init.ss",
+        "t/fixtures/loop-case-trace.v1",
+    ] + glob([
+        "c-abi/*.ss",
+        "c-abi/*.ssi",
+        "modules/**/*.ss",
+        "policy/*.ss",
+        "projection/*.ss",
+        "t/**/*.ss",
+    ]),
+    visibility = ["//crates/marlin-gerbil-scheme:__pkg__"],
+)

@@ -1,6 +1,6 @@
 //! Marlin archive adapters over the upstream Gerbil native build substrate.
 
-use gerbil_scheme_native_build::{
+use gerbil_scheme_aot_build::{
     CargoDirectiveKind, NativeStaticLinkPlan,
     build_static_archive_from_link_plan as build_upstream_static_archive,
     static_archive_cargo_directives as upstream_cargo_directives,
@@ -11,7 +11,7 @@ use marlin_gerbil_scheme::{
 };
 use std::path::{Path, PathBuf};
 
-pub use gerbil_scheme_native_build::static_archive_file_name;
+pub use gerbil_scheme_aot_build::static_archive_file_name;
 
 /// Cargo/rustc link name for the generated Deck runtime native archive.
 pub const DECK_RUNTIME_NATIVE_ARCHIVE_NAME: &str = "marlin_deck_runtime_native";
@@ -46,7 +46,7 @@ pub fn build_agent_policy_routing_static_archive_from_link_plan(
     )
 }
 
-/// Delegates neutral archive packaging to `gerbil-scheme-native-build`.
+/// Delegates neutral archive packaging to `gerbil-scheme-aot-build`.
 pub fn build_static_archive_from_link_plan(
     archive_name: &str,
     link_plan: &GerbilDeckRuntimeNativeStaticLinkPlan,
@@ -85,13 +85,13 @@ fn upstream_link_plan(link_plan: &GerbilDeckRuntimeNativeStaticLinkPlan) -> Nati
         link_libraries: link_plan
             .link_libraries
             .iter()
-            .map(|library| gerbil_scheme_native_build::NativeLinkLibrary::new(library.as_str()))
+            .map(|library| gerbil_scheme_aot_build::NativeLinkLibrary::new(library.as_str()))
             .collect(),
     }
 }
 
 fn marlin_cargo_directive(
-    directive: gerbil_scheme_native_build::CargoDirective,
+    directive: gerbil_scheme_aot_build::CargoDirective,
 ) -> GerbilDeckRuntimeNativeCargoDirective {
     let kind = match directive.kind {
         CargoDirectiveKind::RustcLinkSearch => {

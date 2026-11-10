@@ -17,7 +17,7 @@ use marlin_gerbil_scheme::{
     GerbilDeckRuntimeSelectedPolicyKind, GerbilDeckRuntimeSerializationBoundary,
     gerbil_deck_runtime_native_projection_readiness_plan,
     gerbil_deck_runtime_poo_policy_projection_request,
-    gerbil_deck_runtime_resolved_loop_policy_pack_projection_request, gerbil_runtime_asset,
+    gerbil_deck_runtime_resolved_loop_policy_pack_projection_request,
 };
 
 #[test]
@@ -140,10 +140,10 @@ fn gerbil_deck_runtime_poo_policy_projection_request_matches_scheme_module_contr
         ]
     );
 
-    let native_projection_source =
-        gerbil_runtime_asset("src/marlin/deck-runtime-native-projection.ss")
-            .expect("generated manifest includes native projection source")
-            .source;
+    let native_projection_source = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../scheme/projection/deck.ss"
+    ));
     for expected in [
         GERBIL_DECK_RUNTIME_NATIVE_PROJECTION_ABI_ID,
         GERBIL_DECK_RUNTIME_PROJECT_POO_POLICY_SYMBOL,

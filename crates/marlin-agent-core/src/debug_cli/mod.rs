@@ -4,7 +4,6 @@ mod args;
 mod catalog;
 mod driver;
 mod executor;
-mod gerbil_cmd;
 mod graph;
 mod io;
 mod loop_cmd;
@@ -15,9 +14,7 @@ mod state_cmd;
 mod state_home;
 
 pub use driver::{MarlinCliResult, run_marlin_cli, run_marlin_cli_from_args};
-pub(in crate::debug_cli) use driver::{
-    gerbil_usage, graph_usage, loop_usage, smoke_usage, state_usage, usage,
-};
+pub(in crate::debug_cli) use driver::{graph_usage, loop_usage, smoke_usage, state_usage, usage};
 pub use receipts::{
     GraphQueryOutput, GraphQuerySummary, LoopEventQuerySummary, LoopGovernanceReceipt,
     LoopGovernanceSandboxReceipt, LoopGovernanceSessionReceipt, LoopGovernanceStateReceipt,

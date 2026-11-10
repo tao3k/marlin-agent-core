@@ -1,7 +1,4 @@
-use std::{
-    fs,
-    sync::{Arc, OnceLock},
-};
+use std::{fs, sync::Arc};
 
 use marlin_agent_harness::{
     IntentCaseArtifactBundleMaterializationReceipt, IntentCaseArtifactKind,
@@ -22,18 +19,15 @@ use marlin_gerbil_scheme::{
     GerbilLoopCaseDriverCapability, GerbilLoopCaseDriverVerticalTraceReceipt,
     project_gerbil_loop_case_driver_intent_case_artifact_manifest,
     project_gerbil_loop_case_driver_loop_event_kind, project_gerbil_loop_case_driver_loop_program,
-    run_gerbil_config_interface_case_driver_smoke, verify_gerbil_loop_case_driver_vertical_trace,
+    verify_gerbil_loop_case_driver_vertical_trace,
 };
 
 pub(crate) fn config_interface_case_driver_stdout() -> String {
-    static STDOUT: OnceLock<String> = OnceLock::new();
-
-    STDOUT
-        .get_or_init(|| {
-            run_gerbil_config_interface_case_driver_smoke()
-                .expect("gxi case-driver smoke should produce verified stdout")
-        })
-        .clone()
+    include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../scheme/t/fixtures/loop-case-trace.v1"
+    ))
+    .to_owned()
 }
 
 pub(crate) fn gerbil_vertical_receipts() -> Vec<GerbilLoopCaseDriverVerticalTraceReceipt> {

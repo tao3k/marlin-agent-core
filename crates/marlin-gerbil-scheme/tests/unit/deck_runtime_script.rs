@@ -12,7 +12,7 @@ use marlin_gerbil_scheme::{
     GerbilSchemeValue, decode_gerbil_deck_runtime_script_batch_metrics,
     decode_gerbil_deck_runtime_script_interface_receipt,
     evaluate_gerbil_deck_runtime_script_batch_performance,
-    gerbil_deck_runtime_script_interface_type_manifest, gerbil_runtime_asset,
+    gerbil_deck_runtime_script_interface_type_manifest,
 };
 use std::time::Instant;
 
@@ -44,9 +44,10 @@ fn gerbil_deck_runtime_script_contract_matches_scheme_surface() {
             .is_some()
     );
 
-    let script_source = gerbil_runtime_asset("src/marlin/deck-runtime-script.ss")
-        .expect("generated manifest includes deck runtime script source")
-        .source;
+    let script_source = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../scheme/projection/script.ss"
+    ));
     for expected in [
         GERBIL_DECK_RUNTIME_SCRIPT_KIND,
         GERBIL_DECK_RUNTIME_SCRIPT_INTERFACE_KIND,

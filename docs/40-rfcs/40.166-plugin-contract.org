@@ -1,0 +1,1365 @@
+#+TITLE: 40.166 Plugin Contract
+#+DATE: 2026-11-10
+#+FILETAGS: :marlin:rfc:plugin:runtime:security:
+#+PROPERTY: RFC_VERSION v0
+
+* 40.166 Plugin Contract
+:PROPERTIES:
+:status: Active
+:phase: Design proposal
+:END:
+
+** Decision
+
+Marlin maintains the Rust execution engine, the Gerbil policy boundary, and a
+versioned plugin interface. The default downstream workflow is declarative.
+Authors select published modules, set typed options, and distribute a data-only
+bundle. Operators enable workflows and configure settings in their projects.
+Neither role needs a Gerbil installation, Scheme source, or the TypeScript SDK.
+The host ships the trusted policy runtime needed by its registered modules.
+
+A bundle can also contribute assets for a client that supports the declared interface. The TypeScript
+SDK serves frontend authors and their build tooling. npm can distribute
+prebuilt assets. Rust executes the v0 engine and the Scheme VM evaluates policy
+when needed. The Rust host consumes a verified local
+artifact bundle and runs the engine-owned gRPC service. The engine operates
+independently of npm, Node.js, and the client.
+
+The maintained integration surface is the Rust contract and a thin SDK
+binding. The SDK shares the host's schemas and conveys no additional
+capabilities. Plugin authors choose their own UI frameworks and build tools.
+
+This RFC specifies a design and an acceptance scenario. The proposed bundle,
+contribution names, and lifecycle receipts below require implementation and
+qualification.
+
+** OpenSysML companion
+:PROPERTIES:
+:CUSTOM_ID: plugin-model
+:END:
+
+[[file:../../project.sysml][Project SysML entry]] selects the project views.
+The [[file:../../dev/sysml/plugin-engine.sysml][plugin engine model]] owns the
+structural identities, transport connections, and requirement allocations.
+The [[file:../../dev/sysml/plugin-lifecycle.sysml][lifecycle model]] describes
+the target activation and invocation states. The
+[[file:../../dev/sysml/plugin-execution.sysml][execution model]] describes the
+Agent Call flow and stage allocations. This RFC owns the design rationale,
+contract details, and evidence status. The
+[[file:../../dev/sysml/README.org][model map]] links both directions.
+
+** Ownership and Execution Boundaries
+:PROPERTIES:
+:CUSTOM_ID: plugin-ownership
+:END:
+
+| Surface | Owner | v0 contract |
+|---------+-------+-------------|
+| Execution engine | Rust | Owns catalogs, project authorization, budgets, graph admission, effects, cancellation, and typed receipts. Resolves plugin declarations to existing host-owned operations. |
+| Plugin contract | Rust | Owns the TOML envelope, schemas, identifier newtypes, package validation, and client message schemas. Every ingress goes through runtime validation. |
+| External service | Rust | Owns the gRPC listener, versioned Protobuf contract, message channels, and mapping to runtime requests and receipts. |
+| TypeScript SDK | Client and author tooling | Exposes contract types and narrow client bindings. Produces optional prebuilt assets. Plugins receive neither host credentials nor a general host API. |
+| Gerbil policy | Trusted policy plane | Composes typed policy and graph proposals using host-provisioned policy packs. Rust receives typed C ABI projections and gates graph request creation on ABI readiness. |
+| Gambit JavaScript | Optional client build target | A portable Scheme helper may compile to client JavaScript and use the same client contract and isolation as TypeScript output. |
+
+A plugin may select an allowlisted =PolicyModuleId= and supply validated data
+to it. The host resolves the module to a separately provisioned, trusted policy
+revision. Installing a plugin grants no authority to load Scheme source,
+compiled Scheme modules, shared libraries, or JavaScript into the engine.
+Gerbil exchanges Scheme values and typed C ABI projections with Rust. Rust
+owns outer serialization. For graph proposals from Scheme, the readiness-aware
+compilation path supplies the ABI readiness receipt before a graph execution
+request exists. Dynamic hook actions continue to resolve existing
+=HookRegistration= handlers through the Rust catalog.
+[[file:../30-gerbil/30.30-gerbil-typed-runtime-boundary.org][Gerbil Typed Runtime Boundary]]
+
+Parser can provide structured facts to a policy module, and ASCENT can derive
+rule results from them. The module can use AI Agentic Lib's Gerbil composition
+to propose the next graph action. Rust validates scope and authorizes every
+effect. Gambit's JavaScript target is a separate authoring path. Qualifying it
+requires a bounded helper to pass the same client contract tests as a
+TypeScript build. Each Gerbil library needs its own portability evidence.
+[[https://gambitscheme.org/4.9.7/manual/][Gambit compiler manual]]
+
+The host resolves the manifest at installation and contributions at project
+activation. Runs pin the resulting typed plan and trusted policy epoch.
+Rust executes the plan through the existing graph and tool paths and checks
+live authorization at effect admission. Client events are bounded, asynchronous
+projections. A slow or absent client cannot block the engine. Gerbil policy
+crosses the C ABI boundary at the existing compilation or policy decision
+stage. Token, stream, and tool dispatch stay on the Rust path.
+[[file:40.165-loop-policy-ir-performance-boundary.org][LoopPolicyIR Performance Boundary]]
+
+** Declarative Modules and Settings
+
+In this RFC, AI Agentic Lib refers to the library checked out at
+=ghq/github.com/tao3k/poo-flow/core=. The checkout path still contains the old
+project name, and the current Scheme package exports use =:yuanxu/...=.
+The enclosing project supplies the Lab authoring facade, module descriptors,
+and option projections. AI Agentic Lib supplies the generic Module Interface,
+structured imports, closure, and option validation. A trusted author declares
+options on existing POO =Record= slots. The host publishes a closed TOML view
+of the selected slots. Module composition and semantic validation run in the
+trusted Scheme plane.
+[[file:../../scheme/README.org][Marlin Scheme package]]
+
+The earlier interface examples were inspected in Agentic AI Lab =27e1cdc6=
+and its pinned Yuanxu Core
+=cd794638=. The Lab's =t/module-system-user-interface-test.ss= builds a root
+and child with =yuanxu-module-interface=, =yuanxu-import= and
+=yuanxu-module-option-block=. Its assertions cover closure, phase order, and
+validation projections. =module-option-projection.ss= projects effective
+slots and delegates validation to Core's =option-validation.ss=. These are
+facilities in that source baseline. The top-level Marlin package now selects
+its session publication through Yuanxu from Lab =55bf2074= and separates
+the module roles from policy, projection, and C ABI code. The Brief-to-Draft
+modules and their plugin-facing Scheme activation adapter remain proposed.
+
+| Role | Publishes or supplies | Execution responsibility |
+|------+----------------------+--------------------------|
+| Trusted module maintainer | Existing Module Interface and descriptor, plus which options are exposed to Marlin. | Owns AI Agentic Lib/Gerbil composition. Rust registers a versioned projection of the selected interface. |
+| Downstream workflow author | A =WorkflowPreset= referencing a registered module and supplying optional bundle defaults for its public settings. | Distributes declarative data. Several presets may configure the same module differently. |
+| Project operator | An enable flag and project settings for an installed workflow. Separately approves the requested project capabilities. | Applies configuration through the authorized host path. The enable flag requests activation. |
+| Client author | An optional TS or Gambit JS contribution for presentation, interaction within the granted client contract, or a local preview. | Client code stays in the client boundary. Workflow activation and policy compilation do not depend on it. |
+
+Rust owns TOML decoding, bounds, identifier types, and the versioned wire
+schema projected from the trusted interface. The Module Interface remains the
+source of option definitions. The host binds a settings key to the exact
+published module and slot, checks that its value fits the wire shape, and
+passes typed contributions with their source identities to the registered
+Scheme composition path. Module defaults, signed bundle defaults, and
+authorized project settings remain distinguishable through that handoff.
+The trusted module's composition and validation determine the effective
+settings. Rust has no general settings merge algebra.
+
+A duplicate TOML key fails decoding. An unknown module or unexported option
+fails public validation. A projected public key must have a unique owner.
+The Lab doctor currently reports duplicate module option keys as warnings.
+Marlin's publication gate requires unambiguous projected keys and retains
+the original diagnostic severity. Private options on separate modules can
+share local names because public keys are qualified by module identity.
+Composition conflicts use the owning policy's rules and diagnostics. The
+host denies a rejected composition before publishing a generation.
+
+The typed result of composition binds the module closure and revisions,
+schema identity, effective settings, and the evidence available from the
+composition and validation path. Rust records the settings digest and
+retains the relevant diagnostics. The graph ABI readiness gate still runs before
+Rust admits execution.
+A change to effective settings produces a new policy epoch. Settings changes
+and enable flags are validated against the full requested workflow set. An
+invalid replacement leaves an existing valid activation in place and records a
+denial. A valid replacement closes the old generation before publishing the
+new one. Disabling the last workflow closes the activation through the normal
+disable path. Settings may select declared behavior. They cannot expand a
+capability ceiling or substitute for a project grant.
+
+Use the trusted Gerbil extension path when a module needs new policy semantics,
+such as a different scheduling decision that published options cannot express.
+That path requires separate host provisioning and ABI qualification. A new
+side effect still requires a Rust-owned operation and authorization check.
+
+*** Package loading and policy checks
+
+For generated JavaScript and TypeScript client assets, npm can install the
+declared packages and a JS loader or bundler can resolve their imports. In
+Node.js, =require()= loads CommonJS modules. A publisher can resolve those code
+dependencies at build time and ship the prebuilt client assets. This suffices
+for loading a client feature. The v0 Rust host consumes verified artifacts.
+[[https://docs.npmjs.com/cli/v11/configuring-npm/package-json/#dependencies][npm package dependencies]]
+[[https://nodejs.org/api/modules.html#all-together][Node.js module loading]]
+
+Brief-to-Draft also has a workflow contract. =draft-output= consumes the typed
+brief facts published by =brief-input=. Because this is a fixed pair, the host
+can validate and pin that composition when provisioning the trusted modules.
+Activation binds that approved closure. It need not rediscover modules or
+recompute their dependency graph on each enable or run. Only a change to the
+registered composition requires rechecking its imports and interfaces.
+
+Project settings are a separate input. Both modules can be installed and
+load correctly while the project selects =release-note= and disables the
+audience requirement. The rejection comes from Brief-to-Draft's workflow
+contract and happens when the effective settings are known. A fixed profile
+can be checked before provisioning. A project override needs the corresponding
+check before activation. The same rule would still apply if its implementation
+were compiled to JavaScript. Rust owns project grants and effect admission in
+either case.
+
+** Engine Design and Leverage
+
+*** Scheme VM and Rust runtime
+
+The C ABI path keeps Scheme execution inside a Gerbil/Gambit runtime.
+Gerbil expands the policy code and Gambit compiles it through the C target.
+The linked exports still execute with the Scheme runtime's heap, GC, and
+control semantics. Rust owns admission, scheduling of host work, lifetime of
+the bridge, and effect execution. A Tokio task submits bounded work to the
+Scheme owner. Only owned, typed projections return to other Rust threads.
+Scheme roots, closures, and continuations stay with their originating VM.
+
+Marlin pins =gerbil-scheme-rust= PR #18 at =bfe803f5=. Its default runtime
+image runs the Gerbil Builder and GxTest in process on the VM owner. The
+workspace package entry and role definitions live in =scheme/=. Marlin
+also has opt-in Deck and AgentGraph AOT link units that call
+explicit initializers and typed C ABI exports. These establish the bridge
+and build patterns. Brief-to-Draft still needs a registered linked entry and
+qualification of its owner queue, initialization, projection, and teardown.
+Use one qualified Scheme VM owner as the baseline. Concurrent Rust callers do
+not establish parallel Scheme execution. Independent VMs or Scheme SMP need
+separate qualification. The in-process Scheme VM is a trusted execution
+environment. Linked Scheme modules require host provisioning.
+[[file:../30-gerbil/30.80-native-aot-link-unit.org][Marlin Scheme AOT link unit]]
+
+*** Engine-owned gRPC and the Scheme VM
+:PROPERTIES:
+:CUSTOM_ID: plugin-transport
+:END:
+
+Marlin's Rust plugin engine owns the gRPC service, runtime lifecycle, and
+message channels. A plugin package contributes a declaration and any
+handler or client assets for its declared role. The engine starts the service
+as part of host startup and reuses it across Agent Calls. For each call, Rust
+resolves the active project and capabilities, dispatches admitted work,
+handles deadlines and cancellation, and records results. The gRPC service and
+plugin SDK bindings are proposed integration work. The Scheme C ABI bridge already
+exists.
+
+#+begin_example
+TS and other external clients -> Marlin gRPC service -> Rust runtime
+Trusted Gerbil policy VM <---- C ABI and typed values ----> Rust runtime
+#+end_example
+
+Rust maintains the Protobuf schema and maps decoded messages into the
+existing domain types. An external client uses the supported transport
+binding. The TS frontend SDK or a Marlin-maintained runner supplies that
+binding. A downstream TS package implements a typed handler or UI against
+the SDK surface. Service startup, endpoint configuration, and wire handling
+belong to the engine and its transport binding. A browser frontend reaches
+the same service through a trusted client shell or a gRPC-Web gateway.
+The shell mediates the browser panel's scoped event and action access.
+
+Trusted Gerbil code enters through the existing C ABI, with Scheme
+values and typed Rust projections. A linked Scheme entry executes on its VM
+owner. Rust owns the host queues and delivers the results. The Gerbil module
+boundary keeps its Scheme type contract. The gRPC schema defines the external
+service contract. Both paths meet at the same Rust runtime admission and
+effect interfaces.
+[[https://grpc.io/docs/what-is-grpc/core-concepts/][gRPC core concepts]]
+[[https://github.com/grpc/grpc-web][gRPC-Web transport]]
+[[file:../30-gerbil/30.30-gerbil-typed-runtime-boundary.org][Gerbil typed runtime boundary]]
+
+The initial contract keeps TS execution in the client. If a future plugin
+needs a headless TS handler, Marlin can supply a managed runner that connects
+to the Rust service. A runner would dispatch typed requests to the handler
+in an isolated JavaScript process. Its transport client is shared Marlin
+infrastructure. The plugin author supplies the handler and declaration.
+The runner and its isolation remain a separate integration decision.
+
+*** Performance of the two boundaries
+:PROPERTIES:
+:CUSTOM_ID: plugin-performance
+:END:
+
+OpenSysML requirement =MAR-PLG-R05= allocates high-performance execution to
+the Rust execution path and message channels, the Scheme C ABI bridge, and
+the external gRPC service. The project entry selects its
+=MarlinAgentCore::performanceDesign= view. The design keeps compiled
+transitions in Rust, batches Scheme projections at the planning boundary,
+and delivers client events asynchronously.
+[[file:../../dev/sysml/plugin-engine.sysml][Performance allocations]]
+
+Use the upstream gRPC benchmarks and performance guidance as the transport
+baseline. The gRPC project publishes continuous unary and streaming benchmarks,
+including Node.js. Its maintained =@grpc/grpc-js= client and server provide
+the Node.js ecosystem reference. Apache Arrow Flight demonstrates a
+high-throughput application design that combines gRPC with Arrow IPC and
+streams record batches. Marlin uses gRPC for its own typed plugin commands
+and events.
+[[https://grpc.io/docs/guides/benchmarking/][gRPC benchmark program]]
+[[https://github.com/grpc/grpc-node/tree/master/packages/grpc-js][gRPC for Node.js]]
+[[https://arrow.apache.org/docs/format/Flight.html][Apache Arrow Flight RPC]]
+
+Reuse gRPC connections and stubs across calls. Use unary requests for
+discrete commands and a bounded server stream for status events. Group
+related messages when it reduces per-call work without adding excessive
+wait. Rust owns backpressure, ordering, and cancellation for host
+operations. Execution and lifecycle checks stay in the engine. The client
+can consume progress independently.
+[[https://grpc.io/docs/guides/performance/][gRPC performance practices]]
+
+On the Scheme C ABI path, reuse =ResolvedLoopPolicyPack= and =LoopProgram=. Scheme
+projects the composed policy at activation or a planning boundary. Rust
+executes the compiled transitions and checks live grants at effect
+admission. Keep audit details with the policy epoch and identify each
+decision in the receipt. When a Feature needs resident Scheme computation,
+reuse bounded submissions and owned results through the bridge. Scheme
+roots and continuations stay with their originating VM.
+[[file:40.165-loop-policy-ir-performance-boundary.org][LoopPolicyIR Performance Boundary]]
+
+Marlin's performance research focuses on policy composition, C ABI projection,
+Rust message scheduling, effect admission, and receipt production. Use
+end-to-end workflows to find where these costs accumulate under load.
+
+*** Agent Call execution and batching
+:PROPERTIES:
+:CUSTOM_ID: agent-call-path
+:END:
+
+=MAR-PLG-P01= allocates each stage of an Agent Call to its owner. The view
+=MarlinAgentCore::agentCallPath= shows the compiled Rust path, the Scheme
+planning branch, and their convergence at the Rust execution receipt.
+[[file:../../dev/sysml/plugin-execution.sysml][Agent Call execution model]]
+
+Tokio schedules Rust tasks and drives host I/O. Rust owns message admission,
+ordering, backpressure, effect grants, and cancellation. Inside the
+owner-affine Scheme VM, Gerbil schedules Actors and green threads and owns
+Scheme objects and continuations. The C ABI connects the two scheduling
+domains. The engine uses this division for both single-owner operation and
+future separately qualified VM scaling.
+[[file:../30-gerbil/30.30-gerbil-typed-runtime-boundary.org][Typed runtime boundary]]
+
+| Stage | Owner and responsibility | Batching rule |
+|-------+--------------------------+---------------|
+| Decode and admit | Rust decodes the Agent Call, binds request identity to project, activation generation, and policy epoch, and reserves channel capacity under its live grant. | Admission is per call. Return the applicable denial or backpressure outcome at this boundary. |
+| Drain ready work | Tokio schedules the Rust message owner. The owner dispatches work subject to queue credits, scope order, and deadlines. | Drain a bounded group of already-ready messages. Dispatch a single ready message when it is the available work. Cancellation and close signals retain their own delivery path. |
+| Resolve plan | Rust selects a compiled =LoopProgram= for the current policy epoch and input dependencies, or requests a fresh Scheme decision. | Reuse compiled policy for ordinary transitions. Group Scheme requests at a planning boundary when new facts require Scheme evaluation. |
+| Submit and evaluate | Rust forms the batch, the C ABI enters on the selected VM owner, and Gerbil Actors and green threads evaluate inside the VM. Rust correlates each owned result with the originating request. | Submit once per batch through the C ABI. Group requests whose inputs are all ready and that share a Scheme VM owner, project scope, activation generation, policy epoch, and ABI operation. Bound count, bytes, estimated work, and oldest wait. Preserve the order required by stateful calls. |
+| Retire Scheme work | The bridge projects owned results into reserved host capacity. The VM owner releases VM capacity after retirement. | Reserve result space before admitting Scheme work. Track in-flight Scheme work credits, ready results, and client delivery separately. |
+| Execute and record | Rust qualifies the plan, checks live authorization for each effect, and retains the node and effect outcomes with the terminal receipt. | Preserve one semantic receipt per relevant outcome. A future storage group commit must preserve receipt identity, order, and the promised acknowledgement boundary. |
+| Return and observe | Rust returns the call outcome or receipt reference and independently offers an event to the scoped client channel. | Client delivery can group ready events in stream order. The bounded observer channel never gates execution or receipt acknowledgement. |
+
+The Scheme batch carries typed facts and per-request bindings. Scheme returns
+owned projections or typed failures through the bridge. Rust checks ABI
+readiness, result identity, and current epoch and generation before using a
+projection. Closing a generation fences new effects. A timeout ends the
+caller's wait. Scheme work already admitted keeps its roots and capacity
+until the owner retires it. A late result can record a historical outcome
+or cleanup. Rust's live fence governs any subsequent effect.
+
+Record the applicable admission decision, Scheme outcome, and actual effect
+or terminal result with their separate identities. A transport acknowledgement
+of enqueueing denotes acceptance only. A response that promises durable
+completion follows the receipt store's acknowledgement boundary. Offline
+export and client display consume the recorded evidence as downstream work.
+
+*** Research behind the execution boundary
+
+| Source | Design consequence for Marlin |
+|--------+-------------------------------|
+| Danvy and Nielsen, /Defunctionalization at Work/ (2001) | Represent the finite continuation vocabulary as first-order operations with explicit captured data. Keep open-ended replanning in Scheme. |
+| Welsh, Culler, and Brewer, /SEDA/ (2001) | Put queues and admission at actual changes of execution owner. Bound load and batch policy requests there. Avoid adding a queue to Rust-local transitions. |
+| Hendler et al., /Flat Combining and the Synchronization-Parallelism Tradeoff/ (2010) | Combining work can amortize synchronization at moderate contention. A Scheme owner offers an analogous batching point. Bound batch wait and measure the serial owner ceiling before adding coordination. |
+| Dean and Barroso, /The Tail at Scale/ (2013) | Separate short planning calls from long work where semantics permit. Track completion tails and debt alongside throughput. Keep frontend fan-out off the execution path. |
+| Sivaramakrishnan et al., /Retrofitting Parallelism onto OCaml/ (2020) | Treat multicore GC and single-thread performance as separate runtime concerns. Apply that lesson to evaluating Scheme SMP. OCaml's measurements describe its own runtime. |
+
+[[https://doi.org/10.7146/brics.v8i23.21684][Defunctionalization at Work]]
+[[https://people.eecs.berkeley.edu/~prabal/teaching/resources/eecs582/welsh01seda.pdf][SEDA]]
+[[https://people.csail.mit.edu/shanir/publications/Flat%20Combining%20SPAA%2010.pdf][Flat Combining]]
+[[https://research.google/pubs/the-tail-at-scale/][The Tail at Scale]]
+[[https://icfp20.sigplan.org/details/icfp-2020-papers/21/Retrofitting-Parallelism-onto-OCaml][Retrofitting Parallelism onto OCaml]]
+
+Recent work gives more specific guidance for the chosen architecture:
+
+- Jasny et al. examine submission batching and show how larger batches can
+  amortize boundary cost while increasing wait and burst variance. The Marlin
+  design adopts an age bound and permits underfilled dispatch for the Rust
+  ready queue and Scheme batches. Their experiments concern Linux storage and
+  network I/O. [[https://www.informatik.tu-darmstadt.de/media/systems/pdf_publications/iouring_vldb.pdf][io_uring for High-Performance DBMSs, 2026]]
+- JITServe studies heterogeneous deadlines and the effect of combining
+  dissimilar work in model-serving batches. For Marlin, use separate handling
+  for short control messages and Scheme requests grouped by owner and operation. Preserve
+  per-call deadlines even when one submission carries several requests.
+  [[https://www.usenix.org/conference/nsdi26/presentation/zhang-wei][JITServe, NSDI 2026]]
+- BtrLog separates a durability acknowledgement from later asynchronous
+  archival. That distinction informs Marlin's receipt acknowledgement and
+  downstream export boundaries. The paper's storage design concerns
+  cloud database logs. [[https://arxiv.org/abs/2606.27051][BtrLog, June 2026 preprint]]
+
+Start from the single-owner contract. Independent owner VMs are one scaling
+path. Route stateful work by its owning scope and dispatch stateless batches
+to eligible owners with credits. Each VM retains its own heap and roots.
+Scheme SMP is a separate path for parallel work within one VM. It requires a
+qualified foreign-entry ABI and runtime support for scheduling, GC, and
+lifecycle across processors. PR #18 describes independent owners and marks
+Scheme SMP unsupported by its pinned toolchain. Both scaling paths can sit
+behind the same typed request and result boundary. Their bottlenecks differ.
+Independent owners contend at shared host services, while SMP also shares
+VM scheduling, GC, and heap coordination.
+
+*** Bridge throughput provenance
+
+The frozen single-VM Mailbox control records a real workload. At runtime
+source =7f915df=, a single C ABI call from Rust drives one million typed four-line
+orders through four resident Scheme workers, with an independent result
+check. It records 999,944.88 completions/s, zero rejection, 4.513 ms
+planned-to-consumed p99, and peak due-but-unconsumed debt of 4,853 against
+the unchanged limit of 128. A later replay with the same reader and image
+records 988,600.53/s and 18.018 ms p99. This is evidence for the throughput
+potential of a batched resident Scheme service, with outstanding tail and
+backlog limits. It motivates amortizing the boundary across work rather than
+using one C ABI call per message.
+[[https://github.com/tao3k/gerbil-scheme-rust/blob/73280277cdf5b5affa23a3a5d2dc40f2c1decc66/docs/10-19-design/10.50-mailbox-frozen-control-4513.org][Frozen single-VM Mailbox control]]
+
+At one million completions/s, one fully occupied CPU core has about one
+microsecond of CPU time per completion. Budget per-item work separately
+from fixed batch costs. C ABI entry, queue wakeup, and buffer setup can
+amortize over a batch. Contract checks that depend on an individual result,
+its allocation cost, and its effect receipt still consume per-item work.
+
+On 2026-11-10 the remote head of =gerbil-scheme-rust= PR #18 was =bfe803f=.
+The PR's documented twelve-VM service benchmark uses a different payload
+and request path from the single-VM Mailbox control. The current Marlin pin
+matches that PR head. The benchmark and control retain distinct workload
+identities.
+The Mailbox rate sizes a bridge research workload. A Marlin plugin run
+adds policy, authorization, and receipt costs with their own throughput and
+latency characteristics.
+[[https://github.com/tao3k/gerbil-scheme-rust/pull/18][gerbil-scheme-rust PR #18]]
+
+*** Where Actor throughput carries over
+:PROPERTIES:
+:CUSTOM_ID: actor-throughput
+:END:
+
+The Scheme VM Mailbox control already exercises typed inputs, Actor scheduling,
+business work, and independent result checking. One C ABI service invocation
+drives the whole workload. Marlin can preserve that locality when a trusted
+Feature uses several internal Actor messages to reach one policy decision.
+Rust submits the work and receives the decision at the boundary. The VM
+continues to schedule the internal messages and retains its working state.
+Locality-aware actor scheduling research distinguishes the cost of moving
+execution from the cost of moving data. That distinction supports keeping
+stateful work on its Scheme owner. Independent stateless batches can use
+other qualified owners through Rust admission. [[https://cs.uwaterloo.ca/~mkarsten/papers/ipdps2018-preprint.pdf][Work-Stealing, Locality-Aware Actor Scheduling]]
+
+For a repeated decision that fits =LoopProgram=, compile it at the policy
+boundary and reuse the immutable plan while the policy epoch and input dependencies match. A steady-state
+Rust transition then requires zero C ABI calls. For dynamic decisions,
+batching amortizes the cost of each remaining C ABI call, wakeup, and
+projection. Count Agent Calls, ABI entries, VM-internal Actor messages, and
+committed effects separately. A higher Actor message rate helps the VM part
+of the workflow. Fewer ABI entries and copies determine how much of that
+gain carries across the host boundary.
+
+The recent studies address three places where the surrounding engine can
+lose that gain:
+
+| Boundary | Marlin design consequence |
+|----------+---------------------------|
+| Ready queue and ABI submission | Borrow the age and size tradeoff from the io_uring study. Drain ready work and submit partial batches of ready requests for the same owner and operation when needed. Bound host queue residence and count payload projection separately. |
+| Mixed work at the owner | Borrow the deadline and workload grouping lesson from JITServe. Preserve stateful affinity, group similar ready policy work, and give cancellation and close signals an independent route. A queued batch and a running Scheme computation have different cancellation semantics. |
+| Scheme work retirement and evidence delivery | Reserve bounded result space before admission so already accepted work can retire even when a caller stops reading. Borrow the acknowledgement versus archival distinction from BtrLog. Required receipts retain their durability boundary, while export and client fan-out proceed independently. |
+
+The bridge's architecture notes document a wait cycle in which Scheme work
+retirement depends on client consumption. The model gives admission,
+retirement, and client delivery their own stages and capacity bounds. A slow
+reader can exhaust its result budget and stop further admission. Accepted
+Scheme work can still retire into the reserved space. An oversized projection
+produces a typed failure within the reserved capacity. This integration
+requirement follows the bridge's ownership model. Attribution of the
+historical watchdog and tail excursions remains open.
+[[https://github.com/tao3k/gerbil-scheme-rust/blob/codex/typed-fold-aot/docs/10-19-design/10.03-gerbil-actor-executor-architecture.org][Gerbil Actor and Rust executor architecture]]
+
+*** One engine with two Scheme targets
+
+The production path is a Rust engine with Gerbil policy running in the Scheme VM. Rust owns the
+loop, project isolation, model and tool dispatch, concurrency, cancellation, and
+the durable effects ledger. Gerbil and the AI Agentic Lib ecosystem compose
+policy at configuration or run boundaries. Parser supplies structured facts
+and ASCENT can derive relations and their provenance when a policy needs them.
+A derivation can explain a proposal. Only the Rust admission path can grant
+the effect. The reusable engine unit is the typed plan and its catalogued
+operations. Different policy presets can choose and compose those operations
+under the same admission and evidence rules.
+
+#+begin_example
+Project facts -> trusted Gerbil policy -> typed proposal / compiled plan
+    -> Rust graph admission -> Rust model, tool, and workspace effects
+    -> typed receipts -> offline verifier and bounded client projections
+
+Portable Scheme calculation -> Gambit JS -> isolated client preview
+    -> advisory result for display
+#+end_example
+
+Gambit JS gives a selected calculation a second target. Start with a pure
+policy helper that chooses a draft template from a small, explicit set of
+facts. The Scheme policy and a client preview can share that source. The
+preview takes synthetic or explicitly client-visible data. Brief-to-Draft's
+v0 status panel still receives only the status projection. When a user runs
+the workflow, the trusted policy receives current host-owned facts, and Rust
+decides whether to admit the proposed write. A browser result has no execution
+authority. Broader Gerbil, Parser, or ASCENT portability is a library-by-library
+question, including module expansion, C ABI bindings, and runtime dependencies.
+
+The first leverage check is a second setting value that selects a different
+template for the same brief. Both variants use the same module closure, graph
+executor, read and create capabilities, effect admission, and receipt schema.
+The change is a TOML setting and can ship as a new preset or be applied by a
+project operator. Adding a new effect primitive is host work. Downstream
+authors can reuse the safety and replay behavior of existing primitives.
+
+*** Reusing Scheme semantics in the JavaScript ecosystem
+:PROPERTIES:
+:CUSTOM_ID: gambit-js-leverage
+:END:
+
+Start with a data projection of the approved options. AI Agentic Lib already
+exposes the effective POO slots through =agentic-ai-lab-module-option-schemas=.
+Marlin still needs to project the public fields into its versioned client
+contract. The TypeScript SDK can render fields, defaults, and help from that
+projection. In Brief-to-Draft, the proposed form exposes the audience toggle
+and template choices. A declarative plugin can use the same form without
+shipping executable client code. A finite rule can also ship as data when
+the existing client contract can express it.
+
+Gambit JS earns a place when the same deterministic calculation is useful in
+the Scheme VM and in an interactive or offline client. For Brief-to-Draft,
+the first candidate is an audience/template check on explicit values. It can
+return a template ID or a diagnostic naming both public options. The author
+can test it with synthetic inputs in a local preview. TS owns controls and
+rendering and can call the generated helper through a typed adapter. The
+preview identifies the policy revision and input snapshot it describes.
+The default status panel retains its existing event projection. A preview
+failure leaves the settings and the engine available.
+
+The policy publisher selects the helper and fixes its dependency closure at
+build time. Gerbil can expand authoring macros before Gambit generates JS for
+the selected helper. An exported calculation must have bounded, explicit
+inputs and outputs and depend only on the selected portable code. Keep
+module discovery, POO override resolution, project data access, and effect
+admission on their existing Scheme VM and Rust paths. Bind the preview asset
+to its policy and client contract revisions, including the linked runtime in
+the asset's verified build inputs. npm can distribute the prebuilt asset.
+The host composes the actual effective settings and Rust records activation
+and execution receipts.
+
+The browser-side benefit is immediate local feedback and reuse of a policy
+calculation across environments. Use the small audience/template check to
+qualify the toolchain. Compare it with the data-only client before choosing
+how to ship the fixture. More expressive deterministic rules or diagnostics
+justify executable assets when they remove duplicate behavior or a server
+round trip at an acceptable client cost. Measure the complete shipped asset,
+including its runtime, plus cold startup, first preview, and memory in the
+intended client. The Agent Call execution path has no dependency on the
+preview asset.
+
+*** Runtime boundary and cost
+
+| When | Execution path | Cost and authority invariant |
+|------+----------------+------------------------------|
+| Install and enable | Rust verifies the bundle and resolves contribution and policy references. | Package validation and catalog lookup occur before publishing an activation. npm is outside this path. |
+| Policy change or run boundary | Gerbil composes or selects policy. Typed C ABI projection yields a bounded Rust plan or proposal. | Key reusable compilation by resolved policy inputs, compiler and schema versions, and ABI identity. Bind each plan to its input snapshot, activation, and policy epoch. |
+| Effect admission and streaming | Rust checks the live project grant and generation, then dispatches effects and records receipts. | Cached plans confer no authority. This plugin path adds no JS or Scheme callback to token streaming, per-tool dispatch, or cancellation. |
+| Client observation and preview | Rust emits bounded projections. TS or Gambit JS runs within the client isolation boundary. | The engine never awaits panel code. Preview cannot admit effects or amend receipts. |
+
+A host-side Gambit JS worker is a separate research candidate. It would serve
+a demonstrated need for a portable policy calculation on a host where the linked Gerbil runtime is unsuitable. Its Brief-to-Draft request, trust boundary, and
+qualification gates are specified below. Its evaluation must justify the
+extra process, codec, JavaScript runtime, and maintenance cost.
+
+*** Gambit evidence and target qualification
+
+Gambit's manual documents the C and JavaScript targets and shows that a
+runnable JavaScript program links generated code with the Gambit JS runtime.
+In a local arm64 scratch probe on 2026-11-10, the Gerbil 1cfb032 toolchain
+reported Gambit ea114fc. A three-case Scheme helper selected release-note,
+brief-note, and denied under =gxi=. With the compiler's runtime root set to
+the installed toolchain, =gsc -target js -c= emitted a JS module and
+Node v25.8.2 accepted its syntax. The installed Gerbil release's Gambit
+=gsc -v= reports ~--enable-targets=~, an empty list of targets to build
+alongside C. The JS executable build raised a missing-file exception for
+=bin/gambuild-js=. The same release ships =bin/gambuild-C= and lacks
+=lib/_gambit.js=. The compiler can emit JS modules with this configuration,
+but the package lacks the files needed to produce and run a linked program.
+[[https://gambitscheme.org/4.9.7/manual/][Gambit compiler manual]]
+[[https://github.com/gambit/gambit/blob/master/INSTALL.txt][Gambit build options]]
+
+A second scratch probe with the same compiler revisions used a Gerbil =.ss=
+module with =defrules= and an exported function. The installed =gxc -target js=
+option emitted JavaScript into =portable.c=, then invoked =gsc -obj= on
+that file without forwarding the JS target. The C compiler rejected it.
+The same module built with =gxc -target C= in a clean shell environment.
+=gxi= loaded the compiled module and returned both expected template IDs.
+Separating macro expansion from JS generation with =gxc -S= and Gambit's
+=gsc -target js -c= emitted a module that passed =node --check=. The linked
+JS runtime, exported client entry point, and behavior of the full fixture
+remain unqualified. GxJS documents another Gerbil-to-JS toolchain and
+runtime as prior art.
+[[https://github.com/drewc/gxjs][GxJS toolchain]]
+
+Use a pinned toolchain that ships the JS runtime for qualification. Run the
+same helper corpus on the Scheme VM path and on linked JS. Compare typed outputs
+for nominal inputs and rejection cases, including size limits and any numeric,
+string, or ordering semantics used by the helper. Then run it in the intended
+isolated client without npm, network access, or ambient APIs. Record compiler
+and runtime revisions, artifact digests, startup time, bundle size, and peak
+memory. Treat the compiler, generated code, and linked runtime as supply-chain
+inputs. The same client isolation rules apply to Gambit and TS assets.
+
+** Artifact and Contract
+
+The install unit is a prebuilt bundle. Its Rust-owned manifest declares a
+namespaced =PluginId=, =PluginVersion=, exact contract major, required schema
+features, asset paths and hashes, requested capabilities, and contributions.
+The Rust type system distinguishes plugin, contribution, policy module,
+capability, and receipt identities. Contribution lookup is scoped by plugin
+identity. A release binds the manifest and complete payload to a verified
+bundle digest. Installing another digest under the same ID and version is a
+conflict. A newer release installs disabled and needs its own project grant.
+
+v0 has two contribution kinds:
+
+- =WorkflowPreset= binds typed invocation and settings schemas to a
+  host-registered policy module. It may declare defaults for published options.
+  The host bounds the graph and resolves effects through its own catalogs. The
+  manifest cannot name an executable, define a new effect handler, or override
+  a host service.
+- =ClientPanel= declares a prebuilt local entry asset and a list of supported
+  read-only event projections. Its authority is scoped to that panel instance,
+  project, and activation. The host UI or CLI starts workflows through the
+  ordinary authorized entry point. v0 client panels have no write or workflow
+  invocation channel.
+
+At install the host rejects unsupported contract versions, unknown fields or
+contribution kinds, and missing assets. At enable it rejects unresolved catalog
+IDs and mismatched schemas. It can validate packages and run workflows
+headlessly. Clients discover panels whose interfaces they support independently of graph execution.
+
+** Supply Chain and Client Isolation
+
+The JavaScript supply chain is a primary reason for keeping the v0 TS surface
+in the frontend. The relevant risks are dependency selection, build-time
+execution, and the behavior of shipped scripts. Rust types and Scheme
+contracts define the accepted interface and policy values. Artifact integrity
+and client isolation govern what a dependency can execute and access.
+
+Rust imports data and hashed assets from a local artifact. It validates the
+archive shape and limits before committing it to immutable storage. Absolute
+paths, traversal, symlinks, duplicate entries, and oversized payloads are
+rejected. Installation verifies the publisher signature against a configured
+trust root, verifies the bundle digest, and records the publisher, source
+revision, and build evidence reference. A signature authenticates the release
+under that trust root. Project approval and client isolation govern its use.
+
+If npm distributes a release, the operator or distribution tooling obtains
+the same prebuilt bundle before handing it to Marlin. The host never resolves
+dependencies, runs package scripts, imports package modules, or fetches assets
+on activation. Release metadata identifies the pinned source and build inputs,
+including the lockfile digest for npm builds, and inventories the shipped
+dependencies. Build provenance records how the artifact was produced. The
+release still receives a separate project authorization decision.
+[[https://slsa.dev/spec/v1.2/build-provenance][SLSA build provenance]]
+
+Qualify the reference frontend build from a pinned toolchain and lockfile in
+an isolated build environment. Disable dependency lifecycle scripts by default
+and identify any required script as an explicit build input. Keep project and
+runtime credentials out of the build environment. Bind the shipped asset
+digests to the release metadata. Validate client messages on ingress even when
+the SDK supplies their TypeScript types.
+[[https://docs.npmjs.com/cli/v11/commands/npm-ci/#ignore-scripts][npm lifecycle script controls]]
+
+A client may mount a panel only if it can enforce isolation for untrusted
+scripts. It serves the verified local assets in an isolated context without
+host origin, credentials, storage, or C ABI bindings. The client denies
+network egress, external navigation, popups, and downloads. It allows only
+the declared local assets and a bounded typed bridge. The bridge authenticates
+the mounted instance, validates each message, and exposes only the granted
+project event fields. Rendering, payload size, event rate, and lifetime are
+bounded by the client. Panels have no access to raw prompts, file contents,
+credentials, or arbitrary receipt queries. If these controls cannot be
+enforced, the client records a mount denial and the workflow remains available
+headlessly. The frontend sandbox and its egress controls need a separate gate.
+[[https://html.spec.whatwg.org/multipage/iframe-embed-object.html#attr-iframe-sandbox][HTML sandbox semantics]]
+
+** Grants and Lifecycle
+:PROPERTIES:
+:CUSTOM_ID: plugin-lifecycle
+:END:
+
+The manifest requests a capability ceiling. A project operator grants an
+explicit subset to a specific =ProjectId= and bundle digest. The host checks
+the intersection of manifest request, current project grant, current host
+policy, and contribution scope. A grant for a workspace file resolves to a
+host-controlled path under the selected worktree. The workspace broker checks
+containment and symlink safety at the effect boundary. There is no implicit
+shell, network, model, secret, or filesystem authority.
+
+Each contribution declares the capabilities it requires. Enable requires all
+workflow grants. Panel eligibility additionally requires its observation grant.
+Any replacement of an active grant closes the current generation before a new
+one can publish.
+
+1. *Install* validates and stores the immutable bundle. The install receipt
+   identifies its digest and verification outcome. Installation alone publishes
+   no contribution and grants no project access.
+2. *Enable* validates the project grant and resolves the contribution schemas,
+   policy module, settings, and required runtime readiness. It publishes the workflow
+   route and panel eligibility under one project activation generation. An
+   enable failure leaves the generation unpublished and records a typed denial.
+   A later mount failure is client-local. Repeated enable with the same active
+   bundle, grant, resolved configuration, and module revision returns the
+   existing generation.
+3. *Invoke* binds the run to that generation, the grant revision, and policy
+   epoch. Admission and effect results carry typed receipts. A policy intent
+   outside the grant is denied before dispatch. The host rechecks the live
+   generation and authority when admitting each effect.
+4. *Disable or revoke* closes the generation to new runs and effect admission,
+   detaches subscriptions, and invalidates mounted panel bridges. Effects
+   already admitted may finish or be cancelled by the owning runtime. The
+   disable receipt records those outcomes and completes after the generation
+   quiesces. Committed effects remain visible in evidence. Re-enable creates a
+   new generation after quiescence and cannot restore old handles.
+
+Admission and closure serialize for a project activation. Retries of lifecycle
+operations return the recorded outcome for the same request ID. After a crash,
+the host reconciles pending effect outcomes before declaring cleanup complete.
+An indeterminate outcome is recorded as such and is never automatically retried
+as a fresh effect. History remains available subject to project evidence access
+and retention policy.
+[[file:40.120-project-scoped-agent-graph-runtime.org][Project-scoped Agent Graph Runtime]]
+
+** Comparison with Pi Extensions and DeepSeek Harness
+
+The upstream interfaces in this comparison were reviewed on 2026-11-10.
+
+Pi packages can group extensions, skills, prompt templates, and themes and
+ship through npm, Git, or a local path. An extension runs TypeScript or
+JavaScript in the Pi host, can register tools and commands, and can intercept
+agent and tool events. Pi gates project-local resources on project trust and
+documents that loaded extensions run with the user's system permissions.
+Session shutdown and reload give extensions lifecycle hooks for cleanup.
+[[https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/extensions.md][Pi Extensions]]
+[[https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/packages.md][Pi Packages]]
+
+DeepSeek Harness composes Node.js profiles from Cordis bundles. Host plugins
+can inject services, register tools and model adapters, and attach effects
+that Cordis disposes with the plugin. Profiles can replace core services such
+as the agent loop. Its Web client has named slots for UI contributions. These
+are separate extension surfaces, and the host also has its own tool approval
+and sandbox policies.
+[[https://deepseek-harness.github.io/deepseek-harness/en/reference/][DeepSeek Harness Architecture]]
+[[https://deepseek-harness.github.io/deepseek-harness/en/develop/framework/][Cordis lifecycle]]
+[[https://deepseek-harness.github.io/deepseek-harness/en/reference/subsystems/slots][Web Client Slots]]
+
+At the loop level, Pi exposes interception around the provider request and
+tool execution, including hooks that can rewrite inputs or results. DeepSeek
+Harness has a pre-step chain whose result controls step entry and a scoped tool
+execution pipeline. DeepSeek Harness also documents replay of its retained
+provider stream from durable session events. Marlin should compare these
+behaviors by stage. Its proposed offline verifier checks project authorization
+and recorded effects in addition to reconstructing the recorded workflow.
+[[https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/extensions.md][Pi hook ordering]]
+[[https://deepseek-harness.github.io/deepseek-harness/en/reference/agent-lifecycle][DeepSeek Harness agent lifecycle]]
+[[https://deepseek-harness.github.io/deepseek-harness/en/reference/subsystems/tools][DeepSeek Harness tool execution]]
+
+| Brief-to-Draft question | Pi Extensions | DeepSeek Harness | Marlin v0 design |
+|-------------------------+---------------+------------------+------------------|
+| Who owns the execution loop? | Pi supplies the loop. TS extensions can influence live decisions through host hooks. | The agent loop is a service that a profile can replace. Host plugin callbacks can run on live event paths. | Trusted Gerbil can replace loop strategy and compose a different typed =LoopProgram=. Rust runs admitted transitions and owns effects. The engine never awaits panel callbacks. |
+| Where would draft behavior live? | A TS extension can register a command or tool and supply its implementation. | A Cordis host plugin can register a tool against an injected service. | The manifest selects a trusted module and sets declared options. Rust executes catalogued operations and owns the write. |
+| How does a downstream author change the draft template? | The extension can supply code and expose its own configuration. | A profile can configure a plugin that exposes the setting. | The author changes a typed setting in TOML. The same host module, binary, and grants serve both template variants. |
+| What can the UI observe? | An extension can subscribe to agent events and provide terminal UI. | A client contribution can mount in a Web slot. Host plugins can also listen to Cordis events. | An isolated panel receives only the three projected workflow events defined below. |
+| What does disabling mean? | Session teardown and reload give extension code a cleanup hook. | Fiber disposal unwinds registered effects and awaits cleanup. | Closing the project activation revokes new admissions and panel delivery. A typed receipt accounts for effects already admitted. |
+| What is installed? | A package can carry executable extensions and runtime dependencies. | A bundle composes code and configuration into a profile. | Rust imports a signed, digest-pinned bundle of declarations and optional client assets. Project grants are issued separately. |
+| What does the host retain? | Extensions can append custom session entries. | The session log stores durable session events, with live events on separate surfaces. | The proposed export binds plugin identity, grants, policy revision, and effect receipts for offline verification. |
+
+Pi's executable extension API gives authors direct access to the running
+agent's hooks, tools, and commands. Marlin's primary authoring surface is a
+configuration schema. Authors reuse installed modules and publish workflow
+presets as data. Rich client features can use the TypeScript SDK. New policy
+semantics enter through trusted module provisioning. Cordis lifecycle and UI
+slots are references for owned registration cleanup and separate client entry
+points. Brief-to-Draft tests Marlin's authority boundary through denial and
+offline receipt verification. The comparison covers documented interfaces and
+the proposed Marlin contract. Engine performance and cross-host plugin
+portability require separate evidence.
+[[file:40.140-pi-agent-core-loop-parity.org][Marlin's separate Pi loop parity plan]]
+
+*** Where users extend Marlin
+
+| Author's need | Open surface | Boundary |
+|---------------+--------------+----------|
+| Change a workflow, profile, or project setting | A declarative bundle and typed TOML options | Selects registered modules and operations under separate project grants. |
+| Build a panel, visualizer, or configuration tool | TypeScript or Gambit JS client SDK | v0 panels observe bounded events. Client tools may compute previews from user-supplied data. |
+| Add a client interaction that requests a workflow | Candidate for a later contract with an explicit action such as =RequestWorkflowRun= | Rust would resolve a registered route, check a specific grant and trusted user intent, and return a receipt. The panel would receive no general tool, shell, or policy mutation API. |
+| Add or replace a composition rule, graph strategy, or hook policy | Trusted Gerbil/POO module | Separately provisioned and ABI-qualified. Dynamic hook actions refer to existing Rust catalog handlers. |
+| Provide a new filesystem, model, scheduling, or other runtime implementation | Trusted Rust host component | Registered through its owning interface. The host governs lifecycle, effects, and evidence. |
+
+Marlin's public plugin contract limits which components an ordinary bundle
+can activate. Its trusted composition plane has its own replacement surfaces.
+The authority of a contribution comes from its registered role and project
+grant. TypeScript can grow through specific client actions. Scheme can add
+or replace trusted policy semantics through POO composition. New privileges
+require a host decision for either language.
+
+*** Authoring Features with Scheme and TypeScript
+
+The design target is the Emacs package author's ability to make a small,
+local change to an existing system and get a useful new behavior. Emacs
+offers Lisp hooks and advice for this kind of extension. Doom adds a way to
+select named modules and their flags from a short user configuration. For
+Marlin, a Feature should expose a clear name, documented options, typed
+requirements, and examples. An operator can enable it through TOML. A trusted
+Scheme author can reuse its policy objects, specialize a slot, or publish a
+derived Feature through the existing library.
+[[https://www.gnu.org/software/emacs/manual/html_node/elisp/Advising-Functions.html][Emacs Lisp advice]]
+[[https://github.com/doomemacs/core/blob/master/docs/getting_started.org][Doom modules and flags]]
+
+POO has a published model of extensible computation. Rideau, Knauth, and Amin
+describe functional prototypes, open recursion, and multiple inheritance.
+For a policy author, the useful property is that a derived strategy can change
+one decision while inherited behavior observes the composed object. Scheme
+macros can turn a concise Feature declaration into inspectable descriptors
+and options. Existing role precedence and slot policies decide which
+definition wins. Gerbil-POO's structural and invocation contracts check the
+values and call boundaries selected by the composed policy. Rust checks the
+project authority needed to execute its effects. The paper supports the
+composition model. The selected contracts and Marlin acceptance fixtures
+establish the behavior of specific extensions.
+[[https://namin.seas.harvard.edu/pubs/scheme-poof.pdf][Prototypes: Object-Orientation, Functionally]]
+[[https://github.com/tao3k/gerbil-poo/blob/103aa5aea18da7b802f221f4bd849ef843d48651/doc/object-contracts.md][Gerbil-POO object contracts]]
+
+| What a Brief-to-Draft author wants | What to write |
+|-------------------------------------+---------------|
+| Pick a template or enable a published render-only Feature | A TOML setting in the workflow preset or project configuration. |
+| Show workflow progress or the recorded outcome | A TS panel over the allowed event projections. |
+| Change the continuation after rendering | A trusted Gerbil Feature deriving from the base strategy and overriding the relevant policy slot. Contract checks and the activation receipt identify the selected strategy. |
+
+The AI Agentic Lib working checkout at =a389bc6= contains
+=defpoo-feature=, =defpoo-feature-profile=, and =resolve-feature-profile=.
+The Lab source baseline above pins =cd794638=. Marlin must select and qualify
+the revision it consumes before treating those Feature entry points as part
+of its shipped integration. The proposed render-only Feature can exercise
+that path by changing one policy decision, inheriting the existing brief and
+render behavior, and recording which override produced the effective policy.
+A malformed override or missing required capability must
+fail before activation. This makes author effort and reuse observable
+alongside runtime cost when comparing with a Cordis extension.
+
+*** Replacement in the trusted composition plane
+
+Cordis composes a live service context. Profiles select service providers,
+plugins declare dependencies through =inject=, and fibers own effects and
+their cleanup. POO composes policy objects through prototype inheritance,
+role linearization, slot overrides, and specialization. In Marlin a trusted
+profile can replace an entire policy object or override part of it while
+reusing the rest. Composition and validation produce a new immutable policy
+epoch. Rust binds the resulting typed plan to an activation and continues to
+own effect admission and lifecycle. Compare these concrete mechanisms and
+their observable outcomes. The upstream Cordis documentation describes
+services, events, and lifecycle effects.
+[[https://deepseek-harness.github.io/deepseek-harness/en/develop/framework/service][Cordis services and dependencies]]
+[[https://deepseek-harness.github.io/deepseek-harness/en/develop/framework/][Cordis plugin lifecycle]]
+[[file:40.165-loop-policy-ir-performance-boundary.org][POO composition and LoopPolicyIR]]
+
+| Replacement surface | Mechanism | Evidence or qualification boundary |
+|---------------------+-----------+------------------------------------|
+| Routing or continuation policy | A trusted POO module specializes slots or supplies a different strategy under the same typed contract. | Marlin has a Gerbil routing selector exposed through the C ABI and Scheme policy slot-merge receipts. Plugin-level provisioning, switching, and replay require acceptance. |
+| Whole loop behavior | A trusted composition supplies a different =LoopProgram= with its own transition and continuation rules. | Rust has =LoopProgram= and =GenericLoopMachine=. Qualification must show that two trusted Scheme policy packs can drive distinct loops through the same admission and receipt path. |
+| Runtime service implementation | A trusted host replaces the implementation behind a typed provider, tool, or other runtime interface. A Scheme policy can select an approved handler or service ID where the interface exposes that choice. | =ProviderRuntime= and =ToolRuntime= already exist. Each replacement still needs lifecycle, capability, and receipt qualification. |
+
+For a replacement check beyond changing a Brief-to-Draft setting, provision
+two trusted strategy objects over the same brief and draft operations. The
+base strategy renders and creates. A derived strategy overrides the
+continuation to stop successfully after rendering. Run each strategy headlessly
+with the same brief, template, and project grant in separate fresh worktrees.
+Verify that the rendered byte digests match and the policy epochs differ.
+The base records a write receipt. The derived strategy records a terminal stop,
+zero admitted create calls, and an absent output file. A continuation value outside the declared contract fails contract validation before admission. This fixture
+checks POO override and Rust effect admission together. A provider or storage
+replacement needs its own matched fixture.
+
+*** Connecting the JavaScript ecosystem
+
+Marlin has one execution authority and separate extension interfaces. The
+Scheme C ABI bridge connects the Rust engine to the trusted Scheme VM. JavaScript
+uses the client bindings for the Rust-owned service. A future managed tool
+runner can connect through the same service boundary. Scheme policy can
+select an external tool by its capability ID. The Rust runtime resolves the
+handler and owns dispatch, grants, and receipts.
+
+#+begin_example
+Declarative bundle -> Rust configuration -> Scheme VM policy -> typed plan
+                                            Rust admits and runs the plan
+TS or Gambit JS panel <- scoped events <- client shell <- Rust gRPC service
+External connector handler <- managed runner <-> Rust gRPC service (research)
+#+end_example
+
+Use npm on the author side to distribute the thin TS bindings, portable
+Gambit JS helpers, and prebuilt client or connector assets. Rust's canonical
+schemas define the public messages. The TS SDK exposes typed declarations
+and handlers. Marlin maintains the transport implementation behind that
+surface. The host validates all messages. A v0 headless deployment runs the
+same declarative workflow with the same
+policy and receipts without a JavaScript runtime. An external connector can
+use its own JavaScript runtime outside the engine.
+
+The v0 contribution kinds are the workflow preset and client panel. A
+host-registered external connector is separate research. For example, a
+Brief-to-Draft connector can retrieve an approved style guide and normalize
+it to a typed snapshot. A declarative profile selects
+the registered =fetch-style-guide= capability. Gerbil can use the returned
+facts to choose a template or rendering rule. Rust treats the remote payload as
+untrusted data, records its origin and digest, and admits any resulting
+workspace effect through the normal broker.
+
+The connector's execution grant is specific to the project, operation, and
+approved remote destination. Start with a host-brokered request to an
+allowlisted endpoint. The broker owns credentials, deadlines, and response
+limits. The isolated connector receives only the scoped request inputs and
+response data needed for its transformation. Rust maps its result to the
+existing =ToolRuntime= and tool receipt interfaces. A connector has no direct
+registration authority over models, hooks, policy modules, or workspace
+handlers. Packages that require unrestricted networking or host credentials
+fall outside this candidate's capability model. Qualify a broker and sandbox
+backend before offering the connector surface.
+[[file:40.130-sandbox-backend-capability-protocol.org][Sandbox backend capability protocol]]
+
+*** Where reuse pays off
+
+The reusable assets are published options, typed facts, policy modules,
+catalogued operations, and receipts. Brief-to-Draft can reuse one approved
+brief schema and one draft creation operation across different project
+presets, CLI and Web clients, and model routes. Add a new template option in
+one policy module and callers can use it through the published settings schema
+that exposes it. Add the style-guide connector once and multiple
+trusted policies can consume its typed snapshot under their own grants. The
+client can render a receipt summary, and offline verification can inspect the
+same recorded effect after the connector and client are gone.
+
+Reuse comes from composing behavior and sharing a stable effect boundary.
+The first leverage test is two projects using different Brief-to-Draft
+settings through both headless and client entry points. Verify that the
+variants share the capability catalog and receipt schema, while each retains
+its own grant and settings evidence. The trusted strategy replacement check
+changes control flow while keeping that same effect boundary. The connector
+experiment adds one external data source to the matrix and checks which
+pieces actually need to change.
+
+*** Keep language crossings off the hot path
+
+Compose and validate Scheme policy at activation or when the policy epoch
+changes. When a run needs new policy decisions, submit a bounded batch at a
+planning boundary and project compact owned results. Reuse an immutable plan
+while its schema, policy revision, effective settings, and input dependencies
+match. Rust checks live authorization at each effect. Plan reuse conveys no
+grant. Streaming, scheduling, and cancellation stay in Rust. The panel is a
+bounded asynchronous observer. An external connector incurs IPC and network
+cost only for the explicit tool invocation that depends on its result.
+
+Keep owner queue wait, Scheme evaluation, C ABI projection, connector IPC,
+and remote service time separate in measurements. Compare matched runs with
+the same receipts enabled. Add a saturation case with concurrent slow
+connector calls and unrelated Rust and Scheme workflows, and measure the unrelated
+workflows' p99 and cancellation latency. Also measure a stalled client
+subscriber. These checks establish whether the queues and capability boundaries
+preserve throughput and tail latency. Language choice alone provides no
+performance result.
+
+*** Matched comparison plan
+
+| Question | Workload and controls | Report |
+|----------+-----------------------+--------|
+| How much does policy or observation cost inside Marlin? | Hold inputs, outcomes, concurrency, grant, and receipt mode constant. Compare a pre-resolved Rust plan, the resident Scheme VM owner, and the separately qualified resident JS worker if available. Run the same plan with the panel absent, responsive, and stalled. | Cold startup separately from warm runs. Measure owner queue wait, evaluation and GC, C ABI projection or IPC codec cost, crossings, p50/p95/p99, peak RSS, and sustained throughput. |
+| How do the three engines run the same workflow? | Pin three revisions and use the same machine, brief bytes, deterministic draft, storage conditions, and serial and concurrent workload. Implement equivalent observable behavior in each system's documented extension model. Keep install and startup separate from steady-state runs. | Output bytes and failure behavior first, then cold and warm latency, p50 and p95, throughput, peak RSS, and extension authoring surface. Disclose differences in authorization and persistence work. |
+| What changes under real agent-loop behavior? | Use a scripted provider with the same request and event schedule, tool results, concurrency, cancellation point, and backpressure stimulus. Report model and filesystem costs separately from host work. | Time to first projected event, end-to-end completion and cancellation latency, and whether in-flight effects are accounted for. |
+| Can the claimed boundary be falsified? | Exercise a denied read or write, disable racing a write, a stalled panel, and offline evidence verification. Record which operations each system actually exposes and the controls used to enforce them. | Denial point, side effects, surviving subscriptions, and replay coverage. Keep unmatched features separate from any speed comparison. |
+
+The lightweight workflow compares authoring and runtime overhead. The
+scripted agent loop compares dispatch and streaming. Neither is a live model
+quality test. Use the same persistence and receipt obligations where possible.
+Where they differ, report costs separately rather than deriving a single
+speed ranking. The Marlin acceptance gate requires correct effects, denials,
+and replay before performance results can support a design decision.
+
+** Acceptance Scenario — Brief-to-Draft
+:PROPERTIES:
+:CUSTOM_ID: brief-to-draft
+:END:
+
+=org.marlin.examples.brief-to-draft= is a proposed independently built bundle
+with a =brief-to-draft= workflow preset and an optional TypeScript status panel.
+The workflow-only bundle consists of a manifest and release verification
+metadata. The acceptance host provides two trusted modules and publishes the
+selected settings of their composition. The same release installs from a local
+file on another host with the required module closure and contract version.
+A downstream author can produce the workflow-only bundle without a Gerbil
+toolchain, npm, or the TS SDK. The workflow is startable from a headless client.
+
+*** Two-module composition
+
+The example uses the existing Lab descriptor and Yuanxu Module Interface
+shapes. The names and the policy below are fixture specifications.
+
+| Trusted module | Declared public option | Typed interface and capability |
+|----------------+------------------------+--------------------------------|
+| =marlin.brief-to-draft.brief-input= | =require-audience= is Boolean, default =true=. It requires the audience field during brief validation when enabled. | Produces typed =BriefFacts= from the admitted Org input. Requests =read-brief=. |
+| =marlin.brief-to-draft.draft-output= | =template= is an enum of =brief-note= and =release-note=, default =brief-note=. The chosen template determines the draft format. | Consumes =BriefFacts= and proposes render and create nodes. Requests =create-draft=. |
+
+Each option is a typed slot on the owning module's existing =Record=
+interface. A trusted author declares the type, default, and documentation
+there. Lab projects the option definitions through
+=agentic-ai-lab-module-option-schemas=. The workflow manifest selects
+=draft-output= as its root. The trusted =draft-output= descriptor has a
+structured import of =brief-input= using =yuanxu-import=. It consumes the
+published facts interface. The host exposes those two slots under the
+qualified paths =brief-input.require-audience= and =draft-output.template=.
+The manifest carries settings values and the root/schema reference.
+
+The trusted registration binds both module identities and revisions. At
+provisioning, use the existing import and closure facilities over the fixed
+descriptors. Missing imports, a facts interface that fails the declared contract, or a cycle
+must prevent the registered composition from being published. Qualify the
+chosen existing cycle check before relying on it. Closure traversal and phase
+depth alone provide neither cycle rejection nor dependency ordering. The
+typed facts handoff enforces read-before-render. Rust checks the registered
+composition's required capabilities against the manifest and project grants
+before activation.
+
+For this fixture, the trusted profile composes the module default, signed
+preset, and project contribution for =draft-output.template=. The module
+default applies when the preset and project omit it. The preset selects
+=release-note= and the authorized project can select =brief-note=. This is a
+declared profile override. Separate modules cannot compete for one public
+key by registration order. They retain distinct qualified slots.
+
+A different failure is a valid value pair that violates the composition's
+contract. The =release-note= template requires a guaranteed audience field.
+If =brief-input.require-audience= is =false= and =draft-output.template= is
+=release-note=, the trusted composition check rejects the pair and identifies
+both options in the diagnostic. The operator can restore the audience
+requirement or select =brief-note=. Rust retains the rejection and keeps the
+existing valid activation, if any.
+
+Changing template, enabling the workflow, and configuring an already exposed
+brief option are TOML operations. Implementing a new brief facts interface,
+template selection rule, or cross-module invariant requires trusted Gerbil
+authoring and host provisioning. A new filesystem effect still requires a
+Rust-owned handler and separate authorization.
+
+*** Minimal manifest
+
+This is the proposed =plugin.toml= for the workflow-only sample. The signed
+release descriptor binds the manifest and any asset bytes to the bundle digest.
+The fixture's IDs and spellings are proposed contract data.
+
+#+begin_src toml
+id = "org.marlin.examples.brief-to-draft"
+version = "0.1.0"
+contract_major = 0
+requires_features = ["workflow-preset"]
+
+[capabilities.read-brief]
+kind = "workspace.read-file"
+path = "briefs/launch.org"
+
+[capabilities.create-draft]
+kind = "workspace.create-file"
+path = "drafts/launch.org"
+
+[contributions.brief-to-draft]
+kind = "workflow-preset"
+input_schema = "marlin.brief-to-draft.start.v0"
+policy_module = "marlin.brief-to-draft.draft-output"
+settings_schema = "marlin.brief-to-draft.settings.v0"
+requires = ["read-brief", "create-draft"]
+settings = { draft-output = { template = "release-note" } }
+#+end_src
+
+An authorized operator can apply the following project configuration to
+enable the workflow with =brief-note= and require the audience field. Rust
+still requires separately issued file grants for the installed digest.
+
+#+begin_src toml
+[plugins."org.marlin.examples.brief-to-draft".workflows.brief-to-draft]
+enable = true
+settings = { brief-input = { require-audience = true }, draft-output = { template = "brief-note" } }
+#+end_src
+
+The panel-enabled fixture release uses version =0.1.1= and adds =client-panel=
+to =requires_features=. It ships the following entries and prebuilt asset and
+receives a separate project grant. The illustrative SHA-256 is replaced with
+the actual digest of =ui/status.js= before signing. A headless host can validate
+the panel metadata and skip mounting it.
+
+#+begin_src toml
+[assets."ui/status.js"]
+sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+
+[capabilities.observe-status]
+kind = "workflow.observe"
+workflow = "brief-to-draft"
+
+[contributions.status]
+kind = "client-panel"
+entry_asset = "ui/status.js"
+event_schema = "marlin.workflow-status.v0"
+events = ["run.started", "run.stage", "run.finished"]
+requires = ["observe-status"]
+#+end_src
+
+| Requested capability | Sample project grant |
+|----------------------+----------------------|
+| Read brief | Read only =briefs/launch.org= in the selected worktree |
+| Write draft | Create only =drafts/launch.org= in the same worktree, with atomic create and no overwrite |
+| Observe status | Read the workflow stage, outcome, and an opaque receipt reference for this activation |
+
+*** Rust validation and admission
+
+- *Install* verifies the signed release and each declared asset digest. A
+  strict TOML decoder selects the schema using =contract_major= and validates
+  the feature set, identifier and version formats, closed kind-specific fields,
+  normalized bundle and workspace paths, and references within the manifest.
+  For example, =entry_asset= must identify a declared asset, and =observe-status=
+  must identify a workflow contributed by the same bundle. A missing reference,
+  duplicate TOML key, or kind mismatch produces a typed install denial. Install
+  yields a validated bundle descriptor with no project binding.
+- *Enable* resolves the registered root and both schemas through Rust-owned
+  registries and passes validated bundle and project contributions through
+  the trusted Lab/Yuanxu composition path. It binds the two file capabilities to
+  exact paths in the selected project and worktree under the grant for this
+  bundle digest. The observation grant controls panel eligibility independently.
+  The host records both module revisions and the effective settings digest.
+  An unknown module, schema mismatch, invalid composition, or missing grant
+  prevents publication of the requested activation.
+- *Invoke* validates the start request against the registered schema. This
+  fixture takes an empty input object. Rust supplies the project and worktree
+  from the trusted invocation context and resolves file paths from the approved
+  capability bindings. It rejects caller-supplied path overrides. The broker
+  rechecks the live grant and generation for the initial read and again for
+  the create. A pre-existing destination yields a denial and keeps its bytes.
+
+*** Trusted Gerbil policy handoff
+
+The host first admits the brief read and retains its input digest. The trusted
+=brief-input= path uses the Org parser and validates the facts against its
+effective settings. Through the C ABI boundary, =draft-output= receives the
+typed facts, input snapshot reference, and resolved template option. It
+returns a proposal for two graph nodes. One renders a draft from the retained
+facts and selected template. The other proposes creating the draft using the
+logical =create-draft= capability. Neither the brief facts nor the proposal
+provide a file handle or a destination override.
+
+Rust consumes the C ABI projection through the readiness-aware compiler,
+checks the node kinds and capability reference, and records the selected
+policy revision and ABI readiness before producing an execution request.
+The write node resolves the approved capability through the broker. The run
+retains the input snapshot reference, each node receipt, and the write receipt
+with the output digest. The fixture fixes the brief and expected Org draft
+bytes so the harness can compare the output exactly.
+
+*** TOML-to-runtime trace and API status
+
+The values below describe the proposed Marlin adapter contract. Existing Lab
+and Yuanxu calls operate on Scheme values. The adapter uses Rust-owned C ABI
+projections and preserves semantic diagnostics as typed evidence.
+
+#+begin_example
+Provisioning
+  draft-output -> brief-input
+  Approved closure: both module IDs and revisions, typed facts interface,
+                    exported option slots, and required capability IDs
+
+Activation input
+  Rust binds: project, bundle digest, approved closure, settings schema, grant
+  Bundle contribution:  draft-output.template = release-note
+  Project contributions: brief-input.require-audience = true
+                         draft-output.template = brief-note
+
+Trusted composition result
+  Accepted: require-audience = true, template = brief-note
+  Evidence: option validation, selected sources, composition diagnostics
+  Rust activation evidence: closure, settings digest, grant, policy epoch
+
+Run
+  Authorized brief read -> BriefFacts -> graph proposal from Scheme
+  -> Rust ABI readiness and graph compilation -> render and create
+  -> node receipts, write outcome, input and output digests
+#+end_example
+
+Rust decodes the two TOML sources separately, maps each public key to an
+exported module slot, and keeps the value and origin together. It passes a
+Boolean and two template contributions through the adapter as typed values.
+The trusted profile applies its declared project override and validates the
+effective pair. If the project sets =require-audience=false= and keeps the
+bundle template, the composition reports a rejection with both option IDs.
+Rust links that diagnostic to the requested activation and retains any
+previous valid generation. No graph execution request is created for the
+rejected settings.
+
+| Stage | Existing API or artifact | Marlin plugin integration still to do |
+|-------+--------------------------+---------------------------------------|
+| Publish options | Lab =agentic-ai-lab-module-option-schemas= projects effective =Record= slots. | Export the approved slots as a versioned Rust wire schema. Bind the public aliases to module and option identities. |
+| Provision a fixed module pair | =yuanxu-import=, =module-closure=, =module-missing-imports= and the Lab doctor expose the imports and missing dependencies. | Bind the verified closure to the host registration. Check the facts interface contract and cycle rejection for that registration path. |
+| Validate and compose settings | =yuanxu-module-config-validation-receipts= diagnoses a module record. Lab =agentic-ai-lab-module-evaluate= and =agentic-ai-lab-module-workflow= expose closure and option validation projections. | Map bundle and project contributions into the existing policy composition path. Specify the fixture's override and audience/template constraint in trusted policy. The existing option validator checks individual records. The cross-module constraint and its projection are fixture work. |
+| Project the result to Rust | =marlin-gerbil-scheme= already projects Scheme policy artifacts, including the resolved loop policy pack decoder. | Bind a Scheme activation result for this use case. Preserve acceptance or denial, module revisions, effective settings, and diagnostics. Tie the result to the Rust request and grant before publication. |
+| Compile and run | =compile_graph_policy_proposal_with_native_abi_readiness= is already exported by the Marlin facade. =GraphNativeAbiReadinessReceipt=, =GraphPolicyProposalReceipt= and =GraphNodeExecutionReceipt= are existing types. | Connect the fixture's Scheme proposal to this compiler and the workspace broker. Link the existing graph receipts and the write outcome to plugin activation evidence and the offline export. |
+
+*** Scheme C ABI and npm-distributed Gambit JS
+
+The comparison covers the two Brief-to-Draft modules' policy logic, including
+the audience/template check and draft proposal. The portable JS candidate
+receives typed brief facts. Parser, worktree access, and the Scheme VM's Lab/Yuanxu
+runtime stay on their qualified host paths. A linked JS build of the full
+fixture remains to be demonstrated. The smaller compiler probe above only
+establishes code generation and syntax.
+
+| Question | Gerbil C ABI, v0 host path | Gambit JS client, v0 optional asset | Gambit JS host worker, research |
+|----------+----------------------------------+-------------------------------------+---------------------------------|
+| Who ships and runs it? | The trusted host builds and links the modules. The resident Scheme VM owner calls the typed exports. | The publisher compiles and bundles JS with its required runtime. npm can distribute it. Isolated client or author tooling runs it. | An administrator provisions the exact signed, digest-pinned bundle and worker runtime. Rust launches a qualified isolated process with a prebuilt entry. |
+| Who validates settings? | Rust checks wire shape and context. The registered Scheme policy composes settings and checks the semantic constraint. | JS can run the same pure check against client-visible input for preview. The host evaluates the real activation independently. | Rust checks the request shape and uses the trusted worker for the pure semantic check if qualified. The worker consumes settings plus provenance supplied by Rust. |
+| What does Rust accept? | An owned typed C ABI projection with accepted settings or a diagnostic. For graph proposals, Rust requires the corresponding C ABI readiness receipt. | A normal activation request contains project settings, submitted through the trusted host UI or CLI. A preview result conveys no authority and is never accepted as the activation result. | A reply on the worker's supervised channel, bound to the request and provisioned worker identity. The result contains effective settings or a typed rejection and can propose only catalogued operations. |
+| Who authorizes effects? | Rust binds and rechecks grants and activation generation. | Rust follows the same Scheme C ABI admission path for an actual run. | Rust binds and rechecks the same grants. It builds any execution request through its own typed graph admission. Worker readiness cannot stand in for a C ABI readiness receipt. |
+
+In the worker experiment, Rust first resolves the package to a provisioned
+policy identity. Publishing it on npm or including it in a plugin does not
+provision a worker. Rust verifies the digest and publisher under the trusted
+policy registry, starts the pinned runtime and prebuilt entry, and admits work
+only after a schema/version handshake. OS isolation must block workspace
+mounts, host credentials, network egress, and child-process creation. The
+worker has bounded CPU, memory, input/output, and lifetime, and performs no
+runtime npm dependency resolution. A JavaScript context alone provides no
+host isolation. [[https://nodejs.org/api/vm.html][Node.js VM documentation]]
+
+The Rust-owned request envelope binds a correlation ID, schema version,
+closure and artifact identities, settings digest, and activation generation.
+The host retains the binding to the active grant. Rust checks each reply
+against that envelope and its own supervised channel, validates field types,
+enum and capability IDs, and rejects stale, duplicated, malformed, or
+out-of-bounds replies. For example, when validating =release-note= with
+=require-audience=false=, both qualified policy targets must yield a rejection
+identifying the same option pair. When validating the accepted =brief-note=
+profile, Rust may publish its activation after the independent grant check.
+If the worker also proposes a draft, Rust first admits the brief read. It
+sends only the typed facts needed for the proposal and binds that request to
+the input snapshot. The worker returns a template ID and symbolic render/create
+operations. Rust maps those operations through its catalog and rechecks the
+live grant immediately before the write. The worker cannot pass filesystem
+paths or grant references as authority.
+
+A schema check can establish that a result is well formed. The trust in its
+policy decision comes from provisioning the policy artifact and qualifying
+its behavior against Scheme VM fixtures. In research runs the Scheme VM path
+continues to own activation. Worker timeout, crash, or a reply from a closed
+generation produces a typed failure and admits no new effect. Any future
+host-worker admission needs matched results on positive and negative
+fixtures, isolation and failure tests, and an acceptable latency and resource
+budget. Record backend identity, request and result digests, settings outcome,
+grant revision, and the resulting Rust receipts. Offline replay verifies the
+recorded evidence without running either policy target.
+
+*** TypeScript panel event projection
+
+The client binds the panel instance to the bundle, project, activation
+generation, and =brief-to-draft= workflow. Rust derives the projection from
+runtime state and receipts. Under =marlin.workflow-status.v0= the panel sees
+only the following fields:
+
+| Event =kind= | Fields besides =kind= | Emission point |
+|--------------+----------------------+----------------|
+| =run.started= | =run_ref= | After Rust admits the run. |
+| =run.stage= | =run_ref=, =stage= | When the run enters =reading_brief=, =composing_policy=, =rendering_draft=, or =creating_draft=. |
+| =run.finished= | =run_ref=, =outcome=, =receipt_ref= | Once Rust records a terminal receipt. Outcomes are =succeeded=, =denied=, =failed=, or =cancelled=. |
+
+=run_ref= correlates events within the panel mount. =receipt_ref= is an opaque
+display reference and conveys no lookup authority. The panel receives neither
+brief or draft content, workspace paths, raw tool events, nor denial details.
+Events are asynchronous, ordered within each observed run while the
+subscription remains open, and live only. A stalled subscription may be
+closed without blocking execution. Disable closes the bridge and discards
+pending delivery. Typed receipts remain the source for offline verification.
+
+*** Acceptance steps
+
+Run the following with an isolated project and an offline model gateway:
+
+1. Package and sign the workflow-only manifest in a downstream environment
+   without npm, a TypeScript SDK, or a Gerbil toolchain. Import it on a prepared
+   host and inspect the digest and requested capabilities. Verify that the
+   workflow is unavailable until explicitly enabled. Repeat the import with
+   the panel-enabled release for client checks. Modify a signed asset and
+   assert an integrity denial. Separately sign test bundles with an unsupported
+   contribution or undeclared asset reference and assert manifest denials.
+2. Grant brief read and status only. Enable fails with a typed missing-write
+   denial and publishes no workflow. Add the narrow draft grant and enable.
+   Confirm that another project cannot discover or invoke this activation.
+   Enable in a separate run with both file grants and no observation grant.
+   Verify that the workflow is available headlessly and the panel is ineligible.
+3. Start the workflow through trusted host UI or CLI. Rust reads the allowed
+   brief. Structured facts cross to the trusted Gerbil policy, which returns a
+   typed graph proposal. The Rust readiness gate and graph executor produce a
+   draft, a receipt for each executed node, and a write receipt with the output
+   digest. With a responsive panel, assert the start, four ordered stages, and
+   terminal success with the same =run_ref= and only the declared fields. Verify
+   the expected draft bytes against the fixture. A separate existing-destination
+   case preserves the file, records a write denial, and projects =denied=.
+   For the settings check, run the workflow-only release against equivalent
+   fresh worktrees, once using the bundle default and once using the project
+   setting. Assert different expected draft bytes and settings digests under
+   the same two-module closure, graph shape, and capability scope. Reject an
+   unknown option, invalid template, or audience/template pair that violates policy
+   before publication. In a separate provisioning attempt, make the imported
+   module unavailable and verify that the fixed closure cannot be registered
+   or activated before any effect.
+4. Use a trusted negative fixture to propose an out-of-scope path and a model
+   handoff through the plugin route. Assert typed scope and capability denials
+   before either effect is dispatched. In a separate harness control, send an
+   otherwise authorized test handoff to the offline gateway and retain its typed
+   no-live-LLM denial. Exercise panel egress, an undeclared bridge request, and
+   a cross-project subscription. These fail under the client controls and grant
+   checks.
+5. Disable the activation. Verify that it stops receiving events and rejects
+   stale panel messages and new invocations. In a concurrent case, block a
+   run before its write admission, close the generation, and release it. The
+   pending write must be denied. A write admitted before closure has its actual
+   outcome accounted for in the disable receipt.
+6. Move the evidence bundle to an offline verifier with no source worktree,
+   plugin, JS client, or policy executable. Verify the recorded success and
+   denials from the retained data. Verify that changing a retained payload,
+   removing a required receipt, or substituting a digest causes verification
+   failure. Verify that the replay creates no draft and calls no provider.
+
+** Offline Replay Evidence
+:PROPERTIES:
+:CUSTOM_ID: plugin-replay
+:END:
+
+Replay verifies and reconstructs the recorded run. The Rust verifier consumes
+a versioned evidence bundle whose root digest is authenticated against a
+trusted project record or export signature. It checks linkage among the plugin
+release identity and digest, project and activation, grant revision, module
+closure and revisions, settings schema and resolved settings digest, policy
+epoch, ABI readiness, input and output digests, ordered graph node receipts,
+typed denials, and the terminal outcome. Lifecycle evidence
+includes the install, enable, and disable receipts for the scenario. Replay
+uses retained snapshots and receipts. It has no live plugin or provider
+dispatch and no workspace mutation path.
+
+The sample export includes the synthetic brief and draft bytes so the verifier
+can check their digests. Project evidence policy controls what real runs can
+retain or export. If required bytes or receipts are unavailable, the verifier
+returns an explicit incomplete result. Receipt replay establishes consistency
+with authenticated recorded evidence. Recomputing policy decisions from
+source is a separate qualification exercise.
+
+** Decisions Before Implementation
+
+- Select the bundle encoding, signature format, trust-root management, and
+  canonical receipt representation with test vectors for each.
+- Qualify the projected settings schema, typed contributions, and receipts
+  against the selected Lab/Yuanxu revisions. Exercise the existing import,
+  validation, and composition path with both Brief-to-Draft modules. Bind the
+  C ABI projection to the Rust workspace broker and graph admission path.
+- Qualify the client isolation profile on a supported client before enabling
+  executable panel assets. Qualify Gambit JS separately with one portable
+  helper and the same bridge tests.
+- For the host-worker experiment, compare accepted settings, rejected option
+  pairs, and symbolic draft proposals against the Scheme VM path with the same
+  fixture inputs. Exercise mismatched worker identities, malformed replies,
+  timeout, process loss, and closure during an in-flight request. Record the
+  resulting denials and confirm the workspace remains free of unauthorized
+  effects. Measure resident-worker cost before considering host admission.
+- Run the full acceptance scenario with fault injection at activation,
+  admission, write, and disable. Compare a matched Rust workflow run with and
+  without a panel, including a stalled panel, to verify that observation stays
+  off the execution path. Set numeric performance budgets after establishing
+  the baseline.

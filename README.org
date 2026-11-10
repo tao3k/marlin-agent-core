@@ -1,5 +1,7 @@
 #+title: Marlin Agent Core
 
+[[file:project.sysml][Project SysML]] · [[file:dev/sysml/README.org][Architecture model map]]
+
 Marlin Agent Core is a Rust workspace for an Org-native, typed agent runtime substrate: graph-loop execution, workspace/query/patch/view protocols, project memory, sandbox and process runtime visibility, Gerbil Scheme policy integration, and harness/dev/debug command surfaces.
 
 This repository is not a terminal-user product shell. The =marlin= command and the crate APIs are implementation, harness, development, and debugging surfaces for building and validating the agent runtime layers.
@@ -93,7 +95,8 @@ This is why Marlin is not a duplicate product agent. It targets the layer that p
 - =crates/marlin-agent-runtime=: runtime context, process, stream, and observability boundaries.
 - =crates/marlin-agent-environment=: agent environment and project import support.
 - =crates/marlin-agent-harness=: agent-system scenario, evidence, and release visibility harnessing.
-- =crates/marlin-gerbil-scheme=: Gerbil Scheme native integration and policy extension plane.
+- [[file:scheme/README.org][scheme/]] owns the Scheme package and Yuanxu policy modules.
+- =crates/marlin-gerbil-scheme= owns Rust's typed Scheme C ABI projections.
 - =build-support/=: build-time policy and native Gerbil build support.
 
 * Quick Start

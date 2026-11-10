@@ -1,3 +1,3 @@
-//! Compatibility reexports for upstream native C compiler discovery.
+//! C compiler discovery from the Gerbil bridge.
 
-pub use gerbil_scheme_native_build::{NativeCCompilerTool, discover_native_c_compiler};
+pub use gerbil_scheme_aot_build::{NativeCCompilerTool, discover_native_c_compiler};

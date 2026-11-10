@@ -7,7 +7,7 @@ repository.workspace = true
 
 [dependencies]
 cc.workspace = true
-gerbil-scheme-native-build.workspace = true
+gerbil-scheme-aot-build.workspace = true
 marlin-gerbil-scheme.workspace = true
 object.workspace = true
 gerbil-scheme-build.workspace = true

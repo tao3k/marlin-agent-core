@@ -2,7 +2,7 @@
 
 use std::env;
 
-use super::{args::ArgCursor, gerbil_cmd, graph, loop_cmd, smoke_cmd, state_cmd};
+use super::{args::ArgCursor, graph, loop_cmd, smoke_cmd, state_cmd};
 
 /// Process-shaped result returned by the `marlin` debug CLI facade.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -72,7 +72,6 @@ fn dispatch(args: Vec<String>) -> Result<MarlinCliResult, String> {
     };
 
     match command.as_str() {
-        "gerbil" => gerbil_cmd::dispatch_gerbil(&mut cursor),
         "graph" => graph::dispatch_graph(&mut cursor),
         "loop" => loop_cmd::dispatch_loop(&mut cursor),
         "smoke" => smoke_cmd::dispatch_smoke(&mut cursor),
@@ -84,17 +83,12 @@ fn dispatch(args: Vec<String>) -> Result<MarlinCliResult, String> {
 
 pub(in crate::debug_cli) fn usage() -> String {
     format!(
-        "Usage:\n  marlin gerbil <policy-receipt> [options]\n  marlin graph <query|propose|validate|run> [options]\n  marlin loop <run|replay|inspect> [options]\n  marlin smoke <runtime> [options]\n  marlin state <init|inspect> [options]\n\n{}\n{}\n{}\n{}\n{}",
-        gerbil_usage(),
+        "Usage:\n  marlin graph <query|propose|validate|run> [options]\n  marlin loop <run|replay|inspect> [options]\n  marlin smoke <runtime> [options]\n  marlin state <init|inspect> [options]\n\n{}\n{}\n{}\n{}",
         graph_usage(),
         loop_usage(),
         smoke_usage(),
         state_usage()
     )
-}
-
-pub(in crate::debug_cli) fn gerbil_usage() -> &'static str {
-    "Gerbil commands:\n  marlin gerbil policy-receipt [--iterations N] [--entrypoint <scheme-file>] [--call <scheme-expr>] [--gxi <gxi>] [--package-root <gerbil-package-dir>] [--loadpath <loadpath>]\n  dependencies: install package dependencies with gerbil.pkg/gxpkg; --loadpath is an explicit debug override"
 }
 
 pub(in crate::debug_cli) fn graph_usage() -> &'static str {

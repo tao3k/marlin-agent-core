@@ -10,18 +10,16 @@ use serde::Serialize;
 const REQUIRED_GERBIL_RUNTIME_ASSETS: &[&str] = &[
     "gerbil.pkg",
     "build.ss",
-    "src/marlin/protocol-types.ss",
-    "src/marlin/protocol.ss",
-    "src/marlin/request.ss",
-    "src/marlin/adapter.ss",
-    "src/marlin/deck-runtime.ss",
-    "src/marlin/_deck-runtime-native.ssi",
-    "src/marlin/deck-runtime-native.ss",
-    "src/marlin/_agent-policy-routing-native.ssi",
-    "src/marlin/deck-runtime-native-projection.ss",
-    "src/marlin/graph-loop-continuation-native-projection.ss",
-    "src/marlin/deck-runtime-script.ss",
-    "src/marlin/deck-runtime-strategy.ss",
+    "init.ss",
+    "modules/session/interface.ss",
+    "policy/routing.ss",
+    "c-abi/_deck-runtime-native.ssi",
+    "c-abi/deck-runtime-native.ss",
+    "c-abi/_agent-policy-routing-native.ssi",
+    "projection/deck.ss",
+    "projection/graph-continuation.ss",
+    "projection/script.ss",
+    "policy/strategy.ss",
 ];
 
 const REQUIRED_GERBIL_RUNTIME_HARNESS_CAPABILITIES: &[GerbilRuntimeHarnessCapability] = &[
@@ -34,20 +32,12 @@ const REQUIRED_GERBIL_RUNTIME_HARNESS_CAPABILITIES: &[GerbilRuntimeHarnessCapabi
         required_asset_paths: &["build.ss"],
     },
     GerbilRuntimeHarnessCapability {
-        id: "harness-policy-module",
-        required_asset_paths: &["harness-policy/gerbil.ss"],
-    },
-    GerbilRuntimeHarnessCapability {
         id: "test-entrypoint",
         required_asset_paths: &["t/all-test.ss"],
     },
     GerbilRuntimeHarnessCapability {
         id: "script-performance-source",
-        required_asset_paths: &["src/marlin/deck-runtime-script-performance.ss"],
-    },
-    GerbilRuntimeHarnessCapability {
-        id: "policy-receipt-gate-cli-source",
-        required_asset_paths: &["src/marlin/deck-runtime-policy-receipt-gate-cli.ss"],
+        required_asset_paths: &["t/support/script-performance.ss"],
     },
     GerbilRuntimeHarnessCapability {
         id: "script-performance-test",
@@ -163,7 +153,7 @@ impl GerbilRuntimeHarnessContractReceipt {
 
 /// Inspects crate-shipped Gerbil runtime assets under `gerbil/`.
 pub fn inspect_gerbil_runtime_assets(project_root: &Path) -> GerbilRuntimeAssetManifestReceipt {
-    let gerbil_root = project_root.join("gerbil");
+    let gerbil_root = scheme_package_root(project_root);
     let required_assets = REQUIRED_GERBIL_RUNTIME_ASSETS
         .iter()
         .map(|path| (*path).to_owned())
@@ -279,39 +269,15 @@ pub fn inspect_gerbil_runtime_harness_contract(
     }
 }
 
-/// Generates a Rust manifest for Gerbil runtime assets under `gerbil/`.
-pub fn generate_gerbil_runtime_assets(project_root: &Path) {
-    let gerbil_root = project_root.join("gerbil");
-    let mut paths = Vec::new();
-    collect_gerbil_runtime_asset_paths(&gerbil_root, &gerbil_root, &mut paths)
-        .expect("collect Gerbil runtime asset paths");
-    paths.sort();
-
-    let mut output = String::from(
-        "/// Complete file manifest required under a `GERBIL_LOADPATH` root.\n\
-         pub const GERBIL_RUNTIME_ASSETS: &[GerbilRuntimeAsset] = &[\n",
-    );
-    for path in &paths {
-        println!(
-            "cargo:rerun-if-changed={}",
-            gerbil_root.join(path).display()
-        );
-        output.push_str("    GerbilRuntimeAsset {\n");
-        output.push_str("        path: \"");
-        output.push_str(&escape_rust_string(path));
-        output.push_str("\",\n");
-        output.push_str(
-            "        source: include_str!(concat!(env!(\"CARGO_MANIFEST_DIR\"), \"/gerbil/",
-        );
-        output.push_str(&escape_rust_string(path));
-        output.push_str("\")),\n");
-        output.push_str("    },\n");
+fn scheme_package_root(project_root: &Path) -> PathBuf {
+    if project_root.ends_with("crates/marlin-gerbil-scheme") {
+        return project_root
+            .parent()
+            .and_then(Path::parent)
+            .expect("Marlin Scheme crate is in the workspace")
+            .join("scheme");
     }
-    output.push_str("];\n");
-
-    fs::write(out_dir().join("gerbil_runtime_assets.rs"), output)
-        .expect("write generated Gerbil runtime asset manifest");
-    println!("cargo:rerun-if-changed={}", gerbil_root.display());
+    project_root.join("scheme")
 }
 
 fn collect_gerbil_runtime_asset_paths(
@@ -348,7 +314,12 @@ fn collect_gerbil_runtime_asset_paths(
 fn is_transient_gerbil_runtime_asset_dir(path: &Path) -> bool {
     path.file_name()
         .and_then(|name| name.to_str())
-        .is_some_and(|name| matches!(name, ".cache" | ".devenv" | ".direnv" | ".git" | ".run"))
+        .is_some_and(|name| {
+            matches!(
+                name,
+                ".cache" | ".devenv" | ".direnv" | ".git" | ".gerbil" | ".run"
+            )
+        })
 }
 
 fn is_gerbil_runtime_asset(path: &Path) -> bool {
@@ -356,15 +327,4 @@ fn is_gerbil_runtime_asset(path: &Path) -> bool {
         || path
             .extension()
             .is_some_and(|extension| matches!(extension.to_str(), Some("ss" | "ssi")))
-}
-
-fn escape_rust_string(value: &str) -> String {
-    value
-        .chars()
-        .flat_map(char::escape_default)
-        .collect::<String>()
-}
-
-fn out_dir() -> PathBuf {
-    PathBuf::from(std::env::var_os("OUT_DIR").expect("OUT_DIR set by Cargo for build scripts"))
 }

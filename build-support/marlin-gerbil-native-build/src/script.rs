@@ -1,9 +1,11 @@
 //! Build-script implementation for Gerbil native integration crates.
 
 use std::{
-    env,
+    env, fs,
     path::{Path, PathBuf},
 };
+
+use gerbil_scheme_build::package_aot::{GerbilBuildToolchain, run_package_aot_compile};
 
 use crate::{
     archive::{
@@ -62,10 +64,13 @@ fn emit_native_link_rerun_inputs(target: NativeLinkTarget) {
         "CFLAGS",
         "GAMBOPT",
         "GERBIL_HOME",
+        "GERBIL_LOADPATH",
+        "GERBIL_PATH",
         "HOST_AR",
         "HOST_CC",
         "MARLIN_GERBIL_GSC",
         "MARLIN_GERBIL_GXC",
+        "MARLIN_GERBIL_GXPKG",
         "TARGET_AR",
         "TARGET_CC",
     ] {
@@ -169,8 +174,8 @@ impl NativeLinkTarget {
     const fn deck_runtime() -> Self {
         Self {
             profile: GerbilDeckRuntimeNativeAotProfile::DeckRuntime,
-            source_path: "src/marlin/deck-runtime-native.ss",
-            dependency_source_paths: &["src/marlin/_deck-runtime-native.ssi"],
+            source_path: "c-abi/deck-runtime-native.ss",
+            dependency_source_paths: &["c-abi/_deck-runtime-native.ssi"],
             staged_scm_file: "deck-runtime-native~0.scm",
             staged_dependency_scm_files: &["_deck-runtime-native~0.scm"],
             label: "Deck runtime",
@@ -186,8 +191,8 @@ impl NativeLinkTarget {
     const fn agent_policy_routing() -> Self {
         Self {
             profile: GerbilDeckRuntimeNativeAotProfile::AgentPolicyRouting,
-            source_path: "src/marlin/agent-policy-routing-native.ss",
-            dependency_source_paths: &["src/marlin/_agent-policy-routing-native.ssi"],
+            source_path: "c-abi/agent-policy-routing-native.ss",
+            dependency_source_paths: &["c-abi/_agent-policy-routing-native.ssi"],
             staged_scm_file: "agent-policy-routing-native~0.scm",
             staged_dependency_scm_files: &["_agent-policy-routing-native~0.scm"],
             label: "AgentGraph policy-routing",
@@ -217,26 +222,57 @@ fn compile_native_aot_artifact(
     }
     println!("cargo:rerun-if-changed={}", gerbil_pkg.display());
 
-    let receipt = gerbil_scheme_build::package_native_aot::compile_package_native_aot_artifact(
-        &gerbil_scheme_build::package_native_aot::GerbilBuildToolchain::new(
-            default_gerbil_gxpkg_program(),
-            default_gerbil_gxc_program(),
-        ),
-        &gerbil_scheme_build::package_native_aot::GerbilPackageNativeAotCompilePlan {
-            package_dir: &gerbil_pkg_dir,
-            stage_dir: &root.join(".gerbil/native"),
-            source_path: target.source_path,
-            dependency_source_paths: target.dependency_source_paths,
-            staged_scm_file: target.staged_scm_file,
-            staged_dependency_scm_files: target.staged_dependency_scm_files,
-        },
-    );
-
-    GerbilDeckRuntimeNativeAotCommandReceipt {
-        status_code: receipt.status_code,
-        stdout: receipt.stdout,
-        stderr: receipt.stderr,
+    let toolchain =
+        GerbilBuildToolchain::new(default_gerbil_gxpkg_program(), default_gerbil_gxc_program());
+    let builder_root = env::var_os("GERBIL_PATH")
+        .filter(|value| !value.is_empty())
+        .map_or_else(
+            || gerbil_pkg_dir.join(".gerbil"),
+            |path| gerbil_pkg_dir.join(path),
+        );
+    let compiled_dir = builder_root.join("lib/marlin-agent-core/c-abi");
+    let stage_dir = root.join(".gerbil/native");
+    let units = target
+        .dependency_source_paths
+        .iter()
+        .copied()
+        .zip(target.staged_dependency_scm_files.iter().copied())
+        .chain(std::iter::once((
+            target.source_path,
+            target.staged_scm_file,
+        )));
+    let mut receipt = GerbilDeckRuntimeNativeAotCommandReceipt {
+        status_code: Some(0),
+        stdout: String::new(),
+        stderr: String::new(),
+    };
+    if let Err(error) = fs::create_dir_all(&stage_dir) {
+        receipt.status_code = Some(67);
+        receipt.stderr = format!(
+            "create Gerbil link staging directory {}: {error}",
+            stage_dir.display()
+        );
+        return receipt;
     }
+    for (source, artifact) in units {
+        let build = run_package_aot_compile(&toolchain, &gerbil_pkg_dir, source);
+        receipt.status_code = build.status_code;
+        receipt.stdout = build.stdout;
+        receipt.stderr = build.stderr;
+        if receipt.status_code != Some(0) {
+            return receipt;
+        }
+        let compiled = compiled_dir.join(artifact);
+        if let Err(error) = fs::copy(&compiled, stage_dir.join(artifact)) {
+            receipt.status_code = Some(67);
+            receipt.stderr = format!(
+                "stage Gerbil compiler artifact {}: {error}",
+                compiled.display()
+            );
+            return receipt;
+        }
+    }
+    receipt
 }
 
 fn discover_gambit_link_search_dir() -> Option<GambitLinkSearchDiscovery> {

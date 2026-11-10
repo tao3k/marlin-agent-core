@@ -39,8 +39,7 @@ pub use gate::{
 pub use gerbil_runtime_assets::{
     GerbilRuntimeAssetManifestReceipt, GerbilRuntimeAssetManifestStatus,
     GerbilRuntimeHarnessContractReceipt, GerbilRuntimeHarnessContractStatus,
-    generate_gerbil_runtime_assets, inspect_gerbil_runtime_assets,
-    inspect_gerbil_runtime_harness_contract,
+    inspect_gerbil_runtime_assets, inspect_gerbil_runtime_harness_contract,
 };
 pub use improvement_queue::{
     RustProjectHarnessImprovementId, RustProjectHarnessImprovementItem,

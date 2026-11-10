@@ -1,7 +1,6 @@
-//! `Gerbil` ahead-of-time compiler probing and repair facade.
+//! Scheme C ABI link units for the Rust runtime.
 
 mod native;
-mod probe;
 
 pub use native::{
     GerbilDeckRuntimeNativeAotBuildReceipt, GerbilDeckRuntimeNativeAotBuildStatus,
@@ -12,9 +11,4 @@ pub use native::{
     GerbilDeckRuntimeNativeStaticLinkPlan, GerbilDeckRuntimeNativeStaticLinkStatus,
     GerbilDeckRuntimeNativeSymbol, GerbilDeckRuntimeNativeSymbolAuditMethod, GerbilNativeCCompiler,
     GerbilNativeLinkLibrary, GerbilNativeSymbolAuditor,
-};
-pub use probe::{
-    GerbilAotBackendRepairReceipt, GerbilAotBackendRepairStatus, GerbilAotBackendShimReceipt,
-    GerbilAotBackendShimStatus, GerbilAotCommandReceipt, GerbilAotProbeConfig,
-    GerbilAotProbeReceipt, GerbilAotProbeStatus,
 };

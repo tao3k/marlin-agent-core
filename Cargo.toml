@@ -44,18 +44,21 @@ repository = "https://github.com/tao3k/marlin-agent-core"
 [workspace.dependencies]
 aho-corasick = "1.1.4"
 async-trait = "0.1.89"
+asp-rust = { git = "https://github.com/tao3k/asp-rust", rev = "1ca41124b846dec947f3d05119cafa07eaa57924", version = "0.1.2", default-features = false }
 axum = { version = "0.8", features = ["json"] }
 cc = "1.2.64"
 cbindgen = "0.29.4"
 criterion = "0.8.2"
-gerbil-scheme = { git = "https://github.com/tao3k/gerbil-scheme-rust", rev = "fcfc56f7a7a91793d521ee3538479d173c2b1966", version = "0.1.0" }
-gerbil-scheme-build = { git = "https://github.com/tao3k/gerbil-scheme-rust", rev = "fcfc56f7a7a91793d521ee3538479d173c2b1966", version = "0.1.0" }
-gerbil-scheme-native-build = { git = "https://github.com/tao3k/gerbil-scheme-rust", rev = "fcfc56f7a7a91793d521ee3538479d173c2b1966", version = "0.1.0" }
+gerbil-scheme = { git = "https://github.com/tao3k/gerbil-scheme-rust", rev = "bfe803f597a15a3654b70a64c3a039980c31da8a", version = "0.1.0" }
+gerbil-scheme-build = { git = "https://github.com/tao3k/gerbil-scheme-rust", rev = "bfe803f597a15a3654b70a64c3a039980c31da8a", version = "0.1.0" }
+gerbil-scheme-aot-build = { git = "https://github.com/tao3k/gerbil-scheme-rust", rev = "bfe803f597a15a3654b70a64c3a039980c31da8a", version = "0.1.0" }
 futures-executor = "0.3.32"
 globset = "0.4.18"
 litellm-rs = { version = "0.5", default-features = false, features = ["lite", "gateway", "sqlite", "redis", "websockets"] }
 memoffset = "0.9.1"
 object = "0.39.1"
+# Orgize main still uses Scheme-to-Rust IR. PR #18 enables the bridge's
+# external-program feature, which excludes the in-process package tools.
 orgize = { git = "https://github.com/tao3k/orgize", rev = "9d9ee8c66ccd222bf4379d562deeda514b475875" }
 parking_lot = "0.12.5"
 reqwest = { version = "0.13.4", default-features = false, features = ["json", "rustls"] }

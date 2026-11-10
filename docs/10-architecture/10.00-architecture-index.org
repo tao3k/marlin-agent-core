@@ -9,6 +9,7 @@
 :END:
 
 ** Documents
+- [[file:../../dev/sysml/README.org][OpenSysML project model map]]
 - [[file:10.10-crate-boundaries.org][10.10 Crate Boundaries]]
 - [[file:10.20-kernel-boundary.org][10.20 Kernel Boundary]]
 - [[file:10.30-agent-harness-boundary.org][10.30 Agent Harness Boundary]]

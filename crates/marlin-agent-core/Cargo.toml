@@ -33,6 +33,7 @@ toml.workspace = true
 marlin-rust-project-harness-policy.workspace = true
 
 [dev-dependencies]
+asp-rust.workspace = true
 marlin-agent-test-support.workspace = true
 tempfile.workspace = true
 tokio.workspace = true

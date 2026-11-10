@@ -3,7 +3,6 @@
 mod ids;
 mod intent_case_artifact;
 mod loop_program_projection;
-mod projected_case;
 mod real_llm_case;
 mod receipt;
 mod vertical_trace;
@@ -21,13 +20,6 @@ pub use loop_program_projection::{
     GerbilLoopCaseDriverLoopProgramProjectionError,
     project_gerbil_loop_case_driver_loop_action_kind,
     project_gerbil_loop_case_driver_loop_event_kind, project_gerbil_loop_case_driver_loop_program,
-};
-pub use projected_case::{
-    GerbilLoopCaseDriverProjectedLoopProgram, GerbilLoopCaseDriverProjectedLoopProgramError,
-    GerbilLoopCaseDriverProjectedLoopProgramRequest, default_gerbil_config_interface_root,
-    gerbil_config_interface_loadpath_with_src, load_gerbil_loop_case_driver_projected_loop_program,
-    run_gerbil_config_interface_case_driver_smoke,
-    run_gerbil_config_interface_case_driver_smoke_in,
 };
 pub use real_llm_case::{
     GerbilLoopCaseDriverRealLlmCaseReceipt, GerbilLoopCaseDriverRealLlmCaseReceiptError,

@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use super::support::EventfulExecutor;
 use marlin_agent_harness::{
     AGENT_HARNESS_PERFORMANCE_EVIDENCE_KEYS, AGENT_HARNESS_STABILITY_EVIDENCE_KEYS, AgentHarness,
     AgentHarnessEvidence, AgentHarnessEvidenceKind, AgentHarnessGraphBuilder,
@@ -11,16 +12,6 @@ use marlin_agent_test_support::{
     RuntimeStabilityEvidenceInput, runtime_stability_budget_diagnostics,
     runtime_stability_budget_evidence,
 };
-use marlin_gerbil_scheme::{
-    GERBIL_ADAPTER_MODULE, GerbilCommandProfile, GerbilResidentRuntimeHealthStatus,
-    GerbilResidentRuntimePlan, GerbilResidentRuntimeProcessStatus,
-    GerbilResidentRuntimeShutdownStatus,
-};
-#[cfg(unix)]
-use std::os::unix::fs::PermissionsExt;
-
-use super::support::EventfulExecutor;
-use tempfile::Builder;
 
 #[tokio::test]
 async fn harness_execution_report_carries_performance_benchmark_evidence() {
@@ -65,86 +56,6 @@ async fn harness_execution_report_carries_performance_benchmark_evidence() {
             "missing performance evidence key {key}"
         );
     }
-}
-
-#[test]
-fn harness_performance_evidence_covers_resident_gerbil_runtime_process_plan() {
-    let root = Builder::new()
-        .prefix("marlin-harness-resident-runtime-performance-")
-        .tempdir()
-        .expect("resident runtime tempdir");
-    let adapter = resident_fake_batch_adapter(root.path());
-    let handle = GerbilResidentRuntimePlan::shared_context(root.path(), "perf-session")
-        .with_command_profile(GerbilCommandProfile::new(adapter.to_string_lossy()))
-        .prepare()
-        .expect("prepare resident runtime");
-    let process = handle.process_receipt();
-    let command_profile = process
-        .command_profile
-        .as_ref()
-        .expect("resident process command profile");
-    let mut resident = handle
-        .spawn_process()
-        .expect("spawn resident runtime process");
-    let health = resident
-        .health_receipt()
-        .expect("resident runtime health receipt");
-    let shutdown = resident
-        .shutdown()
-        .expect("resident runtime graceful shutdown");
-    let performance_evidence: AgentHarnessEvidence = AgentHarnessPerformanceEvidence {
-        subject: "crates/marlin-gerbil-scheme/src/resident_runtime.rs".to_owned(),
-        benchmark_command: "cargo test -p marlin-gerbil-scheme --test unit_test resident_runtime"
-            .to_owned(),
-        baseline: format!(
-            "resident_process_status={:?},prepared_assets={},health={:?},shutdown={:?}",
-            process.status, process.written_asset_count, health.status, shutdown.status
-        ),
-        regression_threshold: "resident reuse must keep one child for multiple requests"
-            .to_owned(),
-        latency_or_throughput: format!(
-            "process_plan_projection=O(1),spawn_boundary=resident-process,resident_process_reuse=1child,health_status={:?}",
-            health.status
-        ),
-        allocation_profile: format!(
-            "command_profile_args={},command_profile_env={}",
-            command_profile.args.len(),
-            command_profile.env.len()
-        ),
-        profile_artifact:
-            "target/agent-harness/performance/resident-gerbil-runtime-process-plan.json".to_owned(),
-    }
-    .into();
-    let detail = performance_evidence
-        .detail
-        .as_deref()
-        .expect("performance detail");
-
-    assert_eq!(
-        process.status,
-        GerbilResidentRuntimeProcessStatus::ReadyToSpawn
-    );
-    assert!(process.written_asset_count > 0);
-    assert_eq!(command_profile.args.len(), 1);
-    assert_eq!(command_profile.args[0], GERBIL_ADAPTER_MODULE);
-    assert!(matches!(
-        health.status,
-        GerbilResidentRuntimeHealthStatus::Running | GerbilResidentRuntimeHealthStatus::Exited
-    ));
-    assert!(matches!(
-        shutdown.status,
-        GerbilResidentRuntimeShutdownStatus::AlreadyExited
-            | GerbilResidentRuntimeShutdownStatus::Terminated
-    ));
-    for key in AGENT_HARNESS_PERFORMANCE_EVIDENCE_KEYS {
-        assert!(
-            detail.contains(key),
-            "missing performance evidence key {key}"
-        );
-    }
-    assert!(detail.contains("process_plan_projection=O(1)"));
-    assert!(detail.contains("spawn_boundary=resident-process"));
-    assert!(detail.contains("resident_process_reuse=1child"));
 }
 
 #[tokio::test]
@@ -301,32 +212,3 @@ async fn harness_execution_report_carries_runtime_stability_budget_evidence() {
         );
     }
 }
-
-fn resident_fake_batch_adapter(root: &std::path::Path) -> std::path::PathBuf {
-    let path = root.join("resident-performance-adapter");
-    std::fs::write(
-        &path,
-        r#"#!/bin/sh
-if [ "$1" = ":marlin/adapter" ]; then
-  sleep 5
-  exit 0
-fi
-exit 2
-"#,
-    )
-    .expect("write resident performance adapter");
-    make_executable(&path);
-    path
-}
-
-#[cfg(unix)]
-fn make_executable(path: &std::path::Path) {
-    let mut permissions = std::fs::metadata(path)
-        .expect("resident performance adapter metadata")
-        .permissions();
-    permissions.set_mode(0o755);
-    std::fs::set_permissions(path, permissions).expect("resident performance adapter executable");
-}
-
-#[cfg(not(unix))]
-fn make_executable(_path: &std::path::Path) {}

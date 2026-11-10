@@ -2,22 +2,13 @@
 
 mod agent_policy_routing;
 mod agent_policy_routing_native;
-mod aot_repair_cli;
 mod aot_runtime;
-mod artifact;
-mod command;
-mod compile_source;
-mod compiler;
 mod deck_runtime_native;
 mod deck_runtime_policy;
 mod deck_runtime_script;
-mod deps;
 mod graph_loop_continuation;
 mod loop_case_driver;
-mod native_aot_cli;
 mod policy_pack_projection;
-mod real_gxi_gate;
-mod resident_runtime;
 mod runtime;
 #[doc(hidden)]
 pub mod scheme_type_fixtures;
@@ -59,26 +50,16 @@ pub use agent_policy_routing_native::{
     GerbilAgentPolicyRoutingNativeUtf8, GerbilAgentPolicyRoutingNativeUtf8List,
     gerbil_agent_policy_routing_native_request_conversion_profile,
 };
-pub use aot_repair_cli::run_gerbil_aot_repair_cli;
 pub use aot_runtime::{
-    GerbilAotBackendRepairReceipt, GerbilAotBackendRepairStatus, GerbilAotBackendShimReceipt,
-    GerbilAotBackendShimStatus, GerbilAotCommandReceipt, GerbilAotProbeConfig,
-    GerbilAotProbeReceipt, GerbilAotProbeStatus, GerbilDeckRuntimeNativeAotBuildReceipt,
-    GerbilDeckRuntimeNativeAotBuildStatus, GerbilDeckRuntimeNativeAotCommandPlan,
-    GerbilDeckRuntimeNativeAotCommandReceipt, GerbilDeckRuntimeNativeAotConfig,
-    GerbilDeckRuntimeNativeAotPlan, GerbilDeckRuntimeNativeAotProfile,
-    GerbilDeckRuntimeNativeAotStatus, GerbilDeckRuntimeNativeCargoDirective,
-    GerbilDeckRuntimeNativeCargoDirectiveKind, GerbilDeckRuntimeNativeStaticLinkPlan,
-    GerbilDeckRuntimeNativeStaticLinkStatus, GerbilDeckRuntimeNativeSymbol,
-    GerbilDeckRuntimeNativeSymbolAuditMethod, GerbilNativeCCompiler, GerbilNativeLinkLibrary,
-    GerbilNativeSymbolAuditor,
+    GerbilDeckRuntimeNativeAotBuildReceipt, GerbilDeckRuntimeNativeAotBuildStatus,
+    GerbilDeckRuntimeNativeAotCommandPlan, GerbilDeckRuntimeNativeAotCommandReceipt,
+    GerbilDeckRuntimeNativeAotConfig, GerbilDeckRuntimeNativeAotPlan,
+    GerbilDeckRuntimeNativeAotProfile, GerbilDeckRuntimeNativeAotStatus,
+    GerbilDeckRuntimeNativeCargoDirective, GerbilDeckRuntimeNativeCargoDirectiveKind,
+    GerbilDeckRuntimeNativeStaticLinkPlan, GerbilDeckRuntimeNativeStaticLinkStatus,
+    GerbilDeckRuntimeNativeSymbol, GerbilDeckRuntimeNativeSymbolAuditMethod, GerbilNativeCCompiler,
+    GerbilNativeLinkLibrary, GerbilNativeSymbolAuditor,
 };
-pub use artifact::{GerbilArtifactKind, GerbilArtifactKindMismatch, GerbilCompiledArtifact};
-pub use command::{
-    GERBIL_COMMAND_PROFILE_ENV, GerbilCommandProfile, GerbilCommandSpec, GerbilCompileRequest,
-};
-pub use compile_source::run_compile_source_cli;
-pub use compiler::{GerbilCompiler, GerbilSource, compile_checked};
 pub use deck_runtime_native::{
     GERBIL_DECK_RUNTIME_NATIVE_ABI_ID, GERBIL_DECK_RUNTIME_NATIVE_ABI_VERSION,
     GERBIL_DECK_RUNTIME_NATIVE_HEADER_PATH, GERBIL_DECK_RUNTIME_NATIVE_HEADER_SOURCE,
@@ -139,10 +120,6 @@ pub use deck_runtime_script::{
     gerbil_deck_runtime_script_interface_receipt_contract,
     gerbil_deck_runtime_script_interface_type_manifest,
 };
-pub use deps::{
-    GerbilDepsAction, GerbilDepsConfig, GerbilDepsError, run_gerbil_deps_cli,
-    run_gerbil_deps_from_args,
-};
 pub use graph_loop_continuation::{
     GERBIL_LOOP_GRAPH_CONTINUATION_NATIVE_PROJECTION_ABI_ID,
     GERBIL_LOOP_GRAPH_CONTINUATION_NATIVE_PROJECTION_ABI_VERSION,
@@ -164,23 +141,17 @@ pub use loop_case_driver::{
     GERBIL_LOOP_CASE_DRIVER_SCHEME_RECEIPT_KIND, GerbilLoopCaseCommandKind,
     GerbilLoopCaseDriverCapability, GerbilLoopCaseDriverCaseId, GerbilLoopCaseDriverLoopProgramId,
     GerbilLoopCaseDriverLoopProgramProjectionError, GerbilLoopCaseDriverProfileRef,
-    GerbilLoopCaseDriverProjectedLoopProgram, GerbilLoopCaseDriverProjectedLoopProgramError,
-    GerbilLoopCaseDriverProjectedLoopProgramRequest, GerbilLoopCaseDriverRustLoopReceipt,
-    GerbilLoopCaseDriverSchemeReceipt, GerbilLoopCaseDriverSchemeReceiptKind,
-    GerbilLoopCaseDriverVerticalTraceError, GerbilLoopCaseDriverVerticalTraceReceipt,
-    GerbilLoopCaseRuntimeHandoffStatus, GerbilLoopCaseRuntimeMode, GerbilLoopCaseSchemeBoundary,
-    GerbilLoopCaseSerializationBoundary, GerbilLoopCaseSmokeStatus,
-    default_gerbil_config_interface_root, gerbil_config_interface_loadpath_with_src,
-    load_gerbil_loop_case_driver_projected_loop_program,
-    parse_gerbil_loop_case_driver_vertical_trace,
+    GerbilLoopCaseDriverRustLoopReceipt, GerbilLoopCaseDriverSchemeReceipt,
+    GerbilLoopCaseDriverSchemeReceiptKind, GerbilLoopCaseDriverVerticalTraceError,
+    GerbilLoopCaseDriverVerticalTraceReceipt, GerbilLoopCaseRuntimeHandoffStatus,
+    GerbilLoopCaseRuntimeMode, GerbilLoopCaseSchemeBoundary, GerbilLoopCaseSerializationBoundary,
+    GerbilLoopCaseSmokeStatus, parse_gerbil_loop_case_driver_vertical_trace,
     project_gerbil_loop_case_driver_intent_case_artifact_manifest,
     project_gerbil_loop_case_driver_intent_case_run_receipt,
     project_gerbil_loop_case_driver_loop_action_kind,
     project_gerbil_loop_case_driver_loop_event_kind, project_gerbil_loop_case_driver_loop_program,
     project_gerbil_loop_case_driver_rust_loop_receipt,
     project_gerbil_loop_case_driver_vertical_trace_rust_loop_receipt,
-    run_gerbil_config_interface_case_driver_smoke,
-    run_gerbil_config_interface_case_driver_smoke_in,
     verify_gerbil_loop_case_driver_vertical_trace,
 };
 pub use loop_case_driver::{
@@ -188,7 +159,6 @@ pub use loop_case_driver::{
     parse_gerbil_loop_case_driver_real_llm_case_receipt,
 };
 pub use marlin_gerbil_ir::GerbilWorkspaceContractFacts;
-pub use native_aot_cli::run_gerbil_native_aot_cli;
 pub use policy_pack_projection::{
     GERBIL_LOOP_POLICY_PROJECTION_MODULE_PACKAGE_ID,
     GERBIL_LOOP_POLICY_PROJECTION_MODULE_SCHEMA_ID, GERBIL_LOOP_POLICY_PROJECTION_MODULE_TYPE_ID,
@@ -221,42 +191,9 @@ pub use policy_pack_projection::{
     gerbil_resolved_loop_policy_pack_package_manifest,
     gerbil_resolved_loop_policy_pack_type_manifest,
 };
-pub use real_gxi_gate::{
-    RealGxiGateCommand, RealGxiGateError, run_real_gxi_gate_cli, run_real_gxi_gate_from_args,
-};
-pub use resident_runtime::{
-    GerbilResidentRuntimeHandle, GerbilResidentRuntimeHealthReceipt,
-    GerbilResidentRuntimeHealthStatus, GerbilResidentRuntimePlan,
-    GerbilResidentRuntimePrepareReceipt, GerbilResidentRuntimeProcess,
-    GerbilResidentRuntimeProcessPlan, GerbilResidentRuntimeProcessReceipt,
-    GerbilResidentRuntimeProcessStatus, GerbilResidentRuntimeSessionId,
-    GerbilResidentRuntimeSessionMode, GerbilResidentRuntimeShutdownReceipt,
-    GerbilResidentRuntimeShutdownStatus, GerbilResidentStrategyEventKind,
-    GerbilResidentStrategyExecutionPerformanceReceipt,
-    GerbilResidentStrategyExecutionPerformanceScope, GerbilResidentStrategyExecutionReceipt,
-    GerbilResidentStrategyExecutionRequest, GerbilResidentStrategyExecutionResponse,
-    GerbilResidentStrategyExecutionStatus, GerbilResidentStrategyExecutor,
-    GerbilResidentStrategyGxiSmokeBridge, GerbilResidentStrategyLaneId,
-    GerbilResidentStrategyLanePlan, GerbilResidentStrategyLaneStatus,
-    GerbilResidentStrategyRequest, GerbilResidentStrategyRequestId,
-    GerbilResidentStrategyRequestReceipt, GerbilResidentStrategyRequestStatus,
-    GerbilResidentStrategyServicePlan, GerbilResidentStrategyServiceReceipt,
-};
 pub use runtime::{
-    GERBIL_ADAPTER_MODULE, GERBIL_LOADPATH_ENV, GERBIL_PACKAGE_BUILD_SCRIPT,
-    GERBIL_PACKAGE_ROOT_PATH, GERBIL_PACKAGE_SOURCE_PATH, GERBIL_POO_MOP_MODULE,
-    GERBIL_POO_OBJECT_MODULE, GERBIL_POO_PACKAGE_NAME, GERBIL_POO_PROTO_MODULE,
-    GERBIL_RUNTIME_ASSETS, GERBIL_RUNTIME_BUILD_DEPS, GERBIL_RUNTIME_BUILD_STAGES,
-    GERBIL_RUNTIME_BUILD_WORKER_ENV, GERBIL_RUNTIME_COVERAGE_ROOTS,
-    GERBIL_RUNTIME_EXCLUDED_PACKAGE_SOURCE_FILES, GERBIL_RUNTIME_PACKAGE_NAME,
-    GERBIL_RUNTIME_SOURCE_ROOTS, GERBIL_RUNTIME_SPECIAL_SOURCE_FILES, GerbilRuntimeAsset,
-    GerbilRuntimeBuildScriptContract, MARLIN_GERBIL_GSC_ENV, MARLIN_GERBIL_GXC_ENV,
-    MARLIN_GERBIL_GXI_ENV, MARLIN_GERBIL_GXPKG_ENV, default_gerbil_gsc_program,
-    default_gerbil_gxc_program, default_gerbil_gxi_program, default_gerbil_gxpkg_program,
-    gerbil_package_build_script, gerbil_package_root, gerbil_runtime_asset, gerbil_runtime_assets,
-    gerbil_runtime_build_script_contract, gerbil_runtime_dependency_loadpath,
-    gerbil_runtime_loadpath, gerbil_runtime_loadpath_with_dependencies, resolve_gerbil_executable,
-    write_gerbil_runtime_assets,
+    default_gerbil_gsc_program, default_gerbil_gxc_program, default_gerbil_gxpkg_program,
+    gerbil_package_root,
 };
 pub use scheme_types::{
     GerbilSchemeBackedBindingCatalogReceipt, GerbilSchemeFieldName, GerbilSchemeNativeAbiContract,

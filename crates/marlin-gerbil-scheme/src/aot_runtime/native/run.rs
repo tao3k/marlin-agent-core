@@ -359,7 +359,7 @@ fn run_native_aot_command(
     let program = gerbil_toolchain_program(&command_plan.program);
     let mut command = Command::new(&program);
     command.current_dir(&plan.root).args(&command_plan.args);
-    gerbil_scheme::native_environment::configure_gerbil_native_tool_command(&mut command, &program);
+    gerbil_scheme::tool_environment::configure_gerbil_native_tool_command(&mut command, &program);
 
     let output = command.output();
 

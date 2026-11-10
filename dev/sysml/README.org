@@ -1,0 +1,77 @@
+#+TITLE: Marlin OpenSysML Model Map
+#+LANGUAGE: en
+#+OPTIONS: toc:2
+#+STARTUP: overview
+#+FILETAGS: :marlin:architecture:sysml:
+
+[[file:../../project.sysml][Project entry]] · [[file:../../docs/10-architecture/10.00-architecture-index.org][Architecture index]] · [[file:../../docs/40-rfcs/40.166-plugin-contract.org::#plugin-model][Org companion]]
+
+* Scope and ownership
+
+The initial scope is the plugin engine, its transport boundaries, and the
+activation and run lifecycles. =project.sysml= selects the top-level views.
+The files here own structural identities, relations, and state transitions.
+Org owns rationale, protocol detail, assumptions, and evidence. The
+Brief-to-Draft example stays in the RFC as a fixture of the generic contract.
+The [[file:../../docs/40-rfcs/40.166-plugin-contract.org::#gambit-js-leverage][Gambit JS build target]] produces assets for the client boundary shown in
+the transport view. The Agent Call view models host execution.
+
+The model follows the deterministic-engineering architecture content contract
+at =1fe20380441a0cd85055695c2adcc55ce699a369=. It separates actual and target
+elements, uses stable short IDs, states relation meaning, and traces each
+requirement allocation to an owner and Org section. The reference project's
+case and publication identities remain with that project.
+[[https://github.com/hardenedlinux/deterministic-engineering/blob/1fe20380441a0cd85055695c2adcc55ce699a369/docs/10-19-design/10-architecture/10.31-architecture-document-and-decision-contracts.org][Architecture content contract]]
+
+* Model and Org correspondence
+
+| Model | Viewpoint and state | Org counterpart |
+|-------+---------------------+-----------------|
+| [[file:../../project.sysml][project.sysml]] | Project entry and named views | [[file:../../docs/40-rfcs/40.166-plugin-contract.org::#plugin-model][OpenSysML companion]] |
+| [[file:plugin-engine.sysml][plugin-engine.sysml]] | Source-inspected actual Rust interfaces and target gRPC/C ABI ownership | [[file:../../docs/40-rfcs/40.166-plugin-contract.org::#plugin-ownership][Ownership]] and [[file:../../docs/40-rfcs/40.166-plugin-contract.org::#plugin-transport][Transport]] |
+| [[file:plugin-lifecycle.sysml][plugin-lifecycle.sysml]] | Target activation generation and run lifecycle | [[file:../../docs/40-rfcs/40.166-plugin-contract.org::#plugin-lifecycle][Grants and lifecycle]] |
+| [[file:plugin-execution.sysml][plugin-execution.sysml]] | Target Agent Call flow, stage allocations, and Scheme batch boundaries | [[file:../../docs/40-rfcs/40.166-plugin-contract.org::#agent-call-path][Agent Call execution and batching]] |
+
+#+NAME: plugin-requirement-trace
+| Requirement | Planned owner | Org responsibility |
+|-------------+---------------+--------------------|
+| MAR-PLG-R01 | Rust runtime and activation gate | [[file:../../docs/40-rfcs/40.166-plugin-contract.org::#plugin-lifecycle][Rust owns lifecycle and effect admission]] |
+| MAR-PLG-R02 | Scheme C ABI bridge | [[file:../../docs/40-rfcs/40.166-plugin-contract.org::#plugin-transport][Typed Gerbil C ABI]] |
+| MAR-PLG-R03 | gRPC service and client shell | [[file:../../docs/40-rfcs/40.166-plugin-contract.org::#plugin-transport][Engine-owned gRPC and scoped clients]] |
+| MAR-PLG-R04 | Evidence and offline verifier | [[file:../../docs/40-rfcs/40.166-plugin-contract.org::#plugin-replay][Offline replay evidence]] |
+| MAR-PLG-R05 | Compiled execution, message channels, Scheme C ABI bridge, and gRPC service | [[file:../../docs/40-rfcs/40.166-plugin-contract.org::#plugin-performance][High-performance execution design]] and [[file:../../docs/40-rfcs/40.166-plugin-contract.org::#actor-throughput][Actor throughput across the host boundary]] |
+
+The actual package references the Rust run registry, policy IR, Scheme C ABI
+bridge, and graph admission at the inspected Marlin revision
+=5cdd0b1b925b1513b998ae8e79e28eaf10cabd8e=. The target gRPC server, plugin
+activation integration, and scoped frontend are design work. Dependency arrows
+point from consumer to supplier. Connections identify transport channels.
+Allocations identify who is responsible for implementing a requirement.
+The runtime and acceptance evidence belong to their respective owners.
+
+* Validate and render
+
+From the repository root, load the entry and all companion packages as one
+model. Keep generated views paired with the source and OpenSysML version that
+produced them. Edit the SysML source to change topology and the Org counterpart
+to change rationale or evidence.
+
+#+begin_src sh
+just sysml-check
+sysml -strict -no-record-cache project.sysml dev/sysml \
+  -render MarlinAgentCore::projectStructure -render-form mermaid
+sysml -strict -no-record-cache project.sysml dev/sysml \
+  -render MarlinAgentCore::pluginTransport -render-form mermaid
+sysml -strict -no-record-cache project.sysml dev/sysml \
+  -render MarlinAgentCore::performanceDesign -render-form mermaid
+sysml -strict -no-record-cache project.sysml dev/sysml \
+  -render MarlinAgentCore::agentCallPath -render-form mermaid
+sysml -strict -no-record-cache project.sysml dev/sysml \
+  -render '#state:MarlinPluginLifecycle::ActivationLifecycle' -render-form mermaid
+sysml -strict -no-record-cache project.sysml dev/sysml \
+  -render '#state:MarlinPluginLifecycle::InvocationLifecycle' -render-form mermaid
+#+end_src
+
+Strict validation checks model syntax and references. The reflective self-check
+checks the model structure. Runtime behavior and performance require their own
+evidence.

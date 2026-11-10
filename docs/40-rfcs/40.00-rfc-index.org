@@ -23,6 +23,7 @@ RFC documents define proposed or active protocol contracts before they become ac
 [[file:40.160-agent-graph-topology-protocol.org][40.160 Agent Graph Topology Protocol]]
 [[file:40.164-poo-flow-agent-flow-loop-substrate.org][40.164 POO Flow Agent-Flow Loop Substrate]]
 [[file:40.165-loop-policy-ir-performance-boundary.org][40.165 LoopPolicyIR Performance Boundary]]
+[[file:40.166-plugin-contract.org][40.166 Plugin Contract]]
 ** Acceleration Lanes
 | Lane | RFCs | Goal | Immediate Gate |
 ** Progress Rules

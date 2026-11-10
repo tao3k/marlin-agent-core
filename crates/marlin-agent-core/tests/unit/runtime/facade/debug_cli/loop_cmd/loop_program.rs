@@ -86,8 +86,8 @@ fn debug_cli_loop_program_run_projects_runtime_replay_bundle() {
 }
 
 #[test]
-fn debug_cli_loop_program_run_consumes_config_interface_runtime_handoff_fixture() {
-    let input = config_interface_runtime_handoff_fixture();
+fn debug_cli_loop_program_run_consumes_runtime_handoff_fixture() {
+    let input = runtime_handoff_fixture();
     let run = run_marlin_cli_from_args([
         "loop",
         "program",
@@ -139,18 +139,16 @@ fn debug_cli_loop_program_run_consumes_config_interface_runtime_handoff_fixture(
 }
 
 #[test]
-fn debug_cli_loop_run_consumes_config_interface_loop_case_fixtures() {
-    for case in config_interface_loop_case_fixtures() {
-        let input = config_interface_loop_case_fixture(case.file);
+fn debug_cli_loop_run_consumes_loop_case_fixtures() {
+    for case in loop_case_fixtures() {
+        let input = loop_case_fixture(case.file);
         let run = run_marlin_cli_from_args([
             "loop",
             "run",
             "--input",
             input.to_str().expect("utf8 loop fixture path"),
             "--catalog",
-            config_interface_real_llm_catalog()
-                .to_str()
-                .expect("utf8 catalog path"),
+            real_llm_catalog().to_str().expect("utf8 catalog path"),
             "--max-iterations",
             "1",
             "--no-store",
@@ -194,44 +192,42 @@ fn debug_cli_loop_run_consumes_config_interface_loop_case_fixtures() {
     }
 }
 
-fn config_interface_runtime_handoff_fixture() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(
-        "../marlin-gerbil-scheme/gerbil/t/fixtures/config-interface/loop-cases/runtime-handoff-llm.loop-program-run.json",
-    )
+fn runtime_handoff_fixture() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../scheme/t/fixtures/loop-cases/runtime-handoff-llm.loop-program-run.json")
 }
 
-struct ConfigInterfaceLoopCaseFixture {
+struct LoopCaseFixture {
     file: &'static str,
     graph_id: &'static str,
 }
 
-fn config_interface_loop_case_fixtures() -> [ConfigInterfaceLoopCaseFixture; 3] {
+fn loop_case_fixtures() -> [LoopCaseFixture; 3] {
     [
-        ConfigInterfaceLoopCaseFixture {
+        LoopCaseFixture {
             file: "policy-receipt-gate-llm.loop.json",
             graph_id: "marlin-policy-receipt-gate-real-llm",
         },
-        ConfigInterfaceLoopCaseFixture {
+        LoopCaseFixture {
             file: "loop-contract-llm.loop.json",
             graph_id: "marlin-loop-contract-real-llm",
         },
-        ConfigInterfaceLoopCaseFixture {
+        LoopCaseFixture {
             file: "failure-retry-llm.loop.json",
             graph_id: "marlin-failure-retry-real-llm",
         },
     ]
 }
 
-fn config_interface_loop_case_fixture(file: &str) -> PathBuf {
+fn loop_case_fixture(file: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../marlin-gerbil-scheme/gerbil/t/fixtures/config-interface/loop-cases")
+        .join("../../scheme/t/fixtures/loop-cases")
         .join(file)
 }
 
-fn config_interface_real_llm_catalog() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(
-        "../marlin-gerbil-scheme/gerbil/t/fixtures/config-interface/loop-cases/real-llm-catalog.toml",
-    )
+fn real_llm_catalog() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../scheme/t/fixtures/loop-cases/real-llm-catalog.toml")
 }
 
 fn sample_loop_program() -> LoopProgram {

@@ -1,14 +1,5 @@
-#[path = "unit/artifact.rs"]
-mod artifact;
-
 #[path = "unit/aot_runtime/mod.rs"]
 mod aot_runtime;
-
-#[path = "unit/compiler.rs"]
-mod compiler;
-
-#[path = "unit/deps.rs"]
-mod deps;
 
 #[path = "unit/dependency_boundary.rs"]
 mod dependency_boundary;
@@ -28,15 +19,6 @@ mod deck_runtime_native;
 #[path = "unit/agent_policy_routing_native/mod.rs"]
 mod agent_policy_routing_native;
 
-#[path = "unit/command/mod.rs"]
-mod command;
-
-#[path = "unit/runtime/mod.rs"]
-mod runtime;
-
-#[path = "unit/resident_runtime/mod.rs"]
-mod resident_runtime;
-
 #[path = "unit/loop_case_driver/mod.rs"]
 mod loop_case_driver;
 
@@ -44,3 +26,6 @@ mod loop_case_driver;
 mod scheme_types;
 
 marlin_rust_project_harness_policy::scenario_performance_tests!();
+
+#[path = "unit/scheme_package.rs"]
+mod scheme_package;
