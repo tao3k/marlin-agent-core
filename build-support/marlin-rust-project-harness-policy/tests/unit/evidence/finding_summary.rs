@@ -1,7 +1,5 @@
-use marlin_rust_project_harness_policy::RustProjectHarnessFindingSummary;
-use rust_lang_project_harness::{
-    RustDiagnosticSeverity, RustHarnessFinding, RustHarnessReport, SourceLocation,
-};
+use crate::policy::RustProjectHarnessFindingSummary;
+use asp_rust::{AspRustFinding, AspRustReport, RustDiagnosticSeverity, SourceLocation};
 use std::collections::{BTreeMap, BTreeSet};
 
 #[test]
@@ -15,7 +13,7 @@ fn summary_retains_blocking_counts_and_deduplicated_rule_ids() {
     .into_iter()
     .map(|(rule_id, severity)| finding(rule_id, severity))
     .collect();
-    let report = RustHarnessReport {
+    let report = AspRustReport {
         modules: Vec::new(),
         findings,
         invariant_candidates: Vec::new(),
@@ -24,7 +22,7 @@ fn summary_retains_blocking_counts_and_deduplicated_rule_ids() {
             RustDiagnosticSeverity::Warning,
             RustDiagnosticSeverity::Error,
         ]),
-        project_scope: None,
+        project_resolution: None,
         workspace_member_scopes: Vec::new(),
     };
 
@@ -41,8 +39,8 @@ fn summary_retains_blocking_counts_and_deduplicated_rule_ids() {
     );
 }
 
-fn finding(rule_id: &str, severity: RustDiagnosticSeverity) -> RustHarnessFinding {
-    RustHarnessFinding {
+fn finding(rule_id: &str, severity: RustDiagnosticSeverity) -> AspRustFinding {
+    AspRustFinding {
         rule_id: rule_id.to_string(),
         pack_id: "test.pack".to_string(),
         severity,

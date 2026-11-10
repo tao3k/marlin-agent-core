@@ -22,7 +22,5 @@ mod loop_case_driver;
 #[path = "unit/scheme_types/mod.rs"]
 mod scheme_types;
 
-marlin_rust_project_harness_policy::scenario_performance_tests!();
-
 #[path = "unit/scheme_package.rs"]
 mod scheme_package;

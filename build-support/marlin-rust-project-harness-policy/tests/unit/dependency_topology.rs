@@ -1,6 +1,6 @@
 use std::fs;
 
-use marlin_rust_project_harness_policy::{
+use crate::policy::{
     ExternalDependencyTopologyReceiptStatus, consume_external_dependency_topology_receipt,
 };
 
@@ -8,11 +8,7 @@ use crate::workspace::workspace_root;
 
 #[test]
 fn dependency_topology_receipt_is_optional_for_hermetic_builds() {
-    let receipt = consume_external_dependency_topology_receipt(
-        workspace_root(),
-        "rust-lang-project-harness",
-        None,
-    );
+    let receipt = consume_external_dependency_topology_receipt(workspace_root(), "asp-rust", None);
 
     assert!(receipt.is_success(), "{}", receipt.agent_message());
     assert_eq!(
@@ -37,19 +33,19 @@ fn dependency_topology_receipt_accepts_external_verified_receipt() {
         r#"{
   "schema_id": "agent.semantic-protocols.dependency-topology-receipt",
   "schema_version": "1",
-  "package_name": "rust-lang-project-harness",
+  "package_name": "asp-rust",
   "producer": "asp.graph-turbo",
   "status": "verified",
   "evidence_sources": ["graph-turbo:dependency-topology"],
   "agent_next_action": "continue",
-  "verification_command": "asp rust search pipe 'dependency topology rust-lang-project-harness' --workspace . --view seeds"
+  "verification_command": "asp rust search pipe 'dependency topology asp-rust' --workspace . --view seeds"
 }"#,
     )
     .expect("write topology receipt fixture");
 
     let receipt = consume_external_dependency_topology_receipt(
         workspace_root(),
-        "rust-lang-project-harness",
+        "asp-rust",
         Some(&receipt_path),
     );
 
@@ -83,7 +79,7 @@ fn dependency_topology_receipt_rejects_mismatched_package() {
 
     let receipt = consume_external_dependency_topology_receipt(
         workspace_root(),
-        "rust-lang-project-harness",
+        "asp-rust",
         Some(&receipt_path),
     );
 
@@ -93,7 +89,7 @@ fn dependency_topology_receipt_rejects_mismatched_package() {
     assert_eq!(
         receipt.status(),
         &ExternalDependencyTopologyReceiptStatus::PackageMismatch {
-            expected: "rust-lang-project-harness".to_owned(),
+            expected: "asp-rust".to_owned(),
             actual: "other-package".to_owned(),
         }
     );
@@ -113,7 +109,7 @@ fn dependency_topology_receipt_rejects_invalid_schema() {
         r#"{
   "schema_id": "example.invalid",
   "schema_version": "1",
-  "package_name": "rust-lang-project-harness",
+  "package_name": "asp-rust",
   "status": "verified"
 }"#,
     )
@@ -121,7 +117,7 @@ fn dependency_topology_receipt_rejects_invalid_schema() {
 
     let receipt = consume_external_dependency_topology_receipt(
         workspace_root(),
-        "rust-lang-project-harness",
+        "asp-rust",
         Some(&receipt_path),
     );
 

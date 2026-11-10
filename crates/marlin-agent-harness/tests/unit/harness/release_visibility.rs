@@ -15,7 +15,7 @@ fn harness_runtime_records_release_visibility_evidence() {
         crate_name: "marlin-gerbil-scheme".to_owned(),
         publish_enabled: false,
         asset_audit_command: "cargo package -p marlin-gerbil-scheme --list".to_owned(),
-        package_assets: vec!["README.md".to_owned()],
+        package_assets: vec!["README.org".to_owned()],
         runtime_dependency_chain: vec!["marlin-gerbil-ir".to_owned()],
         workflow_dependency_chain: vec!["marlin-org-workflow".to_owned()],
         gates: vec![ReleaseGateSpec {
@@ -86,7 +86,7 @@ fn harness_release_gate_receipt_projects_c_abi_readiness() {
         publish_enabled: false,
         asset_audit_command: "cargo test -p marlin-deck-runtime --features linked-selector"
             .to_owned(),
-        package_assets: vec!["README.md".to_owned()],
+        package_assets: vec!["README.org".to_owned()],
         runtime_dependency_chain: vec!["marlin-gerbil-scheme".to_owned()],
         workflow_dependency_chain: Vec::new(),
         gates: vec![ReleaseGateSpec {

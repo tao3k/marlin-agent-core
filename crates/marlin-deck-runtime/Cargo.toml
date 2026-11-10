@@ -4,6 +4,7 @@ edition.workspace = true
 version.workspace = true
 authors.workspace = true
 repository.workspace = true
+readme = "README.org"
 
 [features]
 default = []
@@ -26,9 +27,7 @@ tokio = { workspace = true, optional = true }
 tokio-util = { workspace = true, optional = true }
 
 [build-dependencies]
-marlin-rust-project-harness-policy.workspace = true
 marlin-gerbil-aot-link.workspace = true
 
 [dev-dependencies]
 criterion.workspace = true
-marlin-rust-project-harness-policy.workspace = true

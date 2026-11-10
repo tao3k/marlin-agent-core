@@ -423,10 +423,8 @@ make Gambit resolve =~~bin=, =~~lib=, and =~~include=.
 The hard linked-selector gate is a Rust-owned Scenario benchmark, not a shell
 parser. =marlin-agent-policy-routing-abi= runs its =allocation_shape= bench
 with =--features linked-selector=, validates the observed result through
-=marlin-rust-project-harness-policy=, and writes a normalized Scenario snapshot
-under =target/marlin/scenarios=. The downstream crate does not depend directly
-on =rust-lang-project-harness=; build-support owns that boundary for all Rust
-project harness policy APIs.
+its ASP Rust development dependency, and writes a normalized Scenario
+snapshot under =target/marlin/scenarios=.
 
 The stable gate is:
 #+begin_src sh

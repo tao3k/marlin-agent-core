@@ -1,9 +1,9 @@
-use marlin_rust_project_harness_policy::{
+use crate::policy::{
     RustProjectHarnessPackageEvidenceGraphRequest, RustProjectHarnessQualityFindingEvidencePaths,
     build_package_evidence_graph_receipt, evaluate_performance_and_stability_gate,
     run_marlin_rust_project_harness_for_package, rust_project_harness_config_for_project,
 };
-use rust_lang_project_harness::plan_rust_project_verification_with_config;
+use asp_rust::plan_rust_project_verification_with_config;
 
 use crate::workspace::policy_package_root;
 

@@ -59,6 +59,7 @@ ledger, not a free-form project plan.
 :EVAL_STATUS: passed
 :END:
 | Claim | Evidence | Command | Result |
+|-------+----------+---------+--------|
 | The plan example is contract-valid and archive-ready. | [[#agent-plan-ledger-example-20260614][plan root]] | asp org contract trace --org-contract-registry ../agent.plan.v1.org examples/agent.plan.v1.example.org | passed |
 #+begin_src sh
 asp org contract trace --org-contract-registry ../agent.plan.v1.org examples/agent.plan.v1.example.org
@@ -69,6 +70,7 @@ asp org contract trace --org-contract-registry ../agent.plan.v1.org examples/age
 :REVIEW_STATUS: passed
 :END:
 | Question | Value | Evidence |
+|----------+-------+----------|
 | Did the task finish? | yes | [[#agent-plan-ledger-example-20260614][plan root]] |
 | Did project scope drift? | no | [[#agent-plan-ledger-example-20260614][plan root]] |
 | Are all checklist items done? | yes | [[#agent-plan-ledger-example-20260614][plan root]] |

@@ -30,5 +30,3 @@ mod runtime_spawn_config;
 mod runtime_task_tracker;
 #[path = "unit/runtime/working_copy.rs"]
 mod runtime_working_copy;
-
-marlin_rust_project_harness_policy::scenario_performance_tests!();

@@ -9,9 +9,3 @@ repository.workspace = true
 marlin-org-model.workspace = true
 marlin-workspace-patch.workspace = true
 serde.workspace = true
-
-[build-dependencies]
-marlin-rust-project-harness-policy.workspace = true
-
-[dev-dependencies]
-marlin-rust-project-harness-policy.workspace = true

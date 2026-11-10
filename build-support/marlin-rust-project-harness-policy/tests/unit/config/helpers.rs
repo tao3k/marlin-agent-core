@@ -1,8 +1,6 @@
 use std::path::Path;
 
-use rust_lang_project_harness::{
-    RustOwnerResponsibility, RustVerificationProfileHint, RustVerificationTaskKind,
-};
+use asp_rust::{RustOwnerResponsibility, RustVerificationProfileHint, RustVerificationTaskKind};
 
 pub(crate) use crate::workspace::workspace_root;
 

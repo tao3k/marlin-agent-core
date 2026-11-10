@@ -95,6 +95,7 @@ Standard Contract Org needs to validate the same ledger shape agents use for rea
 :EVAL_STATUS: pending
 :END:
 | Claim | Evidence | Command | Result |
+|-------+----------+---------+--------|
 | The standard contract workspace fixture validates the plan ledger shape. | standard_library.rs fixture | cargo test -p marlin-org-workspace org_document_loader_validates_standard_agent_plan_task_loop_memory_topology_contracts | pending |
 
 ** Reflection
@@ -103,6 +104,7 @@ Standard Contract Org needs to validate the same ledger shape agents use for rea
 :REVIEW_STATUS: pending
 :END:
 | Question | Value | Evidence |
+|----------+-------+----------|
 | Did the task finish? | no | active fixture state |
 | Did project scope drift? | no | SCOPE_REF property |
 | Are all checklist items done? | no | root checklist |

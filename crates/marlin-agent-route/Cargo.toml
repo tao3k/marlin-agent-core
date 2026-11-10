@@ -16,11 +16,7 @@ serde.workspace = true
 tokio-util = { workspace = true, optional = true }
 
 [dev-dependencies]
-marlin-rust-project-harness-policy.workspace = true
 serde_json.workspace = true
 tempfile.workspace = true
 tokio.workspace = true
 tower.workspace = true
-
-[build-dependencies]
-marlin-rust-project-harness-policy.workspace = true

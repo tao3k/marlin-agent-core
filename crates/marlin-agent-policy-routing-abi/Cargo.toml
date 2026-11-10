@@ -21,11 +21,10 @@ harness = false
 marlin-gerbil-scheme.workspace = true
 
 [dev-dependencies]
-marlin-rust-project-harness-policy.workspace = true
+asp-rust.workspace = true
 criterion.workspace = true
 marlin-agent-graph.workspace = true
 tempfile.workspace = true
 
 [build-dependencies]
-marlin-rust-project-harness-policy.workspace = true
 marlin-gerbil-aot-link.workspace = true

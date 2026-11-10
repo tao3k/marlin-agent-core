@@ -1,14 +1,14 @@
 #![cfg(feature = "turso")]
 
+use crate::policy::{
+    RustProjectHarnessPackageEvidenceGraphRequest, RustProjectHarnessQualityFindingEvidencePaths,
+    build_package_evidence_graph_receipt, run_marlin_rust_project_harness_for_package,
+    rust_project_harness_config_for_project,
+};
 use marlin_agent_storage::{
     AgentId, AgentStorage, ArtifactHash, ArtifactRecord, EventId, ProjectId, SessionId,
     StorageResult, TopologyEdgeId, TopologyEdgeRecord, TopologyNodeId, TursoAgentStorage,
     TursoAgentStorageConfig, VisibilityReceipt,
-};
-use marlin_rust_project_harness_policy::{
-    RustProjectHarnessPackageEvidenceGraphRequest, RustProjectHarnessQualityFindingEvidencePaths,
-    build_package_evidence_graph_receipt, run_marlin_rust_project_harness_for_package,
-    rust_project_harness_config_for_project,
 };
 use tempfile::tempdir;
 

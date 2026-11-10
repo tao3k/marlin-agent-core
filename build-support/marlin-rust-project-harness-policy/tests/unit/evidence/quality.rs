@@ -1,6 +1,6 @@
 use std::collections::BTreeSet;
 
-use marlin_rust_project_harness_policy::{
+use crate::policy::{
     RustProjectHarnessExpectedArtifact, RustProjectHarnessFindingSeverity,
     RustProjectHarnessImprovementPlanStatus, RustProjectHarnessImprovementPriority,
     RustProjectHarnessImprovementQueueStatus, RustProjectHarnessPolicyProjectionDecision,
@@ -11,9 +11,7 @@ use marlin_rust_project_harness_policy::{
     evaluate_quality_findings_for_gate, project_current_rust_agent_policy_catalog,
     rust_project_harness_config_for_project,
 };
-use rust_lang_project_harness::{
-    plan_rust_project_verification_with_config, rust_agent_policy_rules,
-};
+use asp_rust::{plan_rust_project_verification_with_config, rust_agent_policy_rules};
 
 use super::helpers::{runtime_verification_policy_receipt, workspace_root};
 
@@ -48,7 +46,7 @@ fn verification_policy_receipt_exposes_crate_role_and_owner_profiles() {
 
 #[test]
 fn quality_findings_turn_missing_gates_into_agent_actionable_hard_errors() {
-    let receipt = marlin_rust_project_harness_policy::RustProjectHarnessGateReceipt {
+    let receipt = crate::policy::RustProjectHarnessGateReceipt {
         package_name: "demo".to_owned(),
         performance_gate: false,
         stability_gate: false,
@@ -84,7 +82,7 @@ fn quality_findings_turn_missing_gates_into_agent_actionable_hard_errors() {
 
 #[test]
 fn policy_projection_covers_current_upstream_rust_agent_catalog() {
-    let gate_receipt = marlin_rust_project_harness_policy::RustProjectHarnessGateReceipt {
+    let gate_receipt = crate::policy::RustProjectHarnessGateReceipt {
         package_name: "demo".to_owned(),
         performance_gate: false,
         stability_gate: false,
@@ -160,7 +158,7 @@ fn policy_projection_covers_current_upstream_rust_agent_catalog() {
 
 #[test]
 fn reflection_turns_quality_findings_into_improvement_queue() {
-    let gate_receipt = marlin_rust_project_harness_policy::RustProjectHarnessGateReceipt {
+    let gate_receipt = crate::policy::RustProjectHarnessGateReceipt {
         package_name: "marlin-agent-runtime".to_owned(),
         performance_gate: false,
         stability_gate: false,
@@ -252,7 +250,7 @@ fn reflection_turns_quality_findings_into_improvement_queue() {
 
 #[test]
 fn quality_findings_keep_successful_gate_as_agent_evidence_advice() {
-    let receipt = marlin_rust_project_harness_policy::RustProjectHarnessGateReceipt {
+    let receipt = crate::policy::RustProjectHarnessGateReceipt {
         package_name: "demo".to_owned(),
         performance_gate: true,
         stability_gate: true,
@@ -308,7 +306,7 @@ fn quality_findings_keep_successful_gate_as_agent_evidence_advice() {
 
 #[test]
 fn reflection_keeps_successful_quality_findings_as_healthy_queue() {
-    let gate_receipt = marlin_rust_project_harness_policy::RustProjectHarnessGateReceipt {
+    let gate_receipt = crate::policy::RustProjectHarnessGateReceipt {
         package_name: "marlin-agent-runtime".to_owned(),
         performance_gate: true,
         stability_gate: true,

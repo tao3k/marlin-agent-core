@@ -1,7 +1,7 @@
 use std::path::Path;
 
-use marlin_rust_project_harness_policy::rust_project_harness_config_for_project;
-use rust_lang_project_harness::RustOwnerResponsibility;
+use crate::policy::rust_project_harness_config_for_project;
+use asp_rust::RustOwnerResponsibility;
 
 use super::helpers::{
     assert_performance_and_stability_tasks, assert_responsibilities, profile_hint, workspace_root,

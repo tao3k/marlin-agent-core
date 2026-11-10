@@ -175,6 +175,7 @@ fn request_message(message: ModelGatewayMessage) -> Message {
     Message {
         role,
         content: message.content,
+        images: Vec::new(),
         name: message.name,
         tool_call_id: None,
         tool_calls: Vec::new(),

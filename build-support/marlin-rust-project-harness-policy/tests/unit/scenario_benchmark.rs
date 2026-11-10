@@ -1,12 +1,14 @@
 use std::{fs, path::Path};
 
-use marlin_rust_project_harness_policy::{
+use crate::policy::{
     RustScenarioPerformanceOptimizationFindingKind, RustScenarioPerformanceOptimizationPriority,
     RustScenarioPerformanceOptimizationStatus, RustScenarioWorkspaceBenchmarkImprovementKind,
-    RustScenarioWorkspaceBenchmarkStatus, optimization_receipt_from_benchmark_receipt,
-    validate_workspace_required_scenario_benchmarks,
+    RustScenarioWorkspaceBenchmarkStatus,
+    assert_crate_scenario_performance_baseline_receipt_is_stable,
+    assert_crate_scenario_performance_contract_gate_accepts_crate_scenarios,
+    optimization_receipt_from_benchmark_receipt, validate_workspace_required_scenario_benchmarks,
 };
-use rust_lang_project_harness::{RustScenarioBenchmarkReceipt, validate_rust_scenario_benchmark};
+use asp_rust::{RustScenarioBenchmarkReceipt, validate_rust_scenario_benchmark};
 use tempfile::tempdir;
 
 use crate::workspace::workspace_root;
@@ -86,6 +88,16 @@ fn current_workspace_gate_accepts_all_crate_scenario_benchmarks() {
     );
     assert_ne!(receipt.crate_count, 0, "{receipt:?}");
     assert!(receipt.improvements.is_empty(), "{receipt:?}");
+    for package in receipt.crates {
+        if package.optimization_status.is_some() {
+            let package_root = workspace_root.join(&package.crate_root);
+            assert_crate_scenario_performance_baseline_receipt_is_stable(
+                &package_root,
+                package.crate_name.as_str(),
+            );
+            assert_crate_scenario_performance_contract_gate_accepts_crate_scenarios(&package_root);
+        }
+    }
 }
 
 #[test]
@@ -110,10 +122,10 @@ fn workspace_gate_turns_schema_drift_into_actionable_improvement() {
                 == RustScenarioWorkspaceBenchmarkImprovementKind::InvalidScenarioBenchmarkSchema
                 && improvement
                     .next_action
-                    .contains("upstream rust-lang-project-harness scenario schema")
+                    .contains("upstream asp-rust scenario schema")
                 && improvement
                     .verification_command
-                    .contains("scenario_performance_contract_gate_accepts_crate_scenarios")
+                    .contains("current_workspace_gate_accepts_all_crate_scenario_benchmarks")
         }),
         "{receipt:?}"
     );

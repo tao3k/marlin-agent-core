@@ -14,6 +14,8 @@ mod memory_topology_projection_gate;
 mod org_memory_storage_gate;
 #[path = "integration/paths.rs"]
 mod paths;
+#[path = "../../../build-support/marlin-rust-project-harness-policy/tests/support/mod.rs"]
+pub mod policy;
 #[path = "integration/rfcdb_evidence_graph_gate.rs"]
 mod rfcdb_evidence_graph_gate;
 #[path = "integration/scenario_performance_contract_gate.rs"]
@@ -30,3 +32,5 @@ mod turso_070_fundamental_scenarios;
 mod turso_optimization_scenarios;
 #[path = "integration/turso_sync_feature_gate.rs"]
 mod turso_sync_feature_gate;
+
+asp_rust::asp_rust_cargo_test_gate!(mode = warn);

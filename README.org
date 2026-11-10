@@ -116,7 +116,7 @@ direnv exec . cargo test -p marlin-agent-kernel --locked
 direnv exec . cargo bench -p marlin-agent-kernel --bench loop_program_execution_shape --locked
 #+end_src
 
-Development formatting and policy details live in [[file:development.md][development.md]].
+Development formatting and policy details live in [[file:development.org][development.org]].
 
 * Documentation
 
@@ -143,8 +143,8 @@ Focused design references:
 - [[file:docs/40-rfcs/40.130-sandbox-backend-capability-protocol.org][docs/40-rfcs/40.130-sandbox-backend-capability-protocol.org]]
 - [[file:docs/40-rfcs/40.140-pi-agent-core-loop-parity.org][docs/40-rfcs/40.140-pi-agent-core-loop-parity.org]]
 - [[file:docs/40-rfcs/40.160-agent-graph-topology-protocol.org][docs/40-rfcs/40.160-agent-graph-topology-protocol.org]]
-- [[file:crates/marlin-agent-harness/README.md][crates/marlin-agent-harness/README.md]]
-- [[file:crates/marlin-gerbil-scheme/README.md][crates/marlin-gerbil-scheme/README.md]]
+- [[file:crates/marlin-agent-harness/README.org][crates/marlin-agent-harness/README.org]]
+- [[file:crates/marlin-gerbil-scheme/README.org][crates/marlin-gerbil-scheme/README.org]]
 
 * Project Rules
 

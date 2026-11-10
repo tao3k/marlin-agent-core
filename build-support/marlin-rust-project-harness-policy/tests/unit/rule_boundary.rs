@@ -1,9 +1,9 @@
 use std::fs;
 
-use marlin_rust_project_harness_policy::{
+use crate::policy::{
     run_marlin_rust_project_harness_for_package, rust_project_harness_config_for_project,
 };
-use rust_lang_project_harness::RustHarnessReport;
+use asp_rust::AspRustReport;
 
 enum ModuleLayout {
     Flat,
@@ -11,7 +11,7 @@ enum ModuleLayout {
     Both,
 }
 
-fn report_for_layout(layout: ModuleLayout) -> RustHarnessReport {
+fn report_for_layout(layout: ModuleLayout) -> AspRustReport {
     let project = tempfile::tempdir().expect("temporary Rust project");
     let root = project.path();
     fs::create_dir_all(root.join("src")).expect("create source root");
@@ -35,21 +35,23 @@ fn report_for_layout(layout: ModuleLayout) -> RustHarnessReport {
     run_marlin_rust_project_harness_for_package(root, &config).expect("Marlin harness report")
 }
 
-rust_lang_project_harness::rust_project_harness_rule_boundary_tests! {
-    suite = module_source_layout_boundary,
-    rule = "RUST-MOD-R007",
-    cases = {
-        flat_module_source_is_clean: {
-            report = report_for_layout(ModuleLayout::Flat),
-            expected_findings = 0,
-        },
-        directory_module_source_is_clean: {
-            report = report_for_layout(ModuleLayout::Directory),
-            expected_findings = 0,
-        },
-        file_and_directory_module_sources_conflict: {
-            report = report_for_layout(ModuleLayout::Both),
-            expected_findings = 1,
-        },
-    },
+#[test]
+fn module_source_layout_boundary() {
+    for (layout, expected) in [
+        (ModuleLayout::Flat, 0),
+        (ModuleLayout::Directory, 0),
+        (ModuleLayout::Both, 1),
+    ] {
+        let report = report_for_layout(layout);
+        assert_eq!(
+            report
+                .findings
+                .iter()
+                .filter(|finding| finding.rule_id == "RUST-MOD-R007")
+                .count(),
+            expected,
+            "module layout report: {:?}",
+            report.findings,
+        );
+    }
 }

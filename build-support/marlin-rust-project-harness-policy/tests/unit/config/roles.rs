@@ -1,6 +1,4 @@
-use marlin_rust_project_harness_policy::{
-    MarlinCrateVerificationRole, marlin_crate_verification_role_for_project,
-};
+use crate::policy::{MarlinCrateVerificationRole, marlin_crate_verification_role_for_project};
 
 use super::helpers::workspace_root;
 

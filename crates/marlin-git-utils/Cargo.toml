@@ -9,9 +9,5 @@ repository.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 
-[build-dependencies]
-marlin-rust-project-harness-policy.workspace = true
-
 [dev-dependencies]
 tempfile.workspace = true
-marlin-rust-project-harness-policy.workspace = true

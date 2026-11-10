@@ -4,6 +4,7 @@ edition.workspace = true
 version.workspace = true
 authors.workspace = true
 repository.workspace = true
+readme = "README.org"
 
 [features]
 gerbil = ["dep:gerbil-scheme"]

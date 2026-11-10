@@ -4,5 +4,3 @@ mod session_context;
 mod session_runtime;
 #[path = "unit/storage_projection.rs"]
 mod storage_projection;
-
-marlin_rust_project_harness_policy::scenario_performance_tests!();

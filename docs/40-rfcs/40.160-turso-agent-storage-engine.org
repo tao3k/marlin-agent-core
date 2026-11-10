@@ -2,6 +2,14 @@
 #+date: 2026-07-04
 #+status: research-baseline
 
+* Dependency boundary
+
+=marlin-agent-storage= consumes the =turso_driver= exported by
+=mrr-data-backend=. The workspace pins [[https://github.com/tao3k/mrr-data/pull/12][MRR Data PR #12]]
+at =daa6487820f798f0583713de8d03110aeac5d1fd=. MRR Data selects Turso 0.8.3
+and provides both the embedded and sync driver features. Marlin owns the
+agent storage schema, transaction boundaries, and typed receipts.
+
 * Thesis
 
 Marlin should adopt Turso for the parts of the agent runtime that need a
@@ -1223,22 +1231,15 @@ The equivalent Marlin metadata before this split was =32= workspace packages,
 package build also paid for dependency-topology, evidence-graph, and quality
 gate work.
 
-The typed boundary is now explicit:
+The current typed boundary runs through development targets:
 
-- =assert_marlin_rust_project_harness_build_check_from_env= is the only
-  downstream =build.rs= entry point.  It preserves the package-scoped Harness
-  scan and the 1000-source-line modularity warning.
-- =complete_build_gate= remains the explicit heavy path for dependency
-  topology and evidence graph materialization.
+- =just rust-dev-gate= runs the ASP Rust package scans across the Cargo
+  workspace. Storage uses ASP Rust through its integration tests.
 - =run_marlin_rust_project_harness_for_package= parses the supplied
-  =Cargo.toml= and rejects workspace manifests before delegating to the pinned
-  Harness runner.  Package evidence cannot silently widen back to a workspace
-  scan even while the upstream dependency remains on its stable unscoped API.
+  =Cargo.toml= and delegates to ASP Rust with package scope.
 - Package evidence and performance/stability receipts are exercised by
   independently addressable integration-test targets, including
   =package_evidence_graph_receipt_is_owned_by_build_support=.
-- The ambiguous =assert_marlin_rust_project_harness_gate_from_env= API was
-  removed in the same migration; no compatibility shim remains.
 
 The next build-graph step is to give each package an explicit gate target in a
 workspace gate runner and then delete build scripts that contain no native

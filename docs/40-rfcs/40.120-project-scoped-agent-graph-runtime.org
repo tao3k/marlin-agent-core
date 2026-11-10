@@ -13,7 +13,7 @@ Marlin is not a single-workspace, single-session, single-agent tool shell. It is
 Org is the core reference substrate for this runtime: parser-owned Org facts,
 contracts, source spans, and validation receipts are the durable evidence plane
 that graph query projects into typed runtime views. See
-[[file:../superpowers/specs/2026-06-15-org-first-project-memory-runtime-design.md][Org-first Project Memory Runtime Design]]
+[[file:../superpowers/specs/2026-06-15-org-first-project-memory-runtime-design.org][Org-first Project Memory Runtime Design]]
 for the architecture-level constraint behind the memory and recall slices.
 
 This RFC fixes the first scope topology for that runtime:

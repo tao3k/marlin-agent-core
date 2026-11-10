@@ -6,7 +6,7 @@ authors.workspace = true
 repository.workspace = true
 description = "Gerbil Scheme runtime bindings for typed Marlin artifacts."
 license = "Apache-2.0"
-readme = "README.md"
+readme = "README.org"
 publish = false
 
 [[bench]]
@@ -24,9 +24,6 @@ object.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 gerbil-scheme.workspace = true
-
-[build-dependencies]
-marlin-rust-project-harness-policy.workspace = true
 
 [dev-dependencies]
 criterion.workspace = true
@@ -46,4 +43,3 @@ static_assertions.workspace = true
 tempfile.workspace = true
 tokio.workspace = true
 toml.workspace = true
-marlin-rust-project-harness-policy.workspace = true

@@ -55,7 +55,7 @@ fn gerbil_release_topology_carries_package_gates_and_dependency_chains() {
         asset_audit_command: "cargo package -p marlin-gerbil-scheme --list --allow-dirty"
             .to_string(),
         package_assets: vec![
-            "README.md".to_string(),
+            "README.org".to_string(),
             "examples/workspace-patch-intent-workflow.rs".to_string(),
             "fixtures/gerbil/marlin/protocol.ss".to_string(),
         ],
@@ -87,7 +87,7 @@ fn gerbil_release_topology_carries_package_gates_and_dependency_chains() {
         topology
             .package_assets
             .iter()
-            .any(|asset| asset == "README.md")
+            .any(|asset| asset == "README.org")
     );
     assert!(
         topology

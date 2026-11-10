@@ -4,6 +4,7 @@ edition.workspace = true
 version.workspace = true
 authors.workspace = true
 repository.workspace = true
+readme = "README.org"
 
 [[bench]]
 name = "dynamic_actions"
@@ -24,9 +25,5 @@ toml.workspace = true
 tracing.workspace = true
 thiserror.workspace = true
 
-[build-dependencies]
-marlin-rust-project-harness-policy.workspace = true
-
 [dev-dependencies]
 criterion.workspace = true
-marlin-rust-project-harness-policy.workspace = true

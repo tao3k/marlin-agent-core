@@ -180,6 +180,12 @@ fn project_contract_expectation(
             op: project_contract_compare_op(*op),
             expected: *expected,
         },
+        // These expectations need a binding context. Validation retains the
+        // parser-owned contract and evaluates it through Orgize.
+        orgize::ast::OrgContractExpectation::CountBinding(..)
+        | orgize::ast::OrgContractExpectation::ValueSetEqual { .. } => {
+            OrgContractExpectation::unsupported(expectation.expected_summary())
+        }
     }
 }
 

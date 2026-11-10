@@ -11,6 +11,3 @@ gerbil-scheme-aot-build.workspace = true
 marlin-gerbil-scheme.workspace = true
 object.workspace = true
 gerbil-scheme-build.workspace = true
-
-[build-dependencies]
-marlin-rust-project-harness-policy.workspace = true

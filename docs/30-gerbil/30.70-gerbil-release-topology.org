@@ -63,10 +63,6 @@ the release chain also needs the workflow/dev stack:
 - =marlin-org-workspace=
 - =marlin-org-workflow=
 
-The build gate dependency also needs a crates.io-compatible distribution path:
-
-- =rust-lang-project-harness=
-
 Keep the crate internal until that full chain is ready, or split examples/tests
 so the published runtime crate does not require unpublished workspace crates as
 dev dependencies.

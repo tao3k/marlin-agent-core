@@ -15,9 +15,3 @@ marlin-workspace-status.workspace = true
 marlin-workspace-view.workspace = true
 serde.workspace = true
 thiserror.workspace = true
-
-[build-dependencies]
-marlin-rust-project-harness-policy.workspace = true
-
-[dev-dependencies]
-marlin-rust-project-harness-policy.workspace = true

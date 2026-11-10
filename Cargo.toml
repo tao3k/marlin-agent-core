@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "build-support/marlin-gerbil-aot-link",
+    "build-support/marlin-rust-project-harness-policy",
     "crates/marlin-agent-context",
     "crates/marlin-agent-core",
     "crates/marlin-agent-environment",
@@ -43,34 +44,31 @@ authors = ["marlin contributors"]
 repository = "https://github.com/tao3k/marlin-agent-core"
 
 [workspace.dependencies]
-aho-corasick = "1.1.4"
-async-trait = "0.1.89"
-asp-rust = { git = "https://github.com/tao3k/asp-rust", rev = "1ca41124b846dec947f3d05119cafa07eaa57924", version = "0.1.2", default-features = false }
+aho-corasick = "1.1.5"
+async-trait = "0.1.92"
+asp-rust = { git = "https://github.com/tao3k/asp-rust", rev = "2419414ee5379bad89506496e3eaab928df68daf", version = "0.1.2", default-features = false, features = ["native-syntax"] }
 axum = { version = "0.8", features = ["json"] }
-cc = "1.2.64"
-cbindgen = "0.29.4"
+cc = "1.11.1"
 criterion = "0.8.2"
 gerbil-scheme = { git = "https://github.com/tao3k/gerbil-scheme-rust", rev = "bfe803f597a15a3654b70a64c3a039980c31da8a", version = "0.1.0" }
 gerbil-scheme-sys = { git = "https://github.com/tao3k/gerbil-scheme-rust", rev = "bfe803f597a15a3654b70a64c3a039980c31da8a", version = "0.1.0" }
 gerbil-scheme-build = { git = "https://github.com/tao3k/gerbil-scheme-rust", rev = "bfe803f597a15a3654b70a64c3a039980c31da8a", version = "0.1.0" }
 gerbil-scheme-aot-build = { git = "https://github.com/tao3k/gerbil-scheme-rust", rev = "bfe803f597a15a3654b70a64c3a039980c31da8a", version = "0.1.0" }
-futures-executor = "0.3.32"
-globset = "0.4.18"
-weaver-llm = { path = "../weaver/crates/llm" }
+futures-executor = "0.3.34"
+globset = "0.4.21"
+weaver-llm = { git = "https://github.com/hardenedlinux/weaver.git", rev = "5de7b08a09a2427c7bd03835ab062effc57e5acd" }
 memoffset = "0.9.1"
+mrr-data-backend = { git = "https://github.com/tao3k/mrr-data", rev = "daa6487820f798f0583713de8d03110aeac5d1fd", default-features = false }
 object = "0.39.1"
-# Orgize main still uses Scheme-to-Rust IR. PR #18 enables the bridge's
-# external-program feature, which excludes the in-process package tools.
-orgize = { git = "https://github.com/tao3k/orgize", rev = "9d9ee8c66ccd222bf4379d562deeda514b475875" }
+orgize = { git = "https://github.com/tao3k/orgize", rev = "8f615eb5cb9ec88fb84d73009c7a420875ca7308" }
 parking_lot = "0.12.5"
-reqwest = { version = "0.13.4", default-features = false, features = ["json", "rustls"] }
-serde = { version = "1.0.228", features = ["derive"] }
-serde_json = "1.0.145"
+reqwest = { version = "0.13.5", default-features = false, features = ["json", "rustls"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
 static_assertions = "1.1.0"
 tempfile = "3"
-turso = { version = "0.7.0-pre.17", default-features = false }
-toml = "1.1.2"
-thiserror = "2.0.18"
+toml = "1.2.1"
+thiserror = "2.0.21"
 tokio = { version = "1", features = ["full"] }
 tokio-stream = "0.1"
 tokio-util = { version = "0.7", features = ["rt"] }
@@ -78,16 +76,12 @@ tower = { version = "0.5.3", features = ["limit", "load-shed", "timeout", "util"
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter", "fmt", "json"] }
 wiremock = "0.6.5"
-rust-lang-project-harness = { git = "https://github.com/tao3k/rust-lang-project-harness", rev = "124b78e1e43265255e6e761b93f6a5f0048b0c48", version = "0.1.2" }
-marlin-rust-project-harness-policy = { path = "build-support/marlin-rust-project-harness-policy", version = "0.1.0" }
-marlin-agent-context = { path = "crates/marlin-agent-context", version = "0.1.0" }
 marlin-agent-environment = { path = "crates/marlin-agent-environment", version = "0.1.0" }
 marlin-agent-graph = { path = "crates/marlin-agent-graph", version = "0.1.0" }
 marlin-agent-harness = { path = "crates/marlin-agent-harness", version = "0.1.0" }
 marlin-agent-harness-types = { path = "crates/marlin-agent-harness-types", version = "0.1.0" }
 marlin-agent-hooks = { path = "crates/marlin-agent-hooks", version = "0.1.0" }
 marlin-agent-kernel = { path = "crates/marlin-agent-kernel", version = "0.1.0" }
-marlin-agent-policy-routing-abi = { path = "crates/marlin-agent-policy-routing-abi", version = "0.1.0" }
 marlin-agent-protocol = { path = "crates/marlin-agent-protocol", version = "0.1.0" }
 marlin-agent-route = { path = "crates/marlin-agent-route", version = "0.1.0" }
 marlin-agent-runtime = { path = "crates/marlin-agent-runtime", version = "0.1.0" }
@@ -238,8 +232,4 @@ opt-level = 2
 [profile.dev.package.tracing-subscriber]
 opt-level = 2
 [profile.dev.package.walkdir]
-opt-level = 2
-[profile.dev.package.webpki-roots]
-opt-level = 2
-[profile.dev.package.zstd]
 opt-level = 2

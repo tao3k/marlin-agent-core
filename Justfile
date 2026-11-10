@@ -7,6 +7,10 @@ default:
 sysml-check:
   sysml -strict -validate -self-check -no-record-cache project.sysml dev/sysml
 
+# Run the package-scoped ASP Rust development gate across the workspace.
+rust-dev-gate:
+  cargo run --locked -p marlin-rust-project-harness-policy --example marlin-workspace-package-gate
+
 # Install the dependency declared by the workspace Scheme package.
 scheme-deps:
   cd scheme && gxpkg deps --install

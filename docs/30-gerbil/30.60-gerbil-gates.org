@@ -119,7 +119,7 @@ resolve unpublished workspace-internal crates from the registry.
 
 Expected contents include:
 
-- =README.md=
+- =README.org=
 - =examples/workspace-patch-intent.rs=
 - =examples/workspace-patch-intent-workflow.rs=
 - =examples/workspace-patch-intent-source.ss=

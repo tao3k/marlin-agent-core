@@ -5,6 +5,7 @@ mod schema;
 #[path = "turso_storage.rs"]
 mod storage;
 
+use mrr_data_backend::turso_driver as turso;
 use schema::STORAGE_SCHEMA;
 
 use std::path::PathBuf;

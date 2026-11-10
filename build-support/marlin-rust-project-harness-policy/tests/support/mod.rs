@@ -1,0 +1,90 @@
+//! Build-script helper for Marlin's Rust project harness policy.
+//!
+//! This crate belongs to the Rust project harness boundary. It is responsible
+//! for package-level engineering quality gates, build-script receipts,
+//! performance/stability gates, CI evidence, and Rust project evidence graphs.
+//! It must not model agent runtime loops, sub-agents, hook replay, sessions, or
+//! agent harness scenarios.
+
+mod config;
+mod dependency_topology;
+mod evidence;
+mod evidence_projection;
+mod gate;
+mod gerbil_runtime_assets;
+mod improvement_queue;
+mod package_evidence_graph;
+mod quality_findings;
+mod quality_gate;
+mod scenario_benchmark;
+mod scenario_snapshot;
+mod verification_policy;
+
+pub use config::{
+    MarlinCrateVerificationRole, marlin_crate_verification_role_for_project,
+    rust_project_harness_config_for_project, rust_project_harness_policy_for_project,
+};
+pub use dependency_topology::{
+    ExternalDependencyTopologyReceipt, ExternalDependencyTopologyReceiptStatus,
+    assert_rust_harness_dependency_topology_receipt_from_env_if_strict,
+    consume_external_dependency_topology_receipt,
+    observe_rust_harness_dependency_topology_receipt_from_env,
+};
+pub use evidence::{
+    RustProjectHarnessEvidenceReceipt, RustProjectHarnessFindingSummary,
+    write_evidence_graph_from_env,
+};
+pub use evidence_projection::RustEvidenceGraphSummary;
+pub use gate::{
+    assert_marlin_rust_dev_gate, complete_build_gate, run_marlin_rust_project_harness_for_package,
+};
+pub use gerbil_runtime_assets::{
+    GerbilRuntimeAssetManifestReceipt, GerbilRuntimeAssetManifestStatus,
+    GerbilRuntimeHarnessContractReceipt, GerbilRuntimeHarnessContractStatus,
+    inspect_gerbil_runtime_assets, inspect_gerbil_runtime_harness_contract,
+};
+pub use improvement_queue::{
+    RustProjectHarnessImprovementId, RustProjectHarnessImprovementItem,
+    RustProjectHarnessImprovementPlanReceipt, RustProjectHarnessImprovementPlanStatus,
+    RustProjectHarnessImprovementPlanStep, RustProjectHarnessImprovementPriority,
+    RustProjectHarnessImprovementQueueReceipt, RustProjectHarnessImprovementQueueStatus,
+    RustProjectHarnessImprovementStepId, RustProjectHarnessRuleId, build_improvement_plan_receipt,
+    build_improvement_queue_receipt,
+};
+pub use package_evidence_graph::{
+    RustProjectHarnessPackageEvidenceGraphReceipt, RustProjectHarnessPackageEvidenceGraphRequest,
+    build_package_evidence_graph_receipt,
+};
+pub use quality_findings::{
+    RustProjectHarnessExpectedArtifact, RustProjectHarnessFindingSeverity,
+    RustProjectHarnessPolicyProjection, RustProjectHarnessPolicyProjectionDecision,
+    RustProjectHarnessPolicyProjectionReceipt, RustProjectHarnessQualityAutofixability,
+    RustProjectHarnessQualityBlockingLevel, RustProjectHarnessQualityDomain,
+    RustProjectHarnessQualityFinding, RustProjectHarnessQualityFindingEvidencePaths,
+    RustProjectHarnessQualityFindingsInput, RustProjectHarnessQualityFindingsReceipt,
+    evaluate_quality_findings_for_gate, project_current_rust_agent_policy_catalog,
+};
+pub use quality_gate::{RustProjectHarnessGateReceipt, evaluate_performance_and_stability_gate};
+pub use scenario_benchmark::{
+    RustScenarioBenchmarkReceipt, RustScenarioBenchmarkStatus, RustScenarioPerformanceCrateName,
+    RustScenarioPerformanceDurationMs, RustScenarioPerformanceMemoryBytes,
+    RustScenarioPerformanceOptimizationFinding, RustScenarioPerformanceOptimizationFindingKind,
+    RustScenarioPerformanceOptimizationPriority, RustScenarioPerformanceOptimizationReceipt,
+    RustScenarioPerformanceOptimizationScore, RustScenarioPerformanceOptimizationStatus,
+    RustScenarioPerformanceScenarioId, RustScenarioWorkspaceBenchmarkCrateReceipt,
+    RustScenarioWorkspaceBenchmarkGateReceipt, RustScenarioWorkspaceBenchmarkImprovementKind,
+    RustScenarioWorkspaceBenchmarkImprovementSuggestion, RustScenarioWorkspaceBenchmarkStatus,
+    assert_crate_scenario_performance_baseline_receipt_is_stable,
+    assert_crate_scenario_performance_contract_gate_accepts_crate_scenarios,
+    assert_crate_scenario_performance_first_batch_optimization_frontier_is_clear,
+    assert_workspace_scenario_performance_contract_gate_accepts_all_crates,
+    crate_scenario_performance_optimization_receipt, optimization_receipt_from_benchmark_receipt,
+    validate_rust_scenario_benchmark, validate_workspace_required_scenario_benchmarks,
+    workspace_scenario_performance_optimization_receipt,
+};
+pub use scenario_snapshot::render_rust_scenario_benchmark_snapshot;
+pub use verification_policy::{
+    RustProjectHarnessVerificationOwnerProfileReceipt, RustProjectHarnessVerificationPolicyReceipt,
+    build_verification_policy_receipt,
+};
+pub mod workspace_package_gate;

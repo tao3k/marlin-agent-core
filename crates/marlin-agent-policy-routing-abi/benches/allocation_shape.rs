@@ -9,6 +9,8 @@ use std::{
 };
 
 #[cfg(feature = "linked-selector")]
+use asp_rust::{RustScenarioBenchmarkStatus, validate_rust_scenario_benchmark};
+#[cfg(feature = "linked-selector")]
 use marlin_agent_policy_routing_abi::linked_agent_policy_routing_abi_selector;
 #[cfg(feature = "linked-selector")]
 use marlin_gerbil_scheme::{
@@ -18,10 +20,8 @@ use marlin_gerbil_scheme::{
     gerbil_agent_policy_routing_type_manifest, project_gerbil_agent_policy_routing_abi_receipt,
 };
 #[cfg(feature = "linked-selector")]
-use marlin_rust_project_harness_policy::{
-    RustScenarioBenchmarkStatus, render_rust_scenario_benchmark_snapshot,
-    validate_rust_scenario_benchmark,
-};
+#[path = "../../../build-support/marlin-rust-project-harness-policy/tests/support/scenario_snapshot.rs"]
+mod scenario_snapshot;
 #[cfg(feature = "linked-selector")]
 use tempfile::TempDir;
 
@@ -216,7 +216,7 @@ fn main() {
     let scenario_root = observed_scenario_benchmark_root(&rows, observed_total_ms);
     let receipt = validate_rust_scenario_benchmark(scenario_root.path())
         .expect("linked native allocation shape scenario benchmark should validate");
-    let snapshot = render_rust_scenario_benchmark_snapshot(&receipt);
+    let snapshot = scenario_snapshot::render_rust_scenario_benchmark_snapshot(&receipt);
     let snapshot_path = write_scenario_benchmark_snapshot(&snapshot);
     println!("{snapshot}");
     assert_eq!(

@@ -11,29 +11,16 @@ fn core_facade_does_not_depend_on_stream_or_litellm_gateway_crates() {
 }
 
 #[test]
-fn rust_project_harness_policy_stays_on_build_and_test_dependency_planes() {
+fn runtime_crates_leave_asp_rust_policy_to_development_targets() {
     for package in [
         "crates/marlin-agent-core",
         "crates/marlin-agent-harness",
         "crates/marlin-agent-test-support",
     ] {
-        assert_dependency_absent(
-            package,
-            "dependencies",
-            "marlin-rust-project-harness-policy",
-        );
-        assert_dependency_present(
-            package,
-            "dev-dependencies",
-            "marlin-rust-project-harness-policy",
-        );
-        assert_dependency_present(
-            package,
-            "build-dependencies",
-            "marlin-rust-project-harness-policy",
-        );
-        assert_dependency_absent(package, "dev-dependencies", "rust-lang-project-harness");
-        assert_dependency_absent(package, "build-dependencies", "rust-lang-project-harness");
+        for section in ["dependencies", "dev-dependencies", "build-dependencies"] {
+            assert_dependency_absent(package, section, "marlin-rust-project-harness-policy");
+            assert_dependency_absent(package, section, "asp-rust");
+        }
     }
 }
 

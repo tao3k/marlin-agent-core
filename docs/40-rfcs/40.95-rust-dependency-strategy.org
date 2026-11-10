@@ -16,13 +16,12 @@ observability, or performance problem.
 Rust project quality is an engineering harness concern. It is not a Marlin
 agent graph, loop, or CLI protocol concern.
 
-=rust-lang-project-harness= is an upstream Rust engineering library. In this
-workspace it must be hidden behind =marlin-rust-project-harness-policy=, which
-owns the Marlin-specific build policy, quality findings, verification
-obligations, improvement queue, and evidence artifacts. Downstream crates must
-depend on =marlin-rust-project-harness-policy= from their build-dependency plane
-and call its wrapper from =build.rs=; they must not depend on
-=rust-lang-project-harness= directly.
+ASP Rust supplies the Rust analysis and verification APIs. The
+=marlin-rust-project-harness-policy= development tool owns the Marlin-specific
+policy, quality findings, verification obligations, improvement queue, and
+package evidence projection. ASP Rust is a Cargo development dependency.
+The =just rust-dev-gate= command applies the policy across the workspace
+using Cargo package membership.
 
 The =marlin= debug CLI may consume generated receipts as external evidence when
 an agent is repairing this repository, but it must not add command surface such

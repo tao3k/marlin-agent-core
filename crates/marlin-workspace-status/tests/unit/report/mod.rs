@@ -146,7 +146,7 @@ fn release_status_projects_pending_topology_visibility() {
         asset_audit_command: "cargo package -p marlin-gerbil-scheme --list --allow-dirty"
             .to_string(),
         package_assets: vec![
-            "README.md".to_string(),
+            "README.org".to_string(),
             "fixtures/gerbil/build.ss".to_string(),
         ],
         runtime_dependency_chain: vec![

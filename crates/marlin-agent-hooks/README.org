@@ -1,0 +1,18 @@
+#+title: Marlin Agent Hooks
+
+Rust owns hook registration, selection, authorization, handler execution and
+receipts. Registrations may carry a compiled include/exclude path filter.
+The filter matches typed workspace-relative target paths; it does not grant
+file access. A filter with no matching path produces a typed skip receipt.
+
+Marlin selects ~scheme/hooks/~ as an independent module in ~scheme/init.ss~.
+The Rust ~HookActionProvider~
+accepts typed proposals against read-only dispatch facts. Rust resolves
+registration proposals against its existing catalog and constructs the
+policy receipt. A Scheme policy's allow result adds no Rust action and
+cannot replace Rust's trust decision. The live Scheme-to-provider call is
+a separate ABI integration step.
+
+Run ~cargo test -p marlin-agent-hooks~ for selection and action receipts.
+Run ~cargo bench -p marlin-agent-hooks --bench path_filter~ for warmed
+GlobSet matching or ~--bench dynamic_actions~ for catalog-backed dispatch.

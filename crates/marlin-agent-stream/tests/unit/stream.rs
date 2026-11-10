@@ -235,6 +235,7 @@ async fn replay_marker_tool(gateway: &WeaverModelGateway, endpoint: &ModelEndpoi
             "After receiving the tool result, reply with its exact text."
         )
         .into(),
+        images: Vec::new(),
         name: None,
         tool_call_id: None,
         tool_calls: vec![],
@@ -304,6 +305,7 @@ async fn replay_marker_tool(gateway: &WeaverModelGateway, endpoint: &ModelEndpoi
         Message {
             role: Role::Assistant,
             content: String::new(),
+            images: Vec::new(),
             name: None,
             tool_call_id: None,
             tool_calls,
@@ -312,6 +314,7 @@ async fn replay_marker_tool(gateway: &WeaverModelGateway, endpoint: &ModelEndpoi
         Message {
             role: Role::Tool,
             content: "marlin-live-tool-ok".into(),
+            images: Vec::new(),
             name: None,
             tool_call_id: Some(id),
             tool_calls: vec![],

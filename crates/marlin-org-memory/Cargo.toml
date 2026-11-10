@@ -20,9 +20,5 @@ marlin-workspace-status.workspace = true
 marlin-workspace-view.workspace = true
 parking_lot.workspace = true
 
-[build-dependencies]
-marlin-rust-project-harness-policy.workspace = true
-
 [dev-dependencies]
 futures-executor.workspace = true
-marlin-rust-project-harness-policy.workspace = true

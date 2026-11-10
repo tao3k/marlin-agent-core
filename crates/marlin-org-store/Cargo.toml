@@ -12,10 +12,6 @@ marlin-workspace-status.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 
-[build-dependencies]
-marlin-rust-project-harness-policy.workspace = true
-
 [dev-dependencies]
 marlin-org-model.workspace = true
 marlin-workspace-patch.workspace = true
-marlin-rust-project-harness-policy.workspace = true

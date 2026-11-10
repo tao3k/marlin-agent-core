@@ -1,6 +1,6 @@
 use std::{fs, path::Path};
 
-use marlin_rust_project_harness_policy::{
+use crate::policy::{
     GerbilRuntimeAssetManifestStatus, GerbilRuntimeHarnessContractStatus,
     inspect_gerbil_runtime_assets, inspect_gerbil_runtime_harness_contract,
 };

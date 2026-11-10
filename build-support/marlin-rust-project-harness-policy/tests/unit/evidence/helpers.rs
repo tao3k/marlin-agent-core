@@ -1,9 +1,7 @@
 use std::{fs, path::PathBuf};
 
-use marlin_rust_project_harness_policy::{
-    build_verification_policy_receipt, rust_project_harness_config_for_project,
-};
-use rust_lang_project_harness::plan_rust_project_verification_with_config;
+use crate::policy::{build_verification_policy_receipt, rust_project_harness_config_for_project};
+use asp_rust::plan_rust_project_verification_with_config;
 
 pub(crate) use crate::workspace::workspace_root;
 
@@ -20,7 +18,7 @@ pub(super) fn workspace_crates() -> Vec<PathBuf> {
 }
 
 pub(super) fn runtime_verification_policy_receipt()
--> marlin_rust_project_harness_policy::RustProjectHarnessVerificationPolicyReceipt {
+-> crate::policy::RustProjectHarnessVerificationPolicyReceipt {
     let project_root = workspace_root().join("crates/marlin-agent-runtime");
     let config = rust_project_harness_config_for_project(&project_root);
     let plan = plan_rust_project_verification_with_config(&project_root, &config)
