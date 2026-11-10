@@ -8,7 +8,7 @@ package: marlin/t/support
         "../../policy/hooks.ss"
         "../../policy/extension-objects.ss"
         "../../policy/matchers.ss"
-        "../../projection/script.ss")
+        "../../policy/projection/script.ss")
 
 (export deck-runtime-script-performance-context
         deck-runtime-script-performance-count-runs

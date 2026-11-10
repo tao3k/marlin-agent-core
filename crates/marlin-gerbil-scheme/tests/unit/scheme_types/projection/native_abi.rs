@@ -45,7 +45,7 @@ fn native_abi_projection_decodes_poo_policy_typed_value() {
             policy_id: "customer-extension".to_string(),
             object_system: "clan/poo".to_string(),
             package: "marlin-deck-runtime".to_string(),
-            module: ":marlin-agent-core/projection/deck".to_string(),
+            module: ":marlin-agent-core/policy/projection/deck".to_string(),
             action: "register".to_string(),
         }
     );
@@ -200,7 +200,7 @@ fn poo_projection_envelope(action: &str) -> GerbilSchemeTypedValue {
             ("policy_id", "customer-extension".into()),
             ("object_system", "clan/poo".into()),
             ("package", "marlin-deck-runtime".into()),
-            ("module", ":marlin-agent-core/projection/deck".into()),
+            ("module", ":marlin-agent-core/policy/projection/deck".into()),
             ("action", action.into()),
         ]),
     )

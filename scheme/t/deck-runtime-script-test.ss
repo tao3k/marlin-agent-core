@@ -7,8 +7,8 @@
         "../policy/hooks.ss"
         "../policy/extension-objects.ss"
         "../policy/matchers.ss"
-        "../projection/deck.ss"
-        "../projection/script.ss"
+        "../policy/projection/deck.ss"
+        "../policy/projection/script.ss"
         :std/test)
 
 ;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.

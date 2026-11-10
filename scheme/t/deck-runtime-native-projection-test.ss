@@ -3,7 +3,7 @@
 
 (import :clan/poo/object
         "../policy/routing.ss"
-        "../projection/deck.ss"
+        "../policy/projection/deck.ss"
         :std/test)
 
 ;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
@@ -39,7 +39,7 @@
            => "clan/poo")
     (check (.get projection package) => "marlin-agent-core")
     (check (.get projection module)
-           => ":marlin-agent-core/projection/deck")
+           => ":marlin-agent-core/policy/projection/deck")
     (check (.get projection action) => "register")))
 
 (def (check-resolved-loop-policy-pack-contract)

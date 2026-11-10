@@ -86,7 +86,7 @@
       policy_id: policy-id
       object_system: projection-object-system
       package: projection-package
-      module: ":marlin-agent-core/projection/deck"
+      module: ":marlin-agent-core/policy/projection/deck"
       action: action-value))
 
 ;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
@@ -140,7 +140,7 @@
                 severity: "info"))
       source_locations:
       (list (.o source_location_id: 1
-                path: "scheme/projection/deck.ss"
+                path: "scheme/policy/projection/deck.ss"
                 line: 10
                 column: 2))
       explanation_strings:

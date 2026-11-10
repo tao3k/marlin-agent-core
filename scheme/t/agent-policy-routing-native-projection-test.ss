@@ -2,7 +2,7 @@
 ;;; Boundary: Test owns the Gerbil AgentGraph policy routing projection contract.
 
 (import :clan/poo/object
-        "../projection/routing.ss"
+        "../policy/projection/routing.ss"
         "../policy/routing.ss"
         :std/test)
 

@@ -2,7 +2,6 @@
 
 (.def Session
   identity: 'session
-  tags: '(marlin)
   core: (.o requires: (.o)
             scope-contract: SessionScopeContract
             exports: SessionScope)

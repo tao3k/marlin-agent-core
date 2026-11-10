@@ -57,7 +57,7 @@
       diagnostics-value)
   (.o id: profile-id
       package: projection-package
-      module: ":marlin-agent-core/projection/graph-continuation"
+      module: ":marlin-agent-core/policy/projection/graph-continuation"
       object_system: projection-object-system
       action: action-value
       diagnostics: diagnostics-value))

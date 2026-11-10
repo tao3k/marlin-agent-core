@@ -8,9 +8,8 @@ filegroup(
     ] + glob([
         "c-abi/*.ss",
         "c-abi/*.ssi",
-        "modules/**/*.ss",
-        "policy/*.ss",
-        "projection/*.ss",
+        "session/*.ss",
+        "policy/**/*.ss",
         "t/**/*.ss",
     ]),
     visibility = ["//crates/marlin-gerbil-scheme:__pkg__"],

@@ -7,7 +7,7 @@
                  benchmark-fixture-contract-pass?
                  benchmark-receipt-pass?
                  benchmark-run)
-        (only-in "../projection/script.ss"
+        (only-in "../policy/projection/script.ss"
                  marlin-deck-runtime-script-batch-metrics-kind)
         (only-in "./support/script-performance.ss"
                  deck-runtime-script-performance-context

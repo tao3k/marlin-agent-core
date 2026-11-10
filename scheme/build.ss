@@ -1,20 +1,20 @@
 #!/usr/bin/env gxi
-;;; The package roles define the source set for Gerbil's standard builder.
+;;; The selected Yuanxu modules own the Gerbil library build.
 
-(import (only-in :std/build-script defbuild-script)
-        (only-in :std/source this-source-file))
+(import (for-syntax
+          (only-in :std/source this-source-file)
+          (only-in :yuanxu/module-system/building/source-package
+                   register-module-build-source!)))
+
+(begin-syntax
+  (register-module-build-source! (path-directory (this-source-file))
+                                 'marlin-agent-core))
+
+(import (only-in :clan/poo/object .get)
+        (only-in :yuanxu/module-system/building/script defbuild-script)
+        (only-in "./init.ss" marlin-agent-core.init.exports))
 
 (export main)
 
-(def package-root (path-directory (this-source-file)))
-
-(def (role-sources role)
-  (map (lambda (file) (string-append role "/" file))
-       (list-sort string<?
-                  (filter (lambda (file) (equal? (path-extension file) ".ss"))
-                          (directory-files (path-expand role package-root))))))
-
-;; Yuanxu admits the selected publications from init.ss. The Rust build
-;; links c-abi/ separately because those files export C entry points.
-(defbuild-script (cons "init.ss" (append (role-sources "policy")
-                                       (role-sources "projection"))))
+(def modules-spec (.get marlin-agent-core.init.exports std-make-spec))
+(defbuild-script (modules-spec '("init")))

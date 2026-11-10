@@ -2,8 +2,8 @@
 ;;; Boundary: Test owns Gerbil POO continuation projection contract coverage.
 
 (import :clan/poo/object
-        "../projection/loop-graph.ss"
-        "../projection/graph-continuation.ss"
+        "../policy/projection/loop-graph.ss"
+        "../policy/projection/graph-continuation.ss"
         :std/test)
 
 ;;; Boundary: Continuation graph is policy intent, not runtime execution.

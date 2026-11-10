@@ -4,7 +4,7 @@
 (import :clan/poo/mop
         :clan/poo/object
         :clan/poo/type
-        "../projection/options.ss"
+        "../policy/projection/options.ss"
         (only-in :std/error ignore-errors)
         :std/test)
 

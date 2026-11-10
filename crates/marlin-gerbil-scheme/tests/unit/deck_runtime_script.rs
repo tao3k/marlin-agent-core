@@ -46,7 +46,7 @@ fn gerbil_deck_runtime_script_contract_matches_scheme_surface() {
 
     let script_source = include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../../scheme/projection/script.ss"
+        "/../../scheme/policy/projection/script.ss"
     ));
     for expected in [
         GERBIL_DECK_RUNTIME_SCRIPT_KIND,

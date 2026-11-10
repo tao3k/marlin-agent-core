@@ -3,9 +3,9 @@
 ;;; Typed POO receipts produced from user-facing extension prototypes.
 
 (import (only-in :clan/poo/object .get .o)
-        "../policy/extension-catalog.ss"
-        "../policy/hooks.ss"
-        "../policy/strategy-context.ss")
+        "../extension-catalog.ss"
+        "../hooks.ss"
+        "../strategy-context.ss")
 
 (export marlin-deck-runtime-extension-receipt-kind
         make-marlin-deck-runtime-extension-receipt

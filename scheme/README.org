@@ -3,19 +3,21 @@
 #+FILETAGS: :marlin:scheme:
 
 =gerbil.pkg= declares AI Agentic Lab as the sole direct package dependency.
-Lab supplies Yuanxu and the POO contracts. =init.ss= selects the Marlin
-profile.
+Lab supplies Yuanxu and the POO contracts. =init.ss= selects the
+=session= and =policy= modules from the Scheme package root.
 
 | Role | Responsibility |
 |------+----------------|
-| =modules/*/types.ss= | Declare the POO contract for a module's scope. |
-| =modules/*/objects.ss= | Supply default policy objects. |
-| =modules/*/config.ss= | Validate the chosen values against the contract. |
-| =modules/*/interface.ss= | Publish the scope and its declared features to Yuanxu. |
-| =policy/= | Evaluate model routing, hooks, strategies, and continuations. |
-| =projection/= | Prepare typed values for the Rust adapter. |
+| =session/= | Publish the selected session policy values. |
+| =policy/= | Publish model routing, hooks, strategies, and continuations. |
+| =policy/projection/= | Prepare typed values for the Rust adapter. |
 | =c-abi/= | Own the C entry points and their bindings. |
 | =t/= | Exercise policy composition, projections, and receipt fixtures. |
+
+Each module publishes its scope through =interface.ss=. Its =types.ss= defines
+the contract, =objects.ss= supplies the values, and =config.ss= validates the
+scope. The Policy module's =func.ss= imports the implementation and projection
+roots used to derive its source closure.
 
 Gerbil compiles the C link units through Gambit and executes policy in the
 Scheme VM. The Rust adapter owns typed requests, authorization, and receipts.
@@ -25,7 +27,9 @@ with the bridge's =setup-gerbil= action, prepares the pinned revisions with
 Lab's =runtime-dependencies.ss=, and installs them with =gxpkg=. Run
 =just scheme-package-gate= to initialize the VM and call
 =GerbilRuntime::build_package= and =GerbilRuntime::test_package=. The
-package =build.ss= supplies the build spec to Gerbil's standard builder.
+Yuanxu derives the library source closure from the selected module roles.
+=build.ss= hands the =std-make-spec= exported by =init.ss= to
+=defbuild-script=.
 Run =just agent-policy-routing-native-gate= for the linked C ABI selector.
 
 The recorded loop-case trace in =t/fixtures/loop-case-trace.v1= was exported

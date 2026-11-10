@@ -12,7 +12,7 @@ use crate::scheme_types::{
 };
 use serde::{Deserialize, Serialize};
 
-/// Kind emitted by `:marlin-agent-core/projection/script` for script objects.
+/// Kind emitted by `:marlin-agent-core/policy/projection/script` for script objects.
 pub const GERBIL_DECK_RUNTIME_SCRIPT_KIND: &str = "marlin-deck-runtime.script.v1";
 /// Interface name for downstream script entrypoints that can use POO or native ABI.
 pub const GERBIL_DECK_RUNTIME_SCRIPT_INTERFACE_KIND: &str = "poo-native-api-or-gxi-script";

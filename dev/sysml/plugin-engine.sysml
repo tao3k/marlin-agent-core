@@ -37,9 +37,9 @@ package MarlinPluginEngine {
             doc /* crates/marlin-agent-kernel/src/driver.rs owns graph compilation with ABI readiness checks. */
         }
         part <'MAR-PLG-A05'> schemePackage {
-            doc /* scheme/init.ss selects Yuanxu module publications.
-                   scheme/modules defines their roles. scheme/policy owns
-                   policy evaluation and scheme/projection shapes its results. */
+            doc /* scheme/init.ss selects the session and policy module
+                   publications and exports the Gerbil build specification.
+                   scheme/policy/projection shapes policy results. */
         }
 
         dependency admissionUsesProtocol from graphAdmission to policyProtocol;

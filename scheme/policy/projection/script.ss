@@ -2,7 +2,7 @@
 ;;; Boundary: Module owns quick Gerbil script interfaces for downstream POO extensions.
 
 (import (only-in :clan/poo/object .get .o)
-        "../policy/extension-objects.ss"
+        "../extension-objects.ss"
         "./deck.ss")
 
 (export marlin-deck-runtime-script-kind

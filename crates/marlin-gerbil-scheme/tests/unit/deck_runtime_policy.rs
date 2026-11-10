@@ -142,7 +142,7 @@ fn gerbil_deck_runtime_poo_policy_projection_request_matches_scheme_module_contr
 
     let native_projection_source = include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../../scheme/projection/deck.ss"
+        "/../../scheme/policy/projection/deck.ss"
     ));
     for expected in [
         GERBIL_DECK_RUNTIME_NATIVE_PROJECTION_ABI_ID,

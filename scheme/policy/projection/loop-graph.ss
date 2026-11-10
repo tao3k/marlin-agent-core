@@ -96,7 +96,7 @@
       graph_id: graph-id-value
       object_system: projection-object-system
       package: projection-package
-      module: ":marlin-agent-core/projection/loop-graph"
+      module: ":marlin-agent-core/policy/projection/loop-graph"
       nodes: node-values
       edges: edge-values))
 

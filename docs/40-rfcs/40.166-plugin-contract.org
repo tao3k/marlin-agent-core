@@ -110,10 +110,11 @@ and child with =yuanxu-module-interface=, =yuanxu-import= and
 =yuanxu-module-option-block=. Its assertions cover closure, phase order, and
 validation projections. =module-option-projection.ss= projects effective
 slots and delegates validation to Core's =option-validation.ss=. These are
-facilities in that source baseline. The top-level Marlin package now selects
-its session publication through Yuanxu from Lab =55bf2074= and separates
-the module roles from policy, projection, and C ABI code. The Brief-to-Draft
-modules and their plugin-facing Scheme activation adapter remain proposed.
+facilities in that source baseline. The top-level Marlin package selects its
+session and policy publications through Yuanxu from Lab =55bf2074=.
+=scheme/init.ss= supplies the selected source closure to the Gerbil builder.
+The Brief-to-Draft modules and their plugin-facing Scheme activation adapter
+remain proposed.
 
 | Role | Publishes or supplies | Execution responsibility |
 |------+----------------------+--------------------------|

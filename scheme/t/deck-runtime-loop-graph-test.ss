@@ -78,7 +78,7 @@
     (check (.get compiled package)
            => "marlin-agent-core")
     (check (.get compiled module)
-           => ":marlin-agent-core/projection/loop-graph")
+           => ":marlin-agent-core/policy/projection/loop-graph")
     (check (.get first-node id) => "plan")
     (check (.get first-node executor) => "scheme-policy")
     (check (.get first-node config)
