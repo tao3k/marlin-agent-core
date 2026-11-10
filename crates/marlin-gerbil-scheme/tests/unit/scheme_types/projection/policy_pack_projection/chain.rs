@@ -29,7 +29,7 @@ fn policy_pack_projection_chain_decodes_typed_poo_receipts_without_json_boundary
         "gerbil-module-system"
     );
     assert_eq!(receipt.policy_projection_receipt.owner, "gerbil-poo");
-    assert_eq!(receipt.native_projection_payload.owner, "rust");
+    assert_eq!(receipt.abi_projection_payload.owner, "rust");
     assert_eq!(receipt.budget_receipt.owner, "rust");
     assert_eq!(receipt.catalog_resolution_receipt.owner, "rust");
     assert_eq!(receipt.catalog_resolution_allowed_hook_count, 2);

@@ -36,7 +36,7 @@ fn downstream_scheme_graph_policy_projects_without_rust_static_binding() {
     assert_eq!(
         projection
             .get("native_abi")
-            .and_then(|native_abi| native_abi.get("required_symbols"))
+            .and_then(|c_abi| c_abi.get("required_symbols"))
             .and_then(|symbols| symbols.get_index(1))
             .and_then(GerbilSchemeValue::as_text),
         Some("downstream_graph_policy_select")
@@ -270,7 +270,7 @@ fn downstream_graph_policy_manifest() -> GerbilSchemeTypeManifest {
                         {"name": "schema_id", "type_id": "string", "required": true},
                         {"name": "policy", "type_id": "object", "required": true},
                         {
-                            "name": "native_abi",
+                            "name": "c_abi",
                             "type_id": "downstream.agent.graph-policy.native-abi",
                             "required": true
                         }
@@ -314,7 +314,7 @@ fn recursive_graph_policy_manifest() -> GerbilSchemeTypeManifest {
                     "schema_id": "downstream.agent.graph-policy.experimental.v1",
                     "fields": [
                         {
-                            "name": "native_abi",
+                            "name": "c_abi",
                             "type_id": "downstream.agent.graph-policy.native-abi",
                             "required": true
                         }
@@ -354,7 +354,7 @@ fn deep_graph_policy_manifest(depth: usize) -> GerbilSchemeTypeManifest {
     }
 }
 
-fn dynamic_graph_policy_payload(native_abi: GerbilSchemeValue) -> GerbilSchemeValue {
+fn dynamic_graph_policy_payload(c_abi: GerbilSchemeValue) -> GerbilSchemeValue {
     GerbilSchemeValue::record([
         (
             "schema_id",
@@ -368,7 +368,7 @@ fn dynamic_graph_policy_payload(native_abi: GerbilSchemeValue) -> GerbilSchemeVa
                 ("max_candidates", 8.into()),
             ]),
         ),
-        ("native_abi", native_abi),
+        ("native_abi", c_abi),
     ])
 }
 

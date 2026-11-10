@@ -1,14 +1,13 @@
 //! Scheme C ABI link units for the Rust runtime.
 
-mod native;
+mod linked;
 
-pub use native::{
-    GerbilDeckRuntimeNativeAotBuildReceipt, GerbilDeckRuntimeNativeAotBuildStatus,
-    GerbilDeckRuntimeNativeAotCommandPlan, GerbilDeckRuntimeNativeAotCommandReceipt,
-    GerbilDeckRuntimeNativeAotConfig, GerbilDeckRuntimeNativeAotPlan,
-    GerbilDeckRuntimeNativeAotProfile, GerbilDeckRuntimeNativeAotStatus,
-    GerbilDeckRuntimeNativeCargoDirective, GerbilDeckRuntimeNativeCargoDirectiveKind,
-    GerbilDeckRuntimeNativeStaticLinkPlan, GerbilDeckRuntimeNativeStaticLinkStatus,
-    GerbilDeckRuntimeNativeSymbol, GerbilDeckRuntimeNativeSymbolAuditMethod, GerbilNativeCCompiler,
-    GerbilNativeLinkLibrary, GerbilNativeSymbolAuditor,
+pub use linked::{
+    GerbilCCompiler, GerbilDeckRouteAbiCargoDirective, GerbilDeckRouteAbiCargoDirectiveKind,
+    GerbilDeckRouteAbiStaticLinkPlan, GerbilDeckRouteAbiStaticLinkStatus, GerbilDeckRouteAbiSymbol,
+    GerbilDeckRouteAbiSymbolAuditMethod, GerbilDeckRuntimeAotBuildReceipt,
+    GerbilDeckRuntimeAotBuildStatus, GerbilDeckRuntimeAotCommandPlan,
+    GerbilDeckRuntimeAotCommandReceipt, GerbilDeckRuntimeAotConfig, GerbilDeckRuntimeAotPlan,
+    GerbilDeckRuntimeAotProfile, GerbilDeckRuntimeAotStatus, GerbilLinkLibrary,
+    GerbilSymbolAuditor,
 };

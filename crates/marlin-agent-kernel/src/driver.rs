@@ -8,8 +8,8 @@ use std::{
 };
 
 use marlin_agent_protocol::{
-    GraphId, GraphLoopExecutionBudget, GraphLoopExecutionRequest, GraphLoopExecutionResult,
-    GraphNativeAbiReadinessReceipt, GraphNativeAbiReadinessStatus, GraphNodeExecutionReceipt,
+    GraphCAbiReadinessReceipt, GraphCAbiReadinessStatus, GraphId, GraphLoopExecutionBudget,
+    GraphLoopExecutionRequest, GraphLoopExecutionResult, GraphNodeExecutionReceipt,
     GraphNodeExecutionStatus, GraphNodeInvocation, GraphPolicyProposal, GraphPolicyProposalReceipt,
     GraphPolicyProposalStatus, LoopEdgeSpec, LoopNodeSpec, RunId, RuntimePlanSnapshot,
 };
@@ -66,14 +66,14 @@ pub fn compile_graph_policy_proposal(
 }
 
 /// Validates a graph policy proposal against a native ABI readiness receipt before execution.
-pub fn compile_graph_policy_proposal_with_native_abi_readiness(
+pub fn compile_graph_policy_proposal_with_c_abi_readiness(
     run_id: impl Into<String>,
     proposal: &GraphPolicyProposal,
-    readiness: &GraphNativeAbiReadinessReceipt,
+    readiness: &GraphCAbiReadinessReceipt,
 ) -> GraphPolicyProposalCompilation {
     let mut receipt = GraphPolicyProposalReceipt::validate(proposal);
     if receipt.status == GraphPolicyProposalStatus::Accepted {
-        let diagnostics = native_abi_readiness_diagnostics(proposal, readiness);
+        let diagnostics = c_abi_readiness_diagnostics(proposal, readiness);
         if !diagnostics.is_empty() {
             receipt = GraphPolicyProposalReceipt::rejected(proposal, diagnostics);
         }
@@ -84,35 +84,35 @@ pub fn compile_graph_policy_proposal_with_native_abi_readiness(
     GraphPolicyProposalCompilation { receipt, request }
 }
 
-fn native_abi_readiness_diagnostics(
+fn c_abi_readiness_diagnostics(
     proposal: &GraphPolicyProposal,
-    readiness: &GraphNativeAbiReadinessReceipt,
+    readiness: &GraphCAbiReadinessReceipt,
 ) -> Vec<String> {
     let mut diagnostics = Vec::new();
-    let Some(requirement) = proposal.native_abi.as_ref() else {
-        diagnostics.push("graph_policy_proposal.native_abi_readiness_unexpected".to_string());
+    let Some(requirement) = proposal.c_abi.as_ref() else {
+        diagnostics.push("graph_policy_proposal.c_abi_readiness_unexpected".to_string());
         return diagnostics;
     };
 
     if requirement.abi_id != readiness.abi_id {
         diagnostics.push(format!(
-            "graph_policy_proposal.native_abi_readiness_abi_id_mismatch:{}:{}",
+            "graph_policy_proposal.c_abi_readiness_abi_id_mismatch:{}:{}",
             requirement.abi_id.as_str(),
             readiness.abi_id.as_str()
         ));
     }
     if requirement.version != readiness.version {
         diagnostics.push(format!(
-            "graph_policy_proposal.native_abi_readiness_version_mismatch:{}:{}",
+            "graph_policy_proposal.c_abi_readiness_version_mismatch:{}:{}",
             requirement.version, readiness.version
         ));
     }
-    if readiness.status != GraphNativeAbiReadinessStatus::Ready {
-        diagnostics.push("graph_policy_proposal.native_abi_readiness_not_ready".to_string());
+    if readiness.status != GraphCAbiReadinessStatus::Ready {
+        diagnostics.push("graph_policy_proposal.c_abi_readiness_not_ready".to_string());
     }
     if !readiness.missing_symbols.is_empty() {
         diagnostics.push(format!(
-            "graph_policy_proposal.native_abi_readiness_missing_symbols:{}",
+            "graph_policy_proposal.c_abi_readiness_missing_symbols:{}",
             readiness
                 .missing_symbols
                 .iter()

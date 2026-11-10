@@ -14,7 +14,7 @@ The files here own structural identities, relations, and state transitions.
 Org owns rationale, protocol detail, assumptions, and evidence. The
 Brief-to-Draft example stays in the RFC as a fixture of the generic contract.
 The [[file:../../docs/40-rfcs/40.166-plugin-contract.org::#gambit-js-leverage][Gambit JS build target]] produces assets for the client boundary shown in
-the transport view. The Agent Call view models host execution.
+the transport view. The plugin request view models host execution.
 
 The model follows the deterministic-engineering architecture content contract
 at =1fe20380441a0cd85055695c2adcc55ce699a369=. It separates actual and target
@@ -30,7 +30,7 @@ case and publication identities remain with that project.
 | [[file:../../project.sysml][project.sysml]] | Project entry and named views | [[file:../../docs/40-rfcs/40.166-plugin-contract.org::#plugin-model][OpenSysML companion]] |
 | [[file:plugin-engine.sysml][plugin-engine.sysml]] | Source-inspected actual Rust interfaces and target gRPC/C ABI ownership | [[file:../../docs/40-rfcs/40.166-plugin-contract.org::#plugin-ownership][Ownership]] and [[file:../../docs/40-rfcs/40.166-plugin-contract.org::#plugin-transport][Transport]] |
 | [[file:plugin-lifecycle.sysml][plugin-lifecycle.sysml]] | Target activation generation and run lifecycle | [[file:../../docs/40-rfcs/40.166-plugin-contract.org::#plugin-lifecycle][Grants and lifecycle]] |
-| [[file:plugin-execution.sysml][plugin-execution.sysml]] | Target Agent Call flow, stage allocations, and Scheme batch boundaries | [[file:../../docs/40-rfcs/40.166-plugin-contract.org::#agent-call-path][Agent Call execution and batching]] |
+| [[file:plugin-execution.sysml][plugin-execution.sysml]] | Target plugin request flow, stage allocations, and Scheme batch boundaries | [[file:../../docs/40-rfcs/40.166-plugin-contract.org::#plugin-request-path][plugin request execution and batching]] |
 
 #+NAME: plugin-requirement-trace
 | Requirement | Planned owner | Org responsibility |
@@ -59,13 +59,13 @@ to change rationale or evidence.
 #+begin_src sh
 just sysml-check
 sysml -strict -no-record-cache project.sysml dev/sysml \
-  -render MarlinAgentCore::projectStructure -render-form mermaid
+  -render MarlinAgentCORE::projectStructure -render-form mermaid
 sysml -strict -no-record-cache project.sysml dev/sysml \
-  -render MarlinAgentCore::pluginTransport -render-form mermaid
+  -render MarlinAgentCORE::pluginTransport -render-form mermaid
 sysml -strict -no-record-cache project.sysml dev/sysml \
-  -render MarlinAgentCore::performanceDesign -render-form mermaid
+  -render MarlinAgentCORE::performanceDesign -render-form mermaid
 sysml -strict -no-record-cache project.sysml dev/sysml \
-  -render MarlinAgentCore::agentCallPath -render-form mermaid
+  -render MarlinAgentCORE::pluginRequestPath -render-form mermaid
 sysml -strict -no-record-cache project.sysml dev/sysml \
   -render '#state:MarlinPluginLifecycle::ActivationLifecycle' -render-form mermaid
 sysml -strict -no-record-cache project.sysml dev/sysml \

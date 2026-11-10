@@ -1,6 +1,7 @@
 [workspace]
 members = [
-    "build-support/marlin-gerbil-native-build",
+    "build-support/marlin-gerbil-aot-link",
+    "crates/marlin-agent-context",
     "crates/marlin-agent-core",
     "crates/marlin-agent-environment",
     "crates/marlin-agent-graph",
@@ -8,7 +9,7 @@ members = [
     "crates/marlin-agent-harness-types",
     "crates/marlin-agent-hooks",
     "crates/marlin-agent-kernel",
-    "crates/marlin-agent-policy-routing-native",
+    "crates/marlin-agent-policy-routing-abi",
     "crates/marlin-agent-protocol",
     "crates/marlin-agent-route",
     "crates/marlin-agent-runtime",
@@ -17,7 +18,7 @@ members = [
     "bazel/crate-universe",
     "crates/marlin-agent-stream",
     "crates/marlin-agent-test-support",
-    "crates/marlin-deck-runtime-native",
+    "crates/marlin-deck-runtime",
     "crates/marlin-gerbil-ir",
     "crates/marlin-gerbil-scheme",
     "crates/marlin-git-utils",
@@ -50,11 +51,12 @@ cc = "1.2.64"
 cbindgen = "0.29.4"
 criterion = "0.8.2"
 gerbil-scheme = { git = "https://github.com/tao3k/gerbil-scheme-rust", rev = "bfe803f597a15a3654b70a64c3a039980c31da8a", version = "0.1.0" }
+gerbil-scheme-sys = { git = "https://github.com/tao3k/gerbil-scheme-rust", rev = "bfe803f597a15a3654b70a64c3a039980c31da8a", version = "0.1.0" }
 gerbil-scheme-build = { git = "https://github.com/tao3k/gerbil-scheme-rust", rev = "bfe803f597a15a3654b70a64c3a039980c31da8a", version = "0.1.0" }
 gerbil-scheme-aot-build = { git = "https://github.com/tao3k/gerbil-scheme-rust", rev = "bfe803f597a15a3654b70a64c3a039980c31da8a", version = "0.1.0" }
 futures-executor = "0.3.32"
 globset = "0.4.18"
-litellm-rs = { version = "0.5", default-features = false, features = ["lite", "gateway", "sqlite", "redis", "websockets"] }
+weaver-llm = { path = "../weaver/crates/llm" }
 memoffset = "0.9.1"
 object = "0.39.1"
 # Orgize main still uses Scheme-to-Rust IR. PR #18 enables the bridge's
@@ -78,19 +80,21 @@ tracing-subscriber = { version = "0.3.23", features = ["env-filter", "fmt", "jso
 wiremock = "0.6.5"
 rust-lang-project-harness = { git = "https://github.com/tao3k/rust-lang-project-harness", rev = "124b78e1e43265255e6e761b93f6a5f0048b0c48", version = "0.1.2" }
 marlin-rust-project-harness-policy = { path = "build-support/marlin-rust-project-harness-policy", version = "0.1.0" }
+marlin-agent-context = { path = "crates/marlin-agent-context", version = "0.1.0" }
 marlin-agent-environment = { path = "crates/marlin-agent-environment", version = "0.1.0" }
 marlin-agent-graph = { path = "crates/marlin-agent-graph", version = "0.1.0" }
 marlin-agent-harness = { path = "crates/marlin-agent-harness", version = "0.1.0" }
 marlin-agent-harness-types = { path = "crates/marlin-agent-harness-types", version = "0.1.0" }
 marlin-agent-hooks = { path = "crates/marlin-agent-hooks", version = "0.1.0" }
 marlin-agent-kernel = { path = "crates/marlin-agent-kernel", version = "0.1.0" }
-marlin-agent-policy-routing-native = { path = "crates/marlin-agent-policy-routing-native", version = "0.1.0" }
+marlin-agent-policy-routing-abi = { path = "crates/marlin-agent-policy-routing-abi", version = "0.1.0" }
 marlin-agent-protocol = { path = "crates/marlin-agent-protocol", version = "0.1.0" }
 marlin-agent-route = { path = "crates/marlin-agent-route", version = "0.1.0" }
 marlin-agent-runtime = { path = "crates/marlin-agent-runtime", version = "0.1.0" }
 marlin-agent-sessions = { path = "crates/marlin-agent-sessions", version = "0.1.0" }
 marlin-agent-storage = { path = "crates/marlin-agent-storage", version = "0.1.0" }
 marlin-agent-test-support = { path = "crates/marlin-agent-test-support", version = "0.1.0" }
+marlin-deck-runtime = { path = "crates/marlin-deck-runtime", version = "0.1.0" }
 marlin-gerbil-ir = { path = "crates/marlin-gerbil-ir", version = "0.1.0" }
 marlin-gerbil-scheme = { path = "crates/marlin-gerbil-scheme", version = "0.1.0" }
 marlin-git-utils = { path = "crates/marlin-git-utils", version = "0.1.0" }
@@ -105,7 +109,7 @@ marlin-workspace-protocol = { path = "crates/marlin-workspace-protocol", version
 marlin-workspace-query = { path = "crates/marlin-workspace-query", version = "0.1.0" }
 marlin-workspace-status = { path = "crates/marlin-workspace-status", version = "0.1.0" }
 marlin-workspace-view = { path = "crates/marlin-workspace-view", version = "0.1.0" }
-marlin-gerbil-native-build = { path = "build-support/marlin-gerbil-native-build", version = "0.1.0" }
+marlin-gerbil-aot-link = { path = "build-support/marlin-gerbil-aot-link", version = "0.1.0" }
 
 [profile.release]
 # Thin LTO keeps useful cross-crate optimization without the full monolithic
@@ -188,8 +192,6 @@ opt-level = 2
 [profile.dev.package.http-body]
 opt-level = 2
 [profile.dev.package.hyper]
-opt-level = 2
-[profile.dev.package.litellm-rs]
 opt-level = 2
 [profile.dev.package.memchr]
 opt-level = 2

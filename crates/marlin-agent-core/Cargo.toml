@@ -5,6 +5,9 @@ version.workspace = true
 authors.workspace = true
 repository.workspace = true
 
+[features]
+deck-actor = ["marlin-agent-route/deck-actor"]
+
 [dependencies]
 marlin-gerbil-scheme.workspace = true
 marlin-agent-environment.workspace = true

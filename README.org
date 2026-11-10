@@ -1,8 +1,8 @@
-#+title: Marlin Agent Core
+#+title: Marlin Agent CORE
 
 [[file:project.sysml][Project SysML]] · [[file:dev/sysml/README.org][Architecture model map]]
 
-Marlin Agent Core is a Rust workspace for an Org-native, typed agent runtime substrate: graph-loop execution, workspace/query/patch/view protocols, project memory, sandbox and process runtime visibility, Gerbil Scheme policy integration, and harness/dev/debug command surfaces.
+Marlin Agent CORE is a Rust workspace for an Org-native, typed agent runtime substrate: graph-loop execution, workspace/query/patch/view protocols, project memory, sandbox and process runtime visibility, Gerbil Scheme policy integration, and harness/dev/debug command surfaces.
 
 This repository is not a terminal-user product shell. The =marlin= command and the crate APIs are implementation, harness, development, and debugging surfaces for building and validating the agent runtime layers.
 
@@ -132,13 +132,13 @@ The durable project documentation is kept under =docs/= using Johnny Decimal Org
 Focused design references:
 
 - [[file:docs/40-rfcs/40.70-codex-engineering-baseline.org][docs/40-rfcs/40.70-codex-engineering-baseline.org]]
-- [[file:docs/20-workspace/20.10-org-native-agent-workspace.org][docs/20-workspace/20.10-org-native-agent-workspace.org]]
+- [[file:docs/20-workspace/20.10-org-agent-workspace.org][docs/20-workspace/20.10-org-agent-workspace.org]]
 - [[file:docs/20-workspace/20.20-query-patch-view-protocol.org][docs/20-workspace/20.20-query-patch-view-protocol.org]]
 - [[file:docs/10-architecture/10.20-kernel-boundary.org][docs/10-architecture/10.20-kernel-boundary.org]]
 - [[file:docs/10-architecture/10.30-agent-harness-boundary.org][docs/10-architecture/10.30-agent-harness-boundary.org]]
 - [[file:docs/30-gerbil/30.30-gerbil-typed-runtime-boundary.org][docs/30-gerbil/30.30-gerbil-typed-runtime-boundary.org]]
 - [[file:docs/30-gerbil/gerbil-poo-modules-system-desgin.org][docs/30-gerbil/gerbil-poo-modules-system-desgin.org]]
-- [[file:docs/30-gerbil/30.80-native-aot-link-unit.org][docs/30-gerbil/30.80-native-aot-link-unit.org]]
+- [[file:docs/30-gerbil/30.80-aot-link-unit.org][docs/30-gerbil/30.80-aot-link-unit.org]]
 - [[file:docs/40-rfcs/40.100-graph-loop-controller-substrate.org][docs/40-rfcs/40.100-graph-loop-controller-substrate.org]]
 - [[file:docs/40-rfcs/40.130-sandbox-backend-capability-protocol.org][docs/40-rfcs/40.130-sandbox-backend-capability-protocol.org]]
 - [[file:docs/40-rfcs/40.140-pi-agent-core-loop-parity.org][docs/40-rfcs/40.140-pi-agent-core-loop-parity.org]]

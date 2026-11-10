@@ -3,91 +3,18 @@
 ;;; Facade for the modular Scheme-owned Deck runtime policy plane.
 
 (import "./agent-routes.ss"
-        "./conditions.ss"
-        "./hooks.ss"
-        "./extension-objects.ss"
-        "./extension-catalog.ss"
-        "./projection/extension-receipt.ss"
-        "./extension-validation.ss"
-        "./extension-template.ss"
-        "./projection/loop-graph.ss"
-        "./matchers.ss"
         "./strategy-evaluation.ss"
         "./strategy-facts.ss")
 
 (export marlin-deck-runtime-strategy-rule-kind
         marlin-deck-runtime-strategy-facts-kind
-        marlin-deck-runtime-condition-policy-kind
-        marlin-deck-runtime-condition-combinator-kind
         marlin-deck-runtime-strategy-selection-kind
-        marlin-deck-runtime-dynamic-hook-action-kind
-        marlin-deck-runtime-dynamic-hook-case-kind
-        marlin-deck-runtime-dynamic-hook-selector-kind
-        marlin-deck-runtime-dynamic-hook-selection-kind
-        marlin-deck-runtime-extension-kind
-        marlin-deck-runtime-extension-catalog-kind
-        marlin-deck-runtime-extension-receipt-kind
-        marlin-deck-runtime-extension-safety-report-kind
-        marlin-deck-runtime-loop-node-kind
-        marlin-deck-runtime-loop-edge-kind
-        marlin-deck-runtime-loop-graph-kind
-        marlin-deck-runtime-compiled-loop-graph-type-id
-        marlin-deck-runtime-compiled-loop-graph-schema-id
-        marlin-deck-runtime-high-order-matcher-kind
         marlin-deck-runtime-dynamic-strategy-rule-kind
         marlin-deck-runtime-agent-policy-template-kind
         marlin-deck-runtime-strategy-policy-receipt-kind
         marlin-deck-runtime-strategy-capability-names
-        marlin-deck-runtime-dynamic-hook-action-names
         make-marlin-deck-runtime-strategy-facts
-        make-marlin-deck-runtime-condition-policy
-        marlin-deck-runtime-all-condition-policy
-        marlin-deck-runtime-any-condition-policy
-        marlin-deck-runtime-not-condition-policy
-        marlin-deck-runtime-condition-policy-from-rule
-        marlin-deck-runtime-condition-policy-match?
-        marlin-deck-runtime-condition-policy-signal-names
         make-marlin-deck-runtime-strategy-rule
-        make-marlin-deck-runtime-dynamic-hook-action
-        make-marlin-deck-runtime-dynamic-hook-case
-        make-marlin-deck-runtime-dynamic-hook-selector
-        marlin-deck-runtime-dynamic-hook-selector-selection
-        marlin-deck-runtime-dynamic-hook-selector-select
-        marlin-deck-runtime-dynamic-hook-decision-selection
-        make-marlin-deck-runtime-register-hook-action
-        make-marlin-deck-runtime-unregister-hook-action
-        make-marlin-deck-runtime-defer-hook-action
-        make-marlin-deck-runtime-deny-hook-action
-        make-marlin-deck-runtime-rewrite-hook-action
-        make-marlin-deck-runtime-allow-hook-action
-        make-marlin-deck-runtime-extension
-        make-marlin-deck-runtime-subagent-policy-extension
-        make-marlin-deck-runtime-extension-catalog
-        make-marlin-deck-runtime-extension-receipt
-        make-marlin-deck-runtime-extension-safety-report
-        make-marlin-deck-runtime-loop-node
-        make-marlin-deck-runtime-loop-edge
-        make-marlin-deck-runtime-loop-graph
-        make-marlin-deck-runtime-compiled-loop-graph
-        defmarlin-deck-runtime-extension
-        defmarlin-deck-runtime-loop-graph
-        marlin-deck-runtime-extension-match?
-        marlin-deck-runtime-extension-safe?
-        marlin-deck-runtime-validate-extension
-        marlin-deck-runtime-extension-catalog-add
-        marlin-deck-runtime-extension-catalog-find
-        marlin-deck-runtime-extension-catalog-select
-        marlin-deck-runtime-extension-action-selection
-        marlin-deck-runtime-extension-policy-receipt
-        marlin-deck-runtime-loop-node-shape-valid?
-        marlin-deck-runtime-loop-edge-shape-valid?
-        marlin-deck-runtime-loop-graph-shape-valid?
-        marlin-deck-runtime-loop-node->compiled
-        marlin-deck-runtime-loop-edge->compiled
-        marlin-deck-runtime-compile-loop-graph
-        make-marlin-deck-runtime-high-order-matcher
-        marlin-deck-runtime-and-matcher
-        marlin-deck-runtime-or-matcher
         make-marlin-deck-runtime-dynamic-strategy-rule
         make-marlin-deck-runtime-agent-policy-template
         defmarlin-deck-runtime-strategy-rule
@@ -95,11 +22,6 @@
         defmarlin-deck-runtime-agent-policy-template-set
         marlin-deck-runtime-agent-policy-template-select
         marlin-deck-runtime-agent-policy-templates->dynamic-rules
-        marlin-deck-runtime-high-order-matcher-match?
-        marlin-deck-runtime-not-matcher
-        marlin-deck-runtime-command-prefix-matcher
-        marlin-deck-runtime-agent-class-matcher
-        marlin-deck-runtime-policy-name-matcher
         marlin-deck-runtime-strategy-rule-match?
         marlin-deck-runtime-dynamic-strategy-rule-match?
         marlin-deck-runtime-select-model-route-policy/strategy

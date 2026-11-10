@@ -5,10 +5,10 @@
 ** Purpose
 This note records the follow-up implementation after the P0-P5 closure. The work keeps the runtime, loop, Gerbil strategy, and typed native projection boundaries separate.
 ** P1 Linux Linked-Native Gate
-The linked-native AOT workflow now defaults to =ubuntu-latest=. macOS and self-hosted runners remain explicit =workflow_dispatch= inputs, but the default validation path is Linux.
+The linked-selector AOT workflow now defaults to =ubuntu-latest=. macOS and self-hosted runners remain explicit =workflow_dispatch= inputs, but the default validation path is Linux.
 This makes Linux portability the normal CI path for:
-- =marlin-deck-runtime-native= linked-native tests and benchmark compile;
-- =marlin-agent-policy-routing-native= linked-native tests and benchmark compile;
+- =marlin-deck-route-abi= linked-selector tests and benchmark compile;
+- =marlin-agent-policy-routing-abi= linked-selector tests and benchmark compile;
 - Gerbil/Gambit source bootstrap when toolchain variables are not provided.
 ** P2 Gerbil Policy-Pack Load Cost
 =src/config-interface/modules/policy-pack.ss= continues to avoid importing Marlin

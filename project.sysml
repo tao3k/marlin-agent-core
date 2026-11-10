@@ -1,13 +1,13 @@
 // Project model entry. Load this file together with dev/sysml.
 // Model map and view commands: dev/sysml/README.org
-package MarlinAgentCore {
+package MarlinAgentCORE {
     private import Views::*;
     private import MarlinPluginEngine::*;
     private import MarlinPluginLifecycle::*;
     private import MarlinPluginExecution::*;
 
     part <'MAR-PROJECT'> project {
-        doc /* Marlin Agent Core. This entry selects the plugin-engine
+        doc /* Marlin Agent CORE. This entry selects the plugin-engine
                architecture and lifecycle viewpoint. */
     }
 
@@ -15,7 +15,7 @@ package MarlinAgentCore {
     dependency targetEngine from project to target::pluginEngine;
     dependency activationLifecycle from project to ActivationLifecycle;
     dependency invocationLifecycle from project to InvocationLifecycle;
-    dependency callExecutionPath from project to AgentCallPath;
+    dependency requestExecutionPath from project to PluginRequestPath;
     dependency performanceRequirement from project to requirements::highPerformanceExecution;
 
     view projectStructure {
@@ -45,7 +45,7 @@ package MarlinAgentCore {
         render asTreeDiagram;
     }
 
-    view agentCallPath : StandardViewDefinitions::ActionFlowView {
-        expose AgentCallPath;
+    view pluginRequestPath : StandardViewDefinitions::ActionFlowView {
+        expose PluginRequestPath;
     }
 }

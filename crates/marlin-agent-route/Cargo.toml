@@ -4,11 +4,16 @@ edition.workspace = true
 version.workspace = true
 authors.workspace = true
 
+[features]
+deck-actor = ["dep:marlin-deck-runtime", "dep:tokio-util"]
+
 [dependencies]
 axum.workspace = true
 marlin-agent-protocol.workspace = true
 marlin-agent-runtime.workspace = true
+marlin-deck-runtime = { workspace = true, optional = true, features = ["actor-runtime"] }
 serde.workspace = true
+tokio-util = { workspace = true, optional = true }
 
 [dev-dependencies]
 marlin-rust-project-harness-policy.workspace = true

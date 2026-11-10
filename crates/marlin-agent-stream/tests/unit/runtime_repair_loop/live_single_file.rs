@@ -2,11 +2,11 @@
 
 use super::{
     Arc, BUGGY_FIXTURE, FIXED_FIXTURE, GerbilScriptedIntentCaseArtifactBundleRequest, Instant,
-    IntentCaseArtifactKind, LiteLlmStreamGateway, LiveRepairDecisionMapper, LoopProgramActionKind,
-    LoopProgramEventKind, LoopProgramExecutionDriver, LoopProgramExecutionRequest,
-    LoopProgramExecutionStatus, LoopProgramRuntimeHandoffExecutionReportStatus, ModelEndpoint,
-    ModelGatewayMessageRole, PATCH_INTENT, PATCH_REPLACE, RuntimeEdgeModelGateway,
-    RuntimeEdgePolicy, RuntimeLiveRepairGateStatus, RuntimeRepairCaseId, RuntimeRepairCaseReceipt,
+    IntentCaseArtifactKind, LiveRepairDecisionMapper, LoopProgramActionKind, LoopProgramEventKind,
+    LoopProgramExecutionDriver, LoopProgramExecutionRequest, LoopProgramExecutionStatus,
+    LoopProgramRuntimeHandoffExecutionReportStatus, ModelEndpoint, ModelGatewayMessageRole,
+    PATCH_INTENT, PATCH_REPLACE, RuntimeEdgeModelGateway, RuntimeEdgePolicy,
+    RuntimeLiveRepairGateStatus, RuntimeRepairCaseId, RuntimeRepairCaseReceipt,
     RuntimeRepairContentSummary, RuntimeRepairCount, RuntimeRepairDurationMillis,
     RuntimeRepairHybridHandoffExecutor, RuntimeRepairLiveCaseReceipt,
     RuntimeRepairLiveCaseReceiptRequest, RuntimeRepairModelCompletionId, RuntimeRepairModelId,
@@ -18,7 +18,7 @@ use super::{
 };
 
 #[test]
-#[ignore = "requires MARLIN_LIVE_LLM_GATE=1 and live LiteLLM provider credentials"]
+#[ignore = "requires MARLIN_LIVE_LLM_GATE=1 and live Weaver provider credentials"]
 fn live_runtime_repair_single_file_bug_fix_runs_llm_tool_and_verifier_loop() {
     let gate_receipt = runtime_live_repair_gate_receipt();
     if gate_receipt.status == RuntimeLiveRepairGateStatus::Disabled {
@@ -50,7 +50,7 @@ fn live_runtime_repair_single_file_bug_fix_runs_llm_tool_and_verifier_loop() {
     );
 
     let edge_gateway = RuntimeEdgeModelGateway::new(
-        LiteLlmStreamGateway::new(),
+        crate::stream::live_weaver_gateway(&provider, live_llm_timeout()),
         RuntimeEdgePolicy::new()
             .with_concurrency_limit(1)
             .with_timeout_ms(live_llm_timeout().as_millis() as u64),

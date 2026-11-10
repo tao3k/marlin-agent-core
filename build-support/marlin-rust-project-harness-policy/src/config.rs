@@ -20,7 +20,7 @@ pub enum MarlinCrateVerificationRole {
     ProtocolContract,
     OrgWorkspace,
     GerbilRuntime,
-    NativeBuildSupport,
+    AotLinkSupport,
     BuildHarnessPolicy,
     GitOrEnvironmentBoundary,
     GeneralLibrary,
@@ -52,11 +52,11 @@ pub fn marlin_crate_verification_role_for_project(
         | "marlin-workspace-query"
         | "marlin-workspace-status"
         | "marlin-workspace-view" => MarlinCrateVerificationRole::OrgWorkspace,
-        "marlin-agent-policy-routing-native"
-        | "marlin-deck-runtime-native"
+        "marlin-agent-policy-routing-abi"
+        | "marlin-deck-runtime"
         | "marlin-gerbil-ir"
         | "marlin-gerbil-scheme" => MarlinCrateVerificationRole::GerbilRuntime,
-        "marlin-gerbil-native-build" => MarlinCrateVerificationRole::NativeBuildSupport,
+        "marlin-gerbil-aot-link" => MarlinCrateVerificationRole::AotLinkSupport,
         "marlin-rust-project-harness-policy" => MarlinCrateVerificationRole::BuildHarnessPolicy,
         "marlin-agent-environment" | "marlin-agent-hooks" | "marlin-git-utils" => {
             MarlinCrateVerificationRole::GitOrEnvironmentBoundary
@@ -132,7 +132,7 @@ impl MarlinCrateVerificationRole {
             Self::ProtocolContract => "protocol-contract",
             Self::OrgWorkspace => "org-workspace",
             Self::GerbilRuntime => "gerbil-runtime",
-            Self::NativeBuildSupport => "native-build-support",
+            Self::AotLinkSupport => "aot-link-support",
             Self::BuildHarnessPolicy => "build-harness-policy",
             Self::GitOrEnvironmentBoundary => "git-or-environment-boundary",
             Self::GeneralLibrary => "general-library",
@@ -203,7 +203,7 @@ impl MarlinCrateVerificationRole {
                 RustOwnerResponsibility::LatencySensitive,
                 RustOwnerResponsibility::AvailabilityCritical,
             ],
-            Self::NativeBuildSupport => &[
+            Self::AotLinkSupport => &[
                 RustOwnerResponsibility::ExternalDependency,
                 RustOwnerResponsibility::SecurityBoundary,
             ],
@@ -321,9 +321,7 @@ impl MarlinCrateVerificationRole {
                     &[RustOwnerResponsibility::SecurityBoundary],
                 ),
             ],
-            Self::NativeBuildSupport | Self::BuildHarnessPolicy | Self::GeneralLibrary => {
-                Vec::new()
-            }
+            Self::AotLinkSupport | Self::BuildHarnessPolicy | Self::GeneralLibrary => Vec::new(),
         }
     }
 
@@ -335,7 +333,7 @@ impl MarlinCrateVerificationRole {
             Self::ProtocolContract => "protocol contract",
             Self::OrgWorkspace => "Org workspace",
             Self::GerbilRuntime => "Gerbil/native runtime",
-            Self::NativeBuildSupport => "native build support",
+            Self::AotLinkSupport => "native build support",
             Self::BuildHarnessPolicy => "Rust harness policy",
             Self::GitOrEnvironmentBoundary => "Git/environment boundary",
             Self::GeneralLibrary => "general library",

@@ -1,35 +1,35 @@
 //! Generic `Scheme` type envelopes for Rust-side projections.
 
+mod abi_projection;
 mod error;
 mod ids;
 mod manifest;
-mod native_projection;
 mod package;
 mod projection;
 mod registry;
 mod typed_value;
 mod validation;
 
+pub use abi_projection::{
+    GerbilSchemeAbiProjectionReceipt, GerbilSchemeAbiProjectionRequest,
+    GerbilSchemeAbiProjectionStatus, decode_gerbil_scheme_abi_projection,
+    validate_gerbil_scheme_abi_projection,
+};
 pub use error::GerbilSchemeTypeDecodeError;
 pub use ids::{
-    GerbilSchemeFieldName, GerbilSchemeNativeAbiId, GerbilSchemeNativeSymbol,
-    GerbilSchemePackageId, GerbilSchemeSchemaId, GerbilSchemeTypeId,
+    GerbilSchemeAbiSymbol, GerbilSchemeCAbiId, GerbilSchemeFieldName, GerbilSchemePackageId,
+    GerbilSchemeSchemaId, GerbilSchemeTypeId,
 };
 pub use manifest::{
     GerbilSchemeBackedBindingCatalogReceipt, GerbilSchemeTypeFieldSpec, GerbilSchemeTypeManifest,
     GerbilSchemeTypeManifestValidationReceipt, GerbilSchemeTypeSpec,
     GerbilSchemeTypedValueValidationReceipt, decode_gerbil_scheme_type_manifest_fixture,
 };
-pub use native_projection::{
-    GerbilSchemeNativeProjectionReceipt, GerbilSchemeNativeProjectionRequest,
-    GerbilSchemeNativeProjectionStatus, decode_gerbil_scheme_native_projection,
-    validate_gerbil_scheme_native_projection,
-};
 pub use package::{
-    GerbilSchemeNativeAbiContract, GerbilSchemeNativeAbiReadinessPlan, GerbilSchemePackageManifest,
-    GerbilSchemePackageManifestValidationReceipt, GerbilSchemePackageNativeReadinessReceipt,
-    decode_gerbil_scheme_package_manifest_fixture, validate_gerbil_scheme_package_manifest,
-    validate_gerbil_scheme_package_native_readiness,
+    GerbilSchemeCAbiContract, GerbilSchemeCAbiReadinessPlan,
+    GerbilSchemePackageAbiReadinessReceipt, GerbilSchemePackageManifest,
+    GerbilSchemePackageManifestValidationReceipt, decode_gerbil_scheme_package_manifest_fixture,
+    validate_gerbil_scheme_package_abi_readiness, validate_gerbil_scheme_package_manifest,
 };
 pub use projection::{GerbilSchemeProjectionContract, GerbilSchemeTypedProjection};
 pub use registry::GerbilSchemeTypeRegistry;

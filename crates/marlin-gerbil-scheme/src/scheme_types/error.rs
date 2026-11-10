@@ -7,8 +7,8 @@ use std::{
 };
 
 use super::ids::{
-    GerbilSchemeFieldName, GerbilSchemeNativeAbiId, GerbilSchemeNativeSymbol,
-    GerbilSchemePackageId, GerbilSchemeSchemaId, GerbilSchemeTypeId,
+    GerbilSchemeAbiSymbol, GerbilSchemeCAbiId, GerbilSchemeFieldName, GerbilSchemePackageId,
+    GerbilSchemeSchemaId, GerbilSchemeTypeId,
 };
 
 /// Error raised while decoding Scheme type manifests or typed values.
@@ -74,26 +74,26 @@ pub enum GerbilSchemeTypeDecodeError {
         type_id: GerbilSchemeTypeId,
         schema_id: Option<GerbilSchemeSchemaId>,
     },
-    MissingNativeSymbols {
-        abi_id: GerbilSchemeNativeAbiId,
+    MissingAbiSymbols {
+        abi_id: GerbilSchemeCAbiId,
     },
-    DuplicateNativeSymbol {
-        symbol: GerbilSchemeNativeSymbol,
+    DuplicateAbiSymbol {
+        symbol: GerbilSchemeAbiSymbol,
     },
-    MissingNativeAbi {
+    MissingCAbi {
         package_id: GerbilSchemePackageId,
     },
-    NativeAbiMismatch {
-        expected: GerbilSchemeNativeAbiId,
-        actual: GerbilSchemeNativeAbiId,
+    CAbiMismatch {
+        expected: GerbilSchemeCAbiId,
+        actual: GerbilSchemeCAbiId,
     },
-    NativeAbiVersionMismatch {
-        abi_id: GerbilSchemeNativeAbiId,
+    CAbiVersionMismatch {
+        abi_id: GerbilSchemeCAbiId,
         expected: u32,
         actual: u32,
     },
-    MissingNativeSymbol {
-        symbol: GerbilSchemeNativeSymbol,
+    MissingAbiSymbol {
+        symbol: GerbilSchemeAbiSymbol,
     },
     TypeMismatch {
         expected: GerbilSchemeTypeId,
@@ -229,28 +229,28 @@ impl Display for GerbilSchemeTypeDecodeError {
                 type_id.as_str(),
                 schema_id_label(schema_id.as_ref())
             ),
-            Self::MissingNativeSymbols { abi_id } => write!(
+            Self::MissingAbiSymbols { abi_id } => write!(
                 formatter,
                 "Scheme native ABI {} declares no exported symbols",
                 abi_id.as_str()
             ),
-            Self::DuplicateNativeSymbol { symbol } => write!(
+            Self::DuplicateAbiSymbol { symbol } => write!(
                 formatter,
                 "Scheme native ABI repeats exported symbol {}",
                 symbol.as_str()
             ),
-            Self::MissingNativeAbi { package_id } => write!(
+            Self::MissingCAbi { package_id } => write!(
                 formatter,
                 "Scheme package {} declares no native ABI",
                 package_id.as_str()
             ),
-            Self::NativeAbiMismatch { expected, actual } => write!(
+            Self::CAbiMismatch { expected, actual } => write!(
                 formatter,
                 "Scheme native ABI id {}, expected {}",
                 actual.as_str(),
                 expected.as_str()
             ),
-            Self::NativeAbiVersionMismatch {
+            Self::CAbiVersionMismatch {
                 abi_id,
                 expected,
                 actual,
@@ -261,7 +261,7 @@ impl Display for GerbilSchemeTypeDecodeError {
                 actual,
                 expected
             ),
-            Self::MissingNativeSymbol { symbol } => write!(
+            Self::MissingAbiSymbol { symbol } => write!(
                 formatter,
                 "Scheme native ABI is missing exported symbol {}",
                 symbol.as_str()

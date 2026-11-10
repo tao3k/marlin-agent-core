@@ -1,16 +1,14 @@
-//! Model stream protocol boundaries and LiteLLM gateway adapter.
+//! Model stream protocol boundaries and Weaver gateway adapter.
 
 mod chunk_gate;
 mod event;
 mod gateway;
-mod litellm;
 mod model_probe;
 mod request;
 
 pub use chunk_gate::{ChunkGate, ChunkGatePermit};
 pub use event::{ModelStreamChunk, ModelStreamEvent, ModelStreamTransport};
-pub use gateway::{LiteLlmStreamGateway, ModelStreamGateway};
-pub use litellm::LiteLlmModelClient;
+pub use gateway::{ModelStreamGateway, WeaverModelGateway};
 pub use marlin_agent_protocol::{
     ModelGatewayCompletionChoice, ModelGatewayCompletionOptions, ModelGatewayCompletionResponse,
     ModelGatewayError, ModelGatewayMessage, ModelGatewayMessageRole, ModelGatewayResult,

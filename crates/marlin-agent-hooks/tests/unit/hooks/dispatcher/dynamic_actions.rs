@@ -1,14 +1,13 @@
 use marlin_agent_hooks::{
-    HookDispatchPolicy, HookDispatchPolicyFinalizer, HookDispatchPolicyFinalizerInput,
-    HookDispatcher, HookInvocation, HookRegistration, HookRegistrationCatalog, HookRegistry,
+    HookActionContext, HookActionProvider, HookDispatchPolicy, HookDispatcher, HookInvocation,
+    HookRegistration, HookRegistrationCatalog, HookRegistry,
 };
 use marlin_agent_protocol::{
-    HookAgentScope, HookDecisionContext, HookDispatchPolicyReceipt, HookDispatchPolicyReceiptInput,
-    HookEventName, HookHandlerType, HookPolicyDecisionReason, HookPolicyDynamicAction,
-    HookPolicyDynamicActionApplicationEffect, HookPolicyDynamicActionApplicationReason,
-    HookPolicyDynamicActionApplicationStatus, HookPolicyDynamicActionKind,
-    HookPolicyDynamicActionReplacement, HookPolicyDynamicActionTarget, HookPolicyExtension,
-    HookRegistryUpdateKind, HookTrustStatus,
+    HookAgentScope, HookDecisionContext, HookDispatchPolicyReceipt, HookEventName, HookHandlerType,
+    HookPolicyDecisionReason, HookPolicyDynamicAction, HookPolicyDynamicActionApplicationEffect,
+    HookPolicyDynamicActionApplicationReason, HookPolicyDynamicActionApplicationStatus,
+    HookPolicyDynamicActionKind, HookPolicyDynamicActionReplacement, HookPolicyDynamicActionTarget,
+    HookPolicyExtension, HookRegistryUpdateKind, HookTrustStatus,
 };
 use marlin_agent_runtime::TokioAgentRuntime;
 use std::{collections::BTreeMap, sync::Arc};
@@ -16,27 +15,19 @@ use std::{collections::BTreeMap, sync::Arc};
 use crate::hooks::support::summary_hook_registration;
 
 #[derive(Clone, Debug)]
-struct DynamicActionPolicyFinalizer {
+struct DynamicActionProvider {
     actions: Vec<HookPolicyDynamicAction>,
 }
 
-impl DynamicActionPolicyFinalizer {
+impl DynamicActionProvider {
     fn new(actions: Vec<HookPolicyDynamicAction>) -> Self {
         Self { actions }
     }
 }
 
-impl HookDispatchPolicyFinalizer for DynamicActionPolicyFinalizer {
-    fn finalize(&self, input: HookDispatchPolicyFinalizerInput) -> HookDispatchPolicyReceipt {
-        HookDispatchPolicyReceipt::new(HookDispatchPolicyReceiptInput {
-            event_name: input.invocation.event_name,
-            invocation_agent_scope: input.invocation.agent_scope,
-            decision_context: input.invocation.decision_context.clone(),
-            mode: input.policy_receipt.mode,
-            extension: input.policy_receipt.extension,
-            actions: self.actions.clone(),
-            decisions: input.policy_receipt.decisions,
-        })
+impl HookActionProvider for DynamicActionProvider {
+    fn propose_actions(&self, _: HookActionContext<'_>) -> Vec<HookPolicyDynamicAction> {
+        self.actions.clone()
     }
 }
 
@@ -142,7 +133,7 @@ async fn dispatcher_dynamic_register_action_resolves_catalog_registration() {
     let report = HookDispatcher::new(HookRegistry::new())
         .with_policy(HookDispatchPolicy::enforce_trusted())
         .with_registration_catalog(Arc::new(catalog))
-        .with_policy_finalizer(Arc::new(DynamicActionPolicyFinalizer::new(vec![
+        .with_action_provider(Arc::new(DynamicActionProvider::new(vec![
             HookPolicyDynamicAction {
                 kind: HookPolicyDynamicActionKind::Register,
                 target: Some(HookPolicyDynamicActionTarget::from(
@@ -230,7 +221,7 @@ async fn dispatcher_complex_scheme_policy_action_set_applies_catalog_session_den
     let report = HookDispatcher::new(registry)
         .with_policy(HookDispatchPolicy::enforce_trusted().with_extension(extension.clone()))
         .with_registration_catalog(Arc::new(catalog))
-        .with_policy_finalizer(Arc::new(DynamicActionPolicyFinalizer::new(
+        .with_action_provider(Arc::new(DynamicActionProvider::new(
             complex_scheme_policy_actions(),
         )))
         .dispatch(
@@ -305,7 +296,7 @@ async fn dispatcher_dynamic_unregister_action_removes_registration_before_run() 
 
     let report = HookDispatcher::new(registry)
         .with_policy(HookDispatchPolicy::enforce_trusted())
-        .with_policy_finalizer(Arc::new(DynamicActionPolicyFinalizer::new(vec![
+        .with_action_provider(Arc::new(DynamicActionProvider::new(vec![
             HookPolicyDynamicAction {
                 kind: HookPolicyDynamicActionKind::Unregister,
                 target: Some(HookPolicyDynamicActionTarget::from("removed")),

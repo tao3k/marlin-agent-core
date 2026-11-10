@@ -16,20 +16,20 @@ scheme-package-gate:
   direnv exec . bash -ec 'cd scheme && gxpkg env cargo test --locked -p marlin-gerbil-scheme --test unit_test scheme_package::gerbil_builds_and_tests_the_marlin_package_in_process -- --ignored --exact --nocapture'
 
 # Exercise the linked AgentGraph policy selector through its typed C ABI.
-agent-policy-routing-native-gate:
-  direnv exec . cargo test --locked -p marlin-agent-policy-routing-native --features linked-native
+agent-policy-routing-abi-gate:
+  direnv exec . cargo test --locked -p marlin-agent-policy-routing-abi --features linked-selector
 
 # Benchmark build gate for AgentGraph policy-routing linked native selector.
-agent-policy-routing-native-bench-build:
-  direnv exec . cargo bench -p marlin-agent-policy-routing-native --features linked-native --bench linked_selector --no-run
+agent-policy-routing-abi-bench-build:
+  direnv exec . cargo bench -p marlin-agent-policy-routing-abi --features linked-selector --bench linked_selector --no-run
 
 # Allocation-shape performance gate for AgentGraph policy-routing linked native selector.
-agent-policy-routing-native-performance-gate:
-  direnv exec . cargo bench --locked -p marlin-agent-policy-routing-native --features linked-native --bench allocation_shape
+agent-policy-routing-abi-performance-gate:
+  direnv exec . cargo bench --locked -p marlin-agent-policy-routing-abi --features linked-selector --bench allocation_shape
 
 # Full benchmark gate for AgentGraph policy-routing linked native selector.
-agent-policy-routing-native-bench:
-  direnv exec . cargo bench -p marlin-agent-policy-routing-native --features linked-native --bench linked_selector
+agent-policy-routing-abi-bench:
+  direnv exec . cargo bench -p marlin-agent-policy-routing-abi --features linked-selector --bench linked_selector
 
 # Local P0-P4 gate for AgentGraph native policy-routing and Gerbil module-system closure.
-agent-graph-native-routing-gate: scheme-package-gate agent-policy-routing-native-gate agent-policy-routing-native-bench-build agent-policy-routing-native-performance-gate
+agent-graph-abi-routing-gate: scheme-package-gate agent-policy-routing-abi-gate agent-policy-routing-abi-bench-build agent-policy-routing-abi-performance-gate

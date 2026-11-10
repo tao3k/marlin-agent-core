@@ -37,8 +37,8 @@ fn loop_governor_bridge_package_manifest_declares_marlin_consumer_shape() {
     );
     assert_eq!(receipt.type_count, 4);
     assert_eq!(receipt.projection_contract_count, 1);
-    assert_eq!(receipt.native_abi_version, None);
-    assert_eq!(receipt.native_symbol_count, 0);
+    assert_eq!(receipt.c_abi_version, None);
+    assert_eq!(receipt.abi_symbol_count, 0);
 
     let runtime_manifest = manifest
         .type_manifest

@@ -10,4 +10,4 @@ through Gambit C. The runtime exchanges typed values through the C ABI and
 Rust validates proposals before execution.
 
 Use `just scheme-package-gate` for the Scheme package and
-`just agent-policy-routing-native-gate` for the linked routing selector.
+`just agent-policy-routing-abi-gate` for the linked routing selector.

@@ -76,12 +76,12 @@ fn agent_runtime_crates_do_not_expose_native_build_readiness_surface() {
         assert_forbidden_source_terms_absent(
             package,
             &[
-                "NativeGraphPolicyStrategyReadiness",
-                "NativeGraphPolicyArtifact",
-                "NativeGraphPolicySymbol",
-                "NATIVE_GRAPH_POLICY_STRATEGY_READINESS",
+                "GraphPolicyAbiStrategyReadiness",
+                "GraphPolicyAbiArtifact",
+                "GraphPolicyAbiSymbol",
+                "GRAPH_POLICY_ABI_STRATEGY_READINESS",
                 "graph_policy_strategy_readiness",
-                "native_graph_policy_readiness",
+                "scheme_graph_policy_readiness",
             ],
         );
     }

@@ -1,13 +1,17 @@
 //! Graph-loop owner interface.
 
+mod c_abi;
 mod contract;
 mod controller;
 mod execution_budget;
 mod gerbil_policy;
 mod loop_event;
-mod native_abi;
 mod policy_profile;
 
+pub use c_abi::{
+    GraphAbiSymbol, GraphCAbiId, GraphCAbiReadinessReceipt, GraphCAbiReadinessStatus,
+    GraphCAbiRequirement,
+};
 pub use contract::{
     ExecutorName, GRAPH_POLICY_PROPOSAL_SCHEMA_ID, GraphId, GraphLoopExecutionRequest,
     GraphLoopExecutionResult, GraphLoopExecutionStatus, GraphLoopStrategy, GraphLoopStrategyId,
@@ -40,10 +44,6 @@ pub use loop_event::{
     GraphLoopQueuedInput, GraphLoopStopReason, GraphLoopStopReceipt, GraphNodeExecutionId,
     GraphToolBatchDecision, GraphToolBatchExecutionMode, GraphToolBatchExecutionReceipt,
     GraphToolCallId, GraphToolCallReceipt, GraphToolCallStatus,
-};
-pub use native_abi::{
-    GraphNativeAbiId, GraphNativeAbiReadinessReceipt, GraphNativeAbiReadinessStatus,
-    GraphNativeAbiRequirement, GraphNativeSymbol,
 };
 pub use policy_profile::{
     LoopContinuationCapability, LoopContinuationPolicy, LoopEvidenceCapturePolicy,

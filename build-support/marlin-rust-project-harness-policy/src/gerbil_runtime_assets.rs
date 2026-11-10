@@ -12,12 +12,13 @@ const REQUIRED_GERBIL_RUNTIME_ASSETS: &[&str] = &[
     "build.ss",
     "init.ss",
     "policy/interface.ss",
-    "c-abi/_deck-runtime-native.ssi",
-    "c-abi/deck-runtime-native.ss",
-    "c-abi/_agent-policy-routing-native.ssi",
-    "policy/projection/deck.ss",
-    "policy/projection/graph-continuation.ss",
-    "policy/projection/script.ss",
+    "c-abi/_deck-route-abi.ssi",
+    "c-abi/deck-route-abi.ss",
+    "c-abi/_agent-policy-routing-abi.ssi",
+    "policy/projection/deck/policy.ss",
+    "policy/projection/graph/continuation.ss",
+    "deck-runtime/interface.ss",
+    "deck-runtime/runtime.ss",
     "policy/strategy.ss",
 ];
 
@@ -35,16 +36,8 @@ const REQUIRED_GERBIL_RUNTIME_HARNESS_CAPABILITIES: &[GerbilRuntimeHarnessCapabi
         required_asset_paths: &["t/all-test.ss"],
     },
     GerbilRuntimeHarnessCapability {
-        id: "script-performance-source",
-        required_asset_paths: &["t/support/script-performance.ss"],
-    },
-    GerbilRuntimeHarnessCapability {
-        id: "script-performance-test",
-        required_asset_paths: &["t/deck-runtime-script-performance-test.ss"],
-    },
-    GerbilRuntimeHarnessCapability {
-        id: "script-performance-gate",
-        required_asset_paths: &["t/deck-runtime-script-performance-gate.ss"],
+        id: "deck-runtime-test",
+        required_asset_paths: &["t/deck-runtime-test.ss"],
     },
 ];
 

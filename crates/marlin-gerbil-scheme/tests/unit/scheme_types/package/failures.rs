@@ -1,14 +1,13 @@
 use super::{
-    deck_runtime_native_readiness_plan, downstream_strategy_package,
-    duplicate_native_symbol_contract,
+    deck_route_abi_readiness_plan, downstream_strategy_package, duplicate_native_symbol_contract,
 };
 use crate::scheme_types::support::{strategy_selection_schema_id, strategy_selection_type_id};
 use marlin_gerbil_scheme::{
-    GERBIL_DECK_RUNTIME_NATIVE_ABI_ID, GERBIL_DECK_RUNTIME_NATIVE_ABI_VERSION,
-    GerbilSchemeNativeAbiContract, GerbilSchemeNativeAbiId, GerbilSchemeNativeAbiReadinessPlan,
-    GerbilSchemeNativeSymbol, GerbilSchemePackageId, GerbilSchemeProjectionContract,
-    GerbilSchemeTypeDecodeError, GerbilSchemeTypeId, validate_gerbil_scheme_package_manifest,
-    validate_gerbil_scheme_package_native_readiness,
+    GERBIL_DECK_ROUTE_ABI_ID, GERBIL_DECK_ROUTE_ABI_VERSION, GerbilSchemeAbiSymbol,
+    GerbilSchemeCAbiContract, GerbilSchemeCAbiId, GerbilSchemeCAbiReadinessPlan,
+    GerbilSchemePackageId, GerbilSchemeProjectionContract, GerbilSchemeTypeDecodeError,
+    GerbilSchemeTypeId, validate_gerbil_scheme_package_abi_readiness,
+    validate_gerbil_scheme_package_manifest,
 };
 
 #[test]
@@ -51,35 +50,33 @@ fn scheme_package_manifest_rejects_duplicate_projection_contracts() {
 
 #[test]
 fn scheme_package_manifest_rejects_empty_native_abi_exports() {
-    let manifest =
-        downstream_strategy_package().with_native_abi(GerbilSchemeNativeAbiContract::new(
-            GerbilSchemeNativeAbiId::new(GERBIL_DECK_RUNTIME_NATIVE_ABI_ID),
-            GERBIL_DECK_RUNTIME_NATIVE_ABI_VERSION,
-        ));
+    let manifest = downstream_strategy_package().with_c_abi(GerbilSchemeCAbiContract::new(
+        GerbilSchemeCAbiId::new(GERBIL_DECK_ROUTE_ABI_ID),
+        GERBIL_DECK_ROUTE_ABI_VERSION,
+    ));
 
     let error = validate_gerbil_scheme_package_manifest(&manifest)
         .expect_err("native ABI without exported symbols should fail package validation");
 
     assert_eq!(
         error,
-        GerbilSchemeTypeDecodeError::MissingNativeSymbols {
-            abi_id: GerbilSchemeNativeAbiId::new(GERBIL_DECK_RUNTIME_NATIVE_ABI_ID),
+        GerbilSchemeTypeDecodeError::MissingAbiSymbols {
+            abi_id: GerbilSchemeCAbiId::new(GERBIL_DECK_ROUTE_ABI_ID),
         }
     );
 }
 
 #[test]
 fn scheme_package_manifest_rejects_duplicate_native_abi_exports() {
-    let manifest =
-        downstream_strategy_package().with_native_abi(duplicate_native_symbol_contract());
+    let manifest = downstream_strategy_package().with_c_abi(duplicate_native_symbol_contract());
 
     let error = validate_gerbil_scheme_package_manifest(&manifest)
         .expect_err("duplicate native ABI symbols should fail package validation");
 
     assert_eq!(
         error,
-        GerbilSchemeTypeDecodeError::DuplicateNativeSymbol {
-            symbol: GerbilSchemeNativeSymbol::new("marlin_deck_runtime_select_model_route"),
+        GerbilSchemeTypeDecodeError::DuplicateAbiSymbol {
+            symbol: GerbilSchemeAbiSymbol::new("marlin_deck_runtime_select_model_route"),
         }
     );
 }
@@ -88,15 +85,13 @@ fn scheme_package_manifest_rejects_duplicate_native_abi_exports() {
 fn scheme_package_native_readiness_rejects_missing_native_abi_contract() {
     let manifest = downstream_strategy_package();
 
-    let error = validate_gerbil_scheme_package_native_readiness(
-        &manifest,
-        &deck_runtime_native_readiness_plan(),
-    )
-    .expect_err("readiness should fail when package has no native ABI contract");
+    let error =
+        validate_gerbil_scheme_package_abi_readiness(&manifest, &deck_route_abi_readiness_plan())
+            .expect_err("readiness should fail when package has no native ABI contract");
 
     assert_eq!(
         error,
-        GerbilSchemeTypeDecodeError::MissingNativeAbi {
+        GerbilSchemeTypeDecodeError::MissingCAbi {
             package_id: GerbilSchemePackageId::new("marlin.downstream.strategy-package"),
         }
     );
@@ -104,24 +99,22 @@ fn scheme_package_native_readiness_rejects_missing_native_abi_contract() {
 
 #[test]
 fn scheme_package_native_readiness_rejects_wrong_exported_symbol() {
-    let missing_symbol = GerbilSchemeNativeSymbol::new("marlin_downstream_missing_export");
-    let manifest = downstream_strategy_package().with_native_abi(
-        GerbilSchemeNativeAbiContract::new(
-            GerbilSchemeNativeAbiId::new(GERBIL_DECK_RUNTIME_NATIVE_ABI_ID),
-            GERBIL_DECK_RUNTIME_NATIVE_ABI_VERSION,
+    let missing_symbol = GerbilSchemeAbiSymbol::new("marlin_downstream_missing_export");
+    let manifest = downstream_strategy_package().with_c_abi(
+        GerbilSchemeCAbiContract::new(
+            GerbilSchemeCAbiId::new(GERBIL_DECK_ROUTE_ABI_ID),
+            GERBIL_DECK_ROUTE_ABI_VERSION,
         )
         .with_exported_symbols([missing_symbol.clone()]),
     );
 
-    let error = validate_gerbil_scheme_package_native_readiness(
-        &manifest,
-        &deck_runtime_native_readiness_plan(),
-    )
-    .expect_err("readiness should fail when manifest requires a missing native symbol");
+    let error =
+        validate_gerbil_scheme_package_abi_readiness(&manifest, &deck_route_abi_readiness_plan())
+            .expect_err("readiness should fail when manifest requires a missing native symbol");
 
     assert_eq!(
         error,
-        GerbilSchemeTypeDecodeError::MissingNativeSymbol {
+        GerbilSchemeTypeDecodeError::MissingAbiSymbol {
             symbol: missing_symbol
         }
     );
@@ -129,32 +122,32 @@ fn scheme_package_native_readiness_rejects_wrong_exported_symbol() {
 
 #[test]
 fn scheme_package_native_readiness_rejects_abi_version_mismatch() {
-    let manifest = downstream_strategy_package().with_native_abi(
-        GerbilSchemeNativeAbiContract::new(
-            GerbilSchemeNativeAbiId::new(GERBIL_DECK_RUNTIME_NATIVE_ABI_ID),
-            GERBIL_DECK_RUNTIME_NATIVE_ABI_VERSION,
+    let manifest = downstream_strategy_package().with_c_abi(
+        GerbilSchemeCAbiContract::new(
+            GerbilSchemeCAbiId::new(GERBIL_DECK_ROUTE_ABI_ID),
+            GERBIL_DECK_ROUTE_ABI_VERSION,
         )
-        .with_exported_symbols([GerbilSchemeNativeSymbol::new(
+        .with_exported_symbols([GerbilSchemeAbiSymbol::new(
             "marlin_deck_runtime_select_model_route",
         )]),
     );
-    let readiness_plan = GerbilSchemeNativeAbiReadinessPlan::new(
-        GerbilSchemeNativeAbiId::new(GERBIL_DECK_RUNTIME_NATIVE_ABI_ID),
-        GERBIL_DECK_RUNTIME_NATIVE_ABI_VERSION + 1,
+    let readiness_plan = GerbilSchemeCAbiReadinessPlan::new(
+        GerbilSchemeCAbiId::new(GERBIL_DECK_ROUTE_ABI_ID),
+        GERBIL_DECK_ROUTE_ABI_VERSION + 1,
     )
-    .with_exported_symbols([GerbilSchemeNativeSymbol::new(
+    .with_exported_symbols([GerbilSchemeAbiSymbol::new(
         "marlin_deck_runtime_select_model_route",
     )]);
 
-    let error = validate_gerbil_scheme_package_native_readiness(&manifest, &readiness_plan)
+    let error = validate_gerbil_scheme_package_abi_readiness(&manifest, &readiness_plan)
         .expect_err("readiness should fail when native ABI versions differ");
 
     assert_eq!(
         error,
-        GerbilSchemeTypeDecodeError::NativeAbiVersionMismatch {
-            abi_id: GerbilSchemeNativeAbiId::new(GERBIL_DECK_RUNTIME_NATIVE_ABI_ID),
-            expected: GERBIL_DECK_RUNTIME_NATIVE_ABI_VERSION,
-            actual: GERBIL_DECK_RUNTIME_NATIVE_ABI_VERSION + 1,
+        GerbilSchemeTypeDecodeError::CAbiVersionMismatch {
+            abi_id: GerbilSchemeCAbiId::new(GERBIL_DECK_ROUTE_ABI_ID),
+            expected: GERBIL_DECK_ROUTE_ABI_VERSION,
+            actual: GERBIL_DECK_ROUTE_ABI_VERSION + 1,
         }
     );
 }

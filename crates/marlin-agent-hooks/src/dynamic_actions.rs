@@ -36,21 +36,6 @@ pub(crate) struct DynamicPolicyActionApplication {
     pub(crate) receipts: Vec<HookPolicyDynamicActionApplicationReceipt>,
 }
 
-pub(crate) fn attach_dynamic_actions(
-    policy: HookDispatchPolicyReceipt,
-    actions: Vec<HookPolicyDynamicAction>,
-) -> HookDispatchPolicyReceipt {
-    HookDispatchPolicyReceipt::new(HookDispatchPolicyReceiptInput {
-        event_name: policy.event_name,
-        invocation_agent_scope: policy.invocation_agent_scope,
-        decision_context: policy.decision_context,
-        mode: policy.mode,
-        extension: policy.extension,
-        actions,
-        decisions: policy.decisions,
-    })
-}
-
 pub(crate) fn apply_dynamic_registry_actions<Registration>(
     registry: &mut impl HookRegistryActionTarget<Registration>,
     actions: &[HookPolicyDynamicAction],
@@ -188,9 +173,15 @@ pub(crate) fn apply_dynamic_policy_actions(
     mut message: Option<String>,
     mut policy: HookDispatchPolicyReceipt,
 ) -> DynamicPolicyActionApplication {
+    if policy.actions.is_empty() {
+        return DynamicPolicyActionApplication {
+            message,
+            policy,
+            receipts: Vec::new(),
+        };
+    }
     let receipts = policy
         .actions
-        .clone()
         .iter()
         .filter_map(|action| match &action.kind {
             HookPolicyDynamicActionKind::Deny => Some(apply_dynamic_decision_action(

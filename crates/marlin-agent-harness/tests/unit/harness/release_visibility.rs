@@ -1,9 +1,9 @@
 use marlin_agent_harness::{
     AgentHarness, AgentHarnessEvidenceKind, AgentHarnessRuntime, AgentHarnessScenario,
-    ReleaseGateExecutionStatus, native_abi_readiness_release_gate_execution_receipt,
+    ReleaseGateExecutionStatus, c_abi_readiness_release_gate_execution_receipt,
     release_gate_execution_receipt, release_topology_execution_receipts,
 };
-use marlin_agent_protocol::{GraphNativeAbiReadinessReceipt, GraphNativeAbiRequirement};
+use marlin_agent_protocol::{GraphCAbiReadinessReceipt, GraphCAbiRequirement};
 use marlin_gerbil_ir::{ReleaseGateSpec, ReleaseTopologySpec, ReleaseVisibilitySpec};
 
 #[test]
@@ -79,31 +79,31 @@ fn harness_runtime_records_release_visibility_evidence() {
 }
 
 #[test]
-fn harness_release_gate_receipt_projects_native_abi_readiness() {
+fn harness_release_gate_receipt_projects_c_abi_readiness() {
     let topology = ReleaseTopologySpec {
         topology_id: "release:native".to_owned(),
-        crate_name: "marlin-deck-runtime-native".to_owned(),
+        crate_name: "marlin-deck-runtime".to_owned(),
         publish_enabled: false,
-        asset_audit_command: "cargo test -p marlin-deck-runtime-native --features linked-native"
+        asset_audit_command: "cargo test -p marlin-deck-runtime --features linked-selector"
             .to_owned(),
         package_assets: vec!["README.md".to_owned()],
         runtime_dependency_chain: vec!["marlin-gerbil-scheme".to_owned()],
         workflow_dependency_chain: Vec::new(),
         gates: vec![ReleaseGateSpec {
             gate_id: "native-abi-readiness".to_owned(),
-            command: "cargo test -p marlin-deck-runtime-native --features linked-native".to_owned(),
+            command: "cargo test -p marlin-deck-runtime --features linked-selector".to_owned(),
             requires_local_gerbil: true,
-            required_artifacts: vec!["deck-runtime-native-link-unit".to_owned()],
+            required_artifacts: vec!["deck-route-abi-link-unit".to_owned()],
             visibility: Vec::new(),
         }],
     };
     let gate = &topology.gates[0];
-    let requirement = GraphNativeAbiRequirement::new("marlin.deck-runtime.native", 1)
+    let requirement = GraphCAbiRequirement::new("marlin.deck-runtime.native", 1)
         .with_required_symbols([
             "marlin_deck_runtime_initialize",
             "marlin_deck_runtime_select_model_route",
         ]);
-    let ready = GraphNativeAbiReadinessReceipt::evaluate(
+    let ready = GraphCAbiReadinessReceipt::evaluate(
         &requirement,
         [
             "marlin_deck_runtime_initialize",
@@ -111,23 +111,19 @@ fn harness_release_gate_receipt_projects_native_abi_readiness() {
         ],
     );
     let missing =
-        GraphNativeAbiReadinessReceipt::evaluate(&requirement, ["marlin_deck_runtime_initialize"]);
+        GraphCAbiReadinessReceipt::evaluate(&requirement, ["marlin_deck_runtime_initialize"]);
 
-    let passed = native_abi_readiness_release_gate_execution_receipt(&topology, gate, &ready);
-    let failed = native_abi_readiness_release_gate_execution_receipt(&topology, gate, &missing);
+    let passed = c_abi_readiness_release_gate_execution_receipt(&topology, gate, &ready);
+    let failed = c_abi_readiness_release_gate_execution_receipt(&topology, gate, &missing);
 
     assert_eq!(passed.status, ReleaseGateExecutionStatus::Passed);
     assert!(passed.diagnostics.is_empty());
-    assert!(
-        passed
-            .evidence_keys
-            .contains(&"native_abi_readiness".to_owned())
-    );
+    assert!(passed.evidence_keys.contains(&"c_abi_readiness".to_owned()));
     assert_eq!(failed.status, ReleaseGateExecutionStatus::Failed);
     assert!(
         failed
             .diagnostics
-            .contains(&"native_abi_readiness.missing_symbols".to_owned())
+            .contains(&"c_abi_readiness.missing_symbols".to_owned())
     );
     assert!(
         failed

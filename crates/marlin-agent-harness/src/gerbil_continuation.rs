@@ -13,7 +13,7 @@ use marlin_agent_runtime::RuntimeFuture;
 use marlin_gerbil_scheme::{
     GerbilSchemeTypeDecodeError, GerbilSchemeTypeRegistry, GerbilSchemeTypedValue,
     gerbil_loop_graph_continuation_type_manifest,
-    project_gerbil_loop_graph_continuation_native_action,
+    project_gerbil_loop_graph_continuation_abi_action,
 };
 
 /// Runtime hook that invokes the Gerbil native projection plane for one continuation decision.
@@ -27,13 +27,13 @@ pub trait AgentHarnessGerbilLoopContinuationProjector: Send + Sync + 'static {
 /// Error raised before Rust can compile a Gerbil continuation projection.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum AgentHarnessGerbilLoopContinuationError {
-    NativeProjectionInvocation { message: String },
-    NativeProjectionDecode { message: String },
+    SchemeProjectionInvocation { message: String },
+    SchemeProjectionDecode { message: String },
 }
 
 impl AgentHarnessGerbilLoopContinuationError {
-    pub fn native_projection_invocation(message: impl Into<String>) -> Self {
-        Self::NativeProjectionInvocation {
+    pub fn abi_projection_invocation(message: impl Into<String>) -> Self {
+        Self::SchemeProjectionInvocation {
             message: message.into(),
         }
     }
@@ -42,13 +42,13 @@ impl AgentHarnessGerbilLoopContinuationError {
 impl Display for AgentHarnessGerbilLoopContinuationError {
     fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
         match self {
-            Self::NativeProjectionInvocation { message } => {
+            Self::SchemeProjectionInvocation { message } => {
                 write!(
                     formatter,
                     "Gerbil continuation native projection invocation failed: {message}"
                 )
             }
-            Self::NativeProjectionDecode { message } => {
+            Self::SchemeProjectionDecode { message } => {
                 write!(
                     formatter,
                     "Gerbil continuation native projection decode failed: {message}"
@@ -60,7 +60,7 @@ impl Display for AgentHarnessGerbilLoopContinuationError {
 
 impl From<GerbilSchemeTypeDecodeError> for AgentHarnessGerbilLoopContinuationError {
     fn from(error: GerbilSchemeTypeDecodeError) -> Self {
-        Self::NativeProjectionDecode {
+        Self::SchemeProjectionDecode {
             message: error.to_string(),
         }
     }
@@ -86,7 +86,7 @@ impl AgentHarnessGerbilLoopContinuationPlanner {
     }
 
     /// Builds a planner using the upstream graph-loop continuation projection manifest.
-    pub fn from_native_projection_manifest<P>(
+    pub fn from_abi_projection_manifest<P>(
         projector: P,
     ) -> Result<Self, GerbilSchemeTypeDecodeError>
     where
@@ -104,7 +104,7 @@ impl AgentHarnessGerbilLoopContinuationPlanner {
         let run_id = input.run_id.clone();
         let iteration_id = input.iteration_id;
         let typed_value = projector.project_continuation(input).await?;
-        project_gerbil_loop_graph_continuation_native_action(&registry, &typed_value)
+        project_gerbil_loop_graph_continuation_abi_action(&registry, &typed_value)
             .map(|(_receipt, next_action)| next_action)
             .map(|next_action| {
                 GraphLoopContinuationDecision::new(
@@ -113,7 +113,7 @@ impl AgentHarnessGerbilLoopContinuationPlanner {
                         iteration_id,
                         continuation_action_from_next_action(next_action),
                     )
-                    .with_diagnostic("gerbil_continuation.native_projection"),
+                    .with_diagnostic("gerbil_continuation.abi_projection"),
                 )
             })
             .map_err(AgentHarnessGerbilLoopContinuationError::from)
@@ -147,7 +147,7 @@ fn continuation_action_from_next_action(
         },
         GraphLoopNextAction::ContinueWithGraph(graph) => GraphLoopContinuationAction::Rewrite {
             graph,
-            reason: "gerbil_continuation.native_projection".to_owned(),
+            reason: "gerbil_continuation.abi_projection".to_owned(),
         },
         GraphLoopNextAction::EscalateToHuman { reason } => {
             GraphLoopContinuationAction::Defer { reason }

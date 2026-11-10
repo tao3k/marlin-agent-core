@@ -1,0 +1,34 @@
+[package]
+name = "marlin-deck-runtime"
+edition.workspace = true
+version.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[features]
+default = []
+linked-selector = []
+actor-runtime = ["dep:gerbil-scheme", "dep:gerbil-scheme-sys", "dep:thiserror", "dep:tokio", "dep:tokio-util"]
+
+[[bench]]
+name = "linked_selector"
+harness = false
+
+[dependencies]
+gerbil-scheme = { workspace = true, optional = true, features = ["external-program"] }
+gerbil-scheme-sys = { workspace = true, optional = true }
+marlin-agent-protocol.workspace = true
+marlin-agent-runtime.workspace = true
+marlin-gerbil-scheme.workspace = true
+serde.workspace = true
+thiserror = { workspace = true, optional = true }
+tokio = { workspace = true, optional = true }
+tokio-util = { workspace = true, optional = true }
+
+[build-dependencies]
+marlin-rust-project-harness-policy.workspace = true
+marlin-gerbil-aot-link.workspace = true
+
+[dev-dependencies]
+criterion.workspace = true
+marlin-rust-project-harness-policy.workspace = true

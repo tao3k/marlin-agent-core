@@ -1,18 +1,18 @@
-// Target execution path. Org counterpart: 40.166 Plugin Contract v0, #agent-call-path.
+// Target execution path. Org counterpart: 40.166 Plugin Contract v0, #plugin-request-path.
 package MarlinPluginExecution {
     private import ScalarValues::*;
     private import MarlinPluginEngine::*;
 
-    action def <'MAR-PLG-P01'> AgentCallPath {
-        doc /* One Agent Call, with a compiled Rust path and an optional Scheme
+    action def <'MAR-PLG-P01'> PluginRequestPath {
+        doc /* One plugin request, with a compiled Rust path and an optional Scheme
                planning path. The decision outputs stand for host observations.
                The lifecycle model describes cancellation and terminal states. */
 
-        action decodeAgentCall {
+        action decodePluginRequest {
             doc /* The Rust gRPC service decodes one command into a typed
                    request. Admission starts as soon as the request is ready. */
         }
-        action bindAndAdmitCall {
+        action bindAndAdmitRequest {
             out queued : Boolean;
             doc /* Rust binds project, generation, policy epoch, and request
                    identity. It checks authority and reserves channel capacity. */
@@ -35,8 +35,12 @@ package MarlinPluginExecution {
                    Reserve bounded result capacity before admitting Scheme work. */
         }
         action invokeSchemeCAbi {
-            doc /* One typed C ABI submission per batch. The
-                   bridge enters on the Scheme VM owner. */
+            doc /* One typed C ABI submission per batch. On the Scheme VM
+                   owner, the bridge constructs rooted Scheme records and
+                   vectors from owned Rust fields and calls the batch export.
+                   The Context adapter
+                   transfers shared scope fields once per batch and projects
+                   owned digests in submission order. */
         }
         action evaluateWithSchemeActors {
             doc /* Gerbil Actor and green thread scheduling runs inside the
@@ -56,7 +60,9 @@ package MarlinPluginExecution {
         }
         action executeRustPlan {
             doc /* Tokio drives compiled transitions. Rust checks live grants
-                   before each effect and records each node and effect outcome. */
+                   before each effect and records each node and effect outcome.
+                   Independent CPU work on qualified, owned Rust data may use
+                   Rayon. Effect and receipt ordering follows the plan. */
         }
         action recordRejection {
             doc /* Rust retains the applicable rejection. Rejected or stale
@@ -66,7 +72,7 @@ package MarlinPluginExecution {
             doc /* Rust binds terminal outcome to its request and evidence.
                    Each semantic receipt keeps its identity and ordering. */
         }
-        action returnCallOutcome {
+        action returnRequestOutcome {
             doc /* Rust returns the typed outcome or receipt reference. */
         }
         action offerClientEvent {
@@ -82,11 +88,11 @@ package MarlinPluginExecution {
         merge terminalOutcome;
         fork publishOutcome;
 
-        first start then decodeAgentCall;
-        first decodeAgentCall then bindAndAdmitCall;
-        first bindAndAdmitCall then callAdmission;
-        first callAdmission if bindAndAdmitCall.queued then drainReadyMessages;
-        first callAdmission if not bindAndAdmitCall.queued then rejected;
+        first start then decodePluginRequest;
+        first decodePluginRequest then bindAndAdmitRequest;
+        first bindAndAdmitRequest then callAdmission;
+        first callAdmission if bindAndAdmitRequest.queued then drainReadyMessages;
+        first callAdmission if not bindAndAdmitRequest.queued then rejected;
         first drainReadyMessages then resolvePolicyPlan;
         first resolvePolicyPlan then policyRoute;
         first policyRoute if not resolvePolicyPlan.needsSchemeDecision then readyPlan;
@@ -104,24 +110,24 @@ package MarlinPluginExecution {
         first executeRustPlan then terminalOutcome;
         first terminalOutcome then finalizeExecutionReceipt;
         first finalizeExecutionReceipt then publishOutcome;
-        first publishOutcome then returnCallOutcome;
+        first publishOutcome then returnRequestOutcome;
         first publishOutcome then offerClientEvent;
     }
 
-    action agentCall : AgentCallPath;
+    action pluginRequest : PluginRequestPath;
 
-    allocation ingressOwner allocate agentCall.decodeAgentCall to target::pluginEngine.grpcService;
-    allocation admissionOwner allocate agentCall.bindAndAdmitCall to target::pluginEngine.activationGate;
-    allocation readyQueueOwner allocate agentCall.drainReadyMessages to target::pluginEngine.runtime.messageChannels;
-    allocation planOwner allocate agentCall.resolvePolicyPlan to target::pluginEngine.runtime.compiledExecution;
-    allocation batchOwner allocate agentCall.assembleSchemeBatch to target::pluginEngine.runtime.messageChannels;
-    allocation schemeEntryOwner allocate agentCall.invokeSchemeCAbi to target::pluginEngine.schemeCAbiBridge;
-    allocation schemeEvaluationOwner allocate agentCall.evaluateWithSchemeActors to target::schemeVm;
-    allocation retirementOwner allocate agentCall.retireSchemeWork to target::pluginEngine.schemeCAbiBridge;
-    allocation projectionOwner allocate agentCall.qualifyOwnedProjection to target::pluginEngine.activationGate;
-    allocation executionOwner allocate agentCall.executeRustPlan to target::pluginEngine.runtime.compiledExecution;
-    allocation rejectionOwner allocate agentCall.recordRejection to target::pluginEngine.evidence;
-    allocation receiptOwner allocate agentCall.finalizeExecutionReceipt to target::pluginEngine.evidence;
-    allocation replyOwner allocate agentCall.returnCallOutcome to target::pluginEngine.grpcService;
-    allocation eventQueueOwner allocate agentCall.offerClientEvent to target::pluginEngine.runtime.messageChannels;
+    allocation ingressOwner allocate pluginRequest.decodePluginRequest to target::pluginEngine.grpcService;
+    allocation admissionOwner allocate pluginRequest.bindAndAdmitRequest to target::pluginEngine.activationGate;
+    allocation readyQueueOwner allocate pluginRequest.drainReadyMessages to target::pluginEngine.runtime.messageChannels;
+    allocation planOwner allocate pluginRequest.resolvePolicyPlan to target::pluginEngine.runtime.compiledExecution;
+    allocation batchOwner allocate pluginRequest.assembleSchemeBatch to target::pluginEngine.runtime.messageChannels;
+    allocation schemeEntryOwner allocate pluginRequest.invokeSchemeCAbi to target::pluginEngine.schemeCAbiBridge;
+    allocation schemeEvaluationOwner allocate pluginRequest.evaluateWithSchemeActors to target::schemeVm;
+    allocation retirementOwner allocate pluginRequest.retireSchemeWork to target::pluginEngine.schemeCAbiBridge;
+    allocation projectionOwner allocate pluginRequest.qualifyOwnedProjection to target::pluginEngine.activationGate;
+    allocation executionOwner allocate pluginRequest.executeRustPlan to target::pluginEngine.runtime.compiledExecution;
+    allocation rejectionOwner allocate pluginRequest.recordRejection to target::pluginEngine.evidence;
+    allocation receiptOwner allocate pluginRequest.finalizeExecutionReceipt to target::pluginEngine.evidence;
+    allocation replyOwner allocate pluginRequest.returnRequestOutcome to target::pluginEngine.grpcService;
+    allocation eventQueueOwner allocate pluginRequest.offerClientEvent to target::pluginEngine.runtime.messageChannels;
 }

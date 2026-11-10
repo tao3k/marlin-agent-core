@@ -298,11 +298,11 @@ Resident procedure bridge evidence:
   adds the real Scheme procedure
   =marlin-deck-runtime-resident-strategy-execute=.
 - Smoke =cargo test -p marlin-gerbil-scheme resident_runtime_real_gxi_smoke_bridge_executes_typed_strategy -- --ignored= passed and produced an =Executed= receipt with =process_reuse_observed= true.
-- Negative baseline =MARLIN_GERBIL_REAL_GXI_SMOKE_STRATEGY_BENCH=1 cargo bench -p marlin-gerbil-scheme --bench deck_runtime_native gxi_smoke_typed_response_roundtrip -- --sample-size 10 --warm-up-time 0.1 --measurement-time 0.2= produced =time: [4.8963 s 5.1856 s 5.5322 s]= for the per-call =gxi= transport. This is too slow for runtime policy dispatch and confirms native AOT/resident-native is mandatory.
-- Native hot-path gate =cargo test -p marlin-gerbil-scheme gerbil_deck_runtime_native_selector_performance_gate_stays_sub_millisecond= asserts the linked native selector stays at or below =1000us= average dispatch in the Rust runtime test lane.
-- Real native AOT linked ABI smoke =cargo test -p marlin-gerbil-scheme command_compiler_real_gxi_deck_runtime_native_links_and_runs_abi_smoke -- --ignored --nocapture= passed. The smoke stages =deck-runtime-native~0.scm= through Rust-owned native build support, builds the Rust-owned native AOT link unit, compiles a C runner, initializes the Gambit runtime through =marlin_deck_runtime_initialize=, calls =marlin_deck_runtime_select_model_route= 1000 times, and then calls =___cleanup=.
-- Real linked-native benchmark =cargo bench -p marlin-deck-runtime-native --features linked-native --bench linked_selector= passed after the native array-scan selector change: 1 policy =2.0732 us=, 8 policies =7.2846 us=, 64 policies =44.126 us=, 256 policies =197.11 us= mean estimates.
-- Candidate-plan resolver benchmark =cargo bench -p marlin-deck-runtime-native --features linked-native --bench linked_selector -- --sample-size 10 --warm-up-time 0.1 --measurement-time 0.2= passed after splitting direct selector, optimized resolver, and request-build costs. After the conservative candidate-stream correctness fix, direct full-request =deck_runtime_linked_native_selector/256_policy= measured =398.31 us= as the Criterion point estimate, high-level request build measured =308.69 us=, and optimized =deck_runtime_linked_native_resolver_compiled_candidate/256_policy= measured =9.0418 us=. The resolver now sends one compiled candidate policy at a time through the linked Scheme selector ABI, keeps Rust runtime projection as the final correctness gate, and continues to the next broad candidate when projection rejects an unsupported native predicate projection.
+- Negative baseline =MARLIN_GERBIL_REAL_GXI_SMOKE_STRATEGY_BENCH=1 cargo bench -p marlin-gerbil-scheme --bench deck_route_abi gxi_smoke_typed_response_roundtrip -- --sample-size 10 --warm-up-time 0.1 --measurement-time 0.2= produced =time: [4.8963 s 5.1856 s 5.5322 s]= for the per-call =gxi= transport. This is too slow for runtime policy dispatch and confirms native AOT/resident-native is mandatory.
+- Native hot-path gate =cargo test -p marlin-gerbil-scheme gerbil_deck_route_abi_selector_performance_gate_stays_sub_millisecond= asserts the linked native selector stays at or below =1000us= average dispatch in the Rust runtime test lane.
+- Real native AOT linked ABI smoke =cargo test -p marlin-gerbil-scheme command_compiler_real_gxi_deck_route_abi_links_and_runs_abi_smoke -- --ignored --nocapture= passed. The smoke stages =deck-route-abi~0.scm= through Rust-owned native build support, builds the Rust-owned native AOT link unit, compiles a C runner, initializes the Gambit runtime through =marlin_deck_runtime_initialize=, calls =marlin_deck_runtime_select_model_route= 1000 times, and then calls =___cleanup=.
+- Real linked-selector benchmark =cargo bench -p marlin-deck-runtime --features linked-selector --bench linked_selector= passed after the native array-scan selector change: 1 policy =2.0732 us=, 8 policies =7.2846 us=, 64 policies =44.126 us=, 256 policies =197.11 us= mean estimates.
+- Candidate-plan resolver benchmark =cargo bench -p marlin-deck-runtime --features linked-selector --bench linked_selector -- --sample-size 10 --warm-up-time 0.1 --measurement-time 0.2= passed after splitting direct selector, optimized resolver, and request-build costs. After the conservative candidate-stream correctness fix, direct full-request =deck_runtime_linked_native_selector/256_policy= measured =398.31 us= as the Criterion point estimate, high-level request build measured =308.69 us=, and optimized =deck_runtime_linked_native_resolver_compiled_candidate/256_policy= measured =9.0418 us=. The resolver now sends one compiled candidate policy at a time through the linked Scheme selector ABI, keeps Rust runtime projection as the final correctness gate, and continues to the next broad candidate when projection rejects an unsupported native predicate projection.
 - Scheme Scenario performance gate =GERBIL_LOADPATH=src:.:$GERBIL_LOADPATH gxi t/deck-runtime-script-performance-gate.ss= passed against =t/scenarios/performance/deck-runtime-script-batch/benchmark.ss=. The receipt reported =elapsedMicros=332= for 1024 quick script dispatches with =maxTotalMs=5= and =status=pass=. The timed thunk is pure =marlin-deck-runtime-script-batch-metrics=; metrics checks run outside the benchmark body.
 
 Next closure gates:
@@ -316,16 +316,16 @@ Initial implementation:
 - protocol exports in =crates/marlin-agent-protocol/src/lib.rs=
 - unit tests in =crates/marlin-agent-protocol/tests/unit/protocol/loop_policy_ir.rs=
 - =GerbilAgentPolicyRoutingNativeRequestConversionProfile= in
-  =crates/marlin-gerbil-scheme/src/agent_policy_routing_native/request.rs=
+  =crates/marlin-gerbil-scheme/src/agent_policy_routing_abi/request.rs=
 - =GerbilAgentPolicyRoutingNativeMatchKey=,
   =GerbilAgentPolicyRoutingNativePayload=, and
   =GerbilAgentPolicyRoutingNativeEpochBacking= for epoch-owned scalar request
   backing
 - owner split under
-  =crates/marlin-gerbil-scheme/src/agent_policy_routing_native/mod.rs=, with
+  =crates/marlin-gerbil-scheme/src/agent_policy_routing_abi/mod.rs=, with
   ABI, request/backing, and selector projection kept in separate modules
 - marshalling-only and end-to-end candidate-count benchmarks in
-  =crates/marlin-agent-policy-routing-native/benches/linked_selector.rs=
+  =crates/marlin-agent-policy-routing-abi/benches/linked_selector.rs=
 - =decode_gerbil_resolved_loop_policy_pack= in
   =crates/marlin-gerbil-scheme/src/policy_pack_projection.rs= projects a
   Gerbil typed value into Rust's =ResolvedLoopPolicyPack= hot/audit IR without
@@ -334,16 +334,16 @@ Initial implementation:
   =crates/marlin-gerbil-scheme/tests/unit/scheme_types/projection/policy_pack_projection.rs=
   and
   =crates/marlin-gerbil-scheme/tests/unit/scheme_types/package/policy_pack_projection.rs=
-- =crates/marlin-gerbil-scheme/gerbil/src/marlin/deck-runtime-native-projection.ss=
+- =crates/marlin-gerbil-scheme/gerbil/src/marlin/deck-route-abi-projection.ss=
   now exposes =marlin_deck_runtime_project_resolved_loop_policy_pack= and a
   deterministic Scheme-side =ResolvedLoopPolicyPack= payload fixture
-- =gerbil_deck_runtime_native_projection_package_manifest= now declares both
+- =gerbil_deck_route_abi_projection_package_manifest= now declares both
   the POO policy projection and the resolved loop policy pack projection
   contracts under one native ABI readiness plan
 - =decode_gerbil_deck_runtime_resolved_loop_policy_pack_projection= validates
   the native ABI readiness receipt before decoding the Rust
   =ResolvedLoopPolicyPack=
-- =gxtest t/deck-runtime-native-projection-test.ss= was run with
+- =gxtest t/deck-route-abi-projection-test.ss= was run with
   =GERBIL_LOADPATH=src= and validates the Scheme resolved-loop-policy-pack
   payload shape without JSON
 
@@ -355,8 +355,8 @@ epoch-owned backing.  The epoch-backed selector path is the second P0 receipt:
 it keeps graph id, policy scope, and root node backing stable, then measures
 payload-only marshalling for candidate edges and evidence.
 
-Smoke benchmark receipt from =cargo bench -p marlin-agent-policy-routing-native
---bench linked_selector --features linked-native -- --sample-size 10
+Smoke benchmark receipt from =cargo bench -p marlin-agent-policy-routing-abi
+--bench linked_selector --features linked-selector -- --sample-size 10
 --warm-up-time 0.1 --measurement-time 0.2=:
 
 | Candidates | Full marshalling median | Epoch payload median | Full linked e2e median | Epoch linked e2e median |
@@ -378,7 +378,7 @@ making stronger performance claims.
 ** 40.165.80.10 P0 Native Selector Conversion Audit
 
 Measure and remove repeated policy reconstruction in
-=marlin-agent-policy-routing-native= and model-route native projection.
+=marlin-agent-policy-routing-abi= and model-route native projection.
 
 First landed gate:
 
@@ -417,7 +417,7 @@ continuation, human gate, maker/checker, and graph templates.
 First landed gate:
 
 - project a deterministic Scheme POO payload for =ResolvedLoopPolicyPack= from
-  =:marlin/deck-runtime-native-projection=
+  =:marlin/deck-route-abi-projection=
 - keep =type_id=, =schema_id=, and native projection symbol as ABI constants
   while Rust owns the typed envelope
 - add a native projection request for
@@ -427,7 +427,7 @@ First landed gate:
   projection
 - validate native ABI receipt, symbol, type id, schema id, hot pack, audit
   pack, and schema-version drift in
-  =crates/marlin-gerbil-scheme/tests/unit/scheme_types/projection/native_abi.rs=
+  =crates/marlin-gerbil-scheme/tests/unit/scheme_types/projection/c_abi.rs=
 
 ** 40.165.80.40 P3 Batch ABI Proof
 
@@ -446,13 +446,13 @@ First landed gate:
   selector plus typed Scheme value projection, without Rust receipt decode
 - add =agent_policy_routing_linked_native_selector_epoch_typed_value= for the
   epoch-backed selector plus typed Scheme value projection
-- add =agent_policy_routing_native_receipt_projection= for typed Scheme value
+- add =agent_policy_routing_abi_receipt_projection= for typed Scheme value
   to Rust receipt decode, with selector cost removed from the measured loop
 - keep full and epoch end-to-end groups as comparison receipts
 - add a separate =allocation_shape= bench target with a bench-local counting
   allocator so allocation receipts do not affect Criterion timing buckets
 
-Smoke benchmark receipt from =cargo bench -p marlin-agent-policy-routing-native --bench linked_selector --features linked-native -- --sample-size 10 --warm-up-time 0.1 --measurement-time 0.2=:
+Smoke benchmark receipt from =cargo bench -p marlin-agent-policy-routing-abi --bench linked_selector --features linked-selector -- --sample-size 10 --warm-up-time 0.1 --measurement-time 0.2=:
 
 | Candidates | Full marshal | Epoch marshal | Selector typed value | Epoch selector typed value | Receipt projection | Full e2e | Epoch e2e |
 |------------+--------------+---------------+----------------------+----------------------------+--------------------+----------+-----------|
@@ -468,7 +468,7 @@ the structure needed to make selector compute, typed receipt projection, and
 full end-to-end cost independently visible before turning the smoke run into a
 final benchmark gate.
 
-Allocation-shape receipt from =cargo bench -p marlin-agent-policy-routing-native --bench allocation_shape --features linked-native=:
+Allocation-shape receipt from =cargo bench -p marlin-agent-policy-routing-abi --bench allocation_shape --features linked-selector=:
 
 | Candidates | Full marshal allocs/bytes | Epoch marshal allocs/bytes | Selector allocs/bytes | Epoch selector allocs/bytes | Receipt allocs/bytes | Full e2e allocs/bytes | Epoch e2e allocs/bytes |
 |------------+---------------------------+----------------------------+-----------------------+-----------------------------+----------------------+------------------------+-------------------------|

@@ -4,36 +4,60 @@
 
 =gerbil.pkg= declares AI Agentic Lab as the sole direct package dependency.
 Lab supplies Yuanxu, the POO contracts, and the Context and Session
-implementations. =init.ss= selects Lab's =ai-agentic-context= core profile
-under =Lab= and this package's =policy= under =Marlin=. Scheme consumers read
-the selected Context publication from =marlin-agent-core.init.exports=.
-Session operations belong to Lab's Gerbil APIs. Marlin's policy uses facts
-such as the session identifier and workspace state to make policy decisions.
+implementations. =init.ss= selects =context +causal=, =hooks=, =policy=,
+and =deck-runtime=.
+=context/types.ss= declares the host request as a POO =Record= and checks
+the operation as =(Fun AiAgenticContextScopeType <- MarlinContextRequest)=.
+=context/func.ss= imports the installed Lab Scope library. It projects the
+request into Lab's Scope object and calls Lab's admission procedure.
+Lab owns the Scope invariants and the returned scope digest.
+The =+causal= Feature publishes solve and replay operations over Lab's
+Temporal Causality exchange. It returns the original ASCENT answer with its
+receipt and verifies replay against the caller's exact exchange.
 
 | Role | Responsibility |
 |------+----------------|
-| =policy/= | Publish model routing, hooks, and strategy policy. |
-| =policy/projection/= | Prepare typed values for the Rust adapter. |
+| =context/= | Adapt Lab's Context library to Marlin's runtime boundary. |
+| =hooks/= | Publish Scheme hook selection, composable conditions, and higher-order matchers. |
+| =policy/= | Evaluate model routing and strategy with a declared dependency on Hooks. |
+| =deck-runtime/= | Publish Scheme-owned runtime metadata and evaluate bounded Policy batches on resident actors. |
+| =policy/projection/deck/= | Project policy packs. |
+| =policy/projection/graph/= | Project routing, topology and continuation for the Rust graph runtime. |
 | =c-abi/= | Own the C entry points and their bindings. |
 | =t/= | Exercise policy composition, projections, and receipt fixtures. |
 
-Each module publishes its scope through =interface.ss=. Its =types.ss= defines
-the contract, =objects.ss= supplies the values, and =config.ss= validates the
-scope. The Policy module's =func.ss= imports the implementation and projection
-roots used to derive its source closure.
+Each module publishes its scope through =interface.ss=. The contract, objects,
+and validation live in =types.ss=, =objects.ss=, and =config.ss= respectively.
+Yuanxu owns Module selection, Feature refinement and option contracts. Deck
+Runtime opens its Actor pool on demand through gerbil-scheme-rust. The pool
+uses Gerbil green threads and returns decisions in input order. The owner
+closes it explicitly. Rust maps the version from the published Scheme
+=metadata= record.
 
 Gerbil compiles the C link units through Gambit and executes policy in the
 Scheme VM. The Rust adapter owns typed requests, authorization, and receipts.
+=marlin-agent-context= owns the typed Rust request and prepares a bounded
+batch for the owner-local C ABI. =context/batch.ss= adapts the batch to the
+published Context operation, and =c-abi/context-admission.ss= exposes the
+entry through gerbil-scheme-rust's rooted-object ABI. The batch transfers
+shared fields once and returns an ordered array of Lab scope digests.
+Linking the production VM image and wiring the live Session handoff remain
+integration work.
 
 Install the package dependency with =just scheme-deps=. CI installs the SDK
 with the bridge's =setup-gerbil= action, prepares the pinned revisions with
 Lab's =runtime-dependencies.ss=, and installs them with =gxpkg=. Run
 =just scheme-package-gate= to initialize the VM and call
 =GerbilRuntime::build_package= and =GerbilRuntime::test_package=.
-Yuanxu derives the library source closure from the selected module roles.
+The gate requires the installed Lab Scope and ASCENT exchange libraries
+and their import closure. The pinned Lab revision =55bf2074=
+installs no compiled Lab libraries by default, so the dependency installation
+alone cannot supply these products. Lab's library producer owns that step.
+Yuanxu derives the source closure of Marlin's selected module roles and treats
+the installed Lab libraries as Gerbil prerequisites.
 =build.ss= hands the =std-make-spec= exported by =init.ss= to
 =defbuild-script= and retains =init= as the package entry.
-Run =just agent-policy-routing-native-gate= for the linked C ABI selector.
+Run =just agent-policy-routing-abi-gate= for the linked C ABI selector.
 
 The recorded loop-case trace in =t/fixtures/loop-case-trace.v1= was exported
 from Marlin =5cdd0b1b= using Gerbil =v0.18.2-4-gadd92248=. Rust tests use it

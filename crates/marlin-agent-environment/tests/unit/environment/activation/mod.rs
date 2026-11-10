@@ -10,7 +10,7 @@ use marlin_agent_environment::{DirenvCommandRunner, RuntimeEnvironmentActivation
 
 mod basic;
 mod preflight;
-mod real_native;
+mod real_direnv;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum FakeDirenvRunner {

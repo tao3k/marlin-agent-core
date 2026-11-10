@@ -1,0 +1,16 @@
+[package]
+name = "marlin-gerbil-aot-link"
+edition.workspace = true
+version.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+cc.workspace = true
+gerbil-scheme-aot-build.workspace = true
+marlin-gerbil-scheme.workspace = true
+object.workspace = true
+gerbil-scheme-build.workspace = true
+
+[build-dependencies]
+marlin-rust-project-harness-policy.workspace = true

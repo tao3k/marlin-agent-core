@@ -33,7 +33,7 @@ fn environment_crate_receives_git_environment_boundary_policy() {
 
 #[test]
 fn native_build_crate_receives_external_build_policy() {
-    let root = workspace_root().join("build-support/marlin-gerbil-native-build");
+    let root = workspace_root().join("build-support/marlin-gerbil-aot-link");
     let config = rust_project_harness_config_for_project(&root);
     let root_hint = profile_hint(&config.verification_policy.profile_hints, "src/lib.rs");
 

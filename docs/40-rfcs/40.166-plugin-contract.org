@@ -44,7 +44,7 @@ structural identities, transport connections, and requirement allocations.
 The [[file:../../dev/sysml/plugin-lifecycle.sysml][lifecycle model]] describes
 the target activation and invocation states. The
 [[file:../../dev/sysml/plugin-execution.sysml][execution model]] describes the
-Agent Call flow and stage allocations. This RFC owns the design rationale,
+plugin request flow and stage allocations. This RFC owns the design rationale,
 contract details, and evidence status. The
 [[file:../../dev/sysml/README.org][model map]] links both directions.
 
@@ -110,13 +110,64 @@ and child with =yuanxu-module-interface=, =yuanxu-import= and
 =yuanxu-module-option-block=. Its assertions cover closure, phase order, and
 validation projections. =module-option-projection.ss= projects effective
 slots and delegates validation to Core's =option-validation.ss=. These are
-facilities in that source baseline. Marlin's =scheme/init.ss= selects the
-=ai-agentic-context= core profile from Lab =55bf2074= and Marlin's local
-=policy=. =scheme/build.ss= passes the resulting =std-make-spec= to
-=defbuild-script=. Lab owns Session and Context Session. The Rust runtime
-owns admission and typed receipts. Wiring live Agent Calls to Lab's Context
-Session APIs, the Brief-to-Draft modules, and their plugin-facing Scheme
-activation adapter remain proposed.
+facilities in that source baseline. Marlin's =scheme/init.ss= selects its
+local =context +causal=, =hooks=, =policy=, and =deck-runtime= modules.
+Context imports Lab's installed Gerbil
+library and delegates Scope admission to it. Yuanxu already treats installed
+Gerbil imports as prerequisites, so Marlin's =std-make-spec= has only Marlin
+targets. Lab =55bf2074= does not install compiled libraries by default; Lab
+must publish the Context library for a clean downstream install.
+
+Lab owns Context and Session semantics. Marlin's Context module owns the
+projection for Marlin's host. Its POO =Record= describes host inputs and
+=Fun= checks that the operation returns Lab's =AiAgenticContextScopeType=.
+The separate Rust crate =marlin-agent-context= owns typed Context inputs,
+batch bounds and result projection. Its optional Gerbil bridge binds one
+build-owned rooted-object export. Common scope fields are projected once;
+Scheme calls Lab for each row and returns ordered 32-byte digests. A malformed
+or failed batch returns no digest. Only Rust admits effects and issues
+execution receipts. A Lab scope digest records Scope admission.
+Linking the Context export into the production VM image, live plugin request
+integration, and the Brief-to-Draft activation adapter remain proposed.
+
+Yuanxu owns the Module and Feature extension surface. Context's =+causal=
+Feature publishes solve and replay over Lab's ASCENT exchange. The exchange
+binds the causal cut to explicit valid-time and knowledge-time coordinates.
+Marlin retains the ASCENT answer and receipt and replays them through Lab
+against the same exchange.
+
+=deck-runtime= declares a dependency on Policy. Its Scheme metadata owns
+the Module identity and version. The Rust crate =marlin-deck-runtime=
+projects that record and owns the linked selector.
+Deck Runtime opens resident gerbil-scheme-rust mailbox actors on the owning
+Scheme thread, runs one Policy evaluation per batch row, and returns ordered
+results. The =deck-actor= chat route uses =DeckRouteAdmission= and a bounded
+Tokio queue to submit model-route candidates to one linked VM owner. The
+owner constructs rooted strings and vectors with the SDK. Scheme evaluates
+the batch and returns a Boolean vector. Rust rechecks the original rule
+against the full request before issuing the route receipt. A cancelled or
+expired request skips VM entry at dequeue. An active batch retires on the
+same owner, and Rust discards its result if the caller has retired.
+
+The pinned gerbil-scheme-rust actor example establishes the owner-local
+call pattern. The current linked VM uses its rooted object export once per
+batch and maps result fields directly into Rust types. The multi-owner
+target can reuse =SchemeServiceIngress= and
+=InstanceDispatcher::submit_native_async_on=. Rayon can parallelize
+independent work on owned data after Rust qualifies the projection. Effect
+admission and receipt ordering remain with the Rust runtime.
+[[https://github.com/tao3k/gerbil-scheme-rust/blob/bfe803f597a15a3654b70a64c3a039980c31da8a/docs/instance-runtime.org#public-native-numeric-batches-and-scheme-mailbox-actors][Gerbil mailbox actor example at the pinned revision]]
+
+The selected =scheme/hooks/= module publishes the Scheme selector. Policy
+declares a dependency on Hooks and uses it during evaluation. Projection
+constructs receipts from the decisions already made. The Rust
+=HookActionProvider= proposes typed actions. The dispatcher constructs the
+Rust receipt and applies the action. =Register= carries only a Rust catalog
+target. A Scheme =allow= is an abstention at this boundary. Rust compiles
+workspace path include/exclude globs at registration, checks them during
+selection, and records a path mismatch before execution. This layer can
+combine path selection and high-order policy without granting the Scheme
+policy authority to supply a handler. The live Scheme provider is pending.
 
 | Role | Publishes or supplies | Execution responsibility |
 |------+----------------------+--------------------------|
@@ -211,7 +262,7 @@ Use one qualified Scheme VM owner as the baseline. Concurrent Rust callers do
 not establish parallel Scheme execution. Independent VMs or Scheme SMP need
 separate qualification. The in-process Scheme VM is a trusted execution
 environment. Linked Scheme modules require host provisioning.
-[[file:../30-gerbil/30.80-native-aot-link-unit.org][Marlin Scheme AOT link unit]]
+[[file:../30-gerbil/30.80-aot-link-unit.org][Marlin Scheme AOT link unit]]
 
 *** Engine-owned gRPC and the Scheme VM
 :PROPERTIES:
@@ -221,7 +272,7 @@ environment. Linked Scheme modules require host provisioning.
 Marlin's Rust plugin engine owns the gRPC service, runtime lifecycle, and
 message channels. A plugin package contributes a declaration and any
 handler or client assets for its declared role. The engine starts the service
-as part of host startup and reuses it across Agent Calls. For each call, Rust
+as part of host startup and reuses it across plugin requests. For each call, Rust
 resolves the active project and capabilities, dispatches admitted work,
 handles deadlines and cancellation, and records results. The gRPC service and
 plugin SDK bindings are proposed integration work. The Scheme C ABI bridge already
@@ -266,7 +317,7 @@ The runner and its isolation remain a separate integration decision.
 OpenSysML requirement =MAR-PLG-R05= allocates high-performance execution to
 the Rust execution path and message channels, the Scheme C ABI bridge, and
 the external gRPC service. The project entry selects its
-=MarlinAgentCore::performanceDesign= view. The design keeps compiled
+=MarlinAgentCORE::performanceDesign= view. The design keeps compiled
 transitions in Rust, batches Scheme projections at the planning boundary,
 and delivers client events asynchronously.
 [[file:../../dev/sysml/plugin-engine.sysml][Performance allocations]]
@@ -303,15 +354,15 @@ Marlin's performance research focuses on policy composition, C ABI projection,
 Rust message scheduling, effect admission, and receipt production. Use
 end-to-end workflows to find where these costs accumulate under load.
 
-*** Agent Call execution and batching
+*** plugin request execution and batching
 :PROPERTIES:
-:CUSTOM_ID: agent-call-path
+:CUSTOM_ID: plugin-request-path
 :END:
 
-=MAR-PLG-P01= allocates each stage of an Agent Call to its owner. The view
-=MarlinAgentCore::agentCallPath= shows the compiled Rust path, the Scheme
+=MAR-PLG-P01= allocates each stage of an plugin request to its owner. The view
+=MarlinAgentCORE::pluginRequestPath= shows the compiled Rust path, the Scheme
 planning branch, and their convergence at the Rust execution receipt.
-[[file:../../dev/sysml/plugin-execution.sysml][Agent Call execution model]]
+[[file:../../dev/sysml/plugin-execution.sysml][plugin request execution model]]
 
 Tokio schedules Rust tasks and drives host I/O. Rust owns message admission,
 ordering, backpressure, effect grants, and cancellation. Inside the
@@ -323,7 +374,7 @@ future separately qualified VM scaling.
 
 | Stage | Owner and responsibility | Batching rule |
 |-------+--------------------------+---------------|
-| Decode and admit | Rust decodes the Agent Call, binds request identity to project, activation generation, and policy epoch, and reserves channel capacity under its live grant. | Admission is per call. Return the applicable denial or backpressure outcome at this boundary. |
+| Decode and admit | Rust decodes the plugin request, binds request identity to project, activation generation, and policy epoch, and reserves channel capacity under its live grant. | Admission is per call. Return the applicable denial or backpressure outcome at this boundary. |
 | Drain ready work | Tokio schedules the Rust message owner. The owner dispatches work subject to queue credits, scope order, and deadlines. | Drain a bounded group of already-ready messages. Dispatch a single ready message when it is the available work. Cancellation and close signals retain their own delivery path. |
 | Resolve plan | Rust selects a compiled =LoopProgram= for the current policy epoch and input dependencies, or requests a fresh Scheme decision. | Reuse compiled policy for ordinary transitions. Group Scheme requests at a planning boundary when new facts require Scheme evaluation. |
 | Submit and evaluate | Rust forms the batch, the C ABI enters on the selected VM owner, and Gerbil Actors and green threads evaluate inside the VM. Rust correlates each owned result with the originating request. | Submit once per batch through the C ABI. Group requests whose inputs are all ready and that share a Scheme VM owner, project scope, activation generation, policy epoch, and ABI operation. Bound count, bytes, estimated work, and oldest wait. Preserve the order required by stateful calls. |
@@ -439,7 +490,7 @@ For a repeated decision that fits =LoopProgram=, compile it at the policy
 boundary and reuse the immutable plan while the policy epoch and input dependencies match. A steady-state
 Rust transition then requires zero C ABI calls. For dynamic decisions,
 batching amortizes the cost of each remaining C ABI call, wakeup, and
-projection. Count Agent Calls, ABI entries, VM-internal Actor messages, and
+projection. Count plugin requests, ABI entries, VM-internal Actor messages, and
 committed effects separately. A higher Actor message rate helps the VM part
 of the workflow. Fewer ABI entries and copies determine how much of that
 gain carries across the host boundary.
@@ -543,7 +594,7 @@ how to ship the fixture. More expressive deterministic rules or diagnostics
 justify executable assets when they remove duplicate behavior or a server
 round trip at an acceptable client cost. Measure the complete shipped asset,
 including its runtime, plus cold startup, first preview, and memory in the
-intended client. The Agent Call execution path has no dependency on the
+intended client. The plugin request execution path has no dependency on the
 preview asset.
 
 *** Runtime boundary and cost

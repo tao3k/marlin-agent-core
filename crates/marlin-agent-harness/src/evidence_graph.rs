@@ -230,7 +230,7 @@ impl AgentHarnessEvidenceGraph {
             receipt.schema_id,
             status,
             selected_graph_id,
-            receipt.native_abi.is_some(),
+            receipt.c_abi.is_some(),
             receipt.diagnostics.len(),
         );
 

@@ -29,12 +29,13 @@ fn gerbil_runtime_asset_receipt_accepts_complete_marlin_runtime_package() {
             "build.ss",
             "init.ss",
             "policy/interface.ss",
-            "c-abi/_deck-runtime-native.ssi",
-            "c-abi/deck-runtime-native.ss",
-            "c-abi/_agent-policy-routing-native.ssi",
-            "policy/projection/deck.ss",
-            "policy/projection/graph-continuation.ss",
-            "policy/projection/script.ss",
+            "c-abi/_deck-route-abi.ssi",
+            "c-abi/deck-route-abi.ss",
+            "c-abi/_agent-policy-routing-abi.ssi",
+            "policy/projection/deck/policy.ss",
+            "policy/projection/graph/continuation.ss",
+            "deck-runtime/interface.ss",
+            "deck-runtime/runtime.ss",
             "policy/strategy.ss",
             "policy/extra-policy.ss",
         ],
@@ -45,9 +46,9 @@ fn gerbil_runtime_asset_receipt_accepts_complete_marlin_runtime_package() {
     assert_eq!(receipt.status, GerbilRuntimeAssetManifestStatus::Complete);
     assert!(receipt.is_success());
     assert!(receipt.has_runtime_assets());
-    assert_eq!(receipt.asset_count, 12);
+    assert_eq!(receipt.asset_count, 13);
     assert_eq!(receipt.package_manifest_count, 1);
-    assert_eq!(receipt.scheme_source_count, 9);
+    assert_eq!(receipt.scheme_source_count, 10);
     assert!(receipt.missing_required_assets.is_empty());
 }
 
@@ -61,12 +62,13 @@ fn gerbil_runtime_asset_receipt_ignores_transient_runtime_cache_dirs() {
             "build.ss",
             "init.ss",
             "policy/interface.ss",
-            "c-abi/_deck-runtime-native.ssi",
-            "c-abi/deck-runtime-native.ss",
-            "c-abi/_agent-policy-routing-native.ssi",
-            "policy/projection/deck.ss",
-            "policy/projection/graph-continuation.ss",
-            "policy/projection/script.ss",
+            "c-abi/_deck-route-abi.ssi",
+            "c-abi/deck-route-abi.ss",
+            "c-abi/_agent-policy-routing-abi.ssi",
+            "policy/projection/deck/policy.ss",
+            "policy/projection/graph/continuation.ss",
+            "deck-runtime/interface.ss",
+            "deck-runtime/runtime.ss",
             "policy/strategy.ss",
             ".run/marlin-harness-policy-negative/gerbil.pkg",
             ".run/marlin-harness-policy-negative/src/macros/core.ss",
@@ -80,9 +82,9 @@ fn gerbil_runtime_asset_receipt_ignores_transient_runtime_cache_dirs() {
 
     assert_eq!(receipt.status, GerbilRuntimeAssetManifestStatus::Complete);
     assert!(receipt.is_success());
-    assert_eq!(receipt.asset_count, 11);
+    assert_eq!(receipt.asset_count, 12);
     assert_eq!(receipt.package_manifest_count, 1);
-    assert_eq!(receipt.scheme_source_count, 8);
+    assert_eq!(receipt.scheme_source_count, 9);
     assert!(
         receipt.asset_paths.iter().all(|path| {
             !path.starts_with(".run/")
@@ -149,17 +151,16 @@ fn gerbil_runtime_harness_contract_receipt_accepts_complete_harness_assets() {
             "build.ss",
             "init.ss",
             "policy/interface.ss",
-            "c-abi/_deck-runtime-native.ssi",
-            "c-abi/deck-runtime-native.ss",
-            "c-abi/_agent-policy-routing-native.ssi",
-            "policy/projection/deck.ss",
-            "policy/projection/graph-continuation.ss",
-            "policy/projection/script.ss",
+            "c-abi/_deck-route-abi.ssi",
+            "c-abi/deck-route-abi.ss",
+            "c-abi/_agent-policy-routing-abi.ssi",
+            "policy/projection/deck/policy.ss",
+            "policy/projection/graph/continuation.ss",
+            "deck-runtime/interface.ss",
+            "deck-runtime/runtime.ss",
             "policy/strategy.ss",
-            "t/support/script-performance.ss",
             "t/all-test.ss",
-            "t/deck-runtime-script-performance-test.ss",
-            "t/deck-runtime-script-performance-gate.ss",
+            "t/deck-runtime-test.ss",
         ],
     );
 
@@ -182,7 +183,7 @@ fn gerbil_runtime_harness_contract_receipt_accepts_complete_harness_assets() {
     assert!(
         receipt
             .available_capabilities
-            .contains(&"script-performance-gate".to_owned())
+            .contains(&"deck-runtime-test".to_owned())
     );
 }
 
@@ -196,12 +197,13 @@ fn gerbil_runtime_harness_contract_receipt_rejects_missing_capability_assets() {
             "build.ss",
             "init.ss",
             "policy/interface.ss",
-            "c-abi/_deck-runtime-native.ssi",
-            "c-abi/deck-runtime-native.ss",
-            "c-abi/_agent-policy-routing-native.ssi",
-            "policy/projection/deck.ss",
-            "policy/projection/graph-continuation.ss",
-            "policy/projection/script.ss",
+            "c-abi/_deck-route-abi.ssi",
+            "c-abi/deck-route-abi.ss",
+            "c-abi/_agent-policy-routing-abi.ssi",
+            "policy/projection/deck/policy.ss",
+            "policy/projection/graph/continuation.ss",
+            "deck-runtime/interface.ss",
+            "deck-runtime/runtime.ss",
             "policy/strategy.ss",
         ],
     );
@@ -221,7 +223,7 @@ fn gerbil_runtime_harness_contract_receipt_rejects_missing_capability_assets() {
     assert!(
         receipt
             .missing_capabilities
-            .contains(&"script-performance-gate".to_owned())
+            .contains(&"deck-runtime-test".to_owned())
     );
 }
 
@@ -240,32 +242,32 @@ fn gerbil_runtime_asset_receipt_accepts_real_marlin_gerbil_scheme_package() {
     assert!(
         receipt
             .asset_paths
-            .contains(&"c-abi/_deck-runtime-native.ssi".to_owned())
+            .contains(&"c-abi/_deck-route-abi.ssi".to_owned())
     );
     assert!(
         receipt
             .asset_paths
-            .contains(&"c-abi/deck-runtime-native.ss".to_owned())
+            .contains(&"c-abi/deck-route-abi.ss".to_owned())
     );
     assert!(
         receipt
             .asset_paths
-            .contains(&"c-abi/_agent-policy-routing-native.ssi".to_owned())
+            .contains(&"c-abi/_agent-policy-routing-abi.ssi".to_owned())
     );
     assert!(
         receipt
             .asset_paths
-            .contains(&"policy/projection/deck.ss".to_owned())
+            .contains(&"policy/projection/deck/policy.ss".to_owned())
     );
     assert!(
         receipt
             .asset_paths
-            .contains(&"policy/projection/graph-continuation.ss".to_owned())
+            .contains(&"policy/projection/graph/continuation.ss".to_owned())
     );
     assert!(
         receipt
             .asset_paths
-            .contains(&"policy/projection/script.ss".to_owned())
+            .contains(&"deck-runtime/runtime.ss".to_owned())
     );
 }
 

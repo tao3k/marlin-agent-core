@@ -3,19 +3,19 @@ use super::{
     GERBIL_LOOP_POLICY_PROJECTION_MODULE_SCHEMA_ID, GERBIL_LOOP_POLICY_PROJECTION_MODULE_TYPE_ID,
     GERBIL_POO_LOOP_PROGRAM_COMPILER_SCHEMA_ID, GerbilPooLoopProgramCompilerBoundary,
     GerbilPooLoopProgramCompilerOwner, GerbilPooLoopProgramCompilerSerializationBoundary,
-    GerbilSchemeNativeSymbol, GerbilSchemeSchemaId, GerbilSchemeTypeId, GerbilSchemeValue,
-    decode_gerbil_loop_policy_projection_module,
+    GerbilSchemeAbiSymbol, GerbilSchemeSchemaId, GerbilSchemeTypeId, GerbilSchemeValue,
+    decode_gerbil_loop_policy_projection_module, gerbil_deck_route_abi_projection_readiness_plan,
     gerbil_deck_runtime_loop_policy_projection_module_request,
-    gerbil_deck_runtime_native_projection_readiness_plan, loop_policy_projection_module_envelope,
-    loop_policy_projection_module_registry, poo_loop_program_compiler_fixture,
+    loop_policy_projection_module_envelope, loop_policy_projection_module_registry,
+    poo_loop_program_compiler_fixture,
 };
 
 #[test]
-fn loop_policy_projection_module_declares_deck_native_projection_gate() {
+fn loop_policy_projection_module_declares_deck_abi_projection_gate() {
     let request = gerbil_deck_runtime_loop_policy_projection_module_request();
     assert_eq!(
         request.symbol,
-        GerbilSchemeNativeSymbol::new(
+        GerbilSchemeAbiSymbol::new(
             GERBIL_DECK_RUNTIME_PROJECT_LOOP_POLICY_PROJECTION_MODULE_SYMBOL
         )
     );
@@ -30,7 +30,7 @@ fn loop_policy_projection_module_declares_deck_native_projection_gate() {
         ))
     );
 
-    let readiness_plan = gerbil_deck_runtime_native_projection_readiness_plan();
+    let readiness_plan = gerbil_deck_route_abi_projection_readiness_plan();
     assert!(readiness_plan.exported_symbols.contains(&request.symbol));
 }
 

@@ -5,7 +5,7 @@
 :CONTRACT_ORG: [[../agent.memory.v1.org][agent.memory.v1]]
 :ID: agent-memory-recall-boundary-20260615
 :MEMORY_KIND: architecture-boundary
-:SOURCE_REF: docs/20-workspace/20.10-org-native-agent-workspace.org
+:SOURCE_REF: docs/20-workspace/20.10-org-agent-workspace.org
 :RECALL_QUERY: memory recall org native workspace candidate dispatch intent hybrid frontier evidence graph
 :SALIENCE: high
 :TRUST: internal-doc
@@ -20,9 +20,9 @@ and dispatch receipts downstream.
 
 ** Source
 
-- =docs/20-workspace/20.10-org-native-agent-workspace.org= states that Org
+- =docs/20-workspace/20.10-org-agent-workspace.org= states that Org
   records plans, evidence, trace records, and memory candidates.
-- =docs/40-rfcs/40.10-org-native-agent-work-protocol.org= keeps memory dispatch
+- =docs/40-rfcs/40.10-org-agent-work-protocol.org= keeps memory dispatch
   as a downstream backend concern.
 - =docs/20-workspace/20.40-org-memory-backend.org= defines
   =marlin-org-memory= as the in-memory =AgentWorkspace= backend.

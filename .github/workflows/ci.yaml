@@ -167,4 +167,4 @@ jobs:
       - name: Check Rust projections and linked policy routing
         run: |
           cargo test --locked -p marlin-gerbil-scheme --test unit_test
-          cargo test --locked -p marlin-agent-policy-routing-native --features linked-native
+          cargo test --locked -p marlin-agent-policy-routing-abi --features linked-selector

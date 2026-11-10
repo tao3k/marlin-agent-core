@@ -117,7 +117,7 @@ async fn harness_graph_loop_report_keeps_ordered_continuation_iterations() {
 }
 
 #[tokio::test]
-async fn harness_graph_loop_can_continue_from_gerbil_native_projection() {
+async fn harness_graph_loop_can_continue_from_gerbil_abi_projection() {
     let scenario = AgentHarnessScenario::new("gerbil-continuation-projection");
     let graph = AgentHarnessGraphBuilder::new("graph")
         .node("node-1", "eventful")
@@ -126,7 +126,7 @@ async fn harness_graph_loop_can_continue_from_gerbil_native_projection() {
         .with_stop_policy(GraphLoopStopPolicy::max_iterations(2));
     let kernel =
         TokioGraphLoopKernel::new("run", "graph").with_executor("eventful", EventfulExecutor);
-    let planner = AgentHarnessGerbilLoopContinuationPlanner::from_native_projection_manifest(
+    let planner = AgentHarnessGerbilLoopContinuationPlanner::from_abi_projection_manifest(
         StaticGerbilContinuationProjector,
     )
     .expect("Gerbil continuation projection planner");

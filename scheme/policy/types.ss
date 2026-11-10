@@ -13,5 +13,4 @@
        responsibilities: (.o select-model-route: PolicyOperation
                              project-routing: PolicyOperation
                              compile-loop-graph: PolicyOperation
-                             next-continuation: PolicyOperation
-                             project-script: PolicyOperation)))
+                             next-continuation: PolicyOperation)))

@@ -1,5 +1,5 @@
 {
-  "checksum": "f703b88fb30dfaccd94002632cb5b93ec566b067f9038438b8606b732520db23",
+  "checksum": "3cd1f5311baf468267c94c9e143a64ac88c208f9f9bc7529983473beb746a9bb",
   "crates": {
     "actix-codec 0.5.4": {
       "name": "actix-codec",
@@ -18377,6 +18377,55 @@
       ],
       "license_file": "LICENSE-APACHE2.0"
     },
+    "marlin-agent-context 0.1.0": {
+      "name": "marlin-agent-context",
+      "version": "0.1.0",
+      "package_url": "https://github.com/tao3k/marlin-agent-core",
+      "repository": null,
+      "targets": [
+        {
+          "Library": {
+            "crate_name": "marlin_agent_context",
+            "crate_root": "src/lib.rs",
+            "srcs": {
+              "allow_empty": true,
+              "include": [
+                "**/*.rs"
+              ]
+            }
+          }
+        }
+      ],
+      "library_target_name": "marlin_agent_context",
+      "common_attrs": {
+        "compile_data_glob": [
+          "**"
+        ],
+        "deps": {
+          "common": [
+            {
+              "id": "thiserror 2.0.21",
+              "target": "thiserror"
+            }
+          ],
+          "selects": {}
+        },
+        "deps_dev": {
+          "common": [
+            {
+              "id": "criterion 0.8.2",
+              "target": "criterion"
+            }
+          ],
+          "selects": {}
+        },
+        "edition": "2024",
+        "version": "0.1.0"
+      },
+      "license": null,
+      "license_ids": [],
+      "license_file": null
+    },
     "marlin-agent-core 0.1.0": {
       "name": "marlin-agent-core",
       "version": "0.1.0",
@@ -18831,12 +18880,20 @@
               "target": "aho_corasick"
             },
             {
+              "id": "globset 0.4.21",
+              "target": "globset"
+            },
+            {
               "id": "marlin-agent-hooks 0.1.0",
               "target": "build_script_build"
             },
             {
               "id": "serde 1.0.229",
               "target": "serde"
+            },
+            {
+              "id": "thiserror 2.0.21",
+              "target": "thiserror"
             },
             {
               "id": "tokio 1.54.1",
@@ -18964,15 +19021,15 @@
       "license_ids": [],
       "license_file": null
     },
-    "marlin-agent-policy-routing-native 0.1.0": {
-      "name": "marlin-agent-policy-routing-native",
+    "marlin-agent-policy-routing-abi 0.1.0": {
+      "name": "marlin-agent-policy-routing-abi",
       "version": "0.1.0",
       "package_url": "https://github.com/tao3k/marlin-agent-core",
       "repository": null,
       "targets": [
         {
           "Library": {
-            "crate_name": "marlin_agent_policy_routing_native",
+            "crate_name": "marlin_agent_policy_routing_abi",
             "crate_root": "src/lib.rs",
             "srcs": {
               "allow_empty": true,
@@ -18995,7 +19052,7 @@
           }
         }
       ],
-      "library_target_name": "marlin_agent_policy_routing_native",
+      "library_target_name": "marlin_agent_policy_routing_abi",
       "common_attrs": {
         "compile_data_glob": [
           "**"
@@ -19009,7 +19066,7 @@
         "deps": {
           "common": [
             {
-              "id": "marlin-agent-policy-routing-native 0.1.0",
+              "id": "marlin-agent-policy-routing-abi 0.1.0",
               "target": "build_script_build"
             }
           ],
@@ -19738,15 +19795,15 @@
       "license_ids": [],
       "license_file": null
     },
-    "marlin-deck-runtime-native 0.1.0": {
-      "name": "marlin-deck-runtime-native",
+    "marlin-deck-runtime 0.1.0": {
+      "name": "marlin-deck-runtime",
       "version": "0.1.0",
       "package_url": "https://github.com/tao3k/marlin-agent-core",
       "repository": null,
       "targets": [
         {
           "Library": {
-            "crate_name": "marlin_deck_runtime_native",
+            "crate_name": "marlin_deck_runtime",
             "crate_root": "src/lib.rs",
             "srcs": {
               "allow_empty": true,
@@ -19769,7 +19826,7 @@
           }
         }
       ],
-      "library_target_name": "marlin_deck_runtime_native",
+      "library_target_name": "marlin_deck_runtime",
       "common_attrs": {
         "compile_data_glob": [
           "**"
@@ -19783,8 +19840,12 @@
         "deps": {
           "common": [
             {
-              "id": "marlin-deck-runtime-native 0.1.0",
+              "id": "marlin-deck-runtime 0.1.0",
               "target": "build_script_build"
+            },
+            {
+              "id": "serde 1.0.229",
+              "target": "serde"
             }
           ],
           "selects": {}
@@ -19794,6 +19855,85 @@
             {
               "id": "criterion 0.8.2",
               "target": "criterion"
+            }
+          ],
+          "selects": {}
+        },
+        "edition": "2024",
+        "version": "0.1.0"
+      },
+      "build_script_attrs": {
+        "compile_data_glob": [
+          "**"
+        ],
+        "compile_data_glob_excludes": [
+          "**/*.rs"
+        ],
+        "data_glob": [
+          "**"
+        ]
+      },
+      "license": null,
+      "license_ids": [],
+      "license_file": null
+    },
+    "marlin-gerbil-aot-link 0.1.0": {
+      "name": "marlin-gerbil-aot-link",
+      "version": "0.1.0",
+      "package_url": "https://github.com/tao3k/marlin-agent-core",
+      "repository": null,
+      "targets": [
+        {
+          "Library": {
+            "crate_name": "marlin_gerbil_aot_link",
+            "crate_root": "src/lib.rs",
+            "srcs": {
+              "allow_empty": true,
+              "include": [
+                "**/*.rs"
+              ]
+            }
+          }
+        },
+        {
+          "BuildScript": {
+            "crate_name": "build_script_build",
+            "crate_root": "build.rs",
+            "srcs": {
+              "allow_empty": true,
+              "include": [
+                "**/*.rs"
+              ]
+            }
+          }
+        }
+      ],
+      "library_target_name": "marlin_gerbil_aot_link",
+      "common_attrs": {
+        "compile_data_glob": [
+          "**"
+        ],
+        "deps": {
+          "common": [
+            {
+              "id": "cc 1.11.1",
+              "target": "cc"
+            },
+            {
+              "id": "gerbil-scheme-aot-build 0.1.0",
+              "target": "gerbil_scheme_aot_build"
+            },
+            {
+              "id": "gerbil-scheme-build 0.1.0",
+              "target": "gerbil_scheme_build"
+            },
+            {
+              "id": "marlin-gerbil-aot-link 0.1.0",
+              "target": "build_script_build"
+            },
+            {
+              "id": "object 0.39.1",
+              "target": "object"
             }
           ],
           "selects": {}
@@ -19861,85 +20001,6 @@
             {
               "id": "serde 1.0.229",
               "target": "serde"
-            }
-          ],
-          "selects": {}
-        },
-        "edition": "2024",
-        "version": "0.1.0"
-      },
-      "build_script_attrs": {
-        "compile_data_glob": [
-          "**"
-        ],
-        "compile_data_glob_excludes": [
-          "**/*.rs"
-        ],
-        "data_glob": [
-          "**"
-        ]
-      },
-      "license": null,
-      "license_ids": [],
-      "license_file": null
-    },
-    "marlin-gerbil-native-build 0.1.0": {
-      "name": "marlin-gerbil-native-build",
-      "version": "0.1.0",
-      "package_url": "https://github.com/tao3k/marlin-agent-core",
-      "repository": null,
-      "targets": [
-        {
-          "Library": {
-            "crate_name": "marlin_gerbil_native_build",
-            "crate_root": "src/lib.rs",
-            "srcs": {
-              "allow_empty": true,
-              "include": [
-                "**/*.rs"
-              ]
-            }
-          }
-        },
-        {
-          "BuildScript": {
-            "crate_name": "build_script_build",
-            "crate_root": "build.rs",
-            "srcs": {
-              "allow_empty": true,
-              "include": [
-                "**/*.rs"
-              ]
-            }
-          }
-        }
-      ],
-      "library_target_name": "marlin_gerbil_native_build",
-      "common_attrs": {
-        "compile_data_glob": [
-          "**"
-        ],
-        "deps": {
-          "common": [
-            {
-              "id": "cc 1.11.1",
-              "target": "cc"
-            },
-            {
-              "id": "gerbil-scheme-aot-build 0.1.0",
-              "target": "gerbil_scheme_aot_build"
-            },
-            {
-              "id": "gerbil-scheme-build 0.1.0",
-              "target": "gerbil_scheme_build"
-            },
-            {
-              "id": "marlin-gerbil-native-build 0.1.0",
-              "target": "build_script_build"
-            },
-            {
-              "id": "object 0.39.1",
-              "target": "object"
             }
           ],
           "selects": {}
@@ -44560,6 +44621,7 @@
   },
   "binary_crates": [],
   "workspace_members": {
+    "marlin-agent-context 0.1.0": "crates/marlin-agent-context",
     "marlin-agent-core 0.1.0": "crates/marlin-agent-core",
     "marlin-agent-environment 0.1.0": "crates/marlin-agent-environment",
     "marlin-agent-graph 0.1.0": "crates/marlin-agent-graph",
@@ -44567,7 +44629,7 @@
     "marlin-agent-harness-types 0.1.0": "crates/marlin-agent-harness-types",
     "marlin-agent-hooks 0.1.0": "crates/marlin-agent-hooks",
     "marlin-agent-kernel 0.1.0": "crates/marlin-agent-kernel",
-    "marlin-agent-policy-routing-native 0.1.0": "crates/marlin-agent-policy-routing-native",
+    "marlin-agent-policy-routing-abi 0.1.0": "crates/marlin-agent-policy-routing-abi",
     "marlin-agent-protocol 0.1.0": "crates/marlin-agent-protocol",
     "marlin-agent-route 0.1.0": "crates/marlin-agent-route",
     "marlin-agent-runtime 0.1.0": "crates/marlin-agent-runtime",
@@ -44576,9 +44638,9 @@
     "marlin-agent-stream 0.1.0": "crates/marlin-agent-stream",
     "marlin-agent-test-support 0.1.0": "crates/marlin-agent-test-support",
     "marlin-bazel-scenario-resolution 0.0.0": "bazel/crate-universe",
-    "marlin-deck-runtime-native 0.1.0": "crates/marlin-deck-runtime-native",
+    "marlin-deck-runtime 0.1.0": "crates/marlin-deck-runtime",
+    "marlin-gerbil-aot-link 0.1.0": "build-support/marlin-gerbil-aot-link",
     "marlin-gerbil-ir 0.1.0": "crates/marlin-gerbil-ir",
-    "marlin-gerbil-native-build 0.1.0": "build-support/marlin-gerbil-native-build",
     "marlin-gerbil-scheme 0.1.0": "crates/marlin-gerbil-scheme",
     "marlin-git-utils 0.1.0": "crates/marlin-git-utils",
     "marlin-org-memory 0.1.0": "crates/marlin-org-memory",

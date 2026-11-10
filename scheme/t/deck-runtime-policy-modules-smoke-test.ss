@@ -4,7 +4,7 @@
 (import :clan/poo/object
         "../policy/routing.ss"
         "../policy/agent-routes.ss"
-        "../policy/matchers.ss"
+        "../hooks/matchers.ss"
         "../policy/strategy-evaluation.ss"
         "../policy/strategy-facts.ss"
         :std/test)
@@ -35,7 +35,7 @@
 ;;; Boundary: Matcher remains Scheme-owned policy composition.
 ;; : Object
 (def smoke-matcher
-  (make-marlin-deck-runtime-high-order-matcher
+  (make-hook-matcher
    "module-session"
    (lambda (context policy command agent-scope)
      (and (string=? (.get context session-id) "session-module")
@@ -78,7 +78,7 @@
 
 (check (.get smoke-receipt matched) => #t)
 (check (.get (.get smoke-receipt dynamic-hook-action) action) => "register")
-(check (.get (.get smoke-receipt dynamic-hook-action) registration)
+(check (.get (.get smoke-receipt dynamic-hook-action) hook-id)
        => "module-register-hook")
 (check (.get (.get smoke-receipt dynamic-hook-selection) source)
        => "rule-action")

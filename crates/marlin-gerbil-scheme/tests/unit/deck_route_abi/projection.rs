@@ -1,0 +1,172 @@
+use super::support::{fake_select_model_route, fake_select_no_match, route_request};
+use marlin_agent_protocol::GraphCAbiReadinessStatus;
+use marlin_gerbil_scheme::{
+    GERBIL_DECK_ROUTE_ABI_ID, GERBIL_DECK_ROUTE_ABI_VERSION, GerbilDeckRouteAbiBoundary,
+    GerbilDeckRouteAbiModelRouteSelector, GerbilDeckRouteAbiSymbol, GerbilDeckRouteBridgeStatus,
+    GerbilDeckRuntimeAotBuildReceipt, GerbilDeckRuntimeAotBuildStatus,
+    GerbilDeckRuntimeAotCommandPlan, GerbilDeckRuntimeAotPlan, GerbilDeckRuntimeAotProfile,
+    GerbilDeckRuntimeAotStatus, GerbilDeckRuntimeSerializationBoundary, GerbilLinkLibrary,
+    GerbilSymbolAuditor,
+};
+use std::path::PathBuf;
+
+#[test]
+fn gerbil_deck_route_abi_selector_uses_typed_c_abi_selection() {
+    let selector = GerbilDeckRouteAbiModelRouteSelector::new(fake_select_model_route);
+    let request = route_request("cargo test", "sub-agent");
+
+    let policy_index = selector
+        .select_policy_index(&request)
+        .expect("native C ABI selector should return a typed policy index");
+    assert_eq!(policy_index, Some(0));
+
+    let receipt = selector
+        .evaluate(&request)
+        .expect("native C ABI selector should project typed runtime selection");
+    let selected = receipt.selected_policy().expect("selected policy");
+
+    assert!(receipt.matched);
+    assert_eq!(selected.name, "cheap-test-runner");
+    assert_eq!(selected.provider, "openai");
+    assert_eq!(selected.model, "gpt-5-mini");
+    assert_eq!(receipt.route_abi.abi_id, GERBIL_DECK_ROUTE_ABI_ID);
+    assert_eq!(receipt.route_abi.abi_version, GERBIL_DECK_ROUTE_ABI_VERSION);
+    assert_eq!(receipt.route_abi.status, GerbilDeckRouteBridgeStatus::Ready);
+    assert_eq!(
+        receipt.route_abi.bridge_boundary,
+        GerbilDeckRouteAbiBoundary::SchemeTypesToRustTypes
+    );
+    assert_eq!(
+        receipt.route_abi.serialization_boundary,
+        GerbilDeckRuntimeSerializationBoundary::RustOwnedCliTraceCrossProcess
+    );
+    assert!(
+        !format!("{:?}", receipt.route_abi.bridge_boundary)
+            .to_ascii_lowercase()
+            .contains("json")
+    );
+}
+
+#[test]
+fn gerbil_deck_route_abi_selector_projects_no_match_selection() {
+    let selector = GerbilDeckRouteAbiModelRouteSelector::new(fake_select_no_match);
+    let request = route_request("cargo clippy", "sub-agent");
+
+    let policy_index = selector
+        .select_policy_index(&request)
+        .expect("native C ABI selector should return unmatched policy index");
+    assert_eq!(policy_index, None);
+
+    let receipt = selector
+        .evaluate(&request)
+        .expect("native C ABI selector should project unmatched selection");
+
+    assert!(!receipt.matched);
+    assert!(receipt.selected_policy().is_none());
+    assert_eq!(receipt.command, "cargo clippy");
+    assert_eq!(receipt.agent_scope, "sub-agent");
+}
+
+#[test]
+fn native_aot_build_receipt_projects_ready_graph_abi_readiness() {
+    let receipt = aot_build_receipt(GerbilDeckRuntimeAotBuildStatus::LinkUnitReady, Vec::new());
+    let readiness = receipt.graph_c_abi_readiness_receipt();
+
+    assert_eq!(readiness.abi_id.as_str(), GERBIL_DECK_ROUTE_ABI_ID);
+    assert_eq!(readiness.version, GERBIL_DECK_ROUTE_ABI_VERSION);
+    assert_eq!(readiness.status, GraphCAbiReadinessStatus::Ready);
+    assert_eq!(readiness.required_symbol_count, 2);
+    assert_eq!(readiness.available_symbol_count, 2);
+    assert_eq!(readiness.matched_symbol_count, 2);
+    assert!(readiness.missing_symbols.is_empty());
+}
+
+#[test]
+fn native_aot_build_receipt_projects_missing_graph_abi_symbols() {
+    let receipt = aot_build_receipt(
+        GerbilDeckRuntimeAotBuildStatus::RequiredSymbolsMissing,
+        vec![GerbilDeckRouteAbiSymbol::new(
+            "marlin_deck_runtime_initialize",
+        )],
+    );
+    let readiness = receipt.graph_c_abi_readiness_receipt();
+
+    assert_eq!(readiness.status, GraphCAbiReadinessStatus::MissingSymbols);
+    assert_eq!(readiness.available_symbol_count, 1);
+    assert_eq!(readiness.matched_symbol_count, 1);
+    assert_eq!(readiness.missing_symbols.len(), 1);
+    assert_eq!(
+        readiness.missing_symbols[0].as_str(),
+        "marlin_deck_runtime_initialize"
+    );
+}
+
+#[test]
+fn native_aot_failed_build_never_projects_ready_graph_abi() {
+    let receipt = aot_build_receipt(
+        GerbilDeckRuntimeAotBuildStatus::SymbolAuditFailed,
+        Vec::new(),
+    );
+    let readiness = receipt.graph_c_abi_readiness_receipt();
+
+    assert_eq!(readiness.status, GraphCAbiReadinessStatus::MissingSymbols);
+    assert_eq!(readiness.available_symbol_count, 0);
+    assert_eq!(readiness.matched_symbol_count, 0);
+    assert_eq!(readiness.missing_symbols.len(), 2);
+}
+
+fn aot_build_receipt(
+    status: GerbilDeckRuntimeAotBuildStatus,
+    missing_symbols: Vec<GerbilDeckRouteAbiSymbol>,
+) -> GerbilDeckRuntimeAotBuildReceipt {
+    GerbilDeckRuntimeAotBuildReceipt {
+        status,
+        plan: aot_plan(),
+        detail: None,
+        gsc_compile_object: None,
+        gsc_compile_dependency_objects: Vec::new(),
+        gsc_generate_link_source: None,
+        gsc_compile_link_object: None,
+        symbol_audit_method: None,
+        symbol_audit: None,
+        missing_symbols,
+    }
+}
+
+fn aot_plan() -> GerbilDeckRuntimeAotPlan {
+    GerbilDeckRuntimeAotPlan {
+        profile: GerbilDeckRuntimeAotProfile::DeckRuntime,
+        status: GerbilDeckRuntimeAotStatus::ReadyToBuildLinkUnit,
+        root: PathBuf::from("/tmp/marlin-native"),
+        output_dir: PathBuf::from("/tmp/marlin-native/out"),
+        compiled_runtime_scm: PathBuf::from("/tmp/marlin-native/out/runtime.scm"),
+        compiled_runtime_dependency_scms: Vec::new(),
+        header: PathBuf::from("/tmp/marlin-native/runtime.h"),
+        object: PathBuf::from("/tmp/marlin-native/out/runtime.o"),
+        dependency_objects: Vec::new(),
+        module_objects: vec![PathBuf::from("/tmp/marlin-native/out/runtime.o")],
+        link_c_source: PathBuf::from("/tmp/marlin-native/out/runtime_.c"),
+        link_object: PathBuf::from("/tmp/marlin-native/out/runtime_.o"),
+        exported_symbols: vec![
+            GerbilDeckRouteAbiSymbol::new("marlin_deck_runtime_initialize"),
+            GerbilDeckRouteAbiSymbol::new("marlin_deck_runtime_select_model_route"),
+        ],
+        c_compiler: None,
+        symbol_auditor: GerbilSymbolAuditor::new("nm"),
+        gambit_link_library: GerbilLinkLibrary::new("gambit"),
+        gambit_link_search_dir: None,
+        gsc_compile_object: command_plan("gsc"),
+        gsc_compile_dependency_objects: Vec::new(),
+        gsc_generate_link_source: command_plan("gsc"),
+        gsc_compile_link_object: command_plan("gsc"),
+        audit_symbols: command_plan("nm"),
+        detail: None,
+    }
+}
+
+fn command_plan(program: &str) -> GerbilDeckRuntimeAotCommandPlan {
+    GerbilDeckRuntimeAotCommandPlan {
+        program: PathBuf::from(program),
+        args: Vec::new(),
+    }
+}

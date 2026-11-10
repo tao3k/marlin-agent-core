@@ -37,15 +37,39 @@ package MarlinPluginEngine {
             doc /* crates/marlin-agent-kernel/src/driver.rs owns graph compilation with ABI readiness checks. */
         }
         part <'MAR-PLG-A05'> schemePackage {
-            doc /* scheme/init.ss selects Lab Context and Marlin Policy.
-                   scheme/build.ss hands the resulting specification to defbuild-script.
-                   Lab owns Session and Context Session.
-                   scheme/policy/projection shapes policy results. */
+            doc /* scheme/init.ss selects Context with the causal Feature, Hooks, Policy and Deck Runtime.
+                   scheme/context imports Lab's installed Scope library.
+                   Lab owns Scope validation and Session semantics.
+                   Context's causal Feature uses Lab's ASCENT exchange for solve and replay.
+                   scheme/build.ss compiles Marlin's selected modules.
+                   Policy declares a dependency on Hooks.
+                   Deck Runtime depends on Policy and publishes its version in Scheme metadata.
+                   Resident mailbox actors evaluate ordered batches on Gerbil green threads.
+                   scheme/policy/projection shapes evaluated policy results. */
+        }
+        part <'MAR-PLG-A06'> contextAdapter {
+            doc /* crates/marlin-agent-context owns typed Context inputs,
+                   batch bounds and owned Lab digest projections.
+                   The Gerbil feature binds an owner-local export.
+                   Production VM image integration is pending. */
+        }
+        part <'MAR-PLG-A07'> hooks {
+            doc /* crates/marlin-agent-hooks owns matcher compilation,
+                   selection, catalog admission, execution and receipts.
+                   scheme/hooks publishes the Scheme selector and its higher-order matchers. */
+        }
+        part <'MAR-PLG-A08'> deckRuntimeHost {
+            doc /* crates/marlin-deck-runtime owns Deck metadata and model-route admission.
+                   The feature-selected chat route uses a bounded Tokio queue and one
+                   linked VM owner. The owner submits ordered candidate batches to
+                   Scheme actors and validates the projected match before admission. */
         }
 
         dependency admissionUsesProtocol from graphAdmission to policyProtocol;
         dependency bridgeUsesProtocol from schemeCAbiBridge to policyProtocol;
         dependency bridgeUsesSchemePackage from schemeCAbiBridge to schemePackage;
+        dependency contextUsesSchemeBridge from contextAdapter to schemeCAbiBridge;
+        dependency deckRuntimeUsesSchemeBridge from deckRuntimeHost to schemeCAbiBridge;
     }
 
     package target {
@@ -65,6 +89,12 @@ package MarlinPluginEngine {
                     doc /* Rust owns admission, ordering, backpressure, and
                            retirement. In-flight Scheme work, ready results,
                            and client delivery have separate capacity bounds. */
+                }
+                part <'MAR-PLG-T14'> deckRuntimeHost {
+                    doc /* Uses the gerbil-scheme-rust bounded service ingress
+                           to submit ready batches on their Scheme VM owner.
+                           Tokio drives admission, deadlines, cancellation,
+                           and reply delivery. */
                 }
             }
             part <'MAR-PLG-T04'> bundleRegistry {
@@ -108,6 +138,7 @@ package MarlinPluginEngine {
         dependency grpcUsesRuntime from pluginEngine::grpcService to pluginEngine::runtime;
         dependency runtimeUsesActivation from pluginEngine::runtime to pluginEngine::activationGate;
         dependency runtimeUsesEvidence from pluginEngine::runtime to pluginEngine::evidence;
+        dependency deckRuntimeUsesCAbi from pluginEngine::runtime::deckRuntimeHost to pluginEngine::schemeCAbiBridge;
         dependency activationUsesBundle from pluginEngine::activationGate to pluginEngine::bundleRegistry;
         dependency activationUsesPolicy from pluginEngine::activationGate to pluginEngine::schemeCAbiBridge;
         dependency verifierUsesEvidence from offlineVerifier to pluginEngine::evidence;
@@ -121,7 +152,8 @@ package MarlinPluginEngine {
             doc /* Rust owns lifecycle, message management, and effect admission. */
         }
         requirement <'MAR-PLG-R02'> schemeCAbi {
-            doc /* Trusted Scheme exchanges typed values through the C ABI. */
+            doc /* In-process exchange is exclusively typed C ABI arguments,
+                   owner-local Scheme objects, and owned Rust projections. */
         }
         requirement <'MAR-PLG-R03'> scopedFrontend {
             doc /* The engine serves gRPC. The optional frontend gets a scoped

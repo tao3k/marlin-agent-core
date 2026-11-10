@@ -1,4 +1,5 @@
 mod adapters;
+mod c_abi;
 mod controller;
 mod driver;
 mod loop_machine;
@@ -6,5 +7,4 @@ mod loop_program_execution;
 mod loop_program_handoff;
 mod loop_program_handoff_executor;
 mod loop_program_side_effects;
-mod native_abi;
 mod support;

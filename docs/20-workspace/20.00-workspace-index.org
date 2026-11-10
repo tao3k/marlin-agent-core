@@ -4,9 +4,9 @@
 
 ** Documents
 
-- [[file:20.10-org-native-agent-workspace.org][20.10 Org-native Agent Workspace]]
+- [[file:20.10-org-agent-workspace.org][20.10 Org-native Agent Workspace]]
 
-[[file:20.10-org-native-agent-workspace.org][20.10 Org-native Agent Workspace]]
+[[file:20.10-org-agent-workspace.org][20.10 Org-native Agent Workspace]]
 
 - [[file:20.20-query-patch-view-protocol.org][20.20 Query Patch View Protocol]]
 

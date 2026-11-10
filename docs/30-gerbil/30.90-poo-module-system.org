@@ -5,8 +5,13 @@
 :PROPERTIES:
 :ID: docs-30-90-poo-module-system
 :KIND: gerbil_design
-:STATUS: active
+:STATUS: superseded
 :END:
+
+Yuanxu and AI Agentic Lab now own Module, Feature, and option semantics.
+See [[file:../../scheme/README.org][Marlin Scheme Package]] and
+[[file:../40-rfcs/40.166-plugin-contract.org][Plugin Contract]] for the
+maintained design. The rest of this document records the original proposal.
 
 This document is the landing plan for Marlin's Gerbil ModuleSystem. It exists
 to keep code work aligned while the user-facing extension plane moves from

@@ -2,7 +2,7 @@
 
 * 40.30 RFC: Org Contract Template Protocol
 
-This RFC extends [[file:40.10-org-native-agent-work-protocol.org][40.10 Org-native Agent Work Protocol]] with parser-owned Org
+This RFC extends [[file:40.10-org-agent-work-protocol.org][40.10 Org-native Agent Work Protocol]] with parser-owned Org
 contracts as template and validation protocol input.
 
 ** Motivation

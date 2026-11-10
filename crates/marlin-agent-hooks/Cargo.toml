@@ -9,14 +9,20 @@ repository.workspace = true
 name = "dynamic_actions"
 harness = false
 
+[[bench]]
+name = "path_filter"
+harness = false
+
 [dependencies]
 aho-corasick.workspace = true
+globset.workspace = true
 marlin-agent-protocol.workspace = true
 marlin-agent-runtime.workspace = true
 serde.workspace = true
 tokio.workspace = true
 toml.workspace = true
 tracing.workspace = true
+thiserror.workspace = true
 
 [build-dependencies]
 marlin-rust-project-harness-policy.workspace = true

@@ -1,8 +1,8 @@
-use super::deck_runtime_native_readiness_plan;
+use super::deck_route_abi_readiness_plan;
 use marlin_gerbil_scheme::{
     GerbilSchemeSchemaId, GerbilSchemeTypeId, GerbilSchemeTypeRegistry, GerbilSchemeTypedValue,
     GerbilSchemeValue, scheme_type_fixtures::decode_gerbil_scheme_package_manifest_fixture,
-    validate_gerbil_scheme_package_manifest, validate_gerbil_scheme_package_native_readiness,
+    validate_gerbil_scheme_package_abi_readiness, validate_gerbil_scheme_package_manifest,
 };
 
 #[test]
@@ -34,7 +34,7 @@ fn scheme_package_manifest_decodes_dynamic_graph_policy_payload_through_native_a
                             {"name": "schema_id", "type_id": "string", "required": true},
                             {"name": "policy", "type_id": "object", "required": true},
                             {
-                                "name": "native_abi",
+                                "name": "c_abi",
                                 "type_id": "marlin.downstream.graph-policy.native-abi",
                                 "required": true
                             }
@@ -42,7 +42,7 @@ fn scheme_package_manifest_decodes_dynamic_graph_policy_payload_through_native_a
                     }
                 ]
             },
-            "native_abi": {
+            "c_abi": {
                 "abi_id": "marlin.deck-runtime.native",
                 "version": 1,
                 "exported_symbols": [
@@ -55,11 +55,9 @@ fn scheme_package_manifest_decodes_dynamic_graph_policy_payload_through_native_a
     .expect("decode dynamic graph policy package manifest");
     let receipt = validate_gerbil_scheme_package_manifest(&manifest)
         .expect("dynamic graph policy package manifest should validate");
-    let readiness = validate_gerbil_scheme_package_native_readiness(
-        &manifest,
-        &deck_runtime_native_readiness_plan(),
-    )
-    .expect("dynamic graph policy package should match native readiness");
+    let readiness =
+        validate_gerbil_scheme_package_abi_readiness(&manifest, &deck_route_abi_readiness_plan())
+            .expect("dynamic graph policy package should match native readiness");
     let registry = GerbilSchemeTypeRegistry::new(manifest.type_manifest.clone())
         .expect("package type manifest should build dynamic registry");
     let envelope = GerbilSchemeTypedValue::new(
@@ -109,7 +107,7 @@ fn scheme_package_manifest_decodes_dynamic_graph_policy_payload_through_native_a
     assert_eq!(
         projection
             .get("native_abi")
-            .and_then(|native_abi| native_abi.get("required_symbols"))
+            .and_then(|c_abi| c_abi.get("required_symbols"))
             .and_then(|symbols| symbols.get_index(0))
             .and_then(GerbilSchemeValue::as_text),
         Some("marlin_deck_runtime_initialize")

@@ -1,7 +1,7 @@
 //! Gerbil loop graph `IR` compilation into Rust graph-policy proposals.
 
 use super::{
-    GraphLoopNextAction, GraphLoopStrategy, GraphNativeAbiRequirement, GraphPolicyDigest,
+    GraphCAbiRequirement, GraphLoopNextAction, GraphLoopStrategy, GraphPolicyDigest,
     GraphPolicyProposal, LoopEdgeSpec, LoopGraph, LoopNodeSpec,
 };
 use serde::{Deserialize, Serialize};
@@ -19,7 +19,8 @@ pub const GERBIL_LOOP_GRAPH_CONTINUATION_SCHEMA_ID: &str =
 pub struct GerbilLoopGraphPolicyCompilationRequest {
     pub strategy: GraphLoopStrategy,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub native_abi: Option<GraphNativeAbiRequirement>,
+    #[serde(rename = "native_abi")]
+    pub c_abi: Option<GraphCAbiRequirement>,
     #[serde(
         default,
         skip_serializing_if = "marlin_gerbil_ir::LoopGraphCompileLimits::is_default"
@@ -110,7 +111,7 @@ impl GerbilLoopGraphPolicyCompilationRequest {
     ) -> Self {
         Self {
             strategy,
-            native_abi: None,
+            c_abi: None,
             compile_limits: marlin_gerbil_ir::LoopGraphCompileLimits::default(),
             compiled_graph,
             input_digest: input_digest.into(),
@@ -126,8 +127,8 @@ impl GerbilLoopGraphPolicyCompilationRequest {
     }
 
     /// Attaches the native ABI requirement proven by the Gerbil adapter.
-    pub fn with_native_abi_requirement(mut self, native_abi: GraphNativeAbiRequirement) -> Self {
-        self.native_abi = Some(native_abi);
+    pub fn with_c_abi_requirement(mut self, c_abi: GraphCAbiRequirement) -> Self {
+        self.c_abi = Some(c_abi);
         self
     }
 
@@ -196,7 +197,7 @@ pub fn compile_gerbil_loop_graph_policy(
         request.input_digest,
         request.output_digest,
     );
-    proposal.native_abi = request.native_abi;
+    proposal.c_abi = request.c_abi;
     proposal.diagnostics = request.diagnostics;
     Ok(proposal)
 }

@@ -6,7 +6,8 @@ authors.workspace = true
 repository.workspace = true
 
 [dependencies]
-litellm-rs.workspace = true
+tokio-stream.workspace = true
+weaver-llm.workspace = true
 marlin-agent-protocol.workspace = true
 serde.workspace = true
 tokio.workspace = true

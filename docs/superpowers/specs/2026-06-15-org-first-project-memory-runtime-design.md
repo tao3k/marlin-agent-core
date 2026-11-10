@@ -28,7 +28,7 @@ toward the full Org-first runtime.
 
 ## Existing Anchors
 
-- `docs/20-workspace/20.10-org-native-agent-workspace.org` says Org is the
+- `docs/20-workspace/20.10-org-agent-workspace.org` says Org is the
   structured work metadata plane and records evidence, decisions, traces,
   memory candidates, verification, and source spans.
 - `docs/40-rfcs/40.80-marlin-architecture-principles.org` says Marlin turns

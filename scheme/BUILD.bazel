@@ -8,6 +8,9 @@ filegroup(
     ] + glob([
         "c-abi/*.ss",
         "c-abi/*.ssi",
+        "context/**/*.ss",
+        "deck-runtime/**/*.ss",
+        "hooks/**/*.ss",
         "policy/**/*.ss",
         "t/**/*.ss",
     ]),

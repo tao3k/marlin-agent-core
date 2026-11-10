@@ -3,6 +3,8 @@
 
 (import :clan/poo/object
         "../policy/routing.ss"
+        "../hooks/matchers.ss"
+        "../hooks/selection.ss"
         "../policy/strategy.ss"
         :std/test)
 
@@ -31,7 +33,7 @@
 ;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
 ;; MarlinResult <- MarlinInput
 (def (make-test-matcher)
-  (make-marlin-deck-runtime-high-order-matcher
+  (make-hook-matcher
    "customer-review-exact-command"
    (lambda (context policy command agent-scope)
      (and (string=? (.get context session-id) "session-42")
@@ -75,7 +77,7 @@
            => marlin-deck-runtime-strategy-policy-receipt-kind)
     (check (.get receipt matched) => #t)
     (check (.get receipt policy-engine) => "scheme-poo")
-    (check (.get action kind) => marlin-deck-runtime-dynamic-hook-action-kind)
+    (check (.get action kind) => hook-action-kind)
     (check (.get action action) => "rewrite")
     (check (.get action rewrite-command)
            => "marlin review --policy scheme-poo src/marlin")
@@ -98,3 +100,12 @@
 
 (check-dynamic-strategy-policy-receipt)
 (check-dynamic-strategy-policy-miss)
+
+(let* ((first (make-test-rule))
+       (later (.cc first high-order-matcher:
+                   (make-hook-matcher
+                    "unreachable" (lambda _ (error "later matcher ran after a match")))))
+       (selection (marlin-deck-runtime-select-dynamic-strategy-rule
+                   (list (make-test-policy)) (list first later) (make-test-context)
+                   "marlin review src/marlin" "customer-agent")))
+  (check (eq? (.get selection selected-rule) first) => #t))

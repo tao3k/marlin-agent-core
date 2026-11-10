@@ -1,0 +1,21 @@
+[package]
+name = "marlin-agent-context"
+edition.workspace = true
+version.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[features]
+gerbil = ["dep:gerbil-scheme"]
+
+[dependencies]
+gerbil-scheme = { workspace = true, optional = true }
+marlin-agent-protocol.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+criterion.workspace = true
+
+[[bench]]
+name = "scope_batch"
+harness = false

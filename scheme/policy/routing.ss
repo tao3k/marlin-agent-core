@@ -41,17 +41,6 @@
 
 ;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
 ;; MarlinResult <- MarlinInput
-(def (string-prefix? prefix value)
-  (let ((prefix-length (string-length prefix))
-        (value-length (string-length value)))
-    (and (<= prefix-length value-length)
-         (andmap (lambda (index)
-                   (char=? (string-ref prefix index)
-                           (string-ref value index)))
-                 (list-tabulate prefix-length identity)))))
-
-;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
-;; MarlinResult <- MarlinInput
 (def (string-member? value values)
   (if (member value values) #t #f))
 

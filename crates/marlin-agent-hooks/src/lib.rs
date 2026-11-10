@@ -5,14 +5,16 @@
 mod config;
 mod dispatcher;
 mod dynamic_actions;
+mod path_filter;
 
 pub use config::{
     HookConfigurationEnvelope, HookConfigurationError, HookPolicyConfiguration,
     HookRegistrationDefaults,
 };
 pub use dispatcher::{
-    HookDispatchPolicy, HookDispatchPolicyFinalizer, HookDispatchPolicyFinalizerInput,
-    HookDispatchReport, HookDispatcher, HookInvocation, HookRegistration, HookRegistry,
-    RegisteredHookPolicyFinalizer, RegisteredHookRegistrationCatalog, RegisteredHookRuntime,
+    HookActionContext, HookActionProvider, HookDispatchPolicy, HookDispatchReport, HookDispatcher,
+    HookInvocation, HookRegistration, HookRegistry, RegisteredHookActionProvider,
+    RegisteredHookRegistrationCatalog, RegisteredHookRuntime,
 };
 pub use dynamic_actions::HookRegistrationCatalog;
+pub use path_filter::{HookPathFilter, HookPathFilterError, HookPathPattern, HookTargetPath};

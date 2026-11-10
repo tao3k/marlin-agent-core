@@ -1,8 +1,7 @@
 use marlin_agent_protocol::{ModelRouteAgentScope, ModelRouteRequest};
 use marlin_gerbil_scheme::{
+    GERBIL_DECK_ROUTE_ABI_PROJECTION_ABI_ID, GERBIL_DECK_ROUTE_ABI_PROJECTION_ABI_VERSION,
     GERBIL_DECK_RUNTIME_MODEL_ROUTE_SELECTION_SCHEMA_ID,
-    GERBIL_DECK_RUNTIME_NATIVE_PROJECTION_ABI_ID,
-    GERBIL_DECK_RUNTIME_NATIVE_PROJECTION_ABI_VERSION,
     GERBIL_DECK_RUNTIME_POO_POLICY_PROJECTION_SCHEMA_ID,
     GERBIL_DECK_RUNTIME_POO_POLICY_PROJECTION_TYPE_ID,
     GERBIL_DECK_RUNTIME_PROJECT_LOOP_POLICY_PROJECTION_MODULE_SYMBOL,
@@ -10,12 +9,11 @@ use marlin_gerbil_scheme::{
     GERBIL_DECK_RUNTIME_PROJECT_RESOLVED_LOOP_POLICY_PACK_SYMBOL,
     GERBIL_LOOP_POLICY_PROJECTION_MODULE_SCHEMA_ID, GERBIL_LOOP_POLICY_PROJECTION_MODULE_TYPE_ID,
     GERBIL_RESOLVED_LOOP_POLICY_PACK_SCHEMA_ID, GERBIL_RESOLVED_LOOP_POLICY_PACK_TYPE_ID,
-    GerbilDeckRuntimeContextMode, GerbilDeckRuntimeIsolationMode,
-    GerbilDeckRuntimeModelRoutePolicy, GerbilDeckRuntimeModelRoutePolicyRequest,
-    GerbilDeckRuntimeModelRouteSelectedPolicy, GerbilDeckRuntimeModelRouteSelectionReceipt,
-    GerbilDeckRuntimeNativeBridgeBoundary, GerbilDeckRuntimeNativeBridgeReceipt,
-    GerbilDeckRuntimeSelectedPolicyKind, GerbilDeckRuntimeSerializationBoundary,
-    gerbil_deck_runtime_native_projection_readiness_plan,
+    GerbilDeckRouteAbiBoundary, GerbilDeckRouteAbiReceipt, GerbilDeckRuntimeContextMode,
+    GerbilDeckRuntimeIsolationMode, GerbilDeckRuntimeModelRoutePolicy,
+    GerbilDeckRuntimeModelRoutePolicyRequest, GerbilDeckRuntimeModelRouteSelectedPolicy,
+    GerbilDeckRuntimeModelRouteSelectionReceipt, GerbilDeckRuntimeSelectedPolicyKind,
+    GerbilDeckRuntimeSerializationBoundary, gerbil_deck_route_abi_projection_readiness_plan,
     gerbil_deck_runtime_poo_policy_projection_request,
     gerbil_deck_runtime_resolved_loop_policy_pack_projection_request,
 };
@@ -46,7 +44,7 @@ fn gerbil_deck_runtime_policy_receipt_preserves_provider_model_identity() {
         command: "cargo test".to_string(),
         agent_scope: "sub-agent".to_string(),
         matched: true,
-        native_bridge: GerbilDeckRuntimeNativeBridgeReceipt::ready("marlin.deck-runtime.native", 1),
+        route_abi: GerbilDeckRouteAbiReceipt::ready("marlin.deck-runtime.native", 1),
         policy: Some(GerbilDeckRuntimeModelRouteSelectedPolicy {
             kind: GerbilDeckRuntimeSelectedPolicyKind::new(
                 "marlin-deck-runtime.model-route-policy.v1",
@@ -67,11 +65,11 @@ fn gerbil_deck_runtime_policy_receipt_preserves_provider_model_identity() {
     assert_eq!(policy.model, "gpt-5-mini");
     assert_eq!(policy.context_mode.as_str(), "forked-context");
     assert_eq!(
-        receipt.native_bridge.bridge_boundary,
-        GerbilDeckRuntimeNativeBridgeBoundary::SchemeTypesToRustTypes
+        receipt.route_abi.bridge_boundary,
+        GerbilDeckRouteAbiBoundary::SchemeTypesToRustTypes
     );
     assert_eq!(
-        receipt.native_bridge.serialization_boundary,
+        receipt.route_abi.serialization_boundary,
         GerbilDeckRuntimeSerializationBoundary::RustOwnedCliTraceCrossProcess
     );
 }
@@ -80,15 +78,15 @@ fn gerbil_deck_runtime_policy_receipt_preserves_provider_model_identity() {
 fn gerbil_deck_runtime_poo_policy_projection_request_matches_scheme_module_contract() {
     let request = gerbil_deck_runtime_poo_policy_projection_request();
     let resolved_request = gerbil_deck_runtime_resolved_loop_policy_pack_projection_request();
-    let readiness_plan = gerbil_deck_runtime_native_projection_readiness_plan();
+    let readiness_plan = gerbil_deck_route_abi_projection_readiness_plan();
 
     assert_eq!(
         request.abi_id.as_str(),
-        GERBIL_DECK_RUNTIME_NATIVE_PROJECTION_ABI_ID
+        GERBIL_DECK_ROUTE_ABI_PROJECTION_ABI_ID
     );
     assert_eq!(
         request.abi_version,
-        GERBIL_DECK_RUNTIME_NATIVE_PROJECTION_ABI_VERSION
+        GERBIL_DECK_ROUTE_ABI_PROJECTION_ABI_VERSION
     );
     assert_eq!(
         request.symbol.as_str(),
@@ -140,12 +138,12 @@ fn gerbil_deck_runtime_poo_policy_projection_request_matches_scheme_module_contr
         ]
     );
 
-    let native_projection_source = include_str!(concat!(
+    let abi_projection_source = include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../../scheme/policy/projection/deck.ss"
+        "/../../scheme/policy/projection/deck/policy.ss"
     ));
     for expected in [
-        GERBIL_DECK_RUNTIME_NATIVE_PROJECTION_ABI_ID,
+        GERBIL_DECK_ROUTE_ABI_PROJECTION_ABI_ID,
         GERBIL_DECK_RUNTIME_PROJECT_POO_POLICY_SYMBOL,
         GERBIL_DECK_RUNTIME_PROJECT_RESOLVED_LOOP_POLICY_PACK_SYMBOL,
         GERBIL_DECK_RUNTIME_PROJECT_LOOP_POLICY_PROJECTION_MODULE_SYMBOL,
@@ -157,7 +155,7 @@ fn gerbil_deck_runtime_poo_policy_projection_request_matches_scheme_module_contr
         GERBIL_LOOP_POLICY_PROJECTION_MODULE_SCHEMA_ID,
     ] {
         assert!(
-            native_projection_source.contains(expected),
+            abi_projection_source.contains(expected),
             "native projection Scheme source should contain {expected}"
         );
     }

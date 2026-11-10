@@ -1,10 +1,56 @@
-use marlin_agent_hooks::{HookDispatcher, HookInvocation, HookRegistry};
+use std::sync::Arc;
+
+use marlin_agent_hooks::{
+    HookDispatcher, HookInvocation, HookPathFilter, HookPathPattern, HookRegistry, HookTargetPath,
+};
 use marlin_agent_protocol::{
     HookAgentScope, HookDecisionContext, HookEventName, HookHandlerType, HookSelectionSkipReason,
 };
 use marlin_agent_runtime::{RuntimeExecutionIdentity, TokioAgentRuntime};
 
 use crate::hooks::support::summary_hook_registration;
+
+#[tokio::test]
+async fn dispatcher_checks_path_filters_before_hook_execution() {
+    let filter = Arc::new(
+        HookPathFilter::compile(
+            &[HookPathPattern::new("scheme/**/*.ss")],
+            &[HookPathPattern::new("scheme/t/**")],
+        )
+        .expect("compile hook filter"),
+    );
+    let registry = HookRegistry::new().with_registration(
+        summary_hook_registration(
+            "scheme-source",
+            HookEventName::PreToolUse,
+            HookHandlerType::Command,
+            "scheme-source-run",
+        )
+        .with_path_filter(filter),
+    );
+    let dispatcher = HookDispatcher::new(registry);
+    let (runtime, _events) = TokioAgentRuntime::new(4);
+    for (paths, selected) in [
+        (vec![], false),
+        (vec!["scheme/t/smoke.ss", "scheme/README.org"], false),
+        (vec!["scheme/t/smoke.ss", "scheme/context/func.ss"], true),
+    ] {
+        let invocation = HookInvocation::new(HookEventName::PreToolUse).with_target_paths(
+            paths
+                .into_iter()
+                .map(|path| HookTargetPath::new(path).expect("workspace-relative path"))
+                .collect(),
+        );
+        let report = dispatcher.dispatch(&runtime, invocation).await;
+        assert_eq!(report.runs.len(), usize::from(selected));
+        assert_eq!(
+            report.selection.candidates[0].skip_reason,
+            (!selected).then_some(HookSelectionSkipReason::PathFilterMismatch),
+        );
+    }
+    assert!(HookTargetPath::new("scheme/../Cargo.toml").is_err());
+    assert!(HookPathFilter::compile(&[HookPathPattern::new("[")], &[]).is_err());
+}
 
 #[tokio::test]
 async fn dispatcher_ignores_other_hook_events() {

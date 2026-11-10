@@ -7,10 +7,6 @@
 (export marlin-deck-runtime-strategy-facts-kind
         marlin-deck-runtime-strategy-capability-names
         make-marlin-deck-runtime-strategy-facts
-        strategy-string-active?
-        strategy-required-string-match?
-        strategy-string-member?
-        strategy-all-strings-member?
         marlin-deck-runtime-find-policy-by-name)
 
 ;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
@@ -45,28 +41,6 @@
       workspace-state: workspace-state-values
       org-memory-hits: org-memory-hit-values
       agent-class: agent-class-value))
-
-;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
-;; MarlinResult <- MarlinInput
-(def (strategy-string-active? value)
-  (and value (not (string=? value ""))))
-
-;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
-;; MarlinResult <- MarlinInput
-(def (strategy-required-string-match? required actual)
-  (if (strategy-string-active? required)
-    (string=? required actual)
-    #t))
-
-;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
-;; MarlinResult <- MarlinInput
-(def (strategy-string-member? value values)
-  (if (member value values) #t #f))
-
-;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
-;; MarlinResult <- MarlinInput
-(def (strategy-all-strings-member? required actual)
-  (andmap (cut strategy-string-member? <> actual) required))
 
 ;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
 ;; MarlinResult <- MarlinInput

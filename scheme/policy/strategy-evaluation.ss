@@ -4,9 +4,9 @@
 
 (import (only-in :clan/poo/object .get .o)
         "./routing.ss"
-        "./conditions.ss"
-        "./hooks.ss"
-        "./matchers.ss"
+        "../hooks/conditions.ss"
+        "../hooks/selection.ss"
+        "../hooks/matchers.ss"
         "./strategy-facts.ss")
 
 (export marlin-deck-runtime-strategy-rule-kind
@@ -16,7 +16,7 @@
         marlin-deck-runtime-policy-projection-chain-kind
         marlin-deck-runtime-module-evaluation-receipt-kind
         marlin-deck-runtime-policy-projection-receipt-kind
-        marlin-deck-runtime-native-projection-payload-kind
+        marlin-deck-runtime-abi-projection-payload-kind
         marlin-deck-runtime-policy-budget-receipt-kind
         marlin-deck-runtime-catalog-resolution-receipt-kind
         make-marlin-deck-runtime-strategy-rule
@@ -63,7 +63,7 @@
   "marlin-deck-runtime.policy-projection-receipt.v1")
 ;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
 ;; MarlinResult <- MarlinInput
-(def marlin-deck-runtime-native-projection-payload-kind
+(def marlin-deck-runtime-abi-projection-payload-kind
   "marlin-deck-runtime.native-projection-payload.v1")
 ;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
 ;; MarlinResult <- MarlinInput
@@ -82,9 +82,9 @@
       evaluator: "marlin-agent-core.scheme"
       matched: matched-value
       imports: '(":marlin-agent-core/policy/routing"
-                 ":marlin-agent-core/policy/conditions"
-                 ":marlin-agent-core/policy/hooks"
-                 ":marlin-agent-core/policy/matchers"
+                 ":marlin-agent-core/hooks/conditions"
+                 ":marlin-agent-core/hooks/selection"
+                 ":marlin-agent-core/hooks/matchers"
                  ":marlin-agent-core/policy/strategy-facts")))
 
 ;;; Boundary: Scheme exposes the policy projection shape, not Rust handlers.
@@ -109,10 +109,10 @@
 
 ;;; Boundary: Native payload is data for Rust validation, not Scheme transport.
 ;; MarlinResult <- MarlinInput
-(def (make-marlin-deck-runtime-native-projection-payload
+(def (make-marlin-deck-runtime-abi-projection-payload
       dynamic-hook-action-value
       dynamic-hook-selection-value)
-  (.o kind: marlin-deck-runtime-native-projection-payload-kind
+  (.o kind: marlin-deck-runtime-abi-projection-payload-kind
       owner: "rust"
       payload: "dynamic-hook-action"
       action: (marlin-deck-runtime-dynamic-hook-action-name dynamic-hook-action-value)
@@ -134,7 +134,7 @@
       catalog-owner: "rust"
       action: (marlin-deck-runtime-dynamic-hook-action-name dynamic-hook-action-value)
       hook-id: (marlin-deck-runtime-dynamic-hook-action-hook-id dynamic-hook-action-value)
-      registration-source: "dynamic-hook-action.registration"
+      registration-source: "runtime-catalog"
       resolved-by-scheme: #f))
 
 ;;; Boundary: Fixed chain pattern for Scheme policy projection receipts.
@@ -152,7 +152,7 @@
        matched-value
        strategy-rule-value)
       native-projection-payload:
-      (make-marlin-deck-runtime-native-projection-payload
+      (make-marlin-deck-runtime-abi-projection-payload
        dynamic-hook-action-value
        dynamic-hook-selection-value)
       budget-receipt: (make-marlin-deck-runtime-policy-budget-receipt)
@@ -171,45 +171,26 @@
       dynamic-hook-action-value
       dynamic-hook-selection-value
       matched-signals-value)
-  (let* ((module-evaluation-receipt
-          (make-marlin-deck-runtime-module-evaluation-receipt matched-value))
-         (policy-projection-receipt
-          (make-marlin-deck-runtime-policy-projection-receipt
-           matched-value
-           strategy-rule-value))
-         (native-projection-payload
-          (make-marlin-deck-runtime-native-projection-payload
-           dynamic-hook-action-value
-           dynamic-hook-selection-value))
-         (budget-receipt
-          (make-marlin-deck-runtime-policy-budget-receipt))
-         (catalog-resolution-receipt
-          (make-marlin-deck-runtime-catalog-resolution-receipt
-           dynamic-hook-action-value))
-         (projection-chain
-          (.o kind: marlin-deck-runtime-policy-projection-chain-kind
-              module-evaluation-receipt: module-evaluation-receipt
-              policy-projection-receipt: policy-projection-receipt
-              native-projection-payload: native-projection-payload
-              budget-receipt: budget-receipt
-              catalog-resolution-receipt: catalog-resolution-receipt)))
-    (.o kind: marlin-deck-runtime-strategy-policy-receipt-kind
-        matched: matched-value
-        command: command-value
-        agent-scope: agent-scope-value
-        strategy-rule: strategy-rule-value
-        model-policy: model-policy-value
-        dynamic-hook-action: dynamic-hook-action-value
-        dynamic-hook-selection: dynamic-hook-selection-value
-        policy-projection-chain: projection-chain
-        module-evaluation-receipt: module-evaluation-receipt
-        policy-projection-receipt: policy-projection-receipt
-        native-projection-payload: native-projection-payload
-        budget-receipt: budget-receipt
-        catalog-resolution-receipt: catalog-resolution-receipt
-        matched-signals: matched-signals-value
-        capabilities: (marlin-deck-runtime-strategy-capability-names)
-        policy-engine: "scheme-poo")))
+  (def chain-value
+    (make-marlin-deck-runtime-policy-projection-chain
+     matched-value strategy-rule-value dynamic-hook-action-value dynamic-hook-selection-value))
+  (.o kind: marlin-deck-runtime-strategy-policy-receipt-kind
+      matched: matched-value
+      command: command-value
+      agent-scope: agent-scope-value
+      strategy-rule: strategy-rule-value
+      model-policy: model-policy-value
+      dynamic-hook-action: dynamic-hook-action-value
+      dynamic-hook-selection: dynamic-hook-selection-value
+      policy-projection-chain: chain-value
+      module-evaluation-receipt: (.get chain-value module-evaluation-receipt)
+      policy-projection-receipt: (.get chain-value policy-projection-receipt)
+      native-projection-payload: (.get chain-value native-projection-payload)
+      budget-receipt: (.get chain-value budget-receipt)
+      catalog-resolution-receipt: (.get chain-value catalog-resolution-receipt)
+      matched-signals: matched-signals-value
+      capabilities: (marlin-deck-runtime-strategy-capability-names)
+      policy-engine: "scheme-poo"))
 
 ;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
 ;; MarlinResult <- MarlinInput
@@ -289,8 +270,8 @@
   (and policy
        (string=? (.get rule kind) marlin-deck-runtime-strategy-rule-kind)
        (marlin-deck-runtime-route-policy-match? policy command agent-scope)
-       (marlin-deck-runtime-condition-policy-match?
-        (marlin-deck-runtime-condition-policy-from-rule rule)
+       (hook-condition-match?
+        (hook-condition-from-rule rule)
         context)))
 
 ;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
@@ -300,57 +281,44 @@
   (and policy
        (string=? (.get rule kind) marlin-deck-runtime-dynamic-strategy-rule-kind)
        (marlin-deck-runtime-route-policy-match? policy command agent-scope)
-       (marlin-deck-runtime-condition-policy-match?
-        (marlin-deck-runtime-condition-policy-from-rule rule)
+       (hook-condition-match?
+        (hook-condition-from-rule rule)
         context)
-       (marlin-deck-runtime-high-order-matcher-match?
+       (hook-matcher-match?
         (.get rule high-order-matcher)
         context
         policy
         command
         agent-scope)))
 
-;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
-;; MarlinResult <- MarlinInput
+;;; A rule that matches ends the scan, including calls to extension predicates.
+(def (select-strategy-rule rule-matches? policies rules context command agent-scope)
+  (ormap
+   (lambda (rule)
+     (def policy (marlin-deck-runtime-find-policy-by-name policies (.get rule policy-name)))
+     (and (rule-matches? rule context policy command agent-scope)
+          (.o selected-rule: rule selected-policy: policy)))
+   rules))
+
 (def (marlin-deck-runtime-select-model-route-policy/strategy
       policies rules context command agent-scope)
-  (let (matches
-        (filter-map
-         (lambda (rule)
-           (let (policy
-                 (marlin-deck-runtime-find-policy-by-name
-                  policies
-                  (.get rule policy-name)))
-             (and (marlin-deck-runtime-strategy-rule-match?
-                   rule context policy command agent-scope)
-                  (.o selected-rule: rule selected-policy: policy))))
-         rules))
-    (and (pair? matches) (car matches))))
+  (select-strategy-rule marlin-deck-runtime-strategy-rule-match?
+                        policies rules context command agent-scope))
 
 ;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
 ;; MarlinResult <- MarlinInput
 (def (marlin-deck-runtime-select-dynamic-strategy-rule
       policies rules context command agent-scope)
-  (let (matches
-        (filter-map
-         (lambda (rule)
-           (let (policy
-                 (marlin-deck-runtime-find-policy-by-name
-                  policies
-                  (.get rule policy-name)))
-             (and (marlin-deck-runtime-dynamic-strategy-rule-match?
-                   rule context policy command agent-scope)
-                  (.o selected-rule: rule selected-policy: policy))))
-         rules))
-    (and (pair? matches) (car matches))))
+  (select-strategy-rule marlin-deck-runtime-dynamic-strategy-rule-match?
+                        policies rules context command agent-scope))
 
 ;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
 ;; MarlinResult <- MarlinInput
 (def (marlin-deck-runtime-strategy-rule-signal-names rule)
   (append
    '("model-route" "command-prefix" "agent-scope" "high-order-matcher")
-   (marlin-deck-runtime-condition-policy-signal-names
-    (marlin-deck-runtime-condition-policy-from-rule rule))))
+   (hook-condition-signal-names
+    (hook-condition-from-rule rule))))
 
 ;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
 ;; MarlinResult <- MarlinInput
@@ -366,7 +334,7 @@
 ;; MarlinResult <- MarlinInput
 (def (marlin-deck-runtime-dynamic-strategy-rule-action-selection
       rule context policy command agent-scope)
-  (marlin-deck-runtime-dynamic-hook-decision-selection
+  (select-hook
    (.get rule dynamic-hook-action)
    "rule-action"
    context
@@ -389,33 +357,21 @@
 ;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
 ;; MarlinResult <- MarlinInput
 (def (marlin-deck-runtime-strategy-selection
-      policies rules context command agent-scope)
-  (let ((selection
-         (marlin-deck-runtime-select-model-route-policy/strategy
-          policies rules context command agent-scope)))
-    (if selection
-      (let ((matched-rule (.get selection selected-rule))
-            (matched-policy (.get selection selected-policy)))
-        (.o kind: marlin-deck-runtime-strategy-selection-kind
-            command: command
-            agent-scope: agent-scope
-            matched: #t
-            strategy-rule: (.get matched-rule name)
-            hook-action: (.get matched-rule hook-action)
-            rewrite-command: (.get matched-rule rewrite-command)
-            matched-signals: (marlin-deck-runtime-strategy-rule-signal-names matched-rule)
-            capabilities: (marlin-deck-runtime-strategy-capability-names)
-            policy: matched-policy))
-      (.o kind: marlin-deck-runtime-strategy-selection-kind
-          command: command
-          agent-scope: agent-scope
-          matched: #f
-          strategy-rule: #f
-          hook-action: #f
-          rewrite-command: #f
-          matched-signals: '()
-          capabilities: (marlin-deck-runtime-strategy-capability-names)
-          policy: #f))))
+      policies rules context request-command request-agent-scope)
+  (def selected
+    (marlin-deck-runtime-select-model-route-policy/strategy
+     policies rules context request-command request-agent-scope))
+  (def matched-rule (and selected (.get selected selected-rule)))
+  (.o kind: marlin-deck-runtime-strategy-selection-kind
+      command: request-command
+      agent-scope: request-agent-scope
+      matched: (and selected #t)
+      strategy-rule: (and matched-rule (.get matched-rule name))
+      hook-action: (and matched-rule (.get matched-rule hook-action))
+      rewrite-command: (and matched-rule (.get matched-rule rewrite-command))
+      matched-signals: (if matched-rule (marlin-deck-runtime-strategy-rule-signal-names matched-rule) '())
+      capabilities: (marlin-deck-runtime-strategy-capability-names)
+      policy: (and selected (.get selected selected-policy))))
 
 ;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
 ;; MarlinResult <- MarlinInput

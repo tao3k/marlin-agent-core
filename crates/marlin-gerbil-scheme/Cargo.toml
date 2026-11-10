@@ -10,7 +10,7 @@ readme = "README.md"
 publish = false
 
 [[bench]]
-name = "deck_runtime_native"
+name = "deck_route_abi"
 harness = false
 
 [dependencies]

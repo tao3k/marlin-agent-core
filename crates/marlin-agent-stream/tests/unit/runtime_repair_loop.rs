@@ -32,7 +32,6 @@ use marlin_agent_protocol::{
     ModelGatewayRequest, system_gateway_message, user_gateway_message,
 };
 use marlin_agent_runtime::{RuntimeEdgeModelGateway, RuntimeEdgePolicy, TokioAgentRuntime};
-use marlin_agent_stream::LiteLlmStreamGateway;
 use marlin_gerbil_scheme::{
     GerbilLoopCaseDriverVerticalTraceReceipt, project_gerbil_loop_case_driver_loop_program,
     verify_gerbil_loop_case_driver_vertical_trace,

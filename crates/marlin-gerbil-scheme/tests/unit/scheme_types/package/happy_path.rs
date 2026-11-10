@@ -1,18 +1,17 @@
 use super::{
-    deck_runtime_native_abi_contract, deck_runtime_native_readiness_plan,
-    downstream_strategy_package,
+    deck_route_abi_abi_contract, deck_route_abi_readiness_plan, downstream_strategy_package,
 };
 use crate::scheme_types::support::{strategy_selection_schema_id, strategy_selection_type_id};
 use marlin_agent_protocol::{
-    GraphLoopStrategy, GraphNativeAbiId, GraphNativeSymbol, GraphPolicyProposal,
-    GraphPolicyProposalStatus, LoopGraph, LoopNodeSpec,
+    GraphAbiSymbol, GraphCAbiId, GraphLoopStrategy, GraphPolicyProposal, GraphPolicyProposalStatus,
+    LoopGraph, LoopNodeSpec,
 };
 use marlin_gerbil_scheme::{
-    GERBIL_DECK_RUNTIME_NATIVE_ABI_ID, GERBIL_DECK_RUNTIME_NATIVE_ABI_VERSION,
-    GerbilDeckRuntimeNativeAotConfig, GerbilSchemeNativeAbiId, GerbilSchemeNativeSymbol,
-    GerbilSchemePackageId, GerbilSchemeProjectionContract,
+    GERBIL_DECK_ROUTE_ABI_ID, GERBIL_DECK_ROUTE_ABI_VERSION, GerbilDeckRuntimeAotConfig,
+    GerbilSchemeAbiSymbol, GerbilSchemeCAbiId, GerbilSchemePackageId,
+    GerbilSchemeProjectionContract,
     scheme_type_fixtures::decode_gerbil_scheme_package_manifest_fixture,
-    validate_gerbil_scheme_package_manifest, validate_gerbil_scheme_package_native_readiness,
+    validate_gerbil_scheme_package_abi_readiness, validate_gerbil_scheme_package_manifest,
 };
 use std::collections::BTreeMap;
 
@@ -23,7 +22,7 @@ fn scheme_package_manifest_connects_types_projection_and_native_abi() {
             strategy_selection_type_id(),
         )
         .with_schema_id(strategy_selection_schema_id())])
-        .with_native_abi(deck_runtime_native_abi_contract());
+        .with_c_abi(deck_route_abi_abi_contract());
 
     let receipt = validate_gerbil_scheme_package_manifest(&manifest)
         .expect("downstream Scheme package manifest should validate");
@@ -35,17 +34,12 @@ fn scheme_package_manifest_connects_types_projection_and_native_abi() {
     assert_eq!(receipt.type_count, 1);
     assert_eq!(receipt.field_count, 3);
     assert_eq!(receipt.projection_contract_count, 1);
-    assert_eq!(
-        receipt.native_abi_version,
-        Some(GERBIL_DECK_RUNTIME_NATIVE_ABI_VERSION)
-    );
-    assert_eq!(receipt.native_symbol_count, 2);
+    assert_eq!(receipt.c_abi_version, Some(GERBIL_DECK_ROUTE_ABI_VERSION));
+    assert_eq!(receipt.abi_symbol_count, 2);
 
-    let readiness = validate_gerbil_scheme_package_native_readiness(
-        &manifest,
-        &deck_runtime_native_readiness_plan(),
-    )
-    .expect("downstream Scheme package should match native readiness plan");
+    let readiness =
+        validate_gerbil_scheme_package_abi_readiness(&manifest, &deck_route_abi_readiness_plan())
+            .expect("downstream Scheme package should match native readiness plan");
 
     assert_eq!(readiness.required_symbol_count, 2);
     assert_eq!(readiness.available_symbol_count, 2);
@@ -78,7 +72,7 @@ fn scheme_package_manifest_round_trips_from_serialized_fixture() {
                     "schema_id": "marlin.deck-runtime.strategy-selection.v1"
                 }
             ],
-            "native_abi": {
+            "c_abi": {
                 "abi_id": "marlin.deck-runtime.native",
                 "version": 1,
                 "exported_symbols": [
@@ -94,30 +88,25 @@ fn scheme_package_manifest_round_trips_from_serialized_fixture() {
         .expect("decoded downstream package manifest should validate");
 
     assert_eq!(receipt.projection_contract_count, 1);
-    assert_eq!(receipt.native_symbol_count, 2);
+    assert_eq!(receipt.abi_symbol_count, 2);
 
-    let readiness = validate_gerbil_scheme_package_native_readiness(
-        &manifest,
-        &deck_runtime_native_readiness_plan(),
-    )
-    .expect("decoded downstream package manifest should match native readiness plan");
+    let readiness =
+        validate_gerbil_scheme_package_abi_readiness(&manifest, &deck_route_abi_readiness_plan())
+            .expect("decoded downstream package manifest should match native readiness plan");
 
     assert_eq!(readiness.matched_symbol_count, 2);
 }
 
 #[test]
-fn deck_runtime_native_aot_plan_derives_scheme_readiness_plan() {
-    let aot_plan = GerbilDeckRuntimeNativeAotConfig::new("target/test-downstream-package").plan();
-    let readiness_plan = aot_plan.scheme_native_abi_readiness_plan();
+fn deck_route_abi_aot_plan_derives_scheme_readiness_plan() {
+    let aot_plan = GerbilDeckRuntimeAotConfig::new("target/test-downstream-package").plan();
+    let readiness_plan = aot_plan.scheme_c_abi_readiness_plan();
 
     assert_eq!(
         readiness_plan.abi_id,
-        GerbilSchemeNativeAbiId::new(GERBIL_DECK_RUNTIME_NATIVE_ABI_ID)
+        GerbilSchemeCAbiId::new(GERBIL_DECK_ROUTE_ABI_ID)
     );
-    assert_eq!(
-        readiness_plan.version,
-        GERBIL_DECK_RUNTIME_NATIVE_ABI_VERSION
-    );
+    assert_eq!(readiness_plan.version, GERBIL_DECK_ROUTE_ABI_VERSION);
     assert_eq!(
         readiness_plan.exported_symbols.len(),
         aot_plan.exported_symbols.len()
@@ -127,82 +116,79 @@ fn deck_runtime_native_aot_plan_derives_scheme_readiness_plan() {
         aot_plan
             .exported_symbols
             .iter()
-            .map(GerbilSchemeNativeSymbol::from)
+            .map(GerbilSchemeAbiSymbol::from)
             .collect::<Vec<_>>()
     );
 }
 
 #[test]
-fn deck_runtime_native_aot_plan_derives_scheme_native_abi_contract() {
-    let aot_plan = GerbilDeckRuntimeNativeAotConfig::new("target/test-downstream-package").plan();
-    let native_abi = aot_plan.scheme_native_abi_contract();
+fn deck_route_abi_aot_plan_derives_scheme_c_abi_contract() {
+    let aot_plan = GerbilDeckRuntimeAotConfig::new("target/test-downstream-package").plan();
+    let c_abi = aot_plan.scheme_c_abi_contract();
 
     assert_eq!(
-        native_abi.abi_id,
-        GerbilSchemeNativeAbiId::new(GERBIL_DECK_RUNTIME_NATIVE_ABI_ID)
+        c_abi.abi_id,
+        GerbilSchemeCAbiId::new(GERBIL_DECK_ROUTE_ABI_ID)
     );
-    assert_eq!(native_abi.version, GERBIL_DECK_RUNTIME_NATIVE_ABI_VERSION);
+    assert_eq!(c_abi.version, GERBIL_DECK_ROUTE_ABI_VERSION);
     assert_eq!(
-        native_abi.exported_symbols.len(),
+        c_abi.exported_symbols.len(),
         aot_plan.exported_symbols.len()
     );
     assert_eq!(
-        native_abi.exported_symbols,
+        c_abi.exported_symbols,
         aot_plan
             .exported_symbols
             .iter()
-            .map(GerbilSchemeNativeSymbol::from)
+            .map(GerbilSchemeAbiSymbol::from)
             .collect::<Vec<_>>()
     );
 }
 
 #[test]
-fn scheme_native_abi_contract_projects_to_graph_native_abi_requirement() {
-    let native_abi = deck_runtime_native_abi_contract();
-    let graph_requirement = native_abi.graph_native_abi_requirement();
+fn scheme_c_abi_contract_projects_to_graph_c_abi_requirement() {
+    let c_abi = deck_route_abi_abi_contract();
+    let graph_requirement = c_abi.graph_c_abi_requirement();
 
     assert_eq!(
         graph_requirement.abi_id,
-        GraphNativeAbiId::new(GERBIL_DECK_RUNTIME_NATIVE_ABI_ID)
+        GraphCAbiId::new(GERBIL_DECK_ROUTE_ABI_ID)
     );
-    assert_eq!(
-        graph_requirement.version,
-        GERBIL_DECK_RUNTIME_NATIVE_ABI_VERSION
-    );
+    assert_eq!(graph_requirement.version, GERBIL_DECK_ROUTE_ABI_VERSION);
     assert_eq!(
         graph_requirement.required_symbols,
-        native_abi
+        c_abi
             .exported_symbols
             .iter()
-            .map(|symbol| GraphNativeSymbol::new(symbol.as_str()))
+            .map(|symbol| GraphAbiSymbol::new(symbol.as_str()))
             .collect::<Vec<_>>()
     );
 }
 
 #[test]
-fn deck_runtime_native_aot_plan_derives_graph_native_abi_requirement() {
-    let aot_plan = GerbilDeckRuntimeNativeAotConfig::new("target/test-downstream-package").plan();
-    let graph_requirement = aot_plan.graph_native_abi_requirement();
+fn deck_route_abi_aot_plan_derives_graph_c_abi_requirement() {
+    let aot_plan = GerbilDeckRuntimeAotConfig::new("target/test-downstream-package").plan();
+    let graph_requirement = aot_plan.graph_c_abi_requirement();
 
     assert_eq!(
         graph_requirement.abi_id,
-        GraphNativeAbiId::new(GERBIL_DECK_RUNTIME_NATIVE_ABI_ID)
+        GraphCAbiId::new(GERBIL_DECK_ROUTE_ABI_ID)
     );
     assert_eq!(
         graph_requirement.required_symbols,
         aot_plan
             .exported_symbols
             .iter()
-            .map(|symbol| GraphNativeSymbol::new(symbol.as_str()))
+            .map(|symbol| GraphAbiSymbol::new(symbol.as_str()))
             .collect::<Vec<_>>()
     );
 }
 
 #[test]
-fn deck_runtime_native_graph_requirement_satisfies_graph_policy_validation() {
-    let aot_plan = GerbilDeckRuntimeNativeAotConfig::new("target/test-downstream-package").plan();
+fn deck_route_abi_graph_requirement_satisfies_graph_policy_validation() {
+    let aot_plan = GerbilDeckRuntimeAotConfig::new("target/test-downstream-package").plan();
     let proposal = GraphPolicyProposal::new(
-        GraphLoopStrategy::native_gerbil("gerbil-deck-runtime", "v1"),
+        GraphLoopStrategy::gerbil_c_abi("gerbil-deck-runtime", "v1"),
         LoopGraph {
             graph_id: "gerbil-deck-runtime-graph".to_string(),
             nodes: vec![LoopNodeSpec {
@@ -215,14 +201,14 @@ fn deck_runtime_native_graph_requirement_satisfies_graph_policy_validation() {
         "sha256:input",
         "sha256:output",
     )
-    .with_native_abi_requirement(aot_plan.graph_native_abi_requirement());
+    .with_c_abi_requirement(aot_plan.graph_c_abi_requirement());
 
     let validation = proposal.validate();
 
     assert_eq!(validation.status, GraphPolicyProposalStatus::Accepted);
     assert_eq!(
         validation
-            .native_abi
+            .c_abi
             .as_ref()
             .expect("native ABI requirement")
             .required_symbols

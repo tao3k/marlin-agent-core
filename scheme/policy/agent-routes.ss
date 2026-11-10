@@ -3,7 +3,7 @@
 ;;; Customer/custom agent policy templates for Scheme-owned POO policy.
 
 (import (only-in :clan/poo/object .get .o)
-        "./hooks.ss"
+        "../hooks/selection.ss"
         "./strategy-evaluation.ss")
 
 (export marlin-deck-runtime-agent-policy-template-kind
@@ -71,9 +71,8 @@
 ;; MarlinResult <- MarlinInput
 (def (marlin-deck-runtime-template-action->dynamic-hook
       template rule-name)
-  (make-marlin-deck-runtime-dynamic-hook-action
+  (make-hook-action
    (.get template hook-action)
-   rule-name
    rule-name
    #f
    #f

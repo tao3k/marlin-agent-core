@@ -7,17 +7,14 @@ mod dependency_boundary;
 #[path = "unit/deck_runtime_policy.rs"]
 mod deck_runtime_policy;
 
-#[path = "unit/deck_runtime_script.rs"]
-mod deck_runtime_script;
-
 #[path = "unit/working_copy_policy.rs"]
 mod working_copy_policy;
 
-#[path = "unit/deck_runtime_native/mod.rs"]
-mod deck_runtime_native;
+#[path = "unit/deck_route_abi/mod.rs"]
+mod deck_route_abi;
 
-#[path = "unit/agent_policy_routing_native/mod.rs"]
-mod agent_policy_routing_native;
+#[path = "unit/agent_policy_routing_abi/mod.rs"]
+mod agent_policy_routing_abi;
 
 #[path = "unit/loop_case_driver/mod.rs"]
 mod loop_case_driver;

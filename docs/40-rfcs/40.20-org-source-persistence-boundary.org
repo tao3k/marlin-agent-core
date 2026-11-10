@@ -9,7 +9,7 @@
 :END:
 
 This RFC defines the persistence boundary that may turn validated Org text edit
-plans into durable file changes. It follows [[file:40.10-org-native-agent-work-protocol.org][40.10 Org-native Agent Work Protocol]]
+plans into durable file changes. It follows [[file:40.10-org-agent-work-protocol.org][40.10 Org-native Agent Work Protocol]]
 and keeps filesystem writes outside =marlin-org-patch=.
 
 ** Motivation

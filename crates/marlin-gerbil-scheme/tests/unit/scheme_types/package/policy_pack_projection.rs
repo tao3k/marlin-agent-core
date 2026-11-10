@@ -21,8 +21,8 @@ fn policy_pack_projection_chain_package_manifest_declares_typed_receipt_contract
     assert_eq!(receipt.type_count, 1);
     assert_eq!(receipt.field_count, 16);
     assert_eq!(receipt.projection_contract_count, 1);
-    assert_eq!(receipt.native_abi_version, None);
-    assert_eq!(receipt.native_symbol_count, 0);
+    assert_eq!(receipt.c_abi_version, None);
+    assert_eq!(receipt.abi_symbol_count, 0);
 
     let projection_type = manifest
         .type_manifest
@@ -56,8 +56,8 @@ fn resolved_loop_policy_pack_package_manifest_declares_hot_audit_projection_cont
     assert_eq!(receipt.type_count, 1);
     assert_eq!(receipt.field_count, 5);
     assert_eq!(receipt.projection_contract_count, 1);
-    assert_eq!(receipt.native_abi_version, None);
-    assert_eq!(receipt.native_symbol_count, 0);
+    assert_eq!(receipt.c_abi_version, None);
+    assert_eq!(receipt.abi_symbol_count, 0);
 
     let projection_type = manifest
         .type_manifest

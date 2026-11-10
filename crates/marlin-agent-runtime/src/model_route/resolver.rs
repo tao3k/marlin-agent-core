@@ -61,7 +61,7 @@ impl CompiledModelRouteResolver {
         self.resolve_selected_policy_index_with_source(
             request,
             policy_index,
-            ModelRouteSelectionProjectionSource::NativeAbiPolicyIndex,
+            ModelRouteSelectionProjectionSource::CAbiPolicyIndex,
         )
         .map(|projection| projection.decision)
     }

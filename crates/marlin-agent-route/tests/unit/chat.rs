@@ -18,6 +18,65 @@ use serde_json::{Value, json};
 use tempfile::tempdir;
 use tower::ServiceExt;
 
+#[cfg(feature = "deck-actor")]
+#[tokio::test]
+async fn chat_admission_executes_the_linked_scheme_deck_actor() {
+    use marlin_agent_protocol::{ModelRouteAdmissionRequest, ModelRouteRequest};
+    use marlin_agent_route::{
+        DeckRouteAdmission, DeckRouteAdmissionConfig, DeckRouteAdmissionRejection,
+    };
+    use tokio_util::sync::CancellationToken;
+
+    let deck = DeckRouteAdmission::start(
+        vec![
+            ModelRouteRule::new(
+                "review-only",
+                100,
+                ModelCommandMatcher::new().with_command_kind_glob("review"),
+                ModelEndpoint::new("local", "review"),
+            ),
+            ModelRouteRule::new(
+                "chat-deck",
+                10,
+                ModelCommandMatcher::new().with_command_kind_glob("chat"),
+                ModelEndpoint::new("local", "chat"),
+            ),
+        ],
+        DeckRouteAdmissionConfig {
+            queue_capacity: 1.try_into().unwrap(),
+            actors: 2.try_into().unwrap(),
+        },
+    )
+    .expect("start the linked Scheme VM and resident actors");
+    let request = ModelRouteAdmissionRequest::chat(
+        ModelRouteRequest::command(["marlin", "审阅"]).with_command_kind("chat"),
+    );
+    let cancellation = CancellationToken::new();
+    cancellation.cancel();
+    assert!(matches!(
+        deck.admit(request.clone(), cancellation).await,
+        Err(DeckRouteAdmissionRejection::Cancelled)
+    ));
+
+    let app = model_route_router(ModelRouteHttpState::with_deck_admission(deck));
+    let response = app
+        .clone()
+        .oneshot(json_request(json!({"latencyBudgetMs": 0})))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::GATEWAY_TIMEOUT);
+    let response = app
+        .oneshot(json_request(json!({"routeRequest": request.route_request})))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let receipt: ModelRouteAdmissionResponse =
+        serde_json::from_slice(&body_bytes(response).await).unwrap();
+    assert_eq!(receipt.decision.receipt.rule_id.as_str(), "chat-deck");
+    assert_eq!(receipt.decision.endpoint.model.as_str(), "chat");
+    assert_eq!(receipt.decision.receipt.command_line, "marlin 审阅");
+}
+
 #[tokio::test]
 async fn chat_route_admission_returns_typed_deterministic_response() {
     let app = chat_router(vec![ModelRouteRule::new(

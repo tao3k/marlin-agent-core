@@ -403,16 +403,16 @@ code owner, a validation command, and a stable boundary statement.
 - P2 Gerbil POO projection module: Scheme constructs =marlin.deck-runtime.poo-policy-projection.v1= with POO objects before Rust decodes the typed value.
 - P3 compile-source native boundary: compile-source names the native projection request and receipt boundary while refusing Rust source parsing.
 - P4 Harness policy integration: real-gxi tests can run the whole =gerbil/t= gxtest suite instead of targeting one policy file.
-- P5 CI/runtime asset gate: harness required assets include =deck-runtime-native-projection.ss= and runtime asset tests expose the module constants.
+- P5 CI/runtime asset gate: harness required assets include =deck-route-abi-projection.ss= and runtime asset tests expose the module constants.
 - Working-copy runtime fanout: =marlin-agent-runtime= owns =WorkingCopySubAgentFanoutItem= and =TokioAgentRuntime::spawn_sub_agents_with_working_copy_environments= so isolated working-copy receipts become active child context bindings without JSON, cwd inference, or provider shell text.
 
 | Priority | Owner | Acceptance signal | Validation |
 | P0 | Gerbil native ABI guard | Rust-side Scheme parser dependencies remain denied and compile-source reports native projection pending instead of parsing .ss text. | cargo test -p marlin-gerbil-scheme dependency_boundary compile_source_binary_requires_native_abi_projection -- --ignored |
 | P1 | Scheme typed projection bridge | Rust owns GerbilSchemeNativeProjectionRequest and GerbilSchemeNativeProjectionReceipt for ABI symbol, type, and schema validation. | cargo test -p marlin-gerbil-scheme scheme_types::projection::native_abi --quiet |
-| P2 | Gerbil POO projection module | Scheme constructs marlin.deck-runtime.poo-policy-projection.v1 with POO objects before Rust decodes the typed value. | cd crates/marlin-gerbil-scheme/gerbil && GERBIL_LOADPATH=$PWD/src gxtest t/deck-runtime-native-projection-test.ss |
+| P2 | Gerbil POO projection module | Scheme constructs marlin.deck-runtime.poo-policy-projection.v1 with POO objects before Rust decodes the typed value. | cd crates/marlin-gerbil-scheme/gerbil && GERBIL_LOADPATH=$PWD/src gxtest t/deck-route-abi-projection-test.ss |
 | P3 | compile-source native boundary | compile-source names the native projection request and receipt boundary while refusing Rust source parsing. | cargo test -p marlin-gerbil-scheme compile_source_binary_requires_native_abi_projection -- --ignored |
 | P4 | Harness policy integration | real-gxi tests can run the whole gerbil/t gxtest suite instead of targeting one policy file. | cargo test -p marlin-gerbil-scheme command_compiler_real_gxi_runs_all_runtime_gxtests -- --ignored |
-| P5 | CI/runtime asset gate | Harness required assets include deck-runtime-native-projection.ss and runtime asset tests expose the module constants. | cargo test -p marlin-rust-project-harness-policy gerbil_runtime_asset --quiet && cargo test -p marlin-gerbil-scheme gerbil_runtime_assets --quiet |
+| P5 | CI/runtime asset gate | Harness required assets include deck-route-abi-projection.ss and runtime asset tests expose the module constants. | cargo test -p marlin-rust-project-harness-policy gerbil_runtime_asset --quiet && cargo test -p marlin-gerbil-scheme gerbil_runtime_assets --quiet |
 |----------+-------+-------------------+------------|
 | P0 | =marlin-gerbil-scheme= real Gerbil assets | =build.ss compile= succeeds, =bin/smoke.ss= runs from a written loadpath tree, and native Deck runtime source exposes the stable C ABI symbols. | =cargo test -p marlin-gerbil-scheme command_compiler_real_gxi_builds_runtime_package_and_runs_smoke_launcher -- --ignored= |
 | P1 | =marlin-gerbil-scheme::working_copy_policy= | Scheme policy selections project into Rust-owned =WorkingCopyIsolationRequest= variants for create, switch, list, remove, and pull-request checkout without text handoff. | =cargo test -p marlin-gerbil-scheme working_copy_policy= |

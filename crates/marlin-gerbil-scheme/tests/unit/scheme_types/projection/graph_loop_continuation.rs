@@ -3,16 +3,17 @@ use marlin_agent_protocol::{
     GraphLoopNextAction,
 };
 use marlin_gerbil_scheme::{
-    GERBIL_LOOP_GRAPH_CONTINUATION_NATIVE_PROJECTION_ABI_ID,
-    GERBIL_LOOP_GRAPH_CONTINUATION_NATIVE_SYMBOL, GERBIL_LOOP_GRAPH_CONTINUATION_TYPE_ID,
-    GerbilSchemeNativeAbiId, GerbilSchemeNativeProjectionRequest,
-    GerbilSchemeNativeProjectionStatus, GerbilSchemeNativeSymbol, GerbilSchemeSchemaId,
-    GerbilSchemeTypeId, GerbilSchemeTypeRegistry, GerbilSchemeTypedValue, GerbilSchemeValue,
-    decode_gerbil_loop_graph_continuation_native_projection,
+    GERBIL_LOOP_GRAPH_CONTINUATION_ABI_PROJECTION_ABI_ID,
+    GERBIL_LOOP_GRAPH_CONTINUATION_ABI_SYMBOL, GERBIL_LOOP_GRAPH_CONTINUATION_TYPE_ID,
+    GerbilSchemeAbiProjectionRequest, GerbilSchemeAbiProjectionStatus, GerbilSchemeAbiSymbol,
+    GerbilSchemeCAbiId, GerbilSchemeSchemaId, GerbilSchemeTypeId, GerbilSchemeTypeRegistry,
+    GerbilSchemeTypedValue, GerbilSchemeValue,
+    decode_gerbil_loop_graph_continuation_abi_projection,
     decode_gerbil_loop_graph_continuation_projection,
-    gerbil_loop_graph_continuation_native_projection_request,
-    gerbil_loop_graph_continuation_type_manifest, project_gerbil_loop_graph_continuation_action,
-    project_gerbil_loop_graph_continuation_native_action,
+    gerbil_loop_graph_continuation_abi_projection_request,
+    gerbil_loop_graph_continuation_type_manifest,
+    project_gerbil_loop_graph_continuation_abi_action,
+    project_gerbil_loop_graph_continuation_action,
 };
 
 #[test]
@@ -47,7 +48,7 @@ fn gerbil_poo_continuation_projection_drives_graph_loop_next_action() {
 }
 
 #[test]
-fn gerbil_poo_continuation_native_projection_validates_abi_before_action_compile() {
+fn gerbil_poo_continuation_abi_projection_validates_abi_before_action_compile() {
     let registry = continuation_registry();
     let envelope = GerbilSchemeTypedValue::new(
         continuation_type_id(),
@@ -56,13 +57,10 @@ fn gerbil_poo_continuation_native_projection_validates_abi_before_action_compile
     .with_schema_id(continuation_schema_id());
 
     let (receipt, projection) =
-        decode_gerbil_loop_graph_continuation_native_projection(&registry, &envelope)
+        decode_gerbil_loop_graph_continuation_abi_projection(&registry, &envelope)
             .expect("native continuation projection decodes");
 
-    assert_eq!(
-        receipt.status,
-        GerbilSchemeNativeProjectionStatus::Projected
-    );
+    assert_eq!(receipt.status, GerbilSchemeAbiProjectionStatus::Projected);
     assert_eq!(receipt.abi_id, continuation_abi_id());
     assert_eq!(receipt.symbol, continuation_symbol());
     assert_eq!(receipt.type_id, continuation_type_id());
@@ -73,7 +71,7 @@ fn gerbil_poo_continuation_native_projection_validates_abi_before_action_compile
     ));
 
     let (receipt, next_action) =
-        project_gerbil_loop_graph_continuation_native_action(&registry, &envelope)
+        project_gerbil_loop_graph_continuation_abi_action(&registry, &envelope)
             .expect("native continuation projection compiles into controller action");
     assert_eq!(receipt.symbol, continuation_symbol());
     assert!(matches!(
@@ -149,11 +147,11 @@ fn gerbil_poo_continuation_projection_rejects_wrong_schema_before_payload_decode
 }
 
 #[test]
-fn gerbil_poo_continuation_native_projection_request_round_trips_as_protocol_data() {
-    let request = gerbil_loop_graph_continuation_native_projection_request();
+fn gerbil_poo_continuation_abi_projection_request_round_trips_as_protocol_data() {
+    let request = gerbil_loop_graph_continuation_abi_projection_request();
 
     let encoded = serde_json::to_string(&request).expect("encode continuation request");
-    let decoded: GerbilSchemeNativeProjectionRequest =
+    let decoded: GerbilSchemeAbiProjectionRequest =
         serde_json::from_str(&encoded).expect("decode continuation request");
 
     assert_eq!(decoded, request);
@@ -219,10 +217,10 @@ fn continuation_schema_id() -> GerbilSchemeSchemaId {
     GerbilSchemeSchemaId::new(GERBIL_LOOP_GRAPH_CONTINUATION_SCHEMA_ID)
 }
 
-fn continuation_abi_id() -> GerbilSchemeNativeAbiId {
-    GerbilSchemeNativeAbiId::new(GERBIL_LOOP_GRAPH_CONTINUATION_NATIVE_PROJECTION_ABI_ID)
+fn continuation_abi_id() -> GerbilSchemeCAbiId {
+    GerbilSchemeCAbiId::new(GERBIL_LOOP_GRAPH_CONTINUATION_ABI_PROJECTION_ABI_ID)
 }
 
-fn continuation_symbol() -> GerbilSchemeNativeSymbol {
-    GerbilSchemeNativeSymbol::new(GERBIL_LOOP_GRAPH_CONTINUATION_NATIVE_SYMBOL)
+fn continuation_symbol() -> GerbilSchemeAbiSymbol {
+    GerbilSchemeAbiSymbol::new(GERBIL_LOOP_GRAPH_CONTINUATION_ABI_SYMBOL)
 }

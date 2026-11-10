@@ -11,7 +11,8 @@ use serde::{Deserialize, Serialize};
 /// Runtime selector surface that produced a selected policy index.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum ModelRouteSelectionProjectionSource {
-    NativeAbiPolicyIndex,
+    #[serde(rename = "NativeAbiPolicyIndex")]
+    CAbiPolicyIndex,
     SchemeCompiledPolicyIndex,
 }
 

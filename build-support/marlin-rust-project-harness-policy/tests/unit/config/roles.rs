@@ -34,7 +34,7 @@ fn crate_verification_role_classification_tracks_marlin_boundaries() {
     );
     assert_eq!(
         marlin_crate_verification_role_for_project(
-            &root.join("crates/marlin-agent-policy-routing-native"),
+            &root.join("crates/marlin-agent-policy-routing-abi"),
         ),
         MarlinCrateVerificationRole::GerbilRuntime
     );
@@ -60,9 +60,9 @@ fn crate_verification_role_classification_tracks_marlin_boundaries() {
     );
     assert_eq!(
         marlin_crate_verification_role_for_project(
-            &root.join("build-support/marlin-gerbil-native-build"),
+            &root.join("build-support/marlin-gerbil-aot-link"),
         ),
-        MarlinCrateVerificationRole::NativeBuildSupport
+        MarlinCrateVerificationRole::AotLinkSupport
     );
     assert_eq!(
         marlin_crate_verification_role_for_project(

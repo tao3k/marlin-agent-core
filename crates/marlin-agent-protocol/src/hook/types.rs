@@ -385,6 +385,7 @@ pub enum HookSelectionSkipReason {
     Disabled,
     AgentScopeMismatch,
     EventMismatch,
+    PathFilterMismatch,
 }
 
 /// Selection receipt for one hook registration candidate.

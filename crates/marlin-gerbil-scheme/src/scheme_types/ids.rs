@@ -65,9 +65,9 @@ impl GerbilSchemePackageId {
 /// Stable identifier for a native ABI contract emitted by Scheme package metadata.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 #[serde(transparent)]
-pub struct GerbilSchemeNativeAbiId(String);
+pub struct GerbilSchemeCAbiId(String);
 
-impl GerbilSchemeNativeAbiId {
+impl GerbilSchemeCAbiId {
     pub fn new(abi_id: impl Into<String>) -> Self {
         Self(abi_id.into())
     }
@@ -80,9 +80,9 @@ impl GerbilSchemeNativeAbiId {
 /// Stable C symbol name required by a native Scheme package ABI.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 #[serde(transparent)]
-pub struct GerbilSchemeNativeSymbol(String);
+pub struct GerbilSchemeAbiSymbol(String);
 
-impl GerbilSchemeNativeSymbol {
+impl GerbilSchemeAbiSymbol {
     pub fn new(symbol: impl Into<String>) -> Self {
         Self(symbol.into())
     }

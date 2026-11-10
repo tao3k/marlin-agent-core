@@ -19,13 +19,23 @@ use marlin_agent_runtime::{
 };
 use serde::{Deserialize, Serialize};
 
+#[cfg(feature = "deck-actor")]
+use marlin_deck_runtime::{DeckRouteAdmission, DeckRouteAdmissionRejection};
+
 /// Stable chat model-route admission path.
 pub const MODEL_ROUTE_CHAT_PATH: &str = "/api/model-route/chat";
 
 /// Shared state for model-route HTTP adapters.
 #[derive(Clone)]
 pub struct ModelRouteHttpState {
-    resolver: Arc<CompiledModelRouteResolver>,
+    admission: RouteAdmission,
+}
+
+#[derive(Clone)]
+enum RouteAdmission {
+    Rust(Arc<CompiledModelRouteResolver>),
+    #[cfg(feature = "deck-actor")]
+    Deck(DeckRouteAdmission),
 }
 
 impl fmt::Debug for ModelRouteHttpState {
@@ -39,7 +49,15 @@ impl fmt::Debug for ModelRouteHttpState {
 impl ModelRouteHttpState {
     pub fn new(resolver: CompiledModelRouteResolver) -> Self {
         Self {
-            resolver: Arc::new(resolver),
+            admission: RouteAdmission::Rust(Arc::new(resolver)),
+        }
+    }
+
+    /// Serve the same chat route through the resident Scheme Deck actors.
+    #[cfg(feature = "deck-actor")]
+    pub fn with_deck_admission(deck: DeckRouteAdmission) -> Self {
+        Self {
+            admission: RouteAdmission::Deck(deck),
         }
     }
 
@@ -56,7 +74,11 @@ impl ModelRouteHttpState {
     }
 
     pub fn resolver(&self) -> &CompiledModelRouteResolver {
-        &self.resolver
+        match &self.admission {
+            RouteAdmission::Rust(resolver) => resolver,
+            #[cfg(feature = "deck-actor")]
+            RouteAdmission::Deck(deck) => deck.resolver(),
+        }
     }
 }
 
@@ -136,9 +158,17 @@ pub async fn admit_chat_route(
     payload: Result<Json<ChatModelRouteRequest>, JsonRejection>,
 ) -> Result<Json<ModelRouteAdmissionResponse>, ModelRouteHttpError> {
     let Json(payload) = payload.map_err(ModelRouteHttpError::from)?;
-    let response =
-        admit_model_route_with_resolver(state.resolver(), payload.into_admission_request())
-            .map_err(ModelRouteHttpError::from)?;
+    let request = payload.into_admission_request();
+    #[cfg(feature = "deck-actor")]
+    if let RouteAdmission::Deck(deck) = &state.admission {
+        return deck
+            .admit(request, tokio_util::sync::CancellationToken::new())
+            .await
+            .map(Json)
+            .map_err(ModelRouteHttpError::from);
+    }
+
+    let response = admit_model_route_with_resolver(state.resolver(), request)?;
 
     Ok(Json(response))
 }
@@ -183,6 +213,32 @@ impl From<JsonRejection> for ModelRouteHttpError {
             status: error.status(),
             code: "MODEL_ROUTE_INVALID_REQUEST",
             message: error.body_text(),
+        }
+    }
+}
+
+#[cfg(feature = "deck-actor")]
+impl From<DeckRouteAdmissionRejection> for ModelRouteHttpError {
+    fn from(error: DeckRouteAdmissionRejection) -> Self {
+        use DeckRouteAdmissionRejection as Rejection;
+        let (status, code) = match error {
+            Rejection::Backpressure => (StatusCode::SERVICE_UNAVAILABLE, "DECK_ROUTE_BACKPRESSURE"),
+            Rejection::Cancelled => (StatusCode::REQUEST_TIMEOUT, "DECK_ROUTE_CANCELLED"),
+            Rejection::Deadline => (StatusCode::GATEWAY_TIMEOUT, "DECK_ROUTE_DEADLINE"),
+            Rejection::Unavailable => (StatusCode::SERVICE_UNAVAILABLE, "DECK_ROUTE_UNAVAILABLE"),
+            Rejection::NoMatchingRoute => (StatusCode::NOT_FOUND, "MODEL_ROUTE_NOT_FOUND"),
+            Rejection::Scheme(_) | Rejection::InvalidProjection | Rejection::Projection(_) => {
+                return Self {
+                    status: StatusCode::INTERNAL_SERVER_ERROR,
+                    code: "DECK_ROUTE_PROJECTION_FAILED",
+                    message: "Deck route projection failed".into(),
+                };
+            }
+        };
+        Self {
+            status,
+            code,
+            message: error.to_string(),
         }
     }
 }

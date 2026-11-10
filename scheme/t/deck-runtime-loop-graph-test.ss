@@ -3,7 +3,7 @@
 
 (import :clan/poo/object
         "../policy/routing.ss"
-        "../policy/strategy.ss"
+        "../policy/projection/graph/topology.ss"
         :std/test)
 
 ;;; Boundary: Node intent is user-authored Scheme POO.
@@ -78,7 +78,7 @@
     (check (.get compiled package)
            => "marlin-agent-core")
     (check (.get compiled module)
-           => ":marlin-agent-core/policy/projection/loop-graph")
+           => ":marlin-agent-core/policy/projection/graph/topology")
     (check (.get first-node id) => "plan")
     (check (.get first-node executor) => "scheme-policy")
     (check (.get first-node config)
