@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+#
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 """Exposes a Rust crate and the source data used by development policy tests."""
 
 load("//bazel:marlin_rust.bzl", "marlin_rust_crate")

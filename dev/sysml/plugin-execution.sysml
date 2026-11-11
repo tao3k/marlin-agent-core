@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 // Target execution path. Org counterpart: 40.166 Plugin Contract v0, #plugin-request-path.
 package MarlinPluginExecution {
     private import ScalarValues::*;

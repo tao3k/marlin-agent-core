@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 // TUI design and evidence: ../../docs/40-rfcs/40.180-codewhale-inspired-tui.org
 package MarlinTuiArchitecture {
     doc /* The actual package describes source-inspected implementations, not

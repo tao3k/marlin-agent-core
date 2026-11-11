@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+#
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 #+TITLE: 30.60 Gerbil Gates
 #+PROPERTY: ID docs-30-60-gerbil-gates
 #+PROPERTY: KIND runbook

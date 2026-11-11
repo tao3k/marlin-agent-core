@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 //! An activated Module owns its Actor and timer lifetimes inside the shared VM.
 use super::*;
 use std::num::NonZeroU64;

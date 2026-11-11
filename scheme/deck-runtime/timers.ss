@@ -1,3 +1,7 @@
+;;; SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+;;;
+;;; SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 ;;; Module-owned timer observations use Gambit's own timed mailbox wait.
 ;;; Temporal policy deadlines and durable Agenda remain owned by AI Agentic Lab.
 (import (only-in :clan/poo/object .o)

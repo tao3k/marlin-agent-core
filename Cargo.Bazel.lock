@@ -1,5 +1,5 @@
 {
-  "checksum": "3d6d45b82717694d0dfeb5a5d4b669004d3a19afee01edcac26268ad37c94344",
+  "checksum": "39a93eee32e2e41b8f9d10cf478630ec06ee4816b5bdecdee2d9c8a7b1cd809a",
   "crates": {
     "adler2 2.0.1": {
       "name": "adler2",
@@ -15267,8 +15267,11 @@
         },
         "version": "0.1.0"
       },
-      "license": null,
-      "license_ids": [],
+      "license": "Apache-2.0 AND LGPL-2.1-or-later",
+      "license_ids": [
+        "Apache-2.0",
+        "LGPL-2.1"
+      ],
       "license_file": null
     },
     "marlin-agent-core 0.1.0": {
@@ -15332,8 +15335,11 @@
         "edition": "2024",
         "version": "0.1.0"
       },
-      "license": null,
-      "license_ids": [],
+      "license": "Apache-2.0 AND LGPL-2.1-or-later",
+      "license_ids": [
+        "Apache-2.0",
+        "LGPL-2.1"
+      ],
       "license_file": null
     },
     "marlin-agent-environment 0.1.0": {
@@ -15389,8 +15395,11 @@
         },
         "version": "0.1.0"
       },
-      "license": null,
-      "license_ids": [],
+      "license": "Apache-2.0 AND LGPL-2.1-or-later",
+      "license_ids": [
+        "Apache-2.0",
+        "LGPL-2.1"
+      ],
       "license_file": null
     },
     "marlin-agent-graph 0.1.0": {
@@ -15438,8 +15447,11 @@
         "edition": "2024",
         "version": "0.1.0"
       },
-      "license": null,
-      "license_ids": [],
+      "license": "Apache-2.0 AND LGPL-2.1-or-later",
+      "license_ids": [
+        "Apache-2.0",
+        "LGPL-2.1"
+      ],
       "license_file": null
     },
     "marlin-agent-harness 0.1.0": {
@@ -15499,8 +15511,11 @@
         "edition": "2024",
         "version": "0.1.0"
       },
-      "license": null,
-      "license_ids": [],
+      "license": "Apache-2.0 AND LGPL-2.1-or-later",
+      "license_ids": [
+        "Apache-2.0",
+        "LGPL-2.1"
+      ],
       "license_file": null
     },
     "marlin-agent-harness-types 0.1.0": {
@@ -15539,8 +15554,11 @@
         "edition": "2024",
         "version": "0.1.0"
       },
-      "license": null,
-      "license_ids": [],
+      "license": "Apache-2.0 AND LGPL-2.1-or-later",
+      "license_ids": [
+        "Apache-2.0",
+        "LGPL-2.1"
+      ],
       "license_file": null
     },
     "marlin-agent-hooks 0.1.0": {
@@ -15612,8 +15630,11 @@
         "edition": "2024",
         "version": "0.1.0"
       },
-      "license": null,
-      "license_ids": [],
+      "license": "Apache-2.0 AND LGPL-2.1-or-later",
+      "license_ids": [
+        "Apache-2.0",
+        "LGPL-2.1"
+      ],
       "license_file": null
     },
     "marlin-agent-kernel 0.1.0": {
@@ -15673,8 +15694,11 @@
         "edition": "2024",
         "version": "0.1.0"
       },
-      "license": null,
-      "license_ids": [],
+      "license": "Apache-2.0 AND LGPL-2.1-or-later",
+      "license_ids": [
+        "Apache-2.0",
+        "LGPL-2.1"
+      ],
       "license_file": null
     },
     "marlin-agent-policy-routing-abi 0.1.0": {
@@ -15759,8 +15783,11 @@
           "**"
         ]
       },
-      "license": null,
-      "license_ids": [],
+      "license": "Apache-2.0 AND LGPL-2.1-or-later",
+      "license_ids": [
+        "Apache-2.0",
+        "LGPL-2.1"
+      ],
       "license_file": null
     },
     "marlin-agent-protocol 0.1.0": {
@@ -15812,8 +15839,11 @@
         "edition": "2024",
         "version": "0.1.0"
       },
-      "license": null,
-      "license_ids": [],
+      "license": "Apache-2.0 AND LGPL-2.1-or-later",
+      "license_ids": [
+        "Apache-2.0",
+        "LGPL-2.1"
+      ],
       "license_file": null
     },
     "marlin-agent-runtime 0.1.0": {
@@ -15913,8 +15943,11 @@
         "edition": "2024",
         "version": "0.1.0"
       },
-      "license": null,
-      "license_ids": [],
+      "license": "Apache-2.0 AND LGPL-2.1-or-later",
+      "license_ids": [
+        "Apache-2.0",
+        "LGPL-2.1"
+      ],
       "license_file": null
     },
     "marlin-agent-sessions 0.1.0": {
@@ -15966,8 +15999,11 @@
         "edition": "2024",
         "version": "0.1.0"
       },
-      "license": null,
-      "license_ids": [],
+      "license": "Apache-2.0 AND LGPL-2.1-or-later",
+      "license_ids": [
+        "Apache-2.0",
+        "LGPL-2.1"
+      ],
       "license_file": null
     },
     "marlin-agent-storage 0.1.0": {
@@ -16043,8 +16079,11 @@
         "edition": "2024",
         "version": "0.1.0"
       },
-      "license": null,
-      "license_ids": [],
+      "license": "Apache-2.0 AND LGPL-2.1-or-later",
+      "license_ids": [
+        "Apache-2.0",
+        "LGPL-2.1"
+      ],
       "license_file": null
     },
     "marlin-agent-stream 0.1.0": {
@@ -16116,8 +16155,11 @@
         "edition": "2024",
         "version": "0.1.0"
       },
-      "license": null,
-      "license_ids": [],
+      "license": "Apache-2.0 AND LGPL-2.1-or-later",
+      "license_ids": [
+        "Apache-2.0",
+        "LGPL-2.1"
+      ],
       "license_file": null
     },
     "marlin-agent-test-support 0.1.0": {
@@ -16182,8 +16224,11 @@
         },
         "version": "0.1.0"
       },
-      "license": null,
-      "license_ids": [],
+      "license": "Apache-2.0 AND LGPL-2.1-or-later",
+      "license_ids": [
+        "Apache-2.0",
+        "LGPL-2.1"
+      ],
       "license_file": null
     },
     "marlin-agent-tui 0.1.0": {
@@ -16266,8 +16311,11 @@
         "edition": "2024",
         "version": "0.1.0"
       },
-      "license": null,
-      "license_ids": [],
+      "license": "Apache-2.0 AND LGPL-2.1-or-later",
+      "license_ids": [
+        "Apache-2.0",
+        "LGPL-2.1"
+      ],
       "license_file": null
     },
     "marlin-bazel-scenario-resolution 0.0.0": {
@@ -16297,8 +16345,11 @@
         "edition": "2024",
         "version": "0.0.0"
       },
-      "license": null,
-      "license_ids": [],
+      "license": "Apache-2.0 AND LGPL-2.1-or-later",
+      "license_ids": [
+        "Apache-2.0",
+        "LGPL-2.1"
+      ],
       "license_file": null
     },
     "marlin-context-org-model 0.1.0": {
@@ -16337,8 +16388,11 @@
         "edition": "2024",
         "version": "0.1.0"
       },
-      "license": null,
-      "license_ids": [],
+      "license": "Apache-2.0 AND LGPL-2.1-or-later",
+      "license_ids": [
+        "Apache-2.0",
+        "LGPL-2.1"
+      ],
       "license_file": null
     },
     "marlin-deck-runtime 0.1.0": {
@@ -16410,8 +16464,11 @@
           "**"
         ]
       },
-      "license": null,
-      "license_ids": [],
+      "license": "Apache-2.0 AND LGPL-2.1-or-later",
+      "license_ids": [
+        "Apache-2.0",
+        "LGPL-2.1"
+      ],
       "license_file": null
     },
     "marlin-gerbil-aot-link 0.1.0": {
@@ -16462,8 +16519,11 @@
         "edition": "2024",
         "version": "0.1.0"
       },
-      "license": null,
-      "license_ids": [],
+      "license": "Apache-2.0 AND LGPL-2.1-or-later",
+      "license_ids": [
+        "Apache-2.0",
+        "LGPL-2.1"
+      ],
       "license_file": null
     },
     "marlin-gerbil-ir 0.1.0": {
@@ -16502,8 +16562,11 @@
         "edition": "2024",
         "version": "0.1.0"
       },
-      "license": null,
-      "license_ids": [],
+      "license": "Apache-2.0 AND LGPL-2.1-or-later",
+      "license_ids": [
+        "Apache-2.0",
+        "LGPL-2.1"
+      ],
       "license_file": null
     },
     "marlin-gerbil-scheme 0.1.0": {
@@ -16587,9 +16650,10 @@
         "edition": "2024",
         "version": "0.1.0"
       },
-      "license": "Apache-2.0",
+      "license": "Apache-2.0 AND LGPL-2.1-or-later",
       "license_ids": [
-        "Apache-2.0"
+        "Apache-2.0",
+        "LGPL-2.1"
       ],
       "license_file": null
     },
@@ -16642,8 +16706,11 @@
         "edition": "2024",
         "version": "0.1.0"
       },
-      "license": null,
-      "license_ids": [],
+      "license": "Apache-2.0 AND LGPL-2.1-or-later",
+      "license_ids": [
+        "Apache-2.0",
+        "LGPL-2.1"
+      ],
       "license_file": null
     },
     "marlin-rust-project-harness-policy 0.1.0": {
@@ -16698,8 +16765,11 @@
         "edition": "2024",
         "version": "0.1.0"
       },
-      "license": null,
-      "license_ids": [],
+      "license": "Apache-2.0 AND LGPL-2.1-or-later",
+      "license_ids": [
+        "Apache-2.0",
+        "LGPL-2.1"
+      ],
       "license_file": null
     },
     "marlin-workspace-protocol 0.1.0": {
@@ -16751,8 +16821,11 @@
         },
         "version": "0.1.0"
       },
-      "license": null,
-      "license_ids": [],
+      "license": "Apache-2.0 AND LGPL-2.1-or-later",
+      "license_ids": [
+        "Apache-2.0",
+        "LGPL-2.1"
+      ],
       "license_file": null
     },
     "marlin-workspace-query 0.1.0": {
@@ -16791,8 +16864,11 @@
         "edition": "2024",
         "version": "0.1.0"
       },
-      "license": null,
-      "license_ids": [],
+      "license": "Apache-2.0 AND LGPL-2.1-or-later",
+      "license_ids": [
+        "Apache-2.0",
+        "LGPL-2.1"
+      ],
       "license_file": null
     },
     "marlin-workspace-status 0.1.0": {
@@ -16840,8 +16916,11 @@
         "edition": "2024",
         "version": "0.1.0"
       },
-      "license": null,
-      "license_ids": [],
+      "license": "Apache-2.0 AND LGPL-2.1-or-later",
+      "license_ids": [
+        "Apache-2.0",
+        "LGPL-2.1"
+      ],
       "license_file": null
     },
     "marlin-workspace-view 0.1.0": {
@@ -16889,8 +16968,11 @@
         "edition": "2024",
         "version": "0.1.0"
       },
-      "license": null,
-      "license_ids": [],
+      "license": "Apache-2.0 AND LGPL-2.1-or-later",
+      "license_ids": [
+        "Apache-2.0",
+        "LGPL-2.1"
+      ],
       "license_file": null
     },
     "match-lookup 0.1.3": {

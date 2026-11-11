@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 use super::support::{fake_select_edges, routing_request};
 use marlin_agent_graph::{AgentCoordinationEvidenceKind, AgentPolicyRoutingDecision};
 use marlin_gerbil_scheme::{

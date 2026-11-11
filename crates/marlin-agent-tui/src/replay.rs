@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 //! Bounded TUI projections of validated conversation replay.
 
 use std::{collections::VecDeque, error::Error, fmt, mem::size_of};

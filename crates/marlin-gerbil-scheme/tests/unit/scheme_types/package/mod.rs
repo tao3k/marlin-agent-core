@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 mod abi_projection;
 mod dynamic_graph_policy;
 mod dynamic_runtime_bridge;

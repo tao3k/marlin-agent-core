@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 //! Agent-system harness for scenario execution, replay fixtures, and evidence assertions.
 //!
 //! This crate belongs to the agent harness boundary. It validates agent loop

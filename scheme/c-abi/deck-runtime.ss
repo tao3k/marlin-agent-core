@@ -1,3 +1,7 @@
+;;; SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+;;;
+;;; SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 ;;; Rooted typed entry points for the single-VM Deck Actor runtime.
 
 ;; Root the two selected runtime roles in the linked compiler graph. Yuanxu

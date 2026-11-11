@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+#
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 #+title: Marlin Agent Harness
 ~marlin-agent-harness~ is the agent AI harness crate. Its job is to drive agent-system scenarios through controlled runtime boundaries, capture typed evidence, and evaluate whether the observed agent behavior satisfies a scenario contract.
 This is a different boundary from ordinary Rust tests, generic test support, and the project/package quality harness.

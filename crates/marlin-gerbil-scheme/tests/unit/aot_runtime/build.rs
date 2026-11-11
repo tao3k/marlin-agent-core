@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 use super::support::{write_agent_policy_routing_abi_aot_scms, write_empty_file, write_executable};
 use marlin_agent_protocol::GraphCAbiReadinessStatus;
 use marlin_gerbil_scheme::{

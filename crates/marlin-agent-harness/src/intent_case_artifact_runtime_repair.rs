@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 //! Runtime repair receipt rendering for intent-case verifier artifacts.
 
 use marlin_agent_harness_types::RuntimeRepairCaseReceipt;

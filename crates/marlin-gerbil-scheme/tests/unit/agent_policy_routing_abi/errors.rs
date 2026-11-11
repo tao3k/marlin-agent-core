@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 use super::support::{
     fake_initialize_failure, fake_select_edges, fake_select_invalid_utf8,
     fake_select_output_abi_mismatch, fake_select_runtime_status, routing_request,

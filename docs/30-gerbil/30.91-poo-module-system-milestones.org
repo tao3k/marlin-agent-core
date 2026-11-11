@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+#
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 #+NOTE: CMD routing and Core Debug CLI references in this historical document are retired. Current execution ownership is defined by [[file:../40-rfcs/40.166-plugin-contract.org::#single-vm-actor-runtime][Deck Runtime Context admission]].
 
 * 30.91 POO Module System Milestones

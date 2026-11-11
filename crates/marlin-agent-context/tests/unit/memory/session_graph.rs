@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 use marlin_agent_context::org::{
     MemoryOrgWorkspace, SESSION_FACT_AGENT_ID_PROPERTY, SESSION_FACT_CONTEXT_PACK_ID_PROPERTY,
     SESSION_FACT_CONTRACT_VALIDATED_PROPERTY, SESSION_FACT_FORKED_FROM_CONTENT_ID_PROPERTY,

@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 //! Agent-harness typed contracts shared by agent harness and test-support crates.
 //!
 //! These DTOs describe evidence observed while testing this project's agent

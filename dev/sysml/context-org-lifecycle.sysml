@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 // Context-owned Org design: ../../docs/40-rfcs/40.181-context-org-ownership.org
 package MarlinContextOrgLifecycle {
     doc /* Target only. No transition in this model asserts that the existing

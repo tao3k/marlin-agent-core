@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+#
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 load("//bazel:marlin_crates.bzl", "all_crate_deps", "crate_edition")
 load("//bazel:marlin_rust.bzl", "marlin_rust_binary", "marlin_rust_crate", "marlin_rust_scenario")
 

@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 #[test]
 fn gerbil_scheme_does_not_depend_on_runtime_or_llm_crates() {
     let manifest: toml::Value =

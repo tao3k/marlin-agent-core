@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 //! Thin Unix descriptor ownership for Gambit's native port wait. No scheduler.
 use std::{
     io::{self, PipeReader, PipeWriter, Write},

@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 use marlin_agent_context::org::{
     CONTENT_NODE_AGENT_ID_PROPERTY, CONTENT_NODE_BODY_REF_PROPERTY,
     CONTENT_NODE_COMPRESSION_STATE_PROPERTY, CONTENT_NODE_CONTENT_ID_PROPERTY,

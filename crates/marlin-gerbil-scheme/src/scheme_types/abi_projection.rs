@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 //! Native ABI projection receipts for Gerbil-built Scheme typed values.
 
 use serde::{Deserialize, Serialize, de::DeserializeOwned};

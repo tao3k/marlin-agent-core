@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 // Structural model for Marlin Plugin Contract v0.
 // Rationale and scope: ../../docs/40-rfcs/40.166-plugin-contract.org::#plugin-model
 package MarlinPluginEngine {

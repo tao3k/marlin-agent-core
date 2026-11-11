@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 use marlin_agent_kernel::{
     GraphLoopStrategy, GraphPolicyProposal, GraphPolicyProposalStatus, LoopGraph, LoopNodeSpec,
     compile_graph_policy_proposal_with_c_abi_readiness, compile_static_graph_policy_proposal,

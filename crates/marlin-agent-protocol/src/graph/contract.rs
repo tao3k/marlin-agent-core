@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 //! Core graph-loop request, receipt, snapshot, and identifier contracts.
 
 use super::c_abi::{GraphCAbiRequirement, validate_graph_c_abi_requirement};

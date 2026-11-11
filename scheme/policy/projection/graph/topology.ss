@@ -1,3 +1,7 @@
+;;; SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+;;;
+;;; SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 ;;; -*- Gerbil -*-
 ;;; Boundary: Module owns Scheme POO builders for Rust-validated LoopGraph IR.
 ;;; Executors are opaque runtime catalog handles here. Scheme can compose them

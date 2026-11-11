@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+#
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 #+title: Marlin Agent CORE
 
 [[file:project.sysml][Project SysML]] · [[file:dev/sysml/README.org][Architecture model map]]
@@ -155,5 +159,6 @@ Repository-specific agent and protocol-evolution rules live in [[file:AGENTS.md]
 Marlin's original work is licensed under =Apache-2.0 AND LGPL-2.1-or-later=,
 matching AI Agentic Lab. Both licenses apply; =AND= is intentional.
 See [[file:LICENSE][LICENSE]] and the full texts in [[file:LICENSES/][LICENSES]].
-[[file:REUSE.toml][REUSE.toml]] records file-level licensing and preserves the existing MIT
-contract collection and Ratatui notices. Run =reuse lint= to check coverage.
+Every source file declares this expression in its SPDX header. Files whose
+formats cannot carry comments use adjacent =.license= files. Ratatui attribution
+remains in its third-party notices. Run =reuse lint= to check coverage.

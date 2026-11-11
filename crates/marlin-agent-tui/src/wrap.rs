@@ -1,3 +1,9 @@
+// SPDX-FileCopyrightText: 2016-2022 Florian Dehau
+// SPDX-FileCopyrightText: 2023-2025 The Ratatui Developers
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 //! Streaming terminal row layout, independent of the terminal renderer.
 //!
 //! The word-boundary and whitespace rules are adapted from Ratatui Widgets

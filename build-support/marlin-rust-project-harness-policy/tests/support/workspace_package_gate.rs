@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 //! Runs the Rust project Harness once for every Cargo workspace package.
 //!
 //! This is the explicit, addressable replacement for package-local policy-only

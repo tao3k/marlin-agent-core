@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 //! Typed `scenario_benchmark` receipts shared by crate and workspace gates.
 
 use std::path::PathBuf;

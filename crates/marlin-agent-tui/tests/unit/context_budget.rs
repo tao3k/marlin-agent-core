@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 use std::mem::size_of;
 
 use marlin_agent_protocol::{ModelGatewayMessage, assistant_gateway_message, user_gateway_message};

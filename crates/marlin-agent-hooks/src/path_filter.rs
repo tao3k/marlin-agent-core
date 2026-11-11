@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 //! Compile glob patterns once at registration. Dispatch only matches typed paths.
 
 use std::path::{Component, Path, PathBuf};

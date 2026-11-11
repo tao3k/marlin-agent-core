@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 use marlin_agent_context::org::{
     AGENT_GRAPH_CAPABILITIES_PROPERTY, AGENT_GRAPH_CONTRACT_VALIDATED_PROPERTY,
     AGENT_GRAPH_EDGE_CONDITION_PROPERTY, AGENT_GRAPH_EDGE_FROM_PROPERTY,

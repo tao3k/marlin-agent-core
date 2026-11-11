@@ -1,3 +1,7 @@
+;;; SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+;;;
+;;; SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 ;;; Identity-owned Gerbil Actors with reusable mailboxes and independent replies.
 
 (import (only-in :clan/poo/object .o)
