@@ -28,7 +28,7 @@ Lab Org projection or a Session lifecycle. A digest of an admitted scope is not
 source authentication, disclosure authorization, a durable commit, or proof of
 current policy.
 
-The pinned Lab revision =100db0812023ec028805df36d27c9a6ddcae835c= was
+The pinned Lab revision =75b04e07c6d5a2ff3fa73f2f47689a5947cd08d0= was
 inspected directly in the upstream repository. Its Context module provides
 Org projection and replay with explicit scope, restrictions, source and result
 bounds. The projection selects open Org headlines under bounded row and byte
@@ -44,9 +44,9 @@ all turns or that the current native bridge exposes these operations. Context
 produces an independent Session input proposal, which the host must resolve
 before publication; Session does not parse Org. Native ABI readiness and the
 exact dependency version must be checked before invoking these capabilities.
-See [[https://github.com/tao3k/agentic-ai-lab/blob/100db0812023ec028805df36d27c9a6ddcae835c/modules/ai-agentic-context/funs-projection.ss][pinned projection]],
-[[https://github.com/tao3k/agentic-ai-lab/blob/100db0812023ec028805df36d27c9a6ddcae835c/modules/ai-agentic-context/session-host.ss][session host]], and
-[[https://github.com/tao3k/agentic-ai-lab/blob/100db0812023ec028805df36d27c9a6ddcae835c/modules/ai-agentic-context/durable-owner.ss][durable adapter]].
+See [[https://github.com/tao3k/agentic-ai-lab/blob/75b04e07c6d5a2ff3fa73f2f47689a5947cd08d0/modules/ai-agentic-context/funs-projection.ss][pinned projection]],
+[[https://github.com/tao3k/agentic-ai-lab/blob/75b04e07c6d5a2ff3fa73f2f47689a5947cd08d0/modules/ai-agentic-context/session-host.ss][session host]], and
+[[https://github.com/tao3k/agentic-ai-lab/blob/75b04e07c6d5a2ff3fa73f2f47689a5947cd08d0/modules/ai-agentic-context/durable-owner.ss][durable adapter]].
 
 * Rust dependency direction
 
@@ -107,7 +107,7 @@ package-level dependency cycle.
 
 ** Upstream revision alignment
 
-Orgize PR #18 head =1099148c5ab8ca8f3d97c0ab29314e78cc4e865a=
+Orgize PR #18 head =7a54cc75de8cf9a9986be70bac38be14010141bd=
 keeps package version =0.10.0-alpha.10= but replaces the former Rust syntax
 traversal surface with Scheme-owned parsing and typed projections. Marlin's
 Cargo pin now names that revision. Its FFI bundle is revision- and
@@ -119,17 +119,19 @@ that Marlin's application uses the existing Deck VM or passes end-to-end.
 At the inspected Lab PR #63 head =558e9bd5b8acf1ec644c74c9621007a3695de636=,
 Lab's Scheme package still selects Orgize =8b0959a85d21207e377ee99647df0750abadd9f1=.
 The Marlin Scheme package and its CI tooling now pin [[https://github.com/tao3k/agentic-ai-lab/pull/34][Lab ASCENT PR #34]]
-revision =100db0812023ec028805df36d27c9a6ddcae835c=. Lab's Scheme manifest
+revision =75b04e07c6d5a2ff3fa73f2f47689a5947cd08d0=. Lab's Scheme manifest
 does not declare a direct Scheme bridge dependency. Its Bazel build still supplies
-the bridge needed by the current Orgize build. Orgize's own Scheme package now
-declares that dependency at its exact bridge revision; Lab's explicit Bazel
-producer wiring remains to be migrated to an Orgize-owned build closure. An
-isolated Orgize dependency install initially failed on macOS with an unresolved
+the bridge needed by the current Orgize build. Orgize's dependency check forbids
+declaring that bridge in its Scheme package manifest; an earlier change that did
+so failed Linux CI and was reverted. Lab's explicit Bazel producer wiring remains
+to be migrated to an appropriately owned build closure. At the reverted
+=1099148c= revision, an isolated dependency install initially failed on macOS with an unresolved
 =_memset= symbol; a subsequent retry failed to find OpenSSL via =pkg-config=.
 With the existing Bazel Gerbil linker wrapper and explicit Homebrew OpenSSL,
 SQLite and zlib paths, =gxpkg deps --install= returned zero and listed the
-expected pinned dependencies. That retry reused partial build outputs; it does
-not qualify a fresh install, Orgize's own build, or the integrated application.
+expected pinned dependencies. That retry reused partial build outputs and the
+reverted manifest; it does not qualify the corrected revision, a fresh install,
+Orgize's own build, or the integrated application.
 The exact revisions remain subject to full Lab and downstream qualification.
 The current legacy Rust workspace loader uses removed
 =syntax_ast= and traversal APIs and does not compile against the new Orgize.

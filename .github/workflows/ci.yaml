@@ -142,7 +142,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           repository: tao3k/agentic-ai-lab
-          ref: 100db0812023ec028805df36d27c9a6ddcae835c
+          ref: 75b04e07c6d5a2ff3fa73f2f47689a5947cd08d0
           path: .ci/agentic-ai-lab
           persist-credentials: false
 

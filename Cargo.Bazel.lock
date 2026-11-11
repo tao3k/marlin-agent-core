@@ -1,5 +1,5 @@
 {
-  "checksum": "53ea21408cbc68b903f5b49ad5cfe6874ee1f5f830c300d6f267a82cc21db07f",
+  "checksum": "3d6d45b82717694d0dfeb5a5d4b669004d3a19afee01edcac26268ad37c94344",
   "crates": {
     "adler2 2.0.1": {
       "name": "adler2",
@@ -20362,7 +20362,7 @@
         "Git": {
           "remote": "https://github.com/tao3k/orgize",
           "commitish": {
-            "Rev": "1099148c5ab8ca8f3d97c0ab29314e78cc4e865a"
+            "Rev": "7a54cc75de8cf9a9986be70bac38be14010141bd"
           }
         }
       },
@@ -20497,7 +20497,7 @@
         "Git": {
           "remote": "https://github.com/tao3k/orgize",
           "commitish": {
-            "Rev": "1099148c5ab8ca8f3d97c0ab29314e78cc4e865a"
+            "Rev": "7a54cc75de8cf9a9986be70bac38be14010141bd"
           },
           "strip_prefix": "build-support"
         }

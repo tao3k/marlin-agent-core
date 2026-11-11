@@ -56,9 +56,9 @@ package MarlinContextOrgLifecycle {
                    it is not the source or lifecycle authority. */
         }
         part <'MAR-CONTEXT-P07'> orgBuildClosure {
-            doc /* Orgize declares the Scheme bridge it imports. Lab's Scheme
-                   package does not declare that bridge directly. Lab's current
-                   Bazel producer still wires the bridge for Orgize; migration
+            doc /* Orgize and Lab do not declare the Scheme bridge in their
+                   Scheme package manifests. Lab's current Bazel producer
+                   still wires the bridge for Orgize; migration
                    of that build closure to Orgize remains open. */
         }
         dependency projectionReadsSource from labProjection to sourceOwner;
