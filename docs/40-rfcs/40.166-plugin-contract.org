@@ -2467,3 +2467,82 @@ checks, ten build-support tests, three linked selector tests and eleven Deck
 tests pass. The read-only diagnostic remains separate from production latency;
 OpenSysML strict validation/self-check remains 522 elements, 4,993 checks and
 zero violations. The recorded latency objective is still unmet.
+
+
+*** Qualification cut: Lab 100db and Scheme Rust 0d92
+:PROPERTIES:
+:CUSTOM_ID: context-qualification-lab100db
+:END:
+
+The isolated standard dependency install for Lab
+=100db0812023ec028805df36d27c9a6ddcae835c=, Orgize
+=1099148c5ab8ca8f3d97c0ab29314e78cc4e865a= and Scheme Rust
+=0d92f7bee8c23b373ccd116be6f17701c4c4aac6= exits naturally with status 0.
+It uses Lab's existing dependency preparation and =gxpkg deps --install=,
+with the maintained Gerbil Bazel compiler/linker wrapper. The wrapper hashes
+are retained with the receipts. This is a separate toolchain/dependency cut;
+newer PR dependency corrections are not qualified by it.
+
+Eleven Deck checks pass, including the linked VM Context/Module/timer and
+retirement path. All four original production cohorts keep 4096 timed requests,
+64 warmups, 64-request waves, four Tokio workers and one Scheme processor.
+Each completes 4160 correct admissions through one reused, subsequently joined
+Actor. Transfer capacity remains independent of Actor population.
+
+| Cohort | Transfer capacity | Requests/s | p99 ms | p999 ms | Maximum ms | Over 20 ms |
+|--------+-------------------+------------+--------+---------+------------+------------|
+| A1 | 1 | 3855.6 | 86.3112 | 100.0077 | 100.2115 | 292 |
+| B1 | 64 | 6263.5 | 59.7944 | 59.8890 | 59.9391 | 154 |
+| B2 | 64 | 5639.0 | 74.4285 | 74.6577 | 74.7478 | 173 |
+| A2 | 1 | 4931.2 | 59.1048 | 61.7084 | 62.0315 | 159 |
+
+The complete cohort fails the 20 ms objective. No performance improvement is
+admitted. The independent component diagnostic measures the following totals
+for 4096 rows; GC CPU belongs to the same measured phase, not another run.
+
+| Phase | Wall ms | CPU ms | Included GC CPU ms | Collections |
+|-------+---------+--------+--------------------+-------------|
+| Decode | 2.132 | 2.012 | 0 | 0 |
+| Lab shape validation | 262.112 | 251.594 | 75.704 | 1 |
+| Public Lab admission | 764.424 | 613.677 | 163.351 | 2 |
+| Checked admission | 660.222 | 637.640 | 188.176 | 2 |
+| Lazy digest forcing | 137.679 | 132.526 | 101.124 | 1 |
+| Encode | 4.395 | 4.323 | 0 | 0 |
+| Full Scheme pipeline | 632.839 | 590.770 | 116.815 | 2 |
+| Actor pipeline | 722.891 | 630.545 | 150.869 | 2 |
+
+These independently prepared phases retain simultaneous inputs/results; their
+means cannot be added to explain production p99. The typed statistics export,
+statistics collection and result copying average 1.457 microseconds over
+10,000 calls with no GC. This is not bare C ABI transition time. Rust input
+projection totals 25.174 ms; result projection totals 0.285 ms for 4096 rows.
+The 131072-byte result buffer retains SHA-256
+=a68e0a6a01f972575b88a31059d878df582c428a26ef17dd41492b7de745fdf9=.
+Signed VM accounting differences remain explicitly unqualified as physical
+allocation. The earlier constructor census is separate allocation evidence;
+its byte totals are not silently relabeled as this new cut's census.
+
+The read-only retention probe still observes 955 contexts, 524 Module contexts
+and 343366 bindings. After closing an empty Module, live memory is 218922312
+bytes, with zero business messages and zero business Actors. Compiler authority
+remains intact. No global context table, initializer promise or import/export
+edge is cleared to make the measurement smaller.
+
+A common-owner compiled-role experiment uses Gerbil's existing binding resolver,
+module loader and global value lookup. A compiled procedure-identity control
+adds no registry entry (478 before and after). The original Build/Role suite
+passes after source-location resolution is preserved; earlier failed trials
+remain recorded. This does not establish a saving in Marlin: its first Module
+publication still reaches the source reader. No dependency pin or production
+factory wiring is changed on the strength of that control.
+
+A separate digest-port control compares the existing Lab digest with Gambit's
+standard byte output port: 74 admitted inputs agree only with explicit UTF-8
+and LF settings. The default encoding counterexample is retained. No digest
+implementation or serialization contract is changed. A shared read-issuer
+registry with strong values is also rejected: paired Gambit marks those values
+independently of weak keys, and the native cycle control remains reachable.
+
+Raw installation, component, retention and A/B/B/A records are retained under
+=target/context-runtime-research/current-chain-{gate,runtime}/=. Owner-level
+experiments remain separate from production acceptance and from TUI changes.

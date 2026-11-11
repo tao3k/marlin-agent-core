@@ -234,7 +234,11 @@ package MarlinSingleVmRuntime {
                constructor counters require exact source sites, zero counter
                errors, matching result bytes and one VM/processor admission.
                Instrumented times do not qualify production latency. A signed
-               process-statistics delta is not physical allocation bytes. */
+               process-statistics delta is not physical allocation bytes.
+               Decompose validation, digest, typed projection and boundary work
+               using same-phase CPU and GC counters. A statistics-export probe
+               includes collection and copying; it is not bare ABI transition
+               cost. Independent component means cannot qualify business p99. */
     }
     requirement <'MAR-VM-R12'> preservePublicationAuthority {
         doc /* Any compiler-state lifetime optimization belongs to the existing
