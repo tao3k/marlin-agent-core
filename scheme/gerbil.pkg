@@ -1,3 +1,3 @@
 (package: marlin-agent-core
  prelude: :tao3k/yuanxu/prelude
- depend: ("github.com/tao3k/agentic-ai-lab@dfc9f4d7a6b144c78981d25cf09ace3fba6cf18a"))
+ depend: ("github.com/tao3k/agentic-ai-lab@4dad0dc2c2b41eabc7e978e416320038a3fb6cee"))
