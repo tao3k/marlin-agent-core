@@ -8,6 +8,8 @@ mod metadata;
 #[cfg(feature = "actor-runtime")]
 mod runtime;
 
+#[cfg(feature = "actor-runtime")]
+pub use metadata::DeckRuntimeMetadataError;
 pub use metadata::{DeckRuntimeMetadata, DeckRuntimeModuleId};
 #[cfg(feature = "actor-runtime")]
 pub use runtime::{

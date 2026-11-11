@@ -8,6 +8,7 @@ use super::{
     DeckMailboxMetrics, DeckModuleInstanceId, DeckModuleRetirementReceipt, DeckRuntimeRejection,
     DeckTimerId, DeckTimerReceipt, SchemeVmError,
 };
+use crate::{DeckRuntimeMetadata, DeckRuntimeStartupError};
 use gerbil_scheme::{
     CollectionKind, GerbilRuntime, LinkedObjectExport, NumericBuffer, RootedSchemeObject,
     SchemeScalar,
@@ -67,7 +68,7 @@ impl<'vm> DeckVm<'vm> {
     pub(super) fn open(
         runtime: &'vm GerbilRuntime,
         wake_fds: [u64; 2],
-    ) -> Result<Self, SchemeVmError> {
+    ) -> Result<(Self, DeckRuntimeMetadata), DeckRuntimeStartupError> {
         // SAFETY: these exports belong to the initialized, build-owned AOT graph.
         let (open, submit, receive, close) = unsafe {
             (
@@ -83,29 +84,26 @@ impl<'vm> DeckVm<'vm> {
             #[cfg(any(debug_assertions, feature = "context-profiling"))]
             emit_scheme_diagnostic(runtime, &control);
         })?;
-        // The C ABI uses a Boolean acknowledgement, never a serialized receipt.
-        if result.as_ref().scalar()? != SchemeScalar::Boolean(true) {
-            return Err(SchemeVmError::Status {
-                operation: "Deck lifecycle acknowledgement",
-                code: -1,
-            });
-        }
-        Ok(Self {
-            runtime,
-            submit,
-            receive,
-            close,
-            // SAFETY: these exports are in the same build-owned linked graph.
-            activate: unsafe { runtime.bind_object_export(marlin_deck_runtime_activate)? },
-            retire_module: unsafe { runtime.bind_object_export(marlin_deck_runtime_retire)? },
-            arm: unsafe { runtime.bind_object_export(marlin_deck_runtime_arm)? },
-            control,
-            closed: false,
-            ids: NumericBuffer::default(),
-            final_metrics: DeckMailboxMetrics::default(),
-            #[cfg(feature = "context-profiling")]
-            profile: super::profile::VmStages::default(),
-        })
+        let metadata = DeckRuntimeMetadata::from_scheme_projection(result)?;
+        Ok((
+            Self {
+                runtime,
+                submit,
+                receive,
+                close,
+                // SAFETY: these exports are in the same build-owned linked graph.
+                activate: unsafe { runtime.bind_object_export(marlin_deck_runtime_activate)? },
+                retire_module: unsafe { runtime.bind_object_export(marlin_deck_runtime_retire)? },
+                arm: unsafe { runtime.bind_object_export(marlin_deck_runtime_arm)? },
+                control,
+                closed: false,
+                ids: NumericBuffer::default(),
+                final_metrics: DeckMailboxMetrics::default(),
+                #[cfg(feature = "context-profiling")]
+                profile: super::profile::VmStages::default(),
+            },
+            metadata,
+        ))
     }
 
     pub(super) fn submit(

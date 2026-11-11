@@ -18,7 +18,10 @@ package MarlinSingleVmRuntime {
         part <'MAR-VM-A03'> owner {
             doc /* One fixed OS thread initializes the linked Gerbil VM with
                    exactly one active processor. Only this owner constructs,
-                   calls, projects and releases Scheme roots. */
+                   calls, projects and releases Scheme roots. Scheme startup
+                   returns its module ID and version through rooted string and
+                   u64vector values. Rust validates that receipt before ready
+                   publication and shares only the owned metadata snapshot. */
         }
         part <'MAR-VM-A04'> contextActors {
             doc /* Scheme creates mailbox Actors on first use of a logical
@@ -179,7 +182,10 @@ package MarlinSingleVmRuntime {
         doc /* Check the production mailbox identity and declared procedure
                layout in the SDK compiler manifest and compare actual selected
                factory procedures with linked constructors at startup. Reject
-               substitutions. Manifest presence alone cannot qualify the reached
+               substitutions and malformed startup metadata. Scheme owns the
+               published version; Rust maps it without a version table. The old
+               Boolean startup acknowledgement is not accepted. Manifest
+               presence alone cannot qualify the reached
                production path; constructor-site evidence must identify reached
                canonical units. A separate benchmark is insufficient. */
     }

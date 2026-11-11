@@ -127,6 +127,10 @@ async fn a_full_channel_rejects_without_waiting_or_entering_scheme() {
         .unwrap_or_else(|_| panic!("empty queue"));
     let (_finished, stopped) = watch::channel(None);
     let deck = DeckRuntime {
+        metadata: Arc::new(crate::DeckRuntimeMetadata {
+            module_id: crate::DeckRuntimeModuleId("queue-fixture".into()),
+            version: 0,
+        }),
         queue,
         wake: Arc::new(wake::Wake::new().unwrap()),
         default_module: ModuleState::new(DeckModuleInstanceId(std::num::NonZeroU64::MIN)),

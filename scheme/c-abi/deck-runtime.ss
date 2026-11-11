@@ -20,15 +20,21 @@
 
 (def (open wake-fds)
   (when deck (error "Deck runtime is already open"))
+  (def runtime (.get marlin-agent-core.init.exports Marlin deck-runtime))
+  (def metadata (.get runtime metadata))
+  (def module-id (.get metadata module-id))
+  (when (zero? (string-length module-id)) (error "Deck runtime module ID is empty"))
+  (def receipt (vector (string-copy module-id)
+                       (u64vector (.get metadata version))))
   (set! context-bridge (.get marlin-agent-core.init.exports Marlin context bridge))
-  (set! deck ((.get marlin-agent-core.init.exports Marlin deck-runtime open)
+  (set! deck ((.get runtime open)
               (.get marlin-agent-core.init.exports Marlin context admit-scope)
               (.get context-bridge encode-scopes)))
   ;; The actual constructed runtime must use the linked library procedures.
   ;; Compiler manifests alone cannot certify a reader's private interpreted copy.
   (check-deck-kernel! deck)
   ((.get deck attach-ingress) (u64vector-ref wake-fds 0) (u64vector-ref wake-fds 1))
-  #t)
+  receipt)
 
 (def (submit envelope)
   (def module-ids (vector-ref envelope 0))

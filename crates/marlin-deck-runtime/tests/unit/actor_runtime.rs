@@ -23,6 +23,9 @@ async fn context_sessions_cross_real_single_vm_actors_and_retire() {
     ));
     let config = DeckRuntimeConfig::new(128.try_into().unwrap());
     let deck = DeckRuntime::start(config).expect("open real linked Scheme VM");
+    assert_eq!(deck.metadata().module_id.as_str(), "deck-runtime");
+    assert!(deck.metadata().version > 0);
+    assert_eq!(deck.clone().metadata(), deck.metadata());
     let scopes = [scope("source-a"), scope("source-b")];
     let budget = Duration::from_secs(60);
     let mut expected = Vec::new();

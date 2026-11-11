@@ -13,6 +13,10 @@ Context identities and reuses them across turns. The host runtime schedules Rust
 Tokio workers. Scheme publishes the Deck Module's metadata and
 version. The C ABI roots the Deck and Context runtime roles in the linked
 compiler graph; Yuanxu retains their checked publication and Feature selection.
+The startup receipt transfers the published module ID and version through the
+SDK's rooted string and u64vector APIs. =metadata()= exposes the resulting Rust
+snapshot after the owner is ready. Rust carries no table of Scheme versions;
+this runtime package uses the SDK directly for the receipt.
 The SDK declares separate procedure lowering for the production mailbox module.
 =ContextAdmissionRequest= carries owned domain identifiers, immutable
 shared scope and an optional typed Session/turn pair. Lab's existing Scope

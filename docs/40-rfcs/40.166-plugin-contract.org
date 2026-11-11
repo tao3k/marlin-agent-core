@@ -2019,8 +2019,14 @@ production compiler layout remains scoped to the existing mailbox owner.
 :CUSTOM_ID: deck-module-retirement
 :END:
 
-Scheme now owns Deck contract version 5. Rust projects metadata instead of
-maintaining a second version constant. The new typed submission contains
+Scheme owns Deck contract version 6. The startup receipt carries its module ID
+as a rooted string and its version as a one-element =u64vector=. Rust projects
+both with gerbil-scheme-rust and publishes =DeckRuntime::metadata()= only after
+owner startup succeeds. Its ready channel carries owned Rust data; Scheme roots
+remain owner-local. The old Boolean startup acknowledgement and generic
+=GerbilSchemeTypedValue= metadata adapter are removed. The Deck package uses the
+SDK directly; the generic bridge remains a host dependency of the AOT build tool.
+Rust maintains no second version constant. The typed submission contains
 =u64vector= Module instance IDs plus the existing Context batch vectors. The
 reply is a vector of message IDs, status bytes, packed digest bytes and a
 =u64vector= event window. The event window carries five u64 values per notice:
@@ -2089,6 +2095,72 @@ Rust validates exact Module/timer ownership and duplicate-free event windows;
 a late or foreign event cannot manufacture a client outcome. Native Actor
 population remains independent of Tokio workers, queue credit and transfer
 capacity. None of these limits is an Actor count ceiling.
+
+*** SDK startup receipt and current complete Context cohort
+
+At SDK =a00e62ea= with Lab =75b04e07=, Core =fd215418= and POO =1f4b1720=,
+the standard SDK Builder links the typed startup receipt. The complete
+=cargo test -p marlin-deck-runtime --features actor-runtime= gate passes eleven
+tests: nine queue/ownership cases, the real single-VM Actor/Module/timer
+lifecycle, and rooted metadata admission including malformed and old Boolean
+receipt rejection. Fixture versions include the full u64 range; Rust does not
+copy the production Scheme version into its tests. No consumer preloads or
+upstream pin changes are used for this linked production path.
+
+The unchanged =single_vm_actor= workload runs in four fresh processes with
+4096 timed requests, 64 warmup requests, batch capacity 64, four Tokio workers
+and one Scheme processor. Release preparation takes 293 seconds and is excluded
+from the latency. Every run completes the digest/reply and retirement oracles.
+
+| Process | Requests/s | p50 ms | p95 ms | p99 ms | Requests over 20 ms |
+|---------+------------+--------+--------+--------+---------------------|
+| 1 | 2892.0 | 7.8690 | 67.2033 | 102.7268 | 766 |
+| 2 | 2412.9 | 8.2164 | 94.2697 | 322.9530 | 707 |
+| 3 | 5888.4 | 6.9094 | 12.9819 | 70.5908 | 153 |
+| 4 | 6367.9 | 6.7095 | 11.9480 | 67.5819 | 173 |
+
+All four complete Context samples fail the 20 ms target. These results establish
+the current typed runtime path, not a latency improvement against historical
+cohorts with different SDK/library pins. Existing owner-turn and component
+diagnostics must attribute the remaining tails; allocation accounting is still
+unqualified on this installed runtime.
+
+The existing owner-turn diagnostic observes three GC turns among 375 turns.
+Their elapsed times are 65.530, 59.491 and 58.507 ms, with GC wall times of
+59.870, 54.926 and 56.100 ms respectively. The longest non-GC turn is 6.812 ms.
+Collection occurs during submit in two turns and receive in one; it must not
+be attributed to one ABI export alone. The latest post-collection live sets
+are 267.2--268.0 MB. This identifies GC as the main cost of these observed
+turns, without explaining every request tail or qualifying a latency fix.
+
+The separate existing component diagnostic preserves 4096 rows per stage:
+
+| Stage | Wall ms | GC CPU ms | Collections |
+|-------+---------+-----------+-------------|
+| Decode | 2.340 | 0 | 0 |
+| Lab validation | 231.104 | 69.589 | 1 |
+| Lab public admission | 546.726 | 154.312 | 2 |
+| Checked admission | 568.171 | 177.716 | 2 |
+| Forced digest | 128.951 | 100.818 | 1 |
+| Encode | 3.748 | 0 | 0 |
+| Scheme pipeline | 554.086 | 117.446 | 2 |
+| Rechecked admission | 581.808 | 119.146 | 1 |
+| Scheme Actor pipeline | 596.132 | 159.465 | 2 |
+
+These stages are separate experiments, not additive parts of one request.
+The existing publication and rechecking identity controls both pass, so the
+results do not establish a duplicate function-wrapper problem. Rust input
+projection takes 22.464 ms and result projection 0.081 ms across 4096 rows.
+Ten thousand typed statistics round trips average 1.278 microseconds with
+zero collections. That round trip includes statistics collection and copying;
+it is not a bare ABI transition measurement.
+
+The runtime's cumulative allocation counter still moves backwards, including
+a Scheme-pipeline delta of -1,781,534,288. It cannot serve as a physical
+allocation budget, even in stages where the delta is positive. Negative
+values remain visible; no absolute value, clamping or substituted counter
+turns this diagnostic into a pass. The allocation-accounting defect and the
+retained publication objects remain separate optimization work.
 
 *** Reached implementation and retained Context publication
 
@@ -2567,7 +2639,7 @@ The fresh Lab =75b04e07= / Core =fd215418= / POO =1f4b1720= / Parser
 =e5fdd53b= / SDK =a00e62ea= control completes standard package and dependency
 cleaning, =gerbil build all= and Marlin's =gerbil build= in an isolated prefix.
 Gerbil generates the dependency manifests. The earlier undefined Lab export
-warning disappears, but the default Context publication still raises
+warning disappears, but source-evaluated Context publication still raises
 =stale slot dependency (presence identity)=. The native test command exits 0
 while reporting =ERROR MODULE= and =ERROR HARNESS=; this is a failed gate.
 
@@ -2582,6 +2654,12 @@ checks and Hooks assertions. This control changes no production source or
 dependency pin. The standard library owners must finish initialization before
 publication support is retained; the control is neither a production repair nor
 complete Context latency acceptance.
+
+The upstream ownership correction already exists in
+[[https://github.com/tao3k/gebril-yuanxu/commit/bb63bad10538ba0e2d2d29f4f3cfc559c35672eb][Core's dependency-initialization support change]]. It separates native compiled
+initialization reads from the Scope's actual value support and retains runtime
+Context provenance and mutation refusals. The linked Actor gate above passes
+through standard SDK initialization; this slice adds no replacement reader.
 
 A separate digest-port control compares the existing Lab digest with Gambit's
 standard byte output port: 74 admitted inputs agree only with explicit UTF-8

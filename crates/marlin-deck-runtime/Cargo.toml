@@ -32,7 +32,6 @@ libc = { workspace = true, optional = true }
 gerbil-scheme = { workspace = true, optional = true, features = ["external-program"] }
 gerbil-scheme-sys = { workspace = true, optional = true }
 marlin-agent-context = { workspace = true, optional = true }
-marlin-gerbil-scheme.workspace = true
 serde.workspace = true
 thiserror = { workspace = true, optional = true }
 tokio = { workspace = true, optional = true }

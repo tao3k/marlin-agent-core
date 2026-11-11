@@ -6,11 +6,14 @@
 
 use serde::{Deserialize, Serialize};
 
-use marlin_gerbil_scheme::{GerbilSchemeTypeDecodeError, GerbilSchemeTypedValue};
+#[cfg(feature = "actor-runtime")]
+use gerbil_scheme::{
+    CollectionKind, NativeError as SchemeVmError, NumericBuffer, RootedSchemeObject,
+};
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(transparent)]
-pub struct DeckRuntimeModuleId(String);
+pub struct DeckRuntimeModuleId(pub(crate) String);
 
 impl DeckRuntimeModuleId {
     pub fn as_str(&self) -> &str {
@@ -26,10 +29,49 @@ pub struct DeckRuntimeMetadata {
 }
 
 impl DeckRuntimeMetadata {
-    /// Map the in-memory typed Scheme projection into the Rust metadata record.
+    /// Decode the Scheme startup receipt through the SDK's strong-root API.
+    ///
+    /// Scheme supplies the module ID and version. The receipt is a vector of
+    /// its string ID and a one-element u64vector; no version table is kept here.
+    #[cfg(feature = "actor-runtime")]
     pub fn from_scheme_projection(
-        projection: &GerbilSchemeTypedValue,
-    ) -> Result<Self, GerbilSchemeTypeDecodeError> {
-        projection.decode_value()
+        projection: RootedSchemeObject<'_>,
+    ) -> Result<Self, DeckRuntimeMetadataError> {
+        let fields = projection.into_collection(CollectionKind::Vector)?;
+        if fields.len() != 2 {
+            return Err(DeckRuntimeMetadataError::FieldCount(fields.len()));
+        }
+        let module_id = fields
+            .element(0)?
+            .into_string()?
+            .to_string()
+            .into_result()?;
+        if module_id.is_empty() {
+            return Err(DeckRuntimeMetadataError::EmptyModuleId);
+        }
+        let mut version = NumericBuffer::<u64>::default();
+        fields.element(1)?.as_ref().copy_numeric(&mut version)?;
+        let [version] = version.as_slice() else {
+            return Err(DeckRuntimeMetadataError::VersionCount(
+                version.as_slice().len(),
+            ));
+        };
+        Ok(Self {
+            module_id: DeckRuntimeModuleId(module_id),
+            version: *version,
+        })
     }
+}
+
+#[cfg(feature = "actor-runtime")]
+#[derive(Debug, thiserror::Error)]
+pub enum DeckRuntimeMetadataError {
+    #[error("Deck metadata requires two fields; got {0}")]
+    FieldCount(usize),
+    #[error("Deck metadata requires a nonempty module ID")]
+    EmptyModuleId,
+    #[error("Deck metadata requires one version; got {0}")]
+    VersionCount(usize),
+    #[error("Deck metadata VM projection failed: {0}")]
+    Projection(#[from] SchemeVmError),
 }

@@ -7,8 +7,10 @@
 use super::vm::{Completion, DeckVm, MessageId};
 use super::{
     DeckMailboxMetrics, DeckRuntimeConfig, DeckRuntimeMetrics, DeckRuntimeRejection,
-    DeckRuntimeShutdownReceipt, DeckRuntimeStopReason, Job, Outcome, OwnerMessage, SchemeVmError,
+    DeckRuntimeShutdownReceipt, DeckRuntimeStartupError, DeckRuntimeStopReason, Job, Outcome,
+    OwnerMessage, SchemeVmError,
 };
+use crate::DeckRuntimeMetadata;
 use gerbil_scheme::{GerbilRuntime, LinkedGerbilProgram};
 use marlin_agent_context::CONTEXT_BATCH_MAX_TEXT_BYTES;
 use std::{
@@ -25,7 +27,7 @@ pub(super) fn run(
     mut jobs: mpsc::Receiver<OwnerMessage>,
     stopping: Arc<AtomicBool>,
     wake: Arc<super::wake::Wake>,
-    ready: std::sync::mpsc::SyncSender<Result<(), SchemeVmError>>,
+    ready: std::sync::mpsc::SyncSender<Result<DeckRuntimeMetadata, DeckRuntimeStartupError>>,
     finished: watch::Sender<Option<DeckRuntimeShutdownReceipt>>,
 ) {
     let mut metrics = DeckRuntimeMetrics::default();
@@ -44,7 +46,7 @@ pub(super) fn run(
         let runtime = match GerbilRuntime::initialize_program_single_processor(program) {
             Ok(runtime) => runtime,
             Err(error) => {
-                let _ = ready.send(Err(error));
+                let _ = ready.send(Err(error.into()));
                 return None;
             }
         };
@@ -54,23 +56,24 @@ pub(super) fn run(
                 let _ = ready.send(Err(SchemeVmError::Status {
                     operation: "Deck single processor",
                     code: -1,
-                }));
+                }
+                .into()));
                 return None;
             }
             Err(error) => {
-                let _ = ready.send(Err(error));
+                let _ = ready.send(Err(error.into()));
                 return None;
             }
         };
         observed_processors = processors;
-        let mut vm = match DeckVm::open(&runtime, wake.descriptors()) {
+        let (mut vm, metadata) = match DeckVm::open(&runtime, wake.descriptors()) {
             Ok(vm) => vm,
             Err(error) => {
                 let _ = ready.send(Err(error));
                 return None;
             }
         };
-        if ready.send(Ok(())).is_err() {
+        if ready.send(Ok(metadata)).is_err() {
             return None;
         }
         let mut protocol_failure = None;

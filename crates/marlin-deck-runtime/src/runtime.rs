@@ -18,6 +18,7 @@ mod profile;
 mod receipt;
 mod vm;
 
+use crate::{DeckRuntimeMetadata, DeckRuntimeMetadataError};
 use gerbil_scheme::NativeError as SchemeVmError;
 use marlin_agent_context::gerbil::ContextBridgeError;
 use marlin_agent_context::{CONTEXT_BATCH_MAX_ROWS, ContextAdmissionRequest, ContextScopeDigest};
@@ -49,6 +50,8 @@ pub enum DeckRuntimeStartupError {
     Owner(#[from] std::io::Error),
     #[error("Deck VM startup failed: {0}")]
     Scheme(#[from] SchemeVmError),
+    #[error("Deck metadata startup receipt failed: {0}")]
+    Metadata(#[from] DeckRuntimeMetadataError),
     #[error("Deck VM owner exited during startup")]
     OwnerExited,
 }
@@ -124,6 +127,7 @@ enum OwnerMessage {
 /// Clones share one VM, one bounded admission channel.
 #[derive(Clone)]
 pub struct DeckRuntime {
+    metadata: Arc<DeckRuntimeMetadata>,
     queue: mpsc::Sender<OwnerMessage>,
     wake: Arc<wake::Wake>,
     default_module: Arc<ModuleState>,
@@ -152,7 +156,8 @@ impl DeckRuntime {
                 owner::run(config, jobs, worker_stopping, worker_wake, ready, finished);
             })?;
         match started.recv() {
-            Ok(Ok(())) => Ok(Self {
+            Ok(Ok(metadata)) => Ok(Self {
+                metadata: Arc::new(metadata),
                 queue,
                 wake,
                 default_module,
@@ -163,11 +168,16 @@ impl DeckRuntime {
             result => {
                 let _ = thread.join();
                 match result {
-                    Ok(Err(error)) => Err(error.into()),
+                    Ok(Err(error)) => Err(error),
                     _ => Err(DeckRuntimeStartupError::OwnerExited),
                 }
             }
         }
+    }
+
+    /// Scheme-published metadata from this owner's completed startup receipt.
+    pub fn metadata(&self) -> &DeckRuntimeMetadata {
+        &self.metadata
     }
 
     /// Reserve one reply slot with each admitted request. Ready work never waits

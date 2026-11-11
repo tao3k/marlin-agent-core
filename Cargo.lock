@@ -2704,7 +2704,6 @@ dependencies = [
  "marlin-agent-context",
  "marlin-agent-protocol",
  "marlin-gerbil-aot-link",
- "marlin-gerbil-scheme",
  "serde",
  "thiserror 2.0.21",
  "tokio",
