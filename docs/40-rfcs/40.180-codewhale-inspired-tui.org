@@ -198,6 +198,14 @@ dispatch, old-state retention and a caught Scheme failure. The test took
 The locked Cargo check, strict library Clippy, SDK-value projection test, and
 Bazel 9.2.0 repin also passed. Live terminal wiring, installed module-closure
 discovery, a vendor refresh and an offline Bazel build remain separate gates.
+An additional single cold-start observation on the exact pinned SDK measured
+25 ms for VM initialization, 13,896 ms for resolving the selected =init=
+publication, 50/6/41 ms for resolving open/project/dispatch, 9,633 ms for the
+first open and 2 ms for the first projection; total to first projection was
+23,657 ms, with a separate natural test exit at 31.49 seconds. This is one
+uncontrolled observation, not an acceptance benchmark. It directs the next
+investigation toward selected publication and lazy initialization rather than
+assuming repeated UI export lookup is the dominant startup cost.
 The host must still establish publication provenance, validate and publish candidates,
 and authorize every resulting action; an intent is not a runtime receipt.
 This is not yet terminal event routing or automatic module discovery of
