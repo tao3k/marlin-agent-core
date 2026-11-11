@@ -1,4 +1,5 @@
 [package]
+license.workspace = true
 name = "marlin-agent-test-support"
 edition.workspace = true
 version.workspace = true

@@ -99,6 +99,9 @@ fn main() -> Result<(), Box<dyn Error>> {
         p999,
         maximum,
         late,
+        gc_count,
+        heap_capacity,
+        post_gc_live,
     ] = values.as_slice()
     else {
         return Err("invalid mailbox benchmark receipt cardinality".into());
@@ -108,11 +111,10 @@ fn main() -> Result<(), Box<dyn Error>> {
     assert_eq!(created, retired);
     let seconds = *wall as f64 / 1_000_000_000.0;
     println!(
-        "mailbox_messages={count} logical_identities={identities} messages_per_s={:.1} wall_s={seconds:.9} cpu_s={:.9} gc_cpu_s={:.9} allocation_counter_delta_bytes={allocated} allocation_counter_valid={} actors_created={created} actors_retired={retired} whole_c_abi_call_s={:.9}",
+        "mailbox_messages={count} logical_identities={identities} messages_per_s={:.1} wall_s={seconds:.9} cpu_s={:.9} gc_cpu_s={:.9} vm_accounting_delta={allocated} physical_allocation_budget_qualified=false gc_count={gc_count} heap_capacity_bytes={heap_capacity} post_gc_live_bytes={post_gc_live} actors_created={created} actors_retired={retired} whole_c_abi_call_s={:.9}",
         count as f64 / seconds,
         *cpu as f64 / 1_000_000_000.0,
         *gc as f64 / 1_000_000_000.0,
-        *allocated >= 0,
         whole_call.as_secs_f64(),
     );
     if latency {

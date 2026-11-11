@@ -4,8 +4,6 @@ use std::path::{Path, PathBuf};
 
 pub(super) const GERBIL_AOT_OUTPUT_DIR: &str = ".gerbil/native";
 pub(super) const GERBIL_AGENT_POLICY_ROUTING_ABI_ARTIFACT_STEM: &str = "agent-policy-routing-abi~0";
-pub(super) const GERBIL_AGENT_POLICY_ROUTING_ABI_BINDING_ARTIFACT_STEM: &str =
-    "_agent-policy-routing-abi~0";
 pub(super) const GERBIL_AGENT_POLICY_ROUTING_ABI_SELECT_SYMBOL: &str =
     "marlin_agent_policy_routing_select_edges";
 pub(super) const GERBIL_AGENT_POLICY_ROUTING_ABI_INITIALIZE_SYMBOL: &str =

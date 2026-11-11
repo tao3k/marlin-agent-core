@@ -20,6 +20,7 @@ pub(super) fn run(
     config: DeckRuntimeConfig,
     mut jobs: mpsc::Receiver<OwnerMessage>,
     stopping: Arc<AtomicBool>,
+    wake: Arc<super::wake::Wake>,
     ready: std::sync::mpsc::SyncSender<Result<(), SchemeVmError>>,
     finished: watch::Sender<Option<DeckRuntimeShutdownReceipt>>,
 ) {
@@ -27,6 +28,11 @@ pub(super) fn run(
     let mut observed_processors = 0;
     let mut pending = VecDeque::new();
     let mut active = HashMap::new();
+    let mut control = Controls::new();
+    #[cfg(feature = "context-profiling")]
+    let mut trace = Vec::new();
+    #[cfg(feature = "context-profiling")]
+    let mut trace_dropped = 0;
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         // SAFETY: this owner is the only entry point into the linked program.
         let program =
@@ -53,7 +59,7 @@ pub(super) fn run(
             }
         };
         observed_processors = processors;
-        let mut vm = match DeckVm::open(&runtime) {
+        let mut vm = match DeckVm::open(&runtime, wake.descriptors()) {
             Ok(vm) => vm,
             Err(error) => {
                 let _ = ready.send(Err(error));
@@ -68,24 +74,48 @@ pub(super) fn run(
             if stopping.load(Ordering::Acquire) {
                 jobs.close();
             }
-            if pending.is_empty() && active.is_empty() {
-                match jobs.blocking_recv() {
-                    Some(message) => receive(message, &mut pending, &mut metrics, &mut jobs),
-                    None => break,
-                }
-            }
-            while pending.len() < usize::from(config.batch_capacity.get())
+            let mut control_turn = 0;
+            while control_turn < usize::from(config.queue_capacity.get())
+                && pending.len() < usize::from(config.batch_capacity.get())
                 && active.len() + pending.len() < usize::from(config.queue_capacity.get())
             {
                 match jobs.try_recv() {
-                    Ok(message) => receive(message, &mut pending, &mut metrics, &mut jobs),
+                    Ok(message) => {
+                        control_turn += 1;
+                        if let Err(error) = receive(
+                            message,
+                            &mut pending,
+                            &mut metrics,
+                            &mut jobs,
+                            &vm,
+                            &mut control,
+                        ) {
+                            protocol_failure = Some(error);
+                            break;
+                        }
+                    }
                     Err(_) => break,
                 }
             }
+            if protocol_failure.is_some() {
+                break;
+            }
+            #[cfg(feature = "context-profiling")]
+            let turn_begin = std::time::Instant::now();
+            #[cfg(feature = "context-profiling")]
+            let gc_before = vm.gc_snapshot().expect("diagnostic snapshot");
+            #[cfg(feature = "context-profiling")]
+            {
+                vm.profile = super::profile::VmStages::default();
+            }
+            #[cfg(feature = "context-profiling")]
+            let mut completed_ages = Vec::new();
             metrics.largest_request_batch = metrics.largest_request_batch.max(pending.len());
             let batch = prepare(&mut pending, &mut metrics);
+            #[cfg(feature = "context-profiling")]
+            let submitted_count = batch.len();
             if !batch.is_empty() {
-                let requests: Vec<_> = batch.iter().map(|job| &job.request).collect();
+                let requests: Vec<_> = batch.iter().map(|job| (job.module, &job.request)).collect();
                 match vm.submit(&requests) {
                     Ok(ids) if valid_ids(&ids, &active) => {
                         active.extend(ids.into_iter().zip(batch));
@@ -102,13 +132,53 @@ pub(super) fn run(
                     }
                 }
             }
-            if !active.is_empty() {
+            if let Err(error) = control.retire_ready(&vm, &active, &pending) {
+                protocol_failure = Some(error);
+                break;
+            }
+            if jobs.is_closed() && jobs.is_empty() && active.is_empty() && pending.is_empty() {
+                break;
+            }
+            {
                 let completed = vm.receive(config.batch_capacity);
-                let result =
-                    completed.and_then(|replies| retire(&mut active, replies, &mut metrics));
+                #[cfg(feature = "context-profiling")]
+                if let Ok(replies) = &completed {
+                    completed_ages = replies
+                        .completions
+                        .iter()
+                        .filter_map(|reply| {
+                            active
+                                .get(&reply.id)
+                                .map(|job| (reply.id.0, job.enqueued_at.elapsed().as_micros()))
+                        })
+                        .collect();
+                }
+                let result = completed.and_then(|poll| {
+                    control.validate_timers(&poll.timers)?;
+                    retire(&mut active, poll.completions, &mut metrics)?;
+                    control.publish_timers(poll.timers);
+                    Ok(())
+                });
                 if let Err(failure) = result {
                     protocol_failure = Some(failure);
                     break;
+                }
+            }
+            #[cfg(feature = "context-profiling")]
+            {
+                let gc_after = vm.gc_snapshot().expect("diagnostic snapshot");
+                if trace.len() < 65536 {
+                    trace.push(super::profile::Turn {
+                        elapsed_us: turn_begin.elapsed().as_micros(),
+                        submitted: submitted_count,
+                        completed: completed_ages,
+                        gc_count: gc_after[0] - gc_before[0],
+                        gc_wall_us: (gc_after[1] - gc_before[1]) * 1e6,
+                        heap_live_bytes: gc_after[2],
+                        stages: std::mem::take(&mut vm.profile),
+                    });
+                } else {
+                    trace_dropped += 1;
                 }
             }
         }
@@ -167,24 +237,179 @@ pub(super) fn run(
             })
         }
     };
+    wake.close();
+    for (_, slot) in control.timers.drain() {
+        let _ = slot.reply.send(Err(DeckRuntimeRejection::Unavailable));
+    }
+    #[cfg(feature = "context-profiling")]
+    eprintln!("CONTEXT-TRACE truncated_turns={trace_dropped}");
+    #[cfg(feature = "context-profiling")]
+    for turn in trace {
+        turn.emit();
+    }
     if let Some(receipt) = receipt {
         let _ = finished.send(Some(receipt));
     }
 }
 
+struct TimerSlot {
+    module: super::DeckModuleInstanceId,
+    reply: tokio::sync::oneshot::Sender<Result<super::DeckTimerReceipt, DeckRuntimeRejection>>,
+}
+struct Controls {
+    next_module: u64,
+    next_timer: u64,
+    modules: HashSet<super::DeckModuleInstanceId>,
+    timers: HashMap<super::DeckTimerId, TimerSlot>,
+    retiring: Vec<Arc<super::ModuleState>>,
+}
+impl Controls {
+    fn new() -> Self {
+        Self {
+            next_module: 2,
+            next_timer: 1,
+            modules: HashSet::from([super::DeckModuleInstanceId(std::num::NonZeroU64::MIN)]),
+            timers: HashMap::new(),
+            retiring: Vec::new(),
+        }
+    }
+    fn retire_ready(
+        &mut self,
+        vm: &DeckVm<'_>,
+        active: &HashMap<MessageId, Job>,
+        pending: &VecDeque<Job>,
+    ) -> Result<(), DeckRuntimeRejection> {
+        let mut index = 0;
+        while index < self.retiring.len() {
+            let module = self.retiring[index].id;
+            if active
+                .values()
+                .chain(pending.iter())
+                .any(|job| job.module == module)
+            {
+                index += 1;
+                continue;
+            }
+            let receipt = vm.retire_module(module)?;
+            let timer_count = self
+                .timers
+                .values()
+                .filter(|slot| slot.module == module)
+                .count();
+            if receipt.timers_retired != timer_count as u64 {
+                return Err(DeckRuntimeRejection::InvalidProjection);
+            }
+            let timers: Vec<_> = self
+                .timers
+                .iter()
+                .filter_map(|(id, slot)| (slot.module == module).then_some(*id))
+                .collect();
+            for timer in timers {
+                let slot = self.timers.remove(&timer).expect("owned Module timer");
+                let _ = slot.reply.send(Err(DeckRuntimeRejection::ModuleRetired));
+            }
+            // Native clocks/Actors have joined before the receipt becomes observable.
+            self.modules.remove(&module);
+            self.retiring
+                .swap_remove(index)
+                .finished
+                .send_replace(Some(receipt));
+        }
+        Ok(())
+    }
+    fn validate_timers(
+        &self,
+        receipts: &[super::DeckTimerReceipt],
+    ) -> Result<(), DeckRuntimeRejection> {
+        let unique: HashSet<_> = receipts.iter().map(|receipt| receipt.timer).collect();
+        if unique.len() != receipts.len()
+            || receipts.iter().any(|receipt| {
+                self.timers
+                    .get(&receipt.timer)
+                    .is_none_or(|slot| slot.module != receipt.module)
+            })
+        {
+            return Err(DeckRuntimeRejection::InvalidProjection);
+        }
+        Ok(())
+    }
+    fn publish_timers(&mut self, receipts: Vec<super::DeckTimerReceipt>) {
+        for receipt in receipts {
+            let slot = self
+                .timers
+                .remove(&receipt.timer)
+                .expect("validated timer ownership");
+            let _ = slot.reply.send(Ok(receipt));
+        }
+    }
+}
 fn receive(
     message: OwnerMessage,
     pending: &mut VecDeque<Job>,
     metrics: &mut DeckRuntimeMetrics,
     jobs: &mut mpsc::Receiver<OwnerMessage>,
-) {
+    vm: &DeckVm<'_>,
+    control: &mut Controls,
+) -> Result<(), DeckRuntimeRejection> {
     match message {
         OwnerMessage::Admit(job) => {
             metrics.requests_received += 1;
+            if !control.modules.contains(&job.module) {
+                finish(job, Err(DeckRuntimeRejection::InvalidProjection), metrics);
+                return Err(DeckRuntimeRejection::InvalidProjection);
+            }
             pending.push_back(job);
         }
         OwnerMessage::Stop => jobs.close(),
+        OwnerMessage::Activate(reply) => {
+            if reply.is_closed() {
+                return Ok(());
+            }
+            let id = super::DeckModuleInstanceId(
+                std::num::NonZeroU64::new(control.next_module)
+                    .ok_or(DeckRuntimeRejection::InvalidProjection)?,
+            );
+            control.next_module = control
+                .next_module
+                .checked_add(1)
+                .ok_or(DeckRuntimeRejection::InvalidProjection)?;
+            vm.activate(id)?;
+            if reply.send(Ok(super::ModuleState::new(id))).is_err() {
+                vm.retire_module(id)?;
+            } else {
+                control.modules.insert(id);
+            }
+        }
+        OwnerMessage::Retire(state) => {
+            if !control.modules.contains(&state.id)
+                || control.retiring.iter().any(|old| old.id == state.id)
+            {
+                return Err(DeckRuntimeRejection::InvalidProjection);
+            }
+            control.retiring.push(state);
+        }
+        OwnerMessage::Timer {
+            module,
+            delay_us,
+            reply,
+        } => {
+            if !control.modules.contains(&module) {
+                let _ = reply.send(Err(DeckRuntimeRejection::ModuleRetired));
+                return Ok(());
+            }
+            let timer = super::DeckTimerId(
+                std::num::NonZeroU64::new(control.next_timer)
+                    .ok_or(DeckRuntimeRejection::InvalidProjection)?,
+            );
+            control.next_timer = control
+                .next_timer
+                .checked_add(1)
+                .ok_or(DeckRuntimeRejection::InvalidProjection)?;
+            vm.arm(module, timer, delay_us)?;
+            control.timers.insert(timer, TimerSlot { module, reply });
+        }
     }
+    Ok(())
 }
 
 /// Prepare a text-bounded FIFO prefix and retire cancellation before VM entry.
@@ -243,3 +468,7 @@ fn finish(job: Job, result: Outcome, metrics: &mut DeckRuntimeMetrics) {
     }
     let _ = job.reply.send(result);
 }
+
+#[cfg(test)]
+#[path = "../../tests/unit/module_events.rs"]
+mod tests;

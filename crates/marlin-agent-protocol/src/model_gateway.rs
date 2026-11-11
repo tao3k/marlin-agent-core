@@ -41,8 +41,6 @@ pub enum ModelGatewayMessageRole {
     Developer,
     User,
     Assistant,
-    Tool,
-    Function,
 }
 
 /// Provider-owned continuation data. The payload is opaque to Marlin and must

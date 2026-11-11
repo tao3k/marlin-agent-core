@@ -188,7 +188,6 @@ printf '00000000 T marlin_agent_policy_routing_select_edges\n'
         [
             GerbilAotCargoDirectiveKind::RustcLinkArg,
             GerbilAotCargoDirectiveKind::RustcLinkArg,
-            GerbilAotCargoDirectiveKind::RustcLinkArg,
             GerbilAotCargoDirectiveKind::RustcLinkSearch,
             GerbilAotCargoDirectiveKind::RustcLinkLib
         ]

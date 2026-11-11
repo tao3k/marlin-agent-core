@@ -307,8 +307,6 @@ pub(crate) fn request_message(
         ModelGatewayMessageRole::Developer => Role::Developer,
         ModelGatewayMessageRole::User => Role::User,
         ModelGatewayMessageRole::Assistant => Role::Assistant,
-        ModelGatewayMessageRole::Tool => Role::Tool,
-        ModelGatewayMessageRole::Function => Role::Function,
     };
     Ok(Message {
         role,

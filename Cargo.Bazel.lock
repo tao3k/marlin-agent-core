@@ -1,5 +1,5 @@
 {
-  "checksum": "eed495e1ea1639601fae44def040d5daa7f1d7d2cdddc108ee5115dd82d98466",
+  "checksum": "3d6d45b82717694d0dfeb5a5d4b669004d3a19afee01edcac26268ad37c94344",
   "crates": {
     "adler2 2.0.1": {
       "name": "adler2",
@@ -1900,8 +1900,12 @@
         ],
         "crate_features": {
           "common": [
+            "alloc",
             "aws-lc-sys",
-            "prebuilt-nasm"
+            "default",
+            "prebuilt-nasm",
+            "ring-io",
+            "ring-sig-verify"
           ],
           "selects": {}
         },
@@ -1914,6 +1918,10 @@
             {
               "id": "aws-lc-sys 0.47.0",
               "target": "aws_lc_sys"
+            },
+            {
+              "id": "untrusted 0.7.1",
+              "target": "untrusted"
             },
             {
               "id": "zeroize 1.9.1",
@@ -3217,45 +3225,6 @@
       ],
       "license_file": "LICENSE-APACHE"
     },
-    "bytecount 0.6.9": {
-      "name": "bytecount",
-      "version": "0.6.9",
-      "package_url": "https://github.com/llogiq/bytecount",
-      "repository": {
-        "Http": {
-          "url": "https://static.crates.io/crates/bytecount/0.6.9/download",
-          "sha256": "175812e0be2bccb6abe50bb8d566126198344f707e304f45c648fd8f2cc0365e"
-        }
-      },
-      "targets": [
-        {
-          "Library": {
-            "crate_name": "bytecount",
-            "crate_root": "src/lib.rs",
-            "srcs": {
-              "allow_empty": true,
-              "include": [
-                "**/*.rs"
-              ]
-            }
-          }
-        }
-      ],
-      "library_target_name": "bytecount",
-      "common_attrs": {
-        "compile_data_glob": [
-          "**"
-        ],
-        "edition": "2018",
-        "version": "0.6.9"
-      },
-      "license": "Apache-2.0/MIT",
-      "license_ids": [
-        "Apache-2.0",
-        "MIT"
-      ],
-      "license_file": "LICENSE.Apache2"
-    },
     "bytemuck 1.25.2": {
       "name": "bytemuck",
       "version": "1.25.2",
@@ -4217,6 +4186,7 @@
             "js-sys",
             "now",
             "oldtime",
+            "serde",
             "std",
             "wasm-bindgen",
             "wasmbind",
@@ -4234,6 +4204,10 @@
             {
               "id": "num-traits 0.2.19",
               "target": "num_traits"
+            },
+            {
+              "id": "serde 1.0.229",
+              "target": "serde"
             },
             {
               "id": "windows-link 0.2.1",
@@ -5347,45 +5321,6 @@
         },
         "edition": "2018",
         "version": "0.8.7"
-      },
-      "license": "MIT OR Apache-2.0",
-      "license_ids": [
-        "Apache-2.0",
-        "MIT"
-      ],
-      "license_file": "LICENSE-APACHE"
-    },
-    "countme 3.0.1": {
-      "name": "countme",
-      "version": "3.0.1",
-      "package_url": "https://github.com/matklad/countme",
-      "repository": {
-        "Http": {
-          "url": "https://static.crates.io/crates/countme/3.0.1/download",
-          "sha256": "7704b5fdd17b18ae31c4c1da5a2e0305a2bf17b5249300a9ee9ed7b72114c636"
-        }
-      },
-      "targets": [
-        {
-          "Library": {
-            "crate_name": "countme",
-            "crate_root": "src/lib.rs",
-            "srcs": {
-              "allow_empty": true,
-              "include": [
-                "**/*.rs"
-              ]
-            }
-          }
-        }
-      ],
-      "library_target_name": "countme",
-      "common_attrs": {
-        "compile_data_glob": [
-          "**"
-        ],
-        "edition": "2018",
-        "version": "3.0.1"
       },
       "license": "MIT OR Apache-2.0",
       "license_ids": [
@@ -6907,7 +6842,7 @@
               "target": "data_encoding"
             },
             {
-              "id": "syn 3.0.10",
+              "id": "syn 2.0.119",
               "target": "syn"
             }
           ],
@@ -7777,7 +7712,7 @@
             ],
             "cfg(windows)": [
               {
-                "id": "windows-sys 0.61.2",
+                "id": "windows-sys 0.52.0",
                 "target": "windows_sys"
               }
             ]
@@ -9140,23 +9075,23 @@
       ],
       "license_file": "LICENSE"
     },
-    "gerbil-parser-rowan 0.1.0": {
-      "name": "gerbil-parser-rowan",
+    "gerbil-parser-artifact 0.1.0": {
+      "name": "gerbil-parser-artifact",
       "version": "0.1.0",
       "package_url": "https://github.com/tao3k/gerbil-parser",
       "repository": {
         "Git": {
           "remote": "https://github.com/tao3k/gerbil-parser",
           "commitish": {
-            "Rev": "95966d7695d778e99c5f0de5789efdb734e00817"
+            "Rev": "e5fdd53b33c376dabb927f79b047e4d5cae9f7ac"
           },
-          "strip_prefix": "rust/gerbil-parser-rowan"
+          "strip_prefix": "rust/gerbil-parser-artifact"
         }
       },
       "targets": [
         {
           "Library": {
-            "crate_name": "gerbil_parser_rowan",
+            "crate_name": "gerbil_parser_artifact",
             "crate_root": "src/lib.rs",
             "srcs": {
               "allow_empty": true,
@@ -9167,7 +9102,7 @@
           }
         }
       ],
-      "library_target_name": "gerbil_parser_rowan",
+      "library_target_name": "gerbil_parser_artifact",
       "common_attrs": {
         "compile_data_glob": [
           "**"
@@ -9175,8 +9110,63 @@
         "deps": {
           "common": [
             {
-              "id": "rowan 0.16.1",
-              "target": "rowan"
+              "id": "serde_json 1.0.154",
+              "target": "serde_json"
+            },
+            {
+              "id": "sha2 0.10.9",
+              "target": "sha2"
+            }
+          ],
+          "selects": {}
+        },
+        "edition": "2024",
+        "version": "0.1.0"
+      },
+      "license": "Apache-2.0 AND LGPL-2.1-or-later",
+      "license_ids": [
+        "Apache-2.0",
+        "LGPL-2.1"
+      ],
+      "license_file": null
+    },
+    "gerbil-parser-runtime 0.1.0": {
+      "name": "gerbil-parser-runtime",
+      "version": "0.1.0",
+      "package_url": "https://github.com/tao3k/gerbil-parser",
+      "repository": {
+        "Git": {
+          "remote": "https://github.com/tao3k/gerbil-parser",
+          "commitish": {
+            "Rev": "e5fdd53b33c376dabb927f79b047e4d5cae9f7ac"
+          },
+          "strip_prefix": "rust/gerbil-parser-runtime"
+        }
+      },
+      "targets": [
+        {
+          "Library": {
+            "crate_name": "gerbil_parser_runtime",
+            "crate_root": "src/lib.rs",
+            "srcs": {
+              "allow_empty": true,
+              "include": [
+                "**/*.rs"
+              ]
+            }
+          }
+        }
+      ],
+      "library_target_name": "gerbil_parser_runtime",
+      "common_attrs": {
+        "compile_data_glob": [
+          "**"
+        ],
+        "deps": {
+          "common": [
+            {
+              "id": "gerbil-parser-artifact 0.1.0",
+              "target": "gerbil_parser_artifact"
             },
             {
               "id": "sha2 0.10.9",
@@ -9203,7 +9193,7 @@
         "Git": {
           "remote": "https://github.com/tao3k/gerbil-scheme-rust",
           "commitish": {
-            "Rev": "bfe803f597a15a3654b70a64c3a039980c31da8a"
+            "Rev": "0d92f7bee8c23b373ccd116be6f17701c4c4aac6"
           },
           "strip_prefix": "crates/gerbil-scheme"
         }
@@ -9239,6 +9229,12 @@
         "compile_data_glob": [
           "**"
         ],
+        "crate_features": {
+          "common": [
+            "external-program"
+          ],
+          "selects": {}
+        },
         "deps": {
           "common": [
             {
@@ -9294,7 +9290,7 @@
         "Git": {
           "remote": "https://github.com/tao3k/gerbil-scheme-rust",
           "commitish": {
-            "Rev": "bfe803f597a15a3654b70a64c3a039980c31da8a"
+            "Rev": "0d92f7bee8c23b373ccd116be6f17701c4c4aac6"
           },
           "strip_prefix": "build-support/gerbil-scheme-aot-build"
         }
@@ -9405,7 +9401,7 @@
         "Git": {
           "remote": "https://github.com/tao3k/gerbil-scheme-rust",
           "commitish": {
-            "Rev": "bfe803f597a15a3654b70a64c3a039980c31da8a"
+            "Rev": "0d92f7bee8c23b373ccd116be6f17701c4c4aac6"
           },
           "strip_prefix": "crates/gerbil-scheme-build"
         }
@@ -9448,77 +9444,6 @@
       ],
       "license_file": null
     },
-    "gerbil-scheme-rust-ir 0.1.0": {
-      "name": "gerbil-scheme-rust-ir",
-      "version": "0.1.0",
-      "package_url": "https://github.com/tao3k/gerbil-scheme-rust",
-      "repository": {
-        "Git": {
-          "remote": "https://github.com/tao3k/gerbil-scheme-rust",
-          "commitish": {
-            "Rev": "2aac6d5b24b9c4d1382b232035f6e242a31a5130"
-          },
-          "strip_prefix": "build-support/gerbil-scheme-rust-ir"
-        }
-      },
-      "targets": [
-        {
-          "Library": {
-            "crate_name": "gerbil_scheme_rust_ir",
-            "crate_root": "src/lib.rs",
-            "srcs": {
-              "allow_empty": true,
-              "include": [
-                "**/*.rs"
-              ]
-            }
-          }
-        }
-      ],
-      "library_target_name": "gerbil_scheme_rust_ir",
-      "common_attrs": {
-        "compile_data_glob": [
-          "**"
-        ],
-        "deps": {
-          "common": [
-            {
-              "id": "prettyplease 0.3.0",
-              "target": "prettyplease"
-            },
-            {
-              "id": "proc-macro2 1.0.107",
-              "target": "proc_macro2"
-            },
-            {
-              "id": "quote 1.0.47",
-              "target": "quote"
-            },
-            {
-              "id": "serde 1.0.229",
-              "target": "serde"
-            },
-            {
-              "id": "serde_json 1.0.154",
-              "target": "serde_json"
-            },
-            {
-              "id": "syn 3.0.10",
-              "target": "syn"
-            }
-          ],
-          "selects": {}
-        },
-        "edition": "2024",
-        "version": "0.1.0"
-      },
-      "license": "Apache-2.0 OR LGPL-2.1-or-later",
-      "license_ids": [
-        "Apache-2.0",
-        "LGPL-2.1"
-      ],
-      "license_file": null
-    },
     "gerbil-scheme-rust-project-harness 0.1.2": {
       "name": "gerbil-scheme-rust-project-harness",
       "version": "0.1.2",
@@ -9527,7 +9452,7 @@
         "Git": {
           "remote": "https://github.com/tao3k/gerbil-scheme-rust",
           "commitish": {
-            "Rev": "bfe803f597a15a3654b70a64c3a039980c31da8a"
+            "Rev": "0d92f7bee8c23b373ccd116be6f17701c4c4aac6"
           },
           "strip_prefix": "build-support/gerbil-scheme-rust-project-harness"
         }
@@ -9624,7 +9549,7 @@
         "Git": {
           "remote": "https://github.com/tao3k/gerbil-scheme-rust",
           "commitish": {
-            "Rev": "bfe803f597a15a3654b70a64c3a039980c31da8a"
+            "Rev": "0d92f7bee8c23b373ccd116be6f17701c4c4aac6"
           },
           "strip_prefix": "build-support/gerbil-scheme-rust-project-harness-policy"
         }
@@ -9711,7 +9636,7 @@
         "Git": {
           "remote": "https://github.com/tao3k/gerbil-scheme-rust",
           "commitish": {
-            "Rev": "bfe803f597a15a3654b70a64c3a039980c31da8a"
+            "Rev": "0d92f7bee8c23b373ccd116be6f17701c4c4aac6"
           },
           "strip_prefix": "crates/gerbil-scheme-sys"
         }
@@ -9747,6 +9672,12 @@
         "compile_data_glob": [
           "**"
         ],
+        "crate_features": {
+          "common": [
+            "external-program"
+          ],
+          "selects": {}
+        },
         "deps": {
           "common": [
             {
@@ -9820,9 +9751,16 @@
           "**"
         ],
         "crate_features": {
-          "common": [],
+          "common": [
+            "std"
+          ],
           "selects": {
             "wasm32-unknown-unknown": [
+              "js",
+              "js-sys",
+              "wasm-bindgen"
+            ],
+            "wasm32-wasip1": [
               "js",
               "js-sys",
               "wasm-bindgen"
@@ -10474,51 +10412,6 @@
         },
         "edition": "2021",
         "version": "2.7.1"
-      },
-      "license": "MIT OR Apache-2.0",
-      "license_ids": [
-        "Apache-2.0",
-        "MIT"
-      ],
-      "license_file": "LICENSE-APACHE"
-    },
-    "hashbrown 0.14.5": {
-      "name": "hashbrown",
-      "version": "0.14.5",
-      "package_url": "https://github.com/rust-lang/hashbrown",
-      "repository": {
-        "Http": {
-          "url": "https://static.crates.io/crates/hashbrown/0.14.5/download",
-          "sha256": "e5274423e17b7c9fc20b6e7e208532f9b19825d82dfd615708b70edd83df41f1"
-        }
-      },
-      "targets": [
-        {
-          "Library": {
-            "crate_name": "hashbrown",
-            "crate_root": "src/lib.rs",
-            "srcs": {
-              "allow_empty": true,
-              "include": [
-                "**/*.rs"
-              ]
-            }
-          }
-        }
-      ],
-      "library_target_name": "hashbrown",
-      "common_attrs": {
-        "compile_data_glob": [
-          "**"
-        ],
-        "crate_features": {
-          "common": [
-            "inline-more"
-          ],
-          "selects": {}
-        },
-        "edition": "2021",
-        "version": "0.14.5"
       },
       "license": "MIT OR Apache-2.0",
       "license_ids": [
@@ -11330,7 +11223,26 @@
             "rustls-native-certs",
             "tls12"
           ],
-          "selects": {}
+          "selects": {
+            "aarch64-apple-darwin": [
+              "http2"
+            ],
+            "aarch64-unknown-linux-gnu": [
+              "http2"
+            ],
+            "wasm32-wasip1": [
+              "http2"
+            ],
+            "x86_64-pc-windows-msvc": [
+              "http2"
+            ],
+            "x86_64-unknown-linux-gnu": [
+              "http2"
+            ],
+            "x86_64-unknown-nixos-gnu": [
+              "http2"
+            ]
+          }
         },
         "deps": {
           "common": [
@@ -14167,6 +14079,90 @@
       ],
       "license_file": "LICENSE-APACHE"
     },
+    "jsonwebtoken 11.1.0": {
+      "name": "jsonwebtoken",
+      "version": "11.1.0",
+      "package_url": "https://github.com/Keats/jsonwebtoken",
+      "repository": {
+        "Http": {
+          "url": "https://static.crates.io/crates/jsonwebtoken/11.1.0/download",
+          "sha256": "e75fe14a82d81e5f5af639997db37d8b96045938a7ac6ab18cdbe1c7467e05e1"
+        }
+      },
+      "targets": [
+        {
+          "Library": {
+            "crate_name": "jsonwebtoken",
+            "crate_root": "src/lib.rs",
+            "srcs": {
+              "allow_empty": true,
+              "include": [
+                "**/*.rs"
+              ]
+            }
+          }
+        }
+      ],
+      "library_target_name": "jsonwebtoken",
+      "common_attrs": {
+        "compile_data_glob": [
+          "**"
+        ],
+        "crate_features": {
+          "common": [
+            "aws_lc_rs"
+          ],
+          "selects": {}
+        },
+        "deps": {
+          "common": [
+            {
+              "id": "aws-lc-rs 1.19.0",
+              "target": "aws_lc_rs"
+            },
+            {
+              "id": "base64 0.22.1",
+              "target": "base64"
+            },
+            {
+              "id": "serde 1.0.229",
+              "target": "serde"
+            },
+            {
+              "id": "serde_json 1.0.154",
+              "target": "serde_json"
+            },
+            {
+              "id": "signature 2.2.0",
+              "target": "signature"
+            },
+            {
+              "id": "zeroize 1.9.1",
+              "target": "zeroize"
+            }
+          ],
+          "selects": {
+            "cfg(target_arch = \"wasm32\")": [
+              {
+                "id": "getrandom 0.2.17",
+                "target": "getrandom"
+              },
+              {
+                "id": "js-sys 0.3.105",
+                "target": "js_sys"
+              }
+            ]
+          }
+        },
+        "edition": "2024",
+        "version": "11.1.0"
+      },
+      "license": "MIT",
+      "license_ids": [
+        "MIT"
+      ],
+      "license_file": "LICENSE"
+    },
     "kasuari 0.4.12": {
       "name": "kasuari",
       "version": "0.4.12",
@@ -16345,46 +16341,6 @@
       "license_ids": [],
       "license_file": null
     },
-    "marlin-context-org-patch 0.1.0": {
-      "name": "marlin-context-org-patch",
-      "version": "0.1.0",
-      "package_url": "https://github.com/tao3k/marlin-agent-core",
-      "repository": null,
-      "targets": [
-        {
-          "Library": {
-            "crate_name": "marlin_context_org_patch",
-            "crate_root": "src/lib.rs",
-            "srcs": {
-              "allow_empty": true,
-              "include": [
-                "**/*.rs"
-              ]
-            }
-          }
-        }
-      ],
-      "library_target_name": "marlin_context_org_patch",
-      "common_attrs": {
-        "compile_data_glob": [
-          "**"
-        ],
-        "deps": {
-          "common": [
-            {
-              "id": "serde 1.0.229",
-              "target": "serde"
-            }
-          ],
-          "selects": {}
-        },
-        "edition": "2024",
-        "version": "0.1.0"
-      },
-      "license": null,
-      "license_ids": [],
-      "license_file": null
-    },
     "marlin-deck-runtime 0.1.0": {
       "name": "marlin-deck-runtime",
       "version": "0.1.0",
@@ -16735,46 +16691,6 @@
             {
               "id": "toml 1.2.1+spec-1.1.0",
               "target": "toml"
-            }
-          ],
-          "selects": {}
-        },
-        "edition": "2024",
-        "version": "0.1.0"
-      },
-      "license": null,
-      "license_ids": [],
-      "license_file": null
-    },
-    "marlin-workspace-patch 0.1.0": {
-      "name": "marlin-workspace-patch",
-      "version": "0.1.0",
-      "package_url": "https://github.com/tao3k/marlin-agent-core",
-      "repository": null,
-      "targets": [
-        {
-          "Library": {
-            "crate_name": "marlin_workspace_patch",
-            "crate_root": "src/lib.rs",
-            "srcs": {
-              "allow_empty": true,
-              "include": [
-                "**/*.rs"
-              ]
-            }
-          }
-        }
-      ],
-      "library_target_name": "marlin_workspace_patch",
-      "common_attrs": {
-        "compile_data_glob": [
-          "**"
-        ],
-        "deps": {
-          "common": [
-            {
-              "id": "serde 1.0.229",
-              "target": "serde"
             }
           ],
           "selects": {}
@@ -19117,60 +19033,6 @@
       ],
       "license_file": "LICENSE"
     },
-    "nom 8.0.0": {
-      "name": "nom",
-      "version": "8.0.0",
-      "package_url": "https://github.com/rust-bakery/nom",
-      "repository": {
-        "Http": {
-          "url": "https://static.crates.io/crates/nom/8.0.0/download",
-          "sha256": "df9761775871bdef83bee530e60050f7e54b1105350d6884eb0fb4f46c2f9405"
-        }
-      },
-      "targets": [
-        {
-          "Library": {
-            "crate_name": "nom",
-            "crate_root": "src/lib.rs",
-            "srcs": {
-              "allow_empty": true,
-              "include": [
-                "**/*.rs"
-              ]
-            }
-          }
-        }
-      ],
-      "library_target_name": "nom",
-      "common_attrs": {
-        "compile_data_glob": [
-          "**"
-        ],
-        "crate_features": {
-          "common": [
-            "alloc",
-            "std"
-          ],
-          "selects": {}
-        },
-        "deps": {
-          "common": [
-            {
-              "id": "memchr 2.8.3",
-              "target": "memchr"
-            }
-          ],
-          "selects": {}
-        },
-        "edition": "2021",
-        "version": "8.0.0"
-      },
-      "license": "MIT",
-      "license_ids": [
-        "MIT"
-      ],
-      "license_file": "LICENSE"
-    },
     "ntapi 0.4.3": {
       "name": "ntapi",
       "version": "0.4.3",
@@ -19688,6 +19550,103 @@
         ],
         "edition": "2015",
         "version": "0.2.4"
+      },
+      "license": "MIT OR Apache-2.0",
+      "license_ids": [
+        "Apache-2.0",
+        "MIT"
+      ],
+      "license_file": "LICENSE-APACHE"
+    },
+    "oauth2 5.0.0": {
+      "name": "oauth2",
+      "version": "5.0.0",
+      "package_url": "https://github.com/ramosbugs/oauth2-rs",
+      "repository": {
+        "Http": {
+          "url": "https://static.crates.io/crates/oauth2/5.0.0/download",
+          "sha256": "51e219e79014df21a225b1860a479e2dcd7cbd9130f4defd4bd0e191ea31d67d"
+        }
+      },
+      "targets": [
+        {
+          "Library": {
+            "crate_name": "oauth2",
+            "crate_root": "src/lib.rs",
+            "srcs": {
+              "allow_empty": true,
+              "include": [
+                "**/*.rs"
+              ]
+            }
+          }
+        }
+      ],
+      "library_target_name": "oauth2",
+      "common_attrs": {
+        "compile_data_glob": [
+          "**"
+        ],
+        "crate_features": {
+          "common": [
+            "timing-resistant-secret-traits"
+          ],
+          "selects": {}
+        },
+        "deps": {
+          "common": [
+            {
+              "id": "base64 0.22.1",
+              "target": "base64"
+            },
+            {
+              "id": "chrono 0.4.45",
+              "target": "chrono"
+            },
+            {
+              "id": "http 1.5.0",
+              "target": "http"
+            },
+            {
+              "id": "rand 0.8.8",
+              "target": "rand"
+            },
+            {
+              "id": "serde 1.0.229",
+              "target": "serde"
+            },
+            {
+              "id": "serde_json 1.0.154",
+              "target": "serde_json"
+            },
+            {
+              "id": "serde_path_to_error 0.1.20",
+              "target": "serde_path_to_error"
+            },
+            {
+              "id": "sha2 0.10.9",
+              "target": "sha2"
+            },
+            {
+              "id": "thiserror 1.0.69",
+              "target": "thiserror"
+            },
+            {
+              "id": "url 2.5.8",
+              "target": "url"
+            }
+          ],
+          "selects": {
+            "cfg(target_arch = \"wasm32\")": [
+              {
+                "id": "getrandom 0.2.17",
+                "target": "getrandom"
+              }
+            ]
+          }
+        },
+        "edition": "2021",
+        "version": "5.0.0"
       },
       "license": "MIT OR Apache-2.0",
       "license_ids": [
@@ -20403,7 +20362,7 @@
         "Git": {
           "remote": "https://github.com/tao3k/orgize",
           "commitish": {
-            "Rev": "8f615eb5cb9ec88fb84d73009c7a420875ca7308"
+            "Rev": "7a54cc75de8cf9a9986be70bac38be14010141bd"
           }
         }
       },
@@ -20440,7 +20399,8 @@
         ],
         "crate_features": {
           "common": [
-            "default"
+            "default",
+            "runtime-rust"
           ],
           "selects": {}
         },
@@ -20451,16 +20411,20 @@
               "target": "blake3"
             },
             {
-              "id": "bytecount 0.6.9",
-              "target": "bytecount"
+              "id": "gerbil-parser-artifact 0.1.0",
+              "target": "gerbil_parser_artifact"
             },
             {
-              "id": "cfg-if 1.0.5",
-              "target": "cfg_if"
+              "id": "gerbil-parser-runtime 0.1.0",
+              "target": "gerbil_parser_runtime"
             },
             {
-              "id": "gerbil-parser-rowan 0.1.0",
-              "target": "gerbil_parser_rowan"
+              "id": "gerbil-scheme 0.1.0",
+              "target": "gerbil_scheme"
+            },
+            {
+              "id": "gerbil-scheme-sys 0.1.0",
+              "target": "gerbil_scheme_sys"
             },
             {
               "id": "ignore 0.4.33",
@@ -20475,16 +20439,8 @@
               "target": "memchr"
             },
             {
-              "id": "nom 8.0.0",
-              "target": "nom"
-            },
-            {
               "id": "orgize 0.10.0-alpha.10",
               "target": "build_script_build"
-            },
-            {
-              "id": "rowan 0.16.1",
-              "target": "rowan"
             },
             {
               "id": "serde_json 1.0.154",
@@ -20541,7 +20497,7 @@
         "Git": {
           "remote": "https://github.com/tao3k/orgize",
           "commitish": {
-            "Rev": "8f615eb5cb9ec88fb84d73009c7a420875ca7308"
+            "Rev": "7a54cc75de8cf9a9986be70bac38be14010141bd"
           },
           "strip_prefix": "build-support"
         }
@@ -20568,8 +20524,24 @@
         "deps": {
           "common": [
             {
-              "id": "gerbil-scheme-rust-ir 0.1.0",
-              "target": "gerbil_scheme_rust_ir"
+              "id": "gerbil-scheme-aot-build 0.1.0",
+              "target": "gerbil_scheme_aot_build"
+            },
+            {
+              "id": "serde 1.0.229",
+              "target": "serde"
+            },
+            {
+              "id": "serde_json 1.0.154",
+              "target": "serde_json"
+            },
+            {
+              "id": "sha2 0.10.9",
+              "target": "sha2"
+            },
+            {
+              "id": "toml 0.9.12+spec-1.1.0",
+              "target": "toml"
             }
           ],
           "selects": {}
@@ -21870,86 +21842,6 @@
       ],
       "license_file": "LICENSE-APACHE"
     },
-    "prettyplease 0.3.0": {
-      "name": "prettyplease",
-      "version": "0.3.0",
-      "package_url": "https://github.com/dtolnay/prettyplease",
-      "repository": {
-        "Http": {
-          "url": "https://static.crates.io/crates/prettyplease/0.3.0/download",
-          "sha256": "2bfe0f4c752e450fc2faf62654f1c134747922825d5b04ca717b8874f41a40c0"
-        }
-      },
-      "targets": [
-        {
-          "Library": {
-            "crate_name": "prettyplease",
-            "crate_root": "src/lib.rs",
-            "srcs": {
-              "allow_empty": true,
-              "include": [
-                "**/*.rs"
-              ]
-            }
-          }
-        },
-        {
-          "BuildScript": {
-            "crate_name": "build_script_build",
-            "crate_root": "build.rs",
-            "srcs": {
-              "allow_empty": true,
-              "include": [
-                "**/*.rs"
-              ]
-            }
-          }
-        }
-      ],
-      "library_target_name": "prettyplease",
-      "common_attrs": {
-        "compile_data_glob": [
-          "**"
-        ],
-        "deps": {
-          "common": [
-            {
-              "id": "prettyplease 0.3.0",
-              "target": "build_script_build"
-            },
-            {
-              "id": "proc-macro2 1.0.107",
-              "target": "proc_macro2"
-            },
-            {
-              "id": "syn 3.0.10",
-              "target": "syn"
-            }
-          ],
-          "selects": {}
-        },
-        "edition": "2021",
-        "version": "0.3.0"
-      },
-      "build_script_attrs": {
-        "compile_data_glob": [
-          "**"
-        ],
-        "compile_data_glob_excludes": [
-          "**/*.rs"
-        ],
-        "data_glob": [
-          "**"
-        ],
-        "links": "prettyplease03"
-      },
-      "license": "MIT OR Apache-2.0",
-      "license_ids": [
-        "Apache-2.0",
-        "MIT"
-      ],
-      "license_file": "LICENSE-APACHE"
-    },
     "proc-macro-crate 3.5.0": {
       "name": "proc-macro-crate",
       "version": "3.5.0",
@@ -22580,7 +22472,7 @@
                 "target": "once_cell"
               },
               {
-                "id": "windows-sys 0.61.2",
+                "id": "windows-sys 0.52.0",
                 "target": "windows_sys"
               }
             ]
@@ -22877,14 +22769,55 @@
         "compile_data_glob": [
           "**"
         ],
+        "crate_features": {
+          "common": [
+            "alloc",
+            "default",
+            "getrandom",
+            "libc",
+            "rand_chacha",
+            "std",
+            "std_rng"
+          ],
+          "selects": {}
+        },
         "deps": {
           "common": [
+            {
+              "id": "rand_chacha 0.3.1",
+              "target": "rand_chacha"
+            },
             {
               "id": "rand_core 0.6.4",
               "target": "rand_core"
             }
           ],
-          "selects": {}
+          "selects": {
+            "aarch64-apple-darwin": [
+              {
+                "id": "libc 0.2.191",
+                "target": "libc"
+              }
+            ],
+            "aarch64-unknown-linux-gnu": [
+              {
+                "id": "libc 0.2.191",
+                "target": "libc"
+              }
+            ],
+            "x86_64-unknown-linux-gnu": [
+              {
+                "id": "libc 0.2.191",
+                "target": "libc"
+              }
+            ],
+            "x86_64-unknown-nixos-gnu": [
+              {
+                "id": "libc 0.2.191",
+                "target": "libc"
+              }
+            ]
+          }
         },
         "edition": "2018",
         "version": "0.8.8"
@@ -23055,6 +22988,12 @@
         "compile_data_glob": [
           "**"
         ],
+        "crate_features": {
+          "common": [
+            "std"
+          ],
+          "selects": {}
+        },
         "deps": {
           "common": [
             {
@@ -23167,7 +23106,9 @@
         ],
         "crate_features": {
           "common": [
-            "getrandom"
+            "alloc",
+            "getrandom",
+            "std"
           ],
           "selects": {}
         },
@@ -24231,6 +24172,7 @@
             "__rustls",
             "__rustls-aws-lc-rs",
             "__tls",
+            "http2",
             "json",
             "rustls"
           ],
@@ -24292,6 +24234,18 @@
             }
           ],
           "selects": {
+            "aarch64-apple-darwin": [
+              {
+                "id": "h2 0.4.20",
+                "target": "h2"
+              }
+            ],
+            "aarch64-unknown-linux-gnu": [
+              {
+                "id": "h2 0.4.20",
+                "target": "h2"
+              }
+            ],
             "cfg(all(target_arch = \"wasm32\", any(target_os = \"unknown\", target_os = \"none\")))": [
               {
                 "id": "js-sys 0.3.105",
@@ -24354,6 +24308,30 @@
               {
                 "id": "tower-service 0.3.3",
                 "target": "tower_service"
+              }
+            ],
+            "wasm32-wasip1": [
+              {
+                "id": "h2 0.4.20",
+                "target": "h2"
+              }
+            ],
+            "x86_64-pc-windows-msvc": [
+              {
+                "id": "h2 0.4.20",
+                "target": "h2"
+              }
+            ],
+            "x86_64-unknown-linux-gnu": [
+              {
+                "id": "h2 0.4.20",
+                "target": "h2"
+              }
+            ],
+            "x86_64-unknown-nixos-gnu": [
+              {
+                "id": "h2 0.4.20",
+                "target": "h2"
               }
             ]
           }
@@ -24579,66 +24557,6 @@
         },
         "edition": "2021",
         "version": "0.11.5"
-      },
-      "license": "MIT OR Apache-2.0",
-      "license_ids": [
-        "Apache-2.0",
-        "MIT"
-      ],
-      "license_file": "LICENSE-APACHE"
-    },
-    "rowan 0.16.1": {
-      "name": "rowan",
-      "version": "0.16.1",
-      "package_url": "https://github.com/rust-analyzer/rowan",
-      "repository": {
-        "Http": {
-          "url": "https://static.crates.io/crates/rowan/0.16.1/download",
-          "sha256": "417a3a9f582e349834051b8a10c8d71ca88da4211e4093528e36b9845f6b5f21"
-        }
-      },
-      "targets": [
-        {
-          "Library": {
-            "crate_name": "rowan",
-            "crate_root": "src/lib.rs",
-            "srcs": {
-              "allow_empty": true,
-              "include": [
-                "**/*.rs"
-              ]
-            }
-          }
-        }
-      ],
-      "library_target_name": "rowan",
-      "common_attrs": {
-        "compile_data_glob": [
-          "**"
-        ],
-        "deps": {
-          "common": [
-            {
-              "id": "countme 3.0.1",
-              "target": "countme"
-            },
-            {
-              "id": "hashbrown 0.14.5",
-              "target": "hashbrown"
-            },
-            {
-              "id": "rustc-hash 1.1.0",
-              "target": "rustc_hash"
-            },
-            {
-              "id": "text-size 1.1.1",
-              "target": "text_size"
-            }
-          ],
-          "selects": {}
-        },
-        "edition": "2021",
-        "version": "0.16.1"
       },
       "license": "MIT OR Apache-2.0",
       "license_ids": [
@@ -25125,7 +25043,7 @@
                 "alias": "libc_errno"
               },
               {
-                "id": "windows-sys 0.61.2",
+                "id": "windows-sys 0.52.0",
                 "target": "windows_sys"
               }
             ],
@@ -25508,7 +25426,7 @@
             ],
             "cfg(windows)": [
               {
-                "id": "windows-sys 0.61.2",
+                "id": "windows-sys 0.52.0",
                 "target": "windows_sys"
               }
             ]
@@ -26625,6 +26543,65 @@
         "data_glob": [
           "**"
         ]
+      },
+      "license": "MIT OR Apache-2.0",
+      "license_ids": [
+        "Apache-2.0",
+        "MIT"
+      ],
+      "license_file": "LICENSE-APACHE"
+    },
+    "serde_path_to_error 0.1.20": {
+      "name": "serde_path_to_error",
+      "version": "0.1.20",
+      "package_url": "https://github.com/dtolnay/path-to-error",
+      "repository": {
+        "Http": {
+          "url": "https://static.crates.io/crates/serde_path_to_error/0.1.20/download",
+          "sha256": "10a9ff822e371bb5403e391ecd83e182e0e77ba7f6fe0160b795797109d1b457"
+        }
+      },
+      "targets": [
+        {
+          "Library": {
+            "crate_name": "serde_path_to_error",
+            "crate_root": "src/lib.rs",
+            "srcs": {
+              "allow_empty": true,
+              "include": [
+                "**/*.rs"
+              ]
+            }
+          }
+        }
+      ],
+      "library_target_name": "serde_path_to_error",
+      "common_attrs": {
+        "compile_data_glob": [
+          "**"
+        ],
+        "deps": {
+          "common": [
+            {
+              "id": "itoa 1.0.19",
+              "target": "itoa"
+            },
+            {
+              "id": "serde_core 1.0.229",
+              "target": "serde_core"
+            }
+          ],
+          "selects": {
+            "cfg(any())": [
+              {
+                "id": "serde 1.0.229",
+                "target": "serde"
+              }
+            ]
+          }
+        },
+        "edition": "2021",
+        "version": "0.1.20"
       },
       "license": "MIT OR Apache-2.0",
       "license_ids": [
@@ -28772,13 +28749,13 @@
           "selects": {
             "aarch64-apple-darwin": [
               {
-                "id": "getrandom 0.4.3",
+                "id": "getrandom 0.3.4",
                 "target": "getrandom"
               }
             ],
             "aarch64-unknown-linux-gnu": [
               {
-                "id": "getrandom 0.4.3",
+                "id": "getrandom 0.3.4",
                 "target": "getrandom"
               }
             ],
@@ -28790,31 +28767,31 @@
             ],
             "cfg(windows)": [
               {
-                "id": "windows-sys 0.61.2",
+                "id": "windows-sys 0.52.0",
                 "target": "windows_sys"
               }
             ],
             "wasm32-wasip1": [
               {
-                "id": "getrandom 0.4.3",
+                "id": "getrandom 0.3.4",
                 "target": "getrandom"
               }
             ],
             "x86_64-pc-windows-msvc": [
               {
-                "id": "getrandom 0.4.3",
+                "id": "getrandom 0.3.4",
                 "target": "getrandom"
               }
             ],
             "x86_64-unknown-linux-gnu": [
               {
-                "id": "getrandom 0.4.3",
+                "id": "getrandom 0.3.4",
                 "target": "getrandom"
               }
             ],
             "x86_64-unknown-nixos-gnu": [
               {
-                "id": "getrandom 0.4.3",
+                "id": "getrandom 0.3.4",
                 "target": "getrandom"
               }
             ]
@@ -28880,45 +28857,6 @@
         "MIT"
       ],
       "license_file": "LICENSE"
-    },
-    "text-size 1.1.1": {
-      "name": "text-size",
-      "version": "1.1.1",
-      "package_url": "https://github.com/rust-analyzer/text-size",
-      "repository": {
-        "Http": {
-          "url": "https://static.crates.io/crates/text-size/1.1.1/download",
-          "sha256": "f18aa187839b2bdb1ad2fa35ead8c4c2976b64e4363c386d45ac0f7ee85c9233"
-        }
-      },
-      "targets": [
-        {
-          "Library": {
-            "crate_name": "text_size",
-            "crate_root": "src/lib.rs",
-            "srcs": {
-              "allow_empty": true,
-              "include": [
-                "**/*.rs"
-              ]
-            }
-          }
-        }
-      ],
-      "library_target_name": "text_size",
-      "common_attrs": {
-        "compile_data_glob": [
-          "**"
-        ],
-        "edition": "2018",
-        "version": "1.1.1"
-      },
-      "license": "MIT OR Apache-2.0",
-      "license_ids": [
-        "Apache-2.0",
-        "MIT"
-      ],
-      "license_file": "LICENSE-APACHE"
     },
     "thiserror 1.0.69": {
       "name": "thiserror",
@@ -30087,7 +30025,28 @@
             "serde",
             "std"
           ],
-          "selects": {}
+          "selects": {
+            "aarch64-apple-darwin": [
+              "default",
+              "display"
+            ],
+            "aarch64-unknown-linux-gnu": [
+              "default",
+              "display"
+            ],
+            "x86_64-pc-windows-msvc": [
+              "default",
+              "display"
+            ],
+            "x86_64-unknown-linux-gnu": [
+              "default",
+              "display"
+            ],
+            "x86_64-unknown-nixos-gnu": [
+              "default",
+              "display"
+            ]
+          }
         },
         "deps": {
           "common": [
@@ -30112,7 +30071,38 @@
               "target": "winnow"
             }
           ],
-          "selects": {}
+          "selects": {
+            "aarch64-apple-darwin": [
+              {
+                "id": "toml_writer 1.2.0+spec-1.1.0",
+                "target": "toml_writer"
+              }
+            ],
+            "aarch64-unknown-linux-gnu": [
+              {
+                "id": "toml_writer 1.2.0+spec-1.1.0",
+                "target": "toml_writer"
+              }
+            ],
+            "x86_64-pc-windows-msvc": [
+              {
+                "id": "toml_writer 1.2.0+spec-1.1.0",
+                "target": "toml_writer"
+              }
+            ],
+            "x86_64-unknown-linux-gnu": [
+              {
+                "id": "toml_writer 1.2.0+spec-1.1.0",
+                "target": "toml_writer"
+              }
+            ],
+            "x86_64-unknown-nixos-gnu": [
+              {
+                "id": "toml_writer 1.2.0+spec-1.1.0",
+                "target": "toml_writer"
+              }
+            ]
+          }
         },
         "edition": "2021",
         "version": "0.9.12+spec-1.1.0"
@@ -30290,26 +30280,11 @@
         "crate_features": {
           "common": [
             "alloc",
+            "default",
             "serde",
             "std"
           ],
-          "selects": {
-            "aarch64-apple-darwin": [
-              "default"
-            ],
-            "aarch64-unknown-linux-gnu": [
-              "default"
-            ],
-            "x86_64-pc-windows-msvc": [
-              "default"
-            ],
-            "x86_64-unknown-linux-gnu": [
-              "default"
-            ],
-            "x86_64-unknown-nixos-gnu": [
-              "default"
-            ]
-          }
+          "selects": {}
         },
         "deps": {
           "common": [
@@ -30428,25 +30403,10 @@
         "crate_features": {
           "common": [
             "alloc",
+            "default",
             "std"
           ],
-          "selects": {
-            "aarch64-apple-darwin": [
-              "default"
-            ],
-            "aarch64-unknown-linux-gnu": [
-              "default"
-            ],
-            "x86_64-pc-windows-msvc": [
-              "default"
-            ],
-            "x86_64-unknown-linux-gnu": [
-              "default"
-            ],
-            "x86_64-unknown-nixos-gnu": [
-              "default"
-            ]
-          }
+          "selects": {}
         },
         "deps": {
           "common": [
@@ -32906,6 +32866,44 @@
       ],
       "license_file": "LICENSE"
     },
+    "untrusted 0.7.1": {
+      "name": "untrusted",
+      "version": "0.7.1",
+      "package_url": "https://github.com/briansmith/untrusted",
+      "repository": {
+        "Http": {
+          "url": "https://static.crates.io/crates/untrusted/0.7.1/download",
+          "sha256": "a156c684c91ea7d62626509bce3cb4e1d9ed5c4d978f7b4352658f96a4c26b4a"
+        }
+      },
+      "targets": [
+        {
+          "Library": {
+            "crate_name": "untrusted",
+            "crate_root": "src/untrusted.rs",
+            "srcs": {
+              "allow_empty": true,
+              "include": [
+                "**/*.rs"
+              ]
+            }
+          }
+        }
+      ],
+      "library_target_name": "untrusted",
+      "common_attrs": {
+        "compile_data_glob": [
+          "**"
+        ],
+        "edition": "2018",
+        "version": "0.7.1"
+      },
+      "license": "ISC",
+      "license_ids": [
+        "ISC"
+      ],
+      "license_file": "LICENSE.txt"
+    },
     "untrusted 0.9.0": {
       "name": "untrusted",
       "version": "0.9.0",
@@ -32976,6 +32974,7 @@
         "crate_features": {
           "common": [
             "default",
+            "serde",
             "std"
           ],
           "selects": {}
@@ -32993,11 +32992,24 @@
             {
               "id": "percent-encoding 2.3.2",
               "target": "percent_encoding"
+            },
+            {
+              "id": "serde 1.0.229",
+              "target": "serde"
             }
           ],
           "selects": {}
         },
         "edition": "2018",
+        "proc_macro_deps": {
+          "common": [
+            {
+              "id": "serde_derive 1.0.229",
+              "target": "serde_derive"
+            }
+          ],
+          "selects": {}
+        },
         "version": "2.5.8"
       },
       "license": "MIT OR Apache-2.0",
@@ -33610,10 +33622,13 @@
         ],
         "crate_features": {
           "common": [
-            "default",
             "std"
           ],
-          "selects": {}
+          "selects": {
+            "wasm32-unknown-unknown": [
+              "default"
+            ]
+          }
         },
         "deps": {
           "common": [
@@ -33942,9 +33957,9 @@
       "package_url": null,
       "repository": {
         "Git": {
-          "remote": "https://github.com/hardenedlinux/weaver.git",
+          "remote": "https://github.com/hardenedlinux/weaver",
           "commitish": {
-            "Rev": "5de7b08a09a2427c7bd03835ab062effc57e5acd"
+            "Rev": "cea04974f4100402900842de417fdd598e1861ab"
           },
           "strip_prefix": "crates/llm"
         }
@@ -33983,6 +33998,14 @@
               "target": "bytes"
             },
             {
+              "id": "jsonwebtoken 11.1.0",
+              "target": "jsonwebtoken"
+            },
+            {
+              "id": "oauth2 5.0.0",
+              "target": "oauth2"
+            },
+            {
               "id": "reqwest 0.13.5",
               "target": "reqwest"
             },
@@ -33995,8 +34018,16 @@
               "target": "serde_json"
             },
             {
+              "id": "sha2 0.10.9",
+              "target": "sha2"
+            },
+            {
               "id": "thiserror 2.0.21",
               "target": "thiserror"
+            },
+            {
+              "id": "tokio 1.53.1",
+              "target": "tokio"
             },
             {
               "id": "tokio-stream 0.1.19",
@@ -34009,6 +34040,18 @@
             {
               "id": "tokio_sse_codec 0.0.2",
               "target": "tokio_sse_codec"
+            },
+            {
+              "id": "toml 1.2.1+spec-1.1.0",
+              "target": "toml"
+            },
+            {
+              "id": "uuid 1.29.2",
+              "target": "uuid"
+            },
+            {
+              "id": "zeroize 1.9.1",
+              "target": "zeroize"
             }
           ],
           "selects": {}
@@ -34478,7 +34521,7 @@
           "selects": {
             "cfg(windows)": [
               {
-                "id": "windows-sys 0.61.2",
+                "id": "windows-sys 0.52.0",
                 "target": "windows_sys"
               }
             ]
@@ -35221,7 +35264,15 @@
             "Win32_NetworkManagement_IpHelper",
             "Win32_Networking",
             "Win32_Networking_WinSock",
+            "Win32_Security",
+            "Win32_Security_Cryptography",
+            "Win32_Storage",
+            "Win32_Storage_FileSystem",
             "Win32_System",
+            "Win32_System_Console",
+            "Win32_System_Diagnostics",
+            "Win32_System_Diagnostics_Debug",
+            "Win32_System_SystemInformation",
             "Win32_System_Threading",
             "default"
           ],
@@ -35288,7 +35339,6 @@
             "Win32_Networking",
             "Win32_Networking_WinSock",
             "Win32_Security",
-            "Win32_Security_Cryptography",
             "Win32_Storage",
             "Win32_Storage_FileSystem",
             "Win32_System",
@@ -35312,6 +35362,7 @@
               "Win32_Security_Authentication",
               "Win32_Security_Authentication_Identity",
               "Win32_Security_Credentials",
+              "Win32_Security_Cryptography",
               "Win32_System_LibraryLoader"
             ]
           }
@@ -36111,49 +36162,15 @@
           "**"
         ],
         "crate_features": {
-          "common": [],
-          "selects": {
-            "aarch64-apple-darwin": [
-              "alloc",
-              "ascii",
-              "binary",
-              "default",
-              "parser",
-              "std"
-            ],
-            "aarch64-unknown-linux-gnu": [
-              "alloc",
-              "ascii",
-              "binary",
-              "default",
-              "parser",
-              "std"
-            ],
-            "x86_64-pc-windows-msvc": [
-              "alloc",
-              "ascii",
-              "binary",
-              "default",
-              "parser",
-              "std"
-            ],
-            "x86_64-unknown-linux-gnu": [
-              "alloc",
-              "ascii",
-              "binary",
-              "default",
-              "parser",
-              "std"
-            ],
-            "x86_64-unknown-nixos-gnu": [
-              "alloc",
-              "ascii",
-              "binary",
-              "default",
-              "parser",
-              "std"
-            ]
-          }
+          "common": [
+            "alloc",
+            "ascii",
+            "binary",
+            "default",
+            "parser",
+            "std"
+          ],
+          "selects": {}
         },
         "edition": "2021",
         "version": "1.0.5"
@@ -36893,12 +36910,79 @@
         "crate_features": {
           "common": [
             "alloc",
-            "default"
+            "default",
+            "derive",
+            "zeroize_derive"
           ],
           "selects": {}
         },
         "edition": "2024",
+        "proc_macro_deps": {
+          "common": [
+            {
+              "id": "zeroize_derive 1.5.0",
+              "target": "zeroize_derive"
+            }
+          ],
+          "selects": {}
+        },
         "version": "1.9.1"
+      },
+      "license": "Apache-2.0 OR MIT",
+      "license_ids": [
+        "Apache-2.0",
+        "MIT"
+      ],
+      "license_file": "LICENSE-APACHE"
+    },
+    "zeroize_derive 1.5.0": {
+      "name": "zeroize_derive",
+      "version": "1.5.0",
+      "package_url": "https://github.com/RustCrypto/utils",
+      "repository": {
+        "Http": {
+          "url": "https://static.crates.io/crates/zeroize_derive/1.5.0/download",
+          "sha256": "3c50655cbb0fe3fc43170059e702f1ce5e19b84cec58dc87b037a09935c2f328"
+        }
+      },
+      "targets": [
+        {
+          "ProcMacro": {
+            "crate_name": "zeroize_derive",
+            "crate_root": "src/lib.rs",
+            "srcs": {
+              "allow_empty": true,
+              "include": [
+                "**/*.rs"
+              ]
+            }
+          }
+        }
+      ],
+      "library_target_name": "zeroize_derive",
+      "common_attrs": {
+        "compile_data_glob": [
+          "**"
+        ],
+        "deps": {
+          "common": [
+            {
+              "id": "proc-macro2 1.0.107",
+              "target": "proc_macro2"
+            },
+            {
+              "id": "quote 1.0.47",
+              "target": "quote"
+            },
+            {
+              "id": "syn 2.0.119",
+              "target": "syn"
+            }
+          ],
+          "selects": {}
+        },
+        "edition": "2024",
+        "version": "1.5.0"
       },
       "license": "Apache-2.0 OR MIT",
       "license_ids": [
@@ -37227,14 +37311,12 @@
     "marlin-agent-tui 0.1.0": "crates/marlin-agent-tui",
     "marlin-bazel-scenario-resolution 0.0.0": "bazel/crate-universe",
     "marlin-context-org-model 0.1.0": "crates/marlin-agent-context/parts/org-model",
-    "marlin-context-org-patch 0.1.0": "crates/marlin-agent-context/parts/org-patch",
     "marlin-deck-runtime 0.1.0": "crates/marlin-deck-runtime",
     "marlin-gerbil-aot-link 0.1.0": "build-support/marlin-gerbil-aot-link",
     "marlin-gerbil-ir 0.1.0": "crates/marlin-gerbil-ir",
     "marlin-gerbil-scheme 0.1.0": "crates/marlin-gerbil-scheme",
     "marlin-git-utils 0.1.0": "crates/marlin-git-utils",
     "marlin-rust-project-harness-policy 0.1.0": "build-support/marlin-rust-project-harness-policy",
-    "marlin-workspace-patch 0.1.0": "crates/marlin-workspace-patch",
     "marlin-workspace-protocol 0.1.0": "crates/marlin-workspace-protocol",
     "marlin-workspace-query 0.1.0": "crates/marlin-workspace-query",
     "marlin-workspace-status 0.1.0": "crates/marlin-workspace-status",

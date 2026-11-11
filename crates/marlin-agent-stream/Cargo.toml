@@ -1,4 +1,5 @@
 [package]
+license.workspace = true
 name = "marlin-agent-stream"
 edition.workspace = true
 version.workspace = true

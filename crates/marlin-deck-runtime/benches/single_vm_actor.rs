@@ -19,9 +19,11 @@ fn main() -> Result<(), Box<dyn Error>> {
     if count == 0 {
         return Err("count must be positive".into());
     }
+    let startup_begin = Instant::now();
     let deck = DeckRuntime::start(
         DeckRuntimeConfig::new(128.try_into()?).with_batch_capacity(batch.try_into()?),
     )?;
+    let startup = startup_begin.elapsed();
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(TOKIO_WORKERS)
         .enable_all()
@@ -44,7 +46,9 @@ fn main() -> Result<(), Box<dyn Error>> {
             while let Some(result) = calls.join_next().await { latencies.push(result??); }
         }
         let elapsed = started.elapsed(); latencies.sort_unstable();
+        let shutdown_begin = Instant::now();
         let receipt = deck.shutdown().await?;
+        let shutdown = shutdown_begin.elapsed();
         assert_eq!(receipt.reason, DeckRuntimeStopReason::Drained);
         assert_eq!(receipt.vm_processors, 1);
         assert!(receipt.context_service_closed);
@@ -53,12 +57,17 @@ fn main() -> Result<(), Box<dyn Error>> {
         assert_eq!(receipt.mailbox.actors_retired, 1);
         assert_eq!(receipt.mailbox.results_collected, count as u64 + 64);
         println!(
-            "batch_capacity={batch} requests={count} elapsed_s={:.6} requests_per_s={:.1} p50_us={:.1} p95_us={:.1} p99_us={:.1} vm_processors={} tokio_workers={TOKIO_WORKERS} metrics={:?} mailbox={:?}",
+            "batch_capacity={batch} requests={count} elapsed_s={:.6} requests_per_s={:.1} p50_us={:.1} p95_us={:.1} p99_us={:.1} p999_us={:.1} max_us={:.1} over_20ms={} startup_s={:.6} shutdown_s={:.6} vm_processors={} tokio_workers={TOKIO_WORKERS} metrics={:?} mailbox={:?}",
             elapsed.as_secs_f64(),
             count as f64 / elapsed.as_secs_f64(),
             latencies[count / 2] as f64 / 1000.0,
             latencies[(count * 95 / 100).min(count - 1)] as f64 / 1000.0,
             latencies[(count * 99 / 100).min(count - 1)] as f64 / 1000.0,
+            latencies[(count * 999 / 1000).min(count - 1)] as f64 / 1000.0,
+            latencies[count - 1] as f64 / 1000.0,
+            latencies.iter().filter(|latency| **latency > 20_000_000).count(),
+            startup.as_secs_f64(),
+            shutdown.as_secs_f64(),
             receipt.vm_processors,
             receipt.metrics,
             receipt.mailbox,

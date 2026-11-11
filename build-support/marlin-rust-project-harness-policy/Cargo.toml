@@ -1,4 +1,5 @@
 [package]
+license.workspace = true
 name = "marlin-rust-project-harness-policy"
 edition = "2024"
 version = "0.1.0"

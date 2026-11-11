@@ -1,4 +1,5 @@
 [package]
+license.workspace = true
 name = "marlin-context-org-model"
 edition.workspace = true
 version.workspace = true

@@ -1,4 +1,5 @@
 [package]
+license.workspace = true
 name = "marlin-agent-core"
 edition.workspace = true
 version.workspace = true

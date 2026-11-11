@@ -8,6 +8,9 @@ fn job(index: usize) -> (Job, oneshot::Receiver<Outcome>) {
     let (reply, result) = oneshot::channel();
     (
         Job {
+            module: super::DeckModuleInstanceId(std::num::NonZeroU64::MIN),
+            #[cfg(feature = "context-profiling")]
+            enqueued_at: std::time::Instant::now(),
             request: context_fixture::request(&context_fixture::scope("source"), index),
             cancellation: CancellationToken::new(),
             deadline: Instant::now() + Duration::from_secs(30),
@@ -121,10 +124,22 @@ async fn a_full_channel_rejects_without_waiting_or_entering_scheme() {
     let (_finished, stopped) = watch::channel(None);
     let deck = DeckRuntime {
         queue,
+        wake: Arc::new(wake::Wake::new().unwrap()),
+        default_module: ModuleState::new(DeckModuleInstanceId(std::num::NonZeroU64::MIN)),
         stopping: Arc::new(AtomicBool::new(false)),
         stopped,
         owner: Arc::new(Mutex::new(None)),
     };
+    let module = deck.context_module();
+    assert!(matches!(
+        module.timer(Duration::ZERO).await,
+        Err(DeckRuntimeRejection::TimerDelay)
+    ));
+    assert!(matches!(
+        module.retire().await,
+        Err(DeckRuntimeRejection::Backpressure)
+    ));
+    assert!(!*module.state.closed.lock().unwrap());
     let result = deck
         .admit_context(
             context_fixture::request(&context_fixture::scope("source"), 1),

@@ -78,8 +78,10 @@ pub fn emit_deck_actor_link_directives() {
         r#"(import :gerbil/compiler :gerbil-scheme-rust/scheme/program-build)
            (def benchmark? (equal? (getenv "MARLIN_DECK_MAILBOX_BENCHMARK") "1"))
            (when benchmark?
-             (compile-module (path-expand "bench/mailbox.ss")
-               [output-dir: (getenv "MARLIN_DECK_AOT_LIB") invoke-gsc: #f optimize: #t static: #t]))
+             (for-each (lambda (path)
+               (compile-module (path-expand path)
+                 [output-dir: (getenv "MARLIN_DECK_AOT_LIB") invoke-gsc: #f optimize: #t static: #t]))
+               ["bench/mailbox.ss" "bench/compiler-roots.ss" "bench/context-profile.ss"]))
            (def source (path-expand (if benchmark? "bench/mailbox-entry.ss" "c-abi/deck-runtime.ss")))
            (compile-module source [output-dir: (getenv "MARLIN_DECK_AOT_LIB") invoke-gsc: #f optimize: #t static: #t])
            (gerbil-rs-stage-program source (getenv "MARLIN_DECK_AOT_STAGE") []

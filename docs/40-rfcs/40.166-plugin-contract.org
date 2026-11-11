@@ -1,5 +1,5 @@
 #+TITLE: 40.166 Plugin Contract
-#+DATE: 2026-11-10
+#+DATE: 2026-11-11
 #+FILETAGS: :marlin:rfc:plugin:runtime:security:
 #+PROPERTY: RFC_VERSION v0
 
@@ -1444,7 +1444,8 @@ completed. Each result carries its own u64 message ID and status. Successful
 Scope digests travel together as packed bytes. Rust validates the complete
 reply packet, including duplicate and unknown IDs, before publishing results.
 The host can release completed requests while another Actor remains blocked.
-Scheme publishes version 4 of the Deck Module contract for these signatures.
+The resident-mailbox cohort used version 4 of the Deck Module contract.
+The Module lifetime migration below replaces it with version 5.
 
 Marlin's Context decoder constructs Lab's Scope prototype directly.
 The Context Module publishes Lab's admission function with
@@ -1897,3 +1898,568 @@ this local record does not claim that a remote linked workflow ran. The PR
 snapshot excludes ongoing TUI and other concurrent edits, including unrelated
 changes in shared source files. Earlier historical measurements and failed
 receipts remain available under their original source cohorts.
+
+*** Context tail attribution and allocation accounting
+:PROPERTIES:
+:CUSTOM_ID: context-runtime-cost-attribution
+:END:
+
+The earlier 64.6--70.7 ms full-Context p99 is a business-path result, separate
+from the raw-mailbox result. The diagnostic cohort retains the same 4096 timed
+requests, 64 warmups, 64-request arrival waves, four Tokio workers, native
+credit and one Scheme processor. No heap allowance, concurrency, deadline,
+workload or warmup was increased. Compilation and startup remain separate.
+
+The opt-in =context-profiling= feature records Rust input projection, Scheme
+submission, Scheme receive and Rust result projection on each actual owner
+turn. Request age and native GC counters belong to that same turn. Recording
+is bounded to 65,536 turns; truncation is explicit and disqualifies a complete
+trace. Output is emitted after shutdown. This feature adds observer overhead;
+its timing is diagnostic, not the normal release benchmark's acceptance.
+
+In =target/context-runtime-research/context-gc-trace.log=, 239 owner turns
+include five collections. Their GC wall times are 48.16--54.72 ms. A 61.413 ms
+turn includes 52.825 ms of GC and request ages reaching 62.624 ms. All five
+long turns coincide with these collections; the longest turn without GC is
+10.404 ms. This is a correlation within individual turns, not subtraction of
+unrelated maxima. Post-GC live memory remains approximately 223.8--225.4 MB.
+Which retained library/runtime roots own that live memory still needs a heap
+retention investigation; this trace alone does not identify them.
+
+Across these turns, Rust input projection totals 68.422 ms, Scheme submission
+221.896 ms, receive/evaluation 607.477 ms and Rust result projection 1.102 ms.
+GC wall time totals 259.170 ms. Receive includes actual evaluation and waiting;
+it is not pure C ABI transition cost. No claim attributes the entire interval
+to the ABI. The separate =context_profile= bench calls the actual Lab/Marlin
+operations and returns all 4096 digest results through the existing typed SDK.
+It prepares fresh phase inputs and retains more simultaneous objects than the
+production waves, so independent component means cannot be added to explain
+production p99. Digest forcing is about 24 ms CPU for 4096 rows in that cohort,
+well below total checked admission; allocation and POO field validation dominate
+the remaining measured Scheme work.
+
+The =##process-statistics= field 7 is Gambit's stack/heap-sensitive allocation
+accounting. The paired runtime's implementation combines a historical offset,
+movable heap occupancy, stack occupancy and still-object occupancy. It can
+produce decreasing signed observations in these runs. Neither a positive delta
+nor a negative delta qualifies physical bytes allocated. Bench receipts now
+name it =vm_accounting_delta= and always mark physical allocation qualification
+false for that metric. GC count, heap capacity and post-GC live bytes are
+reported independently. There is no clamp, absolute value or fabricated saving.
+This corrects the measurement contract; it does not claim a Gambit accounting
+implementation defect has been fixed.
+
+A separate constructor-site diagnostic reuses Gerbil Bazel's
+=gambit_allocation_sites.py= source validation and lexical-procedure attribution.
+The SDK image diagnostic admits the actual SMP-capable runtime only while each
+observed allocation sees one VM identity and exactly one active processor.
+This is a separately declared admission, not a relaxation of that upstream
+observer's original single-VM build controls. Native Gambit list, box and small
+vector macro expansions are checked against the paired =gambit.h= when parsing
+sites. Original generated bodies remain byte-identical and line mappings are
+restored. Counter overflow or a changed topology refuses the diagnostic.
+
+The retained first census has 137 generated units, 2192 phase/unit counter
+files, zero counter errors and no skipped units. Its observed and unobserved
+4096-result buffers are byte-identical: 131072 bytes, SHA-256
+=a68e0a6a01f972575b88a31059d878df582c428a26ef17dd41492b7de745fdf9=.
+This census predates the final Module lifetime change and the public checked
+Lab admission procedure; it is an attribution cohort, not a final-head saving.
+
+| Independent phase | Observed constructor calls | Observed constructor bytes |
+|-------------------+----------------------------+----------------------------|
+| Decode 4096 Scope inputs | 115289 | 2999192 |
+| Lab Scope shape validation | 1527817 | 54165768 |
+| Lab admission with immutable copies | 1896449 | 63701016 |
+| Checked Module admission | 3784732 | 127599600 |
+| Force prepared Scope digests | 57344 | 2031616 |
+| Encode already-forced digests | 601 | 17304 |
+| Full Scheme pipeline | 3957890 | 132644936 |
+| Full Scheme Actor pipeline | 3961163 | 132738752 |
+
+These are generated-code constructor sites only. Prebuilt RTS allocation,
+foreign-library allocation and native FIFO internals are outside this census.
+It must not be labelled total process bytes, a coverage ratio against field 7,
+or a production performance improvement. Instrumented timings are unqualified.
+The raw sources, source hashes, per-site counts, parser and complete phase logs
+remain in =target/context-runtime-research/physical-allocation/= and
+=physical-summary.json=. Nothing is inferred for an unobserved owner.
+
+*** Reuse of Lab's functional contract
+
+Marlin's Context role and Deck role previously constructed distinct Function
+descriptors for the same Scope admission operation. Revalidation therefore
+wrapped an already-checked procedure again. The library now owns
+=AiAgenticContextAdmissionType= and publishes its checked admission procedure
+with that descriptor. Both Marlin roles import that existing library type.
+POO's original issuance/currentness mechanism decides reuse; Marlin adds no
+private cache, structural-type shortcut or unchecked entrypoint. Argument and
+result checking remain active. Strings are still frozen by Lab and digest
+computation remains lazy until the owning Actor forces it.
+
+The library change is [[https://github.com/tao3k/agentic-ai-lab/pull/63][Agentic AI Lab PR 63]], REV
+=558e9bd5b8acf1ec644c74c9621007a3695de636=. The focused official Test Harness
+passed input refusal, result refusal, same-descriptor procedure identity,
+caller-string ownership and digest equivalence. Its earlier broader Context
+Core test failed the unchanged Ops idle budget while cold-importing Orgize;
+that failed evidence remains and is not full Lab package acceptance.
+
+Two alternatives were rejected. A local canonical-contract file required a
+new bootstrap/import path instead of the selected Module library path. Widening
+SeparateProcedures/O2 to POO object, MOP and function-signature modules regressed
+the fixed A/B/B/A cohort, including p99 over 120 ms, and was reverted. The
+production compiler layout remains scoped to the existing mailbox owner.
+
+*** Module retirement and autonomous VM progress
+:PROPERTIES:
+:CUSTOM_ID: deck-module-retirement
+:END:
+
+Scheme now owns Deck contract version 5. Rust projects metadata instead of
+maintaining a second version constant. The new typed submission contains
+=u64vector= Module instance IDs plus the existing Context batch vectors. The
+reply is a vector of message IDs, status bytes, packed digest bytes and a
+=u64vector= event window. The event window carries five u64 values per notice:
+kind, Module instance ID, timer ID, monotonic due microseconds and observed
+microseconds. Host wakes have zero identities and timestamps. All result and
+event cardinalities and ownership are checked before client publication. No
+JSON, executable text, npm loader or arbitrary handler crosses this boundary.
+
+=DeckRuntime::activate_context_module()= invokes the registered Context factory.
+Rust mints =DeckModuleInstanceId= and =DeckTimerId=; callers cannot construct
+these IDs from free strings. The original =admit_context= facade uses the
+runtime's default Context Module. All instances use the same Lab operation
+and the same VM; the factory surface does not admit arbitrary Rust handlers.
+
+Each Module has a short admission lock covering channel publication and closing.
+No lock crosses an await or Scheme call. A successful retirement request closes
+admission only after its control message has a queue slot. Queue refusal leaves
+the Module open. Every earlier accepted request is already queued; the VM owner
+drains those requests before invoking Scheme retirement. Scheme rejects a
+retirement while that Module still owns uncollected messages. It sends stop
+and joins only the Module's Actors and timer threads, removes the Module and
+Actor roots, clears its recent routing cache and removes its already-published
+timer notices. Other Modules' messages keep their mailbox positions.
+
+Rust validates the actor/message counters and timer retirement count before
+publishing =DeckModuleRetirementReceipt=. Repeated retirement returns the same
+receipt. Further admission and timer requests return =ModuleRetired=. Global
+shutdown remains the fallback owner of every Module and drops all roots on the
+unique VM owner. Dropping a Module handle does not silently abandon or destroy
+its native work; explicit =retire().await= establishes the observable boundary.
+Dropping the last runtime sender closes admission and wakes the native owner
+before draining and shutdown.
+
+The old idle =blocking_recv= in Rust prevented Scheme scheduling between host
+requests. The owner now waits in Gambit's selective mailbox. A Rust-owned
+nonblocking pipe enters a Gambit input port, and one lightweight ingress Actor
+forwards bounded wake bursts into that same mailbox. Publishing a channel job
+precedes writing its wake byte. A full pipe already contains a pending wake;
+there is no separate pending flag with a clear/rearm race. Descriptors are
+close-on-exec, above stdio, and owned through teardown. Rust retains a reader
+until every racing notification is finished, and Scheme closes its port only
+after stopping and joining the ingress Actor. There is no periodic Rust timer,
+idle spin, custom Scheme ready queue or duplicate native wait protocol.
+
+This is the same native pipe/port wait mechanism used by Scheme Rust services.
+At the pinned SDK revision its Rust wake owner is private to the isolated
+service backend; the process-global linked-object API has no public attachment
+handle. Marlin's small descriptor/ingress adapter fills that boundary only.
+It does not copy the SDK service scheduler, fixed worker set, result FIFO,
+budget ledger, or VM lifecycle. A future public SDK attachment owner can absorb
+this adapter without changing Context semantics or timer observation meaning.
+
+=DeckContextModule::timer(delay)= is a Module-owned monotonic observation.
+The Scheme timer Actor uses Gambit's native timed =thread-receive=, rechecks
+monotonic time after a timeout and publishes its typed notice to the existing
+owner mailbox. It uses the VM's timer and green-thread scheduler. This is not
+a new policy clock, deadline heap or durable scheduling engine. AI Agentic Lab
+continues to own policy-clock provenance, expiry authorization, Context/Session
+semantics and durable Agenda. A timer observation grants no effect authority.
+
+A timer can fire while Rust submits no further requests. Dropping the waiting
+Rust future abandons its observation, not the native timer. The Module retains
+that obligation until the event is collected or retirement stops and joins it.
+Pending timer observations are rejected with =ModuleRetired= after native join.
+Rust validates exact Module/timer ownership and duplicate-free event windows;
+a late or foreign event cannot manufacture a client outcome. Native Actor
+population remains independent of Tokio workers, queue credit and transfer
+capacity. None of these limits is an Actor count ceiling.
+
+*** Reached implementation and retained Context publication
+
+A compiler manifest lists available units; it does not prove that runtime
+publication selected those units. The first constructor census reached zero
+sites in the canonical Context projection, Deck runtime and mailbox units,
+while a diagnostic backtrace showed private publication-reader copies. Marlin
+now registers its source through Yuanxu's existing
+=register-module-build-source!= and uses canonical ordinary library imports
+for these runtime operations. The published runtime exposes its real factory
+and mailbox-factory procedures. The linked C ABI compares both against the
+canonical constructors before startup acknowledgement. Substituted procedures
+are refused by the Scheme tests. Module role publication and Feature ownership
+remain in Yuanxu. This gate replaces the earlier manifest-only claim.
+
+The subsequent unchanged production A/B/B/A cohort, with 4096 measured
+requests and 64 warmups, records the following complete results. All four
+cohorts use four Tokio workers and one Scheme processor; batch capacity is a
+transport window, never an Actor limit. Compilation, startup and shutdown are
+excluded from request timing and reported separately.
+
+| Cohort | Batch capacity | Requests/s | p99 ms | p999 ms | Maximum ms | Requests over 20 ms |
+|--------+----------------+------------+--------+---------+------------+---------------------|
+| A1 | 1 | 3932.3 | 66.4428 | 71.4510 | 71.6621 | 316 |
+| B1 | 64 | 5536.6 | 62.4202 | 71.8555 | 71.8944 | 115 |
+| B2 | 64 | 3549.0 | 107.9866 | 113.8488 | 113.8508 | 676 |
+| A2 | 1 | 3969.4 | 114.9085 | 120.4269 | 121.0418 | 147 |
+
+All cohorts account for 4160 successful requests and one created/joined
+business Actor. These results do not meet the 20 ms objective and do not
+qualify a latency improvement. The earlier failures remain recorded. In a
+separate component diagnostic, 10,000 existing typed statistics round trips
+average 1.241 microseconds without GC. That probe includes statistics collection
+and copying; it is not a measurement of a bare C ABI instruction transition.
+
+A separate =context_profile retention= diagnostic forces collection only
+between activation stages and performs zero business requests with zero
+business Actors. Post-GC live memory grows from 3,050,896 bytes before selection
+to 217,781,384 bytes after first Lab Context publication. Marlin Context adds
+478,496 bytes; Deck publication adds 241,392 bytes. An empty runtime reaches
+218,820,632 bytes and closes to 218,765,160 bytes after local references are
+released. Collections after first Lab publication cost approximately 45--49 ms
+CPU. This locates the large retained set before business Actor creation; it
+does not yet identify individual retained roots. Forced-GC diagnostic times
+are excluded from production qualification and no production GC policy changes.
+
+The original signed allocation metric remains unqualified even when positive.
+Its reporting correction and a generated-constructor census are separate
+evidence, with prebuilt RTS and foreign allocation explicitly outside coverage.
+
+The registry diagnostic records zero registered compiler contexts before
+selection, then 1,949 registry entries, 491 distinct module contexts and
+207,713 context-table bindings after first Lab Context selection. Those counts
+remain unchanged through Marlin Context publication, Deck startup and closure.
+They identify the compiler activation scope; they do not assign all retained
+bytes to those bindings or prove a leak. Clearing Gerbil's registry or dropping
+source/currentness guards is not an admitted optimization.
+
+An isolated Yuanxu experiment recognized its standard =module-prelude= in the
+existing shared-prelude branch. First-publication live memory increased to
+223,236,328 bytes and collections still took about 45--49 ms. This experiment
+was rejected for the production dependency cohort. Its focused tests also
+failed existing idle/source-currentness checks; no Core acceptance is claimed.
+The original fixed Yuanxu revision remains in use.
+
+*** Canonical-library constructor census
+
+The next census uses the checked Lab admission at REV =558e9bd= and the
+canonical linked Marlin libraries, before the frozen-field constant-slot
+experiment. It records 140 generated units and 4,480 complete counter files
+across the component and retention processes, with zero errors and no skipped
+units. All 4096 returned digest bytes match the unobserved control, including
+SHA-256 =a68e0a6a01f972575b88a31059d878df582c428a26ef17dd41492b7de745fdf9=.
+The Actor phase also checks each ID, status, uniqueness and digest outside the
+measurement phases. Missing or failed Actor replies cannot pass on count alone.
+
+| Independent phase, 4096 rows | Observed constructor calls | Observed bytes |
+|-----------------------------+----------------------------+----------------|
+| Input decode | 121625 | 3619224 |
+| Scope shape validation | 1553033 | 54413064 |
+| Public checked Lab admission | 3510939 | 119884240 |
+| Module checked admission | 3510913 | 119883288 |
+| Digest forcing | 57344 | 2031616 |
+| Encoding forced digests | 601 | 17304 |
+| Full Scheme pipeline | 3690433 | 125549608 |
+| Full Actor pipeline and reply capture | 3748222 | 127116232 |
+
+Canonical Context projection contributes 2,101,248 observed bytes to decode
+and the full Scheme phase. The Actor phase reaches 996,224 bytes of Deck
+runtime constructors and 426,208 bytes in the mailbox unit. These actual site
+hits supplement the startup procedure-identity gate. They replace the first
+census's zero canonical-unit hits as evidence of the reached implementation.
+The changed execution coverage prevents a direct old/new total-byte saving
+claim. Neither census observes prebuilt RTS/interpreter allocation or native
+FIFO internals.
+
+First Lab selection is a separate phase with 8,226,192 bytes observed in the
+linked generated constructors. That value is not the approximately 215 MB
+increase in retained memory: imported compiler code and interpreter allocation
+are outside this constructor coverage. The registry and forced-GC results
+remain separate retention evidence. Raw source files, exact site counters and
+strict parsing receipts remain under
+=target/context-runtime-research/physical-linked/=. The parser additionally
+checks the paired header's small unfilled vector macros before accepting their
+allocation sites; it never accepts an arbitrary line as an allocation.
+
+A later complete raw-mailbox cohort also retains two latency failures followed
+by three passes: p99 413.250, 107.300, 8.790, 1.210 and 1.380 ms respectively,
+with Actor populations 1, 1, 1024, 1 and 1. All reply/oracle/join checks pass.
+The complete cohort does not qualify the raw latency objective. An unassigned
+wall-time residual is not evidence of a specific operating-system cause.
+
+The Lab frozen-field constant-slot trial passed the focused heap-fenced
+contract suite and matched all 4096 digest results, but failed its complete
+fixed-load cohort. A1/B1/B2/A2 p99 values were 469.7023, 299.0610, 551.1763 and
+202.2222 ms. Component CPU and wall costs both increased in that observation;
+the wall-minus-CPU residual remains unassigned. No claim attributes the entire
+regression to constant slots or to the host. The trial was rejected and the
+library implementation restored to the published REV =558e9bd=. The patch,
+original logs and matching digest buffers remain in
+=target/context-runtime-research/constant-slots/=. No failed cohort was replaced
+by a favorable rerun.
+
+*** Retained compiler ownership controls
+
+The passive registry census additionally counts 491 retained module code bodies.
+A disposable process first completes the normal zero-business-Actor lifetime,
+then removes code-body roots and subsequently binding-table roots. It performs
+no further Module operation after either destructive step. The observed cuts
+are 218,765,480 bytes after closure, 172,049,320 after code removal and
+140,225,768 after binding removal. Code roots account for 46,716,160 reclaimed
+bytes at that cut; binding roots account for a further 31,823,552. Forced-GC
+CPU observations are 45.729, 35.100 and 27.686 ms respectively.
+
+These are root-attribution controls in an intentionally unusable compiler
+context. They do not qualify a production optimization or prove that every
+remaining byte belongs to those tables. About 140 MB remains unassigned to
+individual retained owners. The destructive operations were removed from the
+maintained benchmark; its normal retention mode only observes code/body counts.
+The full experimental sources and logs remain under
+=target/context-runtime-research/retention-root-probe/=.
+
+Yuanxu already has a relevant owner repair,
+[[https://github.com/tao3k/gebril-yuanxu/commit/cd794638291d45fd5a837d75cc1f280c4315a2ac][separating reader contexts from Build roots]]. An isolated backport onto the
+installed =fd215418= cohort passes its focused compiler-context test. First
+Lab publication then retains 207,846,680 bytes, 467 contexts and 182,807
+bindings, about 9.9 MB less than the preceding cut. Forced-GC observations
+still range approximately 41--48 ms. No production latency pass follows from
+this forced-GC diagnostic.
+
+A second isolated backport reuses
+[[https://github.com/tao3k/gebril-yuanxu/commit/bb63bad10538ba0e2d2d29f4f3cfc559c35672eb][the existing compiled-dependency initialization/read-support separation]].
+The older reader's pending-entry representation is adapted while keeping its
+existing ownership association. The upstream import-support regression passes.
+First publication retains 207,875,304 bytes, so this observation shows no
+additional retained-memory reduction. Its forced-GC observations reach
+57.9--68.6 ms and remain diagnostic. Neither experimental prefix is the current
+Marlin dependency pin, nor a qualification of the complete newer Core revision.
+
+The newer Core release line remains under
+[[https://github.com/tao3k/gebril-yuanxu/pull/19][Yuanxu PR 19]]. The inspected =cd794638= run passes Build/bootstrap and
+input-context mutation gates on both platforms but fails several complete test
+partitions. Its proof workflow passes; those facts are separate gates. Parser
+and ASCENT pins are not advanced from this investigation. Any future change
+to compilation-state lifetime must remain in the existing Gerbil/Yuanxu owners
+and preserve native identity, source/currentness guards, Feature selection and
+advanced Scheme extension. Actor retirement cannot silently discard that state.
+
+The resulting limit is explicit: canonical compiled execution, typed result
+checking, Module retirement and autonomous timer wake are implemented and
+checked; complete Context p99 still fails the 20 ms objective. This evidence
+does not authorize clearing compiler metadata, changing GC policy, enlarging
+heap allowances, or replacing source admission with a remembered verdict.
+
+*** Verification of the maintained slice
+
+The restored production cohort uses Lab =558e9bd=, Yuanxu =fd215418=,
+POO =1f4b1720= and the Rust bridge =bfe803f5=. Eleven Deck tests pass,
+including the real linked VM lifecycle with four Tokio workers, independent
+Modules, idle timer delivery, retirement/admission races and terminal receipts.
+Deck/Core all-target Clippy passes with warnings denied; the final diagnostic
+change also passes Deck all-target Clippy and workspace formatting.
+
+The SDK's original in-process Builder and complete =t/all-test.ss= entry pass
+with =MODULE-OK=, =HARNESS-OK=, final =OK= and natural exit. Reproduction retains
+the earlier accepted dependency fallback order: the installed library directory
+followed by Lab's source-only dependency root. Replays that omitted that
+existing prerequisite failed to resolve optional time constructors; an
+additional test build target also failed native-context identity checks and
+was withdrawn. Neither failed attempt qualifies as a pass. The original
+standard Builder remains the sole package entry.
+
+OpenSysML strict validation and reflective self-check pass with 522 elements,
+4,993 checks and zero violations. The standard Bazel 9.2.0 dependency repin
+entry passes with only the generated manifest checksum change. Local linking
+retains the previously documented classic-linker workaround. These gates
+qualify the reported functional slice, not the unmet production latency
+objective or the unpublished Core backports. Shared TUI and Context/Org
+changes are excluded through an independent publication index.
+
+The linked AOT workflow now also triggers on relevant pull-request changes
+and checks Ubuntu/macOS independently. Manual dispatch retains its explicit
+runner-label input. GitHub refused the original manual-only workflow because
+it was absent from the default branch; those 404 responses did not start a
+remote gate. Remote results must be associated with the actual final PR SHA.
+
+*** Transitive phase and delayed-evaluation roots
+
+A later disposable probe follows each registered context's existing
+=super=, =up= and =down= links without forcing promises or creating contexts.
+After closure it sees 890 reachable expander contexts: 491 module contexts,
+six preludes and 393 other phase/root contexts. Their tables contain 335,099
+bindings, including 127,386 outside the module-context tables. Module/prelude
+evaluation slots contain 88 pending and 408 determined promises.
+
+The paired Gerbil source stores the expanded body both in =code= and in the
+=delay-atomic= evaluator closure. Gambit's determined-promise path clears its
+thunk; pending evaluator closures can independently retain a body. In the
+same disposable process, after the earlier code and module-table controls,
+removing evaluation-promise roots reduces retained memory from 140,227,320
+to 122,051,608 bytes. Removing remaining reachable context-table roots reduces
+it to 96,745,768 bytes. These are respectively 18,175,712 and 25,305,840 bytes
+of additional root-attributed retention in that cut.
+
+The process performs no later Module operation and exits naturally with zero
+business messages/Actors. Clearing those structures destroys compiler state;
+it is not an implementation, permission, or safe retirement rule. Experimental
+source was saved under =target/context-runtime-research/retention-topology-probe/=
+and the maintained benchmark restored byte-for-byte. Approximately 96.7 MB
+still lacks individual-owner attribution at the final destructive cut. This
+refines the earlier 140 MB remainder; it does not qualify a latency improvement
+or change the production dependency cohort.
+
+*** Linked-selector ABI symbol correction
+
+The first automatic macOS linked gate for PR head =f2a24fa= fails during
+linking, before any linked test or performance gate executes. The included
+C initializer still requests the retired
+=agent-policy-routing-native~0= Gambit linker while the existing builder emits
+=agent-policy-routing-abi~0=. Both references now use the emitted ABI name;
+no alias or alternate initialization path is introduced. The real linked
+selector suite passes all three tests locally with the established toolchain.
+The failed remote run is retained and does not qualify the later correction.
+
+*** Allocation ownership inside checked reads
+
+Reparsing the retained complete constructor census gives a narrower ownership
+boundary without executing another workload. The original generated C and
+counter-file hashes are checked, the existing strict parser admits every site,
+and the resulting sums equal the earlier per-unit totals. For the 4,096-row
+checked admission phase, =make-read-issuer= performs 204,800 record allocations
+and 204,800 authentication-closure allocations: 16,384,000 and 19,660,800 bytes,
+respectively. Each issuance therefore costs 80 bytes for its record and 96
+bytes for its birth-authentication closure in this paired toolchain. Together
+they account for 36,044,800 bytes, about 30.07% of the phase's 119,883,288
+observed generated-code bytes. This is 50 issued read records per row across
+the existing construction and argument/result validation path, not 50 calls
+to the admission API.
+
+The digest-only phase issues 4,096 more records/closures, totaling 720,896
+bytes. The complete Actor phase reaches 208,903 issuances, totaling 36,766,928
+bytes, about 28.92% of its observed allocation. This decomposition identifies
+an allocation owner; it does not assign CPU time or quantify a latency saving.
+Prebuilt RTS/interpreter, native FIFO and foreign allocation remain outside
+coverage. Raw receipts are retained in
+=target/context-runtime-research/physical-linked/read-issuer-breakdown.json=.
+
+The paired POO owner keeps both the exposed read record and a privately issued
+closure so mutations of the record cannot manufacture an authenticated read.
+The actual source also preserves dependencies for later observation and
+invalidation. Deleting those records, accepting an old successful validation,
+or replacing the descriptor with a consumer-local shortcut would change the
+contract. Any representation improvement belongs in that existing POO owner
+and requires its mutation/observer controls plus the complete Marlin cohort;
+this investigation introduces no alternate validation or read authority.
+
+*** Import/export ownership beyond the registry and phase links
+
+A further disposable control removes the registered/phase contexts' existing
+import/export relation roots after the earlier code, table and evaluator
+controls. In the run with the extended read-only linkage census, retained
+memory drops from 96,747,288 to 24,173,848 bytes: 72,573,440 additional bytes
+are attributed to those roots in that cut. Clearing the registry afterwards
+reaches 23,794,920 bytes, only 378,928 bytes lower. These values do not prove
+that either the import/export records alone or the registry alone has that
+shallow size. They include everything made unreachable by each ordered cut.
+
+The paired Gerbil types explain the missed edges: a =module-import= references
+a =module-export=, whose =context= can lead outside the registry/phase closure.
+Following those standard accessors, in addition to =super/up/down=, observes
+955 contexts, including 524 module contexts and six preludes, with 343,366
+bindings and 524 code bodies at Lab publication. This is 33 module contexts
+and 8,267 bindings beyond the narrower 890-context traversal. After the
+registered/phase code, table and evaluator cuts, those additional contexts
+still retain 33 code bodies and 33 determined evaluator promises. The graph
+has 388,515 import visits and 499,882 export visits; these are traversal visits,
+not unique object counts. Removing the relation roots removes those additional
+contexts from the traversal. No Module operation follows the destructive cuts,
+and every such mutation has been removed from the maintained benchmark.
+
+The maintained =compiler-roots.ss= diagnostic uses only the existing Gerbil
+context/import/export accessors and local ephemeral traversal tables. It counts
+registered roots separately from the wider graph, does not create contexts or
+force evaluator promises, and never mutates compiler ownership. The existing
+=retention= benchmark invokes it only in its separate forced-GC mode; timed
+production and component phases do not perform this traversal. Native numeric
+buffers carry the counts to Rust, which checks shape and subset consistency.
+The zero-business-message/Actor control remains mandatory. The SysML
+publication-state owner records this boundary.
+
+Approximately 23.8 MB remains without individual-owner attribution after the
+final destructive cut; this includes the VM/application baseline, which is
+about 3.05 MB before selection in that run. No optimization claim follows from
+that remainder or from the forced-GC times. Production retains the complete
+compiler ownership graph and its source/currentness authority. The newer
+Yuanxu PR 19 remains at =0fc1a866= with successful proofs and failed complete
+Yuanxu CI when rechecked; it is not promoted as a qualified dependency fix.
+
+*** Included ABI source has one object owner
+
+The old =f2a24fa= Linux gate completes dependency installation and fails on a
+duplicate =marlin_agent_policy_routing_initialize= definition. The =.ssi= is
+already lexically included by the main policy ABI source, yet the old build
+profile compiles it again as an independent module. Both generated objects
+contain the exported initializer. This is distinct from the earlier stale
+linker-name fault.
+
+The profile now builds the main source once and retains the included =.ssi=
+as a rebuild input. The extra binding artifact name and its default module
+object are removed. Explicit, genuinely independent module dependencies still
+compile before the main unit; a missing explicit dependency still prevents
+readiness. The focused suite checks both cases. One old fixture initially
+expected the removed third link argument and failed; its corrected complete
+ten-test suite passes. The original failure remains recorded.
+
+Using the current PR's Scheme Rust =0d92f7b= revision in an isolated dependency
+overlay, the real selector suite passes three tests. The resulting archive has
+only =agent-policy-routing-abi~0.o= and =agent-policy-routing-abi~0_.o= and one
+exported initializer definition. A relocatable link with the old two generated
+module objects is a matched negative control: it fails on the duplicate
+initializer. The new main/linker pair links successfully. These controls do
+not substitute for the pending cross-platform remote gate.
+
+Eleven Deck tests also pass at =0d92f7b=, covering the real Actor, Module
+retirement and autonomous timer path; the maintained read-only retention
+benchmark passes with zero business messages/Actors and the 955-context phase/import/export
+graph. The dependency overlay changes only the four existing SDK git pins
+and is saved independently; the isolated baseline manifests are restored
+instead of copying the concurrent TUI/Org migration into the test workspace.
+Earlier production latency cohorts retain their recorded =bfe803f5= identity.
+
+The =d90ef488= macOS remote gate gets past compilation but reports a Scheme
+exception during Actor opening, as =linked object export= status 3. Its cause
+is not established by the status alone. Debug builds now reuse the SDK's
+existing consumed-error-root projection to emit the underlying diagnostic;
+release profiling keeps the same opt-in behavior. Successful release requests
+retain the ordinary typed result path. The change adds no error wire format,
+no admission bypass, and no alternate compiler/source authority. Whole-PR CI
+and complete Context latency remain unqualified.
+
+
+The strict Rust checks retain the SDK's actual image modes. A combined
+all-target command for Deck plus the package-test crate enables
+=external-program= through Deck while compiling the in-process Builder test;
+that command fails because the SDK deliberately excludes =runtime::build= in
+that mode. Its error record is retained. Separate all-target checks exercise
+the external Deck image and the default Builder image, respectively. No test
+or SDK guard is deleted to turn the incompatible combined command into a pass.
+
+
+At the final local cut, both mode-specific all-target Clippy commands pass with
+warnings denied, workspace formatting passes, and the original SDK Builder plus
+complete =t/all-test.ss= package entry passes =MODULE-OK=, =HARNESS-OK=, final
+=OK= and natural exit 0 in 83.43 seconds at =0d92f7b=. The ten focused AOT plan
+checks, ten build-support tests, three linked selector tests and eleven Deck
+tests pass. The read-only diagnostic remains separate from production latency;
+OpenSysML strict validation/self-check remains 522 elements, 4,993 checks and
+zero violations. The recorded latency objective is still unmet.

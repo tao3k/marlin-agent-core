@@ -144,9 +144,8 @@ fn emit_aot_link_directives(target: AotLinkTarget) {
 struct AotLinkTarget {
     profile: GerbilAotProfile,
     source_path: &'static str,
-    dependency_source_paths: &'static [&'static str],
+    included_source_paths: &'static [&'static str],
     staged_scm_file: &'static str,
-    staged_dependency_scm_files: &'static [&'static str],
     label: &'static str,
     link_root_dir: &'static str,
     archive_dir: &'static str,
@@ -161,9 +160,8 @@ impl AotLinkTarget {
         Self {
             profile: GerbilAotProfile::AgentPolicyRouting,
             source_path: "c-abi/agent-policy-routing-abi.ss",
-            dependency_source_paths: &["c-abi/_agent-policy-routing-abi.ssi"],
+            included_source_paths: &["c-abi/_agent-policy-routing-abi.ssi"],
             staged_scm_file: "agent-policy-routing-abi~0.scm",
-            staged_dependency_scm_files: &["_agent-policy-routing-abi~0.scm"],
             label: "AgentGraph policy-routing",
             link_root_dir: "agent-policy-routing-abi-link-root",
             archive_dir: "agent-policy-routing-abi-link-archive",
@@ -180,7 +178,7 @@ fn compile_aot_artifact(target: AotLinkTarget, root: &Path) -> GerbilAotCommandR
     let gerbil_pkg = gerbil_pkg_dir.join("gerbil.pkg");
     let source_path = gerbil_pkg_dir.join(target.source_path);
     println!("cargo:rerun-if-changed={}", source_path.display());
-    for dependency_source_path in target.dependency_source_paths {
+    for dependency_source_path in target.included_source_paths {
         println!(
             "cargo:rerun-if-changed={}",
             gerbil_pkg_dir.join(dependency_source_path).display()
@@ -198,15 +196,6 @@ fn compile_aot_artifact(target: AotLinkTarget, root: &Path) -> GerbilAotCommandR
         );
     let compiled_dir = builder_root.join("lib/marlin-agent-core/c-abi");
     let stage_dir = root.join(".gerbil/native");
-    let units = target
-        .dependency_source_paths
-        .iter()
-        .copied()
-        .zip(target.staged_dependency_scm_files.iter().copied())
-        .chain(std::iter::once((
-            target.source_path,
-            target.staged_scm_file,
-        )));
     let mut receipt = GerbilAotCommandReceipt {
         status_code: Some(0),
         stdout: String::new(),
@@ -220,23 +209,21 @@ fn compile_aot_artifact(target: AotLinkTarget, root: &Path) -> GerbilAotCommandR
         );
         return receipt;
     }
-    for (source, artifact) in units {
-        let build = run_package_aot_compile(&toolchain, &gerbil_pkg_dir, source);
-        receipt.status_code = build.status_code;
-        receipt.stdout = build.stdout;
-        receipt.stderr = build.stderr;
-        if receipt.status_code != Some(0) {
-            return receipt;
-        }
-        let compiled = compiled_dir.join(artifact);
-        if let Err(error) = fs::copy(&compiled, stage_dir.join(artifact)) {
-            receipt.status_code = Some(67);
-            receipt.stderr = format!(
-                "stage Gerbil compiler artifact {}: {error}",
-                compiled.display()
-            );
-            return receipt;
-        }
+    let build = run_package_aot_compile(&toolchain, &gerbil_pkg_dir, target.source_path);
+    receipt.status_code = build.status_code;
+    receipt.stdout = build.stdout;
+    receipt.stderr = build.stderr;
+    if receipt.status_code != Some(0) {
+        return receipt;
+    }
+    let compiled = compiled_dir.join(target.staged_scm_file);
+    if let Err(error) = fs::copy(&compiled, stage_dir.join(target.staged_scm_file)) {
+        receipt.status_code = Some(67);
+        receipt.stderr = format!(
+            "stage Gerbil compiler artifact {}: {error}",
+            compiled.display()
+        );
+        return receipt;
     }
     receipt
 }

@@ -2640,6 +2640,7 @@ version = "0.1.0"
 dependencies = [
  "gerbil-scheme",
  "gerbil-scheme-sys",
+ "libc",
  "marlin-agent-context",
  "marlin-agent-protocol",
  "marlin-gerbil-aot-link",
@@ -3325,7 +3326,7 @@ checksum = "7c87def4c32ab89d880effc9e097653c8da5d6ef28e6b539d313baaacfbafcbe"
 [[package]]
 name = "orgize"
 version = "0.10.0-alpha.10"
-source = "git+https://github.com/tao3k/orgize?rev=9a9f63d8286fd0ffe68d64fc2de385dab6e57b23#9a9f63d8286fd0ffe68d64fc2de385dab6e57b23"
+source = "git+https://github.com/tao3k/orgize?rev=7a54cc75de8cf9a9986be70bac38be14010141bd#7a54cc75de8cf9a9986be70bac38be14010141bd"
 dependencies = [
  "blake3",
  "gerbil-parser-artifact",
@@ -3344,7 +3345,7 @@ dependencies = [
 [[package]]
 name = "orgize-build-support"
 version = "0.1.0"
-source = "git+https://github.com/tao3k/orgize?rev=9a9f63d8286fd0ffe68d64fc2de385dab6e57b23#9a9f63d8286fd0ffe68d64fc2de385dab6e57b23"
+source = "git+https://github.com/tao3k/orgize?rev=7a54cc75de8cf9a9986be70bac38be14010141bd#7a54cc75de8cf9a9986be70bac38be14010141bd"
 dependencies = [
  "gerbil-scheme-aot-build",
  "serde",

@@ -4,12 +4,9 @@
         (only-in :clan/poo/mop Fun Type.)
         (only-in :clan/poo/type Record String Exactly Or)
         (only-in :gerbil-ascent/temporal/lens temporal-answer?)
-        (only-in :agentic-ai-lab/modules/ai-agentic-context/types AiAgenticContextScopeType))
+        (only-in :agentic-ai-lab/modules/ai-agentic-context/types AiAgenticContextAdmissionType))
 
-(export MarlinContextAdmission MarlinContextModuleContract ContextCausalContract)
-
-(def MarlinContextAdmission
-  (Fun AiAgenticContextScopeType <- AiAgenticContextScopeType))
+(export MarlinContextModuleContract ContextCausalContract)
 
 (def CausalExchange
   (Record kind: [(Exactly 'agentic-ai-lab.ascent-exchange.v1)]))
@@ -27,7 +24,7 @@
           encode-scopes: [(Fun ContextProjectionBytes <- ContextProjectionRows)]))
 
 (def MarlinContextModuleContract
-  (.cc (Record admit-scope: [MarlinContextAdmission] bridge: [ContextBridgeContract])
+  (.cc (Record admit-scope: [AiAgenticContextAdmissionType] bridge: [ContextBridgeContract])
        identity: 'marlin/context))
 
 (def ContextCausalContract

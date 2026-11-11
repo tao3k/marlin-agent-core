@@ -1,6 +1,8 @@
 ;;; Context messages preserve Actor identity and independent result retirement.
 (import (only-in :clan/poo/object .get .o)
         (only-in :agentic-ai-lab/modules/ai-agentic-context/objects AiAgenticContextScope.)
+        (only-in :agentic-ai-lab/modules/ai-agentic-context/funs-scope agentic-ai-lab-ai-agentic-context-scope-admit)
+        (only-in :marlin-agent-core/deck-runtime/runtime check-deck-kernel!)
         :std/iter
         (only-in :std/sync/channel make-channel channel-put channel-get)
         (only-in :marlin-agent-core/deck-runtime/mailbox
@@ -15,6 +17,8 @@
       actor: "assistant" task: "review" destination: "panel" session: "session" turn: turn-index))
 (def rows (list->vector (for/collect ((index (in-range 70))) (request index))))
 (def expected (vector-map admit rows))
+(require (eq? admit agentic-ai-lab-ai-agentic-context-scope-admit)
+         "Module publication wrapped the library-owned admission again")
 (def owner (current-thread))
 (def handling-actor #f)
 (def (tracked-admit request-value)
@@ -32,8 +36,15 @@
 (def runtime
   ((.get published open) tracked-admit
    (.get marlin-agent-core.init.exports Marlin context bridge encode-scopes)))
+(require (check-deck-kernel! runtime) "Published Deck selected a different kernel")
+(require (with-catch (lambda (_) #t)
+           (lambda () (check-deck-kernel! (.o (:: @ runtime) factory: (lambda _ #f))) #f))
+         "Substituted runtime factory passed linked admission")
+(require (with-catch (lambda (_) #t)
+           (lambda () (check-deck-kernel! (.o (:: @ runtime) mailbox-factory: (lambda _ #f))) #f))
+         "Substituted mailbox factory passed linked admission")
 (thread-send owner 'unrelated-owner-message)
-(def ids ((.get runtime submit-batch) rows))
+(def ids ((.get runtime submit-module-batch) 1 rows))
 (let collect ((left (vector-length rows)))
   (when (positive? left)
     (let* ((packet ((.get runtime collect) 32))
@@ -60,12 +71,13 @@
 (require (equal? ((.get runtime close)) (u64vector 1 1 70 70))
          "Context mailbox shutdown accounting changed")
 (require (with-catch (lambda (_) #t)
-           (lambda () ((.get runtime submit-batch) rows) #f))
+           (lambda () ((.get runtime submit-module-batch) 1 rows) #f))
          "Closed Deck accepted more messages")
 
 ;; A blocked Actor must leave another identity's completion independently ready.
 (def gate (make-channel))
-(def mailboxes (open-deck-mailboxes car (lambda (message) ((cdr message)))))
+(def mailboxes (open-deck-mailboxes (lambda (_) 0) car (lambda (message) ((cdr message)))))
+((.get mailboxes activate) 0)
 (def send (.get mailboxes submit))
 (def collect (.get mailboxes collect))
 (def slow (send (cons 'slow (lambda () (channel-get gate)))))
@@ -85,7 +97,8 @@
          "Independent mailbox Actors failed to drain")
 
 ;; Population follows identity creation, and repeated messages reuse each Actor.
-(def population (open-deck-mailboxes car cdr))
+(def population (open-deck-mailboxes (lambda (_) 0) car cdr))
+((.get population activate) 0)
 (def publish (.get population submit))
 (def recover (.get population collect))
 (for ((key (in-range 257))) (publish (cons key key)))
@@ -103,8 +116,10 @@
 (require (equal? ((.get population close)) (u64vector 257 257 514 514))
          "Actor population failed to follow message identities")
 
-(def left-runtime (open-deck-mailboxes car cdr))
-(def right-runtime (open-deck-mailboxes car cdr))
+(def left-runtime (open-deck-mailboxes (lambda (_) 0) car cdr))
+((.get left-runtime activate) 0)
+(def right-runtime (open-deck-mailboxes (lambda (_) 0) car cdr))
+((.get right-runtime activate) 0)
 ((.get left-runtime submit) (cons 'same-identity 'left-result))
 ((.get right-runtime submit) (cons 'same-identity 'right-result))
 (require (eq? (deck-reply-value (vector-ref ((.get right-runtime collect) 1) 0)) 'right-result)
@@ -113,3 +128,23 @@
          "Selective receive lost an earlier service reply")
 ((.get left-runtime close))
 ((.get right-runtime close))
+
+;; One Module can retire while a different Module retains an unfinished Actor.
+(def grouped (open-deck-mailboxes car cadr (lambda (message) ((caddr message)))))
+((.get grouped activate) 10)
+((.get grouped activate) 20)
+(def module-gate (make-channel))
+((.get grouped submit) (list 20 'same (lambda () (channel-get module-gate))))
+((.get grouped submit) (list 10 'same (lambda () 'module-ten)))
+(require (= (vector-length ((.get grouped collect) 2)) 1) "Foreign Module stalled a ready Module")
+(require (equal? ((.get grouped retire) 10) (u64vector 1 1 1 1)) "Module retirement accounting changed")
+(require (with-catch (lambda (_) #t)
+           (lambda () ((.get grouped submit) (list 10 'same void)) #f))
+         "Retired Module accepted work")
+(require (with-catch (lambda (_) #t)
+           (lambda () ((.get grouped retire) 20) #f))
+         "Unfinished Module retired its outstanding message")
+(channel-put module-gate 'module-twenty)
+(require (= (vector-length ((.get grouped collect) 2)) 1) "Surviving Module lost its Actor")
+((.get grouped retire) 20)
+(require (equal? ((.get grouped close)) (u64vector 2 2 2 2)) "Grouped Actor lifetime accounting changed")

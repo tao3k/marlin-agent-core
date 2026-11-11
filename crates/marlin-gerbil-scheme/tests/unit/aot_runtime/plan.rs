@@ -1,11 +1,11 @@
-use super::support::{write_agent_policy_routing_abi_aot_dependency_scms, write_empty_file};
+use super::support::write_empty_file;
 use marlin_gerbil_scheme::{
     GERBIL_AGENT_POLICY_ROUTING_ABI_ID, GERBIL_AGENT_POLICY_ROUTING_ABI_VERSION, GerbilAotConfig,
     GerbilAotProfile, GerbilAotStatus, GerbilSchemeCAbiId,
 };
 use tempfile::Builder;
 
-fn assert_single_binding_dependency(
+fn assert_single_module_dependency(
     plan: &marlin_gerbil_scheme::GerbilAotPlan,
     expected_dependency_scm: std::path::PathBuf,
     expected_runtime_object: std::path::PathBuf,
@@ -43,7 +43,7 @@ fn assert_single_binding_dependency(
         .expect("runtime scm passed to gsc -link");
     assert!(
         dependency_position < runtime_position,
-        "binding dependency scm must precede wrapper scm in gsc -link"
+        "independent module dependency must precede wrapper scm in gsc -link"
     );
 }
 
@@ -59,7 +59,6 @@ fn graph_aot_plan_records_link_unit_compile() {
         .path()
         .join("include/marlin_agent_policy_routing_abi.h");
     write_empty_file(&compiled_runtime_scm);
-    write_agent_policy_routing_abi_aot_dependency_scms(root.path());
     write_empty_file(&gsc);
     write_empty_file(&header);
 
@@ -78,12 +77,10 @@ fn graph_aot_plan_records_link_unit_compile() {
         plan.object,
         root.path().join("compiled/agent-policy-routing-abi~0.o")
     );
-    assert_single_binding_dependency(
-        &plan,
-        root.path()
-            .join(".gerbil/native/_agent-policy-routing-abi~0.scm"),
-        root.path().join("compiled/agent-policy-routing-abi~0.o"),
-    );
+    assert!(plan.compiled_runtime_dependency_scms.is_empty());
+    assert!(plan.dependency_objects.is_empty());
+    assert!(plan.gsc_compile_dependency_objects.is_empty());
+    assert_eq!(plan.module_objects, vec![plan.object.clone()]);
     assert_eq!(
         plan.link_c_source,
         root.path().join("compiled/agent-policy-routing-abi~0_.c")
@@ -146,7 +143,6 @@ fn graph_aot_plan_records_link_unit_compile() {
     assert_eq!(
         plan.audit_symbols.args,
         [
-            plan.dependency_objects[0].to_string_lossy().into_owned(),
             plan.object.to_string_lossy().into_owned(),
             plan.link_object.to_string_lossy().into_owned()
         ]
@@ -155,7 +151,7 @@ fn graph_aot_plan_records_link_unit_compile() {
 }
 
 #[test]
-fn agent_policy_routing_abi_aot_plan_records_profile_symbols() {
+fn independent_policy_module_is_compiled_before_the_main_unit() {
     let root = Builder::new()
         .prefix("marlin-gerbil-agent-policy-routing-abi-aot-plan-")
         .tempdir()
@@ -166,12 +162,14 @@ fn agent_policy_routing_abi_aot_plan_records_profile_symbols() {
         .path()
         .join("include/marlin_agent_policy_routing_abi.h");
     write_empty_file(&compiled_runtime_scm);
-    write_agent_policy_routing_abi_aot_dependency_scms(root.path());
+    let dependency = root.path().join("compiled/policy-support~0.scm");
+    write_empty_file(&dependency);
     write_empty_file(&gsc);
     write_empty_file(&header);
 
     let plan = GerbilAotConfig::agent_policy_routing(root.path())
         .with_compiled_runtime_scm(&compiled_runtime_scm)
+        .with_compiled_runtime_dependency_scms([&dependency])
         .with_gsc(&gsc)
         .with_header(&header)
         .with_c_compiler("clang")
@@ -183,10 +181,9 @@ fn agent_policy_routing_abi_aot_plan_records_profile_symbols() {
         plan.object,
         root.path().join("compiled/agent-policy-routing-abi~0.o")
     );
-    assert_single_binding_dependency(
+    assert_single_module_dependency(
         &plan,
-        root.path()
-            .join(".gerbil/native/_agent-policy-routing-abi~0.scm"),
+        dependency,
         root.path().join("compiled/agent-policy-routing-abi~0.o"),
     );
     assert_eq!(
@@ -241,4 +238,32 @@ fn graph_aot_plan_reports_missing_compiled_runtime() {
     assert!(plan.detail.as_deref().is_some_and(|detail| {
         detail.contains("missing compiled native AgentGraph policy routing Scheme artifact")
     }));
+}
+
+#[test]
+fn missing_explicit_module_dependency_prevents_readiness() {
+    let root = Builder::new()
+        .prefix("marlin-policy-missing-module-")
+        .tempdir()
+        .unwrap();
+    let main = root.path().join("policy~0.scm");
+    let dependency = root.path().join("missing-support~0.scm");
+    let gsc = root.path().join("gsc");
+    let header = root.path().join("policy.h");
+    for file in [&main, &gsc, &header] {
+        write_empty_file(file);
+    }
+    let plan = GerbilAotConfig::agent_policy_routing(root.path())
+        .with_compiled_runtime_scm(&main)
+        .with_compiled_runtime_dependency_scms([&dependency])
+        .with_gsc(&gsc)
+        .with_header(&header)
+        .plan();
+    assert_eq!(plan.status, GerbilAotStatus::MissingCompiledRuntime);
+    assert!(
+        plan.detail
+            .as_deref()
+            .unwrap()
+            .contains("missing-support~0.scm")
+    );
 }
