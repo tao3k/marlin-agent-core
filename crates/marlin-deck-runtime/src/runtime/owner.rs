@@ -1,14 +1,14 @@
 //! One OS thread owns the VM; Tokio workers never enter Scheme.
 
-use super::vm::DeckVm;
+use super::vm::{Completion, DeckVm, MessageId};
 use super::{
-    DeckRuntimeConfig, DeckRuntimeMetrics, DeckRuntimeRejection, DeckRuntimeShutdownReceipt,
-    DeckRuntimeStopReason, Job, Outcome, OwnerMessage, SchemeVmError,
+    DeckMailboxMetrics, DeckRuntimeConfig, DeckRuntimeMetrics, DeckRuntimeRejection,
+    DeckRuntimeShutdownReceipt, DeckRuntimeStopReason, Job, Outcome, OwnerMessage, SchemeVmError,
 };
 use gerbil_scheme::{GerbilRuntime, LinkedGerbilProgram};
 use marlin_agent_context::CONTEXT_BATCH_MAX_TEXT_BYTES;
 use std::{
-    collections::VecDeque,
+    collections::{HashMap, HashSet, VecDeque},
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -25,6 +25,8 @@ pub(super) fn run(
 ) {
     let mut metrics = DeckRuntimeMetrics::default();
     let mut observed_processors = 0;
+    let mut pending = VecDeque::new();
+    let mut active = HashMap::new();
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         // SAFETY: this owner is the only entry point into the linked program.
         let program =
@@ -61,48 +63,109 @@ pub(super) fn run(
         if ready.send(Ok(())).is_err() {
             return None;
         }
-        let mut pending = VecDeque::new();
+        let mut protocol_failure = None;
         loop {
             if stopping.load(Ordering::Acquire) {
                 jobs.close();
             }
-            if pending.is_empty() {
+            if pending.is_empty() && active.is_empty() {
                 match jobs.blocking_recv() {
                     Some(message) => receive(message, &mut pending, &mut metrics, &mut jobs),
                     None => break,
                 }
             }
-            while pending.len() < usize::from(config.batch_capacity.get()) {
+            while pending.len() < usize::from(config.batch_capacity.get())
+                && active.len() + pending.len() < usize::from(config.queue_capacity.get())
+            {
                 match jobs.try_recv() {
                     Ok(message) => receive(message, &mut pending, &mut metrics, &mut jobs),
                     Err(_) => break,
                 }
             }
             metrics.largest_request_batch = metrics.largest_request_batch.max(pending.len());
-            turn(&mut pending, &mut metrics, |requests| vm.evaluate(requests));
+            let batch = prepare(&mut pending, &mut metrics);
+            if !batch.is_empty() {
+                let requests: Vec<_> = batch.iter().map(|job| &job.request).collect();
+                match vm.submit(&requests) {
+                    Ok(ids) if valid_ids(&ids, &active) => {
+                        active.extend(ids.into_iter().zip(batch));
+                    }
+                    result => {
+                        let failure = result
+                            .err()
+                            .unwrap_or(DeckRuntimeRejection::InvalidProjection);
+                        for job in batch {
+                            finish(job, Err(failure.clone()), &mut metrics);
+                        }
+                        protocol_failure = Some(failure);
+                        break;
+                    }
+                }
+            }
+            if !active.is_empty() {
+                let completed = vm.receive(config.batch_capacity);
+                let result =
+                    completed.and_then(|replies| retire(&mut active, replies, &mut metrics));
+                if let Err(failure) = result {
+                    protocol_failure = Some(failure);
+                    break;
+                }
+            }
         }
-        let context_service_closed = vm.close().is_ok();
+        for (_, job) in active.drain() {
+            finish(
+                job,
+                Err(protocol_failure
+                    .clone()
+                    .unwrap_or(DeckRuntimeRejection::Unavailable)),
+                &mut metrics,
+            );
+        }
+        for job in pending.drain(..) {
+            finish(
+                job,
+                Err(protocol_failure
+                    .clone()
+                    .unwrap_or(DeckRuntimeRejection::Unavailable)),
+                &mut metrics,
+            );
+        }
+        let retirement = vm.close();
+        let context_service_closed = retirement.is_ok();
+        let mailbox = retirement.unwrap_or_default();
         drop(vm);
         drop(runtime);
         Some(DeckRuntimeShutdownReceipt {
-            reason: if context_service_closed {
+            reason: if protocol_failure.is_some() {
+                DeckRuntimeStopReason::ProtocolFailed
+            } else if context_service_closed {
                 DeckRuntimeStopReason::Drained
             } else {
                 DeckRuntimeStopReason::SchemeCloseFailed
             },
             vm_processors: processors,
             context_service_closed,
+            mailbox,
             metrics,
         })
     }));
     let receipt = match result {
         Ok(receipt) => receipt,
-        Err(_) => Some(DeckRuntimeShutdownReceipt {
-            reason: DeckRuntimeStopReason::OwnerPanicked,
-            vm_processors: observed_processors,
-            context_service_closed: false,
-            metrics,
-        }),
+        Err(_) => {
+            for (_, job) in active.drain() {
+                finish(job, Err(DeckRuntimeRejection::Unavailable), &mut metrics);
+            }
+            for job in pending.drain(..) {
+                finish(job, Err(DeckRuntimeRejection::Unavailable), &mut metrics);
+            }
+            Some(DeckRuntimeShutdownReceipt {
+                reason: DeckRuntimeStopReason::OwnerPanicked,
+                vm_processors: observed_processors,
+                context_service_closed: false,
+                mailbox: DeckMailboxMetrics::default(),
+                metrics,
+            })
+        }
     };
     if let Some(receipt) = receipt {
         let _ = finished.send(Some(receipt));
@@ -124,15 +187,8 @@ fn receive(
     }
 }
 
-/// Retire a bounded FIFO prefix, then let the owner refill before the next VM turn.
-pub(super) fn turn(
-    pending: &mut VecDeque<Job>,
-    metrics: &mut DeckRuntimeMetrics,
-    evaluate: impl FnOnce(
-        &[&marlin_agent_context::ContextAdmissionRequest],
-    )
-        -> Result<Vec<marlin_agent_context::ContextScopeDigest>, DeckRuntimeRejection>,
-) {
+/// Prepare a text-bounded FIFO prefix and retire cancellation before VM entry.
+pub(super) fn prepare(pending: &mut VecDeque<Job>, metrics: &mut DeckRuntimeMetrics) -> Vec<Job> {
     let mut batch = Vec::new();
     let mut bytes = 0;
     while let Some(job) = pending.front() {
@@ -146,32 +202,35 @@ pub(super) fn turn(
         bytes += job.request.text_bytes();
         batch.push(pending.pop_front().unwrap());
     }
-    if batch.is_empty() {
-        return;
+    if !batch.is_empty() {
+        metrics.scheme_batches += 1;
+        metrics.scheme_items += batch.len() as u64;
+        metrics.largest_scheme_batch = metrics.largest_scheme_batch.max(batch.len());
     }
-    metrics.scheme_batches += 1;
-    metrics.scheme_items += batch.len() as u64;
-    metrics.largest_scheme_batch = metrics.largest_scheme_batch.max(batch.len());
-    let requests: Vec<_> = batch.iter().map(|job| &job.request).collect();
-    let result = evaluate(&requests).and_then(|digests| {
-        if digests.len() == batch.len() {
-            Ok(digests)
-        } else {
-            Err(DeckRuntimeRejection::InvalidProjection)
-        }
-    });
-    match result {
-        Ok(digests) => {
-            for (job, digest) in batch.into_iter().zip(digests) {
-                finish(job, Ok(digest), metrics);
-            }
-        }
-        Err(error) => {
-            for job in batch {
-                finish(job, Err(error.clone()), metrics);
-            }
-        }
+    batch
+}
+
+fn valid_ids(ids: &[MessageId], active: &HashMap<MessageId, Job>) -> bool {
+    let unique: HashSet<_> = ids.iter().collect();
+    unique.len() == ids.len() && ids.iter().all(|id| id.0 != 0 && !active.contains_key(id))
+}
+
+/// Validate the complete reply window before publishing any client outcome.
+pub(super) fn retire(
+    active: &mut HashMap<MessageId, Job>,
+    replies: Vec<Completion>,
+    metrics: &mut DeckRuntimeMetrics,
+) -> Result<(), DeckRuntimeRejection> {
+    let unique: HashSet<_> = replies.iter().map(|reply| reply.id).collect();
+    if unique.len() != replies.len() || replies.iter().any(|reply| !active.contains_key(&reply.id))
+    {
+        return Err(DeckRuntimeRejection::InvalidProjection);
     }
+    for reply in replies {
+        let job = active.remove(&reply.id).expect("validated reply identity");
+        finish(job, reply.outcome, metrics);
+    }
+    Ok(())
 }
 
 fn finish(job: Job, result: Outcome, metrics: &mut DeckRuntimeMetrics) {

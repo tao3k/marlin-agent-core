@@ -23,7 +23,9 @@ use tokio::{
 use tokio_util::sync::CancellationToken;
 
 pub use config::DeckRuntimeConfig;
-pub use receipt::{DeckRuntimeMetrics, DeckRuntimeShutdownReceipt, DeckRuntimeStopReason};
+pub use receipt::{
+    DeckMailboxMetrics, DeckRuntimeMetrics, DeckRuntimeShutdownReceipt, DeckRuntimeStopReason,
+};
 
 /// Invalid limits, or failure while establishing the unique VM owner.
 #[derive(Debug, thiserror::Error)]
@@ -53,6 +55,8 @@ pub enum DeckRuntimeRejection {
     Scheme(#[from] SchemeVmError),
     #[error("Deck returned an invalid typed projection")]
     InvalidProjection,
+    #[error("The Context Actor rejected this message")]
+    ContextActor,
     #[error(transparent)]
     Context(#[from] ContextBridgeError),
 }

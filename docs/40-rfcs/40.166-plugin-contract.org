@@ -137,15 +137,15 @@ Marlin retains the ASCENT answer and receipt and replays them through Lab
 against the same exchange.
 
 =deck-runtime= declares a dependency on Context. Scheme owns the Module's
-metadata and schedules Context Actors on demand with the selected Lab Context admission
+metadata and routes Context messages to identity-owned mailbox Actors with the selected Lab Context admission
 operation. Rust submits typed Context/Session requests through a bounded Tokio
-queue and a single VM owner. The rooted C ABI returns Lab Scope identities in
-submission order. The former command-route selector, HTTP facade and Debug CLI
+queue and a single VM owner. The rooted C ABI returns Lab Scope identities
+correlated by message ID. The former command-route selector, HTTP facade and Debug CLI
 are retired. See [[#single-vm-actor-runtime][the single-VM implementation boundary]].
 
 The pinned gerbil-scheme-rust actor example establishes the owner-local
-call pattern. The current linked VM uses its rooted object export once per
-batch and maps result fields directly into Rust types. The multi-owner
+call pattern. The linked VM uses separate rooted submission and completion
+exports and maps result fields directly into Rust types. The multi-owner
 target can reuse =SchemeServiceIngress= and
 =InstanceDispatcher::submit_native_async_on=. Rayon can parallelize
 independent work on owned data after Rust qualifies the projection. Effect
@@ -1432,23 +1432,41 @@ Tokio schedules Rust request, deadline and receipt futures on the host
 runtime's workers. Gerbil schedules Actor mailboxes and green threads on the
 Scheme processor. The OS owner supplies the affinity required by the C ABI.
 
-Deck uses Gerbil's =spawn= for each ready Context row. Each Actor completes
-the Lab Scope identity on its green thread. The Scheme owner joins the
-started Actors and collects results in input order before returning across
-the C ABI, including when a row fails. =DeckRuntimeConfig= controls Rust
-admission and the number of rows transferred per call. The 64-row bound
-belongs to that transfer envelope. Scheme selects the green-thread work
-from ready requests and Rust passes no Actor count or yield quantum.
-Scheme publishes version 3 of the Deck Module contract for these signatures.
+Deck creates a Gerbil mailbox Actor on first use of a logical identity.
+The key contains bundle, organization, project, worktree, agent and Session.
+Source-cut, epoch and turn changes travel to that same Actor as message data.
+Gerbil =thread-send= and =thread-receive= supply message delivery, and the
+Actor loops over its mailbox until service shutdown. Handler failures produce
+one failed reply and the Actor continues receiving later messages.
+
+The owner submits ready Context rows and recovers whichever messages have
+completed. Each result carries its own u64 message ID and status. Successful
+Scope digests travel together as packed bytes. Rust validates the complete
+reply packet, including duplicate and unknown IDs, before publishing results.
+The host can release completed requests while another Actor remains blocked.
+Scheme publishes version 4 of the Deck Module contract for these signatures.
+
+Marlin's Context decoder constructs Lab's Scope prototype directly.
+The Context Module publishes Lab's admission function with
+=(Fun AiAgenticContextScopeType <- AiAgenticContextScopeType)=.
+This preserves the input and output checks of the library type while
+removing Marlin's duplicate request Record and per-field forwarding object.
+Lab continues to validate, freeze and hash every admitted Scope.
+
+=DeckRuntimeConfig= controls Rust admission and the number of rows transferred
+per call. At most =queue_capacity= messages occupy the native in-flight window.
+The 64-row bound belongs to the C ABI transfer envelope. Actor population
+follows the identities used during the Deck service lifetime.
 
 Application Actors belong to the Scheme plane. Scheme will spawn them on
 demand according to the owning Module's lifecycle, hold their mailboxes and
 state inside the VM, and retire them when that lifecycle ends. Rust exchanges
 typed requests and receipts and enforces admission budgets at the boundary.
 The application Actor population is independent of the Tokio thread count
-and the Context transfer window. Application Actor creation, retirement and
-population qualification remain implementation work. Today's Context owner
-waits on the Rust queue between C ABI calls. Long-lived Actors with timers
+and the Context transfer window. The Context service retains its mailbox
+Actors until shutdown. Module-specific Actor retirement remains further
+integration work. Today's Context owner waits on the Rust queue after all
+known messages retire. Long-lived Actors with autonomous timers
 or mailboxes need a Scheme-owned wait and wake path that keeps the VM
 scheduler available between host requests. Qualify live Actor count, startup
 and retirement time, memory, mailbox throughput and tail latency separately
@@ -1459,21 +1477,22 @@ from the Context admission baseline.
 | Input qualification | Context crate | Owned typed identifiers; immutable shared Scope; Session and turn travel together |
 | Admission | Rust Tokio handle | Deadline, cancellation, shutdown state and bounded mpsc request slot |
 | Reply reservation | Rust oneshot | One result destination for each accepted request |
-| Ready work | Fixed Rust owner | At most 64 rows; no fill timer; refill between bounded VM turns |
+| Ready work | Fixed Rust owner | Transfer at most 64 rows; reserve native in-flight credit independently; refill as completions retire |
 | Projection | Context bridge | At most 32 KiB of text per turn; common Scope fields once per consecutive shared group |
-| Actor execution | Scheme VM | Spawn a green Actor per ready row; force its lazy digest inside the Actor; join all started Actors |
-| Projection validation | Rust owner | Exactly 32 digest bytes per input row; one bulk bytevector copy; ordered correlation |
+| Actor execution | Scheme VM | Route to an identity-owned mailbox; force the lazy digest before posting the per-message completion |
+| Projection validation | Rust owner | Validate unique known IDs, status bytes and exactly 32 bytes per successful reply; correlate each reply with its caller |
 | Retirement | Rust owner | Recheck cancellation/deadline; release roots on the owner before the next turn |
-| Shutdown | Owner and awaiting host | Close admission, drain, retire the Context service, finalize VM, publish receipt and join owner |
+| Shutdown | Owner and awaiting host | Close admission, drain, stop and join mailbox Actors, finalize VM, publish receipt and join owner |
 
-The channel and owner hold at most =queue_capacity + batch_capacity= requests;
+The Rust channel holds =queue_capacity= requests and the owner holds at most
+=queue_capacity= native in-flight requests;
 producer futures retain their own inputs. =ContextScope= shares immutable
 bundle/organization/project/worktree/source-cut/epoch data through =Arc=.
 =ContextTurn= owns actor/task/destination and an optional =ContextSession=.
 Rust materializes the existing Context envelope as Scheme strings, vectors
 and u64vector values. Scheme constructs the Lab request and invokes the
 INIT-selected =context.admit-scope= operation on its actors. Results cross as
-one packed u8vector. Rust never parses Scheme-produced JSON or command text.
+message ID, status and digest vectors.
 
 Lab's SHA-256 digest is a Scope identity, not an execution grant. Effect
 admission and authoritative Session publication remain separate runtime
@@ -1484,11 +1503,13 @@ the engine requires actual runtime-bound project/worktree/source-cut/Session
 inputs; the UI must not manufacture those identities.
 
 Cancellation before a turn skips Scheme entry. Cancellation during a read-only
-turn retires the result after the Scheme batch returns. A client deadline
+turn retires that message after its Scheme completion is recovered. A client deadline
 is distinct from completion of VM retirement. The shutdown receipt records
 actual processors, Context service closure, received/succeeded/cancelled/expired/failed
-requests and attempted Scheme row/batch counts. Drained shutdown requires
-received requests to equal all terminal owner outcomes.
+requests, attempted Scheme row/batch counts and mailbox Actor/message counters.
+Drained shutdown requires received requests to equal all terminal owner outcomes,
+Actors created to equal Actors retired, and submitted Scheme messages to equal
+collected Scheme results.
 
 Lab installs source declarations without eagerly building an application.
 Marlin's INIT declares a package-backed Lab window and selects its Context
@@ -1500,10 +1521,10 @@ The linked SDK graph is compiled from the same Cargo-pinned bridge revision as
 the Rust ABI, ahead of any transitive compiled bridge on the load path.
 
 The =single_vm_actor= bench compares batch capacity 1 and 64 in separate
-processes with four Tokio workers in Rust, on-demand Actors in Scheme and
+processes with four Tokio workers in Rust, identity-owned mailbox Actors in Scheme and
 the same request count.
 Startup and 64 warmup requests are outside timing. Counters include warmup;
-throughput and p50/p95 cover the complete typed request/reply path. Observed
+throughput and p50/p95/p99 cover the complete typed request/reply path. Observed
 results and qualification limits must be recorded after linked execution.
 
 The explicit graph/package protocol migration also removes the former
@@ -1575,7 +1596,7 @@ establish the upstream Actor mailbox's rate or gRPC performance.
 Earlier samples before strict digest materialization are retained in the
 local logs as preceding evidence. They are not the result set above.
 
-*** On-demand Actor qualification
+*** On-demand Actor qualification at 8b5bf8a1
 
 The updated path uses Scheme-owned =spawn= and =thread-join!= for ready
 Context admissions and four Tokio workers for Rust request futures. The
@@ -1615,3 +1636,264 @@ was uncontrolled and throughput varied across the batched repetitions.
 These samples record Context admission behavior under the revised scheduling
 boundary. Large Actor populations, autonomous mailbox progress between
 host entries and sustained performance remain qualification work.
+
+
+*** Resident mailbox execution and upstream compilation contract
+
+The revised Deck service keeps one Gerbil Actor for each logical Context key.
+It uses the existing =spawn=, =thread-send=, =thread-receive= and selective
+mailbox operations. Actor population follows identity creation, independently
+of Tokio workers, queue credit and transfer size. The direct Scheme test uses
+257 identities and 514 messages; the linked Rust test sends 66 turns through
+one reused identity. A slow Actor leaves another Actor's completion collectible.
+Handler failure produces one failed result and the same Actor can accept its
+next message. Service tokens prevent collection from consuming another
+service's replies or unrelated owner traffic.
+
+Rust tracks each submitted message ID until its individual completion. It
+validates the complete reply packet before publishing any client outcome.
+Duplicate or unknown IDs stop the protocol without replaying admitted work.
+The native in-flight window is bounded by queue capacity; it does not constrain
+how many identity-owned Actors the VM can retain. Cancellation remains checked
+before entry and before delivery. Interrupting an already running Scheme
+handler and autonomous timer progress between host requests remain separate
+host-wake integration work.
+
+The upstream reference is the Cargo-pinned bridge at
+=bfe803f597a15a3654b70a64c3a039980c31da8a=. Its
+[[https://github.com/tao3k/gerbil-scheme-rust/blob/bfe803f597a15a3654b70a64c3a039980c31da8a/crates/gerbil-scheme-qualification/scheme/instance-actor-arrival.ss][Actor arrival workload]]
+enters the VM once per measured arm and retains native mailbox ownership,
+independent result verification and completion retirement. Its sample worker
+and transfer counts are workload parameters. Marlin does not turn them into
+engine-wide Actor limits.
+
+The upstream [[https://github.com/tao3k/gerbil-scheme-rust/blob/bfe803f597a15a3654b70a64c3a039980c31da8a/docs/10-19-design/10.51-pr18-fastpath-migration.org][fast-path migration audit]]
+records the C procedure layout used with the retained 4.513 ms observation:
+#+begin_example
+-O2 -U___SINGLE_HOST -U___INLINE_JUMPS -D___MULTIPLE_HOSTS -D___DONT_INLINE_JUMPS
+#+end_example
+That historical run did not pass its backlog gate. The audit also retains
+large timing variation under replay. Those upstream controls and their failure
+receipts are unchanged; Marlin's local qualification has its own declared
+payload and latency requirement.
+
+Marlin uses the SDK's =gerbil-rs-stage-program= and =SeparateProcedures=
+manifest contract. The rooted C ABI explicitly imports Deck and Context's
+runtime roles, so their actual implementation closure is linked. Yuanxu keeps
+checked publication, dependency routing and Feature selection; its existing
+role loader reuses the linked builtin identities. No alternate role registry
+or policy assembly is introduced. The production mailbox receives the declared
+procedure layout. The qualification image additionally declares that layout
+for its workload driver. The SDK rejects unknown compiler identities, which
+caught the earlier attempt to label a role absent from the static graph.
+
+Successful messages no longer allocate an exception continuation on each
+send or handler call. The handler boundary retains its catch continuation for
+the receiving Actor's lifetime and reopens it after a handler failure. Ready
+reply collection uses Gerbil's public =mailbox-next= operation, followed by
+selective extraction and rewind. Lab's =AiAgenticContextScopeType= is reused
+for admission input and output; the redundant Marlin request Record and
+=scheme/context/func.ss= forwarding layer are removed.
+
+*** Mailbox measurement boundary
+
+The =mailbox-benchmark= feature selects an SDK-linked qualification image.
+All Scheme benchmark sources live in =scheme/bench/=; Rust invokes one rooted
+export with a u64 vector and receives a typed numeric receipt. The production
+image does not include the benchmark entry. Startup, compilation and 1000
+warmup messages are outside the timed Scheme interval. Whole C ABI call time
+is reported separately.
+
+The arrival profile plans one million messages over one second, with a
+128-message transport window and one VM processor. Logical identity count is
+an explicit argument. Payloads contain identity and sequence numbers; the
+handler returns the sequence number. Every reply is range-checked and checked
+for duplication against an independent seen vector. Shutdown verifies the
+expected identity population, Actor joins and all submitted/collected messages.
+The probe uses a monotonic native clock and measures each planned arrival to
+its observed consumption, including source debt. Quantile upper bounds use
+10 microsecond buckets; maximum and the number over 20 ms are also reported.
+The local gate is p99 below 20 ms. This gate does not assert a maximum-latency
+bound or replace upstream backlog criteria.
+
+The full Context workload separately includes Rust/Tokio admission, typed C ABI
+projection, Lab validation, immutable Scope copies and lazy SHA-256 identity
+materialized on the handling Actor. It retains four Tokio workers, 4096 timed
+requests, 64 excluded warmup requests and waves of at most 64. A mailbox-only
+rate cannot establish the rate of that business operation.
+
+Earlier failed local profiles are retained under
+=target/actor-pr-publication/resident-mailbox/=. CLI-compiled planned-arrival
+p99 values were 48.00 ms initially, 29.62 ms after route reuse, 35.08 ms with
+direct selective mailboxes, 48.41 ms after removing the send catch, 36.23 ms
+after hoisting the handler catch, and 26.32 ms with nonblocking selective peek.
+Each completed all one million messages; every one failed the 20 ms gate.
+The in-process SDK build, declared procedure layout, linked runtime roles and
+complete duplicate oracle define the final qualification profile. These are
+changed compilation and verification premises, not retries of a failed frozen
+upstream control. The original failed logs remain alongside the final records.
+
+
+*** Continuations, mailbox waiting and independent lifetimes
+
+The mechanism reference is Section 6 of Germain, Feeley and Monnier,
+[[https://www.iro.umontreal.ca/~feeley/papers/GermainFeeleyMonnierSW06.pdf][Concurrency Oriented Programming in Termite Scheme (2006)]].
+A suspended thread retains its continuation and referenced objects on the
+shared heap. Its storage follows actual execution state rather than a
+preallocated OS-thread stack. Gambit owns the runnable, suspended and sleeping
+thread queues. The paper explains why large populations are practical; its
+historical memory figures are not measurements of Marlin's current SDK.
+
+| Dimension | Owner and lifetime | Relation to limits |
+|-----------+--------------------+--------------------|
+| Live Actor population | Scheme logical ownership, including suspended Actors; from creation until service/Module retirement | Independent of Tokio workers and request credit |
+| Runnable Actor population | Gerbil/Gambit scheduling state; changes with native wait, wake and scheduler selection | A wake makes an Actor eligible; it does not require an immediate context switch |
+| Native business messages in flight | Rust's active request catalog; from publication through collection and correlation of the result | Bounded by native admission credit; credit returns per completed message |
+| Client observation | Rust future and its owned result | A client can expire before Scheme completes; native retirement still must finish |
+
+The =MAR-VM-L01= state model describes the existing runtime transitions.
+Marlin does not implement another scheduler for those states. In-flight
+completion can return message credit while the owning Actor remains alive
+and waits for later work. A queue/transfer window bounds message storage;
+it does not determine how many independent owners can exist. Module-specific
+retirement is still future integration beyond the current Deck-service lifetime.
+
+At the supplied Gambit revision
+=ea114fc3d2f120abbe20393c1f9aeafdd3f8c89f=,
+[[https://github.com/mighty-gerbils/gambit/blob/ea114fc3d2f120abbe20393c1f9aeafdd3f8c89f/lib/_thread.scm#L7000][the mailbox receive path]]
+first checks queued messages, then locks and rechecks before waiting on the
+mailbox condition variable. The sender appends to that native mailbox and
+signals its condition variable. That source already owns the wait/wake race.
+Deck uses these primitives and Gerbil's selective ready-message peek. It has
+no Scheme idle poll, custom FIFO or secondary wake service. The Rust mpsc is
+the cross-runtime admission boundary; the pending deque stages a text-bounded
+C ABI prefix, and the active map correlates results. Neither schedules Scheme
+threads or duplicates their mailbox wait protocol. The benchmark's arrival
+clock loop is load generation and is absent from the engine.
+
+The [[https://github.com/mighty-gerbils/gambit/blob/ea114fc3d2f120abbe20393c1f9aeafdd3f8c89f/lib/_fifo%23.scm][native FIFO implementation]]
+allocates a cons node on insertion. Same-VM messages keep object references,
+but that does not remove allocation. Deck also constructs its message ID
+pair, reply record and ready-result projection; Context additionally allocates
+validated Scope objects, digest data and typed boundary carriers. Allocation
+and GC observations must include these costs. Reusing an Actor and a catch
+continuation removes repeated lifetime setup, while retaining ownership,
+error isolation and complete result validation.
+
+The [[https://github.com/mighty-gerbils/gambit/blob/ea114fc3d2f120abbe20393c1f9aeafdd3f8c89f/examples/ring/ring.scm][official ring workload]]
+creates the caller-selected thread population, establishes neighbor links and
+passes one token around the ring. Its printed handoff time divides CPU time
+by the number of transfers. It demonstrates minimal native handoff and natural
+suspension. It does not measure automatic population scaling or planned-arrival
+business latency. The bridge's four workers and three transfer frames likewise
+belong to that application workload, not to Gambit's capacity contract.
+
+
+*** Allocation ledger and diagnostic limit
+
+| Boundary | Retained owner and allocation |
+|----------+-------------------------------|
+| Rust admission | One owned Job and result destination, bounded by admission and native credit |
+| Rust staging | One ready prefix and active ID map for C ABI projection and correlation; no Scheme readiness queue |
+| Scheme request | One ID/payload pair; same-VM delivery retains the payload reference |
+| Native mailbox enqueue | Gambit's FIFO creates a node for each enqueue in either direction |
+| Scheme result | One token/ID/status/value reply record, preserving service ownership and failure isolation |
+| Ready projection | Temporary collection lists and one result vector; not a second wait/wake protocol |
+| Context business | Lab Scope validation, copied immutable fields and digest; typed boundary vectors and packed result bytes |
+
+The final probe retains the allocation-counter delta as a signed diagnostic.
+A diagnostic run completed the million-message oracle but its post-run
+=##process-statistics= allocation delta decreased by 9,524,378,688 bytes.
+The former unsigned receipt therefore failed during construction. The counter
+source and paired-runtime behavior require further investigation. The signed
+receipt preserves that observation and reports validity explicitly; it neither
+clamps the value nor calls a negative delta an allocation saving. Even a
+positive delta in this cohort is not a qualified bytes-per-message result.
+Latency, message/oracle accounting and retirement checks have independent
+fields and acceptance criteria. The failed unsigned receipts and SDK diagnostic
+remain in the raw evidence. No live-memory bound or allocation improvement is
+claimed from these counter samples.
+
+
+*** Linked resident mailbox qualification
+
+The final 43-file runtime inventory has path/content SHA-256
+=3375b7150482403b3ab1f5cf2e5b1423962e473dada694f492bc58fa49cc6ba3=.
+The inventory, per-file hashes, complete compiler graphs, executable hashes,
+research source receipts and raw logs are retained under the ignored
+=target/actor-pr-publication/resident-mailbox/= directory. The production
+compiler graph contains 306 modules, and the qualification graph contains
+308. Both include the production mailbox with =separate-procedures= layout.
+The bridge and Lab pins are unchanged from the preceding record.
+
+Each row below is a separate process in execution order. It offers one million
+planned arrivals per second and verifies all one million replies, plus the
+excluded warmup. A profiles one identity; B profiles 1024 identities. Observed
+Actor creation and retirement equal those identity counts. The host is a shared
+development machine with uncontrolled external load. Driver CPU includes the
+arrival-clock loop. These results qualify this local mailbox profile; they do
+not establish general business capacity, startup cost or million-Actor memory.
+
+| Run | Live identities | Completed messages/s | p99 upper ms | p99.9 upper ms | Maximum ms | Over 20 ms |
+|-----+-----------------+----------------------+--------------+----------------+------------+------------|
+| A1 | 1 | 999656.1 | 0.770 | 0.900 | 1.021375 | 0 |
+| A2 | 1 | 999982.1 | 0.810 | 0.990 | 1.302458 | 0 |
+| A3 | 1 | 999984.0 | 0.800 | 0.950 | 1.100417 | 0 |
+| B1 | 1024 | 999985.2 | 1.640 | 2.970 | 3.112292 | 0 |
+| B2 | 1024 | 999987.8 | 1.540 | 1.730 | 1.891083 | 0 |
+
+All five p99 checks passed. Whole C ABI calls took 1.0018--1.0027 seconds,
+including warmup, shutdown and quantile projection outside the main timer.
+Every allocation-counter sample decreased and is invalid for allocation
+qualification. The original unsigned-receipt failures are retained under
+=qualified/=; the final signed diagnostic records are under
+=qualified-signed-telemetry/=. Earlier successful in-process samples before
+static runtime-role rooting and the complete duplicate oracle are retained
+under =in-process/= and are a different source cohort.
+
+*** Full Context results with resident mailboxes
+
+The Context matrix below ran before the final mailbox diagnostic-field change;
+that change affects only the optional qualification workload. The production
+Context code and its linked runtime roles are the final source set above.
+Execution order was A1/B1/B2/A2. Each process used one VM processor, four Tokio
+workers, 4096 timed requests, 64 excluded warmup requests and waves of at most
+64. Each retired all 4160 admissions successfully through one reused Actor.
+
+| Run | C ABI transfer cap | Admissions/s | p50 ms | p95 ms | p99 ms | Submission batches including warmup |
+|-----+--------------------+--------------+--------+--------+--------+--------------------------------------|
+| A1 | 1 | 3406.9 | 7.3868 | 33.1080 | 66.2148 | 4160 |
+| B1 | 64 | 4327.1 | 9.3191 | 57.7281 | 66.1657 | 178 |
+| B2 | 64 | 4498.9 | 8.8588 | 55.5100 | 64.6372 | 184 |
+| A2 | 1 | 3224.8 | 7.7424 | 25.7748 | 70.6597 | 4160 |
+
+Full Context p99 remains 64.6--70.7 ms and has not met a 20 ms business-latency
+objective. The mailbox results cannot waive that remaining work. These samples
+include Lab contracts, immutable copies and Scope hashing, typed projections,
+Tokio admission and result delivery. They do not isolate a single cause of the
+tail. Submission-batch counts measure attempts to publish Context rows, not
+all C ABI calls: result collection has separate entries. No total-entry count
+or allocation saving is inferred from the submission count.
+
+
+*** Final verification of the resident-mailbox change
+
+| Check | Final observation |
+|-------+-------------------|
+| Deck unit and real linked Actor tests | 9 passed, including repeated identity, full u64 values, independent completion, duplicate rejection, cancellation and shutdown |
+| SDK in-process Builder and complete Scheme package suite | Explicitly invoked test passed; MODULE-OK, HARNESS-OK and OK |
+| Hook fixture after removing the redundant Context adapter | Focused dispatcher/path-selection test passed |
+| Deck/Core Clippy, all targets, actor-runtime and mailbox-benchmark | Passed with warnings denied |
+| Rust formatting | Passed for Deck and the AOT helper |
+| OpenSysML strict validation and self-check | 478 elements, 4614 checks, zero errors, violations or unevaluated checks in the isolated PR snapshot |
+| Bazel dependency metadata | Existing deps_prepare/repin entry passed; no additional lock-file delta |
+| Mailbox open-arrival p99 | All five declared final runs below 20 ms; exact results above |
+| Full Context p99 and allocation cost | 20 ms business objective unmet; allocation counter unqualified |
+
+The local linked runs retain the previously recorded classic-linker workaround
+for Apple's dead-strip linker crash. The shared development host was not
+isolated. The manual linked AOT workflow now also compiles the mailbox bench;
+this local record does not claim that a remote linked workflow ran. The PR
+snapshot excludes ongoing TUI and other concurrent edits, including unrelated
+changes in shared source files. Earlier historical measurements and failed
+receipts remain available under their original source cohorts.

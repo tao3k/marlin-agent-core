@@ -4,10 +4,13 @@
 * Ownership
 
 =DeckRuntime= owns one fixed OS thread, one single-processor Gerbil VM and a
-bounded Tokio admission channel. Gerbil spawns and schedules a green Actor
-for each ready Context row. The host runtime schedules Rust futures on
+bounded Tokio admission channel. Gerbil creates mailbox Actors for logical
+Context identities and reuses them across turns. The host runtime schedules Rust futures on
 Tokio workers. Scheme publishes the Deck Module's metadata and
-version. =ContextAdmissionRequest= carries owned domain identifiers, immutable
+version. The C ABI roots the Deck and Context runtime roles in the linked
+compiler graph; Yuanxu retains their checked publication and Feature selection.
+The SDK declares separate procedure lowering for the production mailbox module.
+=ContextAdmissionRequest= carries owned domain identifiers, immutable
 shared scope and an optional typed Session/turn pair. Lab's existing Scope
 admission operation owns Context semantics.
 
@@ -15,23 +18,31 @@ admission operation owns Context semantics.
 
 Enable =actor-runtime= and construct =DeckRuntimeConfig::new(queue_capacity)=.
 =with_batch_capacity= selects 1..64 rows per Context C ABI transfer. The
-owner immediately submits ready work, refills between VM turns and limits
+owner immediately submits ready work, independently collects completed
+messages, refills the in-flight window and limits
 projected text to Context's 32 KiB budget. Consecutive requests sharing an
 =Arc<ContextScope>= materialize common fields once.
 
 =admit_context(request, budget, cancellation)= returns a =ContextScopeDigest=.
-The rooted SDK boundary carries strings, vectors, a u64vector and one packed
-u8vector result. Rust checks exact digest cardinality and performs a bulk copy;
+The rooted SDK boundary carries strings, vectors, u64 message IDs, result
+status bytes and packed digest bytes. Rust checks packet cardinality and
+message identities before publishing any receipt;
 no JSON or command-line protocol crosses this boundary. A digest identifies a
 Lab-admitted Scope; it does not grant permission to perform an external effect.
 
 Cancellation and deadlines are checked before submission and before result
-delivery. Each batch joins its started Actors before returning, and its roots
-are released on the owner. =shutdown().await= closes admission for every
+delivery. Each completion releases its native roots on the owner.
+=shutdown().await= closes admission for every
 clone, drains accepted work, retires the Context service, drops the VM,
 publishes a typed receipt and joins the owner. Dropping the final handle also
 drains the channel. The upstream process lifecycle permits one VM
 initialization per process.
+
+Actors are keyed by bundle, organization, project, worktree, agent and Session.
+Source-cut and epoch changes travel as message data to the same Actor.
+Actors remain available until the Deck service closes. Shutdown sends a stop
+message to every Actor and joins it. =DeckMailboxMetrics= records created and
+retired Actors and submitted and collected messages.
 
 * Verification
 
@@ -41,8 +52,24 @@ bench accepts batch capacity and request count, for example
 =cargo bench -p marlin-deck-runtime --features actor-runtime --bench single_vm_actor -- 64 1024=.
 Run batch 1 and 64 in separate processes under matched conditions. The test
 and benchmark hosts each use four Tokio workers. Counters
-include 64 warmup requests; timed throughput and p50/p95 cover request/reply.
+include 64 warmup requests; timed throughput and p50/p95/p99 cover request/reply.
 Qualification results belong in the [[file:../../docs/40-rfcs/40.166-plugin-contract.org::#single-vm-actor-runtime][Org RFC]].
+
+=cargo bench -p marlin-deck-runtime --features mailbox-benchmark --bench mailbox -- 1000000 1=
+uses the SDK's in-process VM and rooted C ABI. The qualification image includes
+the production mailbox transport and a lightweight handler. Its arguments select
+message count and logical identity count. The SDK applies its declared separate
+procedure layout to the mailbox and workload modules. Startup, compilation and
+warmup are excluded from the Scheme timer. Whole C ABI call time is reported
+separately. This workload checks the reply oracle and shutdown accounting.
+The Context benchmark additionally runs Lab admission and hashing. The signed
+allocation-counter delta is diagnostic; decreasing-counter samples are retained
+and do not qualify allocation cost.
+
+Append =latency 1000000= to measure planned arrivals at one million messages
+per second. The probe includes source debt, checks each result and exits with
+failure when p99 reaches 20 ms. Histogram upper bounds use 10 microsecond
+buckets. It reports p50, p95, p99, p99.9, maximum and the count over 20 ms.
 
 The TUI consumes the existing provider-neutral streaming gateway. Connecting a
 TUI conversation to this Context entry requires its actual project, worktree,

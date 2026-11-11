@@ -33,7 +33,7 @@ async fn dispatcher_checks_path_filters_before_hook_execution() {
     for (paths, selected) in [
         (vec![], false),
         (vec!["scheme/t/smoke.ss", "scheme/README.org"], false),
-        (vec!["scheme/t/smoke.ss", "scheme/context/func.ss"], true),
+        (vec!["scheme/t/smoke.ss", "scheme/context/objects.ss"], true),
     ] {
         let invocation = HookInvocation::new(HookEventName::PreToolUse).with_target_paths(
             paths

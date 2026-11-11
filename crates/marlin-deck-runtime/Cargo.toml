@@ -9,11 +9,17 @@ readme = "README.org"
 [features]
 default = []
 actor-runtime = ["dep:marlin-agent-context", "marlin-agent-context/gerbil", "dep:gerbil-scheme", "dep:gerbil-scheme-sys", "dep:thiserror", "dep:tokio", "dep:tokio-util"]
+mailbox-benchmark = ["actor-runtime"]
 
 [[bench]]
 name = "single_vm_actor"
 harness = false
 required-features = ["actor-runtime"]
+
+[[bench]]
+name = "mailbox"
+harness = false
+required-features = ["mailbox-benchmark"]
 
 [dependencies]
 gerbil-scheme = { workspace = true, optional = true, features = ["external-program"] }

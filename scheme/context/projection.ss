@@ -1,6 +1,7 @@
 ;;; Shared typed Context projections for direct and Actor entry points.
 
 (import (only-in :clan/poo/object .get .o)
+        (only-in :agentic-ai-lab/modules/ai-agentic-context/objects AiAgenticContextScope.)
         (only-in :std/encoding/hex hex-decode-byte))
 
 (export marlin-context-batch-requests marlin-context-scopes->bytes)
@@ -26,7 +27,8 @@
                         (unless (string? value) (error "invalid Context session ID")) value))
                  (else (error "invalid Context batch row")))))
         (vector-set! output i
-          (.o bundle: (vector-ref shared 0) organization: (vector-ref shared 1)
+          (.o (:: @ AiAgenticContextScope.)
+              bundle: (vector-ref shared 0) organization: (vector-ref shared 1)
               epoch: epoch-value project: (vector-ref shared 2) worktree: (vector-ref shared 3)
               source-cut: (vector-ref shared 4) actor: (vector-ref row 0)
               task: (vector-ref row 1) destination: (vector-ref row 2)

@@ -96,6 +96,10 @@ async fn context_sessions_cross_real_single_vm_actors_and_retire() {
     assert_eq!(receipt.metrics.requests_succeeded, 66);
     assert_eq!(receipt.metrics.scheme_items, 66);
     assert_eq!(receipt.metrics.requests_failed, 0);
+    assert_eq!(receipt.mailbox.actors_created, 1);
+    assert_eq!(receipt.mailbox.actors_retired, 1);
+    assert_eq!(receipt.mailbox.messages_submitted, 66);
+    assert_eq!(receipt.mailbox.results_collected, 66);
     assert_eq!(deck.shutdown().await.unwrap(), receipt);
     assert!(matches!(
         deck.admit_context(request(&scopes[0], 99), budget, CancellationToken::new())

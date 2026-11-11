@@ -121,7 +121,7 @@ pub use marlin_agent_runtime::{
 pub use marlin_agent_sessions as sessions;
 #[cfg(feature = "actor-runtime")]
 pub use marlin_deck_runtime::{
-    DeckRuntime, DeckRuntimeConfig, DeckRuntimeMetrics, DeckRuntimeRejection,
+    DeckMailboxMetrics, DeckRuntime, DeckRuntimeConfig, DeckRuntimeMetrics, DeckRuntimeRejection,
     DeckRuntimeShutdownError, DeckRuntimeShutdownReceipt, DeckRuntimeStartupError,
     DeckRuntimeStopReason,
 };

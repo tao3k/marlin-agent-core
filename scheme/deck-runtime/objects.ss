@@ -6,5 +6,5 @@
 (export DeckOperations)
 
 (def DeckOperations
-  (.o metadata: (.o module-id: "deck-runtime" version: 3)
+  (.o metadata: (.o module-id: "deck-runtime" version: 4)
       open: open-deck-runtime))

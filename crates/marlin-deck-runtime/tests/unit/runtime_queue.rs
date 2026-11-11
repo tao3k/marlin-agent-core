@@ -1,5 +1,6 @@
 use super::*;
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
+use vm::{Completion, MessageId};
 #[path = "context_fixture.rs"]
 mod context_fixture;
 
@@ -24,9 +25,7 @@ async fn cancelled_and_expired_work_never_enters_scheme() {
     expired.deadline = Instant::now();
     let mut pending = VecDeque::from([cancelled, expired]);
     let mut metrics = DeckRuntimeMetrics::default();
-    owner::turn(&mut pending, &mut metrics, |_| {
-        panic!("retired work entered Scheme")
-    });
+    assert!(owner::prepare(&mut pending, &mut metrics).is_empty());
     assert!(matches!(
         cancelled_result.try_recv().unwrap(),
         Err(DeckRuntimeRejection::Cancelled)
@@ -46,10 +45,18 @@ async fn cancellation_during_vm_turn_overrides_a_failed_result() {
     let cancellation = job.cancellation.clone();
     let mut pending = VecDeque::from([job]);
     let mut metrics = DeckRuntimeMetrics::default();
-    owner::turn(&mut pending, &mut metrics, |_| {
-        cancellation.cancel();
-        Err(DeckRuntimeRejection::InvalidProjection)
-    });
+    let batch = owner::prepare(&mut pending, &mut metrics);
+    let mut active = HashMap::from([(MessageId(1), batch.into_iter().next().unwrap())]);
+    cancellation.cancel();
+    owner::retire(
+        &mut active,
+        vec![Completion {
+            id: MessageId(1),
+            outcome: Err(DeckRuntimeRejection::InvalidProjection),
+        }],
+        &mut metrics,
+    )
+    .unwrap();
     assert!(matches!(
         result.try_recv().unwrap(),
         Err(DeckRuntimeRejection::Cancelled)
@@ -58,19 +65,50 @@ async fn cancellation_during_vm_turn_overrides_a_failed_result() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn malformed_batch_is_rejected_before_any_result_is_published() {
+async fn duplicate_replies_are_rejected_before_any_result_is_published() {
     let (first, mut a) = job(0);
     let (second, mut b) = job(1);
-    let mut pending = VecDeque::from([first, second]);
+    let mut active = HashMap::from([(MessageId(1), first), (MessageId(2), second)]);
     let mut metrics = DeckRuntimeMetrics::default();
-    owner::turn(&mut pending, &mut metrics, |_| Ok(Vec::new()));
-    for result in [&mut a, &mut b] {
-        assert!(matches!(
-            result.try_recv().unwrap(),
-            Err(DeckRuntimeRejection::InvalidProjection)
-        ));
-    }
-    assert_eq!(metrics.requests_failed, 2);
+    let replies = [1, 1]
+        .into_iter()
+        .map(|id| Completion {
+            id: MessageId(id),
+            outcome: Err(DeckRuntimeRejection::ContextActor),
+        })
+        .collect();
+    assert!(matches!(
+        owner::retire(&mut active, replies, &mut metrics),
+        Err(DeckRuntimeRejection::InvalidProjection)
+    ));
+    assert!(a.try_recv().is_err());
+    assert!(b.try_recv().is_err());
+    assert_eq!(active.len(), 2);
+    assert_eq!(metrics.requests_failed, 0);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn completed_actor_retires_without_waiting_for_an_unfinished_actor() {
+    let (first, mut a) = job(0);
+    let (second, mut b) = job(1);
+    let mut active = HashMap::from([(MessageId(1), first), (MessageId(2), second)]);
+    let mut metrics = DeckRuntimeMetrics::default();
+    owner::retire(
+        &mut active,
+        vec![Completion {
+            id: MessageId(2),
+            outcome: Err(DeckRuntimeRejection::ContextActor),
+        }],
+        &mut metrics,
+    )
+    .unwrap();
+    assert!(a.try_recv().is_err());
+    assert!(matches!(
+        b.try_recv().unwrap(),
+        Err(DeckRuntimeRejection::ContextActor)
+    ));
+    assert_eq!(active.len(), 1);
+    assert_eq!(metrics.requests_failed, 1);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -125,18 +163,15 @@ async fn a_text_limited_turn_leaves_a_fifo_remainder_for_the_next_turn() {
         replies.push(reply);
     }
     let mut metrics = DeckRuntimeMetrics::default();
-    let mut first = 0;
-    owner::turn(&mut pending, &mut metrics, |requests| {
-        assert!(
-            requests
-                .iter()
-                .map(|request| request.text_bytes())
-                .sum::<usize>()
-                <= CONTEXT_BATCH_MAX_TEXT_BYTES
-        );
-        first = requests.len();
-        Err(DeckRuntimeRejection::InvalidProjection)
-    });
+    let batch = owner::prepare(&mut pending, &mut metrics);
+    let first = batch.len();
+    assert!(
+        batch
+            .iter()
+            .map(|job| job.request.text_bytes())
+            .sum::<usize>()
+            <= CONTEXT_BATCH_MAX_TEXT_BYTES
+    );
     assert!(first > 0 && first < 16);
     assert_eq!(pending.len(), 16 - first);
     assert_eq!(
@@ -152,7 +187,7 @@ async fn a_text_limited_turn_leaves_a_fifo_remainder_for_the_next_turn() {
             .0,
         first as u64
     );
-    assert_eq!(metrics.requests_failed, first as u64);
+    assert_eq!(metrics.scheme_items, first as u64);
 }
 
 #[test]

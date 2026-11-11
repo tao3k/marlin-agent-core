@@ -94,6 +94,7 @@ jobs:
       - name: Compile linked selector benchmarks
         run: |
           cargo bench --locked -p marlin-deck-runtime --features actor-runtime --bench single_vm_actor --no-run
+          cargo bench --locked -p marlin-deck-runtime --features mailbox-benchmark --bench mailbox --no-run
           cargo bench --locked -p marlin-agent-policy-routing-abi --features linked-selector --bench linked_selector --no-run
           cargo bench --locked -p marlin-agent-policy-routing-abi --features linked-selector --bench allocation_shape --no-run
 

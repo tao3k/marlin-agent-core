@@ -62,12 +62,29 @@ pub fn emit_deck_actor_link_directives() {
     run_native_process(&mut build_package, "build the Marlin Scheme modules", true)
         .expect("build Marlin's Yuanxu-selected modules through its standard Builder");
 
-    stage_program.current_dir(&scheme).env("GERBIL_PATH", &package_prefix).env("GERBIL_LOADPATH", load_path).env("MARLIN_DECK_AOT_LIB", &lib).env("MARLIN_DECK_AOT_STAGE", &stage).args([
+    let mailbox_benchmark = env::var_os("CARGO_FEATURE_MAILBOX_BENCHMARK").is_some();
+    stage_program
+        .current_dir(&scheme)
+        .env("GERBIL_PATH", &package_prefix)
+        .env("GERBIL_LOADPATH", load_path)
+        .env("MARLIN_DECK_AOT_LIB", &lib)
+        .env("MARLIN_DECK_AOT_STAGE", &stage)
+        .env(
+            "MARLIN_DECK_MAILBOX_BENCHMARK",
+            if mailbox_benchmark { "1" } else { "0" },
+        )
+        .args([
         "-e",
         r#"(import :gerbil/compiler :gerbil-scheme-rust/scheme/program-build)
-           (def source (path-expand "c-abi/deck-runtime.ss"))
+           (def benchmark? (equal? (getenv "MARLIN_DECK_MAILBOX_BENCHMARK") "1"))
+           (when benchmark?
+             (compile-module (path-expand "bench/mailbox.ss")
+               [output-dir: (getenv "MARLIN_DECK_AOT_LIB") invoke-gsc: #f optimize: #t static: #t]))
+           (def source (path-expand (if benchmark? "bench/mailbox-entry.ss" "c-abi/deck-runtime.ss")))
            (compile-module source [output-dir: (getenv "MARLIN_DECK_AOT_LIB") invoke-gsc: #f optimize: #t static: #t])
-           (gerbil-rs-stage-program source (getenv "MARLIN_DECK_AOT_STAGE"))"#,
+           (gerbil-rs-stage-program source (getenv "MARLIN_DECK_AOT_STAGE") []
+             (if benchmark? ["marlin-benchmark/mailbox" "marlin-agent-core/deck-runtime/mailbox"]
+                             ["marlin-agent-core/deck-runtime/mailbox"]))"#,
     ]);
     run_native_process(&mut stage_program, "stage Deck Actor Scheme graph", true)
         .expect("stage the Deck Actor graph from the compiled Scheme package and its dependencies");

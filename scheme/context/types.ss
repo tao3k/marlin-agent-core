@@ -2,21 +2,14 @@
 
 (import (only-in :clan/poo/object .cc)
         (only-in :clan/poo/mop Fun Type.)
-        (only-in :clan/poo/type Record String OrFalse Exactly Or)
-        (only-in :clan/poo/number UInt)
+        (only-in :clan/poo/type Record String Exactly Or)
         (only-in :gerbil-ascent/temporal/lens temporal-answer?)
         (only-in :agentic-ai-lab/modules/ai-agentic-context/types AiAgenticContextScopeType))
 
-(export MarlinContextRequest MarlinContextAdmission MarlinContextModuleContract ContextCausalContract)
-
-(def MarlinContextRequest
-  (Record bundle: [String] organization: [String] epoch: [UInt]
-          project: [String] worktree: [String] source-cut: [String]
-          actor: [String] task: [String] destination: [String]
-          session: [(OrFalse String)] turn: [(OrFalse UInt)]))
+(export MarlinContextAdmission MarlinContextModuleContract ContextCausalContract)
 
 (def MarlinContextAdmission
-  (Fun AiAgenticContextScopeType <- MarlinContextRequest))
+  (Fun AiAgenticContextScopeType <- AiAgenticContextScopeType))
 
 (def CausalExchange
   (Record kind: [(Exactly 'agentic-ai-lab.ascent-exchange.v1)]))

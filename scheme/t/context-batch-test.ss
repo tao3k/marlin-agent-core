@@ -1,6 +1,7 @@
 ;;; Batch output must match Lab's individual admissions in request order.
 
 (import (only-in :clan/poo/object .get .o)
+        (only-in :agentic-ai-lab/modules/ai-agentic-context/objects AiAgenticContextScope.)
         (only-in :std/encoding/hex hex-decode)
         (only-in :marlin-agent-core/init marlin-agent-core.init.exports)
         "../context/batch.ss")
@@ -13,7 +14,7 @@
 (def admit (.get marlin-agent-core.init.exports Marlin context admit-scope))
 (def (expected actor-id task-id session-id turn-index)
   (def scope
-    (admit (.o bundle: "bundle" organization: "org" epoch: 1
+    (admit (.o (:: @ AiAgenticContextScope.) bundle: "bundle" organization: "org" epoch: 1
                project: "project" worktree: "worktree" source-cut: "cut:0"
                actor: actor-id task: task-id destination: "provider"
                session: session-id turn: turn-index)))

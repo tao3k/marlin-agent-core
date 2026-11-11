@@ -5,6 +5,7 @@
 pub enum DeckRuntimeStopReason {
     Drained,
     SchemeCloseFailed,
+    ProtocolFailed,
     OwnerPanicked,
 }
 
@@ -21,7 +22,7 @@ pub struct DeckRuntimeMetrics {
     pub requests_expired: u64,
     /// Other rejected requests, including invalid Context projections.
     pub requests_failed: u64,
-    /// Largest active request window held by the owner.
+    /// Largest ready request batch held by the owner before projection.
     pub largest_request_batch: usize,
     /// Context batch attempts, including fallible Scheme value construction.
     pub scheme_batches: u64,
@@ -31,6 +32,15 @@ pub struct DeckRuntimeMetrics {
     pub largest_scheme_batch: usize,
 }
 
+/// Scheme-owned mailbox lifetimes, observed after draining and joining Actors.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct DeckMailboxMetrics {
+    pub actors_created: u64,
+    pub actors_retired: u64,
+    pub messages_submitted: u64,
+    pub results_collected: u64,
+}
+
 /// Terminal observation after the Scheme runtime has been dropped on its owner.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct DeckRuntimeShutdownReceipt {
@@ -38,5 +48,6 @@ pub struct DeckRuntimeShutdownReceipt {
     pub vm_processors: u32,
     /// The Scheme Context service acknowledged retirement.
     pub context_service_closed: bool,
+    pub mailbox: DeckMailboxMetrics,
     pub metrics: DeckRuntimeMetrics,
 }

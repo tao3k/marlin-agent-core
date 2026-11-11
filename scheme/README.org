@@ -7,10 +7,9 @@ Lab supplies Yuanxu, the POO contracts, and the Context and Session
 implementations. =init.ss= selects =context +causal=, =hooks=, =policy=,
 and =deck-runtime=. A package-backed Lab window explicitly selects the upstream
 Context Module; Marlin Context requires its qualified identity.
-=context/types.ss= declares the host request as a POO =Record= and checks
-the operation as =(Fun AiAgenticContextScopeType <- MarlinContextRequest)=.
-=context/func.ss= imports Lab's Scope library. It projects the
-request into Lab's Scope object and calls Lab's admission procedure.
+=context/types.ss= reuses Lab's =AiAgenticContextScopeType= for the input and
+output of the admission function. The typed decoder constructs the Lab Scope
+prototype, and =context/objects.ss= publishes Lab's admission procedure.
 Lab owns the Scope invariants and the returned scope digest.
 The =+causal= Feature publishes solve and replay operations over Lab's
 Temporal Causality exchange. It returns the original ASCENT answer with its
@@ -21,19 +20,22 @@ receipt and verifies replay against the caller's exact exchange.
 | =context/= | Adapt Lab's Context library to Marlin's runtime boundary. |
 | =hooks/= | Publish Scheme hook selection, composable conditions, and higher-order matchers. |
 | =policy/= | Project graph policy, topology and continuation with a declared dependency on Hooks. |
-| =deck-runtime/= | Publish Scheme-owned runtime metadata and schedule Context admissions on demand. |
+| =deck-runtime/= | Publish Scheme-owned runtime metadata and route Context messages to identity-owned mailbox Actors. |
 | =policy/projection/deck/= | Project policy packs. |
 | =policy/projection/graph/= | Project routing, topology and continuation for the Rust graph runtime. |
 | =c-abi/= | Own the C entry points and their bindings. |
 | =t/= | Exercise policy composition, projections, and receipt fixtures. |
+| =bench/= | Own the optional SDK-linked mailbox qualification workload. |
 
 Each module publishes its scope through =interface.ss=. The contract, objects,
 and validation live in =types.ss=, =objects.ss=, and =config.ss= respectively.
 Yuanxu owns Module selection, Feature refinement and option contracts. Deck
-Runtime opens its Actor pool on demand through gerbil-scheme-rust. The pool
-uses Gerbil green threads and returns Lab Scopes in input order. The owner
-closes it explicitly. Rust maps the version from the published Scheme
-=metadata= record.
+Runtime creates a Gerbil mailbox Actor on first use of a logical Context
+identity and reuses it across turns. Each completed message carries its ID,
+status and Scope digest, independently of unfinished Actors. The owner closes
+the service explicitly. Rust maps the version from the published Scheme
+=metadata= record. The Deck C ABI roots the selected runtime roles in the
+compiler graph; Yuanxu retains checked publication and Feature selection.
 
 Gerbil compiles the C link units through Gambit and executes policy in the
 Scheme VM. The Rust adapter owns typed requests, authorization, and receipts.
