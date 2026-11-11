@@ -40,7 +40,7 @@ initialization per process.
 
 Actors are keyed by bundle, organization, project, worktree, agent and Session.
 Source-cut and epoch changes travel as message data to the same Actor.
-Actors remain available until the Deck service closes. Shutdown sends a stop
+Actors remain available until their owning Context Module retires or the runtime closes. Shutdown sends a stop
 message to every Actor and joins it. =DeckMailboxMetrics= records created and
 retired Actors and submitted and collected messages.
 
@@ -62,9 +62,10 @@ message count and logical identity count. The SDK applies its declared separate
 procedure layout to the mailbox and workload modules. Startup, compilation and
 warmup are excluded from the Scheme timer. Whole C ABI call time is reported
 separately. This workload checks the reply oracle and shutdown accounting.
-The Context benchmark additionally runs Lab admission and hashing. The signed
-allocation-counter delta is diagnostic; decreasing-counter samples are retained
-and do not qualify allocation cost.
+The Context benchmark additionally runs Lab admission and hashing. The signed VM accounting delta is diagnostic and never qualifies physical
+allocation bytes, even when positive. GC count, heap capacity and post-GC live
+bytes are separate observations. The component bench and constructor-site
+census distinguish the remaining costs.
 
 Append =latency 1000000= to measure planned arrivals at one million messages
 per second. The probe includes source debt, checks each result and exits with
@@ -74,3 +75,34 @@ buckets. It reports p50, p95, p99, p99.9, maximum and the count over 20 ms.
 The TUI consumes the existing provider-neutral streaming gateway. Connecting a
 TUI conversation to this Context entry requires its actual project, worktree,
 source-cut and Session binding. Those identities must come from the runtime.
+
+* Independent Module lifetimes and timers
+
+=context_module()= returns the default Context Module;
+=activate_context_module().await= creates another instance of the registered
+Context factory in the same VM. Each instance has a Rust-minted
+=DeckModuleInstanceId=. =module.admit_context(...)= uses that Module's Actors.
+=module.retire().await= closes its admission, drains prior requests, joins only
+its Actors and timer threads and returns a checked =DeckModuleRetirementReceipt=.
+It is idempotent and leaves other Modules active. Queue refusal leaves admission
+open. Drop does not replace the explicit retirement boundary.
+
+=module.timer(delay).await= receives a =DeckTimerReceipt= even while no Context
+requests arrive. Scheme uses Gambit's timed mailbox wait and monotonic clock;
+Rust waits on the native event channel. Dropping the future abandons its reply,
+while the Module still owns the timer until collection or retirement. Retirement
+joins pending timers and rejects their reply slots. These are runtime timer
+observations; Lab retains temporal policy and durable Agenda semantics.
+
+* Cost diagnostics
+
+=context_profile= under =mailbox-benchmark= measures the existing decode,
+validation, admission, digest, encode and Actor operations independently. It
+checks and optionally writes all 4096 result digests. These prepared phases
+retain different live sets from the production =single_vm_actor= workload.
+
+=context-profiling= records per-owner-turn C ABI stages, native GC and completion
+ages. It buffers at most 65,536 turns and explicitly reports truncation; output
+occurs after shutdown. Run the ordinary release benchmark without this feature
+for acceptance. Neither instrumentation nor component timing replaces full
+Context latency evidence in the [[file:../../docs/40-rfcs/40.166-plugin-contract.org::#context-runtime-cost-attribution][cost attribution RFC]].

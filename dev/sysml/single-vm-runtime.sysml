@@ -45,15 +45,18 @@ package MarlinSingleVmRuntime {
                    the host runtime. Actor population is independent of
                    Tokio worker count and Context C ABI transfer size.
                    In-flight collection waits in the Scheme mailbox and
-                   permits other green Actors to run. Autonomous timers
-                   between host requests still require a host wake bridge.
-                   Module-owned retirement remains further integration work. */
+                   permits other green Actors to run. Rust closes a Module's
+                   admission before retiring its accepted work. Scheme joins
+                   only that Module's Actors and timers. Other Modules remain
+                   active. Retirement receipts follow native join and validation. */
         }
         part <'MAR-VM-A08'> linkedRuntimeRoles {
             doc /* The rooted C ABI imports the selected Deck and Context
                    runtime roles into the compiler-owned linked graph.
                    Yuanxu still owns checked publication and Feature selection.
-                   Its role loader reuses the linked builtin identities.
+                   Ordinary library imports retain canonical procedure identities.
+                   The C ABI checks the selected factory and mailbox factory
+                   against the linked constructors before acknowledging startup.
                    The SDK applies SeparateProcedures lowering to the production
                    mailbox module; the benchmark also declares its driver. */
         }
@@ -76,6 +79,54 @@ package MarlinSingleVmRuntime {
                    its identity without retaining completed message credit.
                    Client outcome and VM completion remain separate lifetimes. */
         }
+        part <'MAR-VM-A12'> moduleCatalog {
+            doc /* Rust mints opaque Module instance identities for registered
+                   Context factories. Admission and retirement publication share
+                   one short per-Module lock; no lock crosses await or VM entry.
+                   Actor keys are scoped by Module. Removed Modules release their
+                   registry roots and recent-route cache without tombstones. */
+        }
+        part <'MAR-VM-A13'> hostWake {
+            doc /* A nonblocking Rust-owned pipe enters a Gambit native port.
+                   One ingress Actor forwards coalesced host wake notices to the
+                   existing owner mailbox. A full pipe already carries a wake.
+                   The owner waits in Scheme even when Rust has no work, allowing
+                   native I/O, green Actors and timers to advance. No polling
+                   clock, second readiness queue or custom Scheme scheduler. */
+        }
+        part <'MAR-VM-A14'> moduleTimers {
+            doc /* Module-owned timer observations use Gambit's timed mailbox
+                   wait and monotonic time. Expiry publishes a typed timer ID,
+                   Module ID, due time and observed time. Rust validates the
+                   complete event window against pending ownership. Retirement
+                   sends stop, joins timers and rejects remaining observations.
+                   Lab owns temporal policy deadlines and durable Agenda;
+                   timer observations grant no external effect authority. */
+        }
+        part <'MAR-VM-A15'> contextCosts {
+            doc /* Measure Rust input projection, Scheme submission, waiting and
+                   result projection on the same owner turn, correlated with GC.
+                   A component diagnostic separately exercises Lab validation,
+                   Scope freezing, digest forcing and result encoding. Reuse
+                   Lab's canonical admission Function descriptor across Module
+                   roles. Keep runtime accounting and physical allocation-site
+                   census distinct; report unobserved RTS allocations explicitly. */
+        }
+        part <'MAR-VM-A16'> publicationState {
+            doc /* Gerbil and Yuanxu own declaration publication, compiler
+                   contexts, native Type identities and source-currentness
+                   support. This control state has a separate lifetime from
+                   business Actors and their message credits. Module retirement
+                   joins owned work without discarding compiler authority.
+                   Retention diagnostics locate code and binding roots; removing
+                   those roots in a disposable probe grants no production path. */
+        }
+        dependency costObservesPublication from contextCosts to publicationState;
+        dependency moduleOwnsActors from moduleCatalog to contextActors;
+        dependency moduleOwnsTimers from moduleCatalog to moduleTimers;
+        dependency ownerWaitsInScheme from owner to hostWake;
+        dependency timerWakesOwner from moduleTimers to hostWake;
+        dependency contextUsesLibrary from contextActors to contextCosts;
         dependency actorIdentityLifetime from contextActors to actorPopulation;
         dependency actorSchedulingOwner from contextActors to schedulerReadiness;
         dependency messageCreditReturn from retirement to messageCredits;
@@ -119,8 +170,11 @@ package MarlinSingleVmRuntime {
     }
     requirement <'MAR-VM-R06'> linkedMailboxCompilation {
         doc /* Check the production mailbox identity and declared procedure
-               layout in the SDK compiler manifest. A separately compiled
-               benchmark cannot qualify a dynamically loaded production role. */
+               layout in the SDK compiler manifest and compare actual selected
+               factory procedures with linked constructors at startup. Reject
+               substitutions. Manifest presence alone cannot qualify the reached
+               production path; constructor-site evidence must identify reached
+               canonical units. A separate benchmark is insufficient. */
     }
     attribute def MessageAvailable;
     attribute def ReceiveWouldBlock;
@@ -156,6 +210,37 @@ package MarlinSingleVmRuntime {
                replies and typed boundary projections. Ring CPU amortization
                is mechanism evidence, not open-arrival business p99. */
     }
+    requirement <'MAR-VM-R09'> moduleRetirement {
+        doc /* Close admission before queued retirement, drain accepted messages,
+               join only owned Actors and timers, reject outstanding timer slots
+               and publish a checked receipt. A cancelled client does not abandon
+               native resource custody. Other Modules continue independently. */
+    }
+    requirement <'MAR-VM-R10'> autonomousTimerWake {
+        doc /* A timer must become observable while the host submits no further
+               work. Native wait/wake owns progress, never a periodic Rust poll.
+               Dropping a timer future abandons its observation, not its native
+               operation; Module retirement remains responsible for joining it. */
+    }
+    requirement <'MAR-VM-R11'> qualifiedCostAccounting {
+        doc /* Correlate GC and request age within the same owner turn. Generated
+               constructor counters require exact source sites, zero counter
+               errors, matching result bytes and one VM/processor admission.
+               Instrumented times do not qualify production latency. A signed
+               process-statistics delta is not physical allocation bytes. */
+    }
+    requirement <'MAR-VM-R12'> preservePublicationAuthority {
+        doc /* Any compiler-state lifetime optimization belongs to the existing
+               Gerbil/Yuanxu owners and must preserve native identity, fresh
+               source guards, Feature selection and advanced Scheme extension.
+               Actor shutdown cannot clear the compiler registry or substitute
+               a remembered admission verdict. Qualify the complete Context
+               workload separately from forced-GC retention diagnostics. */
+    }
+    allocation publicationStateAllocation allocate preservePublicationAuthority to singleVmRuntime.publicationState;
+    allocation moduleRetirementAllocation allocate moduleRetirement to singleVmRuntime.moduleCatalog;
+    allocation timerWakeAllocation allocate autonomousTimerWake to singleVmRuntime.moduleTimers;
+    allocation costAccountingAllocation allocate qualifiedCostAccounting to singleVmRuntime.contextCosts;
     allocation populationAllocation allocate independentPopulationAndCredit to singleVmRuntime.actorPopulation;
     allocation readinessAllocation allocate independentPopulationAndCredit to singleVmRuntime.schedulerReadiness;
     allocation creditAllocation allocate independentPopulationAndCredit to singleVmRuntime.messageCredits;

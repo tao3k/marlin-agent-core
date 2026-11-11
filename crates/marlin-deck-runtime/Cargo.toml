@@ -8,8 +8,9 @@ readme = "README.org"
 
 [features]
 default = []
-actor-runtime = ["dep:marlin-agent-context", "marlin-agent-context/gerbil", "dep:gerbil-scheme", "dep:gerbil-scheme-sys", "dep:thiserror", "dep:tokio", "dep:tokio-util"]
+actor-runtime = ["dep:libc", "dep:marlin-agent-context", "marlin-agent-context/gerbil", "dep:gerbil-scheme", "dep:gerbil-scheme-sys", "dep:thiserror", "dep:tokio", "dep:tokio-util"]
 mailbox-benchmark = ["actor-runtime"]
+context-profiling = ["actor-runtime"]
 
 [[bench]]
 name = "single_vm_actor"
@@ -22,6 +23,7 @@ harness = false
 required-features = ["mailbox-benchmark"]
 
 [dependencies]
+libc = { workspace = true, optional = true }
 gerbil-scheme = { workspace = true, optional = true, features = ["external-program"] }
 gerbil-scheme-sys = { workspace = true, optional = true }
 marlin-agent-context = { workspace = true, optional = true }
@@ -36,3 +38,8 @@ marlin-gerbil-aot-link.workspace = true
 
 [dev-dependencies]
 marlin-agent-protocol.workspace = true
+
+[[bench]]
+name = "context_profile"
+harness = false
+required-features = ["mailbox-benchmark"]

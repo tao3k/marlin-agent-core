@@ -43,6 +43,7 @@ authors = ["marlin contributors"]
 repository = "https://github.com/tao3k/marlin-agent-core"
 
 [workspace.dependencies]
+libc = "0.2.186"
 aho-corasick = "1.1.5"
 async-trait = "0.1.92"
 asp-rust = { git = "https://github.com/tao3k/asp-rust", rev = "2419414ee5379bad89506496e3eaab928df68daf", version = "0.1.2", default-features = false, features = ["native-syntax"] }

@@ -88,18 +88,111 @@ async fn context_sessions_cross_real_single_vm_actors_and_retire() {
         .await,
         Err(DeckRuntimeRejection::Deadline)
     ));
+    // Independent instances use the same library and VM, with separate ownership.
+    let left = deck.activate_context_module().await.unwrap();
+    let right = deck.activate_context_module().await.unwrap();
+    assert_ne!(left.id(), right.id());
+    let before = std::time::Instant::now();
+    let timer = tokio::time::timeout(
+        Duration::from_secs(2),
+        right.timer(Duration::from_millis(5)),
+    )
+    .await
+    .expect("idle Scheme timer did not wake Rust")
+    .unwrap();
+    assert_eq!(timer.module, right.id());
+    assert!(timer.observed_monotonic_us >= timer.due_monotonic_us);
+    assert!(before.elapsed() >= Duration::from_millis(5));
+    let mut long_timer = Box::pin(left.timer(Duration::from_secs(3600)));
+    std::future::poll_fn(|cx| {
+        assert!(std::future::Future::poll(long_timer.as_mut(), cx).is_pending());
+        std::task::Poll::Ready(())
+    })
+    .await;
+    left.admit_context(request(&scopes[0], 0), budget, CancellationToken::new())
+        .await
+        .unwrap();
+    let retired = left.retire().await.unwrap();
+    assert_eq!(retired.module, left.id());
+    assert_eq!(retired.mailbox.actors_created, 1);
+    assert_eq!(retired.mailbox.actors_retired, 1);
+    assert_eq!(retired.timers_retired, 1);
+    assert_eq!(left.retire().await.unwrap(), retired);
+    assert!(matches!(
+        long_timer.await,
+        Err(DeckRuntimeRejection::ModuleRetired)
+    ));
+    assert!(matches!(
+        left.timer(Duration::from_millis(1)).await,
+        Err(DeckRuntimeRejection::ModuleRetired)
+    ));
+    assert!(matches!(
+        left.admit_context(request(&scopes[0], 0), budget, CancellationToken::new())
+            .await,
+        Err(DeckRuntimeRejection::ModuleRetired)
+    ));
+    right
+        .admit_context(request(&scopes[0], 0), budget, CancellationToken::new())
+        .await
+        .unwrap();
+    right
+        .admit_context(request(&scopes[0], 1), budget, CancellationToken::new())
+        .await
+        .unwrap();
+    let mut abandoned_timer = Box::pin(right.timer(Duration::from_secs(3600)));
+    std::future::poll_fn(|cx| {
+        assert!(std::future::Future::poll(abandoned_timer.as_mut(), cx).is_pending());
+        std::task::Poll::Ready(())
+    })
+    .await;
+    drop(abandoned_timer);
+    assert_eq!(right.retire().await.unwrap().timers_retired, 1);
+
+    let racing = deck.activate_context_module().await.unwrap();
+    let barrier = std::sync::Arc::new(tokio::sync::Barrier::new(65));
+    let mut contenders = tokio::task::JoinSet::new();
+    for index in 0..64 {
+        let module = racing.clone();
+        let barrier = barrier.clone();
+        let request = request(&scopes[0], index);
+        contenders.spawn(async move {
+            barrier.wait().await;
+            module
+                .admit_context(request, budget, CancellationToken::new())
+                .await
+        });
+    }
+    barrier.wait().await;
+    let race_retirement = racing.retire().await.unwrap();
+    let mut race_successes = 0;
+    while let Some(result) = contenders.join_next().await {
+        match result.unwrap() {
+            Ok(_) => race_successes += 1,
+            Err(DeckRuntimeRejection::ModuleRetired) => (),
+            Err(error) => panic!("unexpected admission/retirement race result: {error}"),
+        }
+    }
+    assert_eq!(race_retirement.mailbox.messages_submitted, race_successes);
+    assert_eq!(race_retirement.mailbox.results_collected, race_successes);
+    let total = 69 + race_successes;
     let receipt = deck.shutdown().await.unwrap();
     assert_eq!(receipt.reason, DeckRuntimeStopReason::Drained);
     assert_eq!(receipt.vm_processors, 1);
     assert!(receipt.context_service_closed);
-    assert_eq!(receipt.metrics.requests_received, 66);
-    assert_eq!(receipt.metrics.requests_succeeded, 66);
-    assert_eq!(receipt.metrics.scheme_items, 66);
+    assert_eq!(receipt.metrics.requests_received, total);
+    assert_eq!(receipt.metrics.requests_succeeded, total);
+    assert_eq!(receipt.metrics.scheme_items, total);
     assert_eq!(receipt.metrics.requests_failed, 0);
-    assert_eq!(receipt.mailbox.actors_created, 1);
-    assert_eq!(receipt.mailbox.actors_retired, 1);
-    assert_eq!(receipt.mailbox.messages_submitted, 66);
-    assert_eq!(receipt.mailbox.results_collected, 66);
+    assert_eq!(
+        receipt.mailbox.actors_created,
+        3 + race_retirement.mailbox.actors_created
+    );
+    assert_eq!(
+        receipt.mailbox.actors_retired,
+        receipt.mailbox.actors_created
+    );
+    assert_eq!(receipt.mailbox.messages_submitted, total);
+    assert_eq!(receipt.mailbox.results_collected, total);
     assert_eq!(deck.shutdown().await.unwrap(), receipt);
     assert!(matches!(
         deck.admit_context(request(&scopes[0], 99), budget, CancellationToken::new())

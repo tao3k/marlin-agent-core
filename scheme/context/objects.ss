@@ -3,8 +3,8 @@
 (import (only-in :clan/poo/object .o)
         (only-in :agentic-ai-lab/modules/ai-agentic-context/funs-scope
                  agentic-ai-lab-ai-agentic-context-scope-admit)
-        "./projection.ss"
-        "./evidence.ss")
+        :marlin-agent-core/context/projection
+        :marlin-agent-core/context/evidence)
 
 (export MarlinContextOperations EnableCausalEvidence)
 

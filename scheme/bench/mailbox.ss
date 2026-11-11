@@ -5,7 +5,7 @@ package: marlin-benchmark
         (only-in :marlin-agent-core/deck-runtime/mailbox
                  open-deck-mailboxes deck-reply-id deck-reply-failed? deck-reply-value))
 
-(export run-mailbox-benchmark)
+(export run-mailbox-benchmark mailbox-clock-ns)
 
 (extern mailbox-clock-ns)
 (begin-foreign
@@ -37,7 +37,8 @@ c-end
                (integer? identities) (positive? identities)
                (integer? arrival-rate) (>= arrival-rate 0))
     (error "message and identity counts must be positive integers"))
-  (def mailboxes (open-deck-mailboxes car cdr))
+  (def mailboxes (open-deck-mailboxes (lambda (_) 0) car cdr))
+  ((.get mailboxes activate) 0)
   (def dispatch (.get mailboxes submit))
   (def collect (.get mailboxes collect))
   (def timestamps (and latency? (make-u64vector count)))
@@ -102,7 +103,7 @@ c-end
           (if (= bucket 100000) maximum-ns (* (1+ bucket) 10000))
           (loop (1+ bucket) seen)))))
   (def (ns value) (inexact->exact (round (* value 1000000000.0))))
-  ;; Preserve a decreasing allocation counter as failed diagnostic evidence.
+  ;; Field 7 is stack-sensitive VM accounting, not physical constructor bytes.
   ;; Latency and accounting fields remain independently checked by Rust.
   (s64vector count identities (ns wall)
     (ns (+ (- (f64vector-ref after 0) (f64vector-ref before 0))
@@ -115,4 +116,7 @@ c-end
     (if latency? (quantile 95 100) 0)
     (if latency? (quantile 99 100) 0)
     (if latency? (quantile 999 1000) 0)
-    maximum-ns over-budget))
+    maximum-ns over-budget
+    (inexact->exact (- (f64vector-ref after 6) (f64vector-ref before 6)))
+    (inexact->exact (f64vector-ref after 15))
+    (inexact->exact (f64vector-ref after 17))))

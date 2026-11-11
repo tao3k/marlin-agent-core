@@ -4,6 +4,7 @@
 ;; still owns their checked publication; its role loader reuses these builtins.
 (import (only-in :marlin-agent-core/deck-runtime/objects DeckOperations)
         (only-in :marlin-agent-core/context/objects MarlinContextOperations)
+        (only-in :marlin-agent-core/deck-runtime/runtime check-deck-kernel!)
         :gerbil-scheme-rust/scheme/runtime
         (only-in :clan/poo/object .get)
         (only-in :marlin-agent-core/init marlin-agent-core.init.exports))
@@ -13,32 +14,47 @@
 (def deck #f)
 (def context-bridge #f)
 
-(def (open _)
+(def (open wake-fds)
   (when deck (error "Deck runtime is already open"))
   (set! context-bridge (.get marlin-agent-core.init.exports Marlin context bridge))
   (set! deck ((.get marlin-agent-core.init.exports Marlin deck-runtime open)
               (.get marlin-agent-core.init.exports Marlin context admit-scope)
               (.get context-bridge encode-scopes)))
+  ;; The actual constructed runtime must use the linked library procedures.
+  ;; Compiler manifests alone cannot certify a reader's private interpreted copy.
+  (check-deck-kernel! deck)
+  ((.get deck attach-ingress) (u64vector-ref wake-fds 0) (u64vector-ref wake-fds 1))
   #t)
 
-(def (submit groups)
+(def (submit envelope)
+  (def module-ids (vector-ref envelope 0))
+  (def groups (vector-ref envelope 1))
+  (unless (= (u64vector-length module-ids) (vector-length groups))
+    (error "invalid Module projection count"))
   (unless deck (error "Deck runtime is closed"))
   (unless (<= 1 (vector-length groups) 64) (error "invalid Deck group count"))
   (def decoded (vector-map (.get context-bridge decode-batch) groups))
   (def count (foldl (lambda (rows total) (+ total (vector-length rows))) 0 (vector->list decoded)))
   (unless (<= 1 count 64) (error "invalid Deck row count"))
-  (def rows (make-vector count))
+  (def ids (make-u64vector count))
   (let loop ((group 0) (offset 0))
     (when (< group (vector-length decoded))
-      (let (part (vector-ref decoded group))
-        (vector-copy! rows offset part)
-        (loop (1+ group) (+ offset (vector-length part))))))
-  ((.get deck submit-batch) rows))
+      (let* ((part (vector-ref decoded group))
+             (result ((.get deck submit-module-batch) (u64vector-ref module-ids group) part)))
+      (let copy ((i 0))
+        (when (< i (u64vector-length result))
+          (u64vector-set! ids (+ offset i) (u64vector-ref result i)) (copy (1+ i))))
+      (loop (1+ group) (+ offset (vector-length part))))))
+  ids)
 
 (def (receive maximum)
   (unless deck (error "Deck runtime is closed"))
   ((.get deck collect) maximum))
 
+(def (activate id) ((.get deck activate) (u64vector-ref id 0)))
+(def (retire id) ((.get deck retire) (u64vector-ref id 0)))
+(def (arm timer)
+  ((.get deck arm) (u64vector-ref timer 0) (u64vector-ref timer 1) (u64vector-ref timer 2)))
 (def (close _)
   (unless deck (error "Deck runtime is closed"))
   (let (statistics ((.get deck close)))
@@ -55,3 +71,21 @@
     (gerbil-scheme-rust/scheme/runtime#gerbil-rs-rooted-call root marlin-agent-core/c-abi/deck-runtime#receive))
   (c-define (deck-close root) (int64) int64 "marlin_deck_runtime_close" "extern"
     (gerbil-scheme-rust/scheme/runtime#gerbil-rs-rooted-call root marlin-agent-core/c-abi/deck-runtime#close)))
+
+;; Diagnostic snapshot uses the existing runtime counters, not a wire encoding.
+(begin-foreign
+  (c-define (deck-statistics root) (int64) int64 "marlin_deck_runtime_statistics" "extern"
+    (gerbil-scheme-rust/scheme/runtime#gerbil-rs-rooted-call root
+      (lambda (_) (##process-statistics)))))
+
+(begin-foreign
+  (c-define (deck-activate root) (int64) int64 "marlin_deck_runtime_activate" "extern"
+    (gerbil-scheme-rust/scheme/runtime#gerbil-rs-rooted-call root marlin-agent-core/c-abi/deck-runtime#activate)))
+
+(begin-foreign
+  (c-define (deck-retire root) (int64) int64 "marlin_deck_runtime_retire" "extern"
+    (gerbil-scheme-rust/scheme/runtime#gerbil-rs-rooted-call root marlin-agent-core/c-abi/deck-runtime#retire)))
+
+(begin-foreign
+  (c-define (deck-arm root) (int64) int64 "marlin_deck_runtime_arm" "extern"
+    (gerbil-scheme-rust/scheme/runtime#gerbil-rs-rooted-call root marlin-agent-core/c-abi/deck-runtime#arm)))

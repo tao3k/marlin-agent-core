@@ -7,7 +7,8 @@ mod runtime;
 pub use metadata::{DeckRuntimeMetadata, DeckRuntimeModuleId};
 #[cfg(feature = "actor-runtime")]
 pub use runtime::{
-    DeckMailboxMetrics, DeckRuntime, DeckRuntimeConfig, DeckRuntimeMetrics, DeckRuntimeRejection,
+    DeckContextModule, DeckMailboxMetrics, DeckModuleInstanceId, DeckModuleRetirementReceipt,
+    DeckRuntime, DeckRuntimeConfig, DeckRuntimeMetrics, DeckRuntimeRejection,
     DeckRuntimeShutdownError, DeckRuntimeShutdownReceipt, DeckRuntimeStartupError,
-    DeckRuntimeStopReason,
+    DeckRuntimeStopReason, DeckTimerId, DeckTimerReceipt,
 };

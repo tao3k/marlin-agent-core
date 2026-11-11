@@ -1,7 +1,16 @@
 //! Bounded Tokio admission into one Scheme VM.
 
 mod config;
+mod module;
 mod owner;
+mod wake;
+pub use module::{
+    DeckContextModule, DeckModuleInstanceId, DeckModuleRetirementReceipt, DeckTimerId,
+    DeckTimerReceipt,
+};
+use module::{ModuleState, queue_error};
+#[cfg(feature = "context-profiling")]
+mod profile;
 mod receipt;
 mod vm;
 
@@ -45,6 +54,10 @@ pub enum DeckRuntimeStartupError {
 pub enum DeckRuntimeRejection {
     #[error("Deck Context admission queue is full")]
     Backpressure,
+    #[error("Deck Module has retired")]
+    ModuleRetired,
+    #[error("Deck timer delay must be positive and fit u64 microseconds")]
+    TimerDelay,
     #[error("Deck Context admission was cancelled")]
     Cancelled,
     #[error("Deck Context admission exceeded its latency budget")]
@@ -69,6 +82,9 @@ pub struct DeckRuntimeShutdownError;
 type Outcome = Result<ContextScopeDigest, DeckRuntimeRejection>;
 
 struct Job {
+    module: DeckModuleInstanceId,
+    #[cfg(feature = "context-profiling")]
+    enqueued_at: std::time::Instant,
     request: ContextAdmissionRequest,
     cancellation: CancellationToken,
     deadline: Instant,
@@ -91,6 +107,13 @@ impl Job {
 
 enum OwnerMessage {
     Admit(Job),
+    Activate(oneshot::Sender<Result<Arc<ModuleState>, DeckRuntimeRejection>>),
+    Retire(Arc<ModuleState>),
+    Timer {
+        module: DeckModuleInstanceId,
+        delay_us: u64,
+        reply: oneshot::Sender<Result<DeckTimerReceipt, DeckRuntimeRejection>>,
+    },
     Stop,
 }
 
@@ -98,6 +121,8 @@ enum OwnerMessage {
 #[derive(Clone)]
 pub struct DeckRuntime {
     queue: mpsc::Sender<OwnerMessage>,
+    wake: Arc<wake::Wake>,
+    default_module: Arc<ModuleState>,
     stopping: Arc<AtomicBool>,
     stopped: watch::Receiver<Option<DeckRuntimeShutdownReceipt>>,
     owner: Arc<Mutex<Option<std::thread::JoinHandle<()>>>>,
@@ -109,6 +134,9 @@ impl DeckRuntime {
         if usize::from(config.batch_capacity.get()) > CONTEXT_BATCH_MAX_ROWS {
             return Err(DeckRuntimeStartupError::BatchCapacity);
         }
+        let wake = Arc::new(wake::Wake::new()?);
+        let worker_wake = Arc::clone(&wake);
+        let default_module = ModuleState::new(DeckModuleInstanceId(std::num::NonZeroU64::MIN));
         let (queue, jobs) = mpsc::channel(usize::from(config.queue_capacity.get()));
         let (ready, started) = std::sync::mpsc::sync_channel(1);
         let (finished, stopped) = watch::channel(None);
@@ -117,11 +145,13 @@ impl DeckRuntime {
         let thread = std::thread::Builder::new()
             .name("marlin-deck-vm".into())
             .spawn(move || {
-                owner::run(config, jobs, worker_stopping, ready, finished);
+                owner::run(config, jobs, worker_stopping, worker_wake, ready, finished);
             })?;
         match started.recv() {
             Ok(Ok(())) => Ok(Self {
                 queue,
+                wake,
+                default_module,
                 stopping,
                 stopped,
                 owner: Arc::new(Mutex::new(Some(thread))),
@@ -144,6 +174,62 @@ impl DeckRuntime {
         budget: Duration,
         cancellation: CancellationToken,
     ) -> Outcome {
+        self.admit_in(&self.default_module, request, budget, cancellation)
+            .await
+    }
+
+    pub fn context_module(&self) -> DeckContextModule {
+        DeckContextModule {
+            runtime: self.clone(),
+            state: Arc::clone(&self.default_module),
+        }
+    }
+    pub async fn activate_context_module(&self) -> Result<DeckContextModule, DeckRuntimeRejection> {
+        if self.stopping.load(Ordering::Acquire) {
+            return Err(DeckRuntimeRejection::Unavailable);
+        }
+        let (reply, result) = oneshot::channel();
+        self.queue
+            .try_send(OwnerMessage::Activate(reply))
+            .map_err(queue_error)?;
+        self.wake
+            .notify()
+            .map_err(|_| DeckRuntimeRejection::Unavailable)?;
+        let state = result
+            .await
+            .map_err(|_| DeckRuntimeRejection::Unavailable)??;
+        Ok(DeckContextModule {
+            runtime: self.clone(),
+            state,
+        })
+    }
+    fn offer(
+        &self,
+        module: &ModuleState,
+        message: OwnerMessage,
+    ) -> Result<(), DeckRuntimeRejection> {
+        let closed = module
+            .closed
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if *closed {
+            return Err(DeckRuntimeRejection::ModuleRetired);
+        }
+        if self.stopping.load(Ordering::Acquire) {
+            return Err(DeckRuntimeRejection::Unavailable);
+        }
+        self.queue.try_send(message).map_err(queue_error)?;
+        self.wake
+            .notify()
+            .map_err(|_| DeckRuntimeRejection::Unavailable)
+    }
+    async fn admit_in(
+        &self,
+        module: &ModuleState,
+        request: ContextAdmissionRequest,
+        budget: Duration,
+        cancellation: CancellationToken,
+    ) -> Outcome {
         if self.stopping.load(Ordering::Acquire) {
             return Err(DeckRuntimeRejection::Unavailable);
         }
@@ -152,18 +238,16 @@ impl DeckRuntime {
             .ok_or(DeckRuntimeRejection::Deadline)?;
         let (reply, result) = oneshot::channel();
         let job = Job {
+            module: module.id,
+            #[cfg(feature = "context-profiling")]
+            enqueued_at: std::time::Instant::now(),
             request,
             cancellation: cancellation.clone(),
             deadline,
             reply,
         };
         job.check_active()?;
-        self.queue
-            .try_send(OwnerMessage::Admit(job))
-            .map_err(|error| match error {
-                mpsc::error::TrySendError::Full(_) => DeckRuntimeRejection::Backpressure,
-                mpsc::error::TrySendError::Closed(_) => DeckRuntimeRejection::Unavailable,
-            })?;
+        self.offer(module, OwnerMessage::Admit(job))?;
         tokio::select! {
             biased;
             () = cancellation.cancelled() => Err(DeckRuntimeRejection::Cancelled),
@@ -178,6 +262,7 @@ impl DeckRuntime {
         if !self.stopping.swap(true, Ordering::AcqRel) {
             // A full queue already wakes the owner. An idle owner needs Stop.
             let _ = self.queue.try_send(OwnerMessage::Stop);
+            let _ = self.wake.notify();
         }
         let mut stopped = self.stopped.clone();
         let receipt = loop {
@@ -207,3 +292,12 @@ impl DeckRuntime {
 #[cfg(test)]
 #[path = "../tests/unit/runtime_queue.rs"]
 mod queue_tests;
+
+impl Drop for DeckRuntime {
+    fn drop(&mut self) {
+        if self.queue.strong_count() == 1 {
+            self.stopping.store(true, Ordering::Release);
+            let _ = self.wake.notify();
+        }
+    }
+}

@@ -2444,6 +2444,7 @@ version = "0.1.0"
 dependencies = [
  "gerbil-scheme",
  "gerbil-scheme-sys",
+ "libc",
  "marlin-agent-context",
  "marlin-agent-protocol",
  "marlin-gerbil-aot-link",
