@@ -149,3 +149,11 @@ Focused design references:
 * Project Rules
 
 Repository-specific agent and protocol-evolution rules live in [[file:AGENTS.md][AGENTS.md]]. In short: Rust owns typed protocols, receipts, runtime boundaries, and outer serialization; Gerbil Scheme owns complex policy logic and extension behavior behind the native ABI boundary.
+
+* License
+
+Marlin's original work is licensed under =Apache-2.0 AND LGPL-2.1-or-later=,
+matching AI Agentic Lab. Both licenses apply; =AND= is intentional.
+See [[file:LICENSE][LICENSE]] and the full texts in [[file:LICENSES/][LICENSES]].
+[[file:REUSE.toml][REUSE.toml]] records file-level licensing and preserves the existing MIT
+contract collection and Ratatui notices. Run =reuse lint= to check coverage.

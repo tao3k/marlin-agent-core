@@ -5,7 +5,7 @@ version.workspace = true
 authors.workspace = true
 repository.workspace = true
 description = "Gerbil Scheme runtime bindings for typed Marlin artifacts."
-license = "Apache-2.0"
+license.workspace = true
 readme = "README.org"
 publish = false
 

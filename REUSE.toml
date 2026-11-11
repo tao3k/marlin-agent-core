@@ -1,0 +1,34 @@
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
+version = 1
+
+# Repository-owned work. Keep source bodies and immutable fixtures unchanged.
+# The last matching annotation preserves independently licensed material below.
+[[annotations]]
+path = ["**"]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 tao3k team and Contributors"
+SPDX-License-Identifier = "Apache-2.0 AND LGPL-2.1-or-later"
+
+# The contract collection retains its existing MIT grant and copyright.
+[[annotations]]
+path = ["crates/marlin-agent-context/src/org/workspace/contracts/**"]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 Tao 3000"
+SPDX-License-Identifier = "MIT"
+
+# Ratatui-derived wrapping retains the upstream MIT grant and attribution;
+# Marlin's contributions follow the repository's combined licensing terms.
+[[annotations]]
+path = [
+  "crates/marlin-agent-tui/src/wrap.rs",
+  "crates/marlin-agent-tui/THIRD_PARTY_NOTICES.org",
+]
+precedence = "aggregate"
+SPDX-FileCopyrightText = [
+  "2016-2022 Florian Dehau",
+  "2023-2025 The Ratatui Developers",
+  "2026 tao3k team and Contributors",
+]
+SPDX-License-Identifier = "MIT AND Apache-2.0 AND LGPL-2.1-or-later"

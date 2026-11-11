@@ -1,4 +1,5 @@
 [package]
+license.workspace = true
 name = "marlin-gerbil-ir"
 edition.workspace = true
 version.workspace = true

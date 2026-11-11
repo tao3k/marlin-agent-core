@@ -1,4 +1,5 @@
 [package]
+license.workspace = true
 name = "marlin-git-utils"
 edition.workspace = true
 version.workspace = true
