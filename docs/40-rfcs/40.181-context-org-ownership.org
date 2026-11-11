@@ -133,6 +133,13 @@ replay preserved the semantic digest, and source authentication, action
 authorization and durability remained false. This is a deliberately assembled
 dependency graph, not the pinned Lab package build, Marlin's Deck VM, a turn
 journal, or qualification of the Orgize run's failed Rust performance gate.
+With ASCENT =62299efe= also available, Lab's
+=t/ai-agentic-context-core-test.ss= returned =OK= on a subsequent run after
+the native modules had been loaded in preceding processes. The first run reported a
+=YuanxuDebugDurationAnomaly= in the Memory initialization case after its
+60-second idle budget, despite =gxtest= returning exit status zero. The warm
+success does not erase that failure or qualify cold-start latency; consumers
+must inspect harness output as well as the exit status.
 
 - Bind Org source, selected content, exact scope/session/turn and source cut to
   the Lab operation; distinguish a decoded projection from a current-use grant.
