@@ -2563,6 +2563,26 @@ handled through standard =gerbil clean= and =gerbil build=, followed by a fresh
 load of the current declarations. Marlin adds no publication loader, source
 stamp or cached admission verdict to replace that package lifecycle.
 
+The fresh Lab =75b04e07= / Core =fd215418= / POO =1f4b1720= / Parser
+=e5fdd53b= / SDK =a00e62ea= control completes standard package and dependency
+cleaning, =gerbil build all= and Marlin's =gerbil build= in an isolated prefix.
+Gerbil generates the dependency manifests. The earlier undefined Lab export
+warning disappears, but the default Context publication still raises
+=stale slot dependency (presence identity)=. The native test command exits 0
+while reporting =ERROR MODULE= and =ERROR HARNESS=; this is a failed gate.
+
+The original Core publication and Feature scope suites pass with the rebuilt
+libraries. Existing POO read observation identifies changing Parser and
+Module-authoring MOP records, including =select-lr-action-factory=,
+=select-lr-semantic-reducer= and =module-authoring-analyze=. An initialization
+order control imports the upstream CLOS MOP, authoring admission, LR reduction
+plan and LR preparation libraries before INIT. The unchanged
+=t/yuanxu-policy-test.ss= then completes its Context admission, negative input
+checks and Hooks assertions. This control changes no production source or
+dependency pin. The standard library owners must finish initialization before
+publication support is retained; the control is neither a production repair nor
+complete Context latency acceptance.
+
 A separate digest-port control compares the existing Lab digest with Gambit's
 standard byte output port: 74 admitted inputs agree only with explicit UTF-8
 and LF settings. The default encoding counterexample is retained. No digest

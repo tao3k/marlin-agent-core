@@ -256,7 +256,10 @@ package MarlinSingleVmRuntime {
                Actor shutdown cannot clear the compiler registry or substitute
                a remembered admission verdict. Stale compilation products follow
                standard gerbil clean/build and fresh declaration loading; Marlin
-               adds no publication loader or source-stamp mechanism. Qualify
+               adds no publication loader or source-stamp mechanism. Complete
+               upstream MOP, parser and authoring library initialization before
+               retaining publication support. A ready receipt follows completed
+               initialization and current source checks. Qualify
                the complete Context workload separately from forced-GC
                retention diagnostics. */
     }
