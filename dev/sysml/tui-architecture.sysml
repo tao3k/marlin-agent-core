@@ -254,6 +254,21 @@ package MarlinTuiArchitecture {
     }
 
     package target {
+        part <'MAR-TUI-T17'> schemeUiExtensionPlane {
+            doc /* Proposed Gerbil/Yuanxu modules own UI component composition,
+                   keymaps and state transitions. They consume typed input and
+                   runtime facts and produce a component tree and typed intents.
+                   This does not claim sandboxing or an implemented UI engine. */
+        }
+        part <'MAR-TUI-T18'> typedUiBoundary {
+            doc /* Proposed batched native projection validates component
+                   identity, bounded values and typed intents. No per-cell
+                   Scheme callbacks or text-serialized internal protocol. */
+        }
+        part <'MAR-TUI-T19'> ratatuiHost {
+            doc /* Rust owns terminal lifecycle, input, layout, painting,
+                   async I/O and routing intents through runtime authority. */
+        }
         part <'MAR-TUI-T16'> contextOrgAuthority {
             doc /* Org is the durable context content foundation. Context
                    composes Lab Scope and independent Session semantics with
@@ -346,6 +361,10 @@ package MarlinTuiArchitecture {
         dependency evidenceUsesStore from runtime::evidenceAdmission to sessionStore;
         dependency qualificationMeasuresClient from qualification to terminalClient;
         dependency qualificationMeasuresRuntime from qualification to runtime;
+        dependency uiHostAdmitsProjection from ratatuiHost to typedUiBoundary;
+        dependency uiProjectionUsesScheme from typedUiBoundary to schemeUiExtensionPlane;
+        dependency uiHostUsesRuntime from ratatuiHost to runtime;
+        dependency qualificationMeasuresUiHost from qualification to ratatuiHost;
     }
 
     package requirements {

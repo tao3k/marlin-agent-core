@@ -59,6 +59,49 @@ requirements to their owners. The [[file:../../dev/sysml/tui-lifecycle.sysml][tu
 models provisional output, runtime admission, cancellation and retirement.
 The target model is not an implementation or a performance result.
 
+** Proposed Scheme UI extension plane
+
+The present client paints directly in Rust; it has no Scheme UI engine or
+plugin lifecycle. The target is a Gerbil/Yuanxu UI module whose components,
+keymaps, composition and state transitions are authored as Scheme values.
+Rust owns the terminal, input decoding, layout and Ratatui painting, async
+I/O, typed runtime commands, and effect authorization. Model/session facts and
+receipts originate from their existing runtime owners, never from a UI plugin.
+
+One event cycle delivers typed input and an immutable view of the relevant
+runtime state to the Scheme owner. The module returns a typed component tree
+and typed intents. Rust validates the result, admits intents through their
+owning runtime APIs, and paints the admitted tree. The native boundary projects
+Scheme types into Rust types; it is not a JSON, Org, or Scheme-text protocol.
+Stable domain identifiers, explicit focus ownership and versioned component
+identity permit incremental updates and state retention without depending on
+object addresses. Layout constraints, text, lists, panels, editor and overlays
+are capabilities to specify through that contract, not Scheme wrappers for
+each Ratatui method.
+
+Extensions register through the existing module system, with explicit ordering,
+key binding conflict handling and declared capabilities. A failed module or
+invalid projection must remain visible as an error and cannot produce effects;
+the last admitted UI state and terminal restoration remain Rust responsibilities.
+The design must not imply that arbitrary in-process Scheme is sandboxed: the
+actual trust and isolation properties depend on the VM and host capabilities.
+
+The implementation must establish VM ownership and scheduling from the actual
+runtime, bound event and projection size, batch crossings at a component/update
+boundary, and cache unchanged visible subtrees. No per-cell Scheme callback or
+unbounded event channel is a target. Benchmarks must compare matched terminal
+sizes and input/output loads, including long streaming output, resize, idle,
+slow extensions and allocation/latency across the native boundary. These are
+requirements, not measured performance claims.
+
+First deliver a vertical slice: publish a Scheme-owned workbench with a
+transcript region, composer and extension-contributed status component; drive
+real keyboard input through the native ABI to a Rust Ratatui frame and exercise
+registration, focus, resizing, failure and cleanup in a pseudo-terminal. Then
+migrate session navigation, model selection, menus and other Codewhale UI
+features on the same contract. Runtime-dependent approvals and tools require
+their real typed runtime capabilities before they can be interactive.
+
 ** Evidence and design risks
 
 | Observation | Evidence and interpretation | Target response |
