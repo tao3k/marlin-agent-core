@@ -161,6 +161,9 @@ jobs:
         run: gxpkg deps --install
 
       - name: Build and test the Scheme package in process
+        env:
+          # Test fixtures import optional Lab constructors outside the runtime closure.
+          GERBIL_LOADPATH: ${{ github.workspace }}/.ci/agentic-ai-lab:${{ github.workspace }}/scheme/.gerbil/lib
         working-directory: scheme
         run: gxpkg env cargo test --locked -p marlin-gerbil-scheme --test unit_test scheme_package::gerbil_builds_and_tests_the_marlin_package_in_process -- --ignored --exact --nocapture
 

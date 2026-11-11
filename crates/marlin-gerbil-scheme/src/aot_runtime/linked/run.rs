@@ -1,13 +1,12 @@
 //! Runner for native Gerbil runtime AOT link-unit builds.
 
 use super::{
-    config::GerbilDeckRuntimeAotConfig,
+    config::GerbilAotConfig,
     receipt::{
-        GerbilDeckRouteAbiSymbol, GerbilDeckRouteAbiSymbolAuditMethod,
-        GerbilDeckRuntimeAotBuildReceipt, GerbilDeckRuntimeAotCommandPlan,
-        GerbilDeckRuntimeAotCommandReceipt, GerbilDeckRuntimeAotPlan,
+        GerbilAotBuildReceipt, GerbilAotCommandPlan, GerbilAotCommandReceipt, GerbilAotPlan,
+        GerbilAotSymbol, GerbilAotSymbolAuditMethod,
     },
-    status::{GerbilDeckRuntimeAotBuildStatus, GerbilDeckRuntimeAotStatus},
+    status::{GerbilAotBuildStatus, GerbilAotStatus},
 };
 use object::{Object, ObjectSymbol};
 use std::{
@@ -19,37 +18,35 @@ use std::{
 
 #[derive(Default)]
 struct AotBuildCommandReceipts {
-    gsc_compile_object: Option<GerbilDeckRuntimeAotCommandReceipt>,
-    gsc_compile_dependency_objects: Vec<GerbilDeckRuntimeAotCommandReceipt>,
-    gsc_generate_link_source: Option<GerbilDeckRuntimeAotCommandReceipt>,
-    gsc_compile_link_object: Option<GerbilDeckRuntimeAotCommandReceipt>,
-    symbol_audit_method: Option<GerbilDeckRouteAbiSymbolAuditMethod>,
-    symbol_audit: Option<GerbilDeckRuntimeAotCommandReceipt>,
+    gsc_compile_object: Option<GerbilAotCommandReceipt>,
+    gsc_compile_dependency_objects: Vec<GerbilAotCommandReceipt>,
+    gsc_generate_link_source: Option<GerbilAotCommandReceipt>,
+    gsc_compile_link_object: Option<GerbilAotCommandReceipt>,
+    symbol_audit_method: Option<GerbilAotSymbolAuditMethod>,
+    symbol_audit: Option<GerbilAotCommandReceipt>,
 }
 
 struct DependencyObjectBuildFailure {
-    status: GerbilDeckRuntimeAotBuildStatus,
+    status: GerbilAotBuildStatus,
     detail: Option<String>,
-    receipts: Vec<GerbilDeckRuntimeAotCommandReceipt>,
+    receipts: Vec<GerbilAotCommandReceipt>,
 }
 
-pub(super) fn build_gerbil_deck_route_abi_link_unit(
-    config: &GerbilDeckRuntimeAotConfig,
-) -> GerbilDeckRuntimeAotBuildReceipt {
+pub(super) fn build_gerbil_aot_link_unit(config: &GerbilAotConfig) -> GerbilAotBuildReceipt {
     let initial_plan = config.plan();
-    if initial_plan.status == GerbilDeckRuntimeAotStatus::MissingGsc {
+    if initial_plan.status == GerbilAotStatus::MissingGsc {
         return aot_build_receipt(
-            GerbilDeckRuntimeAotBuildStatus::MissingGsc,
+            GerbilAotBuildStatus::MissingGsc,
             initial_plan,
             None,
             AotBuildCommandReceipts::default(),
             Vec::new(),
         );
     }
-    if initial_plan.status == GerbilDeckRuntimeAotStatus::MissingCompiledRuntime {
+    if initial_plan.status == GerbilAotStatus::MissingCompiledRuntime {
         let detail = initial_plan.detail.clone();
         return aot_build_receipt(
-            GerbilDeckRuntimeAotBuildStatus::MissingCompiledRuntime,
+            GerbilAotBuildStatus::MissingCompiledRuntime,
             initial_plan,
             detail,
             AotBuildCommandReceipts::default(),
@@ -70,7 +67,7 @@ pub(super) fn build_gerbil_deck_route_abi_link_unit(
     }
     if let Err(error) = fs::create_dir_all(&plan.output_dir) {
         return aot_build_receipt(
-            GerbilDeckRuntimeAotBuildStatus::OutputDirCreateFailed,
+            GerbilAotBuildStatus::OutputDirCreateFailed,
             plan,
             Some(error.to_string()),
             AotBuildCommandReceipts::default(),
@@ -100,7 +97,7 @@ pub(super) fn build_gerbil_deck_route_abi_link_unit(
         .is_none_or(|status| status != 0)
     {
         return aot_build_receipt(
-            GerbilDeckRuntimeAotBuildStatus::GscCompileObjectFailed,
+            GerbilAotBuildStatus::GscCompileObjectFailed,
             plan,
             None,
             AotBuildCommandReceipts {
@@ -117,7 +114,7 @@ pub(super) fn build_gerbil_deck_route_abi_link_unit(
             plan.object.display()
         ));
         return aot_build_receipt(
-            GerbilDeckRuntimeAotBuildStatus::ObjectMissing,
+            GerbilAotBuildStatus::ObjectMissing,
             plan,
             detail,
             AotBuildCommandReceipts {
@@ -135,7 +132,7 @@ pub(super) fn build_gerbil_deck_route_abi_link_unit(
         .is_none_or(|status| status != 0)
     {
         return aot_build_receipt(
-            GerbilDeckRuntimeAotBuildStatus::GscGenerateLinkSourceFailed,
+            GerbilAotBuildStatus::GscGenerateLinkSourceFailed,
             plan,
             None,
             AotBuildCommandReceipts {
@@ -153,7 +150,7 @@ pub(super) fn build_gerbil_deck_route_abi_link_unit(
             plan.link_c_source.display()
         ));
         return aot_build_receipt(
-            GerbilDeckRuntimeAotBuildStatus::LinkSourceMissing,
+            GerbilAotBuildStatus::LinkSourceMissing,
             plan,
             detail,
             AotBuildCommandReceipts {
@@ -172,7 +169,7 @@ pub(super) fn build_gerbil_deck_route_abi_link_unit(
         .is_none_or(|status| status != 0)
     {
         return aot_build_receipt(
-            GerbilDeckRuntimeAotBuildStatus::GscCompileLinkObjectFailed,
+            GerbilAotBuildStatus::GscCompileLinkObjectFailed,
             plan,
             None,
             AotBuildCommandReceipts {
@@ -191,7 +188,7 @@ pub(super) fn build_gerbil_deck_route_abi_link_unit(
             plan.link_object.display()
         ));
         return aot_build_receipt(
-            GerbilDeckRuntimeAotBuildStatus::LinkObjectMissing,
+            GerbilAotBuildStatus::LinkObjectMissing,
             plan,
             detail,
             AotBuildCommandReceipts {
@@ -212,14 +209,14 @@ pub(super) fn build_gerbil_deck_route_abi_link_unit(
                 plan.profile.label()
             ));
             return aot_build_receipt(
-                GerbilDeckRuntimeAotBuildStatus::RequiredSymbolsMissing,
+                GerbilAotBuildStatus::RequiredSymbolsMissing,
                 plan,
                 detail,
                 AotBuildCommandReceipts {
                     gsc_compile_object: Some(gsc_compile_object),
                     gsc_generate_link_source: Some(gsc_generate_link_source),
                     gsc_compile_link_object: Some(gsc_compile_link_object),
-                    symbol_audit_method: Some(GerbilDeckRouteAbiSymbolAuditMethod::ObjectFiles),
+                    symbol_audit_method: Some(GerbilAotSymbolAuditMethod::ObjectFiles),
                     ..Default::default()
                 },
                 missing_symbols,
@@ -227,7 +224,7 @@ pub(super) fn build_gerbil_deck_route_abi_link_unit(
         }
 
         return aot_build_receipt(
-            GerbilDeckRuntimeAotBuildStatus::LinkUnitReady,
+            GerbilAotBuildStatus::LinkUnitReady,
             plan,
             None,
             AotBuildCommandReceipts {
@@ -235,7 +232,7 @@ pub(super) fn build_gerbil_deck_route_abi_link_unit(
                 gsc_compile_object: Some(gsc_compile_object),
                 gsc_generate_link_source: Some(gsc_generate_link_source),
                 gsc_compile_link_object: Some(gsc_compile_link_object),
-                symbol_audit_method: Some(GerbilDeckRouteAbiSymbolAuditMethod::ObjectFiles),
+                symbol_audit_method: Some(GerbilAotSymbolAuditMethod::ObjectFiles),
                 ..Default::default()
             },
             Vec::new(),
@@ -245,7 +242,7 @@ pub(super) fn build_gerbil_deck_route_abi_link_unit(
     let symbol_audit = run_aot_command(&plan, &plan.audit_symbols);
     if symbol_audit.status_code.is_none_or(|status| status != 0) {
         return aot_build_receipt(
-            GerbilDeckRuntimeAotBuildStatus::SymbolAuditFailed,
+            GerbilAotBuildStatus::SymbolAuditFailed,
             plan,
             None,
             AotBuildCommandReceipts {
@@ -253,7 +250,7 @@ pub(super) fn build_gerbil_deck_route_abi_link_unit(
                 gsc_compile_object: Some(gsc_compile_object),
                 gsc_generate_link_source: Some(gsc_generate_link_source),
                 gsc_compile_link_object: Some(gsc_compile_link_object),
-                symbol_audit_method: Some(GerbilDeckRouteAbiSymbolAuditMethod::SymbolTableCommand),
+                symbol_audit_method: Some(GerbilAotSymbolAuditMethod::SymbolTableCommand),
                 symbol_audit: Some(symbol_audit),
             },
             Vec::new(),
@@ -266,7 +263,7 @@ pub(super) fn build_gerbil_deck_route_abi_link_unit(
             plan.profile.label()
         ));
         return aot_build_receipt(
-            GerbilDeckRuntimeAotBuildStatus::RequiredSymbolsMissing,
+            GerbilAotBuildStatus::RequiredSymbolsMissing,
             plan,
             detail,
             AotBuildCommandReceipts {
@@ -274,7 +271,7 @@ pub(super) fn build_gerbil_deck_route_abi_link_unit(
                 gsc_compile_object: Some(gsc_compile_object),
                 gsc_generate_link_source: Some(gsc_generate_link_source),
                 gsc_compile_link_object: Some(gsc_compile_link_object),
-                symbol_audit_method: Some(GerbilDeckRouteAbiSymbolAuditMethod::SymbolTableCommand),
+                symbol_audit_method: Some(GerbilAotSymbolAuditMethod::SymbolTableCommand),
                 symbol_audit: Some(symbol_audit),
             },
             missing_symbols,
@@ -282,7 +279,7 @@ pub(super) fn build_gerbil_deck_route_abi_link_unit(
     }
 
     aot_build_receipt(
-        GerbilDeckRuntimeAotBuildStatus::LinkUnitReady,
+        GerbilAotBuildStatus::LinkUnitReady,
         plan,
         None,
         AotBuildCommandReceipts {
@@ -290,7 +287,7 @@ pub(super) fn build_gerbil_deck_route_abi_link_unit(
             gsc_compile_object: Some(gsc_compile_object),
             gsc_generate_link_source: Some(gsc_generate_link_source),
             gsc_compile_link_object: Some(gsc_compile_link_object),
-            symbol_audit_method: Some(GerbilDeckRouteAbiSymbolAuditMethod::SymbolTableCommand),
+            symbol_audit_method: Some(GerbilAotSymbolAuditMethod::SymbolTableCommand),
             symbol_audit: Some(symbol_audit),
         },
         Vec::new(),
@@ -298,8 +295,8 @@ pub(super) fn build_gerbil_deck_route_abi_link_unit(
 }
 
 fn compile_dependency_objects(
-    plan: &GerbilDeckRuntimeAotPlan,
-) -> Result<Vec<GerbilDeckRuntimeAotCommandReceipt>, DependencyObjectBuildFailure> {
+    plan: &GerbilAotPlan,
+) -> Result<Vec<GerbilAotCommandReceipt>, DependencyObjectBuildFailure> {
     plan.gsc_compile_dependency_objects
         .iter()
         .zip(&plan.dependency_objects)
@@ -308,7 +305,7 @@ fn compile_dependency_objects(
             if receipt.status_code.is_none_or(|status| status != 0) {
                 receipts.push(receipt);
                 return Err(DependencyObjectBuildFailure {
-                    status: GerbilDeckRuntimeAotBuildStatus::GscCompileDependencyObjectFailed,
+                    status: GerbilAotBuildStatus::GscCompileDependencyObjectFailed,
                     detail: None,
                     receipts,
                 });
@@ -317,7 +314,7 @@ fn compile_dependency_objects(
 
             if !object.is_file() {
                 return Err(DependencyObjectBuildFailure {
-                    status: GerbilDeckRuntimeAotBuildStatus::ObjectMissing,
+                    status: GerbilAotBuildStatus::ObjectMissing,
                     detail: Some(format!(
                         "gsc completed without producing {}",
                         object.display()
@@ -329,25 +326,21 @@ fn compile_dependency_objects(
         })
 }
 
-fn non_ready_plan_build_status(
-    status: GerbilDeckRuntimeAotStatus,
-) -> Option<GerbilDeckRuntimeAotBuildStatus> {
+fn non_ready_plan_build_status(status: GerbilAotStatus) -> Option<GerbilAotBuildStatus> {
     match status {
-        GerbilDeckRuntimeAotStatus::MissingGsc => Some(GerbilDeckRuntimeAotBuildStatus::MissingGsc),
-        GerbilDeckRuntimeAotStatus::MissingCompiledRuntime => {
-            Some(GerbilDeckRuntimeAotBuildStatus::MissingCompiledRuntime)
+        GerbilAotStatus::MissingGsc => Some(GerbilAotBuildStatus::MissingGsc),
+        GerbilAotStatus::MissingCompiledRuntime => {
+            Some(GerbilAotBuildStatus::MissingCompiledRuntime)
         }
-        GerbilDeckRuntimeAotStatus::MissingHeader => {
-            Some(GerbilDeckRuntimeAotBuildStatus::MissingHeader)
-        }
-        GerbilDeckRuntimeAotStatus::ReadyToBuildLinkUnit => None,
+        GerbilAotStatus::MissingHeader => Some(GerbilAotBuildStatus::MissingHeader),
+        GerbilAotStatus::ReadyToBuildLinkUnit => None,
     }
 }
 
 fn run_aot_command(
-    plan: &GerbilDeckRuntimeAotPlan,
-    command_plan: &GerbilDeckRuntimeAotCommandPlan,
-) -> GerbilDeckRuntimeAotCommandReceipt {
+    plan: &GerbilAotPlan,
+    command_plan: &GerbilAotCommandPlan,
+) -> GerbilAotCommandReceipt {
     let program = gerbil_toolchain_program(&command_plan.program);
     let mut command = Command::new(&program);
     command.current_dir(&plan.root).args(&command_plan.args);
@@ -356,12 +349,12 @@ fn run_aot_command(
     let output = command.output();
 
     match output {
-        Ok(output) => GerbilDeckRuntimeAotCommandReceipt {
+        Ok(output) => GerbilAotCommandReceipt {
             status_code: output.status.code(),
             stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
             stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
         },
-        Err(error) => GerbilDeckRuntimeAotCommandReceipt {
+        Err(error) => GerbilAotCommandReceipt {
             status_code: None,
             stdout: String::new(),
             stderr: error.to_string(),
@@ -373,10 +366,7 @@ fn gerbil_toolchain_program(program: &Path) -> PathBuf {
     gerbil_scheme::GerbilToolchain::from_env().program(program)
 }
 
-fn missing_exported_symbols(
-    plan: &GerbilDeckRuntimeAotPlan,
-    symbol_table: &str,
-) -> Vec<GerbilDeckRouteAbiSymbol> {
+fn missing_exported_symbols(plan: &GerbilAotPlan, symbol_table: &str) -> Vec<GerbilAotSymbol> {
     plan.exported_symbols
         .iter()
         .filter(|symbol| !symbol_table_contains(symbol_table, symbol.as_str()))
@@ -385,8 +375,8 @@ fn missing_exported_symbols(
 }
 
 fn missing_exported_symbols_from_object_files(
-    plan: &GerbilDeckRuntimeAotPlan,
-) -> Result<Vec<GerbilDeckRouteAbiSymbol>, String> {
+    plan: &GerbilAotPlan,
+) -> Result<Vec<GerbilAotSymbol>, String> {
     let mut symbol_names = HashSet::new();
     for path in plan
         .module_objects
@@ -434,13 +424,13 @@ fn symbol_table_contains(symbol_table: &str, symbol: &str) -> bool {
 }
 
 fn aot_build_receipt(
-    status: GerbilDeckRuntimeAotBuildStatus,
-    plan: GerbilDeckRuntimeAotPlan,
+    status: GerbilAotBuildStatus,
+    plan: GerbilAotPlan,
     detail: Option<String>,
     commands: AotBuildCommandReceipts,
-    missing_symbols: Vec<GerbilDeckRouteAbiSymbol>,
-) -> GerbilDeckRuntimeAotBuildReceipt {
-    GerbilDeckRuntimeAotBuildReceipt {
+    missing_symbols: Vec<GerbilAotSymbol>,
+) -> GerbilAotBuildReceipt {
+    GerbilAotBuildReceipt {
         status,
         plan,
         detail,

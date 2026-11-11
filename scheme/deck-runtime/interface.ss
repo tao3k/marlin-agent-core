@@ -1,8 +1,8 @@
-;;; Deck owns execution of admitted policy batches on Scheme actors.
+;;; Deck owns execution of typed Context batches on Scheme actors.
 
 (.def DeckRuntime
   identity: 'deck-runtime
-  core: (.o requires: (.o Policy: (.o module-id: 'policy))
+  core: (.o requires: (.o Context: (.o module-id: 'context))
             scope-contract: DeckScopeContract
             exports: DeckScope)
   features: (.o))

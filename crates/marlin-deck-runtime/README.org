@@ -1,23 +1,47 @@
-#+title: Marlin Deck Runtime
+#+TITLE: Marlin Deck Runtime
+#+FILETAGS: :marlin:runtime:actor:
 
-This crate owns Rust model-route admission, the linked selector and Deck
-Runtime metadata projection. Scheme publishes the Deck Runtime Module and
-owns its version, actor pool and policy evaluation.
+* Ownership
 
-~DeckRouteAdmission~ uses a bounded Tokio queue and a fixed thread for the
-linked Scheme VM. The thread submits typed batches through the SDK's rooted
-object ABI to the resident Scheme actors. It projects the resulting Boolean
-vector and qualifies the candidate against the complete Rust route matcher
-before returning a typed receipt. An expired or cancelled request skips VM
-entry at dequeue. A batch already inside the VM retires on its owner.
+=DeckRuntime= owns one fixed OS thread, one single-processor Gerbil VM and a
+bounded Tokio admission channel. Resident actors and cooperative green threads
+come from gerbil-scheme-rust. Scheme publishes the Deck Module's metadata and
+version. =ContextAdmissionRequest= carries owned domain identifiers, immutable
+shared scope and an optional typed Session/turn pair. Lab's existing Scope
+admission operation owns Context semantics.
 
-With ~deck-actor~, ~marlin-agent-route~ accepts a ~DeckRouteAdmission~ in
-~ModelRouteHttpState::with_deck_admission~ and serves it through the regular
-chat route. Build the Scheme package with the paired Gerbil SDK first and
-keep the compiled package and SDK modules on ~GERBIL_LOADPATH~. Run the
-linked HTTP test with `cargo test -p marlin-agent-route --features deck-actor
-chat_admission_executes_the_linked_scheme_deck_actor`.
+* Admission and retirement
 
-Run ~cargo test -p marlin-deck-runtime~ for the Rust contracts and
-~cargo bench -p marlin-deck-runtime --features linked-selector --bench linked_selector~
-for the linked policy selector benchmark.
+Enable =actor-runtime=. Construct =DeckRuntimeConfig::new(queue_capacity,
+actors)=; =with_batch_capacity= selects 1..64 rows and =with_actor_quantum=
+selects 0..256 items between explicit Scheme yields. Ready work enters at once,
+without a batch-fill timer. The owner refills its bounded window between VM
+turns and limits projected text to Context's 32 KiB budget. Consecutive requests
+sharing an =Arc<ContextScope>= materialize common fields once.
+
+=admit_context(request, budget, cancellation)= returns a =ContextScopeDigest=.
+The rooted SDK boundary carries strings, vectors, a u64vector and one packed
+u8vector result. Rust checks exact digest cardinality and performs a bulk copy;
+no JSON or command-line protocol crosses this boundary. A digest identifies a
+Lab-admitted Scope; it does not grant permission to perform an external effect.
+
+Cancellation and deadlines are checked before submission and before result
+delivery. An active read-only Scheme batch finishes cooperatively and releases
+its roots on the owner. =shutdown().await= closes admission for every clone,
+drains accepted work, closes actors, drops the VM, publishes a typed receipt
+and joins the owner. Dropping the final handle also drains the channel. The
+upstream process lifecycle permits only one VM initialization per process.
+
+* Verification
+
+=cargo test -p marlin-deck-runtime --features actor-runtime= exercises real
+linked Context actors, queue retirement and shutdown. The =single_vm_actor=
+bench accepts batch capacity and request count, for example
+=cargo bench -p marlin-deck-runtime --features actor-runtime --bench single_vm_actor -- 64 1024=.
+Run batch 1 and 64 in separate processes under matched conditions. Counters
+include 64 warmup requests; timed throughput and p50/p95 cover request/reply.
+Qualification results belong in the [[file:../../docs/40-rfcs/40.166-plugin-contract.org::#single-vm-actor-runtime][Org RFC]].
+
+The TUI consumes the existing provider-neutral streaming gateway. Connecting a
+TUI conversation to this Context entry requires its actual project, worktree,
+source-cut and Session binding. Those identities must come from the runtime.

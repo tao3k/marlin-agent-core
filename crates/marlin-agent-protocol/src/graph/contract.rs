@@ -131,10 +131,8 @@ pub enum GraphLoopStrategyRuntime {
     /// Static Rust/TOML policy path used in deterministic hot-path execution.
     StaticPolicy,
     /// Native Scheme strategy reached through a typed C ABI adapter.
-    #[serde(rename = "NativeScheme")]
     SchemeCAbi,
     /// Native Gerbil strategy reached through a typed C ABI adapter.
-    #[serde(rename = "NativeGerbil")]
     GerbilCAbi,
 }
 
@@ -195,7 +193,6 @@ pub struct GraphPolicyProposal {
     pub schema_id: String,
     pub strategy: GraphLoopStrategy,
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "native_abi")]
     pub c_abi: Option<GraphCAbiRequirement>,
     pub proposed_graph: LoopGraph,
     pub input_digest: GraphPolicyDigest,
@@ -264,7 +261,7 @@ pub enum GraphPolicyProposalStatus {
 pub struct GraphPolicyProposalValidationReport {
     pub schema_id: String,
     pub strategy_id: GraphLoopStrategyId,
-    #[serde(rename = "native_abi")]
+
     pub c_abi: Option<GraphCAbiRequirement>,
     pub status: GraphPolicyProposalStatus,
     pub selected_graph_id: Option<GraphId>,
@@ -283,7 +280,7 @@ impl GraphPolicyProposalValidationReport {
 pub struct GraphPolicyProposalReceipt {
     pub schema_id: String,
     pub strategy_id: GraphLoopStrategyId,
-    #[serde(rename = "native_abi")]
+
     pub c_abi: Option<GraphCAbiRequirement>,
     pub status: GraphPolicyProposalStatus,
     pub selected_graph_id: Option<GraphId>,
@@ -384,10 +381,10 @@ fn validate_graph_policy_proposal_c_abi(
         if let Some(c_abi) = &proposal.c_abi {
             validate_graph_c_abi_requirement(c_abi, diagnostics);
         } else {
-            diagnostics.push("graph_policy_proposal.native_abi_missing".to_string());
+            diagnostics.push("graph_policy_proposal.c_abi_missing".to_string());
         }
     } else if proposal.c_abi.is_some() {
-        diagnostics.push("graph_policy_proposal.native_abi_unexpected".to_string());
+        diagnostics.push("graph_policy_proposal.c_abi_unexpected".to_string());
     }
 }
 

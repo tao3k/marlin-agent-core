@@ -3,11 +3,9 @@
 mod linked;
 
 pub use linked::{
-    GerbilCCompiler, GerbilDeckRouteAbiCargoDirective, GerbilDeckRouteAbiCargoDirectiveKind,
-    GerbilDeckRouteAbiStaticLinkPlan, GerbilDeckRouteAbiStaticLinkStatus, GerbilDeckRouteAbiSymbol,
-    GerbilDeckRouteAbiSymbolAuditMethod, GerbilDeckRuntimeAotBuildReceipt,
-    GerbilDeckRuntimeAotBuildStatus, GerbilDeckRuntimeAotCommandPlan,
-    GerbilDeckRuntimeAotCommandReceipt, GerbilDeckRuntimeAotConfig, GerbilDeckRuntimeAotPlan,
-    GerbilDeckRuntimeAotProfile, GerbilDeckRuntimeAotStatus, GerbilLinkLibrary,
-    GerbilSymbolAuditor,
+    GerbilAotBuildReceipt, GerbilAotBuildStatus, GerbilAotCargoDirective,
+    GerbilAotCargoDirectiveKind, GerbilAotCommandPlan, GerbilAotCommandReceipt, GerbilAotConfig,
+    GerbilAotPlan, GerbilAotProfile, GerbilAotStaticLinkPlan, GerbilAotStaticLinkStatus,
+    GerbilAotStatus, GerbilAotSymbol, GerbilAotSymbolAuditMethod, GerbilCCompiler,
+    GerbilLinkLibrary, GerbilSymbolAuditor,
 };

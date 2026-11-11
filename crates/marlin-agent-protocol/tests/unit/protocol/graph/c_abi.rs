@@ -6,14 +6,14 @@ use marlin_agent_protocol::{
 fn graph_c_abi_readiness_receipt_reports_symbol_coverage() {
     let requirement =
         GraphCAbiRequirement::new("marlin-deck-route-abi", 1).with_required_symbols([
-            "marlin_deck_runtime_select_model_route",
+            "marlin_deck_runtime_evaluate",
             "marlin_deck_runtime_abi_version",
         ]);
 
     let ready = GraphCAbiReadinessReceipt::evaluate(
         &requirement,
         [
-            "marlin_deck_runtime_select_model_route",
+            "marlin_deck_runtime_evaluate",
             "marlin_deck_runtime_abi_version",
             "marlin_deck_runtime_extra_symbol",
         ],
@@ -25,10 +25,8 @@ fn graph_c_abi_readiness_receipt_reports_symbol_coverage() {
     assert_eq!(ready.matched_symbol_count, 2);
     assert!(ready.missing_symbols.is_empty());
 
-    let missing = GraphCAbiReadinessReceipt::evaluate(
-        &requirement,
-        ["marlin_deck_runtime_select_model_route"],
-    );
+    let missing =
+        GraphCAbiReadinessReceipt::evaluate(&requirement, ["marlin_deck_runtime_evaluate"]);
 
     assert_eq!(missing.status, GraphCAbiReadinessStatus::MissingSymbols);
     assert_eq!(missing.required_symbol_count, 2);

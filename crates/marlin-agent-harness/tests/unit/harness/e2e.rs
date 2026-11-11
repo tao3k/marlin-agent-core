@@ -24,7 +24,7 @@ use marlin_agent_test_support::{
     assert_budgeted_graph_policy_execution_request,
     assert_deterministic_sub_agent_scenario_fixture, assert_sub_agent_memory_session_fixture,
     budgeted_graph_policy_execution_request_fixture,
-    deterministic_reviewer_routed_receipt_family_evidence,
+    deterministic_reviewer_session_receipt_evidence,
     deterministic_reviewer_sub_agent_scenario_fixture, hook_dispatch_replay_evidence,
     sub_agent_memory_session_replay_evidence, sub_agent_memory_session_visibility_evidence,
 };
@@ -239,7 +239,7 @@ async fn harness_e2e_combines_graph_policy_environment_hooks_and_sub_agent_sessi
         sub_agent_fixture.hook_selection(),
         sub_agent_fixture.hook_policy(),
     ));
-    harness.record_evidence(deterministic_reviewer_routed_receipt_family_evidence());
+    harness.record_evidence(deterministic_reviewer_session_receipt_evidence());
     harness.record_evidence(sub_agent_memory_session_visibility_evidence(
         &child_session,
         &isolation_receipt,
@@ -282,13 +282,10 @@ async fn harness_e2e_combines_graph_policy_environment_hooks_and_sub_agent_sessi
             .count(),
         3
     );
+    assert!(evidence_detail_contains(&report, "profile_id=reviewer"));
     assert!(evidence_detail_contains(
         &report,
-        "route_rule_id=reviewer-opus"
-    ));
-    assert!(evidence_detail_contains(
-        &report,
-        "session_child_id=model-route/persistent/workspace:reviewer"
+        "session_child_id=session/reviewer"
     ));
     assert!(evidence_detail_contains(
         &report,

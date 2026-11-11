@@ -59,10 +59,12 @@ package MarlinPluginEngine {
                    scheme/hooks publishes the Scheme selector and its higher-order matchers. */
         }
         part <'MAR-PLG-A08'> deckRuntimeHost {
-            doc /* crates/marlin-deck-runtime owns Deck metadata and model-route admission.
-                   The feature-selected chat route uses a bounded Tokio queue and one
-                   linked VM owner. The owner submits ordered candidate batches to
-                   Scheme actors and validates the projected match before admission. */
+            doc /* crates/marlin-deck-runtime owns Deck metadata and typed
+                   Context admission. A bounded Tokio queue feeds one linked VM
+                   owner. Ready Context rows enter resident Scheme green actors;
+                   the selected Lab operation returns ordered Scope digests.
+                   Single-VM ownership and shutdown are detailed in
+                   MarlinSingleVmRuntime. Local Context admission is verified. */
         }
 
         dependency admissionUsesProtocol from graphAdmission to policyProtocol;

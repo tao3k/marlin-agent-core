@@ -8,7 +8,7 @@ mod policy_pack_projection;
 
 use super::support::strategy_selection_manifest;
 use marlin_gerbil_scheme::{
-    GERBIL_DECK_ROUTE_ABI_ID, GERBIL_DECK_ROUTE_ABI_VERSION, GerbilDeckRuntimeAotConfig,
+    GERBIL_AGENT_POLICY_ROUTING_ABI_ID, GERBIL_AGENT_POLICY_ROUTING_ABI_VERSION, GerbilAotConfig,
     GerbilSchemeAbiSymbol, GerbilSchemeCAbiContract, GerbilSchemeCAbiId,
     GerbilSchemeCAbiReadinessPlan, GerbilSchemePackageId, GerbilSchemePackageManifest,
 };
@@ -20,21 +20,21 @@ fn downstream_strategy_package() -> GerbilSchemePackageManifest {
     )
 }
 
-fn deck_route_abi_abi_contract() -> GerbilSchemeCAbiContract {
-    let plan = GerbilDeckRuntimeAotConfig::new("target/test-downstream-package").plan();
+fn graph_policy_abi_contract() -> GerbilSchemeCAbiContract {
+    let plan = GerbilAotConfig::agent_policy_routing("target/test-downstream-package").plan();
     plan.scheme_c_abi_contract()
 }
 
-fn deck_route_abi_readiness_plan() -> GerbilSchemeCAbiReadinessPlan {
-    let plan = GerbilDeckRuntimeAotConfig::new("target/test-downstream-package").plan();
+fn graph_policy_abi_readiness_plan() -> GerbilSchemeCAbiReadinessPlan {
+    let plan = GerbilAotConfig::agent_policy_routing("target/test-downstream-package").plan();
     plan.scheme_c_abi_readiness_plan()
 }
 
-fn duplicate_native_symbol_contract() -> GerbilSchemeCAbiContract {
-    let symbol = GerbilSchemeAbiSymbol::new("marlin_deck_runtime_select_model_route");
+fn duplicate_abi_symbol_contract() -> GerbilSchemeCAbiContract {
+    let symbol = GerbilSchemeAbiSymbol::new("marlin_agent_policy_routing_select_edges");
     GerbilSchemeCAbiContract::new(
-        GerbilSchemeCAbiId::new(GERBIL_DECK_ROUTE_ABI_ID),
-        GERBIL_DECK_ROUTE_ABI_VERSION,
+        GerbilSchemeCAbiId::new(GERBIL_AGENT_POLICY_ROUTING_ABI_ID),
+        GERBIL_AGENT_POLICY_ROUTING_ABI_VERSION,
     )
     .with_exported_symbols([symbol.clone(), symbol])
 }

@@ -232,7 +232,7 @@ impl MarlinCrateVerificationRole {
                     ],
                 ),
                 MarlinVerificationOwnerProfile::new(
-                    "src/model_route/session.rs",
+                    "src/model_gateway.rs",
                     &[RustOwnerResponsibility::PublicApi],
                 ),
                 MarlinVerificationOwnerProfile::new(

@@ -39,7 +39,7 @@ pub extern "C" fn marlin_deck_runtime_accept_utf8(input: MarlinDeckRuntimeUtf8) 
     )
     .expect("write temp lib.rs");
 
-    let header = root.join("target/marlin_deck_route_abi.h");
+    let header = root.join("target/marlin_agent_policy_routing_abi.h");
     let receipt = write_c_header(&root, &header, "MARLIN_DECK_ROUTE_ABI_GENERATED_H")
         .expect("generate cbindgen header");
     let content = fs::read_to_string(&receipt.header_file).expect("read generated header");

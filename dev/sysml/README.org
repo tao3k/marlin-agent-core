@@ -29,6 +29,7 @@ case and publication identities remain with that project.
 |-------+---------------------+-----------------|
 | [[file:../../project.sysml][project.sysml]] | Project entry and named views | [[file:../../docs/40-rfcs/40.166-plugin-contract.org::#plugin-model][OpenSysML companion]] |
 | [[file:plugin-engine.sysml][plugin-engine.sysml]] | Source-inspected actual Rust interfaces and target gRPC/C ABI ownership | [[file:../../docs/40-rfcs/40.166-plugin-contract.org::#plugin-ownership][Ownership]] and [[file:../../docs/40-rfcs/40.166-plugin-contract.org::#plugin-transport][Transport]] |
+| [[file:single-vm-runtime.sysml][single-vm-runtime.sysml]] | Single-VM owner, Context batching, green actors and terminal accounting | [[file:../../docs/40-rfcs/40.166-plugin-contract.org::#single-vm-actor-runtime][Single-VM runtime]] |
 | [[file:plugin-lifecycle.sysml][plugin-lifecycle.sysml]] | Target activation generation and run lifecycle | [[file:../../docs/40-rfcs/40.166-plugin-contract.org::#plugin-lifecycle][Grants and lifecycle]] |
 | [[file:plugin-execution.sysml][plugin-execution.sysml]] | Target plugin request flow, stage allocations, and Scheme batch boundaries | [[file:../../docs/40-rfcs/40.166-plugin-contract.org::#plugin-request-path][plugin request execution and batching]] |
 

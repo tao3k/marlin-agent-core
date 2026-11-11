@@ -18,7 +18,7 @@ use marlin_gerbil_scheme::{
 };
 
 #[test]
-fn native_abi_projection_decodes_poo_policy_typed_value() {
+fn c_abi_projection_decodes_poo_policy_typed_value() {
     let registry =
         GerbilSchemeTypeRegistry::new(gerbil_deck_runtime_poo_policy_projection_type_manifest())
             .expect("POO projection manifest should build registry");
@@ -48,7 +48,7 @@ fn native_abi_projection_decodes_poo_policy_typed_value() {
 }
 
 #[test]
-fn native_abi_projection_decodes_resolved_loop_policy_pack_after_readiness_gate() {
+fn c_abi_projection_decodes_resolved_loop_policy_pack_after_readiness_gate() {
     let registry = GerbilSchemeTypeRegistry::new(gerbil_deck_route_abi_projection_type_manifest())
         .expect("Deck runtime native projection manifest should build registry");
     let envelope = resolved_loop_policy_pack_envelope(1);
@@ -73,7 +73,7 @@ fn native_abi_projection_decodes_resolved_loop_policy_pack_after_readiness_gate(
 }
 
 #[test]
-fn native_abi_projection_rejects_resolved_loop_policy_schema_version_drift() {
+fn c_abi_projection_rejects_resolved_loop_policy_schema_version_drift() {
     let registry = GerbilSchemeTypeRegistry::new(gerbil_deck_route_abi_projection_type_manifest())
         .expect("Deck runtime native projection manifest should build registry");
     let envelope = resolved_loop_policy_pack_envelope(2);
@@ -91,7 +91,7 @@ fn native_abi_projection_rejects_resolved_loop_policy_schema_version_drift() {
 }
 
 #[test]
-fn native_abi_projection_rejects_missing_symbol_before_payload_decode() {
+fn c_abi_projection_rejects_missing_symbol_before_payload_decode() {
     let registry =
         GerbilSchemeTypeRegistry::new(gerbil_deck_runtime_poo_policy_projection_type_manifest())
             .expect("POO projection manifest should build registry");
@@ -118,7 +118,7 @@ fn native_abi_projection_rejects_missing_symbol_before_payload_decode() {
 }
 
 #[test]
-fn native_abi_projection_rejects_wrong_schema_before_payload_decode() {
+fn c_abi_projection_rejects_wrong_schema_before_payload_decode() {
     let registry =
         GerbilSchemeTypeRegistry::new(gerbil_deck_runtime_poo_policy_projection_type_manifest())
             .expect("POO projection manifest should build registry");
@@ -147,7 +147,7 @@ fn native_abi_projection_rejects_wrong_schema_before_payload_decode() {
 }
 
 #[test]
-fn native_abi_projection_request_round_trips_as_protocol_data() {
+fn c_abi_projection_request_round_trips_as_protocol_data() {
     let request = poo_projection_request();
 
     let encoded = serde_json::to_string(&request).expect("encode projection request");

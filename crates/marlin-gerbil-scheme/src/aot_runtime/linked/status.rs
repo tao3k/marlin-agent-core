@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 /// Readiness status for a native Deck runtime AOT artifact plan.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub enum GerbilDeckRuntimeAotStatus {
+pub enum GerbilAotStatus {
     MissingGsc,
     MissingCompiledRuntime,
     MissingHeader,
@@ -13,7 +13,7 @@ pub enum GerbilDeckRuntimeAotStatus {
 
 /// Execution status for a native Deck runtime AOT link-unit build.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub enum GerbilDeckRuntimeAotBuildStatus {
+pub enum GerbilAotBuildStatus {
     MissingGsc,
     MissingHeader,
     MissingCompiledRuntime,
@@ -32,7 +32,7 @@ pub enum GerbilDeckRuntimeAotBuildStatus {
 
 /// Readiness status for consuming a native Deck runtime link unit from Rust.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub enum GerbilDeckRouteAbiStaticLinkStatus {
+pub enum GerbilAotStaticLinkStatus {
     LinkUnitNotReady,
     Ready,
 }

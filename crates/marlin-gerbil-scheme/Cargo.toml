@@ -9,9 +9,6 @@ license = "Apache-2.0"
 readme = "README.org"
 publish = false
 
-[[bench]]
-name = "deck_route_abi"
-harness = false
 
 [dependencies]
 marlin-agent-harness-types.workspace = true

@@ -17,6 +17,7 @@ package MarlinAgentCORE {
     dependency invocationLifecycle from project to InvocationLifecycle;
     dependency requestExecutionPath from project to PluginRequestPath;
     dependency performanceRequirement from project to requirements::highPerformanceExecution;
+    dependency singleVmExecution from project to MarlinSingleVmRuntime::singleVmRuntime;
 
     view projectStructure {
         expose project;
@@ -38,6 +39,11 @@ package MarlinAgentCORE {
     }
 
     view performanceDesign {
+        expose MarlinSingleVmRuntime::singleVmRuntime;
+        expose MarlinSingleVmRuntime::singleVmOwnership;
+        expose MarlinSingleVmRuntime::boundedReadyBatching;
+        expose MarlinSingleVmRuntime::terminalAccounting;
+        expose MarlinSingleVmRuntime::measuredExecution;
         expose requirements::highPerformanceExecution;
         expose target::pluginEngine::runtime;
         expose target::pluginEngine::schemeCAbiBridge;

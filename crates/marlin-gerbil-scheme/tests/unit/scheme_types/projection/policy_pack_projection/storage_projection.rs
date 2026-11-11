@@ -110,7 +110,7 @@ async fn real_policy_pack_projection_receipt_persists_as_storage_artifact_and_vi
             receipt_id: "ifc-real-policy-pack-projection-storage-001".to_owned(),
             receipt_kind: "ifc.policy_pack.mixin_stack_projection.stored".to_owned(),
             body: format!(
-                "profile={};artifact={};native_abi=scheme-types-to-rust-types",
+                "profile={};artifact={};c_abi=scheme-types-to-rust-types",
                 receipt.profile_id.as_str(),
                 artifact_hash.as_str()
             )
@@ -161,8 +161,7 @@ async fn real_policy_pack_projection_receipt_persists_as_storage_artifact_and_vi
         .await?;
     assert!(visibility.items.iter().any(|receipt| {
         receipt.receipt_kind == "ifc.policy_pack.mixin_stack_projection.stored"
-            && String::from_utf8_lossy(&receipt.body)
-                .contains("native_abi=scheme-types-to-rust-types")
+            && String::from_utf8_lossy(&receipt.body).contains("c_abi=scheme-types-to-rust-types")
     }));
 
     Ok(())

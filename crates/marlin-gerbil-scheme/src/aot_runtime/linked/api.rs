@@ -2,31 +2,22 @@
 
 use super::{
     config::{
-        GerbilCCompiler, GerbilDeckRuntimeAotConfig, GerbilDeckRuntimeAotProfile,
-        GerbilLinkLibrary, GerbilSymbolAuditor,
+        GerbilAotConfig, GerbilAotProfile, GerbilCCompiler, GerbilLinkLibrary, GerbilSymbolAuditor,
     },
     paths::{
         aot_output_dir, compiled_runtime_link_c_source, compiled_runtime_link_object,
         compiled_runtime_object, default_compiled_runtime_scm,
     },
-    receipt::{
-        GerbilDeckRouteAbiSymbol, GerbilDeckRuntimeAotBuildReceipt,
-        GerbilDeckRuntimeAotCommandPlan, GerbilDeckRuntimeAotPlan,
-    },
-    run::build_gerbil_deck_route_abi_link_unit,
-    status::GerbilDeckRuntimeAotStatus,
+    receipt::{GerbilAotBuildReceipt, GerbilAotCommandPlan, GerbilAotPlan, GerbilAotSymbol},
+    run::build_gerbil_aot_link_unit,
+    status::GerbilAotStatus,
 };
 use crate::runtime::{default_gerbil_gsc_program, resolve_gerbil_executable};
 use std::path::{Path, PathBuf};
 
-impl GerbilDeckRuntimeAotConfig {
-    /// Builds a native AOT plan rooted at a writable runtime asset directory.
-    pub fn new(root: impl Into<PathBuf>) -> Self {
-        Self::new_for_profile(root, GerbilDeckRuntimeAotProfile::DeckRuntime)
-    }
-
+impl GerbilAotConfig {
     /// Builds a native AOT plan for an explicit Gerbil native ABI profile.
-    pub fn new_for_profile(root: impl Into<PathBuf>, profile: GerbilDeckRuntimeAotProfile) -> Self {
+    pub fn new_for_profile(root: impl Into<PathBuf>, profile: GerbilAotProfile) -> Self {
         let root = root.into();
         let output_dir = aot_output_dir(&root);
         let compiled_runtime_dependency_scms = profile
@@ -54,7 +45,7 @@ impl GerbilDeckRuntimeAotConfig {
 
     /// Builds a native AOT plan for the AgentGraph policy-routing C ABI profile.
     pub fn agent_policy_routing(root: impl Into<PathBuf>) -> Self {
-        Self::new_for_profile(root, GerbilDeckRuntimeAotProfile::AgentPolicyRouting)
+        Self::new_for_profile(root, GerbilAotProfile::AgentPolicyRouting)
     }
 
     /// Overrides the native AOT output directory.
@@ -127,7 +118,7 @@ impl GerbilDeckRuntimeAotConfig {
     }
 
     /// Produces a typed, auditable native AOT link-unit build plan.
-    pub fn plan(&self) -> GerbilDeckRuntimeAotPlan {
+    pub fn plan(&self) -> GerbilAotPlan {
         let object = compiled_runtime_object(&self.compiled_runtime_scm);
         let dependency_objects = self
             .compiled_runtime_dependency_scms
@@ -141,7 +132,7 @@ impl GerbilDeckRuntimeAotConfig {
         let status = aot_plan_status(self);
         let detail = aot_plan_detail(status, self);
 
-        GerbilDeckRuntimeAotPlan {
+        GerbilAotPlan {
             profile: self.profile,
             status,
             root: self.root.clone(),
@@ -155,8 +146,8 @@ impl GerbilDeckRuntimeAotConfig {
             link_c_source: link_c_source.clone(),
             link_object: link_object.clone(),
             exported_symbols: vec![
-                GerbilDeckRouteAbiSymbol::new(self.profile.initialize_symbol()),
-                GerbilDeckRouteAbiSymbol::new(self.profile.select_symbol()),
+                GerbilAotSymbol::new(self.profile.initialize_symbol()),
+                GerbilAotSymbol::new(self.profile.select_symbol()),
             ],
             c_compiler: self.c_compiler.clone(),
             symbol_auditor: self.symbol_auditor.clone(),
@@ -193,41 +184,38 @@ impl GerbilDeckRuntimeAotConfig {
     }
 
     /// Executes the native AOT link-unit build and returns a typed receipt.
-    pub fn build_link_unit(&self) -> GerbilDeckRuntimeAotBuildReceipt {
-        build_gerbil_deck_route_abi_link_unit(self)
+    pub fn build_link_unit(&self) -> GerbilAotBuildReceipt {
+        build_gerbil_aot_link_unit(self)
     }
 }
 
-fn aot_plan_status(config: &GerbilDeckRuntimeAotConfig) -> GerbilDeckRuntimeAotStatus {
+fn aot_plan_status(config: &GerbilAotConfig) -> GerbilAotStatus {
     if resolve_gerbil_executable(&config.gsc).is_none() {
-        return GerbilDeckRuntimeAotStatus::MissingGsc;
+        return GerbilAotStatus::MissingGsc;
     }
     if !config.compiled_runtime_scm.is_file() {
-        return GerbilDeckRuntimeAotStatus::MissingCompiledRuntime;
+        return GerbilAotStatus::MissingCompiledRuntime;
     }
     if config
         .compiled_runtime_dependency_scms
         .iter()
         .any(|source| !source.is_file())
     {
-        return GerbilDeckRuntimeAotStatus::MissingCompiledRuntime;
+        return GerbilAotStatus::MissingCompiledRuntime;
     }
     if !config.header.is_file() {
-        return GerbilDeckRuntimeAotStatus::MissingHeader;
+        return GerbilAotStatus::MissingHeader;
     }
-    GerbilDeckRuntimeAotStatus::ReadyToBuildLinkUnit
+    GerbilAotStatus::ReadyToBuildLinkUnit
 }
 
-fn aot_plan_detail(
-    status: GerbilDeckRuntimeAotStatus,
-    config: &GerbilDeckRuntimeAotConfig,
-) -> Option<String> {
+fn aot_plan_detail(status: GerbilAotStatus, config: &GerbilAotConfig) -> Option<String> {
     match status {
-        GerbilDeckRuntimeAotStatus::MissingGsc => Some(format!(
+        GerbilAotStatus::MissingGsc => Some(format!(
             "missing Gerbil Gambit compiler at {}",
             config.gsc.display()
         )),
-        GerbilDeckRuntimeAotStatus::MissingCompiledRuntime => {
+        GerbilAotStatus::MissingCompiledRuntime => {
             let missing = std::iter::once(&config.compiled_runtime_scm)
                 .chain(config.compiled_runtime_dependency_scms.iter())
                 .filter(|source| !source.is_file())
@@ -240,12 +228,12 @@ fn aot_plan_detail(
                 missing
             ))
         }
-        GerbilDeckRuntimeAotStatus::MissingHeader => Some(format!(
+        GerbilAotStatus::MissingHeader => Some(format!(
             "missing native {} C ABI header at {}",
             config.profile.label(),
             config.header.display()
         )),
-        GerbilDeckRuntimeAotStatus::ReadyToBuildLinkUnit => None,
+        GerbilAotStatus::ReadyToBuildLinkUnit => None,
     }
 }
 
@@ -253,7 +241,7 @@ fn gsc_compile_object_plan(
     gsc: &Path,
     c_compiler: Option<&GerbilCCompiler>,
     source: &Path,
-) -> GerbilDeckRuntimeAotCommandPlan {
+) -> GerbilAotCommandPlan {
     let mut args = vec!["-target".to_string(), "C".to_string()];
     if let Some(c_compiler) = c_compiler {
         args.push("-cc".to_string());
@@ -262,7 +250,7 @@ fn gsc_compile_object_plan(
     args.push("-obj".to_string());
     args.push(source.to_string_lossy().into_owned());
 
-    GerbilDeckRuntimeAotCommandPlan {
+    GerbilAotCommandPlan {
         program: gsc.to_path_buf(),
         args,
     }
@@ -272,7 +260,7 @@ fn gsc_compile_link_object_plan(
     gsc: &Path,
     c_compiler: Option<&GerbilCCompiler>,
     source: &Path,
-) -> GerbilDeckRuntimeAotCommandPlan {
+) -> GerbilAotCommandPlan {
     let mut args = vec!["-target".to_string(), "C".to_string()];
     if let Some(c_compiler) = c_compiler {
         args.push("-cc".to_string());
@@ -283,7 +271,7 @@ fn gsc_compile_link_object_plan(
     args.push("-obj".to_string());
     args.push(source.to_string_lossy().into_owned());
 
-    GerbilDeckRuntimeAotCommandPlan {
+    GerbilAotCommandPlan {
         program: gsc.to_path_buf(),
         args,
     }
@@ -294,7 +282,7 @@ fn gsc_generate_link_source_plan(
     c_compiler: Option<&GerbilCCompiler>,
     dependency_sources: &[PathBuf],
     generated_runtime_scm: &Path,
-) -> GerbilDeckRuntimeAotCommandPlan {
+) -> GerbilAotCommandPlan {
     let mut args = vec!["-target".to_string(), "C".to_string()];
     if let Some(c_compiler) = c_compiler {
         args.push("-cc".to_string());
@@ -308,7 +296,7 @@ fn gsc_generate_link_source_plan(
     );
     args.push(generated_runtime_scm.to_string_lossy().into_owned());
 
-    GerbilDeckRuntimeAotCommandPlan {
+    GerbilAotCommandPlan {
         program: gsc.to_path_buf(),
         args,
     }
@@ -318,8 +306,8 @@ fn audit_symbols_plan(
     symbol_auditor: &Path,
     module_objects: &[PathBuf],
     link_object: &Path,
-) -> GerbilDeckRuntimeAotCommandPlan {
-    GerbilDeckRuntimeAotCommandPlan {
+) -> GerbilAotCommandPlan {
+    GerbilAotCommandPlan {
         program: symbol_auditor.to_path_buf(),
         args: module_objects
             .iter()

@@ -6,24 +6,21 @@ use std::{
 };
 
 use marlin_gerbil_aot_link::{
-    AGENT_POLICY_ROUTING_ABI_ARCHIVE_NAME, DECK_ROUTE_ABI_ARCHIVE_NAME,
-    build_static_archive_from_link_plan, discover_c_compiler, static_archive_cargo_directives,
-    static_archive_file_name,
+    AGENT_POLICY_ROUTING_ABI_ARCHIVE_NAME, build_static_archive_from_link_plan,
+    discover_c_compiler, static_archive_cargo_directives, static_archive_file_name,
 };
-use marlin_gerbil_scheme::{
-    GerbilDeckRouteAbiStaticLinkPlan, GerbilDeckRouteAbiStaticLinkStatus, GerbilLinkLibrary,
-};
+use marlin_gerbil_scheme::{GerbilAotStaticLinkPlan, GerbilAotStaticLinkStatus, GerbilLinkLibrary};
 
 #[test]
 fn static_archive_filename_matches_target_family() {
-    let file_name = static_archive_file_name(DECK_ROUTE_ABI_ARCHIVE_NAME);
+    let file_name = static_archive_file_name(AGENT_POLICY_ROUTING_ABI_ARCHIVE_NAME);
     let agent_file_name = static_archive_file_name(AGENT_POLICY_ROUTING_ABI_ARCHIVE_NAME);
 
     if cfg!(target_env = "msvc") {
-        assert_eq!(file_name, "marlin_deck_route_abi.lib");
+        assert_eq!(file_name, "marlin_agent_policy_routing_abi.lib");
         assert_eq!(agent_file_name, "marlin_agent_policy_routing_abi.lib");
     } else {
-        assert_eq!(file_name, "libmarlin_deck_route_abi.a");
+        assert_eq!(file_name, "libmarlin_agent_policy_routing_abi.a");
         assert_eq!(agent_file_name, "libmarlin_agent_policy_routing_abi.a");
     }
 }
@@ -32,12 +29,12 @@ fn static_archive_filename_matches_target_family() {
 fn static_archive_directives_keep_archive_before_gambit_runtime() {
     let archive_dir = PathBuf::from("/tmp/marlin-deck-runtime-archive");
     let gambit_dir = PathBuf::from("/opt/gambit/lib");
-    let plan = GerbilDeckRouteAbiStaticLinkPlan {
-        status: GerbilDeckRouteAbiStaticLinkStatus::Ready,
-        module_object: PathBuf::from("deck-route-abi~0.o"),
-        module_objects: vec![PathBuf::from("deck-route-abi~0.o")],
-        link_object: PathBuf::from("deck-route-abi~0_.o"),
-        header: PathBuf::from("marlin_deck_route_abi.h"),
+    let plan = GerbilAotStaticLinkPlan {
+        status: GerbilAotStaticLinkStatus::Ready,
+        module_object: PathBuf::from("agent-policy-routing-abi~0.o"),
+        module_objects: vec![PathBuf::from("agent-policy-routing-abi~0.o")],
+        link_object: PathBuf::from("agent-policy-routing-abi~0_.o"),
+        header: PathBuf::from("marlin_agent_policy_routing_abi.h"),
         required_symbols: Vec::new(),
         link_libraries: vec![GerbilLinkLibrary::new("gambit")],
         link_search_dirs: vec![gambit_dir.clone()],
@@ -46,7 +43,7 @@ fn static_archive_directives_keep_archive_before_gambit_runtime() {
     };
 
     let directives =
-        static_archive_cargo_directives(DECK_ROUTE_ABI_ARCHIVE_NAME, &archive_dir, &plan);
+        static_archive_cargo_directives(AGENT_POLICY_ROUTING_ABI_ARCHIVE_NAME, &archive_dir, &plan);
     let lines = directives
         .iter()
         .map(|directive| directive.line())
@@ -56,7 +53,7 @@ fn static_archive_directives_keep_archive_before_gambit_runtime() {
         lines,
         vec![
             format!("cargo:rustc-link-search=native={}", archive_dir.display()),
-            "cargo:rustc-link-lib=static=marlin_deck_route_abi".to_string(),
+            "cargo:rustc-link-lib=static=marlin_agent_policy_routing_abi".to_string(),
             format!("cargo:rustc-link-search=native={}", gambit_dir.display()),
             "cargo:rustc-link-lib=gambit".to_string(),
         ]
@@ -89,12 +86,12 @@ fn static_archive_packaging_consumes_real_object_files() {
     compile_c_object(&compiler.program, &objects.join("module.c"), &module_object);
     compile_c_object(&compiler.program, &objects.join("link.c"), &link_object);
 
-    let plan = GerbilDeckRouteAbiStaticLinkPlan {
-        status: GerbilDeckRouteAbiStaticLinkStatus::Ready,
+    let plan = GerbilAotStaticLinkPlan {
+        status: GerbilAotStaticLinkStatus::Ready,
         module_object: module_object.clone(),
         module_objects: vec![module_object],
         link_object,
-        header: PathBuf::from("marlin_deck_route_abi.h"),
+        header: PathBuf::from("marlin_agent_policy_routing_abi.h"),
         required_symbols: Vec::new(),
         link_libraries: Vec::new(),
         link_search_dirs: Vec::new(),
@@ -102,16 +99,21 @@ fn static_archive_packaging_consumes_real_object_files() {
         detail: None,
     };
 
-    let receipt =
-        build_static_archive_from_link_plan(DECK_ROUTE_ABI_ARCHIVE_NAME, &plan, &archive_dir)
-            .expect("package object files into a static archive");
+    let receipt = build_static_archive_from_link_plan(
+        AGENT_POLICY_ROUTING_ABI_ARCHIVE_NAME,
+        &plan,
+        &archive_dir,
+    )
+    .expect("package object files into a static archive");
 
-    assert_eq!(receipt.archive_name, DECK_ROUTE_ABI_ARCHIVE_NAME);
+    assert_eq!(receipt.archive_name, AGENT_POLICY_ROUTING_ABI_ARCHIVE_NAME);
     assert!(receipt.archive_file.is_file());
     assert!(
-        receipt.cargo_directives.iter().any(
-            |directive| directive.line() == "cargo:rustc-link-lib=static=marlin_deck_route_abi"
-        )
+        receipt
+            .cargo_directives
+            .iter()
+            .any(|directive| directive.line()
+                == "cargo:rustc-link-lib=static=marlin_agent_policy_routing_abi")
     );
 
     fs::remove_dir_all(root).expect("remove archive temp dir");

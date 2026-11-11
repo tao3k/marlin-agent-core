@@ -5,10 +5,11 @@
 =gerbil.pkg= declares AI Agentic Lab as the sole direct package dependency.
 Lab supplies Yuanxu, the POO contracts, and the Context and Session
 implementations. =init.ss= selects =context +causal=, =hooks=, =policy=,
-and =deck-runtime=.
+and =deck-runtime=. A package-backed Lab window explicitly selects the upstream
+Context Module; Marlin Context requires its qualified identity.
 =context/types.ss= declares the host request as a POO =Record= and checks
 the operation as =(Fun AiAgenticContextScopeType <- MarlinContextRequest)=.
-=context/func.ss= imports the installed Lab Scope library. It projects the
+=context/func.ss= imports Lab's Scope library. It projects the
 request into Lab's Scope object and calls Lab's admission procedure.
 Lab owns the Scope invariants and the returned scope digest.
 The =+causal= Feature publishes solve and replay operations over Lab's
@@ -19,8 +20,8 @@ receipt and verifies replay against the caller's exact exchange.
 |------+----------------|
 | =context/= | Adapt Lab's Context library to Marlin's runtime boundary. |
 | =hooks/= | Publish Scheme hook selection, composable conditions, and higher-order matchers. |
-| =policy/= | Evaluate model routing and strategy with a declared dependency on Hooks. |
-| =deck-runtime/= | Publish Scheme-owned runtime metadata and evaluate bounded Policy batches on resident actors. |
+| =policy/= | Project graph policy, topology and continuation with a declared dependency on Hooks. |
+| =deck-runtime/= | Publish Scheme-owned runtime metadata and admit typed Context batches on resident actors. |
 | =policy/projection/deck/= | Project policy packs. |
 | =policy/projection/graph/= | Project routing, topology and continuation for the Rust graph runtime. |
 | =c-abi/= | Own the C entry points and their bindings. |
@@ -30,7 +31,7 @@ Each module publishes its scope through =interface.ss=. The contract, objects,
 and validation live in =types.ss=, =objects.ss=, and =config.ss= respectively.
 Yuanxu owns Module selection, Feature refinement and option contracts. Deck
 Runtime opens its Actor pool on demand through gerbil-scheme-rust. The pool
-uses Gerbil green threads and returns decisions in input order. The owner
+uses Gerbil green threads and returns Lab Scopes in input order. The owner
 closes it explicitly. Rust maps the version from the published Scheme
 =metadata= record.
 
@@ -41,22 +42,25 @@ batch for the owner-local C ABI. =context/batch.ss= adapts the batch to the
 published Context operation, and =c-abi/context-admission.ss= exposes the
 entry through gerbil-scheme-rust's rooted-object ABI. The batch transfers
 shared fields once and returns an ordered array of Lab scope digests.
-Linking the production VM image and wiring the live Session handoff remain
-integration work.
+The =actor-runtime= feature links the single-VM image and submits owned
+Context/Session requests. Wiring a live TUI conversation to its authoritative
+Session binding remains integration work.
 
 Install the package dependency with =just scheme-deps=. CI installs the SDK
 with the bridge's =setup-gerbil= action, prepares the pinned revisions with
 Lab's =runtime-dependencies.ss=, and installs them with =gxpkg=. Run
 =just scheme-package-gate= to initialize the VM and call
 =GerbilRuntime::build_package= and =GerbilRuntime::test_package=.
-The gate requires the installed Lab Scope and ASCENT exchange libraries
-and their import closure. The pinned Lab revision =55bf2074=
-installs no compiled Lab libraries by default, so the dependency installation
-alone cannot supply these products. Lab's library producer owns that step.
-Yuanxu derives the source closure of Marlin's selected module roles and treats
-the installed Lab libraries as Gerbil prerequisites.
+The pinned Lab revision installs source declarations without eager library
+compilation. The package window in Marlin INIT gives Yuanxu the upstream
+source ownership needed to derive the combined library closure. The Context
+Module publishes its bounded bridge projection through its typed contract.
 =build.ss= hands the =std-make-spec= exported by =init.ss= to
-=defbuild-script= and retains =init= as the package entry.
+=defbuild-script= and includes =init= and the Deck C ABI entry as build roots.
+The full Scheme test fixtures additionally import Lab constructors outside
+the production closure. Put the pinned Lab source checkout on =GERBIL_LOADPATH=
+for that test invocation; CI does this without adding test modules to the
+production library.
 Run =just agent-policy-routing-abi-gate= for the linked C ABI selector.
 
 The recorded loop-case trace in =t/fixtures/loop-case-trace.v1= was exported

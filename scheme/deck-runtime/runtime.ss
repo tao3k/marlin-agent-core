@@ -1,23 +1,21 @@
-;;; Fixed-owner Deck actors use the bridge's resident mailbox service.
+;;; The published Context operation runs on resident SDK green actors.
 
 (import (only-in :clan/poo/object .get .o)
-        (only-in :clan/poo/mop validate)
         (only-in :gerbil-scheme-rust/scheme/actor-batch
-                 make-gerbil-rs-actor-batch gerbil-rs-actor-batch! gerbil-rs-actor-batch-close!)
-        (only-in "../policy/strategy-evaluation.ss" marlin-deck-runtime-strategy-selection)
-        (only-in "./types.ss" DeckTurn))
+                 make-gerbil-rs-actor-batch gerbil-rs-actor-batch! gerbil-rs-actor-batch-close!))
 
 (export open-deck-runtime)
 
-(def (evaluate-turn _worker row)
-  (def turn (validate DeckTurn row))
-  (marlin-deck-runtime-strategy-selection
-   (.get turn policies) (.get turn rules) (.get turn facts)
-   (.get turn command) (.get turn agent-scope)))
-
-(def (open-deck-runtime workers)
+(def (open-deck-runtime workers admit-context)
   (def owner (current-thread))
-  (def actors (make-gerbil-rs-actor-batch evaluate-turn workers))
+  (def (admit-turn _worker request)
+    (def admitted (admit-context request))
+    ;; A Scope identity is a lazy POO slot. Complete it before the actor ack,
+    ;; so the cooperative quantum covers the full admission operation.
+    (unless (string? (.get admitted semantic-digest))
+      (error "Context admission did not produce a Scope identity"))
+    admitted)
+  (def actors (make-gerbil-rs-actor-batch admit-turn workers))
   (def (assert-owner)
     (unless (eq? owner (current-thread))
       (error "Deck runtime belongs to its opening Scheme thread")))

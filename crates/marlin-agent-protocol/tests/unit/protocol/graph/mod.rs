@@ -56,11 +56,11 @@ fn graph_policy_proposal_records_native_scheme_strategy_with_abi_requirement() {
     let value = serde_json::to_value(&proposal).expect("proposal serializes");
     assert_eq!(value["schema_id"], GRAPH_POLICY_PROPOSAL_SCHEMA_ID);
     assert_eq!(value["strategy"]["strategy_id"], "scheme-loop-ranker");
-    assert_eq!(value["strategy"]["runtime"], "NativeScheme");
-    assert_eq!(value["native_abi"]["abi_id"], "marlin.graph-loop.native");
-    assert_eq!(value["native_abi"]["version"], 1);
+    assert_eq!(value["strategy"]["runtime"], "SchemeCAbi");
+    assert_eq!(value["c_abi"]["abi_id"], "marlin.graph-loop.native");
+    assert_eq!(value["c_abi"]["version"], 1);
     assert_eq!(
-        value["native_abi"]["required_symbols"][0],
+        value["c_abi"]["required_symbols"][0],
         "marlin_graph_loop_rank"
     );
     assert_eq!(value["proposed_graph"]["graph_id"], "turn-frontier-1");
@@ -176,7 +176,7 @@ fn graph_policy_proposal_validation_rejects_invalid_runtime_graph() {
     assert!(
         validation
             .diagnostics
-            .contains(&"graph_policy_proposal.native_abi_missing".to_string())
+            .contains(&"graph_policy_proposal.c_abi_missing".to_string())
     );
     assert!(
         validation
@@ -210,7 +210,7 @@ fn graph_policy_proposal_validation_rejects_invalid_runtime_graph() {
 }
 
 #[test]
-fn native_graph_policy_proposal_validation_requires_native_abi_requirement() {
+fn native_graph_policy_proposal_validation_requires_c_abi_requirement() {
     let proposal = GraphPolicyProposal::new(
         GraphLoopStrategy::gerbil_c_abi("gerbil-loop-ranker", "v1"),
         valid_graph(),
@@ -226,12 +226,12 @@ fn native_graph_policy_proposal_validation_requires_native_abi_requirement() {
     assert!(
         validation
             .diagnostics
-            .contains(&"graph_policy_proposal.native_abi_missing".to_string())
+            .contains(&"graph_policy_proposal.c_abi_missing".to_string())
     );
 }
 
 #[test]
-fn graph_policy_proposal_validation_rejects_invalid_native_abi_requirement() {
+fn graph_policy_proposal_validation_rejects_invalid_c_abi_requirement() {
     let proposal = GraphPolicyProposal::new(
         GraphLoopStrategy::scheme_c_abi("scheme-loop-ranker", "v1"),
         valid_graph(),
@@ -249,27 +249,27 @@ fn graph_policy_proposal_validation_rejects_invalid_native_abi_requirement() {
     assert!(
         validation
             .diagnostics
-            .contains(&"graph_policy_proposal.native_abi_id_empty".to_string())
+            .contains(&"graph_policy_proposal.c_abi_id_empty".to_string())
     );
     assert!(
         validation
             .diagnostics
-            .contains(&"graph_policy_proposal.native_abi_version_zero".to_string())
+            .contains(&"graph_policy_proposal.c_abi_version_zero".to_string())
     );
     assert!(
         validation
             .diagnostics
-            .contains(&"graph_policy_proposal.native_abi_symbol_duplicate:rank".to_string())
+            .contains(&"graph_policy_proposal.c_abi_symbol_duplicate:rank".to_string())
     );
     assert!(
         validation
             .diagnostics
-            .contains(&"graph_policy_proposal.native_abi_symbol_empty".to_string())
+            .contains(&"graph_policy_proposal.c_abi_symbol_empty".to_string())
     );
 }
 
 #[test]
-fn static_graph_policy_proposal_validation_rejects_native_abi_requirement() {
+fn static_graph_policy_proposal_validation_rejects_c_abi_requirement() {
     let proposal = GraphPolicyProposal::new(
         GraphLoopStrategy::new(
             "static-loop-ranker",
@@ -288,7 +288,7 @@ fn static_graph_policy_proposal_validation_rejects_native_abi_requirement() {
     assert!(
         validation
             .diagnostics
-            .contains(&"graph_policy_proposal.native_abi_unexpected".to_string())
+            .contains(&"graph_policy_proposal.c_abi_unexpected".to_string())
     );
 }
 

@@ -8,18 +8,17 @@ readme = "README.org"
 
 [features]
 default = []
-linked-selector = []
-actor-runtime = ["dep:gerbil-scheme", "dep:gerbil-scheme-sys", "dep:thiserror", "dep:tokio", "dep:tokio-util"]
+actor-runtime = ["dep:marlin-agent-context", "marlin-agent-context/gerbil", "dep:gerbil-scheme", "dep:gerbil-scheme-sys", "dep:thiserror", "dep:tokio", "dep:tokio-util"]
 
 [[bench]]
-name = "linked_selector"
+name = "single_vm_actor"
 harness = false
+required-features = ["actor-runtime"]
 
 [dependencies]
 gerbil-scheme = { workspace = true, optional = true, features = ["external-program"] }
 gerbil-scheme-sys = { workspace = true, optional = true }
-marlin-agent-protocol.workspace = true
-marlin-agent-runtime.workspace = true
+marlin-agent-context = { workspace = true, optional = true }
 marlin-gerbil-scheme.workspace = true
 serde.workspace = true
 thiserror = { workspace = true, optional = true }
@@ -30,4 +29,4 @@ tokio-util = { workspace = true, optional = true }
 marlin-gerbil-aot-link.workspace = true
 
 [dev-dependencies]
-criterion.workspace = true
+marlin-agent-protocol.workspace = true

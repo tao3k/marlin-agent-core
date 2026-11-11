@@ -10,7 +10,7 @@ fn downstream_scheme_graph_policy_projects_without_rust_static_binding() {
     let registry = downstream_graph_policy_registry();
     let envelope = GerbilSchemeTypedValue::new(
         downstream_graph_policy_type_id(),
-        dynamic_graph_policy_payload(native_abi_payload(
+        dynamic_graph_policy_payload(c_abi_payload(
             3.into(),
             GerbilSchemeValue::vector([
                 "downstream_graph_policy_rank".into(),
@@ -35,7 +35,7 @@ fn downstream_scheme_graph_policy_projects_without_rust_static_binding() {
     );
     assert_eq!(
         projection
-            .get("native_abi")
+            .get("c_abi")
             .and_then(|c_abi| c_abi.get("required_symbols"))
             .and_then(|symbols| symbols.get_index(1))
             .and_then(GerbilSchemeValue::as_text),
@@ -72,8 +72,8 @@ fn downstream_scheme_graph_policy_rejects_missing_required_field_without_rust_po
         error,
         GerbilSchemeTypeDecodeError::MissingRequiredField {
             type_id: downstream_graph_policy_type_id(),
-            field_name: GerbilSchemeFieldName::new("native_abi"),
-            field_path: "native_abi".to_owned(),
+            field_name: GerbilSchemeFieldName::new("c_abi"),
+            field_path: "c_abi".to_owned(),
         }
     );
 }
@@ -95,7 +95,7 @@ fn downstream_scheme_graph_policy_rejects_builtin_field_type_mismatch_without_ru
                     ("ranker", "pure-gerbil-policy".into()),
                 ]),
             ),
-            ("native_abi", "not-an-abi-object".into()),
+            ("c_abi", "not-an-abi-object".into()),
         ]),
     )
     .with_schema_id(downstream_graph_policy_schema_id());
@@ -108,9 +108,9 @@ fn downstream_scheme_graph_policy_rejects_builtin_field_type_mismatch_without_ru
         error,
         GerbilSchemeTypeDecodeError::FieldTypeMismatch {
             type_id: downstream_graph_policy_type_id(),
-            field_name: GerbilSchemeFieldName::new("native_abi"),
-            expected: downstream_graph_policy_native_abi_type_id(),
-            field_path: "native_abi".to_owned(),
+            field_name: GerbilSchemeFieldName::new("c_abi"),
+            expected: downstream_graph_policy_c_abi_type_id(),
+            field_path: "c_abi".to_owned(),
         }
     );
 }
@@ -121,7 +121,7 @@ fn downstream_scheme_graph_policy_rejects_nested_custom_type_field_mismatch_with
     let registry = downstream_graph_policy_registry();
     let envelope = GerbilSchemeTypedValue::new(
         downstream_graph_policy_type_id(),
-        dynamic_graph_policy_payload(native_abi_payload(
+        dynamic_graph_policy_payload(c_abi_payload(
             "3".into(),
             GerbilSchemeValue::vector([
                 "downstream_graph_policy_rank".into(),
@@ -138,10 +138,10 @@ fn downstream_scheme_graph_policy_rejects_nested_custom_type_field_mismatch_with
     assert_eq!(
         error,
         GerbilSchemeTypeDecodeError::FieldTypeMismatch {
-            type_id: downstream_graph_policy_native_abi_type_id(),
+            type_id: downstream_graph_policy_c_abi_type_id(),
             field_name: GerbilSchemeFieldName::new("version"),
             expected: GerbilSchemeTypeId::new("integer"),
-            field_path: "native_abi.version".to_owned(),
+            field_path: "c_abi.version".to_owned(),
         }
     );
 }
@@ -151,7 +151,7 @@ fn downstream_scheme_graph_policy_rejects_array_element_type_mismatch_without_ru
     let registry = downstream_graph_policy_registry();
     let envelope = GerbilSchemeTypedValue::new(
         downstream_graph_policy_type_id(),
-        dynamic_graph_policy_payload(native_abi_payload(
+        dynamic_graph_policy_payload(c_abi_payload(
             3.into(),
             GerbilSchemeValue::vector(["downstream_graph_policy_rank".into(), 42.into()]),
         )),
@@ -165,10 +165,10 @@ fn downstream_scheme_graph_policy_rejects_array_element_type_mismatch_without_ru
     assert_eq!(
         error,
         GerbilSchemeTypeDecodeError::FieldTypeMismatch {
-            type_id: downstream_graph_policy_native_abi_type_id(),
+            type_id: downstream_graph_policy_c_abi_type_id(),
             field_name: GerbilSchemeFieldName::new("required_symbols"),
             expected: GerbilSchemeTypeId::new("string"),
-            field_path: "native_abi.required_symbols[1]".to_owned(),
+            field_path: "c_abi.required_symbols[1]".to_owned(),
         }
     );
 }
@@ -185,7 +185,7 @@ fn downstream_scheme_graph_policy_rejects_recursive_custom_type_without_rust_pol
                 "downstream.agent.graph-policy.experimental.v1".into(),
             ),
             (
-                "native_abi",
+                "c_abi",
                 GerbilSchemeValue::record([(
                     "parent",
                     GerbilSchemeValue::record([
@@ -193,7 +193,7 @@ fn downstream_scheme_graph_policy_rejects_recursive_custom_type_without_rust_pol
                             "schema_id",
                             "downstream.agent.graph-policy.experimental.v1".into(),
                         ),
-                        ("native_abi", GerbilSchemeValue::empty_record()),
+                        ("c_abi", GerbilSchemeValue::empty_record()),
                     ]),
                 )]),
             ),
@@ -209,7 +209,7 @@ fn downstream_scheme_graph_policy_rejects_recursive_custom_type_without_rust_pol
         error,
         GerbilSchemeTypeDecodeError::RecursiveTypeReference {
             type_id: downstream_graph_policy_type_id(),
-            field_path: "native_abi.parent".to_owned(),
+            field_path: "c_abi.parent".to_owned(),
         }
     );
 }
@@ -250,8 +250,8 @@ fn downstream_graph_policy_manifest() -> GerbilSchemeTypeManifest {
             "schema_id": "marlin.scheme-types.manifest.v1",
             "types": [
                 {
-                    "type_id": "downstream.agent.graph-policy.native-abi",
-                    "schema_id": "downstream.agent.graph-policy.native-abi.v1",
+                    "type_id": "downstream.agent.graph-policy.c-abi",
+                    "schema_id": "downstream.agent.graph-policy.c-abi.v1",
                     "fields": [
                         {"name": "abi_id", "type_id": "string", "required": true},
                         {"name": "version", "type_id": "integer", "required": true},
@@ -271,7 +271,7 @@ fn downstream_graph_policy_manifest() -> GerbilSchemeTypeManifest {
                         {"name": "policy", "type_id": "object", "required": true},
                         {
                             "name": "c_abi",
-                            "type_id": "downstream.agent.graph-policy.native-abi",
+                            "type_id": "downstream.agent.graph-policy.c-abi",
                             "required": true
                         }
                     ]
@@ -286,8 +286,8 @@ fn downstream_graph_policy_type_id() -> GerbilSchemeTypeId {
     GerbilSchemeTypeId::new("downstream.agent.graph-policy.experimental")
 }
 
-fn downstream_graph_policy_native_abi_type_id() -> GerbilSchemeTypeId {
-    GerbilSchemeTypeId::new("downstream.agent.graph-policy.native-abi")
+fn downstream_graph_policy_c_abi_type_id() -> GerbilSchemeTypeId {
+    GerbilSchemeTypeId::new("downstream.agent.graph-policy.c-abi")
 }
 
 fn downstream_graph_policy_schema_id() -> GerbilSchemeSchemaId {
@@ -300,7 +300,7 @@ fn recursive_graph_policy_manifest() -> GerbilSchemeTypeManifest {
             "schema_id": "marlin.scheme-types.manifest.v1",
             "types": [
                 {
-                    "type_id": "downstream.agent.graph-policy.native-abi",
+                    "type_id": "downstream.agent.graph-policy.c-abi",
                     "fields": [
                         {
                             "name": "parent",
@@ -315,7 +315,7 @@ fn recursive_graph_policy_manifest() -> GerbilSchemeTypeManifest {
                     "fields": [
                         {
                             "name": "c_abi",
-                            "type_id": "downstream.agent.graph-policy.native-abi",
+                            "type_id": "downstream.agent.graph-policy.c-abi",
                             "required": true
                         }
                     ]
@@ -368,11 +368,11 @@ fn dynamic_graph_policy_payload(c_abi: GerbilSchemeValue) -> GerbilSchemeValue {
                 ("max_candidates", 8.into()),
             ]),
         ),
-        ("native_abi", c_abi),
+        ("c_abi", c_abi),
     ])
 }
 
-fn native_abi_payload(version: GerbilSchemeValue, symbols: GerbilSchemeValue) -> GerbilSchemeValue {
+fn c_abi_payload(version: GerbilSchemeValue, symbols: GerbilSchemeValue) -> GerbilSchemeValue {
     GerbilSchemeValue::record([
         ("abi_id", "downstream.agent.graph-policy.native".into()),
         ("version", version),

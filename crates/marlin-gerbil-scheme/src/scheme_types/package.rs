@@ -75,6 +75,7 @@ impl GerbilSchemeCAbiReadinessPlan {
 
 /// Manifest emitted by a pure Scheme downstream package.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct GerbilSchemePackageManifest {
     pub schema_id: GerbilSchemeSchemaId,
     pub package_id: GerbilSchemePackageId,
@@ -82,7 +83,6 @@ pub struct GerbilSchemePackageManifest {
     #[serde(default)]
     pub projection_contracts: Vec<GerbilSchemeProjectionContract>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "native_abi")]
     pub c_abi: Option<GerbilSchemeCAbiContract>,
 }
 
@@ -119,9 +119,9 @@ pub struct GerbilSchemePackageManifestValidationReceipt {
     pub type_count: usize,
     pub field_count: usize,
     pub projection_contract_count: usize,
-    #[serde(rename = "native_abi_version")]
+
     pub c_abi_version: Option<u32>,
-    #[serde(rename = "native_symbol_count")]
+
     pub abi_symbol_count: usize,
 }
 

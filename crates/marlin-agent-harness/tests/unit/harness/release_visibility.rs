@@ -101,13 +101,13 @@ fn harness_release_gate_receipt_projects_c_abi_readiness() {
     let requirement = GraphCAbiRequirement::new("marlin.deck-runtime.native", 1)
         .with_required_symbols([
             "marlin_deck_runtime_initialize",
-            "marlin_deck_runtime_select_model_route",
+            "marlin_deck_runtime_evaluate",
         ]);
     let ready = GraphCAbiReadinessReceipt::evaluate(
         &requirement,
         [
             "marlin_deck_runtime_initialize",
-            "marlin_deck_runtime_select_model_route",
+            "marlin_deck_runtime_evaluate",
         ],
     );
     let missing =
@@ -129,6 +129,6 @@ fn harness_release_gate_receipt_projects_c_abi_readiness() {
         failed
             .diagnostics
             .iter()
-            .any(|diagnostic| diagnostic.contains("marlin_deck_runtime_select_model_route"))
+            .any(|diagnostic| diagnostic.contains("marlin_deck_runtime_evaluate"))
     );
 }

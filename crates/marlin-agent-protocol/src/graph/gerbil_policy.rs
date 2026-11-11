@@ -19,7 +19,6 @@ pub const GERBIL_LOOP_GRAPH_CONTINUATION_SCHEMA_ID: &str =
 pub struct GerbilLoopGraphPolicyCompilationRequest {
     pub strategy: GraphLoopStrategy,
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "native_abi")]
     pub c_abi: Option<GraphCAbiRequirement>,
     #[serde(
         default,

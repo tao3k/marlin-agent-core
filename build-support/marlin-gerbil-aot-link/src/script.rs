@@ -8,32 +8,20 @@ use std::{
 use gerbil_scheme_build::package_aot::{GerbilBuildToolchain, run_package_aot_compile};
 
 use crate::{
-    archive::{
-        AGENT_POLICY_ROUTING_ABI_ARCHIVE_NAME, DECK_ROUTE_ABI_ARCHIVE_NAME,
-        build_static_archive_from_link_plan,
-    },
+    archive::{AGENT_POLICY_ROUTING_ABI_ARCHIVE_NAME, build_static_archive_from_link_plan},
     discovery::{GambitLinkSearchDiscovery, find_gambit_link_search_dir_from_gsc},
     toolchain::discover_c_compiler,
 };
 use marlin_gerbil_scheme::{
-    GerbilDeckRouteAbiStaticLinkPlan, GerbilDeckRouteAbiStaticLinkStatus,
-    GerbilDeckRuntimeAotBuildReceipt, GerbilDeckRuntimeAotCommandReceipt,
-    GerbilDeckRuntimeAotConfig, GerbilDeckRuntimeAotProfile, default_gerbil_gsc_program,
+    GerbilAotBuildReceipt, GerbilAotCommandReceipt, GerbilAotConfig, GerbilAotProfile,
+    GerbilAotStaticLinkPlan, GerbilAotStaticLinkStatus, default_gerbil_gsc_program,
     default_gerbil_gxc_program, default_gerbil_gxpkg_program, gerbil_package_root,
 };
 
-const DECK_C_COMPILER_ENV: &str = "MARLIN_DECK_ROUTE_ABI_C_COMPILER";
-const DECK_GAMBIT_LINK_LIBRARY_ENV: &str = "MARLIN_DECK_ROUTE_ABI_GAMBIT_LINK_LIBRARY";
-const DECK_GAMBIT_LINK_SEARCH_DIR_ENV: &str = "MARLIN_DECK_ROUTE_ABI_GAMBIT_LINK_SEARCH_DIR";
 const AGENT_C_COMPILER_ENV: &str = "MARLIN_AGENT_POLICY_ROUTING_ABI_C_COMPILER";
 const AGENT_GAMBIT_LINK_LIBRARY_ENV: &str = "MARLIN_AGENT_POLICY_ROUTING_ABI_GAMBIT_LINK_LIBRARY";
 const AGENT_GAMBIT_LINK_SEARCH_DIR_ENV: &str =
     "MARLIN_AGENT_POLICY_ROUTING_ABI_GAMBIT_LINK_SEARCH_DIR";
-
-/// Emits native Deck runtime link directives when the explicit feature is enabled.
-pub fn emit_deck_route_abi_link_directives() {
-    emit_aot_link_directives_for_target(AotLinkTarget::deck_runtime());
-}
 
 /// Emits native AgentGraph policy-routing link directives when the explicit feature is enabled.
 pub fn emit_agent_policy_routing_abi_link_directives() {
@@ -95,7 +83,7 @@ fn emit_aot_link_directives(target: AotLinkTarget) {
         );
     }
 
-    let mut config = GerbilDeckRuntimeAotConfig::new_for_profile(&root, target.profile);
+    let mut config = GerbilAotConfig::new_for_profile(&root, target.profile);
     if let Some(c_compiler) = env::var_os(target.c_compiler_env) {
         config = config.with_c_compiler(c_compiler.to_string_lossy());
     } else if let Ok(c_compiler) = discover_c_compiler() {
@@ -116,7 +104,7 @@ fn emit_aot_link_directives(target: AotLinkTarget) {
 
     let receipt = config.build_link_unit();
     let link_plan = receipt.static_link_plan();
-    if link_plan.status != GerbilDeckRouteAbiStaticLinkStatus::Ready {
+    if link_plan.status != GerbilAotStaticLinkStatus::Ready {
         if running_under_clippy() {
             println!(
                 "cargo:warning=native {} link unit skipped during Clippy: {}",
@@ -154,7 +142,7 @@ fn emit_aot_link_directives(target: AotLinkTarget) {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct AotLinkTarget {
-    profile: GerbilDeckRuntimeAotProfile,
+    profile: GerbilAotProfile,
     source_path: &'static str,
     dependency_source_paths: &'static [&'static str],
     staged_scm_file: &'static str,
@@ -169,26 +157,9 @@ struct AotLinkTarget {
 }
 
 impl AotLinkTarget {
-    const fn deck_runtime() -> Self {
-        Self {
-            profile: GerbilDeckRuntimeAotProfile::DeckRuntime,
-            source_path: "c-abi/deck-route-abi.ss",
-            dependency_source_paths: &["c-abi/_deck-route-abi.ssi"],
-            staged_scm_file: "deck-route-abi~0.scm",
-            staged_dependency_scm_files: &["_deck-route-abi~0.scm"],
-            label: "Deck runtime",
-            link_root_dir: "deck-route-abi-link-root",
-            archive_dir: "deck-route-abi-link-archive",
-            archive_name: DECK_ROUTE_ABI_ARCHIVE_NAME,
-            c_compiler_env: DECK_C_COMPILER_ENV,
-            gambit_link_library_env: DECK_GAMBIT_LINK_LIBRARY_ENV,
-            gambit_link_search_dir_env: DECK_GAMBIT_LINK_SEARCH_DIR_ENV,
-        }
-    }
-
     const fn agent_policy_routing() -> Self {
         Self {
-            profile: GerbilDeckRuntimeAotProfile::AgentPolicyRouting,
+            profile: GerbilAotProfile::AgentPolicyRouting,
             source_path: "c-abi/agent-policy-routing-abi.ss",
             dependency_source_paths: &["c-abi/_agent-policy-routing-abi.ssi"],
             staged_scm_file: "agent-policy-routing-abi~0.scm",
@@ -204,7 +175,7 @@ impl AotLinkTarget {
     }
 }
 
-fn compile_aot_artifact(target: AotLinkTarget, root: &Path) -> GerbilDeckRuntimeAotCommandReceipt {
+fn compile_aot_artifact(target: AotLinkTarget, root: &Path) -> GerbilAotCommandReceipt {
     let gerbil_pkg_dir = gerbil_package_root();
     let gerbil_pkg = gerbil_pkg_dir.join("gerbil.pkg");
     let source_path = gerbil_pkg_dir.join(target.source_path);
@@ -236,7 +207,7 @@ fn compile_aot_artifact(target: AotLinkTarget, root: &Path) -> GerbilDeckRuntime
             target.source_path,
             target.staged_scm_file,
         )));
-    let mut receipt = GerbilDeckRuntimeAotCommandReceipt {
+    let mut receipt = GerbilAotCommandReceipt {
         status_code: Some(0),
         stdout: String::new(),
         stderr: String::new(),
@@ -294,8 +265,8 @@ pub fn rustc_wrapper_is_clippy(wrapper: impl AsRef<std::ffi::OsStr>) -> bool {
 }
 
 fn aot_link_failure_detail(
-    receipt: &GerbilDeckRuntimeAotBuildReceipt,
-    link_plan: &GerbilDeckRouteAbiStaticLinkPlan,
+    receipt: &GerbilAotBuildReceipt,
+    link_plan: &GerbilAotStaticLinkPlan,
 ) -> String {
     let mut details = vec![
         format!("link_status={:?}", link_plan.status),
@@ -327,7 +298,7 @@ fn aot_link_failure_detail(
         .join("; ")
 }
 
-fn command_detail(label: &str, receipt: Option<&GerbilDeckRuntimeAotCommandReceipt>) -> String {
+fn command_detail(label: &str, receipt: Option<&GerbilAotCommandReceipt>) -> String {
     let Some(receipt) = receipt else {
         return String::new();
     };

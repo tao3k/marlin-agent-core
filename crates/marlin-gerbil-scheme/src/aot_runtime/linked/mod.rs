@@ -9,18 +9,11 @@ mod run;
 mod status;
 
 pub use config::{
-    GerbilCCompiler, GerbilDeckRuntimeAotConfig, GerbilDeckRuntimeAotProfile, GerbilLinkLibrary,
-    GerbilSymbolAuditor,
+    GerbilAotConfig, GerbilAotProfile, GerbilCCompiler, GerbilLinkLibrary, GerbilSymbolAuditor,
 };
-pub use link::{
-    GerbilDeckRouteAbiCargoDirective, GerbilDeckRouteAbiCargoDirectiveKind,
-    GerbilDeckRouteAbiStaticLinkPlan,
-};
+pub use link::{GerbilAotCargoDirective, GerbilAotCargoDirectiveKind, GerbilAotStaticLinkPlan};
 pub use receipt::{
-    GerbilDeckRouteAbiSymbol, GerbilDeckRouteAbiSymbolAuditMethod,
-    GerbilDeckRuntimeAotBuildReceipt, GerbilDeckRuntimeAotCommandPlan,
-    GerbilDeckRuntimeAotCommandReceipt, GerbilDeckRuntimeAotPlan,
+    GerbilAotBuildReceipt, GerbilAotCommandPlan, GerbilAotCommandReceipt, GerbilAotPlan,
+    GerbilAotSymbol, GerbilAotSymbolAuditMethod,
 };
-pub use status::{
-    GerbilDeckRouteAbiStaticLinkStatus, GerbilDeckRuntimeAotBuildStatus, GerbilDeckRuntimeAotStatus,
-};
+pub use status::{GerbilAotBuildStatus, GerbilAotStaticLinkStatus, GerbilAotStatus};

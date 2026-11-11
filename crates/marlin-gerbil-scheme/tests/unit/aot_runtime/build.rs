@@ -1,12 +1,8 @@
-use super::support::{
-    write_agent_policy_routing_abi_aot_scms, write_deck_route_abi_aot_scms, write_empty_file,
-    write_executable,
-};
+use super::support::{write_agent_policy_routing_abi_aot_scms, write_empty_file, write_executable};
 use marlin_agent_protocol::GraphCAbiReadinessStatus;
 use marlin_gerbil_scheme::{
-    GerbilDeckRouteAbiCargoDirectiveKind, GerbilDeckRouteAbiStaticLinkStatus,
-    GerbilDeckRouteAbiSymbolAuditMethod, GerbilDeckRuntimeAotBuildStatus,
-    GerbilDeckRuntimeAotConfig,
+    GerbilAotBuildStatus, GerbilAotCargoDirectiveKind, GerbilAotConfig, GerbilAotStaticLinkStatus,
+    GerbilAotSymbolAuditMethod,
 };
 use std::fs;
 use tempfile::Builder;
@@ -46,7 +42,7 @@ impl Drop for EnvVarGuard {
 
 #[test]
 #[cfg(unix)]
-fn deck_route_abi_aot_build_runs_link_unit_runner() {
+fn graph_aot_build_runs_link_unit_runner() {
     let _env_lock = GERBIL_TOOLCHAIN_ENV_LOCK.lock().expect("lock Gerbil env");
     let root = Builder::new()
         .prefix("marlin-gerbil-native-aot-build-")
@@ -61,7 +57,7 @@ fn deck_route_abi_aot_build_runs_link_unit_runner() {
     let gsc = gerbil_prefix.join("bin/gsc");
     let _gsc_env = EnvVarGuard::set("GERBIL_GSC", &gsc);
     let nm = root.path().join("toolchain/nm");
-    let _compiled_runtime_scm = write_deck_route_abi_aot_scms(root.path());
+    let _compiled_runtime_scm = write_agent_policy_routing_abi_aot_scms(root.path());
     let expected_prefix = gerbil_prefix.to_string_lossy();
     write_executable(
         &gsc,
@@ -106,7 +102,7 @@ dir=$(dirname "$source")
 base=$(basename "$source")
 stem=${{base%.*}}
 if [ "$mode" = "-link" ]; then
-  : > "$dir/deck-route-abi~0_.c"
+  : > "$dir/agent-policy-routing-abi~0_.c"
 else
   : > "$dir/$stem.o"
 fi
@@ -119,22 +115,19 @@ fi
         &nm,
         r#"#!/bin/sh
 set -eu
-printf '00000000 T marlin_deck_runtime_initialize\n'
-printf '00000000 T marlin_deck_runtime_select_model_route\n'
+printf '00000000 T marlin_agent_policy_routing_initialize\n'
+printf '00000000 T marlin_agent_policy_routing_select_edges\n'
 "#,
     );
 
-    let receipt = GerbilDeckRuntimeAotConfig::new(root.path())
+    let receipt = GerbilAotConfig::agent_policy_routing(root.path())
         .with_gsc("gsc")
         .with_c_compiler("clang")
         .with_symbol_auditor(nm)
         .with_gambit_link_search_dir(root.path().join("lib"))
         .build_link_unit();
 
-    assert_eq!(
-        receipt.status,
-        GerbilDeckRuntimeAotBuildStatus::LinkUnitReady
-    );
+    assert_eq!(receipt.status, GerbilAotBuildStatus::LinkUnitReady);
     assert!(receipt.plan.compiled_runtime_scm.is_file());
     assert!(receipt.plan.object.is_file());
     assert!(receipt.plan.link_c_source.is_file());
@@ -155,7 +148,7 @@ printf '00000000 T marlin_deck_runtime_select_model_route\n'
     );
     assert_eq!(
         receipt.symbol_audit_method,
-        Some(GerbilDeckRouteAbiSymbolAuditMethod::SymbolTableCommand)
+        Some(GerbilAotSymbolAuditMethod::SymbolTableCommand)
     );
     assert_eq!(
         receipt
@@ -174,7 +167,7 @@ printf '00000000 T marlin_deck_runtime_select_model_route\n'
     assert!(receipt.missing_symbols.is_empty());
 
     let link_plan = receipt.static_link_plan();
-    assert_eq!(link_plan.status, GerbilDeckRouteAbiStaticLinkStatus::Ready);
+    assert_eq!(link_plan.status, GerbilAotStaticLinkStatus::Ready);
     assert_eq!(link_plan.module_object, receipt.plan.object);
     assert_eq!(link_plan.link_object, receipt.plan.link_object);
     assert_eq!(
@@ -193,11 +186,11 @@ printf '00000000 T marlin_deck_runtime_select_model_route\n'
             .map(|directive| directive.kind)
             .collect::<Vec<_>>(),
         [
-            GerbilDeckRouteAbiCargoDirectiveKind::RustcLinkArg,
-            GerbilDeckRouteAbiCargoDirectiveKind::RustcLinkArg,
-            GerbilDeckRouteAbiCargoDirectiveKind::RustcLinkArg,
-            GerbilDeckRouteAbiCargoDirectiveKind::RustcLinkSearch,
-            GerbilDeckRouteAbiCargoDirectiveKind::RustcLinkLib
+            GerbilAotCargoDirectiveKind::RustcLinkArg,
+            GerbilAotCargoDirectiveKind::RustcLinkArg,
+            GerbilAotCargoDirectiveKind::RustcLinkArg,
+            GerbilAotCargoDirectiveKind::RustcLinkSearch,
+            GerbilAotCargoDirectiveKind::RustcLinkLib
         ]
     );
     assert!(
@@ -259,15 +252,12 @@ printf '00000000 T marlin_agent_policy_routing_select_edges\n'
 "#,
     );
 
-    let receipt = GerbilDeckRuntimeAotConfig::agent_policy_routing(root.path())
+    let receipt = GerbilAotConfig::agent_policy_routing(root.path())
         .with_gsc(gsc)
         .with_symbol_auditor(nm)
         .build_link_unit();
 
-    assert_eq!(
-        receipt.status,
-        GerbilDeckRuntimeAotBuildStatus::LinkUnitReady
-    );
+    assert_eq!(receipt.status, GerbilAotBuildStatus::LinkUnitReady);
     assert!(receipt.plan.object.is_file());
     assert!(receipt.plan.link_c_source.is_file());
     assert!(receipt.plan.link_object.is_file());
@@ -283,13 +273,13 @@ printf '00000000 T marlin_agent_policy_routing_select_edges\n'
 
 #[test]
 #[cfg(unix)]
-fn deck_route_abi_aot_build_rejects_missing_link_source() {
+fn graph_aot_build_rejects_missing_link_source() {
     let root = Builder::new()
         .prefix("marlin-gerbil-native-aot-missing-link-source-")
         .tempdir()
         .expect("create root");
     let gsc = root.path().join("toolchain/gsc");
-    let _compiled_runtime_scm = write_deck_route_abi_aot_scms(root.path());
+    let _compiled_runtime_scm = write_agent_policy_routing_abi_aot_scms(root.path());
     write_executable(
         &gsc,
         r#"#!/bin/sh
@@ -321,14 +311,11 @@ fi
 "#,
     );
 
-    let receipt = GerbilDeckRuntimeAotConfig::new(root.path())
+    let receipt = GerbilAotConfig::agent_policy_routing(root.path())
         .with_gsc(gsc)
         .build_link_unit();
 
-    assert_eq!(
-        receipt.status,
-        GerbilDeckRuntimeAotBuildStatus::LinkSourceMissing
-    );
+    assert_eq!(receipt.status, GerbilAotBuildStatus::LinkSourceMissing);
     assert_eq!(
         receipt
             .gsc_generate_link_source
@@ -342,13 +329,13 @@ fi
 
 #[test]
 #[cfg(unix)]
-fn deck_route_abi_aot_build_rejects_missing_link_object() {
+fn graph_aot_build_rejects_missing_link_object() {
     let root = Builder::new()
         .prefix("marlin-gerbil-native-aot-missing-link-object-")
         .tempdir()
         .expect("create root");
     let gsc = root.path().join("toolchain/gsc");
-    let _compiled_runtime_scm = write_deck_route_abi_aot_scms(root.path());
+    let _compiled_runtime_scm = write_agent_policy_routing_abi_aot_scms(root.path());
     write_executable(
         &gsc,
         r#"#!/bin/sh
@@ -375,21 +362,18 @@ dir=$(dirname "$source")
 base=$(basename "$source")
 stem=${base%.*}
 if [ "$mode" = "-link" ]; then
-  : > "$dir/deck-route-abi~0_.c"
+  : > "$dir/agent-policy-routing-abi~0_.c"
 elif [ "${base##*.}" != "c" ]; then
   : > "$dir/$stem.o"
 fi
 "#,
     );
 
-    let receipt = GerbilDeckRuntimeAotConfig::new(root.path())
+    let receipt = GerbilAotConfig::agent_policy_routing(root.path())
         .with_gsc(gsc)
         .build_link_unit();
 
-    assert_eq!(
-        receipt.status,
-        GerbilDeckRuntimeAotBuildStatus::LinkObjectMissing
-    );
+    assert_eq!(receipt.status, GerbilAotBuildStatus::LinkObjectMissing);
     assert_eq!(
         receipt
             .gsc_compile_link_object
@@ -402,14 +386,14 @@ fi
 
 #[test]
 #[cfg(unix)]
-fn deck_route_abi_aot_build_rejects_object_missing_required_symbols() {
+fn graph_aot_build_rejects_object_missing_required_symbols() {
     let root = Builder::new()
         .prefix("marlin-gerbil-native-aot-missing-symbols-")
         .tempdir()
         .expect("create root");
     let gsc = root.path().join("toolchain/gsc");
     let nm = root.path().join("toolchain/nm");
-    let _compiled_runtime_scm = write_deck_route_abi_aot_scms(root.path());
+    let _compiled_runtime_scm = write_agent_policy_routing_abi_aot_scms(root.path());
     write_executable(
         &gsc,
         r#"#!/bin/sh
@@ -436,7 +420,7 @@ dir=$(dirname "$source")
 base=$(basename "$source")
 stem=${base%.*}
 if [ "$mode" = "-link" ]; then
-  : > "$dir/deck-route-abi~0_.c"
+  : > "$dir/agent-policy-routing-abi~0_.c"
 else
   : > "$dir/$stem.o"
 fi
@@ -450,18 +434,15 @@ printf '00000000 T unrelated_symbol\n'
 "#,
     );
 
-    let receipt = GerbilDeckRuntimeAotConfig::new(root.path())
+    let receipt = GerbilAotConfig::agent_policy_routing(root.path())
         .with_gsc(gsc)
         .with_symbol_auditor(nm)
         .build_link_unit();
 
-    assert_eq!(
-        receipt.status,
-        GerbilDeckRuntimeAotBuildStatus::RequiredSymbolsMissing
-    );
+    assert_eq!(receipt.status, GerbilAotBuildStatus::RequiredSymbolsMissing);
     assert_eq!(
         receipt.symbol_audit_method,
-        Some(GerbilDeckRouteAbiSymbolAuditMethod::SymbolTableCommand)
+        Some(GerbilAotSymbolAuditMethod::SymbolTableCommand)
     );
     assert_eq!(
         receipt
@@ -470,8 +451,8 @@ printf '00000000 T unrelated_symbol\n'
             .map(|symbol| symbol.as_str())
             .collect::<Vec<_>>(),
         [
-            "marlin_deck_runtime_initialize",
-            "marlin_deck_runtime_select_model_route"
+            "marlin_agent_policy_routing_initialize",
+            "marlin_agent_policy_routing_select_edges"
         ]
     );
 }

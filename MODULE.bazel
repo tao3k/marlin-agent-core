@@ -19,8 +19,8 @@ crate = use_extension("@rules_rust//crate_universe:extensions.bzl", "crate")
 crate.annotation(
     crate = "io-uring",
     patch_args = ["-p1"],
-    patches = ["//bazel/patches:io-uring-0.7.16-linux-only.patch"],
-    version = "0.7.16",
+    patches = ["//bazel/patches:io-uring-0.7.15-linux-only.patch"],
+    version = "0.7.15",
 )
 crate.annotation(
     build_script_env = {

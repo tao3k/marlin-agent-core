@@ -151,25 +151,25 @@ pub(super) fn validate_graph_c_abi_requirement(
     diagnostics: &mut Vec<String>,
 ) {
     if c_abi.abi_id.as_str().trim().is_empty() {
-        diagnostics.push("graph_policy_proposal.native_abi_id_empty".to_string());
+        diagnostics.push("graph_policy_proposal.c_abi_id_empty".to_string());
     }
     if c_abi.version == 0 {
-        diagnostics.push("graph_policy_proposal.native_abi_version_zero".to_string());
+        diagnostics.push("graph_policy_proposal.c_abi_version_zero".to_string());
     }
     if c_abi.required_symbols.is_empty() {
-        diagnostics.push("graph_policy_proposal.native_abi_symbols_empty".to_string());
+        diagnostics.push("graph_policy_proposal.c_abi_symbols_empty".to_string());
     }
 
     let mut symbols = BTreeSet::new();
     for symbol in &c_abi.required_symbols {
         let symbol = symbol.as_str().trim();
         if symbol.is_empty() {
-            diagnostics.push("graph_policy_proposal.native_abi_symbol_empty".to_string());
+            diagnostics.push("graph_policy_proposal.c_abi_symbol_empty".to_string());
             continue;
         }
         if !symbols.insert(symbol.to_string()) {
             diagnostics.push(format!(
-                "graph_policy_proposal.native_abi_symbol_duplicate:{symbol}"
+                "graph_policy_proposal.c_abi_symbol_duplicate:{symbol}"
             ));
         }
     }

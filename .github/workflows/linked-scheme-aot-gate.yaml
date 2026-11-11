@@ -15,9 +15,6 @@ permissions:
 env:
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: "0"
-  MARLIN_DECK_RUNTIME_NATIVE_C_COMPILER: clang
-  MARLIN_DECK_RUNTIME_NATIVE_GAMBIT_LINK_LIBRARY: ${{ vars.MARLIN_DECK_RUNTIME_NATIVE_GAMBIT_LINK_LIBRARY }}
-  MARLIN_DECK_RUNTIME_NATIVE_GAMBIT_LINK_SEARCH_DIR: ${{ vars.MARLIN_DECK_RUNTIME_NATIVE_GAMBIT_LINK_SEARCH_DIR }}
   MARLIN_AGENT_POLICY_ROUTING_NATIVE_C_COMPILER: clang
   MARLIN_AGENT_POLICY_ROUTING_NATIVE_GAMBIT_LINK_LIBRARY: ${{ vars.MARLIN_AGENT_POLICY_ROUTING_NATIVE_GAMBIT_LINK_LIBRARY }}
   MARLIN_AGENT_POLICY_ROUTING_NATIVE_GAMBIT_LINK_SEARCH_DIR: ${{ vars.MARLIN_AGENT_POLICY_ROUTING_NATIVE_GAMBIT_LINK_SEARCH_DIR }}
@@ -86,17 +83,17 @@ jobs:
 
       - name: Compile linked-selector tests
         run: |
-          cargo test --locked -p marlin-deck-runtime --features linked-selector --no-run
+          cargo test --locked -p marlin-deck-runtime --features actor-runtime --no-run
           cargo test --locked -p marlin-agent-policy-routing-abi --features linked-selector --no-run
 
       - name: Run linked-selector tests
         run: |
-          cargo test --locked -p marlin-deck-runtime --features linked-selector
+          cargo test --locked -p marlin-deck-runtime --features actor-runtime
           cargo test --locked -p marlin-agent-policy-routing-abi --features linked-selector
 
       - name: Compile linked selector benchmarks
         run: |
-          cargo bench --locked -p marlin-deck-runtime --features linked-selector --bench linked_selector --no-run
+          cargo bench --locked -p marlin-deck-runtime --features actor-runtime --bench single_vm_actor --no-run
           cargo bench --locked -p marlin-agent-policy-routing-abi --features linked-selector --bench linked_selector --no-run
           cargo bench --locked -p marlin-agent-policy-routing-abi --features linked-selector --bench allocation_shape --no-run
 
@@ -105,7 +102,8 @@ jobs:
 
       - name: Benchmark linked selector
         run: |
-          cargo bench --locked -p marlin-deck-runtime --features linked-selector --bench linked_selector
+          cargo bench --locked -p marlin-deck-runtime --features actor-runtime --bench single_vm_actor -- 1 1024
+          cargo bench --locked -p marlin-deck-runtime --features actor-runtime --bench single_vm_actor -- 64 1024
           cargo bench --locked -p marlin-agent-policy-routing-abi --features linked-selector --bench linked_selector
 
       - name: Upload linked native benchmark artifacts

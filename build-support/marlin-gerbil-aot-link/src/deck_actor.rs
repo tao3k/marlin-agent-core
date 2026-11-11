@@ -2,7 +2,7 @@ use std::{env, fs};
 
 use gerbil_scheme_aot_build::{
     ProgramArchiveRequest, build_program_archive, discover_gambit_gsc_from_env, gerbil_command,
-    run_native_process,
+    run_native_process, source_workspace,
 };
 
 /// Link the compiled Deck Actor and rooted-object exports into the application.
@@ -11,6 +11,7 @@ pub fn emit_deck_actor_link_directives() {
     let out = std::path::PathBuf::from(env::var_os("OUT_DIR").expect("Cargo output directory"));
     let lib = out.join("lib");
     let stage = out.join("stage");
+    let bridge = out.join("bridge");
     fs::create_dir_all(&stage).expect("create Deck AOT stage");
     println!("cargo:rerun-if-changed={}", scheme.display());
     for variable in [
@@ -19,22 +20,52 @@ pub fn emit_deck_actor_link_directives() {
         "GERBIL_LOADPATH",
         "GERBIL_GXI",
         "GERBIL_GSC",
+        "GERBIL_BUILD_CORES",
+        "GAMBOPT",
+        "LDFLAGS_GAMBUILD",
         "PKG_CONFIG_PATH",
     ] {
         println!("cargo:rerun-if-env-changed={variable}");
     }
 
+    // The Scheme bridge graph must come from the same Cargo-pinned source as
+    // the Rust ABI. A transitive Lab package may select a different revision.
+    let source = source_workspace();
+    let mut build_bridge = gerbil_command("gxi");
+    build_bridge
+        .current_dir(&source)
+        .env("GERBIL_PATH", &bridge)
+        .arg(source.join("build.ss"))
+        .arg("compile");
+    run_native_process(&mut build_bridge, "build the pinned Scheme bridge", true)
+        .expect("build the canonical bridge package for the linked Actor VM");
+
+    let package_prefix = env::var_os("GERBIL_PATH")
+        .filter(|value| !value.is_empty())
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| scheme.join(".gerbil"));
     let mut stage_program = gerbil_command("gxi");
     let previous = env::var_os("GERBIL_LOADPATH").unwrap_or_default();
     let load_path = env::join_paths(
-        std::iter::once(lib.clone())
+        [lib.clone(), bridge.join("lib"), package_prefix.join("lib")]
+            .into_iter()
             .chain(env::split_paths(&previous).filter(|path| !path.as_os_str().is_empty())),
     )
     .expect("Deck AOT Gerbil load path");
-    stage_program.current_dir(&scheme).env("GERBIL_LOADPATH", load_path).env("MARLIN_DECK_AOT_LIB", &lib).env("MARLIN_DECK_AOT_STAGE", &stage).args([
+    let mut build_package = gerbil_command("gxi");
+    build_package
+        .current_dir(&scheme)
+        .env("GERBIL_LOADPATH", &load_path)
+        .env("GERBIL_PATH", &package_prefix)
+        .arg(scheme.join("build.ss"))
+        .arg("compile");
+    run_native_process(&mut build_package, "build the Marlin Scheme modules", true)
+        .expect("build Marlin's Yuanxu-selected modules through its standard Builder");
+
+    stage_program.current_dir(&scheme).env("GERBIL_PATH", &package_prefix).env("GERBIL_LOADPATH", load_path).env("MARLIN_DECK_AOT_LIB", &lib).env("MARLIN_DECK_AOT_STAGE", &stage).args([
         "-e",
         r#"(import :gerbil/compiler :gerbil-scheme-rust/scheme/program-build)
-           (def source (path-expand "c-abi/deck-route-admission.ss"))
+           (def source (path-expand "c-abi/deck-runtime.ss"))
            (compile-module source [output-dir: (getenv "MARLIN_DECK_AOT_LIB") invoke-gsc: #f optimize: #t static: #t])
            (gerbil-rs-stage-program source (getenv "MARLIN_DECK_AOT_STAGE"))"#,
     ]);

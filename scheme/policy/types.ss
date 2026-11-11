@@ -10,7 +10,6 @@
 
 (def PolicyScopeContract
   (.cc ObjectContract.
-       responsibilities: (.o select-model-route: PolicyOperation
-                             project-routing: PolicyOperation
+       responsibilities: (.o project-routing: PolicyOperation
                              compile-loop-graph: PolicyOperation
                              next-continuation: PolicyOperation)))

@@ -27,8 +27,14 @@
 (def CausalReplayRequest (Record exchange: [CausalExchange] root: [String] answer: [CausalAnswer]))
 (def CausalReplayVerdict (Or (Exactly 'valid) (Exactly 'invalid)))
 
+(def ContextProjectionRows (.cc Type. '.element? vector?))
+(def ContextProjectionBytes (.cc Type. '.element? u8vector?))
+(def ContextBridgeContract
+  (Record decode-batch: [(Fun ContextProjectionRows <- ContextProjectionRows)]
+          encode-scopes: [(Fun ContextProjectionBytes <- ContextProjectionRows)]))
+
 (def MarlinContextModuleContract
-  (.cc (Record admit-scope: [MarlinContextAdmission])
+  (.cc (Record admit-scope: [MarlinContextAdmission] bridge: [ContextBridgeContract])
        identity: 'marlin/context))
 
 (def ContextCausalContract

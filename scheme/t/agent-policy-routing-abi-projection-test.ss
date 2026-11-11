@@ -3,20 +3,11 @@
 
 (import :clan/poo/object
         "../policy/projection/graph/routing.ss"
-        "../policy/routing.ss"
         :std/test)
 
 ;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
 ;; MarlinResult <- MarlinInput
-(def routing-test-policy
-  (make-marlin-deck-runtime-model-route-policy
-   "gerbil.scope.agent-topology"
-   "openai"
-   "gpt-5.4"
-   '("marlin-review")
-   '("extension-agent")
-   "shared-context"
-   "workspace-isolated"))
+(def routing-test-policy (.o name: "gerbil.scope.agent-topology"))
 
 ;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
 ;; MarlinResult <- MarlinInput

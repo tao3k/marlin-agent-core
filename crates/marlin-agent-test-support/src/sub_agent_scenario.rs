@@ -1,14 +1,12 @@
-//! Deterministic sub-agent scenario fixtures spanning routing, session, and hooks.
+//! Deterministic sub-agent scenario fixtures spanning Context sessions, hooks, and the gateway.
 
 use marlin_agent_harness_types::{AgentHarnessEvidence, AgentHarnessEvidenceKind};
 use marlin_agent_protocol::{
-    HookDispatchPolicyReceipt, HookDispatchSelectionReceipt, HookRunSummary, ModelCommandMatcher,
-    ModelContextForkMode, ModelEndpoint, ModelGatewayRequest, ModelGatewayTransport,
-    ModelRouteDecision, ModelRouteRequest, ModelRouteRule, ModelSessionLifecycle,
-    ModelSessionPolicy, RuntimeEnvironmentActivation, RuntimeEnvironmentActivationReceipt,
-    RuntimeEnvironmentActivationStatus, RuntimeEnvironmentDelta, RuntimeEnvrcPolicy,
-    RuntimeShellIsolationPolicy, SubAgentSpawnConfig, SubAgentSpawnConfigSet, SubAgentSpawnProfile,
-    SubAgentSpawnProfileId, user_gateway_message,
+    HookDispatchPolicyReceipt, HookDispatchSelectionReceipt, HookRunSummary, ModelEndpoint,
+    ModelGatewayRequest, ModelGatewayTransport, RuntimeEnvironmentActivation,
+    RuntimeEnvironmentActivationReceipt, RuntimeEnvironmentActivationStatus,
+    RuntimeEnvironmentDelta, RuntimeEnvrcPolicy, RuntimeShellIsolationPolicy, SubAgentSpawnConfig,
+    SubAgentSpawnConfigSet, SubAgentSpawnProfile, SubAgentSpawnProfileId, user_gateway_message,
 };
 use marlin_agent_sessions::{AgentSessionContext, ContextNamespace, SessionIsolationReceipt};
 
@@ -20,11 +18,7 @@ use crate::{
 };
 
 const REVIEWER_MODEL_ID: &str = "anthropic/claude-opus-4-8";
-const REVIEWER_ROUTE_RULE_ID: &str = "reviewer-opus";
-const REVIEWER_PERSISTENCE_KEY: &str = "workspace:reviewer";
-const REVIEWER_CHILD_SESSION_ID: &str = "model-route/persistent/workspace:reviewer";
-const REVIEWER_ROUTE_COMMAND: [&str; 3] = ["gpt-5.5", "sub-agent", "review"];
-const REVIEWER_ROUTE_COMMAND_LINE: &str = "gpt-5.5 sub-agent review";
+const REVIEWER_CHILD_SESSION_ID: &str = "session/reviewer";
 const REVIEWER_PROFILE_TOML: &str = r#"
 [[profiles]]
 profile_id = "reviewer"
@@ -61,21 +55,19 @@ timeout_ms = 300000
 max_depth = 1
 "#;
 
-/// Fixture for one no-LLM sub-agent path across route, session, hook, and gateway.
+/// Fixture for one no-LLM sub-agent path across session, hook, and gateway.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DeterministicSubAgentScenarioFixture {
     session_fixture: SubAgentMemorySessionFixture,
-    route_rule: ModelRouteRule,
-    route_request: ModelRouteRequest,
     endpoint: ModelEndpoint,
     start_hook_summary: HookRunSummary,
     hook_selection: HookDispatchSelectionReceipt,
     hook_policy: HookDispatchPolicyReceipt,
 }
 
-/// Runtime output projection captured from a routed sub-agent execution.
+/// Runtime output projection captured from a configured sub-agent execution.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct DeterministicRoutedSubAgentExecutionReceipt {
+pub struct DeterministicSubAgentExecutionReceipt {
     pub session_id: String,
     pub parent_session_id: Option<String>,
     pub system_visible: bool,
@@ -87,16 +79,6 @@ impl DeterministicSubAgentScenarioFixture {
     /// Parent session and configured sub-agent memory expectation.
     pub fn session_fixture(&self) -> &SubAgentMemorySessionFixture {
         &self.session_fixture
-    }
-
-    /// Model route rule expected to match the sub-agent role.
-    pub fn route_rule(&self) -> &ModelRouteRule {
-        &self.route_rule
-    }
-
-    /// Runtime request expected to resolve to `route_rule`.
-    pub fn route_request(&self) -> &ModelRouteRequest {
-        &self.route_request
     }
 
     /// Hook summary expected when the sub-agent starts.
@@ -114,12 +96,12 @@ impl DeterministicSubAgentScenarioFixture {
         &self.hook_policy
     }
 
-    /// Expected child session id for the routed model session.
-    pub fn expected_route_child_session_id(&self) -> &str {
+    /// Expected child session id for the configured child session.
+    pub fn expected_child_session_id(&self) -> &str {
         REVIEWER_CHILD_SESSION_ID
     }
 
-    /// Expected LiteLLM model id for the routed request.
+    /// Expected LiteLLM model id for the gateway request.
     pub fn expected_litellm_model_id(&self) -> &str {
         REVIEWER_MODEL_ID
     }
@@ -131,32 +113,14 @@ impl DeterministicSubAgentScenarioFixture {
     }
 }
 
-/// Fixture for a reviewer sub-agent that routes to a deterministic model endpoint.
+/// Fixture for a configured reviewer sub-agent with an explicit model endpoint.
 pub fn deterministic_reviewer_sub_agent_scenario_fixture() -> DeterministicSubAgentScenarioFixture {
     let session_fixture = sub_agent_memory_allowed_fixture_with_config(
         deterministic_reviewer_sub_agent_spawn_config(),
     );
     let endpoint = ModelEndpoint::new("anthropic", "claude-opus-4-8");
-    let route_rule = ModelRouteRule::new(
-        REVIEWER_ROUTE_RULE_ID,
-        100,
-        ModelCommandMatcher::new()
-            .with_sub_agent_role_glob("reviewer")
-            .with_command_kind_glob("review"),
-        endpoint.clone(),
-    )
-    .with_session(ModelSessionPolicy::persistent(
-        REVIEWER_PERSISTENCE_KEY,
-        ModelContextForkMode::ForkSnapshot,
-    ));
-    let route_request = ModelRouteRequest::command(REVIEWER_ROUTE_COMMAND)
-        .with_sub_agent_role("reviewer")
-        .with_command_kind("review");
-
     DeterministicSubAgentScenarioFixture {
         session_fixture,
-        route_rule,
-        route_request,
         endpoint,
         start_hook_summary: custom_sub_agent_start_hook_summary_fixture(),
         hook_selection: sub_agent_hook_dispatch_selection_fixture(),
@@ -194,14 +158,12 @@ pub fn deterministic_reviewer_applied_environment_activation_receipt_fixture()
 }
 
 /// Runtime evidence replaying the routed reviewer receipt family without live LLMs.
-pub fn deterministic_reviewer_routed_receipt_family_evidence() -> AgentHarnessEvidence {
+pub fn deterministic_reviewer_session_receipt_evidence() -> AgentHarnessEvidence {
     let fixture = deterministic_reviewer_sub_agent_scenario_fixture();
     let environment = deterministic_reviewer_applied_environment_activation_receipt_fixture();
     let detail = format!(
-        "route_rule_id={} command_line={} session_child_id={} session_lifecycle=Persistent provider_model_id={} provider_transport={:?} environment_status={:?} environment_delta_added=[{}] environment_delta_changed=[{}] environment_delta_removed=[{}] metadata_format=org live_llm=false",
-        REVIEWER_ROUTE_RULE_ID,
-        REVIEWER_ROUTE_COMMAND_LINE,
-        fixture.expected_route_child_session_id(),
+        "profile_id=reviewer session_child_id={} provider_model_id={} provider_transport={:?} environment_status={:?} environment_delta_added=[{}] environment_delta_changed=[{}] environment_delta_removed=[{}] metadata_format=org live_llm=false",
+        fixture.expected_child_session_id(),
         fixture.expected_litellm_model_id(),
         ModelGatewayTransport::Sse,
         environment.status,
@@ -212,7 +174,7 @@ pub fn deterministic_reviewer_routed_receipt_family_evidence() -> AgentHarnessEv
 
     AgentHarnessEvidence::present(
         AgentHarnessEvidenceKind::Runtime,
-        "routed-sub-agent-receipt-family:reviewer",
+        "sub-agent-session-receipt-family:reviewer",
     )
     .with_detail(detail)
 }
@@ -222,43 +184,19 @@ pub fn assert_deterministic_sub_agent_scenario_fixture(
     fixture: &DeterministicSubAgentScenarioFixture,
 ) {
     assert_sub_agent_profile(fixture);
-    assert_sub_agent_route_inputs(fixture);
     assert_custom_sub_agent_start_hook_summary(fixture.start_hook_summary());
     assert_sub_agent_hook_dispatch_selection(fixture.hook_selection());
     assert_custom_hook_policy_receipt(fixture.hook_policy());
 }
 
-/// Assert a model-route decision produced by the runtime resolver for this fixture.
-pub fn assert_deterministic_sub_agent_route_decision(
-    fixture: &DeterministicSubAgentScenarioFixture,
-    decision: &ModelRouteDecision,
-) {
-    assert_eq!(
-        decision.endpoint.litellm_model_id().as_str(),
-        fixture.expected_litellm_model_id(),
-    );
-    assert_eq!(decision.receipt.rule_id.as_str(), REVIEWER_ROUTE_RULE_ID);
-    assert_eq!(decision.receipt.command_line, REVIEWER_ROUTE_COMMAND_LINE);
-    assert_eq!(
-        decision.receipt.context_fork,
-        ModelContextForkMode::ForkSnapshot
-    );
-    assert!(decision.receipt.fallback_reason.is_none());
-    assert!(matches!(
-        &decision.session.lifecycle,
-        ModelSessionLifecycle::Persistent { key } if key.as_str() == REVIEWER_PERSISTENCE_KEY
-    ));
-}
-
-/// Assert the routed model child session produced by runtime session binding.
-pub fn assert_deterministic_routed_sub_agent_session(
+pub fn assert_deterministic_sub_agent_session(
     fixture: &DeterministicSubAgentScenarioFixture,
     child_session: &AgentSessionContext,
     isolation_receipt: &SessionIsolationReceipt,
 ) {
     assert_eq!(
         child_session.session_id().as_str(),
-        fixture.expected_route_child_session_id(),
+        fixture.expected_child_session_id(),
     );
     assert_eq!(
         child_session
@@ -275,14 +213,11 @@ pub fn assert_deterministic_routed_sub_agent_session(
 }
 
 /// Assert a routed sub-agent execution observed the fixture's child session.
-pub fn assert_deterministic_routed_sub_agent_execution(
+pub fn assert_deterministic_sub_agent_execution(
     fixture: &DeterministicSubAgentScenarioFixture,
-    receipt: &DeterministicRoutedSubAgentExecutionReceipt,
+    receipt: &DeterministicSubAgentExecutionReceipt,
 ) {
-    assert_eq!(
-        receipt.session_id,
-        fixture.expected_route_child_session_id()
-    );
+    assert_eq!(receipt.session_id, fixture.expected_child_session_id());
     assert_eq!(receipt.parent_session_id.as_deref(), Some("session/root"));
     assert!(receipt.system_visible);
     assert!(receipt.workspace_visible);
@@ -348,21 +283,4 @@ fn assert_sub_agent_profile(fixture: &DeterministicSubAgentScenarioFixture) {
     assert_eq!(profile.profile_id.as_str(), "reviewer");
     assert_eq!(profile.role, "memory-aware reviewer");
     assert_eq!(profile.hook_agent_scope, config.hook_agent_scope);
-}
-
-fn assert_sub_agent_route_inputs(fixture: &DeterministicSubAgentScenarioFixture) {
-    assert_eq!(
-        fixture.route_rule().rule_id.as_str(),
-        REVIEWER_ROUTE_RULE_ID
-    );
-    assert_eq!(fixture.route_rule().priority, 100);
-    assert_eq!(
-        fixture.route_rule().endpoint.litellm_model_id().as_str(),
-        fixture.expected_litellm_model_id(),
-    );
-    assert_eq!(
-        fixture.route_request().sub_agent_role.as_deref(),
-        Some("reviewer"),
-    );
-    assert!(fixture.route_request().command_kind.is_some());
 }

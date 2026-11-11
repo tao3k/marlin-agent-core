@@ -1,16 +1,12 @@
-use super::support::{
-    write_agent_policy_routing_abi_aot_dependency_scms, write_deck_route_abi_aot_dependency_scms,
-    write_empty_file,
-};
+use super::support::{write_agent_policy_routing_abi_aot_dependency_scms, write_empty_file};
 use marlin_gerbil_scheme::{
-    GERBIL_AGENT_POLICY_ROUTING_ABI_ID, GERBIL_AGENT_POLICY_ROUTING_ABI_VERSION,
-    GerbilDeckRuntimeAotConfig, GerbilDeckRuntimeAotProfile, GerbilDeckRuntimeAotStatus,
-    GerbilSchemeCAbiId,
+    GERBIL_AGENT_POLICY_ROUTING_ABI_ID, GERBIL_AGENT_POLICY_ROUTING_ABI_VERSION, GerbilAotConfig,
+    GerbilAotProfile, GerbilAotStatus, GerbilSchemeCAbiId,
 };
 use tempfile::Builder;
 
 fn assert_single_binding_dependency(
-    plan: &marlin_gerbil_scheme::GerbilDeckRuntimeAotPlan,
+    plan: &marlin_gerbil_scheme::GerbilAotPlan,
     expected_dependency_scm: std::path::PathBuf,
     expected_runtime_object: std::path::PathBuf,
 ) {
@@ -52,46 +48,49 @@ fn assert_single_binding_dependency(
 }
 
 #[test]
-fn deck_route_abi_aot_plan_records_link_unit_compile() {
+fn graph_aot_plan_records_link_unit_compile() {
     let root = Builder::new()
         .prefix("marlin-gerbil-native-aot-plan-")
         .tempdir()
         .expect("create root");
-    let compiled_runtime_scm = root.path().join("compiled/deck-route-abi~0.scm");
+    let compiled_runtime_scm = root.path().join("compiled/agent-policy-routing-abi~0.scm");
     let gsc = root.path().join("toolchain/gsc");
-    let header = root.path().join("include/marlin_deck_route_abi.h");
+    let header = root
+        .path()
+        .join("include/marlin_agent_policy_routing_abi.h");
     write_empty_file(&compiled_runtime_scm);
-    write_deck_route_abi_aot_dependency_scms(root.path());
+    write_agent_policy_routing_abi_aot_dependency_scms(root.path());
     write_empty_file(&gsc);
     write_empty_file(&header);
 
-    let plan = GerbilDeckRuntimeAotConfig::new(root.path())
+    let plan = GerbilAotConfig::agent_policy_routing(root.path())
         .with_compiled_runtime_scm(&compiled_runtime_scm)
         .with_gsc(&gsc)
         .with_header(&header)
         .with_c_compiler("clang")
         .plan();
 
-    assert_eq!(plan.profile, GerbilDeckRuntimeAotProfile::DeckRuntime);
-    assert_eq!(
-        plan.status,
-        GerbilDeckRuntimeAotStatus::ReadyToBuildLinkUnit
-    );
+    assert_eq!(plan.profile, GerbilAotProfile::AgentPolicyRouting);
+    assert_eq!(plan.status, GerbilAotStatus::ReadyToBuildLinkUnit);
     assert_eq!(plan.compiled_runtime_scm, compiled_runtime_scm);
     assert_eq!(plan.header, header);
-    assert_eq!(plan.object, root.path().join("compiled/deck-route-abi~0.o"));
+    assert_eq!(
+        plan.object,
+        root.path().join("compiled/agent-policy-routing-abi~0.o")
+    );
     assert_single_binding_dependency(
         &plan,
-        root.path().join(".gerbil/native/_deck-route-abi~0.scm"),
-        root.path().join("compiled/deck-route-abi~0.o"),
+        root.path()
+            .join(".gerbil/native/_agent-policy-routing-abi~0.scm"),
+        root.path().join("compiled/agent-policy-routing-abi~0.o"),
     );
     assert_eq!(
         plan.link_c_source,
-        root.path().join("compiled/deck-route-abi~0_.c")
+        root.path().join("compiled/agent-policy-routing-abi~0_.c")
     );
     assert_eq!(
         plan.link_object,
-        root.path().join("compiled/deck-route-abi~0_.o")
+        root.path().join("compiled/agent-policy-routing-abi~0_.o")
     );
     assert_eq!(
         plan.exported_symbols
@@ -99,8 +98,8 @@ fn deck_route_abi_aot_plan_records_link_unit_compile() {
             .map(|symbol| symbol.as_str())
             .collect::<Vec<_>>(),
         [
-            "marlin_deck_runtime_initialize",
-            "marlin_deck_runtime_select_model_route"
+            "marlin_agent_policy_routing_initialize",
+            "marlin_agent_policy_routing_select_edges"
         ]
     );
     assert_eq!(plan.gsc_compile_object.program, gsc);
@@ -141,7 +140,7 @@ fn deck_route_abi_aot_plan_records_link_unit_compile() {
         plan.gsc_compile_link_object
             .args
             .iter()
-            .any(|arg| arg.ends_with("deck-route-abi~0_.c"))
+            .any(|arg| arg.ends_with("agent-policy-routing-abi~0_.c"))
     );
     assert_eq!(plan.audit_symbols.program, std::path::PathBuf::from("nm"));
     assert_eq!(
@@ -171,21 +170,15 @@ fn agent_policy_routing_abi_aot_plan_records_profile_symbols() {
     write_empty_file(&gsc);
     write_empty_file(&header);
 
-    let plan = GerbilDeckRuntimeAotConfig::agent_policy_routing(root.path())
+    let plan = GerbilAotConfig::agent_policy_routing(root.path())
         .with_compiled_runtime_scm(&compiled_runtime_scm)
         .with_gsc(&gsc)
         .with_header(&header)
         .with_c_compiler("clang")
         .plan();
 
-    assert_eq!(
-        plan.profile,
-        GerbilDeckRuntimeAotProfile::AgentPolicyRouting
-    );
-    assert_eq!(
-        plan.status,
-        GerbilDeckRuntimeAotStatus::ReadyToBuildLinkUnit
-    );
+    assert_eq!(plan.profile, GerbilAotProfile::AgentPolicyRouting);
+    assert_eq!(plan.status, GerbilAotStatus::ReadyToBuildLinkUnit);
     assert_eq!(
         plan.object,
         root.path().join("compiled/agent-policy-routing-abi~0.o")
@@ -227,26 +220,25 @@ fn agent_policy_routing_abi_aot_plan_records_profile_symbols() {
 }
 
 #[test]
-fn deck_route_abi_aot_plan_reports_missing_compiled_runtime() {
+fn graph_aot_plan_reports_missing_compiled_runtime() {
     let root = Builder::new()
         .prefix("marlin-gerbil-native-aot-missing-compiled-runtime-")
         .tempdir()
         .expect("create root");
     let gsc = root.path().join("toolchain/gsc");
-    let header = root.path().join("include/marlin_deck_route_abi.h");
+    let header = root
+        .path()
+        .join("include/marlin_agent_policy_routing_abi.h");
     write_empty_file(&gsc);
     write_empty_file(&header);
 
-    let plan = GerbilDeckRuntimeAotConfig::new(root.path())
+    let plan = GerbilAotConfig::agent_policy_routing(root.path())
         .with_gsc(gsc)
         .with_header(header)
         .plan();
 
-    assert_eq!(
-        plan.status,
-        GerbilDeckRuntimeAotStatus::MissingCompiledRuntime
-    );
+    assert_eq!(plan.status, GerbilAotStatus::MissingCompiledRuntime);
     assert!(plan.detail.as_deref().is_some_and(|detail| {
-        detail.contains("missing compiled native Deck runtime Scheme artifact")
+        detail.contains("missing compiled native AgentGraph policy routing Scheme artifact")
     }));
 }

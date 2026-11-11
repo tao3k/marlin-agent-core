@@ -2,7 +2,6 @@
 ;;; Boundary: Test owns Scheme POO LoopGraph builder and projection contracts.
 
 (import :clan/poo/object
-        "../policy/routing.ss"
         "../policy/projection/graph/topology.ss"
         :std/test)
 

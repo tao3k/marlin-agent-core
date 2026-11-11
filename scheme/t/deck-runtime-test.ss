@@ -1,37 +1,30 @@
-;;; Qualify the published Deck Runtime with real resident actors.
-
+;;; Compare resident Actor results with the selected Lab Context operation.
 (import (only-in :clan/poo/object .get .o)
-        (only-in :marlin-agent-core/init marlin-agent-core.init.exports)
-        (only-in "../policy/routing.ss" make-marlin-deck-runtime-model-route-policy)
-        (only-in "../policy/strategy.ss"
-                 make-marlin-deck-runtime-strategy-facts make-marlin-deck-runtime-strategy-rule))
-
-(def deck-runtime (.get marlin-agent-core.init.exports Marlin deck-runtime))
-(def metadata (.get deck-runtime metadata))
-(unless (and (equal? (.get metadata module-id) "deck-runtime") (positive? (.get metadata version)))
-  (error "invalid Deck Runtime metadata" metadata))
-
-(def route (make-marlin-deck-runtime-model-route-policy
-            "review" "provider" "model" '("review") '("local") "shared" "workspace"))
-(def rule (make-marlin-deck-runtime-strategy-rule "review-rule" "review" #f '() '() '() #f "allow" #f))
-(def scope-facts (make-marlin-deck-runtime-strategy-facts "session" '() '() '() "local"))
-(def (turn request-command)
-  (.o policies: (list route) rules: (list rule) facts: scope-facts
-      command: request-command agent-scope: "local"))
-
-(let* ((runtime ((.get deck-runtime open) 2))
-       (evaluate (.get runtime evaluate-batch))
-       (close (.get runtime close))
-       (batch (vector (turn "review first") (turn "unmatched") (turn "review third"))))
-  (dynamic-wind
-    void
-    (lambda ()
-      (let (results (evaluate batch 1))
-        (unless (and (equal? (map (lambda (result) (.get result command)) (vector->list results))
-                             '("review first" "unmatched" "review third"))
-                     (equal? (map (lambda (result) (.get result matched)) (vector->list results))
-                             '(#t #f #t)))
-          (error "Deck actors changed batch order or policy results" results))))
-    close)
-  (unless (with-catch (lambda (_) #t) (lambda () (evaluate batch 1) #f))
-    (error "closed Deck Runtime accepted another batch")))
+        (only-in :marlin-agent-core/init marlin-agent-core.init.exports))
+(def published (.get marlin-agent-core.init.exports Marlin deck-runtime))
+(def admit (.get marlin-agent-core.init.exports Marlin context admit-scope))
+(def (request turn-index)
+  (.o bundle: "bundle" organization: "org" epoch: 1
+      project: "project" worktree: "worktree" source-cut: "cut"
+      actor: "assistant" task: "review" destination: "panel" session: "session" turn: turn-index))
+(def rows (vector (request 0) (request 1) (request 2)))
+(def expected (vector-map admit rows))
+(def (tracked-admit request-value)
+  (def admitted (admit request-value))
+  (def actor-owner (current-thread))
+  (.o (:: @ admitted)
+      semantic-digest:
+      (begin
+        (unless (eq? actor-owner (current-thread))
+          (error "Scope identity escaped its Actor completion boundary"))
+        (.get admitted semantic-digest))))
+(def runtime ((.get published open) 2 tracked-admit))
+(dynamic-wind void
+  (lambda ()
+    (let (results ((.get runtime evaluate-batch) rows 1))
+      (unless (equal? (map (lambda (scope) (.get scope semantic-digest)) (vector->list expected))
+                      (map (lambda (scope) (.get scope semantic-digest)) (vector->list results)))
+        (error "Deck changed Context admission order or result"))))
+  (.get runtime close))
+(unless (with-catch (lambda (_) #t) (lambda () ((.get runtime evaluate-batch) rows 1) #f))
+  (error "closed Deck runtime accepted a batch"))

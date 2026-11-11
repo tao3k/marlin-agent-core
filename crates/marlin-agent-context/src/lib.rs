@@ -2,6 +2,8 @@
 
 #[cfg(feature = "gerbil")]
 pub mod gerbil;
+mod request;
+pub use request::{ContextAdmissionRequest, ContextScope, ContextSession, ContextTurn};
 
 use marlin_agent_protocol::{
     ProjectRuntimeAgentId, ProjectRuntimeProjectId, ProjectRuntimeSessionId,
@@ -149,5 +151,14 @@ impl<'a> ContextScopeBatch<'a> {
 
     pub fn rows(&self) -> &[ContextScopeRow<'a>] {
         self.rows
+    }
+
+    pub fn text_bytes(&self) -> usize {
+        self.key
+            .text()
+            .into_iter()
+            .chain(self.rows.iter().flat_map(ContextScopeRow::text))
+            .map(str::len)
+            .sum()
     }
 }

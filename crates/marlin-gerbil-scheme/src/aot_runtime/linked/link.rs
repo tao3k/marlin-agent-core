@@ -2,20 +2,20 @@
 
 use super::{
     config::GerbilLinkLibrary,
-    receipt::{GerbilDeckRouteAbiSymbol, GerbilDeckRuntimeAotBuildReceipt},
-    status::{GerbilDeckRouteAbiStaticLinkStatus, GerbilDeckRuntimeAotBuildStatus},
+    receipt::{GerbilAotBuildReceipt, GerbilAotSymbol},
+    status::{GerbilAotBuildStatus, GerbilAotStaticLinkStatus},
 };
 use std::path::PathBuf;
 
 /// Cargo directive kind needed to consume a generated native link unit.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum GerbilDeckRouteAbiCargoDirectiveKind {
+pub enum GerbilAotCargoDirectiveKind {
     RustcLinkArg,
     RustcLinkLib,
     RustcLinkSearch,
 }
 
-impl GerbilDeckRouteAbiCargoDirectiveKind {
+impl GerbilAotCargoDirectiveKind {
     pub fn key(self) -> &'static str {
         match self {
             Self::RustcLinkArg => "rustc-link-arg",
@@ -27,13 +27,13 @@ impl GerbilDeckRouteAbiCargoDirectiveKind {
 
 /// One `cargo:` directive emitted by a future build-script integration.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct GerbilDeckRouteAbiCargoDirective {
-    pub kind: GerbilDeckRouteAbiCargoDirectiveKind,
+pub struct GerbilAotCargoDirective {
+    pub kind: GerbilAotCargoDirectiveKind,
     pub value: String,
 }
 
-impl GerbilDeckRouteAbiCargoDirective {
-    pub fn new(kind: GerbilDeckRouteAbiCargoDirectiveKind, value: impl Into<String>) -> Self {
+impl GerbilAotCargoDirective {
+    pub fn new(kind: GerbilAotCargoDirectiveKind, value: impl Into<String>) -> Self {
         Self {
             kind,
             value: value.into(),
@@ -47,25 +47,25 @@ impl GerbilDeckRouteAbiCargoDirective {
 
 /// Static-link inputs for a generated native Gerbil runtime link unit.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct GerbilDeckRouteAbiStaticLinkPlan {
-    pub status: GerbilDeckRouteAbiStaticLinkStatus,
+pub struct GerbilAotStaticLinkPlan {
+    pub status: GerbilAotStaticLinkStatus,
     pub module_object: PathBuf,
     pub module_objects: Vec<PathBuf>,
     pub link_object: PathBuf,
     pub header: PathBuf,
-    pub required_symbols: Vec<GerbilDeckRouteAbiSymbol>,
+    pub required_symbols: Vec<GerbilAotSymbol>,
     pub link_libraries: Vec<GerbilLinkLibrary>,
     pub link_search_dirs: Vec<PathBuf>,
-    pub cargo_directives: Vec<GerbilDeckRouteAbiCargoDirective>,
+    pub cargo_directives: Vec<GerbilAotCargoDirective>,
     pub detail: Option<String>,
 }
 
-impl GerbilDeckRuntimeAotBuildReceipt {
+impl GerbilAotBuildReceipt {
     /// Projects an object build receipt into Rust static-link inputs.
-    pub fn static_link_plan(&self) -> GerbilDeckRouteAbiStaticLinkPlan {
-        if self.status != GerbilDeckRuntimeAotBuildStatus::LinkUnitReady {
-            return GerbilDeckRouteAbiStaticLinkPlan {
-                status: GerbilDeckRouteAbiStaticLinkStatus::LinkUnitNotReady,
+    pub fn static_link_plan(&self) -> GerbilAotStaticLinkPlan {
+        if self.status != GerbilAotBuildStatus::LinkUnitReady {
+            return GerbilAotStaticLinkPlan {
+                status: GerbilAotStaticLinkStatus::LinkUnitNotReady,
                 module_object: self.plan.object.clone(),
                 module_objects: self.plan.module_objects.clone(),
                 link_object: self.plan.link_object.clone(),
@@ -88,30 +88,30 @@ impl GerbilDeckRuntimeAotBuildReceipt {
             .module_objects
             .iter()
             .map(|object| {
-                GerbilDeckRouteAbiCargoDirective::new(
-                    GerbilDeckRouteAbiCargoDirectiveKind::RustcLinkArg,
+                GerbilAotCargoDirective::new(
+                    GerbilAotCargoDirectiveKind::RustcLinkArg,
                     object.to_string_lossy().into_owned(),
                 )
             })
             .collect::<Vec<_>>();
-        cargo_directives.push(GerbilDeckRouteAbiCargoDirective::new(
-            GerbilDeckRouteAbiCargoDirectiveKind::RustcLinkArg,
+        cargo_directives.push(GerbilAotCargoDirective::new(
+            GerbilAotCargoDirectiveKind::RustcLinkArg,
             self.plan.link_object.to_string_lossy().into_owned(),
         ));
         if let Some(search_dir) = &self.plan.gambit_link_search_dir {
             link_search_dirs.push(search_dir.clone());
-            cargo_directives.push(GerbilDeckRouteAbiCargoDirective::new(
-                GerbilDeckRouteAbiCargoDirectiveKind::RustcLinkSearch,
+            cargo_directives.push(GerbilAotCargoDirective::new(
+                GerbilAotCargoDirectiveKind::RustcLinkSearch,
                 format!("native={}", search_dir.display()),
             ));
         }
-        cargo_directives.push(GerbilDeckRouteAbiCargoDirective::new(
-            GerbilDeckRouteAbiCargoDirectiveKind::RustcLinkLib,
+        cargo_directives.push(GerbilAotCargoDirective::new(
+            GerbilAotCargoDirectiveKind::RustcLinkLib,
             self.plan.gambit_link_library.as_str(),
         ));
 
-        GerbilDeckRouteAbiStaticLinkPlan {
-            status: GerbilDeckRouteAbiStaticLinkStatus::Ready,
+        GerbilAotStaticLinkPlan {
+            status: GerbilAotStaticLinkStatus::Ready,
             module_object: self.plan.object.clone(),
             module_objects: self.plan.module_objects.clone(),
             link_object: self.plan.link_object.clone(),

@@ -6,8 +6,8 @@ mod event;
 mod graph;
 mod hook;
 mod loop_policy_ir;
+mod model;
 mod model_gateway;
-mod model_route;
 mod project_runtime;
 mod runtime_environment;
 mod runtime_state_home;
@@ -87,22 +87,15 @@ pub use loop_policy_ir::{
     RESOLVED_LOOP_POLICY_PACK_SCHEMA_VERSION, ResolvedLoopPolicyPack, ResourceClass, SlotHotness,
     SlotMergeAlgebra, SlotMergeReceipt, SlotMergeStatus, SlotProvenance, SourceLocation,
 };
+pub use model::{
+    LiteLlmModelId, ModelAlias, ModelEndpoint, ModelEndpointContractError, ModelName,
+    ModelProviderId,
+};
 pub use model_gateway::{
     ModelGateway, ModelGatewayCompletionChoice, ModelGatewayCompletionOptions,
     ModelGatewayCompletionResponse, ModelGatewayError, ModelGatewayFuture, ModelGatewayMessage,
     ModelGatewayMessageRole, ModelGatewayRequest, ModelGatewayResult, ModelGatewayTransport,
     assistant_gateway_message, system_gateway_message, user_gateway_message,
-};
-pub use model_route::{
-    LiteLlmModelId, MODEL_ROUTE_ADMISSION_SCHEMA_ID, ModelAlias, ModelCommandKind,
-    ModelCommandMatcher, ModelContextForkMode, ModelEndpoint, ModelEndpointContractError,
-    ModelName, ModelProviderId, ModelRouteAdmissionMode, ModelRouteAdmissionRequest,
-    ModelRouteAdmissionResponse, ModelRouteAgentScope, ModelRouteArtifactProjection,
-    ModelRouteArtifactRef, ModelRouteDecision, ModelRouteEvidenceProfile, ModelRouteIntent,
-    ModelRouteModality, ModelRoutePrecisionTier, ModelRoutePrivacyTier, ModelRouteReceipt,
-    ModelRouteRequest, ModelRouteRule, ModelRouteRuleId, ModelRouteSessionId, ModelRouteSourceKind,
-    ModelRouteTaskKind, ModelSessionLifecycle, ModelSessionPersistenceKey, ModelSessionPolicy,
-    ModelSessionPoolId,
 };
 pub use project_runtime::{
     AgentContentCompressionState, AgentContentNode, AgentContentNodeInput, AgentContentRole,

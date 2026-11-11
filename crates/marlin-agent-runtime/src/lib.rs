@@ -4,7 +4,7 @@ pub mod observability;
 
 mod agent_graph;
 mod graph_loop;
-mod model_route;
+mod model_gateway;
 mod resilience;
 mod tokio_runtime;
 
@@ -25,16 +25,12 @@ pub use graph_loop::{
     GraphLoopRunRegistrySnapshot, GraphLoopRunStartReceipt, GraphLoopRunStatus,
     GraphLoopRunWaitReceipt, GraphLoopRunWaitStatus, project_agent_flow_loop_step,
 };
-pub use model_route::{
-    ActivatedModelRouteProfileSpawnRequest, CompiledModelRouteResolver, ModelGateway,
-    ModelGatewayCompletionChoice, ModelGatewayCompletionOptions, ModelGatewayCompletionResponse,
-    ModelGatewayError, ModelGatewayFuture, ModelGatewayMessage, ModelGatewayMessageRole,
-    ModelGatewayRequest, ModelGatewayResult, ModelGatewayTransport, ModelRouteAdmissionError,
-    ModelRouteCompileError, ModelRouteConfig, ModelRouteConfigError,
-    ModelRouteSelectionProjectionError, ModelRouteSelectionProjectionReceipt,
-    ModelRouteSelectionProjectionSource, ModelRouteSessionBinding, ProjectedModelRouteDecision,
-    RoutedSubAgentSpawn, RuntimeEdgeModelGateway, admit_model_route_with_resolver,
-    assistant_gateway_message, system_gateway_message, user_gateway_message,
+pub use model_gateway::{
+    ModelGateway, ModelGatewayCompletionChoice, ModelGatewayCompletionOptions,
+    ModelGatewayCompletionResponse, ModelGatewayError, ModelGatewayFuture, ModelGatewayMessage,
+    ModelGatewayMessageRole, ModelGatewayRequest, ModelGatewayResult, ModelGatewayTransport,
+    RuntimeEdgeModelGateway, assistant_gateway_message, system_gateway_message,
+    user_gateway_message,
 };
 pub use observability::process::{
     AsyncManagedChildProcess, ManagedChildProcessSpec, RuntimeProcessCleanupController,

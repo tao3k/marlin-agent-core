@@ -1,12 +1,12 @@
 use super::{
-    deck_route_abi_readiness_plan, downstream_strategy_package, duplicate_native_symbol_contract,
+    downstream_strategy_package, duplicate_abi_symbol_contract, graph_policy_abi_readiness_plan,
 };
 use crate::scheme_types::support::{strategy_selection_schema_id, strategy_selection_type_id};
 use marlin_gerbil_scheme::{
-    GERBIL_DECK_ROUTE_ABI_ID, GERBIL_DECK_ROUTE_ABI_VERSION, GerbilSchemeAbiSymbol,
-    GerbilSchemeCAbiContract, GerbilSchemeCAbiId, GerbilSchemeCAbiReadinessPlan,
-    GerbilSchemePackageId, GerbilSchemeProjectionContract, GerbilSchemeTypeDecodeError,
-    GerbilSchemeTypeId, validate_gerbil_scheme_package_abi_readiness,
+    GERBIL_AGENT_POLICY_ROUTING_ABI_ID, GERBIL_AGENT_POLICY_ROUTING_ABI_VERSION,
+    GerbilSchemeAbiSymbol, GerbilSchemeCAbiContract, GerbilSchemeCAbiId,
+    GerbilSchemeCAbiReadinessPlan, GerbilSchemePackageId, GerbilSchemeProjectionContract,
+    GerbilSchemeTypeDecodeError, GerbilSchemeTypeId, validate_gerbil_scheme_package_abi_readiness,
     validate_gerbil_scheme_package_manifest,
 };
 
@@ -49,10 +49,10 @@ fn scheme_package_manifest_rejects_duplicate_projection_contracts() {
 }
 
 #[test]
-fn scheme_package_manifest_rejects_empty_native_abi_exports() {
+fn scheme_package_manifest_rejects_empty_c_abi_exports() {
     let manifest = downstream_strategy_package().with_c_abi(GerbilSchemeCAbiContract::new(
-        GerbilSchemeCAbiId::new(GERBIL_DECK_ROUTE_ABI_ID),
-        GERBIL_DECK_ROUTE_ABI_VERSION,
+        GerbilSchemeCAbiId::new(GERBIL_AGENT_POLICY_ROUTING_ABI_ID),
+        GERBIL_AGENT_POLICY_ROUTING_ABI_VERSION,
     ));
 
     let error = validate_gerbil_scheme_package_manifest(&manifest)
@@ -61,14 +61,14 @@ fn scheme_package_manifest_rejects_empty_native_abi_exports() {
     assert_eq!(
         error,
         GerbilSchemeTypeDecodeError::MissingAbiSymbols {
-            abi_id: GerbilSchemeCAbiId::new(GERBIL_DECK_ROUTE_ABI_ID),
+            abi_id: GerbilSchemeCAbiId::new(GERBIL_AGENT_POLICY_ROUTING_ABI_ID),
         }
     );
 }
 
 #[test]
-fn scheme_package_manifest_rejects_duplicate_native_abi_exports() {
-    let manifest = downstream_strategy_package().with_c_abi(duplicate_native_symbol_contract());
+fn scheme_package_manifest_rejects_duplicate_c_abi_exports() {
+    let manifest = downstream_strategy_package().with_c_abi(duplicate_abi_symbol_contract());
 
     let error = validate_gerbil_scheme_package_manifest(&manifest)
         .expect_err("duplicate native ABI symbols should fail package validation");
@@ -76,17 +76,17 @@ fn scheme_package_manifest_rejects_duplicate_native_abi_exports() {
     assert_eq!(
         error,
         GerbilSchemeTypeDecodeError::DuplicateAbiSymbol {
-            symbol: GerbilSchemeAbiSymbol::new("marlin_deck_runtime_select_model_route"),
+            symbol: GerbilSchemeAbiSymbol::new("marlin_agent_policy_routing_select_edges"),
         }
     );
 }
 
 #[test]
-fn scheme_package_native_readiness_rejects_missing_native_abi_contract() {
+fn scheme_package_native_readiness_rejects_missing_c_abi_contract() {
     let manifest = downstream_strategy_package();
 
     let error =
-        validate_gerbil_scheme_package_abi_readiness(&manifest, &deck_route_abi_readiness_plan())
+        validate_gerbil_scheme_package_abi_readiness(&manifest, &graph_policy_abi_readiness_plan())
             .expect_err("readiness should fail when package has no native ABI contract");
 
     assert_eq!(
@@ -102,14 +102,14 @@ fn scheme_package_native_readiness_rejects_wrong_exported_symbol() {
     let missing_symbol = GerbilSchemeAbiSymbol::new("marlin_downstream_missing_export");
     let manifest = downstream_strategy_package().with_c_abi(
         GerbilSchemeCAbiContract::new(
-            GerbilSchemeCAbiId::new(GERBIL_DECK_ROUTE_ABI_ID),
-            GERBIL_DECK_ROUTE_ABI_VERSION,
+            GerbilSchemeCAbiId::new(GERBIL_AGENT_POLICY_ROUTING_ABI_ID),
+            GERBIL_AGENT_POLICY_ROUTING_ABI_VERSION,
         )
         .with_exported_symbols([missing_symbol.clone()]),
     );
 
     let error =
-        validate_gerbil_scheme_package_abi_readiness(&manifest, &deck_route_abi_readiness_plan())
+        validate_gerbil_scheme_package_abi_readiness(&manifest, &graph_policy_abi_readiness_plan())
             .expect_err("readiness should fail when manifest requires a missing native symbol");
 
     assert_eq!(
@@ -124,19 +124,19 @@ fn scheme_package_native_readiness_rejects_wrong_exported_symbol() {
 fn scheme_package_native_readiness_rejects_abi_version_mismatch() {
     let manifest = downstream_strategy_package().with_c_abi(
         GerbilSchemeCAbiContract::new(
-            GerbilSchemeCAbiId::new(GERBIL_DECK_ROUTE_ABI_ID),
-            GERBIL_DECK_ROUTE_ABI_VERSION,
+            GerbilSchemeCAbiId::new(GERBIL_AGENT_POLICY_ROUTING_ABI_ID),
+            GERBIL_AGENT_POLICY_ROUTING_ABI_VERSION,
         )
         .with_exported_symbols([GerbilSchemeAbiSymbol::new(
-            "marlin_deck_runtime_select_model_route",
+            "marlin_agent_policy_routing_select_edges",
         )]),
     );
     let readiness_plan = GerbilSchemeCAbiReadinessPlan::new(
-        GerbilSchemeCAbiId::new(GERBIL_DECK_ROUTE_ABI_ID),
-        GERBIL_DECK_ROUTE_ABI_VERSION + 1,
+        GerbilSchemeCAbiId::new(GERBIL_AGENT_POLICY_ROUTING_ABI_ID),
+        GERBIL_AGENT_POLICY_ROUTING_ABI_VERSION + 1,
     )
     .with_exported_symbols([GerbilSchemeAbiSymbol::new(
-        "marlin_deck_runtime_select_model_route",
+        "marlin_agent_policy_routing_select_edges",
     )]);
 
     let error = validate_gerbil_scheme_package_abi_readiness(&manifest, &readiness_plan)
@@ -145,9 +145,22 @@ fn scheme_package_native_readiness_rejects_abi_version_mismatch() {
     assert_eq!(
         error,
         GerbilSchemeTypeDecodeError::CAbiVersionMismatch {
-            abi_id: GerbilSchemeCAbiId::new(GERBIL_DECK_ROUTE_ABI_ID),
-            expected: GERBIL_DECK_ROUTE_ABI_VERSION,
-            actual: GERBIL_DECK_ROUTE_ABI_VERSION + 1,
+            abi_id: GerbilSchemeCAbiId::new(GERBIL_AGENT_POLICY_ROUTING_ABI_ID),
+            expected: GERBIL_AGENT_POLICY_ROUTING_ABI_VERSION,
+            actual: GERBIL_AGENT_POLICY_ROUTING_ABI_VERSION + 1,
         }
     );
+}
+
+#[test]
+fn package_manifest_rejects_a_retired_abi_key_instead_of_losing_the_contract() {
+    let manifest = downstream_strategy_package().with_c_abi(super::graph_policy_abi_contract());
+    let mut encoded = serde_json::to_value(manifest).unwrap();
+    let fields = encoded.as_object_mut().unwrap();
+    let abi = fields.remove("c_abi").unwrap();
+    fields.insert("native_abi".into(), abi);
+    let error =
+        serde_json::from_value::<marlin_gerbil_scheme::GerbilSchemePackageManifest>(encoded)
+            .unwrap_err();
+    assert!(error.to_string().contains("unknown field"));
 }

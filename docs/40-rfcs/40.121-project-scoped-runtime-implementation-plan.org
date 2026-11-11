@@ -1,3 +1,5 @@
+#+NOTE: CMD routing and Core Debug CLI references in this historical document are retired. Current execution ownership is defined by [[file:40.166-plugin-contract.org::#single-vm-actor-runtime][Deck Runtime Context admission]].
+
 #+TITLE: 40.121 Project-scoped Runtime Implementation Plan
 #+FILETAGS: :marlin:rfc:runtime:implementation:graph:
 

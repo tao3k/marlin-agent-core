@@ -3,7 +3,6 @@
 mod agent_policy_routing;
 mod agent_policy_routing_abi;
 mod aot_runtime;
-mod deck_route_abi;
 mod deck_runtime_policy;
 mod graph_loop_continuation;
 mod loop_case_driver;
@@ -47,40 +46,21 @@ pub use agent_policy_routing_abi::{
     gerbil_agent_policy_routing_abi_request_conversion_profile,
 };
 pub use aot_runtime::{
-    GerbilCCompiler, GerbilDeckRouteAbiCargoDirective, GerbilDeckRouteAbiCargoDirectiveKind,
-    GerbilDeckRouteAbiStaticLinkPlan, GerbilDeckRouteAbiStaticLinkStatus, GerbilDeckRouteAbiSymbol,
-    GerbilDeckRouteAbiSymbolAuditMethod, GerbilDeckRuntimeAotBuildReceipt,
-    GerbilDeckRuntimeAotBuildStatus, GerbilDeckRuntimeAotCommandPlan,
-    GerbilDeckRuntimeAotCommandReceipt, GerbilDeckRuntimeAotConfig, GerbilDeckRuntimeAotPlan,
-    GerbilDeckRuntimeAotProfile, GerbilDeckRuntimeAotStatus, GerbilLinkLibrary,
-    GerbilSymbolAuditor,
-};
-pub use deck_route_abi::{
-    GERBIL_DECK_ROUTE_ABI_HEADER_PATH, GERBIL_DECK_ROUTE_ABI_HEADER_SOURCE,
-    GERBIL_DECK_ROUTE_ABI_ID, GERBIL_DECK_ROUTE_ABI_NO_POLICY_INDEX,
-    GERBIL_DECK_ROUTE_ABI_STATUS_ABI_MISMATCH, GERBIL_DECK_ROUTE_ABI_STATUS_INVALID_SELECTION,
-    GERBIL_DECK_ROUTE_ABI_STATUS_NULL_POINTER, GERBIL_DECK_ROUTE_ABI_STATUS_OK,
-    GERBIL_DECK_ROUTE_ABI_VERSION, GerbilDeckRouteAbiError, GerbilDeckRouteAbiModelRoutePolicy,
-    GerbilDeckRouteAbiModelRouteRequest, GerbilDeckRouteAbiModelRouteSelection,
-    GerbilDeckRouteAbiModelRouteSelector, GerbilDeckRouteAbiSelectModelRouteFn,
-    GerbilDeckRouteAbiStatus, GerbilDeckRouteAbiUtf8, GerbilDeckRouteAbiUtf8List,
+    GerbilAotBuildReceipt, GerbilAotBuildStatus, GerbilAotCargoDirective,
+    GerbilAotCargoDirectiveKind, GerbilAotCommandPlan, GerbilAotCommandReceipt, GerbilAotConfig,
+    GerbilAotPlan, GerbilAotProfile, GerbilAotStaticLinkPlan, GerbilAotStaticLinkStatus,
+    GerbilAotStatus, GerbilAotSymbol, GerbilAotSymbolAuditMethod, GerbilCCompiler,
+    GerbilLinkLibrary, GerbilSymbolAuditor,
 };
 pub use deck_runtime_policy::{
     GERBIL_DECK_ROUTE_ABI_PROJECTION_ABI_ID, GERBIL_DECK_ROUTE_ABI_PROJECTION_ABI_VERSION,
     GERBIL_DECK_ROUTE_ABI_PROJECTION_PACKAGE_ID,
-    GERBIL_DECK_ROUTE_ABI_TYPED_BRIDGE_RECEIPT_SCHEMA_ID,
-    GERBIL_DECK_RUNTIME_MODEL_ROUTE_SELECTION_SCHEMA_ID,
     GERBIL_DECK_RUNTIME_POO_POLICY_PROJECTION_SCHEMA_ID,
     GERBIL_DECK_RUNTIME_POO_POLICY_PROJECTION_TYPE_ID,
     GERBIL_DECK_RUNTIME_PROJECT_LOOP_POLICY_PROJECTION_MODULE_SYMBOL,
     GERBIL_DECK_RUNTIME_PROJECT_POO_POLICY_SYMBOL,
-    GERBIL_DECK_RUNTIME_PROJECT_RESOLVED_LOOP_POLICY_PACK_SYMBOL, GerbilDeckRouteAbiBoundary,
-    GerbilDeckRouteAbiReceipt, GerbilDeckRouteBridgeStatus, GerbilDeckRuntimeContextMode,
-    GerbilDeckRuntimeIsolationMode, GerbilDeckRuntimeModelRoutePolicy,
-    GerbilDeckRuntimeModelRoutePolicyRequest, GerbilDeckRuntimeModelRouteSelectedPolicy,
-    GerbilDeckRuntimeModelRouteSelectionReceipt, GerbilDeckRuntimePooPolicyProjection,
-    GerbilDeckRuntimeSelectedPolicyKind, GerbilDeckRuntimeSerializationBoundary,
-    decode_gerbil_deck_runtime_loop_policy_projection_module,
+    GERBIL_DECK_RUNTIME_PROJECT_RESOLVED_LOOP_POLICY_PACK_SYMBOL,
+    GerbilDeckRuntimePooPolicyProjection, decode_gerbil_deck_runtime_loop_policy_projection_module,
     decode_gerbil_deck_runtime_poo_policy_projection,
     decode_gerbil_deck_runtime_resolved_loop_policy_pack_projection,
     gerbil_deck_route_abi_projection_abi_contract,

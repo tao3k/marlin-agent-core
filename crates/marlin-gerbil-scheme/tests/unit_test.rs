@@ -10,9 +10,6 @@ mod deck_runtime_policy;
 #[path = "unit/working_copy_policy.rs"]
 mod working_copy_policy;
 
-#[path = "unit/deck_route_abi/mod.rs"]
-mod deck_route_abi;
-
 #[path = "unit/agent_policy_routing_abi/mod.rs"]
 mod agent_policy_routing_abi;
 

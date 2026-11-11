@@ -3,13 +3,11 @@ use marlin_agent_harness::{
 };
 use marlin_agent_hooks::HookInvocation;
 use marlin_agent_protocol::{HookAgentScope, HookEventName};
-use marlin_agent_runtime::{
-    CancellationToken, CompiledModelRouteResolver, RuntimeEnvironment, TokioAgentRuntime,
-};
+use marlin_agent_runtime::{CancellationToken, RuntimeEnvironment, TokioAgentRuntime};
 use marlin_agent_sessions::SessionKind;
 use marlin_agent_test_support::{
-    SubAgentMemoryExpectation, assert_deterministic_routed_sub_agent_session,
-    assert_deterministic_sub_agent_route_decision, assert_sub_agent_memory_session_fixture,
+    SubAgentMemoryExpectation, assert_deterministic_sub_agent_session,
+    assert_sub_agent_memory_session_fixture,
     complex_gerbil_hook_policy_receipt_with_decision_context,
     custom_sub_agent_start_hook_summary_fixture, deterministic_reviewer_sub_agent_scenario_fixture,
     hook_dispatch_replay_evidence, sub_agent_hook_dispatch_selection_fixture,
@@ -130,14 +128,8 @@ fn harness_consumes_sub_agent_memory_session_replay_without_live_llm() {
 }
 
 #[test]
-fn harness_consumes_model_route_sub_agent_memory_visibility_without_live_llm() {
+fn harness_consumes_configured_sub_agent_memory_visibility_without_live_llm() {
     let fixture = deterministic_reviewer_sub_agent_scenario_fixture();
-    let resolver = CompiledModelRouteResolver::new(vec![fixture.route_rule().clone()])
-        .expect("fixture route rule compiles");
-    let decision = resolver
-        .resolve(fixture.route_request())
-        .expect("fixture route request resolves");
-    assert_deterministic_sub_agent_route_decision(&fixture, &decision);
     let parent_session = fixture.session_fixture().parent_session().clone();
     let (runtime, _events) = TokioAgentRuntime::with_session(
         4,
@@ -146,20 +138,19 @@ fn harness_consumes_model_route_sub_agent_memory_visibility_without_live_llm() {
         parent_session,
     );
 
-    let (child_runtime, binding) =
-        runtime.child_runtime_for_model_route(&decision, SessionKind::SubAgent);
-    assert_deterministic_routed_sub_agent_session(
-        &fixture,
-        child_runtime.session(),
-        binding.isolation_receipt(),
+    let (child_runtime, binding) = runtime.child_runtime_for_session(
+        SessionKind::SubAgent,
+        fixture.expected_child_session_id(),
+        fixture.session_fixture().requested_visibility(),
     );
+    assert_deterministic_sub_agent_session(&fixture, child_runtime.session(), &binding);
 
     let scenario = AgentHarnessScenario::new("model-route-sub-agent-memory-session")
         .expecting_evidence(AgentHarnessEvidenceKind::Visibility);
     let mut harness = AgentHarnessRuntime::new(8);
     harness.record_evidence(sub_agent_memory_session_visibility_evidence(
         child_runtime.session(),
-        binding.isolation_receipt(),
+        &binding,
     ));
 
     let report = AgentHarness::evaluate(&scenario, &[], harness.evidence());
@@ -169,7 +160,7 @@ fn harness_consumes_model_route_sub_agent_memory_visibility_without_live_llm() {
         .expect("sub-agent memory visibility detail");
 
     assert!(report.is_success());
-    assert!(detail.contains(fixture.expected_route_child_session_id()));
+    assert!(detail.contains(fixture.expected_child_session_id()));
     assert!(detail.contains("root_session_id=session/root"));
     assert!(detail.contains("memory_visible=true"));
     assert!(detail.contains("denied_memory=false"));
@@ -177,13 +168,8 @@ fn harness_consumes_model_route_sub_agent_memory_visibility_without_live_llm() {
 }
 
 #[test]
-fn harness_projects_model_route_child_session_into_hook_policy_context_without_live_llm() {
+fn harness_projects_configured_child_session_into_hook_policy_context_without_live_llm() {
     let fixture = deterministic_reviewer_sub_agent_scenario_fixture();
-    let resolver = CompiledModelRouteResolver::new(vec![fixture.route_rule().clone()])
-        .expect("fixture route rule compiles");
-    let decision = resolver
-        .resolve(fixture.route_request())
-        .expect("fixture route request resolves");
     let parent_session = fixture.session_fixture().parent_session().clone();
     let (runtime, _events) = TokioAgentRuntime::with_session(
         4,
@@ -191,13 +177,12 @@ fn harness_projects_model_route_child_session_into_hook_policy_context_without_l
         RuntimeEnvironment::default(),
         parent_session,
     );
-    let (child_runtime, binding) =
-        runtime.child_runtime_for_model_route(&decision, SessionKind::SubAgent);
-    assert_deterministic_routed_sub_agent_session(
-        &fixture,
-        child_runtime.session(),
-        binding.isolation_receipt(),
+    let (child_runtime, binding) = runtime.child_runtime_for_session(
+        SessionKind::SubAgent,
+        fixture.expected_child_session_id(),
+        fixture.session_fixture().requested_visibility(),
     );
+    assert_deterministic_sub_agent_session(&fixture, child_runtime.session(), &binding);
 
     let invocation = HookInvocation::new(HookEventName::PreToolUse)
         .with_agent_scope(HookAgentScope::CustomerAgent)
@@ -220,7 +205,7 @@ fn harness_projects_model_route_child_session_into_hook_policy_context_without_l
         .expect("hook replay detail");
 
     assert!(report.is_success());
-    assert!(detail.contains(fixture.expected_route_child_session_id()));
+    assert!(detail.contains(fixture.expected_child_session_id()));
     assert!(detail.contains("context_agent_lineage=root_session:session/root"));
     assert!(detail.contains("parent_session:session/root"));
     assert!(detail.contains("policy_action_count=4"));

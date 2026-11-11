@@ -226,7 +226,7 @@ impl AgentHarnessEvidenceGraph {
             .unwrap_or("none");
         let status = graph_policy_proposal_status_label(&receipt.status);
         let detail = format!(
-            "schema_id={} status={} selected_graph_id={} native_abi={} diagnostic_count={}",
+            "schema_id={} status={} selected_graph_id={} c_abi={} diagnostic_count={}",
             receipt.schema_id,
             status,
             selected_graph_id,

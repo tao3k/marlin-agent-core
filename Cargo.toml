@@ -12,7 +12,6 @@ members = [
     "crates/marlin-agent-kernel",
     "crates/marlin-agent-policy-routing-abi",
     "crates/marlin-agent-protocol",
-    "crates/marlin-agent-route",
     "crates/marlin-agent-runtime",
     "crates/marlin-agent-sessions",
     "crates/marlin-agent-storage",
@@ -47,7 +46,6 @@ repository = "https://github.com/tao3k/marlin-agent-core"
 aho-corasick = "1.1.5"
 async-trait = "0.1.92"
 asp-rust = { git = "https://github.com/tao3k/asp-rust", rev = "2419414ee5379bad89506496e3eaab928df68daf", version = "0.1.2", default-features = false, features = ["native-syntax"] }
-axum = { version = "0.8", features = ["json"] }
 cc = "1.11.1"
 criterion = "0.8.2"
 gerbil-scheme = { git = "https://github.com/tao3k/gerbil-scheme-rust", rev = "bfe803f597a15a3654b70a64c3a039980c31da8a", version = "0.1.0" }
@@ -76,6 +74,7 @@ tower = { version = "0.5.3", features = ["limit", "load-shed", "timeout", "util"
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter", "fmt", "json"] }
 wiremock = "0.6.5"
+marlin-agent-context = { path = "crates/marlin-agent-context", version = "0.1.0" }
 marlin-agent-environment = { path = "crates/marlin-agent-environment", version = "0.1.0" }
 marlin-agent-graph = { path = "crates/marlin-agent-graph", version = "0.1.0" }
 marlin-agent-harness = { path = "crates/marlin-agent-harness", version = "0.1.0" }
@@ -83,7 +82,6 @@ marlin-agent-harness-types = { path = "crates/marlin-agent-harness-types", versi
 marlin-agent-hooks = { path = "crates/marlin-agent-hooks", version = "0.1.0" }
 marlin-agent-kernel = { path = "crates/marlin-agent-kernel", version = "0.1.0" }
 marlin-agent-protocol = { path = "crates/marlin-agent-protocol", version = "0.1.0" }
-marlin-agent-route = { path = "crates/marlin-agent-route", version = "0.1.0" }
 marlin-agent-runtime = { path = "crates/marlin-agent-runtime", version = "0.1.0" }
 marlin-agent-sessions = { path = "crates/marlin-agent-sessions", version = "0.1.0" }
 marlin-agent-storage = { path = "crates/marlin-agent-storage", version = "0.1.0" }
@@ -170,8 +168,6 @@ debug = false
 # Dev-mode hot paths for this workspace: async runtime, gateway/streaming HTTP,
 # Org parsing, graph/query matching, compression, and native artifact scanning.
 [profile.dev.package.aho-corasick]
-opt-level = 2
-[profile.dev.package.axum]
 opt-level = 2
 [profile.dev.package.bytes]
 opt-level = 2

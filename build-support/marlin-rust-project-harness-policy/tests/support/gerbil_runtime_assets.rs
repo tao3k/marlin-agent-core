@@ -12,14 +12,14 @@ const REQUIRED_GERBIL_RUNTIME_ASSETS: &[&str] = &[
     "build.ss",
     "init.ss",
     "policy/interface.ss",
-    "c-abi/_deck-route-abi.ssi",
-    "c-abi/deck-route-abi.ss",
+    "context/projection.ss",
+    "c-abi/deck-runtime.ss",
     "c-abi/_agent-policy-routing-abi.ssi",
     "policy/projection/deck/policy.ss",
     "policy/projection/graph/continuation.ss",
     "deck-runtime/interface.ss",
     "deck-runtime/runtime.ss",
-    "policy/strategy.ss",
+    "context/interface.ss",
 ];
 
 const REQUIRED_GERBIL_RUNTIME_HARNESS_CAPABILITIES: &[GerbilRuntimeHarnessCapability] = &[

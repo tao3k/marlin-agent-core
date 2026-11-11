@@ -29,14 +29,14 @@ fn gerbil_runtime_asset_receipt_accepts_complete_marlin_runtime_package() {
             "build.ss",
             "init.ss",
             "policy/interface.ss",
-            "c-abi/_deck-route-abi.ssi",
-            "c-abi/deck-route-abi.ss",
+            "context/projection.ss",
+            "c-abi/deck-runtime.ss",
             "c-abi/_agent-policy-routing-abi.ssi",
             "policy/projection/deck/policy.ss",
             "policy/projection/graph/continuation.ss",
             "deck-runtime/interface.ss",
             "deck-runtime/runtime.ss",
-            "policy/strategy.ss",
+            "context/interface.ss",
             "policy/extra-policy.ss",
         ],
     );
@@ -48,7 +48,7 @@ fn gerbil_runtime_asset_receipt_accepts_complete_marlin_runtime_package() {
     assert!(receipt.has_runtime_assets());
     assert_eq!(receipt.asset_count, 13);
     assert_eq!(receipt.package_manifest_count, 1);
-    assert_eq!(receipt.scheme_source_count, 10);
+    assert_eq!(receipt.scheme_source_count, 11);
     assert!(receipt.missing_required_assets.is_empty());
 }
 
@@ -62,14 +62,14 @@ fn gerbil_runtime_asset_receipt_ignores_transient_runtime_cache_dirs() {
             "build.ss",
             "init.ss",
             "policy/interface.ss",
-            "c-abi/_deck-route-abi.ssi",
-            "c-abi/deck-route-abi.ss",
+            "context/projection.ss",
+            "c-abi/deck-runtime.ss",
             "c-abi/_agent-policy-routing-abi.ssi",
             "policy/projection/deck/policy.ss",
             "policy/projection/graph/continuation.ss",
             "deck-runtime/interface.ss",
             "deck-runtime/runtime.ss",
-            "policy/strategy.ss",
+            "context/interface.ss",
             ".run/marlin-harness-policy-negative/gerbil.pkg",
             ".run/marlin-harness-policy-negative/src/macros/core.ss",
             ".direnv/cache.ss",
@@ -84,7 +84,7 @@ fn gerbil_runtime_asset_receipt_ignores_transient_runtime_cache_dirs() {
     assert!(receipt.is_success());
     assert_eq!(receipt.asset_count, 12);
     assert_eq!(receipt.package_manifest_count, 1);
-    assert_eq!(receipt.scheme_source_count, 9);
+    assert_eq!(receipt.scheme_source_count, 10);
     assert!(
         receipt.asset_paths.iter().all(|path| {
             !path.starts_with(".run/")
@@ -151,14 +151,14 @@ fn gerbil_runtime_harness_contract_receipt_accepts_complete_harness_assets() {
             "build.ss",
             "init.ss",
             "policy/interface.ss",
-            "c-abi/_deck-route-abi.ssi",
-            "c-abi/deck-route-abi.ss",
+            "context/projection.ss",
+            "c-abi/deck-runtime.ss",
             "c-abi/_agent-policy-routing-abi.ssi",
             "policy/projection/deck/policy.ss",
             "policy/projection/graph/continuation.ss",
             "deck-runtime/interface.ss",
             "deck-runtime/runtime.ss",
-            "policy/strategy.ss",
+            "context/interface.ss",
             "t/all-test.ss",
             "t/deck-runtime-test.ss",
         ],
@@ -197,14 +197,14 @@ fn gerbil_runtime_harness_contract_receipt_rejects_missing_capability_assets() {
             "build.ss",
             "init.ss",
             "policy/interface.ss",
-            "c-abi/_deck-route-abi.ssi",
-            "c-abi/deck-route-abi.ss",
+            "context/projection.ss",
+            "c-abi/deck-runtime.ss",
             "c-abi/_agent-policy-routing-abi.ssi",
             "policy/projection/deck/policy.ss",
             "policy/projection/graph/continuation.ss",
             "deck-runtime/interface.ss",
             "deck-runtime/runtime.ss",
-            "policy/strategy.ss",
+            "context/interface.ss",
         ],
     );
 
@@ -242,12 +242,12 @@ fn gerbil_runtime_asset_receipt_accepts_real_marlin_gerbil_scheme_package() {
     assert!(
         receipt
             .asset_paths
-            .contains(&"c-abi/_deck-route-abi.ssi".to_owned())
+            .contains(&"context/projection.ss".to_owned())
     );
     assert!(
         receipt
             .asset_paths
-            .contains(&"c-abi/deck-route-abi.ss".to_owned())
+            .contains(&"c-abi/deck-runtime.ss".to_owned())
     );
     assert!(
         receipt

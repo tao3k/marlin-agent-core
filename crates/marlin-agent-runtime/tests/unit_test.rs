@@ -14,8 +14,8 @@ mod runtime_events;
 mod runtime_graph_loop_run_registry;
 #[path = "unit/runtime/graph_loop_runtime.rs"]
 mod runtime_graph_loop_runtime;
-#[path = "unit/runtime/model_route/mod.rs"]
-mod runtime_model_route;
+#[path = "unit/runtime/model_gateway/mod.rs"]
+mod runtime_model_gateway;
 #[path = "unit/runtime/observability.rs"]
 mod runtime_observability;
 #[path = "unit/runtime/process/mod.rs"]

@@ -1,53 +1,8 @@
-;;; Project one owner-local Context batch through the published operation.
-
-(import (only-in :clan/poo/object .get .o)
-        (only-in :std/encoding/hex hex-decode-byte)
+;;; Direct admission uses the same selected Context bridge as Deck actors.
+(import (only-in :clan/poo/object .get)
         (only-in :marlin-agent-core/init marlin-agent-core.init.exports))
-
 (export marlin-context-admit-batch)
-
 (def (marlin-context-admit-batch input)
-  (unless (= (vector-length input) 3) (error "invalid Context batch envelope"))
-  (def shared (vector-ref input 0))
-  (def numbers (vector-ref input 1))
-  (def rows (vector-ref input 2))
-  (def count (vector-length rows))
-  (unless (and (= (vector-length shared) 5)
-               (<= 1 count 64)
-               (= (u64vector-length numbers) (1+ count)))
-    (error "invalid Context batch size"))
-  (def admit (.get marlin-agent-core.init.exports Marlin context admit-scope))
-  (def output (make-u8vector (* count 32)))
-  (def epoch-value (u64vector-ref numbers 0))
-  (let loop ((i 0))
-    (if (= i count)
-      output
-      (let* ((row (vector-ref rows i))
-             (length (vector-length row))
-             (session-id (case length
-                           ((3) #f)
-                           ((4) (let (value (vector-ref row 3))
-                                  (unless (string? value) (error "invalid Context session ID"))
-                                  value))
-                           (else (error "invalid Context batch row"))))
-             (scope (admit
-                      (.o bundle: (vector-ref shared 0)
-                          organization: (vector-ref shared 1)
-                          epoch: epoch-value
-                          project: (vector-ref shared 2)
-                          worktree: (vector-ref shared 3)
-                          source-cut: (vector-ref shared 4)
-                          actor: (vector-ref row 0)
-                          task: (vector-ref row 1)
-                          destination: (vector-ref row 2)
-                          session: session-id
-                          turn: (and session-id (u64vector-ref numbers (1+ i)))))))
-        (let (digest (.get scope semantic-digest))
-          (unless (and (= (string-length digest) 71)
-                       (string=? (substring digest 0 7) "sha256:"))
-            (error "unexpected Lab Context digest"))
-          (let copy ((j 0))
-            (when (< j 32)
-              (u8vector-set! output (+ (* i 32) j) (hex-decode-byte digest (+ 7 (* 2 j))))
-              (copy (1+ j)))))
-        (loop (1+ i))))))
+  (def context (.get marlin-agent-core.init.exports Marlin context))
+  ((.get context bridge encode-scopes)
+    (vector-map (.get context admit-scope) ((.get context bridge decode-batch) input))))

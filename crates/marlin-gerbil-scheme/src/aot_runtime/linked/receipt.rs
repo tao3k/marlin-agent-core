@@ -1,10 +1,8 @@
 //! Receipt types for native Gerbil runtime AOT artifact planning.
 
 use super::{
-    config::{
-        GerbilCCompiler, GerbilDeckRuntimeAotProfile, GerbilLinkLibrary, GerbilSymbolAuditor,
-    },
-    status::{GerbilDeckRuntimeAotBuildStatus, GerbilDeckRuntimeAotStatus},
+    config::{GerbilAotProfile, GerbilCCompiler, GerbilLinkLibrary, GerbilSymbolAuditor},
+    status::{GerbilAotBuildStatus, GerbilAotStatus},
 };
 use crate::{
     GerbilSchemeAbiSymbol, GerbilSchemeCAbiContract, GerbilSchemeCAbiId,
@@ -15,9 +13,9 @@ use std::path::PathBuf;
 
 /// Exported C symbol name owned by the native Deck runtime ABI.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct GerbilDeckRouteAbiSymbol(String);
+pub struct GerbilAotSymbol(String);
 
-impl GerbilDeckRouteAbiSymbol {
+impl GerbilAotSymbol {
     pub fn new(value: impl Into<String>) -> Self {
         Self(value.into())
     }
@@ -27,22 +25,22 @@ impl GerbilDeckRouteAbiSymbol {
     }
 }
 
-impl From<&GerbilDeckRouteAbiSymbol> for GerbilSchemeAbiSymbol {
-    fn from(symbol: &GerbilDeckRouteAbiSymbol) -> Self {
+impl From<&GerbilAotSymbol> for GerbilSchemeAbiSymbol {
+    fn from(symbol: &GerbilAotSymbol) -> Self {
         Self::new(symbol.as_str())
     }
 }
 
 /// Program and argv for one native AOT compiler phase.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct GerbilDeckRuntimeAotCommandPlan {
+pub struct GerbilAotCommandPlan {
     pub program: PathBuf,
     pub args: Vec<String>,
 }
 
 /// Captured command result for a native AOT compiler phase.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct GerbilDeckRuntimeAotCommandReceipt {
+pub struct GerbilAotCommandReceipt {
     pub status_code: Option<i32>,
     pub stdout: String,
     pub stderr: String,
@@ -50,16 +48,16 @@ pub struct GerbilDeckRuntimeAotCommandReceipt {
 
 /// Mechanism used to verify required symbols on generated native objects.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum GerbilDeckRouteAbiSymbolAuditMethod {
+pub enum GerbilAotSymbolAuditMethod {
     ObjectFiles,
     SymbolTableCommand,
 }
 
 /// Typed plan for producing a Rust-linkable native Gerbil runtime link unit.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct GerbilDeckRuntimeAotPlan {
-    pub profile: GerbilDeckRuntimeAotProfile,
-    pub status: GerbilDeckRuntimeAotStatus,
+pub struct GerbilAotPlan {
+    pub profile: GerbilAotProfile,
+    pub status: GerbilAotStatus,
     pub root: PathBuf,
     pub output_dir: PathBuf,
     pub compiled_runtime_scm: PathBuf,
@@ -70,20 +68,20 @@ pub struct GerbilDeckRuntimeAotPlan {
     pub module_objects: Vec<PathBuf>,
     pub link_c_source: PathBuf,
     pub link_object: PathBuf,
-    pub exported_symbols: Vec<GerbilDeckRouteAbiSymbol>,
+    pub exported_symbols: Vec<GerbilAotSymbol>,
     pub c_compiler: Option<GerbilCCompiler>,
     pub symbol_auditor: GerbilSymbolAuditor,
     pub gambit_link_library: GerbilLinkLibrary,
     pub gambit_link_search_dir: Option<PathBuf>,
-    pub gsc_compile_object: GerbilDeckRuntimeAotCommandPlan,
-    pub gsc_compile_dependency_objects: Vec<GerbilDeckRuntimeAotCommandPlan>,
-    pub gsc_generate_link_source: GerbilDeckRuntimeAotCommandPlan,
-    pub gsc_compile_link_object: GerbilDeckRuntimeAotCommandPlan,
-    pub audit_symbols: GerbilDeckRuntimeAotCommandPlan,
+    pub gsc_compile_object: GerbilAotCommandPlan,
+    pub gsc_compile_dependency_objects: Vec<GerbilAotCommandPlan>,
+    pub gsc_generate_link_source: GerbilAotCommandPlan,
+    pub gsc_compile_link_object: GerbilAotCommandPlan,
+    pub audit_symbols: GerbilAotCommandPlan,
     pub detail: Option<String>,
 }
 
-impl GerbilDeckRuntimeAotPlan {
+impl GerbilAotPlan {
     /// Convert this native build plan into a Scheme package native ABI contract.
     pub fn scheme_c_abi_contract(&self) -> GerbilSchemeCAbiContract {
         GerbilSchemeCAbiContract::new(
@@ -116,31 +114,31 @@ impl GerbilDeckRuntimeAotPlan {
 
 /// Structured result for executing a native Deck runtime AOT link-unit build.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct GerbilDeckRuntimeAotBuildReceipt {
-    pub status: GerbilDeckRuntimeAotBuildStatus,
-    pub plan: GerbilDeckRuntimeAotPlan,
+pub struct GerbilAotBuildReceipt {
+    pub status: GerbilAotBuildStatus,
+    pub plan: GerbilAotPlan,
     pub detail: Option<String>,
-    pub gsc_compile_object: Option<GerbilDeckRuntimeAotCommandReceipt>,
-    pub gsc_compile_dependency_objects: Vec<GerbilDeckRuntimeAotCommandReceipt>,
-    pub gsc_generate_link_source: Option<GerbilDeckRuntimeAotCommandReceipt>,
-    pub gsc_compile_link_object: Option<GerbilDeckRuntimeAotCommandReceipt>,
-    pub symbol_audit_method: Option<GerbilDeckRouteAbiSymbolAuditMethod>,
-    pub symbol_audit: Option<GerbilDeckRuntimeAotCommandReceipt>,
-    pub missing_symbols: Vec<GerbilDeckRouteAbiSymbol>,
+    pub gsc_compile_object: Option<GerbilAotCommandReceipt>,
+    pub gsc_compile_dependency_objects: Vec<GerbilAotCommandReceipt>,
+    pub gsc_generate_link_source: Option<GerbilAotCommandReceipt>,
+    pub gsc_compile_link_object: Option<GerbilAotCommandReceipt>,
+    pub symbol_audit_method: Option<GerbilAotSymbolAuditMethod>,
+    pub symbol_audit: Option<GerbilAotCommandReceipt>,
+    pub missing_symbols: Vec<GerbilAotSymbol>,
 }
 
-impl GerbilDeckRuntimeAotBuildReceipt {
+impl GerbilAotBuildReceipt {
     /// Project the executed native AOT build into the graph-loop ABI readiness gate.
     pub fn graph_c_abi_readiness_receipt(&self) -> GraphCAbiReadinessReceipt {
         let requirement = self.plan.graph_c_abi_requirement();
         let available_symbols = match self.status {
-            GerbilDeckRuntimeAotBuildStatus::LinkUnitReady => self
+            GerbilAotBuildStatus::LinkUnitReady => self
                 .plan
                 .exported_symbols
                 .iter()
                 .map(|symbol| symbol.as_str().to_owned())
                 .collect::<Vec<_>>(),
-            GerbilDeckRuntimeAotBuildStatus::RequiredSymbolsMissing => self
+            GerbilAotBuildStatus::RequiredSymbolsMissing => self
                 .plan
                 .exported_symbols
                 .iter()

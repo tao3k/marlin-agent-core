@@ -31,7 +31,3 @@
                (not (.get selection matched))
                (not (.get selection dynamic-hook-action)))
     (error "Hooks must publish its decision selector through init" selection)))
-
-(let (policy (.get marlin-agent-core.init.exports Marlin policy))
-  (unless (eq? ((.get policy select-model-route) '() '() #f "test" "local") #f)
-    (error "empty policy must not select a model route")))
