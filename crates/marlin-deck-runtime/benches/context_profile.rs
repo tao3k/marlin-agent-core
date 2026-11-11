@@ -192,6 +192,27 @@ fn retention(runtime: &GerbilRuntime) -> Result<(), Box<dyn Error>> {
         let mut registry = NumericBuffer::<u64>::default();
         snapshot.element(1)?.as_ref().copy_numeric(&mut registry)?;
         assert_eq!(registry.as_slice().len(), 4);
+        let mut graph = NumericBuffer::<u64>::default();
+        snapshot.element(2)?.as_ref().copy_numeric(&mut graph)?;
+        assert_eq!(graph.as_slice().len(), 9);
+        let graph = graph.as_slice();
+        assert!(graph[0] >= graph[1] + graph[2]);
+        assert!(graph[1] >= registry.as_slice()[1]);
+        assert!(graph[3] >= registry.as_slice()[2]);
+        assert!(graph[4] >= registry.as_slice()[3]);
+        assert!(graph[5] + graph[6] <= graph[1] + graph[2]);
+        println!(
+            "retention_graph_stage={name} contexts={} module_contexts={} prelude_contexts={} bindings={} code_bodies={} pending_promises={} determined_promises={} import_visits={} export_visits={} ownership_graph_mutated=false",
+            graph[0],
+            graph[1],
+            graph[2],
+            graph[3],
+            graph[4],
+            graph[5],
+            graph[6],
+            graph[7],
+            graph[8]
+        );
         println!(
             "retention_registry_stage={name} entries={} unique_contexts={} context_bindings={} context_code_bodies={}",
             registry.as_slice()[0],

@@ -101,8 +101,21 @@ validation, admission, digest, encode and Actor operations independently. It
 checks and optionally writes all 4096 result digests. These prepared phases
 retain different live sets from the production =single_vm_actor= workload.
 
+Its =retention= mode is a separate zero-business-message diagnostic with forced
+GC. It reports both direct compiler registry entries and the wider phase,
+import/export ownership graph through the existing Gerbil accessors. Import
+and export totals count visits, not unique objects or allocation bytes. The
+maintained probe does not clear contexts, bindings, promises or registry roots;
+its timings do not qualify production latency.
+
 =context-profiling= records per-owner-turn C ABI stages, native GC and completion
 ages. It buffers at most 65,536 turns and explicitly reports truncation; output
 occurs after shutdown. Run the ordinary release benchmark without this feature
 for acceptance. Neither instrumentation nor component timing replaces full
 Context latency evidence in the [[file:../../docs/40-rfcs/40.166-plugin-contract.org::#context-runtime-cost-attribution][cost attribution RFC]].
+
+
+When opening the VM fails, debug builds also print the existing SDK call-error
+diagnostic. This consumes the SDK-owned diagnostic root on the VM owner;
+release profiling retains its opt-in diagnostics and ordinary receipts remain
+typed.

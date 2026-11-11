@@ -118,8 +118,11 @@ package MarlinSingleVmRuntime {
                    support. This control state has a separate lifetime from
                    business Actors and their message credits. Module retirement
                    joins owned work without discarding compiler authority.
-                   Retention diagnostics locate code and binding roots; removing
-                   those roots in a disposable probe grants no production path. */
+                   Read-only retention diagnostics follow phase and import/export
+                   edges to locate code, bindings and evaluation promises beyond
+                   the registry's direct entries. Edge visits are not unique
+                   object counts or physical bytes. Removing compiler roots in
+                   a disposable probe grants no production path. */
         }
         dependency costObservesPublication from contextCosts to publicationState;
         dependency moduleOwnsActors from moduleCatalog to contextActors;

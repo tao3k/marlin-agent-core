@@ -20,11 +20,6 @@ impl GerbilAotConfig {
     pub fn new_for_profile(root: impl Into<PathBuf>, profile: GerbilAotProfile) -> Self {
         let root = root.into();
         let output_dir = aot_output_dir(&root);
-        let compiled_runtime_dependency_scms = profile
-            .dependency_artifact_stems()
-            .iter()
-            .map(|stem| default_compiled_runtime_scm(&output_dir, stem))
-            .collect();
         Self {
             profile,
             root,
@@ -32,7 +27,8 @@ impl GerbilAotConfig {
                 &output_dir,
                 profile.artifact_stem(),
             ),
-            compiled_runtime_dependency_scms,
+            // The .ssi is included in the main source, not an independent module.
+            compiled_runtime_dependency_scms: Vec::new(),
             output_dir,
             gsc: default_gerbil_gsc_program(),
             header: PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(profile.header_path()),
@@ -53,12 +49,7 @@ impl GerbilAotConfig {
         let output_dir = output_dir.into();
         self.compiled_runtime_scm =
             default_compiled_runtime_scm(&output_dir, self.profile.artifact_stem());
-        self.compiled_runtime_dependency_scms = self
-            .profile
-            .dependency_artifact_stems()
-            .iter()
-            .map(|stem| default_compiled_runtime_scm(&output_dir, stem))
-            .collect();
+        self.compiled_runtime_dependency_scms.clear();
         self.output_dir = output_dir;
         self
     }

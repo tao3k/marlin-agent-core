@@ -9,7 +9,6 @@ use crate::{
 
 use super::paths::{
     GERBIL_AGENT_POLICY_ROUTING_ABI_ARTIFACT_STEM,
-    GERBIL_AGENT_POLICY_ROUTING_ABI_BINDING_ARTIFACT_STEM,
     GERBIL_AGENT_POLICY_ROUTING_ABI_INITIALIZE_SYMBOL,
     GERBIL_AGENT_POLICY_ROUTING_ABI_SELECT_SYMBOL,
 };
@@ -78,12 +77,6 @@ impl GerbilAotProfile {
     pub(super) const fn artifact_stem(self) -> &'static str {
         match self {
             Self::AgentPolicyRouting => GERBIL_AGENT_POLICY_ROUTING_ABI_ARTIFACT_STEM,
-        }
-    }
-
-    pub(super) const fn dependency_artifact_stems(self) -> &'static [&'static str] {
-        match self {
-            Self::AgentPolicyRouting => &[GERBIL_AGENT_POLICY_ROUTING_ABI_BINDING_ARTIFACT_STEM],
         }
     }
 

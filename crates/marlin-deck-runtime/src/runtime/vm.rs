@@ -31,7 +31,7 @@ unsafe extern "C" {
         state: *mut gerbil_scheme_sys::GerbilGlobalState,
     ) -> *mut gerbil_scheme_sys::GerbilModuleOrLink;
     fn marlin_deck_runtime_open(root: i64) -> i64;
-    #[cfg(feature = "context-profiling")]
+    #[cfg(any(debug_assertions, feature = "context-profiling"))]
     fn gerbil_scheme_rust_take_call_error_raw() -> i64;
     fn marlin_deck_runtime_submit(root: i64) -> i64;
     fn marlin_deck_runtime_receive(root: i64) -> i64;
@@ -76,7 +76,7 @@ impl<'vm> DeckVm<'vm> {
         let control = runtime.scalar_object(SchemeScalar::Boolean(false))?;
         let wake = runtime.numeric_vector(&wake_fds)?;
         let result = open.call(&wake).into_result().inspect_err(|_| {
-            #[cfg(feature = "context-profiling")]
+            #[cfg(any(debug_assertions, feature = "context-profiling"))]
             emit_scheme_diagnostic(runtime, &control);
         })?;
         // The C ABI uses a Boolean acknowledgement, never a serialized receipt.
@@ -378,7 +378,7 @@ impl Drop for DeckVm<'_> {
     }
 }
 
-#[cfg(feature = "context-profiling")]
+#[cfg(any(debug_assertions, feature = "context-profiling"))]
 fn emit_scheme_diagnostic(runtime: &GerbilRuntime, input: &RootedSchemeObject<'_>) {
     unsafe extern "C" fn take_error(_: i64) -> i64 {
         // SAFETY: consume one SDK-owned diagnostic root on its VM owner.

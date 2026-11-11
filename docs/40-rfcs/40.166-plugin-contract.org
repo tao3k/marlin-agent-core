@@ -2360,3 +2360,106 @@ or replacing the descriptor with a consumer-local shortcut would change the
 contract. Any representation improvement belongs in that existing POO owner
 and requires its mutation/observer controls plus the complete Marlin cohort;
 this investigation introduces no alternate validation or read authority.
+
+*** Import/export ownership beyond the registry and phase links
+
+A further disposable control removes the registered/phase contexts' existing
+import/export relation roots after the earlier code, table and evaluator
+controls. In the run with the extended read-only linkage census, retained
+memory drops from 96,747,288 to 24,173,848 bytes: 72,573,440 additional bytes
+are attributed to those roots in that cut. Clearing the registry afterwards
+reaches 23,794,920 bytes, only 378,928 bytes lower. These values do not prove
+that either the import/export records alone or the registry alone has that
+shallow size. They include everything made unreachable by each ordered cut.
+
+The paired Gerbil types explain the missed edges: a =module-import= references
+a =module-export=, whose =context= can lead outside the registry/phase closure.
+Following those standard accessors, in addition to =super/up/down=, observes
+955 contexts, including 524 module contexts and six preludes, with 343,366
+bindings and 524 code bodies at Lab publication. This is 33 module contexts
+and 8,267 bindings beyond the narrower 890-context traversal. After the
+registered/phase code, table and evaluator cuts, those additional contexts
+still retain 33 code bodies and 33 determined evaluator promises. The graph
+has 388,515 import visits and 499,882 export visits; these are traversal visits,
+not unique object counts. Removing the relation roots removes those additional
+contexts from the traversal. No Module operation follows the destructive cuts,
+and every such mutation has been removed from the maintained benchmark.
+
+The maintained =compiler-roots.ss= diagnostic uses only the existing Gerbil
+context/import/export accessors and local ephemeral traversal tables. It counts
+registered roots separately from the wider graph, does not create contexts or
+force evaluator promises, and never mutates compiler ownership. The existing
+=retention= benchmark invokes it only in its separate forced-GC mode; timed
+production and component phases do not perform this traversal. Native numeric
+buffers carry the counts to Rust, which checks shape and subset consistency.
+The zero-business-message/Actor control remains mandatory. The SysML
+publication-state owner records this boundary.
+
+Approximately 23.8 MB remains without individual-owner attribution after the
+final destructive cut; this includes the VM/application baseline, which is
+about 3.05 MB before selection in that run. No optimization claim follows from
+that remainder or from the forced-GC times. Production retains the complete
+compiler ownership graph and its source/currentness authority. The newer
+Yuanxu PR 19 remains at =0fc1a866= with successful proofs and failed complete
+Yuanxu CI when rechecked; it is not promoted as a qualified dependency fix.
+
+*** Included ABI source has one object owner
+
+The old =f2a24fa= Linux gate completes dependency installation and fails on a
+duplicate =marlin_agent_policy_routing_initialize= definition. The =.ssi= is
+already lexically included by the main policy ABI source, yet the old build
+profile compiles it again as an independent module. Both generated objects
+contain the exported initializer. This is distinct from the earlier stale
+linker-name fault.
+
+The profile now builds the main source once and retains the included =.ssi=
+as a rebuild input. The extra binding artifact name and its default module
+object are removed. Explicit, genuinely independent module dependencies still
+compile before the main unit; a missing explicit dependency still prevents
+readiness. The focused suite checks both cases. One old fixture initially
+expected the removed third link argument and failed; its corrected complete
+ten-test suite passes. The original failure remains recorded.
+
+Using the current PR's Scheme Rust =0d92f7b= revision in an isolated dependency
+overlay, the real selector suite passes three tests. The resulting archive has
+only =agent-policy-routing-abi~0.o= and =agent-policy-routing-abi~0_.o= and one
+exported initializer definition. A relocatable link with the old two generated
+module objects is a matched negative control: it fails on the duplicate
+initializer. The new main/linker pair links successfully. These controls do
+not substitute for the pending cross-platform remote gate.
+
+Eleven Deck tests also pass at =0d92f7b=, covering the real Actor, Module
+retirement and autonomous timer path; the maintained read-only retention
+benchmark passes with zero business messages/Actors and the 955-context phase/import/export
+graph. The dependency overlay changes only the four existing SDK git pins
+and is saved independently; the isolated baseline manifests are restored
+instead of copying the concurrent TUI/Org migration into the test workspace.
+Earlier production latency cohorts retain their recorded =bfe803f5= identity.
+
+The =d90ef488= macOS remote gate gets past compilation but reports a Scheme
+exception during Actor opening, as =linked object export= status 3. Its cause
+is not established by the status alone. Debug builds now reuse the SDK's
+existing consumed-error-root projection to emit the underlying diagnostic;
+release profiling keeps the same opt-in behavior. Successful release requests
+retain the ordinary typed result path. The change adds no error wire format,
+no admission bypass, and no alternate compiler/source authority. Whole-PR CI
+and complete Context latency remain unqualified.
+
+
+The strict Rust checks retain the SDK's actual image modes. A combined
+all-target command for Deck plus the package-test crate enables
+=external-program= through Deck while compiling the in-process Builder test;
+that command fails because the SDK deliberately excludes =runtime::build= in
+that mode. Its error record is retained. Separate all-target checks exercise
+the external Deck image and the default Builder image, respectively. No test
+or SDK guard is deleted to turn the incompatible combined command into a pass.
+
+
+At the final local cut, both mode-specific all-target Clippy commands pass with
+warnings denied, workspace formatting passes, and the original SDK Builder plus
+complete =t/all-test.ss= package entry passes =MODULE-OK=, =HARNESS-OK=, final
+=OK= and natural exit 0 in 83.43 seconds at =0d92f7b=. The ten focused AOT plan
+checks, ten build-support tests, three linked selector tests and eleven Deck
+tests pass. The read-only diagnostic remains separate from production latency;
+OpenSysML strict validation/self-check remains 522 elements, 4,993 checks and
+zero violations. The recorded latency objective is still unmet.

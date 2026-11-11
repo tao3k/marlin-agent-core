@@ -2,7 +2,7 @@
 package: marlin-benchmark
 (import (only-in :clan/poo/object .get)
         (only-in :clan/poo/mop validate)
-        (only-in :gerbil/expander __module-registry module-context? expander-context-table module-context-code)
+        (only-in :marlin-benchmark/compiler-roots compiler-roots-snapshot)
         (only-in :marlin-benchmark/mailbox mailbox-clock-ns)
         (only-in :agentic-ai-lab/modules/ai-agentic-context/types
                  agentic-ai-lab-ai-agentic-context-scope-shape? AiAgenticContextAdmissionType)
@@ -127,20 +127,11 @@ static void marlin_context_set_phase(int phase) { marlin_context_profile_phase =
 (def (run-context-retention-profile _)
   (def snapshots [])
   (def (snapshot)
-    (def contexts (make-hash-table-eq))
-    (def bindings 0)
-    (def code-bodies 0)
-    (hash-for-each
-      (lambda (_key context)
-        (when (and (module-context? context) (not (hash-key? contexts context)))
-          (hash-put! contexts context #t)
-          (when (module-context-code context) (set! code-bodies (1+ code-bodies)))
-          (set! bindings (+ bindings (hash-length (expander-context-table context))))))
-      __module-registry)
-    (def registry (u64vector (hash-length __module-registry) (hash-length contexts) bindings code-bodies))
-    (set! contexts #f)
+    (def roots (compiler-roots-snapshot))
+    ;; The traversal's temporary tables die before the forced diagnostic GC.
     (##gc)
-    (set! snapshots (cons (vector (##process-statistics) registry) snapshots)))
+    (set! snapshots
+      (cons (vector (##process-statistics) (vector-ref roots 0) (vector-ref roots 1)) snapshots)))
   (snapshot)
   (context-profile-phase! 10)
   (def lab (.get marlin-agent-core.init.exports Lab ai-agentic-context))
