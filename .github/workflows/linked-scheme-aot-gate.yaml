@@ -71,7 +71,7 @@ jobs:
               ;;
           esac
 
-      - uses: tao3k/gerbil-scheme-rust/.github/actions/setup-gerbil@bfe803f597a15a3654b70a64c3a039980c31da8a
+      - uses: tao3k/gerbil-scheme-rust/.github/actions/setup-gerbil@0d92f7bee8c23b373ccd116be6f17701c4c4aac6
         with:
           release-root: ${{ runner.temp }}/gerbil
 
