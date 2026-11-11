@@ -1,0 +1,5 @@
+(import (only-in :clan/poo/mop validate)
+        "./types.ss" "./objects.ss")
+(export make-c-abi-scope)
+(def (make-c-abi-scope ui context deck)
+  (validate CAbiScopeContract (make-c-abi-operations ui context deck)))

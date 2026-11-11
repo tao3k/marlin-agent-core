@@ -37,6 +37,7 @@ case and publication identities remain with that project.
 | [[file:plugin-lifecycle.sysml][plugin-lifecycle.sysml]] | Target activation generation and run lifecycle | [[file:../../docs/40-rfcs/40.166-plugin-contract.org::#plugin-lifecycle][Grants and lifecycle]] |
 | [[file:plugin-execution.sysml][plugin-execution.sysml]] | Target plugin request flow, stage allocations, and Scheme batch boundaries | [[file:../../docs/40-rfcs/40.166-plugin-contract.org::#plugin-request-path][plugin request execution and batching]] |
 | [[file:tui-architecture.sysml][tui-architecture.sysml]] | Inspected TUI facts, proposed ownership, performance and evidence requirements | [[file:../../docs/40-rfcs/40.180-codewhale-inspired-tui.org::#tui-performance][TUI design and qualification]] |
+| [[file:tui-declarative-engine.sysml][tui-declarative-engine.sysml]] | Marlin's Scheme/Rust UI engine, admission lifecycle, composability and performance qualification | [[file:../../docs/40-rfcs/40.180-codewhale-inspired-tui.org::#tui-performance][Declarative UI design]] |
 | [[file:tui-lifecycle.sysml][tui-lifecycle.sysml]] | Proposed turn lifecycle and cancellation retirement | [[file:../../docs/40-rfcs/40.180-codewhale-inspired-tui.org::#tui-performance][TUI design and qualification]] |
 | [[file:context-org-lifecycle.sysml][context-org-lifecycle.sysml]] | Target Org turn persistence, current-use admission and uncertainty | [[file:../../docs/40-rfcs/40.181-context-org-ownership.org][Context-owned Org architecture]] |
 

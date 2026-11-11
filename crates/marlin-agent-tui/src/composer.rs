@@ -251,6 +251,24 @@ impl Composer {
             .unwrap_or(self.text.len());
     }
 
+    /// Measure the draft only until the available space is filled.
+    pub(crate) fn preferred_rows(&self, width: u16, max_rows: u16) -> u16 {
+        if width == 0 || max_rows == 0 {
+            return 0;
+        }
+        let width = usize::from(width);
+        let limit = usize::from(max_rows);
+        let (mut row, mut col) = (0usize, 0usize);
+        for grapheme in self.text.graphemes(true) {
+            advance(grapheme, width, &mut row, &mut col);
+            if row >= limit {
+                return max_rows;
+            }
+        }
+        let (row, _) = visible_position(row, col, width);
+        (row + 1).min(limit) as u16
+    }
+
     /// Layout the cursor's visible rows without retaining the entire wrapped draft.
     pub(crate) fn view(&self, width: u16, height: u16) -> Option<ComposerView> {
         if width == 0 || height == 0 {

@@ -1,5 +1,5 @@
 {
-  "checksum": "39a93eee32e2e41b8f9d10cf478630ec06ee4816b5bdecdee2d9c8a7b1cd809a",
+  "checksum": "fb6f0a9799c11fa9af9d037296ebe33cc67deb3c17cf93089a70e48c8cdc10b6",
   "crates": {
     "adler2 2.0.1": {
       "name": "adler2",
@@ -4112,21 +4112,11 @@
         "compile_data_glob": [
           "**"
         ],
-        "crate_features": {
-          "common": [
-            "rng"
-          ],
-          "selects": {}
-        },
         "deps": {
           "common": [
             {
               "id": "cfg-if 1.0.5",
               "target": "cfg_if"
-            },
-            {
-              "id": "rand_core 0.10.1",
-              "target": "rand_core"
             }
           ],
           "selects": {
@@ -6842,7 +6832,7 @@
               "target": "data_encoding"
             },
             {
-              "id": "syn 2.0.119",
+              "id": "syn 3.0.10",
               "target": "syn"
             }
           ],
@@ -7712,7 +7702,7 @@
             ],
             "cfg(windows)": [
               {
-                "id": "windows-sys 0.52.0",
+                "id": "windows-sys 0.61.2",
                 "target": "windows_sys"
               }
             ]
@@ -9401,7 +9391,7 @@
         "Git": {
           "remote": "https://github.com/tao3k/gerbil-scheme-rust",
           "commitish": {
-            "Rev": "0d92f7bee8c23b373ccd116be6f17701c4c4aac6"
+            "Rev": "a00e62ea9875f1e2fca1514134eb596754c0a4e5"
           },
           "strip_prefix": "crates/gerbil-scheme-build"
         }
@@ -10004,8 +9994,7 @@
         ],
         "crate_features": {
           "common": [
-            "std",
-            "sys_rng"
+            "std"
           ],
           "selects": {
             "wasm32-unknown-unknown": [
@@ -10022,10 +10011,6 @@
             {
               "id": "getrandom 0.4.3",
               "target": "build_script_build"
-            },
-            {
-              "id": "rand_core 0.10.1",
-              "target": "rand_core"
             }
           ],
           "selects": {
@@ -22554,7 +22539,7 @@
                 "target": "once_cell"
               },
               {
-                "id": "windows-sys 0.52.0",
+                "id": "windows-sys 0.61.2",
                 "target": "windows_sys"
               }
             ]
@@ -23004,26 +22989,8 @@
         "compile_data_glob": [
           "**"
         ],
-        "crate_features": {
-          "common": [
-            "alloc",
-            "std",
-            "std_rng",
-            "sys_rng",
-            "thread_rng"
-          ],
-          "selects": {}
-        },
         "deps": {
           "common": [
-            {
-              "id": "chacha20 0.10.2",
-              "target": "chacha20"
-            },
-            {
-              "id": "getrandom 0.4.3",
-              "target": "getrandom"
-            },
             {
               "id": "rand_core 0.10.1",
               "target": "rand_core"
@@ -25125,7 +25092,7 @@
                 "alias": "libc_errno"
               },
               {
-                "id": "windows-sys 0.52.0",
+                "id": "windows-sys 0.61.2",
                 "target": "windows_sys"
               }
             ],
@@ -25508,7 +25475,7 @@
             ],
             "cfg(windows)": [
               {
-                "id": "windows-sys 0.52.0",
+                "id": "windows-sys 0.61.2",
                 "target": "windows_sys"
               }
             ]
@@ -28831,13 +28798,13 @@
           "selects": {
             "aarch64-apple-darwin": [
               {
-                "id": "getrandom 0.3.4",
+                "id": "getrandom 0.4.3",
                 "target": "getrandom"
               }
             ],
             "aarch64-unknown-linux-gnu": [
               {
-                "id": "getrandom 0.3.4",
+                "id": "getrandom 0.4.3",
                 "target": "getrandom"
               }
             ],
@@ -28849,31 +28816,31 @@
             ],
             "cfg(windows)": [
               {
-                "id": "windows-sys 0.52.0",
+                "id": "windows-sys 0.61.2",
                 "target": "windows_sys"
               }
             ],
             "wasm32-wasip1": [
               {
-                "id": "getrandom 0.3.4",
+                "id": "getrandom 0.4.3",
                 "target": "getrandom"
               }
             ],
             "x86_64-pc-windows-msvc": [
               {
-                "id": "getrandom 0.3.4",
+                "id": "getrandom 0.4.3",
                 "target": "getrandom"
               }
             ],
             "x86_64-unknown-linux-gnu": [
               {
-                "id": "getrandom 0.3.4",
+                "id": "getrandom 0.4.3",
                 "target": "getrandom"
               }
             ],
             "x86_64-unknown-nixos-gnu": [
               {
-                "id": "getrandom 0.3.4",
+                "id": "getrandom 0.4.3",
                 "target": "getrandom"
               }
             ]
@@ -32472,7 +32439,7 @@
         "deps": {
           "common": [
             {
-              "id": "rand 0.10.3",
+              "id": "rand 0.9.5",
               "target": "rand"
             }
           ],
@@ -34603,7 +34570,7 @@
           "selects": {
             "cfg(windows)": [
               {
-                "id": "windows-sys 0.52.0",
+                "id": "windows-sys 0.61.2",
                 "target": "windows_sys"
               }
             ]
@@ -35346,15 +35313,7 @@
             "Win32_NetworkManagement_IpHelper",
             "Win32_Networking",
             "Win32_Networking_WinSock",
-            "Win32_Security",
-            "Win32_Security_Cryptography",
-            "Win32_Storage",
-            "Win32_Storage_FileSystem",
             "Win32_System",
-            "Win32_System_Console",
-            "Win32_System_Diagnostics",
-            "Win32_System_Diagnostics_Debug",
-            "Win32_System_SystemInformation",
             "Win32_System_Threading",
             "default"
           ],
@@ -35421,6 +35380,7 @@
             "Win32_Networking",
             "Win32_Networking_WinSock",
             "Win32_Security",
+            "Win32_Security_Cryptography",
             "Win32_Storage",
             "Win32_Storage_FileSystem",
             "Win32_System",
@@ -35444,7 +35404,6 @@
               "Win32_Security_Authentication",
               "Win32_Security_Authentication_Identity",
               "Win32_Security_Credentials",
-              "Win32_Security_Cryptography",
               "Win32_System_LibraryLoader"
             ]
           }

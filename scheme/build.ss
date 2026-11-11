@@ -17,4 +17,4 @@
 
 (export main)
 
-(defbuild-script ((.get marlin-agent-core.init.exports std-make-spec) '("init" "c-abi/deck-runtime")))
+(defbuild-script ((.get marlin-agent-core.init.exports std-make-spec) '("init")))

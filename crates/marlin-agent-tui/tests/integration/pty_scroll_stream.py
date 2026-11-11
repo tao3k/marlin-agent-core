@@ -20,6 +20,7 @@ listener.listen(1)
 port = listener.getsockname()[1]
 release = threading.Event()
 sent = threading.Event()
+initial_sent = threading.Event()
 errors = []
 
 
@@ -35,6 +36,7 @@ def serve():
             while len(body) < length:
                 body += connection.recv(4096)
             connection.sendall(b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nConnection: close\r\n\r\n" + b'data: {"type":"response.output_text.delta","delta":"INITIAL"}\n\n')
+            initial_sent.set()
             if not release.wait(15):
                 raise TimeoutError("scroll fixture was not released")
             chunk = "\n" + "\n".join(f"FRESH_ROW_{i:02}" for i in range(30))
@@ -80,7 +82,11 @@ with tempfile.TemporaryDirectory() as directory:
         until(b"Marlin")
         prompt = "\n".join(f"HISTORY_ROW_{i:02}" for i in range(50)).encode()
         os.write(master, b"\x1b[200~" + prompt + b"\x1b[201~\r")
-        until(b"INITIAL")
+        assert initial_sent.wait(10), "fixture did not send the initial chunk"
+        # Ratatui may split text into cell updates over pre-existing content.
+        # The assistant role establishes that the client rendered the chunk;
+        # searching the raw output for its contiguous text is not reliable.
+        until(b"Assistant")
         for rows, cols in [(12, 32), (8, 12), (24, 100), (20, 80)]:
             fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
             pump(.25)
@@ -101,9 +107,28 @@ with tempfile.TemporaryDirectory() as directory:
         # Ratatui emits terminal-cell differences, so later rows can be updates
         # to only their numeric suffix rather than complete strings.
         until(b"FRESH_ROW_00")
+        # Search is a modal preview. Its Enter accepts into the composer; it
+        # must not submit a second request, and Escape restores the draft.
+        os.write(master, b"draft before search")
+        pump(.2)
+        output.clear()
+        os.write(master, b"\x12")  # Ctrl-R
+        until(b"Search:")
+        os.write(master, b"HISTORY_ROW_05")
+        pump(.3)
+        output.clear()
+        os.write(master, b"\x1b")  # cancel search
+        until(b"draft before search")
+        output.clear()
+        os.write(master, b"\x12HISTORY_ROW_05")
+        until(b"Search:")
+        os.write(master, b"\r")  # accept preview, do not submit
+        pump(.3)
+        assert process.poll() is None, "TUI exited while searching history"
+        assert not select.select([listener], [], [], .2)[0], "accepting history sent a second request"
         os.write(master, b"\x11")
         assert process.wait(timeout=10) == 0
-        print("PTY scroll fixture passed: live resize survived and streamed tail preserved history until navigating down")
+        print("PTY fixture passed: resize, streaming scroll, and history search input")
     finally:
         release.set()
         if process.poll() is None:

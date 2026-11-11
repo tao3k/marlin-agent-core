@@ -49,10 +49,10 @@ async-trait = "0.1.92"
 asp-rust = { git = "https://github.com/tao3k/asp-rust", rev = "2419414ee5379bad89506496e3eaab928df68daf", version = "0.1.2", default-features = false, features = ["native-syntax"] }
 cc = "1.11.1"
 criterion = "0.8.2"
-gerbil-scheme = { git = "https://github.com/tao3k/gerbil-scheme-rust", rev = "0d92f7bee8c23b373ccd116be6f17701c4c4aac6", version = "0.1.0" }
-gerbil-scheme-sys = { git = "https://github.com/tao3k/gerbil-scheme-rust", rev = "0d92f7bee8c23b373ccd116be6f17701c4c4aac6", version = "0.1.0" }
-gerbil-scheme-build = { git = "https://github.com/tao3k/gerbil-scheme-rust", rev = "0d92f7bee8c23b373ccd116be6f17701c4c4aac6", version = "0.1.0" }
-gerbil-scheme-aot-build = { git = "https://github.com/tao3k/gerbil-scheme-rust", rev = "0d92f7bee8c23b373ccd116be6f17701c4c4aac6", version = "0.1.0" }
+gerbil-scheme = { git = "https://github.com/tao3k/gerbil-scheme-rust", rev = "a00e62ea9875f1e2fca1514134eb596754c0a4e5", version = "0.1.0" }
+gerbil-scheme-sys = { git = "https://github.com/tao3k/gerbil-scheme-rust", rev = "a00e62ea9875f1e2fca1514134eb596754c0a4e5", version = "0.1.0" }
+gerbil-scheme-build = { git = "https://github.com/tao3k/gerbil-scheme-rust", rev = "a00e62ea9875f1e2fca1514134eb596754c0a4e5", version = "0.1.0" }
+gerbil-scheme-aot-build = { git = "https://github.com/tao3k/gerbil-scheme-rust", rev = "a00e62ea9875f1e2fca1514134eb596754c0a4e5", version = "0.1.0" }
 futures-executor = "0.3.34"
 globset = "0.4.21"
 weaver-llm = { git = "https://github.com/hardenedlinux/weaver", rev = "cea04974f4100402900842de417fdd598e1861ab" }

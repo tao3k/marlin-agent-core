@@ -62,11 +62,25 @@ compilation. The package window in Marlin INIT gives Yuanxu the upstream
 source ownership needed to derive the combined library closure. The Context
 Module publishes its bounded bridge projection through its typed contract.
 =build.ss= hands the =std-make-spec= exported by =init.ss= to
-=defbuild-script= and includes =init= and the Deck C ABI entry as build roots.
+=defbuild-script= with =init= as its explicit root. The selected =c-abi=
+Module contributes its own adapter inputs through its Build role.
+The project direnv configuration defaults =GERBIL_BUILD_CORES= to the number
+of online processors when it is unset; an existing value is preserved there.
+The pinned SDK's embedded package-build path currently sets the value to the
+CPU count during its call, even when the caller supplied a different value;
+its behavior is distinct from the direct =gxi build.ss= path.
 The full Scheme test fixtures additionally import Lab constructors outside
 the production closure. Put the pinned Lab source checkout on =GERBIL_LOADPATH=
 for that test invocation; CI does this without adding test modules to the
 production library.
+The rooted UI C ABI fixture =t/ui-c-abi-driver.ss= is test-only and must be
+compiled into the test package library before running =t/ui-c-abi-test.ss=;
+it is not an additional production Module or INIT root. The ignored Rust test
+=gerbil_tests_the_ui_c_abi_in_process= runs that suite through the SDK. The
+fixture calls the three native exports from Scheme inside the Rust-owned VM; it
+does not establish a Rust-bound export or live TUI integration.
+With the package dependencies and load path already configured, compile it from
+the repository root with =gxc -d "$GERBIL_PATH/lib" scheme/t/ui-c-abi-driver.ss=.
 Run =just agent-policy-routing-abi-gate= for the linked C ABI selector.
 
 The recorded loop-case trace in =t/fixtures/loop-case-trace.v1= was exported

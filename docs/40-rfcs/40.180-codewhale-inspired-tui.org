@@ -2,14 +2,18 @@
 #
 # SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
-#+title: Codewhale-inspired Marlin terminal interface
+#+title: Marlin declarative terminal interface
 
 * Objective and reference
 
-Build a usable terminal interface for Marlin, informed by Codewhale's TUI at
+Build Marlin's own terminal interface, informed by Codewhale's TUI at
 =b8643a76e417c4fbc55251be1308cdb6862a80f5=.  The reference checkout lives in
 =.data/Codewhale= and is not a build dependency.  Codewhale is MIT licensed;
 any copied material must retain its required notices and third-party attribution.
+The reference is evidence for capabilities and engineering problems, not a
+visual identity or an instruction to reproduce another application's design.
+Marlin's own Scheme extension model, runtime ownership and workflows define
+the resulting product.
 
 Marlin remains the owner of execution, policy, configuration, typed receipts,
 and evidence.  The interface must not fabricate an agent response, approval,
@@ -61,6 +65,9 @@ The [[file:../../dev/sysml/tui-architecture.sysml][structural model]] separates
 inspected reference and Marlin behavior from proposed components and allocates
 requirements to their owners. The [[file:../../dev/sysml/tui-lifecycle.sysml][turn lifecycle]]
 models provisional output, runtime admission, cancellation and retirement.
+The [[file:../../dev/sysml/tui-declarative-engine.sysml][declarative UI engine model]]
+specifies the Scheme/Rust ownership boundary, candidate publication lifecycle,
+extension identities, incremental work and qualification requirements.
 The target model is not an implementation or a performance result.
 
 ** Proposed Scheme UI extension plane
@@ -71,6 +78,152 @@ keymaps, composition and state transitions are authored as Scheme values.
 Rust owns the terminal, input decoding, layout and Ratatui painting, async
 I/O, typed runtime commands, and effect authorization. Model/session facts and
 receipts originate from their existing runtime owners, never from a UI plugin.
+
+The Scheme module, the Rust/Scheme calling boundary, and any AOT compilation or
+linking step are distinct responsibilities. The module must not import an AOT
+builder or require its host to use one image format. A native ABI adapter can
+export typed, rooted Scheme values, but C ABI describes the call convention;
+it does not itself establish a loader, a build policy, or authority. AOT is one
+possible packaging strategy, not the definition of the UI extension plane.
+Likewise, a Scheme VM must not be represented as already having dynamic module
+loading solely because the language or a subprocess toolchain can load Scheme.
+
+At the proposed =gerbil-scheme-rust= PR #18 pin =b3b50f0=, =GerbilRuntime::initialize=
+provides the process-global native runtime, while =bind_object_export= requires
+a function already belonging to that runtime's AOT graph. The SDK's package
+build/main entrypoints and separate toolchain subprocess APIs are not a typed
+live-module invocation API. An SDK-owned, typed module resolution and call
+capability must therefore be established and qualified before the UI can rely
+on runtime-loaded Scheme modules. Do not invent a Marlin text/eval protocol,
+start a second VM, or present an AOT-only adapter as a general dynamic loader.
+The actual implementation may support multiple execution or packaging modes,
+but each needs a proven owner, lifecycle and typed value boundary.
+
+The initial =scheme/ui= module publishes POO component and event prototypes,
+declarative CLOS method bundles and a bounded workbench projection. It is
+selected and exported by the same Yuanxu =init.ss= as the other Marlin modules;
+module management and publication do not depend on a separate UI entrypoint.
+The UI projection is a dependency of the selected UI module and is published
+as an operation of that module. The selected =c-abi= Module owns its Deck and
+UI adapter build inputs in its Build role; the adapter receives the complete
+selected Yuanxu publication and derives its UI child, rather than importing
+=init= or constructing a default scope. The caller must obtain and retain that
+publication through the Module System; transfer to Rust is not yet implemented.
+The selected =c-abi= scope receives its UI, Context and Deck dependencies from
+the Module System; membership checks retain the linked objects instead of
+wrapping their function contracts again. The Scheme event generic produces
+submit, dismiss and scroll intents, and accepts a bounded caller-supplied focus
+order so component extensions can participate without editing the core focus
+methods. The workbench also accepts explicitly supplied POO extension regions,
+checks their identities and focusability, and derives a focus event from its
+composed regions. The native projection preserves their labels and focusability.
+The UI ABI opens a Scheme-owned session from the selected publication, typed facts and
+an ordered vector of at most 16 Scheme CLOS method bundles. It composes those
+bundles on a fresh unpublished generic; an invalid bundle aborts session creation
+without changing an existing generic. Bundle protocol checks belong to Yuanxu's
+CLOS implementation. The vector limit is not a bound on the size of an
+individual bundle, and supplying a bundle is not proof of Module ownership.
+The session retains the workbench, generic and focus under an SDK strong root. A typed
+event produces a new session and intent; the old session remains valid. Scheme
+derives the focused component and event from that session, checks focus order,
+and rejects a focus result outside the workbench. These are consistency checks,
+not proof that the supplied scope was selected by the Module System.
+Rust's =marlin-gerbil-scheme::ui= resolves the selected publication and the
+open, project and dispatch procedures through the SDK's package API, calls the
+rooted procedures through its C ABI, and converts rooted vectors,
+symbols, strings and booleans through the SDK into Marlin UI types. It checks
+the projected shape, built-in ordering, sizes and duplicate identifier spellings;
+the result remains a candidate, and an intent is not effect authorization.
+A typed Rust facts request now uses the same SDK to construct a rooted request
+from the supplied scope, display facts and ordered extension vectors. Host labels, status identities and
+outer contribution counts are checked before allocating the request; the SDK
+roots do not establish scope or extension provenance.
+A native SDK test constructs real rooted Scheme values and exercises conversion,
+duplicate rejection and event decoding. A separate SDK =test_package= run loaded
+the compiled Yuanxu-selected UI in a Rust-owned VM and exercised all three UI C ABI
+entries through a compiled Scheme foreign-call fixture: session creation,
+projection, focus dispatch, extension-specific CLOS dispatch, invalid bundle
+rejection, old-state retention, borrowed-input retention and
+invalid-root rejection passed, and the
+process exited normally. This is not a Rust rooted-procedure call and does
+not prove runtime scope transfer, owner scheduling, complete transient-memory
+bounds, or end-to-end TUI integration. Symbol conversion copies a name before Marlin's
+length check; bounded identifier admission still requires an upstream or
+producer-side pre-copy bound. No latency or throughput result follows from this test.
+In the SDK-owned VM, a fresh Gerbil expander context imported the existing
+=init= export, observed the identical selected UI scope, and imported and called
+the adapter's exported session procedures. This establishes the standard
+Scheme module path in that environment. The SDK's
+=stage_package_load_closure= produces build resources and is not the runtime
+resolution API. SDK PR #18 revision =a00e62ea= adds package-export resolution
+and rooted procedure invocation through its C ABI. The SDK's real-VM package
+test passed export resolution, application to
+Scheme false, rejection of a non-procedure and a missing export, and reuse of
+the original procedure after the failed lookup. Its existing environment and
+package lifecycle checks also passed. A separate Rust-driven test using that
+local SDK resolved the selected Marlin =init= publication and the three UI
+procedures, opened and projected a session, dispatched a focus event and
+confirmed the prior state remained usable. It required the compiled SDK,
+Yuanxu, POO, ASCENT, Orgize and Parser libraries on the load path, including
+the lazy Parser dependency; missing paths produced real failures before the
+successful run. The successful run included startup and lazy loading and is not
+a frame-performance measurement. A subsequent unoptimized local diagnostic
+executed 512 focus transitions, each constructing the request, calling the
+rooted dispatch and projection procedures, decoding the result and releasing
+the previous session. All focus-intent consistency checks passed; one sample
+run observed median 2,179 microseconds, p99 55,395 microseconds and maximum
+279,155 microseconds. It includes no terminal painting, has no matched
+baseline or controlled machine load, and does not establish an SLO or a cause
+for the tails. A second diagnostic with per-phase timers observed total median
+2,349 microseconds and p99 48,467 microseconds; dispatch median/p99 was
+1,317/11,658 microseconds, intent snapshot and decode 9/75 microseconds, and
+projection plus decode 926/5,788 microseconds. These are independently
+ordered distributions, not additive percentile contributions. Marlin pins this
+SDK revision; the UI module is not yet wired to the terminal. Package resolution uses the SDK's
+process-wide package tooling and is a startup operation; rooted invocation does
+not enter that tooling. A concurrent edit of SDK =program-build.ss= caused one
+subsequent rebuild to fail; later builds succeeded, but these tests do not
+qualify the complete SDK working tree or a clean remote revision.
+The local SDK now also returns an optional bounded Scheme diagnostic with a
+typed rooted-call failure. Its new supervised test passed normal calls,
+non-procedure rejection, exception diagnostics, missing-export recovery and
+natural cleanup in a 4.2-second binary replay. Earlier attempts exceeded the
+unchanged wall or inactivity gate, including one after all assertions reached
+cleanup; those failures are retained and their cause is unknown. Independent
+controls with and without a missing export exited naturally, but do not explain
+the supervised failure. Marlin's =UiModule= wrapper passed a real-VM test
+against the exact pinned revision, including session open, projection, focus
+dispatch, old-state retention and a caught Scheme failure. The test took
+34.33 seconds including startup and lazy loads; this is not a frame benchmark.
+The locked Cargo check, strict library Clippy, SDK-value projection test, and
+Bazel 9.2.0 repin also passed. Live terminal wiring, installed module-closure
+discovery, a vendor refresh and an offline Bazel build remain separate gates.
+The host must still establish publication provenance, validate and publish candidates,
+and authorize every resulting action; an intent is not a runtime receipt.
+This is not yet terminal event routing or automatic module discovery of
+extension components. Each contributed region snapshots and seals its identity,
+label and focusability while retaining the supplied component as a prototype
+for dispatch. Mutations to other inherited slots and whole-tree hot reload are
+not fenced; this is not a complete immutable snapshot guarantee.
+The current Yuanxu =std-make-spec= takes =(\"init\")= as its explicit root;
+a clean build produced the selected modules and both ABI adapters. The UI
+workbench test passed with that compiled package first on the load path.
+The adapters are not yet qualified or connected to the running TUI, and this
+is not a complete component or plugin system. With the earlier SDK pin
+=b3b50f0=, the existing Deck Actor test
+still fails at VM startup with =Unbound variable: Context= in Yuanxu's
+publication reader. This reproduces independently of connecting the UI ABI;
+the cause is not established. The existing Deck AOT build path is
+still present and needs an explicit migration to the unified runtime rather than
+being duplicated or silently bypassed.
+
+In the reproduced Actor test, the staged native manifest does not list Yuanxu's
+publication reader, while the runtime's verbose bootstrap resolves the reader
+from an external Gerbil package. A run without that package on the explicit
+load path also failed, but its exception could not be formatted. These facts
+show that the static manifest alone does not describe the runtime load closure;
+they do not identify the cause of the unbound binding. Qualification must cover
+the actual module versions and loading path as well as the linked manifest.
 
 One event cycle delivers typed input and an immutable view of the relevant
 runtime state to the Scheme owner. The module returns a typed component tree
@@ -166,8 +319,11 @@ and current-version reproduction remain separate from issue closure.
 
 Use the same terminal dimensions, fixture content, chunk timing, build profile,
 machine, OS, sampling method, and offline provider for each paired comparison.
-Keep reference revision =b8643a76e417c4fbc55251be1308cdb6862a80f5= and the
-exact Marlin revision and dirty patch identity in every result. Warm up, run
+The primary comparison is an exact, frozen Marlin baseline against a Marlin
+candidate; a Codewhale comparison is a separate optional observation, not the
+definition of success or a requirement to match its interface. Record the
+exact Marlin revisions and dirty patch identities and, when comparing the
+reference, its revision =b8643a76e417c4fbc55251be1308cdb6862a80f5=. Warm up, run
 multiple paired repetitions and retain raw observations, failures, and p50,
 p95, p99 and maximum where meaningful. Report CPU time, allocation count and
 bytes, peak RSS, bytes read and written, queued bytes, redraw count, input to

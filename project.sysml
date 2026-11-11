@@ -23,6 +23,7 @@ package MarlinAgentCORE {
     dependency performanceRequirement from project to requirements::highPerformanceExecution;
     dependency singleVmExecution from project to MarlinSingleVmRuntime::singleVmRuntime;
     dependency tuiDesign from project to MarlinTuiArchitecture::target::terminalClient;
+    dependency declarativeTuiEngine from project to MarlinDeclarativeUi::engine;
     dependency contextOrgDesign from project to MarlinTuiArchitecture::target::contextOrgAuthority;
     dependency contextOrgLifecycle from project to MarlinContextOrgLifecycle::OrgTurnLifecycle;
     dependency tuiTurnLifecycle from project to MarlinTuiLifecycle::TurnLifecycle;
@@ -67,6 +68,7 @@ package MarlinAgentCORE {
         expose MarlinTuiArchitecture::actual;
         expose MarlinTuiArchitecture::target;
         expose MarlinTuiArchitecture::requirements;
+        expose MarlinDeclarativeUi::engine;
         render asTreeDiagram;
     }
 }

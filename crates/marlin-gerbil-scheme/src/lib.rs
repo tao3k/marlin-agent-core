@@ -12,6 +12,7 @@ mod graph_loop_continuation;
 mod loop_case_driver;
 mod policy_pack_projection;
 mod runtime;
+pub mod ui;
 #[doc(hidden)]
 pub mod scheme_type_fixtures;
 mod scheme_types;

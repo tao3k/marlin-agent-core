@@ -240,3 +240,12 @@ fn composer_layout_diagnostic() {
         eprintln!("{name} up_median_us={} samples_us={moves:?}", moves[3]);
     }
 }
+#[test]
+fn preferred_rows_wraps_unicode_and_respects_available_space() {
+    let mut composer = super::composer::Composer::default();
+    assert_eq!(composer.preferred_rows(4, 8), 1);
+    composer.insert_text("中文\nx\n\ny");
+    assert_eq!(composer.preferred_rows(4, 8), 4);
+    assert_eq!(composer.preferred_rows(4, 2), 2);
+    assert_eq!(composer.preferred_rows(0, 8), 0);
+}

@@ -25,7 +25,7 @@ use super::{
     journal_gateway::JournalGateway,
     model_catalog::ModelCatalog,
     output_limit::{MAX_RESPONSE_BYTES, OutputLimit},
-    prompt_history::PromptHistory,
+    prompt_history::{HistorySearch, PromptHistory},
     render::draw,
     replay::{ReplayOutcome, ReplayTurn, load_session},
     session_browser::{OpenedView, SessionBrowser, SessionPageRequestError},
@@ -82,6 +82,7 @@ struct HistoryPosition {
 pub(crate) struct App {
     pub(crate) composer: Composer,
     prompt_history: PromptHistory,
+    pub(crate) history_search: Option<HistorySearch>,
     pub(crate) command_draft: Option<Composer>,
     pub(crate) quit_armed: bool,
     pub(crate) transcript: Transcript,
@@ -104,7 +105,31 @@ pub(crate) struct App {
 
 impl App {
     pub(crate) fn new(endpoint: ModelEndpoint) -> Self {
-        Self { composer: Composer::default(), prompt_history: PromptHistory::default(), command_draft: None, quit_armed: false, transcript: Transcript::new(vec![("Marlin".into(), "Model gateway configured. Tools and approvals are not yet available. /help for keys.".into())]), history: Arc::new(Vec::new()), context_budget: ContextBudget::default(), endpoint, models: None, pending: None, next_id: 0, scroll_up: 0, persistent: false, needs_replay: false, unverified_thinking: false, runtime_edge: None, session_browser: None, current_session: None, history_position: None, workspace: WorkspaceStatus::default() }
+        Self { composer: Composer::default(), prompt_history: PromptHistory::default(), history_search: None, command_draft: None, quit_armed: false, transcript: Transcript::new(vec![("Marlin".into(), "Model gateway configured. Tools and approvals are not yet available. /help for keys.".into())]), history: Arc::new(Vec::new()), context_budget: ContextBudget::default(), endpoint, models: None, pending: None, next_id: 0, scroll_up: 0, persistent: false, needs_replay: false, unverified_thinking: false, runtime_edge: None, session_browser: None, current_session: None, history_position: None, workspace: WorkspaceStatus::default() }
+    }
+
+    pub(crate) fn endpoint(&self) -> &ModelEndpoint {
+        &self.endpoint
+    }
+
+    pub(crate) fn session_id(&self) -> Option<&SessionId> {
+        self.current_session.as_ref()
+    }
+
+    pub(crate) fn activity_label(&self) -> &'static str {
+        if self.needs_replay {
+            "Recovery required"
+        } else if self.unverified_thinking {
+            "Continuation unavailable"
+        } else if self.history_position.is_some() {
+            "History read-only"
+        } else if self.pending.is_some() {
+            "Working"
+        } else if self.workspace.is_pending() {
+            "Reading workspace"
+        } else {
+            "Idle"
+        }
     }
 
     pub(crate) fn set_runtime_edge(&mut self, receipt: RuntimeEdgePolicyReceipt) {
@@ -121,6 +146,36 @@ impl App {
                 .previous(&mut self.composer, &self.history);
         } else {
             self.prompt_history.next(&mut self.composer, &self.history);
+        }
+    }
+
+    pub(crate) fn start_history_search(&mut self) {
+        if self.pending.is_some()
+            || self.command_draft.is_some()
+            || self.history_position.is_some()
+            || self
+                .session_browser
+                .as_ref()
+                .is_some_and(SessionBrowser::is_opening)
+        {
+            return;
+        }
+        let mut search = HistorySearch::default();
+        search.previous(&self.history);
+        self.history_search = Some(search);
+    }
+
+    pub(crate) fn accept_history_search(&mut self) {
+        if self
+            .history_search
+            .as_ref()
+            .is_some_and(HistorySearch::is_searching)
+        {
+            return;
+        }
+        if let Some(preview) = self.history_search.take().and_then(HistorySearch::accept) {
+            self.prompt_history.discard();
+            self.composer = preview;
         }
     }
 
@@ -615,7 +670,7 @@ impl App {
         };
         if let Some(input) = command {
             match input.trim() {
-                "/help" => self.transcript.push(("Help".into(), "Enter: send · Ctrl-N: newline · Ctrl-O: command without losing draft · arrows: edit · Home/End or Ctrl-A/Ctrl-E: line start/end · Alt-P/Alt-N: prompt history · PageUp/PageDown: scroll · Esc/Ctrl-C: cancel · Ctrl-C twice or Ctrl-Q: quit · /models: list · /model: select · /status: worktree · /diff: unstaged · /diff staged: staged · /sessions: list · /session: switch · /inspect: read-only history · /history older or newest: page · /context: budget · /runtime: stream-open policy".into())),
+                "/help" => self.transcript.push(("Help".into(), "Enter: send · Ctrl-N: newline · Ctrl-O: command without losing draft · arrows: edit · Home/End or Ctrl-A/Ctrl-E: line start/end · Alt-P/Alt-N: prompt history · Ctrl-R: search prompts · PageUp/PageDown: scroll · Esc/Ctrl-C: cancel · Ctrl-C twice or Ctrl-Q: quit · /models: list · /model: select · /status: worktree · /diff: unstaged · /diff staged: staged · /sessions: list · /session: switch · /inspect: read-only history · /history older or newest: page · /context: budget · /runtime: stream-open policy".into())),
                 "/sessions" => self.show_sessions(runtime, false),
                 "/sessions next" => self.show_sessions(runtime, true),
                 "/models" => self.show_models(),
@@ -1140,7 +1195,12 @@ fn run(
                 false
             };
             let switched = app.poll_session_switch(&mut gateway, &base_gateway);
-            if processed > 0 || sessions_changed || switched || workspace_changed {
+            let search_finished = app
+                .history_search
+                .as_mut()
+                .is_some_and(|search| search.step(&app.history));
+            if processed > 0 || sessions_changed || switched || workspace_changed || search_finished
+            {
                 schedule.mark_dirty();
             }
             let size = termion::terminal_size()?;
@@ -1157,7 +1217,12 @@ fn run(
                 app.set_effective_scroll(effective_scroll);
                 schedule.drawn(Instant::now());
             }
-            let wait = if processed == REPLY_BATCH_LIMIT {
+            let wait = if processed == REPLY_BATCH_LIMIT
+                || app
+                    .history_search
+                    .as_ref()
+                    .is_some_and(HistorySearch::is_searching)
+            {
                 std::time::Duration::ZERO
             } else {
                 schedule.wait_duration(Instant::now())
@@ -1174,11 +1239,32 @@ fn run(
             {
                 app.disarm_exit();
             }
+            if let Some(search) = app.history_search.as_mut() {
+                match received {
+                    Ok(Ok(TerminalInput::Key(Key::Ctrl('q')))) => break,
+                    Ok(Ok(TerminalInput::Key(Key::Ctrl('c') | Key::Esc))) => {
+                        app.history_search = None;
+                        app.disarm_exit();
+                    }
+                    Ok(Ok(TerminalInput::Key(Key::Char('\n')))) => app.accept_history_search(),
+                    Ok(Ok(TerminalInput::Key(Key::Ctrl('r')))) => search.previous(&app.history),
+                    Ok(Ok(TerminalInput::Key(Key::Backspace))) => search.backspace(&app.history),
+                    Ok(Ok(TerminalInput::Key(Key::Char(c)))) if !c.is_control() => {
+                        search.insert(&c.to_string(), &app.history)
+                    }
+                    Ok(Ok(TerminalInput::Paste(text))) => search.insert(&text, &app.history),
+                    Ok(Err(e)) => return Err(e),
+                    Err(mpsc::RecvTimeoutError::Disconnected) => break,
+                    _ => {}
+                }
+                continue;
+            }
             match received {
                 Ok(Ok(TerminalInput::Key(Key::Ctrl('q')))) => break,
                 Ok(Ok(TerminalInput::Key(Key::Ctrl('c')))) if app.interrupt() => break,
                 Ok(Ok(TerminalInput::Key(Key::Ctrl('c')))) => {}
                 Ok(Ok(TerminalInput::Key(Key::Ctrl('o')))) => app.toggle_command(),
+                Ok(Ok(TerminalInput::Key(Key::Ctrl('r')))) => app.start_history_search(),
                 Ok(Ok(TerminalInput::Key(Key::Alt('p')))) => app.navigate_prompts(true),
                 Ok(Ok(TerminalInput::Key(Key::Alt('n')))) => app.navigate_prompts(false),
                 Ok(Ok(TerminalInput::Key(Key::Esc))) => app.cancel(),

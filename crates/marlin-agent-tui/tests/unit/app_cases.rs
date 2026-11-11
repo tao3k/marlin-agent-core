@@ -9,7 +9,7 @@ use super::{
     event_queue::{ReplyError, reply_channel},
     model_catalog::{ModelCatalog, ModelRoute},
     render::draw,
-    viewport::TranscriptViewportCache,
+    viewport::{Transcript, TranscriptViewportCache},
 };
 use marlin_agent_protocol::{
     ModelAlias, ModelContinuation, ModelContinuationKind, ModelEndpoint,
@@ -23,6 +23,115 @@ use marlin_agent_stream::{
     ModelThinkingChunk,
 };
 use std::sync::{Arc, Mutex};
+
+#[test]
+fn history_search_previews_then_accepts_without_submitting() {
+    let mut app = App::new(ModelEndpoint::new("openai", "test"));
+    app.history = Arc::new(vec![
+        user_gateway_message("find this"),
+        assistant_gateway_message("reply"),
+    ]);
+    app.composer.insert_text("my draft");
+    app.start_history_search();
+    app.history_search
+        .as_mut()
+        .unwrap()
+        .insert("find", &app.history);
+    assert_eq!(app.composer.text(), "my draft");
+    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(40, 10)).unwrap();
+    terminal
+        .draw(|frame| {
+            draw(
+                frame,
+                &app,
+                &mut Default::default(),
+                &mut Default::default(),
+            );
+        })
+        .unwrap();
+    let buffer = terminal.backend().buffer();
+    let status: String = (0..40).map(|x| buffer[(x, 9)].symbol()).collect();
+    assert!(status.contains("Search: find"), "{status}");
+    app.accept_history_search();
+    assert_eq!(app.composer.text(), "find this");
+    assert!(app.pending.is_none());
+    assert_eq!(app.history.len(), 2);
+}
+
+#[test]
+fn unfinished_history_search_cannot_accept_an_old_preview() {
+    let mut app = App::new(ModelEndpoint::new("openai", "test"));
+    app.history = Arc::new(vec![user_gateway_message("x".repeat(100_000))]);
+    app.composer.insert_text("preserve draft");
+    app.start_history_search();
+    app.history_search
+        .as_mut()
+        .unwrap()
+        .insert("missing", &app.history);
+    assert!(app.history_search.as_ref().unwrap().is_searching());
+    app.accept_history_search();
+    assert!(app.history_search.is_some());
+    assert_eq!(app.composer.text(), "preserve draft");
+}
+
+#[test]
+fn heading_shows_the_selected_model_and_sanitizes_control_characters() {
+    let app = App::new(ModelEndpoint::new("deepseek", "chat\u{1b}[2J"));
+    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(100, 12)).unwrap();
+    terminal
+        .draw(|frame| {
+            draw(
+                frame,
+                &app,
+                &mut Default::default(),
+                &mut Default::default(),
+            );
+        })
+        .unwrap();
+    let heading: String = (0..100)
+        .map(|x| terminal.backend().buffer()[(x, 0)].symbol())
+        .collect();
+    assert!(heading.contains("deepseek/chat�[2J"), "{heading}");
+    assert!(heading.contains("Idle · deepseek"), "{heading}");
+    assert!(heading.contains("temporary"), "{heading}");
+    assert!(!heading.contains('\u{1b}'));
+}
+
+#[test]
+fn composer_expands_with_the_draft_and_leaves_a_transcript_row() {
+    let mut app = App::new(ModelEndpoint::new("openai", "gpt-test"));
+    app.transcript = Transcript::new(vec![("You".into(), "visible transcript".into())]);
+    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(40, 12)).unwrap();
+    let mut cache = TranscriptViewportCache::default();
+    let mut anchor = Default::default();
+    terminal
+        .draw(|frame| {
+            draw(frame, &app, &mut cache, &mut anchor);
+        })
+        .unwrap();
+    let row = |y| {
+        (0..40)
+            .map(|x| terminal.backend().buffer()[(x, y)].symbol())
+            .collect::<String>()
+    };
+    assert!(row(8).contains("Message"));
+
+    app.composer
+        .insert_text("one\ntwo\nthree\nfour\nfive\nsix\nseven\neight\nnine\nten");
+    terminal
+        .draw(|frame| {
+            draw(frame, &app, &mut cache, &mut anchor);
+        })
+        .unwrap();
+    let buffer = terminal.backend().buffer();
+    let header: String = (0..40).map(|x| buffer[(x, 0)].symbol()).collect();
+    let transcript: String = (0..40).map(|x| buffer[(x, 1)].symbol()).collect();
+    let composer: String = (0..40).map(|x| buffer[(x, 3)].symbol()).collect();
+    assert!(header.contains("Marlin"));
+    assert!(transcript.contains("visible transcript"));
+    assert!(composer.contains("Message"));
+    assert!(terminal.backend().cursor_position().y < 11);
+}
 
 #[test]
 fn rejected_draft_insertion_is_visible_in_the_terminal_status() {
@@ -100,6 +209,7 @@ fn repeated_resize_during_stream_matches_a_fresh_terminal_frame() {
     let mut app = App::new(ModelEndpoint::new("openai", "gpt-test"));
     app.composer.insert_text("start");
     app.submit(&gateway, &runtime, &tx);
+    assert_eq!(app.activity_label(), "Working");
     app.composer.insert_text("draft 中🐳");
     app.transcript.push(("Assistant".into(), "start".into()));
     let index = app.transcript.len() - 1;
@@ -144,6 +254,7 @@ fn repeated_resize_during_stream_matches_a_fresh_terminal_frame() {
         );
     }
     app.cancel();
+    assert_eq!(app.activity_label(), "Idle");
 }
 
 #[test]

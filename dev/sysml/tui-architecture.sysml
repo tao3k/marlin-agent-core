@@ -10,6 +10,32 @@ package MarlinTuiArchitecture {
            the component responsible for a requirement. */
 
     package actual {
+        part <'MAR-TUI-A19'> selectedNativeAdapters {
+            doc /* The selected c-abi Module owns UI and Deck adapter build
+                   inputs through its Build role. Its published identity is
+                   metadata, not a Rust ABI readiness receipt. Its linked scope
+                   retains the selected UI, Context and Deck scopes. Scheme UI
+                   dispatch returns declarative submit, dismiss, scroll and
+                   workbench-ordered focus intents; actual terminal routing and
+                   UI-to-Rust execution remain unqualified. Rust now uses SDK
+                   LinkedObjectExport and rooted-value conversion for a
+                   Scheme-owned session, workbench and intent projections. Rust
+                   constructs rooted open requests from typed facts and SDK
+                   objects after checking outer contribution limits.
+                   Ordered CLOS method bundles compose into each fresh session
+                   generic, with an upper bound on bundle count; a bundle's
+                   internal size and its Module provenance remain unqualified. A
+                   Rust-owned VM test calls the three UI exports through a
+                   Scheme foreign-call fixture, checks selected-scope projection,
+                   focus and extension dispatch, old-state retention and root ownership, and
+                   exits normally. Standard Gerbil import in the SDK-owned VM
+                   returned the identical selected scope and called the session
+                   procedures. A supported Rust export-resolution and rooted
+                   procedure-call API is not established. This is not a
+                   Rust-bound LinkedObjectExport or terminal integration. Identifier names
+                   are copied before their Rust length check, so total transient
+                   memory bounds are not established. */
+        }
         part <'MAR-TUI-A14'> weaverConfiguration {
             doc /* Marlin pins unmerged Weaver PR #4 revision cea04974, whose
                    prepared-profile API uses explicit configuration first and
@@ -47,8 +73,10 @@ package MarlinTuiArchitecture {
                    read model is transitional, not Lab Org projection.
                    The shared Org model remains a separate compilation unit.
                    The TUI's independent history/journal
-                   remains. Context admission currently bridges only Lab Scope;
-                   it does not authorize disclosure or establish durability.
+                   remains. Context exposes Lab Scope, Org Contract source and
+                   source-backed Scheme Org graph operations. These do not
+                   authorize disclosure or establish durability, and the Rust
+                   workspace loader is not yet migrated.
                    Source writes create temporary paths exclusively; failed
                    store calls yield an uncertain write outcome. Clean, dirty
                    and unknown source observations are distinct; the filesystem
@@ -273,6 +301,15 @@ package MarlinTuiArchitecture {
             doc /* Rust owns terminal lifecycle, input, layout, painting,
                    async I/O and routing intents through runtime authority. */
         }
+        part <'MAR-TUI-T20'> schemeVmModuleAdmission {
+            doc /* Proposed SDK-owned admission and invocation of typed Scheme
+                   modules on the VM owner. The current pinned SDK does not yet
+                   establish a general typed runtime-loaded module API. */
+        }
+        part <'MAR-TUI-T21'> optionalProgramArtifact {
+            doc /* An AOT artifact is one optional packaging strategy. Its
+                   builder and linker are not the UI protocol or FFI contract. */
+        }
         part <'MAR-TUI-T16'> contextOrgAuthority {
             doc /* Org is the durable context content foundation. Context
                    composes Lab Scope and independent Session semantics with
@@ -367,6 +404,8 @@ package MarlinTuiArchitecture {
         dependency qualificationMeasuresRuntime from qualification to runtime;
         dependency uiHostAdmitsProjection from ratatuiHost to typedUiBoundary;
         dependency uiProjectionUsesScheme from typedUiBoundary to schemeUiExtensionPlane;
+        dependency uiBoundaryUsesVmAdmission from typedUiBoundary to schemeVmModuleAdmission;
+        dependency uiArtifactPackagesModule from optionalProgramArtifact to schemeUiExtensionPlane;
         dependency uiHostUsesRuntime from ratatuiHost to runtime;
         dependency qualificationMeasuresUiHost from qualification to ratatuiHost;
     }

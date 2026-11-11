@@ -8,12 +8,16 @@
         (only-in :agentic-ai-lab/modules/ai-agentic-context/funs-scope
                  agentic-ai-lab-ai-agentic-context-scope-admit)
         :marlin-agent-core/context/projection
+        :marlin-agent-core/context/org-contract
+        :marlin-agent-core/context/org-source
         :marlin-agent-core/context/evidence)
 
 (export MarlinContextOperations EnableCausalEvidence)
 
 (def MarlinContextOperations
   (.o admit-scope: agentic-ai-lab-ai-agentic-context-scope-admit
+      org-contract-source: marlin-context-org-contract-source
+      org-source-graph: marlin-context-org-source-graph
       bridge: (.o decode-batch: marlin-context-batch-requests
                   encode-scopes: marlin-context-scopes->bytes)))
 

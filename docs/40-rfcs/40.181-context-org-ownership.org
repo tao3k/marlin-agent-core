@@ -27,8 +27,10 @@ claimed by this document.
 Lab's Context owns scope and projection semantics, and composes the independent
 Lab Session Module. Its Memory feature is optional. Marlin owns typed Rust
 requests, current-use effect admission, and its native host boundary. The
-existing =scheme/context= bridge currently admits scopes; it does not expose a
-Lab Org projection or a Session lifecycle. A digest of an admitted scope is not
+existing =scheme/context= bridge admits scopes, exposes Lab's typed Org
+Contract source cut, and provides a source-backed Scheme Org Element graph;
+it does not expose the complete Lab Context projection or a
+Session lifecycle. A digest of an admitted scope is not
 source authentication, disclosure authorization, a durable commit, or proof of
 current policy.
 
@@ -39,6 +41,24 @@ bounds. The projection selects open Org headlines under bounded row and byte
 budgets; it is not an exact full-conversation turn journal. Its output marks
 source authentication, action authorization and durability false. It cannot by
 itself prove preservation or disclosure of every conversation turn.
+
+Marlin's =org-contract-source= delegates to Lab's =context-org-source= and
+returns the original source and Lab's structured nodes and digest. This is
+limited to valid Org Contract sources, with Lab's one-MiB source and bounded
+ID limits; it is not a general parser, an authenticated source, a durable
+write or a complete conversation journal. Inputs outside those limits fail
+explicitly rather than being shortened. The separate =org-source-graph=
+operation delegates to Lab's Scheme Orgize source interface, retaining the
+original text alongside its derived Element graph. It is also bounded by the
+upstream one-MiB source and 4,096-Element graph limits and is not a
+source-authentication or durability receipt. In particular, splitting a source
+at arbitrary byte or headline boundaries cannot establish equivalent Org
+semantics across properties, blocks, links, and contracts. A complete history
+therefore needs a durable source representation and a parser-owned strategy
+for cross-segment semantics before these limits can be removed from the path.
+The Rust =orgize= dependency remains
+in the old workspace document, contract and validation modules until their
+consumers are migrated to the corresponding Lab-owned functionality.
 
 The same revision's Context session host coordinates source enrollment,
 claims, observations and Session lifecycle; its durable adapter and runtime

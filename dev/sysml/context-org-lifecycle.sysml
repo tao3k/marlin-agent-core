@@ -23,8 +23,10 @@ package MarlinContextOrgLifecycle {
     part def <'MAR-CONTEXT-P01'> ContextOrgIntegration {
         doc /* Target ownership, not an implementation claim. The pinned Lab
                Context provides the projection, Session input proposal and
-               coordinating host. The Rust boundary must check native readiness;
-               the existing bridge does not expose these operations. */
+               coordinating host. The Scheme Context publication exposes a
+               source-backed Org graph and Lab Contract source cut; neither
+               provides that Session host or a durable turn transaction.
+               The Rust boundary must check native readiness. */
         part <'MAR-CONTEXT-P02'> sourceOwner {
             doc /* Rust owns Org serialization and must retain every accepted
                    conversation turn and typed continuation. A successful write

@@ -14,6 +14,8 @@
   mode: explicit
   rename: Marlin
   (context +causal)
+  (ui)
   (hooks)
   (policy)
-  (deck-runtime))
+  (deck-runtime)
+  (c-abi))

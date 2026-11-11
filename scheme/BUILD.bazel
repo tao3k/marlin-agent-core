@@ -16,6 +16,7 @@ filegroup(
         "deck-runtime/**/*.ss",
         "hooks/**/*.ss",
         "policy/**/*.ss",
+        "ui/**/*.ss",
         "t/**/*.ss",
     ]),
     visibility = ["//crates/marlin-gerbil-scheme:__pkg__"],
