@@ -21,7 +21,7 @@ receipt and verifies replay against the caller's exact exchange.
 | =context/= | Adapt Lab's Context library to Marlin's runtime boundary. |
 | =hooks/= | Publish Scheme hook selection, composable conditions, and higher-order matchers. |
 | =policy/= | Project graph policy, topology and continuation with a declared dependency on Hooks. |
-| =deck-runtime/= | Publish Scheme-owned runtime metadata and admit typed Context batches on resident actors. |
+| =deck-runtime/= | Publish Scheme-owned runtime metadata and schedule Context admissions on demand. |
 | =policy/projection/deck/= | Project policy packs. |
 | =policy/projection/graph/= | Project routing, topology and continuation for the Rust graph runtime. |
 | =c-abi/= | Own the C entry points and their bindings. |

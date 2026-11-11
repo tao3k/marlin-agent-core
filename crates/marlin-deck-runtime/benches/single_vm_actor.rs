@@ -7,6 +7,8 @@ use std::{
 };
 use tokio_util::sync::CancellationToken;
 
+const TOKIO_WORKERS: usize = 4;
+
 fn main() -> Result<(), Box<dyn Error>> {
     let args: Vec<_> = std::env::args()
         .skip(1)
@@ -18,11 +20,10 @@ fn main() -> Result<(), Box<dyn Error>> {
         return Err("count must be positive".into());
     }
     let deck = DeckRuntime::start(
-        DeckRuntimeConfig::new(128.try_into()?, 4.try_into()?)
-            .with_batch_capacity(batch.try_into()?),
+        DeckRuntimeConfig::new(128.try_into()?).with_batch_capacity(batch.try_into()?),
     )?;
     let runtime = tokio::runtime::Builder::new_multi_thread()
-        .worker_threads(2)
+        .worker_threads(TOKIO_WORKERS)
         .enable_all()
         .build()?;
     runtime.block_on(async {
@@ -46,9 +47,17 @@ fn main() -> Result<(), Box<dyn Error>> {
         let receipt = deck.shutdown().await?;
         assert_eq!(receipt.reason, DeckRuntimeStopReason::Drained);
         assert_eq!(receipt.vm_processors, 1);
-        assert!(receipt.actors_closed);
+        assert!(receipt.context_service_closed);
         assert_eq!(receipt.metrics.requests_succeeded, count as u64 + 64);
-        println!("batch_capacity={batch} requests={count} elapsed_s={:.6} requests_per_s={:.1} p50_us={:.1} p95_us={:.1} vm_processors={} actors=4 tokio_workers=2 metrics={:?}", elapsed.as_secs_f64(), count as f64 / elapsed.as_secs_f64(), latencies[count / 2] as f64 / 1000.0, latencies[(count * 95 / 100).min(count - 1)] as f64 / 1000.0, receipt.vm_processors, receipt.metrics);
+        println!(
+            "batch_capacity={batch} requests={count} elapsed_s={:.6} requests_per_s={:.1} p50_us={:.1} p95_us={:.1} vm_processors={} tokio_workers={TOKIO_WORKERS} metrics={:?}",
+            elapsed.as_secs_f64(),
+            count as f64 / elapsed.as_secs_f64(),
+            latencies[count / 2] as f64 / 1000.0,
+            latencies[(count * 95 / 100).min(count - 1)] as f64 / 1000.0,
+            receipt.vm_processors,
+            receipt.metrics,
+        );
         Ok::<_, Box<dyn Error>>(())
     })
 }

@@ -1,5 +1,6 @@
-;;; Compare resident Actor results with the selected Lab Context operation.
+;;; Compare on-demand Actor results with the selected Lab Context operation.
 (import (only-in :clan/poo/object .get .o)
+        :std/iter
         (only-in :marlin-agent-core/init marlin-agent-core.init.exports))
 (def published (.get marlin-agent-core.init.exports Marlin deck-runtime))
 (def admit (.get marlin-agent-core.init.exports Marlin context admit-scope))
@@ -7,24 +8,48 @@
   (.o bundle: "bundle" organization: "org" epoch: 1
       project: "project" worktree: "worktree" source-cut: "cut"
       actor: "assistant" task: "review" destination: "panel" session: "session" turn: turn-index))
-(def rows (vector (request 0) (request 1) (request 2)))
+(def rows (list->vector (for/collect ((index (in-range 65))) (request index))))
 (def expected (vector-map admit rows))
+(def owner (current-thread))
+(def handled-by (make-vector (vector-length rows) #f))
 (def (tracked-admit request-value)
-  (def admitted (admit request-value))
   (def actor-owner (current-thread))
+  (when (eq? actor-owner owner) (error "Context work ran on the Deck owner"))
+  (vector-set! handled-by (.get request-value turn) actor-owner)
+  (def admitted (admit request-value))
   (.o (:: @ admitted)
       semantic-digest:
       (begin
         (unless (eq? actor-owner (current-thread))
           (error "Scope identity escaped its Actor completion boundary"))
         (.get admitted semantic-digest))))
-(def runtime ((.get published open) 2 tracked-admit))
+(def runtime ((.get published open) tracked-admit))
 (dynamic-wind void
   (lambda ()
-    (let (results ((.get runtime evaluate-batch) rows 1))
+    (let (results ((.get runtime evaluate-batch) rows))
       (unless (equal? (map (lambda (scope) (.get scope semantic-digest)) (vector->list expected))
                       (map (lambda (scope) (.get scope semantic-digest)) (vector->list results)))
-        (error "Deck changed Context admission order or result"))))
+        (error "Deck changed Context admission order or result")))
+    (def actors (make-hash-table-eq))
+    (vector-for-each (lambda (actor) (hash-put! actors actor #t)) handled-by)
+    (unless (= (hash-length actors) (vector-length rows))
+      (error "Deck did not spawn a green actor per admission")))
   (.get runtime close))
-(unless (with-catch (lambda (_) #t) (lambda () ((.get runtime evaluate-batch) rows 1) #f))
+(unless (with-catch (lambda (_) #t) (lambda () ((.get runtime evaluate-batch) rows) #f))
   (error "closed Deck runtime accepted a batch"))
+
+(def sibling-completed? #f)
+(def failing-runtime
+  ((.get published open)
+   (lambda (row)
+     (when (zero? (.get row turn)) (error "injected Context failure"))
+     (thread-sleep! 0.01)
+     (set! sibling-completed? #t)
+     (admit row))))
+(dynamic-wind void
+  (lambda ()
+    (unless (with-catch (lambda (_) #t)
+              (lambda () ((.get failing-runtime evaluate-batch) (vector (request 0) (request 1))) #f))
+      (error "Deck accepted a failed Context batch"))
+    (unless sibling-completed? (error "Deck returned before joining a sibling actor")))
+  (.get failing-runtime close))

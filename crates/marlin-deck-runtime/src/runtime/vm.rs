@@ -8,7 +8,7 @@ use marlin_agent_context::{
     ContextAdmissionRequest, ContextScopeBatch, ContextScopeDigest,
     gerbil::{project_scope_batch, project_scope_digests},
 };
-use std::{num::NonZeroU16, sync::Arc};
+use std::sync::Arc;
 
 unsafe extern "C" {
     pub(super) fn ___LNK_marlin__deck__actor(
@@ -28,10 +28,7 @@ pub(super) struct DeckVm<'vm> {
 }
 
 impl<'vm> DeckVm<'vm> {
-    pub(super) fn open(
-        runtime: &'vm GerbilRuntime,
-        actors: NonZeroU16,
-    ) -> Result<Self, SchemeVmError> {
+    pub(super) fn open(runtime: &'vm GerbilRuntime) -> Result<Self, SchemeVmError> {
         // SAFETY: these exports belong to the initialized, build-owned AOT graph.
         let (open, evaluate, close) = unsafe {
             (
@@ -40,8 +37,7 @@ impl<'vm> DeckVm<'vm> {
                 runtime.bind_object_export(marlin_deck_runtime_close)?,
             )
         };
-        let control =
-            runtime.scalar_object(SchemeScalar::Fixnum(scalar_argument(actors.get())?))?;
+        let control = runtime.scalar_object(SchemeScalar::Boolean(false))?;
         let result = open.call(&control).into_result()?;
         // The C ABI uses a Boolean acknowledgement, never a serialized receipt.
         if result.as_ref().scalar()? != SchemeScalar::Boolean(true) {
@@ -62,7 +58,6 @@ impl<'vm> DeckVm<'vm> {
     pub(super) fn evaluate(
         &self,
         requests: &[&ContextAdmissionRequest],
-        quantum: u16,
     ) -> Result<Vec<ContextScopeDigest>, DeckRuntimeRejection> {
         let mut groups = Vec::new();
         let mut start = 0;
@@ -81,11 +76,7 @@ impl<'vm> DeckVm<'vm> {
             groups.push(project_scope_batch(self.runtime, &batch)?);
             start = end;
         }
-        let groups = self.vector(&groups.iter().collect::<Vec<_>>())?;
-        let quantum = self
-            .runtime
-            .scalar_object(SchemeScalar::Fixnum(scalar_argument(quantum)?))?;
-        let input = self.vector(&[&quantum, &groups])?;
+        let input = self.vector(&groups.iter().collect::<Vec<_>>())?;
         let output = self.evaluate.call(&input).into_result()?;
         Ok(project_scope_digests(output, requests.len())?)
     }
@@ -120,11 +111,4 @@ impl Drop for DeckVm<'_> {
     fn drop(&mut self) {
         let _ = self.close();
     }
-}
-
-fn scalar_argument(value: u16) -> Result<isize, SchemeVmError> {
-    isize::try_from(value).map_err(|_| SchemeVmError::Status {
-        operation: "Deck scalar argument",
-        code: -1,
-    })
 }

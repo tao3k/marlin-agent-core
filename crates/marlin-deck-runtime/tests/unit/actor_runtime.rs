@@ -9,20 +9,15 @@ use std::time::Duration;
 use tokio_util::sync::CancellationToken;
 
 // One process owns exactly one VM lifetime; the SDK forbids reinitialization.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn context_sessions_cross_real_single_vm_actors_and_retire() {
-    let invalid = DeckRuntimeConfig::new(1.try_into().unwrap(), 65.try_into().unwrap());
-    assert!(matches!(
-        DeckRuntime::start(invalid),
-        Err(DeckRuntimeStartupError::ActorCount)
-    ));
-    let invalid = DeckRuntimeConfig::new(1.try_into().unwrap(), 1.try_into().unwrap())
-        .with_batch_capacity(65.try_into().unwrap());
+    let invalid =
+        DeckRuntimeConfig::new(1.try_into().unwrap()).with_batch_capacity(65.try_into().unwrap());
     assert!(matches!(
         DeckRuntime::start(invalid),
         Err(DeckRuntimeStartupError::BatchCapacity)
     ));
-    let config = DeckRuntimeConfig::new(128.try_into().unwrap(), 4.try_into().unwrap());
+    let config = DeckRuntimeConfig::new(128.try_into().unwrap());
     let deck = DeckRuntime::start(config).expect("open real linked Scheme VM");
     let scopes = [scope("source-a"), scope("source-b")];
     let budget = Duration::from_secs(60);
@@ -96,7 +91,7 @@ async fn context_sessions_cross_real_single_vm_actors_and_retire() {
     let receipt = deck.shutdown().await.unwrap();
     assert_eq!(receipt.reason, DeckRuntimeStopReason::Drained);
     assert_eq!(receipt.vm_processors, 1);
-    assert!(receipt.actors_closed);
+    assert!(receipt.context_service_closed);
     assert_eq!(receipt.metrics.requests_received, 66);
     assert_eq!(receipt.metrics.requests_succeeded, 66);
     assert_eq!(receipt.metrics.scheme_items, 66);

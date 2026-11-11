@@ -1,4 +1,4 @@
-//! Bounded Tokio admission into one Scheme VM and its resident green actors.
+//! Bounded Tokio admission into one Scheme VM.
 
 mod config;
 mod owner;
@@ -28,12 +28,8 @@ pub use receipt::{DeckRuntimeMetrics, DeckRuntimeShutdownReceipt, DeckRuntimeSto
 /// Invalid limits, or failure while establishing the unique VM owner.
 #[derive(Debug, thiserror::Error)]
 pub enum DeckRuntimeStartupError {
-    #[error("Deck requires at most 64 actors per VM")]
-    ActorCount,
     #[error("Deck batch capacity must be between 1 and {CONTEXT_BATCH_MAX_ROWS}")]
     BatchCapacity,
-    #[error("Deck actor quantum must be between 0 and 256")]
-    ActorQuantum,
     #[error("cannot start Deck VM owner: {0}")]
     Owner(#[from] std::io::Error),
     #[error("Deck VM startup failed: {0}")]
@@ -104,16 +100,10 @@ pub struct DeckRuntime {
 }
 
 impl DeckRuntime {
-    /// Start the single-processor VM and its resident actors before admitting work.
+    /// Start the single-processor VM and the Scheme Context batch service.
     pub fn start(config: DeckRuntimeConfig) -> Result<Self, DeckRuntimeStartupError> {
-        if config.actors.get() > 64 {
-            return Err(DeckRuntimeStartupError::ActorCount);
-        }
         if usize::from(config.batch_capacity.get()) > CONTEXT_BATCH_MAX_ROWS {
             return Err(DeckRuntimeStartupError::BatchCapacity);
-        }
-        if config.actor_quantum > 256 {
-            return Err(DeckRuntimeStartupError::ActorQuantum);
         }
         let (queue, jobs) = mpsc::channel(usize::from(config.queue_capacity.get()));
         let (ready, started) = std::sync::mpsc::sync_channel(1);

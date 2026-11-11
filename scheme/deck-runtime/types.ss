@@ -1,4 +1,4 @@
-;;; Deck Module contracts: one owner, resident Context actors.
+;;; Deck Module contracts: one owner, on-demand Context actors.
 
 (import (only-in :clan/poo/object .cc)
         (only-in :clan/poo/mop Any Fun Type.)
@@ -11,9 +11,9 @@
 (def DeckMetadata (Record module-id: [String] version: [UInt]))
 (def TurnVector (.cc Type. '.element? vector?))
 (def DeckActorRuntime
-  (Record evaluate-batch: [(Fun TurnVector <- TurnVector UInt)]
+  (Record evaluate-batch: [(Fun TurnVector <- TurnVector)]
           close: [(Fun Any <-)]))
 (def DeckScopeContract
   (.cc (Record metadata: [DeckMetadata]
-               open: [(Fun DeckActorRuntime <- UInt MarlinContextAdmission)])
+               open: [(Fun DeckActorRuntime <- MarlinContextAdmission)])
        identity: 'marlin/deck-runtime))

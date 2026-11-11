@@ -16,7 +16,7 @@ fn job(index: usize) -> (Job, oneshot::Receiver<Outcome>) {
     )
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn cancelled_and_expired_work_never_enters_scheme() {
     let (cancelled, mut cancelled_result) = job(0);
     cancelled.cancellation.cancel();
@@ -40,7 +40,7 @@ async fn cancelled_and_expired_work_never_enters_scheme() {
     assert_eq!(metrics.scheme_batches, 0);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn cancellation_during_vm_turn_overrides_a_failed_result() {
     let (job, mut result) = job(0);
     let cancellation = job.cancellation.clone();
@@ -57,7 +57,7 @@ async fn cancellation_during_vm_turn_overrides_a_failed_result() {
     assert_eq!(metrics.requests_cancelled, 1);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn malformed_batch_is_rejected_before_any_result_is_published() {
     let (first, mut a) = job(0);
     let (second, mut b) = job(1);
@@ -73,7 +73,7 @@ async fn malformed_batch_is_rejected_before_any_result_is_published() {
     assert_eq!(metrics.requests_failed, 2);
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_full_channel_rejects_without_waiting_or_entering_scheme() {
     let (queue, mut jobs) = mpsc::channel(1);
     let (occupied, _result) = job(0);
@@ -99,7 +99,7 @@ async fn a_full_channel_rejects_without_waiting_or_entering_scheme() {
     assert!(jobs.try_recv().is_err());
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_text_limited_turn_leaves_a_fifo_remainder_for_the_next_turn() {
     use marlin_agent_context::{
         CONTEXT_BATCH_MAX_TEXT_BYTES, ContextBundleId, ContextDestinationId, ContextOrganizationId,

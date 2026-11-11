@@ -137,7 +137,7 @@ Marlin retains the ASCENT answer and receipt and replays them through Lab
 against the same exchange.
 
 =deck-runtime= declares a dependency on Context. Scheme owns the Module's
-metadata and opens resident actors with the selected Lab Context admission
+metadata and schedules Context Actors on demand with the selected Lab Context admission
 operation. Rust submits typed Context/Session requests through a bounded Tokio
 queue and a single VM owner. The rooted C ABI returns Lab Scope identities in
 submission order. The former command-route selector, HTTP facade and Debug CLI
@@ -1428,9 +1428,31 @@ The fixed OS owner initializes
 =GerbilRuntime::initialize_program_single_processor= and verifies one active
 processor. All live Scheme values remain on this owner. The upstream lifecycle
 allows one VM lifetime per process; restart requires a fresh process.
-The existing ordinary [[https://github.com/tao3k/gerbil-scheme-rust/blob/bfe803f597a15a3654b70a64c3a039980c31da8a/scheme/actor-batch.ss][gerbil-scheme-rust actor-batch service]] owns resident
-mailboxes, cooperative green threads and actor joining. No second scheduler
-or mailbox implementation is introduced in Marlin.
+Tokio schedules Rust request, deadline and receipt futures on the host
+runtime's workers. Gerbil schedules Actor mailboxes and green threads on the
+Scheme processor. The OS owner supplies the affinity required by the C ABI.
+
+Deck uses Gerbil's =spawn= for each ready Context row. Each Actor completes
+the Lab Scope identity on its green thread. The Scheme owner joins the
+started Actors and collects results in input order before returning across
+the C ABI, including when a row fails. =DeckRuntimeConfig= controls Rust
+admission and the number of rows transferred per call. The 64-row bound
+belongs to that transfer envelope. Scheme selects the green-thread work
+from ready requests and Rust passes no Actor count or yield quantum.
+Scheme publishes version 3 of the Deck Module contract for these signatures.
+
+Application Actors belong to the Scheme plane. Scheme will spawn them on
+demand according to the owning Module's lifecycle, hold their mailboxes and
+state inside the VM, and retire them when that lifecycle ends. Rust exchanges
+typed requests and receipts and enforces admission budgets at the boundary.
+The application Actor population is independent of the Tokio thread count
+and the Context transfer window. Application Actor creation, retirement and
+population qualification remain implementation work. Today's Context owner
+waits on the Rust queue between C ABI calls. Long-lived Actors with timers
+or mailboxes need a Scheme-owned wait and wake path that keeps the VM
+scheduler available between host requests. Qualify live Actor count, startup
+and retirement time, memory, mailbox throughput and tail latency separately
+from the Context admission baseline.
 
 | Phase | Owner | Bound and result |
 |-------+-------+------------------|
@@ -1439,10 +1461,10 @@ or mailbox implementation is introduced in Marlin.
 | Reply reservation | Rust oneshot | One result destination for each accepted request |
 | Ready work | Fixed Rust owner | At most 64 rows; no fill timer; refill between bounded VM turns |
 | Projection | Context bridge | At most 32 KiB of text per turn; common Scope fields once per consecutive shared group |
-| Actor execution | Scheme VM | Selected Lab Scope admission per row; force its lazy digest before acknowledgement; configurable cooperative yield quantum |
+| Actor execution | Scheme VM | Spawn a green Actor per ready row; force its lazy digest inside the Actor; join all started Actors |
 | Projection validation | Rust owner | Exactly 32 digest bytes per input row; one bulk bytevector copy; ordered correlation |
 | Retirement | Rust owner | Recheck cancellation/deadline; release roots on the owner before the next turn |
-| Shutdown | Owner and awaiting host | Close admission, drain, close actors, finalize VM, publish receipt and join owner |
+| Shutdown | Owner and awaiting host | Close admission, drain, retire the Context service, finalize VM, publish receipt and join owner |
 
 The channel and owner hold at most =queue_capacity + batch_capacity= requests;
 producer futures retain their own inputs. =ContextScope= shares immutable
@@ -1462,9 +1484,9 @@ the engine requires actual runtime-bound project/worktree/source-cut/Session
 inputs; the UI must not manufacture those identities.
 
 Cancellation before a turn skips Scheme entry. Cancellation during a read-only
-turn retires the result after the cooperative batch returns. A client deadline
+turn retires the result after the Scheme batch returns. A client deadline
 is distinct from completion of VM retirement. The shutdown receipt records
-actual processors, actor closure, received/succeeded/cancelled/expired/failed
+actual processors, Context service closure, received/succeeded/cancelled/expired/failed
 requests and attempted Scheme row/batch counts. Drained shutdown requires
 received requests to equal all terminal owner outcomes.
 
@@ -1478,7 +1500,8 @@ The linked SDK graph is compiled from the same Cargo-pinned bridge revision as
 the Rust ABI, ahead of any transitive compiled bridge on the load path.
 
 The =single_vm_actor= bench compares batch capacity 1 and 64 in separate
-processes with four actors, two Tokio workers and the same request count.
+processes with four Tokio workers in Rust, on-demand Actors in Scheme and
+the same request count.
 Startup and 64 warmup requests are outside timing. Counters include warmup;
 throughput and p50/p95 cover the complete typed request/reply path. Observed
 results and qualification limits must be recorded after linked execution.
@@ -1497,7 +1520,7 @@ reads the completed identity and packs bytes. A Scheme regression installs a
 digest getter that checks its Actor owner; forcing it after Actor completion
 would refuse the test.
 
-*** Local qualification record
+*** Local qualification record at 46353f66
 
 The qualified operation is Context Scope admission through the real linked
 VM. The TUI's live conversation binding and plugin activation protocol remain
@@ -1513,7 +1536,8 @@ separate integration work. No provider completion was used in this workload.
 | OpenSysML strict validation and self-check | 403 elements, 3856 checks, zero errors or violations in the PR snapshot |
 | Bazel dependency metadata | Regenerated with the project's deps_prepare / repin configurations; removed command-route package absent |
 
-The runtime source set contains 40 files: Deck and Context Rust sources,
+The runtime source set for the recorded benchmark at =46353f66= contains 40
+files: Deck and Context Rust sources,
 tests and bench; their Cargo manifests; Scheme Context and Deck modules;
 INIT, build and Deck C ABI entries; and the Actor AOT build helper.
 Its path/content SHA-256 is
@@ -1523,9 +1547,10 @@ The local file inventory and raw logs are retained under the ignored
 is =bfe803f597a15a3654b70a64c3a039980c31da8a=; Lab is
 =55bf2074a7ebbd3ad2708a1e17e566a71eb70249=.
 
-*** Release Scope-admission baseline
+*** Release Scope-admission baseline at 46353f66
 
-Each process used one VM processor, four resident actors, two Tokio workers,
+The historical runs below used one VM processor, four Scheme Context batch
+workers, two Tokio workers,
 4096 timed admissions in waves of at most 64, and 64 excluded warmup
 admissions. The reported counters include warmup. The order was A1/B1/B2/A2.
 These are full Scope admissions, including Lab's validation, immutable copies
@@ -1549,3 +1574,44 @@ establish the upstream Actor mailbox's rate or gRPC performance.
 
 Earlier samples before strict digest materialization are retained in the
 local logs as preceding evidence. They are not the result set above.
+
+*** On-demand Actor qualification
+
+The updated path uses Scheme-owned =spawn= and =thread-join!= for ready
+Context admissions and four Tokio workers for Rust request futures. The
+Rust configuration contains queue capacity and C ABI transfer capacity.
+The Scheme regression directly admits 65 rows, verifies a distinct green
+Actor for each row, checks digest materialization on its handling Actor,
+and verifies sibling retirement after an injected admission failure.
+
+The isolated PR snapshot passed eight Deck Rust tests, the direct Scheme
+regression, and strict Deck/Core Clippy with all targets and =actor-runtime=.
+The SDK's explicitly invoked in-process package test passed its Builder and
+complete Scheme Test calls.
+OpenSysML strict validation passed with 405 elements and 3875 checks.
+The local classic-linker workaround recorded for the previous snapshot
+was used for this linked build as well.
+
+The 40-file runtime inventory has path/content SHA-256
+=642bb0e6efe80c721f7f2e9f84d3ecb8455780989d73aa1e148782f24f4bbda2=.
+Its inventory, original failed attempts and final raw logs are retained in
+=target/actor-pr-publication/on-demand-actors/=.
+
+Each process used one Scheme processor, four Tokio workers, 4096 timed
+admissions, 64 excluded warmup admissions and request waves of at most 64.
+All four runs completed 4160 successful admissions with zero failed,
+cancelled or expired owner outcomes.
+
+| Run | C ABI batch cap | Scope admissions/s | p50 ms | p95 ms | Scheme entries including warmup |
+|-----+-----------------+--------------------+--------+--------+---------------------------------|
+| A1 | 1 | 1336.1 | 19.619 | 93.753 | 4160 |
+| B1 | 64 | 1516.7 | 29.683 | 100.250 | 167 |
+| B2 | 64 | 1221.6 | 33.853 | 149.779 | 166 |
+| A2 | 1 | 1284.4 | 19.158 | 88.981 | 4160 |
+
+The two batched runs used about 96 percent fewer Scheme entries. Their
+observed p95 latency exceeded both single-row runs. Shared-host scheduling
+was uncontrolled and throughput varied across the batched repetitions.
+These samples record Context admission behavior under the revised scheduling
+boundary. Large Actor populations, autonomous mailbox progress between
+host entries and sustained performance remain qualification work.

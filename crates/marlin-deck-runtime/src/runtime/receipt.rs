@@ -1,4 +1,4 @@
-//! Owner observations published after actors and the VM have retired.
+//! Owner observations published after the Context service and the VM retire.
 
 /// Why the single VM owner stopped.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -36,6 +36,7 @@ pub struct DeckRuntimeMetrics {
 pub struct DeckRuntimeShutdownReceipt {
     pub reason: DeckRuntimeStopReason,
     pub vm_processors: u32,
-    pub actors_closed: bool,
+    /// The Scheme Context service acknowledged retirement.
+    pub context_service_closed: bool,
     pub metrics: DeckRuntimeMetrics,
 }

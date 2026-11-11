@@ -51,7 +51,7 @@ pub(super) fn run(
             }
         };
         observed_processors = processors;
-        let mut vm = match DeckVm::open(&runtime, config.actors) {
+        let mut vm = match DeckVm::open(&runtime) {
             Ok(vm) => vm,
             Err(error) => {
                 let _ = ready.send(Err(error));
@@ -79,21 +79,19 @@ pub(super) fn run(
                 }
             }
             metrics.largest_request_batch = metrics.largest_request_batch.max(pending.len());
-            turn(&mut pending, &mut metrics, |requests| {
-                vm.evaluate(requests, config.actor_quantum)
-            });
+            turn(&mut pending, &mut metrics, |requests| vm.evaluate(requests));
         }
-        let actors_closed = vm.close().is_ok();
+        let context_service_closed = vm.close().is_ok();
         drop(vm);
         drop(runtime);
         Some(DeckRuntimeShutdownReceipt {
-            reason: if actors_closed {
+            reason: if context_service_closed {
                 DeckRuntimeStopReason::Drained
             } else {
                 DeckRuntimeStopReason::SchemeCloseFailed
             },
             vm_processors: processors,
-            actors_closed,
+            context_service_closed,
             metrics,
         })
     }));
@@ -102,7 +100,7 @@ pub(super) fn run(
         Err(_) => Some(DeckRuntimeShutdownReceipt {
             reason: DeckRuntimeStopReason::OwnerPanicked,
             vm_processors: observed_processors,
-            actors_closed: false,
+            context_service_closed: false,
             metrics,
         }),
     };

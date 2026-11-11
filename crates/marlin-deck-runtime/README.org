@@ -4,20 +4,20 @@
 * Ownership
 
 =DeckRuntime= owns one fixed OS thread, one single-processor Gerbil VM and a
-bounded Tokio admission channel. Resident actors and cooperative green threads
-come from gerbil-scheme-rust. Scheme publishes the Deck Module's metadata and
+bounded Tokio admission channel. Gerbil spawns and schedules a green Actor
+for each ready Context row. The host runtime schedules Rust futures on
+Tokio workers. Scheme publishes the Deck Module's metadata and
 version. =ContextAdmissionRequest= carries owned domain identifiers, immutable
 shared scope and an optional typed Session/turn pair. Lab's existing Scope
 admission operation owns Context semantics.
 
 * Admission and retirement
 
-Enable =actor-runtime=. Construct =DeckRuntimeConfig::new(queue_capacity,
-actors)=; =with_batch_capacity= selects 1..64 rows and =with_actor_quantum=
-selects 0..256 items between explicit Scheme yields. Ready work enters at once,
-without a batch-fill timer. The owner refills its bounded window between VM
-turns and limits projected text to Context's 32 KiB budget. Consecutive requests
-sharing an =Arc<ContextScope>= materialize common fields once.
+Enable =actor-runtime= and construct =DeckRuntimeConfig::new(queue_capacity)=.
+=with_batch_capacity= selects 1..64 rows per Context C ABI transfer. The
+owner immediately submits ready work, refills between VM turns and limits
+projected text to Context's 32 KiB budget. Consecutive requests sharing an
+=Arc<ContextScope>= materialize common fields once.
 
 =admit_context(request, budget, cancellation)= returns a =ContextScopeDigest=.
 The rooted SDK boundary carries strings, vectors, a u64vector and one packed
@@ -26,11 +26,12 @@ no JSON or command-line protocol crosses this boundary. A digest identifies a
 Lab-admitted Scope; it does not grant permission to perform an external effect.
 
 Cancellation and deadlines are checked before submission and before result
-delivery. An active read-only Scheme batch finishes cooperatively and releases
-its roots on the owner. =shutdown().await= closes admission for every clone,
-drains accepted work, closes actors, drops the VM, publishes a typed receipt
-and joins the owner. Dropping the final handle also drains the channel. The
-upstream process lifecycle permits only one VM initialization per process.
+delivery. Each batch joins its started Actors before returning, and its roots
+are released on the owner. =shutdown().await= closes admission for every
+clone, drains accepted work, retires the Context service, drops the VM,
+publishes a typed receipt and joins the owner. Dropping the final handle also
+drains the channel. The upstream process lifecycle permits one VM
+initialization per process.
 
 * Verification
 
@@ -38,7 +39,8 @@ upstream process lifecycle permits only one VM initialization per process.
 linked Context actors, queue retirement and shutdown. The =single_vm_actor=
 bench accepts batch capacity and request count, for example
 =cargo bench -p marlin-deck-runtime --features actor-runtime --bench single_vm_actor -- 64 1024=.
-Run batch 1 and 64 in separate processes under matched conditions. Counters
+Run batch 1 and 64 in separate processes under matched conditions. The test
+and benchmark hosts each use four Tokio workers. Counters
 include 64 warmup requests; timed throughput and p50/p95 cover request/reply.
 Qualification results belong in the [[file:../../docs/40-rfcs/40.166-plugin-contract.org::#single-vm-actor-runtime][Org RFC]].
 
