@@ -1,5 +1,5 @@
 {
-  "checksum": "fb6f0a9799c11fa9af9d037296ebe33cc67deb3c17cf93089a70e48c8cdc10b6",
+  "checksum": "5e536265d00295cf05244035f5a5c6c1316b96c33f2cf1b5fe9ea7ae2a5083df",
   "crates": {
     "adler2 2.0.1": {
       "name": "adler2",
@@ -16431,6 +16431,15 @@
             {
               "id": "serde 1.0.229",
               "target": "serde"
+            }
+          ],
+          "selects": {}
+        },
+        "deps_dev": {
+          "common": [
+            {
+              "id": "sha2 0.10.9",
+              "target": "sha2"
             }
           ],
           "selects": {}
@@ -37689,6 +37698,7 @@
     "futures-executor 0.3.34",
     "memoffset 0.9.1",
     "reqwest 0.13.5",
+    "sha2 0.10.9",
     "static_assertions 1.1.0",
     "tempfile 3.27.0"
   ],

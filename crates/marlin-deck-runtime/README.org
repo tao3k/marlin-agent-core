@@ -57,7 +57,18 @@ retired Actors and submitted and collected messages.
 =cargo test -p marlin-deck-runtime --features actor-runtime= exercises real
 linked Context actors, queue retirement and shutdown. The =single_vm_actor=
 bench accepts batch capacity and request count, for example
-=cargo bench -p marlin-deck-runtime --features actor-runtime --bench single_vm_actor -- 64 1024=.
+=cargo bench -p marlin-deck-runtime --features actor-runtime --bench single_vm_actor -- 64 4096=.
+
+The qualification cohort uses four fresh processes, 64 warmup requests and
+4096 measured requests per process. Each returned digest and request index is
+retained. Independent known answers for this fixed Unicode/session fixture are
+prepared before VM startup; all warmup and measured identities are checked
+after timing. Missing, duplicate, foreign or substituted results fail the run.
+The oracle makes no extra Scheme admissions and reports its own elapsed time.
+Successful receipt counts alone do not establish result identity. Earlier
+benchmark results that discarded returned digests do not have this check.
+Exit success covers these semantic/lifecycle checks; the 20 ms latency target
+is assessed separately against every process in the complete cohort.
 Run batch 1 and 64 in separate processes under matched conditions. The test
 and benchmark hosts each use four Tokio workers. Counters
 include 64 warmup requests; timed throughput and p50/p95/p99 cover request/reply.

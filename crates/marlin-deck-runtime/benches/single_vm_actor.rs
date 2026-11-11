@@ -4,6 +4,8 @@
 
 #[path = "../tests/unit/context_fixture.rs"]
 mod context_fixture;
+#[path = "support/scope_identity.rs"]
+mod scope_identity;
 use marlin_deck_runtime::{DeckRuntime, DeckRuntimeConfig, DeckRuntimeStopReason};
 use std::{
     error::Error,
@@ -23,6 +25,11 @@ fn main() -> Result<(), Box<dyn Error>> {
     if count == 0 {
         return Err("count must be positive".into());
     }
+    // Prepare the Rust-only known answers before starting the VM. No reference
+    // requests, extra Scheme warmup or admission verdict cache is involved.
+    let expected: Vec<_> = (0..count.max(64))
+        .map(scope_identity::expected_digest)
+        .collect();
     let startup_begin = Instant::now();
     let deck = DeckRuntime::start(
         DeckRuntimeConfig::new(128.try_into()?).with_batch_capacity(batch.try_into()?),
@@ -34,8 +41,12 @@ fn main() -> Result<(), Box<dyn Error>> {
         .build()?;
     runtime.block_on(async {
         let scope = context_fixture::scope("benchmark-source");
-        let mut latencies = Vec::with_capacity(count);
-        for index in 0..64 { deck.admit_context(context_fixture::request(&scope, index), Duration::from_secs(60), CancellationToken::new()).await?; }
+        let mut completed = Vec::with_capacity(count);
+        let mut warmup = Vec::with_capacity(64);
+        for index in 0..64 {
+            let digest = deck.admit_context(context_fixture::request(&scope, index), Duration::from_secs(60), CancellationToken::new()).await?;
+            warmup.push((index, *digest.as_bytes()));
+        }
         let started = Instant::now();
         for wave in (0..count).step_by(64) {
             let mut calls = tokio::task::JoinSet::new();
@@ -43,13 +54,20 @@ fn main() -> Result<(), Box<dyn Error>> {
                 let deck = deck.clone(); let request = context_fixture::request(&scope, index);
                 calls.spawn(async move {
                     let start = Instant::now();
-                    deck.admit_context(request, Duration::from_secs(60), CancellationToken::new()).await?;
-                    Ok::<_, marlin_deck_runtime::DeckRuntimeRejection>(start.elapsed().as_nanos())
+                    let digest = deck.admit_context(request, Duration::from_secs(60), CancellationToken::new()).await?;
+                    let elapsed = start.elapsed().as_nanos();
+                    Ok::<_, marlin_deck_runtime::DeckRuntimeRejection>((index, elapsed, *digest.as_bytes()))
                 });
             }
-            while let Some(result) = calls.join_next().await { latencies.push(result??); }
+            while let Some(result) = calls.join_next().await { completed.push(result??); }
         }
-        let elapsed = started.elapsed(); latencies.sort_unstable();
+        let elapsed = started.elapsed();
+        let oracle_begin = Instant::now();
+        scope_identity::verify(&expected[..64], warmup.iter().map(|(index, digest)| (*index, digest)))?;
+        scope_identity::verify(&expected[..count], completed.iter().map(|(index, _, digest)| (*index, digest)))?;
+        let oracle = oracle_begin.elapsed();
+        let mut latencies: Vec<_> = completed.iter().map(|(_, elapsed, _)| *elapsed).collect();
+        latencies.sort_unstable();
         let shutdown_begin = Instant::now();
         let receipt = deck.shutdown().await?;
         let shutdown = shutdown_begin.elapsed();
@@ -61,7 +79,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         assert_eq!(receipt.mailbox.actors_retired, 1);
         assert_eq!(receipt.mailbox.results_collected, count as u64 + 64);
         println!(
-            "batch_capacity={batch} requests={count} elapsed_s={:.6} requests_per_s={:.1} p50_us={:.1} p95_us={:.1} p99_us={:.1} p999_us={:.1} max_us={:.1} over_20ms={} startup_s={:.6} shutdown_s={:.6} vm_processors={} tokio_workers={TOKIO_WORKERS} metrics={:?} mailbox={:?}",
+            "batch_capacity={batch} requests={count} elapsed_s={:.6} requests_per_s={:.1} p50_us={:.1} p95_us={:.1} p99_us={:.1} p999_us={:.1} max_us={:.1} over_20ms={} startup_s={:.6} shutdown_s={:.6} vm_processors={} tokio_workers={TOKIO_WORKERS} digest_oracle=independent_known_answer digest_verified={} oracle_us={} metrics={:?} mailbox={:?}",
             elapsed.as_secs_f64(),
             count as f64 / elapsed.as_secs_f64(),
             latencies[count / 2] as f64 / 1000.0,
@@ -73,6 +91,8 @@ fn main() -> Result<(), Box<dyn Error>> {
             startup.as_secs_f64(),
             shutdown.as_secs_f64(),
             receipt.vm_processors,
+            count + 64,
+            oracle.as_micros(),
             receipt.metrics,
             receipt.mailbox,
         );

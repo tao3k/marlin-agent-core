@@ -5,6 +5,8 @@
 //! Component diagnostics, separate from the unchanged production workload.
 #[path = "../tests/unit/context_fixture.rs"]
 mod context_fixture;
+#[path = "support/scope_identity.rs"]
+mod scope_identity;
 use gerbil_scheme::{CollectionKind, GerbilRuntime, LinkedGerbilProgram, NumericBuffer};
 use marlin_agent_context::{ContextScopeBatch, gerbil::project_scope_batch};
 use marlin_deck_runtime as _;
@@ -128,13 +130,17 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
     }
     assert_eq!(count, 4096);
+    let result_projection = started.elapsed();
+    let expected: Vec<_> = (0..4096).map(scope_identity::expected_digest).collect();
+    assert_eq!(encoded.len(), expected.len() * 32);
+    scope_identity::verify(&expected, encoded.as_chunks::<32>().0.iter().enumerate())?;
     if let Some(path) = std::env::args().skip(1).find(|arg| arg != "--bench") {
         assert_eq!(encoded.len(), 4096 * 32);
         std::fs::write(path, encoded)?;
     }
     println!(
-        "rust_result_projection_rows={count} elapsed_us={}",
-        started.elapsed().as_micros()
+        "rust_result_projection_rows={count} elapsed_us={} digest_oracle=independent_known_answer digest_verified={count}",
+        result_projection.as_micros()
     );
     // Existing diagnostic export: this is an upper-bound probe of a typed
     // roundtrip plus native statistics collection and copying, not pure ABI time.

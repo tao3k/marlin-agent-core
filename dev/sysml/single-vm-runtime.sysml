@@ -168,7 +168,13 @@ package MarlinSingleVmRuntime {
                admission path on one VM. Batch 1 and batch 64 run in separate
                processes with the same Context scopes and
                workload. Use at least four Tokio workers in the test host.
-               Record throughput, latency percentiles and actual batch counters. */
+               Record throughput, latency percentiles and actual batch counters.
+               Retain each returned scope digest with its offered request index.
+               After timing, verify the complete warmup and measured sets against
+               independent known answers, rejecting duplicates, substitutions
+               and missing or foreign identities. Prepare reference answers
+               outside VM startup; make no extra Scheme admissions or warmup.
+               Successful reply counts alone cannot qualify result identity. */
     }
     requirement <'MAR-VM-R05'> messageLatency {
         doc /* The mailbox qualification profile offers one million planned

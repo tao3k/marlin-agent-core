@@ -42,6 +42,7 @@ marlin-gerbil-aot-link.workspace = true
 
 [dev-dependencies]
 marlin-agent-protocol.workspace = true
+sha2.workspace = true
 
 [[bench]]
 name = "context_profile"

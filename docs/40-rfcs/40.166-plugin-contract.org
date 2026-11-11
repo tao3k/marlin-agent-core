@@ -2110,7 +2110,14 @@ upstream pin changes are used for this linked production path.
 The unchanged =single_vm_actor= workload runs in four fresh processes with
 4096 timed requests, 64 warmup requests, batch capacity 64, four Tokio workers
 and one Scheme processor. Release preparation takes 293 seconds and is excluded
-from the latency. Every run completes the digest/reply and retirement oracles.
+from the latency. Every run completes its success-count and retirement checks.
+An audit of the benchmark found that it discarded returned digests. The earlier
+claim that these runs checked digest identity was incorrect. The separate
+component diagnostic checks Actor/direct-path equivalence, but that cannot
+retroactively supply an independent digest oracle for these production runs.
+The limitation also applies to earlier =single_vm_actor= cohorts below;
+their recorded counts and shutdown checks remain evidence, without proving
+independent result identity.
 
 | Process | Requests/s | p50 ms | p95 ms | p99 ms | Requests over 20 ms |
 |---------+------------+--------+--------+--------+---------------------|
@@ -2124,6 +2131,41 @@ the current typed runtime path, not a latency improvement against historical
 cohorts with different SDK/library pins. Existing owner-turn and component
 diagnostics must attribute the remaining tails; allocation accounting is still
 unqualified on this installed runtime.
+
+The benchmark now prepares independent SHA-256 known answers for its fixed
+scope-v1 fixture before VM startup and retains each returned digest with its
+request index. After the timed interval it checks all 64 warmup and all timed
+results for exact identity, cardinality, duplicate indices and substitutions.
+It makes no extra Scheme requests or reference admissions. Negative controls
+reject altered digests, exchanged identities, duplicate/foreign indices and
+missing results. The component diagnostic also checks these independent
+answers after stopping its Rust result-projection timer, before optional
+artifact I/O. This Rust-only fixture is not a runtime Context encoder or a
+replacement for Lab admission. Historical failures remain recorded; the
+stronger receipt capture does not qualify a performance improvement.
+
+With this oracle, the complete four-fresh-process cohort verifies 4160 digests
+per process, including all warmups. It retains the same 4096/64 request counts,
+64-request waves, queue 128, batch capacity 64, four Tokio workers, one Scheme
+processor and 2 GiB maximum heap. Release preparation takes 94.036 seconds and
+is excluded from latency. Post-measurement oracle checks take 10--29 microseconds.
+
+| Process | Requests/s | p99 ms | Verified digests | Oracle us |
+|---------+------------+--------+------------------+-----------|
+| 1 | 4781.5 | 129.2090 | 4160 | 23 |
+| 2 | 6192.7 | 76.5326 | 4160 | 17 |
+| 3 | 3423.2 | 170.2560 | 4160 | 29 |
+| 4 | 5864.5 | 69.1708 | 4160 | 10 |
+
+All four fail the 20 ms target. The crate gate passes thirteen tests, including
+the two independent-oracle tests, and strict all-target Clippy passes for both
+=actor-runtime= and =mailbox-benchmark=. The existing nine-stage diagnostic
+also verifies all 4096 independent digests, with ordered buffer SHA-256
+=a68e0a6a01f972575b88a31059d878df582c428a26ef17dd41492b7de745fdf9=.
+Its Rust result projection takes 75 microseconds, before oracle work or file I/O;
+10,000 typed statistics round trips average 1.283 microseconds with no GC.
+The Scheme-pipeline allocation counter still moves backwards by 1,810,079,504.
+No physical allocation or Context latency improvement is qualified by this cut.
 
 The existing owner-turn diagnostic observes three GC turns among 375 turns.
 Their elapsed times are 65.530, 59.491 and 58.507 ms, with GC wall times of
