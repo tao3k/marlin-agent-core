@@ -42,6 +42,16 @@ fn model_gateway_request_owns_runtime_visible_message_contract() {
 }
 
 #[test]
+fn uncorrelated_tool_roles_are_rejected_during_decode() {
+    for role in ["tool", "function"] {
+        let message = serde_json::json!({"role": role, "content": "result", "name": null});
+        assert!(
+            serde_json::from_value::<marlin_agent_protocol::ModelGatewayMessage>(message).is_err()
+        );
+    }
+}
+
+#[test]
 fn model_gateway_trait_compiles_without_provider_dependency() {
     let gateway = StaticGateway;
     let request = ModelGatewayRequest::new(ModelEndpoint::new("openai", "gpt-5-mini"), vec![]);
