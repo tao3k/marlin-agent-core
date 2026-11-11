@@ -277,6 +277,16 @@ revision and uses the prepared profile. No context compression is introduced.
 
 ** Provider continuation and thinking (2026-11-11)
 
+A local TUI smoke on 2026-11-11 used the project's =direnv= environment with
+an Anthropic-compatible DeepSeek base URL and credential, leaving model and
+endpoint to Weaver's environment fallback. A real streamed single-turn
+arithmetic request returned the expected result. The test recorded only a
+pass/fail marker, not the credential or response body. Two further local
+two-turn runs enabled adaptive thinking and returned the expected values in
+both turns; one explicitly confirmed that the TUI displayed a thinking
+segment. These runs did not enable a session journal, qualify a PR head, or
+establish Org-backed persistence or provider signature authentication.
+
 Marlin now pins Weaver PR #4 by Git revision. Weaver resolves missing Anthropic endpoint/model from the
 environment, while explicit TOML values win. The Marlin adapter carries
 Anthropic continuation and thinking fragments. The TUI checks observed answer
