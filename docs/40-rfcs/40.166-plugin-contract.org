@@ -2328,3 +2328,35 @@ C initializer still requests the retired
 no alias or alternate initialization path is introduced. The real linked
 selector suite passes all three tests locally with the established toolchain.
 The failed remote run is retained and does not qualify the later correction.
+
+*** Allocation ownership inside checked reads
+
+Reparsing the retained complete constructor census gives a narrower ownership
+boundary without executing another workload. The original generated C and
+counter-file hashes are checked, the existing strict parser admits every site,
+and the resulting sums equal the earlier per-unit totals. For the 4,096-row
+checked admission phase, =make-read-issuer= performs 204,800 record allocations
+and 204,800 authentication-closure allocations: 16,384,000 and 19,660,800 bytes,
+respectively. Each issuance therefore costs 80 bytes for its record and 96
+bytes for its birth-authentication closure in this paired toolchain. Together
+they account for 36,044,800 bytes, about 30.07% of the phase's 119,883,288
+observed generated-code bytes. This is 50 issued read records per row across
+the existing construction and argument/result validation path, not 50 calls
+to the admission API.
+
+The digest-only phase issues 4,096 more records/closures, totaling 720,896
+bytes. The complete Actor phase reaches 208,903 issuances, totaling 36,766,928
+bytes, about 28.92% of its observed allocation. This decomposition identifies
+an allocation owner; it does not assign CPU time or quantify a latency saving.
+Prebuilt RTS/interpreter, native FIFO and foreign allocation remain outside
+coverage. Raw receipts are retained in
+=target/context-runtime-research/physical-linked/read-issuer-breakdown.json=.
+
+The paired POO owner keeps both the exposed read record and a privately issued
+closure so mutations of the record cannot manufacture an authenticated read.
+The actual source also preserves dependencies for later observation and
+invalidation. Deleting those records, accepting an old successful validation,
+or replacing the descriptor with a consumer-local shortcut would change the
+contract. Any representation improvement belongs in that existing POO owner
+and requires its mutation/observer controls plus the complete Marlin cohort;
+this investigation introduces no alternate validation or read authority.
