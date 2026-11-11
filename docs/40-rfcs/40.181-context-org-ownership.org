@@ -135,11 +135,18 @@ dependency graph, not the pinned Lab package build, Marlin's Deck VM, a turn
 journal, or qualification of the Orgize run's failed Rust performance gate.
 With ASCENT =62299efe= also available, Lab's
 =t/ai-agentic-context-core-test.ss= returned =OK= on a subsequent run after
-the native modules had been loaded in preceding processes. The first run reported a
+the native modules had been loaded in preceding processes. These direct =gxtest=
+runs omitted Lab's required heap-fenced =just test-file= entrypoint and are
+diagnostics, not a qualified Lab test. The first run reported a
 =YuanxuDebugDurationAnomaly= in the Memory initialization case after its
 60-second idle budget, despite =gxtest= returning exit status zero. The warm
 success does not erase that failure or qualify cold-start latency; consumers
 must inspect harness output as well as the exit status.
+The isolated Lab revision-alignment candidate was subsequently checked with
+the required =just test-file t/ai-agentic-context-core-test.ss= entrypoint,
+using the same assembled Orgize artifact and ASCENT source. It emitted
+=MODULE-OK=, =HARNESS-OK=, and final =OK=, then exited zero without error
+markers. This focused test is not a full package build or a cold-start gate.
 
 - Bind Org source, selected content, exact scope/session/turn and source cut to
   the Lab operation; distinguish a decoded projection from a current-use grant.
