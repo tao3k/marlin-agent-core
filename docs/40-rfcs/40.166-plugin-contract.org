@@ -2284,3 +2284,9 @@ retains the previously documented classic-linker workaround. These gates
 qualify the reported functional slice, not the unmet production latency
 objective or the unpublished Core backports. Shared TUI and Context/Org
 changes are excluded through an independent publication index.
+
+The linked AOT workflow now also triggers on relevant pull-request changes
+and checks Ubuntu/macOS independently. Manual dispatch retains its explicit
+runner-label input. GitHub refused the original manual-only workflow because
+it was absent from the default branch; those 404 responses did not start a
+remote gate. Remote results must be associated with the actual final PR SHA.

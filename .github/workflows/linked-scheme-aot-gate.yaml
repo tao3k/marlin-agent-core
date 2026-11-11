@@ -1,6 +1,18 @@
 name: Linked native AOT gate
 
 on:
+  pull_request:
+    paths:
+      - ".github/workflows/linked-scheme-aot-gate.yaml"
+      - "build-support/marlin-gerbil-aot-link/**"
+      - "crates/marlin-deck-runtime/**"
+      - "crates/marlin-agent-context/**"
+      - "crates/marlin-gerbil-scheme/**"
+      - "crates/marlin-gerbil-ir/**"
+      - "crates/marlin-agent-policy-routing-abi/**"
+      - "scheme/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
   workflow_dispatch:
     inputs:
       linked_native_runner:
@@ -22,7 +34,11 @@ env:
 jobs:
   linked-selector:
     name: Linked native AOT gate
-    runs-on: ${{ fromJSON(inputs.linked_native_runner || '["macos-latest"]') }}
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: ${{ fromJSON(github.event_name == 'workflow_dispatch' && format('[{0}]', inputs.linked_native_runner || '["ubuntu-latest"]') || '["ubuntu-latest","macos-latest"]') }}
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@v6
@@ -94,7 +110,7 @@ jobs:
       - name: Compile linked selector benchmarks
         run: |
           cargo bench --locked -p marlin-deck-runtime --features actor-runtime --bench single_vm_actor --no-run
-          cargo bench --locked -p marlin-deck-runtime --features mailbox-benchmark --bench mailbox --no-run
+          cargo bench --locked -p marlin-deck-runtime --features mailbox-benchmark --bench mailbox --bench context_profile --no-run
           cargo bench --locked -p marlin-agent-policy-routing-abi --features linked-selector --bench linked_selector --no-run
           cargo bench --locked -p marlin-agent-policy-routing-abi --features linked-selector --bench allocation_shape --no-run
 
