@@ -65,7 +65,7 @@ static size_t marlin_agent_policy_routing_abi_decision_capacity = 0;
 static int marlin_agent_policy_routing_abi_initialized = 0;
 
 ___BEGIN_NEW_LNK
-___DEF_NEW_LNK(___LNK_agent_2d_policy_2d_routing_2d_native_7e_0__)
+___DEF_NEW_LNK(___LNK_agent_2d_policy_2d_routing_2d_abi_7e_0__)
 ___END_NEW_LNK
 
 int
@@ -80,7 +80,7 @@ marlin_agent_policy_routing_initialize (void)
 
   ___setup_params_reset (&setup_params);
   setup_params.version = ___VERSION;
-  setup_params.linker = ___LNK_agent_2d_policy_2d_routing_2d_native_7e_0__;
+  setup_params.linker = ___LNK_agent_2d_policy_2d_routing_2d_abi_7e_0__;
   setup_result = ___setup (&setup_params);
   if (setup_result != ___FIX(___NO_ERR)) {
     return ___INT(setup_result);

@@ -2290,3 +2290,41 @@ and checks Ubuntu/macOS independently. Manual dispatch retains its explicit
 runner-label input. GitHub refused the original manual-only workflow because
 it was absent from the default branch; those 404 responses did not start a
 remote gate. Remote results must be associated with the actual final PR SHA.
+
+*** Transitive phase and delayed-evaluation roots
+
+A later disposable probe follows each registered context's existing
+=super=, =up= and =down= links without forcing promises or creating contexts.
+After closure it sees 890 reachable expander contexts: 491 module contexts,
+six preludes and 393 other phase/root contexts. Their tables contain 335,099
+bindings, including 127,386 outside the module-context tables. Module/prelude
+evaluation slots contain 88 pending and 408 determined promises.
+
+The paired Gerbil source stores the expanded body both in =code= and in the
+=delay-atomic= evaluator closure. Gambit's determined-promise path clears its
+thunk; pending evaluator closures can independently retain a body. In the
+same disposable process, after the earlier code and module-table controls,
+removing evaluation-promise roots reduces retained memory from 140,227,320
+to 122,051,608 bytes. Removing remaining reachable context-table roots reduces
+it to 96,745,768 bytes. These are respectively 18,175,712 and 25,305,840 bytes
+of additional root-attributed retention in that cut.
+
+The process performs no later Module operation and exits naturally with zero
+business messages/Actors. Clearing those structures destroys compiler state;
+it is not an implementation, permission, or safe retirement rule. Experimental
+source was saved under =target/context-runtime-research/retention-topology-probe/=
+and the maintained benchmark restored byte-for-byte. Approximately 96.7 MB
+still lacks individual-owner attribution at the final destructive cut. This
+refines the earlier 140 MB remainder; it does not qualify a latency improvement
+or change the production dependency cohort.
+
+*** Linked-selector ABI symbol correction
+
+The first automatic macOS linked gate for PR head =f2a24fa= fails during
+linking, before any linked test or performance gate executes. The included
+C initializer still requests the retired
+=agent-policy-routing-native~0= Gambit linker while the existing builder emits
+=agent-policy-routing-abi~0=. Both references now use the emitted ABI name;
+no alias or alternate initialization path is introduced. The real linked
+selector suite passes all three tests locally with the established toolchain.
+The failed remote run is retained and does not qualify the later correction.
