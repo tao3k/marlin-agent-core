@@ -147,6 +147,11 @@ the required =just test-file t/ai-agentic-context-core-test.ss= entrypoint,
 using the same assembled Orgize artifact and ASCENT source. It emitted
 =MODULE-OK=, =HARNESS-OK=, and final =OK=, then exited zero without error
 markers. This focused test is not a full package build or a cold-start gate.
+The same candidate's =just test-file t/ai-agentic-context-session-host-test.ss=
+failed during module initialization with =Ops execution budget exceeded= (idle)
+and exit status 42 while the isolated dependency build was also running. No
+Session-host behavior or durable journal is qualified by that run; the reason
+for the initialization delay has not been established.
 
 - Bind Org source, selected content, exact scope/session/turn and source cut to
   the Lab operation; distinguish a decoded projection from a current-use grant.
