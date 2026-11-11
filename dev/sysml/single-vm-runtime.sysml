@@ -238,7 +238,12 @@ package MarlinSingleVmRuntime {
                Decompose validation, digest, typed projection and boundary work
                using same-phase CPU and GC counters. A statistics-export probe
                includes collection and copying; it is not bare ABI transition
-               cost. Independent component means cannot qualify business p99. */
+               cost. Independent component means cannot qualify business p99.
+               Cumulative allocation accounting must remain monotonic on the
+               same processor across explicit GC, automatic GC and rejected
+               heap reservations. Repair bookkeeping in its runtime owner;
+               never clamp or take absolute values of a backward counter.
+               A logical heap charge is not a physical allocation census. */
     }
     requirement <'MAR-VM-R12'> preservePublicationAuthority {
         doc /* Any compiler-state lifetime optimization belongs to the existing

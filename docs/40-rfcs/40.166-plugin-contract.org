@@ -2546,3 +2546,70 @@ independently of weak keys, and the native cycle control remains reachable.
 Raw installation, component, retention and A/B/B/A records are retained under
 =target/context-runtime-research/current-chain-{gate,runtime}/=. Owner-level
 experiments remain separate from production acceptance and from TUI changes.
+
+*** Cumulative still-object accounting: isolated runtime correction
+:PROPERTIES:
+:CUSTOM_ID: context-allocation-accounting
+:END:
+
+An independent native GSC control reproduces backward allocation accounting
+without Gerbil imports, Rust or C ABI calls. The follow-up exports Gambit
+=ea114fc3d2f120abbe20393c1f9aeafdd3f8c89f= and applies the existing global-table
+capacity and multi-VM setup patches maintained by Gerbil Bazel at
+=260f9449a9c5cbce4fa1b8e619ba3dd0621da15b=. These are baseline preparation,
+not allocation changes. The standard clean build uses the installed compiler's
+configure options, GCC 16, the host SDK and =make -j4=. Both images retain SMP
+support but these controls execute on one Scheme processor.
+
+The defect is in the allocation owner's =lib/mem.c=. Deferred still-object
+words move into VM bookkeeping without entering the processor's historical
+charge, while the getter adds current VM still-object occupancy. Reclaiming
+those objects can therefore make a cumulative reading fall. The isolated
+correction transfers deferred charges before clearing them, charges a new
+nondeferred object only after successful allocation, and removes current VM
+occupancy from the cumulative getter. Existing GC entry/exit accounting remains.
+The correction changes no public function, header or ABI layout.
+
+The two statically linked GSI images use the same unchanged control sources.
+Explicit-GC controls retain 16 rounds and 33 samples; automatic-GC controls
+retain 64 rounds, a 32 MiB maximum heap and 66 samples. All three controls
+exit naturally with status 0 in both images. Resulting charges are logical
+runtime accounting, including control/interpreter work, not physical bytes.
+
+| Control | Payload/work | Baseline backward steps | Corrected backward steps | Baseline net charge | Corrected net charge |
+|---------+--------------+-------------------------+--------------------------+---------------------+----------------------|
+| Still objects, explicit GC | 16 x 262144-byte u8vectors | 16 | 0 | 705808 | 4912752 |
+| Movable objects, explicit GC | 16 x 2048 pairs | 0 | 0 | 4908976 | 4909040 |
+| Still objects, automatic GC | 64 x 1048576-byte u8vectors | 32 | 0 | 1460528 | 68599648 |
+
+The automatic-GC control observes 31 automatic collections and one final
+explicit collection in both images. Corrected cumulative charges cover the
+allocated vector payloads. A separate 32 MiB heap-limit control rejects one
+64 MiB vector request in both images; its accounting delta is 7088/7184 bytes,
+not the rejected payload. This checks VM heap-limit rejection, not injected
+C allocator failure. Multiple-processor accounting remains a separate gate.
+
+The original =make check= runs both exit with status 2: 370 of 373 unit cases
+pass, with the same three failures in =02-flonum/fladdmul.scm=,
+=03-number/bitwise_eqv.scm= and =03-number/lcm.scm=. The numerical assertions
+already fail in the unmodified accounting baseline. Tests 1 through 10,
+including the original memory/C-interface and dynamic-loading tests, pass in
+both images. The separately invoked original =test12= stack-ownership test
+also passes in both. There are no newly failing cases in this comparison;
+the full regression gate remains failing.
+
+Earlier failures are retained: the inherited Nix SDK fails the initial GCC probe;
+unprepared multi-VM source fails setup compilation; an incremental build with
+objects predating the maintained header patches crashes at startup. Disassembly
+shows the stale flat-table access. The standard clean rebuild resolves that
+mixed-object failure. The sandboxed baseline suite also retains six explicit
+UDP permission failures. None is reported as a passing test.
+
+The correction remains an isolated runtime-owner prototype. Marlin's SDK and
+toolchain pins are unchanged, so its production statistics are not certified
+by this control. This does not qualify physical allocation totals, remove the
+roughly 219 MB compiler-state retention, or improve the failed complete Context
+latency cohort. Raw sources, patch, immutable binary hashes, controls and all
+build/regression logs are retained in
+=target/context-runtime-research/gambit-accounting/=. No TUI implementation is
+changed.
