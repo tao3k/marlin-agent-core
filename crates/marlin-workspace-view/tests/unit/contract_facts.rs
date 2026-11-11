@@ -1,4 +1,4 @@
-use marlin_org_model::{
+use marlin_context_org_model::{
     OrgContract, OrgContractAssertion, OrgContractCompareOp, OrgContractExpectation, OrgContractId,
     OrgContractKind, OrgContractQuery, OrgContractRegistry, OrgContractScope, OrgContractSeverity,
     OrgContractValidationReceipt, OrgContractValidationReport, OrgContractValidationSkipReason,

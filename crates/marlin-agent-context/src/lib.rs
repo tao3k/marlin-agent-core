@@ -2,6 +2,9 @@
 
 #[cfg(feature = "gerbil")]
 pub mod gerbil;
+/// Org-backed Context source and optional memory projections.
+#[cfg(feature = "org-source")]
+pub mod org;
 mod request;
 pub use request::{ContextAdmissionRequest, ContextScope, ContextSession, ContextTurn};
 

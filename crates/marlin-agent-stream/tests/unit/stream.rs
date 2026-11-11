@@ -8,8 +8,8 @@ use marlin_agent_stream::{
     ChunkGate, ModelGatewayCompletionChoice, ModelGatewayCompletionOptions,
     ModelGatewayCompletionResponse, ModelNoWriteProbeRequest, ModelNoWriteProbeStatus,
     ModelStreamChunk, ModelStreamEvent, ModelStreamGateway, ModelStreamRequest,
-    ModelStreamTransport, WeaverModelGateway, assistant_gateway_message, run_model_no_write_probe,
-    system_gateway_message, user_gateway_message,
+    ModelStreamTransport, ModelStreamingGateway, WeaverModelGateway, assistant_gateway_message,
+    run_model_no_write_probe, system_gateway_message, user_gateway_message,
 };
 use marlin_agent_test_support::{
     NO_LIVE_LLM_GATE_DENIAL_MESSAGE, NoLiveHttpModelGatewayFixture, NoLiveLlmModelGateway,
@@ -23,6 +23,131 @@ const LIVE_LLM_MODEL_ENV: &str = "MARLIN_LIVE_LLM_MODEL";
 const LIVE_LLM_PROVIDER_API_KEY_ENV: &str = "MARLIN_LIVE_LLM_PROVIDER_API_KEY_ENV";
 const LIVE_LLM_TIMEOUT_MS_ENV: &str = "MARLIN_LIVE_LLM_TIMEOUT_MS";
 const DEFAULT_LIVE_LLM_TIMEOUT_MS: u64 = 60_000;
+
+#[test]
+fn anthropic_thinking_requires_matching_valid_continuation() {
+    use marlin_agent_protocol::{ModelContinuation, ModelContinuationKind};
+    use marlin_agent_stream::matches_observed_anthropic_thinking;
+    let endpoint = ModelEndpoint::new("anthropic", "fixture");
+    let mut message = assistant_gateway_message("answer");
+    message.continuation = Some(ModelContinuation {
+        endpoint,
+        kind: ModelContinuationKind::AnthropicMessages,
+        destination: None,
+        payload: r#"[{"type":"thinking","thinking":"thought","signature":"sig"},{"type":"text","text":"answer"}]"#.into(),
+    });
+    assert!(matches_observed_anthropic_thinking(&message, "thought"));
+    assert!(!matches_observed_anthropic_thinking(&message, "thought!"));
+    message.content = "changed".into();
+    assert!(!matches_observed_anthropic_thinking(&message, "thought"));
+    message.content = "answer".into();
+    message.continuation.as_mut().unwrap().payload = "[]".into();
+    assert!(!matches_observed_anthropic_thinking(&message, "thought"));
+    message.continuation.as_mut().unwrap().payload = "not-json".into();
+    assert!(!matches_observed_anthropic_thinking(&message, "thought"));
+}
+
+#[tokio::test]
+async fn invalid_request_override_is_rejected_before_stream_dispatch() {
+    let defaults = weaver_llm::AnthropicSettings {
+        thinking: Some(weaver_llm::AnthropicThinking::Enabled {
+            budget_tokens: 2048,
+        }),
+        effort: None,
+        max_tokens: Some(4096),
+    }
+    .options(weaver_llm::Protocol::Anthropic)
+    .unwrap();
+    let gateway = WeaverModelGateway::new(
+        weaver_llm::Client::new(Duration::from_secs(1), 4096).unwrap(),
+        "fixture".into(),
+        weaver_llm::Endpoint::new(
+            weaver_llm::Protocol::Anthropic,
+            "http://127.0.0.1:9/v1/messages",
+        )
+        .unwrap(),
+        "fixture",
+    )
+    .with_default_options(defaults);
+    let request = marlin_agent_protocol::ModelGatewayRequest::new(
+        ModelEndpoint::new("fixture", "fixture"),
+        vec![user_gateway_message("hello")],
+    )
+    .with_options(ModelGatewayCompletionOptions {
+        max_tokens: Some(1024),
+        ..Default::default()
+    });
+    assert!(matches!(
+        gateway.stream(request).await,
+        Err(ModelGatewayError::RequestNotDispatched(_))
+    ));
+}
+
+#[tokio::test]
+async fn continuation_cannot_cross_destination_credential_or_legacy_boundary() {
+    use marlin_agent_protocol::{
+        ModelContinuation, ModelContinuationKind, ModelDestinationBinding, ModelGatewayRequest,
+    };
+    let identity = ModelEndpoint::new("fixture", "fixture");
+    let original = weaver_llm::Endpoint::new(
+        weaver_llm::Protocol::Anthropic,
+        "http://127.0.0.1:9/v1/messages",
+    )
+    .unwrap();
+    let binding = ModelDestinationBinding::new(original.continuation_binding("first-key"));
+    let mut assistant = assistant_gateway_message("answer");
+    assistant.continuation = Some(ModelContinuation {
+        endpoint: identity.clone(),
+        kind: ModelContinuationKind::AnthropicMessages,
+        destination: Some(binding),
+        payload: r#"[{"type":"text","text":"answer"}]"#.into(),
+    });
+    let request = ModelGatewayRequest::new(identity, vec![assistant, user_gateway_message("next")]);
+    let client = weaver_llm::Client::new(Duration::from_secs(1), 4096).unwrap();
+    let new_gateway = |endpoint, key: &'static str| {
+        WeaverModelGateway::new(client.clone(), "fixture".into(), endpoint, key)
+    };
+    let changed_url = weaver_llm::Endpoint::new(
+        weaver_llm::Protocol::Anthropic,
+        "http://127.0.0.1:10/v1/messages",
+    )
+    .unwrap();
+    for gateway in [
+        new_gateway(changed_url, "first-key"),
+        new_gateway(original.clone(), "second-key"),
+        new_gateway(
+            original
+                .clone()
+                .with_authentication(weaver_llm::Authentication::Bearer),
+            "first-key",
+        ),
+    ] {
+        assert!(matches!(
+            gateway.stream(request.clone()).await,
+            Err(ModelGatewayError::RequestNotDispatched(_))
+        ));
+    }
+    let mut legacy = request.messages().to_vec();
+    let mut stored = serde_json::to_value(&legacy[0]).unwrap();
+    stored["continuation"]
+        .as_object_mut()
+        .unwrap()
+        .remove("destination");
+    legacy[0] = serde_json::from_value(stored).unwrap();
+    assert!(
+        legacy[0]
+            .continuation
+            .as_ref()
+            .unwrap()
+            .destination
+            .is_none()
+    );
+    let legacy = ModelGatewayRequest::new(request.endpoint().clone(), legacy);
+    assert!(matches!(
+        new_gateway(original, "first-key").stream(legacy).await,
+        Err(ModelGatewayError::RequestNotDispatched(_))
+    ));
+}
 
 #[test]
 fn model_stream_request_preserves_gateway_parts() {
@@ -106,7 +231,7 @@ async fn weaver_gateway_runs_marlin_probe_through_responses_sse() {
         socket.write_all(concat!(
             "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nConnection: close\r\n\r\n",
             "data: {\"type\":\"response.output_text.delta\",\"delta\":\"marker\"}\n\n",
-            "data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_fixture\",\"model\":\"gpt-fixture\",\"status\":\"completed\",\"output\":[]}}\n\n",
+            "data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_fixture\",\"model\":\"gpt-fixture\",\"status\":\"completed\",\"output\":[{\"type\":\"message\",\"content\":[{\"type\":\"output_text\",\"text\":\"marker\"}]}]}}\n\n",
         ).as_bytes()).await.expect("reply");
     });
     let gateway = WeaverModelGateway::new(
@@ -158,6 +283,32 @@ async fn responses_fixture_request(
     (socket, payload)
 }
 
+#[tokio::test]
+async fn weaver_stream_open_transport_failure_is_typed_as_uncertain() {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}/v1/responses", listener.local_addr().unwrap());
+    let fixture = tokio::spawn(async move {
+        let (socket, payload) = responses_fixture_request(&listener).await;
+        assert_eq!(payload["input"][0]["content"], "hello");
+        drop(socket);
+    });
+    let gateway = WeaverModelGateway::new(
+        weaver_llm::Client::new(Duration::from_secs(2), 4096).unwrap(),
+        "openai".into(),
+        weaver_llm::Endpoint::new(weaver_llm::Protocol::OpenAiResponses, &url).unwrap(),
+        "fixture",
+    );
+    let request = marlin_agent_protocol::ModelGatewayRequest::new(
+        ModelEndpoint::new("openai", "gpt-fixture"),
+        vec![user_gateway_message("hello")],
+    );
+    assert!(matches!(
+        gateway.stream(request).await,
+        Err(ModelGatewayError::StreamOpenTransport)
+    ));
+    fixture.await.unwrap();
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn weaver_gateway_replays_a_tool_turn_through_marlin() {
     use serde_json::json;
@@ -204,7 +355,7 @@ async fn weaver_gateway_replays_a_tool_turn_through_marlin() {
         );
         let delta = json!({"type":"response.output_text.delta","delta":"marlin-live-tool-ok"});
         let completed = json!({"type":"response.completed","response":{
-            "status":"completed","id":"resp_second","model":"gpt-fixture","output":[]
+            "status":"completed","id":"resp_second","model":"gpt-fixture","output":[{"type":"message","content":[{"type":"output_text","text":"marlin-live-tool-ok"}]}]
         }});
         socket
             .write_all(format!("{SSE}data: {delta}\n\ndata: {completed}\n\n").as_bytes())
@@ -240,6 +391,7 @@ async fn replay_marker_tool(gateway: &WeaverModelGateway, endpoint: &ModelEndpoi
         tool_call_id: None,
         tool_calls: vec![],
         responses_output: None,
+        anthropic_output: None,
     }];
     let options = Options {
         max_tokens: Some(512),
@@ -272,6 +424,7 @@ async fn replay_marker_tool(gateway: &WeaverModelGateway, endpoint: &ModelEndpoi
             .expect("first event")
         {
             TurnEvent::Text(_) => {}
+            TurnEvent::Thinking(_) => panic!("Responses fixture does not emit thinking fragments"),
             TurnEvent::Finished {
                 tool_calls,
                 responses_output,
@@ -310,6 +463,7 @@ async fn replay_marker_tool(gateway: &WeaverModelGateway, endpoint: &ModelEndpoi
             tool_call_id: None,
             tool_calls,
             responses_output,
+            anthropic_output: None,
         },
         Message {
             role: Role::Tool,
@@ -319,6 +473,7 @@ async fn replay_marker_tool(gateway: &WeaverModelGateway, endpoint: &ModelEndpoi
             tool_call_id: Some(id),
             tool_calls: vec![],
             responses_output: None,
+            anthropic_output: None,
         },
     ]);
     let mut events = Box::pin(
@@ -344,6 +499,7 @@ async fn replay_marker_tool(gateway: &WeaverModelGateway, endpoint: &ModelEndpoi
             .expect("second event")
         {
             TurnEvent::Text(delta) => text.push_str(&delta),
+            TurnEvent::Thinking(_) => panic!("Responses fixture does not emit thinking fragments"),
             TurnEvent::Finished {
                 identity,
                 tool_calls,

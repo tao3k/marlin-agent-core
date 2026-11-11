@@ -9,6 +9,6 @@ marlin_crate_with_policy_data(
     deps = crate_deps(["serde"]) + [
         "//crates/marlin-agent-protocol:marlin_agent_protocol",
         "//crates/marlin-gerbil-ir:marlin_gerbil_ir",
-        "//crates/marlin-org-model:marlin_org_model",
+        "//crates/marlin-agent-context/parts/org-model:marlin_context_org_model",
     ],
 )

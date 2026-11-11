@@ -18,7 +18,7 @@ _INTEGRATION_TURSO_DEPS = _INTEGRATION_BASE_DEPS + crate_deps([
     "tokio",
 ]) + [
     "//crates/marlin-agent-sessions:marlin_agent_sessions",
-    "//crates/marlin-org-memory:marlin_org_memory",
+    "//crates/marlin-agent-context:marlin_agent_context",
 ]
 
 _INTEGRATION_COMPILE_DATA = [":storage_evidence_data"]

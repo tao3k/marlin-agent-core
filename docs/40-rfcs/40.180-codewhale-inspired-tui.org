@@ -1,0 +1,863 @@
+#+title: Codewhale-inspired Marlin terminal interface
+
+* Objective and reference
+
+Build a usable terminal interface for Marlin, informed by Codewhale's TUI at
+=b8643a76e417c4fbc55251be1308cdb6862a80f5=.  The reference checkout lives in
+=.data/Codewhale= and is not a build dependency.  Codewhale is MIT licensed;
+any copied material must retain its required notices and third-party attribution.
+
+Marlin remains the owner of execution, policy, configuration, typed receipts,
+and evidence.  The interface must not fabricate an agent response, approval,
+tool outcome, or a successful action when the backing capability is absent.
+
+* Work and acceptance
+
+This is an evolving feature inventory, not a claim of parity. Each item remains
+open until its real Marlin integration and the listed validation exist.
+
+- [ ] Inventory the reference's composer, transcript, streaming, navigation,
+  slash commands, approval, sessions, model selection, tool and process views,
+  diffs, themes, accessibility and terminal lifecycle. Map each to an existing
+  Marlin contract or record its missing runtime capability.
+- [ ] Build a terminal application with resize, Unicode input, multiline editing,
+  scrollback, keyboard help, and reliable terminal restoration on exit and error.
+  Exercise it in a real pseudo-terminal as well as deterministic component tests.
+- [ ] Connect user turns and incremental output to a real configured Marlin
+  runtime and model gateway. Preserve cancellation, errors and no-live-LLM
+  denial evidence; exercise a deterministic end-to-end provider fixture.
+- [ ] Display typed graph, tool, process, sandbox and policy receipts without
+  replacing them with reconstructed log text. Provide navigation to details.
+- [ ] Connect approvals and permission controls only to runtime-owned typed
+  authority, and verify allow, denial, cancellation and failure paths.
+- [ ] Support session creation, selection, persistence and replay through the
+  existing session and storage contracts; verify recovery across restarts.
+- [ ] Integrate supported configuration, model routing, workspace and diff
+  operations through their owning APIs. Clearly identify unavailable features.
+- [ ] Cover keyboard navigation, terminal resize, narrow layouts, Unicode,
+  paste, long output and accessibility; add meaningful integration checks.
+- [ ] Integrate Cargo and Bazel build paths and user documentation; run focused
+  tests and record any wider build or platform limitations.
+
+* Initial observations
+
+Codewhale's TUI spans a large product surface and depends on its own engine,
+protocol, runtime and many other crates. Copying it wholesale would introduce a
+second authority model. Marlin currently describes its =marlin= executable as a
+harness/debug surface, and its typed model gateway, graph execution and runtime
+receipts are separate building blocks. A terminal shell must integrate those
+blocks rather than treating the existing debug CLI's JSON output as its protocol.
+
+* Architecture and performance model
+:PROPERTIES:
+:CUSTOM_ID: tui-performance
+:END:
+
+The [[file:../../dev/sysml/tui-architecture.sysml][structural model]] separates
+inspected reference and Marlin behavior from proposed components and allocates
+requirements to their owners. The [[file:../../dev/sysml/tui-lifecycle.sysml][turn lifecycle]]
+models provisional output, runtime admission, cancellation and retirement.
+The target model is not an implementation or a performance result.
+
+** Evidence and design risks
+
+| Observation | Evidence and interpretation | Target response |
+|-------------+-----------------------------+-----------------|
+| Codewhale coalesces updates and limits frame rate | Reference =b8643a76=, =crates/tui/src/tui/frame_rate_limiter.rs= | Preserve event-driven redraw and distinguish idle, burst and low-motion policies. |
+| Codewhale keeps transcript and output caches | =tui/app.rs= viewport and =tui/output_rows_cache.rs=, which limits entry count and estimated bytes | Use bounded, versioned visible-row projections; qualify invalidation on width, style and content changes. |
+| A Codewhale translation event channel is unbounded | =tui/ui/event_loop.rs= creates an unbounded channel. Producer rate and impact are not measured. | Bound both event count and bytes, preserve control capacity, and measure overload behavior. |
+| Codewhale historically recorded long-session concerns | =crates/tui/CHANGELOG.md= under 0.10.1 describes growth, UI-task cloning, and duplicate resume reads. The entry is historical; current behavior has not been independently established. | Qualify retention, snapshot cost and resume reads on both current reference and Marlin. |
+| Marlin previously redrew on every poll and walked all transcript entries | The client now schedules dirty frames and uses a separate row-layout owner without the renderer's =u16= scroll limit. Deep scrolling and long individual lines still require scans. | Add indexed, bounded projections and qualify resize, long-line and deep-scroll behavior. |
+| Marlin bounds queued model events by count and accounted heap capacity | =event_queue.rs= uses 64 slots and a 32 MiB permit budget; Weaver chunks are at most 64 KiB. The input queue has eight slots. In-flight events, transport, accumulated response and transcript history are separate. | Bound producer and retained live memory independently, and provide durable retention for terminal evidence. |
+| The TUI has local request cancellation and optional durable history | =app.rs= aborts its task; it does not receive an authoritative runtime retirement receipt. An opt-in Turso journal records admission and terminal observations and blocks uncertain continuation. | Runtime owns cancellation outcome and late-event fencing; storage owns ordered, replayable facts. |
+| The graph controller captures events concurrently with an iteration | Previously its 64-item capture queue could fill while the controller waited for that same iteration to finish. The controller now drains during execution and the primary stream retains its backpressure behavior. | Captured iteration traces are still retained in an unbounded vector, are not durable, and need an explicit bounded persistence design before long-running TUI integration. |
+| Native graph proposal admission | Static compilation rejects native proposals, while the native compilation path requires a readiness receipt matching the ABI identity, version and exact required symbol set. | The receipt is a typed runtime observation, not cryptographic proof of a loaded library; TUI graph execution and durable graph evidence are still not wired. |
+
+The in-memory session backend maintains per-project/session event counts under
+the same mutex as event insertion. Replay's before/after count checks therefore
+use an indexed lookup instead of traversing all events in that session. Batch
+validation precedes index updates, so a rejected batch does not increment the
+count. This is an algorithmic change to the in-memory backend, not a measured
+end-to-end improvement or a change to Turso or the planned Org backend.
+The storage unit suite passed seven tests, including cross-project and
+cross-session counts and a rejected atomic batch that leaves counts unchanged.
+
+The readiness receipt encoding now includes its evaluated required symbols.
+Older serialized receipts lacking that field are rejected and must be
+regenerated from the original runtime readiness check; counts alone cannot
+establish the symbol identities.
+
+The AgentGraph execution-request builder also checks nested readiness evidence:
+the request, planning, projection, admission, timestamps, selected plan and
+root loop entry must agree before a request is produced. This checks consistency
+of supplied receipts, not their authenticity or the continued availability of
+the referenced runtime graph.
+
+These observations do not establish a comparative performance result or imply
+that all reference-project features have been examined. In particular, a
+bounded queue must not discard a denial, completion, or other semantic receipt
+to satisfy a memory limit. Display coalescing is distinct from event retention.
+
+** Issue-derived engineering requirements
+
+Issue observations are reports, not proof that current heads still have every
+reported defect. Statuses below were checked on 2026-11-11; regression coverage
+and current-version reproduction remain separate from issue closure.
+
+| Issue | Evidence and design consequence | Marlin verification status |
+|-------+---------------------------------+----------------------------|
+| [[https://github.com/codewhale-hq/Codewhale/issues/5981][Codewhale #5981]] | Closed with #5993: multiline paste was split into submitted turns; the fix addressed the startup path as well as paste detection. | Bracketed UTF-8/CRLF paste is one bounded event, with no submission before Enter; a local PTY test covers it. Unbracketed paste and platform matrix remain open. |
+| [[https://github.com/openai/codex/issues/13729][Codex #13729]] | Closed as duplicate of #31416; maintainers did not claim the Windows paste bug fixed. Newlines may submit without reliable paste boundaries. | Do not infer atomic paste on unbracketed input or extrapolate Unix PTY evidence to Windows. |
+| [[https://github.com/codewhale-hq/Codewhale/issues/6842][Codewhale #6842]] | Open report links long-session retained journal, oversized metadata, UI-thread snapshots and repeated resume reads. The 0.10.1 changelog records partial mitigations and remaining concerns. | Bound live projections independently from durable history; test retention, checkpoint, resume I/O and UI latency separately. Not implemented. |
+| [[https://github.com/openai/codex/issues/21945][Codex #21945]] | Open report identifies full-history overlay rebuilding and repeated wrapping as long-session costs; normal inline view has different behavior. | One bounded visible-viewport cache exists; changed content and dimensions still trigger layout. Benchmark real overlay and resize paths as well as ordinary frames. |
+| [[https://github.com/openai/codex/issues/23260][Codex #23260]] | Open report describes long-running subagent retention and an export that hydrates and clones large history on the UI task. | Bound producer, retained projection and export independently; qualify long sessions and cleanup with actual runtime ownership. |
+| [[https://github.com/openai/codex/issues/16165][Codex #16165]] | Closed after #18575 rebuilt source-backed transcript history on resize and cleared stale rows. | A deterministic backend compares cached repeated resize frames and cursor positions against fresh frames while a turn is active; one Unix PTY exercises shrink/grow during an open stream and subsequent scroll anchoring. Actual screen contents across terminal implementations remain unqualified. |
+| [[https://github.com/codewhale-hq/Codewhale/issues/6169][Codewhale #6169]] | Closed historical report and maintainer investigation describe terminal foreground ownership, suspend and checkpoint hazards; the report's mechanism needed correction. | Model a single terminal owner and test suspend/foreground, shell handoff, mode restoration and incomplete work recovery. Not implemented. |
+| [[https://github.com/codewhale-hq/Codewhale/issues/6978][Codewhale #6978]] | Report includes replayed old queued messages and snapshot failure; do not conflate the two independent failure paths. | Durable event identities, acknowledgements and restart/crash tests must exclude duplicate turn dispatch and preserve failed-work evidence. Not implemented. |
+
+** Qualification plan
+
+Use the same terminal dimensions, fixture content, chunk timing, build profile,
+machine, OS, sampling method, and offline provider for each paired comparison.
+Keep reference revision =b8643a76e417c4fbc55251be1308cdb6862a80f5= and the
+exact Marlin revision and dirty patch identity in every result. Warm up, run
+multiple paired repetitions and retain raw observations, failures, and p50,
+p95, p99 and maximum where meaningful. Report CPU time, allocation count and
+bytes, peak RSS, bytes read and written, queued bytes, redraw count, input to
+visible-frame latency, first-chunk to visible-frame latency, and cancellation to
+runtime retirement latency separately; never substitute component timing for a
+full user-visible measurement.
+
+Scenarios include an idle terminal; 1k, 10k and 100k transcript rows; bursts
+of short and large Unicode chunks; bounded slow-consumer overload; resize and
+scroll during streaming; large paste and multiline editing; failed and
+cancelled turns; and cold and warm session resume. Verify ordered delivery,
+no duplicate replay, correct viewport, grapheme boundaries, no lost terminal
+receipts, and restored terminal state in the same scenarios. Record retained
+and transient memory separately and use a real pseudo-terminal for end-to-end
+latency, while deterministic render and queue tests isolate mechanisms.
+
+Quantitative thresholds are not yet accepted: first collect baseline
+distributions and workload sizes, then choose explicit budgets and regression
+limits with the user. A local green test, SysML validation, reference project's
+historical claim, or a single run does not establish high-performance parity.
+
+* Initial implementation and evidence
+
+** Workspace top-layout component diagnostic (2026-11-11)
+
+For the new top-origin workspace projection, one local debug-build diagnostic
+compared the previous reverse scan to the forward projection in the same
+process, using the same 880,000-byte single Unicode line, 80-column width and
+12-row viewport. The test first asserted identical visible lines, then ran five
+reverse/forward pairs. On Darwin 25.6.0 arm64 with rustc 1.95.0, elapsed
+microseconds were =reverse [1080916, 1137290, 610020, 708251, 618865]= and
+=forward [371, 361, 1268, 354, 357]=. The checkout HEAD was
+=74731c34be0771c01c68c3a67234e33e9b0fb200= with uncommitted work; the
+measured =viewport.rs= SHA-256 was
+=a94645e8aadbad22d943ec544deda792533af5e4c54cf98c2a063f4f523114f5=,
+=wrap.rs= was =01235622bd95cebbb78ee5d9ef04f9e5f3b00745d8eac8a39c18e5d0aeaabe89=,
+and =tests/unit/viewport.rs= was
+=89d608ccac9496f6d711ebfbebe30c77615fa13dac2ee85beb825aa228458464=.
+This is a small, fixed-order component diagnostic with no contention control;
+it is not a terminal responsiveness, release-build, memory, deep-scroll or
+Codewhale comparison. Large individual graphemes may still require scanning
+outside the displayed columns.
+
+** Stream-open uncertainty (2026-11-11)
+
+The runtime edge timeout and Weaver's typed open-stage timeout or transport
+failure now produce typed unresolved observations rather than a completed
+failed turn. The session journal appends an explicit uncertainty event and
+retains the turn as unfinished; a failed uncertainty storage write relinquishes
+local authority because its commit status is unknown. Replay preserves the
+reason and blocks further turns. A local PTY fixture confirmed that a provider
+which had already received a request but did not respond is not contacted
+again after timeout and restart. This does not establish remote cancellation
+or a general exactly-once contract. After the stream opens, transport loss,
+timeout, invalid provider responses and missing terminal events are also
+recorded as unresolved; the observed pending prefix is checkpointed first.
+Invalid chunk sequence or size, local and provider byte-limit rejection, and
+an inconsistent completion now follow the same typed unresolved path; the
+first rejected chunk is not added to the persisted prefix. A malformed
+completion is treated conservatively even if the provider has actually stopped.
+Failed checkpoint and terminal writes relinquish local authority. Any otherwise
+unclassified error observed after stream open also becomes a typed unresolved
+observation; its original diagnostic is not retained by this path. Generic
+errors during stream opening are also unresolved unless the gateway explicitly
+reports that no downstream request was dispatched. Model-catalog rejection and
+edge readiness failure provide that local evidence. The unclassified error's
+original diagnostic is not retained. Historical failed events are not reclassified.
+When a pre-dispatch rejection reaches the TUI (after its journal observation is
+recorded in a persistent session), it restores the submitted prompt if the composer is empty; otherwise
+it preserves the new draft and the visible rejected prompt. The session can
+accept another turn. A rejection-labelled event from an already opened stream
+is treated as uncertain, and a failed terminal journal write does not release
+the session. These behaviors do not reconcile an incompatible continuation.
+The journal's terminal-write API accepts only completion or a pre-dispatch
+rejection, and rejects a pre-dispatch rejection after a checkpoint. Legacy
+failed and locally cancelled terminal records remain readable with their
+historical semantics; replaying them does not establish remote retirement.
+Their presence now blocks new journal claims, even when later historical turns
+exist. They remain inspectable, but there is no reconciliation command yet.
+
+** Provisional Bazel integration (2026-11-11)
+
+Recheck on 2026-11-11: the repository's configured executable is =bazelisk=.
+The default offline =bazelisk test //crates/marlin-agent-tui:unit= invocation
+=d0790031-93e2-4c58-bd03-8abbe01d6240= failed before analysis because
+=bazel/vendor= lacks =rules_rust+=. It executed no tests. The temporary vendor
+and source overrides described below are not part of the default build.
+
+Explicit TUI library, binary and unit targets now have supporting stream,
+runtime, environment, git-utils and session targets. Runtime and session
+targets distinguish the default storage graph from the Turso graph so the TUI
+uses one consistent Rust storage type. These BUILD targets remain provisional:
+they have passed only under the diagnostic overrides described below. The
+previous =Cargo.Bazel.lock= had pre-existing uncommitted changes and its TUI
+dependency map omitted =serde_json= and =tower=. A later isolated generator
+refresh changed only that crate's two mappings and the checksum; the resulting
+lock was byte-identical after those changes were applied to the workspace, and
+the pre-existing remaining contents were retained. =Cargo.lock= and
+=MODULE.bazel= were unchanged. The TUI BUILD now uses =crate_deps= for both.
+Configured analysis of the refreshed TUI binary and unit targets succeeded
+(invocation =6338dc8e-cb2c-4970-8de9-4905eb4d7aca=); it ran no build actions.
+After BUILD formatting, configured target analysis succeeded for the TUI unit
+and binary and the default runtime target (invocation
+=8deebcab-5e61-4aa8-a4a4-262f66be8bac=); analysis ran no build actions.
+
+The normal offline query failed because the local vendor tree lacks
+=rules_rust=. An isolated temporary vendor directory and network-enabled
+dependency preparation allowed analysis without changing the repository lock
+or vendor tree. On Darwin arm64, invocation
+=1852d2c1-bfc5-4aac-9200-8b05ec84fa2b= failed compiling =windows-future
+0.3.2=; configured dependency queries identify unconditional Windows edges
+from =process-wrap 9.1.1= and =sysinfo 0.39.6=. After applying diagnostic-only
+temporary external-repository overrides to those edges, invocation
+=9cc5cd0c-29fd-41e2-93ed-b4ea7dd7e1fc= failed compiling
+=meta-relational-reasoning=: its =include_bytes!=/=include_str!= paths to
+MRR repository-root proof files and =Cargo.lock= are absent in the flattened
+external crate repository. The dependency path starts at the TUI's Turso
+storage, through =mrr-data-backend=, =mrr-data-content= and =mrr-data-core=.
+The diagnostic also emitted Nix compiler-target warnings. No TUI test executed
+in either build; neither diagnostic override is a production fix or a valid
+Bazel qualification. Cross-platform Cargo-to-Bazel dependency resolution,
+MRR source layout, platform-aware lock generation, offline vendor preparation and actual test
+execution remain open.
+
+The isolated lock refresh did not repair the platform selection. Cargo's
+locked offline metadata reports both =process-wrap='s and =sysinfo='s
+=windows= dependency under =cfg(windows)=, while the refreshed Bazel lock still
+lists them unconditionally. Therefore these platform edges need a generator or
+dependency-configuration fix; repinning alone is insufficient.
+
+On the same host, a further diagnostic used a temporary copy of the complete
+MRR source at the exact locked revision
+=c202aa2753678c02dc7daafdec853f66f3368a70=, retaining its original proof
+files and =Cargo.lock=. The Cargo checkout had no tracked modifications; its
+only untracked entry was Cargo's =.cargo-ok=. The temporary generated BUILD
+used the original crate root inside the full repository. With that source
+layout and the two temporary platform overrides, invocation
+=4a0b5774-c7ff-4fec-89c2-950ce7ed76c3= built the TUI binary and ran its Bazel
+unit target: 72 passed, four ignored. This establishes the cause of the missing
+MRR inputs and verifies the provisional targets under those overrides. It is
+not a normal offline build or proof that a maintainable cross-platform Bazel
+integration exists; the overrides are outside the repository and the earlier
+Nix toolchain warnings remain relevant. The resulting Bazel binary also passed
+the local stream/paste and persisted-session/replay PTY fixtures. Those fixtures
+accept =MARLIN_TUI_BINARY= for selecting the tested executable; these runs used
+the diagnostic binary and do not qualify a normal Bazel build.
+
+** Weaver configuration ownership
+
+Weaver PR #4 revision =cea04974f4100402900842de417fdd598e1861ab= provides =Configuration= / =PreparedProfile=
+with explicit configuration first and Anthropic environment fallback for
+missing model, base URL and credential. Marlin pins this public, unmerged
+revision and uses the prepared profile. No context compression is introduced.
+
+** Provider continuation and thinking (2026-11-11)
+
+Marlin now pins Weaver PR #4 by Git revision. Weaver resolves missing Anthropic endpoint/model from the
+environment, while explicit TOML values win. The Marlin adapter carries
+Anthropic continuation and thinking fragments. The TUI checks observed answer
+and thinking against the retained Anthropic blocks before allowing a follow-up;
+this is a consistency check, not signature authentication.
+The local Anthropic PTY fixture passed two turns using =ANTHROPIC_BASE_URL=;
+it is not a live DeepSeek test. Bazel build qualification and Org-backed
+history remain required. Optional per-route
+Anthropic thinking, effort and token limits are parsed and validated by Weaver;
+an explicit request limit overrides a route default and is revalidated before
+dispatch.
+An Anthropic PTY fixture exercises streamed thinking and a signature, checks
+that the continuation was stored in the session database, and exercises live
+and reopened-session follow-ups. This fixture does not establish signature
+authenticity, Org persistence or live-provider behavior.
+The following paragraphs describe earlier pinned-revision observations.
+
+New Weaver continuations bind to a versioned fingerprint of the normalized
+destination, protocol, authentication mode, headers and credential. The adapter
+rejects mismatches before dispatch. Historical continuations without a binding
+remain readable but cannot be sent automatically; no reconciliation mechanism
+is implemented. Credential rotation also blocks continuation. This fingerprint
+is sensitive and can enable offline guessing of weak credentials; it is not
+server authentication, account identity, or authorization to rebind history.
+
+A real DeepSeek Anthropic-compatible exchange using the local Weaver worktree
+completed a streamed first turn and a second buffered request with the preserved
+assistant output; the model recalled the first turn. A subsequent two-turn live
+exchange using explicit adaptive thinking and low effort also delivered thinking
+fragments and recalled the first turn. These establish that the configured
+provider accepted those particular replays, not that the Marlin TUI performed
+them. Weaver retains ordered thinking, signatures and text in its typed opaque
+=AnthropicOutput=. Its local worktree also supplies typed Anthropic thinking and
+effort options, and exposes provider-returned thinking as a separate streaming
+event whose debug formatting redacts content. The upstream client suite passed
+81 tests with one ignored, and all-target Clippy passed against the isolated
+copy. They are now present in Marlin's pinned Weaver PR #4 revision.
+
+Marlin's message protocol now has an opaque, debug-redacted continuation
+carrier. The currently pinned Weaver's OpenAI Responses output is retained in
+both buffered and streaming completions, stored with the assistant message and
+sent back through Weaver. Existing journal serialization retains this field;
+replay and context admission count its bytes, and completion admission counts
+its owned heap capacity. A different logical provider/model/alias or an invalid
+payload is rejected before dispatch. This does not bind the actual URL or
+credential; changing the physical destination behind the same logical route is
+not detected. Historic messages without a continuation do not prove that no
+provider state was lost. These paths have a compilation check only and do not
+establish provider or restart interoperability.
+
+A local PTY fixture with streamed text and an empty Responses terminal output
+exposed a loss: pinned Weaver replays the empty provider output and omits the
+visible assistant text from the next request. The local Weaver worktree has a
+continuation/text consistency check, but Marlin's pinned revision does not.
+Local Weaver also checks a digest of streamed text against the terminal output
+before publishing a successful terminal event; this remains unpublished and
+is not present in Marlin's pinned dependency. The local Weaver LLM unit and
+client suites passed 102 tests, with one ignored; these are not Marlin
+integration or live-provider results.
+The session PTY fixture now emits a consistent provider output and separately
+checks that switching to an incompatible route preserves the draft and sends
+no request. That fixture passed locally; it does not qualify malformed
+provider output or Weaver PR #4 beyond those fixtures.
+
+The earlier pinned Anthropic decoder could not preserve thinking. The current
+PR dependency carries =AnthropicOutput= in both stream and buffered paths.
+Binding continuation to the prepared destination and validating durable
+Org-backed multi-turn replay remain required. No
+context compression or truncation is an acceptable substitute. Thinking
+configuration and verified follow-up remain separate requirements.
+
+The independent Session journal accepts thinking checkpoints in the same
+strict sequence as text checkpoints, with a combined per-turn byte limit.
+Replay retains the observed thinking and answer prefixes separately and
+reconstructs their interleaving from bounded channel spans. It blocks later
+requests when recorded thinking has not been verified against a provider
+continuation. A typed, debug-redacted thinking stream event now passes through
+bounded UI admission, ordered pre-display journal checkpoints and interleaved
+terminal display for a compliant generic gateway. UI admission bounds the
+combined thinking/answer bytes and rejects a turn after 4096 alternating
+display segments; it does not truncate and continue. The local Weaver adapter
+now produces that event. The guard still blocks a follow-up after thinking;
+this is not durable Org storage or proof that all provider thinking was observed.
+Adjacent same-channel checkpoints share a projection span; the source events
+and their full bytes remain unchanged. A replay exceeding the segment limit is
+rejected rather than silently dropping events.
+An in-memory journal/gateway/TUI fixture checked interleaved text and thinking,
+pre-display journal writes and the blocked follow-up; a separate Turso reopen
+test preserved thinking prefixes across storage reopening. These do not
+establish Org persistence, provider continuation validation or live behavior.
+The new event kind is an explicit journal protocol change: older readers
+reject it as unknown and must be upgraded before opening such a session.
+
+An offline Cargo check in an isolated Marlin copy, with only the Weaver Git
+source patched to the local LLM crate, failed at three compile sites: the
+buffered and streaming adapters do not handle =TurnEvent::Thinking=, and the
+Weaver =Message= initializer lacks =anthropic_output=. These are the first
+type-level migration blockers, not an exhaustive integration audit. A finished
+integration must carry the ordered continuation and thinking observations
+through the runtime, bounded UI, Org-backed session and replay without
+discarding them; merely adding match arms or dropping thinking is insufficient.
+
+** Current TUI
+
+For long logical lines at the live tail, the renderer can now retain a bounded
+ring of visible row slices and scan once instead of twice. It limits retained
+slice capacity to 16384 entries and falls back to the previous two-pass path
+when the slice or viewport budget is exceeded; a slice-budget overflow may
+therefore add a partial scan before fallback. Tests compare it to the previous
+layout, including Unicode and fallback cases. A same-process debug-build
+component diagnostic for a 250000-byte line at 80x12 measured eight paired
+samples: the previous path took 140083–429368 microseconds, the new path
+67763–123652 microseconds. This is not a full TUI, release-build, or sustained
+streaming benchmark. Layout still scans a changed line, and a narrow CJK
+fixture produced different wrapping from Ratatui's full renderer; the optimized
+path preserves Marlin's previous behavior rather than resolving that difference.
+
+=marlin-agent-tui= now provides a terminal client for a configured Marlin
+model gateway. Its first version has a grapheme-aware composer, multiline
+input, transcript scrolling, request cancellation and terminal restoration.
+The configured Weaver adapter also checks cumulative text before appending
+each chunk to its completion buffer; its limit is explicit and optional for
+other adapter users. The TUI checks cumulative model text before accepting each stream event in
+both persistent and nonpersistent sessions, rejecting a chunk that would cross
+16 MiB and keeping prior text provisional. A completion without chunks is
+checked too. The journal and UI also reject completion responses over 32 MiB
+of accounted owned heap capacity across metadata and all choices before journal
+cloning or queue admission; the journal records the prefix and typed uncertainty.
+The journal retains its independent persistence boundary. The UI
+guards cannot bound provider decoding or allocations made before an event is
+yielded, and do not provide a total-memory or runtime-retirement guarantee.
+Before model dispatch the TUI also budgets the complete model history and the
+next prompt against 10,000 exchanges and 64 MiB of accounted message data.
+It rejects an over-budget request without cloning, dispatching, losing the
+draft, or truncating history. Admission accounting includes message structure,
+text and optional names, not allocator capacity or all request metadata. A
+successful response can take retained history above the admission threshold;
+the next request is then rejected. This does not bound total process memory,
+transcript contents, or journal events, and the two 64 MiB limits for context
+and replay account different objects.
+Successful exchanges form the in-memory model context; failed and cancelled
+requests are visible but are excluded from subsequent context. The interface
+does not yet provide agent tools, approvals or graph receipts; local persistent
+sessions are optional. A typed gateway stream now displays text chunks
+before completion and includes only successfully completed turns in later
+model requests. Interrupted partial text remains visible with its error.
+The multiline composer follows the cursor across wrapped rows and normalizes
+its position when edits join grapheme clusters. Home/End and Ctrl-A/Ctrl-E
+move to logical-line boundaries even when a line wraps. A pseudo-terminal fixture checks
+a completed-session prompt history round trip while retaining the draft and
+isolating session context. Another fixture checks
+a five-line pasted draft, cursor visibility and exact submitted text. Composer
+layout still scans the draft prefix. Up and down navigate displayed rows while
+retaining the desired column across short rows and respecting grapheme boundaries.
+Ctrl-O opens a separate slash-command editor without consuming the message
+draft. Submission, cancellation and unsuccessful switches restore that draft;
+a successful session switch carries it into the newly selected session. The
+draft is not persisted across application exit.
+The session PTY fixture verifies that the carried draft is submitted with the
+target session's full context and that read-only inspection blocks dispatch.
+Its first cross-session assertion incorrectly expected an entire old answer in
+the incremental terminal byte stream; after changing the synchronization to a
+target-specific rendered fragment, the fixture passed.
+Raw-mode Ctrl-C cancels an active local turn or session load, or closes the
+command editor; when idle it arms exit and a second consecutive Ctrl-C exits.
+Other input disarms exit, and the first press retains the draft. This does not
+implement clipboard selection, remote retirement or shell job-control handoff.
+Codewhale's reference has a richer selection/copy and
+recoverable input-clearing priority; this implementation does not claim parity.
+Local Unix PTY checks exercised two idle Ctrl-C presses and restoration of raw,
+alternate-screen and bracketed-paste modes. The flood fixture also exercised
+Ctrl-C during active SSE output in both persistent and nonpersistent sessions;
+each observed local cancellation after 0.023 seconds in one run. These are
+not latency distributions, remote-cancellation receipts, or platform-wide
+qualification. A unit test confirms pasted ETX remains input data rather than
+being interpreted as an interrupt key.
+On Unix, signal handlers are installed before raw mode for SIGINT, SIGTERM and
+SIGHUP. During the terminal loop, an observed signal stops local work, restores
+terminal guards and returns =128 + signal number=. A local PTY sends each
+signal while idle and checks exit code and terminal modes; a second fixture
+sends SIGTERM during a persistent stream and verifies that the checkpointed
+prefix reopens as unfinished and no second provider call is made. These checks
+do not establish remote retirement, SIGKILL cleanup, disconnected-terminal
+restoration, bounded shutdown latency under blocked output, or suspend/resume.
+The composer caps the entire draft at 1 MiB UTF-8, including accumulated
+ordinary keys and pastes. An insertion exceeding the remaining space is
+rejected atomically, retains the draft, and displays a status message; deletion
+allows editing to resume. This bounds draft text bytes, not process memory or
+interactive latency. No matched worst-case latency measurement has been made.
+
+** Local composer component diagnostic
+
+On 2026-11-11, the same local unoptimized test binary profile and 98x3
+composer workload were measured before and after a printable-ASCII fast path.
+Seven samples per case were taken in fixed order; these are single-run
+component observations, not a release benchmark, p95, terminal-frame timing,
+memory measurement or Codewhale comparison. The retained ignored fixture is
+=composer_layout_diagnostic= in =tests/unit/composer.rs=.
+
+| Input | Before view median (us) | After view median (us) | Before up median (us) | After up median (us) |
+| 1,048,576 ASCII bytes, one line | 616058 | 13698 | 624589 | 13777 |
+| 255,000 ASCII bytes, 17,000 lines | 139063 | 4729 | 147974 | 4401 |
+| 250,000 mixed Unicode bytes | 71103 | 59387 | 73903 | 72580 |
+
+The up baseline was measured in a subsequent run after the view-only fast path;
+its navigation implementation was still the original one. Different sample
+sets and fixed execution order leave noise and ordering effects. ASCII input
+still requires a full classification scan, and non-ASCII drafts use the
+original grapheme path; bounded end-to-end editing latency is not established.
+An exhaustive small-input comparison covers ASCII line breaks, widths, cursor
+positions, repeated vertical moves and resize against the original layout.
+
+The configured gateway uses Marlin's =RuntimeEdgePolicy= when opening a model
+stream. The TUI retains the typed =RuntimeEdgePolicyReceipt= and displays its
+scope through =/runtime=. This timeout covers the open future only, not stream
+consumption. It is not the graph admission, tool approval, no-live-LLM, or
+runtime cancellation protocol, and does not establish full runtime integration.
+Focused tests cover successful stream opening, timeout, invalid timeout,
+preservation of a provider error, and the explicit absence of a stream-lifetime
+timeout. An in-memory session test verifies that an open timeout is persisted
+as a failed turn before the error reaches the caller. Local PTY fixtures cover
+receipt display, streamed output and persistent-session replay. The first
+receipt fixture used an invalid OpenAI model identifier and was corrected before
+it passed. The streaming adapter remains in the TUI and stores gateway failures
+as diagnostics; it does not supply typed graph policy or denial receipts.
+
+Twenty-six focused Rust tests passed, including a controlled SSE fixture that holds
+the terminal event until after a chunk is received and a truncated-stream
+fixture. TUI Clippy and standalone Marlin policy checks for the TUI and stream
+packages also passed. A loopback gateway fixture exercised a Unicode multiline
+request through a pseudo-terminal, observed a streamed chunk before the server
+completed, and verified restored terminal attributes and alternate-screen exit.
+The two existing =model_stream_= unit regressions in the stream package also
+passed; fifteen other tests in that target were filtered out.
+This is not a provider, platform, or full-feature acceptance test. The most
+recent workspace-wide policy gate stopped on =marlin-agent-context= warnings
+before reaching the TUI; its result does not establish the current state of
+other concurrent changes. All work and acceptance items above remain open.
+
+** Narrow idle-redraw experiment
+
+On 2026-11-11, a local Darwin 25.6.0 arm64 pseudo-terminal at 100x30 was
+allowed to show its initial frame and warm for 0.6 s; the probe then counted
+terminal output for one idle second. Three sequential old-version samples were
+468, 416 and 468 bytes; three later current-version samples were 0, 0 and 0.
+The code path now redraws dirty frames at a minimum 16 ms interval, while
+continuing to poll input and terminal size. The 50 ms idle wake is still present.
+
+The probe is [[file:../../crates/marlin-agent-tui/tests/integration/pty_idle_probe.py][pty_idle_probe.py]].
+Baseline executable SHA-256 was
+=69343504e2d0cdb73ad005b1ad3f07a91e48cba46906ada71c5b6225414062ac=
+and its app source SHA-256 was
+=d7c3be189c79ee322763106b01c6fdfb1f3ebc8c5d6dc47757cb0d65cabcb77a=.
+The current executable SHA-256 was
+=177a32fd8eac345ce36dae15f56b383c828bb8c75698c402d789ee4490fa321c=,
+app source SHA-256
+=5f5943e62501eece41c83559f56448575f56764b8f0d757261c2442500766a0a=,
+and workspace HEAD was =74731c34be0771c01c68c3a67234e33e9b0fb200= with the
+TUI and other changes uncommitted. The executable and source hashes identify
+this local observation; the baseline executable is temporary and not retained
+as a project artifact. Paste support also changed between these builds.
+
+This measures idle terminal bytes only, not CPU, latency, memory, or an A/B
+against Codewhale. Samples were sequential rather than interleaved and do not
+establish a general speedup. An earlier probe started sampling before startup
+and produced invalid data; those results were discarded.
+
+** Narrow transcript projection experiment
+
+On 2026-11-11, the ignored diagnostic in
+[[file:../../crates/marlin-agent-tui/tests/unit/viewport.rs][viewport.rs tests]]
+compared the earlier full-history projection to the suffix projection, including
+rendering to the same 80x12 Ratatui buffer. The fixture had 10,000 short ASCII
+records, bottom scroll and no provider activity. The rendered buffers were equal
+for this fixture. Each of 12 pairs ran the full path first; raw wall times in
+microseconds were:
+
+#+begin_example
+full:   336076 494326 447179 338743 756096 237220 343333 625519 517656 359262 327308 332239
+suffix:    641    672    188    716    545    181   5613    183    176    659    191    197
+#+end_example
+
+Medians were 351297.5 and 371 microseconds respectively; the maximum suffix
+sample was 5613 microseconds. This used the unoptimized Cargo test profile on
+Darwin 25.6.0 arm64, workspace HEAD =74731c34be0771c01c68c3a67234e33e9b0fb200=
+with uncommitted changes. The measured =viewport.rs= SHA-256 was
+=b408a545e12b59f7ddaf76ea13a95ab5099d3175416a9308a7e6c1ef1d95213e=;
+the test source SHA-256 was
+=4329171645cedc92058cbeb39f46349689d6b150d65145a92a0304056956d393=.
+Run with =cargo test -p marlin-agent-tui --test unit_test
+compare_full_and_suffix_transcript_projection --offline -- --ignored --nocapture=.
+
+This is a single local component diagnostic, ordered rather than randomized,
+with substantial timing variability. It is not a release-build, allocation,
+end-to-end, arbitrary-load or cross-product comparison. This is historical
+evidence for the earlier suffix implementation, not a measurement of the later
+independent layout engine. The earlier =u16= scroll ceiling is now removed;
+history scans, changed long-line remeasurement, and a byte-budgeted indexed
+history cache remain open.
+
+** Independent layout and deep scrolling
+
+The client now separates word layout and terminal-buffer drawing, and selects
+at most the visible rows using a =usize= history offset. Tests exercise 200,000
+rows of scrollback, a 150,001-character logical line, and a long line of Chinese
+graphemes. A one-column view shows a replacement marker when a wide grapheme
+cannot fit; the stored transcript remains unchanged. The layout adapts Ratatui
+Widgets 0.3.2 word wrapping, with its license retained in the TUI crate.
+
+One deterministic mixed-Unicode, two-column case panics in the pinned Ratatui
+0.30.2 reference renderer; the independent renderer completes on the same
+fixture. This is a local test of a particular dependency and input, not a claim
+about every Ratatui version. When an upstream row would exceed the viewport,
+the layout splits it at a grapheme boundary before buffer access. Common
+non-panicking reference cases are compared cell-for-cell; this repair can
+intentionally differ from the reference on unsafe rows.
+
+The current client keeps one visible viewport and reuses it on an unchanged
+transcript, pending state, terminal size and scroll offset. All transcript
+mutations pass through a revision owner; a different transcript has a distinct
+identity. The cache stores one viewport, not a copy of the history, with a 1 MiB
+budget accounting for vector capacities, span structures and owned string
+capacities. A viewport over budget is rendered but not retained. This is not an
+allocator-level or process-memory limit: the current frame, temporary wrap
+vectors, terminal buffer and stored transcript are outside that accounting.
+Control characters are normalized one grapheme at a time during layout rather
+than copying an entire line when it contains a control character. Consecutive
+zero-width graphemes are grouped as borrowed source ranges in wrapping state;
+the original text is preserved. An instrumented test observed at most three
+pending segments at iteration boundaries for 200,000 zero-width graphemes. This
+is a segment-count result,
+not a byte or process-memory bound: the materialized visible row can still be
+large, as can a single grapheme, and other temporary allocations remain.
+It avoids layout on composer-only redraws; changed streaming content, resize,
+and scrolling still rebuild the viewport and deep scrolling still scans history.
+
+One local unoptimized component diagnostic laid out an unchanged 150,000-grapheme
+mixed Chinese/ASCII line 20 times: uncached 2.202 seconds versus 708 ns for 20
+warm cache lookups after asserting equal output. These are single-process,
+fixed-order samples, not paired distributions, cold-resume measurements,
+full-frame latency or a comparison with Codewhale. The ignored fixture is
+=compare_cached_and_uncached_unchanged_long_line= in the TUI viewport tests.
+After zero-width run compression, a repeat produced 2.529 seconds uncached and
+1.542 microseconds cached for the same 20 calls. The higher uncached observation
+is retained as a possible regression; these unmatched single samples do not
+establish its magnitude or cause.
+
+A subsequent same-process diagnostic compares the frozen pre-compaction
+wrapper and the current wrapper on identical text, alternates run order, and
+asserts equal complete rows before timing. After reusing a row scratch vector
+and limiting compaction checks to buffer boundaries, eight unoptimized samples
+in microseconds were:
+
+#+begin_example
+mixed previous:  101931 112533 105101 143377  75280 108255 107129 109231
+mixed current:   187698 119017 138420 124956 212226 137444 109504 129307
+ascii previous:  149975 102738  62763  73271  87355  67906 144319 176898
+ascii current:   198800 145325  71524 145542  71644  81961 160656 184779
+zero previous:    89785  70162  67712  86435 142094  93011  69275  88050
+zero current:     81074  88574  71147 188795 252184  51304 113774  96864
+#+end_example
+
+These observations are noisy and show a potential cost for normal text; they
+do not close the performance gate. They exclude terminal drawing, storage and
+model streaming and are not optimized-release measurements. The reproducible
+ignored fixture and the frozen baseline are in =tests/unit/wrap_comparison.rs=;
+an additional deterministic test compares 200 mixed-Unicode inputs at five
+widths. A prior paired diagnostic before scratch reuse also showed higher
+current samples on most ASCII and mixed inputs; that negative result is not
+treated as resolved by the change.
+
+Another unoptimized paired run after reducing segment metadata and avoiding a
+second width calculation observed the following microsecond samples:
+
+#+begin_example
+mixed previous: 54898 55124 54879 55089 55051 54979 57637 59099
+mixed current:  48659 49412 48608 49082 49453 51498 51332 50333
+ascii previous: 38517 37728 38025 38569 37769 37890 37663 37748
+ascii current:  41726 41162 41222 41218 41207 41416 41602 41124
+zero previous:  37373 37586 43586 39068 39405 38129 36755 36552
+zero current:   30406 30932 31293 32577 31131 36287 30737 30420
+#+end_example
+
+In this run, mixed and zero-width inputs were faster while ASCII remained
+slower against the frozen reference. The result is limited to this debug-build
+component fixture; optimized builds, allocation counts and complete terminal
+latency remain unqualified. The earlier slower observations are retained.
+
+A repeat of the 10,000-short-record component diagnostic after the architectural
+change produced these local, unoptimized wall-clock samples in microseconds:
+
+#+begin_example
+full:    93167 96615 103321 160792 112760 133730 92411 89558 87535 90735 91346 88573
+layout:    152   132    144    134    130    132   130   131   131   140   158   126
+#+end_example
+
+The respective medians were 92789 and 132 microseconds. This is the same
+limited bottom-view fixture and fixed pair order, not end-to-end latency or a
+reference-product comparison. Workspace HEAD remained
+=74731c34be0771c01c68c3a67234e33e9b0fb200= with uncommitted changes;
+=viewport.rs= SHA-256 was
+=0e7e282b24225213a75f21c6dfa7011dcbcb2122dcbec882a610bd426014d4a5=,
+=wrap.rs= was
+=284348f7d72f29af8bd851eba181dad9e6cfeb0b17b7f8a1e1cc221d453bc8fd=,
+and the test source was
+=d071ba4cf9bb395ea9bc2dce46db339d6c15d2f08be3b1bd6908708369f0e914=.
+Later code edits require a new measurement. The engine still scans skipped
+history and remeasures long lines, and may allocate a sanitized copy when a
+line contains terminal control characters. Input queues, persistent history,
+and cache budgets are not yet comprehensively bounded.
+
+** Event admission and control fairness
+
+The current UI queues at most 64 model events and accounts their owned string
+and choice-vector heap capacities against a 32 MiB semaphore. Gateway errors
+retain their typed interruption and uncertainty reasons through queue admission;
+owned error payload capacities count against the same budget. The transcript
+currently formats those errors for display and does not retain a separate typed
+failure projection. A permit remains
+with each queued item until the consumer takes it; cancelling a blocked sender
+releases its reservation. Oversized events become an explicit failed turn and
+stop the producer. The original oversized payload is not durably retained, so
+this does not yet meet the target requirement for durable terminal evidence.
+The Weaver adapter splits large text deltas at UTF-8 boundaries into ordered
+chunks no larger than 64 KiB. The event loop processes at most 16 model events
+before checking terminal input; the input channel holds at most eight events.
+
+The count and byte bounds apply to queues, not total process memory: the
+upstream SSE decoder, one producer-side event, completion response, transcript,
+history, and raw input decoder have independent lifetimes. A completion can
+therefore still fail admission if its owned capacity exceeds the budget. The
+limit on event count per iteration is not a time bound: layout of a very long
+line can still delay cancellation. There is no runtime-owned cancellation
+retirement receipt yet.
+
+Focused tests cover byte and item backpressure, permit release on cancellation,
+ordered completion, bounded batches, and reconstruction of a 150,000-byte
+Chinese SSE delta. Two local pseudo-terminal runs with a continuous loopback SSE
+producer observed the cancellation notice after 0.024 and 0.017 seconds and
+restored the terminal; these are individual observations, not a latency or
+reliability guarantee.
+The first version of that test falsely failed because it searched for contiguous
+text despite ANSI cursor sequences; the corrected test strips those sequences.
+The fixture is [[file:../../crates/marlin-agent-tui/tests/integration/pty_cancel_flood.py][pty_cancel_flood.py]].
+The final workspace run passed 26 tests with one manual diagnostic ignored;
+Clippy exited successfully with a Cargo warning that its =axum= dev-profile
+override matched no packages. A transient concurrent workspace manifest edit
+initially prevented Cargo metadata from loading; after the other work supplied
+its missing dependency, the original workspace was rechecked successfully.
+The head remained =74731c34be0771c01c68c3a67234e33e9b0fb200= with uncommitted
+changes; the tested =app.rs=, =event_queue.rs= and =streaming.rs= SHA-256s were
+=d26493c46311db31d0028c58ca886915b366d80f2e905aef2f8f35dfb02d0a2b=,
+=7cc1ac5b56b1964e64fa110fb05ca74173510bbf9f720efbea4283da41e4386c= and
+=9ec1ed440961525be7b5ded2e43f8f59489ec36fa29c5eafadf02fdb928766a0=.
+
+** Conversation journal in progress
+
+The session layer now has a typed conversation journal over =AgentStorage=.
+It appends a unique, fixed-width turn start before a caller may dispatch, then
+appends the observed completion, failure with partial text, or explicitly local
+cancellation. A competing stale writer cannot claim the same start key. Replay
+uses storage pagination, checks event identity, order and parent linkage, and
+exposes an unfinished turn without retrying it. A freshly opened journal cannot
+finish that unowned turn: another process may still be its owner. An explicit
+recovery protocol with authoritative ownership is still required.
+
+This is not an exactly-once delivery or a process lease. A crash or uncertain
+storage acknowledgement can leave an admitted turn without a terminal event;
+there is intentionally no automatic recovery or duplicate dispatch. Replay
+callbacks are provisional until the full scan succeeds. Replay now compares
+committed event counts before and after scanning, and checks that the number of
+observed events matches; a mismatch rejects the replay. Under the append-only
+and consistent-read assumptions this detects committed additions during the
+scan. It is not a cross-page transaction, process lease, cross-replica
+guarantee, or protection against mutation outside the storage contract. Writes
+after the final check are handled separately by the existing unique start key.
+Both counts can scan the session index, and their long-history cost has not
+been qualified. One local unoptimized Turso diagnostic alternated eight scans
+of 1,000 unrelated 128-byte events (16 records per page): raw page iteration
+in microseconds was 55251, 54576, 54729, 55596, 53358, 52832, 53326, 53227;
+complete checked journal replay was 57108, 57890, 56869, 56063, 55890, 55206,
+55540, 57356. The latter performs additional validation as well as two count
+queries, so the difference does not isolate count cost. This is not a large
+history, optimized build, real-provider or end-to-end measurement.
+Record-count pagination is not a byte
+budget, and long sessions still require a complete scan. The optional TUI
+session path uses an asynchronous journal gateway: it persists admission
+before invoking the provider, validates the stream, and persists its terminal
+observation before delivering it. Cancellation or a failed turn requires
+reopening; an unfinished turn remains blocked because it has no recovery
+protocol. The first nonempty chunk is checkpointed before delivery; later
+chunks are checkpointed in accumulated batches of at least 64 KiB. While the
+stream is polled, a pending smaller batch is also attempted after one second;
+backpressure, scheduling, storage latency or process failure can delay it, so
+this is not a durability deadline. Each checkpoint is no larger than 128 KiB,
+with a 16 MiB partial-output cap. A crash can
+lose the uncheckpointed tail, and each checkpoint adds storage I/O; throughput
+and long-session storage costs are not yet qualified. Replay validates ordered
+checkpoint identifiers, parent links and the terminal text's prefix. A local
+command-line =--session= accepts a typed session identifier in the configured
+project and database. A new ID has empty history; an existing one replays its
+own history. A local PTY and SSE fixture exercised two isolated sessions and
+reopened the first before a subsequent request. A separate crash fixture chose
+a fresh session while the prior session remained unfinished and blocked.
+The storage contract also provides project-and-agent-scoped, ID-ordered
+session pages. The TUI's =/sessions= and =/sessions next= load 20 IDs per page
+asynchronously, allow one outstanding query, validate ordering and cursor, and
+mark the current ID. IDs above 512 bytes are omitted from that terminal view,
+with the command-line listing identified as the alternative. The count bound
+does not bound individual database fields or backend allocation. The
+command-line listing uses this contract without requiring a
+model credential, and lists sessions with events from any Marlin surface for
+that scope. It is not a recency list, session readiness check, or cross-page
+snapshot. =/session= takes a JSON-quoted ID, loads the target off the UI thread,
+and swaps the gateway, replayed history and current ID only on success. Failed
+or cancelled loading retains the previous session. Switching is disabled while
+a model turn is active; unfinished targets remain blocked, and switching away
+does not retire or retry their work. A local PTY fixture verifies both a failed
+foreign-agent switch retaining the old context and a successful switch to a
+previous session. The crash fixture's first in-app-switch assertion falsely
+looked for a complete ID in incremental terminal output; the renderer emitted
+only changed cells, so the fixture was corrected and rerun. Startup and switch
+now project only the fields needed by the interface and model context. Replay
+stops and returns an explicit error above 10,000 turns or 64 MiB of accounted
+projection data; it never silently sends a truncated history. A switch rejected
+by this budget retains the previous session. These values are provisional
+engineering guards, not measured or accepted performance targets. Read-only
+=/inspect= provides a window of at most 100 turns or 8 MiB of accounted
+projection; oversized individual turns are visibly omitted without changing
+storage. =/history older= and =/history newest= rescan the full journal for each
+page. Their separate scans are not a shared snapshot, and storage pages and
+individual records are outside this projection budget. Inspection disables
+model submission and retains drafts; only successful full =/session= loading
+can restore model submission. Starting the TUI still requires model credentials.
+These are logical projection
+limits, not process-memory bounds: live history, storage page bodies, individual
+records, journal checkpoint reconstruction and allocator overhead are separate.
+The journal has no cross-page snapshot, and paging remains a full scan rather
+than a storage-indexed operation. The in-memory storage implementation seeks
+directly to the exclusive event cursor in its ordered map rather than scanning
+all earlier projects, sessions and event pages on every request. This removes
+repeated prefix traversal from that backend, but does not make a history window
+a bounded-cost query; no matched end-to-end performance measurement has yet
+been made for this change. History projection also evicts old items before
+cloning the next selected turn, avoiding temporary overlap of those projections;
+storage and replay allocations remain outside the window accounting.
+Turso uses an index over project, agent and
+session; opening an existing database initializes it if absent. Index creation
+cost and large-project listing performance have not been measured. The PTY fixture also
+verified restart and replay into a subsequent
+request. A separate local PTY fixture kills the client after the loopback
+provider received the request and sent a chunk, while its connection remains
+open; reopening shows the first chunk and a smaller tail checkpointed after the
+timer, and neither retries nor sends a new
+request during the observation. Its first run falsely failed because ANSI cursor
+movements split displayed words; the corrected assertion strips those sequences.
+This is not proof of remote cancellation or multi-process ownership. This path
+retains replayed history and up to 16 MiB of stream text in
+memory; it is not a bounded-history architecture. No-live-LLM typed denial
+evidence, authoritative recovery and complete partial-output retention remain pending.
+Eight focused session in-memory tests passed, covering stale and
+simultaneous claims, paging across a start/finish boundary, invalid outcomes,
+storage conflicts and unfinished replay. One local Turso integration test
+passed with 30 tests filtered out: it closes and reopens the database, verifies
+one completed and one unfinished turn, and rejects a stale journal claim. The
+two stale writers in that test share one in-process backend. A separate local
+test kills a child process after its start append returns and before any model
+dispatch, then reopens Turso and verifies that the unfinished turn remains and
+blocks a new start. This does not test competing processes, termination during
+commit, or an actual external provider request.
+
+The session catalog passed focused in-memory and local Turso pagination tests,
+including reopening the database and project/agent scoping, and the CLI fixture
+listed without a model credential or terminal. The first Marlin Rust policy
+check passed for the TUI but failed for =marlin-agent-storage= on pre-existing
+=RUST-MOD-R001= findings in =tests/unit/mod.rs=. That module's implementation
+was subsequently moved byte-for-byte to =tests/unit/storage_cases.rs=, retaining
+its module name and tests. The current TUI and storage policy checks passed;
+the storage unit suite passed eight tests, and the Turso conversation fixture
+passed three with one helper ignored. This is not a workspace-wide policy pass.
+
+The local flood-cancellation fixture also passed once with a persisted session
+enabled, observing the local cancellation message after 0.023 seconds; it is
+not a repeated benchmark or a guarantee that a 64 KiB checkpoint occurred.

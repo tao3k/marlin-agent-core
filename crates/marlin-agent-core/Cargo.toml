@@ -16,17 +16,11 @@ marlin-agent-harness.workspace = true
 marlin-agent-hooks.workspace = true
 marlin-agent-kernel.workspace = true
 marlin-agent-protocol.workspace = true
-marlin-agent-context.workspace = true
+marlin-agent-context = { workspace = true, features = ["org-memory", "org-workflow"] }
 marlin-deck-runtime = { workspace = true, optional = true }
 marlin-agent-runtime.workspace = true
 marlin-agent-sessions.workspace = true
 marlin-gerbil-ir.workspace = true
-marlin-org-model.workspace = true
-marlin-org-memory.workspace = true
-marlin-org-patch.workspace = true
-marlin-org-store.workspace = true
-marlin-org-workflow.workspace = true
-marlin-org-workspace.workspace = true
 marlin-workspace-protocol.workspace = true
 serde.workspace = true
 

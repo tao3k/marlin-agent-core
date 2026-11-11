@@ -49,7 +49,13 @@ fn crate_verification_role_classification_tracks_marlin_boundaries() {
         MarlinCrateVerificationRole::OrgWorkspace
     );
     assert_eq!(
-        marlin_crate_verification_role_for_project(&root.join("crates/marlin-org-memory")),
+        marlin_crate_verification_role_for_project(&root.join("crates/marlin-agent-context")),
+        MarlinCrateVerificationRole::OrgWorkspace
+    );
+    assert_eq!(
+        marlin_crate_verification_role_for_project(
+            &root.join("crates/marlin-agent-context/parts/org-model")
+        ),
         MarlinCrateVerificationRole::OrgWorkspace
     );
     assert_eq!(

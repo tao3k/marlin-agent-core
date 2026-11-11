@@ -6,10 +6,12 @@ authors.workspace = true
 repository.workspace = true
 
 [dependencies]
+async-stream = "0.3.6"
 tokio-stream.workspace = true
 weaver-llm.workspace = true
 marlin-agent-protocol.workspace = true
 serde.workspace = true
+serde_json.workspace = true
 tokio.workspace = true
 
 [dev-dependencies]
@@ -20,6 +22,5 @@ marlin-agent-runtime.workspace = true
 marlin-agent-test-support.workspace = true
 marlin-gerbil-scheme.workspace = true
 reqwest.workspace = true
-serde_json.workspace = true
 tempfile.workspace = true
 tokio.workspace = true

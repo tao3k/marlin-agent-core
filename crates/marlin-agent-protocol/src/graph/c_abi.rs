@@ -99,11 +99,14 @@ pub enum GraphCAbiReadinessStatus {
     MissingSymbols,
 }
 
-/// Receipt proving native ABI symbol coverage at a runtime or CI boundary.
+/// Receipt recording native ABI symbol coverage at a runtime or CI boundary.
+/// Callers must establish the provenance of the reported symbols separately.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct GraphCAbiReadinessReceipt {
     pub abi_id: GraphCAbiId,
     pub version: u32,
+    /// Exact requirement evaluated to produce this receipt.
+    pub required_symbols: Vec<GraphAbiSymbol>,
     pub required_symbol_count: usize,
     pub available_symbol_count: usize,
     pub matched_symbol_count: usize,
@@ -137,6 +140,7 @@ impl GraphCAbiReadinessReceipt {
         Self {
             abi_id: requirement.abi_id.clone(),
             version: requirement.version,
+            required_symbols: requirement.required_symbols.clone(),
             required_symbol_count: requirement.required_symbols.len(),
             available_symbol_count: available_symbols.len(),
             matched_symbol_count,

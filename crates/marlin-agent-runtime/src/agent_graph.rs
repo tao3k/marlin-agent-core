@@ -3,8 +3,8 @@
 use std::collections::HashSet;
 
 use marlin_agent_graph::{
-    AgentCoordinationPlan, AgentEdgeId, AgentGraph, AgentGraphId, AgentGraphPlanningReceipt,
-    AgentGraphPlanningStatus, AgentNodeId, GraphLoopEntryRef,
+    AgentCoordinationDecision, AgentCoordinationPlan, AgentEdgeId, AgentGraph, AgentGraphId,
+    AgentGraphPlanningReceipt, AgentGraphPlanningStatus, AgentNodeId, GraphLoopEntryRef,
 };
 use marlin_agent_protocol::AgentGraphProjectionRequest;
 use serde::{Deserialize, Serialize};
@@ -260,6 +260,19 @@ pub enum RuntimeAgentGraphExecutionRequestRejection {
     },
     /// A ready receipt was malformed and did not carry its root loop entry.
     MissingRootLoopEntry,
+    /// The nested evidence does not justify the ready status.
+    InconsistentEvidence(RuntimeAgentGraphReadinessInconsistency),
+}
+
+/// Identity or status inconsistency in a purportedly ready graph receipt.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum RuntimeAgentGraphReadinessInconsistency {
+    ReadinessRejection,
+    RequestOrPlanningMismatch,
+    ProjectionNotAccepted,
+    AdmissionNotAccepted,
+    PlanMismatch,
+    RootLoopEntryMismatch,
 }
 
 /// Build an explicit execution request from a ready AgentGraph runtime receipt.
@@ -282,6 +295,70 @@ pub fn build_agent_graph_execution_request(
     let Some(root_loop_entry) = readiness.root_loop_entry else {
         return Err(RuntimeAgentGraphExecutionRequestRejection::MissingRootLoopEntry);
     };
+
+    let inconsistent =
+        |reason| RuntimeAgentGraphExecutionRequestRejection::InconsistentEvidence(reason);
+    if readiness.rejection.is_some() {
+        return Err(inconsistent(
+            RuntimeAgentGraphReadinessInconsistency::ReadinessRejection,
+        ));
+    }
+    let request = &readiness.request;
+    let projection = &readiness.projection;
+    if !request.has_current_schema()
+        || request.planning != projection.planning
+        || request.graph_id != request.planning.target.graph_id
+        || request.observed_at_ms != projection.observed_at_ms
+        || request.planning.status != AgentGraphPlanningStatus::Planned
+        || request.planning.rejection.is_some()
+        || request
+            .planning
+            .coordination
+            .as_ref()
+            .is_none_or(|coordination| {
+                coordination.graph_id != request.graph_id
+                    || coordination.selected_node != request.planning.target.root_node
+                    || coordination.selected_edge.is_some()
+                    || coordination.decision != AgentCoordinationDecision::SelectNode
+            })
+    {
+        return Err(inconsistent(
+            RuntimeAgentGraphReadinessInconsistency::RequestOrPlanningMismatch,
+        ));
+    }
+    if projection.status != RuntimeAgentGraphProjectionStatus::Projected
+        || projection.rejection.is_some()
+    {
+        return Err(inconsistent(
+            RuntimeAgentGraphReadinessInconsistency::ProjectionNotAccepted,
+        ));
+    }
+    let Some(admission) = projection.admission.as_ref() else {
+        return Err(inconsistent(
+            RuntimeAgentGraphReadinessInconsistency::AdmissionNotAccepted,
+        ));
+    };
+    if admission.status != RuntimeAgentCoordinationAdmissionStatus::Accepted
+        || admission.rejection.is_some()
+        || admission.observed_at_ms != request.observed_at_ms
+    {
+        return Err(inconsistent(
+            RuntimeAgentGraphReadinessInconsistency::AdmissionNotAccepted,
+        ));
+    }
+    if request.planning.plan.as_ref() != Some(&admission.plan)
+        || admission.plan.graph_id != request.graph_id
+        || admission.plan.root_node != request.planning.target.root_node
+    {
+        return Err(inconsistent(
+            RuntimeAgentGraphReadinessInconsistency::PlanMismatch,
+        ));
+    }
+    if admission.root_loop_entry.as_ref() != Some(&root_loop_entry) {
+        return Err(inconsistent(
+            RuntimeAgentGraphReadinessInconsistency::RootLoopEntryMismatch,
+        ));
+    }
 
     Ok(RuntimeAgentGraphExecutionRequest {
         request: readiness.request,

@@ -4,6 +4,7 @@ use marlin_agent_sessions::{
     AgentSessionContext, ContextNamespace, ContextVisibility, SessionId as RuntimeSessionId,
     SessionIsolationPolicy, SessionKind,
 };
+use marlin_agent_storage::SessionEventStore;
 use marlin_agent_storage::{
     AgentId, AgentStorage, EventId, ProjectId, SessionEventRecord, SessionId as StorageSessionId,
     StorageResult, TurnId, TursoAgentStorage, TursoAgentStorageConfig, VisibilityReceipt,

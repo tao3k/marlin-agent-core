@@ -72,6 +72,11 @@ impl RuntimeEventStream {
         self.receiver.try_recv().ok()
     }
 
+    /// Wait for the next event, returning `None` after the stream closes.
+    pub async fn recv(&mut self) -> Option<RuntimeEvent> {
+        self.receiver.recv().await
+    }
+
     /// Close the stream so no further runtime events can be received.
     pub fn close(&mut self) {
         self.receiver.close();

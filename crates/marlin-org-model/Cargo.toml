@@ -1,9 +1,0 @@
-[package]
-name = "marlin-org-model"
-edition.workspace = true
-version.workspace = true
-authors.workspace = true
-repository.workspace = true
-
-[dependencies]
-serde.workspace = true

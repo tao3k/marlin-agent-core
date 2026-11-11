@@ -5,5 +5,5 @@ marlin_crate_with_policy_data(
     name = "marlin_workspace_query",
     srcs = glob(["src/**/*.rs"]),
     edition = crate_edition(),
-    deps = crate_deps(["serde"]) + ["//crates/marlin-org-model:marlin_org_model"],
+    deps = crate_deps(["serde"]) + ["//crates/marlin-agent-context/parts/org-model:marlin_context_org_model"],
 )

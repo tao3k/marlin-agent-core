@@ -41,13 +41,8 @@ pub fn marlin_crate_verification_role_for_project(
         "marlin-agent-protocol" | "marlin-agent-sessions" | "marlin-workspace-protocol" => {
             MarlinCrateVerificationRole::ProtocolContract
         }
-        "marlin-org-memory"
-        | "marlin-org-model"
-        | "marlin-org-patch"
-        | "marlin-org-store"
-        | "marlin-org-workflow"
-        | "marlin-org-workspace"
-        | "marlin-workspace-patch"
+        "marlin-agent-context"
+        | "marlin-context-org-model"
         | "marlin-workspace-query"
         | "marlin-workspace-status"
         | "marlin-workspace-view" => MarlinCrateVerificationRole::OrgWorkspace,
@@ -113,6 +108,9 @@ fn marlin_project_harness_gate_label(project_root: &Path) -> String {
 }
 
 fn marlin_project_harness_package_name(project_root: &Path) -> String {
+    if project_root.ends_with("marlin-agent-context/parts/org-model") {
+        return "marlin-context-org-model".to_owned();
+    }
     let package_name = project_root
         .file_name()
         .and_then(|name| name.to_str())
@@ -281,14 +279,14 @@ impl MarlinCrateVerificationRole {
             ],
             Self::OrgWorkspace => vec![
                 MarlinVerificationOwnerProfile::new(
-                    "src/memory/project_graph.rs",
+                    "src/org/memory/project_graph.rs",
                     &[
                         RustOwnerResponsibility::PureDomainLogic,
                         RustOwnerResponsibility::Persistence,
                     ],
                 ),
                 MarlinVerificationOwnerProfile::new(
-                    "src/memory/workspace.rs",
+                    "src/org/memory/workspace.rs",
                     &[RustOwnerResponsibility::Persistence],
                 ),
             ],

@@ -2,14 +2,91 @@ use super::turso;
 use super::{
     AgentId, AgentStorage, ArtifactHash, ArtifactPointerKey, ArtifactPointerRecord,
     ArtifactPointerUpdate, ArtifactPutOutcome, ArtifactRecord, EventId, MemoryKey,
-    MemoryProposalId, MemoryProposalRecord, ProjectId, SessionEventRecord, SessionId, StorageError,
-    StorageFuture, TopologyEdgeId, TopologyEdgeRecord, TopologyNodeId, TurnId, TursoAgentStorage,
-    TursoTransactionOperation, TursoTransactionReceipt, TursoTransactionStatus, VisibilityReceipt,
-    blob_at, execute_retrying, insert_visibility_receipt, integer_at, map_turso_error,
-    optional_event_id_at, optional_text_value, text_at, text_value, u32_at,
+    MemoryProposalId, MemoryProposalRecord, ProjectId, SessionEventRecord, SessionEventStore,
+    SessionId, StorageError, StorageFuture, TopologyEdgeId, TopologyEdgeRecord, TopologyNodeId,
+    TurnId, TursoAgentStorage, TursoTransactionOperation, TursoTransactionReceipt,
+    TursoTransactionStatus, VisibilityReceipt, blob_at, execute_retrying,
+    insert_visibility_receipt, integer_at, map_turso_error, optional_event_id_at,
+    optional_text_value, text_at, text_value, u32_at,
 };
 
-impl AgentStorage for TursoAgentStorage {
+impl SessionEventStore for TursoAgentStorage {
+    fn count_session_events<'a>(
+        &'a self,
+        project: &'a ProjectId,
+        session: &'a SessionId,
+    ) -> StorageFuture<'a, crate::records::SessionEventCount> {
+        Box::pin(async move {
+            let connection = self.connections.acquire().await?;
+            let mut statement = connection
+                .prepare_cached(
+                    "SELECT COUNT(*) FROM session_events WHERE project_id = ?1 AND session_id = ?2",
+                )
+                .await
+                .map_err(map_turso_error)?;
+            let mut rows = statement
+                .query(vec![
+                    text_value(project.clone()),
+                    text_value(session.clone()),
+                ])
+                .await
+                .map_err(map_turso_error)?;
+            let row = rows.next().await.map_err(map_turso_error)?.ok_or_else(|| {
+                StorageError::Backend {
+                    message: "session event count returned no row".into(),
+                }
+            })?;
+            let count = u64::try_from(integer_at(&row, 0)?).map_err(|_| StorageError::Backend {
+                message: "negative session event count".into(),
+            })?;
+            Ok(crate::records::SessionEventCount::new(count))
+        })
+    }
+
+    fn list_sessions_page<'a>(
+        &'a self,
+        request: crate::records::SessionPageRequest,
+    ) -> StorageFuture<'a, crate::records::StoragePage<SessionId, SessionId>> {
+        Box::pin(async move {
+            let connection = self.connections.acquire().await?;
+            let (sql, params) = match request.cursor() {
+                Some(cursor) => (
+                    "SELECT DISTINCT session_id FROM session_events WHERE project_id = ?1 AND agent_id = ?2 AND session_id > ?3 ORDER BY session_id LIMIT ?4",
+                    vec![
+                        text_value(request.project_id().clone()),
+                        text_value(request.agent_id().clone()),
+                        text_value(cursor.clone()),
+                        turso::Value::Integer(request.limit().fetch_count()),
+                    ],
+                ),
+                None => (
+                    "SELECT DISTINCT session_id FROM session_events WHERE project_id = ?1 AND agent_id = ?2 ORDER BY session_id LIMIT ?3",
+                    vec![
+                        text_value(request.project_id().clone()),
+                        text_value(request.agent_id().clone()),
+                        turso::Value::Integer(request.limit().fetch_count()),
+                    ],
+                ),
+            };
+            let mut statement = connection
+                .prepare_cached(sql)
+                .await
+                .map_err(map_turso_error)?;
+            let mut rows = statement.query(params).await.map_err(map_turso_error)?;
+            let mut items = Vec::new();
+            while let Some(row) = rows.next().await.map_err(map_turso_error)? {
+                items.push(SessionId::new(text_at(&row, 0)?)?);
+            }
+            let next_cursor = if items.len() > request.limit().get() {
+                items.pop();
+                items.last().cloned()
+            } else {
+                None
+            };
+            Ok(crate::records::StoragePage { items, next_cursor })
+        })
+    }
+
     fn append_session_event<'a>(&'a self, record: SessionEventRecord) -> StorageFuture<'a, ()> {
         Box::pin(async move {
             let connection = self.connections.acquire().await?;
@@ -153,7 +230,9 @@ impl AgentStorage for TursoAgentStorage {
             })
         })
     }
+}
 
+impl AgentStorage for TursoAgentStorage {
     fn put_artifact<'a>(&'a self, record: ArtifactRecord) -> StorageFuture<'a, ArtifactPutOutcome> {
         Box::pin(async move {
             let connection = self.connections.acquire().await?;

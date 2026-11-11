@@ -1,5 +1,6 @@
 #![cfg(feature = "turso")]
 
+use marlin_agent_storage::SessionEventStore;
 use std::time::Instant;
 
 use marlin_agent_storage::{

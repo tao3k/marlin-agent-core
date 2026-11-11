@@ -1,6 +1,6 @@
 //! Selector model for workspace scopes and nodes.
 
-use marlin_org_model::OrgNodeId;
+use marlin_context_org_model::OrgNodeId;
 use serde::{Deserialize, Serialize};
 
 /// Workspace region considered by a query or validation run.

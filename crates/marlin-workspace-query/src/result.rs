@@ -1,6 +1,6 @@
 //! Query result records returned by workspace backends.
 
-use marlin_org_model::{OrgNode, OrgNodeId};
+use marlin_context_org_model::{OrgNode, OrgNodeId};
 use serde::{Deserialize, Serialize};
 
 /// Query result set with truncation metadata.

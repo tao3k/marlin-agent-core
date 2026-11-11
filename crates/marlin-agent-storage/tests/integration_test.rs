@@ -1,3 +1,5 @@
+#[path = "integration/conversation_journal_gate.rs"]
+mod conversation_journal_gate;
 #[path = "integration/db_crash_reopen_gate.rs"]
 mod db_crash_reopen_gate;
 #[path = "integration/db_pressure_gate.rs"]

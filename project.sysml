@@ -18,6 +18,10 @@ package MarlinAgentCORE {
     dependency requestExecutionPath from project to PluginRequestPath;
     dependency performanceRequirement from project to requirements::highPerformanceExecution;
     dependency singleVmExecution from project to MarlinSingleVmRuntime::singleVmRuntime;
+    dependency tuiDesign from project to MarlinTuiArchitecture::target::terminalClient;
+    dependency contextOrgDesign from project to MarlinTuiArchitecture::target::contextOrgAuthority;
+    dependency contextOrgLifecycle from project to MarlinContextOrgLifecycle::OrgTurnLifecycle;
+    dependency tuiTurnLifecycle from project to MarlinTuiLifecycle::TurnLifecycle;
 
     view projectStructure {
         expose project;
@@ -53,5 +57,12 @@ package MarlinAgentCORE {
 
     view pluginRequestPath : StandardViewDefinitions::ActionFlowView {
         expose PluginRequestPath;
+    }
+
+    view tuiPerformanceDesign {
+        expose MarlinTuiArchitecture::actual;
+        expose MarlinTuiArchitecture::target;
+        expose MarlinTuiArchitecture::requirements;
+        render asTreeDiagram;
     }
 }

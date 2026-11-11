@@ -21,3 +21,21 @@ Run ~cargo test -p marlin-agent-context~ without a VM and
 ~cargo bench -p marlin-agent-context --bench scope_batch~ to measure Rust
 request preparation for 1, 8, 32 and 64 rows. The benchmark does not include
 Gerbil root construction, C ABI dispatch or Lab Scope validation.
+
+* Org-backed context migration
+
+The =org-source= feature exposes the migrated Org source store;
+=org-workspace= adds document parsing and contracts, =org-workflow= currently
+adds release-status operations, and =org-memory= adds the local Org memory
+projection. The existing store's per-file writes
+are not a transactional turn journal. A =ContextOrgMemoryQuery= checks that its project, worktree, actor and session
+match a typed Context request before querying that local workspace. It retains
+the full scope and turn request for correlation. This check does not call Lab,
+authenticate source bytes, grant model disclosure, establish freshness, or
+make the result durable. It is not a substitute for the Lab Org projection and
+current-use admission paths.
+
+The TUI's existing session journal is not yet backed by Org. The Context-owned
+Org store, typed turn/continuation persistence and migration from that journal
+remain open. Context is not compressed or summarized by this migration. See
+[[file:../../docs/40-rfcs/40.181-context-org-ownership.org][Context-owned Org architecture]].

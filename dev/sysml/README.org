@@ -8,8 +8,8 @@
 
 * Scope and ownership
 
-The initial scope is the plugin engine, its transport boundaries, and the
-activation and run lifecycles. =project.sysml= selects the top-level views.
+The scope includes the plugin engine and the terminal client, their transport
+boundaries, and their lifecycles. =project.sysml= selects the top-level views.
 The files here own structural identities, relations, and state transitions.
 Org owns rationale, protocol detail, assumptions, and evidence. The
 Brief-to-Draft example stays in the RFC as a fixture of the generic contract.
@@ -32,6 +32,9 @@ case and publication identities remain with that project.
 | [[file:single-vm-runtime.sysml][single-vm-runtime.sysml]] | Single-VM owner, Context batching, green actors and terminal accounting | [[file:../../docs/40-rfcs/40.166-plugin-contract.org::#single-vm-actor-runtime][Single-VM runtime]] |
 | [[file:plugin-lifecycle.sysml][plugin-lifecycle.sysml]] | Target activation generation and run lifecycle | [[file:../../docs/40-rfcs/40.166-plugin-contract.org::#plugin-lifecycle][Grants and lifecycle]] |
 | [[file:plugin-execution.sysml][plugin-execution.sysml]] | Target plugin request flow, stage allocations, and Scheme batch boundaries | [[file:../../docs/40-rfcs/40.166-plugin-contract.org::#plugin-request-path][plugin request execution and batching]] |
+| [[file:tui-architecture.sysml][tui-architecture.sysml]] | Inspected TUI facts, proposed ownership, performance and evidence requirements | [[file:../../docs/40-rfcs/40.180-codewhale-inspired-tui.org::#tui-performance][TUI design and qualification]] |
+| [[file:tui-lifecycle.sysml][tui-lifecycle.sysml]] | Proposed turn lifecycle and cancellation retirement | [[file:../../docs/40-rfcs/40.180-codewhale-inspired-tui.org::#tui-performance][TUI design and qualification]] |
+| [[file:context-org-lifecycle.sysml][context-org-lifecycle.sysml]] | Target Org turn persistence, current-use admission and uncertainty | [[file:../../docs/40-rfcs/40.181-context-org-ownership.org][Context-owned Org architecture]] |
 
 #+NAME: plugin-requirement-trace
 | Requirement | Planned owner | Org responsibility |
@@ -41,6 +44,13 @@ case and publication identities remain with that project.
 | MAR-PLG-R03 | gRPC service and client shell | [[file:../../docs/40-rfcs/40.166-plugin-contract.org::#plugin-transport][Engine-owned gRPC and scoped clients]] |
 | MAR-PLG-R04 | Evidence and offline verifier | [[file:../../docs/40-rfcs/40.166-plugin-contract.org::#plugin-replay][Offline replay evidence]] |
 | MAR-PLG-R05 | Compiled execution, message channels, Scheme C ABI bridge, and gRPC service | [[file:../../docs/40-rfcs/40.166-plugin-contract.org::#plugin-performance][High-performance execution design]] and [[file:../../docs/40-rfcs/40.166-plugin-contract.org::#actor-throughput][Actor throughput across the host boundary]] |
+| MAR-TUI-R01 | TUI event admission and projection | [[file:../../docs/40-rfcs/40.180-codewhale-inspired-tui.org::#tui-performance][Backpressure and retention]] |
+| MAR-TUI-R02 | TUI viewport and frame scheduler | [[file:../../docs/40-rfcs/40.180-codewhale-inspired-tui.org::#tui-performance][Incremental rendering and qualification]] |
+| MAR-TUI-R03 | Runtime and session store | [[file:../../docs/40-rfcs/40.180-codewhale-inspired-tui.org::#tui-performance][Typed authority and evidence]] |
+| MAR-TUI-R04 | Session store | [[file:../../docs/40-rfcs/40.180-codewhale-inspired-tui.org::#tui-performance][Replay and duplicate prevention]] |
+| MAR-TUI-R05 | Qualification harness | [[file:../../docs/40-rfcs/40.180-codewhale-inspired-tui.org::#tui-performance][Matched performance measurement]] |
+| MAR-TUI-R06 | Composer | [[file:../../docs/40-rfcs/40.180-codewhale-inspired-tui.org::#tui-performance][Unicode, paste and resize]] |
+| MAR-TUI-R07 | Terminal ownership | [[file:../../docs/40-rfcs/40.180-codewhale-inspired-tui.org::#tui-performance][Suspend and handoff lifecycle]] |
 
 The actual package references the Rust run registry, policy IR, Scheme C ABI
 bridge, and graph admission at the inspected Marlin revision
@@ -71,6 +81,14 @@ sysml -strict -no-record-cache project.sysml dev/sysml \
   -render '#state:MarlinPluginLifecycle::ActivationLifecycle' -render-form mermaid
 sysml -strict -no-record-cache project.sysml dev/sysml \
   -render '#state:MarlinPluginLifecycle::InvocationLifecycle' -render-form mermaid
+sysml -strict -no-record-cache project.sysml dev/sysml \
+  -render MarlinAgentCORE::tuiPerformanceDesign -render-form mermaid
+sysml -strict -no-record-cache project.sysml dev/sysml \
+  -render '#state:MarlinTuiLifecycle::TurnLifecycle' -render-form mermaid
+sysml -strict -no-record-cache project.sysml dev/sysml \
+  -render '#state:MarlinTuiLifecycle::TerminalOwnershipLifecycle' -render-form mermaid
+sysml -strict -no-record-cache project.sysml dev/sysml \
+  -render '#state:MarlinTuiLifecycle::ConversationAdmissionLifecycle' -render-form mermaid
 #+end_src
 
 Strict validation checks model syntax and references. The reflective self-check

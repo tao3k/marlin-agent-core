@@ -1,10 +1,35 @@
 load("@marlin_crates//:defs.bzl", "crate_deps", "crate_edition")
 load("//bazel:marlin_harness.bzl", "marlin_crate_with_policy_data")
+load("//bazel:marlin_rust.bzl", "marlin_rust_crate")
 
 marlin_crate_with_policy_data(
     name = "marlin_agent_sessions",
     srcs = glob(["src/**/*.rs"]),
     edition = crate_edition(),
     gate_data = glob(["tests/**/*.rs"]),
-    deps = crate_deps(["serde"]) + ["//crates/marlin-agent-storage:marlin_agent_storage"],
+    deps = crate_deps([
+        "serde",
+        "serde_json",
+    ]) + [
+        "//crates/marlin-agent-protocol:marlin_agent_protocol",
+        "//crates/marlin-agent-storage:marlin_agent_storage",
+    ],
+)
+
+marlin_rust_crate(
+    name = "marlin_agent_sessions_turso",
+    srcs = glob(["src/**/*.rs"]),
+    build_action = "none",
+    crate_name = "marlin_agent_sessions",
+    crate_root = "src/lib.rs",
+    edition = crate_edition(),
+    manifest = "Cargo.toml",
+    visibility = ["//visibility:public"],
+    deps = crate_deps([
+        "serde",
+        "serde_json",
+    ]) + [
+        "//crates/marlin-agent-protocol:marlin_agent_protocol",
+        "//crates/marlin-agent-storage:marlin_agent_storage_turso",
+    ],
 )

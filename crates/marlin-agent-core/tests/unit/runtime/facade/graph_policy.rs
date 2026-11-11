@@ -7,8 +7,9 @@ use marlin_agent_core::{
     GraphNodeExecutor, GraphNodeInvocation, GraphPolicyProposal, GraphPolicyProposalStatus,
     LoopGraph, LoopNodeSpec, RuntimeContext, RuntimeFuture, TokioAgentRuntime,
     TokioGraphLoopKernel, agent_harness_graph_policy_proposal_visibility_evidence,
-    compile_gerbil_loop_graph_policy, compile_graph_policy_proposal_with_c_abi_readiness,
+    compile_graph_policy_proposal_with_c_abi_readiness,
 };
+use marlin_agent_protocol::compile_gerbil_loop_graph_policy;
 use marlin_agent_test_support::graph_c_abi_requirement_fixture;
 use std::collections::BTreeMap;
 

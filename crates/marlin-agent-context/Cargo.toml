@@ -8,13 +8,48 @@ readme = "README.org"
 
 [features]
 gerbil = ["dep:gerbil-scheme"]
+org-source = [
+    "dep:marlin-gerbil-ir",
+    "dep:marlin-context-org-model",
+    "dep:marlin-workspace-status",
+    "dep:serde",
+    "dep:serde_json",
+]
+org-workspace = [
+    "org-source",
+    "dep:marlin-workspace-protocol",
+    "dep:orgize",
+]
+org-workflow = ["org-workspace"]
+org-memory = [
+    "org-workspace",
+    "dep:async-trait",
+    "dep:marlin-agent-graph",
+    "dep:marlin-workspace-query",
+    "dep:marlin-workspace-view",
+    "dep:parking_lot",
+]
 
 [dependencies]
+async-trait = { workspace = true, optional = true }
+marlin-agent-graph = { workspace = true, optional = true }
+marlin-gerbil-ir = { workspace = true, optional = true }
+marlin-context-org-model = { workspace = true, optional = true }
+marlin-workspace-protocol = { workspace = true, optional = true }
+marlin-workspace-query = { workspace = true, optional = true }
+marlin-workspace-status = { workspace = true, optional = true }
+marlin-workspace-view = { workspace = true, optional = true }
+parking_lot = { workspace = true, optional = true }
+orgize = { workspace = true, optional = true }
+serde = { workspace = true, optional = true }
+serde_json = { workspace = true, optional = true }
 gerbil-scheme = { workspace = true, optional = true }
 marlin-agent-protocol.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
+marlin-context-org-model.workspace = true
+futures-executor.workspace = true
 criterion.workspace = true
 
 [[bench]]

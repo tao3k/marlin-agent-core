@@ -96,12 +96,11 @@ without owning template execution. Both surfaces carry the typed
 =OrgContractRegistry= and full validation report so rendered text is never the
 only contract fact channel.
 
-=marlin-gerbil-scheme= may pass =GerbilWorkspaceContractFacts= in
-=GerbilCompileRequest= so command-backed Gerbil control planes can select
-contract templates or emit patch intents from typed facts, including validation
-skip reasons.
-Workspace patch-intent compile requests carry default empty contract facts and
-can be overridden with real parser-owned facts.
+The Context workspace workflow consumes =GerbilWorkspaceContractFacts= when
+validating patch intents, including typed validation skip reasons. The former
+command-backed compile request is not evidence of Scheme VM execution; a
+native typed projection is still needed to make these facts available to the
+Scheme policy plane.
 
 =marlin-agent-core= re-exports =org_model= and =org_workspace= so callers can
 use contract registries from the facade without depending on parser internals.

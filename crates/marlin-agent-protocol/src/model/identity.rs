@@ -64,3 +64,21 @@ semantic_string!(
     /// String passed to LiteLLM as the concrete model selector.
     LiteLlmModelId
 );
+
+impl ModelProviderId {
+    pub(crate) fn heap_capacity(&self) -> usize {
+        self.0.capacity()
+    }
+}
+
+impl ModelName {
+    pub(crate) fn heap_capacity(&self) -> usize {
+        self.0.capacity()
+    }
+}
+
+impl ModelAlias {
+    pub(crate) fn heap_capacity(&self) -> usize {
+        self.0.capacity()
+    }
+}

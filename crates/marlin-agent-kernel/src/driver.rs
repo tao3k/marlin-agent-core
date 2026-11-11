@@ -54,12 +54,18 @@ impl GraphPolicyProposalCompilation {
     }
 }
 
-/// Validates a graph policy proposal and compiles it into an execution request.
-pub fn compile_graph_policy_proposal(
+/// Compiles a static policy proposal; native proposals require the readiness path.
+pub fn compile_static_graph_policy_proposal(
     run_id: impl Into<String>,
     proposal: &GraphPolicyProposal,
 ) -> GraphPolicyProposalCompilation {
-    let receipt = GraphPolicyProposalReceipt::validate(proposal);
+    let mut receipt = GraphPolicyProposalReceipt::validate(proposal);
+    if receipt.status == GraphPolicyProposalStatus::Accepted && proposal.is_scheme_policy_plane() {
+        receipt = GraphPolicyProposalReceipt::rejected(
+            proposal,
+            vec!["graph_policy_proposal.c_abi_readiness_required".into()],
+        );
+    }
     let request = (receipt.status == GraphPolicyProposalStatus::Accepted)
         .then(|| GraphLoopExecutionRequest::new(run_id, proposal.proposed_graph.clone()));
     GraphPolicyProposalCompilation { receipt, request }
@@ -106,6 +112,20 @@ fn c_abi_readiness_diagnostics(
             "graph_policy_proposal.c_abi_readiness_version_mismatch:{}:{}",
             requirement.version, readiness.version
         ));
+    }
+    let required: BTreeSet<_> = requirement.required_symbols.iter().collect();
+    let checked: BTreeSet<_> = readiness.required_symbols.iter().collect();
+    if required != checked || readiness.required_symbols.len() != checked.len() {
+        diagnostics.push("graph_policy_proposal.c_abi_readiness_requirement_mismatch".to_string());
+    }
+    if readiness.required_symbol_count != readiness.required_symbols.len()
+        || readiness.matched_symbol_count
+            != readiness
+                .required_symbol_count
+                .saturating_sub(readiness.missing_symbols.len())
+        || readiness.matched_symbol_count > readiness.available_symbol_count
+    {
+        diagnostics.push("graph_policy_proposal.c_abi_readiness_count_mismatch".to_string());
     }
     if readiness.status != GraphCAbiReadinessStatus::Ready {
         diagnostics.push("graph_policy_proposal.c_abi_readiness_not_ready".to_string());

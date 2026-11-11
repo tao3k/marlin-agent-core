@@ -80,8 +80,8 @@ The implementation is accepted only when all of the following have receipts:
 The root repository is the only first-party Bazel package-discovery authority.
 Directories containing vendored source trees, development environments, or outputs from other build systems are inputs only through an explicit toolchain, repository rule, or declared file label; recursive target discovery must not infer them as Marlin packages.
 
-=REPO.bazel= is the primary Bazel 9.2 boundary declaration and uses =ignore_directories= for =.data=, =.devenv=, and Cargo =target= roots and their descendants.
-Bazel 9.2 expands a directory symlink such as =.devenv/profile= before =ignore_directories= can reject its descendants, so =.bazelignore= repeats only those three root boundaries as a compatibility closure.
+=REPO.bazel= is the primary Bazel 9.2 boundary declaration and uses =ignore_directories= for =.data=, =.devenv=, Cargo =target= roots and Bazel convenience output links.
+Bazel 9.2 can expand directory symlinks before =ignore_directories= rejects descendants, so =.bazelignore= repeats those boundaries, including the workspace output links.
 The duplicate declaration is not a second ownership model: =REPO.bazel= owns the intended boundary, while =.bazelignore= prevents recursive-query symlink escape and may be removed when the selected Bazel release closes that traversal gap.
 
 The boundary receipt requires:

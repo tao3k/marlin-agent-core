@@ -1,3 +1,8 @@
 .data
 .devenv
 target
+bazel-bin
+bazel-external
+bazel-out
+bazel-testlogs
+bazel-marlin-agent-core

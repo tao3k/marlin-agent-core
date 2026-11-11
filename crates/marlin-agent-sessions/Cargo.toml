@@ -6,8 +6,10 @@ authors.workspace = true
 repository.workspace = true
 
 [dependencies]
+marlin-agent-protocol.workspace = true
 marlin-agent-storage.workspace = true
 serde.workspace = true
+serde_json.workspace = true
 
 [dev-dependencies]
 tokio.workspace = true

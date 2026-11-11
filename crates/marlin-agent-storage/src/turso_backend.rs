@@ -14,9 +14,10 @@ use std::time::Duration;
 use crate::records::{
     AgentId, AgentStorage, ArtifactHash, ArtifactPointerKey, ArtifactPointerRecord,
     ArtifactPointerUpdate, ArtifactPutOutcome, ArtifactRecord, EventId, MemoryKey,
-    MemoryProposalId, MemoryProposalRecord, ProjectId, SessionEventRecord, SessionId, StorageError,
-    StorageFuture, StorageResult, StorageSchemaSnapshot, StorageSchemaTable, TopologyEdgeId,
-    TopologyEdgeRecord, TopologyNodeId, TurnId, VisibilityReceipt,
+    MemoryProposalId, MemoryProposalRecord, ProjectId, SessionEventRecord, SessionEventStore,
+    SessionId, StorageError, StorageFuture, StorageResult, StorageSchemaSnapshot,
+    StorageSchemaTable, TopologyEdgeId, TopologyEdgeRecord, TopologyNodeId, TurnId,
+    VisibilityReceipt,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]

@@ -1,6 +1,6 @@
 //! Rendered workspace view records.
 
-use marlin_org_model::{
+use marlin_context_org_model::{
     OrgContractDiagnostic, OrgContractRegistry, OrgContractResolution, OrgContractTemplate,
     OrgContractValidationReport, OrgContractValidationStatus, OrgNodeId,
 };

@@ -1,8 +1,8 @@
 use marlin_agent_kernel::{
     GraphLoopExecutionBudget, GraphLoopExecutionRequest, GraphLoopExecutionResult,
-    GraphLoopExecutionStatus, GraphLoopKernel, GraphLoopStrategy, GraphPolicyProposal,
-    GraphPolicyProposalStatus, LoopEdgeSpec, LoopGraph, LoopNodeSpec, TokioGraphLoopKernel,
-    compile_graph_policy_proposal,
+    GraphLoopExecutionStatus, GraphLoopKernel, GraphLoopStrategy, GraphLoopStrategyRuntime,
+    GraphPolicyProposal, GraphPolicyProposalStatus, LoopEdgeSpec, LoopGraph, LoopNodeSpec,
+    TokioGraphLoopKernel, compile_static_graph_policy_proposal,
 };
 use marlin_agent_protocol::GraphCAbiRequirement;
 use marlin_agent_runtime::TokioAgentRuntime;
@@ -57,14 +57,17 @@ async fn compiles_accepted_policy_proposal_into_execution_request() {
         edges: Vec::new(),
     };
     let proposal = GraphPolicyProposal::new(
-        GraphLoopStrategy::scheme_c_abi("scheme-loop-ranker", "v1"),
+        GraphLoopStrategy::new(
+            "static-loop-ranker",
+            "v1",
+            GraphLoopStrategyRuntime::StaticPolicy,
+        ),
         graph,
         "sha256:input",
         "sha256:output",
-    )
-    .with_c_abi_requirement(policy_c_abi_requirement());
+    );
 
-    let compilation = compile_graph_policy_proposal("run", &proposal);
+    let compilation = compile_static_graph_policy_proposal("run", &proposal);
 
     assert!(compilation.is_accepted());
     assert_eq!(
@@ -99,7 +102,7 @@ fn rejects_invalid_policy_proposal_before_execution_request() {
     )
     .with_c_abi_requirement(policy_c_abi_requirement());
 
-    let compilation = compile_graph_policy_proposal("run", &proposal);
+    let compilation = compile_static_graph_policy_proposal("run", &proposal);
 
     assert!(!compilation.is_accepted());
     assert_eq!(
