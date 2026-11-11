@@ -124,9 +124,13 @@ does not declare a direct Scheme bridge dependency. Its Bazel build still suppli
 the bridge needed by the current Orgize build. Orgize's own Scheme package now
 declares that dependency at its exact bridge revision; Lab's explicit Bazel
 producer wiring remains to be migrated to an Orgize-owned build closure. An
-isolated Orgize dependency install did not qualify: on macOS, its Gerbil POO
-dependency failed to link with an unresolved =_memset= symbol. The exact
-revisions remain subject to full Lab and downstream qualification.
+isolated Orgize dependency install initially failed on macOS with an unresolved
+=_memset= symbol; a subsequent retry failed to find OpenSSL via =pkg-config=.
+With the existing Bazel Gerbil linker wrapper and explicit Homebrew OpenSSL,
+SQLite and zlib paths, =gxpkg deps --install= returned zero and listed the
+expected pinned dependencies. That retry reused partial build outputs; it does
+not qualify a fresh install, Orgize's own build, or the integrated application.
+The exact revisions remain subject to full Lab and downstream qualification.
 The current legacy Rust workspace loader uses removed
 =syntax_ast= and traversal APIs and does not compile against the new Orgize.
 It must be replaced by the Lab-owned Context path, with compatible pinned
