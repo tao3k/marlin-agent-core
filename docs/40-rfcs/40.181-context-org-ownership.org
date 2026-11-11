@@ -162,7 +162,10 @@ with exit status zero. The two runs differ in build concurrency; this does not
 establish a cause for the earlier timeout or a cold-start performance pass.
 An isolated Lab pin-alignment candidate =dfc9f4d7= passed Bazel's macOS
 =//:dependency_packages= build and strict module-lock resolution on macOS ARM64
-and Linux AMD64. Lab's own full compilation and remote CI remain separate gates.
+and Linux AMD64. Its subsequent =//:compile= failed with a Gerbil stack overflow
+in =std/sync/barrier#__barrier-wait!= (exit 70). This is not a result for the
+later integrated Lab revision; its full compilation and remote CI remain separate
+gates.
 
 - Bind Org source, selected content, exact scope/session/turn and source cut to
   the Lab operation; distinguish a decoded projection from a current-use grant.
