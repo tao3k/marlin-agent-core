@@ -252,6 +252,10 @@ package MarlinSingleVmRuntime {
                Cumulative allocation accounting must remain monotonic on the
                same processor across explicit GC, automatic GC and rejected
                heap reservations. Repair bookkeeping in its runtime owner;
+               a native regression must fail on the unpatched owner and pass
+               on the corrected owner with the same workload and limits.
+               Applying a source patch alone does not qualify the installed
+               consumer's counter or a physical allocation budget.
                never clamp or take absolute values of a backward counter.
                A logical heap charge is not a physical allocation census. */
     }

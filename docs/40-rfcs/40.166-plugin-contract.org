@@ -2162,6 +2162,19 @@ values remain visible; no absolute value, clamping or substituted counter
 turns this diagnostic into a pass. The allocation-accounting defect and the
 retained publication objects remain separate optimization work.
 
+A Gambit-native regression now checks sixteen 256 KiB still-object rounds
+and sixteen movable-pair rounds using the existing unit-test harness. The
+same test fails on the retained unpatched binary with sixteen backward
+transitions and an undercharged accepted payload, then passes on the retained
+corrected binary. Both runs keep one processor and the 2 GiB heap ceiling;
+neither installs a runtime. The source patch applies to exact upstream
+=ea114fc3= and to that source with the existing multi-VM capacity/setup patches.
+It preserves cumulative deferred charges, charges successful nondeferred
+allocations once, and removes live still occupancy from the cumulative getter.
+Forward patch checks reject whitespace errors and verify the resulting source
+identity. This remains a local runtime-owner proposal: it is not enabled in
+Marlin or in a release pipeline, and the installed counter remains unqualified.
+
 *** Reached implementation and retained Context publication
 
 A compiler manifest lists available units; it does not prove that runtime
