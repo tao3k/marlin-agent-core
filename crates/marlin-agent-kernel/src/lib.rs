@@ -18,7 +18,7 @@ pub use controller::{
 };
 pub use driver::{
     GraphLoopKernel, GraphNodeExecutor, GraphPolicyProposalCompilation, TokioGraphLoopKernel,
-    compile_graph_policy_proposal, compile_graph_policy_proposal_with_c_abi_readiness,
+    compile_graph_policy_proposal_with_c_abi_readiness, compile_static_graph_policy_proposal,
 };
 pub use loop_machine::{
     GenericLoopMachine, GenericLoopMachineError, GenericLoopMachineReceipt, GenericLoopMachineStep,

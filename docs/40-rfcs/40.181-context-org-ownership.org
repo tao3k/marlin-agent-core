@@ -1,0 +1,215 @@
+#+title: Context-owned Org architecture
+#+property: STATUS in-progress
+
+* Scope and evidence
+
+Org is the durable representation for agent context. The TUI is a client of
+Context and does not own the authoritative context or invent a compression
+policy. Provider continuation, user and assistant content, and the references
+needed to reconstruct a turn must be retained without silent loss. Storing
+context in Org does not imply sending every stored document to a model; the
+runtime must assemble each request under its actual scope and current policy.
+Any limit or unsupported representation must be explicit, not silent
+truncation.
+
+This direction supersedes the TUI prototype's assumption that its in-memory
+message vector and optional Turso journal alone constitute the complete
+context. That prototype is still present; no migration, full Org-backed turn
+replay, provider-thinking persistence, or retirement of the old journal is
+claimed by this document.
+
+* Semantic owners
+
+Lab's Context owns scope and projection semantics, and composes the independent
+Lab Session Module. Its Memory feature is optional. Marlin owns typed Rust
+requests, current-use effect admission, and its native host boundary. The
+existing =scheme/context= bridge currently admits scopes; it does not expose a
+Lab Org projection or a Session lifecycle. A digest of an admitted scope is not
+source authentication, disclosure authorization, a durable commit, or proof of
+current policy.
+
+The pinned Lab revision =55bf2074a7ebbd3ad2708a1e17e566a71eb70249= was
+inspected directly in the upstream repository. Its Context module provides
+Org projection and replay with explicit scope, restrictions, source and result
+bounds. The projection selects open Org headlines under bounded row and byte
+budgets; it is not an exact full-conversation turn journal. Its output marks
+source authentication, action authorization and durability false. It cannot by
+itself prove preservation or disclosure of every conversation turn.
+
+The same revision's Context session host coordinates source enrollment,
+claims, observations and Session lifecycle; its durable adapter and runtime
+service coordinate journal recovery and authorized effects. These are existing
+Lab owner responsibilities, not evidence that Marlin's Rust Org store records
+all turns or that the current native bridge exposes these operations. Context
+produces an independent Session input proposal, which the host must resolve
+before publication; Session does not parse Org. Native ABI readiness and the
+exact dependency version must be checked before invoking these capabilities.
+See [[https://github.com/tao3k/agentic-ai-lab/blob/55bf2074a7ebbd3ad2708a1e17e566a71eb70249/modules/ai-agentic-context/funs-projection.ss][pinned projection]],
+[[https://github.com/tao3k/agentic-ai-lab/blob/55bf2074a7ebbd3ad2708a1e17e566a71eb70249/modules/ai-agentic-context/session-host.ss][session host]], and
+[[https://github.com/tao3k/agentic-ai-lab/blob/55bf2074a7ebbd3ad2708a1e17e566a71eb70249/modules/ai-agentic-context/durable-owner.ss][durable adapter]].
+
+* Rust dependency direction
+
+The former =marlin-org-memory= projection has moved to
+=marlin_agent_context::org=, with direct callers migrated. Its typed
+=ContextOrgMemoryQuery= checks the project, worktree, actor and session against
+a =ContextAdmissionRequest= before local projection and retains the full
+request, including source cut and turn, for correlation. It remains a local Org
+workspace implementation; identity consistency is not Lab admission, source
+verification, current-use authorization or an authoritative durable store. The former =marlin-org-store= has also moved to the optional
+=marlin_agent_context::org::store= module; its storage limitations are described
+below. The document parser and standard contracts
+now live in =marlin_agent_context::org::workspace=. Org patch planning
+and application have been retired along with their Workspace-specific source
+commit workflow. The remaining Org source store is a storage boundary, not a
+Lab Context implementation. The Org model remains a separate compilation unit
+under =parts/= pending removal of the dependency cycles described below.
+
+The legacy in-memory =WorkspacePatch= mutation path has also been removed,
+along with the patch package and its Workspace facade. It previously changed
+nodes operation by operation, so a later failure could leave earlier changes
+applied. The old validation method that always returned success was removed as
+well. The remaining in-memory read model is not a Lab Context transaction or
+an authoritative source update; it is transitional.
+The old Workspace patch planner, source committer and their receipts were
+removed. They did not implement Lab Context Org projection, Session host or
+durable owner operations. The filesystem source adapter still performs
+individual file replacements and reports unknown clean state. It is not a
+transactional turn journal, does not provide cross-process compare-and-swap or
+a symlink-safe root boundary, and does not prove durable multi-document commit.
+The in-memory source adapter supports exact-content atomic comparison for its
+own process; that does not establish filesystem or Lab durability. These
+limits remain open until the Lab host and durable owner are connected through
+the native Scheme VM boundary.
+
+A direct merge of every existing crate into =marlin-agent-context= would create
+cycles: Context consumes Workspace contracts, while those contracts currently
+depend on =marlin-context-org-model=. Gerbil IR no longer depends on the Org
+model or Workspace patch and view packages. The obsolete Workspace patch-intent workflow and unused legacy workspace
+policy specifications have been removed. This is only an intermediate
+dependency change: the remaining graph compilation and release surfaces still
+use the old Gerbil IR and must be refactored to the Scheme VM and typed native
+boundaries; moving data types alone does not establish VM execution. The shared lower-layer model is still a Context-owned leaf component;
+all former =marlin-org-*= workspace packages have been retired. This changes
+ownership and APIs, but does not implement Lab Org projection, transactional
+storage or TUI history migration.
+
+The remaining leaf is transitional, not the requested final organization.
+Moving it into =context::org::model= requires dependency inversion: Context
+currently consumes project-runtime query types and Workspace contracts, while
+those lower layers consume the Org model. The migration must move the relevant
+semantic contracts to their proper owners, adapt callers, and remove the leaf
+in the same change. Copying the model into both crates would create distinct
+Rust types and is not an acceptable substitute. Cargo features do not remove a
+package-level dependency cycle.
+
+* Required integration
+
+** Upstream revision alignment
+
+Orgize PR #18 head =9a9f63d8286fd0ffe68d64fc2de385dab6e57b23=
+keeps package version =0.10.0-alpha.10= but replaces the former Rust syntax
+traversal surface with Scheme-owned parsing and typed projections. Marlin's
+Cargo pin now names that revision. Its FFI bundle is revision- and
+platform-bound; the macOS Scheme-runtime producer job passed while the same
+PR's runtime-rust performance gate failed. A checked bundle does not establish
+that Marlin's application uses the existing Deck VM or passes end-to-end.
+
+At the inspected Lab PR #63 head =558e9bd5b8acf1ec644c74c9621007a3695de636=,
+Lab's Scheme package still selects Orgize =8b0959a85d21207e377ee99647df0750abadd9f1=.
+Updating only Marlin's Cargo pin therefore does not align Lab's transitive
+Scheme graph. The current legacy Rust workspace loader also uses removed
+=syntax_ast= and traversal APIs and does not compile against the new Orgize.
+It must be replaced by the Lab-owned Context path, with compatible pinned
+Scheme dependencies and actual single-VM lifecycle evidence, rather than a
+second parser owner or a renamed legacy adapter.
+
+- Bind Org source, selected content, exact scope/session/turn and source cut to
+  the Lab operation; distinguish a decoded projection from a current-use grant.
+- Record every accepted turn, typed provider continuation and outcome in Org
+  through the owning source store and an explicit atomic commit/recovery path.
+  Keep uncertain external requests unresolved until their owner supplies
+  evidence; source writes do not prove remote completion.
+- Expose a typed Context request and result to the runtime and TUI. The TUI
+  presents projections and submits interactions; it must not reconstruct
+  authority from formatted text or maintain an independent context truth.
+- Replace rather than silently shadow old session history once Org-backed
+  recovery and migration have been verified. Validate concurrent changes,
+  stale source cuts, crash recovery, model switching and large sessions.
+- Measure projection and persistence under matched conditions, with explicit
+  byte, row and cache limits. Preserve original Org content and surface
+  rejected or incomplete operations; no context compression is introduced.
+
+* Local migration evidence
+
+The six former Org packages no longer appear as independent workspace packages.
+The Context crate exposes source, document workspace, workflow and optional
+memory projections through typed modules. The old patch implementation and
+its source-commit workflow are removed; the model remains a leaf crate pending
+dependency inversion. No patch compatibility alias remains.
+
+Before the patch workflow was retired, Context's combined Org tests passed 73 tests;
+the two former leaf packages passed 10. Source-only and workflow-without-Memory feature
+tests passed 14 and 38 respectively. Context without default features and the
+Core crate compiled; the Core test targets were checked. Context Clippy with
+all targets and both optional features passed. The SysML model validation
+passed. These checks do not establish live Lab Org projection, durable Org
+turn persistence, or TUI end-to-end operation.
+
+The Bazel lock was regenerated in a separate copy. Existing platform-specific
+entries were retained and the resulting checksum was validated in that copy.
+The main workspace's existing Bazel output base still reported a cached stale
+lock digest; an independent temporary output base resolved the Context targets
+under both dependency-preparation and normal offline query configurations.
+A query is not a build or cross-platform qualification.
+The isolated-output Context Bazel target subsequently built successfully using
+=--config=deps_prepare --fetch=; it emitted a Nix compiler target warning.
+A default offline build still failed before analysis because =rules_rust+= is
+not present in the configured vendor directory. Neither result proves a
+normal clean offline build or any other platform.
+The workspace Rust harness policy tests initially found the former memory
+crate path and scenario identity still configured. The policy now classifies
+Context and its leaf packages under the existing Org workspace responsibilities;
+all 42 policy tests passed. Historical component fixture limits were retained
+and marked as inherited, not as a fresh measurement of the enlarged Context
+crate. No end-to-end performance claim follows from those fixtures.
+The workspace-wide Bazel query first encountered a recursive convenience-link
+cycle. Both Bazel ignore declarations now exclude the existing output links;
+the same query then resolved all workspace targets in the temporary output base.
+This is target-graph evidence, not offline build evidence.
+After the source-read API migration, the combined Context suite passed 74 tests,
+including a corrupt UTF-8 source that had to fail discovery and block the then-existing committer.
+Clippy and Core test-target compilation passed again; the same prepared-output
+Bazel target built successfully. These results do not cover concurrent write
+isolation, multi-document atomicity or symlink-safe source access.
+
+* Session storage boundary
+
+The runtime session event operations now form =SessionEventStore=, distinct from
+artifact, visibility, memory and topology storage. =AgentStorage= composes that
+contract; the existing in-memory and Turso backends implement both. The
+conversation journal and TUI session components depend only on the narrower
+session contract. A session-only in-memory delegating fixture verifies that the
+journal does not require the other storage capabilities. This creates an
+integration point for an Org source owner; it does not itself implement an Org
+backend, migrate a session, or establish the Lab Session lifecycle.
+After the session-event split, the prepared-output Bazel default storage target
+built, while the Turso variant failed in the existing external
+=meta-relational-reasoning= crate: its Bazel source projection omitted Lean
+proof inputs and its repository =Cargo.lock=. This is separate from the
+Context library's successful diagnostic build; the Turso Bazel path is not
+qualified by the Cargo checks.
+The Session crate's 27 tests passed after the split, including the session-only
+fixture. Session and storage Clippy checks passed with warnings denied, TUI test
+targets compiled, and the workspace policy's 42 tests and SysML validation
+passed again. These checks do not create an Org event backend.
+
+The temporary-path change passed the two targeted collision tests and the
+full 76-test Context suite. No latency or end-to-end persistence guarantee is
+inferred from those checks.
+The Context suite passed 84 tests after exclusive temporary creation,
+partial-write uncertainty, explicit legacy receipt migration, lexical batch
+alias rejection and fail-closed clean-state handling were added. The alias
+test verifies that a rejected batch leaves the original file unchanged.
+The migration does not resolve the historical outcome or provide a durable
+write receipt; it preserves the original artifact for owner reconciliation.

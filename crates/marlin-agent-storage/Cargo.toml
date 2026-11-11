@@ -19,8 +19,9 @@ turso-sync = ["turso", "mrr-data-backend/turso-sync"]
 
 [dev-dependencies]
 asp-rust.workspace = true
+marlin-agent-protocol.workspace = true
 marlin-agent-sessions = { workspace = true }
-marlin-org-memory = { workspace = true }
+marlin-agent-context = { workspace = true, features = ["org-memory"] }
 serde_json = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true }

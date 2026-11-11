@@ -5,4 +5,9 @@ ignore_directories([
     ".devenv/**",
     "target",
     "target/**",
+    "bazel-bin",
+    "bazel-external",
+    "bazel-marlin-agent-core",
+    "bazel-out",
+    "bazel-testlogs",
 ])

@@ -1,0 +1,13 @@
+load("@marlin_crates//:defs.bzl", "crate_deps", "crate_edition")
+load("//bazel:marlin_harness.bzl", "marlin_crate_with_policy_data")
+
+marlin_crate_with_policy_data(
+    name = "marlin_git_utils",
+    srcs = glob(["src/**/*.rs"]),
+    edition = crate_edition(),
+    gate_data = glob(["tests/**/*.rs"]),
+    deps = crate_deps([
+        "thiserror",
+        "tokio",
+    ]),
+)

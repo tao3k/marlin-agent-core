@@ -8,8 +8,8 @@ use super::helpers::{
 };
 
 #[test]
-fn org_memory_crate_receives_persistence_verification_policy() {
-    let root = workspace_root().join("crates/marlin-org-memory");
+fn context_crate_receives_persistence_verification_policy() {
+    let root = workspace_root().join("crates/marlin-agent-context");
     let config = rust_project_harness_config_for_project(&root);
     let root_hint = profile_hint(&config.verification_policy.profile_hints, "src/lib.rs");
 
@@ -26,6 +26,6 @@ fn org_memory_crate_receives_persistence_verification_policy() {
             .verification_policy
             .profile_hints
             .iter()
-            .any(|hint| hint.owner_path == Path::new("src/memory/project_graph.rs"))
+            .any(|hint| hint.owner_path == Path::new("src/org/memory/project_graph.rs"))
     );
 }

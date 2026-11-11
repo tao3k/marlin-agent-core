@@ -53,3 +53,22 @@ async fn runtime_event_capture_survives_closed_parent_stream() {
         RuntimeEvent::new("runtime.test", "captured-after-parent-close")
     );
 }
+
+#[tokio::test]
+async fn receive_and_stream_share_order_and_close_state() {
+    let (runtime, mut events) = TokioAgentRuntime::new(2);
+    runtime
+        .context()
+        .emit(RuntimeEvent::new("first", "one"))
+        .await
+        .unwrap();
+    runtime
+        .context()
+        .emit(RuntimeEvent::new("second", "two"))
+        .await
+        .unwrap();
+    assert_eq!(events.recv().await.unwrap().topic, "first");
+    assert_eq!(events.next().await.unwrap().topic, "second");
+    events.close();
+    assert!(events.recv().await.is_none());
+}

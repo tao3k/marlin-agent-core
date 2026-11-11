@@ -1,12 +1,12 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::future::ready;
 use std::sync::{Arc, Mutex};
 
 use crate::records::{
     AgentStorage, ArtifactHash, ArtifactPointerKey, ArtifactPointerRecord, ArtifactPointerUpdate,
     ArtifactPutOutcome, ArtifactRecord, MemoryProposalId, MemoryProposalRecord, ProjectId,
-    SessionEventKey, SessionEventRecord, StorageError, StorageFuture, StorageResult,
-    TopologyEdgeId, TopologyEdgeRecord, VisibilityReceipt,
+    SessionEventKey, SessionEventRecord, SessionEventStore, StorageError, StorageFuture,
+    StorageResult, TopologyEdgeId, TopologyEdgeRecord, VisibilityReceipt,
 };
 
 #[derive(Clone, Debug, Default)]
@@ -17,6 +17,12 @@ pub struct InMemoryAgentStorage {
 #[derive(Clone, Debug, Default)]
 struct State {
     session_events: BTreeMap<SessionEventKey, SessionEventRecord>,
+    session_event_counts: BTreeMap<(ProjectId, crate::records::SessionId), u64>,
+    sessions: BTreeSet<(
+        ProjectId,
+        crate::records::AgentId,
+        crate::records::SessionId,
+    )>,
     artifacts: BTreeMap<(ProjectId, ArtifactHash), ArtifactRecord>,
     artifact_pointers: BTreeMap<(ProjectId, ArtifactPointerKey), ArtifactPointerRecord>,
     memory_proposals: BTreeMap<(ProjectId, MemoryProposalId), MemoryProposalRecord>,
@@ -37,14 +43,79 @@ impl InMemoryAgentStorage {
     }
 }
 
-impl AgentStorage for InMemoryAgentStorage {
+impl SessionEventStore for InMemoryAgentStorage {
+    fn count_session_events<'a>(
+        &'a self,
+        project: &'a ProjectId,
+        session: &'a crate::records::SessionId,
+    ) -> StorageFuture<'a, crate::records::SessionEventCount> {
+        Box::pin(ready(self.with_state(|state| {
+            let count = state
+                .session_event_counts
+                .get(&(project.clone(), session.clone()))
+                .copied()
+                .unwrap_or(0);
+            Ok(crate::records::SessionEventCount::new(count))
+        })))
+    }
+
+    fn list_sessions_page<'a>(
+        &'a self,
+        request: crate::records::SessionPageRequest,
+    ) -> StorageFuture<
+        'a,
+        crate::records::StoragePage<crate::records::SessionId, crate::records::SessionId>,
+    > {
+        Box::pin(ready(self.with_state(|state| {
+            use std::ops::Bound::{Excluded, Included, Unbounded};
+            let project = request.project_id().clone();
+            let agent = request.agent_id().clone();
+            let start = match request.cursor() {
+                Some(id) => Excluded((project.clone(), agent.clone(), id.clone())),
+                None => Included((
+                    project.clone(),
+                    agent.clone(),
+                    crate::records::SessionId::new("\0")?,
+                )),
+            };
+            let mut items: Vec<_> = state
+                .sessions
+                .range((start, Unbounded))
+                .take_while(|(p, a, _)| p == &project && a == &agent)
+                .take(request.limit().get() + 1)
+                .map(|(_, _, id)| id.clone())
+                .collect();
+            let next_cursor = if items.len() > request.limit().get() {
+                items.pop();
+                items.last().cloned()
+            } else {
+                None
+            };
+            Ok(crate::records::StoragePage { items, next_cursor })
+        })))
+    }
+
     fn append_session_event<'a>(&'a self, record: SessionEventRecord) -> StorageFuture<'a, ()> {
         Box::pin(ready(self.with_state(|state| {
             let key = record.key();
             if state.session_events.contains_key(&key) {
                 return Err(StorageError::DuplicateSessionEvent { key });
             }
+            let scope = (record.project_id.clone(), record.session_id.clone());
+            let count = state
+                .session_event_counts
+                .get(&scope)
+                .copied()
+                .unwrap_or(0)
+                .checked_add(1)
+                .ok_or_else(count_overflow)?;
+            state.sessions.insert((
+                record.project_id.clone(),
+                record.agent_id.clone(),
+                record.session_id.clone(),
+            ));
             state.session_events.insert(key, record);
+            state.session_event_counts.insert(scope, count);
             Ok(())
         })))
     }
@@ -55,17 +126,29 @@ impl AgentStorage for InMemoryAgentStorage {
     ) -> StorageFuture<'a, crate::records::SessionEventBatchWriteReceipt> {
         Box::pin(ready(self.with_state(|state| {
             let mut keys = std::collections::HashSet::with_capacity(records.len());
+            let mut counts = BTreeMap::new();
             for record in &records {
                 let key = record.key();
                 if state.session_events.contains_key(&key) || !keys.insert(key.clone()) {
                     return Err(StorageError::DuplicateSessionEvent { key });
                 }
+                let scope = (record.project_id.clone(), record.session_id.clone());
+                let count = counts.entry(scope.clone()).or_insert_with(|| {
+                    state.session_event_counts.get(&scope).copied().unwrap_or(0)
+                });
+                *count = count.checked_add(1).ok_or_else(count_overflow)?;
             }
 
             let item_count = records.len();
             for record in records {
+                state.sessions.insert((
+                    record.project_id.clone(),
+                    record.agent_id.clone(),
+                    record.session_id.clone(),
+                ));
                 state.session_events.insert(record.key(), record);
             }
+            state.session_event_counts.extend(counts);
             Ok(crate::records::SessionEventBatchWriteReceipt {
                 item_count,
                 rows_affected: item_count as u64,
@@ -81,23 +164,31 @@ impl AgentStorage for InMemoryAgentStorage {
         crate::records::StoragePage<SessionEventRecord, crate::records::SessionEventCursor>,
     > {
         Box::pin(ready(self.with_state(|state| {
+            use std::ops::Bound::{Excluded, Included, Unbounded};
             let limit = request.limit().get();
+            let start = match request.cursor() {
+                Some(cursor) => Excluded(SessionEventKey {
+                    project_id: request.project_id().clone(),
+                    session_id: request.session_id().clone(),
+                    turn_id: cursor.turn_id().clone(),
+                    event_id: cursor.event_id().clone(),
+                }),
+                None => Included(SessionEventKey {
+                    project_id: request.project_id().clone(),
+                    session_id: request.session_id().clone(),
+                    turn_id: crate::records::TurnId::new("\0")?,
+                    event_id: crate::records::EventId::new("\0")?,
+                }),
+            };
             let mut items = state
                 .session_events
-                .values()
-                .filter(|event| {
-                    &event.project_id == request.project_id()
-                        && &event.session_id == request.session_id()
-                })
-                .filter(|event| {
-                    request.cursor().is_none_or(|cursor| {
-                        event.turn_id > *cursor.turn_id()
-                            || (event.turn_id == *cursor.turn_id()
-                                && event.event_id > *cursor.event_id())
-                    })
+                .range((start, Unbounded))
+                .take_while(|(key, _)| {
+                    &key.project_id == request.project_id()
+                        && &key.session_id == request.session_id()
                 })
                 .take(limit + 1)
-                .cloned()
+                .map(|(_, event)| event.clone())
                 .collect::<Vec<_>>();
             let next_cursor = if items.len() > limit {
                 items.pop();
@@ -110,7 +201,15 @@ impl AgentStorage for InMemoryAgentStorage {
             Ok(crate::records::StoragePage { items, next_cursor })
         })))
     }
+}
 
+fn count_overflow() -> StorageError {
+    StorageError::Backend {
+        message: "session event count exceeds u64".into(),
+    }
+}
+
+impl AgentStorage for InMemoryAgentStorage {
     fn put_artifact<'a>(&'a self, record: ArtifactRecord) -> StorageFuture<'a, ArtifactPutOutcome> {
         Box::pin(ready(self.with_state(|state| {
             let key = (record.project_id.clone(), record.artifact_hash.clone());

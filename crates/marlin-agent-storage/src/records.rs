@@ -81,6 +81,19 @@ pub struct SessionEventBatchWriteReceipt {
     pub rows_affected: u64,
 }
 
+/// Number of committed events in a project-scoped session.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct SessionEventCount(u64);
+
+impl SessionEventCount {
+    pub fn new(value: u64) -> Self {
+        Self(value)
+    }
+    pub fn get(self) -> u64 {
+        self.0
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StoragePageLimit(u16);
 
@@ -109,6 +122,43 @@ impl StoragePageLimit {
 pub struct StoragePage<T, C> {
     pub items: Vec<T>,
     pub next_cursor: Option<C>,
+}
+
+/// Lists session IDs with at least one event for the specified project and agent.
+/// The cursor is exclusive; ordering is by session ID, not recency.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SessionPageRequest {
+    project_id: ProjectId,
+    agent_id: AgentId,
+    after: Option<SessionId>,
+    limit: StoragePageLimit,
+}
+
+impl SessionPageRequest {
+    pub fn new(project_id: ProjectId, agent_id: AgentId, limit: StoragePageLimit) -> Self {
+        Self {
+            project_id,
+            agent_id,
+            after: None,
+            limit,
+        }
+    }
+    pub fn after(mut self, session: SessionId) -> Self {
+        self.after = Some(session);
+        self
+    }
+    pub fn project_id(&self) -> &ProjectId {
+        &self.project_id
+    }
+    pub fn agent_id(&self) -> &AgentId {
+        &self.agent_id
+    }
+    pub fn cursor(&self) -> Option<&SessionId> {
+        self.after.as_ref()
+    }
+    pub fn limit(&self) -> StoragePageLimit {
+        self.limit
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -473,7 +523,23 @@ pub struct StorageSchemaTable {
     pub name: String,
 }
 
-pub trait AgentStorage: Send + Sync {
+/// Ordered, atomic session event persistence. Implementations may own only
+/// session records without providing artifact, memory or topology storage.
+pub trait SessionEventStore: Send + Sync {
+    /// Counts committed session events. Under the append-only storage contract,
+    /// a changed count reveals an append between two completed reads. This is
+    /// not a transaction, a lease, or a cross-replica consistency guarantee.
+    fn count_session_events<'a>(
+        &'a self,
+        project: &'a ProjectId,
+        session: &'a SessionId,
+    ) -> StorageFuture<'a, SessionEventCount>;
+
+    fn list_sessions_page<'a>(
+        &'a self,
+        request: SessionPageRequest,
+    ) -> StorageFuture<'a, StoragePage<SessionId, SessionId>>;
+
     fn append_session_event<'a>(&'a self, record: SessionEventRecord) -> StorageFuture<'a, ()>;
 
     fn append_session_events_atomically<'a>(
@@ -485,7 +551,11 @@ pub trait AgentStorage: Send + Sync {
         &'a self,
         request: SessionEventPageRequest,
     ) -> StorageFuture<'a, StoragePage<SessionEventRecord, SessionEventCursor>>;
+}
 
+/// Complete agent storage, composed from the session event store and the
+/// separate artifact, visibility, memory and topology operations.
+pub trait AgentStorage: SessionEventStore {
     fn put_artifact<'a>(&'a self, record: ArtifactRecord) -> StorageFuture<'a, ArtifactPutOutcome>;
 
     fn get_artifact<'a>(

@@ -31,6 +31,13 @@ impl ModelEndpoint {
         self
     }
 
+    pub(crate) fn heap_capacity(&self) -> usize {
+        self.provider
+            .heap_capacity()
+            .saturating_add(self.model.heap_capacity())
+            .saturating_add(self.alias.as_ref().map_or(0, ModelAlias::heap_capacity))
+    }
+
     pub fn litellm_model_id(&self) -> LiteLlmModelId {
         LiteLlmModelId::new(format!(
             "{}/{}",
@@ -141,6 +148,22 @@ pub enum ModelEndpointContractError {
     AnthropicModelMustBeClaude {
         model: ModelName,
     },
+}
+
+impl ModelEndpointContractError {
+    pub(crate) fn heap_capacity(&self) -> usize {
+        match self {
+            Self::EmptyProvider | Self::EmptyModel => 0,
+            Self::ProviderContainsModelSeparator { provider }
+            | Self::ProviderLooksLikeModel { provider } => provider.heap_capacity(),
+            Self::ModelContainsProviderSeparator { model }
+            | Self::OpenAiModelMustBeGpt { model }
+            | Self::AnthropicModelMustBeClaude { model } => model.heap_capacity(),
+            Self::ModelLooksLikeProvider { provider, model } => provider
+                .heap_capacity()
+                .saturating_add(model.heap_capacity()),
+        }
+    }
 }
 
 impl Display for ModelEndpointContractError {

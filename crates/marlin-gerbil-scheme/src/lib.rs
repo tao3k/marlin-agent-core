@@ -112,7 +112,6 @@ pub use loop_case_driver::{
     GerbilLoopCaseDriverRealLlmCaseReceipt, GerbilLoopCaseDriverRealLlmCaseReceiptError,
     parse_gerbil_loop_case_driver_real_llm_case_receipt,
 };
-pub use marlin_gerbil_ir::GerbilWorkspaceContractFacts;
 pub use policy_pack_projection::{
     GERBIL_LOOP_POLICY_PROJECTION_MODULE_PACKAGE_ID,
     GERBIL_LOOP_POLICY_PROJECTION_MODULE_SCHEMA_ID, GERBIL_LOOP_POLICY_PROJECTION_MODULE_TYPE_ID,

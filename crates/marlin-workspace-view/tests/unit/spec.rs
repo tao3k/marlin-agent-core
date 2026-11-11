@@ -1,4 +1,4 @@
-use marlin_org_model::OrgNodeId;
+use marlin_context_org_model::OrgNodeId;
 use marlin_workspace_view::{RenderMode, WorkspaceField, WorkspaceViewSpec};
 
 #[test]

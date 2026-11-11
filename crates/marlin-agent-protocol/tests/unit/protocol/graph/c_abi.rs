@@ -23,6 +23,7 @@ fn graph_c_abi_readiness_receipt_reports_symbol_coverage() {
     assert_eq!(ready.required_symbol_count, 2);
     assert_eq!(ready.available_symbol_count, 3);
     assert_eq!(ready.matched_symbol_count, 2);
+    assert_eq!(ready.required_symbols, requirement.required_symbols);
     assert!(ready.missing_symbols.is_empty());
 
     let missing =
@@ -40,4 +41,15 @@ fn graph_c_abi_readiness_receipt_reports_symbol_coverage() {
             .collect::<Vec<_>>(),
         vec!["marlin_deck_runtime_abi_version"]
     );
+}
+
+#[test]
+fn readiness_encoding_requires_the_exact_symbol_requirement() {
+    let requirement = GraphCAbiRequirement::new("abi", 1).with_required_symbols(["a", "b"]);
+    let receipt = GraphCAbiReadinessReceipt::evaluate(&requirement, ["a", "b"]);
+    let mut value = serde_json::to_value(&receipt).unwrap();
+    let decoded: GraphCAbiReadinessReceipt = serde_json::from_value(value.clone()).unwrap();
+    assert_eq!(decoded, receipt);
+    value.as_object_mut().unwrap().remove("required_symbols");
+    assert!(serde_json::from_value::<GraphCAbiReadinessReceipt>(value).is_err());
 }

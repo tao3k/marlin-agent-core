@@ -32,19 +32,10 @@ pub use working_copy::{
 };
 pub use workspace::AgentWorkspace;
 
-pub use marlin_org_model::{
+pub use marlin_context_org_model::{
     BlockKind, CheckboxState, LinkKind, OrgBlock, OrgCheckbox, OrgLink, OrgNode, OrgNodeId,
     OrgNodeKind, OrgNodeSourceTokens, OrgProperty, OrgSourceSpan, OrgTable, OrgTableRow,
     OrgTimestamp, TodoState,
-};
-pub use marlin_org_patch::{
-    OrgPatchApplier, OrgPatchApplyReport, OrgPatchDiagnostic, OrgPatchDocumentChange, OrgPatchPlan,
-    OrgPatchPlanner, OrgTextEdit, org_text_hash,
-};
-pub use marlin_workspace_patch::{
-    AffectedNodeSource, DecisionRecord, EvidenceRef, EvidenceTrust, MemoryDispatchReceipt,
-    MetricPoint, PatchId, ValidationDiagnostic, ValidationSeverity, WorkspacePatch,
-    WorkspacePatchOp, WorkspacePatchReceipt, WorkspaceValidationReport,
 };
 pub use marlin_workspace_query::{
     NodeSelector, PropertyFilter, QueryFilter, QueryMatch, QueryOrder, SourceRange, WorkspaceQuery,

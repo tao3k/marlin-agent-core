@@ -1,6 +1,7 @@
 //! Session identity, context visibility, and isolation contracts for agent runtimes.
 
 mod context;
+mod conversation;
 mod id;
 mod identity;
 mod runtime;
@@ -8,6 +9,12 @@ mod storage;
 
 pub use context::{
     ContextExpansionPolicy, ContextNamespace, ContextVisibility, SessionIsolationPolicy,
+};
+pub use conversation::{
+    CONVERSATION_MAX_CHECKPOINT_SEGMENTS, ConversationCheckpointChannel,
+    ConversationCheckpointSpan, ConversationJournal, ConversationJournalError,
+    ConversationTerminalObservation, ConversationTurn, ConversationTurnId, ConversationTurnOutcome,
+    ConversationTurnStart, ConversationUncertaintyReason,
 };
 pub use id::{SessionId, SessionIdError, SessionKind};
 pub use identity::{AgentSessionContext, SessionIdentity, SessionIsolationReceipt};

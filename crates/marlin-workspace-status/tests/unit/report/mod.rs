@@ -1,10 +1,10 @@
-use marlin_gerbil_ir::{ReleaseGateSpec, ReleaseTopologySpec, ReleaseVisibilitySpec};
-use marlin_org_model::{
+use marlin_context_org_model::{
     OrgContract, OrgContractAssertion, OrgContractCompareOp, OrgContractExpectation, OrgContractId,
     OrgContractKind, OrgContractQuery, OrgContractRegistry, OrgContractScope, OrgContractSeverity,
     OrgContractValidationReceipt, OrgContractValidationReport, OrgContractValidationSkipReason,
     OrgContractValidationStatus, OrgContractValidationTarget,
 };
+use marlin_gerbil_ir::{ReleaseGateSpec, ReleaseTopologySpec, ReleaseVisibilitySpec};
 use marlin_workspace_status::{
     ContractStatus, ReleaseGateReceipt, ReleaseGateState, ReleaseStatus, WorkspaceStatusEvidence,
     WorkspaceStatusEvidenceKind,
@@ -151,11 +151,11 @@ fn release_status_projects_pending_topology_visibility() {
         ],
         runtime_dependency_chain: vec![
             "marlin-gerbil-ir".to_string(),
-            "marlin-workspace-patch".to_string(),
+            "marlin-workspace-protocol".to_string(),
         ],
         workflow_dependency_chain: vec![
-            "marlin-org-workflow".to_string(),
-            "marlin-org-store".to_string(),
+            "marlin-agent-context".to_string(),
+            "marlin-workspace-status".to_string(),
         ],
         gates: vec![
             ReleaseGateSpec {
@@ -237,7 +237,7 @@ fn release_status_records_gate_receipts() {
             .to_string(),
         package_assets: vec!["fixtures/gerbil/build.ss".to_string()],
         runtime_dependency_chain: vec!["marlin-gerbil-ir".to_string()],
-        workflow_dependency_chain: vec!["marlin-org-workflow".to_string()],
+        workflow_dependency_chain: vec!["marlin-agent-context".to_string()],
         gates: vec![ReleaseGateSpec {
             gate_id: "package-assets".to_string(),
             command: "cargo package -p marlin-gerbil-scheme --list --allow-dirty".to_string(),
@@ -298,7 +298,7 @@ fn release_status_marks_visibility_evidence_as_passed_gate() {
             .to_string(),
         package_assets: vec!["fixtures/gerbil/command-adapter.ss".to_string()],
         runtime_dependency_chain: vec!["marlin-gerbil-ir".to_string()],
-        workflow_dependency_chain: vec!["marlin-org-workflow".to_string()],
+        workflow_dependency_chain: vec!["marlin-agent-context".to_string()],
         gates: vec![ReleaseGateSpec {
             gate_id: "real-gxi".to_string(),
             command:

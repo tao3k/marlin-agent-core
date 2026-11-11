@@ -1,14 +1,14 @@
 #![cfg(feature = "turso")]
 
-use marlin_agent_storage::{
-    AgentId, AgentStorage, ArtifactHash, ArtifactRecord, EventId, ProjectId, SessionId,
-    StorageResult, TursoAgentStorage, TursoAgentStorageConfig, VisibilityReceipt,
-};
-use marlin_org_memory::{
+use marlin_agent_context::org::{
     PROJECT_MEMORY_CONTENT_ID_PROPERTY, PROJECT_MEMORY_ID_PROPERTY,
     PROJECT_MEMORY_RECALL_QUERY_PROPERTY, PROJECT_MEMORY_SESSION_ID_PROPERTY,
     SESSION_FACT_CONTEXT_PACK_ID_PROPERTY, SESSION_FACT_SESSION_ID_PROPERTY, TOPOLOGY_ID_PROPERTY,
     TOPOLOGY_SCOPE_PROPERTY,
+};
+use marlin_agent_storage::{
+    AgentId, AgentStorage, ArtifactHash, ArtifactRecord, EventId, ProjectId, SessionId,
+    StorageResult, TursoAgentStorage, TursoAgentStorageConfig, VisibilityReceipt,
 };
 use tempfile::tempdir;
 

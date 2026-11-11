@@ -201,10 +201,24 @@ impl TokioGraphLoopController {
 
         loop {
             let iteration = reports.len() as u64;
-            let execution_result = self
-                .execute_iteration(execution_request, iteration_budget.clone(), runtime)
-                .await;
-            let iteration_events = drain_captured_events(captured_events.as_mut());
+            let execution =
+                self.execute_iteration(execution_request, iteration_budget.clone(), runtime);
+            tokio::pin!(execution);
+            let mut iteration_events = Vec::new();
+            let execution_result = if let Some(capture) = captured_events.as_mut() {
+                loop {
+                    tokio::select! {
+                        result = &mut execution => break result,
+                        event = capture.recv() => match event {
+                            Some(event) => iteration_events.push(event),
+                            None => break execution.await,
+                        },
+                    }
+                }
+            } else {
+                execution.await
+            };
+            iteration_events.extend(drain_captured_events(captured_events.as_mut()));
             let decision = self
                 .next_iteration_decision(
                     &base_run_id,

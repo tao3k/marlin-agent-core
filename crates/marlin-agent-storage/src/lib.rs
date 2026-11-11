@@ -14,12 +14,12 @@ pub use records::{
     AgentId, AgentStorage, ArtifactHash, ArtifactPointerKey, ArtifactPointerRecord,
     ArtifactPointerUpdate, ArtifactPutOutcome, ArtifactRecord, EventId, MemoryKey,
     MemoryProposalCursor, MemoryProposalId, MemoryProposalPageRequest, MemoryProposalRecord,
-    ProjectId, SessionEventBatchWriteReceipt, SessionEventCursor, SessionEventKey,
-    SessionEventPageRequest, SessionEventRecord, SessionId, StorageError, StorageFuture,
-    StoragePage, StoragePageLimit, StorageResult, StorageSchemaLifecycle, StorageSchemaSnapshot,
-    StorageSchemaTable, TopologyEdgeCursor, TopologyEdgeId, TopologyEdgePageRequest,
-    TopologyEdgeRecord, TopologyNodeId, TurnId, VisibilityCursor, VisibilityPageRequest,
-    VisibilityReceipt,
+    ProjectId, SessionEventBatchWriteReceipt, SessionEventCount, SessionEventCursor,
+    SessionEventKey, SessionEventPageRequest, SessionEventRecord, SessionEventStore, SessionId,
+    SessionPageRequest, StorageError, StorageFuture, StoragePage, StoragePageLimit, StorageResult,
+    StorageSchemaLifecycle, StorageSchemaSnapshot, StorageSchemaTable, TopologyEdgeCursor,
+    TopologyEdgeId, TopologyEdgePageRequest, TopologyEdgeRecord, TopologyNodeId, TurnId,
+    VisibilityCursor, VisibilityPageRequest, VisibilityReceipt,
 };
 #[cfg(feature = "turso")]
 pub use turso_backend::{

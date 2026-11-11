@@ -11,6 +11,8 @@ pub(super) const STORAGE_SCHEMA: &[&str] = &[
         created_at_unix_ms INTEGER NOT NULL,
         PRIMARY KEY (project_id, session_id, turn_id, event_id)
     )",
+    "CREATE INDEX IF NOT EXISTS session_events_by_agent_session
+        ON session_events (project_id, agent_id, session_id)",
     "CREATE TABLE IF NOT EXISTS artifacts (
         project_id TEXT NOT NULL,
         artifact_hash TEXT NOT NULL,

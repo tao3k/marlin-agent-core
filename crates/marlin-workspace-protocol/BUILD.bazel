@@ -11,9 +11,7 @@ marlin_crate_with_policy_data(
         "serde",
         "thiserror",
     ]) + [
-        "//crates/marlin-org-model:marlin_org_model",
-        "//crates/marlin-org-patch:marlin_org_patch",
-        "//crates/marlin-workspace-patch:marlin_workspace_patch",
+        "//crates/marlin-agent-context/parts/org-model:marlin_context_org_model",
         "//crates/marlin-workspace-query:marlin_workspace_query",
         "//crates/marlin-workspace-status:marlin_workspace_status",
         "//crates/marlin-workspace-view:marlin_workspace_view",

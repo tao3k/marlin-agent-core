@@ -7,8 +7,4 @@ pub use loop_graph::{
     CompiledLoopGraph, LoopEdgeSpec, LoopGraphCompileError, LoopGraphCompileLimits,
     LoopGraphExecutionFrontier, LoopGraphExecutionPlan, LoopGraphValidationError, LoopNodeSpec,
 };
-pub use workspace_policy::{
-    GerbilWorkspaceContractFacts, MemoryDispatchPolicySpec, ReleaseGateSpec, ReleaseTopologySpec,
-    ReleaseVisibilitySpec, WorkspacePatchIntentSpec, WorkspaceSchemaSpec,
-    WorkspaceValidationPolicySpec, WorkspaceViewPolicySpec,
-};
+pub use workspace_policy::{ReleaseGateSpec, ReleaseTopologySpec, ReleaseVisibilitySpec};

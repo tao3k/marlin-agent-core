@@ -6,5 +6,5 @@ marlin_crate_with_policy_data(
     srcs = glob(["src/**/*.rs"]),
     edition = crate_edition(),
     gate_data = glob(["tests/**/*.rs"]),
-    deps = crate_deps(["serde"]) + ["//crates/marlin-org-model:marlin_org_model"],
+    deps = crate_deps(["serde"]) + ["//crates/marlin-agent-context/parts/org-model:marlin_context_org_model"],
 )

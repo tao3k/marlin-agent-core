@@ -1,5 +1,6 @@
 #![cfg(feature = "turso")]
 
+use marlin_agent_storage::SessionEventStore;
 use marlin_agent_storage::{
     AgentId, AgentStorage, ArtifactHash, ArtifactRecord, EventId, ProjectId, SessionEventRecord,
     SessionId, StorageResult, TurnId, TursoAgentStorage, TursoAgentStorageConfig,

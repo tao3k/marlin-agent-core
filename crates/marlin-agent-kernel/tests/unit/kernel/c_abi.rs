@@ -1,6 +1,6 @@
 use marlin_agent_kernel::{
     GraphLoopStrategy, GraphPolicyProposal, GraphPolicyProposalStatus, LoopGraph, LoopNodeSpec,
-    compile_graph_policy_proposal_with_c_abi_readiness,
+    compile_graph_policy_proposal_with_c_abi_readiness, compile_static_graph_policy_proposal,
 };
 use marlin_agent_protocol::{GraphCAbiReadinessReceipt, GraphCAbiRequirement};
 
@@ -51,6 +51,59 @@ fn rejects_policy_proposal_when_c_abi_readiness_gate_fails() {
             &"graph_policy_proposal.c_abi_readiness_missing_symbols:marlin_graph_loop_select"
                 .to_string()
         )
+    );
+}
+
+#[test]
+fn native_proposal_cannot_use_static_compilation() {
+    let proposal = valid_native_policy_proposal();
+    let compilation = compile_static_graph_policy_proposal("run", &proposal);
+    assert!(compilation.request.is_none());
+    assert_eq!(
+        compilation.receipt.status,
+        GraphPolicyProposalStatus::Rejected
+    );
+    assert!(
+        compilation
+            .receipt
+            .diagnostics
+            .contains(&"graph_policy_proposal.c_abi_readiness_required".to_string())
+    );
+}
+
+#[test]
+fn readiness_for_different_symbols_cannot_authorize_a_native_proposal() {
+    let proposal = valid_native_policy_proposal();
+    let other = GraphCAbiRequirement::new("marlin.graph-loop.native", 1)
+        .with_required_symbols(["unrelated_a", "unrelated_b"]);
+    let readiness = GraphCAbiReadinessReceipt::evaluate(&other, ["unrelated_a", "unrelated_b"]);
+    let compilation =
+        compile_graph_policy_proposal_with_c_abi_readiness("run", &proposal, &readiness);
+    assert!(compilation.request.is_none());
+    assert!(
+        compilation
+            .receipt
+            .diagnostics
+            .contains(&"graph_policy_proposal.c_abi_readiness_requirement_mismatch".to_string())
+    );
+}
+
+#[test]
+fn inconsistent_readiness_counts_are_rejected() {
+    let proposal = valid_native_policy_proposal();
+    let mut readiness = GraphCAbiReadinessReceipt::evaluate(
+        proposal.c_abi.as_ref().unwrap(),
+        ["marlin_graph_loop_rank", "marlin_graph_loop_select"],
+    );
+    readiness.matched_symbol_count = 1;
+    let compilation =
+        compile_graph_policy_proposal_with_c_abi_readiness("run", &proposal, &readiness);
+    assert!(compilation.request.is_none());
+    assert!(
+        compilation
+            .receipt
+            .diagnostics
+            .contains(&"graph_policy_proposal.c_abi_readiness_count_mismatch".to_string())
     );
 }
 

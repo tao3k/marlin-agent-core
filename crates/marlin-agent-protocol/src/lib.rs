@@ -92,9 +92,10 @@ pub use model::{
     ModelProviderId,
 };
 pub use model_gateway::{
-    ModelGateway, ModelGatewayCompletionChoice, ModelGatewayCompletionOptions,
-    ModelGatewayCompletionResponse, ModelGatewayError, ModelGatewayFuture, ModelGatewayMessage,
-    ModelGatewayMessageRole, ModelGatewayRequest, ModelGatewayResult, ModelGatewayTransport,
+    ModelContinuation, ModelContinuationKind, ModelDestinationBinding, ModelGateway,
+    ModelGatewayCompletionChoice, ModelGatewayCompletionOptions, ModelGatewayCompletionResponse,
+    ModelGatewayError, ModelGatewayFuture, ModelGatewayMessage, ModelGatewayMessageRole,
+    ModelGatewayRequest, ModelGatewayResult, ModelGatewayTransport, ModelStreamInterruption,
     assistant_gateway_message, system_gateway_message, user_gateway_message,
 };
 pub use project_runtime::{

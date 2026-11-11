@@ -1,0 +1,59 @@
+load("@marlin_crates//:defs.bzl", "crate_deps", "crate_edition")
+load("//bazel:marlin_harness.bzl", "marlin_crate_with_policy_data")
+load("//bazel:marlin_rust.bzl", "marlin_rust_binary", "marlin_rust_scenario")
+
+_DEPS = crate_deps([
+    "async-stream",
+    "ratatui",
+    "serde",
+    "serde_json",
+    "termion",
+    "tokio",
+    "tokio-stream",
+    "toml",
+    "tower",
+    "unicode-segmentation",
+    "unicode-width",
+    "weaver-llm",
+]) + [
+    "//crates/marlin-agent-protocol:marlin_agent_protocol",
+    "//crates/marlin-agent-runtime:marlin_agent_runtime_turso",
+    "//crates/marlin-agent-sessions:marlin_agent_sessions_turso",
+    "//crates/marlin-agent-storage:marlin_agent_storage_turso",
+    "//crates/marlin-agent-stream:marlin_agent_stream",
+    "//crates/marlin-git-utils:marlin_git_utils",
+]
+
+marlin_crate_with_policy_data(
+    name = "marlin_agent_tui",
+    srcs = glob(["src/**/*.rs"]),
+    edition = crate_edition(),
+    gate_data = glob(["tests/**/*.rs"]),
+    deps = _DEPS,
+)
+
+marlin_rust_binary(
+    name = "marlin_tui",
+    srcs = ["src/main.rs"],
+    build_action = "none",
+    crate_root = "src/main.rs",
+    edition = crate_edition(),
+    manifest = "Cargo.toml",
+    visibility = ["//visibility:public"],
+    deps = [":marlin_agent_tui"],
+)
+
+marlin_rust_scenario(
+    name = "unit",
+    srcs = ["tests/unit_test.rs"] + glob([
+        "src/**/*.rs",
+        "tests/unit/**/*.rs",
+    ]),
+    build_action = "none",
+    crate_root = "tests/unit_test.rs",
+    edition = crate_edition(),
+    manifest = "Cargo.toml",
+    scenario = "unit",
+    visibility = ["//visibility:public"],
+    deps = _DEPS,
+)

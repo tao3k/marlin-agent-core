@@ -1,0 +1,43 @@
+load("@marlin_crates//:defs.bzl", "crate_deps", "crate_edition")
+load("//bazel:marlin_harness.bzl", "marlin_crate_with_policy_data")
+load("//bazel:marlin_rust.bzl", "marlin_rust_crate")
+
+_RUNTIME_DEPS = crate_deps([
+    "aho-corasick",
+    "globset",
+    "parking_lot",
+    "process-wrap",
+    "serde",
+    "sysinfo",
+    "tokio",
+    "tokio-stream",
+    "tokio-util",
+    "toml",
+    "tower",
+    "tracing",
+    "tracing-subscriber",
+]) + [
+    "//crates/marlin-agent-environment:marlin_agent_environment",
+    "//crates/marlin-agent-graph:marlin_agent_graph",
+    "//crates/marlin-agent-protocol:marlin_agent_protocol",
+]
+
+marlin_crate_with_policy_data(
+    name = "marlin_agent_runtime",
+    srcs = glob(["src/**/*.rs"]),
+    edition = crate_edition(),
+    gate_data = glob(["tests/**/*.rs"]),
+    deps = _RUNTIME_DEPS + ["//crates/marlin-agent-sessions:marlin_agent_sessions"],
+)
+
+marlin_rust_crate(
+    name = "marlin_agent_runtime_turso",
+    srcs = glob(["src/**/*.rs"]),
+    build_action = "none",
+    crate_name = "marlin_agent_runtime",
+    crate_root = "src/lib.rs",
+    edition = crate_edition(),
+    manifest = "Cargo.toml",
+    visibility = ["//visibility:public"],
+    deps = _RUNTIME_DEPS + ["//crates/marlin-agent-sessions:marlin_agent_sessions_turso"],
+)

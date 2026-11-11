@@ -1,0 +1,34 @@
+[package]
+name = "marlin-agent-tui"
+edition.workspace = true
+version.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "marlin-tui"
+path = "src/main.rs"
+
+[dependencies]
+async-stream = "0.3.6"
+marlin-agent-protocol.workspace = true
+marlin-agent-runtime.workspace = true
+marlin-agent-sessions.workspace = true
+marlin-agent-storage = { workspace = true, features = ["turso"] }
+marlin-agent-stream = { path = "../marlin-agent-stream" }
+marlin-git-utils.workspace = true
+ratatui = { version = "=0.30.2", default-features = false, features = ["termion"] }
+serde.workspace = true
+serde_json.workspace = true
+termion = "4.0.6"
+tokio.workspace = true
+tokio-stream.workspace = true
+toml.workspace = true
+tower.workspace = true
+unicode-segmentation = "1.13.3"
+unicode-width = "0.2.2"
+weaver-llm.workspace = true
+
+[dev-dependencies]
+marlin-rust-project-harness-policy = { path = "../../build-support/marlin-rust-project-harness-policy" }
+ratatui = { version = "=0.30.2", default-features = false, features = ["unstable-rendered-line-info"] }

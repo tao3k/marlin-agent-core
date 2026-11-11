@@ -1,13 +1,13 @@
 //! Release receipt bridges exposed by the core facade.
 
+use marlin_agent_context::org::store::{FileSystemReleaseStatusStore, OrgSourceStoreResult};
+use marlin_agent_context::org::workflow::{
+    GerbilReleaseStatusCommit, GerbilReleaseStatusCommitReceipt, GerbilReleaseStatusCommitter,
+};
 use marlin_agent_harness::{
     ReleaseGateExecutionReceipt, ReleaseGateExecutionStatus, release_gate_execution_receipt,
 };
 use marlin_gerbil_ir::{ReleaseGateSpec, ReleaseTopologySpec};
-use marlin_org_store::{FileSystemReleaseStatusStore, OrgSourceStoreResult};
-use marlin_org_workflow::{
-    GerbilReleaseStatusCommit, GerbilReleaseStatusCommitReceipt, GerbilReleaseStatusCommitter,
-};
 use marlin_workspace_protocol::{ReleaseGateReceipt, ReleaseGateState};
 use std::process::Command;
 
