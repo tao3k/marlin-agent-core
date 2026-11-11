@@ -28,7 +28,7 @@ Lab Org projection or a Session lifecycle. A digest of an admitted scope is not
 source authentication, disclosure authorization, a durable commit, or proof of
 current policy.
 
-The pinned Lab revision =4dad0dc2c2b41eabc7e978e416320038a3fb6cee= was
+The pinned Lab revision =100db0812023ec028805df36d27c9a6ddcae835c= was
 inspected directly in the upstream repository. Its Context module provides
 Org projection and replay with explicit scope, restrictions, source and result
 bounds. The projection selects open Org headlines under bounded row and byte
@@ -44,9 +44,9 @@ all turns or that the current native bridge exposes these operations. Context
 produces an independent Session input proposal, which the host must resolve
 before publication; Session does not parse Org. Native ABI readiness and the
 exact dependency version must be checked before invoking these capabilities.
-See [[https://github.com/tao3k/agentic-ai-lab/blob/4dad0dc2c2b41eabc7e978e416320038a3fb6cee/modules/ai-agentic-context/funs-projection.ss][pinned projection]],
-[[https://github.com/tao3k/agentic-ai-lab/blob/4dad0dc2c2b41eabc7e978e416320038a3fb6cee/modules/ai-agentic-context/session-host.ss][session host]], and
-[[https://github.com/tao3k/agentic-ai-lab/blob/4dad0dc2c2b41eabc7e978e416320038a3fb6cee/modules/ai-agentic-context/durable-owner.ss][durable adapter]].
+See [[https://github.com/tao3k/agentic-ai-lab/blob/100db0812023ec028805df36d27c9a6ddcae835c/modules/ai-agentic-context/funs-projection.ss][pinned projection]],
+[[https://github.com/tao3k/agentic-ai-lab/blob/100db0812023ec028805df36d27c9a6ddcae835c/modules/ai-agentic-context/session-host.ss][session host]], and
+[[https://github.com/tao3k/agentic-ai-lab/blob/100db0812023ec028805df36d27c9a6ddcae835c/modules/ai-agentic-context/durable-owner.ss][durable adapter]].
 
 * Rust dependency direction
 
@@ -107,21 +107,26 @@ package-level dependency cycle.
 
 ** Upstream revision alignment
 
-Orgize PR #18 head =9a9f63d8286fd0ffe68d64fc2de385dab6e57b23=
+Orgize PR #18 head =1099148c5ab8ca8f3d97c0ab29314e78cc4e865a=
 keeps package version =0.10.0-alpha.10= but replaces the former Rust syntax
 traversal surface with Scheme-owned parsing and typed projections. Marlin's
 Cargo pin now names that revision. Its FFI bundle is revision- and
-platform-bound; the macOS Scheme-runtime producer job passed while the same
-PR's runtime-rust performance gate failed. A checked bundle does not establish
+platform-bound; at the previous =9a9f63d8= revision the macOS Scheme-runtime
+producer job passed while the same run's runtime-rust performance gate failed.
+That artifact does not qualify the new revision. A checked bundle does not establish
 that Marlin's application uses the existing Deck VM or passes end-to-end.
 
 At the inspected Lab PR #63 head =558e9bd5b8acf1ec644c74c9621007a3695de636=,
 Lab's Scheme package still selects Orgize =8b0959a85d21207e377ee99647df0750abadd9f1=.
 The Marlin Scheme package and its CI tooling now pin [[https://github.com/tao3k/agentic-ai-lab/pull/34][Lab ASCENT PR #34]]
-revision =4dad0dc2c2b41eabc7e978e416320038a3fb6cee=. Lab's Scheme manifest
+revision =100db0812023ec028805df36d27c9a6ddcae835c=. Lab's Scheme manifest
 does not declare a direct Scheme bridge dependency. Its Bazel build still supplies
-the bridge needed by the current Orgize build; that ownership must be resolved
-and the exact revision remains subject to full Lab and downstream qualification.
+the bridge needed by the current Orgize build. Orgize's own Scheme package now
+declares that dependency at its exact bridge revision; Lab's explicit Bazel
+producer wiring remains to be migrated to an Orgize-owned build closure. An
+isolated Orgize dependency install did not qualify: on macOS, its Gerbil POO
+dependency failed to link with an unresolved =_memset= symbol. The exact
+revisions remain subject to full Lab and downstream qualification.
 The current legacy Rust workspace loader uses removed
 =syntax_ast= and traversal APIs and does not compile against the new Orgize.
 It must be replaced by the Lab-owned Context path, with compatible pinned
