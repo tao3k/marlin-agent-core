@@ -38,10 +38,9 @@ package MarlinContextOrgLifecycle {
         part <'MAR-CONTEXT-P03'> labProjection {
             doc /* A scoped, bounded projection and replay of source, not a
                    complete turn journal, source authentication, current-use
-                   authorization, or proof of durable storage. The current
-                   Marlin Cargo Orgize PR revision and Lab's transitive Scheme
-                   Orgize revision differ; their runtime ownership and native
-                   dependency graph are not yet aligned or qualified. */
+                   authorization, or proof of durable storage. Marlin Cargo and
+                   Lab declare the same Orgize revision; that does not prove
+                   a shared VM, a qualified native closure, or a turn journal. */
         }
         part <'MAR-CONTEXT-P04'> labSessionHost {
             doc /* Coordinates enrolled source snapshots and Session input
@@ -56,10 +55,17 @@ package MarlinContextOrgLifecycle {
             doc /* Presents runtime observations and submits user interactions;
                    it is not the source or lifecycle authority. */
         }
+        part <'MAR-CONTEXT-P07'> orgBuildClosure {
+            doc /* Orgize declares the Scheme bridge it imports. Lab's Scheme
+                   package does not declare that bridge directly. Lab's current
+                   Bazel producer still wires the bridge for Orgize; migration
+                   of that build closure to Orgize remains open. */
+        }
         dependency projectionReadsSource from labProjection to sourceOwner;
         dependency hostUsesProjection from labSessionHost to labProjection;
         dependency boundaryInvokesHost from nativeBoundary to labSessionHost;
         dependency clientUsesBoundary from terminalClient to nativeBoundary;
+        dependency boundaryRequiresOrgClosure from nativeBoundary to orgBuildClosure;
     }
 
     state def <'MAR-CONTEXT-L01'> OrgTurnLifecycle {
