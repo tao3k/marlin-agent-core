@@ -239,6 +239,10 @@ package MarlinSingleVmRuntime {
                using same-phase CPU and GC counters. A statistics-export probe
                includes collection and copying; it is not bare ABI transition
                cost. Independent component means cannot qualify business p99.
+               Distinguish C-only controls from Scheme entry. Per-iteration
+               estimates from batched samples are not individual call tails.
+               An SDK default processor policy does not qualify the explicit
+               single-processor workload.
                Cumulative allocation accounting must remain monotonic on the
                same processor across explicit GC, automatic GC and rejected
                heap reservations. Repair bookkeeping in its runtime owner;
@@ -250,8 +254,11 @@ package MarlinSingleVmRuntime {
                Gerbil/Yuanxu owners and must preserve native identity, fresh
                source guards, Feature selection and advanced Scheme extension.
                Actor shutdown cannot clear the compiler registry or substitute
-               a remembered admission verdict. Qualify the complete Context
-               workload separately from forced-GC retention diagnostics. */
+               a remembered admission verdict. Stale compilation products follow
+               standard gerbil clean/build and fresh declaration loading; Marlin
+               adds no publication loader or source-stamp mechanism. Qualify
+               the complete Context workload separately from forced-GC
+               retention diagnostics. */
     }
     allocation publicationStateAllocation allocate preservePublicationAuthority to singleVmRuntime.publicationState;
     allocation moduleRetirementAllocation allocate moduleRetirement to singleVmRuntime.moduleCatalog;

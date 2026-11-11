@@ -2522,6 +2522,28 @@ Signed VM accounting differences remain explicitly unqualified as physical
 allocation. The earlier constructor census is separate allocation evidence;
 its byte totals are not silently relabeled as this new cut's census.
 
+A separate scalar control uses the unchanged =gerbil-scheme/ffi= benchmark at
+SDK =a00e62ea9875f1e2fca1514134eb596754c0a4e5=, pinned by Marlin
+=07c6263aa3d8306001d9aa5b32a1c1d4de40ad26=. Four =cargo bench= processes
+exit naturally. Every case retains 100 samples and 100,000 iterations per
+process, with one Rust benchmark thread and no sample-budget override.
+
+| Original SDK case | Executed work | Range of four sample medians, ns/iteration |
+|-------------------+---------------+-------------------------------------------|
+| =c_identity= | C identity only; no Scheme entry | 0.946--1.425 |
+| =identity= | Rust owner-thread check and the same C identity | 3.696--3.988 |
+| =raw_add= | C-defined Scheme addition, including scalar conversion and arithmetic | 45.69--92.75 |
+| =add= | Rust owner/overflow checks and C-defined Scheme addition | 46.98--53.40 |
+
+These are per-iteration estimates from 1000-iteration samples, not individual
+call tails. The first raw-add median is higher than the checked-add median;
+subtracting the cases would not isolate exact boundary or thread-check cost.
+The original SDK entry retains Gambit's default processor policy; its actual
+processor population is not measured here. These controls do not qualify the
+production single-processor workload, rooted-object calls, Context payloads or
+the 20 ms objective. Four earlier direct binary invocations produced only
+preflight trees and are excluded from timing; their logs remain recorded.
+
 The read-only retention probe still observes 955 contexts, 524 Module contexts
 and 343366 bindings. After closing an empty Module, live memory is 218922312
 bytes, with zero business messages and zero business Actors. Compiler authority
@@ -2535,6 +2557,11 @@ passes after source-location resolution is preserved; earlier failed trials
 remain recorded. This does not establish a saving in Marlin: its first Module
 publication still reaches the source reader. No dependency pin or production
 factory wiring is changed on the strength of that control.
+
+The compiled-publication prototype is retired. Stale compilation products are
+handled through standard =gerbil clean= and =gerbil build=, followed by a fresh
+load of the current declarations. Marlin adds no publication loader, source
+stamp or cached admission verdict to replace that package lifecycle.
 
 A separate digest-port control compares the existing Lab digest with Gambit's
 standard byte output port: 74 admitted inputs agree only with explicit UTF-8
