@@ -66,7 +66,7 @@ fn decode_layout(value: RootedSchemeObject<'_>) -> Result<UiLayoutPolicy, UiProj
     let layout = UiLayoutPolicy {
         min_transcript_rows: field(0, 1, 4)?,
         max_chatbox_rows: field(1, 3, 20)?,
-        max_command_rows: field(2, 1, 8)?,
+        max_command_rows: field(2, 1, 16)?,
     };
     Ok(layout)
 }

@@ -301,6 +301,8 @@ fn command_menu_filters_scheme_descriptors_and_preserves_draft() {
         .flat_map(|y| (0..60).map(move |x| buffer[(x, y)].symbol()))
         .collect();
     assert!(text.contains("List models"), "{text}");
+    assert!(text.contains("M-x · Commands"), "{text}");
+    assert!(!text.contains("/models"), "{text}");
     assert!(!text.contains("Keyboard shortcuts"), "{text}");
     app.toggle_command();
     assert_eq!(app.composer.text(), "preserved draft");
@@ -360,7 +362,7 @@ fn command_menu_scrolls_to_the_selected_entry() {
         focus: UiComponentId::new("composer").unwrap(),
     };
     app.command_selection = Some(("/".into(), UiCommandName::new("/clear").unwrap()));
-    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(60, 12)).unwrap();
+    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(60, 10)).unwrap();
     terminal
         .draw(|frame| {
             render_draw(
@@ -373,11 +375,11 @@ fn command_menu_scrolls_to_the_selected_entry() {
         })
         .unwrap();
     let buffer = terminal.backend().buffer();
-    let text: String = (0..12)
+    let text: String = (0..10)
         .flat_map(|y| (0..60).map(move |x| buffer[(x, y)].symbol()))
         .collect();
-    assert!(text.contains("› /clear"), "{text}");
-    assert!(!text.contains("/help  /help"), "{text}");
+    assert!(text.contains("› clear"), "{text}");
+    assert!(!text.contains("help  /help"), "{text}");
     app.composer.insert_text("h");
     assert!(app.selected_command().is_none());
 }

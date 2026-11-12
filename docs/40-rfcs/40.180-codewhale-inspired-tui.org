@@ -1642,12 +1642,33 @@ display fields when the gateway is installed, so repainting never formats it
 again. Esc or Ctrl-C closes the view; a submitted draft also closes it.
 
 The next Modeline protocol step is a Scheme-owned profile catalog with Doom and
-oh-my-pi-inspired segment arrangements and palettes. =/themes <name>= must
-select a profile through a typed UI transition, with completion sourced from
-the selected Scheme catalog. The native admission gate must permit only the
+oh-my-pi-inspired segment arrangements and palettes. =M-x= opens the Mini
+Buffer's command palette; theme selection belongs there as a discoverable
+command with candidates and descriptions from the selected Scheme catalog.
+The choice must cross a typed UI transition. The native admission gate must permit only the
 declared profile transition while preserving host status facts, focus and
 runtime authority. The current fixed =doom-one= publication does not yet
 provide that live switch.
+
+The existing command palette now opens with =M-x= (with =Ctrl-O= retained as an
+alias), shows Scheme-published command names and descriptions without the
+internal slash prefix, and gives its candidate area eight rows when height
+allows. This is the entry surface for profile selection, not a separate
+=/themes= command grammar. The current command catalog still uses slash names
+internally; named theme actions and live profile selection remain to be added.
+
+For a maintainable key layer, =ui-keymap= should own declarative bindings,
+prefixes and mode precedence in Scheme. The native terminal must retain byte
+decoding, Ctrl-C/Ctrl-Z process control and effect admission. A selected
+keymap snapshot should cross the ABI once per profile transition and compile
+to a bounded Rust lookup table, avoiding a Scheme call per keystroke. The
+typed command catalog should be shared by =M-x= discovery and key bindings so
+the two paths cannot invoke different effects. Local references in
+=~/.emacs.d/.local/straight/repos/= include =vertico= (candidate display),
+=marginalia= (annotations), =general.el= (keymap declarations),
+=emacs-which-key= (prefix help) and =doom-modeline= (named segments). Their
+installed LICENSE files are GPLv3, so the design is adapted to Marlin's
+protocol rather than copying their Elisp into this dual-licensed package.
 
 The selected =ui-themes= Module now owns the default =doom-one= palette.
 It derives the canvas, foreground and semantic accents from

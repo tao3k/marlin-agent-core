@@ -419,7 +419,7 @@ fn run(
                 Ok(Ok(TerminalInput::Key(Key::Ctrl('q')))) => break,
                 Ok(Ok(TerminalInput::Key(Key::Ctrl('c')))) if app.interrupt() => break,
                 Ok(Ok(TerminalInput::Key(Key::Ctrl('c')))) => {}
-                Ok(Ok(TerminalInput::Key(Key::Ctrl('o')))) => app.toggle_command(),
+                Ok(Ok(TerminalInput::Key(Key::Ctrl('o') | Key::Alt('x')))) => app.toggle_command(),
                 Ok(Ok(TerminalInput::Key(Key::Ctrl('r')))) => app.start_history_search(),
                 Ok(Ok(TerminalInput::Key(Key::Alt('p')))) if accepts_text => {
                     app.navigate_prompts(true)

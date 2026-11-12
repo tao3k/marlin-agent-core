@@ -406,7 +406,7 @@ pub(crate) fn draw(
     let title = if app.history_search.is_some() {
         " History · Enter accept · Esc cancel "
     } else if app.command_draft.is_some() {
-        " Command "
+        " M-x · Commands "
     } else {
         " Message "
     };
@@ -424,11 +424,22 @@ pub(crate) fn draw(
         let inner = block.inner(parts[4]);
         frame.render_widget(block, parts[4]);
         if let Some(view) = composer.view(inner.width, inner.height) {
-            frame.render_widget(Paragraph::new(view.rows.join("\n")), inner);
+            let hide_prefix = app.command_draft.is_some()
+                && view.rows.first().is_some_and(|row| row.starts_with('/'));
+            let mut rows = view.rows;
+            if hide_prefix {
+                rows[0].remove(0);
+            }
+            frame.render_widget(Paragraph::new(rows.join("\n")), inner);
             if app.history_search.is_none()
                 && (ui.focus.as_str() == "composer" || app.command_draft.is_some())
             {
-                frame.set_cursor_position((inner.x + view.cursor.0, inner.y + view.cursor.1));
+                let column = if hide_prefix && view.cursor.1 == 0 {
+                    view.cursor.0.saturating_sub(1)
+                } else {
+                    view.cursor.0
+                };
+                frame.set_cursor_position((inner.x + column, inner.y + view.cursor.1));
             }
         }
     }
@@ -449,7 +460,7 @@ pub(crate) fn draw(
             } else {
                 " "
             },
-            command.name.as_str(),
+            command.name.as_str().trim_start_matches('/'),
             header_value(&command.description)
         );
         let style = Style::default().fg(rgb(ui.theme.info));
@@ -526,7 +537,7 @@ pub(crate) fn draw(
     } else if let Some(status) = selected_status.as_deref() {
         status
     } else if app.command_draft.is_some() {
-        " Enter run command  Up/Down select  Tab complete  Esc cancel  Ctrl-O return"
+        " M-x  Enter run  Up/Down select  Tab complete  Esc cancel"
     } else if app.runtime_receipt_open {
         " Runtime: Esc/Ctrl-C return  Enter submit draft"
     } else if app.workspace.view().is_some() {
@@ -538,9 +549,9 @@ pub(crate) fn draw(
     } else if ui.focus.as_str() != "composer" {
         " Extension: Enter activate  Tab next  Shift-Tab previous  Ctrl-Q quit"
     } else if !suggestions.is_empty() && app.composer.cursor_at_end() {
-        " Command: Enter run  Up/Down select  Tab complete  Ctrl-O editor  Ctrl-Q quit"
+        " M-x  Enter run  Up/Down select  Tab complete  Ctrl-Q quit"
     } else {
-        " Message: Enter send  Tab/Shift-Tab focus  Ctrl-R search  Ctrl-O commands  Ctrl-Q quit"
+        " Message: Enter send  Tab/Shift-Tab focus  Ctrl-R search  M-x commands  Ctrl-Q quit"
     };
     if parts[4].height == 0 {
         let extras = status_items

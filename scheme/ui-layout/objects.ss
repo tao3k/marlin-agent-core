@@ -9,6 +9,6 @@
 (.def UiLayoutBase.
   min-transcript-rows: 2
   max-chatbox-rows: 10
-  max-command-rows: 4)
+  max-command-rows: 8)
 (def marlin-ui-layout-policy
   (seal-object! UiLayoutBase.))

@@ -142,7 +142,7 @@ impl Default for UiLayoutPolicy {
         Self {
             min_transcript_rows: 2,
             max_chatbox_rows: 10,
-            max_command_rows: 4,
+            max_command_rows: 8,
         }
     }
 }

@@ -169,7 +169,7 @@
                                 (event (prototype SpecialEvent.)))
       (.o kind: 'extension-handled)))
   (poo-clos-compose-method-bundle generic ExtensionMethods)
-  (unless (and (equal? (vector-ref projected 3) '#(2 10 4))
+  (unless (and (equal? (vector-ref projected 3) '#(2 10 8))
                (equal? (vector-ref (vector-ref projected 4) 3) '#(198 120 221))
                (not (eq? (list-ref regions 3) extension))
                (equal? (.get view focus-order) '(transcript composer commands extension/editor))
