@@ -2886,6 +2886,16 @@ Module/timer retirement through the linked VM. Forced-GC zero-message retention
 is a separate diagnostic. The original four-process Context cohort and its
 20 ms requirement remain unchanged; there is no new latency result here.
 
+The subsequent exact-head [[https://github.com/tao3k/gebril-yuanxu/actions/runs/43147379249][upstream run]] completes with three failed domain jobs.
+=module-build-process-test.ss= observes compilation during its hot-build
+control; =module-source-spec-test.ss= finds an expected selected product still
+present after clean. Package installation and thousand-package downstream
+controls attempt to read a missing =consumer/yuanxu-thousand-library/modules/=
+source path. Both platform package builds pass, but they do not discharge
+these freshness, cleanup and downstream ownership failures. Keep the candidate
+separate from Marlin's production dependency until those owner gates and the
+actual consumer qualify; do not weaken the checks or supply an alternate path.
+
 The current Marlin =b78152de= remote Linux dependency gate fails before Actor
 tests: Orgize cannot import =:gerbil-scheme-rust/scheme/runtime= and its Builder
 then deadlocks. A fresh local preparation builds the Cargo-selected SDK
