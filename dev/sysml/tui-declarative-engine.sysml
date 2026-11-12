@@ -12,10 +12,11 @@ package MarlinDeclarativeUi {
                Reference products inform requirements, not identity,
                component structure, authority or an obligation to copy visuals. */
         part <'MAR-UI-T02'> modulePublication {
-            doc /* Selected Yuanxu ui-components and ui Modules publish the
-                   component vocabulary, command catalog, UI scope and ordered
-                   extension contributions. UI requires the component scope and
-                   composes its constructors through that selected dependency.
+            doc /* Selected Yuanxu ui-components, ui-modeline and ui Modules
+                   publish the component vocabulary, command catalog, modeline
+                   slots, UI scope and ordered extension contributions. UI
+                   requires both component and modeline scopes and composes
+                   their constructors through selected dependencies.
                    The existing VM owner
                    resolves and retains that scope; a name or a caller-supplied
                    object alone does not establish its provenance. No separate
@@ -29,9 +30,10 @@ package MarlinDeclarativeUi {
                    without embedding Rust callbacks in Scheme components.
                    Forward and reverse focus traverse the same admitted order;
                    both wrap and return a focus intent without executing effects.
-                   The selected Scheme guide is visible on wide terminals and
-                   focusable on narrow ones. Its content describes semantic
-                   actions; terminal shortcuts belong to the terminal adapter.
+                   The selected Scheme modeline declares stable left and right
+                   semantic slots. The host resolves live labels, cell width
+                   and color without reentering the VM for every frame. The
+                   default Guide region is absent; /help owns shortcut help.
                    Command browsing dispatches a bounded query to the declared
                    command component; its selection is a presentation proposal
                    checked against the host's admitted command menu. */
@@ -89,8 +91,13 @@ package MarlinDeclarativeUi {
         part <'MAR-UI-T07'> terminalHost {
             doc /* Rust owns raw-mode lifecycle, input normalization, layout,
                    Unicode cell geometry, Ratatui painting and output. A
-                   visual theme is a Marlin presentation choice; no whale
-                   mascot, reference layout or branding is required. */
+                   modeline sits above a bottom Mini Buffer. The Mini Buffer
+                   displays secondary status while collapsed and expands into
+                   the existing ChatBox on pointer hover or draft editing.
+                   Draft data never disappears on pointer exit. Mouse motion
+                   uses a latest-position observation instead of occupying
+                   the bounded key queue. A visual theme is a Marlin
+                   presentation choice; no reference branding is required. */
         }
         part <'MAR-UI-T08'> intentRouter {
             doc /* A Scheme intent is a proposal, not an approval or execution
@@ -200,6 +207,32 @@ package MarlinDeclarativeUi {
                specification; membership in a linker manifest alone does not
                prove that the selected UI can be realized. */
     }
+    requirement <'MAR-UI-R10'> adaptiveModelineAndMiniBuffer {
+        doc /* The selected Scheme module fixes semantic segment identity,
+               order, full/compact labels and idle/active color tones. A Rust terminal
+               adapter resolves owner facts and paints
+               one width-aware modeline directly above the Mini Buffer. The
+               former top status row and default Guide sidebar consume no
+               terminal area. Initial gateway readiness belongs to the
+               modeline, so the transcript starts empty. Pointer hover may
+               expand an empty Mini Buffer,
+               and pointer exit may collapse it. Text, command editing and
+               history search keep the ChatBox visible so a draft is never
+               hidden or lost. Secondary host status appears in the collapsed
+               Mini Buffer. High-rate motion must not fill the key queue or
+               force a Scheme call for every frame. Terminals that omit motion
+               or window-leave events retain keyboard access. */
+    }
+    requirement <'MAR-UI-R11'> reproducibleUiProperties {
+        doc /* A bounded Quint transition model checks focus, layout and
+               pointer/key separation. Selected Scheme POO properties cover
+               modeline identity, order and host contribution admission.
+               Rust properties cover typed projection and variable terminal
+               geometry. A real PTY remains the evidence for terminal mode
+               restoration and hover behavior; model exploration alone is
+               not runtime acceptance. Seeds and bounds are fixed by the
+               project property gate. */
+    }
 
     allocation extensions allocate composableExtensions to engine.modulePublication;
     allocation specialization allocate composableExtensions to engine.functionalComposition;
@@ -212,6 +245,9 @@ package MarlinDeclarativeUi {
     allocation vmContinuity allocate vmModuleContinuity to engine.nativeBoundary;
     allocation startupQualification allocate interactiveStartup to engine.qualification;
     allocation releaseBoundary allocate selfContainedRelease to engine.nativeBoundary;
+    allocation modelineSemantics allocate adaptiveModelineAndMiniBuffer to engine.modulePublication;
+    allocation miniBufferGeometry allocate adaptiveModelineAndMiniBuffer to engine.terminalHost;
+    allocation uiPropertyQualification allocate reproducibleUiProperties to engine.qualification;
 
     attribute def BeginUpdate;
     attribute def CandidateReady;

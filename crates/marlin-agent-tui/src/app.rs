@@ -8,7 +8,11 @@ use std::{
     env,
     io::{self, IsTerminal, Write},
     path::PathBuf,
-    sync::{Arc, mpsc},
+    sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
+        mpsc,
+    },
     thread,
     time::Instant,
 };
@@ -22,12 +26,12 @@ use super::{
     edge_gateway::{RuntimeStreamGateway, SharedGateway},
     event_queue::{QueuedReply, Reply, ReplyError, ReplySender, reply_channel},
     frame_schedule::FrameSchedule,
-    input::{BracketedPaste, InputDecoder, TerminalInput},
+    input::{BracketedPaste, InputDecoder, MouseMotion, TerminalInput},
     journal_gateway::JournalGateway,
     model_catalog::ModelCatalog,
     output_limit::{MAX_RESPONSE_BYTES, OutputLimit},
     prompt_history::{HistorySearch, PromptHistory},
-    render::draw,
+    render::{draw, mouse_over_minibuffer},
     replay::{ReplayOutcome, ReplayTurn, load_session},
     session_browser::{OpenedView, SessionBrowser, SessionPageRequestError},
     signals::SignalMonitor,
@@ -84,6 +88,7 @@ struct HistoryPosition {
 
 pub(crate) struct App {
     pub(crate) composer: Composer,
+    pub(crate) minibuffer_hovered: bool,
     prompt_history: PromptHistory,
     pub(crate) history_search: Option<HistorySearch>,
     pub(crate) command_draft: Option<Composer>,
@@ -109,7 +114,31 @@ pub(crate) struct App {
 
 impl App {
     pub(crate) fn new(endpoint: ModelEndpoint) -> Self {
-        Self { composer: Composer::default(), prompt_history: PromptHistory::default(), history_search: None, command_draft: None, command_selection: None, quit_armed: false, transcript: Transcript::new(vec![("Marlin".into(), "Model gateway configured. Tools and approvals are not yet available. /help for keys.".into())]), history: Arc::new(Vec::new()), context_budget: ContextBudget::default(), endpoint, models: None, pending: None, next_id: 0, scroll_up: 0, persistent: false, needs_replay: false, unverified_thinking: false, runtime_edge: None, session_browser: None, current_session: None, history_position: None, workspace: WorkspaceStatus::default() }
+        Self {
+            composer: Composer::default(),
+            minibuffer_hovered: false,
+            prompt_history: PromptHistory::default(),
+            history_search: None,
+            command_draft: None,
+            command_selection: None,
+            quit_armed: false,
+            transcript: Transcript::new(vec![]),
+            history: Arc::new(Vec::new()),
+            context_budget: ContextBudget::default(),
+            endpoint,
+            models: None,
+            pending: None,
+            next_id: 0,
+            scroll_up: 0,
+            persistent: false,
+            needs_replay: false,
+            unverified_thinking: false,
+            runtime_edge: None,
+            session_browser: None,
+            current_session: None,
+            history_position: None,
+            workspace: WorkspaceStatus::default(),
+        }
     }
 
     pub(crate) fn selected_command(&self) -> Option<&UiCommandName> {
@@ -1217,19 +1246,29 @@ fn run(
     let signals = SignalMonitor::new(&runtime)?;
     trace_startup("session and signals");
     let stdout = io::stdout().into_raw_mode()?.into_alternate_screen()?;
-    let stdout = BracketedPaste::enable(stdout)?;
+    let stdout = BracketedPaste::enable(MouseMotion::enable(stdout)?)?;
     let backend = TermionBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
     let (keys_tx, keys_rx) = mpsc::sync_channel(INPUT_QUEUE_ITEMS);
+    let mouse_position = Arc::new(AtomicU64::new(0));
+    let input_mouse_position = Arc::clone(&mouse_position);
     thread::spawn(move || {
         let mut decoder = InputDecoder::default();
         for event in io::stdin().events_and_raw() {
             match event {
                 Ok((event, raw)) => {
-                    if let Some(input) = decoder.accept(event, &raw)
-                        && keys_tx.send(Ok(input)).is_err()
-                    {
-                        break;
+                    if let Some(input) = decoder.accept(event, &raw) {
+                        match input {
+                            TerminalInput::MouseMove(x, y) => {
+                                input_mouse_position
+                                    .store((u64::from(y) << 16) | u64::from(x), Ordering::Relaxed);
+                            }
+                            input => {
+                                if keys_tx.send(Ok(input)).is_err() {
+                                    break;
+                                }
+                            }
+                        }
                     }
                 }
                 Err(error) => {
@@ -1284,6 +1323,13 @@ fn run(
             let size = termion::terminal_size()?;
             if last_size != Some(size) {
                 last_size = Some(size);
+                schedule.mark_dirty();
+            }
+            let mouse = mouse_position.load(Ordering::Relaxed);
+            let hovered = mouse_over_minibuffer(&app, size.0, size.1, (mouse >> 16) as u16)
+                && (mouse as u16) <= size.0;
+            if hovered != app.minibuffer_hovered {
+                app.minibuffer_hovered = hovered;
                 schedule.mark_dirty();
             }
             let now = Instant::now();

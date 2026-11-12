@@ -12,8 +12,8 @@ use gerbil_scheme::{
 };
 
 use crate::model::{
-    MAX_EXTENSIONS, MAX_METHOD_BUNDLES, MAX_STATUS, MAX_TEXT_CHARS, UiBrowseDirection,
-    UiCommandName, UiEvent, UiIntent, UiOpenFacts, UiProjectionError, UiWorkbench,
+    MAX_EXTENSIONS, MAX_HOST_STATUS, MAX_METHOD_BUNDLES, MAX_TEXT_CHARS, UiBrowseDirection,
+    UiCommandName, UiEvent, UiIntent, UiOpenFacts, UiProjectionError, UiStatusTone, UiWorkbench,
 };
 use crate::projection::{decode_intent, decode_workbench, string, vector};
 
@@ -256,7 +256,7 @@ pub fn prepare_open_request<'runtime>(
 ) -> Result<RootedSchemeObject<'runtime>, UiProjectionError> {
     if facts.model_label.chars().take(MAX_TEXT_CHARS + 1).count() > MAX_TEXT_CHARS
         || facts.session_label.chars().take(MAX_TEXT_CHARS + 1).count() > MAX_TEXT_CHARS
-        || facts.status.len() > MAX_STATUS
+        || facts.status.len() > MAX_HOST_STATUS
         || facts.extensions.len() > MAX_EXTENSIONS
         || facts.method_bundles.len() > MAX_METHOD_BUNDLES
     {
@@ -265,10 +265,14 @@ pub fn prepare_open_request<'runtime>(
     let mut ids = HashSet::new();
     for item in facts.status {
         if item.label.chars().take(MAX_TEXT_CHARS + 1).count() > MAX_TEXT_CHARS
+            || item.compact_label != item.label
+            || item.tone != UiStatusTone::Muted
+            || item.active_tone != UiStatusTone::Muted
             || matches!(
                 item.id.as_str(),
                 "transcript" | "composer" | "commands" | "status"
             )
+            || item.id.as_str().starts_with("modeline/")
             || !ids.insert(item.id.as_str())
         {
             return Err(UiProjectionError::Invalid("invalid status contribution"));

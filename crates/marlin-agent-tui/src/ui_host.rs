@@ -325,10 +325,10 @@ mod tests {
         let methods = load("test-methods");
         let extensions = [extension];
         let bundles = [methods];
-        let status = [UiStatusItem {
-            id: UiComponentId::new("test/status").unwrap(),
-            label: "VM ready".into(),
-        }];
+        let status = [UiStatusItem::host(
+            UiComponentId::new("test/status").unwrap(),
+            "VM ready",
+        )];
         let mut host = UiHost::open(
             &runtime,
             root,
@@ -342,16 +342,28 @@ mod tests {
         )
         .unwrap();
         assert_eq!(host.view().focus.as_str(), "composer");
+        let modeline = host
+            .view()
+            .regions
+            .iter()
+            .find_map(|region| match region {
+                UiRegion::Status(items) => Some(items.as_slice()),
+                _ => None,
+            })
+            .unwrap();
+        assert_eq!(modeline[0].label, "🐟 MARLIN");
+        assert_eq!(modeline[0].compact_label, "🐟");
+        assert_eq!(modeline[2].label, "Gateway configured");
+        assert_eq!(modeline[2].compact_label, "Ready");
+        assert_eq!(
+            modeline[2].active_tone,
+            marlin_agent_ui::UiStatusTone::Warning
+        );
         assert_eq!(
             host.route_key(Key::Char('\t'), false, false).unwrap(),
             UiKeyAction::Handled
         );
         assert_eq!(host.view().focus.as_str(), "commands");
-        assert_eq!(
-            host.route_key(Key::Char('\t'), false, false).unwrap(),
-            UiKeyAction::Handled
-        );
-        assert_eq!(host.view().focus.as_str(), "guide");
         assert_eq!(
             host.route_key(Key::Char('\t'), false, false).unwrap(),
             UiKeyAction::Handled
@@ -404,7 +416,6 @@ mod tests {
             },
         )
         .unwrap();
-        forged.route_key(Key::Char('\t'), false, false).unwrap();
         forged.route_key(Key::Char('\t'), false, false).unwrap();
         forged.route_key(Key::Char('\t'), false, false).unwrap();
         let previous = forged.view().clone();

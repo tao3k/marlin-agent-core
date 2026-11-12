@@ -6,8 +6,8 @@
 (import (only-in :clan/poo/object .get .o)
         "./workbench.ss" "./dispatch.ss" "./projection.ss")
 (export make-ui-operations)
-(def (make-ui-operations ui-components)
-  (.o workbench: (make-marlin-ui-workbench ui-components)
+(def (make-ui-operations ui-components ui-modeline)
+  (.o workbench: (make-marlin-ui-workbench ui-components ui-modeline)
       project-workbench: marlin-ui-project-workbench
       focus-event: marlin-ui-focus-event
       previous-focus-event: marlin-ui-previous-focus-event

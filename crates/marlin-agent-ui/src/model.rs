@@ -6,16 +6,21 @@
 
 use gerbil_scheme::{NativeError, RootedCallError, RootedSchemeObject};
 
-// Three core regions, the selected Scheme guide, sixteen contributed regions,
-// and the status region.
-pub(crate) const MAX_REGIONS: usize = 21;
-pub(crate) const MAX_STATUS: usize = 8;
+// Three core regions, sixteen contributed regions, and the status region.
+pub(crate) const MAX_REGIONS: usize = 20;
+pub(crate) const MAX_HOST_STATUS: usize = 8;
+// Four selected modeline slots plus eight host status contributions.
+pub(crate) const MAX_STATUS: usize = 12;
 pub(crate) const MAX_EXTENSIONS: usize = 16;
 pub(crate) const MAX_CONTENT_ITEMS: usize = 16;
 pub(crate) const MAX_METHOD_BUNDLES: usize = 16;
 pub(crate) const MAX_COMMANDS: usize = 32;
 pub(crate) const MAX_TEXT_CHARS: usize = 256;
 pub(crate) const MAX_ID_BYTES: usize = 1024;
+
+// Keep protocol admission and renderer capacity tied to the selected shape.
+const _: () = assert!(MAX_STATUS == 4 + MAX_HOST_STATUS);
+const _: () = assert!(MAX_REGIONS == 3 + MAX_EXTENSIONS + 1);
 
 /// A UI component's domain identity, not a Scheme root or object address.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -93,6 +98,33 @@ pub enum UiContent {
 pub struct UiStatusItem {
     pub id: UiComponentId,
     pub label: String,
+    pub compact_label: String,
+    pub tone: UiStatusTone,
+    pub active_tone: UiStatusTone,
+}
+
+impl UiStatusItem {
+    /// A host fact has no authority to define modeline presentation.
+    pub fn host(id: UiComponentId, label: impl Into<String>) -> Self {
+        let label = label.into();
+        Self {
+            id,
+            compact_label: label.clone(),
+            label,
+            tone: UiStatusTone::Muted,
+            active_tone: UiStatusTone::Muted,
+        }
+    }
+}
+
+/// Semantic presentation tone declared by the selected Scheme module.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum UiStatusTone {
+    Accent,
+    Info,
+    Success,
+    Warning,
+    Muted,
 }
 
 /// Host display facts and already-rooted Scheme extension contributions.

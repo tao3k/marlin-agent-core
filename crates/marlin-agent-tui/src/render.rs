@@ -8,7 +8,9 @@ use super::{
     app::App,
     viewport::{ScrollAnchor, TranscriptViewportCache},
 };
-use marlin_agent_ui::{UiCommandName, UiContent, UiRegion, UiWorkbench};
+use marlin_agent_ui::{
+    UiCommandName, UiContent, UiRegion, UiStatusItem, UiStatusTone, UiWorkbench,
+};
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
@@ -30,6 +32,34 @@ fn display_value(value: &str, limit: usize) -> String {
 
 fn header_value(value: &str) -> String {
     display_value(value, 128)
+}
+
+pub(crate) fn chatbox_height(app: &App, width: u16, height: u16) -> u16 {
+    let expanded = app.minibuffer_hovered
+        || !app.composer.text().is_empty()
+        || app.command_draft.is_some()
+        || app.history_search.is_some();
+    if !expanded {
+        return 0;
+    }
+    let transcript_rows = if height >= 7 { 2 } else { 1 };
+    let limit = height.saturating_sub(2 + transcript_rows).min(10);
+    let composer = app
+        .history_search
+        .as_ref()
+        .and_then(|search| search.preview())
+        .unwrap_or(&app.composer);
+    if limit >= 3 {
+        composer
+            .preferred_rows(width.saturating_sub(2), limit.saturating_sub(2))
+            .saturating_add(2)
+    } else {
+        limit
+    }
+}
+
+pub(crate) fn mouse_over_minibuffer(app: &App, width: u16, height: u16, row: u16) -> bool {
+    row > 0 && row <= height && row > height.saturating_sub(chatbox_height(app, width, height) + 1)
 }
 
 fn draw_extension_content(
@@ -60,6 +90,97 @@ fn draw_extension_content(
     frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), inner);
 }
 
+fn draw_modeline(
+    frame: &mut ratatui::Frame<'_>,
+    area: Rect,
+    app: &App,
+    ui: &UiWorkbench,
+    items: &[UiStatusItem],
+) {
+    let slot = |name| items.iter().find(|item| item.id.as_str() == name);
+    let (Some(brand), Some(model_slot), Some(activity_slot), Some(session_slot)) = (
+        slot("modeline/left/brand"),
+        slot("modeline/left/model"),
+        slot("modeline/left/activity"),
+        slot("modeline/right/session"),
+    ) else {
+        return;
+    };
+    let base = Style::default().bg(Color::Rgb(29, 31, 39));
+    let runtime_activity = if app.workspace.view().is_some() {
+        "Workspace"
+    } else {
+        app.activity_label()
+    };
+    let activity = if runtime_activity == "Idle" {
+        if area.width >= 64 {
+            activity_slot.label.as_str()
+        } else {
+            activity_slot.compact_label.as_str()
+        }
+    } else {
+        runtime_activity
+    };
+    let brand_text = if area.width < 18 {
+        &brand.compact_label
+    } else {
+        &brand.label
+    };
+    let right = if area.width >= 40 {
+        format!(" {} ", header_value(&ui.session_label))
+    } else {
+        String::new()
+    };
+    let right_width =
+        UnicodeWidthStr::width(right.as_str()).min(usize::from(area.width / 3)) as u16;
+    let model = format!("  {}  ", header_value(&ui.model_label));
+    let brand_text = format!(" {} ", header_value(brand_text));
+    let essential_width = UnicodeWidthStr::width(brand_text.as_str())
+        + UnicodeWidthStr::width(format!("│ {activity} ").as_str());
+    let show_model = essential_width + UnicodeWidthStr::width(model.as_str())
+        <= usize::from(area.width.saturating_sub(right_width));
+    let mut left = vec![Span::styled(
+        brand_text,
+        base.fg(tone_color(brand.tone)).add_modifier(Modifier::BOLD),
+    )];
+    if show_model {
+        left.push(Span::styled(model, base.fg(tone_color(model_slot.tone))));
+    }
+    left.push(Span::styled(
+        format!("│ {activity} "),
+        base.fg(if runtime_activity == "Idle" {
+            tone_color(activity_slot.tone)
+        } else {
+            tone_color(activity_slot.active_tone)
+        }),
+    ));
+    frame.render_widget(
+        Paragraph::new(Line::from(left)).style(base),
+        Rect::new(area.x, area.y, area.width - right_width, area.height),
+    );
+    if right_width > 0 {
+        frame.render_widget(
+            Paragraph::new(right).style(base.fg(tone_color(session_slot.tone))),
+            Rect::new(
+                area.x + area.width - right_width,
+                area.y,
+                right_width,
+                area.height,
+            ),
+        );
+    }
+}
+
+fn tone_color(tone: UiStatusTone) -> Color {
+    match tone {
+        UiStatusTone::Accent => Color::Rgb(150, 115, 230),
+        UiStatusTone::Info => Color::Cyan,
+        UiStatusTone::Success => Color::Green,
+        UiStatusTone::Warning => Color::Yellow,
+        UiStatusTone::Muted => Color::Gray,
+    }
+}
+
 pub(crate) fn draw(
     frame: &mut ratatui::Frame<'_>,
     app: &App,
@@ -71,21 +192,12 @@ pub(crate) fn draw(
     // The transcript can end in a separator row, so reserve two rows when
     // possible. Bound measurement for large drafts.
     let transcript_rows = if area.height >= 7 { 2 } else { 1 };
-    let composer_limit = area.height.saturating_sub(2 + transcript_rows).min(10);
+    let composer_height = chatbox_height(app, area.width, area.height);
     let composer = app
         .history_search
         .as_ref()
         .and_then(|search| search.preview())
         .unwrap_or(&app.composer);
-    let input_rows = composer.preferred_rows(
-        area.width.saturating_sub(2),
-        composer_limit.saturating_sub(2),
-    );
-    let composer_height = if composer_limit >= 3 {
-        input_rows.saturating_add(2)
-    } else {
-        composer_limit
-    };
     let extensions: Vec<_> = ui
         .regions
         .iter()
@@ -113,48 +225,33 @@ pub(crate) fn draw(
     // the available terminal height cannot display every extension.
     let spare = area
         .height
-        .saturating_sub(2 + transcript_rows + composer_height);
-    let palette_height = (suggestions.len() as u16).min(4).min(spare);
+        .saturating_sub(1 + transcript_rows + composer_height);
+    let status_height = u16::from(
+        status_items.is_some_and(|items| {
+            items
+                .iter()
+                .any(|item| item.id.as_str() == "modeline/left/brand")
+        }) && spare > 0,
+    );
+    let palette_height = (suggestions.len() as u16)
+        .min(4)
+        .min(spare.saturating_sub(status_height));
     let remaining = spare - palette_height;
     let focused_extension = extensions.iter().any(|(id, _)| *id == &ui.focus);
-    let status_height =
-        u16::from(status_items.is_some() && remaining > u16::from(focused_extension));
-    let extension_height = (extensions.len() as u16).min(remaining - status_height);
+    let extension_height = (extensions.len() as u16)
+        .min(remaining.saturating_sub(status_height))
+        .max(u16::from(focused_extension && remaining > status_height));
     let parts = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(1),
             Constraint::Min(1),
-            Constraint::Length(composer_height),
             Constraint::Length(palette_height),
             Constraint::Length(extension_height),
             Constraint::Length(status_height),
+            Constraint::Length(composer_height),
             Constraint::Length(1),
         ])
         .split(area);
-    let heading = if app.workspace.view().is_some() {
-        " Marlin · workspace · Esc to return".to_owned()
-    } else {
-        let endpoint = app.endpoint();
-        let session = app
-            .session_id()
-            .map_or_else(|| "temporary".to_owned(), |id| header_value(id.as_str()));
-        format!(
-            " Marlin · model gateway · {} · {}/{} · {}",
-            app.activity_label(),
-            header_value(endpoint.provider.as_str()),
-            header_value(endpoint.model.as_str()),
-            session,
-        )
-    };
-    frame.render_widget(
-        Paragraph::new(heading).style(
-            Style::default()
-                .fg(Color::Cyan)
-                .add_modifier(Modifier::BOLD),
-        ),
-        parts[0],
-    );
     let focused_content = if app.workspace.view().is_none() {
         ui.regions.iter().find_map(|region| match region {
             UiRegion::Extension {
@@ -168,33 +265,23 @@ pub(crate) fn draw(
     } else {
         None
     };
-    let guide_content = if app.workspace.view().is_none() {
-        ui.regions.iter().find_map(|region| match region {
-            UiRegion::Extension {
-                id, label, content, ..
-            } if id.as_str() == "guide" => Some((label.as_str(), content.as_slice())),
-            _ => None,
-        })
-    } else {
-        None
-    };
-    let panel_content = focused_content.or(guide_content);
+    let panel_content = focused_content;
     let transcript_area = if let Some((label, content)) = panel_content {
-        if parts[1].width >= 100 && parts[1].height >= 6 {
+        if parts[0].width >= 100 && parts[0].height >= 6 {
             let columns = Layout::default()
                 .direction(Direction::Horizontal)
                 .constraints([Constraint::Min(40), Constraint::Length(36)])
-                .split(parts[1]);
+                .split(parts[0]);
             draw_extension_content(frame, columns[1], label, content);
             Some(columns[0])
         } else if focused_content.is_some() {
-            draw_extension_content(frame, parts[1], label, content);
+            draw_extension_content(frame, parts[0], label, content);
             None
         } else {
-            Some(parts[1])
+            Some(parts[0])
         }
     } else {
-        Some(parts[1])
+        Some(parts[0])
     };
     let effective_scroll = if let Some(transcript_area) = transcript_area {
         let mut render_view = |viewport: &super::viewport::TranscriptViewport| {
@@ -248,14 +335,16 @@ pub(crate) fn draw(
                 Style::default()
             },
         );
-    let inner = block.inner(parts[2]);
-    frame.render_widget(block, parts[2]);
-    if let Some(view) = composer.view(inner.width, inner.height) {
-        frame.render_widget(Paragraph::new(view.rows.join("\n")), inner);
-        if app.history_search.is_none()
-            && (ui.focus.as_str() == "composer" || app.command_draft.is_some())
-        {
-            frame.set_cursor_position((inner.x + view.cursor.0, inner.y + view.cursor.1));
+    if parts[4].height > 0 {
+        let inner = block.inner(parts[4]);
+        frame.render_widget(block, parts[4]);
+        if let Some(view) = composer.view(inner.width, inner.height) {
+            frame.render_widget(Paragraph::new(view.rows.join("\n")), inner);
+            if app.history_search.is_none()
+                && (ui.focus.as_str() == "composer" || app.command_draft.is_some())
+            {
+                frame.set_cursor_position((inner.x + view.cursor.0, inner.y + view.cursor.1));
+            }
         }
     }
     let selected = app
@@ -263,11 +352,11 @@ pub(crate) fn draw(
         .filter(|name| suggestions.iter().any(|command| &command.name == *name));
     let selected_index =
         selected.and_then(|name| suggestions.iter().position(|command| &command.name == name));
-    let visible = usize::from(parts[3].height);
+    let visible = usize::from(parts[1].height);
     let start = selected_index.map_or(0, |index| index.saturating_add(1).saturating_sub(visible));
     for (row, command) in suggestions.iter().skip(start).take(visible).enumerate() {
         let line =
-            ratatui::layout::Rect::new(parts[3].x, parts[3].y + row as u16, parts[3].width, 1);
+            ratatui::layout::Rect::new(parts[1].x, parts[1].y + row as u16, parts[1].width, 1);
         let text = format!(
             " {} {}  {}",
             if selected == Some(&command.name) {
@@ -286,7 +375,7 @@ pub(crate) fn draw(
         };
         frame.render_widget(Paragraph::new(text).style(style), line);
     }
-    let visible = usize::from(parts[4].height);
+    let visible = usize::from(parts[2].height);
     if visible > 0 {
         let focused = extensions.iter().position(|(id, _)| *id == &ui.focus);
         let start = focused.map_or(0, |index| index.saturating_add(1).saturating_sub(visible));
@@ -298,7 +387,7 @@ pub(crate) fn draw(
                 header_value(label)
             );
             let line =
-                ratatui::layout::Rect::new(parts[4].x, parts[4].y + row as u16, parts[4].width, 1);
+                ratatui::layout::Rect::new(parts[2].x, parts[2].y + row as u16, parts[2].width, 1);
             let style = if is_focused {
                 Style::default()
                     .fg(Color::Cyan)
@@ -309,13 +398,8 @@ pub(crate) fn draw(
             frame.render_widget(Paragraph::new(text).style(style), line);
         }
     }
-    if let Some(items) = status_items.filter(|_| parts[5].height > 0) {
-        let text = items
-            .iter()
-            .map(|item| header_value(&item.label))
-            .collect::<Vec<_>>()
-            .join(" · ");
-        frame.render_widget(Paragraph::new(format!(" {text}")), parts[5]);
+    if let Some(items) = status_items.filter(|_| parts[3].height > 0) {
+        draw_modeline(frame, parts[3], app, ui, items);
     }
     if let Some(search) = &app.history_search {
         let prefix = if search.is_searching() {
@@ -325,7 +409,7 @@ pub(crate) fn draw(
         } else {
             " No match: "
         };
-        let available = usize::from(parts[6].width)
+        let available = usize::from(parts[5].width)
             .saturating_sub(UnicodeWidthStr::width(prefix))
             .saturating_sub(1);
         let mut suffix = search.query();
@@ -336,11 +420,11 @@ pub(crate) fn draw(
             suffix = &suffix[first.len()..];
         }
         let status = format!("{prefix}{suffix}");
-        frame.render_widget(Paragraph::new(status.clone()), parts[6]);
-        if parts[6].width > 0 && parts[6].height > 0 {
+        frame.render_widget(Paragraph::new(status.clone()), parts[5]);
+        if parts[5].width > 0 && parts[5].height > 0 {
             let column =
-                UnicodeWidthStr::width(status.as_str()).min(usize::from(parts[6].width - 1));
-            frame.set_cursor_position((parts[6].x + column as u16, parts[6].y));
+                UnicodeWidthStr::width(status.as_str()).min(usize::from(parts[5].width - 1));
+            frame.set_cursor_position((parts[5].x + column as u16, parts[5].y));
         }
         return effective_scroll;
     }
@@ -371,6 +455,28 @@ pub(crate) fn draw(
     } else {
         " Message: Enter send  Tab/Shift-Tab focus  Ctrl-R search  Ctrl-O commands  Ctrl-Q quit"
     };
-    frame.render_widget(Paragraph::new(status), parts[6]);
+    if parts[4].height == 0 {
+        let extras = status_items
+            .into_iter()
+            .flatten()
+            .filter(|item| !item.id.as_str().starts_with("modeline/"))
+            .take(2)
+            .map(|item| display_value(&item.label, 16))
+            .collect::<Vec<_>>();
+        let prefix = if extras.is_empty() {
+            " › ".to_owned()
+        } else {
+            format!(" › {} · ", extras.join(" · "))
+        };
+        frame.render_widget(
+            Paragraph::new(format!("{prefix}{}", status.trim_start())),
+            parts[5],
+        );
+        if ui.focus.as_str() == "composer" && parts[5].width > 2 {
+            frame.set_cursor_position((parts[5].x + 2, parts[5].y));
+        }
+    } else {
+        frame.render_widget(Paragraph::new(status), parts[5]);
+    }
     effective_scroll
 }

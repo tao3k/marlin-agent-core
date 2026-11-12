@@ -15,6 +15,7 @@
   rename: Marlin
   (context +causal)
   (ui-components)
+  (ui-modeline)
   (ui)
   (hooks)
   (policy)

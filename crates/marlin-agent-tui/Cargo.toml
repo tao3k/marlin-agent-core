@@ -47,6 +47,7 @@ gerbil-scheme-aot-build = { workspace = true, optional = true }
 [dev-dependencies]
 # `just rust-dev-gate` applies this shared ASP Rust policy to the TUI package.
 marlin-rust-project-harness-policy = { path = "../../build-support/marlin-rust-project-harness-policy" }
+proptest.workspace = true
 ratatui = { version = "=0.30.2", default-features = false, features = ["unstable-rendered-line-info"] }
 
 [target.'cfg(unix)'.dev-dependencies]

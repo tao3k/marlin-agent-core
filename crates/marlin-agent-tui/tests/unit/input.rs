@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
-use super::input::{BracketedPaste, InputDecoder, TerminalInput};
+use super::input::{BracketedPaste, InputDecoder, MouseMotion, TerminalInput};
 use std::io::Cursor;
 use termion::{
     event::{Event, Key},
@@ -68,4 +68,31 @@ fn bracketed_paste_mode_is_disabled_when_guard_drops() {
         let _guard = BracketedPaste::enable(&mut output).unwrap();
     }
     assert_eq!(output, b"\x1b[?2004h\x1b[?2004l");
+}
+
+#[test]
+fn sgr_mouse_motion_is_bounded_and_does_not_enter_the_key_queue() {
+    let mut decoder = InputDecoder::default();
+    let input: Vec<_> = Cursor::new(b"\x1b[<35;24;8M")
+        .events_and_raw()
+        .filter_map(|event| {
+            let (event, raw) = event.unwrap();
+            decoder.accept(event, &raw)
+        })
+        .collect();
+    assert!(matches!(&input[..], [TerminalInput::MouseMove(24, 8)]));
+    assert!(
+        decoder
+            .accept(Event::Unsupported(Vec::new()), b"\x1b[<35;0;8M")
+            .is_none()
+    );
+}
+
+#[test]
+fn mouse_motion_mode_is_disabled_when_guard_drops() {
+    let mut output = Vec::new();
+    {
+        let _guard = MouseMotion::enable(&mut output).unwrap();
+    }
+    assert_eq!(output, b"\x1b[?1003h\x1b[?1006h\x1b[?1006l\x1b[?1003l");
 }

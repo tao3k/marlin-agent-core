@@ -14,7 +14,7 @@ use gerbil_scheme::{
 use crate::model::{
     MAX_COMMANDS, MAX_CONTENT_ITEMS, MAX_ID_BYTES, MAX_REGIONS, MAX_STATUS, MAX_TEXT_CHARS,
     UiCommand, UiCommandName, UiComponentId, UiContent, UiIntent, UiProjectionError, UiRegion,
-    UiScrollDirection, UiStatusItem, UiWorkbench,
+    UiScrollDirection, UiStatusItem, UiStatusTone, UiWorkbench,
 };
 
 /// Convert a rooted Scheme intent; this does not authorize the action.
@@ -43,6 +43,7 @@ pub fn decode_workbench(value: RootedSchemeObject<'_>) -> Result<UiWorkbench, Ui
     let mut names = IdentifierBuffer::default();
     let focus = identifier(root.element(3)?, &mut names)?;
     let mut ids = HashSet::new();
+    let mut modeline_slots = [false; 4];
     let mut result = Vec::with_capacity(regions.len());
     for index in 0..regions.len() {
         let region = vector(regions.element(index)?, 3, 3)?;
@@ -92,8 +93,22 @@ pub fn decode_workbench(value: RootedSchemeObject<'_>) -> Result<UiWorkbench, Ui
                 let children = vector(payload, 0, MAX_STATUS)?;
                 let mut items = Vec::with_capacity(children.len());
                 for item_index in 0..children.len() {
-                    let item = vector(children.element(item_index)?, 3, 3)?;
+                    let item = vector(children.element(item_index)?, 6, 6)?;
                     let id = identifier(item.element(0)?, &mut names)?;
+                    if let Some(index) = match id.as_str() {
+                        "modeline/left/brand" => Some(0),
+                        "modeline/left/model" => Some(1),
+                        "modeline/left/activity" => Some(2),
+                        "modeline/right/session" => Some(3),
+                        _ => None,
+                    } {
+                        if item_index != index {
+                            return Err(UiProjectionError::Invalid("modeline order changed"));
+                        }
+                        modeline_slots[index] = true;
+                    } else if id.as_str().starts_with("modeline/") {
+                        return Err(UiProjectionError::Invalid("unknown modeline slot"));
+                    }
                     if identifier(item.element(1)?, &mut names)?.as_str() != "status-item"
                         || !ids.insert(id.as_str().to_owned())
                     {
@@ -101,9 +116,48 @@ pub fn decode_workbench(value: RootedSchemeObject<'_>) -> Result<UiWorkbench, Ui
                             "invalid status identity or kind",
                         ));
                     }
+                    let label = string(item.element(2)?)?;
+                    let compact_label = string(item.element(3)?)?;
+                    let tone = match identifier(item.element(4)?, &mut names)?.as_str() {
+                        "accent" => UiStatusTone::Accent,
+                        "info" => UiStatusTone::Info,
+                        "success" => UiStatusTone::Success,
+                        "warning" => UiStatusTone::Warning,
+                        "muted" => UiStatusTone::Muted,
+                        _ => return Err(UiProjectionError::Invalid("invalid status tone")),
+                    };
+                    let active_tone = match identifier(item.element(5)?, &mut names)?.as_str() {
+                        "accent" => UiStatusTone::Accent,
+                        "info" => UiStatusTone::Info,
+                        "success" => UiStatusTone::Success,
+                        "warning" => UiStatusTone::Warning,
+                        "muted" => UiStatusTone::Muted,
+                        _ => return Err(UiProjectionError::Invalid("invalid active status tone")),
+                    };
+                    if id.as_str().starts_with("modeline/") {
+                        let dynamic = matches!(
+                            id.as_str(),
+                            "modeline/left/model" | "modeline/right/session"
+                        );
+                        if (dynamic && (!label.is_empty() || !compact_label.is_empty()))
+                            || (!dynamic && (label.is_empty() || compact_label.is_empty()))
+                        {
+                            return Err(UiProjectionError::Invalid("invalid modeline labels"));
+                        }
+                    } else if compact_label != label
+                        || tone != UiStatusTone::Muted
+                        || active_tone != UiStatusTone::Muted
+                    {
+                        return Err(UiProjectionError::Invalid(
+                            "invalid host status presentation",
+                        ));
+                    }
                     items.push(UiStatusItem {
                         id,
-                        label: string(item.element(2)?)?,
+                        label,
+                        compact_label,
+                        tone,
+                        active_tone,
                     });
                 }
                 UiRegion::Status(items)
@@ -143,6 +197,9 @@ pub fn decode_workbench(value: RootedSchemeObject<'_>) -> Result<UiWorkbench, Ui
     }
     if !matches!(result.last(), Some(UiRegion::Status(_))) {
         return Err(UiProjectionError::Invalid("missing status region"));
+    }
+    if modeline_slots.iter().any(|slot| *slot) && !modeline_slots.iter().all(|slot| *slot) {
+        return Err(UiProjectionError::Invalid("incomplete modeline"));
     }
     let focus_valid = result.iter().any(|region| match region {
         UiRegion::Transcript => focus.as_str() == "transcript",

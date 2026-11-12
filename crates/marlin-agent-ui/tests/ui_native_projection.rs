@@ -40,10 +40,10 @@ fn region<'a>(
 fn sdk_roots_project_to_typed_ui_workbench() {
     let runtime = GerbilRuntime::initialize().unwrap();
     let scope = runtime.void_object().unwrap();
-    let status = [UiStatusItem {
-        id: UiComponentId::new("extension/status").unwrap(),
-        label: "Ready 🐟".into(),
-    }];
+    let status = [UiStatusItem::host(
+        UiComponentId::new("extension/status").unwrap(),
+        "Ready 🐟",
+    )];
     let facts = UiOpenFacts {
         model_label: "model",
         session_label: "session",
@@ -165,6 +165,9 @@ fn sdk_roots_project_to_typed_ui_workbench() {
             symbol(&runtime, "example/status"),
             symbol(&runtime, "status-item"),
             string(&runtime, "Ready 🐟"),
+            string(&runtime, "Ready 🐟"),
+            symbol(&runtime, "muted"),
+            symbol(&runtime, "muted"),
         ],
     );
     let focus = runtime.scalar_object(SchemeScalar::Boolean(true)).unwrap();
@@ -246,6 +249,41 @@ fn sdk_roots_project_to_typed_ui_workbench() {
     );
     let malformed = vector(&runtime, &[string(&runtime, "bad")]);
     assert!(decode_workbench(malformed).is_err());
+    let invalid_tone = vector(
+        &runtime,
+        &[
+            symbol(&runtime, "extension/status"),
+            symbol(&runtime, "status-item"),
+            string(&runtime, "Ready"),
+            string(&runtime, "Ready"),
+            symbol(&runtime, "effect"),
+            symbol(&runtime, "muted"),
+        ],
+    );
+    let invalid_tone_regions = vector(
+        &runtime,
+        &[
+            region(&runtime, "transcript", "transcript", empty()),
+            region(&runtime, "composer", "composer", empty()),
+            region(&runtime, "commands", "commands", empty()),
+            region(
+                &runtime,
+                "status",
+                "status",
+                vector(&runtime, &[invalid_tone]),
+            ),
+        ],
+    );
+    let invalid_tone_root = vector(
+        &runtime,
+        &[
+            string(&runtime, "model"),
+            string(&runtime, "session"),
+            invalid_tone_regions,
+            symbol(&runtime, "composer"),
+        ],
+    );
+    assert!(decode_workbench(invalid_tone_root).is_err());
     let duplicate = vector(
         &runtime,
         &[

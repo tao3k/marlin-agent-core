@@ -19,6 +19,21 @@ sysml-check:
 rust-dev-gate:
   cargo run --locked -p marlin-rust-project-harness-policy --example marlin-workspace-package-gate
 
+# The authored Quint model and reproducible trace checks for the active TUI domain.
+property-model-gate:
+  quint typecheck dev/quint/tui-minibuffer.qnt
+  quint test dev/quint/tui-minibuffer.qnt --max-samples=100
+  quint run dev/quint/tui-minibuffer.qnt --seed=42 --max-samples=1000 --max-steps=30 --invariant=stateSafe --verbosity=1
+
+# One project gate: architecture, model, native Scheme PBT and Rust properties.
+property-gate: sysml-check property-model-gate scheme-property-gate
+  cargo test --locked -p marlin-agent-tui --no-default-features --test unit_test
+  cargo test --locked -p marlin-agent-ui --test ui_native_projection
+
+# Gerbil's native test runner discovers the selected package's maintained suite.
+scheme-property-gate:
+  direnv exec . bash -ec 'cd scheme && gxpkg env gerbil test t/all-test.ss'
+
 # Install the dependency declared by the workspace Scheme package.
 scheme-deps:
   cd scheme && gxpkg deps --install

@@ -22,7 +22,9 @@
       ((status)
        (vector identity-value kind-value
          (list->vector (map (lambda (child)
-                             (vector (.get child identity) (.get child kind) (.get child label)))
+                             (vector (.get child identity) (.get child kind)
+                                     (.get child label) (.get child compact)
+                                     (.get child tone) (.get child active-tone)))
                            (.get node children)))))
       ((extension)
        (vector identity-value kind-value

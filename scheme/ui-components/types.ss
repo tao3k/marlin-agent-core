@@ -14,8 +14,8 @@
   (.cc (Record identity: [(Exactly 'marlin/ui-components)]
                components: [Object]
                contribution-node: [(Fun Object <- Object)]
+               modeline-node: [(Fun Object <- Object)]
                extension-node: [(Fun Object <- Object)]
-               guide-node: [(Fun Object <-)]
                command-catalog: [Object]
                command-entries: [(Fun UiCommandEntries <- Object)]
                browse-command: [(Fun Object <- UiCommandEntries Object)])

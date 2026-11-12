@@ -12,11 +12,12 @@ package MarlinTuiArchitecture {
     package actual {
         part <'MAR-TUI-A19'> selectedNativeAdapters {
             doc /* The selected ui-components Module owns component prototypes,
-                   bounded content constructors and the command catalog. The ui
-                   Module requires that scope and owns workbench composition,
-                   generic event dispatch and typed projection. Its Guide is
-                   visible in ordinary wide-terminal startup and focusable in
-                   narrow terminals. The selected c-abi Module owns UI and Deck adapter build
+                   bounded content constructors and the command catalog. The
+                   selected ui-modeline Module owns the ordered semantic slots.
+                   The ui Module requires both scopes and owns workbench
+                   composition, generic event dispatch and typed projection.
+                   The default Guide sidebar has been removed. The selected
+                   c-abi Module owns UI and Deck adapter build
                    inputs through its Build role. Its published identity is
                    metadata, not a Rust ABI readiness receipt. Its linked scope
                    retains the selected UI, Context and Deck scopes. Scheme UI
@@ -27,9 +28,10 @@ package MarlinTuiArchitecture {
                    Scheme-owned session, workbench and intent projections. Rust
                    admits event/intent/successor agreement in the shared UI
                    library; terminal command handlers and focus are admitted
-                   by the terminal host. The Guide contains host-neutral
-                   action descriptions, while key hints belong to the TUI.
-                   constructs rooted open requests from typed facts and SDK
+                   by the terminal host. Rust resolves modeline labels from
+                   live facts and paints a colored width-aware strip above the
+                   collapsible Mini Buffer. The terminal host constructs
+                   rooted open requests from typed facts and SDK
                    objects after checking outer contribution limits.
                    Ordered CLOS method bundles compose into each fresh session
                    generic, with an upper bound on bundle count; a bundle's

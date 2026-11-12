@@ -15,13 +15,14 @@
 
 ;;; Host facts are display data only. Transcript and composer are named regions
 ;;; whose contents and editing authority remain with their existing owners.
-(def (make-marlin-ui-workbench components)
+(def (make-marlin-ui-workbench components modeline)
   (let ((types (.ref components 'components))
         (contribution-node (.ref components 'contribution-node))
+        (modeline-node (.ref components 'modeline-node))
         (extension-node (.ref components 'extension-node))
-        (guide-node (.ref components 'guide-node))
         (command-catalog (.ref components 'command-catalog))
-        (command-entries (.ref components 'command-entries)))
+        (command-entries (.ref components 'command-entries))
+        (modeline-nodes (.ref modeline 'nodes)))
   (lambda (facts)
     (marlin-ui-required-object facts '(model session contributions extensions))
     (let ((model-value (.ref facts 'model)) (session-value (.ref facts 'session))
@@ -33,7 +34,8 @@
       (error "invalid UI workbench facts"))
     (let* ((owned-model (string-copy model-value))
            (owned-session (string-copy session-value))
-           (nodes (map contribution-node contribution-values))
+           (nodes (append (map modeline-node (modeline-nodes))
+                          (map contribution-node contribution-values)))
            (extensions (map extension-node extension-values))
            (ids (map (lambda (node) (.ref node 'identity)) (append nodes extensions)))
            (extension-focus (map (lambda (node) (.ref node 'identity))
@@ -42,12 +44,11 @@
         (error "duplicate UI contribution identity"))
       (.o (:: @ (.ref types 'workbench)) identity: 'workbench kind: 'workbench
           model: owned-model session: owned-session
-          focus-order: (append '(transcript composer commands guide) extension-focus)
+          focus-order: (append '(transcript composer commands) extension-focus)
           regions: (append (list (.o (:: @ (.ref types 'transcript)) identity: 'transcript kind: 'transcript)
                                  (.o (:: @ (.ref types 'composer)) identity: 'composer kind: 'composer)
                                  (.o (:: @ (.ref types 'commands)) identity: 'commands kind: 'commands
-                                     entries: (command-entries command-catalog))
-                                 (guide-node))
+                                     entries: (command-entries command-catalog)))
                            extensions
                            (list (.o (:: @ (.ref types 'status)) identity: 'status kind: 'status children: nodes)))))))))
 

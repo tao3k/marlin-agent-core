@@ -9,8 +9,8 @@
         (only-in "./bounds.ss" marlin-ui-max-content-items marlin-ui-bounded-label?
                  marlin-ui-bounded-list? marlin-ui-required-object))
 (export UiComponent. UiWorkbench. UiTranscript. UiComposer. UiCommands. UiStatus.
-        UiStatusItem. UiExtension. UiGuide. UiText. UiField.
-        marlin-ui-contribution-node marlin-ui-extension-node marlin-ui-guide-node)
+        UiStatusItem. UiExtension. UiText. UiField.
+        marlin-ui-contribution-node marlin-ui-modeline-node marlin-ui-extension-node)
 
 (.def UiComponent.)
 (.def (UiWorkbench. @ UiComponent.))
@@ -20,20 +20,45 @@
 (.def (UiStatus. @ UiComponent.))
 (.def (UiStatusItem. @ UiComponent.))
 (.def (UiExtension. @ UiComponent.))
-(.def (UiGuide. @ UiExtension.))
 (.def (UiText. @ UiComponent.))
 (.def (UiField. @ UiComponent.))
 
-(def reserved-identities '(transcript composer status commands guide))
+(def reserved-identities '(transcript composer status commands))
+(def modeline-identities
+  '(modeline/left/brand modeline/left/model
+    modeline/left/activity modeline/right/session))
+
+(def (marlin-ui-modeline-node descriptor)
+  (marlin-ui-required-object descriptor '(identity label compact tone active-tone))
+  (let ((identity-value (.ref descriptor 'identity))
+        (label-value (.ref descriptor 'label))
+        (compact-value (.ref descriptor 'compact))
+        (tone-value (.ref descriptor 'tone))
+        (active-tone-value (.ref descriptor 'active-tone)))
+    (unless (and (memq identity-value modeline-identities)
+                 (marlin-ui-bounded-label? label-value)
+                 (marlin-ui-bounded-label? compact-value)
+                 (memq tone-value '(accent info success warning muted))
+                 (memq active-tone-value '(accent info success warning muted))
+                 (if (memq identity-value '(modeline/left/model modeline/right/session))
+                   (and (equal? label-value "") (equal? compact-value ""))
+                   (and (not (equal? label-value ""))
+                        (not (equal? compact-value "")))))
+      (error "invalid UI modeline descriptor"))
+    (.o (:: @ UiStatusItem.) identity: identity-value kind: 'status-item
+        label: (string-copy label-value) compact: (string-copy compact-value)
+        tone: tone-value active-tone: active-tone-value)))
 
 (def (marlin-ui-contribution-node contribution)
   (marlin-ui-required-object contribution '(identity label))
   (let ((identity-value (.ref contribution 'identity)) (label-value (.ref contribution 'label)))
     (unless (and (symbol? identity-value) (marlin-ui-bounded-label? label-value)
-                 (not (memq identity-value reserved-identities)))
+                 (not (memq identity-value reserved-identities))
+                 (not (string-prefix? "modeline/" (symbol->string identity-value))))
       (error "invalid UI contribution"))
     (.o (:: @ UiStatusItem.) identity: identity-value kind: 'status-item
-        label: (string-copy label-value))))
+        label: (string-copy label-value) compact: (string-copy label-value)
+        tone: 'muted active-tone: 'muted)))
 
 (def (checked-content item)
   (marlin-ui-required-object item '(kind))
@@ -70,20 +95,3 @@
         (content-value (map checked-content (.ref component 'content))))
     (seal-object! (.o (:: @ component) identity: identity-value kind: 'extension
                       label: label-value focusable: focusable-value content: content-value))))
-
-;;; The selected package contributes a host-neutral guide. A renderer supplies
-;;; keyboard shortcuts, mouse gestures or other device-specific affordances.
-(def (marlin-ui-guide-node)
-  (seal-object!
-   (.o (:: @ UiGuide.) identity: 'guide kind: 'extension label: "Guide"
-       focusable: #t
-       content: (map checked-content
-                     (list (.o (:: @ UiText.) kind: 'text text: "Get started")
-                           (.o (:: @ UiField.) kind: 'field label: "Conversation"
-                               value: "Write a message")
-                           (.o (:: @ UiField.) kind: 'field label: "Actions"
-                               value: "Browse commands")
-                           (.o (:: @ UiField.) kind: 'field label: "Navigation"
-                               value: "Focus a region")
-                           (.o (:: @ UiText.) kind: 'text
-                               text: "Choose Message to begin."))))))

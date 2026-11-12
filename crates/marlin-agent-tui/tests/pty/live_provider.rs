@@ -21,7 +21,9 @@ fn configured_anthropic_provider_responds() {
     let deadline = Instant::now() + Duration::from_secs(120);
     loop {
         let screen = screen_lines(&terminal.output);
-        if screen.iter().any(|line| line.contains("72210")) && screen[0].contains("Idle") {
+        if screen.iter().any(|line| line.contains("72210"))
+            && screen.iter().any(|line| line.contains("Idle"))
+        {
             eprintln!("real provider response completed");
             break;
         }

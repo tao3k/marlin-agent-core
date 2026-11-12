@@ -178,9 +178,9 @@ checks their identities and focusability, and derives a focus event from its
 composed regions. The native projection preserves their labels and focusability.
 The terminal renderer can paint these bounded labels and follows the focused
 extension when vertical space is limited. It sanitizes control characters and
-preserves transcript and composer space. Nonempty typed status contributions
-are also rendered when space permits; a focused extension takes priority over
-the optional status row in a constrained terminal. This is a presentation primitive, not
+preserves transcript and composer space. The selected Modeline takes one row
+when space permits; host status contributions appear in the collapsed Mini
+Buffer. This is a presentation primitive, not
 plugin discovery or general extension event handling: Enter may dispatch a
 contributed submit method only to produce an admitted focus change; it cannot
 submit the user's draft. The current TUI opens its session with no extension
@@ -1373,9 +1373,12 @@ and runtime effect authority. A future GPUI renderer is only an adapter
 direction: host-neutral component semantics could be reused, but this work
 does not compile the current Gerbil UI modules to JavaScript or implement GPUI.
 
-** Selected UI components and ordinary Guide
+** Selected UI components and historical Guide prototype
 
-The UI component vocabulary, bounded constructors and command catalog now live
+This section records the earlier Guide prototype and its validation. The
+Modeline revision below removes its default region and sidebar.
+
+The UI component vocabulary, bounded constructors and command catalog live
 in one selected =ui-components= Yuanxu Module. The =ui= Module declares that
 dependency and builds its workbench from the selected scope; it retains the
 generic/method event dispatch, composition and typed native projection. No
@@ -1386,7 +1389,7 @@ Only names matching an existing Rust terminal command are admitted; catalog
 composition grants no execution authority. The Scheme workbench test verified
 the catalog's exact order and the selected module identities.
 
-The selected module also supplies a Guide component through the same text and
+At this earlier revision, the selected module supplied a Guide component through the same text and
 field projection used by extensions. The terminal host shows it beside the
 transcript when wide enough, and preserves the full transcript by default on
 narrow terminals while allowing Guide focus through Tab. This is the first
@@ -1583,3 +1586,45 @@ ten-second startup acceptance or establish release startup performance.
 The local flood-cancellation fixture also passed once with a persisted session
 enabled, observing the local cancellation message after 0.023 seconds; it is
 not a repeated benchmark or a guarantee that a 64 KiB checkpoint occurred.
+
+** Doom-inspired Modeline and Mini Buffer
+
+Source study pinned =.data/doom-modeline= at =d41f69ab= and
+=.data/oh-my-pi= at =cfd8d04e= (both depth one, excluded from Git). Doom
+Modeline declares named segments and separate left/right layouts. oh-my-pi
+adds themed segment colors, width-aware priorities and cached status facts.
+Marlin uses these as design references; no Elisp or TypeScript implementation
+was copied. Its source of truth remains the selected Scheme/Rust UI protocol.
+
+The selected =ui-modeline= Yuanxu Module publishes four ordered semantic
+slots: brand, model, activity and session. Each slot declares a full label, a
+compact label and semantic idle/active color tones. =ui= composes them with at most eight
+host status contributions. The Rust projection admits at most twelve status
+items and rejects unknown slots, reordering and invalid tone or label shapes.
+The Ratatui host resolves live model, session and activity facts from the
+current admitted workbench and app state, maps the declared tones to terminal
+colors, and omits the model segment first when width is scarce. Its former
+top status heading and
+default right Guide frame are removed; =/help= remains the shortcut surface.
+The initial configured-gateway notice is shown as the Modeline's idle state,
+not as a synthetic transcript entry. A fish glyph marks the Marlin brand.
+
+The bottom Mini Buffer is the existing ChatBox in a collapsed form. With no
+draft or command activity it occupies one row and can show host status that
+does not belong in the Modeline. Pointer movement into that row expands the
+ChatBox upward; moving above the expanded area collapses an empty ChatBox.
+Typing, command editing and history search keep it expanded. A nonempty draft
+stays visible after pointer exit. Termion's unsupported SGR no-button motion
+is decoded from its bounded raw event; the input thread stores only the latest
+pointer position, so pointer floods do not fill the eight-item key queue.
+The frame scheduler samples that position and repaints on state transitions.
+Some terminals may not report motion outside their window, so an external
+pointer leave is not currently a guaranteed collapse event. This design does
+not call Scheme on each rendered frame and adds no context-compression state.
+
+The project verification entry is =just property-gate=. It validates the
+MAR-UI-R10/R11 SysML requirements, the bounded Quint control model, POO Type
+generated Scheme status inputs, the typed native projection and Rust layout
+properties. The real PTY hover and terminal restoration tests remain a
+separate runtime check. Seeds, budgets and extension rules are recorded in
+[[file:../../dev/verification/README.org][the project verification map]].

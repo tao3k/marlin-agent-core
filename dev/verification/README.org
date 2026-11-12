@@ -1,0 +1,42 @@
+#+title: Marlin property and model verification
+#+language: en
+
+* Project entry
+
+=just property-gate= is the maintained project entry. It composes the existing
+=sysml-check= with Quint, native =gerbil test= and Cargo. Each language's
+normal runner executes its own tests; this directory contains no runner or
+second source inventory. =just rust-dev-gate= remains the workspace style gate.
+
+* Ownership
+
+| Concern | Owner | First active property |
+|---------+-------+-----------------------|
+| Architecture and allocations | =project.sysml= and =dev/sysml/= | MAR-UI-R10/R11 |
+| Finite UI transitions | =dev/quint/tui-minibuffer.qnt= | safe geometry, focus, pointer/key separation |
+| Scheme composition and dispatch | selected =scheme/ui-modeline= and =scheme/t/ui-workbench-test.ss= | four slots, ordered contributions, 8/9 admission boundary |
+| Typed native boundary | =marlin-agent-ui= | complete modeline, reserved identities, bounded projection |
+| Terminal geometry and I/O | =marlin-agent-tui= | generated dimensions, collapse/hover, real PTY |
+| Cross-crate fixtures and receipts | =marlin-agent-test-support= | reuse its existing runtime evidence APIs |
+
+Rust's static contracts are domain newtypes, enum exhaustiveness, admission
+types and compile-time capacity assertions. POO Type descriptors generate and
+shrink Scheme inputs. Quint explores control-state interleavings. None of these
+proves that a terminal emits mouse-leave events or that an LLM provider responds;
+the PTY and provider gates remain separate observations.
+
+* Reproduction and extension
+
+The Quint run fixes seed 42, 1,000 traces and 30 steps. The Scheme property
+fixes seed 42, 64 cases and shrink budget 32, with both admitted and refused
+labels required. The Rust =proptest= geometry property fixes seed 42 and 128
+cases; a bounded exhaustive test covers terminal heights 7..80 and widths
+10, 24, 40, 80, 120 and 160. Failed seeds and counterexamples belong in the
+failing test output; do not replace them with a passing rerun.
+
+For a new domain, add its invariant to the owning SysML requirement, its
+finite transition model under =dev/quint/= when temporal behavior matters,
+and executable properties next to the native Scheme/Rust tests. Then add the
+authored model to =property-model-gate=; package tests stay under the existing
+Gerbil and Cargo entrypoints. State the bounds and negative controls before
+claiming a broader stability result.

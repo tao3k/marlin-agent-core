@@ -507,10 +507,38 @@ fn linked_ui_opens_without_a_gerbil_package_tree() {
     terminal.wait_for(Duration::from_secs(10), "linked workbench", |output| {
         contains(output, b"\x1b[?1049h")
             && screen_lines(output)[29].contains("Message: Enter send")
-            && screen_lines(output)
-                .iter()
-                .any(|line| line.contains("Get started"))
+            && screen_lines(output)[28].contains("🐟")
+            && screen_lines(output)[28].contains("MARLIN")
+            && screen_lines(output)[28].contains("Gateway configured")
+            && screen_lines(output)[0].trim().is_empty()
     });
+    terminal.send(b"\x11");
+    terminal.wait_exit(Duration::from_secs(5));
+    terminal.assert_restored();
+}
+
+#[cfg(feature = "linked-ui")]
+#[test]
+fn minibuffer_expands_on_hover_and_collapses_on_leave() {
+    let directory = tempfile::tempdir().unwrap();
+    let config = directory.path().join("config.toml");
+    fs::write(&config, "provider=\"openai\"\nmodel=\"gpt-fixture\"\nendpoint=\"http://127.0.0.1:1/v1/responses\"\nprotocol=\"open-ai-responses\"\ncredential_env=\"MARLIN_TUI_FIXTURE_KEY\"\n").unwrap();
+    let mut terminal = Terminal::start(&config);
+    terminal.wait_for(Duration::from_secs(10), "collapsed minibuffer", |output| {
+        contains(output, b"\x1b[?1003h")
+            && screen_lines(output)[28].contains("MARLIN")
+            && screen_lines(output)[29].contains("Message: Enter send")
+    });
+    terminal.send(b"\x1b[<35;1;30M");
+    terminal.wait_for(Duration::from_secs(5), "expanded minibuffer", |output| {
+        screen_lines(output)[25].contains("MARLIN")
+    });
+    terminal.send(b"\x1b[<35;1;1M");
+    terminal.wait_for(
+        Duration::from_secs(5),
+        "collapsed minibuffer again",
+        |output| screen_lines(output)[28].contains("MARLIN"),
+    );
     terminal.send(b"\x11");
     terminal.wait_exit(Duration::from_secs(5));
     terminal.assert_restored();
@@ -527,7 +555,7 @@ fn example_config_linked_debug_startup() {
             && screen_lines(output)[29].contains("Message: Enter send")
             && screen_lines(output)
                 .iter()
-                .any(|line| line.contains("Get started"))
+                .any(|line| line.contains("MARLIN"))
     });
     eprintln!(
         "example workbench ready after {:?}",
@@ -553,7 +581,7 @@ fn example_config_binary_diagnostic() {
             && screen_lines(output)[29].contains("Message: Enter send")
             && screen_lines(output)
                 .iter()
-                .any(|line| line.contains("Get started"))
+                .any(|line| line.contains("MARLIN"))
     });
     eprintln!(
         "diagnostic workbench ready after {:?} from {}",
@@ -602,7 +630,7 @@ fn release_linked_ui_first_frame_without_a_gerbil_package_tree() {
             && screen_lines(output)[29].contains("Message: Enter send")
             && screen_lines(output)
                 .iter()
-                .any(|line| line.contains("Get started"))
+                .any(|line| line.contains("MARLIN"))
     });
     eprintln!(
         "release workbench ready after {:?}",

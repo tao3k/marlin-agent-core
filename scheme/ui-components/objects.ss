@@ -12,10 +12,10 @@
                       transcript: UiTranscript. composer: UiComposer.
                       commands: UiCommands. status: UiStatus.
                       status-item: UiStatusItem. extension: UiExtension.
-                      guide: UiGuide. text: UiText. field: UiField.)
+                      text: UiText. field: UiField.)
       contribution-node: marlin-ui-contribution-node
+      modeline-node: marlin-ui-modeline-node
       extension-node: marlin-ui-extension-node
-      guide-node: marlin-ui-guide-node
       command-catalog: marlin-ui-command-catalog
       command-entries: marlin-ui-command-entries
       browse-command: marlin-ui-browse-command))

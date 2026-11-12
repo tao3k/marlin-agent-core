@@ -5,7 +5,8 @@
 ;;; Scheme-owned component composition and focus policy for native hosts.
 (.def Ui
   identity: 'ui
-  core: (.o requires: (.o UiComponents: (.o module-id: 'ui-components))
+  core: (.o requires: (.o UiComponents: (.o module-id: 'ui-components)
+                          UiModeline: (.o module-id: 'ui-modeline))
             scope-contract: UiScopeContract
-            exports: (make-ui-scope UiComponents))
+            exports: (make-ui-scope UiComponents UiModeline))
   features: (.o))
