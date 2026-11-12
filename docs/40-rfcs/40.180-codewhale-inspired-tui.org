@@ -74,6 +74,51 @@ specifies the Scheme/Rust ownership boundary, candidate publication lifecycle,
 extension identities, incremental work and qualification requirements.
 The target model is not an implementation or a performance result.
 
+** Startup and hybrid execution decision
+
+The current =run= validates configuration, initializes the Scheme VM, resolves
+the package publication and opens the Scheme UI before entering terminal raw
+mode or drawing a frame. It cannot present a responsive workbench during that
+interval. The pinned SDK documents package export resolution as a startup
+operation that must not overlap unrelated environment or subprocess work; it
+also checks the VM owner thread. Simply spawning the current resolver beside
+the input/Tokio threads would violate that contract.
+
+The desired lifecycle separates (1) process start to a responsive terminal
+initialization state, (2) Scheme UI readiness and admission of its actions,
+and (3) terminal restoration and VM retirement. The design target is subsecond
+first interaction and Scheme readiness within a few seconds. These are target
+budgets, not measured results or replacements for the existing strict
+ten-second workbench and five-second exit tests. Initialization must visibly
+report pending, ready or failure, support cancellation and restoration, and
+never route Scheme-dependent actions before readiness. A fast loading screen
+alone is not a fast usable UI.
+
+| Candidate | Potential benefit | Evidence and qualification boundary |
+|-----------+-------------------+-------------------------------------|
+| Existing dynamic VM | Preserves live Scheme, Module selection and MOP | Current selected publication and first open are slow; the single sample below does not isolate macro expansion from source discovery or loading. |
+| Yuanxu-selected compiled closure linked with the VM | Move core selection and compilation to build time and reduce runtime filesystem and dynamic-loader work | A bare linked VM initialized quickly, but actual publication still accessed the package tree. Upstream compiled-publication owner gates and a real source-free TUI remain unqualified. |
+| Scheme-to-Rust IR plus VM | Lower selected stable pure computations to native Rust while retaining VM-owned dynamic methods and extensions | [[https://github.com/tao3k/gerbil-scheme-rust/pull/17][Scheme Rust PR #17]] implemented a build-time typed function IR backend, not a complete Scheme compiler or demonstrated MOP lowering. It requires a Scheme-side producer, purity and call admission, semantic equivalence tests and a measured hot path. |
+
+First resolve the compiled Module publication and ownership in Yuanxu/SDK,
+then compare the same release workload against the dynamic baseline. IR is a
+candidate for measured pure hotspots, not a substitute for the Module graph or
+for dynamic dispatch. A hybrid candidate must preserve the same admitted
+identities, method precedence, errors, extension behavior and typed boundary;
+unsupported dynamic behavior stays on the VM. Runtime data crosses as Scheme
+and Rust types, rather than a new serialized internal protocol. Do not restore
+the former JSON-based IR as a runtime bridge.
+
+For each candidate, capture independent fresh-process cold and warm runs on the
+same machine and terminal: process-to-first interactive state, process-to-UI
+readiness, VM initialization, publication selection, first open, cleanup,
+CPU, allocations, RSS, source reads and dynamic images. Hold package revision,
+selected modules, input, extension set and retirement behavior fixed; report
+individual observations, distributions and failures. Attribute macro-expansion
+cost only with direct instrumentation rather than inferring it from elapsed
+startup. Include missing/substituted module and extension-dispatch controls,
+as well as terminal restoration when initialization fails or is cancelled.
+
 ** Proposed Scheme UI extension plane
 
 The present client paints directly in Rust; it has no Scheme UI engine or
@@ -1204,6 +1249,11 @@ retry did not establish end-to-end limit behavior: the fixture's original
 ten-second socket-write limit expired before the full large frame was sent,
 and the client observed an incomplete response. Its limit assertion and the
 original timeout remain unchanged.
+Independent Rust loopback tests send a valid prefix followed by an oversized
+event through Weaver and Marlin's journal gateway using both 4096-byte and
+the configured 8 MiB provider budgets. Both observe =ProviderByteLimit=,
+retain the prefix and replay the typed uncertain outcome. These do not replace
+the unresolved PTY acceptance at the 8 MiB limit.
 
 ** Conversation journal in progress
 

@@ -6,8 +6,8 @@ use std::time::Duration;
 
 use super::journal_gateway::JournalGateway;
 use marlin_agent_protocol::{
-    ModelEndpoint, ModelGatewayRequest, ModelGatewayTransport, ModelStreamInterruption,
-    user_gateway_message,
+    ModelEndpoint, ModelGatewayError, ModelGatewayRequest, ModelGatewayTransport,
+    ModelStreamInterruption, user_gateway_message,
 };
 use marlin_agent_sessions::{
     ConversationJournal, ConversationTurnOutcome, ConversationUncertaintyReason,
@@ -24,6 +24,111 @@ use tokio::{
     time::timeout,
 };
 use tokio_stream::StreamExt;
+
+#[tokio::test]
+async fn provider_byte_limit_retains_the_observed_prefix_in_the_journal() {
+    assert_provider_byte_limit(4096).await;
+}
+
+#[tokio::test]
+async fn production_provider_byte_limit_retains_the_observed_prefix_in_the_journal() {
+    assert_provider_byte_limit(8 * 1024 * 1024).await;
+}
+
+async fn assert_provider_byte_limit(limit: usize) {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}/v1/responses", listener.local_addr().unwrap());
+    let (continue_tx, continue_rx) = oneshot::channel();
+    let server = tokio::spawn(async move {
+        let (mut socket, _) = listener.accept().await.unwrap();
+        let mut headers = Vec::new();
+        while !headers.ends_with(b"\r\n\r\n") {
+            headers.push(socket.read_u8().await.unwrap());
+        }
+        let headers = String::from_utf8(headers).unwrap();
+        let length: usize = headers
+            .lines()
+            .find_map(|line| {
+                line.to_ascii_lowercase()
+                    .strip_prefix("content-length:")
+                    .and_then(|value| value.trim().parse().ok())
+            })
+            .unwrap();
+        socket.read_exact(&mut vec![0; length]).await.unwrap();
+        socket.write_all(concat!(
+            "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nConnection: close\r\n\r\n",
+            "data: {\"type\":\"response.output_text.delta\",\"delta\":\"observed-prefix\"}\n\n",
+        ).as_bytes()).await.unwrap();
+        continue_rx.await.unwrap();
+        let oversized = format!(
+            "data: {{\"type\":\"response.output_text.delta\",\"delta\":\"{}\"}}\n\n",
+            "x".repeat(limit + 1)
+        );
+        if let Err(error) = socket.write_all(oversized.as_bytes()).await {
+            assert!(matches!(
+                error.kind(),
+                std::io::ErrorKind::BrokenPipe | std::io::ErrorKind::ConnectionReset
+            ));
+        }
+    });
+    let gateway = WeaverModelGateway::new(
+        weaver_llm::Client::new(Duration::from_secs(3), limit).unwrap(),
+        "openai".into(),
+        weaver_llm::Endpoint::new(weaver_llm::Protocol::OpenAiResponses, &url).unwrap(),
+        "fixture",
+    );
+    let request = ModelGatewayRequest::new(
+        ModelEndpoint::new("openai", "gpt-fixture"),
+        vec![user_gateway_message("hi")],
+    );
+    let storage = InMemoryAgentStorage::new();
+    let project = ProjectId::new("project:provider-limit").unwrap();
+    let session = SessionId::new("session:provider-limit").unwrap();
+    let agent = AgentId::new("agent:provider-limit").unwrap();
+    let journal = ConversationJournal::open(
+        storage.clone(),
+        project.clone(),
+        session.clone(),
+        agent.clone(),
+        |_| {},
+    )
+    .await
+    .unwrap();
+    let gateway = JournalGateway::new(gateway, journal);
+    let mut stream = gateway.stream(request).await.unwrap();
+    assert!(matches!(
+        stream.next().await.unwrap().unwrap(),
+        ModelStreamEvent::Started { .. }
+    ));
+    assert!(
+        matches!(stream.next().await.unwrap().unwrap(), ModelStreamEvent::Chunk(chunk) if chunk.content == "observed-prefix")
+    );
+    continue_tx.send(()).unwrap();
+    assert!(matches!(
+        stream.next().await.unwrap(),
+        Err(ModelGatewayError::StreamInterrupted(
+            ModelStreamInterruption::ProviderByteLimit
+        ))
+    ));
+    assert!(stream.next().await.is_none());
+    let mut turns = Vec::new();
+    ConversationJournal::open(storage, project, session, agent, |turn| {
+        turns.push(turn.clone())
+    })
+    .await
+    .unwrap();
+    assert_eq!(turns.len(), 1);
+    assert_eq!(turns[0].partial_text, "observed-prefix");
+    assert!(matches!(
+        &turns[0].outcome,
+        Some(ConversationTurnOutcome::Uncertain {
+            reason: ConversationUncertaintyReason::StreamInterrupted {
+                reason: ModelStreamInterruption::ProviderByteLimit
+            }
+        })
+    ));
+    server.await.unwrap();
+}
 
 #[tokio::test]
 async fn weaver_output_limit_fails_before_emitting_the_overflowing_chunk() {

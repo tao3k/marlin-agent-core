@@ -286,6 +286,21 @@ package MarlinTuiArchitecture {
     }
 
     package target {
+        part <'MAR-TUI-T22'> startupCoordinator {
+            doc /* Target: terminal owner presents an honest, cancellable
+                   initializing state immediately, admits Scheme-dependent
+                   actions only after typed VM readiness, and reports startup
+                   failure without losing terminal restoration. Background
+                   resolution requires an SDK lifecycle that does not race
+                   process environment or violate VM thread ownership. */
+        }
+        part <'MAR-TUI-T23'> compiledUiClosure {
+            doc /* Yuanxu selects the same Module graph for a linked compiled
+                   core; the SDK owns VM and native linkage. Optional dynamic
+                   Scheme extensions retain their identity and admission.
+                   A typed Rust IR backend may lower qualified pure hot paths;
+                   it does not replace general Scheme or prove MOP equivalence. */
+        }
         part <'MAR-TUI-T17'> schemeUiExtensionPlane {
             doc /* Proposed Gerbil/Yuanxu modules own UI component composition,
                    keymaps and state transitions. They consume typed input and
@@ -408,6 +423,10 @@ package MarlinTuiArchitecture {
         dependency uiArtifactPackagesModule from optionalProgramArtifact to schemeUiExtensionPlane;
         dependency uiHostUsesRuntime from ratatuiHost to runtime;
         dependency qualificationMeasuresUiHost from qualification to ratatuiHost;
+        dependency startupUsesVmAdmission from startupCoordinator to schemeVmModuleAdmission;
+        dependency compiledClosurePackagesUi from compiledUiClosure to schemeUiExtensionPlane;
+        dependency startupUsesCompiledClosure from startupCoordinator to compiledUiClosure;
+        dependency qualificationMeasuresStartup from qualification to startupCoordinator;
     }
 
     package requirements {
@@ -451,6 +470,19 @@ package MarlinTuiArchitecture {
                    bounds, storage failure and cancellation require explicit
                    tests, including a blocked consumer and restarted process. */
         }
+        requirement <'MAR-TUI-R09'> responsiveStartup {
+            doc /* Measure process start to first responsive terminal state and
+                   separately to admitted Scheme UI readiness. Target subsecond
+                   first interaction and readiness within a few seconds; retain
+                   the existing ten-second workbench and five-second exit gates.
+                   Loading, failure, cancellation and cleanup must be observable. */
+        }
+        requirement <'MAR-TUI-R10'> hybridExecutionEquivalence {
+            doc /* A compiled core preserves selected Module identity, typed
+                   contracts and dynamic extension dispatch. Any IR-lowered
+                   candidate must demonstrate semantic equivalence to Scheme,
+                   including rejection and boundary behavior, before adoption. */
+        }
     }
 
     allocation queueBounds allocate requirements::boundedBackpressure to target::terminalClient.eventAdmission;
@@ -463,6 +495,9 @@ package MarlinTuiArchitecture {
     allocation replayOwnership allocate requirements::safeRestoration to target::sessionStore;
     allocation turnClaimOwnership allocate requirements::safeRestoration to target::sessionStore.conversationJournal;
     allocation measurement allocate requirements::measuredPerformance to target::qualification;
+    allocation startupResponsiveness allocate requirements::responsiveStartup to target::startupCoordinator;
+    allocation startupQualification allocate requirements::responsiveStartup to target::qualification;
+    allocation compiledEquivalence allocate requirements::hybridExecutionEquivalence to target::compiledUiClosure;
     allocation editing allocate requirements::usableEditing to target::terminalClient.composer;
     allocation textLayout allocate requirements::usableEditing to target::terminalClient.textLayout;
     allocation ownership allocate requirements::terminalOwnership to target::terminalClient.terminalOwnership;
