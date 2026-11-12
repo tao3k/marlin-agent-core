@@ -1,3 +1,7 @@
+;;; SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+;;;
+;;; SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 ;;; UI composition over host facts; no terminal operations or runtime effects.
 (import (only-in :clan/poo/object .o .ref .slot? object? seal-object!)
         (only-in :yuanxu/poo-clos/types clos-instance?)

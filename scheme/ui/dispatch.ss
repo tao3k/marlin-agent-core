@@ -1,3 +1,7 @@
+;;; SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+;;;
+;;; SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 ;;; Multi-dispatch of a component and an event. Extensions compose their own
 ;;; methods into a fresh generic at module construction, not during painting.
 (import (only-in :clan/poo/object .def .o .ref)

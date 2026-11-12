@@ -1,3 +1,7 @@
+;;; SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+;;;
+;;; SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 ;;; UI operations exported by the selected Marlin module.
 (import (only-in :clan/poo/object .o)
         "./workbench.ss" "./dispatch.ss" "./projection.ss")

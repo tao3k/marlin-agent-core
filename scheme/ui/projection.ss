@@ -1,3 +1,7 @@
+;;; SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+;;;
+;;; SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 ;;; Structured native projection of the selected UI publication. This is a
 ;;; vector of Scheme values, not a text serialization or a terminal command.
 (import (only-in :clan/poo/object .get .o)

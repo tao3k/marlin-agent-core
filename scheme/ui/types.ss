@@ -1,3 +1,7 @@
+;;; SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+;;;
+;;; SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 ;;; Typed publication contract for the Scheme-owned terminal workbench.
 (import (only-in :clan/poo/object .cc)
         (only-in :clan/poo/mop Bool Fun Object Type. element?)
