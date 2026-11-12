@@ -2175,6 +2175,38 @@ be attributed to one ABI export alone. The latest post-collection live sets
 are 267.2--268.0 MB. This identifies GC as the main cost of these observed
 turns, without explaining every request tail or qualifying a latency fix.
 
+A fresh process of the existing =context_profile retention= diagnostic at
+=c9fdc010= separates publication from business execution. This run uses the
+unchanged native diagnostic binary with SHA-256
+=7b26e79bb29c1da1769c22379bbbeb049bd6c22515e7c8887b0fff704497d673=,
+one Scheme processor and the 2 GiB maximum heap. It creates zero business
+Actors, runs zero business messages and closes the empty Module normally.
+
+| Publication stage | Post-GC live bytes | Last GC CPU ms |
+|-------------------+-------------------+----------------|
+| Before selection | 7584496 | 1.623 |
+| First Lab Context | 264436704 | 59.963 |
+| Marlin Context | 264954792 | 56.792 |
+| Deck publication | 265196488 | 58.720 |
+| Empty Module | 265479224 | 58.530 |
+| Module closed | 265424120 | 58.402 |
+
+First Lab selection accounts for a 256,852,208-byte increase in the observed
+live set. The read-only compiler graph census then sees 1173 contexts,
+683 Module contexts, seven prelude contexts and 379321 bindings; direct
+registry entries cover 650 unique Module contexts and 221729 bindings.
+These counts remain unchanged through empty-Module closure. They establish a
+publication-state floor before business Actors exist, rather than an Actor
+population or mailbox-capacity explanation for that retained state. They do
+not attribute physical bytes to individual contexts or prove that the entire
+live set is compiler metadata. This forced-GC diagnostic does not measure
+normal request latency, and its collections must not enter the timed cohort.
+The earlier 217.8 MB publication result remains a distinct dependency/build cut;
+this comparison does not isolate a causal source revision. Native signed
+allocation accounting remains unqualified. Raw output, binary identity and
+zero-business guards are retained in
+=target/context-runtime-research/ci-owner/current-retention*=.
+
 The separate existing component diagnostic preserves 4096 rows per stage:
 
 | Stage | Wall ms | GC CPU ms | Collections |

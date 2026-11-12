@@ -127,7 +127,12 @@ package MarlinSingleVmRuntime {
                    joins owned work without discarding compiler authority.
                    Read-only retention diagnostics follow phase and import/export
                    edges to locate code, bindings and evaluation promises beyond
-                   the registry's direct entries. Edge visits are not unique
+                   the registry's direct entries. Snapshot before selection,
+                   after first Lab Context publication and after empty-Module
+                   closure with zero business Actors and messages, separating
+                   publication-state retention from Actor population. Forced
+                   diagnostic collections never enter request-latency cohorts.
+                   Edge visits are not unique
                    object counts or physical bytes. Removing compiler roots in
                    a disposable probe grants no production path. */
         }
