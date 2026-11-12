@@ -832,6 +832,39 @@ fn transcript_starts_at_the_top_without_a_duplicate_status_heading() {
 }
 
 #[test]
+fn runtime_receipt_uses_the_full_content_width() {
+    let mut app = App::new(ModelEndpoint::new("deepseek", "chat"));
+    app.set_runtime_edge(
+        RuntimeEdgePolicy::new()
+            .with_timeout_ms(1234)
+            .receipt()
+            .unwrap(),
+    );
+    app.runtime_receipt_open = true;
+    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(100, 12)).unwrap();
+    terminal
+        .draw(|frame| {
+            draw(
+                frame,
+                &app,
+                &mut Default::default(),
+                &mut Default::default(),
+            );
+        })
+        .unwrap();
+    let row = |y| {
+        (0..100)
+            .map(|x| terminal.backend().buffer()[(x, y)].symbol())
+            .collect::<String>()
+    };
+    assert!(row(0).contains("Runtime policy"));
+    assert!(row(1).contains("Stream-open timeout: 1234 ms"));
+    assert!(row(2).contains("Concurrency limit: Disabled"));
+    assert!(row(3).contains("Load shedding: Disabled"));
+    assert!(row(11).contains("Runtime: Esc/Ctrl-C return"));
+}
+
+#[test]
 fn minibuffer_expands_with_the_draft_and_leaves_a_transcript_row() {
     let mut app = App::new(ModelEndpoint::new("openai", "gpt-test"));
     app.transcript = Transcript::new(vec![("You".into(), "visible transcript".into())]);

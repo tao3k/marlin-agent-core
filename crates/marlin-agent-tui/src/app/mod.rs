@@ -50,7 +50,7 @@ use marlin_agent_storage::{
 use marlin_agent_stream::{
     ModelStreamEvent, ModelStreamingGateway, matches_observed_anthropic_thinking,
 };
-use marlin_agent_ui::{UiBrowseDirection, UiCommandName, UiOpenFacts};
+use marlin_agent_ui::{UiBrowseDirection, UiCommandName, UiContent, UiOpenFacts};
 use termion::event::Key;
 
 #[path = "runner.rs"]

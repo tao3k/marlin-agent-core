@@ -61,8 +61,7 @@
           (list->vector (map node-value (.get workbench regions)))
           (let (policy (.get workbench geometry-policy))
             (vector (.get policy min-transcript-rows) (.get policy max-chatbox-rows)
-                    (.get policy max-command-rows) (.get policy extension-column-min)
-                    (.get policy extension-panel-columns)))
+                    (.get policy max-command-rows)))
           (let (palette (.get workbench theme-palette))
             (list->vector
              (map (lambda (name) (list->vector (.ref palette name)))

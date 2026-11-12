@@ -10,7 +10,7 @@ use super::{
     ModelEndpoint, ModelGatewayMessage, OpenedView, PromptHistory, ReplayOutcome, ReplayTurn,
     RuntimeEdgePolicyReceipt, RuntimeStreamGateway, SessionBrowser, SessionId,
     SessionPageRequestError, SharedGateway, Transcript, TursoAgentStorage, UiCommandName,
-    WorkspaceStatus, matches_observed_anthropic_thinking, user_gateway_message,
+    UiContent, WorkspaceStatus, matches_observed_anthropic_thinking, user_gateway_message,
 };
 
 pub(crate) const REPLY_BATCH_LIMIT: usize = 16;
@@ -61,7 +61,9 @@ pub(crate) struct App {
     pub(super) persistent: bool,
     pub(super) needs_replay: bool,
     pub(super) unverified_thinking: bool,
-    pub(super) runtime_edge: Option<RuntimeEdgePolicyReceipt>,
+    pub(crate) runtime_edge: Option<RuntimeEdgePolicyReceipt>,
+    pub(crate) runtime_content: Vec<UiContent>,
+    pub(crate) runtime_receipt_open: bool,
     pub(super) session_browser: Option<SessionBrowser<TursoAgentStorage>>,
     pub(super) current_session: Option<SessionId>,
     pub(super) history_position: Option<HistoryPosition>,
@@ -100,6 +102,8 @@ impl App {
             needs_replay: false,
             unverified_thinking: false,
             runtime_edge: None,
+            runtime_content: Vec::new(),
+            runtime_receipt_open: false,
             session_browser: None,
             current_session: None,
             history_position: None,
@@ -147,6 +151,25 @@ impl App {
     }
 
     pub(crate) fn set_runtime_edge(&mut self, receipt: RuntimeEdgePolicyReceipt) {
+        self.runtime_content = vec![
+            UiContent::Field {
+                label: "Stream-open timeout".into(),
+                value: receipt.timeout_ms().map_or_else(|| "Disabled".into(), |ms| format!("{ms} ms")),
+            },
+            UiContent::Field {
+                label: "Concurrency limit".into(),
+                value: receipt.concurrency_limit().map_or_else(|| "Disabled".into(), |limit| limit.to_string()),
+            },
+            UiContent::Field {
+                label: "Load shedding".into(),
+                value: if receipt.load_shed() { "Enabled" } else { "Disabled" }.into(),
+            },
+            UiContent::Field {
+                label: "Attached layers".into(),
+                value: receipt.layers().iter().map(|layer| layer.as_str()).collect::<Vec<_>>().join(" · "),
+            },
+            UiContent::Text("Scope: stream opening. Stream duration, tools, approvals and remote cancellation are separate policies.".into()),
+        ];
         self.runtime_edge = Some(receipt);
     }
 

@@ -39,8 +39,7 @@ fn region<'a>(
 fn layout<'a>(runtime: &'a GerbilRuntime) -> RootedSchemeObject<'a> {
     vector(
         runtime,
-        &[2, 10, 4, 100, 36]
-            .map(|value| runtime.scalar_object(SchemeScalar::Fixnum(value)).unwrap()),
+        &[2, 10, 4].map(|value| runtime.scalar_object(SchemeScalar::Fixnum(value)).unwrap()),
     )
 }
 fn palette<'a>(runtime: &'a GerbilRuntime) -> RootedSchemeObject<'a> {
@@ -261,7 +260,6 @@ fn sdk_roots_project_to_typed_ui_workbench() {
     let workbench = decode_workbench(root).unwrap();
     assert_eq!(workbench.model_label, "model");
     assert_eq!(workbench.layout.max_chatbox_rows, 10);
-    assert_eq!(workbench.layout.extension_column_min, 100);
     assert_eq!(workbench.theme.accent.red, 198);
     assert_eq!(workbench.focus.as_str(), "composer");
     assert_eq!(workbench.commands()[0].name.as_str(), "/help");
@@ -421,8 +419,6 @@ fn sdk_roots_project_to_typed_ui_workbench() {
             runtime.scalar_object(SchemeScalar::Fixnum(2)).unwrap(),
             runtime.scalar_object(SchemeScalar::Fixnum(1000)).unwrap(),
             runtime.scalar_object(SchemeScalar::Fixnum(4)).unwrap(),
-            runtime.scalar_object(SchemeScalar::Fixnum(100)).unwrap(),
-            runtime.scalar_object(SchemeScalar::Fixnum(36)).unwrap(),
         ],
     );
     let invalid_policy_root = vector(

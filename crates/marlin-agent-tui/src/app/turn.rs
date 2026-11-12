@@ -45,6 +45,7 @@ impl App {
             return;
         }
         self.workspace.close_view();
+        self.runtime_receipt_open = false;
         let command = if let Some(draft) = self.command_draft.take() {
             let input = self.composer.take();
             self.composer = draft;
@@ -91,11 +92,11 @@ impl App {
                     self.transcript.push(("Context".into(), message));
                 }
                 Some(Command::Runtime) => {
-                    let text = self.runtime_edge.as_ref().map_or_else(|| "Runtime stream-open policy is unavailable.".into(), |receipt| {
-                        let timeout = receipt.timeout_ms().map_or_else(|| "disabled".into(), |ms| format!("{ms} ms"));
-                        format!("Stream-open timeout: {timeout}; layers: {}. This policy does not cover stream duration, tools, approvals, or remote cancellation.", receipt.layers().iter().map(|layer| layer.as_str()).collect::<Vec<_>>().join(", "))
-                    });
-                    self.transcript.push(("Runtime".into(), text));
+                    if self.runtime_edge.is_some() {
+                        self.runtime_receipt_open = true;
+                    } else {
+                        self.transcript.push(("Runtime".into(), "Runtime stream-open policy is unavailable.".into()));
+                    }
                 }
                 Some(Command::Clear) => self.transcript.clear(),
                 Some(Command::Session(id)) => self.request_session_switch(runtime, id),
@@ -406,6 +407,7 @@ impl App {
                 .push(("Workspace".into(), "Workspace read cancelled.".into()));
         } else {
             self.workspace.close_view();
+            self.runtime_receipt_open = false;
         }
     }
 
@@ -416,6 +418,7 @@ impl App {
             || self.pending.is_some()
             || self.workspace.is_pending()
             || self.workspace.view().is_some()
+            || self.runtime_receipt_open
             || self
                 .session_browser
                 .as_ref()

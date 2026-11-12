@@ -148,7 +148,9 @@ fn draw_modeline(
         return;
     };
     let base = Style::default().bg(rgb(ui.theme.bar)).fg(rgb(ui.theme.ink));
-    let runtime_activity = if app.workspace.view().is_some() {
+    let runtime_activity = if app.runtime_receipt_open {
+        "Runtime"
+    } else if app.workspace.view().is_some() {
         "Workspace"
     } else {
         app.activity_label()
@@ -343,7 +345,7 @@ pub(crate) fn draw(
             Constraint::Length(1),
         ])
         .split(area);
-    let focused_content = if app.workspace.view().is_none() {
+    let focused_content = if app.workspace.view().is_none() && !app.runtime_receipt_open {
         ui.regions.iter().find_map(|region| match region {
             UiRegion::Extension {
                 id,
@@ -356,24 +358,13 @@ pub(crate) fn draw(
     } else {
         None
     };
-    let panel_content = focused_content;
-    let transcript_area = if let Some((label, content)) = panel_content {
-        if parts[0].width >= ui.layout.extension_column_min && parts[0].height >= 6 {
-            let columns = Layout::default()
-                .direction(Direction::Horizontal)
-                .constraints([
-                    Constraint::Min(40),
-                    Constraint::Length(ui.layout.extension_panel_columns),
-                ])
-                .split(parts[0]);
-            draw_extension_content(frame, columns[1], label, content, &ui.theme);
-            Some(columns[0])
-        } else if focused_content.is_some() {
-            draw_extension_content(frame, parts[0], label, content, &ui.theme);
-            None
-        } else {
-            Some(parts[0])
-        }
+    let displayed_content = app
+        .runtime_receipt_open
+        .then_some(("Runtime policy", app.runtime_content.as_slice()))
+        .or(focused_content);
+    let transcript_area = if let Some((label, content)) = displayed_content {
+        draw_extension_content(frame, parts[0], label, content, &ui.theme);
+        None
     } else {
         Some(parts[0])
     };
@@ -536,6 +527,8 @@ pub(crate) fn draw(
         status
     } else if app.command_draft.is_some() {
         " Enter run command  Up/Down select  Tab complete  Esc cancel  Ctrl-O return"
+    } else if app.runtime_receipt_open {
+        " Runtime: Esc/Ctrl-C return  Enter submit draft"
     } else if app.workspace.view().is_some() {
         " Workspace: PageUp/PageDown scroll  Esc/Ctrl-C return  Enter submit draft"
     } else if ui.focus.as_str() == "commands" {

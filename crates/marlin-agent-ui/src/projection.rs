@@ -56,7 +56,7 @@ pub fn decode_workbench(value: RootedSchemeObject<'_>) -> Result<UiWorkbench, Ui
 }
 
 fn decode_layout(value: RootedSchemeObject<'_>) -> Result<UiLayoutPolicy, UiProjectionError> {
-    let layout_values = vector(value, 5, 5)?;
+    let layout_values = vector(value, 3, 3)?;
     let field = |index, lower, upper| -> Result<u16, UiProjectionError> {
         match layout_values.element(index)?.as_ref().scalar()? {
             SchemeScalar::Fixnum(value) if (lower..=upper).contains(&value) => Ok(value as u16),
@@ -67,12 +67,7 @@ fn decode_layout(value: RootedSchemeObject<'_>) -> Result<UiLayoutPolicy, UiProj
         min_transcript_rows: field(0, 1, 4)?,
         max_chatbox_rows: field(1, 3, 20)?,
         max_command_rows: field(2, 1, 8)?,
-        extension_column_min: field(3, 60, 240)?,
-        extension_panel_columns: field(4, 20, 80)?,
     };
-    if layout.extension_panel_columns >= layout.extension_column_min {
-        return Err(UiProjectionError::Invalid("invalid UI layout columns"));
-    }
     Ok(layout)
 }
 

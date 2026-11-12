@@ -541,13 +541,11 @@ fn runtime_command_projects_typed_open_policy_receipt() {
     );
     app.composer.insert_text("/runtime");
     app.submit(&gateway, &runtime, &tx);
-    let (role, detail) = app.transcript.last().unwrap();
-    assert_eq!(role, "Runtime");
-    assert!(
-        detail.contains("1234")
-            && detail.contains("timeout")
-            && detail.contains("does not cover stream duration")
-    );
+    assert!(app.runtime_receipt_open);
+    assert_eq!(app.runtime_edge.as_ref().unwrap().timeout_ms(), Some(1234));
+    assert!(app.transcript.is_empty());
+    app.cancel();
+    assert!(!app.runtime_receipt_open);
     assert!(requests.lock().unwrap().is_empty());
 }
 

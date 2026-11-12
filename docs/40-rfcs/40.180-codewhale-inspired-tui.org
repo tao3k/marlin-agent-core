@@ -1628,13 +1628,26 @@ not call Scheme on each rendered frame and adds no context-compression state.
 
 The selected =ui-layout= Module now publishes a bounded geometry policy through
 the same Yuanxu publication as =ui-components= and =ui-modeline=. It defines
-minimum transcript rows, maximum expanded ChatBox and command rows, and the
-extension panel's column thresholds. The native UI projection admits those
-five integers once per candidate workbench; focus successors must retain the
+minimum transcript rows, maximum expanded ChatBox rows and maximum command rows.
+The native UI projection admits those three integers once per candidate workbench; focus successors must retain the
 policy. Ratatui clips actual cell rectangles, and pointer hit testing reads
 the admitted policy. This moves presentation choices out of =render.rs=
 without invoking Scheme on each frame. The Rust adapter still measures text,
 handles terminal input, owns the viewport cache and paints cells.
+
+The focused extension now occupies the full content area instead of opening a
+right-side pane. =/runtime= uses that same area for a view of the actual
+Rust-owned =RuntimeEdgePolicyReceipt=. The receipt is projected to bounded
+display fields when the gateway is installed, so repainting never formats it
+again. Esc or Ctrl-C closes the view; a submitted draft also closes it.
+
+The next Modeline protocol step is a Scheme-owned profile catalog with Doom and
+oh-my-pi-inspired segment arrangements and palettes. =/themes <name>= must
+select a profile through a typed UI transition, with completion sourced from
+the selected Scheme catalog. The native admission gate must permit only the
+declared profile transition while preserving host status facts, focus and
+runtime authority. The current fixed =doom-one= publication does not yet
+provide that live switch.
 
 The selected =ui-themes= Module now owns the default =doom-one= palette.
 It derives the canvas, foreground and semantic accents from
