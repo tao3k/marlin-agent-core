@@ -7,7 +7,7 @@
 #+FILETAGS: :marlin:scheme:
 
 =gerbil.pkg= declares AI Agentic Lab as the sole direct package dependency.
-Lab supplies Yuanxu, the POO contracts, and the Context and Session
+Lab's =core= submodule fixes Yuanxu's exact revision. Lab supplies the POO contracts, and the Context and Session
 implementations. =init.ss= selects =context +causal=, =hooks=, =policy=,
 and =deck-runtime=. A package-backed Lab window explicitly selects the upstream
 Context Module; Marlin Context requires its qualified identity.
@@ -61,11 +61,13 @@ The pinned Lab revision installs source declarations without eager library
 compilation. The package window in Marlin INIT gives Yuanxu the upstream
 source ownership needed to derive the combined library closure. The Context
 Module publishes its bounded bridge projection through its typed contract.
-=build.ss= hands the =std-make-spec= exported by =init.ss= to
-=defbuild-script= with =init= as its explicit root. The selected =c-abi=
+=build.ss= hands the =std-make-spec= exported by =init.ss= to the native
+=defbuild-script= through Yuanxu's admitted build consumer, with =init= as its
+explicit root. The compiler consumes Yuanxu's checked cross-package source
+view. The selected =c-abi=
 Module contributes its own adapter inputs through its Build role.
-The project direnv configuration defaults =GERBIL_BUILD_CORES= to the number
-of online processors when it is unset; an existing value is preserved there.
+The project direnv configuration and Justfile default =GERBIL_BUILD_CORES= to
+the number of online processors when it is unset; an existing value is preserved.
 The pinned SDK's embedded package-build path also preserves an explicitly set
 value, and defaults to the CPU count only when the variable is absent.
 The full Scheme test fixtures additionally import Lab constructors outside
