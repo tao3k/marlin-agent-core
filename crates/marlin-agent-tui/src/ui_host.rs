@@ -10,8 +10,10 @@ use gerbil_scheme::GerbilRuntime;
 use marlin_agent_ui::UiLinkedExports;
 use marlin_agent_ui::{
     UiBrowseDirection, UiCommandName, UiEvent, UiIntent, UiModule, UiNativeSession, UiOpenFacts,
-    UiProjectionError, UiRegion, UiScrollDirection, UiWorkbench,
+    UiProjectionError, UiWorkbench,
 };
+#[cfg(test)]
+use marlin_agent_ui::{UiRegion, UiScrollDirection};
 use termion::event::Key;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -179,7 +181,7 @@ impl<'runtime> UiHost<'runtime> {
                 }
                 Ok(UiKeyAction::Submit)
             }
-            Key::Char('\n') if focused_extension(&self.view) => {
+            Key::Char('\n') if self.view.focused_extension() => {
                 self.dispatch(UiEvent::Submit)?;
                 Ok(UiKeyAction::Handled)
             }
@@ -251,12 +253,6 @@ fn complete_command(view: &UiWorkbench, draft: &str) -> Option<String> {
     (completed != draft).then_some(completed)
 }
 
-fn focused_extension(view: &UiWorkbench) -> bool {
-    view.regions.iter().any(|region| {
-        matches!(region, UiRegion::Extension { id, focusable: true, .. } if id == &view.focus)
-    })
-}
-
 fn admit_terminal_view(view: &UiWorkbench) -> Result<(), UiProjectionError> {
     for command in view.commands() {
         let Some(kind) = CommandKind::from_name(command.name.as_str()) else {
@@ -271,7 +267,7 @@ fn admit_terminal_view(view: &UiWorkbench) -> Result<(), UiProjectionError> {
         }
     }
     let focus_supported = matches!(view.focus.as_str(), "transcript" | "composer" | "commands")
-        || focused_extension(view);
+        || view.focused_extension();
     if !focus_supported {
         return Err(UiProjectionError::Invalid(
             "terminal focus is not supported",
@@ -287,45 +283,7 @@ fn admit_transition(
     intent: &UiIntent,
 ) -> Result<(), UiProjectionError> {
     admit_terminal_view(next)?;
-    let supported = matches!(
-        (event, intent),
-        (
-            UiEvent::NextFocus | UiEvent::PreviousFocus | UiEvent::Dismiss,
-            UiIntent::Focus(_)
-        ) | (UiEvent::ScrollUp, UiIntent::Scroll(UiScrollDirection::Up))
-            | (
-                UiEvent::ScrollDown,
-                UiIntent::Scroll(UiScrollDirection::Down)
-            )
-    ) || (event == UiEvent::Submit
-        && match intent {
-            UiIntent::SubmitDraft => previous.focus.as_str() == "composer",
-            UiIntent::Focus(_) => focused_extension(previous),
-            UiIntent::Scroll(_) => false,
-        });
-    if !supported {
-        return Err(UiProjectionError::Invalid(
-            "UI intent does not match the event",
-        ));
-    }
-    if previous.model_label != next.model_label
-        || previous.session_label != next.session_label
-        || previous.regions != next.regions
-    {
-        return Err(UiProjectionError::Invalid(
-            "UI event changed the admitted workbench",
-        ));
-    }
-    let expected = match intent {
-        UiIntent::Focus(id) => id,
-        UiIntent::SubmitDraft | UiIntent::Scroll(_) => &previous.focus,
-    };
-    if &next.focus != expected {
-        return Err(UiProjectionError::Invalid(
-            "UI intent and successor focus disagree",
-        ));
-    }
-    Ok(())
+    previous.admit_successor(next, event, intent)
 }
 
 #[cfg(all(test, not(feature = "linked-ui")))]
@@ -393,6 +351,11 @@ mod tests {
             host.route_key(Key::Char('\t'), false, false).unwrap(),
             UiKeyAction::Handled
         );
+        assert_eq!(host.view().focus.as_str(), "guide");
+        assert_eq!(
+            host.route_key(Key::Char('\t'), false, false).unwrap(),
+            UiKeyAction::Handled
+        );
         assert_eq!(host.view().focus.as_str(), "test/extension");
         let app = super::super::app::App::new(ModelEndpoint::new("provider", "model"));
         let mut terminal =
@@ -441,6 +404,7 @@ mod tests {
             },
         )
         .unwrap();
+        forged.route_key(Key::Char('\t'), false, false).unwrap();
         forged.route_key(Key::Char('\t'), false, false).unwrap();
         forged.route_key(Key::Char('\t'), false, false).unwrap();
         let previous = forged.view().clone();

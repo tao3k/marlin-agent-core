@@ -1,0 +1,241 @@
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
+//! Host-neutral UI state and transition contract.
+
+use gerbil_scheme::{NativeError, RootedCallError, RootedSchemeObject};
+
+// Three core regions, the selected Scheme guide, sixteen contributed regions,
+// and the status region.
+pub(crate) const MAX_REGIONS: usize = 21;
+pub(crate) const MAX_STATUS: usize = 8;
+pub(crate) const MAX_EXTENSIONS: usize = 16;
+pub(crate) const MAX_CONTENT_ITEMS: usize = 16;
+pub(crate) const MAX_METHOD_BUNDLES: usize = 16;
+pub(crate) const MAX_COMMANDS: usize = 32;
+pub(crate) const MAX_TEXT_CHARS: usize = 256;
+pub(crate) const MAX_ID_BYTES: usize = 1024;
+
+/// A UI component's domain identity, not a Scheme root or object address.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct UiComponentId(String);
+
+/// A displayable command name; this value does not authorize a handler.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct UiCommandName(String);
+
+impl UiCommandName {
+    /// Check a partial command without scanning past the admitted name limit.
+    pub fn is_valid_prefix(value: &str) -> bool {
+        value.len() <= 32
+            && value.starts_with('/')
+            && value.as_bytes()[1..]
+                .iter()
+                .all(|byte| byte.is_ascii_lowercase() || *byte == b'-')
+    }
+
+    pub fn new(value: &str) -> Result<Self, UiProjectionError> {
+        if value.len() < 2 || !Self::is_valid_prefix(value) {
+            return Err(UiProjectionError::Invalid("invalid command name"));
+        }
+        Ok(Self(value.to_owned()))
+    }
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct UiCommand {
+    pub name: UiCommandName,
+    pub description: String,
+    pub accepts_arguments: bool,
+}
+
+impl UiComponentId {
+    /// Construct a bounded, nonempty domain identity.
+    pub fn new(value: &str) -> Result<Self, UiProjectionError> {
+        if value.is_empty() || value.len() > MAX_ID_BYTES {
+            return Err(UiProjectionError::Invalid("invalid identity length"));
+        }
+        Ok(Self(value.to_owned()))
+    }
+    /// The identity's spelling. Identity admission rejects duplicate spellings.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+/// One declarative workbench region, without authority to execute effects.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum UiRegion {
+    Transcript,
+    Composer,
+    Commands(Vec<UiCommand>),
+    Status(Vec<UiStatusItem>),
+    Extension {
+        id: UiComponentId,
+        label: String,
+        focusable: bool,
+        content: Vec<UiContent>,
+    },
+}
+
+/// Bounded, display-only content from a Scheme extension component.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum UiContent {
+    Text(String),
+    Field { label: String, value: String },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct UiStatusItem {
+    pub id: UiComponentId,
+    pub label: String,
+}
+
+/// Host display facts and already-rooted Scheme extension contributions.
+/// The selected publication and extension provenance remain the VM/module
+/// owner's responsibility.
+pub struct UiOpenFacts<'a, 'runtime> {
+    pub model_label: &'a str,
+    pub session_label: &'a str,
+    pub status: &'a [UiStatusItem],
+    pub extensions: &'a [RootedSchemeObject<'runtime>],
+    pub method_bundles: &'a [RootedSchemeObject<'runtime>],
+}
+
+/// An owned candidate. Publication and effect admission remain host duties.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct UiWorkbench {
+    pub model_label: String,
+    pub session_label: String,
+    pub regions: Vec<UiRegion>,
+    pub focus: UiComponentId,
+}
+
+impl UiWorkbench {
+    pub fn commands(&self) -> &[UiCommand] {
+        self.regions
+            .iter()
+            .find_map(|region| match region {
+                UiRegion::Commands(commands) => Some(commands.as_slice()),
+                _ => None,
+            })
+            .unwrap_or(&[])
+    }
+
+    /// Whether the selected region is an extension that accepts focus.
+    pub fn focused_extension(&self) -> bool {
+        self.regions.iter().any(|region| {
+            matches!(region, UiRegion::Extension { id, focusable: true, .. } if id == &self.focus)
+        })
+    }
+
+    /// Admit a Scheme successor before any host applies its proposed effect.
+    /// Renderer-specific command handlers and geometry remain the host's gate.
+    pub fn admit_successor(
+        &self,
+        next: &Self,
+        event: UiEvent,
+        intent: &UiIntent,
+    ) -> Result<(), UiProjectionError> {
+        let supported = matches!(
+            (event, intent),
+            (
+                UiEvent::NextFocus | UiEvent::PreviousFocus | UiEvent::Dismiss,
+                UiIntent::Focus(_)
+            ) | (UiEvent::ScrollUp, UiIntent::Scroll(UiScrollDirection::Up))
+                | (
+                    UiEvent::ScrollDown,
+                    UiIntent::Scroll(UiScrollDirection::Down)
+                )
+        ) || (event == UiEvent::Submit
+            && match intent {
+                UiIntent::SubmitDraft => self.focus.as_str() == "composer",
+                UiIntent::Focus(_) => self.focused_extension(),
+                UiIntent::Scroll(_) => false,
+            });
+        if !supported {
+            return Err(UiProjectionError::Invalid(
+                "UI intent does not match the event",
+            ));
+        }
+        if self.model_label != next.model_label
+            || self.session_label != next.session_label
+            || self.regions != next.regions
+        {
+            return Err(UiProjectionError::Invalid(
+                "UI event changed the admitted workbench",
+            ));
+        }
+        let expected = match intent {
+            UiIntent::Focus(id) => id,
+            UiIntent::SubmitDraft | UiIntent::Scroll(_) => &self.focus,
+        };
+        if &next.focus != expected {
+            return Err(UiProjectionError::Invalid(
+                "UI intent and successor focus disagree",
+            ));
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum UiEvent {
+    NextFocus,
+    PreviousFocus,
+    Submit,
+    Dismiss,
+    ScrollUp,
+    ScrollDown,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum UiBrowseDirection {
+    Next,
+    Previous,
+}
+
+/// A presentation proposal; only the runtime can authorize its effects.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum UiIntent {
+    SubmitDraft,
+    Focus(UiComponentId),
+    Scroll(UiScrollDirection),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum UiScrollDirection {
+    Up,
+    Down,
+}
+
+#[derive(Debug)]
+pub enum UiProjectionError {
+    Native(NativeError),
+    Call(RootedCallError),
+    Invalid(&'static str),
+}
+impl std::fmt::Display for UiProjectionError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Native(error) => write!(formatter, "{error}"),
+            Self::Call(error) => write!(formatter, "{error}"),
+            Self::Invalid(reason) => write!(formatter, "invalid UI projection: {reason}"),
+        }
+    }
+}
+impl std::error::Error for UiProjectionError {}
+impl From<RootedCallError> for UiProjectionError {
+    fn from(error: RootedCallError) -> Self {
+        Self::Call(error)
+    }
+}
+impl From<NativeError> for UiProjectionError {
+    fn from(error: NativeError) -> Self {
+        Self::Native(error)
+    }
+}

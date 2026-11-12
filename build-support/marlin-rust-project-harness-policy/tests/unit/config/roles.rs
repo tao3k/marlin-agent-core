@@ -82,4 +82,12 @@ fn crate_verification_role_classification_tracks_marlin_boundaries() {
         marlin_crate_verification_role_for_project(&root.join("crates/marlin-agent-environment")),
         MarlinCrateVerificationRole::GitOrEnvironmentBoundary
     );
+    assert_eq!(
+        marlin_crate_verification_role_for_project(&root.join("crates/marlin-agent-tui")),
+        MarlinCrateVerificationRole::InteractiveTerminal
+    );
+    assert_eq!(
+        marlin_crate_verification_role_for_project(&root.join("crates/marlin-agent-ui")),
+        MarlinCrateVerificationRole::UiProtocol
+    );
 }

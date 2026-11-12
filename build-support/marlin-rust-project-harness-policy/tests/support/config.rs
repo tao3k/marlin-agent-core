@@ -26,6 +26,8 @@ pub enum MarlinCrateVerificationRole {
     AotLinkSupport,
     BuildHarnessPolicy,
     GitOrEnvironmentBoundary,
+    InteractiveTerminal,
+    UiProtocol,
     GeneralLibrary,
 }
 
@@ -59,6 +61,8 @@ pub fn marlin_crate_verification_role_for_project(
         "marlin-agent-environment" | "marlin-agent-hooks" | "marlin-git-utils" => {
             MarlinCrateVerificationRole::GitOrEnvironmentBoundary
         }
+        "marlin-agent-tui" => MarlinCrateVerificationRole::InteractiveTerminal,
+        "marlin-agent-ui" => MarlinCrateVerificationRole::UiProtocol,
         _ => MarlinCrateVerificationRole::GeneralLibrary,
     }
 }
@@ -134,13 +138,19 @@ impl MarlinCrateVerificationRole {
             Self::AotLinkSupport => "aot-link-support",
             Self::BuildHarnessPolicy => "build-harness-policy",
             Self::GitOrEnvironmentBoundary => "git-or-environment-boundary",
+            Self::InteractiveTerminal => "interactive-terminal",
+            Self::UiProtocol => "ui-protocol",
             Self::GeneralLibrary => "general-library",
         }
     }
 
     fn root_verification_profile_hint(self, package_name: &str) -> RustVerificationProfileHint {
         verification_profile_hint(
-            "src/lib.rs",
+            if self == Self::InteractiveTerminal {
+                "src/main.rs"
+            } else {
+                "src/lib.rs"
+            },
             self.root_responsibilities(),
             format!(
                 "{package_name} owns {role} verification evidence; require performance and stability receipts",
@@ -215,6 +225,16 @@ impl MarlinCrateVerificationRole {
                 RustOwnerResponsibility::ExternalDependency,
                 RustOwnerResponsibility::SecurityBoundary,
                 RustOwnerResponsibility::AvailabilityCritical,
+            ],
+            Self::InteractiveTerminal => &[
+                RustOwnerResponsibility::LatencySensitive,
+                RustOwnerResponsibility::AvailabilityCritical,
+                RustOwnerResponsibility::ExternalDependency,
+            ],
+            Self::UiProtocol => &[
+                RustOwnerResponsibility::PublicApi,
+                RustOwnerResponsibility::PureDomainLogic,
+                RustOwnerResponsibility::SecurityBoundary,
             ],
             Self::GeneralLibrary => &[
                 RustOwnerResponsibility::PublicApi,
@@ -320,7 +340,27 @@ impl MarlinCrateVerificationRole {
                     &[RustOwnerResponsibility::SecurityBoundary],
                 ),
             ],
-            Self::AotLinkSupport | Self::BuildHarnessPolicy | Self::GeneralLibrary => Vec::new(),
+            Self::InteractiveTerminal => vec![
+                MarlinVerificationOwnerProfile::new(
+                    "src/app.rs",
+                    &[
+                        RustOwnerResponsibility::LatencySensitive,
+                        RustOwnerResponsibility::AvailabilityCritical,
+                    ],
+                ),
+                MarlinVerificationOwnerProfile::new(
+                    "src/ui_host.rs",
+                    &[RustOwnerResponsibility::SecurityBoundary],
+                ),
+                MarlinVerificationOwnerProfile::new(
+                    "src/render.rs",
+                    &[RustOwnerResponsibility::LatencySensitive],
+                ),
+            ],
+            Self::AotLinkSupport
+            | Self::BuildHarnessPolicy
+            | Self::UiProtocol
+            | Self::GeneralLibrary => Vec::new(),
         }
     }
 
@@ -335,6 +375,8 @@ impl MarlinCrateVerificationRole {
             Self::AotLinkSupport => "native build support",
             Self::BuildHarnessPolicy => "Rust harness policy",
             Self::GitOrEnvironmentBoundary => "Git/environment boundary",
+            Self::InteractiveTerminal => "interactive terminal",
+            Self::UiProtocol => "shared UI protocol",
             Self::GeneralLibrary => "general library",
         }
     }

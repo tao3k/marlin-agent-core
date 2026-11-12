@@ -19,4 +19,5 @@ linked-ui = []
 gerbil-scheme.workspace = true
 
 [dev-dependencies]
+# The shared ASP Rust policy checks this renderer-neutral UI protocol package.
 marlin-rust-project-harness-policy = { path = "../../build-support/marlin-rust-project-harness-policy" }

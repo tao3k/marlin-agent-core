@@ -7,12 +7,16 @@ package MarlinDeclarativeUi {
     part <'MAR-UI-T01'> engine {
         doc /* Marlin's own declarative UI. Scheme authors components, state
                transitions and multi-methods using the existing POO/CLOS and
-               Yuanxu Module system. Rust owns the terminal and typed runtime
-               authority. Reference products inform requirements, not identity,
+               Yuanxu Module system. Marlin Rust owns the shared typed UI
+               protocol; the terminal adapter owns terminal authority.
+               Reference products inform requirements, not identity,
                component structure, authority or an obligation to copy visuals. */
         part <'MAR-UI-T02'> modulePublication {
-            doc /* A selected Yuanxu Module publishes a UI scope and explicitly
-                   ordered extension contributions. The existing VM owner
+            doc /* Selected Yuanxu ui-components and ui Modules publish the
+                   component vocabulary, command catalog, UI scope and ordered
+                   extension contributions. UI requires the component scope and
+                   composes its constructors through that selected dependency.
+                   The existing VM owner
                    resolves and retains that scope; a name or a caller-supplied
                    object alone does not establish its provenance. No separate
                    Marlin loader or duplicated module graph is introduced. */
@@ -25,6 +29,9 @@ package MarlinDeclarativeUi {
                    without embedding Rust callbacks in Scheme components.
                    Forward and reverse focus traverse the same admitted order;
                    both wrap and return a focus intent without executing effects.
+                   The selected Scheme guide is visible on wide terminals and
+                   focusable on narrow ones. Its content describes semantic
+                   actions; terminal shortcuts belong to the terminal adapter.
                    Command browsing dispatches a bounded query to the declared
                    command component; its selection is a presentation proposal
                    checked against the host's admitted command menu. */
@@ -37,6 +44,16 @@ package MarlinDeclarativeUi {
                    runtime objects stay in their respective adapters. Gambit
                    can target JavaScript, but this model does not claim that
                    Marlin's current Gerbil modules or C ABI compile to JS. */
+        }
+        part <'MAR-UI-T11'> sheprdAdapterBoundary {
+            doc /* A future Sheprd client may depend on Marlin core's selected
+                   Scheme publication and typed workbench protocol. The
+                   common event/intent/successor agreement gate stays in the
+                   shared Rust UI library. Sheprd owns GUI windows, input
+                   mapping, geometry and painting outside Marlin core. Its
+                   Gerbil package should depend on Marlin core only; Marlin
+                   core must not depend on Sheprd. This is a boundary, not an
+                   implemented GUI adapter or a JavaScript build claim. */
         }
         part <'MAR-UI-T04'> nativeBoundary {
             doc /* The SDK-owned VM boundary transfers rooted Scheme values to
@@ -99,6 +116,7 @@ package MarlinDeclarativeUi {
     dependency compositionCrossesBoundary from engine::functionalComposition to engine::nativeBoundary;
     dependency boundaryFeedsAdmission from engine::nativeBoundary to engine::admittedSnapshot;
     dependency snapshotFeedsView from engine::admittedSnapshot to engine::incrementalView;
+    dependency snapshotFeedsSheprd from engine::admittedSnapshot to engine::sheprdAdapterBoundary;
     dependency viewFeedsTerminal from engine::incrementalView to engine::terminalHost;
     dependency snapshotRoutesIntent from engine::admittedSnapshot to engine::intentRouter;
     dependency intentUsesRuntime from engine::intentRouter to MarlinTuiArchitecture::target::runtime;

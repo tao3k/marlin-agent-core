@@ -2,8 +2,10 @@
 ;;;
 ;;; SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
-;;; Scheme-owned terminal component composition and focus policy.
+;;; Scheme-owned component composition and focus policy for native hosts.
 (.def Ui
   identity: 'ui
-  core: (.o requires: (.o) scope-contract: UiScopeContract exports: UiScope)
+  core: (.o requires: (.o UiComponents: (.o module-id: 'ui-components))
+            scope-contract: UiScopeContract
+            exports: (make-ui-scope UiComponents))
   features: (.o))

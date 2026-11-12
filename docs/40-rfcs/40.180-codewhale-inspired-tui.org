@@ -1373,6 +1373,82 @@ and runtime effect authority. A future GPUI renderer is only an adapter
 direction: host-neutral component semantics could be reused, but this work
 does not compile the current Gerbil UI modules to JavaScript or implement GPUI.
 
+** Selected UI components and ordinary Guide
+
+The UI component vocabulary, bounded constructors and command catalog now live
+in one selected =ui-components= Yuanxu Module. The =ui= Module declares that
+dependency and builds its workbench from the selected scope; it retains the
+generic/method event dispatch, composition and typed native projection. No
+second hand-maintained build inventory was added. The command catalog is
+composed inside =ui-components= with POO =.mix= and inherited
+=(entries => append ...)= slots, then read as one bounded value with =.get=.
+Only names matching an existing Rust terminal command are admitted; catalog
+composition grants no execution authority. The Scheme workbench test verified
+the catalog's exact order and the selected module identities.
+
+The selected module also supplies a Guide component through the same text and
+field projection used by extensions. The terminal host shows it beside the
+transcript when wide enough, and preserves the full transcript by default on
+narrow terminals while allowing Guide focus through Tab. This is the first
+default user-visible Scheme content; it does not complete the general
+component lifecycle, external module admission or all reference TUI features.
+The Guide's Scheme content describes conversation actions rather than terminal
+keys. The terminal host maps keys and provides its shortcut hints. Shared
+=marlin-agent-ui= admission now checks event, intent and successor snapshot
+agreement before a renderer may execute an effect; the TUI separately checks
+terminal command handlers and focus. This keeps the Scheme publication usable
+as a future Sheprd UI input without adding GPUI, Sheprd or a desktop renderer
+to Marlin core. A Sheprd adapter should depend on Marlin core and map the typed
+snapshot to its own GUI; its future =gerbil.pkg= need only depend on Marlin core.
+The Rust UI library root now only declares and exports =model=, =runtime= and
+=projection= modules; the Scheme side keeps its coarse selected =ui-components=
+and =ui= Modules. The TUI and shared UI crates already declare the Marlin
+project Harness policy as a Cargo development dependency. Its package role
+configuration now treats the binary entry, event host and renderer as an
+interactive terminal, while =marlin-agent-ui= owns the shared protocol and
+effect boundary. The package-level Policy configuration tests passed locally.
+The linked debug PTY gate with the actual =example.toml= configuration found
+the Guide and usable workbench in 379.4 ms in one run. The source-free linked
+PTY gate and the menu/paste/stream/terminal-restoration gate passed. That
+interaction gate observed 2.294 s to first usable frame in one run, then
+93.9 ms on a traced run of the same binary. The application trace in the
+latter reported Scheme VM initialization at 42.9 ms, UI publication at
+82.4 ms and first frame at 85.7 ms.
+
+The PTY now times =spawn= return and the first process output separately from
+the application's configuration, VM, UI publication and first-frame stages.
+On this Darwin host, a fresh copy of the 121 MiB debug binary emitted its first
+output after 2.210 s and showed the workbench after 2.373 s; the same file's
+second execution reached those points at 8.0 ms and 91.5 ms. A fresh copy of
+the 98 MiB release binary took 2.170 s and 2.293 s, followed by 9.7 ms and
+98.3 ms on its second execution. The application measured 166 ms and 124 ms
+to its first frame on the two initial executions, respectively. Thus the
+dominant variable in these pairs precedes Rust application entry, including
+the Scheme VM. A freshly copied 17 KiB native C control also took 0.63 s on
+its first execution and near zero on its second; this host has a general
+first-execution cost. Explicit =codesign --verify= did not remove the TUI's
+delay; reading its file reduced but did not eliminate it. The compiled Scheme
+programme includes 849 archive objects, with 55 MiB of release =__text= and
+37 MiB of =__data=, so executable footprint is a plausible contributor, not
+an established cause. These are paired local probes, not a cold-start
+percentile or a macOS loader attribution. Qualify future changes with both
+fresh-file and repeated-file PTY timing; never infer an application regression
+from process wall time alone.
+
+The existing =release-size= Cargo profile recompiles the linked Scheme C
+objects at =-Oz= and produced an 89 MiB binary, versus 98 MiB for the regular
+Release profile. Its fresh-copy PTY run observed first output at 2.111 s and
+the workbench at 2.276 s; the same copy's second run observed 11.0 ms and
+101.6 ms. The 9 MiB reduction did not materially change the first-execution
+delay in this local comparison. It remains an optional size/distribution
+profile; these measurements do not justify changing the default optimization
+profile or moving Scheme initialization off the admitted UI path.
+After rebuilding the exact default =target/debug/marlin-tui= against the new
+Guide, the =example.toml= PTY test saw first output at 2.978 s and the usable
+workbench at 3.107 s, while the app's own first frame was 132 ms. Repeating
+the same test and binary immediately gave 8.4 ms to first output and 105.8 ms
+to the workbench. The test used fixture credentials and made no model request.
+
 ** Conversation journal in progress
 
 The session layer now has a typed conversation journal over =AgentStorage=.

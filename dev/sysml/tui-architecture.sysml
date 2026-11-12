@@ -11,7 +11,12 @@ package MarlinTuiArchitecture {
 
     package actual {
         part <'MAR-TUI-A19'> selectedNativeAdapters {
-            doc /* The selected c-abi Module owns UI and Deck adapter build
+            doc /* The selected ui-components Module owns component prototypes,
+                   bounded content constructors and the command catalog. The ui
+                   Module requires that scope and owns workbench composition,
+                   generic event dispatch and typed projection. Its Guide is
+                   visible in ordinary wide-terminal startup and focusable in
+                   narrow terminals. The selected c-abi Module owns UI and Deck adapter build
                    inputs through its Build role. Its published identity is
                    metadata, not a Rust ABI readiness receipt. Its linked scope
                    retains the selected UI, Context and Deck scopes. Scheme UI
@@ -20,6 +25,10 @@ package MarlinTuiArchitecture {
                    through a Rust-owned terminal host. Rust uses the SDK's
                    LinkedObjectExport and rooted-value conversion for a
                    Scheme-owned session, workbench and intent projections. Rust
+                   admits event/intent/successor agreement in the shared UI
+                   library; terminal command handlers and focus are admitted
+                   by the terminal host. The Guide contains host-neutral
+                   action descriptions, while key hints belong to the TUI.
                    constructs rooted open requests from typed facts and SDK
                    objects after checking outer contribution limits.
                    Ordered CLOS method bundles compose into each fresh session
@@ -300,7 +309,13 @@ package MarlinTuiArchitecture {
                    Release opens under the same denied Gerbil paths. An
                    explicit Release PTY gate passes, but observations range
                    from 3.90 seconds after relinking to 118-129 milliseconds
-                   on warm runs. Cold distribution qualification remains.
+                   on warm runs. Fresh-file PTY probes on Darwin separated
+                   a 2.17-2.21 second delay before first process output from
+                   the 0.12-0.17 second in-app first frame. Repeated execution
+                   of each same file reached first output in 8-10 milliseconds.
+                   The large selected archive is a footprint candidate, while
+                   the operating-system cause and cold distribution percentile
+                   remain unqualified.
                    The selected compiled closure is now the default debug and
                    release TUI path; dynamic loading requires an explicit
                    no-default-features build. Optional external Scheme module
@@ -484,7 +499,11 @@ package MarlinTuiArchitecture {
         }
         requirement <'MAR-TUI-R09'> responsiveStartup {
             doc /* Measure process start to first responsive terminal state and
-                   separately to admitted Scheme UI readiness. Target subsecond
+                   separately to admitted Scheme UI readiness. Partition
+                   spawn return, first process output, VM admission, UI
+                   publication and first frame. Compare fresh-file and repeated
+                   execution of one artifact with a small native control so
+                   host first-execution cost is not charged to Scheme. Target subsecond
                    first interaction and readiness within a few seconds; retain
                    the existing ten-second workbench and five-second exit gates.
                    Loading, failure, cancellation and cleanup must be observable. */

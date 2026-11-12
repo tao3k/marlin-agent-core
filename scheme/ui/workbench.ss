@@ -3,130 +3,53 @@
 ;;; SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
 ;;; UI composition over host facts; no terminal operations or runtime effects.
-(import (only-in :clan/poo/object .o .ref .slot? object? seal-object!)
-        (only-in :yuanxu/poo-clos/types clos-instance?)
+(import (only-in :clan/poo/object .o .ref)
+        (only-in "../ui-components/bounds.ss" marlin-ui-max-contributions marlin-ui-max-extensions
+                 marlin-ui-bounded-label? marlin-ui-bounded-list? marlin-ui-required-object)
         "./dispatch.ss")
-(export marlin-ui-workbench marlin-ui-focus-event marlin-ui-previous-focus-event marlin-ui-bounded-list?)
-
-(def max-contributions 8)
-(def max-extensions 16)
-(def max-content-items 16)
-(def max-label-length 256)
-(def reserved-identities '(transcript composer status commands))
-
-;;; These are presentation descriptors for Rust-owned commands, not handlers.
-;;; The third field indicates whether the command accepts an argument.
-(def command-descriptors
-  '(("/help" "Keyboard shortcuts" #f)
-    ("/models" "List configured models" #f)
-    ("/model" "Select a model alias" #t)
-    ("/sessions" "List sessions; next opens another page" #t)
-    ("/session" "Open a quoted session ID" #t)
-    ("/inspect" "Inspect a quoted session ID" #t)
-    ("/history" "Browse older or newest history" #t)
-    ("/status" "Show workspace status" #f)
-    ("/diff" "Show unstaged or staged changes" #t)
-    ("/context" "Show context budget" #f)
-    ("/runtime" "Show runtime policy" #f)
-    ("/clear" "Clear displayed transcript" #f)))
-
-(def (required-object value slots)
-  (unless (and (object? value) (andmap (lambda (slot) (.slot? value slot)) slots))
-    (error "invalid UI value")))
-
-(def (bounded-label? value)
-  (and (string? value) (<= (string-length value) max-label-length)))
+(export make-marlin-ui-workbench marlin-ui-focus-event marlin-ui-previous-focus-event)
 
 (def (unique-identities? ids)
   (or (null? ids)
       (and (not (memq (car ids) (cdr ids))) (unique-identities? (cdr ids)))))
 
-;;; Stop at the admission limit, including for improper and cyclic lists.
-;;; A separate list? / length pass would traverse arbitrarily large input
-;;; before the workbench could reject it.
-(def (marlin-ui-bounded-list? values limit)
-  (let loop ((rest values) (remaining limit))
-    (cond ((null? rest) #t)
-          ((or (zero? remaining) (not (pair? rest))) #f)
-          (else (loop (cdr rest) (- remaining 1))))))
-
-(def (contribution-node contribution)
-  (required-object contribution '(identity label))
-  (let ((identity-value (.ref contribution 'identity)) (label-value (.ref contribution 'label)))
-    (unless (and (symbol? identity-value) (bounded-label? label-value)
-                 (not (memq identity-value reserved-identities)))
-      (error "invalid UI contribution"))
-    (let (owned-label (string-copy label-value))
-      (.o (:: @ UiStatusItem.) identity: identity-value kind: 'status-item label: owned-label))))
-
-(def (checked-content item)
-  (required-object item '(kind))
-  (cond
-   ((and (clos-instance? UiText. item) (eq? (.ref item 'kind) 'text))
-    (required-object item '(text))
-    (unless (bounded-label? (.ref item 'text)) (error "invalid UI text content"))
-    (seal-object! (.o (:: @ UiText.) kind: 'text text: (string-copy (.ref item 'text)))))
-   ((and (clos-instance? UiField. item) (eq? (.ref item 'kind) 'field))
-    (required-object item '(label value))
-    (unless (and (bounded-label? (.ref item 'label))
-                 (bounded-label? (.ref item 'value)))
-      (error "invalid UI field content"))
-    (seal-object! (.o (:: @ UiField.) kind: 'field
-                      label: (string-copy (.ref item 'label))
-                      value: (string-copy (.ref item 'value)))))
-   (else (error "unsupported UI content component"))))
-
-(def (checked-extension component)
-  (required-object component '(identity kind label focusable content))
-  (unless (and (clos-instance? UiExtension. component)
-               (symbol? (.ref component 'identity))
-               (not (memq (.ref component 'identity) reserved-identities))
-               (eq? (.ref component 'kind) 'extension)
-               (bounded-label? (.ref component 'label))
-               (boolean? (.ref component 'focusable))
-               (marlin-ui-bounded-list? (.ref component 'content) max-content-items))
-    (error "invalid UI extension component"))
-  ;; Snapshot presentation and focus fields without sealing the contributor's
-  ;; object. Its prototype remains in the dispatch precedence list.
-  (let ((identity-value (.ref component 'identity))
-        (label-value (string-copy (.ref component 'label)))
-        (focusable-value (.ref component 'focusable))
-        (content-value (map checked-content (.ref component 'content))))
-    (seal-object! (.o (:: @ component) identity: identity-value kind: 'extension
-                      label: label-value focusable: focusable-value content: content-value))))
-
 ;;; Host facts are display data only. Transcript and composer are named regions
 ;;; whose contents and editing authority remain with their existing owners.
-(def (marlin-ui-workbench facts)
-  (required-object facts '(model session contributions extensions))
-  (let ((model-value (.ref facts 'model)) (session-value (.ref facts 'session))
+(def (make-marlin-ui-workbench components)
+  (let ((types (.ref components 'components))
+        (contribution-node (.ref components 'contribution-node))
+        (extension-node (.ref components 'extension-node))
+        (guide-node (.ref components 'guide-node))
+        (command-catalog (.ref components 'command-catalog))
+        (command-entries (.ref components 'command-entries)))
+  (lambda (facts)
+    (marlin-ui-required-object facts '(model session contributions extensions))
+    (let ((model-value (.ref facts 'model)) (session-value (.ref facts 'session))
         (contribution-values (.ref facts 'contributions))
         (extension-values (.ref facts 'extensions)))
-    (unless (and (bounded-label? model-value) (bounded-label? session-value)
-                 (marlin-ui-bounded-list? contribution-values max-contributions)
-                 (marlin-ui-bounded-list? extension-values max-extensions))
+    (unless (and (marlin-ui-bounded-label? model-value) (marlin-ui-bounded-label? session-value)
+                 (marlin-ui-bounded-list? contribution-values marlin-ui-max-contributions)
+                 (marlin-ui-bounded-list? extension-values marlin-ui-max-extensions))
       (error "invalid UI workbench facts"))
     (let* ((owned-model (string-copy model-value))
            (owned-session (string-copy session-value))
            (nodes (map contribution-node contribution-values))
-           (extensions (map checked-extension extension-values))
+           (extensions (map extension-node extension-values))
            (ids (map (lambda (node) (.ref node 'identity)) (append nodes extensions)))
            (extension-focus (map (lambda (node) (.ref node 'identity))
                                  (filter (lambda (node) (.ref node 'focusable)) extensions))))
       (unless (unique-identities? ids)
         (error "duplicate UI contribution identity"))
-      (.o (:: @ UiWorkbench.) identity: 'workbench kind: 'workbench
+      (.o (:: @ (.ref types 'workbench)) identity: 'workbench kind: 'workbench
           model: owned-model session: owned-session
-          focus-order: (append '(transcript composer commands) extension-focus)
-          regions: (append (list (.o (:: @ UiTranscript.) identity: 'transcript kind: 'transcript)
-                                 (.o (:: @ UiComposer.) identity: 'composer kind: 'composer)
-                                 (.o (:: @ UiCommands.) identity: 'commands kind: 'commands
-                                     entries: (map (lambda (entry) (list (string-copy (car entry))
-                                                                         (string-copy (cadr entry))
-                                                                         (caddr entry)))
-                                                   command-descriptors)))
+          focus-order: (append '(transcript composer commands guide) extension-focus)
+          regions: (append (list (.o (:: @ (.ref types 'transcript)) identity: 'transcript kind: 'transcript)
+                                 (.o (:: @ (.ref types 'composer)) identity: 'composer kind: 'composer)
+                                 (.o (:: @ (.ref types 'commands)) identity: 'commands kind: 'commands
+                                     entries: (command-entries command-catalog))
+                                 (guide-node))
                            extensions
-                           (list (.o (:: @ UiStatus.) identity: 'status kind: 'status children: nodes)))))))
+                           (list (.o (:: @ (.ref types 'status)) identity: 'status kind: 'status children: nodes)))))))))
 
 (def (marlin-ui-focus-event workbench)
   (let (order-value (.ref workbench 'focus-order))

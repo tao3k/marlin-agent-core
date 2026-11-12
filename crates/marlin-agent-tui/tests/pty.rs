@@ -170,6 +170,9 @@ impl Terminal {
         }
         let start = Instant::now();
         let child = command.spawn().expect("start TUI");
+        if std::env::var_os("MARLIN_TUI_STARTUP_TRACE").is_some() {
+            eprintln!("marlin-pty spawn returned after {:?}", start.elapsed());
+        }
         Self {
             child,
             master,
@@ -230,7 +233,14 @@ impl Terminal {
                 String::from_utf8_lossy(&self.output[self.output.len().saturating_sub(1200)..])
             );
             match self.received.recv_timeout(remaining) {
-                Ok(chunk) => self.output.extend_from_slice(&chunk),
+                Ok(chunk) => {
+                    if self.output.is_empty()
+                        && std::env::var_os("MARLIN_TUI_STARTUP_TRACE").is_some()
+                    {
+                        eprintln!("marlin-pty first output after {:?}", self.start.elapsed());
+                    }
+                    self.output.extend_from_slice(&chunk);
+                }
                 Err(mpsc::RecvTimeoutError::Timeout) => panic!(
                     "timed out waiting for {description}; screen: {:?}; output tail: {:?}",
                     screen_lines(&self.output),
@@ -495,7 +505,11 @@ fn linked_ui_opens_without_a_gerbil_package_tree() {
         ],
     );
     terminal.wait_for(Duration::from_secs(10), "linked workbench", |output| {
-        contains(output, b"\x1b[?1049h") && screen_lines(output)[29].contains("Message: Enter send")
+        contains(output, b"\x1b[?1049h")
+            && screen_lines(output)[29].contains("Message: Enter send")
+            && screen_lines(output)
+                .iter()
+                .any(|line| line.contains("Get started"))
     });
     terminal.send(b"\x11");
     terminal.wait_exit(Duration::from_secs(5));
@@ -509,7 +523,11 @@ fn example_config_linked_debug_startup() {
     let config = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("example.toml");
     let mut terminal = Terminal::start(&config);
     terminal.wait_for(Duration::from_secs(10), "example workbench", |output| {
-        contains(output, b"\x1b[?1049h") && screen_lines(output)[29].contains("Message: Enter send")
+        contains(output, b"\x1b[?1049h")
+            && screen_lines(output)[29].contains("Message: Enter send")
+            && screen_lines(output)
+                .iter()
+                .any(|line| line.contains("Get started"))
     });
     eprintln!(
         "example workbench ready after {:?}",
@@ -531,13 +549,24 @@ fn example_config_binary_diagnostic() {
     let config = root.join("crates/marlin-agent-tui/example.toml");
     let mut terminal = Terminal::start_in_binary(&binary, &config, &[], &[], 30, 100, &root);
     terminal.wait_for(Duration::from_secs(10), "diagnostic workbench", |output| {
-        contains(output, b"\x1b[?1049h") && screen_lines(output)[29].contains("Message: Enter send")
+        contains(output, b"\x1b[?1049h")
+            && screen_lines(output)[29].contains("Message: Enter send")
+            && screen_lines(output)
+                .iter()
+                .any(|line| line.contains("Get started"))
     });
     eprintln!(
         "diagnostic workbench ready after {:?} from {}",
         terminal.start.elapsed(),
         binary.display()
     );
+    if std::env::var_os("MARLIN_TUI_STARTUP_TRACE").is_some() {
+        for line in String::from_utf8_lossy(&terminal.output).split("\r\n") {
+            if line.starts_with("marlin-tui startup ") {
+                eprintln!("{line}");
+            }
+        }
+    }
     terminal.send(b"\x11");
     terminal.wait_exit(Duration::from_secs(5));
     terminal.assert_restored();
@@ -569,7 +598,11 @@ fn release_linked_ui_first_frame_without_a_gerbil_package_tree() {
         &root,
     );
     terminal.wait_for(Duration::from_secs(10), "release workbench", |output| {
-        contains(output, b"\x1b[?1049h") && screen_lines(output)[29].contains("Message: Enter send")
+        contains(output, b"\x1b[?1049h")
+            && screen_lines(output)[29].contains("Message: Enter send")
+            && screen_lines(output)
+                .iter()
+                .any(|line| line.contains("Get started"))
     });
     eprintln!(
         "release workbench ready after {:?}",
@@ -657,6 +690,8 @@ fn exercise_pty(startup_limit: Duration, exit_limit: Duration) {
     terminal.wait_status("Enter run command");
     terminal.wait_raw(b"Keyboard shortcuts");
     terminal.send(b"\x0f\t");
+    terminal.wait_status("Extension: Enter activate");
+    terminal.send(b"\t");
     terminal.wait_status("Transcript: Up/Down scroll");
     terminal.send(b"\t");
     terminal.wait_status("Message: Enter send");

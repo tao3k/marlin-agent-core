@@ -8,8 +8,8 @@
 
 =gerbil.pkg= declares AI Agentic Lab as the sole direct package dependency.
 Lab's =core= submodule fixes Yuanxu's exact revision. Lab supplies the POO contracts, and the Context and Session
-implementations. =init.ss= selects =context +causal=, =hooks=, =policy=,
-and =deck-runtime=. A package-backed Lab window explicitly selects the upstream
+implementations. =init.ss= selects =context +causal=, =ui-components=, =ui=,
+=hooks=, =policy=, and =deck-runtime=. A package-backed Lab window explicitly selects the upstream
 Context Module; Marlin Context requires its qualified identity.
 =context/types.ss= reuses Lab's =AiAgenticContextScopeType= for the input and
 output of the admission function. The typed decoder constructs the Lab Scope
@@ -22,6 +22,8 @@ receipt and verifies replay against the caller's exact exchange.
 | Role | Responsibility |
 |------+----------------|
 | =context/= | Adapt Lab's Context library to Marlin's runtime boundary. |
+| =ui-components/= | Publish component prototypes, bounded constructors, Guide and the POO-composed command catalog. |
+| =ui/= | Compose the selected component scope into a workbench; own generic event dispatch and typed native projection. |
 | =hooks/= | Publish Scheme hook selection, composable conditions, and higher-order matchers. |
 | =policy/= | Project graph policy, topology and continuation with a declared dependency on Hooks. |
 | =deck-runtime/= | Publish Scheme-owned runtime metadata and route Context messages to identity-owned mailbox Actors. |

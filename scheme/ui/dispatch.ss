@@ -9,22 +9,11 @@
                  poo-clos-generic-binding-current poo-clos-compose-method-bundle)
         (only-in :yuanxu/poo-clos/generic-syntax .defgeneric .defmethod)
         (only-in :yuanxu/poo-clos/method-bundle-syntax .defmethod-bundle)
-        (only-in :yuanxu/poo-clos/dispatch poo-clos-call))
-(export UiComponent. UiWorkbench. UiTranscript. UiComposer. UiCommands. UiStatus. UiStatusItem. UiExtension.
-        UiText. UiField.
-        UiEvent. UiNextFocus. UiPreviousFocus. UiSubmit. UiDismiss. UiScroll. UiBrowseCommand. UiEventProtocol make-ui-event-generic
+        (only-in :yuanxu/poo-clos/dispatch poo-clos-call)
+        (only-in "../ui-components/commands.ss" marlin-ui-browse-command)
+        "../ui-components/components.ss")
+(export UiEvent. UiNextFocus. UiPreviousFocus. UiSubmit. UiDismiss. UiScroll. UiBrowseCommand. UiEventProtocol make-ui-event-generic
         ui-event-dispatch)
-
-(.def UiComponent.)
-(.def (UiWorkbench. @ UiComponent.))
-(.def (UiTranscript. @ UiComponent.))
-(.def (UiComposer. @ UiComponent.))
-(.def (UiCommands. @ UiComponent.))
-(.def (UiStatus. @ UiComponent.))
-(.def (UiStatusItem. @ UiComponent.))
-(.def (UiExtension. @ UiComponent.))
-(.def (UiText. @ UiComponent.))
-(.def (UiField. @ UiComponent.))
 (.def UiEvent.)
 (.def (UiNextFocus. @ UiEvent.))
 (.def (UiPreviousFocus. @ UiNextFocus.))
@@ -54,27 +43,6 @@
       (error "invalid UI focus order"))
      (else (check (cdr rest) (cons (car rest) seen) (+ count 1))))))
 
-;;; A browse event proposes a display selection only. It never executes a
-;;; command; its query and previous selection are bounded host input facts.
-(def (browse-command component event)
-  (let* ((query (.ref event 'query))
-         (previous (.ref event 'previous))
-         (direction (.ref event 'direction)))
-    (unless (and (string? query) (<= 1 (string-length query) 32)
-                 (or (not previous) (and (string? previous) (<= (string-length previous) 32)))
-                 (memq direction '(next previous)))
-      (error "invalid command browse event"))
-    (let* ((matches (map car (filter (lambda (entry) (string-prefix? query (car entry)))
-                                     (.ref component 'entries))))
-           (found (and previous (member previous matches)))
-           (choice (cond ((null? matches) #f)
-                         ((not found) (if (eq? direction 'next) (car matches) (car (reverse matches))))
-                         ((eq? direction 'next) (if (pair? (cdr found)) (cadr found) (car matches)))
-                         (else (let loop ((rest matches) (prior (car (reverse matches))))
-                                 (if (equal? (car rest) previous) prior
-                                     (loop (cdr rest) (car rest))))))))
-      (.o kind: 'command-selection name: choice))))
-
 (def (make-ui-event-generic bundles)
   (unless (and (vector? bundles) (<= (vector-length bundles) 16))
     (error "invalid UI method bundles"))
@@ -89,13 +57,16 @@
       (move-focus component event #t))
     (.defmethod (ui-event (component (prototype UiCommands.))
                           (event (prototype UiBrowseCommand.)))
-      (browse-command component event))
+      (marlin-ui-browse-command (.ref component 'entries) event))
     ;; These are intents only: the host still owns draft submission and I/O.
     (.defmethod (ui-event (component (prototype UiComposer.))
                           (event (prototype UiSubmit.)))
       (.o kind: 'submit-draft))
     (.defmethod (ui-event (component (prototype UiCommands.))
                           (event (prototype UiDismiss.)))
+      (.o kind: 'focus identity: 'composer))
+    (.defmethod (ui-event (component (prototype UiExtension.))
+                          (event (prototype UiSubmit.)))
       (.o kind: 'focus identity: 'composer))
     (.defmethod (ui-event (component (prototype UiTranscript.))
                           (event (prototype UiScroll.)))

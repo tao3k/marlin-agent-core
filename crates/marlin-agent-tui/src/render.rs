@@ -168,7 +168,18 @@ pub(crate) fn draw(
     } else {
         None
     };
-    let transcript_area = if let Some((label, content)) = focused_content {
+    let guide_content = if app.workspace.view().is_none() {
+        ui.regions.iter().find_map(|region| match region {
+            UiRegion::Extension {
+                id, label, content, ..
+            } if id.as_str() == "guide" => Some((label.as_str(), content.as_slice())),
+            _ => None,
+        })
+    } else {
+        None
+    };
+    let panel_content = focused_content.or(guide_content);
+    let transcript_area = if let Some((label, content)) = panel_content {
         if parts[1].width >= 100 && parts[1].height >= 6 {
             let columns = Layout::default()
                 .direction(Direction::Horizontal)
@@ -176,9 +187,11 @@ pub(crate) fn draw(
                 .split(parts[1]);
             draw_extension_content(frame, columns[1], label, content);
             Some(columns[0])
-        } else {
+        } else if focused_content.is_some() {
             draw_extension_content(frame, parts[1], label, content);
             None
+        } else {
+            Some(parts[1])
         }
     } else {
         Some(parts[1])

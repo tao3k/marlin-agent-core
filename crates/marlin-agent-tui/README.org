@@ -60,8 +60,17 @@ with strings of at most 256 characters. Focusing it shows a Ratatui panel to
 the right on wide terminals or in the transcript area on narrow terminals.
 The selected Scheme module owns component composition and event methods; Rust
 checks the typed snapshot, owns terminal rendering and authorizes effects.
+The shared =marlin-agent-ui= library admits event/intent/successor agreement
+before any renderer can act. The TUI adds command-handler and terminal-focus
+admission; it maps keys and paints cells. The built-in Guide contains semantic
+content, while this terminal host supplies its key and shortcut hints.
 This is a bounded content slice, not a general dynamically loaded UI package
-system. Future native GUI renderers such as GPUI are an adapter direction only.
+system. Sheprd may later consume the same Scheme publication and typed UI
+projection through a separate client adapter. GPUI and Sheprd code do not
+belong in =marlin-agent-core=, and Sheprd is not a =gerbil.pkg= dependency here.
+The selected =ui-components= Module also supplies the built-in Guide panel.
+It appears beside the transcript on terminals at least 100 columns wide; on
+narrow terminals, Tab can focus it without hiding the transcript by default.
 In the transcript, Up and Down
 scroll; in commands, Enter opens the command editor. Ctrl-O remains available
 to open commands while keeping a draft.

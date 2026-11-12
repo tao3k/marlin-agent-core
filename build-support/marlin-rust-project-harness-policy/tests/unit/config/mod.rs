@@ -8,4 +8,5 @@ mod protocol;
 mod roles;
 mod runtime;
 mod support;
+mod ui;
 mod workspace;

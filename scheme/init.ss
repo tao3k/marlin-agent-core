@@ -14,6 +14,7 @@
   mode: explicit
   rename: Marlin
   (context +causal)
+  (ui-components)
   (ui)
   (hooks)
   (policy)

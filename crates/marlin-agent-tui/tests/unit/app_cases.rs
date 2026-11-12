@@ -318,6 +318,50 @@ fn render_focused_scheme_content_on_narrow_and_wide_terminals() {
 }
 
 #[test]
+fn render_guide_is_visible_on_wide_terminals_without_taking_narrow_transcript() {
+    use marlin_agent_ui::{UiComponentId, UiContent, UiRegion, UiWorkbench};
+    let app = App::new(ModelEndpoint::new("provider", "model"));
+    let view = UiWorkbench {
+        model_label: "model".into(),
+        session_label: "session".into(),
+        regions: vec![
+            UiRegion::Transcript,
+            UiRegion::Composer,
+            UiRegion::Commands(vec![]),
+            UiRegion::Extension {
+                id: UiComponentId::new("guide").unwrap(),
+                label: "Guide".into(),
+                focusable: true,
+                content: vec![UiContent::Text("Get started".into())],
+            },
+            UiRegion::Status(vec![]),
+        ],
+        focus: UiComponentId::new("composer").unwrap(),
+    };
+    for width in [80, 120] {
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(width, 20)).unwrap();
+        terminal
+            .draw(|frame| {
+                render_draw(
+                    frame,
+                    &app,
+                    &view,
+                    &mut Default::default(),
+                    &mut Default::default(),
+                );
+            })
+            .unwrap();
+        let buffer = terminal.backend().buffer();
+        let screen: String = (0..20)
+            .flat_map(|y| (0..width).map(move |x| buffer[(x, y)].symbol()))
+            .collect();
+        assert_eq!(screen.contains("Get started"), width == 120, "{screen}");
+        assert!(screen.contains("Model gateway configured"), "{screen}");
+    }
+}
+
+#[test]
 fn render_status_contributions_respects_focus_and_terminal_height() {
     use marlin_agent_ui::{UiComponentId, UiRegion, UiStatusItem, UiWorkbench};
     let app = App::new(ModelEndpoint::new("provider", "model"));
