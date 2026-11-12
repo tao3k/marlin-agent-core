@@ -9,7 +9,6 @@ use marlin_workspace_protocol::{AgentWorkspace, WorkspaceCtx};
 use marlin_workspace_status::WorkspaceTarget;
 use marlin_workspace_view::WorkspaceViewSpec;
 
-#[test]
 fn memory_workspace_renders_loaded_contract_facts() {
     let workspace = MemoryOrgWorkspace::new();
     let document = OrgDocument::new(
@@ -28,10 +27,7 @@ fn memory_workspace_renders_loaded_contract_facts() {
 :END:
 
 #+BEGIN_SRC org-elements-query
-category = "section"
-kind = "headline"
-within = "$scope"
-summary.title = "Goal"
+(headline :descendant-of $scope :summary (title "Goal"))
 #+END_SRC
 
 #+BEGIN_SRC org-elements-expect
@@ -138,7 +134,6 @@ Task `{{ scope.title }}` must contain a Goal section.
     ));
 }
 
-#[test]
 fn memory_workspace_loads_external_contract_documents() {
     let workspace = MemoryOrgWorkspace::new();
     let contract_document = OrgDocument::new(
@@ -157,10 +152,7 @@ fn memory_workspace_loads_external_contract_documents() {
 :END:
 
 #+BEGIN_SRC org-elements-query
-category = "section"
-kind = "headline"
-within = "$scope"
-summary.title = "Goal"
+(headline :descendant-of $scope :summary (title "Goal"))
 #+END_SRC
 
 #+BEGIN_SRC org-elements-expect
@@ -211,7 +203,6 @@ Task `{{ scope.title }}` must contain a Goal section.
     );
 }
 
-#[test]
 fn memory_workspace_loads_documents_with_discovered_contracts() {
     let workspace = MemoryOrgWorkspace::new();
     let contract_document = OrgDocument::new(
@@ -230,10 +221,7 @@ fn memory_workspace_loads_documents_with_discovered_contracts() {
 :END:
 
 #+BEGIN_SRC org-elements-query
-category = "section"
-kind = "headline"
-within = "$scope"
-summary.title = "Goal"
+(headline :descendant-of $scope :summary (title "Goal"))
 #+END_SRC
 
 #+BEGIN_SRC org-elements-expect
@@ -292,7 +280,6 @@ count == 1
     );
 }
 
-#[test]
 fn memory_workspace_loads_document_with_standard_agent_contracts() {
     let workspace = MemoryOrgWorkspace::new();
     let document = OrgDocument::new(
@@ -356,7 +343,6 @@ internal
     );
 }
 
-#[test]
 fn memory_workspace_validates_standard_topology_contract() {
     let workspace = MemoryOrgWorkspace::new();
     let document = OrgDocument::new(
@@ -414,7 +400,6 @@ The topology root gives agents a coarse route map for the imported project.
     );
 }
 
-#[test]
 fn memory_workspace_status_reports_unresolved_contract_diagnostics() {
     let workspace = MemoryOrgWorkspace::new();
     let document = OrgDocument::new(
@@ -449,3 +434,31 @@ fn memory_workspace_status_reports_unresolved_contract_diagnostics() {
         Some("missing.contract")
     );
 }
+
+// Invoked after exclusive parser startup by unit_test.
+pub(super) const CASES: &[(&str, fn())] = &[
+    (
+        "memory_workspace_renders_loaded_contract_facts",
+        memory_workspace_renders_loaded_contract_facts,
+    ),
+    (
+        "memory_workspace_loads_external_contract_documents",
+        memory_workspace_loads_external_contract_documents,
+    ),
+    (
+        "memory_workspace_loads_documents_with_discovered_contracts",
+        memory_workspace_loads_documents_with_discovered_contracts,
+    ),
+    (
+        "memory_workspace_loads_document_with_standard_agent_contracts",
+        memory_workspace_loads_document_with_standard_agent_contracts,
+    ),
+    (
+        "memory_workspace_validates_standard_topology_contract",
+        memory_workspace_validates_standard_topology_contract,
+    ),
+    (
+        "memory_workspace_status_reports_unresolved_contract_diagnostics",
+        memory_workspace_status_reports_unresolved_contract_diagnostics,
+    ),
+];

@@ -9,7 +9,6 @@ use marlin_workspace_protocol::{AgentWorkspace, WorkspaceCtx};
 use marlin_workspace_status::WorkspaceTarget;
 use marlin_workspace_view::WorkspaceViewSpec;
 
-#[test]
 fn sequential_document_loads_accumulate_contract_facts() {
     let workspace = MemoryOrgWorkspace::new();
     workspace
@@ -97,10 +96,7 @@ fn contract_document(
 :END:
 
 #+BEGIN_SRC org-elements-query
-category = "section"
-kind = "headline"
-within = "$scope"
-summary.title = "{required_child_title}"
+(headline :descendant-of $scope :summary (title "{required_child_title}"))
 #+END_SRC
 
 #+BEGIN_SRC org-elements-expect
@@ -116,3 +112,9 @@ count == 1
         ),
     )
 }
+
+// Invoked after exclusive parser startup by unit_test.
+pub(super) const CASES: &[(&str, fn())] = &[(
+    "sequential_document_loads_accumulate_contract_facts",
+    sequential_document_loads_accumulate_contract_facts,
+)];

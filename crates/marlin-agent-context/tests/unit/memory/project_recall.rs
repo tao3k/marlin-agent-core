@@ -18,7 +18,6 @@ use marlin_agent_protocol::{
 };
 use marlin_context_org_model::{OrgNode, OrgNodeId};
 
-#[test]
 fn recalls_project_memory_context_pack_from_discovered_org_roots() {
     let store = MemoryOrgSourceStore::new(BTreeMap::from([(
         ".marlin/memory/project.org".to_string(),
@@ -92,7 +91,6 @@ Org is the project memory substrate.
     );
 }
 
-#[test]
 fn recall_source_spans_follow_matched_org_nodes_not_duplicate_memory_ids() {
     let store = MemoryOrgSourceStore::new(BTreeMap::from([
         (
@@ -179,7 +177,6 @@ Second duplicate memory node.
     );
 }
 
-#[test]
 fn recalls_project_memory_from_store_with_contract_indexed_frontier() {
     let store = MemoryOrgSourceStore::new(BTreeMap::from([(
         ".marlin/memory/store-frontier.org".to_string(),
@@ -247,7 +244,6 @@ fn recalls_project_memory_from_store_with_contract_indexed_frontier() {
     );
 }
 
-#[test]
 fn recall_from_loaded_nodes_keeps_fact_when_source_span_is_missing() {
     let workspace = MemoryOrgWorkspace::from_nodes([loaded_memory_node_without_source(
         "memory-node:missing-source",
@@ -335,3 +331,23 @@ fn loaded_memory_node_without_source(
     );
     node
 }
+
+// Invoked after exclusive parser startup by unit_test.
+pub(super) const CASES: &[(&str, fn())] = &[
+    (
+        "recalls_project_memory_context_pack_from_discovered_org_roots",
+        recalls_project_memory_context_pack_from_discovered_org_roots,
+    ),
+    (
+        "recall_source_spans_follow_matched_org_nodes_not_duplicate_memory_ids",
+        recall_source_spans_follow_matched_org_nodes_not_duplicate_memory_ids,
+    ),
+    (
+        "recalls_project_memory_from_store_with_contract_indexed_frontier",
+        recalls_project_memory_from_store_with_contract_indexed_frontier,
+    ),
+    (
+        "recall_from_loaded_nodes_keeps_fact_when_source_span_is_missing",
+        recall_from_loaded_nodes_keeps_fact_when_source_span_is_missing,
+    ),
+];

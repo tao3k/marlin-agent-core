@@ -13,7 +13,6 @@ use marlin_agent_protocol::{
 };
 use marlin_context_org_model::{LinkKind, OrgLink, OrgNode, OrgNodeId, OrgSourceSpan};
 
-#[test]
 fn project_memory_graph_matches_same_project_across_worktrees_without_sibling_transcript() {
     let workspace = MemoryOrgWorkspace::from_nodes(vec![
         memory_node(
@@ -78,7 +77,6 @@ fn project_memory_graph_matches_same_project_across_worktrees_without_sibling_tr
     assert!(query_match.score_basis_points.as_u16() >= 7_000);
 }
 
-#[test]
 fn project_memory_graph_requires_external_project_policy() {
     let workspace = MemoryOrgWorkspace::from_nodes(vec![memory_node(
         "memory:external-ui",
@@ -123,7 +121,6 @@ fn project_memory_graph_requires_external_project_policy() {
     );
 }
 
-#[test]
 fn project_memory_graph_matches_contract_recall_query_frontier_terms() {
     let mut node = memory_node(
         "memory:hybrid-recall-boundary",
@@ -163,7 +160,6 @@ fn project_memory_graph_matches_contract_recall_query_frontier_terms() {
     );
 }
 
-#[test]
 fn project_memory_graph_matches_contract_indexed_frontier_terms() {
     let mut node = memory_node(
         "memory:contract-indexed-frontier",
@@ -214,7 +210,6 @@ fn project_memory_graph_matches_contract_indexed_frontier_terms() {
     );
 }
 
-#[test]
 fn project_memory_graph_source_anchor_follows_matched_node_not_memory_id() {
     let mut first = memory_node(
         "memory-node:duplicate-a",
@@ -339,3 +334,27 @@ fn raw_session_node(
     );
     node
 }
+
+// Invoked after exclusive parser startup by unit_test.
+pub(super) const CASES: &[(&str, fn())] = &[
+    (
+        "project_memory_graph_matches_same_project_across_worktrees_without_sibling_transcript",
+        project_memory_graph_matches_same_project_across_worktrees_without_sibling_transcript,
+    ),
+    (
+        "project_memory_graph_requires_external_project_policy",
+        project_memory_graph_requires_external_project_policy,
+    ),
+    (
+        "project_memory_graph_matches_contract_recall_query_frontier_terms",
+        project_memory_graph_matches_contract_recall_query_frontier_terms,
+    ),
+    (
+        "project_memory_graph_matches_contract_indexed_frontier_terms",
+        project_memory_graph_matches_contract_indexed_frontier_terms,
+    ),
+    (
+        "project_memory_graph_source_anchor_follows_matched_node_not_memory_id",
+        project_memory_graph_source_anchor_follows_matched_node_not_memory_id,
+    ),
+];

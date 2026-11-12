@@ -13,3 +13,19 @@ mod release;
 mod session_graph;
 mod tool_graph;
 mod topology_graph;
+
+pub(super) fn cases() -> impl Iterator<Item = (&'static str, fn())> {
+    agent_graph_projection::CASES
+        .iter()
+        .copied()
+        .chain(content_graph::CASES.iter().copied())
+        .chain(contracts::CASES.iter().copied())
+        .chain(contracts_accumulation::CASES.iter().copied())
+        .chain(document::CASES.iter().copied())
+        .chain(project_graph::CASES.iter().copied())
+        .chain(project_recall::CASES.iter().copied())
+        .chain(release::CASES.iter().copied())
+        .chain(session_graph::CASES.iter().copied())
+        .chain(tool_graph::CASES.iter().copied())
+        .chain(topology_graph::CASES.iter().copied())
+}

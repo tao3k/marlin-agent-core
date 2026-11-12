@@ -9,7 +9,6 @@ use marlin_workspace_protocol::{AgentWorkspace, WorkspaceCtx};
 use marlin_workspace_query::{QueryFilter, SourceRange, WorkspaceQuery, WorkspaceScope};
 use marlin_workspace_view::WorkspaceViewSpec;
 
-#[test]
 fn memory_workspace_loads_document_for_query_and_view() {
     let workspace = MemoryOrgWorkspace::new();
     let document = OrgDocument::new(
@@ -65,3 +64,9 @@ fn memory_workspace_loads_document_for_query_and_view() {
         block_on(workspace.query(document_query, ctx.clone())).expect("document filter succeeds");
     assert_eq!(document_result.matches.len(), 1);
 }
+
+// Invoked after exclusive parser startup by unit_test.
+pub(super) const CASES: &[(&str, fn())] = &[(
+    "memory_workspace_loads_document_for_query_and_view",
+    memory_workspace_loads_document_for_query_and_view,
+)];

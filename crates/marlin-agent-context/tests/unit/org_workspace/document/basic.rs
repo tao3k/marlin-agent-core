@@ -4,13 +4,12 @@
 
 use marlin_agent_context::org::workspace::{OrgDocument, OrgDocumentLoader};
 use marlin_context_org_model::{
-    CheckboxState, LinkKind, OrgContractCompareOp, OrgContractExpectation, OrgContractTemplateKind,
-    TodoState,
+    CheckboxState, LinkKind, OrgContractCompareOp, OrgContractExpectation, OrgContractPredicate,
+    OrgContractTemplateKind, OrgContractValue, TodoState,
 };
 
 use super::slice;
 
-#[test]
 fn org_document_loader_projects_headings_properties_tasks_and_links() {
     let text = "* NEXT Implement parser adapter :marlin:workspace:\n\
                 :PROPERTIES:\n\
@@ -87,7 +86,29 @@ fn org_document_loader_projects_headings_properties_tasks_and_links() {
     );
 }
 
-#[test]
+fn org_document_loader_preserves_native_section_ownership_and_unicode_spans() {
+    let text = "* TODO 父任务\n:PROPERTIES:\n:OWNER: 甲\n:END:\n\
+                [[id:parent][父链接]]\n\
+                #+begin_src text\n[[id:quoted][示例链接]]\n#+end_src\n\
+                ** NEXT 子任务\n[[file:child.org][子链接]]\n";
+    let nodes = OrgDocumentLoader::load(&OrgDocument::new("doc:unicode", text))
+        .expect("native Org sections project");
+
+    assert_eq!(nodes.len(), 2);
+    assert_eq!(nodes[0].title.as_deref(), Some("父任务"));
+    assert_eq!(nodes[0].children, vec![nodes[1].id.clone()]);
+    assert_eq!(nodes[0].links.len(), 1);
+    assert_eq!(nodes[0].links[0].target, "id:parent");
+    assert_eq!(nodes[0].links[0].description.as_deref(), Some("父链接"));
+    assert_eq!(nodes[1].links.len(), 1);
+    assert_eq!(nodes[1].links[0].target, "file:child.org");
+    assert_eq!(slice(text, &nodes[0].tokens.property_values["OWNER"]), "甲");
+    assert_eq!(
+        slice(text, nodes[1].tokens.todo_keyword.as_ref().unwrap()),
+        "NEXT"
+    );
+}
+
 fn org_document_loader_projects_contract_registry() {
     let text = r#"* agent-task-v1
 :PROPERTIES:
@@ -103,10 +124,7 @@ fn org_document_loader_projects_contract_registry() {
 :END:
 
 #+BEGIN_SRC org-elements-query
-category = "section"
-kind = "headline"
-within = "$scope"
-summary.title = "Goal"
+(headline :descendant-of $scope :summary (title "Goal"))
 #+END_SRC
 
 #+BEGIN_SRC org-elements-expect
@@ -168,10 +186,29 @@ Task `{{ scope.title }}` must contain a Goal section.
             .is_some_and(|kind| kind.contains("headline"))
     );
     assert_eq!(
-        assertion.query.summary_equals,
-        vec![("title".to_string(), "Goal".to_string())]
+        assertion.query.predicates,
+        vec![OrgContractPredicate::SummaryEquals {
+            key: "title".to_string(),
+            value: OrgContractValue::Text("Goal".to_string()),
+        }]
     );
     assert!(assertion.query.use_scope_outline_path);
     let query_source = assertion.query_source.as_ref().expect("query source span");
     assert!(query_source.start_byte < query_source.end_byte);
 }
+
+// Invoked only after the test process has admitted the parser startup.
+pub(super) const CASES: &[(&str, fn())] = &[
+    (
+        "org_document_loader_projects_headings_properties_tasks_and_links",
+        org_document_loader_projects_headings_properties_tasks_and_links,
+    ),
+    (
+        "org_document_loader_preserves_native_section_ownership_and_unicode_spans",
+        org_document_loader_preserves_native_section_ownership_and_unicode_spans,
+    ),
+    (
+        "org_document_loader_projects_contract_registry",
+        org_document_loader_projects_contract_registry,
+    ),
+];

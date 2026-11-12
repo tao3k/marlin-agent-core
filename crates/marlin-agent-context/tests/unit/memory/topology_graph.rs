@@ -16,7 +16,6 @@ use marlin_agent_protocol::{
 use marlin_context_org_model::{OrgNode, OrgNodeId, OrgSourceSpan};
 use std::collections::BTreeMap;
 
-#[test]
 fn topology_graph_matches_project_import_overview() {
     let mut node = topology_node(TopologyNodeFixture {
         id: "topology-node:project-import",
@@ -101,7 +100,6 @@ fn topology_graph_matches_project_import_overview() {
     );
 }
 
-#[test]
 fn topology_graph_requires_external_project_policy() {
     let workspace = MemoryOrgWorkspace::from_nodes(vec![topology_node(TopologyNodeFixture {
         id: "topology-node:external",
@@ -133,7 +131,6 @@ fn topology_graph_requires_external_project_policy() {
     assert!(response.matches.is_empty());
 }
 
-#[test]
 fn topology_graph_executes_store_backed_root_query() {
     let store = MemoryOrgSourceStore::new(BTreeMap::from([(
         ".marlin/topology/project.org".to_string(),
@@ -269,3 +266,19 @@ fn topology_node(fixture: TopologyNodeFixture<'_>) -> OrgNode {
     );
     node
 }
+
+// Invoked after exclusive parser startup by unit_test.
+pub(super) const CASES: &[(&str, fn())] = &[
+    (
+        "topology_graph_matches_project_import_overview",
+        topology_graph_matches_project_import_overview,
+    ),
+    (
+        "topology_graph_requires_external_project_policy",
+        topology_graph_requires_external_project_policy,
+    ),
+    (
+        "topology_graph_executes_store_backed_root_query",
+        topology_graph_executes_store_backed_root_query,
+    ),
+];

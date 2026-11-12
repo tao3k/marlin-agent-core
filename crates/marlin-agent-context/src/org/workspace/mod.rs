@@ -10,6 +10,7 @@ mod standard_contracts;
 mod validation;
 
 pub use document::{OrgDocument, OrgDocumentId, OrgDocumentLoader, OrgDocumentWorkspace};
+pub use orgize::initialize_native_runtime as initialize_org_runtime;
 pub use standard_contracts::{
     STANDARD_AGENT_LOOP_CONTRACT_DOCUMENT_ID, STANDARD_AGENT_LOOP_CONTRACT_ORG,
     STANDARD_AGENT_MEMORY_CONTRACT_DOCUMENT_ID, STANDARD_AGENT_MEMORY_CONTRACT_ORG,

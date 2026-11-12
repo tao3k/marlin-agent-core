@@ -10,7 +10,6 @@ use marlin_context_org_model::{
 
 use super::slice;
 
-#[test]
 fn org_document_loader_resolves_subtree_contract_references() {
     let text = r#"* agent-task-v1
 :PROPERTIES:
@@ -26,10 +25,7 @@ fn org_document_loader_resolves_subtree_contract_references() {
 :END:
 
 #+BEGIN_SRC org-elements-query
-category = "section"
-kind = "headline"
-within = "$scope"
-summary.title = "Goal"
+(headline :descendant-of $scope :summary (title "Goal"))
 #+END_SRC
 
 #+BEGIN_SRC org-elements-expect
@@ -74,7 +70,6 @@ count >= 1
     assert_eq!(slice(text, source), "agent.task.v1");
 }
 
-#[test]
 fn org_document_loader_validates_subtree_contract_references() {
     let text = r#"* agent-task-v1
 :PROPERTIES:
@@ -90,10 +85,7 @@ fn org_document_loader_validates_subtree_contract_references() {
 :END:
 
 #+BEGIN_SRC org-elements-query
-category = "section"
-kind = "headline"
-within = "$scope"
-summary.title = "Goal"
+(headline :descendant-of $scope :summary (title "Goal"))
 #+END_SRC
 
 #+BEGIN_SRC org-elements-expect
@@ -122,7 +114,6 @@ count >= 1
     assert_eq!(receipt.matched_nodes.len(), 1);
 }
 
-#[test]
 fn org_document_loader_validates_orgize_count_comparison_expectations() {
     let text = r#"* agent-task-v1
 :PROPERTIES:
@@ -138,10 +129,7 @@ fn org_document_loader_validates_orgize_count_comparison_expectations() {
 :END:
 
 #+BEGIN_SRC org-elements-query
-category = "section"
-kind = "headline"
-within = "$scope"
-summary.title = "Goal"
+(headline :descendant-of $scope :summary (title "Goal"))
 #+END_SRC
 
 #+BEGIN_SRC org-elements-expect
@@ -155,10 +143,7 @@ count == 1
 :END:
 
 #+BEGIN_SRC org-elements-query
-category = "section"
-kind = "headline"
-within = "$scope"
-summary.title = "Risk"
+(headline :descendant-of $scope :summary (title "Risk"))
 #+END_SRC
 
 #+BEGIN_SRC org-elements-expect
@@ -172,10 +157,7 @@ not exists
 :END:
 
 #+BEGIN_SRC org-elements-query
-category = "section"
-kind = "headline"
-within = "$scope"
-summary.title = "Goal"
+(headline :descendant-of $scope :summary (title "Goal"))
 #+END_SRC
 
 #+BEGIN_SRC org-elements-expect
@@ -222,7 +204,6 @@ count < 1
     assert_eq!(no_goal.matched_nodes.len(), 1);
 }
 
-#[test]
 fn org_document_loader_resolves_references_from_external_contract_documents() {
     let contract_text = r#"* external-agent-task
 :PROPERTIES:
@@ -255,7 +236,6 @@ fn org_document_loader_resolves_references_from_external_contract_documents() {
     );
 }
 
-#[test]
 fn org_document_loader_discovers_contract_documents_from_candidates() {
     let contract_document = OrgDocument::new(
         "doc:external-contracts",
@@ -281,7 +261,8 @@ fn org_document_loader_discovers_contract_documents_from_candidates() {
         task_document.clone(),
         contract_document,
         note_document,
-    ]);
+    ])
+    .expect("discover contracts");
     let workspace = OrgDocumentLoader::load_workspace_with_contracts(&task_document, &discovered)
         .expect("document loads with discovered contract documents");
 
@@ -297,7 +278,6 @@ fn org_document_loader_discovers_contract_documents_from_candidates() {
     );
 }
 
-#[test]
 fn org_document_loader_reports_unresolved_document_contract_references() {
     let text = "#+CONTRACT_ORG: missing.contract\n* Task A\n";
     let document = OrgDocument::new("doc:missing-contract", text);
@@ -322,3 +302,31 @@ fn org_document_loader_reports_unresolved_document_contract_references() {
     let source = diagnostic.reference.source.as_ref().expect("source span");
     assert_eq!(slice(text, source), "#+CONTRACT_ORG: missing.contract\n");
 }
+
+// Invoked only after the test process has admitted the parser startup.
+pub(super) const CASES: &[(&str, fn())] = &[
+    (
+        "org_document_loader_resolves_subtree_contract_references",
+        org_document_loader_resolves_subtree_contract_references,
+    ),
+    (
+        "org_document_loader_validates_subtree_contract_references",
+        org_document_loader_validates_subtree_contract_references,
+    ),
+    (
+        "org_document_loader_validates_orgize_count_comparison_expectations",
+        org_document_loader_validates_orgize_count_comparison_expectations,
+    ),
+    (
+        "org_document_loader_resolves_references_from_external_contract_documents",
+        org_document_loader_resolves_references_from_external_contract_documents,
+    ),
+    (
+        "org_document_loader_discovers_contract_documents_from_candidates",
+        org_document_loader_discovers_contract_documents_from_candidates,
+    ),
+    (
+        "org_document_loader_reports_unresolved_document_contract_references",
+        org_document_loader_reports_unresolved_document_contract_references,
+    ),
+];

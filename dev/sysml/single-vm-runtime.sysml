@@ -94,6 +94,8 @@ package MarlinSingleVmRuntime {
             doc /* Rust mints opaque Module instance identities for registered
                    Context factories. Admission and retirement publication share
                    one short per-Module lock; no lock crosses await or VM entry.
+                   The Agent CORE actor-runtime facade exposes these Module
+                   handles, identities and timer/retirement receipt types.
                    Actor keys are scoped by Module. Removed Modules release their
                    registry roots and recent-route cache without tombstones. */
         }

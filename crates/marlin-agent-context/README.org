@@ -47,6 +47,15 @@ text, generation, contract identity, parser identity, digests and bounded
 anchors. A projected cut does not authenticate a source, authorize disclosure,
 commit a write or connect Lab's Session host.
 
+Workspace loading consumes Orgize's parsed sections and element records directly,
+including their source ranges. Contract query alternatives, typed predicates and
+source conditions are preserved as data; Orgize remains the evaluator.
+The host must call the exported unsafe =initialize_org_runtime= once during
+exclusive startup, before creating application threads or subprocesses, following
+its upstream safety contract. Document loading does not initialize the VM.
+Parsing and contract discovery return =WorkspaceResult= so startup and parser
+failures reach the caller.
+
 The =org-source= feature exposes the migrated Org source store;
 =org-workspace= adds document parsing and contracts, =org-workflow= currently
 adds release-status operations, and =org-memory= adds the local Org memory

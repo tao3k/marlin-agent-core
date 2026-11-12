@@ -14,7 +14,6 @@ use marlin_agent_protocol::{
 };
 use marlin_context_org_model::{OrgNode, OrgNodeId, OrgSourceSpan};
 
-#[test]
 fn session_graph_matches_session_local_boundary_card() {
     let mut node = session_node(SessionNodeFixture {
         id: "session-node:child-a",
@@ -107,7 +106,6 @@ fn session_graph_matches_session_local_boundary_card() {
     );
 }
 
-#[test]
 fn session_graph_requires_external_project_policy() {
     let workspace = MemoryOrgWorkspace::from_nodes(vec![session_node(SessionNodeFixture {
         id: "session-node:external",
@@ -180,3 +178,15 @@ fn session_node(fixture: SessionNodeFixture<'_>) -> OrgNode {
     );
     node
 }
+
+// Invoked after exclusive parser startup by unit_test.
+pub(super) const CASES: &[(&str, fn())] = &[
+    (
+        "session_graph_matches_session_local_boundary_card",
+        session_graph_matches_session_local_boundary_card,
+    ),
+    (
+        "session_graph_requires_external_project_policy",
+        session_graph_requires_external_project_policy,
+    ),
+];

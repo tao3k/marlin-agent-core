@@ -181,6 +181,9 @@ impl OrgContractCompareOp {
 /// Query shape used by parser-owned Org contracts.
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct OrgContractQuery {
+    pub alternatives: Vec<OrgContractQuery>,
+    pub predicates: Vec<OrgContractPredicate>,
+    pub document_predicates: Vec<OrgContractDocumentPredicate>,
     pub category: Option<OrgContractElementCategory>,
     pub kind: Option<OrgContractElementKind>,
     pub affiliated_name: Option<String>,
@@ -196,6 +199,58 @@ pub struct OrgContractQuery {
     pub has_outline_path_prefix: bool,
     pub scope_outline_depth: Option<usize>,
     pub relative_to: Option<OrgContractRelativeScope>,
+}
+
+/// Parser-owned boolean conditions, projected as data without a second evaluator.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum OrgContractPredicate {
+    All(Vec<OrgContractPredicate>),
+    Any(Vec<OrgContractPredicate>),
+    Not(Box<OrgContractPredicate>),
+    Category(OrgContractElementCategory),
+    Kind(OrgContractElementKind),
+    AffiliatedName(String),
+    Context(String),
+    PropertyEquals {
+        key: String,
+        value: OrgContractValue,
+    },
+    PropertyContains {
+        key: String,
+        needle: String,
+    },
+    PropertyPositiveInteger(String),
+    SummaryEquals {
+        key: String,
+        value: OrgContractValue,
+    },
+    SummaryContains {
+        key: String,
+        needle: String,
+    },
+    SummaryPositiveInteger(String),
+}
+
+/// Preserve parser scalar and list types in the runtime-independent projection.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum OrgContractValue {
+    Null,
+    Bool(bool),
+    Integer(i64),
+    Text(String),
+    StringList(Vec<String>),
+}
+
+/// Conditions over source metadata owned by the parser's contract evaluator.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum OrgContractDocumentPredicate {
+    MetadataExists(String),
+    SourcePathEquals(String),
+    SourcePathContains(String),
+    SourceFilenameEquals(String),
+    SourceFilenamePrefix(String),
+    SourceFilenameSuffix(String),
+    SourceFilenameStemUppercase(bool),
 }
 
 /// Source block span for a contract query or expectation block.

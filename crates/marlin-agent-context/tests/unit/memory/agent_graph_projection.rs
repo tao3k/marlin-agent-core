@@ -17,7 +17,6 @@ use marlin_agent_graph::{
 };
 use marlin_context_org_model::{OrgNode, OrgNodeId};
 
-#[test]
 fn org_agent_graph_projection_builds_typed_topology_without_memory_body() {
     let workspace = MemoryOrgWorkspace::from_nodes(vec![
         agent_node(AgentNodeFixture {
@@ -90,7 +89,6 @@ fn org_agent_graph_projection_builds_typed_topology_without_memory_body() {
     );
 }
 
-#[test]
 fn org_agent_graph_projection_rejects_unvalidated_contract_nodes() {
     let workspace = MemoryOrgWorkspace::from_nodes(vec![agent_node(AgentNodeFixture {
         org_id: "org:planner",
@@ -122,7 +120,6 @@ fn org_agent_graph_projection_rejects_unvalidated_contract_nodes() {
     assert!(receipt.graph.is_none());
 }
 
-#[test]
 fn org_agent_graph_projection_rejects_invalid_topology_before_runtime() {
     let workspace = MemoryOrgWorkspace::from_nodes(vec![
         agent_node(AgentNodeFixture {
@@ -274,3 +271,19 @@ fn edge_node(fixture: EdgeNodeFixture<'_>) -> OrgNode {
     );
     node
 }
+
+// Invoked after exclusive parser startup by unit_test.
+pub(super) const CASES: &[(&str, fn())] = &[
+    (
+        "org_agent_graph_projection_builds_typed_topology_without_memory_body",
+        org_agent_graph_projection_builds_typed_topology_without_memory_body,
+    ),
+    (
+        "org_agent_graph_projection_rejects_unvalidated_contract_nodes",
+        org_agent_graph_projection_rejects_unvalidated_contract_nodes,
+    ),
+    (
+        "org_agent_graph_projection_rejects_invalid_topology_before_runtime",
+        org_agent_graph_projection_rejects_invalid_topology_before_runtime,
+    ),
+];

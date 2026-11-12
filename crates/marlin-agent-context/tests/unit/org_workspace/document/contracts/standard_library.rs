@@ -12,7 +12,6 @@ use marlin_agent_context::org::workspace::{
 use marlin_context_org_model::OrgContractValidationStatus;
 use std::collections::BTreeSet;
 
-#[test]
 fn org_document_loader_loads_standard_agent_contract_library_from_org_folder() {
     let workspace =
         load_standard_agent_contract_workspace().expect("standard agent contract library loads");
@@ -49,7 +48,6 @@ fn org_document_loader_loads_standard_agent_contract_library_from_org_folder() {
     );
 }
 
-#[test]
 fn org_document_loader_validates_standard_agent_plan_task_loop_memory_topology_contracts() {
     let contract_documents = standard_agent_contract_documents();
     let work_document = OrgDocument::new(
@@ -216,7 +214,8 @@ detailed Org memory or session facts.
 
     let mut candidates = vec![work_document.clone()];
     candidates.extend(contract_documents);
-    let discovered = OrgDocumentLoader::discover_contract_documents(&candidates);
+    let discovered =
+        OrgDocumentLoader::discover_contract_documents(&candidates).expect("discover contracts");
     let workspace = OrgDocumentLoader::load_workspace_with_contracts(&work_document, &discovered)
         .expect("workspace loads with standard contracts");
 
@@ -252,7 +251,6 @@ detailed Org memory or session facts.
     assert!(failed_receipts.is_empty(), "{failed_receipts:#?}");
 }
 
-#[test]
 fn org_document_loader_validates_standard_agent_contract_examples() {
     assert_standard_contract_example_passes(
         "doc:agent-plan-v1-example",
@@ -301,7 +299,6 @@ fn org_document_loader_validates_standard_agent_contract_examples() {
     );
 }
 
-#[test]
 fn org_document_loader_reports_standard_agent_memory_contract_failures() {
     let contract_documents = standard_agent_contract_documents();
     let memory_document = OrgDocument::new(
@@ -359,7 +356,6 @@ internal
     );
 }
 
-#[test]
 fn org_document_loader_reports_standard_agent_task_template_failures() {
     let contract_documents = standard_agent_contract_documents();
     let task_document = OrgDocument::new(
@@ -488,3 +484,27 @@ fn assert_standard_contract_example_passes(
         "{document_id}: {failed_receipts:#?}"
     );
 }
+
+// Invoked only after the test process has admitted the parser startup.
+pub(super) const CASES: &[(&str, fn())] = &[
+    (
+        "org_document_loader_loads_standard_agent_contract_library_from_org_folder",
+        org_document_loader_loads_standard_agent_contract_library_from_org_folder,
+    ),
+    (
+        "org_document_loader_validates_standard_agent_plan_task_loop_memory_topology_contracts",
+        org_document_loader_validates_standard_agent_plan_task_loop_memory_topology_contracts,
+    ),
+    (
+        "org_document_loader_validates_standard_agent_contract_examples",
+        org_document_loader_validates_standard_agent_contract_examples,
+    ),
+    (
+        "org_document_loader_reports_standard_agent_memory_contract_failures",
+        org_document_loader_reports_standard_agent_memory_contract_failures,
+    ),
+    (
+        "org_document_loader_reports_standard_agent_task_template_failures",
+        org_document_loader_reports_standard_agent_task_template_failures,
+    ),
+];

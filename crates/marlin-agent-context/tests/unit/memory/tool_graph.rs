@@ -18,7 +18,6 @@ use marlin_agent_protocol::{
 };
 use marlin_context_org_model::{LinkKind, OrgLink, OrgNode, OrgNodeId, OrgSourceSpan};
 
-#[test]
 fn tool_capability_graph_matches_project_local_card_with_contract_frontier() {
     let mut node = tool_node(ToolNodeFixture {
         id: "tool-node:rustfmt",
@@ -96,7 +95,6 @@ fn tool_capability_graph_matches_project_local_card_with_contract_frontier() {
     );
 }
 
-#[test]
 fn tool_capability_graph_queries_store_backed_tool_roots() {
     let store = MemoryOrgSourceStore::new(BTreeMap::from([(
         ".marlin/tools/rustfmt.org".to_string(),
@@ -159,7 +157,6 @@ Source path marker: rustfmt.org
     );
 }
 
-#[test]
 fn tool_capability_cards_project_typed_backend_requirements() {
     let mut node = tool_node(ToolNodeFixture {
         id: "tool-node:rustfmt-card",
@@ -247,7 +244,6 @@ fn tool_capability_cards_project_typed_backend_requirements() {
     );
 }
 
-#[test]
 fn tool_capability_graph_requires_external_project_policy() {
     let workspace = MemoryOrgWorkspace::from_nodes(vec![tool_node(ToolNodeFixture {
         id: "tool-node:external",
@@ -313,3 +309,23 @@ fn tool_node(fixture: ToolNodeFixture<'_>) -> OrgNode {
     );
     node
 }
+
+// Invoked after exclusive parser startup by unit_test.
+pub(super) const CASES: &[(&str, fn())] = &[
+    (
+        "tool_capability_graph_matches_project_local_card_with_contract_frontier",
+        tool_capability_graph_matches_project_local_card_with_contract_frontier,
+    ),
+    (
+        "tool_capability_graph_queries_store_backed_tool_roots",
+        tool_capability_graph_queries_store_backed_tool_roots,
+    ),
+    (
+        "tool_capability_cards_project_typed_backend_requirements",
+        tool_capability_cards_project_typed_backend_requirements,
+    ),
+    (
+        "tool_capability_graph_requires_external_project_policy",
+        tool_capability_graph_requires_external_project_policy,
+    ),
+];

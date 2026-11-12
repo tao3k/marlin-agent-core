@@ -10,9 +10,7 @@ use marlin_context_org_model::{
     OrgNode, OrgNodeId, OrgSourceSpan, TodoState,
 };
 use marlin_workspace_protocol::{WorkspaceError, WorkspaceResult};
-use orgize::ast::parse_contracts_from_document;
-use orgize::export::{Container, Event, TraversalContext, Traverser};
-use orgize::syntax_ast::{Headline, SyntaxLink};
+use orgize::ast::{ParsedAnnotation, Section, parse_contracts_from_document};
 
 use crate::org::workspace::contract::{
     contract_reference, document_contract_reference, project_contract_registry,
@@ -97,17 +95,20 @@ impl OrgDocumentLoader {
     }
 
     /// Select candidate documents that contain parser-owned Org contract registries.
-    pub fn discover_contract_documents(candidates: &[OrgDocument]) -> Vec<OrgDocument> {
+    pub fn discover_contract_documents(
+        candidates: &[OrgDocument],
+    ) -> WorkspaceResult<Vec<OrgDocument>> {
         candidates
             .iter()
-            .filter(|document| {
-                let org = parse_org_with_workspace_todo_keywords(&document.text);
-                !parse_contracts_from_document(&org.document(), None)
+            .map(|document| {
+                let org = parse_org_with_workspace_todo_keywords(&document.text)?;
+                Ok((!parse_contracts_from_document(&org.document(), None)
                     .contracts
-                    .is_empty()
+                    .is_empty())
+                .then(|| document.clone()))
             })
-            .cloned()
-            .collect()
+            .collect::<WorkspaceResult<Vec<_>>>()
+            .map(|documents| documents.into_iter().flatten().collect())
     }
 }
 
@@ -121,11 +122,11 @@ impl<'a> OrgDocumentParser<'a> {
     }
 
     fn parse(self, contract_documents: &[OrgDocument]) -> WorkspaceResult<OrgDocumentWorkspace> {
-        let org = parse_org_with_workspace_todo_keywords(&self.document.text);
+        let org = parse_org_with_workspace_todo_keywords(&self.document.text)?;
         let parsed_document = org.document();
         let mut parsed_contracts = parse_contracts_from_document(&parsed_document, None);
         for contract_document in contract_documents {
-            let contract_org = parse_org_with_workspace_todo_keywords(&contract_document.text);
+            let contract_org = parse_org_with_workspace_todo_keywords(&contract_document.text)?;
             parsed_contracts
                 .contracts
                 .extend(parse_contracts_from_document(&contract_org.document(), None).contracts);
@@ -136,10 +137,10 @@ impl<'a> OrgDocumentParser<'a> {
             self.document.id.as_str(),
             &self.document.text,
         );
-        let mut projection = OrgAstProjection::new(&self.document.id, &self.document.text);
+        let mut projection = OrgNodeProjection::new(&self.document.id, &self.document.text);
 
-        for headline in org.syntax_document().headlines() {
-            projection.push_headline(headline, None)?;
+        for section in &parsed_document.sections {
+            projection.push_section(section, None, &org)?;
         }
 
         let (nodes, subtree_contract_references) = projection.into_parts();
@@ -166,14 +167,14 @@ impl<'a> OrgDocumentParser<'a> {
     }
 }
 
-struct OrgAstProjection<'a> {
+struct OrgNodeProjection<'a> {
     document_id: &'a OrgDocumentId,
     document_text: &'a str,
     nodes: Vec<OrgNode>,
     contract_references: Vec<OrgContractReference>,
 }
 
-impl<'a> OrgAstProjection<'a> {
+impl<'a> OrgNodeProjection<'a> {
     fn new(document_id: &'a OrgDocumentId, document_text: &'a str) -> Self {
         Self {
             document_id,
@@ -183,25 +184,26 @@ impl<'a> OrgAstProjection<'a> {
         }
     }
 
-    fn push_headline(
+    fn push_section(
         &mut self,
-        headline: Headline,
+        headline: &Section<ParsedAnnotation>,
         parent: Option<OrgNodeId>,
+        org: &orgize::Org,
     ) -> WorkspaceResult<OrgNodeId> {
-        let level = headline.level();
+        let level = headline.level;
         let title = headline_title(
-            &headline,
-            self.line_number_at_byte(byte_offset(headline.start())),
+            headline,
+            self.line_number_at_byte(byte_offset(headline.ann.range.start())),
         );
-        let id = self.node_id(&headline, &title);
+        let id = self.node_id(headline, &title);
         let mut node = OrgNode::heading(id.clone(), title);
 
-        node.source = Some(self.source_span(&headline));
-        node.todo = headline_todo(&headline);
-        if let Some(keyword) = headline.todo_keyword() {
-            node.tokens.todo_keyword = self.todo_keyword_span(&headline, keyword.as_ref());
+        node.source = Some(self.source_span(headline));
+        node.todo = headline_todo(headline);
+        if let Some(keyword) = &headline.todo {
+            node.tokens.todo_keyword = self.todo_keyword_span(headline, &keyword.name);
         }
-        node.tags = headline.tags().map(|tag| tag.to_string()).collect();
+        node.tags.clone_from(&headline.tags);
         node.properties.insert(
             "DOCUMENT".to_string(),
             self.document_id.as_str().to_string(),
@@ -209,38 +211,37 @@ impl<'a> OrgAstProjection<'a> {
         node.properties
             .insert("LEVEL".to_string(), level.to_string());
 
-        if let Some(priority) = headline.priority() {
+        if let Some(priority) = headline.priority.raw_cookie() {
             node.properties
                 .insert("PRIORITY".to_string(), priority.to_string());
         }
 
-        if let Some(properties) = headline.properties() {
-            for (key, value) in properties.iter() {
-                node.properties.insert(key.to_string(), value.to_string());
-                if let Some(span) =
-                    self.property_value_span(&headline, key.as_ref(), value.as_ref())
-                {
-                    if key.as_ref().eq_ignore_ascii_case("CONTRACT_ORG") {
-                        self.contract_references.push(contract_reference(
-                            value.as_ref(),
-                            OrgContractReferenceScope::Subtree,
-                            Some(id.clone()),
-                            Some(span.clone()),
-                        ));
-                    }
-                    node.tokens.property_values.insert(key.to_string(), span);
+        for property in &headline.properties {
+            let key = property.key.as_str();
+            let value = property.value.as_str();
+            node.properties.insert(key.to_string(), value.to_string());
+            if let Some(span) = self.property_value_span(headline, key, value) {
+                if key.eq_ignore_ascii_case("CONTRACT_ORG") {
+                    self.contract_references.push(contract_reference(
+                        value,
+                        OrgContractReferenceScope::Subtree,
+                        Some(id.clone()),
+                        Some(span.clone()),
+                    ));
                 }
+                node.tokens.property_values.insert(key.to_string(), span);
             }
         }
 
-        if let Some(section) = headline.section() {
-            let section_raw = section.raw();
-            node.body = section_body(&section_raw);
-            let section_start = self.section_start_byte(&headline, &section_raw);
+        if let Some(section) = &headline.body_ann {
+            let section_raw = section.raw.as_str();
+            node.body = section_body(section_raw);
+            let section_start = byte_offset(section.range.start());
             collect_section_facts(
+                org,
                 self.document_id,
                 self.document_text,
-                &section_raw,
+                section_raw,
                 section_start,
                 &mut node,
             );
@@ -262,8 +263,8 @@ impl<'a> OrgAstProjection<'a> {
 
         self.nodes.push(node);
 
-        for child in headline.headlines() {
-            self.push_headline(child, Some(id.clone()))?;
+        for child in &headline.subsections {
+            self.push_section(child, Some(id.clone()), org)?;
         }
 
         Ok(id)
@@ -273,8 +274,8 @@ impl<'a> OrgAstProjection<'a> {
         (self.nodes, self.contract_references)
     }
 
-    fn node_id(&self, headline: &Headline, title: &str) -> OrgNodeId {
-        let line_number = self.line_number_at_byte(byte_offset(headline.start()));
+    fn node_id(&self, headline: &Section<ParsedAnnotation>, title: &str) -> OrgNodeId {
+        let line_number = self.line_number_at_byte(byte_offset(headline.ann.range.start()));
         OrgNodeId::new(format!(
             "{}:{}:{}",
             self.document_id.as_str(),
@@ -283,20 +284,24 @@ impl<'a> OrgAstProjection<'a> {
         ))
     }
 
-    fn source_span(&self, headline: &Headline) -> OrgSourceSpan {
-        let start_byte = byte_offset(headline.start());
-        let end_byte = byte_offset(headline.end());
+    fn source_span(&self, headline: &Section<ParsedAnnotation>) -> OrgSourceSpan {
+        let start_byte = byte_offset(headline.ann.range.start());
+        let end_byte = byte_offset(headline.ann.range.end());
         source_span_for_range(self.document_id, self.document_text, start_byte, end_byte)
     }
 
-    fn todo_keyword_span(&self, headline: &Headline, keyword: &str) -> Option<OrgSourceSpan> {
-        let heading_start = byte_offset(headline.start());
+    fn todo_keyword_span(
+        &self,
+        headline: &Section<ParsedAnnotation>,
+        keyword: &str,
+    ) -> Option<OrgSourceSpan> {
+        let heading_start = byte_offset(headline.ann.range.start());
         let heading_end = self.document_text[heading_start..]
             .find('\n')
             .map(|offset| heading_start + offset)
-            .unwrap_or_else(|| byte_offset(headline.end()).min(self.document_text.len()));
+            .unwrap_or_else(|| byte_offset(headline.ann.range.end()).min(self.document_text.len()));
         let heading_line = self.document_text.get(heading_start..heading_end)?;
-        let search_start = headline.level();
+        let search_start = headline.level;
         let keyword_start = heading_line.get(search_start..)?.find(keyword)? + search_start;
         let start_byte = heading_start + keyword_start;
         Some(source_span_for_range(
@@ -309,12 +314,12 @@ impl<'a> OrgAstProjection<'a> {
 
     fn property_value_span(
         &self,
-        headline: &Headline,
+        headline: &Section<ParsedAnnotation>,
         key: &str,
         value: &str,
     ) -> Option<OrgSourceSpan> {
-        let headline_start = byte_offset(headline.start());
-        let headline_end = byte_offset(headline.end()).min(self.document_text.len());
+        let headline_start = byte_offset(headline.ann.range.start());
+        let headline_end = byte_offset(headline.ann.range.end()).min(self.document_text.len());
         let raw = self.document_text.get(headline_start..headline_end)?;
         let key_marker = format!(":{key}:");
         let mut found = None;
@@ -344,16 +349,6 @@ impl<'a> OrgAstProjection<'a> {
         });
 
         found
-    }
-
-    fn section_start_byte(&self, headline: &Headline, section_raw: &str) -> usize {
-        let headline_start = byte_offset(headline.start());
-        let headline_end = byte_offset(headline.end()).min(self.document_text.len());
-        self.document_text
-            .get(headline_start..headline_end)
-            .and_then(|raw| raw.find(section_raw))
-            .map(|offset| headline_start + offset)
-            .unwrap_or(headline_start)
     }
 
     fn line_number_at_byte(&self, byte_offset: usize) -> usize {
@@ -405,7 +400,7 @@ fn byte_offset(offset: orgize::TextSize) -> usize {
     u32::from(offset) as usize
 }
 
-fn parse_org_with_workspace_todo_keywords(text: &str) -> orgize::Org {
+fn parse_org_with_workspace_todo_keywords(text: &str) -> WorkspaceResult<orgize::Org> {
     let mut config = orgize::ParseConfig::default();
     config.todo_keywords.0 = vec![
         "TODO".to_string(),
@@ -414,11 +409,12 @@ fn parse_org_with_workspace_todo_keywords(text: &str) -> orgize::Org {
         "BLOCKED".to_string(),
     ];
     config.todo_keywords.1 = vec!["DONE".to_string()];
-    config.parse(text)
+    orgize::org_aot::parse_org_aot_with_config(text, &config)
+        .map_err(|error| WorkspaceError::Backend(format!("Org document parse failed: {error:?}")))
 }
 
-fn headline_title(headline: &Headline, line_number: usize) -> String {
-    let title = headline.title_raw().trim().to_string();
+fn headline_title(headline: &Section<ParsedAnnotation>, line_number: usize) -> String {
+    let title = headline.raw_title.trim().to_string();
     if title.is_empty() {
         format!("Untitled heading {line_number}")
     } else {
@@ -426,10 +422,11 @@ fn headline_title(headline: &Headline, line_number: usize) -> String {
     }
 }
 
-fn headline_todo(headline: &Headline) -> Option<TodoState> {
+fn headline_todo(headline: &Section<ParsedAnnotation>) -> Option<TodoState> {
     headline
-        .todo_keyword()
-        .map(|keyword| todo_state_from_keyword(keyword.as_ref()))
+        .todo
+        .as_ref()
+        .map(|keyword| todo_state_from_keyword(&keyword.name))
 }
 
 fn todo_state_from_keyword(value: &str) -> TodoState {
@@ -444,33 +441,35 @@ fn todo_state_from_keyword(value: &str) -> TodoState {
 }
 
 fn collect_section_facts(
+    org: &orgize::Org,
     document_id: &OrgDocumentId,
     document_text: &str,
     section_raw: &str,
     section_start: usize,
     node: &mut OrgNode,
 ) {
-    let mut collector = SectionFactCollector::new(node);
-    orgize::Org::parse(section_raw).traverse(&mut collector);
+    let section_end = section_start + section_raw.len();
+    node.links.extend(
+        org.records()
+            .iter()
+            .filter(|record| {
+                record.kind == "link"
+                    && byte_offset(record.range.start()) >= section_start
+                    && byte_offset(record.range.end()) <= section_end
+            })
+            .map(|record| {
+                let target = record.field("path").unwrap_or_default();
+                OrgLink {
+                    target: target.to_owned(),
+                    kind: link_kind(target),
+                    description: record
+                        .field("description")
+                        .filter(|description| !description.is_empty())
+                        .map(str::to_owned),
+                }
+            }),
+    );
     collect_checkbox_facts(document_id, document_text, section_raw, section_start, node);
-}
-
-struct SectionFactCollector<'a> {
-    node: &'a mut OrgNode,
-}
-
-impl<'a> SectionFactCollector<'a> {
-    fn new(node: &'a mut OrgNode) -> Self {
-        Self { node }
-    }
-}
-
-impl Traverser for SectionFactCollector<'_> {
-    fn event(&mut self, event: Event, _ctx: &mut TraversalContext) {
-        if let Event::Enter(Container::Link(link)) = event {
-            self.node.links.push(link_from_syntax(link));
-        }
-    }
 }
 
 fn collect_checkbox_facts(
@@ -550,22 +549,6 @@ fn list_bullet_len(trimmed: &str) -> Option<usize> {
         .get(after_marker..)
         .is_some_and(|rest| rest.starts_with(' '))
         .then_some(after_marker + 1)
-}
-
-fn link_from_syntax(link: SyntaxLink) -> OrgLink {
-    let target = link.path().to_string();
-    let description = if link.has_description() {
-        let raw_description = link.description_raw();
-        (!raw_description.is_empty()).then_some(raw_description)
-    } else {
-        None
-    };
-
-    OrgLink {
-        kind: link_kind(&target),
-        target,
-        description,
-    }
 }
 
 fn link_kind(target: &str) -> LinkKind {

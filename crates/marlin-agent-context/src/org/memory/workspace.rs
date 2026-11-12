@@ -174,7 +174,7 @@ impl MemoryOrgWorkspace {
         &self,
         documents: &[OrgDocument],
     ) -> WorkspaceResult<Vec<OrgNodeId>> {
-        let contract_documents = OrgDocumentLoader::discover_contract_documents(documents);
+        let contract_documents = OrgDocumentLoader::discover_contract_documents(documents)?;
         self.load_documents_with_contracts(documents, &contract_documents)
     }
 
@@ -183,7 +183,7 @@ impl MemoryOrgWorkspace {
         &self,
         documents: &[OrgDocument],
     ) -> WorkspaceResult<Vec<OrgNodeId>> {
-        let mut contract_documents = OrgDocumentLoader::discover_contract_documents(documents);
+        let mut contract_documents = OrgDocumentLoader::discover_contract_documents(documents)?;
         contract_documents.extend(standard_agent_contract_documents());
         self.load_documents_with_contracts(documents, &contract_documents)
     }

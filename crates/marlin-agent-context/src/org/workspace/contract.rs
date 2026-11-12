@@ -6,12 +6,13 @@
 
 use marlin_context_org_model::{
     OrgContract, OrgContractAssertion, OrgContractBinding, OrgContractCompareOp,
-    OrgContractDiagnostic, OrgContractDiagnosticSeverity, OrgContractElementCategory,
-    OrgContractElementKind, OrgContractExpectation, OrgContractId, OrgContractKind,
-    OrgContractQuery, OrgContractReference, OrgContractReferenceScope, OrgContractRegistry,
-    OrgContractRelativeScope, OrgContractResolution, OrgContractResolutionReport, OrgContractScope,
-    OrgContractSeverity, OrgContractSourceSpan, OrgContractTemplate, OrgContractTemplateEngine,
-    OrgContractTemplateKind, OrgNodeId, OrgSourceSpan,
+    OrgContractDiagnostic, OrgContractDiagnosticSeverity, OrgContractDocumentPredicate,
+    OrgContractElementCategory, OrgContractElementKind, OrgContractExpectation, OrgContractId,
+    OrgContractKind, OrgContractPredicate, OrgContractQuery, OrgContractReference,
+    OrgContractReferenceScope, OrgContractRegistry, OrgContractRelativeScope,
+    OrgContractResolution, OrgContractResolutionReport, OrgContractScope, OrgContractSeverity,
+    OrgContractSourceSpan, OrgContractTemplate, OrgContractTemplateEngine, OrgContractTemplateKind,
+    OrgContractValue, OrgNodeId, OrgSourceSpan,
 };
 use orgize::ast::{Document, ParsedAnnotation, parse_contract_reference};
 
@@ -232,6 +233,21 @@ fn project_contract_templates(
 
 fn project_contract_query(query: &orgize::ast::OrgContractQuery) -> OrgContractQuery {
     OrgContractQuery {
+        alternatives: query
+            .alternatives
+            .iter()
+            .map(project_contract_query)
+            .collect(),
+        predicates: query
+            .predicates
+            .iter()
+            .map(project_contract_predicate)
+            .collect(),
+        document_predicates: query
+            .document_predicates
+            .iter()
+            .map(project_document_predicate)
+            .collect(),
         category: query
             .category
             .as_ref()
@@ -256,6 +272,91 @@ fn project_contract_query(query: &orgize::ast::OrgContractQuery) -> OrgContractQ
             .relative_to
             .as_ref()
             .map(|scope| OrgContractRelativeScope::new(debug_label(scope))),
+    }
+}
+
+fn project_contract_predicate(
+    predicate: &orgize::ast::OrgElementQueryPredicate,
+) -> OrgContractPredicate {
+    use orgize::ast::OrgElementQueryPredicate as Source;
+    match predicate {
+        Source::All(items) => {
+            OrgContractPredicate::All(items.iter().map(project_contract_predicate).collect())
+        }
+        Source::Any(items) => {
+            OrgContractPredicate::Any(items.iter().map(project_contract_predicate).collect())
+        }
+        Source::Not(item) => OrgContractPredicate::Not(Box::new(project_contract_predicate(item))),
+        Source::Category(value) => {
+            OrgContractPredicate::Category(OrgContractElementCategory::new(debug_label(value)))
+        }
+        Source::Kind(value) => {
+            OrgContractPredicate::Kind(OrgContractElementKind::new(debug_label(value)))
+        }
+        Source::AffiliatedName(value) => OrgContractPredicate::AffiliatedName(value.clone()),
+        Source::Context(value) => OrgContractPredicate::Context(value.clone()),
+        Source::PropertyEquals(value) => OrgContractPredicate::PropertyEquals {
+            key: value.key.clone(),
+            value: project_contract_value(&value.value),
+        },
+        Source::PropertyContains(value) => OrgContractPredicate::PropertyContains {
+            key: value.key.clone(),
+            needle: value.needle.clone(),
+        },
+        Source::PropertyPositiveInteger(value) => {
+            OrgContractPredicate::PropertyPositiveInteger(value.clone())
+        }
+        Source::SummaryEquals(value) => OrgContractPredicate::SummaryEquals {
+            key: value.key.clone(),
+            value: project_contract_value(&value.value),
+        },
+        Source::SummaryContains(value) => OrgContractPredicate::SummaryContains {
+            key: value.key.clone(),
+            needle: value.needle.clone(),
+        },
+        Source::SummaryPositiveInteger(value) => {
+            OrgContractPredicate::SummaryPositiveInteger(value.clone())
+        }
+    }
+}
+
+fn project_contract_value(value: &orgize::ast::OrgElementsIndexSummaryValue) -> OrgContractValue {
+    use orgize::ast::OrgElementsIndexSummaryValue as Source;
+    match value {
+        Source::Null => OrgContractValue::Null,
+        Source::Bool(value) => OrgContractValue::Bool(*value),
+        Source::Integer(value) => OrgContractValue::Integer(*value),
+        Source::Text(value) => OrgContractValue::Text(value.clone()),
+        Source::StringList(value) => OrgContractValue::StringList(value.clone()),
+    }
+}
+
+fn project_document_predicate(
+    predicate: &orgize::ast::OrgContractDocumentPredicate,
+) -> OrgContractDocumentPredicate {
+    use orgize::ast::OrgContractDocumentPredicate as Source;
+    match predicate {
+        Source::MetadataExists(value) => {
+            OrgContractDocumentPredicate::MetadataExists(value.clone())
+        }
+        Source::SourcePathEquals(value) => {
+            OrgContractDocumentPredicate::SourcePathEquals(value.clone())
+        }
+        Source::SourcePathContains(value) => {
+            OrgContractDocumentPredicate::SourcePathContains(value.clone())
+        }
+        Source::SourceFilenameEquals(value) => {
+            OrgContractDocumentPredicate::SourceFilenameEquals(value.clone())
+        }
+        Source::SourceFilenamePrefix(value) => {
+            OrgContractDocumentPredicate::SourceFilenamePrefix(value.clone())
+        }
+        Source::SourceFilenameSuffix(value) => {
+            OrgContractDocumentPredicate::SourceFilenameSuffix(value.clone())
+        }
+        Source::SourceFilenameStemUppercase(value) => {
+            OrgContractDocumentPredicate::SourceFilenameStemUppercase(*value)
+        }
     }
 }
 

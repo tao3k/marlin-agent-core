@@ -7,6 +7,7 @@
 mod release;
 
 pub use marlin_agent_context as context;
+pub use marlin_agent_context::org::workspace::initialize_org_runtime;
 pub use marlin_agent_environment as environment;
 pub use marlin_agent_environment::{
     PROJECT_CONFIG_PRECEDENCE, RuntimeEnvironmentError, RuntimeEnvironmentRequest,
@@ -124,9 +125,11 @@ pub use marlin_agent_runtime::{
 pub use marlin_agent_sessions as sessions;
 #[cfg(feature = "actor-runtime")]
 pub use marlin_deck_runtime::{
-    DeckMailboxMetrics, DeckRuntime, DeckRuntimeConfig, DeckRuntimeMetrics, DeckRuntimeRejection,
-    DeckRuntimeShutdownError, DeckRuntimeShutdownReceipt, DeckRuntimeStartupError,
-    DeckRuntimeStopReason,
+    DeckContextModule, DeckMailboxMetrics, DeckModuleInstanceId, DeckModuleRetirementReceipt,
+    DeckRuntime, DeckRuntimeConfig, DeckRuntimeMetadata, DeckRuntimeMetadataError,
+    DeckRuntimeMetrics, DeckRuntimeModuleId, DeckRuntimeRejection, DeckRuntimeShutdownError,
+    DeckRuntimeShutdownReceipt, DeckRuntimeStartupError, DeckRuntimeStopReason, DeckTimerId,
+    DeckTimerReceipt,
 };
 
 pub use marlin_gerbil_ir as gerbil_ir;

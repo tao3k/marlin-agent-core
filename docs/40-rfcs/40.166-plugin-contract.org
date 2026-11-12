@@ -2041,6 +2041,12 @@ these IDs from free strings. The original =admit_context= facade uses the
 runtime's default Context Module. All instances use the same Lab operation
 and the same VM; the factory surface does not admit arbitrary Rust handlers.
 
+The Agent CORE =actor-runtime= facade exports the existing =DeckContextModule=,
+Module and timer IDs, retirement and timer receipts, and runtime metadata
+types. Consumers can name the Module lifecycle and timer contracts through
+=marlin-agent-core=. These are the Deck package's original types and operations;
+the facade introduces no second registry, scheduler or receipt protocol.
+
 Each Module has a short admission lock covering channel publication and closing.
 No lock crosses an await or Scheme call. A successful retirement request closes
 admission only after its control message has a queue slot. Queue refusal leaves

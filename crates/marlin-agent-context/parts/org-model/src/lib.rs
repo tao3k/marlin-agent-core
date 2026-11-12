@@ -14,13 +14,14 @@ mod task;
 pub use block::{BlockKind, OrgBlock};
 pub use contract::{
     OrgContract, OrgContractAssertion, OrgContractBinding, OrgContractCompareOp,
-    OrgContractDiagnostic, OrgContractDiagnosticSeverity, OrgContractElementCategory,
-    OrgContractElementKind, OrgContractExpectation, OrgContractId, OrgContractKind,
-    OrgContractQuery, OrgContractReference, OrgContractReferenceScope, OrgContractRegistry,
-    OrgContractRelativeScope, OrgContractResolution, OrgContractResolutionReport, OrgContractScope,
-    OrgContractSeverity, OrgContractSourceSpan, OrgContractTemplate, OrgContractTemplateEngine,
-    OrgContractTemplateKind, OrgContractValidationReceipt, OrgContractValidationReport,
-    OrgContractValidationSkipReason, OrgContractValidationStatus, OrgContractValidationTarget,
+    OrgContractDiagnostic, OrgContractDiagnosticSeverity, OrgContractDocumentPredicate,
+    OrgContractElementCategory, OrgContractElementKind, OrgContractExpectation, OrgContractId,
+    OrgContractKind, OrgContractPredicate, OrgContractQuery, OrgContractReference,
+    OrgContractReferenceScope, OrgContractRegistry, OrgContractRelativeScope,
+    OrgContractResolution, OrgContractResolutionReport, OrgContractScope, OrgContractSeverity,
+    OrgContractSourceSpan, OrgContractTemplate, OrgContractTemplateEngine, OrgContractTemplateKind,
+    OrgContractValidationReceipt, OrgContractValidationReport, OrgContractValidationSkipReason,
+    OrgContractValidationStatus, OrgContractValidationTarget, OrgContractValue,
 };
 pub use link::{LinkKind, OrgLink};
 pub use node::{
