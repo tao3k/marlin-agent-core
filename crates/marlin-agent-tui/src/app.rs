@@ -1172,6 +1172,7 @@ fn run(
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()?;
+    trace_startup("Tokio runtime");
     let mut app = App::new(endpoint);
     app.set_models(catalog.clone());
     let open_timeout_ms = config
@@ -1182,6 +1183,7 @@ fn run(
         catalog,
         RuntimeEdgePolicy::new().with_timeout_ms(open_timeout_ms),
     )?;
+    trace_startup("model gateway");
     app.set_runtime_edge(gateway.receipt().clone());
     let base_gateway = gateway.clone();
     let mut gateway = if let Some(session) = config.session {
@@ -1213,6 +1215,7 @@ fn run(
         SharedGateway::new(gateway)
     };
     let signals = SignalMonitor::new(&runtime)?;
+    trace_startup("session and signals");
     let stdout = io::stdout().into_raw_mode()?.into_alternate_screen()?;
     let stdout = BracketedPaste::enable(stdout)?;
     let backend = TermionBackend::new(stdout);
@@ -1241,6 +1244,7 @@ fn run(
     let mut viewport_cache = TranscriptViewportCache::default();
     let mut scroll_anchor = ScrollAnchor::default();
     let mut last_size = None;
+    let mut first_frame_elapsed = None;
     let mut failed_ui_labels: Option<(String, String)> = None;
     let mut signal_exit = None;
     let result = (|| -> io::Result<()> {
@@ -1320,6 +1324,9 @@ fn run(
                 })?;
                 app.set_effective_scroll(effective_scroll);
                 schedule.drawn(Instant::now());
+                if first_frame_elapsed.is_none() {
+                    first_frame_elapsed = Some(startup.elapsed());
+                }
             }
             let wait = if processed == REPLY_BATCH_LIMIT
                 || app
@@ -1494,6 +1501,11 @@ fn run(
     terminal.show_cursor()?;
     drop(terminal); // alternate-screen and raw-mode guards restore the terminal
     trace_startup("terminal restored");
+    if env::var_os("MARLIN_TUI_STARTUP_TRACE").is_some()
+        && let Some(elapsed) = first_frame_elapsed
+    {
+        eprintln!("marlin-tui startup first frame: {elapsed:?}");
+    }
     result?;
     drop(gateway);
     trace_startup("gateway dropped");

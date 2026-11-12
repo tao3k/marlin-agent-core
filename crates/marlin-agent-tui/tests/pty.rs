@@ -107,6 +107,26 @@ impl Terminal {
         columns: u16,
         working_directory: &std::path::Path,
     ) -> Self {
+        Self::start_in_binary(
+            std::path::Path::new(env!("CARGO_BIN_EXE_marlin-tui")),
+            config,
+            args,
+            variables,
+            rows,
+            columns,
+            working_directory,
+        )
+    }
+
+    fn start_in_binary(
+        binary: &std::path::Path,
+        config: &std::path::Path,
+        args: &[&str],
+        variables: &[(&str, String)],
+        rows: u16,
+        columns: u16,
+        working_directory: &std::path::Path,
+    ) -> Self {
         let size = Winsize {
             ws_row: rows,
             ws_col: columns,
@@ -127,7 +147,7 @@ impl Terminal {
                 }
             }
         });
-        let mut command = Command::new(env!("CARGO_BIN_EXE_marlin-tui"));
+        let mut command = Command::new(binary);
         command
             .current_dir(working_directory)
             .arg(config)
@@ -268,6 +288,7 @@ impl Terminal {
         if std::env::var_os("MARLIN_TUI_STARTUP_TRACE").is_some() {
             for line in String::from_utf8_lossy(&self.output).split("\r\n") {
                 for marker in [
+                    "marlin-tui startup first frame",
                     "marlin-tui startup event loop exit",
                     "marlin-tui startup terminal restored",
                     "marlin-tui startup gateway dropped",
@@ -476,6 +497,43 @@ fn linked_ui_opens_without_a_gerbil_package_tree() {
     terminal.wait_for(Duration::from_secs(10), "linked workbench", |output| {
         contains(output, b"\x1b[?1049h") && screen_lines(output)[29].contains("Message: Enter send")
     });
+    terminal.send(b"\x11");
+    terminal.wait_exit(Duration::from_secs(5));
+    terminal.assert_restored();
+}
+
+#[cfg(feature = "linked-ui")]
+#[test]
+#[ignore = "requires the linked Release artifact from just tui-aot-build"]
+fn release_linked_ui_first_frame_without_a_gerbil_package_tree() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let binary = root.join("target/release/marlin-tui");
+    assert!(binary.is_file(), "build the linked Release binary first");
+    let directory = tempfile::tempdir().unwrap();
+    let config = directory.path().join("config.toml");
+    fs::write(&config, "provider=\"openai\"\nmodel=\"gpt-fixture\"\nendpoint=\"http://127.0.0.1:1/v1/responses\"\nprotocol=\"open-ai-responses\"\ncredential_env=\"MARLIN_TUI_FIXTURE_KEY\"\n").unwrap();
+    let absent = directory.path().join("no-gerbil-install");
+    let absent = absent.to_string_lossy().into_owned();
+    let mut terminal = Terminal::start_in_binary(
+        &binary,
+        &config,
+        &[],
+        &[
+            ("GERBIL_HOME", absent.clone()),
+            ("GERBIL_PATH", absent.clone()),
+            ("GERBIL_LOADPATH", absent),
+        ],
+        30,
+        100,
+        &root,
+    );
+    terminal.wait_for(Duration::from_secs(10), "release workbench", |output| {
+        contains(output, b"\x1b[?1049h") && screen_lines(output)[29].contains("Message: Enter send")
+    });
+    eprintln!(
+        "release workbench ready after {:?}",
+        terminal.start.elapsed()
+    );
     terminal.send(b"\x11");
     terminal.wait_exit(Duration::from_secs(5));
     terminal.assert_restored();

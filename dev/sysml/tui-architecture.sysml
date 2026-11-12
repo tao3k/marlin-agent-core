@@ -297,8 +297,11 @@ package MarlinTuiArchitecture {
                    core; the SDK owns VM and native linkage. The linked Darwin
                    executable opens a Scheme UI without a package tree, and
                    the strict debug PTY startup and shutdown gate passes.
-                   Release opens under the same denied Gerbil paths; a timed
-                   Release PTY distribution gate remains. Optional dynamic
+                   Release opens under the same denied Gerbil paths. An
+                   explicit Release PTY gate passes, but observations range
+                   from 3.90 seconds after relinking to 118-129 milliseconds
+                   on warm runs. Cold distribution qualification remains.
+                   Optional dynamic
                    Scheme extensions retain their identity and admission.
                    If residual UI operations remain slow,
                    slow, profile the residual macro, object and generic-method

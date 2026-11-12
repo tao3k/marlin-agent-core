@@ -330,6 +330,13 @@ workbench in under ten seconds from process creation and retains the five-second
 normal exit deadline; both include the real Scheme runtime.
 The separate =menu_paste_stream_diagnostic= test uses longer deadlines and does
 not satisfy the startup or shutdown acceptance limits.
+After =just tui-aot-build=, run
+=cargo test --locked -p marlin-agent-tui --features linked-ui --test pty release_linked_ui_first_frame_without_a_gerbil_package_tree -- --ignored --exact --nocapture=
+to launch the actual Release binary under a Rust PTY with all Gerbil package
+paths absent. It keeps the ten-second usable-frame and five-second normal-exit
+limits. =MARLIN_TUI_STARTUP_TRACE=1= prints the application-internal first-frame
+time after terminal restoration. Record fresh and repeated runs separately:
+the fixture does not clear the OS file cache.
 =cargo test -p marlin-agent-tui --test pty idle_output_probe -- --ignored --nocapture=
 observes idle output in three separate terminal processes; it is a diagnostic,
 not an acceptance threshold.

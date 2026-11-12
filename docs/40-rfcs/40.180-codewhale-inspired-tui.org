@@ -97,18 +97,19 @@ alone is not a fast usable UI.
 | Candidate | Potential benefit | Evidence and qualification boundary |
 |-----------+-------------------+-------------------------------------|
 | Existing dynamic VM | Preserves live Scheme, Module selection and MOP | Current selected publication and first open are slow; the single sample below does not isolate macro expansion from source discovery or loading. |
-| Yuanxu-selected compiled closure linked with the VM | Move core selection and compilation to build time and reduce runtime filesystem and dynamic-loader work | A bare linked VM initialized quickly, but actual publication still accessed the package tree. Upstream compiled-publication owner gates and a real source-free TUI remain unqualified. |
+| Yuanxu-selected compiled closure linked with the VM | Move core selection and compilation to build time and reduce runtime filesystem and dynamic-loader work | The linked UI now opens without a Gerbil package tree. Release PTY observations vary between 3.90 s immediately after linking and 118–129 ms on subsequent runs; the application recorded a 72–83 ms first frame in the latter runs. Cold distribution performance remains unqualified. |
 | Restored Scheme-to-Rust IR plus VM | If the complete linked Release misses the startup budget, move measured residual work into native Rust while retaining VM-owned extensibility | [[https://github.com/tao3k/gerbil-scheme-rust/pull/17][Scheme Rust PR #17]] introduced a build-time typed IR, but commit =16a6172= removed that crate from the inspected SDK branch. Restoring and extending it is a separate project, including Scheme macro expansion, object and generic-method semantics where measurements justify them. |
 
-First resolve compiled Module publication and ownership in Yuanxu/SDK, link
-the selected core into the actual Darwin Release binary, and compare complete
-UI readiness and first-frame latency against the dynamic binary. The existing
-65 ms linked-VM control does not cover publication or UI open; the earlier
-linked candidate still tried to access the development package tree. A fast
-VM-only probe therefore cannot settle the product decision. If the full linked
-Release meets the startup budget, keep dynamic Scheme methods and extensions
-on the VM without restoring an IR backend for startup. If it misses, profile
-the remaining work before restoring the removed IR. The possible lowering
+The selected core is now linked into the Darwin Release binary, and the
+source-free PTY gate covers UI publication, first frame and normal exit. The
+earlier 65 ms VM-only control did not cover the selected UI; it remains a
+historical control rather than product evidence. The Release startup spread
+requires a controlled cold-process study before deciding whether lowering
+Scheme work is useful. The application-internal first frame is already far
+shorter than the slow process-to-observation samples; attribution of that gap
+requires process and terminal measurements. If the full linked Release misses
+the cold budget, profile the remaining work before restoring the removed IR.
+The possible lowering
 scope then includes macro-expanded code and object/generic dispatch where they
 actually dominate, not just pure string functions. Any hybrid must preserve
 selected Module identities, method precedence, errors, extension behavior and
@@ -127,9 +128,11 @@ as well as terminal restoration when initialization fails or is cancelled.
 
 ** Proposed Scheme UI extension plane
 
-The present client paints directly in Rust; it has no Scheme UI engine or
-plugin lifecycle. The target is a Gerbil/Yuanxu UI module whose components,
-keymaps, composition and state transitions are authored as Scheme values.
+The client now has a selected Gerbil/Yuanxu workbench with declared regions,
+focus order and CLOS event methods. Rust still paints the terminal, and a
+general plugin lifecycle, contributed content widgets and module admission
+remain open. The target extends that Scheme module so components, keymaps,
+composition and state transitions are authored as Scheme values.
 Rust owns the terminal, input decoding, layout and Ratatui painting, async
 I/O, typed runtime commands, and effect authorization. Model/session facts and
 receipts originate from their existing runtime owners, never from a UI plugin.
@@ -1323,7 +1326,16 @@ Gerbil paths absent and exited normally. =otool -L= shows no Gerbil Scheme build
 dylib; it still lists dynamically linked OpenSSL, zlib, SQLite, iconv and
 system libraries. The Scheme programme is linked into the executable, while
 distribution of the other native libraries remains a packaging concern. A
-strict timed Release PTY gate on the final distribution artifact is still open.
+controlled cold-start distribution study remains open.
+
+A Rust PTY test now launches =target/release/marlin-tui= explicitly with all
+three Gerbil paths absent. The first run immediately after relinking reached
+the usable workbench in 3.899 s; two later runs of the same binary reached it
+in 129 ms and 118 ms. The application reported its first completed frame at
+83 ms and 72 ms in the latter runs, with normal terminal restoration. This
+spread is evidence of substantial process-to-application or PTY observation
+variation, not proof of a loader cause or a cold-start percentile. The fixed
+ten-second first-frame and five-second exit deadlines passed in these runs.
 
 ** Conversation journal in progress
 
