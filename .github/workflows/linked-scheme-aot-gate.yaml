@@ -75,7 +75,7 @@ jobs:
               ;;
           esac
 
-      - uses: tao3k/gerbil-scheme-rust/.github/actions/setup-gerbil@0d92f7bee8c23b373ccd116be6f17701c4c4aac6
+      - uses: tao3k/gerbil-scheme-rust/.github/actions/setup-gerbil@dfe8b62b5dc64de88f8d70a77059a1741218ef80
         with:
           release-root: ${{ runner.temp }}/gerbil
 
@@ -96,6 +96,22 @@ jobs:
         env:
           GERBIL_PATH: ${{ github.workspace }}/scheme/.gerbil
         run: gxi packages/automation/runtime-dependencies.ss --fetch-only
+
+      - name: Build the Cargo-selected Scheme Bridge
+        env:
+          GERBIL_PATH: ${{ github.workspace }}/scheme/.gerbil
+        run: |
+          set -euo pipefail
+          bridge_root="$(
+            cargo metadata --locked --format-version 1 |
+              jq -er '
+                [.packages[] | select(.name == "gerbil-scheme-build") | .manifest_path] |
+                if length == 1 then
+                  .[0] | sub("/crates/gerbil-scheme-build/Cargo.toml$"; "")
+                else error("expected one Cargo-selected Scheme Bridge") end'
+          )"
+          cd "$bridge_root"
+          gxi build.ss compile
 
       - name: Install the Scheme package dependency
         working-directory: scheme

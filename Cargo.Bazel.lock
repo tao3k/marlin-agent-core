@@ -1,5 +1,5 @@
 {
-  "checksum": "3e049fb963b61fcf3ec04877e6c7f68f03dcd3c5d2d57d3b4187ae350f543596",
+  "checksum": "b68d1f049fec0924b245e24a570c81ca58eb499a6b1c93c7fd634284eb657f21",
   "crates": {
     "adler2 2.0.1": {
       "name": "adler2",
@@ -9391,7 +9391,7 @@
         "Git": {
           "remote": "https://github.com/tao3k/gerbil-scheme-rust",
           "commitish": {
-            "Rev": "8cebc52e79c7b453dc70a98292625594eeee84b8"
+            "Rev": "dfe8b62b5dc64de88f8d70a77059a1741218ef80"
           },
           "strip_prefix": "crates/gerbil-scheme-build"
         }
