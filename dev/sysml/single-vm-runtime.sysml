@@ -265,7 +265,9 @@ package MarlinSingleVmRuntime {
                Instrumented times do not qualify production latency. A signed
                process-statistics delta is not physical allocation bytes.
                Decompose validation, digest, typed projection and boundary work
-               using same-phase CPU and GC counters. A statistics-export probe
+               using same-phase CPU and GC counters. Submission and collection
+               can both advance VM execution or GC; their full durations are
+               not bare ABI transition cost. A statistics-export probe
                includes collection and copying; it is not bare ABI transition
                cost. Independent component means cannot qualify business p99.
                Distinguish C-only controls from Scheme entry. Per-iteration

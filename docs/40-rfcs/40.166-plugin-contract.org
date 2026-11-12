@@ -2921,7 +2921,7 @@ these freshness, cleanup and downstream ownership failures. Keep the candidate
 separate from Marlin's production dependency until those owner gates and the
 actual consumer qualify; do not weaken the checks or supply an alternate path.
 
-The current Marlin =b78152de= remote Linux dependency gate fails before Actor
+The earlier Marlin =b78152de= remote Linux dependency gate fails before Actor
 tests: Orgize cannot import =:gerbil-scheme-rust/scheme/runtime= and its Builder
 then deadlocks. A fresh local preparation builds the Cargo-selected SDK
 =8cebc52e= through its own =build.ss compile= into =target/gerbil= first;
@@ -2934,3 +2934,105 @@ qualified producer bundle; bypassing that admission is not a Context repair.
 SysML requirements =MAR-VM-R13= and =MAR-VM-R11= record the compiled selection
 and allocation-observation obligations. Authored Org/SysML are versioned;
 process logs, generated libraries and runtime reports remain under =target/=.
+
+*** Current Marlin cohort and remaining owner gates
+:PROPERTIES:
+:CUSTOM_ID: context-current-marlin-cohort
+:END:
+
+The measured implementation is =60fe7bea458b8c9d99cb5e24ef3af883ba99adf1=:
+SDK =dfe8b62b=, Lab =75b04e07=, Yuanxu =fd215418= and POO =1f4b1720=.
+The installed dependency checkouts match those revisions without source edits.
+This cut includes the shared-text accounting correction. The normal bench image
+uses only =actor-runtime= and =default=; its executable SHA-256 is
+=44efcb073aeaedd11e4e3bf112f61539e51c33105b08bf3139459e8ef6d6dcb9=.
+
+Four sequential fresh processes retain 4096 timed requests, 64 excluded warmups,
+64-request waves, batch capacity 64, queue capacity 128, four Tokio workers,
+one Scheme processor, a 60-second request deadline and a 2 GiB heap ceiling.
+Every process checks all 4160 digests against independent known answers, drains
+all accepted messages and joins its single identity-owned Actor. Preparation,
+startup, shutdown and post-timing oracle work remain separate from request
+latency. All four semantic/lifecycle runs exit naturally with status 0.
+
+| Process | Requests/s | p50 ms | p95 ms | p99 ms | Requests over 20 ms |
+|---------+------------+--------+--------+--------+---------------------|
+| 1 | 6151.6 | 6.8320 | 8.1540 | 75.7596 | 165 |
+| 2 | 5721.3 | 6.8824 | 18.0816 | 75.1764 | 184 |
+| 3 | 6287.9 | 6.6295 | 11.7412 | 72.6948 | 168 |
+| 4 | 6154.1 | 6.7740 | 10.6390 | 71.7238 | 170 |
+
+All four fail the 20 ms requirement. Correct byte accounting does not qualify a
+latency gain for this small-field workload, which already fits its transfer
+budget. These are current-cut measurements, not a paired attribution of SDK or
+queue changes against earlier revisions.
+
+A separate =context-profiling= image runs the same requests. Its 358 owner turns
+report zero truncation and retain exactly 4160 unique completion ages. The
+three turns longer than 20 ms each record one GC:
+
+| Owner turn ms | Same-turn GC ms | Maximum completed request age ms |
+|---------------+-----------------+----------------------------------|
+| 71.262 | 67.973137 | 72.421 |
+| 58.562 | 57.055950 | 62.142 |
+| 58.889 | 55.976868 | 58.950 |
+
+The longest non-GC turn is 14.156 ms. The reported post-GC live values for those
+collections are 267508400--268690496 bytes. Rust input projection totals
+20.512 ms, Scheme submission 171.087 ms, Scheme receive 466.988 ms and Rust
+result projection 1.379 ms across the complete diagnostic lifetime, including
+warmup. One collection occurs inside submission; two occur inside receive.
+Both intervals include VM work. Treating either full call interval as a C ABI
+transition would misattribute execution and GC. The observer adds work, so its
+latency distribution is separate from the four normal bench processes.
+
+The existing =context_profile= component image checks all 4096 digest values.
+Its 131072-byte output retains SHA-256
+=a68e0a6a01f972575b88a31059d878df582c428a26ef17dd41492b7de745fdf9=.
+Each phase prepares separate inputs and can retain more live objects than the
+production waves. CPU includes the listed GC CPU; these phase means cannot be
+added to explain production p99.
+
+| Component, 4096 rows | CPU ms | GC CPU ms |
+|---------------------+--------+-----------|
+| Decode | 2.037 | 0 |
+| Lab validation | 247.814 | 85.804 |
+| Lab public admission | 628.529 | 215.708 |
+| Checked Module admission | 562.800 | 124.683 |
+| Force prepared digests | 24.434 | 0 |
+| Encode forced digests | 4.236 | 0 |
+| Scheme pipeline | 514.998 | 68.411 |
+| Rechecked admission | 468.832 | 76.560 |
+| Scheme Actor pipeline | 548.243 | 93.778 |
+
+Both canonical Function-identity checks pass: publication and revalidation keep
+the existing Lab admission procedure. Rust result projection takes 114
+microseconds. The 10000 statistics-export/root-copy round trips take 13283
+microseconds, averaging 1.328 microseconds with zero observed GC. That probe
+includes native statistics collection and copying; it is not bare ABI cost.
+
+Six of nine component phases still have negative raw =vm_accounting_delta=
+values. The Actor pipeline reports =-1541711608=; the output remains marked
+=physical_allocation_budget_qualified=false=. No clamp, absolute value, new
+counter or inferred physical saving is introduced. The isolated RTS correction
+above is still outside the installed consumer. Correct cumulative accounting
+and a physical allocation-site census remain separate owner gates.
+
+The next high-impact work requires the matched library/SDK release: qualify
+owner-generated compiled publication without runtime source compilation,
+preserve POO Contract/currentness and factory identities, and admit the corrected
+RTS through its original controls before measuring the consumer again. Module
+retirement and autonomous timer wake retain their existing typed VM tests.
+Marlin adds no publication loader or unchecked admission path while these owner
+gates remain open. This measurement changes no dependency pin, upstream source,
+installed toolchain, TUI source, heap limit or Actor scheduling policy.
+
+Release preparation first fails in Apple linker with SIGBUS and the unchanged
+command then completes. Two earlier system crash reports from Marlin links
+identify excessive recursive =ld::AtomFileConsolidator::markLive= calls during
+=deadStrip= and a linker worker stack overflow. This is retained as a build
+failure; the retry does not establish a linker fix. No linker flags are changed
+for the measured images. Raw build failures, process logs, typed output bytes,
+source/binary receipts and diagnostic summaries remain under ignored =target/=.
+The maintained SysML obligation is =MAR-VM-R11=; runtime reports and archives do
+not become model or proof sources.
