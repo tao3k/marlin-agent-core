@@ -66,6 +66,8 @@ files remain local outputs regardless of their extension.
 | MAR-PLG-R03 | gRPC service and client shell | [[file:../../docs/40-rfcs/40.166-plugin-contract.org::#plugin-transport][Engine-owned gRPC and scoped clients]] |
 | MAR-PLG-R04 | Evidence and offline verifier | [[file:../../docs/40-rfcs/40.166-plugin-contract.org::#plugin-replay][Offline replay evidence]] |
 | MAR-PLG-R05 | Compiled execution, message channels, Scheme C ABI bridge, and gRPC service | [[file:../../docs/40-rfcs/40.166-plugin-contract.org::#plugin-performance][High-performance execution design]] and [[file:../../docs/40-rfcs/40.166-plugin-contract.org::#actor-throughput][Actor throughput across the host boundary]] |
+| MAR-VM-R11 | Runtime allocation accounting and Context diagnostics | [[file:../../docs/40-rfcs/40.166-plugin-contract.org::#context-allocation-accounting][Cumulative accounting and its consumer qualification]] |
+| MAR-VM-R13 | Yuanxu Build, native linked closure and Rust Deck receipts | [[file:../../docs/40-rfcs/40.166-plugin-contract.org::#context-compiled-namespace-qualification][Compiled namespace qualification]] |
 | MAR-TUI-R01 | TUI event admission and projection | [[file:../../docs/40-rfcs/40.180-codewhale-inspired-tui.org::#tui-performance][Backpressure and retention]] |
 | MAR-TUI-R02 | TUI viewport and frame scheduler | [[file:../../docs/40-rfcs/40.180-codewhale-inspired-tui.org::#tui-performance][Incremental rendering and qualification]] |
 | MAR-TUI-R03 | Runtime and session store | [[file:../../docs/40-rfcs/40.180-codewhale-inspired-tui.org::#tui-performance][Typed authority and evidence]] |

@@ -304,4 +304,21 @@ package MarlinSingleVmRuntime {
     allocation measurementAllocation allocate measuredExecution to singleVmRuntime;
     allocation latencyAllocation allocate messageLatency to singleVmRuntime.contextActors;
     dependency highPerformanceRequirement from boundedReadyBatching to requirements::highPerformanceExecution;
+    requirement <'MAR-VM-R13'> compiledSelectionPublication {
+        doc /* Qualification obligation for the upstream compiled-publication
+               candidate, not a claim about the current linked image. Yuanxu's
+               init-owned Build projection must emit the selected Module and
+               Feature namespace and native role imports. The SDK packages that
+               closure; Rust consumes its typed entries. Startup and first
+               Context admission must not reconstruct selection from source,
+               read external Scheme interfaces or start another compiler.
+               Preserve lazy role demand, POO Contracts, canonical factory
+               identity and missing-unit refusal. Source-backed authoring keeps
+               its source-currentness checks. Use normal package clean/build;
+               no downstream loader or cached admission replaces these owners.
+               Compare zero-message retained state and the full frozen Context
+               cohort separately before admitting a performance improvement. */
+    }
+    allocation compiledSelectionAllocation allocate compiledSelectionPublication to singleVmRuntime.linkedRuntimeRoles;
+    allocation compiledPublicationAllocation allocate compiledSelectionPublication to singleVmRuntime.publicationState;
 }

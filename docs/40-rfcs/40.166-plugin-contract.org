@@ -2845,3 +2845,57 @@ latency cohort. Raw sources, patch, immutable binary hashes, controls and all
 build/regression logs are retained in
 =target/context-runtime-research/gambit-accounting/=. No TUI implementation is
 changed.
+
+*** Upstream compiled namespace: next Context qualification boundary
+:PROPERTIES:
+:CUSTOM_ID: context-compiled-namespace-qualification
+:END:
+
+The next retention experiment must use Yuanxu's own compiled publication,
+rather than a Marlin publication loader. PR 19 at
+=d2239d94411ae4d027ee5c55040bf862623169fe= adds
+=building/program-publication.ss= and =source/compiled-role.ss=. Its Build
+projection emits the selected init namespace, Module publications, selected
+Features and native role imports from the admitted Graph. Compiled roles use
+compiler-resolved runtime identifiers and registered linked descriptors;
+missing units refuse before filesystem lookup. Source authoring retains its
+existing source-currentness and dependency ownership checks.
+
+| Owner | Input and result | Marlin obligation |
+|-------+------------------+-------------------|
+| Yuanxu Build | Init-owned selection to native compiled namespace and role imports | Consume the existing =std-make-spec=; do not reconstruct selection or add a loader |
+| Gerbil / Scheme Rust | Selected native units to linked program and VM | Package the actual role closure and retain startup factory identity checks |
+| Lab Context | Typed Scope to checked admission and canonical digest | Preserve the public admission Function and independent digest oracle |
+| Rust Deck | Typed requests, admission credits and correlated receipts | Keep queue, cancellation, Module retirement and timer ownership unchanged |
+
+This upstream revision also retires =building/script.ss= in favor of
+=:std/build-script=. Marlin's current build entry still imports the former
+adapter. A candidate evaluation therefore needs the matching standard build
+entry, a normal package clean/build and the emitted compiled init; changing
+only a dependency tag or linking a manifest containing =init= cannot prove
+that runtime source selection disappeared. No production pin is changed by
+this research checkpoint.
+
+At inspection, this exact upstream head has successful Linux package build,
+published Module suites, Build-input and Feature domain jobs; its complete
+cross-platform workflow remains in progress. These results do not qualify
+Marlin. The consumer must separately demonstrate startup and first Context
+admission without external Scheme source/interface reads or compiler child
+starts, preserve missing-unit and substituted-factory refusals, and complete
+Module/timer retirement through the linked VM. Forced-GC zero-message retention
+is a separate diagnostic. The original four-process Context cohort and its
+20 ms requirement remain unchanged; there is no new latency result here.
+
+The current Marlin =b78152de= remote Linux dependency gate fails before Actor
+tests: Orgize cannot import =:gerbil-scheme-rust/scheme/runtime= and its Builder
+then deadlocks. A fresh local preparation builds the Cargo-selected SDK
+=8cebc52e= through its own =build.ss compile= into =target/gerbil= first;
+that step exits 0 in 11.198 seconds without changing the installed toolchain.
+Lab's existing pinned-source preparation also exits 0. The following native
+=gxpkg deps --install= is a separate gate, not a passing result inferred from
+those preparation steps. Rust workspace CI independently lacks Orgize's
+qualified producer bundle; bypassing that admission is not a Context repair.
+
+SysML requirements =MAR-VM-R13= and =MAR-VM-R11= record the compiled selection
+and allocation-observation obligations. Authored Org/SysML are versioned;
+process logs, generated libraries and runtime reports remain under =target/=.
