@@ -35,6 +35,16 @@ Install the Marlin Scheme package and its selected dependencies in the normal
 Gerbil package environment before launching; use =GERBIL_PATH= and
 =GERBIL_LOADPATH= when that environment is not the default. A missing module
 stops startup with an error. Initial module loading can take substantial time.
+From the repository root, when =GERBIL_PATH= is unset and the local Scheme
+package is already built, the executable restarts itself before VM startup
+with =scheme/.gerbil= as the standard package prefix. Explicit paths remain
+authoritative. The binary embeds the VM, but the selected Scheme modules and
+SDK module metadata currently remain on disk in this package environment;
+neither the debug nor the release build is a self-contained module bundle.
+The package must include the Scheme-side =gerbil-scheme-rust/scheme/runtime=
+metadata from the same SDK revision as the binary; =cargo build= alone does
+not install it. Build the SDK Scheme package and the Yuanxu-selected Marlin
+package using their standard build scripts before launching.
 Tab and Shift-Tab move focus forward and backward through the Scheme workbench.
 In the transcript, Up and Down
 scroll; in commands, Enter opens the command editor. Ctrl-O remains available
@@ -103,7 +113,9 @@ shutdown guarantee.
 Ctrl-O opens a separate slash-command editor while keeping the message draft
 and cursor. Enter runs the command and restores the draft; Esc or Ctrl-O returns
 without running it. The menu shows matching Scheme-declared command descriptions;
-Tab completes an unambiguous command or adds a space after an exact command
+Up/Down selects a match and wraps through the list. Enter runs the selected
+command or opens its argument input; Tab completes the selected command.
+Without a selection, Tab completes an unambiguous command or adds a space after an exact command
 that takes arguments. Typing a slash command directly in the message editor also
 shows the menu and supports the same completion. Rust retains authority over
 command execution. When a session switch succeeds, the draft is carried into
@@ -307,6 +319,11 @@ runs the local Unix pseudo-terminal and loopback SSE fixture. It does not test
 Windows, a real provider, shell job control, or unbracketed paste.
 The streaming and session-replay PTY fixtures use =target/debug/marlin-tui= by
 default; set =MARLIN_TUI_BINARY= to an alternate built executable to test it.
+With the local Scheme package built, set =MARLIN_PTY_LOCAL_PACKAGE=1= for the
+streaming fixture to remove inherited Gerbil path variables from its child and
+exercise repository-root bootstrap. The fixture requires an alternate-screen
+workbench in under ten seconds from process creation and retains the five-second
+normal exit deadline; both include the real Scheme runtime.
 =python3 crates/marlin-agent-tui/tests/integration/pty_cancel_flood.py= checks
 that a local streaming load still allows keyboard cancellation; it is not a
 latency or soak test.

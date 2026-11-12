@@ -48,7 +48,7 @@ use marlin_agent_storage::{
 use marlin_agent_stream::{
     ModelStreamEvent, ModelStreamingGateway, matches_observed_anthropic_thinking,
 };
-use marlin_agent_ui::UiOpenFacts;
+use marlin_agent_ui::{UiBrowseDirection, UiCommandName, UiOpenFacts};
 use ratatui::{Terminal, backend::TermionBackend};
 use termion::{
     event::Key, input::TermReadEventsAndRaw, raw::IntoRawMode, screen::IntoAlternateScreen,
@@ -87,6 +87,7 @@ pub(crate) struct App {
     prompt_history: PromptHistory,
     pub(crate) history_search: Option<HistorySearch>,
     pub(crate) command_draft: Option<Composer>,
+    pub(crate) command_selection: Option<(String, UiCommandName)>,
     pub(crate) quit_armed: bool,
     pub(crate) transcript: Transcript,
     pub(crate) history: Arc<Vec<ModelGatewayMessage>>,
@@ -108,7 +109,13 @@ pub(crate) struct App {
 
 impl App {
     pub(crate) fn new(endpoint: ModelEndpoint) -> Self {
-        Self { composer: Composer::default(), prompt_history: PromptHistory::default(), history_search: None, command_draft: None, quit_armed: false, transcript: Transcript::new(vec![("Marlin".into(), "Model gateway configured. Tools and approvals are not yet available. /help for keys.".into())]), history: Arc::new(Vec::new()), context_budget: ContextBudget::default(), endpoint, models: None, pending: None, next_id: 0, scroll_up: 0, persistent: false, needs_replay: false, unverified_thinking: false, runtime_edge: None, session_browser: None, current_session: None, history_position: None, workspace: WorkspaceStatus::default() }
+        Self { composer: Composer::default(), prompt_history: PromptHistory::default(), history_search: None, command_draft: None, command_selection: None, quit_armed: false, transcript: Transcript::new(vec![("Marlin".into(), "Model gateway configured. Tools and approvals are not yet available. /help for keys.".into())]), history: Arc::new(Vec::new()), context_budget: ContextBudget::default(), endpoint, models: None, pending: None, next_id: 0, scroll_up: 0, persistent: false, needs_replay: false, unverified_thinking: false, runtime_edge: None, session_browser: None, current_session: None, history_position: None, workspace: WorkspaceStatus::default() }
+    }
+
+    pub(crate) fn selected_command(&self) -> Option<&UiCommandName> {
+        self.command_selection.as_ref().and_then(|(query, name)| {
+            (query == self.composer.text() && self.composer.cursor_at_end()).then_some(name)
+        })
     }
 
     pub(crate) fn endpoint(&self) -> &ModelEndpoint {
@@ -163,6 +170,7 @@ impl App {
         {
             return;
         }
+        self.command_selection = None;
         let mut search = HistorySearch::default();
         search.previous(&self.history);
         self.history_search = Some(search);
@@ -252,6 +260,7 @@ impl App {
 
     /// Temporarily edit a slash command without consuming the message draft.
     pub(crate) fn toggle_command(&mut self) {
+        self.command_selection = None;
         if let Some(draft) = self.command_draft.take() {
             self.composer = draft;
             return;
@@ -970,6 +979,7 @@ impl App {
     }
 
     pub(crate) fn cancel(&mut self) {
+        self.command_selection = None;
         if let Some(draft) = self.command_draft.take() {
             self.composer = draft;
             return;
@@ -1208,6 +1218,11 @@ fn run(
     let mut signal_exit = None;
     let result = (|| -> io::Result<()> {
         loop {
+            if app.command_selection.as_ref().is_some_and(|(query, _)| {
+                query != app.composer.text() || !app.composer.cursor_at_end()
+            }) {
+                app.command_selection = None;
+            }
             signal_exit = signals.observed_exit_code();
             if signal_exit.is_some() {
                 break;
@@ -1322,14 +1337,52 @@ fn run(
                 continue;
             }
             if let Ok(Ok(TerminalInput::Key(key))) = &received {
-                if *key == Key::Char('\t')
-                    && app.composer.cursor_at_end()
+                let menu_active = app.composer.cursor_at_end()
                     && ui.accepts_text(app.command_draft.is_some())
-                    && ui.has_command_prefix(app.composer.text())
-                {
-                    if let Some(completed) = ui.complete_command(app.composer.text()) {
+                    && ui.has_command_prefix(app.composer.text());
+                if menu_active && matches!(key, Key::Up | Key::Down) {
+                    let direction = if *key == Key::Up {
+                        UiBrowseDirection::Previous
+                    } else {
+                        UiBrowseDirection::Next
+                    };
+                    match ui.browse_command(app.composer.text(), app.selected_command(), direction)
+                    {
+                        Ok(choice) => {
+                            app.command_selection =
+                                choice.map(|name| (app.composer.text().to_owned(), name))
+                        }
+                        Err(error) => app.transcript.push((
+                            "UI".into(),
+                            safe_text(&format!("Command menu failed: {error}")),
+                        )),
+                    }
+                    continue;
+                }
+                if *key == Key::Char('\t') && menu_active {
+                    let completed = app
+                        .selected_command()
+                        .and_then(|name| ui.complete_selected_command(app.composer.text(), name))
+                        .or_else(|| ui.complete_command(app.composer.text()));
+                    if let Some(completed) = completed {
                         app.composer.take();
                         app.composer.insert_text(&completed);
+                    }
+                    app.command_selection = None;
+                    continue;
+                }
+                if *key == Key::Char('\n')
+                    && menu_active
+                    && let Some(completed) = app
+                        .selected_command()
+                        .and_then(|name| ui.complete_selected_command(app.composer.text(), name))
+                {
+                    let arguments = completed.ends_with(' ');
+                    app.composer.take();
+                    app.composer.insert_text(&completed);
+                    app.command_selection = None;
+                    if !arguments {
+                        app.submit(&gateway, &runtime, &reply_tx);
                     }
                     continue;
                 }

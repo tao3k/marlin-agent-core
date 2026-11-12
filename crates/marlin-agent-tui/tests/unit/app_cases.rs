@@ -113,6 +113,61 @@ fn command_menu_filters_scheme_descriptors_and_preserves_draft() {
 }
 
 #[test]
+fn command_menu_scrolls_to_the_selected_entry() {
+    use marlin_agent_ui::{UiCommand, UiCommandName, UiComponentId, UiRegion, UiWorkbench};
+    let mut app = App::new(ModelEndpoint::new("provider", "model"));
+    app.toggle_command();
+    let names = [
+        "/help",
+        "/models",
+        "/model",
+        "/sessions",
+        "/session",
+        "/clear",
+    ];
+    let commands = names
+        .into_iter()
+        .map(|name| UiCommand {
+            name: UiCommandName::new(name).unwrap(),
+            description: name.into(),
+            accepts_arguments: false,
+        })
+        .collect();
+    let view = UiWorkbench {
+        model_label: "model".into(),
+        session_label: "session".into(),
+        regions: vec![
+            UiRegion::Transcript,
+            UiRegion::Composer,
+            UiRegion::Commands(commands),
+            UiRegion::Status(vec![]),
+        ],
+        focus: UiComponentId::new("composer").unwrap(),
+    };
+    app.command_selection = Some(("/".into(), UiCommandName::new("/clear").unwrap()));
+    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(60, 12)).unwrap();
+    terminal
+        .draw(|frame| {
+            render_draw(
+                frame,
+                &app,
+                &view,
+                &mut Default::default(),
+                &mut Default::default(),
+            );
+        })
+        .unwrap();
+    let buffer = terminal.backend().buffer();
+    let text: String = (0..12)
+        .flat_map(|y| (0..60).map(move |x| buffer[(x, y)].symbol()))
+        .collect();
+    assert!(text.contains("› /clear"), "{text}");
+    assert!(!text.contains("/help  /help"), "{text}");
+    app.composer.insert_text("h");
+    assert!(app.selected_command().is_none());
+}
+
+#[test]
 fn render_uses_the_admitted_scheme_focus() {
     use marlin_agent_ui::{UiComponentId, UiRegion, UiWorkbench};
     let app = App::new(ModelEndpoint::new("provider", "model"));

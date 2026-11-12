@@ -17,4 +17,4 @@
                       composer: UiComposer. commands: UiCommands. status: UiStatus.
                       status-item: UiStatusItem. extension: UiExtension.)
       events: (.o base: UiEvent. next-focus: UiNextFocus. previous-focus: UiPreviousFocus. submit: UiSubmit.
-                  dismiss: UiDismiss. scroll: UiScroll.)))
+                  dismiss: UiDismiss. scroll: UiScroll. browse-command: UiBrowseCommand.)))

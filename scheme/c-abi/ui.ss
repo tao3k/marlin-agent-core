@@ -5,9 +5,11 @@
 ;;; Rooted Scheme-object ABI for the selected UI workbench.
 (import :gerbil-scheme-rust/scheme/runtime
         (only-in :clan/poo/object .def .get .o seal-object!)
+        (only-in :std/list/list find)
         (only-in :yuanxu/poo-clos/types clos-instance?)
         "../ui/projection.ss")
 (export marlin-ui-session-open marlin-ui-session-project marlin-ui-session-dispatch
+        marlin-ui-session-browse-command
         marlin-ui-session-refresh-labels)
 
 ;;; Each event returns a successor; older frames keep their own rooted state.
@@ -18,6 +20,21 @@
 (def (checked-session value)
   (unless (clos-instance? UiNativeSession. value) (error "invalid UI native session"))
   value)
+
+(def (marlin-ui-session-browse-command input)
+  (unless (and (vector? input) (= (vector-length input) 4))
+    (error "invalid UI command browse request"))
+  (let* ((current (checked-session (vector-ref input 0)))
+         (ui (.get current ui))
+         (component (find (lambda (region) (eq? (.get region identity) 'commands))
+                          (.get (.get current workbench) regions)))
+         (prototype (.get ui events browse-command))
+         (event (.o (:: @ prototype) query: (vector-ref input 1)
+                    previous: (vector-ref input 2) direction: (vector-ref input 3))))
+    (unless component (error "UI command region is missing"))
+    (let (intent ((.get ui dispatch) (.get current generic) component event))
+      (unless (eq? (.get intent kind) 'command-selection) (error "invalid command browse intent"))
+      (.get intent name))))
 
 (def (marlin-ui-session-open input)
   (unless (and (vector? input) (= (vector-length input) 3))

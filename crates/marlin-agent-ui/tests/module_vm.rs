@@ -3,7 +3,9 @@
 // SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
 use gerbil_scheme::GerbilRuntime;
-use marlin_agent_ui::{UiEvent, UiIntent, UiModule, UiOpenFacts, UiProjectionError};
+use marlin_agent_ui::{
+    UiBrowseDirection, UiEvent, UiIntent, UiModule, UiOpenFacts, UiProjectionError,
+};
 use std::path::Path;
 
 #[test]
@@ -26,6 +28,43 @@ fn gerbil_resolves_and_runs_the_selected_ui_module() {
     let initial = module.open(&facts).expect("open selected UI");
     let first = module.project(&initial).expect("project initial UI");
     assert_eq!(first.focus.as_str(), "composer");
+    let first_choice = module
+        .browse_command(&initial, "/", None, UiBrowseDirection::Next)
+        .unwrap()
+        .unwrap();
+    assert_eq!(first_choice.as_str(), "/help");
+    let wrapped = module
+        .browse_command(
+            &initial,
+            "/",
+            Some(&first_choice),
+            UiBrowseDirection::Previous,
+        )
+        .unwrap()
+        .unwrap();
+    assert_eq!(wrapped.as_str(), "/clear");
+    let forward = module
+        .browse_command(&initial, "/", Some(&wrapped), UiBrowseDirection::Next)
+        .unwrap()
+        .unwrap();
+    assert_eq!(forward, first_choice);
+    let model = module
+        .browse_command(&initial, "/mo", None, UiBrowseDirection::Next)
+        .unwrap()
+        .unwrap();
+    assert_eq!(model.as_str(), "/models");
+    let model = module
+        .browse_command(&initial, "/mo", Some(&model), UiBrowseDirection::Next)
+        .unwrap()
+        .unwrap();
+    assert_eq!(model.as_str(), "/model");
+    assert!(
+        module
+            .browse_command(&initial, "/zz", None, UiBrowseDirection::Next)
+            .unwrap()
+            .is_none()
+    );
+    assert_eq!(module.project(&initial).unwrap(), first);
     assert_eq!(first.commands().len(), 12);
     assert!(
         first

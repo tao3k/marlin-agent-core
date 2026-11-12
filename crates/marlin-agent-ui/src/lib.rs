@@ -137,6 +137,7 @@ pub struct UiModule<'runtime> {
     open: RootedSchemeObject<'runtime>,
     project: RootedSchemeObject<'runtime>,
     dispatch: RootedSchemeObject<'runtime>,
+    browse_command: RootedSchemeObject<'runtime>,
     refresh_labels: RootedSchemeObject<'runtime>,
 }
 
@@ -166,8 +167,9 @@ impl<'runtime> UiModule<'runtime> {
         let open = export(runtime, directory, ui, "marlin-ui-session-open")?;
         let project = export(runtime, directory, ui, "marlin-ui-session-project")?;
         let dispatch = export(runtime, directory, ui, "marlin-ui-session-dispatch")?;
+        let browse_command = export(runtime, directory, ui, "marlin-ui-session-browse-command")?;
         let refresh_labels = export(runtime, directory, ui, "marlin-ui-session-refresh-labels")?;
-        for procedure in [&open, &project, &dispatch, &refresh_labels] {
+        for procedure in [&open, &project, &dispatch, &browse_command, &refresh_labels] {
             if procedure.as_ref().kind()? != ObjectKind::Procedure {
                 return Err(UiProjectionError::Invalid("UI export is not a procedure"));
             }
@@ -178,6 +180,7 @@ impl<'runtime> UiModule<'runtime> {
             open,
             project,
             dispatch,
+            browse_command,
             refresh_labels,
         })
     }
@@ -193,6 +196,47 @@ impl<'runtime> UiModule<'runtime> {
     /// Project an existing session into a typed host candidate.
     pub fn project(&self, session: &UiNativeSession<'_>) -> Result<UiWorkbench, UiProjectionError> {
         project_workbench(self.runtime, &self.project, session)
+    }
+
+    /// Ask the selected Scheme generic for a presentation-only command choice.
+    pub fn browse_command(
+        &self,
+        session: &UiNativeSession<'_>,
+        query: &str,
+        previous: Option<&UiCommandName>,
+        direction: UiBrowseDirection,
+    ) -> Result<Option<UiCommandName>, UiProjectionError> {
+        if !UiCommandName::is_valid_prefix(query) {
+            return Err(UiProjectionError::Invalid("invalid command query"));
+        }
+        let query = self.runtime.string_from_utf8(query)?.into_object();
+        let previous = match previous {
+            Some(name) => self.runtime.string_from_utf8(name.as_str())?.into_object(),
+            None => self.runtime.scalar_object(SchemeScalar::Boolean(false))?,
+        };
+        let direction = self.runtime.intern_identifier(
+            IdentifierKind::Symbol,
+            match direction {
+                UiBrowseDirection::Next => "next",
+                UiBrowseDirection::Previous => "previous",
+            },
+        )?;
+        let input = self.runtime.collection_from_objects(
+            CollectionKind::Vector,
+            &[&session.root, &query, &previous, &direction],
+        )?;
+        let output = self
+            .runtime
+            .call_rooted(&self.browse_command, &input.into_object())?;
+        match output.as_ref().kind()? {
+            ObjectKind::String => Ok(Some(UiCommandName::new(&string(output)?)?)),
+            ObjectKind::Boolean
+                if matches!(output.as_ref().scalar()?, SchemeScalar::Boolean(false)) =>
+            {
+                Ok(None)
+            }
+            _ => Err(UiProjectionError::Invalid("invalid command browse result")),
+        }
     }
 
     /// Refresh host-owned display facts while retaining the Scheme UI session.
@@ -237,6 +281,12 @@ pub enum UiEvent {
     Dismiss,
     ScrollUp,
     ScrollDown,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum UiBrowseDirection {
+    Next,
+    Previous,
 }
 
 /// A presentation proposal; only the runtime can authorize its effects.

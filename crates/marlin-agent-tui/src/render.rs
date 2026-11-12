@@ -72,7 +72,6 @@ pub(crate) fn draw(
         ui.commands()
             .iter()
             .filter(|command| command.name.as_str().starts_with(app.composer.text()))
-            .take(4)
             .collect()
     } else {
         Vec::new()
@@ -82,7 +81,7 @@ pub(crate) fn draw(
     let spare = area
         .height
         .saturating_sub(2 + transcript_rows + composer_height);
-    let palette_height = (suggestions.len() as u16).min(spare);
+    let palette_height = (suggestions.len() as u16).min(4).min(spare);
     let remaining = spare - palette_height;
     let focused_extension = extensions.iter().any(|(id, _)| *id == &ui.focus);
     let status_height =
@@ -181,22 +180,33 @@ pub(crate) fn draw(
             frame.set_cursor_position((inner.x + view.cursor.0, inner.y + view.cursor.1));
         }
     }
-    for (row, command) in suggestions
-        .iter()
-        .take(usize::from(parts[3].height))
-        .enumerate()
-    {
+    let selected = app
+        .selected_command()
+        .filter(|name| suggestions.iter().any(|command| &command.name == *name));
+    let selected_index =
+        selected.and_then(|name| suggestions.iter().position(|command| &command.name == name));
+    let visible = usize::from(parts[3].height);
+    let start = selected_index.map_or(0, |index| index.saturating_add(1).saturating_sub(visible));
+    for (row, command) in suggestions.iter().skip(start).take(visible).enumerate() {
         let line =
             ratatui::layout::Rect::new(parts[3].x, parts[3].y + row as u16, parts[3].width, 1);
         let text = format!(
-            " {}  {}",
+            " {} {}  {}",
+            if selected == Some(&command.name) {
+                "›"
+            } else {
+                " "
+            },
             command.name.as_str(),
             header_value(&command.description)
         );
-        frame.render_widget(
-            Paragraph::new(text).style(Style::default().fg(Color::Cyan)),
-            line,
-        );
+        let style = Style::default().fg(Color::Cyan);
+        let style = if selected == Some(&command.name) {
+            style.add_modifier(Modifier::BOLD)
+        } else {
+            style
+        };
+        frame.render_widget(Paragraph::new(text).style(style), line);
     }
     let visible = usize::from(parts[4].height);
     if visible > 0 {
@@ -256,12 +266,20 @@ pub(crate) fn draw(
         }
         return effective_scroll;
     }
+    let selected_status = selected.map(|name| {
+        format!(
+            " Selected: {}  Enter choose  Up/Down select  Tab complete",
+            name.as_str()
+        )
+    });
     let status = if app.quit_armed {
         " Press Ctrl-C again to quit; another key cancels. Draft will not be saved."
     } else if app.composer.limit_reached() {
         " Draft limit: 1 MiB. Insertion rejected; draft retained."
+    } else if let Some(status) = selected_status.as_deref() {
+        status
     } else if app.command_draft.is_some() {
-        " Enter run command  Tab complete  Esc cancel  Ctrl-O return to draft"
+        " Enter run command  Up/Down select  Tab complete  Esc cancel  Ctrl-O return"
     } else if app.workspace.view().is_some() {
         " Workspace: PageUp/PageDown scroll  Esc/Ctrl-C return  Enter submit draft"
     } else if ui.focus.as_str() == "commands" {
@@ -271,7 +289,7 @@ pub(crate) fn draw(
     } else if ui.focus.as_str() != "composer" {
         " Extension: Enter activate  Tab next  Shift-Tab previous  Ctrl-Q quit"
     } else if !suggestions.is_empty() && app.composer.cursor_at_end() {
-        " Command: Enter run  Tab complete  Ctrl-O separate editor  Ctrl-Q quit"
+        " Command: Enter run  Up/Down select  Tab complete  Ctrl-O editor  Ctrl-Q quit"
     } else {
         " Message: Enter send  Tab/Shift-Tab focus  Ctrl-R search  Ctrl-O commands  Ctrl-Q quit"
     };

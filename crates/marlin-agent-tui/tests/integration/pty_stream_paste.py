@@ -32,8 +32,29 @@ with tempfile.TemporaryDirectory() as temp:
     fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack('HHHH', 30, 100, 0, 0))
     before = termios.tcgetattr(slave)
     env = dict(os.environ, MARLIN_TUI_FIXTURE_KEY='fixture')
+    if env.get('MARLIN_PTY_LOCAL_PACKAGE') == '1':
+        # Exercise the executable's ordinary repository-root bootstrap.
+        env.pop('GERBIL_PATH', None)
+        env.pop('GERBIL_LOADPATH', None)
+    started = time.monotonic()
     proc = subprocess.Popen([binary, path], stdin=slave, stdout=slave, stderr=slave, env=env)
     out = bytearray()
+    def first_frame():
+        # Include process creation and wait for the actual alternate-screen
+        # workbench, not the earlier startup progress message.
+        deadline = started + 10
+        while time.monotonic() < deadline:
+            remaining = deadline - time.monotonic()
+            if select.select([master], [], [], min(.2, max(0, remaining)))[0]:
+                try: out.extend(os.read(master, 65536))
+                except OSError: break
+                if (b'\x1b[?1049h' in out and b'Marlin' in out
+                        and 'Message: Enter send' in status_line()):
+                    elapsed = time.monotonic() - started
+                    assert elapsed < 10, f'first workbench frame took {elapsed:.3f}s (limit: 10s)'
+                    print(f'first workbench frame: {elapsed:.3f}s', flush=True)
+                    return
+        raise AssertionError(f'no workbench frame within 10s; output tail {bytes(out[-1200:])!r}')
     def until(needle, seconds=15):
         deadline = time.monotonic() + seconds
         while needle not in out and time.monotonic() < deadline:
@@ -83,11 +104,20 @@ with tempfile.TemporaryDirectory() as temp:
                 except OSError: break
         assert needle in status_line(), f'missing status {needle!r}: {status_line()!r}'
     try:
-        until(b'Marlin')
+        first_frame()
         assert b'GERBIL-BUILD' not in out, 'internal SDK module progress leaked into the terminal'
         os.write(master, b'\x1b[Z')
         until_status('Transcript: Up/Down scroll')
         os.write(master, b'\t')
+        until_status('Message: Enter send')
+        # The Scheme generic chooses menu entries, including reverse wrap.
+        os.write(master, b'/')
+        until_status('Command: Enter run')
+        os.write(master, b'\x1b[A')
+        until_status('Selected: /clear')
+        os.write(master, b'\x1b[B')
+        until_status('Selected: /help')
+        os.write(master, b'\r')
         until_status('Message: Enter send')
         # Direct slash entry discovers and completes the Scheme-declared command.
         os.write(master, b'/hel')

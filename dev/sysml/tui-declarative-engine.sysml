@@ -24,19 +24,28 @@ package MarlinDeclarativeUi {
                    generic functions and method bundles permit specialization
                    without embedding Rust callbacks in Scheme components.
                    Forward and reverse focus traverse the same admitted order;
-                   both wrap and return a focus intent without executing effects. */
+                   both wrap and return a focus intent without executing effects.
+                   Command browsing dispatches a bounded query to the declared
+                   command component; its selection is a presentation proposal
+                   checked against the host's admitted command menu. */
         }
         part <'MAR-UI-T04'> nativeBoundary {
             doc /* The SDK-owned VM boundary transfers rooted Scheme values to
                    Rust types in batches, with one VM owner and explicit object
                    lifetime. It is not text serialization or a per-cell API.
                    Startup resolves the selected publication and procedures via
-                   the SDK's native ABI; later calls borrow roots and retain
-                   the resolved dependency closure for lazy module access.
+                   the SDK's native ABI; later calls borrow roots and require
+                   the selected dependency closure to remain available for
+                   lazy module access. In a built development checkout, the
+                   executable can restart before VM initialization with the
+                   standard local package prefix when none was configured.
+                   This is not module bundling; SDK-owned path lifetime remains
+                   a separate integration requirement.
                    Scheme failures remain observable without publishing a
                    partial state or losing the previous session.
-                   AOT is optional packaging, not a prerequisite implied by
-                   the C ABI; precompiled Scheme on the VM remains a mode. */
+                   Native linking is a release packaging choice, not a
+                   prerequisite implied by the C ABI; precompiled Scheme on
+                   the VM remains a development mode. */
         }
         part <'MAR-UI-T05'> admittedSnapshot {
             doc /* Rust admits a complete candidate before publishing it.
@@ -140,10 +149,27 @@ package MarlinDeclarativeUi {
         doc /* Measure cold startup through the first usable declared workbench,
                including SDK initialization, selected Module publication and
                lazy dependencies. A progress message is not a usable frame.
-               Preserve existing PTY readiness deadlines and measure shutdown
+               The PTY fixture must observe the workbench in under ten seconds
+               from process creation; measure shutdown
                separately; do not promote an extended diagnostic window into
                a passing acceptance result. The VM owner and native roots must
                retire normally; suppressing cleanup is not an optimization. */
+    }
+    requirement <'MAR-UI-R09'> selfContainedRelease {
+        doc /* A release links the selected core Scheme Module closure and SDK
+               VM into the application so it runs without a source checkout or
+               a preinstalled Gerbil package tree. Optional extensions retain
+               their declared Module identity and may be loaded separately.
+               The linked and development paths preserve typed ABI, generic
+               dispatch, failure visibility and normal VM retirement. Measure
+               cold first-frame and cleanup cost under fixed workloads: static
+               linking alone does not imply zero initialization cost. The
+               Yuanxu-owned publication and its admission evidence must remain
+               available from the compiled closure without discovering package
+               sources or writing a package root at runtime. Generated module
+               identities and metadata must come from the same selected build
+               specification; membership in a linker manifest alone does not
+               prove that the selected UI can be realized. */
     }
 
     allocation extensions allocate composableExtensions to engine.modulePublication;
@@ -156,6 +182,7 @@ package MarlinDeclarativeUi {
     allocation visualIdentity allocate marlinIdentity to engine.terminalHost;
     allocation vmContinuity allocate vmModuleContinuity to engine.nativeBoundary;
     allocation startupQualification allocate interactiveStartup to engine.qualification;
+    allocation releaseBoundary allocate selfContainedRelease to engine.nativeBoundary;
 
     attribute def BeginUpdate;
     attribute def CandidateReady;

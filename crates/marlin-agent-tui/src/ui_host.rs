@@ -7,8 +7,8 @@
 use super::command::CommandKind;
 use gerbil_scheme::GerbilRuntime;
 use marlin_agent_ui::{
-    UiCommandName, UiEvent, UiIntent, UiModule, UiNativeSession, UiOpenFacts, UiProjectionError,
-    UiRegion, UiScrollDirection, UiWorkbench,
+    UiBrowseDirection, UiCommandName, UiEvent, UiIntent, UiModule, UiNativeSession, UiOpenFacts,
+    UiProjectionError, UiRegion, UiScrollDirection, UiWorkbench,
 };
 use termion::event::Key;
 
@@ -81,6 +81,35 @@ impl<'runtime> UiHost<'runtime> {
         complete_command(&self.view, draft)
     }
 
+    pub(crate) fn browse_command(
+        &self,
+        query: &str,
+        previous: Option<&UiCommandName>,
+        direction: UiBrowseDirection,
+    ) -> Result<Option<UiCommandName>, UiProjectionError> {
+        let choice = self
+            .module
+            .browse_command(&self.session, query, previous, direction)?;
+        admit_command_choice(&self.view, query, choice.as_ref())?;
+        Ok(choice)
+    }
+
+    pub(crate) fn complete_selected_command(
+        &self,
+        query: &str,
+        selected: &UiCommandName,
+    ) -> Option<String> {
+        let command =
+            self.view.commands().iter().find(|command| {
+                &command.name == selected && selected.as_str().starts_with(query)
+            })?;
+        let mut result = command.name.as_str().to_owned();
+        if command.accepts_arguments {
+            result.push(' ');
+        }
+        Some(result)
+    }
+
     pub(crate) fn has_command_prefix(&self, draft: &str) -> bool {
         UiCommandName::is_valid_prefix(draft)
             && self
@@ -142,6 +171,24 @@ impl<'runtime> UiHost<'runtime> {
         self.view = candidate;
         Ok(intent)
     }
+}
+
+fn admit_command_choice(
+    view: &UiWorkbench,
+    query: &str,
+    choice: Option<&UiCommandName>,
+) -> Result<(), UiProjectionError> {
+    if let Some(name) = choice
+        && !view
+            .commands()
+            .iter()
+            .any(|command| &command.name == name && name.as_str().starts_with(query))
+    {
+        return Err(UiProjectionError::Invalid(
+            "command choice is not in the admitted menu",
+        ));
+    }
+    Ok(())
 }
 
 fn complete_command(view: &UiWorkbench, draft: &str) -> Option<String> {
@@ -404,6 +451,11 @@ mod tests {
             complete_command(&workbench, &format!("/{}", "m".repeat(1_000_000))),
             None
         );
+        let help = UiCommandName::new("/help").unwrap();
+        let forged = UiCommandName::new("/forged").unwrap();
+        assert!(admit_command_choice(&workbench, "/he", Some(&help)).is_ok());
+        assert!(admit_command_choice(&workbench, "/mo", Some(&help)).is_err());
+        assert!(admit_command_choice(&workbench, "/", Some(&forged)).is_err());
     }
 
     #[test]

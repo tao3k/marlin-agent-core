@@ -46,6 +46,10 @@ open until its real Marlin integration and the listed validation exist.
   paste, long output and accessibility; add meaningful integration checks.
 - [ ] Integrate Cargo and Bazel build paths and user documentation; run focused
   tests and record any wider build or platform limitations.
+- [ ] Ship a release whose selected core Scheme Module closure and SDK VM are
+  linked into the application, without requiring an installed Gerbil package
+  tree. Preserve declared Module identity and optional dynamic extensions, and
+  qualify cold first-frame and normal shutdown against fixed workloads.
 
 * Initial observations
 
@@ -1095,6 +1099,78 @@ state. A real VM test covers reverse traversal, wrap and preservation of the
 previous session; the Scheme workbench test covers the generic directly. A Unix
 PTY run observed both reverse and forward focus, command and streaming input,
 but again failed the unchanged five-second process-exit deadline.
+
+The workspace binary embeds the SDK VM, while Marlin's selected Scheme
+modules and SDK module metadata are still installed separately. A development
+launch from the repository root now restarts before VM initialization with
+the standard =scheme/.gerbil= package prefix when =GERBIL_PATH= is absent;
+an explicit prefix remains authoritative. With the pinned SDK Scheme package
+and the selected Marlin package built in that prefix, the exact
+=target/debug/marlin-tui crates/marlin-agent-tui/example.toml= command reached
+a terminal frame without inherited Gerbil path variables, using a placeholder
+credential and loopback endpoint without sending a provider request. The same
+binary failed the original 15-second first-frame gate under a separate run;
+an extended diagnostic passed menu navigation, stream and terminal restoration.
+This bootstrap does not make release builds self-contained or establish a
+performance improvement. The SDK currently restores a locally discovered load
+path before later rooted calls; a durable SDK-owned lifecycle is still needed.
+
+The streaming PTY acceptance now requires the alternate-screen workbench in
+under ten seconds from process creation, matching the requested startup limit;
+the five-second normal-exit gate remains. One separate observation of the exact
+example command reached its first frame in 53.7 seconds and did not exit within
+12 seconds; disk space was low, so this is an observation rather than a
+controlled benchmark. Neither static linkage nor a longer diagnostic deadline
+can substitute for passing both gates.
+With the development package bootstrap and the unchanged target binary, the
+new ten-second PTY gate failed: the only output was the startup progress line.
+The streaming and normal-exit portions did not run in that attempt.
+
+A build-only static-closure probe used the existing Yuanxu =build.ss spec=
+output and the pinned SDK's program staging interface. Staging with =init=
+alone produced 371 manifest modules but omitted selected UI modules. Passing
+the 62 compilation entries from Yuanxu's specification as runtime imports
+produced 844 manifest modules and included all 62 entries. The first attempt
+with a staging directory ahead of the installed package failed because it
+loaded compiler-generated Scheme as an application module; placing the
+installed package first allowed staging to complete. Manifest membership does
+not establish that the archive links, initializes without a package tree, or
+improves startup. The selection remains owned by Yuanxu, and this probe is not
+a production loader or a second declaration of the selected modules.
+The pinned SDK's archive builder compiled that candidate. An initial smoke
+binary incorrectly used the SDK's default dynamic runtime together with the
+linked graph; it crashed both with and without the development package path.
+Its call stack crossed the dynamic bridge's Gambit setup and the executable's
+linked kernel. This is an invalid combination: the SDK requires its
+=external-program= feature for an application-owned linked graph. The crash
+is not evidence that the correctly configured static graph fails, and the
+default binary also retained a dependency on the SDK's build dylib.
+With =external-program= enabled, a minimal executable linked the candidate
+archive and initialized and retired its VM with =GERBIL_HOME=, =GERBIL_PATH=
+and =GERBIL_LOADPATH= pointing to nonexistent paths. One observation measured
+65.5 ms through initialization and 65.6 ms through retirement. The executable
+did not depend on the SDK build dylib, but still used dynamic OpenSSL, zlib,
+SQLite and system libraries. This exercised the linked VM only: it did not
+force the selected publication, open a UI, or measure a terminal frame.
+A second probe imported the same selected =init= and used the SDK strong-root
+ABI to access =Marlin.ui=. With the development Gerbil package paths it
+initialized the VM in 34.9 ms, obtained that publication in 7.42 seconds,
+and retired in 10.17 seconds total. With all three Gerbil paths pointing to
+nonexistent directories, VM initialization succeeded in 78.5 ms, but the
+publication call failed with native status 3 and its Scheme exception could
+not be formatted. This comparison proves a dependency on the development
+loading environment, not which file or module is missing. Neither run
+opened a workbench or measured a terminal first frame, and the linked-object
+API currently returns the failure status without its diagnostic.
+With a real SDK home and compiled library load path but an absent package
+root, the captured exception is =Operation not permitted= while creating the
+package root. Its stack reaches =gerbil/tools/gxpkg#pkg-root-dir= through
+=yuanxu/module-system/source/init#module-init-source-root= during publication
+access. The selected declaration therefore still invokes source/package
+discovery at runtime. Fixing the release requires the Yuanxu-owned selection
+and provenance lifecycle to support a compiled closure, as well as Gerbil's
+module metadata and SDK loader semantics; a second hand-maintained module
+list or silently skipped admission would not satisfy that boundary.
 
 ** Conversation journal in progress
 
