@@ -8,6 +8,7 @@ use super::{
     app::App,
     viewport::{ScrollAnchor, TranscriptViewportCache},
 };
+use marlin_agent_ui::{UiCommandName, UiRegion, UiWorkbench};
 use ratatui::{
     layout::{Constraint, Direction, Layout},
     style::{Color, Modifier, Style},
@@ -29,6 +30,7 @@ fn header_value(value: &str) -> String {
 pub(crate) fn draw(
     frame: &mut ratatui::Frame<'_>,
     app: &App,
+    ui: &UiWorkbench,
     cache: &mut TranscriptViewportCache,
     anchor: &mut ScrollAnchor,
 ) -> usize {
@@ -51,12 +53,50 @@ pub(crate) fn draw(
     } else {
         composer_limit
     };
+    let extensions: Vec<_> = ui
+        .regions
+        .iter()
+        .filter_map(|region| match region {
+            UiRegion::Extension { id, label, .. } => Some((id, label)),
+            _ => None,
+        })
+        .collect();
+    let status_items = ui.regions.iter().find_map(|region| match region {
+        UiRegion::Status(items) if !items.is_empty() => Some(items),
+        _ => None,
+    });
+    let suggestions: Vec<_> = if app.history_search.is_none()
+        && (app.command_draft.is_some() || ui.focus.as_str() == "composer")
+        && UiCommandName::is_valid_prefix(app.composer.text())
+    {
+        ui.commands()
+            .iter()
+            .filter(|command| command.name.as_str().starts_with(app.composer.text()))
+            .take(4)
+            .collect()
+    } else {
+        Vec::new()
+    };
+    // Keep the core transcript and editor usable; show a moving window when
+    // the available terminal height cannot display every extension.
+    let spare = area
+        .height
+        .saturating_sub(2 + transcript_rows + composer_height);
+    let palette_height = (suggestions.len() as u16).min(spare);
+    let remaining = spare - palette_height;
+    let focused_extension = extensions.iter().any(|(id, _)| *id == &ui.focus);
+    let status_height =
+        u16::from(status_items.is_some() && remaining > u16::from(focused_extension));
+    let extension_height = (extensions.len() as u16).min(remaining - status_height);
     let parts = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(1),
             Constraint::Min(1),
             Constraint::Length(composer_height),
+            Constraint::Length(palette_height),
+            Constraint::Length(extension_height),
+            Constraint::Length(status_height),
             Constraint::Length(1),
         ])
         .split(area);
@@ -121,14 +161,73 @@ pub(crate) fn draw(
     } else {
         " Message "
     };
-    let block = Block::default().borders(Borders::ALL).title(title);
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(title)
+        .border_style(
+            if ui.focus.as_str() == "composer" || app.command_draft.is_some() {
+                Style::default().fg(Color::Cyan)
+            } else {
+                Style::default()
+            },
+        );
     let inner = block.inner(parts[2]);
     frame.render_widget(block, parts[2]);
     if let Some(view) = composer.view(inner.width, inner.height) {
         frame.render_widget(Paragraph::new(view.rows.join("\n")), inner);
-        if app.history_search.is_none() {
+        if app.history_search.is_none()
+            && (ui.focus.as_str() == "composer" || app.command_draft.is_some())
+        {
             frame.set_cursor_position((inner.x + view.cursor.0, inner.y + view.cursor.1));
         }
+    }
+    for (row, command) in suggestions
+        .iter()
+        .take(usize::from(parts[3].height))
+        .enumerate()
+    {
+        let line =
+            ratatui::layout::Rect::new(parts[3].x, parts[3].y + row as u16, parts[3].width, 1);
+        let text = format!(
+            " {}  {}",
+            command.name.as_str(),
+            header_value(&command.description)
+        );
+        frame.render_widget(
+            Paragraph::new(text).style(Style::default().fg(Color::Cyan)),
+            line,
+        );
+    }
+    let visible = usize::from(parts[4].height);
+    if visible > 0 {
+        let focused = extensions.iter().position(|(id, _)| *id == &ui.focus);
+        let start = focused.map_or(0, |index| index.saturating_add(1).saturating_sub(visible));
+        for (row, (id, label)) in extensions.iter().skip(start).take(visible).enumerate() {
+            let is_focused = *id == &ui.focus;
+            let text = format!(
+                " {} {}",
+                if is_focused { "›" } else { "·" },
+                header_value(label)
+            );
+            let line =
+                ratatui::layout::Rect::new(parts[4].x, parts[4].y + row as u16, parts[4].width, 1);
+            let style = if is_focused {
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default()
+            };
+            frame.render_widget(Paragraph::new(text).style(style), line);
+        }
+    }
+    if let Some(items) = status_items.filter(|_| parts[5].height > 0) {
+        let text = items
+            .iter()
+            .map(|item| header_value(&item.label))
+            .collect::<Vec<_>>()
+            .join(" · ");
+        frame.render_widget(Paragraph::new(format!(" {text}")), parts[5]);
     }
     if let Some(search) = &app.history_search {
         let prefix = if search.is_searching() {
@@ -138,7 +237,7 @@ pub(crate) fn draw(
         } else {
             " No match: "
         };
-        let available = usize::from(parts[3].width)
+        let available = usize::from(parts[6].width)
             .saturating_sub(UnicodeWidthStr::width(prefix))
             .saturating_sub(1);
         let mut suffix = search.query();
@@ -149,11 +248,11 @@ pub(crate) fn draw(
             suffix = &suffix[first.len()..];
         }
         let status = format!("{prefix}{suffix}");
-        frame.render_widget(Paragraph::new(status.clone()), parts[3]);
-        if parts[3].width > 0 && parts[3].height > 0 {
+        frame.render_widget(Paragraph::new(status.clone()), parts[6]);
+        if parts[6].width > 0 && parts[6].height > 0 {
             let column =
-                UnicodeWidthStr::width(status.as_str()).min(usize::from(parts[3].width - 1));
-            frame.set_cursor_position((parts[3].x + column as u16, parts[3].y));
+                UnicodeWidthStr::width(status.as_str()).min(usize::from(parts[6].width - 1));
+            frame.set_cursor_position((parts[6].x + column as u16, parts[6].y));
         }
         return effective_scroll;
     }
@@ -162,12 +261,20 @@ pub(crate) fn draw(
     } else if app.composer.limit_reached() {
         " Draft limit: 1 MiB. Insertion rejected; draft retained."
     } else if app.command_draft.is_some() {
-        " Enter run command  Esc cancel  Ctrl-O return to draft"
+        " Enter run command  Tab complete  Esc cancel  Ctrl-O return to draft"
     } else if app.workspace.view().is_some() {
         " Workspace: PageUp/PageDown scroll  Esc/Ctrl-C return  Enter submit draft"
+    } else if ui.focus.as_str() == "commands" {
+        " Commands: Enter open  Tab next  Shift-Tab previous  Ctrl-Q quit"
+    } else if ui.focus.as_str() == "transcript" {
+        " Transcript: Up/Down scroll  Tab next  Shift-Tab previous  Ctrl-Q quit"
+    } else if ui.focus.as_str() != "composer" {
+        " Extension: Enter activate  Tab next  Shift-Tab previous  Ctrl-Q quit"
+    } else if !suggestions.is_empty() && app.composer.cursor_at_end() {
+        " Command: Enter run  Tab complete  Ctrl-O separate editor  Ctrl-Q quit"
     } else {
-        " Enter send  Ctrl-N newline  Ctrl-R search  Ctrl-O commands  Ctrl-Q quit"
+        " Message: Enter send  Tab/Shift-Tab focus  Ctrl-R search  Ctrl-O commands  Ctrl-Q quit"
     };
-    frame.render_widget(Paragraph::new(status), parts[3]);
+    frame.render_widget(Paragraph::new(status), parts[6]);
     effective_scroll
 }

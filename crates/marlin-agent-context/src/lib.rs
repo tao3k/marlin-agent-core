@@ -6,6 +6,8 @@
 
 #[cfg(feature = "gerbil")]
 pub mod gerbil;
+#[cfg(feature = "gerbil")]
+pub mod gerbil_org;
 /// Org-backed Context source and optional memory projections.
 #[cfg(feature = "org-source")]
 pub mod org;

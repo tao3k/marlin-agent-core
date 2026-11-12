@@ -9,6 +9,7 @@
 (import "yuanxu-policy-test"
         "ui-workbench-test"
         "context-org-contract-test"
+        "context-org-boundary-test"
         "context-batch-test"
         "context-causal-test"
         "deck-runtime-test"

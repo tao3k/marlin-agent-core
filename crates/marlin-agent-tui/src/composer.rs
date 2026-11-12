@@ -27,6 +27,9 @@ impl Composer {
     pub fn text(&self) -> &str {
         &self.text
     }
+    pub(crate) fn cursor_at_end(&self) -> bool {
+        self.cursor == self.text.len()
+    }
     pub(crate) fn limit_reached(&self) -> bool {
         self.limit_reached
     }

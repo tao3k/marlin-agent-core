@@ -15,6 +15,7 @@ use std::{
 
 use super::{
     cli::{CliAction, list_sessions, parse_cli},
+    command::Command,
     composer::Composer,
     config,
     context_budget::ContextBudget,
@@ -30,6 +31,7 @@ use super::{
     replay::{ReplayOutcome, ReplayTurn, load_session},
     session_browser::{OpenedView, SessionBrowser, SessionPageRequestError},
     signals::SignalMonitor,
+    ui_host::{UiHost, UiKeyAction},
     viewport::{ScrollAnchor, Transcript, TranscriptViewportCache},
     workspace::{WorkspaceStatus, parse_query},
 };
@@ -46,6 +48,7 @@ use marlin_agent_storage::{
 use marlin_agent_stream::{
     ModelStreamEvent, ModelStreamingGateway, matches_observed_anthropic_thinking,
 };
+use marlin_agent_ui::UiOpenFacts;
 use ratatui::{Terminal, backend::TermionBackend};
 use termion::{
     event::Key, input::TermReadEventsAndRaw, raw::IntoRawMode, screen::IntoAlternateScreen,
@@ -669,12 +672,11 @@ impl App {
             None
         };
         if let Some(input) = command {
-            match input.trim() {
-                "/help" => self.transcript.push(("Help".into(), "Enter: send · Ctrl-N: newline · Ctrl-O: command without losing draft · arrows: edit · Home/End or Ctrl-A/Ctrl-E: line start/end · Alt-P/Alt-N: prompt history · Ctrl-R: search prompts · PageUp/PageDown: scroll · Esc/Ctrl-C: cancel · Ctrl-C twice or Ctrl-Q: quit · /models: list · /model: select · /status: worktree · /diff: unstaged · /diff staged: staged · /sessions: list · /session: switch · /inspect: read-only history · /history older or newest: page · /context: budget · /runtime: stream-open policy".into())),
-                "/sessions" => self.show_sessions(runtime, false),
-                "/sessions next" => self.show_sessions(runtime, true),
-                "/models" => self.show_models(),
-                command if command == "/status" || command == "/diff" || command.starts_with("/diff ") => {
+            match Command::parse(&input) {
+                Some(Command::Help) => self.transcript.push(("Help".into(), "Enter: send · Tab / Shift-Tab: focus · Ctrl-N: newline · Ctrl-O: command without losing draft · arrows: edit · Home/End or Ctrl-A/Ctrl-E: line start/end · Alt-P/Alt-N: prompt history · Ctrl-R: search prompts · PageUp/PageDown: scroll · Esc/Ctrl-C: cancel · Ctrl-C twice or Ctrl-Q: quit · /models: list · /model: select · /status: worktree · /diff: unstaged · /diff staged: staged · /sessions: list · /session: switch · /inspect: read-only history · /history older or newest: page · /context: budget · /runtime: stream-open policy".into())),
+                Some(Command::Sessions(next)) => self.show_sessions(runtime, next),
+                Some(Command::Models) => self.show_models(),
+                Some(Command::Workspace(command)) => {
                     let message = match parse_query(command) {
                         Err(error) => error.to_owned(),
                         Ok(query) => match env::current_dir() {
@@ -684,10 +686,9 @@ impl App {
                     };
                     self.transcript.push(("Workspace".into(), message));
                 }
-                command if command.starts_with("/model ") => self.select_model(command["/model ".len()..].trim()),
-                "/history older" => self.request_history_page(runtime, true),
-                "/history newest" => self.request_history_page(runtime, false),
-                "/context" => {
+                Some(Command::Model(model)) => self.select_model(model),
+                Some(Command::History(older)) => self.request_history_page(runtime, older),
+                Some(Command::Context) => {
                     let message = if self.history_position.is_some() {
                         "Context budget unavailable in read-only history; load a full session first.".to_owned()
                     } else if let Some(usage) = self.context_budget.measure(&self.history, self.composer.text()) {
@@ -697,22 +698,22 @@ impl App {
                     };
                     self.transcript.push(("Context".into(), message));
                 }
-                "/runtime" => {
+                Some(Command::Runtime) => {
                     let text = self.runtime_edge.as_ref().map_or_else(|| "Runtime stream-open policy is unavailable.".into(), |receipt| {
                         let timeout = receipt.timeout_ms().map_or_else(|| "disabled".into(), |ms| format!("{ms} ms"));
                         format!("Stream-open timeout: {timeout}; layers: {}. This policy does not cover stream duration, tools, approvals, or remote cancellation.", receipt.layers().iter().map(|layer| layer.as_str()).collect::<Vec<_>>().join(", "))
                     });
                     self.transcript.push(("Runtime".into(), text));
                 }
-                "/clear" => self.transcript.clear(),
-                command if command.starts_with("/session ") => self.request_session_switch(runtime, command["/session ".len()..].trim()),
-                command if command.starts_with("/inspect ") => {
-                    match serde_json::from_str::<String>(command["/inspect ".len()..].trim()).ok().and_then(|value| SessionId::new(value).ok()) {
+                Some(Command::Clear) => self.transcript.clear(),
+                Some(Command::Session(id)) => self.request_session_switch(runtime, id),
+                Some(Command::Inspect(id)) => {
+                    match serde_json::from_str::<String>(id).ok().and_then(|value| SessionId::new(value).ok()) {
                         Some(id) => self.request_history(runtime, id, None),
                         None => self.transcript.push(("History".into(), "Use /inspect followed by a nonempty JSON-quoted session ID.".into())),
                     }
                 }
-                _ => self.transcript.push(("Marlin".into(), "Unknown command. Available: /help, /models, /model, /status, /diff, /sessions, /session, /inspect, /history, /context, /runtime, /clear".into())),
+                None => self.transcript.push(("Marlin".into(), "Unknown command or arguments. Use /help to see available commands.".into())),
             }
             return;
         }
@@ -1070,9 +1071,7 @@ pub(crate) fn process_replies(
     processed
 }
 
-// Never pass provider-controlled terminal escape sequences to the renderer.
-#[cfg(test)]
-#[allow(dead_code, reason = "used by the external unit-test harness")]
+// Never pass untrusted terminal escape sequences to the renderer.
 pub(crate) fn safe_text(text: &str) -> String {
     text.chars()
         .map(|c| {
@@ -1101,6 +1100,38 @@ fn run(
         return Err("--session requires a [session] storage configuration".into());
     }
     let (endpoint, catalog) = config.catalog()?;
+    // Package resolution uses SDK-owned process environment during startup;
+    // perform it before starting Tokio workers or the terminal input thread.
+    let _ = writeln!(io::stderr(), "Starting interface…");
+    let scheme_runtime = gerbil_scheme::GerbilRuntime::initialize()?;
+    scheme_runtime
+        .set_package_resolution_progress(gerbil_scheme::PackageResolutionProgress::Quiet)?;
+    let directory = env::current_dir()?;
+    let directory = directory
+        .to_str()
+        .ok_or("UI package directory is not UTF-8")?;
+    let model_label = format!("{}/{}", endpoint.provider.as_str(), endpoint.model.as_str());
+    let session_label = selected_session
+        .as_ref()
+        .map(SessionId::as_str)
+        .or_else(|| {
+            config
+                .session
+                .as_ref()
+                .map(|session| session.session.as_str())
+        })
+        .unwrap_or("temporary");
+    let mut ui = UiHost::open(
+        &scheme_runtime,
+        directory,
+        &UiOpenFacts {
+            model_label: &model_label,
+            session_label,
+            status: &[],
+            extensions: &[],
+            method_bundles: &[],
+        },
+    )?;
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()?;
@@ -1173,6 +1204,7 @@ fn run(
     let mut viewport_cache = TranscriptViewportCache::default();
     let mut scroll_anchor = ScrollAnchor::default();
     let mut last_size = None;
+    let mut failed_ui_labels: Option<(String, String)> = None;
     let mut signal_exit = None;
     let result = (|| -> io::Result<()> {
         loop {
@@ -1210,9 +1242,39 @@ fn run(
             }
             let now = Instant::now();
             if schedule.should_draw(now) {
+                let endpoint = app.endpoint();
+                let model = format!("{}/{}", endpoint.provider.as_str(), endpoint.model.as_str());
+                let session = app.session_id().map_or("temporary", |id| id.as_str());
+                if ui.view().model_label == model && ui.view().session_label == session {
+                    failed_ui_labels = None;
+                }
+                if (ui.view().model_label != model || ui.view().session_label != session)
+                    && !failed_ui_labels
+                        .as_ref()
+                        .is_some_and(|(old_model, old_session)| {
+                            old_model == &model && old_session == session
+                        })
+                {
+                    if let Err(error) = ui.refresh_labels(&model, session) {
+                        let attempted = (model, session.to_owned());
+                        app.transcript.push((
+                            "UI".into(),
+                            safe_text(&format!("UI label refresh failed: {error}")),
+                        ));
+                        failed_ui_labels = Some(attempted);
+                    } else {
+                        failed_ui_labels = None;
+                    }
+                }
                 let mut effective_scroll = app.scroll_up;
                 terminal.draw(|frame| {
-                    effective_scroll = draw(frame, &app, &mut viewport_cache, &mut scroll_anchor)
+                    effective_scroll = draw(
+                        frame,
+                        &app,
+                        ui.view(),
+                        &mut viewport_cache,
+                        &mut scroll_anchor,
+                    )
                 })?;
                 app.set_effective_scroll(effective_scroll);
                 schedule.drawn(Instant::now());
@@ -1259,37 +1321,87 @@ fn run(
                 }
                 continue;
             }
+            if let Ok(Ok(TerminalInput::Key(key))) = &received {
+                if *key == Key::Char('\t')
+                    && app.composer.cursor_at_end()
+                    && ui.accepts_text(app.command_draft.is_some())
+                    && ui.has_command_prefix(app.composer.text())
+                {
+                    if let Some(completed) = ui.complete_command(app.composer.text()) {
+                        app.composer.take();
+                        app.composer.insert_text(&completed);
+                    }
+                    continue;
+                }
+                match ui.route_key(
+                    *key,
+                    app.command_draft.is_some(),
+                    app.composer.text().trim_start().starts_with('/'),
+                ) {
+                    Ok(UiKeyAction::Handled) => continue,
+                    Ok(UiKeyAction::Submit) => {
+                        app.submit(&gateway, &runtime, &reply_tx);
+                        continue;
+                    }
+                    Ok(UiKeyAction::OpenCommands) => {
+                        app.toggle_command();
+                        continue;
+                    }
+                    Ok(UiKeyAction::Scroll(up)) => {
+                        app.scroll(up);
+                        continue;
+                    }
+                    Ok(UiKeyAction::Unhandled) => {}
+                    Err(error) => {
+                        app.transcript
+                            .push(("UI".into(), safe_text(&format!("UI event failed: {error}"))));
+                        continue;
+                    }
+                }
+            }
+            let accepts_text = ui.accepts_text(app.command_draft.is_some());
             match received {
                 Ok(Ok(TerminalInput::Key(Key::Ctrl('q')))) => break,
                 Ok(Ok(TerminalInput::Key(Key::Ctrl('c')))) if app.interrupt() => break,
                 Ok(Ok(TerminalInput::Key(Key::Ctrl('c')))) => {}
                 Ok(Ok(TerminalInput::Key(Key::Ctrl('o')))) => app.toggle_command(),
                 Ok(Ok(TerminalInput::Key(Key::Ctrl('r')))) => app.start_history_search(),
-                Ok(Ok(TerminalInput::Key(Key::Alt('p')))) => app.navigate_prompts(true),
-                Ok(Ok(TerminalInput::Key(Key::Alt('n')))) => app.navigate_prompts(false),
-                Ok(Ok(TerminalInput::Key(Key::Esc))) => app.cancel(),
-                Ok(Ok(TerminalInput::Key(Key::Char('\n')))) => {
-                    app.submit(&gateway, &runtime, &reply_tx)
+                Ok(Ok(TerminalInput::Key(Key::Alt('p')))) if accepts_text => {
+                    app.navigate_prompts(true)
                 }
-                Ok(Ok(TerminalInput::Key(Key::Ctrl('n')))) => app.composer.insert('\n'),
-                Ok(Ok(TerminalInput::Key(Key::Char(c)))) if !c.is_control() => {
+                Ok(Ok(TerminalInput::Key(Key::Alt('n')))) if accepts_text => {
+                    app.navigate_prompts(false)
+                }
+                Ok(Ok(TerminalInput::Key(Key::Esc))) => app.cancel(),
+                Ok(Ok(TerminalInput::Key(Key::Ctrl('n')))) if accepts_text => {
+                    app.composer.insert('\n')
+                }
+                Ok(Ok(TerminalInput::Key(Key::Char(c)))) if !c.is_control() && accepts_text => {
                     app.composer.insert(c)
                 }
-                Ok(Ok(TerminalInput::Key(Key::Left))) => app.composer.left(),
-                Ok(Ok(TerminalInput::Key(Key::Right))) => app.composer.right(),
-                Ok(Ok(TerminalInput::Key(Key::Home | Key::Ctrl('a')))) => app.composer.line_start(),
-                Ok(Ok(TerminalInput::Key(Key::End | Key::Ctrl('e')))) => app.composer.line_end(),
-                Ok(Ok(TerminalInput::Key(Key::Up))) => {
+                Ok(Ok(TerminalInput::Key(Key::Left))) if accepts_text => app.composer.left(),
+                Ok(Ok(TerminalInput::Key(Key::Right))) if accepts_text => app.composer.right(),
+                Ok(Ok(TerminalInput::Key(Key::Home | Key::Ctrl('a')))) if accepts_text => {
+                    app.composer.line_start()
+                }
+                Ok(Ok(TerminalInput::Key(Key::End | Key::Ctrl('e')))) if accepts_text => {
+                    app.composer.line_end()
+                }
+                Ok(Ok(TerminalInput::Key(Key::Up))) if accepts_text => {
                     app.composer.move_vertical(size.0.saturating_sub(2), false)
                 }
-                Ok(Ok(TerminalInput::Key(Key::Down))) => {
+                Ok(Ok(TerminalInput::Key(Key::Down))) if accepts_text => {
                     app.composer.move_vertical(size.0.saturating_sub(2), true)
                 }
-                Ok(Ok(TerminalInput::Key(Key::Backspace))) => app.composer.backspace(),
-                Ok(Ok(TerminalInput::Key(Key::Delete))) => app.composer.delete(),
+                Ok(Ok(TerminalInput::Key(Key::Backspace))) if accepts_text => {
+                    app.composer.backspace()
+                }
+                Ok(Ok(TerminalInput::Key(Key::Delete))) if accepts_text => app.composer.delete(),
                 Ok(Ok(TerminalInput::Key(Key::PageUp))) => app.scroll(true),
                 Ok(Ok(TerminalInput::Key(Key::PageDown))) => app.scroll(false),
-                Ok(Ok(TerminalInput::Paste(text))) => app.composer.insert_text(&text),
+                Ok(Ok(TerminalInput::Paste(text))) if accepts_text => {
+                    app.composer.insert_text(&text)
+                }
                 Ok(Ok(TerminalInput::PasteRejected)) => app.transcript.push((
                     "Error".into(),
                     "Paste rejected: invalid UTF-8 or larger than 1 MiB.".into(),

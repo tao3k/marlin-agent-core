@@ -18,12 +18,45 @@ const MAX_REGIONS: usize = 20;
 const MAX_STATUS: usize = 8;
 const MAX_EXTENSIONS: usize = 16;
 const MAX_METHOD_BUNDLES: usize = 16;
+const MAX_COMMANDS: usize = 32;
 const MAX_TEXT_CHARS: usize = 256;
 const MAX_ID_BYTES: usize = 1024;
 
 /// A UI component's domain identity, not a Scheme root or object address.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct UiComponentId(String);
+
+/// A displayable command name; this value does not authorize a handler.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct UiCommandName(String);
+
+impl UiCommandName {
+    /// Check a partial command without scanning past the admitted name limit.
+    pub fn is_valid_prefix(value: &str) -> bool {
+        value.len() <= 32
+            && value.starts_with('/')
+            && value.as_bytes()[1..]
+                .iter()
+                .all(|byte| byte.is_ascii_lowercase() || *byte == b'-')
+    }
+
+    pub fn new(value: &str) -> Result<Self, UiProjectionError> {
+        if value.len() < 2 || !Self::is_valid_prefix(value) {
+            return Err(UiProjectionError::Invalid("invalid command name"));
+        }
+        Ok(Self(value.to_owned()))
+    }
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct UiCommand {
+    pub name: UiCommandName,
+    pub description: String,
+    pub accepts_arguments: bool,
+}
 
 impl UiComponentId {
     /// Construct a bounded, nonempty domain identity.
@@ -44,7 +77,7 @@ impl UiComponentId {
 pub enum UiRegion {
     Transcript,
     Composer,
-    Commands,
+    Commands(Vec<UiCommand>),
     Status(Vec<UiStatusItem>),
     Extension {
         id: UiComponentId,
@@ -79,6 +112,18 @@ pub struct UiWorkbench {
     pub focus: UiComponentId,
 }
 
+impl UiWorkbench {
+    pub fn commands(&self) -> &[UiCommand] {
+        self.regions
+            .iter()
+            .find_map(|region| match region {
+                UiRegion::Commands(commands) => Some(commands.as_slice()),
+                _ => None,
+            })
+            .unwrap_or(&[])
+    }
+}
+
 /// Scheme-owned UI state, retained by the SDK's owner-affine strong root.
 pub struct UiNativeSession<'runtime> {
     root: RootedSchemeObject<'runtime>,
@@ -92,6 +137,7 @@ pub struct UiModule<'runtime> {
     open: RootedSchemeObject<'runtime>,
     project: RootedSchemeObject<'runtime>,
     dispatch: RootedSchemeObject<'runtime>,
+    refresh_labels: RootedSchemeObject<'runtime>,
 }
 
 impl<'runtime> UiModule<'runtime> {
@@ -120,7 +166,8 @@ impl<'runtime> UiModule<'runtime> {
         let open = export(runtime, directory, ui, "marlin-ui-session-open")?;
         let project = export(runtime, directory, ui, "marlin-ui-session-project")?;
         let dispatch = export(runtime, directory, ui, "marlin-ui-session-dispatch")?;
-        for procedure in [&open, &project, &dispatch] {
+        let refresh_labels = export(runtime, directory, ui, "marlin-ui-session-refresh-labels")?;
+        for procedure in [&open, &project, &dispatch, &refresh_labels] {
             if procedure.as_ref().kind()? != ObjectKind::Procedure {
                 return Err(UiProjectionError::Invalid("UI export is not a procedure"));
             }
@@ -131,6 +178,7 @@ impl<'runtime> UiModule<'runtime> {
             open,
             project,
             dispatch,
+            refresh_labels,
         })
     }
 
@@ -147,6 +195,30 @@ impl<'runtime> UiModule<'runtime> {
         project_workbench(self.runtime, &self.project, session)
     }
 
+    /// Refresh host-owned display facts while retaining the Scheme UI session.
+    pub fn refresh_labels(
+        &self,
+        session: &UiNativeSession<'_>,
+        model: &str,
+        session_label: &str,
+    ) -> Result<UiNativeSession<'runtime>, UiProjectionError> {
+        if model.chars().take(MAX_TEXT_CHARS + 1).count() > MAX_TEXT_CHARS
+            || session_label.chars().take(MAX_TEXT_CHARS + 1).count() > MAX_TEXT_CHARS
+        {
+            return Err(UiProjectionError::Invalid("UI facts exceed limits"));
+        }
+        let model = self.runtime.string_from_utf8(model)?.into_object();
+        let label = self.runtime.string_from_utf8(session_label)?.into_object();
+        let request = self
+            .runtime
+            .collection_from_objects(CollectionKind::Vector, &[&session.root, &model, &label])?;
+        Ok(UiNativeSession {
+            root: self
+                .runtime
+                .call_rooted(&self.refresh_labels, &request.into_object())?,
+        })
+    }
+
     /// Dispatch an event without consuming the previous session.
     pub fn dispatch(
         &self,
@@ -160,6 +232,7 @@ impl<'runtime> UiModule<'runtime> {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum UiEvent {
     NextFocus,
+    PreviousFocus,
     Submit,
     Dismiss,
     ScrollUp,
@@ -303,6 +376,7 @@ pub fn dispatch_event<'runtime>(
 ) -> Result<(UiNativeSession<'runtime>, UiIntent), UiProjectionError> {
     let name = match event {
         UiEvent::NextFocus => "next-focus",
+        UiEvent::PreviousFocus => "previous-focus",
         UiEvent::Submit => "submit",
         UiEvent::Dismiss => "dismiss",
         UiEvent::ScrollUp => "scroll-up",
@@ -364,8 +438,31 @@ pub fn decode_workbench(value: RootedSchemeObject<'_>) -> Result<UiWorkbench, Ui
                 UiRegion::Composer
             }
             "commands" if index == 2 && id.as_str() == "commands" => {
-                vector(payload, 0, 0)?;
-                UiRegion::Commands
+                let entries = vector(payload, 0, MAX_COMMANDS)?;
+                let mut commands = Vec::with_capacity(entries.len());
+                let mut names = HashSet::with_capacity(entries.len());
+                for i in 0..entries.len() {
+                    let row = vector(entries.element(i)?, 3, 3)?;
+                    let name = UiCommandName::new(&string(row.element(0)?)?)?;
+                    if !names.insert(name.clone()) {
+                        return Err(UiProjectionError::Invalid("duplicate command name"));
+                    }
+                    let description = string(row.element(1)?)?;
+                    let accepts_arguments = match row.element(2)?.as_ref().scalar()? {
+                        SchemeScalar::Boolean(value) => value,
+                        _ => {
+                            return Err(UiProjectionError::Invalid(
+                                "invalid command arguments flag",
+                            ));
+                        }
+                    };
+                    commands.push(UiCommand {
+                        name,
+                        description,
+                        accepts_arguments,
+                    });
+                }
+                UiRegion::Commands(commands)
             }
             "status" if index + 1 == regions.len() && id.as_str() == "status" => {
                 let children = vector(payload, 0, MAX_STATUS)?;
@@ -410,7 +507,7 @@ pub fn decode_workbench(value: RootedSchemeObject<'_>) -> Result<UiWorkbench, Ui
     let focus_valid = result.iter().any(|region| match region {
         UiRegion::Transcript => focus.as_str() == "transcript",
         UiRegion::Composer => focus.as_str() == "composer",
-        UiRegion::Commands => focus.as_str() == "commands",
+        UiRegion::Commands(_) => focus.as_str() == "commands",
         UiRegion::Extension {
             id,
             focusable: true,

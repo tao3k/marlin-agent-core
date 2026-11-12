@@ -1,4 +1,4 @@
-import fcntl, json, os, pty, select, socket, struct, subprocess, tempfile, termios, threading, time
+import fcntl, json, os, pty, re, select, socket, struct, subprocess, tempfile, termios, threading, time
 binary = os.environ.get('MARLIN_TUI_BINARY', 'target/debug/marlin-tui')
 listener = socket.socket()
 listener.bind(('127.0.0.1', 0))
@@ -7,7 +7,10 @@ port = listener.getsockname()[1]
 requests = []
 release = threading.Event()
 def serve():
-    conn, _ = listener.accept()
+    try:
+        conn, _ = listener.accept()
+    except OSError:
+        return
     with conn:
         buf = b''
         while b'\r\n\r\n' not in buf:
@@ -38,10 +41,74 @@ with tempfile.TemporaryDirectory() as temp:
                 try: out.extend(os.read(master, 65536))
                 except OSError: break
         if needle not in out: raise AssertionError(f'missing {needle!r}; output tail {bytes(out[-1200:])!r}')
+    def status_line():
+        # Ratatui emits only changed cells, so rebuild the last terminal row
+        # from cursor positions instead of searching raw output fragments.
+        text = out.decode('utf-8', 'replace')
+        csi = re.compile(r'\x1b\[([0-9;?]*)([A-Za-z])')
+        row, col, index = 1, 1, 0
+        cells = [' '] * 100
+        while index < len(text):
+            match = csi.match(text, index)
+            if match:
+                args, op = match.groups()
+                nums = [int(n) if n else 0 for n in args.lstrip('?').split(';')]
+                value = nums[0] or 1
+                if op in ('H', 'f'):
+                    row, col = value, (nums[1] or 1) if len(nums) > 1 else 1
+                elif op == 'G': col = value
+                elif op == 'A': row -= value
+                elif op == 'B': row += value
+                elif op == 'C': col += value
+                elif op == 'D': col -= value
+                elif op == 'K' and row == 30:
+                    start = 0 if nums[0] in (1, 2) else max(0, col - 1)
+                    end = min(100, col) if nums[0] == 1 else 100
+                    cells[start:end] = [' '] * (end - start)
+                index = match.end()
+                continue
+            ch = text[index]
+            if ch == '\r': col = 1
+            elif ch == '\n': row += 1
+            elif ch >= ' ' and ch != '\x7f':
+                if row == 30 and 1 <= col <= 100: cells[col - 1] = ch
+                col += 1
+            index += 1
+        return ''.join(cells)
+    def until_status(needle, seconds=15):
+        deadline = time.monotonic() + seconds
+        while needle not in status_line() and time.monotonic() < deadline:
+            if select.select([master], [], [], .2)[0]:
+                try: out.extend(os.read(master, 65536))
+                except OSError: break
+        assert needle in status_line(), f'missing status {needle!r}: {status_line()!r}'
     try:
         until(b'Marlin')
+        assert b'GERBIL-BUILD' not in out, 'internal SDK module progress leaked into the terminal'
+        os.write(master, b'\x1b[Z')
+        until_status('Transcript: Up/Down scroll')
+        os.write(master, b'\t')
+        until_status('Message: Enter send')
+        # Direct slash entry discovers and completes the Scheme-declared command.
+        os.write(master, b'/hel')
+        until_status('Command: Enter run')
+        until(b'Keyboard shortcuts')
+        os.write(master, b'\t\r')
+        until_status('Message: Enter send')
+        until(b'stream-open')
+        assert not requests, 'command completion triggered a model request'
         os.write(master, b'\x1b[200~' + 'hello 中\r\nworld\r\nline-three\r\nline-four\r\nline-five'.encode() + b'\x1b[201~')
         until(b'line-five')
+        # Scheme owns focus; command mode must retain the unsent draft.
+        os.write(master, b'\t')
+        until_status('Commands: Enter open')
+        os.write(master, b'\r')
+        until_status('Enter run command')
+        until(b'Keyboard shortcuts')
+        os.write(master, b'\x0f\t')
+        until_status('Transcript: Up/Down scroll')
+        os.write(master, b'\t')
+        until_status('Message: Enter send')
         deadline = time.monotonic() + 5
         while b'\x1b[?25h' not in out[out.rfind(b'line-five'):] and time.monotonic() < deadline:
             if select.select([master], [], [], .2)[0]:

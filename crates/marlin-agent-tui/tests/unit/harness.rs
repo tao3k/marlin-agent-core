@@ -10,6 +10,8 @@ mod app_cases;
 #[allow(dead_code)]
 #[path = "../../src/cli.rs"]
 mod cli;
+#[path = "../../src/command.rs"]
+mod command;
 #[allow(dead_code)]
 #[path = "../../src/composer.rs"]
 mod composer;
@@ -81,6 +83,9 @@ mod session_browser_cases;
 mod signals;
 #[path = "streaming.rs"]
 mod streaming;
+#[allow(dead_code)]
+#[path = "../../src/ui_host.rs"]
+mod ui_host;
 #[allow(dead_code)]
 #[path = "../../src/viewport.rs"]
 mod viewport;

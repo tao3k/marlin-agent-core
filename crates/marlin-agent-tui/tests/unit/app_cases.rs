@@ -8,7 +8,7 @@ use super::{
     context_budget::ContextBudget,
     event_queue::{ReplyError, reply_channel},
     model_catalog::{ModelCatalog, ModelRoute},
-    render::draw,
+    render::draw as render_draw,
     viewport::{Transcript, TranscriptViewportCache},
 };
 use marlin_agent_protocol::{
@@ -23,6 +23,229 @@ use marlin_agent_stream::{
     ModelThinkingChunk,
 };
 use std::sync::{Arc, Mutex};
+
+fn draw(
+    frame: &mut ratatui::Frame<'_>,
+    app: &App,
+    cache: &mut TranscriptViewportCache,
+    anchor: &mut super::viewport::ScrollAnchor,
+) -> usize {
+    use marlin_agent_ui::{UiComponentId, UiRegion, UiWorkbench};
+    let view = UiWorkbench {
+        model_label: "test".into(),
+        session_label: "test".into(),
+        regions: vec![
+            UiRegion::Transcript,
+            UiRegion::Composer,
+            UiRegion::Commands(vec![]),
+            UiRegion::Status(vec![]),
+        ],
+        focus: UiComponentId::new("composer").unwrap(),
+    };
+    render_draw(frame, app, &view, cache, anchor)
+}
+
+#[test]
+fn command_menu_filters_scheme_descriptors_and_preserves_draft() {
+    use marlin_agent_ui::{UiCommand, UiCommandName, UiComponentId, UiRegion, UiWorkbench};
+    let mut app = App::new(ModelEndpoint::new("provider", "model"));
+    app.composer.insert_text("preserved draft");
+    app.toggle_command();
+    app.composer.insert_text("mo");
+    let command = |name, description: &str| UiCommand {
+        name: UiCommandName::new(name).unwrap(),
+        description: description.into(),
+        accepts_arguments: false,
+    };
+    let view = UiWorkbench {
+        model_label: "model".into(),
+        session_label: "session".into(),
+        regions: vec![
+            UiRegion::Transcript,
+            UiRegion::Composer,
+            UiRegion::Commands(vec![
+                command("/help", "Keyboard shortcuts"),
+                command("/models", "List models"),
+            ]),
+            UiRegion::Status(vec![]),
+        ],
+        focus: UiComponentId::new("composer").unwrap(),
+    };
+    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(60, 10)).unwrap();
+    terminal
+        .draw(|frame| {
+            render_draw(
+                frame,
+                &app,
+                &view,
+                &mut Default::default(),
+                &mut Default::default(),
+            );
+        })
+        .unwrap();
+    let buffer = terminal.backend().buffer();
+    let text: String = (0..10)
+        .flat_map(|y| (0..60).map(move |x| buffer[(x, y)].symbol()))
+        .collect();
+    assert!(text.contains("List models"), "{text}");
+    assert!(!text.contains("Keyboard shortcuts"), "{text}");
+    app.toggle_command();
+    assert_eq!(app.composer.text(), "preserved draft");
+    app.composer.take();
+    app.composer.insert_text("/mo");
+    terminal
+        .draw(|frame| {
+            render_draw(
+                frame,
+                &app,
+                &view,
+                &mut Default::default(),
+                &mut Default::default(),
+            );
+        })
+        .unwrap();
+    let buffer = terminal.backend().buffer();
+    let text: String = (0..10)
+        .flat_map(|y| (0..60).map(move |x| buffer[(x, y)].symbol()))
+        .collect();
+    assert!(text.contains("List models"), "{text}");
+    assert!(text.contains("Tab complete"), "{text}");
+}
+
+#[test]
+fn render_uses_the_admitted_scheme_focus() {
+    use marlin_agent_ui::{UiComponentId, UiRegion, UiWorkbench};
+    let app = App::new(ModelEndpoint::new("provider", "model"));
+    let view = UiWorkbench {
+        model_label: "model".into(),
+        session_label: "session".into(),
+        regions: vec![
+            UiRegion::Transcript,
+            UiRegion::Composer,
+            UiRegion::Commands(vec![]),
+            UiRegion::Status(vec![]),
+        ],
+        focus: UiComponentId::new("transcript").unwrap(),
+    };
+    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 10)).unwrap();
+    terminal
+        .draw(|frame| {
+            render_draw(
+                frame,
+                &app,
+                &view,
+                &mut Default::default(),
+                &mut Default::default(),
+            );
+        })
+        .unwrap();
+    let status: String = (0..80)
+        .map(|x| terminal.backend().buffer()[(x, 9)].symbol())
+        .collect();
+    assert!(status.contains("Transcript: Up/Down scroll"), "{status}");
+}
+
+#[test]
+fn render_keeps_focused_extension_visible_and_sanitizes_its_label() {
+    use marlin_agent_ui::{UiComponentId, UiRegion, UiWorkbench};
+    let app = App::new(ModelEndpoint::new("provider", "model"));
+    let mut regions = vec![
+        UiRegion::Transcript,
+        UiRegion::Composer,
+        UiRegion::Commands(vec![]),
+    ];
+    for (id, label) in [
+        ("first", "first"),
+        ("second", "second"),
+        ("third", "third\u{1b}[31m"),
+    ] {
+        regions.push(UiRegion::Extension {
+            id: UiComponentId::new(id).unwrap(),
+            label: label.into(),
+            focusable: true,
+        });
+    }
+    regions.push(UiRegion::Status(vec![]));
+    let view = UiWorkbench {
+        model_label: "model".into(),
+        session_label: "session".into(),
+        regions,
+        focus: UiComponentId::new("third").unwrap(),
+    };
+    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(40, 8)).unwrap();
+    terminal
+        .draw(|frame| {
+            render_draw(
+                frame,
+                &app,
+                &view,
+                &mut Default::default(),
+                &mut Default::default(),
+            );
+        })
+        .unwrap();
+    let buffer = terminal.backend().buffer();
+    let screen: String = (0..8)
+        .flat_map(|y| (0..40).map(move |x| buffer[(x, y)].symbol()))
+        .collect();
+    assert!(screen.contains("third�[31m"), "{screen}");
+    assert!(!screen.contains('\u{1b}'));
+    assert!(screen.contains("Extension: Enter activate"), "{screen}");
+}
+
+#[test]
+fn render_status_contributions_respects_focus_and_terminal_height() {
+    use marlin_agent_ui::{UiComponentId, UiRegion, UiStatusItem, UiWorkbench};
+    let app = App::new(ModelEndpoint::new("provider", "model"));
+    let view = UiWorkbench {
+        model_label: "model".into(),
+        session_label: "session".into(),
+        regions: vec![
+            UiRegion::Transcript,
+            UiRegion::Composer,
+            UiRegion::Commands(vec![]),
+            UiRegion::Extension {
+                id: UiComponentId::new("extension").unwrap(),
+                label: "Focused panel".into(),
+                focusable: true,
+            },
+            UiRegion::Status(vec![
+                UiStatusItem {
+                    id: UiComponentId::new("ready").unwrap(),
+                    label: "Ready".into(),
+                },
+                UiStatusItem {
+                    id: UiComponentId::new("unsafe").unwrap(),
+                    label: "bad\u{1b}[2J".into(),
+                },
+            ]),
+        ],
+        focus: UiComponentId::new("extension").unwrap(),
+    };
+    for height in [8, 9] {
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(60, height)).unwrap();
+        terminal
+            .draw(|frame| {
+                render_draw(
+                    frame,
+                    &app,
+                    &view,
+                    &mut Default::default(),
+                    &mut Default::default(),
+                );
+            })
+            .unwrap();
+        let buffer = terminal.backend().buffer();
+        let screen: String = (0..height)
+            .flat_map(|y| (0..60).map(move |x| buffer[(x, y)].symbol()))
+            .collect();
+        assert!(screen.contains("Focused panel"), "{screen}");
+        assert!(screen.contains("Extension: Enter activate"), "{screen}");
+        assert_eq!(screen.contains("Ready · bad�[2J"), height == 9, "{screen}");
+        assert!(!screen.contains('\u{1b}'));
+    }
+}
 
 #[test]
 fn history_search_previews_then_accepts_without_submitting() {

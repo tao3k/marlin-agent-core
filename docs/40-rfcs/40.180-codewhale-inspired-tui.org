@@ -107,8 +107,8 @@ The UI projection is a dependency of the selected UI module and is published
 as an operation of that module. The selected =c-abi= Module owns its Deck and
 UI adapter build inputs in its Build role; the adapter receives the complete
 selected Yuanxu publication and derives its UI child, rather than importing
-=init= or constructing a default scope. The caller must obtain and retain that
-publication through the Module System; transfer to Rust is not yet implemented.
+=init= or constructing a default scope. The Rust UI package resolves and retains
+the selected publication through the SDK's package-export API.
 The selected =c-abi= scope receives its UI, Context and Deck dependencies from
 the Module System; membership checks retain the linked objects instead of
 wrapping their function contracts again. The Scheme event generic produces
@@ -117,6 +117,21 @@ order so component extensions can participate without editing the core focus
 methods. The workbench also accepts explicitly supplied POO extension regions,
 checks their identities and focusability, and derives a focus event from its
 composed regions. The native projection preserves their labels and focusability.
+The terminal renderer can paint these bounded labels and follows the focused
+extension when vertical space is limited. It sanitizes control characters and
+preserves transcript and composer space. Nonempty typed status contributions
+are also rendered when space permits; a focused extension takes priority over
+the optional status row in a constrained terminal. This is a presentation primitive, not
+plugin discovery or general extension event handling: Enter may dispatch a
+contributed submit method only to produce an admitted focus change; it cannot
+submit the user's draft. The current TUI opens its session with no extension
+contributions or method bundles.
+An ignored, toolchain-dependent Rust test builds a test-only Gerbil package
+through the SDK, resolves its contributed object and CLOS bundle in the same
+VM as the selected UI, and routes Tab and Enter through the terminal host. It
+also checks that an extension's forged draft-submission intent is rejected
+without replacing the admitted state. This verifies that fixture path, not
+production plugin discovery or complete plugin lifecycle authority.
 The UI ABI opens a Scheme-owned session from the selected publication, typed facts and
 an ordered vector of at most 16 Scheme CLOS method bundles. It composes those
 bundles on a fresh unpublished generic; an invalid bundle aborts session creation
@@ -128,7 +143,7 @@ event produces a new session and intent; the old session remains valid. Scheme
 derives the focused component and event from that session, checks focus order,
 and rejects a focus result outside the workbench. These are consistency checks,
 not proof that the supplied scope was selected by the Module System.
-Rust's =marlin-gerbil-scheme::ui= resolves the selected publication and the
+The dedicated =marlin-agent-ui= Rust package resolves the selected publication and the
 open, project and dispatch procedures through the SDK's package API, calls the
 rooted procedures through its C ABI, and converts rooted vectors,
 symbols, strings and booleans through the SDK into Marlin UI types. It checks
@@ -138,6 +153,13 @@ A typed Rust facts request now uses the same SDK to construct a rooted request
 from the supplied scope, display facts and ordered extension vectors. Host labels, status identities and
 outer contribution counts are checked before allocating the request; the SDK
 roots do not establish scope or extension provenance.
+When the model or session changes, the terminal host sends bounded labels as
+Scheme strings through the same rooted SDK interface. Scheme constructs a new
+workbench without an accumulating prototype chain; Rust admits it only if the
+requested labels match and the existing regions and focus remain unchanged.
+Unchanged labels do not trigger a VM call. Real-VM tests cover old-state
+retention, bounds, and an extension method after a label refresh; they do not
+establish complete provider/session switching acceptance.
 A native SDK test constructs real rooted Scheme values and exercises conversion,
 duplicate rejection and event decoding. A separate SDK =test_package= run loaded
 the compiled Yuanxu-selected UI in a Rust-owned VM and exercised all three UI C ABI
@@ -179,7 +201,8 @@ for the tails. A second diagnostic with per-phase timers observed total median
 1,317/11,658 microseconds, intent snapshot and decode 9/75 microseconds, and
 projection plus decode 926/5,788 microseconds. These are independently
 ordered distributions, not additive percentile contributions. Marlin pins this
-SDK revision; the UI module is not yet wired to the terminal. Package resolution uses the SDK's
+SDK revision; a terminal integration exists in the working tree but has not
+passed the original startup acceptance gate. Package resolution uses the SDK's
 process-wide package tooling and is a startup operation; rooted invocation does
 not enter that tooling. A concurrent edit of SDK =program-build.ss= caused one
 subsequent rebuild to fail; later builds succeeded, but these tests do not
@@ -196,8 +219,37 @@ against the exact pinned revision, including session open, projection, focus
 dispatch, old-state retention and a caught Scheme failure. The test took
 34.33 seconds including startup and lazy loads; this is not a frame benchmark.
 The locked Cargo check, strict library Clippy, SDK-value projection test, and
-Bazel 9.2.0 repin also passed. Live terminal wiring, installed module-closure
-discovery, a vendor refresh and an offline Bazel build remain separate gates.
+Bazel 9.2.0 repin also passed. Installed module-closure discovery, a vendor
+refresh and an offline Bazel build remain separate gates. The working-tree TUI
+initializes the SDK owner before Tokio, and admits projected successor states
+only when event, intent, focus and static regions agree. The original 15-second
+PTY first-frame gate failed twice; a separate diagnostic with a longer window
+passed focus, draft preservation, streaming and terminal restoration. The
+SDK revision =e18cd894= also emitted internal module-loading progress to the
+PTY before the workbench appeared. SDK revision =8cebc52e= adds an owner-local
+resolution progress policy; its supervised tests verify quiet resolution,
+visible errors, restored observation and unaffected build progress. TUI selects
+quiet resolution and the PTY fixture asserts the loader messages are absent.
+The current downstream PTY run did not reach a frame before the unchanged
+15-second deadline; it showed only the startup message. A separate diagnostic
+with first-frame and exit windows extended to 60 and 30 seconds respectively
+passed focus, Unicode paste, streaming, absence of loader progress and normal
+terminal restoration. That diagnostic does not pass either original timing gate.
+The diagnostic with only the first-frame window extended still exceeded the
+original five-second process-exit deadline. Terminal restoration was observed
+in the longer-exit diagnostic; the cause of delayed exit remains under study.
+The prior local binary passed its then-current PTY fixture, but that is
+not an exact-revision paired performance comparison. The extended diagnostic
+is not acceptance evidence for the original gate.
+The post-split Bazel repin completed, but its generated lock records SDK
+=0d92f7b= for =gerbil-scheme 0.1.0=, while the UI uses the newer SDK source.
+Cargo identifies both same-version sources: the older one is retained by the
+Context package's Rust Orgize dependency. Consequently this repin does not
+qualify a Bazel UI build. The intended Context/Org Scheme migration must remove
+that duplicate ownership or the build system must resolve the two sources
+without treating them as interchangeable; neither is established here. An
+offline Bazel build also stopped earlier because the configured vendor tree
+does not contain =rules_rust+=; it did not reach UI compilation.
 An additional single cold-start observation on the exact pinned SDK measured
 25 ms for VM initialization, 13,896 ms for resolving the selected =init=
 publication, 50/6/41 ms for resolving open/project/dispatch, 9,633 ms for the
@@ -206,6 +258,58 @@ first open and 2 ms for the first projection; total to first projection was
 uncontrolled observation, not an acceptance benchmark. It directs the next
 investigation toward selected publication and lazy initialization rather than
 assuming repeated UI export lookup is the dominant startup cost.
+A separate Gerbil control of the open operations observed 1.27 seconds for
+accessing =Marlin= and 5.32 seconds for its =ui= child, versus approximately
+1.4 milliseconds each for workbench and generic construction. This is not a
+matched end-to-end comparison: it imports the profile expressions separately.
+Its allocation counters are not qualified. A direct standard =load-module=
+control ranged from 19.8 seconds on one run to 1.3 seconds on another; a
+sampler produced no usable call graph. These observations do not establish the
+cause of the elapsed-time variation.
+An additional five-second sample began after the UI procedure exports were
+resolved, during the first open. The sampled test worker had 4,042 stack
+samples, of which 2,526 included Gambit's dynamic loader and 2,378 included
+macOS dyld's debugger-notification path; the image listing contained 647
+=.oN= images at sampling time. This is a single instrumented macOS run, and
+attaching the sampler may affect loader behavior. It identifies a candidate
+for further investigation, not a demonstrated saving or a reason to bypass
+Yuanxu selection. Any bundled precompiled Scheme-image experiment must retain
+the same declared Module graph and SDK VM/C ABI, and must be compared against
+the unchanged loader and PTY gates before adoption.
+A separate five-second sample immediately after Ctrl-Q observed all 4,021
+main-thread samples in SDK/Gambit dynamic-module cleanup, with 4,019 in
+=dlclose= and 3,725 in dyld debugger-unload notification. The sampler may
+affect timing; the uninstrumented diagnostic separately exceeded the unchanged
+five-second exit gate. Terminal restoration precedes runtime cleanup, but the
+process must still retire the VM normally; skipping cleanup is not a repair.
+On a later current-worktree build, the unchanged PTY test reached the
+interactive frame within its 15-second limit, completed the focus, paste and
+stream sequence, and then timed out waiting five seconds for process exit.
+This one run does not negate the earlier first-frame failures or establish a
+startup percentile.
+An isolated two-module Gambit control built a flat dynamically loadable image,
+then loaded a separately compiled extension in the same Gambit process and
+checked a cross-module result. The compiler was the paired installation and
+used its standard relocation options. This only establishes the small Gambit
+control: it did not use the SDK C ABI, Gerbil Module identity, Yuanxu selection,
+the real closure, or a measured matched performance comparison. In particular,
+the SDK's current custom-linked image does not automatically admit its package
+resolver; a production bundle would need that lifecycle and module semantics
+qualified, not a second module graph or a skipped VM shutdown.
+The root environment defaults =GERBIL_BUILD_CORES= only when unset. SDK
+revision =a00e62ea= nevertheless replaced a caller's value during package work;
+its successor =e18cd894= preserves explicit values and defaults to Gambit's CPU
+count only when absent. The supervised native fixture observed values 2, 0,
+and the unset default, including restoration after a deliberate failure, under
+the existing 15-second wall and 5-second inactivity gates. The old code failed
+the same explicit-2 test by exposing 12. Marlin's dependency update must also
+pass its own locked build and package tests.
+An order-only diagnostic rebuilt the same declared selection with =ui= before
+=context=, without adding another Module or loader. In A/B/B/A order, elapsed
+time to first projection was 12.306/18.684/8.009/12.037 seconds respectively.
+The runs used separate precompiled prefixes and were not a fully matched clean
+build; they do not demonstrate a reliable improvement. The original =init=
+order was restored byte-for-byte and the alternate was not adopted.
 The host must still establish publication provenance, validate and publish candidates,
 and authorize every resulting action; an intent is not a runtime receipt.
 This is not yet terminal event routing or automatic module discovery of
@@ -216,8 +320,8 @@ not fenced; this is not a complete immutable snapshot guarantee.
 The current Yuanxu =std-make-spec= takes =(\"init\")= as its explicit root;
 a clean build produced the selected modules and both ABI adapters. The UI
 workbench test passed with that compiled package first on the load path.
-The adapters are not yet qualified or connected to the running TUI, and this
-is not a complete component or plugin system. With the earlier SDK pin
+The working-tree terminal connection is not yet qualified, and this is not a
+complete component or plugin system. With the earlier SDK pin
 =b3b50f0=, the existing Deck Actor test
 still fails at VM startup with =Unbound variable: Context= in Yuanxu's
 publication reader. This reproduces independently of connecting the UI ABI;
@@ -952,6 +1056,45 @@ changes; the tested =app.rs=, =event_queue.rs= and =streaming.rs= SHA-256s were
 =d26493c46311db31d0028c58ca886915b366d80f2e905aef2f8f35dfb02d0a2b=,
 =7cc1ac5b56b1964e64fa110fb05ca74173510bbf9f720efbea4283da41e4386c= and
 =9ec1ed440961525be7b5ded2e43f8f59489ec36fa29c5eafadf02fdb928766a0=.
+
+** Scheme command discovery and terminal qualification
+
+The workbench declares bounded command descriptions as Scheme values. The
+gerbil-scheme-rust native boundary projects them to typed Rust values; the
+terminal displays matching entries and completes unambiguous names. These
+descriptors do not register handlers or confer execution authority. The editor
+retains the message draft while the command editor is open. Rust admits a
+descriptor only when its name and argument flag match a typed terminal command;
+the same command type parses execution requests. A future extension command
+requires a host-owned handler registration before it can be admitted.
+Direct slash entry in the message editor uses the same descriptors and Tab
+completion. Prefix admission checks at most 32 bytes before inspecting the
+bounded command list, so a large draft is not scanned as a command on every
+frame. An ambiguous prefix is left unchanged; it does not switch focus.
+
+The selected Scheme module build and real VM projection passed locally, as did
+the TUI unit suite (150 passed, seven ignored), strict Clippy and SysML checks.
+One Unix PTY run reached the first frame within its 15-second deadline and
+displayed the menu, but failed the existing five-second process-exit deadline.
+A separate diagnostic with extended deadlines completed the streaming, draft,
+terminal restoration and shutdown checks. This is not a passing result for
+the original deadline and does not establish a general startup or shutdown
+performance improvement.
+A later merge-validation cut based on PR head =7a6de0e7= passed locked offline
+TUI/UI Cargo check, the TUI unit suite (152 passed, seven ignored), strict
+all-target Clippy, and Bazel 9.2.0 dependency repinning. The Bazel build
+itself remains unqualified, and the earlier same-version SDK alias conflict
+is not resolved by a successful repin.
+A subsequent original-deadline PTY run failed to reach the first frame in 15
+seconds; this remains negative evidence alongside the earlier exit failure.
+
+Shift-Tab now routes a typed reverse-focus event through the selected Scheme
+generic. It traverses the same declared focus order as Tab, including wrap,
+and the Rust host admits the returned focus intent before publishing the next
+state. A real VM test covers reverse traversal, wrap and preservation of the
+previous session; the Scheme workbench test covers the generic directly. A Unix
+PTY run observed both reverse and forward focus, command and streaming input,
+but again failed the unchanged five-second process-exit deadline.
 
 ** Conversation journal in progress
 

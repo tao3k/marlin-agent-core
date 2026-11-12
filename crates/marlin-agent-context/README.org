@@ -28,6 +28,22 @@ Gerbil root construction, C ABI dispatch or Lab Scope validation.
 
 * Org-backed context migration
 
+The =gerbil= feature also exposes =ContextOrgModule=: it resolves the selected
+Yuanxu Context publication through gerbil-scheme-rust, opens source through
+Lab's Scheme Orgize interface, and projects a bounded structural graph through
+rooted Scheme values. Rust checks UTF-8 byte spans, local element identities,
+and parent relations; the complete source remains available. An ordered bounded
+field batch preserves Scheme's missing, text and text-list values, including
+computed headline fields, without re-parsing. The bridge does not yet replace
+contract evaluation, the existing Rust workspace parser, or the TUI journal.
+Element IDs are process-local and tied to one opened source instance: the same
+numeric ordinal from a different source is rejected before a VM query. They are
+not durable source identities, source authentication, or revision receipts.
+The same boundary can open a Lab Org Contract source and project its original
+text, generation, contract identity, parser identity, digests and bounded
+anchors. A projected cut does not authenticate a source, authorize disclosure,
+commit a write or connect Lab's Session host.
+
 The =org-source= feature exposes the migrated Org source store;
 =org-workspace= adds document parsing and contracts, =org-workflow= currently
 adds release-status operations, and =org-memory= adds the local Org memory

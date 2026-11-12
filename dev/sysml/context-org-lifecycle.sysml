@@ -55,7 +55,14 @@ package MarlinContextOrgLifecycle {
         }
         part <'MAR-CONTEXT-P05'> nativeBoundary {
             doc /* Rust checks ABI readiness and transfers typed requests and
-                   receipts; no formatted text grants runtime authority. */
+                   receipts; no formatted text grants runtime authority. The
+                   selected publication can return a source-preserving Lab
+                   Contract cut and bounded anchors through rooted Scheme
+                   values. Its digest is not authentication or a commit;
+                   projection and lookup reject over-limit record lists before
+                   allocating their output or index, but parsing occurs first
+                   and is not bounded by that projection gate;
+                   the Session host and durable journal remain unconnected. */
         }
         part <'MAR-CONTEXT-P06'> terminalClient {
             doc /* Presents runtime observations and submits user interactions;

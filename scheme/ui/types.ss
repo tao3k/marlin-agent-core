@@ -37,6 +37,7 @@
   (.cc (Record workbench: [(Fun UiWorkbench <- UiWorkbenchFacts)]
                project-workbench: [(Fun UiNativeProjection <- UiWorkbench)]
                focus-event: [(Fun Object <- UiWorkbench)]
+               previous-focus-event: [(Fun Object <- UiWorkbench)]
                make-dispatch: [(Fun ClosGenericFunction <- UiMethodBundles)]
                dispatch: [(Fun Object <- ClosGenericFunction Object Object)]
                components: [Object] events: [Object] event-protocol: [ClosGenericProtocol])

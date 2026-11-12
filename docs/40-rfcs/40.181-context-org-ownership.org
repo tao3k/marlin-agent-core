@@ -56,9 +56,53 @@ at arbitrary byte or headline boundaries cannot establish equivalent Org
 semantics across properties, blocks, links, and contracts. A complete history
 therefore needs a durable source representation and a parser-owned strategy
 for cross-segment semantics before these limits can be removed from the path.
+The native projection additionally rejects oversized or improper Scheme record
+lists before allocating its output vector or field index. A synthetic Scheme
+boundary test exercises the 4,096-element and 32-anchor boundaries, and a
+real-VM test observes the upstream parser rejecting a 4,097-headline source.
+The latter rejection occurs before the native projection gate; these checks do
+not measure or bound the parser's peak memory, establish a throughput gain, or
+provide a durable Org journal.
+The standalone boundary test and the real-VM test passed locally. An initial
+Scheme aggregate run lacked a Lab temporal module; adding the Lab source path
+caused the interpreter to reject a native =##c-declare=. After compiling the
+missing =temporal-causality/time/objects= module from the pinned Lab revision
+into a separate test library and adding it to the existing compiled load path,
+the =gxi= aggregate exited successfully. The full workspace Cargo invocation
+of the SDK in-process build-and-test gate failed before running the test:
+the transitional Rust Orgize dependency required a qualified producer FFI
+bundle, which was not supplied. A separate diagnostic under =.data= compiled
+the same existing test source with a smaller dependency closure and the pinned
+SDK =8cebc52=; it passed package build and the aggregate inside the SDK VM in
+39.79 seconds. That diagnostic used the existing same-revision SDK runtime
+artifact on its load path and a separate lockfile. It does not qualify the
+workspace Cargo gate, a clean build, another platform, or TUI latency.
 The Rust =orgize= dependency remains
 in the old workspace document, contract and validation modules until their
 consumers are migrated to the corresponding Lab-owned functionality.
+
+The Rust =gerbil= boundary now resolves that selected publication with the
+SDK and retains the Lab Contract source as an owner-local root. It projects
+the original text, typed source and contract identities, generation, parser
+identity, digests and at most 32 source anchors. Rust checks the returned
+request identity and source, anchor uniqueness, digest shape and UTF-8 byte
+positions. A real-VM test covers generation changes, duplicate ID rejection and
+source preservation; its 64.62-second run is not a startup or throughput pass.
+This makes the Lab cut available as an input to future host integration; it
+does not yet enroll the Session host, authenticate the source, or commit an
+Org turn journal.
+
+The bounded field interface currently constructs its element index per batch.
+An owner-local lazy-index candidate was tested against that implementation on
+the same local debug toolchain with 513 elements, 64 title requests, 24 timed
+calls and an untimed warm-up. In A/B/B/A order, the per-run medians were
+1,032 / 1,952 / 909 / 1,064 microseconds and maxima were
+1,105 / 40,117 / 937 / 1,217 microseconds. Each run checked equal results.
+The experiment did not control host load, measure first-query cost or retained
+memory, or exercise end-to-end session replay. It does not establish a reliable
+performance improvement; the lazy-index candidate was removed and the
+per-batch implementation restored. The ignored diagnostic remains available
+for later controlled comparisons.
 
 The same revision's Context session host coordinates source enrollment,
 claims, observations and Session lifecycle; its durable adapter and runtime

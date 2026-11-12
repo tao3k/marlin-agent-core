@@ -1,5 +1,5 @@
 {
-  "checksum": "5e536265d00295cf05244035f5a5c6c1316b96c33f2cf1b5fe9ea7ae2a5083df",
+  "checksum": "63e36564f4c32fa540b916c127e933d328ae726d9e0946714769960c23296fb9",
   "crates": {
     "adler2 2.0.1": {
       "name": "adler2",
@@ -9391,7 +9391,7 @@
         "Git": {
           "remote": "https://github.com/tao3k/gerbil-scheme-rust",
           "commitish": {
-            "Rev": "a00e62ea9875f1e2fca1514134eb596754c0a4e5"
+            "Rev": "8cebc52e79c7b453dc70a98292625594eeee84b8"
           },
           "strip_prefix": "crates/gerbil-scheme-build"
         }
@@ -16247,6 +16247,10 @@
               "target": "async_stream"
             },
             {
+              "id": "gerbil-scheme 0.1.0",
+              "target": "gerbil_scheme"
+            },
+            {
               "id": "ratatui 0.30.2",
               "target": "ratatui"
             },
@@ -16289,6 +16293,49 @@
             {
               "id": "weaver-llm 0.1.0",
               "target": "weaver_llm"
+            }
+          ],
+          "selects": {}
+        },
+        "edition": "2024",
+        "version": "0.1.0"
+      },
+      "license": "Apache-2.0 AND LGPL-2.1-or-later",
+      "license_ids": [
+        "Apache-2.0",
+        "LGPL-2.1"
+      ],
+      "license_file": null
+    },
+    "marlin-agent-ui 0.1.0": {
+      "name": "marlin-agent-ui",
+      "version": "0.1.0",
+      "package_url": "https://github.com/tao3k/marlin-agent-core",
+      "repository": null,
+      "targets": [
+        {
+          "Library": {
+            "crate_name": "marlin_agent_ui",
+            "crate_root": "src/lib.rs",
+            "srcs": {
+              "allow_empty": true,
+              "include": [
+                "**/*.rs"
+              ]
+            }
+          }
+        }
+      ],
+      "library_target_name": "marlin_agent_ui",
+      "common_attrs": {
+        "compile_data_glob": [
+          "**"
+        ],
+        "deps": {
+          "common": [
+            {
+              "id": "gerbil-scheme 0.1.0",
+              "target": "gerbil_scheme"
             }
           ],
           "selects": {}
@@ -37359,6 +37406,7 @@
     "marlin-agent-stream 0.1.0": "crates/marlin-agent-stream",
     "marlin-agent-test-support 0.1.0": "crates/marlin-agent-test-support",
     "marlin-agent-tui 0.1.0": "crates/marlin-agent-tui",
+    "marlin-agent-ui 0.1.0": "crates/marlin-agent-ui",
     "marlin-bazel-scenario-resolution 0.0.0": "bazel/crate-universe",
     "marlin-context-org-model 0.1.0": "crates/marlin-agent-context/parts/org-model",
     "marlin-deck-runtime 0.1.0": "crates/marlin-deck-runtime",

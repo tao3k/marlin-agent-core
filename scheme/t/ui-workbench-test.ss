@@ -70,6 +70,12 @@
              (eq? (.get ((.get ui dispatch) generic (list-ref (.get output regions) 2)
                           focus-event) identity) 'composer))
   (error "UI focus dispatch failed"))
+(let* ((previous (.get ui previous-focus-event))
+       (event (previous output))
+       (dispatch (.get ui dispatch)))
+  (unless (and (eq? (.get (dispatch generic (list-ref (.get output regions) 1) event) identity) 'transcript)
+               (eq? (.get (dispatch generic (list-ref (.get output regions) 0) event) identity) 'commands))
+    (error "reverse UI focus dispatch failed")))
 (let* ((dispatch (.get ui dispatch))
        (custom (.o (:: @ selected-composer) identity: 'extension/editor))
        (event (.o (:: @ selected-next-focus) order: '(composer extension/editor transcript))))
@@ -137,9 +143,13 @@
                           (.o (:: @ (.get ui events submit)))) #(submit-draft))
                (equal? (marlin-ui-apply-event ui generic output 'composer
                           ((.get ui focus-event) output)) #(focus commands))
+               (equal? (marlin-ui-apply-event ui generic output 'composer
+                          ((.get ui previous-focus-event) output)) #(focus transcript))
                (rejected? (lambda () (marlin-ui-apply-event ui generic output 'status
                                       (.o (:: @ (.get ui events submit))))))
                (rejected? (lambda () (marlin-ui-apply-event ui generic output 'composer focus-event)))
+               (rejected? (lambda () (marlin-ui-apply-event ui generic output 'composer
+                 (.o (:: @ (.get ui events previous-focus)) order: '(composer transcript)))))
                (equal? (marlin-ui-project-intent dismiss) #(focus composer))
                (equal? (marlin-ui-project-intent scroll) #(scroll up))
                (rejected? (lambda () (marlin-ui-project-intent (.o kind: 'unknown))))

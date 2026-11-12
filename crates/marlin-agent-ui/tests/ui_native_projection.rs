@@ -6,7 +6,7 @@ use gerbil_scheme::{
     CollectionKind, GerbilRuntime, IdentifierBuffer, IdentifierKind, RootedSchemeObject,
     SchemeScalar,
 };
-use marlin_gerbil_scheme::ui::{
+use marlin_agent_ui::{
     UiComponentId, UiIntent, UiOpenFacts, UiRegion, UiScrollDirection, UiStatusItem, decode_intent,
     decode_workbench, prepare_open_request,
 };
@@ -174,7 +174,22 @@ fn sdk_roots_project_to_typed_ui_workbench() {
         &[
             region(&runtime, "transcript", "transcript", empty()),
             region(&runtime, "composer", "composer", empty()),
-            region(&runtime, "commands", "commands", empty()),
+            region(
+                &runtime,
+                "commands",
+                "commands",
+                vector(
+                    &runtime,
+                    &[vector(
+                        &runtime,
+                        &[
+                            string(&runtime, "/help"),
+                            string(&runtime, "Help"),
+                            runtime.scalar_object(SchemeScalar::Boolean(false)).unwrap(),
+                        ],
+                    )],
+                ),
+            ),
             region(&runtime, "extension/example", "extension", extension),
             region(
                 &runtime,
@@ -196,6 +211,8 @@ fn sdk_roots_project_to_typed_ui_workbench() {
     let workbench = decode_workbench(root).unwrap();
     assert_eq!(workbench.model_label, "model");
     assert_eq!(workbench.focus.as_str(), "composer");
+    assert_eq!(workbench.commands()[0].name.as_str(), "/help");
+    assert!(!workbench.commands()[0].accepts_arguments);
     assert!(
         matches!(&workbench.regions[3], UiRegion::Extension { id, focusable: true, .. } if id.as_str() == "extension/example")
     );

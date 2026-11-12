@@ -11,7 +11,7 @@
         (only-in :yuanxu/poo-clos/method-bundle-syntax .defmethod-bundle)
         (only-in :yuanxu/poo-clos/dispatch poo-clos-call))
 (export UiComponent. UiWorkbench. UiTranscript. UiComposer. UiCommands. UiStatus. UiStatusItem. UiExtension.
-        UiEvent. UiNextFocus. UiSubmit. UiDismiss. UiScroll. UiEventProtocol make-ui-event-generic
+        UiEvent. UiNextFocus. UiPreviousFocus. UiSubmit. UiDismiss. UiScroll. UiEventProtocol make-ui-event-generic
         ui-event-dispatch)
 
 (.def UiComponent.)
@@ -24,13 +24,14 @@
 (.def (UiExtension. @ UiComponent.))
 (.def UiEvent.)
 (.def (UiNextFocus. @ UiEvent.))
+(.def (UiPreviousFocus. @ UiNextFocus.))
 (.def (UiSubmit. @ UiEvent.))
 (.def (UiDismiss. @ UiEvent.))
 (.def (UiScroll. @ UiEvent.))
 (def UiEventProtocol (poo-clos-generic-protocol 'marlin/ui-event))
 
 ;;; Focus order belongs to the composed workbench, not to fixed widget names.
-(def (next-focus component event)
+(def (move-focus component event backwards?)
   (def identity-value (.ref component 'identity))
   (def order (.ref event 'order))
   (let check ((rest order) (seen '()) (count 0))
@@ -38,7 +39,12 @@
      ((null? rest)
       (let (entry (memq identity-value order))
         (unless entry (error "focused component is not in the focus order"))
-        (.o kind: 'focus identity: (if (pair? (cdr entry)) (cadr entry) (car order)))))
+        (.o kind: 'focus identity:
+            (if backwards?
+                (let loop ((rest order) (previous (car (reverse order))))
+                  (if (eq? (car rest) identity-value) previous
+                      (loop (cdr rest) (car rest))))
+                (if (pair? (cdr entry)) (cadr entry) (car order))))))
      ((or (not (pair? rest)) (>= count 64) (not (symbol? (car rest)))
           (memq (car rest) seen))
       (error "invalid UI focus order"))
@@ -52,7 +58,10 @@
   (.defmethod-bundle UiCoreEventMethods UiEventProtocol
     (.defmethod (ui-event (component (prototype UiComponent.))
                           (event (prototype UiNextFocus.)))
-      (next-focus component event))
+      (move-focus component event #f))
+    (.defmethod (ui-event (component (prototype UiComponent.))
+                          (event (prototype UiPreviousFocus.)))
+      (move-focus component event #t))
     ;; These are intents only: the host still owns draft submission and I/O.
     (.defmethod (ui-event (component (prototype UiComposer.))
                           (event (prototype UiSubmit.)))

@@ -66,13 +66,16 @@ Module publishes its bounded bridge projection through its typed contract.
 Module contributes its own adapter inputs through its Build role.
 The project direnv configuration defaults =GERBIL_BUILD_CORES= to the number
 of online processors when it is unset; an existing value is preserved there.
-The pinned SDK's embedded package-build path currently sets the value to the
-CPU count during its call, even when the caller supplied a different value;
-its behavior is distinct from the direct =gxi build.ss= path.
+The pinned SDK's embedded package-build path also preserves an explicitly set
+value, and defaults to the CPU count only when the variable is absent.
 The full Scheme test fixtures additionally import Lab constructors outside
 the production closure. Put the pinned Lab source checkout on =GERBIL_LOADPATH=
 for that test invocation; CI does this without adding test modules to the
-production library.
+production library. If a direct =gxi= aggregate run reports a missing
+=temporal-causality/time/objects= module or attempts to interpret native
+=##c-declare= forms, compile that test dependency from the pinned Lab checkout
+into a separate test library and add the library to =GERBIL_LOADPATH=. Keep the
+production Module selection unchanged.
 The rooted UI C ABI fixture =t/ui-c-abi-driver.ss= is test-only and must be
 compiled into the test package library before running =t/ui-c-abi-test.ss=;
 it is not an additional production Module or INIT root. The ignored Rust test

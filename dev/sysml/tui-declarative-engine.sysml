@@ -22,7 +22,9 @@ package MarlinDeclarativeUi {
                    produces a bounded declarative tree and typed intents.
                    Components have stable domain identity and explicit state;
                    generic functions and method bundles permit specialization
-                   without embedding Rust callbacks in Scheme components. */
+                   without embedding Rust callbacks in Scheme components.
+                   Forward and reverse focus traverse the same admitted order;
+                   both wrap and return a focus intent without executing effects. */
         }
         part <'MAR-UI-T04'> nativeBoundary {
             doc /* The SDK-owned VM boundary transfers rooted Scheme values to
@@ -57,7 +59,13 @@ package MarlinDeclarativeUi {
         part <'MAR-UI-T08'> intentRouter {
             doc /* A Scheme intent is a proposal, not an approval or execution
                    receipt. Rust validates and routes it to the owning typed
-                   runtime API; only an actual runtime receipt reports outcome. */
+                   runtime API; only an actual runtime receipt reports outcome.
+                   Bounded Scheme command descriptors describe discovery and
+                   completion; they do not register executable Rust handlers.
+                   The host admits only descriptions matching an existing
+                   typed terminal command and its argument contract. Future
+                   plugin commands require a corresponding runtime-owned
+                   registration, not a presentation-only declaration. */
         }
         part <'MAR-UI-T09'> qualification {
             doc /* Fixed fixtures compare correctness, responsiveness, CPU,
@@ -103,7 +111,9 @@ package MarlinDeclarativeUi {
     requirement <'MAR-UI-R04'> typedAuthority {
         doc /* Runtime facts and effect outcomes originate in their owners.
                No Scheme UI result manufactures an approval, tool execution,
-               durable Org write, provider outcome or retirement receipt. */
+               durable Org write, provider outcome or retirement receipt.
+               An extension activation may propose a valid focus transition;
+               only the focused composer may propose submission of its draft. */
     }
     requirement <'MAR-UI-R05'> reproduciblePerformance {
         doc /* Qualification fixes workload, terminal geometry, fixture,
@@ -126,6 +136,15 @@ package MarlinDeclarativeUi {
                measured independently. Caller-supplied roots do not by
                themselves prove selected-publication provenance. */
     }
+    requirement <'MAR-UI-R08'> interactiveStartup {
+        doc /* Measure cold startup through the first usable declared workbench,
+               including SDK initialization, selected Module publication and
+               lazy dependencies. A progress message is not a usable frame.
+               Preserve existing PTY readiness deadlines and measure shutdown
+               separately; do not promote an extended diagnostic window into
+               a passing acceptance result. The VM owner and native roots must
+               retire normally; suppressing cleanup is not an optimization. */
+    }
 
     allocation extensions allocate composableExtensions to engine.modulePublication;
     allocation specialization allocate composableExtensions to engine.functionalComposition;
@@ -136,6 +155,7 @@ package MarlinDeclarativeUi {
     allocation measurements allocate reproduciblePerformance to engine.qualification;
     allocation visualIdentity allocate marlinIdentity to engine.terminalHost;
     allocation vmContinuity allocate vmModuleContinuity to engine.nativeBoundary;
+    allocation startupQualification allocate interactiveStartup to engine.qualification;
 
     attribute def BeginUpdate;
     attribute def CandidateReady;

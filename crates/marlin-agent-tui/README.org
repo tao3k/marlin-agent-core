@@ -30,6 +30,16 @@ omitted model from =ANTHROPIC_MODEL=. Explicit TOML values take precedence.
 Set the named credential environment variable. Local HTTP endpoints must use
 a loopback address. Launch with =cargo run -p marlin-agent-tui -- path/to/config.toml=.
 
+The terminal uses Marlin's compiled Scheme UI modules through the Gerbil SDK.
+Install the Marlin Scheme package and its selected dependencies in the normal
+Gerbil package environment before launching; use =GERBIL_PATH= and
+=GERBIL_LOADPATH= when that environment is not the default. A missing module
+stops startup with an error. Initial module loading can take substantial time.
+Tab and Shift-Tab move focus forward and backward through the Scheme workbench.
+In the transcript, Up and Down
+scroll; in commands, Enter opens the command editor. Ctrl-O remains available
+to open commands while keeping a draft.
+
 The =provider= identifies the model provider; =protocol = "anthropic"= selects
 the wire format, including for an Anthropic-compatible DeepSeek endpoint.
 Optional =[anthropic]= settings select =thinking= (adaptive, enabled with a
@@ -92,7 +102,11 @@ blocked output, suspension and job-control handoff are not covered by this
 shutdown guarantee.
 Ctrl-O opens a separate slash-command editor while keeping the message draft
 and cursor. Enter runs the command and restores the draft; Esc or Ctrl-O returns
-without running it. When a session switch succeeds, the draft is carried into
+without running it. The menu shows matching Scheme-declared command descriptions;
+Tab completes an unambiguous command or adds a space after an exact command
+that takes arguments. Typing a slash command directly in the message editor also
+shows the menu and supports the same completion. Rust retains authority over
+command execution. When a session switch succeeds, the draft is carried into
 the selected session. Copy it before exiting the application.
 =/help= shows the shortcuts and =/clear= clears the displayed transcript;
 =/clear= does not discard the model conversation history. A failed or cancelled

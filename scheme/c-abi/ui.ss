@@ -7,7 +7,8 @@
         (only-in :clan/poo/object .def .get .o seal-object!)
         (only-in :yuanxu/poo-clos/types clos-instance?)
         "../ui/projection.ss")
-(export marlin-ui-session-open marlin-ui-session-project marlin-ui-session-dispatch)
+(export marlin-ui-session-open marlin-ui-session-project marlin-ui-session-dispatch
+        marlin-ui-session-refresh-labels)
 
 ;;; Each event returns a successor; older frames keep their own rooted state.
 (.def UiNativeSession.)
@@ -38,9 +39,30 @@
     (vector (vector-ref projection 0) (vector-ref projection 1)
             (vector-ref projection 2) (.get current focus))))
 
+;;; Refresh only owner-supplied display facts, retaining components and generic.
+;;; Construct a fresh workbench directly so repeated updates do not build an
+;;; unbounded prototype chain of old UI generations.
+(def (marlin-ui-session-refresh-labels input)
+  (unless (and (vector? input) (= (vector-length input) 3))
+    (error "invalid UI label refresh"))
+  (let* ((current (checked-session (vector-ref input 0)))
+         (model-value (vector-ref input 1))
+         (session-label (vector-ref input 2))
+         (ui (.get current ui))
+         (old (.get current workbench)))
+    (unless (and (string? model-value) (<= (string-length model-value) 256)
+                 (string? session-label) (<= (string-length session-label) 256))
+      (error "invalid UI label facts"))
+    (let (next (.o (:: @ (.get ui components workbench))
+                   identity: (.get old identity) kind: (.get old kind)
+                   model: (string-copy model-value) session: (string-copy session-label)
+                   regions: (.get old regions) focus-order: (.get old focus-order)))
+      (session ui (.get current generic) next (.get current focus)))))
+
 (def (event-for ui workbench kind)
   (case kind
     ((next-focus) ((.get ui focus-event) workbench))
+    ((previous-focus) ((.get ui previous-focus-event) workbench))
     ((submit) (let (prototype (.get ui events submit)) (.o (:: @ prototype))))
     ((dismiss) (let (prototype (.get ui events dismiss)) (.o (:: @ prototype))))
     ((scroll-up scroll-down)

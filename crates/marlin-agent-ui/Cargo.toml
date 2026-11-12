@@ -1,0 +1,19 @@
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+#
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
+[package]
+name = "marlin-agent-ui"
+description = "Typed SDK boundary for Marlin's declarative Scheme UI."
+license.workspace = true
+edition.workspace = true
+version.workspace = true
+authors.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+gerbil-scheme.workspace = true
+
+[dev-dependencies]
+marlin-rust-project-harness-policy = { path = "../../build-support/marlin-rust-project-harness-policy" }

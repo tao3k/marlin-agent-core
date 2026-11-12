@@ -6,6 +6,7 @@
 
 mod app;
 mod cli;
+mod command;
 mod composer;
 mod config;
 mod context_budget;
@@ -21,6 +22,7 @@ mod render;
 mod replay;
 mod session_browser;
 mod signals;
+mod ui_host;
 mod viewport;
 mod workspace;
 mod wrap;

@@ -10,10 +10,11 @@
   (.o workbench: marlin-ui-workbench
       project-workbench: marlin-ui-project-workbench
       focus-event: marlin-ui-focus-event
+      previous-focus-event: marlin-ui-previous-focus-event
       make-dispatch: make-ui-event-generic dispatch: ui-event-dispatch
       event-protocol: UiEventProtocol
       components: (.o base: UiComponent. workbench: UiWorkbench. transcript: UiTranscript.
                       composer: UiComposer. commands: UiCommands. status: UiStatus.
                       status-item: UiStatusItem. extension: UiExtension.)
-      events: (.o base: UiEvent. next-focus: UiNextFocus. submit: UiSubmit.
+      events: (.o base: UiEvent. next-focus: UiNextFocus. previous-focus: UiPreviousFocus. submit: UiSubmit.
                   dismiss: UiDismiss. scroll: UiScroll.)))

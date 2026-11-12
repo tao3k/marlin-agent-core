@@ -6,12 +6,28 @@
 (import (only-in :clan/poo/object .o .ref .slot? object? seal-object!)
         (only-in :yuanxu/poo-clos/types clos-instance?)
         "./dispatch.ss")
-(export marlin-ui-workbench marlin-ui-focus-event marlin-ui-bounded-list?)
+(export marlin-ui-workbench marlin-ui-focus-event marlin-ui-previous-focus-event marlin-ui-bounded-list?)
 
 (def max-contributions 8)
 (def max-extensions 16)
 (def max-label-length 256)
 (def reserved-identities '(transcript composer status commands))
+
+;;; These are presentation descriptors for Rust-owned commands, not handlers.
+;;; The third field indicates whether the command accepts an argument.
+(def command-descriptors
+  '(("/help" "Keyboard shortcuts" #f)
+    ("/models" "List configured models" #f)
+    ("/model" "Select a model alias" #t)
+    ("/sessions" "List sessions; next opens another page" #t)
+    ("/session" "Open a quoted session ID" #t)
+    ("/inspect" "Inspect a quoted session ID" #t)
+    ("/history" "Browse older or newest history" #t)
+    ("/status" "Show workspace status" #f)
+    ("/diff" "Show unstaged or staged changes" #t)
+    ("/context" "Show context budget" #f)
+    ("/runtime" "Show runtime policy" #f)
+    ("/clear" "Clear displayed transcript" #f)))
 
 (def (required-object value slots)
   (unless (and (object? value) (andmap (lambda (slot) (.slot? value slot)) slots))
@@ -84,10 +100,18 @@
           focus-order: (append '(transcript composer commands) extension-focus)
           regions: (append (list (.o (:: @ UiTranscript.) identity: 'transcript kind: 'transcript)
                                  (.o (:: @ UiComposer.) identity: 'composer kind: 'composer)
-                                 (.o (:: @ UiCommands.) identity: 'commands kind: 'commands))
+                                 (.o (:: @ UiCommands.) identity: 'commands kind: 'commands
+                                     entries: (map (lambda (entry) (list (string-copy (car entry))
+                                                                         (string-copy (cadr entry))
+                                                                         (caddr entry)))
+                                                   command-descriptors)))
                            extensions
                            (list (.o (:: @ UiStatus.) identity: 'status kind: 'status children: nodes)))))))
 
 (def (marlin-ui-focus-event workbench)
   (let (order-value (.ref workbench 'focus-order))
     (.o (:: @ UiNextFocus.) order: order-value)))
+
+(def (marlin-ui-previous-focus-event workbench)
+  (let (order-value (.ref workbench 'focus-order))
+    (.o (:: @ UiPreviousFocus.) order: order-value)))

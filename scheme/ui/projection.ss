@@ -25,6 +25,8 @@
                              (vector (.get child identity) (.get child kind) (.get child label)))
                            (.get node children)))))
       ((extension) (vector identity-value kind-value (vector (.get node label) (.get node focusable))))
+      ((commands) (vector identity-value kind-value
+                          (list->vector (map list->vector (.get node entries)))))
       (else (vector identity-value kind-value #())))))
 
 (def (marlin-ui-native-facts input)

@@ -202,7 +202,7 @@
         "usagesDigest": "D1r3lfzMuUBFxgG8V6o0bQTLMk3GkaGOaPzw53wrwyw=",
         "recordedInputs": [
           "REPO_MAPPING:pybind11_bazel+,bazel_tools bazel_tools",
-          "FILE:@@//.data/tui-bazel-repin/c93f9bdb37f9832a11077bbcea9c1479/external/pybind11_bazel+/MODULE.bazel e6f4c20442eaa7c90d7190d8dc539d0ab422f95c65a57cc59562170c58ae3d34"
+          "FILE:@@pybind11_bazel+//MODULE.bazel e6f4c20442eaa7c90d7190d8dc539d0ab422f95c65a57cc59562170c58ae3d34"
         ],
         "generatedRepoSpecs": {
           "pybind11": {
