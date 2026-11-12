@@ -382,6 +382,7 @@ fn run(
                     && let Some(completed) = app
                         .selected_command()
                         .and_then(|name| ui.complete_selected_command(app.composer.text(), name))
+                        .or_else(|| ui.complete_command(app.composer.text()))
                 {
                     if app.accept_command_completion(&completed) {
                         app.submit(&gateway, &runtime, &reply_tx);

@@ -326,7 +326,9 @@ pub(crate) fn draw(
                 .any(|item| item.id.as_str() == "modeline/left/brand")
         }) && spare > 0,
     );
-    let palette_height = (suggestions.len() as u16)
+    let palette_height = (suggestions
+        .len()
+        .saturating_add(usize::from(!suggestions.is_empty())) as u16)
         .min(ui.layout.max_command_rows)
         .min(spare.saturating_sub(status_height));
     let remaining = spare - palette_height;
@@ -446,16 +448,34 @@ pub(crate) fn draw(
     let selected = app
         .selected_command()
         .filter(|name| suggestions.iter().any(|command| &command.name == *name));
+    let active = selected.or_else(|| suggestions.first().map(|command| &command.name));
     let selected_index =
-        selected.and_then(|name| suggestions.iter().position(|command| &command.name == name));
-    let visible = usize::from(parts[1].height);
+        active.and_then(|name| suggestions.iter().position(|command| &command.name == name));
+    let header_rows = usize::from(!suggestions.is_empty() && parts[1].height > 1);
+    let visible = usize::from(parts[1].height).saturating_sub(header_rows);
+    if header_rows > 0 {
+        let count = format!(
+            " {}/{}  M-x",
+            selected_index.unwrap_or(0) + 1,
+            suggestions.len()
+        );
+        let header = ratatui::layout::Rect::new(parts[1].x, parts[1].y, parts[1].width, 1);
+        frame.render_widget(
+            Paragraph::new(count).style(Style::default().fg(rgb(ui.theme.accent))),
+            header,
+        );
+    }
     let start = selected_index.map_or(0, |index| index.saturating_add(1).saturating_sub(visible));
     for (row, command) in suggestions.iter().skip(start).take(visible).enumerate() {
-        let line =
-            ratatui::layout::Rect::new(parts[1].x, parts[1].y + row as u16, parts[1].width, 1);
+        let line = ratatui::layout::Rect::new(
+            parts[1].x,
+            parts[1].y + header_rows as u16 + row as u16,
+            parts[1].width,
+            1,
+        );
         let text = format!(
             " {} {}  {}",
-            if selected == Some(&command.name) {
+            if active == Some(&command.name) {
                 "›"
             } else {
                 " "
@@ -464,7 +484,7 @@ pub(crate) fn draw(
             header_value(&command.description)
         );
         let style = Style::default().fg(rgb(ui.theme.info));
-        let style = if selected == Some(&command.name) {
+        let style = if active == Some(&command.name) {
             style.add_modifier(Modifier::BOLD)
         } else {
             style

@@ -302,6 +302,7 @@ fn command_menu_filters_scheme_descriptors_and_preserves_draft() {
         .collect();
     assert!(text.contains("List models"), "{text}");
     assert!(text.contains("M-x · Commands"), "{text}");
+    assert!(text.contains("1/1  M-x"), "{text}");
     assert!(!text.contains("/models"), "{text}");
     assert!(!text.contains("Keyboard shortcuts"), "{text}");
     app.toggle_command();

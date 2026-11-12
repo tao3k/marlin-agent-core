@@ -1653,7 +1653,9 @@ provide that live switch.
 The existing command palette now opens with =M-x= (with =Ctrl-O= retained as an
 alias), shows Scheme-published command names and descriptions without the
 internal slash prefix, and gives its candidate area eight rows when height
-allows. This is the entry surface for profile selection, not a separate
+allows. It reports the selected index and candidate count; Enter chooses the
+first candidate if the user has not moved selection yet. This is the entry
+surface for profile selection, not a separate
 =/themes= command grammar. The current command catalog still uses slash names
 internally; named theme actions and live profile selection remain to be added.
 
@@ -1669,6 +1671,14 @@ the two paths cannot invoke different effects. Local references in
 =emacs-which-key= (prefix help) and =doom-modeline= (named segments). Their
 installed LICENSE files are GPLv3, so the design is adapted to Marlin's
 protocol rather than copying their Elisp into this dual-licensed package.
+
+The current Rust =draw_modeline= still decides segment omission and ordering.
+A profile transition should instead project Scheme-owned ordered segments,
+priority, short/long labels and semantic tones. Rust retains terminal width
+measurement, clipping, cursor placement and cell painting. The projection
+must be cached per profile or host fact change, not recomputed by the VM on
+every frame. This makes a future GUI host able to consume the same Scheme
+presentation semantics without sharing Ratatui code.
 
 The selected =ui-themes= Module now owns the default =doom-one= palette.
 It derives the canvas, foreground and semantic accents from
