@@ -39,3 +39,9 @@ weaver-llm.workspace = true
 [dev-dependencies]
 marlin-rust-project-harness-policy = { path = "../../build-support/marlin-rust-project-harness-policy" }
 ratatui = { version = "=0.30.2", default-features = false, features = ["unstable-rendered-line-info"] }
+
+[target.'cfg(unix)'.dev-dependencies]
+nix = { version = "=0.31.3", features = ["process", "signal", "term"] }
+rustix = { version = "=1.1.6", features = ["termios"] }
+tempfile.workspace = true
+turso = { version = "=0.8.3", default-features = false }

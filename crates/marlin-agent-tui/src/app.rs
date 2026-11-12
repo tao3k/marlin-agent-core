@@ -118,6 +118,15 @@ impl App {
         })
     }
 
+    /// Publish a menu completion and say whether its current form is runnable.
+    pub(crate) fn accept_command_completion(&mut self, completed: &str) -> bool {
+        let runnable = Command::parse(completed).is_some();
+        self.composer.take();
+        self.composer.insert_text(completed);
+        self.command_selection = None;
+        runnable
+    }
+
     pub(crate) fn endpoint(&self) -> &ModelEndpoint {
         &self.endpoint
     }
@@ -1377,11 +1386,7 @@ fn run(
                         .selected_command()
                         .and_then(|name| ui.complete_selected_command(app.composer.text(), name))
                 {
-                    let arguments = completed.ends_with(' ');
-                    app.composer.take();
-                    app.composer.insert_text(&completed);
-                    app.command_selection = None;
-                    if !arguments {
+                    if app.accept_command_completion(&completed) {
                         app.submit(&gateway, &runtime, &reply_tx);
                     }
                     continue;

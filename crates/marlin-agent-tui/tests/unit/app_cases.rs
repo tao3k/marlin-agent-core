@@ -24,6 +24,22 @@ use marlin_agent_stream::{
 };
 use std::sync::{Arc, Mutex};
 
+#[test]
+fn selecting_commands_runs_defaults_and_retains_required_arguments() {
+    let mut app = App::new(ModelEndpoint::new("provider", "model"));
+    app.composer.insert_text("/s");
+    assert!(app.accept_command_completion("/sessions "));
+    assert_eq!(app.composer.text(), "/sessions ");
+
+    assert!(app.accept_command_completion("/diff "));
+    assert_eq!(app.composer.text(), "/diff ");
+
+    assert!(!app.accept_command_completion("/model "));
+    assert_eq!(app.composer.text(), "/model ");
+    assert!(!app.accept_command_completion("/history "));
+    assert_eq!(app.composer.text(), "/history ");
+}
+
 fn draw(
     frame: &mut ratatui::Frame<'_>,
     app: &App,

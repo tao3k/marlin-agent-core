@@ -854,7 +854,9 @@ terminal output for one idle second. Three sequential old-version samples were
 The code path now redraws dirty frames at a minimum 16 ms interval, while
 continuing to poll input and terminal size. The 50 ms idle wake is still present.
 
-The probe is [[file:../../crates/marlin-agent-tui/tests/integration/pty_idle_probe.py][pty_idle_probe.py]].
+The historical probe has since been migrated to the Rust
+[[file:../../crates/marlin-agent-tui/tests/pty.rs][PTY tests]]; the measurements
+below were made before that migration.
 Baseline executable SHA-256 was
 =69343504e2d0cdb73ad005b1ad3f07a91e48cba46906ada71c5b6225414062ac=
 and its app source SHA-256 was
@@ -1049,7 +1051,9 @@ restored the terminal; these are individual observations, not a latency or
 reliability guarantee.
 The first version of that test falsely failed because it searched for contiguous
 text despite ANSI cursor sequences; the corrected test strips those sequences.
-The fixture is [[file:../../crates/marlin-agent-tui/tests/integration/pty_cancel_flood.py][pty_cancel_flood.py]].
+The historical fixture has been migrated to the Rust
+[[file:../../crates/marlin-agent-tui/tests/pty.rs][PTY tests]]; the following
+measurements predate the migration.
 The final workspace run passed 26 tests with one manual diagnostic ignored;
 Clippy exited successfully with a Cargo warning that its =axum= dev-profile
 override matched no packages. A transient concurrent workspace manifest edit
@@ -1179,6 +1183,17 @@ operations; its context scope reported 3.93 seconds. These scopes can nest,
 so their times must not be added. This was not the TUI binary, a paired
 comparison, or a release measurement; it identifies the source/publication
 and import path as the next optimization target without weakening its checks.
+
+The Unix PTY fixtures are now Rust tests using the same binary, local provider
+fixtures and terminal-mode observations. The strict streaming acceptance still
+requires a usable first frame in under ten seconds and normal exit in five;
+an independent longer-window diagnostic is not a passing result for that gate.
+During migration, the Anthropic environment and signed-thinking continuation,
+multi-session replay, workspace isolation, resize/scroll, signal recovery and
+ordinary interrupted-stream tests passed locally. The strict startup gate and
+some five-second shutdown checks failed. The oversized-stream case also
+received the generic invalid-response outcome instead of the expected provider
+byte-limit outcome; its original assertion remains in the Rust test.
 
 ** Conversation journal in progress
 

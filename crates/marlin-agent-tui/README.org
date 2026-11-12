@@ -314,40 +314,49 @@ history update may also trigger a copy on the terminal thread. Copies still use
 memory and occupy their executing thread; this is not a total-memory or latency
 guarantee. Cancellation remains local and does not prove remote retirement.
 
-After building, =python3 crates/marlin-agent-tui/tests/integration/pty_stream_paste.py=
-runs the local Unix pseudo-terminal and loopback SSE fixture. It does not test
-Windows, a real provider, shell job control, or unbracketed paste.
-The streaming and session-replay PTY fixtures use =target/debug/marlin-tui= by
-default; set =MARLIN_TUI_BINARY= to an alternate built executable to test it.
+Run =cargo test -p marlin-agent-tui --test pty startup_menu_paste_stream_and_terminal_restoration -- --ignored=
+for the Rust Unix PTY and loopback SSE acceptance. It does not test Windows, a
+real provider, shell job control, or unbracketed paste. Cargo supplies the test
+binary.
 With the local Scheme package built, set =MARLIN_PTY_LOCAL_PACKAGE=1= for the
 streaming fixture to remove inherited Gerbil path variables from its child and
 exercise repository-root bootstrap. The fixture requires an alternate-screen
 workbench in under ten seconds from process creation and retains the five-second
 normal exit deadline; both include the real Scheme runtime.
-=python3 crates/marlin-agent-tui/tests/integration/pty_cancel_flood.py= checks
+The separate =menu_paste_stream_diagnostic= test uses longer deadlines and does
+not satisfy the startup or shutdown acceptance limits.
+=cargo test -p marlin-agent-tui --test pty idle_output_probe -- --ignored --nocapture=
+observes idle output in three separate terminal processes; it is a diagnostic,
+not an acceptance threshold.
+=cargo test -p marlin-agent-tui --test pty streaming_flood_can_be_cancelled -- --ignored= checks
 that a local streaming load still allows keyboard cancellation; it is not a
-latency or soak test.
-=python3 crates/marlin-agent-tui/tests/integration/pty_ctrl_c.py= checks idle
-Ctrl-C confirmation and terminal restoration on the local Unix PTY.
-=python3 crates/marlin-agent-tui/tests/integration/pty_signal_shutdown.py=
-exercises Unix signal shutdown and persisted unfinished-turn recovery.
-=MARLIN_PTY_PERSIST=1= enables a temporary persisted session for the same test.
-=python3 crates/marlin-agent-tui/tests/integration/pty_session_replay.py=
+latency or soak test. Set =MARLIN_PTY_PERSIST=1= to include session storage.
+=cargo test -p marlin-agent-tui --test pty ctrl_c_confirmation_restores_terminal -- --ignored=
+checks idle Ctrl-C confirmation and terminal restoration on the local Unix PTY.
+=cargo test -p marlin-agent-tui --test pty unix_signals_restore_terminal_modes -- --ignored=
+and =signal_preserves_unfinished_turn_and_blocks_retry= check Unix signal
+shutdown and persistent unfinished-turn recovery.
+=cargo test -p marlin-agent-tui --test pty separate_sessions_preserve_history_and_route_authority -- --ignored=
 checks separate session histories and replay into a subsequent loopback request.
-=python3 crates/marlin-agent-tui/tests/integration/pty_scroll_stream.py=
+=cargo test -p marlin-agent-tui --test pty resize_stream_scroll_and_history_search -- --ignored=
 checks that streamed tail output leaves a scrolled history in place until
 the user navigates down on a local Unix pseudo-terminal.
-=python3 crates/marlin-agent-tui/tests/integration/pty_workspace_status.py=
+=cargo test -p marlin-agent-tui --test pty workspace_reads_remain_outside_model_context -- --ignored=
 checks status, both diff scopes and model-context isolation against a temporary
 Git worktree.
-=python3 crates/marlin-agent-tui/tests/integration/pty_session_crash.py=
+=cargo test -p marlin-agent-tui --test pty crash_recovery_blocks_retry_and_allows_another_session -- --ignored=
 kills the client after loopback provider dispatch and checks that reopening
 blocks both retry and a new request while the previous turn is unfinished.
-=python3 crates/marlin-agent-tui/tests/integration/pty_open_uncertain.py=
+=cargo test -p marlin-agent-tui --test pty uncertain_open_remains_unresolved_after_restart -- --ignored=
 holds a dispatched loopback request without responding and checks that the
 typed stream-open timeout remains unresolved after restart.
-=python3 crates/marlin-agent-tui/tests/integration/pty_stream_interrupted.py=
+=cargo test -p marlin-agent-tui --test pty interrupted_stream_retains_prefix_after_restart -- --ignored=
 checks that a truncated stream retains its observed prefix and stays unresolved
 after restart. =MARLIN_PTY_OVERSIZE=1= exercises the provider byte limit.
-=python3 crates/marlin-agent-tui/tests/integration/pty_runtime_policy.py=
-checks the runtime policy receipt displayed by the terminal.
+=cargo test -p marlin-agent-tui --test pty runtime_policy_receipt -- --ignored=
+checks the runtime policy receipt displayed by the terminal; the separate
+=missing_session_configuration_is_rejected= case verifies invalid selection.
+=cargo test -p marlin-agent-tui --test pty anthropic_base_url_and_two_turns -- --ignored=
+checks Anthropic environment configuration and two-turn request continuity.
+=cargo test -p marlin-agent-tui --test pty anthropic_thinking_continuation_survives_restart -- --ignored=
+checks signed thinking replay and rejection after a credential change.
