@@ -1226,6 +1226,17 @@ discovery at runtime. Fixing the release requires the Yuanxu-owned selection
 and provenance lifecycle to support a compiled closure, as well as Gerbil's
 module metadata and SDK loader semantics; a second hand-maintained module
 list or silently skipped admission would not satisfy that boundary.
+The [[https://github.com/tao3k/gerbil-bazel/blob/main/patches/gerbil-v19-darwin-aot-tools.patch][Gerbil Darwin AOT tools patch]] provides a useful design analogy:
+when =GERBIL_BUILD_AOT_TOOLS=yes=, =std/make= builds separate =optimized-exe=
+targets for =gxpkg=, =gxtags= and =gxtest=, and installation requires real
+executables rather than symlinks to the generic =gerbil= launcher. It also
+declares OpenSSL and optional zlib compiler/linker flags. This patch contains
+no Marlin timing result. Marlin's Rust host needs the corresponding SDK-owned
+linked program closure and Yuanxu compiled publication for the same selected
+=init= graph. A separate Gerbil command or a VM-only link would leave the
+TUI publication problem unresolved. Qualify the final Darwin binary by
+inspecting linked libraries, denying runtime package/source lookup, opening
+the real UI, and measuring first frame and shutdown with the fixed PTY gates.
 A separate =gxi= diagnostic of =(.get marlin-agent-core.init.exports Marlin
 ui)= used Yuanxu's existing callback-free scalar accounting. One process
 reported 33 role imports (6.92 seconds accumulated), 116 native imports
@@ -1239,6 +1250,14 @@ The Unix PTY fixtures are now Rust tests using the same binary, local provider
 fixtures and terminal-mode observations. The strict streaming acceptance still
 requires a usable first frame in under ten seconds and normal exit in five;
 an independent longer-window diagnostic is not a passing result for that gate.
+After clearing the repository's default =target= directory, an offline
+=cargo build --locked -p marlin-agent-tui --bin marlin-tui= compiled 387 crates
+and finished in 5 minutes 2 seconds. The resulting Darwin debug binary still
+linked =libgerbil_scheme_build.dylib=. The unchanged strict Rust PTY gate failed
+after 10.04 seconds with only =Starting interface…= on the terminal. The
+existing longer-window PTY diagnostic passed menu, paste, stream and terminal
+restoration in 107.72 seconds for the whole test process. That duration includes
+startup and shutdown, and cannot qualify the ten-second or five-second gates.
 During migration, the Anthropic environment and signed-thinking continuation,
 multi-session replay, workspace isolation, resize/scroll, signal recovery and
 ordinary interrupted-stream tests passed locally. The strict startup gate and
