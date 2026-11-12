@@ -38,10 +38,11 @@ Org records design decisions and concise, reviewed conclusions.
 Tool caches, compiler outputs, rendered views, raw logs, traces, profiling and
 benchmark data, report indexes and compressed archives stay under =target/=
 (for example =target/sysml/= or =target/runtime/=). They are reproducible local
-outputs and are excluded from version control. Do not move them into
-=dev/sysml/= or =dev/proofs/= to preserve a local run. The directory ignore rule
-admits only model and Org source files; it does not authorize generated files
-merely because they have a source extension.
+outputs and are excluded from version control. =dev/sysml/= contains authored
+architecture sources. =dev/proofs/= contains formal proof sources and their
+proof project definitions. Runtime reports and caches do not belong in either
+directory. The SysML ignore rule admits model and Org source files; generated
+files remain local outputs regardless of their extension.
 
 * Model and Org correspondence
 

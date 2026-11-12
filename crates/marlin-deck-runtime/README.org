@@ -17,7 +17,7 @@ The startup receipt transfers the published module ID and version through the
 SDK's rooted string and u64vector APIs. =metadata()= exposes the resulting Rust
 snapshot after the owner is ready. Rust carries no table of Scheme versions;
 this runtime package uses the SDK directly for the receipt.
-It selects Context's =scheme-abi= feature: rooted value mappings and linked
+It selects Context's =gerbil-scheme-abi= feature: rooted value mappings and linked
 entries. Context's =gerbil= feature additionally requires the SDK package-host
 image, whose package loader is absent from an =external-program= image.
 The SDK declares separate procedure lowering for the production mailbox module.

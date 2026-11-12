@@ -5,11 +5,11 @@
 #+title: Marlin Agent Context
 
 Owns Marlin's Context requests, batch admission and scope digest projections.
-The crate builds without a Scheme SDK by default. The =scheme-abi= feature
+The crate builds without a Scheme SDK by default. The =gerbil-scheme-abi= feature
 provides typed value projections and linked Context entry points through
 gerbil-scheme-rust's rooted-object ABI. Deck selects this feature for its
 =external-program= image. It does not require the SDK's package loader.
-The =gerbil= feature adds package-host Org operations and includes =scheme-abi=.
+The =gerbil= feature adds package-host Org operations and includes =gerbil-scheme-abi=.
 The Scheme adapter lives in ~scheme/context/~ and uses AI Agentic Lab's
 compiled Context library.
 

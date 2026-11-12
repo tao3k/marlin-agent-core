@@ -2098,9 +2098,9 @@ capacity. None of these limits is an Actor count ceiling.
 
 *** Context ABI and package-host build features
 
-Context exposes Cargo feature =scheme-abi= for rooted value projection and
+Context exposes Cargo feature =gerbil-scheme-abi= for rooted value projection and
 linked Context entry points. Deck selects it for the SDK's =external-program=
-image. The =gerbil= feature includes =scheme-abi= and adds the existing
+image. The =gerbil= feature includes =gerbil-scheme-abi= and adds the existing
 =ContextOrgModule= package-host API. Its Org implementation remains owned by
 Context and its Scheme library.
 
@@ -2108,7 +2108,7 @@ SDK =8cebc52e= deliberately omits =runtime::build= from an external program.
 After rebasing Marlin to =6e1e08e6=, the original Deck command fails to compile
 because Context's broad =gerbil= selection also compiled
 =ContextOrgModule::resolve=, which calls the unavailable package resolver.
-Selecting =scheme-abi= for Deck expresses the required typed bridge without
+Selecting =gerbil-scheme-abi= for Deck expresses the required typed bridge without
 importing the package-loader capability. The package-host profile retains the
 existing =gerbil= API. Validate these image profiles separately; enabling the
 external image does not make the SDK's package API available on that image.

@@ -13,9 +13,9 @@ readme = "README.org"
 
 [features]
 # Typed values and linked Context entry points; no package loader.
-scheme-abi = ["dep:gerbil-scheme"]
+gerbil-scheme-abi = ["dep:gerbil-scheme"]
 # Package-host Context operations include the typed ABI.
-gerbil = ["scheme-abi"]
+gerbil = ["gerbil-scheme-abi"]
 org-source = [
     "dep:marlin-gerbil-ir",
     "dep:marlin-context-org-model",

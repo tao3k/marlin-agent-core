@@ -62,7 +62,7 @@ package MarlinSingleVmRuntime {
                    runtime roles into the compiler-owned linked graph.
                    Yuanxu still owns checked publication and Feature selection.
                    Ordinary library imports retain canonical procedure identities.
-                   The external-program image consumes Context's scheme-abi
+                   The external-program image consumes Context's gerbil-scheme-abi
                    capability. Context's gerbil capability adds package-host Org
                    operations, which require the SDK package image. Typed value
                    projection does not depend on the package resolver API.
