@@ -1192,6 +1192,14 @@ installed package first allowed staging to complete. Manifest membership does
 not establish that the archive links, initializes without a package tree, or
 improves startup. The selection remains owned by Yuanxu, and this probe is not
 a production loader or a second declaration of the selected modules.
+The current =scheme/build.ss= already calls =defbuild-script= with the
+=std-make-spec= projection rooted at =("init")=. A fresh =spec= invocation
+prints selected =gxc:= targets for the UI modules, C ABI UI and =init=;
+it prints no =exe:= target. This is the authoritative build selection to
+reuse. The Rust link step must consume those compiled products through the
+SDK program archive and bind the selected publication. The =spec= call itself
+took tens of seconds; that is build-time work, not a linked Release startup
+measurement.
 The pinned SDK's archive builder compiled that candidate. An initial smoke
 binary incorrectly used the SDK's default dynamic runtime together with the
 linked graph; it crashed both with and without the development package path.
