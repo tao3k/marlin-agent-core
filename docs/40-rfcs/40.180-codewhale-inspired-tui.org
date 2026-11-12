@@ -1171,6 +1171,14 @@ discovery at runtime. Fixing the release requires the Yuanxu-owned selection
 and provenance lifecycle to support a compiled closure, as well as Gerbil's
 module metadata and SDK loader semantics; a second hand-maintained module
 list or silently skipped admission would not satisfy that boundary.
+A separate =gxi= diagnostic of =(.get marlin-agent-core.init.exports Marlin
+ui)= used Yuanxu's existing callback-free scalar accounting. One process
+reported 33 role imports (6.92 seconds accumulated), 116 native imports
+(2.39 seconds accumulated), 1,891 source reads and 3,631 source stat
+operations; its context scope reported 3.93 seconds. These scopes can nest,
+so their times must not be added. This was not the TUI binary, a paired
+comparison, or a release measurement; it identifies the source/publication
+and import path as the next optimization target without weakening its checks.
 
 ** Conversation journal in progress
 
