@@ -58,22 +58,47 @@ fn minibuffer_geometry_preserves_bottom_hint_across_terminal_sizes() {
     let mut app = App::new(ModelEndpoint::new("provider", "model"));
     for height in 7..=80 {
         for width in [10, 24, 40, 80, 120, 160] {
-            assert_eq!(chatbox_height(&app, width, height), 0);
+            assert_eq!(
+                chatbox_height(
+                    &app,
+                    &marlin_agent_ui::UiLayoutPolicy::default(),
+                    width,
+                    height
+                ),
+                0
+            );
             for row in 0..=height + 1 {
                 assert_eq!(
-                    mouse_over_minibuffer(&app, width, height, row),
+                    mouse_over_minibuffer(
+                        &app,
+                        &marlin_agent_ui::UiLayoutPolicy::default(),
+                        width,
+                        height,
+                        row
+                    ),
                     row == height,
                     "collapsed geometry at {width}x{height}, row {row}"
                 );
             }
 
             app.minibuffer_hovered = true;
-            let expanded = chatbox_height(&app, width, height);
+            let expanded = chatbox_height(
+                &app,
+                &marlin_agent_ui::UiLayoutPolicy::default(),
+                width,
+                height,
+            );
             assert!((3..=10).contains(&expanded));
             assert!(expanded + 3 <= height);
             for row in 0..=height + 1 {
                 assert_eq!(
-                    mouse_over_minibuffer(&app, width, height, row),
+                    mouse_over_minibuffer(
+                        &app,
+                        &marlin_agent_ui::UiLayoutPolicy::default(),
+                        width,
+                        height,
+                        row
+                    ),
                     row > height - expanded - 1 && row <= height,
                     "expanded geometry at {width}x{height}, row {row}"
                 );
@@ -82,8 +107,30 @@ fn minibuffer_geometry_preserves_bottom_hint_across_terminal_sizes() {
         }
     }
     app.composer.insert_text("draft survives pointer leave");
-    assert!(chatbox_height(&app, 80, 30) >= 3);
-    assert!(!mouse_over_minibuffer(&app, 80, 30, 1));
+    assert!(chatbox_height(&app, &marlin_agent_ui::UiLayoutPolicy::default(), 80, 30) >= 3);
+    assert!(!mouse_over_minibuffer(
+        &app,
+        &marlin_agent_ui::UiLayoutPolicy::default(),
+        80,
+        30,
+        1
+    ));
+}
+
+#[test]
+fn selected_layout_policy_changes_chatbox_and_hover_geometry() {
+    let mut app = App::new(ModelEndpoint::new("provider", "model"));
+    app.minibuffer_hovered = true;
+    app.composer.insert_text(&"draft ".repeat(100));
+    let compact = marlin_agent_ui::UiLayoutPolicy {
+        max_chatbox_rows: 5,
+        min_transcript_rows: 4,
+        ..Default::default()
+    };
+    let expanded = chatbox_height(&app, &compact, 24, 30);
+    assert_eq!(expanded, 5);
+    assert!(mouse_over_minibuffer(&app, &compact, 24, 30, 25));
+    assert!(!mouse_over_minibuffer(&app, &compact, 24, 30, 24));
 }
 
 proptest! {
@@ -107,13 +154,14 @@ proptest! {
         if draft {
             app.composer.insert_text("retained draft");
         }
-        let editor_rows = chatbox_height(&app, width, height);
+        let editor_rows = chatbox_height(&app, &marlin_agent_ui::UiLayoutPolicy::default(), width, height);
         if hovered || draft {
             prop_assert!((3..=10).contains(&editor_rows));
         } else {
             prop_assert_eq!(editor_rows, 0);
         }
         let view = UiWorkbench {
+            layout: marlin_agent_ui::UiLayoutPolicy::default(),
             model_label: "provider/model".into(),
             session_label: "temporary".into(),
             regions: vec![
@@ -170,6 +218,7 @@ fn draw(
 ) -> usize {
     use marlin_agent_ui::{UiComponentId, UiRegion, UiWorkbench};
     let view = UiWorkbench {
+        layout: marlin_agent_ui::UiLayoutPolicy::default(),
         model_label: "test".into(),
         session_label: "test".into(),
         regions: vec![
@@ -196,6 +245,7 @@ fn command_menu_filters_scheme_descriptors_and_preserves_draft() {
         accepts_arguments: false,
     };
     let view = UiWorkbench {
+        layout: marlin_agent_ui::UiLayoutPolicy::default(),
         model_label: "model".into(),
         session_label: "session".into(),
         regions: vec![
@@ -272,6 +322,7 @@ fn command_menu_scrolls_to_the_selected_entry() {
         })
         .collect();
     let view = UiWorkbench {
+        layout: marlin_agent_ui::UiLayoutPolicy::default(),
         model_label: "model".into(),
         session_label: "session".into(),
         regions: vec![
@@ -310,6 +361,7 @@ fn render_uses_the_admitted_scheme_focus() {
     use marlin_agent_ui::{UiComponentId, UiRegion, UiWorkbench};
     let app = App::new(ModelEndpoint::new("provider", "model"));
     let view = UiWorkbench {
+        layout: marlin_agent_ui::UiLayoutPolicy::default(),
         model_label: "model".into(),
         session_label: "session".into(),
         regions: vec![
@@ -361,6 +413,7 @@ fn render_keeps_focused_extension_visible_and_sanitizes_its_label() {
     }
     regions.push(UiRegion::Status(vec![]));
     let view = UiWorkbench {
+        layout: marlin_agent_ui::UiLayoutPolicy::default(),
         model_label: "model".into(),
         session_label: "session".into(),
         regions,
@@ -392,6 +445,7 @@ fn render_focused_scheme_content_on_narrow_and_wide_terminals() {
     use marlin_agent_ui::{UiComponentId, UiContent, UiRegion, UiWorkbench};
     let app = App::new(ModelEndpoint::new("provider", "model"));
     let view = UiWorkbench {
+        layout: marlin_agent_ui::UiLayoutPolicy::default(),
         model_label: "model".into(),
         session_label: "session".into(),
         regions: vec![
@@ -444,6 +498,7 @@ fn unfocused_extension_does_not_create_a_default_sidebar() {
     use marlin_agent_ui::{UiComponentId, UiContent, UiRegion, UiWorkbench};
     let app = App::new(ModelEndpoint::new("provider", "model"));
     let view = UiWorkbench {
+        layout: marlin_agent_ui::UiLayoutPolicy::default(),
         model_label: "model".into(),
         session_label: "session".into(),
         regions: vec![
@@ -489,6 +544,7 @@ fn selected_modeline_is_colored_and_sits_above_the_collapsible_minibuffer() {
     let mut app = App::new(ModelEndpoint::new("deepseek", "chat"));
     assert!(app.transcript.is_empty());
     let view = UiWorkbench {
+        layout: marlin_agent_ui::UiLayoutPolicy::default(),
         model_label: "deepseek/chat".into(),
         session_label: "session-one".into(),
         regions: vec![
@@ -543,15 +599,39 @@ fn selected_modeline_is_colored_and_sits_above_the_collapsible_minibuffer() {
         terminal.backend().buffer()[(4, 10)].fg,
         ratatui::style::Color::Rgb(150, 115, 230)
     );
-    assert!(super::render::mouse_over_minibuffer(&app, 80, 12, 12));
-    assert!(!super::render::mouse_over_minibuffer(&app, 80, 12, 10));
+    assert!(super::render::mouse_over_minibuffer(
+        &app,
+        &marlin_agent_ui::UiLayoutPolicy::default(),
+        80,
+        12,
+        12
+    ));
+    assert!(!super::render::mouse_over_minibuffer(
+        &app,
+        &marlin_agent_ui::UiLayoutPolicy::default(),
+        80,
+        12,
+        10
+    ));
 
     app.minibuffer_hovered = true;
     paint(&mut terminal, &app, &view);
     assert!(row(&terminal, 8).contains("Message"));
     assert!(row(&terminal, 7).contains("MARLIN"));
-    assert!(super::render::mouse_over_minibuffer(&app, 80, 12, 9));
-    assert!(!super::render::mouse_over_minibuffer(&app, 80, 12, 7));
+    assert!(super::render::mouse_over_minibuffer(
+        &app,
+        &marlin_agent_ui::UiLayoutPolicy::default(),
+        80,
+        12,
+        9
+    ));
+    assert!(!super::render::mouse_over_minibuffer(
+        &app,
+        &marlin_agent_ui::UiLayoutPolicy::default(),
+        80,
+        12,
+        7
+    ));
     app.minibuffer_hovered = false;
     app.composer.insert_text("draft survives hover exit");
     paint(&mut terminal, &app, &view);
@@ -564,6 +644,7 @@ fn render_status_contributions_respects_focus_and_terminal_height() {
     use marlin_agent_ui::{UiComponentId, UiRegion, UiStatusItem, UiWorkbench};
     let app = App::new(ModelEndpoint::new("provider", "model"));
     let view = UiWorkbench {
+        layout: marlin_agent_ui::UiLayoutPolicy::default(),
         model_label: "model".into(),
         session_label: "session".into(),
         regions: vec![

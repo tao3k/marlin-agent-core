@@ -13,8 +13,8 @@ use gerbil_scheme::{
 
 use crate::model::{
     MAX_COMMANDS, MAX_CONTENT_ITEMS, MAX_ID_BYTES, MAX_REGIONS, MAX_STATUS, MAX_TEXT_CHARS,
-    UiCommand, UiCommandName, UiComponentId, UiContent, UiIntent, UiProjectionError, UiRegion,
-    UiScrollDirection, UiStatusItem, UiStatusTone, UiWorkbench,
+    UiCommand, UiCommandName, UiComponentId, UiContent, UiIntent, UiLayoutPolicy,
+    UiProjectionError, UiRegion, UiScrollDirection, UiStatusItem, UiStatusTone, UiWorkbench,
 };
 
 /// Convert a rooted Scheme intent; this does not authorize the action.
@@ -36,12 +36,29 @@ pub fn decode_intent(value: RootedSchemeObject<'_>) -> Result<UiIntent, UiProjec
 
 /// Validate and copy one Scheme UI projection into independent Rust values.
 pub fn decode_workbench(value: RootedSchemeObject<'_>) -> Result<UiWorkbench, UiProjectionError> {
-    let root = vector(value, 4, 4)?;
+    let root = vector(value, 5, 5)?;
     let model = string(root.element(0)?)?;
     let session = string(root.element(1)?)?;
     let regions = vector(root.element(2)?, 4, MAX_REGIONS)?;
     let mut names = IdentifierBuffer::default();
     let focus = identifier(root.element(3)?, &mut names)?;
+    let layout_values = vector(root.element(4)?, 5, 5)?;
+    let field = |index, lower, upper| -> Result<u16, UiProjectionError> {
+        match layout_values.element(index)?.as_ref().scalar()? {
+            SchemeScalar::Fixnum(value) if (lower..=upper).contains(&value) => Ok(value as u16),
+            _ => Err(UiProjectionError::Invalid("invalid UI layout policy")),
+        }
+    };
+    let layout = UiLayoutPolicy {
+        min_transcript_rows: field(0, 1, 4)?,
+        max_chatbox_rows: field(1, 3, 20)?,
+        max_command_rows: field(2, 1, 8)?,
+        extension_column_min: field(3, 60, 240)?,
+        extension_panel_columns: field(4, 20, 80)?,
+    };
+    if layout.extension_panel_columns >= layout.extension_column_min {
+        return Err(UiProjectionError::Invalid("invalid UI layout columns"));
+    }
     let mut ids = HashSet::new();
     let mut modeline_slots = [false; 4];
     let mut result = Vec::with_capacity(regions.len());
@@ -219,6 +236,7 @@ pub fn decode_workbench(value: RootedSchemeObject<'_>) -> Result<UiWorkbench, Ui
         model_label: model,
         session_label: session,
         regions: result,
+        layout,
         focus,
     })
 }

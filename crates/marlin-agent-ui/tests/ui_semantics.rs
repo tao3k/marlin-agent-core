@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
-use marlin_agent_ui::{UiComponentId, UiEvent, UiIntent, UiRegion, UiWorkbench};
+use marlin_agent_ui::{UiComponentId, UiEvent, UiIntent, UiLayoutPolicy, UiRegion, UiWorkbench};
 
 fn id(value: &str) -> UiComponentId {
     UiComponentId::new(value).unwrap()
@@ -10,6 +10,7 @@ fn id(value: &str) -> UiComponentId {
 
 fn workbench(focus: &str) -> UiWorkbench {
     UiWorkbench {
+        layout: UiLayoutPolicy::default(),
         model_label: "provider/model".into(),
         session_label: "session".into(),
         regions: vec![
@@ -47,6 +48,13 @@ fn shared_ui_admission_rejects_effect_and_snapshot_substitution() {
     assert!(
         composer
             .admit_successor(&altered, UiEvent::NextFocus, &focus)
+            .is_err()
+    );
+    let mut changed_layout = guide.clone();
+    changed_layout.layout.max_chatbox_rows = 5;
+    assert!(
+        composer
+            .admit_successor(&changed_layout, UiEvent::NextFocus, &focus)
             .is_err()
     );
     assert!(

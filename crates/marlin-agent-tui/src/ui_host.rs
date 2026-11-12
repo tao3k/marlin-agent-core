@@ -425,6 +425,7 @@ mod tests {
 
     fn view(focus: &str) -> UiWorkbench {
         UiWorkbench {
+            layout: marlin_agent_ui::UiLayoutPolicy::default(),
             model_label: "model".into(),
             session_label: "session".into(),
             regions: vec![

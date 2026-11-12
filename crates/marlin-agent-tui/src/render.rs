@@ -9,7 +9,7 @@ use super::{
     viewport::{ScrollAnchor, TranscriptViewportCache},
 };
 use marlin_agent_ui::{
-    UiCommandName, UiContent, UiRegion, UiStatusItem, UiStatusTone, UiWorkbench,
+    UiCommandName, UiContent, UiLayoutPolicy, UiRegion, UiStatusItem, UiStatusTone, UiWorkbench,
 };
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
@@ -34,7 +34,7 @@ fn header_value(value: &str) -> String {
     display_value(value, 128)
 }
 
-pub(crate) fn chatbox_height(app: &App, width: u16, height: u16) -> u16 {
+pub(crate) fn chatbox_height(app: &App, policy: &UiLayoutPolicy, width: u16, height: u16) -> u16 {
     let expanded = app.minibuffer_hovered
         || !app.composer.text().is_empty()
         || app.command_draft.is_some()
@@ -42,8 +42,13 @@ pub(crate) fn chatbox_height(app: &App, width: u16, height: u16) -> u16 {
     if !expanded {
         return 0;
     }
-    let transcript_rows = if height >= 7 { 2 } else { 1 };
-    let limit = height.saturating_sub(2 + transcript_rows).min(10);
+    let transcript_rows = policy
+        .min_transcript_rows
+        .min(height.saturating_sub(2))
+        .max(1);
+    let limit = height
+        .saturating_sub(2 + transcript_rows)
+        .min(policy.max_chatbox_rows);
     let composer = app
         .history_search
         .as_ref()
@@ -58,8 +63,16 @@ pub(crate) fn chatbox_height(app: &App, width: u16, height: u16) -> u16 {
     }
 }
 
-pub(crate) fn mouse_over_minibuffer(app: &App, width: u16, height: u16, row: u16) -> bool {
-    row > 0 && row <= height && row > height.saturating_sub(chatbox_height(app, width, height) + 1)
+pub(crate) fn mouse_over_minibuffer(
+    app: &App,
+    policy: &UiLayoutPolicy,
+    width: u16,
+    height: u16,
+    row: u16,
+) -> bool {
+    row > 0
+        && row <= height
+        && row > height.saturating_sub(chatbox_height(app, policy, width, height) + 1)
 }
 
 fn draw_extension_content(
@@ -191,8 +204,12 @@ pub(crate) fn draw(
     let area = frame.area();
     // The transcript can end in a separator row, so reserve two rows when
     // possible. Bound measurement for large drafts.
-    let transcript_rows = if area.height >= 7 { 2 } else { 1 };
-    let composer_height = chatbox_height(app, area.width, area.height);
+    let transcript_rows = ui
+        .layout
+        .min_transcript_rows
+        .min(area.height.saturating_sub(2))
+        .max(1);
+    let composer_height = chatbox_height(app, &ui.layout, area.width, area.height);
     let composer = app
         .history_search
         .as_ref()
@@ -234,7 +251,7 @@ pub(crate) fn draw(
         }) && spare > 0,
     );
     let palette_height = (suggestions.len() as u16)
-        .min(4)
+        .min(ui.layout.max_command_rows)
         .min(spare.saturating_sub(status_height));
     let remaining = spare - palette_height;
     let focused_extension = extensions.iter().any(|(id, _)| *id == &ui.focus);
@@ -267,10 +284,13 @@ pub(crate) fn draw(
     };
     let panel_content = focused_content;
     let transcript_area = if let Some((label, content)) = panel_content {
-        if parts[0].width >= 100 && parts[0].height >= 6 {
+        if parts[0].width >= ui.layout.extension_column_min && parts[0].height >= 6 {
             let columns = Layout::default()
                 .direction(Direction::Horizontal)
-                .constraints([Constraint::Min(40), Constraint::Length(36)])
+                .constraints([
+                    Constraint::Min(40),
+                    Constraint::Length(ui.layout.extension_panel_columns),
+                ])
                 .split(parts[0]);
             draw_extension_content(frame, columns[1], label, content);
             Some(columns[0])

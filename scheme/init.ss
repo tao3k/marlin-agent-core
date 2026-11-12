@@ -16,6 +16,7 @@
   (context +causal)
   (ui-components)
   (ui-modeline)
+  (ui-layout)
   (ui)
   (hooks)
   (policy)

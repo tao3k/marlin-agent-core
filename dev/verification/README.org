@@ -12,7 +12,7 @@ second source inventory. =just rust-dev-gate= remains the workspace style gate.
 
 | Concern | Owner | First active property |
 |---------+-------+-----------------------|
-| Architecture and allocations | =project.sysml= and =dev/sysml/= | MAR-UI-R10/R11 |
+| Architecture and allocations | =project.sysml= and =dev/sysml/= | MAR-UI-R10/R11/R12 |
 | Finite UI transitions | =dev/quint/tui-minibuffer.qnt= | safe geometry, focus, pointer/key separation |
 | Scheme composition and dispatch | selected =scheme/ui-modeline= and =scheme/t/ui-workbench-test.ss= | four slots, ordered contributions, 8/9 admission boundary |
 | Typed native boundary | =marlin-agent-ui= | complete modeline, reserved identities, bounded projection |

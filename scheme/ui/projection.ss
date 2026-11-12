@@ -58,7 +58,11 @@
 
 (def (marlin-ui-project-workbench workbench)
   (vector (.get workbench model) (.get workbench session)
-          (list->vector (map node-value (.get workbench regions)))))
+          (list->vector (map node-value (.get workbench regions)))
+          (let (policy (.get workbench geometry-policy))
+            (vector (.get policy min-transcript-rows) (.get policy max-chatbox-rows)
+                    (.get policy max-command-rows) (.get policy extension-column-min)
+                    (.get policy extension-panel-columns)))))
 
 ;;; The caller supplies the already-linked scope, so extensions and admission
 ;;; remain owned by the Module System rather than a private default instance.

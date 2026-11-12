@@ -6,7 +6,8 @@
 (.def Ui
   identity: 'ui
   core: (.o requires: (.o UiComponents: (.o module-id: 'ui-components)
-                          UiModeline: (.o module-id: 'ui-modeline))
+                          UiModeline: (.o module-id: 'ui-modeline)
+                          UiLayout: (.o module-id: 'ui-layout))
             scope-contract: UiScopeContract
-            exports: (make-ui-scope UiComponents UiModeline))
+            exports: (make-ui-scope UiComponents UiModeline UiLayout))
   features: (.o))

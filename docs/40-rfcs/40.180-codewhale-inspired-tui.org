@@ -1368,7 +1368,7 @@ loaded plugin API.
 
 The architecture borrows iocraft's declarative component and state ideas while
 placing component identity, pure transition logic and generic-method dispatch
-in Scheme. Rust retains native admission, terminal lifecycle, layout, painting
+in Scheme. Rust retains native admission, terminal lifecycle, layout measurement, painting
 and runtime effect authority. A future GPUI renderer is only an adapter
 direction: host-neutral component semantics could be reused, but this work
 does not compile the current Gerbil UI modules to JavaScript or implement GPUI.
@@ -1621,6 +1621,16 @@ The frame scheduler samples that position and repaints on state transitions.
 Some terminals may not report motion outside their window, so an external
 pointer leave is not currently a guaranteed collapse event. This design does
 not call Scheme on each rendered frame and adds no context-compression state.
+
+The selected =ui-layout= Module now publishes a bounded geometry policy through
+the same Yuanxu publication as =ui-components= and =ui-modeline=. It defines
+minimum transcript rows, maximum expanded ChatBox and command rows, and the
+extension panel's column thresholds. The native UI projection admits those
+five integers once per candidate workbench; focus successors must retain the
+policy. Ratatui clips actual cell rectangles, and pointer hit testing reads
+the admitted policy. This moves presentation choices out of =render.rs=
+without invoking Scheme on each frame. The Rust adapter still measures text,
+handles terminal input, owns the viewport cache and paints cells.
 
 The project verification entry is =just property-gate=. It validates the
 MAR-UI-R10/R11 SysML requirements, the bounded Quint control model, POO Type

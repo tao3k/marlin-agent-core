@@ -127,6 +127,28 @@ pub enum UiStatusTone {
     Muted,
 }
 
+/// Bounded, Scheme-selected geometry policy. Terminal clipping stays native.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct UiLayoutPolicy {
+    pub min_transcript_rows: u16,
+    pub max_chatbox_rows: u16,
+    pub max_command_rows: u16,
+    pub extension_column_min: u16,
+    pub extension_panel_columns: u16,
+}
+
+impl Default for UiLayoutPolicy {
+    fn default() -> Self {
+        Self {
+            min_transcript_rows: 2,
+            max_chatbox_rows: 10,
+            max_command_rows: 4,
+            extension_column_min: 100,
+            extension_panel_columns: 36,
+        }
+    }
+}
+
 /// Host display facts and already-rooted Scheme extension contributions.
 /// The selected publication and extension provenance remain the VM/module
 /// owner's responsibility.
@@ -144,6 +166,7 @@ pub struct UiWorkbench {
     pub model_label: String,
     pub session_label: String,
     pub regions: Vec<UiRegion>,
+    pub layout: UiLayoutPolicy,
     pub focus: UiComponentId,
 }
 
@@ -197,6 +220,7 @@ impl UiWorkbench {
         if self.model_label != next.model_label
             || self.session_label != next.session_label
             || self.regions != next.regions
+            || self.layout != next.layout
         {
             return Err(UiProjectionError::Invalid(
                 "UI event changed the admitted workbench",

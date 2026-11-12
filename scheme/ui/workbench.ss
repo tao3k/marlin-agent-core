@@ -15,7 +15,7 @@
 
 ;;; Host facts are display data only. Transcript and composer are named regions
 ;;; whose contents and editing authority remain with their existing owners.
-(def (make-marlin-ui-workbench components modeline)
+(def (make-marlin-ui-workbench components modeline layout)
   (let ((types (.ref components 'components))
         (contribution-node (.ref components 'contribution-node))
         (modeline-node (.ref components 'modeline-node))
@@ -43,7 +43,7 @@
       (unless (unique-identities? ids)
         (error "duplicate UI contribution identity"))
       (.o (:: @ (.ref types 'workbench)) identity: 'workbench kind: 'workbench
-          model: owned-model session: owned-session
+          model: owned-model session: owned-session geometry-policy: (.ref layout 'policy)
           focus-order: (append '(transcript composer commands) extension-focus)
           regions: (append (list (.o (:: @ (.ref types 'transcript)) identity: 'transcript kind: 'transcript)
                                  (.o (:: @ (.ref types 'composer)) identity: 'composer kind: 'composer)

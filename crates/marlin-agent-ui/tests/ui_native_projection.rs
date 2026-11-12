@@ -36,6 +36,13 @@ fn region<'a>(
 ) -> RootedSchemeObject<'a> {
     vector(runtime, &[symbol(runtime, id), symbol(runtime, kind), data])
 }
+fn layout<'a>(runtime: &'a GerbilRuntime) -> RootedSchemeObject<'a> {
+    vector(
+        runtime,
+        &[2, 10, 4, 100, 36]
+            .map(|value| runtime.scalar_object(SchemeScalar::Fixnum(value)).unwrap()),
+    )
+}
 #[test]
 fn sdk_roots_project_to_typed_ui_workbench() {
     let runtime = GerbilRuntime::initialize().unwrap();
@@ -226,10 +233,13 @@ fn sdk_roots_project_to_typed_ui_workbench() {
             string(&runtime, "session"),
             regions,
             symbol(&runtime, "composer"),
+            layout(&runtime),
         ],
     );
     let workbench = decode_workbench(root).unwrap();
     assert_eq!(workbench.model_label, "model");
+    assert_eq!(workbench.layout.max_chatbox_rows, 10);
+    assert_eq!(workbench.layout.extension_column_min, 100);
     assert_eq!(workbench.focus.as_str(), "composer");
     assert_eq!(workbench.commands()[0].name.as_str(), "/help");
     assert!(!workbench.commands()[0].accepts_arguments);
@@ -281,6 +291,7 @@ fn sdk_roots_project_to_typed_ui_workbench() {
             string(&runtime, "session"),
             invalid_tone_regions,
             symbol(&runtime, "composer"),
+            layout(&runtime),
         ],
     );
     assert!(decode_workbench(invalid_tone_root).is_err());
@@ -313,6 +324,7 @@ fn sdk_roots_project_to_typed_ui_workbench() {
             string(&runtime, "session"),
             duplicate,
             symbol(&runtime, "composer"),
+            layout(&runtime),
         ],
     );
     assert!(decode_workbench(duplicate_root).is_err());
@@ -352,6 +364,7 @@ fn sdk_roots_project_to_typed_ui_workbench() {
             string(&runtime, "session"),
             forged_regions,
             symbol(&runtime, "composer"),
+            layout(&runtime),
         ],
     );
     assert!(decode_workbench(forged_root).is_err());
@@ -371,9 +384,39 @@ fn sdk_roots_project_to_typed_ui_workbench() {
             string(&runtime, "session"),
             regions,
             symbol(&runtime, "status"),
+            layout(&runtime),
         ],
     );
     assert!(decode_workbench(invalid_focus).is_err());
+    let invalid_layout = vector(
+        &runtime,
+        &[
+            runtime.scalar_object(SchemeScalar::Fixnum(2)).unwrap(),
+            runtime.scalar_object(SchemeScalar::Fixnum(1000)).unwrap(),
+            runtime.scalar_object(SchemeScalar::Fixnum(4)).unwrap(),
+            runtime.scalar_object(SchemeScalar::Fixnum(100)).unwrap(),
+            runtime.scalar_object(SchemeScalar::Fixnum(36)).unwrap(),
+        ],
+    );
+    let invalid_policy_root = vector(
+        &runtime,
+        &[
+            string(&runtime, "model"),
+            string(&runtime, "session"),
+            vector(
+                &runtime,
+                &[
+                    region(&runtime, "transcript", "transcript", empty()),
+                    region(&runtime, "composer", "composer", empty()),
+                    region(&runtime, "commands", "commands", empty()),
+                    region(&runtime, "status", "status", empty()),
+                ],
+            ),
+            symbol(&runtime, "composer"),
+            invalid_layout,
+        ],
+    );
+    assert!(decode_workbench(invalid_policy_root).is_err());
     let scroll = vector(
         &runtime,
         &[symbol(&runtime, "scroll"), symbol(&runtime, "down")],

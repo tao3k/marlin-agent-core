@@ -1326,8 +1326,13 @@ fn run(
                 schedule.mark_dirty();
             }
             let mouse = mouse_position.load(Ordering::Relaxed);
-            let hovered = mouse_over_minibuffer(&app, size.0, size.1, (mouse >> 16) as u16)
-                && (mouse as u16) <= size.0;
+            let hovered = mouse_over_minibuffer(
+                &app,
+                &ui.view().layout,
+                size.0,
+                size.1,
+                (mouse >> 16) as u16,
+            ) && (mouse as u16) <= size.0;
             if hovered != app.minibuffer_hovered {
                 app.minibuffer_hovered = hovered;
                 schedule.mark_dirty();

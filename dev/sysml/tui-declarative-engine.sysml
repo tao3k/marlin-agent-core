@@ -12,10 +12,10 @@ package MarlinDeclarativeUi {
                Reference products inform requirements, not identity,
                component structure, authority or an obligation to copy visuals. */
         part <'MAR-UI-T02'> modulePublication {
-            doc /* Selected Yuanxu ui-components, ui-modeline and ui Modules
+            doc /* Selected Yuanxu ui-components, ui-modeline, ui-layout and ui Modules
                    publish the component vocabulary, command catalog, modeline
                    slots, UI scope and ordered extension contributions. UI
-                   requires both component and modeline scopes and composes
+                   requires component, modeline and layout scopes and composes
                    their constructors through selected dependencies.
                    The existing VM owner
                    resolves and retains that scope; a name or a caller-supplied
@@ -233,6 +233,15 @@ package MarlinDeclarativeUi {
                not runtime acceptance. Seeds and bounds are fixed by the
                project property gate. */
     }
+    requirement <'MAR-UI-R12'> selectedLayoutPolicy {
+        doc /* The selected Scheme UI layout Module publishes bounded geometry
+               for minimum transcript rows, maximum ChatBox and command rows,
+               and extension column thresholds. The typed Rust boundary rejects
+               malformed values before publication. Terminal measurement and
+               clipping remain native. Pointer hit testing and painting consume
+               the same admitted policy without calling the VM per frame. A UI
+               successor cannot substitute another policy through an event. */
+    }
 
     allocation extensions allocate composableExtensions to engine.modulePublication;
     allocation specialization allocate composableExtensions to engine.functionalComposition;
@@ -248,6 +257,8 @@ package MarlinDeclarativeUi {
     allocation modelineSemantics allocate adaptiveModelineAndMiniBuffer to engine.modulePublication;
     allocation miniBufferGeometry allocate adaptiveModelineAndMiniBuffer to engine.terminalHost;
     allocation uiPropertyQualification allocate reproducibleUiProperties to engine.qualification;
+    allocation selectedGeometry allocate selectedLayoutPolicy to engine.modulePublication;
+    allocation clippedGeometry allocate selectedLayoutPolicy to engine.terminalHost;
 
     attribute def BeginUpdate;
     attribute def CandidateReady;
