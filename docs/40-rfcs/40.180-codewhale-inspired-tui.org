@@ -98,16 +98,22 @@ alone is not a fast usable UI.
 |-----------+-------------------+-------------------------------------|
 | Existing dynamic VM | Preserves live Scheme, Module selection and MOP | Current selected publication and first open are slow; the single sample below does not isolate macro expansion from source discovery or loading. |
 | Yuanxu-selected compiled closure linked with the VM | Move core selection and compilation to build time and reduce runtime filesystem and dynamic-loader work | A bare linked VM initialized quickly, but actual publication still accessed the package tree. Upstream compiled-publication owner gates and a real source-free TUI remain unqualified. |
-| Scheme-to-Rust IR plus VM | Lower selected stable pure computations to native Rust while retaining VM-owned dynamic methods and extensions | [[https://github.com/tao3k/gerbil-scheme-rust/pull/17][Scheme Rust PR #17]] implemented a build-time typed function IR backend, not a complete Scheme compiler or demonstrated MOP lowering. It requires a Scheme-side producer, purity and call admission, semantic equivalence tests and a measured hot path. |
+| Restored Scheme-to-Rust IR plus VM | If the complete linked Release misses the startup budget, move measured residual work into native Rust while retaining VM-owned extensibility | [[https://github.com/tao3k/gerbil-scheme-rust/pull/17][Scheme Rust PR #17]] introduced a build-time typed IR, but commit =16a6172= removed that crate from the inspected SDK branch. Restoring and extending it is a separate project, including Scheme macro expansion, object and generic-method semantics where measurements justify them. |
 
-First resolve the compiled Module publication and ownership in Yuanxu/SDK,
-then compare the same release workload against the dynamic baseline. IR is a
-candidate for measured pure hotspots, not a substitute for the Module graph or
-for dynamic dispatch. A hybrid candidate must preserve the same admitted
-identities, method precedence, errors, extension behavior and typed boundary;
-unsupported dynamic behavior stays on the VM. Runtime data crosses as Scheme
-and Rust types, rather than a new serialized internal protocol. Do not restore
-the former JSON-based IR as a runtime bridge.
+First resolve compiled Module publication and ownership in Yuanxu/SDK, link
+the selected core into the actual Darwin Release binary, and compare complete
+UI readiness and first-frame latency against the dynamic binary. The existing
+65 ms linked-VM control does not cover publication or UI open; the earlier
+linked candidate still tried to access the development package tree. A fast
+VM-only probe therefore cannot settle the product decision. If the full linked
+Release meets the startup budget, keep dynamic Scheme methods and extensions
+on the VM without restoring an IR backend for startup. If it misses, profile
+the remaining work before restoring the removed IR. The possible lowering
+scope then includes macro-expanded code and object/generic dispatch where they
+actually dominate, not just pure string functions. Any hybrid must preserve
+selected Module identities, method precedence, errors, extension behavior and
+typed boundaries. Runtime data crosses as Scheme and Rust types; the old JSON
+build interchange is not a runtime protocol.
 
 For each candidate, capture independent fresh-process cold and warm runs on the
 same machine and terminal: process-to-first interactive state, process-to-UI

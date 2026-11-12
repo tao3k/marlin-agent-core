@@ -298,8 +298,11 @@ package MarlinTuiArchitecture {
             doc /* Yuanxu selects the same Module graph for a linked compiled
                    core; the SDK owns VM and native linkage. Optional dynamic
                    Scheme extensions retain their identity and admission.
-                   A typed Rust IR backend may lower qualified pure hot paths;
-                   it does not replace general Scheme or prove MOP equivalence. */
+                   Qualify the complete Darwin Release first frame and UI open
+                   before considering a restored Scheme-to-Rust IR. If still
+                   slow, profile the residual macro, object and generic-method
+                   work and lower only admitted semantics with equivalence
+                   evidence; the removed PR 17 IR is no current dependency. */
         }
         part <'MAR-TUI-T17'> schemeUiExtensionPlane {
             doc /* Proposed Gerbil/Yuanxu modules own UI component composition,
