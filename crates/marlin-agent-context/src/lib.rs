@@ -4,7 +4,7 @@
 
 //! Marlin's typed Context admission requests and Lab scope identities.
 
-#[cfg(feature = "gerbil")]
+#[cfg(feature = "scheme-abi")]
 pub mod gerbil;
 #[cfg(feature = "gerbil")]
 pub mod gerbil_org;

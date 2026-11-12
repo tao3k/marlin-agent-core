@@ -13,7 +13,7 @@ readme = "README.org"
 
 [features]
 default = []
-actor-runtime = ["dep:libc", "dep:marlin-agent-context", "marlin-agent-context/gerbil", "dep:gerbil-scheme", "dep:gerbil-scheme-sys", "dep:thiserror", "dep:tokio", "dep:tokio-util"]
+actor-runtime = ["dep:libc", "dep:marlin-agent-context", "marlin-agent-context/scheme-abi", "dep:gerbil-scheme", "dep:gerbil-scheme-sys", "dep:thiserror", "dep:tokio", "dep:tokio-util"]
 mailbox-benchmark = ["actor-runtime"]
 context-profiling = ["actor-runtime"]
 

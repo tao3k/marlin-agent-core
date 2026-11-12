@@ -19,3 +19,8 @@
 **/.gerbil/
 
 .env
+
+scheme/manifest.ss
+
+# Generated runtime reports and archives belong under target.
+/dev/proofs/runtime/
