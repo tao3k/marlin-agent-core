@@ -421,17 +421,27 @@ fn receive(
 
 /// Prepare a text-bounded FIFO prefix and retire cancellation before VM entry.
 pub(super) fn prepare(pending: &mut VecDeque<Job>, metrics: &mut DeckRuntimeMetrics) -> Vec<Job> {
-    let mut batch = Vec::new();
+    let mut batch = Vec::<Job>::new();
     let mut bytes = 0;
     while let Some(job) = pending.front() {
         if let Err(error) = job.check_active() {
             finish(pending.pop_front().unwrap(), Err(error), metrics);
             continue;
         }
-        if bytes + job.request.text_bytes() > CONTEXT_BATCH_MAX_TEXT_BYTES {
+        // Match DeckVm::submit: only consecutive requests for the same Module
+        // and the same immutable Scope allocation share one wire envelope.
+        let additional = if batch.last().is_some_and(|previous| {
+            previous.module == job.module
+                && Arc::ptr_eq(previous.request.scope(), job.request.scope())
+        }) {
+            job.request.turn().text_bytes()
+        } else {
+            job.request.text_bytes()
+        };
+        if bytes + additional > CONTEXT_BATCH_MAX_TEXT_BYTES {
             break;
         }
-        bytes += job.request.text_bytes();
+        bytes += additional;
         batch.push(pending.pop_front().unwrap());
     }
     if !batch.is_empty() {

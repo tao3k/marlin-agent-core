@@ -32,7 +32,12 @@ Enable =actor-runtime= and construct =DeckRuntimeConfig::new(queue_capacity)=.
 owner immediately submits ready work, independently collects completed
 messages, refills the in-flight window and limits
 projected text to Context's 32 KiB budget. Consecutive requests sharing an
-=Arc<ContextScope>= materialize common fields once.
+=Arc<ContextScope>= and Module instance materialize common fields once.
+The queue counts those shared fields once per actual projected group and adds
+only row text for its remaining requests. A different Module or Scope allocation
+starts a new group; returning to an earlier group charges its shared fields
+again. Cancelled and expired rows leave before this accounting. FIFO order and
+the transfer limits remain intact.
 
 =admit_context(request, budget, cancellation)= returns a =ContextScopeDigest=.
 The rooted SDK boundary carries strings, vectors, u64 message IDs, result

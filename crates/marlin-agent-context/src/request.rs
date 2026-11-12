@@ -56,6 +56,11 @@ pub struct ContextTurn {
 }
 
 impl ContextTurn {
+    /// UTF-8 row payload, excluding the separately shared Scope fields.
+    pub fn text_bytes(&self) -> usize {
+        self.as_row().text().map(str::len).sum()
+    }
+
     pub fn as_row(&self) -> ContextScopeRow<'_> {
         ContextScopeRow {
             actor: &self.actor,

@@ -160,11 +160,14 @@ async fn a_full_channel_rejects_without_waiting_or_entering_scheme() {
     assert!(jobs.try_recv().is_err());
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn a_text_limited_turn_leaves_a_fifo_remainder_for_the_next_turn() {
+fn text_limited_queue() -> (
+    Arc<marlin_agent_context::ContextScope>,
+    VecDeque<Job>,
+    Vec<oneshot::Receiver<Outcome>>,
+) {
     use marlin_agent_context::{
-        CONTEXT_BATCH_MAX_TEXT_BYTES, ContextBundleId, ContextDestinationId, ContextOrganizationId,
-        ContextSourceCutId, ContextTaskId,
+        ContextBundleId, ContextDestinationId, ContextOrganizationId, ContextSourceCutId,
+        ContextTaskId,
     };
     let mut shared = (*context_fixture::scope("source")).clone();
     let text = "🦦".repeat(256);
@@ -185,17 +188,33 @@ async fn a_text_limited_turn_leaves_a_fifo_remainder_for_the_next_turn() {
         pending.push_back(job);
         replies.push(reply);
     }
+    (shared, pending, replies)
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_text_limited_turn_leaves_a_fifo_remainder_for_the_next_turn() {
+    use marlin_agent_context::{
+        CONTEXT_BATCH_MAX_TEXT_BYTES, ContextAdmissionError, ContextScopeBatch,
+    };
+    let (shared, mut pending, _replies) = text_limited_queue();
     let mut metrics = DeckRuntimeMetrics::default();
     let batch = owner::prepare(&mut pending, &mut metrics);
     let first = batch.len();
-    assert!(
-        batch
-            .iter()
-            .map(|job| job.request.text_bytes())
-            .sum::<usize>()
-            <= CONTEXT_BATCH_MAX_TEXT_BYTES
-    );
-    assert!(first > 0 && first < 16);
+    // Five 1024-byte shared fields and 2069 bytes per row fit 13 rows.
+    // Counting shared fields per request incorrectly stops after four.
+    assert_eq!(first, 13);
+    let mut rows: Vec<_> = batch
+        .iter()
+        .map(|job| job.request.turn().as_row())
+        .collect();
+    let projected = ContextScopeBatch::new(shared.as_key(), &rows).unwrap();
+    assert_eq!(projected.text_bytes(), 5120 + 2069 * first);
+    assert!(projected.text_bytes() <= CONTEXT_BATCH_MAX_TEXT_BYTES);
+    rows.push(pending.front().unwrap().request.turn().as_row());
+    assert!(matches!(
+        ContextScopeBatch::new(shared.as_key(), &rows),
+        Err(ContextAdmissionError::TextBudget)
+    ));
     assert_eq!(pending.len(), 16 - first);
     assert_eq!(
         pending
@@ -211,6 +230,72 @@ async fn a_text_limited_turn_leaves_a_fifo_remainder_for_the_next_turn() {
         first as u64
     );
     assert_eq!(metrics.scheme_items, first as u64);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn text_budget_counts_each_scope_and_module_group_without_reordering() {
+    for (layout, expected) in [(0, 4), (1, 4), (2, 8)] {
+        let (shared, mut pending, _replies) = text_limited_queue();
+        for (index, job) in pending.iter_mut().enumerate() {
+            match layout {
+                // Equal scope values in different Arc allocations are distinct wire groups.
+                0 => {
+                    job.request = ContextAdmissionRequest::new(
+                        Arc::new((*shared).clone()),
+                        job.request.turn().clone(),
+                    )
+                    .unwrap()
+                }
+                1 | 2 => {
+                    let group = if layout == 1 { index } else { index / 3 };
+                    job.module = DeckModuleInstanceId(
+                        std::num::NonZeroU64::new(1 + (group % 2) as u64).unwrap(),
+                    );
+                }
+                _ => unreachable!(),
+            }
+        }
+        let mut metrics = DeckRuntimeMetrics::default();
+        let batch = owner::prepare(&mut pending, &mut metrics);
+        assert_eq!(batch.len(), expected, "layout {layout}");
+        assert_eq!(pending.len(), 16 - expected);
+        for (index, job) in batch.iter().chain(pending.iter()).enumerate() {
+            assert_eq!(
+                job.request.turn().session.as_ref().unwrap().turn.0,
+                index as u64
+            );
+        }
+        assert_eq!(metrics.scheme_items, expected as u64);
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn cancelled_rows_do_not_spend_text_budget_or_split_a_scope_group() {
+    let (_, mut pending, mut replies) = text_limited_queue();
+    pending[3].cancellation.cancel();
+    let mut metrics = DeckRuntimeMetrics::default();
+    let batch = owner::prepare(&mut pending, &mut metrics);
+    assert_eq!(batch.len(), 13);
+    assert_eq!(pending.len(), 2);
+    assert_eq!(
+        pending
+            .front()
+            .unwrap()
+            .request
+            .turn()
+            .session
+            .as_ref()
+            .unwrap()
+            .turn
+            .0,
+        14
+    );
+    assert!(matches!(
+        replies[3].try_recv().unwrap(),
+        Err(DeckRuntimeRejection::Cancelled)
+    ));
+    assert_eq!(metrics.requests_cancelled, 1);
+    assert_eq!(metrics.scheme_items, 13);
 }
 
 #[test]

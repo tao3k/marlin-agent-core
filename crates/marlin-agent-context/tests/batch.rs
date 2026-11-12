@@ -56,3 +56,22 @@ fn admission_bounds_batch_rows_and_utf8_before_vm_entry() {
         Err(ContextAdmissionError::RowCount),
     ));
 }
+
+#[test]
+fn row_text_budget_counts_utf8_and_optional_session_without_numeric_turn() {
+    use marlin_agent_context::{ContextSession, ContextTurn, ContextTurnIndex};
+    use marlin_agent_protocol::ProjectRuntimeSessionId;
+
+    let mut turn = ContextTurn {
+        actor: ProjectRuntimeAgentId::new("代理"),
+        task: ContextTaskId::new("任务🦦"),
+        destination: ContextDestinationId::new("panel"),
+        session: None,
+    };
+    assert_eq!(turn.text_bytes(), "代理任务🦦panel".len());
+    turn.session = Some(ContextSession {
+        session: ProjectRuntimeSessionId::new("会话🦦"),
+        turn: ContextTurnIndex(u64::MAX),
+    });
+    assert_eq!(turn.text_bytes(), "代理任务🦦panel会话🦦".len());
+}

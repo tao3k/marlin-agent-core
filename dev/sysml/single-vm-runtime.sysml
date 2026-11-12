@@ -165,7 +165,13 @@ package MarlinSingleVmRuntime {
     requirement <'MAR-VM-R02'> boundedReadyBatching {
         doc /* Drain ready work without a fill timer. Owner-held request count
                is bounded by admission capacity. Transfer at most 64 Context
-               rows and 32 KiB of text per C ABI submission. Independent
+               rows and 32 KiB of text per C ABI submission. Count shared
+               fields once per consecutive group with the same Module identity
+               and the same immutable Scope allocation. A changed Module or
+               Scope allocation starts a new charged envelope, including a
+               return to an earlier group. Cancelled or expired rows consume
+               no transfer bytes. Preserve FIFO order without a fill wait.
+               Independent
                completion windows release message credit and permit refill.
                Actor population follows logical identities. */
     }

@@ -1499,6 +1499,25 @@ and u64vector values. Scheme constructs the Lab request and invokes the
 INIT-selected =context.admit-scope= operation on its actors. Results cross as
 message ID, status and digest vectors.
 
+The ready-work byte calculation follows that exact envelope grouping: the
+first request contributes shared Scope fields and row fields; subsequent
+consecutive requests with the same Module instance and the same immutable
+=Arc<ContextScope>= contribute row fields only. Equal Scope values in separate
+allocations remain separate groups, as do different Module instances. Returning
+to an earlier group charges its shared fields again. Cancellation and deadline
+retirement happen before counting; surviving requests retain FIFO order.
+
+The former queue calculation charged shared fields for every request. A fixture
+with five 1024-byte shared fields and 2069 bytes per row therefore stopped at
+four rows even though thirteen project to 32017 bytes within the existing
+32768-byte limit. The next row would exceed that limit. The regression checks
+the actual typed =ContextScopeBatch= projection, Module and Scope boundaries,
+cancelled rows and the retained FIFO suffix. A separate linked-VM test admits
+sixteen long Unicode requests, checks every digest against independently
+specified Scope tuple bytes and verifies complete Actor/message retirement.
+This repairs transfer accounting; it does not qualify a new end-to-end latency
+or physical-allocation result.
+
 Lab's SHA-256 digest is a Scope identity, not an execution grant. Effect
 admission and authoritative Session publication remain separate runtime
 responsibilities. This first Actor operation qualifies Context admission;
