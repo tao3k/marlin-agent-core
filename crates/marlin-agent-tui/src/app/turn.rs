@@ -65,7 +65,7 @@ impl App {
         };
         if let Some(input) = command {
             match Command::parse(&input) {
-                Some(Command::Help) => self.transcript.push(("Help".into(), "Enter: send · Tab / Shift-Tab: focus · Ctrl-N: newline · Ctrl-O: command without losing draft · arrows: edit · Home/End or Ctrl-A/Ctrl-E: line start/end · Alt-P/Alt-N: prompt history · Ctrl-R: search prompts · PageUp/PageDown: scroll · Esc/Ctrl-C: cancel · Ctrl-C twice or Ctrl-Q: quit · /models: list · /model: select · /status: worktree · /diff: unstaged · /diff staged: staged · /sessions: list · /session: switch · /inspect: read-only history · /history older or newest: page · /context: budget · /runtime: stream-open policy".into())),
+                Some(Command::Help) => self.transcript.push(("Help".into(), "Enter: send · Tab / Shift-Tab: focus · Ctrl-N: newline · Ctrl-O: command without losing draft · Ctrl-Z: suspend · arrows: edit · Home/End or Ctrl-A/Ctrl-E: line start/end · Alt-P/Alt-N: prompt history · Ctrl-R: search prompts · PageUp/PageDown: scroll · Esc/Ctrl-C: cancel · Ctrl-C twice or Ctrl-Q: quit · /models: list · /model: select · /status: worktree · /diff: unstaged · /diff staged: staged · /sessions: list · /session: switch · /inspect: read-only history · /history older or newest: page · /context: budget · /runtime: stream-open policy".into())),
                 Some(Command::Sessions(next)) => self.show_sessions(runtime, next),
                 Some(Command::Models) => self.show_models(),
                 Some(Command::Workspace(command)) => {

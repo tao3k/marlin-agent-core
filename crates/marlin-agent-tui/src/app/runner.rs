@@ -5,22 +5,21 @@
 //! Terminal event loop and process entry.
 
 use super::{
-    AgentId, App, Arc, AtomicU64, BracketedPaste, CliAction, FrameSchedule, HistorySearch,
-    INPUT_QUEUE_ITEMS, InputDecoder, Instant, JournalGateway, Key, MouseMotion, Ordering,
-    ProjectId, QueuedReply, REPLY_BATCH_LIMIT, REPLY_QUEUE_BYTES, REPLY_QUEUE_ITEMS,
-    RuntimeEdgePolicy, RuntimeStreamGateway, ScrollAnchor, SessionBrowser, SessionId,
-    SharedGateway, SignalMonitor, Terminal, TerminalInput, TermionBackend, TranscriptViewportCache,
-    TursoAgentStorage, TursoAgentStorageConfig, TursoBatchTransactionMode,
-    TursoOptimizationProfile, UiBrowseDirection, UiHost, UiKeyAction, UiOpenFacts, config, draw,
-    io, list_sessions, load_session, mouse_over_minibuffer, mpsc, parse_cli, reply_channel,
-    safe_text, thread,
+    AgentId, App, Arc, AtomicU64, CliAction, FrameSchedule, HistorySearch, INPUT_QUEUE_ITEMS,
+    InputDecoder, Instant, JournalGateway, Key, Ordering, ProjectId, QueuedReply,
+    REPLY_BATCH_LIMIT, REPLY_QUEUE_BYTES, REPLY_QUEUE_ITEMS, RuntimeEdgePolicy,
+    RuntimeStreamGateway, ScrollAnchor, SessionBrowser, SessionId, SharedGateway, SignalMonitor,
+    TerminalInput, TerminalOwner, TranscriptViewportCache, TursoAgentStorage,
+    TursoAgentStorageConfig, TursoBatchTransactionMode, TursoOptimizationProfile,
+    UiBrowseDirection, UiHost, UiKeyAction, UiOpenFacts, config, draw, io, list_sessions,
+    load_session, mouse_over_minibuffer, mpsc, parse_cli, reply_channel, safe_text, thread,
 };
 use std::{
     env,
     io::{IsTerminal, Write},
     path::PathBuf,
 };
-use termion::{input::TermReadEventsAndRaw, raw::IntoRawMode, screen::IntoAlternateScreen};
+use termion::input::TermReadEventsAndRaw;
 
 pub(crate) fn process_replies(
     app: &mut App,
@@ -153,10 +152,7 @@ fn run(
     };
     let signals = SignalMonitor::new(&runtime)?;
     trace_startup("session and signals");
-    let stdout = io::stdout().into_raw_mode()?.into_alternate_screen()?;
-    let stdout = BracketedPaste::enable(MouseMotion::enable(stdout)?)?;
-    let backend = TermionBackend::new(stdout);
-    let mut terminal = Terminal::new(backend)?;
+    let mut terminal = TerminalOwner::open()?;
     let (keys_tx, keys_rx) = mpsc::sync_channel(INPUT_QUEUE_ITEMS);
     let mouse_position = Arc::new(AtomicU64::new(0));
     let input_mouse_position = Arc::clone(&mouse_position);
@@ -272,7 +268,7 @@ fn run(
                     }
                 }
                 let mut effective_scroll = app.scroll_up;
-                terminal.draw(|frame| {
+                terminal.active().draw(|frame| {
                     effective_scroll = draw(
                         frame,
                         &app,
@@ -301,6 +297,23 @@ fn run(
             signal_exit = signals.observed_exit_code();
             if signal_exit.is_some() {
                 break;
+            }
+            #[cfg(unix)]
+            let requested_suspend = signals.take_suspend_request();
+            #[cfg(unix)]
+            if requested_suspend || matches!(&received, Ok(Ok(TerminalInput::Key(Key::Ctrl('z')))))
+            {
+                terminal.suspend()?;
+                // SAFETY: SIGSTOP stops this process only after the terminal
+                // guards have been dropped. SIGCONT resumes it in the foreground.
+                // The SIGTSTP observer remains installed for external job control.
+                if unsafe { libc::raise(libc::SIGSTOP) } != 0 {
+                    return Err(io::Error::last_os_error());
+                }
+                terminal.resume()?;
+                last_size = None;
+                schedule.mark_dirty();
+                continue;
             }
             if matches!(&received, Ok(Ok(_))) {
                 schedule.mark_dirty();
@@ -457,8 +470,7 @@ fn run(
     })();
     trace_startup("event loop exit");
     app.cancel();
-    terminal.show_cursor()?;
-    drop(terminal); // alternate-screen and raw-mode guards restore the terminal
+    terminal.suspend()?;
     trace_startup("terminal restored");
     if env::var_os("MARLIN_TUI_STARTUP_TRACE").is_some()
         && let Some(elapsed) = first_frame_elapsed

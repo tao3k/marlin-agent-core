@@ -7,7 +7,12 @@
 
 use nix::{
     pty::{Winsize, openpty},
-    sys::termios::tcgetattr,
+    sys::{
+        signal::{Signal, kill},
+        termios::tcgetattr,
+        wait::{WaitPidFlag, WaitStatus, waitpid},
+    },
+    unistd::Pid,
 };
 use std::{
     fs::{self, File},
@@ -537,6 +542,87 @@ fn minibuffer_expands_on_hover_and_collapses_on_leave() {
         Duration::from_secs(5),
         "collapsed minibuffer again",
         |output| screen_lines(output)[28].contains("MARLIN"),
+    );
+    terminal.send(b"\x11");
+    terminal.wait_exit(Duration::from_secs(5));
+    terminal.assert_restored();
+}
+
+#[cfg(feature = "linked-ui")]
+#[test]
+fn ctrl_z_restores_terminal_before_suspend_and_reopens_after_continue() {
+    let directory = tempfile::tempdir().unwrap();
+    let config = directory.path().join("config.toml");
+    fs::write(&config, "provider=\"openai\"\nmodel=\"gpt-fixture\"\nendpoint=\"http://127.0.0.1:1/v1/responses\"\nprotocol=\"open-ai-responses\"\ncredential_env=\"MARLIN_TUI_FIXTURE_KEY\"\n").unwrap();
+    let mut terminal = Terminal::start(&config);
+    terminal.wait_for(Duration::from_secs(10), "first workbench", |output| {
+        screen_lines(output)[28].contains("MARLIN")
+    });
+    terminal.send(b"draft survives suspension");
+    terminal.wait_for(
+        Duration::from_secs(5),
+        "draft before suspension",
+        |output| {
+            screen_lines(output)
+                .iter()
+                .any(|line| line.contains("draft survives suspension"))
+        },
+    );
+    let before_suspend = terminal.output.len();
+    terminal.send(b"\x1a");
+    terminal.wait_for(
+        Duration::from_secs(5),
+        "terminal restoration before stop",
+        |output| contains(&output[before_suspend..], b"\x1b[?1049l"),
+    );
+    let pid = Pid::from_raw(terminal.child.id().try_into().unwrap());
+    let wait_stopped = || {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            match waitpid(pid, Some(WaitPidFlag::WNOHANG | WaitPidFlag::WUNTRACED)).unwrap() {
+                WaitStatus::StillAlive if Instant::now() < deadline => {
+                    thread::sleep(Duration::from_millis(10));
+                }
+                WaitStatus::Stopped(_, Signal::SIGSTOP) => break,
+                outcome => panic!("expected terminal-safe stop, observed {outcome:?}"),
+            }
+        }
+    };
+    wait_stopped();
+    assert_eq!(tcgetattr(&terminal.slave).unwrap(), terminal.initial_mode);
+    let before_resume = terminal.output.len();
+    kill(pid, Signal::SIGCONT).unwrap();
+    terminal.wait_for(
+        Duration::from_secs(5),
+        "workbench after continue",
+        |output| {
+            contains(&output[before_resume..], b"\x1b[?1049h")
+                && screen_lines(output)
+                    .iter()
+                    .any(|line| line.contains("draft survives suspension"))
+        },
+    );
+
+    let before_external_stop = terminal.output.len();
+    kill(pid, Signal::SIGTSTP).unwrap();
+    terminal.wait_for(
+        Duration::from_secs(5),
+        "external stop restoration",
+        |output| contains(&output[before_external_stop..], b"\x1b[?1049l"),
+    );
+    wait_stopped();
+    assert_eq!(tcgetattr(&terminal.slave).unwrap(), terminal.initial_mode);
+    let before_external_resume = terminal.output.len();
+    kill(pid, Signal::SIGCONT).unwrap();
+    terminal.wait_for(
+        Duration::from_secs(5),
+        "workbench after external stop",
+        |output| {
+            contains(&output[before_external_resume..], b"\x1b[?1049h")
+                && screen_lines(output)
+                    .iter()
+                    .any(|line| line.contains("draft survives suspension"))
+        },
     );
     terminal.send(b"\x11");
     terminal.wait_exit(Duration::from_secs(5));

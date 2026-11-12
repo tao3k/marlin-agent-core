@@ -51,13 +51,14 @@ use marlin_agent_stream::{
     ModelStreamEvent, ModelStreamingGateway, matches_observed_anthropic_thinking,
 };
 use marlin_agent_ui::{UiBrowseDirection, UiCommandName, UiOpenFacts};
-use ratatui::{Terminal, backend::TermionBackend};
 use termion::event::Key;
 
 #[path = "runner.rs"]
 mod runner;
 #[path = "state.rs"]
 mod state;
+#[path = "terminal_owner.rs"]
+mod terminal_owner;
 #[path = "turn.rs"]
 mod turn;
 
@@ -69,3 +70,4 @@ pub(crate) use state::{
     App, GatewayObservation, INPUT_QUEUE_ITEMS, MAX_TURN_SEGMENTS, PendingTurn, REPLY_BATCH_LIMIT,
     REPLY_QUEUE_BYTES, REPLY_QUEUE_ITEMS, safe_text,
 };
+use terminal_owner::TerminalOwner;

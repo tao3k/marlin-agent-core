@@ -7,12 +7,13 @@
 #[cfg(unix)]
 use std::sync::{
     Arc,
-    atomic::{AtomicI32, Ordering},
+    atomic::{AtomicBool, AtomicI32, Ordering},
 };
 
 #[cfg(unix)]
 pub(crate) struct SignalMonitor {
     exit_code: Arc<AtomicI32>,
+    suspend_requested: Arc<AtomicBool>,
     task: tokio::task::JoinHandle<()>,
 }
 
@@ -24,25 +25,42 @@ impl SignalMonitor {
         let interrupt_kind = SignalKind::interrupt();
         let terminate_kind = SignalKind::terminate();
         let hangup_kind = SignalKind::hangup();
-        let (mut interrupt, mut terminate, mut hangup) = {
+        let suspend_kind = SignalKind::from_raw(libc::SIGTSTP);
+        let (mut interrupt, mut terminate, mut hangup, mut suspend) = {
             let _entered = runtime.enter();
             (
                 signal(interrupt_kind)?,
                 signal(terminate_kind)?,
                 signal(hangup_kind)?,
+                signal(suspend_kind)?,
             )
         };
         let exit_code = Arc::new(AtomicI32::new(0));
         let observed = exit_code.clone();
+        let suspend_requested = Arc::new(AtomicBool::new(false));
+        let requested = suspend_requested.clone();
         let task = runtime.spawn(async move {
-            let number = tokio::select! {
-                _ = interrupt.recv() => interrupt_kind.as_raw_value(),
-                _ = terminate.recv() => terminate_kind.as_raw_value(),
-                _ = hangup.recv() => hangup_kind.as_raw_value(),
-            };
-            observed.store(128 + number, Ordering::Release);
+            loop {
+                let number = tokio::select! {
+                    _ = interrupt.recv() => Some(interrupt_kind.as_raw_value()),
+                    _ = terminate.recv() => Some(terminate_kind.as_raw_value()),
+                    _ = hangup.recv() => Some(hangup_kind.as_raw_value()),
+                    _ = suspend.recv() => {
+                        requested.store(true, Ordering::Release);
+                        None
+                    },
+                };
+                if let Some(number) = number {
+                    observed.store(128 + number, Ordering::Release);
+                    break;
+                }
+            }
         });
-        Ok(Self { exit_code, task })
+        Ok(Self {
+            exit_code,
+            suspend_requested,
+            task,
+        })
     }
 
     pub(crate) fn observed_exit_code(&self) -> Option<i32> {
@@ -50,6 +68,10 @@ impl SignalMonitor {
             0 => None,
             code => Some(code),
         }
+    }
+
+    pub(crate) fn take_suspend_request(&self) -> bool {
+        self.suspend_requested.swap(false, Ordering::AcqRel)
     }
 }
 

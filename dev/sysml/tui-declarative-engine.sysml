@@ -252,6 +252,16 @@ package MarlinDeclarativeUi {
                Theme choice must not alter effect authority or require a VM
                call per frame. Doom One is an attributed visual reference. */
     }
+    requirement <'MAR-UI-R14'> terminalSuspendOwnership {
+        doc /* Keyboard and external suspend requests cross the single Rust
+               terminal owner. Before a process stop, the owner restores and
+               flushes raw mode, alternate screen, paste and mouse modes.
+               After SIGCONT, it rebuilds the terminal and repaints from the
+               retained admitted UI snapshot and draft. A stop cannot be
+               reported as a model cancellation or a completed runtime action.
+               Real PTY evidence must observe stop, termios restoration,
+               resume and a usable frame on both request paths. */
+    }
 
     allocation extensions allocate composableExtensions to engine.modulePublication;
     allocation specialization allocate composableExtensions to engine.functionalComposition;
@@ -271,6 +281,8 @@ package MarlinDeclarativeUi {
     allocation clippedGeometry allocate selectedLayoutPolicy to engine.terminalHost;
     allocation selectedPalette allocate selectedSemanticTheme to engine.modulePublication;
     allocation paintedPalette allocate selectedSemanticTheme to engine.terminalHost;
+    allocation suspendBoundary allocate terminalSuspendOwnership to engine.terminalHost;
+    allocation suspendEvidence allocate terminalSuspendOwnership to engine.qualification;
 
     attribute def BeginUpdate;
     attribute def CandidateReady;

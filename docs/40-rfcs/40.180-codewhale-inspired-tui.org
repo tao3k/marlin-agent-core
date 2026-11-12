@@ -483,7 +483,7 @@ and current-version reproduction remain separate from issue closure.
 | [[https://github.com/openai/codex/issues/21945][Codex #21945]] | Open report identifies full-history overlay rebuilding and repeated wrapping as long-session costs; normal inline view has different behavior. | One bounded visible-viewport cache exists; changed content and dimensions still trigger layout. Benchmark real overlay and resize paths as well as ordinary frames. |
 | [[https://github.com/openai/codex/issues/23260][Codex #23260]] | Open report describes long-running subagent retention and an export that hydrates and clones large history on the UI task. | Bound producer, retained projection and export independently; qualify long sessions and cleanup with actual runtime ownership. |
 | [[https://github.com/openai/codex/issues/16165][Codex #16165]] | Closed after #18575 rebuilt source-backed transcript history on resize and cleared stale rows. | A deterministic backend compares cached repeated resize frames and cursor positions against fresh frames while a turn is active; one Unix PTY exercises shrink/grow during an open stream and subsequent scroll anchoring. Actual screen contents across terminal implementations remain unqualified. |
-| [[https://github.com/codewhale-hq/Codewhale/issues/6169][Codewhale #6169]] | Closed historical report and maintainer investigation describe terminal foreground ownership, suspend and checkpoint hazards; the report's mechanism needed correction. | Model a single terminal owner and test suspend/foreground, shell handoff, mode restoration and incomplete work recovery. Not implemented. |
+| [[https://github.com/codewhale-hq/Codewhale/issues/6169][Codewhale #6169]] | Closed historical report and maintainer investigation describe terminal foreground ownership, suspend and checkpoint hazards; the report's mechanism needed correction. | Keyboard and external suspend now restore terminal modes before process stop, then reopen and redraw after continue. A real PTY covers both paths and retained draft. Shell foreground handoff and incomplete runtime work still require qualification. |
 | [[https://github.com/codewhale-hq/Codewhale/issues/6978][Codewhale #6978]] | Report includes replayed old queued messages and snapshot failure; do not conflate the two independent failure paths. | Durable event identities, acknowledgements and restart/crash tests must exclude duplicate turn dispatch and preserve failed-work evidence. Not implemented. |
 
 ** Qualification plan
@@ -1653,3 +1653,16 @@ generated Scheme status inputs, the typed native projection and Rust layout
 properties. The real PTY hover and terminal restoration tests remain a
 separate runtime check. Seeds, budgets and extension rules are recorded in
 [[file:../../dev/verification/README.org][the project verification map]].
+
+** Terminal suspension and foreground ownership
+
+The terminal host treats Ctrl-Z and external SIGTSTP as requests to suspend.
+It drops and flushes the Ratatui terminal before stopping the process, so raw
+mode, alternate screen, bracketed paste and mouse tracking are restored before
+the shell can regain the terminal. SIGCONT reopens those guards and forces a
+fresh frame from the retained App and UI snapshot. The signal observer does
+not claim to stop or cancel an in-flight model request; the process-wide stop
+holds its threads until continuation. A Unix PTY test observes both stop paths,
+the restored termios state, a new alternate screen and an unsent draft after
+each resume. It does not exercise an actual interactive shell's =fg= command
+or prove checkpoint recovery across process death.
