@@ -3,8 +3,8 @@
 // SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
 use super::{
-    App, Arc, CliAction, FixtureGateway, ModelAlias, ModelCatalog, ModelEndpoint,
-    ModelGatewayCompletionChoice, ModelGatewayCompletionResponse, ModelGatewayError,
+    App, Arc, CliAction, FixtureGateway, GatewayObservation, ModelAlias, ModelCatalog,
+    ModelEndpoint, ModelGatewayCompletionChoice, ModelGatewayCompletionResponse, ModelGatewayError,
     ModelGatewayEventStream, ModelGatewayFuture, ModelGatewayRequest, ModelGatewayResult,
     ModelGatewayTransport, ModelRoute, ModelStreamChunk, ModelStreamEvent, ModelStreamingGateway,
     Mutex, ReplyError, RuntimeEdgePolicy, TranscriptViewportCache, assistant_gateway_message, draw,
@@ -215,6 +215,7 @@ fn model_selection_retains_draft_and_failed_selection_keeps_previous_route() {
     .unwrap();
     let mut app = App::new(default);
     app.set_models(catalog.clone());
+    app.gateway_observation = GatewayObservation::Online;
     let (tx, mut rx) = reply_channel(8, 4096);
     app.composer.insert_text("draft");
     app.toggle_command();
@@ -232,9 +233,12 @@ fn model_selection_retains_draft_and_failed_selection_keeps_previous_route() {
     app.composer.insert_text("model alt");
     app.submit(&catalog, &runtime, &tx);
     assert_eq!(app.composer.text(), "draft");
+    assert_eq!(app.gateway_observation, GatewayObservation::Unchecked);
+    app.gateway_observation = GatewayObservation::Offline;
     app.toggle_command();
     app.composer.insert_text("model disabled");
     app.submit(&catalog, &runtime, &tx);
+    assert_eq!(app.gateway_observation, GatewayObservation::Offline);
     assert!(
         app.transcript
             .last()

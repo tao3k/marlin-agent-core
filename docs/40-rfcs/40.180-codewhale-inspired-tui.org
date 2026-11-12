@@ -1608,6 +1608,10 @@ top status heading and
 default right Guide frame are removed; =/help= remains the shortcut surface.
 The initial configured-gateway notice is shown as the Modeline's idle state,
 not as a synthetic transcript entry. A fish glyph marks the Marlin brand.
+The right session segment preserves the distinguishing tail of long Unicode
+identifiers within its allotted cells and drops the turn count first when
+space is scarce. Selecting a model clears the previous route's observed
+gateway status until the newly selected route has its own outcome.
 
 The bottom Mini Buffer is the existing ChatBox in a collapsed form. With no
 draft or command activity it occupies one row and can show host status that

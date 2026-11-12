@@ -696,6 +696,13 @@ fn selected_modeline_is_colored_and_sits_above_the_collapsible_minibuffer() {
     paint(&mut terminal, &app, &view);
     assert!(row(&terminal, 8).contains("Message"));
     assert!(row(&terminal, 9).contains("draft survives hover exit"));
+
+    view.session_label = "archive/日本語/critical-session-42".into();
+    paint(&mut terminal, &app, &view);
+    let line = row(&terminal, 7);
+    assert!(line.contains("critical-session-42"), "{line}");
+    assert!(line.contains('…'), "{line}");
+    assert!(!line.contains("archive"), "{line}");
 }
 
 #[test]

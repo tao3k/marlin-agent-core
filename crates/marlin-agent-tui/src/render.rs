@@ -35,6 +35,27 @@ fn header_value(value: &str) -> String {
     display_value(value, 128)
 }
 
+fn trailing_label(value: &str, width: usize) -> String {
+    if width == 0 {
+        return String::new();
+    }
+    if UnicodeWidthStr::width(value) <= width {
+        return value.to_owned();
+    }
+    let suffix: Vec<_> = value
+        .graphemes(true)
+        .rev()
+        .scan(1usize, |used, grapheme| {
+            let next = used.saturating_add(UnicodeWidthStr::width(grapheme));
+            (next <= width).then(|| {
+                *used = next;
+                grapheme
+            })
+        })
+        .collect();
+    format!("…{}", suffix.into_iter().rev().collect::<String>())
+}
+
 fn rgb(color: UiRgb) -> Color {
     Color::Rgb(color.red, color.green, color.blue)
 }
@@ -156,19 +177,30 @@ fn draw_modeline(
     } else {
         &brand.label
     };
-    let session = if area.width >= 44 {
-        format!(" {} ", header_value(&ui.session_label))
+    let right_budget = usize::from(area.width / 3);
+    let session = if area.width >= 44 && right_budget > 4 {
+        format!(
+            " ◉ {} ",
+            trailing_label(&header_value(&ui.session_label), right_budget - 4)
+        )
     } else {
         String::new()
     };
-    let turns = if area.width >= 72 && app.history.len() >= 2 {
+    let turns_candidate = if area.width >= 72 && app.history.len() >= 2 {
         format!("⟳{}  ", app.history.len() / 2)
     } else {
         String::new()
     };
+    let turns = if UnicodeWidthStr::width(turns_candidate.as_str())
+        + UnicodeWidthStr::width(session.as_str())
+        <= right_budget
+    {
+        turns_candidate
+    } else {
+        String::new()
+    };
     let right = format!("{turns}{session}");
-    let right_width =
-        UnicodeWidthStr::width(right.as_str()).min(usize::from(area.width / 3)) as u16;
+    let right_width = UnicodeWidthStr::width(right.as_str()) as u16;
     let model = format!("  {}  ", header_value(&ui.model_label));
     let brand_text = format!(" {} ", header_value(brand_text));
     let essential_width = UnicodeWidthStr::width(brand_text.as_str())

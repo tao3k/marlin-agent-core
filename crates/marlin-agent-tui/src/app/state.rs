@@ -232,6 +232,9 @@ impl App {
         match result {
             Ok(endpoint) => {
                 self.endpoint = endpoint;
+                // A successful observation belongs to the selected route, not
+                // to every configured model in the catalog.
+                self.gateway_observation = GatewayObservation::Unchecked;
                 let continuation_status = if self.has_incompatible_continuation() {
                     "Current session has continuation from another route; sending is blocked until you restore that route or switch sessions."
                 } else {

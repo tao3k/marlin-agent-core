@@ -75,8 +75,8 @@ fn real_vm_routes_a_contributed_method_without_submitting_the_draft() {
         .unwrap();
     assert_eq!(modeline[0].label, "🐟 MARLIN");
     assert_eq!(modeline[0].compact_label, "🐟");
-    assert_eq!(modeline[2].label, "Gateway configured");
-    assert_eq!(modeline[2].compact_label, "Ready");
+    assert_eq!(modeline[2].label, "🟡 Ready");
+    assert_eq!(modeline[2].compact_label, "🟡");
     assert_eq!(
         modeline[2].active_tone,
         marlin_agent_ui::UiStatusTone::Warning
