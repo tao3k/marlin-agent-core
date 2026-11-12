@@ -29,6 +29,15 @@ package MarlinDeclarativeUi {
                    command component; its selection is a presentation proposal
                    checked against the host's admitted command menu. */
         }
+        part <'MAR-UI-T10'> portableComponentSemantics {
+            doc /* Scheme owns component identity, typed props, pure state
+                   transitions and generic-method event behavior. Host-neutral
+                   semantics may later feed another renderer such as GPUI;
+                   terminal cells, Ratatui geometry, native windows and JS
+                   runtime objects stay in their respective adapters. Gambit
+                   can target JavaScript, but this model does not claim that
+                   Marlin's current Gerbil modules or C ABI compile to JS. */
+        }
         part <'MAR-UI-T04'> nativeBoundary {
             doc /* The SDK-owned VM boundary transfers rooted Scheme values to
                    Rust types in batches, with one VM owner and explicit object
@@ -43,9 +52,10 @@ package MarlinDeclarativeUi {
                    a separate integration requirement.
                    Scheme failures remain observable without publishing a
                    partial state or losing the previous session.
-                   Native linking is a release packaging choice, not a
-                   prerequisite implied by the C ABI; precompiled Scheme on
-                   the VM remains a development mode. */
+                   The current default debug and release TUI link the selected
+                   compiled Scheme closure; explicit no-default-features is
+                   the dynamic development path. Linkage is a packaging choice
+                   independent of the typed C ABI contract. */
         }
         part <'MAR-UI-T05'> admittedSnapshot {
             doc /* Rust admits a complete candidate before publishing it.
@@ -85,6 +95,7 @@ package MarlinDeclarativeUi {
     }
 
     dependency publicationSuppliesComposition from engine::modulePublication to engine::functionalComposition;
+    dependency semanticsFeedComposition from engine::portableComponentSemantics to engine::functionalComposition;
     dependency compositionCrossesBoundary from engine::functionalComposition to engine::nativeBoundary;
     dependency boundaryFeedsAdmission from engine::nativeBoundary to engine::admittedSnapshot;
     dependency snapshotFeedsView from engine::admittedSnapshot to engine::incrementalView;

@@ -88,10 +88,13 @@
                  (.o (:: @ selected-next-focus) order: '(composer transcript))))))
     (error "extensible UI focus order failed")))
 (let* ((extension-type (.get ui components extension))
+       (text-item (.o (:: @ (.get ui components text)) kind: 'text text: "Preview"))
+       (field-item (.o (:: @ (.get ui components field))
+                       kind: 'field label: "Mode" value: "Review"))
        (extension (.o (:: @ extension-type) identity: 'extension/editor kind: 'extension
-                      label: "Editor" focusable: #t))
+                      label: "Editor" focusable: #t content: (list text-item field-item)))
        (passive (.o (:: @ extension-type) identity: 'extension/info kind: 'extension
-                    label: "Info" focusable: #f))
+                    label: "Info" focusable: #f content: '()))
        (request (.o model: "model" session: "session" contributions: '()
                     extensions: (list extension passive)))
        (view (workbench request))
@@ -109,8 +112,10 @@
                (equal? (.get view focus-order) '(transcript composer commands extension/editor))
                (eq? (.get ((.get ui dispatch) generic (list-ref regions 2) event) identity)
                     'extension/editor)
-               (equal? (vector-ref (vector-ref (vector-ref projected 2) 3) 2) #("Editor" #t))
-               (equal? (vector-ref (vector-ref (vector-ref native-result 2) 3) 2) #("Editor" #t))
+               (equal? (vector-ref (vector-ref (vector-ref projected 2) 3) 2)
+                       '#("Editor" #t #(#(text "Preview") #(field "Mode" "Review"))))
+               (equal? (vector-ref (vector-ref (vector-ref native-result 2) 3) 2)
+                       '#("Editor" #t #(#(text "Preview") #(field "Mode" "Review"))))
                (eq? (.get ((.get ui dispatch) generic (list-ref regions 3)
                            (.o (:: @ SpecialEvent.))) kind) 'extension-handled)
                (rejected? (lambda () (marlin-ui-native-facts
@@ -122,12 +127,20 @@
                                   extensions: (list extension)))))
                (rejected? (lambda () (workbench (.o model: "m" session: "s" contributions: '()
                                                     extensions: (list (.o identity: 'fake kind: 'extension
-                                                                            label: "Fake" focusable: #t)))))))
+                                                                            label: "Fake" focusable: #t
+                                                                            content: '()))))))
+               (rejected? (lambda () (workbench
+                 (.o model: "m" session: "s" contributions: '()
+                     extensions: (list (.o (:: @ extension-type) identity: 'bad kind: 'extension
+                                           label: "Bad" focusable: #t
+                                           content: (list (.o kind: 'text text: "forged")))))))))
     (error "UI extension composition failed"))
   (.put! extension 'identity 'extension/changed)
   (.put! extension 'focusable #f)
+  (.put! text-item 'text "changed")
   (unless (and (eq? (.get (list-ref regions 3) identity) 'extension/editor)
                (.get (list-ref regions 3) focusable)
+               (equal? (.get (car (.get (list-ref regions 3) content)) text) "Preview")
                (rejected? (lambda () (.put! (list-ref regions 3) 'identity 'forged))))
     (error "UI extension snapshot changed after composition")))
 (let* ((dispatch (.get ui dispatch))

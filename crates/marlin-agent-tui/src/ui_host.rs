@@ -396,7 +396,7 @@ mod tests {
         assert_eq!(host.view().focus.as_str(), "test/extension");
         let app = super::super::app::App::new(ModelEndpoint::new("provider", "model"));
         let mut terminal =
-            ratatui::Terminal::new(ratatui::backend::TestBackend::new(60, 10)).unwrap();
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(60, 20)).unwrap();
         terminal
             .draw(|frame| {
                 super::super::render::draw(
@@ -409,11 +409,14 @@ mod tests {
             })
             .unwrap();
         let buffer = terminal.backend().buffer();
-        let screen: String = (0..10)
+        let screen: String = (0..20)
             .flat_map(|y| (0..60).map(move |x| buffer[(x, y)].symbol()))
             .collect();
         assert!(
-            screen.contains("VM ready") && screen.contains("Test extension"),
+            screen.contains("VM ready")
+                && screen.contains("Test extension")
+                && screen.contains("Scheme component body")
+                && screen.contains("Source: selected module"),
             "{screen}"
         );
         host.refresh_labels("other/model", "other-session").unwrap();
@@ -550,6 +553,7 @@ mod tests {
             id: UiComponentId::new("sample").unwrap(),
             label: "sample".into(),
             focusable: true,
+            content: vec![],
         });
         extended.focus = UiComponentId::new("sample").unwrap();
         assert!(admit_terminal_view(&extended).is_ok());

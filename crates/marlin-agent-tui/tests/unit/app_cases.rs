@@ -234,6 +234,7 @@ fn render_keeps_focused_extension_visible_and_sanitizes_its_label() {
             id: UiComponentId::new(id).unwrap(),
             label: label.into(),
             focusable: true,
+            content: vec![],
         });
     }
     regions.push(UiRegion::Status(vec![]));
@@ -265,6 +266,58 @@ fn render_keeps_focused_extension_visible_and_sanitizes_its_label() {
 }
 
 #[test]
+fn render_focused_scheme_content_on_narrow_and_wide_terminals() {
+    use marlin_agent_ui::{UiComponentId, UiContent, UiRegion, UiWorkbench};
+    let app = App::new(ModelEndpoint::new("provider", "model"));
+    let view = UiWorkbench {
+        model_label: "model".into(),
+        session_label: "session".into(),
+        regions: vec![
+            UiRegion::Transcript,
+            UiRegion::Composer,
+            UiRegion::Commands(vec![]),
+            UiRegion::Extension {
+                id: UiComponentId::new("details").unwrap(),
+                label: "Details".into(),
+                focusable: true,
+                content: vec![
+                    UiContent::Text("Scheme component body".into()),
+                    UiContent::Field {
+                        label: "Source".into(),
+                        value: "safe\u{1b}[2J".into(),
+                    },
+                ],
+            },
+            UiRegion::Status(vec![]),
+        ],
+        focus: UiComponentId::new("details").unwrap(),
+    };
+    for width in [80, 120] {
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(width, 20)).unwrap();
+        terminal
+            .draw(|frame| {
+                render_draw(
+                    frame,
+                    &app,
+                    &view,
+                    &mut Default::default(),
+                    &mut Default::default(),
+                );
+            })
+            .unwrap();
+        let buffer = terminal.backend().buffer();
+        let screen: String = (0..20)
+            .flat_map(|y| (0..width).map(move |x| buffer[(x, y)].symbol()))
+            .collect();
+        assert!(screen.contains("Scheme component body"), "{screen}");
+        assert!(screen.contains("Source: safe�[2J"), "{screen}");
+        assert!(!screen.contains('\u{1b}'), "{screen}");
+        assert_eq!(screen.contains("Model gateway configured"), width == 120);
+    }
+}
+
+#[test]
 fn render_status_contributions_respects_focus_and_terminal_height() {
     use marlin_agent_ui::{UiComponentId, UiRegion, UiStatusItem, UiWorkbench};
     let app = App::new(ModelEndpoint::new("provider", "model"));
@@ -279,6 +332,7 @@ fn render_status_contributions_respects_focus_and_terminal_height() {
                 id: UiComponentId::new("extension").unwrap(),
                 label: "Focused panel".into(),
                 focusable: true,
+                content: vec![],
             },
             UiRegion::Status(vec![
                 UiStatusItem {

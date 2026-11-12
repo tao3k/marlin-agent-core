@@ -33,6 +33,10 @@ tui-aot-stage:
   cd scheme && gxpkg env gxc -S -s -d .gerbil/lib tui-entry.ss
   cd scheme && gxpkg env gxi tui-stage.ss
 
+# Build the default linked debug binary used by target/debug/marlin-tui.
+tui-aot-debug: tui-aot-stage
+  cargo build --locked -p marlin-agent-tui --bin marlin-tui
+
 # Link the staged Scheme graph and VM into the terminal application.
 tui-aot-build: tui-aot-stage
   cargo build --locked -p marlin-agent-tui --bin marlin-tui --features linked-ui --release

@@ -8,23 +8,56 @@ use super::{
     app::App,
     viewport::{ScrollAnchor, TranscriptViewportCache},
 };
-use marlin_agent_ui::{UiCommandName, UiRegion, UiWorkbench};
+use marlin_agent_ui::{UiCommandName, UiContent, UiRegion, UiWorkbench};
 use ratatui::{
-    layout::{Constraint, Direction, Layout},
+    layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
-    widgets::{Block, Borders, Paragraph},
+    text::{Line, Span},
+    widgets::{Block, Borders, Paragraph, Wrap},
 };
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
 // Configuration and session identifiers may contain control characters. Keep
 // the header bounded and prevent them from becoming terminal control input.
-fn header_value(value: &str) -> String {
+fn display_value(value: &str, limit: usize) -> String {
     value
         .chars()
-        .take(128)
+        .take(limit)
         .map(|ch| if ch.is_control() { '�' } else { ch })
         .collect()
+}
+
+fn header_value(value: &str) -> String {
+    display_value(value, 128)
+}
+
+fn draw_extension_content(
+    frame: &mut ratatui::Frame<'_>,
+    area: Rect,
+    label: &str,
+    content: &[UiContent],
+) {
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(format!(" {} ", header_value(label)))
+        .border_style(Style::default().fg(Color::Cyan));
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+    let lines: Vec<Line<'static>> = content
+        .iter()
+        .map(|item| match item {
+            UiContent::Text(text) => Line::from(display_value(text, 256)),
+            UiContent::Field { label, value } => Line::from(vec![
+                Span::styled(
+                    format!("{}: ", display_value(label, 256)),
+                    Style::default().fg(Color::Cyan),
+                ),
+                Span::raw(display_value(value, 256)),
+            ]),
+        })
+        .collect();
+    frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), inner);
 }
 
 pub(crate) fn draw(
@@ -122,36 +155,68 @@ pub(crate) fn draw(
         ),
         parts[0],
     );
-    let mut render_view = |viewport: &super::viewport::TranscriptViewport| {
-        viewport.render(parts[1], frame.buffer_mut());
-        viewport.scroll_up
+    let focused_content = if app.workspace.view().is_none() {
+        ui.regions.iter().find_map(|region| match region {
+            UiRegion::Extension {
+                id,
+                label,
+                content,
+                focusable: true,
+            } if id == &ui.focus => Some((label.as_str(), content.as_slice())),
+            _ => None,
+        })
+    } else {
+        None
     };
-    let effective_scroll = match app.workspace.view() {
-        Some(view) => cache.with_top_view(
-            &view.transcript,
-            parts[1].width,
-            parts[1].height,
-            view.scroll_from_top,
-            &mut render_view,
-        ),
-        None => {
-            let pending = app.pending.is_some();
-            let scroll = anchor.adjust(
-                &app.transcript,
-                pending,
-                parts[1].width,
-                parts[1].height,
-                app.scroll_up,
-            );
-            cache.with_view(
-                &app.transcript,
-                pending,
-                parts[1].width,
-                parts[1].height,
-                scroll,
-                &mut render_view,
-            )
+    let transcript_area = if let Some((label, content)) = focused_content {
+        if parts[1].width >= 100 && parts[1].height >= 6 {
+            let columns = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([Constraint::Min(40), Constraint::Length(36)])
+                .split(parts[1]);
+            draw_extension_content(frame, columns[1], label, content);
+            Some(columns[0])
+        } else {
+            draw_extension_content(frame, parts[1], label, content);
+            None
         }
+    } else {
+        Some(parts[1])
+    };
+    let effective_scroll = if let Some(transcript_area) = transcript_area {
+        let mut render_view = |viewport: &super::viewport::TranscriptViewport| {
+            viewport.render(transcript_area, frame.buffer_mut());
+            viewport.scroll_up
+        };
+        match app.workspace.view() {
+            Some(view) => cache.with_top_view(
+                &view.transcript,
+                transcript_area.width,
+                transcript_area.height,
+                view.scroll_from_top,
+                &mut render_view,
+            ),
+            None => {
+                let pending = app.pending.is_some();
+                let scroll = anchor.adjust(
+                    &app.transcript,
+                    pending,
+                    transcript_area.width,
+                    transcript_area.height,
+                    app.scroll_up,
+                );
+                cache.with_view(
+                    &app.transcript,
+                    pending,
+                    transcript_area.width,
+                    transcript_area.height,
+                    scroll,
+                    &mut render_view,
+                )
+            }
+        }
+    } else {
+        app.scroll_up
     };
     let title = if app.history_search.is_some() {
         " History · Enter accept · Esc cancel "

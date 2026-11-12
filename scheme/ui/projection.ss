@@ -24,10 +24,19 @@
          (list->vector (map (lambda (child)
                              (vector (.get child identity) (.get child kind) (.get child label)))
                            (.get node children)))))
-      ((extension) (vector identity-value kind-value (vector (.get node label) (.get node focusable))))
+      ((extension)
+       (vector identity-value kind-value
+         (vector (.get node label) (.get node focusable)
+                 (list->vector (map content-value (.get node content))))))
       ((commands) (vector identity-value kind-value
                           (list->vector (map list->vector (.get node entries)))))
       (else (vector identity-value kind-value #())))))
+
+(def (content-value item)
+  (case (.get item kind)
+    ((text) (vector 'text (.get item text)))
+    ((field) (vector 'field (.get item label) (.get item value)))
+    (else (error "unsupported UI content projection"))))
 
 (def (marlin-ui-native-facts input)
   (unless (and (vector? input) (= (vector-length input) 4)

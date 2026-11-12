@@ -130,8 +130,9 @@ as well as terminal restoration when initialization fails or is cancelled.
 
 The client now has a selected Gerbil/Yuanxu workbench with declared regions,
 focus order and CLOS event methods. Rust still paints the terminal, and a
-general plugin lifecycle, contributed content widgets and module admission
-remain open. The target extends that Scheme module so components, keymaps,
+general plugin lifecycle, richer stateful widgets and module admission
+remain open. The current bounded text and field content slice is described
+below. The target extends that Scheme module so components, keymaps,
 composition and state transitions are authored as Scheme values.
 Rust owns the terminal, input decoding, layout and Ratatui painting, async
 I/O, typed runtime commands, and effect authorization. Model/session facts and
@@ -1336,6 +1337,41 @@ in 129 ms and 118 ms. The application reported its first completed frame at
 spread is evidence of substantial process-to-application or PTY observation
 variation, not proof of a loader cause or a cold-start percentile. The fixed
 ten-second first-frame and five-second exit deadlines passed in these runs.
+
+** Default linked debug and Scheme content slice (2026-11-12)
+
+The TUI's default Cargo feature is now =linked-ui=. =just tui-aot-debug=
+stages the selected Yuanxu programme and builds the exact
+=target/debug/marlin-tui= path. A deliberately dynamic build uses
+=--no-default-features= and can replace that same path; the previously observed
+12.392-second command was a dynamic binary, as its =otool -L= output showed
+=libgerbil_scheme_build.dylib= and its symbol table lacked the linked Marlin UI
+entry. The rebuilt default debug binary has the linked entry and no Gerbil
+build dylib. In one direct PTY run, the exact example configuration reached a
+usable workbench in 205.7 ms; a separate menu, paste, stream and restoration
+fixture reached it in 195.4 ms. These are local first-frame observations, not
+a cold distribution percentile or a claim about total test-run duration.
+
+Selected Scheme extensions can now contribute bounded =text= and =field=
+components through the existing POO/CLOS publication. The workbench checks at
+most 16 items per extension, copies each string (at most 256 characters) into
+an admitted snapshot, and projects typed values in one native batch. Rust
+validates their kinds and sizes, then Ratatui paints a focused region: a side
+panel on sufficiently wide terminals and a full transcript-area panel when
+narrow. Terminal focus and drawing remain with Rust. Scheme tests, Rust typed
+projection tests, and narrow/wide renderer tests passed locally. The real VM
+extension fixture also passed with rendered-content assertions when the
+selected Scheme package prefix and CLT SDK were provided; two initial attempts
+failed while the fixture could not resolve that package closure. The current
+content types do not constitute a general component lifecycle or a dynamically
+loaded plugin API.
+
+The architecture borrows iocraft's declarative component and state ideas while
+placing component identity, pure transition logic and generic-method dispatch
+in Scheme. Rust retains native admission, terminal lifecycle, layout, painting
+and runtime effect authority. A future GPUI renderer is only an adapter
+direction: host-neutral component semantics could be reused, but this work
+does not compile the current Gerbil UI modules to JavaScript or implement GPUI.
 
 ** Conversation journal in progress
 

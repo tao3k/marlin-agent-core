@@ -28,17 +28,21 @@ protocol. Credentials are not stored in TOML. For Anthropic-compatible routes,
 an omitted endpoint is resolved by Weaver from =ANTHROPIC_BASE_URL=, and an
 omitted model from =ANTHROPIC_MODEL=. Explicit TOML values take precedence.
 Set the named credential environment variable. Local HTTP endpoints must use
-a loopback address. Launch with =cargo run -p marlin-agent-tui -- path/to/config.toml=.
+a loopback address. Run =just tui-aot-debug= once after installing the selected
+Scheme dependencies, then launch
+=target/debug/marlin-tui path/to/config.toml=. The default TUI feature is
+=linked-ui=: normal Cargo builds also produce the linked binary after the
+selected Scheme programme has been staged. The Cargo build script reports a
+missing staging manifest instead of silently producing a dynamic TUI.
 
-The default development build loads Marlin's compiled Scheme UI modules through
-the Gerbil SDK. Install the selected Scheme dependencies and build the package
-before launching; use =GERBIL_PATH= and =GERBIL_LOADPATH= when the package
-environment is not the default. A missing module stops startup with an error.
-From the repository root, when =GERBIL_PATH= is unset and the local Scheme
-package is built, the dynamic executable restarts before VM startup with
-=scheme/.gerbil= as its standard package prefix. The package must include the
-Scheme-side =gerbil-scheme-rust/scheme/runtime= metadata from the same SDK
-revision as the binary. Ordinary =cargo build= does not install it.
+The older dynamic loader remains available explicitly with
+=cargo run -p marlin-agent-tui --no-default-features -- path/to/config.toml=.
+It requires the compiled Scheme package and its SDK metadata; use
+=GERBIL_PATH= and =GERBIL_LOADPATH= when the package environment is not the
+default. From the repository root, when =GERBIL_PATH= is unset, this dynamic
+executable restarts with =scheme/.gerbil= as its package prefix. Rebuilding
+without default features replaces =target/debug/marlin-tui= with the slower
+dynamic artifact; rerun =just tui-aot-debug= before measuring the linked path.
 
 =just tui-aot-build= builds the selected Scheme package, compiles
 =scheme/tui-entry.ss=, stages the programme from =init.exports.std-make-spec=,
@@ -51,6 +55,13 @@ libraries such as OpenSSL, zlib, SQLite and iconv; distribute those alongside
 it where the target machine does not provide them. The build requires a paired
 Gerbil/Gambit compiler and pkg-config metadata for these libraries.
 Tab and Shift-Tab move focus forward and backward through the Scheme workbench.
+An admitted Scheme extension may supply up to 16 =text= or =field= items, each
+with strings of at most 256 characters. Focusing it shows a Ratatui panel to
+the right on wide terminals or in the transcript area on narrow terminals.
+The selected Scheme module owns component composition and event methods; Rust
+checks the typed snapshot, owns terminal rendering and authorizes effects.
+This is a bounded content slice, not a general dynamically loaded UI package
+system. Future native GUI renderers such as GPUI are an adapter direction only.
 In the transcript, Up and Down
 scroll; in commands, Enter opens the command editor. Ctrl-O remains available
 to open commands while keeping a draft.

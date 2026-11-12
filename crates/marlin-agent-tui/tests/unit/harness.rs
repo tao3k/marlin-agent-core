@@ -50,6 +50,9 @@ mod input_cases;
 mod journal_gateway;
 #[path = "journal_gateway.rs"]
 mod journal_gateway_cases;
+#[cfg(feature = "linked-ui")]
+#[path = "../../src/linked_ui.rs"]
+mod linked_ui;
 #[allow(dead_code)]
 #[path = "../../src/model_catalog.rs"]
 mod model_catalog;

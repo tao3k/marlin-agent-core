@@ -12,7 +12,12 @@
 (def ui (.get marlin-agent-core.init.exports Marlin ui))
 (def test-extension
   (.o (:: @ (.get ui components extension)) identity: 'test/extension
-      kind: 'extension label: "Test extension" focusable: #t))
+      kind: 'extension label: "Test extension" focusable: #t
+      content: (list
+                 (.o (:: @ (.get ui components text))
+                     kind: 'text text: "Scheme component body")
+                 (.o (:: @ (.get ui components field))
+                     kind: 'field label: "Source" value: "selected module"))))
 (def submit-event (.get ui events submit))
 (.defgeneric test-event (component event) (protocol (.get ui event-protocol)))
 (.defmethod-bundle test-methods (.get ui event-protocol)

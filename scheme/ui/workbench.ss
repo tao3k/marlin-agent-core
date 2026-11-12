@@ -10,6 +10,7 @@
 
 (def max-contributions 8)
 (def max-extensions 16)
+(def max-content-items 16)
 (def max-label-length 256)
 (def reserved-identities '(transcript composer status commands))
 
@@ -58,22 +59,41 @@
     (let (owned-label (string-copy label-value))
       (.o (:: @ UiStatusItem.) identity: identity-value kind: 'status-item label: owned-label))))
 
+(def (checked-content item)
+  (required-object item '(kind))
+  (cond
+   ((and (clos-instance? UiText. item) (eq? (.ref item 'kind) 'text))
+    (required-object item '(text))
+    (unless (bounded-label? (.ref item 'text)) (error "invalid UI text content"))
+    (seal-object! (.o (:: @ UiText.) kind: 'text text: (string-copy (.ref item 'text)))))
+   ((and (clos-instance? UiField. item) (eq? (.ref item 'kind) 'field))
+    (required-object item '(label value))
+    (unless (and (bounded-label? (.ref item 'label))
+                 (bounded-label? (.ref item 'value)))
+      (error "invalid UI field content"))
+    (seal-object! (.o (:: @ UiField.) kind: 'field
+                      label: (string-copy (.ref item 'label))
+                      value: (string-copy (.ref item 'value)))))
+   (else (error "unsupported UI content component"))))
+
 (def (checked-extension component)
-  (required-object component '(identity kind label focusable))
+  (required-object component '(identity kind label focusable content))
   (unless (and (clos-instance? UiExtension. component)
                (symbol? (.ref component 'identity))
                (not (memq (.ref component 'identity) reserved-identities))
                (eq? (.ref component 'kind) 'extension)
                (bounded-label? (.ref component 'label))
-               (boolean? (.ref component 'focusable)))
+               (boolean? (.ref component 'focusable))
+               (marlin-ui-bounded-list? (.ref component 'content) max-content-items))
     (error "invalid UI extension component"))
   ;; Snapshot presentation and focus fields without sealing the contributor's
   ;; object. Its prototype remains in the dispatch precedence list.
   (let ((identity-value (.ref component 'identity))
         (label-value (string-copy (.ref component 'label)))
-        (focusable-value (.ref component 'focusable)))
+        (focusable-value (.ref component 'focusable))
+        (content-value (map checked-content (.ref component 'content))))
     (seal-object! (.o (:: @ component) identity: identity-value kind: 'extension
-                      label: label-value focusable: focusable-value))))
+                      label: label-value focusable: focusable-value content: content-value))))
 
 ;;; Host facts are display data only. Transcript and composer are named regions
 ;;; whose contents and editing authority remain with their existing owners.

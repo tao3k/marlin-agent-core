@@ -301,18 +301,23 @@ package MarlinTuiArchitecture {
                    explicit Release PTY gate passes, but observations range
                    from 3.90 seconds after relinking to 118-129 milliseconds
                    on warm runs. Cold distribution qualification remains.
-                   Optional dynamic
-                   Scheme extensions retain their identity and admission.
+                   The selected compiled closure is now the default debug and
+                   release TUI path; dynamic loading requires an explicit
+                   no-default-features build. Optional external Scheme module
+                   admission is still unqualified.
                    If residual UI operations remain slow,
-                   slow, profile the residual macro, object and generic-method
+                   profile the residual macro, object and generic-method
                    work and lower only admitted semantics with equivalence
                    evidence; the removed PR 17 IR is no current dependency. */
         }
         part <'MAR-TUI-T17'> schemeUiExtensionPlane {
-            doc /* Proposed Gerbil/Yuanxu modules own UI component composition,
-                   keymaps and state transitions. They consume typed input and
-                   runtime facts and produce a component tree and typed intents.
-                   This does not claim sandboxing or an implemented UI engine. */
+            doc /* Selected Gerbil/Yuanxu modules own UI component composition
+                   and generic-method event dispatch. The current bounded
+                   extension projection admits text and field content with
+                   copied strings; Scheme does not paint terminal cells.
+                   Keyed local state, effects and wider widget composition
+                   remain target design. A future GPUI host may consume
+                   host-neutral semantics; no GPUI adapter is implemented. */
         }
         part <'MAR-TUI-T18'> typedUiBoundary {
             doc /* Proposed batched native projection validates component

@@ -15,6 +15,7 @@ name = "marlin-tui"
 path = "src/main.rs"
 
 [features]
+default = ["linked-ui"]
 linked-ui = ["dep:gerbil-scheme-sys", "dep:gerbil-scheme-aot-build", "gerbil-scheme/external-program", "marlin-agent-ui/linked-ui"]
 
 [dependencies]

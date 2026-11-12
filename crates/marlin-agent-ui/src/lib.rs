@@ -18,6 +18,7 @@ use gerbil_scheme::{
 const MAX_REGIONS: usize = 20;
 const MAX_STATUS: usize = 8;
 const MAX_EXTENSIONS: usize = 16;
+const MAX_CONTENT_ITEMS: usize = 16;
 const MAX_METHOD_BUNDLES: usize = 16;
 const MAX_COMMANDS: usize = 32;
 const MAX_TEXT_CHARS: usize = 256;
@@ -84,7 +85,15 @@ pub enum UiRegion {
         id: UiComponentId,
         label: String,
         focusable: bool,
+        content: Vec<UiContent>,
     },
+}
+
+/// Bounded, display-only content from a Scheme extension component.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum UiContent {
+    Text(String),
+    Field { label: String, value: String },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -642,16 +651,32 @@ pub fn decode_workbench(value: RootedSchemeObject<'_>) -> Result<UiWorkbench, Ui
                 UiRegion::Status(items)
             }
             "extension" if index >= 3 && index + 1 < regions.len() => {
-                let data = vector(payload, 2, 2)?;
+                let data = vector(payload, 3, 3)?;
                 let label = string(data.element(0)?)?;
                 let focusable = match data.element(1)?.as_ref().scalar()? {
                     SchemeScalar::Boolean(value) => value,
                     _ => return Err(UiProjectionError::Invalid("invalid focusable value")),
                 };
+                let entries = vector(data.element(2)?, 0, MAX_CONTENT_ITEMS)?;
+                let mut content = Vec::with_capacity(entries.len());
+                for item_index in 0..entries.len() {
+                    let item = vector(entries.element(item_index)?, 2, 3)?;
+                    let kind = identifier(item.element(0)?, &mut names)?;
+                    let value = match (kind.as_str(), item.len()) {
+                        ("text", 2) => UiContent::Text(string(item.element(1)?)?),
+                        ("field", 3) => UiContent::Field {
+                            label: string(item.element(1)?)?,
+                            value: string(item.element(2)?)?,
+                        },
+                        _ => return Err(UiProjectionError::Invalid("invalid UI content item")),
+                    };
+                    content.push(value);
+                }
                 UiRegion::Extension {
                     id,
                     label,
                     focusable,
+                    content,
                 }
             }
             _ => return Err(UiProjectionError::Invalid("invalid workbench region")),

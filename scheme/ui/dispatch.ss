@@ -11,6 +11,7 @@
         (only-in :yuanxu/poo-clos/method-bundle-syntax .defmethod-bundle)
         (only-in :yuanxu/poo-clos/dispatch poo-clos-call))
 (export UiComponent. UiWorkbench. UiTranscript. UiComposer. UiCommands. UiStatus. UiStatusItem. UiExtension.
+        UiText. UiField.
         UiEvent. UiNextFocus. UiPreviousFocus. UiSubmit. UiDismiss. UiScroll. UiBrowseCommand. UiEventProtocol make-ui-event-generic
         ui-event-dispatch)
 
@@ -22,6 +23,8 @@
 (.def (UiStatus. @ UiComponent.))
 (.def (UiStatusItem. @ UiComponent.))
 (.def (UiExtension. @ UiComponent.))
+(.def (UiText. @ UiComponent.))
+(.def (UiField. @ UiComponent.))
 (.def UiEvent.)
 (.def (UiNextFocus. @ UiEvent.))
 (.def (UiPreviousFocus. @ UiNextFocus.))

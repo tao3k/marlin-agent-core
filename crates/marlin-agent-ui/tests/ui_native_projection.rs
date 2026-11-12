@@ -7,8 +7,8 @@ use gerbil_scheme::{
     SchemeScalar,
 };
 use marlin_agent_ui::{
-    UiComponentId, UiIntent, UiOpenFacts, UiRegion, UiScrollDirection, UiStatusItem, decode_intent,
-    decode_workbench, prepare_open_request,
+    UiComponentId, UiContent, UiIntent, UiOpenFacts, UiRegion, UiScrollDirection, UiStatusItem,
+    decode_intent, decode_workbench, prepare_open_request,
 };
 
 fn vector<'a>(
@@ -168,7 +168,24 @@ fn sdk_roots_project_to_typed_ui_workbench() {
         ],
     );
     let focus = runtime.scalar_object(SchemeScalar::Boolean(true)).unwrap();
-    let extension = vector(&runtime, &[string(&runtime, "Workspace"), focus]);
+    let content = vector(
+        &runtime,
+        &[
+            vector(
+                &runtime,
+                &[symbol(&runtime, "text"), string(&runtime, "Preview")],
+            ),
+            vector(
+                &runtime,
+                &[
+                    symbol(&runtime, "field"),
+                    string(&runtime, "Mode"),
+                    string(&runtime, "Review"),
+                ],
+            ),
+        ],
+    );
+    let extension = vector(&runtime, &[string(&runtime, "Workspace"), focus, content]);
     let regions = vector(
         &runtime,
         &[
@@ -216,6 +233,14 @@ fn sdk_roots_project_to_typed_ui_workbench() {
     assert!(
         matches!(&workbench.regions[3], UiRegion::Extension { id, focusable: true, .. } if id.as_str() == "extension/example")
     );
+    assert!(matches!(
+        &workbench.regions[3],
+        UiRegion::Extension { content, .. }
+            if content == &vec![
+                UiContent::Text("Preview".into()),
+                UiContent::Field { label: "Mode".into(), value: "Review".into() }
+            ]
+    ));
     assert!(
         matches!(&workbench.regions[4], UiRegion::Status(items) if items[0].label == "Ready 🐟")
     );
@@ -236,6 +261,7 @@ fn sdk_roots_project_to_typed_ui_workbench() {
                     &[
                         string(&runtime, "duplicate"),
                         runtime.scalar_object(SchemeScalar::Boolean(true)).unwrap(),
+                        empty(),
                     ],
                 ),
             ),
@@ -252,6 +278,45 @@ fn sdk_roots_project_to_typed_ui_workbench() {
         ],
     );
     assert!(decode_workbench(duplicate_root).is_err());
+    let forged_content = vector(
+        &runtime,
+        &[vector(
+            &runtime,
+            &[symbol(&runtime, "effect"), string(&runtime, "run")],
+        )],
+    );
+    let forged_regions = vector(
+        &runtime,
+        &[
+            region(&runtime, "transcript", "transcript", empty()),
+            region(&runtime, "composer", "composer", empty()),
+            region(&runtime, "commands", "commands", empty()),
+            region(
+                &runtime,
+                "extension/forged",
+                "extension",
+                vector(
+                    &runtime,
+                    &[
+                        string(&runtime, "Forged"),
+                        runtime.scalar_object(SchemeScalar::Boolean(true)).unwrap(),
+                        forged_content,
+                    ],
+                ),
+            ),
+            region(&runtime, "status", "status", empty()),
+        ],
+    );
+    let forged_root = vector(
+        &runtime,
+        &[
+            string(&runtime, "model"),
+            string(&runtime, "session"),
+            forged_regions,
+            symbol(&runtime, "composer"),
+        ],
+    );
+    assert!(decode_workbench(forged_root).is_err());
     let regions = vector(
         &runtime,
         &[

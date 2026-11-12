@@ -15,6 +15,7 @@
       event-protocol: UiEventProtocol
       components: (.o base: UiComponent. workbench: UiWorkbench. transcript: UiTranscript.
                       composer: UiComposer. commands: UiCommands. status: UiStatus.
-                      status-item: UiStatusItem. extension: UiExtension.)
+                      status-item: UiStatusItem. extension: UiExtension.
+                      text: UiText. field: UiField.)
       events: (.o base: UiEvent. next-focus: UiNextFocus. previous-focus: UiPreviousFocus. submit: UiSubmit.
                   dismiss: UiDismiss. scroll: UiScroll. browse-command: UiBrowseCommand.)))

@@ -13,13 +13,20 @@
 
 (def UiIdentity (.cc Type. '.element? symbol?))
 (def UiContribution (Record identity: [UiIdentity] label: [String]))
-(def UiExtensionRegion
-  (Record identity: [UiIdentity] kind: [(Exactly 'extension)] label: [String] focusable: [Bool]))
+(def UiTextContent (Record kind: [(Exactly 'text)] text: [String]))
+(def UiFieldContent (Record kind: [(Exactly 'field)] label: [String] value: [String]))
 (def (bounded-list-type item-type limit)
   (let (items (List item-type))
     (.cc Type. '.element?
          (lambda (value)
            (and (marlin-ui-bounded-list? value limit) (element? items value))))))
+(def UiContent
+  (.cc Type. '.element?
+       (lambda (value)
+         (or (element? UiTextContent value) (element? UiFieldContent value)))))
+(def UiExtensionRegion
+  (Record identity: [UiIdentity] kind: [(Exactly 'extension)] label: [String] focusable: [Bool]
+          content: [(bounded-list-type UiContent 16)]))
 (def UiWorkbenchFacts
   (Record model: [String] session: [String] contributions: [(bounded-list-type UiContribution 8)]
           extensions: [(bounded-list-type UiExtensionRegion 16)]))

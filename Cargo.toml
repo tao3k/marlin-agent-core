@@ -156,6 +156,11 @@ split-debuginfo = "unpacked"
 [profile.dev.package."*"]
 debug = false
 
+# Keep the debug TUI's linked Scheme graph, but omit its large symbol table
+# from the executable loaded on every interactive launch.
+[profile.dev.package.marlin-agent-tui]
+strip = "symbols"
+
 # Build scripts and proc macros run during compilation. A small amount of
 # optimization here improves compile-time execution without making cold builds
 # expensive.

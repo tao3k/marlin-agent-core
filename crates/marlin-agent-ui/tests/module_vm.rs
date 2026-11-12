@@ -2,6 +2,8 @@
 //
 // SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
+#![cfg(not(feature = "linked-ui"))]
+
 use gerbil_scheme::GerbilRuntime;
 use marlin_agent_ui::{
     UiBrowseDirection, UiEvent, UiIntent, UiModule, UiOpenFacts, UiProjectionError,

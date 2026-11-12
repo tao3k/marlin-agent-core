@@ -504,6 +504,47 @@ fn linked_ui_opens_without_a_gerbil_package_tree() {
 
 #[cfg(feature = "linked-ui")]
 #[test]
+#[ignore = "requires ANTHROPIC_API_KEY and ANTHROPIC_BASE_URL for example.toml"]
+fn example_config_linked_debug_startup() {
+    let config = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("example.toml");
+    let mut terminal = Terminal::start(&config);
+    terminal.wait_for(Duration::from_secs(10), "example workbench", |output| {
+        contains(output, b"\x1b[?1049h") && screen_lines(output)[29].contains("Message: Enter send")
+    });
+    eprintln!(
+        "example workbench ready after {:?}",
+        terminal.start.elapsed()
+    );
+    terminal.send(b"\x11");
+    terminal.wait_exit(Duration::from_secs(5));
+    terminal.assert_restored();
+}
+
+#[cfg(feature = "linked-ui")]
+#[test]
+#[ignore = "diagnostic only: set MARLIN_TUI_DIAGNOSTIC_BINARY to an absolute executable path"]
+fn example_config_binary_diagnostic() {
+    let binary = std::path::PathBuf::from(
+        std::env::var_os("MARLIN_TUI_DIAGNOSTIC_BINARY").expect("diagnostic binary path"),
+    );
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let config = root.join("crates/marlin-agent-tui/example.toml");
+    let mut terminal = Terminal::start_in_binary(&binary, &config, &[], &[], 30, 100, &root);
+    terminal.wait_for(Duration::from_secs(10), "diagnostic workbench", |output| {
+        contains(output, b"\x1b[?1049h") && screen_lines(output)[29].contains("Message: Enter send")
+    });
+    eprintln!(
+        "diagnostic workbench ready after {:?} from {}",
+        terminal.start.elapsed(),
+        binary.display()
+    );
+    terminal.send(b"\x11");
+    terminal.wait_exit(Duration::from_secs(5));
+    terminal.assert_restored();
+}
+
+#[cfg(feature = "linked-ui")]
+#[test]
 #[ignore = "requires the linked Release artifact from just tui-aot-build"]
 fn release_linked_ui_first_frame_without_a_gerbil_package_tree() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
