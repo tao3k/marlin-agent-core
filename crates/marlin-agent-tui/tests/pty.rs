@@ -26,6 +26,8 @@ use std::{
 };
 use unicode_width::UnicodeWidthChar;
 
+#[path = "pty/live_provider.rs"]
+mod live_provider;
 #[path = "pty/session_replay.rs"]
 mod session_replay;
 

@@ -5577,7 +5577,7 @@ dependencies = [
 [[package]]
 name = "weaver-llm"
 version = "0.1.0"
-source = "git+https://github.com/hardenedlinux/weaver?rev=cea04974f4100402900842de417fdd598e1861ab#cea04974f4100402900842de417fdd598e1861ab"
+source = "git+https://github.com/hardenedlinux/weaver?rev=2cbb6bf7c6bcfddccde5105b809739323fa29d50#2cbb6bf7c6bcfddccde5105b809739323fa29d50"
 dependencies = [
  "async-stream",
  "base64 0.22.1",

@@ -37,7 +37,7 @@ package MarlinTuiArchitecture {
                    memory bounds are not established. */
         }
         part <'MAR-TUI-A14'> weaverConfiguration {
-            doc /* Marlin pins unmerged Weaver PR #4 revision cea04974, whose
+            doc /* Marlin pins unmerged Weaver PR #4 revision 2cbb6bf7, whose
                    prepared-profile API uses explicit configuration first and
                    Anthropic environment fallback. No context compression is
                    implied by this configuration. */

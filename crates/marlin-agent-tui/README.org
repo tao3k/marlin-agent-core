@@ -57,7 +57,7 @@ budget, or disabled), =effort= and =max_tokens=; see =example.toml=. A named
 model can use =[models.<alias>.anthropic]=. Weaver validates the settings and
 encodes the request. Model and provider support for these options varies.
 The Weaver dependency is pinned to PR #4 revision
-=cea04974f4100402900842de417fdd598e1861ab=; it has not yet merged to main.
+=2cbb6bf7c6bcfddccde5105b809739323fa29d50=; it has not yet merged to main.
 The Weaver adapter emits thinking fragments and retains Anthropic
 continuation blocks. The TUI permits a follow-up only when observed thinking
 and answer match the retained blocks; this checks consistency, not signature
@@ -360,3 +360,6 @@ checks the runtime policy receipt displayed by the terminal; the separate
 checks Anthropic environment configuration and two-turn request continuity.
 =cargo test -p marlin-agent-tui --test pty anthropic_thinking_continuation_survives_restart -- --ignored=
 checks signed thinking replay and rejection after a credential change.
+=MARLIN_PTY_LOCAL_PACKAGE=1 MARLIN_LIVE_PROVIDER=1 cargo test -p marlin-agent-tui --test pty configured_anthropic_provider_responds -- --ignored=
+sends one real request using =example.toml= and the Anthropic environment.
+It is a connectivity diagnostic with extended deadlines, not a startup benchmark.

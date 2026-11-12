@@ -589,7 +589,7 @@ the diagnostic binary and do not qualify a normal Bazel build.
 
 ** Weaver configuration ownership
 
-Weaver PR #4 revision =cea04974f4100402900842de417fdd598e1861ab= provides =Configuration= / =PreparedProfile=
+Weaver PR #4 revision =2cbb6bf7c6bcfddccde5105b809739323fa29d50= provides =Configuration= / =PreparedProfile=
 with explicit configuration first and Anthropic environment fallback for
 missing model, base URL and credential. Marlin pins this public, unmerged
 revision and uses the prepared profile. No context compression is introduced.
@@ -1194,6 +1194,16 @@ ordinary interrupted-stream tests passed locally. The strict startup gate and
 some five-second shutdown checks failed. The oversized-stream case also
 received the generic invalid-response outcome instead of the expected provider
 byte-limit outcome; its original assertion remains in the Rust test.
+Weaver PR #4 revision =2cbb6bf7= classifies the SSE decoder's explicit
+size-limit error as the existing =Limit= variant while retaining =Response=
+for invalid UTF-8. A split-boundary Rust regression failed before that change
+and passed afterwards; 21 non-policy Weaver library tests also passed. The
+full Weaver library run additionally encountered two existing ASP style-gate
+findings in =config.rs= and =anthropic_output.rs=. A downstream oversized PTY
+retry did not establish end-to-end limit behavior: the fixture's original
+ten-second socket-write limit expired before the full large frame was sent,
+and the client observed an incomplete response. Its limit assertion and the
+original timeout remain unchanged.
 
 ** Conversation journal in progress
 
@@ -1320,6 +1330,11 @@ was subsequently moved byte-for-byte to =tests/unit/storage_cases.rs=, retaining
 its module name and tests. The current TUI and storage policy checks passed;
 the storage unit suite passed eight tests, and the Turso conversation fixture
 passed three with one helper ignored. This is not a workspace-wide policy pass.
+
+The opt-in Rust PTY live-provider diagnostic passed once using the configured
+Anthropic-compatible environment, including response and normal exit; its test
+duration was 27.51 seconds. Its extended deadlines do not satisfy the separate
+ten-second startup acceptance or establish release startup performance.
 
 The local flood-cancellation fixture also passed once with a persisted session
 enabled, observing the local cancellation message after 0.023 seconds; it is

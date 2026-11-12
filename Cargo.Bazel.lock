@@ -1,5 +1,5 @@
 {
-  "checksum": "63e36564f4c32fa540b916c127e933d328ae726d9e0946714769960c23296fb9",
+  "checksum": "3e049fb963b61fcf3ec04877e6c7f68f03dcd3c5d2d57d3b4187ae350f543596",
   "crates": {
     "adler2 2.0.1": {
       "name": "adler2",
@@ -16297,6 +16297,29 @@
           ],
           "selects": {}
         },
+        "deps_dev": {
+          "common": [],
+          "selects": {
+            "cfg(unix)": [
+              {
+                "id": "nix 0.31.3",
+                "target": "nix"
+              },
+              {
+                "id": "rustix 1.1.6",
+                "target": "rustix"
+              },
+              {
+                "id": "tempfile 3.27.0",
+                "target": "tempfile"
+              },
+              {
+                "id": "turso 0.8.3",
+                "target": "turso"
+              }
+            ]
+          }
+        },
         "edition": "2024",
         "version": "0.1.0"
       },
@@ -19046,7 +19069,24 @@
             "process",
             "signal"
           ],
-          "selects": {}
+          "selects": {
+            "aarch64-apple-darwin": [
+              "default",
+              "term"
+            ],
+            "aarch64-unknown-linux-gnu": [
+              "default",
+              "term"
+            ],
+            "x86_64-unknown-linux-gnu": [
+              "default",
+              "term"
+            ],
+            "x86_64-unknown-nixos-gnu": [
+              "default",
+              "term"
+            ]
+          }
         },
         "deps": {
           "common": [
@@ -25093,7 +25133,20 @@
             "thread",
             "time"
           ],
-          "selects": {}
+          "selects": {
+            "aarch64-apple-darwin": [
+              "termios"
+            ],
+            "aarch64-unknown-linux-gnu": [
+              "termios"
+            ],
+            "x86_64-unknown-linux-gnu": [
+              "termios"
+            ],
+            "x86_64-unknown-nixos-gnu": [
+              "termios"
+            ]
+          }
         },
         "deps": {
           "common": [
@@ -34064,7 +34117,7 @@
         "Git": {
           "remote": "https://github.com/hardenedlinux/weaver",
           "commitish": {
-            "Rev": "cea04974f4100402900842de417fdd598e1861ab"
+            "Rev": "2cbb6bf7c6bcfddccde5105b809739323fa29d50"
           },
           "strip_prefix": "crates/llm"
         }
@@ -37745,10 +37798,13 @@
     "criterion 0.8.2",
     "futures-executor 0.3.34",
     "memoffset 0.9.1",
+    "nix 0.31.3",
     "reqwest 0.13.5",
+    "rustix 1.1.6",
     "sha2 0.10.9",
     "static_assertions 1.1.0",
-    "tempfile 3.27.0"
+    "tempfile 3.27.0",
+    "turso 0.8.3"
   ],
   "unused_patches": []
 }
