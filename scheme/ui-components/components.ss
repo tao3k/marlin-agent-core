@@ -26,7 +26,8 @@
 (def reserved-identities '(transcript composer status commands))
 (def modeline-identities
   '(modeline/left/brand modeline/left/model
-    modeline/left/activity modeline/right/session))
+    modeline/left/activity modeline/right/turns modeline/right/session
+    modeline/state/online modeline/state/offline modeline/state/unknown))
 
 (def (marlin-ui-modeline-node descriptor)
   (marlin-ui-required-object descriptor '(identity label compact tone active-tone))
@@ -40,7 +41,8 @@
                  (marlin-ui-bounded-label? compact-value)
                  (memq tone-value '(accent info success warning muted))
                  (memq active-tone-value '(accent info success warning muted))
-                 (if (memq identity-value '(modeline/left/model modeline/right/session))
+                 (if (memq identity-value '(modeline/left/model modeline/right/turns
+                                             modeline/right/session))
                    (and (equal? label-value "") (equal? compact-value ""))
                    (and (not (equal? label-value ""))
                         (not (equal? compact-value "")))))

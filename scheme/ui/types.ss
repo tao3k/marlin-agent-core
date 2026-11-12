@@ -33,7 +33,8 @@
 (def UiRegion (Record identity: [UiIdentity] kind: [UiIdentity]))
 (def UiWorkbench
   (Record identity: [(Exactly 'workbench)] kind: [(Exactly 'workbench)]
-          model: [String] session: [String] geometry-policy: [Object] regions: [(List UiRegion)]
+          model: [String] session: [String] geometry-policy: [Object]
+          theme-palette: [Object] regions: [(List UiRegion)]
           focus-order: [(List UiIdentity)]))
 (def UiNativeProjection (.cc Type. '.element? vector?))
 (def UiMethodBundles (.cc Type. '.element?

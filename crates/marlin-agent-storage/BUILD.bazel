@@ -7,7 +7,6 @@ load("//bazel:marlin_rust.bzl", "marlin_rust_crate", "marlin_rust_scenario")
 
 _INTEGRATION_SOURCES = [
     "tests/integration_test.rs",
-    "//build-support/marlin-rust-project-harness-policy:policy_sources",
 ] + glob(["tests/integration/**/*.rs"])
 
 _INTEGRATION_BASE_DEPS = crate_deps([

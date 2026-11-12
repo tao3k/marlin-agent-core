@@ -1632,6 +1632,17 @@ the admitted policy. This moves presentation choices out of =render.rs=
 without invoking Scheme on each frame. The Rust adapter still measures text,
 handles terminal input, owns the viewport cache and paints cells.
 
+The selected =ui-themes= Module now owns the default =doom-one= palette.
+It derives the canvas, foreground and semantic accents from
+[[https://github.com/doomemacs/themes/blob/a59202912ad55014e53a685eee6cd94130bdd4fd/themes/doom-one-theme.el][Doom One]]
+(upstream [[https://github.com/doomemacs/themes/blob/a59202912ad55014e53a685eee6cd94130bdd4fd/LICENSE][MIT license]]); Marlin chooses its own compact Modeline bar shade.
+The theme travels as eight RGB triples through the selected UI snapshot.
+The native boundary validates each channel before Ratatui paints the canvas,
+Modeline, focused border and command emphasis. A focus event cannot exchange
+the admitted palette, and rendering does not call Scheme per frame. Theme
+selection from the TUI remains an open interaction; the module currently
+publishes one default theme.
+
 The project verification entry is =just property-gate=. It validates the
 MAR-UI-R10/R11 SysML requirements, the bounded Quint control model, POO Type
 generated Scheme status inputs, the typed native projection and Rust layout

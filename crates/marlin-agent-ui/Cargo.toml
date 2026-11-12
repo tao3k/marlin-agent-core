@@ -12,6 +12,22 @@ authors.workspace = true
 repository.workspace = true
 publish = false
 
+[[test]]
+name = "policy"
+path = "tests/unit/policy.rs"
+
+[[test]]
+name = "module_vm"
+path = "tests/unit/module_vm.rs"
+
+[[test]]
+name = "ui_native_projection"
+path = "tests/unit/ui_native_projection.rs"
+
+[[test]]
+name = "ui_semantics"
+path = "tests/unit/ui_semantics.rs"
+
 [features]
 linked-ui = []
 
@@ -19,5 +35,5 @@ linked-ui = []
 gerbil-scheme.workspace = true
 
 [dev-dependencies]
-# The shared ASP Rust policy checks this renderer-neutral UI protocol package.
+# The shared ASP Rust gate is mounted by the library's Cargo test target.
 marlin-rust-project-harness-policy = { path = "../../build-support/marlin-rust-project-harness-policy" }

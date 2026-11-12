@@ -5,11 +5,12 @@
 //! Terminal frame projection for the active conversation or workspace view.
 
 use super::{
-    app::App,
+    app::{App, GatewayObservation},
     viewport::{ScrollAnchor, TranscriptViewportCache},
 };
 use marlin_agent_ui::{
-    UiCommandName, UiContent, UiLayoutPolicy, UiRegion, UiStatusItem, UiStatusTone, UiWorkbench,
+    UiCommandName, UiContent, UiLayoutPolicy, UiRegion, UiRgb, UiStatusItem, UiStatusTone, UiTheme,
+    UiWorkbench,
 };
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
@@ -32,6 +33,10 @@ fn display_value(value: &str, limit: usize) -> String {
 
 fn header_value(value: &str) -> String {
     display_value(value, 128)
+}
+
+fn rgb(color: UiRgb) -> Color {
+    Color::Rgb(color.red, color.green, color.blue)
 }
 
 pub(crate) fn chatbox_height(app: &App, policy: &UiLayoutPolicy, width: u16, height: u16) -> u16 {
@@ -80,11 +85,12 @@ fn draw_extension_content(
     area: Rect,
     label: &str,
     content: &[UiContent],
+    theme: &UiTheme,
 ) {
     let block = Block::default()
         .borders(Borders::ALL)
         .title(format!(" {} ", header_value(label)))
-        .border_style(Style::default().fg(Color::Cyan));
+        .border_style(Style::default().fg(rgb(theme.info)));
     let inner = block.inner(area);
     frame.render_widget(block, area);
     let lines: Vec<Line<'static>> = content
@@ -94,7 +100,7 @@ fn draw_extension_content(
             UiContent::Field { label, value } => Line::from(vec![
                 Span::styled(
                     format!("{}: ", display_value(label, 256)),
-                    Style::default().fg(Color::Cyan),
+                    Style::default().fg(rgb(theme.info)),
                 ),
                 Span::raw(display_value(value, 256)),
             ]),
@@ -111,25 +117,36 @@ fn draw_modeline(
     items: &[UiStatusItem],
 ) {
     let slot = |name| items.iter().find(|item| item.id.as_str() == name);
-    let (Some(brand), Some(model_slot), Some(activity_slot), Some(session_slot)) = (
+    let (Some(brand), Some(model_slot), Some(activity_slot), Some(turns_slot), Some(session_slot)) = (
         slot("modeline/left/brand"),
         slot("modeline/left/model"),
         slot("modeline/left/activity"),
+        slot("modeline/right/turns"),
         slot("modeline/right/session"),
     ) else {
         return;
     };
-    let base = Style::default().bg(Color::Rgb(29, 31, 39));
+    let base = Style::default().bg(rgb(ui.theme.bar)).fg(rgb(ui.theme.ink));
     let runtime_activity = if app.workspace.view().is_some() {
         "Workspace"
     } else {
         app.activity_label()
     };
-    let activity = if runtime_activity == "Idle" {
+    let observed = if runtime_activity == "Idle" {
+        match app.gateway_observation {
+            GatewayObservation::Unchecked => Some(activity_slot),
+            GatewayObservation::Online => slot("modeline/state/online"),
+            GatewayObservation::Offline => slot("modeline/state/offline"),
+            GatewayObservation::Unknown => slot("modeline/state/unknown"),
+        }
+    } else {
+        None
+    };
+    let activity = if let Some(observed) = observed {
         if area.width >= 64 {
-            activity_slot.label.as_str()
+            observed.label.as_str()
         } else {
-            activity_slot.compact_label.as_str()
+            observed.compact_label.as_str()
         }
     } else {
         runtime_activity
@@ -139,32 +156,47 @@ fn draw_modeline(
     } else {
         &brand.label
     };
-    let right = if area.width >= 40 {
+    let session = if area.width >= 44 {
         format!(" {} ", header_value(&ui.session_label))
     } else {
         String::new()
     };
+    let turns = if area.width >= 72 && app.history.len() >= 2 {
+        format!("⟳{}  ", app.history.len() / 2)
+    } else {
+        String::new()
+    };
+    let right = format!("{turns}{session}");
     let right_width =
         UnicodeWidthStr::width(right.as_str()).min(usize::from(area.width / 3)) as u16;
     let model = format!("  {}  ", header_value(&ui.model_label));
     let brand_text = format!(" {} ", header_value(brand_text));
     let essential_width = UnicodeWidthStr::width(brand_text.as_str())
+        + 1
         + UnicodeWidthStr::width(format!("│ {activity} ").as_str());
     let show_model = essential_width + UnicodeWidthStr::width(model.as_str())
         <= usize::from(area.width.saturating_sub(right_width));
-    let mut left = vec![Span::styled(
-        brand_text,
-        base.fg(tone_color(brand.tone)).add_modifier(Modifier::BOLD),
-    )];
+    let mut left = vec![
+        Span::styled(
+            brand_text,
+            base.bg(tone_color(brand.tone, &ui.theme))
+                .fg(rgb(ui.theme.canvas))
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled("▸", base.fg(tone_color(brand.tone, &ui.theme))),
+    ];
     if show_model {
-        left.push(Span::styled(model, base.fg(tone_color(model_slot.tone))));
+        left.push(Span::styled(
+            model,
+            base.fg(tone_color(model_slot.tone, &ui.theme)),
+        ));
     }
     left.push(Span::styled(
         format!("│ {activity} "),
-        base.fg(if runtime_activity == "Idle" {
-            tone_color(activity_slot.tone)
+        base.fg(if let Some(observed) = observed {
+            tone_color(observed.tone, &ui.theme)
         } else {
-            tone_color(activity_slot.active_tone)
+            tone_color(activity_slot.active_tone, &ui.theme)
         }),
     ));
     frame.render_widget(
@@ -173,7 +205,11 @@ fn draw_modeline(
     );
     if right_width > 0 {
         frame.render_widget(
-            Paragraph::new(right).style(base.fg(tone_color(session_slot.tone))),
+            Paragraph::new(Line::from(vec![
+                Span::styled(turns, base.fg(tone_color(turns_slot.tone, &ui.theme))),
+                Span::styled(session, base.fg(tone_color(session_slot.tone, &ui.theme))),
+            ]))
+            .style(base),
             Rect::new(
                 area.x + area.width - right_width,
                 area.y,
@@ -184,13 +220,13 @@ fn draw_modeline(
     }
 }
 
-fn tone_color(tone: UiStatusTone) -> Color {
+fn tone_color(tone: UiStatusTone, theme: &UiTheme) -> Color {
     match tone {
-        UiStatusTone::Accent => Color::Rgb(150, 115, 230),
-        UiStatusTone::Info => Color::Cyan,
-        UiStatusTone::Success => Color::Green,
-        UiStatusTone::Warning => Color::Yellow,
-        UiStatusTone::Muted => Color::Gray,
+        UiStatusTone::Accent => rgb(theme.accent),
+        UiStatusTone::Info => rgb(theme.info),
+        UiStatusTone::Success => rgb(theme.success),
+        UiStatusTone::Warning => rgb(theme.warning),
+        UiStatusTone::Muted => rgb(theme.muted),
     }
 }
 
@@ -202,6 +238,12 @@ pub(crate) fn draw(
     anchor: &mut ScrollAnchor,
 ) -> usize {
     let area = frame.area();
+    frame.buffer_mut().set_style(
+        area,
+        Style::default()
+            .bg(rgb(ui.theme.canvas))
+            .fg(rgb(ui.theme.ink)),
+    );
     // The transcript can end in a separator row, so reserve two rows when
     // possible. Bound measurement for large drafts.
     let transcript_rows = ui
@@ -292,10 +334,10 @@ pub(crate) fn draw(
                     Constraint::Length(ui.layout.extension_panel_columns),
                 ])
                 .split(parts[0]);
-            draw_extension_content(frame, columns[1], label, content);
+            draw_extension_content(frame, columns[1], label, content, &ui.theme);
             Some(columns[0])
         } else if focused_content.is_some() {
-            draw_extension_content(frame, parts[0], label, content);
+            draw_extension_content(frame, parts[0], label, content, &ui.theme);
             None
         } else {
             Some(parts[0])
@@ -350,7 +392,7 @@ pub(crate) fn draw(
         .title(title)
         .border_style(
             if ui.focus.as_str() == "composer" || app.command_draft.is_some() {
-                Style::default().fg(Color::Cyan)
+                Style::default().fg(rgb(ui.theme.info))
             } else {
                 Style::default()
             },
@@ -387,7 +429,7 @@ pub(crate) fn draw(
             command.name.as_str(),
             header_value(&command.description)
         );
-        let style = Style::default().fg(Color::Cyan);
+        let style = Style::default().fg(rgb(ui.theme.info));
         let style = if selected == Some(&command.name) {
             style.add_modifier(Modifier::BOLD)
         } else {
@@ -410,7 +452,7 @@ pub(crate) fn draw(
                 ratatui::layout::Rect::new(parts[2].x, parts[2].y + row as u16, parts[2].width, 1);
             let style = if is_focused {
                 Style::default()
-                    .fg(Color::Cyan)
+                    .fg(rgb(ui.theme.info))
                     .add_modifier(Modifier::BOLD)
             } else {
                 Style::default()

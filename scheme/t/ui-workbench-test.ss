@@ -20,12 +20,14 @@
 (def ui (.get marlin-agent-core.init.exports Marlin ui))
 (def ui-components (.get marlin-agent-core.init.exports Marlin ui-components))
 (def ui-modeline (.get marlin-agent-core.init.exports Marlin ui-modeline))
+(def ui-themes (.get marlin-agent-core.init.exports Marlin ui-themes))
 (def command-names
   (map car ((.get ui-components command-entries)
             (.get ui-components command-catalog))))
 (def c-abi (.get marlin-agent-core.init.exports Marlin c-abi))
 (unless (and (eq? (.get ui-components identity) 'marlin/ui-components)
              (eq? (.get ui-modeline identity) 'marlin/ui-modeline)
+             (eq? (.get ui-themes identity) 'marlin/ui-themes)
              (eq? (.get ui components) (.get ui-components components))
              (equal? command-names
                      '("/help" "/models" "/model" "/sessions" "/session"
@@ -45,19 +47,21 @@
                      '(transcript composer commands status))
              (equal? (map (lambda (node) (.get node identity))
                           (.get (list-ref (.get output regions) 3) children))
-                     '(modeline/left/brand modeline/left/model
-                       modeline/left/activity modeline/right/session example/status)))
+                     '(modeline/left/brand modeline/left/model modeline/left/activity
+                       modeline/right/turns modeline/right/session
+                       modeline/state/online modeline/state/offline
+                       modeline/state/unknown example/status)))
   (error "UI workbench publication failed"))
 (let* ((items (.get (list-ref (.get output regions) 3) children))
        (brand (list-ref items 0))
        (activity (list-ref items 2))
-       (host (list-ref items 4)))
+       (host (list-ref items 8)))
   (unless (and (equal? (.get brand label) "🐟 MARLIN")
                (equal? (.get brand compact) "🐟")
                (eq? (.get brand tone) 'accent)
-               (equal? (.get activity label) "Gateway configured")
-               (equal? (.get activity compact) "Ready")
-               (eq? (.get activity tone) 'success)
+               (equal? (.get activity label) "🟡 Ready")
+               (equal? (.get activity compact) "🟡")
+               (eq? (.get activity tone) 'info)
                (eq? (.get activity active-tone) 'warning)
                (eq? (.get host tone) 'muted))
     (error "Scheme modeline presentation was not selected")))
@@ -74,11 +78,13 @@
                    (lambda () (workbench (facts (status-entries count status-identities))))))
         (if (<= count 8)
           (and view
-               (= (length (.get (list-ref (.get view regions) 3) children)) (+ 4 count))
+               (= (length (.get (list-ref (.get view regions) 3) children)) (+ 8 count))
                (equal? (map (lambda (node) (.get node identity))
                             (.get (list-ref (.get view regions) 3) children))
                        (append '(modeline/left/brand modeline/left/model
-                                 modeline/left/activity modeline/right/session)
+                                 modeline/left/activity modeline/right/turns
+                                 modeline/right/session modeline/state/online
+                                 modeline/state/offline modeline/state/unknown)
                                (let loop ((remaining count) (names status-identities))
                                  (if (= remaining 0) '()
                                    (cons (car names) (loop (- remaining 1) (cdr names))))))))
@@ -90,7 +96,7 @@
 (let* ((entries (map (lambda (id) (.o identity: id label: "ok"))
                      '(a b c d e f g h)))
        (accepted (workbench (facts entries))))
-  (unless (and (= (length (.get (list-ref (.get accepted regions) 3) children)) 12)
+  (unless (and (= (length (.get (list-ref (.get accepted regions) 3) children)) 16)
                (rejected? (lambda () (workbench
                                       (facts (append entries (list (.o identity: 'i label: "ok"))))))))
     (error "UI contribution limit boundary failed")))
@@ -164,6 +170,7 @@
       (.o kind: 'extension-handled)))
   (poo-clos-compose-method-bundle generic ExtensionMethods)
   (unless (and (equal? (vector-ref projected 3) '#(2 10 4 100 36))
+               (equal? (vector-ref (vector-ref projected 4) 3) '#(198 120 221))
                (not (eq? (list-ref regions 3) extension))
                (equal? (.get view focus-order) '(transcript composer commands extension/editor))
                (eq? (.get ((.get ui dispatch) generic (list-ref regions 2) event) identity)
@@ -263,7 +270,7 @@
   (unless (and (equal? (vector-ref projected 0) "anthropic/example")
                (= (vector-length regions) 4)
                (eq? (vector-ref (vector-ref regions 0) 0) 'transcript)
-               (equal? (vector-ref (vector-ref (vector-ref status 2) 4) 2) "Ready"))
+               (equal? (vector-ref (vector-ref (vector-ref status 2) 8) 2) "Ready"))
     (error "UI native projection lost component data")))
 (unless (rejected? (lambda () (marlin-ui-native-facts #("bad"))))
   (error "malformed UI native request accepted"))

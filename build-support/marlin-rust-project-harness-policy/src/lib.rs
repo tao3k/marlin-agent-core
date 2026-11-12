@@ -2,4 +2,11 @@
 //
 // SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
-//! Marlin workspace development policy is exercised by the Cargo development targets.
+//! Shared, test-only ASP Rust policy for the Marlin Cargo workspace.
+
+#[doc(hidden)]
+pub use asp_rust;
+
+mod policy;
+
+pub use policy::workspace_policy;

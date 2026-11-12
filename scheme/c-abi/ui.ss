@@ -51,11 +51,11 @@
   (let* ((current (checked-session input))
          (ui (.get current ui))
          (projection ((.get ui project-workbench) (.get current workbench))))
-    (unless (and (vector? projection) (= (vector-length projection) 4))
+    (unless (and (vector? projection) (= (vector-length projection) 5))
       (error "invalid UI workbench projection"))
     (vector (vector-ref projection 0) (vector-ref projection 1)
             (vector-ref projection 2) (.get current focus)
-            (vector-ref projection 3))))
+            (vector-ref projection 3) (vector-ref projection 4))))
 
 ;;; Refresh only owner-supplied display facts, retaining components and generic.
 ;;; Construct a fresh workbench directly so repeated updates do not build an
@@ -75,6 +75,7 @@
                    identity: (.get old identity) kind: (.get old kind)
                    model: (string-copy model-value) session: (string-copy session-label)
                    geometry-policy: (.get old geometry-policy)
+                   theme-palette: (.get old theme-palette)
                    regions: (.get old regions) focus-order: (.get old focus-order)))
       (session ui (.get current generic) next (.get current focus)))))
 

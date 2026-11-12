@@ -18,10 +18,10 @@ ASP Rust checks package quality through the
 =just rust-dev-gate= applies that policy to each Cargo package. Package quality
 findings stay in the engineering evidence surfaced by that command.
 
-Agents may read the structured receipts produced by the Rust project harness
-policy as repair evidence, but that does not transfer ownership. The Rust
-project harness policy owns engineering quality findings, verification
-obligations, improvement queues, and per-package development gates. The agent
+Agents may read the structured receipts produced by ASP Rust as repair
+evidence, but that does not transfer ownership. ASP Rust owns engineering
+quality findings and verification obligations. Marlin's Build Support crate
+only supplies the shared policy and Cargo test macros. The agent
 harness owns runtime scenarios, fake providers, transcript replay, loop
 evidence, and assertions over agent protocol receipts.
 

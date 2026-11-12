@@ -13,8 +13,8 @@ mod runtime;
 
 pub use model::{
     UiBrowseDirection, UiCommand, UiCommandName, UiComponentId, UiContent, UiEvent, UiIntent,
-    UiLayoutPolicy, UiOpenFacts, UiProjectionError, UiRegion, UiScrollDirection, UiStatusItem,
-    UiStatusTone, UiWorkbench,
+    UiLayoutPolicy, UiOpenFacts, UiProjectionError, UiRegion, UiRgb, UiScrollDirection,
+    UiStatusItem, UiStatusTone, UiTheme, UiWorkbench,
 };
 pub use projection::{decode_intent, decode_workbench};
 pub use runtime::{

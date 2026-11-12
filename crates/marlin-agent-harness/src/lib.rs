@@ -8,10 +8,8 @@
 //! behavior, sub-agent/session isolation, hook replay, runtime visibility,
 //! graph-policy receipts, and no-LLM deterministic scenario execution.
 //!
-//! It is intentionally separate from the Rust project harness in
-//! `build-support/marlin-rust-project-harness-policy`, which owns package
-//! engineering quality gates, build-script receipts, CI evidence, and Rust
-//! project evidence graphs.
+//! ASP Rust owns package engineering checks. Marlin's Build Support crate
+//! only mounts that policy from Cargo development targets.
 
 mod assertion;
 mod evidence;

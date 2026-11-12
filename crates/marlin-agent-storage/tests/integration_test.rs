@@ -20,10 +20,8 @@ mod memory_topology_projection_gate;
 mod org_memory_storage_gate;
 #[path = "integration/paths.rs"]
 mod paths;
-#[path = "../../../build-support/marlin-rust-project-harness-policy/tests/support/mod.rs"]
-pub mod policy;
-#[path = "integration/rfcdb_evidence_graph_gate.rs"]
-mod rfcdb_evidence_graph_gate;
+#[path = "integration/rfcdb_asp_report_gate.rs"]
+mod rfcdb_asp_report_gate;
 #[path = "integration/scenario_performance_contract_gate.rs"]
 mod scenario_performance_contract_gate;
 #[path = "integration/schema_development_baseline_gate.rs"]

@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
 #[allow(dead_code)]
-#[path = "../../src/app.rs"]
+#[path = "../../src/app/mod.rs"]
 mod app;
 #[path = "app_cases.rs"]
 mod app_cases;

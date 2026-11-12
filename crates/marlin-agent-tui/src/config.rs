@@ -2,6 +2,8 @@
 //
 // SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
+//! Typed terminal configuration and model route selection.
+
 use std::{
     collections::BTreeMap,
     env, fs,
@@ -34,6 +36,7 @@ pub struct Config {
     pub timeout_seconds: u64,
 }
 
+/// Persistent session identity and local storage location.
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SessionConfig {
@@ -43,6 +46,7 @@ pub struct SessionConfig {
     pub agent: String,
 }
 
+/// Supported wire protocol for a configured model route.
 #[derive(Clone, Copy, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum WireProtocol {
@@ -51,6 +55,7 @@ pub enum WireProtocol {
     Anthropic,
 }
 
+/// One named model route with its own provider and credentials.
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ModelProfile {

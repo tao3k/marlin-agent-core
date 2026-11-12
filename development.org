@@ -80,19 +80,15 @@ attributes rather than bare Rust ~mod helper;~ declarations.
 Root ~build.rs~, when present, is scanned by the project harness and should stay
 a thin Cargo build-script entrypoint.
 
-Intentional non-standard test roots or directories belong in
-~tests/rust-project-harness-rules.toml~, and each entry must carry a non-empty
-~explanation~.
+Rust test targets use explicit Cargo paths under ~tests/unit~ or
+~tests/integration~. ASP Rust reads the owning Cargo workspace graph.
 
 * Policy closure
 
-Default project assertions block on ~Warning~ and ~Error~. ~AGENT-*~ rules stay
-~Info~: rendered by default as repair advice, but non-blocking unless a caller
-opts into stricter severity selection.
-
-The ~marlin-workspace-package-gate~ command prints a workspace receipt after
-all packages pass. Its policy and receipt tests live under ~tests/unit~ and
-are mounted by the existing ~tests/unit_test.rs~ target.
+~just rust-dev-gate~ mounts ASP Rust's workspace Dev Gate through the thin
+Build Support policy. Member crates mount package-local gates through
+~dev-dependencies~ and explicit Cargo test targets. The native gate fails on
+configured blocking findings and on unaddressed agent repair advice.
 
 * Renderer snapshots
 

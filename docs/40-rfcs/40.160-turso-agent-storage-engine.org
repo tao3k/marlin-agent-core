@@ -1239,30 +1239,22 @@ gate work.
 
 The current typed boundary runs through development targets:
 
-- =just rust-dev-gate= runs the ASP Rust package scans across the Cargo
-  workspace. Storage uses ASP Rust through its integration tests.
-- =run_marlin_rust_project_harness_for_package= parses the supplied
-  =Cargo.toml= and delegates to ASP Rust with package scope.
-- Package evidence and performance/stability receipts are exercised by
-  independently addressable integration-test targets, including
-  =package_evidence_graph_receipt_is_owned_by_build_support=.
-
-The next build-graph step is to give each package an explicit gate target in a
-workspace gate runner and then delete build scripts that contain no native
-build action.  Until that target ownership is present, the lightweight
-=build.rs= check remains the enforcement point and must not be replaced by an
-allowlist or a skipped receipt.
+- =just rust-dev-gate= runs ASP Rust's native workspace Dev Gate through a
+  single Cargo test target. Storage uses ASP Rust directly in integration tests.
+- Package reports and scenario benchmark contracts are exercised by their
+  owning Cargo tests. Build Support no longer parses Cargo metadata or
+  reprojects ASP Rust reports into another policy graph.
 
 Verification commands:
-#+begin_quote
-Correction: the workspace package-gate runner does not replace package-local Harness enforcement. The two layers have separate, permanent responsibilities. =marlin-workspace-package-gate= gives CI, Cargo, and a future Bazel projection one explicit aggregate target and receipt. Every package keeps =marlin-rust-project-harness-policy.workspace = true= and its lightweight =build.rs= hook so local builds cannot bypass the 1000-line modularity warning. Native or generated build scripts, including Gerbil runtime asset generation, compose their build action with that same check. The earlier proposal to delete policy-only package hooks is superseded by this dual-layer contract.
-#+end_quote
+The earlier dual-runner policy design is retired. Build Support mounts ASP
+Rust's native test-only gate; production build scripts keep only native build
+actions.
 
 #+begin_src sh
 direnv exec . bazelisk version
 direnv exec . cargo check -p marlin-agent-storage --all-targets --locked
 direnv exec . cargo check -p marlin-agent-storage --features turso --lib --locked
-direnv exec . cargo test -p marlin-rust-project-harness-policy package_evidence_graph_receipt_is_owned_by_build_support --locked
+direnv exec . cargo test -p marlin-rust-project-harness-policy --test workspace_policy --locked
 #+end_src
 
 The =turso= and =turso-sync= feature boundaries are compiled separately.

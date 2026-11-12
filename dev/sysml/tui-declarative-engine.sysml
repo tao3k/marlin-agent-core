@@ -12,10 +12,11 @@ package MarlinDeclarativeUi {
                Reference products inform requirements, not identity,
                component structure, authority or an obligation to copy visuals. */
         part <'MAR-UI-T02'> modulePublication {
-            doc /* Selected Yuanxu ui-components, ui-modeline, ui-layout and ui Modules
+            doc /* Selected Yuanxu ui-components, ui-modeline, ui-themes,
+                   ui-layout and ui Modules
                    publish the component vocabulary, command catalog, modeline
                    slots, UI scope and ordered extension contributions. UI
-                   requires component, modeline and layout scopes and composes
+                   requires component, modeline, theme and layout scopes and composes
                    their constructors through selected dependencies.
                    The existing VM owner
                    resolves and retains that scope; a name or a caller-supplied
@@ -242,6 +243,15 @@ package MarlinDeclarativeUi {
                the same admitted policy without calling the VM per frame. A UI
                successor cannot substitute another policy through an event. */
     }
+    requirement <'MAR-UI-R13'> selectedSemanticTheme {
+        doc /* A selected ui-themes Module publishes one named palette as
+               Scheme integer RGB triples. The UI projection admits exactly
+               the declared semantic colors and valid 0..255 channels before
+               publication. Ratatui applies canvas, Modeline and focus tones
+               from the same snapshot; focus successors retain that theme.
+               Theme choice must not alter effect authority or require a VM
+               call per frame. Doom One is an attributed visual reference. */
+    }
 
     allocation extensions allocate composableExtensions to engine.modulePublication;
     allocation specialization allocate composableExtensions to engine.functionalComposition;
@@ -259,6 +269,8 @@ package MarlinDeclarativeUi {
     allocation uiPropertyQualification allocate reproducibleUiProperties to engine.qualification;
     allocation selectedGeometry allocate selectedLayoutPolicy to engine.modulePublication;
     allocation clippedGeometry allocate selectedLayoutPolicy to engine.terminalHost;
+    allocation selectedPalette allocate selectedSemanticTheme to engine.modulePublication;
+    allocation paintedPalette allocate selectedSemanticTheme to engine.terminalHost;
 
     attribute def BeginUpdate;
     attribute def CandidateReady;

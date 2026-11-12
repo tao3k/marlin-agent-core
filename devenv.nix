@@ -66,9 +66,13 @@ in
     pkgs.bazelisk
     pkgs.buildifier
     pkgs.libiconv
+    pkgs.libffi
     pkgs.lean4
+    pkgs.openssl
     pkgs.pkg-config
     pkgs.protobuf
+    pkgs.sqlite
+    pkgs.zlib
     pkgs.just
   ];
 

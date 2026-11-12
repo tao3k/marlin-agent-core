@@ -14,6 +14,14 @@ repository.workspace = true
 name = "marlin-tui"
 path = "src/main.rs"
 
+[[test]]
+name = "policy"
+path = "tests/unit/policy.rs"
+
+[[test]]
+name = "pty"
+path = "tests/integration/pty.rs"
+
 [features]
 default = ["linked-ui"]
 linked-ui = ["dep:gerbil-scheme-sys", "dep:gerbil-scheme-aot-build", "gerbil-scheme/external-program", "marlin-agent-ui/linked-ui"]
@@ -45,7 +53,7 @@ weaver-llm.workspace = true
 gerbil-scheme-aot-build = { workspace = true, optional = true }
 
 [dev-dependencies]
-# `just rust-dev-gate` applies this shared ASP Rust policy to the TUI package.
+# The shared ASP Rust gate is mounted by tests/unit/policy.rs.
 marlin-rust-project-harness-policy = { path = "../../build-support/marlin-rust-project-harness-policy" }
 proptest.workspace = true
 ratatui = { version = "=0.30.2", default-features = false, features = ["unstable-rendered-line-info"] }

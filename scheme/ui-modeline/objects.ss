@@ -10,9 +10,13 @@
 (.def UiModelineBase.
   slots: '((modeline/left/brand "🐟 MARLIN" "🐟" accent accent)
            (modeline/left/model "" "" info info)
-           (modeline/left/activity "Gateway configured" "Ready" success warning)))
+           (modeline/left/activity "🟡 Ready" "🟡" info warning)))
 (.def UiModelineSession.
-  (slots => append '((modeline/right/session "" "" muted muted))))
+  (slots => append '((modeline/right/turns "" "" info info)
+                     (modeline/right/session "" "" muted muted)
+                     (modeline/state/online "🟢 Online" "🟢" success success)
+                     (modeline/state/offline "🔴 Offline" "🔴" warning warning)
+                     (modeline/state/unknown "🟠 Unknown" "🟠" warning warning))))
 (def modeline-catalog
   (seal-object! (.mix UiModelineSession. UiModelineBase.)))
 

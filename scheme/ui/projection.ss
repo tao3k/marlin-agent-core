@@ -4,7 +4,7 @@
 
 ;;; Structured native projection of the selected UI publication. This is a
 ;;; vector of Scheme values, not a text serialization or a terminal command.
-(import (only-in :clan/poo/object .get .o)
+(import (only-in :clan/poo/object .get .o .ref)
         (only-in :std/list/list find)
         (only-in :yuanxu/poo-clos/types clos-instance?))
 (export marlin-ui-native-facts marlin-ui-project-workbench marlin-ui-apply-native
@@ -62,7 +62,11 @@
           (let (policy (.get workbench geometry-policy))
             (vector (.get policy min-transcript-rows) (.get policy max-chatbox-rows)
                     (.get policy max-command-rows) (.get policy extension-column-min)
-                    (.get policy extension-panel-columns)))))
+                    (.get policy extension-panel-columns)))
+          (let (palette (.get workbench theme-palette))
+            (list->vector
+             (map (lambda (name) (list->vector (.ref palette name)))
+                  '(canvas ink bar accent info success warning muted))))))
 
 ;;; The caller supplies the already-linked scope, so extensions and admission
 ;;; remain owned by the Module System rather than a private default instance.

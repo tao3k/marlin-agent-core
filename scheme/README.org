@@ -24,6 +24,7 @@ receipt and verifies replay against the caller's exact exchange.
 | =context/= | Adapt Lab's Context library to Marlin's runtime boundary. |
 | =ui-components/= | Publish component prototypes, bounded constructors, Guide and the POO-composed command catalog. |
 | =ui-layout/= | Publish bounded presentation geometry for native hosts; the terminal clips to actual cells. |
+| =ui-themes/= | Publish the selected semantic color palette; Doom One is the initial theme. |
 | =ui/= | Compose the selected component scope into a workbench; own generic event dispatch and typed native projection. |
 | =hooks/= | Publish Scheme hook selection, composable conditions, and higher-order matchers. |
 | =policy/= | Project graph policy, topology and continuation with a declared dependency on Hooks. |

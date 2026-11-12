@@ -9,8 +9,8 @@ use gerbil_scheme::{NativeError, RootedCallError, RootedSchemeObject};
 // Three core regions, sixteen contributed regions, and the status region.
 pub(crate) const MAX_REGIONS: usize = 20;
 pub(crate) const MAX_HOST_STATUS: usize = 8;
-// Four selected modeline slots plus eight host status contributions.
-pub(crate) const MAX_STATUS: usize = 12;
+// Five visible slots, three transport observations and eight host contributions.
+pub(crate) const MAX_STATUS: usize = 16;
 pub(crate) const MAX_EXTENSIONS: usize = 16;
 pub(crate) const MAX_CONTENT_ITEMS: usize = 16;
 pub(crate) const MAX_METHOD_BUNDLES: usize = 16;
@@ -19,7 +19,7 @@ pub(crate) const MAX_TEXT_CHARS: usize = 256;
 pub(crate) const MAX_ID_BYTES: usize = 1024;
 
 // Keep protocol admission and renderer capacity tied to the selected shape.
-const _: () = assert!(MAX_STATUS == 4 + MAX_HOST_STATUS);
+const _: () = assert!(MAX_STATUS == 8 + MAX_HOST_STATUS);
 const _: () = assert!(MAX_REGIONS == 3 + MAX_EXTENSIONS + 1);
 
 /// A UI component's domain identity, not a Scheme root or object address.
@@ -51,6 +51,7 @@ impl UiCommandName {
     }
 }
 
+/// A command descriptor projected from the selected Scheme UI.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct UiCommand {
     pub name: UiCommandName,
@@ -94,6 +95,7 @@ pub enum UiContent {
     Field { label: String, value: String },
 }
 
+/// One ordered Modeline contribution and its active tone.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct UiStatusItem {
     pub id: UiComponentId,
@@ -149,6 +151,48 @@ impl Default for UiLayoutPolicy {
     }
 }
 
+/// An RGB color selected by Scheme and admitted at the native boundary.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct UiRgb {
+    pub red: u8,
+    pub green: u8,
+    pub blue: u8,
+}
+
+impl UiRgb {
+    pub const fn new(red: u8, green: u8, blue: u8) -> Self {
+        Self { red, green, blue }
+    }
+}
+
+/// Shared presentation palette for the native terminal adapter.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct UiTheme {
+    pub canvas: UiRgb,
+    pub ink: UiRgb,
+    pub bar: UiRgb,
+    pub accent: UiRgb,
+    pub info: UiRgb,
+    pub success: UiRgb,
+    pub warning: UiRgb,
+    pub muted: UiRgb,
+}
+
+impl Default for UiTheme {
+    fn default() -> Self {
+        Self {
+            canvas: UiRgb::new(40, 44, 52),
+            ink: UiRgb::new(187, 194, 207),
+            bar: UiRgb::new(28, 31, 36),
+            accent: UiRgb::new(198, 120, 221),
+            info: UiRgb::new(81, 175, 239),
+            success: UiRgb::new(152, 190, 101),
+            warning: UiRgb::new(236, 190, 123),
+            muted: UiRgb::new(115, 121, 126),
+        }
+    }
+}
+
 /// Host display facts and already-rooted Scheme extension contributions.
 /// The selected publication and extension provenance remain the VM/module
 /// owner's responsibility.
@@ -167,6 +211,7 @@ pub struct UiWorkbench {
     pub session_label: String,
     pub regions: Vec<UiRegion>,
     pub layout: UiLayoutPolicy,
+    pub theme: UiTheme,
     pub focus: UiComponentId,
 }
 
@@ -221,6 +266,7 @@ impl UiWorkbench {
             || self.session_label != next.session_label
             || self.regions != next.regions
             || self.layout != next.layout
+            || self.theme != next.theme
         {
             return Err(UiProjectionError::Invalid(
                 "UI event changed the admitted workbench",
@@ -239,6 +285,7 @@ impl UiWorkbench {
     }
 }
 
+/// Input events accepted by the Scheme UI dispatcher.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum UiEvent {
     NextFocus,
@@ -249,6 +296,7 @@ pub enum UiEvent {
     ScrollDown,
 }
 
+/// Direction for moving through a visible collection.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum UiBrowseDirection {
     Next,
@@ -263,12 +311,14 @@ pub enum UiIntent {
     Scroll(UiScrollDirection),
 }
 
+/// Direction for scrolling a UI region.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum UiScrollDirection {
     Up,
     Down,
 }
 
+/// A rejected or failed native Scheme projection.
 #[derive(Debug)]
 pub enum UiProjectionError {
     Native(NativeError),

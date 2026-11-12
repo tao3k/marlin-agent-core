@@ -47,7 +47,7 @@ repository = "https://github.com/tao3k/marlin-agent-core"
 libc = "0.2.186"
 aho-corasick = "1.1.5"
 async-trait = "0.1.92"
-asp-rust = { git = "https://github.com/tao3k/asp-rust", rev = "2419414ee5379bad89506496e3eaab928df68daf", version = "0.1.2", default-features = false, features = ["native-syntax"] }
+asp-rust = { git = "https://github.com/tao3k/asp-rust", rev = "dd9bf7188bb9900cdfc6540fee2bfd28f43496fd", version = "0.1.2", default-features = false, features = ["native-syntax"] }
 cc = "1.11.1"
 criterion = "0.8.2"
 gerbil-scheme = { git = "https://github.com/tao3k/gerbil-scheme-rust", rev = "dfe8b62b5dc64de88f8d70a77059a1741218ef80", version = "0.1.0" }

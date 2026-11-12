@@ -15,6 +15,7 @@ pub(crate) struct ComposerView {
     pub(crate) cursor: (u16, u16),
 }
 
+/// Editable multiline input with grapheme-aware cursor movement.
 #[derive(Clone, Default)]
 pub struct Composer {
     text: String,

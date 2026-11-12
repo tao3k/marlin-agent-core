@@ -5,6 +5,7 @@
 //! Terminal user interface for the Marlin model gateway.
 
 mod app;
+mod bootstrap;
 mod cli;
 mod command;
 mod composer;
@@ -28,6 +29,7 @@ mod workspace;
 mod wrap;
 
 pub use app::run_cli;
+pub use bootstrap::launch;
 
 #[cfg(feature = "linked-ui")]
 mod linked_ui;

@@ -402,7 +402,7 @@ fn median_u64(mut values: Vec<u64>) -> u64 {
 }
 
 fn assert_live_phase_within_budget(
-    benchmark: &crate::policy::RustScenarioBenchmarkReceipt,
+    benchmark: &asp_rust::RustScenarioBenchmarkReceipt,
     phase: &str,
     median_ms: u128,
 ) {
@@ -433,7 +433,7 @@ async fn rfcdb_turso_db_pressure_live_performance_regression_gate() -> StorageRe
 
     let scenario_root =
         crate::paths::crate_root().join("tests/unit/scenarios/performance_baseline");
-    let benchmark = crate::policy::validate_rust_scenario_benchmark(&scenario_root)
+    let benchmark = asp_rust::validate_rust_scenario_benchmark(&scenario_root)
         .expect("validate Turso performance baseline before live measurement");
     let optimization_profile =
         marlin_agent_storage::TursoOptimizationProfile::AsyncIoWithMvccAndPassiveCheckpointExperimental;

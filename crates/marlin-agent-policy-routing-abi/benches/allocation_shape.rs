@@ -24,7 +24,7 @@ use marlin_gerbil_scheme::{
     gerbil_agent_policy_routing_type_manifest, project_gerbil_agent_policy_routing_abi_receipt,
 };
 #[cfg(feature = "linked-selector")]
-#[path = "../../../build-support/marlin-rust-project-harness-policy/tests/support/scenario_snapshot.rs"]
+#[path = "../../../dev/verification/scenario_snapshot.rs"]
 mod scenario_snapshot;
 #[cfg(feature = "linked-selector")]
 use tempfile::TempDir;

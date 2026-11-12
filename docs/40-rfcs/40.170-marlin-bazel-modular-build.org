@@ -122,7 +122,9 @@ The generated graph must show =turso 0.7.0= with =sync= and direct =bytes=, =htt
 
 Storage integration tests resolve the workspace through Bazel runfiles first: =TEST_SRCDIR= plus =TEST_WORKSPACE=. Cargo execution falls back to =CARGO_MANIFEST_DIR=. Package identity is the domain constant =marlin-agent-storage= rather than Bazel's scenario target name, so a renamed test label cannot corrupt Harness ownership.
 
-Harness and Bazel remain complementary gates. The Cargo dependency =marlin-rust-project-harness-policy.workspace = true= stays present; the Bazel build action exposes its execution and source-graph inputs to query/aquery and aggregate receipts.
+Cargo and Bazel remain complementary gates. Cargo mounts the shared ASP Rust
+policy through development tests. Bazel exposes the corresponding source graph
+and test target to query/aquery.
 
 * Platform Dependency Projection
 Cargo target predicates remain authoritative when Crate Universe renders third-party targets.

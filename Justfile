@@ -15,9 +15,9 @@ default:
 sysml-check:
   sysml -strict -validate -self-check -no-record-cache project.sysml dev/sysml
 
-# Run the package-scoped ASP Rust development gate across the workspace.
+# Run the ASP Rust native workspace Dev Gate through Cargo test.
 rust-dev-gate:
-  cargo run --locked -p marlin-rust-project-harness-policy --example marlin-workspace-package-gate
+  cargo test --locked -p marlin-rust-project-harness-policy --test workspace_policy
 
 # The authored Quint model and reproducible trace checks for the active TUI domain.
 property-model-gate:

@@ -26,7 +26,7 @@ use marlin_agent_protocol::{
     LoopProgramEventKind, LoopProgramId, LoopProgramInput, LoopProgramStateId,
     LoopProgramTransition, LoopProgramTransitionId,
 };
-#[path = "../../../build-support/marlin-rust-project-harness-policy/tests/support/scenario_snapshot.rs"]
+#[path = "../../../dev/verification/scenario_snapshot.rs"]
 mod scenario_snapshot;
 use tempfile::TempDir;
 

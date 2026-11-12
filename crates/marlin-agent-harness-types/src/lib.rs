@@ -8,9 +8,7 @@
 //! system: agent loop behavior, runtime visibility, sub-agent/session behavior,
 //! hook replay, graph-policy receipts, and deterministic no-LLM scenarios.
 //!
-//! They are not Rust project harness contracts. Rust package/build quality
-//! evidence belongs under `build-support/marlin-rust-project-harness-policy`
-//! and should use `RustProjectHarness*` names.
+//! Rust package/build quality evidence belongs to ASP Rust's development gate.
 
 mod evidence;
 mod intent_case;

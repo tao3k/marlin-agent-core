@@ -74,6 +74,14 @@ impl<'runtime> UiModule<'runtime> {
         runtime: &'runtime GerbilRuntime,
         directory: &str,
     ) -> Result<Self, UiProjectionError> {
+        Self::resolve_dynamic_exports(runtime, directory)
+    }
+
+    #[cfg(not(feature = "linked-ui"))]
+    fn resolve_dynamic_exports(
+        runtime: &'runtime GerbilRuntime,
+        directory: &str,
+    ) -> Result<Self, UiProjectionError> {
         let started = std::time::Instant::now();
         let trace = |stage: &str| {
             if std::env::var_os("MARLIN_TUI_STARTUP_TRACE").is_some() {
@@ -254,6 +262,11 @@ pub fn prepare_open_request<'runtime>(
     scope: &RootedSchemeObject<'_>,
     facts: &UiOpenFacts<'_, '_>,
 ) -> Result<RootedSchemeObject<'runtime>, UiProjectionError> {
+    validate_open_facts(facts)?;
+    encode_open_facts(runtime, scope, facts)
+}
+
+fn validate_open_facts(facts: &UiOpenFacts<'_, '_>) -> Result<(), UiProjectionError> {
     if facts.model_label.chars().take(MAX_TEXT_CHARS + 1).count() > MAX_TEXT_CHARS
         || facts.session_label.chars().take(MAX_TEXT_CHARS + 1).count() > MAX_TEXT_CHARS
         || facts.status.len() > MAX_HOST_STATUS
@@ -278,6 +291,14 @@ pub fn prepare_open_request<'runtime>(
             return Err(UiProjectionError::Invalid("invalid status contribution"));
         }
     }
+    Ok(())
+}
+
+fn encode_open_facts<'runtime>(
+    runtime: &'runtime GerbilRuntime,
+    scope: &RootedSchemeObject<'_>,
+    facts: &UiOpenFacts<'_, '_>,
+) -> Result<RootedSchemeObject<'runtime>, UiProjectionError> {
     let model = runtime.string_from_utf8(facts.model_label)?.into_object();
     let session = runtime.string_from_utf8(facts.session_label)?.into_object();
     let mut rows = Vec::with_capacity(facts.status.len());
