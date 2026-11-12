@@ -28,3 +28,6 @@ mod workspace;
 mod wrap;
 
 pub use app::run_cli;
+
+#[cfg(feature = "linked-ui")]
+mod linked_ui;

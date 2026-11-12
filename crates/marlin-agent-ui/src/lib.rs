@@ -10,8 +10,9 @@
 use std::collections::HashSet;
 
 use gerbil_scheme::{
-    CollectionKind, GerbilRuntime, IdentifierBuffer, IdentifierKind, NativeError, ObjectKind,
-    RootedCallError, RootedObjectBatch, RootedSchemeCollection, RootedSchemeObject, SchemeScalar,
+    CollectionKind, GerbilRuntime, IdentifierBuffer, IdentifierKind, LinkedObjectExport,
+    NativeError, ObjectKind, RootedCallError, RootedObjectBatch, RootedSchemeCollection,
+    RootedSchemeObject, SchemeScalar,
 };
 
 const MAX_REGIONS: usize = 20;
@@ -134,19 +135,59 @@ pub struct UiNativeSession<'runtime> {
 pub struct UiModule<'runtime> {
     runtime: &'runtime GerbilRuntime,
     publication: RootedSchemeObject<'runtime>,
-    open: RootedSchemeObject<'runtime>,
-    project: RootedSchemeObject<'runtime>,
-    dispatch: RootedSchemeObject<'runtime>,
-    browse_command: RootedSchemeObject<'runtime>,
-    refresh_labels: RootedSchemeObject<'runtime>,
+    open: UiCallable<'runtime>,
+    project: UiCallable<'runtime>,
+    dispatch: UiCallable<'runtime>,
+    browse_command: UiCallable<'runtime>,
+    refresh_labels: UiCallable<'runtime>,
+}
+
+enum UiCallable<'runtime> {
+    #[cfg(not(feature = "linked-ui"))]
+    Dynamic(RootedSchemeObject<'runtime>),
+    Linked(LinkedObjectExport<'runtime>),
+}
+
+impl<'runtime> UiCallable<'runtime> {
+    fn call(
+        &self,
+        _runtime: &'runtime GerbilRuntime,
+        input: &RootedSchemeObject<'_>,
+    ) -> Result<RootedSchemeObject<'runtime>, UiProjectionError> {
+        match self {
+            #[cfg(not(feature = "linked-ui"))]
+            Self::Dynamic(procedure) => Ok(_runtime.call_rooted(procedure, input)?),
+            Self::Linked(export) => Ok(export.call(input).into_result()?),
+        }
+    }
+}
+
+/// AOT exports from the same Yuanxu-selected programme as the VM linker.
+/// Each export uses the SDK strong-root object ABI and must belong to that
+/// programme; constructing a module from arbitrary function pointers is unsafe.
+#[derive(Clone, Copy)]
+pub struct UiLinkedExports {
+    pub publication: unsafe extern "C" fn(i64) -> i64,
+    pub open: unsafe extern "C" fn(i64) -> i64,
+    pub project: unsafe extern "C" fn(i64) -> i64,
+    pub dispatch: unsafe extern "C" fn(i64) -> i64,
+    pub browse_command: unsafe extern "C" fn(i64) -> i64,
+    pub refresh_labels: unsafe extern "C" fn(i64) -> i64,
 }
 
 impl<'runtime> UiModule<'runtime> {
     /// Resolve the declared publication and UI procedure exports in one VM.
+    #[cfg(not(feature = "linked-ui"))]
     pub fn resolve(
         runtime: &'runtime GerbilRuntime,
         directory: &str,
     ) -> Result<Self, UiProjectionError> {
+        let started = std::time::Instant::now();
+        let trace = |stage: &str| {
+            if std::env::var_os("MARLIN_TUI_STARTUP_TRACE").is_some() {
+                eprintln!("marlin-tui UI resolve {stage}: {:?}", started.elapsed());
+            }
+        };
         fn export<'a>(
             runtime: &'a GerbilRuntime,
             directory: &str,
@@ -163,12 +204,18 @@ impl<'runtime> UiModule<'runtime> {
             ":marlin-agent-core/init",
             "marlin-agent-core.init.exports",
         )?;
+        trace("init publication");
         let ui = ":marlin-agent-core/c-abi/ui";
         let open = export(runtime, directory, ui, "marlin-ui-session-open")?;
+        trace("session open");
         let project = export(runtime, directory, ui, "marlin-ui-session-project")?;
+        trace("session project");
         let dispatch = export(runtime, directory, ui, "marlin-ui-session-dispatch")?;
+        trace("session dispatch");
         let browse_command = export(runtime, directory, ui, "marlin-ui-session-browse-command")?;
+        trace("command browse");
         let refresh_labels = export(runtime, directory, ui, "marlin-ui-session-refresh-labels")?;
+        trace("label refresh");
         for procedure in [&open, &project, &dispatch, &browse_command, &refresh_labels] {
             if procedure.as_ref().kind()? != ObjectKind::Procedure {
                 return Err(UiProjectionError::Invalid("UI export is not a procedure"));
@@ -177,11 +224,41 @@ impl<'runtime> UiModule<'runtime> {
         Ok(Self {
             runtime,
             publication,
-            open,
-            project,
-            dispatch,
-            browse_command,
-            refresh_labels,
+            open: UiCallable::Dynamic(open),
+            project: UiCallable::Dynamic(project),
+            dispatch: UiCallable::Dynamic(dispatch),
+            browse_command: UiCallable::Dynamic(browse_command),
+            refresh_labels: UiCallable::Dynamic(refresh_labels),
+        })
+    }
+
+    /// Bind the selected AOT publication and all UI operations to one VM.
+    ///
+    /// # Safety
+    /// Every export must belong to `runtime`'s linked programme, catch Scheme
+    /// exceptions and transfer one fresh strong result root. The publication
+    /// must be the complete selected `init.exports` value for this UI graph.
+    pub unsafe fn resolve_linked(
+        runtime: &'runtime GerbilRuntime,
+        exports: UiLinkedExports,
+    ) -> Result<Self, UiProjectionError> {
+        // SAFETY: the caller binds the named exports to the live linked graph.
+        let publication_export = unsafe { runtime.bind_object_export(exports.publication)? };
+        let publication = publication_export
+            .call(&runtime.void_object()?)
+            .into_result()?;
+        let bind = |export| {
+            // SAFETY: the same caller guarantee covers all operation exports.
+            unsafe { runtime.bind_object_export(export) }.map(UiCallable::Linked)
+        };
+        Ok(Self {
+            runtime,
+            publication,
+            open: bind(exports.open)?,
+            project: bind(exports.project)?,
+            dispatch: bind(exports.dispatch)?,
+            browse_command: bind(exports.browse_command)?,
+            refresh_labels: bind(exports.refresh_labels)?,
         })
     }
 
@@ -190,12 +267,14 @@ impl<'runtime> UiModule<'runtime> {
         &self,
         facts: &UiOpenFacts<'_, '_>,
     ) -> Result<UiNativeSession<'runtime>, UiProjectionError> {
-        open_session(self.runtime, &self.open, &self.publication, facts)
+        open_session_with(self.runtime, &self.publication, facts, |request| {
+            self.open.call(self.runtime, request)
+        })
     }
 
     /// Project an existing session into a typed host candidate.
     pub fn project(&self, session: &UiNativeSession<'_>) -> Result<UiWorkbench, UiProjectionError> {
-        project_workbench(self.runtime, &self.project, session)
+        decode_workbench(self.project.call(self.runtime, &session.root)?)
     }
 
     /// Ask the selected Scheme generic for a presentation-only command choice.
@@ -226,8 +305,8 @@ impl<'runtime> UiModule<'runtime> {
             &[&session.root, &query, &previous, &direction],
         )?;
         let output = self
-            .runtime
-            .call_rooted(&self.browse_command, &input.into_object())?;
+            .browse_command
+            .call(self.runtime, &input.into_object())?;
         match output.as_ref().kind()? {
             ObjectKind::String => Ok(Some(UiCommandName::new(&string(output)?)?)),
             ObjectKind::Boolean
@@ -258,8 +337,8 @@ impl<'runtime> UiModule<'runtime> {
             .collection_from_objects(CollectionKind::Vector, &[&session.root, &model, &label])?;
         Ok(UiNativeSession {
             root: self
-                .runtime
-                .call_rooted(&self.refresh_labels, &request.into_object())?,
+                .refresh_labels
+                .call(self.runtime, &request.into_object())?,
         })
     }
 
@@ -269,7 +348,9 @@ impl<'runtime> UiModule<'runtime> {
         session: &UiNativeSession<'runtime>,
         event: UiEvent,
     ) -> Result<(UiNativeSession<'runtime>, UiIntent), UiProjectionError> {
-        dispatch_event(self.runtime, &self.dispatch, session, event)
+        dispatch_event_with(self.runtime, session, event, |request| {
+            self.dispatch.call(self.runtime, request)
+        })
     }
 }
 
@@ -402,9 +483,22 @@ pub fn open_session<'runtime>(
     scope: &RootedSchemeObject<'_>,
     facts: &UiOpenFacts<'_, '_>,
 ) -> Result<UiNativeSession<'runtime>, UiProjectionError> {
+    open_session_with(runtime, scope, facts, |request| {
+        Ok(runtime.call_rooted(export, request)?)
+    })
+}
+
+fn open_session_with<'runtime>(
+    runtime: &'runtime GerbilRuntime,
+    scope: &RootedSchemeObject<'_>,
+    facts: &UiOpenFacts<'_, '_>,
+    call: impl FnOnce(
+        &RootedSchemeObject<'_>,
+    ) -> Result<RootedSchemeObject<'runtime>, UiProjectionError>,
+) -> Result<UiNativeSession<'runtime>, UiProjectionError> {
     let request = prepare_open_request(runtime, scope, facts)?;
     Ok(UiNativeSession {
-        root: runtime.call_rooted(export, &request)?,
+        root: call(&request)?,
     })
 }
 
@@ -424,6 +518,19 @@ pub fn dispatch_event<'runtime>(
     session: &UiNativeSession<'runtime>,
     event: UiEvent,
 ) -> Result<(UiNativeSession<'runtime>, UiIntent), UiProjectionError> {
+    dispatch_event_with(runtime, session, event, |request| {
+        Ok(runtime.call_rooted(export, request)?)
+    })
+}
+
+fn dispatch_event_with<'runtime>(
+    runtime: &'runtime GerbilRuntime,
+    session: &UiNativeSession<'runtime>,
+    event: UiEvent,
+    call: impl FnOnce(
+        &RootedSchemeObject<'_>,
+    ) -> Result<RootedSchemeObject<'runtime>, UiProjectionError>,
+) -> Result<(UiNativeSession<'runtime>, UiIntent), UiProjectionError> {
     let name = match event {
         UiEvent::NextFocus => "next-focus",
         UiEvent::PreviousFocus => "previous-focus",
@@ -435,7 +542,7 @@ pub fn dispatch_event<'runtime>(
     let symbol = runtime.intern_identifier(IdentifierKind::Symbol, name)?;
     let request =
         runtime.collection_from_objects(CollectionKind::Vector, &[&session.root, &symbol])?;
-    let result = vector(runtime.call_rooted(export, &request.into_object())?, 2, 2)?;
+    let result = vector(call(&request.into_object())?, 2, 2)?;
     let mut roots = RootedObjectBatch::default();
     result.copy_into(&mut roots)?;
     let next = roots.root_element(0)?;

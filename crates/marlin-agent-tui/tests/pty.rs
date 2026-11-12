@@ -205,13 +205,15 @@ impl Terminal {
             let remaining = deadline.saturating_duration_since(Instant::now());
             assert!(
                 !remaining.is_zero(),
-                "timed out waiting for {description}; output tail: {:?}",
+                "timed out waiting for {description}; screen: {:?}; output tail: {:?}",
+                screen_lines(&self.output),
                 String::from_utf8_lossy(&self.output[self.output.len().saturating_sub(1200)..])
             );
             match self.received.recv_timeout(remaining) {
                 Ok(chunk) => self.output.extend_from_slice(&chunk),
                 Err(mpsc::RecvTimeoutError::Timeout) => panic!(
-                    "timed out waiting for {description}; output tail: {:?}",
+                    "timed out waiting for {description}; screen: {:?}; output tail: {:?}",
+                    screen_lines(&self.output),
                     String::from_utf8_lossy(&self.output[self.output.len().saturating_sub(1200)..])
                 ),
                 Err(error) => panic!("PTY ended waiting for {description}: {error}"),
@@ -247,17 +249,37 @@ impl Terminal {
     fn wait_exit_status(&mut self, timeout: Duration) -> std::process::ExitStatus {
         let deadline = Instant::now() + timeout;
         let status = loop {
+            while let Ok(chunk) = self.received.try_recv() {
+                self.output.extend_from_slice(&chunk);
+            }
             if let Some(status) = self.child.try_wait().unwrap() {
                 break status;
             }
             assert!(
                 Instant::now() < deadline,
-                "TUI did not exit within {timeout:?}"
+                "TUI did not exit within {timeout:?}; output tail: {:?}",
+                String::from_utf8_lossy(&self.output[self.output.len().saturating_sub(800)..])
             );
             thread::sleep(Duration::from_millis(20));
         };
         while let Ok(chunk) = self.received.recv_timeout(Duration::from_millis(100)) {
             self.output.extend_from_slice(&chunk);
+        }
+        if std::env::var_os("MARLIN_TUI_STARTUP_TRACE").is_some() {
+            for line in String::from_utf8_lossy(&self.output).split("\r\n") {
+                for marker in [
+                    "marlin-tui startup event loop exit",
+                    "marlin-tui startup terminal restored",
+                    "marlin-tui startup gateway dropped",
+                    "marlin-tui startup Tokio runtime dropped",
+                    "marlin-tui startup UI session dropped",
+                    "marlin-tui startup Scheme VM dropped",
+                ] {
+                    if let Some(index) = line.find(marker) {
+                        eprintln!("{}", line[index..].split('\x1b').next().unwrap_or(""));
+                    }
+                }
+            }
         }
         status
     }
@@ -313,6 +335,13 @@ fn screen_lines(output: &[u8]) -> Vec<String> {
                 .collect();
             let n = nums.first().copied().unwrap_or(0).max(1);
             match op {
+                Some('h') if args == "?1049" => {
+                    for line in &mut rows {
+                        line.fill(' ');
+                    }
+                    row = 0;
+                    col = 0;
+                }
                 Some('H' | 'f') => {
                     row = n - 1;
                     col = nums.get(1).copied().unwrap_or(1).max(1) - 1;
@@ -365,6 +394,9 @@ fn terminal_screen_reconstructs_partial_cell_updates() {
     let cleared = screen_lines(b"\x1b[3;1Hstale\x1b[2J\x1b[3;1Hfresh");
     assert!(cleared[2].starts_with("fresh"));
     assert!(!cleared[2].contains("stale"));
+    let alternate = screen_lines(b"startup\r\n\x1b[?1049h\x1b[1;1Hworkbench");
+    assert!(alternate[0].starts_with("workbench"));
+    assert!(!alternate.iter().any(|line| line.contains("startup")));
 }
 
 fn read_request(stream: &mut TcpStream) -> (String, serde_json::Value) {
@@ -424,6 +456,31 @@ fn startup_menu_paste_stream_and_terminal_restoration() {
     exercise_pty(Duration::from_secs(10), Duration::from_secs(5));
 }
 
+#[cfg(feature = "linked-ui")]
+#[test]
+fn linked_ui_opens_without_a_gerbil_package_tree() {
+    let directory = tempfile::tempdir().unwrap();
+    let config = directory.path().join("config.toml");
+    fs::write(&config, "provider=\"openai\"\nmodel=\"gpt-fixture\"\nendpoint=\"http://127.0.0.1:1/v1/responses\"\nprotocol=\"open-ai-responses\"\ncredential_env=\"MARLIN_TUI_FIXTURE_KEY\"\n").unwrap();
+    let absent = directory.path().join("no-gerbil-install");
+    let absent = absent.to_string_lossy().into_owned();
+    let mut terminal = Terminal::start_with_env(
+        &config,
+        &[],
+        &[
+            ("GERBIL_HOME", absent.clone()),
+            ("GERBIL_PATH", absent.clone()),
+            ("GERBIL_LOADPATH", absent),
+        ],
+    );
+    terminal.wait_for(Duration::from_secs(10), "linked workbench", |output| {
+        contains(output, b"\x1b[?1049h") && screen_lines(output)[29].contains("Message: Enter send")
+    });
+    terminal.send(b"\x11");
+    terminal.wait_exit(Duration::from_secs(5));
+    terminal.assert_restored();
+}
+
 #[test]
 #[ignore = "diagnostic only: longer windows do not satisfy the acceptance gate"]
 fn menu_paste_stream_diagnostic() {
@@ -451,6 +508,16 @@ fn exercise_pty(startup_limit: Duration, exit_limit: Duration) {
     });
     assert!(terminal.start.elapsed() < startup_limit);
     eprintln!("workbench ready after {:?}", terminal.start.elapsed());
+    if std::env::var_os("MARLIN_TUI_STARTUP_TRACE").is_some() {
+        for line in String::from_utf8_lossy(&terminal.output).split("\r\n") {
+            if line.starts_with("marlin-tui startup ")
+                || line.starts_with("marlin-tui UI resolve ")
+                || line.starts_with("marlin-tui UI open ")
+            {
+                eprintln!("{line}");
+            }
+        }
+    }
     assert!(!contains(&terminal.output, b"GERBIL-BUILD"));
     terminal.send(b"\x1b[Z");
     terminal.wait_status("Transcript: Up/Down scroll");

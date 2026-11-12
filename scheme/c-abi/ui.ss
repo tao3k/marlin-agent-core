@@ -115,3 +115,13 @@
     "marlin_ui_dispatch_event" "extern"
     (gerbil-scheme-rust/scheme/runtime#gerbil-rs-rooted-call root
       marlin-agent-core/c-abi/ui#marlin-ui-session-dispatch)))
+(begin-foreign
+  (c-define (ui-browse-command root) (int64) int64
+    "marlin_ui_browse_command" "extern"
+    (gerbil-scheme-rust/scheme/runtime#gerbil-rs-rooted-call root
+      marlin-agent-core/c-abi/ui#marlin-ui-session-browse-command)))
+(begin-foreign
+  (c-define (ui-refresh-labels root) (int64) int64
+    "marlin_ui_refresh_labels" "extern"
+    (gerbil-scheme-rust/scheme/runtime#gerbil-rs-rooted-call root
+      marlin-agent-core/c-abi/ui#marlin-ui-session-refresh-labels)))

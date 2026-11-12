@@ -6,6 +6,8 @@
 
 use super::command::CommandKind;
 use gerbil_scheme::GerbilRuntime;
+#[cfg(feature = "linked-ui")]
+use marlin_agent_ui::UiLinkedExports;
 use marlin_agent_ui::{
     UiBrowseDirection, UiCommandName, UiEvent, UiIntent, UiModule, UiNativeSession, UiOpenFacts,
     UiProjectionError, UiRegion, UiScrollDirection, UiWorkbench,
@@ -28,15 +30,48 @@ pub(crate) struct UiHost<'runtime> {
 }
 
 impl<'runtime> UiHost<'runtime> {
+    #[cfg(not(feature = "linked-ui"))]
     pub(crate) fn open(
         runtime: &'runtime GerbilRuntime,
         directory: &str,
         facts: &UiOpenFacts<'_, '_>,
     ) -> Result<Self, UiProjectionError> {
         let module = UiModule::resolve(runtime, directory)?;
+        Self::from_module(module, facts)
+    }
+
+    /// Open the same UI protocol from the selected linked programme.
+    ///
+    /// # Safety
+    /// The caller must supply exports from `runtime`'s live AOT graph.
+    #[cfg(feature = "linked-ui")]
+    pub(crate) unsafe fn open_linked(
+        runtime: &'runtime GerbilRuntime,
+        exports: UiLinkedExports,
+        facts: &UiOpenFacts<'_, '_>,
+    ) -> Result<Self, UiProjectionError> {
+        // SAFETY: the linked runtime and exports are selected by the binary.
+        let module = unsafe { UiModule::resolve_linked(runtime, exports)? };
+        Self::from_module(module, facts)
+    }
+
+    fn from_module(
+        module: UiModule<'runtime>,
+        facts: &UiOpenFacts<'_, '_>,
+    ) -> Result<Self, UiProjectionError> {
+        let started = std::time::Instant::now();
+        let trace = |stage: &str| {
+            if std::env::var_os("MARLIN_TUI_STARTUP_TRACE").is_some() {
+                eprintln!("marlin-tui UI open {stage}: {:?}", started.elapsed());
+            }
+        };
+        trace("module resolved");
         let session = module.open(facts)?;
+        trace("session constructed");
         let view = module.project(&session)?;
+        trace("session projected");
         admit_terminal_view(&view)?;
+        trace("view admitted");
         Ok(Self {
             module,
             session,
@@ -293,7 +328,7 @@ fn admit_transition(
     Ok(())
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "linked-ui")))]
 mod tests {
     use super::*;
     use marlin_agent_ui::UiComponentId;

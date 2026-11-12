@@ -3,9 +3,10 @@
 # SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
 # Anthropic-compatible DeepSeek route. The base URL and API key come from
-# ANTHROPIC_BASE_URL and ANTHROPIC_API_KEY when not specified here.
+# ANTHROPIC_BASE_URL (for DeepSeek: https://api.deepseek.com/anthropic)
+# and ANTHROPIC_API_KEY when not specified here.
 provider = "deepseek"
-model = "deepseek-v4-pro[1m]"
+model = "deepseek-v4-pro"
 protocol = "anthropic"
 credential_env = "ANTHROPIC_API_KEY"
 timeout_seconds = 120

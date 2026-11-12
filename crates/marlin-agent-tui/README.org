@@ -30,21 +30,26 @@ omitted model from =ANTHROPIC_MODEL=. Explicit TOML values take precedence.
 Set the named credential environment variable. Local HTTP endpoints must use
 a loopback address. Launch with =cargo run -p marlin-agent-tui -- path/to/config.toml=.
 
-The terminal uses Marlin's compiled Scheme UI modules through the Gerbil SDK.
-Install the Marlin Scheme package and its selected dependencies in the normal
-Gerbil package environment before launching; use =GERBIL_PATH= and
-=GERBIL_LOADPATH= when that environment is not the default. A missing module
-stops startup with an error. Initial module loading can take substantial time.
+The default development build loads Marlin's compiled Scheme UI modules through
+the Gerbil SDK. Install the selected Scheme dependencies and build the package
+before launching; use =GERBIL_PATH= and =GERBIL_LOADPATH= when the package
+environment is not the default. A missing module stops startup with an error.
 From the repository root, when =GERBIL_PATH= is unset and the local Scheme
-package is already built, the executable restarts itself before VM startup
-with =scheme/.gerbil= as the standard package prefix. Explicit paths remain
-authoritative. The binary embeds the VM, but the selected Scheme modules and
-SDK module metadata currently remain on disk in this package environment;
-neither the debug nor the release build is a self-contained module bundle.
-The package must include the Scheme-side =gerbil-scheme-rust/scheme/runtime=
-metadata from the same SDK revision as the binary; =cargo build= alone does
-not install it. Build the SDK Scheme package and the Yuanxu-selected Marlin
-package using their standard build scripts before launching.
+package is built, the dynamic executable restarts before VM startup with
+=scheme/.gerbil= as its standard package prefix. The package must include the
+Scheme-side =gerbil-scheme-rust/scheme/runtime= metadata from the same SDK
+revision as the binary. Ordinary =cargo build= does not install it.
+
+=just tui-aot-build= builds the selected Scheme package, compiles
+=scheme/tui-entry.ss=, stages the programme from =init.exports.std-make-spec=,
+and links the resulting graph with the VM into =target/release/marlin-tui=.
+The =linked-ui= feature uses the SDK's =external-program= lifecycle and rooted
+object ABI; the executable does not resolve a Gerbil package at runtime.
+Optional external UI modules still need a separately qualified dynamic
+extension path. The Darwin binary currently links system and package manager
+libraries such as OpenSSL, zlib, SQLite and iconv; distribute those alongside
+it where the target machine does not provide them. The build requires a paired
+Gerbil/Gambit compiler and pkg-config metadata for these libraries.
 Tab and Shift-Tab move focus forward and backward through the Scheme workbench.
 In the transcript, Up and Down
 scroll; in commands, Enter opens the command editor. Ctrl-O remains available

@@ -16,8 +16,8 @@ package MarlinTuiArchitecture {
                    metadata, not a Rust ABI readiness receipt. Its linked scope
                    retains the selected UI, Context and Deck scopes. Scheme UI
                    dispatch returns declarative submit, dismiss, scroll and
-                   workbench-ordered focus intents; actual terminal routing and
-                   UI-to-Rust execution remain unqualified. Rust now uses SDK
+                   workbench-ordered focus intents. The linked TUI routes these
+                   through a Rust-owned terminal host. Rust uses the SDK's
                    LinkedObjectExport and rooted-value conversion for a
                    Scheme-owned session, workbench and intent projections. Rust
                    constructs rooted open requests from typed facts and SDK
@@ -25,16 +25,14 @@ package MarlinTuiArchitecture {
                    Ordered CLOS method bundles compose into each fresh session
                    generic, with an upper bound on bundle count; a bundle's
                    internal size and its Module provenance remain unqualified. A
-                   Rust-owned VM test calls the three UI exports through a
-                   Scheme foreign-call fixture, checks selected-scope projection,
-                   focus and extension dispatch, old-state retention and root ownership, and
-                   exits normally. Standard Gerbil import in the SDK-owned VM
-                   returned the identical selected scope and called the session
-                   procedures. A supported Rust export-resolution and rooted
-                   procedure-call API is not established. This is not a
-                   Rust-bound LinkedObjectExport or terminal integration. Identifier names
-                   are copied before their Rust length check, so total transient
-                   memory bounds are not established. */
+                   linked executable binds the selected UI publication and six
+                   C ABI exports to the same rooted Rust request/response path
+                   as the dynamic build. A PTY test opens the workbench without
+                   a Gerbil package tree and restores terminal state. The
+                   selected Yuanxu projection supplies its compiled closure;
+                   no second list of Module targets is maintained. Identifier
+                   names are copied before their Rust length check, so total
+                   transient memory bounds are not established. */
         }
         part <'MAR-TUI-A14'> weaverConfiguration {
             doc /* Marlin pins unmerged Weaver PR #4 revision 2cbb6bf7, whose
@@ -296,10 +294,13 @@ package MarlinTuiArchitecture {
         }
         part <'MAR-TUI-T23'> compiledUiClosure {
             doc /* Yuanxu selects the same Module graph for a linked compiled
-                   core; the SDK owns VM and native linkage. Optional dynamic
+                   core; the SDK owns VM and native linkage. The linked Darwin
+                   executable opens a Scheme UI without a package tree, and
+                   the strict debug PTY startup and shutdown gate passes.
+                   Release opens under the same denied Gerbil paths; a timed
+                   Release PTY distribution gate remains. Optional dynamic
                    Scheme extensions retain their identity and admission.
-                   Qualify the complete Darwin Release first frame and UI open
-                   before considering a restored Scheme-to-Rust IR. If still
+                   If residual UI operations remain slow,
                    slow, profile the residual macro, object and generic-method
                    work and lower only admitted semantics with equivalence
                    evidence; the removed PR 17 IR is no current dependency. */

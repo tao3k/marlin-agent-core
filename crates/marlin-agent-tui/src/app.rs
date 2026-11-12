@@ -1111,6 +1111,12 @@ fn run(
     path: PathBuf,
     selected_session: Option<SessionId>,
 ) -> Result<Option<i32>, Box<dyn std::error::Error>> {
+    let startup = Instant::now();
+    let trace_startup = |stage: &str| {
+        if env::var_os("MARLIN_TUI_STARTUP_TRACE").is_some() {
+            eprintln!("marlin-tui startup {stage}: {:?}", startup.elapsed());
+        }
+    };
     if !io::stdin().is_terminal() || !io::stdout().is_terminal() {
         return Err("marlin-tui requires a terminal on stdin and stdout".into());
     }
@@ -1119,13 +1125,21 @@ fn run(
         return Err("--session requires a [session] storage configuration".into());
     }
     let (endpoint, catalog) = config.catalog()?;
+    trace_startup("configuration");
     // Package resolution uses SDK-owned process environment during startup;
     // perform it before starting Tokio workers or the terminal input thread.
     let _ = writeln!(io::stderr(), "Starting interface…");
+    #[cfg(feature = "linked-ui")]
+    let scheme_runtime = super::linked_ui::initialize()?;
+    #[cfg(not(feature = "linked-ui"))]
     let scheme_runtime = gerbil_scheme::GerbilRuntime::initialize()?;
+    trace_startup("Scheme VM");
+    #[cfg(not(feature = "linked-ui"))]
     scheme_runtime
         .set_package_resolution_progress(gerbil_scheme::PackageResolutionProgress::Quiet)?;
+    #[cfg(not(feature = "linked-ui"))]
     let directory = env::current_dir()?;
+    #[cfg(not(feature = "linked-ui"))]
     let directory = directory
         .to_str()
         .ok_or("UI package directory is not UTF-8")?;
@@ -1140,17 +1154,21 @@ fn run(
                 .map(|session| session.session.as_str())
         })
         .unwrap_or("temporary");
-    let mut ui = UiHost::open(
-        &scheme_runtime,
-        directory,
-        &UiOpenFacts {
-            model_label: &model_label,
-            session_label,
-            status: &[],
-            extensions: &[],
-            method_bundles: &[],
-        },
-    )?;
+    let ui_facts = UiOpenFacts {
+        model_label: &model_label,
+        session_label,
+        status: &[],
+        extensions: &[],
+        method_bundles: &[],
+    };
+    #[cfg(feature = "linked-ui")]
+    // SAFETY: the binary links these exports from the archive built from the
+    // same selected Scheme programme as `linked_ui::initialize`.
+    let mut ui =
+        unsafe { UiHost::open_linked(&scheme_runtime, super::linked_ui::exports(), &ui_facts)? };
+    #[cfg(not(feature = "linked-ui"))]
+    let mut ui = UiHost::open(&scheme_runtime, directory, &ui_facts)?;
+    trace_startup("Scheme UI publication");
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()?;
@@ -1471,10 +1489,20 @@ fn run(
         }
         Ok(())
     })();
+    trace_startup("event loop exit");
     app.cancel();
     terminal.show_cursor()?;
     drop(terminal); // alternate-screen and raw-mode guards restore the terminal
+    trace_startup("terminal restored");
     result?;
+    drop(gateway);
+    trace_startup("gateway dropped");
+    drop(runtime);
+    trace_startup("Tokio runtime dropped");
+    drop(ui);
+    trace_startup("UI session dropped");
+    drop(scheme_runtime);
+    trace_startup("Scheme VM dropped");
     Ok(signal_exit)
 }
 

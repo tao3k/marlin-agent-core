@@ -27,6 +27,16 @@ scheme-deps:
 scheme-package-gate:
   direnv exec . bash -ec 'cd scheme && gxpkg env cargo test --locked -p marlin-gerbil-scheme --test unit_test scheme_package::gerbil_builds_and_tests_the_marlin_package_in_process -- --ignored --exact --nocapture'
 
+# Build the init-selected Scheme graph once, then stage its linked TUI programme.
+tui-aot-stage:
+  cd scheme && gxpkg env gxi build.ss
+  cd scheme && gxpkg env gxc -S -s -d .gerbil/lib tui-entry.ss
+  cd scheme && gxpkg env gxi tui-stage.ss
+
+# Link the staged Scheme graph and VM into the terminal application.
+tui-aot-build: tui-aot-stage
+  cargo build --locked -p marlin-agent-tui --bin marlin-tui --features linked-ui --release
+
 # Exercise the linked AgentGraph policy selector through its typed C ABI.
 agent-policy-routing-abi-gate:
   direnv exec . cargo test --locked -p marlin-agent-policy-routing-abi --features linked-selector

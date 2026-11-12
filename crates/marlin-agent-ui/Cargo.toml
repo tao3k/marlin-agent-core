@@ -12,6 +12,9 @@ authors.workspace = true
 repository.workspace = true
 publish = false
 
+[features]
+linked-ui = []
+
 [dependencies]
 gerbil-scheme.workspace = true
 

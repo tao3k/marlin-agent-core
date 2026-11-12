@@ -14,6 +14,9 @@ repository.workspace = true
 name = "marlin-tui"
 path = "src/main.rs"
 
+[features]
+linked-ui = ["dep:gerbil-scheme-sys", "dep:gerbil-scheme-aot-build", "gerbil-scheme/external-program", "marlin-agent-ui/linked-ui"]
+
 [dependencies]
 async-stream = "0.3.6"
 marlin-agent-protocol.workspace = true
@@ -24,6 +27,7 @@ marlin-agent-stream = { path = "../marlin-agent-stream" }
 marlin-agent-ui.workspace = true
 marlin-git-utils.workspace = true
 gerbil-scheme.workspace = true
+gerbil-scheme-sys = { workspace = true, optional = true }
 ratatui = { version = "=0.30.2", default-features = false, features = ["termion"] }
 serde.workspace = true
 serde_json.workspace = true
@@ -35,6 +39,9 @@ tower.workspace = true
 unicode-segmentation = "1.13.3"
 unicode-width = "0.2.2"
 weaver-llm.workspace = true
+
+[build-dependencies]
+gerbil-scheme-aot-build = { workspace = true, optional = true }
 
 [dev-dependencies]
 marlin-rust-project-harness-policy = { path = "../../build-support/marlin-rust-project-harness-policy" }

@@ -1272,6 +1272,7 @@ ordinary interrupted-stream tests passed locally. The strict startup gate and
 some five-second shutdown checks failed. The oversized-stream case also
 received the generic invalid-response outcome instead of the expected provider
 byte-limit outcome; its original assertion remains in the Rust test.
+
 Weaver PR #4 revision =2cbb6bf7= classifies the SSE decoder's explicit
 size-limit error as the existing =Limit= variant while retaining =Response=
 for invalid UTF-8. A split-boundary Rust regression failed before that change
@@ -1287,6 +1288,42 @@ event through Weaver and Marlin's journal gateway using both 4096-byte and
 the configured 8 MiB provider budgets. Both observe =ProviderByteLimit=,
 retain the prefix and replay the typed uncertain outcome. These do not replace
 the unresolved PTY acceptance at the 8 MiB limit.
+
+** Linked UI closure after the failed publication probe (2026-11-12)
+
+The failed publication probe above used a partial linked graph. The current
+Yuanxu compiled =init= records its programme namespace in the compiled product.
+The production staging step consumes exactly
+=((.get marlin-agent-core.init.exports std-make-spec) '("init"))=, derives the
+runtime imports from its selected compiler targets, and stages the SDK
+=external-program= archive. The staged graph contains 869 modules, including
+the Scheme UI roles and =c-abi/ui=. =tui-entry.ss= imports this selected =init=
+and publishes its existing =Marlin.ui= scope; it does not select a second
+Module graph. This is a build-time projection, with no Yuanxu dependency in
+Marlin's =gerbil.pkg= beyond its pinned Agentic AI Lab package. That Lab
+revision carries Yuanxu =9482264= as its =core= gitlink.
+
+The linked Rust TUI binds six C ABI exports and retains the selected UI scope
+under an SDK root. It uses the existing typed UI request/response path and
+Ratatui host. A source-free probe with =GERBIL_HOME=, =GERBIL_PATH= and
+=GERBIL_LOADPATH= pointed at absent directories initialized the VM in 40.7 ms,
+obtained the selected UI publication in 64.0 ms and retired in 64.1 ms in one
+run. The unchanged strict Rust PTY menu/paste/stream/terminal-restoration gate
+passed with the linked debug binary: the first usable frame appeared at 2.956 s
+and the whole test completed in 3.85 s. A separate Rust PTY test opened the
+workbench with all three Gerbil paths absent and exited in 3.01 s. The exact
+=target/debug/marlin-tui crates/marlin-agent-tui/example.toml= command also
+opened the linked workbench and exited normally. A real DeepSeek request via
+the configured Anthropic-compatible provider passed the existing PTY gate.
+These observations do not establish a distribution-wide latency percentile.
+
+=cargo build --locked --release -p marlin-agent-tui --bin marlin-tui --features linked-ui=
+finished on Darwin. The Release binary opened its workbench with all three
+Gerbil paths absent and exited normally. =otool -L= shows no Gerbil Scheme build
+dylib; it still lists dynamically linked OpenSSL, zlib, SQLite, iconv and
+system libraries. The Scheme programme is linked into the executable, while
+distribution of the other native libraries remains a packaging concern. A
+strict timed Release PTY gate on the final distribution artifact is still open.
 
 ** Conversation journal in progress
 

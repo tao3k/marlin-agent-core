@@ -4,7 +4,7 @@
 
 //! Entrypoint for the Marlin terminal client.
 
-#[cfg(unix)]
+#[cfg(all(unix, not(feature = "linked-ui")))]
 fn use_local_scheme_package() -> std::io::Result<()> {
     use std::{env, os::unix::process::CommandExt, process::Command};
 
@@ -28,7 +28,7 @@ fn use_local_scheme_package() -> std::io::Result<()> {
 }
 
 fn main() {
-    #[cfg(unix)]
+    #[cfg(all(unix, not(feature = "linked-ui")))]
     if let Err(error) = use_local_scheme_package() {
         eprintln!("marlin-tui: cannot start with the local Scheme package: {error}");
         std::process::exit(1);
