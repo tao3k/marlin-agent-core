@@ -260,7 +260,11 @@ fn signed_workflow_enables_with_the_real_scheme_settings_policy() {
         std::fs::write(storage.path().join("signature"), signature.as_ref()).unwrap();
         drop(broker);
         worktree.close().unwrap();
-        let verifier = std::process::Command::new(std::env::current_exe().unwrap())
+        let verifier_path = std::env::var_os("MARLIN_BRIEF_OFFLINE_TEST")
+            .map(std::path::PathBuf::from)
+            .expect("build the brief_to_draft_offline test target without the VM feature");
+        assert!(verifier_path.is_absolute());
+        let verifier = std::process::Command::new(verifier_path)
             .args([
                 "--ignored",
                 "--exact",
@@ -405,42 +409,6 @@ fn signed_workflow_enables_with_the_real_scheme_settings_policy() {
         );
         assert_eq!(verified.execution().visited_nodes, ["render"]);
     });
-}
-
-#[test]
-#[ignore = "subprocess verifier for the linked Brief-to-Draft test"]
-fn verify_offline_archive() {
-    let publisher = "marlin.fixture".to_owned().try_into().unwrap();
-    let attestation = ReleaseAttestation {
-        publisher,
-        source_revision: [2; 20],
-        build_evidence_digest: [4; 32],
-    };
-    let key = Ed25519KeyPair::from_seed_unchecked(&[3; 32]).unwrap();
-    let trust = ReleaseTrust::new(
-        [(
-            attestation.publisher.clone(),
-            key.public_key().as_ref().try_into().unwrap(),
-        )]
-        .into(),
-    );
-    let release = trust
-        .verify(SignedRelease {
-            manifest: &std::fs::read("plugin.toml").unwrap(),
-            attestation,
-            signature: &std::fs::read("signature").unwrap().try_into().unwrap(),
-        })
-        .unwrap();
-    let archive = std::fs::read("draft-run.json").unwrap();
-    let digest = std::fs::read("digest").unwrap().try_into().unwrap();
-    let verified = BriefRunEvidence::verify(&archive, &digest, &release).unwrap();
-    assert_eq!(
-        verified.execution().status,
-        GraphLoopExecutionStatus::Completed
-    );
-    assert_eq!(verified.execution().visited_nodes, ["render", "create"]);
-    assert!(!std::path::Path::new("drafts").exists());
-    println!("BRIEF-OFFLINE-VERIFIED");
 }
 
 fn verify_workspace_effects(

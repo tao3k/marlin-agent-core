@@ -96,6 +96,8 @@ package MarlinPluginEngine {
                    crosses Rust ABI readiness and runs render and create on
                    the graph kernel. Offline verification binds the ordered
                    node receipts and terminal result to the file effects.
+                   The acceptance invokes a separate Rust verifier built
+                   without the linked Brief-to-Draft Scheme program.
                    A create refused before admission retains its typed host
                    denial with no fabricated file effect. */
         }
