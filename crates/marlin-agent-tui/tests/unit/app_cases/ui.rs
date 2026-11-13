@@ -63,7 +63,11 @@ fn runtime_events_enter_messages_in_bounded_batches_without_polluting_conversati
             };
             sink.emit(marlin_agent_protocol::AgentEvent::new(
                 topic,
-                format!("step {index}"),
+                if index == 2 {
+                    "step 2".to_owned()
+                } else {
+                    "same step".to_owned()
+                },
             ))
             .await
             .unwrap();
@@ -72,6 +76,7 @@ fn runtime_events_enter_messages_in_bounded_batches_without_polluting_conversati
 
     assert_eq!(app.poll_runtime_events(2), 2);
     assert_eq!(app.messages.len(), 2);
+    assert_eq!(app.messages[0], app.messages[1]);
     assert!(app.transcript.is_empty());
     assert_eq!(app.poll_runtime_events(2), 1);
     assert!(app.messages.last().unwrap().1.contains("step 2"));
@@ -563,9 +568,8 @@ fn event_messages_use_a_switchable_buffer_without_polluting_conversation() {
         detail: "native status 3",
     };
     app.publish_message(event);
-    app.publish_message(event);
     assert_eq!(app.transcript.len(), 1);
-    assert_eq!(app.messages.len(), 2);
+    assert_eq!(app.messages.len(), 1);
     assert_eq!(
         app.minibuffer_notice.as_deref(),
         Some("Profile selection failed")
@@ -574,7 +578,6 @@ fn event_messages_use_a_switchable_buffer_without_polluting_conversation() {
         app.messages[0].1,
         "Profile selection failed: native status 3"
     );
-    assert_eq!(app.messages[1], app.messages[0]);
     app.composer.insert_text("retained draft");
     app.toggle_command();
     app.composer.insert_text("switch-buffer");
