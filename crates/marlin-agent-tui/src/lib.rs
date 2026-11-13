@@ -4,6 +4,8 @@
 
 //! Terminal user interface for the Marlin model gateway.
 
+#![deny(dead_code)]
+
 mod app;
 mod bootstrap;
 mod cli;

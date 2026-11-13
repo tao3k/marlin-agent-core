@@ -8,6 +8,8 @@
 //! Rust frontends can disable default features and enable `grpc` for the
 //! generated App Server client and schema.
 
+#![deny(dead_code)]
+
 #[cfg(feature = "scheme-ui")]
 mod element;
 #[cfg(feature = "scheme-ui")]
