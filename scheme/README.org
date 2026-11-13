@@ -157,7 +157,9 @@ The Brief-to-Draft acceptance runs the init-selected Scheme settings and
 planning exports from a Rust-owned VM. The linked test admits a signed
 workflow, checks its project grant and activation generation, executes
 the render and file creation through the graph kernel, closes the
-generation, and verifies the archived receipts after removing the worktree.
+generation, and starts a fresh Rust verifier after removing the worktree.
+The verifier reads the signed TOML manifest, archived receipts and retained
+digest with the Scheme environment cleared.
 The linked AOT workflow builds the Cargo-selected Scheme bridge into a
 temporary prefix, puts it first on the staging load path, and checks the
 Context and workflow configuration modules in the staged program manifest.

@@ -16,7 +16,7 @@ use marlin_agent_runtime::plugin::{
 use marlin_gerbil_scheme::{BriefSettings, BriefTemplate, GerbilBriefPlanner, GerbilBriefSettings};
 use ring::signature::{Ed25519KeyPair, KeyPair};
 
-const MANIFEST: &[u8] = include_bytes!("../../../../scheme/t/fixtures/brief-to-draft/plugin.toml");
+const MANIFEST: &str = include_str!("../../../../scheme/t/fixtures/brief-to-draft/plugin.toml");
 
 unsafe extern "C" {
     fn ___LNK_marlin__brief__to__draft(
@@ -60,9 +60,12 @@ fn signed_workflow_enables_with_the_real_scheme_settings_policy() {
         source_revision: [2; 20],
         build_evidence_digest: [4; 32],
     };
-    let signature = key.sign(&SignedRelease::signing_bytes(MANIFEST, &attestation));
+    let signature = key.sign(&SignedRelease::signing_bytes(
+        MANIFEST.as_bytes(),
+        &attestation,
+    ));
     let signed = SignedRelease {
-        manifest: MANIFEST,
+        manifest: MANIFEST.as_bytes(),
         attestation: attestation.clone(),
         signature: signature.as_ref().try_into().unwrap(),
     };
@@ -84,12 +87,12 @@ fn signed_workflow_enables_with_the_real_scheme_settings_policy() {
         "marlin.fixture.unrelated",
     );
     let unrelated_signature = key.sign(&SignedRelease::signing_bytes(
-        &unrelated_manifest,
+        unrelated_manifest.as_bytes(),
         &signed.attestation,
     ));
     let unrelated_release = trust
         .verify(SignedRelease {
-            manifest: &unrelated_manifest,
+            manifest: unrelated_manifest.as_bytes(),
             attestation: signed.attestation.clone(),
             signature: unrelated_signature.as_ref().try_into().unwrap(),
         })
@@ -252,8 +255,32 @@ fn signed_workflow_enables_with_the_real_scheme_settings_policy() {
         let storage = tempfile::tempdir().unwrap();
         let path = storage.path().join("draft-run.json");
         std::fs::write(&path, archive).unwrap();
+        std::fs::write(storage.path().join("digest"), expected).unwrap();
+        std::fs::write(storage.path().join("plugin.toml"), MANIFEST).unwrap();
+        std::fs::write(storage.path().join("signature"), signature.as_ref()).unwrap();
         drop(broker);
         worktree.close().unwrap();
+        let verifier = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--ignored",
+                "--exact",
+                "--nocapture",
+                "verify_offline_archive",
+            ])
+            .current_dir(storage.path())
+            .env_remove("GERBIL_PATH")
+            .env_remove("GERBIL_LOADPATH")
+            .env_remove("GERBIL_HOME")
+            .env_remove("GERBIL_GXI")
+            .env_remove("GERBIL_GSC")
+            .env_remove("GAMBOPT")
+            .output()
+            .unwrap();
+        assert!(verifier.status.success(), "{verifier:?}");
+        assert!(
+            String::from_utf8_lossy(&verifier.stdout).contains("BRIEF-OFFLINE-VERIFIED"),
+            "{verifier:?}"
+        );
         let archive = std::fs::read(path).unwrap();
         let verified = BriefRunEvidence::verify(&archive, &expected, &release).unwrap();
         assert_eq!(verified.execution().visited_nodes, ["render", "create"]);
@@ -378,6 +405,42 @@ fn signed_workflow_enables_with_the_real_scheme_settings_policy() {
         );
         assert_eq!(verified.execution().visited_nodes, ["render"]);
     });
+}
+
+#[test]
+#[ignore = "subprocess verifier for the linked Brief-to-Draft test"]
+fn verify_offline_archive() {
+    let publisher = "marlin.fixture".to_owned().try_into().unwrap();
+    let attestation = ReleaseAttestation {
+        publisher,
+        source_revision: [2; 20],
+        build_evidence_digest: [4; 32],
+    };
+    let key = Ed25519KeyPair::from_seed_unchecked(&[3; 32]).unwrap();
+    let trust = ReleaseTrust::new(
+        [(
+            attestation.publisher.clone(),
+            key.public_key().as_ref().try_into().unwrap(),
+        )]
+        .into(),
+    );
+    let release = trust
+        .verify(SignedRelease {
+            manifest: &std::fs::read("plugin.toml").unwrap(),
+            attestation,
+            signature: &std::fs::read("signature").unwrap().try_into().unwrap(),
+        })
+        .unwrap();
+    let archive = std::fs::read("draft-run.json").unwrap();
+    let digest = std::fs::read("digest").unwrap().try_into().unwrap();
+    let verified = BriefRunEvidence::verify(&archive, &digest, &release).unwrap();
+    assert_eq!(
+        verified.execution().status,
+        GraphLoopExecutionStatus::Completed
+    );
+    assert_eq!(verified.execution().visited_nodes, ["render", "create"]);
+    assert!(!std::path::Path::new("drafts").exists());
+    println!("BRIEF-OFFLINE-VERIFIED");
 }
 
 fn verify_workspace_effects(
