@@ -2468,6 +2468,29 @@ high-side outliers. Criterion reported =p=0.08= against its prior
 an improvement. Another Cargo release task held the artifact lock during
 the run, the editor-slot changes were still uncommitted, and the earlier
 =ui/mapping/input= sample used a different build.
+
+That command is a historical observation, not the supported benchmark entry
+point. Cargo also builds =marlin-tui= for an explicit integration benchmark
+target and exposes it through =CARGO_BIN_EXE_marlin-tui=. Running with
+=--no-default-features= can therefore replace =target/release/marlin-tui=
+with a dynamic binary linked to the SDK build directory. The maintained
+=ui_mapping= benchmark now requires =linked-ui=; Cargo rejects the old command
+before building. Use =just tui-ui-mapping-bench= to stage the selected Scheme
+programme and measure the Rust mapping without initializing the VM in each
+sample. Release acceptance still checks the linked binary independently.
+
+The first linked benchmark qualification staged the selected programme and
+measured =selected-ask-frame-with-slots= over 30 samples at
+=[56.376, 81.747, 120.43]= µs (95% interval and point estimate); five
+measurements were high outliers under concurrent compilation. It built a
+124 MiB Release binary (SHA-256
+=af807f4f14d13651f2985527f2c985cf06a8e7208d6f1813f309c3de7e6c6e11=)
+without the SDK build-only Gerbil dylib. The source-free Release PTY first-frame
+gate passed. A fresh-copy PTY pair measured first output/workbench at
+=2.777/3.261= s, then =0.059/0.182= s on the same file; application tracing
+placed the first frame at =0.485/0.123= s. The first-copy gap and variable VM
+initialization remain outside this mapping benchmark, and the binary still
+depends on Nix OpenSSL, SQLite and libiconv images.
 The two input workloads must be measured from one fixed source cut without
 concurrent release work before assigning an overhead to the declarative tree.
 A later same-process run of =ui/mapping/input= and =ui/mapping/input-tree=

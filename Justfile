@@ -187,6 +187,10 @@ tui-aot-debug: tui-aot-stage
 tui-aot-build: tui-aot-stage
   cargo build --locked -p marlin-agent-tui --bin marlin-tui --features linked-ui --release
 
+# Build the same linked binary as distribution while measuring Rust UI mapping.
+tui-ui-mapping-bench: tui-aot-stage
+  cargo bench --locked -p marlin-agent-tui --bench ui_mapping
+
 # Keep interaction latency, first-copy startup, and source-free release
 # qualification in one reproducible command. Build time is not a sample.
 tui-performance-bench: tui-aot-debug tui-aot-build
