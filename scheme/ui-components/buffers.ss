@@ -5,7 +5,8 @@
 ;;; Buffer identity and window selection are UI state. Native content stays
 ;;; with its owner; bounded static content is declared beside its Buffer.
 (import (only-in :clan/poo/object .def .get .o seal-object!)
-        (only-in :std/list/list find))
+        (only-in :std/list/list find)
+        (only-in "./keymap.ss" marlin-ui-keymap-help))
 (export marlin-ui-make-frame marlin-ui-select-buffer marlin-ui-project-frame
         marlin-ui-buffer-command-entries marlin-ui-buffer-alias-command-entries
         marlin-ui-buffer-static-entries marlin-ui-buffer-identities)
@@ -15,19 +16,14 @@
 (.def UiFrame.)
 (.def UiMiniBuffer.)
 (.def UiBufferCatalog.
-  entries: '((conversation "Conversation buffer" #f #f)
+  entries: `((conversation "Conversation buffer" #f #f)
              (messages "*Messages* UI diagnostics" #f #f)
              (help "Keyboard shortcuts"
                    ("*Help*"
-                    ("Enter  Send message"
-                     "Ctrl-N  Insert newline"
-                     "M-x / Ctrl-O  Open commands"
-                     "Ctrl-X B  Switch buffer"
-                     "Ctrl-R  Search prompts"
-                     "Alt-P / Alt-N  Prompt history"
-                     "PageUp / PageDown  Scroll current buffer"
-                     "Esc / Ctrl-C  Cancel or return"
-                     "Ctrl-Q  Quit"))
+                    ,(append (list "Enter  Send message")
+                            (marlin-ui-keymap-help)
+                            (list "PageUp / PageDown  Scroll current buffer"
+                                  "Esc / Ctrl-C  Cancel · Ctrl-Q  Quit")))
                    "help")
              (processes "*Processes* managed Runtime processes"
                         ("*Processes*" ()) #f)))

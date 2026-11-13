@@ -4,8 +4,8 @@
 
 use super::{
     App, FixtureGateway, GatewayObservation, ModelEndpoint, assistant_gateway_message,
-    install_test_commands, mouse_over_minibuffer, render_draw, reply_channel,
-    selected_modeline_item, test_frame, test_layout, user_gateway_message,
+    install_test_commands, modeline_fixture_item, mouse_over_minibuffer, render_draw,
+    reply_channel, test_frame, test_layout, user_gateway_message,
 };
 use std::sync::{Arc, Mutex};
 
@@ -303,7 +303,7 @@ fn mx_minibuffer_and_candidates_are_below_modeline() {
                     "modeline/state/unknown",
                 ]
                 .into_iter()
-                .map(selected_modeline_item)
+                .map(modeline_fixture_item)
                 .collect(),
             ),
         ],
@@ -331,7 +331,7 @@ fn mx_minibuffer_and_candidates_are_below_modeline() {
                 .collect()
         })
         .collect();
-    let modeline = rows.iter().position(|row| row.contains("BRAND")).unwrap();
+    let modeline = rows.iter().position(|row| row.contains("ANCHOR")).unwrap();
     let prompt = rows.iter().position(|row| row.contains("M-x ")).unwrap();
     let candidate = rows
         .iter()
@@ -363,7 +363,7 @@ fn mx_minibuffer_and_candidates_are_below_modeline() {
             (0..80)
                 .map(|x| buffer[(x, *y)].symbol())
                 .collect::<String>()
-                .contains("BRAND")
+                .contains("ANCHOR")
         })
         .unwrap();
     assert_eq!(
@@ -389,7 +389,7 @@ fn mx_minibuffer_and_candidates_are_below_modeline() {
             (0..80)
                 .map(|x| buffer[(x, *y)].symbol())
                 .collect::<String>()
-                .contains("BRAND")
+                .contains("ANCHOR")
         })
         .unwrap();
     assert!(
@@ -769,7 +769,7 @@ fn scheme_static_buffer_replaces_window_content_without_changing_conversation() 
 }
 
 #[test]
-fn selected_modeline_is_colored_and_sits_above_the_collapsible_minibuffer() {
+fn native_modeline_is_colored_and_sits_above_the_collapsible_minibuffer() {
     use marlin_agent_ui::{UiComponentId, UiRegion, UiStatusItem, UiWorkbench};
     let mut app = App::new(ModelEndpoint::new("deepseek", "chat"));
     install_test_commands(&mut app);
@@ -784,14 +784,14 @@ fn selected_modeline_is_colored_and_sits_above_the_collapsible_minibuffer() {
             UiRegion::Composer,
             UiRegion::Commands(vec![]),
             UiRegion::Status(vec![
-                selected_modeline_item("modeline/left/brand"),
-                selected_modeline_item("modeline/left/model"),
-                selected_modeline_item("modeline/left/activity"),
-                selected_modeline_item("modeline/right/turns"),
-                selected_modeline_item("modeline/right/session"),
-                selected_modeline_item("modeline/state/online"),
-                selected_modeline_item("modeline/state/offline"),
-                selected_modeline_item("modeline/state/unknown"),
+                modeline_fixture_item("modeline/left/brand"),
+                modeline_fixture_item("modeline/left/model"),
+                modeline_fixture_item("modeline/left/activity"),
+                modeline_fixture_item("modeline/right/turns"),
+                modeline_fixture_item("modeline/right/session"),
+                modeline_fixture_item("modeline/state/online"),
+                modeline_fixture_item("modeline/state/offline"),
+                modeline_fixture_item("modeline/state/unknown"),
                 UiStatusItem::host(UiComponentId::new("ready").unwrap(), "Ready"),
             ]),
         ],
@@ -824,11 +824,9 @@ fn selected_modeline_is_colored_and_sits_above_the_collapsible_minibuffer() {
             .map(|x| terminal.backend().buffer()[(x, y)].symbol())
             .collect::<String>()
     };
-    assert!(row(&terminal, 10).contains("BRAND"));
-    assert!(row(&terminal, 10).contains("🐬"));
+    assert!(row(&terminal, 10).contains("ANCHOR"));
     assert!(row(&terminal, 10).contains("deepseek/chat"));
-    assert!(row(&terminal, 10).contains("◇"), "{}", row(&terminal, 10));
-    assert!(row(&terminal, 10).contains("Standing"));
+    assert!(row(&terminal, 10).contains("idle"));
     assert!(row(&terminal, 10).contains("session-one"));
     assert!(row(&terminal, 11).contains("Ready"));
     if let UiRegion::Status(items) = &mut view.regions[3] {
@@ -847,8 +845,8 @@ fn selected_modeline_is_colored_and_sits_above_the_collapsible_minibuffer() {
     paint(&mut terminal, &app, &view);
     let reordered = row(&terminal, 10);
     assert!(
-        reordered.find("Standing").unwrap() < reordered.find("deepseek/chat").unwrap(),
-        "Scheme-selected Modeline order was lost: {reordered}"
+        reordered.find("idle").unwrap() < reordered.find("deepseek/chat").unwrap(),
+        "native Modeline slot order was lost: {reordered}"
     );
     app.history = Arc::new(vec![
         user_gateway_message("first turn"),
@@ -861,7 +859,7 @@ fn selected_modeline_is_colored_and_sits_above_the_collapsible_minibuffer() {
     let reordered = row(&terminal, 10);
     assert!(
         reordered.find("session-one").unwrap() < reordered.find("T1").unwrap(),
-        "Scheme-selected right Modeline order was lost: {reordered}"
+        "native right Modeline slot order was lost: {reordered}"
     );
     let mut narrow = ratatui::Terminal::new(ratatui::backend::TestBackend::new(68, 12)).unwrap();
     paint(&mut narrow, &app, &view);
@@ -888,9 +886,9 @@ fn selected_modeline_is_colored_and_sits_above_the_collapsible_minibuffer() {
             .collect::<String>()
     };
     paint(&mut constrained, &app, &view);
-    let doom_line = constrained_modeline(&constrained);
-    assert!(doom_line.contains("deepseek/chat"), "{doom_line}");
-    assert!(!doom_line.contains('§'), "{doom_line}");
+    let model_first_line = constrained_modeline(&constrained);
+    assert!(model_first_line.contains("deepseek/chat"), "{model_first_line}");
+    assert!(!model_first_line.contains("S:"), "{model_first_line}");
     if let UiRegion::Status(items) = &mut view.regions[3] {
         for item in items {
             match item.id.as_str() {
@@ -901,9 +899,9 @@ fn selected_modeline_is_colored_and_sits_above_the_collapsible_minibuffer() {
         }
     }
     paint(&mut constrained, &app, &view);
-    let pi_line = constrained_modeline(&constrained);
-    assert!(!pi_line.contains("deepseek/chat"), "{pi_line}");
-    assert!(pi_line.contains('§'), "{pi_line}");
+    let session_first_line = constrained_modeline(&constrained);
+    assert!(!session_first_line.contains("deepseek/chat"), "{session_first_line}");
+    assert!(session_first_line.contains("S:"), "{session_first_line}");
     app.history = Arc::new(Vec::new());
     assert_eq!(
         terminal.backend().buffer()[(20, 10)].bg,
@@ -930,19 +928,17 @@ fn selected_modeline_is_colored_and_sits_above_the_collapsible_minibuffer() {
     );
     app.gateway_observation = GatewayObservation::Online;
     paint(&mut terminal, &app, &view);
-    assert!(row(&terminal, 10).contains("◆"));
-    assert!(row(&terminal, 10).contains("Linked"));
+    assert!(row(&terminal, 10).contains("ONLINE"));
     app.gateway_observation = GatewayObservation::Offline;
     paint(&mut terminal, &app, &view);
-    assert!(row(&terminal, 10).contains("◇"));
-    assert!(row(&terminal, 10).contains("Lost"));
+    assert!(row(&terminal, 10).contains("OFFLINE"));
     assert!(mouse_over_minibuffer(&app, &test_layout(), 80, 12, 12));
     assert!(!mouse_over_minibuffer(&app, &test_layout(), 80, 12, 10));
 
     app.minibuffer_hovered = true;
     paint(&mut terminal, &app, &view);
     assert!(row(&terminal, 8).contains("Message"));
-    assert!(row(&terminal, 7).contains("BRAND"));
+    assert!(row(&terminal, 7).contains("ANCHOR"));
     assert!(mouse_over_minibuffer(&app, &test_layout(), 80, 12, 9));
     assert!(!mouse_over_minibuffer(&app, &test_layout(), 80, 12, 7));
     app.minibuffer_hovered = false;

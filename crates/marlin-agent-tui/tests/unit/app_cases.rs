@@ -119,89 +119,33 @@ fn install_test_commands(app: &mut App) {
         .collect();
 }
 
-fn selected_modeline_item(id: &str) -> marlin_agent_ui::UiStatusItem {
+/// Synthetic native slots: Scheme tests own the selected profile's wording.
+fn modeline_fixture_item(id: &str) -> marlin_agent_ui::UiStatusItem {
     use marlin_agent_ui::{UiComponentId, UiStatusItem, UiStatusTone};
-    let (label, compact_label, tone, active_tone, min_width, compact_below) = match id {
-        "modeline/left/brand" => (
-            "🐬 BRAND",
-            "🐬",
-            UiStatusTone::Accent,
-            UiStatusTone::Accent,
-            0,
-            18,
-        ),
-        "modeline/left/model" => (
-            "  {value}  ",
-            "{value}",
-            UiStatusTone::Info,
-            UiStatusTone::Info,
-            0,
-            0,
-        ),
-        "modeline/left/activity" => (
-            "~ ◇ Standing",
-            "~ ◇",
-            UiStatusTone::Info,
-            UiStatusTone::Warning,
-            0,
-            64,
-        ),
-        "modeline/right/turns" => (
-            "T{value}  ",
-            "T{value}",
-            UiStatusTone::Info,
-            UiStatusTone::Info,
-            72,
-            0,
-        ),
-        "modeline/right/session" => (
-            " § {value} ",
-            "§{value}",
-            UiStatusTone::Muted,
-            UiStatusTone::Muted,
-            44,
-            0,
-        ),
-        "modeline/state/online" => (
-            "◆ Linked",
-            "◆",
-            UiStatusTone::Success,
-            UiStatusTone::Success,
-            0,
-            64,
-        ),
-        "modeline/state/offline" => (
-            "◇ Lost",
-            "◇",
-            UiStatusTone::Warning,
-            UiStatusTone::Warning,
-            0,
-            64,
-        ),
-        "modeline/state/unknown" => (
-            "◌ Unclear",
-            "◌",
-            UiStatusTone::Warning,
-            UiStatusTone::Warning,
-            0,
-            64,
-        ),
-        _ => panic!("unknown selected modeline item"),
+    let (label, compact_label, min_width, keep_priority) = match id {
+        "modeline/left/brand" => ("ANCHOR", "ANCHOR", 0, 0),
+        "modeline/left/model" => ("{value}", "{value}", 0, 3),
+        "modeline/left/activity" => ("idle-state", "idle-state", 0, 0),
+        "modeline/right/turns" => ("T{value}", "T{value}", 72, 1),
+        "modeline/right/session" => ("S:{value}", "S:{value}", 44, 2),
+        "modeline/state/online" => ("ONLINE", "ONLINE", 0, 0),
+        "modeline/state/offline" => ("OFFLINE", "OFFLINE", 0, 0),
+        "modeline/state/unknown" => ("UNKNOWN", "UNKNOWN", 0, 0),
+        _ => panic!("unknown native modeline fixture slot"),
     };
     UiStatusItem {
         id: UiComponentId::new(id).unwrap(),
         label: label.into(),
         compact_label: compact_label.into(),
-        tone,
-        active_tone,
-        min_width,
-        compact_below,
-        keep_priority: match id {
-            "modeline/left/model" => 3,
-            "modeline/right/session" => 2,
-            "modeline/right/turns" => 1,
-            _ => 0,
+        tone: if id == "modeline/left/brand" {
+            UiStatusTone::Accent
+        } else {
+            UiStatusTone::Info
         },
+        active_tone: UiStatusTone::Info,
+        min_width,
+        compact_below: 0,
+        keep_priority,
     }
 }
 
@@ -364,10 +308,7 @@ proptest! {
                     "modeline/left/activity",
                     "modeline/right/turns",
                     "modeline/right/session",
-                    "modeline/state/online",
-                    "modeline/state/offline",
-                    "modeline/state/unknown",
-                ].into_iter().map(selected_modeline_item).collect()),
+                ].into_iter().map(modeline_fixture_item).collect()),
             ],
             focus: UiComponentId::new("composer").unwrap(),
             frame: test_frame(),
@@ -383,11 +324,11 @@ proptest! {
         let row = (0..width)
             .map(|x| terminal.backend().buffer()[(x, modeline_y)].symbol())
             .collect::<String>();
-        prop_assert!(row.contains("BRAND"), "{width}x{height}: {row:?}");
+        prop_assert!(row.contains("ANCHOR"), "{width}x{height}: {row:?}");
         let top = (0..width)
             .map(|x| terminal.backend().buffer()[(x, 0)].symbol())
             .collect::<String>();
-        prop_assert!(!top.contains("BRAND"), "redundant top status at {width}x{height}");
+        prop_assert!(!top.contains("ANCHOR"), "redundant top status at {width}x{height}");
     }
 }
 

@@ -1796,9 +1796,12 @@ detail is available by switching buffers. Opt-in restart PTY cases check the
 same separation while preserving the no-resend rule for uncertain requests.
 
 The selected =ui-components/keymap.ss= module declares =M-x=, =C-o=,
-=C-g= and the =C-x b= prefix. It also binds =C-r=, =M-p/M-n=, =C-n= and
-=C-a/C-e= to finite typed editor actions. Its bounded projection is admitted once and
-looked up in Rust without a Scheme call per keystroke. Rust retains terminal
+=C-g= and the =C-x b= prefix. It also binds =C-r=, =M-p/M-n=, =C-n=,
+=C-b/C-f/C-d= and =C-a/C-e= to finite typed editor actions. The movement and
+delete actions use the native composer's grapheme boundaries. Its bounded
+projection is admitted once; the same Scheme declarations generate shortcut
+rows in the Help Buffer, avoiding a second binding list. Lookup runs in Rust
+without a Scheme call per keystroke. Rust retains terminal
 byte decoding, Ctrl-C/Ctrl-Z process control and effect admission. A named
 key binding resolves through the same admitted command descriptor as =M-x=.
 The selected =ui-elements= module provides native Scheme values for text
@@ -2217,7 +2220,9 @@ history pruning leaves the surviving thought addressable by ordinal.
 The Scheme workbench test owns the exact glyphs and role labels. Rust
 projection and viewport tests use different synthetic labels to check bounds,
 row geometry and raw-content preservation; the PTY test checks that the
-selected UI can fold and expand without asserting those glyphs again. One
+selected UI can fold and expand without asserting those glyphs again. Native
+modeline tests likewise use synthetic slots to check ordering, color mapping
+and mini buffer geometry without copying a Scheme profile's presentation. One
 serial run also observed a transient Ctrl-Z terminal-mode mismatch in the
 =PENDIN= bit; the isolated rerun and subsequent serial suite passed, so this
 remains an unresolved terminal timing observation.

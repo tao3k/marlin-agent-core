@@ -755,6 +755,9 @@ fn run(
                             UiEditorAction::InsertNewline if accepts_text => {
                                 app.composer.insert('\n')
                             }
+                            UiEditorAction::BackwardChar if accepts_text => app.composer.left(),
+                            UiEditorAction::ForwardChar if accepts_text => app.composer.right(),
+                            UiEditorAction::DeleteChar if accepts_text => app.composer.delete(),
                             UiEditorAction::LineStart if accepts_text => app.composer.line_start(),
                             UiEditorAction::LineEnd if accepts_text => app.composer.line_end(),
                             _ => {}

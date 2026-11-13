@@ -166,6 +166,9 @@ pub enum UiEditorAction {
     PreviousPrompt,
     NextPrompt,
     InsertNewline,
+    BackwardChar,
+    ForwardChar,
+    DeleteChar,
     LineStart,
     LineEnd,
 }

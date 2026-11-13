@@ -183,6 +183,9 @@ fn decode_keymap(value: RootedSchemeObject<'_>) -> Result<Vec<UiKeyBinding>, UiP
             ("insert-newline", 2) => {
                 UiKeyCommand::Edit(crate::model::UiEditorAction::InsertNewline)
             }
+            ("backward-char", 2) => UiKeyCommand::Edit(crate::model::UiEditorAction::BackwardChar),
+            ("forward-char", 2) => UiKeyCommand::Edit(crate::model::UiEditorAction::ForwardChar),
+            ("delete-char", 2) => UiKeyCommand::Edit(crate::model::UiEditorAction::DeleteChar),
             ("line-start", 2) => UiKeyCommand::Edit(crate::model::UiEditorAction::LineStart),
             ("line-end", 2) => UiKeyCommand::Edit(crate::model::UiEditorAction::LineEnd),
             (name, 2) => UiKeyCommand::Invoke(UiCommandName::new(name)?),
