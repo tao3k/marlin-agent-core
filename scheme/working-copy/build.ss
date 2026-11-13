@@ -2,6 +2,4 @@
 ;;;
 ;;; SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
-(.def Build
-  kind: 'module/build
-  roots: '("bridge"))
+(def Build '("bridge"))
