@@ -72,6 +72,10 @@ struct Terminal {
     slave: File,
     received: Receiver<Vec<u8>>,
     output: Vec<u8>,
+    #[cfg(feature = "linked-ui")]
+    screen: TerminalScreen,
+    #[cfg(feature = "linked-ui")]
+    screen_offset: usize,
     start: Instant,
     first_output_elapsed: Option<Duration>,
     initial_mode: nix::sys::termios::Termios,
@@ -199,6 +203,10 @@ impl Terminal {
             slave,
             received,
             output: Vec::new(),
+            #[cfg(feature = "linked-ui")]
+            screen: TerminalScreen::new(),
+            #[cfg(feature = "linked-ui")]
+            screen_offset: 0,
             start,
             first_output_elapsed: None,
             initial_mode,
@@ -241,9 +249,34 @@ impl Terminal {
         description: &str,
         mut predicate: impl FnMut(&[u8]) -> bool,
     ) {
+        self.wait_until(timeout, description, |terminal| predicate(&terminal.output));
+    }
+
+    #[cfg(feature = "linked-ui")]
+    fn wait_for_screen(
+        &mut self,
+        timeout: Duration,
+        description: &str,
+        mut predicate: impl FnMut(&TerminalScreen) -> bool,
+    ) {
+        self.wait_until(timeout, description, |terminal| {
+            terminal
+                .screen
+                .update(&terminal.output[terminal.screen_offset..]);
+            terminal.screen_offset = terminal.output.len();
+            predicate(&terminal.screen)
+        });
+    }
+
+    fn wait_until(
+        &mut self,
+        timeout: Duration,
+        description: &str,
+        mut predicate: impl FnMut(&mut Self) -> bool,
+    ) {
         let deadline = Instant::now() + timeout;
         loop {
-            if predicate(&self.output) {
+            if predicate(self) {
                 return;
             }
             let remaining = deadline.saturating_duration_since(Instant::now());
@@ -480,6 +513,11 @@ impl TerminalScreen {
     fn line(&self, row: usize) -> String {
         self.rows[row].iter().collect()
     }
+
+    #[cfg(feature = "linked-ui")]
+    fn lines(&self) -> impl Iterator<Item = String> + '_ {
+        (0..self.rows.len()).map(|row| self.line(row))
+    }
 }
 
 fn screen_lines(output: &[u8]) -> Vec<String> {
@@ -521,6 +559,10 @@ fn terminal_screen_reconstructs_partial_cell_updates() {
     for byte in output {
         incremental.update(&[*byte]);
     }
+    assert_eq!(
+        (0..30).map(|row| incremental.line(row)).collect::<Vec<_>>(),
+        rows
+    );
     incremental.update(b"\x1b[30;2HR");
     assert!(incremental.line(29).contains("Ressage: Enter send"));
     for byte in "\x1b[1;1H🐟".bytes() {

@@ -95,3 +95,35 @@ initially failed because it assumed exactly four Buffers; Scheme now supplies
 six. After changing the assertion to check the selected row without fixing
 the candidate count, the test passed. The slow =C-x b= and abbreviation tails
 merit a frozen, phase-separated follow-up.
+
+* PTY interaction measurement correction, 2026-11-14
+
+The preceding Debug interaction numbers are retained as failed measurement
+evidence. The PTY test reconstructed its entire accumulated terminal output
+on each observation poll. This added history-dependent test cost and made its
+later percentile samples unsuitable as application latency measurements.
+The query-edit control also accepted the unchanged old screen after deletion.
+The PTY harness now updates a terminal screen only with newly received bytes;
+the query control waits for the visible query to change in both directions.
+A byte-split screen reconstruction check agrees with a full replay.
+
+The corrected linked Debug PTY test passed with test binary SHA-256
+=955de144a8c065edd95f123f5eadcc82ea606c7ca3dcbe1f2ae746cb30592384=.
+It ran in a concurrently edited checkout, so these are binary-specific
+diagnostics, not a frozen-source tail guarantee.
+
+| Operation | Samples | p50 | p95 |
+|-----------+---------+-----+-----|
+| M-x arrow in an open menu | 30 | 21.62 ms | 84.95 ms |
+| M-x open plus first arrow | 30 | 21.92 ms | 37.02 ms |
+| M-x query edit and Scheme projection | 30 | 19.61 ms | 48.33 ms |
+| M-x open with subsequence abbreviation | 30 | 18.53 ms | 36.27 ms |
+| C-x b open plus immediate Down in one write | 30 | 19.29 ms | 62.12 ms |
+| C-x b menu open, separately observed | 30 | 20.52 ms | 33.10 ms |
+| C-x b Down after open, separately observed | 30 | 19.19 ms | 28.51 ms |
+| First M-x arrow in a new process after first frame | 10 | 20.52 ms | 36.54 ms |
+
+The split samples show no persistent hundreds-of-milliseconds =C-x b=
+median after fixing the harness. The remaining p95 spread needs a frozen
+source and controlled host load before attributing it to Scheme, Rust,
+terminal scheduling, or the operating system.
