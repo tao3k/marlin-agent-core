@@ -10,9 +10,9 @@ mod benchmark_input;
 use criterion::{Criterion, criterion_group, criterion_main};
 use marlin_agent_tui::ui_elements::{
     Extent, RegionExtents, UiContentSlot, UiListRow, UiRenderInputs, UiSlotRenderer, hit_test,
-    hit_test_scroll, layout_regions, layout_regions_with_facts, render_input, render_list,
-    render_prompt, render_template, render_with_regions, render_with_scroll, render_with_slots,
-    resolve_choice, resolve_size,
+    hit_test_scroll, layout_regions, layout_regions_with_facts, layout_regions_with_scroll,
+    render_input, render_list, render_prompt, render_template, render_with_facts,
+    render_with_regions, render_with_scroll, render_with_slots, resolve_choice, resolve_size,
 };
 use marlin_agent_ui::{
     UiComponentId, UiElement, UiSpan, UiTemplateSpan, UiTemplateValue, UiTheme, UiTone,
@@ -53,15 +53,25 @@ fn mapping(c: &mut Criterion) {
             for _ in 0..16 {
                 black_box(wheel.push(true, 4, 3));
             }
-            black_box(wheel.take_lines());
+            black_box(wheel.take_steps());
+        })
+    });
+    c.bench_function("ui/input/wheel-coalesced-101", |b| {
+        b.iter(|| {
+            for _ in 0..101 {
+                black_box(wheel.push(true, 4, 3));
+            }
+            while wheel.has_pending() {
+                black_box(wheel.take_steps());
+            }
         })
     });
     c.bench_function("ui/input/wheel-two-regions", |b| {
         b.iter(|| {
             black_box(wheel.push(true, 4, 3));
             black_box(wheel.push(false, 4, 18));
-            black_box(wheel.take_lines());
-            black_box(wheel.take_lines());
+            black_box(wheel.take_steps());
+            black_box(wheel.take_steps());
             black_box(wheel.has_pending());
         })
     });
@@ -189,32 +199,53 @@ fn mapping(c: &mut Criterion) {
             black_box(regions)
         })
     });
-    let list_template = UiElement::Choice {
-        cases: vec![(UiComponentId::new("selected").unwrap(), template.clone())],
-        fallback: Box::new(template.clone()),
-    };
-    let mut list_terminal = Terminal::new(TestBackend::new(80, 10)).unwrap();
-    c.bench_function("ui/mapping/list-256-visible-10", |b| {
-        b.iter(|| {
-            list_terminal
-                .draw(|frame| {
-                    render_list(
-                        frame,
-                        frame.area(),
-                        &list_template,
-                        &theme,
-                        256,
-                        Some(255),
-                        |index| {
-                            Some(UiListRow {
-                                bindings: vec![("name", format!("command-{index}").into())],
-                            })
-                        },
-                    )
-                })
-                .unwrap();
-        })
-    });
+    let mut column_template = template.clone();
+    if let UiElement::Template { spans, .. } = &mut column_template {
+        spans[1].value = UiTemplateValue::Column {
+            id: UiComponentId::new("name").unwrap(),
+            width: UiSize::Binding(UiComponentId::new("candidate-name-width").unwrap()),
+        };
+    }
+    for (benchmark, row) in [
+        ("ui/mapping/list-256-visible-10", template.clone()),
+        ("ui/mapping/list-column-256-visible-10", column_template),
+    ] {
+        let list_template = UiElement::List {
+            id: UiComponentId::new("benchmark-list").unwrap(),
+            offset: UiSize::Cells(246),
+            child: Box::new(UiElement::Choice {
+                cases: vec![(UiComponentId::new("selected").unwrap(), row.clone())],
+                fallback: Box::new(row),
+            }),
+        };
+        let mut list_terminal = Terminal::new(TestBackend::new(80, 10)).unwrap();
+        let mut list_state = marlin_agent_tui::ui_elements::UiListState::default();
+        c.bench_function(benchmark, |b| {
+            b.iter(|| {
+                list_terminal
+                    .draw(|frame| {
+                        render_list(
+                            frame,
+                            frame.area(),
+                            &list_template,
+                            &theme,
+                            marlin_agent_tui::ui_elements::UiListData {
+                                count: 256,
+                                selected: Some(255),
+                                extent: &|_| Extent::Cells(16),
+                            },
+                            &mut list_state,
+                            |index| {
+                                Some(UiListRow {
+                                    bindings: vec![("name", format!("command-{index}").into())],
+                                })
+                            },
+                        )
+                    })
+                    .unwrap();
+            })
+        });
+    }
     let choice = UiElement::Choice {
         cases: (0..10)
             .map(|index| {
@@ -261,7 +292,16 @@ fn mapping(c: &mut Criterion) {
     let input = UiElement::Input {
         bordered: false,
         background: marlin_agent_ui::UiBackground::Bar,
-        prefix: Some(UiComponentId::new("prompt").unwrap()),
+        prefix: Some(Box::new(UiElement::Template {
+            background: marlin_agent_ui::UiBackground::None,
+            spans: vec![marlin_agent_ui::UiTemplateSpan {
+                value: marlin_agent_ui::UiTemplateValue::Binding(
+                    UiComponentId::new("prompt").unwrap(),
+                ),
+                tone: UiTone::Accent,
+                bold: false,
+            }],
+        })),
         title: None,
         active: UiComponentId::new("active").unwrap(),
     };
@@ -291,7 +331,8 @@ fn mapping(c: &mut Criterion) {
             _: &mut ratatui::Frame<'_>,
             _: ratatui::layout::Rect,
             _: &UiComponentId,
-            _: Option<UiTone>,
+            _: Option<&UiElement>,
+            _: &UiRenderInputs<'_>,
             _: usize,
         ) {
         }
@@ -329,7 +370,34 @@ fn mapping(c: &mut Criterion) {
     });
     let panel = UiElement::Panel {
         border_tone: UiTone::Info,
-        field_tone: UiTone::Accent,
+        field_template: Box::new(UiElement::Template {
+            background: marlin_agent_ui::UiBackground::None,
+            spans: vec![
+                UiTemplateSpan {
+                    value: UiTemplateValue::Binding(UiComponentId::new("label").unwrap()),
+                    tone: UiTone::Accent,
+                    bold: false,
+                },
+                UiTemplateSpan {
+                    value: UiTemplateValue::Literal(": ".into()),
+                    tone: UiTone::Accent,
+                    bold: false,
+                },
+                UiTemplateSpan {
+                    value: UiTemplateValue::Binding(UiComponentId::new("value").unwrap()),
+                    tone: UiTone::Normal,
+                    bold: false,
+                },
+            ],
+        }),
+        title: Some(Box::new(UiElement::Template {
+            background: marlin_agent_ui::UiBackground::None,
+            spans: vec![UiTemplateSpan {
+                value: UiTemplateValue::Literal(" Panel ".into()),
+                tone: UiTone::Info,
+                bold: false,
+            }],
+        })),
         child: Box::new(UiElement::Slot(UiComponentId::new("static").unwrap())),
     };
     let fields: Vec<_> = (0..16)
@@ -340,9 +408,7 @@ fn mapping(c: &mut Criterion) {
         .collect();
     let mut panel_terminal = Terminal::new(TestBackend::new(80, 20)).unwrap();
     let mut panel_slot = UiContentSlot {
-        title: "Panel",
         content: &fields,
-        theme: &theme,
         scroll: 0,
     };
     c.bench_function("ui/mapping/panel-16-fields", |b| {
@@ -362,6 +428,13 @@ fn mapping(c: &mut Criterion) {
         })
     });
     let mut template_terminal = Terminal::new(TestBackend::new(120, 80)).unwrap();
+    let template_inputs = UiRenderInputs {
+        theme: &theme,
+        offset: &|_| 0,
+        facts: &|_| false,
+        extent: &|_| Extent::Cells(0),
+        bindings: &[("name", "model-selection")],
+    };
     c.bench_function("ui/mapping/templates-64", |b| {
         b.iter(|| {
             template_terminal
@@ -371,10 +444,77 @@ fn mapping(c: &mut Criterion) {
                             frame,
                             ratatui::layout::Rect::new(0, y, 120, 1),
                             black_box(&template),
-                            &theme,
-                            &[("name", "model-selection")],
+                            &template_inputs,
                         );
                     }
+                })
+                .unwrap();
+        })
+    });
+    let status = UiElement::Columns(vec![
+        UiElement::Sized {
+            size: UiSize::Binding(UiComponentId::new("prefix-width").unwrap()),
+            child: Box::new(UiElement::Choice {
+                cases: vec![(UiComponentId::new("active").unwrap(), template.clone())],
+                fallback: Box::new(template.clone()),
+            }),
+        },
+        UiElement::Sized {
+            size: UiSize::Flex(1),
+            child: Box::new(template.clone()),
+        },
+    ]);
+    let status_inputs = UiRenderInputs {
+        theme: &theme,
+        offset: &|_| 0,
+        facts: &|id| id.as_str() == "active",
+        extent: &|_| Extent::Cells(16),
+        bindings: &[("name", "status")],
+    };
+    let mut status_terminal = Terminal::new(TestBackend::new(80, 1)).unwrap();
+    c.bench_function("ui/mapping/status-columns", |b| {
+        b.iter(|| {
+            status_terminal
+                .draw(|frame| {
+                    render_with_facts(
+                        frame,
+                        frame.area(),
+                        black_box(&status),
+                        &mut Vec::new(),
+                        &status_inputs,
+                    );
+                })
+                .unwrap();
+        })
+    });
+    let bar = UiElement::Bar {
+        background: marlin_agent_ui::UiBackground::Bar,
+        right_divisor: 3,
+        segments: (0..10)
+            .map(|index| marlin_agent_ui::UiBarSegment {
+                side: if index < 6 {
+                    marlin_agent_ui::UiBarSide::Left
+                } else {
+                    marlin_agent_ui::UiBarSide::Right
+                },
+                priority: if index == 0 { 0 } else { 2 },
+                min_width: 0,
+                condition: None,
+                child: Box::new(template.clone()),
+            })
+            .collect(),
+    };
+    c.bench_function("ui/mapping/bar-10-segments", |b| {
+        b.iter(|| {
+            status_terminal
+                .draw(|frame| {
+                    render_with_facts(
+                        frame,
+                        frame.area(),
+                        black_box(&bar),
+                        &mut Vec::new(),
+                        &status_inputs,
+                    );
                 })
                 .unwrap();
         })
@@ -398,7 +538,7 @@ fn mapping(c: &mut Criterion) {
             child: Box::new(UiElement::Region {
                 id: UiComponentId::new(id).unwrap(),
                 scroll_target: matches!(id, "transcript" | "candidates")
-                    .then(|| marlin_agent_ui::UiScrollTarget::new(id).unwrap()),
+                    .then(|| marlin_agent_ui::UiScrollTarget::new(id, 3).unwrap()),
                 child: Box::new(UiElement::Text(vec![])),
             }),
         })
@@ -470,7 +610,10 @@ fn mapping(c: &mut Criterion) {
                 &mut mapped,
                 &|id| id.as_str() == "active",
             );
-            black_box(hit_test_scroll(&mapped, 20, 38));
+            black_box(
+                hit_test_scroll(&mapped, 20, 38)
+                    .map(|hit| (hit.scroll_target(), hit.scroll_step())),
+            );
         })
     });
     let mut empty = Terminal::new(TestBackend::new(120, 80)).unwrap();
@@ -489,7 +632,7 @@ fn mapping(c: &mut Criterion) {
                 .map(|n| UiElement::Region {
                     id: UiComponentId::new(&format!("item-{n}")).unwrap(),
                     scroll_target: Some(
-                        marlin_agent_ui::UiScrollTarget::new("transcript").unwrap(),
+                        marlin_agent_ui::UiScrollTarget::new("transcript", 3).unwrap(),
                     ),
                     child: Box::new(UiElement::Text(vec![UiSpan {
                         text: "message 🐟".into(),
@@ -521,7 +664,7 @@ fn mapping(c: &mut Criterion) {
     }
     let viewport = UiElement::Region {
         id: UiComponentId::new("viewport").unwrap(),
-        scroll_target: Some(marlin_agent_ui::UiScrollTarget::new("transcript").unwrap()),
+        scroll_target: Some(marlin_agent_ui::UiScrollTarget::new("transcript", 3).unwrap()),
         child: Box::new(UiElement::Rows(
             (0..64)
                 .map(|n| UiElement::Region {
@@ -553,6 +696,20 @@ fn mapping(c: &mut Criterion) {
                     )
                 })
                 .unwrap();
+            black_box(hit_test_scroll(&regions, 1, 29));
+        })
+    });
+    c.bench_function("ui/mapping/scroll-hit-layout-64", |b| {
+        b.iter(|| {
+            regions.clear();
+            layout_regions_with_scroll(
+                black_box(&viewport),
+                ratatui::layout::Rect::new(0, 0, 120, 30),
+                &|_| Extent::Cells(0),
+                &mut regions,
+                &|_| false,
+                &|_| 16,
+            );
             black_box(hit_test_scroll(&regions, 1, 29));
         })
     });

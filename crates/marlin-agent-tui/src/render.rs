@@ -14,16 +14,11 @@ use super::{
     ui_host::MainSource,
     viewport::{ScrollAnchor, TranscriptViewportCache},
 };
-use marlin_agent_ui::{
-    UiLayoutPolicy, UiRegion, UiRgb, UiStatusItem, UiStatusTone, UiTheme, UiWorkbench,
-};
+use marlin_agent_ui::{UiLayoutPolicy, UiRegion, UiRgb, UiWorkbench};
 use ratatui::{
     layout::Rect,
     style::{Color, Modifier, Style},
-    text::{Line, Span},
-    widgets::Paragraph,
 };
-use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
 // Configuration and session identifiers may contain control characters. Keep
@@ -44,27 +39,6 @@ fn menu_display_name<'a>(name: &'a str, prefix: Option<&str>) -> &'a str {
     prefix
         .and_then(|prefix| name.strip_prefix(prefix))
         .unwrap_or(name)
-}
-
-fn trailing_label(value: &str, width: usize) -> String {
-    if width == 0 {
-        return String::new();
-    }
-    if UnicodeWidthStr::width(value) <= width {
-        return value.to_owned();
-    }
-    let suffix: Vec<_> = value
-        .graphemes(true)
-        .rev()
-        .scan(1usize, |used, grapheme| {
-            let next = used.saturating_add(UnicodeWidthStr::width(grapheme));
-            (next <= width).then(|| {
-                *used = next;
-                grapheme
-            })
-        })
-        .collect();
-    format!("…{}", suffix.into_iter().rev().collect::<String>())
 }
 
 fn rgb(color: UiRgb) -> Color {
@@ -121,12 +95,10 @@ fn main_view_fact(
                 })
         }
         "workspace" => !previewing && app.workspace.view().is_some(),
-        "modeline-present" => ui.regions.iter().any(|region| match region {
-            UiRegion::Status(items) => items
-                .iter()
-                .any(|item| item.id.as_str() == "modeline/left/brand"),
-            _ => false,
-        }),
+        "modeline-present" => ui
+            .regions
+            .iter()
+            .any(|region| matches!(region, UiRegion::Status(items) if !items.is_empty())),
         "command" | "editor-fixed" | "editor-expanded" => editor_fact(app, &ui.layout, name),
         "extensions-enabled" => {
             if app.command_draft.is_some() || app.tool_review_prompt.is_some() {
@@ -252,6 +224,9 @@ pub(crate) fn frame_regions(
     .unwrap_or(u16::MAX);
     let metrics = |id: &marlin_agent_ui::UiComponentId| match id.as_str() {
         "review-count" => Extent::Cells(review_count),
+        "command-count" => {
+            Extent::Cells(u16::try_from(app.command_candidates.len()).unwrap_or(u16::MAX))
+        }
         "command-limit" => Extent::Cells(ui.layout.max_command_rows),
         "extension-count" => Extent::Cells(extension_count),
         _ => editor_metrics.extent(id),
@@ -282,203 +257,6 @@ pub(crate) fn mouse_over_minibuffer(
                 && row > region.area.y
                 && row - 1 < region.area.bottom()
         })
-}
-
-fn draw_modeline(
-    frame: &mut ratatui::Frame<'_>,
-    area: Rect,
-    app: &App,
-    ui: &UiWorkbench,
-    items: &[UiStatusItem],
-) {
-    let slot = |name| items.iter().find(|item| item.id.as_str() == name);
-    let (Some(brand), Some(model_slot), Some(activity_slot), Some(turns_slot), Some(session_slot)) = (
-        slot("modeline/left/brand"),
-        slot("modeline/left/model"),
-        slot("modeline/left/activity"),
-        slot("modeline/right/turns"),
-        slot("modeline/right/session"),
-    ) else {
-        return;
-    };
-    let base = Style::default().bg(rgb(ui.theme.bar)).fg(rgb(ui.theme.ink));
-    let observed = match app.modeline_activity() {
-        ModelineActivity::Idle => match app.gateway_observation {
-            GatewayObservation::Unchecked => Some(activity_slot),
-            GatewayObservation::Online => slot("modeline/state/online"),
-            GatewayObservation::Offline => slot("modeline/state/offline"),
-            GatewayObservation::Unknown => slot("modeline/state/unknown"),
-        },
-        ModelineActivity::Runtime => slot("modeline/state/runtime"),
-        ModelineActivity::Workspace => slot("modeline/state/workspace"),
-        ModelineActivity::Recovery => slot("modeline/state/recovery"),
-        ModelineActivity::ContinuationUnavailable => slot("modeline/state/continuation"),
-        ModelineActivity::History => slot("modeline/state/history"),
-        ModelineActivity::Working => slot("modeline/state/working"),
-        ModelineActivity::ReadingWorkspace => slot("modeline/state/reading"),
-    };
-    let activity = if let Some(item) = observed {
-        if area.width < item.compact_below {
-            item.compact_label.as_str()
-        } else {
-            item.label.as_str()
-        }
-    } else {
-        activity_slot.label.as_str()
-    };
-    let brand_text = if area.width < brand.compact_below {
-        &brand.compact_label
-    } else {
-        &brand.label
-    };
-    let right_budget = usize::from(area.width / 3);
-    let (session_prefix, session_suffix) = modeline_template(session_slot, area.width);
-    let session_adornment =
-        UnicodeWidthStr::width(session_prefix) + UnicodeWidthStr::width(session_suffix);
-    let session_candidate = if right_budget > session_adornment {
-        modeline_value(
-            session_slot,
-            &trailing_label(
-                &header_value(&ui.session_label),
-                right_budget - session_adornment,
-            ),
-            area.width,
-        )
-    } else {
-        String::new()
-    };
-    let turns_candidate = if app.history.len() >= 2 {
-        modeline_value(turns_slot, &(app.history.len() / 2).to_string(), area.width)
-    } else {
-        String::new()
-    };
-    let model = modeline_value(model_slot, &header_value(&ui.model_label), area.width);
-    let brand_text = format!(" {} ", header_value(brand_text));
-    let essential_width =
-        UnicodeWidthStr::width(brand_text.as_str()) + 1 + UnicodeWidthStr::width(activity) + 1;
-    let mut remaining = usize::from(area.width).saturating_sub(essential_width);
-    let mut right_width = 0usize;
-    let mut shown = [false; 3];
-    for priority in (1_u8..=3).rev() {
-        for item in items {
-            let (index, text, right) = match item.id.as_str() {
-                "modeline/left/model" => (0, model.as_str(), false),
-                "modeline/right/turns" => (1, turns_candidate.as_str(), true),
-                "modeline/right/session" => (2, session_candidate.as_str(), true),
-                _ => continue,
-            };
-            if item.keep_priority != priority || area.width < item.min_width || text.is_empty() {
-                continue;
-            }
-            let width = UnicodeWidthStr::width(text);
-            if width <= remaining && (!right || right_width + width <= right_budget) {
-                shown[index] = true;
-                remaining -= width;
-                if right {
-                    right_width += width;
-                }
-            }
-        }
-    }
-    let show_model = shown[0];
-    let turns = if shown[1] {
-        turns_candidate
-    } else {
-        String::new()
-    };
-    let session = if shown[2] {
-        session_candidate
-    } else {
-        String::new()
-    };
-    let right_width = right_width as u16;
-    let mut left = Vec::with_capacity(4);
-    for item in items {
-        match item.id.as_str() {
-            "modeline/left/brand" => {
-                left.push(Span::styled(
-                    brand_text.clone(),
-                    base.bg(tone_color(brand.tone, &ui.theme))
-                        .fg(rgb(ui.theme.canvas))
-                        .add_modifier(Modifier::BOLD),
-                ));
-                left.push(Span::styled(
-                    "▸",
-                    base.fg(tone_color(brand.tone, &ui.theme)),
-                ));
-            }
-            "modeline/left/model" if show_model => left.push(Span::styled(
-                model.clone(),
-                base.fg(tone_color(model_slot.tone, &ui.theme)),
-            )),
-            "modeline/left/activity" => left.push(Span::styled(
-                format!("{activity} "),
-                base.fg(if let Some(observed) = observed {
-                    tone_color(observed.tone, &ui.theme)
-                } else {
-                    tone_color(activity_slot.active_tone, &ui.theme)
-                }),
-            )),
-            _ => {}
-        }
-    }
-    frame.render_widget(
-        Paragraph::new(Line::from(left)).style(base),
-        Rect::new(area.x, area.y, area.width - right_width, area.height),
-    );
-    if right_width > 0 {
-        let right = items
-            .iter()
-            .filter_map(|item| match item.id.as_str() {
-                "modeline/right/turns" => Some(Span::styled(
-                    turns.clone(),
-                    base.fg(tone_color(turns_slot.tone, &ui.theme)),
-                )),
-                "modeline/right/session" => Some(Span::styled(
-                    session.clone(),
-                    base.fg(tone_color(session_slot.tone, &ui.theme)),
-                )),
-                _ => None,
-            })
-            .collect::<Vec<_>>();
-        frame.render_widget(
-            Paragraph::new(Line::from(right)).style(base),
-            Rect::new(
-                area.x + area.width - right_width,
-                area.y,
-                right_width,
-                area.height,
-            ),
-        );
-    }
-}
-
-fn tone_color(tone: UiStatusTone, theme: &UiTheme) -> Color {
-    match tone {
-        UiStatusTone::Accent => rgb(theme.accent),
-        UiStatusTone::Info => rgb(theme.info),
-        UiStatusTone::Success => rgb(theme.success),
-        UiStatusTone::Warning => rgb(theme.warning),
-        UiStatusTone::Muted => rgb(theme.muted),
-    }
-}
-
-fn modeline_template(item: &UiStatusItem, width: u16) -> (&str, &str) {
-    let template = if width < item.compact_below {
-        item.compact_label.as_str()
-    } else {
-        item.label.as_str()
-    };
-    template.split_once("{value}").unwrap_or(("", ""))
-}
-
-fn modeline_value(item: &UiStatusItem, value: &str, width: u16) -> String {
-    let (prefix, suffix) = modeline_template(item, width);
-    let mut rendered = String::with_capacity(prefix.len() + value.len() + suffix.len());
-    rendered.push_str(prefix);
-    rendered.push_str(value);
-    rendered.push_str(suffix);
-    rendered
 }
 
 pub(crate) fn draw(
@@ -597,7 +375,6 @@ pub(crate) fn draw(
     };
     let mut slots = main_view::MainSlots {
         app,
-        theme: &ui.theme,
         cache,
         anchor,
         role_style,
@@ -606,12 +383,16 @@ pub(crate) fn draw(
         effective_scroll: app.scroll_up,
     };
     if let Some(main_view) = ui.layout.frame_tree.region_child("transcript") {
+        let panel_title = static_content
+            .or(focused_content)
+            .map_or_else(String::new, |(title, _)| header_value(title));
+        let main_bindings = [("panel-title", panel_title.as_str())];
         let inputs = super::ui_elements::UiRenderInputs {
             theme: &ui.theme,
             offset: &|_| 0,
             facts: &main_facts,
             extent: &|_| super::ui_elements::Extent::Cells(0),
-            bindings: &[],
+            bindings: &main_bindings,
         };
         super::ui_elements::render_with_slots(
             frame,
@@ -645,23 +426,23 @@ pub(crate) fn draw(
     } else {
         command_prompt
     };
-    let prompt = if parts[3].width >= 20 {
-        format!(
-            "{}/{} {}",
-            selected_index.map_or(0, |index| index + 1),
-            app.tool_review_prompt
-                .as_ref()
-                .map_or(suggestions.len(), |prompt| prompt.menu.choices.len()),
-            command_prompt.trim_start()
-        )
-    } else {
-        command_prompt.to_owned()
-    };
+    let selected_count = selected_index.map_or(0, |index| index + 1).to_string();
+    let candidate_count = app
+        .tool_review_prompt
+        .as_ref()
+        .map_or(suggestions.len(), |prompt| prompt.menu.choices.len())
+        .to_string();
     if let Some(editor) = ui.layout.frame_tree.region_child("editor") {
         let facts = |id: &marlin_agent_ui::UiComponentId| {
             main_view_fact(app, ui, buffer, preview.is_some(), id.as_str())
         };
-        let bindings = [("prompt", prompt.as_str()), ("title", title)];
+        let bindings = [
+            ("selected-count", selected_count.as_str()),
+            ("candidate-count", candidate_count.as_str()),
+            ("prompt", command_prompt.trim_start()),
+            ("compact-prompt", command_prompt),
+            ("title", title),
+        ];
         let inputs = super::ui_elements::UiRenderInputs {
             theme: &ui.theme,
             offset: &|_| 0,
@@ -687,10 +468,9 @@ pub(crate) fn draw(
     let menu_prefix = app.command_menu.as_ref().map(|menu| menu.prefix.as_str());
     let name_width = suggestions
         .iter()
-        .map(|name| menu_display_name(name.as_str(), menu_prefix).len())
+        .map(|name| UnicodeWidthStr::width(menu_display_name(name.as_str(), menu_prefix)))
         .max()
-        .unwrap_or(0)
-        .min(28);
+        .unwrap_or(0);
     if let Some(template) = ui.layout.frame_tree.region_child("candidates") {
         let count = app
             .tool_review_prompt
@@ -701,8 +481,20 @@ pub(crate) fn draw(
             parts[4],
             template,
             &ui.theme,
-            count,
-            selected_index,
+            super::ui_elements::UiListData {
+                count,
+                selected: selected_index,
+                extent: &|id| {
+                    if id.as_str() == "candidate-name-width" {
+                        super::ui_elements::Extent::Cells(
+                            u16::try_from(name_width).unwrap_or(u16::MAX),
+                        )
+                    } else {
+                        super::ui_elements::Extent::Cells(0)
+                    }
+                },
+            },
+            &mut app.list_state.borrow_mut(),
             |index| {
                 let bindings = if let Some(prompt) = &app.tool_review_prompt {
                     let choice = prompt.menu.choices.get(index)?;
@@ -716,11 +508,7 @@ pub(crate) fn draw(
                     vec![
                         (
                             "name",
-                            format!(
-                                "{:<name_width$}",
-                                menu_display_name(command.name.as_str(), menu_prefix)
-                            )
-                            .into(),
+                            menu_display_name(command.name.as_str(), menu_prefix).into(),
                         ),
                         ("description", header_value(&command.description).into()),
                     ]
@@ -736,8 +524,12 @@ pub(crate) fn draw(
             parts[1],
             template,
             &ui.theme,
-            extensions.len(),
-            focused,
+            super::ui_elements::UiListData {
+                count: extensions.len(),
+                selected: focused,
+                extent: &|_| super::ui_elements::Extent::Cells(0),
+            },
+            &mut app.list_state.borrow_mut(),
             |index| {
                 Some(super::ui_elements::UiListRow {
                     bindings: vec![("label", header_value(extensions.get(index)?.1).into())],
@@ -745,36 +537,62 @@ pub(crate) fn draw(
             },
         );
     }
-    if let Some(items) = status_items.filter(|_| parts[2].height > 0) {
-        draw_modeline(frame, parts[2], app, ui, items);
+    if parts[2].height > 0
+        && let Some(bar) = ui.layout.frame_tree.region_child("modeline")
+    {
+        let activity = match app.modeline_activity() {
+            ModelineActivity::Idle => match app.gateway_observation {
+                GatewayObservation::Unchecked => "",
+                GatewayObservation::Online => "activity-online",
+                GatewayObservation::Offline => "activity-offline",
+                GatewayObservation::Unknown => "activity-unknown",
+            },
+            ModelineActivity::Runtime => "activity-runtime",
+            ModelineActivity::Workspace => "activity-workspace",
+            ModelineActivity::Recovery => "activity-recovery",
+            ModelineActivity::ContinuationUnavailable => "activity-continuation",
+            ModelineActivity::History => "activity-history",
+            ModelineActivity::Working => "activity-working",
+            ModelineActivity::ReadingWorkspace => "activity-reading",
+        };
+        let model = header_value(&ui.model_label);
+        let session = header_value(&ui.session_label);
+        let turns = (app.history.len() / 2).to_string();
+        let bindings = [
+            ("model", model.as_str()),
+            ("session", session.as_str()),
+            ("turns", turns.as_str()),
+        ];
+        let inputs = super::ui_elements::UiRenderInputs {
+            theme: &ui.theme,
+            offset: &|_| 0,
+            facts: &|id| {
+                id.as_str() == activity || id.as_str() == "has-turns" && app.history.len() >= 2
+            },
+            extent: &|_| super::ui_elements::Extent::Cells(0),
+            bindings: &bindings,
+        };
+        super::ui_elements::render_with_facts(frame, parts[2], bar, &mut Vec::new(), &inputs);
     }
     if parts[5].height == 0 {
         return effective_scroll;
     }
-    let static_status =
-        static_content.map(|(label, _)| format!("{} · Esc returns", header_value(label)));
+    let static_name = static_content.map(|(label, _)| header_value(label));
     if app.history_search.is_none()
         && let Some(hint) = &app.transient_hint
     {
         super::ui_elements::render_element(frame, parts[5], hint, &ui.theme);
         return effective_scroll;
     }
-    let prefix = if parts[3].height == 0 {
-        let extras = status_items
-            .into_iter()
-            .flatten()
-            .filter(|item| !item.id.as_str().starts_with("modeline/"))
-            .take(2)
-            .map(|item| display_value(&item.label, 16))
-            .collect::<Vec<_>>();
-        if extras.is_empty() {
-            " › ".to_owned()
-        } else {
-            format!(" › {} · ", extras.join(" · "))
-        }
-    } else {
-        " ".to_owned()
-    };
+    let mut extras = status_items
+        .into_iter()
+        .flatten()
+        .filter(|_| parts[3].height == 0)
+        .filter(|item| !item.id.as_str().starts_with("modeline/"))
+        .take(2)
+        .map(|item| display_value(&item.label, 16));
+    let extra_one = extras.next();
+    let extra_two = extras.next();
     if let Some(view) = ui.layout.frame_tree.region_child("minibuffer") {
         let facts = |fact: &marlin_agent_ui::UiComponentId| match fact.as_str() {
             "searching" => app
@@ -788,7 +606,10 @@ pub(crate) fn draw(
             "search-no-match" => app.history_search.is_some(),
             "notice" => app.minibuffer_notice.is_some(),
             "messages" => *buffer == BufferView::Messages,
-            "static-buffer" => static_status.is_some(),
+            "static-buffer" => static_name.is_some(),
+            "editor-collapsed" => parts[3].height == 0,
+            "extra-one" => extra_one.is_some(),
+            "extra-two" => extra_two.is_some(),
             "quit-armed" => app.quit_armed,
             "draft-limit" => app.composer.limit_reached(),
             "runtime" => preview.is_none() && app.runtime_receipt_open,
@@ -796,21 +617,33 @@ pub(crate) fn draw(
             "commands-focus" => ui.focus.as_str() == "commands",
             "transcript-focus" => ui.focus.as_str() == "transcript",
             "extension-focus" => ui.focus.as_str() != "composer",
+            "normal-mode" => !command_active && app.key_mode == marlin_agent_ui::UiKeyMode::Normal,
             _ => false,
         };
         let bindings = [
-            ("prefix", prefix.as_str()),
+            ("extra-one", extra_one.as_deref().unwrap_or("")),
+            ("extra-two", extra_two.as_deref().unwrap_or("")),
             (
                 "notice",
                 app.minibuffer_notice.as_deref().unwrap_or("").trim_start(),
             ),
-            ("static-status", static_status.as_deref().unwrap_or("")),
+            ("static-name", static_name.as_deref().unwrap_or("")),
         ];
+        let extent = |id: &marlin_agent_ui::UiComponentId| {
+            let value = match id.as_str() {
+                "extra-one-width" => extra_one.as_deref(),
+                "extra-two-width" => extra_two.as_deref(),
+                _ => None,
+            };
+            super::ui_elements::Extent::Cells(value.map_or(0, |text| {
+                u16::try_from(UnicodeWidthStr::width(text)).unwrap_or(u16::MAX)
+            }))
+        };
         let inputs = super::ui_elements::UiRenderInputs {
             theme: &ui.theme,
             offset: &|_| 0,
             facts: &facts,
-            extent: &|_| super::ui_elements::Extent::Cells(0),
+            extent: &extent,
             bindings: &bindings,
         };
         if let Some(search) = &app.history_search {

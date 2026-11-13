@@ -348,7 +348,7 @@ impl<'runtime> UiModule<'runtime> {
         if !UiCommandName::is_valid_prefix(query) {
             return Err(UiProjectionError::Invalid("invalid command query"));
         }
-        if !(1..=16).contains(&steps) {
+        if !(1..=512).contains(&steps) {
             return Err(UiProjectionError::Invalid("invalid command browse steps"));
         }
         let query = self.runtime.string_from_utf8(query)?.into_object();

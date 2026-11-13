@@ -9,4 +9,4 @@
 
 (def UiLayoutScope
   (validate UiLayoutScopeContract
-            (.o identity: 'marlin/ui-layout policy: marlin-ui-layout-policy)))
+            (.o identity: 'marlin/ui-layout policy-for: marlin-ui-layout-policy-for)))

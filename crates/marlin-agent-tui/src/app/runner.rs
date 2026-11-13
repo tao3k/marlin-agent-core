@@ -11,7 +11,7 @@ use super::{
     RUNTIME_EVENT_BATCH_LIMIT, RuntimeEdgePolicy, RuntimeStreamGateway, ScrollAnchor,
     SessionBrowser, SessionId, SharedGateway, SignalMonitor, TerminalInput, TerminalOwner,
     TranscriptViewportCache, TursoAgentStorage, TursoAgentStorageConfig, TursoBatchTransactionMode,
-    TursoOptimizationProfile, UiBrowseDirection, UiEvent, UiHost, UiKeyAction, UiOpenFacts,
+    TursoOptimizationProfile, UiBrowseDirection, UiHost, UiKeyAction, UiOpenFacts,
     WheelAccumulator, config, draw, frame_regions, io, list_sessions, load_session,
     mouse_over_minibuffer, mpsc, parse_cli, reply_channel, thread,
 };
@@ -25,6 +25,7 @@ use std::{
 
 use super::runtime_probe::RuntimeProbe;
 use super::tool_review::{open_tool_review, poll_tool_review, submit_tool_review};
+use super::ui_events::{apply_ui_request, browse_menu, command_menu_active};
 use termion::input::TermReadEventsAndRaw;
 
 pub(crate) fn process_replies(
@@ -57,65 +58,6 @@ pub(super) fn publish_error(
         summary,
         detail: &detail,
     });
-}
-
-fn command_menu_active(app: &App, ui: &UiHost<'_>) -> bool {
-    app.command_draft.is_some()
-        && app.composer.cursor_at_end()
-        && ui.accepts_text(true)
-        && !app.command_candidates.is_empty()
-}
-
-fn browse_menu(app: &mut App, ui: &UiHost<'_>, direction: UiBrowseDirection, steps: u8) {
-    let anchor = app.menu_navigation_anchor();
-    match ui.browse_command_steps(
-        &app.command_lookup_query(),
-        &app.command_candidates,
-        anchor.as_ref(),
-        direction,
-        steps,
-        app.pending.is_some(),
-    ) {
-        Ok(choice) => {
-            app.command_selection = choice.map(|name| (app.composer.text().to_owned(), name));
-            app.command_selection_locked = app.command_selection.is_some();
-        }
-        Err(error) => publish_error(app, MessageSource::Ui, "Command menu failed", &error),
-    }
-}
-
-fn apply_ui_request(app: &mut App, ui: &mut UiHost<'_>) {
-    if let Some(name) = app.command_history_request.take()
-        && let Err(error) = ui.dispatch(UiEvent::RecordCommand(name))
-    {
-        publish_error(app, MessageSource::Ui, "Command history failed", &error);
-    }
-    if let Some(event) = app.ui_request.take() {
-        let summary = match event {
-            UiEvent::SelectBuffer(_) => "Buffer selection failed",
-            _ => "Profile selection failed",
-        };
-        match ui.dispatch(event) {
-            Ok(_) => {
-                app.transcript_policy = Some(ui.view().layout.transcript_policy.clone());
-                if let Err(error) = app.sync_window(ui.view()) {
-                    app.publish_message(MessageEvent {
-                        source: MessageSource::Ui,
-                        severity: MessageSeverity::Error,
-                        summary,
-                        detail: error,
-                    });
-                }
-            }
-            Err(error) => publish_error(app, MessageSource::Ui, summary, &error),
-        }
-    }
-    if let Some(id) = app.transient_request.take() {
-        if let Err(error) = ui.enter_transient(&id) {
-            publish_error(app, MessageSource::Ui, "Command group failed", &error);
-        }
-        app.transient_hint = ui.transient_hint().cloned();
-    }
 }
 
 fn run(
@@ -578,27 +520,37 @@ fn run(
                 schedule.wait_duration(Instant::now())
             };
             let received = keys_rx.recv_timeout(wait);
-            if let Some((up, lines, column, row)) = wheel_steps.take_lines() {
-                let target = if column > 0 && row > 0 {
+            if let Some((up, pulses, column, row)) = wheel_steps.take_steps() {
+                let hit = if column > 0 && row > 0 {
                     super::super::ui_elements::hit_test_scroll(&geometry, column - 1, row - 1)
-                        .and_then(|region| region.scroll_target())
                 } else {
                     None
                 };
+                let target = hit.and_then(|region| region.scroll_target());
+                let units = pulses.saturating_mul(usize::from(
+                    hit.and_then(|region| region.scroll_step()).unwrap_or(0),
+                ));
                 if target == Some("transcript")
                     && let Some(prompt) = app.tool_review_prompt.as_mut()
                 {
                     prompt.scroll = if up {
-                        prompt.scroll.saturating_sub(lines as u16)
+                        prompt
+                            .scroll
+                            .saturating_sub(u16::try_from(units).unwrap_or(u16::MAX))
                     } else {
-                        prompt.scroll.saturating_add(lines as u16)
+                        prompt
+                            .scroll
+                            .saturating_add(u16::try_from(units).unwrap_or(u16::MAX))
                     };
                 } else if target == Some("candidates") && app.tool_review_prompt.is_some() {
                     if let Some(prompt) = app.tool_review_prompt.as_mut() {
                         prompt.selected = if up {
-                            prompt.selected.saturating_sub(1)
+                            prompt.selected.saturating_sub(units)
                         } else {
-                            (prompt.selected + 1).min(prompt.menu.choices.len() - 1)
+                            prompt
+                                .selected
+                                .saturating_add(units)
+                                .min(prompt.menu.choices.len().saturating_sub(1))
                         };
                     }
                 } else if target == Some("candidates") && command_menu_active(&app, &ui) {
@@ -610,10 +562,10 @@ fn run(
                         } else {
                             UiBrowseDirection::Next
                         },
-                        (lines / 3) as u8,
+                        u16::try_from(units).unwrap_or(u16::MAX),
                     );
                 } else if target == Some("transcript") {
-                    app.scroll_lines(up, lines);
+                    app.scroll_lines(up, units);
                 }
                 schedule.mark_dirty();
             }
@@ -740,6 +692,7 @@ fn run(
                     *key,
                     app.command_draft.is_some(),
                     app.command_draft.is_some(),
+                    app.key_mode,
                 );
                 app.transient_hint = ui.transient_hint().cloned();
                 match routed {
@@ -749,8 +702,30 @@ fn run(
                         apply_ui_request(&mut app, &mut ui);
                         continue;
                     }
+                    Ok(UiKeyAction::Mode { mode, cancel }) => {
+                        // Escape first preserves existing cancel/return behaviour.
+                        // Enter normal mode only from the idle conversation.
+                        let enter_mode = !cancel
+                            || (app.buffer_view == super::BufferView::Conversation
+                                && app.modeline_activity() == super::ModelineActivity::Idle);
+                        if cancel {
+                            app.cancel();
+                            apply_ui_request(&mut app, &mut ui);
+                        }
+                        if enter_mode {
+                            if mode == marlin_agent_ui::UiKeyMode::Normal
+                                && app.key_mode == marlin_agent_ui::UiKeyMode::Insert
+                            {
+                                app.composer.normal_cursor();
+                            }
+                            app.key_mode = mode;
+                        }
+                        continue;
+                    }
                     Ok(UiKeyAction::Edit(action)) => {
                         let accepts_text = ui.accepts_text(app.command_draft.is_some());
+                        let normal = app.key_mode == marlin_agent_ui::UiKeyMode::Normal
+                            && app.command_draft.is_none();
                         match action {
                             UiEditorAction::HistorySearch => app.start_history_search(),
                             UiEditorAction::PreviousPrompt if accepts_text => {
@@ -762,11 +737,62 @@ fn run(
                             UiEditorAction::InsertNewline if accepts_text => {
                                 app.composer.insert('\n')
                             }
+                            UiEditorAction::BackwardChar if accepts_text && normal => {
+                                app.composer.normal_left()
+                            }
                             UiEditorAction::BackwardChar if accepts_text => app.composer.left(),
+                            UiEditorAction::ForwardChar if accepts_text && normal => {
+                                app.composer.normal_right()
+                            }
                             UiEditorAction::ForwardChar if accepts_text => app.composer.right(),
-                            UiEditorAction::DeleteChar if accepts_text => app.composer.delete(),
+                            UiEditorAction::DeleteChar if accepts_text => {
+                                app.composer.delete();
+                                if normal {
+                                    app.composer.clamp_normal_cursor();
+                                }
+                            }
+                            UiEditorAction::PreviousLine if accepts_text => {
+                                app.composer.move_vertical(size.0.saturating_sub(2), false);
+                                if normal {
+                                    app.composer.clamp_normal_cursor();
+                                }
+                            }
+                            UiEditorAction::NextLine if accepts_text => {
+                                app.composer.move_vertical(size.0.saturating_sub(2), true);
+                                if normal {
+                                    app.composer.clamp_normal_cursor();
+                                }
+                            }
+                            UiEditorAction::PreviousLine => app.scroll(true),
+                            UiEditorAction::NextLine => app.scroll(false),
+                            UiEditorAction::NextWord if accepts_text => {
+                                app.composer.next_word();
+                                if normal {
+                                    app.composer.clamp_normal_cursor();
+                                }
+                            }
+                            UiEditorAction::PreviousWord if accepts_text => {
+                                app.composer.previous_word()
+                            }
+                            UiEditorAction::DeleteLine if accepts_text => {
+                                app.composer.delete_line();
+                                app.composer.clamp_normal_cursor();
+                            }
+                            UiEditorAction::Undo if accepts_text => {
+                                app.composer.undo();
+                                app.composer.clamp_normal_cursor();
+                            }
+                            UiEditorAction::AppendInsert if accepts_text => {
+                                app.composer.right();
+                                app.key_mode = marlin_agent_ui::UiKeyMode::Insert;
+                            }
                             UiEditorAction::LineStart if accepts_text => app.composer.line_start(),
-                            UiEditorAction::LineEnd if accepts_text => app.composer.line_end(),
+                            UiEditorAction::LineEnd if accepts_text => {
+                                app.composer.line_end();
+                                if normal {
+                                    app.composer.clamp_normal_cursor();
+                                }
+                            }
                             _ => {}
                         }
                         continue;

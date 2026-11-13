@@ -7,6 +7,7 @@
         (only-in :clan/poo/object .def .get .o seal-object!)
         (only-in :std/list/list find filter)
         (only-in :yuanxu/poo-clos/types clos-instance?)
+        (only-in "../ui-components/bounds.ss" marlin-ui-max-browse-steps)
         "../ui/projection.ss")
 (export marlin-ui-session-open marlin-ui-session-project marlin-ui-session-dispatch
         marlin-ui-session-browse-command
@@ -27,7 +28,7 @@
 (def (marlin-ui-session-browse-command input)
   (unless (and (vector? input) (= (vector-length input) 6)
                (integer? (vector-ref input 4))
-               (<= 1 (vector-ref input 4) 16)
+               (<= 1 (vector-ref input 4) marlin-ui-max-browse-steps)
                (or (not (vector-ref input 5))
                    (and (vector? (vector-ref input 5))
                         (<= (vector-length (vector-ref input 5)) 256))))

@@ -33,21 +33,29 @@ pub struct UiComponentId(Arc<str>);
 
 /// A Scheme-selected host capability for scrolling a region.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub struct UiScrollTarget(UiComponentId);
+pub struct UiScrollTarget {
+    id: UiComponentId,
+    step: u16,
+}
 
 impl UiScrollTarget {
-    pub fn new(value: &str) -> Result<Self, UiProjectionError> {
-        Ok(Self(UiComponentId::new(value)?))
+    pub fn new(value: &str, step: u16) -> Result<Self, UiProjectionError> {
+        Self::from_id(UiComponentId::new(value)?, step)
+    }
+
+    pub fn from_id(id: UiComponentId, step: u16) -> Result<Self, UiProjectionError> {
+        if !(1..=32).contains(&step) {
+            return Err(UiProjectionError::Invalid("invalid UI scroll step"));
+        }
+        Ok(Self { id, step })
     }
 
     pub fn as_str(&self) -> &str {
-        self.0.as_str()
+        self.id.as_str()
     }
-}
 
-impl From<UiComponentId> for UiScrollTarget {
-    fn from(value: UiComponentId) -> Self {
-        Self(value)
+    pub fn step(&self) -> u16 {
+        self.step
     }
 }
 
@@ -109,6 +117,25 @@ pub enum UiKeyCommand {
     Cancel,
     Edit(UiEditorAction),
     Invoke(UiCommandName),
+    /// Switch an editor mode; `cancel` preserves the active Escape action.
+    Mode {
+        mode: UiKeyMode,
+        cancel: bool,
+    },
+}
+
+/// The native editor's input interpretation mode.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum UiKeyMode {
+    Insert,
+    Normal,
+}
+
+/// Scheme selects whether a binding is global or applies in one editor mode.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum UiKeyScope {
+    Global,
+    Mode(UiKeyMode),
 }
 
 /// Identity of a temporary Scheme-declared keymap.
@@ -170,6 +197,13 @@ pub enum UiEditorAction {
     BackwardChar,
     ForwardChar,
     DeleteChar,
+    PreviousLine,
+    NextLine,
+    AppendInsert,
+    NextWord,
+    PreviousWord,
+    DeleteLine,
+    Undo,
     LineStart,
     LineEnd,
 }
@@ -177,6 +211,7 @@ pub enum UiEditorAction {
 /// One Scheme-declared shortcut and the admitted host command it invokes.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct UiKeyBinding {
+    pub scope: UiKeyScope,
     pub sequence: Vec<UiKeyToken>,
     pub command: UiKeyCommand,
 }
@@ -496,11 +531,13 @@ pub struct UiWorkbench {
 }
 
 impl UiWorkbench {
-    pub fn key_command(&self, sequence: &[&str]) -> Option<UiKeyCommand> {
+    pub fn key_command(&self, sequence: &[&str], mode: Option<UiKeyMode>) -> Option<UiKeyCommand> {
         self.keymap
             .iter()
             .find(|binding| {
-                binding.sequence.len() == sequence.len()
+                (binding.scope == UiKeyScope::Global
+                    || mode.is_some_and(|mode| binding.scope == UiKeyScope::Mode(mode)))
+                    && binding.sequence.len() == sequence.len()
                     && binding
                         .sequence
                         .iter()
@@ -510,9 +547,11 @@ impl UiWorkbench {
             .map(|binding| binding.command.clone())
     }
 
-    pub fn key_prefix(&self, sequence: &[&str]) -> bool {
+    pub fn key_prefix(&self, sequence: &[&str], mode: Option<UiKeyMode>) -> bool {
         self.keymap.iter().any(|binding| {
-            binding.sequence.len() > sequence.len()
+            (binding.scope == UiKeyScope::Global
+                || mode.is_some_and(|mode| binding.scope == UiKeyScope::Mode(mode)))
+                && binding.sequence.len() > sequence.len()
                 && binding
                     .sequence
                     .iter()
@@ -583,7 +622,10 @@ impl UiWorkbench {
                     || self.layout.command_frame != next.layout.command_frame
                     || self.layout.max_chatbox_rows != next.layout.max_chatbox_rows
                     || self.layout.max_command_rows != next.layout.max_command_rows
-                    || self.layout.frame_tree != next.layout.frame_tree
+                    || !self
+                        .layout
+                        .frame_tree
+                        .same_profile_structure(&next.layout.frame_tree)
             } else {
                 self.layout != next.layout
             }
@@ -730,7 +772,7 @@ pub struct UiBrowseRequest<'a> {
     pub query: &'a str,
     pub previous: Option<&'a UiCommandName>,
     pub direction: UiBrowseDirection,
-    pub steps: u8,
+    pub steps: u16,
     /// Optional runtime-admitted subset, retaining Scheme's original order.
     pub allowed: Option<&'a [UiCommandName]>,
 }
@@ -757,6 +799,18 @@ pub enum UiProjectionError {
     Native(NativeError),
     Call(RootedCallError),
     Invalid(&'static str),
+    Field {
+        name: &'static str,
+        source: Box<UiProjectionError>,
+    },
+}
+impl UiProjectionError {
+    pub(crate) fn at(self, name: &'static str) -> Self {
+        Self::Field {
+            name,
+            source: Box::new(self),
+        }
+    }
 }
 impl std::fmt::Display for UiProjectionError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -764,6 +818,15 @@ impl std::fmt::Display for UiProjectionError {
             Self::Native(error) => write!(formatter, "{error}"),
             Self::Call(error) => write!(formatter, "{error}"),
             Self::Invalid(reason) => write!(formatter, "invalid UI projection: {reason}"),
+            Self::Field { name, source } => write!(formatter, "UI projection {name}: {source}"),
+        }
+    }
+}
+impl std::error::Error for UiProjectionError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Field { source, .. } => Some(source),
+            _ => None,
         }
     }
 }
@@ -777,24 +840,3 @@ impl From<NativeError> for UiProjectionError {
         Self::Native(error)
     }
 }
-    Field {
-        name: &'static str,
-        source: Box<UiProjectionError>,
-    },
-}
-impl UiProjectionError {
-    pub(crate) fn at(self, name: &'static str) -> Self {
-        Self::Field {
-            name,
-            source: Box::new(self),
-        }
-    }
-            Self::Field { name, source } => write!(formatter, "UI projection {name}: {source}"),
-        }
-    }
-}
-impl std::error::Error for UiProjectionError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            Self::Field { source, .. } => Some(source),
-            _ => None,

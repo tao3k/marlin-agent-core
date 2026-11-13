@@ -39,18 +39,11 @@ pub(super) fn test_layout() -> UiLayoutPolicy {
     };
     let status = |label: &str| UiElement::Template {
         background: marlin_agent_ui::UiBackground::None,
-        spans: vec![
-            UiTemplateSpan {
-                value: UiTemplateValue::Binding(UiComponentId::new("prefix").unwrap()),
-                tone: UiTone::Normal,
-                bold: false,
-            },
-            UiTemplateSpan {
-                value: UiTemplateValue::Literal(label.into()),
-                tone: UiTone::Normal,
-                bold: false,
-            },
-        ],
+        spans: vec![UiTemplateSpan {
+            value: UiTemplateValue::Literal(label.into()),
+            tone: UiTone::Normal,
+            bold: false,
+        }],
     };
     use marlin_agent_ui::UiSize;
     let id = |name| UiComponentId::new(name).unwrap();
@@ -185,8 +178,13 @@ pub(super) fn test_layout() -> UiLayoutPolicy {
                 },
                 child: Box::new(marlin_agent_ui::UiElement::Region {
                     id: UiComponentId::new(name).unwrap(),
-                    scroll_target: matches!(name, "transcript" | "candidates")
-                        .then(|| marlin_agent_ui::UiScrollTarget::new(name).unwrap()),
+                    scroll_target: matches!(name, "transcript" | "candidates").then(|| {
+                        marlin_agent_ui::UiScrollTarget::new(
+                            name,
+                            if name == "candidates" { 1 } else { 3 },
+                        )
+                        .unwrap()
+                    }),
                     child: Box::new(if name == "transcript" {
                         UiElement::Choice {
                             cases: [
@@ -205,7 +203,42 @@ pub(super) fn test_layout() -> UiLayoutPolicy {
                                     if matches!(name, "static" | "runtime" | "extension") {
                                         UiElement::Panel {
                                             border_tone: UiTone::Info,
-                                            field_tone: UiTone::Info,
+                                            field_template: Box::new(UiElement::Template {
+                                                background: marlin_agent_ui::UiBackground::None,
+                                                spans: vec![
+                                                    UiTemplateSpan {
+                                                        value: UiTemplateValue::Binding(
+                                                            UiComponentId::new("label").unwrap(),
+                                                        ),
+                                                        tone: UiTone::Info,
+                                                        bold: false,
+                                                    },
+                                                    UiTemplateSpan {
+                                                        value: UiTemplateValue::Literal(
+                                                            ": ".into(),
+                                                        ),
+                                                        tone: UiTone::Info,
+                                                        bold: false,
+                                                    },
+                                                    UiTemplateSpan {
+                                                        value: UiTemplateValue::Binding(
+                                                            UiComponentId::new("value").unwrap(),
+                                                        ),
+                                                        tone: UiTone::Normal,
+                                                        bold: false,
+                                                    },
+                                                ],
+                                            }),
+                                            title: Some(Box::new(UiElement::Template {
+                                                background: marlin_agent_ui::UiBackground::None,
+                                                spans: vec![UiTemplateSpan {
+                                                    value: UiTemplateValue::Binding(
+                                                        UiComponentId::new("panel-title").unwrap(),
+                                                    ),
+                                                    tone: UiTone::Info,
+                                                    bold: false,
+                                                }],
+                                            })),
                                             child: Box::new(slot),
                                         }
                                     } else {
@@ -219,27 +252,48 @@ pub(super) fn test_layout() -> UiLayoutPolicy {
                             )),
                         }
                     } else if name == "extensions" {
-                        UiElement::Template {
-                            background: marlin_agent_ui::UiBackground::None,
-                            spans: vec![
-                                UiTemplateSpan {
-                                    value: UiTemplateValue::Literal("fixture: ".into()),
-                                    tone: UiTone::Normal,
-                                    bold: false,
-                                },
-                                UiTemplateSpan {
-                                    value: UiTemplateValue::Binding(
-                                        UiComponentId::new("label").unwrap(),
-                                    ),
-                                    tone: UiTone::Normal,
-                                    bold: false,
-                                },
-                            ],
+                        UiElement::List {
+                            id: UiComponentId::new("extensions").unwrap(),
+                            offset: UiSize::Cells(0),
+                            child: Box::new(UiElement::Template {
+                                background: marlin_agent_ui::UiBackground::None,
+                                spans: vec![
+                                    UiTemplateSpan {
+                                        value: UiTemplateValue::Literal("fixture: ".into()),
+                                        tone: UiTone::Normal,
+                                        bold: false,
+                                    },
+                                    UiTemplateSpan {
+                                        value: UiTemplateValue::Binding(
+                                            UiComponentId::new("label").unwrap(),
+                                        ),
+                                        tone: UiTone::Normal,
+                                        bold: false,
+                                    },
+                                ],
+                            }),
                         }
                     } else if name == "candidates" {
-                        UiElement::Choice {
-                            cases: vec![(UiComponentId::new("selected").unwrap(), candidate(true))],
-                            fallback: Box::new(candidate(false)),
+                        UiElement::List {
+                            id: UiComponentId::new("candidates").unwrap(),
+                            offset: UiSize::Subtract(
+                                Box::new(UiSize::Add(
+                                    Box::new(UiSize::Binding(
+                                        UiComponentId::new("list-index").unwrap(),
+                                    )),
+                                    Box::new(UiSize::Cells(1)),
+                                )),
+                                Box::new(UiSize::Binding(
+                                    UiComponentId::new("list-visible").unwrap(),
+                                )),
+                            ),
+                            child: Box::new(UiElement::Choice {
+                                cases: vec![(
+                                    UiComponentId::new("selected").unwrap(),
+                                    candidate(true),
+                                )],
+                                fallback: Box::new(candidate(false)),
+                            }),
                         }
                     } else if name == "editor" {
                         let input =
@@ -247,7 +301,18 @@ pub(super) fn test_layout() -> UiLayoutPolicy {
                                 UiElement::Input {
                                     bordered,
                                     background,
-                                    prefix: prefix.map(|name| UiComponentId::new(name).unwrap()),
+                                    prefix: prefix.map(|name| {
+                                        Box::new(UiElement::Template {
+                                            background: marlin_agent_ui::UiBackground::None,
+                                            spans: vec![UiTemplateSpan {
+                                                value: UiTemplateValue::Binding(
+                                                    UiComponentId::new(name).unwrap(),
+                                                ),
+                                                tone: UiTone::Accent,
+                                                bold: false,
+                                            }],
+                                        })
+                                    }),
                                     title: title.map(|name| UiComponentId::new(name).unwrap()),
                                     active: UiComponentId::new("focused").unwrap(),
                                 }
@@ -268,6 +333,18 @@ pub(super) fn test_layout() -> UiLayoutPolicy {
                                 None,
                                 Some("title"),
                             )),
+                        }
+                    } else if name == "modeline" {
+                        UiElement::Bar {
+                            background: marlin_agent_ui::UiBackground::Bar,
+                            right_divisor: 3,
+                            segments: vec![marlin_agent_ui::UiBarSegment {
+                                side: marlin_agent_ui::UiBarSide::Left,
+                                priority: 0,
+                                min_width: 0,
+                                condition: None,
+                                child: Box::new(status("ANCHOR")),
+                            }],
                         }
                     } else if name == "minibuffer" {
                         UiElement::Choice {

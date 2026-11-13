@@ -4,10 +4,28 @@
 
 //! A grapheme-aware multiline composer.
 
+use std::collections::VecDeque;
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
 pub(crate) const MAX_DRAFT_BYTES: usize = 1024 * 1024;
+const MAX_UNDO_EDITS: usize = 128;
+
+fn word_class(grapheme: &str) -> u8 {
+    match grapheme.chars().next() {
+        Some(character) if character.is_whitespace() => 0,
+        Some(character) if character.is_alphanumeric() || character == '_' => 1,
+        _ => 2,
+    }
+}
+
+#[derive(Clone)]
+struct UndoEdit {
+    start: usize,
+    inserted_bytes: usize,
+    removed: String,
+    cursor_before: usize,
+}
 
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) struct ComposerView {
@@ -22,6 +40,9 @@ pub struct Composer {
     cursor: usize,
     vertical_column: Option<(u16, usize)>,
     limit_reached: bool,
+    undo: VecDeque<UndoEdit>,
+    undo_bytes: usize,
+    undo_insert_group: bool,
 }
 
 impl Composer {
@@ -45,6 +66,8 @@ impl Composer {
         }
         self.limit_reached = false;
         self.vertical_column = None;
+        self.record_edit(self.cursor, c.len_utf8(), String::new(), self.cursor);
+        self.undo_insert_group = true;
         self.text.insert(self.cursor, c);
         self.cursor += c.len_utf8();
         self.normalize_cursor();
@@ -59,11 +82,14 @@ impl Composer {
         }
         self.limit_reached = false;
         self.vertical_column = None;
+        self.record_edit(self.cursor, text.len(), String::new(), self.cursor);
+        self.undo_insert_group = true;
         self.text.insert_str(self.cursor, text);
         self.cursor += text.len();
         self.normalize_cursor();
     }
     pub fn left(&mut self) {
+        self.undo_insert_group = false;
         self.vertical_column = None;
         self.cursor = self.text[..self.cursor]
             .grapheme_indices(true)
@@ -71,6 +97,7 @@ impl Composer {
             .map_or(0, |(i, _)| i);
     }
     pub fn right(&mut self) {
+        self.undo_insert_group = false;
         self.vertical_column = None;
         if let Some(g) = self.text[self.cursor..].graphemes(true).next() {
             self.cursor += g.len();
@@ -79,12 +106,14 @@ impl Composer {
 
     /// Move to the start of the current logical line, independent of wrapping.
     pub fn line_start(&mut self) {
+        self.undo_insert_group = false;
         self.vertical_column = None;
         self.cursor = self.text[..self.cursor].rfind('\n').map_or(0, |i| i + 1);
     }
 
     /// Move to the end of the current logical line, before its newline.
     pub fn line_end(&mut self) {
+        self.undo_insert_group = false;
         self.vertical_column = None;
         self.cursor = self.text[self.cursor..]
             .find('\n')
@@ -93,6 +122,9 @@ impl Composer {
     pub fn backspace(&mut self) {
         let old = self.cursor;
         self.left();
+        if self.cursor != old {
+            self.record_edit(self.cursor, 0, self.text[self.cursor..old].to_owned(), old);
+        }
         self.text.drain(self.cursor..old);
         if self.cursor != old {
             self.limit_reached = false;
@@ -102,6 +134,9 @@ impl Composer {
     pub fn delete(&mut self) {
         let old = self.cursor;
         self.right();
+        if self.cursor != old {
+            self.record_edit(old, 0, self.text[old..self.cursor].to_owned(), old);
+        }
         self.text.drain(old..self.cursor);
         if self.cursor != old {
             self.limit_reached = false;
@@ -113,12 +148,179 @@ impl Composer {
         self.cursor = 0;
         self.limit_reached = false;
         self.vertical_column = None;
+        self.undo.clear();
+        self.undo_bytes = 0;
+        self.undo_insert_group = false;
         std::mem::take(&mut self.text)
+    }
+
+    /// Enter normal mode on the preceding grapheme without crossing a line.
+    pub(crate) fn normal_cursor(&mut self) {
+        self.undo_insert_group = false;
+        let line_start = self.text[..self.cursor]
+            .rfind('\n')
+            .map_or(0, |index| index + 1);
+        if self.cursor > line_start {
+            self.left();
+        }
+    }
+
+    pub(crate) fn normal_left(&mut self) {
+        let line_start = self.text[..self.cursor]
+            .rfind('\n')
+            .map_or(0, |index| index + 1);
+        if self.cursor > line_start {
+            self.left();
+        }
+    }
+
+    pub(crate) fn normal_right(&mut self) {
+        let line_end = self.text[self.cursor..]
+            .find('\n')
+            .map_or(self.text.len(), |index| self.cursor + index);
+        if self.text[self.cursor..line_end]
+            .graphemes(true)
+            .nth(1)
+            .is_some()
+        {
+            self.right();
+        }
+    }
+
+    pub(crate) fn clamp_normal_cursor(&mut self) {
+        let line_start = self.text[..self.cursor]
+            .rfind('\n')
+            .map_or(0, |index| index + 1);
+        let at_end = self.cursor == self.text.len() || self.text[self.cursor..].starts_with('\n');
+        if at_end && self.cursor > line_start {
+            self.left();
+        }
+    }
+
+    /// Move to the next Unicode word or punctuation group.
+    pub(crate) fn next_word(&mut self) {
+        self.undo_insert_group = false;
+        self.vertical_column = None;
+        let mut iter = self.text[self.cursor..].grapheme_indices(true).peekable();
+        let Some((_, first)) = iter.peek().copied() else {
+            return;
+        };
+        let first_class = word_class(first);
+        if first_class != 0 {
+            while iter
+                .peek()
+                .is_some_and(|(_, value)| word_class(value) == first_class)
+            {
+                iter.next();
+            }
+        }
+        while iter.peek().is_some_and(|(_, value)| word_class(value) == 0) {
+            iter.next();
+        }
+        self.cursor += iter
+            .peek()
+            .map_or(self.text.len() - self.cursor, |(index, _)| *index);
+    }
+
+    /// Move to the start of the previous Unicode word or punctuation group.
+    pub(crate) fn previous_word(&mut self) {
+        self.undo_insert_group = false;
+        self.vertical_column = None;
+        let mut iter = self.text[..self.cursor]
+            .grapheme_indices(true)
+            .rev()
+            .peekable();
+        while iter.peek().is_some_and(|(_, value)| word_class(value) == 0) {
+            iter.next();
+        }
+        if let Some((_, first)) = iter.peek().copied() {
+            let class = word_class(first);
+            while iter
+                .peek()
+                .is_some_and(|(_, value)| word_class(value) == class)
+            {
+                self.cursor = iter.next().expect("peeked grapheme").0;
+            }
+        } else {
+            self.cursor = 0;
+        }
+    }
+
+    /// Delete the current logical line, including one adjacent newline.
+    pub(crate) fn delete_line(&mut self) {
+        self.undo_insert_group = false;
+        let before = self.cursor;
+        let mut start = self.text[..before].rfind('\n').map_or(0, |index| index + 1);
+        let end = self.text[before..]
+            .find('\n')
+            .map_or(self.text.len(), |index| before + index + 1);
+        if end == self.text.len() && start > 0 && (start == end || !self.text.ends_with('\n')) {
+            start -= 1;
+        }
+        if start == end {
+            return;
+        }
+        self.record_edit(start, 0, self.text[start..end].to_owned(), before);
+        self.text.drain(start..end);
+        self.cursor = start.min(self.text.len());
+        self.vertical_column = None;
+        self.limit_reached = false;
+        self.normalize_cursor();
+    }
+
+    pub(crate) fn undo(&mut self) {
+        self.undo_insert_group = false;
+        let Some(edit) = self.undo.pop_back() else {
+            return;
+        };
+        self.undo_bytes -= edit.removed.len();
+        let end = edit.start + edit.inserted_bytes;
+        self.text.replace_range(edit.start..end, &edit.removed);
+        self.cursor = edit.cursor_before.min(self.text.len());
+        self.vertical_column = None;
+        self.limit_reached = false;
+        self.normalize_cursor();
+    }
+
+    fn record_edit(
+        &mut self,
+        start: usize,
+        inserted_bytes: usize,
+        removed: String,
+        cursor_before: usize,
+    ) {
+        if self.undo_insert_group
+            && removed.is_empty()
+            && inserted_bytes > 0
+            && let Some(previous) = self.undo.back_mut()
+            && previous.removed.is_empty()
+            && previous.start.saturating_add(previous.inserted_bytes) == start
+        {
+            previous.inserted_bytes = previous.inserted_bytes.saturating_add(inserted_bytes);
+            return;
+        }
+        self.undo_insert_group = false;
+        while self.undo.len() >= MAX_UNDO_EDITS
+            || self.undo_bytes.saturating_add(removed.len()) > MAX_DRAFT_BYTES
+        {
+            let Some(oldest) = self.undo.pop_front() else {
+                break;
+            };
+            self.undo_bytes -= oldest.removed.len();
+        }
+        self.undo_bytes += removed.len();
+        self.undo.push_back(UndoEdit {
+            start,
+            inserted_bytes,
+            removed,
+            cursor_before,
+        });
     }
 
     /// Move by one displayed row, retaining the desired cell column across
     /// short rows. No move is made when the target row does not exist.
     pub(crate) fn move_vertical(&mut self, width: u16, down: bool) {
+        self.undo_insert_group = false;
         if width == 0 {
             return;
         }

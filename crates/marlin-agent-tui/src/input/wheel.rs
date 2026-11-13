@@ -17,6 +17,8 @@ struct WheelBatch {
 }
 
 const MAX_WHEEL_BATCHES: usize = 64;
+const MAX_PENDING_STEPS: i32 = 256;
+const MAX_FRAME_STEPS: u32 = 16;
 
 impl WheelAccumulator {
     /// A true result means the event loop needs one wake notification.
@@ -28,7 +30,10 @@ impl WheelAccumulator {
             && last.column == column
             && last.row == row
         {
-            last.steps = last.steps.saturating_add(step);
+            last.steps = last
+                .steps
+                .saturating_add(step)
+                .clamp(-MAX_PENDING_STEPS, MAX_PENDING_STEPS);
             if last.steps == 0 {
                 batches.pop_back();
             }
@@ -42,19 +47,18 @@ impl WheelAccumulator {
         wake && !batches.is_empty()
     }
 
-    /// Bound one frame's scroll while retaining direction and small gestures.
-    pub(crate) fn take_lines(&self) -> Option<(bool, usize, u16, u16)> {
-        let batch = self
-            .0
-            .lock()
-            .expect("wheel accumulator poisoned")
-            .pop_front()?;
-        Some((
-            batch.steps > 0,
-            batch.steps.unsigned_abs().min(16) as usize * 3,
-            batch.column,
-            batch.row,
-        ))
+    /// Bound one event-loop turn's pulse count while retaining direction and coordinates.
+    pub(crate) fn take_steps(&self) -> Option<(bool, usize, u16, u16)> {
+        let mut batches = self.0.lock().expect("wheel accumulator poisoned");
+        let batch = batches.front_mut()?;
+        let up = batch.steps > 0;
+        let count = batch.steps.unsigned_abs().min(MAX_FRAME_STEPS);
+        batch.steps -= if up { count as i32 } else { -(count as i32) };
+        let (column, row) = (batch.column, batch.row);
+        if batch.steps == 0 {
+            batches.pop_front();
+        }
+        Some((up, count as usize, column, row))
     }
 
     pub(crate) fn has_pending(&self) -> bool {

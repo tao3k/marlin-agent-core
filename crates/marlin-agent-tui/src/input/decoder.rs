@@ -4,10 +4,6 @@
 
 //! Terminal input normalization, including explicit bracketed paste boundaries.
 
-mod wheel;
-
-pub(crate) use wheel::WheelAccumulator;
-
 use std::io::{self, Write};
 
 use termion::event::{Event, Key, MouseButton, MouseEvent};

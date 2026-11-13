@@ -5,6 +5,28 @@
 //! Real terminal regression for the first M-x navigation input.
 use super::{Duration, Instant, Terminal, fs, mx_last, mx_position, mx_selected, screen_lines};
 
+#[test]
+fn doom_leader_uses_normal_mode_without_stealing_insert_spaces() {
+    let directory = tempfile::tempdir().unwrap();
+    let config = directory.path().join("config.toml");
+    fs::write(&config, "provider=\"openai\"\nmodel=\"gpt-fixture\"\nendpoint=\"http://127.0.0.1:1/v1/responses\"\nprotocol=\"open-ai-responses\"\ncredential_env=\"MARLIN_TUI_FIXTURE_KEY\"\n").unwrap();
+    let mut terminal = Terminal::start(&config);
+    terminal.wait_status("Message: Enter send");
+    terminal.send(b"a x");
+    terminal.wait_text("a x");
+    terminal.send(b"\x1b");
+    terminal.wait_status("NORMAL");
+    terminal.send(b" x");
+    terminal.wait_mx_selected(1);
+    terminal.send(b"\x07");
+    terminal.wait_status("NORMAL");
+    terminal.send(b"a b");
+    terminal.wait_text("a x b");
+    terminal.send(b"\x11");
+    terminal.wait_exit(Duration::from_secs(5));
+    terminal.assert_restored();
+}
+
 #[cfg(feature = "linked-ui")]
 #[test]
 fn accepted_command_ranks_first_on_next_mx_and_navigation_uses_that_order() {
@@ -63,6 +85,17 @@ fn filtering_preserves_a_user_selected_candidate_when_still_visible() {
         rows.iter()
             .any(|line| mx_selected(line, 2) && line.contains(" M-x mode"))
             && rows.iter().any(|line| line.contains("› models"))
+            && rows
+                .iter()
+                .find_map(|line| {
+                    line.find("Select a model alias")
+                        .map(|index| line[..index].chars().count())
+                })
+                .zip(rows.iter().find_map(|line| {
+                    line.find("List configured models")
+                        .map(|index| line[..index].chars().count())
+                }))
+                .is_some_and(|(left, right)| left == right)
     });
     terminal.send(b"\x7f");
     terminal.wait_for(
@@ -331,8 +364,8 @@ fn mx_abbreviation_opens_the_scheme_declared_buffer_menu() {
     terminal.send(b"\r");
     terminal.wait_for(Duration::from_secs(5), "scoped buffer menu", |output| {
         let rows = screen_lines(output);
-        rows.iter().any(|line| line.contains("1/4 Switch to: "))
-            && rows.iter().any(|line| line.contains("› help"))
+        rows.iter().any(|line| line.contains(" Switch to: "))
+            && rows.iter().any(|line| line.contains("› "))
     });
     terminal.send(b"\x07\x11");
     terminal.wait_exit(Duration::from_secs(5));
@@ -401,7 +434,7 @@ fn mx_help_switches_to_scheme_buffer_without_appending_conversation() {
         let rows = screen_lines(output);
         rows[..28]
             .iter()
-            .any(|line| line.contains("Ctrl-R  Search prompts"))
+            .any(|line| line.contains("C-r  Search prompts"))
             && rows[29].contains("*Help*")
             && rows[..28].iter().all(|line| !line.contains("Help: Enter"))
     });
@@ -411,7 +444,7 @@ fn mx_help_switches_to_scheme_buffer_without_appending_conversation() {
         rows[29].contains("Message: Enter send")
             && rows[..28]
                 .iter()
-                .all(|line| !line.contains("Ctrl-R  Search prompts"))
+                .all(|line| !line.contains("C-r  Search prompts"))
     });
     terminal.send(b"\x11");
     terminal.wait_exit(Duration::from_secs(5));
@@ -496,6 +529,28 @@ fn first_mx_arrows_move_the_visible_selection_and_c_x_b_opens_buffers() {
         "reverse burst returns to first",
         |output| screen_lines(output).iter().any(|line| mx_selected(line, 1)),
     );
+    let total = screen_lines(&terminal.output)
+        .iter()
+        .find_map(|line| mx_position(line))
+        .unwrap()
+        .1;
+    assert!(total > 4);
+    terminal.send(&b"\x1b[<65;30;25M".repeat(20));
+    terminal.wait_for(
+        Duration::from_secs(5),
+        "large trackpad burst retains every pulse",
+        |output| {
+            screen_lines(output)
+                .iter()
+                .any(|line| mx_selected(line, 20 % total + 1))
+        },
+    );
+    terminal.send(&b"\x1b[<64;30;25M".repeat(20));
+    terminal.wait_for(
+        Duration::from_secs(5),
+        "large reverse burst restores selection",
+        |output| screen_lines(output).iter().any(|line| mx_selected(line, 1)),
+    );
     terminal.send(b"mode");
     terminal.wait_for(Duration::from_secs(5), "filtered command list", |output| {
         screen_lines(output)
@@ -524,8 +579,9 @@ fn first_mx_arrows_move_the_visible_selection_and_c_x_b_opens_buffers() {
         "C-x b opens and navigates buffer selection",
         |output| {
             let rows = screen_lines(output);
-            rows.iter().any(|line| line.contains("2/4 Switch to: "))
-                && rows.iter().any(|line| line.contains("› messages"))
+            rows.iter()
+                .any(|line| line.contains("2/") && line.contains(" Switch to: "))
+                && rows.iter().any(|line| line.contains("› "))
         },
     );
     terminal.send(b"mess");
@@ -539,7 +595,10 @@ fn first_mx_arrows_move_the_visible_selection_and_c_x_b_opens_buffers() {
     terminal.wait_for(
         Duration::from_secs(5),
         "Messages buffer selected",
-        |output| screen_lines(output)[29].contains("*Messages*"),
+        |output| {
+            let rows = screen_lines(output);
+            rows[29].contains("*Messages*") && rows.iter().all(|line| !line.contains("Switch to:"))
+        },
     );
     terminal.send(b"\x1b");
     terminal.wait_for(

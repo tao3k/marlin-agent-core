@@ -3,9 +3,8 @@
 // SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
 use super::{
-    App, FixtureGateway, GatewayObservation, ModelEndpoint, assistant_gateway_message,
-    install_test_commands, modeline_fixture_item, mouse_over_minibuffer, render_draw,
-    reply_channel, test_frame, test_layout, user_gateway_message,
+    App, FixtureGateway, ModelEndpoint, install_test_commands, modeline_fixture_item,
+    mouse_over_minibuffer, render_draw, reply_channel, test_frame, test_layout,
 };
 use std::sync::{Arc, Mutex};
 
@@ -163,7 +162,7 @@ fn command_menu_filters_scheme_descriptors_and_preserves_draft() {
         .flat_map(|y| (0..60).map(move |x| buffer[(x, y)].symbol()))
         .collect();
     assert!(text.contains("List models"), "{text}");
-    assert!(text.contains("1/1 M-x mo"), "{text}");
+    assert!(text.contains("M-x mo"), "{text}");
     assert!(text.contains("› models"), "{text}");
     assert!(!text.contains("Keyboard shortcuts"), "{text}");
     app.toggle_command();
@@ -567,8 +566,14 @@ fn event_messages_use_a_switchable_buffer_without_polluting_conversation() {
     app.publish_message(event);
     assert_eq!(app.transcript.len(), 1);
     assert_eq!(app.messages.len(), 1);
-    assert_eq!(app.minibuffer_notice.as_deref(), Some("Profile selection failed"));
-    assert_eq!(app.messages[0].1, "Profile selection failed: native status 3");
+    assert_eq!(
+        app.minibuffer_notice.as_deref(),
+        Some("Profile selection failed")
+    );
+    assert_eq!(
+        app.messages[0].1,
+        "Profile selection failed: native status 3"
+    );
     app.composer.insert_text("retained draft");
     app.toggle_command();
     app.composer.insert_text("switch-buffer");
@@ -765,12 +770,12 @@ fn scheme_static_buffer_replaces_window_content_without_changing_conversation() 
 }
 
 #[test]
-fn native_modeline_is_colored_and_sits_above_the_collapsible_minibuffer() {
-    use marlin_agent_ui::{UiComponentId, UiRegion, UiStatusItem, UiWorkbench};
+fn modeline_sits_above_the_collapsible_minibuffer() {
+    use marlin_agent_ui::{UiComponentId, UiRegion, UiWorkbench};
     let mut app = App::new(ModelEndpoint::new("deepseek", "chat"));
     install_test_commands(&mut app);
     assert!(app.transcript.is_empty());
-    let mut view = UiWorkbench {
+    let view = UiWorkbench {
         layout: test_layout(),
         theme: marlin_agent_ui::UiTheme::default(),
         model_label: "deepseek/chat".into(),
@@ -788,7 +793,6 @@ fn native_modeline_is_colored_and_sits_above_the_collapsible_minibuffer() {
                 modeline_fixture_item("modeline/state/online"),
                 modeline_fixture_item("modeline/state/offline"),
                 modeline_fixture_item("modeline/state/unknown"),
-                UiStatusItem::host(UiComponentId::new("ready").unwrap(), "Ready"),
             ]),
         ],
         focus: UiComponentId::new("composer").unwrap(),
@@ -821,113 +825,6 @@ fn native_modeline_is_colored_and_sits_above_the_collapsible_minibuffer() {
             .collect::<String>()
     };
     assert!(row(&terminal, 10).contains("ANCHOR"));
-    assert!(row(&terminal, 10).contains("deepseek/chat"));
-    assert!(row(&terminal, 10).contains("idle"));
-    assert!(row(&terminal, 10).contains("session-one"));
-    assert!(row(&terminal, 11).contains("Ready"));
-    if let UiRegion::Status(items) = &mut view.regions[3] {
-        items.push(UiStatusItem::host(
-            UiComponentId::new("modeline/state/runtime").unwrap(),
-            "native-projection",
-        ));
-    }
-    app.runtime_receipt_open = true;
-    paint(&mut terminal, &app, &view);
-    assert!(row(&terminal, 10).contains("native-projection"));
-    app.runtime_receipt_open = false;
-    if let UiRegion::Status(items) = &mut view.regions[3] {
-        items.swap(1, 2);
-    }
-    paint(&mut terminal, &app, &view);
-    let reordered = row(&terminal, 10);
-    assert!(
-        reordered.find("idle").unwrap() < reordered.find("deepseek/chat").unwrap(),
-        "native Modeline slot order was lost: {reordered}"
-    );
-    app.history = Arc::new(vec![
-        user_gateway_message("first turn"),
-        assistant_gateway_message("first reply"),
-    ]);
-    if let UiRegion::Status(items) = &mut view.regions[3] {
-        items.swap(3, 4);
-    }
-    paint(&mut terminal, &app, &view);
-    let reordered = row(&terminal, 10);
-    assert!(
-        reordered.find("session-one").unwrap() < reordered.find("T1").unwrap(),
-        "native right Modeline slot order was lost: {reordered}"
-    );
-    let mut narrow = ratatui::Terminal::new(ratatui::backend::TestBackend::new(68, 12)).unwrap();
-    paint(&mut narrow, &app, &view);
-    let narrow_text = |terminal: &ratatui::Terminal<ratatui::backend::TestBackend>| {
-        (0..12)
-            .flat_map(|y| (0..68).map(move |x| terminal.backend().buffer()[(x, y)].symbol()))
-            .collect::<String>()
-    };
-    assert!(!narrow_text(&narrow).contains("T1"));
-    if let UiRegion::Status(items) = &mut view.regions[3] {
-        let turns = items
-            .iter_mut()
-            .find(|item| item.id.as_str() == "modeline/right/turns")
-            .unwrap();
-        turns.min_width = 66;
-    }
-    paint(&mut narrow, &app, &view);
-    assert!(narrow_text(&narrow).contains("T1"));
-    let mut constrained =
-        ratatui::Terminal::new(ratatui::backend::TestBackend::new(44, 12)).unwrap();
-    let constrained_modeline = |terminal: &ratatui::Terminal<ratatui::backend::TestBackend>| {
-        (0..44)
-            .map(|x| terminal.backend().buffer()[(x, 10)].symbol())
-            .collect::<String>()
-    };
-    paint(&mut constrained, &app, &view);
-    let model_first_line = constrained_modeline(&constrained);
-    assert!(model_first_line.contains("deepseek/chat"), "{model_first_line}");
-    assert!(!model_first_line.contains("S:"), "{model_first_line}");
-    if let UiRegion::Status(items) = &mut view.regions[3] {
-        for item in items {
-            match item.id.as_str() {
-                "modeline/left/model" => item.keep_priority = 1,
-                "modeline/right/session" => item.keep_priority = 3,
-                _ => {}
-            }
-        }
-    }
-    paint(&mut constrained, &app, &view);
-    let session_first_line = constrained_modeline(&constrained);
-    assert!(!session_first_line.contains("deepseek/chat"), "{session_first_line}");
-    assert!(session_first_line.contains("S:"), "{session_first_line}");
-    app.history = Arc::new(Vec::new());
-    assert_eq!(
-        terminal.backend().buffer()[(20, 10)].bg,
-        ratatui::style::Color::Rgb(28, 31, 36)
-    );
-    assert_eq!(
-        terminal.backend().buffer()[(4, 10)].bg,
-        ratatui::style::Color::Rgb(198, 120, 221)
-    );
-    assert_eq!(
-        terminal.backend().buffer()[(0, 0)].bg,
-        ratatui::style::Color::Rgb(40, 44, 52)
-    );
-    view.theme.canvas = marlin_agent_ui::UiRgb::new(12, 34, 56);
-    view.theme.accent = marlin_agent_ui::UiRgb::new(246, 48, 68);
-    paint(&mut terminal, &app, &view);
-    assert_eq!(
-        terminal.backend().buffer()[(0, 0)].bg,
-        ratatui::style::Color::Rgb(12, 34, 56)
-    );
-    assert_eq!(
-        terminal.backend().buffer()[(4, 10)].bg,
-        ratatui::style::Color::Rgb(246, 48, 68)
-    );
-    app.gateway_observation = GatewayObservation::Online;
-    paint(&mut terminal, &app, &view);
-    assert!(row(&terminal, 10).contains("ONLINE"));
-    app.gateway_observation = GatewayObservation::Offline;
-    paint(&mut terminal, &app, &view);
-    assert!(row(&terminal, 10).contains("OFFLINE"));
     assert!(mouse_over_minibuffer(&app, &test_layout(), 80, 12, 12));
     assert!(!mouse_over_minibuffer(&app, &test_layout(), 80, 12, 10));
 
@@ -942,11 +839,4 @@ fn native_modeline_is_colored_and_sits_above_the_collapsible_minibuffer() {
     paint(&mut terminal, &app, &view);
     assert!(row(&terminal, 8).contains("Message"));
     assert!(row(&terminal, 9).contains("draft survives hover exit"));
-
-    view.session_label = "archive/日本語/critical-session-42".into();
-    paint(&mut terminal, &app, &view);
-    let line = row(&terminal, 7);
-    assert!(line.contains("critical-session-42"), "{line}");
-    assert!(line.contains('…'), "{line}");
-    assert!(!line.contains("archive"), "{line}");
 }

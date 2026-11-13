@@ -4,7 +4,7 @@
 //! Bind host-owned content and cached transcripts to declarative UI slots.
 
 use super::{App, Composer, MainSource, ScrollAnchor, TranscriptViewportCache, ui_elements};
-use marlin_agent_ui::{UiComponentId, UiContent, UiElement, UiTheme, UiTone};
+use marlin_agent_ui::{UiComponentId, UiContent, UiElement};
 use ratatui::{layout::Rect, style::Style};
 
 pub(super) struct EditorSlots<'a> {
@@ -19,7 +19,8 @@ impl ui_elements::UiSlotRenderer for EditorSlots<'_> {
         _: &mut ratatui::Frame<'_>,
         _: Rect,
         _: &UiComponentId,
-        _: Option<UiTone>,
+        _: Option<&UiElement>,
+        _: &ui_elements::UiRenderInputs<'_>,
         _: usize,
     ) {
     }
@@ -52,7 +53,6 @@ impl ui_elements::UiSlotRenderer for EditorSlots<'_> {
 
 pub(super) struct MainSlots<'a> {
     pub app: &'a App,
-    pub theme: &'a UiTheme,
     pub cache: &'a mut TranscriptViewportCache,
     pub anchor: &'a mut ScrollAnchor,
     pub role_style: Style,
@@ -62,27 +62,18 @@ pub(super) struct MainSlots<'a> {
 }
 
 impl ui_elements::UiSlotRenderer for MainSlots<'_> {
-    fn title(&self, id: &UiComponentId) -> Option<&str> {
-        match MainSource::from_id(id)? {
-            MainSource::Static => self.static_content.map(|(title, _)| title),
-            MainSource::Runtime => Some("Runtime policy"),
-            MainSource::Extension => self.focused_content.map(|(title, _)| title),
-            _ => None,
-        }
-    }
-
     fn render(
         &mut self,
         frame: &mut ratatui::Frame<'_>,
         area: Rect,
         id: &UiComponentId,
-        field_tone: Option<UiTone>,
+        field_template: Option<&UiElement>,
+        inputs: &ui_elements::UiRenderInputs<'_>,
         skip: usize,
     ) {
         let Some(source) = MainSource::from_id(id) else {
             return;
         };
-        let tone = field_tone.unwrap_or(UiTone::Normal);
         match source {
             MainSource::Static | MainSource::Runtime | MainSource::Extension => {
                 let content = match source {
@@ -91,7 +82,7 @@ impl ui_elements::UiSlotRenderer for MainSlots<'_> {
                     MainSource::Extension => self.focused_content.map(|(_, content)| content),
                     _ => None,
                 };
-                if let Some(content) = content {
+                if let (Some(content), Some(field_template)) = (content, field_template) {
                     let scroll = if matches!(source, MainSource::Static) {
                         self.app.static_buffer_scroll
                     } else {
@@ -101,8 +92,8 @@ impl ui_elements::UiSlotRenderer for MainSlots<'_> {
                         frame,
                         area,
                         content,
-                        self.theme,
-                        tone,
+                        field_template,
+                        inputs,
                         scroll.saturating_add(skip),
                     );
                 }

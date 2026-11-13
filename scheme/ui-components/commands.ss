@@ -6,25 +6,42 @@
 ;;; selected Scheme owner. The native host admits the capabilities and effects.
 (import (only-in :clan/poo/object .def .o .get .ref .mix seal-object!)
         (only-in :std/list/list duplicates)
-        (only-in "../ui-elements/objects.ss" ui-template ui-choice)
-        (only-in "./bounds.ss" marlin-ui-bounded-list?)
+        (only-in "../ui-elements/objects.ss" ui-template ui-choice ui-list ui-size-binding
+                 ui-size-cells ui-size-add ui-size-subtract ui-size-min ui-size-max ui-size-choice)
+        (only-in "./bounds.ss" marlin-ui-bounded-list? marlin-ui-max-browse-steps)
         (only-in "./buffers.ss" marlin-ui-buffer-command-entries
                  marlin-ui-buffer-alias-command-entries))
 (export marlin-ui-command-catalog marlin-ui-command-entries
-        marlin-ui-candidate-templates
+        marlin-ui-candidate-templates marlin-ui-list-offset
         marlin-ui-command-history? marlin-ui-record-command-history
         marlin-ui-command-entries? marlin-ui-command-candidates
         marlin-ui-browse-command marlin-ui-profile-command-entries
         marlin-ui-command-catalog-with-profiles marlin-ui-command-catalog-with-extensions)
 
+;;; Vertico's scroll equation with scroll-margin zero, expressed as cell sizes.
+;;; The host supplies selection, previous offset, visible rows and list length.
+(def marlin-ui-list-offset
+  (ui-size-choice
+    (list (list 'list-selected
+                (ui-size-min
+                  (ui-size-subtract (ui-size-binding 'list-total) (ui-size-binding 'list-visible))
+                  (ui-size-max
+                    (ui-size-subtract (ui-size-add (ui-size-binding 'list-index) (ui-size-cells 1))
+                                      (ui-size-binding 'list-visible))
+                    (ui-size-min (ui-size-binding 'list-index) (ui-size-binding 'list-offset))))))
+    (ui-size-cells 0)))
 ;;; A native template contains typed literal and binding spans, not encoded text.
+(def candidate-name-width
+  (ui-size-min (ui-size-binding 'candidate-name-width) (ui-size-cells 28)))
 (def marlin-ui-candidate-templates
-  (ui-choice
+  (ui-list 'candidates marlin-ui-list-offset (ui-choice
     (list (list 'selected
-                (ui-template 'bar '((literal accent #f " › ") (binding info #t name)
-                                    (literal normal #f "  ") (binding muted #f description)))))
-    (ui-template 'none '((literal accent #f "   ") (binding normal #f name)
-                         (literal normal #f "  ") (binding muted #f description)))))
+                (ui-template 'bar (list '(literal accent #f " › ")
+                                        (list 'column 'info #t 'name candidate-name-width)
+                                        '(literal normal #f "  ") '(binding muted #f description)))))
+    (ui-template 'none (list '(literal accent #f "   ")
+                             (list 'column 'normal #f 'name candidate-name-width)
+                             '(literal normal #f "  ") '(binding muted #f description))))))
 
 (.def UiCommandCatalog.
   entries: (append (marlin-ui-buffer-alias-command-entries)
@@ -217,7 +234,7 @@
                  (or (not previous)
                      (and (string? previous) (<= (string-length previous) 32)))
                  (memq direction '(next previous))
-                 (integer? steps) (<= 1 steps 16)
+                 (integer? steps) (<= 1 steps marlin-ui-max-browse-steps)
                  (or (not allowed)
                      (and (marlin-ui-bounded-list? allowed 256)
                           (andmap (lambda (name)

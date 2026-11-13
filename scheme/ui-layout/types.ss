@@ -4,9 +4,10 @@
 
 (import (only-in :clan/poo/object .cc)
         (only-in :clan/poo/type Exactly Record)
-        (only-in :clan/poo/mop Object))
+        (only-in :clan/poo/mop Fun Object Type.))
 (export UiLayoutScopeContract)
 
+(def UiBarValue (.cc Type. '.element? vector?))
 (def UiLayoutScopeContract
-  (.cc (Record identity: [(Exactly 'marlin/ui-layout)] policy: [Object])
+  (.cc (Record identity: [(Exactly 'marlin/ui-layout)] policy-for: [(Fun Object <- UiBarValue)])
        identity: 'marlin/ui-layout))

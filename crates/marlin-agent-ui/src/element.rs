@@ -20,7 +20,8 @@ pub enum UiElement {
     /// A bordered presentation around a host-backed visual source.
     Panel {
         border_tone: UiTone,
-        field_tone: UiTone,
+        field_template: Box<UiElement>,
+        title: Option<Box<UiElement>>,
         child: Box<UiElement>,
     },
     /// A styled line whose named fields are bound by the host.
@@ -28,11 +29,23 @@ pub enum UiElement {
         background: UiBackground,
         spans: Vec<UiTemplateSpan>,
     },
+    /// A single-row flow of Scheme-declared, priority-aware segments.
+    Bar {
+        background: UiBackground,
+        right_divisor: u16,
+        segments: Vec<UiBarSegment>,
+    },
+    /// A repeated row and its Scheme-declared window offset.
+    List {
+        id: UiComponentId,
+        offset: UiSize,
+        child: Box<UiElement>,
+    },
     /// A host-supplied editable value with Scheme-selected presentation.
     Input {
         bordered: bool,
         background: UiBackground,
-        prefix: Option<UiComponentId>,
+        prefix: Option<Box<UiElement>>,
         title: Option<UiComponentId>,
         active: UiComponentId,
     },
@@ -54,6 +67,21 @@ pub enum UiElement {
         scroll_target: Option<UiScrollTarget>,
         child: Box<UiElement>,
     },
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum UiBarSide {
+    Left,
+    Right,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct UiBarSegment {
+    pub side: UiBarSide,
+    pub priority: u8,
+    pub min_width: u16,
+    pub condition: Option<UiComponentId>,
+    pub child: Box<UiElement>,
 }
 
 /// A fixed, flexible, or host-bound extent on the containing layout axis.
@@ -92,6 +120,15 @@ pub struct UiTemplateSpan {
 pub enum UiTemplateValue {
     Literal(String),
     Binding(UiComponentId),
+    /// A bound value padded to the Scheme-declared minimum cell width.
+    Column {
+        id: UiComponentId,
+        width: UiSize,
+    },
+    Tail {
+        id: UiComponentId,
+        width: UiSize,
+    },
 }
 
 /// One styled text run in a host-neutral UI element.
@@ -105,6 +142,7 @@ pub struct UiSpan {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum UiTone {
     Normal,
+    Canvas,
     Accent,
     Info,
     Success,
@@ -122,6 +160,73 @@ pub enum UiBackground {
 }
 
 impl UiElement {
+    /// Profile switches may replace presentation-only bar segments, not geometry or input.
+    pub(crate) fn same_profile_structure(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Bar { .. }, Self::Bar { .. }) => true,
+            (
+                Self::Region {
+                    id: a,
+                    scroll_target: x,
+                    child: c,
+                },
+                Self::Region {
+                    id: b,
+                    scroll_target: y,
+                    child: d,
+                },
+            ) => a == b && x == y && c.same_profile_structure(d),
+            (Self::Sized { size: a, child: c }, Self::Sized { size: b, child: d }) => {
+                a == b && c.same_profile_structure(d)
+            }
+            (Self::Rows(a), Self::Rows(b)) | (Self::Columns(a), Self::Columns(b)) => {
+                a.len() == b.len() && a.iter().zip(b).all(|(x, y)| x.same_profile_structure(y))
+            }
+            (
+                Self::Choice {
+                    cases: a,
+                    fallback: x,
+                },
+                Self::Choice {
+                    cases: b,
+                    fallback: y,
+                },
+            ) => {
+                a.len() == b.len()
+                    && a.iter()
+                        .zip(b)
+                        .all(|((ka, va), (kb, vb))| ka == kb && va.same_profile_structure(vb))
+                    && x.same_profile_structure(y)
+            }
+            (
+                Self::List {
+                    id: a,
+                    offset: x,
+                    child: c,
+                },
+                Self::List {
+                    id: b,
+                    offset: y,
+                    child: d,
+                },
+            ) => a == b && x == y && c.same_profile_structure(d),
+            (
+                Self::Panel {
+                    border_tone: a,
+                    field_template: f,
+                    title: t,
+                    child: c,
+                },
+                Self::Panel {
+                    border_tone: b,
+                    field_template: g,
+                    title: u,
+                    child: d,
+                },
+            ) => a == b && f == g && t == u && c.same_profile_structure(d),
+            _ => self == other,
+        }
+    }
     /// Find a named region's contents in a declarative tree.
     pub fn region_child(&self, name: &str) -> Option<&UiElement> {
         match self {
@@ -129,6 +234,7 @@ impl UiElement {
             Self::Region { child, .. } => child.region_child(name),
             Self::Sized { child, .. } => child.region_child(name),
             Self::Panel { child, .. } => child.region_child(name),
+            Self::List { child, .. } => child.region_child(name),
             Self::Rows(children) | Self::Columns(children) => {
                 children.iter().find_map(|child| child.region_child(name))
             }
@@ -136,7 +242,11 @@ impl UiElement {
                 .iter()
                 .find_map(|(_, child)| child.region_child(name))
                 .or_else(|| fallback.region_child(name)),
-            Self::Text(_) | Self::Slot(_) | Self::Template { .. } | Self::Input { .. } => None,
+            Self::Text(_)
+            | Self::Slot(_)
+            | Self::Template { .. }
+            | Self::Input { .. }
+            | Self::Bar { .. } => None,
         }
     }
     /// Natural line count before wrapping or clipping to the terminal.
@@ -148,7 +258,7 @@ impl UiElement {
                     .map(|span| span.text.bytes().filter(|byte| *byte == b'\n').count())
                     .sum::<usize>(),
             ),
-            Self::Template { .. } | Self::Input { .. } | Self::Slot(_) => 1,
+            Self::Template { .. } | Self::Input { .. } | Self::Slot(_) | Self::Bar { .. } => 1,
             Self::Rows(children) => children.iter().fold(0usize, |rows, child| {
                 rows.saturating_add(child.intrinsic_rows())
             }),
@@ -162,6 +272,7 @@ impl UiElement {
             Self::Region { child, .. } => child.intrinsic_rows(),
             Self::Sized { child, .. } => child.intrinsic_rows(),
             Self::Panel { child, .. } => child.intrinsic_rows(),
+            Self::List { child, .. } => child.intrinsic_rows(),
         }
     }
 
@@ -184,9 +295,12 @@ impl UiElement {
             Self::Region { child, .. } => child.intrinsic_rows_with(facts),
             Self::Sized { child, .. } => child.intrinsic_rows_with(facts),
             Self::Panel { child, .. } => child.intrinsic_rows_with(facts),
-            Self::Text(_) | Self::Slot(_) | Self::Template { .. } | Self::Input { .. } => {
-                self.intrinsic_rows()
-            }
+            Self::List { child, .. } => child.intrinsic_rows_with(facts),
+            Self::Text(_)
+            | Self::Slot(_)
+            | Self::Template { .. }
+            | Self::Input { .. }
+            | Self::Bar { .. } => self.intrinsic_rows(),
         }
     }
 }
@@ -283,7 +397,9 @@ fn decode_size(
 /// Project a bounded UI tree through gerbil-scheme's rooted object API.
 pub fn decode_element(value: RootedSchemeObject<'_>) -> Result<UiElement, UiProjectionError> {
     let mut budget = Budget {
-        nodes: 256,
+        // The budget includes size expressions as well as inline bar choices.
+        // Keep the whole projection bounded while admitting a complete frame.
+        nodes: 512,
         spans: 256,
         bytes: 32 * 1024,
         regions: HashSet::new(),
@@ -305,16 +421,93 @@ fn decode(
     let kind = identifier(node.element(0)?, names)?;
     let values = vector(node.element(1)?, 0, 64)?;
     match kind.as_str() {
-        "panel" => {
+        "bar" => {
             if values.len() != 3 {
+                return Err(UiProjectionError::Invalid("invalid UI bar"));
+            }
+            let background = match identifier(values.element(0)?, names)?.as_str() {
+                "none" => UiBackground::None,
+                "canvas" => UiBackground::Canvas,
+                "bar" => UiBackground::Bar,
+                _ => UiBackground::Tone(decode_tone(values.element(0)?, names)?),
+            };
+            let right_divisor = match values.element(1)?.as_ref().scalar()? {
+                SchemeScalar::Fixnum(value) if (1..=16).contains(&value) => value as u16,
+                _ => return Err(UiProjectionError::Invalid("invalid UI bar divisor")),
+            };
+            let entries = vector(values.element(2)?, 0, 32)?;
+            let mut segments = Vec::with_capacity(entries.len());
+            for index in 0..entries.len() {
+                let entry = vector(entries.element(index)?, 5, 5)?;
+                let side = match identifier(entry.element(0)?, names)?.as_str() {
+                    "left" => UiBarSide::Left,
+                    "right" => UiBarSide::Right,
+                    _ => return Err(UiProjectionError::Invalid("invalid UI bar side")),
+                };
+                let priority = match entry.element(1)?.as_ref().scalar()? {
+                    SchemeScalar::Fixnum(value) if (0..=3).contains(&value) => value as u8,
+                    _ => return Err(UiProjectionError::Invalid("invalid UI bar priority")),
+                };
+                let min_width = match entry.element(2)?.as_ref().scalar()? {
+                    SchemeScalar::Fixnum(value) if (0..=256).contains(&value) => value as u16,
+                    _ => return Err(UiProjectionError::Invalid("invalid UI bar width")),
+                };
+                let condition_value = entry.element(3)?;
+                let condition = if matches!(
+                    condition_value.as_ref().scalar(),
+                    Ok(SchemeScalar::Boolean(false))
+                ) {
+                    None
+                } else {
+                    Some(identifier(condition_value, names)?)
+                };
+                let child = decode(entry.element(4)?, depth + 1, budget, names)?;
+                if !inline_template(&child) {
+                    return Err(UiProjectionError::Invalid("invalid UI bar segment"));
+                }
+                segments.push(UiBarSegment {
+                    side,
+                    priority,
+                    min_width,
+                    condition,
+                    child: Box::new(child),
+                });
+            }
+            Ok(UiElement::Bar {
+                background,
+                right_divisor,
+                segments,
+            })
+        }
+        "panel" => {
+            if values.len() != 4 {
                 return Err(UiProjectionError::Invalid("invalid UI panel"));
             }
             let border_tone = decode_tone(values.element(0)?, names)?;
-            let field_tone = decode_tone(values.element(1)?, names)?;
-            let child = Box::new(decode(values.element(2)?, depth + 1, budget, names)?);
+            let field_template = decode(values.element(1)?, depth + 1, budget, names)?;
+            if !inline_template(&field_template) {
+                return Err(UiProjectionError::Invalid(
+                    "invalid UI panel field template",
+                ));
+            }
+            let title_value = values.element(2)?;
+            let title = if matches!(
+                title_value.as_ref().scalar(),
+                Ok(SchemeScalar::Boolean(false))
+            ) {
+                None
+            } else {
+                let title = decode(title_value, depth + 1, budget, names)?;
+                if !inline_template(&title) {
+                    return Err(UiProjectionError::Invalid("invalid UI panel title"));
+                }
+                Some(Box::new(title))
+            };
+            let child = Box::new(decode(values.element(3)?, depth + 1, budget, names)?);
             Ok(UiElement::Panel {
                 border_tone,
-                field_tone,
+                field_template: Box::new(field_template),
+                title,
                 child,
             })
         }
@@ -348,7 +541,19 @@ fn decode(
                     Ok(Some(identifier(value, names)?))
                 }
             };
-            let prefix = optional(2, names)?;
+            let prefix_value = values.element(2)?;
+            let prefix = if matches!(
+                prefix_value.as_ref().scalar(),
+                Ok(SchemeScalar::Boolean(false))
+            ) {
+                None
+            } else {
+                let prefix = decode(prefix_value, depth + 1, budget, names)?;
+                if !inline_template(&prefix) {
+                    return Err(UiProjectionError::Invalid("invalid UI input prefix"));
+                }
+                Some(Box::new(prefix))
+            };
             let title = optional(3, names)?;
             let active = identifier(values.element(4)?, names)?;
             Ok(UiElement::Input {
@@ -366,6 +571,16 @@ fn decode(
             let size = decode_size(values.element(0)?, values.element(1)?, 0, budget, names)?;
             let child = Box::new(decode(values.element(2)?, depth + 1, budget, names)?);
             Ok(UiElement::Sized { size, child })
+        }
+        "list" => {
+            if values.len() != 3 {
+                return Err(UiProjectionError::Invalid("invalid UI list"));
+            }
+            let id = identifier(values.element(0)?, names)?;
+            let size = vector(values.element(1)?, 2, 2)?;
+            let offset = decode_size(size.element(0)?, size.element(1)?, 0, budget, names)?;
+            let child = Box::new(decode(values.element(2)?, depth + 1, budget, names)?);
+            Ok(UiElement::List { id, offset, child })
         }
         "template" => {
             if values.len() != 2 {
@@ -385,7 +600,7 @@ fn decode(
             budget.spans -= entries.len();
             let mut spans = Vec::with_capacity(entries.len());
             for index in 0..entries.len() {
-                let entry = vector(entries.element(index)?, 4, 4)?;
+                let entry = vector(entries.element(index)?, 4, 5)?;
                 let source = identifier(entry.element(0)?, names)?;
                 let tone = decode_tone(entry.element(1)?, names)?;
                 let bold = match entry.element(2)?.as_ref().scalar()? {
@@ -394,6 +609,9 @@ fn decode(
                 };
                 let value = match source.as_str() {
                     "literal" => {
+                        if entry.len() != 4 {
+                            return Err(UiProjectionError::Invalid("invalid UI template span"));
+                        }
                         let text = entry.element(3)?.into_string()?;
                         if text.len().into_result()? > budget.bytes {
                             return Err(UiProjectionError::Invalid("UI text exceeds limit"));
@@ -408,7 +626,32 @@ fn decode(
                         }
                         UiTemplateValue::Literal(text)
                     }
-                    "binding" => UiTemplateValue::Binding(identifier(entry.element(3)?, names)?),
+                    "binding" => {
+                        if entry.len() != 4 {
+                            return Err(UiProjectionError::Invalid("invalid UI template span"));
+                        }
+                        UiTemplateValue::Binding(identifier(entry.element(3)?, names)?)
+                    }
+                    "column" => {
+                        if entry.len() != 5 {
+                            return Err(UiProjectionError::Invalid("invalid UI template column"));
+                        }
+                        let id = identifier(entry.element(3)?, names)?;
+                        let size = vector(entry.element(4)?, 2, 2)?;
+                        let width =
+                            decode_size(size.element(0)?, size.element(1)?, 0, budget, names)?;
+                        UiTemplateValue::Column { id, width }
+                    }
+                    "tail" => {
+                        if entry.len() != 5 {
+                            return Err(UiProjectionError::Invalid("invalid UI template tail"));
+                        }
+                        let id = identifier(entry.element(3)?, names)?;
+                        let size = vector(entry.element(4)?, 2, 2)?;
+                        let width =
+                            decode_size(size.element(0)?, size.element(1)?, 0, budget, names)?;
+                        UiTemplateValue::Tail { id, width }
+                    }
                     _ => return Err(UiProjectionError::Invalid("invalid UI template source")),
                 };
                 spans.push(UiTemplateSpan { value, tone, bold });
@@ -425,7 +668,15 @@ fn decode(
             }
             let scroll_target = match values.element(1)?.as_ref().scalar() {
                 Ok(SchemeScalar::Boolean(false)) => None,
-                _ => Some(UiScrollTarget::from(identifier(values.element(1)?, names)?)),
+                _ => {
+                    let target = vector(values.element(1)?, 2, 2)?;
+                    let id = identifier(target.element(0)?, names)?;
+                    let step = match target.element(1)?.as_ref().scalar()? {
+                        SchemeScalar::Fixnum(value) if (1..=32).contains(&value) => value as u16,
+                        _ => return Err(UiProjectionError::Invalid("invalid UI scroll step")),
+                    };
+                    Some(UiScrollTarget::from_id(id, step)?)
+                }
             };
             let child = Box::new(decode(values.element(2)?, depth + 1, budget, names)?);
             Ok(UiElement::Region {
@@ -495,12 +746,23 @@ fn decode(
     }
 }
 
+fn inline_template(element: &UiElement) -> bool {
+    match element {
+        UiElement::Template { .. } => true,
+        UiElement::Choice { cases, fallback } => {
+            cases.iter().all(|(_, child)| inline_template(child)) && inline_template(fallback)
+        }
+        _ => false,
+    }
+}
+
 pub(crate) fn decode_tone(
     value: RootedSchemeObject<'_>,
     names: &mut IdentifierBuffer,
 ) -> Result<UiTone, UiProjectionError> {
     match identifier(value, names)?.as_str() {
         "normal" => Ok(UiTone::Normal),
+        "canvas" => Ok(UiTone::Canvas),
         "accent" => Ok(UiTone::Accent),
         "info" => Ok(UiTone::Info),
         "success" => Ok(UiTone::Success),

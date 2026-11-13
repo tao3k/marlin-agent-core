@@ -16,10 +16,10 @@ use crate::model::{
     MAX_COMMANDS, MAX_CONTENT_ITEMS, MAX_ID_BYTES, MAX_REGIONS, MAX_STATUS, MAX_TEXT_CHARS,
     MODELINE_SLOTS, UiBufferId, UiCommand, UiCommandArguments, UiCommandCapability, UiCommandName,
     UiComponentId, UiContent, UiFrame, UiFrameSpec, UiIntent, UiKeyBinding, UiKeyCommand,
-    UiKeyToken, UiLayoutPolicy, UiProjectionError, UiRegion, UiReviewChoice, UiReviewMenu, UiRgb,
-    UiScrollDirection, UiStatusItem, UiStatusTone, UiTheme, UiToolReviewChoice,
-    UiToolReviewDecision, UiToolReviewMenu, UiTransient, UiTransientForeign, UiTransientHead,
-    UiTransientId, UiWindow, UiWorkbench,
+    UiKeyMode, UiKeyScope, UiKeyToken, UiLayoutPolicy, UiProjectionError, UiRegion, UiReviewChoice,
+    UiReviewMenu, UiRgb, UiScrollDirection, UiStatusItem, UiStatusTone, UiTheme,
+    UiToolReviewChoice, UiToolReviewDecision, UiToolReviewMenu, UiTransient, UiTransientForeign,
+    UiTransientHead, UiTransientId, UiWindow, UiWorkbench,
 };
 
 /// Admit a finite Scheme presentation without granting review authority.
@@ -156,49 +156,69 @@ pub fn decode_workbench(value: RootedSchemeObject<'_>) -> Result<UiWorkbench, Ui
 }
 
 fn decode_keymap(value: RootedSchemeObject<'_>) -> Result<Vec<UiKeyBinding>, UiProjectionError> {
-    let entries = vector(value, 0, 32)?;
+    let entries = vector(value, 0, 64)?;
     let mut names = IdentifierBuffer::default();
-    let mut seen = HashSet::new();
     let mut result = Vec::with_capacity(entries.len());
     for index in 0..entries.len() {
-        let entry = vector(entries.element(index)?, 2, 2)?;
-        let keys = vector(entry.element(0)?, 1, 3)?;
+        let entry = vector(entries.element(index)?, 3, 3)?;
+        let scope = match identifier(entry.element(0)?, &mut names)?.as_str() {
+            "global" => UiKeyScope::Global,
+            "insert" => UiKeyScope::Mode(UiKeyMode::Insert),
+            "normal" => UiKeyScope::Mode(UiKeyMode::Normal),
+            _ => return Err(UiProjectionError::Invalid("invalid UI key scope")),
+        };
+        let keys = vector(entry.element(1)?, 1, 3)?;
         let mut sequence = Vec::with_capacity(keys.len());
         for position in 0..keys.len() {
             sequence.push(UiKeyToken::new(
                 identifier(keys.element(position)?, &mut names)?.as_str(),
             )?);
         }
-        let kind = identifier(entry.element(1)?, &mut names)?;
-        let command = match (kind.as_str(), entry.len()) {
-            ("open-commands", 2) => UiKeyCommand::OpenCommands,
-            ("cancel", 2) => UiKeyCommand::Cancel,
-            ("history-search", 2) => {
-                UiKeyCommand::Edit(crate::model::UiEditorAction::HistorySearch)
-            }
-            ("previous-prompt", 2) => {
-                UiKeyCommand::Edit(crate::model::UiEditorAction::PreviousPrompt)
-            }
-            ("next-prompt", 2) => UiKeyCommand::Edit(crate::model::UiEditorAction::NextPrompt),
-            ("insert-newline", 2) => {
-                UiKeyCommand::Edit(crate::model::UiEditorAction::InsertNewline)
-            }
-            ("backward-char", 2) => UiKeyCommand::Edit(crate::model::UiEditorAction::BackwardChar),
-            ("forward-char", 2) => UiKeyCommand::Edit(crate::model::UiEditorAction::ForwardChar),
-            ("delete-char", 2) => UiKeyCommand::Edit(crate::model::UiEditorAction::DeleteChar),
-            ("line-start", 2) => UiKeyCommand::Edit(crate::model::UiEditorAction::LineStart),
-            ("line-end", 2) => UiKeyCommand::Edit(crate::model::UiEditorAction::LineEnd),
-            (name, 2) => UiKeyCommand::Invoke(UiCommandName::new(name)?),
-            _ => return Err(UiProjectionError::Invalid("invalid UI key binding")),
+        let kind = identifier(entry.element(2)?, &mut names)?;
+        let command = match kind.as_str() {
+            "open-commands" => UiKeyCommand::OpenCommands,
+            "cancel" => UiKeyCommand::Cancel,
+            "normal-mode" => UiKeyCommand::Mode {
+                mode: UiKeyMode::Normal,
+                cancel: true,
+            },
+            "insert-mode" => UiKeyCommand::Mode {
+                mode: UiKeyMode::Insert,
+                cancel: false,
+            },
+            "append-insert" => UiKeyCommand::Edit(crate::model::UiEditorAction::AppendInsert),
+            "previous-line" => UiKeyCommand::Edit(crate::model::UiEditorAction::PreviousLine),
+            "next-line" => UiKeyCommand::Edit(crate::model::UiEditorAction::NextLine),
+            "next-word" => UiKeyCommand::Edit(crate::model::UiEditorAction::NextWord),
+            "previous-word" => UiKeyCommand::Edit(crate::model::UiEditorAction::PreviousWord),
+            "delete-line" => UiKeyCommand::Edit(crate::model::UiEditorAction::DeleteLine),
+            "undo" => UiKeyCommand::Edit(crate::model::UiEditorAction::Undo),
+            "history-search" => UiKeyCommand::Edit(crate::model::UiEditorAction::HistorySearch),
+            "previous-prompt" => UiKeyCommand::Edit(crate::model::UiEditorAction::PreviousPrompt),
+            "next-prompt" => UiKeyCommand::Edit(crate::model::UiEditorAction::NextPrompt),
+            "insert-newline" => UiKeyCommand::Edit(crate::model::UiEditorAction::InsertNewline),
+            "backward-char" => UiKeyCommand::Edit(crate::model::UiEditorAction::BackwardChar),
+            "forward-char" => UiKeyCommand::Edit(crate::model::UiEditorAction::ForwardChar),
+            "delete-char" => UiKeyCommand::Edit(crate::model::UiEditorAction::DeleteChar),
+            "line-start" => UiKeyCommand::Edit(crate::model::UiEditorAction::LineStart),
+            "line-end" => UiKeyCommand::Edit(crate::model::UiEditorAction::LineEnd),
+            name => UiKeyCommand::Invoke(UiCommandName::new(name)?),
         };
-        if !seen.insert(sequence.clone()) {
-            return Err(UiProjectionError::Invalid("duplicate UI key sequence"));
-        }
-        result.push(UiKeyBinding { sequence, command });
+        result.push(UiKeyBinding {
+            scope,
+            sequence,
+            command,
+        });
     }
-    for binding in &result {
-        for length in 1..binding.sequence.len() {
-            if seen.contains(&binding.sequence[..length]) {
+    for (index, binding) in result.iter().enumerate() {
+        for other in &result[index + 1..] {
+            let overlap = binding.scope == UiKeyScope::Global
+                || other.scope == UiKeyScope::Global
+                || binding.scope == other.scope;
+            if overlap
+                && (binding.sequence.starts_with(&other.sequence)
+                    || other.sequence.starts_with(&binding.sequence))
+            {
                 return Err(UiProjectionError::Invalid("ambiguous UI key prefix"));
             }
         }

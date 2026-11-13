@@ -4,8 +4,10 @@
 
 ;;; Declarative modeline content and semantic tones. The host resolves live
 ;;; model, session and activity facts without a VM call on each frame.
-(import (only-in :clan/poo/object .def .get .mix .o seal-object!))
-(export marlin-ui-modeline-nodes marlin-ui-modeline-nodes-for)
+(import (only-in :clan/poo/object .def .get .mix .o seal-object!)
+        (only-in :std/list/list find)
+        (only-in "../ui-elements/objects.ss" ui-bar ui-template ui-choice ui-size-binding ui-size-cells ui-size-subtract))
+(export marlin-ui-modeline-nodes marlin-ui-modeline-nodes-for marlin-ui-modeline-bar-for)
 
 (.def UiModelineBase.
   activity-separator: "│ "
@@ -65,3 +67,69 @@
 
 (def (marlin-ui-modeline-nodes)
   (marlin-ui-modeline-nodes-for 'doom-one))
+
+;;; Turn the selected catalog into a generic flow. The host only supplies facts
+;;; and values; ordering, colors, compact forms and retention stay here.
+(def (marlin-ui-modeline-bar-for nodes)
+  (let* ((slot (lambda (identity-value)
+                 (or (find (lambda (entry) (eq? (.get entry identity) identity-value)) nodes)
+                     (error "missing modeline entry" identity-value))))
+         (width-fact (lambda (width-value)
+                       (string->symbol (string-append "width-at-least-" (number->string width-value)))))
+         (fixed (lambda (text-value tone-value background-value bold-value)
+                  (ui-template background-value (list (list 'literal tone-value bold-value text-value)))))
+         (compact (lambda (entry full-value short-value)
+                    (ui-choice (list (list (width-fact (.get entry compact-below)) full-value)) short-value)))
+         (dynamic (lambda (template-value value-name tone-value tail-value)
+                    (let* ((parts (string-split template-value #\{))
+                           (before (car parts))
+                           (suffix (if (and (= (length parts) 2)
+                                            (string-prefix? "value}" (cadr parts)))
+                                     (cadr parts)
+                                     (error "missing modeline value placeholder" template-value)))
+                           (after (substring suffix 6 (string-length suffix)))
+                           (value-span (if tail-value
+                                         (list 'tail tone-value #f value-name
+                                           (ui-size-subtract (ui-size-binding 'bar-right-budget)
+                                             (ui-size-cells (+ (string-length before) (string-length after)))))
+                                         (list 'binding tone-value #f value-name))))
+                      (ui-template 'none (list (list 'literal tone-value #f before)
+                                              value-span (list 'literal tone-value #f after))))))
+         (activity (lambda (entry)
+                     (let (tone-value (.get entry tone))
+                       (compact entry
+                         (fixed (string-append (.get entry label) " ") tone-value 'none #f)
+                         (fixed (string-append (.get entry compact) " ") tone-value 'none #f)))))
+         (activity-view
+           (ui-choice
+             (map (lambda (name-value)
+                    (let* ((name (symbol->string name-value))
+                           (entry (slot (string->symbol (string-append "modeline/state/" name)))))
+                      (list (string->symbol (string-append "activity-" name)) (activity entry))))
+                  '(online offline unknown runtime workspace recovery continuation history working reading))
+             (activity (slot 'modeline/left/activity))))
+         (segments
+           (apply append
+             (map (lambda (entry)
+                    (let* ((id (.get entry identity)) (tone-value (.get entry tone))
+                           (min-width (.get entry min-width)) (priority (.get entry keep-priority)))
+                      (case id
+                        ((modeline/left/brand)
+                         (list (list 'left 0 0 #f
+                                 (compact entry
+                                   (fixed (string-append " " (.get entry label) " ") 'canvas tone-value #t)
+                                   (fixed (string-append " " (.get entry compact) " ") 'canvas tone-value #t)))
+                               (list 'left 0 0 #f (fixed "▸" tone-value 'none #f))))
+                        ((modeline/left/activity) (list (list 'left 0 0 #f activity-view)))
+                        ((modeline/left/model modeline/right/turns modeline/right/session)
+                         (let* ((side (if (eq? id 'modeline/left/model) 'left 'right))
+                                (value-name (case id ((modeline/left/model) 'model)
+                                                   ((modeline/right/turns) 'turns) (else 'session)))
+                                (tail-value (eq? id 'modeline/right/session))
+                                (condition (and (eq? id 'modeline/right/turns) 'has-turns)))
+                           (list (list side priority min-width condition
+                                   (compact entry
+                                     (dynamic (.get entry label) value-name tone-value tail-value)
+                                     (dynamic (.get entry compact) value-name tone-value tail-value))))))
+                        (else '())))) nodes))))
+    (ui-bar 'bar 3 segments)))

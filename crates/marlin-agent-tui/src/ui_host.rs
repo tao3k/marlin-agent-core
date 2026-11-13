@@ -9,8 +9,8 @@ use gerbil_scheme::GerbilRuntime;
 #[cfg(feature = "linked-ui")]
 use marlin_agent_ui::UiLinkedExports;
 use marlin_agent_ui::{
-    UiBrowseDirection, UiCommandName, UiEditorAction, UiEvent, UiIntent, UiKeyCommand, UiModule,
-    UiNativeSession, UiOpenFacts, UiProjectionError, UiTransient, UiTransientForeign,
+    UiBrowseDirection, UiCommandName, UiEditorAction, UiEvent, UiIntent, UiKeyCommand, UiKeyMode,
+    UiModule, UiNativeSession, UiOpenFacts, UiProjectionError, UiTransient, UiTransientForeign,
     UiTransientId, UiWorkbench,
 };
 use std::collections::HashSet;
@@ -26,6 +26,7 @@ pub(crate) enum UiKeyAction {
     OpenCommands,
     Cancel,
     Edit(UiEditorAction),
+    Mode { mode: UiKeyMode, cancel: bool },
     InvokeCommand(UiCommandName),
     Scroll(bool),
     Unhandled,
@@ -229,7 +230,7 @@ impl<'runtime> UiHost<'runtime> {
         candidates: &[UiCommandName],
         previous: Option<&UiCommandName>,
         direction: UiBrowseDirection,
-        steps: u8,
+        steps: u16,
         restricted: bool,
     ) -> Result<Option<UiCommandName>, UiProjectionError> {
         let choice = self.module.browse_command_steps(
@@ -289,7 +290,9 @@ impl<'runtime> UiHost<'runtime> {
         key: Key,
         command_active: bool,
         draft_is_command: bool,
+        mode: UiKeyMode,
     ) -> Result<UiKeyAction, UiProjectionError> {
+        let scope = (!command_active).then_some(mode);
         if let Some(transient) = &self.transient {
             self.transient_warning = false;
             if matches!(key, Key::Esc | Key::Ctrl('g')) {
@@ -322,25 +325,32 @@ impl<'runtime> UiHost<'runtime> {
             if let Some(token) = key_token(key) {
                 sequence.push(token);
                 let keys: Vec<_> = sequence.iter().map(String::as_str).collect();
-                if let Some(command) = self.view.key_command(&keys) {
+                if let Some(command) = self.view.key_command(&keys, scope) {
                     return Ok(self.key_command_action(command));
                 }
-                if self.view.key_prefix(&keys) {
+                if self.view.key_prefix(&keys, scope) {
                     self.key_prefix = sequence;
                     return Ok(UiKeyAction::Handled);
                 }
             }
         }
-        if matches!(key, Key::Ctrl(_) | Key::Alt(_))
+        if (matches!(key, Key::Ctrl(_) | Key::Alt(_))
+            || (!command_active && (mode == UiKeyMode::Normal || key == Key::Esc)))
             && let Some(token) = key_token(key)
         {
-            if let Some(command) = self.view.key_command(&[&token]) {
+            if let Some(command) = self.view.key_command(&[&token], scope) {
                 return Ok(self.key_command_action(command));
             }
-            if self.view.key_prefix(&[&token]) {
+            if self.view.key_prefix(&[&token], scope) {
                 self.key_prefix = vec![token];
                 return Ok(UiKeyAction::Handled);
             }
+        }
+        if !command_active
+            && mode == UiKeyMode::Normal
+            && matches!(key, Key::Char(c) if !c.is_control())
+        {
+            return Ok(UiKeyAction::Handled);
         }
         match key {
             Key::Char('\t') if !command_active => {
@@ -384,6 +394,7 @@ impl<'runtime> UiHost<'runtime> {
             UiKeyCommand::OpenCommands => UiKeyAction::OpenCommands,
             UiKeyCommand::Cancel => UiKeyAction::Cancel,
             UiKeyCommand::Edit(action) => UiKeyAction::Edit(action),
+            UiKeyCommand::Mode { mode, cancel } => UiKeyAction::Mode { mode, cancel },
             UiKeyCommand::Invoke(name) => UiKeyAction::InvokeCommand(name),
         }
     }
@@ -401,6 +412,13 @@ impl<'runtime> UiHost<'runtime> {
 
 fn key_token(key: Key) -> Option<String> {
     match key {
+        Key::Esc => Some("ESC".into()),
+        Key::Backspace => Some("BACKSPACE".into()),
+        Key::Delete => Some("DELETE".into()),
+        Key::Char('\n') => Some("RET".into()),
+        Key::Char(' ') => Some("SPC".into()),
+        Key::Char('0') => Some("Digit0".into()),
+        Key::Char('$') => Some("Dollar".into()),
         Key::Ctrl(value) if value.is_ascii_alphanumeric() => Some(format!("C-{value}")),
         Key::Alt(value) if value.is_ascii_alphanumeric() => Some(format!("M-{value}")),
         Key::Char(value) if value.is_ascii_alphanumeric() => Some(value.to_string()),
@@ -471,23 +489,42 @@ fn admit_terminal_view(view: &UiWorkbench) -> Result<(), UiProjectionError> {
             | marlin_agent_ui::UiElement::Columns(children) => {
                 children.iter().all(scroll_targets_admitted)
             }
+            marlin_agent_ui::UiElement::Bar { segments, .. } => segments
+                .iter()
+                .all(|segment| scroll_targets_admitted(&segment.child)),
             marlin_agent_ui::UiElement::Sized { child, .. }
-            | marlin_agent_ui::UiElement::Panel { child, .. } => scroll_targets_admitted(child),
+            | marlin_agent_ui::UiElement::Panel { child, .. }
+            | marlin_agent_ui::UiElement::List { child, .. } => scroll_targets_admitted(child),
             _ => true,
         }
     }
-    fn main_presentation(element: &marlin_agent_ui::UiElement) -> bool {
+    fn main_presentation(element: &marlin_agent_ui::UiElement, within_panel: bool) -> bool {
         match element {
-            marlin_agent_ui::UiElement::Slot(id) => MainSource::from_id(id).is_some(),
-            marlin_agent_ui::UiElement::Panel { child, .. }
-            | marlin_agent_ui::UiElement::Sized { child, .. }
-            | marlin_agent_ui::UiElement::Region { child, .. } => main_presentation(child),
-            marlin_agent_ui::UiElement::Rows(children)
-            | marlin_agent_ui::UiElement::Columns(children) => {
-                children.iter().all(main_presentation)
+            marlin_agent_ui::UiElement::Slot(id) => match MainSource::from_id(id) {
+                Some(MainSource::Static | MainSource::Runtime | MainSource::Extension) => {
+                    within_panel
+                }
+                Some(_) => true,
+                None => false,
+            },
+            marlin_agent_ui::UiElement::Panel { child, .. } => main_presentation(child, true),
+            marlin_agent_ui::UiElement::Sized { child, .. }
+            | marlin_agent_ui::UiElement::List { child, .. }
+            | marlin_agent_ui::UiElement::Region { child, .. } => {
+                main_presentation(child, within_panel)
             }
+            marlin_agent_ui::UiElement::Rows(children)
+            | marlin_agent_ui::UiElement::Columns(children) => children
+                .iter()
+                .all(|child| main_presentation(child, within_panel)),
+            marlin_agent_ui::UiElement::Bar { segments, .. } => segments
+                .iter()
+                .all(|segment| main_presentation(&segment.child, within_panel)),
             marlin_agent_ui::UiElement::Choice { cases, fallback } => {
-                cases.iter().all(|(_, item)| main_presentation(item)) && main_presentation(fallback)
+                cases
+                    .iter()
+                    .all(|(_, item)| main_presentation(item, within_panel))
+                    && main_presentation(fallback, within_panel)
             }
             marlin_agent_ui::UiElement::Text(_) | marlin_agent_ui::UiElement::Template { .. } => {
                 true
@@ -509,13 +546,18 @@ fn admit_terminal_view(view: &UiWorkbench) -> Result<(), UiProjectionError> {
             | marlin_agent_ui::UiElement::Columns(children) => children
                 .iter()
                 .try_fold(0usize, |sum, child| sum.checked_add(input_count(child)?)),
+            marlin_agent_ui::UiElement::Bar { segments, .. } => {
+                segments.iter().try_fold(0usize, |sum, segment| {
+                    sum.checked_add(input_count(&segment.child)?)
+                })
+            }
             marlin_agent_ui::UiElement::Panel { child, .. }
             | marlin_agent_ui::UiElement::Sized { child, .. }
             | marlin_agent_ui::UiElement::Region { child, .. } => input_count(child),
             marlin_agent_ui::UiElement::Text(_) | marlin_agent_ui::UiElement::Template { .. } => {
                 Some(0)
             }
-            marlin_agent_ui::UiElement::Slot(_) => None,
+            marlin_agent_ui::UiElement::Slot(_) | marlin_agent_ui::UiElement::List { .. } => None,
         }
     }
     fn collect_slots<'a>(
@@ -531,10 +573,14 @@ fn admit_terminal_view(view: &UiWorkbench) -> Result<(), UiProjectionError> {
             | marlin_agent_ui::UiElement::Columns(children) => children
                 .iter()
                 .all(|child| collect_slots(child, slots, within_region)),
+            marlin_agent_ui::UiElement::Bar { segments, .. } => segments
+                .iter()
+                .all(|segment| collect_slots(&segment.child, slots, within_region)),
             marlin_agent_ui::UiElement::Sized { child, .. }
             | marlin_agent_ui::UiElement::Panel { child, .. } => {
                 collect_slots(child, slots, within_region)
             }
+            marlin_agent_ui::UiElement::List { .. } => within_region,
             // The terminal's required slots must exist independent of facts.
             marlin_agent_ui::UiElement::Choice { .. } => within_region,
             marlin_agent_ui::UiElement::Text(_)
@@ -573,19 +619,29 @@ fn admit_terminal_view(view: &UiWorkbench) -> Result<(), UiProjectionError> {
             | marlin_agent_ui::UiElement::Columns(children) => {
                 children.iter().all(candidate_presentation)
             }
+            marlin_agent_ui::UiElement::Bar { segments, .. } => segments
+                .iter()
+                .all(|segment| candidate_presentation(&segment.child)),
             marlin_agent_ui::UiElement::Sized { child, .. }
             | marlin_agent_ui::UiElement::Panel { child, .. }
+            | marlin_agent_ui::UiElement::List { child, .. }
             | marlin_agent_ui::UiElement::Region { child, .. } => candidate_presentation(child),
             marlin_agent_ui::UiElement::Slot(_) | marlin_agent_ui::UiElement::Input { .. } => false,
         }
     }
-    if !view
-        .layout
-        .frame_tree
-        .region_child("candidates")
-        .is_some_and(candidate_presentation)
-    {
+    let list = |name| match view.layout.frame_tree.region_child(name) {
+        Some(marlin_agent_ui::UiElement::List { id, child, .. })
+            if candidate_presentation(child) =>
+        {
+            Some(id)
+        }
+        _ => None,
+    };
+    let (Some(candidates), Some(extensions)) = (list("candidates"), list("extensions")) else {
         return Err(UiProjectionError::Invalid("invalid candidate presentation"));
+    };
+    if candidates == extensions {
+        return Err(UiProjectionError::Invalid("duplicate UI list identity"));
     }
     if view
         .layout
@@ -600,7 +656,7 @@ fn admit_terminal_view(view: &UiWorkbench) -> Result<(), UiProjectionError> {
         .layout
         .frame_tree
         .region_child("transcript")
-        .is_some_and(main_presentation)
+        .is_some_and(|element| main_presentation(element, false))
     {
         return Err(UiProjectionError::Invalid("invalid main presentation"));
     }

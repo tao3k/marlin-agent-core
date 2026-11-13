@@ -36,7 +36,7 @@ fn wheel_gestures_are_hit_tested_at_their_own_positions() {
     wheel.push(true, transcript.0, transcript.1);
     wheel.push(false, candidates.0, candidates.1);
     for expected in ["transcript", "candidates"] {
-        let (_, _, column, row) = wheel.take_lines().unwrap();
+        let (_, _, column, row) = wheel.take_steps().unwrap();
         let hit = super::super::ui_elements::hit_test_scroll(&geometry, column - 1, row - 1)
             .and_then(|region| region.scroll_target());
         assert_eq!(hit, Some(expected));
@@ -210,7 +210,7 @@ fn frame_hit_testing_uses_the_selected_scheme_branch() {
     let id = |name| UiComponentId::new(name).unwrap();
     let region = |name| UiElement::Region {
         id: id(name),
-        scroll_target: Some(marlin_agent_ui::UiScrollTarget::new("transcript").unwrap()),
+        scroll_target: Some(marlin_agent_ui::UiScrollTarget::new("transcript", 3).unwrap()),
         child: Box::new(UiElement::Text(Vec::new())),
     };
     let mut layout = test_layout();

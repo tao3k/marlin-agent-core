@@ -4,7 +4,7 @@
 
 use super::{
     Arc, AtomicBool, Duration, Instant, StopOnDrop, TcpListener, Terminal, contains, fs, mpsc,
-    screen_lines, stream_fixture, thread,
+    mx_position, screen_lines, stream_fixture, thread,
 };
 
 #[cfg(feature = "linked-ui")]
@@ -89,7 +89,7 @@ fn linked_fresh_copy_startup_pair(binary: &std::path::Path, profile: &str) {
         terminal.wait_exit(Duration::from_secs(5));
         terminal.assert_restored();
         for line in String::from_utf8_lossy(&terminal.output).split("\r\n") {
-            if line.starts_with("marlin-tui startup ") {
+            if line.starts_with("marlin-tui startup ") || line.starts_with("marlin-tui UI open ") {
                 eprintln!("{profile} {line}");
             }
         }
@@ -148,12 +148,27 @@ pub(super) fn exercise_pty(startup_limit: Duration, exit_limit: Duration) {
     terminal.wait_mx_last();
     terminal.send(b"\x1b[B");
     terminal.wait_mx_selected(1);
+    // The first candidate depends on history and Vertico-style ranking.
+    // Select Help by its exact command instead of relying on catalogue order.
+    terminal.send(b"help");
+    terminal.wait_for(Duration::from_secs(15), "M-x help", |output| {
+        screen_lines(output)
+            .iter()
+            .any(|line| line.contains("M-x help"))
+    });
     terminal.send(b"\r");
-    terminal.wait_text("*Help*");
+    terminal.wait_for(Duration::from_secs(15), "confirmed Help buffer", |output| {
+        let rows = screen_lines(output);
+        rows[29].contains("*Help* · Esc returns")
+            && rows.iter().all(|line| mx_position(line).is_none())
+    });
     terminal.send(b"\x1b");
     terminal.wait_status("Message: Enter send");
     terminal.send(b"\x1bxsessions\r");
+    terminal.wait_status("Sessions");
+    terminal.send(b"\x18bmessages\r");
     terminal.wait_text("Session listing requires a persistent session configuration.");
+    terminal.send(b"\x1b");
     terminal.wait_status("Message: Enter send");
     assert!(
         matches!(request_rx.try_recv(), Err(mpsc::TryRecvError::Empty)),
@@ -190,7 +205,7 @@ pub(super) fn exercise_pty(startup_limit: Duration, exit_limit: Duration) {
     terminal.send(b"\x1b[A!\x1b[B?\x01^\x05$\x1b[H<\x1b[F>");
     thread::sleep(Duration::from_millis(300));
     terminal.send(b"\r");
-    terminal.wait_raw(b"fixture-live");
+    terminal.wait_text("fixture-live");
     let request = request_rx.recv_timeout(Duration::from_secs(5)).unwrap();
     assert_eq!(
         request["input"][0]["content"],
@@ -198,7 +213,7 @@ pub(super) fn exercise_pty(startup_limit: Duration, exit_limit: Duration) {
     );
     assert_eq!(request["stream"], true);
     release_tx.send(()).unwrap();
-    terminal.wait_raw(b"done");
+    terminal.wait_text("fixture-livedone");
     terminal.send(b"\x11");
     terminal.wait_exit(exit_limit);
     terminal.assert_restored();
@@ -269,10 +284,11 @@ fn runtime_policy_receipt() {
     fs::write(&config, "provider=\"openai\"\nmodel=\"gpt-fixture\"\nendpoint=\"http://127.0.0.1:9/v1/responses\"\nprotocol=\"open-ai-responses\"\ncredential_env=\"MARLIN_TUI_FIXTURE_KEY\"\ntimeout_seconds=7\n").unwrap();
     let mut terminal = Terminal::start(&config);
     terminal.wait_status("Message: Enter send");
-    terminal.send(b"/runtime\r");
+    terminal.send(b"\x1bxruntime\r");
     for text in [
+        "Runtime policy",
         "Stream-open timeout: 7000 ms",
-        "does not cover stream duration",
+        "Scope: stream opening. Stream duration",
     ] {
         terminal.wait_for(Duration::from_secs(15), text, |output| {
             screen_lines(output).join(" ").contains(text)

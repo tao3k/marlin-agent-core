@@ -5,6 +5,27 @@
 use super::composer::Composer;
 
 #[test]
+fn word_and_line_edits_undo_without_breaking_unicode_boundaries() {
+    let mut composer = Composer::default();
+    composer.insert_text("abc βeta\nlast");
+    composer.normal_cursor();
+    composer.previous_word();
+    assert_eq!(&composer.text()[composer.cursor()..], "last");
+    composer.previous_word();
+    assert_eq!(&composer.text()[composer.cursor()..], "βeta\nlast");
+    composer.delete_line();
+    assert_eq!(composer.text(), "last");
+    composer.undo();
+    assert_eq!(composer.text(), "abc βeta\nlast");
+
+    let mut combined = Composer::default();
+    combined.insert_text("e");
+    combined.insert_text("\u{301}");
+    combined.undo();
+    assert_eq!(combined.text(), "");
+}
+
+#[test]
 fn line_boundaries_handle_unicode_empty_lines_and_wrapped_text() {
     let mut composer = Composer::default();
     composer.insert_text("first\n中e\u{301}🐳wrapped\n\nlast");

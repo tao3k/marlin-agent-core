@@ -70,5 +70,5 @@
             (check-equal? (vector-ref (vector-ref help-view 6) 1) '#(#(main help)))
             (check-equal? (vector-ref (vector-ref help-pi-view 6) 1) '#(#(main help)))
             (check-equal? (vector-ref (vector-ref (vector-ref help-view 2) 3) 0) 'help)
-            (check-equal? (vector-ref (vector-ref view 7) 0) '#(#(M-x) open-commands))
+            (check-equal? (vector-ref (vector-ref view 7) 0) '#(global #(M-x) open-commands))
             (check-equal? (vector-ref (vector-ref view 6) 1) '#(#(main conversation)))))))))

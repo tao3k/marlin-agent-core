@@ -167,13 +167,16 @@ fn trackpad_pulses_coalesce_without_blocking_keyboard_input() {
     for _ in 0..100 {
         assert!(!wheel.push(true, 24, 8));
     }
-    assert_eq!(wheel.take_lines(), Some((true, 48, 24, 8)));
-    assert_eq!(wheel.take_lines(), None);
+    for _ in 0..6 {
+        assert_eq!(wheel.take_steps(), Some((true, 16, 24, 8)));
+    }
+    assert_eq!(wheel.take_steps(), Some((true, 5, 24, 8)));
+    assert_eq!(wheel.take_steps(), None);
     assert!(wheel.push(false, 24, 8));
-    assert_eq!(wheel.take_lines(), Some((false, 3, 24, 8)));
+    assert_eq!(wheel.take_steps(), Some((false, 1, 24, 8)));
     assert!(wheel.push(true, 24, 8));
     assert!(!wheel.push(false, 24, 8));
-    assert_eq!(wheel.take_lines(), None);
+    assert_eq!(wheel.take_steps(), None);
 }
 
 #[test]
@@ -182,9 +185,23 @@ fn wheel_batches_keep_the_pointer_position_at_each_gesture() {
     assert!(wheel.push(true, 4, 3));
     assert!(!wheel.push(true, 4, 3));
     assert!(!wheel.push(false, 4, 18));
-    assert_eq!(wheel.take_lines(), Some((true, 6, 4, 3)));
+    assert_eq!(wheel.take_steps(), Some((true, 2, 4, 3)));
     assert!(wheel.has_pending());
-    assert_eq!(wheel.take_lines(), Some((false, 3, 4, 18)));
+    assert_eq!(wheel.take_steps(), Some((false, 1, 4, 18)));
+    assert!(!wheel.has_pending());
+}
+
+#[test]
+fn wheel_retains_large_gestures_without_retargeting_or_unbounded_backlog() {
+    let wheel = WheelAccumulator::default();
+    for _ in 0..300 {
+        wheel.push(true, 4, 3);
+    }
+    wheel.push(false, 4, 18);
+    for _ in 0..16 {
+        assert_eq!(wheel.take_steps(), Some((true, 16, 4, 3)));
+    }
+    assert_eq!(wheel.take_steps(), Some((false, 1, 4, 18)));
     assert!(!wheel.has_pending());
 }
 
@@ -195,9 +212,9 @@ fn wheel_queue_is_bounded_without_retargeting_older_events() {
         wheel.push(true, 1, row);
     }
     for row in 1..=64 {
-        assert_eq!(wheel.take_lines(), Some((true, 3, 1, row)));
+        assert_eq!(wheel.take_steps(), Some((true, 1, 1, row)));
     }
-    assert_eq!(wheel.take_lines(), None);
+    assert_eq!(wheel.take_steps(), None);
 }
 
 #[test]

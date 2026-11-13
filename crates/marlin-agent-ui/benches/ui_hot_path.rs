@@ -8,8 +8,8 @@
 use criterion::{Criterion, criterion_group, criterion_main};
 use marlin_agent_ui::{
     UiBufferId, UiCommandName, UiComponentId, UiEditorAction, UiEvent, UiFrame, UiFrameSpec,
-    UiIntent, UiKeyBinding, UiKeyCommand, UiKeyToken, UiLayoutPolicy, UiProfileName, UiRegion,
-    UiStatusItem, UiStatusTone, UiTheme, UiWindow, UiWorkbench,
+    UiIntent, UiKeyBinding, UiKeyCommand, UiKeyScope, UiKeyToken, UiLayoutPolicy, UiProfileName,
+    UiRegion, UiStatusItem, UiStatusTone, UiTheme, UiWindow, UiWorkbench,
 };
 use std::{hint::black_box, time::Duration};
 
@@ -98,7 +98,7 @@ fn view() -> UiWorkbench {
                 .map(|name| marlin_agent_ui::UiElement::Region {
                     id: UiComponentId::new(name).unwrap(),
                     scroll_target: matches!(name, "transcript" | "candidates")
-                        .then(|| marlin_agent_ui::UiScrollTarget::new(name).unwrap()),
+                        .then(|| marlin_agent_ui::UiScrollTarget::new(name, 3).unwrap()),
                     child: Box::new(marlin_agent_ui::UiElement::Text(vec![])),
                 })
                 .collect(),
@@ -142,6 +142,7 @@ fn view() -> UiWorkbench {
         ]
         .into_iter()
         .map(|(keys, command)| UiKeyBinding {
+            scope: UiKeyScope::Global,
             sequence: keys
                 .into_iter()
                 .map(|key| UiKeyToken::new(key).unwrap())
@@ -195,17 +196,17 @@ fn benchmark_hot_path(criterion: &mut Criterion) {
         "benchmark must measure an admitted full Modeline transition"
     );
     criterion.bench_function("ui/keymap/M-x", |bench| {
-        bench.iter(|| black_box(&prior).key_command(black_box(&["M-x"])))
+        bench.iter(|| black_box(&prior).key_command(black_box(&["M-x"]), None))
     });
     assert_eq!(
-        prior.key_command(&["C-n"]),
+        prior.key_command(&["C-n"], None),
         Some(UiKeyCommand::Edit(UiEditorAction::InsertNewline))
     );
     criterion.bench_function("ui/keymap/C-n-editor", |bench| {
-        bench.iter(|| black_box(&prior).key_command(black_box(&["C-n"])))
+        bench.iter(|| black_box(&prior).key_command(black_box(&["C-n"]), None))
     });
     criterion.bench_function("ui/keymap/C-x-prefix", |bench| {
-        bench.iter(|| black_box(&prior).key_prefix(black_box(&["C-x"])))
+        bench.iter(|| black_box(&prior).key_prefix(black_box(&["C-x"]), None))
     });
     criterion.bench_function("ui/frame/select-buffer-admission", |bench| {
         bench.iter(|| {

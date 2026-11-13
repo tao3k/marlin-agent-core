@@ -58,6 +58,8 @@ use termion::event::Key;
 
 #[path = "presentation.rs"]
 mod presentation;
+#[path = "restore.rs"]
+mod restore;
 #[path = "runner.rs"]
 mod runner;
 #[path = "runtime_probe.rs"]
@@ -70,6 +72,8 @@ mod terminal_owner;
 mod tool_review;
 #[path = "turn.rs"]
 mod turn;
+#[path = "ui_events.rs"]
+mod ui_events;
 
 #[cfg(test)]
 #[cfg_attr(test, allow(unused_imports))]

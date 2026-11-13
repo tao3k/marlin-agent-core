@@ -21,7 +21,7 @@ pub struct HitRegion {
 
 #[derive(Debug)]
 enum HitScrollTarget {
-    Region,
+    Region(u16),
     Named(UiScrollTarget),
 }
 
@@ -29,7 +29,7 @@ impl HitRegion {
     pub(super) fn new(id: &UiComponentId, area: Rect, target: Option<&UiScrollTarget>) -> Self {
         let scroll_target = target.map(|target| {
             if target.as_str() == id.as_str() {
-                HitScrollTarget::Region
+                HitScrollTarget::Region(target.step())
             } else {
                 HitScrollTarget::Named(target.clone())
             }
@@ -44,8 +44,16 @@ impl HitRegion {
     /// Return the Scheme-selected destination, which may differ from the region identity.
     pub fn scroll_target(&self) -> Option<&str> {
         match self.scroll_target.as_ref()? {
-            HitScrollTarget::Region => Some(self.id.as_str()),
+            HitScrollTarget::Region(_) => Some(self.id.as_str()),
             HitScrollTarget::Named(target) => Some(target.as_str()),
+        }
+    }
+
+    /// Scheme-selected number of destination units for each wheel pulse.
+    pub fn scroll_step(&self) -> Option<u16> {
+        match self.scroll_target.as_ref()? {
+            HitScrollTarget::Region(step) => Some(*step),
+            HitScrollTarget::Named(target) => Some(target.step()),
         }
     }
 }
@@ -119,9 +127,9 @@ pub fn region_extent(
             }
             _ => region_extent(child, name, extent, facts),
         },
-        UiElement::Region { child, .. } | UiElement::Panel { child, .. } => {
-            region_extent(child, name, extent, facts)
-        }
+        UiElement::Region { child, .. }
+        | UiElement::Panel { child, .. }
+        | UiElement::List { child, .. } => region_extent(child, name, extent, facts),
         UiElement::Rows(children) | UiElement::Columns(children) => children
             .iter()
             .find_map(|child| region_extent(child, name, extent, facts)),
@@ -205,6 +213,7 @@ pub(super) fn group_demand(
             group_demand(resolve_choice(element, facts), vertical, extent, facts)
         }
         UiElement::Region { child, .. } => group_demand(child, vertical, extent, facts),
+        UiElement::List { child, .. } => group_demand(child, vertical, extent, facts),
         UiElement::Panel { child, .. } => group_demand(child, vertical, extent, facts),
         UiElement::Rows(children) if vertical => {
             children.iter().fold(Demand::default(), |sum, child| {
@@ -293,6 +302,65 @@ pub(super) fn layout_children<'tree>(
     }
 }
 
+/// Project children into the visible portion of a potentially scrolled group.
+/// Painting and hit testing must use the same clipped rectangles and offsets.
+pub(super) fn layout_scrolled_children<'tree>(
+    children: &'tree [UiElement],
+    vertical: bool,
+    area: Rect,
+    extent: &dyn Fn(&UiComponentId) -> Extent,
+    facts: &dyn Fn(&UiComponentId) -> bool,
+    skip: usize,
+    mut visit: impl FnMut(&'tree UiElement, Rect, usize),
+) {
+    let height = if vertical && skip > 0 {
+        let fixed = children.iter().fold(0u32, |total, child| {
+            total.saturating_add(group_demand(child, true, extent, facts).cells)
+        });
+        area.height.max(fixed.min(u32::from(u16::MAX)) as u16)
+    } else {
+        area.height
+    };
+    layout_children(
+        children,
+        vertical,
+        Rect::new(0, 0, area.width, height),
+        extent,
+        facts,
+        |child, rect| {
+            if vertical {
+                let start = usize::from(rect.y);
+                let visible_start = start.max(skip);
+                let visible_end =
+                    usize::from(rect.bottom()).min(skip.saturating_add(usize::from(area.height)));
+                if visible_start < visible_end {
+                    visit(
+                        child,
+                        Rect::new(
+                            area.x,
+                            area.y + (visible_start - skip) as u16,
+                            area.width,
+                            (visible_end - visible_start) as u16,
+                        ),
+                        visible_start - start,
+                    );
+                }
+            } else {
+                visit(
+                    child,
+                    Rect::new(
+                        area.x.saturating_add(rect.x),
+                        area.y,
+                        rect.width,
+                        area.height,
+                    ),
+                    skip,
+                );
+            }
+        },
+    );
+}
+
 /// Map a declarative region tree to terminal rectangles without painting it.
 ///
 /// `regions` is appended in traversal order; callers clear it for each layout.
@@ -313,6 +381,30 @@ pub fn layout_regions_with_facts(
     regions: &mut Vec<HitRegion>,
     facts: &dyn Fn(&UiComponentId) -> bool,
 ) {
+    layout_regions_with_scroll(element, area, extent, regions, facts, &|_| 0);
+}
+
+/// Lay out the same scrolled tree as painting, retaining visible hit regions.
+pub fn layout_regions_with_scroll(
+    element: &UiElement,
+    area: Rect,
+    extent: &dyn Fn(&UiComponentId) -> Extent,
+    regions: &mut Vec<HitRegion>,
+    facts: &dyn Fn(&UiComponentId) -> bool,
+    offset: &dyn Fn(&UiComponentId) -> usize,
+) {
+    layout_regions_inner(element, area, extent, regions, facts, offset, 0);
+}
+
+fn layout_regions_inner(
+    element: &UiElement,
+    area: Rect,
+    extent: &dyn Fn(&UiComponentId) -> Extent,
+    regions: &mut Vec<HitRegion>,
+    facts: &dyn Fn(&UiComponentId) -> bool,
+    offset: &dyn Fn(&UiComponentId) -> usize,
+    skip: usize,
+) {
     if area.is_empty() {
         return;
     }
@@ -323,27 +415,56 @@ pub fn layout_regions_with_facts(
             child,
         } => {
             regions.push(HitRegion::new(id, area, scroll_target.as_ref()));
-            layout_regions_with_facts(child, area, extent, regions, facts);
+            let scroll = scroll_target.as_ref().map_or(0, |_| offset(id));
+            layout_regions_inner(
+                child,
+                area,
+                extent,
+                regions,
+                facts,
+                offset,
+                skip.saturating_add(scroll),
+            );
         }
+        // Lists are supplied by the host and repeated per visible data row;
+        // their row geometry cannot be inferred from a template alone.
         UiElement::Text(_)
         | UiElement::Slot(_)
         | UiElement::Template { .. }
-        | UiElement::Input { .. } => {}
+        | UiElement::Bar { .. }
+        | UiElement::Input { .. }
+        | UiElement::List { .. } => {}
         UiElement::Choice { .. } => {
-            layout_regions_with_facts(resolve_choice(element, facts), area, extent, regions, facts);
+            layout_regions_inner(
+                resolve_choice(element, facts),
+                area,
+                extent,
+                regions,
+                facts,
+                offset,
+                skip,
+            );
         }
         UiElement::Sized { child, .. } => {
-            layout_regions_with_facts(child, area, extent, regions, facts);
+            layout_regions_inner(child, area, extent, regions, facts, offset, skip);
         }
         UiElement::Panel { child, .. } => {
             let inner = Block::default().borders(Borders::ALL).inner(area);
-            layout_regions_with_facts(child, inner, extent, regions, facts);
+            layout_regions_inner(child, inner, extent, regions, facts, offset, skip);
         }
         UiElement::Rows(children) | UiElement::Columns(children) => {
             let vertical = matches!(element, UiElement::Rows(_));
-            layout_children(children, vertical, area, extent, facts, |child, rect| {
-                layout_regions_with_facts(child, rect, extent, regions, facts);
-            });
+            layout_scrolled_children(
+                children,
+                vertical,
+                area,
+                extent,
+                facts,
+                skip,
+                |child, rect, child_skip| {
+                    layout_regions_inner(child, rect, extent, regions, facts, offset, child_skip);
+                },
+            );
         }
     }
 }

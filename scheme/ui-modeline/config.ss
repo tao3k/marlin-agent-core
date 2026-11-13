@@ -10,4 +10,4 @@
 (def UiModelineScope
   (validate UiModelineScopeContract
             (.o identity: 'marlin/ui-modeline nodes: marlin-ui-modeline-nodes
-                nodes-for: marlin-ui-modeline-nodes-for)))
+                nodes-for: marlin-ui-modeline-nodes-for bar-for: marlin-ui-modeline-bar-for)))

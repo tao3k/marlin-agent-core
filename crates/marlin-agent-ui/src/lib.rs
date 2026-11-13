@@ -25,16 +25,16 @@ pub mod grpc;
 
 #[cfg(feature = "scheme-ui")]
 pub use element::{
-    UiBackground, UiElement, UiSize, UiSpan, UiTemplateSpan, UiTemplateValue, UiTone,
-    decode_element,
+    UiBackground, UiBarSegment, UiBarSide, UiElement, UiSize, UiSpan, UiTemplateSpan,
+    UiTemplateValue, UiTone, decode_element,
 };
 #[cfg(feature = "scheme-ui")]
 pub use model::{
     UiBrowseDirection, UiBrowseRequest, UiBufferId, UiCommand, UiCommandArguments,
     UiCommandCandidates, UiCommandCapability, UiCommandName, UiComponentId, UiContent,
-    UiEditorAction, UiEvent, UiFrame, UiFrameSpec, UiIntent, UiKeyBinding, UiKeyCommand,
-    UiKeyToken, UiLayoutPolicy, UiOpenFacts, UiProfileName, UiProjectionError, UiRegion,
-    UiReviewChoice, UiReviewMenu, UiRgb, UiScrollDirection, UiScrollTarget, UiStatusItem,
+    UiEditorAction, UiEvent, UiFrame, UiFrameSpec, UiIntent, UiKeyBinding, UiKeyCommand, UiKeyMode,
+    UiKeyScope, UiKeyToken, UiLayoutPolicy, UiOpenFacts, UiProfileName, UiProjectionError,
+    UiRegion, UiReviewChoice, UiReviewMenu, UiRgb, UiScrollDirection, UiScrollTarget, UiStatusItem,
     UiStatusTone, UiTheme, UiToolReviewChoice, UiToolReviewDecision, UiToolReviewMenu,
     UiTranscriptPolicy, UiTransient, UiTransientForeign, UiTransientHead, UiTransientId, UiWindow,
     UiWorkbench,

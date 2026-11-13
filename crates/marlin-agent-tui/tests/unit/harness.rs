@@ -37,7 +37,7 @@ mod replay_cases;
 mod session_browser_cases;
 #[path = "streaming.rs"]
 mod streaming;
-#[path = "ui_elements.rs"]
+#[path = "ui_elements/mod.rs"]
 mod ui_elements_cases;
 #[path = "viewport.rs"]
 mod viewport_cases;

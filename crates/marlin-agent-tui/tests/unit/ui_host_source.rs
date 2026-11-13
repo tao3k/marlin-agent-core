@@ -87,24 +87,54 @@ fn real_vm_routes_a_contributed_method_without_submitting_the_draft() {
         Some(restricted[0].clone())
     );
     assert_eq!(
-        host.route_key(Key::Ctrl('r'), false, false).unwrap(),
+        host.route_key(
+            Key::Ctrl('r'),
+            false,
+            false,
+            marlin_agent_ui::UiKeyMode::Insert
+        )
+        .unwrap(),
         UiKeyAction::Edit(UiEditorAction::HistorySearch)
     );
     assert_eq!(
-        host.route_key(Key::Ctrl('n'), false, false).unwrap(),
+        host.route_key(
+            Key::Ctrl('n'),
+            false,
+            false,
+            marlin_agent_ui::UiKeyMode::Insert
+        )
+        .unwrap(),
         UiKeyAction::Edit(UiEditorAction::InsertNewline)
     );
     assert_eq!(
-        host.route_key(Key::Alt('p'), false, false).unwrap(),
+        host.route_key(
+            Key::Alt('p'),
+            false,
+            false,
+            marlin_agent_ui::UiKeyMode::Insert
+        )
+        .unwrap(),
         UiKeyAction::Edit(UiEditorAction::PreviousPrompt)
     );
     assert_eq!(
-        host.route_key(Key::Char('\t'), false, false).unwrap(),
+        host.route_key(
+            Key::Char('\t'),
+            false,
+            false,
+            marlin_agent_ui::UiKeyMode::Insert
+        )
+        .unwrap(),
         UiKeyAction::Handled
     );
     assert_eq!(host.view().focus.as_str(), "commands");
     assert_eq!(
-        host.route_key(Key::Char('\t'), false, false).unwrap(),
+        host.route_key(
+            Key::Char('\t'),
+            false,
+            false,
+            marlin_agent_ui::UiKeyMode::Insert
+        )
+        .unwrap(),
         UiKeyAction::Handled
     );
     assert_eq!(host.view().focus.as_str(), "test/extension");
@@ -136,7 +166,13 @@ fn real_vm_routes_a_contributed_method_without_submitting_the_draft() {
     assert_eq!(host.view().focus.as_str(), "test/extension");
     assert_eq!(host.view().model_label, "other/model");
     assert_eq!(
-        host.route_key(Key::Char('\n'), false, false).unwrap(),
+        host.route_key(
+            Key::Char('\n'),
+            false,
+            false,
+            marlin_agent_ui::UiKeyMode::Insert
+        )
+        .unwrap(),
         UiKeyAction::Handled
     );
     assert_eq!(host.view().focus.as_str(), "composer");
@@ -154,10 +190,33 @@ fn real_vm_routes_a_contributed_method_without_submitting_the_draft() {
         },
     )
     .unwrap();
-    forged.route_key(Key::Char('\t'), false, false).unwrap();
-    forged.route_key(Key::Char('\t'), false, false).unwrap();
+    forged
+        .route_key(
+            Key::Char('\t'),
+            false,
+            false,
+            marlin_agent_ui::UiKeyMode::Insert,
+        )
+        .unwrap();
+    forged
+        .route_key(
+            Key::Char('\t'),
+            false,
+            false,
+            marlin_agent_ui::UiKeyMode::Insert,
+        )
+        .unwrap();
     let previous = forged.view().clone();
-    assert!(forged.route_key(Key::Char('\n'), false, false).is_err());
+    assert!(
+        forged
+            .route_key(
+                Key::Char('\n'),
+                false,
+                false,
+                marlin_agent_ui::UiKeyMode::Insert
+            )
+            .is_err()
+    );
     assert_eq!(forged.view(), &previous);
 }
 
@@ -252,11 +311,57 @@ fn terminal_rejects_unknown_scroll_target_inside_choice() {
             UiComponentId::new("messages").unwrap(),
             UiElement::Region {
                 id: UiComponentId::new("nested").unwrap(),
-                scroll_target: Some(UiScrollTarget::new("unregistered").unwrap()),
+                scroll_target: Some(UiScrollTarget::new("unregistered", 3).unwrap()),
                 child: Box::new(UiElement::Text(vec![])),
             },
         )],
         fallback: Box::new(UiElement::Slot(UiComponentId::new("conversation").unwrap())),
+    };
+    assert!(admit_terminal_view(&workbench).is_err());
+}
+
+#[test]
+fn terminal_checks_bar_segment_children_before_admission() {
+    use marlin_agent_ui::{UiBackground, UiBarSegment, UiBarSide, UiElement, UiScrollTarget};
+    let mut workbench = view("composer");
+    let UiElement::Rows(slots) = &mut workbench.layout.frame_tree else {
+        panic!("frame")
+    };
+    let UiElement::Sized { child, .. } = &mut slots[0] else {
+        panic!("transcript size")
+    };
+    let UiElement::Region { child, .. } = child.as_mut() else {
+        panic!("transcript region")
+    };
+    **child = UiElement::Bar {
+        background: UiBackground::Bar,
+        right_divisor: 3,
+        segments: vec![UiBarSegment {
+            side: UiBarSide::Left,
+            priority: 0,
+            min_width: 0,
+            condition: None,
+            child: Box::new(UiElement::Slot(UiComponentId::new("unbound").unwrap())),
+        }],
+    };
+    assert!(admit_terminal_view(&workbench).is_err());
+
+    let UiElement::Rows(slots) = &mut workbench.layout.frame_tree else {
+        unreachable!()
+    };
+    let UiElement::Sized { child, .. } = &mut slots[0] else {
+        unreachable!()
+    };
+    let UiElement::Region { child, .. } = child.as_mut() else {
+        unreachable!()
+    };
+    let UiElement::Bar { segments, .. } = child.as_mut() else {
+        unreachable!()
+    };
+    *segments[0].child = UiElement::Region {
+        id: UiComponentId::new("nested").unwrap(),
+        scroll_target: Some(UiScrollTarget::new("unregistered", 3).unwrap()),
+        child: Box::new(UiElement::Text(vec![])),
     };
     assert!(admit_terminal_view(&workbench).is_err());
 }

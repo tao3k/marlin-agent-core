@@ -29,9 +29,9 @@ package MarlinDeclarativeUi {
                    Text spans, rows and columns use Scheme native values;
                    the Rust adapter admits bounded trees and maps their
                    primitives and semantic tones to terminal cells. Interactive
-                   regions have unique identities and expose clipped geometry
-                   from that same rendering traversal. Scroll offsets shift
-                   painting and hit geometry together; the deepest scrollable
+                   regions have unique identities and expose clipped geometry.
+                   Painting and geometry traversals share the same scrolled
+                   child layout and clipping, with per-region offsets; the deepest scrollable
                    region under a pointer is the scroll target. The selected
                    Scheme frame tree supplies region order and scrollability;
                    the terminal adapter uses its mapped rectangles both for
@@ -40,8 +40,10 @@ package MarlinDeclarativeUi {
                    same facts select painted and interactive branches. Scheme
                    declares Mini Buffer status and search prompt precedence and
                    text; the adapter maps the editable field and cursor by cell
-                   width. Transcript and editor remain separate implementations
-                   until each is migrated to the common rendering contract.
+                   width. The terminal host still binds transcript, editor and
+                   list data through dedicated adapters; transcript scrolling
+                   retains its native deep-scroll cache. Generic tree group
+                   coordinates remain terminal-sized.
                    Components have stable domain identity and explicit state;
                    generic functions and method bundles permit specialization
                    without embedding Rust callbacks in Scheme components.

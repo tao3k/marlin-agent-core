@@ -35,7 +35,7 @@ fn test_layout() -> UiLayoutPolicy {
             .map(|name| marlin_agent_ui::UiElement::Region {
                 id: UiComponentId::new(name).unwrap(),
                 scroll_target: matches!(name, "transcript" | "candidates")
-                    .then(|| marlin_agent_ui::UiScrollTarget::new(name).unwrap()),
+                    .then(|| marlin_agent_ui::UiScrollTarget::new(name, 3).unwrap()),
                 child: Box::new(marlin_agent_ui::UiElement::Text(vec![])),
             })
             .collect(),
@@ -183,6 +183,15 @@ fn profile_admission_preserves_status_ownership_while_allowing_modeline_order() 
         keep_priority,
     };
     let mut previous = workbench("composer");
+    if let marlin_agent_ui::UiElement::Rows(regions) = &mut previous.layout.frame_tree
+        && let marlin_agent_ui::UiElement::Region { child, .. } = &mut regions[2]
+    {
+        **child = marlin_agent_ui::UiElement::Bar {
+            background: marlin_agent_ui::UiBackground::Bar,
+            right_divisor: 3,
+            segments: vec![],
+        };
+    }
     previous.regions.push(UiRegion::Status(vec![
         modeline("modeline/a", "A", 0),
         modeline("modeline/b", "B", 3),
@@ -192,6 +201,12 @@ fn profile_admission_preserves_status_ownership_while_allowing_modeline_order() 
     let event = UiEvent::SelectProfile(UiProfileName::new("pi").unwrap());
     let focus = UiIntent::Focus(id("composer"));
     let mut reordered = previous.clone();
+    if let marlin_agent_ui::UiElement::Rows(regions) = &mut reordered.layout.frame_tree
+        && let marlin_agent_ui::UiElement::Region { child, .. } = &mut regions[2]
+        && let marlin_agent_ui::UiElement::Bar { right_divisor, .. } = child.as_mut()
+    {
+        *right_divisor = 2;
+    }
     reordered.layout.transcript_policy.thinking_collapsed_role = "⋯".into();
     if let UiRegion::Status(items) = &mut reordered.regions[3] {
         items.swap(1, 2);
@@ -210,6 +225,18 @@ fn profile_admission_preserves_status_ownership_while_allowing_modeline_order() 
     assert!(
         previous
             .admit_successor(&changed_geometry, event.clone(), &focus)
+            .is_err()
+    );
+
+    let mut changed_region = reordered.clone();
+    if let marlin_agent_ui::UiElement::Rows(regions) = &mut changed_region.layout.frame_tree
+        && let marlin_agent_ui::UiElement::Region { id: region_id, .. } = &mut regions[2]
+    {
+        *region_id = id("different-region");
+    }
+    assert!(
+        previous
+            .admit_successor(&changed_region, event.clone(), &focus)
             .is_err()
     );
 

@@ -15,8 +15,9 @@ pub use core::{
 };
 pub use geometry::{
     Extent, HitRegion, RegionExtents, hit_test, hit_test_scroll, layout_regions,
-    layout_regions_with_facts, region_extent, resolve_size,
+    layout_regions_with_facts, layout_regions_with_scroll, region_extent, resolve_size,
 };
 pub use widgets::{
-    UiContentSlot, UiListRow, input_border, render_content, render_input, render_list,
+    UiContentSlot, UiListData, UiListRow, UiListState, input_border, render_content, render_input,
+    render_list,
 };
