@@ -106,10 +106,11 @@ client contract comes from =app_server.proto=.
 | Weaver | Use App Server's =client= feature to map A2A and ACP operations to Marlin Sessions. |
 
 The client-only dependency graph contains the generated client, Protobuf
-types and HTTP/2 channel. CI checks that it excludes Gerbil Scheme and the
-Marlin Runtime, Session, storage and internal protocol crates. The Rust
-generator derives the descriptor and bindings from =app_server.proto= for
-both client and host builds.
+types and HTTP/2 channel. CI runs the public client test from a standalone
+Cargo package outside the workspace. It checks normal and build dependencies
+for Gerbil Scheme and admits only the UI and App Server crates from Marlin.
+The Rust generator derives the descriptor and bindings from
+=app_server.proto= for both client and host builds.
 
 A local Cargo project outside the Marlin workspace built the UI client from
 =02a3044= with only =grpc= enabled. Its generated descriptor matched the host

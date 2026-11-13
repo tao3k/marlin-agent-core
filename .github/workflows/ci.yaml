@@ -56,11 +56,33 @@ jobs:
       - name: Test the isolated Rust UI client
         shell: bash
         run: |
-          dependencies=$(cargo tree --locked -p marlin-agent-ui --no-default-features --features grpc -e normal,build --prefix none --format '{p}')
-          if grep -E '^(gerbil-scheme[^ ]*|marlin-agent-(protocol|runtime|sessions|storage|stream)) v' <<< "$dependencies"; then
+          cargo test --locked -p marlin-agent-ui --no-default-features --features grpc --test grpc_client
+      - name: Test the generated Rust client from outside the workspace
+        shell: bash
+        run: |
+          consumer=$(mktemp -d "$RUNNER_TEMP/marlin-grpc-consumer.XXXXXX")
+          mkdir "$consumer/src"
+          cp crates/marlin-agent-ui/tests/integration/grpc_client.rs "$consumer/src/lib.rs"
+          cp Cargo.lock "$consumer/Cargo.lock"
+          cat > "$consumer/Cargo.toml" <<EOF
+          [package]
+          name = "marlin-grpc-consumer"
+          version = "0.0.0"
+          edition = "2024"
+
+          [dependencies]
+          marlin-agent-ui = { path = "$GITHUB_WORKSPACE/crates/marlin-agent-ui", default-features = false, features = ["grpc"] }
+          EOF
+          # Cargo narrows the copied lock to the downstream graph using the
+          # crates already downloaded by the locked workspace test.
+          export CARGO_TARGET_DIR="$GITHUB_WORKSPACE/target"
+          cargo test --offline --manifest-path "$consumer/Cargo.toml"
+          dependencies=$(cargo tree --offline --locked --manifest-path "$consumer/Cargo.toml" -e normal,build --prefix none --format '{p}')
+          forbidden=$(awk '$1 ~ /^gerbil-scheme/ || ($1 ~ /^marlin-agent-/ && $1 != "marlin-agent-ui" && $1 != "marlin-agent-app-server")' <<< "$dependencies")
+          if [[ -n "$forbidden" ]]; then
+            printf '%s\n' "$forbidden"
             exit 1
           fi
-          cargo test --locked -p marlin-agent-ui --no-default-features --features grpc --test grpc_client
       - name: Test App Server over HTTP/2
         run: cargo test --locked -p marlin-agent-app-server --features grpc
 
