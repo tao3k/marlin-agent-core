@@ -159,3 +159,23 @@ executable control had its own fresh-copy delay. These observations do not
 identify a single OS cause or establish a cold-start percentile. The shared
 worktree was edited during this run; this is artifact-specific evidence, not
 a frozen-source performance acceptance.
+
+* Release-size candidate failure, 2026-11-14
+
+The maintained =just tui-size-performance-bench= entry built the selected
+Scheme staging and a =release-size= binary in 8m 21s. The binary was 96,340,608
+bytes, SHA-256
+=e8506d34fe828dfd6749e16211a2a1172354d950257795be54806da79b280e27=.
+The early-exit test passed: a newly copied file took 2.067 s, the same file's
+second launch 60.616 ms; the copied =/usr/bin/true= control took 409.835 ms
+and 2.697 ms. These are separate runs from the Release observations above,
+not a source-matched size A/B.
+
+The real PTY test did not reach a workbench. Its startup trace reached Scheme
+VM initialization at 295.034 ms and UI session construction at 97.944 ms
+after that; the native boundary then failed with =collection object failed
+with native status 3=. The test timed out without a frame. The shared Scheme
+and Rust worktree changed during this build, and another Release artifact was
+rebuilt concurrently. This record neither attributes the failure to
+=opt-level="z"= nor qualifies =release-size= for distribution. Rebuild and
+compare only after staging, source, and binary identity can be held fixed.
