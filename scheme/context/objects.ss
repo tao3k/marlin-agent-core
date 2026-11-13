@@ -5,7 +5,7 @@
 ;;; Assemble Marlin's Context operations.
 
 (import (only-in :clan/poo/object .o)
-        (only-in :agentic-ai-lab/modules/ai-agentic-context/funs-scope
+        (only-in :tao3k/agentic-ai-lab/modules/ai-agentic-context/funs-scope
                  agentic-ai-lab-ai-agentic-context-scope-admit)
         :marlin-agent-core/context/projection
         :marlin-agent-core/context/org-contract

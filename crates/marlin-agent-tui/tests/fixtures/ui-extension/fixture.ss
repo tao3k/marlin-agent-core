@@ -5,8 +5,8 @@
 ;;; A contributed component and method bundle selected from the real UI scope.
 (import (only-in :clan/poo/object .get .o)
         (only-in :marlin-agent-core/init marlin-agent-core.init.exports)
-        (only-in :yuanxu/poo-clos/generic-syntax .defgeneric .defmethod)
-        (only-in :yuanxu/poo-clos/method-bundle-syntax .defmethod-bundle))
+        (only-in :tao3k/yuanxu/poo-clos/generic-syntax .defgeneric .defmethod)
+        (only-in :tao3k/yuanxu/poo-clos/method-bundle-syntax .defmethod-bundle))
 (export test-extension test-methods test-forged-methods)
 
 (def ui (.get marlin-agent-core.init.exports Marlin ui))

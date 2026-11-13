@@ -8,9 +8,9 @@ package: marlin-benchmark
         (only-in :clan/poo/mop validate)
         (only-in :marlin-benchmark/compiler-roots compiler-roots-snapshot)
         (only-in :marlin-benchmark/mailbox mailbox-clock-ns)
-        (only-in :agentic-ai-lab/modules/ai-agentic-context/types
+        (only-in :tao3k/agentic-ai-lab/modules/ai-agentic-context/types
                  agentic-ai-lab-ai-agentic-context-scope-shape? AiAgenticContextAdmissionType)
-        (only-in :agentic-ai-lab/modules/ai-agentic-context/funs-scope
+        (only-in :tao3k/agentic-ai-lab/modules/ai-agentic-context/funs-scope
                  agentic-ai-lab-ai-agentic-context-scope-admit)
         (only-in :marlin-agent-core/init marlin-agent-core.init.exports))
 (export run-context-profile run-context-retention-profile)

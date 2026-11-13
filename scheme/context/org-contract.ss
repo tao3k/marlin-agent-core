@@ -4,7 +4,7 @@
 
 ;;; Publish the Lab-owned Org Contract source cut without a Rust Org parser.
 (import (only-in :clan/poo/object .ref)
-        (only-in :agentic-ai-lab/modules/ai-agentic-context/org-contract/elements
+        (only-in :tao3k/agentic-ai-lab/modules/ai-agentic-context/org-contract/elements
                  context-org-source))
 (export marlin-context-org-contract-source)
 

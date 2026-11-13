@@ -8,7 +8,7 @@
         (only-in :clan/poo/mop Fun Type.)
         (only-in :clan/poo/number UInt)
         (only-in :clan/poo/type Record String True)
-        (only-in :agentic-ai-lab/modules/ai-agentic-context/types AiAgenticContextAdmissionType))
+        (only-in :tao3k/agentic-ai-lab/modules/ai-agentic-context/types AiAgenticContextAdmissionType))
 
 (export DeckScopeContract DeckActorRuntime)
 

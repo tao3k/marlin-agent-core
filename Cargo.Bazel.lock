@@ -1,5 +1,5 @@
 {
-  "checksum": "02eb5557ff97fca7dd998eac8a250590a8a296423a427271c8cab6adea1bdafc",
+  "checksum": "41e2616439daeef05263cb7265504eb025e9d0d01a3f05a1278aa55e5f5cb8ca",
   "crates": {
     "adler2 2.0.1": {
       "name": "adler2",
@@ -7996,7 +7996,7 @@
             ],
             "cfg(windows)": [
               {
-                "id": "windows-sys 0.61.2",
+                "id": "windows-sys 0.52.0",
                 "target": "windows_sys"
               }
             ]
@@ -9368,7 +9368,7 @@
         "Git": {
           "remote": "https://github.com/tao3k/gerbil-parser",
           "commitish": {
-            "Rev": "e5fdd53b33c376dabb927f79b047e4d5cae9f7ac"
+            "Rev": "725fd55fc82dc9dc2bd743d97fd5a5449bfd288e"
           },
           "strip_prefix": "rust/gerbil-parser-artifact"
         }
@@ -9423,7 +9423,7 @@
         "Git": {
           "remote": "https://github.com/tao3k/gerbil-parser",
           "commitish": {
-            "Rev": "e5fdd53b33c376dabb927f79b047e4d5cae9f7ac"
+            "Rev": "725fd55fc82dc9dc2bd743d97fd5a5449bfd288e"
           },
           "strip_prefix": "rust/gerbil-parser-runtime"
         }
@@ -15770,6 +15770,10 @@
         "deps": {
           "common": [
             {
+              "id": "serde 1.0.229",
+              "target": "serde"
+            },
+            {
               "id": "serde_json 1.0.154",
               "target": "serde_json"
             },
@@ -15780,6 +15784,15 @@
             {
               "id": "tokio 1.53.1",
               "target": "tokio"
+            }
+          ],
+          "selects": {}
+        },
+        "deps_dev": {
+          "common": [
+            {
+              "id": "tempfile 3.27.0",
+              "target": "tempfile"
             }
           ],
           "selects": {}
@@ -16398,6 +16411,10 @@
         "deps_dev": {
           "common": [
             {
+              "id": "criterion 0.8.2",
+              "target": "criterion"
+            },
+            {
               "id": "tempfile 3.27.0",
               "target": "tempfile"
             }
@@ -16794,6 +16811,49 @@
       ],
       "license_file": null
     },
+    "marlin-agent-tooling 0.1.0": {
+      "name": "marlin-agent-tooling",
+      "version": "0.1.0",
+      "package_url": "https://github.com/tao3k/marlin-agent-core",
+      "repository": null,
+      "targets": [
+        {
+          "Library": {
+            "crate_name": "marlin_agent_tooling",
+            "crate_root": "src/lib.rs",
+            "srcs": {
+              "allow_empty": true,
+              "include": [
+                "**/*.rs"
+              ]
+            }
+          }
+        }
+      ],
+      "library_target_name": "marlin_agent_tooling",
+      "common_attrs": {
+        "compile_data_glob": [
+          "**"
+        ],
+        "deps": {
+          "common": [
+            {
+              "id": "gerbil-scheme 0.1.0",
+              "target": "gerbil_scheme"
+            }
+          ],
+          "selects": {}
+        },
+        "edition": "2024",
+        "version": "0.1.0"
+      },
+      "license": "Apache-2.0 AND LGPL-2.1-or-later",
+      "license_ids": [
+        "Apache-2.0",
+        "LGPL-2.1"
+      ],
+      "license_file": null
+    },
     "marlin-agent-tui 0.1.0": {
       "name": "marlin-agent-tui",
       "version": "0.1.0",
@@ -16911,6 +16971,10 @@
         },
         "deps_dev": {
           "common": [
+            {
+              "id": "criterion 0.8.2",
+              "target": "criterion"
+            },
             {
               "id": "proptest 1.12.0",
               "target": "proptest"
@@ -21448,7 +21512,7 @@
         "Git": {
           "remote": "https://github.com/tao3k/orgize",
           "commitish": {
-            "Rev": "7a54cc75de8cf9a9986be70bac38be14010141bd"
+            "Rev": "7d98b5355b866bfba9ce7d16f6d401d9addb50c4"
           }
         }
       },
@@ -21495,10 +21559,6 @@
             {
               "id": "blake3 1.8.7",
               "target": "blake3"
-            },
-            {
-              "id": "gerbil-parser-artifact 0.1.0",
-              "target": "gerbil_parser_artifact"
             },
             {
               "id": "gerbil-parser-runtime 0.1.0",
@@ -21583,7 +21643,7 @@
         "Git": {
           "remote": "https://github.com/tao3k/orgize",
           "commitish": {
-            "Rev": "7a54cc75de8cf9a9986be70bac38be14010141bd"
+            "Rev": "7d98b5355b866bfba9ce7d16f6d401d9addb50c4"
           },
           "strip_prefix": "build-support"
         }
@@ -23806,7 +23866,7 @@
                 "target": "once_cell"
               },
               {
-                "id": "windows-sys 0.61.2",
+                "id": "windows-sys 0.52.0",
                 "target": "windows_sys"
               }
             ]
@@ -24260,18 +24320,12 @@
           "common": [
             "alloc",
             "std",
-            "std_rng",
-            "sys_rng",
-            "thread_rng"
+            "sys_rng"
           ],
           "selects": {}
         },
         "deps": {
           "common": [
-            {
-              "id": "chacha20 0.10.2",
-              "target": "chacha20"
-            },
             {
               "id": "getrandom 0.4.3",
               "target": "getrandom"
@@ -26736,7 +26790,7 @@
                 "alias": "libc_errno"
               },
               {
-                "id": "windows-sys 0.61.2",
+                "id": "windows-sys 0.52.0",
                 "target": "windows_sys"
               }
             ],
@@ -27197,7 +27251,7 @@
             ],
             "cfg(windows)": [
               {
-                "id": "windows-sys 0.61.2",
+                "id": "windows-sys 0.52.0",
                 "target": "windows_sys"
               }
             ]
@@ -30694,13 +30748,13 @@
           "selects": {
             "aarch64-apple-darwin": [
               {
-                "id": "getrandom 0.4.3",
+                "id": "getrandom 0.3.4",
                 "target": "getrandom"
               }
             ],
             "aarch64-unknown-linux-gnu": [
               {
-                "id": "getrandom 0.4.3",
+                "id": "getrandom 0.3.4",
                 "target": "getrandom"
               }
             ],
@@ -30712,31 +30766,31 @@
             ],
             "cfg(windows)": [
               {
-                "id": "windows-sys 0.61.2",
+                "id": "windows-sys 0.52.0",
                 "target": "windows_sys"
               }
             ],
             "wasm32-wasip1": [
               {
-                "id": "getrandom 0.4.3",
+                "id": "getrandom 0.3.4",
                 "target": "getrandom"
               }
             ],
             "x86_64-pc-windows-msvc": [
               {
-                "id": "getrandom 0.4.3",
+                "id": "getrandom 0.3.4",
                 "target": "getrandom"
               }
             ],
             "x86_64-unknown-linux-gnu": [
               {
-                "id": "getrandom 0.4.3",
+                "id": "getrandom 0.3.4",
                 "target": "getrandom"
               }
             ],
             "x86_64-unknown-nixos-gnu": [
               {
-                "id": "getrandom 0.4.3",
+                "id": "getrandom 0.3.4",
                 "target": "getrandom"
               }
             ]
@@ -34617,7 +34671,7 @@
         "deps": {
           "common": [
             {
-              "id": "rand 0.10.3",
+              "id": "rand 0.9.5",
               "target": "rand"
             }
           ],
@@ -36837,7 +36891,7 @@
           "selects": {
             "cfg(windows)": [
               {
-                "id": "windows-sys 0.61.2",
+                "id": "windows-sys 0.52.0",
                 "target": "windows_sys"
               }
             ]
@@ -37580,7 +37634,15 @@
             "Win32_NetworkManagement_IpHelper",
             "Win32_Networking",
             "Win32_Networking_WinSock",
+            "Win32_Security",
+            "Win32_Security_Cryptography",
+            "Win32_Storage",
+            "Win32_Storage_FileSystem",
             "Win32_System",
+            "Win32_System_Console",
+            "Win32_System_Diagnostics",
+            "Win32_System_Diagnostics_Debug",
+            "Win32_System_SystemInformation",
             "Win32_System_Threading",
             "default"
           ],
@@ -37647,7 +37709,6 @@
             "Win32_Networking",
             "Win32_Networking_WinSock",
             "Win32_Security",
-            "Win32_Security_Cryptography",
             "Win32_Storage",
             "Win32_Storage_FileSystem",
             "Win32_System",
@@ -37671,6 +37732,7 @@
               "Win32_Security_Authentication",
               "Win32_Security_Authentication_Identity",
               "Win32_Security_Credentials",
+              "Win32_Security_Cryptography",
               "Win32_System_LibraryLoader"
             ]
           }
@@ -39653,6 +39715,7 @@
     "marlin-agent-stream 0.1.0": "crates/marlin-agent-stream",
     "marlin-agent-telemetry 0.1.0": "crates/marlin-agent-telemetry",
     "marlin-agent-test-support 0.1.0": "crates/marlin-agent-test-support",
+    "marlin-agent-tooling 0.1.0": "crates/marlin-agent-tooling",
     "marlin-agent-tui 0.1.0": "crates/marlin-agent-tui",
     "marlin-agent-ui 0.1.0": "crates/marlin-agent-ui",
     "marlin-bazel-scenario-resolution 0.0.0": "bazel/crate-universe",

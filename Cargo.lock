@@ -1303,7 +1303,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -1528,7 +1528,7 @@ dependencies = [
 [[package]]
 name = "gerbil-parser-artifact"
 version = "0.1.0"
-source = "git+https://github.com/tao3k/gerbil-parser?rev=e5fdd53b33c376dabb927f79b047e4d5cae9f7ac#e5fdd53b33c376dabb927f79b047e4d5cae9f7ac"
+source = "git+https://github.com/tao3k/gerbil-parser?tag=v0.1.0#725fd55fc82dc9dc2bd743d97fd5a5449bfd288e"
 dependencies = [
  "serde_json",
  "sha2 0.10.9",
@@ -1537,7 +1537,7 @@ dependencies = [
 [[package]]
 name = "gerbil-parser-runtime"
 version = "0.1.0"
-source = "git+https://github.com/tao3k/gerbil-parser?rev=e5fdd53b33c376dabb927f79b047e4d5cae9f7ac#e5fdd53b33c376dabb927f79b047e4d5cae9f7ac"
+source = "git+https://github.com/tao3k/gerbil-parser?tag=v0.1.0#725fd55fc82dc9dc2bd743d97fd5a5449bfd288e"
 dependencies = [
  "gerbil-parser-artifact",
  "sha2 0.10.9",
@@ -3666,10 +3666,9 @@ dependencies = [
 [[package]]
 name = "orgize"
 version = "0.10.0-alpha.10"
-source = "git+https://github.com/tao3k/orgize?rev=7a54cc75de8cf9a9986be70bac38be14010141bd#7a54cc75de8cf9a9986be70bac38be14010141bd"
+source = "git+https://github.com/tao3k/orgize?rev=7d98b5355b866bfba9ce7d16f6d401d9addb50c4#7d98b5355b866bfba9ce7d16f6d401d9addb50c4"
 dependencies = [
  "blake3",
- "gerbil-parser-artifact",
  "gerbil-parser-runtime",
  "gerbil-scheme 0.1.0 (git+https://github.com/tao3k/gerbil-scheme-rust?rev=0d92f7bee8c23b373ccd116be6f17701c4c4aac6)",
  "gerbil-scheme-sys 0.1.0 (git+https://github.com/tao3k/gerbil-scheme-rust?rev=0d92f7bee8c23b373ccd116be6f17701c4c4aac6)",
@@ -3685,7 +3684,7 @@ dependencies = [
 [[package]]
 name = "orgize-build-support"
 version = "0.1.0"
-source = "git+https://github.com/tao3k/orgize?rev=7a54cc75de8cf9a9986be70bac38be14010141bd#7a54cc75de8cf9a9986be70bac38be14010141bd"
+source = "git+https://github.com/tao3k/orgize?rev=7d98b5355b866bfba9ce7d16f6d401d9addb50c4#7d98b5355b866bfba9ce7d16f6d401d9addb50c4"
 dependencies = [
  "gerbil-scheme-aot-build 0.1.0 (git+https://github.com/tao3k/gerbil-scheme-rust?rev=0d92f7bee8c23b373ccd116be6f17701c4c4aac6)",
  "serde",
@@ -4121,7 +4120,7 @@ dependencies = [
  "once_cell",
  "socket2",
  "tracing",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -4551,7 +4550,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.12.1",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -4610,7 +4609,7 @@ dependencies = [
  "security-framework",
  "security-framework-sys",
  "webpki-root-certs",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -5162,10 +5161,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.4.3",
+ "getrandom 0.3.4",
  "once_cell",
  "rustix 1.1.6",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -5870,7 +5869,7 @@ version = "2.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "86a801b3cea342a06d468c8710662aa29e5e05e4f5c0d62f00bbb7f2ad7941c2"
 dependencies = [
- "rand 0.10.3",
+ "rand 0.9.5",
 ]
 
 [[package]]
@@ -6215,7 +6214,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
