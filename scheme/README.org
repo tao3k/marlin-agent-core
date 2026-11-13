@@ -104,14 +104,17 @@ job log records the underlying worker failure. The diagnostic at =7a9c594=
 reported that =gxtags= worker 3, counting from zero, terminated with SIGSEGV
 while scanning its source list. The Ubuntu core at =c947bb5= locates the
 fault in =___H_grammar_7e_0_23_= inside Orgize's compiled
-=org-parser/grammar~0.o1= during module initialization. The optional Ubuntu
-diagnostic records the instruction and tests a direct import of the installed
-grammar in a fresh process after this crash. The direct import checks whether
-ordinary module loading can reproduce the fault independently of the tagger's
-expansion history. The job preserves the original dependency install status,
-command, and worker count.
+=org-parser/grammar~0.o1= during module initialization. The follow-up at
+=7f4d9ce= instead faulted in the compiled =org-contract/expectation-grammar~0.o1=
+initializer. The instruction reads through =r11=, which held =-52= in that
+process. The initial diagnostic recognized only the parser grammar and did
+not run its import control. The Ubuntu diagnostic now covers both modules.
+It compares fresh imports and single-file indexing against the compiled
+dependencies from the failed full index. The job preserves the original
+dependency install status, command, and worker count.
 [[https://github.com/tao3k/marlin-agent-core/actions/runs/43485082047/job/132091275495][Linux failure]] ·
-[[https://github.com/tao3k/marlin-agent-core/actions/runs/43499112275/job/132139918408][Ubuntu core backtrace]]
+[[https://github.com/tao3k/marlin-agent-core/actions/runs/43499112275/job/132139918408][Parser grammar core backtrace]] ·
+[[https://github.com/tao3k/marlin-agent-core/actions/runs/43505127121/job/132160665630][Expectation grammar core backtrace]]
 
 The macOS linked workflow at =7c5b926= installed and cached the dependencies.
 Marlin's =gerbil build= then failed inside Yuanxu's

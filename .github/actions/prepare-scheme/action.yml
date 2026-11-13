@@ -66,7 +66,7 @@ runs:
         (cd scheme && GAMBOPT="${GAMBOPT:+$GAMBOPT,}debug=q2+" gerbil deps --install) || {
           status=$?
           if [[ -n "${crash_dir:-}" ]]; then
-            grammar_crashed=false
+            orgize_crashed=false
             for dump in "$crash_dir"/core.gxtags.* "$crash_dir"/core.gerbil.*; do
               [[ -f "$dump" ]] || continue
               tool=${dump##*/core.}
@@ -74,23 +74,33 @@ runs:
               backtrace="$dump.txt"
               gdb --batch --nx -iex 'set auto-load off' \
                 -ex 'set print frame-arguments none' -ex 'thread apply all bt' \
-                -ex 'info registers' -ex 'x/12i $pc' \
+                -ex 'info registers' -ex 'disassemble /r $pc-32,$pc+48' \
                 "$(command -v "$tool")" "$dump" 2>&1 | tee "$backtrace" || true
-              if grep -Fq 'org-parser/grammar~0.o1' "$backtrace"; then
-                grammar_crashed=true
+              if grep -Eq 'orgize/[^ ]*/(grammar|expectation-grammar)~0[.]o1' "$backtrace"; then
+                orgize_crashed=true
               fi
             done
-            if [[ "$grammar_crashed" == true ]]; then
-              # The failed index ran after dependency compilation. Use the
-              # exact installed module in a fresh process to separate ordinary
-              # module initialization from the tagger's expansion history.
+            if [[ "$orgize_crashed" == true ]]; then
+              # Compare ordinary imports and isolated source indexing against
+              # the same compiled dependencies as the full package index.
               ulimit -c 0
-              import_status=0
-              (cd "$GERBIL_PATH/pkg" && timeout 120s gxi -e '
-                (import :orgize/languages/org/modules/org-parser/grammar)
-                (unless org-mode-language-grammar (error "missing Org grammar"))
-                (displayln "compiled Org grammar imported")') || import_status=$?
-              echo "Direct Org grammar import exit status: $import_status"
+              export GAMBOPT="${GAMBOPT:+$GAMBOPT,}debug=q2+"
+              for module in org-parser/grammar org-contract/expectation-grammar; do
+                import_status=0
+                tag_status=0
+                binding=org-mode-language-grammar
+                if [[ "$module" == org-contract/expectation-grammar ]]; then
+                  binding=org-expectation-language-grammar
+                fi
+                (cd "$GERBIL_PATH/pkg" && timeout 120s gxi -e \
+                  "(import :orgize/languages/org/modules/$module)
+                   (unless $binding (error \"missing Org grammar\"))") || import_status=$?
+                (cd "$GERBIL_PATH/pkg" && timeout 120s gxtags --global-env --jobs 1 \
+                  -o "$crash_dir/${module##*/}.tags" \
+                  "$orgize_checkout/languages/org/modules/$module.ss") || tag_status=$?
+                printf 'Orgize %s direct import status %s, single-file index status %s\n' \
+                  "$module" "$import_status" "$tag_status"
+              done
             fi
           fi
           exit "$status"
