@@ -30,6 +30,7 @@ linked-ui = ["dep:gerbil-scheme-sys", "dep:gerbil-scheme-aot-build", "gerbil-sch
 async-stream = "0.3.6"
 marlin-agent-protocol.workspace = true
 marlin-agent-runtime.workspace = true
+marlin-agent-telemetry.workspace = true
 marlin-agent-sessions.workspace = true
 marlin-agent-storage = { workspace = true, features = ["turso"] }
 marlin-agent-stream = { path = "../marlin-agent-stream" }

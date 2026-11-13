@@ -9,20 +9,22 @@ use super::{
     HistorySearch, JournalGateway, MAX_COMPLETION_HEAP_BYTES, ModelAlias, ModelCatalog,
     ModelEndpoint, ModelGatewayMessage, OpenedView, PromptHistory, ReplayOutcome, ReplayTurn,
     RuntimeEdgePolicyReceipt, RuntimeStreamGateway, SessionBrowser, SessionId,
-    SessionPageRequestError, SharedGateway, Transcript, TursoAgentStorage, UiCommandName,
-    UiContent, WorkspaceStatus, matches_observed_anthropic_thinking, user_gateway_message,
+    SessionPageRequestError, SharedGateway, Transcript, TursoAgentStorage, UiBufferId, UiCommand,
+    UiCommandName, UiContent, UiEvent, UiTranscriptPolicy, UiWorkbench, WorkspaceStatus,
+    matches_observed_anthropic_thinking, user_gateway_message,
 };
 
 pub(crate) const REPLY_BATCH_LIMIT: usize = 16;
 pub(crate) const REPLY_QUEUE_ITEMS: usize = 64;
 pub(crate) const REPLY_QUEUE_BYTES: u32 = MAX_COMPLETION_HEAP_BYTES as u32;
 pub(crate) const INPUT_QUEUE_ITEMS: usize = 8;
+pub(crate) const RUNTIME_EVENT_BATCH_LIMIT: usize = 16;
 pub(crate) const MAX_TURN_SEGMENTS: usize =
     marlin_agent_sessions::CONVERSATION_MAX_CHECKPOINT_SEGMENTS;
 
 pub(crate) struct PendingTurn {
     pub(super) id: u64,
-    pub(super) task: tokio::task::JoinHandle<()>,
+    pub(super) task: marlin_agent_runtime::RuntimeTask<()>,
     pub(super) prompt: String,
     pub(super) output: Option<usize>,
     pub(super) output_segments: Vec<usize>,
@@ -41,16 +43,88 @@ pub(super) struct HistoryPosition {
     pub(super) has_newer: bool,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum BufferView {
+    Conversation,
+    Messages,
+    Processes,
+    Static(UiBufferId),
+}
+
+pub(crate) struct CommandMenu {
+    pub(crate) prefix: String,
+    pub(crate) prompt: String,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum MessageSource {
+    Ui,
+    Workspace,
+    Input,
+    Gateway,
+    Runtime,
+}
+
+impl MessageSource {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Ui => "UI",
+            Self::Workspace => "Workspace",
+            Self::Input => "Input",
+            Self::Gateway => "Gateway",
+            Self::Runtime => "Runtime",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum MessageSeverity {
+    Info,
+    Warning,
+    Error,
+}
+
+impl MessageSeverity {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Info => "info",
+            Self::Warning => "warning",
+            Self::Error => "error",
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+pub(crate) struct MessageEvent<'a> {
+    pub(crate) source: MessageSource,
+    pub(crate) severity: MessageSeverity,
+    pub(crate) summary: &'a str,
+    pub(crate) detail: &'a str,
+}
+
 pub(crate) struct App {
+    pub(super) runtime_owner: marlin_agent_runtime::TokioAgentRuntime,
+    runtime_events: marlin_agent_runtime::RuntimeEventStream,
     pub(crate) composer: Composer,
     pub(crate) minibuffer_hovered: bool,
     pub(crate) gateway_observation: GatewayObservation,
     pub(super) prompt_history: PromptHistory,
     pub(crate) history_search: Option<HistorySearch>,
     pub(crate) command_draft: Option<Composer>,
+    pub(crate) command_menu: Option<CommandMenu>,
     pub(crate) command_selection: Option<(String, UiCommandName)>,
+    pub(crate) command_query: Option<String>,
+    pub(crate) command_candidates_pending: Option<bool>,
+    pub(crate) command_candidates: Vec<UiCommandName>,
+    pub(crate) command_catalog: Vec<UiCommand>,
+    pub(crate) ui_request: Option<UiEvent>,
     pub(crate) quit_armed: bool,
     pub(crate) transcript: Transcript,
+    pub(crate) transcript_policy: Option<UiTranscriptPolicy>,
+    pub(crate) messages: Transcript,
+    pub(crate) buffer_view: BufferView,
+    pub(crate) minibuffer_notice: Option<String>,
+    pub(crate) hydra_hint: Option<String>,
     pub(crate) history: Arc<Vec<ModelGatewayMessage>>,
     pub(crate) context_budget: ContextBudget,
     pub(super) endpoint: ModelEndpoint,
@@ -58,12 +132,16 @@ pub(crate) struct App {
     pub(crate) pending: Option<PendingTurn>,
     pub(super) next_id: u64,
     pub(crate) scroll_up: usize,
+    pub(crate) message_scroll_up: usize,
+    pub(crate) static_buffer_scroll: usize,
     pub(super) persistent: bool,
     pub(super) needs_replay: bool,
+    pub(super) pending_tool_request: bool,
     pub(super) unverified_thinking: bool,
     pub(crate) runtime_edge: Option<RuntimeEdgePolicyReceipt>,
     pub(crate) runtime_content: Vec<UiContent>,
     pub(crate) runtime_receipt_open: bool,
+    pub(crate) process_content: Vec<UiContent>,
     pub(super) session_browser: Option<SessionBrowser<TursoAgentStorage>>,
     pub(super) current_session: Option<SessionId>,
     pub(super) history_position: Option<HistoryPosition>,
@@ -79,18 +157,54 @@ pub(crate) enum GatewayObservation {
     Unknown,
 }
 
+/// Runtime facts select a Scheme-declared Modeline presentation.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum ModelineActivity {
+    Idle,
+    Runtime,
+    Workspace,
+    Recovery,
+    ContinuationUnavailable,
+    History,
+    Working,
+    ReadingWorkspace,
+}
+
 impl App {
     pub(crate) fn new(endpoint: ModelEndpoint) -> Self {
+        let (runtime_owner, runtime_events) = marlin_agent_runtime::TokioAgentRuntime::new(64);
+        Self::with_runtime(endpoint, runtime_owner, runtime_events)
+    }
+
+    pub(crate) fn with_runtime(
+        endpoint: ModelEndpoint,
+        runtime_owner: marlin_agent_runtime::TokioAgentRuntime,
+        runtime_events: marlin_agent_runtime::RuntimeEventStream,
+    ) -> Self {
         Self {
+            workspace: WorkspaceStatus::new(runtime_owner.clone()),
+            runtime_owner,
+            runtime_events,
             composer: Composer::default(),
             minibuffer_hovered: false,
             gateway_observation: GatewayObservation::Unchecked,
             prompt_history: PromptHistory::default(),
             history_search: None,
             command_draft: None,
+            command_menu: None,
             command_selection: None,
+            command_query: None,
+            command_candidates_pending: None,
+            command_candidates: Vec::new(),
+            command_catalog: Vec::new(),
+            ui_request: None,
             quit_armed: false,
             transcript: Transcript::new(vec![]),
+            transcript_policy: None,
+            messages: Transcript::new(vec![]),
+            buffer_view: BufferView::Conversation,
+            minibuffer_notice: None,
+            hydra_hint: None,
             history: Arc::new(Vec::new()),
             context_budget: ContextBudget::default(),
             endpoint,
@@ -98,17 +212,40 @@ impl App {
             pending: None,
             next_id: 0,
             scroll_up: 0,
+            message_scroll_up: 0,
+            static_buffer_scroll: 0,
             persistent: false,
             needs_replay: false,
+            pending_tool_request: false,
             unverified_thinking: false,
             runtime_edge: None,
             runtime_content: Vec::new(),
             runtime_receipt_open: false,
+            process_content: Vec::new(),
             session_browser: None,
             current_session: None,
             history_position: None,
-            workspace: WorkspaceStatus::default(),
         }
+    }
+
+    pub(crate) fn push_prompt(&mut self, text: String) {
+        if let Some(policy) = &self.transcript_policy {
+            self.transcript
+                .push((String::new(), format!("{}{}", policy.user_prefix, text)));
+        } else {
+            self.transcript.push(("You".into(), text));
+        }
+    }
+
+    pub(crate) fn push_answer(&mut self, role: &str, content: String) {
+        let display_role = if role == "Assistant" {
+            self.transcript_policy
+                .as_ref()
+                .map_or_else(|| role.to_owned(), |policy| policy.assistant_role.clone())
+        } else {
+            role.to_owned()
+        };
+        self.transcript.push((display_role, content));
     }
 
     pub(crate) fn selected_command(&self) -> Option<&UiCommandName> {
@@ -117,11 +254,157 @@ impl App {
         })
     }
 
+    pub(crate) fn command_lookup_query(&self) -> String {
+        match &self.command_menu {
+            Some(menu) => format!("{}{}", menu.prefix, self.composer.text()),
+            None => self.composer.text().to_owned(),
+        }
+    }
+
+    pub(crate) fn command_query_is_current(&self) -> bool {
+        match (self.command_menu.as_ref(), self.command_query.as_deref()) {
+            (Some(menu), Some(query)) => {
+                query.strip_prefix(&menu.prefix) == Some(self.composer.text())
+            }
+            (None, Some(query)) => query == self.composer.text(),
+            _ => false,
+        }
+    }
+
+    /// Keep the first visible Scheme-ordered candidate as the real selection.
+    /// The renderer and first arrow key must agree on the same anchor.
+    pub(crate) fn menu_navigation_anchor(&self) -> Option<UiCommandName> {
+        self.selected_command()
+            .cloned()
+            .or_else(|| self.command_candidates.first().cloned())
+    }
+
+    pub(crate) fn seed_command_selection(&mut self) {
+        if self.command_draft.is_some() {
+            self.command_selection = self
+                .menu_navigation_anchor()
+                .map(|name| (self.composer.text().to_owned(), name));
+        }
+    }
+
+    pub(crate) fn set_commands(&mut self, ui: &UiWorkbench) {
+        self.command_catalog = ui.commands().to_vec();
+        self.command_query = None;
+        self.command_candidates_pending = None;
+    }
+
+    /// Scheme orders candidates; native runtime readiness narrows effects.
+    pub(crate) fn admit_available_commands(&self, candidates: &mut Vec<UiCommandName>) {
+        if self.pending.is_some() {
+            candidates.retain(|name| {
+                self.command_catalog.iter().any(|descriptor| {
+                    descriptor.name == *name
+                        && (matches!(
+                            descriptor.capability,
+                            marlin_agent_ui::UiCommandCapability::ToggleThinking
+                                | marlin_agent_ui::UiCommandCapability::KillProcess
+                        ) || (descriptor.capability
+                            == marlin_agent_ui::UiCommandCapability::SelectBuffer
+                            && descriptor.value.as_deref() == Some("processes")))
+                })
+            });
+        }
+    }
+
+    pub(crate) fn command_descriptor(&self, input: &str) -> Option<&UiCommand> {
+        let name = input
+            .trim()
+            .split_once(' ')
+            .map_or(input.trim(), |(name, _)| name);
+        self.command_catalog
+            .iter()
+            .find(|command| command.name.as_str() == name)
+    }
+
+    /// Mirror the admitted Scheme window binding for native content painting.
+    /// No command or key handler may select this view independently.
+    pub(crate) fn sync_window(&mut self, ui: &UiWorkbench) -> Result<(), &'static str> {
+        let next = match ui.frame.selected_buffer().map(UiBufferId::as_str) {
+            Some("conversation") => BufferView::Conversation,
+            Some("messages") => BufferView::Messages,
+            Some("processes") => BufferView::Processes,
+            Some(id)
+                if ui.regions.iter().any(|region| {
+                    matches!(region,
+                marlin_agent_ui::UiRegion::Extension { id: region_id, focusable: false, .. }
+                    if region_id.as_str() == id)
+                }) =>
+            {
+                BufferView::Static(UiBufferId::new(id).map_err(|_| "invalid Scheme buffer ID")?)
+            }
+            _ => return Err("selected Scheme buffer has no native content owner"),
+        };
+        if self.buffer_view != next && next == BufferView::Messages {
+            self.message_scroll_up = 0;
+            self.minibuffer_notice = None;
+        }
+        if self.buffer_view != next
+            && matches!(&next, BufferView::Static(_) | BufferView::Processes)
+        {
+            self.static_buffer_scroll = 0;
+            self.minibuffer_notice = None;
+        }
+        self.buffer_view = next;
+        Ok(())
+    }
+
+    pub(crate) fn publish_message(&mut self, event: MessageEvent<'_>) {
+        let summary: String = event
+            .summary
+            .chars()
+            .take(256)
+            .map(|ch| if ch.is_control() { '�' } else { ch })
+            .collect();
+        let bounded_detail: String = event.detail.chars().take(16_384).collect();
+        let detail = format!("{}: {}", summary, safe_text(&bounded_detail));
+        let role = format!("{} · {}", event.source.label(), event.severity.label());
+        if !self
+            .messages
+            .last()
+            .is_some_and(|(previous_role, previous)| previous_role == &role && previous == &detail)
+        {
+            self.messages.push((role, detail));
+            self.messages.retain_latest(64);
+        }
+        self.minibuffer_notice = Some(format!("{summary} · M-x switch-buffer → *Messages*"));
+    }
+
+    /// Drain the runtime's bounded event bus into the Scheme-selected Messages buffer.
+    /// Keeping the receiver alive also preserves producer backpressure semantics.
+    pub(crate) fn poll_runtime_events(&mut self, limit: usize) -> usize {
+        let mut processed = 0;
+        while processed < limit {
+            let Some(event) = self.runtime_events.try_next() else {
+                break;
+            };
+            self.publish_message(MessageEvent {
+                source: MessageSource::Runtime,
+                severity: MessageSeverity::Info,
+                summary: &event.topic,
+                detail: &event.message,
+            });
+            processed += 1;
+        }
+        processed
+    }
+
     /// Publish a menu completion and say whether its current form is runnable.
     pub(crate) fn accept_command_completion(&mut self, completed: &str) -> bool {
-        let runnable = Command::parse(completed).is_some();
+        let runnable = self
+            .command_descriptor(completed)
+            .is_some_and(|descriptor| Command::parse(descriptor, completed).is_some());
+        let display = self
+            .command_menu
+            .as_ref()
+            .and_then(|menu| completed.strip_prefix(&menu.prefix))
+            .unwrap_or(completed);
         self.composer.take();
-        self.composer.insert_text(completed);
+        self.composer.insert_text(display);
         self.command_selection = None;
         runnable
     }
@@ -134,19 +417,23 @@ impl App {
         self.current_session.as_ref()
     }
 
-    pub(crate) fn activity_label(&self) -> &'static str {
-        if self.needs_replay {
-            "Recovery required"
-        } else if self.unverified_thinking {
-            "Continuation unavailable"
+    pub(crate) fn modeline_activity(&self) -> ModelineActivity {
+        if self.runtime_receipt_open {
+            ModelineActivity::Runtime
+        } else if self.workspace.view().is_some() {
+            ModelineActivity::Workspace
+        } else if self.needs_replay {
+            ModelineActivity::Recovery
+        } else if self.pending_tool_request || self.unverified_thinking {
+            ModelineActivity::ContinuationUnavailable
         } else if self.history_position.is_some() {
-            "History read-only"
+            ModelineActivity::History
         } else if self.pending.is_some() {
-            "Working"
+            ModelineActivity::Working
         } else if self.workspace.is_pending() {
-            "Reading workspace"
+            ModelineActivity::ReadingWorkspace
         } else {
-            "Idle"
+            ModelineActivity::Idle
         }
     }
 
@@ -242,7 +529,7 @@ impl App {
                 endpoint.model.as_str()
             ));
         }
-        text.push_str("Use /model <alias> to select. Credentials are read at startup.");
+        text.push_str("Use M-x model <alias> to select. Credentials are read at startup.");
         self.transcript.push(("Models".into(), text));
     }
 
@@ -263,19 +550,24 @@ impl App {
                 } else {
                     "Next request includes current conversation."
                 };
-                self.transcript.push((
-                    "Models".into(),
-                    format!(
-                        "Selected {alias}: {}/{}. {continuation_status}",
-                        self.endpoint.provider.as_str(),
-                        self.endpoint.model.as_str()
-                    ),
-                ));
+                let detail = format!(
+                    "Selected {alias}: {}/{}. {continuation_status}",
+                    self.endpoint.provider.as_str(),
+                    self.endpoint.model.as_str()
+                );
+                self.publish_message(MessageEvent {
+                    source: MessageSource::Ui,
+                    severity: MessageSeverity::Info,
+                    summary: "Model selected",
+                    detail: &detail,
+                });
             }
-            Err(reason) => self.transcript.push((
-                "Models".into(),
-                format!("Model selection failed; current model retained: {reason}."),
-            )),
+            Err(reason) => self.publish_message(MessageEvent {
+                source: MessageSource::Ui,
+                severity: MessageSeverity::Warning,
+                summary: "Model selection failed",
+                detail: &format!("Current model retained: {reason}."),
+            }),
         }
     }
 
@@ -288,41 +580,57 @@ impl App {
         })
     }
 
-    /// Temporarily edit a slash command without consuming the message draft.
+    /// Open or close the command Mini Buffer without consuming the message draft.
     pub(crate) fn toggle_command(&mut self) {
         self.command_selection = None;
+        self.command_query = None;
+        self.command_candidates_pending = None;
+        self.command_candidates.clear();
+        self.command_menu = None;
         if let Some(draft) = self.command_draft.take() {
             self.composer = draft;
             return;
         }
-        if self.pending.is_some()
-            || self
-                .session_browser
-                .as_ref()
-                .is_some_and(SessionBrowser::is_opening)
+        if self
+            .session_browser
+            .as_ref()
+            .is_some_and(SessionBrowser::is_opening)
         {
-            self.transcript.push((
-                "Marlin".into(),
-                "Wait for the current request or session switch before opening commands.".into(),
-            ));
+            self.publish_message(MessageEvent {
+                source: MessageSource::Ui,
+                severity: MessageSeverity::Warning,
+                summary: "Commands unavailable",
+                detail: "Wait for the current request or session switch before opening commands.",
+            });
             return;
         }
         self.command_draft = Some(std::mem::take(&mut self.composer));
-        self.composer.insert('/');
     }
 
     pub(super) fn show_sessions(&mut self, runtime: &tokio::runtime::Runtime, next: bool) {
-        let message = match self.session_browser.as_mut() {
-            None => "Session listing requires a persistent session configuration.",
+        let (severity, message) = match self.session_browser.as_mut() {
+            None => (
+                MessageSeverity::Warning,
+                "Session listing requires a persistent session configuration.",
+            ),
             Some(browser) => match browser.request(runtime, next) {
-                Ok(()) => "Loading sessions…",
-                Err(SessionPageRequestError::Busy) => "A session listing is already in progress.",
-                Err(SessionPageRequestError::NoNextPage) => {
-                    "No next page. Use /sessions to refresh."
-                }
+                Ok(()) => (MessageSeverity::Info, "Loading sessions…"),
+                Err(SessionPageRequestError::Busy) => (
+                    MessageSeverity::Warning,
+                    "A session listing is already in progress.",
+                ),
+                Err(SessionPageRequestError::NoNextPage) => (
+                    MessageSeverity::Info,
+                    "No next page. Use M-x sessions to refresh.",
+                ),
             },
         };
-        self.transcript.push(("Sessions".into(), message.into()));
+        self.publish_message(MessageEvent {
+            source: MessageSource::Ui,
+            severity,
+            summary: "Sessions",
+            detail: message,
+        });
     }
 
     pub(super) fn poll_sessions(&mut self) -> bool {
@@ -330,7 +638,15 @@ impl App {
             return false;
         };
         let text = match result {
-            Err(error) => format!("Session listing failed: {error}"),
+            Err(error) => {
+                self.publish_message(MessageEvent {
+                    source: MessageSource::Ui,
+                    severity: MessageSeverity::Error,
+                    summary: "Session listing failed",
+                    detail: &error.to_string(),
+                });
+                return true;
+            }
             Ok(page) => {
                 let mut output = String::from("Sessions with recorded events (ordered by ID):\n");
                 if page.items.is_empty() {
@@ -351,9 +667,9 @@ impl App {
                     output.push('\n');
                 }
                 if page.next_cursor.is_some() {
-                    output.push_str("Use /sessions next for the next page.\n");
+                    output.push_str("Use M-x sessions-next for the next page.\n");
                 }
-                output.push_str("Use /session followed by a quoted ID to switch; listing does not verify recovery status.");
+                output.push_str("Use M-x session followed by a quoted ID to switch; listing does not verify recovery status.");
                 output
             }
         };
@@ -372,21 +688,34 @@ impl App {
         {
             Some(id) => id,
             None => {
-                self.transcript.push((
-                    "Sessions".into(),
-                    "Use /session followed by a nonempty JSON-quoted session ID.".into(),
-                ));
+                self.publish_message(MessageEvent {
+                    source: MessageSource::Input,
+                    severity: MessageSeverity::Warning,
+                    summary: "Invalid session ID",
+                    detail: "Use M-x session followed by a nonempty JSON-quoted session ID.",
+                });
                 return;
             }
         };
-        let message = match self.session_browser.as_mut() {
-            None => "Session switching requires a persistent session configuration.",
+        let (severity, message) = match self.session_browser.as_mut() {
+            None => (
+                MessageSeverity::Warning,
+                "Session switching requires a persistent session configuration.",
+            ),
             Some(browser) => match browser.open(runtime, id) {
-                Ok(()) => "Loading selected session…",
-                Err(_) => "A session switch is already in progress.",
+                Ok(()) => (MessageSeverity::Info, "Loading selected session…"),
+                Err(_) => (
+                    MessageSeverity::Warning,
+                    "A session switch is already in progress.",
+                ),
             },
         };
-        self.transcript.push(("Sessions".into(), message.into()));
+        self.publish_message(MessageEvent {
+            source: MessageSource::Ui,
+            severity,
+            summary: "Session switch",
+            detail: message,
+        });
     }
 
     pub(super) fn request_history(
@@ -395,27 +724,44 @@ impl App {
         id: SessionId,
         before: Option<ConversationTurnId>,
     ) {
-        let message = match self.session_browser.as_mut() {
-            None => "History inspection requires a persistent session configuration.",
+        let (severity, message) = match self.session_browser.as_mut() {
+            None => (
+                MessageSeverity::Warning,
+                "History inspection requires a persistent session configuration.",
+            ),
             Some(browser) => match browser.inspect(runtime, id, before) {
-                Ok(()) => "Loading read-only history…",
-                Err(_) => "A session load is already in progress.",
+                Ok(()) => (MessageSeverity::Info, "Loading read-only history…"),
+                Err(_) => (
+                    MessageSeverity::Warning,
+                    "A session load is already in progress.",
+                ),
             },
         };
-        self.transcript.push(("History".into(), message.into()));
+        self.publish_message(MessageEvent {
+            source: MessageSource::Ui,
+            severity,
+            summary: "History inspection",
+            detail: message,
+        });
     }
 
     pub(super) fn request_history_page(&mut self, runtime: &tokio::runtime::Runtime, older: bool) {
         let Some(position) = &self.history_position else {
-            self.transcript.push((
-                "History".into(),
-                "Use /inspect followed by a JSON-quoted session ID first.".into(),
-            ));
+            self.publish_message(MessageEvent {
+                source: MessageSource::Input,
+                severity: MessageSeverity::Warning,
+                summary: "No history buffer selected",
+                detail: "Use M-x inspect followed by a JSON-quoted session ID first.",
+            });
             return;
         };
         if older && !position.has_earlier {
-            self.transcript
-                .push(("History".into(), "No earlier history page.".into()));
+            self.publish_message(MessageEvent {
+                source: MessageSource::Ui,
+                severity: MessageSeverity::Info,
+                summary: "No earlier history page",
+                detail: "The current history window is already at the oldest page.",
+            });
             return;
         }
         let before = if older { position.oldest } else { None };
@@ -436,10 +782,12 @@ impl App {
             return false;
         };
         match result {
-            Err(error) => self.transcript.push((
-                "Error".into(),
-                format!("Session switch failed; current session retained: {error}"),
-            )),
+            Err(error) => self.publish_message(MessageEvent {
+                source: MessageSource::Ui,
+                severity: MessageSeverity::Error,
+                summary: "Session switch failed",
+                detail: &format!("Current session retained: {error}"),
+            }),
             Ok(opened) => {
                 self.prompt_history.restore(&mut self.composer);
                 *gateway =
@@ -447,6 +795,7 @@ impl App {
                 self.transcript.clear();
                 self.history = Arc::new(Vec::new());
                 self.needs_replay = false;
+                self.pending_tool_request = false;
                 self.unverified_thinking = false;
                 self.scroll_up = 0;
                 self.current_session = Some(opened.id.clone());
@@ -469,15 +818,20 @@ impl App {
                             .as_ref()
                             .expect("history position set");
                         let mut text = String::from(
-                            "Read-only history: model requests are disabled. Use /session with this ID to load full context if it fits.",
+                            "Read-only history: model requests are disabled. Use M-x session with this ID to load full context if it fits.",
                         );
                         if position.has_earlier {
-                            text.push_str(" /history older loads earlier turns.");
+                            text.push_str(" M-x history-older loads earlier turns.");
                         }
                         if position.has_newer {
-                            text.push_str(" /history newest returns to recent turns.");
+                            text.push_str(" M-x history returns to recent turns.");
                         }
-                        self.transcript.push(("History".into(), text));
+                        self.publish_message(MessageEvent {
+                            source: MessageSource::Ui,
+                            severity: MessageSeverity::Info,
+                            summary: "Read-only history",
+                            detail: &text,
+                        });
                     }
                 }
             }
@@ -488,18 +842,21 @@ impl App {
     pub(crate) fn restore(&mut self, turns: Vec<ReplayTurn>) {
         self.persistent = true;
         for turn in turns {
-            self.transcript.push(("You".into(), turn.prompt.clone()));
+            self.push_prompt(turn.prompt.clone());
             let Some(answer_end) = self.restore_checkpoints(&turn) else {
                 self.needs_replay = true;
-                self.transcript.push((
-                    "Error".into(),
-                    "Invalid checkpoint ranges; session cannot be continued.".into(),
-                ));
+                self.publish_message(MessageEvent {
+                    source: MessageSource::Gateway,
+                    severity: MessageSeverity::Error,
+                    summary: "Invalid checkpoint ranges",
+                    detail: "The session cannot be continued.",
+                });
                 continue;
             };
             let unverified_thinking = !turn.thinking.is_empty()
                 && self.history_position.is_none()
-                && !matches!(&turn.outcome, ReplayOutcome::Completed(message)
+                && !matches!(&turn.outcome,
+                    ReplayOutcome::Completed(message) | ReplayOutcome::ToolRequested(message)
                     if matches_observed_anthropic_thinking(message, &turn.thinking));
             self.unverified_thinking |= unverified_thinking;
             let merge_answer = turn
@@ -520,6 +877,24 @@ impl App {
                         history.push(message);
                     }
                 }
+                ReplayOutcome::ToolRequested(message) => {
+                    self.pending_tool_request = true;
+                    self.restore_answer_suffix(
+                        "Assistant",
+                        &message.content[answer_end..],
+                        merge_answer,
+                        false,
+                    );
+                    self.publish_message(MessageEvent {
+                        source: MessageSource::Gateway,
+                        severity: MessageSeverity::Warning,
+                        summary: "Tool review pending",
+                        detail: &format!(
+                            "The model requested {} tool(s). Execution and further turns await authorization.",
+                            message.tool_calls.len(),
+                        ),
+                    });
+                }
                 ReplayOutcome::Failed {
                     diagnostic,
                     partial,
@@ -530,7 +905,12 @@ impl App {
                         merge_answer,
                         false,
                     );
-                    self.transcript.push(("Error".into(), diagnostic));
+                    self.publish_message(MessageEvent {
+                        source: MessageSource::Gateway,
+                        severity: MessageSeverity::Error,
+                        summary: "Historical request failed",
+                        detail: &diagnostic,
+                    });
                 }
                 ReplayOutcome::LegacyFailed {
                     diagnostic,
@@ -543,7 +923,12 @@ impl App {
                         merge_answer,
                         false,
                     );
-                    self.transcript.push(("Error".into(), format!("Historical failure: {diagnostic}. Remote retirement is unverified; further turns are blocked.")));
+                    self.publish_message(MessageEvent {
+                        source: MessageSource::Gateway,
+                        severity: MessageSeverity::Error,
+                        summary: "Historical failure",
+                        detail: &format!("{diagnostic}. Remote retirement is unverified; further turns are blocked."),
+                    });
                 }
                 ReplayOutcome::LegacyCancelled { partial } => {
                     self.needs_replay = true;
@@ -553,8 +938,12 @@ impl App {
                         merge_answer,
                         false,
                     );
-                    self.transcript
-                        .push(("Marlin".into(), "Historical local cancellation has no remote retirement evidence; further turns are blocked.".into()));
+                    self.publish_message(MessageEvent {
+                        source: MessageSource::Gateway,
+                        severity: MessageSeverity::Error,
+                        summary: "Historical cancellation uncertain",
+                        detail: "Historical local cancellation has no remote retirement evidence; further turns are blocked.",
+                    });
                 }
                 ReplayOutcome::Unfinished { partial } => {
                     self.needs_replay = true;
@@ -564,11 +953,12 @@ impl App {
                         merge_answer,
                         false,
                     );
-                    self.transcript.push((
-                        "Error".into(),
-                        "Unfinished prior turn: ownership is unknown; automatic retry is disabled."
-                            .into(),
-                    ));
+                    self.publish_message(MessageEvent {
+                        source: MessageSource::Gateway,
+                        severity: MessageSeverity::Error,
+                        summary: "Unfinished prior turn",
+                        detail: "Ownership is unknown; automatic retry is disabled.",
+                    });
                 }
                 ReplayOutcome::Uncertain { reason, partial } => {
                     self.needs_replay = true;
@@ -584,22 +974,36 @@ impl App {
                         marlin_agent_sessions::ConversationUncertaintyReason::StreamOpenUnclassified => "Stream-open failed; remote outcome and ownership are unknown. Further turns are blocked.".to_owned(),
                         marlin_agent_sessions::ConversationUncertaintyReason::StreamInterrupted { reason } => format!("{reason}; remote outcome and ownership are unknown. Further turns are blocked."),
                     };
-                    self.transcript.push(("Error".into(), message));
+                    self.publish_message(MessageEvent {
+                        source: MessageSource::Gateway,
+                        severity: MessageSeverity::Error,
+                        summary: "Uncertain prior turn",
+                        detail: &message,
+                    });
                 }
-                ReplayOutcome::Omitted => self.transcript.push((
-                    "History".into(),
-                    "Turn contents exceed the history page budget and were not displayed.".into(),
-                )),
+                ReplayOutcome::Omitted => self.publish_message(MessageEvent {
+                    source: MessageSource::Ui,
+                    severity: MessageSeverity::Warning,
+                    summary: "History turn omitted",
+                    detail: "Turn contents exceed the history page budget and were not displayed.",
+                }),
             }
             if unverified_thinking {
-                self.transcript.push(("Error".into(), "Recorded thinking is not yet verified against a provider continuation; further requests are blocked.".into()));
+                self.publish_message(MessageEvent {
+                    source: MessageSource::Gateway,
+                    severity: MessageSeverity::Error,
+                    summary: "Recorded thinking unverified",
+                    detail: "Recorded thinking is not yet verified against a provider continuation; further requests are blocked.",
+                });
             }
         }
         if self.history_position.is_none() && self.has_incompatible_continuation() {
-            self.transcript.push((
-                "Models".into(),
-                "Restored session has continuation from another model route; select its original route before sending.".into(),
-            ));
+            self.publish_message(MessageEvent {
+                source: MessageSource::Gateway,
+                severity: MessageSeverity::Warning,
+                summary: "Restored continuation route mismatch",
+                detail: "Select the original model route before sending.",
+            });
         }
     }
 
@@ -612,19 +1016,21 @@ impl App {
     ) {
         if suffix.is_empty() {
             if show_empty && !merge {
-                self.transcript.push((role.into(), String::new()));
+                self.push_answer(role, String::new());
             }
         } else if merge {
             let index = self.transcript.len() - 1;
             self.transcript.append_content(index, suffix);
         } else {
-            self.transcript.push((role.into(), suffix.to_owned()));
+            self.push_answer(role, suffix.to_owned());
         }
     }
 
     pub(super) fn restore_checkpoints(&mut self, turn: &ReplayTurn) -> Option<usize> {
         let answer = match &turn.outcome {
-            ReplayOutcome::Completed(message) => message.content.as_str(),
+            ReplayOutcome::Completed(message) | ReplayOutcome::ToolRequested(message) => {
+                message.content.as_str()
+            }
             ReplayOutcome::Failed { partial, .. }
             | ReplayOutcome::LegacyFailed { partial, .. }
             | ReplayOutcome::LegacyCancelled { partial }
@@ -666,8 +1072,21 @@ impl App {
                     ("Thinking (recorded)", turn.thinking.as_str())
                 }
             };
-            self.transcript
-                .push((role.into(), source[span.start..span.end].to_owned()));
+            let content = source[span.start..span.end].to_owned();
+            if matches!(span.channel, ConversationCheckpointChannel::Thinking) {
+                if let Some(policy) = &self.transcript_policy {
+                    self.transcript.push_thinking(
+                        policy.thinking_expanded_role.clone(),
+                        &policy.thinking_collapsed_role,
+                        content,
+                        policy.default_collapsed,
+                    );
+                } else {
+                    self.transcript.push((role.into(), content));
+                }
+            } else {
+                self.push_answer(role, content);
+            }
         }
         Some(answer_end)
     }

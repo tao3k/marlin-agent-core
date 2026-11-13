@@ -2,22 +2,22 @@
 //
 // SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
-//! Runtime-owned tracing subscriber configuration and receipts.
+//! Local tracing subscriber configuration and receipts.
 
 use std::{error::Error, fmt};
 
 use serde::{Deserialize, Serialize};
 use tracing_subscriber::EnvFilter;
 
-/// Runtime tracing output format.
+/// Local tracing output format.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
-pub enum RuntimeTracingSubscriberFormat {
+pub enum TracingSubscriberFormat {
     #[default]
     Compact,
     Json,
 }
 
-impl RuntimeTracingSubscriberFormat {
+impl TracingSubscriberFormat {
     /// Stable receipt label for this output format.
     pub fn as_str(self) -> &'static str {
         match self {
@@ -29,12 +29,12 @@ impl RuntimeTracingSubscriberFormat {
 
 /// Scope for a tracing subscriber receipt.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub enum RuntimeTracingSubscriberScope {
+pub enum TracingSubscriberScope {
     Validated,
     ScopedDefault,
 }
 
-impl RuntimeTracingSubscriberScope {
+impl TracingSubscriberScope {
     /// Stable receipt label for this subscriber scope.
     pub fn as_str(self) -> &'static str {
         match self {
@@ -44,21 +44,21 @@ impl RuntimeTracingSubscriberScope {
     }
 }
 
-/// Runtime tracing subscriber configuration.
+/// Local tracing subscriber configuration.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct RuntimeTracingSubscriberConfig {
+pub struct TracingSubscriberConfig {
     env_filter: String,
-    format: RuntimeTracingSubscriberFormat,
+    format: TracingSubscriberFormat,
     ansi: bool,
     with_target: bool,
     with_thread_ids: bool,
 }
 
-impl Default for RuntimeTracingSubscriberConfig {
+impl Default for TracingSubscriberConfig {
     fn default() -> Self {
         Self {
             env_filter: "marlin_agent=info,marlin=info,warn".to_owned(),
-            format: RuntimeTracingSubscriberFormat::Compact,
+            format: TracingSubscriberFormat::Compact,
             ansi: false,
             with_target: true,
             with_thread_ids: false,
@@ -66,8 +66,8 @@ impl Default for RuntimeTracingSubscriberConfig {
     }
 }
 
-impl RuntimeTracingSubscriberConfig {
-    /// Creates a subscriber config using runtime defaults.
+impl TracingSubscriberConfig {
+    /// Creates a subscriber config using Marlin defaults.
     pub fn new() -> Self {
         Self::default()
     }
@@ -79,7 +79,7 @@ impl RuntimeTracingSubscriberConfig {
     }
 
     /// Replaces the output format.
-    pub fn with_format(mut self, format: RuntimeTracingSubscriberFormat) -> Self {
+    pub fn with_format(mut self, format: TracingSubscriberFormat) -> Self {
         self.format = format;
         self
     }
@@ -108,7 +108,7 @@ impl RuntimeTracingSubscriberConfig {
     }
 
     /// Returns the configured output format.
-    pub fn format(&self) -> RuntimeTracingSubscriberFormat {
+    pub fn format(&self) -> TracingSubscriberFormat {
         self.format
     }
 
@@ -128,28 +128,24 @@ impl RuntimeTracingSubscriberConfig {
     }
 
     /// Validates the config and returns a typed receipt.
-    pub fn validate(
-        &self,
-    ) -> Result<RuntimeTracingSubscriberReceipt, RuntimeTracingSubscriberConfigError> {
+    pub fn validate(&self) -> Result<TracingSubscriberReceipt, TracingSubscriberConfigError> {
         self.parse_env_filter()?;
-        Ok(RuntimeTracingSubscriberReceipt::from_config(
+        Ok(TracingSubscriberReceipt::from_config(
             self,
-            RuntimeTracingSubscriberScope::Validated,
+            TracingSubscriberScope::Validated,
         ))
     }
 
     /// Runs a closure under a scoped default subscriber without installing a process-global subscriber.
     pub fn with_scoped_default<T>(
         &self,
-        f: impl FnOnce(&RuntimeTracingSubscriberReceipt) -> T,
-    ) -> Result<T, RuntimeTracingSubscriberConfigError> {
-        let receipt = RuntimeTracingSubscriberReceipt::from_config(
-            self,
-            RuntimeTracingSubscriberScope::ScopedDefault,
-        );
+        f: impl FnOnce(&TracingSubscriberReceipt) -> T,
+    ) -> Result<T, TracingSubscriberConfigError> {
+        let receipt =
+            TracingSubscriberReceipt::from_config(self, TracingSubscriberScope::ScopedDefault);
 
         match self.format {
-            RuntimeTracingSubscriberFormat::Compact => {
+            TracingSubscriberFormat::Compact => {
                 let subscriber = tracing_subscriber::fmt()
                     .compact()
                     .with_env_filter(self.parse_env_filter()?)
@@ -161,7 +157,7 @@ impl RuntimeTracingSubscriberConfig {
                     f(&receipt)
                 }))
             }
-            RuntimeTracingSubscriberFormat::Json => {
+            TracingSubscriberFormat::Json => {
                 let subscriber = tracing_subscriber::fmt()
                     .json()
                     .with_env_filter(self.parse_env_filter()?)
@@ -176,9 +172,9 @@ impl RuntimeTracingSubscriberConfig {
         }
     }
 
-    fn parse_env_filter(&self) -> Result<EnvFilter, RuntimeTracingSubscriberConfigError> {
+    fn parse_env_filter(&self) -> Result<EnvFilter, TracingSubscriberConfigError> {
         EnvFilter::try_new(self.env_filter.as_str()).map_err(|source| {
-            RuntimeTracingSubscriberConfigError::InvalidEnvFilter {
+            TracingSubscriberConfigError::InvalidEnvFilter {
                 env_filter: self.env_filter.clone(),
                 message: source.to_string(),
             }
@@ -186,22 +182,19 @@ impl RuntimeTracingSubscriberConfig {
     }
 }
 
-/// Receipt proving the runtime subscriber config was validated or scoped.
+/// Receipt proving the tracing subscriber config was validated or scoped.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct RuntimeTracingSubscriberReceipt {
+pub struct TracingSubscriberReceipt {
     env_filter: String,
-    format: RuntimeTracingSubscriberFormat,
+    format: TracingSubscriberFormat,
     ansi: bool,
     with_target: bool,
     with_thread_ids: bool,
-    scope: RuntimeTracingSubscriberScope,
+    scope: TracingSubscriberScope,
 }
 
-impl RuntimeTracingSubscriberReceipt {
-    fn from_config(
-        config: &RuntimeTracingSubscriberConfig,
-        scope: RuntimeTracingSubscriberScope,
-    ) -> Self {
+impl TracingSubscriberReceipt {
+    fn from_config(config: &TracingSubscriberConfig, scope: TracingSubscriberScope) -> Self {
         Self {
             env_filter: config.env_filter.clone(),
             format: config.format,
@@ -218,7 +211,7 @@ impl RuntimeTracingSubscriberReceipt {
     }
 
     /// Output format.
-    pub fn format(&self) -> RuntimeTracingSubscriberFormat {
+    pub fn format(&self) -> TracingSubscriberFormat {
         self.format
     }
 
@@ -238,18 +231,18 @@ impl RuntimeTracingSubscriberReceipt {
     }
 
     /// Scope for this receipt.
-    pub fn scope(&self) -> RuntimeTracingSubscriberScope {
+    pub fn scope(&self) -> TracingSubscriberScope {
         self.scope
     }
 }
 
 /// Invalid tracing subscriber configuration.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum RuntimeTracingSubscriberConfigError {
+pub enum TracingSubscriberConfigError {
     InvalidEnvFilter { env_filter: String, message: String },
 }
 
-impl fmt::Display for RuntimeTracingSubscriberConfigError {
+impl fmt::Display for TracingSubscriberConfigError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::InvalidEnvFilter {
@@ -257,10 +250,10 @@ impl fmt::Display for RuntimeTracingSubscriberConfigError {
                 message,
             } => write!(
                 formatter,
-                "invalid runtime tracing EnvFilter `{env_filter}`: {message}"
+                "invalid tracing EnvFilter `{env_filter}`: {message}"
             ),
         }
     }
 }
 
-impl Error for RuntimeTracingSubscriberConfigError {}
+impl Error for TracingSubscriberConfigError {}

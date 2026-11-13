@@ -3,8 +3,8 @@
 // SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
 use marlin_agent_protocol::{
-    ModelEndpoint, ModelGatewayCompletionChoice, ModelGatewayCompletionResponse,
-    assistant_gateway_message,
+    ModelEndpoint, ModelGatewayCompletionChoice, ModelGatewayCompletionResponse, ModelToolCall,
+    ModelToolCallId, ModelToolName, assistant_gateway_message,
 };
 use marlin_agent_sessions::{
     ConversationJournal, ConversationJournalError, ConversationTerminalObservation,
@@ -50,6 +50,88 @@ fn recorded_completion(content: &str) -> ConversationTurnOutcome {
         unreachable!("fixture always creates a completion")
     };
     ConversationTurnOutcome::Completed { response }
+}
+
+fn tool_request() -> ModelGatewayCompletionResponse {
+    let mut message = assistant_gateway_message("I need the requested marker.");
+    message.tool_calls.push(ModelToolCall {
+        id: ModelToolCallId::new("call_1").unwrap(),
+        name: ModelToolName::new("read_marker").unwrap(),
+        arguments: serde_json::json!({"path":"src/lib.rs"})
+            .as_object()
+            .unwrap()
+            .clone(),
+    });
+    ModelGatewayCompletionResponse::new(
+        "response-tool",
+        "gpt-fixture",
+        vec![ModelGatewayCompletionChoice::new(
+            0,
+            message,
+            Some("tool_calls".into()),
+        )],
+    )
+}
+
+#[tokio::test]
+async fn tool_request_is_durable_and_blocks_an_unreviewed_followup() {
+    let storage = InMemoryAgentStorage::new();
+    let (project, session, agent) = ids();
+    let mut journal = ConversationJournal::open(
+        storage.clone(),
+        project.clone(),
+        session.clone(),
+        agent.clone(),
+        |_| {},
+    )
+    .await
+    .unwrap();
+    let id = journal.start(start("read marker"), 1).await.unwrap();
+    journal
+        .checkpoint(id, "I need the requested marker.", 2)
+        .await
+        .unwrap();
+    assert!(matches!(
+        journal
+            .finish(
+                id,
+                ConversationTerminalObservation::Completed {
+                    response: tool_request()
+                },
+                3
+            )
+            .await,
+        Err(ConversationJournalError::InvalidEvent(_))
+    ));
+    journal
+        .finish(
+            id,
+            ConversationTerminalObservation::ToolRequested {
+                response: tool_request(),
+            },
+            3,
+        )
+        .await
+        .unwrap();
+    assert!(matches!(
+        journal.start(start("next"), 4).await,
+        Err(ConversationJournalError::ToolRequestPending)
+    ));
+    let mut replayed = Vec::new();
+    let mut reopened = ConversationJournal::open(storage, project, session, agent, |turn| {
+        replayed.push(turn.clone());
+    })
+    .await
+    .unwrap();
+    assert!(matches!(
+        &replayed[0].outcome,
+        Some(ConversationTurnOutcome::ToolRequested { response })
+            if response.choices[0].message.tool_calls[0].id.as_str() == "call_1"
+    ));
+    assert!(matches!(
+        reopened.start(start("next"), 5).await,
+        Err(ConversationJournalError::ToolRequestPending)
+    ));
 }
 
 #[tokio::test]

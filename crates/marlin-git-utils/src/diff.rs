@@ -4,7 +4,7 @@
 
 //! Read-only diffs with explicit index or worktree scope.
 
-use crate::{GitReadError, ProcessGitTooling, read::read_git};
+use crate::{GitReadError, ProcessGitTooling};
 use std::{
     ffi::OsString,
     path::{Component, Path},
@@ -105,6 +105,14 @@ impl GitDiff {
 impl ProcessGitTooling {
     /// Read a bounded diff; external diff programs and text conversion are disabled.
     pub async fn diff(path: &Path, request: GitDiffRequest) -> Result<GitDiff, GitReadError> {
+        Self::diff_with_executor(&crate::read::LocalExecutor, path, request).await
+    }
+
+    pub async fn diff_with_executor(
+        executor: &dyn marlin_agent_protocol::BoundedProcessExecutor,
+        path: &Path,
+        request: GitDiffRequest,
+    ) -> Result<GitDiff, GitReadError> {
         let mut args: Vec<OsString> = [
             "diff",
             "--no-ext-diff",
@@ -124,7 +132,7 @@ impl ProcessGitTooling {
         }
         Ok(GitDiff {
             request,
-            bytes: read_git(path, &args).await?,
+            bytes: crate::read::read_git_with(executor, path, &args).await?,
         })
     }
 }

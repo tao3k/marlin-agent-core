@@ -233,28 +233,29 @@ async fn cancelling_a_blocked_sender_releases_its_byte_reservation() {
 
 #[tokio::test]
 async fn completion_waits_for_capacity_and_remains_ordered() {
-    let (sender, mut receiver) = reply_channel(2, 256);
+    let response = ModelGatewayCompletionResponse::new(
+        "receipt",
+        "gpt-test",
+        vec![ModelGatewayCompletionChoice::new(
+            0,
+            assistant_gateway_message("done"),
+            Some("stop".into()),
+        )],
+    );
+    let completion_bytes = u32::try_from(response.heap_capacity()).unwrap();
+    let (sender, mut receiver) = reply_channel(2, completion_bytes + 128);
     sender
         .send(
             1,
             Ok(ModelStreamEvent::Chunk(ModelStreamChunk::new(
                 1,
-                "a".repeat(200),
+                "a".repeat(129),
             ))),
         )
         .await
         .unwrap();
     let other = sender.clone();
     let task = tokio::spawn(async move {
-        let response = ModelGatewayCompletionResponse::new(
-            "receipt",
-            "gpt-test",
-            vec![ModelGatewayCompletionChoice::new(
-                0,
-                assistant_gateway_message("done"),
-                Some("stop".into()),
-            )],
-        );
         other
             .send(1, Ok(ModelStreamEvent::Completed { response }))
             .await

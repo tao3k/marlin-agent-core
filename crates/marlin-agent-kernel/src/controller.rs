@@ -9,17 +9,20 @@ use std::{
     time::{Duration, Instant},
 };
 
+use tokio::sync::{mpsc, oneshot};
+
 use marlin_agent_protocol::{
     AgentExecutionTrace, FailureClassificationReceipt, GraphId, GraphLoopContinuationAction,
     GraphLoopContinuationDecision, GraphLoopContinuationReceipt, GraphLoopEventId,
     GraphLoopEvidencePolicy, GraphLoopExecutionResult, GraphLoopExecutionStatus,
     GraphLoopFailureKind, GraphLoopIterationId, GraphLoopIterationReport, GraphLoopNextAction,
-    GraphLoopRunRequest, GraphLoopStopPolicy, GraphNodeExecutionStatus, HumanGateReceipt,
-    HumanReviewKind, LoopContinuationPolicy, LoopEvidenceCapturePolicy, LoopFailurePolicy,
-    LoopGraph, LoopPolicyProfile, RunId,
+    GraphLoopRunRequest, GraphLoopStopPolicy, GraphNodeExecutionStatus, HumanDecision,
+    HumanDecisionReceipt, HumanGateReceipt, HumanReviewKind, LoopContinuationPolicy,
+    LoopEvidenceCapturePolicy, LoopFailurePolicy, LoopGraph, LoopPolicyProfile, RunId,
 };
 use marlin_agent_runtime::{
-    GraphLoopRunProgressUpdate, RuntimeFuture, RuntimeTask, TokioAgentRuntime,
+    GraphLoopRunProgressUpdate, GraphLoopRunRegistryError, GraphLoopRunStatus, RuntimeFuture,
+    RuntimeTask, TokioAgentRuntime,
 };
 
 use crate::{
@@ -31,6 +34,41 @@ use crate::{
 };
 
 const CONTROLLER_EVENT_CAPTURE_BUFFER: usize = 64;
+
+struct HumanReviewRequest {
+    decision: HumanDecisionReceipt,
+    response: oneshot::Sender<Result<(), GraphLoopRunRegistryError>>,
+}
+
+/// Bounded channel for submitting a typed decision to a live graph-loop gate.
+pub struct GraphLoopHumanReviewHandle {
+    requests: mpsc::Sender<HumanReviewRequest>,
+}
+
+/// A review request failed before it could authorize a graph continuation.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum GraphLoopHumanReviewError {
+    Closed,
+    Rejected(GraphLoopRunRegistryError),
+}
+
+impl GraphLoopHumanReviewHandle {
+    /// Returns only after the runtime gate has admitted or rejected the decision.
+    pub async fn decide(
+        &self,
+        decision: HumanDecisionReceipt,
+    ) -> Result<(), GraphLoopHumanReviewError> {
+        let (response, received) = oneshot::channel();
+        self.requests
+            .send(HumanReviewRequest { decision, response })
+            .await
+            .map_err(|_| GraphLoopHumanReviewError::Closed)?;
+        received
+            .await
+            .map_err(|_| GraphLoopHumanReviewError::Closed)?
+            .map_err(GraphLoopHumanReviewError::Rejected)
+    }
+}
 
 /// Controller contract for spawning a bounded graph-loop run.
 pub trait GraphLoopController: Send + Sync + 'static {
@@ -175,11 +213,60 @@ impl TokioGraphLoopController {
         self.loop_program_side_effect_executor.clone()
     }
 
+    /// Runs a graph loop that can wait for and consume matching human decisions.
+    pub fn spawn_reviewable_loop(
+        &self,
+        request: GraphLoopRunRequest,
+        runtime: &TokioAgentRuntime,
+    ) -> (
+        RuntimeTask<Vec<GraphLoopIterationReport>>,
+        GraphLoopHumanReviewHandle,
+    ) {
+        let (requests, receiver) = mpsc::channel(1);
+        (
+            self.spawn_loop_with_review(request, runtime, Some(receiver)),
+            GraphLoopHumanReviewHandle { requests },
+        )
+    }
+
+    fn spawn_loop_with_review(
+        &self,
+        request: GraphLoopRunRequest,
+        runtime: &TokioAgentRuntime,
+        review_requests: Option<mpsc::Receiver<HumanReviewRequest>>,
+    ) -> RuntimeTask<Vec<GraphLoopIterationReport>> {
+        let controller = self.clone();
+        let controller_runtime = runtime.child_runtime();
+        let capture_runtime_events = request
+            .policy_profile
+            .as_ref()
+            .map(|profile| profile.evidence_policy.capture_events)
+            .unwrap_or(request.evidence_policy.capture_runtime_events);
+        let (execution_runtime, captured_events) = if capture_runtime_events {
+            let (runtime, events) = controller_runtime
+                .child_runtime_with_event_capture(CONTROLLER_EVENT_CAPTURE_BUFFER);
+            (runtime, Some(events))
+        } else {
+            (controller_runtime.child_runtime(), None)
+        };
+        controller_runtime.spawn(async move {
+            controller
+                .run_loop(
+                    request,
+                    &execution_runtime,
+                    captured_events,
+                    review_requests,
+                )
+                .await
+        })
+    }
+
     async fn run_loop(
         &self,
         request: GraphLoopRunRequest,
         runtime: &TokioAgentRuntime,
         captured_events: Option<marlin_agent_runtime::RuntimeEventStream>,
+        mut review_requests: Option<mpsc::Receiver<HumanReviewRequest>>,
     ) -> Vec<GraphLoopIterationReport> {
         if request.stop_policy.max_iterations == Some(0) {
             return Vec::new();
@@ -202,8 +289,26 @@ impl TokioGraphLoopController {
         let mut execution_request = initial_request;
         let mut reports = Vec::new();
         record_loop_started(runtime, &base_run_id, &initial_graph_id);
+        let registered_run_id = RunId::new(&base_run_id);
 
-        loop {
+        'run: loop {
+            let run_status = runtime
+                .graph_loop_runs()
+                .read_registry(|registry| registry.run_status(&registered_run_id));
+            if matches!(run_status, Some(GraphLoopRunStatus::Cancelling)) {
+                runtime.graph_loop_runs().with_registry(|registry| {
+                    let _ = registry.complete_run(
+                        &registered_run_id,
+                        GraphLoopExecutionStatus::Cancelled,
+                        elapsed_loop_ms(started_at),
+                        loop_event_id(reports.len() as u64, "cancelled"),
+                    );
+                });
+                break;
+            }
+            if matches!(run_status, Some(GraphLoopRunStatus::Cancelled)) {
+                break;
+            }
             let iteration = reports.len() as u64;
             let execution =
                 self.execute_iteration(execution_request, iteration_budget.clone(), runtime);
@@ -257,13 +362,61 @@ impl TokioGraphLoopController {
                 let terminal_report = reports
                     .last()
                     .expect("terminal report should exist before loop stop");
-                record_loop_completed(
-                    runtime,
-                    &base_run_id,
-                    terminal_report.iteration,
-                    &terminal_report.execution_result,
-                    elapsed_loop_ms(started_at),
-                );
+                if let Some(gate) = terminal_report.human_gate_receipt.as_ref() {
+                    record_loop_deferred(runtime, gate.clone(), elapsed_loop_ms(started_at));
+                    if let Some(receiver) = review_requests.as_mut() {
+                        loop {
+                            let Some(request) = receiver.recv().await else {
+                                runtime.graph_loop_runs().with_registry(|registry| {
+                                    registry.cancel_run(
+                                        &RunId::new(&base_run_id),
+                                        elapsed_loop_ms(started_at),
+                                    );
+                                });
+                                break 'run;
+                            };
+                            let decision = request.decision;
+                            let admitted = runtime.graph_loop_runs().with_registry(|registry| {
+                                registry.decide_human_gate(
+                                    &RunId::new(&base_run_id),
+                                    &decision,
+                                    elapsed_loop_ms(started_at),
+                                    loop_event_id(iteration, "human-decision"),
+                                )
+                            });
+                            let _ = request
+                                .response
+                                .send(admitted.as_ref().map(|_| ()).map_err(Clone::clone));
+                            if let Ok(next_graph) = admitted {
+                                reports
+                                    .last_mut()
+                                    .expect("gate report exists")
+                                    .human_decision_receipt = Some(decision.clone());
+                                match decision.decision {
+                                    HumanDecision::Approved => {
+                                        execution_request = continuation_execution_request(
+                                            &base_run_id,
+                                            iteration + 1,
+                                            next_graph.expect("approved gate admits a graph"),
+                                        );
+                                        continue 'run;
+                                    }
+                                    HumanDecision::Rejected => break 'run,
+                                    HumanDecision::NeedsQuestion
+                                    | HumanDecision::PatchRequested => {}
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    record_loop_completed(
+                        runtime,
+                        &base_run_id,
+                        terminal_report.iteration,
+                        &terminal_report.execution_result,
+                        elapsed_loop_ms(started_at),
+                    );
+                }
                 break;
             };
             execution_request =
@@ -441,6 +594,15 @@ fn record_loop_completed(
     });
 }
 
+fn record_loop_deferred(runtime: &TokioAgentRuntime, gate: HumanGateReceipt, observed_at_ms: u64) {
+    let iteration = gate.iteration_id.get();
+    runtime.graph_loop_runs().with_registry(|registry| {
+        registry
+            .defer_run(gate, observed_at_ms, loop_event_id(iteration, "human-gate"))
+            .expect("controller-produced gate must match active run iteration");
+    });
+}
+
 fn loop_event_id(iteration: u64, kind: &str) -> GraphLoopEventId {
     GraphLoopEventId::new(format!("loop.iteration.{iteration}.{kind}"))
 }
@@ -456,25 +618,7 @@ impl GraphLoopController for TokioGraphLoopController {
         request: GraphLoopRunRequest,
         runtime: &TokioAgentRuntime,
     ) -> RuntimeTask<Vec<GraphLoopIterationReport>> {
-        let controller = self.clone();
-        let controller_runtime = runtime.child_runtime();
-        let capture_runtime_events = request
-            .policy_profile
-            .as_ref()
-            .map(|profile| profile.evidence_policy.capture_events)
-            .unwrap_or(request.evidence_policy.capture_runtime_events);
-        let (execution_runtime, captured_events) = if capture_runtime_events {
-            let (runtime, events) = controller_runtime
-                .child_runtime_with_event_capture(CONTROLLER_EVENT_CAPTURE_BUFFER);
-            (runtime, Some(events))
-        } else {
-            (controller_runtime.child_runtime(), None)
-        };
-        controller_runtime.spawn(async move {
-            controller
-                .run_loop(request, &execution_runtime, captured_events)
-                .await
-        })
+        self.spawn_loop_with_review(request, runtime, None)
     }
 }
 

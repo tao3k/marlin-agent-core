@@ -3,20 +3,106 @@
 // SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
 use super::Command;
+use marlin_agent_ui::{UiCommand, UiCommandArguments, UiCommandCapability, UiCommandName};
+
+fn descriptor(
+    name: &str,
+    arguments: UiCommandArguments,
+    capability: UiCommandCapability,
+    value: Option<&str>,
+) -> UiCommand {
+    UiCommand {
+        name: UiCommandName::new(name).unwrap(),
+        description: String::new(),
+        arguments,
+        capability,
+        value: value.map(str::to_owned),
+    }
+}
 
 #[test]
-fn parser_preserves_command_boundaries_and_arguments() {
-    assert_eq!(Command::parse("/model  x "), Some(Command::Model("x")));
-    assert_eq!(Command::parse("/models"), Some(Command::Models));
+fn selected_descriptors_define_names_and_native_capability_arguments() {
+    use UiCommandArguments::{None as NoArguments, Optional, Required};
+    use UiCommandCapability as Capability;
+    let alias = descriptor("choose-fish", Required, Capability::Model, None);
     assert_eq!(
-        Command::parse("/sessions next"),
+        Command::parse(&alias, "choose-fish  x "),
+        Some(Command::Model("x"))
+    );
+    assert_eq!(Command::parse(&alias, "model x"), None);
+    let sessions = descriptor("browse-sessions", NoArguments, Capability::Sessions, None);
+    assert_eq!(
+        Command::parse(&sessions, "browse-sessions"),
+        Some(Command::Sessions(false))
+    );
+    let next = descriptor(
+        "more-sessions",
+        NoArguments,
+        Capability::Sessions,
+        Some("next"),
+    );
+    assert_eq!(
+        Command::parse(&next, "more-sessions"),
         Some(Command::Sessions(true))
     );
-    assert_eq!(Command::parse("/sessions  next"), None);
+    assert_eq!(Command::parse(&sessions, "browse-sessions next"), None);
+    assert_eq!(Command::parse(&next, "more-sessions next"), None);
+    let older = descriptor("earlier", NoArguments, Capability::History, Some("older"));
     assert_eq!(
-        Command::parse("/diff staged \"a b\""),
-        Some(Command::Workspace("/diff staged \"a b\""))
+        Command::parse(&older, "earlier"),
+        Some(Command::History(true))
     );
-    assert_eq!(Command::parse("/status extra"), None);
-    assert_eq!(Command::parse("/inspectx \"x\""), None);
+    assert!(!Command::admit(&descriptor(
+        "invalid-history",
+        Required,
+        Capability::History,
+        None,
+    )));
+    let buffer = descriptor(
+        "show-errors",
+        NoArguments,
+        Capability::SelectBuffer,
+        Some("messages"),
+    );
+    assert!(matches!(
+        Command::parse(&buffer, "show-errors"),
+        Some(Command::SelectUi(_))
+    ));
+    assert_eq!(Command::parse(&buffer, "show-errors extra"), None);
+    let invalid = descriptor(
+        "forged",
+        NoArguments,
+        Capability::SelectBuffer,
+        Some("unknown!"),
+    );
+    assert!(!Command::admit(&invalid));
+    assert!(!Command::admit(&descriptor(
+        "status-with-arguments",
+        Optional,
+        Capability::Workspace,
+        Some("status"),
+    )));
+    assert!(!Command::admit(&descriptor(
+        "diff-without-arguments",
+        NoArguments,
+        Capability::Workspace,
+        Some("diff"),
+    )));
+    let thought = descriptor("thought", Optional, Capability::ToggleThinking, None);
+    assert_eq!(
+        Command::parse(&thought, "thought"),
+        Some(Command::ToggleThinking(1))
+    );
+    assert_eq!(
+        Command::parse(&thought, "thought 2"),
+        Some(Command::ToggleThinking(2))
+    );
+    assert_eq!(Command::parse(&thought, "thought 0"), None);
+    assert_eq!(Command::parse(&thought, "thought -1"), None);
+    assert!(!Command::admit(&descriptor(
+        "thought-without-arguments",
+        NoArguments,
+        Capability::ToggleThinking,
+        None,
+    )));
 }

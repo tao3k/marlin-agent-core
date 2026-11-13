@@ -74,6 +74,7 @@ in
     pkgs.sqlite
     pkgs.zlib
     pkgs.just
+    pkgs.asciinema
   ];
 
   languages.rust = {

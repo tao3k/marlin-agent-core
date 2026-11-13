@@ -8,6 +8,7 @@ use super::replay::{
     HistoryWindow, ReplayError, ReplayLimits, ReplayTurn, load_history_window,
     load_session_with_limits,
 };
+use marlin_agent_runtime::{RuntimeOperationId, RuntimeTask, TokioAgentRuntime};
 use marlin_agent_sessions::{ConversationJournal, ConversationTurnId};
 use marlin_agent_storage::{
     AgentId, ProjectId, SessionEventStore, SessionId, SessionPageRequest, StorageError,
@@ -50,15 +51,21 @@ pub(crate) struct SessionBrowser<S> {
     storage: S,
     project: ProjectId,
     agent: AgentId,
-    pending: Option<oneshot::Receiver<Result<SessionPage, StorageError>>>,
+    pending: Option<PendingPage>,
     next: Option<SessionId>,
     opening: Option<PendingOpen<S>>,
     replay_limits: ReplayLimits,
+    owner: TokioAgentRuntime,
 }
 
 struct PendingOpen<S> {
     receiver: oneshot::Receiver<Result<OpenedSession<S>, ReplayError>>,
-    task: tokio::task::JoinHandle<()>,
+    task: RuntimeTask<()>,
+}
+
+struct PendingPage {
+    receiver: oneshot::Receiver<Result<SessionPage, StorageError>>,
+    task: RuntimeTask<()>,
 }
 
 pub(crate) struct OpenedSession<S> {
@@ -88,8 +95,20 @@ impl std::fmt::Display for SessionOpenError {
 }
 
 impl<S: SessionEventStore + Clone + 'static> SessionBrowser<S> {
+    #[cfg(test)]
+    #[cfg_attr(test, allow(dead_code))]
     pub(crate) fn new(storage: S, project: ProjectId, agent: AgentId) -> Self {
+        Self::with_runtime(storage, project, agent, TokioAgentRuntime::new(64).0)
+    }
+
+    pub(crate) fn with_runtime(
+        storage: S,
+        project: ProjectId,
+        agent: AgentId,
+        owner: TokioAgentRuntime,
+    ) -> Self {
         Self {
+            owner,
             storage,
             project,
             agent,
@@ -124,16 +143,22 @@ impl<S: SessionEventStore + Clone + 'static> SessionBrowser<S> {
         let agent = self.agent.clone();
         let limits = self.replay_limits;
         let (sender, receiver) = oneshot::channel();
-        let task = runtime.spawn(async move {
-            let result = load_session_with_limits(storage, project, id.clone(), agent, limits)
-                .await
-                .map(|(journal, turns)| OpenedSession {
-                    id,
-                    journal,
-                    view: OpenedView::Full(turns),
-                });
-            let _ = sender.send(result);
-        });
+        let session = marlin_agent_runtime::SessionId::new(id.as_str());
+        let task = self.owner.spawn_in_session_on(
+            runtime,
+            &session,
+            RuntimeOperationId::new("session.open"),
+            async move {
+                let result = load_session_with_limits(storage, project, id.clone(), agent, limits)
+                    .await
+                    .map(|(journal, turns)| OpenedSession {
+                        id,
+                        journal,
+                        view: OpenedView::Full(turns),
+                    });
+                let _ = sender.send(result);
+            },
+        );
         self.opening = Some(PendingOpen { receiver, task });
         Ok(())
     }
@@ -151,16 +176,22 @@ impl<S: SessionEventStore + Clone + 'static> SessionBrowser<S> {
         let project = self.project.clone();
         let agent = self.agent.clone();
         let (sender, receiver) = oneshot::channel();
-        let task = runtime.spawn(async move {
-            let result = load_history_window(storage, project, id.clone(), agent, before)
-                .await
-                .map(|(journal, window)| OpenedSession {
-                    id,
-                    journal,
-                    view: OpenedView::History(window),
-                });
-            let _ = sender.send(result);
-        });
+        let session = marlin_agent_runtime::SessionId::new(id.as_str());
+        let task = self.owner.spawn_in_session_on(
+            runtime,
+            &session,
+            RuntimeOperationId::new("session.inspect"),
+            async move {
+                let result = load_history_window(storage, project, id.clone(), agent, before)
+                    .await
+                    .map(|(journal, window)| OpenedSession {
+                        id,
+                        journal,
+                        view: OpenedView::History(window),
+                    });
+                let _ = sender.send(result);
+            },
+        );
         self.opening = Some(PendingOpen { receiver, task });
         Ok(())
     }
@@ -211,19 +242,24 @@ impl<S: SessionEventStore + Clone + 'static> SessionBrowser<S> {
             request = request.after(cursor);
         }
         let (sender, receiver) = oneshot::channel();
-        self.pending = Some(receiver);
-        runtime.spawn(async move {
-            let result = storage
-                .list_sessions_page(request)
-                .await
-                .and_then(|page| validate_page(page, cursor.as_ref()));
-            let _ = sender.send(result);
-        });
+        let task = self.owner.spawn_in_session_on(
+            runtime,
+            self.owner.session().session_id(),
+            RuntimeOperationId::new("session.list"),
+            async move {
+                let result = storage
+                    .list_sessions_page(request)
+                    .await
+                    .and_then(|page| validate_page(page, cursor.as_ref()));
+                let _ = sender.send(result);
+            },
+        );
+        self.pending = Some(PendingPage { receiver, task });
         Ok(())
     }
 
     pub(crate) fn poll(&mut self) -> Option<Result<SessionPage, StorageError>> {
-        let result = match self.pending.as_mut()?.try_recv() {
+        let result = match self.pending.as_mut()?.receiver.try_recv() {
             Ok(result) => result,
             Err(oneshot::error::TryRecvError::Empty) => return None,
             Err(oneshot::error::TryRecvError::Closed) => Err(StorageError::Backend {
@@ -235,5 +271,16 @@ impl<S: SessionEventStore + Clone + 'static> SessionBrowser<S> {
             self.next = page.next_cursor.clone();
         }
         Some(result)
+    }
+
+    pub(crate) async fn shutdown(&mut self) {
+        if let Some(pending) = self.pending.take() {
+            pending.task.abort();
+            let _ = pending.task.join().await;
+        }
+        if let Some(pending) = self.opening.take() {
+            pending.task.abort();
+            let _ = pending.task.join().await;
+        }
     }
 }

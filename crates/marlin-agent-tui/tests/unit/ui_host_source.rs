@@ -8,10 +8,14 @@ use super::{
 };
 use gerbil_scheme::GerbilRuntime;
 use marlin_agent_ui::{
-    UiCommandName, UiComponentId, UiEvent, UiIntent, UiOpenFacts, UiRegion, UiScrollDirection,
-    UiWorkbench,
+    UiCommandName, UiComponentId, UiEditorAction, UiEvent, UiIntent, UiOpenFacts, UiRegion,
+    UiScrollDirection, UiWorkbench,
 };
 use termion::event::Key;
+
+#[path = "ui_fixture.rs"]
+mod ui_fixture;
+use ui_fixture::{test_frame, test_layout};
 
 #[test]
 #[ignore = "requires a compiled Marlin Scheme dependency closure and Gerbil toolchain"]
@@ -64,22 +68,25 @@ fn real_vm_routes_a_contributed_method_without_submitting_the_draft() {
     )
     .unwrap();
     assert_eq!(host.view().focus.as_str(), "composer");
-    let modeline = host
-        .view()
-        .regions
-        .iter()
-        .find_map(|region| match region {
-            UiRegion::Status(items) => Some(items.as_slice()),
-            _ => None,
-        })
-        .unwrap();
-    assert_eq!(modeline[0].label, "🐟 MARLIN");
-    assert_eq!(modeline[0].compact_label, "🐟");
-    assert_eq!(modeline[2].label, "🟡 Ready");
-    assert_eq!(modeline[2].compact_label, "🟡");
     assert_eq!(
-        modeline[2].active_tone,
-        marlin_agent_ui::UiStatusTone::Warning
+        host.command_candidates("m")
+            .unwrap()
+            .iter()
+            .map(UiCommandName::as_str)
+            .collect::<Vec<_>>(),
+        vec!["models", "model"]
+    );
+    assert_eq!(
+        host.route_key(Key::Ctrl('r'), false, false).unwrap(),
+        UiKeyAction::Edit(UiEditorAction::HistorySearch)
+    );
+    assert_eq!(
+        host.route_key(Key::Ctrl('n'), false, false).unwrap(),
+        UiKeyAction::Edit(UiEditorAction::InsertNewline)
+    );
+    assert_eq!(
+        host.route_key(Key::Alt('p'), false, false).unwrap(),
+        UiKeyAction::Edit(UiEditorAction::PreviousPrompt)
     );
     assert_eq!(
         host.route_key(Key::Char('\t'), false, false).unwrap(),
@@ -146,7 +153,7 @@ fn real_vm_routes_a_contributed_method_without_submitting_the_draft() {
 
 fn view(focus: &str) -> UiWorkbench {
     UiWorkbench {
-        layout: marlin_agent_ui::UiLayoutPolicy::default(),
+        layout: test_layout(),
         theme: marlin_agent_ui::UiTheme::default(),
         model_label: "model".into(),
         session_label: "session".into(),
@@ -157,57 +164,94 @@ fn view(focus: &str) -> UiWorkbench {
             UiRegion::Status(vec![]),
         ],
         focus: UiComponentId::new(focus).unwrap(),
+        frame: test_frame(),
+        keymap: Vec::new(),
     }
 }
 
 #[test]
 fn completion_respects_ambiguity_exact_names_and_arguments() {
-    use marlin_agent_ui::{UiCommand, UiCommandName};
+    use marlin_agent_ui::{UiCommand, UiCommandArguments, UiCommandCapability, UiCommandName};
     let mut workbench = view("commands");
     workbench.regions[2] = UiRegion::Commands(
-        [("/help", false), ("/model", true), ("/models", false)]
+        [("help", false), ("model", true), ("models", false)]
             .into_iter()
             .map(|(name, accepts_arguments)| UiCommand {
                 name: UiCommandName::new(name).unwrap(),
                 description: String::new(),
-                accepts_arguments,
+                arguments: if accepts_arguments {
+                    UiCommandArguments::Required
+                } else {
+                    UiCommandArguments::None
+                },
+                capability: UiCommandCapability::Clear,
+                value: None,
             })
             .collect(),
     );
-    assert_eq!(complete_command(&workbench, "/"), None);
-    assert_eq!(complete_command(&workbench, "/mo"), None);
-    assert_eq!(complete_command(&workbench, "/hel"), Some("/help".into()));
+    let help = UiCommandName::new("help").unwrap();
+    let model = UiCommandName::new("model").unwrap();
+    let models = UiCommandName::new("models").unwrap();
     assert_eq!(
-        complete_command(&workbench, "/model"),
-        Some("/model ".into())
-    );
-    assert_eq!(complete_command(&workbench, "/model foo"), None);
-    assert_eq!(complete_command(&workbench, "/模型"), None);
-    assert_eq!(
-        complete_command(&workbench, &format!("/{}", "m".repeat(1_000_000))),
+        complete_command(
+            &workbench,
+            "",
+            &[help.clone(), model.clone(), models.clone()]
+        ),
         None
     );
-    let help = UiCommandName::new("/help").unwrap();
-    let forged = UiCommandName::new("/forged").unwrap();
-    assert!(admit_command_choice(&workbench, "/he", Some(&help)).is_ok());
-    assert!(admit_command_choice(&workbench, "/mo", Some(&help)).is_err());
-    assert!(admit_command_choice(&workbench, "/", Some(&forged)).is_err());
+    assert_eq!(
+        complete_command(&workbench, "mo", &[model.clone(), models]),
+        None
+    );
+    assert_eq!(
+        complete_command(&workbench, "hel", std::slice::from_ref(&help)),
+        Some("help".into())
+    );
+    assert_eq!(
+        complete_command(&workbench, "model", &[model]),
+        Some("model ".into())
+    );
+    assert_eq!(complete_command(&workbench, "model foo", &[]), None);
+    assert_eq!(complete_command(&workbench, "/模型", &[]), None);
+    assert_eq!(
+        complete_command(&workbench, &format!("/{}", "m".repeat(1_000_000)), &[]),
+        None
+    );
+    let forged = UiCommandName::new("forged").unwrap();
+    assert!(admit_command_choice(std::slice::from_ref(&help), Some(&help)).is_ok());
+    assert!(admit_command_choice(&[], Some(&help)).is_err());
+    assert!(admit_command_choice(&[help], Some(&forged)).is_err());
 }
 
 #[test]
 fn command_descriptions_cannot_invent_handlers_or_argument_contracts() {
-    use marlin_agent_ui::UiCommand;
+    use marlin_agent_ui::{UiCommand, UiCommandArguments, UiCommandCapability};
     let mut workbench = view("composer");
-    let command = |name, accepts_arguments| UiCommand {
+    let command = |name, arguments, capability| UiCommand {
         name: UiCommandName::new(name).unwrap(),
         description: "description".into(),
-        accepts_arguments,
+        arguments,
+        capability,
+        value: None,
     };
-    workbench.regions[2] = UiRegion::Commands(vec![command("/help", false)]);
+    workbench.regions[2] = UiRegion::Commands(vec![command(
+        "any-name",
+        UiCommandArguments::None,
+        UiCommandCapability::Clear,
+    )]);
     assert!(admit_terminal_view(&workbench).is_ok());
-    workbench.regions[2] = UiRegion::Commands(vec![command("/made-up", false)]);
+    workbench.regions[2] = UiRegion::Commands(vec![command(
+        "made-up",
+        UiCommandArguments::Required,
+        UiCommandCapability::Clear,
+    )]);
     assert!(admit_terminal_view(&workbench).is_err());
-    workbench.regions[2] = UiRegion::Commands(vec![command("/model", false)]);
+    workbench.regions[2] = UiRegion::Commands(vec![command(
+        "choose-model",
+        UiCommandArguments::None,
+        UiCommandCapability::Model,
+    )]);
     assert!(admit_terminal_view(&workbench).is_err());
 }
 

@@ -5,12 +5,14 @@
 //! Host-neutral UI state and transition contract.
 
 use gerbil_scheme::{NativeError, RootedCallError, RootedSchemeObject};
+use marlin_agent_protocol::HumanDecision;
 
-// Three core regions, sixteen contributed regions, and the status region.
-pub(crate) const MAX_REGIONS: usize = 20;
+// Three core regions, one built-in buffer, sixteen contributions, and status.
+pub(crate) const MAX_REGIONS: usize = 21;
 pub(crate) const MAX_HOST_STATUS: usize = 8;
-// Five visible slots, three transport observations and eight host contributions.
-pub(crate) const MAX_STATUS: usize = 16;
+// Five visible slots, ten runtime/transport observations and eight host contributions.
+pub(crate) const MODELINE_SLOTS: usize = 15;
+pub(crate) const MAX_STATUS: usize = 23;
 pub(crate) const MAX_EXTENSIONS: usize = 16;
 pub(crate) const MAX_CONTENT_ITEMS: usize = 16;
 pub(crate) const MAX_METHOD_BUNDLES: usize = 16;
@@ -19,8 +21,8 @@ pub(crate) const MAX_TEXT_CHARS: usize = 256;
 pub(crate) const MAX_ID_BYTES: usize = 1024;
 
 // Keep protocol admission and renderer capacity tied to the selected shape.
-const _: () = assert!(MAX_STATUS == 8 + MAX_HOST_STATUS);
-const _: () = assert!(MAX_REGIONS == 3 + MAX_EXTENSIONS + 1);
+const _: () = assert!(MAX_STATUS == MODELINE_SLOTS + MAX_HOST_STATUS);
+const _: () = assert!(MAX_REGIONS == 3 + 1 + MAX_EXTENSIONS + 1);
 
 /// A UI component's domain identity, not a Scheme root or object address.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -30,18 +32,135 @@ pub struct UiComponentId(String);
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct UiCommandName(String);
 
+/// Stable Scheme buffer identity. Content remains native and is never copied
+/// through the UI session merely to switch a window.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct UiBufferId(String);
+
+impl UiBufferId {
+    pub fn new(value: &str) -> Result<Self, UiProjectionError> {
+        if !UiCommandName::is_valid_prefix(value) || value.is_empty() {
+            return Err(UiProjectionError::Invalid("invalid UI buffer identity"));
+        }
+        Ok(Self(value.to_owned()))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+/// One window binds a buffer; the buffer's contents stay with their owner.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct UiWindow {
+    pub id: UiComponentId,
+    pub buffer: UiBufferId,
+}
+
+/// A terminal-independent key sequence token admitted from Scheme.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct UiKeyToken(String);
+
+impl UiKeyToken {
+    pub fn new(value: &str) -> Result<Self, UiProjectionError> {
+        if value.is_empty()
+            || value.len() > 16
+            || !value
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+        {
+            return Err(UiProjectionError::Invalid("invalid UI key token"));
+        }
+        Ok(Self(value.to_owned()))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+/// Host capabilities are fixed; Scheme owns their bindings and sequences.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum UiKeyCommand {
+    OpenCommands,
+    Cancel,
+    Edit(UiEditorAction),
+    Invoke(UiCommandName),
+    Hydra(UiHydra),
+}
+
+/// A bounded transient keymap projected from the selected Scheme module.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct UiHydra {
+    pub hint: String,
+    pub warning_hint: String,
+    pub foreign: UiHydraForeign,
+    pub heads: Vec<UiHydraHead>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum UiHydraForeign {
+    Exit,
+    Warn,
+    Run,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct UiHydraHead {
+    pub key: UiKeyToken,
+    pub command: Option<UiCommandName>,
+    pub label: String,
+    pub exit: bool,
+}
+
+/// Native editor actions bound by the selected Scheme keymap at UI open.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum UiEditorAction {
+    HistorySearch,
+    PreviousPrompt,
+    NextPrompt,
+    InsertNewline,
+    LineStart,
+    LineEnd,
+}
+
+/// One Scheme-declared shortcut and the admitted host command it invokes.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct UiKeyBinding {
+    pub sequence: Vec<UiKeyToken>,
+    pub command: UiKeyCommand,
+}
+
+/// Scheme-owned frame topology projected into a bounded native snapshot.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct UiFrame {
+    pub id: UiComponentId,
+    pub windows: Vec<UiWindow>,
+    pub selected_window: UiComponentId,
+    pub minibuffer: UiComponentId,
+    pub buffers: Vec<UiBufferId>,
+}
+
+impl UiFrame {
+    pub fn selected_buffer(&self) -> Option<&UiBufferId> {
+        self.windows
+            .iter()
+            .find(|window| window.id == self.selected_window)
+            .map(|window| &window.buffer)
+    }
+}
+
 impl UiCommandName {
     /// Check a partial command without scanning past the admitted name limit.
     pub fn is_valid_prefix(value: &str) -> bool {
         value.len() <= 32
-            && value.starts_with('/')
-            && value.as_bytes()[1..]
-                .iter()
-                .all(|byte| byte.is_ascii_lowercase() || *byte == b'-')
+            && value
+                .bytes()
+                .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
     }
 
     pub fn new(value: &str) -> Result<Self, UiProjectionError> {
-        if value.len() < 2 || !Self::is_valid_prefix(value) {
+        if value.is_empty() || !Self::is_valid_prefix(value) {
             return Err(UiProjectionError::Invalid("invalid command name"));
         }
         Ok(Self(value.to_owned()))
@@ -56,7 +175,58 @@ impl UiCommandName {
 pub struct UiCommand {
     pub name: UiCommandName,
     pub description: String,
-    pub accepts_arguments: bool,
+    pub arguments: UiCommandArguments,
+    pub capability: UiCommandCapability,
+    pub value: Option<String>,
+}
+
+/// Scheme-selected Minibuffer presentation for an existing runtime human gate.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct UiReviewMenu {
+    pub prompt: String,
+    pub choices: Vec<UiReviewChoice>,
+}
+
+/// Presentation of one finite Rust-owned human decision variant.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct UiReviewChoice {
+    pub decision: HumanDecision,
+    pub label: String,
+    pub description: String,
+}
+
+impl UiCommand {
+    pub fn accepts_arguments(&self) -> bool {
+        self.arguments != UiCommandArguments::None
+    }
+}
+
+/// Scheme-declared argument grammar, checked before invoking a host capability.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum UiCommandArguments {
+    None,
+    Required,
+    Optional,
+}
+
+/// The finite Rust-owned capability catalog. Names and aliases stay in Scheme.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum UiCommandCapability {
+    Models,
+    Model,
+    Sessions,
+    Session,
+    Inspect,
+    History,
+    Workspace,
+    Context,
+    Runtime,
+    OpenMenu,
+    SelectProfile,
+    SelectBuffer,
+    KillProcess,
+    ToggleThinking,
+    Clear,
 }
 
 impl UiComponentId {
@@ -99,10 +269,18 @@ pub enum UiContent {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct UiStatusItem {
     pub id: UiComponentId,
+    /// Static text or a dynamic Modeline template with one `{value}` slot.
     pub label: String,
+    /// Compact presentation with the same slot rule for dynamic items.
     pub compact_label: String,
     pub tone: UiStatusTone,
     pub active_tone: UiStatusTone,
+    /// Minimum terminal width at which a dynamic contribution is shown.
+    pub min_width: u16,
+    /// Use the compact label below this terminal width.
+    pub compact_below: u16,
+    /// Larger values retain optional contributions first when space is scarce.
+    pub keep_priority: u8,
 }
 
 impl UiStatusItem {
@@ -115,6 +293,9 @@ impl UiStatusItem {
             label,
             tone: UiStatusTone::Muted,
             active_tone: UiStatusTone::Muted,
+            min_width: 0,
+            compact_below: 0,
+            keep_priority: 0,
         }
     }
 }
@@ -129,22 +310,36 @@ pub enum UiStatusTone {
     Muted,
 }
 
-/// Bounded, Scheme-selected geometry policy. Terminal clipping stays native.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct UiLayoutPolicy {
+/// One Scheme-declared frame mapped to Ratatui constraints by the host.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct UiFrameSpec {
     pub min_transcript_rows: u16,
-    pub max_chatbox_rows: u16,
-    pub max_command_rows: u16,
+    /// Zero means measure the expandable editor from its content.
+    pub fixed_editor_rows: u16,
+    pub footer_rows: u16,
+    pub extensions: bool,
+    pub bordered: bool,
+    pub prompt: String,
 }
 
-impl Default for UiLayoutPolicy {
-    fn default() -> Self {
-        Self {
-            min_transcript_rows: 2,
-            max_chatbox_rows: 10,
-            max_command_rows: 8,
-        }
-    }
+/// Bounded, Scheme-selected geometry policy. Terminal clipping stays native.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct UiLayoutPolicy {
+    pub message_frame: UiFrameSpec,
+    pub command_frame: UiFrameSpec,
+    pub max_chatbox_rows: u16,
+    pub max_command_rows: u16,
+    pub transcript_policy: UiTranscriptPolicy,
+}
+
+/// Scheme-selected compact conversation presentation; raw messages remain in history.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct UiTranscriptPolicy {
+    pub default_collapsed: bool,
+    pub user_prefix: String,
+    pub assistant_role: String,
+    pub thinking_collapsed_role: String,
+    pub thinking_expanded_role: String,
 }
 
 /// An RGB color selected by Scheme and admitted at the native boundary.
@@ -209,9 +404,36 @@ pub struct UiWorkbench {
     pub layout: UiLayoutPolicy,
     pub theme: UiTheme,
     pub focus: UiComponentId,
+    pub frame: UiFrame,
+    pub keymap: Vec<UiKeyBinding>,
 }
 
 impl UiWorkbench {
+    pub fn key_command(&self, sequence: &[&str]) -> Option<UiKeyCommand> {
+        self.keymap
+            .iter()
+            .find(|binding| {
+                binding.sequence.len() == sequence.len()
+                    && binding
+                        .sequence
+                        .iter()
+                        .zip(sequence)
+                        .all(|(left, right)| left.as_str() == *right)
+            })
+            .map(|binding| binding.command.clone())
+    }
+
+    pub fn key_prefix(&self, sequence: &[&str]) -> bool {
+        self.keymap.iter().any(|binding| {
+            binding.sequence.len() > sequence.len()
+                && binding
+                    .sequence
+                    .iter()
+                    .zip(sequence)
+                    .all(|(left, right)| left.as_str() == *right)
+        })
+    }
+
     pub fn commands(&self) -> &[UiCommand] {
         self.regions
             .iter()
@@ -237,8 +459,10 @@ impl UiWorkbench {
         event: UiEvent,
         intent: &UiIntent,
     ) -> Result<(), UiProjectionError> {
+        let profile_change = matches!(&event, UiEvent::SelectProfile(_));
+        let buffer_change = matches!(&event, UiEvent::SelectBuffer(_));
         let supported = matches!(
-            (event, intent),
+            (&event, intent),
             (
                 UiEvent::NextFocus | UiEvent::PreviousFocus | UiEvent::Dismiss,
                 UiIntent::Focus(_)
@@ -247,12 +471,17 @@ impl UiWorkbench {
                     UiEvent::ScrollDown,
                     UiIntent::Scroll(UiScrollDirection::Down)
                 )
-        ) || (event == UiEvent::Submit
-            && match intent {
-                UiIntent::SubmitDraft => self.focus.as_str() == "composer",
-                UiIntent::Focus(_) => self.focused_extension(),
-                UiIntent::Scroll(_) => false,
-            });
+        ) || (profile_change
+            && matches!(intent, UiIntent::Focus(id) if id == &self.focus))
+            || (buffer_change
+                && matches!((&event, intent), (UiEvent::SelectBuffer(requested), UiIntent::SelectBuffer(id))
+                    if requested == id && next.frame.selected_buffer() == Some(id)))
+            || (event == UiEvent::Submit
+                && match intent {
+                    UiIntent::SubmitDraft => self.focus.as_str() == "composer",
+                    UiIntent::Focus(_) => self.focused_extension(),
+                    UiIntent::Scroll(_) | UiIntent::SelectBuffer(_) => false,
+                });
         if !supported {
             return Err(UiProjectionError::Invalid(
                 "UI intent does not match the event",
@@ -260,9 +489,32 @@ impl UiWorkbench {
         }
         if self.model_label != next.model_label
             || self.session_label != next.session_label
-            || self.regions != next.regions
             || self.layout != next.layout
-            || self.theme != next.theme
+            || self.keymap != next.keymap
+            || if buffer_change {
+                self.frame.id != next.frame.id
+                    || self.frame.selected_window != next.frame.selected_window
+                    || self.frame.minibuffer != next.frame.minibuffer
+                    || self.frame.buffers != next.frame.buffers
+                    || self.frame.windows.len() != next.frame.windows.len()
+                    || self
+                        .frame
+                        .windows
+                        .iter()
+                        .zip(&next.frame.windows)
+                        .any(|(old, new)| {
+                            old.id != new.id
+                                || (old.id != self.frame.selected_window
+                                    && old.buffer != new.buffer)
+                        })
+            } else {
+                self.frame != next.frame
+            }
+            || if profile_change {
+                !profile_regions_match(&self.regions, &next.regions)
+            } else {
+                self.regions != next.regions || self.theme != next.theme
+            }
         {
             return Err(UiProjectionError::Invalid(
                 "UI event changed the admitted workbench",
@@ -270,7 +522,7 @@ impl UiWorkbench {
         }
         let expected = match intent {
             UiIntent::Focus(id) => id,
-            UiIntent::SubmitDraft | UiIntent::Scroll(_) => &self.focus,
+            UiIntent::SubmitDraft | UiIntent::Scroll(_) | UiIntent::SelectBuffer(_) => &self.focus,
         };
         if &next.focus != expected {
             return Err(UiProjectionError::Invalid(
@@ -281,8 +533,57 @@ impl UiWorkbench {
     }
 }
 
+fn profile_regions_match(previous: &[UiRegion], next: &[UiRegion]) -> bool {
+    previous.len() == next.len()
+        && previous
+            .iter()
+            .zip(next)
+            .all(|(left, right)| match (left, right) {
+                (UiRegion::Status(a), UiRegion::Status(b)) => profile_status_match(a, b),
+                _ => left == right,
+            })
+}
+
+fn profile_status_match(previous: &[UiStatusItem], next: &[UiStatusItem]) -> bool {
+    fn unique_modeline_ids(items: &[UiStatusItem]) -> Option<([&str; MODELINE_SLOTS], usize)> {
+        let mut ids = [""; MODELINE_SLOTS];
+        let mut count = 0;
+        for item in items {
+            if item.id.as_str().starts_with("modeline/") {
+                if count == MODELINE_SLOTS {
+                    return None;
+                }
+                ids[count] = item.id.as_str();
+                count += 1;
+            }
+        }
+        ids[..count].sort_unstable();
+        if ids[..count].windows(2).any(|pair| pair[0] == pair[1]) {
+            return None;
+        }
+        Some((ids, count))
+    }
+
+    if previous.len() != next.len() {
+        return false;
+    }
+    let (Some((old_ids, old_count)), Some((new_ids, new_count))) =
+        (unique_modeline_ids(previous), unique_modeline_ids(next))
+    else {
+        return false;
+    };
+    old_count == new_count
+        && old_ids[..old_count] == new_ids[..new_count]
+        && previous
+            .iter()
+            .filter(|item| !item.id.as_str().starts_with("modeline/"))
+            .eq(next
+                .iter()
+                .filter(|item| !item.id.as_str().starts_with("modeline/")))
+}
+
 /// Input events accepted by the Scheme UI dispatcher.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum UiEvent {
     NextFocus,
     PreviousFocus,
@@ -290,6 +591,30 @@ pub enum UiEvent {
     Dismiss,
     ScrollUp,
     ScrollDown,
+    SelectProfile(UiProfileName),
+    SelectBuffer(UiBufferId),
+}
+
+/// A bounded Scheme profile identity; Rust does not enumerate profile names.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct UiProfileName(String);
+
+impl UiProfileName {
+    pub fn new(value: &str) -> Result<Self, UiProjectionError> {
+        if value.is_empty()
+            || value.len() > 32
+            || !value
+                .bytes()
+                .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
+        {
+            return Err(UiProjectionError::Invalid("invalid UI profile name"));
+        }
+        Ok(Self(value.to_owned()))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
 }
 
 /// Direction for moving through a visible collection.
@@ -299,12 +624,22 @@ pub enum UiBrowseDirection {
     Previous,
 }
 
+/// One bounded Scheme-owned candidate navigation request.
+#[derive(Clone, Copy, Debug)]
+pub struct UiBrowseRequest<'a> {
+    pub query: &'a str,
+    pub previous: Option<&'a UiCommandName>,
+    pub direction: UiBrowseDirection,
+    pub steps: u8,
+}
+
 /// A presentation proposal; only the runtime can authorize its effects.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum UiIntent {
     SubmitDraft,
     Focus(UiComponentId),
     Scroll(UiScrollDirection),
+    SelectBuffer(UiBufferId),
 }
 
 /// Direction for scrolling a UI region.

@@ -56,24 +56,21 @@ it where the target machine does not provide them. The build requires a paired
 Gerbil/Gambit compiler and pkg-config metadata for these libraries.
 Tab and Shift-Tab move focus forward and backward through the Scheme workbench.
 An admitted Scheme extension may supply up to 16 =text= or =field= items, each
-with strings of at most 256 characters. Focusing it shows a Ratatui panel to
-the right on wide terminals or in the transcript area on narrow terminals.
+with strings of at most 256 characters. Focusing one displays its content in
+the main window. The default workbench has no right-side Guide frame.
 The selected Scheme module owns component composition and event methods; Rust
 checks the typed snapshot, owns terminal rendering and authorizes effects.
 The shared =marlin-agent-ui= library admits event/intent/successor agreement
 before any renderer can act. The TUI adds command-handler and terminal-focus
-admission; it maps keys and paints cells. The built-in Guide contains semantic
-content, while this terminal host supplies its key and shortcut hints.
+admission; it maps keys and paints cells. =M-x help= shows the current shortcut
+summary.
 This is a bounded content slice, not a general dynamically loaded UI package
 system. Sheprd may later consume the same Scheme publication and typed UI
 projection through a separate client adapter. GPUI and Sheprd code do not
 belong in =marlin-agent-core=, and Sheprd is not a =gerbil.pkg= dependency here.
-The selected =ui-components= Module also supplies the built-in Guide panel.
-It appears beside the transcript on terminals at least 100 columns wide; on
-narrow terminals, Tab can focus it without hiding the transcript by default.
-In the transcript, Up and Down
-scroll; in commands, Enter opens the command editor. Ctrl-O remains available
-to open commands while keeping a draft.
+In the transcript, Up and Down scroll; =M-x= or Ctrl-O opens command selection
+while keeping the message draft. The command list appears beneath the Modeline
+and Mini Buffer input line, with no separate command box.
 
 The =provider= identifies the model provider; =protocol = "anthropic"= selects
 the wire format, including for an Anthropic-compatible DeepSeek endpoint.
@@ -100,8 +97,8 @@ proof of a server or account identity and can enable guessing weak credentials;
 protect the session database accordingly. No reconciliation tool exists yet.
 
 Optional =[models.<alias>]= entries configure additional explicit model
-endpoints; see =example.toml=. =/models= lists the configured identities and
-=/model <alias>= selects one while idle. The top-level model is =default=.
+endpoints; see =example.toml=. =M-x models= lists the configured identities and
+=M-x model <alias>= selects one while idle. The top-level model is =default=.
 Selection survives session switches but resets to =default= on restart. The
 next request sends retained conversation to the selected endpoint. A stored
 OpenAI Responses continuation is restricted to its original logical model route;
@@ -135,19 +132,28 @@ is active trigger local cancellation, terminal cleanup and exit with status
 restart; no remote retirement is inferred. SIGKILL, terminal disconnection,
 blocked output, suspension and job-control handoff are not covered by this
 shutdown guarantee.
-Ctrl-O opens a separate slash-command editor while keeping the message draft
+M-x or Ctrl-O opens the Mini Buffer command input while keeping the message draft
 and cursor. Enter runs the command and restores the draft; Esc or Ctrl-O returns
 without running it. The menu shows matching Scheme-declared command descriptions;
 Up/Down selects a match and wraps through the list. Enter runs the selected
 command or opens its argument input; Tab completes the selected command.
 Without a selection, Tab completes an unambiguous command or adds a space after an exact command
-that takes arguments. Typing a slash command directly in the message editor also
-shows the menu and supports the same completion. Rust retains authority over
+that takes arguments. Commands are entered through M-x; the message editor
+keeps its text as a model draft. Rust retains authority over
 command execution. When a session switch succeeds, the draft is carried into
 the selected session. Copy it before exiting the application.
-=/help= shows the shortcuts and =/clear= clears the displayed transcript;
-=/clear= does not discard the model conversation history. A failed or cancelled
+=M-x help= shows the shortcuts and =M-x clear= clears the displayed transcript;
+=M-x clear= does not discard the model conversation history. A failed or cancelled
 turn stays visible but is not sent as part of the next request.
+=M-x toggle-thinking= expands or folds the newest thinking segment;
+=M-x toggle-thinking 2= selects the second newest retained segment, and so on.
+The ordinal changes only visibility and is valid while a turn is streaming.
+The selected Scheme UI displays a prompt as =› text=, a normal answer without
+an extra role heading, and folded thinking as a single =▸ Thought= row.
+Expanding changes it to =▾ Thought= with the original content below. Folding
+changes only displayed rows: signed thinking, replay checkpoints, and the model
+continuation retain their original content. M-x remains available while a
+model turn is streaming and shows only the thinking toggle until it finishes.
 The editor scrolls its visible rows to keep the cursor in view for longer
 drafts. It wraps at grapheme boundaries, including on narrow terminals. Up and
 down move by displayed row and preserve the desired column across short rows.
@@ -161,7 +167,7 @@ before the next draw clamps an overshoot. The anchor retains counts for
 completed source lines and rescans the unfinished line and newly appended
 lines; this does not establish a latency bound for a long unfinished line.
 
-=/context= reports completed-turn and next-request byte accounting against
+=M-x context= reports completed-turn and next-request byte accounting against
 the local admission limits. Use Ctrl-O to inspect the current draft without
 sending it. These are accounted message bytes, not model tokens or total
 process memory; the command is unavailable in read-only history views. Marlin
@@ -170,12 +176,12 @@ request exceeding the admission limit is rejected with its draft preserved.
 Retention of provider-specific continuation data has the limitations described
 above.
 
-=/runtime= displays the typed runtime edge-policy receipt for opening a model
+=M-x runtime= displays the typed runtime edge-policy receipt for opening a model
 stream. Its timeout comes from =timeout_seconds=. The runtime edge timeout
 applies only until the gateway returns a stream; it does not govern the length
 of the stream, approve tools, or confirm remote cancellation.
 
-=/status= reads Git status for the current working directory in the background
+=M-x status= reads Git status for the current working directory in the background
 and displays index and worktree states, untracked entries and rename sources.
 It uses Git's normal ignore and submodule configuration; it is a point-in-time
 observation, not a snapshot or an authorization for changes. Git's optional
@@ -199,29 +205,29 @@ Cancellation returns locally, but synchronous conversion already in progress
 may continue until it completes. Another workspace read is refused until that
 task has retired. Conversion still uses memory and occupies its worker.
 
-=/diff= shows unstaged tracked changes (worktree against index), and =/diff
+=M-x diff= shows unstaged tracked changes (worktree against index), and =M-x diff
 staged= shows staged changes (index against HEAD). Git presents renames as
 deletions and additions; binary files follow Git's normal binary-diff summary.
-Untracked files are listed by =/status= and are not included in these diffs.
+Untracked files are listed by =M-x status= and are not included in these diffs.
 External diff programs, text conversion and color are disabled. The same
 1 MiB and 10-second limits apply; over-limit output is rejected in full.
 Control characters are escaped and the output is not sent to the model.
-To select a path, use =/diff "path/to/file"= or =/diff staged "path/to/file"=.
+To select a path, use =M-x diff "path/to/file"= or =M-x diff staged "path/to/file"=.
 The argument is a JSON string relative to the repository root even when the
 TUI starts in a subdirectory; Git matches it literally, not as a wildcard.
 Absolute paths and parent-directory components are rejected. The command
-accepts UTF-8 paths; non-UTF-8 names can be listed by =/status= but cannot
+accepts UTF-8 paths; non-UTF-8 names can be listed by =M-x status= but cannot
 currently be selected here. An empty diff can mean the path is absent or
 untracked. Selecting a directory can include its tracked descendants. A
 selected result that exceeds the limit is still rejected.
 
-With a persistent session configured, =/sessions= loads up to 20 session IDs
-in the background and =/sessions next= loads the next page. The current ID is
+With a persistent session configured, =M-x sessions= loads up to 20 session IDs
+in the background and =M-x sessions-next= loads the next page. The current ID is
 marked. Run these commands when no model turn is active. IDs longer than 512
 bytes are omitted from the terminal list; use the command-line listing to see
 them. Listing does not prove that a session is safe to resume.
 
-Use =/session "session:another"= to switch while no model turn is active.
+Use =M-x session "session:another"= to switch while no model turn is active.
 The ID is a JSON string, matching the quoted IDs shown in the list. Loading
 happens in the background; the current session remains in use if loading fails.
 Esc cancels a pending switch. Switching away from an unfinished turn does not
@@ -233,13 +239,13 @@ projection data. It does not silently shorten the model context. This is not a
 total-memory limit: storage pages, individual records, current live history and
 terminal data have separate allocations.
 
-Use =/inspect "session:another"= to view history without loading it as model
+Use =M-x inspect "session:another"= to view history without loading it as model
 context. Each page retains at most 100 turns and 8 MiB of accounted projection
 data; a single larger turn is explicitly marked as omitted, with its source
-unchanged. =/history older= loads the preceding page and =/history newest=
+unchanged. =M-x history-older= loads the preceding page and =M-x history=
 returns to the latest. Each page rescans the complete journal, so cost grows
 with history size; separate pages do not share a snapshot. Model requests are
-disabled while inspecting, and the draft is retained. =/session= can exit
+disabled while inspecting, and the draft is retained. =M-x session= can exit
 inspection only if the complete context can be loaded. To inspect a session
 too large to load at startup, start with another session ID first. Starting the
 TUI currently still requires model configuration and credentials.
@@ -395,3 +401,32 @@ checks signed thinking replay and rejection after a credential change.
 =MARLIN_PTY_LOCAL_PACKAGE=1 MARLIN_LIVE_PROVIDER=1 cargo test -p marlin-agent-tui --test pty configured_anthropic_provider_responds -- --ignored=
 sends one real request using =example.toml= and the Anthropic environment.
 It is a connectivity diagnostic with extended deadlines, not a startup benchmark.
+
+* OpenTelemetry traces
+
+Set =OTEL_EXPORTER_OTLP_TRACES_ENDPOINT= to a full OTLP/HTTP protobuf traces
+URL such as =http://127.0.0.1:4318/v1/traces= to enable =marlin-agent-telemetry=.
+The TUI sends Runtime lifecycle spans under service name =marlin-tui= and
+shuts down the exporter after Runtime drain. The selected span target carries
+lifecycle classifications. Process-registry events, terminal content, metrics,
+and log records are outside this export.
+
+* macOS Runtime process budget and host observations
+
+The optional =[process_budget]= section in [[file:example.toml][example.toml]]
+passes Runtime its own typed configuration. Choose concurrency, the admission
+limit and the per-command reservation for the machine and tool mix. Runtime
+uses the reservation for every managed process. The telemetry package samples
+the host and registered direct children locally, even with OTLP disabled.
+Runtime releases the reservation after process cleanup and closure of its
+managed pipe leases.
+
+Set =MARLIN_TUI_HOST_OBSERVATIONS_FILE= to a new local file path to start the
+independent macOS observer. The file records terminal and Tokio heartbeats
+and kernel-confirmed host exit. The observer only reports evidence. The
+Runtime owner remains responsible for cancellation and process reaping.
+
+Use =M-x list-processes= to open =*Processes*=. It shows the current session's
+live Runtime processes and recent terminal results. Use =M-x kill-process=
+followed by the generation number in the first column. Runtime resolves that
+generation to its owned process and runs cleanup. The PID column is for inspection.

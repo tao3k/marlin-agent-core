@@ -43,10 +43,12 @@
 ;; Constructors also validate size and ownership; no runtime authority is conveyed.
 (def UiScopeContract
   (.cc (Record workbench: [(Fun UiWorkbench <- UiWorkbenchFacts)]
+               profile-workbench: [(Fun UiWorkbench <- UiWorkbenchFacts UiIdentity)]
                project-workbench: [(Fun UiNativeProjection <- UiWorkbench)]
                focus-event: [(Fun Object <- UiWorkbench)]
                previous-focus-event: [(Fun Object <- UiWorkbench)]
                make-dispatch: [(Fun ClosGenericFunction <- UiMethodBundles)]
                dispatch: [(Fun Object <- ClosGenericFunction Object Object)]
-               components: [Object] events: [Object] event-protocol: [ClosGenericProtocol])
+               components: [Object] hydra: [Object]
+               events: [Object] event-protocol: [ClosGenericProtocol])
        identity: 'marlin/ui))

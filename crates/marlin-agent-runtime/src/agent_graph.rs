@@ -296,10 +296,23 @@ pub fn build_agent_graph_execution_request(
         );
     }
 
-    let Some(root_loop_entry) = readiness.root_loop_entry else {
+    let Some(root_loop_entry) = readiness.root_loop_entry.clone() else {
         return Err(RuntimeAgentGraphExecutionRequestRejection::MissingRootLoopEntry);
     };
 
+    validate_graph_execution_evidence(&readiness, &root_loop_entry)?;
+    Ok(RuntimeAgentGraphExecutionRequest {
+        request: readiness.request,
+        projection: readiness.projection,
+        root_loop_entry,
+        observed_at_ms,
+    })
+}
+
+fn validate_graph_execution_evidence(
+    readiness: &RuntimeAgentGraphExecutionReadinessReceipt,
+    root_loop_entry: &GraphLoopEntryRef,
+) -> Result<(), RuntimeAgentGraphExecutionRequestRejection> {
     let inconsistent =
         |reason| RuntimeAgentGraphExecutionRequestRejection::InconsistentEvidence(reason);
     if readiness.rejection.is_some() {
@@ -358,18 +371,13 @@ pub fn build_agent_graph_execution_request(
             RuntimeAgentGraphReadinessInconsistency::PlanMismatch,
         ));
     }
-    if admission.root_loop_entry.as_ref() != Some(&root_loop_entry) {
+    if admission.root_loop_entry.as_ref() != Some(root_loop_entry) {
         return Err(inconsistent(
             RuntimeAgentGraphReadinessInconsistency::RootLoopEntryMismatch,
         ));
     }
 
-    Ok(RuntimeAgentGraphExecutionRequest {
-        request: readiness.request,
-        projection: readiness.projection,
-        root_loop_entry,
-        observed_at_ms,
-    })
+    Ok(())
 }
 
 /// Projects an AgentGraph protocol request into runtime admission evidence.

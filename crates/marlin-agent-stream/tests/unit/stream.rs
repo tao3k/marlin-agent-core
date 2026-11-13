@@ -379,67 +379,46 @@ async fn weaver_gateway_replays_a_tool_turn_through_marlin() {
 }
 
 async fn replay_marker_tool(gateway: &WeaverModelGateway, endpoint: &ModelEndpoint) -> String {
+    use marlin_agent_protocol::{
+        ModelGatewayRequest, ModelGatewayTransport, ModelToolDefinition, ModelToolName,
+        tool_gateway_message,
+    };
     use serde_json::json;
-    use tokio_stream::StreamExt;
-    use weaver_llm::{Message, Options, Request, Role, Tool, TurnEvent};
-
-    let mut history = vec![Message {
-        role: Role::User,
-        content: concat!(
-            "Call read_marker exactly once with an empty object before answering. ",
-            "After receiving the tool result, reply with its exact text."
-        )
-        .into(),
-        images: Vec::new(),
-        name: None,
-        tool_call_id: None,
-        tool_calls: vec![],
-        responses_output: None,
-        anthropic_output: None,
-    }];
-    let options = Options {
+    let mut history = vec![user_gateway_message(concat!(
+        "Call read_marker exactly once with an empty object before answering. ",
+        "After receiving the tool result, reply with its exact text."
+    ))];
+    let options = ModelGatewayCompletionOptions {
         max_tokens: Some(512),
-        tools: vec![Tool {
-            name: "read_marker".into(),
+        tools: Some(vec![ModelToolDefinition {
+            name: ModelToolName::new("read_marker").unwrap(),
             description: "Return a fixture marker".into(),
             parameters: json!({"type":"object"}),
-        }],
-        ..Options::default()
+        }]),
+        ..Default::default()
     };
-    let mut events = Box::pin(
-        gateway
-            .stream_turn(
-                endpoint,
-                &Request {
-                    model: endpoint.model.as_str(),
-                    messages: &history,
-                    options: &options,
-                },
-            )
-            .await
-            .expect("first stream")
-            .into_stream(),
-    );
-    let (tool_calls, responses_output) = loop {
-        match events
-            .next()
-            .await
-            .expect("first terminal event")
-            .expect("first event")
-        {
-            TurnEvent::Text(_) => {}
-            TurnEvent::Thinking(_) => panic!("Responses fixture does not emit thinking fragments"),
-            TurnEvent::Finished {
-                tool_calls,
-                responses_output,
-                ..
-            } => {
-                break (tool_calls, responses_output);
-            }
-        }
-    };
-    let output = serde_json::to_value(responses_output.as_ref().expect("Responses output"))
-        .expect("serializable replay items");
+    let first = gateway
+        .complete(
+            ModelGatewayRequest::new(endpoint.clone(), history.clone())
+                .with_options(options.clone())
+                .with_transport(ModelGatewayTransport::Sse),
+        )
+        .await
+        .expect("first completion");
+    let assistant = first
+        .choices
+        .into_iter()
+        .next()
+        .expect("assistant choice")
+        .message;
+    let output: serde_json::Value = serde_json::from_str(
+        &assistant
+            .continuation
+            .as_ref()
+            .expect("Responses continuation")
+            .payload,
+    )
+    .expect("serializable replay items");
     assert!(
         output
             .as_array()
@@ -453,70 +432,88 @@ async fn replay_marker_tool(gateway: &WeaverModelGateway, endpoint: &ModelEndpoi
             }),
         "missing encrypted reasoning in Responses output"
     );
-    assert_eq!(tool_calls.len(), 1);
-    assert_eq!(tool_calls[0].name, "read_marker");
-    assert_eq!(tool_calls[0].arguments, json!({}));
-    let id = tool_calls[0].id.clone();
-    assert!(events.next().await.is_none());
-    history.extend([
-        Message {
-            role: Role::Assistant,
-            content: String::new(),
-            images: Vec::new(),
-            name: None,
-            tool_call_id: None,
-            tool_calls,
-            responses_output,
-            anthropic_output: None,
-        },
-        Message {
-            role: Role::Tool,
-            content: "marlin-live-tool-ok".into(),
-            images: Vec::new(),
-            name: None,
-            tool_call_id: Some(id),
-            tool_calls: vec![],
-            responses_output: None,
-            anthropic_output: None,
-        },
-    ]);
-    let mut events = Box::pin(
-        gateway
-            .stream_turn(
-                endpoint,
-                &Request {
-                    model: endpoint.model.as_str(),
-                    messages: &history,
-                    options: &options,
-                },
-            )
-            .await
-            .expect("second stream")
-            .into_stream(),
+    assert_eq!(assistant.tool_calls.len(), 1);
+    assert_eq!(assistant.tool_calls[0].name.as_str(), "read_marker");
+    assert_eq!(
+        assistant.tool_calls[0].arguments,
+        json!({}).as_object().unwrap().clone()
     );
-    let mut text = String::new();
-    let id = loop {
-        match events
-            .next()
-            .await
-            .expect("second terminal event")
-            .expect("second event")
-        {
-            TurnEvent::Text(delta) => text.push_str(&delta),
-            TurnEvent::Thinking(_) => panic!("Responses fixture does not emit thinking fragments"),
-            TurnEvent::Finished {
-                identity,
-                tool_calls,
-                ..
-            } => {
-                assert!(tool_calls.is_empty());
-                break identity.expect("provider identity").id;
-            }
-        }
+    let id = assistant.tool_calls[0].id.clone();
+    history.extend([assistant, tool_gateway_message(id, "marlin-live-tool-ok")]);
+    let second = gateway
+        .complete(
+            ModelGatewayRequest::new(endpoint.clone(), history)
+                .with_options(options)
+                .with_transport(ModelGatewayTransport::Sse),
+        )
+        .await
+        .expect("second completion");
+    assert_eq!(
+        second.choices[0].message.content.trim(),
+        "marlin-live-tool-ok"
+    );
+    assert!(second.choices[0].message.tool_calls.is_empty());
+    second.id
+}
+
+#[tokio::test]
+async fn streaming_tool_request_has_a_distinct_terminal_event() {
+    use marlin_agent_protocol::{ModelGatewayRequest, ModelToolDefinition, ModelToolName};
+    use serde_json::json;
+    use tokio::{io::AsyncWriteExt, net::TcpListener};
+    use tokio_stream::StreamExt;
+
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}/v1/responses", listener.local_addr().unwrap());
+    let fixture = tokio::spawn(async move {
+        let (mut socket, request) = responses_fixture_request(&listener).await;
+        assert_eq!(request["tools"][0]["name"], "read_marker");
+        let finished = json!({"type":"response.completed","response":{
+            "status":"completed","id":"resp_tool","model":"gpt-fixture",
+            "output":[{"type":"function_call","id":"fc_1","call_id":"call_1",
+                "name":"read_marker","arguments":"{}","status":"completed"}]
+        }});
+        socket.write_all(format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nConnection: close\r\n\r\ndata: {finished}\n\n"
+        ).as_bytes()).await.unwrap();
+    });
+    let gateway = WeaverModelGateway::new(
+        weaver_llm::Client::new(Duration::from_secs(2), 4096).unwrap(),
+        "openai".into(),
+        weaver_llm::Endpoint::new(weaver_llm::Protocol::OpenAiResponses, &url).unwrap(),
+        "fixture",
+    );
+    let request = ModelGatewayRequest::new(
+        ModelEndpoint::new("openai", "gpt-fixture"),
+        vec![user_gateway_message("call read_marker")],
+    )
+    .with_options(ModelGatewayCompletionOptions {
+        tools: Some(vec![ModelToolDefinition {
+            name: ModelToolName::new("read_marker").unwrap(),
+            description: "Return a marker".into(),
+            parameters: json!({"type":"object"}),
+        }]),
+        ..Default::default()
+    });
+    let mut stream = gateway.stream(request).await.unwrap();
+    assert!(matches!(
+        stream.next().await,
+        Some(Ok(ModelStreamEvent::Started { .. }))
+    ));
+    let event = stream.next().await.unwrap().unwrap();
+    let ModelStreamEvent::ToolRequested { response } = event else {
+        panic!("tool request must remain distinct from a completed answer");
     };
-    assert_eq!(text.trim(), "marlin-live-tool-ok");
-    assert!(events.next().await.is_none());
-    id
+    assert_eq!(
+        response.choices[0].message.tool_calls[0].id.as_str(),
+        "call_1"
+    );
+    assert_eq!(
+        response.choices[0].message.tool_calls[0].name.as_str(),
+        "read_marker"
+    );
+    assert!(stream.next().await.is_none());
+    fixture.await.unwrap();
 }
 
 #[tokio::test]

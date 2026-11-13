@@ -5,14 +5,16 @@
 #![cfg(not(feature = "linked-ui"))]
 
 use gerbil_scheme::GerbilRuntime;
-use marlin_agent_ui::{
-    UiBrowseDirection, UiEvent, UiIntent, UiModule, UiOpenFacts, UiProjectionError,
-};
+use marlin_agent_protocol::HumanReviewKind;
+use marlin_agent_ui::{UiEvent, UiIntent, UiModule, UiOpenFacts, UiProjectionError};
 use std::path::Path;
 
+// Scheme tests own command order, labels, profiles, focus rules, and review
+// choices. This smoke test exercises typed calls across the live VM boundary;
+// synthetic projection tests cover malformed ABI values.
 #[test]
 #[ignore = "requires the compiled Marlin UI and its complete Scheme dependency load path"]
-fn gerbil_resolves_and_runs_the_selected_ui_module() {
+fn selected_ui_module_crosses_the_live_vm_boundary() {
     let directory = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../..")
         .canonicalize()
@@ -28,92 +30,23 @@ fn gerbil_resolves_and_runs_the_selected_ui_module() {
         method_bundles: &[],
     };
     let initial = module.open(&facts).expect("open selected UI");
-    let first = module.project(&initial).expect("project initial UI");
-    assert_eq!(first.focus.as_str(), "composer");
-    let first_choice = module
-        .browse_command(&initial, "/", None, UiBrowseDirection::Next)
-        .unwrap()
-        .unwrap();
-    assert_eq!(first_choice.as_str(), "/help");
-    let wrapped = module
-        .browse_command(
-            &initial,
-            "/",
-            Some(&first_choice),
-            UiBrowseDirection::Previous,
-        )
-        .unwrap()
-        .unwrap();
-    assert_eq!(wrapped.as_str(), "/clear");
-    let forward = module
-        .browse_command(&initial, "/", Some(&wrapped), UiBrowseDirection::Next)
-        .unwrap()
-        .unwrap();
-    assert_eq!(forward, first_choice);
-    let model = module
-        .browse_command(&initial, "/mo", None, UiBrowseDirection::Next)
-        .unwrap()
-        .unwrap();
-    assert_eq!(model.as_str(), "/models");
-    let model = module
-        .browse_command(&initial, "/mo", Some(&model), UiBrowseDirection::Next)
-        .unwrap()
-        .unwrap();
-    assert_eq!(model.as_str(), "/model");
-    assert!(
-        module
-            .browse_command(&initial, "/zz", None, UiBrowseDirection::Next)
-            .unwrap()
-            .is_none()
-    );
-    assert_eq!(module.project(&initial).unwrap(), first);
-    assert_eq!(first.commands().len(), 12);
-    assert!(
-        first
-            .commands()
-            .iter()
-            .any(|command| command.name.as_str() == "/model" && command.accepts_arguments)
-    );
-    let (previous, previous_intent) = module.dispatch(&initial, UiEvent::PreviousFocus).unwrap();
-    assert_eq!(
-        module.project(&previous).unwrap().focus.as_str(),
-        "transcript"
-    );
-    assert_eq!(
-        previous_intent,
-        UiIntent::Focus(module.project(&previous).unwrap().focus)
-    );
-    let (wrapped, _) = module.dispatch(&previous, UiEvent::PreviousFocus).unwrap();
-    assert_eq!(module.project(&wrapped).unwrap().focus.as_str(), "commands");
-    let (returned, _) = module.dispatch(&previous, UiEvent::NextFocus).unwrap();
-    assert_eq!(
-        module.project(&returned).unwrap().focus.as_str(),
-        "composer"
-    );
-    let (next, intent) = module
+    let projected = module.project(&initial).expect("decode selected UI");
+    assert!(!projected.regions.is_empty());
+    assert!(!module
+        .review_menu(&initial, HumanReviewKind::PermissionEscalation)
+        .expect("decode selected review menu")
+        .choices
+        .is_empty());
+
+    let (successor, intent) = module
         .dispatch(&initial, UiEvent::NextFocus)
-        .expect("dispatch focus event");
-    let second = module.project(&next).expect("project successor");
-    assert_eq!(intent, UiIntent::Focus(second.focus.clone()));
-    assert_ne!(first.focus, second.focus);
-    assert_eq!(module.project(&initial).unwrap(), first);
-    let refreshed = module
-        .refresh_labels(&next, "new/model", "new-session")
-        .unwrap();
-    let updated = module.project(&refreshed).unwrap();
-    assert_eq!(updated.model_label, "new/model");
-    assert_eq!(updated.session_label, "new-session");
-    assert_eq!(updated.focus, second.focus);
-    assert_eq!(updated.regions, second.regions);
-    assert_eq!(module.project(&next).unwrap(), second);
-    assert!(
-        module
-            .refresh_labels(&next, &"x".repeat(257), "ok")
-            .is_err()
-    );
+        .expect("dispatch through the selected UI");
+    let next = module.project(&successor).expect("decode successor");
+    assert!(matches!(intent, UiIntent::Focus(ref id) if id == &next.focus));
+    assert_eq!(module.project(&initial).unwrap(), projected);
+
     let Err(UiProjectionError::Call(failure)) = module.dispatch(&initial, UiEvent::Dismiss) else {
-        panic!("dismissing from the composer must fail as a Scheme call");
+        panic!("Scheme rejection must cross as a typed call failure");
     };
     assert!(failure.diagnostic.is_some());
-    assert_eq!(module.project(&initial).unwrap(), first);
 }

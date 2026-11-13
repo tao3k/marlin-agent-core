@@ -131,6 +131,8 @@ fn reply_bytes(reply: &Reply) -> usize {
         Ok(ModelStreamEvent::Started { .. }) => 0,
         Ok(ModelStreamEvent::Chunk(chunk)) => chunk.content.capacity(),
         Ok(ModelStreamEvent::Thinking(chunk)) => chunk.content.capacity(),
-        Ok(ModelStreamEvent::Completed { response }) => response.heap_capacity(),
+        Ok(
+            ModelStreamEvent::Completed { response } | ModelStreamEvent::ToolRequested { response },
+        ) => response.heap_capacity(),
     }
 }

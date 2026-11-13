@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
 use super::{
-    app::{App, GatewayObservation, safe_text},
+    app::{App, GatewayObservation, ModelineActivity, safe_text},
     cli::{CliAction, parse_cli},
     context_budget::ContextBudget,
     event_queue::{ReplyError, reply_channel},
@@ -29,36 +29,116 @@ use proptest::{
 };
 use std::sync::{Arc, Mutex};
 
+#[path = "ui_fixture.rs"]
+mod ui_fixture;
+use ui_fixture::{test_frame, test_layout};
+
+/// Native tests exercise only the capabilities they use. The selected Scheme
+/// catalogue itself is checked by the Scheme and linked UI tests.
+fn install_test_commands(app: &mut App) {
+    use marlin_agent_ui::{
+        UiCommand, UiCommandArguments as Args, UiCommandCapability as Cap, UiCommandName,
+    };
+    let entries = [
+        ("help", Args::None, Cap::SelectBuffer, Some("help")),
+        ("models", Args::None, Cap::Models, None),
+        ("model", Args::Required, Cap::Model, None),
+        ("sessions", Args::None, Cap::Sessions, None),
+        ("sessions-next", Args::None, Cap::Sessions, Some("next")),
+        ("session", Args::Required, Cap::Session, None),
+        ("history", Args::None, Cap::History, Some("newest")),
+        ("history-older", Args::None, Cap::History, Some("older")),
+        ("diff", Args::Optional, Cap::Workspace, Some("diff")),
+        ("context", Args::None, Cap::Context, None),
+        ("runtime", Args::None, Cap::Runtime, None),
+        ("switch-themes", Args::None, Cap::OpenMenu, Some("theme-")),
+        ("theme-pi", Args::None, Cap::SelectProfile, Some("pi")),
+        ("switch-buffer", Args::None, Cap::OpenMenu, Some("buffer-")),
+        (
+            "buffer-messages",
+            Args::None,
+            Cap::SelectBuffer,
+            Some("messages"),
+        ),
+    ];
+    app.command_catalog = entries
+        .into_iter()
+        .map(|(name, arguments, capability, value)| UiCommand {
+            name: UiCommandName::new(name).unwrap(),
+            description: String::new(),
+            arguments,
+            capability,
+            value: value.map(str::to_owned),
+        })
+        .collect();
+}
+
 fn selected_modeline_item(id: &str) -> marlin_agent_ui::UiStatusItem {
     use marlin_agent_ui::{UiComponentId, UiStatusItem, UiStatusTone};
-    let (label, compact_label, tone, active_tone) = match id {
+    let (label, compact_label, tone, active_tone, min_width, compact_below) = match id {
         "modeline/left/brand" => (
-            "🐟 MARLIN",
-            "🐟",
+            "🐬 BRAND",
+            "🐬",
             UiStatusTone::Accent,
             UiStatusTone::Accent,
+            0,
+            18,
         ),
-        "modeline/left/model" => ("", "", UiStatusTone::Info, UiStatusTone::Info),
-        "modeline/left/activity" => ("🟡 Ready", "🟡", UiStatusTone::Info, UiStatusTone::Warning),
-        "modeline/right/turns" => ("", "", UiStatusTone::Info, UiStatusTone::Info),
-        "modeline/right/session" => ("", "", UiStatusTone::Muted, UiStatusTone::Muted),
+        "modeline/left/model" => (
+            "  {value}  ",
+            "{value}",
+            UiStatusTone::Info,
+            UiStatusTone::Info,
+            0,
+            0,
+        ),
+        "modeline/left/activity" => (
+            "~ ◇ Standing",
+            "~ ◇",
+            UiStatusTone::Info,
+            UiStatusTone::Warning,
+            0,
+            64,
+        ),
+        "modeline/right/turns" => (
+            "T{value}  ",
+            "T{value}",
+            UiStatusTone::Info,
+            UiStatusTone::Info,
+            72,
+            0,
+        ),
+        "modeline/right/session" => (
+            " § {value} ",
+            "§{value}",
+            UiStatusTone::Muted,
+            UiStatusTone::Muted,
+            44,
+            0,
+        ),
         "modeline/state/online" => (
-            "🟢 Online",
-            "🟢",
+            "◆ Linked",
+            "◆",
             UiStatusTone::Success,
             UiStatusTone::Success,
+            0,
+            64,
         ),
         "modeline/state/offline" => (
-            "🔴 Offline",
-            "🔴",
+            "◇ Lost",
+            "◇",
             UiStatusTone::Warning,
             UiStatusTone::Warning,
+            0,
+            64,
         ),
         "modeline/state/unknown" => (
-            "🟠 Unknown",
-            "🟠",
+            "◌ Unclear",
+            "◌",
             UiStatusTone::Warning,
             UiStatusTone::Warning,
+            0,
+            64,
         ),
         _ => panic!("unknown selected modeline item"),
     };
@@ -68,55 +148,39 @@ fn selected_modeline_item(id: &str) -> marlin_agent_ui::UiStatusItem {
         compact_label: compact_label.into(),
         tone,
         active_tone,
+        min_width,
+        compact_below,
+        keep_priority: match id {
+            "modeline/left/model" => 3,
+            "modeline/right/session" => 2,
+            "modeline/right/turns" => 1,
+            _ => 0,
+        },
     }
 }
 
 #[test]
 fn minibuffer_geometry_preserves_bottom_hint_across_terminal_sizes() {
     let mut app = App::new(ModelEndpoint::new("provider", "model"));
+    install_test_commands(&mut app);
     for height in 7..=80 {
         for width in [10, 24, 40, 80, 120, 160] {
-            assert_eq!(
-                chatbox_height(
-                    &app,
-                    &marlin_agent_ui::UiLayoutPolicy::default(),
-                    width,
-                    height
-                ),
-                0
-            );
+            assert_eq!(chatbox_height(&app, &test_layout(), width, height), 0);
             for row in 0..=height + 1 {
                 assert_eq!(
-                    mouse_over_minibuffer(
-                        &app,
-                        &marlin_agent_ui::UiLayoutPolicy::default(),
-                        width,
-                        height,
-                        row
-                    ),
+                    mouse_over_minibuffer(&app, &test_layout(), width, height, row),
                     row == height,
                     "collapsed geometry at {width}x{height}, row {row}"
                 );
             }
 
             app.minibuffer_hovered = true;
-            let expanded = chatbox_height(
-                &app,
-                &marlin_agent_ui::UiLayoutPolicy::default(),
-                width,
-                height,
-            );
+            let expanded = chatbox_height(&app, &test_layout(), width, height);
             assert!((3..=10).contains(&expanded));
             assert!(expanded + 3 <= height);
             for row in 0..=height + 1 {
                 assert_eq!(
-                    mouse_over_minibuffer(
-                        &app,
-                        &marlin_agent_ui::UiLayoutPolicy::default(),
-                        width,
-                        height,
-                        row
-                    ),
+                    mouse_over_minibuffer(&app, &test_layout(), width, height, row),
                     row > height - expanded - 1 && row <= height,
                     "expanded geometry at {width}x{height}, row {row}"
                 );
@@ -125,25 +189,23 @@ fn minibuffer_geometry_preserves_bottom_hint_across_terminal_sizes() {
         }
     }
     app.composer.insert_text("draft survives pointer leave");
-    assert!(chatbox_height(&app, &marlin_agent_ui::UiLayoutPolicy::default(), 80, 30) >= 3);
-    assert!(!mouse_over_minibuffer(
-        &app,
-        &marlin_agent_ui::UiLayoutPolicy::default(),
-        80,
-        30,
-        1
-    ));
+    assert!(chatbox_height(&app, &test_layout(), 80, 30) >= 3);
+    assert!(!mouse_over_minibuffer(&app, &test_layout(), 80, 30, 1));
 }
 
 #[test]
 fn selected_layout_policy_changes_chatbox_and_hover_geometry() {
     let mut app = App::new(ModelEndpoint::new("provider", "model"));
+    install_test_commands(&mut app);
     app.minibuffer_hovered = true;
     app.composer.insert_text(&"draft ".repeat(100));
     let compact = marlin_agent_ui::UiLayoutPolicy {
         max_chatbox_rows: 5,
-        min_transcript_rows: 4,
-        ..Default::default()
+        message_frame: marlin_agent_ui::UiFrameSpec {
+            min_transcript_rows: 4,
+            ..test_layout().message_frame
+        },
+        ..test_layout()
     };
     let expanded = chatbox_height(&app, &compact, 24, 30);
     assert_eq!(expanded, 5);
@@ -168,18 +230,19 @@ proptest! {
     ) {
         use marlin_agent_ui::{UiComponentId, UiRegion, UiWorkbench};
         let mut app = App::new(ModelEndpoint::new("provider", "model"));
+    install_test_commands(&mut app);
         app.minibuffer_hovered = hovered;
         if draft {
             app.composer.insert_text("retained draft");
         }
-        let editor_rows = chatbox_height(&app, &marlin_agent_ui::UiLayoutPolicy::default(), width, height);
+        let editor_rows = chatbox_height(&app, &test_layout(), width, height);
         if hovered || draft {
             prop_assert!((3..=10).contains(&editor_rows));
         } else {
             prop_assert_eq!(editor_rows, 0);
         }
         let view = UiWorkbench {
-            layout: marlin_agent_ui::UiLayoutPolicy::default(),
+            layout: test_layout(),
             theme: marlin_agent_ui::UiTheme::default(),
             model_label: "provider/model".into(),
             session_label: "temporary".into(),
@@ -199,6 +262,8 @@ proptest! {
                 ].into_iter().map(selected_modeline_item).collect()),
             ],
             focus: UiComponentId::new("composer").unwrap(),
+            frame: test_frame(),
+            keymap: Vec::new(),
         };
         let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(width, height))
             .unwrap();
@@ -209,28 +274,50 @@ proptest! {
         let row = (0..width)
             .map(|x| terminal.backend().buffer()[(x, modeline_y)].symbol())
             .collect::<String>();
-        prop_assert!(row.contains("MARLIN"), "{width}x{height}: {row:?}");
+        prop_assert!(row.contains("BRAND"), "{width}x{height}: {row:?}");
         let top = (0..width)
             .map(|x| terminal.backend().buffer()[(x, 0)].symbol())
             .collect::<String>();
-        prop_assert!(!top.contains("MARLIN"), "redundant top status at {width}x{height}");
+        prop_assert!(!top.contains("BRAND"), "redundant top status at {width}x{height}");
     }
 }
 
 #[test]
 fn selecting_commands_runs_defaults_and_retains_required_arguments() {
     let mut app = App::new(ModelEndpoint::new("provider", "model"));
-    app.composer.insert_text("/s");
-    assert!(app.accept_command_completion("/sessions "));
-    assert_eq!(app.composer.text(), "/sessions ");
+    install_test_commands(&mut app);
+    app.composer.insert_text("s");
+    assert!(app.accept_command_completion("sessions"));
+    assert_eq!(app.composer.text(), "sessions");
+    assert!(app.accept_command_completion("sessions-next"));
+    assert_eq!(app.composer.text(), "sessions-next");
 
-    assert!(app.accept_command_completion("/diff "));
-    assert_eq!(app.composer.text(), "/diff ");
+    assert!(app.accept_command_completion("diff "));
+    assert_eq!(app.composer.text(), "diff ");
 
-    assert!(!app.accept_command_completion("/model "));
-    assert_eq!(app.composer.text(), "/model ");
-    assert!(!app.accept_command_completion("/history "));
-    assert_eq!(app.composer.text(), "/history ");
+    assert!(!app.accept_command_completion("model "));
+    assert_eq!(app.composer.text(), "model ");
+    assert!(app.accept_command_completion("history"));
+    assert_eq!(app.composer.text(), "history");
+    assert!(app.accept_command_completion("history-older"));
+    assert_eq!(app.composer.text(), "history-older");
+}
+
+#[test]
+fn opening_mx_selects_the_visible_first_candidate_before_arrow_navigation() {
+    let mut app = App::new(ModelEndpoint::new("provider", "model"));
+    install_test_commands(&mut app);
+    app.toggle_command();
+    app.command_candidates = vec![marlin_agent_ui::UiCommandName::new("help").unwrap()];
+    app.seed_command_selection();
+    assert_eq!(
+        app.selected_command().map(|name| name.as_str()),
+        Some("help")
+    );
+    app.composer.insert_text("m");
+    assert!(app.selected_command().is_none());
+    app.command_candidates = vec![marlin_agent_ui::UiCommandName::new("models").unwrap()];
+    assert_eq!(app.menu_navigation_anchor().unwrap().as_str(), "models");
 }
 
 fn draw(
@@ -241,7 +328,7 @@ fn draw(
 ) -> usize {
     use marlin_agent_ui::{UiComponentId, UiRegion, UiWorkbench};
     let view = UiWorkbench {
-        layout: marlin_agent_ui::UiLayoutPolicy::default(),
+        layout: test_layout(),
         theme: marlin_agent_ui::UiTheme::default(),
         model_label: "test".into(),
         session_label: "test".into(),
@@ -252,137 +339,10 @@ fn draw(
             UiRegion::Status(vec![]),
         ],
         focus: UiComponentId::new("composer").unwrap(),
+        frame: test_frame(),
+        keymap: Vec::new(),
     };
     render_draw(frame, app, &view, cache, anchor)
-}
-
-#[test]
-fn command_menu_filters_scheme_descriptors_and_preserves_draft() {
-    use marlin_agent_ui::{UiCommand, UiCommandName, UiComponentId, UiRegion, UiWorkbench};
-    let mut app = App::new(ModelEndpoint::new("provider", "model"));
-    app.composer.insert_text("preserved draft");
-    app.toggle_command();
-    app.composer.insert_text("mo");
-    let command = |name, description: &str| UiCommand {
-        name: UiCommandName::new(name).unwrap(),
-        description: description.into(),
-        accepts_arguments: false,
-    };
-    let view = UiWorkbench {
-        layout: marlin_agent_ui::UiLayoutPolicy::default(),
-        theme: marlin_agent_ui::UiTheme::default(),
-        model_label: "model".into(),
-        session_label: "session".into(),
-        regions: vec![
-            UiRegion::Transcript,
-            UiRegion::Composer,
-            UiRegion::Commands(vec![
-                command("/help", "Keyboard shortcuts"),
-                command("/models", "List models"),
-            ]),
-            UiRegion::Status(vec![]),
-        ],
-        focus: UiComponentId::new("composer").unwrap(),
-    };
-    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(60, 10)).unwrap();
-    terminal
-        .draw(|frame| {
-            render_draw(
-                frame,
-                &app,
-                &view,
-                &mut Default::default(),
-                &mut Default::default(),
-            );
-        })
-        .unwrap();
-    let buffer = terminal.backend().buffer();
-    let text: String = (0..10)
-        .flat_map(|y| (0..60).map(move |x| buffer[(x, y)].symbol()))
-        .collect();
-    assert!(text.contains("List models"), "{text}");
-    assert!(text.contains("M-x · Commands"), "{text}");
-    assert!(text.contains("1/1  M-x"), "{text}");
-    assert!(!text.contains("/models"), "{text}");
-    assert!(!text.contains("Keyboard shortcuts"), "{text}");
-    app.toggle_command();
-    assert_eq!(app.composer.text(), "preserved draft");
-    app.composer.take();
-    app.composer.insert_text("/mo");
-    terminal
-        .draw(|frame| {
-            render_draw(
-                frame,
-                &app,
-                &view,
-                &mut Default::default(),
-                &mut Default::default(),
-            );
-        })
-        .unwrap();
-    let buffer = terminal.backend().buffer();
-    let text: String = (0..10)
-        .flat_map(|y| (0..60).map(move |x| buffer[(x, y)].symbol()))
-        .collect();
-    assert!(text.contains("List models"), "{text}");
-    assert!(text.contains("Tab complete"), "{text}");
-}
-
-#[test]
-fn command_menu_scrolls_to_the_selected_entry() {
-    use marlin_agent_ui::{UiCommand, UiCommandName, UiComponentId, UiRegion, UiWorkbench};
-    let mut app = App::new(ModelEndpoint::new("provider", "model"));
-    app.toggle_command();
-    let names = [
-        "/help",
-        "/models",
-        "/model",
-        "/sessions",
-        "/session",
-        "/clear",
-    ];
-    let commands = names
-        .into_iter()
-        .map(|name| UiCommand {
-            name: UiCommandName::new(name).unwrap(),
-            description: name.into(),
-            accepts_arguments: false,
-        })
-        .collect();
-    let view = UiWorkbench {
-        layout: marlin_agent_ui::UiLayoutPolicy::default(),
-        theme: marlin_agent_ui::UiTheme::default(),
-        model_label: "model".into(),
-        session_label: "session".into(),
-        regions: vec![
-            UiRegion::Transcript,
-            UiRegion::Composer,
-            UiRegion::Commands(commands),
-            UiRegion::Status(vec![]),
-        ],
-        focus: UiComponentId::new("composer").unwrap(),
-    };
-    app.command_selection = Some(("/".into(), UiCommandName::new("/clear").unwrap()));
-    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(60, 10)).unwrap();
-    terminal
-        .draw(|frame| {
-            render_draw(
-                frame,
-                &app,
-                &view,
-                &mut Default::default(),
-                &mut Default::default(),
-            );
-        })
-        .unwrap();
-    let buffer = terminal.backend().buffer();
-    let text: String = (0..10)
-        .flat_map(|y| (0..60).map(move |x| buffer[(x, y)].symbol()))
-        .collect();
-    assert!(text.contains("› clear"), "{text}");
-    assert!(!text.contains("help  /help"), "{text}");
-    app.composer.insert_text("h");
-    assert!(app.selected_command().is_none());
 }
 
 #[test]
@@ -390,7 +350,7 @@ fn render_uses_the_admitted_scheme_focus() {
     use marlin_agent_ui::{UiComponentId, UiRegion, UiWorkbench};
     let app = App::new(ModelEndpoint::new("provider", "model"));
     let view = UiWorkbench {
-        layout: marlin_agent_ui::UiLayoutPolicy::default(),
+        layout: test_layout(),
         theme: marlin_agent_ui::UiTheme::default(),
         model_label: "model".into(),
         session_label: "session".into(),
@@ -401,6 +361,8 @@ fn render_uses_the_admitted_scheme_focus() {
             UiRegion::Status(vec![]),
         ],
         focus: UiComponentId::new("transcript").unwrap(),
+        frame: test_frame(),
+        keymap: Vec::new(),
     };
     let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 10)).unwrap();
     terminal
@@ -417,7 +379,7 @@ fn render_uses_the_admitted_scheme_focus() {
     let status: String = (0..80)
         .map(|x| terminal.backend().buffer()[(x, 9)].symbol())
         .collect();
-    assert!(status.contains("Transcript: Up/Down scroll"), "{status}");
+    assert!(status.contains("Transcript: scroll to browse"), "{status}");
 }
 
 #[test]
@@ -443,12 +405,14 @@ fn render_keeps_focused_extension_visible_and_sanitizes_its_label() {
     }
     regions.push(UiRegion::Status(vec![]));
     let view = UiWorkbench {
-        layout: marlin_agent_ui::UiLayoutPolicy::default(),
+        layout: test_layout(),
         theme: marlin_agent_ui::UiTheme::default(),
         model_label: "model".into(),
         session_label: "session".into(),
         regions,
         focus: UiComponentId::new("third").unwrap(),
+        frame: test_frame(),
+        keymap: Vec::new(),
     };
     let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(40, 8)).unwrap();
     terminal
@@ -476,7 +440,7 @@ fn render_focused_scheme_content_on_narrow_and_wide_terminals() {
     use marlin_agent_ui::{UiComponentId, UiContent, UiRegion, UiWorkbench};
     let app = App::new(ModelEndpoint::new("provider", "model"));
     let view = UiWorkbench {
-        layout: marlin_agent_ui::UiLayoutPolicy::default(),
+        layout: test_layout(),
         theme: marlin_agent_ui::UiTheme::default(),
         model_label: "model".into(),
         session_label: "session".into(),
@@ -499,6 +463,8 @@ fn render_focused_scheme_content_on_narrow_and_wide_terminals() {
             UiRegion::Status(vec![]),
         ],
         focus: UiComponentId::new("details").unwrap(),
+        frame: test_frame(),
+        keymap: Vec::new(),
     };
     for width in [80, 120] {
         let mut terminal =
@@ -530,7 +496,7 @@ fn unfocused_extension_does_not_create_a_default_sidebar() {
     use marlin_agent_ui::{UiComponentId, UiContent, UiRegion, UiWorkbench};
     let app = App::new(ModelEndpoint::new("provider", "model"));
     let view = UiWorkbench {
-        layout: marlin_agent_ui::UiLayoutPolicy::default(),
+        layout: test_layout(),
         theme: marlin_agent_ui::UiTheme::default(),
         model_label: "model".into(),
         session_label: "session".into(),
@@ -547,6 +513,8 @@ fn unfocused_extension_does_not_create_a_default_sidebar() {
             UiRegion::Status(vec![]),
         ],
         focus: UiComponentId::new("composer").unwrap(),
+        frame: test_frame(),
+        keymap: Vec::new(),
     };
     for width in [80, 120] {
         let mut terminal =
@@ -572,148 +540,11 @@ fn unfocused_extension_does_not_create_a_default_sidebar() {
 }
 
 #[test]
-fn selected_modeline_is_colored_and_sits_above_the_collapsible_minibuffer() {
-    use marlin_agent_ui::{UiComponentId, UiRegion, UiStatusItem, UiWorkbench};
-    let mut app = App::new(ModelEndpoint::new("deepseek", "chat"));
-    assert!(app.transcript.is_empty());
-    let mut view = UiWorkbench {
-        layout: marlin_agent_ui::UiLayoutPolicy::default(),
-        theme: marlin_agent_ui::UiTheme::default(),
-        model_label: "deepseek/chat".into(),
-        session_label: "session-one".into(),
-        regions: vec![
-            UiRegion::Transcript,
-            UiRegion::Composer,
-            UiRegion::Commands(vec![]),
-            UiRegion::Status(vec![
-                selected_modeline_item("modeline/left/brand"),
-                selected_modeline_item("modeline/left/model"),
-                selected_modeline_item("modeline/left/activity"),
-                selected_modeline_item("modeline/right/turns"),
-                selected_modeline_item("modeline/right/session"),
-                selected_modeline_item("modeline/state/online"),
-                selected_modeline_item("modeline/state/offline"),
-                selected_modeline_item("modeline/state/unknown"),
-                UiStatusItem::host(UiComponentId::new("ready").unwrap(), "Ready"),
-            ]),
-        ],
-        focus: UiComponentId::new("composer").unwrap(),
-    };
-    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 12)).unwrap();
-    fn paint(
-        terminal: &mut ratatui::Terminal<ratatui::backend::TestBackend>,
-        app: &App,
-        view: &UiWorkbench,
-    ) {
-        terminal
-            .draw(|frame| {
-                render_draw(
-                    frame,
-                    app,
-                    view,
-                    &mut Default::default(),
-                    &mut Default::default(),
-                );
-            })
-            .unwrap();
-    }
-    paint(&mut terminal, &app, &view);
-    let row = |terminal: &ratatui::Terminal<ratatui::backend::TestBackend>, y| {
-        (0..80)
-            .map(|x| terminal.backend().buffer()[(x, y)].symbol())
-            .collect::<String>()
-    };
-    assert!(row(&terminal, 10).contains("MARLIN"));
-    assert!(row(&terminal, 10).contains("🐟"));
-    assert!(row(&terminal, 10).contains("deepseek/chat"));
-    assert!(row(&terminal, 10).contains("🟡"), "{}", row(&terminal, 10));
-    assert!(row(&terminal, 10).contains("Ready"));
-    assert!(row(&terminal, 10).contains("session-one"));
-    assert!(row(&terminal, 11).contains("Ready"));
-    assert_eq!(
-        terminal.backend().buffer()[(20, 10)].bg,
-        ratatui::style::Color::Rgb(28, 31, 36)
-    );
-    assert_eq!(
-        terminal.backend().buffer()[(4, 10)].bg,
-        ratatui::style::Color::Rgb(198, 120, 221)
-    );
-    assert_eq!(
-        terminal.backend().buffer()[(0, 0)].bg,
-        ratatui::style::Color::Rgb(40, 44, 52)
-    );
-    view.theme.canvas = marlin_agent_ui::UiRgb::new(12, 34, 56);
-    view.theme.accent = marlin_agent_ui::UiRgb::new(246, 48, 68);
-    paint(&mut terminal, &app, &view);
-    assert_eq!(
-        terminal.backend().buffer()[(0, 0)].bg,
-        ratatui::style::Color::Rgb(12, 34, 56)
-    );
-    assert_eq!(
-        terminal.backend().buffer()[(4, 10)].bg,
-        ratatui::style::Color::Rgb(246, 48, 68)
-    );
-    app.gateway_observation = GatewayObservation::Online;
-    paint(&mut terminal, &app, &view);
-    assert!(row(&terminal, 10).contains("🟢"));
-    assert!(row(&terminal, 10).contains("Online"));
-    app.gateway_observation = GatewayObservation::Offline;
-    paint(&mut terminal, &app, &view);
-    assert!(row(&terminal, 10).contains("🔴"));
-    assert!(row(&terminal, 10).contains("Offline"));
-    assert!(super::render::mouse_over_minibuffer(
-        &app,
-        &marlin_agent_ui::UiLayoutPolicy::default(),
-        80,
-        12,
-        12
-    ));
-    assert!(!super::render::mouse_over_minibuffer(
-        &app,
-        &marlin_agent_ui::UiLayoutPolicy::default(),
-        80,
-        12,
-        10
-    ));
-
-    app.minibuffer_hovered = true;
-    paint(&mut terminal, &app, &view);
-    assert!(row(&terminal, 8).contains("Message"));
-    assert!(row(&terminal, 7).contains("MARLIN"));
-    assert!(super::render::mouse_over_minibuffer(
-        &app,
-        &marlin_agent_ui::UiLayoutPolicy::default(),
-        80,
-        12,
-        9
-    ));
-    assert!(!super::render::mouse_over_minibuffer(
-        &app,
-        &marlin_agent_ui::UiLayoutPolicy::default(),
-        80,
-        12,
-        7
-    ));
-    app.minibuffer_hovered = false;
-    app.composer.insert_text("draft survives hover exit");
-    paint(&mut terminal, &app, &view);
-    assert!(row(&terminal, 8).contains("Message"));
-    assert!(row(&terminal, 9).contains("draft survives hover exit"));
-
-    view.session_label = "archive/日本語/critical-session-42".into();
-    paint(&mut terminal, &app, &view);
-    let line = row(&terminal, 7);
-    assert!(line.contains("critical-session-42"), "{line}");
-    assert!(line.contains('…'), "{line}");
-    assert!(!line.contains("archive"), "{line}");
-}
-
-#[test]
 fn render_status_contributions_respects_focus_and_terminal_height() {
     use marlin_agent_ui::{UiComponentId, UiRegion, UiStatusItem, UiWorkbench};
     let app = App::new(ModelEndpoint::new("provider", "model"));
     let view = UiWorkbench {
-        layout: marlin_agent_ui::UiLayoutPolicy::default(),
+        layout: test_layout(),
         theme: marlin_agent_ui::UiTheme::default(),
         model_label: "model".into(),
         session_label: "session".into(),
@@ -733,6 +564,8 @@ fn render_status_contributions_respects_focus_and_terminal_height() {
             ]),
         ],
         focus: UiComponentId::new("extension").unwrap(),
+        frame: test_frame(),
+        keymap: Vec::new(),
     };
     for height in [8, 9] {
         let mut terminal =
@@ -762,6 +595,7 @@ fn render_status_contributions_respects_focus_and_terminal_height() {
 #[test]
 fn history_search_previews_then_accepts_without_submitting() {
     let mut app = App::new(ModelEndpoint::new("openai", "test"));
+    install_test_commands(&mut app);
     app.history = Arc::new(vec![
         user_gateway_message("find this"),
         assistant_gateway_message("reply"),
@@ -796,6 +630,7 @@ fn history_search_previews_then_accepts_without_submitting() {
 #[test]
 fn unfinished_history_search_cannot_accept_an_old_preview() {
     let mut app = App::new(ModelEndpoint::new("openai", "test"));
+    install_test_commands(&mut app);
     app.history = Arc::new(vec![user_gateway_message("x".repeat(100_000))]);
     app.composer.insert_text("preserve draft");
     app.start_history_search();
@@ -812,6 +647,7 @@ fn unfinished_history_search_cannot_accept_an_old_preview() {
 #[test]
 fn transcript_starts_at_the_top_without_a_duplicate_status_heading() {
     let mut app = App::new(ModelEndpoint::new("deepseek", "chat\u{1b}[2J"));
+    install_test_commands(&mut app);
     app.transcript
         .push(("You".into(), "actual conversation".into()));
     let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(100, 12)).unwrap();
@@ -837,6 +673,7 @@ fn transcript_starts_at_the_top_without_a_duplicate_status_heading() {
 #[test]
 fn runtime_receipt_uses_the_full_content_width() {
     let mut app = App::new(ModelEndpoint::new("deepseek", "chat"));
+    install_test_commands(&mut app);
     app.set_runtime_edge(
         RuntimeEdgePolicy::new()
             .with_timeout_ms(1234)
@@ -870,6 +707,7 @@ fn runtime_receipt_uses_the_full_content_width() {
 #[test]
 fn minibuffer_expands_with_the_draft_and_leaves_a_transcript_row() {
     let mut app = App::new(ModelEndpoint::new("openai", "gpt-test"));
+    install_test_commands(&mut app);
     app.transcript = Transcript::new(vec![("You".into(), "visible transcript".into())]);
     let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(40, 12)).unwrap();
     let mut cache = TranscriptViewportCache::default();
@@ -907,6 +745,7 @@ fn minibuffer_expands_with_the_draft_and_leaves_a_transcript_row() {
 #[test]
 fn rejected_draft_insertion_is_visible_in_the_terminal_status() {
     let mut app = App::new(ModelEndpoint::new("openai", "gpt-test"));
+    install_test_commands(&mut app);
     app.composer.insert_text(&"a".repeat(1024 * 1024));
     app.composer.insert('b');
     let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(100, 12)).unwrap();
@@ -925,6 +764,12 @@ fn rejected_draft_insertion_is_visible_in_the_terminal_status() {
     assert_eq!(app.composer.text().len(), 1024 * 1024);
 }
 
+#[path = "app_cases/continuation.rs"]
+mod continuation;
+#[path = "app_cases/gateway.rs"]
+mod gateway;
+#[path = "app_cases/ui.rs"]
+mod ui;
 #[derive(Clone)]
 struct FixtureGateway {
     requests: Arc<Mutex<Vec<ModelGatewayRequest>>>,
@@ -957,8 +802,3 @@ impl ModelStreamingGateway for FixtureGateway {
         })
     }
 }
-
-#[path = "app_cases/continuation.rs"]
-mod continuation;
-#[path = "app_cases/gateway.rs"]
-mod gateway;

@@ -4,21 +4,24 @@
 
 //! Admission of functional Scheme UI states into the terminal owner.
 
-use super::command::CommandKind;
+use super::command::Command;
 use gerbil_scheme::GerbilRuntime;
 #[cfg(feature = "linked-ui")]
 use marlin_agent_ui::UiLinkedExports;
 use marlin_agent_ui::{
-    UiBrowseDirection, UiCommandName, UiEvent, UiIntent, UiModule, UiNativeSession, UiOpenFacts,
-    UiProjectionError, UiWorkbench,
+    UiBrowseDirection, UiCommandName, UiEditorAction, UiEvent, UiHydra, UiHydraForeign, UiIntent,
+    UiKeyCommand, UiModule, UiNativeSession, UiOpenFacts, UiProjectionError, UiWorkbench,
 };
 use termion::event::Key;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum UiKeyAction {
     Handled,
     Submit,
     OpenCommands,
+    Cancel,
+    Edit(UiEditorAction),
+    InvokeCommand(UiCommandName),
     Scroll(bool),
     Unhandled,
 }
@@ -27,6 +30,9 @@ pub(crate) struct UiHost<'runtime> {
     module: UiModule<'runtime>,
     session: UiNativeSession<'runtime>,
     view: UiWorkbench,
+    key_prefix: Vec<String>,
+    hydra: Option<UiHydra>,
+    hydra_warning: bool,
 }
 
 impl<'runtime> UiHost<'runtime> {
@@ -76,11 +82,24 @@ impl<'runtime> UiHost<'runtime> {
             module,
             session,
             view,
+            key_prefix: Vec::new(),
+            hydra: None,
+            hydra_warning: false,
         })
     }
 
     pub(crate) fn view(&self) -> &UiWorkbench {
         &self.view
+    }
+
+    pub(crate) fn hydra_hint(&self) -> Option<&str> {
+        self.hydra.as_ref().map(|hydra| {
+            if self.hydra_warning {
+                hydra.warning_hint.as_str()
+            } else {
+                hydra.hint.as_str()
+            }
+        })
     }
 
     pub(crate) fn refresh_labels(
@@ -98,6 +117,8 @@ impl<'runtime> UiHost<'runtime> {
             || candidate.session_label != session
             || candidate.regions != self.view.regions
             || candidate.focus != self.view.focus
+            || candidate.frame != self.view.frame
+            || candidate.keymap != self.view.keymap
         {
             return Err(UiProjectionError::Invalid(
                 "UI label refresh changed the workbench",
@@ -112,46 +133,90 @@ impl<'runtime> UiHost<'runtime> {
         command_active || self.view.focus.as_str() == "composer"
     }
 
-    pub(crate) fn complete_command(&self, draft: &str) -> Option<String> {
-        complete_command(&self.view, draft)
-    }
-
-    pub(crate) fn browse_command(
+    pub(crate) fn command_candidates(
         &self,
         query: &str,
+    ) -> Result<Vec<UiCommandName>, UiProjectionError> {
+        let names = self.module.command_candidates(&self.session, query)?;
+        if names.iter().any(|name| {
+            !self
+                .view
+                .commands()
+                .iter()
+                .any(|command| &command.name == name)
+        }) {
+            return Err(UiProjectionError::Invalid(
+                "command candidate is not in the admitted catalog",
+            ));
+        }
+        Ok(names)
+    }
+
+    pub(crate) fn complete_command(
+        &self,
+        draft: &str,
+        candidates: &[UiCommandName],
+    ) -> Option<String> {
+        complete_command(&self.view, draft, candidates)
+    }
+
+    pub(crate) fn browse_command_steps(
+        &self,
+        query: &str,
+        candidates: &[UiCommandName],
         previous: Option<&UiCommandName>,
         direction: UiBrowseDirection,
+        steps: u8,
     ) -> Result<Option<UiCommandName>, UiProjectionError> {
-        let choice = self
-            .module
-            .browse_command(&self.session, query, previous, direction)?;
-        admit_command_choice(&self.view, query, choice.as_ref())?;
+        let choice = self.module.browse_command_steps(
+            &self.session,
+            marlin_agent_ui::UiBrowseRequest {
+                query,
+                previous,
+                direction,
+                steps,
+            },
+        )?;
+        admit_command_choice(candidates, choice.as_ref())?;
         Ok(choice)
     }
 
     pub(crate) fn complete_selected_command(
         &self,
-        query: &str,
+        candidates: &[UiCommandName],
         selected: &UiCommandName,
     ) -> Option<String> {
-        let command =
-            self.view.commands().iter().find(|command| {
-                &command.name == selected && selected.as_str().starts_with(query)
-            })?;
+        if !candidates.contains(selected) {
+            return None;
+        }
+        let command = self
+            .view
+            .commands()
+            .iter()
+            .find(|command| &command.name == selected)?;
         let mut result = command.name.as_str().to_owned();
-        if command.accepts_arguments {
+        if command.accepts_arguments() {
             result.push(' ');
         }
         Some(result)
     }
 
-    pub(crate) fn has_command_prefix(&self, draft: &str) -> bool {
-        UiCommandName::is_valid_prefix(draft)
-            && self
-                .view
-                .commands()
-                .iter()
-                .any(|command| command.name.as_str().starts_with(draft))
+    /// Resolve the Mini Buffer's default choice through Scheme's ordered menu.
+    pub(crate) fn accept_command(
+        &self,
+        query: &str,
+        candidates: &[UiCommandName],
+        selected: Option<&UiCommandName>,
+    ) -> Result<Option<String>, UiProjectionError> {
+        if let Some(name) = selected {
+            return Ok(self.complete_selected_command(candidates, name));
+        }
+        if let Some(completed) = self.complete_command(query, candidates) {
+            return Ok(Some(completed));
+        }
+        Ok(candidates
+            .first()
+            .and_then(|name| self.complete_selected_command(candidates, name)))
     }
 
     pub(crate) fn route_key(
@@ -160,6 +225,55 @@ impl<'runtime> UiHost<'runtime> {
         command_active: bool,
         draft_is_command: bool,
     ) -> Result<UiKeyAction, UiProjectionError> {
+        if let Some(hydra) = &self.hydra {
+            self.hydra_warning = false;
+            if matches!(key, Key::Esc | Key::Ctrl('g')) {
+                self.hydra = None;
+                return Ok(UiKeyAction::Handled);
+            }
+            if let Some(head) = key_token(key)
+                .and_then(|token| hydra.heads.iter().find(|head| head.key.as_str() == token))
+            {
+                let command = head.command.clone();
+                if head.exit {
+                    self.hydra = None;
+                }
+                return Ok(command.map_or(UiKeyAction::Handled, UiKeyAction::InvokeCommand));
+            }
+            match hydra.foreign {
+                UiHydraForeign::Exit => self.hydra = None,
+                UiHydraForeign::Warn => {
+                    self.hydra_warning = true;
+                    return Ok(UiKeyAction::Handled);
+                }
+                UiHydraForeign::Run => {}
+            }
+        }
+        if !self.key_prefix.is_empty() {
+            let mut sequence = std::mem::take(&mut self.key_prefix);
+            if let Some(token) = key_token(key) {
+                sequence.push(token);
+                let keys: Vec<_> = sequence.iter().map(String::as_str).collect();
+                if let Some(command) = self.view.key_command(&keys) {
+                    return Ok(self.key_command_action(command));
+                }
+                if self.view.key_prefix(&keys) {
+                    self.key_prefix = sequence;
+                    return Ok(UiKeyAction::Handled);
+                }
+            }
+        }
+        if matches!(key, Key::Ctrl(_) | Key::Alt(_))
+            && let Some(token) = key_token(key)
+        {
+            if let Some(command) = self.view.key_command(&[&token]) {
+                return Ok(self.key_command_action(command));
+            }
+            if self.view.key_prefix(&[&token]) {
+                self.key_prefix = vec![token];
+                return Ok(UiKeyAction::Handled);
+            }
+        }
         match key {
             Key::Char('\t') if !command_active => {
                 self.dispatch(UiEvent::NextFocus)?;
@@ -197,9 +311,23 @@ impl<'runtime> UiHost<'runtime> {
         }
     }
 
+    fn key_command_action(&mut self, command: UiKeyCommand) -> UiKeyAction {
+        match command {
+            UiKeyCommand::OpenCommands => UiKeyAction::OpenCommands,
+            UiKeyCommand::Cancel => UiKeyAction::Cancel,
+            UiKeyCommand::Edit(action) => UiKeyAction::Edit(action),
+            UiKeyCommand::Invoke(name) => UiKeyAction::InvokeCommand(name),
+            UiKeyCommand::Hydra(hydra) => {
+                self.hydra_warning = false;
+                self.hydra = Some(hydra);
+                UiKeyAction::Handled
+            }
+        }
+    }
+
     /// Publish a successor only after its projection and intent agree.
     pub(crate) fn dispatch(&mut self, event: UiEvent) -> Result<UiIntent, UiProjectionError> {
-        let (successor, intent) = self.module.dispatch(&self.session, event)?;
+        let (successor, intent) = self.module.dispatch(&self.session, event.clone())?;
         let candidate = self.module.project(&successor)?;
         admit_transition(&self.view, &candidate, event, &intent)?;
         self.session = successor;
@@ -208,16 +336,21 @@ impl<'runtime> UiHost<'runtime> {
     }
 }
 
+fn key_token(key: Key) -> Option<String> {
+    match key {
+        Key::Ctrl(value) if value.is_ascii_alphanumeric() => Some(format!("C-{value}")),
+        Key::Alt(value) if value.is_ascii_alphanumeric() => Some(format!("M-{value}")),
+        Key::Char(value) if value.is_ascii_alphanumeric() => Some(value.to_string()),
+        _ => None,
+    }
+}
+
 fn admit_command_choice(
-    view: &UiWorkbench,
-    query: &str,
+    candidates: &[UiCommandName],
     choice: Option<&UiCommandName>,
 ) -> Result<(), UiProjectionError> {
     if let Some(name) = choice
-        && !view
-            .commands()
-            .iter()
-            .any(|command| &command.name == name && name.as_str().starts_with(query))
+        && !candidates.contains(name)
     {
         return Err(UiProjectionError::Invalid(
             "command choice is not in the admitted menu",
@@ -226,41 +359,86 @@ fn admit_command_choice(
     Ok(())
 }
 
-fn complete_command(view: &UiWorkbench, draft: &str) -> Option<String> {
+fn complete_command(
+    view: &UiWorkbench,
+    draft: &str,
+    candidates: &[UiCommandName],
+) -> Option<String> {
     if !UiCommandName::is_valid_prefix(draft) {
         return None;
     }
-    let mut candidates = view
-        .commands()
-        .iter()
-        .filter(|command| command.name.as_str().starts_with(draft));
-    let first = candidates.next()?;
-    let exact = view
-        .commands()
-        .iter()
-        .find(|command| command.name.as_str() == draft);
+    let first = candidates.first()?;
+    let exact = candidates.iter().find(|name| name.as_str() == draft);
     let selected = match exact {
-        Some(command) => command,
-        None if candidates.next().is_none() => first,
+        Some(name) => name,
+        None if candidates.len() == 1 => first,
         None => return None,
     };
+    let selected = view
+        .commands()
+        .iter()
+        .find(|command| &command.name == selected)?;
     let mut completed = selected.name.as_str().to_owned();
-    if selected.accepts_arguments {
+    if selected.accepts_arguments() {
         completed.push(' ');
     }
     (completed != draft).then_some(completed)
 }
 
 fn admit_terminal_view(view: &UiWorkbench) -> Result<(), UiProjectionError> {
-    for command in view.commands() {
-        let Some(kind) = CommandKind::from_name(command.name.as_str()) else {
-            return Err(UiProjectionError::Invalid(
-                "command has no registered terminal handler",
-            ));
+    let admitted_command = |name: &UiCommandName| {
+        view.commands().iter().any(|command| {
+            &command.name == name && command.arguments == marlin_agent_ui::UiCommandArguments::None
+        })
+    };
+    for binding in &view.keymap {
+        let valid = match &binding.command {
+            UiKeyCommand::Invoke(name) => admitted_command(name),
+            UiKeyCommand::Hydra(hydra) => hydra
+                .heads
+                .iter()
+                .all(|head| head.command.as_ref().is_none_or(&admitted_command)),
+            _ => true,
         };
-        if command.accepts_arguments != kind.accepts_arguments() {
+        if !valid {
             return Err(UiProjectionError::Invalid(
-                "command argument description disagrees with handler",
+                "UI key binding names an unavailable command",
+            ));
+        }
+    }
+    if view.frame.windows.len() != 1
+        || view.frame.id.as_str() != "main"
+        || view.frame.selected_window.as_str() != "main"
+        || view.frame.minibuffer.as_str() != "minibuffer"
+        || view.frame.buffers.iter().any(|buffer| {
+            !matches!(buffer.as_str(), "conversation" | "messages" | "processes")
+                && !view.regions.iter().any(|region| {
+                    matches!(region,
+                    marlin_agent_ui::UiRegion::Extension { id, focusable: false, .. }
+                        if id.as_str() == buffer.as_str())
+                })
+        })
+        || view.frame.selected_buffer().is_none()
+    {
+        return Err(UiProjectionError::Invalid(
+            "unsupported terminal frame binding",
+        ));
+    }
+    for command in view.commands() {
+        if !Command::admit(command) {
+            return Err(UiProjectionError::Invalid(
+                "command capability has no registered terminal handler",
+            ));
+        }
+        if command.capability == marlin_agent_ui::UiCommandCapability::SelectBuffer
+            && !view
+                .frame
+                .buffers
+                .iter()
+                .any(|buffer| Some(buffer.as_str()) == command.value.as_deref())
+        {
+            return Err(UiProjectionError::Invalid(
+                "command selects an unavailable buffer",
             ));
         }
     }

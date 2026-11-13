@@ -15,6 +15,8 @@ unsafe extern "C" {
     fn marlin_ui_project_workbench(root: i64) -> i64;
     fn marlin_ui_dispatch_event(root: i64) -> i64;
     fn marlin_ui_browse_command(root: i64) -> i64;
+    fn marlin_ui_command_candidates(root: i64) -> i64;
+    fn marlin_ui_review_menu(root: i64) -> i64;
     fn marlin_ui_refresh_labels(root: i64) -> i64;
 }
 
@@ -32,6 +34,8 @@ pub(crate) fn exports() -> UiLinkedExports {
         project: marlin_ui_project_workbench,
         dispatch: marlin_ui_dispatch_event,
         browse_command: marlin_ui_browse_command,
+        command_candidates: marlin_ui_command_candidates,
+        review_menu: marlin_ui_review_menu,
         refresh_labels: marlin_ui_refresh_labels,
     }
 }

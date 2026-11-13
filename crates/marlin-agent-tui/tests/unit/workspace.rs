@@ -9,21 +9,21 @@ use marlin_git_utils::{GitDiffScope, GitStatus};
 
 #[test]
 fn diff_selection_uses_json_path_and_explicit_scope() {
-    let WorkspaceQuery::Diff(request) = parse_query(r#"/diff "file [1].txt""#).unwrap() else {
+    let WorkspaceQuery::Diff(request) = parse_query(r#"diff "file [1].txt""#).unwrap() else {
         panic!("diff")
     };
     assert_eq!(request.scope, GitDiffScope::Worktree);
     assert_eq!(request.path.unwrap().as_str(), "file [1].txt");
-    let WorkspaceQuery::Diff(request) = parse_query(r#"/diff staged "name\nnext""#).unwrap() else {
+    let WorkspaceQuery::Diff(request) = parse_query(r#"diff staged "name\nnext""#).unwrap() else {
         panic!("diff")
     };
     assert_eq!(request.scope, GitDiffScope::Index);
     assert_eq!(request.path.unwrap().as_str(), "name\nnext");
     for invalid in [
-        r#"/diff "../private""#,
-        r#"/diff "/absolute""#,
-        "/diff file.txt",
-        r#"/diff "file" trailing"#,
+        r#"diff "../private""#,
+        r#"diff "/absolute""#,
+        "diff file.txt",
+        r#"diff "file" trailing"#,
     ] {
         assert!(parse_query(invalid).is_err(), "{invalid}");
     }
@@ -56,10 +56,25 @@ fn cancelled_read_must_retire_before_another_read_starts() {
         .unwrap();
     let path = std::env::current_dir().unwrap();
     let mut workspace = WorkspaceStatus::default();
-    assert!(workspace.start(&runtime, path.clone(), WorkspaceQuery::Status));
+    assert!(workspace.start(
+        &runtime,
+        &marlin_agent_runtime::SessionId::new("test"),
+        path.clone(),
+        WorkspaceQuery::Status
+    ));
     assert!(workspace.cancel());
-    assert!(!workspace.start(&runtime, path.clone(), WorkspaceQuery::Status));
+    assert!(!workspace.start(
+        &runtime,
+        &marlin_agent_runtime::SessionId::new("test"),
+        path.clone(),
+        WorkspaceQuery::Status
+    ));
     runtime.block_on(async { tokio::task::yield_now().await });
-    assert!(workspace.start(&runtime, path, WorkspaceQuery::Status));
+    assert!(workspace.start(
+        &runtime,
+        &marlin_agent_runtime::SessionId::new("test"),
+        path,
+        WorkspaceQuery::Status
+    ));
     assert!(workspace.cancel());
 }

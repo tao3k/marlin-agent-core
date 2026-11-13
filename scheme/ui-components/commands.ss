@@ -2,39 +2,86 @@
 ;;;
 ;;; SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
-;;; Command discovery is a selected UI module. Execution remains with the
-;;; Rust command catalog; these entries carry no handler or effect authority.
-(import (only-in :clan/poo/object .def .o .get .ref .mix seal-object!))
+;;; Names, descriptions, argument grammar and capability bindings have one
+;;; selected Scheme owner. The native host admits the capabilities and effects.
+(import (only-in :clan/poo/object .def .o .get .ref .mix seal-object!)
+        (only-in "./buffers.ss" marlin-ui-buffer-command-entries
+                 marlin-ui-buffer-alias-command-entries))
 (export marlin-ui-command-catalog marlin-ui-command-entries
-        marlin-ui-command-entries? marlin-ui-browse-command)
+        marlin-ui-command-entries? marlin-ui-command-candidates
+        marlin-ui-browse-command marlin-ui-profile-command-entries
+        marlin-ui-command-catalog-with-profiles marlin-ui-command-catalog-with-extensions)
 
 (.def UiCommandCatalog.
-  entries: '(("/help" "Keyboard shortcuts" #f)
-             ("/models" "List configured models" #f)
-             ("/model" "Select a model alias" #t)))
+  entries: (append (marlin-ui-buffer-alias-command-entries)
+                   '(("models" "List configured models" none models #f)
+                     ("model" "Select a model alias" required model #f))))
 (.def SessionCommands.
-  (entries => append '(("/sessions" "List sessions; next opens another page" #t)
-                       ("/session" "Open a quoted session ID" #t)
-                       ("/inspect" "Inspect a quoted session ID" #t)
-                       ("/history" "Browse older or newest history" #t))))
+  (entries => append '(("sessions" "List sessions" none sessions #f)
+                       ("sessions-next" "List the next session page" none sessions "next")
+                       ("session" "Open a quoted session ID" required session #f)
+                       ("inspect" "Inspect a quoted session ID" required inspect #f))))
 (.def WorkspaceCommands.
-  (entries => append '(("/status" "Show workspace status" #f)
-                       ("/diff" "Show unstaged or staged changes" #t)
-                       ("/context" "Show context budget" #f)
-                       ("/runtime" "Show runtime policy" #f)
-                       ("/clear" "Clear displayed transcript" #f))))
+  (entries => append '(("status" "Show workspace status" none workspace "status")
+                       ("diff" "Show unstaged or staged changes" optional workspace "diff")
+                       ("context" "Show context budget" none context #f)
+                       ("runtime" "Show runtime policy" none runtime #f)
+                       ("list-processes" "List managed Runtime processes" none select-buffer "processes")
+                       ("kill-process" "Stop a managed process by generation" required kill-process #f)
+                       ("switch-themes" "Theme: " none open-menu "theme-")
+                       ("switch-buffer" "Switch to: " none open-menu "buffer-"))
+                     (marlin-ui-buffer-command-entries)
+                     '(("toggle-thinking" "Expand or fold thinking (N from newest)" optional toggle-thinking #f)
+                       ("clear" "Clear displayed transcript" none clear #f))))
 ;;; The inherited slot computes one ordered catalog when the selected module
 ;;; reads it. No additional loader or imperative append registry is needed.
 (def marlin-ui-command-catalog
   (seal-object! (.mix WorkspaceCommands. SessionCommands. UiCommandCatalog.)))
 
+;;; The selected theme scope owns profiles. Components only turn its bounded
+;;; entries into native-admissible command descriptors.
+(def (marlin-ui-profile-command-entries profiles)
+  (let loop ((rest profiles) (remaining 8) (seen '()))
+    (cond ((null? rest) '())
+          ((or (zero? remaining) (not (pair? rest))
+               (not (list? (car rest))) (not (= (length (car rest)) 3)))
+           (error "invalid UI profile catalog"))
+          (else
+           (let* ((entry (car rest))
+                  (identity-value (car entry))
+                  (label (cadr entry)))
+             (unless (and (symbol? identity-value)
+                          (not (memq identity-value seen))
+                          (string? label) (<= (string-length label) 256))
+               (error "invalid UI profile entry"))
+             (let (name (symbol->string identity-value))
+               (unless (and (<= 1 (string-length name) 26)
+                            (string=? name (string-downcase name)))
+                 (error "invalid UI profile identity"))
+               (cons (list (string-append "theme-" name) label
+                           'none 'select-profile name)
+                     (loop (cdr rest) (- remaining 1)
+                           (cons identity-value seen)))))))))
+
+(def (marlin-ui-command-catalog-with-profiles catalog profiles)
+  (let (generated (marlin-ui-profile-command-entries profiles))
+    (.o entries:
+      (let insert ((rest (.get catalog entries)))
+        (cond ((null? rest) (error "missing theme command anchor"))
+              ((string=? (caar rest) "switch-buffer")
+               (append generated rest))
+              (else (cons (car rest) (insert (cdr rest)))))))))
+
 (def (command-entry? entry)
-  (and (pair? entry) (pair? (cdr entry)) (pair? (cddr entry))
-       (null? (cdddr entry))
-       (string? (car entry)) (<= 2 (string-length (car entry)) 32)
-       (string-prefix? "/" (car entry))
+  (and (list? entry) (= (length entry) 5)
+       (string? (car entry)) (<= 1 (string-length (car entry)) 32)
        (string? (cadr entry)) (<= (string-length (cadr entry)) 256)
-       (boolean? (caddr entry))))
+       (memq (caddr entry) '(none required optional))
+       (memq (cadddr entry)
+             '(models model sessions session inspect history workspace context runtime
+                    open-menu select-profile select-buffer kill-process toggle-thinking clear))
+       (let (value (car (cddddr entry)))
+         (or (not value) (and (string? value) (<= 1 (string-length value) 32))))))
 
 ;;; Admission is bounded before map/filter can traverse a supplied catalog.
 (def (marlin-ui-command-entries? entries)
@@ -44,29 +91,75 @@
                (not (command-entry? (car rest)))) #f)
           (else (loop (cdr rest) (- remaining 1))))))
 
+(def (marlin-ui-command-catalog-with-extensions catalog extensions)
+  (unless (marlin-ui-command-entries? extensions) (error "invalid extension commands"))
+  (let* ((base (.get catalog entries))
+         (names (map car (append base extensions))))
+    (let loop ((rest names))
+      (unless (null? rest)
+        (when (member (car rest) (cdr rest)) (error "duplicate UI command" (car rest)))
+        (loop (cdr rest))))
+    (.o entries:
+      (let insert ((rest base))
+        (cond ((null? rest) (error "missing command extension anchor"))
+              ((string=? (caar rest) "status") (append extensions rest))
+              (else (cons (car rest) (insert (cdr rest)))))))))
+
 (def (marlin-ui-command-entries catalog)
   (let (entries (.get catalog entries))
     (unless (marlin-ui-command-entries? entries) (error "invalid UI command catalog"))
     (map (lambda (entry)
-           (list (string-copy (car entry)) (string-copy (cadr entry)) (caddr entry)))
+           (list (string-copy (car entry)) (string-copy (cadr entry))
+                 (caddr entry) (cadddr entry)
+                 (let (value (car (cddddr entry)))
+                   (if value (string-copy value) #f))))
          entries)))
 
 ;;; A browse result is a presentation proposal, checked again by the host.
+(def (command-subsequence? query name)
+  (let ((needle-length (string-length query))
+        (name-length (string-length name)))
+    (let loop ((needle 0) (position 0))
+      (cond ((= needle needle-length) #t)
+            ((= position name-length) #f)
+            ((char=? (string-ref query needle) (string-ref name position))
+             (loop (+ needle 1) (+ position 1)))
+            (else (loop needle (+ position 1)))))))
+
+(def (marlin-ui-command-candidates entries query)
+  (unless (and (marlin-ui-command-entries? entries)
+               (string? query) (<= (string-length query) 32))
+    (error "invalid UI command candidate request"))
+  (let (prefixes (filter (lambda (entry) (string-prefix? query (car entry))) entries))
+    ;; Keep exact prefix results and their catalog order. Abbreviations fall
+    ;; back to a bounded subsequence scan only when no prefix matches.
+    (map car (if (pair? prefixes)
+               prefixes
+               (filter (lambda (entry) (command-subsequence? query (car entry)))
+                       entries)))))
+
 (def (marlin-ui-browse-command entries event)
   (let* ((query (.ref event 'query))
          (previous (.ref event 'previous))
-         (direction (.ref event 'direction)))
+         (direction (.ref event 'direction))
+         (steps (.ref event 'steps)))
     (unless (and (marlin-ui-command-entries? entries)
-                 (string? query) (<= 1 (string-length query) 32)
+                 (string? query) (<= 0 (string-length query) 32)
                  (or (not previous) (and (string? previous) (<= (string-length previous) 32)))
-                 (memq direction '(next previous)))
+                 (memq direction '(next previous))
+                 (integer? steps) (<= 1 steps 16))
       (error "invalid command browse event or catalog"))
-    (let* ((matches (map car (filter (lambda (entry) (string-prefix? query (car entry))) entries)))
-           (found (and previous (member previous matches)))
-           (choice (cond ((null? matches) #f)
-                         ((not found) (if (eq? direction 'next) (car matches) (car (reverse matches))))
-                         ((eq? direction 'next) (if (pair? (cdr found)) (cadr found) (car matches)))
-                         (else (let loop ((rest matches) (prior (car (reverse matches))))
-                                 (if (equal? (car rest) previous) prior
-                                     (loop (cdr rest) (car rest))))))))
+    (let* ((matches (marlin-ui-command-candidates entries query))
+           (count (length matches))
+           (found (and previous
+                       (let loop ((rest matches) (index 0))
+                         (cond ((null? rest) #f)
+                               ((equal? (car rest) previous) index)
+                               (else (loop (cdr rest) (+ index 1)))))))
+           (choice (if (zero? count) #f
+                     (list-ref matches
+                       (modulo (if found
+                                 (+ found (if (eq? direction 'next) steps (- steps)))
+                                 (if (eq? direction 'next) (- steps 1) (- count steps)))
+                               count)))))
       (.o kind: 'command-selection name: choice))))

@@ -16,6 +16,9 @@ macro_rules! marlin_rust_dev_gate {
     () => {
         $crate::asp_rust::asp_rust_cargo_test_gate!(mode = deny);
     };
+    (advice = allow) => {
+        $crate::asp_rust::asp_rust_cargo_test_gate!(advice = allow);
+    };
 }
 
 /// Mount one native ASP Rust gate for all Cargo workspace members.

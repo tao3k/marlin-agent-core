@@ -43,6 +43,7 @@ pub(crate) struct ReplayTurn {
 
 pub(crate) enum ReplayOutcome {
     Completed(ModelGatewayMessage),
+    ToolRequested(ModelGatewayMessage),
     Failed {
         diagnostic: String,
         partial: String,
@@ -126,6 +127,7 @@ fn projected_bytes(turn: &ConversationTurn) -> Option<usize> {
                         .map_or(0, |state| state.accounted_bytes()),
                 )
         }
+        Some(ConversationTurnOutcome::ToolRequested { response }) => response.heap_capacity(),
         Some(ConversationTurnOutcome::Failed {
             diagnostic,
             partial_text,
@@ -149,6 +151,9 @@ fn project_turn(turn: &ConversationTurn) -> ReplayTurn {
                 .message
                 .clone(),
         ),
+        Some(ConversationTurnOutcome::ToolRequested { response }) => {
+            ReplayOutcome::ToolRequested(response.choices[0].message.clone())
+        }
         Some(ConversationTurnOutcome::Failed {
             diagnostic,
             partial_text,

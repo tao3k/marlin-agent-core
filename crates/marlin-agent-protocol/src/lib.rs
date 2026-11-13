@@ -12,12 +12,18 @@ mod hook;
 mod loop_policy_ir;
 mod model;
 mod model_gateway;
+mod process;
 mod project_runtime;
 mod runtime_environment;
 mod runtime_state_home;
 mod scenario;
 mod sub_agent;
 mod trace;
+
+pub use process::{
+    BoundedProcessExecutor, BoundedProcessOutput, BoundedProcessRequest, ProcessExecutionError,
+    ProcessMemorySample, ProcessMemorySampler,
+};
 
 pub use agent_flow::{
     AgentFlowDerivedSession, AgentFlowIntent, AgentFlowIntentId, AgentFlowMemoryIntent,
@@ -100,7 +106,9 @@ pub use model_gateway::{
     ModelGatewayCompletionChoice, ModelGatewayCompletionOptions, ModelGatewayCompletionResponse,
     ModelGatewayError, ModelGatewayFuture, ModelGatewayMessage, ModelGatewayMessageRole,
     ModelGatewayRequest, ModelGatewayResult, ModelGatewayTransport, ModelStreamInterruption,
-    assistant_gateway_message, system_gateway_message, user_gateway_message,
+    ModelToolCall, ModelToolCallId, ModelToolChoice, ModelToolDefinition, ModelToolName,
+    assistant_gateway_message, developer_gateway_message, system_gateway_message,
+    tool_gateway_message, user_gateway_message,
 };
 pub use project_runtime::{
     AgentContentCompressionState, AgentContentNode, AgentContentNodeInput, AgentContentRole,

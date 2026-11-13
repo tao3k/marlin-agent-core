@@ -10,6 +10,8 @@ use marlin_agent_protocol::{AgentEvent, AgentEventTopic, AgentSpanName, Executor
 
 /// Tracing target for runtime-owned process lifecycle events.
 pub const TARGET_RUNTIME_PROCESS: &str = "runtime.process";
+/// Tracing target for Runtime spans carrying lifecycle classifications.
+pub const TARGET_RUNTIME_SPAN: &str = "marlin.runtime";
 
 /// Tracing span name for runtime-owned task execution.
 pub const SPAN_RUNTIME_TASK: &str = "runtime.task";
@@ -244,27 +246,27 @@ pub fn harness_result_span_name() -> AgentSpanName {
 
 /// Create a `runtime.task` tracing span with the supplied runtime kind.
 pub fn runtime_task_span(runtime_kind: &'static str) -> tracing::Span {
-    tracing::info_span!("runtime.task", runtime_kind)
+    tracing::info_span!(target: TARGET_RUNTIME_SPAN, "runtime.task", runtime_kind)
 }
 
 /// Create a `runtime.provider` tracing span.
 pub fn runtime_provider_span() -> tracing::Span {
-    tracing::info_span!("runtime.provider", runtime_kind = RUNTIME_KIND_PROVIDER)
+    tracing::info_span!(target: TARGET_RUNTIME_SPAN, "runtime.provider", runtime_kind = RUNTIME_KIND_PROVIDER)
 }
 
 /// Create a `runtime.tool` tracing span.
 pub fn runtime_tool_span() -> tracing::Span {
-    tracing::info_span!("runtime.tool", runtime_kind = RUNTIME_KIND_TOOL)
+    tracing::info_span!(target: TARGET_RUNTIME_SPAN, "runtime.tool", runtime_kind = RUNTIME_KIND_TOOL)
 }
 
 /// Create a `runtime.sub_agent` tracing span.
 pub fn runtime_sub_agent_span() -> tracing::Span {
-    tracing::info_span!("runtime.sub_agent", runtime_kind = RUNTIME_KIND_SUB_AGENT)
+    tracing::info_span!(target: TARGET_RUNTIME_SPAN, "runtime.sub_agent", runtime_kind = RUNTIME_KIND_SUB_AGENT)
 }
 
 /// Create a `runtime.hook` tracing span.
 pub fn runtime_hook_span() -> tracing::Span {
-    tracing::info_span!("runtime.hook", runtime_kind = RUNTIME_KIND_HOOK)
+    tracing::info_span!(target: TARGET_RUNTIME_SPAN, "runtime.hook", runtime_kind = RUNTIME_KIND_HOOK)
 }
 
 /// Create an `agent.provider` tracing span for a kernel provider node.

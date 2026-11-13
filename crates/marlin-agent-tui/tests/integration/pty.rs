@@ -31,6 +31,8 @@ use unicode_width::UnicodeWidthChar;
 
 #[path = "pty/live_provider.rs"]
 mod live_provider;
+#[path = "pty/minibuffer.rs"]
+mod minibuffer;
 #[path = "pty/session_replay.rs"]
 mod session_replay;
 
@@ -45,7 +47,12 @@ impl Drop for StopOnDrop {
 fn accept_until(listener: &TcpListener, stop: &AtomicBool) -> Option<TcpStream> {
     while !stop.load(Ordering::Relaxed) {
         match listener.accept() {
-            Ok((stream, _)) => return Some(stream),
+            Ok((stream, _)) => {
+                stream
+                    .set_nonblocking(false)
+                    .expect("blocking fixture connection");
+                return Some(stream);
+            }
             Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
                 thread::sleep(Duration::from_millis(20));
             }
@@ -62,6 +69,7 @@ struct Terminal {
     received: Receiver<Vec<u8>>,
     output: Vec<u8>,
     start: Instant,
+    first_output_elapsed: Option<Duration>,
     initial_mode: nix::sys::termios::Termios,
 }
 
@@ -156,6 +164,8 @@ impl Terminal {
             .arg(config)
             .args(args)
             .env("MARLIN_TUI_FIXTURE_KEY", "fixture")
+            .env_remove("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT")
+            .env_remove("MARLIN_TUI_HOST_OBSERVATIONS_FILE")
             .stdin(Stdio::from(slave.try_clone().unwrap()))
             .stdout(Stdio::from(slave.try_clone().unwrap()))
             .stderr(Stdio::from(slave.try_clone().unwrap()));
@@ -183,6 +193,7 @@ impl Terminal {
             received,
             output: Vec::new(),
             start,
+            first_output_elapsed: None,
             initial_mode,
         }
     }
@@ -221,7 +232,7 @@ impl Terminal {
         &mut self,
         timeout: Duration,
         description: &str,
-        predicate: impl Fn(&[u8]) -> bool,
+        mut predicate: impl FnMut(&[u8]) -> bool,
     ) {
         let deadline = Instant::now() + timeout;
         loop {
@@ -237,10 +248,12 @@ impl Terminal {
             );
             match self.received.recv_timeout(remaining) {
                 Ok(chunk) => {
-                    if self.output.is_empty()
-                        && std::env::var_os("MARLIN_TUI_STARTUP_TRACE").is_some()
-                    {
-                        eprintln!("marlin-pty first output after {:?}", self.start.elapsed());
+                    if self.first_output_elapsed.is_none() {
+                        let elapsed = self.start.elapsed();
+                        self.first_output_elapsed = Some(elapsed);
+                        if std::env::var_os("MARLIN_TUI_STARTUP_TRACE").is_some() {
+                            eprintln!("marlin-pty first output after {elapsed:?}");
+                        }
                     }
                     self.output.extend_from_slice(&chunk);
                 }
@@ -265,6 +278,20 @@ impl Terminal {
             screen_lines(output)
                 .iter()
                 .any(|line| line.contains(expected))
+        });
+    }
+
+    fn wait_mx_selected(&mut self, selected: usize) {
+        self.wait_for(Duration::from_secs(15), "M-x selection", |output| {
+            screen_lines(output)
+                .iter()
+                .any(|line| mx_selected(line, selected))
+        });
+    }
+
+    fn wait_mx_last(&mut self) {
+        self.wait_for(Duration::from_secs(15), "last M-x selection", |output| {
+            screen_lines(output).iter().any(|line| mx_last(line))
         });
     }
 
@@ -346,77 +373,128 @@ fn contains(haystack: &[u8], needle: &[u8]) -> bool {
 
 // Ratatui sends cell deltas rather than contiguous strings. Reconstruct the
 // screen from cursor operations so checks do not depend on escape chunking.
-fn screen_lines(output: &[u8]) -> Vec<String> {
-    let text = String::from_utf8_lossy(output);
-    let mut chars = text.chars().peekable();
-    let mut rows = vec![vec![' '; 100]; 30];
-    let (mut row, mut col) = (0usize, 0usize);
-    while let Some(ch) = chars.next() {
-        if ch == '\x1b' && chars.peek() == Some(&'[') {
-            chars.next();
-            let mut args = String::new();
-            let op = loop {
-                match chars.next() {
-                    Some(c) if c.is_ascii_alphabetic() => break Some(c),
-                    Some(c) => args.push(c),
-                    None => break None,
-                }
-            };
-            let nums: Vec<usize> = args
-                .trim_start_matches('?')
-                .split(';')
-                .map(|n| n.parse().unwrap_or(0))
-                .collect();
-            let n = nums.first().copied().unwrap_or(0).max(1);
-            match op {
-                Some('h') if args == "?1049" => {
-                    for line in &mut rows {
-                        line.fill(' ');
-                    }
-                    row = 0;
-                    col = 0;
-                }
-                Some('H' | 'f') => {
-                    row = n - 1;
-                    col = nums.get(1).copied().unwrap_or(1).max(1) - 1;
-                }
-                Some('G') => col = n - 1,
-                Some('A') => row = row.saturating_sub(n),
-                Some('B') => row = row.saturating_add(n),
-                Some('C') => col = col.saturating_add(n),
-                Some('D') => col = col.saturating_sub(n),
-                Some('J') if nums.first().copied() == Some(2) => {
-                    for line in &mut rows {
-                        line.fill(' ');
-                    }
-                }
-                Some('K') if row < 30 => {
-                    let mode = nums.first().copied().unwrap_or(0);
-                    let start = if mode == 1 || mode == 2 {
-                        0
-                    } else {
-                        col.min(100)
-                    };
-                    let end = if mode == 1 { (col + 1).min(100) } else { 100 };
-                    rows[row][start..end].fill(' ');
-                }
-                _ => {}
-            }
-        } else if ch == '\r' {
-            col = 0;
-        } else if ch == '\n' {
-            row = row.saturating_add(1);
-        } else if !ch.is_control() {
-            let width = ch.width().unwrap_or(0);
-            if row < 30 && col < 100 && width > 0 {
-                rows[row][col] = ch;
-            }
-            col = col.saturating_add(width);
+struct TerminalScreen {
+    rows: [[char; 100]; 30],
+    row: usize,
+    col: usize,
+    pending: Vec<u8>,
+}
+
+impl TerminalScreen {
+    fn new() -> Self {
+        Self {
+            rows: [[' '; 100]; 30],
+            row: 0,
+            col: 0,
+            pending: Vec::new(),
         }
     }
-    rows.into_iter()
-        .map(|row| row.into_iter().collect())
-        .collect()
+
+    fn update(&mut self, output: &[u8]) {
+        let mut buffered = std::mem::take(&mut self.pending);
+        buffered.extend_from_slice(output);
+        let complete = match std::str::from_utf8(&buffered) {
+            Err(error) if error.error_len().is_none() => error.valid_up_to(),
+            _ => buffered.len(),
+        };
+        let text = String::from_utf8_lossy(&buffered[..complete]);
+        let mut chars = text.char_indices().peekable();
+        let mut remaining = text.len();
+        let (rows, row, col) = (&mut self.rows, &mut self.row, &mut self.col);
+        while let Some((index, ch)) = chars.next() {
+            if ch == '\x1b' && chars.peek().is_none() {
+                remaining = index;
+                break;
+            }
+            if ch == '\x1b' && chars.peek().is_some_and(|&(_, next)| next == '[') {
+                chars.next();
+                let Some((end, op)) = chars.find(|&(_, c)| ('\x40'..='\x7e').contains(&c)) else {
+                    remaining = index;
+                    break;
+                };
+                let args = &text[index + 2..end];
+                let nums: Vec<usize> = args
+                    .trim_start_matches('?')
+                    .split(';')
+                    .map(|n| n.parse().unwrap_or(0))
+                    .collect();
+                let n = nums.first().copied().unwrap_or(0).max(1);
+                match op {
+                    'h' if args == "?1049" => {
+                        for line in rows.iter_mut() {
+                            line.fill(' ');
+                        }
+                        *row = 0;
+                        *col = 0;
+                    }
+                    'H' | 'f' => {
+                        *row = n - 1;
+                        *col = nums.get(1).copied().unwrap_or(1).max(1) - 1;
+                    }
+                    'G' => *col = n - 1,
+                    'A' => *row = row.saturating_sub(n),
+                    'B' => *row = row.saturating_add(n),
+                    'C' => *col = col.saturating_add(n),
+                    'D' => *col = col.saturating_sub(n),
+                    'J' if nums.first().copied() == Some(2) => {
+                        for line in rows.iter_mut() {
+                            line.fill(' ');
+                        }
+                    }
+                    'K' if *row < 30 => {
+                        let mode = nums.first().copied().unwrap_or(0);
+                        let start = if mode == 1 || mode == 2 {
+                            0
+                        } else {
+                            (*col).min(100)
+                        };
+                        let end = if mode == 1 { (*col + 1).min(100) } else { 100 };
+                        rows[*row][start..end].fill(' ');
+                    }
+                    _ => {}
+                }
+            } else if ch == '\r' {
+                *col = 0;
+            } else if ch == '\n' {
+                *row = row.saturating_add(1);
+            } else if !ch.is_control() {
+                let width = ch.width().unwrap_or(0);
+                if *row < 30 && *col < 100 && width > 0 {
+                    rows[*row][*col] = ch;
+                }
+                *col = col.saturating_add(width);
+            }
+        }
+        self.pending
+            .extend_from_slice(&text.as_bytes()[remaining..]);
+        self.pending.extend_from_slice(&buffered[complete..]);
+    }
+
+    fn line(&self, row: usize) -> String {
+        self.rows[row].iter().collect()
+    }
+}
+
+fn screen_lines(output: &[u8]) -> Vec<String> {
+    let mut screen = TerminalScreen::new();
+    screen.update(output);
+    (0..screen.rows.len()).map(|row| screen.line(row)).collect()
+}
+
+fn mx_position(line: &str) -> Option<(usize, usize)> {
+    let (position, _) = line.trim_start().split_once(" M-x")?;
+    let (selected, total) = position.split_once('/')?;
+    let selected = selected.parse::<usize>().ok()?;
+    let total = total.parse::<usize>().ok()?;
+    (total > 0 && selected > 0 && selected <= total).then_some((selected, total))
+}
+
+fn mx_selected(line: &str, selected: usize) -> bool {
+    mx_position(line).is_some_and(|(current, _)| current == selected)
+}
+
+fn mx_last(line: &str) -> bool {
+    mx_position(line).is_some_and(|(selected, total)| selected == total)
 }
 
 #[test]
@@ -431,12 +509,28 @@ fn terminal_screen_reconstructs_partial_cell_updates() {
     let alternate = screen_lines(b"startup\r\n\x1b[?1049h\x1b[1;1Hworkbench");
     assert!(alternate[0].starts_with("workbench"));
     assert!(!alternate.iter().any(|line| line.contains("startup")));
+
+    let mut incremental = TerminalScreen::new();
+    for byte in output {
+        incremental.update(&[*byte]);
+    }
+    incremental.update(b"\x1b[30;2HR");
+    assert!(incremental.line(29).contains("Ressage: Enter send"));
+    for byte in "\x1b[1;1H🐟".bytes() {
+        incremental.update(&[byte]);
+    }
+    assert!(incremental.line(0).starts_with('🐟'));
 }
 
 fn read_request(stream: &mut TcpStream) -> (String, serde_json::Value) {
     stream
         .set_read_timeout(Some(Duration::from_secs(15)))
         .unwrap();
+    let (headers, body) = read_http_request(stream);
+    (headers, serde_json::from_slice(&body).unwrap())
+}
+
+fn read_http_request(stream: &mut TcpStream) -> (String, Vec<u8>) {
     let mut input = Vec::new();
     let mut chunk = [0; 4096];
     let (body_start, content_length) = loop {
@@ -462,8 +556,10 @@ fn read_request(stream: &mut TcpStream) -> (String, serde_json::Value) {
         input.extend_from_slice(&chunk[..count]);
     }
     let headers = String::from_utf8(input[..body_start - 4].to_vec()).unwrap();
-    let body = serde_json::from_slice(&input[body_start..body_start + content_length]).unwrap();
-    (headers, body)
+    (
+        headers,
+        input[body_start..body_start + content_length].to_vec(),
+    )
 }
 
 fn stream_fixture(
@@ -508,14 +604,22 @@ fn linked_ui_opens_without_a_gerbil_package_tree() {
         ],
     );
     terminal.wait_for(Duration::from_secs(10), "linked workbench", |output| {
+        let rows = screen_lines(output);
         contains(output, b"\x1b[?1049h")
-            && screen_lines(output)[29].contains("Message: Enter send")
-            && screen_lines(output)[28].contains("🐟")
-            && screen_lines(output)[28].contains("MARLIN")
-            && screen_lines(output)[28].contains("🟡")
-            && screen_lines(output)[28].contains("Ready")
-            && screen_lines(output)[0].trim().is_empty()
+            && rows[29].contains("Message: Enter send")
+            && rows[28].contains("openai/gpt-fixture")
+            && rows[0].trim().is_empty()
     });
+    terminal.send(b"\x1bx\x1b[B");
+    terminal.wait_for(
+        Duration::from_secs(5),
+        "source-free first M-x Down",
+        |output| {
+            screen_lines(output)
+                .iter()
+                .any(|line| line.contains("2/") && line.contains("M-x"))
+        },
+    );
     terminal.send(b"\x11");
     terminal.wait_exit(Duration::from_secs(5));
     terminal.assert_restored();
@@ -708,7 +812,7 @@ fn release_linked_ui_first_frame_without_a_gerbil_package_tree() {
         ],
         30,
         100,
-        &root,
+        directory.path(),
     );
     terminal.wait_for(Duration::from_secs(10), "release workbench", |output| {
         contains(output, b"\x1b[?1049h")
@@ -721,9 +825,85 @@ fn release_linked_ui_first_frame_without_a_gerbil_package_tree() {
         "release workbench ready after {:?}",
         terminal.start.elapsed()
     );
+    terminal.send(b"\x1bx\x1b[B");
+    terminal.wait_for(Duration::from_secs(5), "release M-x first Down", |output| {
+        let rows = screen_lines(output);
+        rows.iter().any(|line| mx_selected(line, 2))
+            && rows.iter().any(|line| line.contains("› models"))
+    });
     terminal.send(b"\x11");
     terminal.wait_exit(Duration::from_secs(5));
     terminal.assert_restored();
+}
+
+#[cfg(feature = "linked-ui")]
+#[test]
+#[ignore = "manual paired startup benchmark; build the current Release binary first"]
+fn release_linked_fresh_copy_startup_pair() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let binary = root.join("target/release/marlin-tui");
+    linked_fresh_copy_startup_pair(&binary, "Release");
+}
+
+#[cfg(feature = "linked-ui")]
+#[test]
+#[ignore = "manual paired startup benchmark; build the current debug binary first"]
+fn debug_linked_fresh_copy_startup_pair() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let binary = root.join("target/debug/marlin-tui");
+    linked_fresh_copy_startup_pair(&binary, "debug");
+}
+
+#[cfg(feature = "linked-ui")]
+fn linked_fresh_copy_startup_pair(binary: &std::path::Path, profile: &str) {
+    assert!(binary.is_file(), "build the linked {profile} binary first");
+    let directory = tempfile::tempdir().unwrap();
+    let copied = directory.path().join("marlin-tui-copy");
+    fs::copy(binary, &copied).expect("copy linked binary");
+    let config = directory.path().join("config.toml");
+    fs::write(&config, "provider=\"openai\"\nmodel=\"gpt-fixture\"\nendpoint=\"http://127.0.0.1:1/v1/responses\"\nprotocol=\"open-ai-responses\"\ncredential_env=\"MARLIN_TUI_FIXTURE_KEY\"\n").unwrap();
+    let absent = directory.path().join("no-gerbil-install");
+    let absent = absent.to_string_lossy().into_owned();
+    let mut observations = Vec::with_capacity(2);
+    for _ in 0..2 {
+        let mut terminal = Terminal::start_in_binary(
+            &copied,
+            &config,
+            &[],
+            &[
+                ("GERBIL_HOME", absent.clone()),
+                ("GERBIL_PATH", absent.clone()),
+                ("GERBIL_LOADPATH", absent.clone()),
+                ("MARLIN_TUI_STARTUP_TRACE", "1".to_owned()),
+            ],
+            30,
+            100,
+            directory.path(),
+        );
+        terminal.wait_for(Duration::from_secs(10), "Release startup pair", |output| {
+            contains(output, b"\x1b[?1049h")
+                && screen_lines(output)[29].contains("Message: Enter send")
+                && screen_lines(output)
+                    .iter()
+                    .any(|line| line.contains("MARLIN"))
+        });
+        observations.push((
+            terminal.first_output_elapsed.expect("first PTY output"),
+            terminal.start.elapsed(),
+        ));
+        terminal.send(b"\x11");
+        terminal.wait_exit(Duration::from_secs(5));
+        terminal.assert_restored();
+        for line in String::from_utf8_lossy(&terminal.output).split("\r\n") {
+            if line.starts_with("marlin-tui startup ") {
+                eprintln!("{profile} {line}");
+            }
+        }
+    }
+    eprintln!(
+        "linked {profile} fresh copy: first output {:?}, workbench {:?}; same file second run: first output {:?}, workbench {:?}",
+        observations[0].0, observations[0].1, observations[1].0, observations[1].1
+    );
 }
 
 #[test]
@@ -748,7 +928,7 @@ fn exercise_pty(startup_limit: Duration, exit_limit: Duration) {
     let remaining = startup_limit.saturating_sub(terminal.start.elapsed());
     terminal.wait_for(remaining, "workbench", |output| {
         contains(output, b"\x1b[?1049h")
-            && contains(output, b"Marlin")
+            && screen_lines(output)[28].contains("MARLIN")
             && screen_lines(output)[29].contains("Message: Enter send")
     });
     assert!(terminal.start.elapsed() < startup_limit);
@@ -765,30 +945,22 @@ fn exercise_pty(startup_limit: Duration, exit_limit: Duration) {
     }
     assert!(!contains(&terminal.output, b"GERBIL-BUILD"));
     terminal.send(b"\x1b[Z");
-    terminal.wait_status("Transcript: Up/Down scroll");
+    terminal.wait_status("Transcript: scroll to browse");
     terminal.send(b"\t");
     terminal.wait_status("Message: Enter send");
-    terminal.send(b"/");
-    terminal.wait_status("Command: Enter run");
+    terminal.send(b"\x1bx");
+    terminal.wait_mx_selected(1);
     terminal.send(b"\x1b[A");
-    terminal.wait_status("Selected: /clear");
+    terminal.wait_mx_last();
     terminal.send(b"\x1b[B");
-    terminal.wait_status("Selected: /help");
+    terminal.wait_mx_selected(1);
     terminal.send(b"\r");
+    terminal.wait_text("*Help*");
+    terminal.send(b"\x1b");
     terminal.wait_status("Message: Enter send");
-    terminal.send(b"/sessions");
-    terminal.wait_status("Command: Enter run");
-    terminal.send(b"\x1b[B");
-    terminal.wait_status("Selected: /sessions");
-    terminal.send(b"\r");
+    terminal.send(b"\x1bxsessions\r");
     terminal.wait_text("Session listing requires a persistent session configuration.");
     terminal.wait_status("Message: Enter send");
-    terminal.send(b"/hel");
-    terminal.wait_status("Command: Enter run");
-    terminal.wait_raw(b"Keyboard shortcuts");
-    terminal.send(b"\t\r");
-    terminal.wait_status("Message: Enter send");
-    terminal.wait_raw(b"stream-open");
     assert!(
         matches!(request_rx.try_recv(), Err(mpsc::TryRecvError::Empty)),
         "command sent a model request"
@@ -800,12 +972,11 @@ fn exercise_pty(startup_limit: Duration, exit_limit: Duration) {
     terminal.send(b"\t");
     terminal.wait_status("Commands: Enter open");
     terminal.send(b"\r");
-    terminal.wait_status("Enter run command");
-    terminal.wait_raw(b"Keyboard shortcuts");
-    terminal.send(b"\x0f\t");
-    terminal.wait_status("Extension: Enter activate");
+    terminal.wait_mx_selected(1);
+    terminal.send(b"\x07");
+    terminal.wait_status("Commands: Enter open");
     terminal.send(b"\t");
-    terminal.wait_status("Transcript: Up/Down scroll");
+    terminal.wait_status("Transcript: scroll to browse");
     terminal.send(b"\t");
     terminal.wait_status("Message: Enter send");
     terminal.wait_for(
@@ -933,3 +1104,9 @@ fn missing_session_configuration_is_rejected() {
 
 #[path = "pty/turns.rs"]
 mod turns;
+
+#[path = "pty/soak.rs"]
+mod soak;
+
+#[path = "pty/tool_cleanup.rs"]
+mod tool_cleanup;

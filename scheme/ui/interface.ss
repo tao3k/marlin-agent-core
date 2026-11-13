@@ -6,9 +6,10 @@
 (.def Ui
   identity: 'ui
   core: (.o requires: (.o UiComponents: (.o module-id: 'ui-components)
+                          UiHydra: (.o module-id: 'ui-hydra)
                           UiModeline: (.o module-id: 'ui-modeline)
                           UiThemes: (.o module-id: 'ui-themes)
                           UiLayout: (.o module-id: 'ui-layout))
             scope-contract: UiScopeContract
-            exports: (make-ui-scope UiComponents UiModeline UiThemes UiLayout))
+            exports: (make-ui-scope UiComponents UiHydra UiModeline UiThemes UiLayout))
   features: (.o))

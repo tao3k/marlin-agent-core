@@ -10,6 +10,7 @@ use super::{
         transcript_viewport, transcript_viewport_reference,
     },
 };
+use proptest::{collection::vec, prelude::ProptestConfig, prop_assert_eq, proptest};
 use ratatui::{
     buffer::Buffer,
     layout::Rect,
@@ -27,12 +28,14 @@ fn full_reference(
 ) -> Buffer {
     let mut lines = Vec::new();
     for (role, content) in entries {
-        lines.push(Line::from(Span::styled(
-            role.clone(),
-            Style::default()
-                .fg(Color::Cyan)
-                .add_modifier(Modifier::BOLD),
-        )));
+        if !role.is_empty() {
+            lines.push(Line::from(Span::styled(
+                role.clone(),
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            )));
+        }
         lines.extend(
             safe_text(content)
                 .lines()
@@ -52,6 +55,23 @@ fn full_reference(
     let mut buffer = Buffer::empty(area);
     paragraph.scroll((scroll, 0)).render(area, &mut buffer);
     buffer
+}
+
+#[test]
+fn compact_transcript_omits_repeated_roles_without_losing_scroll_geometry() {
+    let entries = vec![
+        (String::new(), "u: hello".to_owned()),
+        ("folded".to_owned(), String::new()),
+        (String::new(), "answer with 中 and emoji 🐟".to_owned()),
+    ];
+    for (width, height, scroll) in [(12, 7, 0), (12, 4, 2), (30, 5, 0)] {
+        let area = Rect::new(0, 0, width, height);
+        let expected = full_reference(&entries, false, width, height, scroll);
+        let view = transcript_viewport(&entries, false, width, height, usize::from(scroll));
+        let mut actual = Buffer::empty(area);
+        view.render(area, &mut actual);
+        assert_eq!(actual, expected);
+    }
 }
 
 #[test]
@@ -91,6 +111,56 @@ fn cache_does_not_confuse_distinct_transcripts_with_equal_revisions() {
         assert!(view.lines.iter().any(|line| line.to_string() == "second"));
     });
     assert_eq!(cache.build_count(), 2);
+}
+
+#[test]
+fn folded_thinking_keeps_stream_content_without_rebuilding_hidden_rows() {
+    let mut transcript = Transcript::new(vec![("You".into(), "question".into())]);
+    transcript.push_thinking("open".into(), "closed", String::new(), true);
+    let mut cache = TranscriptViewportCache::default();
+    cache.with_view(&transcript, false, 30, 5, 0, |_| {});
+    assert_eq!(cache.build_count(), 1);
+    transcript.append_content(1, "secret\nreasoning");
+    cache.with_view(&transcript, false, 30, 5, 0, |view| {
+        let visible = format!("{:?}", view.lines);
+        assert!(visible.contains("closed"));
+        assert!(!visible.contains("secret"));
+    });
+    assert_eq!(cache.build_count(), 1);
+    assert_eq!(transcript.content(1), "secret\nreasoning");
+    assert!(transcript.toggle_thinking_from_end(1));
+    assert_eq!(transcript[1].0, "open");
+    cache.with_view(&transcript, false, 30, 5, 0, |view| {
+        assert!(format!("{:?}", view.lines).contains("secret"));
+    });
+    assert_eq!(cache.build_count(), 2);
+    assert!(transcript.toggle_thinking_from_end(1));
+    assert_eq!(transcript[1].0, "closed");
+    assert_eq!(transcript.content(1), "secret\nreasoning");
+    transcript.retain_latest(1);
+    assert_eq!(transcript.content(0), "secret\nreasoning");
+    assert!(transcript.toggle_thinking_from_end(1));
+    assert_eq!(transcript[0].1, "secret\nreasoning");
+}
+
+#[test]
+fn thinking_folds_can_be_selected_independently_from_newest() {
+    let mut transcript = Transcript::new(Vec::new());
+    transcript.push_thinking("open".into(), "closed", "older raw".into(), true);
+    transcript.push((String::new(), "answer".into()));
+    transcript.push_thinking("open".into(), "closed", "newer raw".into(), true);
+
+    assert!(!transcript.toggle_thinking_from_end(0));
+    assert!(!transcript.toggle_thinking_from_end(3));
+    assert!(transcript.toggle_thinking_from_end(2));
+    assert_eq!(transcript[0].1, "older raw");
+    assert!(transcript[2].1.is_empty());
+    assert_eq!(transcript.content(2), "newer raw");
+    assert!(transcript.toggle_thinking_from_end(1));
+    assert_eq!(transcript[2].1, "newer raw");
+    assert!(transcript.toggle_thinking_from_end(2));
+    assert_eq!(transcript.content(0), "older raw");
+    assert!(transcript[0].1.is_empty());
 }
 
 #[test]
@@ -663,6 +733,181 @@ fn bottom_view_does_not_materialize_a_long_history() {
 }
 
 #[test]
+fn sparse_deep_scroll_matches_reference_across_mutations_and_resize() {
+    let mut transcript = Transcript::new(
+        (0..700)
+            .map(|index| {
+                (
+                    match index % 3 {
+                        0 => "You",
+                        1 => "Assistant",
+                        _ => "助手",
+                    }
+                    .into(),
+                    match index % 5 {
+                        0 => format!("回复 {index} 中"),
+                        1 => format!("🐳 e\u{301} {index}"),
+                        2 => format!("ｶﾞ {index} \u{200b}"),
+                        _ => format!("entry {index} 中\nsecond line {}", "x".repeat(index % 11)),
+                    },
+                )
+            })
+            .collect(),
+    );
+    let mut cache = TranscriptViewportCache::default();
+    let mut compare = |transcript: &Transcript, pending, width, scroll| {
+        let expected = transcript_viewport_reference(transcript, pending, width, 9, scroll);
+        cache.with_view(transcript, pending, width, 9, scroll, |actual| {
+            assert_eq!(actual.lines, expected.lines);
+            assert_eq!(actual.scroll_up, expected.scroll_up);
+        });
+    };
+    for width in [7, 19, 80] {
+        for pending in [false, true] {
+            for scroll in [256, 257, 400, 701, 999, 1_200, 1_800, 2_200, usize::MAX] {
+                compare(&transcript, pending, width, scroll);
+            }
+        }
+    }
+    transcript.append_content(0, "\nmodified old entry 🐟");
+    compare(&transcript, false, 7, 400);
+    transcript.append_content(699, "\nnew tail 🐟");
+    compare(&transcript, true, 19, 700);
+    transcript.push(("You".into(), "a new request".into()));
+    compare(&transcript, false, 19, 700);
+    transcript.retain_latest(500);
+    compare(&transcript, false, 19, 700);
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(32))]
+    #[test]
+    fn thinking_fold_preserves_every_stream_prefix(
+        chunks in vec("[a-z\\n]{0,16}", 0..24),
+        switches in vec(proptest::bool::ANY, 0..24),
+    ) {
+        let mut transcript = Transcript::new(Vec::new());
+        transcript.push_thinking("open".into(), "closed", String::new(), true);
+        let mut raw = String::new();
+        for (index, chunk) in chunks.iter().enumerate() {
+            transcript.append_content(0, chunk);
+            raw.push_str(chunk);
+            if switches.get(index).copied().unwrap_or(false) {
+                prop_assert_eq!(transcript.toggle_thinking_from_end(1), true);
+            }
+            prop_assert_eq!(transcript.content(0), raw.as_str());
+        }
+        transcript.retain_latest(1);
+        prop_assert_eq!(transcript.content(0), raw.as_str());
+    }
+
+    #[test]
+    fn sparse_deep_scroll_preserves_randomized_unicode_rows(
+        shapes in vec(0_u8..12, 256..360),
+        width in 2_u16..90,
+        scroll in 256_usize..2_000,
+        pending in proptest::bool::ANY,
+    ) {
+        let entries = shapes
+            .iter()
+            .enumerate()
+            .map(|(index, shape)| {
+                let text = match shape {
+                    0 => "plain text".to_owned(),
+                    1 => "中 e\u{301} 🐟".to_owned(),
+                    2 => "ｶﾞ\u{200b} word".to_owned(),
+                    3 => "a\nb\n".to_owned(),
+                    4 => "\t\x1bcontrol".to_owned(),
+                    5 => "longword".repeat(10),
+                    6 => "  leading spaces  ".to_owned(),
+                    7 => format!("row {index} 😀"),
+                    8 => "\u{0085} short".to_owned(),
+                    9 => "👩‍💻👨‍👩‍👧‍👦".to_owned(),
+                    10 => "中中中 e\u{301}".to_owned(),
+                    _ => "👩🏽‍🚀".to_owned(),
+                };
+                ("Assistant".to_owned(), text)
+            })
+            .collect();
+        let transcript = Transcript::new(entries);
+        let expected = transcript_viewport_reference(&transcript, pending, width, 11, scroll);
+        let mut cache = TranscriptViewportCache::default();
+        cache.with_view(&transcript, pending, width, 11, scroll, |actual| {
+            prop_assert_eq!(&actual.lines, &expected.lines);
+            prop_assert_eq!(actual.scroll_up, expected.scroll_up);
+            Ok(())
+        })?;
+        prop_assert_eq!(cache.row_index_bytes() > 0, true);
+    }
+}
+
+#[test]
+#[ignore = "manual matched deep-scroll timing; not a latency acceptance gate"]
+fn compare_sparse_deep_scroll_with_full_history_scan() {
+    use std::{hint::black_box, time::Instant};
+    let transcript = Transcript::new(
+        (0..100_000)
+            .map(|index| ("User".into(), format!("entry {index}")))
+            .collect(),
+    );
+    let scrolls: Vec<_> = (50_000..50_032).collect();
+    let mut cache = TranscriptViewportCache::default();
+    let first_expected = transcript_viewport(&transcript, false, 80, 12, scrolls[0]);
+    let started = Instant::now();
+    cache.with_view(&transcript, false, 80, 12, scrolls[0], |actual| {
+        assert_eq!(actual.lines, first_expected.lines);
+    });
+    let first_index = started.elapsed();
+    for &scroll in &scrolls {
+        let expected = transcript_viewport(&transcript, false, 80, 12, scroll);
+        cache.with_view(&transcript, false, 80, 12, scroll, |actual| {
+            assert_eq!(actual.lines, expected.lines);
+        });
+    }
+    let started = Instant::now();
+    for &scroll in &scrolls {
+        black_box(transcript_viewport(&transcript, false, 80, 12, scroll));
+    }
+    let full_scan = started.elapsed();
+    let started = Instant::now();
+    for &scroll in &scrolls {
+        cache.with_view(&transcript, false, 80, 12, scroll, |view| {
+            black_box(view.lines.len());
+        });
+    }
+    let indexed = started.elapsed();
+    eprintln!(
+        "100k-entry deep scroll: n={} first_index={first_index:?} index_bytes={} full_scan={full_scan:?} indexed={indexed:?}",
+        scrolls.len(),
+        cache.row_index_bytes()
+    );
+}
+
+#[test]
+#[ignore = "manual first-index timing for non-ASCII history"]
+fn compare_unicode_first_deep_scroll_with_full_history_scan() {
+    use std::time::Instant;
+    let transcript = Transcript::new(
+        (0..100_000)
+            .map(|index| ("助手".into(), format!("回复 {index} 中")))
+            .collect(),
+    );
+    let started = Instant::now();
+    let expected = transcript_viewport(&transcript, false, 80, 12, 50_000);
+    let full_scan = started.elapsed();
+    let mut cache = TranscriptViewportCache::default();
+    let started = Instant::now();
+    cache.with_view(&transcript, false, 80, 12, 50_000, |actual| {
+        assert_eq!(actual.lines, expected.lines);
+    });
+    let first_index = started.elapsed();
+    eprintln!(
+        "100k Unicode entries first deep scroll: full_scan={full_scan:?} first_index={first_index:?} index_bytes={}",
+        cache.row_index_bytes()
+    );
+}
+
+#[test]
 #[ignore = "manual diagnostic; wall-clock measurements are not an acceptance gate"]
 fn compare_full_and_suffix_transcript_projection() {
     use std::{hint::black_box, time::Instant};
@@ -723,5 +968,33 @@ fn compare_full_and_suffix_transcript_projection() {
     }
     println!(
         "fixture=10000-short-entries terminal=80x12 scroll=0 baseline_us={baseline_us:?} candidate_us={candidate_us:?}"
+    );
+}
+
+#[test]
+#[ignore = "manual fold-selection timing; not an end-to-end latency gate"]
+fn benchmark_sparse_thinking_fold_selection() {
+    use std::{
+        hint::black_box,
+        time::{Duration, Instant},
+    };
+    let mut transcript = Transcript::new(Vec::new());
+    for _ in 0..10_000 {
+        transcript.push_thinking("open".into(), "closed", "x".repeat(256), true);
+    }
+    fn sample(transcript: &mut Transcript, ordinal: usize) -> Duration {
+        let started = Instant::now();
+        for _ in 0..100 {
+            black_box(&mut *transcript).toggle_thinking_from_end(ordinal);
+        }
+        started.elapsed() / 100
+    }
+    let mut latest: Vec<_> = (0..100).map(|_| sample(&mut transcript, 1)).collect();
+    let mut middle: Vec<_> = (0..100).map(|_| sample(&mut transcript, 5_000)).collect();
+    latest.sort_unstable();
+    middle.sort_unstable();
+    eprintln!(
+        "10k sparse folds, 100 batches × 100 toggles: newest p50={:?} p95={:?}; middle p50={:?} p95={:?}",
+        latest[50], latest[95], middle[50], middle[95]
     );
 }

@@ -197,6 +197,7 @@ pub type RuntimeFanoutResult<T> = Result<RuntimeFanoutOutput<T>, RuntimeFanoutRe
 pub enum RuntimeTaskShutdownStatus {
     Completed,
     TimedOut,
+    CleanupUnconfirmed,
 }
 
 /// Request mode represented by a runtime task shutdown receipt.
@@ -232,19 +233,19 @@ pub struct RuntimeTaskShutdownReceiptInput {
     pub request: RuntimeTaskShutdownRequest,
     pub tracker_state: RuntimeTaskTrackerShutdownState,
     pub timeout_ms: Option<u64>,
-    pub tracked_task_count_at_shutdown: usize,
-    pub remaining_task_count: usize,
+    pub tracked_resource_count_at_shutdown: usize,
+    pub remaining_resource_count: usize,
 }
 
-/// Receipt emitted when a runtime closes and waits for tracked tasks.
+/// Receipt emitted when runtime admission closes and tracked resources drain.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RuntimeTaskShutdownReceipt {
     status: RuntimeTaskShutdownStatus,
     cancellation_requested: bool,
     tracker_closed: bool,
     timeout_ms: Option<u64>,
-    tracked_task_count_at_shutdown: usize,
-    remaining_task_count: usize,
+    tracked_resource_count_at_shutdown: usize,
+    remaining_resource_count: usize,
 }
 
 impl RuntimeTaskShutdownReceipt {
@@ -254,8 +255,8 @@ impl RuntimeTaskShutdownReceipt {
             cancellation_requested: input.request.cancellation_requested(),
             tracker_closed: input.tracker_state.tracker_closed(),
             timeout_ms: input.timeout_ms,
-            tracked_task_count_at_shutdown: input.tracked_task_count_at_shutdown,
-            remaining_task_count: input.remaining_task_count,
+            tracked_resource_count_at_shutdown: input.tracked_resource_count_at_shutdown,
+            remaining_resource_count: input.remaining_resource_count,
         }
     }
 
@@ -275,11 +276,11 @@ impl RuntimeTaskShutdownReceipt {
         self.timeout_ms
     }
 
-    pub fn tracked_task_count_at_shutdown(&self) -> usize {
-        self.tracked_task_count_at_shutdown
+    pub fn tracked_resource_count_at_shutdown(&self) -> usize {
+        self.tracked_resource_count_at_shutdown
     }
 
-    pub fn remaining_task_count(&self) -> usize {
-        self.remaining_task_count
+    pub fn remaining_resource_count(&self) -> usize {
+        self.remaining_resource_count
     }
 }

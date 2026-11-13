@@ -77,6 +77,51 @@ async fn open(storage: InMemoryAgentStorage) -> ConversationJournal<InMemoryAgen
 struct BatchFixture;
 
 #[tokio::test]
+async fn tool_request_is_persisted_before_delivery_and_blocks_a_second_turn() {
+    use marlin_agent_protocol::{ModelToolCall, ModelToolCallId, ModelToolName};
+
+    struct ToolFixture;
+    impl ModelStreamingGateway for ToolFixture {
+        fn stream(
+            &self,
+            _: ModelGatewayRequest,
+        ) -> ModelGatewayFuture<ModelGatewayResult<ModelGatewayEventStream>> {
+            let mut message = assistant_gateway_message("inspect the workspace");
+            message.tool_calls.push(ModelToolCall {
+                id: ModelToolCallId::new("call-1").unwrap(),
+                name: ModelToolName::new("read_marker").unwrap(),
+                arguments: serde_json::Map::new(),
+            });
+            let response = ModelGatewayCompletionResponse::new(
+                "id",
+                "model",
+                vec![ModelGatewayCompletionChoice::new(0, message, None)],
+            );
+            Box::pin(async move {
+                Ok(
+                    Box::pin(tokio_stream::iter([Ok(ModelStreamEvent::ToolRequested {
+                        response,
+                    })])) as ModelGatewayEventStream,
+                )
+            })
+        }
+    }
+
+    let storage = InMemoryAgentStorage::new();
+    let gateway = JournalGateway::new(ToolFixture, open(storage.clone()).await);
+    let mut stream = gateway.stream(request()).await.unwrap();
+    assert!(matches!(
+        stream.next().await,
+        Some(Ok(ModelStreamEvent::ToolRequested { .. }))
+    ));
+    assert!(stream.next().await.is_none());
+    assert!(matches!(
+        gateway.stream(request()).await,
+        Err(ModelGatewayError::Completion(message)) if message.contains("pending")
+    ));
+}
+
+#[tokio::test]
 async fn rejected_request_with_unrecordable_terminal_is_not_reported_as_safe() {
     struct ConflictingRejection(InMemoryAgentStorage);
     impl ModelStreamingGateway for ConflictingRejection {

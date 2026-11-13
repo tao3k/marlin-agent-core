@@ -4,7 +4,6 @@
 
 //! Runtime context and execution identity ownership.
 
-use crate::observability;
 use tokio::sync::mpsc;
 
 use super::{
@@ -25,8 +24,10 @@ pub struct RuntimeContext {
     pub(super) active_working_copy: Option<WorkingCopyActiveBinding>,
     pub(super) working_copy_receipts: Vec<WorkingCopyIsolationReceipt>,
     pub(super) graph_loop_runs: crate::GraphLoopRunRegistryHandle,
-    pub(super) process_registry: observability::RuntimeProcessRegistryHandle,
-    pub(super) process_cleanup_policy: observability::RuntimeProcessCleanupPolicy,
+    pub(super) process_registry: crate::process::RuntimeProcessRegistryHandle,
+    pub(crate) process_quota: Option<std::sync::Arc<tokio::sync::Semaphore>>,
+    pub(super) process_cleanup_policy: crate::process::RuntimeProcessCleanupPolicy,
+    pub(crate) task_tracker: super::RuntimeTaskTracker,
 }
 
 impl RuntimeContext {
@@ -62,11 +63,11 @@ impl RuntimeContext {
         self.graph_loop_runs.clone()
     }
 
-    pub fn process_registry(&self) -> observability::RuntimeProcessRegistryHandle {
+    pub fn process_registry(&self) -> crate::process::RuntimeProcessRegistryHandle {
         self.process_registry.clone()
     }
 
-    pub fn process_cleanup_policy(&self) -> &observability::RuntimeProcessCleanupPolicy {
+    pub fn process_cleanup_policy(&self) -> &crate::process::RuntimeProcessCleanupPolicy {
         &self.process_cleanup_policy
     }
 
@@ -104,7 +105,9 @@ impl RuntimeContext {
             working_copy_receipts: self.working_copy_receipts.clone(),
             graph_loop_runs: self.graph_loop_runs.clone(),
             process_registry: self.process_registry.clone(),
+            process_quota: self.process_quota.clone(),
             process_cleanup_policy: self.process_cleanup_policy.clone(),
+            task_tracker: self.task_tracker.clone(),
         }
     }
 
@@ -119,7 +122,9 @@ impl RuntimeContext {
             working_copy_receipts: self.working_copy_receipts.clone(),
             graph_loop_runs: self.graph_loop_runs.clone(),
             process_registry: self.process_registry.clone(),
+            process_quota: self.process_quota.clone(),
             process_cleanup_policy: self.process_cleanup_policy.clone(),
+            task_tracker: self.task_tracker.clone(),
         }
     }
 
@@ -143,7 +148,9 @@ impl RuntimeContext {
                 working_copy_receipts: self.working_copy_receipts.clone(),
                 graph_loop_runs: self.graph_loop_runs.clone(),
                 process_registry: self.process_registry.clone(),
+                process_quota: self.process_quota.clone(),
                 process_cleanup_policy: self.process_cleanup_policy.clone(),
+                task_tracker: self.task_tracker.clone(),
             },
             receipt,
         )

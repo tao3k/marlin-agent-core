@@ -1,0 +1,689 @@
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
+use super::{
+    App, FixtureGateway, GatewayObservation, ModelEndpoint, assistant_gateway_message,
+    install_test_commands, mouse_over_minibuffer, render_draw, reply_channel,
+    selected_modeline_item, test_frame, test_layout, user_gateway_message,
+};
+use std::sync::{Arc, Mutex};
+
+#[test]
+fn runtime_events_enter_messages_in_bounded_batches_without_polluting_conversation() {
+    let (owner, events) = marlin_agent_runtime::TokioAgentRuntime::new(64);
+    let sink = owner.event_sink();
+    let mut app = App::with_runtime(ModelEndpoint::new("provider", "model"), owner, events);
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .build()
+        .unwrap();
+    runtime.block_on(async {
+        for index in 0..3 {
+            let topic = if index == 2 {
+                format!("\u{1b}{}", "x".repeat(1024))
+            } else {
+                "tool.progress".to_owned()
+            };
+            sink.emit(marlin_agent_protocol::AgentEvent::new(
+                topic,
+                format!("step {index}"),
+            ))
+            .await
+            .unwrap();
+        }
+    });
+
+    assert_eq!(app.poll_runtime_events(2), 2);
+    assert_eq!(app.messages.len(), 2);
+    assert!(app.transcript.is_empty());
+    assert_eq!(app.poll_runtime_events(2), 1);
+    assert!(app.messages.last().unwrap().1.contains("step 2"));
+    assert!(!app.messages.last().unwrap().1.contains('\u{1b}'));
+    assert!(app.messages.last().unwrap().1.chars().count() < 300);
+    assert_eq!(app.poll_runtime_events(2), 0);
+}
+
+#[test]
+fn typed_thinking_capability_reaches_the_selected_segment() {
+    use marlin_agent_ui::{UiCommand, UiCommandArguments, UiCommandCapability, UiCommandName};
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .build()
+        .unwrap();
+    let gateway = FixtureGateway {
+        requests: Arc::new(Mutex::new(Vec::new())),
+    };
+    let (tx, _) = reply_channel(8, 4096);
+    let mut app = App::new(ModelEndpoint::new("provider", "model"));
+    app.command_catalog = vec![UiCommand {
+        name: UiCommandName::new("thought").unwrap(),
+        description: String::new(),
+        arguments: UiCommandArguments::Optional,
+        capability: UiCommandCapability::ToggleThinking,
+        value: None,
+    }];
+    app.transcript
+        .push_thinking("open".into(), "closed", "older".into(), true);
+    app.transcript
+        .push_thinking("open".into(), "closed", "newer".into(), true);
+
+    app.toggle_command();
+    app.composer.insert_text("thought 2");
+    app.submit(&gateway, &runtime, &tx);
+    assert_eq!(app.transcript[0].1, "older");
+    assert!(app.transcript[1].1.is_empty());
+}
+
+#[test]
+fn command_menu_filters_scheme_descriptors_and_preserves_draft() {
+    use marlin_agent_ui::{UiCommand, UiCommandName, UiComponentId, UiRegion, UiWorkbench};
+    let mut app = App::new(ModelEndpoint::new("provider", "model"));
+    install_test_commands(&mut app);
+    app.composer.insert_text("preserved draft");
+    app.toggle_command();
+    app.composer.insert_text("mo");
+    let command = |name, description: &str| UiCommand {
+        name: UiCommandName::new(name).unwrap(),
+        description: description.into(),
+        arguments: marlin_agent_ui::UiCommandArguments::None,
+        capability: marlin_agent_ui::UiCommandCapability::Clear,
+        value: None,
+    };
+    let view = UiWorkbench {
+        layout: test_layout(),
+        theme: marlin_agent_ui::UiTheme::default(),
+        model_label: "model".into(),
+        session_label: "session".into(),
+        regions: vec![
+            UiRegion::Transcript,
+            UiRegion::Composer,
+            UiRegion::Commands(vec![
+                command("help", "Keyboard shortcuts"),
+                command("models", "List models"),
+            ]),
+            UiRegion::Status(vec![]),
+        ],
+        focus: UiComponentId::new("composer").unwrap(),
+        frame: test_frame(),
+        keymap: Vec::new(),
+    };
+    app.command_candidates = vec![UiCommandName::new("models").unwrap()];
+    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(60, 10)).unwrap();
+    terminal
+        .draw(|frame| {
+            render_draw(
+                frame,
+                &app,
+                &view,
+                &mut Default::default(),
+                &mut Default::default(),
+            );
+        })
+        .unwrap();
+    let buffer = terminal.backend().buffer();
+    let text: String = (0..10)
+        .flat_map(|y| (0..60).map(move |x| buffer[(x, y)].symbol()))
+        .collect();
+    assert!(text.contains("List models"), "{text}");
+    assert!(text.contains("1/1 M-x mo"), "{text}");
+    assert!(text.contains("› models"), "{text}");
+    assert!(!text.contains("Keyboard shortcuts"), "{text}");
+    app.toggle_command();
+    assert_eq!(app.composer.text(), "preserved draft");
+    app.composer.take();
+    app.composer.insert_text("mo");
+    terminal
+        .draw(|frame| {
+            render_draw(
+                frame,
+                &app,
+                &view,
+                &mut Default::default(),
+                &mut Default::default(),
+            );
+        })
+        .unwrap();
+    let buffer = terminal.backend().buffer();
+    let text: String = (0..10)
+        .flat_map(|y| (0..60).map(move |x| buffer[(x, y)].symbol()))
+        .collect();
+    assert!(!text.contains("List models"), "{text}");
+    assert!(!text.contains("Tab complete"), "{text}");
+}
+
+#[test]
+fn command_menu_scrolls_to_the_selected_entry() {
+    use marlin_agent_ui::{UiCommand, UiCommandName, UiComponentId, UiRegion, UiWorkbench};
+    let mut app = App::new(ModelEndpoint::new("provider", "model"));
+    install_test_commands(&mut app);
+    app.toggle_command();
+    let names = ["help", "models", "model", "sessions", "session", "clear"];
+    let commands = names
+        .into_iter()
+        .map(|name| UiCommand {
+            name: UiCommandName::new(name).unwrap(),
+            description: name.into(),
+            arguments: marlin_agent_ui::UiCommandArguments::None,
+            capability: marlin_agent_ui::UiCommandCapability::Clear,
+            value: None,
+        })
+        .collect();
+    app.command_candidates = names
+        .into_iter()
+        .map(|name| UiCommandName::new(name).unwrap())
+        .collect();
+    let view = UiWorkbench {
+        layout: test_layout(),
+        theme: marlin_agent_ui::UiTheme::default(),
+        model_label: "model".into(),
+        session_label: "session".into(),
+        regions: vec![
+            UiRegion::Transcript,
+            UiRegion::Composer,
+            UiRegion::Commands(commands),
+            UiRegion::Status(vec![]),
+        ],
+        focus: UiComponentId::new("composer").unwrap(),
+        frame: test_frame(),
+        keymap: Vec::new(),
+    };
+    app.command_selection = Some(("".into(), UiCommandName::new("clear").unwrap()));
+    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(60, 10)).unwrap();
+    terminal
+        .draw(|frame| {
+            render_draw(
+                frame,
+                &app,
+                &view,
+                &mut Default::default(),
+                &mut Default::default(),
+            );
+        })
+        .unwrap();
+    let buffer = terminal.backend().buffer();
+    let text: String = (0..10)
+        .flat_map(|y| (0..60).map(move |x| buffer[(x, y)].symbol()))
+        .collect();
+    assert!(text.contains("› clear"), "{text}");
+    assert!(!text.contains("help  /help"), "{text}");
+    app.composer.insert_text("h");
+    assert!(app.selected_command().is_none());
+}
+
+#[test]
+fn mx_minibuffer_and_candidates_are_below_modeline() {
+    use marlin_agent_ui::{UiCommand, UiCommandName, UiComponentId, UiRegion, UiWorkbench};
+    let mut app = App::new(ModelEndpoint::new("provider", "model"));
+    install_test_commands(&mut app);
+    app.toggle_command();
+    let mut commands = vec![UiCommand {
+        name: UiCommandName::new("help").unwrap(),
+        description: "Keyboard shortcuts".into(),
+        arguments: marlin_agent_ui::UiCommandArguments::None,
+        capability: marlin_agent_ui::UiCommandCapability::Clear,
+        value: None,
+    }];
+    for index in 0..14 {
+        commands.push(UiCommand {
+            name: UiCommandName::new(&format!("command-{index:02}")).unwrap(),
+            description: "Additional command".into(),
+            arguments: marlin_agent_ui::UiCommandArguments::None,
+            capability: marlin_agent_ui::UiCommandCapability::Clear,
+            value: None,
+        });
+    }
+    app.command_candidates = commands
+        .iter()
+        .map(|command| command.name.clone())
+        .collect();
+    let view = UiWorkbench {
+        layout: test_layout(),
+        theme: Default::default(),
+        model_label: "model".into(),
+        session_label: "session".into(),
+        regions: vec![
+            UiRegion::Transcript,
+            UiRegion::Composer,
+            UiRegion::Commands(commands),
+            UiRegion::Status(
+                [
+                    "modeline/left/brand",
+                    "modeline/left/model",
+                    "modeline/left/activity",
+                    "modeline/right/turns",
+                    "modeline/right/session",
+                    "modeline/state/online",
+                    "modeline/state/offline",
+                    "modeline/state/unknown",
+                ]
+                .into_iter()
+                .map(selected_modeline_item)
+                .collect(),
+            ),
+        ],
+        focus: UiComponentId::new("composer").unwrap(),
+        frame: test_frame(),
+        keymap: Vec::new(),
+    };
+    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 18)).unwrap();
+    terminal
+        .draw(|frame| {
+            render_draw(
+                frame,
+                &app,
+                &view,
+                &mut Default::default(),
+                &mut Default::default(),
+            );
+        })
+        .unwrap();
+    let rows: Vec<String> = (0..18)
+        .map(|y| {
+            (0..80)
+                .map(|x| terminal.backend().buffer()[(x, y)].symbol())
+                .collect()
+        })
+        .collect();
+    let modeline = rows.iter().position(|row| row.contains("BRAND")).unwrap();
+    let prompt = rows.iter().position(|row| row.contains("M-x ")).unwrap();
+    let candidate = rows
+        .iter()
+        .position(|row| row.contains("Keyboard shortcuts"))
+        .unwrap();
+    assert!(modeline < prompt && prompt + 1 == candidate, "{rows:?}");
+    assert!(!rows[prompt].contains('┌') && !rows[prompt].contains('│'));
+    assert!(rows[17].contains("command-13"), "{rows:?}");
+    assert!(!rows.iter().any(|row| row.contains("Tab complete")));
+}
+
+#[test]
+fn mx_switch_themes_keeps_message_draft_and_emits_one_profile_request() {
+    use marlin_agent_ui::{UiEvent, UiProfileName};
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    let requests = Arc::new(Mutex::new(Vec::new()));
+    let gateway = FixtureGateway {
+        requests: requests.clone(),
+    };
+    let (tx, _) = reply_channel(8, 4096);
+    let mut app = App::new(ModelEndpoint::new("provider", "model"));
+    install_test_commands(&mut app);
+    app.composer.insert_text("retained message");
+    app.toggle_command();
+    app.composer.insert_text("switch-themes");
+    app.submit(&gateway, &runtime, &tx);
+    assert_eq!(app.composer.text(), "");
+    assert_eq!(app.command_lookup_query(), "theme-");
+    assert!(app.command_draft.is_some());
+    app.composer.insert_text("pi");
+    app.submit(&gateway, &runtime, &tx);
+    assert_eq!(app.composer.text(), "retained message");
+    assert!(app.command_draft.is_none());
+    assert_eq!(
+        app.ui_request,
+        Some(UiEvent::SelectProfile(UiProfileName::new("pi").unwrap()))
+    );
+    assert!(requests.lock().unwrap().is_empty());
+}
+
+#[test]
+fn scoped_buffer_completion_and_cancel_keep_the_message_draft() {
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    let gateway = FixtureGateway {
+        requests: Arc::new(Mutex::new(Vec::new())),
+    };
+    let (tx, _) = reply_channel(8, 4096);
+    let mut app = App::new(ModelEndpoint::new("provider", "model"));
+    install_test_commands(&mut app);
+    app.composer.insert_text("unsent message");
+    app.toggle_command();
+    app.composer.insert_text("switch-buffer");
+    app.submit(&gateway, &runtime, &tx);
+    app.command_query = Some("buffer-".into());
+    assert!(app.command_query_is_current());
+    assert!(app.accept_command_completion("buffer-messages"));
+    assert_eq!(app.composer.text(), "messages");
+    assert_eq!(app.command_lookup_query(), "buffer-messages");
+    assert!(!app.command_query_is_current());
+    app.cancel();
+    assert!(app.command_menu.is_none());
+    assert_eq!(app.composer.text(), "unsent message");
+    assert!(app.ui_request.is_none());
+}
+
+#[test]
+fn event_messages_use_a_switchable_buffer_without_polluting_conversation() {
+    use crate::harness::app::{BufferView, MessageEvent, MessageSeverity, MessageSource};
+    use marlin_agent_ui::{UiComponentId, UiRegion, UiWorkbench};
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    let requests = Arc::new(Mutex::new(Vec::new()));
+    let gateway = FixtureGateway {
+        requests: requests.clone(),
+    };
+    let (tx, _) = reply_channel(8, 4096);
+    let mut app = App::new(ModelEndpoint::new("provider", "model"));
+    install_test_commands(&mut app);
+    app.transcript
+        .push(("You".into(), "conversation remains here".into()));
+    let event = MessageEvent {
+        source: MessageSource::Ui,
+        severity: MessageSeverity::Error,
+        summary: "Profile selection failed",
+        detail: "native status 3",
+    };
+    app.publish_message(event);
+    app.publish_message(event);
+    assert_eq!(app.transcript.len(), 1);
+    assert_eq!(app.messages.len(), 1);
+    assert!(
+        app.minibuffer_notice
+            .as_deref()
+            .unwrap()
+            .contains("*Messages*")
+    );
+    app.composer.insert_text("retained draft");
+    app.toggle_command();
+    app.composer.insert_text("switch-buffer");
+    app.submit(&gateway, &runtime, &tx);
+    assert_eq!(app.composer.text(), "");
+    assert_eq!(app.command_lookup_query(), "buffer-");
+    app.composer.insert_text("messages");
+    app.submit(&gateway, &runtime, &tx);
+    assert_eq!(app.buffer_view, BufferView::Conversation);
+    assert_eq!(
+        app.ui_request,
+        Some(marlin_agent_ui::UiEvent::SelectBuffer(
+            marlin_agent_ui::UiBufferId::new("messages").unwrap()
+        ))
+    );
+    assert_eq!(app.composer.text(), "retained draft");
+    let mut view = UiWorkbench {
+        layout: test_layout(),
+        theme: Default::default(),
+        model_label: "model".into(),
+        session_label: "session".into(),
+        regions: vec![
+            UiRegion::Transcript,
+            UiRegion::Composer,
+            UiRegion::Commands(vec![]),
+            UiRegion::Status(vec![]),
+        ],
+        focus: UiComponentId::new("composer").unwrap(),
+        frame: test_frame(),
+        keymap: Vec::new(),
+    };
+    view.frame.windows[0].buffer = marlin_agent_ui::UiBufferId::new("messages").unwrap();
+    app.sync_window(&view).unwrap();
+    assert_eq!(app.buffer_view, BufferView::Messages);
+    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 12)).unwrap();
+    terminal
+        .draw(|frame| {
+            render_draw(
+                frame,
+                &app,
+                &view,
+                &mut Default::default(),
+                &mut Default::default(),
+            );
+        })
+        .unwrap();
+    let buffer = terminal.backend().buffer();
+    let text: String = (0..12)
+        .flat_map(|y| (0..80).map(move |x| buffer[(x, y)].symbol()))
+        .collect();
+    assert!(text.contains("native status 3"));
+    assert!(!text.contains("conversation remains here"));
+    app.cancel();
+    assert_eq!(
+        app.ui_request,
+        Some(marlin_agent_ui::UiEvent::SelectBuffer(
+            marlin_agent_ui::UiBufferId::new("conversation").unwrap()
+        ))
+    );
+    assert!(requests.lock().unwrap().is_empty());
+}
+
+#[test]
+fn scheme_static_buffer_replaces_window_content_without_changing_conversation() {
+    use crate::harness::app::BufferView;
+    use marlin_agent_ui::{UiBufferId, UiComponentId, UiContent, UiRegion, UiWorkbench};
+    let mut app = App::new(ModelEndpoint::new("provider", "model"));
+    app.transcript
+        .push(("You".into(), "private conversation".into()));
+    let mut frame = test_frame();
+    frame.buffers.push(UiBufferId::new("help").unwrap());
+    frame.windows[0].buffer = UiBufferId::new("help").unwrap();
+    let view = UiWorkbench {
+        layout: test_layout(),
+        theme: Default::default(),
+        model_label: "model".into(),
+        session_label: "session".into(),
+        regions: vec![
+            UiRegion::Transcript,
+            UiRegion::Composer,
+            UiRegion::Commands(vec![]),
+            UiRegion::Extension {
+                id: UiComponentId::new("help").unwrap(),
+                label: "*Help*".into(),
+                content: vec![UiContent::Text("Ctrl-R  Search prompts".into())],
+                focusable: false,
+            },
+            UiRegion::Status(vec![]),
+        ],
+        focus: UiComponentId::new("composer").unwrap(),
+        frame,
+        keymap: Vec::new(),
+    };
+    app.sync_window(&view).unwrap();
+    assert_eq!(
+        app.buffer_view,
+        BufferView::Static(UiBufferId::new("help").unwrap())
+    );
+    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 16)).unwrap();
+    terminal
+        .draw(|frame| {
+            render_draw(
+                frame,
+                &app,
+                &view,
+                &mut Default::default(),
+                &mut Default::default(),
+            );
+        })
+        .unwrap();
+    let buffer = terminal.backend().buffer();
+    let text: String = (0..16)
+        .flat_map(|y| (0..80).map(move |x| buffer[(x, y)].symbol()))
+        .collect();
+    assert!(text.contains("Ctrl-R  Search prompts"), "{text}");
+    assert!(!text.contains("private conversation"), "{text}");
+    assert_eq!(app.transcript.len(), 1);
+}
+
+#[test]
+fn selected_modeline_is_colored_and_sits_above_the_collapsible_minibuffer() {
+    use marlin_agent_ui::{UiComponentId, UiRegion, UiStatusItem, UiWorkbench};
+    let mut app = App::new(ModelEndpoint::new("deepseek", "chat"));
+    install_test_commands(&mut app);
+    assert!(app.transcript.is_empty());
+    let mut view = UiWorkbench {
+        layout: test_layout(),
+        theme: marlin_agent_ui::UiTheme::default(),
+        model_label: "deepseek/chat".into(),
+        session_label: "session-one".into(),
+        regions: vec![
+            UiRegion::Transcript,
+            UiRegion::Composer,
+            UiRegion::Commands(vec![]),
+            UiRegion::Status(vec![
+                selected_modeline_item("modeline/left/brand"),
+                selected_modeline_item("modeline/left/model"),
+                selected_modeline_item("modeline/left/activity"),
+                selected_modeline_item("modeline/right/turns"),
+                selected_modeline_item("modeline/right/session"),
+                selected_modeline_item("modeline/state/online"),
+                selected_modeline_item("modeline/state/offline"),
+                selected_modeline_item("modeline/state/unknown"),
+                UiStatusItem::host(UiComponentId::new("ready").unwrap(), "Ready"),
+            ]),
+        ],
+        focus: UiComponentId::new("composer").unwrap(),
+        frame: test_frame(),
+        keymap: Vec::new(),
+    };
+    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 12)).unwrap();
+    fn paint(
+        terminal: &mut ratatui::Terminal<ratatui::backend::TestBackend>,
+        app: &App,
+        view: &UiWorkbench,
+    ) {
+        terminal
+            .draw(|frame| {
+                render_draw(
+                    frame,
+                    app,
+                    view,
+                    &mut Default::default(),
+                    &mut Default::default(),
+                );
+            })
+            .unwrap();
+    }
+    paint(&mut terminal, &app, &view);
+    let row = |terminal: &ratatui::Terminal<ratatui::backend::TestBackend>, y| {
+        (0..80)
+            .map(|x| terminal.backend().buffer()[(x, y)].symbol())
+            .collect::<String>()
+    };
+    assert!(row(&terminal, 10).contains("BRAND"));
+    assert!(row(&terminal, 10).contains("🐬"));
+    assert!(row(&terminal, 10).contains("deepseek/chat"));
+    assert!(row(&terminal, 10).contains("◇"), "{}", row(&terminal, 10));
+    assert!(row(&terminal, 10).contains("Standing"));
+    assert!(row(&terminal, 10).contains("session-one"));
+    assert!(row(&terminal, 11).contains("Ready"));
+    if let UiRegion::Status(items) = &mut view.regions[3] {
+        items.push(UiStatusItem::host(
+            UiComponentId::new("modeline/state/runtime").unwrap(),
+            "native-projection",
+        ));
+    }
+    app.runtime_receipt_open = true;
+    paint(&mut terminal, &app, &view);
+    assert!(row(&terminal, 10).contains("native-projection"));
+    app.runtime_receipt_open = false;
+    if let UiRegion::Status(items) = &mut view.regions[3] {
+        items.swap(1, 2);
+    }
+    paint(&mut terminal, &app, &view);
+    let reordered = row(&terminal, 10);
+    assert!(
+        reordered.find("Standing").unwrap() < reordered.find("deepseek/chat").unwrap(),
+        "Scheme-selected Modeline order was lost: {reordered}"
+    );
+    app.history = Arc::new(vec![
+        user_gateway_message("first turn"),
+        assistant_gateway_message("first reply"),
+    ]);
+    if let UiRegion::Status(items) = &mut view.regions[3] {
+        items.swap(3, 4);
+    }
+    paint(&mut terminal, &app, &view);
+    let reordered = row(&terminal, 10);
+    assert!(
+        reordered.find("session-one").unwrap() < reordered.find("T1").unwrap(),
+        "Scheme-selected right Modeline order was lost: {reordered}"
+    );
+    let mut narrow = ratatui::Terminal::new(ratatui::backend::TestBackend::new(68, 12)).unwrap();
+    paint(&mut narrow, &app, &view);
+    let narrow_text = |terminal: &ratatui::Terminal<ratatui::backend::TestBackend>| {
+        (0..12)
+            .flat_map(|y| (0..68).map(move |x| terminal.backend().buffer()[(x, y)].symbol()))
+            .collect::<String>()
+    };
+    assert!(!narrow_text(&narrow).contains("T1"));
+    if let UiRegion::Status(items) = &mut view.regions[3] {
+        let turns = items
+            .iter_mut()
+            .find(|item| item.id.as_str() == "modeline/right/turns")
+            .unwrap();
+        turns.min_width = 66;
+    }
+    paint(&mut narrow, &app, &view);
+    assert!(narrow_text(&narrow).contains("T1"));
+    let mut constrained =
+        ratatui::Terminal::new(ratatui::backend::TestBackend::new(44, 12)).unwrap();
+    let constrained_modeline = |terminal: &ratatui::Terminal<ratatui::backend::TestBackend>| {
+        (0..44)
+            .map(|x| terminal.backend().buffer()[(x, 10)].symbol())
+            .collect::<String>()
+    };
+    paint(&mut constrained, &app, &view);
+    let doom_line = constrained_modeline(&constrained);
+    assert!(doom_line.contains("deepseek/chat"), "{doom_line}");
+    assert!(!doom_line.contains('§'), "{doom_line}");
+    if let UiRegion::Status(items) = &mut view.regions[3] {
+        for item in items {
+            match item.id.as_str() {
+                "modeline/left/model" => item.keep_priority = 1,
+                "modeline/right/session" => item.keep_priority = 3,
+                _ => {}
+            }
+        }
+    }
+    paint(&mut constrained, &app, &view);
+    let pi_line = constrained_modeline(&constrained);
+    assert!(!pi_line.contains("deepseek/chat"), "{pi_line}");
+    assert!(pi_line.contains('§'), "{pi_line}");
+    app.history = Arc::new(Vec::new());
+    assert_eq!(
+        terminal.backend().buffer()[(20, 10)].bg,
+        ratatui::style::Color::Rgb(28, 31, 36)
+    );
+    assert_eq!(
+        terminal.backend().buffer()[(4, 10)].bg,
+        ratatui::style::Color::Rgb(198, 120, 221)
+    );
+    assert_eq!(
+        terminal.backend().buffer()[(0, 0)].bg,
+        ratatui::style::Color::Rgb(40, 44, 52)
+    );
+    view.theme.canvas = marlin_agent_ui::UiRgb::new(12, 34, 56);
+    view.theme.accent = marlin_agent_ui::UiRgb::new(246, 48, 68);
+    paint(&mut terminal, &app, &view);
+    assert_eq!(
+        terminal.backend().buffer()[(0, 0)].bg,
+        ratatui::style::Color::Rgb(12, 34, 56)
+    );
+    assert_eq!(
+        terminal.backend().buffer()[(4, 10)].bg,
+        ratatui::style::Color::Rgb(246, 48, 68)
+    );
+    app.gateway_observation = GatewayObservation::Online;
+    paint(&mut terminal, &app, &view);
+    assert!(row(&terminal, 10).contains("◆"));
+    assert!(row(&terminal, 10).contains("Linked"));
+    app.gateway_observation = GatewayObservation::Offline;
+    paint(&mut terminal, &app, &view);
+    assert!(row(&terminal, 10).contains("◇"));
+    assert!(row(&terminal, 10).contains("Lost"));
+    assert!(mouse_over_minibuffer(&app, &test_layout(), 80, 12, 12));
+    assert!(!mouse_over_minibuffer(&app, &test_layout(), 80, 12, 10));
+
+    app.minibuffer_hovered = true;
+    paint(&mut terminal, &app, &view);
+    assert!(row(&terminal, 8).contains("Message"));
+    assert!(row(&terminal, 7).contains("BRAND"));
+    assert!(mouse_over_minibuffer(&app, &test_layout(), 80, 12, 9));
+    assert!(!mouse_over_minibuffer(&app, &test_layout(), 80, 12, 7));
+    app.minibuffer_hovered = false;
+    app.composer.insert_text("draft survives hover exit");
+    paint(&mut terminal, &app, &view);
+    assert!(row(&terminal, 8).contains("Message"));
+    assert!(row(&terminal, 9).contains("draft survives hover exit"));
+
+    view.session_label = "archive/日本語/critical-session-42".into();
+    paint(&mut terminal, &app, &view);
+    let line = row(&terminal, 7);
+    assert!(line.contains("critical-session-42"), "{line}");
+    assert!(line.contains('…'), "{line}");
+    assert!(!line.contains("archive"), "{line}");
+}

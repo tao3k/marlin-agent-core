@@ -11,14 +11,16 @@ use marlin_agent_kernel::{
     LoopProgramRuntimeHandoffExecutionStatus, LoopProgramRuntimeHandoffExecutor,
     LoopProgramRuntimeHandoffHandler, LoopProgramRuntimeHandoffPlan,
     LoopProgramRuntimeHandoffRouter, LoopProgramRuntimeHandoffRouterHandlers,
-    LoopProgramRuntimeOwner, LoopProgramToolProcessProgram, LoopProgramToolProcessSpawnRequest,
-    StaticLoopProgramRuntimeHandoffHandler, spawn_loop_program_tool_process,
+    LoopProgramRuntimeOwner, LoopProgramToolProcessCommandTemplate, LoopProgramToolProcessProgram,
+    LoopProgramToolProcessResolver, LoopProgramToolProcessSpawnRequest,
+    StaticLoopProgramRuntimeHandoffHandler, StaticLoopProgramToolProcessResolver,
+    spawn_loop_program_tool_process,
 };
 use marlin_agent_protocol::{
     AgentFlowMemoryOperation, AgentFlowSession, LoopProgramActionKind, LoopProgramEventKind,
     LoopProgramId, LoopProgramStateId, LoopProgramTransitionId,
 };
-use marlin_agent_runtime::TokioAgentRuntime;
+use marlin_agent_runtime::{RuntimeProcessContainmentRequirement, TokioAgentRuntime};
 
 #[test]
 fn default_handoff_router_defers_all_runtime_lanes_with_typed_receipts() {
@@ -465,6 +467,75 @@ async fn tool_process_projection_can_spawn_fixture_command() {
             .get(receipt.pid)
             .is_none()
     );
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn strict_tree_tool_request_rejects_before_process_spawn() {
+    let temp = tempfile::tempdir().unwrap();
+    let marker = temp.path().join("spawned");
+    let (runtime, _events) = TokioAgentRuntime::new(4);
+    let plan = LoopProgramRuntimeHandoffPlan::from_receipts(
+        LoopProgramId::new("strict-tool-program"),
+        &[receipt(1, LoopProgramActionKind::DispatchTools)],
+    );
+    let execution =
+        AgentFlowLoopProgramRuntimeHandoffExecutor::new(LoopProgramRuntimeOwner::new("owner"))
+            .execute_plan(&plan);
+    let request = LoopProgramToolProcessSpawnRequest::new(
+        execution.tool_process_projections[0].clone(),
+        LoopProgramToolProcessProgram::new("/bin/sh"),
+    )
+    .with_args(
+        vec![
+            "-c".to_owned(),
+            "touch \"$1\"".to_owned(),
+            "fixture".to_owned(),
+            marker.to_string_lossy().into_owned(),
+        ]
+        .into_boxed_slice(),
+    )
+    .with_containment(RuntimeProcessContainmentRequirement::EnforcedDescendantTree);
+    let error = spawn_loop_program_tool_process(&runtime.context(), request)
+        .await
+        .unwrap_err();
+    assert_eq!(error.kind(), std::io::ErrorKind::Unsupported);
+    assert!(!marker.exists());
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn strict_tree_command_template_preserves_admission_requirement() {
+    let temp = tempfile::tempdir().unwrap();
+    let marker = temp.path().join("template-spawned");
+    let (runtime, _events) = TokioAgentRuntime::new(4);
+    let plan = LoopProgramRuntimeHandoffPlan::from_receipts(
+        LoopProgramId::new("strict-template-program"),
+        &[receipt(1, LoopProgramActionKind::DispatchTools)],
+    );
+    let execution =
+        AgentFlowLoopProgramRuntimeHandoffExecutor::new(LoopProgramRuntimeOwner::new("owner"))
+            .execute_plan(&plan);
+    let projection = &execution.tool_process_projections[0];
+    let template = LoopProgramToolProcessCommandTemplate::new(
+        projection.command.command_kind.as_str(),
+        projection.command.argv.clone(),
+        LoopProgramToolProcessProgram::new("/bin/sh"),
+    )
+    .with_args([
+        "-c".to_owned(),
+        "touch \"$1\"".to_owned(),
+        "fixture".to_owned(),
+        marker.to_string_lossy().into_owned(),
+    ])
+    .with_containment(RuntimeProcessContainmentRequirement::EnforcedDescendantTree);
+    let resolver = StaticLoopProgramToolProcessResolver::new(vec![template].into_boxed_slice());
+    let request = resolver.resolve(projection).expect("matching template");
+    let error = spawn_loop_program_tool_process(&runtime.context(), request)
+        .await
+        .unwrap_err();
+    assert_eq!(error.kind(), std::io::ErrorKind::Unsupported);
+    assert!(!marker.exists());
 }
 
 fn handled_by(owner: &'static str) -> Arc<dyn LoopProgramRuntimeHandoffHandler> {

@@ -24,7 +24,7 @@ use super::{
     edge_gateway::{RuntimeStreamGateway, SharedGateway},
     event_queue::{QueuedReply, Reply, ReplyError, ReplySender, reply_channel},
     frame_schedule::FrameSchedule,
-    input::{BracketedPaste, InputDecoder, MouseMotion, TerminalInput},
+    input::{BracketedPaste, InputDecoder, MouseMotion, TerminalInput, WheelAccumulator},
     journal_gateway::JournalGateway,
     model_catalog::ModelCatalog,
     output_limit::{MAX_COMPLETION_HEAP_BYTES, MAX_RESPONSE_BYTES, OutputLimit},
@@ -50,7 +50,10 @@ use marlin_agent_storage::{
 use marlin_agent_stream::{
     ModelStreamEvent, ModelStreamingGateway, matches_observed_anthropic_thinking,
 };
-use marlin_agent_ui::{UiBrowseDirection, UiCommandName, UiContent, UiOpenFacts};
+use marlin_agent_ui::{
+    UiBrowseDirection, UiBufferId, UiCommand, UiCommandName, UiContent, UiEvent, UiOpenFacts,
+    UiTranscriptPolicy, UiWorkbench,
+};
 use termion::event::Key;
 
 #[path = "runner.rs"]
@@ -63,11 +66,18 @@ mod terminal_owner;
 mod turn;
 
 #[cfg(test)]
+#[cfg_attr(test, allow(unused_imports))]
 pub(crate) use runner::process_replies;
+// The standalone unit harness imports this module without the binary facade.
+#[cfg_attr(test, allow(unused_imports))]
 pub use runner::run_cli;
 
+#[cfg(test)]
+#[cfg_attr(test, allow(unused_imports))]
+pub(crate) use state::safe_text;
 pub(crate) use state::{
-    App, GatewayObservation, INPUT_QUEUE_ITEMS, MAX_TURN_SEGMENTS, PendingTurn, REPLY_BATCH_LIMIT,
-    REPLY_QUEUE_BYTES, REPLY_QUEUE_ITEMS, safe_text,
+    App, BufferView, GatewayObservation, INPUT_QUEUE_ITEMS, MAX_TURN_SEGMENTS, MessageEvent,
+    MessageSeverity, MessageSource, ModelineActivity, PendingTurn, REPLY_BATCH_LIMIT,
+    REPLY_QUEUE_BYTES, REPLY_QUEUE_ITEMS, RUNTIME_EVENT_BATCH_LIMIT,
 };
 use terminal_owner::TerminalOwner;

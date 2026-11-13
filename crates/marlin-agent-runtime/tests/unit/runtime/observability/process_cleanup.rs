@@ -4,7 +4,7 @@
 
 use std::{collections::BTreeSet, sync::mpsc, time::Duration};
 
-use marlin_agent_runtime::{SubAgentSpawnProfile, observability};
+use marlin_agent_runtime::{SubAgentSpawnProfile, observability, process};
 
 use super::RecordingSubscriber;
 
@@ -12,15 +12,15 @@ use super::RecordingSubscriber;
 fn runtime_process_registry_sweeps_stale_and_live_cleanup_candidates() {
     let subscriber = RecordingSubscriber::new();
     let _guard = tracing::subscriber::set_default(subscriber.clone());
-    let mut registry = observability::RuntimeProcessRegistry::new();
+    let mut registry = process::RuntimeProcessRegistry::new();
     registry.track(
-        observability::RuntimeProcessObservation::new(
+        process::RuntimeProcessObservation::new(
             100,
-            observability::RuntimeProcessKind::SubAgent,
+            process::RuntimeProcessKind::SubAgent,
             "sub-agent:stale",
         )
         .with_command(
-            observability::RuntimeCommandObservation::new("sub-agent-command")
+            process::RuntimeCommandObservation::new("sub-agent-command")
                 .with_argv(["marlin-subagent", "--role", "research"])
                 .with_sub_agent_source("kernel-node")
                 .with_sub_agent_profile(
@@ -31,14 +31,13 @@ fn runtime_process_registry_sweeps_stale_and_live_cleanup_candidates() {
         .with_started_at_ms(1),
     );
     registry.track(
-        observability::RuntimeProcessObservation::new(
+        process::RuntimeProcessObservation::new(
             101,
-            observability::RuntimeProcessKind::Tool,
+            process::RuntimeProcessKind::Tool,
             "tool:live",
         )
         .with_command(
-            observability::RuntimeCommandObservation::new("tool-command")
-                .with_argv(["sleep", "10"]),
+            process::RuntimeCommandObservation::new("tool-command").with_argv(["sleep", "10"]),
         )
         .with_started_at_ms(2),
     );
@@ -59,7 +58,7 @@ fn runtime_process_registry_sweeps_stale_and_live_cleanup_candidates() {
     assert!(registry.get(100).is_none());
     assert_eq!(
         registry.get(101).map(|process| process.status.clone()),
-        Some(observability::RuntimeProcessStatus::CleanupRequested)
+        Some(process::RuntimeProcessStatus::CleanupRequested)
     );
     assert_eq!(
         registry
@@ -77,14 +76,14 @@ fn runtime_process_registry_sweeps_stale_and_live_cleanup_candidates() {
         .expect("stale command receipt entry");
     assert_eq!(
         stale.outcome,
-        observability::RuntimeCommandCleanupOutcome::RemovedStale
+        process::RuntimeCommandCleanupOutcome::RemovedStale
     );
     assert_eq!(stale.cleanup_attempts, 0);
     assert_eq!(stale.last_cleanup_attempt_at_ms, None);
     assert!(!stale.retained_in_registry);
     assert!(!stale.requires_follow_up);
     assert!(!stale.force_cleanup_recommended);
-    assert_eq!(stale.kind, observability::RuntimeProcessKind::SubAgent);
+    assert_eq!(stale.kind, process::RuntimeProcessKind::SubAgent);
     assert_eq!(
         stale
             .command
@@ -115,7 +114,7 @@ fn runtime_process_registry_sweeps_stale_and_live_cleanup_candidates() {
         .expect("live command receipt entry");
     assert_eq!(
         live.outcome,
-        observability::RuntimeCommandCleanupOutcome::TerminationRequested
+        process::RuntimeCommandCleanupOutcome::TerminationRequested
     );
     assert_eq!(live.cleanup_attempts, 1);
     assert_eq!(live.last_cleanup_attempt_at_ms, Some(50));
@@ -178,15 +177,15 @@ fn runtime_process_registry_sweeps_stale_and_live_cleanup_candidates() {
 fn runtime_process_registry_retains_cleanup_candidate_when_termination_fails() {
     let subscriber = RecordingSubscriber::new();
     let _guard = tracing::subscriber::set_default(subscriber.clone());
-    let mut registry = observability::RuntimeProcessRegistry::new();
+    let mut registry = process::RuntimeProcessRegistry::new();
     registry.track(
-        observability::RuntimeProcessObservation::new(
+        process::RuntimeProcessObservation::new(
             200,
-            observability::RuntimeProcessKind::Provider,
+            process::RuntimeProcessKind::Provider,
             "provider:stuck",
         )
         .with_command(
-            observability::RuntimeCommandObservation::new("provider-command")
+            process::RuntimeCommandObservation::new("provider-command")
                 .with_argv(["provider", "serve"]),
         )
         .with_started_at_ms(1),
@@ -206,7 +205,7 @@ fn runtime_process_registry_retains_cleanup_candidate_when_termination_fails() {
     );
     assert_eq!(
         registry.get(200).map(|process| process.status.clone()),
-        Some(observability::RuntimeProcessStatus::CleanupRequested)
+        Some(process::RuntimeProcessStatus::CleanupRequested)
     );
     assert_eq!(
         registry
@@ -219,7 +218,7 @@ fn runtime_process_registry_retains_cleanup_candidate_when_termination_fails() {
     assert_eq!(receipt.entries.len(), 1);
     assert_eq!(
         receipt.entries[0].outcome,
-        observability::RuntimeCommandCleanupOutcome::TerminationFailed
+        process::RuntimeCommandCleanupOutcome::TerminationFailed
     );
     assert_eq!(receipt.entries[0].cleanup_attempts, 1);
     assert_eq!(receipt.entries[0].last_cleanup_attempt_at_ms, Some(60));
@@ -258,17 +257,17 @@ fn runtime_process_registry_retains_cleanup_candidate_when_termination_fails() {
 
 #[test]
 fn runtime_process_cleanup_policy_gates_force_cleanup_by_attempt_count() {
-    let mut registry = observability::RuntimeProcessRegistry::new();
+    let mut registry = process::RuntimeProcessRegistry::new();
     registry.track(
-        observability::RuntimeProcessObservation::new(
+        process::RuntimeProcessObservation::new(
             250,
-            observability::RuntimeProcessKind::Provider,
+            process::RuntimeProcessKind::Provider,
             "provider:retry-policy",
         )
         .with_started_at_ms(1),
     );
     registry.request_cleanup(250, 40);
-    let policy = observability::RuntimeProcessCleanupPolicy::new(2);
+    let policy = process::RuntimeProcessCleanupPolicy::new(2);
     let mut controller = FakeCleanupController::with_alive([250]).with_failure(250);
 
     let first_sweep = registry.sweep_cleanup_candidates(&mut controller, 60);
@@ -300,11 +299,11 @@ fn runtime_process_cleanup_policy_gates_force_cleanup_by_attempt_count() {
 
 #[test]
 fn runtime_process_registry_handle_releases_lock_before_cleanup_controller_calls() {
-    let registry = observability::RuntimeProcessRegistryHandle::new();
+    let registry = process::RuntimeProcessRegistryHandle::new();
     registry.track(
-        observability::RuntimeProcessObservation::new(
+        process::RuntimeProcessObservation::new(
             260,
-            observability::RuntimeProcessKind::Tool,
+            process::RuntimeProcessKind::Tool,
             "tool:lock-granularity",
         )
         .with_started_at_ms(1),
@@ -337,15 +336,15 @@ fn runtime_process_registry_handle_releases_lock_before_cleanup_controller_calls
 
 #[test]
 fn runtime_process_registry_handle_exposes_command_cleanup_receipt() {
-    let registry = observability::RuntimeProcessRegistryHandle::new();
+    let registry = process::RuntimeProcessRegistryHandle::new();
     registry.track(
-        observability::RuntimeProcessObservation::new(
+        process::RuntimeProcessObservation::new(
             300,
-            observability::RuntimeProcessKind::SubAgent,
+            process::RuntimeProcessKind::SubAgent,
             "sub-agent:stale",
         )
         .with_command(
-            observability::RuntimeCommandObservation::new("sub-agent-command")
+            process::RuntimeCommandObservation::new("sub-agent-command")
                 .with_argv(["marlin-subagent", "--role", "audit"])
                 .with_sub_agent_profile(
                     SubAgentSpawnProfile::new("audit-profile", "asp_explorer", "audit")
@@ -355,14 +354,13 @@ fn runtime_process_registry_handle_exposes_command_cleanup_receipt() {
         .with_started_at_ms(1),
     );
     registry.track(
-        observability::RuntimeProcessObservation::new(
+        process::RuntimeProcessObservation::new(
             301,
-            observability::RuntimeProcessKind::Tool,
+            process::RuntimeProcessKind::Tool,
             "tool:live",
         )
         .with_command(
-            observability::RuntimeCommandObservation::new("tool-command")
-                .with_argv(["sleep", "30"]),
+            process::RuntimeCommandObservation::new("tool-command").with_argv(["sleep", "30"]),
         )
         .with_started_at_ms(2),
     );
@@ -382,7 +380,7 @@ fn runtime_process_registry_handle_exposes_command_cleanup_receipt() {
     assert!(registry.get(300).is_none());
     assert_eq!(
         registry.get(301).map(|process| process.status),
-        Some(observability::RuntimeProcessStatus::CleanupRequested)
+        Some(process::RuntimeProcessStatus::CleanupRequested)
     );
 
     let stale = receipt
@@ -392,7 +390,7 @@ fn runtime_process_registry_handle_exposes_command_cleanup_receipt() {
         .expect("stale command cleanup receipt");
     assert_eq!(
         stale.outcome,
-        observability::RuntimeCommandCleanupOutcome::RemovedStale
+        process::RuntimeCommandCleanupOutcome::RemovedStale
     );
     assert_eq!(stale.cleanup_attempts, 0);
     assert_eq!(stale.last_cleanup_attempt_at_ms, None);
@@ -415,7 +413,7 @@ fn runtime_process_registry_handle_exposes_command_cleanup_receipt() {
         .expect("live command cleanup receipt");
     assert_eq!(
         live.outcome,
-        observability::RuntimeCommandCleanupOutcome::TerminationRequested
+        process::RuntimeCommandCleanupOutcome::TerminationRequested
     );
     assert_eq!(live.cleanup_attempts, 1);
     assert_eq!(live.last_cleanup_attempt_at_ms, Some(70));
@@ -445,13 +443,13 @@ impl FakeCleanupController {
     }
 }
 
-impl observability::RuntimeProcessLiveness for FakeCleanupController {
+impl process::RuntimeProcessLiveness for FakeCleanupController {
     fn is_process_alive(&mut self, pid: u32) -> bool {
         self.alive.contains(&pid)
     }
 }
 
-impl observability::RuntimeProcessTerminator for FakeCleanupController {
+impl process::RuntimeProcessTerminator for FakeCleanupController {
     fn request_termination(&mut self, pid: u32) -> Result<bool, String> {
         if self.fail_termination.contains(&pid) {
             return Err(format!("pid {pid} refused termination"));
@@ -462,14 +460,14 @@ impl observability::RuntimeProcessTerminator for FakeCleanupController {
 }
 
 struct SnapshottingCleanupController {
-    registry: observability::RuntimeProcessRegistryHandle,
+    registry: process::RuntimeProcessRegistryHandle,
     alive: BTreeSet<u32>,
     snapshot_count: usize,
 }
 
 impl SnapshottingCleanupController {
     fn new(
-        registry: observability::RuntimeProcessRegistryHandle,
+        registry: process::RuntimeProcessRegistryHandle,
         alive: impl IntoIterator<Item = u32>,
     ) -> Self {
         Self {
@@ -480,13 +478,13 @@ impl SnapshottingCleanupController {
     }
 }
 
-impl observability::RuntimeProcessLiveness for SnapshottingCleanupController {
+impl process::RuntimeProcessLiveness for SnapshottingCleanupController {
     fn is_process_alive(&mut self, pid: u32) -> bool {
         self.alive.contains(&pid)
     }
 }
 
-impl observability::RuntimeProcessTerminator for SnapshottingCleanupController {
+impl process::RuntimeProcessTerminator for SnapshottingCleanupController {
     fn request_termination(&mut self, pid: u32) -> Result<bool, String> {
         let snapshot = self.registry.snapshot(79);
         assert_eq!(snapshot.cleanup_candidate_count, 1);

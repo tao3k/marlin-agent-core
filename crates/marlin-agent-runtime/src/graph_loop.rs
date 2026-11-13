@@ -9,16 +9,19 @@ use std::{collections::BTreeMap, sync::Arc};
 use marlin_agent_protocol::{
     AgentFlowReceipt, AgentFlowReceiptId, AgentFlowRuntimeHandoffId, AgentFlowSession,
     AgentFlowSessionTransform, AgentFlowTransformRejection, GraphId, GraphLoopEventId,
-    GraphLoopExecutionStatus, GraphLoopIterationId, NodeId, RunId,
+    GraphLoopExecutionStatus, GraphLoopIterationId, GraphLoopNextAction, HumanDecision,
+    HumanDecisionReceipt, HumanGateId, HumanGateReceipt, LoopGraph, NodeId, RunId,
     build_agent_flow_runtime_handoff, derive_agent_flow_session,
 };
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
+use tokio::sync::watch;
 
 /// Runtime state for a graph-loop run.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum GraphLoopRunStatus {
     Active,
+    AwaitingHuman,
     Cancelling,
     Completed,
     Failed,
@@ -93,6 +96,8 @@ pub struct GraphLoopRunObservation {
     pub last_event_id: Option<GraphLoopEventId>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub terminal_status: Option<GraphLoopExecutionStatus>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pending_human_gate: Option<HumanGateReceipt>,
 }
 
 impl GraphLoopRunObservation {
@@ -108,6 +113,7 @@ impl GraphLoopRunObservation {
             pending_node_ids: Vec::new(),
             last_event_id: None,
             terminal_status: None,
+            pending_human_gate: None,
         }
     }
 
@@ -135,8 +141,27 @@ impl GraphLoopRunObservation {
 /// Error returned by graph-loop run registry mutation.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum GraphLoopRunRegistryError {
-    DuplicateRun { run_id: RunId },
-    RunNotFound { run_id: RunId },
+    DuplicateRun {
+        run_id: RunId,
+    },
+    RunNotFound {
+        run_id: RunId,
+    },
+    InvalidRunState {
+        run_id: RunId,
+        status: GraphLoopRunStatus,
+    },
+    GateIterationMismatch {
+        run_id: RunId,
+        iteration_id: GraphLoopIterationId,
+    },
+    GateMismatch {
+        expected: HumanGateId,
+        received: HumanGateId,
+    },
+    InvalidHumanDecision {
+        gate_id: HumanGateId,
+    },
 }
 
 /// Receipt returned after registering a graph-loop run.
@@ -211,6 +236,7 @@ pub struct GraphLoopRunCancelReceipt {
 pub enum GraphLoopRunWaitStatus {
     Idle,
     Active,
+    AwaitingHuman,
     NotFound,
 }
 
@@ -278,6 +304,115 @@ impl GraphLoopRunRegistry {
         Ok(observation.clone())
     }
 
+    /// Suspends an active run at the exact iteration that produced a human gate.
+    pub fn defer_run(
+        &mut self,
+        gate: HumanGateReceipt,
+        observed_at_ms: u64,
+        last_event_id: impl Into<GraphLoopEventId>,
+    ) -> Result<GraphLoopRunObservation, GraphLoopRunRegistryError> {
+        let Some(observation) = self.runs.get_mut(&gate.run_id) else {
+            return Err(GraphLoopRunRegistryError::RunNotFound {
+                run_id: gate.run_id,
+            });
+        };
+        if observation.status == GraphLoopRunStatus::Cancelling {
+            observation.updated_at_ms = observed_at_ms;
+            observation.status = GraphLoopRunStatus::Cancelled;
+            observation.terminal_status = Some(GraphLoopExecutionStatus::Cancelled);
+            observation.last_event_id = Some(last_event_id.into());
+            observation.pending_node_ids.clear();
+            return Ok(observation.clone());
+        }
+        if observation.status != GraphLoopRunStatus::Active {
+            return Err(GraphLoopRunRegistryError::InvalidRunState {
+                run_id: gate.run_id,
+                status: observation.status.clone(),
+            });
+        }
+        if observation.current_iteration_id.as_ref() != Some(&gate.iteration_id) {
+            return Err(GraphLoopRunRegistryError::GateIterationMismatch {
+                run_id: gate.run_id,
+                iteration_id: gate.iteration_id,
+            });
+        }
+        observation.updated_at_ms = observed_at_ms;
+        observation.status = GraphLoopRunStatus::AwaitingHuman;
+        observation.last_event_id = Some(last_event_id.into());
+        observation.pending_node_ids.clear();
+        observation.pending_human_gate = Some(gate);
+        Ok(observation.clone())
+    }
+
+    /// Admits a decision against the one pending gate and returns its approved graph.
+    /// A repeated or stale decision cannot authorize another execution.
+    pub fn decide_human_gate(
+        &mut self,
+        run_id: &RunId,
+        decision: &HumanDecisionReceipt,
+        observed_at_ms: u64,
+        last_event_id: impl Into<GraphLoopEventId>,
+    ) -> Result<Option<LoopGraph>, GraphLoopRunRegistryError> {
+        let Some(observation) = self.runs.get_mut(run_id) else {
+            return Err(GraphLoopRunRegistryError::RunNotFound {
+                run_id: run_id.clone(),
+            });
+        };
+        if observation.status != GraphLoopRunStatus::AwaitingHuman {
+            return Err(GraphLoopRunRegistryError::InvalidRunState {
+                run_id: run_id.clone(),
+                status: observation.status.clone(),
+            });
+        }
+        let gate = observation
+            .pending_human_gate
+            .as_ref()
+            .expect("awaiting-human run must retain its gate");
+        if gate.gate_id != decision.gate_id {
+            return Err(GraphLoopRunRegistryError::GateMismatch {
+                expected: gate.gate_id.clone(),
+                received: decision.gate_id.clone(),
+            });
+        }
+        if decision.decision != HumanDecision::Approved && decision.approved_next_graph.is_some() {
+            return Err(GraphLoopRunRegistryError::InvalidHumanDecision {
+                gate_id: decision.gate_id.clone(),
+            });
+        }
+        let next_graph = if decision.decision == HumanDecision::Approved {
+            Some(
+                decision
+                    .approved_next_graph
+                    .clone()
+                    .or_else(|| match &gate.proposed_next_action {
+                        GraphLoopNextAction::ContinueWithGraph(graph) => Some(graph.clone()),
+                        _ => None,
+                    })
+                    .ok_or_else(|| GraphLoopRunRegistryError::InvalidHumanDecision {
+                        gate_id: decision.gate_id.clone(),
+                    })?,
+            )
+        } else {
+            None
+        };
+        observation.updated_at_ms = observed_at_ms;
+        observation.last_event_id = Some(last_event_id.into());
+        match decision.decision {
+            HumanDecision::Approved => {
+                observation.status = GraphLoopRunStatus::Active;
+                observation.pending_human_gate = None;
+                Ok(next_graph)
+            }
+            HumanDecision::Rejected => {
+                observation.status = GraphLoopRunStatus::Failed;
+                observation.terminal_status = Some(GraphLoopExecutionStatus::Failed);
+                observation.pending_human_gate = None;
+                Ok(None)
+            }
+            HumanDecision::NeedsQuestion | HumanDecision::PatchRequested => Ok(None),
+        }
+    }
+
     /// Marks an active run as cancellation-requested.
     pub fn cancel_run(&mut self, run_id: &RunId, observed_at_ms: u64) -> GraphLoopRunCancelReceipt {
         let Some(observation) = self.runs.get_mut(run_id) else {
@@ -292,6 +427,11 @@ impl GraphLoopRunRegistry {
         observation.updated_at_ms = observed_at_ms;
         let status = if observation.status.is_terminal() {
             GraphLoopRunCancelStatus::AlreadyTerminal
+        } else if observation.status == GraphLoopRunStatus::AwaitingHuman {
+            observation.status = GraphLoopRunStatus::Cancelled;
+            observation.terminal_status = Some(GraphLoopExecutionStatus::Cancelled);
+            observation.pending_human_gate = None;
+            GraphLoopRunCancelStatus::Requested
         } else {
             observation.status = GraphLoopRunStatus::Cancelling;
             GraphLoopRunCancelStatus::Requested
@@ -317,12 +457,33 @@ impl GraphLoopRunRegistry {
                 run_id: run_id.clone(),
             });
         };
+        if observation.status == GraphLoopRunStatus::AwaitingHuman {
+            return Err(GraphLoopRunRegistryError::InvalidRunState {
+                run_id: run_id.clone(),
+                status: observation.status.clone(),
+            });
+        }
+        let terminal_status = if observation.status == GraphLoopRunStatus::Cancelling {
+            GraphLoopExecutionStatus::Cancelled
+        } else {
+            terminal_status
+        };
         observation.updated_at_ms = observed_at_ms;
         observation.status = GraphLoopRunStatus::from(terminal_status.clone());
         observation.terminal_status = Some(terminal_status);
         observation.last_event_id = Some(last_event_id.into());
         observation.pending_node_ids.clear();
         Ok(observation.clone())
+    }
+
+    /// Reads a run status without cloning its graph or pending gate.
+    pub fn run_status(&self, run_id: &RunId) -> Option<GraphLoopRunStatus> {
+        self.runs.get(run_id).map(|run| run.status.clone())
+    }
+
+    /// Borrows the exact pending gate for a known run without cloning its graph.
+    pub fn pending_human_gate(&self, run_id: &RunId) -> Option<&HumanGateReceipt> {
+        self.runs.get(run_id)?.pending_human_gate.as_ref()
     }
 
     /// Inspects one known run.
@@ -344,7 +505,9 @@ impl GraphLoopRunRegistry {
                 observation: None,
             };
         };
-        let status = if observation.is_active() {
+        let status = if observation.status == GraphLoopRunStatus::AwaitingHuman {
+            GraphLoopRunWaitStatus::AwaitingHuman
+        } else if observation.is_active() {
             GraphLoopRunWaitStatus::Active
         } else {
             GraphLoopRunWaitStatus::Idle
@@ -369,10 +532,32 @@ impl GraphLoopRunRegistry {
     }
 }
 
+/// Monotonic wake revision for reading the authoritative graph-loop registry.
+#[derive(Clone, Copy, Debug, Default, Eq, Ord, PartialEq, PartialOrd)]
+pub struct GraphLoopRegistryRevision(u64);
+
+impl GraphLoopRegistryRevision {
+    /// Returns the revision number for change detection.
+    pub fn get(self) -> u64 {
+        self.0
+    }
+}
+
 /// Shared graph-loop run registry handle.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct GraphLoopRunRegistryHandle {
     registry: Arc<Mutex<GraphLoopRunRegistry>>,
+    changes: watch::Sender<GraphLoopRegistryRevision>,
+}
+
+impl Default for GraphLoopRunRegistryHandle {
+    fn default() -> Self {
+        let (changes, _) = watch::channel(GraphLoopRegistryRevision::default());
+        Self {
+            registry: Arc::new(Mutex::new(GraphLoopRunRegistry::new())),
+            changes,
+        }
+    }
 }
 
 impl GraphLoopRunRegistryHandle {
@@ -384,7 +569,19 @@ impl GraphLoopRunRegistryHandle {
     /// Mutates the registry through a scoped closure.
     pub fn with_registry<T>(&self, f: impl FnOnce(&mut GraphLoopRunRegistry) -> T) -> T {
         let mut registry = self.registry.lock();
-        f(&mut registry)
+        let result = f(&mut registry);
+        self.changes.send_modify(|revision| {
+            revision.0 = revision
+                .0
+                .checked_add(1)
+                .expect("graph-loop revision exhausted");
+        });
+        result
+    }
+
+    /// Subscribe to coalesced state changes; read the typed registry after wake.
+    pub fn subscribe(&self) -> watch::Receiver<GraphLoopRegistryRevision> {
+        self.changes.subscribe()
     }
 
     /// Reads the registry through a scoped closure.

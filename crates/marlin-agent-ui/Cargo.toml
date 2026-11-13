@@ -28,12 +28,18 @@ path = "tests/unit/ui_native_projection.rs"
 name = "ui_semantics"
 path = "tests/unit/ui_semantics.rs"
 
+[[bench]]
+name = "ui_hot_path"
+harness = false
+
 [features]
 linked-ui = []
 
 [dependencies]
 gerbil-scheme.workspace = true
+marlin-agent-protocol.workspace = true
 
 [dev-dependencies]
 # The shared ASP Rust gate is mounted by the library's Cargo test target.
 marlin-rust-project-harness-policy = { path = "../../build-support/marlin-rust-project-harness-policy" }
+criterion.workspace = true

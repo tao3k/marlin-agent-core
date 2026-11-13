@@ -34,6 +34,7 @@ pub struct Config {
     pub models: BTreeMap<String, ModelProfile>,
     #[serde(default = "default_timeout")]
     pub timeout_seconds: u64,
+    pub process_budget: Option<marlin_agent_runtime::RuntimeProcessBudget>,
 }
 
 /// Persistent session identity and local storage location.

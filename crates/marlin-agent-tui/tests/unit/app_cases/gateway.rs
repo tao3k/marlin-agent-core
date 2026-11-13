@@ -7,14 +7,16 @@ use super::{
     ModelEndpoint, ModelGatewayCompletionChoice, ModelGatewayCompletionResponse, ModelGatewayError,
     ModelGatewayEventStream, ModelGatewayFuture, ModelGatewayRequest, ModelGatewayResult,
     ModelGatewayTransport, ModelRoute, ModelStreamChunk, ModelStreamEvent, ModelStreamingGateway,
-    Mutex, ReplyError, RuntimeEdgePolicy, TranscriptViewportCache, assistant_gateway_message, draw,
-    parse_cli, reply_channel, user_gateway_message,
+    ModelineActivity, Mutex, ReplyError, RuntimeEdgePolicy, TranscriptViewportCache,
+    assistant_gateway_message, draw, install_test_commands, parse_cli, reply_channel,
+    user_gateway_message,
 };
 
 #[test]
 fn workspace_view_closes_without_losing_the_message_draft_or_history() {
     use crate::harness::workspace::{WorkspaceObservation, WorkspaceView};
     let mut app = App::new(ModelEndpoint::new("openai", "gpt-test"));
+    install_test_commands(&mut app);
     app.composer.insert_text("keep this draft");
     app.scroll_up = 7;
     let original_transcript_len = app.transcript.len();
@@ -64,9 +66,10 @@ fn repeated_resize_during_stream_matches_a_fresh_terminal_frame() {
     };
     let (tx, _rx) = reply_channel(8, 4096);
     let mut app = App::new(ModelEndpoint::new("openai", "gpt-test"));
+    install_test_commands(&mut app);
     app.composer.insert_text("start");
     app.submit(&gateway, &runtime, &tx);
-    assert_eq!(app.activity_label(), "Working");
+    assert_eq!(app.modeline_activity(), ModelineActivity::Working);
     app.composer.insert_text("draft 中🐳");
     app.transcript.push(("Assistant".into(), "start".into()));
     let index = app.transcript.len() - 1;
@@ -111,7 +114,7 @@ fn repeated_resize_during_stream_matches_a_fresh_terminal_frame() {
         );
     }
     app.cancel();
-    assert_eq!(app.activity_label(), "Idle");
+    assert_eq!(app.modeline_activity(), ModelineActivity::Idle);
 }
 
 #[test]
@@ -126,8 +129,10 @@ fn pending_workspace_read_retains_input_until_cancelled() {
     };
     let (tx, _rx) = reply_channel(8, 4096);
     let mut app = App::new(ModelEndpoint::new("openai", "gpt-test"));
+    install_test_commands(&mut app);
     assert!(app.workspace.start(
         &runtime,
+        &marlin_agent_runtime::SessionId::new("test"),
         std::env::current_dir().unwrap(),
         WorkspaceQuery::Status
     ));
@@ -214,6 +219,7 @@ fn model_selection_retains_draft_and_failed_selection_keeps_previous_route() {
     ])
     .unwrap();
     let mut app = App::new(default);
+    install_test_commands(&mut app);
     app.set_models(catalog.clone());
     app.gateway_observation = GatewayObservation::Online;
     let (tx, mut rx) = reply_channel(8, 4096);
@@ -240,11 +246,11 @@ fn model_selection_retains_draft_and_failed_selection_keeps_previous_route() {
     app.submit(&catalog, &runtime, &tx);
     assert_eq!(app.gateway_observation, GatewayObservation::Offline);
     assert!(
-        app.transcript
+        app.messages
             .last()
             .unwrap()
             .1
-            .contains("current model retained")
+            .contains("Current model retained")
     );
     app.submit(&catalog, &runtime, &tx);
     while app.pending.is_some() {
@@ -323,6 +329,7 @@ fn predispatch_rejection_preserves_draft_and_allows_a_later_turn() {
             };
             let (tx, mut rx) = reply_channel(8, 4096);
             let mut app = App::new(ModelEndpoint::new("openai", "gpt-test"));
+            install_test_commands(&mut app);
             if persistent {
                 app.restore(Vec::new());
             }
@@ -345,6 +352,13 @@ fn predispatch_rejection_preserves_draft_and_allows_a_later_turn() {
                 app.transcript
                     .iter()
                     .any(|(role, text)| role == "You" && text == "first prompt")
+            );
+            assert!(app.messages.last().unwrap().1.contains("fixture rejection"));
+            assert!(
+                app.transcript
+                    .iter()
+                    .all(|(_, text)| !text.contains("fixture rejection")),
+                "pre-dispatch diagnostics must stay outside the conversation"
             );
             app.submit(&gateway, &runtime, &tx);
             assert!(
@@ -388,6 +402,7 @@ fn predispatch_claim_after_stream_start_does_not_release_uncertain_session() {
     };
     let (tx, _rx) = reply_channel(8, 4096);
     let mut app = App::new(ModelEndpoint::new("openai", "gpt-test"));
+    install_test_commands(&mut app);
     app.restore(Vec::new());
     app.composer.insert_text("first");
     app.submit(&gateway, &runtime, &tx);
@@ -407,7 +422,7 @@ fn predispatch_claim_after_stream_start_does_not_release_uncertain_session() {
     app.submit(&gateway, &runtime, &tx);
     assert!(app.pending.is_none());
     assert_eq!(app.composer.text(), "new draft");
-    assert!(app.transcript.last().unwrap().1.contains("uncertain"));
+    assert!(app.messages.last().unwrap().1.contains("uncertain"));
 }
 
 #[test]
@@ -429,6 +444,7 @@ fn predispatch_claim_from_opened_stream_is_treated_as_uncertain() {
     let runtime = tokio::runtime::Runtime::new().unwrap();
     let (tx, mut rx) = reply_channel(8, 4096);
     let mut app = App::new(ModelEndpoint::new("openai", "gpt-test"));
+    install_test_commands(&mut app);
     app.restore(Vec::new());
     app.composer.insert_text("first");
     app.submit(&MislabelledStream, &runtime, &tx);
@@ -438,7 +454,7 @@ fn predispatch_claim_from_opened_stream_is_treated_as_uncertain() {
     app.submit(&MislabelledStream, &runtime, &tx);
     assert!(app.pending.is_none());
     assert_eq!(app.composer.text(), "new draft");
-    assert!(app.transcript.last().unwrap().1.contains("uncertain"));
+    assert!(app.messages.last().unwrap().1.contains("uncertain"));
 }
 
 #[test]
@@ -449,6 +465,7 @@ fn ctrl_c_prioritizes_cancellation_then_requires_consecutive_exit_confirmation()
     };
     let (tx, _) = reply_channel(8, 4096);
     let mut app = App::new(ModelEndpoint::new("openai", "gpt-test"));
+    install_test_commands(&mut app);
     app.composer.insert_text("draft");
     app.toggle_command();
     app.composer.insert_text("help");
@@ -466,13 +483,7 @@ fn ctrl_c_prioritizes_cancellation_then_requires_consecutive_exit_confirmation()
     assert!(app.pending.is_some());
     assert!(!app.interrupt());
     assert!(app.pending.is_none());
-    assert!(
-        app.transcript
-            .last()
-            .unwrap()
-            .1
-            .contains("cancelled locally")
-    );
+    assert!(app.messages.last().unwrap().1.contains("cancelled locally"));
     app.composer.insert_text("next");
     app.submit(&gateway, &runtime, &tx);
     assert!(app.pending.is_none());
@@ -501,6 +512,7 @@ fn nonpersistent_turn_stops_at_output_budget_without_committing_history() {
     let runtime = tokio::runtime::Runtime::new().unwrap();
     let (tx, mut rx) = reply_channel(8, 1024 * 1024);
     let mut app = App::new(ModelEndpoint::new("openai", "gpt-test"));
+    install_test_commands(&mut app);
     app.composer.insert_text("prompt");
     app.submit(&OversizedGateway, &runtime, &tx);
     while app.pending.is_some() {
@@ -516,7 +528,7 @@ fn nonpersistent_turn_stops_at_output_budget_without_committing_history() {
     assert!(app.history.is_empty());
     assert_eq!(app.transcript[1].1.len(), 16 * 1024 * 1024);
     assert!(
-        app.transcript
+        app.messages
             .last()
             .unwrap()
             .1
@@ -533,13 +545,15 @@ fn runtime_command_projects_typed_open_policy_receipt() {
     };
     let (tx, _) = reply_channel(8, 4096);
     let mut app = App::new(ModelEndpoint::new("openai", "gpt-test"));
+    install_test_commands(&mut app);
     app.set_runtime_edge(
         RuntimeEdgePolicy::new()
             .with_timeout_ms(1234)
             .receipt()
             .unwrap(),
     );
-    app.composer.insert_text("/runtime");
+    app.toggle_command();
+    app.composer.insert_text("runtime");
     app.submit(&gateway, &runtime, &tx);
     assert!(app.runtime_receipt_open);
     assert_eq!(app.runtime_edge.as_ref().unwrap().timeout_ms(), Some(1234));
@@ -578,6 +592,7 @@ fn request_preparation_runs_off_terminal_thread_and_keeps_full_context() {
     };
     let (tx, mut rx) = reply_channel(8, 4096);
     let mut app = App::new(ModelEndpoint::new("openai", "gpt-test"));
+    install_test_commands(&mut app);
     app.history = Arc::new(vec![
         user_gateway_message("earlier"),
         assistant_gateway_message("reply"),
@@ -613,6 +628,7 @@ fn cancelling_before_background_task_runs_does_not_open_gateway() {
     };
     let (tx, _rx) = reply_channel(8, 4096);
     let mut app = App::new(ModelEndpoint::new("openai", "gpt-test"));
+    install_test_commands(&mut app);
     app.composer.insert_text("prompt");
     app.submit(&gateway, &runtime, &tx);
     app.cancel();

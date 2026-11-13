@@ -5,8 +5,9 @@
 
 =just property-gate= is the maintained project entry. It composes the existing
 =sysml-check= with Quint, native =gerbil test= and Cargo. Each language's
-normal runner executes its own tests; this directory contains no runner or
-second source inventory. =just rust-dev-gate= remains the workspace style gate.
+normal runner executes its own tests; the Gerbil wrapper also checks its
+module-success receipt because the native runner can return zero after a module
+error. This directory does not maintain a second source inventory. =just rust-dev-gate= remains the workspace style gate.
 
 * Ownership
 
@@ -14,10 +15,21 @@ second source inventory. =just rust-dev-gate= remains the workspace style gate.
 |---------+-------+-----------------------|
 | Architecture and allocations | =project.sysml= and =dev/sysml/= | MAR-UI-R10/R11/R12/R13 |
 | Finite UI transitions | =dev/quint/tui-minibuffer.qnt= | safe geometry, focus, pointer/key separation |
-| Scheme composition and dispatch | selected =scheme/ui-modeline= and =scheme/t/ui-workbench-test.ss= | eight slots, ordered contributions, 8/9 host admission boundary |
+| Managed process quota and cleanup | =MAR-PROC-R01/R07= in =dev/sysml/process-lifecycle.sysml=, Rust runtime, =dev/quint/= | generated trace replay against OS process and output EOF observations, plus isolated mutations |
+| Host observation | =MAR-PROC-R18=, =marlin-agent-telemetry= and =dev/quint/host-observer.qnt= | Quint drives a linked macOS TUI and managed process group through suspend, resume and orderly exit |
+| Process memory admission | =MAR-PROC-R19=, =marlin-agent-runtime= consuming the protocol sampler | competing real commands and a caller-held pipe retain the reservation until cleanup |
+| Scheme composition and dispatch | selected =scheme/ui-modeline= and =scheme/t/ui-workbench-test.ss= | fifteen modeline slots, ordered contributions, 8/9 host admission boundary |
 | Typed native boundary | =marlin-agent-ui= | complete modeline, reserved identities, bounded projection |
 | Terminal geometry and I/O | =marlin-agent-tui= | generated dimensions, collapse/hover, real PTY |
 | Cross-crate fixtures and receipts | =marlin-agent-test-support= | reuse its existing runtime evidence APIs |
+
+UI labels, icons, command order, profile selection, and focus rules have one
+presentation oracle in Scheme tests. A presentation-only change should not
+require editing Rust assertions. Rust UI tests use deliberately synthetic
+values to check ABI decoding and rejection, typed host admission, folding and
+viewport/cache behavior, and the observable PTY interaction. The live VM smoke
+test checks that calls and typed failures cross the boundary; it does not
+restate the Scheme command catalog or its labels.
 
 Rust's static contracts are domain newtypes, enum exhaustiveness, admission
 types and compile-time capacity assertions. POO Type descriptors generate and
@@ -34,9 +46,100 @@ cases; a bounded exhaustive test covers terminal heights 7..80 and widths
 10, 24, 40, 80, 120 and 160. Failed seeds and counterexamples belong in the
 failing test output; do not replace them with a passing rerun.
 
+The process quota model fixes seed 42, 1,000 simulation traces and eight steps.
+Its negative control must report an invariant violation. In addition, the
+process quota gate generates three named and 20 seeded ITF traces, replays each
+through Rust with OS observations, and checks isolated source mutations. Two
+process-tree traces additionally observe a same-group descendant and output
+EOF; Unix group disappearance gates quota reuse. Two lease traces cover strict-tree denial and caller-held stdin
+closure before or after process exit; a third source mutation removes the pipe
+lease. An OS counterexample confirms that default groups can be escaped.
+The strict-tree proposal and bounded Linux OS experiment are documented in
+=strict-process-containment.org=. They do not enable a production backend.
+The SysML requirements, Rust and Quint model are authored and traced, not
+automatically generated from one another. See =dev/quint/process-quota.org=
+for assumptions and bounds.
+
 For a new domain, add its invariant to the owning SysML requirement, its
 finite transition model under =dev/quint/= when temporal behavior matters,
 and executable properties next to the native Scheme/Rust tests. Then add the
 authored model to =property-model-gate=; package tests stay under the existing
 Gerbil and Cargo entrypoints. State the bounds and negative controls before
 claiming a broader stability result.
+
+* macOS real TUI runtime gate
+
+On macOS =property-gate= also runs =tui-runtime-gate=. It stages the linked
+Scheme UI, exercises the real binary in a PTY with a local streaming fixture,
+checks workspace Git cancellation and orderly TUI shutdown against the OS PID.
+An additional, separately invoked crash experiment remains available; its
+fixture cleanup is not evidence of product cleanup.
+
+=stalled_collector_does_not_delay_runtime_drain_or_block_tui_exit= holds the
+accepted OTLP/HTTP request open without sending a response. Before the TUI
+exits, the test checks the final Runtime task and process counts, the terminal
+mode, and OS absence of the workspace tool, its pipe-inheriting descendant,
+and their process group. The PTY test process measures a ten-second deadline
+from the quit key. The TUI must report the export failure and exit successfully
+while the collector still owns the socket.
+
+The default streaming run is 30 seconds. Set =MARLIN_TUI_SOAK_SECONDS= to a
+larger value for longer runs. An opt-in diagnostic thread, enabled only by the
+fixture through =MARLIN_TUI_RUNTIME_METRICS_FILE=, records Tokio alive tasks
+and worker count. macOS =libproc= samples TUI resident memory, thread count and
+open descriptors without launching external sampling processes. The test compares
+idle Tokio tasks to its startup baseline with one-task tolerance, but does not
+establish a universal memory or thread bound. Per-phase maxima separate
+provider connection, screen output, cancellation, and sampling time. These
+bounded fixtures do not prove behaviour under a real provider, escaped process
+descendants, external pipe holders, arbitrary SIGKILL recovery, or days of use.
+
+TUI turn, session, workspace and signal tasks use the same
+=TokioAgentRuntime= tracker. Shutdown cancels owned work and waits for tracked
+cleanup before dropping Tokio. Workspace Git injects the generic bounded
+=marlin-agent-protocol= process contract, implemented using =AsyncManagedChildProcess=;
+Git retains its read-only arguments, deadline and output limit. Task admission,
+process reservation and shutdown serialize on the same lock. Each admitted
+resource receives a typed session, operation and host-process generation.
+The managed process reserves its operation before launch, and its ownership
+follows the child, its reaper and any leased pipe. On macOS the process group
+must also be observed absent, even without a configured quota. Shutdown receipts count
+both tasks and process reservations. A timed-out or unconfirmed cleanup
+keeps the reservation visible. Callers holding a managed child or pipe must
+release it for an orderly drain.
+
+MAR-PROC-R12 through R17 are checked with seven directed and sixteen seeded traces
+from =runtime-process-owner.qnt= in the macOS property gate. The Rust replay
+compares the tracker and registry with OS process existence after each step.
+It exercises late admission, concurrent ownership constraints, session
+separation, operation reuse across generations, stale cleanup and pipe-held drain. Separate
+Rust tests race task admission against shutdown and race two process starts.
+The watchdog actions observe a deadline while the child remains live, present
+the report to owners in a different session or operation and to a replacement
+generation, and exercise matching cleanup with a pipe lease still held. The
+gate rejects a Rust mutation that compares only session and operation after
+the replay observes the replacement exit. A separate executor regression
+checks that a real command deadline reaps both an in-group descendant that
+inherits stdout and the process group.
+Host heartbeat and stdout silence are replayed as advisory observations. The
+gate rejects a second source mutation that reaps the current child on an
+advisory report. The executor test pauses heartbeat and stdout independently,
+observes deduplication and rearming, and waits for the same child to finish
+successfully. A linked TUI PTY test observes the workspace idle notice, checks
+the tool PID remains live, and then checks normal quit reaps it.
+See [[file:codex-runtime-research.org][Codex lifecycle research]] for the
+reported concurrency and exit failures that motivated these checks. The
+qualification covers managed resources in one host process. Unmanaged OS
+threads, direct subprocess calls, escaped descendants and duplicated OS file
+descriptors remain outside this ownership boundary.
+
+A shared event bus is a possible extraction only after its delivery semantics
+are agreed. Today =RuntimeEventSink= sends =AgentEvent= envelopes with string
+topics and messages through a
+bounded primary queue and awaits each capture queue; an undrained capture can
+therefore stall its producer. The TUI model reply queue separately enforces
+item and byte limits and retains permit ownership until consumption. An event
+bus migration must specify subscriber backpressure, disconnect and shutdown,
+loss/replay and ordering per event class, and byte accounting, and replace the
+overlapping paths rather than add a third active protocol. Events are evidence
+of resource state, not ownership or proof that process cleanup completed.

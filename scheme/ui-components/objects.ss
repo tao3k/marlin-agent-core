@@ -3,7 +3,8 @@
 ;;; SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
 (import (only-in :clan/poo/object .o)
-        "./components.ss" "./commands.ss")
+        "./components.ss" "./commands.ss" "./buffers.ss" "./keymap.ss"
+        "./review.ss")
 (export UiComponentsOperations)
 
 (def UiComponentsOperations
@@ -16,6 +17,16 @@
       contribution-node: marlin-ui-contribution-node
       modeline-node: marlin-ui-modeline-node
       extension-node: marlin-ui-extension-node
+      static-buffer-nodes: marlin-ui-static-buffer-nodes
+      buffer-identities: marlin-ui-buffer-identities
       command-catalog: marlin-ui-command-catalog
       command-entries: marlin-ui-command-entries
-      browse-command: marlin-ui-browse-command))
+      command-catalog-with-profiles: marlin-ui-command-catalog-with-profiles
+      command-catalog-with-extensions: marlin-ui-command-catalog-with-extensions
+      command-candidates: marlin-ui-command-candidates
+      browse-command: marlin-ui-browse-command
+      review-menu: marlin-ui-review-menu
+      make-frame: marlin-ui-make-frame
+      select-buffer: marlin-ui-select-buffer
+      project-frame: marlin-ui-project-frame
+      keymap-entries: marlin-ui-keymap-entries))

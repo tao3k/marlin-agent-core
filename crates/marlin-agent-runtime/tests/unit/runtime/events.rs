@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
-use marlin_agent_runtime::{RuntimeEvent, TokioAgentRuntime};
+use marlin_agent_runtime::{RuntimeEvent, RuntimeEventSink, TokioAgentRuntime};
 use tokio_stream::StreamExt;
 
 #[tokio::test]
@@ -59,6 +59,102 @@ async fn runtime_event_capture_survives_closed_parent_stream() {
 }
 
 #[tokio::test]
+async fn captured_fanout_waits_for_all_live_subscribers_before_delivery() {
+    let (runtime, mut parent_events) = TokioAgentRuntime::new(1);
+    let (capture_runtime, mut captured_events) = runtime.child_runtime_with_event_capture(1);
+    capture_runtime
+        .context()
+        .emit(RuntimeEvent::new("first", "one"))
+        .await
+        .unwrap();
+    assert_eq!(parent_events.recv().await.unwrap().topic, "first");
+
+    let context = capture_runtime.context();
+    let mut pending =
+        tokio::spawn(async move { context.emit(RuntimeEvent::new("second", "two")).await });
+    assert!(
+        tokio::time::timeout(std::time::Duration::from_millis(20), &mut pending)
+            .await
+            .is_err()
+    );
+    assert!(parent_events.try_next().is_none());
+
+    assert_eq!(captured_events.recv().await.unwrap().topic, "first");
+    tokio::time::timeout(std::time::Duration::from_secs(1), pending)
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    assert_eq!(parent_events.recv().await.unwrap().topic, "second");
+    assert_eq!(captured_events.recv().await.unwrap().topic, "second");
+}
+
+#[tokio::test]
+async fn cancelling_a_blocked_fanout_releases_capacity_without_partial_delivery() {
+    let (runtime, mut parent_events) = TokioAgentRuntime::new(1);
+    let (capture_runtime, mut captured_events) = runtime.child_runtime_with_event_capture(1);
+    let context = capture_runtime.context();
+    context
+        .emit(RuntimeEvent::new("first", "one"))
+        .await
+        .unwrap();
+    parent_events.recv().await.unwrap();
+
+    let blocked_context = context.clone();
+    let mut pending = tokio::spawn(async move {
+        blocked_context
+            .emit(RuntimeEvent::new("cancelled", "must not appear"))
+            .await
+    });
+    assert!(
+        tokio::time::timeout(std::time::Duration::from_millis(20), &mut pending)
+            .await
+            .is_err()
+    );
+    pending.abort();
+    assert!(pending.await.unwrap_err().is_cancelled());
+    assert!(parent_events.try_next().is_none());
+    assert_eq!(captured_events.recv().await.unwrap().topic, "first");
+
+    context
+        .emit(RuntimeEvent::new("next", "delivered"))
+        .await
+        .unwrap();
+    assert_eq!(parent_events.recv().await.unwrap().topic, "next");
+    assert_eq!(captured_events.recv().await.unwrap().topic, "next");
+}
+
+#[tokio::test]
+async fn multiple_captures_wait_for_the_slowest_active_subscriber() {
+    let (runtime, mut parent_events) = TokioAgentRuntime::new(1);
+    let (first_runtime, mut first_events) = runtime.child_runtime_with_event_capture(1);
+    let (second_runtime, mut second_events) = first_runtime.child_runtime_with_event_capture(1);
+    let context = second_runtime.context();
+    context
+        .emit(RuntimeEvent::new("first", "one"))
+        .await
+        .unwrap();
+    parent_events.recv().await.unwrap();
+    first_events.recv().await.unwrap();
+
+    let mut pending =
+        tokio::spawn(async move { context.emit(RuntimeEvent::new("second", "two")).await });
+    assert!(
+        tokio::time::timeout(std::time::Duration::from_millis(20), &mut pending)
+            .await
+            .is_err()
+    );
+    assert!(parent_events.try_next().is_none());
+    assert!(first_events.try_next().is_none());
+    second_events.recv().await.unwrap();
+
+    pending.await.unwrap().unwrap();
+    assert_eq!(parent_events.recv().await.unwrap().topic, "second");
+    assert_eq!(first_events.recv().await.unwrap().topic, "second");
+    assert_eq!(second_events.recv().await.unwrap().topic, "second");
+}
+
+#[tokio::test]
 async fn receive_and_stream_share_order_and_close_state() {
     let (runtime, mut events) = TokioAgentRuntime::new(2);
     runtime
@@ -75,4 +171,30 @@ async fn receive_and_stream_share_order_and_close_state() {
     assert_eq!(events.next().await.unwrap().topic, "second");
     events.close();
     assert!(events.recv().await.is_none());
+}
+
+#[tokio::test]
+#[ignore = "manual uncontended event admission timing; not a TUI latency gate"]
+async fn benchmark_uncontended_runtime_event_fanout() {
+    async fn cohort(with_capture: bool) -> std::time::Duration {
+        const EVENTS: usize = 10_000;
+        let (sink, _primary) = RuntimeEventSink::channel(EVENTS);
+        let (sink, _capture) = if with_capture {
+            let (sink, capture) = sink.with_capture(EVENTS);
+            (sink, Some(capture))
+        } else {
+            (sink, None)
+        };
+        let started = std::time::Instant::now();
+        for _ in 0..EVENTS {
+            sink.emit(RuntimeEvent::new("bench", "x")).await.unwrap();
+        }
+        started.elapsed()
+    }
+    let a1 = cohort(false).await;
+    let b = cohort(true).await;
+    let a2 = cohort(false).await;
+    eprintln!(
+        "uncontended 10k runtime events: primary A1={a1:?}, capture B={b:?}, primary A2={a2:?}"
+    );
 }

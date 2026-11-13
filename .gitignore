@@ -6,7 +6,7 @@
 /bazel-*
 .devenv
 .pre-commit-config.yaml
-
+/_apalache-out/
 
 # prj-spec directories (numtide/prj-spec)
 # See: https://github.com/numtide/prj-spec

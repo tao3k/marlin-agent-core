@@ -4,19 +4,34 @@
 
 //! Asynchronous read-only worktree observations.
 
-use std::path::PathBuf;
+use std::{path::PathBuf, time::Duration};
 
 use super::viewport::Transcript;
+use marlin_agent_runtime::{
+    AgentSessionContext, ContextVisibility, ManagedProcessExecutor, RuntimeOperationId,
+    RuntimeTask, SessionId, TokioAgentRuntime,
+    process::{HostHeartbeat, ProcessHealthPolicy, ProcessHealthReport},
+};
 use marlin_git_utils::{
     GitDiff, GitDiffRequest, GitDiffScope, GitRepositoryPath, GitStatus, ProcessGitTooling,
 };
-use tokio::{runtime::Runtime, sync::oneshot, task::JoinHandle};
+use tokio::{
+    runtime::Runtime,
+    sync::{mpsc, oneshot},
+};
 
-#[derive(Default)]
 pub(crate) struct WorkspaceStatus {
     pending: Option<PendingStatus>,
-    retiring: Option<JoinHandle<()>>,
+    retiring: Option<RuntimeTask<()>>,
     view: Option<WorkspaceView>,
+    owner: TokioAgentRuntime,
+    host: HostHeartbeat,
+}
+
+impl Default for WorkspaceStatus {
+    fn default() -> Self {
+        Self::new(TokioAgentRuntime::new(64).0)
+    }
 }
 
 pub(crate) struct WorkspaceView {
@@ -42,10 +57,10 @@ pub(crate) enum WorkspaceQuery {
 }
 
 pub(crate) fn parse_query(input: &str) -> Result<WorkspaceQuery, &'static str> {
-    if input == "/status" {
+    if input == "status" {
         return Ok(WorkspaceQuery::Status);
     }
-    let Some(arguments) = input.strip_prefix("/diff") else {
+    let Some(arguments) = input.strip_prefix("diff") else {
         return Err("Unknown workspace command.");
     };
     let arguments = arguments.trim();
@@ -60,7 +75,7 @@ pub(crate) fn parse_query(input: &str) -> Result<WorkspaceQuery, &'static str> {
         GitDiffRequest::all(scope)
     } else {
         let path: String = serde_json::from_str(selected).map_err(
-            |_| "Use /diff [staged] followed by a JSON-quoted repository-relative path.",
+            |_| "Use M-x diff [staged] followed by a JSON-quoted repository-relative path.",
         )?;
         let path = GitRepositoryPath::new(path).map_err(|_| "Diff path must be a nonempty repository-relative path without parent components or NUL.")?;
         GitDiffRequest::for_path(scope, path)
@@ -75,13 +90,25 @@ pub(crate) enum WorkspaceObservation {
 
 struct PendingStatus {
     receiver: oneshot::Receiver<Result<WorkspaceView, String>>,
-    task: JoinHandle<()>,
+    reports: mpsc::Receiver<ProcessHealthReport>,
+    task: RuntimeTask<()>,
 }
 
 impl WorkspaceStatus {
+    pub(crate) fn new(owner: TokioAgentRuntime) -> Self {
+        Self {
+            pending: None,
+            retiring: None,
+            view: None,
+            owner,
+            host: HostHeartbeat::new(),
+        }
+    }
+
     pub(crate) fn start(
         &mut self,
         runtime: &Runtime,
+        session: &SessionId,
         path: PathBuf,
         query: WorkspaceQuery,
     ) -> bool {
@@ -95,26 +122,66 @@ impl WorkspaceStatus {
         }
         self.retiring = None;
         let (tx, rx) = oneshot::channel();
-        let task = runtime.spawn(async move {
-            let result = match query {
-                WorkspaceQuery::Status => ProcessGitTooling::status(&path)
-                    .await
-                    .map(WorkspaceObservation::Status)
-                    .map_err(|error| error.to_string()),
-                WorkspaceQuery::Diff(request) => ProcessGitTooling::diff(&path, request)
-                    .await
-                    .map(WorkspaceObservation::Diff)
-                    .map_err(|error| error.to_string()),
-            };
-            let result = result.map(WorkspaceView::from_observation);
-            let _ = tx.send(result);
+        let (health_tx, reports) = mpsc::channel(4);
+        let operation = RuntimeOperationId::new(match &query {
+            WorkspaceQuery::Status => "workspace.status",
+            WorkspaceQuery::Diff(_) => "workspace.diff",
         });
-        self.pending = Some(PendingStatus { receiver: rx, task });
+        let context = self
+            .owner
+            .context()
+            .with_session_context(AgentSessionContext::root(
+                session.clone(),
+                ContextVisibility::default_runtime(),
+            ));
+        let executor = ManagedProcessExecutor::new(
+            context,
+            marlin_agent_runtime::process::RuntimeProcessKind::Tool,
+            operation.clone(),
+        )
+        .with_health_monitor(
+            self.host.clone(),
+            ProcessHealthPolicy::new(Duration::from_secs(2), Duration::from_secs(3)),
+            health_tx,
+        );
+        let task = self
+            .owner
+            .spawn_in_session_on(runtime, session, operation, async move {
+                let result = match query {
+                    WorkspaceQuery::Status => {
+                        ProcessGitTooling::status_with_executor(&executor, &path)
+                            .await
+                            .map(WorkspaceObservation::Status)
+                            .map_err(|error| error.to_string())
+                    }
+                    WorkspaceQuery::Diff(request) => {
+                        ProcessGitTooling::diff_with_executor(&executor, &path, request)
+                            .await
+                            .map(WorkspaceObservation::Diff)
+                            .map_err(|error| error.to_string())
+                    }
+                };
+                let result = result.map(WorkspaceView::from_observation);
+                let _ = tx.send(result);
+            });
+        self.pending = Some(PendingStatus {
+            receiver: rx,
+            reports,
+            task,
+        });
         true
     }
 
     pub(crate) fn is_pending(&self) -> bool {
         self.pending.is_some()
+    }
+
+    pub(crate) fn pulse_host(&self) {
+        self.host.pulse();
+    }
+
+    pub(crate) fn poll_health(&mut self) -> Option<ProcessHealthReport> {
+        self.pending.as_mut()?.reports.try_recv().ok()
     }
 
     pub(crate) fn show(&mut self, view: WorkspaceView) {
@@ -138,6 +205,13 @@ impl WorkspaceStatus {
             true
         } else {
             false
+        }
+    }
+
+    pub(crate) async fn shutdown(&mut self) {
+        self.cancel();
+        if let Some(task) = self.retiring.take() {
+            let _ = task.join().await;
         }
     }
 

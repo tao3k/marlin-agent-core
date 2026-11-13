@@ -15,6 +15,7 @@
   rename: Marlin
   (context +causal)
   (ui-components)
+  (ui-hydra)
   (ui-modeline)
   (ui-themes)
   (ui-layout)

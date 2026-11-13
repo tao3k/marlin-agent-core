@@ -6,10 +6,7 @@
 
 use std::path::Path;
 
-use crate::{
-    GitReadError, ProcessGitTooling,
-    read::{MAX_OUTPUT_BYTES, read_git},
-};
+use crate::{GitReadError, ProcessGitTooling, read::MAX_OUTPUT_BYTES};
 use thiserror::Error;
 
 #[cfg(test)]
@@ -114,8 +111,15 @@ pub enum GitStatusError {
 impl ProcessGitTooling {
     /// Read the current worktree status without optional index locks or hooks.
     pub async fn status(path: &Path) -> Result<GitStatus, GitStatusError> {
+        Self::status_with_executor(&crate::read::LocalExecutor, path).await
+    }
+
+    pub async fn status_with_executor(
+        executor: &dyn marlin_agent_protocol::BoundedProcessExecutor,
+        path: &Path,
+    ) -> Result<GitStatus, GitStatusError> {
         let args = ["status", "--porcelain=v1", "-z", "--untracked-files=normal"].map(Into::into);
-        let output = read_git(path, &args).await?;
+        let output = crate::read::read_git_with(executor, path, &args).await?;
         parse_status(&output)
     }
 }

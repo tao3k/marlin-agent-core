@@ -2,117 +2,127 @@
 //
 // SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
-//! Typed authority for the terminal's built-in commands.
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum CommandKind {
-    Help,
-    Models,
-    Model,
-    Sessions,
-    Session,
-    Inspect,
-    History,
-    Status,
-    Diff,
-    Context,
-    Runtime,
-    Clear,
-}
-
-impl CommandKind {
-    pub(crate) fn from_name(name: &str) -> Option<Self> {
-        Some(match name {
-            "/help" => Self::Help,
-            "/models" => Self::Models,
-            "/model" => Self::Model,
-            "/sessions" => Self::Sessions,
-            "/session" => Self::Session,
-            "/inspect" => Self::Inspect,
-            "/history" => Self::History,
-            "/status" => Self::Status,
-            "/diff" => Self::Diff,
-            "/context" => Self::Context,
-            "/runtime" => Self::Runtime,
-            "/clear" => Self::Clear,
-            _ => return None,
-        })
-    }
-
-    pub(crate) fn accepts_arguments(self) -> bool {
-        matches!(
-            self,
-            Self::Model
-                | Self::Sessions
-                | Self::Session
-                | Self::Inspect
-                | Self::History
-                | Self::Diff
-        )
-    }
-}
+//! Native capability admission for Scheme-declared commands.
+use marlin_agent_ui::{
+    UiBufferId, UiCommand, UiCommandArguments, UiCommandCapability, UiCommandName, UiEvent,
+    UiProfileName,
+};
 
 #[derive(Debug, Eq, PartialEq)]
 pub(crate) enum Command<'a> {
-    Help,
     Models,
     Model(&'a str),
     Sessions(bool),
     Session(&'a str),
     Inspect(&'a str),
     History(bool),
-    Workspace(&'a str),
+    Workspace {
+        mode: &'a str,
+        arguments: Option<&'a str>,
+    },
     Context,
     Runtime,
+    KillProcess(std::num::NonZeroU64),
+    OpenMenu(&'a str),
+    SelectUi(UiEvent),
+    ToggleThinking(usize),
     Clear,
 }
 
 impl<'a> Command<'a> {
-    pub(crate) fn parse(input: &'a str) -> Option<Self> {
+    /// Check the fixed host capability contract, independent of display name.
+    pub(crate) fn admit(descriptor: &UiCommand) -> bool {
+        use UiCommandArguments::{None as NoArguments, Optional, Required};
+        use UiCommandCapability as Capability;
+        match (
+            descriptor.capability,
+            descriptor.arguments,
+            descriptor.value.as_deref(),
+        ) {
+            (
+                Capability::Models | Capability::Context | Capability::Runtime | Capability::Clear,
+                NoArguments,
+                None,
+            ) => true,
+            (
+                Capability::Model
+                | Capability::Session
+                | Capability::Inspect
+                | Capability::KillProcess,
+                Required,
+                None,
+            ) => true,
+            (Capability::Sessions, NoArguments, None | Some("next")) => true,
+            (Capability::History, NoArguments, Some("older" | "newest")) => true,
+            (Capability::Workspace, NoArguments, Some("status"))
+            | (Capability::Workspace, Optional, Some("diff"))
+            | (Capability::ToggleThinking, Optional, None) => true,
+            (Capability::OpenMenu, NoArguments, Some(prefix)) => {
+                prefix.ends_with('-') && UiCommandName::is_valid_prefix(prefix)
+            }
+            (Capability::SelectProfile, NoArguments, Some(profile)) => {
+                UiProfileName::new(profile).is_ok()
+            }
+            (Capability::SelectBuffer, NoArguments, Some(buffer)) => {
+                UiBufferId::new(buffer).is_ok()
+            }
+            _ => false,
+        }
+    }
+
+    /// Parse arguments using the selected descriptor, then select one native
+    /// capability. A new command alias needs no Rust name-table edit.
+    pub(crate) fn parse(descriptor: &'a UiCommand, input: &'a str) -> Option<Self> {
+        if !Self::admit(descriptor) {
+            return None;
+        }
         let input = input.trim();
-        let (name, arg) = input
+        let (name, argument) = input
             .split_once(' ')
-            .map_or((input, None), |(name, arg)| (name, Some(arg)));
-        let no_args = || arg.is_none().then_some(());
-        Some(match CommandKind::from_name(name)? {
-            CommandKind::Help => {
-                no_args()?;
-                Self::Help
+            .map_or((input, None), |(name, value)| (name, Some(value)));
+        if name != descriptor.name.as_str() {
+            return None;
+        }
+        let argument = match descriptor.arguments {
+            UiCommandArguments::None if argument.is_none() => None,
+            UiCommandArguments::Required
+                if argument.is_some_and(|value| !value.trim().is_empty()) =>
+            {
+                argument
             }
-            CommandKind::Models => {
-                no_args()?;
-                Self::Models
+            UiCommandArguments::Optional if argument.is_none_or(|value| !value.is_empty()) => {
+                argument
             }
-            CommandKind::Model => Self::Model(arg?.trim()),
-            CommandKind::Sessions => match arg {
-                None => Self::Sessions(false),
-                Some("next") => Self::Sessions(true),
-                _ => return None,
+            _ => return None,
+        };
+        let value = descriptor.value.as_deref();
+        use UiCommandCapability as Capability;
+        Some(match descriptor.capability {
+            Capability::Models => Self::Models,
+            Capability::Model => Self::Model(argument?.trim()),
+            Capability::Sessions => Self::Sessions(value == Some("next")),
+            Capability::Session => Self::Session(argument?.trim()),
+            Capability::Inspect => Self::Inspect(argument?.trim()),
+            Capability::History => Self::History(value == Some("older")),
+            Capability::Workspace => Self::Workspace {
+                mode: value?,
+                arguments: argument,
             },
-            CommandKind::Session => Self::Session(arg?.trim()),
-            CommandKind::Inspect => Self::Inspect(arg?.trim()),
-            CommandKind::History => match arg {
-                Some("older") => Self::History(true),
-                Some("newest") => Self::History(false),
-                _ => return None,
-            },
-            CommandKind::Status => {
-                no_args()?;
-                Self::Workspace(input)
+            Capability::Context => Self::Context,
+            Capability::Runtime => Self::Runtime,
+            Capability::KillProcess => Self::KillProcess(argument?.trim().parse().ok()?),
+            Capability::OpenMenu => Self::OpenMenu(value?),
+            Capability::SelectProfile => {
+                Self::SelectUi(UiEvent::SelectProfile(UiProfileName::new(value?).ok()?))
             }
-            CommandKind::Diff => Self::Workspace(input),
-            CommandKind::Context => {
-                no_args()?;
-                Self::Context
+            Capability::SelectBuffer => {
+                Self::SelectUi(UiEvent::SelectBuffer(UiBufferId::new(value?).ok()?))
             }
-            CommandKind::Runtime => {
-                no_args()?;
-                Self::Runtime
-            }
-            CommandKind::Clear => {
-                no_args()?;
-                Self::Clear
-            }
+            Capability::Clear => Self::Clear,
+            Capability::ToggleThinking => Self::ToggleThinking(match argument {
+                Some(value) => value.trim().parse().ok().filter(|index| *index > 0)?,
+                None => 1,
+            }),
         })
     }
 }

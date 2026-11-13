@@ -22,6 +22,7 @@ filegroup(
         "//crates/marlin-agent-protocol:marlin_agent_protocol_runtime_source_graph",
         "//crates/marlin-agent-sessions:marlin_agent_sessions_runtime_source_graph",
         "//crates/marlin-agent-storage:storage_harness_runtime_source_graph",
+        "//crates/marlin-agent-telemetry:marlin_agent_telemetry_runtime_source_graph",
         "//crates/marlin-gerbil-ir:marlin_gerbil_ir_runtime_source_graph",
         "//crates/marlin-gerbil-scheme:policy_unit_runtime_data",
         "//crates/marlin-agent-context:marlin_agent_context_runtime_source_graph",

@@ -8,8 +8,47 @@ use super::{
     ModelGatewayCompletionResponse, ModelGatewayError, ModelGatewayEventStream, ModelGatewayFuture,
     ModelGatewayRequest, ModelGatewayResult, ModelRoute, ModelStreamChunk, ModelStreamEvent,
     ModelStreamingGateway, ModelThinkingChunk, Mutex, ReplyError, assistant_gateway_message,
-    reply_channel, safe_text, user_gateway_message,
+    install_test_commands, reply_channel, safe_text, user_gateway_message,
 };
+
+#[test]
+fn live_tool_request_waits_for_review_without_entering_answer_history() {
+    use marlin_agent_protocol::{ModelToolCall, ModelToolCallId, ModelToolName};
+
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    let requests = Arc::new(Mutex::new(Vec::new()));
+    let gateway = FixtureGateway {
+        requests: requests.clone(),
+    };
+    let (tx, mut rx) = reply_channel(8, 4096);
+    let mut app = App::new(ModelEndpoint::new("openai", "gpt-test"));
+    app.composer.insert_text("inspect");
+    app.submit(&gateway, &runtime, &tx);
+    let (id, started) = rx.blocking_recv().unwrap().into_parts();
+    app.receive(id, started);
+    for _ in 0..2 {
+        let (_, chunk) = rx.blocking_recv().unwrap().into_parts();
+        app.receive(id, chunk);
+    }
+    let mut message = assistant_gateway_message("hello");
+    message.tool_calls.push(ModelToolCall {
+        id: ModelToolCallId::new("call-1").unwrap(),
+        name: ModelToolName::new("read_marker").unwrap(),
+        arguments: serde_json::Map::new(),
+    });
+    let response = ModelGatewayCompletionResponse::new(
+        "fixture",
+        "gpt-test",
+        vec![ModelGatewayCompletionChoice::new(0, message, None)],
+    );
+    app.receive(id, Ok(ModelStreamEvent::ToolRequested { response }));
+    assert!(app.pending.is_none());
+    assert!(app.history.is_empty());
+    app.composer.insert_text("second");
+    app.submit(&gateway, &runtime, &tx);
+    assert_eq!(app.composer.text(), "second");
+    assert_eq!(requests.lock().unwrap().len(), 1);
+}
 
 #[test]
 fn gateway_indicator_distinguishes_transport_failure_from_unchecked_route() {
@@ -19,6 +58,7 @@ fn gateway_indicator_distinguishes_transport_failure_from_unchecked_route() {
     };
     let (tx, _rx) = reply_channel(8, 4096);
     let mut app = App::new(ModelEndpoint::new("openai", "gpt-test"));
+    install_test_commands(&mut app);
     assert_eq!(app.gateway_observation, GatewayObservation::Unchecked);
     app.composer.insert_text("check transport");
     app.submit(&gateway, &runtime, &tx);
@@ -29,11 +69,16 @@ fn gateway_indicator_distinguishes_transport_failure_from_unchecked_route() {
     );
     assert_eq!(app.gateway_observation, GatewayObservation::Offline);
     assert!(
-        app.transcript
+        app.messages
             .last()
             .unwrap()
             .1
             .contains("remote outcome is unknown")
+    );
+    assert!(
+        !app.transcript
+            .iter()
+            .any(|(_, text)| text.contains("remote outcome is unknown"))
     );
 }
 
@@ -46,6 +91,7 @@ fn gateway_turns_show_chunks_and_carry_only_completed_history() {
     };
     let (tx, mut rx) = reply_channel(8, 4096);
     let mut app = App::new(ModelEndpoint::new("openai", "gpt-test"));
+    install_test_commands(&mut app);
     for c in "first".chars() {
         app.composer.insert(c);
     }
@@ -112,6 +158,7 @@ fn alternating_thinking_and_answer_segments_are_bounded() {
     let runtime = tokio::runtime::Runtime::new().unwrap();
     let (tx, mut rx) = reply_channel(8, 4096);
     let mut app = App::new(ModelEndpoint::new("openai", "gpt-test"));
+    install_test_commands(&mut app);
     app.composer.insert_text("prompt");
     app.submit(&AlternatingGateway, &runtime, &tx);
     while app.pending.is_some() {
@@ -119,7 +166,7 @@ fn alternating_thinking_and_answer_segments_are_bounded() {
         app.receive(id, event);
     }
     assert!(
-        app.transcript
+        app.messages
             .last()
             .unwrap()
             .1
@@ -188,6 +235,7 @@ fn interleaved_thinking_stays_ordered_and_blocks_unverified_followup() {
         };
         let (tx, mut rx) = reply_channel(8, 4096);
         let mut app = App::new(ModelEndpoint::new("openai", "gpt-test"));
+        install_test_commands(&mut app);
         if persistent {
             app.restore(Vec::new());
         }
@@ -262,6 +310,7 @@ fn restored_answer_suffix_merges_with_last_text_checkpoint() {
     use crate::harness::replay::{ReplayOutcome, ReplayTurn};
     use marlin_agent_sessions::{ConversationCheckpointChannel, ConversationCheckpointSpan};
     let mut app = App::new(ModelEndpoint::new("openai", "gpt-test"));
+    install_test_commands(&mut app);
     app.restore(vec![ReplayTurn {
         id: serde_json::from_str("1").unwrap(),
         prompt: "prompt".into(),
@@ -292,6 +341,7 @@ fn recorded_thinking_is_visible_and_blocks_unverified_continuation() {
     };
     let (tx, _) = reply_channel(8, 4096);
     let mut app = App::new(ModelEndpoint::new("openai", "gpt-test"));
+    install_test_commands(&mut app);
     app.restore(vec![ReplayTurn {
         id: serde_json::from_str("1").unwrap(),
         prompt: "question".into(),
@@ -313,7 +363,7 @@ fn recorded_thinking_is_visible_and_blocks_unverified_continuation() {
     assert!(requests.lock().unwrap().is_empty());
     assert_eq!(app.composer.text(), "new question");
     assert!(
-        app.transcript
+        app.messages
             .iter()
             .any(|(_, text)| text.contains("not yet verified"))
     );
@@ -324,6 +374,7 @@ fn restored_session_reports_incompatible_model_route() {
     use crate::harness::replay::{ReplayOutcome, ReplayTurn};
     let original = ModelEndpoint::new("openai", "gpt-original");
     let mut app = App::new(ModelEndpoint::new("openai", "gpt-alternate"));
+    install_test_commands(&mut app);
     let mut answer = assistant_gateway_message("answer");
     answer.continuation = Some(ModelContinuation {
         endpoint: original,
@@ -339,13 +390,19 @@ fn restored_session_reports_incompatible_model_route() {
         outcome: ReplayOutcome::Completed(answer),
     }]);
     assert!(
-        app.transcript
+        app.messages
             .last()
             .unwrap()
             .1
-            .contains("Restored session")
+            .contains("Restored continuation route mismatch")
     );
-    assert!(app.transcript.last().unwrap().1.contains("original route"));
+    assert!(
+        app.messages
+            .last()
+            .unwrap()
+            .1
+            .contains("original model route")
+    );
     assert_eq!(app.history.len(), 2);
 }
 
@@ -360,6 +417,7 @@ fn incompatible_continuation_retains_draft_without_dispatch() {
     let original = ModelEndpoint::new("openai", "gpt-original");
     let alternate = ModelEndpoint::new("openai", "gpt-alternate").with_alias("alt");
     let mut app = App::new(original.clone());
+    install_test_commands(&mut app);
     let catalog = ModelCatalog::new(vec![
         ModelRoute {
             alias: ModelAlias::new("default"),
@@ -387,7 +445,7 @@ fn incompatible_continuation_retains_draft_without_dispatch() {
     app.composer.insert_text("model alt");
     app.submit(&gateway, &runtime, &tx);
     assert!(
-        app.transcript
+        app.messages
             .last()
             .unwrap()
             .1
@@ -399,7 +457,7 @@ fn incompatible_continuation_retains_draft_without_dispatch() {
     assert!(app.pending.is_none());
     assert_eq!(app.composer.text(), "keep draft");
     assert!(
-        app.transcript
+        app.messages
             .last()
             .unwrap()
             .1
@@ -417,6 +475,7 @@ fn historical_unbound_continuation_retains_draft_without_dispatch() {
     let (tx, _rx) = reply_channel(8, 4096);
     let endpoint = ModelEndpoint::new("openai", "gpt-original");
     let mut app = App::new(endpoint.clone());
+    install_test_commands(&mut app);
     let mut answer = assistant_gateway_message("answer");
     answer.continuation = Some(ModelContinuation {
         endpoint,
@@ -429,7 +488,7 @@ fn historical_unbound_continuation_retains_draft_without_dispatch() {
     app.submit(&gateway, &runtime, &tx);
     assert_eq!(app.composer.text(), "keep draft");
     assert!(
-        app.transcript
+        app.messages
             .last()
             .unwrap()
             .1
@@ -447,6 +506,7 @@ fn context_limit_retains_draft_and_does_not_dispatch_or_drop_history() {
     };
     let (tx, mut rx) = reply_channel(8, 4096);
     let mut app = App::new(ModelEndpoint::new("openai", "gpt-test"));
+    install_test_commands(&mut app);
     app.composer.insert_text("first");
     app.submit(&gateway, &runtime, &tx);
     while app.pending.is_some() {
@@ -462,7 +522,7 @@ fn context_limit_retains_draft_and_does_not_dispatch_or_drop_history() {
     assert_eq!(requests.lock().unwrap().len(), 1);
     assert_eq!(app.composer.text(), "second");
     assert_eq!(app.history.len(), 2);
-    assert!(app.transcript.last().unwrap().1.contains("Draft retained"));
+    assert!(app.messages.last().unwrap().1.contains("Draft retained"));
 }
 
 #[test]
@@ -474,10 +534,11 @@ fn command_entry_preserves_draft_cursor_and_never_sends_plain_text() {
     };
     let (tx, _) = reply_channel(8, 4096);
     let mut app = App::new(ModelEndpoint::new("openai", "gpt-test"));
+    install_test_commands(&mut app);
     app.composer.insert_text("a中b");
     app.composer.left();
     app.toggle_command();
-    assert_eq!(app.composer.text(), "/");
+    assert_eq!(app.composer.text(), "");
     app.composer.insert_text("help");
     app.submit(&gateway, &runtime, &tx);
     assert_eq!(app.composer.text(), "a中b");
@@ -490,10 +551,12 @@ fn command_entry_preserves_draft_cursor_and_never_sends_plain_text() {
     app.toggle_command();
     app.composer.backspace();
     app.composer.insert_text("not a command");
+    let transcript_len = app.transcript.len();
     app.submit(&gateway, &runtime, &tx);
     assert_eq!(app.composer.text(), "a中Xb");
     assert!(requests.lock().unwrap().is_empty());
-    assert!(app.transcript.last().unwrap().1.contains("Draft retained"));
+    assert_eq!(app.transcript.len(), transcript_len);
+    assert!(app.messages.last().unwrap().1.contains("Unknown command"));
     app.toggle_command();
     app.composer.insert_text("session \"session:missing\"");
     app.submit(&gateway, &runtime, &tx);
@@ -510,6 +573,7 @@ fn context_command_reports_original_draft_without_dispatching_it() {
     };
     let (tx, _) = reply_channel(8, 4096);
     let mut app = App::new(ModelEndpoint::new("openai", "gpt-test"));
+    install_test_commands(&mut app);
     app.history = Arc::new(vec![
         user_gateway_message("old"),
         assistant_gateway_message("reply"),
@@ -534,6 +598,7 @@ fn interrupted_stream_keeps_partial_output_out_of_history() {
     };
     let (tx, mut rx) = reply_channel(8, 4096);
     let mut app = App::new(ModelEndpoint::new("openai", "gpt-test"));
+    install_test_commands(&mut app);
     for c in "first".chars() {
         app.composer.insert(c);
     }
@@ -550,8 +615,9 @@ fn interrupted_stream_keeps_partial_output_out_of_history() {
     );
     assert!(app.pending.is_none());
     assert!(app.history.is_empty());
+    assert_eq!(app.transcript.len(), 2);
     assert_eq!(app.transcript[1].1, "hel");
-    assert!(app.transcript.last().unwrap().1.contains("connection lost"));
+    assert!(app.messages.last().unwrap().1.contains("connection lost"));
 }
 
 #[test]
@@ -563,6 +629,7 @@ fn sending_a_recalled_prompt_restores_the_original_draft() {
     };
     let (tx, mut rx) = reply_channel(8, 4096);
     let mut app = App::new(ModelEndpoint::new("openai", "gpt-test"));
+    install_test_commands(&mut app);
     app.history = Arc::new(vec![
         user_gateway_message("previous"),
         assistant_gateway_message("answer"),
@@ -618,6 +685,7 @@ fn legacy_failure_blocks_submission_without_losing_draft() {
     };
     let (tx, _) = reply_channel(8, 4096);
     let mut app = App::new(ModelEndpoint::new("openai", "gpt-test"));
+    install_test_commands(&mut app);
     app.restore(vec![ReplayTurn {
         id,
         prompt: "previous".into(),
@@ -633,7 +701,7 @@ fn legacy_failure_blocks_submission_without_losing_draft() {
     assert_eq!(app.composer.text(), "keep draft");
     assert!(requests.lock().unwrap().is_empty());
     assert!(
-        app.transcript
+        app.messages
             .iter()
             .any(|(_, text)| text.contains("Remote retirement is unverified"))
     );
@@ -648,6 +716,7 @@ fn persistent_session_stops_after_a_mismatched_completion() {
     };
     let (tx, mut rx) = reply_channel(8, 4096);
     let mut app = App::new(ModelEndpoint::new("openai", "gpt-test"));
+    install_test_commands(&mut app);
     app.restore(Vec::new());
     app.composer.insert_text("first");
     app.submit(&gateway, &runtime, &tx);
@@ -669,11 +738,18 @@ fn persistent_session_stops_after_a_mismatched_completion() {
     app.composer.insert_text("second");
     app.submit(&gateway, &runtime, &tx);
     assert_eq!(requests.lock().unwrap().len(), 1);
-    assert!(app.transcript.last().unwrap().1.contains("uncertain"));
+    assert!(app.messages.last().unwrap().1.contains("uncertain"));
     assert_eq!(app.composer.take(), "second");
-    app.composer.insert_text("/help");
+    app.toggle_command();
+    app.composer.insert_text("help");
     app.submit(&gateway, &runtime, &tx);
-    assert_eq!(app.transcript.last().unwrap().0, "Help");
+    assert_eq!(app.transcript.last().unwrap().0, "Assistant");
+    assert_eq!(
+        app.ui_request,
+        Some(marlin_agent_ui::UiEvent::SelectBuffer(
+            marlin_agent_ui::UiBufferId::new("help").unwrap()
+        ))
+    );
     assert_eq!(requests.lock().unwrap().len(), 1);
 }
 
@@ -685,6 +761,7 @@ fn cancelled_turn_ignores_late_events() {
     };
     let (tx, mut rx) = reply_channel(8, 4096);
     let mut app = App::new(ModelEndpoint::new("openai", "gpt-test"));
+    install_test_commands(&mut app);
     for c in "first".chars() {
         app.composer.insert(c);
     }
@@ -701,7 +778,7 @@ fn cancelled_turn_ignores_late_events() {
     assert!(app.pending.is_none());
     assert!(app.history.is_empty());
     assert_eq!(app.transcript[1].1, "hel");
-    assert!(app.transcript.last().unwrap().1.contains("cancelled"));
+    assert!(app.messages.last().unwrap().1.contains("cancelled"));
 }
 
 #[test]

@@ -8,8 +8,8 @@ use std::{num::NonZeroUsize, pin::Pin};
 
 use marlin_agent_protocol::{
     ModelGatewayCompletionChoice, ModelGatewayCompletionResponse, ModelGatewayError,
-    ModelGatewayFuture, ModelGatewayMessage, ModelGatewayMessageRole, ModelGatewayRequest,
-    ModelGatewayResult, ModelGatewayTransport, ModelStreamInterruption,
+    ModelGatewayFuture, ModelGatewayRequest, ModelGatewayResult, ModelGatewayTransport,
+    ModelStreamInterruption, assistant_gateway_message,
 };
 use tokio_stream::{Stream, StreamExt};
 use weaver_llm::{Request, TurnEvent};
@@ -17,7 +17,7 @@ use weaver_llm::{Request, TurnEvent};
 use crate::{
     MODEL_STREAM_MAX_CHUNK_BYTES, ModelStreamChunk, ModelStreamEvent, ModelThinkingChunk,
     WeaverModelGateway,
-    gateway::{provider_continuation, request_message},
+    gateway::{provider_continuation, provider_tool_calls, request_message},
 };
 
 /// A pull-driven model stream. Dropping it cancels the underlying exchange.
@@ -121,7 +121,7 @@ impl ModelStreamingGateway for WeaverModelGateway {
                         }
                         TurnEvent::Finished { reason, identity: Some(identity), tool_calls, responses_output, anthropic_output, .. }
                             if tool_calls.is_empty() => {
-                                let mut message = ModelGatewayMessage::new(ModelGatewayMessageRole::Assistant, std::mem::take(&mut text));
+                                let mut message = assistant_gateway_message(std::mem::take(&mut text));
                                 message.continuation = provider_continuation(&endpoint, gateway.destination(), responses_output, anthropic_output)?;
                                 let choice = ModelGatewayCompletionChoice::new(0, message, Some(reason));
                                 yield ModelStreamEvent::Completed {
@@ -130,6 +130,22 @@ impl ModelStreamingGateway for WeaverModelGateway {
                                 completed = true;
                                 break;
                             }
+                        TurnEvent::Finished { reason, identity: Some(identity), tool_calls, responses_output, anthropic_output, .. } => {
+                            if tool_calls.is_empty() || tool_calls.iter().any(|call| {
+                                !options.tools.iter().any(|offered| offered.name == call.name)
+                            }) {
+                                Err(ModelGatewayError::StreamInterrupted(ModelStreamInterruption::InvalidCompletion))?;
+                            }
+                            let mut message = assistant_gateway_message(std::mem::take(&mut text));
+                            message.tool_calls = provider_tool_calls(tool_calls)?;
+                            message.continuation = provider_continuation(&endpoint, gateway.destination(), responses_output, anthropic_output)?;
+                            let choice = ModelGatewayCompletionChoice::new(0, message, Some(reason));
+                            yield ModelStreamEvent::ToolRequested {
+                                response: ModelGatewayCompletionResponse::new(identity.id, identity.model, vec![choice]),
+                            };
+                            completed = true;
+                            break;
+                        }
                         TurnEvent::Finished { .. } => {
                             Err(ModelGatewayError::StreamInterrupted(ModelStreamInterruption::InvalidCompletion))?;
                         }

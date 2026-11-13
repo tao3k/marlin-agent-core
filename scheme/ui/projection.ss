@@ -24,7 +24,9 @@
          (list->vector (map (lambda (child)
                              (vector (.get child identity) (.get child kind)
                                      (.get child label) (.get child compact)
-                                     (.get child tone) (.get child active-tone)))
+                                     (.get child tone) (.get child active-tone)
+                                     (.get child min-width) (.get child compact-below)
+                                     (.get child keep-priority)))
                            (.get node children)))))
       ((extension)
        (vector identity-value kind-value
@@ -56,12 +58,24 @@
     (.o model: model-value session: session-value contributions: contribution-values
         extensions: (vector->list native-extensions))))
 
+(def (frame-value frame)
+  (vector (.get frame min-transcript-rows) (.get frame fixed-editor-rows)
+          (.get frame footer-rows) (.get frame extensions)
+          (.get frame bordered) (.get frame prompt)))
+
 (def (marlin-ui-project-workbench workbench)
   (vector (.get workbench model) (.get workbench session)
           (list->vector (map node-value (.get workbench regions)))
           (let (policy (.get workbench geometry-policy))
-            (vector (.get policy min-transcript-rows) (.get policy max-chatbox-rows)
-                    (.get policy max-command-rows)))
+            (vector (frame-value (.get policy message-frame))
+                    (frame-value (.get policy command-frame))
+                    (.get policy max-chatbox-rows)
+                    (.get policy max-command-rows)
+                    (vector (.get policy thinking-collapsed)
+                            (.get policy user-prefix)
+                            (.get policy assistant-role)
+                            (.get policy thinking-collapsed-role)
+                            (.get policy thinking-expanded-role))))
           (let (palette (.get workbench theme-palette))
             (list->vector
              (map (lambda (name) (list->vector (.ref palette name)))

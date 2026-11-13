@@ -4,7 +4,10 @@
 
 //! Process registry state and shared `RuntimeProcessRegistryHandle` accessors.
 
-use std::{collections::BTreeMap, sync::Arc};
+use std::{
+    collections::{BTreeMap, VecDeque},
+    sync::Arc,
+};
 
 use parking_lot::Mutex;
 
@@ -28,8 +31,11 @@ use crate::observability::{
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct RuntimeProcessRegistry {
     active: BTreeMap<u32, RuntimeProcessObservation>,
-    active_handles: BTreeMap<RuntimeProcessHandle, u32>,
+    active_handles: BTreeMap<(Option<crate::SessionId>, RuntimeProcessHandle), u32>,
+    recent_managed: VecDeque<RuntimeProcessObservation>,
 }
+
+const RECENT_MANAGED_LIMIT: usize = 64;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct RuntimeCleanupProbe {
@@ -58,7 +64,8 @@ impl RuntimeProcessRegistry {
         &mut self,
         observation: RuntimeProcessObservation,
     ) -> Result<(), RuntimeProcessRegistrationError> {
-        if let Some(existing_pid) = self.active_handles.get(&observation.handle) {
+        let key = Self::handle_key(&observation);
+        if let Some(existing_pid) = self.active_handles.get(&key) {
             return Err(RuntimeProcessRegistrationError::DuplicateActiveHandle {
                 handle: observation.handle,
                 existing_pid: *existing_pid,
@@ -71,8 +78,7 @@ impl RuntimeProcessRegistry {
             });
         }
         emit_process_lifecycle_event(PROCESS_EVENT_TRACKED, &observation);
-        self.active_handles
-            .insert(observation.handle.clone(), observation.pid);
+        self.active_handles.insert(key, observation.pid);
         self.active.insert(observation.pid, observation);
         Ok(())
     }
@@ -89,16 +95,41 @@ impl RuntimeProcessRegistry {
         &self,
         handle: &RuntimeProcessHandle,
     ) -> Option<&RuntimeProcessObservation> {
-        self.active_handles
-            .get(handle)
-            .and_then(|pid| self.active.get(pid))
+        let mut matches = self
+            .active
+            .values()
+            .filter(|process| &process.handle == handle);
+        let first = matches.next()?;
+        matches.next().is_none().then_some(first)
+    }
+
+    fn handle_key(
+        process: &RuntimeProcessObservation,
+    ) -> (Option<crate::SessionId>, RuntimeProcessHandle) {
+        (
+            process.resource_id().map(|id| id.session().clone()),
+            process.handle.clone(),
+        )
+    }
+
+    fn unmanaged(&self, pid: u32) -> Option<()> {
+        self.active.get(&pid)?.resource_id().is_none().then_some(())
+    }
+
+    fn pid_for_resource(&self, id: &crate::RuntimeResourceId) -> Option<u32> {
+        self.active
+            .values()
+            .find(|process| process.resource_id() == Some(id))
+            .map(|process| process.pid)
     }
 
     pub fn finish(&mut self, pid: u32, observed_at_ms: u64) -> Option<RuntimeProcessObservation> {
+        self.unmanaged(pid)?;
         self.complete(pid, RuntimeProcessStatus::Finished, observed_at_ms)
     }
 
     pub fn fail(&mut self, pid: u32, observed_at_ms: u64) -> Option<RuntimeProcessObservation> {
+        self.unmanaged(pid)?;
         self.complete(pid, RuntimeProcessStatus::Failed, observed_at_ms)
     }
 
@@ -107,6 +138,7 @@ impl RuntimeProcessRegistry {
         pid: u32,
         observed_at_ms: u64,
     ) -> Option<&RuntimeProcessObservation> {
+        self.unmanaged(pid)?;
         self.update_active(pid, RuntimeProcessStatus::Orphaned, observed_at_ms)
     }
 
@@ -115,6 +147,7 @@ impl RuntimeProcessRegistry {
         pid: u32,
         observed_at_ms: u64,
     ) -> Option<&RuntimeProcessObservation> {
+        self.unmanaged(pid)?;
         self.update_active(pid, RuntimeProcessStatus::CleanupRequested, observed_at_ms)
     }
 
@@ -150,8 +183,13 @@ impl RuntimeProcessRegistry {
     }
 
     pub fn remove(&mut self, pid: u32) -> Option<RuntimeProcessObservation> {
+        self.unmanaged(pid)?;
+        self.remove_entry(pid)
+    }
+
+    fn remove_entry(&mut self, pid: u32) -> Option<RuntimeProcessObservation> {
         let observation = self.active.remove(&pid)?;
-        self.active_handles.remove(&observation.handle);
+        self.active_handles.remove(&Self::handle_key(&observation));
         Some(observation)
     }
 
@@ -181,7 +219,11 @@ impl RuntimeProcessRegistry {
     }
 
     fn cleanup_candidate_observations(&self) -> Vec<RuntimeProcessObservation> {
-        self.cleanup_candidates().into_iter().cloned().collect()
+        self.cleanup_candidates()
+            .into_iter()
+            .filter(|process| process.resource_id().is_none())
+            .cloned()
+            .collect()
     }
 
     fn apply_cleanup_probes(
@@ -242,7 +284,9 @@ impl RuntimeProcessRegistry {
 
     fn is_current_cleanup_candidate(&self, candidate: &RuntimeProcessObservation) -> bool {
         self.active.get(&candidate.pid).is_some_and(|current| {
-            current.handle == candidate.handle
+            current.resource_id().is_none()
+                && current.handle == candidate.handle
+                && current.started_at_ms == candidate.started_at_ms
                 && matches!(
                     current.status,
                     RuntimeProcessStatus::Orphaned | RuntimeProcessStatus::CleanupRequested
@@ -256,10 +300,15 @@ impl RuntimeProcessRegistry {
         status: RuntimeProcessStatus,
         observed_at_ms: u64,
     ) -> Option<RuntimeProcessObservation> {
-        let mut observation = self.active.remove(&pid)?;
-        self.active_handles.remove(&observation.handle);
+        let mut observation = self.remove_entry(pid)?;
         observation.update_status_at_ms(status, observed_at_ms);
         emit_process_lifecycle_event(process_event_for_status(&observation.status), &observation);
+        if observation.resource_id().is_some() {
+            if self.recent_managed.len() == RECENT_MANAGED_LIMIT {
+                self.recent_managed.pop_front();
+            }
+            self.recent_managed.push_back(observation.clone());
+        }
         Some(observation)
     }
 
@@ -335,6 +384,7 @@ fn emit_process_lifecycle_event(event: &'static str, process: &RuntimeProcessObs
         runtime_kind = runtime_kind_for_process(&process.kind),
         process_kind = ?process.kind,
         process_handle = process.handle.as_str(),
+        resource_id = ?process.resource_id(),
         owner_reference = process.owner_reference.as_str(),
         agent_reference = process_agent_reference(process),
         sub_agent_source = process_sub_agent_source(process),
@@ -454,6 +504,8 @@ fn process_sub_agent_source(process: &RuntimeProcessObservation) -> &str {
 #[derive(Clone, Debug)]
 pub struct RuntimeProcessRegistryHandle {
     inner: Arc<Mutex<RuntimeProcessRegistry>>,
+    managed_stops:
+        Arc<Mutex<BTreeMap<crate::RuntimeResourceId, tokio_util::sync::CancellationToken>>>,
 }
 
 impl RuntimeProcessRegistryHandle {
@@ -464,6 +516,7 @@ impl RuntimeProcessRegistryHandle {
     pub fn from_registry(registry: RuntimeProcessRegistry) -> Self {
         Self {
             inner: Arc::new(Mutex::new(registry)),
+            managed_stops: Arc::default(),
         }
     }
 
@@ -476,6 +529,86 @@ impl RuntimeProcessRegistryHandle {
         observation: RuntimeProcessObservation,
     ) -> Result<(), RuntimeProcessRegistrationError> {
         self.inner.lock().try_track(observation)
+    }
+
+    pub(super) fn track_managed(
+        &self,
+        observation: RuntimeProcessObservation,
+        stop: tokio_util::sync::CancellationToken,
+    ) -> Result<(), RuntimeProcessRegistrationError> {
+        let id = observation.resource_id().expect("managed identity").clone();
+        let mut registry = self.inner.lock();
+        registry.try_track(observation)?;
+        self.managed_stops.lock().insert(id, stop);
+        Ok(())
+    }
+
+    /// Inspect active processes and the recent terminal history for one session.
+    pub fn managed_processes(&self, session: &crate::SessionId) -> Vec<RuntimeProcessObservation> {
+        let registry = self.inner.lock();
+        registry
+            .active
+            .values()
+            .chain(registry.recent_managed.iter().rev())
+            .filter(|row| row.resource_id().is_some_and(|id| id.session() == session))
+            .cloned()
+            .collect()
+    }
+
+    /// Resolve a displayed generation in this session and wake its managed owner.
+    pub fn stop_session_generation(
+        &self,
+        session: &crate::SessionId,
+        generation: std::num::NonZeroU64,
+    ) -> bool {
+        let stop = self
+            .managed_stops
+            .lock()
+            .iter()
+            .find(|(id, _)| id.session() == session && id.generation().get() == generation.get())
+            .map(|(_, stop)| stop.clone());
+        let Some(stop) = stop else { return false };
+        stop.cancel();
+        true
+    }
+
+    pub fn get_by_resource(
+        &self,
+        id: &crate::RuntimeResourceId,
+    ) -> Option<RuntimeProcessObservation> {
+        let registry = self.inner.lock();
+        registry.get(registry.pid_for_resource(id)?).cloned()
+    }
+
+    /// Record cleanup intent for a specific generation. The managed owner signals and reaps it.
+    pub fn request_cleanup_for(
+        &self,
+        id: &crate::RuntimeResourceId,
+        observed_at_ms: u64,
+    ) -> Option<RuntimeProcessObservation> {
+        let mut registry = self.inner.lock();
+        let pid = registry.pid_for_resource(id)?;
+        registry
+            .update_active(pid, RuntimeProcessStatus::CleanupRequested, observed_at_ms)
+            .cloned()
+    }
+
+    pub(super) fn complete_managed(
+        &self,
+        id: &crate::RuntimeResourceId,
+        success: bool,
+        observed_at_ms: u64,
+    ) {
+        let mut registry = self.inner.lock();
+        if let Some(pid) = registry.pid_for_resource(id) {
+            self.managed_stops.lock().remove(id);
+            let status = if success {
+                RuntimeProcessStatus::Finished
+            } else {
+                RuntimeProcessStatus::Failed
+            };
+            registry.complete(pid, status, observed_at_ms);
+        }
     }
 
     pub fn active_processes(&self) -> Vec<RuntimeProcessObservation> {

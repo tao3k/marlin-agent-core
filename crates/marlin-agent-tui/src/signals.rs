@@ -14,13 +14,16 @@ use std::sync::{
 pub(crate) struct SignalMonitor {
     exit_code: Arc<AtomicI32>,
     suspend_requested: Arc<AtomicBool>,
-    task: tokio::task::JoinHandle<()>,
+    task: marlin_agent_runtime::RuntimeTask<()>,
 }
 
 #[cfg(unix)]
 impl SignalMonitor {
     /// Register before entering raw mode, so failure cannot strand terminal modes.
-    pub(crate) fn new(runtime: &tokio::runtime::Runtime) -> std::io::Result<Self> {
+    pub(crate) fn new(
+        runtime: &tokio::runtime::Runtime,
+        owner: &marlin_agent_runtime::TokioAgentRuntime,
+    ) -> std::io::Result<Self> {
         use tokio::signal::unix::{SignalKind, signal};
         let interrupt_kind = SignalKind::interrupt();
         let terminate_kind = SignalKind::terminate();
@@ -39,23 +42,28 @@ impl SignalMonitor {
         let observed = exit_code.clone();
         let suspend_requested = Arc::new(AtomicBool::new(false));
         let requested = suspend_requested.clone();
-        let task = runtime.spawn(async move {
-            loop {
-                let number = tokio::select! {
-                    _ = interrupt.recv() => Some(interrupt_kind.as_raw_value()),
-                    _ = terminate.recv() => Some(terminate_kind.as_raw_value()),
-                    _ = hangup.recv() => Some(hangup_kind.as_raw_value()),
-                    _ = suspend.recv() => {
-                        requested.store(true, Ordering::Release);
-                        None
-                    },
-                };
-                if let Some(number) = number {
-                    observed.store(128 + number, Ordering::Release);
-                    break;
+        let task = owner.spawn_in_session_on(
+            runtime,
+            owner.session().session_id(),
+            marlin_agent_runtime::RuntimeOperationId::new("terminal.signals"),
+            async move {
+                loop {
+                    let number = tokio::select! {
+                        _ = interrupt.recv() => Some(interrupt_kind.as_raw_value()),
+                        _ = terminate.recv() => Some(terminate_kind.as_raw_value()),
+                        _ = hangup.recv() => Some(hangup_kind.as_raw_value()),
+                        _ = suspend.recv() => {
+                            requested.store(true, Ordering::Release);
+                            None
+                        },
+                    };
+                    if let Some(number) = number {
+                        observed.store(128 + number, Ordering::Release);
+                        break;
+                    }
                 }
-            }
-        });
+            },
+        );
         Ok(Self {
             exit_code,
             suspend_requested,
@@ -87,7 +95,10 @@ pub(crate) struct SignalMonitor;
 
 #[cfg(not(unix))]
 impl SignalMonitor {
-    pub(crate) fn new(_: &tokio::runtime::Runtime) -> std::io::Result<Self> {
+    pub(crate) fn new(
+        _: &tokio::runtime::Runtime,
+        _: &marlin_agent_runtime::TokioAgentRuntime,
+    ) -> std::io::Result<Self> {
         Ok(Self)
     }
     pub(crate) fn observed_exit_code(&self) -> Option<i32> {

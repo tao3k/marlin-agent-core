@@ -5,24 +5,28 @@
 ;;; Rooted Scheme-object ABI for the selected UI workbench.
 (import :gerbil-scheme-rust/scheme/runtime
         (only-in :clan/poo/object .def .get .o seal-object!)
-        (only-in :std/list/list find)
+        (only-in :std/list/list find filter)
         (only-in :yuanxu/poo-clos/types clos-instance?)
         "../ui/projection.ss")
 (export marlin-ui-session-open marlin-ui-session-project marlin-ui-session-dispatch
         marlin-ui-session-browse-command
+        marlin-ui-session-command-candidates
+        marlin-ui-session-review-menu
         marlin-ui-session-refresh-labels)
 
 ;;; Each event returns a successor; older frames keep their own rooted state.
 (.def UiNativeSession.)
-(def (session ui-value generic-value workbench-value focus-value)
+(def (session ui-value generic-value workbench-value focus-value frame-value)
   (seal-object! (.o (:: @ UiNativeSession.) ui: ui-value generic: generic-value
-                    workbench: workbench-value focus: focus-value)))
+                    workbench: workbench-value focus: focus-value frame: frame-value)))
 (def (checked-session value)
   (unless (clos-instance? UiNativeSession. value) (error "invalid UI native session"))
   value)
 
 (def (marlin-ui-session-browse-command input)
-  (unless (and (vector? input) (= (vector-length input) 4))
+  (unless (and (vector? input) (= (vector-length input) 5)
+               (integer? (vector-ref input 4))
+               (<= 1 (vector-ref input 4) 16))
     (error "invalid UI command browse request"))
   (let* ((current (checked-session (vector-ref input 0)))
          (ui (.get current ui))
@@ -30,11 +34,31 @@
                           (.get (.get current workbench) regions)))
          (prototype (.get ui events browse-command))
          (event (.o (:: @ prototype) query: (vector-ref input 1)
-                    previous: (vector-ref input 2) direction: (vector-ref input 3))))
+                    previous: (vector-ref input 2) direction: (vector-ref input 3)
+                    steps: (vector-ref input 4))))
     (unless component (error "UI command region is missing"))
     (let (intent ((.get ui dispatch) (.get current generic) component event))
       (unless (eq? (.get intent kind) 'command-selection) (error "invalid command browse intent"))
       (.get intent name))))
+
+(def (marlin-ui-session-command-candidates input)
+  (unless (and (vector? input) (= (vector-length input) 2))
+    (error "invalid UI command candidate request"))
+  (let* ((current (checked-session (vector-ref input 0)))
+         (ui (.get current ui))
+         (component (find (lambda (region) (eq? (.get region identity) 'commands))
+                          (.get (.get current workbench) regions))))
+    (unless component (error "UI command region is missing"))
+    (list->vector
+      ((.get ui command-candidates) (.get component entries) (vector-ref input 1)))))
+
+(def (marlin-ui-session-review-menu input)
+  (unless (and (vector? input) (= (vector-length input) 2)
+               (symbol? (vector-ref input 1)))
+    (error "invalid UI review menu request"))
+  (let* ((current (checked-session (vector-ref input 0)))
+         (ui (.get current ui)))
+    ((.get ui review-menu) (vector-ref input 1))))
 
 (def (marlin-ui-session-open input)
   (unless (and (vector? input) (= (vector-length input) 3))
@@ -45,7 +69,7 @@
          (ui (.get selection Marlin ui))
          (workbench ((.get ui workbench) (marlin-ui-native-facts (vector-ref input 1))))
          (generic ((.get ui make-dispatch) (vector-ref input 2))))
-    (session ui generic workbench 'composer)))
+    (session ui generic workbench 'composer ((.get ui make-frame)))))
 
 (def (marlin-ui-session-project input)
   (let* ((current (checked-session input))
@@ -55,7 +79,9 @@
       (error "invalid UI workbench projection"))
     (vector (vector-ref projection 0) (vector-ref projection 1)
             (vector-ref projection 2) (.get current focus)
-            (vector-ref projection 3) (vector-ref projection 4))))
+            (vector-ref projection 3) (vector-ref projection 4)
+            ((.get ui project-frame) (.get current frame))
+            ((.get ui keymap-entries)))))
 
 ;;; Refresh only owner-supplied display facts, retaining components and generic.
 ;;; Construct a fresh workbench directly so repeated updates do not build an
@@ -77,7 +103,7 @@
                    geometry-policy: (.get old geometry-policy)
                    theme-palette: (.get old theme-palette)
                    regions: (.get old regions) focus-order: (.get old focus-order)))
-      (session ui (.get current generic) next (.get current focus)))))
+      (session ui (.get current generic) next (.get current focus) (.get current frame)))))
 
 (def (event-for ui workbench kind)
   (case kind
@@ -90,18 +116,55 @@
        (.o (:: @ prototype) direction: (if (eq? kind 'scroll-up) 'up 'down))))
     (else (error "unknown UI native event"))))
 
+(def (profile-facts workbench frame)
+  (let* ((regions (.get workbench regions))
+         (buffer-ids (map (lambda (buffer) (.get buffer identity))
+                          (.get frame buffers)))
+         (status (find (lambda (region) (eq? (.get region kind) 'status)) regions)))
+    (unless status (error "UI status region is missing"))
+    ;; Reuse only the sealed workbench snapshot, never the mutable open request.
+    (.o model: (.get workbench model) session: (.get workbench session)
+        contributions: (filter (lambda (item)
+                                 (not (string-prefix? "modeline/"
+                                       (symbol->string (.get item identity)))))
+                               (.get status children))
+        extensions: (filter (lambda (region)
+                              (and (eq? (.get region kind) 'extension)
+                                   ;; Selected Buffer components are rebuilt by
+                                   ;; the owner and must not become contributions.
+                                   (not (memq (.get region identity) buffer-ids))))
+                            regions))))
+
 (def (marlin-ui-session-dispatch input)
-  (unless (and (vector? input) (= (vector-length input) 2))
+  (unless (and (vector? input) (<= 2 (vector-length input) 3))
     (error "invalid UI native event request"))
   (let* ((current (checked-session (vector-ref input 0)))
          (ui (.get current ui))
          (generic (.get current generic))
          (workbench (.get current workbench))
          (focus (.get current focus))
-         (event (event-for ui workbench (vector-ref input 1)))
-         (intent (marlin-ui-apply-event ui generic workbench focus event))
-         (next-focus (if (eq? (vector-ref intent 0) 'focus) (vector-ref intent 1) focus)))
-    (vector (session ui generic workbench next-focus) intent)))
+         (kind (vector-ref input 1)))
+    (if (eq? kind 'select-buffer)
+      (let* ((_arity (unless (= (vector-length input) 3)
+                       (error "invalid UI buffer request")))
+             (next-frame ((.get ui select-buffer) (.get current frame)
+                          (vector-ref input 2))))
+        (vector (session ui generic workbench focus next-frame)
+                (vector 'select-buffer (vector-ref input 2))))
+    (if (eq? kind 'select-profile)
+      (let* ((_arity (unless (and (= (vector-length input) 3)
+                                  (symbol? (vector-ref input 2)))
+                       (error "invalid UI profile request")))
+             (profile (vector-ref input 2))
+             (next ((.get ui profile-workbench)
+                    (profile-facts workbench (.get current frame)) profile)))
+        (vector (session ui generic next focus (.get current frame)) (vector 'focus focus)))
+      (let* ((_arity (unless (= (vector-length input) 2)
+                       (error "invalid UI event arity")))
+             (event (event-for ui workbench kind))
+             (intent (marlin-ui-apply-event ui generic workbench focus event))
+             (next-focus (if (eq? (vector-ref intent 0) 'focus) (vector-ref intent 1) focus)))
+        (vector (session ui generic workbench next-focus (.get current frame)) intent))))))
 
 (begin-foreign
   (c-define (ui-open root) (int64) int64
@@ -123,6 +186,16 @@
     "marlin_ui_browse_command" "extern"
     (gerbil-scheme-rust/scheme/runtime#gerbil-rs-rooted-call root
       marlin-agent-core/c-abi/ui#marlin-ui-session-browse-command)))
+(begin-foreign
+  (c-define (ui-command-candidates root) (int64) int64
+    "marlin_ui_command_candidates" "extern"
+    (gerbil-scheme-rust/scheme/runtime#gerbil-rs-rooted-call root
+      marlin-agent-core/c-abi/ui#marlin-ui-session-command-candidates)))
+(begin-foreign
+  (c-define (ui-review-menu root) (int64) int64
+    "marlin_ui_review_menu" "extern"
+    (gerbil-scheme-rust/scheme/runtime#gerbil-rs-rooted-call root
+      marlin-agent-core/c-abi/ui#marlin-ui-session-review-menu)))
 (begin-foreign
   (c-define (ui-refresh-labels root) (int64) int64
     "marlin_ui_refresh_labels" "extern"

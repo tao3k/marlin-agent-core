@@ -9,10 +9,13 @@ use marlin_agent_protocol::{
     ModelContinuation, ModelContinuationKind, ModelDestinationBinding, ModelEndpoint, ModelGateway,
     ModelGatewayCompletionChoice, ModelGatewayCompletionOptions, ModelGatewayCompletionResponse,
     ModelGatewayError, ModelGatewayFuture, ModelGatewayMessage, ModelGatewayMessageRole,
-    ModelGatewayRequest, ModelGatewayResult, ModelGatewayTransport, ModelProviderId,
+    ModelGatewayRequest, ModelGatewayResult, ModelGatewayTransport, ModelProviderId, ModelToolCall,
+    ModelToolCallId, ModelToolChoice, ModelToolName, assistant_gateway_message,
 };
 use tokio_stream::StreamExt;
-use weaver_llm::{Client, Endpoint, Message, Options, Request, Role, TurnEvent, TurnStream};
+use weaver_llm::{
+    Client, Endpoint, Message, Options, Request, Role, Tool, ToolChoice, TurnEvent, TurnStream,
+};
 
 /// Direct model gateway bound to one configured provider and credential.
 #[derive(Clone)]
@@ -62,6 +65,26 @@ impl WeaverModelGateway {
     pub(crate) fn options(&self, requested: Option<ModelGatewayCompletionOptions>) -> Options {
         let mut options = self.default_options.clone();
         if let Some(requested) = requested {
+            if let Some(tools) = requested.tools {
+                options.tools = tools
+                    .into_iter()
+                    .map(|tool| Tool {
+                        name: tool.name.as_str().to_owned(),
+                        description: tool.description,
+                        parameters: tool.parameters,
+                    })
+                    .collect();
+            }
+            if let Some(choice) = requested.tool_choice {
+                options.tool_choice = Some(match choice {
+                    ModelToolChoice::Auto => ToolChoice::Auto,
+                    ModelToolChoice::None => ToolChoice::None,
+                    ModelToolChoice::Required => ToolChoice::Required,
+                    ModelToolChoice::Function(name) => {
+                        ToolChoice::Function(name.as_str().to_owned())
+                    }
+                });
+            }
             options.temperature = requested.temperature.or(options.temperature);
             options.max_tokens = requested.max_tokens.or(options.max_tokens);
             options.top_p = requested.top_p.or(options.top_p);
@@ -137,16 +160,9 @@ impl WeaverModelGateway {
                     .choices
                     .into_iter()
                     .map(|choice| {
-                        if !choice.message.tool_calls.is_empty() {
-                            return Err(ModelGatewayError::Completion(
-                                "tool calls are not supported by this gateway".into(),
-                            ));
-                        }
-                        let mut message = ModelGatewayMessage::new(
-                            ModelGatewayMessageRole::Assistant,
-                            choice.message.content,
-                        );
+                        let mut message = assistant_gateway_message(choice.message.content);
                         message.name = choice.message.name;
+                        message.tool_calls = provider_tool_calls(choice.message.tool_calls)?;
                         message.continuation = provider_continuation(
                             &endpoint,
                             &self.destination,
@@ -181,9 +197,9 @@ impl WeaverModelGateway {
                             responses_output,
                             anthropic_output,
                             ..
-                        } if tool_calls.is_empty() => {
-                            let mut message =
-                                ModelGatewayMessage::new(ModelGatewayMessageRole::Assistant, text);
+                        } => {
+                            let mut message = assistant_gateway_message(text);
+                            message.tool_calls = provider_tool_calls(tool_calls)?;
                             message.continuation = provider_continuation(
                                 &endpoint,
                                 &self.destination,
@@ -274,6 +290,9 @@ pub(crate) fn request_message(
     endpoint: &ModelEndpoint,
     destination: &ModelDestinationBinding,
 ) -> ModelGatewayResult<Message> {
+    message
+        .validate_tool_contract()
+        .map_err(|diagnostic| ModelGatewayError::RequestNotDispatched(diagnostic.into()))?;
     let (responses_output, anthropic_output) = match message.continuation {
         None => (None, None),
         Some(state)
@@ -311,17 +330,62 @@ pub(crate) fn request_message(
         ModelGatewayMessageRole::Developer => Role::Developer,
         ModelGatewayMessageRole::User => Role::User,
         ModelGatewayMessageRole::Assistant => Role::Assistant,
+        ModelGatewayMessageRole::Tool => Role::Tool,
     };
     Ok(Message {
         role,
         content: message.content,
         images: Vec::new(),
         name: message.name,
-        tool_call_id: None,
-        tool_calls: Vec::new(),
+        tool_call_id: message.tool_call_id.map(String::from),
+        tool_calls: message
+            .tool_calls
+            .into_iter()
+            .map(|call| weaver_llm::ToolCall {
+                id: call.id.as_str().to_owned(),
+                name: call.name.as_str().to_owned(),
+                arguments: serde_json::Value::Object(call.arguments),
+            })
+            .collect(),
         responses_output,
         anthropic_output,
     })
+}
+
+pub(crate) fn provider_tool_calls(
+    calls: Vec<weaver_llm::ToolCall>,
+) -> ModelGatewayResult<Vec<ModelToolCall>> {
+    if calls.len() > 32 {
+        return Err(ModelGatewayError::Completion(
+            "too many provider tool calls".into(),
+        ));
+    }
+    let mut result = Vec::with_capacity(calls.len());
+    for call in calls {
+        let id = ModelToolCallId::new(call.id)
+            .map_err(|error| ModelGatewayError::Completion(error.into()))?;
+        let name = ModelToolName::new(call.name)
+            .map_err(|error| ModelGatewayError::Completion(error.into()))?;
+        let serde_json::Value::Object(arguments) = call.arguments else {
+            return Err(ModelGatewayError::Completion(
+                "model tool arguments must be an object".into(),
+            ));
+        };
+        if result
+            .iter()
+            .any(|previous: &ModelToolCall| previous.id == id)
+        {
+            return Err(ModelGatewayError::Completion(
+                "duplicate provider tool call ID".into(),
+            ));
+        }
+        result.push(ModelToolCall {
+            id,
+            name,
+            arguments,
+        });
+    }
+    Ok(result)
 }
 
 fn gateway_error(error: weaver_llm::Error) -> ModelGatewayError {

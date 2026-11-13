@@ -25,9 +25,19 @@ use super::wrap::visit_rows;
 /// without invalidating a cached viewport.
 pub(crate) struct Transcript {
     entries: Vec<(String, String)>,
+    /// Thinking entries are appended in transcript order; one sorted slot
+    /// vector supports ordinal selection and indexed lookup without a scan.
+    folds: Vec<(usize, ThinkingFold)>,
     identity: u64,
     revision: u64,
     non_tail_revision: u64,
+}
+
+/// The hidden side of a thinking row is kept out of viewport layout/cache.
+struct ThinkingFold {
+    other: String,
+    other_role: String,
+    collapsed: bool,
 }
 
 static NEXT_TRANSCRIPT_ID: AtomicU64 = AtomicU64::new(1);
@@ -38,6 +48,7 @@ impl Transcript {
             .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |id| id.checked_add(1))
             .expect("transcript identity exhausted");
         Self {
+            folds: Vec::new(),
             entries,
             identity,
             revision: 0,
@@ -57,6 +68,77 @@ impl Transcript {
         self.entries.push(entry);
     }
 
+    pub(crate) fn push_thinking(
+        &mut self,
+        expanded_role: String,
+        collapsed_role: &str,
+        content: String,
+        collapsed: bool,
+    ) {
+        self.changed();
+        let (role, other_role, visible, other) = if collapsed {
+            (
+                collapsed_role.to_owned(),
+                expanded_role,
+                String::new(),
+                content,
+            )
+        } else {
+            (
+                expanded_role,
+                collapsed_role.to_owned(),
+                content,
+                String::new(),
+            )
+        };
+        debug_assert!(
+            self.folds
+                .last()
+                .is_none_or(|(index, _)| *index < self.entries.len())
+        );
+        self.folds.push((
+            self.entries.len(),
+            ThinkingFold {
+                other,
+                other_role,
+                collapsed,
+            },
+        ));
+        self.entries.push((role, visible));
+    }
+
+    pub(crate) fn content(&self, index: usize) -> &str {
+        match self.fold_slot(index) {
+            Some((_, fold)) if fold.collapsed => &fold.other,
+            _ => &self.entries[index].1,
+        }
+    }
+
+    fn fold_slot(&self, index: usize) -> Option<&(usize, ThinkingFold)> {
+        self.folds
+            .binary_search_by_key(&index, |(entry, _)| *entry)
+            .ok()
+            .map(|slot| &self.folds[slot])
+    }
+
+    pub(crate) fn toggle_thinking_from_end(&mut self, ordinal: usize) -> bool {
+        if ordinal == 0 || ordinal > self.folds.len() {
+            return false;
+        }
+        let slot = self.folds.len() - ordinal;
+        let (index, fold) = &mut self.folds[slot];
+        let index = *index;
+        std::mem::swap(&mut self.entries[index].0, &mut fold.other_role);
+        std::mem::swap(&mut self.entries[index].1, &mut fold.other);
+        fold.collapsed = !fold.collapsed;
+        self.changed();
+        self.non_tail_revision = self
+            .non_tail_revision
+            .checked_add(1)
+            .expect("transcript mutation counter exhausted");
+        true
+    }
+
     pub(crate) fn clear(&mut self) {
         self.changed();
         self.non_tail_revision = self
@@ -64,9 +146,34 @@ impl Transcript {
             .checked_add(1)
             .expect("transcript mutation counter exhausted");
         self.entries.clear();
+        self.folds.clear();
+    }
+
+    pub(crate) fn retain_latest(&mut self, limit: usize) {
+        let remove = self.entries.len().saturating_sub(limit);
+        if remove > 0 {
+            self.changed();
+            self.non_tail_revision = self
+                .non_tail_revision
+                .checked_add(1)
+                .expect("transcript mutation counter exhausted");
+            self.entries.drain(..remove);
+            let first = self.folds.partition_point(|(index, _)| *index < remove);
+            self.folds.drain(..first);
+            for (index, _) in &mut self.folds {
+                *index -= remove;
+            }
+        }
     }
 
     pub(crate) fn append_content(&mut self, index: usize, content: &str) {
+        if let Ok(slot) = self.folds.binary_search_by_key(&index, |(entry, _)| *entry) {
+            let fold = &mut self.folds[slot].1;
+            if fold.collapsed {
+                fold.other.push_str(content);
+                return;
+            }
+        }
         self.changed();
         if index + 1 != self.entries.len() {
             self.non_tail_revision = self
@@ -117,7 +224,11 @@ impl TailLayout {
         Self {
             prefix_end: 0,
             prefix_rows: 0,
-            role_rows: wrapped_rows(&entry.0, width),
+            role_rows: if entry.0.is_empty() {
+                0
+            } else {
+                wrapped_rows(&entry.0, width)
+            },
         }
     }
 
@@ -231,10 +342,152 @@ struct ViewportKey {
 
 const VIEWPORT_CACHE_BYTES: usize = 1024 * 1024;
 const TAIL_ROW_PARTS_LIMIT: usize = 16_384;
+const ROW_CHECKPOINT_STRIDE: usize = 128;
+const ROW_CHECKPOINT_BYTES: usize = 1024 * 1024;
+
+#[derive(Clone, Copy)]
+struct RowCheckpoint {
+    entry: usize,
+    rows: usize,
+}
+
+/// Width-specific row positions for deep scrolling. Only every 128th entry is
+/// retained; the source transcript remains the authority for rendered text.
+struct RowCheckpointIndex {
+    identity: u64,
+    non_tail_revision: u64,
+    revision: u64,
+    width: u16,
+    indexed_entries: usize,
+    total_rows: usize,
+    tail_rows: usize,
+    tail_layout: Option<TailLayout>,
+    checkpoints: Vec<RowCheckpoint>,
+}
+
+fn fits_one_row(text: &str, width: u16) -> bool {
+    if text.len() <= usize::from(width) && text.bytes().all(|byte| !byte.is_ascii_control()) {
+        // A UTF-8 grapheme cannot occupy more terminal cells than its source
+        // bytes; ASCII controls are excluded because layout sanitizes them.
+        return true;
+    }
+    // CellWidth is the same terminal width operation used by the row visitor.
+    // Bound the input so its u16 result cannot wrap on a pathological string.
+    text.len() <= 1024 && !text.chars().any(char::is_control) && text.cell_width() <= width
+}
+
+fn entry_rows(entry: &(String, String), width: u16) -> usize {
+    // Most completed fragments fit one row. Check without allocating the
+    // word-wrapping segments, including short Unicode labels and messages.
+    if !entry.1.is_empty() && fits_one_row(&entry.0, width) && fits_one_row(&entry.1, width) {
+        return 2 + usize::from(!entry.0.is_empty());
+    }
+    (if entry.0.is_empty() {
+        0
+    } else {
+        wrapped_rows(&entry.0, width)
+    }) + entry
+        .1
+        .split_terminator('\n')
+        .map(|line| wrapped_rows(line, width))
+        .sum::<usize>()
+        + wrapped_rows("", width)
+}
+
+impl RowCheckpointIndex {
+    fn update(&mut self, transcript: &Transcript) -> bool {
+        if self.identity != transcript.identity
+            || self.non_tail_revision != transcript.non_tail_revision
+            || self.width == 0
+            || transcript.len() < self.indexed_entries
+        {
+            return false;
+        }
+        if self.revision == transcript.revision {
+            return true;
+        }
+        if let Some(layout) = self.tail_layout.as_mut() {
+            let rows = layout.rows(&transcript[self.indexed_entries - 1], self.width);
+            self.total_rows = self.total_rows - self.tail_rows + rows;
+            self.tail_rows = rows;
+        }
+        for index in self.indexed_entries..transcript.len() {
+            if index % ROW_CHECKPOINT_STRIDE == 0 {
+                if (self.checkpoints.len() + 1).saturating_mul(size_of::<RowCheckpoint>())
+                    > ROW_CHECKPOINT_BYTES
+                {
+                    return false;
+                }
+                self.checkpoints.push(RowCheckpoint {
+                    entry: index,
+                    rows: self.total_rows,
+                });
+            }
+            let last = index + 1 == transcript.len();
+            let (rows, layout) = if last {
+                let mut layout = TailLayout::new(&transcript[index], self.width);
+                (layout.rows(&transcript[index], self.width), Some(layout))
+            } else {
+                (entry_rows(&transcript[index], self.width), None)
+            };
+            self.total_rows = self.total_rows.saturating_add(rows);
+            self.tail_rows = rows;
+            self.tail_layout = layout;
+        }
+        self.indexed_entries = transcript.len();
+        self.revision = transcript.revision;
+        true
+    }
+
+    fn build(transcript: &Transcript, width: u16) -> Option<Self> {
+        let mut index = Self {
+            identity: transcript.identity,
+            non_tail_revision: transcript.non_tail_revision,
+            revision: u64::MAX,
+            width,
+            indexed_entries: 0,
+            total_rows: 0,
+            tail_rows: 0,
+            tail_layout: None,
+            checkpoints: Vec::new(),
+        };
+        index.update(transcript).then_some(index)
+    }
+
+    fn viewport(
+        &self,
+        transcript: &Transcript,
+        pending: bool,
+        width: u16,
+        height: u16,
+        scroll_up: usize,
+    ) -> TranscriptViewport {
+        let total = self
+            .total_rows
+            .saturating_add(usize::from(pending) * wrapped_rows("Waiting for gateway…", width));
+        let max_scroll = total.saturating_sub(usize::from(height));
+        let scroll = scroll_up.min(max_scroll);
+        let target = max_scroll - scroll;
+        let checkpoint = self
+            .checkpoints
+            .partition_point(|point| point.rows <= target);
+        let point = self.checkpoints[checkpoint.saturating_sub(1)];
+        let mut view = transcript_from_top(
+            &transcript[point.entry..],
+            pending,
+            width,
+            height,
+            target - point.rows,
+        );
+        view.scroll_up = scroll;
+        view
+    }
+}
 
 /// Retains at most one viewport within its accounted allocation budget.
 pub(crate) struct TranscriptViewportCache {
     cached: Option<(ViewportKey, TranscriptViewport)>,
+    row_index: Option<RowCheckpointIndex>,
     max_bytes: usize,
     #[cfg(test)]
     builds: usize,
@@ -244,6 +497,7 @@ impl Default for TranscriptViewportCache {
     fn default() -> Self {
         Self {
             cached: None,
+            row_index: None,
             max_bytes: VIEWPORT_CACHE_BYTES,
             #[cfg(test)]
             builds: 0,
@@ -311,6 +565,41 @@ impl TranscriptViewportCache {
                 key.height,
                 key.scroll_up,
             )
+        } else if key.scroll_up >= 256
+            && transcript.len() >= ROW_CHECKPOINT_STRIDE * 2
+            && transcript
+                .len()
+                .div_ceil(ROW_CHECKPOINT_STRIDE)
+                .saturating_mul(size_of::<RowCheckpoint>())
+                <= ROW_CHECKPOINT_BYTES
+        {
+            if !self
+                .row_index
+                .as_mut()
+                .is_some_and(|index| index.width == key.width && index.update(transcript))
+            {
+                self.row_index = RowCheckpointIndex::build(transcript, key.width);
+            }
+            self.row_index.as_ref().map_or_else(
+                || {
+                    transcript_viewport(
+                        transcript,
+                        key.pending,
+                        key.width,
+                        key.height,
+                        key.scroll_up,
+                    )
+                },
+                |index| {
+                    index.viewport(
+                        transcript,
+                        key.pending,
+                        key.width,
+                        key.height,
+                        key.scroll_up,
+                    )
+                },
+            )
         } else {
             transcript_viewport(
                 transcript,
@@ -349,6 +638,17 @@ impl TranscriptViewportCache {
             max_bytes,
             ..Self::default()
         }
+    }
+
+    #[cfg(test)]
+    #[allow(dead_code, reason = "used by the external unit-test benchmark")]
+    pub(crate) fn row_index_bytes(&self) -> usize {
+        self.row_index.as_ref().map_or(0, |index| {
+            index
+                .checkpoints
+                .capacity()
+                .saturating_mul(size_of::<RowCheckpoint>())
+        })
     }
 }
 
@@ -540,7 +840,7 @@ fn transcript_viewport_impl(
                     break 'entries;
                 }
             }
-            if window.add(role, role_style) {
+            if !role.is_empty() && window.add(role, role_style) {
                 break;
             }
         }
@@ -599,7 +899,7 @@ pub(crate) fn transcript_from_top(
         .add_modifier(Modifier::BOLD);
     let mut filled = false;
     'entries: for (role, content) in transcript {
-        if add(role, role_style) {
+        if !role.is_empty() && add(role, role_style) {
             filled = true;
             break;
         }

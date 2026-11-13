@@ -413,6 +413,7 @@ async fn large_unicode_delta_is_split_without_losing_content() {
                 observed.push_str(&chunk.content);
             }
             ModelStreamEvent::Thinking(_) => panic!("fixture does not emit thinking"),
+            ModelStreamEvent::ToolRequested { .. } => panic!("fixture does not request tools"),
             ModelStreamEvent::Completed { response } => {
                 assert_eq!(response.choices[0].message.content, content);
                 completed = true;

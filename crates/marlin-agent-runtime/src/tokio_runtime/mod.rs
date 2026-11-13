@@ -46,6 +46,10 @@ pub use receipt::{
     RuntimeTaskShutdownRequest, RuntimeTaskShutdownStatus, RuntimeTaskTrackerShutdownState,
     SubAgentSpawnReceipt,
 };
-pub use task::{RuntimeTask, RuntimeTaskOutcome, RuntimeTaskTracker};
+pub(crate) use task::RuntimeTaskGuard;
+pub use task::{
+    RuntimeAdmissionError, RuntimeOperationId, RuntimeProcessBudget, RuntimeResourceGeneration, RuntimeResourceId,
+    RuntimeTask, RuntimeTaskJoinError, RuntimeTaskOutcome, RuntimeTaskTracker,
+};
 pub use tokio_util::sync::CancellationToken;
 pub use traits::{HookRuntime, ProviderRuntime, RuntimeFuture, SubAgentRuntime, ToolRuntime};

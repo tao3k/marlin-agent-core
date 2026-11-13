@@ -11,6 +11,13 @@ protocol = "anthropic"
 credential_env = "ANTHROPIC_API_KEY"
 timeout_seconds = 120
 
+# Optional macOS Runtime admission policy. Set the three fields for the
+# workload and machine. The reservation applies to each managed command.
+# [process_budget]
+# concurrent = 4
+# memory_limit_bytes = 3221225472
+# command_reservation_bytes = 268435456
+
 # Optional Anthropic thinking settings; provider/model support varies.
 # [anthropic]
 # thinking = { type = "adaptive" }
@@ -25,7 +32,7 @@ timeout_seconds = 120
 # protocol = "open-ai-responses"
 # credential_env = "OPENAI_API_KEY"
 
-# Optional named model, selected with /model alternate.
+# Optional named model, selected with M-x model alternate.
 # [models.alternate]
 # provider = "openai"
 # model = "gpt-4.1"

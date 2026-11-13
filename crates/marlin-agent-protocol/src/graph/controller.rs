@@ -420,7 +420,7 @@ pub enum HumanDecision {
 }
 
 /// Typed receipt emitted when a graph loop must stop for human review.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct HumanGateReceipt {
     pub gate_id: HumanGateId,
     pub run_id: RunId,

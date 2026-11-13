@@ -50,12 +50,38 @@ impl RuntimeEventSink {
         let Some((primary, captures)) = self.senders.split_first() else {
             return Err(mpsc::error::SendError(event));
         };
-
-        let primary_result = primary.send(event.clone()).await;
-        for capture in captures {
-            let _ = capture.send(event.clone()).await;
+        if captures.is_empty() {
+            return primary.send(event).await;
         }
-        primary_result
+
+        // Reserve every live destination before publishing to any of them.
+        // Dropping a pending emit releases its reservations without exposing
+        // an event to only a prefix of the subscribers.
+        let primary_permit = primary.reserve().await.ok();
+        let primary_closed = primary_permit.is_none();
+        // One capture is the normal graph-evidence case; keep its permit on
+        // the stack so the fanout hot path does not allocate per event.
+        let first_capture_permit = captures[0].reserve().await.ok();
+        let mut capture_permits = Vec::with_capacity(captures.len() - 1);
+        for capture in &captures[1..] {
+            if let Ok(permit) = capture.reserve().await {
+                capture_permits.push(permit);
+            }
+        }
+        if let Some(permit) = primary_permit {
+            permit.send(event.clone());
+        }
+        if let Some(permit) = first_capture_permit {
+            permit.send(event.clone());
+        }
+        for permit in capture_permits {
+            permit.send(event.clone());
+        }
+        if primary_closed {
+            Err(mpsc::error::SendError(event))
+        } else {
+            Ok(())
+        }
     }
 }
 

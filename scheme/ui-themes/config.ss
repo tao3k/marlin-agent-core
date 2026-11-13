@@ -9,4 +9,8 @@
 
 (def UiThemesScope
   (validate UiThemesScopeContract
-            (.o identity: 'marlin/ui-themes selected: marlin-ui-doom-one-theme)))
+            (.o identity: 'marlin/ui-themes
+                selected: (marlin-ui-theme-for marlin-ui-default-profile)
+                default-profile: marlin-ui-default-profile
+                profiles: marlin-ui-theme-profiles
+                select: marlin-ui-theme-for)))

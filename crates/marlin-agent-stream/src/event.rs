@@ -67,4 +67,8 @@ pub enum ModelStreamEvent {
     Completed {
         response: ModelGatewayCompletionResponse,
     },
+    /// The provider finished by requesting tools; no tool has run yet.
+    ToolRequested {
+        response: ModelGatewayCompletionResponse,
+    },
 }

@@ -5,120 +5,283 @@
 //! Turn submission, completion and cancellation.
 
 use super::{
-    App, Arc, Command, GatewayObservation, MAX_RESPONSE_BYTES, MAX_TURN_SEGMENTS,
-    ModelGatewayError, ModelGatewayMessageRole, ModelGatewayRequest, ModelStreamEvent,
-    ModelStreamInterruption, ModelStreamingGateway, OutputLimit, PendingTurn, Reply, ReplyError,
-    ReplySender, SessionBrowser, SessionId, matches_observed_anthropic_thinking, parse_query,
-    user_gateway_message,
+    App, Arc, Command, GatewayObservation, MAX_RESPONSE_BYTES, MAX_TURN_SEGMENTS, MessageEvent,
+    MessageSeverity, MessageSource, ModelGatewayError, ModelGatewayMessageRole,
+    ModelGatewayRequest, ModelStreamEvent, ModelStreamInterruption, ModelStreamingGateway,
+    OutputLimit, PendingTurn, Reply, ReplyError, ReplySender, SessionBrowser, SessionId, UiContent,
+    UiEvent, matches_observed_anthropic_thinking, parse_query, user_gateway_message,
 };
 use std::env;
 use tokio_stream::StreamExt;
 
 impl App {
+    fn runtime_session_id(&self) -> marlin_agent_runtime::SessionId {
+        self.current_session.as_ref().map_or_else(
+            || self.runtime_owner.session().session_id().clone(),
+            |session| marlin_agent_runtime::SessionId::new(session.as_str()),
+        )
+    }
+
+    pub(crate) async fn shutdown(&mut self) -> std::io::Result<()> {
+        self.runtime_owner.task_tracker().close();
+        if let Some(pending) = self.pending.take() {
+            pending.task.abort();
+            let _ = pending.task.join().await;
+        }
+        if let Some(browser) = self.session_browser.as_mut() {
+            browser.shutdown().await;
+        }
+        self.workspace.shutdown().await;
+        let receipt = self
+            .runtime_owner
+            .shutdown_tasks(
+                &marlin_agent_runtime::RuntimeTaskTrackerPolicy::cancel_on_shutdown(None),
+            )
+            .await;
+        if receipt.status() != &marlin_agent_runtime::RuntimeTaskShutdownStatus::Completed {
+            return Err(std::io::Error::other(format!(
+                "runtime cleanup incomplete: {receipt:?}"
+            )));
+        }
+        Ok(())
+    }
+
     pub(crate) fn submit<G: ModelStreamingGateway + Clone>(
         &mut self,
         gateway: &G,
         runtime: &tokio::runtime::Runtime,
         tx: &ReplySender,
     ) {
-        if self.pending.is_some()
-            || (self.command_draft.is_none() && self.composer.text().trim().is_empty())
-        {
+        if self.command_draft.is_none() && self.composer.text().trim().is_empty() {
             return;
+        }
+        if self.submit_process_command() {
+            return;
+        }
+        if self.pending.is_some() {
+            let Some(_) = self.command_draft.as_ref() else {
+                return;
+            };
+            let input = match &self.command_menu {
+                Some(menu) => format!("{}{}", menu.prefix, self.composer.text()),
+                None => self.composer.text().to_owned(),
+            };
+            if !matches!(
+                self.command_descriptor(&input)
+                    .and_then(|descriptor| Command::parse(descriptor, &input)),
+                Some(Command::ToggleThinking(_))
+            ) {
+                self.publish_message(MessageEvent {
+                    source: MessageSource::Ui,
+                    severity: MessageSeverity::Warning,
+                    summary: "Command unavailable while streaming",
+                    detail: "The current model turn must finish before this command can run.",
+                });
+                return;
+            }
         }
         if self
             .session_browser
             .as_ref()
             .is_some_and(SessionBrowser::is_opening)
         {
-            self.transcript.push((
-                "Sessions".into(),
-                "Session switch in progress; draft retained.".into(),
-            ));
+            self.publish_message(MessageEvent {
+                source: MessageSource::Ui,
+                severity: MessageSeverity::Warning,
+                summary: "Session switch in progress",
+                detail: "Draft retained.",
+            });
             return;
         }
         if self.workspace.is_pending() {
-            self.transcript.push((
-                "Workspace".into(),
-                "Workspace read in progress; input retained.".into(),
-            ));
+            self.publish_message(MessageEvent {
+                source: MessageSource::Workspace,
+                severity: MessageSeverity::Warning,
+                summary: "Workspace read in progress",
+                detail: "Input retained.",
+            });
             return;
         }
         self.workspace.close_view();
         self.runtime_receipt_open = false;
         let command = if let Some(draft) = self.command_draft.take() {
             let input = self.composer.take();
+            let input = match self.command_menu.take() {
+                Some(menu) => format!("{}{}", menu.prefix, input),
+                None => input,
+            };
             self.composer = draft;
-            if !input.trim_start().starts_with('/') {
-                self.transcript.push((
-                    "Marlin".into(),
-                    "Commands must start with /. Draft retained.".into(),
-                ));
-                return;
-            }
             Some(input)
-        } else if self.composer.text().trim_start().starts_with('/') {
-            let command = self.composer.take();
-            self.prompt_history.restore(&mut self.composer);
-            Some(command)
         } else {
             None
         };
         if let Some(input) = command {
-            match Command::parse(&input) {
-                Some(Command::Help) => self.transcript.push(("Help".into(), "Enter: send · Tab / Shift-Tab: focus · Ctrl-N: newline · M-x or Ctrl-O: command palette without losing draft · Ctrl-Z: suspend · arrows: edit · Home/End or Ctrl-A/Ctrl-E: line start/end · Alt-P/Alt-N: prompt history · Ctrl-R: search prompts · PageUp/PageDown: scroll · Esc/Ctrl-C: cancel · Ctrl-C twice or Ctrl-Q: quit · /models: list · /model: select · /status: worktree · /diff: unstaged · /diff staged: staged · /sessions: list · /session: switch · /inspect: read-only history · /history older or newest: page · /context: budget · /runtime: stream-open policy".into())),
+            let descriptor = self.command_descriptor(&input).cloned();
+            match descriptor
+                .as_ref()
+                .and_then(|descriptor| Command::parse(descriptor, &input))
+            {
                 Some(Command::Sessions(next)) => self.show_sessions(runtime, next),
                 Some(Command::Models) => self.show_models(),
-                Some(Command::Workspace(command)) => {
-                    let message = match parse_query(command) {
-                        Err(error) => error.to_owned(),
+                Some(Command::Workspace { mode, arguments }) => {
+                    let query_text = match arguments {
+                        Some(arguments) => format!("{mode} {arguments}"),
+                        None => mode.to_owned(),
+                    };
+                    let (severity, message) = match parse_query(&query_text) {
+                        Err(error) => (MessageSeverity::Warning, error.to_owned()),
                         Ok(query) => match env::current_dir() {
-                            Ok(path) => if self.workspace.start(runtime, path, query) { "Reading workspace…".to_owned() } else { "A workspace read is already running.".to_owned() },
-                            Err(error) => format!("Cannot determine current directory: {error}"),
+                            Ok(path) => {
+                                let session = self.runtime_session_id();
+                                if self.workspace.start(runtime, &session, path, query) {
+                                    (MessageSeverity::Info, "Reading workspace…".to_owned())
+                                } else {
+                                    (
+                                        MessageSeverity::Warning,
+                                        "A workspace read is already running.".to_owned(),
+                                    )
+                                }
+                            }
+                            Err(error) => (
+                                MessageSeverity::Error,
+                                format!("Cannot determine current directory: {error}"),
+                            ),
                         },
                     };
-                    self.transcript.push(("Workspace".into(), message));
+                    self.publish_message(MessageEvent {
+                        source: MessageSource::Workspace,
+                        severity,
+                        summary: "Workspace command",
+                        detail: &message,
+                    });
                 }
                 Some(Command::Model(model)) => self.select_model(model),
                 Some(Command::History(older)) => self.request_history_page(runtime, older),
                 Some(Command::Context) => {
-                    let message = if self.history_position.is_some() {
-                        "Context budget unavailable in read-only history; load a full session first.".to_owned()
-                    } else if let Some(usage) = self.context_budget.measure(&self.history, self.composer.text()) {
-                        format!("Completed turns: {} / {}. Next request accounting: {} / {} bytes, including a {}-byte draft. Budget: {}. Counts include message structures and text; they are not token counts or total process memory.", usage.completed_turns, self.context_budget.turns, usage.request_bytes, self.context_budget.bytes, self.composer.text().len(), if usage.allowed { "within limit" } else { "exceeded" })
+                    if self.history_position.is_some() {
+                        self.publish_message(MessageEvent {
+                            source: MessageSource::Ui,
+                            severity: MessageSeverity::Warning,
+                            summary: "Context budget unavailable",
+                            detail: "Context budget unavailable in read-only history; load a full session first.",
+                        });
+                    } else if let Some(usage) = self
+                        .context_budget
+                        .measure(&self.history, self.composer.text())
+                    {
+                        let message = format!(
+                            "Completed turns: {} / {}. Next request accounting: {} / {} bytes, including a {}-byte draft. Budget: {}. Counts include message structures and text; they are not token counts or total process memory.",
+                            usage.completed_turns,
+                            self.context_budget.turns,
+                            usage.request_bytes,
+                            self.context_budget.bytes,
+                            self.composer.text().len(),
+                            if usage.allowed {
+                                "within limit"
+                            } else {
+                                "exceeded"
+                            }
+                        );
+                        self.transcript.push(("Context".into(), message));
                     } else {
-                        "Context accounting overflowed; the request cannot be admitted.".to_owned()
-                    };
-                    self.transcript.push(("Context".into(), message));
+                        self.publish_message(MessageEvent {
+                            source: MessageSource::Ui,
+                            severity: MessageSeverity::Error,
+                            summary: "Context accounting overflow",
+                            detail: "Context accounting overflowed; the request cannot be admitted.",
+                        });
+                    }
                 }
                 Some(Command::Runtime) => {
                     if self.runtime_edge.is_some() {
                         self.runtime_receipt_open = true;
                     } else {
-                        self.transcript.push(("Runtime".into(), "Runtime stream-open policy is unavailable.".into()));
+                        self.publish_message(MessageEvent {
+                            source: MessageSource::Ui,
+                            severity: MessageSeverity::Warning,
+                            summary: "Runtime policy unavailable",
+                            detail: "Runtime stream-open policy is unavailable.",
+                        });
                     }
                 }
+                Some(Command::SelectUi(event)) => self.ui_request = Some(event),
+                Some(Command::KillProcess(_)) => {
+                    unreachable!("process command handled at admission")
+                }
+                Some(Command::OpenMenu(prefix)) => {
+                    self.command_draft = Some(std::mem::take(&mut self.composer));
+                    self.command_menu = Some(super::state::CommandMenu {
+                        prefix: prefix.to_owned(),
+                        prompt: descriptor
+                            .as_ref()
+                            .expect("admitted menu descriptor")
+                            .description
+                            .clone(),
+                    });
+                    self.command_selection = None;
+                }
                 Some(Command::Clear) => self.transcript.clear(),
+                Some(Command::ToggleThinking(index)) => {
+                    if !self.transcript.toggle_thinking_from_end(index) {
+                        self.publish_message(MessageEvent {
+                            source: MessageSource::Ui,
+                            severity: MessageSeverity::Info,
+                            summary: "No thinking segment",
+                            detail: "There is no thinking segment in the displayed transcript.",
+                        });
+                    }
+                }
                 Some(Command::Session(id)) => self.request_session_switch(runtime, id),
                 Some(Command::Inspect(id)) => {
                     match serde_json::from_str::<String>(id).ok().and_then(|value| SessionId::new(value).ok()) {
                         Some(id) => self.request_history(runtime, id, None),
-                        None => self.transcript.push(("History".into(), "Use /inspect followed by a nonempty JSON-quoted session ID.".into())),
+                        None => self.publish_message(MessageEvent {
+                            source: MessageSource::Input,
+                            severity: MessageSeverity::Warning,
+                            summary: "Invalid session ID",
+                            detail: "Use M-x inspect followed by a nonempty JSON-quoted session ID.",
+                        }),
                     }
                 }
-                None => self.transcript.push(("Marlin".into(), "Unknown command or arguments. Use /help to see available commands.".into())),
+                None => self.publish_message(MessageEvent {
+                    source: MessageSource::Input,
+                    severity: MessageSeverity::Warning,
+                    summary: "Unknown command or arguments",
+                    detail: "Use M-x to see available commands.",
+                }),
             }
             return;
         }
         if self.history_position.is_some() {
-            self.transcript.push((
-                "History".into(),
-                "Read-only history; load a full session before sending. Draft retained.".into(),
-            ));
+            self.publish_message(MessageEvent {
+                source: MessageSource::Input,
+                severity: MessageSeverity::Warning,
+                summary: "Read-only history",
+                detail: "Load a full session before sending. Draft retained.",
+            });
             return;
         }
+        if self.buffer_view != super::state::BufferView::Conversation {
+            self.ui_request = Some(UiEvent::SelectBuffer(
+                marlin_agent_ui::UiBufferId::new("conversation").expect("static buffer ID"),
+            ));
+        }
         if self.needs_replay {
-            self.transcript.push(("Error".into(), "Session state is uncertain. Reopen it to inspect the journal; unfinished turns require recovery.".into()));
+            self.publish_message(MessageEvent {
+                source: MessageSource::Gateway,
+                severity: MessageSeverity::Error,
+                summary: "Session state is uncertain",
+                detail: "Reopen it to inspect the journal; unfinished turns require recovery.",
+            });
+            return;
+        }
+        if self.pending_tool_request {
+            self.publish_message(MessageEvent {
+                source: MessageSource::Gateway,
+                severity: MessageSeverity::Warning,
+                summary: "Tool review pending",
+                detail: "The pending model tool request must be reviewed before another turn. Draft retained.",
+            });
             return;
         }
         if self.unverified_thinking {
@@ -127,11 +290,21 @@ impl App {
             } else {
                 "Prior thinking cannot be verified for continuation. Restart to begin a new session; draft retained."
             };
-            self.transcript.push(("Error".into(), message.into()));
+            self.publish_message(MessageEvent {
+                source: MessageSource::Gateway,
+                severity: MessageSeverity::Error,
+                summary: "Continuation unavailable",
+                detail: message,
+            });
             return;
         }
         if self.has_incompatible_continuation() {
-            self.transcript.push(("Error".into(), "A provider continuation belongs to a different model route. Select its original route or open another session; draft retained.".into()));
+            self.publish_message(MessageEvent {
+                source: MessageSource::Gateway,
+                severity: MessageSeverity::Error,
+                summary: "Incompatible continuation",
+                detail: "A provider continuation belongs to a different model route. Select its original route or open another session; draft retained.",
+            });
             return;
         }
         if self.history.iter().any(|message| {
@@ -140,19 +313,29 @@ impl App {
                 .as_ref()
                 .is_some_and(|state| state.destination.is_none())
         }) {
-            self.transcript.push(("Error".into(), "Historical provider continuation has no destination binding. Open another session or reconcile its origin; draft retained.".into()));
+            self.publish_message(MessageEvent {
+                source: MessageSource::Gateway,
+                severity: MessageSeverity::Error,
+                summary: "Unbound continuation",
+                detail: "Historical provider continuation has no destination binding. Open another session or reconcile its origin; draft retained.",
+            });
             return;
         }
         if !self
             .context_budget
             .allows(&self.history, self.composer.text())
         {
-            self.transcript.push(("Error".into(), "Full model context exceeds the TUI budget. Draft retained; Ctrl-O opens commands without losing it.".into()));
+            self.publish_message(MessageEvent {
+                source: MessageSource::Input,
+                severity: MessageSeverity::Warning,
+                summary: "Context budget exceeded",
+                detail: "Full model context exceeds the TUI budget. Draft retained; M-x opens commands without losing it.",
+            });
             return;
         }
         let input = self.composer.take();
         self.prompt_history.restore(&mut self.composer);
-        self.transcript.push(("You".into(), input.clone()));
+        self.push_prompt(input.clone());
         let history = Arc::clone(&self.history);
         let endpoint = self.endpoint.clone();
         let prompt = input.clone();
@@ -160,7 +343,7 @@ impl App {
         self.next_id += 1;
         let id = self.next_id;
         let tx = tx.clone();
-        let handle = runtime.spawn(async move {
+        let handle = self.runtime_owner.spawn_in_session_on(runtime, &self.runtime_session_id(), marlin_agent_runtime::RuntimeOperationId::new("turn.stream"), async move {
             let mut messages = history.as_ref().clone();
             drop(history);
             messages.push(user_gateway_message(prompt));
@@ -187,7 +370,7 @@ impl App {
                     output_limit.check(&event)?;
                     Ok(event)
                 });
-                let terminal = matches!(event, Ok(ModelStreamEvent::Completed { .. }) | Err(_));
+                let terminal = matches!(event, Ok(ModelStreamEvent::Completed { .. } | ModelStreamEvent::ToolRequested { .. }) | Err(_));
                 if !matches!(tx.send(id, event).await, Ok(true)) {
                     return;
                 }
@@ -252,7 +435,11 @@ impl App {
                         self.fail_turn("model output has too many alternating segments".into());
                         return;
                     }
-                    self.transcript.push(("Assistant".into(), String::new()));
+                    let role = self.transcript_policy.as_ref().map_or_else(
+                        || "Assistant".to_owned(),
+                        |policy| policy.assistant_role.clone(),
+                    );
+                    self.transcript.push((role, String::new()));
                     let index = self.transcript.len() - 1;
                     pending.segments += 1;
                     pending.output = Some(index);
@@ -282,7 +469,16 @@ impl App {
                 let index = if let Some(index) = pending.thinking {
                     index
                 } else {
-                    self.transcript.push(("Thinking".into(), String::new()));
+                    if let Some(policy) = &self.transcript_policy {
+                        self.transcript.push_thinking(
+                            policy.thinking_expanded_role.clone(),
+                            &policy.thinking_collapsed_role,
+                            String::new(),
+                            policy.default_collapsed,
+                        );
+                    } else {
+                        self.transcript.push(("Thinking".into(), String::new()));
+                    }
                     pending.segments += 1;
                     let index = self.transcript.len() - 1;
                     pending.thinking = Some(index);
@@ -291,46 +487,79 @@ impl App {
                 };
                 self.transcript.append_content(index, &chunk.content);
             }
-            Ok(ModelStreamEvent::Completed { response }) => match response
-                .choices
-                .into_iter()
-                .find(|choice| choice.message.role == ModelGatewayMessageRole::Assistant)
-            {
-                Some(choice) => {
-                    let pending = self.pending.as_ref().expect("matching pending turn");
-                    let mut remainder = Some(choice.message.content.as_str());
-                    for index in &pending.output_segments {
-                        remainder = remainder
-                            .and_then(|text| text.strip_prefix(self.transcript[*index].1.as_str()));
+            Ok(
+                event @ (ModelStreamEvent::Completed { .. }
+                | ModelStreamEvent::ToolRequested { .. }),
+            ) => {
+                let tool_requested = matches!(&event, ModelStreamEvent::ToolRequested { .. });
+                let response = match event {
+                    ModelStreamEvent::Completed { response }
+                    | ModelStreamEvent::ToolRequested { response } => response,
+                    _ => unreachable!("terminal event pattern"),
+                };
+                match response
+                    .choices
+                    .into_iter()
+                    .find(|choice| choice.message.role == ModelGatewayMessageRole::Assistant)
+                {
+                    Some(choice) => {
+                        let pending = self.pending.as_ref().expect("matching pending turn");
+                        let mut remainder = Some(choice.message.content.as_str());
+                        for index in &pending.output_segments {
+                            remainder = remainder.and_then(|text| {
+                                text.strip_prefix(self.transcript[*index].1.as_str())
+                            });
+                        }
+                        if !pending.output_segments.is_empty() && remainder != Some("") {
+                            self.fail_turn(
+                                "model stream completion does not match its chunks".into(),
+                            );
+                            return;
+                        }
+                        let thinking_verified = !pending.had_thinking || {
+                            let thinking: String = pending
+                                .thinking_segments
+                                .iter()
+                                .map(|index| self.transcript.content(*index))
+                                .collect();
+                            matches_observed_anthropic_thinking(&choice.message, &thinking)
+                        };
+                        let pending = self.pending.take().expect("matching pending turn");
+                        if pending.output_segments.is_empty()
+                            && (!tool_requested || !choice.message.content.is_empty())
+                        {
+                            self.push_answer("Assistant", choice.message.content.clone());
+                        }
+                        if tool_requested {
+                            self.pending_tool_request = true;
+                            self.publish_message(MessageEvent {
+                            source: MessageSource::Gateway,
+                            severity: MessageSeverity::Warning,
+                            summary: "Tool review pending",
+                            detail: &format!(
+                                "The model requested {} tool(s). Execution and further turns await authorization.",
+                                choice.message.tool_calls.len(),
+                            ),
+                        });
+                        } else {
+                            let history = Arc::make_mut(&mut self.history);
+                            history.push(user_gateway_message(pending.prompt));
+                            history.push(choice.message);
+                        }
+                        self.gateway_observation = GatewayObservation::Online;
+                        if !thinking_verified {
+                            self.unverified_thinking = true;
+                            self.publish_message(MessageEvent {
+                            source: MessageSource::Gateway,
+                            severity: MessageSeverity::Error,
+                            summary: "Thinking unverified",
+                            detail: "Thinking was observed but has not been verified against a provider continuation; further requests are blocked.",
+                        });
+                        }
                     }
-                    if !pending.output_segments.is_empty() && remainder != Some("") {
-                        self.fail_turn("model stream completion does not match its chunks".into());
-                        return;
-                    }
-                    let thinking_verified = !pending.had_thinking || {
-                        let thinking: String = pending
-                            .thinking_segments
-                            .iter()
-                            .map(|index| self.transcript[*index].1.as_str())
-                            .collect();
-                        matches_observed_anthropic_thinking(&choice.message, &thinking)
-                    };
-                    let pending = self.pending.take().expect("matching pending turn");
-                    if pending.output_segments.is_empty() {
-                        self.transcript
-                            .push(("Assistant".into(), choice.message.content.clone()));
-                    }
-                    let history = Arc::make_mut(&mut self.history);
-                    history.push(user_gateway_message(pending.prompt));
-                    history.push(choice.message);
-                    self.gateway_observation = GatewayObservation::Online;
-                    if !thinking_verified {
-                        self.unverified_thinking = true;
-                        self.transcript.push(("Error".into(), "Thinking was observed but has not been verified against a provider continuation; further requests are blocked.".into()));
-                    }
+                    None => self.fail_turn("Gateway returned no assistant choice.".into()),
                 }
-                None => self.fail_turn("Gateway returned no assistant choice.".into()),
-            },
+            }
             Err(ReplyError::Gateway(ModelGatewayError::RequestNotDispatched(message)))
                 if self
                     .pending
@@ -345,10 +574,12 @@ impl App {
                 } else {
                     "Current draft retained; the rejected prompt remains visible above."
                 };
-                self.transcript.push((
-                    "Error".into(),
-                    format!("Request not dispatched: {message}. {explanation}"),
-                ));
+                self.publish_message(MessageEvent {
+                    source: MessageSource::Gateway,
+                    severity: MessageSeverity::Error,
+                    summary: "Request not dispatched",
+                    detail: &format!("Request not dispatched: {message}. {explanation}"),
+                });
             }
             Err(error) => {
                 if let ReplyError::Gateway(source) = &error {
@@ -372,13 +603,25 @@ impl App {
             pending.task.abort();
         }
         self.needs_replay |= self.persistent;
-        self.transcript.push(("Error".into(), message));
+        self.publish_message(MessageEvent {
+            source: MessageSource::Gateway,
+            severity: MessageSeverity::Error,
+            summary: "Model request failed",
+            detail: &message,
+        });
     }
 
     pub(crate) fn cancel(&mut self) {
         self.command_selection = None;
         if let Some(draft) = self.command_draft.take() {
+            self.command_menu = None;
             self.composer = draft;
+            return;
+        }
+        if self.buffer_view != super::state::BufferView::Conversation {
+            self.ui_request = Some(UiEvent::SelectBuffer(
+                marlin_agent_ui::UiBufferId::new("conversation").expect("static buffer ID"),
+            ));
             return;
         }
         if let Some(pending) = self.pending.take() {
@@ -392,19 +635,30 @@ impl App {
             } else {
                 "Request cancelled locally."
             };
-            self.transcript.push(("Marlin".into(), message.into()));
+            self.publish_message(MessageEvent {
+                source: MessageSource::Gateway,
+                severity: MessageSeverity::Warning,
+                summary: "Request cancelled locally",
+                detail: message,
+            });
         } else if self
             .session_browser
             .as_mut()
             .is_some_and(SessionBrowser::cancel_open)
         {
-            self.transcript.push((
-                "Sessions".into(),
-                "Session switch cancelled; current session retained.".into(),
-            ));
+            self.publish_message(MessageEvent {
+                source: MessageSource::Ui,
+                severity: MessageSeverity::Info,
+                summary: "Session switch cancelled",
+                detail: "Current session retained.",
+            });
         } else if self.workspace.cancel() {
-            self.transcript
-                .push(("Workspace".into(), "Workspace read cancelled.".into()));
+            self.publish_message(MessageEvent {
+                source: MessageSource::Workspace,
+                severity: MessageSeverity::Info,
+                summary: "Workspace read cancelled",
+                detail: "The pending read was cancelled.",
+            });
         } else {
             self.workspace.close_view();
             self.runtime_receipt_open = false;
@@ -419,6 +673,7 @@ impl App {
             || self.workspace.is_pending()
             || self.workspace.view().is_some()
             || self.runtime_receipt_open
+            || self.buffer_view != super::state::BufferView::Conversation
             || self
                 .session_browser
                 .as_ref()
@@ -440,25 +695,157 @@ impl App {
     }
 
     pub(crate) fn scroll(&mut self, up: bool) {
-        if let Some(view) = self.workspace.view_mut() {
-            view.scroll_from_top = if up {
-                view.scroll_from_top.saturating_sub(10)
+        self.scroll_lines(up, 10);
+    }
+
+    pub(crate) fn scroll_lines(&mut self, up: bool, lines: usize) {
+        if matches!(
+            self.buffer_view,
+            super::state::BufferView::Static(_) | super::state::BufferView::Processes
+        ) {
+            self.static_buffer_scroll = if up {
+                self.static_buffer_scroll.saturating_sub(lines)
             } else {
-                view.scroll_from_top.saturating_add(10)
+                self.static_buffer_scroll.saturating_add(lines)
+            };
+            return;
+        }
+        if self.buffer_view == super::state::BufferView::Messages {
+            self.message_scroll_up = if up {
+                self.message_scroll_up.saturating_add(lines)
+            } else {
+                self.message_scroll_up.saturating_sub(lines)
+            };
+        } else if let Some(view) = self.workspace.view_mut() {
+            view.scroll_from_top = if up {
+                view.scroll_from_top.saturating_sub(lines)
+            } else {
+                view.scroll_from_top.saturating_add(lines)
             };
         } else {
             self.scroll_up = if up {
-                self.scroll_up.saturating_add(10)
+                self.scroll_up.saturating_add(lines)
             } else {
-                self.scroll_up.saturating_sub(10)
+                self.scroll_up.saturating_sub(lines)
             };
         }
     }
 
     pub(super) fn set_effective_scroll(&mut self, value: usize) {
+        if matches!(
+            self.buffer_view,
+            super::state::BufferView::Static(_) | super::state::BufferView::Processes
+        ) {
+            return;
+        }
+        if self.buffer_view == super::state::BufferView::Messages {
+            self.message_scroll_up = value;
+            return;
+        }
         match self.workspace.view_mut() {
             Some(view) => view.scroll_from_top = value,
             None => self.scroll_up = value,
         }
+    }
+}
+
+impl App {
+    fn submit_process_command(&mut self) -> bool {
+        let Some(_) = self.command_draft else {
+            return false;
+        };
+        let input = match &self.command_menu {
+            Some(menu) => format!("{}{}", menu.prefix, self.composer.text()),
+            None => self.composer.text().to_owned(),
+        };
+        let command = self
+            .command_descriptor(&input)
+            .and_then(|descriptor| Command::parse(descriptor, &input));
+        match command {
+            Some(Command::SelectUi(UiEvent::SelectBuffer(buffer)))
+                if buffer.as_str() == "processes" =>
+            {
+                self.ui_request = Some(UiEvent::SelectBuffer(buffer));
+                self.refresh_process_content();
+            }
+            Some(Command::KillProcess(generation)) => self.stop_process(generation),
+            _ => return false,
+        }
+        self.composer = self
+            .command_draft
+            .take()
+            .expect("process command has a saved draft");
+        self.command_menu = None;
+        true
+    }
+
+    fn stop_process(&mut self, generation: std::num::NonZeroU64) {
+        let session = self.runtime_session_id();
+        let stopped = self
+            .runtime_owner
+            .process_registry()
+            .stop_session_generation(&session, generation);
+        let (severity, summary, detail) = if stopped {
+            (
+                MessageSeverity::Info,
+                "Process stop requested",
+                "Runtime is reaping the selected process.",
+            )
+        } else {
+            (
+                MessageSeverity::Warning,
+                "Process unavailable",
+                "Use a live generation from this session's Processes buffer.",
+            )
+        };
+        self.publish_message(MessageEvent {
+            source: MessageSource::Runtime,
+            severity,
+            summary,
+            detail,
+        });
+    }
+
+    pub(super) fn refresh_process_content(&mut self) -> bool {
+        let rows = self
+            .runtime_owner
+            .process_registry()
+            .managed_processes(&self.runtime_session_id());
+        let mut content = Vec::with_capacity(rows.len() + 1);
+        content.push(UiContent::Text(if rows.is_empty() {
+            "No managed processes in this session.".into()
+        } else {
+            "Generation   State   PID   Operation".into()
+        }));
+        for row in rows {
+            let id = row.resource_id().expect("managed process row");
+            let operation: String = id
+                .operation()
+                .as_str()
+                .chars()
+                .take(128)
+                .map(|ch| if ch.is_control() { '�' } else { ch })
+                .collect();
+            use marlin_agent_runtime::process::RuntimeProcessStatus;
+            let state = match row.status {
+                RuntimeProcessStatus::Running => "Running",
+                RuntimeProcessStatus::Finished => "Exited",
+                RuntimeProcessStatus::Failed => "Exited (failed)",
+                RuntimeProcessStatus::Orphaned => "Orphaned",
+                RuntimeProcessStatus::CleanupRequested => "Cleaning up",
+            };
+            content.push(UiContent::Text(format!(
+                "{}   {}   {}   {}",
+                id.generation().get(),
+                state,
+                row.pid,
+                operation
+            )));
+        }
+        if self.process_content == content {
+            return false;
+        }
+        self.process_content = content;
+        true
     }
 }

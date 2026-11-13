@@ -22,6 +22,11 @@ package MarlinAgentCORE {
     dependency requestExecutionPath from project to PluginRequestPath;
     dependency performanceRequirement from project to requirements::highPerformanceExecution;
     dependency singleVmExecution from project to MarlinSingleVmRuntime::singleVmRuntime;
+    dependency processLifecycle from project to MarlinProcessLifecycle::managedProcess;
+    dependency processQuotaRequirement from project to MarlinProcessLifecycle::quotaHeldUntilExit;
+    dependency telemetryExport from project to MarlinTelemetry::telemetry;
+    dependency rustPackageOwnership from project to MarlinRustPackageOwnership::packages;
+    dependency eventBusContract from project to MarlinEventBusContract::eventBusDesign;
     dependency tuiDesign from project to MarlinTuiArchitecture::target::terminalClient;
     dependency declarativeTuiEngine from project to MarlinDeclarativeUi::engine;
     dependency contextOrgDesign from project to MarlinTuiArchitecture::target::contextOrgAuthority;
@@ -70,5 +75,11 @@ package MarlinAgentCORE {
         expose MarlinTuiArchitecture::requirements;
         expose MarlinDeclarativeUi::engine;
         render asTreeDiagram;
+    }
+
+    view rustPackageBoundaries {
+        expose MarlinRustPackageOwnership::packages;
+        expose MarlinRustPackageOwnership::scheme;
+        render asInterconnectionDiagram;
     }
 }

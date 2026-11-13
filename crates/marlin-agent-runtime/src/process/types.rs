@@ -173,6 +173,7 @@ pub struct RuntimeProcessRegistrySnapshot {
 pub struct RuntimeProcessObservation {
     pub pid: u32,
     pub handle: RuntimeProcessHandle,
+    pub(super) resource_id: Option<crate::RuntimeResourceId>,
     pub kind: RuntimeProcessKind,
     pub owner_reference: String,
     pub command: Option<RuntimeCommandObservation>,
@@ -188,6 +189,7 @@ impl RuntimeProcessObservation {
         let owner_reference = owner_reference.into();
         Self {
             pid,
+            resource_id: None,
             handle: RuntimeProcessHandle::new(owner_reference.clone()),
             kind,
             owner_reference,
@@ -198,6 +200,15 @@ impl RuntimeProcessObservation {
             cleanup_attempts: 0,
             last_cleanup_attempt_at_ms: None,
         }
+    }
+
+    pub fn resource_id(&self) -> Option<&crate::RuntimeResourceId> {
+        self.resource_id.as_ref()
+    }
+
+    pub(super) fn with_resource_id(mut self, id: crate::RuntimeResourceId) -> Self {
+        self.resource_id = Some(id);
+        self
     }
 
     pub fn with_handle(mut self, handle: impl Into<RuntimeProcessHandle>) -> Self {

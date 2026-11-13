@@ -52,6 +52,10 @@ files remain local outputs regardless of their extension.
 | [[file:plugin-engine.sysml][plugin-engine.sysml]] | Source-inspected actual Rust interfaces and target gRPC/C ABI ownership | [[file:../../docs/40-rfcs/40.166-plugin-contract.org::#plugin-ownership][Ownership]] and [[file:../../docs/40-rfcs/40.166-plugin-contract.org::#plugin-transport][Transport]] |
 | [[file:single-vm-runtime.sysml][single-vm-runtime.sysml]] | Single-VM owner, Context batching, green actors and terminal accounting | [[file:../../docs/40-rfcs/40.166-plugin-contract.org::#single-vm-actor-runtime][Single-VM runtime]] |
 | [[file:plugin-lifecycle.sysml][plugin-lifecycle.sysml]] | Target activation generation and run lifecycle | [[file:../../docs/40-rfcs/40.166-plugin-contract.org::#plugin-lifecycle][Grants and lifecycle]] |
+| [[file:process-lifecycle.sysml][process-lifecycle.sysml]] | MAR-PROC-R01/R07 managed process, containment and pipe lease verification | [[file:../quint/process-quota.org][Quota model and executable evidence]] |
+| [[file:event-bus-contract.sysml][event-bus-contract.sysml]] | Proposed reliable event admission and bounded subscriber ownership | [[file:../verification/event-bus-design.org][Event Bus design]] |
+| [[file:telemetry.sysml][telemetry.sysml]] | OTLP exporter ownership, span selection and shutdown | [[file:../../crates/marlin-agent-tui/README.org::*OpenTelemetry traces][TUI OpenTelemetry traces]] |
+| [[file:rust-package-ownership.sysml][rust-package-ownership.sysml]] | Cargo package responsibilities, Runtime and telemetry authority, and Rust-to-Scheme native projection | [[file:../verification/codex-runtime-research.org][Runtime and watchdog design evidence]] |
 | [[file:plugin-execution.sysml][plugin-execution.sysml]] | Target plugin request flow, stage allocations, and Scheme batch boundaries | [[file:../../docs/40-rfcs/40.166-plugin-contract.org::#plugin-request-path][plugin request execution and batching]] |
 | [[file:tui-architecture.sysml][tui-architecture.sysml]] | Inspected TUI facts, proposed ownership, performance and evidence requirements | [[file:../../docs/40-rfcs/40.180-codewhale-inspired-tui.org::#tui-performance][TUI design and qualification]] |
 | [[file:tui-declarative-engine.sysml][tui-declarative-engine.sysml]] | Marlin's Scheme/Rust UI engine, admission lifecycle, composability and performance qualification | [[file:../../docs/40-rfcs/40.180-codewhale-inspired-tui.org::#tui-performance][Declarative UI design]] |
@@ -96,6 +100,8 @@ just sysml-check
 mkdir -p target/sysml
 sysml -strict -no-record-cache project.sysml dev/sysml \
   -render MarlinAgentCORE::projectStructure -render-form mermaid > target/sysml/project-structure.mmd
+sysml -strict -no-record-cache project.sysml dev/sysml \
+  -render MarlinAgentCORE::rustPackageBoundaries -render-form mermaid > target/sysml/rust-package-boundaries.mmd
 sysml -strict -no-record-cache project.sysml dev/sysml \
   -render MarlinAgentCORE::pluginTransport -render-form mermaid > target/sysml/plugin-transport.mmd
 sysml -strict -no-record-cache project.sysml dev/sysml \

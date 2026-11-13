@@ -18,7 +18,8 @@ mod loop_program_side_effects;
 pub use adapters::{ProviderNodeAdapter, SubAgentNodeAdapter, ToolNodeAdapter};
 pub use controller::{
     GraphLoopContinuationInput, GraphLoopContinuationPlanner, GraphLoopController,
-    TerminalGraphLoopContinuationPlanner, TokioGraphLoopController,
+    GraphLoopHumanReviewError, GraphLoopHumanReviewHandle, TerminalGraphLoopContinuationPlanner,
+    TokioGraphLoopController,
 };
 pub use driver::{
     GraphLoopKernel, GraphNodeExecutor, GraphPolicyProposalCompilation, TokioGraphLoopKernel,

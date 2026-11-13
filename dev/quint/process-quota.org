@@ -1,0 +1,44 @@
+#+title: Process quota lifecycle model
+
+=MAR-PROC-R01/R02= in =dev/sysml/process-lifecycle.sysml= specify and
+allocate the direct-child quota and its verification. Rust owns implementation;
+this Quint model specifies finite control interleavings. The files are authored
+and linked by requirement IDs, not generated from SysML. A cancelled task and
+its draining child are separate states. When B is queued, the abstract exit
+transition also admits B; the replay waits for both concrete operations before
+comparing that resulting state. The model does not assert fairness, eventual
+exit, pipe closure, descendant cleanup, or crash consistency.
+
+#+begin_src sh
+quint typecheck dev/quint/process-quota.qnt
+quint test dev/quint/process-quota.qnt --main=processQuota --max-samples=100
+quint run dev/quint/process-quota.qnt --main=processQuota --invariant=safe --seed=42 --max-samples=1000 --max-steps=8 --verbosity=1
+# Negative control: must report an invariant violation and exit nonzero.
+quint run dev/quint/process-quota.qnt --main=processQuota --step=badStep --invariant=safe --seed=42 --max-samples=1000 --max-steps=8 --verbosity=1
+quint verify dev/quint/process-quota.qnt --main=processQuota --backend=tlc --invariant=safe --max-steps=8
+#+end_src
+
+=python3 dev/verification/process_quota_gate.py= generates three named and 20
+seeded ITF traces in a temporary directory, replays each against Rust and
+observes OS PIDs at every state. It probes queued admission while A is alive,
+and checks an isolated copy with the production cleanup method mutated to
+release early. The gate requires that mutant to fail at the admission assertion.
+The gate is included in =just property-gate=. Simulation and finite TLC checks
+are not proofs of unbounded execution. The optional process limit defaults to
+unlimited; failure to confirm exit retains capacity. Unix process groups cover
+same-group descendants. The typed =EnforcedDescendantTree= admission currently
+fails before spawn because no escape-resistant backend is implemented. Kernel
+tool requests and command templates propagate the requirement. The
+platform-default mode remains vulnerable to =setsid= escape, demonstrated by an
+OS negative control. Output endpoints and the caller-held =ManagedChildStdin=
+share the process quota lease; capacity returns only after confirmed cleanup and
+all such owned handles drop. A forgotten handle retains capacity indefinitely.
+Unmanaged duplicated descriptors, external process copies of pipe endpoints,
+non-Unix process trees, process-group identity reuse and eventual cleanup remain
+outside the guarantee. =process-lease.qnt= and generated Rust replay cover strict
+rejection and both process-exit / caller-pipe-close orderings. =process-tree.qnt= and its generated Rust replay cover a leader,
+one descendant and one inherited output pipe. The gate also mutates group
+confirmation and requires the OS descendant test to fail. A third mutation
+removes the caller-pipe lease and must fail the generated lease replay. The
+output endpoint drop-order unit test uses a controlled destructor; arbitrary
+OS descriptor aliases and all cancellation schedules are not exhaustively checked.

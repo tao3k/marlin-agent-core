@@ -87,6 +87,10 @@ pub enum ConversationTurnOutcome {
     Completed {
         response: ModelGatewayCompletionResponse,
     },
+    /// Provider retired with a tool request; execution remains unapproved.
+    ToolRequested {
+        response: ModelGatewayCompletionResponse,
+    },
     Failed {
         diagnostic: String,
         partial_text: String,
@@ -108,6 +112,9 @@ pub enum ConversationTurnOutcome {
 #[derive(Clone, Debug, PartialEq)]
 pub enum ConversationTerminalObservation {
     Completed {
+        response: ModelGatewayCompletionResponse,
+    },
+    ToolRequested {
         response: ModelGatewayCompletionResponse,
     },
     RejectedBeforeDispatch {
@@ -212,6 +219,7 @@ pub struct ConversationJournal<S> {
     owns_active: bool,
     next_checkpoint: u64,
     legacy_outcome_unresolved: bool,
+    pending_tool_request: bool,
 }
 
 impl<S: SessionEventStore> ConversationJournal<S> {
@@ -253,6 +261,7 @@ impl<S: SessionEventStore> ConversationJournal<S> {
             owns_active: false,
             next_checkpoint: 1,
             legacy_outcome_unresolved: false,
+            pending_tool_request: false,
         };
         let before = journal
             .storage
@@ -345,6 +354,9 @@ impl<S: SessionEventStore> ConversationJournal<S> {
         }
         if self.legacy_outcome_unresolved {
             return Err(ConversationJournalError::LegacyOutcomeUnresolved);
+        }
+        if self.pending_tool_request {
+            return Err(ConversationJournalError::ToolRequestPending);
         }
         start
             .endpoint
@@ -494,6 +506,9 @@ impl<S: SessionEventStore> ConversationJournal<S> {
             ConversationTerminalObservation::Completed { response } => {
                 ConversationTurnOutcome::Completed { response }
             }
+            ConversationTerminalObservation::ToolRequested { response } => {
+                ConversationTurnOutcome::ToolRequested { response }
+            }
             ConversationTerminalObservation::RejectedBeforeDispatch { diagnostic } => {
                 if self.next_checkpoint != 1 {
                     return Err(ConversationJournalError::InvalidEvent(
@@ -527,6 +542,8 @@ impl<S: SessionEventStore> ConversationJournal<S> {
         .await?;
         self.active = None;
         self.owns_active = false;
+        self.pending_tool_request =
+            matches!(outcome, ConversationTurnOutcome::ToolRequested { .. });
         Ok(())
     }
 
@@ -626,7 +643,8 @@ impl<S: SessionEventStore> ConversationJournal<S> {
         }
         match event.event_kind.as_str() {
             START_KIND if event.event_id == id.start_event_id()? => {
-                if self.active.is_some()
+                if self.pending_tool_request
+                    || self.active.is_some()
                     || id.0 != self.next
                     || event.causality_parent_event_id.is_some()
                 {
@@ -737,6 +755,10 @@ impl<S: SessionEventStore> ConversationJournal<S> {
                     self.legacy_outcome_unresolved = true;
                 }
                 turn.outcome = Some(outcome);
+                self.pending_tool_request = matches!(
+                    turn.outcome,
+                    Some(ConversationTurnOutcome::ToolRequested { .. })
+                );
                 if !visit(&turn) {
                     return Err(ConversationJournalError::ReplayStopped);
                 }
@@ -781,7 +803,8 @@ fn validate_checkpoint_prefix(
     outcome: &ConversationTurnOutcome,
 ) -> Result<(), ConversationJournalError> {
     let text = match outcome {
-        ConversationTurnOutcome::Completed { response } => response
+        ConversationTurnOutcome::Completed { response }
+        | ConversationTurnOutcome::ToolRequested { response } => response
             .choices
             .iter()
             .find(|choice| choice.message.role == ModelGatewayMessageRole::Assistant)
@@ -805,15 +828,41 @@ fn validate_checkpoint_prefix(
 }
 
 fn validate_outcome(outcome: &ConversationTurnOutcome) -> Result<(), ConversationJournalError> {
-    if let ConversationTurnOutcome::Completed { response } = outcome
-        && !response
-            .choices
-            .iter()
-            .any(|choice| choice.message.role == ModelGatewayMessageRole::Assistant)
-    {
-        return Err(ConversationJournalError::InvalidEvent(
-            "completion has no assistant choice".into(),
-        ));
+    match outcome {
+        ConversationTurnOutcome::Completed { response } => {
+            response
+                .choices
+                .iter()
+                .find(|choice| choice.message.role == ModelGatewayMessageRole::Assistant)
+                .ok_or_else(|| {
+                    ConversationJournalError::InvalidEvent(
+                        "completion has no assistant choice".into(),
+                    )
+                })?;
+            if response
+                .choices
+                .iter()
+                .any(|choice| !choice.message.tool_calls.is_empty())
+            {
+                return Err(ConversationJournalError::InvalidEvent(
+                    "tool request recorded as completed answer".into(),
+                ));
+            }
+        }
+        ConversationTurnOutcome::ToolRequested { response }
+            if response.choices.len() != 1
+                || response.choices[0].message.role != ModelGatewayMessageRole::Assistant
+                || response.choices[0].message.tool_calls.is_empty()
+                || response.choices[0]
+                    .message
+                    .validate_tool_contract()
+                    .is_err() =>
+        {
+            return Err(ConversationJournalError::InvalidEvent(
+                "invalid pending tool request".into(),
+            ));
+        }
+        _ => {}
     }
     Ok(())
 }
@@ -827,6 +876,7 @@ pub enum ConversationJournalError {
     UnfinishedTurn,
     /// Historical terminal record lacks evidence that remote work retired.
     LegacyOutcomeUnresolved,
+    ToolRequestPending,
     UnownedTurn,
     WrongActiveTurn,
     OrdinalExhausted,
@@ -854,6 +904,7 @@ impl fmt::Display for ConversationJournalError {
             Self::LegacyOutcomeUnresolved => {
                 f.write_str("historical failure or cancellation has no remote retirement evidence")
             }
+            Self::ToolRequestPending => f.write_str("conversation has a pending tool request"),
             Self::UnownedTurn => {
                 f.write_str("replayed unfinished turn is owned by an unknown process")
             }

@@ -285,15 +285,22 @@ impl<G: ModelStreamingGateway, S: SessionEventStore + 'static> ModelStreamingGat
                             thinking_bytes += chunk.content.len();
                             yield Ok(ModelStreamEvent::Thinking(chunk));
                         }
-                        Ok(ModelStreamEvent::Completed { response }) => {
+                        Ok(event @ (ModelStreamEvent::Completed { .. } | ModelStreamEvent::ToolRequested { .. })) => {
+                            let (response, tool_requested) = match &event {
+                                ModelStreamEvent::Completed { response } => (response, false),
+                                ModelStreamEvent::ToolRequested { response } => (response, true),
+                                _ => unreachable!("terminal event pattern"),
+                            };
                             let assistant = response.choices.iter().find(|choice| choice.message.role == ModelGatewayMessageRole::Assistant);
                             let any_oversized = response.choices.iter().filter(|choice| choice.message.role == ModelGatewayMessageRole::Assistant).any(|choice| {
                                 choice.message.content.len() > MAX_RESPONSE_BYTES || (!had_chunks && thinking_bytes.checked_add(choice.message.content.len()).is_none_or(|size| size > MAX_RESPONSE_BYTES))
                             });
-                            let heap_rejection = completion_heap_limit(&response);
+                            let heap_rejection = completion_heap_limit(response);
                             let rejected = match assistant {
                                 _ if heap_rejection.is_some() => heap_rejection,
                                 _ if any_oversized => Some(ModelStreamInterruption::OutputLimit { limit_bytes: MAX_RESPONSE_BYTES }),
+                                Some(choice) if tool_requested && (response.choices.len() != 1 || choice.message.tool_calls.is_empty()) => Some(ModelStreamInterruption::InvalidCompletion),
+                                Some(choice) if !tool_requested && !choice.message.tool_calls.is_empty() => Some(ModelStreamInterruption::InvalidCompletion),
                                 Some(choice) if had_chunks && choice.message.content != partial => Some(ModelStreamInterruption::InvalidCompletion),
                                 None => Some(ModelStreamInterruption::InvalidCompletion),
                                 _ => None,
@@ -302,8 +309,13 @@ impl<G: ModelStreamingGateway, S: SessionEventStore + 'static> ModelStreamingGat
                                 yield Err(record_stream_uncertainty(&mut journal, id, reason, &partial, persisted).await);
                                 return;
                             }
-                            match journal.finish(id, ConversationTerminalObservation::Completed { response: response.clone() }, now_ms()).await {
-                                Ok(()) => yield Ok(ModelStreamEvent::Completed { response }),
+                            let observation = if tool_requested {
+                                ConversationTerminalObservation::ToolRequested { response: response.clone() }
+                            } else {
+                                ConversationTerminalObservation::Completed { response: response.clone() }
+                            };
+                            match journal.finish(id, observation, now_ms()).await {
+                                Ok(()) => yield Ok(event),
                                 Err(error) => yield Err(failure(format!("model completion could not be persisted: {error}"))),
                             }
                             return;

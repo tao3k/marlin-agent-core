@@ -4,11 +4,14 @@
 
 use marlin_agent_kernel::{
     GraphLoopContinuationAction, GraphLoopController, GraphLoopExecutionBudget,
-    GraphLoopExecutionRequest, GraphLoopExecutionStatus, GraphLoopFailureKind, GraphLoopNextAction,
-    GraphLoopRunRequest, GraphLoopStopPolicy, HumanReviewKind, LoopContinuationCapability,
+    GraphLoopExecutionRequest, GraphLoopExecutionStatus, GraphLoopFailureKind,
+    GraphLoopHumanReviewError, GraphLoopNextAction, GraphLoopRunRequest, GraphLoopStopPolicy,
+    HumanDecision, HumanDecisionReceipt, HumanReviewKind, LoopContinuationCapability,
     LoopContinuationPolicy, LoopGraph, LoopPolicyProfile,
 };
-use marlin_agent_runtime::TokioAgentRuntime;
+use marlin_agent_runtime::{
+    GraphLoopRunRegistryError, GraphLoopRunStatus, GraphLoopRunWaitStatus, TokioAgentRuntime,
+};
 
 use super::{ContinueOncePlanner, RepairFailurePlanner, controller, edge, node};
 
@@ -105,6 +108,160 @@ async fn controller_human_gate_blocks_continuation_planner_graph() {
         human_gate_receipt.proposed_next_action,
         GraphLoopNextAction::ContinueWithGraph(_)
     ));
+    let observation = runtime.graph_loop_runs().read_registry(|registry| {
+        registry
+            .inspect_run(&"run".into(), 1)
+            .observation
+            .expect("suspended run")
+    });
+    assert_eq!(observation.status, GraphLoopRunStatus::AwaitingHuman);
+    assert_eq!(
+        observation.pending_human_gate,
+        Some(human_gate_receipt.clone())
+    );
+    assert_eq!(observation.terminal_status, None);
+    assert_eq!(
+        runtime
+            .graph_loop_runs()
+            .read_registry(|registry| registry.wait_run(&"run".into(), 1).status),
+        GraphLoopRunWaitStatus::AwaitingHuman
+    );
+}
+
+#[tokio::test]
+async fn reviewable_controller_resumes_only_after_matching_approved_gate() {
+    let request = GraphLoopRunRequest::new(GraphLoopExecutionRequest::new(
+        "review-run",
+        LoopGraph {
+            graph_id: "graph-initial".to_owned(),
+            nodes: vec![node("plan")],
+            edges: Vec::new(),
+        },
+    ))
+    .with_stop_policy(GraphLoopStopPolicy::max_iterations(2).require_human_gate());
+    let (runtime, _events) = TokioAgentRuntime::new(16);
+    let (task, review) = controller()
+        .with_continuation_planner(ContinueOncePlanner)
+        .spawn_reviewable_loop(request, &runtime);
+    tokio::time::timeout(std::time::Duration::from_secs(2), async {
+        loop {
+            if runtime
+                .graph_loop_runs()
+                .read_registry(|registry| registry.wait_run(&"review-run".into(), 0).status)
+                == GraphLoopRunWaitStatus::AwaitingHuman
+            {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("controller should publish the gate");
+    assert!(!task.is_finished());
+    assert!(matches!(
+        review
+            .decide(HumanDecisionReceipt::new(
+                "wrong-gate",
+                HumanDecision::Approved
+            ))
+            .await,
+        Err(GraphLoopHumanReviewError::Rejected(
+            GraphLoopRunRegistryError::GateMismatch { .. }
+        ))
+    ));
+    assert!(!task.is_finished());
+    review
+        .decide(HumanDecisionReceipt::new(
+            "human-gate:review-run:0",
+            HumanDecision::Approved,
+        ))
+        .await
+        .expect("matching approval admitted");
+    let reports = task.join().await.expect("controller task joins");
+    assert_eq!(reports.len(), 2);
+    assert_eq!(reports[1].execution_result.snapshot.graph_id, "graph-next");
+    assert_eq!(
+        reports[0]
+            .human_decision_receipt
+            .as_ref()
+            .map(|receipt| &receipt.decision),
+        Some(&HumanDecision::Approved)
+    );
+    let observation = runtime.graph_loop_runs().read_registry(|registry| {
+        registry
+            .inspect_run(&"review-run".into(), 0)
+            .observation
+            .expect("run")
+    });
+    assert_eq!(observation.status, GraphLoopRunStatus::Completed);
+    assert!(observation.pending_human_gate.is_none());
+}
+
+#[tokio::test]
+async fn reviewable_controller_rejection_never_executes_proposed_graph() {
+    let request = GraphLoopRunRequest::new(GraphLoopExecutionRequest::new(
+        "review-rejected",
+        LoopGraph {
+            graph_id: "graph-initial".to_owned(),
+            nodes: vec![node("plan")],
+            edges: Vec::new(),
+        },
+    ))
+    .with_stop_policy(GraphLoopStopPolicy::max_iterations(2).require_human_gate());
+    let (runtime, _events) = TokioAgentRuntime::new(16);
+    let (task, review) = controller()
+        .with_continuation_planner(ContinueOncePlanner)
+        .spawn_reviewable_loop(request, &runtime);
+    review
+        .decide(HumanDecisionReceipt::new(
+            "human-gate:review-rejected:0",
+            HumanDecision::Rejected,
+        ))
+        .await
+        .expect("matching rejection admitted");
+    let reports = task.join().await.expect("controller task joins");
+    assert_eq!(reports.len(), 1);
+    assert_eq!(
+        reports[0]
+            .human_decision_receipt
+            .as_ref()
+            .map(|receipt| &receipt.decision),
+        Some(&HumanDecision::Rejected)
+    );
+    assert_eq!(
+        runtime
+            .graph_loop_runs()
+            .read_registry(|registry| { registry.run_status(&"review-rejected".into()) }),
+        Some(GraphLoopRunStatus::Failed)
+    );
+}
+
+#[tokio::test]
+async fn closing_review_handle_cancels_pending_gate() {
+    let request = GraphLoopRunRequest::new(GraphLoopExecutionRequest::new(
+        "review-closed",
+        LoopGraph {
+            graph_id: "graph-initial".to_owned(),
+            nodes: vec![node("plan")],
+            edges: Vec::new(),
+        },
+    ))
+    .with_stop_policy(GraphLoopStopPolicy::max_iterations(2).require_human_gate());
+    let (runtime, _events) = TokioAgentRuntime::new(16);
+    let (task, review) = controller()
+        .with_continuation_planner(ContinueOncePlanner)
+        .spawn_reviewable_loop(request, &runtime);
+    drop(review);
+    let reports = task.join().await.expect("controller task joins");
+    assert_eq!(reports.len(), 1);
+    let observation = runtime.graph_loop_runs().read_registry(|registry| {
+        registry
+            .inspect_run(&"review-closed".into(), 0)
+            .observation
+            .expect("run")
+    });
+    assert_eq!(observation.status, GraphLoopRunStatus::Cancelled);
+    assert!(observation.pending_human_gate.is_none());
 }
 
 #[tokio::test]

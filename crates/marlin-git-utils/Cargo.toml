@@ -11,6 +11,7 @@ authors.workspace = true
 repository.workspace = true
 
 [dependencies]
+marlin-agent-protocol.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 

@@ -7,7 +7,8 @@
         (only-in "../ui-components/bounds.ss" marlin-ui-max-contributions marlin-ui-max-extensions
                  marlin-ui-bounded-label? marlin-ui-bounded-list? marlin-ui-required-object)
         "./dispatch.ss")
-(export make-marlin-ui-workbench marlin-ui-focus-event marlin-ui-previous-focus-event)
+(export make-marlin-ui-workbench make-marlin-ui-profile-workbench
+        marlin-ui-focus-event marlin-ui-previous-focus-event)
 
 (def (unique-identities? ids)
   (or (null? ids)
@@ -15,15 +16,21 @@
 
 ;;; Host facts are display data only. Transcript and composer are named regions
 ;;; whose contents and editing authority remain with their existing owners.
-(def (make-marlin-ui-workbench components modeline themes layout)
-  (let ((types (.ref components 'components))
+(def (make-marlin-ui-profile-workbench components hydra modeline themes layout)
+  (let* ((types (.ref components 'components))
         (contribution-node (.ref components 'contribution-node))
         (modeline-node (.ref components 'modeline-node))
         (extension-node (.ref components 'extension-node))
-        (command-catalog (.ref components 'command-catalog))
+        (buffer-identities ((.ref components 'buffer-identities)))
         (command-entries (.ref components 'command-entries))
-        (modeline-nodes (.ref modeline 'nodes)))
-  (lambda (facts)
+        (command-catalog
+          ((.ref components 'command-catalog-with-profiles)
+           ((.ref components 'command-catalog-with-extensions)
+            (.ref components 'command-catalog) ((.ref hydra 'command-entries)))
+           (.ref themes 'profiles)))
+        (modeline-nodes-for (.ref modeline 'nodes-for))
+        (theme-for (.ref themes 'select)))
+  (lambda (facts profile)
     (marlin-ui-required-object facts '(model session contributions extensions))
     (let ((model-value (.ref facts 'model)) (session-value (.ref facts 'session))
         (contribution-values (.ref facts 'contributions))
@@ -34,17 +41,22 @@
       (error "invalid UI workbench facts"))
     (let* ((owned-model (string-copy model-value))
            (owned-session (string-copy session-value))
-           (nodes (append (map modeline-node (modeline-nodes))
+           (nodes (append (map modeline-node (modeline-nodes-for profile))
                           (map contribution-node contribution-values)))
-           (extensions (map extension-node extension-values))
+           (host-extensions (map extension-node extension-values))
+           (extensions (append ((.ref components 'static-buffer-nodes))
+                               host-extensions))
            (ids (map (lambda (node) (.ref node 'identity)) (append nodes extensions)))
            (extension-focus (map (lambda (node) (.ref node 'identity))
                                  (filter (lambda (node) (.ref node 'focusable)) extensions))))
-      (unless (unique-identities? ids)
+      (unless (and (unique-identities? ids)
+                   (not (ormap (lambda (node)
+                                 (memq (.ref node 'identity) buffer-identities))
+                               host-extensions)))
         (error "duplicate UI contribution identity"))
       (.o (:: @ (.ref types 'workbench)) identity: 'workbench kind: 'workbench
           model: owned-model session: owned-session geometry-policy: (.ref layout 'policy)
-          theme-palette: (.ref themes 'selected)
+          theme-palette: (theme-for profile)
           focus-order: (append '(transcript composer commands) extension-focus)
           regions: (append (list (.o (:: @ (.ref types 'transcript)) identity: 'transcript kind: 'transcript)
                                  (.o (:: @ (.ref types 'composer)) identity: 'composer kind: 'composer)
@@ -52,6 +64,10 @@
                                      entries: (command-entries command-catalog)))
                            extensions
                            (list (.o (:: @ (.ref types 'status)) identity: 'status kind: 'status children: nodes)))))))))
+
+(def (make-marlin-ui-workbench components hydra modeline themes layout)
+  (def build (make-marlin-ui-profile-workbench components hydra modeline themes layout))
+  (lambda (facts) (build facts (.ref themes 'default-profile))))
 
 (def (marlin-ui-focus-event workbench)
   (let (order-value (.ref workbench 'focus-order))

@@ -43,7 +43,8 @@ impl OutputLimit {
     /// Reject an entire event before it enters the UI queue if its text would
     /// exceed the limit. Earlier chunks remain visible as provisional output.
     pub(crate) fn check(&mut self, event: &ModelStreamEvent) -> Result<(), ModelGatewayError> {
-        if let ModelStreamEvent::Completed { response } = event
+        if let ModelStreamEvent::Completed { response }
+        | ModelStreamEvent::ToolRequested { response } = event
             && let Some(reason) = completion_heap_limit(response)
         {
             return Err(ModelGatewayError::StreamInterrupted(reason));
@@ -69,7 +70,8 @@ impl OutputLimit {
                     _ => true,
                 }
             }
-            ModelStreamEvent::Completed { response } => response
+            ModelStreamEvent::Completed { response }
+            | ModelStreamEvent::ToolRequested { response } => response
                 .choices
                 .iter()
                 .filter(|choice| choice.message.role == ModelGatewayMessageRole::Assistant)

@@ -10,12 +10,14 @@ use gerbil_scheme::{
     CollectionKind, GerbilRuntime, IdentifierKind, LinkedObjectExport, ObjectKind,
     RootedObjectBatch, RootedSchemeObject, SchemeScalar,
 };
+use marlin_agent_protocol::HumanReviewKind;
 
 use crate::model::{
     MAX_EXTENSIONS, MAX_HOST_STATUS, MAX_METHOD_BUNDLES, MAX_TEXT_CHARS, UiBrowseDirection,
-    UiCommandName, UiEvent, UiIntent, UiOpenFacts, UiProjectionError, UiStatusTone, UiWorkbench,
+    UiBrowseRequest, UiCommandName, UiEvent, UiIntent, UiOpenFacts, UiProjectionError,
+    UiReviewMenu, UiStatusTone, UiWorkbench,
 };
-use crate::projection::{decode_intent, decode_workbench, string, vector};
+use crate::projection::{decode_intent, decode_review_menu, decode_workbench, string, vector};
 
 /// Scheme-owned UI state, retained by the SDK's owner-affine strong root.
 pub struct UiNativeSession<'runtime> {
@@ -31,6 +33,8 @@ pub struct UiModule<'runtime> {
     project: UiCallable<'runtime>,
     dispatch: UiCallable<'runtime>,
     browse_command: UiCallable<'runtime>,
+    command_candidates: UiCallable<'runtime>,
+    review_menu: UiCallable<'runtime>,
     refresh_labels: UiCallable<'runtime>,
 }
 
@@ -64,6 +68,8 @@ pub struct UiLinkedExports {
     pub project: unsafe extern "C" fn(i64) -> i64,
     pub dispatch: unsafe extern "C" fn(i64) -> i64,
     pub browse_command: unsafe extern "C" fn(i64) -> i64,
+    pub command_candidates: unsafe extern "C" fn(i64) -> i64,
+    pub review_menu: unsafe extern "C" fn(i64) -> i64,
     pub refresh_labels: unsafe extern "C" fn(i64) -> i64,
 }
 
@@ -114,9 +120,26 @@ impl<'runtime> UiModule<'runtime> {
         trace("session dispatch");
         let browse_command = export(runtime, directory, ui, "marlin-ui-session-browse-command")?;
         trace("command browse");
+        let command_candidates = export(
+            runtime,
+            directory,
+            ui,
+            "marlin-ui-session-command-candidates",
+        )?;
+        trace("command candidates");
+        let review_menu = export(runtime, directory, ui, "marlin-ui-session-review-menu")?;
+        trace("review menu");
         let refresh_labels = export(runtime, directory, ui, "marlin-ui-session-refresh-labels")?;
         trace("label refresh");
-        for procedure in [&open, &project, &dispatch, &browse_command, &refresh_labels] {
+        for procedure in [
+            &open,
+            &project,
+            &dispatch,
+            &browse_command,
+            &command_candidates,
+            &review_menu,
+            &refresh_labels,
+        ] {
             if procedure.as_ref().kind()? != ObjectKind::Procedure {
                 return Err(UiProjectionError::Invalid("UI export is not a procedure"));
             }
@@ -128,6 +151,8 @@ impl<'runtime> UiModule<'runtime> {
             project: UiCallable::Dynamic(project),
             dispatch: UiCallable::Dynamic(dispatch),
             browse_command: UiCallable::Dynamic(browse_command),
+            command_candidates: UiCallable::Dynamic(command_candidates),
+            review_menu: UiCallable::Dynamic(review_menu),
             refresh_labels: UiCallable::Dynamic(refresh_labels),
         })
     }
@@ -158,8 +183,63 @@ impl<'runtime> UiModule<'runtime> {
             project: bind(exports.project)?,
             dispatch: bind(exports.dispatch)?,
             browse_command: bind(exports.browse_command)?,
+            command_candidates: bind(exports.command_candidates)?,
+            review_menu: bind(exports.review_menu)?,
             refresh_labels: bind(exports.refresh_labels)?,
         })
+    }
+
+    /// Projects Scheme's menu for a typed runtime review category.
+    pub fn review_menu(
+        &self,
+        session: &UiNativeSession<'_>,
+        kind: HumanReviewKind,
+    ) -> Result<UiReviewMenu, UiProjectionError> {
+        let name = match kind {
+            HumanReviewKind::General => "general",
+            HumanReviewKind::PolicyChange => "policy-change",
+            HumanReviewKind::PermissionEscalation => "permission-escalation",
+            HumanReviewKind::MemoryPromotion => "memory-promotion",
+            HumanReviewKind::CrossProjectReference => "cross-project-reference",
+            HumanReviewKind::SessionVisibilityExpansion => "session-visibility-expansion",
+            HumanReviewKind::DataMigration => "data-migration",
+        };
+        let kind = self
+            .runtime
+            .intern_identifier(IdentifierKind::Symbol, name)?;
+        let input = self
+            .runtime
+            .collection_from_objects(CollectionKind::Vector, &[&session.root, &kind])?;
+        decode_review_menu(self.review_menu.call(self.runtime, &input.into_object())?)
+    }
+
+    /// Project the selected Scheme command order once per edited menu query.
+    pub fn command_candidates(
+        &self,
+        session: &UiNativeSession<'_>,
+        query: &str,
+    ) -> Result<Vec<UiCommandName>, UiProjectionError> {
+        if !UiCommandName::is_valid_prefix(query) {
+            return Err(UiProjectionError::Invalid("invalid command query"));
+        }
+        let query = self.runtime.string_from_utf8(query)?.into_object();
+        let input = self
+            .runtime
+            .collection_from_objects(CollectionKind::Vector, &[&session.root, &query])?;
+        let output = self
+            .command_candidates
+            .call(self.runtime, &input.into_object())?;
+        let names = vector(output, 0, 32)?;
+        let mut candidates = Vec::with_capacity(names.len());
+        let mut seen = HashSet::new();
+        for index in 0..names.len() {
+            let name = UiCommandName::new(&string(names.element(index)?)?)?;
+            if !seen.insert(name.clone()) {
+                return Err(UiProjectionError::Invalid("duplicate command candidate"));
+            }
+            candidates.push(name);
+        }
+        Ok(candidates)
     }
 
     /// Construct one Scheme-owned functional UI session.
@@ -185,8 +265,34 @@ impl<'runtime> UiModule<'runtime> {
         previous: Option<&UiCommandName>,
         direction: UiBrowseDirection,
     ) -> Result<Option<UiCommandName>, UiProjectionError> {
+        self.browse_command_steps(
+            session,
+            UiBrowseRequest {
+                query,
+                previous,
+                direction,
+                steps: 1,
+            },
+        )
+    }
+
+    /// Move across a bounded number of Scheme-ordered candidates in one call.
+    pub fn browse_command_steps(
+        &self,
+        session: &UiNativeSession<'_>,
+        request: UiBrowseRequest<'_>,
+    ) -> Result<Option<UiCommandName>, UiProjectionError> {
+        let UiBrowseRequest {
+            query,
+            previous,
+            direction,
+            steps,
+        } = request;
         if !UiCommandName::is_valid_prefix(query) {
             return Err(UiProjectionError::Invalid("invalid command query"));
+        }
+        if !(1..=16).contains(&steps) {
+            return Err(UiProjectionError::Invalid("invalid command browse steps"));
         }
         let query = self.runtime.string_from_utf8(query)?.into_object();
         let previous = match previous {
@@ -200,9 +306,12 @@ impl<'runtime> UiModule<'runtime> {
                 UiBrowseDirection::Previous => "previous",
             },
         )?;
+        let steps = self
+            .runtime
+            .scalar_object(SchemeScalar::Fixnum(isize::from(steps)))?;
         let input = self.runtime.collection_from_objects(
             CollectionKind::Vector,
-            &[&session.root, &query, &previous, &direction],
+            &[&session.root, &query, &previous, &direction, &steps],
         )?;
         let output = self
             .browse_command
@@ -391,17 +500,32 @@ fn dispatch_event_with<'runtime>(
         &RootedSchemeObject<'_>,
     ) -> Result<RootedSchemeObject<'runtime>, UiProjectionError>,
 ) -> Result<(UiNativeSession<'runtime>, UiIntent), UiProjectionError> {
-    let name = match event {
+    let name = match &event {
         UiEvent::NextFocus => "next-focus",
         UiEvent::PreviousFocus => "previous-focus",
         UiEvent::Submit => "submit",
         UiEvent::Dismiss => "dismiss",
         UiEvent::ScrollUp => "scroll-up",
         UiEvent::ScrollDown => "scroll-down",
+        UiEvent::SelectProfile(_) => "select-profile",
+        UiEvent::SelectBuffer(_) => "select-buffer",
     };
     let symbol = runtime.intern_identifier(IdentifierKind::Symbol, name)?;
-    let request =
-        runtime.collection_from_objects(CollectionKind::Vector, &[&session.root, &symbol])?;
+    let argument = match &event {
+        UiEvent::SelectProfile(name) => {
+            Some(runtime.intern_identifier(IdentifierKind::Symbol, name.as_str())?)
+        }
+        UiEvent::SelectBuffer(name) => {
+            Some(runtime.intern_identifier(IdentifierKind::Symbol, name.as_str())?)
+        }
+        _ => None,
+    };
+    let request = if let Some(argument) = &argument {
+        runtime
+            .collection_from_objects(CollectionKind::Vector, &[&session.root, &symbol, argument])?
+    } else {
+        runtime.collection_from_objects(CollectionKind::Vector, &[&session.root, &symbol])?
+    };
     let result = vector(call(&request.into_object())?, 2, 2)?;
     let mut roots = RootedObjectBatch::default();
     result.copy_into(&mut roots)?;

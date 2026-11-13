@@ -10,7 +10,7 @@ use marlin_agent_protocol::{
 };
 use marlin_agent_runtime::{
     CancellationToken, HookRuntime, RuntimeContext, RuntimeEnvironment, RuntimeExecutionIdentity,
-    RuntimeFuture, SubAgentRuntime, TokioAgentRuntime, observability,
+    RuntimeFuture, SubAgentRuntime, TokioAgentRuntime, observability, process,
 };
 use tokio_stream::StreamExt;
 
@@ -107,9 +107,9 @@ fn runtime_context_shares_process_registry_with_children() {
     let (runtime, _events) = TokioAgentRuntime::new(4);
     let process_registry = runtime.process_registry();
     process_registry.track(
-        observability::RuntimeProcessObservation::new(
+        process::RuntimeProcessObservation::new(
             2100,
-            observability::RuntimeProcessKind::Tool,
+            process::RuntimeProcessKind::Tool,
             "tool:apply",
         )
         .with_started_at_ms(1),
@@ -121,10 +121,7 @@ fn runtime_context_shares_process_registry_with_children() {
         .finish(2100, 2)
         .expect("process should be visible from child context");
 
-    assert_eq!(
-        finished.status,
-        observability::RuntimeProcessStatus::Finished
-    );
+    assert_eq!(finished.status, process::RuntimeProcessStatus::Finished);
     assert!(process_registry.active_processes().is_empty());
 }
 

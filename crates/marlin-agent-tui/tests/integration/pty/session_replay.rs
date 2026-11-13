@@ -22,7 +22,9 @@ fn wait_raw(terminal: &mut Terminal, expected: &[u8]) {
 
 fn run_turn(config: &std::path::Path, session: &str, prompt: &[u8], answer: &[u8]) {
     let mut terminal = Terminal::start_with_args(config, &["--session", session]);
-    wait_raw(&mut terminal, b"Marlin");
+    terminal.wait_for(Duration::from_secs(20), "Modeline", |output| {
+        screen_lines(output)[28].contains("MARLIN")
+    });
     wait_raw(&mut terminal, session.as_bytes());
     terminal.send(prompt);
     terminal.send(b"\r");
@@ -124,19 +126,39 @@ fn separate_sessions_preserve_history_and_route_authority() {
     run_turn(&foreign, "session:foreign", b"foreign", b"answer-foreign");
 
     let mut terminal = Terminal::start_with_args(&config, &["--session", "session:B"]);
-    wait_raw(&mut terminal, b"Marlin");
+    terminal.wait_for(Duration::from_secs(20), "Modeline", |output| {
+        screen_lines(output)[28].contains("MARLIN")
+    });
     wait_raw(&mut terminal, b"session:B");
     terminal.send(b"second\r");
     wait_raw(&mut terminal, b"answer-two");
     thread::sleep(Duration::from_millis(500));
-    terminal.send(b"/session \"session:foreign\"\r");
-    wait_raw(&mut terminal, b"retained:");
+    terminal.send(b"\x0fsession \"session:foreign\"\r");
+    terminal.wait_for(Duration::from_secs(20), "failed session switch", |output| {
+        screen_lines(output)[29].contains("Session switch failed")
+    });
+    terminal.send(b"\x18bmessages\r");
+    terminal.wait_for(
+        Duration::from_secs(20),
+        "retained session diagnostic",
+        |output| {
+            let rows = screen_lines(output);
+            rows[29].contains("*Messages*")
+                && rows[..28]
+                    .iter()
+                    .any(|line| line.contains("Current session retained"))
+        },
+    );
+    terminal.send(b"\x1b");
+    terminal.wait_for(Duration::from_secs(20), "session B restored", |output| {
+        screen_lines(output)[29].contains("Message: Enter send")
+    });
     terminal.send(b"probe\r");
     wait_raw(&mut terminal, b"answer-probe");
     thread::sleep(Duration::from_millis(500));
-    terminal.send(b"/sessions\r");
+    terminal.send(b"\x0fsessions\r");
     wait_raw(&mut terminal, b"session:A");
-    terminal.send(b"/session \"session:A\"\r");
+    terminal.send(b"\x0fsession \"session:A\"\r");
     wait_raw(&mut terminal, b"answer-one");
     terminal.send(b"third\x0fcontext\r");
     wait_raw(&mut terminal, b"accounting:");
@@ -151,14 +173,18 @@ fn separate_sessions_preserve_history_and_route_authority() {
     terminal.send(b"blocked\x0finspect \"session:A\"\r");
     wait_raw(&mut terminal, b"Read-only");
     terminal.send(b"\r");
-    wait_raw(&mut terminal, b"retained.");
+    terminal.wait_for(
+        Duration::from_secs(20),
+        "read-only history notice",
+        |output| screen_lines(output)[29].contains("Read-only history"),
+    );
     thread::sleep(Duration::from_millis(500));
     assert_eq!(
         requests.lock().unwrap().len(),
         5,
         "read-only inspection dispatched a request"
     );
-    terminal.send(b"\x7f\x7f\x7f\x7f\x7f\x7f\x7f/session \"session:A\"\r");
+    terminal.send(b"\x7f\x7f\x7f\x7f\x7f\x7f\x7f\x0fsession \"session:A\"\r");
     thread::sleep(Duration::from_millis(500));
     terminal.send(b"fourth\r");
     wait_raw(&mut terminal, b"answer-four");
@@ -173,9 +199,24 @@ fn separate_sessions_preserve_history_and_route_authority() {
     terminal.wait_for(
         Duration::from_secs(20),
         "incompatible continuation",
-        |output| contains(&output[offset..], b"retained."),
+        |output| screen_lines(output)[29].contains("Incompatible continuation"),
     );
-    assert!(contains(&terminal.output[offset..], b"blocked"));
+    terminal.send(b"\x18bmessages\r");
+    terminal.wait_for(
+        Duration::from_secs(20),
+        "continuation diagnostic",
+        |output| {
+            let rows = screen_lines(output);
+            rows[29].contains("*Messages*")
+                && rows[..28]
+                    .iter()
+                    .any(|line| line.contains("draft retained"))
+        },
+    );
+    terminal.send(b"\x1b");
+    terminal.wait_for(Duration::from_secs(20), "conversation restored", |output| {
+        screen_lines(output)[29].contains("Message: Enter send")
+    });
     assert_eq!(
         requests.lock().unwrap().len(),
         6,

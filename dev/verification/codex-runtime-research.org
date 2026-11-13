@@ -1,0 +1,127 @@
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
+* Codex lifecycle and telemetry research (2026-11-13)
+
+These are public reports and source references, not claims about every Codex
+version or proof that a proposed mitigation has shipped. They guide macOS
+qualification of Marlin's own implementation. The linked source pages follow
+=main= and are not pinned to an exact commit; verify the revision before
+using them as release evidence.
+
+- [[https://github.com/openai/codex/issues/15379][openai/codex#15379]] reports macOS children surviving normal parent exit and
+  warns about aborting waiter tasks before reaping. Marlin must keep cleanup
+  tracked until OS exit and distinguish task cancellation from resource drain.
+- [[https://github.com/openai/codex/issues/19958][openai/codex#19958]] reports an interrupted macOS status process spinning
+  with revoked stdio. Test closed stdin/stdout and verify actual OS state, not
+  just a terminal completion event.
+- [[https://github.com/openai/codex/issues/60298][openai/codex#60298]] reports concurrent client starts overwriting a process
+  handle. Test concurrent admission, ownership registration and close/start
+  races; a PID or latest handle alone is not sufficient authority.
+- [[https://github.com/openai/codex/issues/37244][openai/codex#37244]] reports macOS zombie accumulation associated with a
+  sampling path. Monitoring must itself be bounded and its subprocesses reaped.
+- [[https://github.com/openai/codex/issues/42837][openai/codex#42837]] reports an OpenTelemetry event-name mismatch. Require
+  tests on the exported semantic name and attributes, not just local tracing.
+- A search snippet described an independent stdio watchdog, but the fetched
+  [[https://github.com/openai/codex/blob/main/codex-rs/app-server-transport/src/transport/stdio.rs][stdio transport source]] did not contain it. Treat this as unverified and
+  do not claim that this mechanism exists in the inspected source.
+- Codex's [[https://github.com/openai/codex/blob/main/codex-rs/otel/README.md][telemetry package documentation]] describes an in-memory exporter
+  for tests and explicit shutdown to flush metrics. That separation and an
+  exporter-level test are useful design references for Marlin.
+
+* Claude Code and Codex exporter failure cases
+
+The following cases were checked with =gh issue view=. The observed symptoms
+come from the reports. Reporter hypotheses about root cause remain hypotheses.
+
+| Public report | Observed behavior | Marlin check or boundary |
+|---------------+-------------------+--------------------------|
+| [[https://github.com/anthropics/claude-code/issues/30378][Claude Code #30378]] | macOS subagents reportedly remained alive during exporter retries after HTTP 429. | Bound exporter shutdown separately from Runtime drain. The loopback rejection test returns 429 and a 60-second Retry-After and checks that shutdown reports the failure within its budget. |
+| [[https://github.com/anthropics/claude-code/issues/64436][Claude Code #64436]] | Bootstrap logs arrived while work logs were missing for supervised background sessions. | Qualify export on each entry point that enables it. For the current TUI, shutdown follows task and process cleanup. Background worker and log export are outside the implemented surface. |
+| [[https://github.com/openai/codex/issues/28810][Codex #28810]] | Traces and metrics reached the collector while the logs output stayed empty. The reporter saw a log emission warning after provider shutdown. | Verify the selected signal's decoded payload and end its producers before shutting down the provider. A trace receipt establishes trace export only. |
+| [[https://github.com/openai/codex/issues/40402][Codex #40402]] | In the reported release-build experiment, process exit followed turn completion by about 900 ms with the metrics exporter active. | Keep TUI export opt-in. Measure normal exit separately from work completion when qualifying exporter latency. |
+| [[https://github.com/openai/codex/issues/42837][Codex #42837]] | The OTLP log record name and the semantic event-name attribute differed, and a downstream exporter selected the record name. | Assert the wire-level span name and fields. Apply the same check to the record name when adding logs. |
+
+* macOS background work and watchdog reports
+
+These reports were read with =gh issue view=. The checks exercise the reported
+failure classes in Marlin's linked TUI and Runtime.
+
+| Public report | Reported symptom | Executable check or boundary |
+|---------------+------------------+------------------------------|
+| [[https://github.com/anthropics/claude-code/issues/60095][Claude Code #60095]] | The underlying processes had exited while the parent UI still listed the background tasks as running. | Compare the Runtime task and process counters with OS PID observations at the same shutdown boundary. |
+| [[https://github.com/anthropics/claude-code/issues/83728][Claude Code #83728]] | A background process tree was killed after about 106 seconds. The reporter suspected a PTY-host watchdog. | The test watchdog only observes a deadline. It verifies the tool group is live before quit and leaves cleanup to Runtime on the passing path. |
+| [[https://github.com/anthropics/claude-code/issues/106745][Claude Code #106745]] | A macOS stackshot showed many =git= processes during a kernel watchdog incident. Attribution of orphaned processes was incomplete. | The existing repeated workspace test checks that each cancelled tool is gone before another cycle. The new fixture verifies a live workspace process group at orderly exit. |
+| [[https://github.com/openai/codex/issues/15379][Codex #15379]] and [[https://github.com/openai/codex/issues/41009][Codex #41009]] | Reporters observed surviving children after parent exit or task interruption. | Check the tool, an in-group descendant that inherits the output pipe, and the group itself using OS signal-zero probes before telemetry shutdown finishes. |
+| [[https://github.com/openai/codex/issues/25744][Codex #25744]] and [[https://github.com/openai/codex/issues/37244][Codex #37244]] | Reported helper and zombie accumulation accompanied UI stalls and watchdog symptoms. | Observe fixture PIDs directly with syscalls and keep the existing real-TUI soak. This does not exercise macOS kernel watchdog recovery or GUI helper processes. |
+
+The combined regression takes the collector failure one step past an HTTP 429
+response. It reads the OTLP request and keeps the connection open without a
+response until the linked TUI exits. The fixture checks restored terminal
+settings and zero Runtime counts while the TUI is still alive in the export
+phase. The deadline runs in the PTY test process, outside TUI and Tokio.
+
+* Namespace and ownership
+
+The =marlin_agent_runtime::process= module owns process lifecycle. The existing
+=marlin-agent-telemetry= crate owns local sampling, host watchdog evidence,
+OpenTelemetry trace export and provider shutdown. It implements the sampling
+port in =marlin-agent-protocol=. Runtime consumes that port with its own managed
+PID inventory. TUI wires the ports and sends a read-only budget status through
+the existing UI open ABI to the selected Gerbil Module.
+The bounded process executor observes its monotonic command deadline with
+=ProcessCommandWatchdog=. The owned process handle binds the deadline and
+compares session, operation, and generation before starting cleanup. A separate
+health observer samples the host heartbeat and process stdout progress. The
+TUI workspace path uses a two-second heartbeat threshold and three-second
+stdout silence threshold. It publishes advisory notices through a bounded
+queue. The existing ten-second command deadline still governs workspace reads.
+Advisory observations never initiate cleanup, including when their identity
+matches the current resource. Fresh heartbeat or stdout evidence rearms its
+own condition. A missed heartbeat says the host did not report progress within
+the threshold. It provides no proof of host death.
+
+[[https://github.com/anthropics/claude-code/issues/88071][Claude Code #88071]] reports task termination after the launching session
+became idle. [[https://github.com/anthropics/claude-code/issues/73332][Claude Code #73332]] reports mid-work reaping with orphan-watchdog
+evidence on related jobs. [[https://github.com/openai/codex/issues/33372][Codex #33372]] reports an interrupted task remaining in a
+thinking state without a useful distinction between waiting and orphaning.
+These reports motivate separate host and task observations. Marlin tests the
+current and stale identities against live OS processes and keeps explicit quit
+and command deadline reclamation in the Runtime reaper.
+
+For exported telemetry, follow OpenTelemetry's distinct [[https://opentelemetry.io/docs/concepts/resources/][resource]],
+[[https://opentelemetry.io/docs/concepts/instrumentation-scope/][instrumentation scope]] and metric attribute concepts. Use stable
+=marlin.runtime.process.*= and =marlin.runtime.resource.*= names for proposed
+instruments; process/session IDs belong in controlled traces or logs, not
+unbounded metric dimensions. Do not export command lines, paths, credentials or
+user content by default. These names and policies require review and exporter
+integration tests before they become a supported contract.
+
+* Independent failure detection and admission
+
+[[https://ecommons.cornell.edu/entities/publication/7948ff49-7263-49f8-a29b-d062e7cbb240][Chandra and Toueg's failure-detector model]]
+separates suspicion from correctness properties. Marlin uses separate
+monotonic clocks for terminal and Tokio progress. The macOS sidecar uses
+[[https://developer.apple.com/library/archive/documentation/System/Conceptual/ManPages_iPhoneOS/man2/kqueue.2.html][Darwin EVFILT_PROC with NOTE_EXIT]]
+to establish exit independently. The sidecar has no managed process handles.
+[[https://web.eecs.umich.edu/~mosharaf/Readings/Leases.pdf][Gray and Cheriton's leases]]
+motivate naming the holder and expiry conditions explicitly. Here the
+Runtime reservation is tied to cleanup evidence and pipe ownership. Transferring
+cleanup after host death would require an independently established owner with
+authority over the old generation before the host dies.
+
+[[https://github.com/openai/codex/issues/56117][Codex #56117]] reports a stall
+during memory pressure and a failed relaunch by the reporter's own watchdog.
+[[https://github.com/openai/codex/issues/24551][Codex #24551]] reports possible
+surviving helpers after app exit. These are reported observations with incomplete
+causal attribution.
+
+Local admission uses host footprint plus the greater of outstanding
+reservations or observed direct-child footprint, plus the new reservation.
+It treats the reservation sum and each admission atomically. A registered
+direct-child PID can disappear between listing and sampling. A missing PID
+contributes zero observed bytes while its reservation remains tied to cleanup.
+The sample excludes escaped and unregistered descendants and other apps.
+Sampling has no kernel enforcement. The configured estimate bounds admissions
+and cannot cap allocations between observations. The project currently exports
+traces, with no OTLP memory metrics or time-series leak detector.

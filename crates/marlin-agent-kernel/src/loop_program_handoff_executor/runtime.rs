@@ -15,8 +15,7 @@ use marlin_agent_protocol::{
     LoopProgramEventKind, LoopProgramId,
 };
 use marlin_agent_runtime::{
-    AgentFlowLoopStepRequest, observability::RuntimeCommandObservation,
-    project_agent_flow_loop_step,
+    AgentFlowLoopStepRequest, process::RuntimeCommandObservation, project_agent_flow_loop_step,
 };
 
 use crate::{

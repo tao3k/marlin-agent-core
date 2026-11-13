@@ -9,6 +9,7 @@ load("//bazel:marlin_rust.bzl", "marlin_rust_crate")
 _RUNTIME_DEPS = crate_deps([
     "aho-corasick",
     "globset",
+    "libc",
     "parking_lot",
     "process-wrap",
     "serde",
@@ -19,7 +20,6 @@ _RUNTIME_DEPS = crate_deps([
     "toml",
     "tower",
     "tracing",
-    "tracing-subscriber",
 ]) + [
     "//crates/marlin-agent-environment:marlin_agent_environment",
     "//crates/marlin-agent-graph:marlin_agent_graph",

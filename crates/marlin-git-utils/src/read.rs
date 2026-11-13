@@ -1,10 +1,11 @@
 // SPDX-FileCopyrightText: 2026 tao3k team and Contributors
-//
 // SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
 //! Bounded execution for read-only Git queries.
-
-use std::{ffi::OsString, path::Path, process::Stdio, time::Duration};
+use marlin_agent_protocol::{
+    BoundedProcessExecutor, BoundedProcessOutput, BoundedProcessRequest, ProcessExecutionError,
+};
+use std::{ffi::OsString, future::Future, path::Path, pin::Pin, process::Stdio, time::Duration};
 use thiserror::Error;
 use tokio::{io::AsyncReadExt, process::Command};
 
@@ -16,7 +17,6 @@ const DISABLED_HOOKS: &str = if cfg!(windows) {
     "core.hooksPath=/dev/null"
 };
 
-/// A failed or incomplete read-only Git command.
 #[derive(Debug, Error)]
 pub enum GitReadError {
     #[error("git read could not run: {0}")]
@@ -31,46 +31,103 @@ pub enum GitReadError {
     MissingOutput,
 }
 
-pub(crate) async fn read_git(path: &Path, args: &[OsString]) -> Result<Vec<u8>, GitReadError> {
-    tokio::time::timeout(TIMEOUT, read_inner(path, args))
-        .await
-        .map_err(|_| GitReadError::Timeout)?
+/// Local execution for callers which have not provided a runtime owner.
+pub(crate) struct LocalExecutor;
+impl BoundedProcessExecutor for LocalExecutor {
+    fn execute(
+        &self,
+        request: BoundedProcessRequest,
+    ) -> Pin<
+        Box<dyn Future<Output = Result<BoundedProcessOutput, ProcessExecutionError>> + Send + '_>,
+    > {
+        Box::pin(async move {
+            let timeout = request.timeout;
+            let operation = async move {
+                let mut command = Command::new(request.program);
+                command
+                    .args(request.arguments)
+                    .current_dir(request.working_directory)
+                    .stdin(Stdio::null())
+                    .stdout(Stdio::piped())
+                    .stderr(Stdio::null())
+                    .kill_on_drop(true);
+                for name in request.remove_environment {
+                    command.env_remove(name);
+                }
+                let mut child = command.spawn().map_err(ProcessExecutionError::Io)?;
+                let stdout = child.stdout.take().ok_or_else(|| {
+                    ProcessExecutionError::Io(std::io::Error::other("stdout unavailable"))
+                })?;
+                let size = request.stdout_limit.checked_add(1).ok_or_else(|| {
+                    ProcessExecutionError::Io(std::io::Error::other("stdout limit overflow"))
+                })?;
+                let mut bytes = Vec::new();
+                stdout
+                    .take(size as u64)
+                    .read_to_end(&mut bytes)
+                    .await
+                    .map_err(ProcessExecutionError::Io)?;
+                if bytes.len() > request.stdout_limit {
+                    child.kill().await.map_err(ProcessExecutionError::Io)?;
+                    return Err(ProcessExecutionError::OutputLimit);
+                }
+                let status = child.wait().await.map_err(ProcessExecutionError::Io)?;
+                Ok(BoundedProcessOutput {
+                    stdout: bytes,
+                    exit_code: status.code(),
+                    success: status.success(),
+                })
+            };
+            tokio::time::timeout(timeout, operation)
+                .await
+                .map_err(|_| ProcessExecutionError::TimedOut)?
+        })
+    }
 }
 
-async fn read_inner(path: &Path, args: &[OsString]) -> Result<Vec<u8>, GitReadError> {
-    let mut child = Command::new("git")
-        .current_dir(path)
-        .args([
-            "--no-optional-locks",
-            "--no-pager",
-            "-c",
-            DISABLED_HOOKS,
-            "-c",
-            "core.fsmonitor=false",
-        ])
-        .env_remove("GIT_LITERAL_PATHSPECS")
-        .env_remove("GIT_GLOB_PATHSPECS")
-        .env_remove("GIT_NOGLOB_PATHSPECS")
-        .env_remove("GIT_ICASE_PATHSPECS")
-        .args(args)
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .kill_on_drop(true)
-        .spawn()?;
-    let stdout = child.stdout.take().ok_or(GitReadError::MissingOutput)?;
-    let mut output = Vec::new();
-    stdout
-        .take((MAX_OUTPUT_BYTES + 1) as u64)
-        .read_to_end(&mut output)
-        .await?;
-    if output.len() > MAX_OUTPUT_BYTES {
-        let _ = child.kill().await;
-        return Err(GitReadError::OutputLimit);
+pub(crate) async fn read_git_with(
+    executor: &dyn BoundedProcessExecutor,
+    path: &Path,
+    args: &[OsString],
+) -> Result<Vec<u8>, GitReadError> {
+    let mut arguments: Vec<OsString> = [
+        "--no-optional-locks",
+        "--no-pager",
+        "-c",
+        DISABLED_HOOKS,
+        "-c",
+        "core.fsmonitor=false",
+    ]
+    .into_iter()
+    .map(Into::into)
+    .collect();
+    arguments.extend_from_slice(args);
+    let request = BoundedProcessRequest {
+        program: "git".into(),
+        arguments,
+        working_directory: path.to_owned(),
+        remove_environment: [
+            "GIT_LITERAL_PATHSPECS",
+            "GIT_GLOB_PATHSPECS",
+            "GIT_NOGLOB_PATHSPECS",
+            "GIT_ICASE_PATHSPECS",
+        ]
+        .into_iter()
+        .map(Into::into)
+        .collect(),
+        stdout_limit: MAX_OUTPUT_BYTES,
+        timeout: TIMEOUT,
+    };
+    let output = executor
+        .execute(request)
+        .await
+        .map_err(|error| match error {
+            ProcessExecutionError::Io(error) => GitReadError::Io(error),
+            ProcessExecutionError::OutputLimit => GitReadError::OutputLimit,
+            ProcessExecutionError::TimedOut => GitReadError::Timeout,
+        })?;
+    if !output.success {
+        return Err(GitReadError::Failed(output.exit_code));
     }
-    let status = child.wait().await?;
-    if !status.success() {
-        return Err(GitReadError::Failed(status.code()));
-    }
-    Ok(output)
+    Ok(output.stdout)
 }

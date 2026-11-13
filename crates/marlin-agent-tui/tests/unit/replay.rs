@@ -2,12 +2,13 @@
 //
 // SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
+use super::app::{App, ModelineActivity};
 use super::replay::{
     ReplayLimits, ReplayOutcome, ReplayProjection, load_history_window_with_limits, load_session,
 };
 use marlin_agent_protocol::{
-    ModelEndpoint, ModelGatewayCompletionChoice, ModelGatewayCompletionResponse,
-    assistant_gateway_message,
+    ModelEndpoint, ModelGatewayCompletionChoice, ModelGatewayCompletionResponse, ModelToolCall,
+    ModelToolCallId, ModelToolName, assistant_gateway_message,
 };
 use marlin_agent_sessions::{ConversationJournal, ConversationJournalError, ConversationTurnStart};
 use marlin_agent_storage::{AgentId, InMemoryAgentStorage, ProjectId, SessionId};
@@ -18,6 +19,76 @@ fn ids() -> (ProjectId, SessionId, AgentId) {
         SessionId::new("session:replay").unwrap(),
         AgentId::new("agent:replay").unwrap(),
     )
+}
+
+#[tokio::test]
+async fn pending_tool_request_replays_without_becoming_answer_history() {
+    let storage = InMemoryAgentStorage::new();
+    let (project, session, agent) = ids();
+    let mut journal = ConversationJournal::open(
+        storage.clone(),
+        project.clone(),
+        session.clone(),
+        agent.clone(),
+        |_| {},
+    )
+    .await
+    .unwrap();
+    let id = journal
+        .start(
+            ConversationTurnStart {
+                endpoint: ModelEndpoint::new("openai", "gpt-fixture"),
+                user_text: "read marker".into(),
+            },
+            1,
+        )
+        .await
+        .unwrap();
+    let mut message = assistant_gateway_message("Calling read_marker.");
+    message.tool_calls.push(ModelToolCall {
+        id: ModelToolCallId::new("call_1").unwrap(),
+        name: ModelToolName::new("read_marker").unwrap(),
+        arguments: serde_json::json!({}).as_object().unwrap().clone(),
+    });
+    journal
+        .finish(
+            id,
+            marlin_agent_sessions::ConversationTerminalObservation::ToolRequested {
+                response: ModelGatewayCompletionResponse::new(
+                    "response-tool",
+                    "gpt-fixture",
+                    vec![ModelGatewayCompletionChoice::new(
+                        0,
+                        message,
+                        Some("tool_calls".into()),
+                    )],
+                ),
+            },
+            2,
+        )
+        .await
+        .unwrap();
+    let (_, turns) = load_session(storage, project, session, agent)
+        .await
+        .unwrap();
+    assert!(
+        matches!(&turns[0].outcome, ReplayOutcome::ToolRequested(message)
+        if message.tool_calls[0].id.as_str() == "call_1")
+    );
+    let mut app = App::new(ModelEndpoint::new("openai", "gpt-fixture"));
+    app.restore(turns);
+    assert!(app.history.is_empty());
+    assert_eq!(
+        app.modeline_activity(),
+        ModelineActivity::ContinuationUnavailable
+    );
+    assert!(
+        app.messages
+            .last()
+            .unwrap()
+            .1
+            .contains("Tool review pending")
+    );
 }
 
 #[tokio::test]

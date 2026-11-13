@@ -154,7 +154,7 @@ fn streaming_flood_can_be_cancelled() {
     terminal.wait_for(Duration::from_secs(10), "local cancellation", |output| {
         screen_lines(output)
             .join(" ")
-            .contains("Request cancelled locally.")
+            .contains("Request cancelled locally")
     });
     eprintln!(
         "local cancellation after {:?}; persistent={persistent}",
@@ -205,7 +205,13 @@ fn uncertain_open_remains_unresolved_after_restart() {
     first.send(b"first\r");
     first.wait_for(
         Duration::from_secs(20),
-        "unknown remote outcome",
+        "model request failure summary",
+        |output| screen_lines(output)[29].contains("Model request failed"),
+    );
+    first.send(b"\x18bmessages\r");
+    first.wait_for(
+        Duration::from_secs(5),
+        "unknown remote outcome detail",
         |output| {
             screen_lines(output)
                 .join(" ")
@@ -219,15 +225,19 @@ fn uncertain_open_remains_unresolved_after_restart() {
     drop(first);
 
     let mut reopened = Terminal::start(&config);
+    reopened.wait_for(Duration::from_secs(20), "recovery required", |output| {
+        screen_lines(output)[28].contains("Recovery required")
+    });
+    reopened.send(b"\x18bmessages\r");
     reopened.wait_for(
-        Duration::from_secs(20),
+        Duration::from_secs(5),
         "unresolved previous turn",
         |output| {
-            screen_lines(output)
-                .join(" ")
-                .contains("remote outcome and ownership are unknown")
+            let text = screen_lines(output).join(" ");
+            text.contains("Uncertain prior turn") && text.contains("Further turns are blocked")
         },
     );
+    reopened.send(b"\x1b");
     reopened.send(b"second\r");
     reopened.wait_for(
         Duration::from_secs(20),
@@ -299,7 +309,13 @@ fn interrupted_stream_retains_prefix_after_restart() {
     first.send(b"first\r");
     first.wait_for(
         Duration::from_secs(20),
-        "unknown remote outcome",
+        "model request failure summary",
+        |output| screen_lines(output)[29].contains("Model request failed"),
+    );
+    first.send(b"\x18bmessages\r");
+    first.wait_for(
+        Duration::from_secs(5),
+        "unknown remote outcome detail",
         |output| {
             screen_lines(output)
                 .join(" ")
@@ -319,15 +335,27 @@ fn interrupted_stream_retains_prefix_after_restart() {
     drop(first);
 
     let mut reopened = Terminal::start(&config);
+    reopened.wait_for(Duration::from_secs(20), "recovery required", |output| {
+        screen_lines(output)[28].contains("Recovery required")
+    });
+    reopened.send(b"\x18bmessages\r");
     reopened.wait_for(
-        Duration::from_secs(20),
+        Duration::from_secs(5),
         "unresolved previous turn",
         |output| {
-            screen_lines(output)
-                .join(" ")
-                .contains("remote outcome and ownership are unknown")
+            let text = screen_lines(output).join(" ");
+            text.contains("Uncertain prior turn") && text.contains("Further turns are blocked")
         },
     );
+    if oversized {
+        assert!(
+            screen_lines(&reopened.output)
+                .join(" ")
+                .contains("provider response exceeded its byte limit"),
+            "recovered byte-limit diagnostic belongs in Messages"
+        );
+    }
+    reopened.send(b"\x1b");
     let expected = if oversized {
         "observed-prefix"
     } else {
@@ -337,15 +365,6 @@ fn interrupted_stream_retains_prefix_after_restart() {
         screen_lines(output).join(" ").contains(expected)
     });
     if oversized {
-        reopened.wait_for(
-            Duration::from_secs(20),
-            "recovered byte-limit error",
-            |output| {
-                screen_lines(output)
-                    .join(" ")
-                    .contains("provider response exceeded its byte limit")
-            },
-        );
         assert!(
             !screen_lines(&reopened.output)
                 .join("")
@@ -440,8 +459,15 @@ fn crash_recovery_blocks_retry_and_allows_another_session() {
         matches!(receiver.try_recv(), Err(mpsc::TryRecvError::Empty)),
         "unfinished turn was retried"
     );
-    reopened.send(b"\x7f\x7f\x7f\x7f\x7f\x7f/session \"session:separate\"\r");
-    thread::sleep(Duration::from_millis(500));
+    // Open the command surface explicitly: the rejected prompt remains a
+    // draft, so typing a slash into it does not open the command palette.
+    reopened.send(b"\x0f");
+    reopened.wait_text("M-x");
+    reopened.send(b"session \"session:separate\"\r");
+    reopened.wait_for(Duration::from_secs(20), "separate session", |output| {
+        screen_lines(output).join(" ").contains("session:separate")
+    });
+    reopened.send(b"\x7f\x7f\x7f\x7f\x7f\x7f");
     let offset = reopened.output.len();
     reopened.send(b"new conversation\r");
     reopened.wait_for(
@@ -500,7 +526,7 @@ fn resize_stream_scroll_and_history_search() {
     let config = directory.path().join("config.toml");
     fs::write(&config, format!("provider=\"openai\"\nmodel=\"gpt-fixture\"\nendpoint=\"http://{address}/v1/responses\"\nprotocol=\"open-ai-responses\"\ncredential_env=\"MARLIN_TUI_FIXTURE_KEY\"\n")).unwrap();
     let mut terminal = Terminal::start_sized(&config, &[], &[], 20, 80);
-    terminal.wait_raw(b"Marlin");
+    terminal.wait_text("MARLIN");
     let prompt = (0..50)
         .map(|i| format!("HISTORY_ROW_{i:02}"))
         .collect::<Vec<_>>()
@@ -524,6 +550,19 @@ fn resize_stream_scroll_and_history_search() {
         contains(&output[scrolled..], b"HISTORY_ROW_")
     });
     terminal.pump(Duration::from_millis(300));
+    let before_wheel = screen_lines(&terminal.output);
+    terminal.send(b"\x1b[<64;40;5M");
+    terminal.wait_for(
+        Duration::from_secs(5),
+        "wheel up reveals older rows",
+        |output| screen_lines(output)[..18] != before_wheel[..18],
+    );
+    terminal.send(b"\x1b[<65;40;5M");
+    terminal.wait_for(
+        Duration::from_secs(5),
+        "wheel down restores rows",
+        |output| screen_lines(output)[..18] == before_wheel[..18],
+    );
     let before_tail = terminal.output.len();
     release_tx.send(()).unwrap();
     sent_rx
@@ -786,8 +825,12 @@ fn anthropic_thinking_continuation_survives_restart() {
     let stop = Arc::new(AtomicBool::new(false));
     let _stop_on_drop = StopOnDrop(stop.clone());
     let (sender, receiver) = mpsc::channel();
+    let (resume_tx, resume_rx) = mpsc::channel();
     let server = thread::spawn(move || {
-        for answer in ["answer-fixture", "answer-live", "answer-restart"] {
+        for (turn_index, answer) in ["answer-fixture", "answer-live", "answer-restart"]
+            .into_iter()
+            .enumerate()
+        {
             let Some(mut stream) = accept_until(&listener, &stop) else {
                 return;
             };
@@ -808,8 +851,11 @@ fn anthropic_thinking_continuation_survives_restart() {
                 serde_json::json!({"type":"message_stop"}),
             ];
             stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nConnection: close\r\n\r\n").unwrap();
-            for event in events {
+            for (event_index, event) in events.into_iter().enumerate() {
                 write!(stream, "data: {event}\n\n").unwrap();
+                if turn_index == 0 && event_index == 2 {
+                    resume_rx.recv_timeout(Duration::from_secs(20)).unwrap();
+                }
             }
         }
     });
@@ -829,29 +875,81 @@ fn anthropic_thinking_continuation_survives_restart() {
         ];
         let mut terminal = Terminal::start_with_env(&config, &[], &variables);
         terminal.wait_for(Duration::from_secs(20), "workbench", |output| {
-            contains(output, b"Marlin")
+            screen_lines(output)
+                .iter()
+                .any(|line| line.contains("MARLIN"))
         });
         if first {
             terminal.send(b"hello\r");
         }
-        terminal.wait_for(Duration::from_secs(20), "thinking", |output| {
-            contains(output, b"reasoning-fixture")
+        terminal.wait_for(Duration::from_secs(20), "folded thinking", |output| {
+            let rows = screen_lines(output);
+            let Some(user) = rows.iter().position(|line| line.contains("hello")) else {
+                return false;
+            };
+            let end = if first {
+                "Waiting for gateway"
+            } else {
+                "answer-fixture"
+            };
+            let Some(next) = rows.iter().position(|line| line.contains(end)) else {
+                return false;
+            };
+            if next <= user + 1 {
+                return false;
+            }
+            rows[user + 1..next]
+                .iter()
+                .any(|line| !line.trim().is_empty())
         });
+        terminal.send(b"\x1bx");
+        terminal.wait_for(Duration::from_secs(20), "thinking command", |output| {
+            screen_lines(output)
+                .iter()
+                .any(|line| line.contains("toggle-thinking"))
+        });
+        assert!(
+            !screen_lines(&terminal.output)
+                .iter()
+                .any(|line| line.contains("reasoning-fixture"))
+        );
+        terminal.send(b"toggle-thinking\r");
+        terminal.wait_for(Duration::from_secs(20), "expanded thinking", |output| {
+            let rows = screen_lines(output);
+            rows.iter().any(|line| line.contains("reasoning-fixture"))
+        });
+        if first {
+            assert!(
+                !screen_lines(&terminal.output)
+                    .iter()
+                    .any(|line| line.contains("answer-fixture"))
+            );
+            resume_tx.send(()).unwrap();
+        }
         terminal.wait_for(Duration::from_secs(20), "first answer", |output| {
             contains(output, b"answer-fixture")
         });
+        if first {
+            let rows = screen_lines(&terminal.output);
+            assert!(rows.iter().any(|line| line.contains("hello")));
+            assert!(
+                !rows
+                    .iter()
+                    .any(|line| matches!(line.trim(), "You" | "Assistant"))
+            );
+        }
         thread::sleep(Duration::from_millis(500));
         let offset = terminal.output.len();
         terminal.send(b"follow-up\r");
-        let expected: &[u8] = if changed {
-            b"restored"
-        } else if first {
-            b"answer-live"
-        } else {
-            b"restart"
-        };
+        let expected: &[u8] = if first { b"answer-live" } else { b"restart" };
         terminal.wait_for(Duration::from_secs(20), "follow-up outcome", |output| {
-            contains(&output[offset..], expected)
+            if changed {
+                screen_lines(output)
+                    .iter()
+                    .any(|line| line.contains("Request not dispatched"))
+            } else {
+                contains(&output[offset..], expected)
+            }
         });
         thread::sleep(Duration::from_millis(500));
         terminal.send(b"\x11");
