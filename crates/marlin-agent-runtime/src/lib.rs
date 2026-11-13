@@ -48,11 +48,11 @@ pub use process::{
     SysinfoRuntimeProcessController,
 };
 pub use process_executor::ManagedProcessExecutor;
-pub use tokio_runtime::RuntimeProcessBudget;
 pub use resilience::{
     RuntimeEdgeLayer, RuntimeEdgePolicy, RuntimeEdgePolicyError, RuntimeEdgePolicyReceipt,
     RuntimeEdgeService,
 };
+pub use tokio_runtime::RuntimeProcessBudget;
 pub use tokio_runtime::{
     AgentSessionContext, CancellationToken, ContextExpansionPolicy, ContextNamespace,
     ContextVisibility, EventStream, HookRuntime, ProviderRuntime, RuntimeAdmissionError,

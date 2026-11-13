@@ -221,8 +221,12 @@ fn hydra_text(value: RootedSchemeObject<'_>) -> Result<String, UiProjectionError
         return Err(UiProjectionError::Invalid("hydra hint exceeds limit"));
     }
     let text = value.to_string().into_result()?;
-    if text.is_empty() || text.len() > 4096 || text.lines().count() > 8
-        || text.chars().any(|character| character.is_control() && character != '\n')
+    if text.is_empty()
+        || text.len() > 4096
+        || text.lines().count() > 8
+        || text
+            .chars()
+            .any(|character| character.is_control() && character != '\n')
     {
         return Err(UiProjectionError::Invalid("invalid hydra hint"));
     }

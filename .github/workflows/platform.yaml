@@ -1,0 +1,117 @@
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+#
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
+name: Rust and Scheme platform
+
+on:
+  workflow_call:
+    inputs:
+      os:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+
+jobs:
+  prepare:
+    name: Prepare Scheme dependencies and AOT programs
+    runs-on: ${{ inputs.os }}
+    timeout-minutes: 120
+    outputs:
+      artifact: ${{ steps.artifact.outputs.name }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-targets: false
+          key: scheme-preparation
+      - uses: ./.github/actions/prepare-scheme
+      - name: Archive this run's Scheme products
+        id: artifact
+        run: |
+          tar -czf "$RUNNER_TEMP/package.tar.gz" scheme/.gerbil target/ci/marlin-bridge/lib
+          echo "name=marlin-scheme-${{ inputs.os }}-${{ github.run_attempt }}" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ${{ steps.artifact.outputs.name }}
+          path: ${{ runner.temp }}/package.tar.gz
+          compression-level: 0
+          retention-days: 1
+          if-no-files-found: error
+
+  rust:
+    name: Rust / ${{ matrix.gate }}
+    needs: prepare
+    runs-on: ${{ inputs.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        gate: ${{ fromJSON(inputs.os == 'ubuntu-latest' && '["check","lint","test","tui"]' || '["test","tui"]') }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: ${{ matrix.gate == 'lint' && 'clippy' || '' }}
+      - uses: ./.github/actions/restore-scheme
+        with:
+          artifact: ${{ needs.prepare.outputs.artifact }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: workspace-${{ matrix.gate }}-${{ hashFiles('.github/actions/setup-scheme/action.yml', 'scheme/gerbil.pkg') }}
+      - name: Run the Rust gate
+        shell: bash
+        env:
+          GATE: ${{ matrix.gate }}
+        run: |
+          case "$GATE" in
+            check) cargo check --workspace --all-targets --locked ;;
+            lint) cargo clippy --workspace --all-targets --locked -- -D warnings ;;
+            test)
+              cargo test --workspace --locked \
+                --exclude marlin-agent-harness --exclude marlin-gerbil-scheme \
+                --exclude marlin-agent-tui --features marlin-agent-storage/turso \
+                -- --skip storage_artifact_pointer_cas_lean_proof_builds
+              ;;
+            tui) cargo test --locked -p marlin-agent-tui ;;
+          esac
+
+  scheme:
+    name: Scheme package and C ABI
+    if: inputs.os == 'ubuntu-latest'
+    needs: prepare
+    runs-on: ${{ inputs.os }}
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: ./.github/actions/restore-scheme
+        with:
+          artifact: ${{ needs.prepare.outputs.artifact }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: scheme-package-${{ hashFiles('.github/actions/setup-scheme/action.yml', 'scheme/gerbil.pkg') }}
+      - name: Build and test the Scheme package in process
+        working-directory: scheme
+        run: |
+          export GERBIL_LOADPATH="$GERBIL_PATH/pkg/github.com/tao3k/agentic-ai-lab:$GERBIL_LOADPATH"
+          gxpkg env cargo test --locked -p marlin-gerbil-scheme --test unit_test scheme_package::gerbil_builds_and_tests_the_marlin_package_in_process -- --ignored --exact --nocapture
+      - name: Check Rust projections and linked policy routing
+        run: |
+          cargo test --locked -p marlin-gerbil-scheme --test unit_test
+          cargo test --locked -p marlin-agent-policy-routing-abi --features linked-selector
+
+  linked-aot:
+    name: Linked AOT
+    needs: prepare
+    uses: ./.github/workflows/linked-scheme-aot-gate.yaml
+    with:
+      runner: ${{ toJSON(inputs.os) }}
+      artifact: ${{ needs.prepare.outputs.artifact }}

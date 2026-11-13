@@ -7,15 +7,19 @@ name: CI
 on:
   pull_request:
   push:
-    branches:
-      - main
+    branches: [main]
   workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 env:
   CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
 
 jobs:
   format:
@@ -23,109 +27,20 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
+      - run: cargo fmt --all -- --check
 
-      - name: Check Rust formatting
-        run: cargo fmt --all -- --check
-
-  check:
-    name: Rust / check / ubuntu-latest
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-    env:
-      CARGO_INCREMENTAL: "0"
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache cargo artifacts
-        uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: marlin-agent-core-check-${{ runner.os }}
-          cache-on-failure: true
-
-      - name: Fetch workspace dependencies
-        run: cargo fetch --locked
-
-      - uses: tao3k/gerbil-scheme-rust/.github/actions/setup-gerbil@dfe8b62b5dc64de88f8d70a77059a1741218ef80
-        with:
-          release-root: ${{ runner.temp }}/gerbil
-
-      - name: Check Rust workspace
-        run: cargo check --workspace --all-targets --locked
-
-  lint:
-    name: Rust / lint / ubuntu-latest
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-    env:
-      CARGO_INCREMENTAL: "0"
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy
-
-      - name: Cache cargo artifacts
-        uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: marlin-agent-core-lint-${{ runner.os }}
-          cache-on-failure: true
-
-      - name: Fetch workspace dependencies
-        run: cargo fetch --locked
-
-      - uses: tao3k/gerbil-scheme-rust/.github/actions/setup-gerbil@dfe8b62b5dc64de88f8d70a77059a1741218ef80
-        with:
-          release-root: ${{ runner.temp }}/gerbil
-
-      - name: Run Rust lint
-        run: cargo clippy --workspace --all-targets --locked -- -D warnings
-
-  test:
-    name: Rust / test / ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 60
+  platform:
+    name: Build and test / ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os:
-          - ubuntu-latest
-          - macos-latest
-    env:
-      CARGO_INCREMENTAL: "0"
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache cargo artifacts
-        uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: marlin-agent-core-test-${{ runner.os }}
-          cache-on-failure: true
-
-      - name: Fetch workspace dependencies
-        run: cargo fetch --locked
-
-      - uses: tao3k/gerbil-scheme-rust/.github/actions/setup-gerbil@dfe8b62b5dc64de88f8d70a77059a1741218ef80
-        with:
-          release-root: ${{ runner.temp }}/gerbil
-
-      - name: Run Rust tests
-        run: >-
-          cargo test --workspace --locked
-          --exclude marlin-agent-harness --exclude marlin-gerbil-scheme --
-          --skip storage_artifact_pointer_cas_lean_proof_builds
+        os: [ubuntu-latest, macos-latest]
+    uses: ./.github/workflows/platform.yaml
+    with:
+      os: ${{ matrix.os }}
 
   app-server:
     name: App Server / gRPC / ubuntu-latest
@@ -133,72 +48,32 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: app-server-grpc
       - name: Install Protobuf compiler
         run: sudo apt-get install -y protobuf-compiler
       - name: Test App Server over HTTP/2
         run: cargo test --locked -p marlin-agent-app-server --features grpc
 
-  gerbil:
-    name: Scheme package and C ABI
+  model:
+    name: Quint / protocol models
     runs-on: ubuntu-latest
-    timeout-minutes: 180
     steps:
       - uses: actions/checkout@v6
-
       - uses: dtolnay/rust-toolchain@stable
-
-      - uses: Swatinem/rust-cache@v2
-
-      - uses: tao3k/gerbil-scheme-rust/.github/actions/setup-gerbil@dfe8b62b5dc64de88f8d70a77059a1741218ef80
+      - uses: actions/setup-node@v6
         with:
-          release-root: ${{ runner.temp }}/gerbil
-
-      - name: Check out AI Agentic Lab dependency tooling
-        uses: actions/checkout@v6
+          node-version: '24'
+          package-manager-cache: false
+      - uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177 # v2
         with:
-          repository: tao3k/agentic-ai-lab
-          ref: 75b04e07c6d5a2ff3fa73f2f47689a5947cd08d0
-          path: .ci/agentic-ai-lab
-          persist-credentials: false
-
-      - name: Prepare the pinned Lab source
-        working-directory: scheme
-        run: gxpkg env gxi ../.ci/agentic-ai-lab/packages/automation/runtime-dependencies.ss --fetch-only
-
-      - name: Prepare Lab's pinned dependencies
-        working-directory: .ci/agentic-ai-lab
-        env:
-          GERBIL_PATH: ${{ github.workspace }}/scheme/.gerbil
-        run: gxi packages/automation/runtime-dependencies.ss --fetch-only
-
-      - name: Build the Cargo-selected Scheme Bridge
-        env:
-          GERBIL_PATH: ${{ github.workspace }}/scheme/.gerbil
-        run: |
-          set -euo pipefail
-          bridge_root="$(
-            cargo metadata --locked --format-version 1 |
-              jq -er '
-                [.packages[] | select(.name == "gerbil-scheme-build") | .manifest_path] |
-                if length == 1 then
-                  .[0] | sub("/crates/gerbil-scheme-build/Cargo.toml$"; "")
-                else error("expected one Cargo-selected Scheme Bridge") end'
-          )"
-          cd "$bridge_root"
-          gxi build.ss compile
-
-      - name: Install the Scheme package dependency
-        working-directory: scheme
-        run: gxpkg deps --install
-
-      - name: Build and test the Scheme package in process
-        env:
-          # Test fixtures import optional Lab constructors outside the runtime closure.
-          GERBIL_LOADPATH: ${{ github.workspace }}/.ci/agentic-ai-lab:${{ github.workspace }}/scheme/.gerbil/lib
-        working-directory: scheme
-        run: gxpkg env cargo test --locked -p marlin-gerbil-scheme --test unit_test scheme_package::gerbil_builds_and_tests_the_marlin_package_in_process -- --ignored --exact --nocapture
-
-      - name: Check Rust projections and linked policy routing
-        run: |
-          cargo test --locked -p marlin-gerbil-scheme --test unit_test
-          cargo test --locked -p marlin-agent-policy-routing-abi --features linked-selector
+          tool: just@1.56.0
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.npm
+          key: quint-npm-${{ runner.os }}-${{ runner.arch }}-0.33.0
+      - name: Install Quint
+        run: npm install --global --no-audit --no-fund @informalsystems/quint@0.33.0
+      - name: Run the maintained model gates
+        run: just property-model-gate

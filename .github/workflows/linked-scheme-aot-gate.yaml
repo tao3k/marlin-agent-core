@@ -5,18 +5,14 @@
 name: Linked native AOT gate
 
 on:
-  pull_request:
-    paths:
-      - ".github/workflows/linked-scheme-aot-gate.yaml"
-      - "build-support/marlin-gerbil-aot-link/**"
-      - "crates/marlin-deck-runtime/**"
-      - "crates/marlin-agent-context/**"
-      - "crates/marlin-gerbil-scheme/**"
-      - "crates/marlin-gerbil-ir/**"
-      - "crates/marlin-agent-policy-routing-abi/**"
-      - "scheme/**"
-      - "Cargo.toml"
-      - "Cargo.lock"
+  workflow_call:
+    inputs:
+      runner:
+        required: true
+        type: string
+      artifact:
+        required: true
+        type: string
   workflow_dispatch:
     inputs:
       linked_native_runner:
@@ -38,11 +34,7 @@ env:
 jobs:
   linked-selector:
     name: Linked native AOT gate
-    strategy:
-      fail-fast: false
-      matrix:
-        runner: ${{ fromJSON(github.event_name == 'workflow_dispatch' && format('[{0}]', inputs.linked_native_runner || '["ubuntu-latest"]') || '["ubuntu-latest","macos-latest"]') }}
-    runs-on: ${{ matrix.runner }}
+    runs-on: ${{ fromJSON(inputs.runner || inputs.linked_native_runner) }}
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@v6
@@ -53,69 +45,31 @@ jobs:
       - name: Cache cargo artifacts
         uses: Swatinem/rust-cache@v2
         with:
-          shared-key: marlin-agent-core-linked-selector-${{ runner.os }}
-          cache-on-failure: true
+          key: linked-aot-${{ hashFiles('.github/actions/setup-scheme/action.yml', 'scheme/gerbil.pkg') }}
 
-      - name: Fetch workspace dependencies
-        run: cargo fetch --locked
-
-      - name: Install native compiler
-        run: |
-          case "${{ runner.os }}" in
-            Linux)
-              sudo apt-get update
-              sudo apt-get install -y clang
-              ;;
-            macOS)
-              clang --version
-              ;;
-            *)
-              echo "::error::linked-selector gate requested on unsupported runner OS ${{ runner.os }}."
-              exit 1
-              ;;
-          esac
-
-      - uses: tao3k/gerbil-scheme-rust/.github/actions/setup-gerbil@dfe8b62b5dc64de88f8d70a77059a1741218ef80
+      - uses: ./.github/actions/restore-scheme
+        if: inputs.artifact != ''
         with:
-          release-root: ${{ runner.temp }}/gerbil
+          artifact: ${{ inputs.artifact }}
 
-      - name: Check out AI Agentic Lab dependency tooling
-        uses: actions/checkout@v6
-        with:
-          repository: tao3k/agentic-ai-lab
-          ref: 75b04e07c6d5a2ff3fa73f2f47689a5947cd08d0
-          path: .ci/agentic-ai-lab
-          persist-credentials: false
+      - uses: ./.github/actions/prepare-scheme
+        if: inputs.artifact == ''
 
-      - name: Prepare the pinned Lab source
-        working-directory: scheme
-        run: gxpkg env gxi ../.ci/agentic-ai-lab/packages/automation/runtime-dependencies.ss --fetch-only
-
-      - name: Prepare Lab's pinned dependencies
-        working-directory: .ci/agentic-ai-lab
-        env:
-          GERBIL_PATH: ${{ github.workspace }}/scheme/.gerbil
-        run: gxi packages/automation/runtime-dependencies.ss --fetch-only
-
-      - name: Build the Cargo-selected Scheme Bridge
-        env:
-          GERBIL_PATH: ${{ github.workspace }}/scheme/.gerbil
+      - name: Select the staged Scheme inputs for a manual run
+        if: inputs.artifact == ''
         run: |
-          set -euo pipefail
-          bridge_root="$(
-            cargo metadata --locked --format-version 1 |
-              jq -er '
-                [.packages[] | select(.name == "gerbil-scheme-build") | .manifest_path] |
-                if length == 1 then
-                  .[0] | sub("/crates/gerbil-scheme-build/Cargo.toml$"; "")
-                else error("expected one Cargo-selected Scheme Bridge") end'
-          )"
-          cd "$bridge_root"
-          gxi build.ss compile
+          prefix="$GITHUB_WORKSPACE/scheme/.gerbil"
+          {
+            echo "GERBIL_PATH=$prefix"
+            echo "GERBIL_LOADPATH=$GITHUB_WORKSPACE/target/ci/marlin-bridge/lib:$prefix/lib"
+          } >> "$GITHUB_ENV"
 
-      - name: Install the Scheme package dependency
-        working-directory: scheme
-        run: gxpkg deps --install
+      - name: Ensure the native compiler is available
+        run: |
+          if [[ "$RUNNER_OS" == Linux ]] && ! command -v clang >/dev/null; then
+            sudo apt-get install -y clang
+          fi
+          clang --version
 
       - name: Compile linked-selector tests
         run: |

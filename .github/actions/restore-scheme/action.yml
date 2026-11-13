@@ -1,0 +1,34 @@
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+#
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
+name: Restore the Marlin Scheme package
+description: Activate the same SDK and restore the current run's Scheme programs.
+inputs:
+  artifact:
+    description: Scheme package artifact produced by the current workflow.
+    required: true
+runs:
+  using: composite
+  steps:
+    - uses: ./.github/actions/setup-scheme
+    - uses: actions/download-artifact@v8
+      with:
+        name: ${{ inputs.artifact }}
+        path: ${{ runner.temp }}/marlin-scheme
+    - name: Restore the Scheme build
+      shell: bash
+      run: |
+        tar -xzf "$RUNNER_TEMP/marlin-scheme/package.tar.gz" -C "$GITHUB_WORKSPACE"
+    - name: Export Scheme package paths
+      shell: bash
+      run: |
+        prefix="$GITHUB_WORKSPACE/scheme/.gerbil"
+        manifest="$prefix/pkg/github.com/tao3k/orgize/target/gerbil-parser/program.json"
+        test -s "$manifest"
+        test -s "$prefix/native/tui/program.json"
+        {
+          echo "GERBIL_PATH=$prefix"
+          echo "GERBIL_LOADPATH=$GITHUB_WORKSPACE/target/ci/marlin-bridge/lib:$prefix/lib"
+          echo "ORGIZE_GERBIL_PROGRAM_MANIFEST=$manifest"
+        } >> "$GITHUB_ENV"

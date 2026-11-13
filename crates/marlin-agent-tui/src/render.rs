@@ -412,7 +412,10 @@ pub(crate) fn draw(
     // Keep the core transcript and editor usable; show a moving window when
     // the available terminal height cannot display every extension.
     let footer_height = minibuffer_footer_rows(app, frame_spec.footer_rows)
-        .min(area.height.saturating_sub(transcript_rows + composer_height + 1))
+        .min(
+            area.height
+                .saturating_sub(transcript_rows + composer_height + 1),
+        )
         .max(frame_spec.footer_rows.min(area.height));
     let spare = area
         .height

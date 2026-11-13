@@ -32,11 +32,13 @@ fn selected_ui_module_crosses_the_live_vm_boundary() {
     let initial = module.open(&facts).expect("open selected UI");
     let projected = module.project(&initial).expect("decode selected UI");
     assert!(!projected.regions.is_empty());
-    assert!(!module
-        .review_menu(&initial, HumanReviewKind::PermissionEscalation)
-        .expect("decode selected review menu")
-        .choices
-        .is_empty());
+    assert!(
+        !module
+            .review_menu(&initial, HumanReviewKind::PermissionEscalation)
+            .expect("decode selected review menu")
+            .choices
+            .is_empty()
+    );
 
     let (successor, intent) = module
         .dispatch(&initial, UiEvent::NextFocus)

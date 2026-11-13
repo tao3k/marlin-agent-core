@@ -61,6 +61,15 @@ with the bridge's =setup-gerbil= action, prepares the pinned revisions with
 Lab's =runtime-dependencies.ss=, and installs them with =gxpkg=. Run
 =just scheme-package-gate= to initialize the VM and call
 =GerbilRuntime::build_package= and =GerbilRuntime::test_package=.
+The platform workflow prepares the dependencies, Orgize parser program and
+linked TUI program once per runner platform. Rust checks, tests, Scheme ABI
+checks and linked AOT jobs restore that run's package artifact. The
+cross-run Scheme cache stores the installed dependencies before compiling
+Marlin modules. Its key includes the runner architecture, SDK and host
+toolchain identity, Orgize bridge revision and Scheme dependency declaration.
+Each Rust job caches its own Cargo build artifacts and runs its checks on
+the current checkout. App Server HTTP/2, Quint, formatting and REUSE can
+start independently of Scheme preparation.
 The pinned Lab revision installs source declarations without eager library
 compilation. The package window in Marlin INIT gives Yuanxu the upstream
 source ownership needed to derive the combined library closure. The Context

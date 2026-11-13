@@ -1,5 +1,4 @@
 # SPDX-FileCopyrightText: 2026 tao3k team and Contributors
-# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
 #
 # SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
@@ -13,6 +12,10 @@ on:
 
 permissions:
   contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   license:
