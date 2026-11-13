@@ -7,19 +7,20 @@
 // A process restart also loses the live owner of an unfinished turn.
 module appServerTurn {
   type State = { phase: str, log: List[str], acknowledged: int, delivered: int,
-    connected: bool, cancel: bool, localRetired: bool, receipt: str, dispatches: int,
-    submission: str, startResponse: str }
+    connected: bool, cancel: bool, ownerPresent: bool, localRetired: bool, receipt: str, dispatches: int,
+    submission: str, startResponse: str, cancellationResponse: str }
   var s: State
 
   action init = s' = { phase: "idle", log: [], acknowledged: 0, delivered: 0,
-    connected: true, cancel: false, localRetired: false, receipt: "none", dispatches: 0,
-    submission: "none", startResponse: "none" }
+    connected: true, cancel: false, ownerPresent: false, localRetired: false, receipt: "none", dispatches: 0,
+    submission: "none", startResponse: "none", cancellationResponse: "unread" }
 
   action commitStart = {
     nondet id = Set("client-a", "client-b").oneOf()
     all {
       s.phase == "idle",
-      s' = s.with("phase", "claimed").with("log", ["start"]).with("submission", id),
+      s' = s.with("phase", "claimed").with("log", ["start"]).with("submission", id)
+        .with("ownerPresent", true),
     }
   }
   action retryStart(id: str, sameInput: bool): bool = all {
@@ -54,7 +55,7 @@ module appServerTurn {
   }
   action requestCancel = all {
     Set("claimed", "running", "writing-text", "writing-finish", "terminal").contains(s.phase),
-    not(s.localRetired), not(s.cancel),
+    s.ownerPresent, not(s.localRetired), not(s.cancel),
     s' = s.with("cancel", true),
   }
   action commitCancellation = all {
@@ -67,7 +68,7 @@ module appServerTurn {
     s' = s.with("phase", "write-error"),
   }
   action retire = all {
-    Set("terminal", "write-error").contains(s.phase), not(s.localRetired),
+    Set("terminal", "write-error").contains(s.phase), s.ownerPresent, not(s.localRetired),
     s' = s.with("localRetired", true),
   }
   action publishReceipt = all {
@@ -75,14 +76,23 @@ module appServerTurn {
     s' = s.with("receipt", "joined"),
   }
   action timeoutReceipt = all {
-    s.cancel, not(s.localRetired), s.receipt == "none",
+    s.cancel, s.ownerPresent, not(s.localRetired), s.receipt == "none",
     s' = s.with("receipt", "timeout"),
   }
   action restartWithUnfinishedTurn = all {
     Set("claimed", "running", "writing-text", "writing-finish", "write-error").contains(s.phase),
     s' = s.with("phase", "owner-lost").with("connected", false)
       .with("delivered", s.acknowledged).with("cancel", false)
-      .with("localRetired", false).with("receipt", "none"),
+      .with("ownerPresent", false).with("localRetired", false).with("cancellationResponse", "unread"),
+  }
+  action restartAfterTerminal = all {
+    s.phase == "terminal", s.connected, s.ownerPresent,
+    s' = s.with("connected", false).with("delivered", s.acknowledged)
+      .with("ownerPresent", false).with("localRetired", false).with("cancellationResponse", "unread"),
+  }
+  action readCancellation = all {
+    s.connected, s.submission != "none",
+    s' = s.with("cancellationResponse", if (s.receipt == "none") "unavailable" else s.receipt),
   }
   action disconnect = all { s.connected, s' = s.with("connected", false) }
   action reconnect = all {
@@ -100,8 +110,8 @@ module appServerTurn {
   action step = any {
     commitStart, dispatch, beginCheckpoint, commitCheckpoint, beginFinish,
     commitFinish, requestCancel, commitCancellation, writeFailure, retire,
-    publishReceipt, timeoutReceipt, restartWithUnfinishedTurn, disconnect, reconnect,
-    deliver, acknowledge, retryAnyStart,
+    publishReceipt, timeoutReceipt, restartWithUnfinishedTurn, restartAfterTerminal,
+    readCancellation, disconnect, reconnect, deliver, acknowledge, retryAnyStart,
   }
 
   val hasTerminal = if (s.log.length() == 0) false else Set("completed", "uncertain").contains(s.log.nth(s.log.length() - 1))
@@ -111,11 +121,13 @@ module appServerTurn {
     (s.submission != "none") iff s.log.length() > 0,
     Set("client-a", "client-b").contains(s.startResponse) implies s.startResponse == s.submission,
     s.dispatches == 1 implies (s.log.length() > 0 and s.log.head() == "start"),
-    s.receipt == "joined" implies (s.localRetired and hasTerminal),
+    s.receipt == "joined" implies hasTerminal,
+    s.localRetired implies s.ownerPresent,
+    s.cancellationResponse == "joined" implies s.receipt == "joined",
     s.phase == "terminal" iff hasTerminal,
     (hasTerminal and s.log.nth(s.log.length() - 1) == "uncertain") implies s.cancel,
     s.phase == "write-error" implies not(hasTerminal),
-    s.phase == "owner-lost" implies (not(s.localRetired) and s.receipt == "none"),
+    s.phase == "owner-lost" implies (not(s.localRetired) and s.receipt != "joined"),
   }
 
   run reconnectAndCancelTest = init.then(commitStart).then(dispatch).then(deliver)
@@ -131,7 +143,14 @@ module appServerTurn {
   run failedCommitTest = init.then(commitStart).then(dispatch).then(beginCheckpoint)
     .then(writeFailure).then(retire).expect(safe and s.log == ["start"] and s.receipt == "none")
   run timeoutDoesNotProveRetirementTest = init.then(commitStart).then(dispatch)
-    .then(requestCancel).then(timeoutReceipt).expect(safe and not(s.localRetired))
+    .then(requestCancel).then(timeoutReceipt).then(restartWithUnfinishedTurn)
+    .then(reconnect).then(readCancellation)
+    .expect(safe and not(s.localRetired) and s.cancellationResponse == "timeout")
+  run cancellationEvidenceSurvivesRestartTest = init.then(commitStart).then(dispatch)
+    .then(requestCancel).then(commitCancellation).then(retire).then(publishReceipt)
+    .then(restartAfterTerminal).then(reconnect).then(readCancellation)
+    .expect(safe and s.cancellationResponse == "joined" and s.dispatches == 1
+      and s.log == ["start", "uncertain"])
   run lostStartResponseTest = init.then(commitStart).then(disconnect).then(dispatch)
     .then(reconnect).then(retryStart(s.submission, true))
     .expect(safe and s.startResponse == s.submission and s.dispatches == 1)
@@ -140,9 +159,10 @@ module appServerTurn {
     .then(restartWithUnfinishedTurn).then(reconnect)
     .then(retryStart(s.submission, true))
     .expect(safe and s.phase == "owner-lost" and s.startResponse == s.submission)
-    .then(retryStart(s.submission, false)).then(deliver).then(deliver)
+    .then(retryStart(s.submission, false)).then(deliver).then(deliver).then(readCancellation)
     .expect(safe and s.startResponse == "conflict" and s.dispatches == 1
-      and s.log == ["start", "text"] and s.delivered == 2)
+      and s.log == ["start", "text"] and s.delivered == 2
+      and s.cancellationResponse == "unavailable")
   run conflictingRetryTest = init.then(commitStart).then(dispatch)
     .then(retryStart(s.submission, false))
     .expect(safe and s.startResponse == "conflict" and s.dispatches == 1)
