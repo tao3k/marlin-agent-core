@@ -200,7 +200,12 @@ impl App {
                                 "exceeded"
                             }
                         );
-                        self.transcript.push(("Context".into(), message));
+                        self.publish_message(MessageEvent {
+                            source: MessageSource::Ui,
+                            severity: MessageSeverity::Info,
+                            summary: "Context budget",
+                            detail: &message,
+                        });
                     } else {
                         self.publish_message(MessageEvent {
                             source: MessageSource::Ui,

@@ -588,7 +588,9 @@ fn context_budget_command_reports_original_draft_without_dispatching_it() {
     app.composer.insert_text("context-budget");
     app.submit(&gateway, &runtime, &tx);
     assert_eq!(app.composer.text(), "draft 中");
-    let message = &app.transcript.last().unwrap().1;
+    assert!(app.transcript.is_empty());
+    assert_eq!(app.minibuffer_notice.as_deref(), Some("Context budget"));
+    let message = &app.messages.last().unwrap().1;
     assert!(message.contains("Completed turns: 1 /"), "{message}");
     assert!(message.contains("9-byte draft"), "{message}");
     assert!(message.contains("not token counts"), "{message}");
