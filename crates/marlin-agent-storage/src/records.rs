@@ -79,6 +79,15 @@ pub struct SessionEventRecord {
     pub created_at_unix_ms: i64,
 }
 
+/// Identity and kind of a committed event without its body.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SessionEventHeader {
+    pub agent_id: AgentId,
+    pub cursor: SessionEventCursor,
+    pub event_kind: String,
+    pub causality_parent_event_id: Option<EventId>,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SessionEventBatchWriteReceipt {
     pub item_count: usize,
@@ -534,6 +543,15 @@ pub struct StorageSchemaTable {
 /// Ordered, atomic session event persistence. Implementations may own only
 /// session records without providing artifact, memory or topology storage.
 pub trait SessionEventStore: Send + Sync {
+    /// Seek to the last event in the half-open turn range for one Session.
+    fn latest_session_event_header<'a>(
+        &'a self,
+        project: &'a ProjectId,
+        session: &'a SessionId,
+        from_turn: &'a TurnId,
+        before_turn: &'a TurnId,
+    ) -> StorageFuture<'a, Option<SessionEventHeader>>;
+
     /// Counts committed session events. Under the append-only storage contract,
     /// a changed count reveals an append between two completed reads. This is
     /// not a transaction, a lease, or a cross-replica consistency guarantee.

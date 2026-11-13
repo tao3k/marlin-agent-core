@@ -48,6 +48,37 @@ impl InMemoryAgentStorage {
 }
 
 impl SessionEventStore for InMemoryAgentStorage {
+    fn latest_session_event_header<'a>(
+        &'a self,
+        project: &'a ProjectId,
+        session: &'a crate::SessionId,
+        from_turn: &'a crate::TurnId,
+        before_turn: &'a crate::TurnId,
+    ) -> StorageFuture<'a, Option<crate::SessionEventHeader>> {
+        Box::pin(ready(self.with_state(|state| {
+            if from_turn >= before_turn {
+                return Ok(None);
+            }
+            let floor = crate::EventId::new("\0")?;
+            let key = |turn_id: &crate::TurnId| SessionEventKey {
+                project_id: project.clone(),
+                session_id: session.clone(),
+                turn_id: turn_id.clone(),
+                event_id: floor.clone(),
+            };
+            Ok(state
+                .session_events
+                .range(key(from_turn)..key(before_turn))
+                .next_back()
+                .map(|(_, record)| crate::SessionEventHeader {
+                    agent_id: record.agent_id.clone(),
+                    cursor: crate::SessionEventCursor::from_record(record),
+                    event_kind: record.event_kind.clone(),
+                    causality_parent_event_id: record.causality_parent_event_id.clone(),
+                }))
+        })))
+    }
+
     fn count_session_events<'a>(
         &'a self,
         project: &'a ProjectId,

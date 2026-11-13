@@ -18,8 +18,9 @@ use std::{
 use marlin_agent_app_server::{
     AppServer, SessionBinding,
     v1::{
-        CancelSessionTurnRequest, SessionTurnOutcome, SessionTurnRef, StartSessionTurnRequest,
-        WatchSessionTurnRequest, app_server_client::AppServerClient, session_turn_event::Event,
+        CancelSessionTurnRequest, GetSessionSummaryRequest, SessionRecoveryState,
+        SessionTurnOutcome, SessionTurnRef, StartSessionTurnRequest, WatchSessionTurnRequest,
+        app_server_client::AppServerClient, session_turn_event::Event,
     },
 };
 use marlin_agent_protocol::{
@@ -63,6 +64,17 @@ struct PausedStartStore<S> {
 }
 
 impl<S: SessionEventStore> SessionEventStore for PausedStartStore<S> {
+    fn latest_session_event_header<'a>(
+        &'a self,
+        project: &'a ProjectId,
+        session: &'a SessionId,
+        from_turn: &'a marlin_agent_storage::TurnId,
+        before_turn: &'a marlin_agent_storage::TurnId,
+    ) -> StorageFuture<'a, Option<marlin_agent_storage::SessionEventHeader>> {
+        self.storage
+            .latest_session_event_header(project, session, from_turn, before_turn)
+    }
+
     fn count_session_events<'a>(
         &'a self,
         project: &'a ProjectId,
@@ -175,6 +187,12 @@ async fn gui_reconnects_with_the_journal_cursor_and_cancels_its_runtime_task() {
         ));
         let mut client = AppServerClient::connect(address.clone()).await.unwrap();
         let start = StartSessionTurnRequest { session_id: "gui-session".into(), user_text: "请开始".into(), after_turn: 0, submission_id: "gui-send-1".into() };
+        let summary = || GetSessionSummaryRequest { session_id: start.session_id.clone() };
+        assert_eq!(client.get_session_summary(summary()).await.unwrap_err().code(), Code::Unauthenticated);
+        let empty = client.get_session_summary(authorized(summary())).await.unwrap().into_inner();
+        assert_eq!(empty.recovery_state(), SessionRecoveryState::Empty);
+        assert!(empty.latest_turn.is_none() && empty.latest_event_id.is_none());
+        assert_eq!(client.get_session_summary(authorized(GetSessionSummaryRequest { session_id: "outside".into() })).await.unwrap_err().code(), Code::NotFound);
         assert_eq!(client.start_session_turn(start.clone()).await.unwrap_err().code(), Code::Unauthenticated);
         let mut missing_id = start.clone();
         missing_id.submission_id.clear();
@@ -185,6 +203,7 @@ async fn gui_reconnects_with_the_journal_cursor_and_cancels_its_runtime_task() {
         lost_response.abort();
         assert!(lost_response.await.unwrap_err().is_cancelled());
         let mut client = AppServerClient::connect(address.clone()).await.unwrap();
+        assert_eq!(client.get_session_summary(authorized(summary())).await.unwrap_err().code(), Code::Aborted);
         let turn = client.start_session_turn(authorized(start.clone())).await.unwrap().into_inner().turn.unwrap();
         assert_eq!(turn.ordinal, 1);
         assert_eq!(gateway.calls.load(Ordering::Relaxed), 0);
@@ -200,6 +219,10 @@ async fn gui_reconnects_with_the_journal_cursor_and_cancels_its_runtime_task() {
         assert!(matches!(stream.message().await.unwrap().unwrap().event, Some(Event::Started(_))));
         let first = stream.message().await.unwrap().unwrap();
         assert!(matches!(first.event, Some(Event::TextCheckpoint(delta)) if delta.text == "第一段"));
+        let active = client.get_session_summary(authorized(summary())).await.unwrap().into_inner();
+        assert_eq!(active.recovery_state(), SessionRecoveryState::Active);
+        assert_eq!(active.latest_turn, Some(turn.clone()));
+        assert_eq!(active.latest_event_id.as_deref(), Some(first.event_id.as_str()));
         drop(stream);
         drop(client);
 
@@ -232,6 +255,10 @@ async fn gui_reconnects_with_the_journal_cursor_and_cancels_its_runtime_task() {
         let last = resumed.message().await.unwrap().unwrap();
         assert!(matches!(last.event, Some(Event::Outcome(outcome)) if outcome == i32::from(SessionTurnOutcome::RemoteUncertain)));
         assert!(resumed.message().await.unwrap().is_none());
+        let unresolved = client.get_session_summary(authorized(summary())).await.unwrap().into_inner();
+        assert_eq!(unresolved.recovery_state(), SessionRecoveryState::Unresolved);
+        assert_eq!(unresolved.latest_turn, Some(turn.clone()));
+        assert_eq!(unresolved.latest_event_id.as_deref(), Some(last.event_id.as_str()));
         let mut suffix = client.watch_session_turn(watch(Some(last.event_id))).await.unwrap().into_inner();
         assert!(suffix.message().await.unwrap().is_none());
         let repeat = client.cancel_session_turn(cancel()).await.unwrap().into_inner();
@@ -438,6 +465,19 @@ async fn turso_http2_recovers_lost_submission_after_process_restart() {
         let mut client = AppServerClient::connect(fixture_marker(&mut output, "READY ").await)
             .await
             .unwrap();
+        let summary = client
+            .get_session_summary(authorized(GetSessionSummaryRequest {
+                session_id: request.session_id.clone(),
+            }))
+            .await
+            .unwrap()
+            .into_inner();
+        assert_eq!(summary.recovery_state(), SessionRecoveryState::Unresolved);
+        assert_eq!(summary.latest_turn, Some(expected.clone()));
+        assert_eq!(
+            summary.latest_event_id.as_deref(),
+            Some(checkpoint.event_id.as_str())
+        );
         let recovered = client
             .start_session_turn(authorized(request.clone()))
             .await

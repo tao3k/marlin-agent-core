@@ -150,14 +150,15 @@ package MarlinAppServer {
                restart, replay committed events and report an unfinished turn
                without a live owner. Recovery does not dispatch that turn. */
     }
-    // Proposed Session summary and cancellation readback.
     requirement <'MAR-APP-R05'> boundedSessionRecovery {
-        doc /* Expose a bounded summary for the authorized Session and replay
+        doc /* GetSessionSummary reads one indexed event header for the
+               authorized Session and reports typed recovery state. Replay
                committed visible events after the caller's exclusive cursor.
                Bound page work and bytes, and isolate slow replay from control
                calls for other Sessions. A terminal commit racing attachment
                remains visible in the journal suffix. */
     }
+    // Proposed cancellation readback.
     requirement <'MAR-APP-R06'> recoverCancellationEvidence {
         doc /* Keep Session outcome, local retirement and provider stop
                evidence independently observable by turn. Persist any Runtime

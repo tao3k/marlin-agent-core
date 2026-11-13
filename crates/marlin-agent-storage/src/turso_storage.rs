@@ -15,6 +15,51 @@ use super::{
 };
 
 impl SessionEventStore for TursoAgentStorage {
+    fn latest_session_event_header<'a>(
+        &'a self,
+        project: &'a ProjectId,
+        session: &'a SessionId,
+        from_turn: &'a TurnId,
+        before_turn: &'a TurnId,
+    ) -> StorageFuture<'a, Option<crate::SessionEventHeader>> {
+        Box::pin(async move {
+            let connection = self.connections.acquire().await?;
+            let mut statement = connection
+                .prepare_cached(
+                    "SELECT agent_id, turn_id, event_id, event_kind, causality_parent_event_id
+                 FROM session_events
+                 WHERE project_id = ?1 AND session_id = ?2 AND turn_id >= ?3 AND turn_id < ?4
+                 ORDER BY turn_id DESC, event_id DESC LIMIT 1",
+                )
+                .await
+                .map_err(map_turso_error)?;
+            let mut rows = statement
+                .query(vec![
+                    text_value(project.clone()),
+                    text_value(session.clone()),
+                    text_value(from_turn.clone()),
+                    text_value(before_turn.clone()),
+                ])
+                .await
+                .map_err(map_turso_error)?;
+            rows.next()
+                .await
+                .map_err(map_turso_error)?
+                .map(|row| {
+                    Ok(crate::SessionEventHeader {
+                        agent_id: AgentId::new(text_at(&row, 0)?)?,
+                        cursor: crate::SessionEventCursor::new(
+                            TurnId::new(text_at(&row, 1)?)?,
+                            EventId::new(text_at(&row, 2)?)?,
+                        ),
+                        event_kind: text_at(&row, 3)?,
+                        causality_parent_event_id: optional_event_id_at(&row, 4)?,
+                    })
+                })
+                .transpose()
+        })
+    }
+
     fn count_session_events<'a>(
         &'a self,
         project: &'a ProjectId,

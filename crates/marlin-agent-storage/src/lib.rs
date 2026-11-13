@@ -19,11 +19,12 @@ pub use records::{
     ArtifactPointerUpdate, ArtifactPutOutcome, ArtifactRecord, EventId, MemoryKey,
     MemoryProposalCursor, MemoryProposalId, MemoryProposalPageRequest, MemoryProposalRecord,
     ProjectId, SessionEventBatchWriteReceipt, SessionEventCount, SessionEventCursor,
-    SessionEventKey, SessionEventPageRequest, SessionEventRecord, SessionEventStore, SessionId,
-    SessionPageRequest, StorageError, StorageFuture, StoragePage, StoragePageLimit, StorageResult,
-    StorageSchemaLifecycle, StorageSchemaSnapshot, StorageSchemaTable, TopologyEdgeCursor,
-    TopologyEdgeId, TopologyEdgePageRequest, TopologyEdgeRecord, TopologyNodeId, TurnId,
-    VisibilityCursor, VisibilityPageRequest, VisibilityReceipt,
+    SessionEventHeader, SessionEventKey, SessionEventPageRequest, SessionEventRecord,
+    SessionEventStore, SessionId, SessionPageRequest, StorageError, StorageFuture, StoragePage,
+    StoragePageLimit, StorageResult, StorageSchemaLifecycle, StorageSchemaSnapshot,
+    StorageSchemaTable, TopologyEdgeCursor, TopologyEdgeId, TopologyEdgePageRequest,
+    TopologyEdgeRecord, TopologyNodeId, TurnId, VisibilityCursor, VisibilityPageRequest,
+    VisibilityReceipt,
 };
 #[cfg(feature = "turso")]
 pub use turso_backend::{

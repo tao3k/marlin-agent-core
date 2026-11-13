@@ -53,6 +53,13 @@ async fn duplicate_submission_rolls_back_new_ordinal_and_survives_reopen() {
         )
         .await
         .unwrap();
+    let reader = ConversationEventReader::new(store, project, session, agent);
+    let finished = reader.latest_turn().await.unwrap().unwrap();
+    assert_eq!(finished.turn, first);
+    assert_eq!(
+        finished.state,
+        marlin_agent_sessions::ConversationTailState::Finished
+    );
     assert!(matches!(
         journal
             .start_submission(&submission, start.clone(), 1, 3)
@@ -63,7 +70,12 @@ async fn duplicate_submission_rolls_back_new_ordinal_and_survives_reopen() {
     ));
     let second = journal.start(start, 4).await.unwrap();
     assert_eq!(second.get(), 2);
-    let reader = ConversationEventReader::new(store, project, session, agent);
+    let latest = reader.latest_turn().await.unwrap().unwrap();
+    assert_eq!(latest.turn, second);
+    assert_eq!(
+        latest.state,
+        marlin_agent_sessions::ConversationTailState::Unfinished
+    );
     assert_eq!(
         reader
             .resolve_submission(&submission, "hello", 0)
@@ -74,6 +86,17 @@ async fn duplicate_submission_rolls_back_new_ordinal_and_survives_reopen() {
 }
 
 impl SessionEventStore for SessionOnly {
+    fn latest_session_event_header<'a>(
+        &'a self,
+        project: &'a ProjectId,
+        session: &'a SessionId,
+        from_turn: &'a marlin_agent_storage::TurnId,
+        before_turn: &'a marlin_agent_storage::TurnId,
+    ) -> StorageFuture<'a, Option<marlin_agent_storage::SessionEventHeader>> {
+        self.0
+            .latest_session_event_header(project, session, from_turn, before_turn)
+    }
+
     fn count_session_events<'a>(
         &'a self,
         p: &'a ProjectId,
@@ -111,6 +134,17 @@ struct WrongScope {
 }
 
 impl SessionEventStore for WrongScope {
+    fn latest_session_event_header<'a>(
+        &'a self,
+        project: &'a ProjectId,
+        session: &'a SessionId,
+        from_turn: &'a marlin_agent_storage::TurnId,
+        before_turn: &'a marlin_agent_storage::TurnId,
+    ) -> StorageFuture<'a, Option<marlin_agent_storage::SessionEventHeader>> {
+        self.inner
+            .latest_session_event_header(project, session, from_turn, before_turn)
+    }
+
     fn count_session_events<'a>(
         &'a self,
         p: &'a ProjectId,

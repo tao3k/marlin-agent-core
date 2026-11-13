@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 
 #[path = "conversation_events.rs"]
 mod events;
-pub use events::{ConversationEvent, ConversationEventEntry, ConversationEventReader};
+pub use events::{ConversationEvent, ConversationEventEntry, ConversationEventReader, ConversationTail, ConversationTailState};
 mod tool_review;
 pub use tool_review::{
     ConversationToolExecutionClaim, ConversationToolRequestKey, ConversationToolReviewDecision,
@@ -86,6 +86,14 @@ impl ConversationTurnId {
 
     fn storage_id(self) -> Result<TurnId, StorageError> {
         TurnId::new(format!("{TURN_PREFIX}{:020}", self.0))
+    }
+
+    fn from_storage_id(id: &TurnId) -> Option<Self> {
+        let value = id.as_str().strip_prefix(TURN_PREFIX)?;
+        if value.len() != 20 || !value.bytes().all(|byte| byte.is_ascii_digit()) {
+            return None;
+        }
+        value.parse().ok().map(Self::from_ordinal)
     }
 
     fn start_event_id(self) -> Result<EventId, StorageError> {
@@ -739,17 +747,8 @@ impl<S: SessionEventStore> ConversationJournal<S> {
                 "unexpected agent identity".into(),
             ));
         }
-        let ordinal = event
-            .turn_id
-            .as_str()
-            .strip_prefix(TURN_PREFIX)
-            .and_then(|value| {
-                (value.len() == 20 && value.bytes().all(|byte| byte.is_ascii_digit()))
-                    .then(|| value.parse::<u64>().ok())
-                    .flatten()
-            })
+        let id = ConversationTurnId::from_storage_id(&event.turn_id)
             .ok_or_else(|| ConversationJournalError::InvalidEvent("invalid turn ordinal".into()))?;
-        let id = ConversationTurnId(ordinal);
         if self.active.as_ref().is_some_and(|turn| {
             matches!(
                 turn.outcome,

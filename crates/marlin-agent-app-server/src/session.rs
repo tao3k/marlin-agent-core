@@ -20,9 +20,9 @@ use marlin_agent_runtime::{
 };
 use marlin_agent_sessions::{
     ConversationCheckpointChannel, ConversationEvent, ConversationEventReader, ConversationJournal,
-    ConversationJournalError, ConversationSubmissionId, ConversationTerminalObservation,
-    ConversationTurnId, ConversationTurnOutcome, ConversationTurnStart,
-    ConversationUncertaintyReason, RuntimeTaskTrackerPolicy,
+    ConversationJournalError, ConversationSubmissionId, ConversationTailState,
+    ConversationTerminalObservation, ConversationTurnId, ConversationTurnOutcome,
+    ConversationTurnStart, ConversationUncertaintyReason, RuntimeTaskTrackerPolicy,
 };
 use marlin_agent_storage::{
     AgentId, EventId, ProjectId, SessionEventStore, SessionId, StorageError, StoragePageLimit,
@@ -38,9 +38,10 @@ use tonic::Status;
 use crate::{
     grpc::{MAX_REQUEST_BYTES, MAX_TURN_TIME, account_output},
     v1::{
-        CancelSessionTurnRequest, CancelSessionTurnResponse, RuntimeShutdownReceipt,
-        SessionTurnEvent, SessionTurnOutcome, SessionTurnRef, StartSessionTurnRequest,
-        TextCheckpoint, TurnStarted, WatchSessionTurnRequest, session_turn_event::Event,
+        CancelSessionTurnRequest, CancelSessionTurnResponse, GetSessionSummaryRequest,
+        GetSessionSummaryResponse, RuntimeShutdownReceipt, SessionRecoveryState, SessionTurnEvent,
+        SessionTurnOutcome, SessionTurnRef, StartSessionTurnRequest, TextCheckpoint, TurnStarted,
+        WatchSessionTurnRequest, session_turn_event::Event,
     },
 };
 
@@ -119,6 +120,47 @@ impl<S: SessionEventStore + Clone + 'static> SessionBinding<S> {
         let ordinal = NonZeroU64::new(turn.ordinal)
             .ok_or_else(|| Status::invalid_argument("turn ordinal must be positive"))?;
         Ok((turn, ConversationTurnId::from_ordinal(ordinal)))
+    }
+
+    pub(crate) async fn summary(
+        &self,
+        request: GetSessionSummaryRequest,
+    ) -> Result<GetSessionSummaryResponse, Status> {
+        self.check_scope(&request.session_id)?;
+        let owner = &self.inner;
+        // Pair one indexed read with this binding's local owner. A concurrent
+        // admission can retry the summary once it has published its task scope.
+        let current = owner
+            .current
+            .try_lock()
+            .map_err(|_| Status::aborted("Session admission is busy"))?;
+        let running = current
+            .as_ref()
+            .filter(|active| active.finished.borrow().is_none())
+            .map(|active| active.id);
+        let Some(tail) = owner.reader.latest_turn().await.map_err(journal_status)? else {
+            return Ok(GetSessionSummaryResponse {
+                latest_turn: None,
+                latest_event_id: None,
+                recovery_state: SessionRecoveryState::Empty.into(),
+            });
+        };
+        let recovery_state = match tail.state {
+            ConversationTailState::Finished => SessionRecoveryState::Finished,
+            ConversationTailState::Uncertain => SessionRecoveryState::Unresolved,
+            ConversationTailState::Unfinished => {
+                if running == Some(tail.turn) {
+                    SessionRecoveryState::Active
+                } else {
+                    SessionRecoveryState::Unresolved
+                }
+            }
+        };
+        Ok(GetSessionSummaryResponse {
+            latest_turn: Some(owner.wire_turn(tail.turn)),
+            latest_event_id: Some(tail.event_id.as_str().to_owned()),
+            recovery_state: recovery_state.into(),
+        })
     }
 
     pub(crate) async fn start(

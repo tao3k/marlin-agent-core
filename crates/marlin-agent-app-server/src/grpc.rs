@@ -109,6 +109,19 @@ impl<S: marlin_agent_storage::SessionEventStore + Clone + 'static> app_server_se
 
     type WatchSessionTurnStream = crate::session::WatchStream;
 
+    async fn get_session_summary(
+        &self,
+        request: Request<crate::v1::GetSessionSummaryRequest>,
+    ) -> Result<Response<crate::v1::GetSessionSummaryResponse>, Status> {
+        (self.authorize)(request.metadata())?;
+        let timeout = turn_timeout(request.metadata())?;
+        let binding = self.session.as_ref().ok_or_else(session_unavailable)?;
+        let summary = tokio::time::timeout(timeout, binding.summary(request.into_inner()))
+            .await
+            .map_err(|_| Status::deadline_exceeded("Session summary deadline elapsed"))??;
+        Ok(Response::new(summary))
+    }
+
     async fn start_session_turn(
         &self,
         request: Request<crate::v1::StartSessionTurnRequest>,

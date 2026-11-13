@@ -18,7 +18,7 @@ pub use conversation::{
     CONVERSATION_MAX_CHECKPOINT_SEGMENTS, ConversationCheckpointChannel,
     ConversationCheckpointSpan, ConversationEvent, ConversationEventEntry, ConversationEventReader,
     ConversationJournal, ConversationJournalError, ConversationPendingToolRequest,
-    ConversationSubmissionId, ConversationTerminalObservation, ConversationToolExecutionClaim,
+    ConversationSubmissionId, ConversationTail, ConversationTailState, ConversationTerminalObservation, ConversationToolExecutionClaim,
     ConversationToolRequestKey, ConversationToolReviewDecision, ConversationToolReviewReceipt,
     ConversationToolReviewRequest, ConversationToolReviewStatus, ConversationTurn,
     ConversationTurnId, ConversationTurnOutcome, ConversationTurnStart,

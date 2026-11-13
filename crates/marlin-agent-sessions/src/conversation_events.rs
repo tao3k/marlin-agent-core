@@ -5,6 +5,7 @@
 //! Typed reads of the journal's existing committed records.
 
 use marlin_agent_storage::SessionEventCursor;
+use std::num::NonZeroU64;
 
 use super::*;
 
@@ -26,6 +27,21 @@ pub struct ConversationEventEntry {
     pub event: ConversationEvent,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ConversationTailState {
+    Unfinished,
+    Finished,
+    Uncertain,
+}
+
+/// The latest committed conversation position, without transcript payloads.
+#[derive(Debug)]
+pub struct ConversationTail {
+    pub turn: ConversationTurnId,
+    pub event_id: EventId,
+    pub state: ConversationTailState,
+}
+
 #[derive(Clone)]
 pub struct ConversationEventReader<S> {
     storage: S,
@@ -42,6 +58,63 @@ impl<S: SessionEventStore> ConversationEventReader<S> {
             session,
             agent,
         }
+    }
+
+    /// Seek the conversation tail without scanning the transcript or loading event bodies.
+    pub async fn latest_turn(&self) -> Result<Option<ConversationTail>, ConversationJournalError> {
+        // Numeric conversation keys sort before the first key past `conversation:`.
+        // Submission claims use `conversation-submission:` and are outside the range.
+        let from = TurnId::new(TURN_PREFIX)?;
+        let before = TurnId::new("conversation;")?;
+        let Some(header) = self
+            .storage
+            .latest_session_event_header(&self.project, &self.session, &from, &before)
+            .await?
+        else {
+            return Ok(None);
+        };
+        if header.agent_id != self.agent {
+            return Err(invalid());
+        }
+        let turn =
+            ConversationTurnId::from_storage_id(header.cursor.turn_id()).ok_or_else(invalid)?;
+        let event_id = header.cursor.event_id();
+        let start = turn.start_event_id()?;
+        let state = match header.event_kind.as_str() {
+            tool_review::REVIEW_KIND
+                if *event_id == turn.review_event_id()?
+                    && header.causality_parent_event_id == Some(turn.finish_event_id()?) =>
+            {
+                ConversationTailState::Uncertain
+            }
+            tool_review::CLAIM_KIND
+                if *event_id == turn.claim_event_id()?
+                    && header.causality_parent_event_id == Some(turn.review_event_id()?) =>
+            {
+                ConversationTailState::Uncertain
+            }
+            START_KIND if *event_id == start && header.causality_parent_event_id.is_none() => {
+                ConversationTailState::Unfinished
+            }
+            kind if header.causality_parent_event_id.as_ref() == Some(&start) => match kind {
+                END_KIND if *event_id == turn.finish_event_id()? => ConversationTailState::Finished,
+                UNCERTAIN_KIND if *event_id == turn.uncertain_event_id()? => {
+                    ConversationTailState::Uncertain
+                }
+                CHECKPOINT_KIND | THINKING_CHECKPOINT_KIND
+                    if checkpoint_sequence(turn, event_id).is_some() =>
+                {
+                    ConversationTailState::Unfinished
+                }
+                _ => return Err(invalid()),
+            },
+            _ => return Err(invalid()),
+        };
+        Ok(Some(ConversationTail {
+            turn,
+            event_id: event_id.clone(),
+            state,
+        }))
     }
 
     /// Resolve a committed submission by its unique Session journal key.
@@ -107,17 +180,9 @@ impl<S: SessionEventStore> ConversationEventReader<S> {
         } else if event_id == id.claim_event_id()? {
             id.review_event_id()?
         } else {
-            let Some(sequence) = event_id
-                .as_str()
-                .rsplit(':')
-                .next()
-                .and_then(|value| value.parse::<u64>().ok())
-            else {
+            let Some(sequence) = checkpoint_sequence(id, &event_id) else {
                 return Ok(None);
             };
-            if sequence == 0 || event_id != id.checkpoint_event_id(sequence)? {
-                return Ok(None);
-            }
             if sequence == 1 {
                 id.start_event_id()?
             } else {
@@ -224,17 +289,7 @@ pub(super) fn decode_event(
     }
     match record.event_kind.as_str() {
         CHECKPOINT_KIND | THINKING_CHECKPOINT_KIND => {
-            let sequence = record
-                .event_id
-                .as_str()
-                .rsplit(':')
-                .next()
-                .and_then(|value| value.parse::<u64>().ok())
-                .filter(|n| *n > 0)
-                .ok_or_else(invalid)?;
-            if record.event_id != id.checkpoint_event_id(sequence)? {
-                return Err(invalid());
-            }
+            checkpoint_sequence(id, &record.event_id).ok_or_else(invalid)?;
             let text: String = serde_json::from_slice(&record.body)?;
             if text.is_empty() || text.len() > MAX_CHECKPOINT_BYTES {
                 return Err(invalid());
@@ -261,6 +316,17 @@ pub(super) fn decode_event(
         ),
         _ => Err(invalid()),
     }
+}
+
+fn checkpoint_sequence(turn: ConversationTurnId, event: &EventId) -> Option<u64> {
+    let sequence = event
+        .as_str()
+        .rsplit(':')
+        .next()?
+        .parse::<NonZeroU64>()
+        .ok()?
+        .get();
+    (turn.checkpoint_event_id(sequence).ok().as_ref() == Some(event)).then_some(sequence)
 }
 
 fn invalid() -> ConversationJournalError {

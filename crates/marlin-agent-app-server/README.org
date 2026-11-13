@@ -116,6 +116,7 @@ ownership against stale writers using the same store.
 | RPC | Existing authority | Client behavior |
 |-----+--------------------+-----------------|
 | =StartSessionTurn= | =ConversationJournal::open_controlled= and =start_submission= | Submit user text with a stable submission ID and the last observed turn ordinal. Retry the same inputs to recover the original turn. |
+| =GetSessionSummary= | One indexed read of the journal tail and the host's live turn scope | Discover the latest turn and whether it is empty, active, finished or unresolved. |
 | =WatchSessionTurn= | =SessionEventStore= keyset pages and =SessionEventCursor= | Save the last processed event ID and pass it back as an exclusive cursor after reconnecting. |
 | =CancelSessionTurn= | Turn-local Runtime task scope and =RuntimeTaskShutdownReceipt= | Request cancellation and inspect local retirement alongside the committed Session outcome. |
 
@@ -272,8 +273,9 @@ these Session operations for Marlin-backed work.
 :CUSTOM_ID: recoverable-session-interactions
 :END:
 
-Submission recovery is implemented in =StartSessionTurn=. A bounded Session
-summary and cancellation receipt readback remain proposals.
+Submission recovery is implemented in =StartSessionTurn=. =GetSessionSummary=
+discovers the latest committed turn. Cancellation receipt readback remains a
+proposal.
 [[file:../../dev/sysml/app-server.sysml][OpenSysML requirements]]
 
 ** User reports that inform the design
@@ -344,13 +346,18 @@ admission; remote side effects need provider evidence.
 
 ** Reopen a Session without rebuilding the whole view
 
-Provide a bounded, read-only Session summary from the Session owner with the
-latest committed turn reference, active turn if known, and typed recovery
-state. Direct lookup by authorized Session and submission identity must work
-when a derived listing index is stale. A summary of a particular turn carries
-the last committed cursor represented by its state. A fresh GUI that has only
-a summary can obtain the visible text through bounded replay. A GUI restoring
-its saved view uses the last cursor whose visible event it applied and saved.
+=GetSessionSummary= reads the latest conversation event header for the
+authorized, host-bound Session. The lookup seeks the existing journal key
+range and reads one header. The response contains the latest turn, its
+journal position, and a typed recovery state. Admission that holds the local
+turn lock can return =ABORTED= so the caller can retry the read. A finished
+turn has a committed finish record. An uncertain terminal record or an
+unfinished turn without a live local owner is unresolved.
+
+A fresh GUI uses the returned turn with =WatchSessionTurn= from the start.
+A restoring GUI uses the last cursor whose visible event it applied and
+saved. The summary position describes journal state and can include a
+checkpoint that the visible stream skips.
 
 Keep =WatchSessionTurn= as the ordered suffix of the same journal. A terminal
 event committed during attach appears in the replay suffix whenever the client
