@@ -12,6 +12,10 @@
 
 * Scope and ownership
 
+=MarlinAgentCORE::appServerTransport= shows the optional external App Server
+and its model gateway. [[file:app-server.sysml][App Server model]] ·
+[[file:../../crates/marlin-agent-app-server/README.org][App Server contract]]
+
 The scope includes the plugin engine and the terminal client, their transport
 boundaries, and their lifecycles. =project.sysml= selects the top-level views.
 The files here own structural identities, relations, and state transitions.

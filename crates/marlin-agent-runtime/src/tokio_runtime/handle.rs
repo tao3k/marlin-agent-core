@@ -43,6 +43,31 @@ pub struct TokioAgentRuntime {
     runtime_snapshot: SessionRuntimeSnapshot,
 }
 
+/// Isolated cancellation and retirement accounting for Tokio tasks.
+#[derive(Clone, Debug)]
+pub struct RuntimeTaskScope(TokioAgentRuntime);
+
+impl RuntimeTaskScope {
+    pub fn cancellation_token(&self) -> CancellationToken {
+        self.0.cancellation_token()
+    }
+
+    pub fn spawn<F>(&self, future: F) -> RuntimeTask<F::Output>
+    where
+        F: Future + Send + 'static,
+        F::Output: Send + 'static,
+    {
+        self.0.spawn(future)
+    }
+
+    pub async fn shutdown_tasks(
+        &self,
+        policy: &RuntimeTaskTrackerPolicy,
+    ) -> RuntimeTaskShutdownReceipt {
+        self.0.shutdown_tasks(policy).await
+    }
+}
+
 /// Named request for constructing a Tokio-backed agent runtime.
 #[derive(Clone, Debug)]
 pub struct TokioAgentRuntimeBuildRequest {
@@ -332,6 +357,13 @@ impl TokioAgentRuntime {
             },
             stream,
         )
+    }
+
+    /// A child cancellation domain with its own task retirement accounting.
+    pub fn child_task_scope(&self) -> RuntimeTaskScope {
+        let mut child = self.child_runtime();
+        child.task_tracker = RuntimeTaskTracker::new();
+        RuntimeTaskScope(child)
     }
 
     pub fn child_runtime_with_environment(&self, environment: RuntimeEnvironment) -> Self {

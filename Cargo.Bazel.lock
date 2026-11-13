@@ -1,5 +1,5 @@
 {
-  "checksum": "539f369ffe148c40daee0f2b3191efc7f028caa50303657afb7b16568496c9d3",
+  "checksum": "aca8d0c8ca349319a4c2d87bdc06725a2de6f18c29a50cc6f18c383e5e7ec4b2",
   "crates": {
     "adler2 2.0.1": {
       "name": "adler2",
@@ -15473,6 +15473,87 @@
         "Zlib"
       ],
       "license_file": "LICENSE-APACHE"
+    },
+    "marlin-agent-app-server 0.1.0": {
+      "name": "marlin-agent-app-server",
+      "version": "0.1.0",
+      "package_url": "https://github.com/tao3k/marlin-agent-core",
+      "repository": null,
+      "targets": [
+        {
+          "Library": {
+            "crate_name": "marlin_agent_app_server",
+            "crate_root": "src/lib.rs",
+            "srcs": {
+              "allow_empty": true,
+              "include": [
+                "**/*.rs"
+              ]
+            }
+          }
+        },
+        {
+          "BuildScript": {
+            "crate_name": "build_script_build",
+            "crate_root": "build.rs",
+            "srcs": {
+              "allow_empty": true,
+              "include": [
+                "**/*.rs"
+              ]
+            }
+          }
+        }
+      ],
+      "library_target_name": "marlin_agent_app_server",
+      "common_attrs": {
+        "compile_data_glob": [
+          "**"
+        ],
+        "crate_features": {
+          "common": [
+            "default"
+          ],
+          "selects": {}
+        },
+        "deps": {
+          "common": [
+            {
+              "id": "marlin-agent-app-server 0.1.0",
+              "target": "build_script_build"
+            }
+          ],
+          "selects": {}
+        },
+        "deps_dev": {
+          "common": [
+            {
+              "id": "tokio-stream 0.1.19",
+              "target": "tokio_stream"
+            }
+          ],
+          "selects": {}
+        },
+        "edition": "2024",
+        "version": "0.1.0"
+      },
+      "build_script_attrs": {
+        "compile_data_glob": [
+          "**"
+        ],
+        "compile_data_glob_excludes": [
+          "**/*.rs"
+        ],
+        "data_glob": [
+          "**"
+        ]
+      },
+      "license": "Apache-2.0 AND LGPL-2.1-or-later",
+      "license_ids": [
+        "Apache-2.0",
+        "LGPL-2.1"
+      ],
+      "license_file": null
     },
     "marlin-agent-context 0.1.0": {
       "name": "marlin-agent-context",
@@ -31707,6 +31788,7 @@
         "crate_features": {
           "common": [
             "default",
+            "net",
             "time"
           ],
           "selects": {}
@@ -39501,6 +39583,7 @@
   },
   "binary_crates": [],
   "workspace_members": {
+    "marlin-agent-app-server 0.1.0": "crates/marlin-agent-app-server",
     "marlin-agent-context 0.1.0": "crates/marlin-agent-context",
     "marlin-agent-core 0.1.0": "crates/marlin-agent-core",
     "marlin-agent-environment 0.1.0": "crates/marlin-agent-environment",

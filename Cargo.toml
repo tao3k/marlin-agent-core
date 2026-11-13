@@ -6,6 +6,7 @@
 members = [
     "build-support/marlin-gerbil-aot-link",
     "build-support/marlin-rust-project-harness-policy",
+    "crates/marlin-agent-app-server",
     "crates/marlin-agent-context",
     "crates/marlin-agent-core",
     "crates/marlin-agent-environment",
@@ -79,6 +80,7 @@ tower = { version = "0.5.3", features = ["limit", "load-shed", "timeout", "util"
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter", "fmt", "json"] }
 wiremock = "0.6.5"
+marlin-agent-app-server = { path = "crates/marlin-agent-app-server", version = "0.1.0" }
 marlin-agent-context = { path = "crates/marlin-agent-context", version = "0.1.0" }
 marlin-agent-environment = { path = "crates/marlin-agent-environment", version = "0.1.0" }
 marlin-agent-graph = { path = "crates/marlin-agent-graph", version = "0.1.0" }
@@ -90,6 +92,7 @@ marlin-agent-protocol = { path = "crates/marlin-agent-protocol", version = "0.1.
 marlin-agent-runtime = { path = "crates/marlin-agent-runtime", version = "0.1.0" }
 marlin-agent-sessions = { path = "crates/marlin-agent-sessions", version = "0.1.0" }
 marlin-agent-storage = { path = "crates/marlin-agent-storage", version = "0.1.0" }
+marlin-agent-stream = { path = "crates/marlin-agent-stream", version = "0.1.0" }
 marlin-agent-test-support = { path = "crates/marlin-agent-test-support", version = "0.1.0" }
 marlin-deck-runtime = { path = "crates/marlin-deck-runtime", version = "0.1.0" }
 marlin-gerbil-ir = { path = "crates/marlin-gerbil-ir", version = "0.1.0" }

@@ -20,7 +20,7 @@ rust-dev-gate:
   cargo test --locked -p marlin-rust-project-harness-policy --test workspace_policy
 
 # Authored Quint models and reproducible trace checks.
-property-model-gate:
+property-model-gate: app-server-model-gate
   quint typecheck dev/quint/host-observer.qnt
   quint run dev/quint/host-observer.qnt --seed=42 --max-samples=100 --max-steps=8 --invariant=safe --verbosity=1
   @output=$(quint run dev/quint/host-observer.qnt --step=badStep --invariant=safe --seed=42 --max-samples=100 --max-steps=8 --verbosity=1 2>&1) && { printf '%s\n' "Unexpected success in host exit negative control"; exit 1; } || { printf '%s\n' "$output"; printf '%s\n' "$output" | grep -q 'Invariant violated'; }
@@ -59,6 +59,12 @@ property-model-gate:
 # Run only inside a disposable, root-owned delegated Linux systemd scope.
 strict-linux-os-qualification:
   python3 dev/verification/linux_cgroup_qualification.py
+
+# Session journal, reconnect cursor and Runtime cancellation.
+app-server-model-gate:
+  quint typecheck dev/quint/app-server-turn.qnt
+  quint test dev/quint/app-server-turn.qnt --max-samples=100
+  quint run dev/quint/app-server-turn.qnt --seed=42 --max-samples=1000 --max-steps=30 --invariant=safe --verbosity=1
 
 # One project gate: architecture, model, native Scheme PBT and Rust properties.
 property-gate: sysml-check property-model-gate scheme-property-gate

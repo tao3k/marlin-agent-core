@@ -11,9 +11,11 @@ authors.workspace = true
 repository.workspace = true
 
 [features]
+app-server = ["dep:marlin-agent-app-server", "marlin-agent-app-server/grpc"]
 actor-runtime = ["dep:marlin-deck-runtime", "marlin-deck-runtime/actor-runtime"]
 
 [dependencies]
+marlin-agent-app-server = { workspace = true, optional = true }
 marlin-gerbil-scheme.workspace = true
 marlin-agent-environment.workspace = true
 marlin-agent-graph.workspace = true

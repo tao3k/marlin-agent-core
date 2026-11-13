@@ -127,6 +127,17 @@ jobs:
           --exclude marlin-agent-harness --exclude marlin-gerbil-scheme --
           --skip storage_artifact_pointer_cas_lean_proof_builds
 
+  app-server:
+    name: App Server / gRPC / ubuntu-latest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install Protobuf compiler
+        run: sudo apt-get install -y protobuf-compiler
+      - name: Test App Server over HTTP/2
+        run: cargo test --locked -p marlin-agent-app-server --features grpc
+
   gerbil:
     name: Scheme package and C ABI
     runs-on: ubuntu-latest

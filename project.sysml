@@ -27,6 +27,7 @@ package MarlinAgentCORE {
     dependency telemetryExport from project to MarlinTelemetry::telemetry;
     dependency rustPackageOwnership from project to MarlinRustPackageOwnership::packages;
     dependency eventBusContract from project to MarlinEventBusContract::eventBusDesign;
+    dependency externalAppServer from project to MarlinAppServer::appServer;
     dependency tuiDesign from project to MarlinTuiArchitecture::target::terminalClient;
     dependency declarativeTuiEngine from project to MarlinDeclarativeUi::engine;
     dependency contextOrgDesign from project to MarlinTuiArchitecture::target::contextOrgAuthority;
@@ -39,6 +40,13 @@ package MarlinAgentCORE {
         expose MarlinPluginEngine::target;
         expose requirements::highPerformanceExecution;
         render asTreeDiagram;
+    }
+
+    view appServerTransport {
+        expose MarlinAppServer::externalClient;
+        expose MarlinAppServer::appServer;
+        expose MarlinAppServer::grpcChannel;
+        render asInterconnectionDiagram;
     }
 
     view pluginTransport {

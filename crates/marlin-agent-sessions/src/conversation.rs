@@ -15,6 +15,10 @@ use marlin_agent_storage::{
 };
 use serde::{Deserialize, Serialize};
 
+#[path = "conversation_events.rs"]
+mod events;
+pub use events::{ConversationEvent, ConversationEventEntry, ConversationEventReader};
+
 const START_KIND: &str = "marlin.conversation.turn.started.v1";
 const END_KIND: &str = "marlin.conversation.turn.finished.v1";
 const CHECKPOINT_KIND: &str = "marlin.conversation.turn.checkpoint.v1";
@@ -48,6 +52,10 @@ impl ConversationTurnId {
     /// Returns the numeric ordinal, starting at one.
     pub fn get(self) -> u64 {
         self.0
+    }
+
+    pub fn from_ordinal(value: std::num::NonZeroU64) -> Self {
+        Self(value.get())
     }
 
     fn storage_id(self) -> Result<TurnId, StorageError> {
@@ -641,25 +649,11 @@ impl<S: SessionEventStore> ConversationJournal<S> {
                 "events follow an uncertain turn".into(),
             ));
         }
-        match event.event_kind.as_str() {
-            START_KIND if event.event_id == id.start_event_id()? => {
-                if self.pending_tool_request
-                    || self.active.is_some()
-                    || id.0 != self.next
-                    || event.causality_parent_event_id.is_some()
-                {
+        match events::decode_event(id, &event)? {
+            ConversationEvent::Started(start) => {
+                if self.pending_tool_request || self.active.is_some() || id.0 != self.next {
                     return Err(ConversationJournalError::InvalidEvent(
                         "noncontiguous or overlapping start".into(),
-                    ));
-                }
-                let start: ConversationTurnStart = serde_json::from_slice(&event.body)?;
-                start
-                    .endpoint
-                    .validate_contract()
-                    .map_err(|error| ConversationJournalError::InvalidEvent(error.to_string()))?;
-                if start.user_text.trim().is_empty() {
-                    return Err(ConversationJournalError::InvalidEvent(
-                        "user text is empty".into(),
                     ));
                 }
                 self.next = self
@@ -676,25 +670,15 @@ impl<S: SessionEventStore> ConversationJournal<S> {
                 });
                 self.next_checkpoint = 1;
             }
-            CHECKPOINT_KIND | THINKING_CHECKPOINT_KIND
-                if event.event_id == id.checkpoint_event_id(self.next_checkpoint)? =>
-            {
-                if event.causality_parent_event_id != Some(id.start_event_id()?) {
-                    return Err(ConversationJournalError::InvalidEvent(
-                        "invalid checkpoint parent".into(),
-                    ));
-                }
-                let delta: String = serde_json::from_slice(&event.body)?;
+            ConversationEvent::Checkpoint {
+                channel,
+                text: delta,
+            } if event.event_id == id.checkpoint_event_id(self.next_checkpoint)? => {
                 let turn = self
                     .active
                     .as_mut()
                     .filter(|turn| turn.id == id)
                     .ok_or(ConversationJournalError::WrongActiveTurn)?;
-                let channel = if event.event_kind == CHECKPOINT_KIND {
-                    ConversationCheckpointChannel::Text
-                } else {
-                    ConversationCheckpointChannel::Thinking
-                };
                 if !turn.can_append_checkpoint(channel) {
                     return Err(ConversationJournalError::InvalidEvent(
                         "too many alternating checkpoint segments".into(),
@@ -719,18 +703,9 @@ impl<S: SessionEventStore> ConversationJournal<S> {
                     .checked_add(1)
                     .ok_or(ConversationJournalError::OrdinalExhausted)?;
             }
-            END_KIND if event.event_id == id.finish_event_id()? => {
-                if event.causality_parent_event_id != Some(id.start_event_id()?) {
-                    return Err(ConversationJournalError::InvalidEvent(
-                        "invalid finish parent".into(),
-                    ));
-                }
-                let outcome: ConversationTurnOutcome = serde_json::from_slice(&event.body)?;
-                if matches!(outcome, ConversationTurnOutcome::Uncertain { .. }) {
-                    return Err(ConversationJournalError::InvalidEvent(
-                        "uncertain outcome encoded as a finish".into(),
-                    ));
-                }
+            ConversationEvent::Outcome(outcome)
+                if !matches!(outcome, ConversationTurnOutcome::Uncertain { .. }) =>
+            {
                 if matches!(
                     outcome,
                     ConversationTurnOutcome::RejectedBeforeDispatch { .. }
@@ -740,7 +715,6 @@ impl<S: SessionEventStore> ConversationJournal<S> {
                         "pre-dispatch rejection follows a checkpoint".into(),
                     ));
                 }
-                validate_outcome(&outcome)?;
                 let mut turn = self
                     .active
                     .take()
@@ -763,13 +737,7 @@ impl<S: SessionEventStore> ConversationJournal<S> {
                     return Err(ConversationJournalError::ReplayStopped);
                 }
             }
-            UNCERTAIN_KIND if event.event_id == id.uncertain_event_id()? => {
-                if event.causality_parent_event_id != Some(id.start_event_id()?) {
-                    return Err(ConversationJournalError::InvalidEvent(
-                        "invalid uncertainty parent".into(),
-                    ));
-                }
-                let reason: ConversationUncertaintyReason = serde_json::from_slice(&event.body)?;
+            ConversationEvent::Outcome(ConversationTurnOutcome::Uncertain { reason }) => {
                 if self.next_checkpoint != 1
                     && !matches!(
                         reason,

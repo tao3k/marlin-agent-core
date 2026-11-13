@@ -1,0 +1,125 @@
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
+syntax = "proto3";
+
+package marlin.app.v1;
+
+service AppServer {
+  rpc GetCapabilities(GetCapabilitiesRequest) returns (GetCapabilitiesResponse);
+  // A request carries the transcript for a single stateless text turn.
+  rpc StreamTurn(StreamTurnRequest) returns (stream TurnEvent);
+  rpc StartSessionTurn(StartSessionTurnRequest) returns (StartSessionTurnResponse);
+  rpc WatchSessionTurn(WatchSessionTurnRequest) returns (stream SessionTurnEvent);
+  rpc CancelSessionTurn(CancelSessionTurnRequest) returns (CancelSessionTurnResponse);
+}
+
+message GetCapabilitiesRequest {}
+
+message GetCapabilitiesResponse {
+  uint32 max_request_bytes = 1;
+  uint32 max_messages = 2;
+  uint32 max_output_text_bytes = 3;
+  optional string session_id = 4;
+}
+
+message StreamTurnRequest {
+  repeated ConversationMessage messages = 1;
+}
+
+enum MessageRole {
+  MESSAGE_ROLE_UNSPECIFIED = 0;
+  MESSAGE_ROLE_USER = 1;
+  MESSAGE_ROLE_ASSISTANT = 2;
+}
+
+message ConversationMessage {
+  MessageRole role = 1;
+  string text = 2;
+}
+
+message TurnEvent {
+  oneof event {
+    TurnStarted started = 1;
+    TextDelta text_delta = 2;
+    TurnCompleted completed = 3;
+  }
+}
+
+message TurnStarted {}
+
+message TextDelta {
+  // One-based sequence within this turn.
+  uint64 sequence = 1;
+  string text = 2;
+}
+
+// Completion describes the streamed text. It carries no session identity.
+message TurnCompleted {
+  uint64 text_chunks = 1;
+  uint64 text_bytes = 2;
+}
+
+// The host binds the service instance to an existing project and Session.
+message StartSessionTurnRequest {
+  string session_id = 1;
+  string user_text = 2;
+  // Client's observed last turn ordinal. A stale ordinal refuses redispatch.
+  uint64 after_turn = 3;
+}
+
+message SessionTurnRef {
+  string session_id = 1;
+  uint64 ordinal = 2;
+}
+
+message StartSessionTurnResponse {
+  SessionTurnRef turn = 1;
+}
+
+message WatchSessionTurnRequest {
+  SessionTurnRef turn = 1;
+  // Exclusive journal event ID previously delivered for this same turn.
+  optional string after_event_id = 2;
+}
+
+message SessionTurnEvent {
+  string event_id = 1;
+  oneof event {
+    TurnStarted started = 2;
+    TextCheckpoint text_checkpoint = 3;
+    SessionTurnOutcome outcome = 4;
+  }
+}
+
+message TextCheckpoint {
+  string text = 1;
+}
+
+enum SessionTurnOutcome {
+  SESSION_TURN_OUTCOME_UNSPECIFIED = 0;
+  SESSION_TURN_OUTCOME_COMPLETED = 1;
+  SESSION_TURN_OUTCOME_REJECTED_BEFORE_DISPATCH = 2;
+  SESSION_TURN_OUTCOME_REMOTE_UNCERTAIN = 3;
+}
+
+message CancelSessionTurnRequest {
+  SessionTurnRef turn = 1;
+}
+
+// Projection of Marlin's RuntimeTaskShutdownReceipt for this turn's local task scope.
+message RuntimeShutdownReceipt {
+  bool completed = 1;
+  bool cancellation_requested = 2;
+  bool tracker_closed = 3;
+  uint64 tracked_tasks_at_shutdown = 4;
+  uint64 remaining_tasks = 5;
+  optional uint64 timeout_ms = 6;
+}
+
+message CancelSessionTurnResponse {
+  SessionTurnRef turn = 1;
+  RuntimeShutdownReceipt runtime = 2;
+  SessionTurnOutcome outcome = 3;
+}

@@ -172,6 +172,10 @@ pub struct SessionEventCursor {
 }
 
 impl SessionEventCursor {
+    pub fn new(turn_id: TurnId, event_id: EventId) -> Self {
+        Self { turn_id, event_id }
+    }
+
     pub fn from_record(record: &SessionEventRecord) -> Self {
         Self {
             turn_id: record.turn_id.clone(),

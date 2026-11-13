@@ -6,6 +6,9 @@
 
 mod release;
 
+#[cfg(feature = "app-server")]
+pub use marlin_agent_app_server as app_server;
+
 pub use marlin_agent_context as context;
 pub use marlin_agent_context::org::workspace::initialize_org_runtime;
 pub use marlin_agent_environment as environment;

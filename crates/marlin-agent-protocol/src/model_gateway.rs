@@ -514,6 +514,7 @@ fn json_object_heap_bytes(items: &Map<String, Value>) -> usize {
 /// An observed stream interruption without remote retirement evidence.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum ModelStreamInterruption {
+    CancelledLocally,
     Transport,
     Timeout,
     InvalidResponse,
@@ -543,6 +544,7 @@ pub enum ModelStreamInterruption {
 impl fmt::Display for ModelStreamInterruption {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::CancelledLocally => formatter.write_str("model stream cancelled locally"),
             Self::Transport => formatter.write_str("stream transport failed"),
             Self::Timeout => formatter.write_str("stream transport timed out"),
             Self::InvalidResponse => {
