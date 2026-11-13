@@ -153,9 +153,12 @@ impl<'runtime> UiHost<'runtime> {
     pub(crate) fn command_candidates(
         &self,
         query: &str,
-    ) -> Result<Vec<UiCommandName>, UiProjectionError> {
-        let names = self.module.command_candidates(&self.session, query)?;
-        if names.iter().any(|name| {
+        locked: Option<&UiCommandName>,
+    ) -> Result<marlin_agent_ui::UiCommandCandidates, UiProjectionError> {
+        let candidates = self
+            .module
+            .command_candidates(&self.session, query, locked)?;
+        if candidates.names.iter().any(|name| {
             !self
                 .view
                 .commands()
@@ -166,7 +169,7 @@ impl<'runtime> UiHost<'runtime> {
                 "command candidate is not in the admitted catalog",
             ));
         }
-        Ok(names)
+        Ok(candidates)
     }
 
     pub(crate) fn complete_command(
@@ -184,6 +187,7 @@ impl<'runtime> UiHost<'runtime> {
         previous: Option<&UiCommandName>,
         direction: UiBrowseDirection,
         steps: u8,
+        restricted: bool,
     ) -> Result<Option<UiCommandName>, UiProjectionError> {
         let choice = self.module.browse_command_steps(
             &self.session,
@@ -192,6 +196,7 @@ impl<'runtime> UiHost<'runtime> {
                 previous,
                 direction,
                 steps,
+                allowed: restricted.then_some(candidates),
             },
         )?;
         admit_command_choice(candidates, choice.as_ref())?;

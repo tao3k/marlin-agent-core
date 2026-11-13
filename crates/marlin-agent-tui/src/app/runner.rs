@@ -127,15 +127,22 @@ fn browse_menu(app: &mut App, ui: &UiHost<'_>, direction: UiBrowseDirection, ste
         anchor.as_ref(),
         direction,
         steps,
+        app.pending.is_some(),
     ) {
         Ok(choice) => {
             app.command_selection = choice.map(|name| (app.composer.text().to_owned(), name));
+            app.command_selection_locked = app.command_selection.is_some();
         }
         Err(error) => publish_error(app, MessageSource::Ui, "Command menu failed", &error),
     }
 }
 
 fn apply_ui_request(app: &mut App, ui: &mut UiHost<'_>) {
+    if let Some(name) = app.command_history_request.take()
+        && let Err(error) = ui.dispatch(UiEvent::RecordCommand(name))
+    {
+        publish_error(app, MessageSource::Ui, "Command history failed", &error);
+    }
     if let Some(event) = app.ui_request.take() {
         let summary = match event {
             UiEvent::SelectBuffer(_) => "Buffer selection failed",
@@ -402,22 +409,32 @@ fn run(
             if let Some(pulse) = &host_pulse {
                 pulse.pulse(marlin_agent_telemetry::host_watchdog::HostHeartbeatSource::Tui);
             }
-            if app.command_selection.as_ref().is_some_and(|(query, _)| {
-                query != app.composer.text() || !app.composer.cursor_at_end()
-            }) {
+            if !app.composer.cursor_at_end()
+                || (!app.command_selection_locked
+                    && app
+                        .command_selection
+                        .as_ref()
+                        .is_some_and(|(query, _)| query != app.composer.text()))
+            {
                 app.command_selection = None;
+                app.command_selection_locked = false;
             }
             if app.command_draft.is_some() {
                 if !app.command_query_is_current()
                     || app.command_candidates_pending != Some(app.pending.is_some())
                 {
                     let query = app.command_lookup_query();
+                    let locked = app
+                        .command_selection
+                        .as_ref()
+                        .filter(|_| app.command_selection_locked)
+                        .map(|(_, name)| name.clone());
                     app.command_query = Some(query.clone());
                     app.command_candidates_pending = Some(app.pending.is_some());
-                    app.command_candidates =
+                    let (candidates, selected) =
                         if marlin_agent_ui::UiCommandName::is_valid_prefix(&query) {
-                            match ui.command_candidates(&query) {
-                                Ok(candidates) => candidates,
+                            match ui.command_candidates(&query, locked.as_ref()) {
+                                Ok(candidates) => (candidates.names, candidates.selected),
                                 Err(error) => {
                                     publish_error(
                                         &mut app,
@@ -425,23 +442,29 @@ fn run(
                                         "Command candidates failed",
                                         &error,
                                     );
-                                    Vec::new()
+                                    (Vec::new(), None)
                                 }
                             }
                         } else {
-                            Vec::new()
+                            (Vec::new(), None)
                         };
-                    let mut candidates = std::mem::take(&mut app.command_candidates);
+                    let mut candidates = candidates;
                     app.admit_available_commands(&mut candidates);
                     app.command_candidates = candidates;
-                    app.command_selection = None;
-                    app.seed_command_selection();
+                    app.command_selection = selected
+                        .filter(|name| app.command_candidates.contains(name))
+                        .map(|name| (app.composer.text().to_owned(), name));
+                    if app.command_selection.is_none() {
+                        app.command_selection_locked = false;
+                        app.seed_command_selection();
+                    }
                     schedule.mark_dirty();
                 }
             } else if app.command_query.take().is_some() {
                 app.command_candidates_pending = None;
                 app.command_candidates.clear();
                 app.command_selection = None;
+                app.command_selection_locked = false;
             }
             signal_exit = signals.observed_exit_code();
             if signal_exit.is_some() {
@@ -675,6 +698,7 @@ fn run(
                         app.accept_command_completion(&completed);
                     }
                     app.command_selection = None;
+                    app.command_selection_locked = false;
                     continue;
                 }
                 if *key == Key::Char('\n') && menu_active {
@@ -739,6 +763,7 @@ fn run(
                         app.composer.take();
                         app.composer.insert_text(name.as_str());
                         app.command_selection = None;
+                        app.command_selection_locked = false;
                         app.submit(&gateway, &runtime, &reply_tx);
                         apply_ui_request(&mut app, &mut ui);
                         continue;

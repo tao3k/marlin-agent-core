@@ -67,12 +67,26 @@ fn real_vm_routes_a_contributed_method_without_submitting_the_draft() {
     .unwrap();
     assert_eq!(host.view().focus.as_str(), "composer");
     assert_eq!(
-        host.command_candidates("m")
+        host.command_candidates("mode", None)
             .unwrap()
+            .names
             .iter()
             .map(UiCommandName::as_str)
             .collect::<Vec<_>>(),
-        vec!["models", "model"]
+        vec!["model", "models"]
+    );
+    let restricted = [UiCommandName::new("models").unwrap()];
+    assert_eq!(
+        host.browse_command_steps(
+            "mode",
+            &restricted,
+            None,
+            marlin_agent_ui::UiBrowseDirection::Next,
+            1,
+            true,
+        )
+        .unwrap(),
+        Some(restricted[0].clone())
     );
     assert_eq!(
         host.route_key(Key::Ctrl('r'), false, false).unwrap(),

@@ -4,13 +4,21 @@
 
 //! Runtime-owned model tool registrations and offer admission.
 
-use std::{collections::HashSet, sync::Arc};
-
-use marlin_agent_protocol::{
-    ModelGatewayCompletionOptions, ModelToolCall, ModelToolDefinition, ModelToolName,
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
 };
 
-use crate::ToolRuntime;
+use marlin_agent_protocol::{
+    ModelGatewayCompletionOptions, ModelToolCall, ModelToolCallId, ModelToolDefinition,
+    ModelToolName,
+};
+use marlin_agent_sessions::ConversationToolExecutionClaim;
+
+use crate::{
+    ModelToolDeclaration, ModelToolGovernance, RuntimeContext, ShellToolHandler, ToolRuntime,
+};
+use std::path::PathBuf;
 
 /// Typed result of one handler invocation. The caller must commit it before
 /// using it as a provider continuation.
@@ -27,6 +35,7 @@ pub type ModelToolHandler = dyn ToolRuntime<Invocation = ModelToolCall, Output =
 struct Entry {
     definition: ModelToolDefinition,
     handler: Arc<ModelToolHandler>,
+    declaration: ModelToolDeclaration,
 }
 
 /// Immutable-after-setup tool directory. The model only sees definitions
@@ -40,13 +49,13 @@ pub struct ModelToolCatalog {
 /// this value until the provider's terminal response has been admitted.
 pub struct ModelToolOffer {
     entries: Vec<Entry>,
+    index: HashMap<ModelToolName, usize>,
 }
 
 /// Rejection at the runtime offer boundary.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ModelToolCatalogError {
     DuplicateName,
-    InvalidDefinition,
     InvalidCallSet,
     UnregisteredTool,
 }
@@ -56,29 +65,47 @@ impl ModelToolCatalog {
         Self::default()
     }
 
-    /// Register exactly one schema and handler before offering tools.
+    /// Bind a selected Scheme declaration to an existing Rust handler.
+    /// Provider schemas can only be derived from the admitted declaration.
     pub fn register(
         &mut self,
-        definition: ModelToolDefinition,
+        declaration: ModelToolDeclaration,
         handler: Arc<ModelToolHandler>,
     ) -> Result<(), ModelToolCatalogError> {
-        if definition.description.trim().is_empty() || !definition.parameters.is_object() {
-            return Err(ModelToolCatalogError::InvalidDefinition);
-        }
+        let definition = declaration.definition();
         if self.contains(&definition.name) {
             return Err(ModelToolCatalogError::DuplicateName);
         }
         self.entries.push(Entry {
             definition,
             handler,
+            declaration,
         });
         Ok(())
+    }
+
+    /// Register a selected Scheme declaration against an existing host
+    /// capability. This is independent of any particular tool name.
+    pub fn register_declaration(
+        &mut self,
+        declaration: ModelToolDeclaration,
+        workspace: PathBuf,
+    ) -> Result<(), ModelToolCatalogError> {
+        let handler: Arc<ModelToolHandler> =
+            Arc::new(ShellToolHandler::new(workspace, declaration.clone()));
+        self.register(declaration, handler)
     }
 
     /// Freeze the handlers and definitions for one provider request.
     pub fn offer(&self) -> ModelToolOffer {
         ModelToolOffer {
             entries: self.entries.clone(),
+            index: self
+                .entries
+                .iter()
+                .enumerate()
+                .map(|(position, entry)| (entry.definition.name.clone(), position))
+                .collect(),
         }
     }
 
@@ -90,6 +117,39 @@ impl ModelToolCatalog {
 }
 
 impl ModelToolOffer {
+    /// Consume the journal's one-shot claim before any handler runs. The caller
+    /// must commit outcomes before sending a provider continuation.
+    pub async fn execute_claim(
+        &self,
+        claim: ConversationToolExecutionClaim,
+        context: RuntimeContext,
+    ) -> Result<Vec<(ModelToolCallId, ModelToolOutcome)>, ModelToolCatalogError> {
+        let calls = claim.into_calls();
+        self.admit_calls(&calls)?;
+        let mut outcomes = Vec::with_capacity(calls.len());
+        for call in calls {
+            let position = self
+                .index
+                .get(&call.name)
+                .ok_or(ModelToolCatalogError::UnregisteredTool)?;
+            let id = call.id.clone();
+            outcomes.push((
+                id,
+                self.entries[*position]
+                    .handler
+                    .run_tool(call, context.child_context())
+                    .await,
+            ));
+        }
+        Ok(outcomes)
+    }
+    /// Return Scheme's admitted governance for this offered tool. The value
+    /// still requires a durable user decision and one-shot execution claim.
+    pub fn governance(&self, name: &ModelToolName) -> Option<ModelToolGovernance> {
+        self.index
+            .get(name)
+            .map(|position| self.entries[*position].declaration.governance())
+    }
     /// Stable registration order for the provider request.
     pub fn definitions(&self) -> Vec<ModelToolDefinition> {
         self.entries
@@ -127,29 +187,27 @@ impl ModelToolOffer {
             return Err(ModelToolCatalogError::InvalidCallSet);
         }
         if calls.len() == 1 {
-            return self
-                .handler(&calls[0].name)
-                .map(|_| ())
-                .ok_or(ModelToolCatalogError::UnregisteredTool);
+            return self.admit_call(&calls[0]);
         }
         let mut ids = HashSet::with_capacity(calls.len());
         for call in calls {
             if !ids.insert(&call.id) {
                 return Err(ModelToolCatalogError::InvalidCallSet);
             }
-            if self.handler(&call.name).is_none() {
-                return Err(ModelToolCatalogError::UnregisteredTool);
-            }
+            self.admit_call(call)?;
         }
         Ok(())
     }
 
-    /// A handler is only accessible within the runtime execution boundary;
-    /// the UI and provider response cannot invoke it from a name alone.
-    fn handler(&self, name: &ModelToolName) -> Option<&Arc<ModelToolHandler>> {
-        self.entries
-            .iter()
-            .find(|entry| &entry.definition.name == name)
-            .map(|entry| &entry.handler)
+    fn admit_call(&self, call: &ModelToolCall) -> Result<(), ModelToolCatalogError> {
+        let position = self
+            .index
+            .get(&call.name)
+            .ok_or(ModelToolCatalogError::UnregisteredTool)?;
+        let entry = &self.entries[*position];
+        if !entry.declaration.admits(call) {
+            return Err(ModelToolCatalogError::InvalidCallSet);
+        }
+        Ok(())
     }
 }

@@ -13,6 +13,7 @@ fn request(script: &str, directory: &std::path::Path, limit: usize) -> BoundedPr
         program: "/bin/sh".into(),
         arguments: vec!["-c".into(), script.into()],
         working_directory: directory.into(),
+        environment: marlin_agent_protocol::ProcessEnvironmentPolicy::Inherit,
         remove_environment: vec![],
         stdout_limit: limit,
         timeout: Duration::from_secs(30),

@@ -7,6 +7,7 @@
 mod cleanup;
 mod context;
 mod events;
+mod fanout_item;
 mod handle;
 mod receipt;
 mod task;
@@ -14,10 +15,8 @@ mod traits;
 
 pub use context::{RuntimeContext, RuntimeExecutionIdentity};
 pub use events::{EventStream, RuntimeEventSink, RuntimeEventStream};
-pub use handle::{
-    RuntimeTaskScope, TokioAgentRuntime, TokioAgentRuntimeBuildRequest,
-    WorkingCopySubAgentFanoutItem,
-};
+pub use fanout_item::WorkingCopySubAgentFanoutItem;
+pub use handle::{RuntimeTaskScope, TokioAgentRuntime, TokioAgentRuntimeBuildRequest};
 pub use marlin_agent_environment::{
     WorkingCopyActiveBinding, WorkingCopyBaseRef, WorkingCopyBranchName,
     WorkingCopyCommandInvocation, WorkingCopyCommandProgram, WorkingCopyCommandProjection,

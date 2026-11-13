@@ -11,6 +11,7 @@ mod agent_graph;
 mod graph_loop;
 mod model_gateway;
 mod model_tool_catalog;
+mod model_tooling;
 mod process_executor;
 mod resilience;
 mod tokio_runtime;
@@ -43,6 +44,10 @@ pub use model_gateway::{
 };
 pub use model_tool_catalog::{
     ModelToolCatalog, ModelToolCatalogError, ModelToolHandler, ModelToolOffer, ModelToolOutcome,
+};
+pub use model_tooling::{
+    ModelToolCapability, ModelToolDeclaration, ModelToolGovernance, ShellToolDeclarationRequest,
+    ShellToolHandler,
 };
 pub use process::{
     AsyncManagedChildProcess, ManagedChildProcessSpec, ManagedChildStdin,

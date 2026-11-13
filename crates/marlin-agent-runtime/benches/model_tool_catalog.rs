@@ -7,9 +7,10 @@
 use std::{hint::black_box, sync::Arc, time::Duration};
 
 use criterion::{Criterion, criterion_group, criterion_main};
-use marlin_agent_protocol::{ModelToolCall, ModelToolCallId, ModelToolDefinition, ModelToolName};
+use marlin_agent_protocol::{ModelToolCall, ModelToolCallId, ModelToolName};
 use marlin_agent_runtime::{
-    ModelToolCatalog, ModelToolOutcome, RuntimeContext, RuntimeFuture, ToolRuntime,
+    ModelToolCatalog, ModelToolDeclaration, ModelToolOutcome, RuntimeContext, RuntimeFuture,
+    ShellToolDeclarationRequest, ToolRuntime,
 };
 
 struct Handler;
@@ -32,11 +33,14 @@ fn admission(c: &mut Criterion) {
     let name = ModelToolName::new("read_workspace").unwrap();
     catalog
         .register(
-            ModelToolDefinition {
+            ModelToolDeclaration::shell(ShellToolDeclarationRequest {
                 name: name.clone(),
                 description: "Read a bounded workspace fact".into(),
-                parameters: serde_json::json!({"type": "object"}),
-            },
+                argument: "command".into(),
+                timeout_seconds: 5,
+                output_limit: 1024,
+            })
+            .unwrap(),
             Arc::new(Handler),
         )
         .unwrap();
@@ -46,7 +50,10 @@ fn admission(c: &mut Criterion) {
             .map(|index| ModelToolCall {
                 id: ModelToolCallId::new(format!("call-{index}")).unwrap(),
                 name: name.clone(),
-                arguments: serde_json::Map::new(),
+                arguments: serde_json::json!({"command":"printf ok"})
+                    .as_object()
+                    .unwrap()
+                    .clone(),
             })
             .collect::<Vec<_>>();
         c.bench_function(&format!("model-tool/admit-{count}"), |b| {

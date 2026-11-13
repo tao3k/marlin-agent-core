@@ -24,14 +24,18 @@
                                         marlin-ui-session-open marlin-ui-session-project
                                         marlin-ui-session-dispatch
                                         marlin-ui-session-browse-command
+                                        marlin-ui-session-command-candidates
                                         marlin-ui-session-review-menu)))
           (let* ((publication (eval 'marlin-agent-core.init.exports))
                  (open (eval 'marlin-ui-session-open))
                  (project (eval 'marlin-ui-session-project))
                  (dispatch (eval 'marlin-ui-session-dispatch))
                  (browse (eval 'marlin-ui-session-browse-command))
+                 (candidates (eval 'marlin-ui-session-command-candidates))
                  (review-menu (eval 'marlin-ui-session-review-menu))
                  (state (open (vector publication #("model" "session" #() #()) #())))
+                 (names (vector->list (vector-ref (candidates (vector state "" #f)) 0)))
+                 (ranked (vector-ref (dispatch (vector state 'record-command 'runtime)) 0))
                  (view (project state))
                  (selection (dispatch (vector state 'select-profile 'pi)))
                  (pi-view (project (vector-ref selection 0)))
@@ -43,9 +47,15 @@
                  (help-profile (dispatch (vector help-state 'select-profile 'pi)))
                  (help-pi-view (project (vector-ref help-profile 0))))
             (check-equal? (vector-ref view 0) "model")
-            (check-equal? (browse (vector state "" #f 'next 1)) "help")
-            (check-equal? (browse (vector state "" "help" 'next 2)) "model")
-            (check-equal? (browse (vector state "" "help" 'previous 1)) "clear")
+            (check-equal? (browse (vector state "" #f 'next 1 #f)) (car names))
+            (check-equal? (browse (vector state "" (car names) 'next 2 #f)) (caddr names))
+            (check-equal? (browse (vector state "" (car names) 'previous 1 #f)) (car (reverse names)))
+            (check-equal? (vector-ref (vector-ref (candidates (vector ranked "" #f)) 0) 0) "runtime")
+            (check-equal? (browse (vector ranked "" #f 'next 1 #f)) "runtime")
+            (check-equal? (browse (vector ranked "" #f 'next 1 #("clear"))) "clear")
+            (check-equal? (vector->list (vector-ref (candidates (vector state "" #f)) 0)) names)
+            (check-equal? (vector-ref (candidates (vector state "mode" "models")) 1) "models")
+            (check-equal? (vector-ref (candidates (vector state "mode" "runtime")) 1) #f)
             (check-equal?
               (review-menu (vector state 'permission-escalation))
               '#("Permission: "

@@ -132,6 +132,43 @@ fn shared_ui_admission_rejects_effect_and_snapshot_substitution() {
 }
 
 #[test]
+fn command_history_admits_only_catalog_names_without_changing_the_view() {
+    use marlin_agent_ui::{UiCommand, UiCommandArguments, UiCommandCapability, UiCommandName};
+    let mut view = workbench("composer");
+    let name = UiCommandName::new("clear").unwrap();
+    view.regions.push(UiRegion::Commands(vec![UiCommand {
+        name: name.clone(),
+        description: "Clear".into(),
+        arguments: UiCommandArguments::None,
+        capability: UiCommandCapability::Clear,
+        value: None,
+    }]));
+    let intent = UiIntent::Focus(id("composer"));
+    assert!(
+        view.admit_successor(&view, UiEvent::RecordCommand(name), &intent)
+            .is_ok()
+    );
+    assert!(
+        view.admit_successor(
+            &view,
+            UiEvent::RecordCommand(UiCommandName::new("unknown").unwrap()),
+            &intent
+        )
+        .is_err()
+    );
+    let mut changed = view.clone();
+    changed.layout.max_command_rows += 1;
+    assert!(
+        view.admit_successor(
+            &changed,
+            UiEvent::RecordCommand(UiCommandName::new("clear").unwrap()),
+            &intent
+        )
+        .is_err()
+    );
+}
+
+#[test]
 fn profile_admission_preserves_status_ownership_while_allowing_modeline_order() {
     use marlin_agent_ui::{UiProfileName, UiStatusItem, UiStatusTone};
     let modeline = |identity: &str, label: &str, keep_priority| UiStatusItem {

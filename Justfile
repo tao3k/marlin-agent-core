@@ -112,7 +112,14 @@ scheme-package-gate:
 
 # Build the init-selected Scheme graph through the package Builder.
 scheme-build:
-  cd scheme && gerbil build
+  #!/usr/bin/env bash
+  set -euo pipefail
+  if [[ "$(uname -s)" == Darwin ]]; then
+    unset SDKROOT DEVELOPER_DIR NIX_CFLAGS_COMPILE
+    export PATH="${GERBIL_PREFIX:+$GERBIL_PREFIX/bin:}/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+  fi
+  cd scheme
+  gerbil build
 
 # Stage the selected package's linked TUI programme.
 tui-aot-stage: scheme-build tui-program-stage

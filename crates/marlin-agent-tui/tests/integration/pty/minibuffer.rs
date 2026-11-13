@@ -7,6 +7,81 @@ use super::{Duration, Instant, Terminal, fs, mx_last, mx_position, mx_selected, 
 
 #[cfg(feature = "linked-ui")]
 #[test]
+fn accepted_command_ranks_first_on_next_mx_and_navigation_uses_that_order() {
+    let directory = tempfile::tempdir().unwrap();
+    let config = directory.path().join("config.toml");
+    fs::write(&config, "provider=\"openai\"\nmodel=\"gpt-fixture\"\nendpoint=\"http://127.0.0.1:1/v1/responses\"\nprotocol=\"open-ai-responses\"\ncredential_env=\"MARLIN_TUI_FIXTURE_KEY\"\n").unwrap();
+    let mut terminal = Terminal::start(&config);
+    terminal.wait_for(Duration::from_secs(10), "initial Modeline", |output| {
+        screen_lines(output)[28].contains("MARLIN")
+    });
+    terminal.send(b"\x1bxclear");
+    terminal.wait_for(Duration::from_secs(5), "exact command", |output| {
+        screen_lines(output)
+            .iter()
+            .any(|line| line.contains("M-x clear"))
+    });
+    terminal.send(b"\r");
+    terminal.wait_for(Duration::from_secs(5), "command accepted", |output| {
+        let rows = screen_lines(output);
+        rows[28].contains("MARLIN") && !rows.iter().any(|line| mx_position(line).is_some())
+    });
+    terminal.send(b"\x1bx");
+    terminal.wait_for(Duration::from_secs(5), "recent command first", |output| {
+        let rows = screen_lines(output);
+        rows.iter().any(|line| mx_selected(line, 1))
+            && rows.iter().any(|line| line.contains("› clear"))
+    });
+    terminal.send(b"\x1b[B");
+    terminal.wait_for(Duration::from_secs(5), "ranked next", |output| {
+        screen_lines(output).iter().any(|line| mx_selected(line, 2))
+    });
+    terminal.send(b"\x1b[A");
+    terminal.wait_for(Duration::from_secs(5), "ranked navigation", |output| {
+        let rows = screen_lines(output);
+        rows.iter().any(|line| mx_selected(line, 1))
+            && rows.iter().any(|line| line.contains("› clear"))
+    });
+    terminal.send(b"\x07\x11");
+    terminal.wait_exit(Duration::from_secs(5));
+    terminal.assert_restored();
+}
+
+#[cfg(feature = "linked-ui")]
+#[test]
+fn filtering_preserves_a_user_selected_candidate_when_still_visible() {
+    let directory = tempfile::tempdir().unwrap();
+    let config = directory.path().join("config.toml");
+    fs::write(&config, "provider=\"openai\"\nmodel=\"gpt-fixture\"\nendpoint=\"http://127.0.0.1:1/v1/responses\"\nprotocol=\"open-ai-responses\"\ncredential_env=\"MARLIN_TUI_FIXTURE_KEY\"\n").unwrap();
+    let mut terminal = Terminal::start(&config);
+    terminal.wait_for(Duration::from_secs(10), "initial Modeline", |output| {
+        screen_lines(output)[28].contains("MARLIN")
+    });
+    terminal.send(b"\x1bxmode\x1b[B");
+    terminal.wait_for(Duration::from_secs(5), "selected models", |output| {
+        let rows = screen_lines(output);
+        rows.iter()
+            .any(|line| mx_selected(line, 2) && line.contains(" M-x mode"))
+            && rows.iter().any(|line| line.contains("› models"))
+    });
+    terminal.send(b"\x7f");
+    terminal.wait_for(
+        Duration::from_secs(5),
+        "locked selection after filtering",
+        |output| {
+            let rows = screen_lines(output);
+            rows.iter()
+                .any(|line| mx_selected(line, 2) && line.contains(" M-x mod"))
+                && rows.iter().any(|line| line.contains("› models"))
+        },
+    );
+    terminal.send(b"\x07\x11");
+    terminal.wait_exit(Duration::from_secs(5));
+    terminal.assert_restored();
+}
+
+#[cfg(feature = "linked-ui")]
+#[test]
 fn hydra_hint_and_foreign_key_use_the_minibuffer_without_losing_the_draft() {
     let directory = tempfile::tempdir().unwrap();
     let config = directory.path().join("config.toml");
@@ -122,7 +197,6 @@ fn first_mx_arrow_is_not_lost_before_the_menu_frame() {
     terminal.wait_for(Duration::from_secs(5), "immediate Down", |output| {
         let rows = screen_lines(output);
         rows.iter().any(|line| mx_selected(line, 2))
-            && rows.iter().any(|line| line.contains("› models"))
     });
     terminal.send(b"\x07");
     terminal.wait_for(Duration::from_secs(5), "closed M-x", |output| {
@@ -132,7 +206,7 @@ fn first_mx_arrow_is_not_lost_before_the_menu_frame() {
     terminal.send(b"\x1bx\x1b[A");
     terminal.wait_for(Duration::from_secs(5), "immediate Up", |output| {
         let rows = screen_lines(output);
-        rows.iter().any(|line| mx_last(line)) && rows.iter().any(|line| line.contains("› clear"))
+        rows.iter().any(|line| mx_last(line))
     });
     terminal.send(b"\x07");
     terminal.wait_for(Duration::from_secs(5), "closed M-x", |output| {
@@ -161,13 +235,11 @@ fn first_mx_arrow_is_not_lost_before_the_menu_frame() {
     terminal.wait_for(Duration::from_secs(5), "explicit CSI Down", |output| {
         let rows = screen_lines(output);
         rows.iter().any(|line| mx_selected(line, 2))
-            && rows.iter().any(|line| line.contains("› models"))
     });
     terminal.send(b"\x1b[1;1A");
     terminal.wait_for(Duration::from_secs(5), "explicit CSI Up", |output| {
         let rows = screen_lines(output);
         rows.iter().any(|line| mx_selected(line, 1))
-            && rows.iter().any(|line| line.contains("› help"))
     });
     terminal.send(b"\x07");
     terminal.wait_for(
@@ -207,15 +279,15 @@ fn first_mx_arrow_is_not_lost_before_the_menu_frame() {
     });
     // Filtering and the first navigation can also arrive before either menu
     // frame is painted. The new candidate set must be selected first.
-    terminal.send(b"\x1bxm\x1b[B");
+    terminal.send(b"\x1bxmode\x1b[B");
     terminal.wait_for(
         Duration::from_secs(5),
         "immediate filtered Down",
         |output| {
             let rows = screen_lines(output);
             rows.iter()
-                .any(|line| mx_selected(line, 2) && line.contains(" M-x m"))
-                && rows.iter().any(|line| line.contains("› model"))
+                .any(|line| mx_selected(line, 2) && line.contains(" M-x mode"))
+                && rows.iter().any(|line| line.contains("› models"))
         },
     );
     terminal.send(b"\x07");
@@ -225,7 +297,7 @@ fn first_mx_arrow_is_not_lost_before_the_menu_frame() {
             .any(|line| mx_position(line).is_some())
     });
     // The first arrow must change the executable choice, not only its paint.
-    terminal.send(b"\x1bx\x1b[B\r");
+    terminal.send(b"\x1bxmode\x1b[B\r");
     terminal.wait_for(
         Duration::from_secs(5),
         "first-arrow command executed",
@@ -260,7 +332,7 @@ fn mx_abbreviation_opens_the_scheme_declared_buffer_menu() {
     terminal.wait_for(Duration::from_secs(5), "scoped buffer menu", |output| {
         let rows = screen_lines(output);
         rows.iter().any(|line| line.contains("1/4 Switch to: "))
-            && rows.iter().any(|line| line.contains("› conversation"))
+            && rows.iter().any(|line| line.contains("› help"))
     });
     terminal.send(b"\x07\x11");
     terminal.wait_exit(Duration::from_secs(5));
@@ -367,7 +439,6 @@ fn first_mx_arrows_move_the_visible_selection_and_c_x_b_opens_buffers() {
         |output| {
             let rows = screen_lines(output);
             rows.iter().any(|line| mx_last(line))
-                && rows.iter().any(|line| line.contains("› clear"))
         },
     );
     terminal.send(b"\x1b[B");
@@ -377,7 +448,6 @@ fn first_mx_arrows_move_the_visible_selection_and_c_x_b_opens_buffers() {
         |output| {
             let rows = screen_lines(output);
             rows.iter().any(|line| mx_selected(line, 1))
-                && rows.iter().any(|line| line.contains("› help"))
         },
     );
     terminal.send(b"\x1b[B");
@@ -387,7 +457,6 @@ fn first_mx_arrows_move_the_visible_selection_and_c_x_b_opens_buffers() {
         |output| {
             let rows = screen_lines(output);
             rows.iter().any(|line| mx_selected(line, 2))
-                && rows.iter().any(|line| line.contains("› models"))
         },
     );
     terminal.send(b"\x1b[A");
@@ -397,7 +466,6 @@ fn first_mx_arrows_move_the_visible_selection_and_c_x_b_opens_buffers() {
         |output| {
             let rows = screen_lines(output);
             rows.iter().any(|line| mx_selected(line, 1))
-                && rows.iter().any(|line| line.contains("› help"))
         },
     );
     terminal.send(b"\x1b[<65;30;25M");
@@ -428,11 +496,11 @@ fn first_mx_arrows_move_the_visible_selection_and_c_x_b_opens_buffers() {
         "reverse burst returns to first",
         |output| screen_lines(output).iter().any(|line| mx_selected(line, 1)),
     );
-    terminal.send(b"m");
+    terminal.send(b"mode");
     terminal.wait_for(Duration::from_secs(5), "filtered command list", |output| {
         screen_lines(output)
             .iter()
-            .any(|line| mx_selected(line, 1) && line.contains(" M-x m"))
+            .any(|line| mx_selected(line, 1) && line.contains(" M-x mode"))
     });
     terminal.send(b"\x1b[B");
     terminal.wait_for(
@@ -441,8 +509,8 @@ fn first_mx_arrows_move_the_visible_selection_and_c_x_b_opens_buffers() {
         |output| {
             let rows = screen_lines(output);
             rows.iter()
-                .any(|line| mx_selected(line, 2) && line.contains(" M-x m"))
-                && rows.iter().any(|line| line.contains("› model"))
+                .any(|line| mx_selected(line, 2) && line.contains(" M-x mode"))
+                && rows.iter().any(|line| line.contains("› models"))
         },
     );
     terminal.send(b"\x07");
@@ -498,7 +566,7 @@ fn mx_profile_switch_uses_the_selected_scheme_modeline() {
     terminal.wait_for(Duration::from_secs(5), "Scheme theme menu", |output| {
         let rows = screen_lines(output);
         rows.iter().any(|line| line.contains("Theme: "))
-            && rows.iter().any(|line| line.contains("› doom-one"))
+            && rows.iter().any(|line| line.contains("› pi"))
     });
     terminal.send(b"pi\r");
     terminal.wait_for(Duration::from_secs(5), "pi Modeline", |output| {

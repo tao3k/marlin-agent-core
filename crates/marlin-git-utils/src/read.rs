@@ -44,6 +44,13 @@ impl BoundedProcessExecutor for LocalExecutor {
             let timeout = request.timeout;
             let operation = async move {
                 let mut command = Command::new(request.program);
+                if request.environment == marlin_agent_protocol::ProcessEnvironmentPolicy::Clean {
+                    command.env_clear();
+                    command.env(
+                        "PATH",
+                        marlin_agent_protocol::ProcessEnvironmentPolicy::CLEAN_PATH,
+                    );
+                }
                 command
                     .args(request.arguments)
                     .current_dir(request.working_directory)
@@ -106,6 +113,7 @@ pub(crate) async fn read_git_with(
         program: "git".into(),
         arguments,
         working_directory: path.to_owned(),
+        environment: marlin_agent_protocol::ProcessEnvironmentPolicy::Inherit,
         remove_environment: [
             "GIT_LITERAL_PATHSPECS",
             "GIT_GLOB_PATHSPECS",

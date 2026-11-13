@@ -204,6 +204,13 @@ pub struct UiCommand {
     pub value: Option<String>,
 }
 
+/// Ordered Scheme candidates and the user's still-visible locked selection.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct UiCommandCandidates {
+    pub names: Vec<UiCommandName>,
+    pub selected: Option<UiCommandName>,
+}
+
 /// Scheme-selected Minibuffer presentation for an existing runtime human gate.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct UiReviewMenu {
@@ -525,6 +532,8 @@ impl UiWorkbench {
                 )
         ) || (profile_change
             && matches!(intent, UiIntent::Focus(id) if id == &self.focus))
+            || (matches!(&event, UiEvent::RecordCommand(name) if self.commands().iter().any(|command| &command.name == name))
+                && matches!(intent, UiIntent::Focus(id) if id == &self.focus))
             || (buffer_change
                 && matches!((&event, intent), (UiEvent::SelectBuffer(requested), UiIntent::SelectBuffer(id))
                     if requested == id && next.frame.selected_buffer() == Some(id)))
@@ -654,6 +663,8 @@ pub enum UiEvent {
     ScrollDown,
     SelectProfile(UiProfileName),
     SelectBuffer(UiBufferId),
+    /// A successfully admitted command, for Scheme-owned completion history.
+    RecordCommand(UiCommandName),
 }
 
 /// A bounded Scheme profile identity; Rust does not enumerate profile names.
@@ -692,6 +703,8 @@ pub struct UiBrowseRequest<'a> {
     pub previous: Option<&'a UiCommandName>,
     pub direction: UiBrowseDirection,
     pub steps: u8,
+    /// Optional runtime-admitted subset, retaining Scheme's original order.
+    pub allowed: Option<&'a [UiCommandName]>,
 }
 
 /// A presentation proposal; only the runtime can authorize its effects.

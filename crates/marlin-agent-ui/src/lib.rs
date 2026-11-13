@@ -30,12 +30,12 @@ pub use element::{
 #[cfg(feature = "scheme-ui")]
 pub use model::{
     UiBrowseDirection, UiBrowseRequest, UiBufferId, UiCommand, UiCommandArguments,
-    UiCommandCapability, UiCommandName, UiComponentId, UiContent, UiEditorAction, UiEvent, UiFrame,
-    UiFrameSpec, UiIntent, UiKeyBinding, UiKeyCommand, UiKeyToken, UiLayoutPolicy, UiOpenFacts,
-    UiProfileName, UiProjectionError, UiRegion, UiReviewChoice, UiReviewMenu, UiRgb,
-    UiScrollDirection, UiStatusItem, UiStatusTone, UiTheme, UiToolReviewChoice,
-    UiToolReviewDecision, UiToolReviewMenu, UiTranscriptPolicy, UiTransient, UiTransientForeign,
-    UiTransientHead, UiTransientId, UiWindow, UiWorkbench,
+    UiCommandCandidates, UiCommandCapability, UiCommandName, UiComponentId, UiContent,
+    UiEditorAction, UiEvent, UiFrame, UiFrameSpec, UiIntent, UiKeyBinding, UiKeyCommand,
+    UiKeyToken, UiLayoutPolicy, UiOpenFacts, UiProfileName, UiProjectionError, UiRegion,
+    UiReviewChoice, UiReviewMenu, UiRgb, UiScrollDirection, UiStatusItem, UiStatusTone, UiTheme,
+    UiToolReviewChoice, UiToolReviewDecision, UiToolReviewMenu, UiTranscriptPolicy, UiTransient,
+    UiTransientForeign, UiTransientHead, UiTransientId, UiWindow, UiWorkbench,
 };
 #[cfg(feature = "scheme-ui")]
 pub use projection::{

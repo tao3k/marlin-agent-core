@@ -22,6 +22,7 @@
   (ui-themes)
   (ui-layout)
   (ui)
+  (tooling)
   (hooks)
   (policy)
   (deck-runtime)

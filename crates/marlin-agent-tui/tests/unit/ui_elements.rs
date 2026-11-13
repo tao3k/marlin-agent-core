@@ -260,6 +260,29 @@ fn hit_regions_follow_painted_layout_and_clip_at_terminal_edges() {
 
 proptest! {
     #[test]
+    fn prompt_keeps_a_bounded_suffix_and_cursor(width in 1u16..80, length in 0usize..300) {
+        let tree = UiElement::Template {
+            background: marlin_agent_ui::UiBackground::None,
+            spans: vec![
+                UiTemplateSpan { value: UiTemplateValue::Literal("> ".into()), tone: UiTone::Normal, bold: false },
+                UiTemplateSpan { value: UiTemplateValue::Binding(UiComponentId::new("query").unwrap()), tone: UiTone::Normal, bold: false },
+            ],
+        };
+        let theme = UiTheme::default();
+        let inputs = UiRenderInputs { theme: &theme, offset: &|_| 0, facts: &|_| false, bindings: &[] };
+        let query = "x".repeat(length);
+        let mut terminal = Terminal::new(TestBackend::new(width, 1)).unwrap();
+        let mut cursor = None;
+        terminal.draw(|frame| cursor = render_prompt(frame, frame.area(), &tree, &inputs, "query", &query)).unwrap();
+        let available = usize::from(width).saturating_sub(2).saturating_sub(1);
+        let visible = length.min(available);
+        prop_assert_eq!(cursor, Some(((2 + visible).min(usize::from(width - 1)) as u16, 0)));
+        for column in 2..(2 + visible) {
+            prop_assert_eq!(terminal.backend().buffer()[(column as u16, 0)].symbol(), "x");
+        }
+    }
+
+    #[test]
     fn choice_selects_first_true_fact(flags in proptest::collection::vec(proptest::bool::ANY, 0..32)) {
         let text = |value: String| UiElement::Text(vec![UiSpan { text: value, tone: UiTone::Normal }]);
         let tree = UiElement::Choice {

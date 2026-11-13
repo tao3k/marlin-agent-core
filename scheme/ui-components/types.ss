@@ -10,6 +10,9 @@
 
 (def UiCommandEntries (.cc Type. '.element? marlin-ui-command-entries?))
 (def UiTransientEntries (.cc Type. '.element? vector?))
+(def UiCommandQuery (.cc Type. '.element? (lambda (value) (and (string? value) (<= (string-length value) 32)))))
+(def UiCommandHistory (.cc Type. '.element? (lambda (value) (and (list? value) (<= (length value) 256) (andmap (lambda (name) (and (string? name) (<= (string-length name) 32))) value)))))
+(def UiCommandNames (.cc Type. '.element? (lambda (value) (and (list? value) (<= (length value) 256) (andmap string? value)))))
 
 (def UiComponentsScopeContract
   (.cc (Record identity: [(Exactly 'marlin/ui-components)]
@@ -19,6 +22,7 @@
                extension-node: [(Fun Object <- Object)]
                command-catalog: [Object]
                command-entries: [(Fun UiCommandEntries <- Object)]
+               command-candidates: [(Fun UiCommandNames <- UiCommandEntries UiCommandQuery UiCommandHistory)]
                command-extensions: [(Fun UiCommandEntries <-)]
                transient-entries: [(Fun UiTransientEntries <-)]
                browse-command: [(Fun Object <- UiCommandEntries Object)])

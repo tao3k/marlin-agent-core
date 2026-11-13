@@ -23,8 +23,20 @@ pub struct BoundedProcessRequest {
     pub arguments: Vec<OsString>,
     pub working_directory: PathBuf,
     pub remove_environment: Vec<OsString>,
+    pub environment: ProcessEnvironmentPolicy,
     pub stdout_limit: usize,
     pub timeout: Duration,
+}
+/// Whether a process sees the host environment. Model tools use a clean one.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ProcessEnvironmentPolicy {
+    Inherit,
+    Clean,
+}
+
+impl ProcessEnvironmentPolicy {
+    pub const CLEAN_PATH: &'static str =
+        "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin";
 }
 #[derive(Debug)]
 pub struct BoundedProcessOutput {

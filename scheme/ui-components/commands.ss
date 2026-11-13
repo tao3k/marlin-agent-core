@@ -137,30 +137,62 @@
              (loop (+ needle 1) (+ position 1)))
             (else (loop needle (+ position 1)))))))
 
-(def (marlin-ui-command-candidates entries query)
+;;; The bounded history uses the same decay positions on every query.
+(def command-history-decay
+  (list->vector
+    (map (lambda (index) (inexact->exact (round (* 10 (exp (/ (- index) 100.0))))))
+         (iota 256))))
+
+(def (marlin-ui-command-candidates entries query history)
   (unless (and (marlin-ui-command-entries? entries)
-               (string? query) (<= (string-length query) 32))
+               (string? query) (<= (string-length query) 32)
+               (list? history) (<= (length history) 256)
+               (andmap (lambda (name) (and (string? name) (<= (string-length name) 32))) history))
     (error "invalid UI command candidate request"))
-  (let (prefixes (filter (lambda (entry) (string-prefix? query (car entry))) entries))
-    ;; Keep exact prefix results and their catalog order. Abbreviations fall
-    ;; back to a bounded subsequence scan only when no prefix matches.
-    (map car (if (pair? prefixes)
-               prefixes
-               (filter (lambda (entry) (command-subsequence? query (car entry)))
-                       entries)))))
+  ;; Vertico's history-length-alpha ordering: recent history first, repeated
+  ;; uses receive an exponentially decaying boost, then length and alphabetic
+  ;; order. The first history item is never displaced by duplicates.
+  (let (ranks (make-hash-table))
+    (let loop ((rest history) (index 0))
+      (unless (null? rest)
+        (let* ((name (car rest))
+               (prior (hash-get ranks name))
+               (rank (if prior
+                       (- prior (vector-ref command-history-decay index))
+                       (if (zero? index) -1000000 index))))
+          (hash-put! ranks name rank)
+          (loop (cdr rest) (+ index 1)))))
+    (let* ((names (map car (filter (lambda (entry) (command-subsequence? query (car entry))) entries)))
+           (ordered
+             (list-sort
+               (lambda (left right)
+                 (let ((lrank (hash-get ranks left)) (rrank (hash-get ranks right)))
+                   (cond ((and lrank rrank) (if (= lrank rrank) (string<? left right) (< lrank rrank)))
+                         (lrank #t) (rrank #f)
+                         ((= (string-length left) (string-length right)) (string<? left right))
+                         (else (< (string-length left) (string-length right))))))
+               names)))
+      ;; Vertico gives an exact field match priority over the history sort.
+      (if (member query ordered) (cons query (filter (lambda (name) (not (string=? name query))) ordered)) ordered))))
 
 (def (marlin-ui-browse-command entries event)
   (let* ((query (.ref event 'query))
          (previous (.ref event 'previous))
          (direction (.ref event 'direction))
-         (steps (.ref event 'steps)))
+         (steps (.ref event 'steps))
+         (history (.ref event 'history))
+         (allowed (.ref event 'allowed)))
     (unless (and (marlin-ui-command-entries? entries)
                  (string? query) (<= 0 (string-length query) 32)
                  (or (not previous) (and (string? previous) (<= (string-length previous) 32)))
                  (memq direction '(next previous))
-                 (integer? steps) (<= 1 steps 16))
+                 (integer? steps) (<= 1 steps 16)
+                 (or (not allowed)
+                     (and (list? allowed) (<= (length allowed) 256)
+                          (andmap (lambda (name) (and (string? name) (<= (string-length name) 32))) allowed))))
       (error "invalid command browse event or catalog"))
-    (let* ((matches (marlin-ui-command-candidates entries query))
+    (let* ((all (marlin-ui-command-candidates entries query history))
+           (matches (if allowed (filter (lambda (name) (member name allowed)) all) all))
            (count (length matches))
            (found (and previous
                        (let loop ((rest matches) (index 0))

@@ -24,6 +24,7 @@ members = [
     "crates/marlin-agent-stream",
     "crates/marlin-agent-test-support",
     "crates/marlin-agent-tui",
+    "crates/marlin-agent-tooling",
     "crates/marlin-agent-ui",
     "crates/marlin-deck-runtime",
     "crates/marlin-gerbil-ir",

@@ -7,8 +7,9 @@
   identity: 'c-abi
   core: (.o requires: (.o Context: (.o module-id: 'context)
                          Ui: (.o module-id: 'ui)
-                         DeckRuntime: (.o module-id: 'deck-runtime))
+                         DeckRuntime: (.o module-id: 'deck-runtime)
+                         Tooling: (.o module-id: 'tooling))
             scope-contract: CAbiScopeContract
-            exports: (make-c-abi-scope Ui Context DeckRuntime)
+            exports: (make-c-abi-scope Ui Context DeckRuntime Tooling)
             projections: (list Build))
   features: (.o))

@@ -296,6 +296,18 @@ package MarlinDeclarativeUi {
                once against its call ID and source turn. A graph human gate
                may be used only when an actual graph run produced it. */
     }
+    requirement <'MAR-UI-R22'> schemeToolGovernance {
+        doc /* Yuanxu selects the Scheme tooling Module and projects bounded
+               native declaration values. Rust validates names, capability,
+               arguments and limits once, then binds each declaration to a
+               reusable runtime handler. Scheme owns the governance choice;
+               a tool request cannot execute before a matching durable user
+               decision and one-shot claim. A rejected, stale or unclaimed
+               request has no process effect. Execution results must be
+               durable before provider continuation, and uncertain effects
+               cannot be replayed as success. Tooling remains unadvertised
+               until the complete Ask-to-result path is connected. */
+    }
     requirement <'MAR-UI-R05'> reproduciblePerformance {
         doc /* Qualification fixes workload, terminal geometry, fixture,
                revisions, build mode, machine and sampling. Measure idle and
@@ -481,6 +493,28 @@ package MarlinDeclarativeUi {
                one native ABI call rather than scrolling hidden content or
                calling the VM for every pulse. */
     }
+    requirement <'MAR-UI-R21'> verticoCommandCompletion {
+        doc /* M-x completion uses one Scheme-owned candidate order for the
+               visible list, first selection and directional navigation.
+               Accepted command identities enter bounded history; cancelled,
+               unknown or incomplete input and command arguments do not.
+               Exact fields outrank history, recent commands outrank unseen
+               commands, repeated uses receive a decaying boost, and ties
+               have deterministic length and lexical order. A selected
+               candidate remains selected across filtering when still present.
+               Candidate count and scroll margin stay bounded independently of
+               catalog size. Optional Rust-owned storage may restore bounded
+               command identities across launches without saving arguments,
+               prompts or serializing the native Scheme API. Different completion
+               categories retain separate histories and may select an explicit
+               category ordering. Selected and matched text remain visually
+               distinct while descriptions stay aligned and clipped safely.
+               Scheme properties must verify sorting, history limits and
+               filtering; linked PTY checks must verify real selection,
+               navigation, cancellation, query edits and window geometry.
+               Measure first open, query edits and navigation separately from
+               VM startup, including tail latency and large bounded catalogs. */
+    }
 
     allocation extensions allocate composableExtensions to engine.modulePublication;
     allocation specialization allocate composableExtensions to engine.functionalComposition;
@@ -513,6 +547,9 @@ package MarlinDeclarativeUi {
     allocation pointerDecode allocate coalescedPointerScroll to engine.terminalHost;
     allocation pointerBound allocate coalescedPointerScroll to engine.incrementalView;
     allocation pointerEvidence allocate coalescedPointerScroll to engine.qualification;
+    allocation commandRanking allocate verticoCommandCompletion to engine.modulePublication;
+    allocation rankedInput allocate verticoCommandCompletion to engine.nativeBoundary;
+    allocation rankingEvidence allocate verticoCommandCompletion to engine.qualification;
 
     attribute def BeginUpdate;
     attribute def CandidateReady;

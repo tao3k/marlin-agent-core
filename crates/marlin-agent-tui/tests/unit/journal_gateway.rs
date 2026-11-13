@@ -12,11 +12,12 @@ use super::journal_gateway::JournalGateway;
 use marlin_agent_protocol::{
     ModelEndpoint, ModelGatewayCompletionChoice, ModelGatewayCompletionOptions,
     ModelGatewayCompletionResponse, ModelGatewayError, ModelGatewayFuture, ModelGatewayRequest,
-    ModelGatewayResult, ModelStreamInterruption, ModelToolCall, ModelToolCallId,
-    ModelToolDefinition, ModelToolName, assistant_gateway_message, user_gateway_message,
+    ModelGatewayResult, ModelStreamInterruption, ModelToolCall, ModelToolCallId, ModelToolName,
+    assistant_gateway_message, user_gateway_message,
 };
 use marlin_agent_runtime::{
-    ModelToolCatalog, ModelToolOffer, ModelToolOutcome, RuntimeContext, RuntimeFuture, ToolRuntime,
+    ModelToolCatalog, ModelToolDeclaration, ModelToolOffer, ModelToolOutcome, RuntimeContext,
+    RuntimeFuture, ShellToolDeclarationRequest, ToolRuntime,
 };
 use marlin_agent_sessions::{
     ConversationJournal, ConversationTurnOutcome, ConversationUncertaintyReason,
@@ -73,13 +74,19 @@ fn request() -> ModelGatewayRequest {
 }
 fn tool_request() -> ModelGatewayRequest {
     request().with_options(ModelGatewayCompletionOptions {
-        tools: Some(vec![ModelToolDefinition {
-            name: ModelToolName::new("read_marker").unwrap(),
-            description: "Read a marker".into(),
-            parameters: serde_json::json!({"type":"object"}),
-        }]),
+        tools: Some(vec![tool_declaration().definition()]),
         ..ModelGatewayCompletionOptions::default()
     })
+}
+fn tool_declaration() -> ModelToolDeclaration {
+    ModelToolDeclaration::shell(ShellToolDeclarationRequest {
+        name: ModelToolName::new("read_marker").unwrap(),
+        description: "Read a marker".into(),
+        argument: "command".into(),
+        timeout_seconds: 5,
+        output_limit: 1024,
+    })
+    .unwrap()
 }
 struct Handler;
 
@@ -99,14 +106,7 @@ impl ToolRuntime for Handler {
 fn tool_offer() -> ModelToolOffer {
     let mut catalog = ModelToolCatalog::new();
     catalog
-        .register(
-            ModelToolDefinition {
-                name: ModelToolName::new("read_marker").unwrap(),
-                description: "Read a marker".into(),
-                parameters: serde_json::json!({"type":"object"}),
-            },
-            Arc::new(Handler),
-        )
+        .register(tool_declaration(), Arc::new(Handler))
         .unwrap();
     catalog.offer()
 }
@@ -129,7 +129,10 @@ impl ModelStreamingGateway for ToolFixture {
         message.tool_calls.push(ModelToolCall {
             id: ModelToolCallId::new("call-1").unwrap(),
             name: ModelToolName::new("read_marker").unwrap(),
-            arguments: serde_json::Map::new(),
+            arguments: serde_json::json!({"command":"printf marker"})
+                .as_object()
+                .unwrap()
+                .clone(),
         });
         let response = ModelGatewayCompletionResponse::new(
             "id",

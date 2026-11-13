@@ -60,11 +60,13 @@ pub(crate) struct App {
     pub(crate) command_draft: Option<Composer>,
     pub(crate) command_menu: Option<CommandMenu>,
     pub(crate) command_selection: Option<(String, UiCommandName)>,
+    pub(crate) command_selection_locked: bool,
     pub(crate) command_query: Option<String>,
     pub(crate) command_candidates_pending: Option<bool>,
     pub(crate) command_candidates: Vec<UiCommandName>,
     pub(crate) command_catalog: Vec<UiCommand>,
     pub(crate) ui_request: Option<UiEvent>,
+    pub(crate) command_history_request: Option<UiCommandName>,
     pub(crate) transient_request: Option<super::UiTransientId>,
     pub(crate) quit_armed: bool,
     pub(crate) transcript: Transcript,
@@ -120,11 +122,13 @@ impl App {
             command_draft: None,
             command_menu: None,
             command_selection: None,
+            command_selection_locked: false,
             command_query: None,
             command_candidates_pending: None,
             command_candidates: Vec::new(),
             command_catalog: Vec::new(),
             ui_request: None,
+            command_history_request: None,
             transient_request: None,
             quit_armed: false,
             transcript: Transcript::new(vec![]),
@@ -263,6 +267,7 @@ impl App {
         self.composer.take();
         self.composer.insert_text(display);
         self.command_selection = None;
+        self.command_selection_locked = false;
         runnable
     }
 
@@ -299,6 +304,7 @@ impl App {
             return;
         }
         self.command_selection = None;
+        self.command_selection_locked = false;
         let mut search = HistorySearch::default();
         search.previous(&self.history);
         self.history_search = Some(search);
@@ -397,6 +403,7 @@ impl App {
     /// Open or close the command Mini Buffer without consuming the message draft.
     pub(crate) fn toggle_command(&mut self) {
         self.command_selection = None;
+        self.command_selection_locked = false;
         self.command_query = None;
         self.command_candidates_pending = None;
         self.command_candidates.clear();

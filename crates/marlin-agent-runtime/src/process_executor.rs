@@ -11,7 +11,8 @@ use crate::{
     },
 };
 use marlin_agent_protocol::{
-    BoundedProcessExecutor, BoundedProcessOutput, BoundedProcessRequest, ProcessExecutionError,
+    BoundedProcessExecutor, BoundedProcessOutput, BoundedProcessRequest, ProcessEnvironmentPolicy,
+    ProcessExecutionError,
 };
 use std::{future::Future, pin::Pin, process::Stdio};
 use tokio::process::Command;
@@ -70,6 +71,10 @@ impl BoundedProcessExecutor for ManagedProcessExecutor {
                 ))
             })?;
             let mut command = Command::new(request.program);
+            if request.environment == ProcessEnvironmentPolicy::Clean {
+                command.env_clear();
+                command.env("PATH", ProcessEnvironmentPolicy::CLEAN_PATH);
+            }
             command
                 .args(request.arguments)
                 .current_dir(request.working_directory)

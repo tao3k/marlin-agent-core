@@ -117,10 +117,13 @@ impl App {
         };
         if let Some(input) = command {
             let descriptor = self.command_descriptor(&input).cloned();
-            match descriptor
+            let parsed = descriptor
                 .as_ref()
-                .and_then(|descriptor| Command::parse(descriptor, &input))
-            {
+                .and_then(|descriptor| Command::parse(descriptor, &input));
+            if parsed.is_some() {
+                self.command_history_request = descriptor.as_ref().map(|item| item.name.clone());
+            }
+            match parsed {
                 Some(Command::Sessions(next)) => self.show_sessions(runtime, next),
                 Some(Command::Models) => self.show_models(),
                 Some(Command::Workspace { mode, arguments }) => {
@@ -220,6 +223,7 @@ impl App {
                             .clone(),
                     });
                     self.command_selection = None;
+                    self.command_selection_locked = false;
                 }
                 Some(Command::Clear) => self.transcript.clear(),
                 Some(Command::ToggleThinking(index)) => {
@@ -614,6 +618,7 @@ impl App {
 
     pub(crate) fn cancel(&mut self) {
         self.command_selection = None;
+        self.command_selection_locked = false;
         if let Some(draft) = self.command_draft.take() {
             self.command_menu = None;
             self.composer = draft;
@@ -753,9 +758,10 @@ impl App {
             Some(menu) => format!("{}{}", menu.prefix, self.composer.text()),
             None => self.composer.text().to_owned(),
         };
-        let command = self
-            .command_descriptor(&input)
-            .and_then(|descriptor| Command::parse(descriptor, &input));
+        let descriptor = self.command_descriptor(&input).cloned();
+        let command = descriptor
+            .as_ref()
+            .and_then(|item| Command::parse(item, &input));
         match command {
             Some(Command::SelectUi(UiEvent::SelectBuffer(buffer)))
                 if buffer.as_str() == "processes" =>
@@ -766,6 +772,7 @@ impl App {
             Some(Command::KillProcess(generation)) => self.stop_process(generation),
             _ => return false,
         }
+        self.command_history_request = descriptor.map(|item| item.name);
         self.composer = self
             .command_draft
             .take()

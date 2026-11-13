@@ -21,8 +21,8 @@ mod sub_agent;
 mod trace;
 
 pub use process::{
-    BoundedProcessExecutor, BoundedProcessOutput, BoundedProcessRequest, ProcessExecutionError,
-    ProcessMemorySample, ProcessMemorySampler,
+    BoundedProcessExecutor, BoundedProcessOutput, BoundedProcessRequest, ProcessEnvironmentPolicy,
+    ProcessExecutionError, ProcessMemorySample, ProcessMemorySampler,
 };
 
 pub use agent_flow::{

@@ -453,11 +453,19 @@ fn mx_switch_themes_keeps_message_draft_and_emits_one_profile_request() {
     app.toggle_command();
     app.composer.insert_text("switch-themes");
     app.submit(&gateway, &runtime, &tx);
+    assert_eq!(
+        app.command_history_request.take().unwrap().as_str(),
+        "switch-themes"
+    );
     assert_eq!(app.composer.text(), "");
     assert_eq!(app.command_lookup_query(), "theme-");
     assert!(app.command_draft.is_some());
     app.composer.insert_text("pi");
     app.submit(&gateway, &runtime, &tx);
+    assert_eq!(
+        app.command_history_request.take().unwrap().as_str(),
+        "theme-pi"
+    );
     assert_eq!(app.composer.text(), "retained message");
     assert!(app.command_draft.is_none());
     assert_eq!(
@@ -465,6 +473,25 @@ fn mx_switch_themes_keeps_message_draft_and_emits_one_profile_request() {
         Some(UiEvent::SelectProfile(UiProfileName::new("pi").unwrap()))
     );
     assert!(requests.lock().unwrap().is_empty());
+}
+
+#[test]
+fn cancelled_and_incomplete_commands_do_not_enter_history() {
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    let gateway = FixtureGateway {
+        requests: Arc::new(Mutex::new(Vec::new())),
+    };
+    let (tx, _) = reply_channel(8, 4096);
+    let mut app = App::new(ModelEndpoint::new("provider", "model"));
+    install_test_commands(&mut app);
+    app.toggle_command();
+    app.composer.insert_text("model");
+    app.cancel();
+    assert!(app.command_history_request.is_none());
+    app.toggle_command();
+    app.composer.insert_text("model");
+    app.submit(&gateway, &runtime, &tx);
+    assert!(app.command_history_request.is_none());
 }
 
 #[test]

@@ -20,6 +20,7 @@ use super::{
     RuntimeTaskTrackerPolicy, SessionId, SessionIsolationReceipt, SessionKind,
     SessionRuntimeSnapshot, SubAgentRuntime, SubAgentSpawnConfig, SubAgentSpawnReceipt,
     TokioRuntimePolicy, TokioRuntimePolicyReceipt, ToolRuntime, WorkingCopyIsolationReceipt,
+    WorkingCopySubAgentFanoutItem,
 };
 use crate::tokio_runtime::context::context_visibility_from_sub_agent_policy;
 use crate::tokio_runtime::receipt::{
@@ -150,44 +151,6 @@ fn runtime_snapshot_for_session(
     .with_task_tracker(snapshot.task_tracker().clone())
     .with_fanout_join(snapshot.fanout_join().clone())
     .with_blocking_bridge(snapshot.blocking_bridge().clone())
-}
-
-/// One working-copy-bound sub-agent spawn in a runtime fanout.
-#[derive(Clone, Debug)]
-pub struct WorkingCopySubAgentFanoutItem<I> {
-    input: I,
-    environment: RuntimeEnvironment,
-    working_copy_receipt: WorkingCopyIsolationReceipt,
-}
-
-impl<I> WorkingCopySubAgentFanoutItem<I> {
-    pub fn new(
-        input: I,
-        environment: RuntimeEnvironment,
-        working_copy_receipt: WorkingCopyIsolationReceipt,
-    ) -> Self {
-        Self {
-            input,
-            environment,
-            working_copy_receipt,
-        }
-    }
-
-    pub fn input(&self) -> &I {
-        &self.input
-    }
-
-    pub fn environment(&self) -> &RuntimeEnvironment {
-        &self.environment
-    }
-
-    pub fn working_copy_receipt(&self) -> &WorkingCopyIsolationReceipt {
-        &self.working_copy_receipt
-    }
-
-    pub fn into_parts(self) -> (I, RuntimeEnvironment, WorkingCopyIsolationReceipt) {
-        (self.input, self.environment, self.working_copy_receipt)
-    }
 }
 
 impl TokioAgentRuntime {
@@ -933,12 +896,13 @@ where
             let Some((index, item)) = self.pending.pop_front() else {
                 break;
             };
+            let (input, environment, working_copy_receipt) = item.into_parts();
             let sub_agent = Arc::clone(&self.sub_agent);
             let context = self
                 .runtime
                 .context()
-                .child_context_with_environment(item.environment)
-                .with_working_copy_receipt(item.working_copy_receipt);
+                .child_context_with_environment(environment)
+                .with_working_copy_receipt(working_copy_receipt);
             let Ok(guard) = self.runtime.task_tracker.admit(
                 context.session().session_id(),
                 RuntimeOperationId::new("subagent.fanout.item"),
@@ -950,7 +914,7 @@ where
             self.tasks.spawn(
                 async move {
                     let _guard = guard;
-                    (index, sub_agent.run_sub_agent(item.input, context).await)
+                    (index, sub_agent.run_sub_agent(input, context).await)
                 }
                 .instrument(observability::runtime_sub_agent_span()),
             );

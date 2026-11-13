@@ -17,7 +17,6 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph, Wrap},
 };
-use std::collections::HashMap;
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
@@ -472,18 +471,10 @@ pub(crate) fn draw(
         UiRegion::Status(items) if !items.is_empty() => Some(items),
         _ => None,
     });
-    let suggestions: Vec<_> = if app.history_search.is_none() && app.command_draft.is_some() {
-        let catalog: HashMap<_, _> = ui
-            .commands()
-            .iter()
-            .map(|command| (&command.name, command))
-            .collect();
-        app.command_candidates
-            .iter()
-            .filter_map(|name| catalog.get(name).copied())
-            .collect()
+    let suggestions = if app.history_search.is_none() && app.command_draft.is_some() {
+        app.command_candidates.as_slice()
     } else {
-        Vec::new()
+        &[]
     };
     let regions = frame_regions(app, ui, area);
     let part = |name: &str| {
@@ -610,10 +601,9 @@ pub(crate) fn draw(
     };
     let selected = app
         .selected_command()
-        .filter(|name| suggestions.iter().any(|command| &command.name == *name));
-    let active = selected.or_else(|| suggestions.first().map(|command| &command.name));
-    let selected_index =
-        active.and_then(|name| suggestions.iter().position(|command| &command.name == name));
+        .filter(|name| suggestions.contains(name));
+    let active = selected.or_else(|| suggestions.first());
+    let selected_index = active.and_then(|name| suggestions.iter().position(|item| item == name));
     let command_prompt = app
         .command_menu
         .as_ref()
@@ -684,7 +674,7 @@ pub(crate) fn draw(
     let menu_prefix = app.command_menu.as_ref().map(|menu| menu.prefix.as_str());
     let name_width = suggestions
         .iter()
-        .map(|command| menu_display_name(command.name.as_str(), menu_prefix).len())
+        .map(|name| menu_display_name(name.as_str(), menu_prefix).len())
         .max()
         .unwrap_or(0)
         .min(28);
@@ -692,10 +682,13 @@ pub(crate) fn draw(
         Some(marlin_agent_ui::UiElement::Rows(templates)) => templates.as_slice(),
         _ => &[],
     };
-    for (row, command) in suggestions.iter().skip(start).take(visible).enumerate() {
+    for (row, name) in suggestions.iter().skip(start).take(visible).enumerate() {
+        let Some(command) = ui.commands().iter().find(|command| &command.name == name) else {
+            continue;
+        };
         let line =
             ratatui::layout::Rect::new(parts[4].x, parts[4].y + row as u16, parts[4].width, 1);
-        let active_row = active == Some(&command.name);
+        let active_row = active == Some(name);
         if let Some(template) = templates.get(usize::from(!active_row)) {
             let name = format!(
                 "{:<name_width$}",

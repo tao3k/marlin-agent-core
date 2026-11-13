@@ -14,8 +14,8 @@ use marlin_agent_protocol::HumanReviewKind;
 
 use crate::model::{
     MAX_COMMANDS, MAX_EXTENSIONS, MAX_HOST_STATUS, MAX_METHOD_BUNDLES, MAX_TEXT_CHARS,
-    UiBrowseDirection, UiBrowseRequest, UiCommandName, UiEvent, UiIntent, UiOpenFacts,
-    UiProjectionError, UiReviewMenu, UiStatusTone, UiToolReviewMenu, UiWorkbench,
+    UiBrowseDirection, UiBrowseRequest, UiCommandCandidates, UiCommandName, UiEvent, UiIntent,
+    UiOpenFacts, UiProjectionError, UiReviewMenu, UiStatusTone, UiToolReviewMenu, UiWorkbench,
 };
 use crate::projection::{
     decode_intent, decode_review_menu, decode_tool_review_menu, decode_workbench, string, vector,
@@ -236,18 +236,25 @@ impl<'runtime> UiModule<'runtime> {
         &self,
         session: &UiNativeSession<'_>,
         query: &str,
-    ) -> Result<Vec<UiCommandName>, UiProjectionError> {
+        locked: Option<&UiCommandName>,
+    ) -> Result<UiCommandCandidates, UiProjectionError> {
         if !UiCommandName::is_valid_prefix(query) {
             return Err(UiProjectionError::Invalid("invalid command query"));
         }
         let query = self.runtime.string_from_utf8(query)?.into_object();
+        let requested = locked.cloned();
+        let locked = match locked {
+            Some(name) => self.runtime.string_from_utf8(name.as_str())?.into_object(),
+            None => self.runtime.scalar_object(SchemeScalar::Boolean(false))?,
+        };
         let input = self
             .runtime
-            .collection_from_objects(CollectionKind::Vector, &[&session.root, &query])?;
+            .collection_from_objects(CollectionKind::Vector, &[&session.root, &query, &locked])?;
         let output = self
             .command_candidates
             .call(self.runtime, &input.into_object())?;
-        let names = vector(output, 0, MAX_COMMANDS)?;
+        let result = vector(output, 2, 2)?;
+        let names = vector(result.element(0)?, 0, MAX_COMMANDS)?;
         let mut candidates = Vec::with_capacity(names.len());
         let mut seen = HashSet::new();
         for index in 0..names.len() {
@@ -257,7 +264,30 @@ impl<'runtime> UiModule<'runtime> {
             }
             candidates.push(name);
         }
-        Ok(candidates)
+        let selected = result.element(1)?;
+        let selected = match selected.as_ref().kind()? {
+            ObjectKind::String => Some(UiCommandName::new(&string(selected)?)?),
+            ObjectKind::Boolean
+                if matches!(selected.as_ref().scalar()?, SchemeScalar::Boolean(false)) =>
+            {
+                None
+            }
+            _ => return Err(UiProjectionError::Invalid("invalid command selection")),
+        };
+        if selected.as_ref().is_some_and(|name| !seen.contains(name)) {
+            return Err(UiProjectionError::Invalid(
+                "selected command is not a candidate",
+            ));
+        }
+        if selected.is_some() && selected != requested {
+            return Err(UiProjectionError::Invalid(
+                "command selection differs from the requested lock",
+            ));
+        }
+        Ok(UiCommandCandidates {
+            names: candidates,
+            selected,
+        })
     }
 
     /// Construct one Scheme-owned functional UI session.
@@ -290,6 +320,7 @@ impl<'runtime> UiModule<'runtime> {
                 previous,
                 direction,
                 steps: 1,
+                allowed: None,
             },
         )
     }
@@ -305,6 +336,7 @@ impl<'runtime> UiModule<'runtime> {
             previous,
             direction,
             steps,
+            allowed,
         } = request;
         if !UiCommandName::is_valid_prefix(query) {
             return Err(UiProjectionError::Invalid("invalid command query"));
@@ -327,9 +359,37 @@ impl<'runtime> UiModule<'runtime> {
         let steps = self
             .runtime
             .scalar_object(SchemeScalar::Fixnum(isize::from(steps)))?;
+        let allowed = if let Some(names) = allowed {
+            if names.len() > MAX_COMMANDS {
+                return Err(UiProjectionError::Invalid(
+                    "too many admitted command candidates",
+                ));
+            }
+            let roots = names
+                .iter()
+                .map(|name| {
+                    self.runtime
+                        .string_from_utf8(name.as_str())
+                        .map(|value| value.into_object())
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            let references = roots.iter().collect::<Vec<_>>();
+            self.runtime
+                .collection_from_objects(CollectionKind::Vector, &references)?
+                .into_object()
+        } else {
+            self.runtime.scalar_object(SchemeScalar::Boolean(false))?
+        };
         let input = self.runtime.collection_from_objects(
             CollectionKind::Vector,
-            &[&session.root, &query, &previous, &direction, &steps],
+            &[
+                &session.root,
+                &query,
+                &previous,
+                &direction,
+                &steps,
+                &allowed,
+            ],
         )?;
         let output = self
             .browse_command
@@ -527,6 +587,7 @@ fn dispatch_event_with<'runtime>(
         UiEvent::ScrollDown => "scroll-down",
         UiEvent::SelectProfile(_) => "select-profile",
         UiEvent::SelectBuffer(_) => "select-buffer",
+        UiEvent::RecordCommand(_) => "record-command",
     };
     let symbol = runtime.intern_identifier(IdentifierKind::Symbol, name)?;
     let argument = match &event {
@@ -534,6 +595,9 @@ fn dispatch_event_with<'runtime>(
             Some(runtime.intern_identifier(IdentifierKind::Symbol, name.as_str())?)
         }
         UiEvent::SelectBuffer(name) => {
+            Some(runtime.intern_identifier(IdentifierKind::Symbol, name.as_str())?)
+        }
+        UiEvent::RecordCommand(name) => {
             Some(runtime.intern_identifier(IdentifierKind::Symbol, name.as_str())?)
         }
         _ => None,

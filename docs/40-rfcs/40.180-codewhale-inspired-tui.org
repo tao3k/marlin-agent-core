@@ -2257,16 +2257,23 @@ definitions come only from registered =ToolRuntime= handlers. Each request
 retains an immutable offer snapshot, and a complete tool-call batch must match
 that snapshot before review; a later registration cannot enlarge an earlier
 offer. The persistent TUI gateway now checks the exact handler-backed offer
-before dispatch and rejects returned tool calls outside it. Its current
-production catalog is empty, so direct chat does not advertise a tool. The
-catalog still does not dispatch a claim. Durable tool results, provider
-continuation and live Mini Buffer Ask binding remain open; the journal claim
-alone does not execute a handler. The isolated catalog-admission benchmark
-excludes VM startup, handler execution and journal I/O. Quick runs on the
-shared development host varied from about 17 to 31 ns for one call and 1.8 to
-2.8 us for 32 calls;
-the spread prevents a stable improvement claim. They are not an end-to-end
-latency bound.
+before dispatch and rejects returned tool calls outside it. Yuanxu now selects
+a Scheme =tooling= Module. It composes a bounded Bash declaration using POO
+=.mix= and ==> append=, then projects native Scheme values through the linked
+ABI. Rust validates those values into a typed declaration and binds
+the reusable shell capability to its admitted name and argument schema. New
+tools using an existing capability can be declared in Scheme without adding a
+Rust command case. The catalog's registration API accepts typed declarations,
+not standalone provider schemas, so a Rust caller cannot silently advertise
+an unrelated tool definition. A new host capability still needs one Rust
+adapter; Scheme cannot create a Rust handler or grant its own approval. The catalog can consume
+the journal's one-shot execution claim, but the current production TUI catalog
+is empty. Durable tool results, provider continuation and live Mini Buffer Ask
+binding remain open, so chat does not yet advertise Bash. The offer now builds
+a name index once; admission and execution reuse that index. The isolated
+catalog-admission benchmark excludes VM startup, handler execution and journal
+I/O. Its earlier timings predate the index change and need a fixed-cohort rerun
+before any performance claim.
 
 The graph-loop controller now records a produced =HumanGateReceipt= in the
 runtime run registry as =AwaitingHuman= instead of completing the run with the
