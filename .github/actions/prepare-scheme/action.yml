@@ -2,104 +2,38 @@
 #
 # SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
-name: Prepare the Marlin Scheme package
-description: Install locked Scheme dependencies and stage the workspace's AOT programs.
+name: Build the Scheme package
+description: Use the Gerbil package manager and Builder on the selected platform.
 runs:
   using: composite
   steps:
     - uses: ./.github/actions/setup-scheme
       id: sdk
-    - uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177 # v2
-      with:
-        tool: just@1.56.0
-    - name: Resolve the locked bridge and Lab sources
-      id: sources
-      shell: bash
-      run: |
-        metadata=$(cargo metadata --locked --format-version 1)
-        marlin_bridge=$(jq -er '
-          [.packages[] | select(.name == "gerbil-scheme-build") | .manifest_path] |
-          if length == 1 then .[0] | sub("/crates/gerbil-scheme-build/Cargo.toml$"; "")
-          else error("expected one Marlin Scheme Bridge") end
-        ' <<< "$metadata")
-        orgize_bridge=$(jq -er '
-          (.packages[] | select(.name == "orgize") | .id) as $orgize |
-          (.resolve.nodes[] | select(.id == $orgize) |
-            .deps[] | select(.name == "gerbil_scheme") | .pkg) as $bridge |
-          .packages[] | select(.id == $bridge) |
-          .manifest_path | sub("/crates/gerbil-scheme/Cargo.toml$"; "")
-        ' <<< "$metadata")
-        orgize_revision=$(jq -er '.packages[] | select(.name == "orgize") | .source | split("#") | last' <<< "$metadata")
-        lab_revision=$(sed -nE 's/.*"github\.com\/tao3k\/agentic-ai-lab@([0-9a-f]{40})".*/\1/p' scheme/gerbil.pkg)
-        [[ "$lab_revision" =~ ^[0-9a-f]{40}$ ]]
-        {
-          echo "lab=$lab_revision"
-          echo "orgize=$orgize_revision"
-          echo "marlin-bridge=$marlin_bridge"
-          echo "orgize-bridge=$orgize_bridge"
-          echo "orgize-bridge-rev=$(git -C "$orgize_bridge" rev-parse HEAD)"
-        } >> "$GITHUB_OUTPUT"
     - name: Restore installed Scheme dependencies
       id: dependencies
       uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: scheme/.gerbil
-        key: scheme-deps-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.sdk.outputs.toolchain }}-${{ steps.sources.outputs.orgize }}-${{ steps.sources.outputs.orgize-bridge-rev }}-${{ hashFiles('scheme/gerbil.pkg', '.github/actions/prepare-scheme/action.yml') }}
-    - name: Check out Lab's dependency preparation entry
+        key: scheme-deps-v2-${{ runner.os }}-${{ runner.arch }}-${{ steps.sdk.outputs.toolchain }}-${{ hashFiles('scheme/gerbil.pkg', 'Cargo.lock', '.github/actions/prepare-scheme/action.yml') }}
+    - name: Install declared Scheme dependencies
       if: steps.dependencies.outputs.cache-hit != 'true'
-      uses: actions/checkout@v6
-      with:
-        repository: tao3k/agentic-ai-lab
-        ref: ${{ steps.sources.outputs.lab }}
-        path: target/ci/lab-tooling
-        persist-credentials: false
-    - name: Prepare pinned Lab sources
-      if: steps.dependencies.outputs.cache-hit != 'true'
-      working-directory: scheme
       shell: bash
       env:
         GERBIL_PATH: ${{ github.workspace }}/scheme/.gerbil
-        ORGIZE_BRIDGE: ${{ steps.sources.outputs.orgize-bridge }}
       run: |
-        gxpkg env gxi ../target/ci/lab-tooling/packages/automation/runtime-dependencies.ss --fetch-only
-        (
-          cd "$GERBIL_PATH/pkg/github.com/tao3k/agentic-ai-lab" || exit
-          gxi packages/automation/runtime-dependencies.ss --fetch-only
-        )
-        (
-          cd "$ORGIZE_BRIDGE" || exit
-          gxi build.ss compile
-        )
-        gxpkg deps --install
-    - name: Verify the dependency products
-      shell: bash
-      working-directory: scheme
-      env:
-        GERBIL_PATH: ${{ github.workspace }}/scheme/.gerbil
-        LAB_REVISION: ${{ steps.sources.outputs.lab }}
-        ORGIZE_REVISION: ${{ steps.sources.outputs.orgize }}
-      run: |
-        test "$(git -C "$GERBIL_PATH/pkg/github.com/tao3k/agentic-ai-lab" rev-parse HEAD)" = "$LAB_REVISION"
-        gxpkg env gxi -e '(import :clan/poo/object :gerbil-parser/compiler-build-support)'
-        orgize="$GERBIL_PATH/pkg/github.com/tao3k/orgize"
-        test "$(git -C "$orgize" rev-parse HEAD)" = "$ORGIZE_REVISION"
-        test -s "$orgize/target/gerbil-parser/program.json"
+        # Orgize's Builder imports bridge tools. Build them from Cargo's
+        # selected source before Gerbil installs the Lab dependency graph.
+        bridge_manifest=$(cargo metadata --locked --format-version 1 |
+          jq -er '.packages[] | select(.name == "gerbil-scheme-build") | .manifest_path')
+        (cd "${bridge_manifest%/crates/gerbil-scheme-build/Cargo.toml}" && gerbil build)
+        (cd scheme && gerbil deps --install)
     - name: Save installed Scheme dependencies
       if: steps.dependencies.outputs.cache-hit != 'true'
       uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: scheme/.gerbil
         key: ${{ steps.dependencies.outputs.cache-primary-key }}
-    - name: Build the Marlin bridge and stage the linked UI
+    - name: Build the selected Scheme package
       shell: bash
-      env:
-        MARLIN_BRIDGE: ${{ steps.sources.outputs.marlin-bridge }}
-        GERBIL_PATH: ${{ github.workspace }}/scheme/.gerbil
-      run: |
-        bridge_output="$GITHUB_WORKSPACE/target/ci/marlin-bridge"
-        (
-          cd "$MARLIN_BRIDGE" || exit
-          GERBIL_PATH="$bridge_output" gxi build.ss compile
-        )
-        GERBIL_LOADPATH="$bridge_output/lib:$GERBIL_PATH/lib" just tui-aot-stage
-        test -s "$GERBIL_PATH/native/tui/program.json"
+      working-directory: scheme
+      run: gerbil build

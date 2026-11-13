@@ -11,6 +11,17 @@ outputs:
 runs:
   using: composite
   steps:
+    - name: Set Gerbil build workers from the runner
+      shell: bash
+      run: |
+        if [[ "$RUNNER_OS" == macOS ]]; then
+          cores=$(sysctl -n hw.logicalcpu)
+        else
+          cores=$(nproc)
+        fi
+        [[ "$cores" =~ ^[1-9][0-9]*$ ]]
+        echo "GERBIL_BUILD_CORES=$cores" >> "$GITHUB_ENV"
+        echo "Gerbil build workers: $cores"
     - uses: tao3k/gerbil-scheme-rust/.github/actions/setup-gerbil@dfe8b62b5dc64de88f8d70a77059a1741218ef80
       with:
         release-root: ${{ runner.temp }}/gerbil

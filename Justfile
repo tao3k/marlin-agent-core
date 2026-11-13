@@ -100,14 +100,21 @@ scheme-property-gate:
 
 # Install the dependency declared by the workspace Scheme package.
 scheme-deps:
-  cd scheme && gxpkg deps --install
+  cd scheme && gerbil deps --install
 
 # Run the package's build and test through the embedded Gerbil VM.
 scheme-package-gate:
   direnv exec . bash -ec 'cd scheme && gxpkg env cargo test --locked -p marlin-gerbil-scheme --test unit_test scheme_package::gerbil_builds_and_tests_the_marlin_package_in_process -- --ignored --exact --nocapture'
 
-# Build the init-selected Scheme graph once, then stage its linked TUI programme.
-tui-aot-stage:
+# Build the init-selected Scheme graph through the package Builder.
+scheme-build:
+  cd scheme && gerbil build
+
+# Stage the selected package's linked TUI programme.
+tui-aot-stage: scheme-build tui-program-stage
+
+# Consume the Scheme package already built by scheme-build.
+tui-program-stage:
   #!/usr/bin/env bash
   set -euo pipefail
   if [[ "$(uname -s)" == Darwin ]]; then
@@ -115,7 +122,6 @@ tui-aot-stage:
     export PATH="${GERBIL_PREFIX:+$GERBIL_PREFIX/bin:}/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
   fi
   cd scheme
-  gxpkg env gxi build.ss
   gxpkg env gxc -S -s -d .gerbil/lib tui-entry.ss
   gxpkg env gxi tui-stage.ss
 

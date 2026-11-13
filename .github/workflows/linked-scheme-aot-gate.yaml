@@ -61,7 +61,7 @@ jobs:
           prefix="$GITHUB_WORKSPACE/scheme/.gerbil"
           {
             echo "GERBIL_PATH=$prefix"
-            echo "GERBIL_LOADPATH=$GITHUB_WORKSPACE/target/ci/marlin-bridge/lib:$prefix/lib"
+            echo "GERBIL_LOADPATH=$prefix/lib"
           } >> "$GITHUB_ENV"
 
       - name: Ensure the native compiler is available
