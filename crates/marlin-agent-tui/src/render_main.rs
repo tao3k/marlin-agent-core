@@ -75,6 +75,8 @@ impl ui_elements::UiSlotRenderer for FrameSlots<'_> {
                     count,
                     selected: self.selected,
                     extent: inputs.extent,
+                    facts: inputs.facts,
+                    bindings: inputs.bindings,
                 },
                 &mut self.app.list_state.borrow_mut(),
                 |index| {
@@ -129,6 +131,8 @@ impl ui_elements::UiSlotRenderer for FrameSlots<'_> {
                     count: self.extensions.len(),
                     selected,
                     extent: inputs.extent,
+                    facts: inputs.facts,
+                    bindings: inputs.bindings,
                 },
                 &mut self.app.list_state.borrow_mut(),
                 |index| {

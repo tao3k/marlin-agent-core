@@ -91,6 +91,8 @@ impl UiSlotRenderer for AskFrameSlots {
                 count: 2,
                 selected: Some(0),
                 extent: inputs.extent,
+                facts: inputs.facts,
+                bindings: inputs.bindings,
             },
             &mut self.list,
             |index| {
@@ -301,6 +303,8 @@ fn mapping(c: &mut Criterion) {
                                 count: 256,
                                 selected: Some(255),
                                 extent: &|_| Extent::Cells(16),
+                                facts: &|_| false,
+                                bindings: &[],
                             },
                             &mut list_state,
                             |index| {

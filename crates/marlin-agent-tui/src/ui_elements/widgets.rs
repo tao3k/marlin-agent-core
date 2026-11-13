@@ -171,6 +171,8 @@ pub struct UiListData<'a> {
     pub count: usize,
     pub selected: Option<usize>,
     pub extent: &'a dyn Fn(&UiComponentId) -> super::Extent,
+    pub facts: &'a dyn Fn(&UiComponentId) -> bool,
+    pub bindings: &'a [(&'a str, &'a str)],
 }
 
 /// Frame-independent offsets for Scheme-declared lists, bounded per session.
@@ -247,7 +249,10 @@ pub fn render_list<'a>(
         "list-offset" => super::Extent::Cells(saved_offset),
         _ => (data.extent)(key),
     };
-    let facts = |key: &UiComponentId| key.as_str() == "list-selected" && selected.is_some();
+    let facts = |key: &UiComponentId| match key.as_str() {
+        "list-selected" => selected.is_some(),
+        _ => (data.facts)(key),
+    };
     let start = match super::resolve_size(offset, &metrics, &facts) {
         super::Extent::Cells(value) => usize::from(value).min(count.saturating_sub(visible)),
         super::Extent::Flex(_) => 0,
@@ -263,15 +268,22 @@ pub fn render_list<'a>(
                 area: line,
             });
         }
-        let bindings: Vec<_> = row
-            .bindings
-            .iter()
-            .map(|(key, value)| (*key, value.as_ref()))
-            .collect();
+        let mut bindings = Vec::with_capacity(row.bindings.len() + data.bindings.len());
+        bindings.extend(
+            row.bindings
+                .iter()
+                .map(|(key, value)| (*key, value.as_ref())),
+        );
+        // Row bindings shadow frame bindings, while unrelated frame values
+        // remain available to the Scheme-declared row template.
+        bindings.extend_from_slice(data.bindings);
         let inputs = UiRenderInputs {
             theme,
             offset: &|_| 0,
-            facts: &|id| id.as_str() == "selected" && selected == Some(index),
+            facts: &|id| match id.as_str() {
+                "selected" => selected == Some(index),
+                _ => facts(id),
+            },
             extent: &metrics,
             bindings: &bindings,
         };

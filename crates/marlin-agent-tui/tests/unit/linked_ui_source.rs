@@ -127,6 +127,8 @@ fn linked_scheme_workbench_renders_through_the_native_boundary() {
                         count: 20,
                         selected: Some(selected),
                         extent: &|_| super::super::ui_elements::Extent::Cells(0),
+                        facts: &|_| false,
+                        bindings: &[],
                     },
                     &mut state,
                     |index| {

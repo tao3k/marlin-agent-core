@@ -182,6 +182,8 @@ fn list_renders_selected_scheme_template_and_keeps_selection_visible() {
                     count: 4,
                     selected: Some(3),
                     extent: &|_| Extent::Cells(0),
+                    facts: &|_| false,
+                    bindings: &[],
                 },
                 &mut state,
                 |_| {
@@ -197,6 +199,59 @@ fn list_renders_selected_scheme_template_and_keeps_selection_visible() {
     assert_eq!(terminal.backend().buffer()[(0, 0)].symbol(), "o");
     assert_eq!(terminal.backend().buffer()[(0, 1)].symbol(), "s");
     assert_eq!(generated.get(), 2, "only visible rows should be prepared");
+}
+
+#[test]
+fn list_mapper_inherits_frame_scope_and_shadows_row_bindings() {
+    let id = |name: &str| UiComponentId::new(name).unwrap();
+    let binding = |name| UiTemplateSpan {
+        value: UiTemplateValue::Binding(id(name)),
+        tone: UiTone::Normal,
+        bold: false,
+    };
+    let tree = UiElement::List {
+        id: id("items"),
+        offset: marlin_agent_ui::UiSize::Cells(0),
+        child: Box::new(UiElement::Choice {
+            cases: vec![(
+                id("active"),
+                UiElement::Template {
+                    background: marlin_agent_ui::UiBackground::None,
+                    spans: vec![binding("name"), binding("suffix")],
+                },
+            )],
+            fallback: Box::new(UiElement::Text(vec![])),
+        }),
+    };
+    let mut terminal = Terminal::new(TestBackend::new(8, 1)).unwrap();
+    let mut state = crate::ui_elements::UiListState::default();
+    terminal
+        .draw(|frame| {
+            crate::ui_elements::render_list(
+                frame,
+                frame.area(),
+                &tree,
+                &UiTheme::default(),
+                crate::ui_elements::UiListData {
+                    count: 1,
+                    selected: None,
+                    extent: &|_| Extent::Cells(0),
+                    facts: &|fact| fact.as_str() == "active",
+                    bindings: &[("name", "parent"), ("suffix", "!")],
+                },
+                &mut state,
+                |_| {
+                    Some(crate::ui_elements::UiListRow {
+                        key: None,
+                        bindings: vec![("name", "row".into())],
+                    })
+                },
+            );
+        })
+        .unwrap();
+    let buffer = terminal.backend().buffer();
+    assert_eq!(buffer[(0, 0)].symbol(), "r");
+    assert_eq!(buffer[(3, 0)].symbol(), "!");
 }
 
 #[test]
@@ -221,6 +276,8 @@ fn list_hit_uses_painted_row_identity_and_excludes_unrendered_rows() {
                     count: 5,
                     selected: Some(3),
                     extent: &|_| Extent::Cells(0),
+                    facts: &|_| false,
+                    bindings: &[],
                 },
                 &mut state,
                 |index| {
@@ -248,6 +305,8 @@ fn list_hit_uses_painted_row_identity_and_excludes_unrendered_rows() {
                     count: 5,
                     selected: None,
                     extent: &|_| Extent::Cells(0),
+                    facts: &|_| false,
+                    bindings: &[],
                 },
                 &mut state,
                 |_| None,
@@ -285,6 +344,8 @@ fn declared_list_offsets_are_independent_between_identities() {
                         count: 10,
                         selected: None,
                         extent: &|_| Extent::Cells(0),
+                        facts: &|_| false,
+                        bindings: &[],
                     },
                     &mut state,
                     |index| {
@@ -311,6 +372,8 @@ fn declared_list_offsets_are_independent_between_identities() {
                     count: 10,
                     selected: None,
                     extent: &|_| Extent::Cells(0),
+                    facts: &|_| false,
+                    bindings: &[],
                 },
                 &mut state,
                 |_| {
@@ -334,6 +397,8 @@ fn declared_list_offsets_are_independent_between_identities() {
                     count: 10,
                     selected: None,
                     extent: &|_| Extent::Cells(0),
+                    facts: &|_| false,
+                    bindings: &[],
                 },
                 &mut state,
                 |index| {
