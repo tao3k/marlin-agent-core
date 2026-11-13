@@ -1408,6 +1408,11 @@ includes the install, enable, and disable receipts for the scenario. Replay
 uses retained snapshots and receipts. It has no live plugin or provider
 dispatch and no workspace mutation path.
 
+The linked acceptance runs the archive verifier as a separate Cargo test
+target built with default features off. The verifier receives only the
+signed declaration, archive and trusted digest after the source worktree
+has been removed. Its build omits the linked Brief-to-Draft Scheme program.
+
 The sample export includes the synthetic brief and draft bytes so the verifier
 can check their digests. If closing the generation races a prepared create,
 the archived run retains the typed =StaleActivation= refusal alongside the

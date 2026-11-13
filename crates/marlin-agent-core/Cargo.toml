@@ -48,6 +48,10 @@ tempfile.workspace = true
 tokio-stream.workspace = true
 
 [[test]]
+name = "brief_to_draft_offline"
+path = "tests/integration/brief_to_draft_offline.rs"
+
+[[test]]
 name = "brief_to_draft_vm"
 path = "tests/integration/brief_to_draft_vm.rs"
 required-features = ["brief-to-draft-vm-test"]

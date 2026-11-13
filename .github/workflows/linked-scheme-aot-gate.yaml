@@ -130,7 +130,15 @@ jobs:
       - name: Verify Brief-to-Draft activation and offline replay
         env:
           ORGIZE_GERBIL_PROGRAM_MANIFEST: ${{ github.workspace }}/scheme/.gerbil/pkg/github.com/tao3k/orgize/target/gerbil-parser/program.json
-        run: cargo test --locked -p marlin-agent-core --features brief-to-draft-vm-test --test brief_to_draft_vm
+        shell: bash
+        run: |
+          cargo test --locked -p marlin-agent-core --no-default-features \
+            --test brief_to_draft_offline --no-run --message-format=json > "$RUNNER_TEMP/brief-offline-build.jsonl"
+          verifier=$(jq -ser '[.[] | select(.reason == "compiler-artifact"
+            and .target.name == "brief_to_draft_offline" and .executable != null) | .executable]
+            | if length == 1 then .[0] else error("expected one offline verifier") end' "$RUNNER_TEMP/brief-offline-build.jsonl")
+          MARLIN_BRIEF_OFFLINE_TEST="$verifier" cargo test --locked -p marlin-agent-core \
+            --features brief-to-draft-vm-test --test brief_to_draft_vm
 
       - name: Compile linked selector benchmarks
         run: |
