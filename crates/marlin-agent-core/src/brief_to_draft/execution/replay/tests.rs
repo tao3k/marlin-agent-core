@@ -148,9 +148,9 @@ fn replay_checks_the_signed_workflow_contract_after_authenticating_the_archive()
             ]);
     let archive = BriefRun {
         activation: activation.id,
-        render_input,
-        readiness,
-        proposal,
+        render_input: render_input.clone(),
+        readiness: readiness.clone(),
+        proposal: proposal.clone(),
         admission: admission.receipt,
         execution,
         input: (input.id, input.value),
@@ -158,10 +158,75 @@ fn replay_checks_the_signed_workflow_contract_after_authenticating_the_archive()
     }
     .export(&host)
     .unwrap();
+
+    let activation = host
+        .enable(EnableWorkflow {
+            plugin: release.id(),
+            version: release.version(),
+            workflow: &workflow,
+            project: &project,
+            project_settings: &toml::Table::new(),
+        })
+        .unwrap();
+    let input = broker
+        .read(&host, &activation.id, &capability("read-brief"))
+        .unwrap();
+    let prepared = broker
+        .prepare_create(&host, &activation.id, &create)
+        .unwrap();
+    let closed = host.disable(&activation.id).unwrap();
+    assert_eq!(closed.outcomes.len(), 1);
+    let denied = prepared.execute(b"blocked");
+    assert!(matches!(
+        denied,
+        Err(WorkspaceEffectError::Admission(
+            PluginDenial::StaleActivation
+        ))
+    ));
+    let execution = GraphLoopExecutionResult::failed_with_visited(
+        RuntimePlanSnapshot {
+            run_id: "closed-before-create".into(),
+            graph_id: proposal.proposed_graph.graph_id.clone(),
+            active_node: None,
+        },
+        vec!["render".into()],
+        vec![CREATE_REFUSED.into()],
+    )
+    .with_node_receipts(vec![
+        GraphNodeExecutionReceipt::completed("render", RENDER),
+        GraphNodeExecutionReceipt::failed("create", CREATE, vec![CREATE_REFUSED.into()]),
+    ]);
+    let admission = marlin_agent_kernel::compile_graph_policy_proposal_with_c_abi_readiness(
+        &execution.snapshot.run_id,
+        &proposal,
+        &readiness,
+    );
+    let denied_archive = BriefRun {
+        activation: activation.id,
+        render_input,
+        readiness,
+        proposal,
+        admission: admission.receipt,
+        execution,
+        input: (input.id, input.value),
+        output: denied.map(|_| None),
+    }
+    .export(&host)
+    .unwrap();
     drop(broker);
     worktree.close().unwrap();
     assert!(!root.exists());
     assert!(BriefRunEvidence::verify(&archive, &hash(&archive), &release).is_ok());
+    let denied =
+        BriefRunEvidence::verify(&denied_archive, &hash(&denied_archive), &release).unwrap();
+    assert_eq!(denied.create_denial(), Some(&PluginDenial::StaleActivation));
+    let mut missing_denial: serde_json::Value = serde_json::from_slice(&denied_archive).unwrap();
+    missing_denial["create_denial"] = serde_json::Value::Null;
+    let missing_denial = serde_json::to_vec(&missing_denial).unwrap();
+    assert!(matches!(
+        BriefRunEvidence::verify(&missing_denial, &hash(&missing_denial), &release),
+        Err(WorkflowEvidenceError::Inconsistent)
+    ));
 
     let policy = policy_module();
     for (declared, substitution) in [

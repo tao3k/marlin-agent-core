@@ -35,6 +35,7 @@ pub use replay::BriefRunEvidence;
 const EXPORT: &str = "marlin_brief_to_draft_propose";
 const RENDER: &str = "brief-to-draft.render";
 const CREATE: &str = "brief-to-draft.create";
+const CREATE_REFUSED: &str = "draft create refused or failed";
 
 /// Evidence from the Scheme proposal, Rust readiness gate and kernel execution.
 #[derive(Debug)]
@@ -312,5 +313,5 @@ fn create(state: &Mutex<ExecutionState>) -> Result<(), &'static str> {
         .output
         .as_ref()
         .map(|_| ())
-        .map_err(|_| "draft create refused or failed")
+        .map_err(|_| CREATE_REFUSED)
 }

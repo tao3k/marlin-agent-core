@@ -4,10 +4,12 @@
 
 //! Typed denials at the plugin release and effect boundaries.
 
+use serde::{Deserialize, Serialize};
+
 use super::CapabilityId;
 
 /// The host reason for refusing a release, activation, or effect.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum PluginDenial {
     InvalidDeclaration,
     UnsupportedContract,

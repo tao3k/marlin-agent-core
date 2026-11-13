@@ -1409,7 +1409,11 @@ uses retained snapshots and receipts. It has no live plugin or provider
 dispatch and no workspace mutation path.
 
 The sample export includes the synthetic brief and draft bytes so the verifier
-can check their digests. Project evidence policy controls what real runs can
+can check their digests. If closing the generation races a prepared create,
+the archived run retains the typed =StaleActivation= refusal alongside the
+failed create node receipt. The file ledger contains only admitted effects.
+An existing destination reaches the broker after admission and leaves a
+settled =Denied= effect. Project evidence policy controls what real runs can
 retain or export. If required bytes or receipts are unavailable, the verifier
 returns an explicit incomplete result. Receipt replay establishes consistency
 with authenticated recorded evidence. Recomputing policy decisions from

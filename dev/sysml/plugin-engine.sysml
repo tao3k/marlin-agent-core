@@ -95,7 +95,9 @@ package MarlinPluginEngine {
                    projects Org facts and executor kinds through Scheme,
                    crosses Rust ABI readiness and runs render and create on
                    the graph kernel. Offline verification binds the ordered
-                   node receipts and terminal result to the file effects. */
+                   node receipts and terminal result to the file effects.
+                   A create refused before admission retains its typed host
+                   denial with no fabricated file effect. */
         }
 
         dependency admissionUsesProtocol from graphAdmission to policyProtocol;

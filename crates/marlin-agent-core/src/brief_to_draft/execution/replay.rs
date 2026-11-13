@@ -9,18 +9,21 @@ use marlin_agent_protocol::{
     GraphLoopStrategy, GraphNodeExecutionStatus, GraphPolicyProposal, GraphPolicyProposalReceipt,
 };
 use marlin_agent_runtime::plugin::{
-    ClosedWorkflowEvidence, EffectId, EffectOutcome, PluginHost, VerifiedRelease,
-    WorkflowEvidenceError,
+    ClosedWorkflowEvidence, EffectId, EffectOutcome, PluginDenial, PluginHost, VerifiedRelease,
+    WorkflowEvidenceError, WorkspaceEffectError,
 };
 use serde::{Deserialize, Serialize};
 
 use super::super::{INPUT_SCHEMA, SETTINGS_SCHEMA, file_capabilities, policy_module};
-use super::{BriefRenderInput, BriefRun, capability, digest_ref, hash, workflow_abi_requirement};
+use super::{
+    BriefRenderInput, BriefRun, CREATE_REFUSED, capability, digest_ref, hash,
+    workflow_abi_requirement,
+};
 
 #[cfg(test)]
 mod tests;
 
-const SCHEMA: &str = "marlin.brief-to-draft.run.v1";
+const SCHEMA: &str = "marlin.brief-to-draft.run.v2";
 // The nested effect evidence is already limited by its canonical encoder.
 const LIMIT: usize = 18 * 1024 * 1024;
 
@@ -36,6 +39,7 @@ pub struct BriefRunEvidence {
     render_input: BriefRenderInput,
     read: EffectId,
     create: Option<EffectId>,
+    create_denial: Option<PluginDenial>,
     effects: ClosedWorkflowEvidence,
 }
 
@@ -46,13 +50,14 @@ impl BriefRun {
     pub fn export(self, host: &PluginHost<'_>) -> Result<Vec<u8>, WorkflowEvidenceError> {
         let (read, input) = self.input;
         let mut payloads = std::collections::BTreeMap::from([(read, input)]);
-        let create = match self.output {
+        let (create, create_denial) = match self.output {
             Ok(Some((id, bytes))) => {
                 payloads.insert(id, bytes);
-                Some(id)
+                (Some(id), None)
             }
-            Err(marlin_agent_runtime::plugin::WorkspaceEffectError::Effect { id, .. }) => Some(id),
-            _ => None,
+            Err(WorkspaceEffectError::Effect { id, .. }) => (Some(id), None),
+            Err(WorkspaceEffectError::Admission(denial)) => (None, Some(denial)),
+            Ok(None) => (None, None),
         };
         let effects = host.export_closed_effects(&self.activation, payloads)?;
         effects.encode()?;
@@ -65,6 +70,7 @@ impl BriefRun {
             render_input: self.render_input,
             read,
             create,
+            create_denial,
             effects,
         };
         evidence.check_graph()?;
@@ -114,6 +120,11 @@ impl BriefRunEvidence {
     /// The recorded terminal outcome and ordered per-node receipts.
     pub fn execution(&self) -> &GraphLoopExecutionResult {
         &self.execution
+    }
+
+    /// The typed host refusal when create reached the broker without admission.
+    pub fn create_denial(&self) -> Option<&PluginDenial> {
+        self.create_denial.as_ref()
     }
 
     fn check_graph(&self) -> Result<(), WorkflowEvidenceError> {
@@ -189,31 +200,52 @@ impl BriefRunEvidence {
             run.status.clone(),
             receipts.as_slice(),
             create.map(|effect| effect.outcome),
+            self.create_denial.as_ref(),
         ) {
             (
                 GraphLoopExecutionStatus::Completed,
                 [render, create],
                 Some(EffectOutcome::Committed { output_digest }),
+                None,
             ) if render.status == GraphNodeExecutionStatus::Completed
                 && create.status == GraphNodeExecutionStatus::Completed
                 && output_digest == hash(&self.render_input.render()) =>
             {
                 Ok(())
             }
-            (GraphLoopExecutionStatus::Failed, [render, create], outcome)
+            (GraphLoopExecutionStatus::Failed, [render, create], outcome, denial)
                 if render.status == GraphNodeExecutionStatus::Completed
                     && create.status == GraphNodeExecutionStatus::Failed
-                    && !matches!(outcome, Some(EffectOutcome::Committed { .. })) =>
+                    && run.diagnostics == create.diagnostics
+                    && check_create_failure(&create.diagnostics, outcome, denial) =>
             {
                 Ok(())
             }
-            (GraphLoopExecutionStatus::Cancelled, [], None) => Ok(()),
-            (GraphLoopExecutionStatus::Cancelled, [render], None)
+            (GraphLoopExecutionStatus::Cancelled, [], None, None) => Ok(()),
+            (GraphLoopExecutionStatus::Cancelled, [render], None, None)
                 if render.status == GraphNodeExecutionStatus::Completed =>
             {
                 Ok(())
             }
             _ => Err(Inconsistent),
         }
+    }
+}
+
+fn check_create_failure(
+    diagnostics: &[String],
+    outcome: Option<EffectOutcome>,
+    denial: Option<&PluginDenial>,
+) -> bool {
+    match (outcome, denial) {
+        (
+            Some(EffectOutcome::Denied | EffectOutcome::Failed | EffectOutcome::Indeterminate),
+            None,
+        )
+        | (None, Some(PluginDenial::StaleActivation | PluginDenial::CapacityExceeded)) => {
+            diagnostics == [CREATE_REFUSED]
+        }
+        (None, None) => diagnostics != [CREATE_REFUSED],
+        _ => false,
     }
 }
