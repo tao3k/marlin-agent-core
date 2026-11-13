@@ -2630,3 +2630,26 @@ the shared snapshot; a subsequent snapshot run measured 20.28/27.48 ms.
 Implementations and host load differed, so these are diagnostic observations,
 not a controlled speedup or a guarantee on tail latency. The cold Release
 startup gap and a matched source-fixed performance cohort remain open.
+
+** Scheme-owned Mini Buffer prompts (2026-11-14)
+
+The selected =ui-layout= module now declares a bounded =ui-prompt= with a
+trailing editable field. The native projection admits only a template whose
+last span binds that field. The generic Ratatui mapper clips the value by
+grapheme and terminal-cell width and places the cursor; the history-search
+status line no longer needs a special Rust region paint branch. Scheme also
+selects the transient hint through a slot in the same frame tree. The host
+still owns the live query value and cursor mapping.
+
+At =601ff02c=, the selected Scheme build/stage, focused native Scheme
+=ui-workbench= test, 243 TUI library tests (9 ignored), strict TUI/UI Clippy,
+M-x first-arrow PTY, real resize/stream/scroll/history-search PTY, and strict
+SysML validation passed. The linked =ui_mapping= Criterion executable measured
+the 256-byte direct prompt at =[5.3778, 5.7437, 6.2216]= microseconds and
+the generic Prompt tree at =[5.6110, 6.4492, 7.6871]= microseconds (30 samples;
+95% interval and point estimate). Seven and six measurements respectively
+were high outliers, and the intervals overlap. These numbers cover terminal
+mapping only, under shared-host load after an artifact-lock wait. Criterion's
+saved-baseline change percentages compare different earlier binaries; they
+do not establish an improvement or regression for this design. The selected
+frame and first-input latency still require a source-fixed terminal cohort.
