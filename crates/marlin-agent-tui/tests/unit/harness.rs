@@ -4,9 +4,9 @@
 // Unit cases exercise the actual library modules, rather than compiling a
 // second copy of the application into an integration-test crate.
 pub(crate) use crate::{
-    app, cli, composer, config, context_budget, edge_gateway, event_queue, frame_schedule,
-    input, journal_gateway, model_catalog, output_limit, prompt_history, render, replay,
-    session_browser, ui_elements, ui_fixture, viewport, workspace, wrap,
+    app, cli, composer, config, context_budget, edge_gateway, event_queue, frame_schedule, input,
+    journal_gateway, model_catalog, output_limit, prompt_history, render, replay, session_browser,
+    ui_elements, ui_fixture, viewport, workspace, wrap,
 };
 
 #[path = "app_cases.rs"]
