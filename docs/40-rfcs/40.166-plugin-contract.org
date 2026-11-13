@@ -747,7 +747,11 @@ headlessly. The frontend sandbox and its egress controls need a separate gate.
 :END:
 
 The manifest requests a capability ceiling. A project operator grants an
-explicit subset to a specific =ProjectId= and bundle digest. The host checks
+explicit subset to a specific =ProjectId= and installed bundle digest. Each
+granted capability must match the signed declaration, including its kind and
+registered path. A refused replacement leaves the current grant and activation
+in place. Offline verification checks the retained grant against the same
+signed declaration. The host checks
 the intersection of manifest request, current project grant, current host
 policy, and contribution scope. A grant for a workspace file resolves to a
 host-controlled path under the selected worktree. The workspace broker checks

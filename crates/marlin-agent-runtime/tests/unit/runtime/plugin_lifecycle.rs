@@ -6,9 +6,9 @@ use std::collections::BTreeMap;
 
 use marlin_agent_protocol::RuntimeWorkspaceProjectId;
 use marlin_agent_runtime::plugin::{
-    CapabilityId, ContributionId, EffectOutcome, EnableWorkflow, FileCapability, PluginDenial,
-    PluginHost, PolicyModuleId, ProjectGrant, ReleaseAttestation, ReleaseTrust, SchemaId,
-    SignedRelease, WorkflowRegistration,
+    CapabilityId, ClosedWorkflowEvidence, ContributionId, EffectOutcome, EnableWorkflow,
+    FileCapability, PluginDenial, PluginHost, PolicyModuleId, ProjectGrant, ReleaseAttestation,
+    ReleaseTrust, SchemaId, SignedRelease, WorkflowEvidenceError, WorkflowRegistration,
 };
 use ring::signature::{Ed25519KeyPair, KeyPair};
 
@@ -172,6 +172,27 @@ fn brief_workflow_requires_scope_and_accounts_for_admitted_effects_on_close() {
     let outside = FileCapability::Create {
         path: "drafts/outside.org".into(),
     };
+    let mut changed_grant = grant.clone();
+    changed_grant.revision += 1;
+    changed_grant
+        .capabilities
+        .insert(write_id.clone(), outside.clone());
+    assert_eq!(
+        host.replace_project_grant(changed_grant.clone()),
+        Err(PluginDenial::MissingCapability(write_id.clone()))
+    );
+    let extra: CapabilityId = "extra-draft".to_owned().try_into().unwrap();
+    changed_grant
+        .capabilities
+        .insert(write_id.clone(), write.clone());
+    changed_grant
+        .capabilities
+        .insert(extra.clone(), outside.clone());
+    assert_eq!(
+        host.replace_project_grant(changed_grant),
+        Err(PluginDenial::MissingCapability(extra))
+    );
+    assert_eq!(host.enable(request()).unwrap(), active);
     assert!(matches!(
         host.admit_effect(&project, &active.id, &write_id, &outside),
         Err(PluginDenial::MissingCapability(_))
@@ -230,5 +251,16 @@ fn brief_workflow_requires_scope_and_accounts_for_admitted_effects_on_close() {
             .outcomes
             .get(&unfinished_id),
         Some(&EffectOutcome::Indeterminate)
+    );
+    let evidence = host
+        .export_closed_effects(&reopened.id, BTreeMap::new())
+        .unwrap();
+    evidence.validate_release(&release).unwrap();
+    let mut tampered = serde_json::to_value(evidence).unwrap();
+    tampered["grant"]["capabilities"]["extra-draft"] = serde_json::to_value(outside).unwrap();
+    let tampered: ClosedWorkflowEvidence = serde_json::from_value(tampered).unwrap();
+    assert_eq!(
+        tampered.validate_release(&release),
+        Err(WorkflowEvidenceError::Inconsistent)
     );
 }

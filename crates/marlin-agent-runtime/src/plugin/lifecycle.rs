@@ -209,6 +209,18 @@ impl<'owner> PluginHost<'owner> {
         if grant.project.as_str().is_empty() || grant.revision == 0 {
             return Err(PluginDenial::ScopeMismatch);
         }
+        let release = self
+            .releases
+            .values()
+            .find(|release| release.digest() == grant.bundle)
+            .ok_or(PluginDenial::MissingRelease)?;
+        if let Some((id, _)) = grant
+            .capabilities
+            .iter()
+            .find(|(id, capability)| release.capability(id) != Some(*capability))
+        {
+            return Err(PluginDenial::MissingCapability(id.clone()));
+        }
         let key = (grant.project.clone(), grant.bundle);
         if let Some(previous) = self.grants.get(&key) {
             if previous == &grant {

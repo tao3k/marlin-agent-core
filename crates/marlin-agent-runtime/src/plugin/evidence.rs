@@ -98,6 +98,11 @@ impl ClosedWorkflowEvidence {
         };
         if self.activation.bundle != release.digest()
             || self.activation.id.plugin() != release.id()
+            || self
+                .grant
+                .capabilities
+                .iter()
+                .any(|(id, capability)| release.capability(id) != Some(capability))
             || workflow.requires.iter().any(|capability| {
                 self.grant.capabilities.get(capability) != release.capability(capability)
             })

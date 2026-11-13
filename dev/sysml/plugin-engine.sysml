@@ -73,7 +73,9 @@ package MarlinPluginEngine {
         part <'MAR-PLG-A09'> workflowBundleAdmission {
             doc /* crates/marlin-agent-runtime/src/plugin owns signed TOML
                    verification, host-provisioned workflow registration, project
-                   grant checks and generation-scoped effect admission. Closing
+                   grant checks and generation-scoped effect admission. Grant
+                   replacement and offline replay both check every granted
+                   capability against the installed signed declaration. Closing
                    a generation retains outcomes for admitted effects.
                    Brief-to-Draft execution requires a live generation for
                    its registered policy module. Offline graph replay checks
