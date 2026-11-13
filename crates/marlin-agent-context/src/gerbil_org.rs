@@ -276,7 +276,7 @@ impl<'vm> ContextOrgModule<'vm> {
             .runtime
             .call_rooted(&self.open, &request.into_object())?;
         let identity = NEXT_SOURCE_ID
-            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |value| {
+            .try_update(Ordering::Relaxed, Ordering::Relaxed, |value| {
                 value.checked_add(1)
             })
             .map_err(|_| ContextOrgError::Invalid("Org source identity space exhausted"))?;

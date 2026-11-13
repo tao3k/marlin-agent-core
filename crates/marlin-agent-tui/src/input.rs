@@ -33,7 +33,7 @@ impl WheelAccumulator {
     pub(crate) fn push(&self, up: bool) -> bool {
         let step = if up { 1 } else { -1 };
         self.0
-            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |value| {
+            .try_update(Ordering::Relaxed, Ordering::Relaxed, |value| {
                 Some(value.saturating_add(step))
             })
             .expect("wheel update cannot fail")

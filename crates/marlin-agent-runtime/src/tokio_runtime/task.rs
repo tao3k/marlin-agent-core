@@ -413,7 +413,7 @@ impl RuntimeTaskTracker {
             .checked_add(reserved_memory)
             .ok_or(RuntimeAdmissionError::MemoryBudgetExceeded)?;
         let generation = NEXT_GENERATION
-            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |next| {
+            .try_update(Ordering::Relaxed, Ordering::Relaxed, |next| {
                 next.checked_add(1)
             })
             .map_err(|_| RuntimeAdmissionError::GenerationExhausted)?;

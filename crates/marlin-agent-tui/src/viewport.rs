@@ -45,7 +45,7 @@ static NEXT_TRANSCRIPT_ID: AtomicU64 = AtomicU64::new(1);
 impl Transcript {
     pub(crate) fn new(entries: Vec<(String, String)>) -> Self {
         let identity = NEXT_TRANSCRIPT_ID
-            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |id| id.checked_add(1))
+            .try_update(Ordering::Relaxed, Ordering::Relaxed, |id| id.checked_add(1))
             .expect("transcript identity exhausted");
         Self {
             folds: Vec::new(),
