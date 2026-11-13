@@ -119,6 +119,7 @@ ownership against stale writers using the same store.
 | =GetSessionSummary= | One indexed read of the journal tail and the host's live turn scope | Discover the latest turn and whether it is empty, active, finished or unresolved. |
 | =WatchSessionTurn= | =SessionEventStore= keyset pages and =SessionEventCursor= | Save the last processed event ID and pass it back as an exclusive cursor after reconnecting. |
 | =CancelSessionTurn= | Turn-local Runtime task scope and =RuntimeTaskShutdownReceipt= | Request cancellation and inspect local retirement alongside the committed Session outcome. |
+| =GetSessionTurnCancellation= | Journaled Runtime observation and committed turn outcome | Read cancellation evidence by turn after reconnect or restart. |
 
 Start commits the existing journal record before dispatch. The Runtime owns the
 task independently of the connection. It replays completed history, persists
@@ -164,7 +165,7 @@ The client opens an authenticated channel to the host, calls
 =GetCapabilities=, and uses the returned =session_id= to address the host's
 existing Session. A missing =session_id= means the endpoint has no Session
 binding. =GetCapabilities= does not provide a transcript or latest ordinal.
-The example starts from a known empty Session. The proposed Session summary
+The example starts from a known empty Session. The Session summary
 below covers opening an existing Session without saved client state.
 
 ** Send a draft
@@ -274,8 +275,8 @@ these Session operations for Marlin-backed work.
 :END:
 
 Submission recovery is implemented in =StartSessionTurn=. =GetSessionSummary=
-discovers the latest committed turn. Cancellation receipt readback remains a
-proposal.
+discovers the latest committed turn. =GetSessionTurnCancellation= reads
+recorded cancellation evidence by turn.
 [[file:../../dev/sysml/app-server.sysml][OpenSysML requirements]]
 
 ** User reports that inform the design
@@ -386,13 +387,15 @@ no stop evidence, display that uncertainty alongside local retirement. If the
 Session write fails, surface the journal error independently of the Runtime
 result so a locally retired task can still require Session reconciliation.
 
-Expose the last authoritative cancellation observation by turn reference
-through the Session read surface. A receipt retained after later turns or a
-process restart must come from a recorded Runtime observation associated with
-that turn. With missing evidence, return an explicit unavailable receipt
-state and the journal outcome if present. The turn scope must also give every
-pending tool call a terminal observation or unresolved state if its executor
-disappears. The current text-turn adapter does not dispatch tools.
+=CancelSessionTurn= records the Runtime observation before returning it.
+=GetSessionTurnCancellation= reads the strongest recorded observation for
+the authorized turn, together with the committed outcome if present. The
+journal retains the first observation at each strength. Completed local
+retirement takes precedence over an incomplete observation. A process
+restart preserves those records. When no observation was recorded, the
+read returns =unavailable= evidence. Provider effects remain governed by
+the committed Session outcome. Tool-call recovery is outside the current
+text-turn contract.
 
 ** Acceptance scenarios for the next protocol change
 
@@ -416,7 +419,8 @@ checkpoint, kills the server process, then opens the same database from a
 new server process. It checks the original turn, =ALREADY_EXISTS= for changed
 text, replay of the original checkpoint, and one gateway dispatch across
 both processes. The replay reports that the unfinished turn has no live owner.
-Cancellation receipt readback across restart remains a proposal.
+A separate Turso HTTP/2 test verifies that a recorded local retirement
+receipt survives a process restart and retains the uncertain provider outcome.
 Record first usable summary latency, replay bytes and cancel latency while
 replay is backpressured before choosing budgets.
 

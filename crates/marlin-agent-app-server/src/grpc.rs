@@ -122,6 +122,22 @@ impl<S: marlin_agent_storage::SessionEventStore + Clone + 'static> app_server_se
         Ok(Response::new(summary))
     }
 
+    async fn get_session_turn_cancellation(
+        &self,
+        request: Request<crate::v1::GetSessionTurnCancellationRequest>,
+    ) -> Result<Response<crate::v1::GetSessionTurnCancellationResponse>, Status> {
+        (self.authorize)(request.metadata())?;
+        let timeout = turn_timeout(request.metadata())?;
+        let binding = self.session.as_ref().ok_or_else(session_unavailable)?;
+        let evidence =
+            tokio::time::timeout(timeout, binding.read_cancellation(request.into_inner()))
+                .await
+                .map_err(|_| {
+                    Status::deadline_exceeded("Cancellation evidence deadline elapsed")
+                })??;
+        Ok(Response::new(evidence))
+    }
+
     async fn start_session_turn(
         &self,
         request: Request<crate::v1::StartSessionTurnRequest>,

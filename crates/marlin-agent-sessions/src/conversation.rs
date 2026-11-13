@@ -18,7 +18,10 @@ use serde::{Deserialize, Serialize};
 
 #[path = "conversation_events.rs"]
 mod events;
-pub use events::{ConversationEvent, ConversationEventEntry, ConversationEventReader, ConversationTail, ConversationTailState};
+pub use events::{
+    ConversationCancellationEvidence, ConversationEvent, ConversationEventEntry,
+    ConversationEventReader, ConversationRetirementStatus, ConversationTail, ConversationTailState,
+};
 mod tool_review;
 pub use tool_review::{
     ConversationToolExecutionClaim, ConversationToolRequestKey, ConversationToolReviewDecision,

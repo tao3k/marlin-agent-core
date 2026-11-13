@@ -9,6 +9,32 @@ use std::num::NonZeroU64;
 
 use super::*;
 
+const CANCELLATION_KIND: &str = "marlin.conversation.cancellation.v1";
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum ConversationRetirementStatus {
+    Completed,
+    TimedOut,
+    CleanupUnconfirmed,
+}
+
+/// Local Runtime evidence recorded separately from the provider outcome.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct ConversationCancellationEvidence {
+    pub status: ConversationRetirementStatus,
+    pub cancellation_requested: bool,
+    pub tracker_closed: bool,
+    pub timeout_ms: Option<u64>,
+    pub tracked_tasks_at_shutdown: u64,
+    pub remaining_tasks: u64,
+}
+
+impl ConversationCancellationEvidence {
+    pub fn completed(&self) -> bool {
+        self.status == ConversationRetirementStatus::Completed
+    }
+}
+
 #[derive(Debug)]
 pub enum ConversationEvent {
     Started(ConversationTurnStart),
@@ -58,6 +84,110 @@ impl<S: SessionEventStore> ConversationEventReader<S> {
             session,
             agent,
         }
+    }
+
+    /// Retain the first observation at each strength. A completed observation
+    /// supersedes incomplete evidence, including out-of-order writes.
+    pub async fn record_cancellation(
+        &self,
+        id: ConversationTurnId,
+        evidence: &ConversationCancellationEvidence,
+        created_at_unix_ms: i64,
+    ) -> Result<(), ConversationJournalError> {
+        let event = SessionEventRecord {
+            project_id: self.project.clone(),
+            session_id: self.session.clone(),
+            agent_id: self.agent.clone(),
+            turn_id: cancellation_key(id)?,
+            event_id: cancellation_event_id(evidence.completed())?,
+            event_kind: CANCELLATION_KIND.into(),
+            causality_parent_event_id: Some(id.start_event_id()?),
+            body: serde_json::to_vec(evidence)?,
+            created_at_unix_ms,
+        };
+        match self.storage.append_session_event(event).await {
+            Ok(()) => Ok(()),
+            Err(StorageError::DuplicateSessionEvent { .. })
+                if self
+                    .cancellation_evidence(id)
+                    .await?
+                    .is_some_and(|stored| !evidence.completed() || stored.completed()) =>
+            {
+                Ok(())
+            }
+            Err(error) => Err(error.into()),
+        }
+    }
+
+    pub async fn cancellation_evidence(
+        &self,
+        id: ConversationTurnId,
+    ) -> Result<Option<ConversationCancellationEvidence>, ConversationJournalError> {
+        let turn = cancellation_key(id)?;
+        // Completed sorts before incomplete. One read chooses the strongest observation.
+        let request = SessionEventPageRequest::new(
+            self.project.clone(),
+            self.session.clone(),
+            StoragePageLimit::new(1)?,
+        )
+        .after(SessionEventCursor::new(turn.clone(), EventId::new("\0")?));
+        let mut page = self.storage.list_session_events_page(request).await?;
+        if page.items.len() > 1 {
+            return Err(invalid());
+        }
+        let Some(record) = page.items.pop() else {
+            return Ok(None);
+        };
+        if record.project_id != self.project
+            || record.session_id != self.session
+            || record.turn_id < turn
+        {
+            return Err(invalid());
+        }
+        if record.turn_id > turn {
+            return Ok(None);
+        }
+        let completed = record.event_id == cancellation_event_id(true)?;
+        if record.agent_id != self.agent
+            || record.event_id != cancellation_event_id(completed)?
+            || record.event_kind != CANCELLATION_KIND
+            || record.causality_parent_event_id != Some(id.start_event_id()?)
+        {
+            return Err(invalid());
+        }
+        let evidence: ConversationCancellationEvidence = serde_json::from_slice(&record.body)?;
+        if evidence.completed() != completed
+            || !evidence.tracker_closed
+            || (completed && evidence.remaining_tasks != 0)
+        {
+            return Err(invalid());
+        }
+        Ok(Some(evidence))
+    }
+
+    pub async fn committed_outcome(
+        &self,
+        id: ConversationTurnId,
+    ) -> Result<Option<ConversationTurnOutcome>, ConversationJournalError> {
+        let after = SessionEventCursor::new(id.storage_id()?, id.checkpoint_event_id(u64::MAX)?);
+        let mut entries = self
+            .page(id, Some(after), StoragePageLimit::new(1)?)
+            .await?;
+        match entries.pop().map(|entry| entry.event) {
+            Some(ConversationEvent::Outcome(outcome)) => Ok(Some(outcome)),
+            Some(_) => Err(invalid()),
+            None => Ok(None),
+        }
+    }
+
+    pub async fn has_committed_start(
+        &self,
+        id: ConversationTurnId,
+    ) -> Result<bool, ConversationJournalError> {
+        Ok(self
+            .resolve_cursor(id, id.start_event_id()?)
+            .await?
+            .is_some())
     }
 
     /// Seek the conversation tail without scanning the transcript or loading event bodies.
@@ -331,4 +461,12 @@ fn checkpoint_sequence(turn: ConversationTurnId, event: &EventId) -> Option<u64>
 
 fn invalid() -> ConversationJournalError {
     ConversationJournalError::InvalidEvent("invalid conversation event page".into())
+}
+
+fn cancellation_key(id: ConversationTurnId) -> Result<TurnId, StorageError> {
+    TurnId::new(format!("conversation-cancellation:{:020}", id.get()))
+}
+
+fn cancellation_event_id(completed: bool) -> Result<EventId, StorageError> {
+    EventId::new(if completed { "completed" } else { "incomplete" })
 }

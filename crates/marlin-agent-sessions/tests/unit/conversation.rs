@@ -247,11 +247,22 @@ async fn tool_execution_requires_a_matching_review_and_one_durable_claim() {
         session.clone(),
         agent.clone(),
     );
+    let tail = reader.latest_turn().await.unwrap().unwrap();
+    assert_eq!(tail.turn, id);
+    assert_eq!(
+        tail.state,
+        marlin_agent_sessions::ConversationTailState::Uncertain
+    );
+    assert!(matches!(
+        reader.committed_outcome(id).await.unwrap(),
+        Some(ConversationTurnOutcome::ToolRequested { .. })
+    ));
     let entries = reader
         .page(id, None, StoragePageLimit::new(4).unwrap())
         .await
         .unwrap();
     assert_eq!(entries.len(), 4);
+    assert_eq!(&tail.event_id, entries[3].cursor.event_id());
     assert!(matches!(
         &entries[2].event,
         ConversationEvent::ToolReview(_)

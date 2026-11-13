@@ -158,12 +158,11 @@ package MarlinAppServer {
                calls for other Sessions. A terminal commit racing attachment
                remains visible in the journal suffix. */
     }
-    // Proposed cancellation readback.
     requirement <'MAR-APP-R06'> recoverCancellationEvidence {
         doc /* Keep Session outcome, local retirement and provider stop
-               evidence independently observable by turn. Persist any Runtime
-               receipt offered across restart. Expose missing evidence and
-               unresolved work when the corresponding owner cannot confirm it. */
+               evidence independently observable by turn. CancelSessionTurn
+               records the local Runtime observation. GetSessionTurnCancellation
+               returns it after restart or reports missing evidence. */
     }
     allocation submissionIdentity allocate recoverSubmission to appServer.sessionJournal;
     allocation recoveryBudget allocate boundedSessionRecovery to appServer.turnService;

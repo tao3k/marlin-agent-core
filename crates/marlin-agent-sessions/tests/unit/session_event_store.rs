@@ -4,9 +4,9 @@
 
 use marlin_agent_protocol::ModelEndpoint;
 use marlin_agent_sessions::{
-    ConversationEventReader, ConversationJournal, ConversationJournalError,
-    ConversationSubmissionId, ConversationTerminalObservation, ConversationTurnOutcome,
-    ConversationTurnStart,
+    ConversationCancellationEvidence, ConversationEventReader, ConversationJournal,
+    ConversationJournalError, ConversationRetirementStatus, ConversationSubmissionId,
+    ConversationTerminalObservation, ConversationTurnOutcome, ConversationTurnStart,
 };
 use marlin_agent_storage::{
     AgentId, InMemoryAgentStorage, ProjectId, SessionEventBatchWriteReceipt, SessionEventCount,
@@ -18,6 +18,45 @@ use marlin_agent_storage::{
 // backend need not implement unrelated artifact or topology operations.
 #[derive(Clone, Default)]
 struct SessionOnly(InMemoryAgentStorage);
+
+#[tokio::test]
+async fn completed_cancellation_evidence_survives_late_incomplete_writes() {
+    let reader = ConversationEventReader::new(
+        SessionOnly::default(),
+        ProjectId::new("project").unwrap(),
+        SessionId::new("session").unwrap(),
+        AgentId::new("agent").unwrap(),
+    );
+    let turn = marlin_agent_sessions::ConversationTurnId::from_ordinal(1.try_into().unwrap());
+    let completed = ConversationCancellationEvidence {
+        status: ConversationRetirementStatus::Completed,
+        cancellation_requested: true,
+        tracker_closed: true,
+        timeout_ms: Some(10),
+        tracked_tasks_at_shutdown: 1,
+        remaining_tasks: 0,
+    };
+    let timeout = ConversationCancellationEvidence {
+        status: ConversationRetirementStatus::TimedOut,
+        remaining_tasks: 1,
+        ..completed.clone()
+    };
+    assert_eq!(reader.cancellation_evidence(turn).await.unwrap(), None);
+    reader.record_cancellation(turn, &timeout, 1).await.unwrap();
+    assert_eq!(
+        reader.cancellation_evidence(turn).await.unwrap(),
+        Some(timeout.clone())
+    );
+    reader
+        .record_cancellation(turn, &completed, 2)
+        .await
+        .unwrap();
+    reader.record_cancellation(turn, &timeout, 3).await.unwrap();
+    assert_eq!(
+        reader.cancellation_evidence(turn).await.unwrap(),
+        Some(completed)
+    );
+}
 
 #[tokio::test]
 async fn duplicate_submission_rolls_back_new_ordinal_and_survives_reopen() {

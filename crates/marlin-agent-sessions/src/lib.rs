@@ -15,13 +15,14 @@ pub use context::{
     ContextExpansionPolicy, ContextNamespace, ContextVisibility, SessionIsolationPolicy,
 };
 pub use conversation::{
-    CONVERSATION_MAX_CHECKPOINT_SEGMENTS, ConversationCheckpointChannel,
-    ConversationCheckpointSpan, ConversationEvent, ConversationEventEntry, ConversationEventReader,
-    ConversationJournal, ConversationJournalError, ConversationPendingToolRequest,
-    ConversationSubmissionId, ConversationTail, ConversationTailState, ConversationTerminalObservation, ConversationToolExecutionClaim,
-    ConversationToolRequestKey, ConversationToolReviewDecision, ConversationToolReviewReceipt,
-    ConversationToolReviewRequest, ConversationToolReviewStatus, ConversationTurn,
-    ConversationTurnId, ConversationTurnOutcome, ConversationTurnStart,
+    CONVERSATION_MAX_CHECKPOINT_SEGMENTS, ConversationCancellationEvidence,
+    ConversationCheckpointChannel, ConversationCheckpointSpan, ConversationEvent,
+    ConversationEventEntry, ConversationEventReader, ConversationJournal, ConversationJournalError,
+    ConversationPendingToolRequest, ConversationRetirementStatus, ConversationSubmissionId,
+    ConversationTail, ConversationTailState, ConversationTerminalObservation,
+    ConversationToolExecutionClaim, ConversationToolRequestKey, ConversationToolReviewDecision,
+    ConversationToolReviewReceipt, ConversationToolReviewRequest, ConversationToolReviewStatus,
+    ConversationTurn, ConversationTurnId, ConversationTurnOutcome, ConversationTurnStart,
     ConversationUncertaintyReason,
 };
 pub use id::{SessionId, SessionIdError, SessionKind};

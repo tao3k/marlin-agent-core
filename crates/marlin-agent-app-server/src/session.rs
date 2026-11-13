@@ -19,8 +19,9 @@ use marlin_agent_runtime::{
     RuntimeTaskScope, RuntimeTaskShutdownReceipt, RuntimeTaskShutdownStatus, TokioAgentRuntime,
 };
 use marlin_agent_sessions::{
-    ConversationCheckpointChannel, ConversationEvent, ConversationEventReader, ConversationJournal,
-    ConversationJournalError, ConversationSubmissionId, ConversationTailState,
+    ConversationCancellationEvidence, ConversationCheckpointChannel, ConversationEvent,
+    ConversationEventReader, ConversationJournal, ConversationJournalError,
+    ConversationRetirementStatus, ConversationSubmissionId, ConversationTailState,
     ConversationTerminalObservation, ConversationTurnId, ConversationTurnOutcome,
     ConversationTurnStart, ConversationUncertaintyReason, RuntimeTaskTrackerPolicy,
 };
@@ -38,10 +39,12 @@ use tonic::Status;
 use crate::{
     grpc::{MAX_REQUEST_BYTES, MAX_TURN_TIME, account_output},
     v1::{
-        CancelSessionTurnRequest, CancelSessionTurnResponse, GetSessionSummaryRequest,
-        GetSessionSummaryResponse, RuntimeShutdownReceipt, SessionRecoveryState, SessionTurnEvent,
-        SessionTurnOutcome, SessionTurnRef, StartSessionTurnRequest, TextCheckpoint, TurnStarted,
-        WatchSessionTurnRequest, session_turn_event::Event,
+        CancelSessionTurnRequest, CancelSessionTurnResponse, CancellationEvidenceUnavailable,
+        GetSessionSummaryRequest, GetSessionSummaryResponse, GetSessionTurnCancellationRequest,
+        GetSessionTurnCancellationResponse, RuntimeRetirementStatus, RuntimeShutdownReceipt,
+        SessionRecoveryState, SessionTurnEvent, SessionTurnOutcome, SessionTurnRef,
+        StartSessionTurnRequest, TextCheckpoint, TurnStarted, WatchSessionTurnRequest,
+        get_session_turn_cancellation_response::Evidence, session_turn_event::Event,
     },
 };
 
@@ -299,7 +302,13 @@ impl<S: SessionEventStore + Clone + 'static> SessionBinding<S> {
             RuntimeTaskTrackerPolicy::cancel_on_shutdown(Some(10_000))
         };
         let receipt = active.runtime.shutdown_tasks(&policy).await;
-        let outcome = if *receipt.status() == RuntimeTaskShutdownStatus::Completed {
+        let evidence = cancellation_evidence(&receipt);
+        self.inner
+            .reader
+            .record_cancellation(id, &evidence, now_ms())
+            .await
+            .map_err(journal_status)?;
+        let outcome = if evidence.completed() {
             let outcome = active
                 .finished
                 .wait_for(Option::is_some)
@@ -311,8 +320,40 @@ impl<S: SessionEventStore + Clone + 'static> SessionBinding<S> {
         };
         Ok(CancelSessionTurnResponse {
             turn: Some(turn),
-            runtime: Some(runtime_receipt(&receipt)),
+            runtime: Some(runtime_receipt(evidence)),
             outcome: outcome.into(),
+        })
+    }
+
+    pub(crate) async fn read_cancellation(
+        &self,
+        request: GetSessionTurnCancellationRequest,
+    ) -> Result<GetSessionTurnCancellationResponse, Status> {
+        let (turn, id) = self.turn_ref(request.turn)?;
+        let reader = &self.inner.reader;
+        if !reader
+            .has_committed_start(id)
+            .await
+            .map_err(journal_status)?
+        {
+            return Err(Status::not_found("turn has no committed start"));
+        }
+        let evidence = match reader
+            .cancellation_evidence(id)
+            .await
+            .map_err(journal_status)?
+        {
+            Some(evidence) => Evidence::Recorded(runtime_receipt(evidence)),
+            None => Evidence::Unavailable(CancellationEvidenceUnavailable {}),
+        };
+        let outcome = reader.committed_outcome(id).await.map_err(journal_status)?;
+        Ok(GetSessionTurnCancellationResponse {
+            turn: Some(turn),
+            evidence: Some(evidence),
+            outcome: outcome
+                .as_ref()
+                .map_or(SessionTurnOutcome::Unspecified, outcome_status)
+                .into(),
         })
     }
 }
@@ -635,14 +676,39 @@ fn outcome_status(outcome: &ConversationTurnOutcome) -> SessionTurnOutcome {
     }
 }
 
-fn runtime_receipt(receipt: &RuntimeTaskShutdownReceipt) -> RuntimeShutdownReceipt {
-    RuntimeShutdownReceipt {
-        completed: *receipt.status() == RuntimeTaskShutdownStatus::Completed,
+fn cancellation_evidence(receipt: &RuntimeTaskShutdownReceipt) -> ConversationCancellationEvidence {
+    ConversationCancellationEvidence {
+        status: match receipt.status() {
+            RuntimeTaskShutdownStatus::Completed => ConversationRetirementStatus::Completed,
+            RuntimeTaskShutdownStatus::TimedOut => ConversationRetirementStatus::TimedOut,
+            RuntimeTaskShutdownStatus::CleanupUnconfirmed => {
+                ConversationRetirementStatus::CleanupUnconfirmed
+            }
+        },
         cancellation_requested: receipt.cancellation_requested(),
         tracker_closed: receipt.tracker_closed(),
         tracked_tasks_at_shutdown: receipt.tracked_resource_count_at_shutdown() as u64,
         remaining_tasks: receipt.remaining_resource_count() as u64,
         timeout_ms: receipt.timeout_ms(),
+    }
+}
+
+fn runtime_receipt(evidence: ConversationCancellationEvidence) -> RuntimeShutdownReceipt {
+    RuntimeShutdownReceipt {
+        completed: evidence.completed(),
+        cancellation_requested: evidence.cancellation_requested,
+        tracker_closed: evidence.tracker_closed,
+        tracked_tasks_at_shutdown: evidence.tracked_tasks_at_shutdown,
+        remaining_tasks: evidence.remaining_tasks,
+        timeout_ms: evidence.timeout_ms,
+        status: match evidence.status {
+            ConversationRetirementStatus::Completed => RuntimeRetirementStatus::Completed,
+            ConversationRetirementStatus::TimedOut => RuntimeRetirementStatus::TimedOut,
+            ConversationRetirementStatus::CleanupUnconfirmed => {
+                RuntimeRetirementStatus::CleanupUnconfirmed
+            }
+        }
+        .into(),
     }
 }
 

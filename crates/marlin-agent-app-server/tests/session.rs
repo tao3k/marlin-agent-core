@@ -18,9 +18,10 @@ use std::{
 use marlin_agent_app_server::{
     AppServer, SessionBinding,
     v1::{
-        CancelSessionTurnRequest, GetSessionSummaryRequest, SessionRecoveryState,
-        SessionTurnOutcome, SessionTurnRef, StartSessionTurnRequest, WatchSessionTurnRequest,
-        app_server_client::AppServerClient, session_turn_event::Event,
+        CancelSessionTurnRequest, GetSessionSummaryRequest, GetSessionTurnCancellationRequest,
+        SessionRecoveryState, SessionTurnOutcome, SessionTurnRef, StartSessionTurnRequest,
+        WatchSessionTurnRequest, app_server_client::AppServerClient,
+        get_session_turn_cancellation_response::Evidence, session_turn_event::Event,
     },
 };
 use marlin_agent_protocol::{
@@ -246,6 +247,10 @@ async fn gui_reconnects_with_the_journal_cursor_and_cancels_its_runtime_task() {
         foreign.session_id = "other-session".into();
         assert_eq!(client.cancel_session_turn(authorized(CancelSessionTurnRequest { turn: Some(foreign) })).await.unwrap_err().code(), Code::NotFound);
         let cancel = || authorized(CancelSessionTurnRequest { turn: Some(turn.clone()) });
+        let read_cancellation = || authorized(GetSessionTurnCancellationRequest { turn: Some(turn.clone()) });
+        let missing = client.get_session_turn_cancellation(read_cancellation()).await.unwrap().into_inner();
+        assert!(matches!(missing.evidence, Some(Evidence::Unavailable(_))));
+        assert_eq!(missing.outcome(), SessionTurnOutcome::Unspecified);
         let receipt = client.cancel_session_turn(cancel()).await.unwrap().into_inner();
         assert_eq!(receipt.turn, Some(turn.clone()));
         let runtime = receipt.runtime.unwrap();
@@ -263,6 +268,9 @@ async fn gui_reconnects_with_the_journal_cursor_and_cancels_its_runtime_task() {
         assert!(suffix.message().await.unwrap().is_none());
         let repeat = client.cancel_session_turn(cancel()).await.unwrap().into_inner();
         assert!(!repeat.runtime.unwrap().cancellation_requested);
+        let recorded = client.get_session_turn_cancellation(read_cancellation()).await.unwrap().into_inner();
+        assert_eq!(recorded.outcome(), SessionTurnOutcome::RemoteUncertain);
+        assert_eq!(recorded.evidence, Some(Evidence::Recorded(runtime)));
         let retry = client.start_session_turn(authorized(start)).await.unwrap().into_inner();
         assert_eq!(retry.turn, Some(turn));
         assert_eq!(gateway.calls.load(Ordering::Relaxed), 1);
@@ -352,13 +360,17 @@ async fn turso_app_server_process() {
         // The parent kills this process after observing a durable checkpoint.
         std::future::pending::<()>().await;
     }
-    assert_eq!(phase, "reopened");
+    if phase == "cancelled" {
+        store.release.add_permits(1);
+        std::future::pending::<()>().await;
+    }
+    assert!(matches!(phase.as_str(), "reopened" | "reopened-cancelled"));
     assert_eq!(control.read_u8().await.unwrap(), b'Q');
     stop.send(()).unwrap();
     server.await.unwrap().unwrap();
     assert_eq!(gateway.calls.load(Ordering::Relaxed), 0);
     let session = SessionId::new("gui-session").unwrap();
-    // Original start, submission claim, and first text checkpoint.
+    // The cancelled case also has its uncertainty record and retirement receipt.
     assert_eq!(
         store
             .storage
@@ -366,9 +378,95 @@ async fn turso_app_server_process() {
             .await
             .unwrap()
             .get(),
-        3
+        if phase == "reopened" { 3 } else { 5 }
     );
     println!("REOPENED_NO_DISPATCH");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn turso_http2_recovers_cancellation_evidence_after_process_restart() {
+    tokio::time::timeout(Duration::from_secs(30), async {
+        let directory = tempfile::tempdir().unwrap();
+        let (mut initial, mut output) = start_turso_process(directory.path(), "cancelled");
+        let initial_pid = initial.id().unwrap();
+        let mut client = AppServerClient::connect(fixture_marker(&mut output, "READY ").await)
+            .await
+            .unwrap();
+        let turn = client
+            .start_session_turn(authorized(StartSessionTurnRequest {
+                session_id: "gui-session".into(),
+                user_text: "请开始".into(),
+                after_turn: 0,
+                submission_id: "cancelled-send-1".into(),
+            }))
+            .await
+            .unwrap()
+            .into_inner()
+            .turn
+            .unwrap();
+        let mut events = client
+            .watch_session_turn(authorized(WatchSessionTurnRequest {
+                turn: Some(turn.clone()),
+                after_event_id: None,
+            }))
+            .await
+            .unwrap()
+            .into_inner();
+        assert!(matches!(
+            events.message().await.unwrap().unwrap().event,
+            Some(Event::Started(_))
+        ));
+        assert!(matches!(
+            events.message().await.unwrap().unwrap().event,
+            Some(Event::TextCheckpoint(_))
+        ));
+        let cancelled = client
+            .cancel_session_turn(authorized(CancelSessionTurnRequest {
+                turn: Some(turn.clone()),
+            }))
+            .await
+            .unwrap()
+            .into_inner();
+        assert_eq!(cancelled.outcome(), SessionTurnOutcome::RemoteUncertain);
+        let receipt = cancelled.runtime.unwrap();
+        assert!(receipt.completed && receipt.cancellation_requested);
+        drop(events);
+        drop(client);
+        initial.kill().await.unwrap();
+        assert!(!initial.wait().await.unwrap().success());
+
+        let (mut reopened, mut output) =
+            start_turso_process(directory.path(), "reopened-cancelled");
+        let mut client = AppServerClient::connect(fixture_marker(&mut output, "READY ").await)
+            .await
+            .unwrap();
+        let recovered = client
+            .get_session_turn_cancellation(authorized(GetSessionTurnCancellationRequest {
+                turn: Some(turn.clone()),
+            }))
+            .await
+            .unwrap()
+            .into_inner();
+        assert_eq!(recovered.outcome(), SessionTurnOutcome::RemoteUncertain);
+        assert_eq!(recovered.turn, Some(turn));
+        assert_eq!(recovered.evidence, Some(Evidence::Recorded(receipt)));
+        drop(client);
+        reopened
+            .stdin
+            .as_mut()
+            .unwrap()
+            .write_all(b"Q")
+            .await
+            .unwrap();
+        fixture_marker(&mut output, "REOPENED_NO_DISPATCH").await;
+        assert!(reopened.wait().await.unwrap().success());
+        assert_eq!(
+            std::fs::read_to_string(directory.path().join("dispatches")).unwrap(),
+            format!("{initial_pid}\n")
+        );
+    })
+    .await
+    .expect("Turso HTTP/2 cancellation recovery exceeded its deadline");
 }
 
 async fn fixture_marker(lines: &mut Lines<BufReader<ChildStdout>>, prefix: &str) -> String {
@@ -478,6 +576,15 @@ async fn turso_http2_recovers_lost_submission_after_process_restart() {
             summary.latest_event_id.as_deref(),
             Some(checkpoint.event_id.as_str())
         );
+        let readback = client
+            .get_session_turn_cancellation(authorized(GetSessionTurnCancellationRequest {
+                turn: Some(expected.clone()),
+            }))
+            .await
+            .unwrap()
+            .into_inner();
+        assert!(matches!(readback.evidence, Some(Evidence::Unavailable(_))));
+        assert_eq!(readback.outcome(), SessionTurnOutcome::Unspecified);
         let recovered = client
             .start_session_turn(authorized(request.clone()))
             .await
