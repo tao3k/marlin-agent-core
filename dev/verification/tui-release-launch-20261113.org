@@ -127,3 +127,35 @@ The split samples show no persistent hundreds-of-milliseconds =C-x b=
 median after fixing the harness. The remaining p95 spread needs a frozen
 source and controlled host load before attributing it to Scheme, Rust,
 terminal scheduling, or the operating system.
+
+* Linked Release launch pair, 2026-11-14
+
+The maintained source-free PTY test passed with a Release binary of 130,025,336
+bytes, SHA-256
+=af29500d49e0f252197bda002670cc16e2a88a16884280f1803c1c2addbc4ad8=.
+It launched from a temporary directory with =GERBIL_HOME=, =GERBIL_PATH= and
+=GERBIL_LOADPATH= pointing to a nonexistent location, rendered the workbench,
+accepted the first M-x Down, and exited with terminal state restored. One
+separate warm run observed the workbench at 781.152 ms.
+
+| Paired operation | Fresh copy | Same file, second run |
+|------------------+------------+-----------------------|
+| Release PTY, first output | 3.107 s | 45.542 ms |
+| Release PTY, workbench visible | 3.538 s | 162.396 ms |
+| Release early exit before terminal/UI check | 3.736 s | 79.768 ms |
+| Copied =/usr/bin/true= early-exit control | 544.139 ms | 2.199 ms |
+
+The process's own startup trace reached the first frame 430.533 ms after
+entry on the first PTY run and 116.463 ms on the second. Scheme VM
+initialization reached 315.644 ms and 40.816 ms respectively. The previous
+trace label =Scheme tooling publication= then reached 427.997 ms and 115.895
+ms, but this temporary session did not bind a tool catalog: that interval
+contained UI session projection. The source now traces UI projection before
+tool catalog binding, so a later artifact can distinguish these phases.
+
+The 3.1-3.7 second first-copy delay occurs mainly before the application
+startup trace and was also observed in the early-exit test. The small
+executable control had its own fresh-copy delay. These observations do not
+identify a single OS cause or establish a cold-start percentile. The shared
+worktree was edited during this run; this is artifact-specific evidence, not
+a frozen-source performance acceptance.

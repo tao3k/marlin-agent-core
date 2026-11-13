@@ -195,6 +195,14 @@ fn run(
     };
     #[cfg(not(feature = "linked-ui"))]
     let mut ui = UiHost::open(&scheme_runtime, directory, &ui_facts)?;
+    if let Some(status) = status.first()
+        && !ui.view().regions.iter().any(|region| {
+            matches!(region, marlin_agent_ui::UiRegion::Status(items) if items.iter().any(|item| item == status))
+        })
+    {
+        return Err("Scheme projection lost the Runtime budget status".into());
+    }
+    trace_startup("UI session projection");
     #[cfg(feature = "linked-ui")]
     let tool_catalog = if config.session.is_some() {
         let declarations = super::super::linked_ui::tooling_declarations(&scheme_runtime)?;
@@ -207,15 +215,7 @@ fn run(
     };
     #[cfg(not(feature = "linked-ui"))]
     let tool_catalog: Option<Arc<marlin_agent_runtime::ModelToolCatalog>> = None;
-    trace_startup("Scheme tooling publication");
-    if let Some(status) = status.first()
-        && !ui.view().regions.iter().any(|region| {
-            matches!(region, marlin_agent_ui::UiRegion::Status(items) if items.iter().any(|item| item == status))
-        })
-    {
-        return Err("Scheme projection lost the Runtime budget status".into());
-    }
-    trace_startup("Scheme UI publication");
+    trace_startup("tool catalog binding");
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()?;
