@@ -2309,8 +2309,11 @@ binds its Bash capability, and attaches the exact offer to model requests.
 On a committed tool request, it presents Scheme's finite Ask choices in the
 Mini Buffer and shows the full arguments in a temporary request view; one
 selection commits the review, claim, and result through a managed Runtime
-task. Provider continuation remains open, so the session stays pending after
-the result instead of sending a synthetic user turn. The offer now builds
+task. The TUI now resumes the same provider turn with the committed tool
+result, or a denial result, without sending a synthetic user turn. The linked
+PTY fixture verifies the second provider request and final answer for both
+ApproveOnce and Reject. This fixture does not qualify a crash between result
+commit and provider continuation. The offer now builds
 a name index once; admission and execution reuse that index. The isolated
 catalog-admission benchmark excludes VM startup, handler execution and journal
 I/O. Its earlier timings predate the index change and need a fixed-cohort rerun
