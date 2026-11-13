@@ -100,8 +100,11 @@ embedded package build receive the same worker budget within a job.
 The Linux linked workflow at =dda113e= built the declared dependencies and
 failed when the Gerbil package manager ran =gxtags github.com= with exit 70.
 CI now directs Gambit errors to stderr during =gerbil deps --install= so the
-package manager's stdout capture preserves the child exit status while the
-original exception can appear in the job log.
+job log records the underlying worker failure. The diagnostic at =7a9c594=
+reported that =gxtags= worker 3, counting from zero, terminated with SIGSEGV
+while scanning its source list. The linked workflow offers an optional crash
+backtrace on GitHub-hosted Ubuntu with the same dependency install command
+and worker count.
 [[https://github.com/tao3k/marlin-agent-core/actions/runs/43485082047/job/132091275495][Linux failure]] ·
 [[https://github.com/tao3k/marlin-agent-core/actions/runs/43492113331/job/132115695841][Linux diagnostic run]]
 

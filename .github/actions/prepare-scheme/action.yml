@@ -4,6 +4,10 @@
 
 name: Build the Scheme package
 description: Use the Gerbil package manager and Builder on the selected platform.
+inputs:
+  trace-dependency-crash:
+    description: Print Gerbil process backtraces from crash dumps on hosted Ubuntu.
+    default: 'false'
 runs:
   using: composite
   steps:
@@ -20,6 +24,7 @@ runs:
       shell: bash
       env:
         GERBIL_PATH: ${{ github.workspace }}/scheme/.gerbil
+        TRACE_DEPENDENCY_CRASH: ${{ inputs.trace-dependency-crash }}
       run: |
         # Orgize's Builder imports bridge tools. Build them from Cargo's
         # selected source before Gerbil installs the Lab dependency graph.
@@ -49,8 +54,27 @@ runs:
             (import :gerbil/tools/gxpkg)
             (pkg-update (getenv "ORGIZE_PACKAGE"))'
         )
+        if [[ "$TRACE_DEPENDENCY_CRASH" == true && "$RUNNER_OS" == Linux ]]; then
+          command -v gdb >/dev/null || sudo apt-get install -y gdb
+          crash_dir=$(mktemp -d "$RUNNER_TEMP/marlin-gerbil-crash.XXXXXX")
+          core_pattern=$(sysctl -n kernel.core_pattern)
+          trap 'sudo sysctl -q -w "kernel.core_pattern=$core_pattern"' EXIT
+          sudo sysctl -q -w "kernel.core_pattern=$crash_dir/core.%e.%p"
+          ulimit -c unlimited
+        fi
         # gxpkg captures gxtags stdout. Send uncaught Gambit errors to stderr.
-        (cd scheme && GAMBOPT="${GAMBOPT:+$GAMBOPT,}debug=q2+" gerbil deps --install)
+        (cd scheme && GAMBOPT="${GAMBOPT:+$GAMBOPT,}debug=q2+" gerbil deps --install) || {
+          status=$?
+          if [[ -n "${crash_dir:-}" ]]; then
+            for dump in "$crash_dir"/core.gxtags.* "$crash_dir"/core.gerbil.*; do
+              [[ -f "$dump" ]] || continue
+              gdb --batch --nx -iex 'set auto-load off' \
+                -ex 'set print frame-arguments none' -ex 'thread apply all bt' \
+                "$(command -v gxtags)" "$dump" || true
+            done
+          fi
+          exit "$status"
+        }
         test "$(git -C "$orgize_checkout" rev-parse HEAD)" = "$orgize_revision"
     - name: Save installed Scheme dependencies
       if: steps.dependencies.outputs.cache-hit != 'true'

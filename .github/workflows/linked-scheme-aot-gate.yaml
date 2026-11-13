@@ -20,6 +20,10 @@ on:
         required: false
         default: '["ubuntu-latest"]'
         type: string
+      trace_dependency_crash:
+        description: Print the dependency crash backtrace on GitHub-hosted Ubuntu.
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -54,6 +58,8 @@ jobs:
 
       - uses: ./.github/actions/prepare-scheme
         if: inputs.artifact == ''
+        with:
+          trace-dependency-crash: ${{ inputs.trace_dependency_crash && inputs.linked_native_runner == '["ubuntu-latest"]' }}
 
       - name: Select the staged Scheme inputs for a manual run
         if: inputs.artifact == ''
