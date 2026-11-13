@@ -215,9 +215,9 @@ fn terminal_rejects_unbound_main_source() {
     let UiElement::Region { child, .. } = child.as_mut() else {
         panic!("region")
     };
-    *child = Box::new(UiElement::Rows(vec![UiElement::Slot(
+    **child = UiElement::Rows(vec![UiElement::Slot(
         UiComponentId::new("conversation").unwrap(),
-    )]));
+    )]);
     assert!(admit_terminal_view(&workbench).is_ok());
     let UiElement::Rows(slots) = &mut workbench.layout.frame_tree else {
         unreachable!()
@@ -228,9 +228,9 @@ fn terminal_rejects_unbound_main_source() {
     let UiElement::Region { child, .. } = child.as_mut() else {
         unreachable!()
     };
-    *child = Box::new(UiElement::Rows(vec![UiElement::Slot(
+    **child = UiElement::Rows(vec![UiElement::Slot(
         UiComponentId::new("unbound").unwrap(),
-    )]));
+    )]);
     assert!(admit_terminal_view(&workbench).is_err());
 }
 
@@ -247,7 +247,7 @@ fn terminal_rejects_unknown_scroll_target_inside_choice() {
     let UiElement::Region { child, .. } = child.as_mut() else {
         panic!("transcript region")
     };
-    *child = Box::new(UiElement::Choice {
+    **child = UiElement::Choice {
         cases: vec![(
             UiComponentId::new("messages").unwrap(),
             UiElement::Region {
@@ -257,7 +257,7 @@ fn terminal_rejects_unknown_scroll_target_inside_choice() {
             },
         )],
         fallback: Box::new(UiElement::Slot(UiComponentId::new("conversation").unwrap())),
-    });
+    };
     assert!(admit_terminal_view(&workbench).is_err());
 }
 
@@ -281,10 +281,10 @@ fn terminal_admits_nested_input_and_rejects_duplicate_editors() {
         panic!("editor region")
     };
     let original = child.clone();
-    *child = Box::new(UiElement::Rows(vec![UiElement::Sized {
+    **child = UiElement::Rows(vec![UiElement::Sized {
         size: UiSize::Flex(1),
         child: original.clone(),
-    }]));
+    }]);
     assert!(admit_terminal_view(&workbench).is_ok());
     let UiElement::Rows(slots) = &mut workbench.layout.frame_tree else {
         unreachable!()
@@ -301,7 +301,7 @@ fn terminal_admits_nested_input_and_rejects_duplicate_editors() {
     let UiElement::Region { child, .. } = child.as_mut() else {
         unreachable!()
     };
-    *child = Box::new(UiElement::Rows(vec![*original.clone(), *original]));
+    **child = UiElement::Rows(vec![*original.clone(), *original]);
     assert!(admit_terminal_view(&workbench).is_err());
 }
 

@@ -346,6 +346,85 @@ fn sdk_roots_project_to_typed_ui_workbench() {
         )
     };
     assert!(marlin_agent_ui::decode_element(interactive_region()).is_ok());
+    let size_case = || {
+        vector(
+            &runtime,
+            &[
+                symbol(&runtime, "command"),
+                vector(
+                    &runtime,
+                    &[
+                        symbol(&runtime, "bounded"),
+                        vector(
+                            &runtime,
+                            &[symbol(&runtime, "requested"), symbol(&runtime, "available")],
+                        ),
+                    ],
+                ),
+            ],
+        )
+    };
+    let size_choice = |cases: Vec<_>| {
+        vector(
+            &runtime,
+            &[
+                symbol(&runtime, "sized"),
+                vector(
+                    &runtime,
+                    &[
+                        symbol(&runtime, "choice"),
+                        vector(
+                            &runtime,
+                            &[
+                                vector(&runtime, &cases),
+                                vector(
+                                    &runtime,
+                                    &[
+                                        symbol(&runtime, "cells"),
+                                        runtime.scalar_object(SchemeScalar::Fixnum(0)).unwrap(),
+                                    ],
+                                ),
+                            ],
+                        ),
+                        element("normal", "candidate"),
+                    ],
+                ),
+            ],
+        )
+    };
+    assert!(marlin_agent_ui::decode_element(size_choice(vec![size_case()])).is_ok());
+    assert!(marlin_agent_ui::decode_element(size_choice(vec![size_case(), size_case()])).is_err());
+    let cell = || {
+        vector(
+            &runtime,
+            &[
+                symbol(&runtime, "cells"),
+                runtime.scalar_object(SchemeScalar::Fixnum(1)).unwrap(),
+            ],
+        )
+    };
+    let mut nested = cell();
+    for _ in 0..13 {
+        nested = vector(
+            &runtime,
+            &[symbol(&runtime, "add"), vector(&runtime, &[nested, cell()])],
+        );
+    }
+    let too_deep = vector(
+        &runtime,
+        &[
+            symbol(&runtime, "sized"),
+            vector(
+                &runtime,
+                &[
+                    symbol(&runtime, "add"),
+                    vector(&runtime, &[nested, cell()]),
+                    element("normal", "deep"),
+                ],
+            ),
+        ],
+    );
+    assert!(marlin_agent_ui::decode_element(too_deep).is_err());
     let duplicate_regions = vector(
         &runtime,
         &[

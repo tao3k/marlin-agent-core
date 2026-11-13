@@ -78,6 +78,95 @@ fn choice_uses_declared_order_and_fallback() {
 }
 
 #[test]
+fn bounded_size_uses_scheme_choice_and_host_cell_metrics() {
+    use marlin_agent_ui::UiSize;
+    let id = |name| UiComponentId::new(name).unwrap();
+    let size = UiSize::Choice {
+        cases: vec![(
+            id("active"),
+            UiSize::Bounded {
+                value: id("requested"),
+                limit: id("available"),
+            },
+        )],
+        fallback: Box::new(UiSize::Cells(0)),
+    };
+    let metrics = |id: &UiComponentId| match id.as_str() {
+        "requested" => Extent::Cells(20),
+        "available" => Extent::Cells(7),
+        _ => Extent::Cells(0),
+    };
+    assert_eq!(
+        super::ui_elements::resolve_size(&size, &metrics, &|_| true),
+        Extent::Cells(7)
+    );
+    assert_eq!(
+        super::ui_elements::resolve_size(&size, &metrics, &|_| false),
+        Extent::Cells(0)
+    );
+    assert_eq!(
+        super::ui_elements::resolve_size(&size, &|_| Extent::Flex(1), &|_| true),
+        Extent::Cells(0)
+    );
+}
+
+#[test]
+fn size_arithmetic_saturates_and_rejects_flexible_operands() {
+    use marlin_agent_ui::UiSize;
+    let binary = |f: fn(Box<UiSize>, Box<UiSize>) -> UiSize, a, b| f(Box::new(a), Box::new(b));
+    let cases = [
+        (
+            binary(UiSize::Add, UiSize::Cells(u16::MAX), UiSize::Cells(1)),
+            u16::MAX,
+        ),
+        (
+            binary(UiSize::Subtract, UiSize::Cells(1), UiSize::Cells(2)),
+            0,
+        ),
+        (binary(UiSize::Max, UiSize::Cells(3), UiSize::Cells(5)), 5),
+        (binary(UiSize::Min, UiSize::Cells(3), UiSize::Cells(5)), 3),
+        (binary(UiSize::Min, UiSize::Flex(1), UiSize::Cells(5)), 0),
+    ];
+    for (size, expected) in cases {
+        assert_eq!(
+            super::ui_elements::resolve_size(&size, &|_| Extent::Cells(0), &|_| false),
+            Extent::Cells(expected)
+        );
+    }
+}
+
+#[test]
+fn region_extents_follow_dependencies_and_bound_cycles() {
+    use marlin_agent_ui::UiSize;
+    let id = |name| UiComponentId::new(name).unwrap();
+    let region = |name, size| UiElement::Sized {
+        size,
+        child: Box::new(UiElement::Region {
+            id: id(name),
+            scroll_target: None,
+            child: Box::new(UiElement::Text(vec![])),
+        }),
+    };
+    let tree = UiElement::Rows(vec![
+        region("a", UiSize::Binding(id("region/b"))),
+        region("b", UiSize::Binding(id("raw"))),
+        region("cycle", UiSize::Binding(id("region/cycle"))),
+    ]);
+    let calls = std::cell::Cell::new(0);
+    let raw = |_: &UiComponentId| {
+        calls.set(calls.get() + 1);
+        Extent::Cells(7)
+    };
+    let facts = |_: &UiComponentId| false;
+    let resolver = super::ui_elements::RegionExtents::new(&tree, &raw, &facts);
+    assert_eq!(resolver.extent(&id("region/a")), Extent::Cells(7));
+    assert_eq!(resolver.extent(&id("region/a")), Extent::Cells(7));
+    assert_eq!(calls.get(), 1);
+    assert_eq!(resolver.extent(&id("region/cycle")), Extent::Cells(0));
+    assert_eq!(resolver.extent(&id("region/missing")), Extent::Cells(0));
+}
+
+#[test]
 fn choice_uses_same_facts_for_layout_and_paint() {
     let region = |id: &str| UiElement::Region {
         id: UiComponentId::new(id).unwrap(),

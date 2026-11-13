@@ -2463,3 +2463,12 @@ workloads and do not isolate the cost of a scroll target. These observations
 show substantial host variance. Keep them as diagnostic evidence, then repeat
 from a stable source cut under controlled load before setting a performance
 threshold or attributing a regression to the declarative mapper.
+
+The next same-process 30-sample pair measured =input= at
+=[7.3837, 10.122, 12.393] us= and =input-tree= at
+=[6.4348, 8.5220, 10.792] us=. The intervals overlap and Criterion found
+no change against either prior baseline (=p=0.89= and =p=0.46=). The shared
+geometry implementation changed during the release benchmark: the working
+diff fingerprint moved from =3c4bb4f1= to =74471d85= and the untracked
+=ui_elements/geometry.rs= fingerprint also changed. This run is diagnostic
+only; it does not qualify the current source cut or establish tree overhead.

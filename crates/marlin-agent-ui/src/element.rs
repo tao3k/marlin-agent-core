@@ -62,6 +62,21 @@ pub enum UiSize {
     Cells(u16),
     Flex(u16),
     Binding(UiComponentId),
+    /// A cell measurement capped by another host-supplied measurement.
+    Bounded {
+        value: UiComponentId,
+        limit: UiComponentId,
+    },
+    /// Saturating cell arithmetic, composed by the Scheme layout.
+    Min(Box<UiSize>, Box<UiSize>),
+    Max(Box<UiSize>, Box<UiSize>),
+    Add(Box<UiSize>, Box<UiSize>),
+    Subtract(Box<UiSize>, Box<UiSize>),
+    /// The first true Scheme-selected fact chooses the size.
+    Choice {
+        cases: Vec<(UiComponentId, UiSize)>,
+        fallback: Box<UiSize>,
+    },
 }
 
 /// One literal or dynamically bound span in a declarative line.
@@ -183,6 +198,88 @@ struct Budget {
     regions: HashSet<UiComponentId>,
 }
 
+fn decode_size(
+    kind: RootedSchemeObject<'_>,
+    value: RootedSchemeObject<'_>,
+    depth: usize,
+    budget: &mut Budget,
+    names: &mut IdentifierBuffer,
+) -> Result<UiSize, UiProjectionError> {
+    if depth >= 12 || budget.nodes == 0 {
+        return Err(UiProjectionError::Invalid("UI size tree exceeds limit"));
+    }
+    budget.nodes -= 1;
+    let kind = identifier(kind, names)?;
+    match kind.as_str() {
+        "cells" | "flex" => {
+            let count = match value.as_ref().scalar()? {
+                SchemeScalar::Fixnum(value) => u16::try_from(value)
+                    .map_err(|_| UiProjectionError::Invalid("invalid UI size count"))?,
+                _ => return Err(UiProjectionError::Invalid("invalid UI size count")),
+            };
+            Ok(if kind.as_str() == "cells" {
+                UiSize::Cells(count)
+            } else {
+                UiSize::Flex(count)
+            })
+        }
+        "binding" => Ok(UiSize::Binding(identifier(value, names)?)),
+        "bounded" => {
+            let pair = vector(value, 2, 2)?;
+            Ok(UiSize::Bounded {
+                value: identifier(pair.element(0)?, names)?,
+                limit: identifier(pair.element(1)?, names)?,
+            })
+        }
+        "min" | "max" | "add" | "subtract" => {
+            let operands = vector(value, 2, 2)?;
+            let mut operand = |index| {
+                let size = vector(operands.element(index)?, 2, 2)?;
+                decode_size(size.element(0)?, size.element(1)?, depth + 1, budget, names)
+                    .map(Box::new)
+            };
+            let left = operand(0)?;
+            let right = operand(1)?;
+            Ok(match kind.as_str() {
+                "min" => UiSize::Min(left, right),
+                "max" => UiSize::Max(left, right),
+                "add" => UiSize::Add(left, right),
+                _ => UiSize::Subtract(left, right),
+            })
+        }
+        "choice" => {
+            let parts = vector(value, 2, 2)?;
+            let entries = vector(parts.element(0)?, 0, 16)?;
+            let mut seen = HashSet::new();
+            let mut cases = Vec::with_capacity(entries.len());
+            for index in 0..entries.len() {
+                let entry = vector(entries.element(index)?, 2, 2)?;
+                let fact = identifier(entry.element(0)?, names)?;
+                if !seen.insert(fact.clone()) {
+                    return Err(UiProjectionError::Invalid("duplicate UI size choice"));
+                }
+                let size = vector(entry.element(1)?, 2, 2)?;
+                cases.push((
+                    fact,
+                    decode_size(size.element(0)?, size.element(1)?, depth + 1, budget, names)?,
+                ));
+            }
+            let fallback = vector(parts.element(1)?, 2, 2)?;
+            Ok(UiSize::Choice {
+                cases,
+                fallback: Box::new(decode_size(
+                    fallback.element(0)?,
+                    fallback.element(1)?,
+                    depth + 1,
+                    budget,
+                    names,
+                )?),
+            })
+        }
+        _ => Err(UiProjectionError::Invalid("invalid UI size kind")),
+    }
+}
+
 /// Project a bounded UI tree through gerbil-scheme's rooted object API.
 pub fn decode_element(value: RootedSchemeObject<'_>) -> Result<UiElement, UiProjectionError> {
     let mut budget = Budget {
@@ -266,23 +363,7 @@ fn decode(
             if values.len() != 3 {
                 return Err(UiProjectionError::Invalid("invalid UI size"));
             }
-            let kind = identifier(values.element(0)?, names)?;
-            let size = match kind.as_str() {
-                "cells" | "flex" => {
-                    let count = match values.element(1)?.as_ref().scalar()? {
-                        SchemeScalar::Fixnum(value) => u16::try_from(value)
-                            .map_err(|_| UiProjectionError::Invalid("invalid UI size count"))?,
-                        _ => return Err(UiProjectionError::Invalid("invalid UI size count")),
-                    };
-                    if kind.as_str() == "cells" {
-                        UiSize::Cells(count)
-                    } else {
-                        UiSize::Flex(count)
-                    }
-                }
-                "binding" => UiSize::Binding(identifier(values.element(1)?, names)?),
-                _ => return Err(UiProjectionError::Invalid("invalid UI size kind")),
-            };
+            let size = decode_size(values.element(0)?, values.element(1)?, 0, budget, names)?;
             let child = Box::new(decode(values.element(2)?, depth + 1, budget, names)?);
             Ok(UiElement::Sized { size, child })
         }

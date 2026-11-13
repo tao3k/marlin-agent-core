@@ -4,6 +4,91 @@
 use super::{App, ModelEndpoint, test_frame, test_layout};
 
 #[test]
+fn extension_list_uses_the_projected_row_template() {
+    use marlin_agent_ui::{UiComponentId, UiRegion, UiWorkbench};
+    use ratatui::{Terminal, backend::TestBackend};
+    let app = App::new(ModelEndpoint::new("provider", "model"));
+    let view = UiWorkbench {
+        model_label: "model".into(),
+        session_label: "session".into(),
+        regions: vec![
+            UiRegion::Transcript,
+            UiRegion::Composer,
+            UiRegion::Extension {
+                id: UiComponentId::new("extension/test").unwrap(),
+                label: "Tools".into(),
+                content: vec![],
+                focusable: true,
+            },
+        ],
+        layout: test_layout(),
+        theme: Default::default(),
+        focus: UiComponentId::new("composer").unwrap(),
+        frame: test_frame(),
+        keymap: Vec::new(),
+        transients: Vec::new(),
+    };
+    let mut terminal = Terminal::new(TestBackend::new(80, 20)).unwrap();
+    terminal
+        .draw(|frame| {
+            super::render_draw(
+                frame,
+                &app,
+                &view,
+                &mut Default::default(),
+                &mut Default::default(),
+            );
+        })
+        .unwrap();
+    let buffer = terminal.backend().buffer();
+    let text: String = (0..20)
+        .flat_map(|y| (0..80).map(move |x| buffer[(x, y)].symbol()))
+        .collect();
+    assert!(text.contains("fixture: Tools"));
+}
+
+#[test]
+fn command_list_tracks_the_declared_editor_size() {
+    use marlin_agent_ui::{UiComponentId, UiElement, UiRegion, UiSize, UiWorkbench};
+    let mut app = App::new(ModelEndpoint::new("provider", "model"));
+    app.toggle_command();
+    let mut view = UiWorkbench {
+        model_label: "model".into(),
+        session_label: "session".into(),
+        regions: vec![UiRegion::Transcript, UiRegion::Composer],
+        layout: test_layout(),
+        theme: Default::default(),
+        focus: UiComponentId::new("composer").unwrap(),
+        frame: test_frame(),
+        keymap: Vec::new(),
+        transients: Vec::new(),
+    };
+    let candidate_rows = |view: &UiWorkbench| {
+        super::super::render::frame_regions(&app, view, ratatui::layout::Rect::new(0, 0, 80, 12))
+            .into_iter()
+            .find(|region| region.id.as_str() == "candidates")
+            .unwrap()
+            .area
+            .height
+    };
+    let before = candidate_rows(&view);
+    let UiElement::Rows(slots) = &mut view.layout.frame_tree else {
+        panic!("frame")
+    };
+    let UiElement::Region { child, .. } = &mut slots[3] else {
+        panic!("minibuffer")
+    };
+    let UiElement::Rows(children) = child.as_mut() else {
+        panic!("rows")
+    };
+    let UiElement::Sized { size, .. } = &mut children[0] else {
+        panic!("editor")
+    };
+    *size = UiSize::Cells(4);
+    assert_eq!(before.saturating_sub(candidate_rows(&view)), 3);
+}
+
+#[test]
 fn selecting_buffer_previews_without_committing_and_cancel_restores() {
     use super::{install_test_commands, render_draw};
     use marlin_agent_ui::{UiCommandName, UiComponentId, UiRegion, UiWorkbench};
@@ -52,6 +137,11 @@ fn selecting_buffer_previews_without_committing_and_cancel_restores() {
             .collect::<String>()
     };
     assert!(draw(&mut terminal, &app).contains("conversation content"));
+    // Vertico selects the first candidate immediately, before any arrow key.
+    app.command_candidates = vec![messages.clone(), UiCommandName::new("models").unwrap()];
+    app.command_selection = None;
+    assert!(draw(&mut terminal, &app).contains("message buffer content"));
+    app.command_candidates = vec![UiCommandName::new("models").unwrap(), messages.clone()];
     app.command_selection = Some((String::new(), messages));
     let text = draw(&mut terminal, &app);
     assert!(text.contains("message buffer content"));

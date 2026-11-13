@@ -414,12 +414,10 @@ fn mx_minibuffer_and_candidates_are_below_modeline() {
         panic!("editor region")
     };
     let original = std::mem::replace(child, Box::new(marlin_agent_ui::UiElement::Text(vec![])));
-    *child = Box::new(marlin_agent_ui::UiElement::Rows(vec![
-        marlin_agent_ui::UiElement::Sized {
-            size: marlin_agent_ui::UiSize::Flex(1),
-            child: original,
-        },
-    ]));
+    **child = marlin_agent_ui::UiElement::Rows(vec![marlin_agent_ui::UiElement::Sized {
+        size: marlin_agent_ui::UiSize::Flex(1),
+        child: original,
+    }]);
     slots.swap(2, 3);
     let geometry = super::super::render::frame_regions(
         &app,

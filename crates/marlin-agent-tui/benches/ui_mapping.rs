@@ -5,9 +5,10 @@
 
 use criterion::{Criterion, criterion_group, criterion_main};
 use marlin_agent_tui::ui_elements::{
-    Extent, UiContentSlot, UiListRow, UiRenderInputs, UiSlotRenderer, hit_test, hit_test_scroll,
-    layout_regions, layout_regions_with_facts, render_input, render_list, render_prompt,
-    render_template, render_with_regions, render_with_scroll, render_with_slots, resolve_choice,
+    Extent, RegionExtents, UiContentSlot, UiListRow, UiRenderInputs, UiSlotRenderer, hit_test,
+    hit_test_scroll, layout_regions, layout_regions_with_facts, render_input, render_list,
+    render_prompt, render_template, render_with_regions, render_with_scroll, render_with_slots,
+    resolve_choice, resolve_size,
 };
 use marlin_agent_ui::{
     UiComponentId, UiElement, UiSpan, UiTemplateSpan, UiTemplateValue, UiTheme, UiTone,
@@ -58,6 +59,114 @@ fn mapping(c: &mut Criterion) {
         ],
     };
     let theme = UiTheme::default();
+    let size_choice = marlin_agent_ui::UiSize::Choice {
+        cases: vec![
+            (
+                UiComponentId::new("review").unwrap(),
+                marlin_agent_ui::UiSize::Bounded {
+                    value: UiComponentId::new("review-count").unwrap(),
+                    limit: UiComponentId::new("available").unwrap(),
+                },
+            ),
+            (
+                UiComponentId::new("command").unwrap(),
+                marlin_agent_ui::UiSize::Bounded {
+                    value: UiComponentId::new("limit").unwrap(),
+                    limit: UiComponentId::new("available").unwrap(),
+                },
+            ),
+        ],
+        fallback: Box::new(marlin_agent_ui::UiSize::Cells(0)),
+    };
+    c.bench_function("ui/mapping/bounded-size-choice", |b| {
+        b.iter(|| {
+            black_box(resolve_size(
+                black_box(&size_choice),
+                &|id| Extent::Cells(if id.as_str() == "limit" { 10 } else { 7 }),
+                &|id| id.as_str() == "command",
+            ))
+        })
+    });
+    // The expanded editor budget is a nested expression projected by Scheme.
+    use marlin_agent_ui::UiSize;
+    let bind = |name| UiSize::Binding(UiComponentId::new(name).unwrap());
+    let binary = |f: fn(Box<UiSize>, Box<UiSize>) -> UiSize, a, b| f(Box::new(a), Box::new(b));
+    let transcript = binary(
+        UiSize::Min,
+        bind("transcript-min"),
+        binary(UiSize::Subtract, bind("terminal-height"), UiSize::Cells(2)),
+    );
+    let footer = binary(UiSize::Max, bind("footer-min"), bind("hint-rows"));
+    let reserved = binary(
+        UiSize::Add,
+        binary(UiSize::Add, footer, UiSize::Cells(1)),
+        transcript,
+    );
+    let editor = binary(
+        UiSize::Min,
+        bind("measured-editor"),
+        binary(
+            UiSize::Min,
+            bind("chatbox-limit"),
+            binary(UiSize::Subtract, bind("terminal-height"), reserved),
+        ),
+    );
+    c.bench_function("ui/mapping/editor-budget", |b| {
+        b.iter(|| {
+            black_box(resolve_size(
+                black_box(&editor),
+                &|id| {
+                    Extent::Cells(if id.as_str() == "terminal-height" {
+                        40
+                    } else {
+                        7
+                    })
+                },
+                &|_| false,
+            ))
+        })
+    });
+    let region = |name, size| UiElement::Sized {
+        size,
+        child: Box::new(UiElement::Region {
+            id: UiComponentId::new(name).unwrap(),
+            scroll_target: None,
+            child: Box::new(UiElement::Text(Vec::new())),
+        }),
+    };
+    let dependent_frame = UiElement::Rows(vec![
+        region("editor", editor.clone()),
+        region(
+            "footer",
+            binary(UiSize::Min, bind("region/editor"), UiSize::Cells(2)),
+        ),
+        region(
+            "modeline",
+            binary(UiSize::Add, bind("region/footer"), UiSize::Cells(1)),
+        ),
+    ]);
+    let raw = |id: &UiComponentId| {
+        Extent::Cells(if id.as_str() == "terminal-height" {
+            40
+        } else {
+            7
+        })
+    };
+    let facts = |_: &UiComponentId| false;
+    c.bench_function("ui/mapping/dependent-frame-layout", |b| {
+        b.iter(|| {
+            let extents = RegionExtents::new(&dependent_frame, &raw, &facts);
+            let mut regions = Vec::new();
+            layout_regions_with_facts(
+                black_box(&dependent_frame),
+                ratatui::layout::Rect::new(0, 0, 80, 40),
+                &|id| extents.extent(id),
+                &mut regions,
+                &facts,
+            );
+            black_box(regions)
+        })
+    });
     let list_template = UiElement::Choice {
         cases: vec![(UiComponentId::new("selected").unwrap(), template.clone())],
         fallback: Box::new(template.clone()),

@@ -71,10 +71,24 @@ fn rgb(color: UiRgb) -> Color {
     Color::Rgb(color.red, color.green, color.blue)
 }
 
-fn minibuffer_footer_rows(app: &App, base: u16) -> u16 {
-    app.transient_hint.as_ref().map_or(base, |hint| {
-        base.max(u16::try_from(hint.intrinsic_rows()).unwrap_or(u16::MAX))
-    })
+pub(crate) fn editor_fact(app: &App, policy: &UiLayoutPolicy, name: &str) -> bool {
+    match name {
+        "command" => app.command_draft.is_some() || app.tool_review_prompt.is_some(),
+        "editor-fixed" => {
+            let frame = if app.command_draft.is_some() || app.tool_review_prompt.is_some() {
+                &policy.command_frame
+            } else {
+                &policy.message_frame
+            };
+            frame.fixed_editor_rows > 0
+        }
+        "editor-expanded" => {
+            app.minibuffer_hovered
+                || !app.composer.text().is_empty()
+                || app.history_search.is_some()
+        }
+        _ => false,
+    }
 }
 
 // Layout and painting must choose the same Scheme branch for a given frame.
@@ -107,30 +121,79 @@ fn main_view_fact(
                 })
         }
         "workspace" => !previewing && app.workspace.view().is_some(),
-        "command" => app.command_draft.is_some() || app.tool_review_prompt.is_some(),
+        "modeline-present" => ui.regions.iter().any(|region| match region {
+            UiRegion::Status(items) => items
+                .iter()
+                .any(|item| item.id.as_str() == "modeline/left/brand"),
+            _ => false,
+        }),
+        "command" | "editor-fixed" | "editor-expanded" => editor_fact(app, &ui.layout, name),
+        "extensions-enabled" => {
+            if app.command_draft.is_some() || app.tool_review_prompt.is_some() {
+                ui.layout.command_frame.extensions
+            } else {
+                ui.layout.message_frame.extensions
+            }
+        }
         "focused" => ui.focus.as_str() == "composer" || app.command_draft.is_some(),
         _ => false,
     }
 }
 
-pub(crate) fn chatbox_height(app: &App, policy: &UiLayoutPolicy, width: u16, height: u16) -> u16 {
+pub(crate) struct EditorMeasurements<'a> {
+    fixed: u16,
+    measured: std::cell::Cell<Option<u16>>,
+    footer_min: u16,
+    hint_rows: u16,
+    transcript_min: u16,
+    height: u16,
+    composer: &'a Composer,
+    width: u16,
+    border: u16,
+    max_rows: u16,
+}
+
+impl EditorMeasurements<'_> {
+    pub(crate) fn extent(&self, id: &marlin_agent_ui::UiComponentId) -> super::ui_elements::Extent {
+        use super::ui_elements::Extent;
+        Extent::Cells(match id.as_str() {
+            "fixed-editor" => self.fixed,
+            "measured-editor" => match self.measured.get() {
+                Some(value) => value,
+                None => {
+                    let value = self
+                        .composer
+                        .preferred_rows(
+                            self.width.saturating_sub(self.border),
+                            self.max_rows.saturating_sub(self.border),
+                        )
+                        .saturating_add(self.border);
+                    self.measured.set(Some(value));
+                    value
+                }
+            },
+            "footer-min" => self.footer_min,
+            "hint-rows" => self.hint_rows,
+            "transcript-min" => self.transcript_min,
+            "chatbox-limit" => self.max_rows,
+            "terminal-height" => self.height,
+            _ => 0,
+        })
+    }
+}
+
+pub(crate) fn editor_measurements<'a>(
+    app: &'a App,
+    policy: &UiLayoutPolicy,
+    width: u16,
+    height: u16,
+    facts: &dyn Fn(&marlin_agent_ui::UiComponentId) -> bool,
+) -> EditorMeasurements<'a> {
     let frame = if app.command_draft.is_some() || app.tool_review_prompt.is_some() {
         &policy.command_frame
     } else {
         &policy.message_frame
     };
-    if frame.fixed_editor_rows > 0 {
-        return frame.fixed_editor_rows.min(height);
-    }
-    let expanded =
-        app.minibuffer_hovered || !app.composer.text().is_empty() || app.history_search.is_some();
-    if !expanded {
-        return 0;
-    }
-    let transcript_rows = frame.min_transcript_rows.min(height.saturating_sub(2));
-    let limit = height
-        .saturating_sub(minibuffer_footer_rows(app, frame.footer_rows) + 1 + transcript_rows)
-        .min(policy.max_chatbox_rows);
     let composer = app
         .history_search
         .as_ref()
@@ -139,19 +202,21 @@ pub(crate) fn chatbox_height(app: &App, policy: &UiLayoutPolicy, width: u16, hei
     let border = policy
         .frame_tree
         .region_child("editor")
-        .and_then(|editor| {
-            super::ui_elements::input_border(editor, &|id| {
-                id.as_str() == "command"
-                    && (app.command_draft.is_some() || app.tool_review_prompt.is_some())
-            })
-        })
+        .and_then(|editor| super::ui_elements::input_border(editor, facts))
         .unwrap_or(0);
-    if limit > border {
-        composer
-            .preferred_rows(width.saturating_sub(border), limit.saturating_sub(border))
-            .saturating_add(border)
-    } else {
-        limit
+    EditorMeasurements {
+        fixed: frame.fixed_editor_rows,
+        measured: std::cell::Cell::new(None),
+        footer_min: frame.footer_rows,
+        hint_rows: app.transient_hint.as_ref().map_or(0, |hint| {
+            u16::try_from(hint.intrinsic_rows()).unwrap_or(u16::MAX)
+        }),
+        transcript_min: frame.min_transcript_rows,
+        height,
+        composer,
+        width,
+        border,
+        max_rows: policy.max_chatbox_rows,
     }
 }
 
@@ -160,48 +225,18 @@ pub(crate) fn frame_regions(
     ui: &UiWorkbench,
     area: Rect,
 ) -> Vec<super::ui_elements::HitRegion> {
-    use super::ui_elements::{Extent, layout_regions_with_facts};
-    let command = app.command_draft.is_some() || app.tool_review_prompt.is_some();
-    let policy = if command {
-        &ui.layout.command_frame
-    } else {
-        &ui.layout.message_frame
+    use super::ui_elements::{Extent, RegionExtents, layout_regions_with_facts};
+    let preview = app.preview_buffer();
+    let buffer = preview.as_ref().unwrap_or(&app.buffer_view);
+    let facts = |id: &marlin_agent_ui::UiComponentId| {
+        main_view_fact(app, ui, buffer, preview.is_some(), id.as_str())
     };
-    let transcript = policy
-        .min_transcript_rows
-        .min(area.height.saturating_sub(2));
-    let editor = chatbox_height(app, &ui.layout, area.width, area.height);
-    let footer = minibuffer_footer_rows(app, policy.footer_rows)
-        .min(
-            area.height
-                .saturating_sub(transcript.saturating_add(editor).saturating_add(1)),
-        )
-        .max(policy.footer_rows.min(area.height));
-    let spare = area
-        .height
-        .saturating_sub(footer.saturating_add(transcript).saturating_add(editor));
-    let status = u16::from(
-        spare > 0
-            && ui.regions.iter().any(|region| match region {
-                UiRegion::Status(items) => items
-                    .iter()
-                    .any(|item| item.id.as_str() == "modeline/left/brand"),
-                _ => false,
-            }),
-    );
-    let candidates = if let Some(prompt) = &app.tool_review_prompt {
-        u16::try_from(prompt.menu.choices.len())
-            .unwrap_or(u16::MAX)
-            .min(spare.saturating_sub(status))
-    } else if command {
-        ui.layout.max_command_rows.min(spare.saturating_sub(status))
-    } else {
-        0
-    };
-    let available = spare.saturating_sub(candidates).saturating_sub(status);
-    let extensions = if policy.extensions {
-        let count = ui
-            .regions
+    let editor_metrics = editor_measurements(app, &ui.layout, area.width, area.height, &facts);
+    let review_count = app.tool_review_prompt.as_ref().map_or(0, |prompt| {
+        u16::try_from(prompt.menu.choices.len()).unwrap_or(u16::MAX)
+    });
+    let extension_count = u16::try_from(
+        ui.regions
             .iter()
             .filter(|region| {
                 matches!(
@@ -212,27 +247,23 @@ pub(crate) fn frame_regions(
                     }
                 )
             })
-            .count();
-        (count.min(u16::MAX as usize) as u16).min(available)
-    } else {
-        0
+            .count(),
+    )
+    .unwrap_or(u16::MAX);
+    let metrics = |id: &marlin_agent_ui::UiComponentId| match id.as_str() {
+        "review-count" => Extent::Cells(review_count),
+        "command-limit" => Extent::Cells(ui.layout.max_command_rows),
+        "extension-count" => Extent::Cells(extension_count),
+        _ => editor_metrics.extent(id),
     };
+    let extents = RegionExtents::new(&ui.layout.frame_tree, &metrics, &facts);
     let mut result = Vec::with_capacity(7);
-    let preview = app.preview_buffer();
-    let buffer = preview.as_ref().unwrap_or(&app.buffer_view);
     layout_regions_with_facts(
         &ui.layout.frame_tree,
         area,
-        &|id| match id.as_str() {
-            "extensions" => Extent::Cells(extensions),
-            "modeline" => Extent::Cells(status),
-            "editor" => Extent::Cells(editor),
-            "candidates" => Extent::Cells(candidates),
-            "minibuffer" => Extent::Cells(footer),
-            _ => Extent::Cells(0),
-        },
+        &|id| extents.extent(id),
         &mut result,
-        &|id| main_view_fact(app, ui, buffer, preview.is_some(), id.as_str()),
+        &facts,
     );
     result
 }
@@ -627,10 +658,8 @@ pub(crate) fn draw(
         command_prompt.to_owned()
     };
     if let Some(editor) = ui.layout.frame_tree.region_child("editor") {
-        let facts = |id: &marlin_agent_ui::UiComponentId| match id.as_str() {
-            "command" => command_active,
-            "focused" => ui.focus.as_str() == "composer" || app.command_draft.is_some(),
-            _ => false,
+        let facts = |id: &marlin_agent_ui::UiComponentId| {
+            main_view_fact(app, ui, buffer, preview.is_some(), id.as_str())
         };
         let bindings = [("prompt", prompt.as_str()), ("title", title)];
         let inputs = super::ui_elements::UiRenderInputs {
@@ -700,28 +729,21 @@ pub(crate) fn draw(
             },
         );
     }
-    let visible = usize::from(parts[1].height);
-    if visible > 0 {
+    if let Some(template) = ui.layout.frame_tree.region_child("extensions") {
         let focused = extensions.iter().position(|(id, _)| *id == &ui.focus);
-        let start = focused.map_or(0, |index| index.saturating_add(1).saturating_sub(visible));
-        for (row, (id, label)) in extensions.iter().skip(start).take(visible).enumerate() {
-            let is_focused = *id == &ui.focus;
-            let text = format!(
-                " {} {}",
-                if is_focused { "›" } else { "·" },
-                header_value(label)
-            );
-            let line =
-                ratatui::layout::Rect::new(parts[1].x, parts[1].y + row as u16, parts[1].width, 1);
-            let style = if is_focused {
-                Style::default()
-                    .fg(rgb(ui.theme.info))
-                    .add_modifier(Modifier::BOLD)
-            } else {
-                Style::default()
-            };
-            frame.render_widget(Paragraph::new(text).style(style), line);
-        }
+        super::ui_elements::render_list(
+            frame,
+            parts[1],
+            template,
+            &ui.theme,
+            extensions.len(),
+            focused,
+            |index| {
+                Some(super::ui_elements::UiListRow {
+                    bindings: vec![("label", header_value(extensions.get(index)?.1).into())],
+                })
+            },
+        );
     }
     if let Some(items) = status_items.filter(|_| parts[2].height > 0) {
         draw_modeline(frame, parts[2], app, ui, items);

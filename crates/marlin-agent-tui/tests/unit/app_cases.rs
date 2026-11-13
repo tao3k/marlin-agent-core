@@ -8,7 +8,7 @@ use super::{
     context_budget::ContextBudget,
     event_queue::{ReplyError, reply_channel},
     model_catalog::{ModelCatalog, ModelRoute},
-    render::{chatbox_height, draw as render_draw, frame_regions},
+    render::{draw as render_draw, editor_fact, editor_measurements, frame_regions},
     viewport::{Transcript, TranscriptViewportCache},
 };
 use marlin_agent_protocol::{
@@ -30,6 +30,25 @@ use proptest::{
 use std::sync::{Arc, Mutex};
 
 use super::ui_fixture::{test_frame, test_layout};
+
+fn chatbox_height(
+    app: &App,
+    policy: &marlin_agent_ui::UiLayoutPolicy,
+    width: u16,
+    height: u16,
+) -> u16 {
+    let facts = |id: &marlin_agent_ui::UiComponentId| editor_fact(app, policy, id.as_str());
+    let metrics = editor_measurements(app, policy, width, height, &facts);
+    match super::ui_elements::region_extent(
+        &policy.frame_tree,
+        "editor",
+        &|id| metrics.extent(id),
+        &facts,
+    ) {
+        Some(super::ui_elements::Extent::Cells(rows)) => rows.min(height),
+        _ => 0,
+    }
+}
 
 fn mouse_over_minibuffer(
     app: &App,
@@ -271,6 +290,35 @@ fn editor_height_follows_the_declared_input_border() {
     };
     *bordered = false;
     assert_eq!(chatbox_height(&app, &layout, 40, 20), 1);
+}
+
+#[test]
+fn editor_height_uses_the_selected_scheme_size() {
+    use marlin_agent_ui::{UiElement, UiSize};
+    let mut app = App::new(ModelEndpoint::new("provider", "model"));
+    let mut layout = test_layout();
+    let UiElement::Rows(slots) = &mut layout.frame_tree else {
+        panic!("frame")
+    };
+    let UiElement::Region { child, .. } = &mut slots[3] else {
+        panic!("minibuffer")
+    };
+    let UiElement::Rows(children) = child.as_mut() else {
+        panic!("minibuffer rows")
+    };
+    let UiElement::Sized { size, .. } = &mut children[0] else {
+        panic!("editor")
+    };
+    *size = UiSize::Choice {
+        cases: vec![(
+            marlin_agent_ui::UiComponentId::new("command").unwrap(),
+            UiSize::Cells(2),
+        )],
+        fallback: Box::new(UiSize::Cells(1)),
+    };
+    assert_eq!(chatbox_height(&app, &layout, 40, 20), 1);
+    app.toggle_command();
+    assert_eq!(chatbox_height(&app, &layout, 40, 20), 2);
 }
 
 proptest! {

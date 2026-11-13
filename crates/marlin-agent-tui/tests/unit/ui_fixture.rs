@@ -52,6 +52,100 @@ pub(super) fn test_layout() -> UiLayoutPolicy {
             },
         ],
     };
+    use marlin_agent_ui::UiSize;
+    let id = |name| UiComponentId::new(name).unwrap();
+    let bind = |name| UiSize::Binding(id(name));
+    let binary = |f: fn(Box<UiSize>, Box<UiSize>) -> UiSize, a, b| f(Box::new(a), Box::new(b));
+    let choice = |cases| UiSize::Choice {
+        cases,
+        fallback: Box::new(UiSize::Cells(0)),
+    };
+    let bounded = |value, limit| UiSize::Bounded {
+        value: id(value),
+        limit: id(limit),
+    };
+    let transcript = binary(
+        UiSize::Min,
+        bind("transcript-min"),
+        binary(UiSize::Subtract, bind("terminal-height"), UiSize::Cells(2)),
+    );
+    let footer = binary(UiSize::Max, bind("footer-min"), bind("hint-rows"));
+    let editor_reserved = binary(
+        UiSize::Add,
+        binary(UiSize::Add, footer.clone(), UiSize::Cells(1)),
+        transcript.clone(),
+    );
+    let editor = choice(vec![
+        (
+            id("editor-fixed"),
+            bounded("fixed-editor", "terminal-height"),
+        ),
+        (
+            id("editor-expanded"),
+            binary(
+                UiSize::Min,
+                bind("measured-editor"),
+                binary(
+                    UiSize::Min,
+                    bind("chatbox-limit"),
+                    binary(UiSize::Subtract, bind("terminal-height"), editor_reserved),
+                ),
+            ),
+        ),
+    ]);
+    let footer_size = binary(
+        UiSize::Max,
+        binary(
+            UiSize::Min,
+            footer,
+            binary(
+                UiSize::Subtract,
+                bind("terminal-height"),
+                binary(
+                    UiSize::Add,
+                    binary(UiSize::Add, transcript.clone(), bind("region/editor")),
+                    UiSize::Cells(1),
+                ),
+            ),
+        ),
+        binary(UiSize::Min, bind("footer-min"), bind("terminal-height")),
+    );
+    let spare = binary(
+        UiSize::Subtract,
+        bind("terminal-height"),
+        binary(
+            UiSize::Add,
+            binary(UiSize::Add, bind("region/minibuffer"), transcript),
+            bind("region/editor"),
+        ),
+    );
+    let modeline = choice(vec![(
+        id("modeline-present"),
+        binary(UiSize::Min, UiSize::Cells(1), spare.clone()),
+    )]);
+    let candidate_budget = binary(UiSize::Subtract, spare, bind("region/modeline"));
+    let candidates = choice(vec![
+        (
+            id("review"),
+            binary(UiSize::Min, bind("review-count"), candidate_budget.clone()),
+        ),
+        (
+            id("command"),
+            binary(UiSize::Min, bind("command-limit"), candidate_budget.clone()),
+        ),
+    ]);
+    let extensions = choice(vec![(
+        id("extensions-enabled"),
+        binary(
+            UiSize::Min,
+            bind("extension-count"),
+            binary(
+                UiSize::Subtract,
+                candidate_budget,
+                bind("region/candidates"),
+            ),
+        ),
+    )]);
     UiLayoutPolicy {
         message_frame: UiFrameSpec {
             min_transcript_rows: 2,
@@ -80,10 +174,14 @@ pub(super) fn test_layout() -> UiLayoutPolicy {
             ]
             .into_iter()
             .map(|name| marlin_agent_ui::UiElement::Sized {
-                size: if name == "transcript" {
-                    marlin_agent_ui::UiSize::Flex(1)
-                } else {
-                    marlin_agent_ui::UiSize::Binding(UiComponentId::new(name).unwrap())
+                size: match name {
+                    "transcript" => marlin_agent_ui::UiSize::Flex(1),
+                    "editor" => editor.clone(),
+                    "minibuffer" => footer_size.clone(),
+                    "modeline" => modeline.clone(),
+                    "candidates" => candidates.clone(),
+                    "extensions" => extensions.clone(),
+                    _ => marlin_agent_ui::UiSize::Binding(UiComponentId::new(name).unwrap()),
                 },
                 child: Box::new(marlin_agent_ui::UiElement::Region {
                     id: UiComponentId::new(name).unwrap(),
@@ -119,6 +217,24 @@ pub(super) fn test_layout() -> UiLayoutPolicy {
                             fallback: Box::new(UiElement::Slot(
                                 UiComponentId::new("conversation").unwrap(),
                             )),
+                        }
+                    } else if name == "extensions" {
+                        UiElement::Template {
+                            background: marlin_agent_ui::UiBackground::None,
+                            spans: vec![
+                                UiTemplateSpan {
+                                    value: UiTemplateValue::Literal("fixture: ".into()),
+                                    tone: UiTone::Normal,
+                                    bold: false,
+                                },
+                                UiTemplateSpan {
+                                    value: UiTemplateValue::Binding(
+                                        UiComponentId::new("label").unwrap(),
+                                    ),
+                                    tone: UiTone::Normal,
+                                    bold: false,
+                                },
+                            ],
                         }
                     } else if name == "candidates" {
                         UiElement::Choice {
