@@ -69,3 +69,29 @@ binary hash, retaining first-output, workbench and internal phase times for
 both processes. Keep the no-terminal early-exit control separate from the
 visible TUI gate. Investigate the OS pre-entry wait with a controlled launch
 trace before selecting a binary-layout or signing change.
+
+* Linked Debug interaction diagnostic, 2026-11-14
+
+The ignored Rust PTY test =minibuffer::mx_navigation_pty_latency= passed with
+the linked UI test binary SHA-256
+=bda2e51ae2fae3d88a5f489fde5701541899664aaa1bd6398bd14ede8de6332f=.
+The test drives the real terminal and Scheme projection. It measures elapsed
+time from sending input through observing a matching rendered screen; it is
+not a standalone Scheme call benchmark or a Release startup measurement.
+
+| Operation | Samples | p50 | p95 | Maximum |
+|-----------+---------+-----+-----+---------|
+| M-x arrow after menu is open | 30 | 19.37 ms | 32.37 ms | 42.07 ms |
+| M-x open plus first arrow | 30 | 62.55 ms | 137.56 ms | 190.42 ms |
+| M-x query edit and Scheme candidate projection | 30 | 12.32 ms | 17.19 ms | 74.58 ms |
+| M-x open with subsequence abbreviation | 30 | 52.61 ms | 228.90 ms | 305.10 ms |
+| C-x b open plus first Down | 30 | 116.79 ms | 330.89 ms | 338.61 ms |
+| First M-x arrow in a new process after first frame | 10 | 24.07 ms | 87.00 ms | 87.00 ms |
+
+Concurrent worktree edits changed the source difference hash during the test.
+These numbers describe this exact test binary, but cannot serve as a frozen
+source baseline or establish a cold-start target. The scoped menu benchmark
+initially failed because it assumed exactly four Buffers; Scheme now supplies
+six. After changing the assertion to check the selected row without fixing
+the candidate count, the test passed. The slow =C-x b= and abbreviation tails
+merit a frozen, phase-separated follow-up.
