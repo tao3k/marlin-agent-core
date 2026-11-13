@@ -2514,3 +2514,34 @@ pointer-to-frame latency. The second interval is wide; the following
 minute's host load was 65.92 on 12 logical CPUs. Treat both as diagnostics
 and repeat a matched, source-fixed
 cohort after competing work subsides before setting a queue cost threshold.
+
+** Declarative scrolling and linked startup observations (2026-11-14)
+
+At =7f4cddb5=, generic painting and geometry share the calculation of scrolled
+child rectangles. A Rust property compares their visible regions across
+offsets, and a nested-region test checks that pointer routing selects the
+visible inner scroll target. This covers the terminal mapping boundary; Scheme
+tests retain ownership of UI presentation. Host-provided list rows still need
+their own row geometry, and the terminal host retains dedicated transcript,
+editor and list adapters. The native transcript cache remains in use.
+
+The =scroll-hit-layout-64= Criterion diagnostic took =[5.1787, 9.2567,
+12.720]= µs (95% mean interval and point estimate), with ten samples while
+other compilation was active. It does not establish a latency bound or a
+comparison against the previous implementation. A loopback PTY fixture passed
+resize, wheel up/down during streaming, history search and retained-scroll
+checks. The ordinary PTY suite passed 16 tests with 36 ignored on the final
+run; an earlier run failed the Ctrl-Z termios equality on the =PENDIN= state
+bit, which remains an unresolved timing observation.
+
+The selected Modeline nodes are now built once per workbench construction and
+used for both status items and the generic bar. The latest linked Release fresh
+copy emitted first output at 2.267 s and showed the workbench at 2.425 s. The
+same file's second launch measured 44.7 ms and 164.0 ms; its application
+trace reported 69.2 ms for UI session construction and 119.0 ms to first
+frame. A separate Release PTY launch from a temporary directory, with Gerbil
+paths set to an absent directory, reached the workbench in 2.866 s. These are
+single samples, not a controlled before/after comparison:
+the earlier pair measured 1.904/2.534 s and 53.6/479.8 ms under different
+load. Neither run identifies the cause of the fresh-copy pre-output gap or
+proves that eliminating duplicate Scheme node construction caused a speedup.
