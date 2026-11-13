@@ -164,17 +164,8 @@ fn decode_hydra(
     entry: &RootedSchemeCollection<'_>,
     names: &mut IdentifierBuffer,
 ) -> Result<UiHydra, UiProjectionError> {
-    let hint = string(entry.element(2)?)?;
-    if hint.is_empty() || hint.len() > 256 || hint.chars().any(char::is_control) {
-        return Err(UiProjectionError::Invalid("invalid hydra hint"));
-    }
-    let warning_hint = string(entry.element(5)?)?;
-    if warning_hint.is_empty()
-        || warning_hint.len() > 256
-        || warning_hint.chars().any(char::is_control)
-    {
-        return Err(UiProjectionError::Invalid("invalid hydra warning hint"));
-    }
+    let hint = hydra_text(entry.element(2)?)?;
+    let warning_hint = hydra_text(entry.element(5)?)?;
     let foreign = match identifier(entry.element(3)?, names)?.as_str() {
         "exit" => UiHydraForeign::Exit,
         "warn" => UiHydraForeign::Warn,
@@ -222,6 +213,20 @@ fn decode_hydra(
         foreign,
         heads,
     })
+}
+
+fn hydra_text(value: RootedSchemeObject<'_>) -> Result<String, UiProjectionError> {
+    let value = value.into_string()?;
+    if value.len().into_result()? > 2048 {
+        return Err(UiProjectionError::Invalid("hydra hint exceeds limit"));
+    }
+    let text = value.to_string().into_result()?;
+    if text.is_empty() || text.len() > 4096 || text.lines().count() > 8
+        || text.chars().any(|character| character.is_control() && character != '\n')
+    {
+        return Err(UiProjectionError::Invalid("invalid hydra hint"));
+    }
+    Ok(text)
 }
 
 fn decode_frame_state(value: RootedSchemeObject<'_>) -> Result<UiFrame, UiProjectionError> {

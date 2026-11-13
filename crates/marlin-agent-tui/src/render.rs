@@ -65,6 +65,12 @@ fn rgb(color: UiRgb) -> Color {
     Color::Rgb(color.red, color.green, color.blue)
 }
 
+fn minibuffer_footer_rows(app: &App, base: u16) -> u16 {
+    app.hydra_hint.as_ref().map_or(base, |hint| {
+        base.max(u16::try_from(hint.lines().count()).unwrap_or(u16::MAX))
+    })
+}
+
 pub(crate) fn chatbox_height(app: &App, policy: &UiLayoutPolicy, width: u16, height: u16) -> u16 {
     let frame = if app.command_draft.is_some() {
         &policy.command_frame
@@ -81,7 +87,7 @@ pub(crate) fn chatbox_height(app: &App, policy: &UiLayoutPolicy, width: u16, hei
     }
     let transcript_rows = frame.min_transcript_rows.min(height.saturating_sub(2));
     let limit = height
-        .saturating_sub(frame.footer_rows + 1 + transcript_rows)
+        .saturating_sub(minibuffer_footer_rows(app, frame.footer_rows) + 1 + transcript_rows)
         .min(policy.max_chatbox_rows);
     let composer = app
         .history_search
@@ -109,6 +115,7 @@ pub(crate) fn mouse_over_minibuffer(
     } else {
         policy.message_frame.footer_rows
     };
+    let footer_rows = minibuffer_footer_rows(app, footer_rows).min(height);
     row > 0
         && row <= height
         && row > height.saturating_sub(chatbox_height(app, policy, width, height) + footer_rows)
@@ -404,7 +411,9 @@ pub(crate) fn draw(
     };
     // Keep the core transcript and editor usable; show a moving window when
     // the available terminal height cannot display every extension.
-    let footer_height = frame_spec.footer_rows;
+    let footer_height = minibuffer_footer_rows(app, frame_spec.footer_rows)
+        .min(area.height.saturating_sub(transcript_rows + composer_height + 1))
+        .max(frame_spec.footer_rows.min(area.height));
     let spare = area
         .height
         .saturating_sub(footer_height + transcript_rows + composer_height);
@@ -762,7 +771,7 @@ pub(crate) fn draw(
             Paragraph::new(format!("{prefix}{}", status.trim_start())),
             parts[5],
         );
-        if ui.focus.as_str() == "composer" && parts[5].width > 2 {
+        if ui.focus.as_str() == "composer" && parts[5].width > 2 && app.hydra_hint.is_none() {
             frame.set_cursor_position((parts[5].x + 2, parts[5].y));
         }
     } else {

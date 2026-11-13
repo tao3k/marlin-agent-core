@@ -19,21 +19,21 @@ fn hydra_hint_and_foreign_key_use_the_minibuffer_without_losing_the_draft() {
     terminal.wait_for(Duration::from_secs(5), "hydra hint", |output| {
         let rows = screen_lines(output);
         rows.iter().any(|line| line.contains("draft"))
-            && rows
-                .iter()
-                .any(|line| line.contains("History: p newest  n older  q quit"))
+            && rows.iter().any(|line| line.contains("History"))
+            && rows.iter().any(|line| line.contains("p newest  n older  q quit"))
     });
     terminal.send(b"nq");
     terminal.wait_for(Duration::from_secs(5), "hydra exit", |output| {
         let rows = screen_lines(output);
         rows.iter().any(|line| line.contains("draft"))
-            && !rows.iter().any(|line| line.contains("History: p newest"))
+            && !rows.iter().any(|line| line.contains("draftn"))
+            && !rows.iter().any(|line| line.contains("p newest  n older  q quit"))
     });
     terminal.send(b"\x18hz");
     terminal.wait_for(Duration::from_secs(5), "foreign key replay", |output| {
         let rows = screen_lines(output);
         rows.iter().any(|line| line.contains("draftz"))
-            && !rows.iter().any(|line| line.contains("History: p newest"))
+            && !rows.iter().any(|line| line.contains("p newest  n older  q quit"))
     });
     terminal.send(b"\x11");
     terminal.wait_exit(Duration::from_secs(5));

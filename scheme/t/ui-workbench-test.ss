@@ -142,6 +142,8 @@
        (passthrough (vector-ref (marlin-ui-hydra-keymap-entries (.o entries: (list PassHydraValue))) 0)))
   (unless (and (eq? (.get hydra identity) 'marlin/ui-hydra)
                (equal? (vector-ref (vector-ref bindings 0) 0) '#(C-x h))
+               (equal? (vector-ref (vector-ref bindings 0) 2)
+                       "History\np newest  n older  q quit")
                (eq? (vector-ref (vector-ref bindings 0) 3) 'exit)
                (eq? (vector-ref strict 3) 'warn)
                (eq? (vector-ref passthrough 3) 'run)

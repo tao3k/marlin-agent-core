@@ -41,14 +41,15 @@
   (let ((trigger (.get hydra trigger)) (hint (.get hydra hint)))
     (unless (and (symbol? (.get hydra identity))
                  (pair? trigger) (bounded-list? trigger 3) (andmap symbol? trigger)
-                 (string? hint) (<= 1 (string-length hint) 220)
+                 (string? hint) (<= 1 (string-length hint) 2000)
                  (memq (.get hydra foreign) '(exit warn run)))
       (error "invalid hydra body"))
     (checked-heads (.get hydra heads))
     hydra))
 
-(def (make-marlin-ui-hydra identity-value trigger-value title-value foreign-value heads-value)
-  (unless (and (string? title-value) (<= 1 (string-length title-value) 64))
+(def (make-marlin-ui-hydra identity-value trigger-value title-value foreign-value heads-value auto-hint?)
+  (unless (and (string? title-value) (boolean? auto-hint?)
+               (<= 1 (string-length title-value) (if auto-hint? 64 2000)))
     (error "invalid hydra title"))
   (checked-heads heads-value)
   (def (hint-heads rest)
@@ -58,7 +59,9 @@
                      (hint-heads (cdr rest)))))
   (checked-hydra
     (seal-object! (.o (:: @ UiHydra.) identity: identity-value trigger: trigger-value
-                      hint: (string-append title-value ": " (hint-heads heads-value))
+                      hint: (if auto-hint?
+                              (string-append title-value ": " (hint-heads heads-value))
+                              title-value)
                       foreign: foreign-value heads: heads-value))))
 
 ;;; Colors follow Hydra's two independent decisions: exit after a head, and
@@ -91,13 +94,22 @@
 
 ;;; A declaration owns the trigger, command descriptors and per-head rules.
 (defrules defui-hydra ()
+  ((_ binding (identity-value (trigger-key ...) color: color hint: #f) title
+      (head-key command-name label-value head-option ...) ...)
+   (def binding
+     (let (default-exit (hydra-color-exit 'color))
+       (make-marlin-ui-hydra 'identity-value '(trigger-key ...) title
+         (hydra-color-foreign 'color)
+         (list (ui-hydra-head default-exit head-key command-name label-value head-option ...) ...)
+         #f))))
   ((_ binding (identity-value (trigger-key ...) color: color) title
       (head-key command-name label-value head-option ...) ...)
    (def binding
      (let (default-exit (hydra-color-exit 'color))
        (make-marlin-ui-hydra 'identity-value '(trigger-key ...) title
          (hydra-color-foreign 'color)
-         (list (ui-hydra-head default-exit head-key command-name label-value head-option ...) ...))))))
+         (list (ui-hydra-head default-exit head-key command-name label-value head-option ...) ...)
+         #t)))))
 
 ;;; The result is a typed native keymap entry, not serialized text.
 (def (checked-catalog catalog)

@@ -8,8 +8,8 @@
 
 ;;; The command catalog, transient bindings and hint come from this declaration.
 (defui-hydra HistoryHydraValue
-  (history (C-x h) color: red)
-  "History"
+  (history (C-x h) color: red hint: #f)
+  "History\np newest  n older  q quit"
   (p (history "Return to newest history" history "newest") "newest")
   (n (history-older "Browse earlier history" history "older") "older")
   (q #f "quit" color: blue))
