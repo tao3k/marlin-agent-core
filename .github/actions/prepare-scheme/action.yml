@@ -61,6 +61,37 @@ runs:
           trap 'sudo sysctl -q -w "kernel.core_pattern=$core_pattern"' EXIT
           sudo sysctl -q -w "kernel.core_pattern=$crash_dir/core.%e.%p"
           ulimit -c unlimited
+          cat > "$crash_dir/grammar-global.gdb" <<'GDB'
+        python
+        import gdb
+        import re
+        import subprocess
+
+        try:
+            pc = int(gdb.parse_and_eval("$pc"))
+            module = gdb.solib_name(pc) or ""
+            if re.search(r"orgize/.*/(?:grammar|expectation-grammar)~0[.]o1$", module):
+                # On this x86-64 crash, a RIP-relative load fetches the global
+                # cell immediately before dereferencing its unbound value.
+                assembly = gdb.execute("disassemble /r $pc-10,$pc", to_string=True)
+                slot = re.search(r"# (0x[0-9a-f]+) <___glotbl\+(\d+)>", assembly)
+                if slot is None:
+                    raise ValueError("fault does not match the observed global load")
+                slot_address, byte_offset = int(slot[1], 16), int(slot[2])
+                pointer_size = gdb.lookup_type("void").pointer().sizeof
+                if byte_offset % pointer_size:
+                    raise ValueError("unaligned global table slot")
+                symbols = subprocess.check_output(["nm", "--defined-only", module], text=True)
+                offsets = {name: int(address, 16) for address, name in
+                           re.findall(r"^([0-9a-f]+) \w (___glotbl|___glo_names)$", symbols, re.M)}
+                name_slot = slot_address + offsets["___glo_names"] - offsets["___glotbl"]
+                name = gdb.parse_and_eval("*(char **)" + hex(name_slot)).string()
+                value = gdb.parse_and_eval("**(long **)" + hex(slot_address))
+                print(f"Orgize grammar fault global {name!r}, slot {byte_offset // pointer_size}, value {int(value)}")
+        except Exception as failure:
+            print(f"Orgize grammar fault global unavailable: {failure}")
+        end
+        GDB
           export MARLIN_TRACE_GXTAGS="$(command -v gxtags)"
           export MARLIN_TRACE_DIR="$crash_dir"
           mkdir "$crash_dir/bin"
@@ -103,6 +134,7 @@ runs:
               gdb --batch --nx -iex 'set auto-load off' \
                 -ex 'set print frame-arguments none' -ex 'thread apply all bt' \
                 -ex 'info registers' -ex 'disassemble /r $pc-32,$pc+48' \
+                -x "$crash_dir/grammar-global.gdb" \
                 "$executable" "$dump" 2>&1 | tee "$backtrace" || true
               if grep -Eq 'orgize/[^ ]*/(grammar|expectation-grammar)~0[.]o1' "$backtrace"; then
                 orgize_crashed=true
