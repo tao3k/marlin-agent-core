@@ -96,6 +96,25 @@ start independently of Scheme preparation.
 CI sets =GERBIL_BUILD_CORES= to each runner's available logical CPU count
 before activating the SDK. Dependency builds, the package Builder, and Rust's
 embedded package build receive the same worker budget within a job.
+
+The Linux linked workflow at =dda113e= built the declared dependencies and
+failed when the Gerbil package manager ran =gxtags github.com= with exit 70.
+CI now directs Gambit errors to stderr during =gerbil deps --install= so the
+package manager's stdout capture preserves the child exit status while the
+original exception can appear in the job log.
+[[https://github.com/tao3k/marlin-agent-core/actions/runs/43485082047/job/132091275495][Linux failure]] ·
+[[https://github.com/tao3k/marlin-agent-core/actions/runs/43492113331/job/132115695841][Linux diagnostic run]]
+
+The macOS linked workflow at =7c5b926= installed and cached the dependencies.
+Marlin's =gerbil build= then failed inside Yuanxu's
+=reader-evaluation-observers= while normalizing a publication wrapper path
+whose temporary directory had already been removed. The Yuanxu candidate
+registers the path aliases while the wrapper exists and carries the original
+source through evaluation. Marlin's paired Lab and Yuanxu build still needs
+qualification.
+[[https://github.com/tao3k/marlin-agent-core/actions/runs/43486146039/job/132095014399][macOS failure]] ·
+[[https://github.com/tao3k/gebril-yuanxu/blob/ab7eed0e910d5ef2bea10d3f11b2ee79906cd8b9/module-system/source/reader-evaluation.ss][Yuanxu reader ownership]]
+
 The pinned Lab revision installs source declarations without eager library
 compilation. The package window in Marlin INIT gives Yuanxu the upstream
 source ownership needed to derive the combined library closure. The Context

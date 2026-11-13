@@ -45,18 +45,21 @@ including identity, authorization and task or session lifecycle. Marlin owns
 Session and Runtime attachment, journal ordering and local cancellation receipts.
 [[https://github.com/tao3k/weaver/blob/3242a3ad123ae90eb6250885a09425fec304c19f/docs/10-19-llm-gateway/17-policy-continuation/17.04-protocol-admission-and-identity.org][Weaver protocol inventory]]
 
-The isolated local Weaver candidate at =8ae57a3= calls a separate Turso-backed
-Marlin App Server. Its client pin =88c3f9ce= and the current host use identical
+The isolated local Weaver candidate at =2017cb0= uses the generated client
+from Marlin =dda113e= and was verified against a separate Turso-backed
+Marlin App Server built at =02a3044=. Both revisions use identical
 =app_server.proto= bytes. The A2A gRPC case submits, reconnects, refuses a
 conflicting retry and cancels with one Marlin dispatch. Two ACP JSON-RPC
 cases exercise Session creation, resume, foreign Session refusal and live
 cancellation. The restart case also recovers the original cancellation
 receipt and records two dispatches from the original process, with zero
-from the new process. The host's =cancelled= fixture mode returns the
-normal cancellation response. The =cancel-response-lost= mode holds it
-after the journal commit for the Marlin restart test. These cases use fixture
-identities and provisioned Sessions. Production deployment and authorization
-remain open.
+from the new process. ACP uses =provisioned_app_server_process= for Session
+creation and identity-bound reopening. A2A uses =turso_app_server_process=
+with a host-bound Session. The =cancel-response-lost= mode holds the response
+after the journal commit for the Marlin restart test. Production deployment
+and authorization remain open.
+[[https://github.com/tao3k/marlin-agent-core/actions/runs/43492402642/job/132116857814][Marlin HTTP/2 and client isolation CI]] ·
+[[https://github.com/tao3k/marlin-agent-core/actions/runs/43492402642/job/132116857390][Marlin Quint CI]]
 
 | Operation | Existing Marlin behavior | Weaver work |
 |-----------+--------------------------+-------------|
@@ -108,10 +111,10 @@ Marlin Runtime, Session, storage and internal protocol crates. The Rust
 generator derives the descriptor and bindings from =app_server.proto= for
 both client and host builds.
 
-A local Cargo project outside the Marlin workspace built the UI client with
-only =grpc= enabled. Its generated descriptor matched the host build byte for
-byte with SHA-256
-=0b4adb4bd86e7eb491ac8e3917154a2a13783e23b4667e86bb1a2bd4f76c6904=.
+A local Cargo project outside the Marlin workspace built the UI client from
+=02a3044= with only =grpc= enabled. Its generated descriptor matched the host
+build byte for byte with SHA-256
+=7de8a662ae0fcbe4fc5cffdd3ce6e4ce741a8c3b7cb60a769b90a0086d843c46=.
 Over HTTP/2 it submitted a turn to a separate Turso-backed App Server,
 received a checkpoint, retried the same submission, resumed from the
 checkpoint cursor and read back the cancellation receipt. The host recorded
