@@ -10,6 +10,44 @@ use super::{
 use std::sync::{Arc, Mutex};
 
 #[test]
+fn process_buffer_refresh_reuses_unchanged_runtime_snapshot() {
+    let mut app = App::new(ModelEndpoint::new("provider", "model"));
+    assert!(app.refresh_process_content());
+    let snapshot = app.dynamic_buffer_content.clone();
+    assert!(!app.refresh_process_content());
+    assert_eq!(app.dynamic_buffer_content, snapshot);
+    assert_eq!(app.dynamic_buffer_content.len(), 1);
+}
+
+#[test]
+fn dynamic_buffer_rejects_oversized_replacement_without_changing_its_view() {
+    use marlin_agent_ui::{UiBufferId, UiContent};
+
+    let mut app = App::new(ModelEndpoint::new("provider", "model"));
+    let id = UiBufferId::new("processes").unwrap();
+    assert_eq!(
+        app.replace_dynamic_buffer_content(id.clone(), vec![UiContent::Text("ready".into())]),
+        Ok(true)
+    );
+    assert_eq!(
+        app.replace_dynamic_buffer_content(id.clone(), vec![UiContent::Text("ready".into())]),
+        Ok(false)
+    );
+    assert!(
+        app.replace_dynamic_buffer_content(
+            id.clone(),
+            vec![UiContent::Text("x".repeat(32 * 1024 + 1))]
+        )
+        .is_err()
+    );
+    assert_eq!(
+        app.dynamic_buffer_content.get(&id),
+        Some(&vec![UiContent::Text("ready".into())])
+    );
+    assert!(app.transcript.is_empty());
+}
+
+#[test]
 fn runtime_events_enter_messages_in_bounded_batches_without_polluting_conversation() {
     let (owner, events) = marlin_agent_runtime::TokioAgentRuntime::new(64);
     let sink = owner.event_sink();
@@ -105,6 +143,7 @@ fn command_menu_filters_scheme_descriptors_and_preserves_draft() {
         focus: UiComponentId::new("composer").unwrap(),
         frame: test_frame(),
         keymap: Vec::new(),
+        transients: Vec::new(),
     };
     app.command_candidates = vec![UiCommandName::new("models").unwrap()];
     let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(60, 10)).unwrap();
@@ -185,6 +224,7 @@ fn command_menu_scrolls_to_the_selected_entry() {
         focus: UiComponentId::new("composer").unwrap(),
         frame: test_frame(),
         keymap: Vec::new(),
+        transients: Vec::new(),
     };
     app.command_selection = Some(("".into(), UiCommandName::new("clear").unwrap()));
     let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(60, 10)).unwrap();
@@ -236,7 +276,14 @@ fn mx_minibuffer_and_candidates_are_below_modeline() {
         .map(|command| command.name.clone())
         .collect();
     let view = UiWorkbench {
-        layout: test_layout(),
+        layout: marlin_agent_ui::UiLayoutPolicy {
+            max_command_rows: 10,
+            command_frame: marlin_agent_ui::UiFrameSpec {
+                min_transcript_rows: 4,
+                ..test_layout().command_frame
+            },
+            ..test_layout()
+        },
         theme: Default::default(),
         model_label: "model".into(),
         session_label: "session".into(),
@@ -263,6 +310,7 @@ fn mx_minibuffer_and_candidates_are_below_modeline() {
         focus: UiComponentId::new("composer").unwrap(),
         frame: test_frame(),
         keymap: Vec::new(),
+        transients: Vec::new(),
     };
     let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 18)).unwrap();
     terminal
@@ -291,8 +339,103 @@ fn mx_minibuffer_and_candidates_are_below_modeline() {
         .unwrap();
     assert!(modeline < prompt && prompt + 1 == candidate, "{rows:?}");
     assert!(!rows[prompt].contains('┌') && !rows[prompt].contains('│'));
-    assert!(rows[17].contains("command-13"), "{rows:?}");
+    assert!(
+        !rows.iter().any(|row| row.contains("command-13")),
+        "{rows:?}"
+    );
     assert!(!rows.iter().any(|row| row.contains("Tab complete")));
+
+    app.command_candidates.truncate(1);
+    terminal
+        .draw(|frame| {
+            render_draw(
+                frame,
+                &app,
+                &view,
+                &mut Default::default(),
+                &mut Default::default(),
+            );
+        })
+        .unwrap();
+    let buffer = terminal.backend().buffer();
+    let stable_modeline = (0..18)
+        .find(|y| {
+            (0..80)
+                .map(|x| buffer[(x, *y)].symbol())
+                .collect::<String>()
+                .contains("BRAND")
+        })
+        .unwrap();
+    assert_eq!(
+        usize::from(stable_modeline),
+        modeline,
+        "filtering must keep the minibuffer height fixed"
+    );
+    app.toggle_command();
+    terminal
+        .draw(|frame| {
+            render_draw(
+                frame,
+                &app,
+                &view,
+                &mut Default::default(),
+                &mut Default::default(),
+            );
+        })
+        .unwrap();
+    let buffer = terminal.backend().buffer();
+    let restored_modeline = (0..18)
+        .find(|y| {
+            (0..80)
+                .map(|x| buffer[(x, *y)].symbol())
+                .collect::<String>()
+                .contains("BRAND")
+        })
+        .unwrap();
+    assert!(
+        usize::from(restored_modeline) > modeline,
+        "closing must return the candidate area"
+    );
+    app.toggle_command();
+    let mut reordered = view.clone();
+    let marlin_agent_ui::UiElement::Rows(slots) = &mut reordered.layout.frame_tree else {
+        panic!("test frame must be rows");
+    };
+    slots.swap(2, 3);
+    let geometry = super::super::render::frame_regions(
+        &app,
+        &reordered,
+        ratatui::layout::Rect::new(0, 0, 80, 18),
+    );
+    let editor = geometry
+        .iter()
+        .find(|region| region.id.as_str() == "editor")
+        .unwrap();
+    assert_eq!(
+        super::super::ui_elements::hit_test(&geometry, editor.area.x, editor.area.y)
+            .unwrap()
+            .id
+            .as_str(),
+        "editor"
+    );
+    terminal
+        .draw(|frame| {
+            render_draw(
+                frame,
+                &app,
+                &reordered,
+                &mut Default::default(),
+                &mut Default::default(),
+            );
+        })
+        .unwrap();
+    let prompt: String = (0..80)
+        .map(|x| terminal.backend().buffer()[(x, editor.area.y)].symbol())
+        .collect();
+    assert!(
+        prompt.contains("M-x "),
+        "render and hit test must share the Scheme geometry: {prompt:?}"
+    );
 }
 
 #[test]
@@ -409,6 +552,7 @@ fn event_messages_use_a_switchable_buffer_without_polluting_conversation() {
         focus: UiComponentId::new("composer").unwrap(),
         frame: test_frame(),
         keymap: Vec::new(),
+        transients: Vec::new(),
     };
     view.frame.windows[0].buffer = marlin_agent_ui::UiBufferId::new("messages").unwrap();
     app.sync_window(&view).unwrap();
@@ -451,7 +595,7 @@ fn scheme_static_buffer_replaces_window_content_without_changing_conversation() 
     let mut frame = test_frame();
     frame.buffers.push(UiBufferId::new("help").unwrap());
     frame.windows[0].buffer = UiBufferId::new("help").unwrap();
-    let view = UiWorkbench {
+    let mut view = UiWorkbench {
         layout: test_layout(),
         theme: Default::default(),
         model_label: "model".into(),
@@ -471,11 +615,12 @@ fn scheme_static_buffer_replaces_window_content_without_changing_conversation() 
         focus: UiComponentId::new("composer").unwrap(),
         frame,
         keymap: Vec::new(),
+        transients: Vec::new(),
     };
     app.sync_window(&view).unwrap();
     assert_eq!(
         app.buffer_view,
-        BufferView::Static(UiBufferId::new("help").unwrap())
+        BufferView::Named(UiBufferId::new("help").unwrap())
     );
     let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 16)).unwrap();
     terminal
@@ -496,6 +641,41 @@ fn scheme_static_buffer_replaces_window_content_without_changing_conversation() 
     assert!(text.contains("Ctrl-R  Search prompts"), "{text}");
     assert!(!text.contains("private conversation"), "{text}");
     assert_eq!(app.transcript.len(), 1);
+
+    let processes = UiBufferId::new("processes").unwrap();
+    view.frame.buffers.push(processes.clone());
+    view.frame.windows[0].buffer = processes.clone();
+    view.regions.push(UiRegion::Extension {
+        id: UiComponentId::new("processes").unwrap(),
+        label: "*Processes*".into(),
+        content: vec![],
+        focusable: false,
+    });
+    app.replace_dynamic_buffer_content(
+        processes.clone(),
+        vec![UiContent::Text("Generation 7 Running".into())],
+    )
+    .unwrap();
+    app.sync_window(&view).unwrap();
+    assert_eq!(app.buffer_view, BufferView::Named(processes));
+    terminal
+        .draw(|frame| {
+            render_draw(
+                frame,
+                &app,
+                &view,
+                &mut Default::default(),
+                &mut Default::default(),
+            );
+        })
+        .unwrap();
+    let buffer = terminal.backend().buffer();
+    let text: String = (0..16)
+        .flat_map(|y| (0..80).map(move |x| buffer[(x, y)].symbol()))
+        .collect();
+    assert!(text.contains("*Processes*"), "{text}");
+    assert!(text.contains("Generation 7 Running"), "{text}");
+    assert!(!text.contains("private conversation"), "{text}");
 }
 
 #[test]
@@ -528,6 +708,7 @@ fn selected_modeline_is_colored_and_sits_above_the_collapsible_minibuffer() {
         focus: UiComponentId::new("composer").unwrap(),
         frame: test_frame(),
         keymap: Vec::new(),
+        transients: Vec::new(),
     };
     let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 12)).unwrap();
     fn paint(

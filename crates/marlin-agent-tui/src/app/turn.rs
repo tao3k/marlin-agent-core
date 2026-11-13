@@ -157,7 +157,7 @@ impl App {
                 }
                 Some(Command::Model(model)) => self.select_model(model),
                 Some(Command::History(older)) => self.request_history_page(runtime, older),
-                Some(Command::Context) => {
+                Some(Command::ContextBudget) => {
                     if self.history_position.is_some() {
                         self.publish_message(MessageEvent {
                             source: MessageSource::Ui,
@@ -205,6 +205,7 @@ impl App {
                     }
                 }
                 Some(Command::SelectUi(event)) => self.ui_request = Some(event),
+                Some(Command::EnterTransient(id)) => self.transient_request = Some(id),
                 Some(Command::KillProcess(_)) => {
                     unreachable!("process command handled at admission")
                 }
@@ -261,7 +262,7 @@ impl App {
             });
             return;
         }
-        if self.buffer_view != super::state::BufferView::Conversation {
+        if self.buffer_view != super::BufferView::Conversation {
             self.ui_request = Some(UiEvent::SelectBuffer(
                 marlin_agent_ui::UiBufferId::new("conversation").expect("static buffer ID"),
             ));
@@ -618,7 +619,7 @@ impl App {
             self.composer = draft;
             return;
         }
-        if self.buffer_view != super::state::BufferView::Conversation {
+        if self.buffer_view != super::BufferView::Conversation {
             self.ui_request = Some(UiEvent::SelectBuffer(
                 marlin_agent_ui::UiBufferId::new("conversation").expect("static buffer ID"),
             ));
@@ -673,7 +674,7 @@ impl App {
             || self.workspace.is_pending()
             || self.workspace.view().is_some()
             || self.runtime_receipt_open
-            || self.buffer_view != super::state::BufferView::Conversation
+            || self.buffer_view != super::BufferView::Conversation
             || self
                 .session_browser
                 .as_ref()
@@ -699,10 +700,7 @@ impl App {
     }
 
     pub(crate) fn scroll_lines(&mut self, up: bool, lines: usize) {
-        if matches!(
-            self.buffer_view,
-            super::state::BufferView::Static(_) | super::state::BufferView::Processes
-        ) {
+        if matches!(self.buffer_view, super::BufferView::Named(_)) {
             self.static_buffer_scroll = if up {
                 self.static_buffer_scroll.saturating_sub(lines)
             } else {
@@ -710,7 +708,7 @@ impl App {
             };
             return;
         }
-        if self.buffer_view == super::state::BufferView::Messages {
+        if self.buffer_view == super::BufferView::Messages {
             self.message_scroll_up = if up {
                 self.message_scroll_up.saturating_add(lines)
             } else {
@@ -732,13 +730,10 @@ impl App {
     }
 
     pub(super) fn set_effective_scroll(&mut self, value: usize) {
-        if matches!(
-            self.buffer_view,
-            super::state::BufferView::Static(_) | super::state::BufferView::Processes
-        ) {
+        if matches!(self.buffer_view, super::BufferView::Named(_)) {
             return;
         }
-        if self.buffer_view == super::state::BufferView::Messages {
+        if self.buffer_view == super::BufferView::Messages {
             self.message_scroll_up = value;
             return;
         }
@@ -806,11 +801,14 @@ impl App {
         });
     }
 
-    pub(super) fn refresh_process_content(&mut self) -> bool {
-        let rows = self
-            .runtime_owner
-            .process_registry()
-            .managed_processes(&self.runtime_session_id());
+    pub(crate) fn refresh_process_content(&mut self) -> bool {
+        let session = self.runtime_session_id();
+        let registry = self.runtime_owner.process_registry();
+        let revision = registry.managed_revision();
+        if self.process_snapshot.as_ref() == Some(&(session.clone(), revision)) {
+            return false;
+        }
+        let rows = registry.managed_processes(&session);
         let mut content = Vec::with_capacity(rows.len() + 1);
         content.push(UiContent::Text(if rows.is_empty() {
             "No managed processes in this session.".into()
@@ -842,10 +840,22 @@ impl App {
                 operation
             )));
         }
-        if self.process_content == content {
-            return false;
+        let id = marlin_agent_ui::UiBufferId::new("processes").expect("static Buffer identity");
+        match self.replace_dynamic_buffer_content(id, content) {
+            Ok(changed) => {
+                self.process_snapshot = Some((session, revision));
+                changed
+            }
+            Err(detail) => {
+                self.process_snapshot = Some((session, revision));
+                self.publish_message(MessageEvent {
+                    source: MessageSource::Runtime,
+                    severity: MessageSeverity::Error,
+                    summary: "Process Buffer update rejected",
+                    detail,
+                });
+                false
+            }
         }
-        self.process_content = content;
-        true
     }
 }

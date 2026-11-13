@@ -7,6 +7,51 @@ use marlin_agent_ui::{
 };
 
 pub(super) fn test_layout() -> UiLayoutPolicy {
+    use marlin_agent_ui::{UiElement, UiTemplateSpan, UiTemplateValue, UiTone};
+    let candidate = |active| UiElement::Template {
+        background: if active {
+            marlin_agent_ui::UiBackground::Bar
+        } else {
+            marlin_agent_ui::UiBackground::None
+        },
+        spans: vec![
+            UiTemplateSpan {
+                value: UiTemplateValue::Literal(if active { " › " } else { "   " }.into()),
+                tone: UiTone::Accent,
+                bold: false,
+            },
+            UiTemplateSpan {
+                value: UiTemplateValue::Binding(UiComponentId::new("name").unwrap()),
+                tone: UiTone::Info,
+                bold: active,
+            },
+            UiTemplateSpan {
+                value: UiTemplateValue::Literal("  ".into()),
+                tone: UiTone::Normal,
+                bold: false,
+            },
+            UiTemplateSpan {
+                value: UiTemplateValue::Binding(UiComponentId::new("description").unwrap()),
+                tone: UiTone::Muted,
+                bold: false,
+            },
+        ],
+    };
+    let status = |label: &str| UiElement::Template {
+        background: marlin_agent_ui::UiBackground::None,
+        spans: vec![
+            UiTemplateSpan {
+                value: UiTemplateValue::Binding(UiComponentId::new("prefix").unwrap()),
+                tone: UiTone::Normal,
+                bold: false,
+            },
+            UiTemplateSpan {
+                value: UiTemplateValue::Literal(label.into()),
+                tone: UiTone::Normal,
+                bold: false,
+            },
+        ],
+    };
     UiLayoutPolicy {
         message_frame: UiFrameSpec {
             min_transcript_rows: 2,
@@ -26,6 +71,68 @@ pub(super) fn test_layout() -> UiLayoutPolicy {
         },
         max_chatbox_rows: 10,
         max_command_rows: 32,
+        frame_tree: marlin_agent_ui::UiElement::Rows(
+            [
+                "transcript",
+                "extensions",
+                "modeline",
+                "editor",
+                "candidates",
+                "minibuffer",
+            ]
+            .into_iter()
+            .map(|name| marlin_agent_ui::UiElement::Region {
+                id: UiComponentId::new(name).unwrap(),
+                scrollable: matches!(name, "transcript" | "candidates"),
+                child: Box::new(if name == "candidates" {
+                    UiElement::Rows(vec![candidate(true), candidate(false)])
+                } else if name == "minibuffer" {
+                    UiElement::Choice {
+                        cases: ["searching", "search-match", "search-no-match"]
+                            .into_iter()
+                            .map(|name| {
+                                (
+                                    UiComponentId::new(name).unwrap(),
+                                    UiElement::Template {
+                                        background: marlin_agent_ui::UiBackground::None,
+                                        spans: vec![
+                                            UiTemplateSpan {
+                                                value: UiTemplateValue::Literal(
+                                                    "fixture search ".into(),
+                                                ),
+                                                tone: UiTone::Normal,
+                                                bold: false,
+                                            },
+                                            UiTemplateSpan {
+                                                value: UiTemplateValue::Binding(
+                                                    UiComponentId::new("query").unwrap(),
+                                                ),
+                                                tone: UiTone::Normal,
+                                                bold: false,
+                                            },
+                                        ],
+                                    },
+                                )
+                            })
+                            .chain(
+                                [
+                                    "draft-limit",
+                                    "runtime",
+                                    "transcript-focus",
+                                    "extension-focus",
+                                ]
+                                .into_iter()
+                                .map(|name| (UiComponentId::new(name).unwrap(), status(name))),
+                            )
+                            .collect(),
+                        fallback: Box::new(status("fixture status")),
+                    }
+                } else {
+                    UiElement::Text(vec![])
+                }),
+            })
+            .collect(),
+        ),
         // These are synthetic host values, not copies of Scheme presentation.
         transcript_policy: UiTranscriptPolicy {
             default_collapsed: true,

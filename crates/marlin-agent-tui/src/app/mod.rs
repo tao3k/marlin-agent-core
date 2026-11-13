@@ -29,7 +29,7 @@ use super::{
     model_catalog::ModelCatalog,
     output_limit::{MAX_COMPLETION_HEAP_BYTES, MAX_RESPONSE_BYTES, OutputLimit},
     prompt_history::{HistorySearch, PromptHistory},
-    render::{draw, mouse_over_minibuffer},
+    render::{draw, frame_regions, mouse_over_minibuffer},
     replay::{ReplayOutcome, ReplayTurn, load_session},
     session_browser::{OpenedView, SessionBrowser, SessionPageRequestError},
     signals::SignalMonitor,
@@ -52,10 +52,12 @@ use marlin_agent_stream::{
 };
 use marlin_agent_ui::{
     UiBrowseDirection, UiBufferId, UiCommand, UiCommandName, UiContent, UiEvent, UiOpenFacts,
-    UiTranscriptPolicy, UiWorkbench,
+    UiTranscriptPolicy, UiTransientId, UiWorkbench,
 };
 use termion::event::Key;
 
+#[path = "presentation.rs"]
+mod presentation;
 #[path = "runner.rs"]
 mod runner;
 #[path = "state.rs"]
@@ -74,10 +76,12 @@ pub use runner::run_cli;
 
 #[cfg(test)]
 #[cfg_attr(test, allow(unused_imports))]
-pub(crate) use state::safe_text;
+pub(crate) use presentation::safe_text;
+pub(crate) use presentation::{
+    BufferView, GatewayObservation, MessageEvent, MessageSeverity, MessageSource, ModelineActivity,
+};
 pub(crate) use state::{
-    App, BufferView, GatewayObservation, INPUT_QUEUE_ITEMS, MAX_TURN_SEGMENTS, MessageEvent,
-    MessageSeverity, MessageSource, ModelineActivity, PendingTurn, REPLY_BATCH_LIMIT,
-    REPLY_QUEUE_BYTES, REPLY_QUEUE_ITEMS, RUNTIME_EVENT_BATCH_LIMIT,
+    App, INPUT_QUEUE_ITEMS, MAX_TURN_SEGMENTS, PendingTurn, REPLY_BATCH_LIMIT, REPLY_QUEUE_BYTES,
+    REPLY_QUEUE_ITEMS, RUNTIME_EVENT_BATCH_LIMIT,
 };
 use terminal_owner::TerminalOwner;

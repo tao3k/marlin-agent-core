@@ -100,6 +100,59 @@ package MarlinTuiLifecycle {
     dependency evidenceDeliveryOwnedByRuntime from EvidenceDeliveryLifecycle to target::runtime::evidenceAdmission;
     dependency evidenceDeliveryPersisted from EvidenceDeliveryLifecycle to target::sessionStore;
 
+    attribute def ToolAdvertised;
+    attribute def ModelToolRequested;
+    attribute def ToolRequestCommitted;
+    attribute def ReviewApproved;
+    attribute def ReviewRejected;
+    attribute def ToolExecutionStarted;
+    attribute def ToolExecutionClaimCommitted;
+    attribute def ToolResultCommitted;
+    attribute def ToolExecutionUncertain;
+
+    state def <'MAR-TUI-L07'> ModelToolReviewLifecycle {
+        doc /* A model tool name is offered only with a registered runtime
+               handler. One request retains an immutable definition/handler
+               snapshot, so a later catalog update cannot authorize a call
+               absent from that request. The provider call ID, tool identity and durable
+               conversation turn must agree before the Mini Buffer can show
+               Ask. A decision receipt is consumed once. A stale receipt,
+               provisional request or uncertain result cannot authorize a
+               second execution. The runtime commits an execution claim before
+               invoking a handler. Recovery after a claimed but unrecorded
+               result stays uncertain and never retries silently. The UI binds
+               Ask to the Mini Buffer as a
+               temporary Frame, retains the conversation draft, and returns
+               to its prior Buffer after resolution; it does not add a side
+               panel. Scheme owns that Frame's choices and keymap. The UI
+               owns presentation, never authority. */
+        first start then unavailable;
+        state unavailable;
+        state offered;
+        state requested;
+        state awaitingReview;
+        state approved;
+        state rejected;
+        state claimed;
+        state executing;
+        state settled;
+        state uncertain;
+        transition offer first unavailable accept ToolAdvertised then offered;
+        transition request first offered accept ModelToolRequested then requested;
+        transition commitRequest first requested accept ToolRequestCommitted then awaitingReview;
+        transition approveRequest first awaitingReview accept ReviewApproved then approved;
+        transition rejectRequest first awaitingReview accept ReviewRejected then rejected;
+        transition claimApproved first approved accept ToolExecutionClaimCommitted then claimed;
+        transition executeClaimed first claimed accept ToolExecutionStarted then executing;
+        transition uncertainBeforeObservation first claimed accept ToolExecutionUncertain then uncertain;
+        transition persistResult first executing accept ToolResultCommitted then settled;
+        transition uncertainResult first executing accept ToolExecutionUncertain then uncertain;
+    }
+
+    dependency modelToolReviewOwnedByRuntime from ModelToolReviewLifecycle to target::runtime;
+    dependency modelToolReviewPersisted from ModelToolReviewLifecycle to target::sessionStore;
+    dependency modelToolReviewProjected from ModelToolReviewLifecycle to target::terminalClient::projection;
+
     attribute def InterruptKey;
     attribute def OtherInput;
     attribute def ActiveWorkStarted;

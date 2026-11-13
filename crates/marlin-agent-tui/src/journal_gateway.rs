@@ -13,6 +13,7 @@ use marlin_agent_protocol::{
     ModelGatewayError, ModelGatewayFuture, ModelGatewayMessageRole, ModelGatewayRequest,
     ModelGatewayResult, ModelStreamInterruption,
 };
+use marlin_agent_runtime::ModelToolOffer;
 use marlin_agent_sessions::{
     ConversationJournal, ConversationTerminalObservation, ConversationTurnId,
     ConversationTurnStart, ConversationUncertaintyReason,
@@ -33,6 +34,7 @@ const CHECKPOINT_INTERVAL: Duration = Duration::from_secs(1);
 pub(crate) struct JournalGateway<G, S> {
     gateway: Arc<G>,
     journal: Arc<Mutex<ConversationJournal<S>>>,
+    tool_offer: Option<Arc<ModelToolOffer>>,
 }
 
 impl<G, S> JournalGateway<G, S> {
@@ -40,7 +42,13 @@ impl<G, S> JournalGateway<G, S> {
         Self {
             gateway: Arc::new(gateway),
             journal: Arc::new(Mutex::new(journal)),
+            tool_offer: None,
         }
+    }
+
+    pub(crate) fn with_tool_offer(mut self, offer: ModelToolOffer) -> Self {
+        self.tool_offer = Some(Arc::new(offer));
+        self
     }
 }
 
@@ -118,7 +126,21 @@ impl<G: ModelStreamingGateway, S: SessionEventStore + 'static> ModelStreamingGat
     ) -> ModelGatewayFuture<ModelGatewayResult<ModelGatewayEventStream>> {
         let gateway = self.gateway.clone();
         let journal = self.journal.clone();
+        let tool_offer = self.tool_offer.clone();
         Box::pin(async move {
+            let offered_tools = request
+                .options()
+                .and_then(|options| options.tools.as_ref())
+                .map(Vec::as_slice);
+            match (tool_offer.as_ref(), offered_tools) {
+                (None, None) => {}
+                (Some(offer), expected) if offer.matches_definitions(expected) => {}
+                _ => {
+                    return Err(ModelGatewayError::RequestNotDispatched(
+                        "model tool offer does not match the runtime handler catalog".into(),
+                    ));
+                }
+            }
             let user_text = request
                 .messages()
                 .last()
@@ -300,6 +322,7 @@ impl<G: ModelStreamingGateway, S: SessionEventStore + 'static> ModelStreamingGat
                                 _ if heap_rejection.is_some() => heap_rejection,
                                 _ if any_oversized => Some(ModelStreamInterruption::OutputLimit { limit_bytes: MAX_RESPONSE_BYTES }),
                                 Some(choice) if tool_requested && (response.choices.len() != 1 || choice.message.tool_calls.is_empty()) => Some(ModelStreamInterruption::InvalidCompletion),
+                                Some(choice) if tool_requested && tool_offer.as_ref().is_none_or(|offer| offer.admit_calls(&choice.message.tool_calls).is_err()) => Some(ModelStreamInterruption::InvalidCompletion),
                                 Some(choice) if !tool_requested && !choice.message.tool_calls.is_empty() => Some(ModelStreamInterruption::InvalidCompletion),
                                 Some(choice) if had_chunks && choice.message.content != partial => Some(ModelStreamInterruption::InvalidCompletion),
                                 None => Some(ModelStreamInterruption::InvalidCompletion),

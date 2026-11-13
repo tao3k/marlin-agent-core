@@ -138,6 +138,13 @@ Rust owns the terminal, input decoding, layout and Ratatui painting, async
 I/O, typed runtime commands, and effect authorization. Model/session facts and
 receipts originate from their existing runtime owners, never from a UI plugin.
 
+The linked TUI executes Scheme in the Gerbil/Gambit VM. Gerbil and Gambit
+compile and link the selected module closure for that VM; the SDK package named
+=gerbil-scheme-aot-build= builds the linked program archive. Neither that
+package name nor the =tui-aot-*= recipes imply translation of Scheme modules to
+Rust. Scheme-to-Rust IR is a separate, currently unused backend with its own
+limitations; linked modules do not by themselves establish dynamic loading.
+
 The Scheme module, the Rust/Scheme calling boundary, and any AOT compilation or
 linking step are distinct responsibilities. The module must not import an AOT
 builder or require its host to use one image format. A native ABI adapter can
@@ -1794,15 +1801,26 @@ The selected =ui-components/keymap.ss= module declares =M-x=, =C-o=,
 looked up in Rust without a Scheme call per keystroke. Rust retains terminal
 byte decoding, Ctrl-C/Ctrl-Z process control and effect admission. A named
 key binding resolves through the same admitted command descriptor as =M-x=.
+The selected =ui-elements= module provides native Scheme values for text
+spans, rows and columns. Rust admits a bounded tree and maps those primitives
+to Ratatui; transient groups use the same vocabulary, without a Hydra-specific
+renderer. This is an initial vocabulary, not a complete mapping of Ratatui.
+
 The selected =ui-hydra/config.ss= declares transient key groups with
 =defui-hydra=. One head declares its key, command capability, annotation and
-optional exit override. The command catalog and Mini Buffer hint are derived
-from that declaration. For example, =C-x h= enters History; =p= and =n=
+optional exit override. The command catalog is derived from that declaration;
+the Mini Buffer hint can be generated from heads or provided as a multiline
+docstring. For example, =M-x hydra-history= enters History; =p= and =n=
 invoke the same M-x commands repeatedly and =q= leaves the group. A foreign
 key follows the selected exit, warn or run policy. The terminal admits bounded
 Scheme projections before routing keys; it does not call the VM per key.
 The local Hydra reference is =abo-abo/hydra= at revision
 =59a2a45a35027948476d1d7751b0f0215b1e61aa=.
+The implementation was checked against =hydra--normalize-body=,
+=hydra--make-defun=, =hydra--clearfun= and =hydra--format=. Per-key color,
+dynamic docstring expressions, numeric arguments, hooks and timeout are not
+yet part of this projection; a plain hint must not be described as full
+Hydra compatibility.
 Mode precedence and conflict reporting are future extensions. Local references in
 =~/.emacs.d/.local/straight/repos/= include =vertico= (candidate display),
 =marginalia= (annotations), =general.el= (keymap declarations),
@@ -2222,6 +2240,33 @@ to the durable turn, provider call ID, advertised tool and registered handler;
 its typed decision receipt must be consumed once. Actual graph-run tools keep
 using the graph gate. A presentation-only menu would claim authority the
 current TUI does not have.
+An approved decision still cannot invoke a handler directly: the runtime must
+commit a one-shot execution claim first. If the process dies after that claim
+without a durable result, replay records an unknown external outcome and does
+not retry the effect. The Mini Buffer may display recovery choices but cannot
+turn the old claim into a second execution.
+The conversation journal now records typed review and claim events keyed by
+the committed session, turn and provider call IDs. A second claim, a stale
+review or a rejected request cannot produce a claim receipt. Reopening after a
+claim reports execution outcome unknown. Scheme now declares a separate
+=model-tool= Mini Buffer review menu with =approve-once= and =reject= choices.
+The native UI projection admits exactly those two typed presentation intents
+and rejects duplicate or unknown choices; neither intent is an execution
+receipt. The runtime now has a handler-backed model-tool catalog: provider
+definitions come only from registered =ToolRuntime= handlers. Each request
+retains an immutable offer snapshot, and a complete tool-call batch must match
+that snapshot before review; a later registration cannot enlarge an earlier
+offer. The persistent TUI gateway now checks the exact handler-backed offer
+before dispatch and rejects returned tool calls outside it. Its current
+production catalog is empty, so direct chat does not advertise a tool. The
+catalog still does not dispatch a claim. Durable tool results, provider
+continuation and live Mini Buffer Ask binding remain open; the journal claim
+alone does not execute a handler. The isolated catalog-admission benchmark
+excludes VM startup, handler execution and journal I/O. Quick runs on the
+shared development host varied from about 17 to 31 ns for one call and 1.8 to
+2.8 us for 32 calls;
+the spread prevents a stable improvement claim. They are not an end-to-end
+latency bound.
 
 The graph-loop controller now records a produced =HumanGateReceipt= in the
 runtime run registry as =AwaitingHuman= instead of completing the run with the
@@ -2307,3 +2352,47 @@ Ask request can temporarily bind a choice view to the Minibuffer while the
 runtime holds the pending gate; the choice must resolve that exact typed gate
 before the Window returns to its prior Buffer. This preserves the Emacs
 interaction idea while fitting Marlin's runtime authority and stream model.
+
+The UI Buffer is a view binding, not a second durable session or context
+container. Agentic AI Lab Context and ORG define the narrative and evidence
+semantics; MRR is the intended evidence and storage boundary. The current TUI
+still uses the Marlin conversation journal for recovery and provider
+continuation; it must not promote that journal into an independent Context
+model. A transcript cell refers
+to the typed event or receipt that produced it; changing Buffer, theme, fold
+state, or Window does not copy or reinterpret that evidence. Consequently,
+oh-my-pi and Codewhale session catalogs are
+interaction references only. Marlin must not adopt their conversation storage
+or reconstruction semantics.
+
+=ui-transcript= now owns profile-specific role labels and thinking fold
+defaults; =ui-layout= owns frame geometry. The selected Scheme workbench
+combines both into one bounded native projection. Rust reads that projection
+to paint cells and must not hard-code a second set of profile rules or call
+the VM on each frame.
+
+The previous =M-x context= command displayed only a local message-byte
+admission budget. It is now =M-x context-budget= with an explicit
+=context-budget= capability. No compatibility alias remains. An actual Context
+Buffer must consume a scoped ORG query and its MRR-backed evidence receipt;
+relabeling the existing session pager or byte counter would not provide that
+projection.
+
+Named Buffers now have one rendering route. Scheme declares the =*Processes*=
+identity and title with an empty content component, and the Rust Runtime
+owner atomically replaces only its bounded display content. The same route
+can later display an admitted Context/ORG query result without creating a new
+conversation or a one-off renderer. There is no query producer or Context
+Buffer binding in this change, so it does not yet expose ORG evidence in the
+TUI. The existing =ContextOrgMemoryQuery= checks common scope identities and
+executes a local Org projection, but its own contract explicitly does not
+authenticate the source cut or grant current use. A TUI Context Buffer needs
+the admitted Lab scope and an MRR-backed evidence receipt before that result
+can become a navigable view. The session pager remains a journal recovery tool
+until that producer exists; copying an external session catalog into the UI
+would give it the wrong authority.
+
+The =*Processes*= Buffer now caches the Runtime registry's managed revision and
+session identity. The TUI skips cloning and formatting its rows when neither
+changes. Runtime mutators increment the revision on managed registration,
+cleanup and completion; the terminal draw path reads the last bounded view.

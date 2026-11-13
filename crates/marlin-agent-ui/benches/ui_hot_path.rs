@@ -87,6 +87,23 @@ fn view() -> UiWorkbench {
             },
             max_chatbox_rows: 10,
             max_command_rows: 32,
+            frame_tree: marlin_agent_ui::UiElement::Rows(
+                [
+                    "transcript",
+                    "extensions",
+                    "modeline",
+                    "editor",
+                    "candidates",
+                    "minibuffer",
+                ]
+                .into_iter()
+                .map(|name| marlin_agent_ui::UiElement::Region {
+                    id: UiComponentId::new(name).unwrap(),
+                    scrollable: matches!(name, "transcript" | "candidates"),
+                    child: Box::new(marlin_agent_ui::UiElement::Text(vec![])),
+                })
+                .collect(),
+            ),
             transcript_policy: marlin_agent_ui::UiTranscriptPolicy {
                 default_collapsed: true,
                 user_prefix: "u: ".into(),
@@ -131,6 +148,7 @@ fn view() -> UiWorkbench {
             command,
         })
         .collect(),
+        transients: Vec::new(),
     }
 }
 

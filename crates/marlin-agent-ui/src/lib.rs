@@ -9,6 +9,8 @@
 //! generated App Server client and schema.
 
 #[cfg(feature = "scheme-ui")]
+mod element;
+#[cfg(feature = "scheme-ui")]
 mod model;
 #[cfg(feature = "scheme-ui")]
 mod projection;
@@ -22,16 +24,23 @@ pub mod grpc {
 }
 
 #[cfg(feature = "scheme-ui")]
+pub use element::{
+    UiBackground, UiElement, UiSpan, UiTemplateSpan, UiTemplateValue, UiTone, decode_element,
+};
+#[cfg(feature = "scheme-ui")]
 pub use model::{
     UiBrowseDirection, UiBrowseRequest, UiBufferId, UiCommand, UiCommandArguments,
     UiCommandCapability, UiCommandName, UiComponentId, UiContent, UiEditorAction, UiEvent, UiFrame,
-    UiFrameSpec, UiHydra, UiHydraForeign, UiHydraHead, UiIntent, UiKeyBinding, UiKeyCommand,
-    UiKeyToken, UiLayoutPolicy, UiOpenFacts, UiProfileName, UiProjectionError, UiRegion,
-    UiReviewChoice, UiReviewMenu, UiRgb, UiScrollDirection, UiStatusItem, UiStatusTone, UiTheme,
-    UiTranscriptPolicy, UiWindow, UiWorkbench,
+    UiFrameSpec, UiIntent, UiKeyBinding, UiKeyCommand, UiKeyToken, UiLayoutPolicy, UiOpenFacts,
+    UiProfileName, UiProjectionError, UiRegion, UiReviewChoice, UiReviewMenu, UiRgb,
+    UiScrollDirection, UiStatusItem, UiStatusTone, UiTheme, UiToolReviewChoice,
+    UiToolReviewDecision, UiToolReviewMenu, UiTranscriptPolicy, UiTransient, UiTransientForeign,
+    UiTransientHead, UiTransientId, UiWindow, UiWorkbench,
 };
 #[cfg(feature = "scheme-ui")]
-pub use projection::{decode_intent, decode_review_menu, decode_workbench};
+pub use projection::{
+    decode_intent, decode_review_menu, decode_tool_review_menu, decode_workbench,
+};
 #[cfg(feature = "scheme-ui")]
 pub use runtime::{
     UiLinkedExports, UiModule, UiNativeSession, dispatch_event, open_session, prepare_open_request,

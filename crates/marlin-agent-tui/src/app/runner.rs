@@ -12,8 +12,8 @@ use super::{
     SessionBrowser, SessionId, SharedGateway, SignalMonitor, TerminalInput, TerminalOwner,
     TranscriptViewportCache, TursoAgentStorage, TursoAgentStorageConfig, TursoBatchTransactionMode,
     TursoOptimizationProfile, UiBrowseDirection, UiEvent, UiHost, UiKeyAction, UiOpenFacts,
-    WheelAccumulator, config, draw, io, list_sessions, load_session, mouse_over_minibuffer, mpsc,
-    parse_cli, reply_channel, thread,
+    WheelAccumulator, config, draw, frame_regions, io, list_sessions, load_session,
+    mouse_over_minibuffer, mpsc, parse_cli, reply_channel, thread,
 };
 use marlin_agent_telemetry::{OpenTelemetry, TelemetryServiceName, TraceTarget};
 use marlin_agent_ui::UiEditorAction;
@@ -155,6 +155,12 @@ fn apply_ui_request(app: &mut App, ui: &mut UiHost<'_>) {
             }
             Err(error) => publish_error(app, MessageSource::Ui, summary, &error),
         }
+    }
+    if let Some(id) = app.transient_request.take() {
+        if let Err(error) = ui.enter_transient(&id) {
+            publish_error(app, MessageSource::Ui, "Command group failed", &error);
+        }
+        app.transient_hint = ui.transient_hint().cloned();
     }
 }
 
@@ -331,7 +337,10 @@ fn run(
         app.transcript
             .push(("Session".into(), session_id.as_str().to_owned()));
         app.restore(turns);
-        SharedGateway::new(JournalGateway::new(gateway, journal))
+        SharedGateway::new(
+            JournalGateway::new(gateway, journal)
+                .with_tool_offer(marlin_agent_runtime::ModelToolCatalog::new().offer()),
+        )
     } else {
         SharedGateway::new(gateway)
     };
@@ -463,8 +472,8 @@ fn run(
             } else {
                 false
             };
-            let processes_changed =
-                app.buffer_view == super::BufferView::Processes && app.refresh_process_content();
+            let processes_changed = matches!(&app.buffer_view, super::BufferView::Named(id) if id.as_str() == "processes")
+                && app.refresh_process_content();
             let workspace_changed = if let Some(result) = app.workspace.poll() {
                 match result {
                     Ok(view) => app.workspace.show(view),
@@ -501,15 +510,12 @@ fn run(
                 schedule.mark_dirty();
             }
             let mouse = mouse_position.load(Ordering::Relaxed);
-            let hovered = mouse_over_minibuffer(
-                &app,
-                &ui.view().layout,
-                size.0,
-                size.1,
-                (mouse >> 16) as u16,
-            ) && (mouse as u16) <= size.0;
+            let area = ratatui::layout::Rect::new(0, 0, size.0, size.1);
+            let mut geometry = frame_regions(&app, ui.view(), area);
+            let hovered = mouse_over_minibuffer(&geometry, mouse as u16, (mouse >> 16) as u16);
             if hovered != app.minibuffer_hovered {
                 app.minibuffer_hovered = hovered;
+                geometry = frame_regions(&app, ui.view(), area);
                 schedule.mark_dirty();
             }
             let now = Instant::now();
@@ -569,7 +575,16 @@ fn run(
             };
             let received = keys_rx.recv_timeout(wait);
             if let Some((up, lines)) = wheel_steps.take_lines() {
-                if command_menu_active(&app, &ui) {
+                let pointer = mouse_position.load(Ordering::Relaxed);
+                let column = pointer as u16;
+                let row = (pointer >> 16) as u16;
+                let target = if column > 0 && row > 0 {
+                    super::super::ui_elements::hit_test_scroll(&geometry, column - 1, row - 1)
+                        .map(|region| region.id.as_str())
+                } else {
+                    None
+                };
+                if target == Some("candidates") && command_menu_active(&app, &ui) {
                     browse_menu(
                         &mut app,
                         &ui,
@@ -580,7 +595,7 @@ fn run(
                         },
                         (lines / 3) as u8,
                     );
-                } else if app.command_draft.is_none() {
+                } else if target == Some("transcript") {
                     app.scroll_lines(up, lines);
                 }
                 schedule.mark_dirty();
@@ -689,7 +704,7 @@ fn run(
                     app.command_draft.is_some(),
                     app.command_draft.is_some(),
                 );
-                app.hydra_hint = ui.hydra_hint().map(str::to_owned);
+                app.transient_hint = ui.transient_hint().cloned();
                 match routed {
                     Ok(UiKeyAction::Handled) => continue,
                     Ok(UiKeyAction::Cancel) => {

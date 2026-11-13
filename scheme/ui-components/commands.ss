@@ -5,26 +5,37 @@
 ;;; Names, descriptions, argument grammar and capability bindings have one
 ;;; selected Scheme owner. The native host admits the capabilities and effects.
 (import (only-in :clan/poo/object .def .o .get .ref .mix seal-object!)
+        (only-in "../ui-elements/objects.ss" ui-template)
         (only-in "./buffers.ss" marlin-ui-buffer-command-entries
                  marlin-ui-buffer-alias-command-entries))
 (export marlin-ui-command-catalog marlin-ui-command-entries
+        marlin-ui-candidate-templates
         marlin-ui-command-entries? marlin-ui-command-candidates
         marlin-ui-browse-command marlin-ui-profile-command-entries
         marlin-ui-command-catalog-with-profiles marlin-ui-command-catalog-with-extensions)
+
+;;; A native template contains typed literal and binding spans, not encoded text.
+(def marlin-ui-candidate-templates
+  (list
+    (ui-template 'bar '((literal accent #f " › ") (binding info #t name)
+                       (literal normal #f "  ") (binding muted #f description)))
+    (ui-template 'none '((literal accent #f "   ") (binding normal #f name)
+                       (literal normal #f "  ") (binding muted #f description)))))
 
 (.def UiCommandCatalog.
   entries: (append (marlin-ui-buffer-alias-command-entries)
                    '(("models" "List configured models" none models #f)
                      ("model" "Select a model alias" required model #f))))
-(.def SessionCommands.
-  (entries => append '(("sessions" "List sessions" none sessions #f)
-                       ("sessions-next" "List the next session page" none sessions "next")
-                       ("session" "Open a quoted session ID" required session #f)
-                       ("inspect" "Inspect a quoted session ID" required inspect #f))))
+;;; Journal recovery remains a storage operation, not a Context source.
+(.def JournalCommands.
+  (entries => append '(("sessions" "Browse conversation journal IDs" none sessions #f)
+                       ("sessions-next" "Next journal index page" none sessions "next")
+                       ("session" "Recover a quoted journal ID" required session #f)
+                       ("inspect" "Read a quoted journal ID" required inspect #f))))
 (.def WorkspaceCommands.
   (entries => append '(("status" "Show workspace status" none workspace "status")
                        ("diff" "Show unstaged or staged changes" optional workspace "diff")
-                       ("context" "Show context budget" none context #f)
+                       ("context-budget" "Show request budget" none context-budget #f)
                        ("runtime" "Show runtime policy" none runtime #f)
                        ("list-processes" "List managed Runtime processes" none select-buffer "processes")
                        ("kill-process" "Stop a managed process by generation" required kill-process #f)
@@ -36,7 +47,7 @@
 ;;; The inherited slot computes one ordered catalog when the selected module
 ;;; reads it. No additional loader or imperative append registry is needed.
 (def marlin-ui-command-catalog
-  (seal-object! (.mix WorkspaceCommands. SessionCommands. UiCommandCatalog.)))
+  (seal-object! (.mix WorkspaceCommands. JournalCommands. UiCommandCatalog.)))
 
 ;;; The selected theme scope owns profiles. Components only turn its bounded
 ;;; entries into native-admissible command descriptors.
@@ -78,14 +89,14 @@
        (string? (cadr entry)) (<= (string-length (cadr entry)) 256)
        (memq (caddr entry) '(none required optional))
        (memq (cadddr entry)
-             '(models model sessions session inspect history workspace context runtime
-                    open-menu select-profile select-buffer kill-process toggle-thinking clear))
+             '(models model sessions session inspect history workspace context-budget runtime
+                    open-menu select-profile select-buffer enter-transient kill-process toggle-thinking clear))
        (let (value (car (cddddr entry)))
          (or (not value) (and (string? value) (<= 1 (string-length value) 32))))))
 
 ;;; Admission is bounded before map/filter can traverse a supplied catalog.
 (def (marlin-ui-command-entries? entries)
-  (let loop ((rest entries) (remaining 32))
+  (let loop ((rest entries) (remaining 256))
     (cond ((null? rest) #t)
           ((or (zero? remaining) (not (pair? rest))
                (not (command-entry? (car rest)))) #f)

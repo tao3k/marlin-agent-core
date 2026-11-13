@@ -15,14 +15,20 @@ fn hydra_hint_and_foreign_key_use_the_minibuffer_without_losing_the_draft() {
     terminal.wait_for(Duration::from_secs(10), "initial Modeline", |output| {
         screen_lines(output)[28].contains("MARLIN")
     });
-    terminal.send(b"draft\x18h");
+    terminal.send(b"draft\x1bxhydra-history");
+    terminal.wait_for(Duration::from_secs(5), "M-x hydra command", |output| {
+        screen_lines(output)
+            .iter()
+            .any(|line| line.contains("M-x hydra-history"))
+    });
+    terminal.send(b"\r");
     terminal.wait_for(Duration::from_secs(5), "hydra hint", |output| {
         let rows = screen_lines(output);
         rows.iter().any(|line| line.contains("draft"))
             && rows.iter().any(|line| line.contains("History"))
             && rows
                 .iter()
-                .any(|line| line.contains("p newest  n older  q quit"))
+                .any(|line| line.contains("p: newest  n: older  q: quit"))
     });
     terminal.send(b"nq");
     terminal.wait_for(Duration::from_secs(5), "hydra exit", |output| {
@@ -31,15 +37,43 @@ fn hydra_hint_and_foreign_key_use_the_minibuffer_without_losing_the_draft() {
             && !rows.iter().any(|line| line.contains("draftn"))
             && !rows
                 .iter()
-                .any(|line| line.contains("p newest  n older  q quit"))
+                .any(|line| line.contains("p: newest  n: older  q: quit"))
     });
-    terminal.send(b"\x18hz");
+    terminal.send(b"\x1bxhydra-history");
+    terminal.wait_for(
+        Duration::from_secs(5),
+        "M-x hydra command again",
+        |output| {
+            screen_lines(output)
+                .iter()
+                .any(|line| line.contains("M-x hydra-history"))
+        },
+    );
+    terminal.send(b"\rz");
     terminal.wait_for(Duration::from_secs(5), "foreign key replay", |output| {
         let rows = screen_lines(output);
         rows.iter().any(|line| line.contains("draftz"))
             && !rows
                 .iter()
-                .any(|line| line.contains("p newest  n older  q quit"))
+                .any(|line| line.contains("p: newest  n: older  q: quit"))
+    });
+    terminal.send(b"\x1bxhydra-buffers");
+    terminal.wait_for(Duration::from_secs(5), "M-x buffers group", |output| {
+        screen_lines(output)
+            .iter()
+            .any(|line| line.contains("M-x hydra-buffers"))
+    });
+    terminal.send(b"\r");
+    terminal.wait_for(Duration::from_secs(5), "buffers group hint", |output| {
+        screen_lines(output)
+            .iter()
+            .any(|line| line.contains("m messages"))
+    });
+    terminal.send(b"m");
+    terminal.wait_for(Duration::from_secs(5), "messages buffer", |output| {
+        let rows = screen_lines(output);
+        rows.iter().any(|line| line.contains("*Messages*"))
+            && !rows.iter().any(|line| line.contains("m messages"))
     });
     terminal.send(b"\x11");
     terminal.wait_exit(Duration::from_secs(5));
@@ -225,7 +259,7 @@ fn mx_abbreviation_opens_the_scheme_declared_buffer_menu() {
     terminal.send(b"\r");
     terminal.wait_for(Duration::from_secs(5), "scoped buffer menu", |output| {
         let rows = screen_lines(output);
-        rows.iter().any(|line| line.contains("1/3 Switch to: "))
+        rows.iter().any(|line| line.contains("1/4 Switch to: "))
             && rows.iter().any(|line| line.contains("› conversation"))
     });
     terminal.send(b"\x07\x11");
@@ -366,19 +400,19 @@ fn first_mx_arrows_move_the_visible_selection_and_c_x_b_opens_buffers() {
                 && rows.iter().any(|line| line.contains("› help"))
         },
     );
-    terminal.send(b"\x1b[<65;30;5M");
+    terminal.send(b"\x1b[<65;30;25M");
     terminal.wait_for(
         Duration::from_secs(5),
         "wheel selects second command",
         |output| screen_lines(output).iter().any(|line| mx_selected(line, 2)),
     );
-    terminal.send(b"\x1b[<64;30;5M");
+    terminal.send(b"\x1b[<64;30;25M");
     terminal.wait_for(
         Duration::from_secs(5),
         "wheel restores first command",
         |output| screen_lines(output).iter().any(|line| mx_selected(line, 1)),
     );
-    terminal.send(&b"\x1b[<65;30;5M".repeat(10));
+    terminal.send(&b"\x1b[<65;30;25M".repeat(10));
     terminal.wait_for(
         Duration::from_secs(5),
         "trackpad burst advances ten commands",
@@ -388,7 +422,7 @@ fn first_mx_arrows_move_the_visible_selection_and_c_x_b_opens_buffers() {
                 .any(|line| mx_selected(line, 11))
         },
     );
-    terminal.send(&b"\x1b[<64;30;5M".repeat(10));
+    terminal.send(&b"\x1b[<64;30;25M".repeat(10));
     terminal.wait_for(
         Duration::from_secs(5),
         "reverse burst returns to first",
@@ -422,7 +456,7 @@ fn first_mx_arrows_move_the_visible_selection_and_c_x_b_opens_buffers() {
         "C-x b opens and navigates buffer selection",
         |output| {
             let rows = screen_lines(output);
-            rows.iter().any(|line| line.contains("2/3 Switch to: "))
+            rows.iter().any(|line| line.contains("2/4 Switch to: "))
                 && rows.iter().any(|line| line.contains("› messages"))
         },
     );
@@ -647,7 +681,7 @@ fn mx_navigation_pty_latency() {
         terminal.wait_for(Duration::from_secs(5), "first scoped arrow", |output| {
             screen_lines(output)
                 .iter()
-                .any(|line| line.contains("2/3 Switch to: "))
+                .any(|line| line.contains("2/4 Switch to: "))
         });
         scoped_samples.push(started.elapsed());
         terminal.send(b"\x07");

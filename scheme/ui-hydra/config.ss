@@ -8,12 +8,20 @@
 
 ;;; The command catalog, transient bindings and hint come from this declaration.
 (defui-hydra HistoryHydraValue
-  (history (C-x h) color: red hint: #f)
-  "History\np newest  n older  q quit"
-  (p (history "Return to newest history" history "newest") "newest")
-  (n (history-older "Browse earlier history" history "older") "older")
-  (q #f "quit" color: blue))
-(.def UiHydraCatalog. entries: (list HistoryHydraValue))
+  (history color: red hint: #f)
+  "\n^History^\n_p_: newest  _n_: older  _q_: quit"
+  (p (history "Return to newest history" history "newest"))
+  (n (history-older "Browse earlier history" history "older"))
+  (q #f))
+(defui-hydra BuffersHydraValue
+  (buffers color: blue)
+  "Buffers"
+  (c buffer-conversation "conversation")
+  (m buffer-messages "messages")
+  (h buffer-help "help")
+  (p buffer-processes "processes")
+  (q #f "quit"))
+(.def UiHydraCatalog. entries: (list HistoryHydraValue BuffersHydraValue))
 (def HydraCatalogValue (seal-object! UiHydraCatalog.))
 
 (def UiHydraScope
@@ -21,4 +29,4 @@
             (.o identity: 'marlin/ui-hydra
                 catalog: HydraCatalogValue
                 command-entries: (lambda () (marlin-ui-hydra-command-entries HydraCatalogValue))
-                keymap-entries: (lambda () (marlin-ui-hydra-keymap-entries HydraCatalogValue)))))
+                entries: (lambda () (marlin-ui-hydra-entries HydraCatalogValue)))))

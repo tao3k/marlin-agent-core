@@ -8,7 +8,7 @@ use super::{
     context_budget::ContextBudget,
     event_queue::{ReplyError, reply_channel},
     model_catalog::{ModelCatalog, ModelRoute},
-    render::{chatbox_height, draw as render_draw, mouse_over_minibuffer},
+    render::{chatbox_height, draw as render_draw, frame_regions},
     viewport::{Transcript, TranscriptViewportCache},
 };
 use marlin_agent_protocol::{
@@ -29,9 +29,38 @@ use proptest::{
 };
 use std::sync::{Arc, Mutex};
 
-#[path = "ui_fixture.rs"]
-mod ui_fixture;
-use ui_fixture::{test_frame, test_layout};
+use super::ui_fixture::{test_frame, test_layout};
+
+fn mouse_over_minibuffer(
+    app: &App,
+    layout: &marlin_agent_ui::UiLayoutPolicy,
+    width: u16,
+    height: u16,
+    row: u16,
+) -> bool {
+    use marlin_agent_ui::{UiComponentId, UiRegion, UiStatusItem, UiWorkbench};
+    let view = UiWorkbench {
+        model_label: "model".into(),
+        session_label: "session".into(),
+        regions: vec![
+            UiRegion::Transcript,
+            UiRegion::Composer,
+            UiRegion::Commands(vec![]),
+            UiRegion::Status(vec![UiStatusItem::host(
+                UiComponentId::new("modeline/left/brand").unwrap(),
+                "brand",
+            )]),
+        ],
+        layout: layout.clone(),
+        theme: Default::default(),
+        focus: UiComponentId::new("composer").unwrap(),
+        frame: test_frame(),
+        keymap: vec![],
+        transients: vec![],
+    };
+    let regions = frame_regions(app, &view, ratatui::layout::Rect::new(0, 0, width, height));
+    super::render::mouse_over_minibuffer(&regions, 1, row)
+}
 
 /// Native tests exercise only the capabilities they use. The selected Scheme
 /// catalogue itself is checked by the Scheme and linked UI tests.
@@ -49,7 +78,7 @@ fn install_test_commands(app: &mut App) {
         ("history", Args::None, Cap::History, Some("newest")),
         ("history-older", Args::None, Cap::History, Some("older")),
         ("diff", Args::Optional, Cap::Workspace, Some("diff")),
-        ("context", Args::None, Cap::Context, None),
+        ("context-budget", Args::None, Cap::ContextBudget, None),
         ("runtime", Args::None, Cap::Runtime, None),
         ("switch-themes", Args::None, Cap::OpenMenu, Some("theme-")),
         ("theme-pi", Args::None, Cap::SelectProfile, Some("pi")),
@@ -264,6 +293,7 @@ proptest! {
             focus: UiComponentId::new("composer").unwrap(),
             frame: test_frame(),
             keymap: Vec::new(),
+        transients: Vec::new(),
         };
         let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(width, height))
             .unwrap();
@@ -341,6 +371,7 @@ fn draw(
         focus: UiComponentId::new("composer").unwrap(),
         frame: test_frame(),
         keymap: Vec::new(),
+        transients: Vec::new(),
     };
     render_draw(frame, app, &view, cache, anchor)
 }
@@ -363,6 +394,7 @@ fn render_uses_the_admitted_scheme_focus() {
         focus: UiComponentId::new("transcript").unwrap(),
         frame: test_frame(),
         keymap: Vec::new(),
+        transients: Vec::new(),
     };
     let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 10)).unwrap();
     terminal
@@ -379,7 +411,7 @@ fn render_uses_the_admitted_scheme_focus() {
     let status: String = (0..80)
         .map(|x| terminal.backend().buffer()[(x, 9)].symbol())
         .collect();
-    assert!(status.contains("Transcript: scroll to browse"), "{status}");
+    assert!(status.contains("transcript-focus"), "{status}");
 }
 
 #[test]
@@ -413,6 +445,7 @@ fn render_keeps_focused_extension_visible_and_sanitizes_its_label() {
         focus: UiComponentId::new("third").unwrap(),
         frame: test_frame(),
         keymap: Vec::new(),
+        transients: Vec::new(),
     };
     let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(40, 8)).unwrap();
     terminal
@@ -432,7 +465,7 @@ fn render_keeps_focused_extension_visible_and_sanitizes_its_label() {
         .collect();
     assert!(screen.contains("third�[31m"), "{screen}");
     assert!(!screen.contains('\u{1b}'));
-    assert!(screen.contains("Extension: Enter activate"), "{screen}");
+    assert!(screen.contains("extension-focus"), "{screen}");
 }
 
 #[test]
@@ -465,6 +498,7 @@ fn render_focused_scheme_content_on_narrow_and_wide_terminals() {
         focus: UiComponentId::new("details").unwrap(),
         frame: test_frame(),
         keymap: Vec::new(),
+        transients: Vec::new(),
     };
     for width in [80, 120] {
         let mut terminal =
@@ -515,6 +549,7 @@ fn unfocused_extension_does_not_create_a_default_sidebar() {
         focus: UiComponentId::new("composer").unwrap(),
         frame: test_frame(),
         keymap: Vec::new(),
+        transients: Vec::new(),
     };
     for width in [80, 120] {
         let mut terminal =
@@ -566,6 +601,7 @@ fn render_status_contributions_respects_focus_and_terminal_height() {
         focus: UiComponentId::new("extension").unwrap(),
         frame: test_frame(),
         keymap: Vec::new(),
+        transients: Vec::new(),
     };
     for height in [8, 9] {
         let mut terminal =
@@ -586,7 +622,7 @@ fn render_status_contributions_respects_focus_and_terminal_height() {
             .flat_map(|y| (0..60).map(move |x| buffer[(x, y)].symbol()))
             .collect();
         assert!(screen.contains("Focused panel"), "{screen}");
-        assert!(screen.contains("Extension: Enter activate"), "{screen}");
+        assert!(screen.contains("extension-focus"), "{screen}");
         assert!(screen.contains("Ready · bad�[2J"), "{screen}");
         assert!(!screen.contains('\u{1b}'));
     }
@@ -620,7 +656,7 @@ fn history_search_previews_then_accepts_without_submitting() {
         .unwrap();
     let buffer = terminal.backend().buffer();
     let status: String = (0..40).map(|x| buffer[(x, 9)].symbol()).collect();
-    assert!(status.contains("Search: find"), "{status}");
+    assert!(status.contains("fixture search find"), "{status}");
     app.accept_history_search();
     assert_eq!(app.composer.text(), "find this");
     assert!(app.pending.is_none());
@@ -701,7 +737,7 @@ fn runtime_receipt_uses_the_full_content_width() {
     assert!(row(1).contains("Stream-open timeout: 1234 ms"));
     assert!(row(2).contains("Concurrency limit: Disabled"));
     assert!(row(3).contains("Load shedding: Disabled"));
-    assert!(row(11).contains("Runtime: Esc/Ctrl-C return"));
+    assert!(row(11).contains("runtime"));
 }
 
 #[test]
@@ -723,7 +759,7 @@ fn minibuffer_expands_with_the_draft_and_leaves_a_transcript_row() {
             .collect::<String>()
     };
     assert!(!row(8).contains("Message"));
-    assert!(row(11).contains("Message: Enter send"));
+    assert!(row(11).contains("fixture status"));
 
     app.composer
         .insert_text("one\ntwo\nthree\nfour\nfive\nsix\nseven\neight\nnine\nten");
@@ -757,10 +793,7 @@ fn rejected_draft_insertion_is_visible_in_the_terminal_status() {
         .unwrap();
     let buffer = terminal.backend().buffer();
     let status: String = (0..100).map(|x| buffer[(x, 11)].symbol()).collect();
-    assert!(
-        status.contains("Insertion rejected; draft retained."),
-        "{status}"
-    );
+    assert!(status.contains("draft-limit"), "{status}");
     assert_eq!(app.composer.text().len(), 1024 * 1024);
 }
 

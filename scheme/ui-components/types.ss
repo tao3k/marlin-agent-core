@@ -9,6 +9,7 @@
 (export UiComponentsScopeContract)
 
 (def UiCommandEntries (.cc Type. '.element? marlin-ui-command-entries?))
+(def UiTransientEntries (.cc Type. '.element? vector?))
 
 (def UiComponentsScopeContract
   (.cc (Record identity: [(Exactly 'marlin/ui-components)]
@@ -18,5 +19,7 @@
                extension-node: [(Fun Object <- Object)]
                command-catalog: [Object]
                command-entries: [(Fun UiCommandEntries <- Object)]
+               command-extensions: [(Fun UiCommandEntries <-)]
+               transient-entries: [(Fun UiTransientEntries <-)]
                browse-command: [(Fun Object <- UiCommandEntries Object)])
        identity: 'marlin/ui-components))

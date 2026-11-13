@@ -23,6 +23,10 @@ mod render;
 mod replay;
 mod session_browser;
 mod signals;
+pub mod ui_elements;
+#[cfg(all(test, not(feature = "linked-ui")))]
+#[path = "../tests/unit/ui_fixture.rs"]
+mod ui_fixture;
 mod ui_host;
 mod viewport;
 mod workspace;

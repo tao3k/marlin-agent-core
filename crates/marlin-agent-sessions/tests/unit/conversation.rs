@@ -7,13 +7,15 @@ use marlin_agent_protocol::{
     ModelToolCallId, ModelToolName, assistant_gateway_message,
 };
 use marlin_agent_sessions::{
-    ConversationJournal, ConversationJournalError, ConversationTerminalObservation,
-    ConversationTurnOutcome, ConversationTurnStart, ConversationUncertaintyReason,
+    ConversationEvent, ConversationEventReader, ConversationJournal, ConversationJournalError,
+    ConversationTerminalObservation, ConversationToolReviewDecision, ConversationToolReviewRequest,
+    ConversationToolReviewStatus, ConversationTurnOutcome, ConversationTurnStart,
+    ConversationUncertaintyReason,
 };
 use marlin_agent_storage::SessionEventStore;
 use marlin_agent_storage::{
     AgentId, EventId, InMemoryAgentStorage, ProjectId, SessionEventRecord, SessionId, StorageError,
-    TurnId,
+    StoragePageLimit, TurnId,
 };
 
 fn ids() -> (ProjectId, SessionId, AgentId) {
@@ -87,6 +89,7 @@ async fn tool_request_is_durable_and_blocks_an_unreviewed_followup() {
     .await
     .unwrap();
     let id = journal.start(start("read marker"), 1).await.unwrap();
+    assert!(journal.pending_tool_request().is_none());
     journal
         .checkpoint(id, "I need the requested marker.", 2)
         .await
@@ -103,6 +106,7 @@ async fn tool_request_is_durable_and_blocks_an_unreviewed_followup() {
             .await,
         Err(ConversationJournalError::InvalidEvent(_))
     ));
+    assert!(journal.pending_tool_request().is_none());
     journal
         .finish(
             id,
@@ -113,25 +117,270 @@ async fn tool_request_is_durable_and_blocks_an_unreviewed_followup() {
         )
         .await
         .unwrap();
+    let pending = journal.pending_tool_request().unwrap();
+    assert_eq!(pending.session(), &session);
+    assert_eq!(pending.turn(), id);
+    assert_eq!(pending.calls().len(), 1);
+    assert_eq!(pending.calls()[0].id.as_str(), "call_1");
+    assert_eq!(pending.calls()[0].name.as_str(), "read_marker");
     assert!(matches!(
         journal.start(start("next"), 4).await,
         Err(ConversationJournalError::ToolRequestPending)
     ));
     let mut replayed = Vec::new();
-    let mut reopened = ConversationJournal::open(storage, project, session, agent, |turn| {
-        replayed.push(turn.clone());
-    })
-    .await
-    .unwrap();
+    let mut reopened =
+        ConversationJournal::open(storage, project, session.clone(), agent, |turn| {
+            replayed.push(turn.clone());
+        })
+        .await
+        .unwrap();
     assert!(matches!(
         &replayed[0].outcome,
         Some(ConversationTurnOutcome::ToolRequested { response })
             if response.choices[0].message.tool_calls[0].id.as_str() == "call_1"
     ));
+    let pending = reopened.pending_tool_request().unwrap();
+    assert_eq!(pending.session(), &session);
+    assert_eq!(pending.turn(), id);
+    assert_eq!(pending.calls()[0].id.as_str(), "call_1");
     assert!(matches!(
         reopened.start(start("next"), 5).await,
         Err(ConversationJournalError::ToolRequestPending)
     ));
+}
+
+#[tokio::test]
+async fn tool_execution_requires_a_matching_review_and_one_durable_claim() {
+    let storage = InMemoryAgentStorage::new();
+    let (project, session, agent) = ids();
+    let mut journal = ConversationJournal::open(
+        storage.clone(),
+        project.clone(),
+        session.clone(),
+        agent.clone(),
+        |_| {},
+    )
+    .await
+    .unwrap();
+    let id = journal.start(start("read marker"), 1).await.unwrap();
+    journal
+        .finish(
+            id,
+            ConversationTerminalObservation::ToolRequested {
+                response: tool_request(),
+            },
+            2,
+        )
+        .await
+        .unwrap();
+    let key = journal.pending_tool_request().unwrap().key();
+    let other_session = SessionId::new("session:other").unwrap();
+    let mut other = ConversationJournal::open(
+        storage.clone(),
+        project.clone(),
+        other_session,
+        agent.clone(),
+        |_| {},
+    )
+    .await
+    .unwrap();
+    let other_id = other.start(start("read marker"), 1).await.unwrap();
+    other
+        .finish(
+            other_id,
+            ConversationTerminalObservation::ToolRequested {
+                response: tool_request(),
+            },
+            2,
+        )
+        .await
+        .unwrap();
+    assert!(
+        journal
+            .review_tool_request(
+                ConversationToolReviewRequest::new(
+                    other.pending_tool_request().unwrap().key(),
+                    ConversationToolReviewDecision::ApproveOnce,
+                ),
+                3,
+            )
+            .await
+            .is_err()
+    );
+    let receipt = journal
+        .review_tool_request(
+            ConversationToolReviewRequest::new(
+                key.clone(),
+                ConversationToolReviewDecision::ApproveOnce,
+            ),
+            3,
+        )
+        .await
+        .unwrap();
+    assert_eq!(receipt.key(), &key);
+    assert_eq!(
+        journal.pending_tool_request().unwrap().status(),
+        ConversationToolReviewStatus::Approved
+    );
+    drop(journal);
+    let mut reopened = ConversationJournal::open(
+        storage.clone(),
+        project.clone(),
+        session.clone(),
+        agent.clone(),
+        |_| {},
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        reopened.pending_tool_request().unwrap().status(),
+        ConversationToolReviewStatus::Approved
+    );
+    let claim = reopened.claim_tool_execution(&receipt, 4).await.unwrap();
+    assert_eq!(claim.session(), &session);
+    assert_eq!(claim.turn(), id);
+    assert_eq!(claim.into_calls()[0].id.as_str(), "call_1");
+    assert!(reopened.claim_tool_execution(&receipt, 5).await.is_err());
+    let reader = ConversationEventReader::new(
+        storage.clone(),
+        project.clone(),
+        session.clone(),
+        agent.clone(),
+    );
+    let entries = reader
+        .page(id, None, StoragePageLimit::new(4).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(entries.len(), 4);
+    assert!(matches!(
+        &entries[2].event,
+        ConversationEvent::ToolReview(_)
+    ));
+    assert!(matches!(
+        &entries[3].event,
+        ConversationEvent::ToolExecutionClaim(_)
+    ));
+    assert!(
+        reader
+            .resolve_cursor(id, entries[3].cursor.event_id().clone())
+            .await
+            .unwrap()
+            .is_some()
+    );
+    let reopened = ConversationJournal::open(storage, project, session, agent, |_| {})
+        .await
+        .unwrap();
+    assert_eq!(
+        reopened.pending_tool_request().unwrap().status(),
+        ConversationToolReviewStatus::ExecutionUncertain
+    );
+}
+
+#[tokio::test]
+async fn rejected_tool_request_cannot_claim_execution_after_replay() {
+    let storage = InMemoryAgentStorage::new();
+    let (project, session, agent) = ids();
+    let mut journal = ConversationJournal::open(
+        storage.clone(),
+        project.clone(),
+        session.clone(),
+        agent.clone(),
+        |_| {},
+    )
+    .await
+    .unwrap();
+    let id = journal.start(start("read marker"), 1).await.unwrap();
+    journal
+        .finish(
+            id,
+            ConversationTerminalObservation::ToolRequested {
+                response: tool_request(),
+            },
+            2,
+        )
+        .await
+        .unwrap();
+    let key = journal.pending_tool_request().unwrap().key();
+    let receipt = journal
+        .review_tool_request(
+            ConversationToolReviewRequest::new(key, ConversationToolReviewDecision::Reject),
+            3,
+        )
+        .await
+        .unwrap();
+    assert!(journal.claim_tool_execution(&receipt, 4).await.is_err());
+    let mut reopened = ConversationJournal::open(storage, project, session, agent, |_| {})
+        .await
+        .unwrap();
+    assert_eq!(
+        reopened.pending_tool_request().unwrap().status(),
+        ConversationToolReviewStatus::Rejected
+    );
+    assert!(reopened.claim_tool_execution(&receipt, 5).await.is_err());
+}
+
+#[tokio::test]
+async fn competing_claim_write_relinquishes_local_execution_authority() {
+    let storage = InMemoryAgentStorage::new();
+    let (project, session, agent) = ids();
+    let mut journal = ConversationJournal::open(
+        storage.clone(),
+        project.clone(),
+        session.clone(),
+        agent.clone(),
+        |_| {},
+    )
+    .await
+    .unwrap();
+    let id = journal.start(start("read marker"), 1).await.unwrap();
+    journal
+        .finish(
+            id,
+            ConversationTerminalObservation::ToolRequested {
+                response: tool_request(),
+            },
+            2,
+        )
+        .await
+        .unwrap();
+    let receipt = journal
+        .review_tool_request(
+            ConversationToolReviewRequest::new(
+                journal.pending_tool_request().unwrap().key(),
+                ConversationToolReviewDecision::ApproveOnce,
+            ),
+            3,
+        )
+        .await
+        .unwrap();
+    storage
+        .append_session_event(SessionEventRecord {
+            project_id: project.clone(),
+            session_id: session.clone(),
+            agent_id: agent.clone(),
+            turn_id: TurnId::new("conversation:00000000000000000001").unwrap(),
+            event_id: EventId::new("conversation:00000000000000000001:03-tool-claim").unwrap(),
+            event_kind: "marlin.conversation.tool.claim.v1".into(),
+            causality_parent_event_id: Some(
+                EventId::new("conversation:00000000000000000001:02-tool-review").unwrap(),
+            ),
+            body: serde_json::to_vec(&receipt).unwrap(),
+            created_at_unix_ms: 4,
+        })
+        .await
+        .unwrap();
+    assert!(journal.claim_tool_execution(&receipt, 4).await.is_err());
+    assert!(matches!(
+        journal.claim_tool_execution(&receipt, 5).await,
+        Err(ConversationJournalError::UnownedTurn)
+    ));
+    let reopened = ConversationJournal::open(storage, project, session, agent, |_| {})
+        .await
+        .unwrap();
+    assert_eq!(
+        reopened.pending_tool_request().unwrap().status(),
+        ConversationToolReviewStatus::ExecutionUncertain
+    );
 }
 
 #[tokio::test]

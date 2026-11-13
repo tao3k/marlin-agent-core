@@ -12,11 +12,11 @@ package MarlinDeclarativeUi {
                Reference products inform requirements, not identity,
                component structure, authority or an obligation to copy visuals. */
         part <'MAR-UI-T02'> modulePublication {
-            doc /* Selected Yuanxu ui-components, ui-modeline, ui-themes,
-                   ui-layout and ui Modules
+            doc /* Selected Yuanxu ui-components, ui-elements, ui-hydra, ui-modeline, ui-themes,
+                   ui-layout, ui-transcript and ui Modules
                    publish the component vocabulary, command catalog, modeline
                    slots, UI scope and ordered extension contributions. UI
-                   requires component, modeline, theme and layout scopes and composes
+                   requires component, modeline, transcript, theme and layout scopes and composes
                    their constructors through selected dependencies.
                    The existing VM owner
                    resolves and retains that scope; a name or a caller-supplied
@@ -26,6 +26,22 @@ package MarlinDeclarativeUi {
         part <'MAR-UI-T03'> functionalComposition {
             doc /* Given an admitted state, input and runtime facts, Scheme
                    produces a bounded declarative tree and typed intents.
+                   Text spans, rows and columns use Scheme native values;
+                   the Rust adapter admits bounded trees and maps their
+                   primitives and semantic tones to terminal cells. Interactive
+                   regions have unique identities and expose clipped geometry
+                   from that same rendering traversal. Scroll offsets shift
+                   painting and hit geometry together; the deepest scrollable
+                   region under a pointer is the scroll target. The selected
+                   Scheme frame tree supplies region order and scrollability;
+                   the terminal adapter uses its mapped rectangles both for
+                   drawing and for pointer routing. Ordered choices select
+                   bounded Scheme-authored views from named host facts; the
+                   same facts select painted and interactive branches. Scheme
+                   declares Mini Buffer status and search prompt precedence and
+                   text; the adapter maps the editable field and cursor by cell
+                   width. Transcript and editor remain separate implementations
+                   until each is migrated to the common rendering contract.
                    Components have stable domain identity and explicit state;
                    generic functions and method bundles permit specialization
                    without embedding Rust callbacks in Scheme components.
@@ -53,6 +69,19 @@ package MarlinDeclarativeUi {
                    Buffer and theme menus display Scheme-declared prompts and
                    short candidates while retaining full admitted command
                    identities only as internal lookup keys. */
+        }
+        part <'MAR-UI-T15'> contextViewBoundary {
+            doc /* A UI Buffer is a selected Window view, never a second
+                   durable conversation or context container. Agentic AI Lab
+                   Context and ORG define narrative and evidence semantics;
+                   MRR is the intended evidence and storage boundary. The
+                   current conversation journal only supplies provider
+                   recovery and cannot impersonate a Context source. UI cells refer to
+                   typed events or receipts from those owners. Switching
+                   Buffer, Window, transcript fold or theme preserves those
+                   identities and cannot copy or reconstruct their history.
+                   Codewhale and oh-my-pi session browsers supply interaction
+                   ideas, not Marlin session authority or storage semantics. */
         }
         part <'MAR-UI-T10'> portableComponentSemantics {
             doc /* Scheme owns component identity, typed props, pure state
@@ -126,7 +155,14 @@ package MarlinDeclarativeUi {
                    itself fails. The runtime event receiver remains owned by
                    the TUI and drains in bounded batches into Messages.
                    Event publication never appends to the conversation or
-                   changes its model context. Generic Scheme event
+                   changes its model context. Scheme declares named Buffer
+                   identities and titles; a runtime owner may atomically
+                   replace bounded display-only content for one of those
+                   Buffers. Rejected replacements preserve its prior view.
+                   A Runtime-owned managed revision and typed session identity
+                   invalidate the Processes view; unchanged observations do
+                   not clone or format process rows on each event-loop turn.
+                   Generic Scheme event
                    subscriptions remain target design. */
         }
         part <'MAR-UI-T08'> intentRouter {
@@ -197,6 +233,8 @@ package MarlinDeclarativeUi {
     dependency intentUsesRuntime from engine::intentRouter to MarlinTuiArchitecture::target::runtime;
     dependency moduleUsesVmOwner from engine::modulePublication to MarlinTuiArchitecture::target::schemeVmModuleAdmission;
     dependency contextUsesOrg from engine::functionalComposition to MarlinTuiArchitecture::target::contextOrgAuthority;
+    dependency viewUsesContext from engine::contextViewBoundary to engine::functionalComposition;
+    dependency contextFeedsAdmission from engine::contextViewBoundary to engine::admittedSnapshot;
     dependency qualificationMeasuresBoundary from engine::qualification to engine::nativeBoundary;
     dependency qualificationMeasuresView from engine::qualification to engine::incrementalView;
     dependency qualificationMeasuresTerminal from engine::qualification to engine::terminalHost;

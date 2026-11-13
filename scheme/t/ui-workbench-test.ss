@@ -5,7 +5,7 @@
 ;;; Test the selected module, including extension admission and focus.
 (import (only-in :clan/poo/object .cc .get .o .put!)
         (only-in :marlin-agent-core/init marlin-agent-core.init.exports)
-        (only-in :marlin-agent-core/ui-hydra/objects defui-hydra marlin-ui-hydra-keymap-entries)
+        (only-in :marlin-agent-core/ui-hydra/objects defui-hydra marlin-ui-hydra-entries)
         (only-in :marlin-agent-core/ui/projection marlin-ui-native-facts marlin-ui-apply-native
                  marlin-ui-apply-event marlin-ui-project-intent)
         (only-in :yuanxu/poo-clos/objects poo-clos-compose-method-bundle)
@@ -20,6 +20,11 @@
 
 (def ui (.get marlin-agent-core.init.exports Marlin ui))
 (def ui-components (.get marlin-agent-core.init.exports Marlin ui-components))
+(def ui-elements (.get marlin-agent-core.init.exports Marlin ui-elements))
+(unless (equal? ((.get ui-elements region) 'messages #t
+                 ((.get ui-elements text) '((normal . "message"))))
+                '#(region #(messages #t #(text #(#(normal "message"))))))
+  (error "interactive UI region projection failed"))
 (def ui-modeline (.get marlin-agent-core.init.exports Marlin ui-modeline))
 (def ui-themes (.get marlin-agent-core.init.exports Marlin ui-themes))
 (def workbench (.get ui workbench))
@@ -47,6 +52,8 @@
              (equal? (command-form "sessions-next") '(none sessions "next"))
              (equal? (command-form "history") '(none history "newest"))
              (equal? (command-form "history-older") '(none history "older"))
+             (equal? (command-form "hydra-history") '(none enter-transient "history"))
+             (equal? (command-form "hydra-buffers") '(none enter-transient "buffers"))
              (equal? (command-form "toggle-thinking") '(optional toggle-thinking #f)))
   (error "Scheme command effect choices diverged"))
 (def c-abi (.get marlin-agent-core.init.exports Marlin c-abi))
@@ -57,7 +64,7 @@
              (eq? (.get ui components) (.get ui-components components))
              (equal? command-names
                      '("help" "models" "model" "sessions" "sessions-next" "session"
-                       "inspect" "history" "history-older" "status" "diff" "context"
+                       "inspect" "history" "history-older" "hydra-history" "hydra-buffers" "status" "diff" "context-budget"
                        "runtime" "list-processes" "kill-process" "switch-themes" "theme-doom-one" "theme-pi"
                        "switch-buffer" "buffer-conversation" "buffer-messages" "buffer-help" "buffer-processes"
                        "toggle-thinking" "clear"))
@@ -83,9 +90,9 @@
     profile-identities))
 (unless (and (eq? (.get output identity) 'workbench)
              (equal? (map (lambda (node) (.get node identity)) (.get output regions))
-                     '(transcript composer commands help status))
+                     '(transcript composer commands help processes status))
              (equal? (map (lambda (node) (.get node identity))
-                          (.get (list-ref (.get output regions) 4) children))
+                          (.get (list-ref (.get output regions) 5) children))
                      '(modeline/left/brand modeline/left/model modeline/left/activity
                        modeline/right/turns modeline/right/session
                        modeline/state/online modeline/state/offline
@@ -100,7 +107,7 @@
                (equal? (.get (car (.get help-region content)) text)
                        "Enter  Send message"))
     (error "Scheme Help Buffer content was not published")))
-(let* ((items (.get (list-ref (.get output regions) 4) children))
+(let* ((items (.get (list-ref (.get output regions) 5) children))
        (brand (list-ref items 0))
        (activity (list-ref items 2))
        (host (list-ref items 15)))
@@ -129,28 +136,32 @@
     (error "Scheme modeline presentation was not selected")))
 (def (rejected? thunk) (with-catch (lambda (_) #t) (lambda () (thunk) #f)))
 (defui-hydra StrictHydraValue
-  (strict (C-x t) color: amaranth)
+  (strict color: amaranth)
   "Strict"
-  (a (history "History" history "newest") "history"))
+  (a (history "History" history "newest") "history")
+  (q #f))
 (defui-hydra PassHydraValue
-  (pass (C-x p) color: pink)
+  (pass color: pink)
   "Pass"
   (a (history "History" history "newest") "history" color: blue))
 (let* ((hydra (.get marlin-agent-core.init.exports Marlin ui-hydra))
-       (bindings ((.get hydra keymap-entries)))
-       (strict (vector-ref (marlin-ui-hydra-keymap-entries (.o entries: (list StrictHydraValue))) 0))
-       (passthrough (vector-ref (marlin-ui-hydra-keymap-entries (.o entries: (list PassHydraValue))) 0)))
+       (bindings ((.get hydra entries)))
+       (strict (vector-ref (marlin-ui-hydra-entries (.o entries: (list StrictHydraValue))) 0))
+       (passthrough (vector-ref (marlin-ui-hydra-entries (.o entries: (list PassHydraValue))) 0)))
   (unless (and (eq? (.get hydra identity) 'marlin/ui-hydra)
-               (equal? (vector-ref (vector-ref bindings 0) 0) '#(C-x h))
-               (equal? (vector-ref (vector-ref bindings 0) 2)
-                       "History\np newest  n older  q quit")
-               (eq? (vector-ref (vector-ref bindings 0) 3) 'exit)
-               (eq? (vector-ref strict 3) 'warn)
-               (eq? (vector-ref passthrough 3) 'run)
-               (not (vector-ref (vector-ref (vector-ref strict 4) 0) 3))
-               (vector-ref (vector-ref (vector-ref passthrough 4) 0) 3)
-               (rejected? (lambda () (marlin-ui-hydra-keymap-entries
-                 (.o entries: (list (.o identity: 'bad trigger: '(C-x b) hint: "bad" foreign: 'exit
+               (eq? (vector-ref (vector-ref bindings 0) 0) 'history)
+               (eq? (vector-ref (vector-ref bindings 1) 0) 'buffers)
+               (eq? (vector-ref (vector-ref (vector-ref (vector-ref bindings 1) 3) 1) 1) 'buffer-messages)
+               (equal? (vector-ref (vector-ref (vector-ref (vector-ref (vector-ref bindings 0) 1) 1) 0) 1)
+                       "History\np: newest  n: older  q: quit")
+               (eq? (vector-ref (vector-ref bindings 0) 2) 'exit)
+               (eq? (vector-ref strict 2) 'warn)
+               (eq? (vector-ref passthrough 2) 'run)
+               (not (vector-ref (vector-ref (vector-ref strict 3) 0) 3))
+               (vector-ref (vector-ref (vector-ref strict 3) 1) 3)
+               (vector-ref (vector-ref (vector-ref passthrough 3) 0) 3)
+               (rejected? (lambda () (marlin-ui-hydra-entries
+                 (.o entries: (list (.o identity: 'bad hint: "bad" foreign: 'exit
                      heads: '((a ("history" "History" none history "newest") "one" #f)
                               (a ("history" "History" none history "newest") "two" #t)))))))))
     (error "hydra transition contract failed")))
@@ -177,6 +188,13 @@
              (rejected? (lambda () ((.get ui command-candidates)
                                      command-entries (make-string 33 #\m)))))
   (error "selected Scheme command candidates diverged"))
+(let (entries (let loop ((index 0))
+                 (if (= index 40) '()
+                   (cons (list (string-append "cmd-" (number->string index))
+                               "Command" 'none 'clear #f)
+                         (loop (+ index 1))))))
+  (unless (= 40 (length ((.get ui command-candidates) entries "cmd-")))
+    (error "command catalog must support more than 32 entries")))
 (require-property-passed
   (check-property (Enum "" "m" "model" "buffer-" "swb" "missing")
     (lambda (query-value)
@@ -202,7 +220,10 @@
               (filter (lambda (entry) (string-prefix? "buffer-" (car entry)))
                       command-entries))))
   (unless (and (equal? buffer-ids command-ids)
-               (equal? (map (lambda (node) (.get node identity)) static-nodes) '(help))
+               (equal? (map (lambda (node) (.get node identity)) static-nodes)
+                       '(help processes))
+               (equal? (.get (cadr static-nodes) label) "*Processes*")
+               (null? (.get (cadr static-nodes) content))
                (andmap (lambda (node) (memq (.get node identity) buffer-ids)) static-nodes)
                (andmap (lambda (identity-value)
                          (let* ((selected (select-buffer frame identity-value))
@@ -213,7 +234,7 @@
     (error "Scheme buffer catalog and M-x commands diverged")))
 (let* ((profile-workbench (.get ui profile-workbench))
        (pi (profile-workbench (facts '()) 'pi))
-       (items (.get (list-ref (.get pi regions) 4) children))
+       (items (.get (list-ref (.get pi regions) 5) children))
        (brand (car items)))
   (unless (and (equal? (.get brand label) "🐟 marlin")
                (= (.get brand compact-below) 16)
@@ -228,7 +249,7 @@
                (equal? (.get (list-ref items 2) label) "· ● ready")
                (equal? (.get (list-ref items 8) label) "· ● runtime")
                (equal? (map (lambda (node) (.get node identity))
-                            (.get (list-ref (.get pi regions) 4) children))
+                            (.get (list-ref (.get pi regions) 5) children))
                        '(modeline/left/brand modeline/left/model modeline/left/activity
                          modeline/right/session modeline/right/turns
                          modeline/state/online modeline/state/offline
@@ -251,9 +272,9 @@
                    (lambda () (workbench (facts (status-entries count status-identities))))))
         (if (<= count 8)
           (and view
-               (= (length (.get (list-ref (.get view regions) 4) children)) (+ 15 count))
+               (= (length (.get (list-ref (.get view regions) 5) children)) (+ 15 count))
                (equal? (map (lambda (node) (.get node identity))
-                            (.get (list-ref (.get view regions) 4) children))
+                            (.get (list-ref (.get view regions) 5) children))
                        (append '(modeline/left/brand modeline/left/model
                                  modeline/left/activity modeline/right/turns
                                  modeline/right/session modeline/state/online
@@ -273,7 +294,7 @@
 (let* ((entries (map (lambda (id) (.o identity: id label: "ok"))
                      '(a b c d e f g h)))
        (accepted (workbench (facts entries))))
-  (unless (and (= (length (.get (list-ref (.get accepted regions) 4) children)) 23)
+  (unless (and (= (length (.get (list-ref (.get accepted regions) 5) children)) 23)
                (rejected? (lambda () (workbench
                                       (facts (append entries (list (.o identity: 'i label: "ok"))))))))
     (error "UI contribution limit boundary failed")))
@@ -347,20 +368,21 @@
       (.o kind: 'extension-handled)))
   (poo-clos-compose-method-bundle generic ExtensionMethods)
   ;;; This is the presentation oracle; Rust uses synthetic labels for ABI checks.
-  (unless (and (equal? (vector-ref projected 3)
-                       '#(#(2 0 1 #t #t " Message ")
-                          #(0 1 0 #f #f " M-x ") 10 32
-                          #(#t "› " "" "▸ Thought" "▾ Thought")))
+  (unless (and (equal? (map (lambda (index) (vector-ref (vector-ref projected 3) index)) '(0 1 2 3 4))
+                       '(#(2 0 1 #t #t " Message ")
+                         #(4 1 0 #f #f " M-x ") 10 10
+                         #(#t "› " "" "▸ Thought" "▾ Thought")))
+               (eq? (vector-ref (vector-ref (vector-ref projected 3) 5) 0) 'rows)
                (equal? (vector-ref (vector-ref projected 4) 3) '#(198 120 221))
-               (not (eq? (list-ref regions 4) extension))
+               (not (eq? (list-ref regions 5) extension))
                (equal? (.get view focus-order) '(transcript composer commands extension/editor))
                (eq? (.get ((.get ui dispatch) generic (list-ref regions 2) event) identity)
                     'extension/editor)
-               (equal? (vector-ref (vector-ref (vector-ref projected 2) 4) 2)
+               (equal? (vector-ref (vector-ref (vector-ref projected 2) 5) 2)
                        '#("Editor" #t #(#(text "Preview") #(field "Mode" "Review"))))
-               (equal? (vector-ref (vector-ref (vector-ref native-result 2) 4) 2)
+               (equal? (vector-ref (vector-ref (vector-ref native-result 2) 5) 2)
                        '#("Editor" #t #(#(text "Preview") #(field "Mode" "Review"))))
-               (eq? (.get ((.get ui dispatch) generic (list-ref regions 4)
+               (eq? (.get ((.get ui dispatch) generic (list-ref regions 5)
                            (.o (:: @ SpecialEvent.))) kind) 'extension-handled)
                (rejected? (lambda () (marlin-ui-native-facts
                                       (vector "m" "s" #() (make-vector 17 extension)))))
@@ -387,10 +409,10 @@
   (.put! extension 'identity 'extension/changed)
   (.put! extension 'focusable #f)
   (.put! text-item 'text "changed")
-  (unless (and (eq? (.get (list-ref regions 4) identity) 'extension/editor)
-               (.get (list-ref regions 4) focusable)
-               (equal? (.get (car (.get (list-ref regions 4) content)) text) "Preview")
-               (rejected? (lambda () (.put! (list-ref regions 4) 'identity 'forged))))
+  (unless (and (eq? (.get (list-ref regions 5) identity) 'extension/editor)
+               (.get (list-ref regions 5) focusable)
+               (equal? (.get (car (.get (list-ref regions 5) content)) text) "Preview")
+               (rejected? (lambda () (.put! (list-ref regions 5) 'identity 'forged))))
     (error "UI extension snapshot changed after composition")))
 (let* ((dispatch (.get ui dispatch))
        (regions (.get output regions))
@@ -452,9 +474,9 @@
                     (workbench (marlin-ui-native-facts
                       #("anthropic/example" "saved" #(#(example/status "Ready")) #())))))
        (regions (vector-ref projected 2))
-       (status (vector-ref regions 4)))
+       (status (vector-ref regions 5)))
   (unless (and (equal? (vector-ref projected 0) "anthropic/example")
-               (= (vector-length regions) 5)
+               (= (vector-length regions) 6)
                (eq? (vector-ref (vector-ref regions 0) 0) 'transcript)
                (equal? (vector-ref (vector-ref (vector-ref status 2) 15) 2) "Ready"))
     (error "UI native projection lost component data")))

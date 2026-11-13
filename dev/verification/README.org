@@ -18,7 +18,8 @@ error. This directory does not maintain a second source inventory. =just rust-de
 | Concern | Owner | First active property |
 |---------+-------+-----------------------|
 | Architecture and allocations | =project.sysml= and =dev/sysml/= | MAR-UI-R10/R11/R12/R13 |
-| Finite UI transitions | =dev/quint/tui-minibuffer.qnt= | safe geometry, focus, pointer/key separation |
+| Finite UI transitions | =dev/quint/tui-minibuffer.qnt= | safe geometry, focus, first M-x arrow, Ask Frame draft retention, pointer/key separation |
+| Model tool review | =dev/quint/model-tool-review.qnt= | durable request, registered tool identity, matching one-shot approval, execution claim before effects, crash uncertainty without silent retry, stale/early execution controls |
 | Managed process quota and cleanup | =MAR-PROC-R01/R07= in =dev/sysml/process-lifecycle.sysml=, Rust runtime, =dev/quint/= | generated trace replay against OS process and output EOF observations, plus isolated mutations |
 | Host observation | =MAR-PROC-R18=, =marlin-agent-telemetry= and =dev/quint/host-observer.qnt= | Quint drives a linked macOS TUI and managed process group through suspend, resume and orderly exit |
 | Process memory admission | =MAR-PROC-R19=, =marlin-agent-runtime= consuming the protocol sampler | competing real commands and a caller-held pipe retain the reservation until cleanup |

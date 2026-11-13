@@ -6,9 +6,9 @@
 (import (only-in :clan/poo/object .get .o)
         "./workbench.ss" "./dispatch.ss" "./projection.ss")
 (export make-ui-operations)
-(def (make-ui-operations ui-components ui-hydra ui-modeline ui-themes ui-layout)
-  (.o workbench: (make-marlin-ui-workbench ui-components ui-hydra ui-modeline ui-themes ui-layout)
-      profile-workbench: (make-marlin-ui-profile-workbench ui-components ui-hydra ui-modeline ui-themes ui-layout)
+(def (make-ui-operations ui-components ui-modeline ui-transcript ui-themes ui-layout)
+  (.o workbench: (make-marlin-ui-workbench ui-components ui-modeline ui-transcript ui-themes ui-layout)
+      profile-workbench: (make-marlin-ui-profile-workbench ui-components ui-modeline ui-transcript ui-themes ui-layout)
       project-workbench: marlin-ui-project-workbench
       focus-event: marlin-ui-focus-event
       previous-focus-event: marlin-ui-previous-focus-event
@@ -18,11 +18,8 @@
       make-frame: (.get ui-components make-frame)
       select-buffer: (.get ui-components select-buffer)
       project-frame: (.get ui-components project-frame)
-      hydra: ui-hydra
-      keymap-entries: (lambda ()
-                        (list->vector
-                          (append (vector->list ((.get ui-components keymap-entries)))
-                                  (vector->list ((.get ui-hydra keymap-entries))))))
+      keymap-entries: (.get ui-components keymap-entries)
+      transient-entries: (.get ui-components transient-entries)
       command-candidates: (.get ui-components command-candidates)
       review-menu: (.get ui-components review-menu)
       events: (.o base: UiEvent. next-focus: UiNextFocus. previous-focus: UiPreviousFocus. submit: UiSubmit.

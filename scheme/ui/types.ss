@@ -34,6 +34,7 @@
 (def UiWorkbench
   (Record identity: [(Exactly 'workbench)] kind: [(Exactly 'workbench)]
           model: [String] session: [String] geometry-policy: [Object]
+          transcript-policy: [Object]
           theme-palette: [Object] regions: [(List UiRegion)]
           focus-order: [(List UiIdentity)]))
 (def UiNativeProjection (.cc Type. '.element? vector?))
@@ -49,6 +50,6 @@
                previous-focus-event: [(Fun Object <- UiWorkbench)]
                make-dispatch: [(Fun ClosGenericFunction <- UiMethodBundles)]
                dispatch: [(Fun Object <- ClosGenericFunction Object Object)]
-               components: [Object] hydra: [Object]
+               components: [Object]
                events: [Object] event-protocol: [ClosGenericProtocol])
        identity: 'marlin/ui))

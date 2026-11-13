@@ -565,7 +565,7 @@ fn command_entry_preserves_draft_cursor_and_never_sends_plain_text() {
 }
 
 #[test]
-fn context_command_reports_original_draft_without_dispatching_it() {
+fn context_budget_command_reports_original_draft_without_dispatching_it() {
     let runtime = tokio::runtime::Runtime::new().unwrap();
     let requests = Arc::new(Mutex::new(Vec::new()));
     let gateway = FixtureGateway {
@@ -580,7 +580,7 @@ fn context_command_reports_original_draft_without_dispatching_it() {
     ]);
     app.composer.insert_text("draft 中");
     app.toggle_command();
-    app.composer.insert_text("context");
+    app.composer.insert_text("context-budget");
     app.submit(&gateway, &runtime, &tx);
     assert_eq!(app.composer.text(), "draft 中");
     let message = &app.transcript.last().unwrap().1;

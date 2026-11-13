@@ -5,9 +5,9 @@
 (import (only-in :clan/poo/object .o)
         "./components.ss" "./commands.ss" "./buffers.ss" "./keymap.ss"
         "./review.ss")
-(export UiComponentsOperations)
+(export make-ui-components-operations)
 
-(def UiComponentsOperations
+(def (make-ui-components-operations command-extensions-value transient-entries-value)
   (.o identity: 'marlin/ui-components
       components: (.o base: UiComponent. workbench: UiWorkbench.
                       transcript: UiTranscript. composer: UiComposer.
@@ -23,6 +23,8 @@
       command-entries: marlin-ui-command-entries
       command-catalog-with-profiles: marlin-ui-command-catalog-with-profiles
       command-catalog-with-extensions: marlin-ui-command-catalog-with-extensions
+      command-extensions: command-extensions-value
+      transient-entries: transient-entries-value
       command-candidates: marlin-ui-command-candidates
       browse-command: marlin-ui-browse-command
       review-menu: marlin-ui-review-menu

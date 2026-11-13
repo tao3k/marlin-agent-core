@@ -16,7 +16,7 @@
 
 ;;; Host facts are display data only. Transcript and composer are named regions
 ;;; whose contents and editing authority remain with their existing owners.
-(def (make-marlin-ui-profile-workbench components hydra modeline themes layout)
+(def (make-marlin-ui-profile-workbench components modeline transcript themes layout)
   (let* ((types (.ref components 'components))
         (contribution-node (.ref components 'contribution-node))
         (modeline-node (.ref components 'modeline-node))
@@ -26,9 +26,10 @@
         (command-catalog
           ((.ref components 'command-catalog-with-profiles)
            ((.ref components 'command-catalog-with-extensions)
-            (.ref components 'command-catalog) ((.ref hydra 'command-entries)))
+            (.ref components 'command-catalog) ((.ref components 'command-extensions)))
            (.ref themes 'profiles)))
         (modeline-nodes-for (.ref modeline 'nodes-for))
+        (transcript-for (.ref transcript 'select))
         (theme-for (.ref themes 'select)))
   (lambda (facts profile)
     (marlin-ui-required-object facts '(model session contributions extensions))
@@ -56,6 +57,7 @@
         (error "duplicate UI contribution identity"))
       (.o (:: @ (.ref types 'workbench)) identity: 'workbench kind: 'workbench
           model: owned-model session: owned-session geometry-policy: (.ref layout 'policy)
+          transcript-policy: (transcript-for profile)
           theme-palette: (theme-for profile)
           focus-order: (append '(transcript composer commands) extension-focus)
           regions: (append (list (.o (:: @ (.ref types 'transcript)) identity: 'transcript kind: 'transcript)
@@ -65,8 +67,8 @@
                            extensions
                            (list (.o (:: @ (.ref types 'status)) identity: 'status kind: 'status children: nodes)))))))))
 
-(def (make-marlin-ui-workbench components hydra modeline themes layout)
-  (def build (make-marlin-ui-profile-workbench components hydra modeline themes layout))
+(def (make-marlin-ui-workbench components modeline transcript themes layout)
+  (def build (make-marlin-ui-profile-workbench components modeline transcript themes layout))
   (lambda (facts) (build facts (.ref themes 'default-profile))))
 
 (def (marlin-ui-focus-event workbench)

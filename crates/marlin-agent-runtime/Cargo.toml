@@ -30,11 +30,16 @@ tower.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
+criterion.workspace = true
 marlin-rust-project-harness-policy = { path = "../../build-support/marlin-rust-project-harness-policy" }
 marlin-agent-harness-types.workspace = true
 marlin-agent-test-support.workspace = true
 serde_json.workspace = true
 tempfile.workspace = true
+
+[[bench]]
+name = "model_tool_catalog"
+harness = false
 
 [[test]]
 name = "policy"

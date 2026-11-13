@@ -13,9 +13,7 @@ use marlin_agent_ui::{
 };
 use termion::event::Key;
 
-#[path = "ui_fixture.rs"]
-mod ui_fixture;
-use ui_fixture::{test_frame, test_layout};
+use crate::harness::ui_fixture::{test_frame, test_layout};
 
 #[test]
 #[ignore = "requires a compiled Marlin Scheme dependency closure and Gerbil toolchain"]
@@ -166,6 +164,7 @@ fn view(focus: &str) -> UiWorkbench {
         focus: UiComponentId::new(focus).unwrap(),
         frame: test_frame(),
         keymap: Vec::new(),
+        transients: Vec::new(),
     }
 }
 

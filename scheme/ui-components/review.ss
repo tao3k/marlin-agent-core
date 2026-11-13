@@ -14,6 +14,11 @@
              (patch-requested "Request changes" "Keep this gate pending")))
 (def marlin-ui-review-menu-config (seal-object! UiReviewMenu.))
 
+(.def UiToolReviewMenu.
+  choices: '((approve-once "Approve once" "Run the requested tool once")
+             (reject "Deny" "Do not run the requested tool")))
+(def marlin-ui-tool-review-menu-config (seal-object! UiToolReviewMenu.))
+
 (def (marlin-ui-review-menu review-kind)
   (let (prompt
         (case review-kind
@@ -24,9 +29,13 @@
           ((cross-project-reference) "Reference: ")
           ((session-visibility-expansion) "Visibility: ")
           ((data-migration) "Migration: ")
-          (else (error "invalid human review kind"))))
+          ((model-tool) "Tool request: ")
+          (else (error "invalid review kind"))))
     (vector prompt
             (list->vector
               (map (lambda (entry)
                      (vector (car entry) (cadr entry) (caddr entry)))
-                   (.get marlin-ui-review-menu-config choices))))))
+                   (.get (if (eq? review-kind 'model-tool)
+                           marlin-ui-tool-review-menu-config
+                           marlin-ui-review-menu-config)
+                         choices))))))

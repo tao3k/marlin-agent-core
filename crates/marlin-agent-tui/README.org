@@ -167,12 +167,15 @@ before the next draw clamps an overshoot. The anchor retains counts for
 completed source lines and rescans the unfinished line and newly appended
 lines; this does not establish a latency bound for a long unfinished line.
 
-=M-x context= reports completed-turn and next-request byte accounting against
+=M-x context-budget= reports completed-turn and next-request byte accounting against
 the local admission limits. Use Ctrl-O to inspect the current draft without
 sending it. These are accounted message bytes, not model tokens or total
 process memory; the command is unavailable in read-only history views. Marlin
 does not compress or summarize context here: retained messages are sent, and a
 request exceeding the admission limit is rejected with its draft preserved.
+This command reports a local request limit; it is not an ORG Context query or
+an MRR evidence view. The short =context= command has been retired so it does
+not imply those semantics.
 Retention of provider-specific continuation data has the limitations described
 above.
 

@@ -38,6 +38,10 @@ property-model-gate: app-server-model-gate
   quint typecheck dev/quint/tui-minibuffer.qnt
   quint test dev/quint/tui-minibuffer.qnt --max-samples=100
   quint run dev/quint/tui-minibuffer.qnt --seed=42 --max-samples=1000 --max-steps=30 --invariant=stateSafe --verbosity=1
+  quint typecheck dev/quint/model-tool-review.qnt
+  quint test dev/quint/model-tool-review.qnt --main=modelToolReview --max-samples=100
+  quint run dev/quint/model-tool-review.qnt --main=modelToolReview --seed=42 --max-samples=1000 --max-steps=10 --invariant=safe --verbosity=1
+  @output=$(quint run dev/quint/model-tool-review.qnt --main=modelToolReview --step=badStep --seed=42 --max-samples=1000 --max-steps=10 --invariant=safe --verbosity=1 2>&1) && { printf '%s\n' "Unexpected success in model tool review negative control"; exit 1; } || { printf '%s\n' "$output"; printf '%s\n' "$output" | grep -q 'Invariant violated'; }
   quint typecheck dev/quint/strict-tree-proposal.qnt
   quint test dev/quint/strict-tree-proposal.qnt --main=strictTreeProposal
   quint run dev/quint/strict-tree-proposal.qnt --main=strictTreeProposal --seed=42 --max-samples=1000 --max-steps=12 --invariant=safe --verbosity=1

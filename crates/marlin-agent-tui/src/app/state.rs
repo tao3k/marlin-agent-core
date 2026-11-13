@@ -5,10 +5,11 @@
 //! Terminal application state and transcript navigation.
 
 use super::{
-    Arc, Command, Composer, ContextBudget, ConversationCheckpointChannel, ConversationTurnId,
-    HistorySearch, JournalGateway, MAX_COMPLETION_HEAP_BYTES, ModelAlias, ModelCatalog,
-    ModelEndpoint, ModelGatewayMessage, OpenedView, PromptHistory, ReplayOutcome, ReplayTurn,
-    RuntimeEdgePolicyReceipt, RuntimeStreamGateway, SessionBrowser, SessionId,
+    Arc, BufferView, Command, Composer, ContextBudget, ConversationCheckpointChannel,
+    ConversationTurnId, GatewayObservation, HistorySearch, JournalGateway,
+    MAX_COMPLETION_HEAP_BYTES, MessageEvent, MessageSeverity, MessageSource, ModelAlias,
+    ModelCatalog, ModelEndpoint, ModelGatewayMessage, OpenedView, PromptHistory, ReplayOutcome,
+    ReplayTurn, RuntimeEdgePolicyReceipt, RuntimeStreamGateway, SessionBrowser, SessionId,
     SessionPageRequestError, SharedGateway, Transcript, TursoAgentStorage, UiBufferId, UiCommand,
     UiCommandName, UiContent, UiEvent, UiTranscriptPolicy, UiWorkbench, WorkspaceStatus,
     matches_observed_anthropic_thinking, user_gateway_message,
@@ -43,68 +44,14 @@ pub(super) struct HistoryPosition {
     pub(super) has_newer: bool,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) enum BufferView {
-    Conversation,
-    Messages,
-    Processes,
-    Static(UiBufferId),
-}
-
 pub(crate) struct CommandMenu {
     pub(crate) prefix: String,
     pub(crate) prompt: String,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum MessageSource {
-    Ui,
-    Workspace,
-    Input,
-    Gateway,
-    Runtime,
-}
-
-impl MessageSource {
-    fn label(self) -> &'static str {
-        match self {
-            Self::Ui => "UI",
-            Self::Workspace => "Workspace",
-            Self::Input => "Input",
-            Self::Gateway => "Gateway",
-            Self::Runtime => "Runtime",
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum MessageSeverity {
-    Info,
-    Warning,
-    Error,
-}
-
-impl MessageSeverity {
-    fn label(self) -> &'static str {
-        match self {
-            Self::Info => "info",
-            Self::Warning => "warning",
-            Self::Error => "error",
-        }
-    }
-}
-
-#[derive(Clone, Copy)]
-pub(crate) struct MessageEvent<'a> {
-    pub(crate) source: MessageSource,
-    pub(crate) severity: MessageSeverity,
-    pub(crate) summary: &'a str,
-    pub(crate) detail: &'a str,
-}
-
 pub(crate) struct App {
     pub(super) runtime_owner: marlin_agent_runtime::TokioAgentRuntime,
-    runtime_events: marlin_agent_runtime::RuntimeEventStream,
+    pub(super) runtime_events: marlin_agent_runtime::RuntimeEventStream,
     pub(crate) composer: Composer,
     pub(crate) minibuffer_hovered: bool,
     pub(crate) gateway_observation: GatewayObservation,
@@ -118,13 +65,14 @@ pub(crate) struct App {
     pub(crate) command_candidates: Vec<UiCommandName>,
     pub(crate) command_catalog: Vec<UiCommand>,
     pub(crate) ui_request: Option<UiEvent>,
+    pub(crate) transient_request: Option<super::UiTransientId>,
     pub(crate) quit_armed: bool,
     pub(crate) transcript: Transcript,
     pub(crate) transcript_policy: Option<UiTranscriptPolicy>,
     pub(crate) messages: Transcript,
     pub(crate) buffer_view: BufferView,
     pub(crate) minibuffer_notice: Option<String>,
-    pub(crate) hydra_hint: Option<String>,
+    pub(crate) transient_hint: Option<marlin_agent_ui::UiElement>,
     pub(crate) history: Arc<Vec<ModelGatewayMessage>>,
     pub(crate) context_budget: ContextBudget,
     pub(super) endpoint: ModelEndpoint,
@@ -141,33 +89,12 @@ pub(crate) struct App {
     pub(crate) runtime_edge: Option<RuntimeEdgePolicyReceipt>,
     pub(crate) runtime_content: Vec<UiContent>,
     pub(crate) runtime_receipt_open: bool,
-    pub(crate) process_content: Vec<UiContent>,
+    pub(crate) dynamic_buffer_content: std::collections::HashMap<UiBufferId, Vec<UiContent>>,
+    pub(super) process_snapshot: Option<(marlin_agent_runtime::SessionId, u64)>,
     pub(super) session_browser: Option<SessionBrowser<TursoAgentStorage>>,
     pub(super) current_session: Option<SessionId>,
     pub(super) history_position: Option<HistoryPosition>,
     pub(crate) workspace: WorkspaceStatus,
-}
-
-/// The most recent local transport observation, not a persistent HTTP link.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum GatewayObservation {
-    Unchecked,
-    Online,
-    Offline,
-    Unknown,
-}
-
-/// Runtime facts select a Scheme-declared Modeline presentation.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum ModelineActivity {
-    Idle,
-    Runtime,
-    Workspace,
-    Recovery,
-    ContinuationUnavailable,
-    History,
-    Working,
-    ReadingWorkspace,
 }
 
 impl App {
@@ -198,13 +125,14 @@ impl App {
             command_candidates: Vec::new(),
             command_catalog: Vec::new(),
             ui_request: None,
+            transient_request: None,
             quit_armed: false,
             transcript: Transcript::new(vec![]),
             transcript_policy: None,
             messages: Transcript::new(vec![]),
             buffer_view: BufferView::Conversation,
             minibuffer_notice: None,
-            hydra_hint: None,
+            transient_hint: None,
             history: Arc::new(Vec::new()),
             context_budget: ContextBudget::default(),
             endpoint,
@@ -221,7 +149,8 @@ impl App {
             runtime_edge: None,
             runtime_content: Vec::new(),
             runtime_receipt_open: false,
-            process_content: Vec::new(),
+            dynamic_buffer_content: std::collections::HashMap::new(),
+            process_snapshot: None,
             session_browser: None,
             current_session: None,
             history_position: None,
@@ -321,78 +250,6 @@ impl App {
             .find(|command| command.name.as_str() == name)
     }
 
-    /// Mirror the admitted Scheme window binding for native content painting.
-    /// No command or key handler may select this view independently.
-    pub(crate) fn sync_window(&mut self, ui: &UiWorkbench) -> Result<(), &'static str> {
-        let next = match ui.frame.selected_buffer().map(UiBufferId::as_str) {
-            Some("conversation") => BufferView::Conversation,
-            Some("messages") => BufferView::Messages,
-            Some("processes") => BufferView::Processes,
-            Some(id)
-                if ui.regions.iter().any(|region| {
-                    matches!(region,
-                marlin_agent_ui::UiRegion::Extension { id: region_id, focusable: false, .. }
-                    if region_id.as_str() == id)
-                }) =>
-            {
-                BufferView::Static(UiBufferId::new(id).map_err(|_| "invalid Scheme buffer ID")?)
-            }
-            _ => return Err("selected Scheme buffer has no native content owner"),
-        };
-        if self.buffer_view != next && next == BufferView::Messages {
-            self.message_scroll_up = 0;
-            self.minibuffer_notice = None;
-        }
-        if self.buffer_view != next
-            && matches!(&next, BufferView::Static(_) | BufferView::Processes)
-        {
-            self.static_buffer_scroll = 0;
-            self.minibuffer_notice = None;
-        }
-        self.buffer_view = next;
-        Ok(())
-    }
-
-    pub(crate) fn publish_message(&mut self, event: MessageEvent<'_>) {
-        let summary: String = event
-            .summary
-            .chars()
-            .take(256)
-            .map(|ch| if ch.is_control() { '�' } else { ch })
-            .collect();
-        let bounded_detail: String = event.detail.chars().take(16_384).collect();
-        let detail = format!("{}: {}", summary, safe_text(&bounded_detail));
-        let role = format!("{} · {}", event.source.label(), event.severity.label());
-        if !self
-            .messages
-            .last()
-            .is_some_and(|(previous_role, previous)| previous_role == &role && previous == &detail)
-        {
-            self.messages.push((role, detail));
-            self.messages.retain_latest(64);
-        }
-        self.minibuffer_notice = Some(format!("{summary} · M-x switch-buffer → *Messages*"));
-    }
-
-    /// Drain the runtime's bounded event bus into the Scheme-selected Messages buffer.
-    /// Keeping the receiver alive also preserves producer backpressure semantics.
-    pub(crate) fn poll_runtime_events(&mut self, limit: usize) -> usize {
-        let mut processed = 0;
-        while processed < limit {
-            let Some(event) = self.runtime_events.try_next() else {
-                break;
-            };
-            self.publish_message(MessageEvent {
-                source: MessageSource::Runtime,
-                severity: MessageSeverity::Info,
-                summary: &event.topic,
-                detail: &event.message,
-            });
-            processed += 1;
-        }
-        processed
-    }
-
     /// Publish a menu completion and say whether its current form is runnable.
     pub(crate) fn accept_command_completion(&mut self, completed: &str) -> bool {
         let runnable = self
@@ -415,49 +272,6 @@ impl App {
 
     pub(crate) fn session_id(&self) -> Option<&SessionId> {
         self.current_session.as_ref()
-    }
-
-    pub(crate) fn modeline_activity(&self) -> ModelineActivity {
-        if self.runtime_receipt_open {
-            ModelineActivity::Runtime
-        } else if self.workspace.view().is_some() {
-            ModelineActivity::Workspace
-        } else if self.needs_replay {
-            ModelineActivity::Recovery
-        } else if self.pending_tool_request || self.unverified_thinking {
-            ModelineActivity::ContinuationUnavailable
-        } else if self.history_position.is_some() {
-            ModelineActivity::History
-        } else if self.pending.is_some() {
-            ModelineActivity::Working
-        } else if self.workspace.is_pending() {
-            ModelineActivity::ReadingWorkspace
-        } else {
-            ModelineActivity::Idle
-        }
-    }
-
-    pub(crate) fn set_runtime_edge(&mut self, receipt: RuntimeEdgePolicyReceipt) {
-        self.runtime_content = vec![
-            UiContent::Field {
-                label: "Stream-open timeout".into(),
-                value: receipt.timeout_ms().map_or_else(|| "Disabled".into(), |ms| format!("{ms} ms")),
-            },
-            UiContent::Field {
-                label: "Concurrency limit".into(),
-                value: receipt.concurrency_limit().map_or_else(|| "Disabled".into(), |limit| limit.to_string()),
-            },
-            UiContent::Field {
-                label: "Load shedding".into(),
-                value: if receipt.load_shed() { "Enabled" } else { "Disabled" }.into(),
-            },
-            UiContent::Field {
-                label: "Attached layers".into(),
-                value: receipt.layers().iter().map(|layer| layer.as_str()).collect::<Vec<_>>().join(" · "),
-            },
-            UiContent::Text("Scope: stream opening. Stream duration, tools, approvals and remote cancellation are separate policies.".into()),
-        ];
-        self.runtime_edge = Some(receipt);
     }
 
     pub(crate) fn navigate_prompts(&mut self, previous: bool) {
@@ -790,8 +604,10 @@ impl App {
             }),
             Ok(opened) => {
                 self.prompt_history.restore(&mut self.composer);
-                *gateway =
-                    SharedGateway::new(JournalGateway::new(base_gateway.clone(), opened.journal));
+                *gateway = SharedGateway::new(
+                    JournalGateway::new(base_gateway.clone(), opened.journal)
+                        .with_tool_offer(marlin_agent_runtime::ModelToolCatalog::new().offer()),
+                );
                 self.transcript.clear();
                 self.history = Arc::new(Vec::new());
                 self.needs_replay = false;
@@ -1090,21 +906,4 @@ impl App {
         }
         Some(answer_end)
     }
-}
-
-// Never pass untrusted terminal escape sequences to the renderer.
-pub(crate) fn safe_text(text: &str) -> String {
-    text.chars()
-        .map(|c| {
-            if c == '\n' {
-                c
-            } else if c == '\t' {
-                ' '
-            } else if c.is_control() {
-                '�'
-            } else {
-                c
-            }
-        })
-        .collect()
 }

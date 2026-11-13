@@ -26,6 +26,10 @@ path = "tests/integration/pty.rs"
 name = "launch"
 path = "tests/integration/launch.rs"
 
+[[bench]]
+name = "ui_mapping"
+harness = false
+
 [features]
 default = ["linked-ui"]
 linked-ui = ["dep:gerbil-scheme-sys", "dep:gerbil-scheme-aot-build", "gerbil-scheme/external-program", "marlin-agent-ui/linked-ui"]
@@ -64,6 +68,7 @@ gerbil-scheme-aot-build = { workspace = true, optional = true }
 # The shared ASP Rust gate is mounted by tests/unit/policy.rs.
 marlin-rust-project-harness-policy = { path = "../../build-support/marlin-rust-project-harness-policy" }
 proptest.workspace = true
+criterion.workspace = true
 ratatui = { version = "=0.30.2", default-features = false, features = ["unstable-rendered-line-info"] }
 
 [target.'cfg(unix)'.dev-dependencies]

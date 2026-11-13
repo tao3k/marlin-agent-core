@@ -13,11 +13,13 @@ use gerbil_scheme::{
 use marlin_agent_protocol::HumanReviewKind;
 
 use crate::model::{
-    MAX_EXTENSIONS, MAX_HOST_STATUS, MAX_METHOD_BUNDLES, MAX_TEXT_CHARS, UiBrowseDirection,
-    UiBrowseRequest, UiCommandName, UiEvent, UiIntent, UiOpenFacts, UiProjectionError,
-    UiReviewMenu, UiStatusTone, UiWorkbench,
+    MAX_COMMANDS, MAX_EXTENSIONS, MAX_HOST_STATUS, MAX_METHOD_BUNDLES, MAX_TEXT_CHARS,
+    UiBrowseDirection, UiBrowseRequest, UiCommandName, UiEvent, UiIntent, UiOpenFacts,
+    UiProjectionError, UiReviewMenu, UiStatusTone, UiToolReviewMenu, UiWorkbench,
 };
-use crate::projection::{decode_intent, decode_review_menu, decode_workbench, string, vector};
+use crate::projection::{
+    decode_intent, decode_review_menu, decode_tool_review_menu, decode_workbench, string, vector,
+};
 
 /// Scheme-owned UI state, retained by the SDK's owner-affine strong root.
 pub struct UiNativeSession<'runtime> {
@@ -204,13 +206,29 @@ impl<'runtime> UiModule<'runtime> {
             HumanReviewKind::SessionVisibilityExpansion => "session-visibility-expansion",
             HumanReviewKind::DataMigration => "data-migration",
         };
+        decode_review_menu(self.call_review_menu(session, name)?)
+    }
+
+    /// Read Scheme's tool Ask presentation without granting execution authority.
+    pub fn tool_review_menu(
+        &self,
+        session: &UiNativeSession<'_>,
+    ) -> Result<UiToolReviewMenu, UiProjectionError> {
+        decode_tool_review_menu(self.call_review_menu(session, "model-tool")?)
+    }
+
+    fn call_review_menu(
+        &self,
+        session: &UiNativeSession<'_>,
+        name: &str,
+    ) -> Result<RootedSchemeObject<'runtime>, UiProjectionError> {
         let kind = self
             .runtime
             .intern_identifier(IdentifierKind::Symbol, name)?;
         let input = self
             .runtime
             .collection_from_objects(CollectionKind::Vector, &[&session.root, &kind])?;
-        decode_review_menu(self.review_menu.call(self.runtime, &input.into_object())?)
+        self.review_menu.call(self.runtime, &input.into_object())
     }
 
     /// Project the selected Scheme command order once per edited menu query.
@@ -229,7 +247,7 @@ impl<'runtime> UiModule<'runtime> {
         let output = self
             .command_candidates
             .call(self.runtime, &input.into_object())?;
-        let names = vector(output, 0, 32)?;
+        let names = vector(output, 0, MAX_COMMANDS)?;
         let mut candidates = Vec::with_capacity(names.len());
         let mut seen = HashSet::new();
         for index in 0..names.len() {

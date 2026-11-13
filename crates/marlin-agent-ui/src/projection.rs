@@ -15,10 +15,11 @@ use marlin_agent_protocol::HumanDecision;
 use crate::model::{
     MAX_COMMANDS, MAX_CONTENT_ITEMS, MAX_ID_BYTES, MAX_REGIONS, MAX_STATUS, MAX_TEXT_CHARS,
     MODELINE_SLOTS, UiBufferId, UiCommand, UiCommandArguments, UiCommandCapability, UiCommandName,
-    UiComponentId, UiContent, UiFrame, UiFrameSpec, UiHydra, UiHydraForeign, UiHydraHead, UiIntent,
-    UiKeyBinding, UiKeyCommand, UiKeyToken, UiLayoutPolicy, UiProjectionError, UiRegion,
-    UiReviewChoice, UiReviewMenu, UiRgb, UiScrollDirection, UiStatusItem, UiStatusTone, UiTheme,
-    UiWindow, UiWorkbench,
+    UiComponentId, UiContent, UiFrame, UiFrameSpec, UiIntent, UiKeyBinding, UiKeyCommand,
+    UiKeyToken, UiLayoutPolicy, UiProjectionError, UiRegion, UiReviewChoice, UiReviewMenu, UiRgb,
+    UiScrollDirection, UiStatusItem, UiStatusTone, UiTheme, UiToolReviewChoice,
+    UiToolReviewDecision, UiToolReviewMenu, UiTransient, UiTransientForeign, UiTransientHead,
+    UiTransientId, UiWindow, UiWorkbench,
 };
 
 /// Admit a finite Scheme presentation without granting review authority.
@@ -32,6 +33,7 @@ pub fn decode_review_menu(
     }
     let entries = vector(menu.element(1)?, 4, 4)?;
     let mut symbols = IdentifierBuffer::default();
+    let mut seen = HashSet::with_capacity(entries.len());
     let mut choices = Vec::with_capacity(entries.len());
     for index in 0..entries.len() {
         let entry = vector(entries.element(index)?, 3, 3)?;
@@ -42,10 +44,7 @@ pub fn decode_review_menu(
             "patch-requested" => HumanDecision::PatchRequested,
             _ => return Err(UiProjectionError::Invalid("unknown human review decision")),
         };
-        if choices
-            .iter()
-            .any(|choice: &UiReviewChoice| choice.decision == decision)
-        {
+        if !seen.insert(std::mem::discriminant(&decision)) {
             return Err(UiProjectionError::Invalid(
                 "duplicate human review decision",
             ));
@@ -62,6 +61,44 @@ pub fn decode_review_menu(
         });
     }
     Ok(UiReviewMenu { prompt, choices })
+}
+
+/// Admit only the two finite tool-review intents. Neither intent is authority
+/// to execute a tool; the runtime must validate the durable request.
+pub fn decode_tool_review_menu(
+    value: RootedSchemeObject<'_>,
+) -> Result<UiToolReviewMenu, UiProjectionError> {
+    let menu = vector(value, 2, 2)?;
+    let prompt = string(menu.element(0)?)?;
+    if prompt.is_empty() {
+        return Err(UiProjectionError::Invalid("tool review prompt is empty"));
+    }
+    let entries = vector(menu.element(1)?, 2, 2)?;
+    let mut symbols = IdentifierBuffer::default();
+    let mut seen = HashSet::with_capacity(entries.len());
+    let mut choices = Vec::with_capacity(entries.len());
+    for index in 0..entries.len() {
+        let entry = vector(entries.element(index)?, 3, 3)?;
+        let decision = match identifier(entry.element(0)?, &mut symbols)?.as_str() {
+            "approve-once" => UiToolReviewDecision::ApproveOnce,
+            "reject" => UiToolReviewDecision::Reject,
+            _ => return Err(UiProjectionError::Invalid("unknown tool review decision")),
+        };
+        if !seen.insert(decision) {
+            return Err(UiProjectionError::Invalid("duplicate tool review decision"));
+        }
+        let label = string(entry.element(1)?)?;
+        let description = string(entry.element(2)?)?;
+        if label.is_empty() || description.is_empty() {
+            return Err(UiProjectionError::Invalid("empty tool review choice"));
+        }
+        choices.push(UiToolReviewChoice {
+            decision,
+            label,
+            description,
+        });
+    }
+    Ok(UiToolReviewMenu { prompt, choices })
 }
 
 /// Convert a rooted Scheme intent; this does not authorize the action.
@@ -86,7 +123,7 @@ pub fn decode_intent(value: RootedSchemeObject<'_>) -> Result<UiIntent, UiProjec
 
 /// Validate and copy one Scheme UI projection into independent Rust values.
 pub fn decode_workbench(value: RootedSchemeObject<'_>) -> Result<UiWorkbench, UiProjectionError> {
-    let root = vector(value, 8, 8)?;
+    let root = vector(value, 9, 9)?;
     let model = string(root.element(0)?)?;
     let session = string(root.element(1)?)?;
     let mut names = IdentifierBuffer::default();
@@ -95,6 +132,7 @@ pub fn decode_workbench(value: RootedSchemeObject<'_>) -> Result<UiWorkbench, Ui
     let theme = decode_theme(root.element(5)?)?;
     let frame = decode_frame_state(root.element(6)?)?;
     let keymap = decode_keymap(root.element(7)?)?;
+    let transients = decode_transients(root.element(8)?)?;
     let regions = decode_regions(root.element(2)?, &focus)?;
     Ok(UiWorkbench {
         model_label: model,
@@ -105,6 +143,7 @@ pub fn decode_workbench(value: RootedSchemeObject<'_>) -> Result<UiWorkbench, Ui
         focus,
         frame,
         keymap,
+        transients,
     })
 }
 
@@ -114,7 +153,7 @@ fn decode_keymap(value: RootedSchemeObject<'_>) -> Result<Vec<UiKeyBinding>, UiP
     let mut seen = HashSet::new();
     let mut result = Vec::with_capacity(entries.len());
     for index in 0..entries.len() {
-        let entry = vector(entries.element(index)?, 2, 6)?;
+        let entry = vector(entries.element(index)?, 2, 2)?;
         let keys = vector(entry.element(0)?, 1, 3)?;
         let mut sequence = Vec::with_capacity(keys.len());
         for position in 0..keys.len() {
@@ -124,7 +163,6 @@ fn decode_keymap(value: RootedSchemeObject<'_>) -> Result<Vec<UiKeyBinding>, UiP
         }
         let kind = identifier(entry.element(1)?, &mut names)?;
         let command = match (kind.as_str(), entry.len()) {
-            ("hydra", 6) => UiKeyCommand::Hydra(decode_hydra(&entry, &mut names)?),
             ("open-commands", 2) => UiKeyCommand::OpenCommands,
             ("cancel", 2) => UiKeyCommand::Cancel,
             ("history-search", 2) => {
@@ -139,50 +177,70 @@ fn decode_keymap(value: RootedSchemeObject<'_>) -> Result<Vec<UiKeyBinding>, UiP
             }
             ("line-start", 2) => UiKeyCommand::Edit(crate::model::UiEditorAction::LineStart),
             ("line-end", 2) => UiKeyCommand::Edit(crate::model::UiEditorAction::LineEnd),
-            ("hydra", _) => return Err(UiProjectionError::Invalid("invalid hydra entry")),
             (name, 2) => UiKeyCommand::Invoke(UiCommandName::new(name)?),
             _ => return Err(UiProjectionError::Invalid("invalid UI key binding")),
         };
-        let identity: Vec<_> = sequence.iter().map(|key| key.as_str().to_owned()).collect();
-        if !seen.insert(identity) {
+        if !seen.insert(sequence.clone()) {
             return Err(UiProjectionError::Invalid("duplicate UI key sequence"));
         }
         result.push(UiKeyBinding { sequence, command });
     }
     for binding in &result {
-        if result.iter().any(|other| {
-            other.sequence.len() > binding.sequence.len()
-                && other.sequence.starts_with(&binding.sequence)
-        }) {
-            return Err(UiProjectionError::Invalid("ambiguous UI key prefix"));
+        for length in 1..binding.sequence.len() {
+            if seen.contains(&binding.sequence[..length]) {
+                return Err(UiProjectionError::Invalid("ambiguous UI key prefix"));
+            }
         }
     }
     Ok(result)
 }
 
-fn decode_hydra(
+fn decode_transients(value: RootedSchemeObject<'_>) -> Result<Vec<UiTransient>, UiProjectionError> {
+    let entries = vector(value, 0, 8)?;
+    let mut names = IdentifierBuffer::default();
+    let mut seen = HashSet::with_capacity(entries.len());
+    let mut result = Vec::with_capacity(entries.len());
+    for index in 0..entries.len() {
+        let entry = vector(entries.element(index)?, 5, 5)?;
+        let id = UiTransientId::new(identifier(entry.element(0)?, &mut names)?.as_str())?;
+        if !seen.insert(id.clone()) {
+            return Err(UiProjectionError::Invalid("duplicate transient identity"));
+        }
+        result.push(decode_transient(&entry, &mut names, id)?);
+    }
+    Ok(result)
+}
+
+fn decode_transient(
     entry: &RootedSchemeCollection<'_>,
     names: &mut IdentifierBuffer,
-) -> Result<UiHydra, UiProjectionError> {
-    let hint = hydra_text(entry.element(2)?)?;
-    let warning_hint = hydra_text(entry.element(5)?)?;
-    let foreign = match identifier(entry.element(3)?, names)?.as_str() {
-        "exit" => UiHydraForeign::Exit,
-        "warn" => UiHydraForeign::Warn,
-        "run" => UiHydraForeign::Run,
+    id: UiTransientId,
+) -> Result<UiTransient, UiProjectionError> {
+    let hint = crate::decode_element(entry.element(1)?)?;
+    let warning_hint = crate::decode_element(entry.element(4)?)?;
+    if hint.intrinsic_rows() > 8 || warning_hint.intrinsic_rows() > 8 {
+        return Err(UiProjectionError::Invalid(
+            "transient hint exceeds row limit",
+        ));
+    }
+    let foreign = match identifier(entry.element(2)?, names)?.as_str() {
+        "exit" => UiTransientForeign::Exit,
+        "warn" => UiTransientForeign::Warn,
+        "run" => UiTransientForeign::Run,
         _ => {
             return Err(UiProjectionError::Invalid(
-                "invalid hydra foreign key policy",
+                "invalid transient foreign key policy",
             ));
         }
     };
-    let values = vector(entry.element(4)?, 1, 16)?;
+    let values = vector(entry.element(3)?, 1, 16)?;
+    let mut seen = HashSet::with_capacity(values.len());
     let mut heads = Vec::with_capacity(values.len());
     for index in 0..values.len() {
         let head = vector(values.element(index)?, 4, 4)?;
         let key = UiKeyToken::new(identifier(head.element(0)?, names)?.as_str())?;
-        if heads.iter().any(|prior: &UiHydraHead| prior.key == key) {
-            return Err(UiProjectionError::Invalid("duplicate hydra head"));
+        if !seen.insert(key.clone()) {
+            return Err(UiProjectionError::Invalid("duplicate transient head"));
         }
         let command = match identifier(head.element(1)?, names)?.as_str() {
             "exit" => None,
@@ -191,46 +249,25 @@ fn decode_hydra(
         let label = string(head.element(2)?)?;
         let exit = match head.element(3)?.as_ref().scalar()? {
             SchemeScalar::Boolean(value) => value,
-            _ => return Err(UiProjectionError::Invalid("invalid hydra exit flag")),
+            _ => return Err(UiProjectionError::Invalid("invalid transient exit flag")),
         };
-        if label.is_empty()
-            || label.len() > 64
-            || label.chars().any(char::is_control)
-            || (command.is_none() && !exit)
-        {
-            return Err(UiProjectionError::Invalid("invalid hydra head"));
+        if label.len() > 64 || label.chars().any(char::is_control) || (command.is_none() && !exit) {
+            return Err(UiProjectionError::Invalid("invalid transient head"));
         }
-        heads.push(UiHydraHead {
+        heads.push(UiTransientHead {
             key,
             command,
             label,
             exit,
         });
     }
-    Ok(UiHydra {
+    Ok(UiTransient {
+        id,
         hint,
         warning_hint,
         foreign,
         heads,
     })
-}
-
-fn hydra_text(value: RootedSchemeObject<'_>) -> Result<String, UiProjectionError> {
-    let value = value.into_string()?;
-    if value.len().into_result()? > 2048 {
-        return Err(UiProjectionError::Invalid("hydra hint exceeds limit"));
-    }
-    let text = value.to_string().into_result()?;
-    if text.is_empty()
-        || text.len() > 4096
-        || text.lines().count() > 8
-        || text
-            .chars()
-            .any(|character| character.is_control() && character != '\n')
-    {
-        return Err(UiProjectionError::Invalid("invalid hydra hint"));
-    }
-    Ok(text)
 }
 
 fn decode_frame_state(value: RootedSchemeObject<'_>) -> Result<UiFrame, UiProjectionError> {
@@ -280,7 +317,7 @@ fn decode_frame_state(value: RootedSchemeObject<'_>) -> Result<UiFrame, UiProjec
 }
 
 fn decode_layout(value: RootedSchemeObject<'_>) -> Result<UiLayoutPolicy, UiProjectionError> {
-    let layout_values = vector(value, 5, 5)?;
+    let layout_values = vector(value, 6, 6)?;
     let field = |index, lower, upper| -> Result<u16, UiProjectionError> {
         match layout_values.element(index)?.as_ref().scalar()? {
             SchemeScalar::Fixnum(value) if (lower..=upper).contains(&value) => Ok(value as u16),
@@ -302,11 +339,33 @@ fn decode_layout(value: RootedSchemeObject<'_>) -> Result<UiLayoutPolicy, UiProj
         }
         Ok(value)
     };
+    let frame_tree = crate::decode_element(layout_values.element(5)?)?;
+    let crate::UiElement::Rows(slots) = &frame_tree else {
+        return Err(UiProjectionError::Invalid("invalid UI frame tree"));
+    };
+    if slots.len() != 6
+        || slots.iter().any(|slot| match slot {
+            crate::UiElement::Region { id, .. } => !matches!(
+                id.as_str(),
+                "transcript" | "extensions" | "modeline" | "editor" | "candidates" | "minibuffer"
+            ),
+            _ => true,
+        })
+    {
+        return Err(UiProjectionError::Invalid("invalid UI frame regions"));
+    }
+    if !matches!(frame_tree.region_child("candidates"),
+        Some(crate::UiElement::Rows(templates)) if templates.len() == 2
+            && templates.iter().all(|item| matches!(item, crate::UiElement::Template { .. })))
+    {
+        return Err(UiProjectionError::Invalid("invalid candidate presentation"));
+    }
     let layout = UiLayoutPolicy {
         message_frame: decode_frame(layout_values.element(0)?)?,
         command_frame: decode_frame(layout_values.element(1)?)?,
         max_chatbox_rows: field(2, 3, 20)?,
         max_command_rows: field(3, 1, MAX_COMMANDS as isize)?,
+        frame_tree,
         transcript_policy: super::model::UiTranscriptPolicy {
             default_collapsed,
             user_prefix: label(1, false)?,
@@ -457,11 +516,12 @@ fn decode_commands(payload: RootedSchemeObject<'_>) -> Result<UiRegion, UiProjec
             "inspect" => UiCommandCapability::Inspect,
             "history" => UiCommandCapability::History,
             "workspace" => UiCommandCapability::Workspace,
-            "context" => UiCommandCapability::Context,
+            "context-budget" => UiCommandCapability::ContextBudget,
             "runtime" => UiCommandCapability::Runtime,
             "open-menu" => UiCommandCapability::OpenMenu,
             "select-profile" => UiCommandCapability::SelectProfile,
             "select-buffer" => UiCommandCapability::SelectBuffer,
+            "enter-transient" => UiCommandCapability::EnterTransient,
             "kill-process" => UiCommandCapability::KillProcess,
             "toggle-thinking" => UiCommandCapability::ToggleThinking,
             "clear" => UiCommandCapability::Clear,
@@ -663,7 +723,7 @@ pub(crate) fn string(value: RootedSchemeObject<'_>) -> Result<String, UiProjecti
     Ok(value.to_string().into_result()?)
 }
 
-fn identifier(
+pub(crate) fn identifier(
     value: RootedSchemeObject<'_>,
     buffer: &mut IdentifierBuffer,
 ) -> Result<UiComponentId, UiProjectionError> {

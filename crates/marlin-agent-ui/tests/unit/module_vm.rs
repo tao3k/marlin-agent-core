@@ -39,6 +39,14 @@ fn selected_ui_module_crosses_the_live_vm_boundary() {
             .choices
             .is_empty()
     );
+    assert_eq!(
+        module
+            .tool_review_menu(&initial)
+            .expect("decode selected tool review menu")
+            .choices
+            .len(),
+        2
+    );
 
     let (successor, intent) = module
         .dispatch(&initial, UiEvent::NextFocus)

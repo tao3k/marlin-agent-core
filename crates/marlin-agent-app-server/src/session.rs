@@ -182,7 +182,12 @@ impl<S: SessionEventStore + Clone + 'static> SessionBinding<S> {
                     .ok_or_else(|| {
                         Status::invalid_argument("cursor is not a committed event in this turn")
                     })?;
-                if matches!(cursor.event, ConversationEvent::Outcome(_)) {
+                if matches!(
+                    cursor.event,
+                    ConversationEvent::Outcome(_)
+                        | ConversationEvent::ToolReview(_)
+                        | ConversationEvent::ToolExecutionClaim(_)
+                ) {
                     return Ok(Box::pin(tokio_stream::empty()));
                 }
                 Some(cursor.cursor)
@@ -222,6 +227,7 @@ impl<S: SessionEventStore + Clone + 'static> SessionBinding<S> {
                             (Event::TextCheckpoint(TextCheckpoint { text }), false),
                         ConversationEvent::Checkpoint { channel: ConversationCheckpointChannel::Thinking, .. } => continue,
                         ConversationEvent::Outcome(outcome) => (Event::Outcome(outcome_status(&outcome).into()), true),
+                        ConversationEvent::ToolReview(_) | ConversationEvent::ToolExecutionClaim(_) => continue,
                     };
                     yield SessionTurnEvent { event_id, event: Some(event) };
                     if terminal { return; }

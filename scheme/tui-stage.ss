@@ -3,7 +3,7 @@
 ;;;
 ;;; SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
-;;; Stage the selected AOT graph after the normal package build. The runtime
+;;; Stage the selected compiled Gerbil modules for linking with the VM. The runtime
 ;;; imports come from init's one std-make-spec projection, never a second list.
 (import (only-in :clan/poo/object .get)
         (only-in "./init.ss" marlin-agent-core.init.exports)

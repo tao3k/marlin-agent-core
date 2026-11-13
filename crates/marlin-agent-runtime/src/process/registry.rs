@@ -6,7 +6,10 @@
 
 use std::{
     collections::{BTreeMap, VecDeque},
-    sync::Arc,
+    sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
+    },
 };
 
 use parking_lot::Mutex;
@@ -506,6 +509,7 @@ pub struct RuntimeProcessRegistryHandle {
     inner: Arc<Mutex<RuntimeProcessRegistry>>,
     managed_stops:
         Arc<Mutex<BTreeMap<crate::RuntimeResourceId, tokio_util::sync::CancellationToken>>>,
+    managed_revision: Arc<AtomicU64>,
 }
 
 impl RuntimeProcessRegistryHandle {
@@ -517,18 +521,25 @@ impl RuntimeProcessRegistryHandle {
         Self {
             inner: Arc::new(Mutex::new(registry)),
             managed_stops: Arc::default(),
+            managed_revision: Arc::new(AtomicU64::new(0)),
         }
     }
 
     pub fn track(&self, observation: RuntimeProcessObservation) {
-        self.inner.lock().track(observation);
+        self.try_track(observation)
+            .expect("runtime process observation must not duplicate an active pid or handle");
     }
 
     pub fn try_track(
         &self,
         observation: RuntimeProcessObservation,
     ) -> Result<(), RuntimeProcessRegistrationError> {
-        self.inner.lock().try_track(observation)
+        let managed = observation.resource_id().is_some();
+        self.inner.lock().try_track(observation)?;
+        if managed {
+            self.managed_revision.fetch_add(1, Ordering::Release);
+        }
+        Ok(())
     }
 
     pub(super) fn track_managed(
@@ -540,7 +551,13 @@ impl RuntimeProcessRegistryHandle {
         let mut registry = self.inner.lock();
         registry.try_track(observation)?;
         self.managed_stops.lock().insert(id, stop);
+        self.managed_revision.fetch_add(1, Ordering::Release);
         Ok(())
+    }
+
+    /// Monotonic invalidation token for managed process Buffer snapshots.
+    pub fn managed_revision(&self) -> u64 {
+        self.managed_revision.load(Ordering::Acquire)
     }
 
     /// Inspect active processes and the recent terminal history for one session.
@@ -588,9 +605,13 @@ impl RuntimeProcessRegistryHandle {
     ) -> Option<RuntimeProcessObservation> {
         let mut registry = self.inner.lock();
         let pid = registry.pid_for_resource(id)?;
-        registry
+        let updated = registry
             .update_active(pid, RuntimeProcessStatus::CleanupRequested, observed_at_ms)
-            .cloned()
+            .cloned();
+        if updated.is_some() {
+            self.managed_revision.fetch_add(1, Ordering::Release);
+        }
+        updated
     }
 
     pub(super) fn complete_managed(
@@ -608,6 +629,7 @@ impl RuntimeProcessRegistryHandle {
                 RuntimeProcessStatus::Failed
             };
             registry.complete(pid, status, observed_at_ms);
+            self.managed_revision.fetch_add(1, Ordering::Release);
         }
     }
 

@@ -9,8 +9,41 @@ use gerbil_scheme::{
 use marlin_agent_protocol::HumanDecision;
 use marlin_agent_ui::{
     UiComponentId, UiContent, UiIntent, UiOpenFacts, UiRegion, UiScrollDirection, UiStatusItem,
-    decode_intent, decode_review_menu, decode_workbench, prepare_open_request,
+    UiToolReviewDecision, decode_intent, decode_review_menu, decode_tool_review_menu,
+    decode_workbench, prepare_open_request,
 };
+
+fn assert_tool_review_projection_rejects_missing_or_duplicate_choices(runtime: &GerbilRuntime) {
+    let menu = |decisions: &[&str]| {
+        let entries = decisions
+            .iter()
+            .map(|decision| {
+                vector(
+                    runtime,
+                    &[
+                        symbol(runtime, decision),
+                        string(runtime, "choice"),
+                        string(runtime, "description"),
+                    ],
+                )
+            })
+            .collect::<Vec<_>>();
+        vector(
+            runtime,
+            &[string(runtime, "Tool request: "), vector(runtime, &entries)],
+        )
+    };
+    let admitted =
+        decode_tool_review_menu(menu(&["reject", "approve-once"])).expect("typed tool review menu");
+    assert_eq!(admitted.choices[0].decision, UiToolReviewDecision::Reject);
+    assert_eq!(
+        admitted.choices[1].decision,
+        UiToolReviewDecision::ApproveOnce
+    );
+    assert!(decode_tool_review_menu(menu(&["approve-once"])).is_err());
+    assert!(decode_tool_review_menu(menu(&["reject", "reject"])).is_err());
+    assert!(decode_tool_review_menu(menu(&["approve-once", "approved"])).is_err());
+}
 
 fn assert_review_menu_projection_requires_each_typed_decision_once(runtime: &GerbilRuntime) {
     fn menu<'a>(runtime: &'a GerbilRuntime, decisions: &[(&str, &str)]) -> RootedSchemeObject<'a> {
@@ -160,6 +193,65 @@ fn frame<'a>(
 }
 fn layout<'a>(runtime: &'a GerbilRuntime) -> RootedSchemeObject<'a> {
     // Deliberately distinct from any Scheme profile: this tests ABI decoding.
+    let children: Vec<_> = [
+        "transcript",
+        "extensions",
+        "modeline",
+        "editor",
+        "candidates",
+        "minibuffer",
+    ]
+    .into_iter()
+    .map(|name| {
+        vector(
+            runtime,
+            &[
+                symbol(runtime, "region"),
+                vector(
+                    runtime,
+                    &[
+                        symbol(runtime, name),
+                        runtime
+                            .scalar_object(SchemeScalar::Boolean(matches!(
+                                name,
+                                "transcript" | "candidates"
+                            )))
+                            .unwrap(),
+                        if name == "candidates" {
+                            let template = |highlight| {
+                                vector(
+                                    runtime,
+                                    &[
+                                        symbol(runtime, "template"),
+                                        vector(
+                                            runtime,
+                                            &[
+                                                symbol(
+                                                    runtime,
+                                                    if highlight { "bar" } else { "none" },
+                                                ),
+                                                vector(runtime, &[]),
+                                            ],
+                                        ),
+                                    ],
+                                )
+                            };
+                            vector(
+                                runtime,
+                                &[
+                                    symbol(runtime, "rows"),
+                                    vector(runtime, &[template(true), template(false)]),
+                                ],
+                            )
+                        } else {
+                            vector(runtime, &[symbol(runtime, "text"), vector(runtime, &[])])
+                        },
+                    ],
+                ),
+            ],
+        )
+    })
+    .collect();
     vector(
         runtime,
         &[
@@ -176,6 +268,10 @@ fn layout<'a>(runtime: &'a GerbilRuntime) -> RootedSchemeObject<'a> {
                     string(runtime, "folded"),
                     string(runtime, "revealed"),
                 ],
+            ),
+            vector(
+                runtime,
+                &[symbol(runtime, "rows"), vector(runtime, &children)],
             ),
         ],
     )
@@ -204,6 +300,99 @@ fn palette<'a>(runtime: &'a GerbilRuntime) -> RootedSchemeObject<'a> {
 #[test]
 fn sdk_roots_project_to_typed_ui_workbench() {
     let runtime = GerbilRuntime::initialize().unwrap();
+    assert_tool_review_projection_rejects_missing_or_duplicate_choices(&runtime);
+    let element = |tone: &str, value: &str| {
+        vector(
+            &runtime,
+            &[
+                symbol(&runtime, "text"),
+                vector(
+                    &runtime,
+                    &[vector(
+                        &runtime,
+                        &[symbol(&runtime, tone), string(&runtime, value)],
+                    )],
+                ),
+            ],
+        )
+    };
+    assert!(marlin_agent_ui::decode_element(element("info", "hello 🐟")).is_ok());
+    assert!(marlin_agent_ui::decode_element(element("unknown", "hello")).is_err());
+    assert!(marlin_agent_ui::decode_element(element("normal", "bad\u{1b}")).is_err());
+    let choice_case = |fact: &str| {
+        vector(
+            &runtime,
+            &[symbol(&runtime, fact), element("normal", "chosen")],
+        )
+    };
+    let choice = |cases: Vec<_>| {
+        vector(
+            &runtime,
+            &[
+                symbol(&runtime, "choice"),
+                vector(
+                    &runtime,
+                    &[vector(&runtime, &cases), element("normal", "fallback")],
+                ),
+            ],
+        )
+    };
+    assert!(marlin_agent_ui::decode_element(choice(vec![choice_case("ready")])).is_ok());
+    assert!(
+        marlin_agent_ui::decode_element(choice(vec![choice_case("ready"), choice_case("ready")]))
+            .is_err()
+    );
+    let interactive_region = || {
+        vector(
+            &runtime,
+            &[
+                symbol(&runtime, "region"),
+                vector(
+                    &runtime,
+                    &[
+                        symbol(&runtime, "messages"),
+                        runtime.scalar_object(SchemeScalar::Boolean(true)).unwrap(),
+                        element("info", "message"),
+                    ],
+                ),
+            ],
+        )
+    };
+    assert!(marlin_agent_ui::decode_element(interactive_region()).is_ok());
+    let duplicate_regions = vector(
+        &runtime,
+        &[
+            symbol(&runtime, "rows"),
+            vector(&runtime, &[interactive_region(), interactive_region()]),
+        ],
+    );
+    assert!(marlin_agent_ui::decode_element(duplicate_regions).is_err());
+    let part = vector(
+        &runtime,
+        &[
+            symbol(&runtime, "binding"),
+            symbol(&runtime, "info"),
+            runtime.scalar_object(SchemeScalar::Boolean(true)).unwrap(),
+            symbol(&runtime, "name"),
+        ],
+    );
+    let template = vector(
+        &runtime,
+        &[
+            symbol(&runtime, "template"),
+            vector(
+                &runtime,
+                &[symbol(&runtime, "bar"), vector(&runtime, &[part])],
+            ),
+        ],
+    );
+    assert!(matches!(
+        marlin_agent_ui::decode_element(template).unwrap(),
+        marlin_agent_ui::UiElement::Template {
+            background: marlin_agent_ui::UiBackground::Bar,
+            ..
+        }
+    ));
     assert_review_menu_projection_requires_each_typed_decision_once(&runtime);
     let scope = runtime.void_object().unwrap();
     let status = [
@@ -419,6 +608,7 @@ fn sdk_roots_project_to_typed_ui_workbench() {
             palette(&runtime),
             frame_state(&runtime),
             keymap_state(&runtime),
+            vector(&runtime, &[]),
         ],
     );
     let workbench = decode_workbench(root).unwrap();
@@ -511,6 +701,7 @@ fn sdk_roots_project_to_typed_ui_workbench() {
             palette(&runtime),
             frame_state(&runtime),
             keymap_state(&runtime),
+            vector(&runtime, &[]),
         ],
     );
     assert!(decode_workbench(invalid_tone_root).is_err());
@@ -567,6 +758,7 @@ fn sdk_roots_project_to_typed_ui_workbench() {
                 palette(&runtime),
                 frame_state(&runtime),
                 keymap_state(&runtime),
+                vector(&runtime, &[]),
             ],
         );
         assert!(
@@ -607,6 +799,7 @@ fn sdk_roots_project_to_typed_ui_workbench() {
             palette(&runtime),
             frame_state(&runtime),
             keymap_state(&runtime),
+            vector(&runtime, &[]),
         ],
     );
     assert!(decode_workbench(duplicate_root).is_err());
@@ -650,6 +843,7 @@ fn sdk_roots_project_to_typed_ui_workbench() {
             palette(&runtime),
             frame_state(&runtime),
             keymap_state(&runtime),
+            vector(&runtime, &[]),
         ],
     );
     assert!(decode_workbench(forged_root).is_err());
@@ -673,6 +867,7 @@ fn sdk_roots_project_to_typed_ui_workbench() {
             palette(&runtime),
             frame_state(&runtime),
             keymap_state(&runtime),
+            vector(&runtime, &[]),
         ],
     );
     assert!(decode_workbench(invalid_focus).is_err());
@@ -704,6 +899,7 @@ fn sdk_roots_project_to_typed_ui_workbench() {
             palette(&runtime),
             frame_state(&runtime),
             keymap_state(&runtime),
+            vector(&runtime, &[]),
         ],
     );
     assert!(decode_workbench(invalid_policy_root).is_err());

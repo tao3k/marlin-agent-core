@@ -7,7 +7,8 @@
 use std::{error::Error, fmt, future::Future};
 
 use marlin_agent_protocol::{
-    ModelEndpoint, ModelGatewayCompletionResponse, ModelGatewayMessageRole, ModelStreamInterruption,
+    ModelEndpoint, ModelGatewayCompletionResponse, ModelGatewayMessageRole,
+    ModelStreamInterruption, ModelToolCall,
 };
 use marlin_agent_storage::{
     AgentId, EventId, ProjectId, SessionEventPageRequest, SessionEventRecord, SessionEventStore,
@@ -18,6 +19,11 @@ use serde::{Deserialize, Serialize};
 #[path = "conversation_events.rs"]
 mod events;
 pub use events::{ConversationEvent, ConversationEventEntry, ConversationEventReader};
+mod tool_review;
+pub use tool_review::{
+    ConversationToolExecutionClaim, ConversationToolRequestKey, ConversationToolReviewDecision,
+    ConversationToolReviewReceipt, ConversationToolReviewRequest, ConversationToolReviewStatus,
+};
 
 const START_KIND: &str = "marlin.conversation.turn.started.v1";
 const END_KIND: &str = "marlin.conversation.turn.finished.v1";
@@ -90,6 +96,14 @@ impl ConversationTurnId {
         EventId::new(format!("{TURN_PREFIX}{:020}:01-finish", self.0))
     }
 
+    fn review_event_id(self) -> Result<EventId, StorageError> {
+        EventId::new(format!("{TURN_PREFIX}{:020}:02-tool-review", self.0))
+    }
+
+    fn claim_event_id(self) -> Result<EventId, StorageError> {
+        EventId::new(format!("{TURN_PREFIX}{:020}:03-tool-claim", self.0))
+    }
+
     fn uncertain_event_id(self) -> Result<EventId, StorageError> {
         EventId::new(format!("{TURN_PREFIX}{:020}:01-uncertain", self.0))
     }
@@ -107,6 +121,31 @@ impl ConversationTurnId {
 pub struct ConversationTurnStart {
     pub endpoint: ModelEndpoint,
     pub user_text: String,
+}
+
+/// A committed model-tool request awaiting runtime review. This observation
+/// grants no authority to execute a tool.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ConversationPendingToolRequest {
+    session: SessionId,
+    turn: ConversationTurnId,
+    calls: Vec<ModelToolCall>,
+    status: ConversationToolReviewStatus,
+    review_receipt: Option<ConversationToolReviewReceipt>,
+}
+
+impl ConversationPendingToolRequest {
+    pub fn session(&self) -> &SessionId {
+        &self.session
+    }
+
+    pub fn turn(&self) -> ConversationTurnId {
+        self.turn
+    }
+
+    pub fn calls(&self) -> &[ModelToolCall] {
+        &self.calls
+    }
 }
 
 /// A recorded observation; uncertainty does not claim runtime retirement.
@@ -247,10 +286,17 @@ pub struct ConversationJournal<S> {
     owns_active: bool,
     next_checkpoint: u64,
     legacy_outcome_unresolved: bool,
-    pending_tool_request: bool,
+    pending_tool_request: Option<ConversationPendingToolRequest>,
+    owns_pending_review: bool,
 }
 
 impl<S: SessionEventStore> ConversationJournal<S> {
+    /// Return only a request whose terminal event was committed or completely
+    /// replayed from storage. Presentation must not treat this as approval.
+    pub fn pending_tool_request(&self) -> Option<&ConversationPendingToolRequest> {
+        self.pending_tool_request.as_ref()
+    }
+
     /// Scan pages in storage order and visit each validated turn once.
     /// The callback controls whether and how replayed history is retained;
     /// its observations remain provisional until this method returns `Ok`.
@@ -289,7 +335,8 @@ impl<S: SessionEventStore> ConversationJournal<S> {
             owns_active: false,
             next_checkpoint: 1,
             legacy_outcome_unresolved: false,
-            pending_tool_request: false,
+            pending_tool_request: None,
+            owns_pending_review: false,
         };
         let before = journal
             .storage
@@ -407,7 +454,7 @@ impl<S: SessionEventStore> ConversationJournal<S> {
         if self.legacy_outcome_unresolved {
             return Err(ConversationJournalError::LegacyOutcomeUnresolved);
         }
-        if self.pending_tool_request {
+        if self.pending_tool_request.is_some() {
             return Err(ConversationJournalError::ToolRequestPending);
         }
         start
@@ -611,10 +658,11 @@ impl<S: SessionEventStore> ConversationJournal<S> {
             self.storage.append_session_event(event),
         )
         .await?;
+        let pending_tool_request = pending_tool_request_from_outcome(&self.session, id, &outcome);
         self.active = None;
         self.owns_active = false;
-        self.pending_tool_request =
-            matches!(outcome, ConversationTurnOutcome::ToolRequested { .. });
+        self.pending_tool_request = pending_tool_request;
+        self.owns_pending_review = self.pending_tool_request.is_some();
         Ok(())
     }
 
@@ -714,7 +762,8 @@ impl<S: SessionEventStore> ConversationJournal<S> {
         }
         match events::decode_event(id, &event)? {
             ConversationEvent::Started(start) => {
-                if self.pending_tool_request || self.active.is_some() || id.0 != self.next {
+                if self.pending_tool_request.is_some() || self.active.is_some() || id.0 != self.next
+                {
                     return Err(ConversationJournalError::InvalidEvent(
                         "noncontiguous or overlapping start".into(),
                     ));
@@ -792,14 +841,16 @@ impl<S: SessionEventStore> ConversationJournal<S> {
                     self.legacy_outcome_unresolved = true;
                 }
                 turn.outcome = Some(outcome);
-                self.pending_tool_request = matches!(
-                    turn.outcome,
-                    Some(ConversationTurnOutcome::ToolRequested { .. })
-                );
+                self.pending_tool_request = turn.outcome.as_ref().and_then(|outcome| {
+                    pending_tool_request_from_outcome(&self.session, id, outcome)
+                });
+                self.owns_pending_review = self.pending_tool_request.is_some();
                 if !visit(&turn) {
                     return Err(ConversationJournalError::ReplayStopped);
                 }
             }
+            ConversationEvent::ToolReview(_) => self.replay_tool_review(&event, id)?,
+            ConversationEvent::ToolExecutionClaim(_) => self.replay_tool_claim(&event, id)?,
             ConversationEvent::Outcome(ConversationTurnOutcome::Uncertain { reason }) => {
                 if self.next_checkpoint != 1
                     && !matches!(
@@ -896,6 +947,24 @@ fn validate_outcome(outcome: &ConversationTurnOutcome) -> Result<(), Conversatio
         _ => {}
     }
     Ok(())
+}
+
+fn pending_tool_request_from_outcome(
+    session: &SessionId,
+    turn: ConversationTurnId,
+    outcome: &ConversationTurnOutcome,
+) -> Option<ConversationPendingToolRequest> {
+    let ConversationTurnOutcome::ToolRequested { response } = outcome else {
+        return None;
+    };
+    let calls = response.choices.first()?.message.tool_calls.clone();
+    Some(ConversationPendingToolRequest {
+        session: session.clone(),
+        turn,
+        calls,
+        status: ConversationToolReviewStatus::AwaitingReview,
+        review_receipt: None,
+    })
 }
 
 /// Storage, validation, or state-transition failure for a conversation journal.

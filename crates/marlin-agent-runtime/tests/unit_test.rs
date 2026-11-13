@@ -20,6 +20,8 @@ mod runtime_graph_loop_run_registry;
 mod runtime_graph_loop_runtime;
 #[path = "unit/runtime/model_gateway/mod.rs"]
 mod runtime_model_gateway;
+#[path = "unit/runtime/model_tool_catalog.rs"]
+mod runtime_model_tool_catalog;
 #[path = "unit/runtime/observability.rs"]
 mod runtime_observability;
 #[path = "unit/runtime/process/mod.rs"]

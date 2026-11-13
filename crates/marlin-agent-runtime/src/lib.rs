@@ -10,6 +10,7 @@ pub mod process;
 mod agent_graph;
 mod graph_loop;
 mod model_gateway;
+mod model_tool_catalog;
 mod process_executor;
 mod resilience;
 mod tokio_runtime;
@@ -39,6 +40,9 @@ pub use model_gateway::{
     ModelGatewayMessageRole, ModelGatewayRequest, ModelGatewayResult, ModelGatewayTransport,
     RuntimeEdgeModelGateway, assistant_gateway_message, system_gateway_message,
     user_gateway_message,
+};
+pub use model_tool_catalog::{
+    ModelToolCatalog, ModelToolCatalogError, ModelToolHandler, ModelToolOffer, ModelToolOutcome,
 };
 pub use process::{
     AsyncManagedChildProcess, ManagedChildProcessSpec, ManagedChildStdin,

@@ -29,7 +29,8 @@
                      "Esc / Ctrl-C  Cancel or return"
                      "Ctrl-Q  Quit"))
                    "help")
-             (processes "*Processes* managed Runtime processes" #f #f)))
+             (processes "*Processes* managed Runtime processes"
+                        ("*Processes*" ()) #f)))
 (def marlin-ui-buffer-catalog (seal-object! UiBufferCatalog.))
 
 (def (marlin-ui-buffer-identities)

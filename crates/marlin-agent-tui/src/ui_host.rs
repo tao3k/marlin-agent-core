@@ -9,8 +9,9 @@ use gerbil_scheme::GerbilRuntime;
 #[cfg(feature = "linked-ui")]
 use marlin_agent_ui::UiLinkedExports;
 use marlin_agent_ui::{
-    UiBrowseDirection, UiCommandName, UiEditorAction, UiEvent, UiHydra, UiHydraForeign, UiIntent,
-    UiKeyCommand, UiModule, UiNativeSession, UiOpenFacts, UiProjectionError, UiWorkbench,
+    UiBrowseDirection, UiCommandName, UiEditorAction, UiEvent, UiIntent, UiKeyCommand, UiModule,
+    UiNativeSession, UiOpenFacts, UiProjectionError, UiTransient, UiTransientForeign,
+    UiTransientId, UiWorkbench,
 };
 use termion::event::Key;
 
@@ -31,8 +32,8 @@ pub(crate) struct UiHost<'runtime> {
     session: UiNativeSession<'runtime>,
     view: UiWorkbench,
     key_prefix: Vec<String>,
-    hydra: Option<UiHydra>,
-    hydra_warning: bool,
+    transient: Option<UiTransient>,
+    transient_warning: bool,
 }
 
 impl<'runtime> UiHost<'runtime> {
@@ -83,8 +84,8 @@ impl<'runtime> UiHost<'runtime> {
             session,
             view,
             key_prefix: Vec::new(),
-            hydra: None,
-            hydra_warning: false,
+            transient: None,
+            transient_warning: false,
         })
     }
 
@@ -92,14 +93,29 @@ impl<'runtime> UiHost<'runtime> {
         &self.view
     }
 
-    pub(crate) fn hydra_hint(&self) -> Option<&str> {
-        self.hydra.as_ref().map(|hydra| {
-            if self.hydra_warning {
-                hydra.warning_hint.as_str()
+    pub(crate) fn transient_hint(&self) -> Option<&marlin_agent_ui::UiElement> {
+        self.transient.as_ref().map(|transient| {
+            if self.transient_warning {
+                &transient.warning_hint
             } else {
-                hydra.hint.as_str()
+                &transient.hint
             }
         })
+    }
+
+    pub(crate) fn enter_transient(&mut self, id: &UiTransientId) -> Result<(), UiProjectionError> {
+        let transient = self
+            .view
+            .transients
+            .iter()
+            .find(|transient| &transient.id == id)
+            .ok_or(UiProjectionError::Invalid(
+                "transient is not in the selected catalog",
+            ))?;
+        self.transient = Some(transient.clone());
+        self.transient_warning = false;
+        self.key_prefix.clear();
+        Ok(())
     }
 
     pub(crate) fn refresh_labels(
@@ -119,6 +135,7 @@ impl<'runtime> UiHost<'runtime> {
             || candidate.focus != self.view.focus
             || candidate.frame != self.view.frame
             || candidate.keymap != self.view.keymap
+            || candidate.transients != self.view.transients
         {
             return Err(UiProjectionError::Invalid(
                 "UI label refresh changed the workbench",
@@ -225,28 +242,31 @@ impl<'runtime> UiHost<'runtime> {
         command_active: bool,
         draft_is_command: bool,
     ) -> Result<UiKeyAction, UiProjectionError> {
-        if let Some(hydra) = &self.hydra {
-            self.hydra_warning = false;
+        if let Some(transient) = &self.transient {
+            self.transient_warning = false;
             if matches!(key, Key::Esc | Key::Ctrl('g')) {
-                self.hydra = None;
+                self.transient = None;
                 return Ok(UiKeyAction::Handled);
             }
-            if let Some(head) = key_token(key)
-                .and_then(|token| hydra.heads.iter().find(|head| head.key.as_str() == token))
-            {
+            if let Some(head) = key_token(key).and_then(|token| {
+                transient
+                    .heads
+                    .iter()
+                    .find(|head| head.key.as_str() == token)
+            }) {
                 let command = head.command.clone();
                 if head.exit {
-                    self.hydra = None;
+                    self.transient = None;
                 }
                 return Ok(command.map_or(UiKeyAction::Handled, UiKeyAction::InvokeCommand));
             }
-            match hydra.foreign {
-                UiHydraForeign::Exit => self.hydra = None,
-                UiHydraForeign::Warn => {
-                    self.hydra_warning = true;
+            match transient.foreign {
+                UiTransientForeign::Exit => self.transient = None,
+                UiTransientForeign::Warn => {
+                    self.transient_warning = true;
                     return Ok(UiKeyAction::Handled);
                 }
-                UiHydraForeign::Run => {}
+                UiTransientForeign::Run => {}
             }
         }
         if !self.key_prefix.is_empty() {
@@ -317,11 +337,6 @@ impl<'runtime> UiHost<'runtime> {
             UiKeyCommand::Cancel => UiKeyAction::Cancel,
             UiKeyCommand::Edit(action) => UiKeyAction::Edit(action),
             UiKeyCommand::Invoke(name) => UiKeyAction::InvokeCommand(name),
-            UiKeyCommand::Hydra(hydra) => {
-                self.hydra_warning = false;
-                self.hydra = Some(hydra);
-                UiKeyAction::Handled
-            }
         }
     }
 
@@ -394,10 +409,6 @@ fn admit_terminal_view(view: &UiWorkbench) -> Result<(), UiProjectionError> {
     for binding in &view.keymap {
         let valid = match &binding.command {
             UiKeyCommand::Invoke(name) => admitted_command(name),
-            UiKeyCommand::Hydra(hydra) => hydra
-                .heads
-                .iter()
-                .all(|head| head.command.as_ref().is_none_or(&admitted_command)),
             _ => true,
         };
         if !valid {
@@ -405,6 +416,26 @@ fn admit_terminal_view(view: &UiWorkbench) -> Result<(), UiProjectionError> {
                 "UI key binding names an unavailable command",
             ));
         }
+    }
+    if view.transients.iter().any(|transient| {
+        transient.heads.iter().any(|head| {
+            head.command
+                .as_ref()
+                .is_some_and(|name| !admitted_command(name))
+        }) || !view.commands().iter().any(|command| {
+            command.capability == marlin_agent_ui::UiCommandCapability::EnterTransient
+                && command.value.as_deref() == Some(transient.id.as_str())
+        })
+    }) || view.commands().iter().any(|command| {
+        command.capability == marlin_agent_ui::UiCommandCapability::EnterTransient
+            && !view
+                .transients
+                .iter()
+                .any(|transient| Some(transient.id.as_str()) == command.value.as_deref())
+    }) {
+        return Err(UiProjectionError::Invalid(
+            "transient catalog and command descriptors diverge",
+        ));
     }
     if view.frame.windows.len() != 1
         || view.frame.id.as_str() != "main"

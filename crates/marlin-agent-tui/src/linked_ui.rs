@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
-//! Process-owned AOT graph selected by the package's Yuanxu build projection.
+//! Process-owned Gerbil VM and its linked, Yuanxu-selected module graph.
 
 use gerbil_scheme::{GerbilRuntime, LinkedGerbilProgram, NativeError};
 use gerbil_scheme_sys::{GerbilGlobalState, GerbilModuleOrLink};

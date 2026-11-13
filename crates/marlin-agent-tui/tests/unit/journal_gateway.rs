@@ -10,9 +10,13 @@ use std::sync::{
 
 use super::journal_gateway::JournalGateway;
 use marlin_agent_protocol::{
-    ModelEndpoint, ModelGatewayCompletionChoice, ModelGatewayCompletionResponse, ModelGatewayError,
-    ModelGatewayFuture, ModelGatewayRequest, ModelGatewayResult, ModelStreamInterruption,
-    assistant_gateway_message, user_gateway_message,
+    ModelEndpoint, ModelGatewayCompletionChoice, ModelGatewayCompletionOptions,
+    ModelGatewayCompletionResponse, ModelGatewayError, ModelGatewayFuture, ModelGatewayRequest,
+    ModelGatewayResult, ModelStreamInterruption, ModelToolCall, ModelToolCallId,
+    ModelToolDefinition, ModelToolName, assistant_gateway_message, user_gateway_message,
+};
+use marlin_agent_runtime::{
+    ModelToolCatalog, ModelToolOffer, ModelToolOutcome, RuntimeContext, RuntimeFuture, ToolRuntime,
 };
 use marlin_agent_sessions::{
     ConversationJournal, ConversationTurnOutcome, ConversationUncertaintyReason,
@@ -67,6 +71,45 @@ fn request() -> ModelGatewayRequest {
         vec![user_gateway_message("hello")],
     )
 }
+fn tool_request() -> ModelGatewayRequest {
+    request().with_options(ModelGatewayCompletionOptions {
+        tools: Some(vec![ModelToolDefinition {
+            name: ModelToolName::new("read_marker").unwrap(),
+            description: "Read a marker".into(),
+            parameters: serde_json::json!({"type":"object"}),
+        }]),
+        ..ModelGatewayCompletionOptions::default()
+    })
+}
+struct Handler;
+
+impl ToolRuntime for Handler {
+    type Invocation = ModelToolCall;
+    type Output = ModelToolOutcome;
+
+    fn run_tool(
+        &self,
+        _call: ModelToolCall,
+        _context: RuntimeContext,
+    ) -> RuntimeFuture<Self::Output> {
+        Box::pin(async { ModelToolOutcome::Completed("marker".into()) })
+    }
+}
+
+fn tool_offer() -> ModelToolOffer {
+    let mut catalog = ModelToolCatalog::new();
+    catalog
+        .register(
+            ModelToolDefinition {
+                name: ModelToolName::new("read_marker").unwrap(),
+                description: "Read a marker".into(),
+                parameters: serde_json::json!({"type":"object"}),
+            },
+            Arc::new(Handler),
+        )
+        .unwrap();
+    catalog.offer()
+}
 async fn open(storage: InMemoryAgentStorage) -> ConversationJournal<InMemoryAgentStorage> {
     let (p, s, a) = ids();
     ConversationJournal::open(storage, p, s, a, |_| {})
@@ -76,49 +119,94 @@ async fn open(storage: InMemoryAgentStorage) -> ConversationJournal<InMemoryAgen
 
 struct BatchFixture;
 
+struct ToolFixture;
+impl ModelStreamingGateway for ToolFixture {
+    fn stream(
+        &self,
+        _: ModelGatewayRequest,
+    ) -> ModelGatewayFuture<ModelGatewayResult<ModelGatewayEventStream>> {
+        let mut message = assistant_gateway_message("inspect the workspace");
+        message.tool_calls.push(ModelToolCall {
+            id: ModelToolCallId::new("call-1").unwrap(),
+            name: ModelToolName::new("read_marker").unwrap(),
+            arguments: serde_json::Map::new(),
+        });
+        let response = ModelGatewayCompletionResponse::new(
+            "id",
+            "model",
+            vec![ModelGatewayCompletionChoice::new(0, message, None)],
+        );
+        Box::pin(async move {
+            Ok(
+                Box::pin(tokio_stream::iter([Ok(ModelStreamEvent::ToolRequested {
+                    response,
+                })])) as ModelGatewayEventStream,
+            )
+        })
+    }
+}
+
 #[tokio::test]
 async fn tool_request_is_persisted_before_delivery_and_blocks_a_second_turn() {
-    use marlin_agent_protocol::{ModelToolCall, ModelToolCallId, ModelToolName};
-
-    struct ToolFixture;
-    impl ModelStreamingGateway for ToolFixture {
-        fn stream(
-            &self,
-            _: ModelGatewayRequest,
-        ) -> ModelGatewayFuture<ModelGatewayResult<ModelGatewayEventStream>> {
-            let mut message = assistant_gateway_message("inspect the workspace");
-            message.tool_calls.push(ModelToolCall {
-                id: ModelToolCallId::new("call-1").unwrap(),
-                name: ModelToolName::new("read_marker").unwrap(),
-                arguments: serde_json::Map::new(),
-            });
-            let response = ModelGatewayCompletionResponse::new(
-                "id",
-                "model",
-                vec![ModelGatewayCompletionChoice::new(0, message, None)],
-            );
-            Box::pin(async move {
-                Ok(
-                    Box::pin(tokio_stream::iter([Ok(ModelStreamEvent::ToolRequested {
-                        response,
-                    })])) as ModelGatewayEventStream,
-                )
-            })
-        }
-    }
-
     let storage = InMemoryAgentStorage::new();
-    let gateway = JournalGateway::new(ToolFixture, open(storage.clone()).await);
-    let mut stream = gateway.stream(request()).await.unwrap();
+    let gateway =
+        JournalGateway::new(ToolFixture, open(storage.clone()).await).with_tool_offer(tool_offer());
+    let mut stream = gateway.stream(tool_request()).await.unwrap();
     assert!(matches!(
         stream.next().await,
         Some(Ok(ModelStreamEvent::ToolRequested { .. }))
     ));
     assert!(stream.next().await.is_none());
     assert!(matches!(
-        gateway.stream(request()).await,
+        gateway.stream(tool_request()).await,
         Err(ModelGatewayError::Completion(message)) if message.contains("pending")
     ));
+}
+
+#[tokio::test]
+async fn unoffered_tool_call_never_becomes_a_reviewable_request() {
+    let storage = InMemoryAgentStorage::new();
+    let gateway = JournalGateway::new(ToolFixture, open(storage.clone()).await);
+    let mut stream = gateway.stream(request()).await.unwrap();
+    assert!(matches!(
+        stream.next().await,
+        Some(Err(ModelGatewayError::StreamInterrupted(
+            ModelStreamInterruption::InvalidCompletion
+        )))
+    ));
+    let (project, session, agent) = ids();
+    let mut turns = Vec::new();
+    let reopened = ConversationJournal::open(storage, project, session, agent, |turn| {
+        turns.push(turn.clone());
+    })
+    .await
+    .unwrap();
+    assert!(reopened.pending_tool_request().is_none());
+    assert!(matches!(
+        turns[0].outcome,
+        Some(ConversationTurnOutcome::Uncertain {
+            reason: ConversationUncertaintyReason::StreamInterrupted {
+                reason: ModelStreamInterruption::InvalidCompletion
+            }
+        })
+    ));
+}
+
+#[tokio::test]
+async fn tool_definition_without_runtime_handler_is_not_dispatched() {
+    let storage = InMemoryAgentStorage::new();
+    let gateway = JournalGateway::new(ToolFixture, open(storage.clone()).await);
+    assert!(matches!(
+        gateway.stream(tool_request()).await,
+        Err(ModelGatewayError::RequestNotDispatched(_))
+    ));
+    let (project, session, agent) = ids();
+    let mut replayed = 0;
+    let reopened = ConversationJournal::open(storage, project, session, agent, |_| replayed += 1)
+        .await
+        .unwrap();
+    assert_eq!(replayed, 0);
+    assert!(reopened.pending_tool_request().is_none());
 }
 
 #[tokio::test]

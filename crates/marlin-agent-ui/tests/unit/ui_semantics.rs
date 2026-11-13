@@ -24,6 +24,23 @@ fn test_layout() -> UiLayoutPolicy {
         },
         max_chatbox_rows: 10,
         max_command_rows: 32,
+        frame_tree: marlin_agent_ui::UiElement::Rows(
+            [
+                "transcript",
+                "extensions",
+                "modeline",
+                "editor",
+                "candidates",
+                "minibuffer",
+            ]
+            .into_iter()
+            .map(|name| marlin_agent_ui::UiElement::Region {
+                id: UiComponentId::new(name).unwrap(),
+                scrollable: matches!(name, "transcript" | "candidates"),
+                child: Box::new(marlin_agent_ui::UiElement::Text(vec![])),
+            })
+            .collect(),
+        ),
         transcript_policy: marlin_agent_ui::UiTranscriptPolicy {
             default_collapsed: true,
             user_prefix: "u: ".into(),
@@ -73,6 +90,7 @@ fn workbench(focus: &str) -> UiWorkbench {
         focus: id(focus),
         frame: test_frame(),
         keymap: Vec::new(),
+        transients: Vec::new(),
     }
 }
 
@@ -148,6 +166,7 @@ fn profile_admission_preserves_status_ownership_while_allowing_modeline_order() 
     let event = UiEvent::SelectProfile(UiProfileName::new("pi").unwrap());
     let focus = UiIntent::Focus(id("composer"));
     let mut reordered = previous.clone();
+    reordered.layout.transcript_policy.thinking_collapsed_role = "⋯".into();
     if let UiRegion::Status(items) = &mut reordered.regions[3] {
         items.swap(3, 4);
         items[0].label = "pi brand".into();
@@ -158,6 +177,14 @@ fn profile_admission_preserves_status_ownership_while_allowing_modeline_order() 
         previous
             .admit_successor(&reordered, event.clone(), &focus)
             .is_ok()
+    );
+
+    let mut changed_geometry = reordered.clone();
+    changed_geometry.layout.max_command_rows += 1;
+    assert!(
+        previous
+            .admit_successor(&changed_geometry, event.clone(), &focus)
+            .is_err()
     );
 
     let mut changed_host = reordered.clone();

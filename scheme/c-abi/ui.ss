@@ -81,7 +81,8 @@
             (vector-ref projection 2) (.get current focus)
             (vector-ref projection 3) (vector-ref projection 4)
             ((.get ui project-frame) (.get current frame))
-            ((.get ui keymap-entries)))))
+            ((.get ui keymap-entries))
+            ((.get ui transient-entries)))))
 
 ;;; Refresh only owner-supplied display facts, retaining components and generic.
 ;;; Construct a fresh workbench directly so repeated updates do not build an
@@ -101,6 +102,7 @@
                    identity: (.get old identity) kind: (.get old kind)
                    model: (string-copy model-value) session: (string-copy session-label)
                    geometry-policy: (.get old geometry-policy)
+                   transcript-policy: (.get old transcript-policy)
                    theme-palette: (.get old theme-palette)
                    regions: (.get old regions) focus-order: (.get old focus-order)))
       (session ui (.get current generic) next (.get current focus) (.get current frame)))))

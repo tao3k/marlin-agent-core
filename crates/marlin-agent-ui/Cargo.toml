@@ -41,6 +41,11 @@ name = "ui_hot_path"
 harness = false
 required-features = ["scheme-ui"]
 
+[[bench]]
+name = "ui_native_mapping"
+harness = false
+required-features = ["scheme-ui"]
+
 [features]
 default = ["scheme-ui"]
 scheme-ui = ["dep:gerbil-scheme", "dep:marlin-agent-protocol"]

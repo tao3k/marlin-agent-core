@@ -5,7 +5,7 @@
 //! Native capability admission for Scheme-declared commands.
 use marlin_agent_ui::{
     UiBufferId, UiCommand, UiCommandArguments, UiCommandCapability, UiCommandName, UiEvent,
-    UiProfileName,
+    UiProfileName, UiTransientId,
 };
 
 #[derive(Debug, Eq, PartialEq)]
@@ -20,11 +20,12 @@ pub(crate) enum Command<'a> {
         mode: &'a str,
         arguments: Option<&'a str>,
     },
-    Context,
+    ContextBudget,
     Runtime,
     KillProcess(std::num::NonZeroU64),
     OpenMenu(&'a str),
     SelectUi(UiEvent),
+    EnterTransient(UiTransientId),
     ToggleThinking(usize),
     Clear,
 }
@@ -40,7 +41,10 @@ impl<'a> Command<'a> {
             descriptor.value.as_deref(),
         ) {
             (
-                Capability::Models | Capability::Context | Capability::Runtime | Capability::Clear,
+                Capability::Models
+                | Capability::ContextBudget
+                | Capability::Runtime
+                | Capability::Clear,
                 NoArguments,
                 None,
             ) => true,
@@ -66,6 +70,7 @@ impl<'a> Command<'a> {
             (Capability::SelectBuffer, NoArguments, Some(buffer)) => {
                 UiBufferId::new(buffer).is_ok()
             }
+            (Capability::EnterTransient, NoArguments, Some(id)) => UiTransientId::new(id).is_ok(),
             _ => false,
         }
     }
@@ -108,7 +113,7 @@ impl<'a> Command<'a> {
                 mode: value?,
                 arguments: argument,
             },
-            Capability::Context => Self::Context,
+            Capability::ContextBudget => Self::ContextBudget,
             Capability::Runtime => Self::Runtime,
             Capability::KillProcess => Self::KillProcess(argument?.trim().parse().ok()?),
             Capability::OpenMenu => Self::OpenMenu(value?),
@@ -118,6 +123,7 @@ impl<'a> Command<'a> {
             Capability::SelectBuffer => {
                 Self::SelectUi(UiEvent::SelectBuffer(UiBufferId::new(value?).ok()?))
             }
+            Capability::EnterTransient => Self::EnterTransient(UiTransientId::new(value?).ok()?),
             Capability::Clear => Self::Clear,
             Capability::ToggleThinking => Self::ToggleThinking(match argument {
                 Some(value) => value.trim().parse().ok().filter(|index| *index > 0)?,

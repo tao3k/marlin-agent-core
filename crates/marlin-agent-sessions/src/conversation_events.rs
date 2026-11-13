@@ -16,6 +16,8 @@ pub enum ConversationEvent {
         text: String,
     },
     Outcome(ConversationTurnOutcome),
+    ToolReview(ConversationToolReviewReceipt),
+    ToolExecutionClaim(ConversationToolReviewReceipt),
 }
 
 #[derive(Debug)]
@@ -100,6 +102,10 @@ impl<S: SessionEventStore> ConversationEventReader<S> {
             EventId::new("\0")?
         } else if event_id == id.finish_event_id()? || event_id == id.uncertain_event_id()? {
             EventId::new(format!("{TURN_PREFIX}{:020}:01", id.get()))?
+        } else if event_id == id.review_event_id()? {
+            id.finish_event_id()?
+        } else if event_id == id.claim_event_id()? {
+            id.review_event_id()?
         } else {
             let Some(sequence) = event_id
                 .as_str()
@@ -192,6 +198,26 @@ pub(super) fn decode_event(
             return Err(invalid());
         }
         return Ok(ConversationEvent::Started(start));
+    }
+    if record.event_kind == tool_review::REVIEW_KIND
+        && record.event_id == id.review_event_id()?
+        && record.causality_parent_event_id == Some(id.finish_event_id()?)
+    {
+        let receipt: ConversationToolReviewReceipt = serde_json::from_slice(&record.body)?;
+        if receipt.key().turn() != id || receipt.key().session() != &record.session_id {
+            return Err(invalid());
+        }
+        return Ok(ConversationEvent::ToolReview(receipt));
+    }
+    if record.event_kind == tool_review::CLAIM_KIND
+        && record.event_id == id.claim_event_id()?
+        && record.causality_parent_event_id == Some(id.review_event_id()?)
+    {
+        let receipt: ConversationToolReviewReceipt = serde_json::from_slice(&record.body)?;
+        if receipt.key().turn() != id || receipt.key().session() != &record.session_id {
+            return Err(invalid());
+        }
+        return Ok(ConversationEvent::ToolExecutionClaim(receipt));
     }
     if record.causality_parent_event_id != Some(start_id) {
         return Err(invalid());

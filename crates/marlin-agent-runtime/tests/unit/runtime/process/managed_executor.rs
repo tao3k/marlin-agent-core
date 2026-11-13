@@ -93,15 +93,18 @@ async fn managed_executor_process_stop_is_scoped_and_rejects_old_generations() {
     let (owner, _events) = TokioAgentRuntime::new(8);
     let context = owner.context();
     let session = context.session().session_id();
+    let registry = owner.process_registry();
+    let before = registry.managed_revision();
     let launch = || {
         let mut command = Command::new("/bin/sleep");
         command.arg("30");
         AsyncManagedChildProcess::spawn(&context, command, RuntimeProcessKind::Tool, "test.stop")
     };
     let child = launch().await.unwrap();
+    let tracked = registry.managed_revision();
+    assert!(tracked > before);
     let id = child.resource_id().clone();
     let generation = id.generation().get().try_into().unwrap();
-    let registry = owner.process_registry();
     assert!(!registry.stop_session_generation(&SessionId::new("other-session"), generation));
     assert!(registry.stop_session_generation(session, generation));
     let pid = child.pid();
@@ -116,6 +119,8 @@ async fn managed_executor_process_stop_is_scoped_and_rejects_old_generations() {
     })
     .await
     .unwrap();
+    let completed = registry.managed_revision();
+    assert!(completed > tracked);
     // SAFETY: signal zero only probes the fixture process.
     assert_eq!(unsafe { libc::kill(pid.try_into().unwrap(), 0) }, -1);
     assert_eq!(
@@ -123,6 +128,7 @@ async fn managed_executor_process_stop_is_scoped_and_rejects_old_generations() {
         Some(libc::ESRCH)
     );
     let replacement = launch().await.unwrap();
+    assert!(registry.managed_revision() > completed);
     assert!(!registry.stop_session_generation(session, generation));
     assert!(
         owner

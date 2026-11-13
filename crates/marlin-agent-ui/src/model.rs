@@ -16,7 +16,7 @@ pub(crate) const MAX_STATUS: usize = 23;
 pub(crate) const MAX_EXTENSIONS: usize = 16;
 pub(crate) const MAX_CONTENT_ITEMS: usize = 16;
 pub(crate) const MAX_METHOD_BUNDLES: usize = 16;
-pub(crate) const MAX_COMMANDS: usize = 32;
+pub(crate) const MAX_COMMANDS: usize = 256;
 pub(crate) const MAX_TEXT_CHARS: usize = 256;
 pub(crate) const MAX_ID_BYTES: usize = 1024;
 
@@ -86,27 +86,51 @@ pub enum UiKeyCommand {
     Cancel,
     Edit(UiEditorAction),
     Invoke(UiCommandName),
-    Hydra(UiHydra),
+}
+
+/// Identity of a temporary Scheme-declared keymap.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct UiTransientId(String);
+
+impl UiTransientId {
+    pub fn new(value: &str) -> Result<Self, UiProjectionError> {
+        if value.is_empty()
+            || value.len() > 20
+            || !value
+                .bytes()
+                .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
+        {
+            return Err(UiProjectionError::Invalid("invalid transient identity"));
+        }
+        Ok(Self(value.to_owned()))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
 }
 
 /// A bounded transient keymap projected from the selected Scheme module.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct UiHydra {
-    pub hint: String,
-    pub warning_hint: String,
-    pub foreign: UiHydraForeign,
-    pub heads: Vec<UiHydraHead>,
+pub struct UiTransient {
+    pub id: UiTransientId,
+    pub hint: crate::UiElement,
+    pub warning_hint: crate::UiElement,
+    pub foreign: UiTransientForeign,
+    pub heads: Vec<UiTransientHead>,
 }
 
+/// Action for a key outside the active transient keymap.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum UiHydraForeign {
+pub enum UiTransientForeign {
     Exit,
     Warn,
     Run,
 }
 
+/// One key and command exposed by a temporary keymap.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct UiHydraHead {
+pub struct UiTransientHead {
     pub key: UiKeyToken,
     pub command: Option<UiCommandName>,
     pub label: String,
@@ -195,6 +219,30 @@ pub struct UiReviewChoice {
     pub description: String,
 }
 
+/// Scheme-selected Mini Buffer choices for a committed model tool request.
+/// These are presentation intents; the session journal validates the request
+/// identity and commits the actual review decision.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct UiToolReviewMenu {
+    pub prompt: String,
+    pub choices: Vec<UiToolReviewChoice>,
+}
+
+/// One visual action in the tool Ask Mini Buffer.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct UiToolReviewChoice {
+    pub decision: UiToolReviewDecision,
+    pub label: String,
+    pub description: String,
+}
+
+/// A finite UI selection that must be mapped to a matching journal request.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+pub enum UiToolReviewDecision {
+    ApproveOnce,
+    Reject,
+}
+
 impl UiCommand {
     pub fn accepts_arguments(&self) -> bool {
         self.arguments != UiCommandArguments::None
@@ -219,11 +267,12 @@ pub enum UiCommandCapability {
     Inspect,
     History,
     Workspace,
-    Context,
+    ContextBudget,
     Runtime,
     OpenMenu,
     SelectProfile,
     SelectBuffer,
+    EnterTransient,
     KillProcess,
     ToggleThinking,
     Clear,
@@ -330,6 +379,8 @@ pub struct UiLayoutPolicy {
     pub max_chatbox_rows: u16,
     pub max_command_rows: u16,
     pub transcript_policy: UiTranscriptPolicy,
+    /// Ordered frame regions, authored by the selected Scheme layout.
+    pub frame_tree: crate::UiElement,
 }
 
 /// Scheme-selected compact conversation presentation; raw messages remain in history.
@@ -406,6 +457,7 @@ pub struct UiWorkbench {
     pub focus: UiComponentId,
     pub frame: UiFrame,
     pub keymap: Vec<UiKeyBinding>,
+    pub transients: Vec<UiTransient>,
 }
 
 impl UiWorkbench {
@@ -489,8 +541,17 @@ impl UiWorkbench {
         }
         if self.model_label != next.model_label
             || self.session_label != next.session_label
-            || self.layout != next.layout
+            || if profile_change {
+                self.layout.message_frame != next.layout.message_frame
+                    || self.layout.command_frame != next.layout.command_frame
+                    || self.layout.max_chatbox_rows != next.layout.max_chatbox_rows
+                    || self.layout.max_command_rows != next.layout.max_command_rows
+                    || self.layout.frame_tree != next.layout.frame_tree
+            } else {
+                self.layout != next.layout
+            }
             || self.keymap != next.keymap
+            || self.transients != next.transients
             || if buffer_change {
                 self.frame.id != next.frame.id
                     || self.frame.selected_window != next.frame.selected_window

@@ -12,5 +12,5 @@
   (.cc (Record identity: [(Exactly 'marlin/ui-hydra)]
                catalog: [Object]
                command-entries: [(Fun HydraCommands <-)]
-               keymap-entries: [(Fun HydraEntries <-)])
+               entries: [(Fun HydraEntries <-)])
        identity: 'marlin/ui-hydra))
