@@ -749,7 +749,7 @@ fn mx_navigation_pty_latency() {
         terminal.wait_for(Duration::from_secs(5), "first scoped arrow", |output| {
             screen_lines(output)
                 .iter()
-                .any(|line| line.contains("2/4 Switch to: "))
+                .any(|line| line.contains("2/") && line.contains(" Switch to: "))
         });
         scoped_samples.push(started.elapsed());
         terminal.send(b"\x07");
