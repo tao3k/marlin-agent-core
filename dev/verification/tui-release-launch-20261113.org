@@ -204,3 +204,11 @@ collection error. The diagnostic had empty stdin and was stopped after 12 s;
 it captured no complete workbench frame. This narrows the earlier failure to
 an artifact/staging-specific event but does not establish its cause or satisfy
 the maintained source-matched startup gate.
+
+A further direct launch of the same binary in an allocated PTY rendered the
+80-column workbench with the Marlin modeline and minibuffer. =Ctrl-Q= exited
+normally and restored the terminal. The internal trace reported first frame
+at 584.366 ms in this one diagnostic launch. This establishes that the second
+size-profile artifact can reach a visible frame without a Gerbil install;
+the sample is not a cold-start distribution and does not replace the maintained
+source-matched pair, which the intervening staging change still prevents.
