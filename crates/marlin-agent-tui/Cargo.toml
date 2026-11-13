@@ -30,6 +30,10 @@ path = "tests/integration/launch.rs"
 name = "ui_mapping"
 harness = false
 
+[[bench]]
+name = "composer_hot_path"
+harness = false
+
 [features]
 default = ["linked-ui"]
 linked-ui = ["dep:gerbil-scheme-sys", "dep:gerbil-scheme-aot-build", "dep:marlin-agent-tooling", "gerbil-scheme/external-program", "marlin-agent-ui/linked-ui"]

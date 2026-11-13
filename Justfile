@@ -155,6 +155,10 @@ tui-performance-bench: tui-aot-debug tui-aot-build
   cargo test --locked -p marlin-agent-tui --test pty release_linked_fresh_copy_startup_pair -- --ignored --nocapture
   cargo test --locked -p marlin-agent-tui --test pty release_linked_ui_first_frame_without_a_gerbil_package_tree -- --ignored --nocapture
 
+# Isolate native draft movement and visible-row projection from VM startup.
+tui-composer-bench:
+  cargo bench --locked -p marlin-agent-tui --no-default-features --bench composer_hot_path
+
 # Diagnose whether the size-oriented profile improves a source-matched linked
 # TUI. Stage the Scheme programme first; comparing against a stale native
 # manifest can produce a misleading projection failure.

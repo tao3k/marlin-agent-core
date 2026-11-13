@@ -2499,3 +2499,18 @@ pointer-to-frame latency. The second interval is wide; the following
 minute's host load was 65.92 on 12 logical CPUs. Treat both as diagnostics
 and repeat a matched, source-fixed
 cohort after competing work subsides before setting a queue cost threshold.
+
+** Native Composer workload (2026-11-14)
+
+=just tui-composer-bench= runs the production Composer source in a separate
+Criterion target without the VM, terminal, gateway or startup path. The fixed
+=view-80x8= cohort uses 4 KiB, 64 KiB and 1 MiB ASCII drafts plus a repeated
+Unicode draft; the movement cohort pairs left and right at the cursor end.
+The separate workloads prevent a fast cursor movement result from hiding an
+expensive visible-row projection. =left= uses a reverse grapheme iterator, so
+its implementation alone does not establish a whole-prefix scan per move.
+The dev-profile Criterion =--test= run executed all seven workloads without
+fixture failure; this mode does not produce benchmark timing evidence.
+Current host load is too high for a performance conclusion; no timing from
+this source cut has been admitted. Run the benchmark from a stable tree under
+controlled load before changing the editor or setting a latency threshold.
