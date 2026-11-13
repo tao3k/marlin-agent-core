@@ -12,7 +12,7 @@ use super::{
 };
 
 #[test]
-fn live_tool_request_waits_for_review_without_entering_answer_history() {
+fn live_tool_request_retains_provider_context_while_waiting_for_review() {
     use marlin_agent_protocol::{ModelToolCall, ModelToolCallId, ModelToolName};
 
     let runtime = tokio::runtime::Runtime::new().unwrap();
@@ -43,7 +43,9 @@ fn live_tool_request_waits_for_review_without_entering_answer_history() {
     );
     app.receive(id, Ok(ModelStreamEvent::ToolRequested { response }));
     assert!(app.pending.is_none());
-    assert!(app.history.is_empty());
+    assert_eq!(app.history.len(), 2);
+    assert_eq!(app.history[0].content, "inspect");
+    assert_eq!(app.history[1].tool_calls.len(), 1);
     app.composer.insert_text("second");
     app.submit(&gateway, &runtime, &tx);
     assert_eq!(app.composer.text(), "second");
@@ -313,7 +315,8 @@ fn restored_answer_suffix_merges_with_last_text_checkpoint() {
     install_test_commands(&mut app);
     app.restore(vec![ReplayTurn {
         id: serde_json::from_str("1").unwrap(),
-        prompt: "prompt".into(),
+        prompt: Some("prompt".into()),
+        tool_results: None,
         thinking: String::new(),
         checkpoint_spans: vec![ConversationCheckpointSpan {
             channel: ConversationCheckpointChannel::Text,
@@ -344,7 +347,8 @@ fn recorded_thinking_is_visible_and_blocks_unverified_continuation() {
     install_test_commands(&mut app);
     app.restore(vec![ReplayTurn {
         id: serde_json::from_str("1").unwrap(),
-        prompt: "question".into(),
+        prompt: Some("question".into()),
+        tool_results: None,
         thinking: "reasoning prefix".into(),
         checkpoint_spans: vec![marlin_agent_sessions::ConversationCheckpointSpan {
             channel: marlin_agent_sessions::ConversationCheckpointChannel::Thinking,
@@ -384,7 +388,8 @@ fn restored_session_reports_incompatible_model_route() {
     });
     app.restore(vec![ReplayTurn {
         id: serde_json::from_str("1").unwrap(),
-        prompt: "prompt".into(),
+        prompt: Some("prompt".into()),
+        tool_results: None,
         thinking: String::new(),
         checkpoint_spans: Vec::new(),
         outcome: ReplayOutcome::Completed(answer),
@@ -688,7 +693,8 @@ fn legacy_failure_blocks_submission_without_losing_draft() {
     install_test_commands(&mut app);
     app.restore(vec![ReplayTurn {
         id,
-        prompt: "previous".into(),
+        prompt: Some("previous".into()),
+        tool_results: None,
         thinking: String::new(),
         checkpoint_spans: Vec::new(),
         outcome: ReplayOutcome::LegacyFailed {

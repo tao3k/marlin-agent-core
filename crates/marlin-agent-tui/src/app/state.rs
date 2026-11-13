@@ -26,7 +26,7 @@ pub(crate) const MAX_TURN_SEGMENTS: usize =
 pub(crate) struct PendingTurn {
     pub(super) id: u64,
     pub(super) task: marlin_agent_runtime::RuntimeTask<()>,
-    pub(super) prompt: String,
+    pub(super) prompt: Option<String>,
     pub(super) output: Option<usize>,
     pub(super) output_segments: Vec<usize>,
     pub(super) thinking: Option<usize>,
@@ -704,7 +704,9 @@ impl App {
     pub(crate) fn restore(&mut self, turns: Vec<ReplayTurn>) {
         self.persistent = true;
         for turn in turns {
-            self.push_prompt(turn.prompt.clone());
+            if let Some(prompt) = &turn.prompt {
+                self.push_prompt(prompt.clone());
+            }
             let Some(answer_end) = self.restore_checkpoints(&turn) else {
                 self.needs_replay = true;
                 self.publish_message(MessageEvent {
@@ -727,6 +729,7 @@ impl App {
                 .is_some_and(|span| span.channel == ConversationCheckpointChannel::Text);
             match turn.outcome {
                 ReplayOutcome::Completed(message) => {
+                    self.pending_tool_request = false;
                     self.restore_answer_suffix(
                         "Assistant",
                         &message.content[answer_end..],
@@ -735,26 +738,43 @@ impl App {
                     );
                     if self.history_position.is_none() {
                         let history = Arc::make_mut(&mut self.history);
-                        history.push(user_gateway_message(turn.prompt));
+                        if let Some(prompt) = turn.prompt {
+                            history.push(user_gateway_message(prompt));
+                        }
                         history.push(message);
                     }
                 }
                 ReplayOutcome::ToolRequested(message) => {
                     self.pending_tool_request = true;
+                    if self.history_position.is_none() {
+                        let history = Arc::make_mut(&mut self.history);
+                        if let Some(prompt) = turn.prompt {
+                            history.push(user_gateway_message(prompt));
+                        }
+                        history.push(message.clone());
+                        if let Some(receipt) = &turn.tool_results {
+                            history.extend(receipt.gateway_messages());
+                        }
+                    }
                     self.restore_answer_suffix(
                         "Assistant",
                         &message.content[answer_end..],
                         merge_answer,
                         false,
                     );
+                    let detail = if turn.tool_results.is_some() {
+                        "Committed tool results await provider continuation.".to_owned()
+                    } else {
+                        format!(
+                            "The model requested {} tool(s). Execution and further turns await authorization.",
+                            message.tool_calls.len(),
+                        )
+                    };
                     self.publish_message(MessageEvent {
                         source: MessageSource::Gateway,
                         severity: MessageSeverity::Warning,
-                        summary: "Tool review pending",
-                        detail: &format!(
-                            "The model requested {} tool(s). Execution and further turns await authorization.",
-                            message.tool_calls.len(),
-                        ),
+                        summary: if turn.tool_results.is_some() { "Tool continuation pending" } else { "Tool review pending" },
+                        detail: &detail,
                     });
                 }
                 ReplayOutcome::Failed {

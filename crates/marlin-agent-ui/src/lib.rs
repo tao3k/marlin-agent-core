@@ -19,9 +19,7 @@ mod runtime;
 
 /// The generated Marlin client and versioned Session schema.
 #[cfg(feature = "grpc")]
-pub mod grpc {
-    pub use marlin_agent_app_server::v1;
-}
+pub mod grpc;
 
 #[cfg(feature = "scheme-ui")]
 pub use element::{

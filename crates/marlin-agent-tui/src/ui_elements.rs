@@ -10,12 +10,12 @@ use ratatui::{
     layout::Rect,
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::Paragraph,
+    widgets::{Block, Borders, Paragraph},
 };
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
-fn tone_color(tone: UiTone, theme: &UiTheme) -> Color {
+pub(crate) fn tone_color(tone: UiTone, theme: &UiTheme) -> Color {
     let color = match tone {
         UiTone::Normal => theme.ink,
         UiTone::Accent => theme.accent,
@@ -99,6 +99,7 @@ fn group_demand(
         UiElement::Choice { .. } => {
             group_demand(resolve_choice(element, facts), vertical, extent, facts)
         }
+        UiElement::Region { child, .. } => group_demand(child, vertical, extent, facts),
         UiElement::Rows(children) if vertical => {
             children.iter().fold(Demand::default(), |sum, child| {
                 let next = group_demand(child, vertical, extent, facts);
@@ -205,7 +206,10 @@ pub fn layout_regions_with_facts(
             });
             layout_regions_with_facts(child, area, extent, regions, facts);
         }
-        UiElement::Text(_) | UiElement::Template { .. } => {}
+        UiElement::Text(_)
+        | UiElement::Slot(_)
+        | UiElement::Template { .. }
+        | UiElement::Input { .. } => {}
         UiElement::Choice { .. } => {
             layout_regions_with_facts(resolve_choice(element, facts), area, extent, regions, facts);
         }
@@ -401,6 +405,94 @@ pub struct UiRenderInputs<'a> {
     pub bindings: &'a [(&'a str, &'a str)],
 }
 
+/// Render an admitted input component using a host-provided editable value.
+pub fn render_input(
+    frame: &mut ratatui::Frame<'_>,
+    area: Rect,
+    element: &UiElement,
+    inputs: &UiRenderInputs<'_>,
+    show_cursor: bool,
+    value: impl FnOnce(u16, u16) -> Option<(Vec<String>, (u16, u16))>,
+) {
+    let element = resolve_choice(element, inputs.facts);
+    let UiElement::Input {
+        bordered,
+        background,
+        prefix,
+        title,
+        active,
+    } = element
+    else {
+        return;
+    };
+    let area = area.intersection(frame.area());
+    if area.is_empty() {
+        return;
+    }
+    let binding = |name: &UiComponentId| {
+        inputs
+            .bindings
+            .iter()
+            .find_map(|(key, value)| (*key == name.as_str()).then_some(*value))
+            .unwrap_or("")
+    };
+    let background = match background {
+        UiBackground::None => None,
+        UiBackground::Canvas => Some(Color::Rgb(
+            inputs.theme.canvas.red,
+            inputs.theme.canvas.green,
+            inputs.theme.canvas.blue,
+        )),
+        UiBackground::Bar => Some(Color::Rgb(
+            inputs.theme.bar.red,
+            inputs.theme.bar.green,
+            inputs.theme.bar.blue,
+        )),
+        UiBackground::Tone(tone) => Some(tone_color(*tone, inputs.theme)),
+    };
+    let style = background.map_or(Style::default(), |color| {
+        Style::default()
+            .bg(color)
+            .fg(tone_color(UiTone::Normal, inputs.theme))
+    });
+    let mut content = area;
+    if *bordered {
+        let title = title.as_ref().map(&binding).unwrap_or("");
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .title(terminal_text(title).into_owned())
+            .border_style(if (inputs.facts)(active) {
+                Style::default().fg(tone_color(UiTone::Info, inputs.theme))
+            } else {
+                Style::default()
+            });
+        content = block.inner(area);
+        frame.render_widget(block, area);
+    } else {
+        frame.render_widget(Paragraph::new("").style(style), area);
+    }
+    if let Some(prefix) = prefix {
+        let prefix = terminal_text(binding(prefix));
+        let width = UnicodeWidthStr::width(prefix.as_ref()).min(usize::from(content.width)) as u16;
+        frame.render_widget(
+            Paragraph::new(prefix.into_owned())
+                .style(style.fg(tone_color(UiTone::Accent, inputs.theme))),
+            content,
+        );
+        content.x = content.x.saturating_add(width);
+        content.width = content.width.saturating_sub(width);
+    }
+    if content.is_empty() {
+        return;
+    }
+    if let Some((rows, cursor)) = value(content.width, content.height) {
+        frame.render_widget(Paragraph::new(rows.join("\n")).style(style), content);
+        if show_cursor && cursor.0 < content.width && cursor.1 < content.height {
+            frame.set_cursor_position((content.x + cursor.0, content.y + cursor.1));
+        }
+    }
+}
+
 /// Paint a tree with named facts and bindings shared by every selected branch.
 pub fn render_with_facts(
     frame: &mut ratatui::Frame<'_>,
@@ -426,6 +518,7 @@ fn render_inner(
     }
     match element {
         UiElement::Sized { child, .. } => render_inner(frame, area, child, regions, inputs, skip),
+        UiElement::Input { .. } | UiElement::Slot(_) => {}
         UiElement::Choice { .. } => {
             render_inner(
                 frame,

@@ -28,6 +28,33 @@ pub(crate) enum UiKeyAction {
     Unhandled,
 }
 
+/// Native source bindings available to the Scheme-selected main view.
+#[derive(Clone, Copy)]
+pub(crate) enum MainSource {
+    Review,
+    Messages,
+    Static,
+    Runtime,
+    Extension,
+    Workspace,
+    Conversation,
+}
+
+impl MainSource {
+    pub(crate) fn from_id(id: &marlin_agent_ui::UiComponentId) -> Option<Self> {
+        match id.as_str() {
+            "review" => Some(Self::Review),
+            "messages" => Some(Self::Messages),
+            "static" => Some(Self::Static),
+            "runtime" => Some(Self::Runtime),
+            "extension" => Some(Self::Extension),
+            "workspace" => Some(Self::Workspace),
+            "conversation" => Some(Self::Conversation),
+            _ => None,
+        }
+    }
+}
+
 pub(crate) struct UiHost<'runtime> {
     module: UiModule<'runtime>,
     session: UiNativeSession<'runtime>,
@@ -419,26 +446,51 @@ fn complete_command(
 }
 
 fn admit_terminal_view(view: &UiWorkbench) -> Result<(), UiProjectionError> {
+    fn main_presentation(element: &marlin_agent_ui::UiElement) -> bool {
+        match element {
+            marlin_agent_ui::UiElement::Slot(id) => MainSource::from_id(id).is_some(),
+            marlin_agent_ui::UiElement::Choice { cases, fallback } => {
+                cases.iter().all(|(_, item)| main_presentation(item)) && main_presentation(fallback)
+            }
+            _ => false,
+        }
+    }
+    fn input_presentation(element: &marlin_agent_ui::UiElement) -> bool {
+        match element {
+            marlin_agent_ui::UiElement::Input { .. } => true,
+            marlin_agent_ui::UiElement::Choice { cases, fallback } => {
+                cases.iter().all(|(_, item)| input_presentation(item))
+                    && input_presentation(fallback)
+            }
+            _ => false,
+        }
+    }
     fn collect_slots<'a>(
         element: &'a marlin_agent_ui::UiElement,
         slots: &mut HashSet<&'a str>,
+        within_region: bool,
     ) -> bool {
         match element {
-            marlin_agent_ui::UiElement::Region { id, .. } => slots.insert(id.as_str()),
+            marlin_agent_ui::UiElement::Region { id, child, .. } => {
+                slots.insert(id.as_str()) && collect_slots(child, slots, true)
+            }
             marlin_agent_ui::UiElement::Rows(children)
-            | marlin_agent_ui::UiElement::Columns(children) => {
-                children.iter().all(|child| collect_slots(child, slots))
+            | marlin_agent_ui::UiElement::Columns(children) => children
+                .iter()
+                .all(|child| collect_slots(child, slots, within_region)),
+            marlin_agent_ui::UiElement::Sized { child, .. } => {
+                collect_slots(child, slots, within_region)
             }
-            marlin_agent_ui::UiElement::Sized { child, .. } => collect_slots(child, slots),
             // The terminal's required slots must exist independent of facts.
-            marlin_agent_ui::UiElement::Choice { .. } => false,
-            marlin_agent_ui::UiElement::Text(_) | marlin_agent_ui::UiElement::Template { .. } => {
-                true
-            }
+            marlin_agent_ui::UiElement::Choice { .. } => within_region,
+            marlin_agent_ui::UiElement::Text(_)
+            | marlin_agent_ui::UiElement::Slot(_)
+            | marlin_agent_ui::UiElement::Template { .. }
+            | marlin_agent_ui::UiElement::Input { .. } => true,
         }
     }
     let mut slots = HashSet::new();
-    if !collect_slots(&view.layout.frame_tree, &mut slots)
+    if !collect_slots(&view.layout.frame_tree, &mut slots, false)
         || [
             "transcript",
             "extensions",
@@ -446,6 +498,7 @@ fn admit_terminal_view(view: &UiWorkbench) -> Result<(), UiProjectionError> {
             "editor",
             "candidates",
             "minibuffer",
+            "minibuffer-hover",
         ]
         .iter()
         .any(|name| !slots.contains(name))
@@ -457,6 +510,22 @@ fn admit_terminal_view(view: &UiWorkbench) -> Result<(), UiProjectionError> {
             && templates.iter().all(|item| matches!(item, marlin_agent_ui::UiElement::Template { .. })))
     {
         return Err(UiProjectionError::Invalid("invalid candidate presentation"));
+    }
+    if !view
+        .layout
+        .frame_tree
+        .region_child("editor")
+        .is_some_and(input_presentation)
+    {
+        return Err(UiProjectionError::Invalid("invalid input presentation"));
+    }
+    if !view
+        .layout
+        .frame_tree
+        .region_child("transcript")
+        .is_some_and(main_presentation)
+    {
+        return Err(UiProjectionError::Invalid("invalid main presentation"));
     }
     let admitted_command = |name: &UiCommandName| {
         view.commands().iter().any(|command| {

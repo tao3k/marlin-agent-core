@@ -37,7 +37,7 @@ impl ConversationCancellationEvidence {
 
 #[derive(Debug)]
 pub enum ConversationEvent {
-    Started(ConversationTurnStart),
+    Started(ConversationTurnSource),
     Checkpoint {
         channel: ConversationCheckpointChannel,
         text: String,
@@ -231,7 +231,8 @@ impl<S: SessionEventStore> ConversationEventReader<S> {
             {
                 ConversationTailState::ToolContinuationPending
             }
-            START_KIND if *event_id == start && header.causality_parent_event_id.is_none() => {
+            START_KIND | TOOL_CONTINUATION_START_KIND
+                if *event_id == start && header.causality_parent_event_id.is_none() => {
                 ConversationTailState::Unfinished
             }
             kind if header.causality_parent_event_id.as_ref() == Some(&start) => match kind {
@@ -297,7 +298,7 @@ impl<S: SessionEventStore> ConversationEventReader<S> {
             return Err(invalid());
         };
         let expected_after = id.get().checked_sub(1).ok_or_else(invalid)?;
-        if start.user_text != user_text || expected_after != after_turn {
+        if start.user_text() != Some(user_text) || expected_after != after_turn {
             return Err(ConversationJournalError::SubmissionConflict);
         }
         Ok(Some(id))
@@ -402,7 +403,20 @@ pub(super) fn decode_event(
         if start.user_text.trim().is_empty() {
             return Err(invalid());
         }
-        return Ok(ConversationEvent::Started(start));
+        return Ok(ConversationEvent::Started(ConversationTurnSource::User(start)));
+    }
+    if record.event_kind == TOOL_CONTINUATION_START_KIND
+        && record.event_id == start_id
+        && record.causality_parent_event_id.is_none()
+    {
+        let start: ConversationToolContinuationStart = serde_json::from_slice(&record.body)?;
+        start.endpoint.validate_contract().map_err(|error| {
+            ConversationJournalError::InvalidEvent(error.to_string())
+        })?;
+        if start.source.session() != &record.session_id || start.source.turn() >= id {
+            return Err(invalid());
+        }
+        return Ok(ConversationEvent::Started(ConversationTurnSource::ToolResults(start)));
     }
     if record.event_kind == tool_review::REVIEW_KIND
         && record.event_id == id.review_event_id()?

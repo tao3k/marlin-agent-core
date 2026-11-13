@@ -4,7 +4,7 @@
 
 //! Durable review and pre-effect claim for a pending model tool batch.
 
-use marlin_agent_protocol::{ModelToolCall, ModelToolCallId};
+use marlin_agent_protocol::{ModelGatewayMessage, ModelToolCall, ModelToolCallId, tool_gateway_message};
 use marlin_agent_storage::{SessionEventRecord, SessionEventStore, SessionId};
 use serde::{Deserialize, Serialize};
 
@@ -125,6 +125,20 @@ impl ConversationToolResultsReceipt {
 
     pub fn results(&self) -> &[ConversationToolCallResult] {
         &self.results
+    }
+
+    /// Provider-neutral correlated messages in the committed call order.
+    pub fn gateway_messages(&self) -> Vec<ModelGatewayMessage> {
+        self.results
+            .iter()
+            .map(|result| {
+                let content = match &result.outcome {
+                    ConversationToolResultOutcome::Completed(output) => output.clone(),
+                    ConversationToolResultOutcome::Failed(error) => format!("Tool error: {error}"),
+                };
+                tool_gateway_message(result.id.clone(), content)
+            })
+            .collect()
     }
 }
 

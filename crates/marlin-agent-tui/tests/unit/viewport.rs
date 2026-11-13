@@ -6,7 +6,7 @@ use super::wrap::visit_rows_counted;
 use super::{
     app::safe_text,
     viewport::{
-        ScrollAnchor, Transcript, TranscriptViewportCache, transcript_from_top,
+        ScrollAnchor, Transcript, TranscriptViewport, TranscriptViewportCache, transcript_from_top,
         transcript_viewport, transcript_viewport_reference,
     },
 };
@@ -18,6 +18,22 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Paragraph, Widget, Wrap},
 };
+
+trait TestRender {
+    fn render(&self, area: Rect, buffer: &mut Buffer);
+}
+
+impl TestRender for TranscriptViewport {
+    fn render(&self, area: Rect, buffer: &mut Buffer) {
+        self.render_with_role_style(
+            area,
+            buffer,
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        );
+    }
+}
 
 fn full_reference(
     entries: &[(String, String)],
@@ -99,6 +115,25 @@ fn viewport_cache_invalidates_for_transcript_and_view_changes() {
     let another = Transcript::new(vec![("Other".into(), "different".into())]);
     check(&another, true, 3, 2, 2);
     assert_eq!(cache.build_count(), 9);
+}
+
+#[test]
+fn theme_changes_restyle_cached_roles_without_rebuilding_rows() {
+    let transcript = Transcript::new(vec![("Role".into(), "content".into())]);
+    let mut cache = TranscriptViewportCache::default();
+    let area = Rect::new(0, 0, 20, 3);
+    let mut first = Buffer::empty(area);
+    let mut second = Buffer::empty(area);
+    cache.with_view(&transcript, false, 20, 3, 0, |view| {
+        view.render_with_role_style(area, &mut first, Style::default().fg(Color::Red));
+    });
+    cache.with_view(&transcript, false, 20, 3, 0, |view| {
+        view.render_with_role_style(area, &mut second, Style::default().fg(Color::Blue));
+    });
+    assert_eq!(cache.build_count(), 1);
+    assert_eq!(first[(0, 0)].symbol(), second[(0, 0)].symbol());
+    assert_eq!(first[(0, 0)].fg, Color::Red);
+    assert_eq!(second[(0, 0)].fg, Color::Blue);
 }
 
 #[test]

@@ -58,7 +58,6 @@ pub(super) fn test_layout() -> UiLayoutPolicy {
             fixed_editor_rows: 0,
             footer_rows: 1,
             extensions: true,
-            bordered: true,
             prompt: " Message ".into(),
         },
         command_frame: UiFrameSpec {
@@ -66,13 +65,12 @@ pub(super) fn test_layout() -> UiLayoutPolicy {
             fixed_editor_rows: 1,
             footer_rows: 0,
             extensions: false,
-            bordered: false,
             prompt: " M-x ".into(),
         },
         max_chatbox_rows: 10,
         max_command_rows: 32,
-        frame_tree: marlin_agent_ui::UiElement::Rows(
-            [
+        frame_tree: {
+            let mut slots: Vec<_> = [
                 "transcript",
                 "extensions",
                 "modeline",
@@ -90,8 +88,58 @@ pub(super) fn test_layout() -> UiLayoutPolicy {
                 child: Box::new(marlin_agent_ui::UiElement::Region {
                     id: UiComponentId::new(name).unwrap(),
                     scrollable: matches!(name, "transcript" | "candidates"),
-                    child: Box::new(if name == "candidates" {
+                    child: Box::new(if name == "transcript" {
+                        UiElement::Choice {
+                            cases: [
+                                "review",
+                                "messages",
+                                "static",
+                                "runtime",
+                                "extension",
+                                "workspace",
+                            ]
+                            .into_iter()
+                            .map(|name| {
+                                (
+                                    UiComponentId::new(name).unwrap(),
+                                    UiElement::Slot(UiComponentId::new(name).unwrap()),
+                                )
+                            })
+                            .collect(),
+                            fallback: Box::new(UiElement::Slot(
+                                UiComponentId::new("conversation").unwrap(),
+                            )),
+                        }
+                    } else if name == "candidates" {
                         UiElement::Rows(vec![candidate(true), candidate(false)])
+                    } else if name == "editor" {
+                        let input =
+                            |bordered, background, prefix: Option<&str>, title: Option<&str>| {
+                                UiElement::Input {
+                                    bordered,
+                                    background,
+                                    prefix: prefix.map(|name| UiComponentId::new(name).unwrap()),
+                                    title: title.map(|name| UiComponentId::new(name).unwrap()),
+                                    active: UiComponentId::new("focused").unwrap(),
+                                }
+                            };
+                        UiElement::Choice {
+                            cases: vec![(
+                                UiComponentId::new("command").unwrap(),
+                                input(
+                                    false,
+                                    marlin_agent_ui::UiBackground::Bar,
+                                    Some("prompt"),
+                                    None,
+                                ),
+                            )],
+                            fallback: Box::new(input(
+                                true,
+                                marlin_agent_ui::UiBackground::None,
+                                None,
+                                Some("title"),
+                            )),
+                        }
                     } else if name == "minibuffer" {
                         UiElement::Choice {
                             cases: ["searching", "search-match", "search-no-match"]
@@ -138,8 +186,15 @@ pub(super) fn test_layout() -> UiLayoutPolicy {
                     }),
                 }),
             })
-            .collect(),
-        ),
+            .collect();
+            let minibuffer = slots.split_off(3);
+            slots.push(UiElement::Region {
+                id: UiComponentId::new("minibuffer-hover").unwrap(),
+                scrollable: false,
+                child: Box::new(UiElement::Rows(minibuffer)),
+            });
+            UiElement::Rows(slots)
+        },
         // These are synthetic host values, not copies of Scheme presentation.
         transcript_policy: UiTranscriptPolicy {
             default_collapsed: true,
@@ -147,6 +202,8 @@ pub(super) fn test_layout() -> UiLayoutPolicy {
             assistant_role: String::new(),
             thinking_collapsed_role: "closed".into(),
             thinking_expanded_role: "open".into(),
+            role_tone: marlin_agent_ui::UiTone::Info,
+            role_bold: true,
         },
     }
 }

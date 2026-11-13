@@ -11,10 +11,13 @@
   thinking-collapsed: #t
   user-prefix: "› "
   assistant-role: ""
+  role-tone: 'info
+  role-bold: #t
   thinking-collapsed-role: "▸ Thought"
   thinking-expanded-role: "▾ Thought")
 
 (.def (UiTranscriptPi. @ UiTranscriptDoom.)
+  role-tone: 'accent
   thinking-collapsed-role: "⋯"
   thinking-expanded-role: "⋯ Thought")
 

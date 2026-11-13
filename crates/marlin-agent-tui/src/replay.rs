@@ -9,7 +9,8 @@ use std::{collections::VecDeque, error::Error, fmt, mem::size_of};
 use marlin_agent_protocol::{ModelGatewayMessage, ModelGatewayMessageRole};
 use marlin_agent_sessions::{
     ConversationCheckpointSpan, ConversationJournal, ConversationJournalError, ConversationTurn,
-    ConversationTurnId, ConversationTurnOutcome, ConversationUncertaintyReason,
+    ConversationToolResultsReceipt, ConversationTurnId, ConversationTurnOutcome,
+    ConversationUncertaintyReason,
 };
 use marlin_agent_storage::{AgentId, ProjectId, SessionEventStore, SessionId};
 
@@ -35,7 +36,8 @@ impl Default for ReplayLimits {
 
 pub(crate) struct ReplayTurn {
     pub(crate) id: ConversationTurnId,
-    pub(crate) prompt: String,
+    pub(crate) prompt: Option<String>,
+    pub(crate) tool_results: Option<ConversationToolResultsReceipt>,
     pub(crate) thinking: String,
     pub(crate) checkpoint_spans: Vec<ConversationCheckpointSpan>,
     pub(crate) outcome: ReplayOutcome,
@@ -101,7 +103,15 @@ impl ReplayProjection {
 
 fn projected_bytes(turn: &ConversationTurn) -> Option<usize> {
     let bytes = size_of::<ReplayTurn>()
-        .saturating_add(turn.start.user_text.len())
+        .saturating_add(turn.start.user_text().map_or(0, str::len))
+        .saturating_add(turn.tool_results.as_ref().map_or(0, |receipt| {
+            receipt.results().iter().fold(0usize, |sum, result| {
+                sum.saturating_add(result.id.as_str().len()).saturating_add(match &result.outcome {
+                    marlin_agent_sessions::ConversationToolResultOutcome::Completed(text)
+                    | marlin_agent_sessions::ConversationToolResultOutcome::Failed(text) => text.len(),
+                })
+            })
+        }))
         .saturating_add(turn.partial_thinking.len())
         .saturating_add(
             turn.checkpoint_spans
@@ -182,7 +192,8 @@ fn project_turn(turn: &ConversationTurn) -> ReplayTurn {
     };
     ReplayTurn {
         id: turn.id,
-        prompt: turn.start.user_text.clone(),
+        prompt: turn.start.user_text().map(str::to_owned),
+        tool_results: turn.tool_results.clone(),
         thinking: turn.partial_thinking.clone(),
         checkpoint_spans: turn.checkpoint_spans.clone(),
         outcome,
@@ -246,7 +257,8 @@ impl HistoryProjection {
         let item = if omitted {
             ReplayTurn {
                 id: turn.id,
-                prompt: OMITTED_PROMPT.into(),
+                prompt: Some(OMITTED_PROMPT.into()),
+                tool_results: None,
                 thinking: String::new(),
                 checkpoint_spans: Vec::new(),
                 outcome: ReplayOutcome::Omitted,

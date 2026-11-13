@@ -11,7 +11,6 @@ fn test_layout() -> UiLayoutPolicy {
             fixed_editor_rows: 0,
             footer_rows: 1,
             extensions: true,
-            bordered: true,
             prompt: " Message ".into(),
         },
         command_frame: marlin_agent_ui::UiFrameSpec {
@@ -19,7 +18,6 @@ fn test_layout() -> UiLayoutPolicy {
             fixed_editor_rows: 1,
             footer_rows: 0,
             extensions: false,
-            bordered: false,
             prompt: " M-x ".into(),
         },
         max_chatbox_rows: 10,
@@ -47,6 +45,8 @@ fn test_layout() -> UiLayoutPolicy {
             assistant_role: String::new(),
             thinking_collapsed_role: "closed".into(),
             thinking_expanded_role: "open".into(),
+            role_tone: marlin_agent_ui::UiTone::Info,
+            role_bold: true,
         },
     }
 }

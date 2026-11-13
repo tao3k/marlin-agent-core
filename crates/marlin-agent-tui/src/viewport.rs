@@ -15,7 +15,7 @@ use std::{
 use ratatui::{
     buffer::{Buffer, CellWidth},
     layout::Rect,
-    style::{Color, Modifier, Style},
+    style::Style,
     text::{Line, Span},
 };
 
@@ -653,8 +653,21 @@ impl TranscriptViewportCache {
 }
 
 pub(crate) struct TranscriptViewport {
-    pub(crate) lines: Vec<Line<'static>>,
+    pub(crate) lines: Vec<TranscriptLine>,
     pub(crate) scroll_up: usize,
+}
+
+/// Cached geometry records semantic roles without baking in a theme.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct TranscriptLine {
+    line: Line<'static>,
+    role: bool,
+}
+
+impl std::fmt::Display for TranscriptLine {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.line.fmt(f)
+    }
 }
 
 impl TranscriptViewport {
@@ -662,14 +675,15 @@ impl TranscriptViewport {
         let mut bytes = self
             .lines
             .capacity()
-            .saturating_mul(size_of::<Line<'static>>());
+            .saturating_mul(size_of::<TranscriptLine>());
         for line in &self.lines {
             bytes = bytes.saturating_add(
-                line.spans
+                line.line
+                    .spans
                     .capacity()
                     .saturating_mul(size_of::<Span<'static>>()),
             );
-            for span in &line.spans {
+            for span in &line.line.spans {
                 if let Cow::Owned(text) = &span.content {
                     bytes = bytes.saturating_add(text.capacity());
                 }
@@ -678,11 +692,21 @@ impl TranscriptViewport {
         bytes
     }
 
-    pub(crate) fn render(&self, area: Rect, buffer: &mut Buffer) {
+    pub(crate) fn render_with_role_style(
+        &self,
+        area: Rect,
+        buffer: &mut Buffer,
+        role_style: Style,
+    ) {
         let area = area.intersection(buffer.area);
         for (row, line) in self.lines.iter().take(usize::from(area.height)).enumerate() {
             let mut x = 0u16;
-            for grapheme in line.styled_graphemes(Style::default()) {
+            let style = if line.role {
+                role_style
+            } else {
+                Style::default()
+            };
+            for grapheme in line.line.styled_graphemes(style) {
                 let width = grapheme.symbol.cell_width();
                 if width == 0 {
                     continue;
@@ -703,12 +727,12 @@ struct ReverseWindow {
     width: u16,
     needed: usize,
     skip: usize,
-    lines: Vec<Line<'static>>,
+    lines: Vec<TranscriptLine>,
     fast_tail: bool,
 }
 
 impl ReverseWindow {
-    fn add(&mut self, text: &str, style: Style) -> bool {
+    fn add(&mut self, text: &str, role: bool) -> bool {
         // Streaming answers often contain a very long line. At the live tail,
         // keep only the visible row slices while scanning once. Deep scrolling
         // retains the two-pass path so memory does not grow with scroll depth.
@@ -747,11 +771,11 @@ impl ReverseWindow {
             });
             if !exceeded {
                 self.needed -= rows.len();
-                self.lines.extend(
-                    rows.into_iter()
-                        .rev()
-                        .map(|row| Line::styled(row.concat(), style)),
-                );
+                self.lines
+                    .extend(rows.into_iter().rev().map(|row| TranscriptLine {
+                        line: Line::raw(row.concat()),
+                        role,
+                    }));
                 return self.needed == 0;
             }
         }
@@ -770,7 +794,10 @@ impl ReverseWindow {
         let mut index = 0usize;
         visit_rows(text, self.width, |row| {
             if index >= start && index < end {
-                selected.push(Line::styled(row.concat(), style));
+                selected.push(TranscriptLine {
+                    line: Line::raw(row.concat()),
+                    role,
+                });
             }
             index += 1;
             index < end
@@ -827,20 +854,17 @@ fn transcript_viewport_impl(
         lines: Vec::new(),
         fast_tail,
     };
-    let role_style = Style::default()
-        .fg(Color::Cyan)
-        .add_modifier(Modifier::BOLD);
-    if !pending || !window.add("Waiting for gateway…", Style::default()) {
+    if !pending || !window.add("Waiting for gateway…", false) {
         'entries: for (role, content) in transcript.iter().rev() {
-            if window.add("", Style::default()) {
+            if window.add("", false) {
                 break;
             }
             for line in content.split_terminator('\n').rev() {
-                if window.add(line, Style::default()) {
+                if window.add(line, false) {
                     break 'entries;
                 }
             }
-            if !role.is_empty() && window.add(role, role_style) {
+            if !role.is_empty() && window.add(role, true) {
                 break;
             }
         }
@@ -884,38 +908,38 @@ pub(crate) fn transcript_from_top(
     let mut lines = Vec::new();
     let mut seen = 0usize;
     let end = scroll_from_top.saturating_add(usize::from(height));
-    let mut add = |text: &str, style: Style| {
+    let mut add = |text: &str, role: bool| {
         visit_rows(text, width, |row| {
             if seen >= scroll_from_top {
-                lines.push(Line::styled(row.concat(), style));
+                lines.push(TranscriptLine {
+                    line: Line::raw(row.concat()),
+                    role,
+                });
             }
             seen += 1;
             seen < end
         });
         seen >= end
     };
-    let role_style = Style::default()
-        .fg(Color::Cyan)
-        .add_modifier(Modifier::BOLD);
     let mut filled = false;
     'entries: for (role, content) in transcript {
-        if !role.is_empty() && add(role, role_style) {
+        if !role.is_empty() && add(role, true) {
             filled = true;
             break;
         }
         for line in content.split_terminator('\n') {
-            if add(line, Style::default()) {
+            if add(line, false) {
                 filled = true;
                 break 'entries;
             }
         }
-        if add("", Style::default()) {
+        if add("", false) {
             filled = true;
             break;
         }
     }
     if pending && !filled {
-        add("Waiting for gateway…", Style::default());
+        add("Waiting for gateway…", false);
     }
     let max_scroll = seen.saturating_sub(usize::from(height));
     if !filled && scroll_from_top > max_scroll {

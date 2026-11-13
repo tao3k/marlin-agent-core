@@ -5,7 +5,10 @@
 //! Scheme-selected Mini Buffer Ask bound to one durable tool request.
 
 use super::runner::publish_error;
-use super::{App, MessageEvent, MessageSeverity, MessageSource, Transcript, UiHost};
+use super::{
+    App, MessageEvent, MessageSeverity, MessageSource, ModelStreamingGateway, ReplySender,
+    Transcript, UiHost,
+};
 use marlin_agent_sessions::{
     ConversationToolReviewDecision, ConversationToolReviewRequest, ConversationToolReviewStatus,
 };
@@ -85,8 +88,27 @@ pub(super) fn submit_tool_review(app: &mut App, runtime: &tokio::runtime::Runtim
     }));
 }
 
-pub(super) fn poll_tool_review(app: &mut App) -> bool {
+pub(super) fn poll_tool_review<G: ModelStreamingGateway + Clone>(
+    app: &mut App,
+    gateway: &G,
+    runtime: &tokio::runtime::Runtime,
+    tx: &ReplySender,
+) -> bool {
     let Some(receiver) = app.tool_review_inflight.as_mut() else {
+        if app.pending_tool_request
+            && app.pending.is_none()
+            && !app.tool_review_suppressed
+            && let Some(receipt) = app
+                .tool_review
+                .as_ref()
+                .and_then(|review| review.try_pending())
+                .filter(|pending| pending.status() == ConversationToolReviewStatus::ResultsCommitted)
+                .and_then(|pending| pending.results_receipt().cloned())
+        {
+            app.tool_review_suppressed = true;
+            app.continue_tool_turn(gateway, runtime, tx, &receipt);
+            return true;
+        }
         return false;
     };
     let result = match receiver.try_recv() {
@@ -114,16 +136,18 @@ pub(super) fn poll_tool_review(app: &mut App) -> bool {
                 summary: "Tool request denied",
                 detail: &format!("Request in turn {} was denied.", receipt.key().turn().get()),
             }),
-        Ok(super::super::journal_gateway::JournalToolReviewOutcome::Results(receipt)) => app
-            .publish_message(MessageEvent {
+        Ok(super::super::journal_gateway::JournalToolReviewOutcome::Results(receipt)) => {
+            app.publish_message(MessageEvent {
                 source: MessageSource::Gateway,
                 severity: MessageSeverity::Info,
                 summary: "Tool results committed",
                 detail: &format!(
-                    "{} result(s) are recorded for provider continuation.",
+                    "{} result(s) are committed; continuing the model turn.",
                     receipt.results().len()
                 ),
-            }),
+            });
+            app.continue_tool_turn(gateway, runtime, tx, &receipt);
+        }
         Err(error) => publish_error(app, MessageSource::Gateway, "Tool review failed", &error),
     }
     true

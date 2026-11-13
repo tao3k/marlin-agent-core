@@ -432,6 +432,10 @@ async fn admit<S: SessionEventStore + Clone + 'static>(
                     return false;
                 }
                 if let Some(ConversationTurnOutcome::Completed { response }) = &turn.outcome {
+                    let Some(user_text) = turn.start.user_text() else {
+                        history_error = Some("Session history contains a tool continuation");
+                        return false;
+                    };
                     let Some(choice) = response
                         .choices
                         .iter()
@@ -447,7 +451,7 @@ async fn admit<S: SessionEventStore + Clone + 'static>(
                         return false;
                     }
                     bytes = bytes
-                        .saturating_add(turn.start.user_text.len())
+                        .saturating_add(user_text.len())
                         .saturating_add(choice.message.content.len())
                         .saturating_add(
                             choice
@@ -461,7 +465,7 @@ async fn admit<S: SessionEventStore + Clone + 'static>(
                     {
                         return false;
                     }
-                    history.push(user_gateway_message(turn.start.user_text.clone()));
+                    history.push(user_gateway_message(user_text.to_owned()));
                     history.push(choice.message.clone());
                 }
                 true

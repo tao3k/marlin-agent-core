@@ -3,9 +3,9 @@
 // SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
 use super::{
-    Buffer, Color, Line, Modifier, Paragraph, ProptestConfig, Rect, Span, Style, Transcript,
-    TranscriptViewportCache, Widget, Wrap, full_reference, prop_assert_eq, proptest, safe_text,
-    transcript_viewport, transcript_viewport_reference, vec,
+    Buffer, Color, Line, Modifier, Paragraph, ProptestConfig, Rect, Span, Style, TestRender,
+    Transcript, TranscriptViewportCache, Widget, Wrap, full_reference, prop_assert_eq, proptest,
+    safe_text, transcript_viewport, transcript_viewport_reference, vec,
 };
 
 #[test]

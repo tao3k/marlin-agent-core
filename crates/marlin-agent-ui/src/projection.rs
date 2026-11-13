@@ -324,7 +324,7 @@ fn decode_layout(value: RootedSchemeObject<'_>) -> Result<UiLayoutPolicy, UiProj
             _ => Err(UiProjectionError::Invalid("invalid UI layout policy")),
         }
     };
-    let fold = vector(layout_values.element(4)?, 5, 5)?;
+    let fold = vector(layout_values.element(4)?, 7, 7)?;
     let default_collapsed = match fold.element(0)?.as_ref().scalar()? {
         SchemeScalar::Boolean(value) => value,
         _ => return Err(UiProjectionError::Invalid("invalid thinking fold flag")),
@@ -352,13 +352,21 @@ fn decode_layout(value: RootedSchemeObject<'_>) -> Result<UiLayoutPolicy, UiProj
             assistant_role: label(2, true)?,
             thinking_collapsed_role: label(3, false)?,
             thinking_expanded_role: label(4, false)?,
+            role_tone: crate::element::decode_tone(
+                fold.element(5)?,
+                &mut IdentifierBuffer::default(),
+            )?,
+            role_bold: match fold.element(6)?.as_ref().scalar()? {
+                SchemeScalar::Boolean(value) => value,
+                _ => return Err(UiProjectionError::Invalid("invalid transcript role weight")),
+            },
         },
     };
     Ok(layout)
 }
 
 fn decode_frame(value: RootedSchemeObject<'_>) -> Result<UiFrameSpec, UiProjectionError> {
-    let fields = vector(value, 6, 6)?;
+    let fields = vector(value, 5, 5)?;
     let rows = |index, upper| -> Result<u16, UiProjectionError> {
         match fields.element(index)?.as_ref().scalar()? {
             SchemeScalar::Fixnum(value) if (0..=upper).contains(&value) => Ok(value as u16),
@@ -371,7 +379,7 @@ fn decode_frame(value: RootedSchemeObject<'_>) -> Result<UiFrameSpec, UiProjecti
             _ => Err(UiProjectionError::Invalid("invalid UI frame flag")),
         }
     };
-    let prompt = string(fields.element(5)?)?;
+    let prompt = string(fields.element(4)?)?;
     if prompt.len() > 32 || prompt.chars().any(char::is_control) {
         return Err(UiProjectionError::Invalid("invalid UI frame prompt"));
     }
@@ -380,7 +388,6 @@ fn decode_frame(value: RootedSchemeObject<'_>) -> Result<UiFrameSpec, UiProjecti
         fixed_editor_rows: rows(1, 2)?,
         footer_rows: rows(2, 1)?,
         extensions: boolean(3)?,
-        bordered: boolean(4)?,
         prompt,
     })
 }

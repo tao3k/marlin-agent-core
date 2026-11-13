@@ -4,16 +4,16 @@
 
 ;;; Scheme owns presentation choices; the native host clips them to cells.
 (import (only-in :clan/poo/object .def .o seal-object!)
-        (only-in "../ui-elements/objects.ss" ui-text ui-rows ui-region ui-template ui-choice ui-sized)
+        (only-in "../ui-elements/objects.ss" ui-text ui-rows ui-region ui-template ui-choice ui-sized ui-input ui-slot)
         (only-in "../ui-components/commands.ss" marlin-ui-candidate-templates))
 (export marlin-ui-layout-policy)
 
 (def MessageFrameValue
   (seal-object! (.o min-transcript-rows: 2 fixed-editor-rows: 0
-                    footer-rows: 1 extensions: #t bordered: #t prompt: " Message ")))
+                    footer-rows: 1 extensions: #t prompt: " Message ")))
 (def CommandFrameValue
   (seal-object! (.o min-transcript-rows: 4 fixed-editor-rows: 1
-                    footer-rows: 0 extensions: #f bordered: #f prompt: " M-x ")))
+                    footer-rows: 0 extensions: #f prompt: " M-x ")))
 (def (status-line spans)
   (ui-template 'none (cons '(binding normal #f prefix) spans)))
 (def (status-text text)
@@ -37,12 +37,27 @@
           (list 'transcript-focus (status-text "Transcript: scroll to browse  M-x commands  Ctrl-Q quit"))
           (list 'extension-focus (status-text "Extension: Enter activate  M-x commands  Ctrl-Q quit")))
     (status-text "Message: Enter send  Ctrl-R search  M-x commands  Ctrl-Q quit")))
+(def editor-view
+  (ui-choice
+    (list (list 'command (ui-input #f 'bar 'prompt #f 'focused)))
+    (ui-input #t 'none #f 'title 'focused)))
+(def main-view
+  (ui-choice
+    (list (list 'review (ui-slot 'review))
+          (list 'messages (ui-slot 'messages))
+          (list 'static (ui-slot 'static))
+          (list 'runtime (ui-slot 'runtime))
+          (list 'extension (ui-slot 'extension))
+          (list 'workspace (ui-slot 'workspace)))
+    (ui-slot 'conversation)))
 (def (frame-region slot)
   (let (name (car slot))
     (ui-sized (if (eq? name 'transcript) 'flex 'binding)
               (if (eq? name 'transcript) 1 name)
               (ui-region name (cdr slot)
                          (case name
+                           ((transcript) main-view)
+                           ((editor) editor-view)
                            ((candidates) (ui-rows marlin-ui-candidate-templates))
                            ((minibuffer) minibuffer-status)
                            (else (ui-text '())))))))
@@ -53,7 +68,9 @@
   max-command-rows: 10
   frame-tree: (ui-rows
     (list (ui-rows (map frame-region '((transcript . #t) (extensions . #f))))
-          (ui-rows (map frame-region '((modeline . #f) (editor . #f)
-                                       (candidates . #t) (minibuffer . #f)))))))
+          (frame-region '(modeline . #f))
+          (ui-region 'minibuffer-hover #f
+                     (ui-rows (map frame-region '((editor . #f)
+                                                  (candidates . #t) (minibuffer . #f))))))))
 (def marlin-ui-layout-policy
   (seal-object! UiLayoutBase.))

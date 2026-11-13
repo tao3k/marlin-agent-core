@@ -77,7 +77,9 @@ async fn pending_tool_request_replays_without_becoming_answer_history() {
     );
     let mut app = App::new(ModelEndpoint::new("openai", "gpt-fixture"));
     app.restore(turns);
-    assert!(app.history.is_empty());
+    assert_eq!(app.history.len(), 2);
+    assert_eq!(app.history[0].content, "read marker");
+    assert_eq!(app.history[1].tool_calls[0].id.as_str(), "call_1");
     assert_eq!(
         app.modeline_activity(),
         ModelineActivity::ContinuationUnavailable
@@ -349,7 +351,7 @@ async fn history_pages_are_ordered_bounded_and_preserve_oversized_source() {
         newest
             .turns
             .iter()
-            .map(|t| t.prompt.as_str())
+            .map(|t| t.prompt.as_deref().unwrap())
             .collect::<Vec<_>>(),
         ["prompt-3", "prompt-4"]
     );
@@ -364,7 +366,7 @@ async fn history_pages_are_ordered_bounded_and_preserve_oversized_source() {
     )
     .await
     .unwrap();
-    assert_eq!(middle.turns[0].prompt, "prompt-1");
+    assert_eq!(middle.turns[0].prompt.as_deref(), Some("prompt-1"));
     assert!(matches!(middle.turns[1].outcome, ReplayOutcome::Omitted));
     assert!(middle.has_earlier);
     let (_, oldest) = load_history_window_with_limits(
@@ -378,7 +380,7 @@ async fn history_pages_are_ordered_bounded_and_preserve_oversized_source() {
     .await
     .unwrap();
     assert_eq!(oldest.turns.len(), 1);
-    assert_eq!(oldest.turns[0].prompt, "prompt-0");
+    assert_eq!(oldest.turns[0].prompt.as_deref(), Some("prompt-0"));
     assert!(!oldest.has_earlier);
     let (_, full) = load_session(storage, project, session, agent)
         .await

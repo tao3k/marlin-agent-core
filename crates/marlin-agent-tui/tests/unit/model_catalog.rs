@@ -315,11 +315,11 @@ async fn journal_records_the_selected_endpoint_for_each_dispatched_turn() {
     .await
     .unwrap();
     assert_eq!(
-        turns[0].start.endpoint,
+        turns[0].start.endpoint().clone(),
         catalog.select(&ModelAlias::new("default")).unwrap()
     );
     assert_eq!(
-        turns[1].start.endpoint,
+        turns[1].start.endpoint().clone(),
         catalog.select(&ModelAlias::new("alternate")).unwrap()
     );
 }

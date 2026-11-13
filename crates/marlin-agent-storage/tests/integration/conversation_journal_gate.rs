@@ -340,7 +340,7 @@ async fn conversation_turns_survive_reopen_and_stale_claims_are_rejected() {
     .await
     .unwrap();
     assert_eq!(replay.len(), 1);
-    assert_eq!(replay[0].start.user_text, "hello");
+    assert_eq!(replay[0].start.user_text(), Some("hello"));
     assert_eq!(replay[0].partial_thinking, "reasoned more");
     assert_eq!(replay[0].partial_text, "world");
     use marlin_agent_sessions::ConversationCheckpointChannel::{Text, Thinking};
@@ -483,7 +483,7 @@ async fn killed_process_leaves_unfinished_turn_without_automatic_retry() {
     .await
     .unwrap();
     assert_eq!(replay.len(), 1);
-    assert_eq!(replay[0].start.user_text, "persist before dispatch");
+    assert_eq!(replay[0].start.user_text(), Some("persist before dispatch"));
     assert!(replay[0].outcome.is_none());
     assert!(matches!(
         journal.start(start("must not dispatch"), 2).await,

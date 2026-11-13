@@ -260,6 +260,8 @@
        (items (.get (list-ref (.get pi regions) 5) children))
        (brand (car items)))
   (unless (and (equal? (.get brand label) "🐟 marlin")
+               (eq? (.get (.get pi transcript-policy) role-tone) 'accent)
+               (.get (.get pi transcript-policy) role-bold)
                (= (.get brand compact-below) 16)
                (= (.get (list-ref items 2) compact-below) 48)
                (= (.get (list-ref items 3) min-width) 40)
@@ -392,9 +394,9 @@
   (poo-clos-compose-method-bundle generic ExtensionMethods)
   ;;; This is the presentation oracle; Rust uses synthetic labels for ABI checks.
   (unless (and (equal? (map (lambda (index) (vector-ref (vector-ref projected 3) index)) '(0 1 2 3 4))
-                       '(#(2 0 1 #t #t " Message ")
-                         #(4 1 0 #f #f " M-x ") 10 10
-                         #(#t "› " "" "▸ Thought" "▾ Thought")))
+                       '(#(2 0 1 #t " Message ")
+                         #(4 1 0 #f " M-x ") 10 10
+                         #(#t "› " "" "▸ Thought" "▾ Thought" info #t)))
                (eq? (vector-ref (vector-ref (vector-ref projected 3) 5) 0) 'rows)
                (equal? (vector-ref (vector-ref projected 4) 3) '#(198 120 221))
                (not (eq? (list-ref regions 5) extension))

@@ -21,6 +21,47 @@ use crate::projection::{
     decode_intent, decode_review_menu, decode_tool_review_menu, decode_workbench, string, vector,
 };
 
+fn decode_command_candidates(
+    output: RootedSchemeObject<'_>,
+    requested: Option<&UiCommandName>,
+) -> Result<UiCommandCandidates, UiProjectionError> {
+    let result = vector(output, 2, 2)?;
+    let names = vector(result.element(0)?, 0, MAX_COMMANDS)?;
+    let mut candidates = Vec::with_capacity(names.len());
+    let mut seen = HashSet::new();
+    for index in 0..names.len() {
+        let name = UiCommandName::new(&string(names.element(index)?)?)?;
+        if !seen.insert(name.clone()) {
+            return Err(UiProjectionError::Invalid("duplicate command candidate"));
+        }
+        candidates.push(name);
+    }
+    let selected = result.element(1)?;
+    let selected = match selected.as_ref().kind()? {
+        ObjectKind::String => Some(UiCommandName::new(&string(selected)?)?),
+        ObjectKind::Boolean
+            if matches!(selected.as_ref().scalar()?, SchemeScalar::Boolean(false)) =>
+        {
+            None
+        }
+        _ => return Err(UiProjectionError::Invalid("invalid command selection")),
+    };
+    if selected.as_ref().is_some_and(|name| !seen.contains(name)) {
+        return Err(UiProjectionError::Invalid(
+            "selected command is not a candidate",
+        ));
+    }
+    if selected.is_some() && selected.as_ref() != requested {
+        return Err(UiProjectionError::Invalid(
+            "command selection differs from the requested lock",
+        ));
+    }
+    Ok(UiCommandCandidates {
+        names: candidates,
+        selected,
+    })
+}
+
 /// Scheme-owned UI state, retained by the SDK's owner-affine strong root.
 pub struct UiNativeSession<'runtime> {
     root: RootedSchemeObject<'runtime>,
@@ -242,7 +283,7 @@ impl<'runtime> UiModule<'runtime> {
             return Err(UiProjectionError::Invalid("invalid command query"));
         }
         let query = self.runtime.string_from_utf8(query)?.into_object();
-        let requested = locked.cloned();
+        let requested = locked;
         let locked = match locked {
             Some(name) => self.runtime.string_from_utf8(name.as_str())?.into_object(),
             None => self.runtime.scalar_object(SchemeScalar::Boolean(false))?,
@@ -253,41 +294,7 @@ impl<'runtime> UiModule<'runtime> {
         let output = self
             .command_candidates
             .call(self.runtime, &input.into_object())?;
-        let result = vector(output, 2, 2)?;
-        let names = vector(result.element(0)?, 0, MAX_COMMANDS)?;
-        let mut candidates = Vec::with_capacity(names.len());
-        let mut seen = HashSet::new();
-        for index in 0..names.len() {
-            let name = UiCommandName::new(&string(names.element(index)?)?)?;
-            if !seen.insert(name.clone()) {
-                return Err(UiProjectionError::Invalid("duplicate command candidate"));
-            }
-            candidates.push(name);
-        }
-        let selected = result.element(1)?;
-        let selected = match selected.as_ref().kind()? {
-            ObjectKind::String => Some(UiCommandName::new(&string(selected)?)?),
-            ObjectKind::Boolean
-                if matches!(selected.as_ref().scalar()?, SchemeScalar::Boolean(false)) =>
-            {
-                None
-            }
-            _ => return Err(UiProjectionError::Invalid("invalid command selection")),
-        };
-        if selected.as_ref().is_some_and(|name| !seen.contains(name)) {
-            return Err(UiProjectionError::Invalid(
-                "selected command is not a candidate",
-            ));
-        }
-        if selected.is_some() && selected != requested {
-            return Err(UiProjectionError::Invalid(
-                "command selection differs from the requested lock",
-            ));
-        }
-        Ok(UiCommandCandidates {
-            names: candidates,
-            selected,
-        })
+        decode_command_candidates(output, requested)
     }
 
     /// Construct one Scheme-owned functional UI session.

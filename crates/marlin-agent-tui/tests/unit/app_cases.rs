@@ -242,6 +242,39 @@ fn selected_layout_policy_changes_chatbox_and_hover_geometry() {
     assert!(!mouse_over_minibuffer(&app, &compact, 24, 30, 24));
 }
 
+#[test]
+fn editor_height_follows_the_declared_input_border() {
+    use marlin_agent_ui::UiElement;
+    let mut app = App::new(ModelEndpoint::new("provider", "model"));
+    app.minibuffer_hovered = true;
+    app.composer.insert_text("draft");
+    let mut layout = test_layout();
+    assert_eq!(chatbox_height(&app, &layout, 40, 20), 3);
+    let UiElement::Rows(slots) = &mut layout.frame_tree else {
+        panic!("frame")
+    };
+    let UiElement::Region { child, .. } = &mut slots[3] else {
+        panic!("hover region")
+    };
+    let UiElement::Rows(children) = child.as_mut() else {
+        panic!("minibuffer children")
+    };
+    let UiElement::Sized { child, .. } = &mut children[0] else {
+        panic!("slot")
+    };
+    let UiElement::Region { child, .. } = child.as_mut() else {
+        panic!("region")
+    };
+    let UiElement::Choice { fallback, .. } = child.as_mut() else {
+        panic!("choice")
+    };
+    let UiElement::Input { bordered, .. } = fallback.as_mut() else {
+        panic!("input")
+    };
+    *bordered = false;
+    assert_eq!(chatbox_height(&app, &layout, 40, 20), 1);
+}
+
 proptest! {
     #![proptest_config(ProptestConfig {
         cases: 128,

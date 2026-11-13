@@ -439,7 +439,8 @@ fn run(
                 break;
             }
             let processed = process_replies(&mut app, &mut reply_rx, REPLY_BATCH_LIMIT);
-            let tool_review_finished = poll_tool_review(&mut app);
+            let tool_review_finished =
+                poll_tool_review(&mut app, &gateway, &runtime, &reply_tx);
             let tool_review_opened = open_tool_review(&mut app, &ui);
             let runtime_processed = app.poll_runtime_events(RUNTIME_EVENT_BATCH_LIMIT);
             let sessions_changed = app.poll_sessions();

@@ -15,10 +15,20 @@ use crate::{
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum UiElement {
     Text(Vec<UiSpan>),
+    /// An opaque host-provided visual source selected by a Scheme component.
+    Slot(UiComponentId),
     /// A styled line whose named fields are bound by the host.
     Template {
         background: UiBackground,
         spans: Vec<UiTemplateSpan>,
+    },
+    /// A host-supplied editable value with Scheme-selected presentation.
+    Input {
+        bordered: bool,
+        background: UiBackground,
+        prefix: Option<UiComponentId>,
+        title: Option<UiComponentId>,
+        active: UiComponentId,
     },
     Rows(Vec<UiElement>),
     Columns(Vec<UiElement>),
@@ -104,7 +114,7 @@ impl UiElement {
                 .iter()
                 .find_map(|(_, child)| child.region_child(name))
                 .or_else(|| fallback.region_child(name)),
-            Self::Text(_) | Self::Template { .. } => None,
+            Self::Text(_) | Self::Slot(_) | Self::Template { .. } | Self::Input { .. } => None,
         }
     }
     /// Natural line count before wrapping or clipping to the terminal.
@@ -116,7 +126,7 @@ impl UiElement {
                     .map(|span| span.text.bytes().filter(|byte| *byte == b'\n').count())
                     .sum::<usize>(),
             ),
-            Self::Template { .. } => 1,
+            Self::Template { .. } | Self::Input { .. } | Self::Slot(_) => 1,
             Self::Rows(children) => children.iter().fold(0usize, |rows, child| {
                 rows.saturating_add(child.intrinsic_rows())
             }),
@@ -150,7 +160,9 @@ impl UiElement {
                 .unwrap_or(0),
             Self::Region { child, .. } => child.intrinsic_rows_with(facts),
             Self::Sized { child, .. } => child.intrinsic_rows_with(facts),
-            Self::Text(_) | Self::Template { .. } => self.intrinsic_rows(),
+            Self::Text(_) | Self::Slot(_) | Self::Template { .. } | Self::Input { .. } => {
+                self.intrinsic_rows()
+            }
         }
     }
 }
@@ -187,6 +199,47 @@ fn decode(
     let kind = identifier(node.element(0)?, names)?;
     let values = vector(node.element(1)?, 0, 64)?;
     match kind.as_str() {
+        "slot" => {
+            if values.len() != 1 {
+                return Err(UiProjectionError::Invalid("invalid UI slot"));
+            }
+            Ok(UiElement::Slot(identifier(values.element(0)?, names)?))
+        }
+        "input" => {
+            if values.len() != 5 {
+                return Err(UiProjectionError::Invalid("invalid UI input"));
+            }
+            let bordered = match values.element(0)?.as_ref().scalar()? {
+                SchemeScalar::Boolean(value) => value,
+                _ => return Err(UiProjectionError::Invalid("invalid UI input border")),
+            };
+            let background = match identifier(values.element(1)?, names)?.as_str() {
+                "none" => UiBackground::None,
+                "canvas" => UiBackground::Canvas,
+                "bar" => UiBackground::Bar,
+                _ => return Err(UiProjectionError::Invalid("invalid UI input background")),
+            };
+            let optional = |index,
+                            names: &mut IdentifierBuffer|
+             -> Result<Option<UiComponentId>, UiProjectionError> {
+                let value = values.element(index)?;
+                if matches!(value.as_ref().scalar(), Ok(SchemeScalar::Boolean(false))) {
+                    Ok(None)
+                } else {
+                    Ok(Some(identifier(value, names)?))
+                }
+            };
+            let prefix = optional(2, names)?;
+            let title = optional(3, names)?;
+            let active = identifier(values.element(4)?, names)?;
+            Ok(UiElement::Input {
+                bordered,
+                background,
+                prefix,
+                title,
+                active,
+            })
+        }
         "sized" => {
             if values.len() != 3 {
                 return Err(UiProjectionError::Invalid("invalid UI size"));
@@ -339,7 +392,7 @@ fn decode(
     }
 }
 
-fn decode_tone(
+pub(crate) fn decode_tone(
     value: RootedSchemeObject<'_>,
     names: &mut IdentifierBuffer,
 ) -> Result<UiTone, UiProjectionError> {

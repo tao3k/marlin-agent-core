@@ -14,7 +14,7 @@ publish = false
 
 [[test]]
 name = "grpc_client"
-path = "tests/grpc_client.rs"
+path = "tests/integration/grpc_client.rs"
 required-features = ["grpc"]
 
 [[test]]

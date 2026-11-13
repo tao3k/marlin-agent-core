@@ -609,6 +609,40 @@ fn event_messages_use_a_switchable_buffer_without_polluting_conversation() {
         .collect();
     assert!(text.contains("native status 3"));
     assert!(!text.contains("conversation remains here"));
+    let marlin_agent_ui::UiElement::Rows(slots) = &mut view.layout.frame_tree else {
+        panic!("frame")
+    };
+    let marlin_agent_ui::UiElement::Sized { child, .. } = &mut slots[0] else {
+        panic!("slot")
+    };
+    let marlin_agent_ui::UiElement::Region { child, .. } = child.as_mut() else {
+        panic!("region")
+    };
+    let marlin_agent_ui::UiElement::Choice { cases, .. } = child.as_mut() else {
+        panic!("main choice")
+    };
+    let (_, selected) = cases
+        .iter_mut()
+        .find(|(fact, _)| fact.as_str() == "messages")
+        .unwrap();
+    *selected = marlin_agent_ui::UiElement::Slot(UiComponentId::new("conversation").unwrap());
+    terminal
+        .draw(|frame| {
+            render_draw(
+                frame,
+                &app,
+                &view,
+                &mut Default::default(),
+                &mut Default::default(),
+            );
+        })
+        .unwrap();
+    let buffer = terminal.backend().buffer();
+    let text: String = (0..12)
+        .flat_map(|y| (0..80).map(move |x| buffer[(x, y)].symbol()))
+        .collect();
+    assert!(text.contains("conversation remains here"));
+    assert!(!text.contains("native status 3"));
     app.cancel();
     assert_eq!(
         app.ui_request,

@@ -345,9 +345,33 @@ impl App {
         let input = self.composer.take();
         self.prompt_history.restore(&mut self.composer);
         self.push_prompt(input.clone());
+        self.begin_stream(gateway, runtime, tx, vec![user_gateway_message(input.clone())], Some(input));
+    }
+
+    pub(super) fn continue_tool_turn<G: ModelStreamingGateway + Clone>(
+        &mut self,
+        gateway: &G,
+        runtime: &tokio::runtime::Runtime,
+        tx: &ReplySender,
+        receipt: &marlin_agent_sessions::ConversationToolResultsReceipt,
+    ) {
+        let messages = receipt.gateway_messages();
+        if !self.history.ends_with(&messages) {
+            Arc::make_mut(&mut self.history).extend(messages);
+        }
+        self.begin_stream(gateway, runtime, tx, Vec::new(), None);
+    }
+
+    fn begin_stream<G: ModelStreamingGateway + Clone>(
+        &mut self,
+        gateway: &G,
+        runtime: &tokio::runtime::Runtime,
+        tx: &ReplySender,
+        suffix: Vec<super::ModelGatewayMessage>,
+        prompt: Option<String>,
+    ) {
         let history = Arc::clone(&self.history);
         let endpoint = self.endpoint.clone();
-        let prompt = input.clone();
         let gateway = gateway.clone();
         let tool_options = self.tool_offer_options.clone();
         self.next_id += 1;
@@ -356,7 +380,7 @@ impl App {
         let handle = self.runtime_owner.spawn_in_session_on(runtime, &self.runtime_session_id(), marlin_agent_runtime::RuntimeOperationId::new("turn.stream"), async move {
             let mut messages = history.as_ref().clone();
             drop(history);
-            messages.push(user_gateway_message(prompt));
+            messages.extend(suffix);
             let request = match tool_options {
                 Some(options) => ModelGatewayRequest::new(endpoint, messages).with_options(options),
                 None => ModelGatewayRequest::new(endpoint, messages),
@@ -403,7 +427,7 @@ impl App {
         self.pending = Some(PendingTurn {
             id,
             task: handle,
-            prompt: input,
+            prompt,
             output: None,
             output_segments: Vec::new(),
             thinking: None,
@@ -547,6 +571,11 @@ impl App {
                             self.pending_tool_request = true;
                             self.tool_review_prompt = None;
                             self.tool_review_suppressed = false;
+                            let history = Arc::make_mut(&mut self.history);
+                            if let Some(prompt) = pending.prompt {
+                                history.push(user_gateway_message(prompt));
+                            }
+                            history.push(choice.message.clone());
                             self.publish_message(MessageEvent {
                             source: MessageSource::Gateway,
                             severity: MessageSeverity::Warning,
@@ -557,8 +586,11 @@ impl App {
                             ),
                         });
                         } else {
+                            self.pending_tool_request = false;
                             let history = Arc::make_mut(&mut self.history);
-                            history.push(user_gateway_message(pending.prompt));
+                            if let Some(prompt) = pending.prompt {
+                                history.push(user_gateway_message(prompt));
+                            }
                             history.push(choice.message);
                         }
                         self.gateway_observation = GatewayObservation::Online;
@@ -583,11 +615,13 @@ impl App {
             {
                 let pending = self.pending.take().expect("matching pending turn");
                 pending.task.abort();
-                let explanation = if self.composer.text().is_empty() {
-                    self.composer.insert_text(&pending.prompt);
-                    "Prompt restored to the composer."
-                } else {
-                    "Current draft retained; the rejected prompt remains visible above."
+                let explanation = match pending.prompt {
+                    Some(prompt) if self.composer.text().is_empty() => {
+                        self.composer.insert_text(&prompt);
+                        "Prompt restored to the composer."
+                    }
+                    Some(_) => "Current draft retained; the rejected prompt remains visible above.",
+                    None => "Committed tool results remain in the session journal; no tool was run again.",
                 };
                 self.publish_message(MessageEvent {
                     source: MessageSource::Gateway,

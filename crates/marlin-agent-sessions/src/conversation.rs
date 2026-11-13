@@ -7,7 +7,7 @@
 use std::{error::Error, fmt, future::Future};
 
 use marlin_agent_protocol::{
-    ModelEndpoint, ModelGatewayCompletionResponse, ModelGatewayMessageRole,
+    ModelEndpoint, ModelGatewayCompletionResponse, ModelGatewayMessage, ModelGatewayMessageRole,
     ModelStreamInterruption, ModelToolCall,
 };
 use marlin_agent_storage::{
@@ -30,6 +30,7 @@ pub use tool_review::{
 };
 
 const START_KIND: &str = "marlin.conversation.turn.started.v1";
+const TOOL_CONTINUATION_START_KIND: &str = "marlin.conversation.turn.tool-continuation.v1";
 const END_KIND: &str = "marlin.conversation.turn.finished.v1";
 const CHECKPOINT_KIND: &str = "marlin.conversation.turn.checkpoint.v1";
 const THINKING_CHECKPOINT_KIND: &str = "marlin.conversation.turn.thinking-checkpoint.v1";
@@ -139,12 +140,44 @@ pub struct ConversationTurnStart {
     pub user_text: String,
 }
 
+/// A new provider request caused by committed tool results, never by a
+/// fabricated user prompt. Its source is the exact reviewed result batch.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct ConversationToolContinuationStart {
+    pub endpoint: ModelEndpoint,
+    pub source: ConversationToolRequestKey,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum ConversationTurnSource {
+    User(ConversationTurnStart),
+    ToolResults(ConversationToolContinuationStart),
+}
+
+impl ConversationTurnSource {
+    pub fn endpoint(&self) -> &ModelEndpoint {
+        match self {
+            Self::User(start) => &start.endpoint,
+            Self::ToolResults(start) => &start.endpoint,
+        }
+    }
+
+    pub fn user_text(&self) -> Option<&str> {
+        match self {
+            Self::User(start) => Some(&start.user_text),
+            Self::ToolResults(_) => None,
+        }
+    }
+}
+
 /// A committed model-tool request awaiting runtime review. This observation
 /// grants no authority to execute a tool.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ConversationPendingToolRequest {
     session: SessionId,
     turn: ConversationTurnId,
+    endpoint: ModelEndpoint,
+    assistant: ModelGatewayMessage,
     calls: Vec<ModelToolCall>,
     status: ConversationToolReviewStatus,
     review_receipt: Option<ConversationToolReviewReceipt>,
@@ -162,6 +195,14 @@ impl ConversationPendingToolRequest {
 
     pub fn calls(&self) -> &[ModelToolCall] {
         &self.calls
+    }
+
+    pub fn endpoint(&self) -> &ModelEndpoint {
+        &self.endpoint
+    }
+
+    pub fn assistant(&self) -> &ModelGatewayMessage {
+        &self.assistant
     }
 }
 
@@ -219,8 +260,9 @@ pub enum ConversationUncertaintyReason {
 #[derive(Clone, PartialEq)]
 pub struct ConversationTurn {
     pub id: ConversationTurnId,
-    pub start: ConversationTurnStart,
+    pub start: ConversationTurnSource,
     pub outcome: Option<ConversationTurnOutcome>,
+    pub tool_results: Option<ConversationToolResultsReceipt>,
     /// Durable prefix of streamed text, possibly shorter than observed output.
     pub partial_text: String,
     /// Recorded thinking prefix. It is an observation, not a validated provider continuation.
@@ -249,6 +291,7 @@ impl fmt::Debug for ConversationTurn {
             .field("id", &self.id)
             .field("start", &self.start)
             .field("outcome", &self.outcome)
+            .field("tool_results", &self.tool_results)
             .field("partial_text", &self.partial_text)
             .field("partial_thinking_bytes", &self.partial_thinking.len())
             .field("checkpoint_spans", &self.checkpoint_spans)
@@ -300,6 +343,7 @@ pub struct ConversationJournal<S> {
     agent: AgentId,
     next: u64,
     active: Option<ConversationTurn>,
+    deferred_tool_turn: Option<ConversationTurn>,
     owns_active: bool,
     next_checkpoint: u64,
     legacy_outcome_unresolved: bool,
@@ -350,6 +394,7 @@ impl<S: SessionEventStore> ConversationJournal<S> {
             agent,
             next: 1,
             active: None,
+            deferred_tool_turn: None,
             owns_active: false,
             next_checkpoint: 1,
             legacy_outcome_unresolved: false,
@@ -417,6 +462,11 @@ impl<S: SessionEventStore> ConversationJournal<S> {
                 None => break,
             }
         }
+        if let Some(turn) = &journal.deferred_tool_turn
+            && !visit(turn)
+        {
+            return Err(ConversationJournalError::ReplayStopped);
+        }
         if let Some(turn) = &journal.active
             && !visit(turn)
         {
@@ -443,7 +493,23 @@ impl<S: SessionEventStore> ConversationJournal<S> {
         start: ConversationTurnStart,
         created_at_unix_ms: i64,
     ) -> Result<ConversationTurnId, ConversationJournalError> {
-        self.commit_start(start, None, created_at_unix_ms).await
+        self.commit_start(ConversationTurnSource::User(start), None, created_at_unix_ms)
+            .await
+    }
+
+    /// Claim the next provider request only after this exact tool-result batch
+    /// was durably committed. No user input is fabricated for the turn.
+    pub async fn start_tool_continuation(
+        &mut self,
+        start: ConversationToolContinuationStart,
+        created_at_unix_ms: i64,
+    ) -> Result<ConversationTurnId, ConversationJournalError> {
+        self.commit_start(
+            ConversationTurnSource::ToolResults(start),
+            None,
+            created_at_unix_ms,
+        )
+        .await
     }
 
     /// Atomically claim both the submission identity and its new turn ordinal.
@@ -457,13 +523,17 @@ impl<S: SessionEventStore> ConversationJournal<S> {
         if self.next - 1 != after_turn {
             return Err(ConversationJournalError::StaleTurn);
         }
-        self.commit_start(start, Some(submission), created_at_unix_ms)
-            .await
+        self.commit_start(
+            ConversationTurnSource::User(start),
+            Some(submission),
+            created_at_unix_ms,
+        )
+        .await
     }
 
     async fn commit_start(
         &mut self,
-        start: ConversationTurnStart,
+        start: ConversationTurnSource,
         submission: Option<&ConversationSubmissionId>,
         created_at_unix_ms: i64,
     ) -> Result<ConversationTurnId, ConversationJournalError> {
@@ -473,18 +543,33 @@ impl<S: SessionEventStore> ConversationJournal<S> {
         if self.legacy_outcome_unresolved {
             return Err(ConversationJournalError::LegacyOutcomeUnresolved);
         }
-        if self.pending_tool_request.is_some() {
-            return Err(ConversationJournalError::ToolRequestPending);
-        }
         start
-            .endpoint
+            .endpoint()
             .validate_contract()
             .map_err(|error| ConversationJournalError::InvalidEvent(error.to_string()))?;
-        if start.user_text.trim().is_empty() {
-            return Err(ConversationJournalError::InvalidEvent(
-                "user text is empty".into(),
-            ));
-        }
+        let (kind, body) = match &start {
+            ConversationTurnSource::User(user) => {
+                if self.pending_tool_request.is_some() {
+                    return Err(ConversationJournalError::ToolRequestPending);
+                }
+                if user.user_text.trim().is_empty() {
+                    return Err(ConversationJournalError::InvalidEvent("user text is empty".into()));
+                }
+                (START_KIND, serde_json::to_vec(user)?)
+            }
+            ConversationTurnSource::ToolResults(tool) => {
+                if submission.is_some()
+                    || !self.pending_tool_request.as_ref().is_some_and(|pending| {
+                        pending.status == ConversationToolReviewStatus::ResultsCommitted
+                            && pending.key() == tool.source
+                            && pending.endpoint == tool.endpoint
+                    })
+                {
+                    return Err(ConversationJournalError::ToolRequestPending);
+                }
+                (TOOL_CONTINUATION_START_KIND, serde_json::to_vec(tool)?)
+            }
+        };
         let id = ConversationTurnId(self.next);
         let next = self
             .next
@@ -493,9 +578,9 @@ impl<S: SessionEventStore> ConversationJournal<S> {
         let event = self.record(
             id,
             id.start_event_id()?,
-            START_KIND,
+            kind,
             None,
-            serde_json::to_vec(&start)?,
+            body,
             created_at_unix_ms,
         )?;
         if let Some(submission) = submission {
@@ -523,6 +608,7 @@ impl<S: SessionEventStore> ConversationJournal<S> {
             id,
             start,
             outcome: None,
+            tool_results: None,
             partial_text: String::new(),
             partial_thinking: String::new(),
             checkpoint_spans: Vec::new(),
@@ -677,11 +763,14 @@ impl<S: SessionEventStore> ConversationJournal<S> {
             self.storage.append_session_event(event),
         )
         .await?;
-        let pending_tool_request = pending_tool_request_from_outcome(&self.session, id, &outcome);
-        self.active = None;
+        let active = self.active.take().expect("active turn checked above");
+        let pending_tool_request =
+            pending_tool_request_from_outcome(&self.session, id, &active.start, &outcome);
+        if pending_tool_request.is_some() || !matches!(outcome, ConversationTurnOutcome::RejectedBeforeDispatch { .. }) {
+            self.pending_tool_request = pending_tool_request;
+        }
         self.owns_active = false;
-        self.pending_tool_request = pending_tool_request;
-        self.owns_pending_review = self.pending_tool_request.is_some();
+        self.owns_pending_review = self.pending_tool_request.as_ref().is_some_and(|pending| pending.status == ConversationToolReviewStatus::AwaitingReview);
         self.owns_pending_result = false;
         Ok(())
     }
@@ -773,8 +862,23 @@ impl<S: SessionEventStore> ConversationJournal<S> {
         }
         match events::decode_event(id, &event)? {
             ConversationEvent::Started(start) => {
-                if self.pending_tool_request.is_some() || self.active.is_some() || id.0 != self.next
+                if let Some(turn) = self.deferred_tool_turn.take()
+                    && !visit(&turn)
                 {
+                    return Err(ConversationJournalError::ReplayStopped);
+                }
+                let allowed = match &start {
+                    ConversationTurnSource::User(_) => self.pending_tool_request.is_none(),
+                    ConversationTurnSource::ToolResults(tool) => self
+                        .pending_tool_request
+                        .as_ref()
+                        .is_some_and(|pending| {
+                            pending.status == ConversationToolReviewStatus::ResultsCommitted
+                                && pending.key() == tool.source
+                                && pending.endpoint == tool.endpoint
+                        }),
+                };
+                if !allowed || self.active.is_some() || id.0 != self.next {
                     return Err(ConversationJournalError::InvalidEvent(
                         "noncontiguous or overlapping start".into(),
                     ));
@@ -787,6 +891,7 @@ impl<S: SessionEventStore> ConversationJournal<S> {
                     id,
                     start,
                     outcome: None,
+                    tool_results: None,
                     partial_text: String::new(),
                     partial_thinking: String::new(),
                     checkpoint_spans: Vec::new(),
@@ -852,18 +957,30 @@ impl<S: SessionEventStore> ConversationJournal<S> {
                     self.legacy_outcome_unresolved = true;
                 }
                 turn.outcome = Some(outcome);
-                self.pending_tool_request = turn.outcome.as_ref().and_then(|outcome| {
-                    pending_tool_request_from_outcome(&self.session, id, outcome)
+                let next_pending = turn.outcome.as_ref().and_then(|outcome| {
+                    pending_tool_request_from_outcome(&self.session, id, &turn.start, outcome)
                 });
-                self.owns_pending_review = self.pending_tool_request.is_some();
+                if next_pending.is_some()
+                    || !matches!(turn.outcome, Some(ConversationTurnOutcome::RejectedBeforeDispatch { .. }))
+                {
+                    self.pending_tool_request = next_pending;
+                }
+                self.owns_pending_review = self.pending_tool_request.as_ref().is_some_and(|pending| pending.status == ConversationToolReviewStatus::AwaitingReview);
                 self.owns_pending_result = false;
-                if !visit(&turn) {
+                if matches!(turn.outcome, Some(ConversationTurnOutcome::ToolRequested { .. })) {
+                    self.deferred_tool_turn = Some(turn);
+                } else if !visit(&turn) {
                     return Err(ConversationJournalError::ReplayStopped);
                 }
             }
             ConversationEvent::ToolReview(_) => self.replay_tool_review(&event, id)?,
             ConversationEvent::ToolExecutionClaim(_) => self.replay_tool_claim(&event, id)?,
-            ConversationEvent::ToolResults(_) => self.replay_tool_results(&event, id)?,
+            ConversationEvent::ToolResults(_) => {
+                self.replay_tool_results(&event, id)?;
+                let receipt = self.pending_tool_request.as_ref().and_then(|pending| pending.results_receipt.clone());
+                let deferred = self.deferred_tool_turn.as_mut().filter(|turn| turn.id == id).ok_or_else(|| ConversationJournalError::InvalidEvent("tool results without deferred request".into()))?;
+                deferred.tool_results = receipt;
+            }
             ConversationEvent::Outcome(ConversationTurnOutcome::Uncertain { reason }) => {
                 if self.next_checkpoint != 1
                     && !matches!(
@@ -965,15 +1082,19 @@ fn validate_outcome(outcome: &ConversationTurnOutcome) -> Result<(), Conversatio
 fn pending_tool_request_from_outcome(
     session: &SessionId,
     turn: ConversationTurnId,
+    start: &ConversationTurnSource,
     outcome: &ConversationTurnOutcome,
 ) -> Option<ConversationPendingToolRequest> {
     let ConversationTurnOutcome::ToolRequested { response } = outcome else {
         return None;
     };
-    let calls = response.choices.first()?.message.tool_calls.clone();
+    let assistant = response.choices.first()?.message.clone();
+    let calls = assistant.tool_calls.clone();
     Some(ConversationPendingToolRequest {
         session: session.clone(),
         turn,
+        endpoint: start.endpoint().clone(),
+        assistant,
         calls,
         status: ConversationToolReviewStatus::AwaitingReview,
         review_receipt: None,

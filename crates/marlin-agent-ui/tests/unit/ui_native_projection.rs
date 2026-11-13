@@ -6,104 +6,17 @@ use gerbil_scheme::{
     CollectionKind, GerbilRuntime, IdentifierBuffer, IdentifierKind, RootedSchemeObject,
     SchemeScalar,
 };
-use marlin_agent_protocol::HumanDecision;
 use marlin_agent_ui::{
     UiComponentId, UiContent, UiIntent, UiOpenFacts, UiRegion, UiScrollDirection, UiStatusItem,
-    UiToolReviewDecision, decode_intent, decode_review_menu, decode_tool_review_menu,
-    decode_workbench, prepare_open_request,
+    decode_intent, decode_workbench, prepare_open_request,
 };
 
-fn assert_tool_review_projection_rejects_missing_or_duplicate_choices(runtime: &GerbilRuntime) {
-    let menu = |decisions: &[&str]| {
-        let entries = decisions
-            .iter()
-            .map(|decision| {
-                vector(
-                    runtime,
-                    &[
-                        symbol(runtime, decision),
-                        string(runtime, "choice"),
-                        string(runtime, "description"),
-                    ],
-                )
-            })
-            .collect::<Vec<_>>();
-        vector(
-            runtime,
-            &[string(runtime, "Tool request: "), vector(runtime, &entries)],
-        )
-    };
-    let admitted =
-        decode_tool_review_menu(menu(&["reject", "approve-once"])).expect("typed tool review menu");
-    assert_eq!(admitted.choices[0].decision, UiToolReviewDecision::Reject);
-    assert_eq!(
-        admitted.choices[1].decision,
-        UiToolReviewDecision::ApproveOnce
-    );
-    assert!(decode_tool_review_menu(menu(&["approve-once"])).is_err());
-    assert!(decode_tool_review_menu(menu(&["reject", "reject"])).is_err());
-    assert!(decode_tool_review_menu(menu(&["approve-once", "approved"])).is_err());
-}
-
-fn assert_review_menu_projection_requires_each_typed_decision_once(runtime: &GerbilRuntime) {
-    fn menu<'a>(runtime: &'a GerbilRuntime, decisions: &[(&str, &str)]) -> RootedSchemeObject<'a> {
-        let entries = decisions
-            .iter()
-            .map(|(decision, label)| {
-                vector(
-                    runtime,
-                    &[
-                        symbol(runtime, decision),
-                        string(runtime, label),
-                        string(runtime, "description"),
-                    ],
-                )
-            })
-            .collect::<Vec<_>>();
-        vector(
-            runtime,
-            &[string(runtime, "Review: "), vector(runtime, &entries)],
-        )
-    }
-    let valid = menu(
-        runtime,
-        &[
-            ("patch-requested", "patch"),
-            ("rejected", "deny"),
-            ("approved", "approve"),
-            ("needs-question", "question"),
-        ],
-    );
-    let projected = decode_review_menu(valid).expect("typed menu");
-    assert_eq!(projected.choices[0].decision, HumanDecision::PatchRequested);
-    assert_eq!(projected.choices[2].decision, HumanDecision::Approved);
-    assert!(
-        decode_review_menu(menu(
-            runtime,
-            &[
-                ("approved", "a"),
-                ("approved", "b"),
-                ("rejected", "r"),
-                ("needs-question", "q"),
-            ]
-        ))
-        .is_err()
-    );
-    assert!(decode_review_menu(menu(runtime, &[("approved", "a")])).is_err());
-    assert!(
-        decode_review_menu(menu(
-            runtime,
-            &[
-                ("approved", "a"),
-                ("rejected", "r"),
-                ("needs-question", "q"),
-                ("unknown", "u"),
-            ]
-        ))
-        .is_err()
-    );
-}
-
+#[path = "ui_native_projection/review.rs"]
+mod review;
+use review::{
+    assert_review_menu_projection_requires_each_typed_decision_once,
+    assert_tool_review_projection_rejects_missing_or_duplicate_choices,
+};
 fn vector<'a>(
     runtime: &'a GerbilRuntime,
     objects: &[RootedSchemeObject<'a>],
@@ -170,7 +83,6 @@ fn frame<'a>(
     editor: isize,
     footer: isize,
     extensions: bool,
-    bordered: bool,
     prompt: &str,
 ) -> RootedSchemeObject<'a> {
     vector(
@@ -183,9 +95,6 @@ fn frame<'a>(
             runtime.scalar_object(SchemeScalar::Fixnum(footer)).unwrap(),
             runtime
                 .scalar_object(SchemeScalar::Boolean(extensions))
-                .unwrap(),
-            runtime
-                .scalar_object(SchemeScalar::Boolean(bordered))
                 .unwrap(),
             string(runtime, prompt),
         ],
@@ -217,7 +126,15 @@ fn layout<'a>(runtime: &'a GerbilRuntime) -> RootedSchemeObject<'a> {
                                 "transcript" | "candidates"
                             )))
                             .unwrap(),
-                        if name == "candidates" {
+                        if name == "transcript" {
+                            vector(
+                                runtime,
+                                &[
+                                    symbol(runtime, "slot"),
+                                    vector(runtime, &[symbol(runtime, "conversation")]),
+                                ],
+                            )
+                        } else if name == "candidates" {
                             let template = |highlight| {
                                 vector(
                                     runtime,
@@ -241,6 +158,27 @@ fn layout<'a>(runtime: &'a GerbilRuntime) -> RootedSchemeObject<'a> {
                                 &[
                                     symbol(runtime, "rows"),
                                     vector(runtime, &[template(true), template(false)]),
+                                ],
+                            )
+                        } else if name == "editor" {
+                            vector(
+                                runtime,
+                                &[
+                                    symbol(runtime, "input"),
+                                    vector(
+                                        runtime,
+                                        &[
+                                            runtime
+                                                .scalar_object(SchemeScalar::Boolean(true))
+                                                .unwrap(),
+                                            symbol(runtime, "none"),
+                                            runtime
+                                                .scalar_object(SchemeScalar::Boolean(false))
+                                                .unwrap(),
+                                            symbol(runtime, "title"),
+                                            symbol(runtime, "focused"),
+                                        ],
+                                    ),
                                 ],
                             )
                         } else {
@@ -275,8 +213,8 @@ fn layout<'a>(runtime: &'a GerbilRuntime) -> RootedSchemeObject<'a> {
     vector(
         runtime,
         &[
-            frame(runtime, 2, 0, 1, true, true, "input> "),
-            frame(runtime, 0, 1, 0, false, false, "command> "),
+            frame(runtime, 2, 0, 1, true, "input> "),
+            frame(runtime, 0, 1, 0, false, "command> "),
             runtime.scalar_object(SchemeScalar::Fixnum(7)).unwrap(),
             runtime.scalar_object(SchemeScalar::Fixnum(4)).unwrap(),
             vector(
@@ -287,6 +225,8 @@ fn layout<'a>(runtime: &'a GerbilRuntime) -> RootedSchemeObject<'a> {
                     string(runtime, ""),
                     string(runtime, "folded"),
                     string(runtime, "revealed"),
+                    symbol(runtime, "accent"),
+                    runtime.scalar_object(SchemeScalar::Boolean(false)).unwrap(),
                 ],
             ),
             vector(
@@ -647,6 +587,23 @@ fn sdk_roots_project_to_typed_ui_workbench() {
         ],
     );
     let workbench = decode_workbench(root).unwrap();
+    assert!(
+        matches!(workbench.layout.frame_tree.region_child("transcript"), Some(marlin_agent_ui::UiElement::Slot(id)) if id.as_str() == "conversation")
+    );
+    assert_eq!(
+        workbench.layout.transcript_policy.role_tone,
+        marlin_agent_ui::UiTone::Accent
+    );
+    assert!(!workbench.layout.transcript_policy.role_bold);
+    assert!(matches!(
+        workbench.layout.frame_tree.region_child("editor"),
+        Some(marlin_agent_ui::UiElement::Input {
+            bordered: true,
+            title: Some(_),
+            prefix: None,
+            ..
+        })
+    ));
     let marlin_agent_ui::UiElement::Rows(groups) = &workbench.layout.frame_tree else {
         panic!("frame groups")
     };
@@ -676,10 +633,8 @@ fn sdk_roots_project_to_typed_ui_workbench() {
     assert_eq!(workbench.model_label, "model");
     assert_eq!(workbench.layout.max_chatbox_rows, 7);
     assert_eq!(workbench.layout.message_frame.prompt, "input> ");
-    assert!(workbench.layout.message_frame.bordered);
     assert_eq!(workbench.layout.command_frame.fixed_editor_rows, 1);
     assert_eq!(workbench.layout.command_frame.footer_rows, 0);
-    assert!(!workbench.layout.command_frame.bordered);
     assert_eq!(
         (
             workbench
@@ -935,8 +890,8 @@ fn sdk_roots_project_to_typed_ui_workbench() {
     let invalid_layout = vector(
         &runtime,
         &[
-            frame(&runtime, 2, 0, 1, true, true, " Message "),
-            frame(&runtime, 0, 1, 0, false, false, " M-x "),
+            frame(&runtime, 2, 0, 1, true, " Message "),
+            frame(&runtime, 0, 1, 0, false, " M-x "),
             runtime.scalar_object(SchemeScalar::Fixnum(1000)).unwrap(),
             runtime.scalar_object(SchemeScalar::Fixnum(4)).unwrap(),
         ],

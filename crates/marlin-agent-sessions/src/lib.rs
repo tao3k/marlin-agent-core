@@ -23,7 +23,8 @@ pub use conversation::{
     ConversationToolCallResult, ConversationToolExecutionClaim, ConversationToolRequestKey,
     ConversationToolResultOutcome, ConversationToolResultsReceipt, ConversationToolReviewDecision,
     ConversationToolReviewReceipt, ConversationToolReviewRequest, ConversationToolReviewStatus,
-    ConversationTurn, ConversationTurnId, ConversationTurnOutcome, ConversationTurnStart,
+    ConversationToolContinuationStart, ConversationTurn, ConversationTurnId,
+    ConversationTurnOutcome, ConversationTurnSource, ConversationTurnStart,
     ConversationUncertaintyReason,
 };
 pub use id::{SessionId, SessionIdError, SessionKind};

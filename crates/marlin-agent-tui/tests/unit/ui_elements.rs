@@ -261,6 +261,62 @@ fn hit_regions_follow_painted_layout_and_clip_at_terminal_edges() {
 }
 
 #[test]
+fn input_component_uses_selected_presentation_and_literal_bindings() {
+    let input = UiElement::Choice {
+        cases: vec![(
+            UiComponentId::new("command").unwrap(),
+            UiElement::Input {
+                bordered: false,
+                background: marlin_agent_ui::UiBackground::Bar,
+                prefix: Some(UiComponentId::new("prompt").unwrap()),
+                title: None,
+                active: UiComponentId::new("focused").unwrap(),
+            },
+        )],
+        fallback: Box::new(UiElement::Input {
+            bordered: true,
+            background: marlin_agent_ui::UiBackground::None,
+            prefix: None,
+            title: Some(UiComponentId::new("title").unwrap()),
+            active: UiComponentId::new("focused").unwrap(),
+        }),
+    };
+    let theme = UiTheme::default();
+    let facts = |id: &UiComponentId| id.as_str() == "command";
+    let inputs = UiRenderInputs {
+        theme: &theme,
+        offset: &|_| 0,
+        facts: &facts,
+        extent: &|_| Extent::Cells(0),
+        bindings: &[("prompt", "M-x "), ("title", "Message")],
+    };
+    let mut terminal = Terminal::new(TestBackend::new(20, 3)).unwrap();
+    let mut measured = None;
+    terminal
+        .draw(|frame| {
+            super::ui_elements::render_input(
+                frame,
+                frame.area(),
+                &input,
+                &inputs,
+                true,
+                |width, height| {
+                    measured = Some((width, height));
+                    Some((vec!["help".into()], (4, 0)))
+                },
+            )
+        })
+        .unwrap();
+    assert_eq!(measured, Some((16, 3)));
+    assert_eq!(terminal.backend().buffer()[(0, 0)].symbol(), "M");
+    assert_eq!(terminal.backend().buffer()[(4, 0)].symbol(), "h");
+    assert_eq!(
+        terminal.backend().buffer()[(4, 0)].bg,
+        Color::Rgb(theme.bar.red, theme.bar.green, theme.bar.blue)
+    );
+}
+
+#[test]
 fn scheme_size_bindings_are_independent_of_region_names() {
     let region = |name: &str, size| UiElement::Sized {
         size,
@@ -484,7 +540,10 @@ proptest! {
                 }),
             }).collect();
         let flat = UiElement::Rows(slots.clone());
-        let nested = UiElement::Rows(vec![UiElement::Rows(slots[..2].to_vec()), UiElement::Rows(slots[2..].to_vec())]);
+        let nested = UiElement::Rows(vec![UiElement::Rows(slots[..2].to_vec()), slots[2].clone(), UiElement::Region {
+            id: UiComponentId::new("minibuffer-hover").unwrap(), scrollable: false,
+            child: Box::new(UiElement::Rows(slots[3..].to_vec())),
+        }]);
         let extent = |id: &UiComponentId| match id.as_str() {
             "extensions" => Extent::Cells(extensions),
             "modeline" => Extent::Cells(1),
@@ -497,7 +556,7 @@ proptest! {
         let mut actual = Vec::new();
         super::ui_elements::layout_regions(&flat, area, &extent, &mut expected);
         super::ui_elements::layout_regions(&nested, area, &extent, &mut actual);
-        let snapshot = |regions: Vec<super::ui_elements::HitRegion>| regions.into_iter()
+        let snapshot = |regions: Vec<super::ui_elements::HitRegion>| regions.into_iter().filter(|region| region.id.as_str() != "minibuffer-hover")
             .map(|region| (region.id, region.area, region.scrollable)).collect::<Vec<_>>();
         prop_assert_eq!(snapshot(actual), snapshot(expected));
     }

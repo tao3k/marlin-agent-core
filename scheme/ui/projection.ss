@@ -60,8 +60,7 @@
 
 (def (frame-value frame)
   (vector (.get frame min-transcript-rows) (.get frame fixed-editor-rows)
-          (.get frame footer-rows) (.get frame extensions)
-          (.get frame bordered) (.get frame prompt)))
+          (.get frame footer-rows) (.get frame extensions) (.get frame prompt)))
 
 (def (marlin-ui-project-workbench workbench)
   (vector (.get workbench model) (.get workbench session)
@@ -76,7 +75,9 @@
                               (.get transcript user-prefix)
                               (.get transcript assistant-role)
                               (.get transcript thinking-collapsed-role)
-                              (.get transcript thinking-expanded-role)))
+                              (.get transcript thinking-expanded-role)
+                              (.get transcript role-tone)
+                              (.get transcript role-bold)))
                     (.get policy frame-tree)))
           (let (palette (.get workbench theme-palette))
             (list->vector

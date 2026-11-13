@@ -94,10 +94,26 @@ pub(crate) fn chatbox_height(app: &App, policy: &UiLayoutPolicy, width: u16, hei
         .as_ref()
         .and_then(|search| search.preview())
         .unwrap_or(&app.composer);
-    if limit >= 3 {
+    let bordered = policy
+        .frame_tree
+        .region_child("editor")
+        .map(|editor| {
+            super::ui_elements::resolve_choice(editor, &|id| {
+                id.as_str() == "command"
+                    && (app.command_draft.is_some() || app.tool_review_prompt.is_some())
+            })
+        })
+        .is_some_and(|editor| {
+            matches!(
+                editor,
+                marlin_agent_ui::UiElement::Input { bordered: true, .. }
+            )
+        });
+    let border = if bordered { 2 } else { 0 };
+    if limit > border {
         composer
-            .preferred_rows(width.saturating_sub(2), limit.saturating_sub(2))
-            .saturating_add(2)
+            .preferred_rows(width.saturating_sub(border), limit.saturating_sub(border))
+            .saturating_add(border)
     } else {
         limit
     }
@@ -165,7 +181,7 @@ pub(crate) fn frame_regions(
     } else {
         0
     };
-    let mut result = Vec::with_capacity(6);
+    let mut result = Vec::with_capacity(7);
     layout_regions(
         &ui.layout.frame_tree,
         area,
@@ -190,7 +206,7 @@ pub(crate) fn mouse_over_minibuffer(
     column > 0
         && row > 0
         && regions.iter().any(|region| {
-            matches!(region.id.as_str(), "editor" | "candidates" | "minibuffer")
+            region.id.as_str() == "minibuffer-hover"
                 && column > region.area.x
                 && column - 1 < region.area.right()
                 && row > region.area.y
@@ -530,89 +546,154 @@ pub(crate) fn draw(
         }),
         _ => None,
     };
-    let displayed_content = if app.buffer_view == BufferView::Messages {
-        None
-    } else if static_content.is_some() {
-        static_content
-    } else {
-        app.runtime_receipt_open
-            .then_some(("Runtime policy", app.runtime_content.as_slice()))
-            .or(focused_content)
+    let transcript_policy = &ui.layout.transcript_policy;
+    let mut role_style = Style::default().fg(super::ui_elements::tone_color(
+        transcript_policy.role_tone,
+        &ui.theme,
+    ));
+    if transcript_policy.role_bold {
+        role_style = role_style.add_modifier(Modifier::BOLD);
+    }
+    let main_facts = |id: &marlin_agent_ui::UiComponentId| match id.as_str() {
+        "review" => app.tool_review_prompt.is_some(),
+        "messages" => app.buffer_view == BufferView::Messages,
+        "static" => static_content.is_some(),
+        "runtime" => app.runtime_receipt_open,
+        "extension" => focused_content.is_some(),
+        "workspace" => app.workspace.view().is_some(),
+        _ => false,
     };
-    let transcript_area = if let Some(prompt) = &app.tool_review_prompt {
-        cache.with_top_view(
-            &prompt.details,
-            parts[0].width,
-            parts[0].height,
-            usize::from(prompt.scroll),
-            |viewport| viewport.render(parts[0], frame.buffer_mut()),
-        );
-        None
-    } else if let Some((label, content)) = displayed_content {
-        let scroll = if static_content.is_some() {
-            app.static_buffer_scroll
-        } else {
-            0
-        };
-        draw_extension_content(frame, parts[0], label, content, &ui.theme, scroll);
-        None
-    } else if parts[0].height > 0 {
-        Some(parts[0])
+    let main_slot = ui
+        .layout
+        .frame_tree
+        .region_child("transcript")
+        .map(|view| super::ui_elements::resolve_choice(view, &main_facts))
+        .and_then(|view| match view {
+            marlin_agent_ui::UiElement::Slot(id) => super::ui_host::MainSource::from_id(id),
+            _ => None,
+        });
+    let transcript_area = parts[0];
+    let effective_scroll = if transcript_area.is_empty() {
+        app.scroll_up
     } else {
-        None
-    };
-    let effective_scroll = if let Some(transcript_area) = transcript_area {
-        let mut render_view = |viewport: &super::viewport::TranscriptViewport| {
-            viewport.render(transcript_area, frame.buffer_mut());
-            viewport.scroll_up
-        };
-        if app.buffer_view == BufferView::Messages {
-            let scroll = anchor.adjust(
-                &app.messages,
-                false,
-                transcript_area.width,
-                transcript_area.height,
-                app.message_scroll_up,
-            );
-            cache.with_view(
-                &app.messages,
-                false,
-                transcript_area.width,
-                transcript_area.height,
-                scroll,
-                &mut render_view,
-            )
-        } else {
-            match app.workspace.view() {
-                Some(view) => cache.with_top_view(
-                    &view.transcript,
+        match main_slot {
+            Some(super::ui_host::MainSource::Review) => {
+                if let Some(prompt) = &app.tool_review_prompt {
+                    cache.with_top_view(
+                        &prompt.details,
+                        transcript_area.width,
+                        transcript_area.height,
+                        usize::from(prompt.scroll),
+                        |viewport| {
+                            viewport.render_with_role_style(
+                                transcript_area,
+                                frame.buffer_mut(),
+                                role_style,
+                            )
+                        },
+                    );
+                }
+                app.scroll_up
+            }
+            Some(super::ui_host::MainSource::Static) => {
+                if let Some((label, content)) = static_content {
+                    draw_extension_content(
+                        frame,
+                        transcript_area,
+                        label,
+                        content,
+                        &ui.theme,
+                        app.static_buffer_scroll,
+                    );
+                }
+                app.scroll_up
+            }
+            Some(super::ui_host::MainSource::Runtime) => {
+                draw_extension_content(
+                    frame,
+                    transcript_area,
+                    "Runtime policy",
+                    &app.runtime_content,
+                    &ui.theme,
+                    0,
+                );
+                app.scroll_up
+            }
+            Some(super::ui_host::MainSource::Extension) => {
+                if let Some((label, content)) = focused_content {
+                    draw_extension_content(frame, transcript_area, label, content, &ui.theme, 0);
+                }
+                app.scroll_up
+            }
+            Some(super::ui_host::MainSource::Messages) => {
+                let scroll = anchor.adjust(
+                    &app.messages,
+                    false,
                     transcript_area.width,
                     transcript_area.height,
-                    view.scroll_from_top,
-                    &mut render_view,
-                ),
-                None => {
-                    let pending = app.pending.is_some();
-                    let scroll = anchor.adjust(
-                        &app.transcript,
-                        pending,
-                        transcript_area.width,
-                        transcript_area.height,
-                        app.scroll_up,
-                    );
-                    cache.with_view(
-                        &app.transcript,
-                        pending,
-                        transcript_area.width,
-                        transcript_area.height,
-                        scroll,
-                        &mut render_view,
-                    )
-                }
+                    app.message_scroll_up,
+                );
+                cache.with_view(
+                    &app.messages,
+                    false,
+                    transcript_area.width,
+                    transcript_area.height,
+                    scroll,
+                    |viewport| {
+                        viewport.render_with_role_style(
+                            transcript_area,
+                            frame.buffer_mut(),
+                            role_style,
+                        );
+                        viewport.scroll_up
+                    },
+                )
             }
+            Some(super::ui_host::MainSource::Workspace) => {
+                app.workspace.view().map_or(app.scroll_up, |view| {
+                    cache.with_top_view(
+                        &view.transcript,
+                        transcript_area.width,
+                        transcript_area.height,
+                        view.scroll_from_top,
+                        |viewport| {
+                            viewport.render_with_role_style(
+                                transcript_area,
+                                frame.buffer_mut(),
+                                role_style,
+                            );
+                            viewport.scroll_up
+                        },
+                    )
+                })
+            }
+            Some(super::ui_host::MainSource::Conversation) => {
+                let pending = app.pending.is_some();
+                let scroll = anchor.adjust(
+                    &app.transcript,
+                    pending,
+                    transcript_area.width,
+                    transcript_area.height,
+                    app.scroll_up,
+                );
+                cache.with_view(
+                    &app.transcript,
+                    pending,
+                    transcript_area.width,
+                    transcript_area.height,
+                    scroll,
+                    |viewport| {
+                        viewport.render_with_role_style(
+                            transcript_area,
+                            frame.buffer_mut(),
+                            role_style,
+                        );
+                        viewport.scroll_up
+                    },
+                )
+            }
+            _ => app.scroll_up,
         }
-    } else {
-        app.scroll_up
     };
     let selected = app
         .selected_command()
@@ -636,67 +717,48 @@ pub(crate) fn draw(
     } else {
         command_prompt
     };
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .title(title)
-        .border_style(
-            if ui.focus.as_str() == "composer" || app.command_draft.is_some() {
-                Style::default().fg(rgb(ui.theme.info))
-            } else {
-                Style::default()
+    let prompt = if parts[3].width >= 20 {
+        format!(
+            "{}/{} {}",
+            selected_index.map_or(0, |index| index + 1),
+            app.tool_review_prompt
+                .as_ref()
+                .map_or(suggestions.len(), |prompt| prompt.menu.choices.len()),
+            command_prompt.trim_start()
+        )
+    } else {
+        command_prompt.to_owned()
+    };
+    if let Some(editor) = ui.layout.frame_tree.region_child("editor") {
+        let facts = |id: &marlin_agent_ui::UiComponentId| match id.as_str() {
+            "command" => command_active,
+            "focused" => ui.focus.as_str() == "composer" || app.command_draft.is_some(),
+            _ => false,
+        };
+        let bindings = [("prompt", prompt.as_str()), ("title", title)];
+        let inputs = super::ui_elements::UiRenderInputs {
+            theme: &ui.theme,
+            offset: &|_| 0,
+            facts: &facts,
+            extent: &|_| super::ui_elements::Extent::Cells(0),
+            bindings: &bindings,
+        };
+        super::ui_elements::render_input(
+            frame,
+            parts[3],
+            editor,
+            &inputs,
+            command_active || (app.history_search.is_none() && ui.focus.as_str() == "composer"),
+            |width, height| {
+                if app.tool_review_prompt.is_some() {
+                    None
+                } else {
+                    composer
+                        .view(width, height)
+                        .map(|view| (view.rows, view.cursor))
+                }
             },
         );
-    if parts[3].height > 0 {
-        if !frame_spec.bordered {
-            let prompt = if parts[3].width >= 20 {
-                format!(
-                    "{}/{} {}",
-                    selected_index.map_or(0, |index| index + 1),
-                    app.tool_review_prompt
-                        .as_ref()
-                        .map_or(suggestions.len(), |prompt| prompt.menu.choices.len()),
-                    command_prompt.trim_start()
-                )
-            } else {
-                command_prompt.to_owned()
-            };
-            let prompt_width = UnicodeWidthStr::width(prompt.as_str()) as u16;
-            frame.render_widget(
-                Paragraph::new(prompt).style(
-                    Style::default()
-                        .bg(rgb(ui.theme.bar))
-                        .fg(rgb(ui.theme.accent)),
-                ),
-                parts[3],
-            );
-            let inner = Rect::new(
-                parts[3].x + prompt_width.min(parts[3].width),
-                parts[3].y,
-                parts[3].width.saturating_sub(prompt_width),
-                1,
-            );
-            if app.tool_review_prompt.is_none()
-                && let Some(view) = composer.view(inner.width, inner.height)
-            {
-                frame.render_widget(
-                    Paragraph::new(view.rows.join("\n"))
-                        .style(Style::default().bg(rgb(ui.theme.bar)).fg(rgb(ui.theme.ink))),
-                    inner,
-                );
-                frame.set_cursor_position((inner.x + view.cursor.0, inner.y));
-            }
-        } else {
-            let inner = block.inner(parts[3]);
-            frame.render_widget(block, parts[3]);
-            if app.tool_review_prompt.is_none()
-                && let Some(view) = composer.view(inner.width, inner.height)
-            {
-                frame.render_widget(Paragraph::new(view.rows.join("\n")), inner);
-                if app.history_search.is_none() && ui.focus.as_str() == "composer" {
-                    frame.set_cursor_position((inner.x + view.cursor.0, inner.y + view.cursor.1));
-                }
-            }
-        }
     }
     let visible = usize::from(parts[4].height);
     let start = selected_index.map_or(0, |index| index.saturating_add(1).saturating_sub(visible));

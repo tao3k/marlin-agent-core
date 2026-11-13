@@ -205,6 +205,23 @@ fn terminal_admits_composed_frame_groups_and_rejects_missing_slots() {
 }
 
 #[test]
+fn terminal_rejects_unbound_main_source() {
+    use marlin_agent_ui::UiElement;
+    let mut workbench = view("composer");
+    let UiElement::Rows(slots) = &mut workbench.layout.frame_tree else {
+        panic!("frame")
+    };
+    let UiElement::Sized { child, .. } = &mut slots[0] else {
+        panic!("slot")
+    };
+    let UiElement::Region { child, .. } = child.as_mut() else {
+        panic!("region")
+    };
+    *child = Box::new(UiElement::Slot(UiComponentId::new("unbound").unwrap()));
+    assert!(admit_terminal_view(&workbench).is_err());
+}
+
+#[test]
 fn completion_respects_ambiguity_exact_names_and_arguments() {
     use marlin_agent_ui::{UiCommand, UiCommandArguments, UiCommandCapability, UiCommandName};
     let mut workbench = view("commands");

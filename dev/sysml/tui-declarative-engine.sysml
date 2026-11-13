@@ -131,7 +131,15 @@ package MarlinDeclarativeUi {
             doc /* Stable identities and explicit content, style and geometry
                    revisions enable subtree reuse. Resize, theme, focus, source
                    mutation and extension replacement invalidate the affected
-                   views; reuse never changes the authoritative source. */
+                   views; reuse never changes the authoritative source.
+                   Transcript viewport rows retain semantic role information,
+                   while the selected Scheme role tone and weight are applied
+                   during painting. A theme change can restyle cached rows
+                   without rebuilding their geometry or deep-scroll index.
+                   The Scheme main-view choice selects an admitted native
+                   content slot from review, buffer, workspace and conversation
+                   facts; slot bindings borrow the existing owner data and do
+                   not materialize transcript history into the Scheme VM. */
         }
         part <'MAR-UI-T07'> terminalHost {
             doc /* Rust owns raw-mode lifecycle, input normalization,
@@ -140,6 +148,9 @@ package MarlinDeclarativeUi {
                    modeline sits above a bottom Mini Buffer. The Mini Buffer
                    displays secondary status while collapsed and expands into
                    the existing ChatBox on pointer hover or draft editing.
+                   Scheme groups its interactive children into a named hover
+                   region; shared layout derives that region's clipped extent
+                   from its children for painting and pointer hit testing.
                    Draft data never disappears on pointer exit. Mouse motion
                    uses a latest-position observation instead of occupying
                    the bounded key queue. A visual theme is a Marlin

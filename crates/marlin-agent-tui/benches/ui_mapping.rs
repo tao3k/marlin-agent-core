@@ -5,7 +5,7 @@
 
 use criterion::{Criterion, criterion_group, criterion_main};
 use marlin_agent_tui::ui_elements::{
-    Extent, UiRenderInputs, hit_test, hit_test_scroll, layout_regions, render_prompt,
+    Extent, UiRenderInputs, hit_test, hit_test_scroll, layout_regions, render_input, render_prompt,
     render_template, render_with_regions, render_with_scroll, resolve_choice,
 };
 use marlin_agent_ui::{
@@ -74,6 +74,32 @@ fn mapping(c: &mut Criterion) {
                 .unwrap();
         })
     });
+    let input = UiElement::Input {
+        bordered: false,
+        background: marlin_agent_ui::UiBackground::Bar,
+        prefix: Some(UiComponentId::new("prompt").unwrap()),
+        title: None,
+        active: UiComponentId::new("active").unwrap(),
+    };
+    let input_values = UiRenderInputs {
+        theme: &theme,
+        offset: &|_| 0,
+        facts: &|_| false,
+        extent: &|_| Extent::Cells(0),
+        bindings: &[("prompt", "M-x ")],
+    };
+    let mut input_terminal = Terminal::new(TestBackend::new(80, 1)).unwrap();
+    c.bench_function("ui/mapping/input", |b| {
+        b.iter(|| {
+            input_terminal
+                .draw(|frame| {
+                    render_input(frame, frame.area(), &input, &input_values, true, |_, _| {
+                        Some((vec![black_box("command").to_owned()], (7, 0)))
+                    });
+                })
+                .unwrap();
+        })
+    });
     let mut template_terminal = Terminal::new(TestBackend::new(120, 80)).unwrap();
     c.bench_function("ui/mapping/templates-64", |b| {
         b.iter(|| {
@@ -116,7 +142,7 @@ fn mapping(c: &mut Criterion) {
         })
         .collect(),
     );
-    let mut mapped = Vec::with_capacity(6);
+    let mut mapped = Vec::with_capacity(7);
     c.bench_function("ui/mapping/frame-hit", |b| {
         b.iter(|| {
             mapped.clear();
@@ -134,7 +160,12 @@ fn mapping(c: &mut Criterion) {
     };
     let grouped_frame = UiElement::Rows(vec![
         UiElement::Rows(slots[..2].to_vec()),
-        UiElement::Rows(slots[2..].to_vec()),
+        slots[2].clone(),
+        UiElement::Region {
+            id: UiComponentId::new("minibuffer-hover").unwrap(),
+            scrollable: false,
+            child: Box::new(UiElement::Rows(slots[3..].to_vec())),
+        },
     ]);
     c.bench_function("ui/mapping/grouped-frame-hit", |b| {
         b.iter(|| {

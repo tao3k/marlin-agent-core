@@ -6,6 +6,7 @@
 
 use gerbil_scheme::{NativeError, RootedCallError, RootedSchemeObject};
 use marlin_agent_protocol::HumanDecision;
+use std::sync::Arc;
 
 // Three core regions, one built-in buffer, sixteen contributions, and status.
 pub(crate) const MAX_REGIONS: usize = 21;
@@ -24,9 +25,10 @@ pub(crate) const MAX_ID_BYTES: usize = 1024;
 const _: () = assert!(MAX_STATUS == MODELINE_SLOTS + MAX_HOST_STATUS);
 const _: () = assert!(MAX_REGIONS == 3 + 1 + MAX_EXTENSIONS + 1);
 
-/// A UI component's domain identity, not a Scheme root or object address.
+/// A UI component's domain identity, shared across projected hit regions.
+/// It is not a Scheme root or object address.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub struct UiComponentId(String);
+pub struct UiComponentId(Arc<str>);
 
 /// A displayable command name; this value does not authorize a handler.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -291,7 +293,7 @@ impl UiComponentId {
         if value.is_empty() || value.len() > MAX_ID_BYTES {
             return Err(UiProjectionError::Invalid("invalid identity length"));
         }
-        Ok(Self(value.to_owned()))
+        Ok(Self(value.into()))
     }
     /// The identity's spelling. Identity admission rejects duplicate spellings.
     pub fn as_str(&self) -> &str {
@@ -374,7 +376,6 @@ pub struct UiFrameSpec {
     pub fixed_editor_rows: u16,
     pub footer_rows: u16,
     pub extensions: bool,
-    pub bordered: bool,
     pub prompt: String,
 }
 
@@ -398,6 +399,8 @@ pub struct UiTranscriptPolicy {
     pub assistant_role: String,
     pub thinking_collapsed_role: String,
     pub thinking_expanded_role: String,
+    pub role_tone: crate::UiTone,
+    pub role_bold: bool,
 }
 
 /// An RGB color selected by Scheme and admitted at the native boundary.

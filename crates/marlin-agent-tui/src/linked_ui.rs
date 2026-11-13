@@ -50,3 +50,7 @@ pub(crate) fn tooling_declarations(
     // SAFETY: this export belongs to the same linked programme initialized above.
     unsafe { marlin_agent_tooling::project_linked(runtime, marlin_tooling_project) }
 }
+
+#[cfg(test)]
+#[path = "../tests/unit/linked_ui_source.rs"]
+mod tests;

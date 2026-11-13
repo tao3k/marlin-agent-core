@@ -9,8 +9,9 @@ use marlin_agent_protocol::{
 use marlin_agent_sessions::{
     ConversationEvent, ConversationEventReader, ConversationJournal, ConversationJournalError,
     ConversationTerminalObservation, ConversationToolCallResult, ConversationToolResultOutcome,
-    ConversationToolReviewDecision, ConversationToolReviewRequest, ConversationToolReviewStatus,
-    ConversationTurnOutcome, ConversationTurnStart, ConversationUncertaintyReason,
+    ConversationToolContinuationStart, ConversationToolReviewDecision,
+    ConversationToolReviewRequest, ConversationToolReviewStatus, ConversationTurnOutcome,
+    ConversationTurnSource, ConversationTurnStart, ConversationUncertaintyReason,
 };
 use marlin_agent_storage::SessionEventStore;
 use marlin_agent_storage::{
@@ -384,6 +385,63 @@ async fn tool_results_require_the_live_claim_and_survive_replay() {
             .event,
         ConversationEvent::ToolResults(_)
     ));
+}
+
+#[tokio::test]
+async fn committed_tool_results_admit_a_typed_continuation_without_reexecuting() {
+    let storage = InMemoryAgentStorage::new();
+    let (project, session, agent) = ids();
+    let mut journal = ConversationJournal::open(
+        storage.clone(), project.clone(), session.clone(), agent.clone(), |_| {},
+    ).await.unwrap();
+    let request = journal.start(start("read marker"), 1).await.unwrap();
+    journal.finish(request, ConversationTerminalObservation::ToolRequested {
+        response: tool_request(),
+    }, 2).await.unwrap();
+    let key = journal.pending_tool_request().unwrap().key();
+    let approval = journal.review_tool_request(
+        ConversationToolReviewRequest::new(key.clone(), ConversationToolReviewDecision::ApproveOnce),
+        3,
+    ).await.unwrap();
+    let claim = journal.claim_tool_execution(&approval, 4).await.unwrap();
+    let receipt = journal.record_tool_results(
+        claim.key(),
+        vec![ConversationToolCallResult {
+            id: ModelToolCallId::new("call_1").unwrap(),
+            outcome: ConversationToolResultOutcome::Completed("marker".into()),
+        }],
+        5,
+    ).await.unwrap();
+    assert_eq!(receipt.gateway_messages()[0].tool_call_id.as_ref().unwrap().as_str(), "call_1");
+    assert!(matches!(journal.start(start("next user"), 6).await, Err(ConversationJournalError::ToolRequestPending)));
+    assert!(journal.start_tool_continuation(ConversationToolContinuationStart {
+        endpoint: ModelEndpoint::new("openai", "wrong-model"),
+        source: key.clone(),
+    }, 6).await.is_err());
+    let continuation = ConversationToolContinuationStart {
+        endpoint: ModelEndpoint::new("openai", "gpt-fixture"),
+        source: key,
+    };
+    let first = journal.start_tool_continuation(continuation.clone(), 7).await.unwrap();
+    assert!(journal.start_tool_continuation(continuation.clone(), 8).await.is_err());
+    journal.finish(first, ConversationTerminalObservation::RejectedBeforeDispatch {
+        diagnostic: "local route unavailable".into(),
+    }, 8).await.unwrap();
+    assert_eq!(journal.pending_tool_request().unwrap().status(), ConversationToolReviewStatus::ResultsCommitted);
+    let second = journal.start_tool_continuation(continuation, 9).await.unwrap();
+    journal.finish(second, completion("marker read"), 10).await.unwrap();
+    assert!(journal.pending_tool_request().is_none());
+    let mut turns = Vec::new();
+    let reopened = ConversationJournal::open(storage.clone(), project.clone(), session.clone(), agent.clone(), |turn| turns.push(turn.clone())).await.unwrap();
+    assert!(reopened.pending_tool_request().is_none());
+    assert_eq!(turns.len(), 3);
+    assert_eq!(turns[0].tool_results.as_ref(), Some(&receipt));
+    assert!(matches!(&turns[1].start, ConversationTurnSource::ToolResults(_)));
+    assert!(matches!(&turns[2].start, ConversationTurnSource::ToolResults(_)));
+    assert_eq!(turns[1].start.user_text(), None);
+    assert_eq!(turns[2].start.user_text(), None);
+    let reader = ConversationEventReader::new(storage, project, session, agent);
+    assert_eq!(reader.latest_turn().await.unwrap().unwrap().state, marlin_agent_sessions::ConversationTailState::Finished);
 }
 
 #[tokio::test]

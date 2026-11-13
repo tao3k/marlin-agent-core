@@ -26,8 +26,8 @@ use std::{
 
 #[test]
 #[ignore = "real PTY, linked Scheme tool catalog, loopback provider and local journal"]
-fn scheme_bash_ask_commits_one_result_from_the_minibuffer() {
-    use marlin_agent_sessions::{ConversationJournal, ConversationToolReviewStatus};
+fn scheme_bash_ask_continues_with_one_committed_result() {
+    use marlin_agent_sessions::{ConversationJournal, ConversationTurnOutcome, ConversationTurnSource};
     use marlin_agent_storage::{
         AgentId, ProjectId, SessionId, TursoAgentStorage, TursoAgentStorageConfig,
         TursoBatchTransactionMode, TursoOptimizationProfile,
@@ -52,6 +52,19 @@ fn scheme_bash_ask_commits_one_result_from_the_minibuffer() {
                 "status":"completed"}]
         }});
         write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nConnection: close\r\n\r\ndata: {response}\n\n").unwrap();
+        let Some(mut continuation) = accept_until(&listener, &server_stop) else {
+            panic!("committed tool result did not trigger provider continuation");
+        };
+        let (_, request) = read_request(&mut continuation);
+        let output = request["input"].as_array().unwrap().last().unwrap();
+        assert_eq!(output["type"], "function_call_output");
+        assert_eq!(output["call_id"], "call-1");
+        assert!(output["output"].as_str().unwrap().contains("marlin-tool-ok"));
+        let response = serde_json::json!({"type":"response.completed","response":{
+            "status":"completed","id":"resp-answer","model":"gpt-fixture",
+            "output":[{"type":"message","content":[{"type":"output_text","text":"marker observed"}]}]
+        }});
+        write!(continuation, "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nConnection: close\r\n\r\ndata: {response}\n\n").unwrap();
     });
     let directory = tempfile::tempdir().unwrap();
     let database = directory.path().join("session.db");
@@ -84,13 +97,14 @@ fn scheme_bash_ask_commits_one_result_from_the_minibuffer() {
             .iter()
             .any(|line| line.contains("Tool results committed"))
     });
+    terminal.wait_text("marker observed");
     terminal.send(b"\x11");
     terminal.wait_exit(Duration::from_secs(10));
     terminal.assert_restored();
     stop.store(true, Ordering::Relaxed);
     server.join().unwrap();
     let runtime = tokio::runtime::Runtime::new().unwrap();
-    let result = runtime.block_on(async {
+    let turns = runtime.block_on(async {
         let storage = TursoAgentStorage::open_local(TursoAgentStorageConfig {
             path: database,
             optimization_profile: TursoOptimizationProfile::AsyncIoOnlyCompatibility,
@@ -98,24 +112,25 @@ fn scheme_bash_ask_commits_one_result_from_the_minibuffer() {
         })
         .await
         .unwrap();
+        let mut turns = Vec::new();
         let journal = ConversationJournal::open(
             storage,
             ProjectId::new("project:tool").unwrap(),
             SessionId::new("session:tool").unwrap(),
             AgentId::new("agent:tool").unwrap(),
-            |_| {},
+            |turn| turns.push(turn.clone()),
         )
         .await
         .unwrap();
-        journal.pending_tool_request().cloned().unwrap()
+        assert!(journal.pending_tool_request().is_none());
+        turns
     });
-    assert_eq!(
-        result.status(),
-        ConversationToolReviewStatus::ResultsCommitted
-    );
+    assert_eq!(turns.len(), 2);
     assert!(
-        format!("{:?}", result.results_receipt().unwrap().results()).contains("marlin-tool-ok")
+        format!("{:?}", turns[0].tool_results.as_ref().unwrap().results()).contains("marlin-tool-ok")
     );
+    assert!(matches!(turns[1].start, ConversationTurnSource::ToolResults(_)));
+    assert!(matches!(turns[1].outcome, Some(ConversationTurnOutcome::Completed { .. })));
 }
 
 #[test]
