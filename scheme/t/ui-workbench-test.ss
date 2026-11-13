@@ -16,8 +16,6 @@
         (only-in :clan/poo/testing/property make-policy)
         (only-in :clan/poo/support/testing require-property-passed))
 
-(export ui-workbench-verified)
-
 (def ui (.get marlin-agent-core.init.exports Marlin ui))
 (def ui-components (.get marlin-agent-core.init.exports Marlin ui-components))
 (def ui-elements (.get marlin-agent-core.init.exports Marlin ui-elements))
@@ -512,4 +510,3 @@
   (unless (and (= calls 1) (equal? (vector-ref result 0) "model"))
     (error "native projection ignored the supplied UI scope")))
 (displayln "UI-WORKBENCH-OK")
-(def ui-workbench-verified #t)

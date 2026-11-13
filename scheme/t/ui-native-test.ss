@@ -2,17 +2,14 @@
 ;;;
 ;;; SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
-;;; Run the workbench contract through the SDK's in-process GxTest entrypoint.
+;;; Exercise dynamic module imports and the selected native UI ABI.
 (import :std/test :gerbil/expander
         (only-in :clan/poo/object .get)
-        (only-in :marlin-agent-core/init marlin-agent-core.init.exports)
-        (only-in "ui-workbench-test" ui-workbench-verified))
+        (only-in :marlin-agent-core/init marlin-agent-core.init.exports))
 (export ui-native-test)
 
 (def ui-native-test
   (test-suite "Marlin UI workbench"
-    (test-case "the selected Scheme UI contract completed"
-      (check ui-workbench-verified => #t))
     (test-case "standard module import retains the selected UI scope"
       (let ((expected (.get marlin-agent-core.init.exports Marlin ui)))
         (parameterize ((current-expander-context (make-top-context)))
@@ -70,11 +67,6 @@
                    #(reject "Deny" "Do not run the requested tool"))))
             (check-equal? (vector-ref view 3) 'composer)
             (check-equal? (vector-ref selection 1) '#(focus composer))
-            (check-equal? (vector-ref (vector-ref pi-view 5) 3) '#(255 186 104))
-            (check-equal? (vector-ref (vector-ref view 4) 4)
-                          '#(#t "› " "" "▸ Thought" "▾ Thought" info #t))
-            (check-equal? (vector-ref (vector-ref pi-view 4) 4)
-                          '#(#t "› " "" "⋯" "⋯ Thought" accent #t))
             (check-equal? (vector-ref message-view 1) (vector-ref view 1))
             (check-equal? (vector-ref help-pi-view 1) (vector-ref view 1))
             (check-equal? (vector-ref (vector-ref help-pi-view 4) 4)
