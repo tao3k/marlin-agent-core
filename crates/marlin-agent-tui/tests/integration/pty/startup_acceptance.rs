@@ -18,6 +18,15 @@ fn release_linked_fresh_copy_startup_pair() {
 
 #[cfg(feature = "linked-ui")]
 #[test]
+#[ignore = "manual size-oriented startup benchmark; build target/release-size/marlin-tui first"]
+fn release_size_linked_fresh_copy_startup_pair() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let binary = root.join("target/release-size/marlin-tui");
+    linked_fresh_copy_startup_pair(&binary, "release-size");
+}
+
+#[cfg(feature = "linked-ui")]
+#[test]
 #[ignore = "manual paired startup benchmark; build the current debug binary first"]
 fn debug_linked_fresh_copy_startup_pair() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
@@ -28,6 +37,14 @@ fn debug_linked_fresh_copy_startup_pair() {
 #[cfg(feature = "linked-ui")]
 fn linked_fresh_copy_startup_pair(binary: &std::path::Path, profile: &str) {
     assert!(binary.is_file(), "build the linked {profile} binary first");
+    let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../scheme/.gerbil/native/tui/program.json");
+    let binary_time = fs::metadata(binary).unwrap().modified().unwrap();
+    let manifest_time = fs::metadata(&manifest).unwrap().modified().unwrap();
+    assert!(
+        binary_time >= manifest_time,
+        "linked {profile} binary predates the staged Scheme programme; rebuild before benchmarking"
+    );
     let directory = tempfile::tempdir().unwrap();
     let copied = directory.path().join("marlin-tui-copy");
     fs::copy(binary, &copied).expect("copy linked binary");
@@ -51,13 +68,17 @@ fn linked_fresh_copy_startup_pair(binary: &std::path::Path, profile: &str) {
             100,
             directory.path(),
         );
-        terminal.wait_for(Duration::from_secs(10), "Release startup pair", |output| {
-            contains(output, b"\x1b[?1049h")
-                && screen_lines(output)[29].contains("Message: Enter send")
-                && screen_lines(output)
-                    .iter()
-                    .any(|line| line.contains("MARLIN"))
-        });
+        terminal.wait_for(
+            Duration::from_secs(10),
+            &format!("{profile} startup pair"),
+            |output| {
+                contains(output, b"\x1b[?1049h")
+                    && screen_lines(output)[29].contains("Message: Enter send")
+                    && screen_lines(output)
+                        .iter()
+                        .any(|line| line.contains("MARLIN"))
+            },
+        );
         observations.push((
             terminal.first_output_elapsed.expect("first PTY output"),
             terminal.start.elapsed(),

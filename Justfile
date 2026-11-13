@@ -154,6 +154,14 @@ tui-performance-bench: tui-aot-build
   cargo test --locked -p marlin-agent-tui --test pty release_linked_fresh_copy_startup_pair -- --ignored --nocapture
   cargo test --locked -p marlin-agent-tui --test pty release_linked_ui_first_frame_without_a_gerbil_package_tree -- --ignored --nocapture
 
+# Diagnose whether the size-oriented profile improves a source-matched linked
+# TUI. Stage the Scheme programme first; comparing against a stale native
+# manifest can produce a misleading projection failure.
+tui-size-performance-bench: tui-aot-stage
+  cargo build --locked -p marlin-agent-tui --bin marlin-tui --features linked-ui --profile release-size
+  cargo test --locked -p marlin-agent-tui --test launch linked_release_size_pre_ui_launch_pair -- --ignored --nocapture
+  cargo test --locked -p marlin-agent-tui --test pty release_size_linked_fresh_copy_startup_pair -- --ignored --nocapture
+
 # Exercise the linked AgentGraph policy selector through its typed C ABI.
 agent-policy-routing-abi-gate:
   direnv exec . cargo test --locked -p marlin-agent-policy-routing-abi --features linked-selector

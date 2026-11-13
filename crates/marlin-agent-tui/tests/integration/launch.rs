@@ -9,10 +9,26 @@
 #[test]
 #[ignore = "manual fresh-file launch diagnostic; build target/release/marlin-tui first"]
 fn linked_release_pre_ui_launch_pair() {
+    linked_pre_ui_launch_pair("release");
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+#[ignore = "manual fresh-file launch diagnostic; build target/release-size/marlin-tui first"]
+fn linked_release_size_pre_ui_launch_pair() {
+    linked_pre_ui_launch_pair("release-size");
+}
+
+#[cfg(target_os = "macos")]
+fn linked_pre_ui_launch_pair(profile: &str) {
     use std::{fs, path::Path, process::Command, time::Instant};
 
-    let binary = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/release/marlin-tui");
-    assert!(binary.is_file(), "build the linked Release binary first");
+    let binary = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .join("target")
+        .join(profile)
+        .join("marlin-tui");
+    assert!(binary.is_file(), "build the linked {profile} binary first");
     let directory = tempfile::tempdir().expect("private launch directory");
     let copied = directory.path().join("marlin-tui");
     fs::copy(&binary, &copied).expect("fresh executable copy");
@@ -30,7 +46,7 @@ fn linked_release_pre_ui_launch_pair() {
             "early exit changed: {}",
             String::from_utf8_lossy(&output.stderr)
         );
-        eprintln!("linked Release {launch} pre-UI launch: {elapsed:?}");
+        eprintln!("linked {profile} {launch} pre-UI launch: {elapsed:?}");
     }
 
     let control = directory.path().join("true");

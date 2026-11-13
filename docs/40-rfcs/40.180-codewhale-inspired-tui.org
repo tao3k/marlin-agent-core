@@ -2153,6 +2153,21 @@ The debug source-free PTY gate now sends M-x and its first Down key in one
 write after the usable frame, checking navigation without duplicating the
 Scheme profile's glyph and status-label assertions in Rust.
 
+The later size-profile diagnostic has its own Rust PTY and pre-UI launch
+tests, driven by =just tui-size-performance-bench= after =tui-aot-stage=.
+The observed ordinary Release artifact was 25 MiB and reached its first
+usable copied-file frame in 3.29 s (0.21 s on the same file's next run);
+its application stopwatch reached the first frame in 0.29/0.15 s. The
+size-profile artifact was 91 MiB, and its fresh pre-UI launch took 3.71 s
+versus 0.09 s on the same file. Its source-free PTY gate failed with
+=invalid terminal frame regions=. The shared checkout's Scheme programme
+manifest changed after the size-profile binary was written, so this
+failure cannot be attributed to compiler optimization without a stable,
+source-matched rerun. The failed gate remains evidence against selecting
+=release-size= for distribution today. The paired copy results distinguish
+pre-application loading from VM/UI costs but are not cold-machine tail
+percentiles.
+
 ** Scheme-declared thinking folding (2026-11-13)
 
 The selected =ui-layout= module declares compact role labels, the initial
