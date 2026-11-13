@@ -76,7 +76,8 @@ jobs:
           # Cargo narrows the copied lock to the downstream graph using the
           # crates already downloaded by the locked workspace test.
           export CARGO_TARGET_DIR="$GITHUB_WORKSPACE/target"
-          cargo test --offline --manifest-path "$consumer/Cargo.toml"
+          cargo test --offline --manifest-path "$consumer/Cargo.toml" --message-format=json |
+            tee "$RUNNER_TEMP/marlin-grpc-client-build.jsonl" | awk '!/^\{"reason":/'
           dependencies=$(cargo tree --offline --locked --manifest-path "$consumer/Cargo.toml" -e normal,build --prefix none --format '{p}')
           forbidden=$(awk '$1 ~ /^gerbil-scheme/ || ($1 ~ /^marlin-agent-/ && $1 != "marlin-agent-ui" && $1 != "marlin-agent-app-server")' <<< "$dependencies")
           if [[ -n "$forbidden" ]]; then
@@ -84,7 +85,26 @@ jobs:
             exit 1
           fi
       - name: Test App Server over HTTP/2
-        run: cargo test --locked -p marlin-agent-app-server --features grpc
+        shell: bash
+        run: |
+          cargo test --locked -p marlin-agent-app-server --features grpc --message-format=json |
+            tee "$RUNNER_TEMP/marlin-grpc-host-build.jsonl" | awk '!/^\{"reason":/'
+      - name: Compare the generated client and host Protobuf descriptors
+        shell: bash
+        run: |
+          descriptor() {
+            jq -nRer '
+              [inputs | fromjson? | select(.reason == "build-script-executed"
+                and (.package_id | contains("/marlin-agent-app-server#"))) | .out_dir]
+              | unique
+              | if length == 1 then .[0] + "/marlin-app-v1.bin"
+                else error("expected one generated App Server descriptor") end
+            ' "$RUNNER_TEMP/marlin-grpc-$1-build.jsonl"
+          }
+          client=$(descriptor client)
+          host=$(descriptor host)
+          cmp -- "$client" "$host"
+          sha256sum -- "$host"
 
   model:
     name: Quint / protocol models
