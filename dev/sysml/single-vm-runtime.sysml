@@ -259,7 +259,14 @@ package MarlinSingleVmRuntime {
                operation; Module retirement remains responsible for joining it. */
     }
     requirement <'MAR-VM-R11'> qualifiedCostAccounting {
-        doc /* Correlate GC and request age within the same owner turn. Generated
+        doc /* The full Context latency gate runs four fresh processes with
+               4096 measured requests and 64 warmups each. The wave and batch
+               are 64, the Rust queue is 128, Tokio has four workers and
+               Scheme has one processor. The request deadline is 60 seconds,
+               the process watchdog is 180 seconds and the Scheme heap ceiling
+               is 2 GiB. Every process verifies digest identity and retirement
+               and must report p99 below 20 ms. Retain each process result.
+               Correlate GC and request age within the same owner turn. Generated
                constructor counters require exact source sites, zero counter
                errors, matching result bytes and one VM/processor admission.
                Instrumented times do not qualify production latency. A signed

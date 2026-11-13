@@ -76,7 +76,12 @@ The oracle makes no extra Scheme admissions and reports its own elapsed time.
 Successful receipt counts alone do not establish result identity. Earlier
 benchmark results that discarded returned digests do not have this check.
 Exit success covers these semantic/lifecycle checks; the 20 ms latency target
-is assessed separately against every process in the complete cohort.
+is assessed separately against every process in the complete cohort. Once the
+paired SDK and Scheme package are provisioned, run =just context-latency-gate=
+in that environment. It runs four separate processes under the 2 GiB Scheme
+heap ceiling and 180-second per-process watchdog. It retains every log and
+the benchmark binary identity under =target/=. Physical allocation still
+requires the separately qualified runtime and allocation-site evidence.
 Run batch 1 and 64 in separate processes under matched conditions. The test
 and benchmark hosts each use four Tokio workers. Counters
 include 64 warmup requests; timed throughput and p50/p95/p99 cover request/reply.

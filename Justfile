@@ -121,6 +121,49 @@ scheme-build:
   cd scheme
   gerbil build
 
+# Run the fixed full Context workload after provisioning the paired Scheme package.
+context-latency-gate:
+  #!/usr/bin/env bash
+  set -euo pipefail
+  watchdog=$(command -v timeout || command -v gtimeout)
+  mkdir -p target
+  evidence=$(mktemp -d target/context-cohort.XXXXXX)
+  printf 'Context cohort evidence: %s\n' "$evidence"
+  git rev-parse HEAD > "$evidence/revision"
+  shasum -a 256 Cargo.lock > "$evidence/cargo-lock.sha256"
+  cargo bench --locked -p marlin-deck-runtime --features actor-runtime \
+    --bench single_vm_actor --no-run --message-format=json > "$evidence/build.jsonl"
+  binary=$(jq -ser '[.[] | select(.reason == "compiler-artifact" and
+    .target.name == "single_vm_actor" and .target.kind == ["bench"] and .executable != null)
+    | .executable] | if length == 1 then .[0] else error("expected one Context benchmark") end' \
+    "$evidence/build.jsonl")
+  shasum -a 256 "$binary" > "$evidence/benchmark.sha256"
+  export GAMBOPT="${GAMBOPT:+$GAMBOPT,}max-heap=2G,debug=q"
+  printf '%s\n' "$GAMBOPT" > "$evidence/gambopt"
+  failed=0
+  for process in 1 2 3 4; do
+    log="$evidence/process-$process.log"
+    status=0
+    "$watchdog" 180 "$binary" 64 4096 > "$log" 2>&1 || status=$?
+    printf '%s\t%s\n' "$process" "$status" >> "$evidence/exit-status.tsv"
+    if (( status == 0 )); then
+      if ! awk '/^batch_capacity=64 requests=4096 / {
+        for (i = 1; i <= NF; i++) {
+          if ($i ~ /^p99_us=[0-9]+(\.[0-9]+)?$/) {
+            split($i, field, "="); p99 = field[2]; samples++
+          }
+        }
+      } END { exit !(samples == 1 && p99 < 20000) }' "$log"; then
+        failed=1
+      fi
+    else
+      printf 'Context process %s exited with status %s\n' "$process" "$status" >&2
+      failed=1
+    fi
+    cat "$log"
+  done
+  exit "$failed"
+
 # Stage the selected package's linked TUI programme.
 tui-aot-stage: scheme-build tui-program-stage
 
