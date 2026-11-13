@@ -7,7 +7,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     {
         const SCHEMA: &str = "proto/marlin/app/v1/app_server.proto";
         println!("cargo:rerun-if-changed={SCHEMA}");
-        tonic_prost_build::compile_protos(SCHEMA)?;
+        let out = std::path::PathBuf::from(std::env::var_os("OUT_DIR").expect("Cargo output"));
+        tonic_prost_build::configure()
+            .file_descriptor_set_path(out.join("marlin-app-v1.bin"))
+            .compile_protos(&[SCHEMA], &["proto"])?;
     }
     Ok(())
 }

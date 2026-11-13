@@ -8,20 +8,38 @@
 
 * Placement
 
-=marlin-agent-app-server= is the Rust service for external desktop and mobile
-GUI clients, browser frontends and server-to-server callers. Enable =grpc= on
-the package or =app-server= on Agent CORE. The TUI calls Marlin in-process.
-The host assembles the listener, TLS, authorization and graceful shutdown.
-The package supplies the service, versioned schema and generated Rust bindings.
+=marlin-agent-app-server= exposes Marlin's Session messages to desktop,
+mobile and other external applications. A native client can use its own UI
+framework, such as GPUI, and a generated gRPC client over HTTP/2. Enable =grpc= on the package or
+=app-server= on Agent CORE. The TUI calls Marlin in-process. The host
+assembles the listener, TLS, authorization and graceful shutdown. The
+package supplies the service, versioned schema and generated Rust bindings.
 
-Native clients speak gRPC over HTTP/2. Deploy a gRPC-Web gateway on the trusted
-web origin for browser clients. The same schema supports unary calls and a
-server stream. Configure the gateway to forward authorization, cancellation,
-request deadlines and terminal status. Cross-origin access belongs to the
-web deployment and its origin policy. Browser deployment is a separate
-integration step. [[https://github.com/grpc/grpc-web][gRPC-Web transport]]
+| Boundary | Responsibility |
+|----------+----------------|
+| GPUI and other application clients | Submit Session messages, receive events, resume from an event cursor, and request cancellation. GPUI owns rendering and its local view state. |
+| Marlin's Rust gRPC service | Authenticate and translate the wire requests into existing Session and Runtime operations. The journal owns committed messages and event order. |
+| Weaver | Supply model routing through its existing integration. If editor interoperability is needed, Weaver is the proposed owner of an optional Agent Client Protocol (ACP) adapter. |
 
-* First service contract
+Native desktop and mobile apps use the same unary and server-streaming RPCs
+as service clients. A browser deployment can expose
+gRPC-Web from a trusted origin, forwarding authorization, deadlines,
+cancellation and terminal status. If an HTTP/JSON endpoint is needed, it can
+project the same Session operations and recovery semantics. GPUI, gRPC-Web
+deployment and an HTTP/JSON endpoint are design scope here. The repository
+currently supplies the gRPC service and generated client.
+[[https://github.com/grpc/grpc-web][gRPC-Web transport]]
+
+Agent Client Protocol defines editor-facing JSON-RPC operations such as
+prompt, progress and permission requests. Weaver documents it as an optional
+integration. A future Weaver adapter would translate those calls into the
+owner's operations. For Marlin-backed Sessions, Marlin would continue to own
+admission, event order and receipts. The =marlin.app.v1= schema is the
+application message contract for GPUI and external clients.
+[[https://agentclientprotocol.com/protocol/v1/overview][ACP overview]]
+· [[https://github.com/tao3k/weaver/blob/343076629d3cb7b5c92f96eaaddb4b49402d88b1/docs/10-19-llm-gateway/17-policy-continuation/17.04-protocol-admission-and-identity.org][Weaver protocol inventory]]
+
+* Capabilities and stateless model stream
 
 | RPC | Behavior |
 |-----+----------|
@@ -37,6 +55,9 @@ The model gateway can use Weaver's LLM client. This package declares Tonic and
 Prost directly to generate and serve Marlin's own wire schema. The Cargo lock
 shares the Tonic runtime with Marlin telemetry.
 [[file:proto/marlin/app/v1/app_server.proto][Protobuf schema]]
+
+The GPUI message path uses the Session RPCs below. =StreamTurn= is the
+existing standalone model-stream RPC and carries no Session identity.
 
 The stream emits =Started=, zero or more numbered UTF-8 =TextDelta= messages,
 then =Completed= with the chunk and byte totals. Completion means the gateway
@@ -65,7 +86,7 @@ ownership against stale writers using the same store.
 
 | RPC | Existing authority | Client behavior |
 |-----+--------------------+-----------------|
-| =StartSessionTurn= | =ConversationJournal::open_controlled= and =start= | Submit user text with the last observed turn ordinal. A stale ordinal or unresolved turn refuses dispatch. |
+| =StartSessionTurn= | =ConversationJournal::open_controlled= and =start_submission= | Submit user text with a stable submission ID and the last observed turn ordinal. Retry the same inputs to recover the original turn. |
 | =WatchSessionTurn= | =SessionEventStore= keyset pages and =SessionEventCursor= | Save the last processed event ID and pass it back as an exclusive cursor after reconnecting. |
 | =CancelSessionTurn= | Turn-local Runtime task scope and =RuntimeTaskShutdownReceipt= | Request cancellation and inspect local retirement alongside the committed Session outcome. |
 
@@ -82,13 +103,12 @@ A GUI resumes from the last event it processed. A delivered event whose cursor
 was lost may be delivered again. A cursor must resolve to a committed record in
 the requested turn. Replaying from the committed terminal cursor yields an
 empty suffix. The client keeps its turn reference across reconnects. Retrying
-a start with the old ordinal refuses redispatch. The next ordinal can be
-inferred from the caller's prior ordinal after an interrupted start response,
-then checked by watching that turn. The current service uses one local turn
-scope per binding and retains its cancellation receipt source until the next
-turn. Journal events persist according to the host's selected store. A process
-restart can replay committed records. Recovering an unfinished provider call
-after a restart needs a provider-specific reconciliation policy.
+a committed submission returns its original turn even when the client's
+ordinal is stale. A new submission still requires the current ordinal. The service uses one
+local turn scope per binding and retains its cancellation receipt source
+until the next turn. Journal events persist according to the host's selected
+store. A process restart can replay committed records. Recovering an
+unfinished provider call after restart needs provider-specific reconciliation.
 
 Cancellation drops the local model future or stream, records uncertainty and
 waits for local task retirement. A provider completion selected before
@@ -102,11 +122,283 @@ Run =just app-server-model-gate=. The HTTP/2 test checks the same lifecycle
 through the generated client, the existing journal and the Tokio runtime. It
 uses the in-memory session store and a deterministic gateway.
 
+* Application message walkthrough
+:PROPERTIES:
+:CUSTOM_ID: gpui-message-walkthrough
+:END:
+
+This example uses the current =marlin.app.v1= gRPC messages. The loopback
+HTTP/2 test exercises send, watch, reconnect and cancel. GPUI illustrates
+the same client behavior available to mobile and other native applications.
+The client opens an authenticated channel to the host, calls
+=GetCapabilities=, and uses the returned =session_id= to address the host's
+existing Session. A missing =session_id= means the endpoint has no Session
+binding. =GetCapabilities= does not provide a transcript or latest ordinal.
+The example starts from a known empty Session. The proposed Session summary
+below covers opening an existing Session without saved client state.
+
+** Send a draft
+
+The user writes a message and presses Send. GPUI saves a new submission ID
+with the draft and its original =after_turn= while the request is pending.
+=after_turn= is the last observed turn ordinal, with zero
+for an empty Session. The request carries user text only. The host chooses the
+route and assembles model history from Session records.
+
+#+begin_example
+StartSessionTurn { session_id: "gui-session", user_text: "请开始",
+                   after_turn: 0, submission_id: "gui-send-1" }
+               -> { turn: { session_id: "gui-session", ordinal: 1 } }
+#+end_example
+
+The Session commits its start record before model dispatch. A successful
+response lets GPUI associate the draft with the returned turn and advance its
+known ordinal. A refusal leaves the draft available to edit or send later.
+=ABORTED= can indicate concurrent admission, and =FAILED_PRECONDITION= can
+indicate an active or unresolved turn or a stale ordinal. GPUI must preserve
+the draft on either result. If the response is lost, show that admission is
+unknown and retain the draft. Reconnect and retry the exact request. A
+committed submission returns its original turn. =ALREADY_EXISTS= signals
+that the ID belongs to different input.
+
+** Receive events and advance the cursor
+
+Open =WatchSessionTurn= for the returned reference. Omit =after_event_id= for
+a fresh transcript for this turn. Each server message carries an =event_id=
+and one visible event. GPUI routes it to the view for that turn.
+
+| Event | Client projection |
+|-------+-------------------|
+| =Started= | Mark the turn as started and reuse the user row associated with the start response. The event carries no user text. |
+| =TextCheckpoint= | Append its UTF-8 text to the assistant row for the turn. |
+| =Outcome= | Record the committed outcome and stop following that turn. |
+
+=REJECTED_BEFORE_DISPATCH= reports a committed refusal before model
+dispatch. GPUI can show the refusal alongside the admitted user message.
+
+Treat event IDs as opaque. The Session can persist records that the wire
+stream filters out, including thinking checkpoints. Apply visible events in
+delivery order and ignore duplicates by turn reference and event ID. When
+saving the view for restart, persist the applied projection and its last
+applied cursor together. Advancing the cursor upon network receipt can skip
+text the GUI has yet to apply. Any late callback from a replaced watch should
+be discarded by the client before it updates the view.
+
+** Reconnect and request cancellation
+
+After GPUI applies =第一段=, let =c1= stand for that event's actual ID. The
+connection drops and the host commits =第二段=. GPUI reconnects with the same
+turn reference and supplies =after_event_id = c1=. The server sends the
+committed suffix beginning with =第二段=. Connection loss changes the GUI's
+observation state. The Runtime can continue executing while GPUI reconnects.
+
+#+begin_example
+WatchSessionTurn { turn: { session_id: "gui-session", ordinal: 1 }, after_event_id: c1 }
+               -> { event_id: c2, text_checkpoint: { text: "第二段" } }
+#+end_example
+
+If GPUI has the turn reference but no saved view, replay from the beginning
+of the turn. An invalid cursor requires rebuilding that turn's projection
+from a known position. An empty stream after a saved terminal cursor means
+there is no later event to apply. Stream closure before GPUI sees a terminal
+event leaves the turn outcome unconfirmed in the view.
+
+When the user presses Stop, send =CancelSessionTurn= for the same turn on a
+unary call. The watch can continue receiving committed events while GPUI shows
+that it is waiting for the cancellation result. The HTTP/2 fixture observes
+this response shape. The actual event IDs come from the server.
+
+#+begin_example
+CancelSessionTurn { turn: { session_id: "gui-session", ordinal: 1 } }
+                -> { turn: { session_id: "gui-session", ordinal: 1 },
+                     runtime: { completed: true, cancellation_requested: true,
+                                tracker_closed: true, remaining_tasks: 0, ... },
+                     outcome: SESSION_TURN_OUTCOME_REMOTE_UNCERTAIN }
+#+end_example
+
+| Observation | What GPUI can display |
+|-------------+-----------------------|
+| =runtime.completed= is true and =remaining_tasks= is zero | The local task has retired. |
+| =outcome= is =REMOTE_UNCERTAIN= | The provider's final state is unknown. Keep the committed partial text. |
+| =outcome= is =COMPLETED= | The turn completed. Read any missing text and terminal event through the watch. |
+| =runtime.completed= is false and =outcome= is =UNSPECIFIED= | Local retirement was unconfirmed when the RPC responded. Continue observing the Session. =timeout_ms= reports the wait budget. |
+| No receipt arrives, or the server no longer has that turn's local scope | Local retirement evidence is unavailable to the GUI. A watch may still recover the journal outcome. |
+
+=cancellation_requested= describes this call. For example, a later call
+against an already-finished local scope can report =false=. The unary receipt
+updates local retirement information. Only an applied stream event advances
+the watch cursor. Either message can arrive first. If a journal write fails,
+the current cancel RPC can return an error without its Runtime receipt. The
+proposed readback contract below keeps these observations recoverable.
+
+The server owns the Session and Runtime state throughout this flow. GPUI owns
+the draft, projection and applied cursor. An external application can use the
+same RPCs over HTTP/2. A future Weaver ACP adapter has its own editor-facing
+contract and can consume the Session owner operations where needed.
+[[file:../../dev/sysml/app-server.sysml][GPUI message flow model]] ·
+[[file:tests/session.rs][HTTP/2 fixture]]
+
+* Recoverable Session interactions
+:PROPERTIES:
+:CUSTOM_ID: recoverable-session-interactions
+:END:
+
+Submission recovery is implemented in =StartSessionTurn=. A bounded Session
+summary and cancellation receipt readback remain proposals.
+[[file:../../dev/sysml/app-server.sysml][OpenSysML requirements]]
+
+** User reports that inform the design
+
+- A Codex Desktop report describes a duplicate turn after reconnect, and a
+  direct App Server reproduction reports that completing between a history
+  read and live subscription can hide the final answer. These motivate separate
+  submission recovery and journal replay. [[https://github.com/openai/codex/issues/35203][Codex #35203]] ·
+  [[https://github.com/openai/codex/issues/47124][Codex #47124]]
+- A Codex user measured a 23 MB resume response with generated images that
+  exceeded their client's frame limit. A Claude Code user reported that a
+  Session ID emitted during resume could not be used as the next resume target.
+  These motivate bounded recovery responses and a stable Session identity.
+  [[https://github.com/openai/codex/issues/40362][Codex #40362]] ·
+  [[https://github.com/anthropics/claude-code/issues/58760][Claude Code #58760]]
+- A Codex user reported a stalled turn after disconnect during tool execution.
+  A Claude Code report describes active-turn input that was processed but
+  absent from history after resume. These motivate explicit ownership of
+  pending work and an admission receipt backed by the journal.
+  [[https://github.com/openai/codex/issues/40306][Codex #40306]] ·
+  [[https://github.com/anthropics/claude-code/issues/41230][Claude Code #41230]]
+- A Codex queue integration reported that the acknowledgement had the same
+  meaning to the sender whether automatic dispatch could proceed or was
+  paused after interruption. This motivates reporting admission and dispatch
+  eligibility separately whenever Marlin exposes a queue.
+  [[https://github.com/openai/codex/issues/56914][Codex #56914]]
+
+The five cited Codex issues were open when checked on 2026-11-13. They
+describe specific releases and reproductions. The Marlin requirements below
+are design inferences from those failures.
+
+** Recover a send whose response was lost
+
+The GUI records a client-generated submission ID and its draft before sending.
+The Session ID stays stable across connections. The submission ID identifies
+one user action and is scoped to the host's authorized project and Session.
+The turn reference
+identifies admitted execution. The event cursor identifies an exclusive
+position in that turn's committed stream. Connection IDs and provider call
+IDs are internal to their respective owners.
+
+=StartSessionTurn= requires a submission ID of 1–128 ASCII letters, digits,
+hyphens or underscores. The Session journal atomically commits the existing
+start record and a submission record keyed by project, Session and ID. The
+submission record points to the original turn. The start record retains the
+exact text and its ordinal determines the admitted =after_turn=. A retry
+reads these committed records before it checks admission for new work.
+
+| Observation | Server result | GUI behavior |
+|-------------+---------------+--------------|
+| Same ID and same original input | Return the original turn reference. | Attach to that turn and keep the existing transcript. |
+| Same ID and changed input | Return =ALREADY_EXISTS=. | Keep the draft. A new user send gets a new ID. |
+| Different ID while the Session is busy | Refuse admission. | Keep the unsent draft. |
+| Admission response unavailable | Retry the exact request with the same ID. | Show that the send is being checked. |
+
+For this contract, a busy Session refuses new submissions. If queued input
+is added later, the Session must expose queue admission, dispatch eligibility
+and the typed reason for a pause. A queued draft becomes an admitted turn only
+when its own start record commits.
+
+The equality check binds the exact user text and original =after_turn= to the
+submission. A retry keeps these fields even if the view has advanced. If a
+start is committed and the owner disappears before the dispatch outcome can be
+established, recover the original turn reference with an unresolved state.
+The provider may already have seen the request. Recovery cannot automatically
+dispatch it again. Turn-local ownership and journal commits govern one
+admission; remote side effects need provider evidence.
+
+** Reopen a Session without rebuilding the whole view
+
+Provide a bounded, read-only Session summary from the Session owner with the
+latest committed turn reference, active turn if known, and typed recovery
+state. Direct lookup by authorized Session and submission identity must work
+when a derived listing index is stale. A summary of a particular turn carries
+the last committed cursor represented by its state. A fresh GUI that has only
+a summary can obtain the visible text through bounded replay. A GUI restoring
+its saved view uses the last cursor whose visible event it applied and saved.
+
+Keep =WatchSessionTurn= as the ordered suffix of the same journal. A terminal
+event committed during attach appears in the replay suffix whenever the client
+has yet to apply it. The client deduplicates by turn reference and event ID.
+After any transport interruption it can recover the same suffix. A watch
+deadline, connection close or silent observer leaves the turn's outcome to the
+Session owner. The durable store and the live Runtime independently determine
+whether a turn is terminal, still executing or unresolved.
+
+Budget recovery by encoded bytes and record count, including the work needed
+to fill a page. A large transcript or artifact is fetched on demand through
+its authorized owner. A slow reader retains bounded resources and releases
+its slot when the watch ends. Control calls and recovery for another Session
+must remain responsive under a saturated replay. Model input construction has
+its own budget. In the current build, a long history can refuse a new turn
+once it exceeds the input budget. The GUI needs a typed reason so it can keep
+the draft and show the limit while existing committed results remain readable.
+
+** Recover cancellation evidence
+
+Keep observation, cancellation and a new submission as separate actions. The
+GUI shows that cancellation was requested, then reports local task retirement,
+its wait timeout or missing evidence from a typed Runtime receipt. A completion
+that wins the race remains the committed turn outcome. If the provider supplies
+no stop evidence, display that uncertainty alongside local retirement. If the
+Session write fails, surface the journal error independently of the Runtime
+result so a locally retired task can still require Session reconciliation.
+
+Expose the last authoritative cancellation observation by turn reference
+through the Session read surface. A receipt retained after later turns or a
+process restart must come from a recorded Runtime observation associated with
+that turn. With missing evidence, return an explicit unavailable receipt
+state and the journal outcome if present. The turn scope must also give every
+pending tool call a terminal observation or unresolved state if its executor
+disappears. The current text-turn adapter does not dispatch tools.
+
+** Acceptance scenarios for the next protocol change
+
+| Scenario | Required observation |
+|----------+----------------------|
+| Start committed, response dropped, two clients retry or send concurrently | The original sender recovers its exact turn by ID. The other draft stays unadmitted. The gateway receives one dispatch. |
+| Same submission ID with edited text, then retry after the turn is superseded | The edited payload gets a typed conflict. The original payload resolves to the original turn. |
+| Completion races attach on both sides of a journal read | Applying the replay suffix yields the complete visible text and exactly one outcome. Replaying from its terminal cursor yields an empty suffix. |
+| Lost local cursor, stale listing index and large prior history | Direct Session lookup still works. Bounded pages restore the view. A second Session's cancel and summary calls stay responsive while replay is backpressured. |
+| Cancellation races completion, journal write failure or provider stop timeout | The GUI can distinguish the committed outcome, journal error, Runtime retirement and remote stop evidence. Retrying after a later turn recovers recorded evidence or an explicit unavailable receipt. |
+| Host restarts with a committed start and uncertain provider dispatch | The original identity and last committed text survive. Status shows unresolved dispatch and the gateway sees no automatic resubmission. |
+
+Quint covers lost start responses, conflicting input, competing submissions,
+and restart with a committed checkpoint and no live turn owner. The real
+HTTP/2 fixture pauses the start after its atomic commit,
+drops the caller, then verifies that retry returns the original turn and that
+changed input conflicts. It releases the original owner and checks one
+gateway dispatch. A second HTTP/2 test uses a temporary Turso database. It
+drops the start response after commit, waits for the first committed text
+checkpoint, kills the server process, then opens the same database from a
+new server process. It checks the original turn, =ALREADY_EXISTS= for changed
+text, replay of the original checkpoint, and one gateway dispatch across
+both processes. The replay reports that the unfinished turn has no live owner.
+Cancellation receipt readback across restart remains a proposal.
+Record first usable summary latency, replay bytes and cancel latency while
+replay is backpressured before choosing budgets.
+
 * Build and embed
 
 Use the repository's protobuf toolchain (=protoc=). Generated Rust bindings
-are written into Cargo's build directory. Build and test the feature with
-=cargo test --locked -p marlin-agent-app-server --features grpc=.
+and =marlin-app-v1.bin= are generated in the same Cargo build step from the
+one =app_server.proto= source. Rust exposes the descriptor as
+=marlin_agent_app_server::v1::FILE_DESCRIPTOR_SET=. Distribute that schema
+or its descriptor to downstream code generators for each platform. Client
+projects own their UI and language-specific generated bindings. A native app
+can use its platform's gRPC plugin with the descriptor as the input schema.
+For example, ~protoc --descriptor_set_in=marlin-app-v1.bin~ can supply the
+schema to an installed language generator for =marlin/app/v1/app_server.proto=.
+Build and test with =cargo test --locked -p marlin-agent-app-server --features grpc=.
+
+Run the persistent restart test alone with
+~cargo test --locked -p marlin-agent-app-server --features grpc --test session turso_http2_recovers_lost_submission_after_process_restart -- --exact~.
 
 #+begin_src rust
 let session = marlin_agent_app_server::SessionBinding::new(store, project, agent, runtime)?;

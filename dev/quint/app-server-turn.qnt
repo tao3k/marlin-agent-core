@@ -4,17 +4,33 @@
 // A Session journal, one Runtime task and one observing client. A commit and
 // a client acknowledgement are separate actions. A dropped connection loses
 // its delivery position and reconnects from the last acknowledged cursor.
+// A process restart also loses the live owner of an unfinished turn.
 module appServerTurn {
   type State = { phase: str, log: List[str], acknowledged: int, delivered: int,
-    connected: bool, cancel: bool, localRetired: bool, receipt: str, dispatches: int }
+    connected: bool, cancel: bool, localRetired: bool, receipt: str, dispatches: int,
+    submission: str, startResponse: str }
   var s: State
 
   action init = s' = { phase: "idle", log: [], acknowledged: 0, delivered: 0,
-    connected: true, cancel: false, localRetired: false, receipt: "none", dispatches: 0 }
+    connected: true, cancel: false, localRetired: false, receipt: "none", dispatches: 0,
+    submission: "none", startResponse: "none" }
 
-  action commitStart = all {
-    s.phase == "idle",
-    s' = s.with("phase", "claimed").with("log", ["start"]),
+  action commitStart = {
+    nondet id = Set("client-a", "client-b").oneOf()
+    all {
+      s.phase == "idle",
+      s' = s.with("phase", "claimed").with("log", ["start"]).with("submission", id),
+    }
+  }
+  action retryStart(id: str, sameInput: bool): bool = all {
+    s.connected, s.submission != "none",
+    s' = s.with("startResponse", if (id != s.submission) "busy"
+      else if (sameInput) s.submission else "conflict"),
+  }
+  action retryAnyStart = {
+    nondet id = Set("client-a", "client-b").oneOf()
+    nondet sameInput = Set(true, false).oneOf()
+    retryStart(id, sameInput)
   }
   action dispatch = all {
     s.phase == "claimed", not(s.cancel),
@@ -62,6 +78,12 @@ module appServerTurn {
     s.cancel, not(s.localRetired), s.receipt == "none",
     s' = s.with("receipt", "timeout"),
   }
+  action restartWithUnfinishedTurn = all {
+    Set("claimed", "running", "writing-text", "writing-finish", "write-error").contains(s.phase),
+    s' = s.with("phase", "owner-lost").with("connected", false)
+      .with("delivered", s.acknowledged).with("cancel", false)
+      .with("localRetired", false).with("receipt", "none"),
+  }
   action disconnect = all { s.connected, s' = s.with("connected", false) }
   action reconnect = all {
     not(s.connected),
@@ -78,18 +100,22 @@ module appServerTurn {
   action step = any {
     commitStart, dispatch, beginCheckpoint, commitCheckpoint, beginFinish,
     commitFinish, requestCancel, commitCancellation, writeFailure, retire,
-    publishReceipt, timeoutReceipt, disconnect, reconnect, deliver, acknowledge,
+    publishReceipt, timeoutReceipt, restartWithUnfinishedTurn, disconnect, reconnect,
+    deliver, acknowledge, retryAnyStart,
   }
 
   val hasTerminal = if (s.log.length() == 0) false else Set("completed", "uncertain").contains(s.log.nth(s.log.length() - 1))
   val safe = all {
     s.acknowledged >= 0, s.acknowledged <= s.delivered, s.delivered <= s.log.length(),
     s.dispatches <= 1,
+    (s.submission != "none") iff s.log.length() > 0,
+    Set("client-a", "client-b").contains(s.startResponse) implies s.startResponse == s.submission,
     s.dispatches == 1 implies (s.log.length() > 0 and s.log.head() == "start"),
     s.receipt == "joined" implies (s.localRetired and hasTerminal),
     s.phase == "terminal" iff hasTerminal,
     (hasTerminal and s.log.nth(s.log.length() - 1) == "uncertain") implies s.cancel,
     s.phase == "write-error" implies not(hasTerminal),
+    s.phase == "owner-lost" implies (not(s.localRetired) and s.receipt == "none"),
   }
 
   run reconnectAndCancelTest = init.then(commitStart).then(dispatch).then(deliver)
@@ -106,4 +132,21 @@ module appServerTurn {
     .then(writeFailure).then(retire).expect(safe and s.log == ["start"] and s.receipt == "none")
   run timeoutDoesNotProveRetirementTest = init.then(commitStart).then(dispatch)
     .then(requestCancel).then(timeoutReceipt).expect(safe and not(s.localRetired))
+  run lostStartResponseTest = init.then(commitStart).then(disconnect).then(dispatch)
+    .then(reconnect).then(retryStart(s.submission, true))
+    .expect(safe and s.startResponse == s.submission and s.dispatches == 1)
+  run restartAfterLostStartResponseTest = init.then(commitStart).then(disconnect)
+    .then(dispatch).then(beginCheckpoint).then(commitCheckpoint)
+    .then(restartWithUnfinishedTurn).then(reconnect)
+    .then(retryStart(s.submission, true))
+    .expect(safe and s.phase == "owner-lost" and s.startResponse == s.submission)
+    .then(retryStart(s.submission, false)).then(deliver).then(deliver)
+    .expect(safe and s.startResponse == "conflict" and s.dispatches == 1
+      and s.log == ["start", "text"] and s.delivered == 2)
+  run conflictingRetryTest = init.then(commitStart).then(dispatch)
+    .then(retryStart(s.submission, false))
+    .expect(safe and s.startResponse == "conflict" and s.dispatches == 1)
+  run competingSubmissionTest = init.then(commitStart).then(dispatch)
+    .then(retryStart(if (s.submission == "client-a") "client-b" else "client-a", true))
+    .expect(safe and s.startResponse == "busy" and s.dispatches == 1)
 }

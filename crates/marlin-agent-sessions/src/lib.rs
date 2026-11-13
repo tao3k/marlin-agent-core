@@ -17,9 +17,9 @@ pub use context::{
 pub use conversation::{
     CONVERSATION_MAX_CHECKPOINT_SEGMENTS, ConversationCheckpointChannel,
     ConversationCheckpointSpan, ConversationEvent, ConversationEventEntry, ConversationEventReader,
-    ConversationJournal, ConversationJournalError, ConversationTerminalObservation,
-    ConversationTurn, ConversationTurnId, ConversationTurnOutcome, ConversationTurnStart,
-    ConversationUncertaintyReason,
+    ConversationJournal, ConversationJournalError, ConversationSubmissionId,
+    ConversationTerminalObservation, ConversationTurn, ConversationTurnId, ConversationTurnOutcome,
+    ConversationTurnStart, ConversationUncertaintyReason,
 };
 pub use id::{SessionId, SessionIdError, SessionKind};
 pub use identity::{AgentSessionContext, SessionIdentity, SessionIsolationReceipt};

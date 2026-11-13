@@ -32,4 +32,6 @@ tonic-prost = { version = "=0.14.9", optional = true }
 tonic-prost-build = { version = "=0.14.6", optional = true }
 
 [dev-dependencies]
+marlin-agent-storage = { workspace = true, features = ["turso"] }
+tempfile.workspace = true
 tokio-stream = { workspace = true, features = ["net"] }

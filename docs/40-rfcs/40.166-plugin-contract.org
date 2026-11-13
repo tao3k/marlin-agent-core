@@ -267,13 +267,23 @@ environment. Linked Scheme modules require host provisioning.
 :CUSTOM_ID: plugin-transport
 :END:
 
-The first external transport is the optional Marlin App Server package. It
-serves GUI, Web and server-to-server callers with capabilities discovery and
-streamed text turns through the model gateway. A host-bound Session supports
-start, cursor-based reconnection and cancellation through the existing journal
-and Runtime task receipts. Plugin activation and scoped
-panel actions remain separate contracts. The terminal UI uses its in-process
-API. [[file:../../crates/marlin-agent-app-server/README.org][App Server package and protocol]]
+The optional Marlin App Server package exposes Session messages to GPUI,
+Web and other external clients. Its Protobuf service projects turn
+submission, cursor-based replay and cancellation through the existing
+journal and Runtime receipts. The terminal UI uses its in-process API.
+Weaver supplies model routing and is the proposed owner of an optional
+Agent Client Protocol adapter for editor integrations. Plugin activation
+and scoped panel actions have their own contracts.
+[[file:../../crates/marlin-agent-app-server/README.org][App Server package and protocol]]
+The GPUI walkthrough maps the current wire messages to the journal, local
+view cursor and Runtime receipt.
+[[file:../../crates/marlin-agent-app-server/README.org::#gpui-message-walkthrough][GPUI message walkthrough]]
+
+The Session journal commits submission identity and turn admission together.
+Clients can recover a lost acknowledgement by retrying the original request.
+The recovery design also specifies a proposed Session summary and cancellation
+receipt readback using the same Session and Runtime owners.
+[[file:../../crates/marlin-agent-app-server/README.org::#recoverable-session-interactions][App Server recovery and acceptance scenarios]]
 
 Marlin's Rust plugin engine owns the gRPC service, runtime lifecycle, and
 message channels. A plugin package contributes a declaration and any

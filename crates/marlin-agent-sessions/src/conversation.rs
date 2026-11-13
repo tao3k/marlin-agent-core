@@ -25,6 +25,7 @@ const CHECKPOINT_KIND: &str = "marlin.conversation.turn.checkpoint.v1";
 const THINKING_CHECKPOINT_KIND: &str = "marlin.conversation.turn.thinking-checkpoint.v1";
 const UNCERTAIN_KIND: &str = "marlin.conversation.turn.uncertain.v1";
 const TURN_PREFIX: &str = "conversation:";
+const SUBMISSION_KIND: &str = "marlin.conversation.submission.v1";
 const MAX_CHECKPOINT_BYTES: usize = 128 * 1024;
 const MAX_PARTIAL_BYTES: usize = 16 * 1024 * 1024;
 /// Maximum contiguous channel runs in one recorded turn.
@@ -47,6 +48,25 @@ async fn write_with_authority<E>(
 /// Ordinal in a single conversation, encoded as a fixed-width storage key.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub struct ConversationTurnId(u64);
+
+/// Client-generated identity of one submission, scoped to a project and Session.
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+pub struct ConversationSubmissionId(String);
+
+impl ConversationSubmissionId {
+    pub fn new(value: String) -> Option<Self> {
+        (!value.is_empty()
+            && value.len() <= 128
+            && value
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_')))
+        .then_some(Self(value))
+    }
+
+    fn record_turn(&self) -> Result<TurnId, StorageError> {
+        TurnId::new(format!("conversation-submission:{}", self.0))
+    }
+}
 
 impl ConversationTurnId {
     /// Returns the numeric ordinal, starting at one.
@@ -357,6 +377,30 @@ impl<S: SessionEventStore> ConversationJournal<S> {
         start: ConversationTurnStart,
         created_at_unix_ms: i64,
     ) -> Result<ConversationTurnId, ConversationJournalError> {
+        self.commit_start(start, None, created_at_unix_ms).await
+    }
+
+    /// Atomically claim both the submission identity and its new turn ordinal.
+    pub async fn start_submission(
+        &mut self,
+        submission: &ConversationSubmissionId,
+        start: ConversationTurnStart,
+        after_turn: u64,
+        created_at_unix_ms: i64,
+    ) -> Result<ConversationTurnId, ConversationJournalError> {
+        if self.next - 1 != after_turn {
+            return Err(ConversationJournalError::StaleTurn);
+        }
+        self.commit_start(start, Some(submission), created_at_unix_ms)
+            .await
+    }
+
+    async fn commit_start(
+        &mut self,
+        start: ConversationTurnStart,
+        submission: Option<&ConversationSubmissionId>,
+        created_at_unix_ms: i64,
+    ) -> Result<ConversationTurnId, ConversationJournalError> {
         if self.active.is_some() {
             return Err(ConversationJournalError::UnfinishedTurn);
         }
@@ -388,7 +432,26 @@ impl<S: SessionEventStore> ConversationJournal<S> {
             serde_json::to_vec(&start)?,
             created_at_unix_ms,
         )?;
-        self.storage.append_session_event(event).await?;
+        if let Some(submission) = submission {
+            // This Session-wide key and the normal turn start key are claimed
+            // in one transaction. Only a successful writer can dispatch.
+            let claim = SessionEventRecord {
+                project_id: event.project_id.clone(),
+                session_id: event.session_id.clone(),
+                agent_id: event.agent_id.clone(),
+                turn_id: submission.record_turn()?,
+                event_id: EventId::new("submission")?,
+                event_kind: SUBMISSION_KIND.into(),
+                causality_parent_event_id: None,
+                body: serde_json::to_vec(&id)?,
+                created_at_unix_ms,
+            };
+            self.storage
+                .append_session_events_atomically(vec![event, claim])
+                .await?;
+        } else {
+            self.storage.append_session_event(event).await?;
+        }
         self.next = next;
         self.active = Some(ConversationTurn {
             id,
@@ -845,6 +908,8 @@ pub enum ConversationJournalError {
     /// Historical terminal record lacks evidence that remote work retired.
     LegacyOutcomeUnresolved,
     ToolRequestPending,
+    StaleTurn,
+    SubmissionConflict,
     UnownedTurn,
     WrongActiveTurn,
     OrdinalExhausted,
@@ -873,6 +938,10 @@ impl fmt::Display for ConversationJournalError {
                 f.write_str("historical failure or cancellation has no remote retirement evidence")
             }
             Self::ToolRequestPending => f.write_str("conversation has a pending tool request"),
+            Self::StaleTurn => f.write_str("Session turn cursor is stale"),
+            Self::SubmissionConflict => {
+                f.write_str("submission ID was already used with different input")
+            }
             Self::UnownedTurn => {
                 f.write_str("replayed unfinished turn is owned by an unknown process")
             }

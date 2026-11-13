@@ -4,8 +4,9 @@
 
 use marlin_agent_protocol::ModelEndpoint;
 use marlin_agent_sessions::{
-    ConversationJournal, ConversationJournalError, ConversationTerminalObservation,
-    ConversationTurnOutcome, ConversationTurnStart,
+    ConversationEventReader, ConversationJournal, ConversationJournalError,
+    ConversationSubmissionId, ConversationTerminalObservation, ConversationTurnOutcome,
+    ConversationTurnStart,
 };
 use marlin_agent_storage::{
     AgentId, InMemoryAgentStorage, ProjectId, SessionEventBatchWriteReceipt, SessionEventCount,
@@ -17,6 +18,60 @@ use marlin_agent_storage::{
 // backend need not implement unrelated artifact or topology operations.
 #[derive(Clone, Default)]
 struct SessionOnly(InMemoryAgentStorage);
+
+#[tokio::test]
+async fn duplicate_submission_rolls_back_new_ordinal_and_survives_reopen() {
+    let store = SessionOnly::default();
+    let project = ProjectId::new("project").unwrap();
+    let session = SessionId::new("session").unwrap();
+    let agent = AgentId::new("agent").unwrap();
+    let submission = ConversationSubmissionId::new("send-1".into()).unwrap();
+    let start = ConversationTurnStart {
+        endpoint: ModelEndpoint::new("openai", "gpt-fixture"),
+        user_text: "hello".into(),
+    };
+    let mut journal = ConversationJournal::open(
+        store.clone(),
+        project.clone(),
+        session.clone(),
+        agent.clone(),
+        |_| {},
+    )
+    .await
+    .unwrap();
+    let first = journal
+        .start_submission(&submission, start.clone(), 0, 1)
+        .await
+        .unwrap();
+    journal
+        .finish(
+            first,
+            ConversationTerminalObservation::RejectedBeforeDispatch {
+                diagnostic: "fixture".into(),
+            },
+            2,
+        )
+        .await
+        .unwrap();
+    assert!(matches!(
+        journal
+            .start_submission(&submission, start.clone(), 1, 3)
+            .await,
+        Err(ConversationJournalError::Storage(
+            marlin_agent_storage::StorageError::DuplicateSessionEvent { .. }
+        ))
+    ));
+    let second = journal.start(start, 4).await.unwrap();
+    assert_eq!(second.get(), 2);
+    let reader = ConversationEventReader::new(store, project, session, agent);
+    assert_eq!(
+        reader
+            .resolve_submission(&submission, "hello", 0)
+            .await
+            .unwrap(),
+        Some(first)
+    );
+}
 
 impl SessionEventStore for SessionOnly {
     fn count_session_events<'a>(

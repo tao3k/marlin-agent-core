@@ -20,9 +20,9 @@ use marlin_agent_runtime::{
 };
 use marlin_agent_sessions::{
     ConversationCheckpointChannel, ConversationEvent, ConversationEventReader, ConversationJournal,
-    ConversationJournalError, ConversationTerminalObservation, ConversationTurnId,
-    ConversationTurnOutcome, ConversationTurnStart, ConversationUncertaintyReason,
-    RuntimeTaskTrackerPolicy,
+    ConversationJournalError, ConversationSubmissionId, ConversationTerminalObservation,
+    ConversationTurnId, ConversationTurnOutcome, ConversationTurnStart,
+    ConversationUncertaintyReason, RuntimeTaskTrackerPolicy,
 };
 use marlin_agent_storage::{
     AgentId, EventId, ProjectId, SessionEventStore, SessionId, StorageError, StoragePageLimit,
@@ -128,21 +128,30 @@ impl<S: SessionEventStore + Clone + 'static> SessionBinding<S> {
         gateway: Arc<dyn ModelStreamingGateway>,
     ) -> Result<SessionTurnRef, Status> {
         self.check_scope(&request.session_id)?;
+        let submission = ConversationSubmissionId::new(request.submission_id.clone())
+            .ok_or_else(|| Status::invalid_argument("invalid submission ID"))?;
+        let owner = self.inner.clone();
+        if let Some(turn) = owner.resolve_submission(&submission, &request).await? {
+            return Ok(turn);
+        }
         if request.user_text.trim().is_empty()
             || request.user_text.len() > MAX_REQUEST_BYTES as usize
         {
             return Err(Status::invalid_argument("invalid user text"));
         }
-        let owner = self.inner.clone();
-        let current = owner
-            .current
-            .clone()
-            .try_lock_owned()
-            .map_err(|_| Status::aborted("Session admission is busy"))?;
+        let Ok(current) = owner.current.clone().try_lock_owned() else {
+            return owner
+                .resolve_submission(&submission, &request)
+                .await?
+                .ok_or_else(|| Status::aborted("Session admission is busy"));
+        };
         let (reply, result) = owner.runtime.oneshot_channel();
         // Admission outlives its RPC after the journal write has begun.
         let admission = self.inner.runtime.spawn(async move {
-            admit(owner, current, request, endpoint, gateway, reply).await;
+            admit(
+                owner, current, submission, request, endpoint, gateway, reply,
+            )
+            .await;
         });
         admission
             .admission()
@@ -260,14 +269,47 @@ impl<S: SessionEventStore + Clone + 'static> SessionBinding<S> {
     }
 }
 
+impl<S: SessionEventStore> Binding<S> {
+    fn wire_turn(&self, id: ConversationTurnId) -> SessionTurnRef {
+        SessionTurnRef {
+            session_id: self.session.as_str().to_owned(),
+            ordinal: id.get(),
+        }
+    }
+
+    async fn resolve_submission(
+        &self,
+        id: &ConversationSubmissionId,
+        request: &StartSessionTurnRequest,
+    ) -> Result<Option<SessionTurnRef>, Status> {
+        self.reader
+            .resolve_submission(id, &request.user_text, request.after_turn)
+            .await
+            .map(|turn| turn.map(|turn| self.wire_turn(turn)))
+            .map_err(journal_status)
+    }
+}
+
 async fn admit<S: SessionEventStore + Clone + 'static>(
     owner: Arc<Binding<S>>,
     mut current: OwnedMutexGuard<Option<ActiveTurn>>,
+    submission: ConversationSubmissionId,
     request: StartSessionTurnRequest,
     endpoint: ModelEndpoint,
     gateway: Arc<dyn ModelStreamingGateway>,
     reply: oneshot::Sender<Result<SessionTurnRef, Status>>,
 ) {
+    match owner.resolve_submission(&submission, &request).await {
+        Ok(None) => {}
+        Ok(Some(turn)) => {
+            let _ = reply.send(Ok(turn));
+            return;
+        }
+        Err(error) => {
+            let _ = reply.send(Err(error));
+            return;
+        }
+    }
     let admitted = async {
         if reply.is_closed() || owner.runtime.cancellation_token().is_cancelled() {
             return Err(Status::cancelled("turn admission cancelled"));
@@ -280,7 +322,6 @@ async fn admit<S: SessionEventStore + Clone + 'static>(
                 "Session already has an active turn",
             ));
         }
-        let mut last_turn = 0;
         let mut history = Vec::new();
         let mut bytes = request.user_text.len();
         let mut history_error = None;
@@ -290,7 +331,6 @@ async fn admit<S: SessionEventStore + Clone + 'static>(
             owner.session.clone(),
             owner.agent.clone(),
             |turn| {
-                last_turn = turn.id.get();
                 if matches!(
                     turn.outcome,
                     Some(ConversationTurnOutcome::ToolRequested { .. })
@@ -344,19 +384,18 @@ async fn admit<S: SessionEventStore + Clone + 'static>(
                 journal_status(error)
             }
         })?;
-        if request.after_turn != last_turn {
-            return Err(Status::failed_precondition("Session turn cursor is stale"));
-        }
         if reply.is_closed() || owner.runtime.cancellation_token().is_cancelled() {
             return Err(Status::cancelled("turn admission cancelled before commit"));
         }
         history.push(user_gateway_message(request.user_text.clone()));
         let id = journal
-            .start(
+            .start_submission(
+                &submission,
                 ConversationTurnStart {
                     endpoint: endpoint.clone(),
-                    user_text: request.user_text,
+                    user_text: request.user_text.clone(),
                 },
+                request.after_turn,
                 now_ms(),
             )
             .await
@@ -367,7 +406,13 @@ async fn admit<S: SessionEventStore + Clone + 'static>(
     let (id, journal, model_request) = match admitted {
         Ok(value) => value,
         Err(status) => {
-            let _ = reply.send(Err(status));
+            // Another binding can commit during replay or race the atomic write.
+            // A recovered receipt is read-only, including after an ambiguous write.
+            let result = owner
+                .resolve_submission(&submission, &request)
+                .await
+                .and_then(|turn| turn.ok_or(status));
+            let _ = reply.send(result);
             return;
         }
     };
@@ -383,10 +428,7 @@ async fn admit<S: SessionEventStore + Clone + 'static>(
     });
     drop(current);
     owner.changed.send_replace(());
-    let _ = reply.send(Ok(SessionTurnRef {
-        session_id: owner.session.as_str().to_owned(),
-        ordinal: id.get(),
-    }));
+    let _ = reply.send(Ok(owner.wire_turn(id)));
     let outcome = task
         .join()
         .await
@@ -558,6 +600,12 @@ fn runtime_receipt(receipt: &RuntimeTaskShutdownReceipt) -> RuntimeShutdownRecei
 
 fn journal_status(error: ConversationJournalError) -> Status {
     match error {
+        ConversationJournalError::SubmissionConflict => {
+            Status::already_exists("submission ID was already used with different input")
+        }
+        ConversationJournalError::StaleTurn => {
+            Status::failed_precondition("Session turn cursor is stale")
+        }
         ConversationJournalError::UnfinishedTurn
         | ConversationJournalError::LegacyOutcomeUnresolved => {
             Status::failed_precondition("Session has an unresolved turn")

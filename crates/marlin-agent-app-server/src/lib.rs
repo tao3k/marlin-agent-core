@@ -17,4 +17,7 @@ pub use session::SessionBinding;
 #[cfg(feature = "grpc")]
 pub mod v1 {
     tonic::include_proto!("marlin.app.v1");
+
+    /// Descriptor set generated with the bindings from the same Protobuf source.
+    pub const FILE_DESCRIPTOR_SET: &[u8] = tonic::include_file_descriptor_set!("marlin-app-v1");
 }

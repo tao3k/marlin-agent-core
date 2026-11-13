@@ -2546,6 +2546,7 @@ dependencies = [
  "marlin-agent-storage",
  "marlin-agent-stream",
  "prost",
+ "tempfile",
  "tokio",
  "tokio-stream",
  "tonic",

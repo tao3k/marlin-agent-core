@@ -49,6 +49,18 @@ package MarlinAgentCORE {
         render asInterconnectionDiagram;
     }
 
+    view appServerRecovery {
+        expose MarlinAppServer::recoverSubmission;
+        expose MarlinAppServer::boundedSessionRecovery;
+        expose MarlinAppServer::recoverCancellationEvidence;
+        expose MarlinAppServer::appServer;
+        render asInterconnectionDiagram;
+    }
+
+    view applicationMessageFlow : StandardViewDefinitions::ActionFlowView {
+        expose MarlinAppServer::ApplicationMessageFlow;
+    }
+
     view pluginTransport {
         expose target::pluginEngine;
         expose target::clientShell;

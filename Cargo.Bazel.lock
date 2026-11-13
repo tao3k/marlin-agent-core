@@ -1,5 +1,5 @@
 {
-  "checksum": "aca8d0c8ca349319a4c2d87bdc06725a2de6f18c29a50cc6f18c383e5e7ec4b2",
+  "checksum": "04af311ceeb26e4f277b9d5618b3736c02f1ee7412d92f6c1ea8a0d3fa995cbc",
   "crates": {
     "adler2 2.0.1": {
       "name": "adler2",
@@ -15527,6 +15527,10 @@
         },
         "deps_dev": {
           "common": [
+            {
+              "id": "tempfile 3.27.0",
+              "target": "tempfile"
+            },
             {
               "id": "tokio-stream 0.1.19",
               "target": "tokio_stream"
@@ -32254,11 +32258,26 @@
         "crate_features": {
           "common": [
             "alloc",
-            "default",
             "serde",
             "std"
           ],
-          "selects": {}
+          "selects": {
+            "aarch64-apple-darwin": [
+              "default"
+            ],
+            "aarch64-unknown-linux-gnu": [
+              "default"
+            ],
+            "x86_64-pc-windows-msvc": [
+              "default"
+            ],
+            "x86_64-unknown-linux-gnu": [
+              "default"
+            ],
+            "x86_64-unknown-nixos-gnu": [
+              "default"
+            ]
+          }
         },
         "deps": {
           "common": [
@@ -32377,10 +32396,25 @@
         "crate_features": {
           "common": [
             "alloc",
-            "default",
             "std"
           ],
-          "selects": {}
+          "selects": {
+            "aarch64-apple-darwin": [
+              "default"
+            ],
+            "aarch64-unknown-linux-gnu": [
+              "default"
+            ],
+            "x86_64-pc-windows-msvc": [
+              "default"
+            ],
+            "x86_64-unknown-linux-gnu": [
+              "default"
+            ],
+            "x86_64-unknown-nixos-gnu": [
+              "default"
+            ]
+          }
         },
         "deps": {
           "common": [
@@ -38452,15 +38486,49 @@
           "**"
         ],
         "crate_features": {
-          "common": [
-            "alloc",
-            "ascii",
-            "binary",
-            "default",
-            "parser",
-            "std"
-          ],
-          "selects": {}
+          "common": [],
+          "selects": {
+            "aarch64-apple-darwin": [
+              "alloc",
+              "ascii",
+              "binary",
+              "default",
+              "parser",
+              "std"
+            ],
+            "aarch64-unknown-linux-gnu": [
+              "alloc",
+              "ascii",
+              "binary",
+              "default",
+              "parser",
+              "std"
+            ],
+            "x86_64-pc-windows-msvc": [
+              "alloc",
+              "ascii",
+              "binary",
+              "default",
+              "parser",
+              "std"
+            ],
+            "x86_64-unknown-linux-gnu": [
+              "alloc",
+              "ascii",
+              "binary",
+              "default",
+              "parser",
+              "std"
+            ],
+            "x86_64-unknown-nixos-gnu": [
+              "alloc",
+              "ascii",
+              "binary",
+              "default",
+              "parser",
+              "std"
+            ]
+          }
         },
         "edition": "2021",
         "version": "1.0.5"

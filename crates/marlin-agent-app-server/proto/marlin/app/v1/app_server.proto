@@ -67,6 +67,10 @@ message StartSessionTurnRequest {
   string user_text = 2;
   // Client's observed last turn ordinal. A stale ordinal refuses redispatch.
   uint64 after_turn = 3;
+  // Required. Stable across retries of the exact user_text and after_turn.
+  // 1-128 ASCII letters, digits, hyphens or underscores, scoped to this Session.
+  // Reusing an ID with different input returns ALREADY_EXISTS.
+  string submission_id = 4;
 }
 
 message SessionTurnRef {

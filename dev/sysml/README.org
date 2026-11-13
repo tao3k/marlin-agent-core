@@ -15,6 +15,11 @@
 =MarlinAgentCORE::appServerTransport= shows the optional external App Server
 and its model gateway. [[file:app-server.sysml][App Server model]] ·
 [[file:../../crates/marlin-agent-app-server/README.org][App Server contract]]
+=MarlinAgentCORE::applicationMessageFlow= traces an application send through the Session
+journal, a cursor-based reattach, and the Runtime and Session observations
+after Stop. [[file:../../crates/marlin-agent-app-server/README.org::#gpui-message-walkthrough][GPUI message walkthrough]]
+=MarlinAgentCORE::appServerRecovery= shows submission identity, replay and
+cancellation receipt requirements. [[file:../../crates/marlin-agent-app-server/README.org::#recoverable-session-interactions][Recovery scenarios]]
 
 The scope includes the plugin engine and the terminal client, their transport
 boundaries, and their lifecycles. =project.sysml= selects the top-level views.

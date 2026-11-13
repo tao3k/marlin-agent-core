@@ -42,6 +42,54 @@ impl<S: SessionEventStore> ConversationEventReader<S> {
         }
     }
 
+    /// Resolve a committed submission by its unique Session journal key.
+    pub async fn resolve_submission(
+        &self,
+        submission: &ConversationSubmissionId,
+        user_text: &str,
+        after_turn: u64,
+    ) -> Result<Option<ConversationTurnId>, ConversationJournalError> {
+        let turn = submission.record_turn()?;
+        let event = EventId::new("submission")?;
+        let request = SessionEventPageRequest::new(
+            self.project.clone(),
+            self.session.clone(),
+            StoragePageLimit::new(1)?,
+        )
+        .after(SessionEventCursor::new(turn.clone(), EventId::new("\0")?));
+        let mut page = self.storage.list_session_events_page(request).await?;
+        if page.items.len() > 1 {
+            return Err(invalid());
+        }
+        let Some(record) = page.items.pop() else {
+            return Ok(None);
+        };
+        if record.project_id != self.project || record.session_id != self.session {
+            return Err(invalid());
+        }
+        if record.turn_id > turn {
+            return Ok(None);
+        }
+        if record.turn_id != turn
+            || record.event_id != event
+            || record.agent_id != self.agent
+            || record.event_kind != SUBMISSION_KIND
+            || record.causality_parent_event_id.is_some()
+        {
+            return Err(invalid());
+        }
+        let id: ConversationTurnId = serde_json::from_slice(&record.body)?;
+        let start = self.resolve_cursor(id, id.start_event_id()?).await?;
+        let Some(ConversationEvent::Started(start)) = start.map(|entry| entry.event) else {
+            return Err(invalid());
+        };
+        let expected_after = id.get().checked_sub(1).ok_or_else(invalid)?;
+        if start.user_text != user_text || expected_after != after_turn {
+            return Err(ConversationJournalError::SubmissionConflict);
+        }
+        Ok(Some(id))
+    }
+
     /// Resolve a supplied cursor against a committed event in this turn.
     pub async fn resolve_cursor(
         &self,
