@@ -9,15 +9,16 @@ mod benchmark_input;
 
 use criterion::{Criterion, criterion_group, criterion_main};
 use marlin_agent_tui::ui_elements::{
-    Extent, RegionExtents, UiContentSlot, UiListRow, UiRenderInputs, UiSlotRenderer, hit_test,
-    hit_test_scroll, layout_regions, layout_regions_with_facts, layout_regions_with_scroll,
-    render_input, render_list, render_prompt, render_template, render_with_facts,
-    render_with_regions, render_with_scroll, render_with_slots, resolve_choice, resolve_size,
+    Extent, RegionExtents, UiContentSlot, UiListRow, UiListState, UiRenderInputs, UiSlotRenderer,
+    hit_test, hit_test_scroll, layout_regions, layout_regions_with_facts,
+    layout_regions_with_scroll, render_input, render_list, render_prompt, render_template,
+    render_with_facts, render_with_regions, render_with_scroll, render_with_slots, resolve_choice,
+    resolve_size,
 };
 use marlin_agent_ui::{
     UiComponentId, UiElement, UiSpan, UiTemplateSpan, UiTemplateValue, UiTheme, UiTone,
 };
-use ratatui::{Terminal, backend::TestBackend};
+use ratatui::{Terminal, backend::TestBackend, layout::Rect, widgets::Paragraph};
 use std::{hint::black_box, time::Duration};
 
 fn clear_scroll_targets(element: &mut UiElement) {
@@ -43,6 +44,67 @@ fn clear_scroll_targets(element: &mut UiElement) {
             clear_scroll_targets(child)
         }
         _ => {}
+    }
+}
+
+#[derive(Default)]
+struct AskFrameSlots {
+    list: UiListState,
+}
+
+impl UiSlotRenderer for AskFrameSlots {
+    fn render(
+        &mut self,
+        frame: &mut ratatui::Frame<'_>,
+        area: Rect,
+        _: &UiComponentId,
+        _: Option<&UiElement>,
+        _: &UiRenderInputs<'_>,
+        _: usize,
+    ) {
+        frame.render_widget(Paragraph::new("conversation"), area);
+    }
+
+    fn input(
+        &mut self,
+        frame: &mut ratatui::Frame<'_>,
+        area: Rect,
+        _: &UiElement,
+        _: &UiRenderInputs<'_>,
+    ) {
+        frame.render_widget(Paragraph::new("Tool request:"), area);
+    }
+
+    fn list(
+        &mut self,
+        frame: &mut ratatui::Frame<'_>,
+        area: Rect,
+        element: &UiElement,
+        inputs: &UiRenderInputs<'_>,
+    ) {
+        render_list(
+            frame,
+            area,
+            element,
+            inputs.theme,
+            marlin_agent_tui::ui_elements::UiListData {
+                count: 2,
+                selected: Some(0),
+                extent: inputs.extent,
+            },
+            &mut self.list,
+            |index| {
+                let (name, description) = if index == 0 {
+                    ("approve-once", "Run the requested tool once")
+                } else {
+                    ("reject", "Do not run the requested tool")
+                };
+                Some(UiListRow {
+                    key: Some(UiComponentId::new(name).unwrap()),
+                    bindings: vec![("name", name.into()), ("description", description.into())],
+                })
+            },
+        );
     }
 }
 
@@ -638,6 +700,88 @@ fn mapping(c: &mut Criterion) {
                 .unwrap();
         });
     });
+    let sized = |size, child| UiElement::Sized {
+        size,
+        child: Box::new(child),
+    };
+    let ask_tree = UiElement::Choice {
+        cases: vec![(
+            UiComponentId::new("ask-active").unwrap(),
+            UiElement::Rows(vec![
+                sized(
+                    marlin_agent_ui::UiSize::Flex(1),
+                    UiElement::Region {
+                        id: UiComponentId::new("conversation").unwrap(),
+                        scroll_target: None,
+                        child: Box::new(UiElement::Slot(UiComponentId::new("transcript").unwrap())),
+                    },
+                ),
+                sized(
+                    marlin_agent_ui::UiSize::Cells(1),
+                    UiElement::Template {
+                        background: marlin_agent_ui::UiBackground::Bar,
+                        spans: vec![UiTemplateSpan {
+                            value: UiTemplateValue::Literal("🐟 MARLIN".into()),
+                            tone: UiTone::Accent,
+                            bold: true,
+                        }],
+                    },
+                ),
+                sized(
+                    marlin_agent_ui::UiSize::Cells(1),
+                    UiElement::Input {
+                        bordered: false,
+                        background: marlin_agent_ui::UiBackground::Canvas,
+                        prefix: None,
+                        title: None,
+                        active: UiComponentId::new("ask").unwrap(),
+                    },
+                ),
+                sized(
+                    marlin_agent_ui::UiSize::Cells(2),
+                    UiElement::List {
+                        id: UiComponentId::new("ask-choices").unwrap(),
+                        offset: marlin_agent_ui::UiSize::Cells(0),
+                        child: Box::new(template.clone()),
+                    },
+                ),
+            ]),
+        )],
+        fallback: Box::new(UiElement::Text(Vec::new())),
+    };
+    let mut ask_terminal = Terminal::new(TestBackend::new(120, 40)).unwrap();
+    let mut ask_slots = AskFrameSlots::default();
+    let mut ask_regions = Vec::with_capacity(3);
+    let ask_inputs = UiRenderInputs {
+        theme: &theme,
+        offset: &|_| 0,
+        facts: &|id| id.as_str() == "ask-active",
+        extent: &|_| Extent::Cells(0),
+        bindings: &[],
+    };
+    c.bench_function("ui/mapping/selected-ask-frame-with-slots", |b| {
+        b.iter(|| {
+            ask_regions.clear();
+            ask_slots.list.begin_frame();
+            ask_terminal
+                .draw(|frame| {
+                    render_with_slots(
+                        frame,
+                        frame.area(),
+                        black_box(&ask_tree),
+                        &mut ask_regions,
+                        &ask_inputs,
+                        &mut ask_slots,
+                    );
+                })
+                .unwrap();
+            black_box(ask_slots.list.hit(2, 39));
+        })
+    });
+    assert!(
+        ask_slots.list.hit(2, 39).is_some(),
+        "the fixed Ask frame must paint its second choice"
+    );
     for count in [8, 64] {
         let tree = UiElement::Rows(
             (0..count)

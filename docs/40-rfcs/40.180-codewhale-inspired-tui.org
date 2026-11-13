@@ -2562,6 +2562,18 @@ linked Scheme Bash Ask PTY paths also pass with a clicked Deny preview followed
 by an explicit Enter: approval runs the tool once, while rejection does not.
 The ordinary PTY suite passed 16 tests, with 36 explicitly ignored.
 
+The maintained =ui/mapping/selected-ask-frame-with-slots= Criterion workload
+now paints a fixed 120×40 selected frame through the generic slot adapter:
+conversation slot, Modeline template, input and two keyed Ask rows. Its fixture
+asserts that the second choice was actually painted and is hit-testable. It
+excludes VM startup, live provider work, journal I/O and a real terminal.
+Two 30-sample local runs measured 95% intervals and point estimates of
+=[129.07, 181.53, 239.57]= µs and =[63.904, 69.999, 78.255]= µs.
+The host and shared source state varied, so this spread is evidence against
+claiming a speedup from these samples. A source-frozen paired cohort and full
+PTY input-to-frame measurement remain required for a rendering performance
+claim.
+
 Criterion's ten-sample list diagnostics used the TUI diff SHA-256
 =3a07cc2da7a23a5e571bb9d4c14f8fb3985e12a36a20fb006229a8e1b07abe3a=
 over =f3a4c1fa=. During concurrent compilation, the keyed ten-visible-row
