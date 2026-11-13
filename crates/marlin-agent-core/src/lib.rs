@@ -4,6 +4,7 @@
 
 //! Lean `marlin-agent-core` facade for graph-loop runtime boundaries.
 
+pub mod brief_to_draft;
 mod release;
 
 #[cfg(feature = "app-server")]

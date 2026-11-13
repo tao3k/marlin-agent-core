@@ -7,6 +7,7 @@
 ;;; Aggregated Gerbil runtime test entrypoint.
 
 (import "yuanxu-policy-test"
+        "brief-to-draft-options-test"
         "ui-workbench-test"
         "context-org-contract-test"
         "context-org-boundary-test"

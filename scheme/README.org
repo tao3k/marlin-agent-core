@@ -112,3 +112,13 @@ Run =just agent-policy-routing-abi-gate= for the linked C ABI selector.
 The recorded loop-case trace in =t/fixtures/loop-case-trace.v1= was exported
 from Marlin =5cdd0b1b= using Gerbil =v0.18.2-4-gadd92248=. Rust tests use it
 to exercise typed receipt validation, no-live model denial, and replay.
+
+The Brief-to-Draft acceptance runs the init-selected Scheme settings and
+planning exports from a Rust-owned VM. The linked test admits a signed
+workflow, checks its project grant and activation generation, executes
+the render and file creation through the graph kernel, closes the
+generation, and verifies the archived receipts after removing the worktree.
+The linked AOT workflow builds the Cargo-selected Scheme bridge into a
+temporary prefix, puts it first on the staging load path, and checks the
+Context and workflow configuration modules in the staged program manifest.
+[[file:../crates/marlin-agent-core/tests/integration/brief_to_draft_vm.rs][Brief-to-Draft host test]]

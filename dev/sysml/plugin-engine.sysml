@@ -70,12 +70,38 @@ package MarlinPluginEngine {
                    Single-VM ownership and shutdown are detailed in
                    MarlinSingleVmRuntime. Local Context admission is verified. */
         }
+        part <'MAR-PLG-A09'> workflowBundleAdmission {
+            doc /* crates/marlin-agent-runtime/src/plugin owns signed TOML
+                   verification, host-provisioned workflow registration, project
+                   grant checks and generation-scoped effect admission. Closing
+                   a generation retains outcomes for admitted effects.
+                   Brief-to-Draft execution requires a live generation for
+                   its registered policy module. Offline graph replay checks
+                   the policy module, schemas and registered file capabilities
+                   declared by the signed workflow.
+                   The Brief-to-Draft host test binds the init-selected
+                   settings policy through a linked Scheme object export.
+                   The workspace broker resolves the registered file
+                   capabilities, denies symlink traversal and overwrite,
+                   and records digests for committed effects. Closed effect
+                   evidence verifies against the trusted release and project
+                   digest with the worktree removed. Graph replay checks the
+                   selected template and audience requirement against the
+                   admitted settings digest, then checks committed draft
+                   bytes against the Rust renderer and recorded Scheme facts.
+                   The linked fixture
+                   projects Org facts and executor kinds through Scheme,
+                   crosses Rust ABI readiness and runs render and create on
+                   the graph kernel. Offline verification binds the ordered
+                   node receipts and terminal result to the file effects. */
+        }
 
         dependency admissionUsesProtocol from graphAdmission to policyProtocol;
         dependency bridgeUsesProtocol from schemeCAbiBridge to policyProtocol;
         dependency bridgeUsesSchemePackage from schemeCAbiBridge to schemePackage;
         dependency contextUsesSchemeBridge from contextAdapter to schemeCAbiBridge;
         dependency deckRuntimeUsesSchemeBridge from deckRuntimeHost to schemeCAbiBridge;
+        dependency workflowAdmissionUsesRuntime from workflowBundleAdmission to runtime;
     }
 
     package target {

@@ -5,6 +5,7 @@
 //! Tokio-backed runtime extension traits used by the graph-loop kernel.
 
 pub mod observability;
+pub mod plugin;
 pub mod process;
 
 mod agent_graph;

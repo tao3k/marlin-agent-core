@@ -2,6 +2,8 @@
 //
 // SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
+#[path = "unit/runtime/plugin_lifecycle.rs"]
+mod plugin_lifecycle;
 #[path = "unit/runtime.rs"]
 mod runtime;
 #[path = "unit/runtime/agent_flow_loop.rs"]

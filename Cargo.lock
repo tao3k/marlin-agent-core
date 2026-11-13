@@ -2581,6 +2581,9 @@ dependencies = [
 name = "marlin-agent-core"
 version = "0.1.0"
 dependencies = [
+ "gerbil-scheme 0.1.0 (git+https://github.com/tao3k/gerbil-scheme-rust?rev=dfe8b62b5dc64de88f8d70a77059a1741218ef80)",
+ "gerbil-scheme-aot-build 0.1.0 (git+https://github.com/tao3k/gerbil-scheme-rust?rev=dfe8b62b5dc64de88f8d70a77059a1741218ef80)",
+ "gerbil-scheme-sys 0.1.0 (git+https://github.com/tao3k/gerbil-scheme-rust?rev=dfe8b62b5dc64de88f8d70a77059a1741218ef80)",
  "marlin-agent-app-server",
  "marlin-agent-context",
  "marlin-agent-environment",
@@ -2596,8 +2599,10 @@ dependencies = [
  "marlin-gerbil-ir",
  "marlin-gerbil-scheme",
  "marlin-workspace-protocol",
+ "ring",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
  "tempfile",
  "tokio",
  "tokio-stream",
@@ -2725,6 +2730,8 @@ dependencies = [
  "marlin-rust-project-harness-policy",
  "parking_lot",
  "process-wrap",
+ "ring",
+ "semver",
  "serde",
  "serde_json",
  "sysinfo",

@@ -81,6 +81,27 @@ jobs:
           cargo test --locked -p marlin-deck-runtime --features actor-runtime
           cargo test --locked -p marlin-agent-policy-routing-abi --features linked-selector
 
+      - name: Stage the Brief-to-Draft Scheme program
+        working-directory: scheme
+        shell: bash
+        run: |
+          bridge_manifest=$(cargo metadata --locked --format-version 1 |
+            jq -er '.packages[] | select(.name == "gerbil-scheme-build") | .manifest_path')
+          bridge_root=${bridge_manifest%/crates/gerbil-scheme-build/Cargo.toml}
+          bridge_prefix="$RUNNER_TEMP/brief-to-draft-bridge"
+          (cd "$bridge_root" && GERBIL_PATH="$bridge_prefix" gerbil build)
+          test -s "$bridge_prefix/lib/gerbil-scheme-rust/scheme/program-build.ssi"
+          export GERBIL_LOADPATH="$bridge_prefix/lib:$GERBIL_LOADPATH"
+          gxi brief-to-draft-stage.ss
+          jq -e 'any(.modules[]; .module == "marlin-agent-core/context/types" and .deferred == true) and
+            any(.modules[]; .module == "marlin-agent-core/brief-to-draft/config" and .deferred == true)' \
+            .gerbil/native/brief-to-draft/program.json
+
+      - name: Verify Brief-to-Draft activation and offline replay
+        env:
+          ORGIZE_GERBIL_PROGRAM_MANIFEST: ${{ github.workspace }}/scheme/.gerbil/pkg/github.com/tao3k/orgize/target/gerbil-parser/program.json
+        run: cargo test --locked -p marlin-agent-core --features brief-to-draft-vm-test --test brief_to_draft_vm
+
       - name: Compile linked selector benchmarks
         run: |
           cargo bench --locked -p marlin-deck-runtime --features actor-runtime --bench single_vm_actor --no-run

@@ -10,6 +10,7 @@ filegroup(
         "init.ss",
         "t/fixtures/loop-case-trace.v1",
     ] + glob([
+        "brief-to-draft/*.ss",
         "c-abi/*.ss",
         "c-abi/*.ssi",
         "context/**/*.ss",

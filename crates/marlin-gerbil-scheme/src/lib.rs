@@ -7,6 +7,7 @@
 mod agent_policy_routing;
 mod agent_policy_routing_abi;
 mod aot_runtime;
+mod brief_to_draft;
 mod deck_runtime_policy;
 mod graph_loop_continuation;
 mod loop_case_driver;
@@ -55,6 +56,10 @@ pub use aot_runtime::{
     GerbilAotPlan, GerbilAotProfile, GerbilAotStaticLinkPlan, GerbilAotStaticLinkStatus,
     GerbilAotStatus, GerbilAotSymbol, GerbilAotSymbolAuditMethod, GerbilCCompiler,
     GerbilLinkLibrary, GerbilSymbolAuditor,
+};
+pub use brief_to_draft::{
+    BriefNode, BriefProposal, BriefSettings, BriefSettingsDenial, BriefTemplate,
+    GerbilBriefPlanner, GerbilBriefSettings, GerbilBriefSettingsError,
 };
 pub use deck_runtime_policy::{
     GERBIL_DECK_ROUTE_ABI_PROJECTION_ABI_ID, GERBIL_DECK_ROUTE_ABI_PROJECTION_ABI_VERSION,
