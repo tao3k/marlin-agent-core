@@ -2653,3 +2653,20 @@ mapping only, under shared-host load after an artifact-lock wait. Criterion's
 saved-baseline change percentages compare different earlier binaries; they
 do not establish an improvement or regression for this design. The selected
 frame and first-input latency still require a source-fixed terminal cohort.
+
+** Inherited list scope (2026-11-14)
+
+List rows inherit the enclosing frame's facts and bindings; row bindings and
+the row's =selected= fact take precedence. The native mapping test exercises
+scope inheritance and shadowing. Scheme continues to own its list policies.
+At =75ba9d35=, the linked TUI library passed 244 tests (9 ignored), the
+unlinked library passed 253 (10 ignored), and the ordinary PTY suite passed
+16 (36 ignored). Strict TUI Clippy and the debug binary build also passed.
+
+One linked Criterion run with 10 samples and three inherited bindings measured
+the 256-item list with 10 visible keyed rows at =[36.290, 43.948, 50.457]=
+microseconds. The other list groups had wide intervals, and Criterion reported
+regressions against saved earlier binaries for the plain and keyed groups.
+Shared-host load and different source builds prevent attributing those changes;
+they remain an unresolved performance signal, not a passed regression gate.
+A controlled paired comparison with the full frame binding set is still needed.
