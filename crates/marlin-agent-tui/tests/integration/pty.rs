@@ -148,7 +148,10 @@ impl Terminal {
             ws_xpixel: 0,
             ws_ypixel: 0,
         };
-        let pair = openpty(Some(&size), None).expect("open PTY");
+        let pair = openpty(Some(&size), None).unwrap_or_else(|error| {
+            let os_error = std::io::Error::last_os_error();
+            panic!("open PTY: {error:?}; underlying OS error: {os_error:?}")
+        });
         let master = File::from(pair.master);
         let slave = File::from(pair.slave);
         let initial_mode = tcgetattr(&slave).expect("capture terminal mode");

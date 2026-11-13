@@ -81,54 +81,61 @@ pub(super) fn test_layout() -> UiLayoutPolicy {
                 "minibuffer",
             ]
             .into_iter()
-            .map(|name| marlin_agent_ui::UiElement::Region {
-                id: UiComponentId::new(name).unwrap(),
-                scrollable: matches!(name, "transcript" | "candidates"),
-                child: Box::new(if name == "candidates" {
-                    UiElement::Rows(vec![candidate(true), candidate(false)])
-                } else if name == "minibuffer" {
-                    UiElement::Choice {
-                        cases: ["searching", "search-match", "search-no-match"]
-                            .into_iter()
-                            .map(|name| {
-                                (
-                                    UiComponentId::new(name).unwrap(),
-                                    UiElement::Template {
-                                        background: marlin_agent_ui::UiBackground::None,
-                                        spans: vec![
-                                            UiTemplateSpan {
-                                                value: UiTemplateValue::Literal(
-                                                    "fixture search ".into(),
-                                                ),
-                                                tone: UiTone::Normal,
-                                                bold: false,
-                                            },
-                                            UiTemplateSpan {
-                                                value: UiTemplateValue::Binding(
-                                                    UiComponentId::new("query").unwrap(),
-                                                ),
-                                                tone: UiTone::Normal,
-                                                bold: false,
-                                            },
-                                        ],
-                                    },
-                                )
-                            })
-                            .chain(
-                                [
-                                    "draft-limit",
-                                    "runtime",
-                                    "transcript-focus",
-                                    "extension-focus",
-                                ]
-                                .into_iter()
-                                .map(|name| (UiComponentId::new(name).unwrap(), status(name))),
-                            )
-                            .collect(),
-                        fallback: Box::new(status("fixture status")),
-                    }
+            .map(|name| marlin_agent_ui::UiElement::Sized {
+                size: if name == "transcript" {
+                    marlin_agent_ui::UiSize::Flex(1)
                 } else {
-                    UiElement::Text(vec![])
+                    marlin_agent_ui::UiSize::Binding(UiComponentId::new(name).unwrap())
+                },
+                child: Box::new(marlin_agent_ui::UiElement::Region {
+                    id: UiComponentId::new(name).unwrap(),
+                    scrollable: matches!(name, "transcript" | "candidates"),
+                    child: Box::new(if name == "candidates" {
+                        UiElement::Rows(vec![candidate(true), candidate(false)])
+                    } else if name == "minibuffer" {
+                        UiElement::Choice {
+                            cases: ["searching", "search-match", "search-no-match"]
+                                .into_iter()
+                                .map(|name| {
+                                    (
+                                        UiComponentId::new(name).unwrap(),
+                                        UiElement::Template {
+                                            background: marlin_agent_ui::UiBackground::None,
+                                            spans: vec![
+                                                UiTemplateSpan {
+                                                    value: UiTemplateValue::Literal(
+                                                        "fixture search ".into(),
+                                                    ),
+                                                    tone: UiTone::Normal,
+                                                    bold: false,
+                                                },
+                                                UiTemplateSpan {
+                                                    value: UiTemplateValue::Binding(
+                                                        UiComponentId::new("query").unwrap(),
+                                                    ),
+                                                    tone: UiTone::Normal,
+                                                    bold: false,
+                                                },
+                                            ],
+                                        },
+                                    )
+                                })
+                                .chain(
+                                    [
+                                        "draft-limit",
+                                        "runtime",
+                                        "transcript-focus",
+                                        "extension-focus",
+                                    ]
+                                    .into_iter()
+                                    .map(|name| (UiComponentId::new(name).unwrap(), status(name))),
+                                )
+                                .collect(),
+                            fallback: Box::new(status("fixture status")),
+                        }
+                    } else {
+                        UiElement::Text(vec![])
+                    }),
                 }),
             })
             .collect(),

@@ -2,7 +2,9 @@
 //
 // SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
-use super::{StopOnDrop, Terminal, accept_until, contains, read_request, screen_lines};
+use super::{
+    StopOnDrop, Terminal, accept_until, contains, mx_selected, read_request, screen_lines,
+};
 use nix::{
     sys::signal::{Signal, kill},
     sys::termios::tcgetattr,
@@ -21,6 +23,156 @@ use std::{
     thread,
     time::{Duration, Instant},
 };
+
+#[test]
+#[ignore = "real PTY, linked Scheme tool catalog, loopback provider and local journal"]
+fn scheme_bash_ask_commits_one_result_from_the_minibuffer() {
+    use marlin_agent_sessions::{ConversationJournal, ConversationToolReviewStatus};
+    use marlin_agent_storage::{
+        AgentId, ProjectId, SessionId, TursoAgentStorage, TursoAgentStorageConfig,
+        TursoBatchTransactionMode, TursoOptimizationProfile,
+    };
+
+    let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let address = listener.local_addr().unwrap();
+    let stop = Arc::new(AtomicBool::new(false));
+    let _stop_on_drop = StopOnDrop(stop.clone());
+    let server_stop = stop.clone();
+    let server = thread::spawn(move || {
+        let Some(mut stream) = accept_until(&listener, &server_stop) else {
+            return;
+        };
+        let (_, request) = read_request(&mut stream);
+        assert_eq!(request["tools"][0]["name"], "bash");
+        let response = serde_json::json!({"type":"response.completed","response":{
+            "status":"completed","id":"resp-tool","model":"gpt-fixture",
+            "output":[{"type":"function_call","id":"fc-1","call_id":"call-1",
+                "name":"bash","arguments":"{\"command\":\"printf marlin-tool-ok\"}",
+                "status":"completed"}]
+        }});
+        write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nConnection: close\r\n\r\ndata: {response}\n\n").unwrap();
+    });
+    let directory = tempfile::tempdir().unwrap();
+    let database = directory.path().join("session.db");
+    let config = directory.path().join("config.toml");
+    fs::write(&config, format!(
+        "provider=\"openai\"\nmodel=\"gpt-fixture\"\nendpoint=\"http://{address}/v1/responses\"\nprotocol=\"open-ai-responses\"\ncredential_env=\"MARLIN_TUI_FIXTURE_KEY\"\n[session]\npath={}\nproject=\"project:tool\"\nsession=\"session:tool\"\nagent=\"agent:tool\"\n",
+        serde_json::to_string(&database.to_string_lossy()).unwrap(),
+    )).unwrap();
+    let mut terminal = Terminal::start(&config);
+    terminal.wait_status("Message: Enter send");
+    terminal.send(b"run tool\r");
+    terminal.wait_for(Duration::from_secs(20), "Scheme Ask", |output| {
+        contains(output, b"Tool request:") && contains(output, b"marlin-tool-ok")
+    });
+    terminal.send(b"\x1b[B");
+    terminal.wait_for(Duration::from_secs(5), "second Ask choice", |output| {
+        screen_lines(output)
+            .iter()
+            .any(|line| line.contains("2/2 Tool request:"))
+    });
+    terminal.send(b"\x1b[A");
+    terminal.wait_for(Duration::from_secs(5), "first Ask choice", |output| {
+        screen_lines(output)
+            .iter()
+            .any(|line| line.contains("1/2 Tool request:"))
+    });
+    terminal.send(b"\r");
+    terminal.wait_for(Duration::from_secs(20), "committed tool result", |output| {
+        screen_lines(output)
+            .iter()
+            .any(|line| line.contains("Tool results committed"))
+    });
+    terminal.send(b"\x11");
+    terminal.wait_exit(Duration::from_secs(10));
+    terminal.assert_restored();
+    stop.store(true, Ordering::Relaxed);
+    server.join().unwrap();
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    let result = runtime.block_on(async {
+        let storage = TursoAgentStorage::open_local(TursoAgentStorageConfig {
+            path: database,
+            optimization_profile: TursoOptimizationProfile::AsyncIoOnlyCompatibility,
+            batch_transaction_mode: TursoBatchTransactionMode::Immediate,
+        })
+        .await
+        .unwrap();
+        let journal = ConversationJournal::open(
+            storage,
+            ProjectId::new("project:tool").unwrap(),
+            SessionId::new("session:tool").unwrap(),
+            AgentId::new("agent:tool").unwrap(),
+            |_| {},
+        )
+        .await
+        .unwrap();
+        journal.pending_tool_request().cloned().unwrap()
+    });
+    assert_eq!(
+        result.status(),
+        ConversationToolReviewStatus::ResultsCommitted
+    );
+    assert!(
+        format!("{:?}", result.results_receipt().unwrap().results()).contains("marlin-tool-ok")
+    );
+}
+
+#[test]
+#[ignore = "real PTY and controlled loopback stream"]
+fn streaming_command_navigation_stays_within_admitted_candidates() {
+    let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let address = listener.local_addr().unwrap();
+    let stop = Arc::new(AtomicBool::new(false));
+    let _stop_on_drop = StopOnDrop(stop.clone());
+    let server_stop = stop.clone();
+    let (connected_tx, connected_rx) = mpsc::channel();
+    let (release_tx, release_rx) = mpsc::channel();
+    let server = thread::spawn(move || {
+        let Some(mut stream) = accept_until(&listener, &server_stop) else {
+            return;
+        };
+        let _ = read_request(&mut stream);
+        stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nConnection: close\r\n\r\ndata: {\"type\":\"response.output_text.delta\",\"delta\":\"stream-active\"}\n\n").unwrap();
+        connected_tx.send(()).unwrap();
+        let _ = release_rx.recv_timeout(Duration::from_secs(20));
+    });
+    let directory = tempfile::tempdir().unwrap();
+    let config = directory.path().join("config.toml");
+    fs::write(&config, format!("provider=\"openai\"\nmodel=\"gpt-fixture\"\nendpoint=\"http://{address}/v1/responses\"\nprotocol=\"open-ai-responses\"\ncredential_env=\"MARLIN_TUI_FIXTURE_KEY\"\n")).unwrap();
+    let mut terminal = Terminal::start(&config);
+    terminal.wait_status("Message: Enter send");
+    terminal.send(b"stream test\r");
+    connected_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+    terminal.wait_for(Duration::from_secs(10), "stream active", |output| {
+        contains(output, b"stream-active")
+    });
+    terminal.send(b"\x1bx");
+    terminal.wait_for(
+        Duration::from_secs(5),
+        "restricted first candidate",
+        |output| screen_lines(output).iter().any(|line| mx_selected(line, 1)),
+    );
+    terminal.send(b"\x1b[B");
+    terminal.wait_for(
+        Duration::from_secs(5),
+        "restricted next candidate",
+        |output| {
+            let rows = screen_lines(output);
+            rows.iter().any(|line| mx_selected(line, 2))
+                && rows
+                    .iter()
+                    .all(|line| !line.contains("Command menu failed"))
+        },
+    );
+    terminal.send(b"\x07\x03");
+    let _ = release_tx.send(());
+    terminal.send(b"\x11");
+    terminal.wait_exit(Duration::from_secs(5));
+    terminal.assert_restored();
+    server.join().unwrap();
+}
 
 #[test]
 #[ignore = "real PTY and loopback acceptance; requires the built Scheme package"]

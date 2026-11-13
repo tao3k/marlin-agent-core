@@ -4,7 +4,7 @@
 
 ;;; Scheme owns presentation choices; the native host clips them to cells.
 (import (only-in :clan/poo/object .def .o seal-object!)
-        (only-in "../ui-elements/objects.ss" ui-text ui-rows ui-region ui-template ui-choice)
+        (only-in "../ui-elements/objects.ss" ui-text ui-rows ui-region ui-template ui-choice ui-sized)
         (only-in "../ui-components/commands.ss" marlin-ui-candidate-templates))
 (export marlin-ui-layout-policy)
 
@@ -37,19 +37,23 @@
           (list 'transcript-focus (status-text "Transcript: scroll to browse  M-x commands  Ctrl-Q quit"))
           (list 'extension-focus (status-text "Extension: Enter activate  M-x commands  Ctrl-Q quit")))
     (status-text "Message: Enter send  Ctrl-R search  M-x commands  Ctrl-Q quit")))
+(def (frame-region slot)
+  (let (name (car slot))
+    (ui-sized (if (eq? name 'transcript) 'flex 'binding)
+              (if (eq? name 'transcript) 1 name)
+              (ui-region name (cdr slot)
+                         (case name
+                           ((candidates) (ui-rows marlin-ui-candidate-templates))
+                           ((minibuffer) minibuffer-status)
+                           (else (ui-text '())))))))
 (.def UiLayoutBase.
   message-frame: MessageFrameValue
   command-frame: CommandFrameValue
   max-chatbox-rows: 10
   max-command-rows: 10
   frame-tree: (ui-rows
-    (map (lambda (slot)
-           (ui-region (car slot) (cdr slot)
-                      (case (car slot)
-                        ((candidates) (ui-rows marlin-ui-candidate-templates))
-                        ((minibuffer) minibuffer-status)
-                        (else (ui-text '())))))
-         '((transcript . #t) (extensions . #f) (modeline . #f)
-           (editor . #f) (candidates . #t) (minibuffer . #f)))))
+    (list (ui-rows (map frame-region '((transcript . #t) (extensions . #f))))
+          (ui-rows (map frame-region '((modeline . #f) (editor . #f)
+                                       (candidates . #t) (minibuffer . #f)))))))
 (def marlin-ui-layout-policy
   (seal-object! UiLayoutBase.))

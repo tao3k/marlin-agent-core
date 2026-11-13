@@ -5,13 +5,13 @@
 (import (only-in :clan/poo/object .cc)
         (only-in :clan/poo/mop Fun Object Type.)
         (only-in :clan/poo/type Exactly Record)
-        (only-in "./commands.ss" marlin-ui-command-entries?))
+        (only-in "./commands.ss" marlin-ui-command-entries? marlin-ui-command-history?))
 (export UiComponentsScopeContract)
 
 (def UiCommandEntries (.cc Type. '.element? marlin-ui-command-entries?))
 (def UiTransientEntries (.cc Type. '.element? vector?))
 (def UiCommandQuery (.cc Type. '.element? (lambda (value) (and (string? value) (<= (string-length value) 32)))))
-(def UiCommandHistory (.cc Type. '.element? (lambda (value) (and (list? value) (<= (length value) 256) (andmap (lambda (name) (and (string? name) (<= (string-length name) 32))) value)))))
+(def UiCommandHistory (.cc Type. '.element? marlin-ui-command-history?))
 (def UiCommandNames (.cc Type. '.element? (lambda (value) (and (list? value) (<= (length value) 256) (andmap string? value)))))
 
 (def UiComponentsScopeContract
@@ -23,6 +23,7 @@
                command-catalog: [Object]
                command-entries: [(Fun UiCommandEntries <- Object)]
                command-candidates: [(Fun UiCommandNames <- UiCommandEntries UiCommandQuery UiCommandHistory)]
+               record-command-history: [(Fun UiCommandHistory <- UiCommandHistory UiCommandQuery)]
                command-extensions: [(Fun UiCommandEntries <-)]
                transient-entries: [(Fun UiTransientEntries <-)]
                browse-command: [(Fun Object <- UiCommandEntries Object)])

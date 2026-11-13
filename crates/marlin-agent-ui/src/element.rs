@@ -27,12 +27,25 @@ pub enum UiElement {
         cases: Vec<(UiComponentId, UiElement)>,
         fallback: Box<UiElement>,
     },
+    /// A layout constraint supplied by the module that composes the tree.
+    Sized {
+        size: UiSize,
+        child: Box<UiElement>,
+    },
     /// An interactive area whose identity is owned by the Scheme module.
     Region {
         id: UiComponentId,
         scrollable: bool,
         child: Box<UiElement>,
     },
+}
+
+/// A fixed, flexible, or host-bound extent on the containing layout axis.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum UiSize {
+    Cells(u16),
+    Flex(u16),
+    Binding(UiComponentId),
 }
 
 /// One literal or dynamically bound span in a declarative line.
@@ -83,6 +96,7 @@ impl UiElement {
         match self {
             Self::Region { id, child, .. } if id.as_str() == name => Some(child),
             Self::Region { child, .. } => child.region_child(name),
+            Self::Sized { child, .. } => child.region_child(name),
             Self::Rows(children) | Self::Columns(children) => {
                 children.iter().find_map(|child| child.region_child(name))
             }
@@ -114,6 +128,7 @@ impl UiElement {
                 .max()
                 .unwrap_or(0),
             Self::Region { child, .. } => child.intrinsic_rows(),
+            Self::Sized { child, .. } => child.intrinsic_rows(),
         }
     }
 
@@ -134,6 +149,7 @@ impl UiElement {
                 .max()
                 .unwrap_or(0),
             Self::Region { child, .. } => child.intrinsic_rows_with(facts),
+            Self::Sized { child, .. } => child.intrinsic_rows_with(facts),
             Self::Text(_) | Self::Template { .. } => self.intrinsic_rows(),
         }
     }
@@ -171,6 +187,30 @@ fn decode(
     let kind = identifier(node.element(0)?, names)?;
     let values = vector(node.element(1)?, 0, 64)?;
     match kind.as_str() {
+        "sized" => {
+            if values.len() != 3 {
+                return Err(UiProjectionError::Invalid("invalid UI size"));
+            }
+            let kind = identifier(values.element(0)?, names)?;
+            let size = match kind.as_str() {
+                "cells" | "flex" => {
+                    let count = match values.element(1)?.as_ref().scalar()? {
+                        SchemeScalar::Fixnum(value) => u16::try_from(value)
+                            .map_err(|_| UiProjectionError::Invalid("invalid UI size count"))?,
+                        _ => return Err(UiProjectionError::Invalid("invalid UI size count")),
+                    };
+                    if kind.as_str() == "cells" {
+                        UiSize::Cells(count)
+                    } else {
+                        UiSize::Flex(count)
+                    }
+                }
+                "binding" => UiSize::Binding(identifier(values.element(1)?, names)?),
+                _ => return Err(UiProjectionError::Invalid("invalid UI size kind")),
+            };
+            let child = Box::new(decode(values.element(2)?, depth + 1, budget, names)?);
+            Ok(UiElement::Sized { size, child })
+        }
         "template" => {
             if values.len() != 2 {
                 return Err(UiProjectionError::Invalid("invalid UI template"));

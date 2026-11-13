@@ -26,6 +26,7 @@
       command-extensions: command-extensions-value
       transient-entries: transient-entries-value
       command-candidates: marlin-ui-command-candidates
+      record-command-history: marlin-ui-record-command-history
       browse-command: marlin-ui-browse-command
       review-menu: marlin-ui-review-menu
       make-frame: marlin-ui-make-frame

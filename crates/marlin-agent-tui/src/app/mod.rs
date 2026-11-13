@@ -60,10 +60,14 @@ use termion::event::Key;
 mod presentation;
 #[path = "runner.rs"]
 mod runner;
+#[path = "runtime_probe.rs"]
+mod runtime_probe;
 #[path = "state.rs"]
 mod state;
 #[path = "terminal_owner.rs"]
 mod terminal_owner;
+#[path = "tool_review.rs"]
+mod tool_review;
 #[path = "turn.rs"]
 mod turn;
 

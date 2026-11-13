@@ -13,10 +13,12 @@ use marlin_agent_protocol::{
     ModelGatewayError, ModelGatewayFuture, ModelGatewayMessageRole, ModelGatewayRequest,
     ModelGatewayResult, ModelStreamInterruption,
 };
-use marlin_agent_runtime::ModelToolOffer;
+use marlin_agent_runtime::{ModelToolOffer, ModelToolOutcome, RuntimeContext};
 use marlin_agent_sessions::{
-    ConversationJournal, ConversationTerminalObservation, ConversationTurnId,
-    ConversationTurnStart, ConversationUncertaintyReason,
+    ConversationJournal, ConversationPendingToolRequest, ConversationTerminalObservation,
+    ConversationToolCallResult, ConversationToolResultOutcome, ConversationToolResultsReceipt,
+    ConversationToolReviewDecision, ConversationToolReviewReceipt, ConversationToolReviewRequest,
+    ConversationTurnId, ConversationTurnStart, ConversationUncertaintyReason,
 };
 use marlin_agent_storage::SessionEventStore;
 use marlin_agent_stream::{
@@ -37,6 +39,26 @@ pub(crate) struct JournalGateway<G, S> {
     tool_offer: Option<Arc<ModelToolOffer>>,
 }
 
+/// A live Ask gate bound to the same journal and immutable offer as a request.
+pub(crate) struct JournalToolReview<S> {
+    journal: Arc<Mutex<ConversationJournal<S>>>,
+    offer: Arc<ModelToolOffer>,
+}
+
+impl<S> Clone for JournalToolReview<S> {
+    fn clone(&self) -> Self {
+        Self {
+            journal: Arc::clone(&self.journal),
+            offer: Arc::clone(&self.offer),
+        }
+    }
+}
+
+pub(crate) enum JournalToolReviewOutcome {
+    Rejected(ConversationToolReviewReceipt),
+    Results(ConversationToolResultsReceipt),
+}
+
 impl<G, S> JournalGateway<G, S> {
     pub(crate) fn new(gateway: G, journal: ConversationJournal<S>) -> Self {
         Self {
@@ -49,6 +71,71 @@ impl<G, S> JournalGateway<G, S> {
     pub(crate) fn with_tool_offer(mut self, offer: ModelToolOffer) -> Self {
         self.tool_offer = Some(Arc::new(offer));
         self
+    }
+
+    pub(crate) fn tool_review_handle(&self) -> Option<JournalToolReview<S>> {
+        Some(JournalToolReview {
+            journal: Arc::clone(&self.journal),
+            offer: Arc::clone(self.tool_offer.as_ref()?),
+        })
+    }
+}
+
+impl<S: SessionEventStore> JournalToolReview<S> {
+    pub(crate) fn try_pending(&self) -> Option<ConversationPendingToolRequest> {
+        self.journal
+            .try_lock()
+            .ok()?
+            .pending_tool_request()
+            .cloned()
+    }
+
+    pub(crate) async fn decide(
+        &self,
+        request: ConversationToolReviewRequest,
+        context: RuntimeContext,
+    ) -> Result<JournalToolReviewOutcome, ModelGatewayError> {
+        let mut journal = self.journal.lock().await;
+        let approval = journal
+            .review_tool_request(request, now_ms())
+            .await
+            .map_err(failure)?;
+        if approval.decision() == ConversationToolReviewDecision::Reject {
+            return Ok(JournalToolReviewOutcome::Rejected(approval));
+        }
+        let claim = journal
+            .claim_tool_execution(&approval, now_ms())
+            .await
+            .map_err(failure)?;
+        let key = claim.key();
+        drop(journal);
+        let outcomes = self
+            .offer
+            .execute_claim(claim, context)
+            .await
+            .map_err(|error| {
+                failure(format!("tool offer rejected the durable claim: {error:?}"))
+            })?;
+        let results = outcomes
+            .into_iter()
+            .map(|(id, outcome)| ConversationToolCallResult {
+                id,
+                outcome: match outcome {
+                    ModelToolOutcome::Completed(output) => {
+                        ConversationToolResultOutcome::Completed(output)
+                    }
+                    ModelToolOutcome::Failed(error) => ConversationToolResultOutcome::Failed(error),
+                },
+            })
+            .collect();
+        let receipt = self
+            .journal
+            .lock()
+            .await
+            .record_tool_results(key, results, now_ms())
+            .await
+            .map_err(failure)?;
+        Ok(JournalToolReviewOutcome::Results(receipt))
     }
 }
 

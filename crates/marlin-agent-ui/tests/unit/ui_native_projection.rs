@@ -203,7 +203,7 @@ fn layout<'a>(runtime: &'a GerbilRuntime) -> RootedSchemeObject<'a> {
     ]
     .into_iter()
     .map(|name| {
-        vector(
+        let region = vector(
             runtime,
             &[
                 symbol(runtime, "region"),
@@ -249,6 +249,26 @@ fn layout<'a>(runtime: &'a GerbilRuntime) -> RootedSchemeObject<'a> {
                     ],
                 ),
             ],
+        );
+        let (kind, size) = if name == "transcript" {
+            (
+                "flex",
+                runtime.scalar_object(SchemeScalar::Fixnum(1)).unwrap(),
+            )
+        } else if name == "modeline" {
+            (
+                "cells",
+                runtime.scalar_object(SchemeScalar::Fixnum(1)).unwrap(),
+            )
+        } else {
+            ("binding", symbol(runtime, name))
+        };
+        vector(
+            runtime,
+            &[
+                symbol(runtime, "sized"),
+                vector(runtime, &[symbol(runtime, kind), size, region]),
+            ],
         )
     })
     .collect();
@@ -271,7 +291,22 @@ fn layout<'a>(runtime: &'a GerbilRuntime) -> RootedSchemeObject<'a> {
             ),
             vector(
                 runtime,
-                &[symbol(runtime, "rows"), vector(runtime, &children)],
+                &[
+                    symbol(runtime, "rows"),
+                    vector(
+                        runtime,
+                        &[
+                            vector(
+                                runtime,
+                                &[symbol(runtime, "rows"), vector(runtime, &children[..2])],
+                            ),
+                            vector(
+                                runtime,
+                                &[symbol(runtime, "rows"), vector(runtime, &children[2..])],
+                            ),
+                        ],
+                    ),
+                ],
             ),
         ],
     )
@@ -612,6 +647,32 @@ fn sdk_roots_project_to_typed_ui_workbench() {
         ],
     );
     let workbench = decode_workbench(root).unwrap();
+    let marlin_agent_ui::UiElement::Rows(groups) = &workbench.layout.frame_tree else {
+        panic!("frame groups")
+    };
+    let marlin_agent_ui::UiElement::Rows(slots) = &groups[0] else {
+        panic!("frame slots")
+    };
+    assert!(matches!(
+        &slots[0],
+        marlin_agent_ui::UiElement::Sized {
+            size: marlin_agent_ui::UiSize::Flex(1),
+            ..
+        }
+    ));
+    assert!(
+        matches!(&slots[1], marlin_agent_ui::UiElement::Sized { size: marlin_agent_ui::UiSize::Binding(name), .. } if name.as_str() == "extensions")
+    );
+    let marlin_agent_ui::UiElement::Rows(slots) = &groups[1] else {
+        panic!("frame slots")
+    };
+    assert!(matches!(
+        &slots[0],
+        marlin_agent_ui::UiElement::Sized {
+            size: marlin_agent_ui::UiSize::Cells(1),
+            ..
+        }
+    ));
     assert_eq!(workbench.model_label, "model");
     assert_eq!(workbench.layout.max_chatbox_rows, 7);
     assert_eq!(workbench.layout.message_frame.prompt, "input> ");

@@ -3,7 +3,9 @@
 
 //! Generic Ratatui mapping for admitted Scheme UI elements.
 
-use marlin_agent_ui::{UiBackground, UiComponentId, UiElement, UiTemplateValue, UiTheme, UiTone};
+use marlin_agent_ui::{
+    UiBackground, UiComponentId, UiElement, UiSize, UiTemplateValue, UiTheme, UiTone,
+};
 use ratatui::{
     layout::Rect,
     style::{Color, Modifier, Style},
@@ -63,6 +65,110 @@ pub enum Extent {
     Flex(u16),
 }
 
+#[derive(Clone, Copy, Default)]
+struct Demand {
+    cells: u32,
+    flex: u32,
+}
+
+/// Preserve fixed and flexible demand when Scheme nests groups on one axis.
+fn group_demand(
+    element: &UiElement,
+    vertical: bool,
+    extent: &dyn Fn(&UiComponentId) -> Extent,
+    facts: &dyn Fn(&UiComponentId) -> bool,
+) -> Demand {
+    match element {
+        UiElement::Sized { size, .. } => {
+            let size = match size {
+                UiSize::Cells(value) => Extent::Cells(*value),
+                UiSize::Flex(value) => Extent::Flex(*value),
+                UiSize::Binding(name) => extent(name),
+            };
+            match size {
+                Extent::Cells(value) => Demand {
+                    cells: value.into(),
+                    flex: 0,
+                },
+                Extent::Flex(value) => Demand {
+                    cells: 0,
+                    flex: value.into(),
+                },
+            }
+        }
+        UiElement::Choice { .. } => {
+            group_demand(resolve_choice(element, facts), vertical, extent, facts)
+        }
+        UiElement::Rows(children) if vertical => {
+            children.iter().fold(Demand::default(), |sum, child| {
+                let next = group_demand(child, vertical, extent, facts);
+                Demand {
+                    cells: sum.cells.saturating_add(next.cells),
+                    flex: sum.flex.saturating_add(next.flex),
+                }
+            })
+        }
+        UiElement::Columns(children) if !vertical => {
+            children.iter().fold(Demand::default(), |sum, child| {
+                let next = group_demand(child, vertical, extent, facts);
+                Demand {
+                    cells: sum.cells.saturating_add(next.cells),
+                    flex: sum.flex.saturating_add(next.flex),
+                }
+            })
+        }
+        _ if vertical => Demand {
+            cells: element.intrinsic_rows_with(facts).min(u16::MAX as usize) as u32,
+            flex: 0,
+        },
+        _ => Demand { cells: 0, flex: 1 },
+    }
+}
+
+fn layout_children(
+    children: &[UiElement],
+    vertical: bool,
+    area: Rect,
+    extent: &dyn Fn(&UiComponentId) -> Extent,
+    facts: &dyn Fn(&UiComponentId) -> bool,
+    mut visit: impl FnMut(&UiElement, Rect),
+) {
+    let limit = if vertical { area.height } else { area.width };
+    let sizing: Vec<_> = children
+        .iter()
+        .map(|child| group_demand(child, vertical, extent, facts))
+        .collect();
+    let fixed = sizing
+        .iter()
+        .fold(0u32, |sum, size| sum.saturating_add(size.cells));
+    let mut available = u32::from(limit).saturating_sub(fixed);
+    let mut weight = sizing
+        .iter()
+        .fold(0u32, |sum, size| sum.saturating_add(size.flex));
+    let mut cursor = 0u16;
+    for (child, size) in children.iter().zip(sizing) {
+        let extra = if size.flex > 0 && weight > 0 {
+            let portion = (u64::from(available) * u64::from(size.flex) / u64::from(weight)) as u32;
+            available -= portion;
+            weight -= size.flex;
+            portion
+        } else {
+            0
+        };
+        let length = size
+            .cells
+            .saturating_add(extra)
+            .min(u32::from(limit.saturating_sub(cursor))) as u16;
+        let rect = if vertical {
+            Rect::new(area.x, area.y.saturating_add(cursor), area.width, length)
+        } else {
+            Rect::new(area.x.saturating_add(cursor), area.y, length, area.height)
+        };
+        cursor = cursor.saturating_add(length);
+        visit(child, rect);
+    }
+}
+
 /// Map a declarative region tree to terminal rectangles without painting it.
 ///
 /// `regions` is appended in traversal order; callers clear it for each layout.
@@ -103,54 +209,14 @@ pub fn layout_regions_with_facts(
         UiElement::Choice { .. } => {
             layout_regions_with_facts(resolve_choice(element, facts), area, extent, regions, facts);
         }
+        UiElement::Sized { child, .. } => {
+            layout_regions_with_facts(child, area, extent, regions, facts);
+        }
         UiElement::Rows(children) | UiElement::Columns(children) => {
             let vertical = matches!(element, UiElement::Rows(_));
-            let limit = if vertical { area.height } else { area.width };
-            let sizing: Vec<_> =
-                children
-                    .iter()
-                    .map(|child| match child {
-                        UiElement::Region { id, .. } => extent(id),
-                        _ => Extent::Cells(
-                            child.intrinsic_rows_with(facts).min(u16::MAX as usize) as u16
-                        ),
-                    })
-                    .collect();
-            let fixed: u32 = sizing
-                .iter()
-                .map(|size| match size {
-                    Extent::Cells(n) => u32::from(*n),
-                    _ => 0,
-                })
-                .sum();
-            let mut available = u32::from(limit).saturating_sub(fixed);
-            let mut weight: u32 = sizing
-                .iter()
-                .map(|size| match size {
-                    Extent::Flex(n) => u32::from(*n),
-                    _ => 0,
-                })
-                .sum();
-            let mut cursor = 0u16;
-            for (child, size) in children.iter().zip(sizing) {
-                let length = match size {
-                    Extent::Cells(n) => n.min(limit.saturating_sub(cursor)),
-                    Extent::Flex(n) if weight > 0 => {
-                        let portion = available.saturating_mul(u32::from(n)) / weight;
-                        available -= portion;
-                        weight -= u32::from(n);
-                        (portion as u16).min(limit.saturating_sub(cursor))
-                    }
-                    _ => 0,
-                };
-                let rect = if vertical {
-                    Rect::new(area.x, area.y.saturating_add(cursor), area.width, length)
-                } else {
-                    Rect::new(area.x.saturating_add(cursor), area.y, length, area.height)
-                };
-                cursor = cursor.saturating_add(length);
+            layout_children(children, vertical, area, extent, facts, |child, rect| {
                 layout_regions_with_facts(child, rect, extent, regions, facts);
-            }
+            });
         }
     }
 }
@@ -320,6 +386,7 @@ pub fn render_with_scroll(
         theme,
         offset,
         facts: &|_| false,
+        extent: &|_| Extent::Cells(0),
         bindings: &[],
     };
     render_with_facts(frame, area, element, regions, &inputs);
@@ -330,6 +397,7 @@ pub struct UiRenderInputs<'a> {
     pub theme: &'a UiTheme,
     pub offset: &'a dyn Fn(&UiComponentId) -> usize,
     pub facts: &'a dyn Fn(&UiComponentId) -> bool,
+    pub extent: &'a dyn Fn(&UiComponentId) -> Extent,
     pub bindings: &'a [(&'a str, &'a str)],
 }
 
@@ -357,6 +425,7 @@ fn render_inner(
         return;
     }
     match element {
+        UiElement::Sized { child, .. } => render_inner(frame, area, child, regions, inputs, skip),
         UiElement::Choice { .. } => {
             render_inner(
                 frame,
@@ -368,7 +437,9 @@ fn render_inner(
             );
         }
         UiElement::Template { .. } => {
-            render_template(frame, area, element, inputs.theme, inputs.bindings)
+            if skip == 0 {
+                render_template(frame, area, element, inputs.theme, inputs.bindings)
+            }
         }
         UiElement::Region {
             id,
@@ -415,37 +486,56 @@ fn render_inner(
                 return;
             }
             let vertical = matches!(element, UiElement::Rows(_));
-            let mut cursor = 0usize;
-            for (index, child) in children.iter().enumerate() {
-                if vertical {
-                    let end = cursor.saturating_add(child.intrinsic_rows_with(inputs.facts));
-                    let visible_start = cursor.max(skip);
-                    let visible_end = end.min(skip.saturating_add(usize::from(area.height)));
-                    if visible_start < visible_end {
-                        let rect = Rect::new(
-                            area.x,
-                            area.y + (visible_start - skip) as u16,
-                            area.width,
-                            (visible_end - visible_start) as u16,
+            let height = if vertical && skip > 0 {
+                let fixed = children.iter().fold(0u32, |total, child| {
+                    total.saturating_add(
+                        group_demand(child, true, inputs.extent, inputs.facts).cells,
+                    )
+                });
+                area.height.max(fixed.min(u32::from(u16::MAX)) as u16)
+            } else {
+                area.height
+            };
+            let virtual_area = Rect::new(0, 0, area.width, height);
+            layout_children(
+                children,
+                vertical,
+                virtual_area,
+                inputs.extent,
+                inputs.facts,
+                |child, rect| {
+                    if vertical {
+                        let start = usize::from(rect.y);
+                        let visible_start = start.max(skip);
+                        let visible_end = usize::from(rect.bottom())
+                            .min(skip.saturating_add(usize::from(area.height)));
+                        if visible_start < visible_end {
+                            let visible = Rect::new(
+                                area.x,
+                                area.y + (visible_start - skip) as u16,
+                                area.width,
+                                (visible_end - visible_start) as u16,
+                            );
+                            render_inner(
+                                frame,
+                                visible,
+                                child,
+                                regions,
+                                inputs,
+                                visible_start - start,
+                            );
+                        }
+                    } else {
+                        let visible = Rect::new(
+                            area.x.saturating_add(rect.x),
+                            area.y,
+                            rect.width,
+                            area.height,
                         );
-                        render_inner(frame, rect, child, regions, inputs, visible_start - cursor);
+                        render_inner(frame, visible, child, regions, inputs, skip);
                     }
-                    cursor = end;
-                } else {
-                    let count = children.len();
-                    let width = usize::from(area.width) / count
-                        + usize::from(index < usize::from(area.width) % count);
-                    let width = width as u16;
-                    let rect = Rect::new(
-                        area.x.saturating_add(cursor as u16),
-                        area.y,
-                        width,
-                        area.height,
-                    );
-                    cursor = cursor.saturating_add(usize::from(width));
-                    render_inner(frame, rect, child, regions, inputs, skip);
-                }
-            }
+                },
+            );
         }
     }
 }

@@ -13,6 +13,7 @@ use marlin_agent_ui::{
     UiNativeSession, UiOpenFacts, UiProjectionError, UiTransient, UiTransientForeign,
     UiTransientId, UiWorkbench,
 };
+use std::collections::HashSet;
 use termion::event::Key;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -31,6 +32,7 @@ pub(crate) struct UiHost<'runtime> {
     module: UiModule<'runtime>,
     session: UiNativeSession<'runtime>,
     view: UiWorkbench,
+    admitted_commands: HashSet<UiCommandName>,
     key_prefix: Vec<String>,
     transient: Option<UiTransient>,
     transient_warning: bool,
@@ -79,10 +81,17 @@ impl<'runtime> UiHost<'runtime> {
         trace("session projected");
         admit_terminal_view(&view)?;
         trace("view admitted");
+        // Successor admission keeps the command catalog unchanged.
+        let admitted_commands = view
+            .commands()
+            .iter()
+            .map(|command| command.name.clone())
+            .collect();
         Ok(Self {
             module,
             session,
             view,
+            admitted_commands,
             key_prefix: Vec::new(),
             transient: None,
             transient_warning: false,
@@ -91,6 +100,12 @@ impl<'runtime> UiHost<'runtime> {
 
     pub(crate) fn view(&self) -> &UiWorkbench {
         &self.view
+    }
+
+    pub(crate) fn tool_review_menu(
+        &self,
+    ) -> Result<marlin_agent_ui::UiToolReviewMenu, UiProjectionError> {
+        self.module.tool_review_menu(&self.session)
     }
 
     pub(crate) fn transient_hint(&self) -> Option<&marlin_agent_ui::UiElement> {
@@ -158,13 +173,11 @@ impl<'runtime> UiHost<'runtime> {
         let candidates = self
             .module
             .command_candidates(&self.session, query, locked)?;
-        if candidates.names.iter().any(|name| {
-            !self
-                .view
-                .commands()
-                .iter()
-                .any(|command| &command.name == name)
-        }) {
+        if candidates
+            .names
+            .iter()
+            .any(|name| !self.admitted_commands.contains(name))
+        {
             return Err(UiProjectionError::Invalid(
                 "command candidate is not in the admitted catalog",
             ));
@@ -406,6 +419,45 @@ fn complete_command(
 }
 
 fn admit_terminal_view(view: &UiWorkbench) -> Result<(), UiProjectionError> {
+    fn collect_slots<'a>(
+        element: &'a marlin_agent_ui::UiElement,
+        slots: &mut HashSet<&'a str>,
+    ) -> bool {
+        match element {
+            marlin_agent_ui::UiElement::Region { id, .. } => slots.insert(id.as_str()),
+            marlin_agent_ui::UiElement::Rows(children)
+            | marlin_agent_ui::UiElement::Columns(children) => {
+                children.iter().all(|child| collect_slots(child, slots))
+            }
+            marlin_agent_ui::UiElement::Sized { child, .. } => collect_slots(child, slots),
+            // The terminal's required slots must exist independent of facts.
+            marlin_agent_ui::UiElement::Choice { .. } => false,
+            marlin_agent_ui::UiElement::Text(_) | marlin_agent_ui::UiElement::Template { .. } => {
+                true
+            }
+        }
+    }
+    let mut slots = HashSet::new();
+    if !collect_slots(&view.layout.frame_tree, &mut slots)
+        || [
+            "transcript",
+            "extensions",
+            "modeline",
+            "editor",
+            "candidates",
+            "minibuffer",
+        ]
+        .iter()
+        .any(|name| !slots.contains(name))
+    {
+        return Err(UiProjectionError::Invalid("invalid terminal frame regions"));
+    }
+    if !matches!(view.layout.frame_tree.region_child("candidates"),
+        Some(marlin_agent_ui::UiElement::Rows(templates)) if templates.len() == 2
+            && templates.iter().all(|item| matches!(item, marlin_agent_ui::UiElement::Template { .. })))
+    {
+        return Err(UiProjectionError::Invalid("invalid candidate presentation"));
+    }
     let admitted_command = |name: &UiCommandName| {
         view.commands().iter().any(|command| {
             &command.name == name && command.arguments == marlin_agent_ui::UiCommandArguments::None

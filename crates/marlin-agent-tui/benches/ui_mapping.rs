@@ -54,6 +54,7 @@ fn mapping(c: &mut Criterion) {
         theme: &theme,
         offset: &|_| 0,
         facts: &|_| false,
+        extent: &|_| Extent::Cells(0),
         bindings: &[],
     };
     let query = "x".repeat(256);
@@ -101,10 +102,17 @@ fn mapping(c: &mut Criterion) {
             "minibuffer",
         ]
         .into_iter()
-        .map(|id| UiElement::Region {
-            id: UiComponentId::new(id).unwrap(),
-            scrollable: matches!(id, "transcript" | "candidates"),
-            child: Box::new(UiElement::Text(vec![])),
+        .map(|id| UiElement::Sized {
+            size: if id == "transcript" {
+                marlin_agent_ui::UiSize::Flex(1)
+            } else {
+                marlin_agent_ui::UiSize::Binding(UiComponentId::new(id).unwrap())
+            },
+            child: Box::new(UiElement::Region {
+                id: UiComponentId::new(id).unwrap(),
+                scrollable: matches!(id, "transcript" | "candidates"),
+                child: Box::new(UiElement::Text(vec![])),
+            }),
         })
         .collect(),
     );
@@ -115,13 +123,26 @@ fn mapping(c: &mut Criterion) {
             layout_regions(
                 black_box(&frame_tree),
                 ratatui::layout::Rect::new(0, 0, 120, 40),
-                &|id| {
-                    if id.as_str() == "transcript" {
-                        Extent::Flex(1)
-                    } else {
-                        Extent::Cells(1)
-                    }
-                },
+                &|_| Extent::Cells(1),
+                &mut mapped,
+            );
+            black_box(hit_test(&mapped, 20, 38));
+        })
+    });
+    let UiElement::Rows(slots) = &frame_tree else {
+        unreachable!()
+    };
+    let grouped_frame = UiElement::Rows(vec![
+        UiElement::Rows(slots[..2].to_vec()),
+        UiElement::Rows(slots[2..].to_vec()),
+    ]);
+    c.bench_function("ui/mapping/grouped-frame-hit", |b| {
+        b.iter(|| {
+            mapped.clear();
+            layout_regions(
+                black_box(&grouped_frame),
+                ratatui::layout::Rect::new(0, 0, 120, 40),
+                &|_| Extent::Cells(1),
                 &mut mapped,
             );
             black_box(hit_test(&mapped, 20, 38));

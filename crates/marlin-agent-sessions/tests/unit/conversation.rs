@@ -8,9 +8,9 @@ use marlin_agent_protocol::{
 };
 use marlin_agent_sessions::{
     ConversationEvent, ConversationEventReader, ConversationJournal, ConversationJournalError,
-    ConversationTerminalObservation, ConversationToolReviewDecision, ConversationToolReviewRequest,
-    ConversationToolReviewStatus, ConversationTurnOutcome, ConversationTurnStart,
-    ConversationUncertaintyReason,
+    ConversationTerminalObservation, ConversationToolCallResult, ConversationToolResultOutcome,
+    ConversationToolReviewDecision, ConversationToolReviewRequest, ConversationToolReviewStatus,
+    ConversationTurnOutcome, ConversationTurnStart, ConversationUncertaintyReason,
 };
 use marlin_agent_storage::SessionEventStore;
 use marlin_agent_storage::{
@@ -285,6 +285,105 @@ async fn tool_execution_requires_a_matching_review_and_one_durable_claim() {
         reopened.pending_tool_request().unwrap().status(),
         ConversationToolReviewStatus::ExecutionUncertain
     );
+}
+
+#[tokio::test]
+async fn tool_results_require_the_live_claim_and_survive_replay() {
+    let storage = InMemoryAgentStorage::new();
+    let (project, session, agent) = ids();
+    let mut journal = ConversationJournal::open(
+        storage.clone(),
+        project.clone(),
+        session.clone(),
+        agent.clone(),
+        |_| {},
+    )
+    .await
+    .unwrap();
+    let id = journal.start(start("read marker"), 1).await.unwrap();
+    journal
+        .finish(
+            id,
+            ConversationTerminalObservation::ToolRequested {
+                response: tool_request(),
+            },
+            2,
+        )
+        .await
+        .unwrap();
+    let key = journal.pending_tool_request().unwrap().key();
+    let result = ConversationToolCallResult {
+        id: ModelToolCallId::new("call_1").unwrap(),
+        outcome: ConversationToolResultOutcome::Completed("marker".into()),
+    };
+    assert!(
+        journal
+            .record_tool_results(key.clone(), vec![result.clone()], 3)
+            .await
+            .is_err()
+    );
+    let approval = journal
+        .review_tool_request(
+            ConversationToolReviewRequest::new(
+                key.clone(),
+                ConversationToolReviewDecision::ApproveOnce,
+            ),
+            3,
+        )
+        .await
+        .unwrap();
+    let claim = journal.claim_tool_execution(&approval, 4).await.unwrap();
+    assert_eq!(claim.key(), key);
+    assert!(
+        journal
+            .record_tool_results(
+                key.clone(),
+                vec![ConversationToolCallResult {
+                    id: ModelToolCallId::new("foreign").unwrap(),
+                    outcome: ConversationToolResultOutcome::Completed("marker".into()),
+                }],
+                5,
+            )
+            .await
+            .is_err()
+    );
+    let receipt = journal
+        .record_tool_results(key.clone(), vec![result.clone()], 5)
+        .await
+        .unwrap();
+    assert_eq!(receipt.results(), &[result]);
+    assert!(journal.record_tool_results(key, vec![], 6).await.is_err());
+    drop(journal);
+    let reopened = ConversationJournal::open(
+        storage.clone(),
+        project.clone(),
+        session.clone(),
+        agent.clone(),
+        |_| {},
+    )
+    .await
+    .unwrap();
+    let pending = reopened.pending_tool_request().unwrap();
+    assert_eq!(
+        pending.status(),
+        ConversationToolReviewStatus::ResultsCommitted
+    );
+    assert_eq!(pending.results_receipt(), Some(&receipt));
+    let reader = ConversationEventReader::new(storage, project, session, agent);
+    let tail = reader.latest_turn().await.unwrap().unwrap();
+    assert_eq!(
+        tail.state,
+        marlin_agent_sessions::ConversationTailState::ToolContinuationPending
+    );
+    assert!(matches!(
+        reader
+            .resolve_cursor(id, tail.event_id)
+            .await
+            .unwrap()
+            .unwrap()
+            .event,
+        ConversationEvent::ToolResults(_)
+    ));
 }
 
 #[tokio::test]

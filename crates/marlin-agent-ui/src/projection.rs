@@ -340,26 +340,6 @@ fn decode_layout(value: RootedSchemeObject<'_>) -> Result<UiLayoutPolicy, UiProj
         Ok(value)
     };
     let frame_tree = crate::decode_element(layout_values.element(5)?)?;
-    let crate::UiElement::Rows(slots) = &frame_tree else {
-        return Err(UiProjectionError::Invalid("invalid UI frame tree"));
-    };
-    if slots.len() != 6
-        || slots.iter().any(|slot| match slot {
-            crate::UiElement::Region { id, .. } => !matches!(
-                id.as_str(),
-                "transcript" | "extensions" | "modeline" | "editor" | "candidates" | "minibuffer"
-            ),
-            _ => true,
-        })
-    {
-        return Err(UiProjectionError::Invalid("invalid UI frame regions"));
-    }
-    if !matches!(frame_tree.region_child("candidates"),
-        Some(crate::UiElement::Rows(templates)) if templates.len() == 2
-            && templates.iter().all(|item| matches!(item, crate::UiElement::Template { .. })))
-    {
-        return Err(UiProjectionError::Invalid("invalid candidate presentation"));
-    }
     let layout = UiLayoutPolicy {
         message_frame: decode_frame(layout_values.element(0)?)?,
         command_frame: decode_frame(layout_values.element(1)?)?,

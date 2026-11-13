@@ -10,6 +10,7 @@
                  marlin-ui-buffer-alias-command-entries))
 (export marlin-ui-command-catalog marlin-ui-command-entries
         marlin-ui-candidate-templates
+        marlin-ui-command-history? marlin-ui-record-command-history
         marlin-ui-command-entries? marlin-ui-command-candidates
         marlin-ui-browse-command marlin-ui-profile-command-entries
         marlin-ui-command-catalog-with-profiles marlin-ui-command-catalog-with-extensions)
@@ -127,6 +128,20 @@
          entries)))
 
 ;;; A browse result is a presentation proposal, checked again by the host.
+(def command-history-limit 256)
+(def command-history-duplicate-boost 10)
+(def command-history-decay-span 100.0)
+(def (marlin-ui-command-history? value)
+  (and (list? value) (<= (length value) command-history-limit)
+       (andmap (lambda (name) (and (string? name) (<= (string-length name) 32))) value)))
+(def (marlin-ui-record-command-history history-value name-value)
+  (unless (and (marlin-ui-command-history? history-value)
+               (string? name-value) (<= 1 (string-length name-value) 32))
+    (error "invalid UI command history"))
+  (cons name-value
+        (if (>= (length history-value) command-history-limit)
+          (take history-value (- command-history-limit 1)) history-value)))
+
 (def (command-subsequence? query name)
   (let ((needle-length (string-length query))
         (name-length (string-length name)))
@@ -140,14 +155,15 @@
 ;;; The bounded history uses the same decay positions on every query.
 (def command-history-decay
   (list->vector
-    (map (lambda (index) (inexact->exact (round (* 10 (exp (/ (- index) 100.0))))))
-         (iota 256))))
+    (map (lambda (index)
+           (inexact->exact (round (* command-history-duplicate-boost
+                                     (exp (/ (- index) command-history-decay-span))))))
+         (iota command-history-limit))))
 
 (def (marlin-ui-command-candidates entries query history)
   (unless (and (marlin-ui-command-entries? entries)
                (string? query) (<= (string-length query) 32)
-               (list? history) (<= (length history) 256)
-               (andmap (lambda (name) (and (string? name) (<= (string-length name) 32))) history))
+               (marlin-ui-command-history? history))
     (error "invalid UI command candidate request"))
   ;; Vertico's history-length-alpha ordering: recent history first, repeated
   ;; uses receive an exponentially decaying boost, then length and alphabetic
@@ -159,7 +175,9 @@
                (prior (hash-get ranks name))
                (rank (if prior
                        (- prior (vector-ref command-history-decay index))
-                       (if (zero? index) -1000000 index))))
+                       (if (zero? index)
+                         (- (+ 1 (* command-history-limit command-history-duplicate-boost)))
+                         index))))
           (hash-put! ranks name rank)
           (loop (cdr rest) (+ index 1)))))
     (let* ((names (map car (filter (lambda (entry) (command-subsequence? query (car entry))) entries)))

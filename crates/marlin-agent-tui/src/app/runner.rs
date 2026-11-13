@@ -23,61 +23,8 @@ use std::{
     path::PathBuf,
 };
 
-// Optional diagnostic observer. It runs outside Tokio so it does not inflate
-// the runtime task count and never performs file I/O on the UI thread.
-struct RuntimeProbe(Option<(std::sync::mpsc::Sender<()>, std::thread::JoinHandle<()>)>);
-
-impl RuntimeProbe {
-    fn start(
-        runtime: &tokio::runtime::Runtime,
-        owner: &marlin_agent_runtime::TokioAgentRuntime,
-    ) -> Self {
-        let Some(path) = std::env::var_os("MARLIN_TUI_RUNTIME_METRICS_FILE") else {
-            return Self(None);
-        };
-        let metrics = runtime.handle().metrics();
-        let tracker = owner.task_tracker();
-        let processes = owner.process_registry();
-        let (stop, receiver) = std::sync::mpsc::channel();
-        let thread = std::thread::spawn(move || {
-            use std::io::Write;
-            let Ok(mut file) = std::fs::File::create(path) else {
-                return;
-            };
-            let mut stopped = false;
-            loop {
-                if writeln!(
-                    file,
-                    "{},{},{},{}",
-                    metrics.num_alive_tasks(),
-                    metrics.num_workers(),
-                    tracker.active_task_count(),
-                    processes.active_processes().len()
-                )
-                .is_err()
-                    || stopped
-                {
-                    return;
-                }
-                // Capture the final state after Runtime drain when the owner stops the probe.
-                stopped = !matches!(
-                    receiver.recv_timeout(std::time::Duration::from_millis(250)),
-                    Err(std::sync::mpsc::RecvTimeoutError::Timeout)
-                );
-            }
-        });
-        Self(Some((stop, thread)))
-    }
-}
-
-impl Drop for RuntimeProbe {
-    fn drop(&mut self) {
-        if let Some((stop, thread)) = self.0.take() {
-            let _ = stop.send(());
-            let _ = thread.join();
-        }
-    }
-}
+use super::runtime_probe::RuntimeProbe;
+use super::tool_review::{open_tool_review, poll_tool_review, submit_tool_review};
 use termion::input::TermReadEventsAndRaw;
 
 pub(crate) fn process_replies(
@@ -97,7 +44,7 @@ pub(crate) fn process_replies(
     processed
 }
 
-fn publish_error(
+pub(super) fn publish_error(
     app: &mut App,
     source: MessageSource,
     summary: &str,
@@ -248,6 +195,19 @@ fn run(
     };
     #[cfg(not(feature = "linked-ui"))]
     let mut ui = UiHost::open(&scheme_runtime, directory, &ui_facts)?;
+    #[cfg(feature = "linked-ui")]
+    let tool_catalog = if config.session.is_some() {
+        let declarations = super::super::linked_ui::tooling_declarations(&scheme_runtime)?;
+        Some(Arc::new(
+            marlin_agent_tooling::catalog_from_declarations(declarations, env::current_dir()?)
+                .map_err(|error| format!("cannot bind Scheme tool catalog: {error:?}"))?,
+        ))
+    } else {
+        None
+    };
+    #[cfg(not(feature = "linked-ui"))]
+    let tool_catalog: Option<Arc<marlin_agent_runtime::ModelToolCatalog>> = None;
+    trace_startup("Scheme tooling publication");
     if let Some(status) = status.first()
         && !ui.view().regions.iter().any(|region| {
             matches!(region, marlin_agent_ui::UiRegion::Status(items) if items.iter().any(|item| item == status))
@@ -276,6 +236,10 @@ fn run(
     #[cfg(not(target_os = "macos"))]
     let mut app = App::new(endpoint);
     app.transcript_policy = Some(ui.view().layout.transcript_policy.clone());
+    app.tool_offer_options = tool_catalog
+        .as_ref()
+        .map(|catalog| catalog.offer().completion_options());
+    app.tool_catalog = tool_catalog.clone();
     let runtime_probe = RuntimeProbe::start(&runtime, &app.runtime_owner);
     #[cfg(target_os = "macos")]
     let host_pulse = match env::var_os("MARLIN_TUI_HOST_OBSERVATIONS_FILE")
@@ -344,10 +308,14 @@ fn run(
         app.transcript
             .push(("Session".into(), session_id.as_str().to_owned()));
         app.restore(turns);
-        SharedGateway::new(
-            JournalGateway::new(gateway, journal)
-                .with_tool_offer(marlin_agent_runtime::ModelToolCatalog::new().offer()),
-        )
+        let bound = JournalGateway::new(gateway, journal).with_tool_offer(
+            tool_catalog.as_ref().map_or_else(
+                || marlin_agent_runtime::ModelToolCatalog::new().offer(),
+                |catalog| catalog.offer(),
+            ),
+        );
+        app.tool_review = bound.tool_review_handle();
+        SharedGateway::new(bound)
     } else {
         SharedGateway::new(gateway)
     };
@@ -471,6 +439,8 @@ fn run(
                 break;
             }
             let processed = process_replies(&mut app, &mut reply_rx, REPLY_BATCH_LIMIT);
+            let tool_review_finished = poll_tool_review(&mut app);
+            let tool_review_opened = open_tool_review(&mut app, &ui);
             let runtime_processed = app.poll_runtime_events(RUNTIME_EVENT_BATCH_LIMIT);
             let sessions_changed = app.poll_sessions();
             let workspace_health_changed = if let Some(report) = app.workspace.poll_health() {
@@ -517,6 +487,8 @@ fn run(
                 .as_mut()
                 .is_some_and(|search| search.step(&app.history));
             if processed > 0
+                || tool_review_finished
+                || tool_review_opened
                 || runtime_processed > 0
                 || sessions_changed
                 || switched
@@ -607,7 +579,23 @@ fn run(
                 } else {
                     None
                 };
-                if target == Some("candidates") && command_menu_active(&app, &ui) {
+                if target == Some("transcript")
+                    && let Some(prompt) = app.tool_review_prompt.as_mut()
+                {
+                    prompt.scroll = if up {
+                        prompt.scroll.saturating_sub(lines as u16)
+                    } else {
+                        prompt.scroll.saturating_add(lines as u16)
+                    };
+                } else if target == Some("candidates") && app.tool_review_prompt.is_some() {
+                    if let Some(prompt) = app.tool_review_prompt.as_mut() {
+                        prompt.selected = if up {
+                            prompt.selected.saturating_sub(1)
+                        } else {
+                            (prompt.selected + 1).min(prompt.menu.choices.len() - 1)
+                        };
+                    }
+                } else if target == Some("candidates") && command_menu_active(&app, &ui) {
                     browse_menu(
                         &mut app,
                         &ui,
@@ -672,6 +660,25 @@ fn run(
                 continue;
             }
             if let Ok(Ok(TerminalInput::Key(key))) = &received {
+                if let Some(prompt) = app.tool_review_prompt.as_mut() {
+                    match key {
+                        Key::Up => prompt.selected = prompt.selected.saturating_sub(1),
+                        Key::Down => {
+                            prompt.selected =
+                                (prompt.selected + 1).min(prompt.menu.choices.len() - 1)
+                        }
+                        Key::PageUp => {
+                            prompt.scroll = prompt.scroll.saturating_sub(size.1.saturating_sub(4))
+                        }
+                        Key::PageDown => {
+                            prompt.scroll = prompt.scroll.saturating_add(size.1.saturating_sub(4))
+                        }
+                        Key::Char('\n') => submit_tool_review(&mut app, &runtime),
+                        Key::Ctrl('q') => break,
+                        _ => {}
+                    }
+                    continue;
+                }
                 let menu_active = command_menu_active(&app, &ui);
                 if menu_active && matches!(key, Key::Up | Key::Down) {
                     let direction = if *key == Key::Up {

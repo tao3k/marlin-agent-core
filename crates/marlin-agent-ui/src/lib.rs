@@ -25,7 +25,8 @@ pub mod grpc {
 
 #[cfg(feature = "scheme-ui")]
 pub use element::{
-    UiBackground, UiElement, UiSpan, UiTemplateSpan, UiTemplateValue, UiTone, decode_element,
+    UiBackground, UiElement, UiSize, UiSpan, UiTemplateSpan, UiTemplateValue, UiTone,
+    decode_element,
 };
 #[cfg(feature = "scheme-ui")]
 pub use model::{

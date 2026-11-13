@@ -45,6 +45,7 @@ pub enum ConversationEvent {
     Outcome(ConversationTurnOutcome),
     ToolReview(ConversationToolReviewReceipt),
     ToolExecutionClaim(ConversationToolReviewReceipt),
+    ToolResults(ConversationToolResultsReceipt),
 }
 
 #[derive(Debug)]
@@ -58,6 +59,7 @@ pub enum ConversationTailState {
     Unfinished,
     Finished,
     Uncertain,
+    ToolContinuationPending,
 }
 
 /// The latest committed conversation position, without transcript payloads.
@@ -223,6 +225,12 @@ impl<S: SessionEventStore> ConversationEventReader<S> {
             {
                 ConversationTailState::Uncertain
             }
+            tool_review::RESULTS_KIND
+                if *event_id == turn.tool_results_event_id()?
+                    && header.causality_parent_event_id == Some(turn.claim_event_id()?) =>
+            {
+                ConversationTailState::ToolContinuationPending
+            }
             START_KIND if *event_id == start && header.causality_parent_event_id.is_none() => {
                 ConversationTailState::Unfinished
             }
@@ -309,6 +317,8 @@ impl<S: SessionEventStore> ConversationEventReader<S> {
             id.finish_event_id()?
         } else if event_id == id.claim_event_id()? {
             id.review_event_id()?
+        } else if event_id == id.tool_results_event_id()? {
+            id.claim_event_id()?
         } else {
             let Some(sequence) = checkpoint_sequence(id, &event_id) else {
                 return Ok(None);
@@ -413,6 +423,16 @@ pub(super) fn decode_event(
             return Err(invalid());
         }
         return Ok(ConversationEvent::ToolExecutionClaim(receipt));
+    }
+    if record.event_kind == tool_review::RESULTS_KIND
+        && record.event_id == id.tool_results_event_id()?
+        && record.causality_parent_event_id == Some(id.claim_event_id()?)
+    {
+        let receipt: ConversationToolResultsReceipt = serde_json::from_slice(&record.body)?;
+        if receipt.key().turn() != id || receipt.key().session() != &record.session_id {
+            return Err(invalid());
+        }
+        return Ok(ConversationEvent::ToolResults(receipt));
     }
     if record.causality_parent_event_id != Some(start_id) {
         return Err(invalid());

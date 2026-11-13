@@ -183,6 +183,28 @@ fn view(focus: &str) -> UiWorkbench {
 }
 
 #[test]
+fn terminal_admits_composed_frame_groups_and_rejects_missing_slots() {
+    use marlin_agent_ui::UiElement;
+    let mut workbench = view("composer");
+    let UiElement::Rows(slots) = &workbench.layout.frame_tree else {
+        panic!("fixture frame")
+    };
+    workbench.layout.frame_tree = UiElement::Rows(vec![
+        UiElement::Rows(slots[..2].to_vec()),
+        UiElement::Rows(slots[2..].to_vec()),
+    ]);
+    assert!(admit_terminal_view(&workbench).is_ok());
+    let UiElement::Rows(groups) = &mut workbench.layout.frame_tree else {
+        unreachable!()
+    };
+    let UiElement::Rows(first) = &mut groups[0] else {
+        unreachable!()
+    };
+    first.remove(0);
+    assert!(admit_terminal_view(&workbench).is_err());
+}
+
+#[test]
 fn completion_respects_ambiguity_exact_names_and_arguments() {
     use marlin_agent_ui::{UiCommand, UiCommandArguments, UiCommandCapability, UiCommandName};
     let mut workbench = view("commands");

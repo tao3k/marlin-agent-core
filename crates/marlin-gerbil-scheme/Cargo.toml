@@ -32,7 +32,6 @@ marlin-agent-kernel.workspace = true
 marlin-agent-runtime.workspace = true
 marlin-agent-storage = { workspace = true, features = ["turso"] }
 marlin-git-utils.workspace = true
-marlin-agent-context = { workspace = true, features = ["org-memory", "org-workflow"] }
 marlin-workspace-status.workspace = true
 marlin-workspace-view.workspace = true
 memoffset.workspace = true

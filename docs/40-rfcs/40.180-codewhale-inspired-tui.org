@@ -2266,10 +2266,18 @@ tools using an existing capability can be declared in Scheme without adding a
 Rust command case. The catalog's registration API accepts typed declarations,
 not standalone provider schemas, so a Rust caller cannot silently advertise
 an unrelated tool definition. A new host capability still needs one Rust
-adapter; Scheme cannot create a Rust handler or grant its own approval. The catalog can consume
-the journal's one-shot execution claim, but the current production TUI catalog
-is empty. Durable tool results, provider continuation and live Mini Buffer Ask
-binding remain open, so chat does not yet advertise Bash. The offer now builds
+adapter; Scheme cannot create a Rust handler or grant its own approval. The
+catalog can consume the journal's one-shot execution claim. The journal now
+accepts one bounded, ordered result batch from the live claimant and replays
+its exact provider call IDs. A claim without results stays uncertain after
+restart; a committed result remains pending provider continuation. The linked
+TUI now projects the Scheme catalog when a persistent session is configured,
+binds its Bash capability, and attaches the exact offer to model requests.
+On a committed tool request, it presents Scheme's finite Ask choices in the
+Mini Buffer and shows the full arguments in a temporary request view; one
+selection commits the review, claim, and result through a managed Runtime
+task. Provider continuation remains open, so the session stays pending after
+the result instead of sending a synthetic user turn. The offer now builds
 a name index once; admission and execution reuse that index. The isolated
 catalog-admission benchmark excludes VM startup, handler execution and journal
 I/O. Its earlier timings predate the index change and need a fixed-cohort rerun

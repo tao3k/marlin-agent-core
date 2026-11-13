@@ -151,6 +151,9 @@ impl<S: SessionEventStore + Clone + 'static> SessionBinding<S> {
         let recovery_state = match tail.state {
             ConversationTailState::Finished => SessionRecoveryState::Finished,
             ConversationTailState::Uncertain => SessionRecoveryState::Unresolved,
+            ConversationTailState::ToolContinuationPending => {
+                SessionRecoveryState::ToolContinuationPending
+            }
             ConversationTailState::Unfinished => {
                 if running == Some(tail.turn) {
                     SessionRecoveryState::Active
@@ -232,6 +235,7 @@ impl<S: SessionEventStore + Clone + 'static> SessionBinding<S> {
                     ConversationEvent::Outcome(_)
                         | ConversationEvent::ToolReview(_)
                         | ConversationEvent::ToolExecutionClaim(_)
+                        | ConversationEvent::ToolResults(_)
                 ) {
                     return Ok(Box::pin(tokio_stream::empty()));
                 }
@@ -272,7 +276,7 @@ impl<S: SessionEventStore + Clone + 'static> SessionBinding<S> {
                             (Event::TextCheckpoint(TextCheckpoint { text }), false),
                         ConversationEvent::Checkpoint { channel: ConversationCheckpointChannel::Thinking, .. } => continue,
                         ConversationEvent::Outcome(outcome) => (Event::Outcome(outcome_status(&outcome).into()), true),
-                        ConversationEvent::ToolReview(_) | ConversationEvent::ToolExecutionClaim(_) => continue,
+                        ConversationEvent::ToolReview(_) | ConversationEvent::ToolExecutionClaim(_) | ConversationEvent::ToolResults(_) => continue,
                     };
                     yield SessionTurnEvent { event_id, event: Some(event) };
                     if terminal { return; }

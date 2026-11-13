@@ -49,6 +49,14 @@ pub(crate) struct CommandMenu {
     pub(crate) prompt: String,
 }
 
+pub(crate) struct ToolReviewPrompt {
+    pub(crate) key: marlin_agent_sessions::ConversationToolRequestKey,
+    pub(crate) menu: marlin_agent_ui::UiToolReviewMenu,
+    pub(crate) details: Transcript,
+    pub(crate) selected: usize,
+    pub(crate) scroll: u16,
+}
+
 pub(crate) struct App {
     pub(super) runtime_owner: marlin_agent_runtime::TokioAgentRuntime,
     pub(super) runtime_events: marlin_agent_runtime::RuntimeEventStream,
@@ -87,6 +95,21 @@ pub(crate) struct App {
     pub(super) persistent: bool,
     pub(super) needs_replay: bool,
     pub(super) pending_tool_request: bool,
+    pub(crate) tool_offer_options: Option<marlin_agent_protocol::ModelGatewayCompletionOptions>,
+    pub(crate) tool_catalog: Option<Arc<marlin_agent_runtime::ModelToolCatalog>>,
+    pub(crate) tool_review:
+        Option<super::super::journal_gateway::JournalToolReview<TursoAgentStorage>>,
+    pub(crate) tool_review_prompt: Option<ToolReviewPrompt>,
+    pub(crate) tool_review_inflight: Option<
+        tokio::sync::oneshot::Receiver<
+            Result<
+                super::super::journal_gateway::JournalToolReviewOutcome,
+                marlin_agent_protocol::ModelGatewayError,
+            >,
+        >,
+    >,
+    pub(crate) tool_review_task: Option<marlin_agent_runtime::RuntimeTask<()>>,
+    pub(crate) tool_review_suppressed: bool,
     pub(super) unverified_thinking: bool,
     pub(crate) runtime_edge: Option<RuntimeEdgePolicyReceipt>,
     pub(crate) runtime_content: Vec<UiContent>,
@@ -149,6 +172,13 @@ impl App {
             persistent: false,
             needs_replay: false,
             pending_tool_request: false,
+            tool_offer_options: None,
+            tool_catalog: None,
+            tool_review: None,
+            tool_review_prompt: None,
+            tool_review_inflight: None,
+            tool_review_task: None,
+            tool_review_suppressed: false,
             unverified_thinking: false,
             runtime_edge: None,
             runtime_content: Vec::new(),
@@ -611,10 +641,19 @@ impl App {
             }),
             Ok(opened) => {
                 self.prompt_history.restore(&mut self.composer);
-                *gateway = SharedGateway::new(
-                    JournalGateway::new(base_gateway.clone(), opened.journal)
-                        .with_tool_offer(marlin_agent_runtime::ModelToolCatalog::new().offer()),
-                );
+                let bound = JournalGateway::new(base_gateway.clone(), opened.journal)
+                    .with_tool_offer(self.tool_catalog.as_ref().map_or_else(
+                        || marlin_agent_runtime::ModelToolCatalog::new().offer(),
+                        |catalog| catalog.offer(),
+                    ));
+                self.tool_review = bound.tool_review_handle();
+                self.tool_review_prompt = None;
+                self.tool_review_inflight = None;
+                self.tool_review_suppressed = false;
+                if let Some(task) = self.tool_review_task.take() {
+                    task.abort();
+                }
+                *gateway = SharedGateway::new(bound);
                 self.transcript.clear();
                 self.history = Arc::new(Vec::new());
                 self.needs_replay = false;

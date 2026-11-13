@@ -24,7 +24,8 @@ pub use events::{
 };
 mod tool_review;
 pub use tool_review::{
-    ConversationToolExecutionClaim, ConversationToolRequestKey, ConversationToolReviewDecision,
+    ConversationToolCallResult, ConversationToolExecutionClaim, ConversationToolRequestKey,
+    ConversationToolResultOutcome, ConversationToolResultsReceipt, ConversationToolReviewDecision,
     ConversationToolReviewReceipt, ConversationToolReviewRequest, ConversationToolReviewStatus,
 };
 
@@ -115,6 +116,10 @@ impl ConversationTurnId {
         EventId::new(format!("{TURN_PREFIX}{:020}:03-tool-claim", self.0))
     }
 
+    fn tool_results_event_id(self) -> Result<EventId, StorageError> {
+        EventId::new(format!("{TURN_PREFIX}{:020}:04-tool-results", self.0))
+    }
+
     fn uncertain_event_id(self) -> Result<EventId, StorageError> {
         EventId::new(format!("{TURN_PREFIX}{:020}:01-uncertain", self.0))
     }
@@ -143,6 +148,7 @@ pub struct ConversationPendingToolRequest {
     calls: Vec<ModelToolCall>,
     status: ConversationToolReviewStatus,
     review_receipt: Option<ConversationToolReviewReceipt>,
+    results_receipt: Option<ConversationToolResultsReceipt>,
 }
 
 impl ConversationPendingToolRequest {
@@ -299,6 +305,7 @@ pub struct ConversationJournal<S> {
     legacy_outcome_unresolved: bool,
     pending_tool_request: Option<ConversationPendingToolRequest>,
     owns_pending_review: bool,
+    owns_pending_result: bool,
 }
 
 impl<S: SessionEventStore> ConversationJournal<S> {
@@ -348,6 +355,7 @@ impl<S: SessionEventStore> ConversationJournal<S> {
             legacy_outcome_unresolved: false,
             pending_tool_request: None,
             owns_pending_review: false,
+            owns_pending_result: false,
         };
         let before = journal
             .storage
@@ -674,6 +682,7 @@ impl<S: SessionEventStore> ConversationJournal<S> {
         self.owns_active = false;
         self.pending_tool_request = pending_tool_request;
         self.owns_pending_review = self.pending_tool_request.is_some();
+        self.owns_pending_result = false;
         Ok(())
     }
 
@@ -847,12 +856,14 @@ impl<S: SessionEventStore> ConversationJournal<S> {
                     pending_tool_request_from_outcome(&self.session, id, outcome)
                 });
                 self.owns_pending_review = self.pending_tool_request.is_some();
+                self.owns_pending_result = false;
                 if !visit(&turn) {
                     return Err(ConversationJournalError::ReplayStopped);
                 }
             }
             ConversationEvent::ToolReview(_) => self.replay_tool_review(&event, id)?,
             ConversationEvent::ToolExecutionClaim(_) => self.replay_tool_claim(&event, id)?,
+            ConversationEvent::ToolResults(_) => self.replay_tool_results(&event, id)?,
             ConversationEvent::Outcome(ConversationTurnOutcome::Uncertain { reason }) => {
                 if self.next_checkpoint != 1
                     && !matches!(
@@ -966,6 +977,7 @@ fn pending_tool_request_from_outcome(
         calls,
         status: ConversationToolReviewStatus::AwaitingReview,
         review_receipt: None,
+        results_receipt: None,
     })
 }
 

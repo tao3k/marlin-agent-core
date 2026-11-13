@@ -35,6 +35,7 @@ fn prompt_clips_at_graphemes_and_positions_cursor() {
         theme: &theme,
         offset: &|_| 0,
         facts: &|_| false,
+        extent: &|_| Extent::Cells(0),
         bindings: &[],
     };
     let mut terminal = Terminal::new(TestBackend::new(6, 1)).unwrap();
@@ -99,6 +100,7 @@ fn choice_uses_same_facts_for_layout_and_paint() {
         theme: &theme,
         offset: &|_| 0,
         facts: &facts,
+        extent: &|_| Extent::Flex(1),
         bindings: &[],
     };
     let mut painted = Vec::new();
@@ -258,7 +260,248 @@ fn hit_regions_follow_painted_layout_and_clip_at_terminal_edges() {
     assert!(hit_test(&regions, 10, 0).is_none());
 }
 
+#[test]
+fn scheme_size_bindings_are_independent_of_region_names() {
+    let region = |name: &str, size| UiElement::Sized {
+        size,
+        child: Box::new(UiElement::Region {
+            id: UiComponentId::new(name).unwrap(),
+            scrollable: false,
+            child: Box::new(UiElement::Text(vec![])),
+        }),
+    };
+    let tree = UiElement::Rows(vec![
+        region("body", marlin_agent_ui::UiSize::Flex(1)),
+        region(
+            "prompt",
+            marlin_agent_ui::UiSize::Binding(UiComponentId::new("prompt-height").unwrap()),
+        ),
+        region("status", marlin_agent_ui::UiSize::Cells(1)),
+    ]);
+    let mut regions = Vec::new();
+    super::ui_elements::layout_regions(
+        &tree,
+        Rect::new(0, 0, 20, 10),
+        &|id| {
+            assert_eq!(id.as_str(), "prompt-height");
+            Extent::Cells(3)
+        },
+        &mut regions,
+    );
+    assert_eq!(
+        regions
+            .iter()
+            .map(|region| region.area.height)
+            .collect::<Vec<_>>(),
+        [6, 3, 1]
+    );
+    assert_eq!(hit_test(&regions, 0, 6).unwrap().id.as_str(), "prompt");
+}
+
+#[test]
+fn sized_layout_paint_and_hit_regions_share_rectangles() {
+    let item = |id: &str, text: &str, size| UiElement::Sized {
+        size,
+        child: Box::new(UiElement::Region {
+            id: UiComponentId::new(id).unwrap(),
+            scrollable: false,
+            child: Box::new(UiElement::Text(vec![UiSpan {
+                text: text.into(),
+                tone: UiTone::Normal,
+            }])),
+        }),
+    };
+    let tree = UiElement::Rows(vec![
+        item("body", "A", marlin_agent_ui::UiSize::Flex(1)),
+        item(
+            "prompt",
+            "B",
+            marlin_agent_ui::UiSize::Binding(UiComponentId::new("height").unwrap()),
+        ),
+    ]);
+    let extent = |_: &UiComponentId| Extent::Cells(2);
+    let theme = UiTheme::default();
+    let inputs = UiRenderInputs {
+        theme: &theme,
+        offset: &|_| 0,
+        facts: &|_| false,
+        extent: &extent,
+        bindings: &[],
+    };
+    let mut layout = Vec::new();
+    let mut painted = Vec::new();
+    let area = Rect::new(0, 0, 12, 6);
+    layout_regions_with_facts(&tree, area, &extent, &mut layout, inputs.facts);
+    let mut terminal = Terminal::new(TestBackend::new(12, 6)).unwrap();
+    terminal
+        .draw(|frame| render_with_facts(frame, area, &tree, &mut painted, &inputs))
+        .unwrap();
+    assert_eq!(
+        layout.iter().map(|r| (&r.id, r.area)).collect::<Vec<_>>(),
+        painted.iter().map(|r| (&r.id, r.area)).collect::<Vec<_>>()
+    );
+    assert_eq!(terminal.backend().buffer()[(0, 4)].symbol(), "B");
+    assert_eq!(hit_test(&painted, 0, 4).unwrap().id.as_str(), "prompt");
+}
+
+#[test]
+fn scrolling_sized_rows_keeps_paint_and_hit_testing_aligned() {
+    let row = |id: &str, text: &str| UiElement::Sized {
+        size: marlin_agent_ui::UiSize::Cells(2),
+        child: Box::new(UiElement::Region {
+            id: UiComponentId::new(id).unwrap(),
+            scrollable: false,
+            child: Box::new(UiElement::Text(vec![UiSpan {
+                text: text.into(),
+                tone: UiTone::Normal,
+            }])),
+        }),
+    };
+    let tree = UiElement::Region {
+        id: UiComponentId::new("viewport").unwrap(),
+        scrollable: true,
+        child: Box::new(UiElement::Rows(vec![row("a", "A\nA"), row("b", "B\nB")])),
+    };
+    let mut terminal = Terminal::new(TestBackend::new(8, 3)).unwrap();
+    let mut regions = Vec::new();
+    terminal
+        .draw(|frame| {
+            super::ui_elements::render_with_scroll(
+                frame,
+                frame.area(),
+                &tree,
+                &UiTheme::default(),
+                &mut regions,
+                &|_| 1,
+            )
+        })
+        .unwrap();
+    assert_eq!(terminal.backend().buffer()[(0, 0)].symbol(), "A");
+    assert_eq!(terminal.backend().buffer()[(0, 1)].symbol(), "B");
+    assert_eq!(hit_test(&regions, 0, 1).unwrap().id.as_str(), "b");
+}
+
+#[test]
+fn column_width_constraints_do_not_become_parent_row_heights() {
+    let column = |id: &str| UiElement::Sized {
+        size: marlin_agent_ui::UiSize::Cells(2),
+        child: Box::new(UiElement::Region {
+            id: UiComponentId::new(id).unwrap(),
+            scrollable: false,
+            child: Box::new(UiElement::Text(vec![UiSpan {
+                text: id.into(),
+                tone: UiTone::Normal,
+            }])),
+        }),
+    };
+    let tree = UiElement::Rows(vec![
+        UiElement::Columns(vec![column("a"), column("b")]),
+        UiElement::Region {
+            id: UiComponentId::new("next").unwrap(),
+            scrollable: false,
+            child: Box::new(UiElement::Text(vec![])),
+        },
+    ]);
+    let mut terminal = Terminal::new(TestBackend::new(8, 4)).unwrap();
+    let mut painted = Vec::new();
+    terminal
+        .draw(|frame| {
+            render_with_regions(
+                frame,
+                frame.area(),
+                &tree,
+                &UiTheme::default(),
+                &mut painted,
+            )
+        })
+        .unwrap();
+    assert_eq!(
+        painted
+            .iter()
+            .find(|region| region.id.as_str() == "next")
+            .unwrap()
+            .area
+            .y,
+        1
+    );
+    assert_eq!(
+        painted
+            .iter()
+            .find(|region| region.id.as_str() == "b")
+            .unwrap()
+            .area
+            .x,
+        2
+    );
+}
+
 proptest! {
+    #[test]
+    fn sized_layout_matches_painted_regions_across_terminal_sizes(
+        width in 1u16..60, height in 1u16..35,
+        sizes in proptest::collection::vec((0u16..12, proptest::bool::ANY), 1..16),
+        vertical in proptest::bool::ANY,
+    ) {
+        let children = sizes.iter().enumerate().map(|(index, (size, flex))| UiElement::Sized {
+            size: if *flex { marlin_agent_ui::UiSize::Flex(size.saturating_add(1)) } else { marlin_agent_ui::UiSize::Cells(*size) },
+            child: Box::new(UiElement::Region {
+                id: UiComponentId::new(&format!("sized-{index}")).unwrap(),
+                scrollable: false,
+                child: Box::new(UiElement::Text(vec![])),
+            }),
+        }).collect();
+        let tree = if vertical { UiElement::Rows(children) } else { UiElement::Columns(children) };
+        let area = Rect::new(0, 0, width, height);
+        let extent = |_: &UiComponentId| Extent::Cells(0);
+        let theme = UiTheme::default();
+        let inputs = UiRenderInputs { theme: &theme, offset: &|_| 0, facts: &|_| false, extent: &extent, bindings: &[] };
+        let mut expected = Vec::new();
+        let mut painted = Vec::new();
+        layout_regions_with_facts(&tree, area, &extent, &mut expected, inputs.facts);
+        let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
+        terminal.draw(|frame| render_with_facts(frame, area, &tree, &mut painted, &inputs)).unwrap();
+        let snapshot = |regions: Vec<super::ui_elements::HitRegion>| regions.into_iter().map(|r| (r.id, r.area, r.scrollable)).collect::<Vec<_>>();
+        prop_assert_eq!(snapshot(painted), snapshot(expected));
+    }
+
+    #[test]
+    fn nested_frame_groups_preserve_flat_rectangles(
+        height in 0u16..80,
+        width in 1u16..40,
+        extensions in 0u16..16,
+        editor in 0u16..20,
+        candidates in 0u16..20,
+        footer in 0u16..5,
+    ) {
+        let slots: Vec<_> = ["transcript", "extensions", "modeline", "editor", "candidates", "minibuffer"]
+            .into_iter().map(|name| UiElement::Sized {
+                size: if name == "transcript" { marlin_agent_ui::UiSize::Flex(1) }
+                      else { marlin_agent_ui::UiSize::Binding(UiComponentId::new(name).unwrap()) },
+                child: Box::new(UiElement::Region {
+                    id: UiComponentId::new(name).unwrap(),
+                    scrollable: matches!(name, "transcript" | "candidates"),
+                    child: Box::new(UiElement::Text(vec![])),
+                }),
+            }).collect();
+        let flat = UiElement::Rows(slots.clone());
+        let nested = UiElement::Rows(vec![UiElement::Rows(slots[..2].to_vec()), UiElement::Rows(slots[2..].to_vec())]);
+        let extent = |id: &UiComponentId| match id.as_str() {
+            "extensions" => Extent::Cells(extensions),
+            "modeline" => Extent::Cells(1),
+            "editor" => Extent::Cells(editor),
+            "candidates" => Extent::Cells(candidates),
+            _ => Extent::Cells(footer),
+        };
+        let area = Rect::new(0, 0, width, height);
+        let mut expected = Vec::new();
+        let mut actual = Vec::new();
+        super::ui_elements::layout_regions(&flat, area, &extent, &mut expected);
+        super::ui_elements::layout_regions(&nested, area, &extent, &mut actual);
+        let snapshot = |regions: Vec<super::ui_elements::HitRegion>| regions.into_iter()
+            .map(|region| (region.id, region.area, region.scrollable)).collect::<Vec<_>>();
+        prop_assert_eq!(snapshot(actual), snapshot(expected));
+    }
+
     #[test]
     fn prompt_keeps_a_bounded_suffix_and_cursor(width in 1u16..80, length in 0usize..300) {
         let tree = UiElement::Template {
@@ -269,7 +512,7 @@ proptest! {
             ],
         };
         let theme = UiTheme::default();
-        let inputs = UiRenderInputs { theme: &theme, offset: &|_| 0, facts: &|_| false, bindings: &[] };
+        let inputs = UiRenderInputs { theme: &theme, offset: &|_| 0, facts: &|_| false, extent: &|_| Extent::Cells(0), bindings: &[] };
         let query = "x".repeat(length);
         let mut terminal = Terminal::new(TestBackend::new(width, 1)).unwrap();
         let mut cursor = None;

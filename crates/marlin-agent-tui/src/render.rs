@@ -72,7 +72,7 @@ fn minibuffer_footer_rows(app: &App, base: u16) -> u16 {
 }
 
 pub(crate) fn chatbox_height(app: &App, policy: &UiLayoutPolicy, width: u16, height: u16) -> u16 {
-    let frame = if app.command_draft.is_some() {
+    let frame = if app.command_draft.is_some() || app.tool_review_prompt.is_some() {
         &policy.command_frame
     } else {
         &policy.message_frame
@@ -109,7 +109,7 @@ pub(crate) fn frame_regions(
     area: Rect,
 ) -> Vec<super::ui_elements::HitRegion> {
     use super::ui_elements::{Extent, layout_regions};
-    let command = app.command_draft.is_some();
+    let command = app.command_draft.is_some() || app.tool_review_prompt.is_some();
     let policy = if command {
         &ui.layout.command_frame
     } else {
@@ -137,7 +137,11 @@ pub(crate) fn frame_regions(
                 _ => false,
             }),
     );
-    let candidates = if command {
+    let candidates = if let Some(prompt) = &app.tool_review_prompt {
+        u16::try_from(prompt.menu.choices.len())
+            .unwrap_or(u16::MAX)
+            .min(spare.saturating_sub(status))
+    } else if command {
         ui.layout.max_command_rows.min(spare.saturating_sub(status))
     } else {
         0
@@ -166,7 +170,6 @@ pub(crate) fn frame_regions(
         &ui.layout.frame_tree,
         area,
         &|id| match id.as_str() {
-            "transcript" => Extent::Flex(1),
             "extensions" => Extent::Cells(extensions),
             "modeline" => Extent::Cells(status),
             "editor" => Extent::Cells(editor),
@@ -443,7 +446,7 @@ pub(crate) fn draw(
     );
     // The transcript can end in a separator row, so reserve two rows when
     // possible. Bound measurement for large drafts.
-    let command_active = app.command_draft.is_some();
+    let command_active = app.command_draft.is_some() || app.tool_review_prompt.is_some();
     let frame_spec = if command_active {
         &ui.layout.command_frame
     } else {
@@ -471,7 +474,10 @@ pub(crate) fn draw(
         UiRegion::Status(items) if !items.is_empty() => Some(items),
         _ => None,
     });
-    let suggestions = if app.history_search.is_none() && app.command_draft.is_some() {
+    let suggestions = if app.history_search.is_none()
+        && app.command_draft.is_some()
+        && app.tool_review_prompt.is_none()
+    {
         app.command_candidates.as_slice()
     } else {
         &[]
@@ -533,7 +539,16 @@ pub(crate) fn draw(
             .then_some(("Runtime policy", app.runtime_content.as_slice()))
             .or(focused_content)
     };
-    let transcript_area = if let Some((label, content)) = displayed_content {
+    let transcript_area = if let Some(prompt) = &app.tool_review_prompt {
+        cache.with_top_view(
+            &prompt.details,
+            parts[0].width,
+            parts[0].height,
+            usize::from(prompt.scroll),
+            |viewport| viewport.render(parts[0], frame.buffer_mut()),
+        );
+        None
+    } else if let Some((label, content)) = displayed_content {
         let scroll = if static_content.is_some() {
             app.static_buffer_scroll
         } else {
@@ -603,11 +618,19 @@ pub(crate) fn draw(
         .selected_command()
         .filter(|name| suggestions.contains(name));
     let active = selected.or_else(|| suggestions.first());
-    let selected_index = active.and_then(|name| suggestions.iter().position(|item| item == name));
-    let command_prompt = app
-        .command_menu
+    let selected_index = app
+        .tool_review_prompt
         .as_ref()
-        .map_or(frame_spec.prompt.as_str(), |menu| menu.prompt.as_str());
+        .map(|prompt| prompt.selected)
+        .or_else(|| active.and_then(|name| suggestions.iter().position(|item| item == name)));
+    let command_prompt = app.tool_review_prompt.as_ref().map_or_else(
+        || {
+            app.command_menu
+                .as_ref()
+                .map_or(frame_spec.prompt.as_str(), |menu| menu.prompt.as_str())
+        },
+        |prompt| prompt.menu.prompt.as_str(),
+    );
     let title = if app.history_search.is_some() {
         " History · Enter accept · Esc cancel "
     } else {
@@ -629,7 +652,9 @@ pub(crate) fn draw(
                 format!(
                     "{}/{} {}",
                     selected_index.map_or(0, |index| index + 1),
-                    suggestions.len(),
+                    app.tool_review_prompt
+                        .as_ref()
+                        .map_or(suggestions.len(), |prompt| prompt.menu.choices.len()),
                     command_prompt.trim_start()
                 )
             } else {
@@ -650,7 +675,9 @@ pub(crate) fn draw(
                 parts[3].width.saturating_sub(prompt_width),
                 1,
             );
-            if let Some(view) = composer.view(inner.width, inner.height) {
+            if app.tool_review_prompt.is_none()
+                && let Some(view) = composer.view(inner.width, inner.height)
+            {
                 frame.render_widget(
                     Paragraph::new(view.rows.join("\n"))
                         .style(Style::default().bg(rgb(ui.theme.bar)).fg(rgb(ui.theme.ink))),
@@ -661,7 +688,9 @@ pub(crate) fn draw(
         } else {
             let inner = block.inner(parts[3]);
             frame.render_widget(block, parts[3]);
-            if let Some(view) = composer.view(inner.width, inner.height) {
+            if app.tool_review_prompt.is_none()
+                && let Some(view) = composer.view(inner.width, inner.height)
+            {
                 frame.render_widget(Paragraph::new(view.rows.join("\n")), inner);
                 if app.history_search.is_none() && ui.focus.as_str() == "composer" {
                     frame.set_cursor_position((inner.x + view.cursor.0, inner.y + view.cursor.1));
@@ -682,6 +711,23 @@ pub(crate) fn draw(
         Some(marlin_agent_ui::UiElement::Rows(templates)) => templates.as_slice(),
         _ => &[],
     };
+    if let Some(prompt) = &app.tool_review_prompt {
+        for (row, choice) in prompt.menu.choices.iter().take(visible).enumerate() {
+            let line = Rect::new(parts[4].x, parts[4].y + row as u16, parts[4].width, 1);
+            if let Some(template) = templates.get(usize::from(row != prompt.selected)) {
+                super::ui_elements::render_template(
+                    frame,
+                    line,
+                    template,
+                    &ui.theme,
+                    &[
+                        ("name", choice.label.as_str()),
+                        ("description", choice.description.as_str()),
+                    ],
+                );
+            }
+        }
+    }
     for (row, name) in suggestions.iter().skip(start).take(visible).enumerate() {
         let Some(command) = ui.commands().iter().find(|command| &command.name == name) else {
             continue;
@@ -792,6 +838,7 @@ pub(crate) fn draw(
             theme: &ui.theme,
             offset: &|_| 0,
             facts: &facts,
+            extent: &|_| super::ui_elements::Extent::Cells(0),
             bindings: &bindings,
         };
         if let Some(search) = &app.history_search {

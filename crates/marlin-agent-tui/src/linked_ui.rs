@@ -18,6 +18,7 @@ unsafe extern "C" {
     fn marlin_ui_command_candidates(root: i64) -> i64;
     fn marlin_ui_review_menu(root: i64) -> i64;
     fn marlin_ui_refresh_labels(root: i64) -> i64;
+    fn marlin_tooling_project(root: i64) -> i64;
 }
 
 pub(crate) fn initialize() -> Result<GerbilRuntime, NativeError> {
@@ -38,4 +39,14 @@ pub(crate) fn exports() -> UiLinkedExports {
         review_menu: marlin_ui_review_menu,
         refresh_labels: marlin_ui_refresh_labels,
     }
+}
+
+pub(crate) fn tooling_declarations(
+    runtime: &GerbilRuntime,
+) -> Result<
+    Vec<marlin_agent_runtime::ModelToolDeclaration>,
+    marlin_agent_tooling::ToolingProjectionError,
+> {
+    // SAFETY: this export belongs to the same linked programme initialized above.
+    unsafe { marlin_agent_tooling::project_linked(runtime, marlin_tooling_project) }
 }

@@ -99,6 +99,7 @@ marlin-deck-runtime = { path = "crates/marlin-deck-runtime", version = "0.1.0" }
 marlin-gerbil-ir = { path = "crates/marlin-gerbil-ir", version = "0.1.0" }
 marlin-gerbil-scheme = { path = "crates/marlin-gerbil-scheme", version = "0.1.0" }
 marlin-agent-ui = { path = "crates/marlin-agent-ui", version = "0.1.0" }
+marlin-agent-tooling = { path = "crates/marlin-agent-tooling", version = "0.1.0" }
 marlin-git-utils = { path = "crates/marlin-git-utils", version = "0.1.0" }
 marlin-agent-telemetry = { path = "crates/marlin-agent-telemetry", version = "0.1.0" }
 marlin-context-org-model = { path = "crates/marlin-agent-context/parts/org-model", version = "0.1.0" }

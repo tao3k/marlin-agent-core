@@ -28,6 +28,10 @@ impl App {
             pending.task.abort();
             let _ = pending.task.join().await;
         }
+        if let Some(task) = self.tool_review_task.take() {
+            task.abort();
+            let _ = task.join().await;
+        }
         if let Some(browser) = self.session_browser.as_mut() {
             browser.shutdown().await;
         }
@@ -345,6 +349,7 @@ impl App {
         let endpoint = self.endpoint.clone();
         let prompt = input.clone();
         let gateway = gateway.clone();
+        let tool_options = self.tool_offer_options.clone();
         self.next_id += 1;
         let id = self.next_id;
         let tx = tx.clone();
@@ -352,7 +357,10 @@ impl App {
             let mut messages = history.as_ref().clone();
             drop(history);
             messages.push(user_gateway_message(prompt));
-            let request = ModelGatewayRequest::new(endpoint, messages);
+            let request = match tool_options {
+                Some(options) => ModelGatewayRequest::new(endpoint, messages).with_options(options),
+                None => ModelGatewayRequest::new(endpoint, messages),
+            };
             tokio::task::yield_now().await;
             let future = gateway.stream(request);
             let mut output_limit = OutputLimit::new(MAX_RESPONSE_BYTES);
@@ -537,6 +545,8 @@ impl App {
                         }
                         if tool_requested {
                             self.pending_tool_request = true;
+                            self.tool_review_prompt = None;
+                            self.tool_review_suppressed = false;
                             self.publish_message(MessageEvent {
                             source: MessageSource::Gateway,
                             severity: MessageSeverity::Warning,

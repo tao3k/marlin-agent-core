@@ -21,6 +21,7 @@
       keymap-entries: (.get ui-components keymap-entries)
       transient-entries: (.get ui-components transient-entries)
       command-candidates: (.get ui-components command-candidates)
+      record-command-history: (.get ui-components record-command-history)
       review-menu: (.get ui-components review-menu)
       events: (.o base: UiEvent. next-focus: UiNextFocus. previous-focus: UiPreviousFocus. submit: UiSubmit.
                   dismiss: UiDismiss. scroll: UiScroll. browse-command: UiBrowseCommand.)))

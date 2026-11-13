@@ -492,6 +492,13 @@ fn cancelled_and_incomplete_commands_do_not_enter_history() {
     app.composer.insert_text("model");
     app.submit(&gateway, &runtime, &tx);
     assert!(app.command_history_request.is_none());
+    app.toggle_command();
+    app.composer.insert_text("model private-argument");
+    app.submit(&gateway, &runtime, &tx);
+    assert_eq!(
+        app.command_history_request.take().unwrap().as_str(),
+        "model"
+    );
 }
 
 #[test]
