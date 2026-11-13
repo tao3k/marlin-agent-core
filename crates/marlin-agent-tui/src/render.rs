@@ -266,6 +266,7 @@ pub(crate) fn draw(
     cache: &mut TranscriptViewportCache,
     anchor: &mut ScrollAnchor,
 ) -> usize {
+    app.list_state.borrow_mut().begin_frame();
     let area = frame.area();
     frame.buffer_mut().set_style(
         area,
@@ -496,24 +497,30 @@ pub(crate) fn draw(
             },
             &mut app.list_state.borrow_mut(),
             |index| {
-                let bindings = if let Some(prompt) = &app.tool_review_prompt {
+                let (key, bindings) = if let Some(prompt) = &app.tool_review_prompt {
                     let choice = prompt.menu.choices.get(index)?;
-                    vec![
-                        ("name", choice.label.as_str().into()),
-                        ("description", choice.description.as_str().into()),
-                    ]
+                    (
+                        None,
+                        vec![
+                            ("name", choice.label.as_str().into()),
+                            ("description", choice.description.as_str().into()),
+                        ],
+                    )
                 } else {
                     let name = suggestions.get(index)?;
                     let command = ui.commands().iter().find(|command| &command.name == name)?;
-                    vec![
-                        (
-                            "name",
-                            menu_display_name(command.name.as_str(), menu_prefix).into(),
-                        ),
-                        ("description", header_value(&command.description).into()),
-                    ]
+                    (
+                        Some(marlin_agent_ui::UiComponentId::new(name.as_str()).ok()?),
+                        vec![
+                            (
+                                "name",
+                                menu_display_name(command.name.as_str(), menu_prefix).into(),
+                            ),
+                            ("description", header_value(&command.description).into()),
+                        ],
+                    )
                 };
-                Some(super::ui_elements::UiListRow { bindings })
+                Some(super::ui_elements::UiListRow { key, bindings })
             },
         );
     }
@@ -532,6 +539,7 @@ pub(crate) fn draw(
             &mut app.list_state.borrow_mut(),
             |index| {
                 Some(super::ui_elements::UiListRow {
+                    key: None,
                     bindings: vec![("label", header_value(extensions.get(index)?.1).into())],
                 })
             },

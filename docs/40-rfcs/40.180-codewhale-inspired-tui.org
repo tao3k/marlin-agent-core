@@ -2545,3 +2545,28 @@ single samples, not a controlled before/after comparison:
 the earlier pair measured 1.904/2.534 s and 53.6/479.8 ms under different
 load. Neither run identifies the cause of the fresh-copy pre-output gap or
 proves that eliminating duplicate Scheme node construction caused a speedup.
+
+** Painted list row hit testing (2026-11-14)
+
+The generic list mapper keeps the bounded identities and cell rectangles of
+painted rows for the current frame. Empty or hidden lists clear their prior
+hits. A left click selects an identity only if it remains in the current
+Scheme-ordered candidate set, using the existing Scheme browse operation;
+selection previews a buffer and does not confirm it. Review choices remain
+display-only for pointer presses. Rust tests cover row geometry and native
+input, while PTY tests exercise candidate clicks, keyboard and wheel navigation,
+and Messages preview before confirmation. The ordinary PTY suite passed 16
+tests, with 36 explicitly ignored.
+
+Criterion's ten-sample list diagnostics used the TUI diff SHA-256
+=3a07cc2da7a23a5e571bb9d4c14f8fb3985e12a36a20fb006229a8e1b07abe3a=
+over =f3a4c1fa=. During concurrent compilation, the keyed ten-visible-row
+workload measured =[49.955, 77.560, 134.64]= µs and the unkeyed column
+workload measured =[88.451, 129.94, 174.24]= µs; Criterion flagged both
+unkeyed list baselines as regressions versus its saved previous run. A
+subsequent run of the same compiled executable measured the keyed workload
+=[33.598, 47.494, 78.074]= µs and the unkeyed column workload
+=[37.538, 47.182, 64.198]= µs. These are broad 95% intervals from separate
+workloads under varying system load, not a controlled overhead comparison or
+proof that a performance regression is absent. Repeat a source-fixed paired
+cohort under controlled load before setting an acceptance bound.

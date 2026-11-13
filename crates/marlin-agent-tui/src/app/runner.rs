@@ -25,7 +25,9 @@ use std::{
 
 use super::runtime_probe::RuntimeProbe;
 use super::tool_review::{open_tool_review, poll_tool_review, submit_tool_review};
-use super::ui_events::{apply_ui_request, browse_menu, command_menu_active};
+use super::ui_events::{
+    apply_ui_request, browse_menu, command_menu_active, select_clicked_command,
+};
 use termion::input::TermReadEventsAndRaw;
 
 pub(crate) fn process_replies(
@@ -287,6 +289,13 @@ fn run(
                                 );
                                 if input_wheel_steps.push(up, column, row) {
                                     let _ = keys_tx.try_send(Ok(TerminalInput::WheelWake));
+                                }
+                            }
+                            TerminalInput::MouseClick(x, y) => {
+                                input_mouse_position
+                                    .store((u64::from(y) << 16) | u64::from(x), Ordering::Relaxed);
+                                if keys_tx.send(Ok(TerminalInput::MouseClick(x, y))).is_err() {
+                                    break;
                                 }
                             }
                             input => {
@@ -596,6 +605,10 @@ fn run(
             if matches!(&received, Ok(Ok(input)) if !matches!(input, TerminalInput::Key(Key::Ctrl('c'))))
             {
                 app.disarm_exit();
+            }
+            if let Ok(Ok(TerminalInput::MouseClick(column, row))) = &received {
+                select_clicked_command(&mut app, &ui, *column, *row);
+                continue;
             }
             if let Some(search) = app.history_search.as_mut() {
                 match received {

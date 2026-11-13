@@ -5,9 +5,25 @@
 use super::input::{BracketedPaste, InputDecoder, MouseMotion, TerminalInput, WheelAccumulator};
 use std::io::Cursor;
 use termion::{
-    event::{Event, Key},
+    event::{Event, Key, MouseButton, MouseEvent},
     input::TermReadEventsAndRaw,
 };
+
+#[test]
+fn left_press_is_distinct_from_motion_and_wheel() {
+    let mut decoder = InputDecoder::default();
+    assert!(matches!(
+        decoder.accept(
+            Event::Mouse(MouseEvent::Press(MouseButton::Left, 5, 7)),
+            b""
+        ),
+        Some(TerminalInput::MouseClick(5, 7))
+    ));
+    assert!(matches!(
+        decoder.accept(Event::Mouse(MouseEvent::Release(5, 7)), b""),
+        Some(TerminalInput::MouseMove(5, 7))
+    ));
+}
 
 #[test]
 fn bracketed_multiline_paste_is_one_input_without_enter_or_control_actions() {

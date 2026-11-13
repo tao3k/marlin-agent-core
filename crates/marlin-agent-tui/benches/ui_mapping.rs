@@ -206,9 +206,14 @@ fn mapping(c: &mut Criterion) {
             width: UiSize::Binding(UiComponentId::new("candidate-name-width").unwrap()),
         };
     }
-    for (benchmark, row) in [
-        ("ui/mapping/list-256-visible-10", template.clone()),
-        ("ui/mapping/list-column-256-visible-10", column_template),
+    for (benchmark, row, keyed) in [
+        ("ui/mapping/list-256-visible-10", template.clone(), false),
+        (
+            "ui/mapping/list-column-256-visible-10",
+            column_template.clone(),
+            false,
+        ),
+        ("ui/mapping/list-hit-256-visible-10", column_template, true),
     ] {
         let list_template = UiElement::List {
             id: UiComponentId::new("benchmark-list").unwrap(),
@@ -222,6 +227,7 @@ fn mapping(c: &mut Criterion) {
         let mut list_state = marlin_agent_tui::ui_elements::UiListState::default();
         c.bench_function(benchmark, |b| {
             b.iter(|| {
+                list_state.begin_frame();
                 list_terminal
                     .draw(|frame| {
                         render_list(
@@ -237,12 +243,18 @@ fn mapping(c: &mut Criterion) {
                             &mut list_state,
                             |index| {
                                 Some(UiListRow {
+                                    key: keyed.then(|| {
+                                        UiComponentId::new(&format!("command-{index}")).unwrap()
+                                    }),
                                     bindings: vec![("name", format!("command-{index}").into())],
                                 })
                             },
                         )
                     })
                     .unwrap();
+                if keyed {
+                    black_box(list_state.hit(1, 9));
+                }
             })
         });
     }

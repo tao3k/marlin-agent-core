@@ -15,6 +15,7 @@ const MAX_PASTE_BYTES: usize = 1024 * 1024;
 pub(crate) enum TerminalInput {
     Key(Key),
     MouseMove(u16, u16),
+    MouseClick(u16, u16),
     MouseWheel { up: bool, column: u16, row: u16 },
     WheelWake,
     Paste(String),
@@ -83,6 +84,9 @@ impl InputDecoder {
                     column,
                     row,
                 })
+            }
+            Event::Mouse(MouseEvent::Press(MouseButton::Left, column, row)) => {
+                Some(TerminalInput::MouseClick(column, row))
             }
             Event::Mouse(
                 MouseEvent::Press(_, x, y) | MouseEvent::Hold(x, y) | MouseEvent::Release(x, y),

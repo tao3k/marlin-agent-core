@@ -131,7 +131,10 @@ fn linked_scheme_workbench_renders_through_the_native_boundary() {
                     &mut state,
                     |index| {
                         rows.push(index);
-                        Some(super::super::ui_elements::UiListRow { bindings: vec![] })
+                        Some(super::super::ui_elements::UiListRow {
+                            key: None,
+                            bindings: vec![],
+                        })
                     },
                 );
             })

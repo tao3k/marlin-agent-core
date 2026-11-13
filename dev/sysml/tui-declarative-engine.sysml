@@ -42,7 +42,10 @@ package MarlinDeclarativeUi {
                    text; the adapter maps the editable field and cursor by cell
                    width. The terminal host still binds transcript, editor and
                    list data through dedicated adapters; transcript scrolling
-                   retains its native deep-scroll cache. Generic tree group
+                   retains its native deep-scroll cache. A list publishes hit
+                   identities only for rows actually painted in the current
+                   frame; the host validates the identity against current
+                   candidates before dispatching Scheme navigation. Generic tree group
                    coordinates remain terminal-sized.
                    Components have stable domain identity and explicit state;
                    generic functions and method bundles permit specialization
@@ -529,6 +532,9 @@ package MarlinDeclarativeUi {
     requirement <'MAR-UI-R21'> verticoCommandCompletion {
         doc /* M-x completion uses one Scheme-owned candidate order for the
                visible list, first selection and directional navigation.
+               A pointer selection uses the painted row identity and the same
+               Scheme navigation; it previews a buffer without confirming it.
+               Stale or hidden rows cannot select a different current command.
                Accepted command identities enter bounded history; cancelled,
                unknown or incomplete input and command arguments do not.
                Exact fields outrank history, recent commands outrank unseen

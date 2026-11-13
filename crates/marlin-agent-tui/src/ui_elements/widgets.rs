@@ -159,6 +159,8 @@ pub fn input_border(element: &UiElement, facts: &dyn Fn(&UiComponentId) -> bool)
 
 /// One host-provided row and the named values used by its Scheme template.
 pub struct UiListRow<'a> {
+    /// Stable identity for hit testing; rows without an identity are display-only.
+    pub key: Option<UiComponentId>,
     pub bindings: Vec<(&'a str, std::borrow::Cow<'a, str>)>,
 }
 
@@ -174,9 +176,29 @@ pub struct UiListData<'a> {
 #[derive(Default)]
 pub struct UiListState {
     offsets: VecDeque<(UiComponentId, u16)>,
+    hits: Vec<UiListHit>,
+}
+
+/// One painted row, identified independently of its current list position.
+pub struct UiListHit {
+    pub list: UiComponentId,
+    pub key: UiComponentId,
+    pub area: Rect,
 }
 
 impl UiListState {
+    /// Discard geometry from the previous painted frame.
+    pub fn begin_frame(&mut self) {
+        self.hits.clear();
+    }
+
+    /// Resolve only a row actually painted in the current frame.
+    pub fn hit(&self, x: u16, y: u16) -> Option<&UiListHit> {
+        self.hits.iter().rev().find(|hit| {
+            x >= hit.area.x && x < hit.area.right() && y >= hit.area.y && y < hit.area.bottom()
+        })
+    }
+
     fn get(&self, id: &UiComponentId) -> u16 {
         self.offsets
             .iter()
@@ -207,6 +229,7 @@ pub fn render_list<'a>(
     let UiElement::List { id, offset, child } = template else {
         return;
     };
+    state.hits.retain(|hit| &hit.list != id);
     let area = area.intersection(frame.area());
     if area.is_empty() {
         return;
@@ -232,6 +255,13 @@ pub fn render_list<'a>(
     for index in start..count.min(start.saturating_add(visible)) {
         let Some(row) = row(index) else { continue };
         let line = Rect::new(area.x, area.y + (index - start) as u16, area.width, 1);
+        if let Some(key) = row.key {
+            state.hits.push(UiListHit {
+                list: id.clone(),
+                key,
+                area: line,
+            });
+        }
         let bindings: Vec<_> = row
             .bindings
             .iter()

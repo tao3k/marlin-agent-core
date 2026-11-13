@@ -173,7 +173,10 @@ fn list_renders_selected_scheme_template_and_keeps_selection_visible() {
                 &mut state,
                 |_| {
                     generated.set(generated.get() + 1);
-                    Some(crate::ui_elements::UiListRow { bindings: vec![] })
+                    Some(crate::ui_elements::UiListRow {
+                        key: None,
+                        bindings: vec![],
+                    })
                 },
             )
         })
@@ -181,6 +184,64 @@ fn list_renders_selected_scheme_template_and_keeps_selection_visible() {
     assert_eq!(terminal.backend().buffer()[(0, 0)].symbol(), "o");
     assert_eq!(terminal.backend().buffer()[(0, 1)].symbol(), "s");
     assert_eq!(generated.get(), 2, "only visible rows should be prepared");
+}
+
+#[test]
+fn list_hit_uses_painted_row_identity_and_excludes_unrendered_rows() {
+    let id = |name: &str| UiComponentId::new(name).unwrap();
+    let template = UiElement::List {
+        id: id("items"),
+        offset: marlin_agent_ui::UiSize::Cells(2),
+        child: Box::new(UiElement::Text(vec![])),
+    };
+    let mut state = crate::ui_elements::UiListState::default();
+    let mut terminal = Terminal::new(TestBackend::new(8, 2)).unwrap();
+    state.begin_frame();
+    terminal
+        .draw(|frame| {
+            crate::ui_elements::render_list(
+                frame,
+                frame.area(),
+                &template,
+                &UiTheme::default(),
+                crate::ui_elements::UiListData {
+                    count: 5,
+                    selected: Some(3),
+                    extent: &|_| Extent::Cells(0),
+                },
+                &mut state,
+                |index| {
+                    (index != 2).then(|| crate::ui_elements::UiListRow {
+                        key: Some(id(&format!("item-{index}"))),
+                        bindings: vec![],
+                    })
+                },
+            )
+        })
+        .unwrap();
+    assert!(state.hit(0, 0).is_none());
+    let hit = state.hit(0, 1).unwrap();
+    assert_eq!(hit.list.as_str(), "items");
+    assert_eq!(hit.key.as_str(), "item-3");
+    assert!(state.hit(8, 1).is_none());
+    terminal
+        .draw(|frame| {
+            crate::ui_elements::render_list(
+                frame,
+                Rect::default(),
+                &template,
+                &UiTheme::default(),
+                crate::ui_elements::UiListData {
+                    count: 5,
+                    selected: None,
+                    extent: &|_| Extent::Cells(0),
+                },
+                &mut state,
+                |_| None,
+            )
+        })
+        .unwrap();
+    assert!(state.hit(0, 1).is_none());
 }
 
 #[test]
@@ -215,7 +276,10 @@ fn declared_list_offsets_are_independent_between_identities() {
                     &mut state,
                     |index| {
                         visited.push(index);
-                        Some(crate::ui_elements::UiListRow { bindings: vec![] })
+                        Some(crate::ui_elements::UiListRow {
+                            key: None,
+                            bindings: vec![],
+                        })
                     },
                 );
             })
@@ -236,7 +300,12 @@ fn declared_list_offsets_are_independent_between_identities() {
                     extent: &|_| Extent::Cells(0),
                 },
                 &mut state,
-                |_| Some(crate::ui_elements::UiListRow { bindings: vec![] }),
+                |_| {
+                    Some(crate::ui_elements::UiListRow {
+                        key: None,
+                        bindings: vec![],
+                    })
+                },
             );
         })
         .unwrap();
@@ -256,7 +325,10 @@ fn declared_list_offsets_are_independent_between_identities() {
                 &mut state,
                 |index| {
                     visited.push(index);
-                    Some(crate::ui_elements::UiListRow { bindings: vec![] })
+                    Some(crate::ui_elements::UiListRow {
+                        key: None,
+                        bindings: vec![],
+                    })
                 },
             );
         })

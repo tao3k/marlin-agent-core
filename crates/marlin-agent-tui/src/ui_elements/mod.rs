@@ -18,6 +18,6 @@ pub use geometry::{
     layout_regions_with_facts, layout_regions_with_scroll, region_extent, resolve_size,
 };
 pub use widgets::{
-    UiContentSlot, UiListData, UiListRow, UiListState, input_border, render_content, render_input,
-    render_list,
+    UiContentSlot, UiListData, UiListHit, UiListRow, UiListState, input_border, render_content,
+    render_input, render_list,
 };

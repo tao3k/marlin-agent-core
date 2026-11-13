@@ -38,6 +38,44 @@ pub(super) fn browse_menu(
     }
 }
 
+/// Route a painted row identity through the same Scheme navigation as keys.
+pub(super) fn select_clicked_command(app: &mut App, ui: &UiHost<'_>, column: u16, row: u16) {
+    let clicked = column
+        .checked_sub(1)
+        .zip(row.checked_sub(1))
+        .and_then(|(x, y)| {
+            app.list_state
+                .borrow()
+                .hit(x, y)
+                .map(|hit| (hit.list.clone(), hit.key.clone()))
+        });
+    if let Some((list, key)) = clicked
+        && matches!(ui.view().layout.frame_tree.region_child("candidates"),
+                    Some(marlin_agent_ui::UiElement::List { id, .. }) if id == &list)
+        && app.tool_review_prompt.is_none()
+        && command_menu_active(app, ui)
+        && app.command_query_is_current()
+        && let Some(target) = app
+            .command_candidates
+            .iter()
+            .position(|name| name.as_str() == key.as_str())
+        && let Some(current) = app.menu_navigation_anchor().and_then(|name| {
+            app.command_candidates
+                .iter()
+                .position(|candidate| candidate == &name)
+        })
+        && target != current
+        && let Ok(steps) = u16::try_from(target.abs_diff(current))
+    {
+        let direction = if target < current {
+            UiBrowseDirection::Previous
+        } else {
+            UiBrowseDirection::Next
+        };
+        browse_menu(app, ui, direction, steps);
+    }
+}
+
 pub(super) fn apply_ui_request(app: &mut App, ui: &mut UiHost<'_>) {
     if let Some(name) = app.command_history_request.take()
         && let Err(error) = ui.dispatch(UiEvent::RecordCommand(name))

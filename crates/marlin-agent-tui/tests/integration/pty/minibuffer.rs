@@ -394,7 +394,37 @@ fn invalid_mx_command_uses_messages_buffer_without_changing_conversation() {
                     .all(|line| !line.contains("Unknown command"))
         },
     );
-    terminal.send(b"\x18bmessages\r");
+    terminal.send(b"\x18b");
+    terminal.wait_for(
+        Duration::from_secs(5),
+        "buffer menu with Messages",
+        |output| {
+            let rows = screen_lines(output);
+            rows.iter().any(|line| line.contains("Switch to:"))
+                && rows
+                    .iter()
+                    .any(|line| line.trim_start().starts_with("messages"))
+        },
+    );
+    let rows = screen_lines(&terminal.output);
+    let messages_row = rows
+        .iter()
+        .position(|line| line.trim_start().starts_with("messages"))
+        .unwrap();
+    terminal.send(format!("\x1b[<0;30;{}M", messages_row + 1).as_bytes());
+    terminal.wait_for(
+        Duration::from_secs(5),
+        "clicked Messages previews without confirmation",
+        |output| {
+            let rows = screen_lines(output);
+            rows.iter().any(|line| line.contains("Switch to:"))
+                && rows.iter().any(|line| line.contains("› messages"))
+                && rows[..28]
+                    .iter()
+                    .any(|line| line.contains("Use M-x to see available commands"))
+        },
+    );
+    terminal.send(b"\r");
     terminal.wait_for(
         Duration::from_secs(5),
         "full Messages diagnostic",
@@ -511,6 +541,23 @@ fn first_mx_arrows_move_the_visible_selection_and_c_x_b_opens_buffers() {
     terminal.wait_for(
         Duration::from_secs(5),
         "wheel restores first command",
+        |output| screen_lines(output).iter().any(|line| mx_selected(line, 1)),
+    );
+    let rows = screen_lines(&terminal.output);
+    let first_row = rows
+        .iter()
+        .position(|line| line.trim_start().starts_with('›'))
+        .unwrap();
+    terminal.send(format!("\x1b[<0;30;{}M", first_row + 2).as_bytes());
+    terminal.wait_for(
+        Duration::from_secs(5),
+        "click selects the painted second command",
+        |output| screen_lines(output).iter().any(|line| mx_selected(line, 2)),
+    );
+    terminal.send(b"\x1b[A");
+    terminal.wait_for(
+        Duration::from_secs(5),
+        "keyboard returns to first command",
         |output| screen_lines(output).iter().any(|line| mx_selected(line, 1)),
     );
     terminal.send(&b"\x1b[<65;30;25M".repeat(10));
