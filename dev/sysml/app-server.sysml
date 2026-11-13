@@ -44,10 +44,11 @@ package MarlinAppServer {
     }
     part <'MAR-APP-A07'> weaverInterop {
         doc /* tao3k/weaver owns A2A and client-facing Agent Client Protocol
-               adapters. The planned Marlin integration translates operations
-               supported by marlin.app.v1 to its gRPC service. Weaver owns
-               external protocol identity and lifecycle mapping. Marlin owns
-               Session admission, event order, cancellation and local receipts. */
+               adapters. A local Weaver transport test uses Marlin's generated
+               gRPC client to submit, reconnect and cancel on a host-bound
+               Session. External task and session identity mapping remains
+               delivery work in Weaver. Marlin owns Session admission, event
+               order, cancellation and local receipts. */
     }
     connection <'MAR-APP-C01'> grpcChannel connect externalClient to appServer.turnService;
     connection <'MAR-APP-C02'> weaverGrpcChannel connect weaverInterop to appServer.turnService;

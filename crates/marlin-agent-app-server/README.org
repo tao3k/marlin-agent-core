@@ -33,15 +33,17 @@ deployment and an HTTP/JSON endpoint are design scope here. The repository
 currently supplies the gRPC service and generated client.
 [[https://github.com/grpc/grpc-web][gRPC-Web transport]]
 
-The planned Weaver integration maps A2A task identity and Client ACP session
-identity to Marlin Sessions and turns. Weaver translates supported operations
-through =marlin.app.v1= and owns the external protocol responses. Marlin
-projects its Session and Runtime into gRPC and owns admission, ordered replay,
-cancellation and local retirement receipts. External task and permission
-semantics remain with Weaver. The current App Server serves a host-bound
-Session. Dynamic Session creation and selection need a separate integration
-contract. Web, desktop and mobile clients live in separate application
-repositories and use the same schema.
+The Weaver Session transport uses the generated =marlin.app.v1= Rust client
+and verifies the authenticated host's Session binding. Its local HTTP/2 test
+starts and retries a submission, resumes from a journal cursor on a second
+connection, cancels the turn and reads back its Runtime receipt. The Turso
+fixture records one dispatch. The A2A task and Client ACP session identity
+mapping still needs to join Weaver's canonical registry. Weaver owns external
+task and permission semantics. Marlin owns Session admission, ordered replay,
+cancellation and local retirement receipts. The current App Server serves a
+host-bound Session. Dynamic Session creation and selection need a separate
+integration contract. Web, desktop and mobile clients live in separate
+application repositories and use the same schema.
 [[https://a2a-protocol.org/latest/topics/life-of-a-task/][A2A task lifecycle]]
 [[https://agentclientprotocol.com/protocol/v1/overview][ACP overview]]
 · [[https://github.com/tao3k/weaver/blob/343076629d3cb7b5c92f96eaaddb4b49402d88b1/docs/10-19-llm-gateway/17-policy-continuation/17.04-protocol-admission-and-identity.org][Weaver protocol inventory]]
@@ -260,7 +262,7 @@ against an already-finished local scope can report =false=. The unary receipt
 updates local retirement information. Only an applied stream event advances
 the watch cursor. Either message can arrive first. If a journal write fails,
 the current cancel RPC can return an error without its Runtime receipt. The
-proposed readback contract below keeps these observations recoverable.
+readback RPC below recovers observations committed before the response was lost.
 
 The server owns the Session and Runtime state throughout this flow. GPUI owns
 the draft, projection and applied cursor. An external application can use the
