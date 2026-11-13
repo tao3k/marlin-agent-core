@@ -42,8 +42,8 @@ pub(super) fn open_tool_review(app: &mut App, ui: &UiHost<'_>) -> bool {
             return true;
         }
     };
-    let mut details =
-        String::from("Model tool request · inspect every argument before approval\n\n");
+    let mut details = super::presentation::safe_text(&menu.details_heading);
+    details.push_str("\n\n");
     for call in pending.calls() {
         details.push_str(call.name.as_str());
         details.push_str("  [");

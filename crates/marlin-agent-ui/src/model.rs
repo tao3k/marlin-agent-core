@@ -255,6 +255,7 @@ pub struct UiReviewChoice {
 pub struct UiToolReviewMenu {
     pub prompt: String,
     pub choices: Vec<UiToolReviewChoice>,
+    pub details_heading: String,
 }
 
 /// One visual action in the tool Ask Mini Buffer.

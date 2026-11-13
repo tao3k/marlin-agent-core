@@ -25,7 +25,11 @@ pub(super) fn assert_tool_review_projection_rejects_missing_or_duplicate_choices
             .collect::<Vec<_>>();
         vector(
             runtime,
-            &[string(runtime, "Tool request: "), vector(runtime, &entries)],
+            &[
+                string(runtime, "Tool request: "),
+                vector(runtime, &entries),
+                string(runtime, "Inspect tool arguments"),
+            ],
         )
     };
     let admitted =
@@ -35,6 +39,7 @@ pub(super) fn assert_tool_review_projection_rejects_missing_or_duplicate_choices
         admitted.choices[1].decision,
         UiToolReviewDecision::ApproveOnce
     );
+    assert_eq!(admitted.details_heading, "Inspect tool arguments");
     assert!(decode_tool_review_menu(menu(&["approve-once"])).is_err());
     assert!(decode_tool_review_menu(menu(&["reject", "reject"])).is_err());
     assert!(decode_tool_review_menu(menu(&["approve-once", "approved"])).is_err());

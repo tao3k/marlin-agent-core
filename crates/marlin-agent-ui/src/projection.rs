@@ -68,10 +68,14 @@ pub fn decode_review_menu(
 pub fn decode_tool_review_menu(
     value: RootedSchemeObject<'_>,
 ) -> Result<UiToolReviewMenu, UiProjectionError> {
-    let menu = vector(value, 2, 2)?;
+    let menu = vector(value, 3, 3)?;
     let prompt = string(menu.element(0)?)?;
     if prompt.is_empty() {
         return Err(UiProjectionError::Invalid("tool review prompt is empty"));
+    }
+    let details_heading = string(menu.element(2)?)?;
+    if details_heading.is_empty() {
+        return Err(UiProjectionError::Invalid("tool review heading is empty"));
     }
     let entries = vector(menu.element(1)?, 2, 2)?;
     let mut symbols = IdentifierBuffer::default();
@@ -98,7 +102,11 @@ pub fn decode_tool_review_menu(
             description,
         });
     }
-    Ok(UiToolReviewMenu { prompt, choices })
+    Ok(UiToolReviewMenu {
+        prompt,
+        choices,
+        details_heading,
+    })
 }
 
 /// Convert a rooted Scheme intent; this does not authorize the action.

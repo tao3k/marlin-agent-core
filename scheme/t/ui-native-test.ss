@@ -64,7 +64,8 @@
               (review-menu (vector state 'model-tool))
               '#("Tool request: "
                  #(#(approve-once "Approve once" "Run the requested tool once")
-                   #(reject "Deny" "Do not run the requested tool"))))
+                   #(reject "Deny" "Do not run the requested tool"))
+                 "Model tool request · inspect every argument before approval"))
             (check-equal? (vector-ref view 3) 'composer)
             (check-equal? (vector-ref selection 1) '#(focus composer))
             (check-equal? (vector-ref message-view 1) (vector-ref view 1))

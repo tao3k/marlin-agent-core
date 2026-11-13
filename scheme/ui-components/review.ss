@@ -15,6 +15,7 @@
 (def marlin-ui-review-menu-config (seal-object! UiReviewMenu.))
 
 (.def UiToolReviewMenu.
+  details-heading: "Model tool request · inspect every argument before approval"
   choices: '((approve-once "Approve once" "Run the requested tool once")
              (reject "Deny" "Do not run the requested tool")))
 (def marlin-ui-tool-review-menu-config (seal-object! UiToolReviewMenu.))
@@ -31,11 +32,12 @@
           ((data-migration) "Migration: ")
           ((model-tool) "Tool request: ")
           (else (error "invalid review kind"))))
-    (vector prompt
-            (list->vector
-              (map (lambda (entry)
-                     (vector (car entry) (cadr entry) (caddr entry)))
-                   (.get (if (eq? review-kind 'model-tool)
-                           marlin-ui-tool-review-menu-config
-                           marlin-ui-review-menu-config)
-                         choices))))))
+    (let* ((tool? (eq? review-kind 'model-tool))
+           (config (if tool? marlin-ui-tool-review-menu-config marlin-ui-review-menu-config))
+           (choices (list->vector
+                      (map (lambda (entry)
+                             (vector (car entry) (cadr entry) (caddr entry)))
+                           (.get config choices)))))
+      (if tool?
+        (vector prompt choices (.get config details-heading))
+        (vector prompt choices)))))
