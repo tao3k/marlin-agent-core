@@ -2609,3 +2609,24 @@ subsequent run of the same compiled executable measured the keyed workload
 workloads under varying system load, not a controlled overhead comparison or
 proof that a performance regression is absent. Repeat a source-fixed paired
 cohort under controlled load before setting an acceptance bound.
+
+** Whole-frame traversal and fact snapshot (2026-11-14)
+
+The selected Scheme frame tree is now painted by the generic mapper as a
+whole. A boundary test adds an ordinary region without a Rust paint branch and
+checks both its painted cell and hit geometry. Host adapters still supply the
+editor, native transcript cache, list data and transient/search views. Layout
+and paint use the same frame facts and metrics; the terminal reuses that
+snapshot for painting and sends wheel events to the last painted regions.
+Label refresh admission preserves layout and theme. A bounded three-pass
+collapse evaluation prevents an authored self-dependency from looping; an
+oscillating layout does not establish a converged collapse state.
+
+The linked TUI suite passed 243 unit tests (9 ignored) and 16 ordinary PTY
+tests (36 ignored); the separate loopback streaming/resize/wheel/search PTY and
+the clicked Ask preview/confirmation fixture also passed. One 30-sample M-x
+arrow PTY run during concurrent work measured p50/p95 21.24/204.38 ms before
+the shared snapshot; a subsequent snapshot run measured 20.28/27.48 ms.
+Implementations and host load differed, so these are diagnostic observations,
+not a controlled speedup or a guarantee on tail latency. The cold Release
+startup gap and a matched source-fixed performance cohort remain open.
