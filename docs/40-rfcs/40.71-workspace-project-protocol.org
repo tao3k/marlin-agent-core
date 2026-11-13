@@ -343,6 +343,10 @@ and GitHub remains the collaboration and operations plane.
   injectable runtime driver and records command receipts without duplicating
   provider argv construction.
 
+- Before removal, the driver verifies that the target is a worktree root of
+  the selected Git repository. An applied Worktrunk removal receipt must
+  identify that same resolved path.
+
 - =GitWorktree= and =Worktrunk= cover create/switch/list/remove where
   supported, and =Worktrunk= covers typed GitHub pull request checkout.
 

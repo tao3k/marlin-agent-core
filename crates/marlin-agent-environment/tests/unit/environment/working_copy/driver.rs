@@ -72,9 +72,23 @@ async fn git_branch_changes_require_a_worktree_of_the_selected_repository() {
             .with_repository_discovery_path(repo.as_path()),
         )
     };
+    let remove = |target: &Path| {
+        WorkingCopyIsolationRequest::Remove(WorkingCopyRemoveRequest::new(
+            "project",
+            provider.clone(),
+            repo.as_path(),
+            WorkingCopyHandle::new("copy", target),
+        ))
+    };
     let nested = linked.join("nested");
     std::fs::create_dir(&nested).unwrap();
-    for request in [switch(&foreign), finalize(&foreign), switch(&nested)] {
+    for request in [
+        switch(&foreign),
+        finalize(&foreign),
+        switch(&nested),
+        remove(&foreign),
+        remove(&nested),
+    ] {
         let receipt = driver.isolate(request).await.receipt;
         assert_eq!(receipt.status, WorkingCopyIsolationStatus::Rejected);
         assert!(receipt.command_receipts.is_empty());
@@ -86,6 +100,8 @@ async fn git_branch_changes_require_a_worktree_of_the_selected_repository() {
         );
     }
     assert_eq!(git(&foreign, &["branch", "--show-current"]).trim(), "main");
+    assert!(foreign.join(".git").exists());
+    assert!(linked.join(".git").is_file());
     assert!(git(&foreign, &["branch", "--list", "finalized"]).is_empty());
     assert!(git(&linked, &["branch", "--show-current"]).is_empty());
 
@@ -104,6 +120,10 @@ async fn git_branch_changes_require_a_worktree_of_the_selected_repository() {
         assert_eq!(copy.branch.unwrap().as_str(), branch);
         assert_eq!(git(&linked, &["branch", "--show-current"]).trim(), branch);
     }
+    let removed = driver.isolate(remove(Path::new("../linked"))).await.receipt;
+    assert_eq!(removed.status, WorkingCopyIsolationStatus::Applied);
+    assert_eq!(removed.working_copy.unwrap().path, linked);
+    assert!(!linked.exists());
 }
 
 fn git(path: &Path, args: &[&str]) -> String {
@@ -192,6 +212,7 @@ async fn worktrunk_reports_the_registered_worktree_and_removes_it_by_path() {
         WorkingCopyIsolationStatus::Rejected,
         "{rejected:?}"
     );
+    assert!(rejected.command_receipts.is_empty());
     assert!(active.working_copy.path.is_dir());
 
     let removed = driver
@@ -545,6 +566,30 @@ async fn working_copy_driver_rejects_success_without_a_worktrunk_path() {
     assert_eq!(result.command_receipts[0].stdout.as_deref(), Some(stdout));
     assert!(result.command_receipts[0].working_copy.is_none());
     assert!(WorkingCopyActiveBinding::from_receipt(&result).is_none());
+}
+
+#[tokio::test]
+async fn working_copy_driver_rejects_a_worktrunk_receipt_for_a_different_removal_path() {
+    let stdout = r#"[{"kind":"worktree","branch":"feature/a","path":"/copies/different"}]"#;
+    let runner = ScriptedWorkingCopyRunner::new([WorkingCopyCommandOutput::succeeded(stdout)]);
+    let git_resolver = ScriptedGitRepositoryResolver::new("/repo");
+    let driver = WorkingCopyIsolationDriver::with_runner_and_git_resolver(runner, git_resolver);
+    let request = WorkingCopyIsolationRequest::Remove(WorkingCopyRemoveRequest::new(
+        "worktrunk",
+        WorkingCopyIsolationProvider::Worktrunk,
+        "/repo",
+        WorkingCopyHandle::new("feature-a", "/copies/expected").with_branch("feature/a"),
+    ));
+
+    let receipt = driver.isolate(request).await.receipt;
+
+    assert_eq!(receipt.status, WorkingCopyIsolationStatus::Rejected);
+    assert_eq!(
+        receipt.reason.as_deref(),
+        Some("Worktrunk reported removing a different worktree")
+    );
+    assert_eq!(receipt.command_receipts[0].stdout.as_deref(), Some(stdout));
+    assert!(receipt.command_receipts[0].working_copy.is_none());
 }
 
 #[tokio::test]

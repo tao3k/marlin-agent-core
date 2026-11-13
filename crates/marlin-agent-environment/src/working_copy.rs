@@ -501,6 +501,16 @@ where
             repository_discovery_path,
             working_copy,
         }
+        | WorkingCopyIsolationPlanStep::GitWorktreeRemove {
+            repository_discovery_path,
+            working_copy,
+            ..
+        }
+        | WorkingCopyIsolationPlanStep::WorktrunkRemove {
+            repository_discovery_path,
+            working_copy,
+            ..
+        }
         | WorkingCopyIsolationPlanStep::GitFinalizeBranch {
             repository_discovery_path,
             working_copy,
@@ -618,6 +628,9 @@ fn resolve_working_copy(
         let [removed]: [WorktrunkRemoval; 1] = serde_json::from_str(stdout).map_err(parse_error)?;
         if removed.kind != "worktree" {
             return Err("Worktrunk did not report a worktree removal".to_owned());
+        }
+        if removed.worktree.path != working_copy.path {
+            return Err("Worktrunk reported removing a different worktree".to_owned());
         }
         removed.worktree
     } else {

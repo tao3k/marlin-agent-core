@@ -118,8 +118,9 @@ package MarlinRustPackageOwnership {
         doc /* The working-copy Module selects a provider from the caller's
                preference and observed availability. Rust executes the typed
                plan. For a Worktrunk create, the active binding carries the
-               provider's registered path and branch. Remove consumes that
-               path and closes the binding only after successful removal. */
+               provider's registered path and branch. Remove resolves that
+               path against the selected Git repository before execution and
+               closes the binding only after a matching removal receipt. */
     }
     allocation selectWorkingCopyProvider allocate workingCopyBinding to packages.gerbilScheme;
     allocation projectWorkingCopyPlan allocate workingCopyBinding to packages.gitOps;
