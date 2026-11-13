@@ -2428,3 +2428,24 @@ The =*Processes*= Buffer now caches the Runtime registry's managed revision and
 session identity. The TUI skips cloning and formatting its rows when neither
 changes. Runtime mutators increment the revision on managed registration,
 cleanup and completion; the terminal draw path reads the last bounded view.
+
+** Declarative input mapping probe (2026-11-13)
+
+The new input slot is measured separately from startup and Scheme VM work.
+=cargo bench --locked -p marlin-agent-tui --no-default-features --bench ui_mapping -- ui/mapping/input-tree=
+completed 30 Criterion samples on Darwin: estimated time
+=[5.2832, 6.8822, 9.4633] us= (lower, point, upper). Six samples were
+high-side outliers. Criterion reported =p=0.08= against its prior
+=input-tree= baseline, so this run does not qualify either a regression or
+an improvement. Another Cargo release task held the artifact lock during
+the run, the editor-slot changes were still uncommitted, and the earlier
+=ui/mapping/input= sample used a different build.
+The two input workloads must be measured from one fixed source cut without
+concurrent release work before assigning an overhead to the declarative tree.
+A later same-process run of =ui/mapping/input= and =ui/mapping/input-tree=
+from the then-current uncommitted tree estimated =[7.2565, 8.0906, 8.9957] us=
+and =[6.7000, 7.5765, 8.5473] us= respectively. Both changed substantially
+against their historical Criterion baselines; their current intervals overlap.
+This does not isolate the tree's cost. An immediate repeat failed to compile
+while the shared UI =Region= contract was changing from =scrollable= to
+=scroll_target=. No result from that failed build is treated as a sample.
