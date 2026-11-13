@@ -43,6 +43,10 @@ tempfile.workspace = true
 name = "model_tool_catalog"
 harness = false
 
+[[bench]]
+name = "runtime_events"
+harness = false
+
 [[test]]
 name = "policy"
 path = "tests/unit/policy.rs"

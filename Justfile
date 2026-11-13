@@ -197,6 +197,7 @@ tui-performance-bench: tui-aot-debug tui-aot-build
   cargo test --locked -p marlin-agent-tui --test pty debug_linked_fresh_copy_startup_pair -- --ignored --nocapture
   cargo test --locked -p marlin-agent-tui --test pty release_linked_fresh_copy_startup_pair -- --ignored --nocapture
   cargo test --locked -p marlin-agent-tui --test pty release_linked_ui_first_frame_without_a_gerbil_package_tree -- --ignored --nocapture
+  cargo bench --locked -p marlin-agent-runtime --bench runtime_events
 
 # Diagnose whether the size-oriented profile improves a source-matched linked
 # TUI. Stage the Scheme programme first; comparing against a stale native

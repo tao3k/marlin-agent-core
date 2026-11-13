@@ -208,29 +208,3 @@ async fn receive_and_stream_share_order_and_close_state() {
     events.close();
     assert!(events.recv().await.is_none());
 }
-
-#[tokio::test]
-#[ignore = "manual uncontended event admission timing; not a TUI latency gate"]
-async fn benchmark_uncontended_runtime_event_fanout() {
-    async fn cohort(with_capture: bool) -> std::time::Duration {
-        const EVENTS: usize = 10_000;
-        let (sink, _primary) = RuntimeEventSink::channel(EVENTS);
-        let (sink, _capture) = if with_capture {
-            let (sink, capture) = sink.with_capture(EVENTS);
-            (sink, Some(capture))
-        } else {
-            (sink, None)
-        };
-        let started = std::time::Instant::now();
-        for _ in 0..EVENTS {
-            sink.emit(RuntimeEvent::new("bench", "x")).await.unwrap();
-        }
-        started.elapsed()
-    }
-    let a1 = cohort(false).await;
-    let b = cohort(true).await;
-    let a2 = cohort(false).await;
-    eprintln!(
-        "uncontended 10k runtime events: primary A1={a1:?}, capture B={b:?}, primary A2={a2:?}"
-    );
-}

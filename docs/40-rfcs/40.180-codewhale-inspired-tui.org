@@ -2254,6 +2254,15 @@ An ignored fixed-load A/B/A debug benchmark sent 10,000 short events without
 backpressure: primary-only 4.799/4.273 ms and primary plus one capture
 7.686 ms. This measures admission and cloning in one local run, not an
 end-to-end TUI latency percentile or a cross-version regression threshold.
+That manual timer has been replaced by the maintained Criterion
+=runtime_events= bench, which excludes channel setup and measures 1,024
+uncontended sends plus receives per sample. It runs through
+=tui-performance-bench= alongside the linked PTY gates. One 20-sample,
+one-second diagnostic on 2026-11-14 measured 74.861-120.76 microseconds
+for the primary stream and 191.30-511.14 microseconds with one capture
+stream (95% confidence intervals per batch). Both cohorts had high outliers
+while other UI work was active. These are current absolute observations, not
+a frozen-source improvement claim or an input-to-frame latency bound.
 
 Tool Ask is a separate runtime integration. The provider-neutral completion
 protocol now has typed tool IDs, names, JSON-object arguments, offered tool
