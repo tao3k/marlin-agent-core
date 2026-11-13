@@ -212,3 +212,31 @@ at 584.366 ms in this one diagnostic launch. This establishes that the second
 size-profile artifact can reach a visible frame without a Gerbil install;
 the sample is not a cold-start distribution and does not replace the maintained
 source-matched pair, which the intervening staging change still prevents.
+
+* Current UI interaction and mapping checks, 2026-11-14
+
+The TUI Rust library suite passed with 237 tests and 9 ignored when its local
+loopback fixtures were permitted. The first sandboxed run had 231 passes and
+six socket-permission failures before fixture assertions. Gerbil's native
+=gerbil test -v 4 t/ui-native-test.ss t/ui-workbench-test.ss= returned
+=MODULE-OK= for both selected files and =SUITE-OK Marlin UI workbench=.
+The real PTY first-M-x-arrow acceptance test also passed.
+
+The current linked Debug PTY interaction test passed with test-binary SHA-256
+=a4faf8acfc22f573a7115c8fa1f9ffe8a5b013ec2f35c8ab10ff74f3d18c11a8=.
+It reported 30-sample M-x open-plus-first-arrow p50/p95 of 20.258/34.093 ms,
+query-edit p50/p95 of 19.817/34.614 ms, and C-x b open-plus-first-Down
+p50/p95 of 19.568/89.950 ms. The latter tail is wider than the earlier
+binary's sample and cannot be assigned to one layer from this run.
+
+The Rust-only =ui_mapping= benchmark compiled without linked UI. Binary
+SHA-256 was
+=45f560a3e153690a8b9a29f9e87ae5ae64581f031af7ffa1c22fa545360a8802=.
+An initial 10-sample Criterion run compared against an unrelated saved local
+baseline and printed a regression label; that label is not a source-matched
+claim. Running this exact binary with a fresh named baseline and 30 samples
+measured 256-item lists with 10 visible rows at 18.276-33.425 us (95% CI)
+and the column variant at 23.017-33.994 us. There were 5 and 3 severe high
+outliers respectively. Concurrent checkout edits changed the source-diff hash
+during this work, so these are artifact-specific diagnostics, not a release
+tail-latency or comparative performance gate.
