@@ -2,10 +2,8 @@
 //
 // SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
-use futures_executor::block_on;
 use marlin_agent_context::org::MemoryOrgWorkspace;
 use marlin_agent_context::org::workspace::OrgDocument;
-use marlin_workspace_protocol::{AgentWorkspace, WorkspaceCtx};
 use marlin_workspace_status::WorkspaceTarget;
 use marlin_workspace_view::WorkspaceViewSpec;
 
@@ -32,9 +30,9 @@ fn sequential_document_loads_accumulate_contract_facts() {
         .find(|id| id.as_str().contains("task-two"))
         .expect("second task id loaded")
         .clone();
-    let ctx = WorkspaceCtx::new("unit-test");
 
-    let status = block_on(workspace.status(WorkspaceTarget::Workspace, ctx.clone()))
+    let status = workspace
+        .status(WorkspaceTarget::Workspace)
         .expect("workspace status includes accumulated contract facts");
     let contracts = status.contracts.expect("contract status");
 
@@ -53,7 +51,8 @@ fn sequential_document_loads_accumulate_contract_facts() {
             .contains(&"agent.two.v1/task.has-required-child: count == 1".to_string())
     );
 
-    let view = block_on(workspace.render_view(WorkspaceViewSpec::compact(vec![second_task]), ctx))
+    let view = workspace
+        .render_view(WorkspaceViewSpec::compact(vec![second_task]))
         .expect("view renders accumulated contract facts");
 
     assert!(view.text.contains("contracts.resolved: 2"), "{}", view.text);

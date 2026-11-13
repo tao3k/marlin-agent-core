@@ -19,19 +19,20 @@ marlin-agent-harness-types.workspace = true
 marlin-agent-protocol.workspace = true
 marlin-agent-graph.workspace = true
 marlin-gerbil-ir.workspace = true
-marlin-workspace-protocol.workspace = true
+marlin-agent-gitops.workspace = true
 object.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 gerbil-scheme.workspace = true
 
 [dev-dependencies]
+marlin-agent-environment.workspace = true
 criterion.workspace = true
 futures-executor.workspace = true
 marlin-agent-kernel.workspace = true
 marlin-agent-runtime.workspace = true
 marlin-agent-storage = { workspace = true, features = ["turso"] }
-marlin-git-utils.workspace = true
+marlin-agent-context = { workspace = true, features = ["org-memory", "org-workflow"] }
 marlin-workspace-status.workspace = true
 marlin-workspace-view.workspace = true
 memoffset.workspace = true

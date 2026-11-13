@@ -17,6 +17,7 @@ filegroup(
         "deck-runtime/**/*.ss",
         "hooks/**/*.ss",
         "policy/**/*.ss",
+        "working-copy/**/*.ss",
         "ui/**/*.ss",
         "t/**/*.ss",
     ]),

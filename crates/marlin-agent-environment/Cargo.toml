@@ -13,8 +13,11 @@ repository.workspace = true
 [dependencies]
 async-trait.workspace = true
 marlin-agent-protocol.workspace = true
-marlin-git-utils.workspace = true
-marlin-workspace-protocol.workspace = true
+marlin-agent-gitops.workspace = true
+serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

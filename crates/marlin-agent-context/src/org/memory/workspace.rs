@@ -13,16 +13,15 @@ use crate::org::store::{
     OrgProjectRoot, OrgProjectRootCandidate, OrgSourceStore, discover_project_roots,
 };
 use crate::org::workspace::{
-    OrgDocument, OrgDocumentLoader, OrgDocumentWorkspace, standard_agent_contract_documents,
+    OrgDocument, OrgDocumentLoader, OrgDocumentWorkspace, WorkspaceError, WorkspaceResult,
+    standard_agent_contract_documents,
 };
-use async_trait::async_trait;
 use marlin_agent_protocol::{
     GraphQueryRequest, GraphQueryResponse, ProjectMemoryContextFact, ProjectMemoryContextPack,
     ProjectMemoryRecallRequest, ProjectRuntimeToolCapabilityCard,
 };
 use marlin_context_org_model::{OrgNode, OrgNodeId, OrgSourceSpan};
 use marlin_gerbil_ir::ReleaseTopologySpec;
-use marlin_workspace_protocol::{AgentWorkspace, WorkspaceCtx, WorkspaceError, WorkspaceResult};
 use marlin_workspace_query::{QueryMatch, WorkspaceQuery, WorkspaceQueryResult};
 use marlin_workspace_status::{
     ReleaseGateReceipt, ReleaseStatus, WorkspaceStatusReport, WorkspaceTarget,
@@ -34,7 +33,7 @@ use marlin_workspace_view::{
 use parking_lot::{RwLock, RwLockReadGuard};
 use std::collections::BTreeMap;
 
-/// In-memory implementation of the native `AgentWorkspace` protocol.
+/// In-memory Org document, query, view and status projection.
 pub struct MemoryOrgWorkspace {
     nodes: RwLock<BTreeMap<OrgNodeId, OrgNode>>,
     contract_facts: RwLock<RenderedContractFacts>,
@@ -572,13 +571,9 @@ impl Default for MemoryOrgWorkspace {
     }
 }
 
-#[async_trait]
-impl AgentWorkspace for MemoryOrgWorkspace {
-    async fn query(
-        &self,
-        query: WorkspaceQuery,
-        _ctx: WorkspaceCtx,
-    ) -> WorkspaceResult<WorkspaceQueryResult> {
+impl MemoryOrgWorkspace {
+    /// Query the current Org nodes.
+    pub fn query(&self, query: WorkspaceQuery) -> WorkspaceResult<WorkspaceQueryResult> {
         let nodes = self.read_nodes()?;
         let mut candidates = query::scope_nodes(&nodes, &query.scope);
         candidates.retain(|node| {
@@ -608,18 +603,16 @@ impl AgentWorkspace for MemoryOrgWorkspace {
         })
     }
 
-    async fn read_node(&self, id: OrgNodeId, _ctx: WorkspaceCtx) -> WorkspaceResult<OrgNode> {
+    /// Read an Org node by its identity.
+    pub fn read_node(&self, id: OrgNodeId) -> WorkspaceResult<OrgNode> {
         self.read_nodes()?
             .get(&id)
             .cloned()
             .ok_or_else(|| WorkspaceError::NodeNotFound(id.as_str().to_string()))
     }
 
-    async fn render_view(
-        &self,
-        view: WorkspaceViewSpec,
-        _ctx: WorkspaceCtx,
-    ) -> WorkspaceResult<RenderedWorkspaceView> {
+    /// Render a view of the current Org nodes and selected contract facts.
+    pub fn render_view(&self, view: WorkspaceViewSpec) -> WorkspaceResult<RenderedWorkspaceView> {
         let nodes = self.read_nodes()?;
         let contract_facts = self.read_contract_facts()?;
         let mut rendered_nodes = Vec::new();
@@ -662,11 +655,8 @@ impl AgentWorkspace for MemoryOrgWorkspace {
         })
     }
 
-    async fn status(
-        &self,
-        target: WorkspaceTarget,
-        _ctx: WorkspaceCtx,
-    ) -> WorkspaceResult<WorkspaceStatusReport> {
+    /// Project the status of an Org target.
+    pub fn status(&self, target: WorkspaceTarget) -> WorkspaceResult<WorkspaceStatusReport> {
         let nodes = self.read_nodes()?;
         let contract_facts = self.read_contract_facts()?;
         let release_status = self.read_release_status()?;

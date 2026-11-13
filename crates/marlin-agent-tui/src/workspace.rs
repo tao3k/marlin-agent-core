@@ -7,13 +7,13 @@
 use std::{path::PathBuf, time::Duration};
 
 use super::viewport::Transcript;
+use marlin_agent_gitops::{
+    GitDiff, GitDiffRequest, GitDiffScope, GitOperations, GitRepositoryPath, GitStatus,
+};
 use marlin_agent_runtime::{
     AgentSessionContext, ContextVisibility, ManagedProcessExecutor, RuntimeOperationId,
     RuntimeTask, SessionId, TokioAgentRuntime,
     process::{HostHeartbeat, ProcessHealthPolicy, ProcessHealthReport},
-};
-use marlin_git_utils::{
-    GitDiff, GitDiffRequest, GitDiffScope, GitRepositoryPath, GitStatus, ProcessGitTooling,
 };
 use tokio::{
     runtime::Runtime,
@@ -148,14 +148,12 @@ impl WorkspaceStatus {
             .owner
             .spawn_in_session_on(runtime, session, operation, async move {
                 let result = match query {
-                    WorkspaceQuery::Status => {
-                        ProcessGitTooling::status_with_executor(&executor, &path)
-                            .await
-                            .map(WorkspaceObservation::Status)
-                            .map_err(|error| error.to_string())
-                    }
+                    WorkspaceQuery::Status => GitOperations::status_with_executor(&executor, &path)
+                        .await
+                        .map(WorkspaceObservation::Status)
+                        .map_err(|error| error.to_string()),
                     WorkspaceQuery::Diff(request) => {
-                        ProcessGitTooling::diff_with_executor(&executor, &path, request)
+                        GitOperations::diff_with_executor(&executor, &path, request)
                             .await
                             .map(WorkspaceObservation::Diff)
                             .map_err(|error| error.to_string())

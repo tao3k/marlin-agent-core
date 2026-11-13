@@ -4,7 +4,7 @@
 
 //! Built-in Org contract libraries shipped with the workspace adapter.
 
-use marlin_workspace_protocol::WorkspaceResult;
+use crate::org::workspace::WorkspaceResult;
 
 use crate::org::workspace::{OrgDocument, OrgDocumentLoader, OrgDocumentWorkspace};
 

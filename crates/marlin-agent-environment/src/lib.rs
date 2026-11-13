@@ -40,7 +40,7 @@ pub use working_copy::{
     WorkingCopyProviderExecutableStatus,
 };
 
-pub use marlin_workspace_protocol::{
+pub use marlin_agent_gitops::working_copy::{
     WorkingCopyActiveBinding, WorkingCopyBaseRef, WorkingCopyBranchName,
     WorkingCopyCommandInvocation, WorkingCopyCommandProgram, WorkingCopyCommandProjection,
     WorkingCopyCommandProjectionError, WorkingCopyCommandReceipt, WorkingCopyCommandStatus,

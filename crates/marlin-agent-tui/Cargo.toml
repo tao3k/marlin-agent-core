@@ -44,7 +44,7 @@ marlin-agent-sessions.workspace = true
 marlin-agent-storage = { workspace = true, features = ["turso"] }
 marlin-agent-stream = { path = "../marlin-agent-stream" }
 marlin-agent-ui.workspace = true
-marlin-git-utils.workspace = true
+marlin-agent-gitops.workspace = true
 gerbil-scheme.workspace = true
 gerbil-scheme-sys = { workspace = true, optional = true }
 ratatui = { version = "=0.30.2", default-features = false, features = ["termion"] }

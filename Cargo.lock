@@ -2558,15 +2558,12 @@ dependencies = [
 name = "marlin-agent-context"
 version = "0.1.0"
 dependencies = [
- "async-trait",
  "criterion",
- "futures-executor",
  "gerbil-scheme 0.1.0 (git+https://github.com/tao3k/gerbil-scheme-rust?rev=dfe8b62b5dc64de88f8d70a77059a1741218ef80)",
  "marlin-agent-graph",
  "marlin-agent-protocol",
  "marlin-context-org-model",
  "marlin-gerbil-ir",
- "marlin-workspace-protocol",
  "marlin-workspace-query",
  "marlin-workspace-status",
  "marlin-workspace-view",
@@ -2598,7 +2595,7 @@ dependencies = [
  "marlin-deck-runtime",
  "marlin-gerbil-ir",
  "marlin-gerbil-scheme",
- "marlin-workspace-protocol",
+ "marlin-workspace-status",
  "ring",
  "serde",
  "serde_json",
@@ -2614,10 +2611,22 @@ name = "marlin-agent-environment"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "marlin-agent-gitops",
  "marlin-agent-protocol",
- "marlin-git-utils",
- "marlin-workspace-protocol",
+ "serde",
  "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+]
+
+[[package]]
+name = "marlin-agent-gitops"
+version = "0.1.0"
+dependencies = [
+ "marlin-agent-protocol",
+ "serde",
+ "tempfile",
  "thiserror 2.0.21",
  "tokio",
 ]
@@ -2850,6 +2859,7 @@ dependencies = [
  "gerbil-scheme-aot-build 0.1.0 (git+https://github.com/tao3k/gerbil-scheme-rust?rev=dfe8b62b5dc64de88f8d70a77059a1741218ef80)",
  "gerbil-scheme-sys 0.1.0 (git+https://github.com/tao3k/gerbil-scheme-rust?rev=dfe8b62b5dc64de88f8d70a77059a1741218ef80)",
  "libc",
+ "marlin-agent-gitops",
  "marlin-agent-protocol",
  "marlin-agent-runtime",
  "marlin-agent-sessions",
@@ -2858,7 +2868,6 @@ dependencies = [
  "marlin-agent-telemetry",
  "marlin-agent-tooling",
  "marlin-agent-ui",
- "marlin-git-utils",
  "marlin-rust-project-harness-policy",
  "nix",
  "proptest",
@@ -2945,6 +2954,9 @@ dependencies = [
  "criterion",
  "futures-executor",
  "gerbil-scheme 0.1.0 (git+https://github.com/tao3k/gerbil-scheme-rust?rev=dfe8b62b5dc64de88f8d70a77059a1741218ef80)",
+ "marlin-agent-context",
+ "marlin-agent-environment",
+ "marlin-agent-gitops",
  "marlin-agent-graph",
  "marlin-agent-harness-types",
  "marlin-agent-kernel",
@@ -2952,8 +2964,6 @@ dependencies = [
  "marlin-agent-runtime",
  "marlin-agent-storage",
  "marlin-gerbil-ir",
- "marlin-git-utils",
- "marlin-workspace-protocol",
  "marlin-workspace-status",
  "marlin-workspace-view",
  "memoffset",
@@ -2967,33 +2977,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "marlin-git-utils"
-version = "0.1.0"
-dependencies = [
- "marlin-agent-protocol",
- "tempfile",
- "thiserror 2.0.21",
- "tokio",
-]
-
-[[package]]
 name = "marlin-rust-project-harness-policy"
 version = "0.1.0"
 dependencies = [
  "asp-rust",
-]
-
-[[package]]
-name = "marlin-workspace-protocol"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "marlin-context-org-model",
- "marlin-workspace-query",
- "marlin-workspace-status",
- "marlin-workspace-view",
- "serde",
- "thiserror 2.0.21",
 ]
 
 [[package]]

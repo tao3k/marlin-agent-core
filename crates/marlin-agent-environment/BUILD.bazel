@@ -12,12 +12,12 @@ marlin_crate_with_policy_data(
     gate_data = glob(["tests/**/*.rs"]),
     proc_macro_deps = crate_deps(["async-trait"]),
     deps = crate_deps([
+        "serde",
         "serde_json",
         "thiserror",
         "tokio",
     ]) + [
         "//crates/marlin-agent-protocol:marlin_agent_protocol",
-        "//crates/marlin-git-utils:marlin_git_utils",
-        "//crates/marlin-workspace-protocol:marlin_workspace_protocol",
+        "//crates/marlin-agent-gitops:marlin_agent_gitops",
     ],
 )

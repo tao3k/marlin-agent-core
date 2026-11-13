@@ -5,7 +5,7 @@
 use super::workspace::{
     WorkspaceObservation, WorkspaceQuery, WorkspaceStatus, WorkspaceView, parse_query,
 };
-use marlin_git_utils::{GitDiffScope, GitStatus};
+use marlin_agent_gitops::{GitDiffScope, GitStatus};
 
 #[test]
 fn diff_selection_uses_json_path_and_explicit_scope() {

@@ -131,6 +131,23 @@ jobs:
         run: |
           cargo test --locked -p marlin-gerbil-scheme --test unit_test
           cargo test --locked -p marlin-agent-policy-routing-abi --features linked-selector
+      - name: Install Worktrunk for the worktree acceptance
+        shell: bash
+        run: |
+          archive=worktrunk-x86_64-unknown-linux-musl.tar.xz
+          url="https://github.com/max-sixty/worktrunk/releases/download/v0.58.0/$archive"
+          cd "$RUNNER_TEMP"
+          curl --fail --location --retry 2 --output "$archive" "$url"
+          printf '%s  %s\n' d1feb2c231e10030c5301ffdd539a48f37ebfec50dea6ef1e1078c87e95beeec "$archive" | sha256sum --check
+          tar -xJf "$archive" worktrunk-x86_64-unknown-linux-musl/wt
+          echo "$RUNNER_TEMP/worktrunk-x86_64-unknown-linux-musl" >> "$GITHUB_PATH"
+      - name: Verify Scheme working-copy selection and Git receipts
+        env:
+          ORGIZE_GERBIL_PROGRAM_MANIFEST: ${{ github.workspace }}/scheme/.gerbil/pkg/github.com/tao3k/orgize/target/gerbil-parser/program.json
+        run: >-
+          cargo test --locked -p marlin-gerbil-scheme --test unit_test
+          working_copy_policy::scheme_selects_the_provider_for_a_real_git_worktree
+          -- --ignored --exact --nocapture
 
   linked-aot:
     name: Linked AOT

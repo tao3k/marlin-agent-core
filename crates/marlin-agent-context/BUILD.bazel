@@ -12,13 +12,11 @@ marlin_crate_with_policy_data(
     edition = crate_edition(),
     crate_features = ["org-source", "org-workspace", "org-memory", "org-workflow"],
     gate_data = glob(["tests/**/*.rs"]),
-    proc_macro_deps = crate_deps(["async-trait"]),
     deps = crate_deps(["parking_lot", "serde", "serde_json", "orgize", "thiserror"]) + [
         "//crates/marlin-agent-graph:marlin_agent_graph",
         "//crates/marlin-agent-protocol:marlin_agent_protocol",
         "//crates/marlin-gerbil-ir:marlin_gerbil_ir",
         "//crates/marlin-agent-context/parts/org-model:marlin_context_org_model",
-        "//crates/marlin-workspace-protocol:marlin_workspace_protocol",
         "//crates/marlin-workspace-query:marlin_workspace_query",
         "//crates/marlin-workspace-status:marlin_workspace_status",
         "//crates/marlin-workspace-view:marlin_workspace_view",

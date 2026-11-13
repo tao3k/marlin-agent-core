@@ -26,5 +26,6 @@
   (tooling)
   (hooks)
   (policy)
+  (working-copy)
   (deck-runtime)
   (c-abi))

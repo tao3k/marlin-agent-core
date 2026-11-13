@@ -6,10 +6,12 @@
 
 mod contract;
 mod document;
+mod error;
 mod standard_contracts;
 mod validation;
 
 pub use document::{OrgDocument, OrgDocumentId, OrgDocumentLoader, OrgDocumentWorkspace};
+pub use error::{WorkspaceError, WorkspaceResult};
 pub use orgize::initialize_native_runtime as initialize_org_runtime;
 pub use standard_contracts::{
     STANDARD_AGENT_LOOP_CONTRACT_DOCUMENT_ID, STANDARD_AGENT_LOOP_CONTRACT_ORG,

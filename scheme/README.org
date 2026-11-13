@@ -36,6 +36,24 @@ receipt and verifies replay against the caller's exact exchange.
 | =t/= | Exercise policy composition, projections, and receipt fixtures. |
 | =bench/= | Own the optional SDK-linked mailbox qualification workload. |
 
+The working-copy integration test loads the selected policy through the
+Rust-owned VM. It verifies that Scheme selects Git Worktree when Worktrunk is
+unavailable, then checks the resulting creation and removal in a temporary
+Git repository. It resolves the top level from a nested directory and checks
+that a configured post-checkout hook does not run. It also exercises
+Worktrunk listing, creation and removal through the same Rust request and
+receipt path. Removal uses the path returned by the provider.
+Use the same package prefix and library paths as the preceding =gerbil build=.
+An older compiled INIT can be rejected when Yuanxu checks the current source
+declaration.
+[[file:../crates/marlin-gerbil-scheme/tests/unit/working_copy_policy.rs][Working-copy integration test]]
+
+For SysML requirement =MAR-PKG-R04=, the Rust Environment suite exercises
+Worktrunk against a temporary Git repository. It checks the reported path
+and branch against Git's registered worktrees, rejects the unused requested
+path, and removes the worktree using the path from the receipt.
+[[file:../crates/marlin-agent-environment/tests/unit/environment/working_copy/driver.rs::worktrunk_reports_the_registered_worktree_and_removes_it_by_path][Rust Worktrunk acceptance]]
+
 Each module publishes its scope through =interface.ss=. The contract, objects,
 and validation live in =types.ss=, =objects.ss=, and =config.ss= respectively.
 Yuanxu owns Module selection, Feature refinement and option contracts. Deck

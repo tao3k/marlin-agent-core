@@ -2,10 +2,8 @@
 //
 // SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
-use futures_executor::block_on;
 use marlin_agent_context::org::MemoryOrgWorkspace;
 use marlin_agent_context::org::workspace::OrgDocument;
-use marlin_workspace_protocol::{AgentWorkspace, WorkspaceCtx};
 use marlin_workspace_status::WorkspaceTarget;
 use marlin_workspace_view::WorkspaceViewSpec;
 
@@ -48,12 +46,9 @@ Task `{{ scope.title }}` must contain a Goal section.
     let ids = workspace
         .load_document(document)
         .expect("document inserted with contract facts");
-    let ctx = WorkspaceCtx::new("unit-test");
-    let view = block_on(workspace.render_view(
-        WorkspaceViewSpec::compact(vec![ids[2].clone()]),
-        ctx.clone(),
-    ))
-    .expect("view renders contract facts");
+    let view = workspace
+        .render_view(WorkspaceViewSpec::compact(vec![ids[2].clone()]))
+        .expect("view renders contract facts");
 
     let contract_facts = view.contract_facts.expect("contract facts selected");
     assert_eq!(contract_facts.registry.contracts.len(), 1);
@@ -95,7 +90,8 @@ Task `{{ scope.title }}` must contain a Goal section.
         view.text
     );
 
-    let status = block_on(workspace.status(WorkspaceTarget::Goal(ids[2].clone()), ctx))
+    let status = workspace
+        .status(WorkspaceTarget::Goal(ids[2].clone()))
         .expect("status includes contract facts");
     let contracts = status.contracts.expect("contract status");
     assert_eq!(contracts.resolved_references, 1);
@@ -176,11 +172,9 @@ Task `{{ scope.title }}` must contain a Goal section.
     let ids = workspace
         .load_document_with_contracts(task_document, &[contract_document])
         .expect("document inserted with external contract facts");
-    let status = block_on(workspace.status(
-        WorkspaceTarget::Goal(ids[0].clone()),
-        WorkspaceCtx::new("unit-test"),
-    ))
-    .expect("status includes external contract facts");
+    let status = workspace
+        .status(WorkspaceTarget::Goal(ids[0].clone()))
+        .expect("status includes external contract facts");
     let contracts = status.contracts.expect("contract status");
 
     assert_eq!(contracts.resolved_references, 1);
@@ -252,13 +246,10 @@ count == 1
         .find(|id| id.as_str().starts_with("doc:task:1:task-a"))
         .expect("task id loaded")
         .clone();
-    let ctx = WorkspaceCtx::new("unit-test");
 
-    let view = block_on(workspace.render_view(
-        WorkspaceViewSpec::compact(vec![task_id.clone()]),
-        ctx.clone(),
-    ))
-    .expect("view renders discovered contract facts");
+    let view = workspace
+        .render_view(WorkspaceViewSpec::compact(vec![task_id.clone()]))
+        .expect("view renders discovered contract facts");
     assert!(view.text.contains("contracts.validation.passed: 1"));
     assert!(
         view.text
@@ -267,7 +258,8 @@ count == 1
         view.text
     );
 
-    let status = block_on(workspace.status(WorkspaceTarget::Goal(task_id), ctx))
+    let status = workspace
+        .status(WorkspaceTarget::Goal(task_id))
         .expect("status includes discovered contract facts");
     let contracts = status.contracts.expect("contract status");
     assert_eq!(contracts.resolved_references, 1);
@@ -317,11 +309,9 @@ internal
     let ids = workspace
         .load_document_with_standard_agent_contracts(document)
         .expect("document inserted with standard agent contracts");
-    let status = block_on(workspace.status(
-        WorkspaceTarget::Goal(ids[0].clone()),
-        WorkspaceCtx::new("unit-test"),
-    ))
-    .expect("status includes standard agent contract facts");
+    let status = workspace
+        .status(WorkspaceTarget::Goal(ids[0].clone()))
+        .expect("status includes standard agent contract facts");
     let contracts = status.contracts.expect("contract status");
 
     assert_eq!(contracts.resolved_references, 1);
@@ -375,11 +365,9 @@ The topology root gives agents a coarse route map for the imported project.
     let ids = workspace
         .load_document_with_standard_agent_contracts(document)
         .expect("document inserted with standard topology contracts");
-    let status = block_on(workspace.status(
-        WorkspaceTarget::Goal(ids[0].clone()),
-        WorkspaceCtx::new("unit-test"),
-    ))
-    .expect("status includes standard topology contract facts");
+    let status = workspace
+        .status(WorkspaceTarget::Goal(ids[0].clone()))
+        .expect("status includes standard topology contract facts");
     let contracts = status.contracts.expect("contract status");
 
     assert_eq!(contracts.resolved_references, 1);
@@ -410,9 +398,9 @@ fn memory_workspace_status_reports_unresolved_contract_diagnostics() {
     workspace
         .load_document(document)
         .expect("document inserted with unresolved contract facts");
-    let status =
-        block_on(workspace.status(WorkspaceTarget::Workspace, WorkspaceCtx::new("unit-test")))
-            .expect("workspace status includes unresolved contract diagnostics");
+    let status = workspace
+        .status(WorkspaceTarget::Workspace)
+        .expect("workspace status includes unresolved contract diagnostics");
     let contracts = status.contracts.expect("contract status");
 
     assert_eq!(contracts.resolved_references, 0);

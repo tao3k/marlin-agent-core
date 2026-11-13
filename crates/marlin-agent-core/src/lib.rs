@@ -154,8 +154,7 @@ pub use marlin_gerbil_scheme::{
     project_gerbil_loop_graph_continuation_abi_action,
     project_gerbil_loop_graph_continuation_action,
 };
-pub use marlin_workspace_protocol as workspace;
-pub use marlin_workspace_protocol::{
+pub use marlin_workspace_status::{
     ReleaseGateReceipt, ReleaseGateState, ReleaseGateStatus, ReleaseLandingReport, ReleaseStatus,
     ReleaseVisibilityStatus,
 };

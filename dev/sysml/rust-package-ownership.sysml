@@ -4,28 +4,52 @@
 
 package MarlinRustPackageOwnership {
     part <'MAR-PKG-A01'> packages {
-        part protocol { doc /* marlin-agent-protocol: typed requests, observations, outcomes and ports shared across package boundaries. */ }
+        part protocol {
+            doc /* marlin-agent-protocol: in-process Rust contracts for graph execution,
+                   model requests and gateway ports, hooks, process control,
+                   Context queries, environment records, events and evidence. */
+        }
+        part appServer {
+            doc /* marlin-agent-app-server: marlin.app.v1 Protobuf schema and gRPC
+                   service. Translates wire messages to Session and Runtime calls. */
+        }
         part runtime { doc /* marlin-agent-runtime: Tokio scheduling, atomic admission, resource identities, cancellation and process/pipe reaping. */ }
         part telemetry { doc /* marlin-agent-telemetry: local host/process sampling, independent watchdog evidence and bounded OpenTelemetry export. */ }
         part tui { doc /* marlin-agent-tui: terminal I/O, input/render loop, application wiring and presentation. */ }
-        part ui { doc /* marlin-agent-ui: typed Rust projection of the selected Scheme UI and validation of its proposals. */ }
+        part ui { doc /* marlin-agent-ui: scheme-ui enables typed Scheme projection. The optional grpc feature exposes generated client bindings. */ }
         part core { doc /* marlin-agent-core: public facade and readiness-aware composition of agent services. */ }
         part kernel { doc /* marlin-agent-kernel: graph-loop transitions, tool requests and effect execution via Runtime. */ }
         part hooks { doc /* marlin-agent-hooks: handler catalog, typed registration and dispatch. */ }
         part graph { doc /* marlin-agent-graph: graph topology and coordination types. */ }
-        part sessions { doc /* marlin-agent-sessions: session identity, visibility and isolation. */ }
+        part sessions { doc /* marlin-agent-sessions: identity, visibility, isolation, turn journal and submission recovery. */ }
         part storage { doc /* marlin-agent-storage: typed persistence ports and enabled backend adapters. */ }
-        part environment { doc /* marlin-agent-environment: resolve home, configuration layers and working copies. */ }
+        part environment {
+            doc /* marlin-agent-environment: resolve home and configuration layers,
+                   execute working-copy commands, and take the applied Worktrunk
+                   path and branch from the provider's structured output.
+                   Git switch and branch finalization use a worktree root
+                   verified against the selected repository's common directory.
+                   Worktrunk PR checkout verifies the requested GitHub repository
+                   against forge configuration, fetch URLs and gh default. */
+        }
         part stream { doc /* marlin-agent-stream: adapt provider gateway responses to typed model streams. */ }
-        part context { doc /* marlin-agent-context: Context admission, scope and Org workspace orchestration. */ }
+        part context { doc /* marlin-agent-context: Context admission and scope, Org loading and document, query, view and status projection. */ }
         part contextOrg { doc /* marlin-context-org-model: Org identity and workspace data model. */ }
-        part git { doc /* marlin-git-utils: Git discovery, command construction and interpretation via the process port. */ }
-        part workspaceProtocol { doc /* marlin-workspace-protocol: facade over workspace and Org contracts. */ }
+        part gitOps {
+            doc /* marlin-agent-gitops: bounded Git repository discovery, status
+                   and diff, and typed GitWorktree and Worktrunk plans and
+                   receipts. Git checkout mutations disable repository hooks
+                   in the projected command. */
+        }
         part workspaceQuery { doc /* marlin-workspace-query: workspace selectors and query records. */ }
         part workspaceStatus { doc /* marlin-workspace-status: workspace status records. */ }
         part workspaceView { doc /* marlin-workspace-view: workspace presentation contracts. */ }
         part gerbilIr { doc /* marlin-gerbil-ir: typed artifacts exchanged with the Gerbil extension plane. */ }
-        part gerbilScheme { doc /* marlin-gerbil-scheme: native Scheme bindings and typed data conversion. */ }
+        part gerbilScheme {
+            doc /* marlin-gerbil-scheme: Scheme bindings and typed data conversion.
+                   The published working-copy policy selects a provider.
+                   Rust checks availability and projects the selection into GitOps. */
+        }
         part policyRoutingAbi { doc /* marlin-agent-policy-routing-abi: typed calls to the linked Scheme AgentGraph selector. */ }
         part deck { doc /* marlin-deck-runtime: ownership of the embedded VM and Deck Actor requests and receipts. */ }
         part harness { doc /* marlin-agent-harness: scenario execution and evidence validation. */ }
@@ -44,12 +68,20 @@ package MarlinRustPackageOwnership {
     }
 
     dependency runtimeUsesPorts from packages::runtime to packages::protocol;
+    dependency appServerUsesModelContracts from packages::appServer to packages::protocol;
+    dependency appServerUsesSessionJournal from packages::appServer to packages::sessions;
+    dependency appServerUsesRuntime from packages::appServer to packages::runtime;
+    dependency uiUsesAppServerClient from packages::ui to packages::appServer;
+    dependency environmentExecutesWorkingCopyPlans from packages::environment to packages::gitOps;
+    dependency contextUsesQueryRecords from packages::context to packages::workspaceQuery;
+    dependency contextUsesStatusRecords from packages::context to packages::workspaceStatus;
+    dependency contextUsesViewRecords from packages::context to packages::workspaceView;
     dependency telemetryImplementsSampling from packages::telemetry to packages::protocol;
     dependency tuiComposesRuntime from packages::tui to packages::runtime;
     dependency tuiComposesTelemetry from packages::tui to packages::telemetry;
     dependency tuiUsesUiProjection from packages::tui to packages::ui;
     dependency kernelSubmitsEffects from packages::kernel to packages::runtime;
-    dependency gitUsesProcessPort from packages::git to packages::protocol;
+    dependency gitOpsUsesProcessPort from packages::gitOps to packages::protocol;
     dependency uiProjectsNativeFacts from packages::ui to scheme;
     dependency routingSubmitsNativeInputs from packages::policyRoutingAbi to scheme;
     dependency deckSubmitsNativeRequests from packages::deck to scheme;
@@ -81,4 +113,15 @@ package MarlinRustPackageOwnership {
     allocation authorizeProcessControl allocate processConsole to packages.runtime;
     allocation presentProcessControl allocate processConsole to packages.tui;
     allocation declareProcessCommands allocate processConsole to scheme;
+
+    requirement <'MAR-PKG-R04'> workingCopyBinding {
+        doc /* The working-copy Module selects a provider from the caller's
+               preference and observed availability. Rust executes the typed
+               plan. For a Worktrunk create, the active binding carries the
+               provider's registered path and branch. Remove consumes that
+               path and closes the binding only after successful removal. */
+    }
+    allocation selectWorkingCopyProvider allocate workingCopyBinding to packages.gerbilScheme;
+    allocation projectWorkingCopyPlan allocate workingCopyBinding to packages.gitOps;
+    allocation applyWorkingCopyReceipt allocate workingCopyBinding to packages.environment;
 }

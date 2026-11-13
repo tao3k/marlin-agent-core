@@ -1,5 +1,5 @@
 {
-  "checksum": "37432282b032e5d4051c5dabccc549e5b9425cf6cc3cf95f9f0fc468da887d8f",
+  "checksum": "02eb5557ff97fca7dd998eac8a250590a8a296423a427271c8cab6adea1bdafc",
   "crates": {
     "adler2 2.0.1": {
       "name": "adler2",
@@ -15622,24 +15622,11 @@
             {
               "id": "criterion 0.8.2",
               "target": "criterion"
-            },
-            {
-              "id": "futures-executor 0.3.34",
-              "target": "futures_executor"
             }
           ],
           "selects": {}
         },
         "edition": "2024",
-        "proc_macro_deps": {
-          "common": [
-            {
-              "id": "async-trait 0.1.92",
-              "target": "async_trait"
-            }
-          ],
-          "selects": {}
-        },
         "version": "0.1.0"
       },
       "license": "Apache-2.0 AND LGPL-2.1-or-later",
@@ -15666,6 +15653,18 @@
               ]
             }
           }
+        },
+        {
+          "BuildScript": {
+            "crate_name": "build_script_build",
+            "crate_root": "build.rs",
+            "srcs": {
+              "allow_empty": true,
+              "include": [
+                "**/*.rs"
+              ]
+            }
+          }
         }
       ],
       "library_target_name": "marlin_agent_core",
@@ -15676,29 +15675,24 @@
         "deps": {
           "common": [
             {
+              "id": "marlin-agent-core 0.1.0",
+              "target": "build_script_build"
+            },
+            {
               "id": "serde 1.0.229",
               "target": "serde"
-            }
-          ],
-          "selects": {}
-        },
-        "deps_dev": {
-          "common": [
+            },
             {
               "id": "serde_json 1.0.154",
               "target": "serde_json"
             },
             {
-              "id": "tempfile 3.27.0",
-              "target": "tempfile"
+              "id": "sha2 0.10.9",
+              "target": "sha2"
             },
             {
               "id": "tokio 1.53.1",
               "target": "tokio"
-            },
-            {
-              "id": "tokio-stream 0.1.19",
-              "target": "tokio_stream"
             },
             {
               "id": "toml 1.2.1+spec-1.1.0",
@@ -15707,8 +15701,40 @@
           ],
           "selects": {}
         },
+        "deps_dev": {
+          "common": [
+            {
+              "id": "gerbil-scheme 0.1.0",
+              "target": "gerbil_scheme"
+            },
+            {
+              "id": "ring 0.17.14",
+              "target": "ring"
+            },
+            {
+              "id": "tempfile 3.27.0",
+              "target": "tempfile"
+            },
+            {
+              "id": "tokio-stream 0.1.19",
+              "target": "tokio_stream"
+            }
+          ],
+          "selects": {}
+        },
         "edition": "2024",
         "version": "0.1.0"
+      },
+      "build_script_attrs": {
+        "compile_data_glob": [
+          "**"
+        ],
+        "compile_data_glob_excludes": [
+          "**/*.rs"
+        ],
+        "data_glob": [
+          "**"
+        ]
       },
       "license": "Apache-2.0 AND LGPL-2.1-or-later",
       "license_ids": [
@@ -15768,6 +15794,66 @@
           ],
           "selects": {}
         },
+        "version": "0.1.0"
+      },
+      "license": "Apache-2.0 AND LGPL-2.1-or-later",
+      "license_ids": [
+        "Apache-2.0",
+        "LGPL-2.1"
+      ],
+      "license_file": null
+    },
+    "marlin-agent-gitops 0.1.0": {
+      "name": "marlin-agent-gitops",
+      "version": "0.1.0",
+      "package_url": "https://github.com/tao3k/marlin-agent-core",
+      "repository": null,
+      "targets": [
+        {
+          "Library": {
+            "crate_name": "marlin_agent_gitops",
+            "crate_root": "src/lib.rs",
+            "srcs": {
+              "allow_empty": true,
+              "include": [
+                "**/*.rs"
+              ]
+            }
+          }
+        }
+      ],
+      "library_target_name": "marlin_agent_gitops",
+      "common_attrs": {
+        "compile_data_glob": [
+          "**"
+        ],
+        "deps": {
+          "common": [
+            {
+              "id": "serde 1.0.229",
+              "target": "serde"
+            },
+            {
+              "id": "thiserror 2.0.21",
+              "target": "thiserror"
+            },
+            {
+              "id": "tokio 1.53.1",
+              "target": "tokio"
+            }
+          ],
+          "selects": {}
+        },
+        "deps_dev": {
+          "common": [
+            {
+              "id": "tempfile 3.27.0",
+              "target": "tempfile"
+            }
+          ],
+          "selects": {}
+        },
+        "edition": "2024",
         "version": "0.1.0"
       },
       "license": "Apache-2.0 AND LGPL-2.1-or-later",
@@ -16263,8 +16349,20 @@
               "target": "process_wrap"
             },
             {
+              "id": "ring 0.17.14",
+              "target": "ring"
+            },
+            {
+              "id": "semver 1.0.28",
+              "target": "semver"
+            },
+            {
               "id": "serde 1.0.229",
               "target": "serde"
+            },
+            {
+              "id": "serde_json 1.0.154",
+              "target": "serde_json"
             },
             {
               "id": "sysinfo 0.39.6",
@@ -16299,10 +16397,6 @@
         },
         "deps_dev": {
           "common": [
-            {
-              "id": "serde_json 1.0.154",
-              "target": "serde_json"
-            },
             {
               "id": "tempfile 3.27.0",
               "target": "tempfile"
@@ -17281,62 +17375,6 @@
       ],
       "license_file": null
     },
-    "marlin-git-utils 0.1.0": {
-      "name": "marlin-git-utils",
-      "version": "0.1.0",
-      "package_url": "https://github.com/tao3k/marlin-agent-core",
-      "repository": null,
-      "targets": [
-        {
-          "Library": {
-            "crate_name": "marlin_git_utils",
-            "crate_root": "src/lib.rs",
-            "srcs": {
-              "allow_empty": true,
-              "include": [
-                "**/*.rs"
-              ]
-            }
-          }
-        }
-      ],
-      "library_target_name": "marlin_git_utils",
-      "common_attrs": {
-        "compile_data_glob": [
-          "**"
-        ],
-        "deps": {
-          "common": [
-            {
-              "id": "thiserror 2.0.21",
-              "target": "thiserror"
-            },
-            {
-              "id": "tokio 1.53.1",
-              "target": "tokio"
-            }
-          ],
-          "selects": {}
-        },
-        "deps_dev": {
-          "common": [
-            {
-              "id": "tempfile 3.27.0",
-              "target": "tempfile"
-            }
-          ],
-          "selects": {}
-        },
-        "edition": "2024",
-        "version": "0.1.0"
-      },
-      "license": "Apache-2.0 AND LGPL-2.1-or-later",
-      "license_ids": [
-        "Apache-2.0",
-        "LGPL-2.1"
-      ],
-      "license_file": null
-    },
     "marlin-rust-project-harness-policy 0.1.0": {
       "name": "marlin-rust-project-harness-policy",
       "version": "0.1.0",
@@ -17371,62 +17409,6 @@
           "selects": {}
         },
         "edition": "2024",
-        "version": "0.1.0"
-      },
-      "license": "Apache-2.0 AND LGPL-2.1-or-later",
-      "license_ids": [
-        "Apache-2.0",
-        "LGPL-2.1"
-      ],
-      "license_file": null
-    },
-    "marlin-workspace-protocol 0.1.0": {
-      "name": "marlin-workspace-protocol",
-      "version": "0.1.0",
-      "package_url": "https://github.com/tao3k/marlin-agent-core",
-      "repository": null,
-      "targets": [
-        {
-          "Library": {
-            "crate_name": "marlin_workspace_protocol",
-            "crate_root": "src/lib.rs",
-            "srcs": {
-              "allow_empty": true,
-              "include": [
-                "**/*.rs"
-              ]
-            }
-          }
-        }
-      ],
-      "library_target_name": "marlin_workspace_protocol",
-      "common_attrs": {
-        "compile_data_glob": [
-          "**"
-        ],
-        "deps": {
-          "common": [
-            {
-              "id": "serde 1.0.229",
-              "target": "serde"
-            },
-            {
-              "id": "thiserror 2.0.21",
-              "target": "thiserror"
-            }
-          ],
-          "selects": {}
-        },
-        "edition": "2024",
-        "proc_macro_deps": {
-          "common": [
-            {
-              "id": "async-trait 0.1.92",
-              "target": "async_trait"
-            }
-          ],
-          "selects": {}
-        },
         "version": "0.1.0"
       },
       "license": "Apache-2.0 AND LGPL-2.1-or-later",
@@ -39657,6 +39639,7 @@
     "marlin-agent-context 0.1.0": "crates/marlin-agent-context",
     "marlin-agent-core 0.1.0": "crates/marlin-agent-core",
     "marlin-agent-environment 0.1.0": "crates/marlin-agent-environment",
+    "marlin-agent-gitops 0.1.0": "crates/marlin-agent-gitops",
     "marlin-agent-graph 0.1.0": "crates/marlin-agent-graph",
     "marlin-agent-harness 0.1.0": "crates/marlin-agent-harness",
     "marlin-agent-harness-types 0.1.0": "crates/marlin-agent-harness-types",
@@ -39678,9 +39661,7 @@
     "marlin-gerbil-aot-link 0.1.0": "build-support/marlin-gerbil-aot-link",
     "marlin-gerbil-ir 0.1.0": "crates/marlin-gerbil-ir",
     "marlin-gerbil-scheme 0.1.0": "crates/marlin-gerbil-scheme",
-    "marlin-git-utils 0.1.0": "crates/marlin-git-utils",
     "marlin-rust-project-harness-policy 0.1.0": "build-support/marlin-rust-project-harness-policy",
-    "marlin-workspace-protocol 0.1.0": "crates/marlin-workspace-protocol",
     "marlin-workspace-query 0.1.0": "crates/marlin-workspace-query",
     "marlin-workspace-status 0.1.0": "crates/marlin-workspace-status",
     "marlin-workspace-view 0.1.0": "crates/marlin-workspace-view"
@@ -40002,8 +39983,11 @@
     "parking_lot 0.12.5",
     "process-wrap 9.1.1",
     "ratatui 0.30.2",
+    "ring 0.17.14",
+    "semver 1.0.28",
     "serde 1.0.229",
     "serde_json 1.0.154",
+    "sha2 0.10.9",
     "sysinfo 0.39.6",
     "termion 4.0.6",
     "thiserror 2.0.21",
@@ -40030,7 +40014,6 @@
     "prost 0.14.4",
     "reqwest 0.13.5",
     "rustix 1.1.6",
-    "sha2 0.10.9",
     "static_assertions 1.1.0",
     "tempfile 3.27.0",
     "turso 0.8.3"

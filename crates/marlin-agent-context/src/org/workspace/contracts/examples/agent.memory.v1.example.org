@@ -30,7 +30,7 @@ and dispatch receipts downstream.
 - =docs/40-rfcs/40.10-org-agent-work-protocol.org= keeps memory dispatch
   as a downstream backend concern.
 - =docs/20-workspace/20.40-org-memory-backend.org= defines
-  =marlin-org-memory= as the in-memory =AgentWorkspace= backend.
+  =marlin_agent_context::org::MemoryOrgWorkspace= for in-memory Org reads.
 
 ** Recall
 

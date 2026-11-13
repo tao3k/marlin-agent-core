@@ -30,7 +30,7 @@ marlin-deck-runtime = { workspace = true, optional = true }
 marlin-agent-runtime.workspace = true
 marlin-agent-sessions.workspace = true
 marlin-gerbil-ir.workspace = true
-marlin-workspace-protocol.workspace = true
+marlin-workspace-status.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true

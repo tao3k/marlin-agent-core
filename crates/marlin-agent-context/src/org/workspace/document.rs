@@ -4,12 +4,12 @@
 
 //! Document loading adapter from `Org` text into structured workspace nodes.
 
+use crate::org::workspace::{WorkspaceError, WorkspaceResult};
 use marlin_context_org_model::{
     CheckboxState, LinkKind, OrgCheckbox, OrgContractReference, OrgContractReferenceScope,
     OrgContractRegistry, OrgContractResolutionReport, OrgContractValidationReport, OrgLink,
     OrgNode, OrgNodeId, OrgSourceSpan, TodoState,
 };
-use marlin_workspace_protocol::{WorkspaceError, WorkspaceResult};
 use orgize::ast::{ParsedAnnotation, Section, parse_contracts_from_document};
 
 use crate::org::workspace::contract::{

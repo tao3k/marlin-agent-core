@@ -23,7 +23,7 @@ fn gerbil_release_topology_carries_package_gates_and_dependency_chains() {
             "marlin-agent-protocol".to_string(),
         ],
         workflow_dependency_chain: vec![
-            "marlin-workspace-protocol".to_string(),
+            "marlin-agent-gitops".to_string(),
             "marlin-agent-context".to_string(),
         ],
         gates: vec![ReleaseGateSpec {

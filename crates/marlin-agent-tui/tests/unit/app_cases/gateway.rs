@@ -21,7 +21,7 @@ fn workspace_view_closes_without_losing_the_message_draft_or_history() {
     app.scroll_up = 7;
     let original_transcript_len = app.transcript.len();
     app.workspace.show(WorkspaceView::from_observation(
-        WorkspaceObservation::Status(marlin_git_utils::GitStatus {
+        WorkspaceObservation::Status(marlin_agent_gitops::GitStatus {
             entries: Vec::new(),
         }),
     ));

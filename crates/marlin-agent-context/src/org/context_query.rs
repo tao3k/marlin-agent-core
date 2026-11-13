@@ -5,10 +5,10 @@
 //! Bind an Org memory query to the same identities as a Context request.
 
 use crate::ContextAdmissionRequest;
+use crate::org::workspace::WorkspaceResult;
 use marlin_agent_protocol::{
     GraphQueryFamily, GraphQueryRequest, GraphQueryResponse, ProjectRuntimeReceiptId,
 };
-use marlin_workspace_protocol::WorkspaceResult;
 
 use super::MemoryOrgWorkspace;
 

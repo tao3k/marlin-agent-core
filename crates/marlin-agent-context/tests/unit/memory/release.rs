@@ -2,10 +2,8 @@
 //
 // SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
-use futures_executor::block_on;
 use marlin_agent_context::org::MemoryOrgWorkspace;
 use marlin_gerbil_ir::{ReleaseGateSpec, ReleaseTopologySpec, ReleaseVisibilitySpec};
-use marlin_workspace_protocol::{AgentWorkspace, WorkspaceCtx};
 use marlin_workspace_status::{ReleaseGateReceipt, ReleaseGateState, WorkspaceTarget};
 
 fn memory_workspace_reports_recorded_release_topology_status() {
@@ -35,9 +33,9 @@ fn memory_workspace_reports_recorded_release_topology_status() {
     let recorded = workspace
         .record_release_topology(&topology)
         .expect("release topology recorded");
-    let status =
-        block_on(workspace.status(WorkspaceTarget::Workspace, WorkspaceCtx::new("unit-test")))
-            .expect("workspace status");
+    let status = workspace
+        .status(WorkspaceTarget::Workspace)
+        .expect("workspace status");
     let release = status.release.expect("release status");
 
     assert_eq!(recorded.topology_id, "release:gerbil");
@@ -85,9 +83,9 @@ fn memory_workspace_reports_release_gate_receipts() {
             ))
             .expect("gate receipt recorded")
     );
-    let status =
-        block_on(workspace.status(WorkspaceTarget::Workspace, WorkspaceCtx::new("unit-test")))
-            .expect("workspace status");
+    let status = workspace
+        .status(WorkspaceTarget::Workspace)
+        .expect("workspace status");
     let release = status.release.expect("release status");
 
     assert_eq!(release.gates[0].state, ReleaseGateState::Passed);

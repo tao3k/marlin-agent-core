@@ -28,7 +28,7 @@ _DEPS = crate_deps([
     "//crates/marlin-agent-storage:marlin_agent_storage_turso",
     "//crates/marlin-agent-stream:marlin_agent_stream",
     "//crates/marlin-agent-ui:marlin_agent_ui",
-    "//crates/marlin-git-utils:marlin_git_utils",
+    "//crates/marlin-agent-gitops:marlin_agent_gitops",
     "//crates/marlin-agent-telemetry:marlin_agent_telemetry",
 ]
 

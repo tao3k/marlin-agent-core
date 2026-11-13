@@ -12,7 +12,7 @@ use marlin_agent_harness::{
     ReleaseGateExecutionReceipt, ReleaseGateExecutionStatus, release_gate_execution_receipt,
 };
 use marlin_gerbil_ir::{ReleaseGateSpec, ReleaseTopologySpec};
-use marlin_workspace_protocol::{ReleaseGateReceipt, ReleaseGateState};
+use marlin_workspace_status::{ReleaseGateReceipt, ReleaseGateState};
 use std::process::Command;
 
 /// Result of executing one release gate command.

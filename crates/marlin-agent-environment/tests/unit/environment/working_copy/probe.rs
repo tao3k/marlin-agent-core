@@ -5,7 +5,7 @@
 use marlin_agent_environment::{
     ProcessWorkingCopyCommandRunner, WorkingCopyProviderExecutableStatus,
 };
-use marlin_workspace_protocol::WorkingCopyCommandProgram;
+use marlin_agent_gitops::working_copy::WorkingCopyCommandProgram;
 
 #[tokio::test]
 async fn process_runner_can_probe_git_executable_without_mutating_workspace() {

@@ -155,7 +155,7 @@ fn release_status_projects_pending_topology_visibility() {
         ],
         runtime_dependency_chain: vec![
             "marlin-gerbil-ir".to_string(),
-            "marlin-workspace-protocol".to_string(),
+            "marlin-agent-gitops".to_string(),
         ],
         workflow_dependency_chain: vec![
             "marlin-agent-context".to_string(),

@@ -3,8 +3,8 @@
 // SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 #![cfg(feature = "org-workspace")]
 
+use marlin_agent_context::org::workspace::WorkspaceError;
 use marlin_agent_context::org::workspace::{OrgDocument, OrgDocumentLoader};
-use marlin_workspace_protocol::WorkspaceError;
 
 #[test]
 fn workspace_requires_host_startup_without_implicitly_initializing() {

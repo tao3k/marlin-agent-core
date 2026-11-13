@@ -77,7 +77,7 @@ property-gate: sysml-check property-model-gate scheme-property-gate
   cargo test --locked -p marlin-agent-runtime --test unit_test process::containment
   cargo test --locked -p marlin-agent-runtime --test unit_test process::managed_executor
   cargo test --locked -p marlin-agent-runtime --test unit_test runtime_task_tracker
-  cargo test --locked -p marlin-git-utils
+  cargo test --locked -p marlin-agent-gitops
   cargo test --locked -p marlin-agent-runtime --lib confirmed_process_does_not_release_until_pipe_endpoint_is_dropped
   cargo test --locked -p marlin-agent-kernel --test unit_test strict_tree_
   python3 dev/verification/process_quota_gate.py
