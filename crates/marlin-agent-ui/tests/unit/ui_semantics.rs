@@ -184,21 +184,9 @@ fn profile_admission_preserves_status_ownership_while_allowing_modeline_order() 
     };
     let mut previous = workbench("composer");
     previous.regions.push(UiRegion::Status(vec![
-        modeline("modeline/left/brand", "brand", 0),
-        modeline("modeline/left/model", "  {value}  ", 3),
-        modeline("modeline/left/activity", "ready", 0),
-        modeline("modeline/right/turns", "T{value}  ", 1),
-        modeline("modeline/right/session", " § {value} ", 2),
-        modeline("modeline/state/online", "online", 0),
-        modeline("modeline/state/offline", "offline", 0),
-        modeline("modeline/state/unknown", "unknown", 0),
-        modeline("modeline/state/runtime", "runtime", 0),
-        modeline("modeline/state/workspace", "workspace", 0),
-        modeline("modeline/state/recovery", "recovery", 0),
-        modeline("modeline/state/continuation", "continuation", 0),
-        modeline("modeline/state/history", "history", 0),
-        modeline("modeline/state/working", "working", 0),
-        modeline("modeline/state/reading", "reading", 0),
+        modeline("modeline/a", "A", 0),
+        modeline("modeline/b", "B", 3),
+        modeline("modeline/c", "C", 1),
         UiStatusItem::host(id("host/status"), "host fact"),
     ]));
     let event = UiEvent::SelectProfile(UiProfileName::new("pi").unwrap());
@@ -206,10 +194,10 @@ fn profile_admission_preserves_status_ownership_while_allowing_modeline_order() 
     let mut reordered = previous.clone();
     reordered.layout.transcript_policy.thinking_collapsed_role = "⋯".into();
     if let UiRegion::Status(items) = &mut reordered.regions[3] {
-        items.swap(3, 4);
-        items[0].label = "pi brand".into();
+        items.swap(1, 2);
+        items[0].label = "new A".into();
         items[1].keep_priority = 1;
-        items[3].keep_priority = 3;
+        items[2].keep_priority = 3;
     }
     assert!(
         previous
@@ -227,7 +215,7 @@ fn profile_admission_preserves_status_ownership_while_allowing_modeline_order() 
 
     let mut changed_host = reordered.clone();
     if let UiRegion::Status(items) = &mut changed_host.regions[3] {
-        items[15].label = "forged".into();
+        items[3].label = "forged".into();
     }
     assert!(
         previous
@@ -236,7 +224,7 @@ fn profile_admission_preserves_status_ownership_while_allowing_modeline_order() 
     );
     let mut duplicate_role = reordered.clone();
     if let UiRegion::Status(items) = &mut duplicate_role.regions[3] {
-        items[8].id = items[7].id.clone();
+        items[2].id = items[1].id.clone();
     }
     assert!(
         previous
@@ -245,7 +233,7 @@ fn profile_admission_preserves_status_ownership_while_allowing_modeline_order() 
     );
     let mut missing_role = reordered;
     if let UiRegion::Status(items) = &mut missing_role.regions[3] {
-        items[0].id = id("modeline/left/other");
+        items[0].id = id("modeline/d");
     }
     assert!(
         previous
