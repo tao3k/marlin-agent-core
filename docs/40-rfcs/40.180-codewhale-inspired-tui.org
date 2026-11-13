@@ -2472,3 +2472,17 @@ geometry implementation changed during the release benchmark: the working
 diff fingerprint moved from =3c4bb4f1= to =74471d85= and the untracked
 =ui_elements/geometry.rs= fingerprint also changed. This run is diagnostic
 only; it does not qualify the current source cut or establish tree overhead.
+
+** Wheel queue benchmark diagnostic (2026-11-14)
+
+The source-clean =8dd4b7bf= Release benchmark binary (SHA-256
+=35cb034a26425e987707696b35f377a3c9ef75a6bee51ac5e1f549054cf2075e=)
+measured the production bounded wheel queue without VM startup or terminal
+painting. Ten Criterion samples estimated =ui/input/wheel-coalesced-16= at
+=[165.69, 177.82, 193.14] ns= and =ui/input/wheel-two-regions= at
+=[71.71, 161.44, 282.26] ns= (lower bound, point estimate and upper bound
+of the 95% mean interval). These are queue microbenchmarks, not
+pointer-to-frame latency. The second interval is wide; the following
+minute's host load was 65.92 on 12 logical CPUs. Treat both as diagnostics
+and repeat a matched, source-fixed
+cohort after competing work subsides before setting a queue cost threshold.
