@@ -24,6 +24,10 @@ on:
         description: Inspect dependency crash dumps and test the compiled Org grammar import on GitHub-hosted Ubuntu.
         default: false
         type: boolean
+      qualify_context_latency:
+        description: Run the fixed four-process Context latency cohort on the selected runner.
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -144,6 +148,14 @@ jobs:
           cargo bench --locked -p marlin-deck-runtime --features actor-runtime --bench single_vm_actor -- 64 1024
           cargo bench --locked -p marlin-agent-policy-routing-abi --features linked-selector --bench linked_selector
 
+      - uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177 # v2
+        if: inputs.qualify_context_latency
+        with:
+          tool: just@1.56.0
+      - name: Qualify full Context latency
+        if: inputs.qualify_context_latency
+        run: just context-latency-gate
+
       - name: Upload linked native benchmark artifacts
         if: ${{ always() }}
         uses: actions/upload-artifact@v7
@@ -152,4 +164,5 @@ jobs:
           path: |
             target/criterion
             target/marlin/scenarios
+            target/context-cohort.*
           if-no-files-found: warn

@@ -82,6 +82,10 @@ in that environment. It runs four separate processes under the 2 GiB Scheme
 heap ceiling and 180-second per-process watchdog. It retains every log and
 the benchmark binary identity under =target/=. Physical allocation still
 requires the separately qualified runtime and allocation-site evidence.
+On GitHub, the manual =Linked native AOT gate= accepts
+=qualify_context_latency=true=. It runs this same target after the linked
+checks and uploads the cohort logs, including failed runs. Compare timings
+with the runner and SDK identity attached to the workflow run.
 Run batch 1 and 64 in separate processes under matched conditions. The test
 and benchmark hosts each use four Tokio workers. Counters
 include 64 warmup requests; timed throughput and p50/p95/p99 cover request/reply.
