@@ -71,11 +71,11 @@
   max-chatbox-rows: 10
   max-command-rows: 10
   frame-tree: (ui-rows
-    (list (ui-rows (map frame-region '((transcript . #t) (extensions . #f))))
+    (list (ui-rows (map frame-region '((transcript . transcript) (extensions . #f))))
           (frame-region '(modeline . #f))
           (ui-region 'minibuffer-hover #f
                      (ui-rows
-                       (map frame-region '((editor . #f) (candidates . #t)
+                       (map frame-region '((editor . #f) (candidates . candidates)
                                            (minibuffer . #f))))))))
 (def marlin-ui-layout-policy
   (seal-object! UiLayoutBase.))

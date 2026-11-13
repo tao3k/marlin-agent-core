@@ -9,7 +9,7 @@ use gerbil_scheme_sys::{GerbilGlobalState, GerbilModuleOrLink};
 use marlin_agent_ui::UiLinkedExports;
 
 #[cfg(test)]
-use super::{ui_elements::resolve_choice as resolve_test_choice, ui_host::UiHost as TestUiHost};
+use super::ui_host::UiHost as TestUiHost;
 
 unsafe extern "C" {
     fn ___LNK_marlin__tui(gs: *mut GerbilGlobalState) -> *mut GerbilModuleOrLink;

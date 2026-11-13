@@ -19,9 +19,9 @@
 (def ui (.get marlin-agent-core.init.exports Marlin ui))
 (def ui-components (.get marlin-agent-core.init.exports Marlin ui-components))
 (def ui-elements (.get marlin-agent-core.init.exports Marlin ui-elements))
-(unless (equal? ((.get ui-elements region) 'messages #t
+(unless (equal? ((.get ui-elements region) 'messages 'transcript
                  ((.get ui-elements text) '((normal . "message"))))
-                '#(region #(messages #t #(text #(#(normal "message"))))))
+                '#(region #(messages transcript #(text #(#(normal "message"))))))
   (error "interactive UI region projection failed"))
 (def ui-modeline (.get marlin-agent-core.init.exports Marlin ui-modeline))
 (def ui-themes (.get marlin-agent-core.init.exports Marlin ui-themes))

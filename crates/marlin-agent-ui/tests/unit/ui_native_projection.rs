@@ -120,12 +120,11 @@ fn layout<'a>(runtime: &'a GerbilRuntime) -> RootedSchemeObject<'a> {
                     runtime,
                     &[
                         symbol(runtime, name),
-                        runtime
-                            .scalar_object(SchemeScalar::Boolean(matches!(
-                                name,
-                                "transcript" | "candidates"
-                            )))
-                            .unwrap(),
+                        if matches!(name, "transcript" | "candidates") {
+                            symbol(runtime, name)
+                        } else {
+                            runtime.scalar_object(SchemeScalar::Boolean(false)).unwrap()
+                        },
                         if name == "transcript" {
                             vector(
                                 runtime,
@@ -339,7 +338,7 @@ fn sdk_roots_project_to_typed_ui_workbench() {
                     &runtime,
                     &[
                         symbol(&runtime, "messages"),
-                        runtime.scalar_object(SchemeScalar::Boolean(true)).unwrap(),
+                        symbol(&runtime, "transcript"),
                         element("info", "message"),
                     ],
                 ),

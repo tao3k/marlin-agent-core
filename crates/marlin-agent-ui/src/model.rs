@@ -30,6 +30,26 @@ const _: () = assert!(MAX_REGIONS == 3 + 1 + MAX_EXTENSIONS + 1);
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct UiComponentId(Arc<str>);
 
+/// A Scheme-selected host capability for scrolling a region.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct UiScrollTarget(UiComponentId);
+
+impl UiScrollTarget {
+    pub fn new(value: &str) -> Result<Self, UiProjectionError> {
+        Ok(Self(UiComponentId::new(value)?))
+    }
+
+    pub fn as_str(&self) -> &str {
+        self.0.as_str()
+    }
+}
+
+impl From<UiComponentId> for UiScrollTarget {
+    fn from(value: UiComponentId) -> Self {
+        Self(value)
+    }
+}
+
 /// A displayable command name; this value does not authorize a handler.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct UiCommandName(String);

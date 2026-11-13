@@ -9,6 +9,7 @@ mod main_view;
 
 use super::{
     app::{App, BufferView, GatewayObservation, ModelineActivity},
+    composer::Composer,
     ui_elements,
     ui_host::MainSource,
     viewport::{ScrollAnchor, TranscriptViewportCache},
@@ -128,22 +129,16 @@ pub(crate) fn chatbox_height(app: &App, policy: &UiLayoutPolicy, width: u16, hei
         .as_ref()
         .and_then(|search| search.preview())
         .unwrap_or(&app.composer);
-    let bordered = policy
+    let border = policy
         .frame_tree
         .region_child("editor")
-        .map(|editor| {
-            super::ui_elements::resolve_choice(editor, &|id| {
+        .and_then(|editor| {
+            super::ui_elements::input_border(editor, &|id| {
                 id.as_str() == "command"
                     && (app.command_draft.is_some() || app.tool_review_prompt.is_some())
             })
         })
-        .is_some_and(|editor| {
-            matches!(
-                editor,
-                marlin_agent_ui::UiElement::Input { bordered: true, .. }
-            )
-        });
-    let border = if bordered { 2 } else { 0 };
+        .unwrap_or(0);
     if limit > border {
         composer
             .preferred_rows(width.saturating_sub(border), limit.saturating_sub(border))
@@ -631,21 +626,19 @@ pub(crate) fn draw(
             extent: &|_| super::ui_elements::Extent::Cells(0),
             bindings: &bindings,
         };
-        super::ui_elements::render_input(
+        let mut editor_slots = main_view::EditorSlots {
+            composer,
+            show_cursor: command_active
+                || (app.history_search.is_none() && ui.focus.as_str() == "composer"),
+            read_only: app.tool_review_prompt.is_some(),
+        };
+        super::ui_elements::render_with_slots(
             frame,
             parts[3],
             editor,
+            &mut Vec::new(),
             &inputs,
-            command_active || (app.history_search.is_none() && ui.focus.as_str() == "composer"),
-            |width, height| {
-                if app.tool_review_prompt.is_some() {
-                    None
-                } else {
-                    composer
-                        .view(width, height)
-                        .map(|view| (view.rows, view.cursor))
-                }
-            },
+            &mut editor_slots,
         );
     }
     let menu_prefix = app.command_menu.as_ref().map(|menu| menu.prefix.as_str());

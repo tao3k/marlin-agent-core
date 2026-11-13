@@ -81,7 +81,7 @@ fn choice_uses_declared_order_and_fallback() {
 fn choice_uses_same_facts_for_layout_and_paint() {
     let region = |id: &str| UiElement::Region {
         id: UiComponentId::new(id).unwrap(),
-        scrollable: true,
+        scroll_target: Some(marlin_agent_ui::UiScrollTarget::new("transcript").unwrap()),
         child: Box::new(UiElement::Text(vec![UiSpan {
             text: id.into(),
             tone: UiTone::Normal,
@@ -130,7 +130,7 @@ fn nested_slots_follow_declared_layout_and_share_hit_regions() {
     }
     let region = |name: &str| UiElement::Region {
         id: UiComponentId::new(name).unwrap(),
-        scrollable: true,
+        scroll_target: Some(marlin_agent_ui::UiScrollTarget::new("transcript").unwrap()),
         child: Box::new(UiElement::Slot(UiComponentId::new(name).unwrap())),
     };
     let tree = UiElement::Columns(vec![region("left"), region("right")]);
@@ -161,6 +161,35 @@ fn nested_slots_follow_declared_layout_and_share_hit_regions() {
     assert_eq!(
         hit_test_scroll(&regions, 10, 0).unwrap().id.as_str(),
         "right"
+    );
+}
+
+#[test]
+fn scroll_target_preserves_same_and_distinct_region_bindings() {
+    let target = |name| Some(marlin_agent_ui::UiScrollTarget::new(name).unwrap());
+    let region = |id, scroll_target| UiElement::Region {
+        id: UiComponentId::new(id).unwrap(),
+        scroll_target,
+        child: Box::new(UiElement::Text(vec![])),
+    };
+    let tree = UiElement::Columns(vec![
+        region("transcript", target("transcript")),
+        region("nested", target("candidates")),
+    ]);
+    let mut regions = Vec::new();
+    super::ui_elements::layout_regions(
+        &tree,
+        Rect::new(0, 0, 20, 1),
+        &|_| Extent::Flex(1),
+        &mut regions,
+    );
+    assert_eq!(
+        hit_test_scroll(&regions, 0, 0).unwrap().scroll_target(),
+        Some("transcript")
+    );
+    assert_eq!(
+        hit_test_scroll(&regions, 10, 0).unwrap().scroll_target(),
+        Some("candidates")
     );
 }
 
@@ -236,7 +265,7 @@ fn template_binds_untrusted_values_as_literal_cells() {
 fn scrolling_moves_painted_rows_and_hit_regions_together() {
     let row = |id, text: &str| UiElement::Region {
         id: UiComponentId::new(id).unwrap(),
-        scrollable: false,
+        scroll_target: None,
         child: Box::new(UiElement::Text(vec![UiSpan {
             text: text.into(),
             tone: UiTone::Normal,
@@ -244,7 +273,7 @@ fn scrolling_moves_painted_rows_and_hit_regions_together() {
     };
     let tree = UiElement::Region {
         id: UiComponentId::new("messages").unwrap(),
-        scrollable: true,
+        scroll_target: Some(marlin_agent_ui::UiScrollTarget::new("transcript").unwrap()),
         child: Box::new(UiElement::Rows(vec![
             row("first", "A"),
             row("second", "B"),
@@ -309,12 +338,12 @@ fn maps_nested_elements_and_tones_to_terminal_cells() {
 fn hit_regions_follow_painted_layout_and_clip_at_terminal_edges() {
     let tree = UiElement::Region {
         id: UiComponentId::new("frame").unwrap(),
-        scrollable: false,
+        scroll_target: None,
         child: Box::new(UiElement::Columns(vec![
             UiElement::Text(vec![]),
             UiElement::Region {
                 id: UiComponentId::new("messages").unwrap(),
-                scrollable: true,
+                scroll_target: Some(marlin_agent_ui::UiScrollTarget::new("transcript").unwrap()),
                 child: Box::new(UiElement::Text(vec![UiSpan {
                     text: "abc".into(),
                     tone: UiTone::Normal,
@@ -453,12 +482,33 @@ fn input_component_uses_selected_presentation_and_literal_bindings() {
 }
 
 #[test]
+fn input_measurement_counts_selected_nested_borders() {
+    let input = |bordered| UiElement::Input {
+        bordered,
+        background: marlin_agent_ui::UiBackground::None,
+        prefix: None,
+        title: None,
+        active: UiComponentId::new("focused").unwrap(),
+    };
+    let tree = UiElement::Panel {
+        border_tone: UiTone::Normal,
+        field_tone: UiTone::Normal,
+        child: Box::new(UiElement::Rows(vec![UiElement::Choice {
+            cases: vec![(UiComponentId::new("compact").unwrap(), input(false))],
+            fallback: Box::new(input(true)),
+        }])),
+    };
+    assert_eq!(super::ui_elements::input_border(&tree, &|_| false), Some(4));
+    assert_eq!(super::ui_elements::input_border(&tree, &|_| true), Some(2));
+}
+
+#[test]
 fn scheme_size_bindings_are_independent_of_region_names() {
     let region = |name: &str, size| UiElement::Sized {
         size,
         child: Box::new(UiElement::Region {
             id: UiComponentId::new(name).unwrap(),
-            scrollable: false,
+            scroll_target: None,
             child: Box::new(UiElement::Text(vec![])),
         }),
     };
@@ -496,7 +546,7 @@ fn sized_layout_paint_and_hit_regions_share_rectangles() {
         size,
         child: Box::new(UiElement::Region {
             id: UiComponentId::new(id).unwrap(),
-            scrollable: false,
+            scroll_target: None,
             child: Box::new(UiElement::Text(vec![UiSpan {
                 text: text.into(),
                 tone: UiTone::Normal,
@@ -542,7 +592,7 @@ fn scrolling_sized_rows_keeps_paint_and_hit_testing_aligned() {
         size: marlin_agent_ui::UiSize::Cells(2),
         child: Box::new(UiElement::Region {
             id: UiComponentId::new(id).unwrap(),
-            scrollable: false,
+            scroll_target: None,
             child: Box::new(UiElement::Text(vec![UiSpan {
                 text: text.into(),
                 tone: UiTone::Normal,
@@ -551,7 +601,7 @@ fn scrolling_sized_rows_keeps_paint_and_hit_testing_aligned() {
     };
     let tree = UiElement::Region {
         id: UiComponentId::new("viewport").unwrap(),
-        scrollable: true,
+        scroll_target: Some(marlin_agent_ui::UiScrollTarget::new("transcript").unwrap()),
         child: Box::new(UiElement::Rows(vec![row("a", "A\nA"), row("b", "B\nB")])),
     };
     let mut terminal = Terminal::new(TestBackend::new(8, 3)).unwrap();
@@ -579,7 +629,7 @@ fn column_width_constraints_do_not_become_parent_row_heights() {
         size: marlin_agent_ui::UiSize::Cells(2),
         child: Box::new(UiElement::Region {
             id: UiComponentId::new(id).unwrap(),
-            scrollable: false,
+            scroll_target: None,
             child: Box::new(UiElement::Text(vec![UiSpan {
                 text: id.into(),
                 tone: UiTone::Normal,
@@ -590,7 +640,7 @@ fn column_width_constraints_do_not_become_parent_row_heights() {
         UiElement::Columns(vec![column("a"), column("b")]),
         UiElement::Region {
             id: UiComponentId::new("next").unwrap(),
-            scrollable: false,
+            scroll_target: None,
             child: Box::new(UiElement::Text(vec![])),
         },
     ]);
@@ -638,7 +688,7 @@ proptest! {
             size: if *flex { marlin_agent_ui::UiSize::Flex(size.saturating_add(1)) } else { marlin_agent_ui::UiSize::Cells(*size) },
             child: Box::new(UiElement::Region {
                 id: UiComponentId::new(&format!("sized-{index}")).unwrap(),
-                scrollable: false,
+                scroll_target: None,
                 child: Box::new(UiElement::Text(vec![])),
             }),
         }).collect();
@@ -652,7 +702,7 @@ proptest! {
         layout_regions_with_facts(&tree, area, &extent, &mut expected, inputs.facts);
         let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
         terminal.draw(|frame| render_with_facts(frame, area, &tree, &mut painted, &inputs)).unwrap();
-        let snapshot = |regions: Vec<super::ui_elements::HitRegion>| regions.into_iter().map(|r| (r.id, r.area, r.scrollable)).collect::<Vec<_>>();
+        let snapshot = |regions: Vec<super::ui_elements::HitRegion>| regions.into_iter().map(|r| { let target = r.scroll_target().map(str::to_owned); (r.id, r.area, target) }).collect::<Vec<_>>();
         prop_assert_eq!(snapshot(painted), snapshot(expected));
     }
 
@@ -671,13 +721,13 @@ proptest! {
                       else { marlin_agent_ui::UiSize::Binding(UiComponentId::new(name).unwrap()) },
                 child: Box::new(UiElement::Region {
                     id: UiComponentId::new(name).unwrap(),
-                    scrollable: matches!(name, "transcript" | "candidates"),
+                    scroll_target: matches!(name, "transcript" | "candidates").then(|| marlin_agent_ui::UiScrollTarget::new(name).unwrap()),
                     child: Box::new(UiElement::Text(vec![])),
                 }),
             }).collect();
         let flat = UiElement::Rows(slots.clone());
         let nested = UiElement::Rows(vec![UiElement::Rows(slots[..2].to_vec()), slots[2].clone(), UiElement::Region {
-            id: UiComponentId::new("minibuffer-hover").unwrap(), scrollable: false,
+            id: UiComponentId::new("minibuffer-hover").unwrap(), scroll_target: None,
             child: Box::new(UiElement::Rows(slots[3..].to_vec())),
         }]);
         let extent = |id: &UiComponentId| match id.as_str() {
@@ -693,7 +743,7 @@ proptest! {
         super::ui_elements::layout_regions(&flat, area, &extent, &mut expected);
         super::ui_elements::layout_regions(&nested, area, &extent, &mut actual);
         let snapshot = |regions: Vec<super::ui_elements::HitRegion>| regions.into_iter().filter(|region| region.id.as_str() != "minibuffer-hover")
-            .map(|region| (region.id, region.area, region.scrollable)).collect::<Vec<_>>();
+            .map(|region| { let target = region.scroll_target().map(str::to_owned); (region.id, region.area, target) }).collect::<Vec<_>>();
         prop_assert_eq!(snapshot(actual), snapshot(expected));
     }
 
@@ -741,10 +791,10 @@ proptest! {
     fn scrolling_and_hit_testing_share_visible_rows(count in 1usize..20, height in 1u16..10, offset in 0usize..25) {
         let rows = (0..count).map(|index| UiElement::Region {
             id: UiComponentId::new(&format!("row-{index}")).unwrap(),
-            scrollable: false,
+            scroll_target: None,
             child: Box::new(UiElement::Text(vec![UiSpan { text: "X".into(), tone: UiTone::Normal }])),
         }).collect();
-        let tree = UiElement::Region { id: UiComponentId::new("scroll").unwrap(), scrollable: true,
+        let tree = UiElement::Region { id: UiComponentId::new("scroll").unwrap(), scroll_target: Some(marlin_agent_ui::UiScrollTarget::new("transcript").unwrap()),
             child: Box::new(UiElement::Rows(rows)) };
         let mut terminal = Terminal::new(TestBackend::new(8, height)).unwrap();
         let mut regions = Vec::new();
@@ -764,7 +814,7 @@ proptest! {
     fn hit_test_respects_terminal_bounds(width in 1u16..120, height in 1u16..50) {
         let tree = UiElement::Region {
             id: UiComponentId::new("viewport").unwrap(),
-            scrollable: true,
+            scroll_target: Some(marlin_agent_ui::UiScrollTarget::new("transcript").unwrap()),
             child: Box::new(UiElement::Text(vec![])),
         };
         let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
@@ -781,7 +831,7 @@ proptest! {
     fn columns_partition_the_visible_width(width in 1u16..100, count in 1usize..32) {
         let tree = UiElement::Columns((0..count).map(|index| UiElement::Region {
             id: UiComponentId::new(&format!("item-{index}")).unwrap(),
-            scrollable: true,
+            scroll_target: Some(marlin_agent_ui::UiScrollTarget::new("transcript").unwrap()),
             child: Box::new(UiElement::Text(vec![])),
         }).collect());
         let mut terminal = Terminal::new(TestBackend::new(width, 1)).unwrap();

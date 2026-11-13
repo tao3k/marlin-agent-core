@@ -235,6 +235,77 @@ fn terminal_rejects_unbound_main_source() {
 }
 
 #[test]
+fn terminal_rejects_unknown_scroll_target_inside_choice() {
+    use marlin_agent_ui::{UiElement, UiScrollTarget};
+    let mut workbench = view("composer");
+    let UiElement::Rows(slots) = &mut workbench.layout.frame_tree else {
+        panic!("frame")
+    };
+    let UiElement::Sized { child, .. } = &mut slots[0] else {
+        panic!("transcript size")
+    };
+    let UiElement::Region { child, .. } = child.as_mut() else {
+        panic!("transcript region")
+    };
+    *child = Box::new(UiElement::Choice {
+        cases: vec![(
+            UiComponentId::new("messages").unwrap(),
+            UiElement::Region {
+                id: UiComponentId::new("nested").unwrap(),
+                scroll_target: Some(UiScrollTarget::new("unregistered").unwrap()),
+                child: Box::new(UiElement::Text(vec![])),
+            },
+        )],
+        fallback: Box::new(UiElement::Slot(UiComponentId::new("conversation").unwrap())),
+    });
+    assert!(admit_terminal_view(&workbench).is_err());
+}
+
+#[test]
+fn terminal_admits_nested_input_and_rejects_duplicate_editors() {
+    use marlin_agent_ui::{UiElement, UiSize};
+    let mut workbench = view("composer");
+    let UiElement::Rows(slots) = &mut workbench.layout.frame_tree else {
+        panic!("frame")
+    };
+    let UiElement::Region { child, .. } = &mut slots[3] else {
+        panic!("minibuffer")
+    };
+    let UiElement::Rows(children) = child.as_mut() else {
+        panic!("minibuffer rows")
+    };
+    let UiElement::Sized { child, .. } = &mut children[0] else {
+        panic!("editor size")
+    };
+    let UiElement::Region { child, .. } = child.as_mut() else {
+        panic!("editor region")
+    };
+    let original = child.clone();
+    *child = Box::new(UiElement::Rows(vec![UiElement::Sized {
+        size: UiSize::Flex(1),
+        child: original.clone(),
+    }]));
+    assert!(admit_terminal_view(&workbench).is_ok());
+    let UiElement::Rows(slots) = &mut workbench.layout.frame_tree else {
+        unreachable!()
+    };
+    let UiElement::Region { child, .. } = &mut slots[3] else {
+        unreachable!()
+    };
+    let UiElement::Rows(children) = child.as_mut() else {
+        unreachable!()
+    };
+    let UiElement::Sized { child, .. } = &mut children[0] else {
+        unreachable!()
+    };
+    let UiElement::Region { child, .. } = child.as_mut() else {
+        unreachable!()
+    };
+    *child = Box::new(UiElement::Rows(vec![*original.clone(), *original]));
+    assert!(admit_terminal_view(&workbench).is_err());
+}
+
+#[test]
 fn completion_respects_ambiguity_exact_names_and_arguments() {
     use marlin_agent_ui::{UiCommand, UiCommandArguments, UiCommandCapability, UiCommandName};
     let mut workbench = view("commands");

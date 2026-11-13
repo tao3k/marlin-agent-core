@@ -34,7 +34,8 @@ fn test_layout() -> UiLayoutPolicy {
             .into_iter()
             .map(|name| marlin_agent_ui::UiElement::Region {
                 id: UiComponentId::new(name).unwrap(),
-                scrollable: matches!(name, "transcript" | "candidates"),
+                scroll_target: matches!(name, "transcript" | "candidates")
+                    .then(|| marlin_agent_ui::UiScrollTarget::new(name).unwrap()),
                 child: Box::new(marlin_agent_ui::UiElement::Text(vec![])),
             })
             .collect(),

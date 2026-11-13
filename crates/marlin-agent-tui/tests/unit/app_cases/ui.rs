@@ -10,53 +10,6 @@ use super::{
 use std::sync::{Arc, Mutex};
 
 #[test]
-fn frame_hit_testing_uses_the_selected_scheme_branch() {
-    use marlin_agent_ui::{UiComponentId, UiElement, UiRegion, UiSize, UiWorkbench};
-
-    let id = |name| UiComponentId::new(name).unwrap();
-    let region = |name| UiElement::Region {
-        id: id(name),
-        scrollable: true,
-        child: Box::new(UiElement::Text(Vec::new())),
-    };
-    let mut layout = test_layout();
-    layout.frame_tree = UiElement::Rows(vec![UiElement::Sized {
-        size: UiSize::Flex(1),
-        child: Box::new(UiElement::Choice {
-            cases: vec![(id("messages"), region("message-scroll"))],
-            fallback: Box::new(region("conversation-scroll")),
-        }),
-    }]);
-    let view = UiWorkbench {
-        model_label: "model".into(),
-        session_label: "session".into(),
-        regions: vec![UiRegion::Transcript],
-        layout,
-        theme: Default::default(),
-        focus: id("composer"),
-        frame: test_frame(),
-        keymap: Vec::new(),
-        transients: Vec::new(),
-    };
-    let mut app = App::new(ModelEndpoint::new("provider", "model"));
-    let hit = |app: &App| {
-        let regions = super::super::render::frame_regions(
-            app,
-            &view,
-            ratatui::layout::Rect::new(0, 0, 80, 20),
-        );
-        super::super::ui_elements::hit_test_scroll(&regions, 0, 0)
-            .unwrap()
-            .id
-            .as_str()
-            .to_owned()
-    };
-    assert_eq!(hit(&app), "conversation-scroll");
-    app.buffer_view = super::super::app::BufferView::Messages;
-    assert_eq!(hit(&app), "message-scroll");
-}
-
-#[test]
 fn process_buffer_refresh_reuses_unchanged_runtime_snapshot() {
     let mut app = App::new(ModelEndpoint::new("provider", "model"));
     assert!(app.refresh_process_content());
@@ -448,6 +401,25 @@ fn mx_minibuffer_and_candidates_are_below_modeline() {
     let marlin_agent_ui::UiElement::Rows(slots) = &mut reordered.layout.frame_tree else {
         panic!("test frame must be rows");
     };
+    let marlin_agent_ui::UiElement::Region { child, .. } = &mut slots[3] else {
+        panic!("minibuffer")
+    };
+    let marlin_agent_ui::UiElement::Rows(minibuffer) = child.as_mut() else {
+        panic!("minibuffer rows")
+    };
+    let marlin_agent_ui::UiElement::Sized { child, .. } = &mut minibuffer[0] else {
+        panic!("editor size")
+    };
+    let marlin_agent_ui::UiElement::Region { child, .. } = child.as_mut() else {
+        panic!("editor region")
+    };
+    let original = std::mem::replace(child, Box::new(marlin_agent_ui::UiElement::Text(vec![])));
+    *child = Box::new(marlin_agent_ui::UiElement::Rows(vec![
+        marlin_agent_ui::UiElement::Sized {
+            size: marlin_agent_ui::UiSize::Flex(1),
+            child: original,
+        },
+    ]));
     slots.swap(2, 3);
     let geometry = super::super::render::frame_regions(
         &app,

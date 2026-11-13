@@ -813,6 +813,8 @@ mod continuation;
 mod gateway;
 #[path = "app_cases/ui.rs"]
 mod ui;
+#[path = "app_cases/ui_geometry.rs"]
+mod ui_geometry;
 #[derive(Clone)]
 struct FixtureGateway {
     requests: Arc<Mutex<Vec<ModelGatewayRequest>>>,

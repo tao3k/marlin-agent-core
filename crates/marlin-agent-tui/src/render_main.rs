@@ -3,9 +3,52 @@
 
 //! Bind host-owned content and cached transcripts to declarative UI slots.
 
-use super::{App, MainSource, ScrollAnchor, TranscriptViewportCache, ui_elements};
-use marlin_agent_ui::{UiComponentId, UiContent, UiTheme, UiTone};
+use super::{App, Composer, MainSource, ScrollAnchor, TranscriptViewportCache, ui_elements};
+use marlin_agent_ui::{UiComponentId, UiContent, UiElement, UiTheme, UiTone};
 use ratatui::{layout::Rect, style::Style};
+
+pub(super) struct EditorSlots<'a> {
+    pub composer: &'a Composer,
+    pub show_cursor: bool,
+    pub read_only: bool,
+}
+
+impl ui_elements::UiSlotRenderer for EditorSlots<'_> {
+    fn render(
+        &mut self,
+        _: &mut ratatui::Frame<'_>,
+        _: Rect,
+        _: &UiComponentId,
+        _: Option<UiTone>,
+        _: usize,
+    ) {
+    }
+
+    fn input(
+        &mut self,
+        frame: &mut ratatui::Frame<'_>,
+        area: Rect,
+        element: &UiElement,
+        inputs: &ui_elements::UiRenderInputs<'_>,
+    ) {
+        ui_elements::render_input(
+            frame,
+            area,
+            element,
+            inputs,
+            self.show_cursor,
+            |width, height| {
+                if self.read_only {
+                    None
+                } else {
+                    self.composer
+                        .view(width, height)
+                        .map(|view| (view.rows, view.cursor))
+                }
+            },
+        );
+    }
+}
 
 pub(super) struct MainSlots<'a> {
     pub app: &'a App,

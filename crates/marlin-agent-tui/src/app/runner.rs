@@ -575,7 +575,7 @@ fn run(
                 let row = (pointer >> 16) as u16;
                 let target = if column > 0 && row > 0 {
                     super::super::ui_elements::hit_test_scroll(&geometry, column - 1, row - 1)
-                        .map(|region| region.id.as_str())
+                        .and_then(|region| region.scroll_target())
                 } else {
                     None
                 };

@@ -13,4 +13,6 @@ pub use core::{
     layout_regions_with_facts, render_element, render_prompt, render_template, render_with_facts,
     render_with_regions, render_with_scroll, render_with_slots, resolve_choice,
 };
-pub use widgets::{UiContentSlot, UiListRow, render_content, render_input, render_list};
+pub use widgets::{
+    UiContentSlot, UiListRow, input_border, render_content, render_input, render_list,
+};

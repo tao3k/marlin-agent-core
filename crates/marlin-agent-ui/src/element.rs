@@ -7,7 +7,7 @@ use gerbil_scheme::{IdentifierBuffer, RootedSchemeObject, SchemeScalar};
 use std::collections::HashSet;
 
 use crate::{
-    UiComponentId, UiProjectionError,
+    UiComponentId, UiProjectionError, UiScrollTarget,
     projection::{identifier, vector},
 };
 
@@ -51,7 +51,7 @@ pub enum UiElement {
     /// An interactive area whose identity is owned by the Scheme module.
     Region {
         id: UiComponentId,
-        scrollable: bool,
+        scroll_target: Option<UiScrollTarget>,
         child: Box<UiElement>,
     },
 }
@@ -342,14 +342,14 @@ fn decode(
             if !budget.regions.insert(id.clone()) {
                 return Err(UiProjectionError::Invalid("duplicate UI region identity"));
             }
-            let scrollable = match values.element(1)?.as_ref().scalar()? {
-                SchemeScalar::Boolean(value) => value,
-                _ => return Err(UiProjectionError::Invalid("invalid UI region scroll flag")),
+            let scroll_target = match values.element(1)?.as_ref().scalar() {
+                Ok(SchemeScalar::Boolean(false)) => None,
+                _ => Some(UiScrollTarget::from(identifier(values.element(1)?, names)?)),
             };
             let child = Box::new(decode(values.element(2)?, depth + 1, budget, names)?);
             Ok(UiElement::Region {
                 id,
-                scrollable,
+                scroll_target,
                 child,
             })
         }

@@ -449,6 +449,33 @@ fn complete_command(
 }
 
 fn admit_terminal_view(view: &UiWorkbench) -> Result<(), UiProjectionError> {
+    fn scroll_targets_admitted(element: &marlin_agent_ui::UiElement) -> bool {
+        match element {
+            marlin_agent_ui::UiElement::Region {
+                scroll_target,
+                child,
+                ..
+            } => {
+                scroll_target
+                    .as_ref()
+                    .is_none_or(|target| matches!(target.as_str(), "transcript" | "candidates"))
+                    && scroll_targets_admitted(child)
+            }
+            marlin_agent_ui::UiElement::Choice { cases, fallback } => {
+                cases
+                    .iter()
+                    .all(|(_, child)| scroll_targets_admitted(child))
+                    && scroll_targets_admitted(fallback)
+            }
+            marlin_agent_ui::UiElement::Rows(children)
+            | marlin_agent_ui::UiElement::Columns(children) => {
+                children.iter().all(scroll_targets_admitted)
+            }
+            marlin_agent_ui::UiElement::Sized { child, .. }
+            | marlin_agent_ui::UiElement::Panel { child, .. } => scroll_targets_admitted(child),
+            _ => true,
+        }
+    }
     fn main_presentation(element: &marlin_agent_ui::UiElement) -> bool {
         match element {
             marlin_agent_ui::UiElement::Slot(id) => MainSource::from_id(id).is_some(),
@@ -468,14 +495,27 @@ fn admit_terminal_view(view: &UiWorkbench) -> Result<(), UiProjectionError> {
             marlin_agent_ui::UiElement::Input { .. } => false,
         }
     }
-    fn input_presentation(element: &marlin_agent_ui::UiElement) -> bool {
+    fn input_count(element: &marlin_agent_ui::UiElement) -> Option<usize> {
         match element {
-            marlin_agent_ui::UiElement::Input { .. } => true,
+            marlin_agent_ui::UiElement::Input { .. } => Some(1),
             marlin_agent_ui::UiElement::Choice { cases, fallback } => {
-                cases.iter().all(|(_, item)| input_presentation(item))
-                    && input_presentation(fallback)
+                let count = input_count(fallback)?;
+                cases
+                    .iter()
+                    .all(|(_, item)| input_count(item) == Some(count))
+                    .then_some(count)
             }
-            _ => false,
+            marlin_agent_ui::UiElement::Rows(children)
+            | marlin_agent_ui::UiElement::Columns(children) => children
+                .iter()
+                .try_fold(0usize, |sum, child| sum.checked_add(input_count(child)?)),
+            marlin_agent_ui::UiElement::Panel { child, .. }
+            | marlin_agent_ui::UiElement::Sized { child, .. }
+            | marlin_agent_ui::UiElement::Region { child, .. } => input_count(child),
+            marlin_agent_ui::UiElement::Text(_) | marlin_agent_ui::UiElement::Template { .. } => {
+                Some(0)
+            }
+            marlin_agent_ui::UiElement::Slot(_) => None,
         }
     }
     fn collect_slots<'a>(
@@ -504,7 +544,8 @@ fn admit_terminal_view(view: &UiWorkbench) -> Result<(), UiProjectionError> {
         }
     }
     let mut slots = HashSet::new();
-    if !collect_slots(&view.layout.frame_tree, &mut slots, false)
+    if !scroll_targets_admitted(&view.layout.frame_tree)
+        || !collect_slots(&view.layout.frame_tree, &mut slots, false)
         || [
             "transcript",
             "extensions",
@@ -546,11 +587,12 @@ fn admit_terminal_view(view: &UiWorkbench) -> Result<(), UiProjectionError> {
     {
         return Err(UiProjectionError::Invalid("invalid candidate presentation"));
     }
-    if !view
+    if view
         .layout
         .frame_tree
         .region_child("editor")
-        .is_some_and(input_presentation)
+        .and_then(input_count)
+        != Some(1)
     {
         return Err(UiProjectionError::Invalid("invalid input presentation"));
     }

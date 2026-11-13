@@ -4,7 +4,8 @@
 //! Generic Ratatui mapping for admitted Scheme UI elements.
 
 use marlin_agent_ui::{
-    UiBackground, UiComponentId, UiElement, UiSize, UiTemplateValue, UiTheme, UiTone,
+    UiBackground, UiComponentId, UiElement, UiScrollTarget, UiSize, UiTemplateValue, UiTheme,
+    UiTone,
 };
 use ratatui::{
     layout::Rect,
@@ -55,7 +56,38 @@ pub fn render_element(
 pub struct HitRegion {
     pub id: UiComponentId,
     pub area: Rect,
-    pub scrollable: bool,
+    scroll_target: Option<HitScrollTarget>,
+}
+
+#[derive(Debug)]
+enum HitScrollTarget {
+    Region,
+    Named(UiScrollTarget),
+}
+
+impl HitRegion {
+    fn new(id: &UiComponentId, area: Rect, target: Option<&UiScrollTarget>) -> Self {
+        let scroll_target = target.map(|target| {
+            if target.as_str() == id.as_str() {
+                HitScrollTarget::Region
+            } else {
+                HitScrollTarget::Named(target.clone())
+            }
+        });
+        Self {
+            id: id.clone(),
+            area,
+            scroll_target,
+        }
+    }
+
+    /// Return the Scheme-selected destination, which may differ from the region identity.
+    pub fn scroll_target(&self) -> Option<&str> {
+        match self.scroll_target.as_ref()? {
+            HitScrollTarget::Region => Some(self.id.as_str()),
+            HitScrollTarget::Named(target) => Some(target.as_str()),
+        }
+    }
 }
 
 /// Space requested by an externally bound terminal component.
@@ -136,6 +168,23 @@ fn layout_children(
     mut visit: impl FnMut(&UiElement, Rect),
 ) {
     let limit = if vertical { area.height } else { area.width };
+    // A single child is common for compositional wrappers; no sizing vector is needed.
+    if let [child] = children {
+        let demand = group_demand(child, vertical, extent, facts);
+        let extra = if demand.flex > 0 {
+            u32::from(limit).saturating_sub(demand.cells)
+        } else {
+            0
+        };
+        let length = demand.cells.saturating_add(extra).min(u32::from(limit)) as u16;
+        let rect = if vertical {
+            Rect::new(area.x, area.y, area.width, length)
+        } else {
+            Rect::new(area.x, area.y, length, area.height)
+        };
+        visit(child, rect);
+        return;
+    }
     let sizing: Vec<_> = children
         .iter()
         .map(|child| group_demand(child, vertical, extent, facts))
@@ -197,14 +246,10 @@ pub fn layout_regions_with_facts(
     match element {
         UiElement::Region {
             id,
-            scrollable,
+            scroll_target,
             child,
         } => {
-            regions.push(HitRegion {
-                id: id.clone(),
-                area,
-                scrollable: *scrollable,
-            });
+            regions.push(HitRegion::new(id, area, scroll_target.as_ref()));
             layout_regions_with_facts(child, area, extent, regions, facts);
         }
         UiElement::Text(_)
@@ -361,7 +406,7 @@ pub fn hit_test(regions: &[HitRegion], x: u16, y: u16) -> Option<&HitRegion> {
 /// Find the innermost scrollable ancestor at a terminal cell.
 pub fn hit_test_scroll(regions: &[HitRegion], x: u16, y: u16) -> Option<&HitRegion> {
     regions.iter().rev().find(|region| {
-        region.scrollable
+        region.scroll_target.is_some()
             && x >= region.area.x
             && x < region.area.right()
             && y >= region.area.y
@@ -424,6 +469,16 @@ pub trait UiSlotRenderer {
         field_tone: Option<UiTone>,
         skip: usize,
     );
+
+    /// Render a host-provided editor at a Scheme-declared input node.
+    fn input(
+        &mut self,
+        _frame: &mut ratatui::Frame<'_>,
+        _area: Rect,
+        _element: &UiElement,
+        _inputs: &UiRenderInputs<'_>,
+    ) {
+    }
 }
 
 struct EmptySlots;
@@ -513,7 +568,7 @@ fn render_inner(
             render_inner(frame, inner, child, regions, inputs, skip, slots);
             slots.field_tone = previous;
         }
-        UiElement::Input { .. } => {}
+        UiElement::Input { .. } => slots.renderer.input(frame, area, element, inputs),
         UiElement::Slot(id) => slots
             .renderer
             .render(frame, area, id, slots.field_tone, skip),
@@ -535,15 +590,15 @@ fn render_inner(
         }
         UiElement::Region {
             id,
-            scrollable,
+            scroll_target,
             child,
         } => {
-            regions.push(HitRegion {
-                id: id.clone(),
-                area,
-                scrollable: *scrollable,
-            });
-            let scroll = if *scrollable { (inputs.offset)(id) } else { 0 };
+            regions.push(HitRegion::new(id, area, scroll_target.as_ref()));
+            let scroll = if scroll_target.is_some() {
+                (inputs.offset)(id)
+            } else {
+                0
+            };
             render_inner(
                 frame,
                 area,

@@ -13,6 +13,24 @@ use ratatui::{
 };
 use unicode_width::UnicodeWidthStr;
 
+/// Measure borders enclosing the selected input before measuring its text.
+pub fn input_border(element: &UiElement, facts: &dyn Fn(&UiComponentId) -> bool) -> Option<u16> {
+    match element {
+        UiElement::Input { bordered, .. } => Some(if *bordered { 2 } else { 0 }),
+        UiElement::Choice { .. } => input_border(resolve_choice(element, facts), facts),
+        UiElement::Panel { child, .. } => {
+            input_border(child, facts).map(|size| size.saturating_add(2))
+        }
+        UiElement::Sized { child, .. } | UiElement::Region { child, .. } => {
+            input_border(child, facts)
+        }
+        UiElement::Rows(children) | UiElement::Columns(children) => {
+            children.iter().find_map(|child| input_border(child, facts))
+        }
+        UiElement::Text(_) | UiElement::Template { .. } | UiElement::Slot(_) => None,
+    }
+}
+
 /// One host-provided row and the named values used by its Scheme template.
 pub struct UiListRow<'a> {
     pub bindings: Vec<(&'a str, std::borrow::Cow<'a, str>)>,

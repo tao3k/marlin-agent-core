@@ -87,7 +87,8 @@ pub(super) fn test_layout() -> UiLayoutPolicy {
                 },
                 child: Box::new(marlin_agent_ui::UiElement::Region {
                     id: UiComponentId::new(name).unwrap(),
-                    scrollable: matches!(name, "transcript" | "candidates"),
+                    scroll_target: matches!(name, "transcript" | "candidates")
+                        .then(|| marlin_agent_ui::UiScrollTarget::new(name).unwrap()),
                     child: Box::new(if name == "transcript" {
                         UiElement::Choice {
                             cases: [
@@ -202,7 +203,7 @@ pub(super) fn test_layout() -> UiLayoutPolicy {
             let minibuffer = slots.split_off(3);
             slots.push(UiElement::Region {
                 id: UiComponentId::new("minibuffer-hover").unwrap(),
-                scrollable: false,
+                scroll_target: None,
                 child: Box::new(UiElement::Rows(minibuffer)),
             });
             UiElement::Rows(slots)

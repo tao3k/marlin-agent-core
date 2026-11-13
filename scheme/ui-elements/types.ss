@@ -7,7 +7,7 @@
 (def UiElementValues (.cc Type. '.element? list?))
 (def UiElementVector (.cc Type. '.element? vector?))
 (def UiElementIdentity (.cc Type. '.element? symbol?))
-(def UiElementFlag (.cc Type. '.element? boolean?))
+(def UiScrollTarget (.cc Type. '.element? (lambda (value) (or (not value) (symbol? value)))))
 (def UiElementsScopeContract
   (.cc (Record identity: [(Exactly 'marlin/ui-elements)]
                text: [(Fun UiElementVector <- UiElementValues)]
@@ -15,5 +15,5 @@
                columns: [(Fun UiElementVector <- UiElementValues)]
                template: [(Fun UiElementVector <- UiElementIdentity UiElementValues)]
                choice: [(Fun UiElementVector <- UiElementValues UiElementVector)]
-               region: [(Fun UiElementVector <- UiElementIdentity UiElementFlag UiElementVector)])
+               region: [(Fun UiElementVector <- UiElementIdentity UiScrollTarget UiElementVector)])
        identity: 'marlin/ui-elements))

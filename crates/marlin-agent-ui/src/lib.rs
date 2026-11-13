@@ -32,9 +32,10 @@ pub use model::{
     UiCommandCandidates, UiCommandCapability, UiCommandName, UiComponentId, UiContent,
     UiEditorAction, UiEvent, UiFrame, UiFrameSpec, UiIntent, UiKeyBinding, UiKeyCommand,
     UiKeyToken, UiLayoutPolicy, UiOpenFacts, UiProfileName, UiProjectionError, UiRegion,
-    UiReviewChoice, UiReviewMenu, UiRgb, UiScrollDirection, UiStatusItem, UiStatusTone, UiTheme,
-    UiToolReviewChoice, UiToolReviewDecision, UiToolReviewMenu, UiTranscriptPolicy, UiTransient,
-    UiTransientForeign, UiTransientHead, UiTransientId, UiWindow, UiWorkbench,
+    UiReviewChoice, UiReviewMenu, UiRgb, UiScrollDirection, UiScrollTarget, UiStatusItem,
+    UiStatusTone, UiTheme, UiToolReviewChoice, UiToolReviewDecision, UiToolReviewMenu,
+    UiTranscriptPolicy, UiTransient, UiTransientForeign, UiTransientHead, UiTransientId, UiWindow,
+    UiWorkbench,
 };
 #[cfg(feature = "scheme-ui")]
 pub use projection::{
