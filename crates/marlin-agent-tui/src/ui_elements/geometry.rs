@@ -232,13 +232,13 @@ pub(super) fn group_demand(
     }
 }
 
-pub(super) fn layout_children(
-    children: &[UiElement],
+pub(super) fn layout_children<'tree>(
+    children: &'tree [UiElement],
     vertical: bool,
     area: Rect,
     extent: &dyn Fn(&UiComponentId) -> Extent,
     facts: &dyn Fn(&UiComponentId) -> bool,
-    mut visit: impl FnMut(&UiElement, Rect),
+    mut visit: impl FnMut(&'tree UiElement, Rect),
 ) {
     let limit = if vertical { area.height } else { area.width };
     // A single child is common for compositional wrappers; no sizing vector is needed.

@@ -878,7 +878,7 @@ fn release_linked_ui_first_frame_without_a_gerbil_package_tree() {
     terminal.wait_for(Duration::from_secs(5), "release M-x first Down", |output| {
         let rows = screen_lines(output);
         rows.iter().any(|line| mx_selected(line, 2))
-            && rows.iter().any(|line| line.contains("› models"))
+            && rows.iter().any(|line| line.starts_with(" › "))
     });
     terminal.send(b"\x11");
     terminal.wait_exit(Duration::from_secs(5));
