@@ -11,8 +11,10 @@ package MarlinAgentCORE {
     private import MarlinPluginExecution::*;
 
     part <'MAR-PROJECT'> project {
-        doc /* Marlin Agent CORE. This entry selects the plugin-engine
-               architecture and lifecycle viewpoint. */
+        doc /* Marlin AI Agent Platform. This repository focuses on Agent CORE,
+               its runtime and extension contracts, and application transport.
+               External Web, desktop and mobile applications live in separate
+               repositories and consume the App Server schema. */
     }
 
     dependency currentRuntime from project to actual::runtime;
@@ -44,8 +46,11 @@ package MarlinAgentCORE {
 
     view appServerTransport {
         expose MarlinAppServer::externalClient;
+        expose MarlinAppServer::weaverInterop;
         expose MarlinAppServer::appServer;
         expose MarlinAppServer::grpcChannel;
+        expose MarlinAppServer::weaverGrpcChannel;
+        expose MarlinAppServer::clientBuildIsolation;
         render asInterconnectionDiagram;
     }
 

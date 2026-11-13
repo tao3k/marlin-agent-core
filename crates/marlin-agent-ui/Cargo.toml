@@ -13,31 +13,44 @@ repository.workspace = true
 publish = false
 
 [[test]]
+name = "grpc_client"
+path = "tests/grpc_client.rs"
+required-features = ["grpc"]
+
+[[test]]
 name = "policy"
 path = "tests/unit/policy.rs"
 
 [[test]]
 name = "module_vm"
 path = "tests/unit/module_vm.rs"
+required-features = ["scheme-ui"]
 
 [[test]]
 name = "ui_native_projection"
 path = "tests/unit/ui_native_projection.rs"
+required-features = ["scheme-ui"]
 
 [[test]]
 name = "ui_semantics"
 path = "tests/unit/ui_semantics.rs"
+required-features = ["scheme-ui"]
 
 [[bench]]
 name = "ui_hot_path"
 harness = false
+required-features = ["scheme-ui"]
 
 [features]
-linked-ui = []
+default = ["scheme-ui"]
+scheme-ui = ["dep:gerbil-scheme", "dep:marlin-agent-protocol"]
+linked-ui = ["scheme-ui"]
+grpc = ["dep:marlin-agent-app-server", "marlin-agent-app-server/client"]
 
 [dependencies]
-gerbil-scheme.workspace = true
-marlin-agent-protocol.workspace = true
+gerbil-scheme = { workspace = true, optional = true }
+marlin-agent-app-server = { workspace = true, optional = true }
+marlin-agent-protocol = { workspace = true, optional = true }
 
 [dev-dependencies]
 # The shared ASP Rust gate is mounted by the library's Cargo test target.

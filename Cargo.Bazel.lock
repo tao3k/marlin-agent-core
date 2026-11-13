@@ -1,5 +1,5 @@
 {
-  "checksum": "04af311ceeb26e4f277b9d5618b3736c02f1ee7412d92f6c1ea8a0d3fa995cbc",
+  "checksum": "37432282b032e5d4051c5dabccc549e5b9425cf6cc3cf95f9f0fc468da887d8f",
   "crates": {
     "adler2 2.0.1": {
       "name": "adler2",
@@ -16899,7 +16899,9 @@
         ],
         "crate_features": {
           "common": [
-            "linked-ui"
+            "default",
+            "linked-ui",
+            "scheme-ui"
           ],
           "selects": {}
         },

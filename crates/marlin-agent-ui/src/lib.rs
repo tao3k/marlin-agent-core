@@ -2,15 +2,26 @@
 //
 // SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
-//! Typed projection of the selected Scheme UI workbench through the SDK.
+//! UI entry points for local Scheme projection and external gRPC clients.
 //!
-//! The caller owns VM initialization and startup package selection. The SDK's
-//! standard module loader resolves the selected publication and procedures.
+//! With `scheme-ui`, the caller owns VM initialization and package selection.
+//! Rust frontends can disable default features and enable `grpc` for the
+//! generated App Server client and schema.
 
+#[cfg(feature = "scheme-ui")]
 mod model;
+#[cfg(feature = "scheme-ui")]
 mod projection;
+#[cfg(feature = "scheme-ui")]
 mod runtime;
 
+/// The generated Marlin client and versioned Session schema.
+#[cfg(feature = "grpc")]
+pub mod grpc {
+    pub use marlin_agent_app_server::v1;
+}
+
+#[cfg(feature = "scheme-ui")]
 pub use model::{
     UiBrowseDirection, UiBrowseRequest, UiBufferId, UiCommand, UiCommandArguments,
     UiCommandCapability, UiCommandName, UiComponentId, UiContent, UiEditorAction, UiEvent, UiFrame,
@@ -19,7 +30,9 @@ pub use model::{
     UiReviewChoice, UiReviewMenu, UiRgb, UiScrollDirection, UiStatusItem, UiStatusTone, UiTheme,
     UiTranscriptPolicy, UiWindow, UiWorkbench,
 };
+#[cfg(feature = "scheme-ui")]
 pub use projection::{decode_intent, decode_review_menu, decode_workbench};
+#[cfg(feature = "scheme-ui")]
 pub use runtime::{
     UiLinkedExports, UiModule, UiNativeSession, dispatch_event, open_session, prepare_open_request,
     project_workbench,

@@ -13,7 +13,20 @@ readme = "README.org"
 
 [features]
 default = []
-grpc = ["dep:async-stream", "dep:marlin-agent-protocol", "dep:marlin-agent-runtime", "dep:marlin-agent-sessions", "dep:marlin-agent-storage", "dep:marlin-agent-stream", "dep:prost", "dep:tokio", "dep:tokio-stream", "dep:tonic", "dep:tonic-prost", "dep:tonic-prost-build"]
+client = ["dep:prost", "dep:tonic", "dep:tonic-prost", "dep:tonic-prost-build"]
+grpc = [
+    "client",
+    "dep:async-stream",
+    "dep:marlin-agent-protocol",
+    "dep:marlin-agent-runtime",
+    "dep:marlin-agent-sessions",
+    "dep:marlin-agent-storage",
+    "dep:marlin-agent-stream",
+    "dep:tokio",
+    "dep:tokio-stream",
+    "tonic/router",
+    "tonic/server",
+]
 
 [dependencies]
 async-stream = { version = "0.3.6", optional = true }
@@ -25,7 +38,7 @@ marlin-agent-stream = { workspace = true, optional = true }
 prost = { version = "=0.14.4", optional = true }
 tokio = { workspace = true, optional = true }
 tokio-stream = { workspace = true, optional = true }
-tonic = { version = "=0.14.9", features = ["transport", "tls-ring"], optional = true }
+tonic = { version = "=0.14.9", default-features = false, features = ["channel", "codegen", "tls-ring"], optional = true }
 tonic-prost = { version = "=0.14.9", optional = true }
 
 [build-dependencies]

@@ -13,8 +13,8 @@ mod session;
 #[cfg(feature = "grpc")]
 pub use session::SessionBinding;
 
-/// Versioned wire types and the generated client and service bindings.
-#[cfg(feature = "grpc")]
+/// Versioned wire types and client bindings. The `grpc` feature adds service bindings.
+#[cfg(feature = "client")]
 pub mod v1 {
     tonic::include_proto!("marlin.app.v1");
 

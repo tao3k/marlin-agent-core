@@ -53,6 +53,14 @@ jobs:
           key: app-server-grpc
       - name: Install Protobuf compiler
         run: sudo apt-get install -y protobuf-compiler
+      - name: Test the isolated Rust UI client
+        shell: bash
+        run: |
+          dependencies=$(cargo tree --locked -p marlin-agent-ui --no-default-features --features grpc -e normal,build --prefix none --format '{p}')
+          if grep -E '^(gerbil-scheme[^ ]*|marlin-agent-(protocol|runtime|sessions|storage|stream)) v' <<< "$dependencies"; then
+            exit 1
+          fi
+          cargo test --locked -p marlin-agent-ui --no-default-features --features grpc --test grpc_client
       - name: Test App Server over HTTP/2
         run: cargo test --locked -p marlin-agent-app-server --features grpc
 

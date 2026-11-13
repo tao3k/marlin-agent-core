@@ -4,8 +4,9 @@
 
 package MarlinAppServer {
     part <'MAR-APP-A01'> appServer {
-        doc /* Cargo package marlin-agent-app-server exposes the grpc feature.
-               Agent CORE exposes it through app-server. The host supplies the
+        doc /* marlin-agent-app-server exposes generated bindings through
+               client and the host service through grpc. Agent CORE enables
+               the service through app-server. The host supplies the
                listener, TLS, authorization, model route and shutdown.
                The application protocol projects Marlin Session operations. */
         part <'MAR-APP-A02'> turnService {
@@ -17,8 +18,7 @@ package MarlinAppServer {
         }
         part <'MAR-APP-A03'> modelGateway {
             doc /* Existing ModelStreamingGateway, with the Weaver adapter as
-                   a host-selectable implementation. Weaver is the proposed
-                   owner of any future Agent Client Protocol adapter. */
+                   a host-selectable implementation. */
         }
         part <'MAR-APP-A05'> sessionJournal {
             doc /* ConversationJournal owns admission and checkpoint commits.
@@ -35,12 +35,32 @@ package MarlinAppServer {
         dependency turnUsesGateway from turnService to modelGateway;
     }
     part <'MAR-APP-A04'> externalClient {
-        doc /* Desktop, mobile and other external application clients use
-               generated bindings from the Rust-owned Protobuf schema.
-               Clients own rendering and local view state. Browser access can use a deployment-owned
-               gRPC-Web gateway on a trusted origin. */
+        doc /* Web, desktop and mobile clients are maintained in separate
+               repositories and use the Rust-owned Protobuf schema.
+               Rust applications can use marlin-agent-ui/grpc with default
+               features disabled. Clients own
+               rendering and view state. Browser access can use a
+               deployment-owned gRPC-Web gateway on a trusted origin. */
+    }
+    part <'MAR-APP-A07'> weaverInterop {
+        doc /* tao3k/weaver owns A2A and client-facing Agent Client Protocol
+               adapters. The planned Marlin integration translates operations
+               supported by marlin.app.v1 to its gRPC service. Weaver owns
+               external protocol identity and lifecycle mapping. Marlin owns
+               Session admission, event order, cancellation and local receipts. */
     }
     connection <'MAR-APP-C01'> grpcChannel connect externalClient to appServer.turnService;
+    connection <'MAR-APP-C02'> weaverGrpcChannel connect weaverInterop to appServer.turnService;
+
+    requirement <'MAR-APP-R07'> clientBuildIsolation {
+        doc /* The Rust UI grpc feature with defaults off builds the
+               generated marlin.app.v1 client and descriptor independently of
+               Gerbil Scheme, the internal protocol, Session, Runtime and
+               storage. App Server grpc enables the service and its owners.
+               Both build paths use the same Protobuf schema. */
+    }
+    allocation clientBuildBoundary allocate clientBuildIsolation to externalClient;
+    allocation serviceBuildBoundary allocate clientBuildIsolation to appServer.turnService;
 
     action def <'MAR-APP-F01'> ApplicationMessageFlow {
         doc /* Representative HTTP/2 fixture sequence for a known empty Session.

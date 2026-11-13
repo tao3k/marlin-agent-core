@@ -10,16 +10,19 @@
 
 =marlin-agent-app-server= exposes Marlin's Session messages to desktop,
 mobile and other external applications. A native client can use its own UI
-framework, such as GPUI, and a generated gRPC client over HTTP/2. Enable =grpc= on the package or
-=app-server= on Agent CORE. The TUI calls Marlin in-process. The host
-assembles the listener, TLS, authorization and graceful shutdown. The
-package supplies the service, versioned schema and generated Rust bindings.
+framework, such as GPUI, and a generated gRPC client over HTTP/2. Rust
+applications can enable =grpc= with default features off on =marlin-agent-ui=
+and import the client from =marlin_agent_ui::grpc::v1=. Standalone hosts can enable
+=grpc= on this package or =app-server= on Agent CORE. The TUI calls Marlin
+in-process. The host assembles the listener, TLS, authorization and graceful
+shutdown. The package supplies the service, versioned schema and generated
+Rust bindings.
 
 | Boundary | Responsibility |
 |----------+----------------|
 | GPUI and other application clients | Submit Session messages, receive events, resume from an event cursor, and request cancellation. GPUI owns rendering and its local view state. |
 | Marlin's Rust gRPC service | Authenticate and translate the wire requests into existing Session and Runtime operations. The journal owns committed messages and event order. |
-| Weaver | Supply model routing through its existing integration. If editor interoperability is needed, Weaver is the proposed owner of an optional Agent Client Protocol (ACP) adapter. |
+| =tao3k/weaver= | Supply model routing through its existing integration and own the A2A and client-facing Agent Client Protocol (Client ACP) adapters. |
 
 Native desktop and mobile apps use the same unary and server-streaming RPCs
 as service clients. A browser deployment can expose
@@ -30,14 +33,40 @@ deployment and an HTTP/JSON endpoint are design scope here. The repository
 currently supplies the gRPC service and generated client.
 [[https://github.com/grpc/grpc-web][gRPC-Web transport]]
 
-Agent Client Protocol defines editor-facing JSON-RPC operations such as
-prompt, progress and permission requests. Weaver documents it as an optional
-integration. A future Weaver adapter would translate those calls into the
-owner's operations. For Marlin-backed Sessions, Marlin would continue to own
-admission, event order and receipts. The =marlin.app.v1= schema is the
-application message contract for GPUI and external clients.
+The planned Weaver integration maps A2A task identity and Client ACP session
+identity to Marlin Sessions and turns. Weaver translates supported operations
+through =marlin.app.v1= and owns the external protocol responses. Marlin
+projects its Session and Runtime into gRPC and owns admission, ordered replay,
+cancellation and local retirement receipts. External task and permission
+semantics remain with Weaver. The current App Server serves a host-bound
+Session. Dynamic Session creation and selection need a separate integration
+contract. Web, desktop and mobile clients live in separate application
+repositories and use the same schema.
+[[https://a2a-protocol.org/latest/topics/life-of-a-task/][A2A task lifecycle]]
 [[https://agentclientprotocol.com/protocol/v1/overview][ACP overview]]
 · [[https://github.com/tao3k/weaver/blob/343076629d3cb7b5c92f96eaaddb4b49402d88b1/docs/10-19-llm-gateway/17-policy-continuation/17.04-protocol-admission-and-identity.org][Weaver protocol inventory]]
+
+** Cargo feature boundaries
+
+The request path starts at the external client. The client sends
+=marlin.app.v1= messages to App Server over gRPC. App Server translates them
+into the Rust Session and Runtime operations. =marlin-agent-protocol= owns
+shared in-process types and ports that the server uses internally. The
+client contract comes from =app_server.proto=.
+
+| Consumer | Cargo feature boundary |
+|----------+------------------------|
+| Rust desktop or mobile application | Set ~default-features = false~ and ~features = ["grpc"]~ on =marlin-agent-ui=. UI uses App Server's =client= feature and exposes its generated Rust client and descriptor. |
+| Rust App Server host | Enable App Server's =grpc= or Agent CORE's =app-server=. The host build includes the service and the existing Session and Runtime adapters. |
+| Local TUI and embedded UI | The default =scheme-ui= feature enables Scheme projection. =linked-ui= selects the linked projection path. |
+| Web, Swift and Kotlin applications | Generate platform bindings from the same schema or descriptor in the application repository. |
+| Weaver | Consume App Server's =client= feature for its planned A2A and ACP adapters. |
+
+The client-only dependency graph contains the generated client, Protobuf
+types and HTTP/2 channel. CI checks that it excludes Gerbil Scheme and the
+Marlin Runtime, Session, storage and internal protocol crates. The Rust
+generator derives the descriptor and bindings from =app_server.proto= for
+both client and host builds.
 
 * Capabilities and stateless model stream
 
@@ -233,8 +262,8 @@ proposed readback contract below keeps these observations recoverable.
 
 The server owns the Session and Runtime state throughout this flow. GPUI owns
 the draft, projection and applied cursor. An external application can use the
-same RPCs over HTTP/2. A future Weaver ACP adapter has its own editor-facing
-contract and can consume the Session owner operations where needed.
+same RPCs over HTTP/2. The planned Weaver A2A and Client ACP adapters use
+these Session operations for Marlin-backed work.
 [[file:../../dev/sysml/app-server.sysml][GPUI message flow model]] ·
 [[file:tests/session.rs][HTTP/2 fixture]]
 
@@ -396,6 +425,9 @@ can use its platform's gRPC plugin with the descriptor as the input schema.
 For example, ~protoc --descriptor_set_in=marlin-app-v1.bin~ can supply the
 schema to an installed language generator for =marlin/app/v1/app_server.proto=.
 Build and test with =cargo test --locked -p marlin-agent-app-server --features grpc=.
+
+Run the Rust UI client check with
+~cargo test --locked -p marlin-agent-ui --no-default-features --features grpc --test grpc_client~.
 
 Run the persistent restart test alone with
 ~cargo test --locked -p marlin-agent-app-server --features grpc --test session turso_http2_recovers_lost_submission_after_process_restart -- --exact~.
