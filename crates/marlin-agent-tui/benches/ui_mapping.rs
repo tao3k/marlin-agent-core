@@ -270,14 +270,31 @@ fn mapping(c: &mut Criterion) {
             width: UiSize::Binding(UiComponentId::new("candidate-name-width").unwrap()),
         };
     }
-    for (benchmark, row, keyed) in [
-        ("ui/mapping/list-256-visible-10", template.clone(), false),
+    for (benchmark, row, keyed, inherited) in [
+        (
+            "ui/mapping/list-256-visible-10",
+            template.clone(),
+            false,
+            false,
+        ),
         (
             "ui/mapping/list-column-256-visible-10",
             column_template.clone(),
             false,
+            false,
         ),
-        ("ui/mapping/list-hit-256-visible-10", column_template, true),
+        (
+            "ui/mapping/list-hit-256-visible-10",
+            column_template.clone(),
+            true,
+            false,
+        ),
+        (
+            "ui/mapping/list-frame-bindings-256-visible-10",
+            column_template,
+            true,
+            true,
+        ),
     ] {
         let list_template = UiElement::List {
             id: UiComponentId::new("benchmark-list").unwrap(),
@@ -304,7 +321,15 @@ fn mapping(c: &mut Criterion) {
                                 selected: Some(255),
                                 extent: &|_| Extent::Cells(16),
                                 facts: &|_| false,
-                                bindings: &[],
+                                bindings: if inherited {
+                                    &[
+                                        ("model", "deepseek"),
+                                        ("session", "chat"),
+                                        ("status", "ready"),
+                                    ]
+                                } else {
+                                    &[]
+                                },
                             },
                             &mut list_state,
                             |index| {
