@@ -224,6 +224,8 @@ The real PTY first-M-x-arrow acceptance test also passed.
 
 The current linked Debug PTY interaction test passed with test-binary SHA-256
 =a4faf8acfc22f573a7115c8fa1f9ffe8a5b013ec2f35c8ab10ff74f3d18c11a8=.
+Its =CARGO_BIN_EXE_marlin-tui= application SHA-256 was
+=e54f272923faf033919b6c706213c1064c6e56c92f6d5da3985eb3d69e3983b5=.
 It reported 30-sample M-x open-plus-first-arrow p50/p95 of 20.258/34.093 ms,
 query-edit p50/p95 of 19.817/34.614 ms, and C-x b open-plus-first-Down
 p50/p95 of 19.568/89.950 ms. The latter tail is wider than the earlier
