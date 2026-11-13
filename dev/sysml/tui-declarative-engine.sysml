@@ -180,6 +180,8 @@ package MarlinDeclarativeUi {
                    Rust retains a bounded local diagnostic route when the VM
                    itself fails. The runtime event receiver remains owned by
                    the TUI and drains in bounded batches into Messages.
+                   Identical successive deliveries remain distinct entries
+                   until the bounded display history evicts them.
                    Event publication never appends to the conversation or
                    changes its model context. Scheme declares named Buffer
                    identities and titles; a runtime owner may atomically

@@ -192,14 +192,8 @@ impl App {
         let bounded_detail: String = event.detail.chars().take(16_384).collect();
         let detail = format!("{}: {}", summary, safe_text(&bounded_detail));
         let role = format!("{} · {}", event.source.label(), event.severity.label());
-        if !self
-            .messages
-            .last()
-            .is_some_and(|(previous_role, previous)| previous_role == &role && previous == &detail)
-        {
-            self.messages.push((role, detail));
-            self.messages.retain_latest(64);
-        }
+        self.messages.push((role, detail));
+        self.messages.retain_latest(64);
         self.minibuffer_notice = Some(summary);
     }
 

@@ -565,7 +565,7 @@ fn event_messages_use_a_switchable_buffer_without_polluting_conversation() {
     app.publish_message(event);
     app.publish_message(event);
     assert_eq!(app.transcript.len(), 1);
-    assert_eq!(app.messages.len(), 1);
+    assert_eq!(app.messages.len(), 2);
     assert_eq!(
         app.minibuffer_notice.as_deref(),
         Some("Profile selection failed")
@@ -574,6 +574,7 @@ fn event_messages_use_a_switchable_buffer_without_polluting_conversation() {
         app.messages[0].1,
         "Profile selection failed: native status 3"
     );
+    assert_eq!(app.messages[1], app.messages[0]);
     app.composer.insert_text("retained draft");
     app.toggle_command();
     app.composer.insert_text("switch-buffer");
