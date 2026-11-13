@@ -14,7 +14,10 @@ mod task;
 mod traits;
 
 pub use context::{RuntimeContext, RuntimeExecutionIdentity};
-pub use events::{EventStream, RuntimeEventSink, RuntimeEventStream};
+pub use events::{
+    EventStream, MAX_RUNTIME_EVENT_HEAP_BYTES, RuntimeEventSendError, RuntimeEventSink,
+    RuntimeEventStream,
+};
 pub use fanout_item::WorkingCopySubAgentFanoutItem;
 pub use handle::{RuntimeTaskScope, TokioAgentRuntime, TokioAgentRuntimeBuildRequest};
 pub use marlin_agent_environment::{

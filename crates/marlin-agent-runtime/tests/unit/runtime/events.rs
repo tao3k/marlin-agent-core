@@ -2,8 +2,44 @@
 //
 // SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
-use marlin_agent_runtime::{RuntimeEvent, RuntimeEventSink, TokioAgentRuntime};
+use marlin_agent_runtime::{
+    MAX_RUNTIME_EVENT_HEAP_BYTES, RuntimeEvent, RuntimeEventSendError, RuntimeEventSink,
+    TokioAgentRuntime,
+};
 use tokio_stream::StreamExt;
+
+#[tokio::test]
+async fn oversized_runtime_events_never_enter_primary_or_capture_queues() {
+    let (sink, mut primary) = RuntimeEventSink::channel(2);
+    let (sink, mut capture) = sink.with_capture(2);
+    let event = RuntimeEvent::new("runtime.test", "x".repeat(MAX_RUNTIME_EVENT_HEAP_BYTES));
+    let error = sink.emit(event).await.unwrap_err();
+    assert!(matches!(
+        error,
+        RuntimeEventSendError::Oversized {
+            event,
+            actual_bytes,
+            limit_bytes: MAX_RUNTIME_EVENT_HEAP_BYTES,
+        } if event.topic == "runtime.test" && actual_bytes > MAX_RUNTIME_EVENT_HEAP_BYTES
+    ));
+    assert!(primary.try_next().is_none());
+    assert!(capture.try_next().is_none());
+
+    let mut retained = String::with_capacity(MAX_RUNTIME_EVENT_HEAP_BYTES + 1);
+    retained.push('x');
+    assert!(matches!(
+        sink.emit(RuntimeEvent::new("runtime.test", retained)).await,
+        Err(RuntimeEventSendError::Oversized { .. })
+    ));
+    assert!(primary.try_next().is_none());
+    assert!(capture.try_next().is_none());
+
+    sink.emit(RuntimeEvent::new("runtime.test", "small"))
+        .await
+        .unwrap();
+    assert_eq!(primary.recv().await.unwrap().message, "small");
+    assert_eq!(capture.recv().await.unwrap().message, "small");
+}
 
 #[tokio::test]
 async fn runtime_event_capture_tees_child_events_to_parent_and_capture_streams() {

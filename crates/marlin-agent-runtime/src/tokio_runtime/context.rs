@@ -4,13 +4,11 @@
 
 //! Runtime context and execution identity ownership.
 
-use tokio::sync::mpsc;
-
 use super::{
     AgentSessionContext, CancellationToken, ContextNamespace, ContextVisibility, GraphId, RunId,
-    RuntimeEnvironment, RuntimeEvent, RuntimeEventSink, SessionId, SessionIsolationReceipt,
-    SessionKind, SubAgentContextPolicy, SubAgentContextVisibility, WorkingCopyActiveBinding,
-    WorkingCopyIsolationReceipt,
+    RuntimeEnvironment, RuntimeEvent, RuntimeEventSendError, RuntimeEventSink, SessionId,
+    SessionIsolationReceipt, SessionKind, SubAgentContextPolicy, SubAgentContextVisibility,
+    WorkingCopyActiveBinding, WorkingCopyIsolationReceipt,
 };
 
 /// Per-call runtime context passed into provider, tool, and sub-agent work.
@@ -160,10 +158,7 @@ impl RuntimeContext {
         self.cancellation.is_cancelled()
     }
 
-    pub async fn emit(
-        &self,
-        event: RuntimeEvent,
-    ) -> Result<(), mpsc::error::SendError<RuntimeEvent>> {
+    pub async fn emit(&self, event: RuntimeEvent) -> Result<(), RuntimeEventSendError> {
         self.events.emit(event).await
     }
 }

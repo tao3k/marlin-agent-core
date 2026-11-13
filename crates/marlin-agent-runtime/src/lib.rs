@@ -62,16 +62,17 @@ pub use resilience::{
     RuntimeEdgeLayer, RuntimeEdgePolicy, RuntimeEdgePolicyError, RuntimeEdgePolicyReceipt,
     RuntimeEdgeService,
 };
+pub use tokio_runtime::MAX_RUNTIME_EVENT_HEAP_BYTES;
 pub use tokio_runtime::RuntimeProcessBudget;
 pub use tokio_runtime::{
     AgentSessionContext, CancellationToken, ContextExpansionPolicy, ContextNamespace,
     ContextVisibility, EventStream, HookRuntime, ProviderRuntime, RuntimeAdmissionError,
     RuntimeBlockingBridgePolicy, RuntimeBlockingBridgeStrategy, RuntimeContext, RuntimeEnvironment,
-    RuntimeEvent, RuntimeEventSink, RuntimeEventStream, RuntimeExecutionIdentity,
-    RuntimeFanoutJoinPolicy, RuntimeFanoutOutput, RuntimeFanoutReceipt, RuntimeFanoutResult,
-    RuntimeFanoutTaskReceipt, RuntimeFanoutTaskStatus, RuntimeFuture, RuntimeOperationId,
-    RuntimeResourceGeneration, RuntimeResourceId, RuntimeTask, RuntimeTaskJoinError,
-    RuntimeTaskOutcome, RuntimeTaskScope, RuntimeTaskShutdownReceipt,
+    RuntimeEvent, RuntimeEventSendError, RuntimeEventSink, RuntimeEventStream,
+    RuntimeExecutionIdentity, RuntimeFanoutJoinPolicy, RuntimeFanoutOutput, RuntimeFanoutReceipt,
+    RuntimeFanoutResult, RuntimeFanoutTaskReceipt, RuntimeFanoutTaskStatus, RuntimeFuture,
+    RuntimeOperationId, RuntimeResourceGeneration, RuntimeResourceId, RuntimeTask,
+    RuntimeTaskJoinError, RuntimeTaskOutcome, RuntimeTaskScope, RuntimeTaskShutdownReceipt,
     RuntimeTaskShutdownReceiptInput, RuntimeTaskShutdownRequest, RuntimeTaskShutdownStatus,
     RuntimeTaskTracker, RuntimeTaskTrackerPolicy, RuntimeTaskTrackerShutdownState, SessionId,
     SessionIdError, SessionIdentity, SessionIsolationPolicy, SessionIsolationReceipt, SessionKind,

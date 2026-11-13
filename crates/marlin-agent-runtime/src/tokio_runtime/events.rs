@@ -5,6 +5,7 @@
 //! Runtime event sink and stream ownership.
 
 use std::{
+    fmt,
     pin::Pin,
     sync::Arc,
     task::{Context, Poll},
@@ -13,6 +14,38 @@ use std::{
 use tokio::sync::mpsc;
 
 use super::RuntimeEvent;
+
+/// Maximum heap retained by one queued runtime observation.
+pub const MAX_RUNTIME_EVENT_HEAP_BYTES: usize = 64 * 1024;
+
+/// The event remains owned by the caller when admission fails.
+#[derive(Debug)]
+pub enum RuntimeEventSendError {
+    Closed(RuntimeEvent),
+    Oversized {
+        event: RuntimeEvent,
+        actual_bytes: usize,
+        limit_bytes: usize,
+    },
+}
+
+impl fmt::Display for RuntimeEventSendError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Closed(_) => formatter.write_str("runtime event stream closed"),
+            Self::Oversized {
+                actual_bytes,
+                limit_bytes,
+                ..
+            } => write!(
+                formatter,
+                "runtime event retains {actual_bytes} bytes; limit is {limit_bytes} bytes"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for RuntimeEventSendError {}
 
 /// Cloneable Tokio mpsc sender for runtime observations and receipts.
 #[derive(Clone, Debug)]
@@ -43,15 +76,26 @@ impl RuntimeEventSink {
         )
     }
 
-    pub async fn emit(
-        &self,
-        event: RuntimeEvent,
-    ) -> Result<(), mpsc::error::SendError<RuntimeEvent>> {
+    pub async fn emit(&self, event: RuntimeEvent) -> Result<(), RuntimeEventSendError> {
+        let actual_bytes = event
+            .topic
+            .capacity()
+            .saturating_add(event.message.capacity());
+        if actual_bytes > MAX_RUNTIME_EVENT_HEAP_BYTES {
+            return Err(RuntimeEventSendError::Oversized {
+                event,
+                actual_bytes,
+                limit_bytes: MAX_RUNTIME_EVENT_HEAP_BYTES,
+            });
+        }
         let Some((primary, captures)) = self.senders.split_first() else {
-            return Err(mpsc::error::SendError(event));
+            return Err(RuntimeEventSendError::Closed(event));
         };
         if captures.is_empty() {
-            return primary.send(event).await;
+            return primary
+                .send(event)
+                .await
+                .map_err(|error| RuntimeEventSendError::Closed(error.0));
         }
 
         // Reserve every live destination before publishing to any of them.
@@ -78,7 +122,7 @@ impl RuntimeEventSink {
             permit.send(event.clone());
         }
         if primary_closed {
-            Err(mpsc::error::SendError(event))
+            Err(RuntimeEventSendError::Closed(event))
         } else {
             Ok(())
         }
