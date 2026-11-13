@@ -10,6 +10,7 @@ use super::{
         transcript_viewport, transcript_viewport_reference,
     },
 };
+
 use proptest::{collection::vec, prelude::ProptestConfig, prop_assert_eq, proptest};
 use ratatui::{
     buffer::Buffer,
@@ -18,6 +19,16 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Paragraph, Widget, Wrap},
 };
+
+#[test]
+fn tool_argument_view_sanitizes_controls_left_raw_by_json() {
+    let arguments = serde_json::json!({ "command": "a\u{85}b" });
+    let json = serde_json::to_string_pretty(&arguments).unwrap();
+    assert!(json.contains('\u{85}'));
+    let details = safe_text(&json);
+    assert!(!details.contains('\u{85}'));
+    assert!(details.contains("a�b"));
+}
 
 trait TestRender {
     fn render(&self, area: Rect, buffer: &mut Buffer);

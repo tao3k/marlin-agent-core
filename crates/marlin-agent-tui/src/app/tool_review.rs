@@ -51,7 +51,7 @@ pub(super) fn open_tool_review(app: &mut App, ui: &UiHost<'_>) -> bool {
         details.push_str("]\n");
         let arguments = serde_json::to_string_pretty(&call.arguments)
             .expect("validated JSON tool arguments serialize");
-        details.push_str(&super::presentation::safe_text(&arguments));
+        super::presentation::append_safe_text(&mut details, &arguments);
         details.push_str("\n\n");
     }
     app.tool_review_prompt = Some(super::state::ToolReviewPrompt {

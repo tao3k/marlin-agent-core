@@ -257,17 +257,20 @@ impl App {
 
 // Never pass untrusted terminal escape sequences to the renderer.
 pub(crate) fn safe_text(text: &str) -> String {
-    text.chars()
-        .map(|c| {
-            if c == '\n' {
-                c
-            } else if c == '\t' {
-                ' '
-            } else if c.is_control() {
-                '�'
-            } else {
-                c
-            }
-        })
-        .collect()
+    let mut safe = String::with_capacity(text.len());
+    append_safe_text(&mut safe, text);
+    safe
+}
+
+/// Sanitize directly into an owned view to avoid a second full-size copy.
+pub(crate) fn append_safe_text(output: &mut String, text: &str) {
+    let mut start = 0;
+    for (index, character) in text.char_indices() {
+        if character == '\t' || (character != '\n' && character.is_control()) {
+            output.push_str(&text[start..index]);
+            output.push(if character == '\t' { ' ' } else { '�' });
+            start = index + character.len_utf8();
+        }
+    }
+    output.push_str(&text[start..]);
 }
