@@ -195,3 +195,12 @@ another staging operation rewrote =program.json= at 04:44:55, after the binary
 was written at 04:44:07. The maintained test correctly rejected this stale
 pair before launch. This build supplies no new =release-size= workbench or
 performance result; the previous native projection failure remains unresolved.
+
+After that gate rejection, a separate bounded =script= PTY diagnostic launched
+this exact binary with the example configuration and an absent Gerbil install.
+Its trace reached UI session projection at 349.221 ms, view admission,
+tool-catalog binding, and terminal alternate-screen entry without the earlier
+collection error. The diagnostic had empty stdin and was stopped after 12 s;
+it captured no complete workbench frame. This narrows the earlier failure to
+an artifact/staging-specific event but does not establish its cause or satisfy
+the maintained source-matched startup gate.
