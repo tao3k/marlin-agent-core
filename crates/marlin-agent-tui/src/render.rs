@@ -197,41 +197,15 @@ pub(crate) fn frame_regions(
     ui: &UiWorkbench,
     area: Rect,
 ) -> Vec<super::ui_elements::HitRegion> {
-    use super::ui_elements::{Extent, RegionExtents, layout_regions_with_facts};
+    use super::ui_elements::{RegionExtents, layout_regions_with_facts};
     let preview = app.preview_buffer();
     let buffer = preview.as_ref().unwrap_or(&app.buffer_view);
     let facts = |id: &marlin_agent_ui::UiComponentId| {
         main_view_fact(app, ui, buffer, preview.is_some(), id.as_str())
     };
-    let editor_metrics = editor_measurements(app, &ui.layout, area.width, area.height, &facts);
-    let review_count = app.tool_review_prompt.as_ref().map_or(0, |prompt| {
-        u16::try_from(prompt.menu.choices.len()).unwrap_or(u16::MAX)
-    });
-    let extension_count = u16::try_from(
-        ui.regions
-            .iter()
-            .filter(|region| {
-                matches!(
-                    region,
-                    UiRegion::Extension {
-                        focusable: true,
-                        ..
-                    }
-                )
-            })
-            .count(),
-    )
-    .unwrap_or(u16::MAX);
-    let metrics = |id: &marlin_agent_ui::UiComponentId| match id.as_str() {
-        "review-count" => Extent::Cells(review_count),
-        "command-count" => {
-            Extent::Cells(u16::try_from(app.command_candidates.len()).unwrap_or(u16::MAX))
-        }
-        "command-limit" => Extent::Cells(ui.layout.max_command_rows),
-        "extension-count" => Extent::Cells(extension_count),
-        _ => editor_metrics.extent(id),
-    };
-    let extents = RegionExtents::new(&ui.layout.frame_tree, &metrics, &facts);
+    let metrics = FrameMeasurements::new(app, ui, area, &facts);
+    let raw_extent = |id: &marlin_agent_ui::UiComponentId| metrics.extent(id);
+    let extents = RegionExtents::new(&ui.layout.frame_tree, &raw_extent, &facts);
     let mut result = Vec::with_capacity(7);
     layout_regions_with_facts(
         &ui.layout.frame_tree,
@@ -241,6 +215,60 @@ pub(crate) fn frame_regions(
         &facts,
     );
     result
+}
+
+struct FrameMeasurements<'a> {
+    editor: EditorMeasurements<'a>,
+    review_count: u16,
+    command_count: u16,
+    command_limit: u16,
+    extension_count: u16,
+}
+
+impl<'a> FrameMeasurements<'a> {
+    fn new(
+        app: &'a App,
+        ui: &'a UiWorkbench,
+        area: Rect,
+        facts: &dyn Fn(&marlin_agent_ui::UiComponentId) -> bool,
+    ) -> Self {
+        let review_count = app.tool_review_prompt.as_ref().map_or(0, |prompt| {
+            u16::try_from(prompt.menu.choices.len()).unwrap_or(u16::MAX)
+        });
+        let extension_count = u16::try_from(
+            ui.regions
+                .iter()
+                .filter(|region| {
+                    matches!(
+                        region,
+                        UiRegion::Extension {
+                            focusable: true,
+                            ..
+                        }
+                    )
+                })
+                .count(),
+        )
+        .unwrap_or(u16::MAX);
+        Self {
+            editor: editor_measurements(app, &ui.layout, area.width, area.height, facts),
+            review_count,
+            command_count: u16::try_from(app.command_candidates.len()).unwrap_or(u16::MAX),
+            command_limit: ui.layout.max_command_rows,
+            extension_count,
+        }
+    }
+
+    fn extent(&self, id: &marlin_agent_ui::UiComponentId) -> super::ui_elements::Extent {
+        use super::ui_elements::Extent;
+        match id.as_str() {
+            "review-count" => Extent::Cells(self.review_count),
+            "command-count" => Extent::Cells(self.command_count),
+            "command-limit" => Extent::Cells(self.command_limit),
+            "extension-count" => Extent::Cells(self.extension_count),
+            _ => self.editor.extent(id),
+        }
+    }
 }
 
 pub(crate) fn mouse_over_minibuffer(
@@ -266,6 +294,8 @@ pub(crate) fn draw(
     cache: &mut TranscriptViewportCache,
     anchor: &mut ScrollAnchor,
 ) -> usize {
+    use super::ui_elements::{Extent, RegionExtents, UiRenderInputs};
+
     app.list_state.borrow_mut().begin_frame();
     let area = frame.area();
     frame.buffer_mut().set_style(
@@ -274,8 +304,6 @@ pub(crate) fn draw(
             .bg(rgb(ui.theme.canvas))
             .fg(rgb(ui.theme.ink)),
     );
-    // The transcript can end in a separator row, so reserve two rows when
-    // possible. Bound measurement for large drafts.
     let command_active = app.command_draft.is_some() || app.tool_review_prompt.is_some();
     let frame_spec = if command_active {
         &ui.layout.command_frame
@@ -296,7 +324,7 @@ pub(crate) fn draw(
                 label,
                 focusable: true,
                 ..
-            } => Some((id, label)),
+            } => Some((id, label.as_str())),
             _ => None,
         })
         .collect();
@@ -319,14 +347,8 @@ pub(crate) fn draw(
             .find(|region| region.id.as_str() == name)
             .map_or(Rect::default(), |region| region.area)
     };
-    let parts = [
-        part("transcript"),
-        part("extensions"),
-        part("modeline"),
-        part("editor"),
-        part("candidates"),
-        part("minibuffer"),
-    ];
+    let editor_area = part("editor");
+    let minibuffer_area = part("minibuffer");
     let preview = app.preview_buffer();
     let buffer = preview.as_ref().unwrap_or(&app.buffer_view);
     let focused_content = if preview.is_none()
@@ -371,40 +393,6 @@ pub(crate) fn draw(
     if transcript_policy.role_bold {
         role_style = role_style.add_modifier(Modifier::BOLD);
     }
-    let main_facts = |id: &marlin_agent_ui::UiComponentId| {
-        main_view_fact(app, ui, buffer, preview.is_some(), id.as_str())
-    };
-    let mut slots = main_view::MainSlots {
-        app,
-        cache,
-        anchor,
-        role_style,
-        static_content,
-        focused_content,
-        effective_scroll: app.scroll_up,
-    };
-    if let Some(main_view) = ui.layout.frame_tree.region_child("transcript") {
-        let panel_title = static_content
-            .or(focused_content)
-            .map_or_else(String::new, |(title, _)| header_value(title));
-        let main_bindings = [("panel-title", panel_title.as_str())];
-        let inputs = super::ui_elements::UiRenderInputs {
-            theme: &ui.theme,
-            offset: &|_| 0,
-            facts: &main_facts,
-            extent: &|_| super::ui_elements::Extent::Cells(0),
-            bindings: &main_bindings,
-        };
-        super::ui_elements::render_with_slots(
-            frame,
-            parts[0],
-            main_view,
-            &mut Vec::new(),
-            &inputs,
-            &mut slots,
-        );
-    }
-    let effective_scroll = slots.effective_scroll;
     let selected = app
         .selected_command()
         .filter(|name| suggestions.contains(name));
@@ -433,248 +421,147 @@ pub(crate) fn draw(
         .as_ref()
         .map_or(suggestions.len(), |prompt| prompt.menu.choices.len())
         .to_string();
-    if let Some(editor) = ui.layout.frame_tree.region_child("editor") {
-        let facts = |id: &marlin_agent_ui::UiComponentId| {
-            main_view_fact(app, ui, buffer, preview.is_some(), id.as_str())
-        };
-        let bindings = [
-            ("selected-count", selected_count.as_str()),
-            ("candidate-count", candidate_count.as_str()),
-            ("prompt", command_prompt.trim_start()),
-            ("compact-prompt", command_prompt),
-            ("title", title),
-        ];
-        let inputs = super::ui_elements::UiRenderInputs {
-            theme: &ui.theme,
-            offset: &|_| 0,
-            facts: &facts,
-            extent: &|_| super::ui_elements::Extent::Cells(0),
-            bindings: &bindings,
-        };
-        let mut editor_slots = main_view::EditorSlots {
-            composer,
-            show_cursor: command_active
-                || (app.history_search.is_none() && ui.focus.as_str() == "composer"),
-            read_only: app.tool_review_prompt.is_some(),
-        };
-        super::ui_elements::render_with_slots(
-            frame,
-            parts[3],
-            editor,
-            &mut Vec::new(),
-            &inputs,
-            &mut editor_slots,
-        );
-    }
     let menu_prefix = app.command_menu.as_ref().map(|menu| menu.prefix.as_str());
     let name_width = suggestions
         .iter()
         .map(|name| UnicodeWidthStr::width(menu_display_name(name.as_str(), menu_prefix)))
         .max()
         .unwrap_or(0);
-    if let Some(template) = ui.layout.frame_tree.region_child("candidates") {
-        let count = app
-            .tool_review_prompt
-            .as_ref()
-            .map_or(suggestions.len(), |prompt| prompt.menu.choices.len());
-        super::ui_elements::render_list(
-            frame,
-            parts[4],
-            template,
-            &ui.theme,
-            super::ui_elements::UiListData {
-                count,
-                selected: selected_index,
-                extent: &|id| {
-                    if id.as_str() == "candidate-name-width" {
-                        super::ui_elements::Extent::Cells(
-                            u16::try_from(name_width).unwrap_or(u16::MAX),
-                        )
-                    } else {
-                        super::ui_elements::Extent::Cells(0)
-                    }
-                },
-            },
-            &mut app.list_state.borrow_mut(),
-            |index| {
-                let (key, bindings) = if let Some(prompt) = &app.tool_review_prompt {
-                    let choice = prompt.menu.choices.get(index)?;
-                    (
-                        None,
-                        vec![
-                            ("name", choice.label.as_str().into()),
-                            ("description", choice.description.as_str().into()),
-                        ],
-                    )
-                } else {
-                    let name = suggestions.get(index)?;
-                    let command = ui.commands().iter().find(|command| &command.name == name)?;
-                    (
-                        Some(marlin_agent_ui::UiComponentId::new(name.as_str()).ok()?),
-                        vec![
-                            (
-                                "name",
-                                menu_display_name(command.name.as_str(), menu_prefix).into(),
-                            ),
-                            ("description", header_value(&command.description).into()),
-                        ],
-                    )
-                };
-                Some(super::ui_elements::UiListRow { key, bindings })
-            },
-        );
-    }
-    if let Some(template) = ui.layout.frame_tree.region_child("extensions") {
-        let focused = extensions.iter().position(|(id, _)| *id == &ui.focus);
-        super::ui_elements::render_list(
-            frame,
-            parts[1],
-            template,
-            &ui.theme,
-            super::ui_elements::UiListData {
-                count: extensions.len(),
-                selected: focused,
-                extent: &|_| super::ui_elements::Extent::Cells(0),
-            },
-            &mut app.list_state.borrow_mut(),
-            |index| {
-                Some(super::ui_elements::UiListRow {
-                    key: None,
-                    bindings: vec![("label", header_value(extensions.get(index)?.1).into())],
-                })
-            },
-        );
-    }
-    if parts[2].height > 0
-        && let Some(bar) = ui.layout.frame_tree.region_child("modeline")
-    {
-        let activity = match app.modeline_activity() {
-            ModelineActivity::Idle => match app.gateway_observation {
-                GatewayObservation::Unchecked => "",
-                GatewayObservation::Online => "activity-online",
-                GatewayObservation::Offline => "activity-offline",
-                GatewayObservation::Unknown => "activity-unknown",
-            },
-            ModelineActivity::Runtime => "activity-runtime",
-            ModelineActivity::Workspace => "activity-workspace",
-            ModelineActivity::Recovery => "activity-recovery",
-            ModelineActivity::ContinuationUnavailable => "activity-continuation",
-            ModelineActivity::History => "activity-history",
-            ModelineActivity::Working => "activity-working",
-            ModelineActivity::ReadingWorkspace => "activity-reading",
-        };
-        let model = header_value(&ui.model_label);
-        let session = header_value(&ui.session_label);
-        let turns = (app.history.len() / 2).to_string();
-        let bindings = [
-            ("model", model.as_str()),
-            ("session", session.as_str()),
-            ("turns", turns.as_str()),
-        ];
-        let inputs = super::ui_elements::UiRenderInputs {
-            theme: &ui.theme,
-            offset: &|_| 0,
-            facts: &|id| {
-                id.as_str() == activity || id.as_str() == "has-turns" && app.history.len() >= 2
-            },
-            extent: &|_| super::ui_elements::Extent::Cells(0),
-            bindings: &bindings,
-        };
-        super::ui_elements::render_with_facts(frame, parts[2], bar, &mut Vec::new(), &inputs);
-    }
-    if parts[5].height == 0 {
-        return effective_scroll;
-    }
+    let activity = match app.modeline_activity() {
+        ModelineActivity::Idle => match app.gateway_observation {
+            GatewayObservation::Unchecked => "",
+            GatewayObservation::Online => "activity-online",
+            GatewayObservation::Offline => "activity-offline",
+            GatewayObservation::Unknown => "activity-unknown",
+        },
+        ModelineActivity::Runtime => "activity-runtime",
+        ModelineActivity::Workspace => "activity-workspace",
+        ModelineActivity::Recovery => "activity-recovery",
+        ModelineActivity::ContinuationUnavailable => "activity-continuation",
+        ModelineActivity::History => "activity-history",
+        ModelineActivity::Working => "activity-working",
+        ModelineActivity::ReadingWorkspace => "activity-reading",
+    };
+    let model = header_value(&ui.model_label);
+    let session = header_value(&ui.session_label);
+    let turns = (app.history.len() / 2).to_string();
     let static_name = static_content.map(|(label, _)| header_value(label));
-    if app.history_search.is_none()
-        && let Some(hint) = &app.transient_hint
-    {
-        super::ui_elements::render_element(frame, parts[5], hint, &ui.theme);
-        return effective_scroll;
-    }
+    let panel_title = static_content
+        .or(focused_content)
+        .map_or_else(String::new, |(title, _)| header_value(title));
     let mut extras = status_items
         .into_iter()
         .flatten()
-        .filter(|_| parts[3].height == 0)
+        .filter(|_| editor_area.height == 0)
         .filter(|item| !item.id.as_str().starts_with("modeline/"))
         .take(2)
         .map(|item| display_value(&item.label, 16));
     let extra_one = extras.next();
     let extra_two = extras.next();
-    if let Some(view) = ui.layout.frame_tree.region_child("minibuffer") {
-        let facts = |fact: &marlin_agent_ui::UiComponentId| match fact.as_str() {
-            "searching" => app
-                .history_search
-                .as_ref()
-                .is_some_and(|search| search.is_searching()),
-            "search-match" => app
-                .history_search
-                .as_ref()
-                .is_some_and(|search| search.preview().is_some()),
-            "search-no-match" => app.history_search.is_some(),
-            "notice" => app.minibuffer_notice.is_some(),
-            "messages" => *buffer == BufferView::Messages,
-            "static-buffer" => static_name.is_some(),
-            "editor-collapsed" => parts[3].height == 0,
-            "extra-one" => extra_one.is_some(),
-            "extra-two" => extra_two.is_some(),
-            "quit-armed" => app.quit_armed,
-            "draft-limit" => app.composer.limit_reached(),
-            "runtime" => preview.is_none() && app.runtime_receipt_open,
-            "workspace" => preview.is_none() && app.workspace.view().is_some(),
-            "commands-focus" => ui.focus.as_str() == "commands",
-            "transcript-focus" => ui.focus.as_str() == "transcript",
-            "extension-focus" => ui.focus.as_str() != "composer",
-            "normal-mode" => !command_active && app.key_mode == marlin_agent_ui::UiKeyMode::Normal,
-            _ => false,
-        };
-        let bindings = [
-            ("extra-one", extra_one.as_deref().unwrap_or("")),
-            ("extra-two", extra_two.as_deref().unwrap_or("")),
-            (
-                "notice",
-                app.minibuffer_notice.as_deref().unwrap_or("").trim_start(),
-            ),
-            ("static-name", static_name.as_deref().unwrap_or("")),
-        ];
-        let extent = |id: &marlin_agent_ui::UiComponentId| {
-            let value = match id.as_str() {
-                "extra-one-width" => extra_one.as_deref(),
-                "extra-two-width" => extra_two.as_deref(),
-                _ => None,
+    let facts = |id: &marlin_agent_ui::UiComponentId| match id.as_str() {
+        "searching" => app
+            .history_search
+            .as_ref()
+            .is_some_and(|search| search.is_searching()),
+        "search-match" => app
+            .history_search
+            .as_ref()
+            .is_some_and(|search| search.preview().is_some()),
+        "search-no-match" => app.history_search.is_some(),
+        "notice" => app.minibuffer_notice.is_some(),
+        "static-buffer" => static_name.is_some(),
+        "editor-collapsed" => editor_area.height == 0,
+        "extra-one" => extra_one.is_some(),
+        "extra-two" => extra_two.is_some(),
+        "quit-armed" => app.quit_armed,
+        "draft-limit" => app.composer.limit_reached(),
+        "commands-focus" => ui.focus.as_str() == "commands",
+        "transcript-focus" => ui.focus.as_str() == "transcript",
+        "extension-focus" => ui.focus.as_str() != "composer",
+        "normal-mode" => !command_active && app.key_mode == marlin_agent_ui::UiKeyMode::Normal,
+        "has-turns" => app.history.len() >= 2,
+        name if name == activity && !activity.is_empty() => true,
+        name => main_view_fact(app, ui, buffer, preview.is_some(), name),
+    };
+    let measurements = FrameMeasurements::new(app, ui, area, &facts);
+    let raw_extent = |id: &marlin_agent_ui::UiComponentId| match id.as_str() {
+        "extra-one-width" | "extra-two-width" => {
+            let value = if id.as_str() == "extra-one-width" {
+                extra_one.as_deref()
+            } else {
+                extra_two.as_deref()
             };
-            super::ui_elements::Extent::Cells(value.map_or(0, |text| {
+            Extent::Cells(value.map_or(0, |text| {
                 u16::try_from(UnicodeWidthStr::width(text)).unwrap_or(u16::MAX)
             }))
-        };
-        let inputs = super::ui_elements::UiRenderInputs {
-            theme: &ui.theme,
-            offset: &|_| 0,
-            facts: &facts,
-            extent: &extent,
-            bindings: &bindings,
-        };
-        if let Some(search) = &app.history_search {
-            if let Some(cursor) = super::ui_elements::render_prompt(
-                frame,
-                parts[5],
-                view,
-                &inputs,
-                "query",
-                search.query(),
-            ) {
-                frame.set_cursor_position(cursor);
-            }
-            return effective_scroll;
         }
-        super::ui_elements::render_with_facts(frame, parts[5], view, &mut Vec::new(), &inputs);
-    }
-    if parts[3].height == 0
+        "candidate-name-width" => Extent::Cells(u16::try_from(name_width).unwrap_or(u16::MAX)),
+        _ => measurements.extent(id),
+    };
+    let extents = RegionExtents::new(&ui.layout.frame_tree, &raw_extent, &facts);
+    let bindings = [
+        ("panel-title", panel_title.as_str()),
+        ("selected-count", selected_count.as_str()),
+        ("candidate-count", candidate_count.as_str()),
+        ("prompt", command_prompt.trim_start()),
+        ("compact-prompt", command_prompt),
+        ("title", title),
+        ("model", model.as_str()),
+        ("session", session.as_str()),
+        ("turns", turns.as_str()),
+        ("extra-one", extra_one.as_deref().unwrap_or("")),
+        ("extra-two", extra_two.as_deref().unwrap_or("")),
+        (
+            "notice",
+            app.minibuffer_notice.as_deref().unwrap_or("").trim_start(),
+        ),
+        ("static-name", static_name.as_deref().unwrap_or("")),
+    ];
+    let inputs = UiRenderInputs {
+        theme: &ui.theme,
+        offset: &|_| 0,
+        facts: &facts,
+        extent: &|id| extents.extent(id),
+        bindings: &bindings,
+    };
+    let mut slots = main_view::FrameSlots {
+        main: main_view::MainSlots {
+            app,
+            cache,
+            anchor,
+            role_style,
+            static_content,
+            focused_content,
+            effective_scroll: app.scroll_up,
+        },
+        editor: main_view::EditorSlots {
+            composer,
+            show_cursor: command_active
+                || (app.history_search.is_none() && ui.focus.as_str() == "composer"),
+            read_only: app.tool_review_prompt.is_some(),
+        },
+        app,
+        ui,
+        suggestions,
+        extensions: &extensions,
+        selected: selected_index,
+        menu_prefix,
+    };
+    super::ui_elements::render_with_slots(
+        frame,
+        area,
+        &ui.layout.frame_tree,
+        &mut Vec::new(),
+        &inputs,
+        &mut slots,
+    );
+    if editor_area.height == 0
         && ui.focus.as_str() == "composer"
-        && parts[5].width > 2
+        && minibuffer_area.width > 2
         && app.transient_hint.is_none()
+        && app.history_search.is_none()
     {
-        frame.set_cursor_position((parts[5].x + 2, parts[5].y));
+        frame.set_cursor_position((minibuffer_area.x + 2, minibuffer_area.y));
     }
-    effective_scroll
+    slots.main.effective_scroll
 }

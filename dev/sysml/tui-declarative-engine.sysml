@@ -40,8 +40,11 @@ package MarlinDeclarativeUi {
                    same facts select painted and interactive branches. Scheme
                    declares Mini Buffer status and search prompt precedence and
                    text; the adapter maps the editable field and cursor by cell
-                   width. The terminal host still binds transcript, editor and
-                   list data through dedicated adapters; transcript scrolling
+                   width. The terminal maps the whole selected frame tree in
+                   one rendering traversal, so ordinary additional regions do
+                   not require a Rust paint branch. The terminal host still
+                   binds transcript, editor and list data through dedicated
+                   adapters; transcript scrolling
                    retains its native deep-scroll cache. A list publishes hit
                    identities only for rows actually painted in the current
                    frame; the host validates the identity against current
@@ -336,9 +339,10 @@ package MarlinDeclarativeUi {
         doc /* Only a handler-backed Scheme declaration may be advertised to
                the provider. A committed request binds its exact journal key
                to Scheme's finite Mini Buffer choices. The full arguments
-               remain inspectable in a temporary view; selection commits one
-               review and one effect claim on a managed Runtime task. A
-               cancelled or restarted claimant cannot repeat the effect.
+               remain inspectable in a temporary view. Pointer selection of a
+               painted choice only changes the preview; explicit confirmation
+               commits one review and one effect claim on a managed Runtime
+               task. A cancelled or restarted claimant cannot repeat the effect.
                Provider continuation requires its own durable transition. */
     }
     requirement <'MAR-UI-R05'> reproduciblePerformance {

@@ -292,6 +292,28 @@ pub trait UiSlotRenderer {
         _inputs: &UiRenderInputs<'_>,
     ) {
     }
+
+    /// Bind dynamic list data to a declarative list node.
+    fn list(
+        &mut self,
+        _frame: &mut ratatui::Frame<'_>,
+        _area: Rect,
+        _element: &UiElement,
+        _inputs: &UiRenderInputs<'_>,
+    ) {
+    }
+
+    /// Optionally replace a region with a dynamically supplied view.
+    fn region(
+        &mut self,
+        _frame: &mut ratatui::Frame<'_>,
+        _area: Rect,
+        _id: &UiComponentId,
+        _child: &UiElement,
+        _inputs: &UiRenderInputs<'_>,
+    ) -> bool {
+        false
+    }
 }
 
 struct EmptySlots;
@@ -355,9 +377,10 @@ fn render_inner<'tree>(
         return;
     }
     match element {
-        UiElement::Sized { child, .. } | UiElement::List { child, .. } => {
+        UiElement::Sized { child, .. } => {
             render_inner(frame, area, child, regions, inputs, skip, slots)
         }
+        UiElement::List { .. } => slots.renderer.list(frame, area, element, inputs),
         UiElement::Panel {
             border_tone,
             field_template,
@@ -427,6 +450,9 @@ fn render_inner<'tree>(
             child,
         } => {
             regions.push(HitRegion::new(id, area, scroll_target.as_ref()));
+            if slots.renderer.region(frame, area, id, child, inputs) {
+                return;
+            }
             let scroll = if scroll_target.is_some() {
                 (inputs.offset)(id)
             } else {

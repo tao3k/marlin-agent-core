@@ -4,8 +4,166 @@
 //! Bind host-owned content and cached transcripts to declarative UI slots.
 
 use super::{App, Composer, MainSource, ScrollAnchor, TranscriptViewportCache, ui_elements};
-use marlin_agent_ui::{UiComponentId, UiContent, UiElement};
+use marlin_agent_ui::{UiCommandName, UiComponentId, UiContent, UiElement, UiWorkbench};
 use ratatui::{layout::Rect, style::Style};
+
+/// Bind host data to nodes while the common mapper traverses the full frame.
+pub(super) struct FrameSlots<'a> {
+    pub main: MainSlots<'a>,
+    pub editor: EditorSlots<'a>,
+    pub app: &'a App,
+    pub ui: &'a UiWorkbench,
+    pub suggestions: &'a [UiCommandName],
+    pub extensions: &'a [(&'a UiComponentId, &'a str)],
+    pub selected: Option<usize>,
+    pub menu_prefix: Option<&'a str>,
+}
+
+impl ui_elements::UiSlotRenderer for FrameSlots<'_> {
+    fn render(
+        &mut self,
+        frame: &mut ratatui::Frame<'_>,
+        area: Rect,
+        id: &UiComponentId,
+        field_template: Option<&UiElement>,
+        inputs: &ui_elements::UiRenderInputs<'_>,
+        skip: usize,
+    ) {
+        self.main
+            .render(frame, area, id, field_template, inputs, skip);
+    }
+
+    fn input(
+        &mut self,
+        frame: &mut ratatui::Frame<'_>,
+        area: Rect,
+        element: &UiElement,
+        inputs: &ui_elements::UiRenderInputs<'_>,
+    ) {
+        self.editor.input(frame, area, element, inputs);
+    }
+
+    fn list(
+        &mut self,
+        frame: &mut ratatui::Frame<'_>,
+        area: Rect,
+        element: &UiElement,
+        inputs: &ui_elements::UiRenderInputs<'_>,
+    ) {
+        let UiElement::List { id, .. } = element else {
+            return;
+        };
+        let matches_region = |name| matches!(self.ui.layout.frame_tree.region_child(name), Some(UiElement::List { id: expected, .. }) if expected == id);
+        if matches_region("candidates") {
+            let count = self
+                .app
+                .tool_review_prompt
+                .as_ref()
+                .map_or(self.suggestions.len(), |prompt| prompt.menu.choices.len());
+            ui_elements::render_list(
+                frame,
+                area,
+                element,
+                &self.ui.theme,
+                ui_elements::UiListData {
+                    count,
+                    selected: self.selected,
+                    extent: inputs.extent,
+                },
+                &mut self.app.list_state.borrow_mut(),
+                |index| {
+                    let (key, bindings) = if let Some(prompt) = &self.app.tool_review_prompt {
+                        let choice = prompt.menu.choices.get(index)?;
+                        (
+                            Some(UiComponentId::new(choice.decision.selection_id()).ok()?),
+                            vec![
+                                ("name", choice.label.as_str().into()),
+                                ("description", choice.description.as_str().into()),
+                            ],
+                        )
+                    } else {
+                        let name = self.suggestions.get(index)?;
+                        let command = self
+                            .ui
+                            .commands()
+                            .iter()
+                            .find(|command| &command.name == name)?;
+                        (
+                            Some(UiComponentId::new(name.as_str()).ok()?),
+                            vec![
+                                (
+                                    "name",
+                                    super::menu_display_name(
+                                        command.name.as_str(),
+                                        self.menu_prefix,
+                                    )
+                                    .into(),
+                                ),
+                                (
+                                    "description",
+                                    super::header_value(&command.description).into(),
+                                ),
+                            ],
+                        )
+                    };
+                    Some(ui_elements::UiListRow { key, bindings })
+                },
+            );
+        } else if matches_region("extensions") {
+            let selected = self
+                .extensions
+                .iter()
+                .position(|(id, _)| *id == &self.ui.focus);
+            ui_elements::render_list(
+                frame,
+                area,
+                element,
+                &self.ui.theme,
+                ui_elements::UiListData {
+                    count: self.extensions.len(),
+                    selected,
+                    extent: inputs.extent,
+                },
+                &mut self.app.list_state.borrow_mut(),
+                |index| {
+                    Some(ui_elements::UiListRow {
+                        key: None,
+                        bindings: vec![(
+                            "label",
+                            super::header_value(self.extensions.get(index)?.1).into(),
+                        )],
+                    })
+                },
+            );
+        }
+    }
+
+    fn region(
+        &mut self,
+        frame: &mut ratatui::Frame<'_>,
+        area: Rect,
+        id: &UiComponentId,
+        child: &UiElement,
+        inputs: &ui_elements::UiRenderInputs<'_>,
+    ) -> bool {
+        if id.as_str() != "minibuffer" {
+            return false;
+        }
+        if let Some(search) = &self.app.history_search {
+            if let Some(cursor) =
+                ui_elements::render_prompt(frame, area, child, inputs, "query", search.query())
+            {
+                frame.set_cursor_position(cursor);
+            }
+            true
+        } else if let Some(hint) = &self.app.transient_hint {
+            ui_elements::render_element(frame, area, hint, &self.ui.theme);
+            true
+        } else {
+            false
+        }
+    }
+}
 
 pub(super) struct EditorSlots<'a> {
     pub composer: &'a Composer,

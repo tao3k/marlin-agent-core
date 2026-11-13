@@ -38,8 +38,8 @@ pub(super) fn browse_menu(
     }
 }
 
-/// Route a painted row identity through the same Scheme navigation as keys.
-pub(super) fn select_clicked_command(app: &mut App, ui: &UiHost<'_>, column: u16, row: u16) {
+/// Select a painted list row without committing a command or review decision.
+pub(super) fn select_clicked_list_row(app: &mut App, ui: &UiHost<'_>, column: u16, row: u16) {
     let clicked = column
         .checked_sub(1)
         .zip(row.checked_sub(1))
@@ -49,11 +49,24 @@ pub(super) fn select_clicked_command(app: &mut App, ui: &UiHost<'_>, column: u16
                 .hit(x, y)
                 .map(|hit| (hit.list.clone(), hit.key.clone()))
         });
-    if let Some((list, key)) = clicked
-        && matches!(ui.view().layout.frame_tree.region_child("candidates"),
-                    Some(marlin_agent_ui::UiElement::List { id, .. }) if id == &list)
-        && app.tool_review_prompt.is_none()
-        && command_menu_active(app, ui)
+    let Some((list, key)) = clicked else { return };
+    if !matches!(ui.view().layout.frame_tree.region_child("candidates"),
+                 Some(marlin_agent_ui::UiElement::List { id, .. }) if id == &list)
+    {
+        return;
+    }
+    if let Some(prompt) = app.tool_review_prompt.as_mut() {
+        if let Some(index) = prompt
+            .menu
+            .choices
+            .iter()
+            .position(|choice| choice.decision.selection_id() == key.as_str())
+        {
+            prompt.selected = index;
+        }
+        return;
+    }
+    if command_menu_active(app, ui)
         && app.command_query_is_current()
         && let Some(target) = app
             .command_candidates

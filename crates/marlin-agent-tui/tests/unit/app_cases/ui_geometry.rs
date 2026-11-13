@@ -4,6 +4,64 @@
 use super::{App, ModelEndpoint, test_frame, test_layout};
 
 #[test]
+fn frame_tree_can_add_a_region_without_a_host_render_branch() {
+    use marlin_agent_ui::{
+        UiComponentId, UiElement, UiRegion, UiSize, UiSpan, UiTone, UiWorkbench,
+    };
+    use ratatui::{Terminal, backend::TestBackend};
+    let app = App::new(ModelEndpoint::new("provider", "model"));
+    let mut view = UiWorkbench {
+        model_label: "model".into(),
+        session_label: "session".into(),
+        regions: vec![UiRegion::Transcript, UiRegion::Composer],
+        layout: test_layout(),
+        theme: Default::default(),
+        focus: UiComponentId::new("composer").unwrap(),
+        frame: test_frame(),
+        keymap: Vec::new(),
+        transients: Vec::new(),
+    };
+    if let UiElement::Rows(children) = &mut view.layout.frame_tree {
+        children.insert(
+            0,
+            UiElement::Sized {
+                size: UiSize::Cells(1),
+                child: Box::new(UiElement::Region {
+                    id: UiComponentId::new("extra-region").unwrap(),
+                    scroll_target: None,
+                    child: Box::new(UiElement::Text(vec![UiSpan {
+                        text: "extra view".into(),
+                        tone: UiTone::Normal,
+                    }])),
+                }),
+            },
+        );
+    }
+    let mut terminal = Terminal::new(TestBackend::new(40, 10)).unwrap();
+    terminal
+        .draw(|frame| {
+            super::render_draw(
+                frame,
+                &app,
+                &view,
+                &mut Default::default(),
+                &mut Default::default(),
+            );
+        })
+        .unwrap();
+    assert_eq!(terminal.backend().buffer()[(0, 0)].symbol(), "e");
+    let regions =
+        super::super::render::frame_regions(&app, &view, ratatui::layout::Rect::new(0, 0, 40, 10));
+    assert_eq!(
+        super::super::ui_elements::hit_test(&regions, 0, 0)
+            .unwrap()
+            .id
+            .as_str(),
+        "extra-region"
+    );
+}
+
+#[test]
 fn wheel_gestures_are_hit_tested_at_their_own_positions() {
     use marlin_agent_ui::{UiComponentId, UiRegion, UiWorkbench};
     let mut app = App::new(ModelEndpoint::new("provider", "model"));

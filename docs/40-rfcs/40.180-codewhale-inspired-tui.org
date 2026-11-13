@@ -2552,11 +2552,15 @@ The generic list mapper keeps the bounded identities and cell rectangles of
 painted rows for the current frame. Empty or hidden lists clear their prior
 hits. A left click selects an identity only if it remains in the current
 Scheme-ordered candidate set, using the existing Scheme browse operation;
-selection previews a buffer and does not confirm it. Review choices remain
-display-only for pointer presses. Rust tests cover row geometry and native
-input, while PTY tests exercise candidate clicks, keyboard and wheel navigation,
-and Messages preview before confirmation. The ordinary PTY suite passed 16
-tests, with 36 explicitly ignored.
+selection previews a buffer and does not confirm it. The model-tool Ask menu
+uses the same painted-row map with typed decision identities: a click changes
+only the highlighted Scheme-ordered choice; Enter still commits the runtime
+review request. An old command hit cannot match a review identity. Rust tests
+cover row geometry and native input. PTY tests exercise candidate clicks,
+keyboard and wheel navigation, and Messages preview before confirmation. Both
+linked Scheme Bash Ask PTY paths also pass with a clicked Deny preview followed
+by an explicit Enter: approval runs the tool once, while rejection does not.
+The ordinary PTY suite passed 16 tests, with 36 explicitly ignored.
 
 Criterion's ten-sample list diagnostics used the TUI diff SHA-256
 =3a07cc2da7a23a5e571bb9d4c14f8fb3985e12a36a20fb006229a8e1b07abe3a=

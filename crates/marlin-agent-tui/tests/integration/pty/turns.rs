@@ -102,12 +102,21 @@ fn scheme_bash_review_continues(approve: bool) {
     terminal.wait_for(Duration::from_secs(20), "Scheme Ask", |output| {
         contains(output, b"Tool request:") && contains(output, b"marlin-tool-ok")
     });
-    terminal.send(b"\x1b[B");
-    terminal.wait_for(Duration::from_secs(5), "second Ask choice", |output| {
-        screen_lines(output)
-            .iter()
-            .any(|line| line.contains("2/2 Tool request:"))
-    });
+    let rows = screen_lines(&terminal.output);
+    let deny_row = rows
+        .iter()
+        .position(|line| line.contains("Do not run the requested tool"))
+        .expect("Scheme Ask paints the Deny choice");
+    terminal.send(format!("\x1b[<0;30;{}M", deny_row + 1).as_bytes());
+    terminal.wait_for(
+        Duration::from_secs(5),
+        "clicked Deny previews only",
+        |output| {
+            screen_lines(output)
+                .iter()
+                .any(|line| line.contains("2/2 Tool request:"))
+        },
+    );
     if approve {
         terminal.send(b"\x1b[A");
         terminal.wait_for(Duration::from_secs(5), "first Ask choice", |output| {

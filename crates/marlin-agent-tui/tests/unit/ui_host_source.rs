@@ -247,6 +247,11 @@ fn terminal_admits_composed_frame_groups_and_rejects_missing_slots() {
         panic!("fixture frame")
     };
     workbench.layout.frame_tree = UiElement::Rows(vec![
+        UiElement::Region {
+            id: UiComponentId::new("extra-region").unwrap(),
+            scroll_target: None,
+            child: Box::new(UiElement::Text(vec![])),
+        },
         UiElement::Rows(slots[..2].to_vec()),
         UiElement::Rows(slots[2..].to_vec()),
     ]);
@@ -254,7 +259,7 @@ fn terminal_admits_composed_frame_groups_and_rejects_missing_slots() {
     let UiElement::Rows(groups) = &mut workbench.layout.frame_tree else {
         unreachable!()
     };
-    let UiElement::Rows(first) = &mut groups[0] else {
+    let UiElement::Rows(first) = &mut groups[1] else {
         unreachable!()
     };
     first.remove(0);

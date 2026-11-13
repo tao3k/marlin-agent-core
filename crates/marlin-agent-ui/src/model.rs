@@ -312,6 +312,16 @@ pub enum UiToolReviewDecision {
     Reject,
 }
 
+impl UiToolReviewDecision {
+    /// An identity for pointer selection, separate from Scheme-owned labels.
+    pub fn selection_id(self) -> &'static str {
+        match self {
+            Self::ApproveOnce => "tool-review/approve-once",
+            Self::Reject => "tool-review/reject",
+        }
+    }
+}
+
 impl UiCommand {
     pub fn accepts_arguments(&self) -> bool {
         self.arguments != UiCommandArguments::None

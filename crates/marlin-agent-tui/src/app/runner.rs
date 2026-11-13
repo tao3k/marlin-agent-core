@@ -26,7 +26,7 @@ use std::{
 use super::runtime_probe::RuntimeProbe;
 use super::tool_review::{open_tool_review, poll_tool_review, submit_tool_review};
 use super::ui_events::{
-    apply_ui_request, browse_menu, command_menu_active, select_clicked_command,
+    apply_ui_request, browse_menu, command_menu_active, select_clicked_list_row,
 };
 use termion::input::TermReadEventsAndRaw;
 
@@ -607,7 +607,7 @@ fn run(
                 app.disarm_exit();
             }
             if let Ok(Ok(TerminalInput::MouseClick(column, row))) = &received {
-                select_clicked_command(&mut app, &ui, *column, *row);
+                select_clicked_list_row(&mut app, &ui, *column, *row);
                 continue;
             }
             if let Some(search) = app.history_search.as_mut() {
