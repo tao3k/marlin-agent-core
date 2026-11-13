@@ -1,0 +1,42 @@
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
+//! Status values for native Gerbil Deck runtime AOT artifact planning.
+
+use serde::{Deserialize, Serialize};
+
+/// Readiness status for a native Deck runtime AOT artifact plan.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub enum GerbilAotStatus {
+    MissingGsc,
+    MissingCompiledRuntime,
+    MissingHeader,
+    ReadyToBuildLinkUnit,
+}
+
+/// Execution status for a native Deck runtime AOT link-unit build.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub enum GerbilAotBuildStatus {
+    MissingGsc,
+    MissingHeader,
+    MissingCompiledRuntime,
+    OutputDirCreateFailed,
+    GscCompileObjectFailed,
+    GscCompileDependencyObjectFailed,
+    ObjectMissing,
+    GscGenerateLinkSourceFailed,
+    LinkSourceMissing,
+    GscCompileLinkObjectFailed,
+    LinkObjectMissing,
+    SymbolAuditFailed,
+    RequiredSymbolsMissing,
+    LinkUnitReady,
+}
+
+/// Readiness status for consuming a native Deck runtime link unit from Rust.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub enum GerbilAotStaticLinkStatus {
+    LinkUnitNotReady,
+    Ready,
+}

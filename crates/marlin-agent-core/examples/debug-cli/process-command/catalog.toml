@@ -1,6 +1,0 @@
-[[executors]]
-executor = "example.process.echo"
-adapter = "tool"
-runtime = "process-command"
-command = "echo"
-args = ["marlin-debug-cli-example"]

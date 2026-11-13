@@ -1,84 +1,231 @@
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+#
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 set shell := ["bash", "-eu", "-o", "pipefail", "-c"]
 
-gerbil_deps := "direnv exec . cargo run -p marlin-gerbil-scheme --bin marlin-gerbil-deps --"
+# Bound native Scheme builds to the available processors unless the caller
+# has selected a smaller budget.
+export GERBIL_BUILD_CORES := env_var_or_default("GERBIL_BUILD_CORES", num_cpus())
 
 default:
   @just --list
 
-# Print the Rust-resolved Gerbil dependency bootstrap plan.
-gerbil-env:
-  {{gerbil_deps}} env
+# Validate the project entry and maintained OpenSysML models together.
+sysml-check:
+  sysml -strict -validate -self-check -no-record-cache project.sysml dev/sysml
 
-# Repair platform-specific Gerbil package tooling state.
-gerbil-homebrew-repair:
-  {{gerbil_deps}} repair
+# Run the ASP Rust native workspace Dev Gate through Cargo test.
+rust-dev-gate:
+  cargo test --locked -p marlin-rust-project-harness-policy --test workspace_policy
 
-# Fetch local Gerbil package dependency checkouts.
-gerbil-deps-fetch:
-  {{gerbil_deps}} fetch
+# Authored Quint models and reproducible trace checks.
+property-model-gate: app-server-model-gate
+  quint typecheck dev/quint/host-observer.qnt
+  quint run dev/quint/host-observer.qnt --seed=42 --max-samples=100 --max-steps=8 --invariant=safe --verbosity=1
+  @output=$(quint run dev/quint/host-observer.qnt --step=badStep --invariant=safe --seed=42 --max-samples=100 --max-steps=8 --verbosity=1 2>&1) && { printf '%s\n' "Unexpected success in host exit negative control"; exit 1; } || { printf '%s\n' "$output"; printf '%s\n' "$output" | grep -q 'Invariant violated'; }
+  quint typecheck dev/quint/runtime-process-owner.qnt
+  quint test dev/quint/runtime-process-owner.qnt --main=runtimeProcessOwner
+  quint run dev/quint/runtime-process-owner.qnt --main=runtimeProcessOwner --seed=42 --max-samples=1000 --max-steps=8 --invariant=safe --verbosity=1
+  @output=$(quint run dev/quint/runtime-process-owner.qnt --main=runtimeProcessOwner --step=watchdogMutation --invariant=safe --seed=42 --max-samples=1000 --max-steps=12 --verbosity=1 2>&1) && { printf '%s\n' "Unexpected success in watchdog negative control"; exit 1; } || { printf '%s\n' "$output"; printf '%s\n' "$output" | grep -q 'Invariant violated'; }
+  @output=$(quint run dev/quint/runtime-process-owner.qnt --main=runtimeProcessOwner --step=healthMutation --invariant=safe --seed=42 --max-samples=1000 --max-steps=12 --verbosity=1 2>&1) && { printf '%s\n' "Unexpected success in health negative control"; exit 1; } || { printf '%s\n' "$output"; printf '%s\n' "$output" | grep -q 'Invariant violated'; }
+  @output=$(quint run dev/quint/runtime-process-owner.qnt --main=runtimeProcessOwner --step=badStep --invariant=safe --seed=42 --max-samples=1000 --max-steps=8 --verbosity=1 2>&1) && { printf '%s\n' "Unexpected success in process owner negative control"; exit 1; } || { printf '%s\n' "$output"; printf '%s\n' "$output" | grep -q 'Invariant violated'; }
+  quint typecheck dev/quint/event-bus.qnt
+  quint test dev/quint/event-bus.qnt --main=eventBus
+  quint run dev/quint/event-bus.qnt --main=eventBus --seed=42 --max-samples=1000 --max-steps=10 --invariant=safe --verbosity=1
+  @output=$(quint run dev/quint/event-bus.qnt --main=eventBus --step=badStep --invariant=safe --seed=42 --max-samples=1000 --max-steps=10 --verbosity=1 2>&1) && { printf '%s\n' "Unexpected success in event bus negative control"; exit 1; } || { printf '%s\n' "$output"; printf '%s\n' "$output" | grep -q 'Invariant violated'; }
+  @test_binary=$(mktemp -t marlin-event-bus-test.XXXXXX); trap 'rm -f "$test_binary"' EXIT; rustc --edition=2024 --test dev/verification/event_bus_contract.rs -o "$test_binary"; "$test_binary"
+  quint typecheck dev/quint/tui-minibuffer.qnt
+  quint test dev/quint/tui-minibuffer.qnt --max-samples=100
+  quint run dev/quint/tui-minibuffer.qnt --seed=42 --max-samples=1000 --max-steps=30 --invariant=stateSafe --verbosity=1
+  quint typecheck dev/quint/model-tool-review.qnt
+  quint test dev/quint/model-tool-review.qnt --main=modelToolReview --max-samples=100
+  quint run dev/quint/model-tool-review.qnt --main=modelToolReview --seed=42 --max-samples=1000 --max-steps=10 --invariant=safe --verbosity=1
+  @output=$(quint run dev/quint/model-tool-review.qnt --main=modelToolReview --step=badStep --seed=42 --max-samples=1000 --max-steps=10 --invariant=safe --verbosity=1 2>&1) && { printf '%s\n' "Unexpected success in model tool review negative control"; exit 1; } || { printf '%s\n' "$output"; printf '%s\n' "$output" | grep -q 'Invariant violated'; }
+  quint typecheck dev/quint/strict-tree-proposal.qnt
+  quint test dev/quint/strict-tree-proposal.qnt --main=strictTreeProposal
+  quint run dev/quint/strict-tree-proposal.qnt --main=strictTreeProposal --seed=42 --max-samples=1000 --max-steps=12 --invariant=safe --verbosity=1
+  @output=$(quint run dev/quint/strict-tree-proposal.qnt --main=strictTreeProposal --step=badLaunchStep --invariant=safe --seed=42 --max-samples=1000 --max-steps=12 --verbosity=1 2>&1) && { printf '%s\n' "Unexpected success in strict launch negative control"; exit 1; } || { printf '%s\n' "$output"; printf '%s\n' "$output" | grep -q 'Invariant violated'; }
+  @output=$(quint run dev/quint/strict-tree-proposal.qnt --main=strictTreeProposal --step=badReleaseStep --invariant=safe --seed=42 --max-samples=1000 --max-steps=12 --verbosity=1 2>&1) && { printf '%s\n' "Unexpected success in strict cleanup negative control"; exit 1; } || { printf '%s\n' "$output"; printf '%s\n' "$output" | grep -q 'Invariant violated'; }
+  quint typecheck dev/quint/process-lease.qnt
+  quint test dev/quint/process-lease.qnt --main=processLease
+  quint run dev/quint/process-lease.qnt --main=processLease --seed=42 --max-samples=1000 --max-steps=10 --invariant=safe --verbosity=1
+  @output=$(quint run dev/quint/process-lease.qnt --main=processLease --step=badStep --invariant=safe --seed=42 --max-samples=1000 --max-steps=10 --verbosity=1 2>&1) && { printf '%s\n' "Unexpected success in process lease negative control"; exit 1; } || { printf '%s\n' "$output"; printf '%s\n' "$output" | grep -q 'Invariant violated'; }
+  quint typecheck dev/quint/process-tree.qnt
+  quint test dev/quint/process-tree.qnt --main=processTree
+  quint run dev/quint/process-tree.qnt --main=processTree --seed=42 --max-samples=1000 --max-steps=8 --invariant=safe --verbosity=1
+  @output=$(quint run dev/quint/process-tree.qnt --main=processTree --step=badStep --invariant=safe --seed=42 --max-samples=1000 --max-steps=8 --verbosity=1 2>&1) && { printf '%s\n' "Unexpected success in process tree negative control"; exit 1; } || { printf '%s\n' "$output"; printf '%s\n' "$output" | grep -q 'Invariant violated'; }
+  quint typecheck dev/quint/process-quota.qnt
+  quint test dev/quint/process-quota.qnt --main=processQuota --max-samples=100
+  quint run dev/quint/process-quota.qnt --main=processQuota --invariant=safe --seed=42 --max-samples=1000 --max-steps=8 --verbosity=1
+  @output=$(quint run dev/quint/process-quota.qnt --main=processQuota --step=badStep --invariant=safe --seed=42 --max-samples=1000 --max-steps=8 --verbosity=1 2>&1) && { printf '%s\n' "Unexpected success in process quota negative control"; exit 1; } || { printf '%s\n' "$output"; printf '%s\n' "$output" | grep -q 'Invariant violated'; }
 
-# Link Gerbil packages into the user global gxpkg environment.
-gerbil-deps-link:
-  {{gerbil_deps}} link
+# Run only inside a disposable, root-owned delegated Linux systemd scope.
+strict-linux-os-qualification:
+  python3 dev/verification/linux_cgroup_qualification.py
 
-# Build Gerbil package dependencies through the Rust bootstrapper.
-gerbil-deps-build:
-  {{gerbil_deps}} build
+# Session journal, reconnect cursor and Runtime cancellation.
+app-server-model-gate:
+  quint typecheck dev/quint/app-server-turn.qnt
+  quint test dev/quint/app-server-turn.qnt --max-samples=100
+  quint run dev/quint/app-server-turn.qnt --seed=42 --max-samples=1000 --max-steps=30 --invariant=safe --verbosity=1
 
-# Verify Gerbil can import the deck-runtime dependency modules.
-gerbil-deps-verify:
-  {{gerbil_deps}} verify
+# One project gate: architecture, model, native Scheme PBT and Rust properties.
+property-gate: sysml-check property-model-gate scheme-property-gate
+  cargo test --locked -p marlin-agent-telemetry
+  cargo test --locked -p marlin-agent-runtime --test unit_test process::quota
+  cargo test --locked -p marlin-agent-runtime --test unit_test process::containment
+  cargo test --locked -p marlin-agent-runtime --test unit_test process::managed_executor
+  cargo test --locked -p marlin-agent-runtime --test unit_test runtime_task_tracker
+  cargo test --locked -p marlin-agent-gitops
+  cargo test --locked -p marlin-agent-runtime --lib confirmed_process_does_not_release_until_pipe_endpoint_is_dropped
+  cargo test --locked -p marlin-agent-kernel --test unit_test strict_tree_
+  python3 dev/verification/process_quota_gate.py
+  cargo test --locked -p marlin-agent-tui --no-default-features --lib
+  cargo test --locked -p marlin-agent-ui --test ui_native_projection
+  if [[ $(uname -s) == Darwin ]]; then just tui-runtime-gate; fi
 
-# Full local bootstrap for deck-runtime Gerbil dependencies.
-gerbil-deck-runtime-bootstrap:
-  {{gerbil_deps}} bootstrap
+# Real linked macOS TUI: override MARLIN_TUI_SOAK_SECONDS for longer runs.
+tui-runtime-gate:
+  just tui-aot-stage
+  MARLIN_TUI_SOAK_SECONDS="${MARLIN_TUI_SOAK_SECONDS:-30}" cargo test --locked -p marlin-agent-tui --test pty repeated_stream_cancellation_soak -- --ignored --nocapture
+  cargo test --locked -p marlin-agent-tui --test pty workspace_tool_cancel_reaps_process -- --ignored --nocapture
+  cargo test --locked -p marlin-agent-tui --test pty workspace_tool_shutdown_reaps_after_exit -- --ignored --nocapture
+  cargo test --locked -p marlin-agent-tui --test pty stalled_collector_does_not_delay_runtime_drain_or_block_tui_exit -- --ignored --nocapture
+  cargo test --locked -p marlin-agent-tui --test pty quiet_workspace_tool_survives_idle_observation -- --ignored --nocapture
+  cargo test --locked -p marlin-agent-tui --test pty process_buffer_stops_a_managed_generation -- --ignored --nocapture
+  @trace_dir=$(mktemp -d -t marlin-host-trace.XXXXXX); trap 'rm -rf "$trace_dir"' EXIT; quint test dev/quint/host-observer.qnt --out-itf="$trace_dir/{test}-{seq}.json"; trace_files=("$trace_dir"/*.json); [[ ${#trace_files[@]} == 1 && -f "${trace_files[0]}" ]]; MARLIN_HOST_OBSERVER_TRACE="${trace_files[0]}" cargo test --locked -p marlin-agent-tui --test pty independent_observer_distinguishes_stall_from_exit -- --ignored --nocapture
 
-# Run the real-gxi gates that prove Rust can execute against installed Gerbil packages.
-gerbil-real-gxi-gate: gerbil-deps-verify
-  direnv exec . cargo test -p marlin-gerbil-scheme --test unit_test \
-    command::real_gxi::examples::poo_object::command_compiler_real_gxi_deck_runtime_can_execute_poo_object_probe_when_dependency_installed \
-    -- --ignored --nocapture
-  direnv exec . cargo test -p marlin-gerbil-scheme --test unit_test \
-    command::real_gxi::examples::runtime_assets::command_compiler_real_gxi_deck_runtime_capability_handshake \
-    -- --ignored --nocapture
-  direnv exec . cargo test -p marlin-gerbil-scheme --test unit_test \
-    command::real_gxi::examples::runtime_assets::command_compiler_real_gxi_deck_runtime_selects_scheme_model_route_policy \
-    -- --ignored --nocapture
-  direnv exec . cargo test -p marlin-gerbil-scheme --test unit_test \
-    deck_runtime_policy::gerbil_deck_runtime_policy_runtime_binding_real_gxi_selects_policy \
-    -- --ignored --nocapture
-  direnv exec . cargo test -p marlin-gerbil-scheme --test unit_test \
-    deck_runtime_native::gerbil_deck_runtime_native_selector_performance_gate_stays_in_process \
-    -- --nocapture
-  direnv exec . cargo test -p marlin-gerbil-scheme --test unit_test \
-    command::real_gxi::examples::build_script::command_compiler_real_gxi_build_script_compiles_runtime_assets \
-    -- --ignored --nocapture
+# Gerbil's native test runner discovers the selected package's maintained suite.
+scheme-property-gate:
+  python3 -m unittest discover -s dev/verification -p test_gerbil_gate.py
+  python3 dev/verification/run_gerbil_property_gate.py
+  python3 dev/verification/run_gerbil_property_gate.py t/ui-native-test.ss
 
-# Smoke gate for Gerbil package compile, module pack tests, and downstream module examples.
-gerbil-package-module-gate:
-  cd crates/marlin-gerbil-scheme/gerbil && GERBIL_LOADPATH=src gxi build.ss compile
-  cd crates/marlin-gerbil-scheme/gerbil && GERBIL_LOADPATH=src gxtest t/marlin-policy-pack-inventory-test.ss
-  cd crates/marlin-gerbil-scheme/gerbil && GERBIL_LOADPATH=src gxtest t/marlin-user-interface-prefab-test.ss
-  cd crates/marlin-gerbil-scheme/examples/user-interface-module-config && GERBIL_LOADPATH=../../gerbil/src:. gxtest t/user-interface-module-config-test.ss
+# Install the dependency declared by the workspace Scheme package.
+scheme-deps:
+  cd scheme && gerbil deps --install
 
-# Smoke gate for real AgentGraph policy-routing AOT staging plus linked native Rust tests.
-agent-policy-routing-native-gate:
-  stage_dir="$(mktemp -d "${TMPDIR:-/tmp}/marlin-agent-policy-routing-aot.XXXXXX")"; \
-    cd crates/marlin-gerbil-scheme/gerbil && \
-    gxi build.ss stage-native-aot agent-policy-routing "$stage_dir"
-  direnv exec . cargo test -p marlin-agent-policy-routing-native --features linked-native
+# Run the package's build and test through the embedded Gerbil VM.
+scheme-package-gate:
+  direnv exec . bash -ec 'cd scheme && gxpkg env cargo test --locked -p marlin-gerbil-scheme --test unit_test scheme_package::gerbil_builds_and_tests_the_marlin_package_in_process -- --ignored --exact --nocapture'
+
+# Build the init-selected Scheme graph through the package Builder.
+scheme-build:
+  #!/usr/bin/env bash
+  set -euo pipefail
+  if [[ "$(uname -s)" == Darwin ]]; then
+    unset SDKROOT DEVELOPER_DIR NIX_CFLAGS_COMPILE
+    export PATH="${GERBIL_PREFIX:+$GERBIL_PREFIX/bin:}/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+  fi
+  cd scheme
+  gerbil build
+
+# Run the fixed full Context workload after provisioning the paired Scheme package.
+context-latency-gate:
+  #!/usr/bin/env bash
+  set -euo pipefail
+  watchdog=$(command -v timeout || command -v gtimeout)
+  mkdir -p target
+  evidence=$(mktemp -d target/context-cohort.XXXXXX)
+  printf 'Context cohort evidence: %s\n' "$evidence"
+  git rev-parse HEAD > "$evidence/revision"
+  shasum -a 256 Cargo.lock > "$evidence/cargo-lock.sha256"
+  cargo bench --locked -p marlin-deck-runtime --features actor-runtime \
+    --bench single_vm_actor --no-run --message-format=json > "$evidence/build.jsonl"
+  binary=$(jq -ser '[.[] | select(.reason == "compiler-artifact" and
+    .target.name == "single_vm_actor" and .target.kind == ["bench"] and .executable != null)
+    | .executable] | if length == 1 then .[0] else error("expected one Context benchmark") end' \
+    "$evidence/build.jsonl")
+  shasum -a 256 "$binary" > "$evidence/benchmark.sha256"
+  export GAMBOPT="${GAMBOPT:+$GAMBOPT,}max-heap=2G,debug=q"
+  printf '%s\n' "$GAMBOPT" > "$evidence/gambopt"
+  failed=0
+  for process in 1 2 3 4; do
+    log="$evidence/process-$process.log"
+    status=0
+    "$watchdog" 180 "$binary" 64 4096 > "$log" 2>&1 || status=$?
+    printf '%s\t%s\n' "$process" "$status" >> "$evidence/exit-status.tsv"
+    if (( status == 0 )); then
+      if ! awk '/^batch_capacity=64 requests=4096 / {
+        for (i = 1; i <= NF; i++) {
+          if ($i ~ /^p99_us=[0-9]+(\.[0-9]+)?$/) {
+            split($i, field, "="); p99 = field[2]; samples++
+          }
+        }
+      } END { exit !(samples == 1 && p99 < 20000) }' "$log"; then
+        failed=1
+      fi
+    else
+      printf 'Context process %s exited with status %s\n' "$process" "$status" >&2
+      failed=1
+    fi
+    cat "$log"
+  done
+  exit "$failed"
+
+# Stage the selected package's linked TUI programme.
+tui-aot-stage: scheme-build tui-program-stage
+
+# Consume the Scheme package already built by scheme-build.
+tui-program-stage:
+  #!/usr/bin/env bash
+  set -euo pipefail
+  if [[ "$(uname -s)" == Darwin ]]; then
+    unset SDKROOT DEVELOPER_DIR NIX_CFLAGS_COMPILE
+    export PATH="${GERBIL_PREFIX:+$GERBIL_PREFIX/bin:}/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+  fi
+  cd scheme
+  gxpkg env gxc -S -s -d .gerbil/lib tui-entry.ss
+  gxpkg env gxi tui-stage.ss
+
+# Build the default linked debug binary used by target/debug/marlin-tui.
+tui-aot-debug: tui-aot-stage
+  cargo build --locked -p marlin-agent-tui --bin marlin-tui
+
+# Link the staged Scheme graph and VM into the terminal application.
+tui-aot-build: tui-aot-stage
+  cargo build --locked -p marlin-agent-tui --bin marlin-tui --features linked-ui --release
+
+# Build the same linked binary as distribution while measuring Rust UI mapping.
+tui-ui-mapping-bench: tui-aot-stage
+  cargo bench --locked -p marlin-agent-tui --bench ui_mapping
+
+# Keep interaction latency, first-copy startup, and source-free release
+# qualification in one reproducible command. Build time is not a sample.
+tui-performance-bench: tui-aot-debug tui-aot-build
+  cargo test --locked -p marlin-agent-tui --test launch linked_debug_pre_ui_launch_pair -- --ignored --nocapture
+  cargo test --locked -p marlin-agent-tui --test launch linked_release_pre_ui_launch_pair -- --ignored --nocapture
+  cargo test --locked -p marlin-agent-tui --test pty first_mx_arrow_is_not_lost_before_the_menu_frame
+  cargo test --locked -p marlin-agent-tui --test pty mx_navigation_pty_latency -- --ignored --nocapture
+  cargo test --locked -p marlin-agent-tui --test pty debug_linked_fresh_copy_startup_pair -- --ignored --nocapture
+  cargo test --locked -p marlin-agent-tui --test pty release_linked_fresh_copy_startup_pair -- --ignored --nocapture
+  cargo test --locked -p marlin-agent-tui --test pty release_linked_ui_first_frame_without_a_gerbil_package_tree -- --ignored --nocapture
+  cargo bench --locked -p marlin-agent-runtime --bench runtime_events
+
+# Diagnose whether the size-oriented profile improves a source-matched linked
+# TUI. Stage the Scheme programme first; comparing against a stale native
+# manifest can produce a misleading projection failure.
+tui-size-performance-bench: tui-aot-stage
+  cargo build --locked -p marlin-agent-tui --bin marlin-tui --features linked-ui --profile release-size
+  cargo test --locked -p marlin-agent-tui --test launch linked_release_size_pre_ui_launch_pair -- --ignored --nocapture
+  cargo test --locked -p marlin-agent-tui --test pty release_size_linked_fresh_copy_startup_pair -- --ignored --nocapture
+
+# Exercise the linked AgentGraph policy selector through its typed C ABI.
+agent-policy-routing-abi-gate:
+  direnv exec . cargo test --locked -p marlin-agent-policy-routing-abi --features linked-selector
 
 # Benchmark build gate for AgentGraph policy-routing linked native selector.
-agent-policy-routing-native-bench-build:
-  direnv exec . cargo bench -p marlin-agent-policy-routing-native --features linked-native --bench linked_selector --no-run
+agent-policy-routing-abi-bench-build:
+  direnv exec . cargo bench -p marlin-agent-policy-routing-abi --features linked-selector --bench linked_selector --no-run
 
 # Allocation-shape performance gate for AgentGraph policy-routing linked native selector.
-agent-policy-routing-native-performance-gate:
-  direnv exec . cargo bench --locked -p marlin-agent-policy-routing-native --features linked-native --bench allocation_shape
+agent-policy-routing-abi-performance-gate:
+  direnv exec . cargo bench --locked -p marlin-agent-policy-routing-abi --features linked-selector --bench allocation_shape
 
 # Full benchmark gate for AgentGraph policy-routing linked native selector.
-agent-policy-routing-native-bench:
-  direnv exec . cargo bench -p marlin-agent-policy-routing-native --features linked-native --bench linked_selector
+agent-policy-routing-abi-bench:
+  direnv exec . cargo bench -p marlin-agent-policy-routing-abi --features linked-selector --bench linked_selector
 
 # Local P0-P4 gate for AgentGraph native policy-routing and Gerbil module-system closure.
-agent-graph-native-routing-gate: gerbil-package-module-gate agent-policy-routing-native-gate agent-policy-routing-native-bench-build agent-policy-routing-native-performance-gate
+agent-graph-abi-routing-gate: scheme-package-gate agent-policy-routing-abi-gate agent-policy-routing-abi-bench-build agent-policy-routing-abi-performance-gate

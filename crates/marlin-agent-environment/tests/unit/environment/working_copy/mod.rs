@@ -1,9 +1,13 @@
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 use async_trait::async_trait;
 use marlin_agent_environment::{
     WorkingCopyCommandOutput, WorkingCopyCommandRunner, WorkingCopyGitRepositoryResolver,
     WorkingCopyIsolationDriverError,
 };
-use marlin_workspace_protocol::{WorkingCopyCommandInvocation, WorkingCopyGitTopLevel};
+use marlin_agent_gitops::working_copy::{WorkingCopyCommandInvocation, WorkingCopyGitTopLevel};
 use std::{
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
@@ -76,5 +80,16 @@ impl WorkingCopyGitRepositoryResolver for ScriptedGitRepositoryResolver {
             .expect("calls lock")
             .push(discovery_path.to_path_buf());
         Ok(self.root.clone())
+    }
+
+    async fn resolve_repository_worktree(
+        &self,
+        repository: &WorkingCopyGitTopLevel,
+        target: &Path,
+    ) -> Result<WorkingCopyGitTopLevel, WorkingCopyIsolationDriverError> {
+        assert_eq!(repository, &self.root);
+        Ok(WorkingCopyGitTopLevel::from_resolved_path(
+            repository.as_path().join(target),
+        ))
     }
 }

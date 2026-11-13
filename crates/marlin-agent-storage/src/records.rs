@@ -1,5 +1,10 @@
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 use std::fmt;
 use std::future::Future;
+use std::num::NonZeroU32;
 use std::pin::Pin;
 
 use serde::{Deserialize, Serialize};
@@ -75,10 +80,32 @@ pub struct SessionEventRecord {
     pub created_at_unix_ms: i64,
 }
 
+/// Identity and kind of a committed event without its body.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SessionEventHeader {
+    pub agent_id: AgentId,
+    pub cursor: SessionEventCursor,
+    pub event_kind: String,
+    pub causality_parent_event_id: Option<EventId>,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SessionEventBatchWriteReceipt {
     pub item_count: usize,
     pub rows_affected: u64,
+}
+
+/// Number of committed events in a project-scoped session.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct SessionEventCount(u64);
+
+impl SessionEventCount {
+    pub fn new(value: u64) -> Self {
+        Self(value)
+    }
+    pub fn get(self) -> u64 {
+        self.0
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -111,6 +138,43 @@ pub struct StoragePage<T, C> {
     pub next_cursor: Option<C>,
 }
 
+/// Lists session IDs with at least one event for the specified project and agent.
+/// The cursor is exclusive; ordering is by session ID, not recency.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SessionPageRequest {
+    project_id: ProjectId,
+    agent_id: AgentId,
+    after: Option<SessionId>,
+    limit: StoragePageLimit,
+}
+
+impl SessionPageRequest {
+    pub fn new(project_id: ProjectId, agent_id: AgentId, limit: StoragePageLimit) -> Self {
+        Self {
+            project_id,
+            agent_id,
+            after: None,
+            limit,
+        }
+    }
+    pub fn after(mut self, session: SessionId) -> Self {
+        self.after = Some(session);
+        self
+    }
+    pub fn project_id(&self) -> &ProjectId {
+        &self.project_id
+    }
+    pub fn agent_id(&self) -> &AgentId {
+        &self.agent_id
+    }
+    pub fn cursor(&self) -> Option<&SessionId> {
+        self.after.as_ref()
+    }
+    pub fn limit(&self) -> StoragePageLimit {
+        self.limit
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SessionEventCursor {
     turn_id: TurnId,
@@ -118,6 +182,10 @@ pub struct SessionEventCursor {
 }
 
 impl SessionEventCursor {
+    pub fn new(turn_id: TurnId, event_id: EventId) -> Self {
+        Self { turn_id, event_id }
+    }
+
     pub fn from_record(record: &SessionEventRecord) -> Self {
         Self {
             turn_id: record.turn_id.clone(),
@@ -140,6 +208,10 @@ pub struct SessionEventPageRequest {
     session_id: SessionId,
     after: Option<SessionEventCursor>,
     limit: StoragePageLimit,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    turn_body_budget: Option<NonZeroU32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    session_body_budget: Option<NonZeroU32>,
 }
 
 impl SessionEventPageRequest {
@@ -149,12 +221,54 @@ impl SessionEventPageRequest {
             session_id,
             after: None,
             limit,
+            turn_body_budget: None,
+            session_body_budget: None,
         }
     }
 
     pub fn after(mut self, cursor: SessionEventCursor) -> Self {
         self.after = Some(cursor);
         self
+    }
+
+    /// Read only the cursor's turn and return a contiguous prefix within the
+    /// combined budget for raw event bodies. The cursor is exclusive.
+    pub fn within_turn_after(
+        mut self,
+        cursor: SessionEventCursor,
+        body_budget: NonZeroU32,
+    ) -> Self {
+        self.after = Some(cursor);
+        self.turn_body_budget = Some(body_budget);
+        self.session_body_budget = None;
+        self
+    }
+
+    /// Bound the raw event bodies in a page spanning the Session.
+    pub fn with_body_budget(mut self, body_budget: NonZeroU32) -> Self {
+        self.session_body_budget = Some(body_budget);
+        self.turn_body_budget = None;
+        self
+    }
+
+    /// The budget for pages restricted to the cursor's turn.
+    pub fn turn_body_budget(&self) -> Option<NonZeroU32> {
+        self.turn_body_budget
+    }
+
+    /// Stores enforce this budget before copying bodies into the page.
+    pub fn body_budget(&self) -> Option<NonZeroU32> {
+        self.turn_body_budget.or(self.session_body_budget)
+    }
+
+    pub(crate) fn turn_bound(&self) -> StorageResult<Option<(&SessionEventCursor, NonZeroU32)>> {
+        self.turn_body_budget
+            .map(|budget| {
+                self.cursor()
+                    .map(|cursor| (cursor, budget))
+                    .ok_or(StorageError::MissingTurnPageCursor)
+            })
+            .transpose()
     }
 
     pub fn project_id(&self) -> &ProjectId {
@@ -473,7 +587,32 @@ pub struct StorageSchemaTable {
     pub name: String,
 }
 
-pub trait AgentStorage: Send + Sync {
+/// Ordered, atomic session event persistence. Implementations may own only
+/// session records without providing artifact, memory or topology storage.
+pub trait SessionEventStore: Send + Sync {
+    /// Seek to the last event in the half-open turn range for one Session.
+    fn latest_session_event_header<'a>(
+        &'a self,
+        project: &'a ProjectId,
+        session: &'a SessionId,
+        from_turn: &'a TurnId,
+        before_turn: &'a TurnId,
+    ) -> StorageFuture<'a, Option<SessionEventHeader>>;
+
+    /// Counts committed session events. Under the append-only storage contract,
+    /// a changed count reveals an append between two completed reads. This is
+    /// not a transaction, a lease, or a cross-replica consistency guarantee.
+    fn count_session_events<'a>(
+        &'a self,
+        project: &'a ProjectId,
+        session: &'a SessionId,
+    ) -> StorageFuture<'a, SessionEventCount>;
+
+    fn list_sessions_page<'a>(
+        &'a self,
+        request: SessionPageRequest,
+    ) -> StorageFuture<'a, StoragePage<SessionId, SessionId>>;
+
     fn append_session_event<'a>(&'a self, record: SessionEventRecord) -> StorageFuture<'a, ()>;
 
     fn append_session_events_atomically<'a>(
@@ -481,11 +620,17 @@ pub trait AgentStorage: Send + Sync {
         records: Vec<SessionEventRecord>,
     ) -> StorageFuture<'a, SessionEventBatchWriteReceipt>;
 
+    /// For a byte-bounded request, report the last returned cursor when
+    /// another record remains. An oversized first body returns an error.
     fn list_session_events_page<'a>(
         &'a self,
         request: SessionEventPageRequest,
     ) -> StorageFuture<'a, StoragePage<SessionEventRecord, SessionEventCursor>>;
+}
 
+/// Complete agent storage, composed from the session event store and the
+/// separate artifact, visibility, memory and topology operations.
+pub trait AgentStorage: SessionEventStore {
     fn put_artifact<'a>(&'a self, record: ArtifactRecord) -> StorageFuture<'a, ArtifactPutOutcome>;
 
     fn get_artifact<'a>(
@@ -541,6 +686,10 @@ pub enum StorageError {
     InvalidPageLimit {
         limit: u16,
     },
+    MissingTurnPageCursor,
+    SessionEventBodyExceedsPageBudget {
+        budget: u32,
+    },
     InvalidSyncConfiguration {
         reason: &'static str,
     },
@@ -592,6 +741,15 @@ impl fmt::Display for StorageError {
             }
             StorageError::InvalidPageLimit { limit } => {
                 write!(f, "storage page limit must be between 1 and 1000: {limit}")
+            }
+            StorageError::MissingTurnPageCursor => {
+                f.write_str("turn-scoped Session event page requires an exclusive cursor")
+            }
+            StorageError::SessionEventBodyExceedsPageBudget { budget } => {
+                write!(
+                    f,
+                    "Session event body exceeds the {budget}-byte page budget"
+                )
             }
             StorageError::InvalidSyncConfiguration { reason } => {
                 write!(f, "invalid Turso sync configuration: {reason}")

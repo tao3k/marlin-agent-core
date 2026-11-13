@@ -1,0 +1,29 @@
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
+* Proposed Event Bus contract
+
+This is a design, not an installed bus or an OpenTelemetry exporter. Rust owns
+typed event/resource identifiers and lifecycle states. Runtime owns process and
+task handles; event delivery never proves that the OS has reclaimed a resource.
+A future independent bus replaces overlapping delivery paths after migration.
+
+Reliable publication reserves one item and its accounted bytes at every active
+subscriber atomically. If any subscriber lacks capacity, no delivery occurs and
+publication reports backpressure; the caller decides whether and how long to
+wait. Production accounting must derive retained bytes from owned payloads,
+not trust a publisher-supplied number. Oversize and no-subscriber outcomes are explicit. A reservation remains
+with each queued event until consumption or subscriber close. Subscriber close
+releases queued reservations; it is not an acknowledgement or a durable receipt.
+FIFO per subscriber is required. Cancellation before admission leaves no
+reservation; cancellation after admission does not retract delivered events.
+Shutdown closes admission and specifies whether outstanding queues drain or are
+explicitly abandoned. Durable delivery, cross-process ordering and retry dedupe
+are not implied. Telemetry consumers must choose a separate bounded loss policy
+or isolation; a slow observer must not invisibly block critical state progress.
+
+The Rust =event_bus_contract.rs= is a sequential admission prototype; the Quint
+model bounds each of two subscribers to one item and fixes event size, so it
+does not prove arbitrary byte sizes, concurrent atomicity or fairness. They are
+authored from the SysML requirements; no automatic SysML-to-code generation is
+claimed. Production concurrency and subscriber failure remain to be tested.

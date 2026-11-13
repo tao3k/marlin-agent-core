@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 use marlin_agent_harness::{
     AGENT_HARNESS_PERFORMANCE_EVIDENCE_KEYS, AGENT_HARNESS_STABILITY_EVIDENCE_KEYS,
     AgentHarnessEvidence, AgentHarnessEvidenceKind, AgentHarnessPerformanceEvidence,

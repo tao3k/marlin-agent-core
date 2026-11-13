@@ -1,0 +1,25 @@
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+#
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
+filegroup(
+    name = "policy_unit_runtime_data",
+    srcs = [
+        "build.ss",
+        "gerbil.pkg",
+        "init.ss",
+        "t/fixtures/loop-case-trace.v1",
+    ] + glob([
+        "brief-to-draft/*.ss",
+        "c-abi/*.ss",
+        "c-abi/*.ssi",
+        "context/**/*.ss",
+        "deck-runtime/**/*.ss",
+        "hooks/**/*.ss",
+        "policy/**/*.ss",
+        "working-copy/**/*.ss",
+        "ui/**/*.ss",
+        "t/**/*.ss",
+    ]),
+    visibility = ["//crates/marlin-gerbil-scheme:__pkg__"],
+)

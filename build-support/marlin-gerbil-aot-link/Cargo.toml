@@ -1,0 +1,18 @@
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+#
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
+[package]
+license.workspace = true
+name = "marlin-gerbil-aot-link"
+edition.workspace = true
+version.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+cc.workspace = true
+gerbil-scheme-aot-build.workspace = true
+marlin-gerbil-scheme.workspace = true
+object.workspace = true
+gerbil-scheme-build.workspace = true

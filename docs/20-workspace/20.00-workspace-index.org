@@ -1,12 +1,16 @@
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+#
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 #+TITLE: 20.00 Workspace Index
 
 * 20.00 Workspace Index
 
 ** Documents
 
-- [[file:20.10-org-native-agent-workspace.org][20.10 Org-native Agent Workspace]]
+- [[file:20.10-org-agent-workspace.org][20.10 Org-native Agent Workspace]]
 
-[[file:20.10-org-native-agent-workspace.org][20.10 Org-native Agent Workspace]]
+[[file:20.10-org-agent-workspace.org][20.10 Org-native Agent Workspace]]
 
 - [[file:20.20-query-patch-view-protocol.org][20.20 Query Patch View Protocol]]
 

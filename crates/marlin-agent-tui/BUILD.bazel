@@ -1,0 +1,67 @@
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+#
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
+load("@marlin_crates//:defs.bzl", "crate_deps", "crate_edition")
+load("//bazel:marlin_harness.bzl", "marlin_crate_with_policy_data")
+load("//bazel:marlin_rust.bzl", "marlin_rust_binary", "marlin_rust_scenario")
+
+_DEPS = crate_deps([
+    "async-stream",
+    "gerbil-scheme",
+    "libc",
+    "ratatui",
+    "serde",
+    "serde_json",
+    "termion",
+    "tokio",
+    "tokio-stream",
+    "toml",
+    "tower",
+    "unicode-segmentation",
+    "unicode-width",
+    "weaver-llm",
+]) + [
+    "//crates/marlin-agent-protocol:marlin_agent_protocol",
+    "//crates/marlin-agent-runtime:marlin_agent_runtime_turso",
+    "//crates/marlin-agent-sessions:marlin_agent_sessions_turso",
+    "//crates/marlin-agent-storage:marlin_agent_storage_turso",
+    "//crates/marlin-agent-stream:marlin_agent_stream",
+    "//crates/marlin-agent-ui:marlin_agent_ui",
+    "//crates/marlin-agent-gitops:marlin_agent_gitops",
+    "//crates/marlin-agent-telemetry:marlin_agent_telemetry",
+]
+
+marlin_crate_with_policy_data(
+    name = "marlin_agent_tui",
+    srcs = glob(["src/**/*.rs"]),
+    edition = crate_edition(),
+    gate_data = glob(["tests/**/*.rs"]),
+    deps = _DEPS,
+)
+
+marlin_rust_binary(
+    name = "marlin_tui",
+    srcs = ["src/main.rs"],
+    build_action = "none",
+    crate_root = "src/main.rs",
+    edition = crate_edition(),
+    manifest = "Cargo.toml",
+    visibility = ["//visibility:public"],
+    deps = [":marlin_agent_tui"],
+)
+
+marlin_rust_scenario(
+    name = "unit",
+    srcs = glob([
+        "src/**/*.rs",
+        "tests/unit/**/*.rs",
+    ]),
+    build_action = "none",
+    crate_root = "src/lib.rs",
+    edition = crate_edition(),
+    manifest = "Cargo.toml",
+    scenario = "unit",
+    visibility = ["//visibility:public"],
+    deps = _DEPS + crate_deps(["proptest"]),
+)

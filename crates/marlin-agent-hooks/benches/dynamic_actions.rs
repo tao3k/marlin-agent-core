@@ -1,13 +1,16 @@
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 use criterion::{Criterion, criterion_group, criterion_main};
 use marlin_agent_hooks::{
-    HookDispatchPolicy, HookDispatchPolicyFinalizer, HookDispatchPolicyFinalizerInput,
-    HookDispatcher, HookInvocation, HookRegistration, HookRegistrationCatalog, HookRegistry,
+    HookActionContext, HookActionProvider, HookDispatchPolicy, HookDispatcher, HookInvocation,
+    HookRegistration, HookRegistrationCatalog, HookRegistry,
 };
 use marlin_agent_protocol::{
-    HookAgentScope, HookDispatchPolicyReceipt, HookDispatchPolicyReceiptInput, HookEventName,
-    HookHandlerType, HookPolicyDynamicAction, HookPolicyDynamicActionKind,
-    HookPolicyDynamicActionReplacement, HookPolicyDynamicActionTarget, HookRunSummary,
-    HookTrustStatus,
+    HookAgentScope, HookEventName, HookHandlerType, HookPolicyDynamicAction,
+    HookPolicyDynamicActionKind, HookPolicyDynamicActionReplacement, HookPolicyDynamicActionTarget,
+    HookRunSummary, HookTrustStatus,
 };
 use marlin_agent_runtime::{HookRuntime, RuntimeContext, RuntimeFuture, TokioAgentRuntime};
 use std::{collections::BTreeMap, sync::Arc};
@@ -36,21 +39,13 @@ impl HookRuntime for BenchHook {
 }
 
 #[derive(Clone, Debug)]
-struct BenchFinalizer {
+struct BenchActionProvider {
     actions: Vec<HookPolicyDynamicAction>,
 }
 
-impl HookDispatchPolicyFinalizer for BenchFinalizer {
-    fn finalize(&self, input: HookDispatchPolicyFinalizerInput) -> HookDispatchPolicyReceipt {
-        HookDispatchPolicyReceipt::new(HookDispatchPolicyReceiptInput {
-            event_name: input.invocation.event_name,
-            invocation_agent_scope: input.invocation.agent_scope,
-            decision_context: input.policy_receipt.decision_context,
-            mode: input.policy_receipt.mode,
-            extension: input.policy_receipt.extension,
-            actions: self.actions.clone(),
-            decisions: input.policy_receipt.decisions,
-        })
+impl HookActionProvider for BenchActionProvider {
+    fn propose_actions(&self, _: HookActionContext<'_>) -> Vec<HookPolicyDynamicAction> {
+        self.actions.clone()
     }
 }
 
@@ -84,7 +79,7 @@ fn bench_dynamic_action_dispatch(c: &mut Criterion) {
     let dispatcher = HookDispatcher::new(HookRegistry::new())
         .with_policy(HookDispatchPolicy::enforce_trusted())
         .with_registration_catalog(Arc::new(catalog))
-        .with_policy_finalizer(Arc::new(BenchFinalizer {
+        .with_action_provider(Arc::new(BenchActionProvider {
             actions: vec![
                 HookPolicyDynamicAction {
                     kind: HookPolicyDynamicActionKind::Register,

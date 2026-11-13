@@ -1,0 +1,136 @@
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+#
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
+#+TITLE: Marlin OpenSysML Model Map
+#+LANGUAGE: en
+#+OPTIONS: toc:2
+#+STARTUP: overview
+#+FILETAGS: :marlin:architecture:sysml:
+
+[[file:../../project.sysml][Project entry]] · [[file:../../docs/10-architecture/10.00-architecture-index.org][Architecture index]] · [[file:../../docs/40-rfcs/40.166-plugin-contract.org::#plugin-model][Org companion]]
+
+* Scope and ownership
+
+=MarlinAgentCORE::appServerTransport= shows the optional external App Server
+and its model gateway. [[file:app-server.sysml][App Server model]] ·
+[[file:../../crates/marlin-agent-app-server/README.org][App Server contract]]
+=MarlinAgentCORE::applicationMessageFlow= traces an application send through the Session
+journal, a cursor-based reattach, and the Runtime and Session observations
+after Stop. [[file:../../crates/marlin-agent-app-server/README.org::#gpui-message-walkthrough][GPUI message walkthrough]]
+=MarlinAgentCORE::appServerRecovery= shows submission identity, replay and
+cancellation receipt requirements. [[file:../../crates/marlin-agent-app-server/README.org::#recoverable-session-interactions][Recovery scenarios]]
+
+The scope includes the plugin engine and the terminal client, their transport
+boundaries, and their lifecycles. =project.sysml= selects the top-level views.
+The files here own structural identities, relations, and state transitions.
+Org owns rationale, protocol detail, assumptions, and reviewed acceptance
+conclusions. The
+Brief-to-Draft example stays in the RFC as a fixture of the generic contract.
+The [[file:../../docs/40-rfcs/40.166-plugin-contract.org::#gambit-js-leverage][Gambit JS build target]] produces assets for the client boundary shown in
+the transport view. The plugin request view models host execution.
+
+The model follows the deterministic-engineering architecture content contract
+at =1fe20380441a0cd85055695c2adcc55ce699a369=. It separates actual and target
+elements, uses stable short IDs, states relation meaning, and traces each
+requirement allocation to an owner and Org section. The reference project's
+case and publication identities remain with that project.
+[[https://github.com/hardenedlinux/deterministic-engineering/blob/1fe20380441a0cd85055695c2adcc55ce699a369/docs/10-19-design/10-architecture/10.31-architecture-document-and-decision-contracts.org][Architecture content contract]]
+
+* Source-control boundary
+
+Version control contains authored =.sysml= architecture models, their =.org=
+companions and the local ignore rule. Models define structural identities,
+relations, ownership, lifecycle, protocol constraints and acceptance criteria.
+Org records design decisions and concise, reviewed conclusions.
+
+Tool caches, compiler outputs, rendered views, raw logs, traces, profiling and
+benchmark data, report indexes and compressed archives stay under =target/=
+(for example =target/sysml/= or =target/runtime/=). They are reproducible local
+outputs and are excluded from version control. =dev/sysml/= contains authored
+architecture sources. =dev/proofs/= contains formal proof sources and their
+proof project definitions. Runtime reports and caches do not belong in either
+directory. The SysML ignore rule admits model and Org source files; generated
+files remain local outputs regardless of their extension.
+
+* Model and Org correspondence
+
+| Model | Viewpoint and state | Org counterpart |
+|-------+---------------------+-----------------|
+| [[file:../../project.sysml][project.sysml]] | Project entry and named views | [[file:../../docs/40-rfcs/40.166-plugin-contract.org::#plugin-model][OpenSysML companion]] |
+| [[file:plugin-engine.sysml][plugin-engine.sysml]] | Source-inspected actual Rust interfaces and target gRPC/C ABI ownership | [[file:../../docs/40-rfcs/40.166-plugin-contract.org::#plugin-ownership][Ownership]] and [[file:../../docs/40-rfcs/40.166-plugin-contract.org::#plugin-transport][Transport]] |
+| [[file:single-vm-runtime.sysml][single-vm-runtime.sysml]] | Single-VM owner, Context batching, green actors and terminal accounting | [[file:../../docs/40-rfcs/40.166-plugin-contract.org::#single-vm-actor-runtime][Single-VM runtime]] |
+| [[file:plugin-lifecycle.sysml][plugin-lifecycle.sysml]] | Target activation generation and run lifecycle | [[file:../../docs/40-rfcs/40.166-plugin-contract.org::#plugin-lifecycle][Grants and lifecycle]] |
+| [[file:process-lifecycle.sysml][process-lifecycle.sysml]] | MAR-PROC-R01/R07 managed process, containment and pipe lease verification | [[file:../quint/process-quota.org][Quota model and executable evidence]] |
+| [[file:event-bus-contract.sysml][event-bus-contract.sysml]] | Proposed reliable event admission and bounded subscriber ownership | [[file:../verification/event-bus-design.org][Event Bus design]] |
+| [[file:telemetry.sysml][telemetry.sysml]] | OTLP exporter ownership, span selection and shutdown | [[file:../../crates/marlin-agent-tui/README.org::*OpenTelemetry traces][TUI OpenTelemetry traces]] |
+| [[file:rust-package-ownership.sysml][rust-package-ownership.sysml]] | Cargo package responsibilities, Runtime and telemetry authority, and Rust-to-Scheme native projection | [[file:../verification/codex-runtime-research.org][Runtime and watchdog design evidence]] |
+| [[file:plugin-execution.sysml][plugin-execution.sysml]] | Target plugin request flow, stage allocations, and Scheme batch boundaries | [[file:../../docs/40-rfcs/40.166-plugin-contract.org::#plugin-request-path][plugin request execution and batching]] |
+| [[file:tui-architecture.sysml][tui-architecture.sysml]] | Inspected TUI facts, proposed ownership, performance and evidence requirements | [[file:../../docs/40-rfcs/40.180-codewhale-inspired-tui.org::#tui-performance][TUI design and qualification]] |
+| [[file:tui-declarative-engine.sysml][tui-declarative-engine.sysml]] | Marlin's Scheme/Rust UI engine, admission lifecycle, composability and performance qualification | [[file:../../docs/40-rfcs/40.180-codewhale-inspired-tui.org::#tui-performance][Declarative UI design]] |
+| [[file:tui-lifecycle.sysml][tui-lifecycle.sysml]] | Proposed turn lifecycle and cancellation retirement | [[file:../../docs/40-rfcs/40.180-codewhale-inspired-tui.org::#tui-performance][TUI design and qualification]] |
+| [[file:context-org-lifecycle.sysml][context-org-lifecycle.sysml]] | Target Org turn persistence, current-use admission and uncertainty | [[file:../../docs/40-rfcs/40.181-context-org-ownership.org][Context-owned Org architecture]] |
+
+#+NAME: plugin-requirement-trace
+| Requirement | Planned owner | Org responsibility |
+|-------------+---------------+--------------------|
+| MAR-PLG-R01 | Rust runtime and activation gate | [[file:../../docs/40-rfcs/40.166-plugin-contract.org::#plugin-lifecycle][Rust owns lifecycle and effect admission]] |
+| MAR-PLG-R02 | Scheme C ABI bridge | [[file:../../docs/40-rfcs/40.166-plugin-contract.org::#plugin-transport][Typed Gerbil C ABI]] |
+| MAR-PLG-R03 | gRPC service and client shell | [[file:../../docs/40-rfcs/40.166-plugin-contract.org::#plugin-transport][Engine-owned gRPC and scoped clients]] |
+| MAR-PLG-R04 | Evidence and offline verifier | [[file:../../docs/40-rfcs/40.166-plugin-contract.org::#plugin-replay][Offline replay evidence]] |
+| MAR-PLG-R05 | Compiled execution, message channels, Scheme C ABI bridge, and gRPC service | [[file:../../docs/40-rfcs/40.166-plugin-contract.org::#plugin-performance][High-performance execution design]] and [[file:../../docs/40-rfcs/40.166-plugin-contract.org::#actor-throughput][Actor throughput across the host boundary]] |
+| MAR-VM-R11 | Runtime allocation accounting and Context diagnostics | [[file:../../docs/40-rfcs/40.166-plugin-contract.org::#context-allocation-accounting][Cumulative accounting and its consumer qualification]] |
+| MAR-VM-R13 | Yuanxu Build, native linked closure and Rust Deck receipts | [[file:../../docs/40-rfcs/40.166-plugin-contract.org::#context-compiled-namespace-qualification][Compiled namespace qualification]] |
+| MAR-TUI-R01 | TUI event admission and projection | [[file:../../docs/40-rfcs/40.180-codewhale-inspired-tui.org::#tui-performance][Backpressure and retention]] |
+| MAR-TUI-R02 | TUI viewport and frame scheduler | [[file:../../docs/40-rfcs/40.180-codewhale-inspired-tui.org::#tui-performance][Incremental rendering and qualification]] |
+| MAR-TUI-R03 | Runtime and session store | [[file:../../docs/40-rfcs/40.180-codewhale-inspired-tui.org::#tui-performance][Typed authority and evidence]] |
+| MAR-TUI-R04 | Session store | [[file:../../docs/40-rfcs/40.180-codewhale-inspired-tui.org::#tui-performance][Replay and duplicate prevention]] |
+| MAR-TUI-R05 | Qualification harness | [[file:../../docs/40-rfcs/40.180-codewhale-inspired-tui.org::#tui-performance][Matched performance measurement]] |
+| MAR-TUI-R06 | Composer | [[file:../../docs/40-rfcs/40.180-codewhale-inspired-tui.org::#tui-performance][Unicode, paste and resize]] |
+| MAR-TUI-R07 | Terminal ownership | [[file:../../docs/40-rfcs/40.180-codewhale-inspired-tui.org::#tui-performance][Suspend and handoff lifecycle]] |
+
+The actual package references the Rust run registry, policy IR, Scheme C ABI
+bridge, and graph admission at the inspected Marlin revision
+=5cdd0b1b925b1513b998ae8e79e28eaf10cabd8e=. The target gRPC server, plugin
+activation integration, and scoped frontend are design work. Dependency arrows
+point from consumer to supplier. Connections identify transport channels.
+Allocations identify who is responsible for implementing a requirement.
+The runtime and acceptance evidence belong to their respective owners.
+
+* Validate and render
+
+From the repository root, load the entry and all companion packages as one
+model. Write generated views to =target/sysml/= and record the producing
+OpenSysML version with local run data when needed. Edit the SysML source to
+change topology and the Org counterpart to change design rationale.
+
+#+begin_src sh
+just sysml-check
+mkdir -p target/sysml
+sysml -strict -no-record-cache project.sysml dev/sysml \
+  -render MarlinAgentCORE::projectStructure -render-form mermaid > target/sysml/project-structure.mmd
+sysml -strict -no-record-cache project.sysml dev/sysml \
+  -render MarlinAgentCORE::rustPackageBoundaries -render-form mermaid > target/sysml/rust-package-boundaries.mmd
+sysml -strict -no-record-cache project.sysml dev/sysml \
+  -render MarlinAgentCORE::pluginTransport -render-form mermaid > target/sysml/plugin-transport.mmd
+sysml -strict -no-record-cache project.sysml dev/sysml \
+  -render MarlinAgentCORE::performanceDesign -render-form mermaid > target/sysml/performance-design.mmd
+sysml -strict -no-record-cache project.sysml dev/sysml \
+  -render MarlinAgentCORE::pluginRequestPath -render-form mermaid > target/sysml/plugin-request-path.mmd
+sysml -strict -no-record-cache project.sysml dev/sysml \
+  -render '#state:MarlinPluginLifecycle::ActivationLifecycle' -render-form mermaid > target/sysml/activation-lifecycle.mmd
+sysml -strict -no-record-cache project.sysml dev/sysml \
+  -render '#state:MarlinPluginLifecycle::InvocationLifecycle' -render-form mermaid > target/sysml/invocation-lifecycle.mmd
+sysml -strict -no-record-cache project.sysml dev/sysml \
+  -render MarlinAgentCORE::tuiPerformanceDesign -render-form mermaid > target/sysml/tui-performance.mmd
+sysml -strict -no-record-cache project.sysml dev/sysml \
+  -render '#state:MarlinTuiLifecycle::TurnLifecycle' -render-form mermaid > target/sysml/turn-lifecycle.mmd
+sysml -strict -no-record-cache project.sysml dev/sysml \
+  -render '#state:MarlinTuiLifecycle::TerminalOwnershipLifecycle' -render-form mermaid > target/sysml/terminal-ownership.mmd
+sysml -strict -no-record-cache project.sysml dev/sysml \
+  -render '#state:MarlinTuiLifecycle::ConversationAdmissionLifecycle' -render-form mermaid > target/sysml/conversation-admission.mmd
+#+end_src
+
+Strict validation checks model syntax and references. The reflective self-check
+checks the model structure. Runtime behavior and performance require their own
+evidence.

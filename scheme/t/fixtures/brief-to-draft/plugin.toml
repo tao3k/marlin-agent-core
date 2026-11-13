@@ -1,0 +1,24 @@
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+#
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
+id = "org.marlin.examples.brief-to-draft"
+version = "0.1.0"
+contract_major = 0
+requires_features = ["workflow-preset"]
+
+[capabilities.read-brief]
+kind = "workspace.read-file"
+path = "briefs/launch.org"
+
+[capabilities.create-draft]
+kind = "workspace.create-file"
+path = "drafts/launch.org"
+
+[contributions.brief-to-draft]
+kind = "workflow-preset"
+input_schema = "marlin.brief-to-draft.start.v0"
+policy_module = "marlin.brief-to-draft.draft-output"
+settings_schema = "marlin.brief-to-draft.settings.v0"
+requires = ["read-brief", "create-draft"]
+settings = { draft-output = { template = "release-note" } }

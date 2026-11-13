@@ -1,0 +1,50 @@
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+#
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
+[package]
+license.workspace = true
+name = "marlin-deck-runtime"
+edition.workspace = true
+version.workspace = true
+authors.workspace = true
+repository.workspace = true
+readme = "README.org"
+
+[features]
+default = []
+actor-runtime = ["dep:libc", "dep:marlin-agent-context", "marlin-agent-context/gerbil-scheme-abi", "dep:gerbil-scheme", "dep:gerbil-scheme-sys", "dep:thiserror", "dep:tokio", "dep:tokio-util"]
+mailbox-benchmark = ["actor-runtime"]
+context-profiling = ["actor-runtime"]
+
+[[bench]]
+name = "single_vm_actor"
+harness = false
+required-features = ["actor-runtime"]
+
+[[bench]]
+name = "mailbox"
+harness = false
+required-features = ["mailbox-benchmark"]
+
+[dependencies]
+libc = { workspace = true, optional = true }
+gerbil-scheme = { workspace = true, optional = true, features = ["external-program"] }
+gerbil-scheme-sys = { workspace = true, optional = true }
+marlin-agent-context = { workspace = true, optional = true }
+serde.workspace = true
+thiserror = { workspace = true, optional = true }
+tokio = { workspace = true, optional = true }
+tokio-util = { workspace = true, optional = true }
+
+[build-dependencies]
+marlin-gerbil-aot-link.workspace = true
+
+[dev-dependencies]
+marlin-agent-protocol.workspace = true
+sha2.workspace = true
+
+[[bench]]
+name = "context_profile"
+harness = false
+required-features = ["mailbox-benchmark"]

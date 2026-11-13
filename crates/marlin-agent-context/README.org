@@ -1,0 +1,73 @@
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+#
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
+#+title: Marlin Agent Context
+
+Owns Marlin's Context requests, batch admission and scope digest projections.
+The crate builds without a Scheme SDK by default. The =gerbil-scheme-abi= feature
+provides typed value projections and linked Context entry points through
+gerbil-scheme-rust's rooted-object ABI. Deck selects this feature for its
+=external-program= image. It does not require the SDK's package loader.
+The =gerbil= feature adds package-host Org operations and includes =gerbil-scheme-abi=.
+The Scheme adapter lives in ~scheme/context/~ and uses AI Agentic Lab's
+compiled Context library.
+
+A batch shares its bundle, organization, project, worktree, epoch and source
+cut. Each row carries its own actor, task, destination and optional
+session/turn pair. The caller may dispatch one ready row immediately.
+The ABI returns one fixed-width Lab digest per row in submission order.
+These digests identify admitted scopes. Rust must still check that the scope
+and grants are current before admitting effects.
+
+The Deck runtime routes Context requests through the linked Scheme Actor
+image. Complete Context throughput, tail latency and physical allocation
+qualification remain separate acceptance gates.
+
+Run ~cargo test -p marlin-agent-context~ without a VM and
+~cargo bench -p marlin-agent-context --bench scope_batch~ to measure Rust
+request preparation for 1, 8, 32 and 64 rows. The benchmark does not include
+Gerbil root construction, C ABI dispatch or Lab Scope validation.
+
+* Org-backed context migration
+
+The =gerbil= feature also exposes =ContextOrgModule=: it resolves the selected
+Yuanxu Context publication through gerbil-scheme-rust, opens source through
+Lab's Scheme Orgize interface, and projects a bounded structural graph through
+rooted Scheme values. Rust checks UTF-8 byte spans, local element identities,
+and parent relations; the complete source remains available. An ordered bounded
+field batch preserves Scheme's missing, text and text-list values, including
+computed headline fields, without re-parsing. The bridge does not yet replace
+contract evaluation, the existing Rust workspace parser, or the TUI journal.
+Element IDs are process-local and tied to one opened source instance: the same
+numeric ordinal from a different source is rejected before a VM query. They are
+not durable source identities, source authentication, or revision receipts.
+The same boundary can open a Lab Org Contract source and project its original
+text, generation, contract identity, parser identity, digests and bounded
+anchors. A projected cut does not authenticate a source, authorize disclosure,
+commit a write or connect Lab's Session host.
+
+Workspace loading consumes Orgize's parsed sections and element records directly,
+including their source ranges. Contract query alternatives, typed predicates and
+source conditions are preserved as data; Orgize remains the evaluator.
+The host must call the exported unsafe =initialize_org_runtime= once during
+exclusive startup, before creating application threads or subprocesses, following
+its upstream safety contract. Document loading does not initialize the VM.
+Parsing and contract discovery return =WorkspaceResult= so startup and parser
+failures reach the caller.
+
+The =org-source= feature exposes the migrated Org source store;
+=org-workspace= adds document parsing and contracts, =org-workflow= currently
+adds release-status operations, and =org-memory= adds the local Org memory
+projection. The existing store's per-file writes
+are not a transactional turn journal. A =ContextOrgMemoryQuery= checks that its project, worktree, actor and session
+match a typed Context request before querying that local workspace. It retains
+the full scope and turn request for correlation. This check does not call Lab,
+authenticate source bytes, grant model disclosure, establish freshness, or
+make the result durable. It is not a substitute for the Lab Org projection and
+current-use admission paths.
+
+The TUI's existing session journal is not yet backed by Org. The Context-owned
+Org store, typed turn/continuation persistence and migration from that journal
+remain open. Context is not compressed or summarized by this migration. See
+[[file:../../docs/40-rfcs/40.181-context-org-ownership.org][Context-owned Org architecture]].

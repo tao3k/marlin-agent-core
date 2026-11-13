@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 #[path = "turso_operations.rs"]
 mod operations;
 #[path = "turso_schema.rs"]
@@ -5,6 +9,7 @@ mod schema;
 #[path = "turso_storage.rs"]
 mod storage;
 
+use mrr_data_backend::turso_driver as turso;
 use schema::STORAGE_SCHEMA;
 
 use std::path::PathBuf;
@@ -13,9 +18,10 @@ use std::time::Duration;
 use crate::records::{
     AgentId, AgentStorage, ArtifactHash, ArtifactPointerKey, ArtifactPointerRecord,
     ArtifactPointerUpdate, ArtifactPutOutcome, ArtifactRecord, EventId, MemoryKey,
-    MemoryProposalId, MemoryProposalRecord, ProjectId, SessionEventRecord, SessionId, StorageError,
-    StorageFuture, StorageResult, StorageSchemaSnapshot, StorageSchemaTable, TopologyEdgeId,
-    TopologyEdgeRecord, TopologyNodeId, TurnId, VisibilityReceipt,
+    MemoryProposalId, MemoryProposalRecord, ProjectId, SessionEventRecord, SessionEventStore,
+    SessionId, StorageError, StorageFuture, StorageResult, StorageSchemaSnapshot,
+    StorageSchemaTable, TopologyEdgeId, TopologyEdgeRecord, TopologyNodeId, TurnId,
+    VisibilityReceipt,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]

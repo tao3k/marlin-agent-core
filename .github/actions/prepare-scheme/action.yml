@@ -1,0 +1,118 @@
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+#
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
+name: Build the Scheme package
+description: Use the Gerbil package manager and Builder on the selected platform.
+inputs:
+  trace-dependency-crash:
+    description: Inspect Gerbil crash dumps and test the compiled Org grammar import on hosted Ubuntu.
+    default: 'false'
+runs:
+  using: composite
+  steps:
+    - uses: ./.github/actions/setup-scheme
+      id: sdk
+    - name: Restore installed Scheme dependencies
+      id: dependencies
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: scheme/.gerbil
+        key: scheme-deps-v2-${{ runner.os }}-${{ runner.arch }}-${{ steps.sdk.outputs.toolchain }}-${{ hashFiles('scheme/gerbil.pkg', 'Cargo.lock', '.github/actions/prepare-scheme/action.yml') }}
+    - name: Install declared Scheme dependencies
+      if: steps.dependencies.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        GERBIL_PATH: ${{ github.workspace }}/scheme/.gerbil
+        TRACE_DEPENDENCY_CRASH: ${{ inputs.trace-dependency-crash }}
+      run: |
+        # Orgize's Builder imports bridge tools. Build them from Cargo's
+        # selected source before Gerbil installs the Lab dependency graph.
+        metadata=$(cargo metadata --locked --format-version 1)
+        bridge_manifest=$(jq -er '.packages[] | select(.name == "gerbil-scheme-build") | .manifest_path' <<< "$metadata")
+        (cd "${bridge_manifest%/crates/gerbil-scheme-build/Cargo.toml}" && gerbil build)
+
+        # The pinned SDK checks out the requested revision before fetching it.
+        # Fetch the same Orgize Git object Cargo selected before Gerbil installs it.
+        orgize_repo=github.com/tao3k/orgize
+        orgize_revision=$(jq -er --arg repo "$orgize_repo" '
+          [.packages[] | select(.name == "orgize") | .source
+            | select(startswith("git+https://" + $repo + "?")) | split("#")[1]
+            | select(test("^[0-9a-f]{40}$"))]
+          | if length == 1 then .[0] else error("expected one locked Orgize revision") end
+        ' <<< "$metadata")
+        orgize_checkout="$GERBIL_PATH/pkg/$orgize_repo"
+        git init --quiet --initial-branch=main "$orgize_checkout"
+        git -C "$orgize_checkout" remote add origin "https://$orgize_repo.git"
+        git -C "$orgize_checkout" fetch --quiet --no-tags origin "$orgize_revision"
+        git -C "$orgize_checkout" cat-file -e "$orgize_revision^{tree}"
+        # Use the package manager's source-update API to register the revision.
+        # Dependency installation and indexing still run through gerbil deps.
+        (
+          cd scheme
+          ORGIZE_PACKAGE="$orgize_repo@$orgize_revision" gxi -e '
+            (import :gerbil/tools/gxpkg)
+            (pkg-update (getenv "ORGIZE_PACKAGE"))'
+        )
+        if [[ "$TRACE_DEPENDENCY_CRASH" == true && "$RUNNER_OS" == Linux ]]; then
+          command -v gdb >/dev/null || sudo apt-get install -y gdb
+          crash_dir=$(mktemp -d "$RUNNER_TEMP/marlin-gerbil-crash.XXXXXX")
+          core_pattern=$(sysctl -n kernel.core_pattern)
+          trap 'sudo sysctl -q -w "kernel.core_pattern=$core_pattern"' EXIT
+          sudo sysctl -q -w "kernel.core_pattern=$crash_dir/core.%e.%p"
+          ulimit -c unlimited
+        fi
+        # gxpkg captures gxtags stdout. Send uncaught Gambit errors to stderr.
+        (cd scheme && GAMBOPT="${GAMBOPT:+$GAMBOPT,}debug=q2+" gerbil deps --install) || {
+          status=$?
+          if [[ -n "${crash_dir:-}" ]]; then
+            orgize_crashed=false
+            for dump in "$crash_dir"/core.gxtags.* "$crash_dir"/core.gerbil.*; do
+              [[ -f "$dump" ]] || continue
+              tool=${dump##*/core.}
+              tool=${tool%%.*}
+              backtrace="$dump.txt"
+              gdb --batch --nx -iex 'set auto-load off' \
+                -ex 'set print frame-arguments none' -ex 'thread apply all bt' \
+                -ex 'info registers' -ex 'disassemble /r $pc-32,$pc+48' \
+                "$(command -v "$tool")" "$dump" 2>&1 | tee "$backtrace" || true
+              if grep -Eq 'orgize/[^ ]*/(grammar|expectation-grammar)~0[.]o1' "$backtrace"; then
+                orgize_crashed=true
+              fi
+            done
+            if [[ "$orgize_crashed" == true ]]; then
+              # Compare ordinary imports and isolated source indexing against
+              # the same compiled dependencies as the full package index.
+              ulimit -c 0
+              export GAMBOPT="${GAMBOPT:+$GAMBOPT,}debug=q2+"
+              for module in org-parser/grammar org-contract/expectation-grammar; do
+                import_status=0
+                tag_status=0
+                binding=org-mode-language-grammar
+                if [[ "$module" == org-contract/expectation-grammar ]]; then
+                  binding=org-expectation-language-grammar
+                fi
+                (cd "$GERBIL_PATH/pkg" && timeout 120s gxi -e \
+                  "(import :orgize/languages/org/modules/$module)
+                   (unless $binding (error \"missing Org grammar\"))") || import_status=$?
+                (cd "$GERBIL_PATH/pkg" && timeout 120s gxtags --global-env --jobs 1 \
+                  -o "$crash_dir/${module##*/}.tags" \
+                  "$orgize_checkout/languages/org/modules/$module.ss") || tag_status=$?
+                printf 'Orgize %s direct import status %s, single-file index status %s\n' \
+                  "$module" "$import_status" "$tag_status"
+              done
+            fi
+          fi
+          exit "$status"
+        }
+        test "$(git -C "$orgize_checkout" rev-parse HEAD)" = "$orgize_revision"
+    - name: Save installed Scheme dependencies
+      if: steps.dependencies.outputs.cache-hit != 'true'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: scheme/.gerbil
+        key: ${{ steps.dependencies.outputs.cache-primary-key }}
+    - name: Build the selected Scheme package
+      shell: bash
+      working-directory: scheme
+      run: gerbil build

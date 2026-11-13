@@ -1,3 +1,9 @@
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+#
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
+#+NOTE: CMD routing and Core Debug CLI references in this historical document are retired. Current execution ownership is defined by [[file:40.166-plugin-contract.org::#single-vm-actor-runtime][Deck Runtime Context admission]].
+
 #+TITLE: 40.121 Project-scoped Runtime Implementation Plan
 #+FILETAGS: :marlin:rfc:runtime:implementation:graph:
 
@@ -14,7 +20,7 @@ Architecture calibration: the implementation is Org-first. Org is the core
 reference substrate for project memory, evidence, contracts, source spans, and
 compact context packs; code slices should be selected because they strengthen
 that substrate, not because they are the smallest local patch. See
-[[file:../superpowers/specs/2026-06-15-org-first-project-memory-runtime-design.md][Org-first Project Memory Runtime Design]].
+[[file:../superpowers/specs/2026-06-15-org-first-project-memory-runtime-design.org][Org-first Project Memory Runtime Design]].
 
 Sandbox backend capability remains important, but it is not a prerequisite for the first project-scoped runtime. The first runtime slice is a read-model and protocol slice:
 

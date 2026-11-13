@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 use marlin_agent_protocol::{
     AgentEvent, AgentExecutionTrace, AgentSpanName, AgentTraceSpanRecord,
     GRAPH_POLICY_PROPOSAL_SPAN_NAME, GraphId, GraphLoopExecutionStatus, GraphLoopStrategy,
@@ -19,7 +23,7 @@ fn agent_trace_span_record_keeps_name_and_fields() {
 #[test]
 fn agent_trace_span_record_projects_graph_policy_proposal_receipts() {
     let proposal = GraphPolicyProposal::new(
-        GraphLoopStrategy::native_scheme("scheme-loop-ranker", "v1"),
+        GraphLoopStrategy::scheme_c_abi("scheme-loop-ranker", "v1"),
         LoopGraph {
             graph_id: "turn-frontier-1".to_string(),
             nodes: Vec::new(),
@@ -142,7 +146,7 @@ fn agent_execution_trace_packages_run_facts() {
 #[test]
 fn agent_execution_trace_finds_graph_policy_proposal_spans_by_strategy() {
     let proposal = GraphPolicyProposal::new(
-        GraphLoopStrategy::native_scheme("scheme-loop-ranker", "v1"),
+        GraphLoopStrategy::scheme_c_abi("scheme-loop-ranker", "v1"),
         LoopGraph {
             graph_id: "turn-frontier-1".to_string(),
             nodes: Vec::new(),

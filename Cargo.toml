@@ -1,6 +1,13 @@
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+#
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 [workspace]
 members = [
-    "build-support/marlin-gerbil-native-build",
+    "build-support/marlin-gerbil-aot-link",
+    "build-support/marlin-rust-project-harness-policy",
+    "crates/marlin-agent-app-server",
+    "crates/marlin-agent-context",
     "crates/marlin-agent-core",
     "crates/marlin-agent-environment",
     "crates/marlin-agent-graph",
@@ -8,27 +15,23 @@ members = [
     "crates/marlin-agent-harness-types",
     "crates/marlin-agent-hooks",
     "crates/marlin-agent-kernel",
-    "crates/marlin-agent-policy-routing-native",
+    "crates/marlin-agent-policy-routing-abi",
     "crates/marlin-agent-protocol",
-    "crates/marlin-agent-route",
     "crates/marlin-agent-runtime",
     "crates/marlin-agent-sessions",
     "crates/marlin-agent-storage",
     "bazel/crate-universe",
     "crates/marlin-agent-stream",
     "crates/marlin-agent-test-support",
-    "crates/marlin-deck-runtime-native",
+    "crates/marlin-agent-tui",
+    "crates/marlin-agent-tooling",
+    "crates/marlin-agent-ui",
+    "crates/marlin-deck-runtime",
     "crates/marlin-gerbil-ir",
     "crates/marlin-gerbil-scheme",
-    "crates/marlin-git-utils",
-    "crates/marlin-org-memory",
-    "crates/marlin-org-model",
-    "crates/marlin-org-patch",
-    "crates/marlin-org-store",
-    "crates/marlin-org-workflow",
-    "crates/marlin-org-workspace",
-    "crates/marlin-workspace-patch",
-    "crates/marlin-workspace-protocol",
+    "crates/marlin-agent-gitops",
+    "crates/marlin-agent-telemetry",
+    "crates/marlin-agent-context/parts/org-model",
     "crates/marlin-workspace-query",
     "crates/marlin-workspace-status",
     "crates/marlin-workspace-view",
@@ -36,36 +39,40 @@ members = [
 resolver = "2"
 
 [workspace.package]
+license = "Apache-2.0 AND LGPL-2.1-or-later"
 edition = "2024"
 version = "0.1.0"
 authors = ["marlin contributors"]
 repository = "https://github.com/tao3k/marlin-agent-core"
 
 [workspace.dependencies]
-aho-corasick = "1.1.4"
-async-trait = "0.1.89"
-axum = { version = "0.8", features = ["json"] }
-cc = "1.2.64"
-cbindgen = "0.29.4"
+libc = "0.2.186"
+aho-corasick = "1.1.5"
+async-trait = "0.1.92"
+asp-rust = { git = "https://github.com/tao3k/asp-rust", rev = "dd9bf7188bb9900cdfc6540fee2bfd28f43496fd", version = "0.1.2", default-features = false, features = ["native-syntax"] }
+cc = "1.11.1"
 criterion = "0.8.2"
-gerbil-scheme = { git = "https://github.com/tao3k/gerbil-scheme-rust", rev = "1f28201a8de47fd40931331e81ae2f638b491095", version = "0.1.0" }
-gerbil-scheme-build = { git = "https://github.com/tao3k/gerbil-scheme-rust", rev = "1f28201a8de47fd40931331e81ae2f638b491095", version = "0.1.0" }
-gerbil-scheme-native-build = { git = "https://github.com/tao3k/gerbil-scheme-rust", rev = "1f28201a8de47fd40931331e81ae2f638b491095", version = "0.1.0" }
-futures-executor = "0.3.32"
-globset = "0.4.18"
-litellm-rs = { version = "0.5", default-features = false, features = ["lite", "gateway", "sqlite", "redis", "websockets"] }
+gerbil-scheme = { git = "https://github.com/tao3k/gerbil-scheme-rust", rev = "dfe8b62b5dc64de88f8d70a77059a1741218ef80", version = "0.1.0" }
+gerbil-scheme-sys = { git = "https://github.com/tao3k/gerbil-scheme-rust", rev = "dfe8b62b5dc64de88f8d70a77059a1741218ef80", version = "0.1.0" }
+gerbil-scheme-build = { git = "https://github.com/tao3k/gerbil-scheme-rust", rev = "dfe8b62b5dc64de88f8d70a77059a1741218ef80", version = "0.1.0" }
+gerbil-scheme-aot-build = { git = "https://github.com/tao3k/gerbil-scheme-rust", rev = "dfe8b62b5dc64de88f8d70a77059a1741218ef80", version = "0.1.0" }
+futures-executor = "0.3.34"
+globset = "0.4.21"
+weaver-llm = { git = "https://github.com/hardenedlinux/weaver", rev = "2cbb6bf7c6bcfddccde5105b809739323fa29d50" }
 memoffset = "0.9.1"
+mrr-data-backend = { git = "https://github.com/tao3k/mrr-data", rev = "daa6487820f798f0583713de8d03110aeac5d1fd", default-features = false }
 object = "0.39.1"
-orgize = { git = "https://github.com/tao3k/orgize", rev = "9d9ee8c66ccd222bf4379d562deeda514b475875" }
+orgize = { git = "https://github.com/tao3k/orgize", rev = "7a54cc75de8cf9a9986be70bac38be14010141bd" }
 parking_lot = "0.12.5"
-reqwest = { version = "0.13.4", default-features = false, features = ["json", "rustls"] }
-serde = { version = "1.0.228", features = ["derive"] }
-serde_json = "1.0.145"
+proptest = "=1.12.0"
+reqwest = { version = "0.13.5", default-features = false, features = ["json", "rustls"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+sha2 = "0.10.9"
 static_assertions = "1.1.0"
 tempfile = "3"
-turso = { version = "0.7.0-pre.17", default-features = false }
-toml = "1.1.2"
-thiserror = "2.0.18"
+toml = "1.2.1"
+thiserror = "2.0.21"
 tokio = { version = "1", features = ["full"] }
 tokio-stream = "0.1"
 tokio-util = { version = "0.7", features = ["rt"] }
@@ -73,36 +80,32 @@ tower = { version = "0.5.3", features = ["limit", "load-shed", "timeout", "util"
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter", "fmt", "json"] }
 wiremock = "0.6.5"
-rust-lang-project-harness = { git = "https://github.com/tao3k/rust-lang-project-harness", rev = "124b78e1e43265255e6e761b93f6a5f0048b0c48", version = "0.1.2" }
-marlin-rust-project-harness-policy = { path = "build-support/marlin-rust-project-harness-policy", version = "0.1.0" }
+marlin-agent-app-server = { path = "crates/marlin-agent-app-server", version = "0.1.0" }
+marlin-agent-context = { path = "crates/marlin-agent-context", version = "0.1.0" }
 marlin-agent-environment = { path = "crates/marlin-agent-environment", version = "0.1.0" }
 marlin-agent-graph = { path = "crates/marlin-agent-graph", version = "0.1.0" }
 marlin-agent-harness = { path = "crates/marlin-agent-harness", version = "0.1.0" }
 marlin-agent-harness-types = { path = "crates/marlin-agent-harness-types", version = "0.1.0" }
 marlin-agent-hooks = { path = "crates/marlin-agent-hooks", version = "0.1.0" }
 marlin-agent-kernel = { path = "crates/marlin-agent-kernel", version = "0.1.0" }
-marlin-agent-policy-routing-native = { path = "crates/marlin-agent-policy-routing-native", version = "0.1.0" }
 marlin-agent-protocol = { path = "crates/marlin-agent-protocol", version = "0.1.0" }
-marlin-agent-route = { path = "crates/marlin-agent-route", version = "0.1.0" }
 marlin-agent-runtime = { path = "crates/marlin-agent-runtime", version = "0.1.0" }
 marlin-agent-sessions = { path = "crates/marlin-agent-sessions", version = "0.1.0" }
 marlin-agent-storage = { path = "crates/marlin-agent-storage", version = "0.1.0" }
+marlin-agent-stream = { path = "crates/marlin-agent-stream", version = "0.1.0" }
 marlin-agent-test-support = { path = "crates/marlin-agent-test-support", version = "0.1.0" }
+marlin-deck-runtime = { path = "crates/marlin-deck-runtime", version = "0.1.0" }
 marlin-gerbil-ir = { path = "crates/marlin-gerbil-ir", version = "0.1.0" }
 marlin-gerbil-scheme = { path = "crates/marlin-gerbil-scheme", version = "0.1.0" }
-marlin-git-utils = { path = "crates/marlin-git-utils", version = "0.1.0" }
-marlin-org-memory = { path = "crates/marlin-org-memory", version = "0.1.0" }
-marlin-org-model = { path = "crates/marlin-org-model", version = "0.1.0" }
-marlin-org-patch = { path = "crates/marlin-org-patch", version = "0.1.0" }
-marlin-org-store = { path = "crates/marlin-org-store", version = "0.1.0" }
-marlin-org-workflow = { path = "crates/marlin-org-workflow", version = "0.1.0" }
-marlin-org-workspace = { path = "crates/marlin-org-workspace", version = "0.1.0" }
-marlin-workspace-patch = { path = "crates/marlin-workspace-patch", version = "0.1.0" }
-marlin-workspace-protocol = { path = "crates/marlin-workspace-protocol", version = "0.1.0" }
+marlin-agent-ui = { path = "crates/marlin-agent-ui", version = "0.1.0" }
+marlin-agent-tooling = { path = "crates/marlin-agent-tooling", version = "0.1.0" }
+marlin-agent-gitops = { path = "crates/marlin-agent-gitops", version = "0.1.0" }
+marlin-agent-telemetry = { path = "crates/marlin-agent-telemetry", version = "0.1.0" }
+marlin-context-org-model = { path = "crates/marlin-agent-context/parts/org-model", version = "0.1.0" }
 marlin-workspace-query = { path = "crates/marlin-workspace-query", version = "0.1.0" }
 marlin-workspace-status = { path = "crates/marlin-workspace-status", version = "0.1.0" }
 marlin-workspace-view = { path = "crates/marlin-workspace-view", version = "0.1.0" }
-marlin-gerbil-native-build = { path = "build-support/marlin-gerbil-native-build", version = "0.1.0" }
+marlin-gerbil-aot-link = { path = "build-support/marlin-gerbil-aot-link", version = "0.1.0" }
 
 [profile.release]
 # Thin LTO keeps useful cross-crate optimization without the full monolithic
@@ -159,6 +162,11 @@ split-debuginfo = "unpacked"
 [profile.dev.package."*"]
 debug = false
 
+# Keep the debug TUI's linked Scheme graph, but omit its large symbol table
+# from the executable loaded on every interactive launch.
+[profile.dev.package.marlin-agent-tui]
+strip = "symbols"
+
 # Build scripts and proc macros run during compilation. A small amount of
 # optimization here improves compile-time execution without making cold builds
 # expensive.
@@ -169,8 +177,6 @@ debug = false
 # Dev-mode hot paths for this workspace: async runtime, gateway/streaming HTTP,
 # Org parsing, graph/query matching, compression, and native artifact scanning.
 [profile.dev.package.aho-corasick]
-opt-level = 2
-[profile.dev.package.axum]
 opt-level = 2
 [profile.dev.package.bytes]
 opt-level = 2
@@ -185,8 +191,6 @@ opt-level = 2
 [profile.dev.package.http-body]
 opt-level = 2
 [profile.dev.package.hyper]
-opt-level = 2
-[profile.dev.package.litellm-rs]
 opt-level = 2
 [profile.dev.package.memchr]
 opt-level = 2
@@ -233,8 +237,4 @@ opt-level = 2
 [profile.dev.package.tracing-subscriber]
 opt-level = 2
 [profile.dev.package.walkdir]
-opt-level = 2
-[profile.dev.package.webpki-roots]
-opt-level = 2
-[profile.dev.package.zstd]
 opt-level = 2

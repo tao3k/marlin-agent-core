@@ -1,20 +1,15 @@
-//! `Gerbil` ahead-of-time compiler probing and repair facade.
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
 
-mod native;
-mod probe;
+//! Scheme C ABI link units for the Rust runtime.
 
-pub use native::{
-    GerbilDeckRuntimeNativeAotBuildReceipt, GerbilDeckRuntimeNativeAotBuildStatus,
-    GerbilDeckRuntimeNativeAotCommandPlan, GerbilDeckRuntimeNativeAotCommandReceipt,
-    GerbilDeckRuntimeNativeAotConfig, GerbilDeckRuntimeNativeAotPlan,
-    GerbilDeckRuntimeNativeAotProfile, GerbilDeckRuntimeNativeAotStatus,
-    GerbilDeckRuntimeNativeCargoDirective, GerbilDeckRuntimeNativeCargoDirectiveKind,
-    GerbilDeckRuntimeNativeStaticLinkPlan, GerbilDeckRuntimeNativeStaticLinkStatus,
-    GerbilDeckRuntimeNativeSymbol, GerbilDeckRuntimeNativeSymbolAuditMethod, GerbilNativeCCompiler,
-    GerbilNativeLinkLibrary, GerbilNativeSymbolAuditor,
-};
-pub use probe::{
-    GerbilAotBackendRepairReceipt, GerbilAotBackendRepairStatus, GerbilAotBackendShimReceipt,
-    GerbilAotBackendShimStatus, GerbilAotCommandReceipt, GerbilAotProbeConfig,
-    GerbilAotProbeReceipt, GerbilAotProbeStatus,
+mod linked;
+
+pub use linked::{
+    GerbilAotBuildReceipt, GerbilAotBuildStatus, GerbilAotCargoDirective,
+    GerbilAotCargoDirectiveKind, GerbilAotCommandPlan, GerbilAotCommandReceipt, GerbilAotConfig,
+    GerbilAotPlan, GerbilAotProfile, GerbilAotStaticLinkPlan, GerbilAotStaticLinkStatus,
+    GerbilAotStatus, GerbilAotSymbol, GerbilAotSymbolAuditMethod, GerbilCCompiler,
+    GerbilLinkLibrary, GerbilSymbolAuditor,
 };

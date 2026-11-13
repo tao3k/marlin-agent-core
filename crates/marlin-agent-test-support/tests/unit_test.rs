@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 #[path = "unit/agent_graph_readiness.rs"]
 mod agent_graph_readiness;
 #[path = "unit/graph_policy.rs"]
@@ -22,5 +26,3 @@ mod sub_agent_session;
 mod test_run;
 #[path = "unit/three_layer.rs"]
 mod three_layer;
-
-marlin_rust_project_harness_policy::scenario_performance_tests!();

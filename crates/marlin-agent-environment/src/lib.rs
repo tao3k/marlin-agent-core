@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 //! Runtime environment resolution for custom homes, config layers, and sub-agents.
 
 #![forbid(unsafe_code)]
@@ -36,7 +40,7 @@ pub use working_copy::{
     WorkingCopyProviderExecutableStatus,
 };
 
-pub use marlin_workspace_protocol::{
+pub use marlin_agent_gitops::working_copy::{
     WorkingCopyActiveBinding, WorkingCopyBaseRef, WorkingCopyBranchName,
     WorkingCopyCommandInvocation, WorkingCopyCommandProgram, WorkingCopyCommandProjection,
     WorkingCopyCommandProjectionError, WorkingCopyCommandReceipt, WorkingCopyCommandStatus,

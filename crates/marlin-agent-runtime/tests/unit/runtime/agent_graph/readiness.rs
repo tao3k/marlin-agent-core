@@ -1,13 +1,66 @@
-use marlin_agent_graph::{AgentGraphPlanningTarget, plan_agent_coordination};
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
+use marlin_agent_graph::{AgentGraphPlanningTarget, GraphLoopGraphRef, plan_agent_coordination};
 use marlin_agent_protocol::AgentGraphProjectionRequest;
 use marlin_agent_runtime::{
-    RuntimeAgentGraphExecutionReadinessRejection, RuntimeAgentGraphExecutionReadinessStatus,
-    RuntimeAgentGraphExecutionRequestRejection, RuntimeAgentGraphProjectionRejection,
-    build_agent_graph_execution_request, check_agent_graph_execution_readiness,
+    RuntimeAgentCoordinationAdmissionStatus, RuntimeAgentGraphExecutionReadinessRejection,
+    RuntimeAgentGraphExecutionReadinessStatus, RuntimeAgentGraphExecutionRequestRejection,
+    RuntimeAgentGraphProjectionRejection, RuntimeAgentGraphProjectionStatus,
+    RuntimeAgentGraphReadinessInconsistency, build_agent_graph_execution_request,
+    check_agent_graph_execution_readiness,
 };
 use marlin_agent_test_support::agent_graph_readiness_replay_artifact_fixture;
 
 use super::support::{graph_id, node_id, sample_graph};
+
+fn ready_receipt() -> marlin_agent_runtime::RuntimeAgentGraphExecutionReadinessReceipt {
+    let graph = sample_graph();
+    let planning = plan_agent_coordination(
+        &graph,
+        AgentGraphPlanningTarget::new(graph_id("agent-graph.p1"), node_id("planner")),
+    );
+    check_agent_graph_execution_readiness(
+        &graph,
+        AgentGraphProjectionRequest::new(graph_id("agent-graph.p1"), planning, 52),
+    )
+}
+
+#[test]
+fn execution_request_rejects_mismatched_nested_readiness_evidence() {
+    use RuntimeAgentGraphReadinessInconsistency as Reason;
+    let mut cases = Vec::new();
+    let mut wrong = ready_receipt();
+    wrong.request.graph_id = graph_id("agent-graph.other");
+    cases.push((wrong, Reason::RequestOrPlanningMismatch));
+    let mut wrong = ready_receipt();
+    wrong.request.planning.coordination = None;
+    wrong.projection.planning.coordination = None;
+    cases.push((wrong, Reason::RequestOrPlanningMismatch));
+    let mut wrong = ready_receipt();
+    wrong.projection.status = RuntimeAgentGraphProjectionStatus::Rejected;
+    cases.push((wrong, Reason::ProjectionNotAccepted));
+    let mut wrong = ready_receipt();
+    wrong.projection.admission.as_mut().unwrap().status =
+        RuntimeAgentCoordinationAdmissionStatus::Rejected;
+    cases.push((wrong, Reason::AdmissionNotAccepted));
+    let mut wrong = ready_receipt();
+    wrong.projection.admission.as_mut().unwrap().plan.root_node = node_id("other");
+    cases.push((wrong, Reason::PlanMismatch));
+    let mut wrong = ready_receipt();
+    wrong.root_loop_entry.as_mut().unwrap().graph = GraphLoopGraphRef::new("loop.other").unwrap();
+    cases.push((wrong, Reason::RootLoopEntryMismatch));
+    let mut wrong = ready_receipt();
+    wrong.rejection = Some(RuntimeAgentGraphExecutionReadinessRejection::MissingAdmission);
+    cases.push((wrong, Reason::ReadinessRejection));
+    for (receipt, reason) in cases {
+        assert_eq!(
+            build_agent_graph_execution_request(receipt, 56),
+            Err(RuntimeAgentGraphExecutionRequestRejection::InconsistentEvidence(reason))
+        );
+    }
+}
 
 #[test]
 fn runtime_readiness_projects_root_loop_entry_without_execution_request() {

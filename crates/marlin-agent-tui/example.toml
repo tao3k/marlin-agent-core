@@ -1,0 +1,48 @@
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+#
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
+# Anthropic-compatible DeepSeek route. The base URL and API key come from
+# ANTHROPIC_BASE_URL (for DeepSeek: https://api.deepseek.com/anthropic)
+# and ANTHROPIC_API_KEY when not specified here.
+provider = "deepseek"
+model = "deepseek-v4-pro"
+protocol = "anthropic"
+credential_env = "ANTHROPIC_API_KEY"
+timeout_seconds = 120
+
+# Optional macOS Runtime admission policy. Set the three fields for the
+# workload and machine. The reservation applies to each managed command.
+# [process_budget]
+# concurrent = 4
+# memory_limit_bytes = 3221225472
+# command_reservation_bytes = 268435456
+
+# Optional Anthropic thinking settings; provider/model support varies.
+# [anthropic]
+# thinking = { type = "adaptive" }
+# effort = "low"
+# max_tokens = 8192
+# Manual mode instead: thinking = { type = "enabled", budget_tokens = 4096 }
+
+# OpenAI alternative (comment the Anthropic fields above before enabling).
+# provider = "openai"
+# model = "gpt-4.1-mini"
+# endpoint = "https://api.openai.com/v1/responses"
+# protocol = "open-ai-responses"
+# credential_env = "OPENAI_API_KEY"
+
+# Optional named model, selected with M-x model alternate.
+# [models.alternate]
+# provider = "openai"
+# model = "gpt-4.1"
+# endpoint = "https://api.openai.com/v1/responses"
+# protocol = "open-ai-responses"
+# credential_env = "OPENAI_API_KEY"
+
+# Optional local conversation journal; the parent directory must exist.
+# [session]
+# path = "/absolute/path/to/conversation.db"
+# project = "project:example"
+# session = "session:example"
+# agent = "agent:example"

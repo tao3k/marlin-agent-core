@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+#
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 ignore_directories([
     ".data",
     ".data/**",
@@ -5,4 +9,9 @@ ignore_directories([
     ".devenv/**",
     "target",
     "target/**",
+    "bazel-bin",
+    "bazel-external",
+    "bazel-marlin-agent-core",
+    "bazel-out",
+    "bazel-testlogs",
 ])

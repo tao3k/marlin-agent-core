@@ -1,8 +1,13 @@
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+#
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 """Typed, low-fanout Bazel contracts for Marlin Rust packages."""
 
 load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_library", "rust_test")
 
 _BUILD_ACTIONS = [
+    "none",
     "harness",
     "generated+harness",
     "native+harness",

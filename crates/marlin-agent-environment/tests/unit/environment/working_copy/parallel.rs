@@ -1,6 +1,10 @@
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 use super::{ScriptedGitRepositoryResolver, ScriptedWorkingCopyRunner};
 use marlin_agent_environment::{WorkingCopyCommandOutput, WorkingCopyIsolationDriver};
-use marlin_workspace_protocol::{
+use marlin_agent_gitops::working_copy::{
     WorkingCopyBaseRef, WorkingCopyBranchName, WorkingCopyCommandProgram,
     WorkingCopyFanoutBenchmarkReceipt, WorkingCopyFinalizeBranchRequest, WorkingCopyHandle,
     WorkingCopyIsolationProvider, WorkingCopyIsolationRequest, WorkingCopyIsolationStatus,
@@ -10,11 +14,7 @@ use std::{path::PathBuf, time::Instant};
 
 #[tokio::test]
 async fn working_copy_driver_executes_parallel_worktrunk_fanout_with_bounded_receipt() {
-    let runner = ScriptedWorkingCopyRunner::new([
-        WorkingCopyCommandOutput::succeeded(r#"{"branch":"agent/a"}"#),
-        WorkingCopyCommandOutput::succeeded(r#"{"branch":"agent/b"}"#),
-        WorkingCopyCommandOutput::succeeded(r#"{"branch":"agent/c"}"#),
-    ]);
+    let runner = ScriptedWorkingCopyRunner::new(["a", "b", "c"].map(worktrunk_switch_output));
     let git_resolver = ScriptedGitRepositoryResolver::new("/repo");
     let driver = WorkingCopyIsolationDriver::with_runner_and_git_resolver(
         runner.clone(),
@@ -84,6 +84,13 @@ async fn working_copy_driver_executes_finalize_branch_projection() {
     assert_eq!(
         runner.calls()[0].args,
         vec![
+            "-c".to_string(),
+            if cfg!(windows) {
+                "core.hooksPath=NUL"
+            } else {
+                "core.hooksPath=/dev/null"
+            }
+            .to_string(),
             "-C".to_string(),
             "/repo.agent-a".to_string(),
             "switch".to_string(),
@@ -95,10 +102,7 @@ async fn working_copy_driver_executes_finalize_branch_projection() {
 
 #[tokio::test]
 async fn working_copy_parallel_fanout_emits_benchmark_receipt() {
-    let runner = ScriptedWorkingCopyRunner::new([
-        WorkingCopyCommandOutput::succeeded(r#"{"branch":"agent/a"}"#),
-        WorkingCopyCommandOutput::succeeded(r#"{"branch":"agent/b"}"#),
-    ]);
+    let runner = ScriptedWorkingCopyRunner::new(["a", "b"].map(worktrunk_switch_output));
     let git_resolver = ScriptedGitRepositoryResolver::new("/repo");
     let driver = WorkingCopyIsolationDriver::with_runner_and_git_resolver(runner, git_resolver);
     let requests = ["a", "b"].into_iter().map(|suffix| {
@@ -129,4 +133,15 @@ async fn working_copy_parallel_fanout_emits_benchmark_receipt() {
     assert_eq!(benchmark.max_parallelism, 2);
     assert_eq!(benchmark.applied, 2);
     assert_eq!(benchmark.rejected, 0);
+}
+
+fn worktrunk_switch_output(suffix: &str) -> WorkingCopyCommandOutput {
+    WorkingCopyCommandOutput::succeeded(
+        serde_json::json!({
+            "action": "existing",
+            "branch": format!("agent/{suffix}"),
+            "path": format!("/repo.agent-{suffix}"),
+        })
+        .to_string(),
+    )
 }

@@ -1,6 +1,10 @@
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 //! Release visibility evidence bridge for `Gerbil` release topology gates.
 
-use marlin_agent_protocol::{GraphNativeAbiReadinessReceipt, GraphNativeAbiReadinessStatus};
+use marlin_agent_protocol::{GraphCAbiReadinessReceipt, GraphCAbiReadinessStatus};
 use marlin_gerbil_ir::{ReleaseGateSpec, ReleaseTopologySpec, ReleaseVisibilitySpec};
 
 use crate::{AgentHarnessEvidence, AgentHarnessEvidenceKind};
@@ -108,31 +112,29 @@ pub fn release_gate_execution_receipt(
 }
 
 /// Project a graph native ABI readiness receipt into a release gate execution receipt.
-pub fn native_abi_readiness_release_gate_execution_receipt(
+pub fn c_abi_readiness_release_gate_execution_receipt(
     topology: &ReleaseTopologySpec,
     gate: &ReleaseGateSpec,
-    readiness: &GraphNativeAbiReadinessReceipt,
+    readiness: &GraphCAbiReadinessReceipt,
 ) -> ReleaseGateExecutionReceipt {
     let status = match readiness.status {
-        GraphNativeAbiReadinessStatus::Ready => ReleaseGateExecutionStatus::Passed,
-        GraphNativeAbiReadinessStatus::MissingSymbols => ReleaseGateExecutionStatus::Failed,
+        GraphCAbiReadinessStatus::Ready => ReleaseGateExecutionStatus::Passed,
+        GraphCAbiReadinessStatus::MissingSymbols => ReleaseGateExecutionStatus::Failed,
     };
     let mut receipt = release_gate_execution_receipt(topology, gate, status);
     if !receipt
         .evidence_keys
         .iter()
-        .any(|key| key == "native_abi_readiness")
+        .any(|key| key == "c_abi_readiness")
     {
-        receipt
-            .evidence_keys
-            .push("native_abi_readiness".to_owned());
+        receipt.evidence_keys.push("c_abi_readiness".to_owned());
     }
-    if readiness.status == GraphNativeAbiReadinessStatus::MissingSymbols {
+    if readiness.status == GraphCAbiReadinessStatus::MissingSymbols {
         receipt.diagnostics.extend([
-            "native_abi_readiness.missing_symbols".to_owned(),
-            format!("native_abi_readiness.abi_id={}", readiness.abi_id.as_str()),
+            "c_abi_readiness.missing_symbols".to_owned(),
+            format!("c_abi_readiness.abi_id={}", readiness.abi_id.as_str()),
             format!(
-                "native_abi_readiness.missing={}",
+                "c_abi_readiness.missing={}",
                 readiness
                     .missing_symbols
                     .iter()

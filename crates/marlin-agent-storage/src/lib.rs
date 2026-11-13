@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 //! Agent-native storage contracts.
 //!
 //! This crate owns the persistence boundary for sessions, artifacts, visibility,
@@ -14,9 +18,10 @@ pub use records::{
     AgentId, AgentStorage, ArtifactHash, ArtifactPointerKey, ArtifactPointerRecord,
     ArtifactPointerUpdate, ArtifactPutOutcome, ArtifactRecord, EventId, MemoryKey,
     MemoryProposalCursor, MemoryProposalId, MemoryProposalPageRequest, MemoryProposalRecord,
-    ProjectId, SessionEventBatchWriteReceipt, SessionEventCursor, SessionEventKey,
-    SessionEventPageRequest, SessionEventRecord, SessionId, StorageError, StorageFuture,
-    StoragePage, StoragePageLimit, StorageResult, StorageSchemaLifecycle, StorageSchemaSnapshot,
+    ProjectId, SessionEventBatchWriteReceipt, SessionEventCount, SessionEventCursor,
+    SessionEventHeader, SessionEventKey, SessionEventPageRequest, SessionEventRecord,
+    SessionEventStore, SessionId, SessionPageRequest, StorageError, StorageFuture, StoragePage,
+    StoragePageLimit, StorageResult, StorageSchemaLifecycle, StorageSchemaSnapshot,
     StorageSchemaTable, TopologyEdgeCursor, TopologyEdgeId, TopologyEdgePageRequest,
     TopologyEdgeRecord, TopologyNodeId, TurnId, VisibilityCursor, VisibilityPageRequest,
     VisibilityReceipt,

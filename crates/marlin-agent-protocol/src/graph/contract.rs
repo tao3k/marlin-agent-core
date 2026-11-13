@@ -1,7 +1,11 @@
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 //! Core graph-loop request, receipt, snapshot, and identifier contracts.
 
+use super::c_abi::{GraphCAbiRequirement, validate_graph_c_abi_requirement};
 use super::execution_budget::GraphLoopExecutionBudget;
-use super::native_abi::{GraphNativeAbiRequirement, validate_graph_native_abi_requirement};
 use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
@@ -131,15 +135,15 @@ pub enum GraphLoopStrategyRuntime {
     /// Static Rust/TOML policy path used in deterministic hot-path execution.
     StaticPolicy,
     /// Native Scheme strategy reached through a typed C ABI adapter.
-    NativeScheme,
+    SchemeCAbi,
     /// Native Gerbil strategy reached through a typed C ABI adapter.
-    NativeGerbil,
+    GerbilCAbi,
 }
 
 impl GraphLoopStrategyRuntime {
     /// Returns true when this runtime represents an external native policy plane.
-    pub fn is_native_policy_plane(&self) -> bool {
-        matches!(self, Self::NativeScheme | Self::NativeGerbil)
+    pub fn is_scheme_policy_plane(&self) -> bool {
+        matches!(self, Self::SchemeCAbi | Self::GerbilCAbi)
     }
 }
 
@@ -166,24 +170,24 @@ impl GraphLoopStrategy {
     }
 
     /// Creates a native Scheme strategy descriptor.
-    pub fn native_scheme(
+    pub fn scheme_c_abi(
         strategy_id: impl Into<GraphLoopStrategyId>,
         version: impl Into<GraphLoopStrategyVersion>,
     ) -> Self {
-        Self::new(strategy_id, version, GraphLoopStrategyRuntime::NativeScheme)
+        Self::new(strategy_id, version, GraphLoopStrategyRuntime::SchemeCAbi)
     }
 
     /// Creates a native Gerbil strategy descriptor.
-    pub fn native_gerbil(
+    pub fn gerbil_c_abi(
         strategy_id: impl Into<GraphLoopStrategyId>,
         version: impl Into<GraphLoopStrategyVersion>,
     ) -> Self {
-        Self::new(strategy_id, version, GraphLoopStrategyRuntime::NativeGerbil)
+        Self::new(strategy_id, version, GraphLoopStrategyRuntime::GerbilCAbi)
     }
 
     /// Returns true when this strategy is computed outside the Rust hot path.
-    pub fn is_native_policy_plane(&self) -> bool {
-        self.runtime.is_native_policy_plane()
+    pub fn is_scheme_policy_plane(&self) -> bool {
+        self.runtime.is_scheme_policy_plane()
     }
 }
 
@@ -193,7 +197,7 @@ pub struct GraphPolicyProposal {
     pub schema_id: String,
     pub strategy: GraphLoopStrategy,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub native_abi: Option<GraphNativeAbiRequirement>,
+    pub c_abi: Option<GraphCAbiRequirement>,
     pub proposed_graph: LoopGraph,
     pub input_digest: GraphPolicyDigest,
     pub output_digest: GraphPolicyDigest,
@@ -211,7 +215,7 @@ impl GraphPolicyProposal {
         Self {
             schema_id: GRAPH_POLICY_PROPOSAL_SCHEMA_ID.to_string(),
             strategy,
-            native_abi: None,
+            c_abi: None,
             proposed_graph,
             input_digest: input_digest.into(),
             output_digest: output_digest.into(),
@@ -225,13 +229,13 @@ impl GraphPolicyProposal {
     }
 
     /// Returns true when the proposal came from a native strategy plane.
-    pub fn is_native_policy_plane(&self) -> bool {
-        self.strategy.is_native_policy_plane()
+    pub fn is_scheme_policy_plane(&self) -> bool {
+        self.strategy.is_scheme_policy_plane()
     }
 
     /// Attaches the native ABI requirement proven by the strategy plane adapter.
-    pub fn with_native_abi_requirement(mut self, native_abi: GraphNativeAbiRequirement) -> Self {
-        self.native_abi = Some(native_abi);
+    pub fn with_c_abi_requirement(mut self, c_abi: GraphCAbiRequirement) -> Self {
+        self.c_abi = Some(c_abi);
         self
     }
 
@@ -261,7 +265,8 @@ pub enum GraphPolicyProposalStatus {
 pub struct GraphPolicyProposalValidationReport {
     pub schema_id: String,
     pub strategy_id: GraphLoopStrategyId,
-    pub native_abi: Option<GraphNativeAbiRequirement>,
+
+    pub c_abi: Option<GraphCAbiRequirement>,
     pub status: GraphPolicyProposalStatus,
     pub selected_graph_id: Option<GraphId>,
     pub diagnostics: Vec<String>,
@@ -279,7 +284,8 @@ impl GraphPolicyProposalValidationReport {
 pub struct GraphPolicyProposalReceipt {
     pub schema_id: String,
     pub strategy_id: GraphLoopStrategyId,
-    pub native_abi: Option<GraphNativeAbiRequirement>,
+
+    pub c_abi: Option<GraphCAbiRequirement>,
     pub status: GraphPolicyProposalStatus,
     pub selected_graph_id: Option<GraphId>,
     pub diagnostics: Vec<String>,
@@ -304,7 +310,7 @@ impl GraphPolicyProposalReceipt {
         Self {
             schema_id: report.schema_id.clone(),
             strategy_id: report.strategy_id.clone(),
-            native_abi: report.native_abi.clone(),
+            c_abi: report.c_abi.clone(),
             status: report.status.clone(),
             selected_graph_id: report.selected_graph_id.clone(),
             diagnostics: report.diagnostics.clone(),
@@ -322,7 +328,7 @@ impl GraphPolicyProposalValidationReport {
         Self {
             schema_id: proposal.schema_id.clone(),
             strategy_id: proposal.strategy.strategy_id.clone(),
-            native_abi: proposal.native_abi.clone(),
+            c_abi: proposal.c_abi.clone(),
             status: GraphPolicyProposalStatus::Accepted,
             selected_graph_id: Some(GraphId::new(proposal.proposed_graph.graph_id.clone())),
             diagnostics: Vec::new(),
@@ -333,7 +339,7 @@ impl GraphPolicyProposalValidationReport {
         Self {
             schema_id: proposal.schema_id.clone(),
             strategy_id: proposal.strategy.strategy_id.clone(),
-            native_abi: proposal.native_abi.clone(),
+            c_abi: proposal.c_abi.clone(),
             status: GraphPolicyProposalStatus::Rejected,
             selected_graph_id: None,
             diagnostics,
@@ -361,7 +367,7 @@ pub fn validate_graph_policy_proposal(
     if proposal.output_digest.as_str().trim().is_empty() {
         diagnostics.push("graph_policy_proposal.output_digest_empty".to_string());
     }
-    validate_graph_policy_proposal_native_abi(proposal, &mut diagnostics);
+    validate_graph_policy_proposal_c_abi(proposal, &mut diagnostics);
     validate_loop_graph_shape(&proposal.proposed_graph, &mut diagnostics);
 
     if diagnostics.is_empty() {
@@ -371,18 +377,18 @@ pub fn validate_graph_policy_proposal(
     }
 }
 
-fn validate_graph_policy_proposal_native_abi(
+fn validate_graph_policy_proposal_c_abi(
     proposal: &GraphPolicyProposal,
     diagnostics: &mut Vec<String>,
 ) {
-    if proposal.strategy.is_native_policy_plane() {
-        if let Some(native_abi) = &proposal.native_abi {
-            validate_graph_native_abi_requirement(native_abi, diagnostics);
+    if proposal.strategy.is_scheme_policy_plane() {
+        if let Some(c_abi) = &proposal.c_abi {
+            validate_graph_c_abi_requirement(c_abi, diagnostics);
         } else {
-            diagnostics.push("graph_policy_proposal.native_abi_missing".to_string());
+            diagnostics.push("graph_policy_proposal.c_abi_missing".to_string());
         }
-    } else if proposal.native_abi.is_some() {
-        diagnostics.push("graph_policy_proposal.native_abi_unexpected".to_string());
+    } else if proposal.c_abi.is_some() {
+        diagnostics.push("graph_policy_proposal.c_abi_unexpected".to_string());
     }
 }
 

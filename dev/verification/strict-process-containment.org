@@ -1,0 +1,142 @@
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+#
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
+#+title: Strict process-tree containment qualification
+#+language: en
+
+* Status and requirement trace
+
+=MAR-PROC-R08/R10= in =dev/sysml/process-lifecycle.sysml= define the proposed
+admission and cleanup requirements. =dev/quint/strict-tree-proposal.qnt= is a
+finite proposal, not an implementation or a replay of Rust. Production Rust
+still rejects =EnforcedDescendantTree= before starting a process on every OS.
+The normal process-group mode is not strict. No production backend has passed
+the acceptance gates below.
+
+* Platform mechanism research
+
+- Linux cgroup v2: children inherit cgroup membership at fork. Moving an
+  already-running parent does not move its existing descendants. Migration
+  requires write access both to the target and to the common ancestor's
+  =cgroup.procs=. =cgroup.kill= terminates a cgroup subtree; =cgroup.events=
+  =populated= reports live processes recursively. See the [[https://docs.kernel.org/admin-guide/cgroup-v2.html][Linux kernel cgroup v2 documentation]].
+  =clone3(CLONE_INTO_CGROUP)= can create a child in its target cgroup; an
+  alternative trusted pre-exec protocol needs a careful async-signal-safe and
+  fail-closed implementation. See [[https://man7.org/linux/man-pages/man2/clone3.2.html][clone3(2)]] and [[https://doc.rust-lang.org/std/os/unix/process/trait.CommandExt.html][Rust CommandExt]].
+- Windows Job Objects: descendants normally join the job; breakaway settings,
+  job-handle ownership and nested-job rules matter. =KILL_ON_JOB_CLOSE= acts
+  when the *last* job handle closes. See [[https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects][Microsoft Job Objects]] and
+  [[https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-updateprocthreadattribute][process creation attributes]]. The currently pinned =process-wrap= 9.1.1
+  sets its cached leader-exit status before completing the job-empty wait;
+  cancellation and a subsequent wait therefore require independent audit.
+  No Windows backend is enabled or qualified here.
+- macOS: App Sandbox inheritance is a permissions mechanism, not evidence
+  that an arbitrary command's descendants can be enumerated, kept in a
+  non-escapable tree, and synchronously terminated. Apple's [[https://developer.apple.com/library/archive/documentation/Miscellaneous/Reference/EntitlementKeyReference/Chapters/EnablingAppSandbox.html][sandbox entitlement
+  documentation]] describes inheritance, not that lifecycle contract. The
+  existing POSIX process group has an OS-observed =setsid= escape. Strict mode
+  remains unavailable; no claim is made that another macOS mechanism cannot
+  be designed.
+
+* Linux bounded OS experiment
+
+On 2026-11-13, a Linux 6.12.13 aarch64 Podman VM was already running. The
+fixture =dev/verification/linux_cgroup_qualification.py= was run as root in
+an ephemeral delegated systemd scope. It creates unique child cgroups and only
+signals processes it starts. Its checks observed:
+
+1. A leader that forks before migration leaves the earlier descendant outside
+   the new cgroup; =populated= becomes zero while that descendant is alive.
+2. A privileged member can write itself back to the parent cgroup; a writable
+   delegated hierarchy alone is not an escape-resistant boundary.
+3. In this root-owned scope, a gated child moved before its test, with uid/gid
+   65534, cleared effective/permitted capabilities and =no_new_privs=, could
+   not migrate to its parent; its descendant confirmed =setsid= and remained
+   in the cgroup. =cgroup.kill= led to =populated 0=.
+4. An independently held writer prevented pipe EOF after =populated 0=; EOF
+   was observed only after that external writer closed.
+
+These observations are specific to the fixture, credentials and host. The
+fixture's gated Python child is trusted setup, not a Rust =pre_exec= adapter,
+and the fixture does not prove resistance against arbitrary inherited handles,
+credential tricks, race schedules, kernel bugs or supervisor crash. It does not
+qualify production admission.
+
+To reproduce on a suitable Linux host, first review the script, then run it in
+an otherwise disposable delegated scope. The script rejects non-root callers,
+non-Linux systems, and scope names other than =run-*.scope=:
+
+#+begin_src sh
+sudo systemd-run --scope --quiet --property=Delegate=yes \
+  python3 /absolute/path/to/dev/verification/linux_cgroup_qualification.py
+#+end_src
+
+* Standalone Rust candidate
+
+=dev/verification/linux_cgroup_rust_candidate.rs= is a qualification fixture,
+not linked into the runtime. Using Rust 1.95.0 and the official SHA-256-checked
+=aarch64-unknown-linux-musl= standard library, it was cross-compiled as a static
+Linux binary and executed in ten independent root-owned delegated scopes on the
+same VM. Its trusted =pre_exec= callback put the child in the cgroup before
+=exec=, cleared supplementary groups, set all UID/GID values to 65534, checked
+capability sets and =no_new_privs=, and rejected writable ancestor control
+files. The target completed =setsid=, forked a descendant programmed to call
+=setsid=, and attempted migration; both PIDs were observed in the cgroup and
+migration was denied. The Rust fixture does not handshake with the grandchild,
+so it does not establish that the grandchild completed =setsid= before
+observation. After =cgroup.kill=, =populated 0= was observed. A deliberately
+retained writer kept the pipe open until it was dropped.
+
+A separately compiled source mutation replaced =setuid(65534)= with
+=setuid(0)=. The program exited with =EPERM= during spawn, before the fixture
+reported target execution. This is one controlled failure path, not complete
+mutation coverage. Four existing cross-compiled runtime containment tests also
+passed in the Linux VM; they exercise the currently enabled group mode and
+strict refusal, not this candidate as a runtime backend.
+
+The examined fixture source SHA-256 was
+=b2bef78761f805e69d61a941cb94762965d208121a1e903c0fb75ee3bd3d6ba0=;
+the positive static binary was
+=f415e78e16692af750cc6ec837bf814e698398649215e2dbf1609e9865731d05=,
+and the final UID-mutated binary was
+=e9260ba32ce622cf93ec5182f62bbb870cb10a36f9ce1f45e4576526534e3959=.
+The host compiler was =rustc 1.95.0 (59807616e 2026-04-14)=. These are local
+qualification receipts, not CI results; the temporary binaries were removed.
+
+This candidate does not verify a cgroup mount's identity and full authority,
+close or account for all inherited descriptors, integrate with Tokio task
+cancellation and quota ownership, prove async-signal safety of every platform
+libc operation, handle supervisor crash, or cover adversarial concurrent
+cgroup reconfiguration. The Python and Rust experiments are not Quint-to-Rust
+trace replay. Do not enable strict production admission based on them.
+
+A native aarch64 Linux Rust installation can compile and run this fixture
+inside a suitable disposable scope:
+
+#+begin_src sh
+rustc --edition 2024 -D warnings dev/verification/linux_cgroup_rust_candidate.rs -o /tmp/marlin-cgroup-candidate
+sudo systemd-run --scope --quiet --property=Delegate=yes /tmp/marlin-cgroup-candidate
+#+end_src
+
+* Required evidence before enabling a backend
+
+- A typed request must select the backend, an explicit unprivileged execution
+  identity and its security boundary. A caller-supplied =Command= may already
+  contain pre-exec hooks; do not treat it as a trusted empty launch plan.
+- Verify cgroup-v2 identity and authority, secure placement before target code,
+  restricted credentials/capabilities, =no_new_privs=, inherited-descriptor
+  policy and inability to migrate out. Use fail-closed errors for every setup
+  stage. A private tree and an actual credential boundary are required; root
+  membership or a writable parent is insufficient.
+- Test cancellation and failure at every setup step, including parent death,
+  fork/exec failure, already-exited leader, nested forks, =setsid=, migration
+  attempts, cgroup identity reuse, stale handles and unavailable control files.
+  Model and test the cleanup of setup-only children as well as running targets.
+- Bind the runtime's quota and every accounted pipe endpoint to verified
+  containment-empty and pipe-closure evidence. A cgroup cannot close an fd
+  deliberately transferred outside it. State that trust boundary explicitly.
+- Run real Linux adversarial tests on supported kernels and delegation setups;
+  use isolated source mutations to establish sensitivity. Run equivalent
+  platform-native tests before enabling Windows or macOS. Quint simulation and
+  TLC bounded checking do not replace these OS observations.

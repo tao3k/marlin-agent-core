@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 use std::sync::{Arc, Barrier};
 
 use marlin_agent_runtime::{
@@ -58,8 +62,8 @@ async fn runtime_shutdown_cancels_and_waits_for_tracked_tasks() {
     assert!(receipt.cancellation_requested());
     assert!(receipt.tracker_closed());
     assert_eq!(receipt.timeout_ms(), Some(1_000));
-    assert_eq!(receipt.tracked_task_count_at_shutdown(), 1);
-    assert_eq!(receipt.remaining_task_count(), 0);
+    assert_eq!(receipt.tracked_resource_count_at_shutdown(), 1);
+    assert_eq!(receipt.remaining_resource_count(), 0);
     assert_eq!(
         task.join().await.expect("task should join"),
         RuntimeTaskOutcome::Cancelled
@@ -99,8 +103,8 @@ async fn runtime_shutdown_waits_without_cancelling_when_policy_requests_wait() {
     assert!(!receipt.cancellation_requested());
     assert!(receipt.tracker_closed());
     assert_eq!(receipt.timeout_ms(), Some(1_000));
-    assert_eq!(receipt.tracked_task_count_at_shutdown(), 1);
-    assert_eq!(receipt.remaining_task_count(), 0);
+    assert_eq!(receipt.tracked_resource_count_at_shutdown(), 1);
+    assert_eq!(receipt.remaining_resource_count(), 0);
     assert_eq!(
         task.join().await.expect("task should join"),
         RuntimeTaskOutcome::Completed(13)
@@ -237,4 +241,71 @@ fn child_runtime_for_session_rebinds_runtime_snapshot_to_child_session() {
             .blocking_bridge()
             .blocking_non_cancellable()
     );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn closing_linearizes_with_concurrent_task_admission() {
+    use marlin_agent_runtime::{RuntimeAdmissionError, RuntimeTaskJoinError};
+    use std::time::Duration;
+    use tokio::sync::{Barrier, oneshot};
+
+    for _ in 0..32 {
+        let (runtime, _) = TokioAgentRuntime::new(4);
+        let barrier = Arc::new(Barrier::new(3));
+        let (release, wait) = oneshot::channel::<()>();
+        let start = tokio::spawn({
+            let runtime = runtime.clone();
+            let barrier = barrier.clone();
+            async move {
+                barrier.wait().await;
+                runtime.spawn(async move {
+                    let _ = wait.await;
+                })
+            }
+        });
+        let shutdown = tokio::spawn({
+            let runtime = runtime.clone();
+            let barrier = barrier.clone();
+            async move {
+                barrier.wait().await;
+                runtime
+                    .shutdown_tasks(&RuntimeTaskTrackerPolicy::wait_on_shutdown(Some(5_000)))
+                    .await
+            }
+        });
+        barrier.wait().await;
+        let task = start.await.unwrap();
+        tokio::time::timeout(Duration::from_secs(5), runtime.task_tracker().closed())
+            .await
+            .unwrap();
+        let admitted = match task.admission() {
+            Ok(_) => {
+                assert!(!shutdown.is_finished(), "shutdown omitted admitted work");
+                release.send(()).unwrap();
+                task.join().await.unwrap();
+                1
+            }
+            Err(RuntimeAdmissionError::Closed) => {
+                assert!(matches!(
+                    task.join().await,
+                    Err(RuntimeTaskJoinError::Admission(
+                        RuntimeAdmissionError::Closed
+                    ))
+                ));
+                0
+            }
+            Err(error) => panic!("unexpected admission failure: {error}"),
+        };
+        let receipt = shutdown.await.unwrap();
+        assert_eq!(receipt.status(), &RuntimeTaskShutdownStatus::Completed);
+        assert_eq!(receipt.tracked_resource_count_at_shutdown(), admitted);
+        assert_eq!(receipt.remaining_resource_count(), 0);
+        let rejected = runtime.spawn_blocking(|| panic!("closed runtime ran a blocking task"));
+        assert!(matches!(
+            rejected.join().await,
+            Err(RuntimeTaskJoinError::Admission(
+                RuntimeAdmissionError::Closed
+            ))
+        ));
+    }
 }

@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+#
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 * 40.160 Agent Graph Topology Protocol
 :PROPERTIES:
 :STATUS: Active
@@ -198,33 +202,33 @@ the Scheme type manifest, projection contract, native ABI readiness plan, and
 native projection request, then projects Scheme values into typed
 =AgentGraphId=, =GerbilPolicyScopeRef=, =AgentNodeId=, =AgentEdgeId=, and
 evidence refs before =PolicyScoped= planning can consume them.
-- =crates/marlin-gerbil-scheme/gerbil/src/marlin/agent-policy-routing-native-projection.ss=
+- =crates/marlin-gerbil-scheme/gerbil/src/marlin/agent-policy-routing-abi-projection.ss=
 owns the Gerbil-side POO projection producer for AgentGraph policy routing.
 The Scheme module emits the same ABI id, type id, schema id, native symbol, and
 POO slots that Rust consumes, while avoiding POO-reserved generic slot names by
 projecting =routing_decision=, =routing_evidence=, and =evidence_kind= into
 Rust-owned typed fields.
-- =crates/marlin-gerbil-scheme/gerbil/src/marlin/agent-policy-routing-native.ss=
+- =crates/marlin-gerbil-scheme/gerbil/src/marlin/agent-policy-routing-abi.ss=
 owns the Gerbil-side native C export for AgentGraph policy routing. It maps the
 native request into the existing POO projection producer and writes only the
 native slot projection consumed by Rust. The module is a =gsc:= target in
 =gerbil/build.ss= because ordinary =gxtest= interpretation cannot load
 =c-declare= forms.
-- =crates/marlin-gerbil-scheme/src/agent_policy_routing_native.rs= owns the
+- =crates/marlin-gerbil-scheme/src/agent_policy_routing_abi.rs= owns the
 Rust-side native C ABI wrapper for AgentGraph policy routing. The ABI passes
 borrowed UTF-8 slot projections and evidence refs, never JSON or owned byte
 protocol frames, then Rust constructs the typed =GerbilSchemeTypedValue= and
 projects it through the existing
-=project_gerbil_agent_policy_routing_native_receipt= path into
+=project_gerbil_agent_policy_routing_abi_receipt= path into
 =AgentPolicyRoutingReceipt=.
-- =crates/marlin-gerbil-scheme/tests/unit/agent_policy_routing_native= covers
+- =crates/marlin-gerbil-scheme/tests/unit/agent_policy_routing_abi= covers
 header/layout stability, native status handling, initializer failure, invalid
 UTF-8 rejection, and a fake linked selector smoke from native slot projection
 to typed AgentGraph routing receipt.
 - =crates/marlin-gerbil-scheme/src/aot_runtime/native= now carries an explicit
 native AOT profile boundary. The default profile remains Deck runtime, while
 =GerbilDeckRuntimeNativeAotProfile::AgentPolicyRouting= derives the
-=agent-policy-routing-native~0= artifact stem, AgentGraph policy-routing C ABI
+=agent-policy-routing-abi~0= artifact stem, AgentGraph policy-routing C ABI
 header, required =marlin_agent_policy_routing_initialize= and
 =marlin_agent_policy_routing_select_edges= symbols, and
 =marlin.agent.policy-routing.native= readiness ABI. The
@@ -233,20 +237,20 @@ header, required =marlin_agent_policy_routing_initialize= and
 - =crates/marlin-gerbil-scheme/tests/unit/aot_runtime= is split into a
 folder-first suite and covers both the Deck default profile and AgentGraph
 policy-routing profile without mixing the two symbol contracts.
-- =build-support/marlin-gerbil-native-build= is now the shared Gerbil native
+- =build-support/marlin-gerbil-aot-link= is now the shared Gerbil native
 build-script support crate. It exposes explicit Deck runtime and AgentGraph
 policy-routing link entrypoints, profile-specific archive names, and shared
 cc/Gambit discovery without making AgentGraph depend on a Deck-named build
 support boundary.
-- =crates/marlin-agent-policy-routing-native= is the dedicated AgentGraph
-policy-routing linked-native crate. Its default build is a no-link typed Rust
-crate; the =linked-native= feature uses Rust-owned native build support to
+- =crates/marlin-agent-policy-routing-abi= is the dedicated AgentGraph
+policy-routing linked-selector crate. Its default build is a no-link typed Rust
+crate; the =linked-selector= feature uses Rust-owned native build support to
 stage =agent-policy-routing=, consumes the generated
-=agent-policy-routing-native~0.scm= artifact, then calls the AgentGraph
+=agent-policy-routing-abi~0.scm= artifact, then calls the AgentGraph
 policy-routing native build entrypoint and exposes a linked selector only after
 the real symbols are available.
-- =crates/marlin-agent-policy-routing-native/tests/unit/feature.rs= now runs
-the real linked selector under =--features linked-native=. The smoke
+- =crates/marlin-agent-policy-routing-abi/tests/unit/feature.rs= now runs
+the real linked selector under =--features linked-selector=. The smoke
 initializes the staged Gerbil/Gambit link unit once, calls
 =marlin_agent_policy_routing_select_edges=, and projects the result into a
 typed =AgentPolicyRoutingReceipt= without JSON or text receipt transport.
@@ -300,12 +304,12 @@ typed receipt path without text serialization.
 routing wired into =gxi build.ss= as =gsc:= and =ssi:= targets.
 11. Rust native AOT planning now supports an AgentGraph policy-routing profile
 and CLI selection via =--profile agent-policy-routing=.
-12. AgentGraph policy-routing now has a dedicated linked-native Rust crate and
+12. AgentGraph policy-routing now has a dedicated linked-selector Rust crate and
 the old Deck-only build-support package has been replaced with
-=marlin-gerbil-native-build= profile-aware support.
+=marlin-gerbil-aot-link= profile-aware support.
 13. Package-owned native AOT staging is wired through =gerbil.pkg= /
-=build.ss=: =marlin-agent-policy-routing-native --features linked-native= now
-stages =agent-policy-routing-native~0.scm= through Gerbil before Rust builds
+=build.ss=: =marlin-agent-policy-routing-abi --features linked-selector= now
+stages =agent-policy-routing-abi~0.scm= through Gerbil before Rust builds
 the object/archive, so the previous =MissingCompiledRuntime= blocker is closed
 without reintroducing Rust-side source discovery.
 14. The linked AgentGraph policy-routing ABI smoke now calls the real selector
@@ -315,15 +319,15 @@ while the linked native ABI writes only the routing decision slot and lets Rust
 construct the typed receipt from the request plus native projection.
 ** 2026-06-17 P0-P4 Landing Evidence
 - AgentGraph policy-routing now has a real linked selector benchmark in
-=crates/marlin-agent-policy-routing-native/benches/linked_selector.rs=. The local 2026-06-17 baseline is 21.151 us midpoint for one candidate edge, 19.292 us midpoint for eight candidate edges, 39.042 us midpoint for 64 candidate edges, and 144.91 us midpoint for 256 candidate edges.
+=crates/marlin-agent-policy-routing-abi/benches/linked_selector.rs=. The local 2026-06-17 baseline is 21.151 us midpoint for one candidate edge, 19.292 us midpoint for eight candidate edges, 39.042 us midpoint for 64 candidate edges, and 144.91 us midpoint for 256 candidate edges.
 - =marlin-gerbil-scheme/tests/unit/aot_runtime/build.rs= now proves the AgentGraph policy-routing AOT build receipt projects a =GraphNativeAbiReadinessStatus::Ready= receipt after the generated object/link unit exposes both =marlin_agent_policy_routing_initialize= and =marlin_agent_policy_routing_select_edges=.
 - =build.ss compile= is now an ordinary Gerbil package/module compile gate. Native C ABI modules are staged through Rust-owned native build support, which prevents package compile from treating the native =.ss= modules as missing =.scm= sources.
 - This supersedes the earlier landing-status wording that described the native export module as a =gsc:= package compile target. Native C export modules are package-staged AOT inputs, not ordinary package compile entries.
-- =build-support/marlin-gerbil-native-build= now discovers =libgambit= from Gerbil shell wrappers that export =GERBIL_HOME= or exec a real =.../bin/gsc=, so linked-native builds do not accidentally resolve Ghostscript =gsc= or miss the runtime library path.
-- The local gate map now includes =gerbil-package-module-gate=, =agent-policy-routing-native-gate=, =agent-policy-routing-native-bench-build=, and =agent-graph-native-routing-gate= in the root justfile.
+- =build-support/marlin-gerbil-aot-link= now discovers =libgambit= from Gerbil shell wrappers that export =GERBIL_HOME= or exec a real =.../bin/gsc=, so linked-selector builds do not accidentally resolve Ghostscript =gsc= or miss the runtime library path.
+- The local gate map now includes =gerbil-package-module-gate=, =agent-policy-routing-abi-gate=, =agent-policy-routing-abi-bench-build=, and =agent-graph-abi-routing-gate= in the root justfile.
 ** Superseded 2026-06-17 Gaps
 1. Run the live object symbol audit for the AgentGraph policy-routing profile
-against the gsc/gxi-generated =agent-policy-routing-native~0= artifact.
+against the gsc/gxi-generated =agent-policy-routing-abi~0= artifact.
 2. Add a native AgentGraph policy-routing performance baseline comparable to
 the Deck linked selector benchmark, then track regression thresholds separately
 from process-level Gerbil policy benchmarks.

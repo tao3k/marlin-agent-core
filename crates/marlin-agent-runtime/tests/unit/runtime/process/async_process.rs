@@ -1,9 +1,13 @@
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 use std::io::ErrorKind;
 use std::process::Stdio;
 
 use marlin_agent_runtime::{
     AsyncManagedChildProcess, ManagedChildProcessSpec, SubAgentSpawnProfile, TokioAgentRuntime,
-    observability,
+    process,
 };
 use tokio::io::AsyncWriteExt;
 use tokio::process::Command as AsyncCommand;
@@ -19,7 +23,7 @@ async fn async_managed_child_process_removes_successful_process_from_active_trac
     let child = AsyncManagedChildProcess::spawn_with_spec(
         &context,
         command,
-        ManagedChildProcessSpec::new(observability::RuntimeProcessKind::Tool, "tool:async-echo")
+        ManagedChildProcessSpec::new(process::RuntimeProcessKind::Tool, "tool:async-echo")
             .with_started_at_ms(10),
     )
     .await
@@ -30,7 +34,7 @@ async fn async_managed_child_process_removes_successful_process_from_active_trac
             .process_registry()
             .get(pid)
             .map(|process| process.status),
-        Some(observability::RuntimeProcessStatus::Running)
+        Some(process::RuntimeProcessStatus::Running)
     );
 
     let status = child
@@ -49,7 +53,7 @@ async fn async_managed_child_process_records_command_lifecycle_metadata() {
     let context = runtime.context();
     let mut command = AsyncCommand::new("sh");
     command.arg("-c").arg("sleep 1");
-    let command_observation = observability::RuntimeCommandObservation::new("shell-command")
+    let command_observation = process::RuntimeCommandObservation::new("shell-command")
         .with_argv(["sh", "-c", "sleep 1"])
         .with_cwd("/tmp")
         .with_sub_agent_source("kernel-node")
@@ -62,7 +66,7 @@ async fn async_managed_child_process_records_command_lifecycle_metadata() {
         &context,
         command,
         ManagedChildProcessSpec::new(
-            observability::RuntimeProcessKind::Tool,
+            process::RuntimeProcessKind::Tool,
             "tool:async-command-lifecycle",
         )
         .with_command(command_observation.clone())
@@ -105,7 +109,7 @@ async fn dropped_async_managed_child_process_becomes_cleanup_candidate() {
     let child = AsyncManagedChildProcess::spawn_with_spec(
         &context,
         command,
-        ManagedChildProcessSpec::new(observability::RuntimeProcessKind::Tool, "tool:async-drop")
+        ManagedChildProcessSpec::new(process::RuntimeProcessKind::Tool, "tool:async-drop")
             .with_started_at_ms(10),
     )
     .await
@@ -117,7 +121,7 @@ async fn dropped_async_managed_child_process_becomes_cleanup_candidate() {
     let registry = context.process_registry();
     assert_eq!(
         registry.get(pid).map(|process| process.status),
-        Some(observability::RuntimeProcessStatus::CleanupRequested)
+        Some(process::RuntimeProcessStatus::CleanupRequested)
     );
     assert_eq!(registry.cleanup_candidates().len(), 1);
 }
@@ -127,13 +131,13 @@ async fn dropped_async_managed_child_process_becomes_cleanup_candidate() {
 async fn async_managed_child_process_rejects_duplicate_active_handle() {
     let (runtime, _events) = TokioAgentRuntime::new(4);
     let context = runtime.context();
-    let handle = observability::RuntimeProcessHandle::new("tool:async-shared-handle");
+    let handle = process::RuntimeProcessHandle::new("tool:async-shared-handle");
     let mut first_command = AsyncCommand::new("sh");
     first_command.arg("-c").arg("sleep 10");
     let first = AsyncManagedChildProcess::spawn_with_spec(
         &context,
         first_command,
-        ManagedChildProcessSpec::new(observability::RuntimeProcessKind::Tool, "tool:async-first")
+        ManagedChildProcessSpec::new(process::RuntimeProcessKind::Tool, "tool:async-first")
             .with_handle(handle.clone())
             .with_started_at_ms(10),
     )
@@ -146,7 +150,7 @@ async fn async_managed_child_process_rejects_duplicate_active_handle() {
     let error = AsyncManagedChildProcess::spawn_with_spec(
         &context,
         second_command,
-        ManagedChildProcessSpec::new(observability::RuntimeProcessKind::Tool, "tool:async-second")
+        ManagedChildProcessSpec::new(process::RuntimeProcessKind::Tool, "tool:async-second")
             .with_handle(handle.clone())
             .with_started_at_ms(11),
     )
@@ -178,10 +182,7 @@ async fn async_managed_child_process_spawn_failure_does_not_pollute_registry() {
     let error = AsyncManagedChildProcess::spawn_with_spec(
         &context,
         command,
-        ManagedChildProcessSpec::new(
-            observability::RuntimeProcessKind::Tool,
-            "tool:async-missing",
-        ),
+        ManagedChildProcessSpec::new(process::RuntimeProcessKind::Tool, "tool:async-missing"),
     )
     .await
     .expect_err("missing command should not spawn");
@@ -206,7 +207,7 @@ async fn async_managed_child_process_captures_stdout_and_stderr() {
     let mut child = AsyncManagedChildProcess::spawn_with_spec(
         &context,
         command,
-        ManagedChildProcessSpec::new(observability::RuntimeProcessKind::Tool, "tool:async-stdio")
+        ManagedChildProcessSpec::new(process::RuntimeProcessKind::Tool, "tool:async-stdio")
             .with_started_at_ms(10),
     )
     .await
@@ -248,7 +249,7 @@ async fn async_managed_child_process_captures_failed_output_and_removes_tracking
         &context,
         command,
         ManagedChildProcessSpec::new(
-            observability::RuntimeProcessKind::Tool,
+            process::RuntimeProcessKind::Tool,
             "tool:async-failed-output",
         )
         .with_started_at_ms(10),

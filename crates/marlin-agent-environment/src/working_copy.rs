@@ -1,16 +1,26 @@
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 //! Executes working-copy isolation plans through injectable provider commands.
 
-use std::{io::ErrorKind, path::Path};
+use std::{
+    io::ErrorKind,
+    path::{Path, PathBuf},
+};
 
 use async_trait::async_trait;
-use marlin_git_utils::{GitToolingError, ProcessGitTooling};
-use marlin_workspace_protocol::{
-    WorkingCopyCommandInvocation, WorkingCopyCommandProgram, WorkingCopyCommandProjection,
-    WorkingCopyCommandProjectionError, WorkingCopyCommandReceipt, WorkingCopyCommandStatus,
-    WorkingCopyGitTopLevel, WorkingCopyIsolationPlan, WorkingCopyIsolationPlanError,
-    WorkingCopyIsolationProvider, WorkingCopyIsolationReceipt, WorkingCopyIsolationRequest,
-    WorkingCopyParallelIsolationReceipt, WorkingCopyRepositoryDiscoveryPath, WorkspaceProjectId,
+use marlin_agent_gitops::working_copy::{
+    WorkingCopyBranchName, WorkingCopyCommandInvocation, WorkingCopyCommandProgram,
+    WorkingCopyCommandProjection, WorkingCopyCommandProjectionError, WorkingCopyCommandReceipt,
+    WorkingCopyCommandStatus, WorkingCopyGitTopLevel, WorkingCopyHandle,
+    WorkingCopyIsolationOperationKind, WorkingCopyIsolationPlan, WorkingCopyIsolationPlanError,
+    WorkingCopyIsolationPlanStep, WorkingCopyIsolationProvider, WorkingCopyIsolationReceipt,
+    WorkingCopyIsolationRequest, WorkingCopyParallelIsolationReceipt,
+    WorkingCopyRepositoryDiscoveryPath, WorkspaceProjectGitHubRepository, WorkspaceProjectId,
 };
+use marlin_agent_gitops::{GIT_REPOSITORY_OVERRIDES, GitOperations, GitReadError};
+use serde::Deserialize;
 use thiserror::Error;
 use tokio::process::Command;
 use tokio::task::JoinSet;
@@ -177,6 +187,12 @@ pub trait WorkingCopyGitRepositoryResolver: Send + Sync {
         &self,
         discovery_path: &Path,
     ) -> Result<WorkingCopyGitTopLevel, WorkingCopyIsolationDriverError>;
+
+    async fn resolve_repository_worktree(
+        &self,
+        repository: &WorkingCopyGitTopLevel,
+        target: &Path,
+    ) -> Result<WorkingCopyGitTopLevel, WorkingCopyIsolationDriverError>;
 }
 
 /// Production resolver backed by `git rev-parse --show-toplevel`.
@@ -189,10 +205,15 @@ impl WorkingCopyGitRepositoryResolver for ProcessWorkingCopyGitRepositoryResolve
         &self,
         discovery_path: &Path,
     ) -> Result<WorkingCopyGitTopLevel, WorkingCopyIsolationDriverError> {
-        let root = ProcessGitTooling::resolve_repository_root(discovery_path).await?;
-        Ok(WorkingCopyGitTopLevel::from_resolved_path(
-            root.into_path_buf(),
-        ))
+        Ok(GitOperations::resolve_repository_root(discovery_path).await?)
+    }
+
+    async fn resolve_repository_worktree(
+        &self,
+        repository: &WorkingCopyGitTopLevel,
+        target: &Path,
+    ) -> Result<WorkingCopyGitTopLevel, WorkingCopyIsolationDriverError> {
+        Ok(GitOperations::resolve_repository_worktree(repository, target).await?)
     }
 }
 
@@ -201,6 +222,63 @@ impl WorkingCopyGitRepositoryResolver for ProcessWorkingCopyGitRepositoryResolve
 pub struct ProcessWorkingCopyCommandRunner;
 
 impl ProcessWorkingCopyCommandRunner {
+    async fn verify_pull_request_repository(
+        root: &WorkingCopyGitTopLevel,
+        expected: &WorkspaceProjectGitHubRepository,
+    ) -> Result<(), WorkingCopyIsolationDriverError> {
+        let deny = || WorkingCopyIsolationDriverError::PullRequestRepositoryMismatch {
+            expected: expected.slug(),
+        };
+        let urls = GitOperations::fetch_remote_urls(root).await?;
+        if urls.is_empty() || !urls.iter().all(|url| expected.matches_fetch_url(url)) {
+            return Err(deny());
+        }
+        let config = provider_command("wt", root)
+            .args(["config", "show", "--format", "json"])
+            .output()
+            .await
+            .map_err(|error| WorkingCopyIsolationDriverError::CommandIo {
+                command: "wt".into(),
+                message: error.to_string(),
+            })?;
+        if !config.status.success() {
+            return Err(deny());
+        }
+        let config: serde_json::Value =
+            serde_json::from_slice(&config.stdout).map_err(|_| deny())?;
+        if !config
+            .get("project")
+            .is_some_and(serde_json::Value::is_object)
+            || config
+                .pointer("/project/config/forge/platform")
+                .is_some_and(|value| value.as_str() != Some("github"))
+            || config
+                .pointer("/project/config/forge/hostname")
+                .is_some_and(|value| value.as_str() != Some("github.com"))
+        {
+            return Err(deny());
+        }
+        let default = provider_command("gh", root)
+            .env("GH_HOST", "github.com")
+            .env("GH_PROMPT_DISABLED", "1")
+            .args(["repo", "set-default", "--view"])
+            .output()
+            .await
+            .map_err(|error| WorkingCopyIsolationDriverError::CommandIo {
+                command: "gh".into(),
+                message: error.to_string(),
+            })?;
+        let slug = std::str::from_utf8(&default.stdout)
+            .map_err(|_| deny())?
+            .trim();
+        if (default.status.success() && slug.eq_ignore_ascii_case(&expected.slug()))
+            || (matches!(default.status.code(), Some(0 | 1)) && slug.is_empty())
+        {
+            return Ok(());
+        }
+        Err(deny())
+    }
+
     /// Probes a provider executable without mutating the working tree.
     pub async fn probe_program(
         program: WorkingCopyCommandProgram,
@@ -225,8 +303,15 @@ impl WorkingCopyCommandRunner for ProcessWorkingCopyCommandRunner {
         &self,
         invocation: &WorkingCopyCommandInvocation,
     ) -> Result<WorkingCopyCommandOutput, WorkingCopyIsolationDriverError> {
-        let output = Command::new(invocation.program.executable())
-            .current_dir(invocation.git_toplevel.as_path())
+        let mut command =
+            provider_command(invocation.program.executable(), &invocation.git_toplevel);
+        if let Some(repository) = &invocation.github_repository {
+            Self::verify_pull_request_repository(&invocation.git_toplevel, repository).await?;
+            command
+                .env("GH_HOST", "github.com")
+                .env("GH_PROMPT_DISABLED", "1");
+        }
+        let output = command
             .args(&invocation.args)
             .output()
             .await
@@ -252,6 +337,15 @@ impl WorkingCopyCommandRunner for ProcessWorkingCopyCommandRunner {
             })?,
         })
     }
+}
+
+fn provider_command(executable: &str, root: &WorkingCopyGitTopLevel) -> Command {
+    let mut command = Command::new(executable);
+    command.current_dir(root.as_path());
+    for name in GIT_REPOSITORY_OVERRIDES {
+        command.env_remove(name);
+    }
+    command
 }
 
 /// Driver that compiles isolation requests and executes provider commands.
@@ -321,7 +415,7 @@ where
             Ok(plan) => plan,
             Err(error) => return rejected(request, error.to_string(), []),
         };
-        let projection = match project_commands(&plan, &self.git_resolver).await {
+        let projection = match project_commands(plan, &self.git_resolver).await {
             Ok(projection) => projection,
             Err(error) => return rejected(request, error.to_string(), []),
         };
@@ -333,17 +427,19 @@ where
         request: WorkingCopyIsolationRequest,
         projection: WorkingCopyCommandProjection,
     ) -> WorkingCopyIsolationResult {
-        let command_receipts =
-            match execute_commands_in_order(&self.runner, &projection.commands).await {
-                Ok(command_receipts) => command_receipts,
-                Err((reason, command_receipts)) => {
-                    return rejected(request, reason, command_receipts);
-                }
-            };
+        let command_receipts = match execute_commands_in_order(&self.runner, &projection).await {
+            Ok(command_receipts) => command_receipts,
+            Err((reason, command_receipts)) => {
+                return rejected(request, reason, command_receipts);
+            }
+        };
 
+        let mut receipt = WorkingCopyIsolationReceipt::applied(&request);
+        receipt.working_copy = command_receipts
+            .last()
+            .and_then(|command| command.working_copy.clone());
         WorkingCopyIsolationResult {
-            receipt: WorkingCopyIsolationReceipt::applied(&request)
-                .with_command_receipts(command_receipts),
+            receipt: receipt.with_command_receipts(command_receipts),
         }
     }
 }
@@ -393,14 +489,42 @@ where
 }
 
 async fn project_commands<G>(
-    plan: &WorkingCopyIsolationPlan,
+    mut plan: WorkingCopyIsolationPlan,
     git_resolver: &G,
 ) -> Result<WorkingCopyCommandProjection, WorkingCopyIsolationDriverError>
 where
     G: WorkingCopyGitRepositoryResolver,
 {
-    let roots = ResolvedWorkingCopyGitTopLevels::resolve(plan, git_resolver).await?;
-    WorkingCopyCommandProjection::from_plan(plan, |path| roots.git_toplevel_for(path))
+    let roots = ResolvedWorkingCopyGitTopLevels::resolve(&plan, git_resolver).await?;
+    for step in &mut plan.steps {
+        if let WorkingCopyIsolationPlanStep::GitWorktreeSwitch {
+            repository_discovery_path,
+            working_copy,
+        }
+        | WorkingCopyIsolationPlanStep::GitWorktreeRemove {
+            repository_discovery_path,
+            working_copy,
+            ..
+        }
+        | WorkingCopyIsolationPlanStep::WorktrunkRemove {
+            repository_discovery_path,
+            working_copy,
+            ..
+        }
+        | WorkingCopyIsolationPlanStep::GitFinalizeBranch {
+            repository_discovery_path,
+            working_copy,
+            ..
+        } = step
+        {
+            let root = roots.git_toplevel_for(repository_discovery_path)?;
+            let target = git_resolver
+                .resolve_repository_worktree(&root, &working_copy.path)
+                .await?;
+            working_copy.path = target.as_path().to_path_buf();
+        }
+    }
+    WorkingCopyCommandProjection::from_plan(&plan, |path| roots.git_toplevel_for(path))
         .map_err(Into::into)
 }
 
@@ -444,47 +568,89 @@ impl ResolvedWorkingCopyGitTopLevels {
 
 async fn execute_commands_in_order<R>(
     runner: &R,
-    commands: &[WorkingCopyCommandInvocation],
+    projection: &WorkingCopyCommandProjection,
 ) -> Result<Vec<WorkingCopyCommandReceipt>, (String, Vec<WorkingCopyCommandReceipt>)>
 where
     R: WorkingCopyCommandRunner,
 {
-    let mut command_receipts = Vec::with_capacity(commands.len());
-    execute_remaining_commands(runner, commands, &mut command_receipts).await?;
+    let mut command_receipts = Vec::with_capacity(projection.commands.len());
+    for invocation in &projection.commands {
+        let output = match runner.run(invocation).await {
+            Ok(output) => output,
+            Err(error) => return Err((error.to_string(), command_receipts)),
+        };
+        let mut receipt = command_receipt_from_output(invocation, output);
+        let result = if receipt.status == WorkingCopyCommandStatus::Failed {
+            Err("working-copy provider command failed".to_owned())
+        } else {
+            let expected = receipt.working_copy.take();
+            resolve_working_copy(&receipt, &projection.operation, expected).map(|working_copy| {
+                receipt.working_copy = working_copy;
+            })
+        };
+        command_receipts.push(receipt);
+        if let Err(reason) = result {
+            return Err((reason, command_receipts));
+        }
+    }
     Ok(command_receipts)
 }
 
-async fn execute_remaining_commands<R>(
-    runner: &R,
-    commands: &[WorkingCopyCommandInvocation],
-    command_receipts: &mut Vec<WorkingCopyCommandReceipt>,
-) -> Result<(), (String, Vec<WorkingCopyCommandReceipt>)>
-where
-    R: WorkingCopyCommandRunner,
-{
-    let Some((invocation, remaining)) = commands.split_first() else {
-        return Ok(());
+#[derive(Deserialize)]
+struct WorktrunkWorktree {
+    path: PathBuf,
+    branch: Option<WorkingCopyBranchName>,
+}
+
+#[derive(Deserialize)]
+struct WorktrunkRemoval {
+    kind: String,
+    #[serde(flatten)]
+    worktree: WorktrunkWorktree,
+}
+
+fn resolve_working_copy(
+    receipt: &WorkingCopyCommandReceipt,
+    operation: &WorkingCopyIsolationOperationKind,
+    expected: Option<WorkingCopyHandle>,
+) -> Result<Option<WorkingCopyHandle>, String> {
+    let Some(mut working_copy) = expected else {
+        return Ok(None);
     };
-    let output = runner
-        .run(invocation)
-        .await
-        .map_err(|error| (error.to_string(), command_receipts.clone()))?;
-    let receipt = command_receipt_from_output(invocation, output);
-    let failed = receipt.status == WorkingCopyCommandStatus::Failed;
-    command_receipts.push(receipt);
-    if failed {
-        return Err((
-            "working-copy provider command failed".to_owned(),
-            command_receipts.clone(),
-        ));
+    if receipt.program == WorkingCopyCommandProgram::Git {
+        working_copy.path = receipt.git_toplevel.as_path().join(working_copy.path);
+        return Ok(Some(working_copy));
     }
 
-    Box::pin(execute_remaining_commands(
-        runner,
-        remaining,
-        command_receipts,
-    ))
-    .await
+    let stdout = receipt.stdout.as_deref().unwrap_or_default();
+    let parse_error = |error| format!("invalid Worktrunk working-copy receipt: {error}");
+    let worktree = if *operation == WorkingCopyIsolationOperationKind::Remove {
+        let [removed]: [WorktrunkRemoval; 1] = serde_json::from_str(stdout).map_err(parse_error)?;
+        if removed.kind != "worktree" {
+            return Err("Worktrunk did not report a worktree removal".to_owned());
+        }
+        if removed.worktree.path != working_copy.path {
+            return Err("Worktrunk reported removing a different worktree".to_owned());
+        }
+        removed.worktree
+    } else {
+        let worktree: WorktrunkWorktree = serde_json::from_str(stdout).map_err(parse_error)?;
+        if worktree
+            .branch
+            .as_ref()
+            .is_none_or(|branch| branch.as_str().is_empty())
+        {
+            return Err("Worktrunk did not report a working-copy branch".to_owned());
+        }
+        worktree
+    };
+    if !worktree.path.is_absolute() {
+        return Err("Worktrunk did not report an absolute working-copy path".to_owned());
+    }
+
+    working_copy.path = worktree.path;
+    working_copy.branch = worktree.branch;
+    Ok(Some(working_copy))
 }
 
 fn command_receipt_from_output(
@@ -526,8 +692,10 @@ pub enum WorkingCopyIsolationDriverError {
     CommandIo { command: String, message: String },
     #[error("working-copy command {command} output is not utf8: {message}")]
     CommandOutput { command: String, message: String },
+    #[error("Worktrunk GitHub checkout could not verify the requested repository {expected}")]
+    PullRequestRepositoryMismatch { expected: String },
     #[error(transparent)]
-    Git(#[from] GitToolingError),
+    Git(#[from] GitReadError),
     #[error(transparent)]
     Plan(#[from] WorkingCopyIsolationPlanError),
     #[error(transparent)]

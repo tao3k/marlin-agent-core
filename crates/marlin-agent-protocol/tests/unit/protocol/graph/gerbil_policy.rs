@@ -1,10 +1,14 @@
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 use std::collections::BTreeMap;
 
 use marlin_agent_protocol::{
     GERBIL_LOOP_GRAPH_CONTINUATION_SCHEMA_ID, GerbilLoopGraphContinuationCompileError,
-    GerbilLoopGraphContinuationRequest, GerbilLoopGraphPolicyCompilationRequest,
-    GraphLoopNextAction, GraphLoopStrategy, GraphLoopStrategyRuntime, GraphNativeAbiRequirement,
-    GraphNativeSymbol, compile_gerbil_loop_graph_continuation, compile_gerbil_loop_graph_policy,
+    GerbilLoopGraphContinuationRequest, GerbilLoopGraphPolicyCompilationRequest, GraphAbiSymbol,
+    GraphCAbiRequirement, GraphLoopNextAction, GraphLoopStrategy, GraphLoopStrategyRuntime,
+    compile_gerbil_loop_graph_continuation, compile_gerbil_loop_graph_policy,
 };
 
 #[test]
@@ -32,19 +36,19 @@ fn gerbil_loop_graph_ir_compiles_into_graph_policy_proposal() {
 
     let proposal = compile_gerbil_loop_graph_policy(
         GerbilLoopGraphPolicyCompilationRequest::new(
-            GraphLoopStrategy::native_gerbil("gerbil-loop-ranker", "v1"),
+            GraphLoopStrategy::gerbil_c_abi("gerbil-loop-ranker", "v1"),
             compiled_graph,
             "sha256:gerbil-input",
             "sha256:gerbil-output",
         )
-        .with_native_abi_requirement(native_policy_abi_requirement())
+        .with_c_abi_requirement(policy_c_abi_requirement())
         .with_diagnostic("gerbil_ir=compiled"),
     )
     .expect("Gerbil loop graph IR should compile into graph policy proposal");
 
     assert_eq!(
         proposal.strategy.runtime,
-        GraphLoopStrategyRuntime::NativeGerbil
+        GraphLoopStrategyRuntime::GerbilCAbi
     );
     assert_eq!(proposal.proposed_graph.graph_id, "gerbil-graph");
     assert_eq!(proposal.proposed_graph.nodes[0].executor, "gerbil.rank");
@@ -54,13 +58,13 @@ fn gerbil_loop_graph_ir_compiles_into_graph_policy_proposal() {
     );
     assert_eq!(
         proposal
-            .native_abi
+            .c_abi
             .as_ref()
             .expect("native abi")
             .required_symbols,
         vec![
-            GraphNativeSymbol::new("marlin_graph_loop_rank"),
-            GraphNativeSymbol::new("marlin_graph_loop_select"),
+            GraphAbiSymbol::new("marlin_graph_loop_rank"),
+            GraphAbiSymbol::new("marlin_graph_loop_select"),
         ]
     );
     assert_eq!(proposal.diagnostics, vec!["gerbil_ir=compiled"]);
@@ -140,8 +144,8 @@ fn gerbil_loop_graph_continuation_terminal_actions_remain_typed() {
     );
 }
 
-fn native_policy_abi_requirement() -> GraphNativeAbiRequirement {
-    GraphNativeAbiRequirement::new("marlin.graph-loop.native", 1)
+fn policy_c_abi_requirement() -> GraphCAbiRequirement {
+    GraphCAbiRequirement::new("marlin.graph-loop.native", 1)
         .with_required_symbols(["marlin_graph_loop_rank", "marlin_graph_loop_select"])
 }
 

@@ -1,6 +1,8 @@
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 #[path = "unit/loop_graph.rs"]
 mod loop_graph;
 #[path = "unit/workspace_policy.rs"]
 mod workspace_policy;
-
-marlin_rust_project_harness_policy::scenario_performance_tests!();

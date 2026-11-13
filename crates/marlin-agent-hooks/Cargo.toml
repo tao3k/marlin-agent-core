@@ -1,26 +1,34 @@
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+#
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 [package]
+license.workspace = true
 name = "marlin-agent-hooks"
 edition.workspace = true
 version.workspace = true
 authors.workspace = true
 repository.workspace = true
+readme = "README.org"
 
 [[bench]]
 name = "dynamic_actions"
 harness = false
 
+[[bench]]
+name = "path_filter"
+harness = false
+
 [dependencies]
 aho-corasick.workspace = true
+globset.workspace = true
 marlin-agent-protocol.workspace = true
 marlin-agent-runtime.workspace = true
 serde.workspace = true
 tokio.workspace = true
 toml.workspace = true
 tracing.workspace = true
-
-[build-dependencies]
-marlin-rust-project-harness-policy.workspace = true
+thiserror.workspace = true
 
 [dev-dependencies]
 criterion.workspace = true
-marlin-rust-project-harness-policy.workspace = true

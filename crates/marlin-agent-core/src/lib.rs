@@ -1,20 +1,17 @@
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 //! Lean `marlin-agent-core` facade for graph-loop runtime boundaries.
 
-mod debug_cli;
+pub mod brief_to_draft;
 mod release;
 
-pub use debug_cli::{
-    GraphQueryOutput, GraphQuerySummary, LoopEventQuerySummary, LoopGovernanceReceipt,
-    LoopGovernanceSandboxReceipt, LoopGovernanceSessionReceipt, LoopGovernanceStateReceipt,
-    LoopGovernanceVerifierDecision, LoopGovernanceVerifierReceipt, LoopInspectReceipt,
-    LoopProgramDerivedSessionPolicyStatusReceipt, LoopProgramRunReceipt,
-    LoopProgramRunStatusReceipt, LoopProgramRuntimeHandoffStatusReceipt,
-    LoopProgramRuntimeHandoffSummary, LoopProgramRuntimeReplaySummary,
-    LoopProgramRuntimeSideEffectStatusReceipt, LoopQuerySummary, LoopReplayReceipt, LoopRunReceipt,
-    MarlinCliResult, ProjectRuntimeQuerySummary, SmokeLlmMode, SmokeRuntimeModelRouteDryRun,
-    SmokeRuntimeReceipt, SmokeRuntimeScenario, SmokeRuntimeStateHome, run_marlin_cli,
-    run_marlin_cli_from_args,
-};
+#[cfg(feature = "app-server")]
+pub use marlin_agent_app_server as app_server;
+
+pub use marlin_agent_context as context;
+pub use marlin_agent_context::org::workspace::initialize_org_runtime;
 pub use marlin_agent_environment as environment;
 pub use marlin_agent_environment::{
     PROJECT_CONFIG_PRECEDENCE, RuntimeEnvironmentError, RuntimeEnvironmentRequest,
@@ -58,9 +55,8 @@ pub use marlin_agent_harness::{
 };
 pub use marlin_agent_hooks as hooks;
 pub use marlin_agent_hooks::{
-    HookDispatchPolicy, HookDispatchPolicyFinalizer, HookDispatchPolicyFinalizerInput,
-    HookDispatchReport, HookDispatcher, HookInvocation, HookRegistration, HookRegistrationCatalog,
-    HookRegistry, RegisteredHookPolicyFinalizer, RegisteredHookRegistrationCatalog,
+    HookDispatchPolicy, HookDispatchReport, HookDispatcher, HookInvocation, HookRegistration,
+    HookRegistrationCatalog, HookRegistry, RegisteredHookRegistrationCatalog,
     RegisteredHookRuntime,
 };
 pub use marlin_agent_kernel::{
@@ -80,7 +76,7 @@ pub use marlin_agent_kernel::{
     LoopPolicyProfileId, LoopQueuePolicy, LoopSelfEvolutionPolicy, LoopToolBatchPolicy, NodeId,
     ProviderNodeAdapter, RunId, RuntimePlanSnapshot, SubAgentNodeAdapter,
     TerminalGraphLoopContinuationPlanner, TokioGraphLoopController, TokioGraphLoopKernel,
-    ToolNodeAdapter, compile_graph_policy_proposal_with_native_abi_readiness,
+    ToolNodeAdapter, compile_graph_policy_proposal_with_c_abi_readiness,
 };
 pub use marlin_agent_protocol as protocol;
 pub use marlin_agent_protocol::{
@@ -88,100 +84,77 @@ pub use marlin_agent_protocol::{
     AgentExecutionTraceSummary, AgentGraphProjectionRequest, AgentSpanName, AgentTraceSpanRecord,
     GERBIL_LOOP_GRAPH_CONTINUATION_SCHEMA_ID, GERBIL_LOOP_GRAPH_POLICY_COMPILATION_SCHEMA_ID,
     GRAPH_POLICY_PROPOSAL_SPAN_NAME, GerbilLoopGraphContinuationAction,
-    GerbilLoopGraphContinuationRequest, GerbilLoopGraphPolicyCompilationRequest,
+    GerbilLoopGraphContinuationRequest, GerbilLoopGraphPolicyCompilationRequest, GraphAbiSymbol,
+    GraphCAbiId, GraphCAbiReadinessReceipt, GraphCAbiReadinessStatus, GraphCAbiRequirement,
     GraphLoopContinuationAction, GraphLoopContinuationDecision, GraphLoopContinuationReceipt,
     GraphLoopEvent, GraphLoopEventEnvelope, GraphLoopEventId, GraphLoopEvidencePolicy,
     GraphLoopInputDrainPolicy, GraphLoopInputLane, GraphLoopInputQueueReceipt,
     GraphLoopIterationId, GraphLoopIterationReport, GraphLoopMessageRole, GraphLoopNextAction,
     GraphLoopQueuedInput, GraphLoopRunRequest, GraphLoopStopPolicy, GraphLoopStopReason,
-    GraphLoopStopReceipt, GraphNativeAbiId, GraphNativeAbiReadinessReceipt,
-    GraphNativeAbiReadinessStatus, GraphNativeAbiRequirement, GraphNativeSymbol,
-    GraphNodeExecutionId, GraphToolBatchDecision, GraphToolBatchExecutionMode,
-    GraphToolBatchExecutionReceipt, GraphToolCallId, GraphToolCallReceipt, GraphToolCallStatus,
-    HookAgentScope, HookDispatchPolicyReceipt, HookDispatchPolicyReceiptInput, HookDurationMs,
-    HookEventName, HookExecutionMode, HookHandlerType, HookOutputEntry, HookOutputEntryKind,
-    HookPolicyDecision, HookPolicyDecisionReason, HookPolicyDynamicAction,
-    HookPolicyDynamicActionApplicationEffect, HookPolicyDynamicActionApplicationReason,
-    HookPolicyDynamicActionApplicationReceipt, HookPolicyDynamicActionApplicationStatus,
-    HookPolicyDynamicActionKind, HookPolicyDynamicActionReason, HookPolicyDynamicActionReplacement,
+    GraphLoopStopReceipt, GraphNodeExecutionId, GraphToolBatchDecision,
+    GraphToolBatchExecutionMode, GraphToolBatchExecutionReceipt, GraphToolCallId,
+    GraphToolCallReceipt, GraphToolCallStatus, HookAgentScope, HookDispatchPolicyReceipt,
+    HookDispatchPolicyReceiptInput, HookDurationMs, HookEventName, HookExecutionMode,
+    HookHandlerType, HookOutputEntry, HookOutputEntryKind, HookPolicyDecision,
+    HookPolicyDecisionReason, HookPolicyDynamicAction, HookPolicyDynamicActionApplicationEffect,
+    HookPolicyDynamicActionApplicationReason, HookPolicyDynamicActionApplicationReceipt,
+    HookPolicyDynamicActionApplicationStatus, HookPolicyDynamicActionKind,
+    HookPolicyDynamicActionReason, HookPolicyDynamicActionReplacement,
     HookPolicyDynamicActionTarget, HookPolicyExtension, HookRunId, HookRunStatus, HookRunSummary,
     HookScope, HookSource, HookSourcePath, HookTimestampMs, HookTrustStatus, LiteLlmModelId,
-    MARLIN_HOME_ENV_VAR, MARLIN_SESSION_ID_ENV_VAR, MODEL_ROUTE_ADMISSION_SCHEMA_ID, ModelAlias,
-    ModelCommandKind, ModelCommandMatcher, ModelContextForkMode, ModelEndpoint,
-    ModelEndpointContractError, ModelName, ModelProviderId, ModelRouteAdmissionMode,
-    ModelRouteAdmissionRequest, ModelRouteAdmissionResponse, ModelRouteAgentScope,
-    ModelRouteArtifactProjection, ModelRouteArtifactRef, ModelRouteDecision,
-    ModelRouteEvidenceProfile, ModelRouteIntent, ModelRouteModality, ModelRoutePrecisionTier,
-    ModelRoutePrivacyTier, ModelRouteReceipt, ModelRouteRequest, ModelRouteRule, ModelRouteRuleId,
-    ModelRouteSessionId, ModelRouteSourceKind, ModelRouteTaskKind, ModelSessionLifecycle,
-    ModelSessionPersistenceKey, ModelSessionPolicy, ModelSessionPoolId, RuntimeConfigLayer,
+    MARLIN_HOME_ENV_VAR, MARLIN_SESSION_ID_ENV_VAR, ModelAlias, ModelEndpoint,
+    ModelEndpointContractError, ModelName, ModelProviderId, RuntimeConfigLayer,
     RuntimeConfigLayerSource, RuntimeHome, RuntimeHomeSource, RuntimeSandboxPolicy, RuntimeSession,
     RuntimeSessionId, RuntimeSessionIdSource, SubAgentActivity, SubAgentActivityKind,
-    SubAgentSource, compile_gerbil_loop_graph, compile_gerbil_loop_graph_continuation,
-    compile_gerbil_loop_graph_policy,
-};
-pub use marlin_agent_route::{
-    self as route, ChatModelRouteRequest, MODEL_ROUTE_CHAT_PATH, ModelRouteHttpError,
-    ModelRouteHttpErrorBody, ModelRouteHttpState, admit_chat_route, model_route_router,
-    model_route_router_from_config, model_route_router_from_toml_path,
-    model_route_router_from_toml_str,
+    SubAgentSource,
 };
 pub use marlin_agent_runtime::{
-    self as runtime, AgentSessionContext, CancellationToken, CompiledModelRouteResolver,
-    ContextExpansionPolicy, ContextNamespace, ContextVisibility, EventStream, HookRuntime,
-    ModelGateway, ModelGatewayCompletionChoice, ModelGatewayCompletionOptions,
-    ModelGatewayCompletionResponse, ModelGatewayError, ModelGatewayFuture, ModelGatewayMessage,
-    ModelGatewayMessageRole, ModelGatewayRequest, ModelGatewayResult, ModelGatewayTransport,
-    ModelRouteCompileError, ModelRouteConfig, ModelRouteConfigError, ModelRouteSessionBinding,
-    ProviderRuntime, RoutedSubAgentSpawn, RuntimeAgentCoordinationAdmissionReceipt,
-    RuntimeAgentCoordinationAdmissionStatus, RuntimeAgentCoordinationRejection,
-    RuntimeAgentGraphExecutionReadinessReceipt, RuntimeAgentGraphExecutionReadinessRejection,
-    RuntimeAgentGraphExecutionReadinessStatus, RuntimeAgentGraphProjectionReceipt,
-    RuntimeAgentGraphProjectionRejection, RuntimeAgentGraphProjectionStatus, RuntimeContext,
-    RuntimeEnvironment, RuntimeEvent, RuntimeEventSink, RuntimeEventStream,
-    RuntimeExecutionIdentity, RuntimeFuture, RuntimeTask, RuntimeTaskOutcome, SessionId,
-    SessionIdError, SessionIdentity, SessionIsolationPolicy, SessionIsolationReceipt, SessionKind,
-    SubAgentRuntime, TokioAgentRuntime, ToolRuntime, admit_agent_coordination_plan,
-    assistant_gateway_message, check_agent_graph_execution_readiness, observability,
-    project_agent_graph_planning_receipt, project_agent_graph_projection_request,
-    system_gateway_message, user_gateway_message,
+    self as runtime, AgentSessionContext, CancellationToken, ContextExpansionPolicy,
+    ContextNamespace, ContextVisibility, EventStream, HookRuntime, ModelGateway,
+    ModelGatewayCompletionChoice, ModelGatewayCompletionOptions, ModelGatewayCompletionResponse,
+    ModelGatewayError, ModelGatewayFuture, ModelGatewayMessage, ModelGatewayMessageRole,
+    ModelGatewayRequest, ModelGatewayResult, ModelGatewayTransport, ProviderRuntime,
+    RuntimeAgentCoordinationAdmissionReceipt, RuntimeAgentCoordinationAdmissionStatus,
+    RuntimeAgentCoordinationRejection, RuntimeAgentGraphExecutionReadinessReceipt,
+    RuntimeAgentGraphExecutionReadinessRejection, RuntimeAgentGraphExecutionReadinessStatus,
+    RuntimeAgentGraphProjectionReceipt, RuntimeAgentGraphProjectionRejection,
+    RuntimeAgentGraphProjectionStatus, RuntimeContext, RuntimeEnvironment, RuntimeEvent,
+    RuntimeEventSink, RuntimeEventStream, RuntimeExecutionIdentity, RuntimeFuture, RuntimeTask,
+    RuntimeTaskOutcome, SessionId, SessionIdError, SessionIdentity, SessionIsolationPolicy,
+    SessionIsolationReceipt, SessionKind, SubAgentRuntime, TokioAgentRuntime, ToolRuntime,
+    admit_agent_coordination_plan, assistant_gateway_message,
+    check_agent_graph_execution_readiness, observability, project_agent_graph_planning_receipt,
+    project_agent_graph_projection_request, system_gateway_message, user_gateway_message,
 };
 pub use marlin_agent_sessions as sessions;
+#[cfg(feature = "actor-runtime")]
+pub use marlin_deck_runtime::{
+    DeckContextModule, DeckMailboxMetrics, DeckModuleInstanceId, DeckModuleRetirementReceipt,
+    DeckRuntime, DeckRuntimeConfig, DeckRuntimeMetadata, DeckRuntimeMetadataError,
+    DeckRuntimeMetrics, DeckRuntimeModuleId, DeckRuntimeRejection, DeckRuntimeShutdownError,
+    DeckRuntimeShutdownReceipt, DeckRuntimeStartupError, DeckRuntimeStopReason, DeckTimerId,
+    DeckTimerReceipt,
+};
 
 pub use marlin_gerbil_ir as gerbil_ir;
 pub use marlin_gerbil_scheme as gerbil_scheme;
 pub use marlin_gerbil_scheme::{
-    GERBIL_LOOP_GRAPH_CONTINUATION_NATIVE_PROJECTION_ABI_ID,
-    GERBIL_LOOP_GRAPH_CONTINUATION_NATIVE_PROJECTION_ABI_VERSION,
-    GERBIL_LOOP_GRAPH_CONTINUATION_NATIVE_PROJECTION_PACKAGE_ID,
-    GERBIL_LOOP_GRAPH_CONTINUATION_NATIVE_SYMBOL, GERBIL_LOOP_GRAPH_CONTINUATION_TYPE_ID,
-    GerbilCommandSpec, decode_gerbil_loop_graph_continuation_native_projection,
+    GERBIL_LOOP_GRAPH_CONTINUATION_ABI_PROJECTION_ABI_ID,
+    GERBIL_LOOP_GRAPH_CONTINUATION_ABI_PROJECTION_ABI_VERSION,
+    GERBIL_LOOP_GRAPH_CONTINUATION_ABI_PROJECTION_PACKAGE_ID,
+    GERBIL_LOOP_GRAPH_CONTINUATION_ABI_SYMBOL, GERBIL_LOOP_GRAPH_CONTINUATION_TYPE_ID,
+    decode_gerbil_loop_graph_continuation_abi_projection,
     decode_gerbil_loop_graph_continuation_projection,
-    gerbil_loop_graph_continuation_native_projection_abi_contract,
-    gerbil_loop_graph_continuation_native_projection_package_manifest,
-    gerbil_loop_graph_continuation_native_projection_readiness_plan,
-    gerbil_loop_graph_continuation_native_projection_request,
+    gerbil_loop_graph_continuation_abi_projection_abi_contract,
+    gerbil_loop_graph_continuation_abi_projection_package_manifest,
+    gerbil_loop_graph_continuation_abi_projection_readiness_plan,
+    gerbil_loop_graph_continuation_abi_projection_request,
     gerbil_loop_graph_continuation_projection_contract,
-    gerbil_loop_graph_continuation_type_manifest, project_gerbil_loop_graph_continuation_action,
-    project_gerbil_loop_graph_continuation_native_action,
+    gerbil_loop_graph_continuation_type_manifest,
+    project_gerbil_loop_graph_continuation_abi_action,
+    project_gerbil_loop_graph_continuation_action,
 };
-pub use marlin_org_memory as org_memory;
-pub use marlin_org_model as org_model;
-pub use marlin_org_patch as org_patch;
-pub use marlin_org_store as org_store;
-pub use marlin_org_store::{FileSystemReleaseStatusStore, OrgSourceStoreResult};
-pub use marlin_org_workflow as org_workflow;
-pub use marlin_org_workspace as org_workspace;
-pub use marlin_org_workspace::{
-    STANDARD_AGENT_LOOP_CONTRACT_DOCUMENT_ID, STANDARD_AGENT_LOOP_CONTRACT_ORG,
-    STANDARD_AGENT_MEMORY_CONTRACT_DOCUMENT_ID, STANDARD_AGENT_MEMORY_CONTRACT_ORG,
-    STANDARD_AGENT_PLAN_CONTRACT_DOCUMENT_ID, STANDARD_AGENT_PLAN_CONTRACT_ORG,
-    STANDARD_AGENT_TASK_CONTRACT_DOCUMENT_ID, STANDARD_AGENT_TASK_CONTRACT_ORG,
-    STANDARD_AGENT_TOPOLOGY_CONTRACT_DOCUMENT_ID, STANDARD_AGENT_TOPOLOGY_CONTRACT_ORG,
-    load_standard_agent_contract_workspace, standard_agent_contract_documents,
-};
-pub use marlin_workspace_protocol as workspace;
-pub use marlin_workspace_protocol::{
+pub use marlin_workspace_status::{
     ReleaseGateReceipt, ReleaseGateState, ReleaseGateStatus, ReleaseLandingReport, ReleaseStatus,
     ReleaseVisibilityStatus,
 };

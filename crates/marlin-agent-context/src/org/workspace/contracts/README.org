@@ -1,0 +1,14 @@
+# SPDX-FileCopyrightText: 2026 Tao 3000
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+#
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
+#+TITLE: Built-in Org contracts
+
+The contracts and their examples are from
+[[https://github.com/tao3k/org/tree/2ce88df0ceaf9fa8eae665127f87479421b5f2fa/contracts][tao3k/org at 2ce88df]].
+Their license is in [[file:LICENSE][LICENSE]].
+
+In =agent.plan.v1=, put an Org horizontal rule between the header and data
+rows of the Evidence Loop and Reflection tables. Orgize uses that rule to
+resolve the named columns referenced by the contract.

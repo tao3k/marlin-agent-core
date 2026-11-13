@@ -1,0 +1,50 @@
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+#
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
+[package]
+name = "marlin-agent-app-server"
+license.workspace = true
+edition.workspace = true
+version.workspace = true
+authors.workspace = true
+repository.workspace = true
+readme = "README.org"
+
+[features]
+default = []
+client = ["dep:prost", "dep:tonic", "dep:tonic-prost", "dep:tonic-prost-build"]
+grpc = [
+    "client",
+    "dep:async-stream",
+    "dep:marlin-agent-protocol",
+    "dep:marlin-agent-runtime",
+    "dep:marlin-agent-sessions",
+    "dep:marlin-agent-storage",
+    "dep:marlin-agent-stream",
+    "dep:tokio",
+    "dep:tokio-stream",
+    "tonic/router",
+    "tonic/server",
+]
+
+[dependencies]
+async-stream = { version = "0.3.6", optional = true }
+marlin-agent-protocol = { workspace = true, optional = true }
+marlin-agent-runtime = { workspace = true, optional = true }
+marlin-agent-sessions = { workspace = true, optional = true }
+marlin-agent-storage = { workspace = true, optional = true }
+marlin-agent-stream = { workspace = true, optional = true }
+prost = { version = "=0.14.4", optional = true }
+tokio = { workspace = true, optional = true }
+tokio-stream = { workspace = true, optional = true }
+tonic = { version = "=0.14.9", default-features = false, features = ["channel", "codegen", "tls-ring"], optional = true }
+tonic-prost = { version = "=0.14.9", optional = true }
+
+[build-dependencies]
+tonic-prost-build = { version = "=0.14.6", optional = true }
+
+[dev-dependencies]
+marlin-agent-storage = { workspace = true, features = ["turso"] }
+tempfile.workspace = true
+tokio-stream = { workspace = true, features = ["net"] }

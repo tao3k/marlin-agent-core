@@ -1,3 +1,9 @@
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
+#[path = "integration/conversation_journal_gate.rs"]
+mod conversation_journal_gate;
 #[path = "integration/db_crash_reopen_gate.rs"]
 mod db_crash_reopen_gate;
 #[path = "integration/db_pressure_gate.rs"]
@@ -14,8 +20,8 @@ mod memory_topology_projection_gate;
 mod org_memory_storage_gate;
 #[path = "integration/paths.rs"]
 mod paths;
-#[path = "integration/rfcdb_evidence_graph_gate.rs"]
-mod rfcdb_evidence_graph_gate;
+#[path = "integration/rfcdb_asp_report_gate.rs"]
+mod rfcdb_asp_report_gate;
 #[path = "integration/scenario_performance_contract_gate.rs"]
 mod scenario_performance_contract_gate;
 #[path = "integration/schema_development_baseline_gate.rs"]
@@ -30,3 +36,5 @@ mod turso_070_fundamental_scenarios;
 mod turso_optimization_scenarios;
 #[path = "integration/turso_sync_feature_gate.rs"]
 mod turso_sync_feature_gate;
+
+asp_rust::asp_rust_cargo_test_gate!(mode = warn);

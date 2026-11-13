@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+#
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 * 40.161 AgentGraph P0-P5 Closure
 :PROPERTIES:
 :ID: marlin-rfc-agent-graph-p0-p5-closure
@@ -15,7 +19,7 @@ The current closure keeps the protocol split explicit:
   boundary.
 - =marlin-gerbil-scheme= owns the Scheme package assets and native ABI typed
   projection surface.
-- =marlin-agent-policy-routing-native= owns opt-in linked native policy-routing
+- =marlin-agent-policy-routing-abi= owns opt-in linked native policy-routing
   tests and benchmarks.
 
 No compatibility shim is added. The native path remains Scheme types to Rust
@@ -24,10 +28,10 @@ types; JSON is not part of the native AgentGraph routing hot path.
 ** P1-P2 Verification Gate
 The linked native AOT workflow now includes AgentGraph policy-routing native
 coverage in addition to Deck runtime coverage:
-- compile linked-native tests for =marlin-agent-policy-routing-native=;
-- run linked-native tests for =marlin-agent-policy-routing-native=;
+- compile linked-selector tests for =marlin-agent-policy-routing-abi=;
+- run linked-selector tests for =marlin-agent-policy-routing-abi=;
 - compile the =linked_selector= benchmark;
-- run the benchmark and upload =target/criterion= as the linked-native
+- run the benchmark and upload =target/criterion= as the linked-selector
   benchmark artifact.
 
 This gives Linux-capable runners the same gate shape as local real AOT runs:
@@ -36,7 +40,7 @@ the workflow bootstraps Gerbil/Gambit from source, resolves =gxi=, =gxc=, and
 
 The 2026-06-17 local linked selector benchmark was run through:
 #+begin_src sh
-direnv exec . cargo bench -p marlin-agent-policy-routing-native --features linked-native --bench linked_selector
+direnv exec . cargo bench -p marlin-agent-policy-routing-abi --features linked-selector --bench linked_selector
 #+end_src
 
 The observed midpoint latencies were:
@@ -106,7 +110,7 @@ direnv exec . cargo fmt --all -- --check
 direnv exec . cargo test -p marlin-agent-graph
 direnv exec . cargo test -p marlin-agent-runtime
 direnv exec . cargo test -p marlin-agent-test-support
-direnv exec . cargo test -p marlin-agent-policy-routing-native --features linked-native
-direnv exec . cargo bench -p marlin-agent-policy-routing-native --features linked-native --bench linked_selector --no-run
+direnv exec . cargo test -p marlin-agent-policy-routing-abi --features linked-selector
+direnv exec . cargo bench -p marlin-agent-policy-routing-abi --features linked-selector --bench linked_selector --no-run
 asp org lint docs/40-rfcs/40.160-agent-graph-topology-protocol.org docs/40-rfcs/40.161-agent-graph-p0-p5-closure.org
 #+end_src

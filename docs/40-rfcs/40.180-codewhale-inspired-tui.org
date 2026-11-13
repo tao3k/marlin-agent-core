@@ -1,0 +1,2685 @@
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+#
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
+#+title: Marlin declarative terminal interface
+
+* Objective and reference
+
+Build Marlin's own terminal interface, informed by Codewhale's TUI at
+=b8643a76e417c4fbc55251be1308cdb6862a80f5=.  The reference checkout lives in
+=.data/Codewhale= and is not a build dependency.  Codewhale is MIT licensed;
+any copied material must retain its required notices and third-party attribution.
+The reference is evidence for capabilities and engineering problems, not a
+visual identity or an instruction to reproduce another application's design.
+Marlin's own Scheme extension model, runtime ownership and workflows define
+the resulting product.
+
+Marlin remains the owner of execution, policy, configuration, typed receipts,
+and evidence.  The interface must not fabricate an agent response, approval,
+tool outcome, or a successful action when the backing capability is absent.
+
+* Work and acceptance
+
+This is an evolving feature inventory, not a claim of parity. Each item remains
+open until its real Marlin integration and the listed validation exist.
+
+- [ ] Inventory the reference's composer, transcript, streaming, navigation,
+  slash commands, approval, sessions, model selection, tool and process views,
+  diffs, themes, accessibility and terminal lifecycle. Map each to an existing
+  Marlin contract or record its missing runtime capability.
+- [ ] Build a terminal application with resize, Unicode input, multiline editing,
+  scrollback, keyboard help, and reliable terminal restoration on exit and error.
+  Exercise it in a real pseudo-terminal as well as deterministic component tests.
+- [ ] Connect user turns and incremental output to a real configured Marlin
+  runtime and model gateway. Preserve cancellation, errors and no-live-LLM
+  denial evidence; exercise a deterministic end-to-end provider fixture.
+- [ ] Display typed graph, tool, process, sandbox and policy receipts without
+  replacing them with reconstructed log text. Provide navigation to details.
+- [ ] Connect approvals and permission controls only to runtime-owned typed
+  authority, and verify allow, denial, cancellation and failure paths.
+- [ ] Support session creation, selection, persistence and replay through the
+  existing session and storage contracts; verify recovery across restarts.
+- [ ] Integrate supported configuration, model routing, workspace and diff
+  operations through their owning APIs. Clearly identify unavailable features.
+- [ ] Cover keyboard navigation, terminal resize, narrow layouts, Unicode,
+  paste, long output and accessibility; add meaningful integration checks.
+- [ ] Integrate Cargo and Bazel build paths and user documentation; run focused
+  tests and record any wider build or platform limitations.
+- [ ] Ship a release whose selected core Scheme Module closure and SDK VM are
+  linked into the application, without requiring an installed Gerbil package
+  tree. Preserve declared Module identity and optional dynamic extensions, and
+  qualify cold first-frame and normal shutdown against fixed workloads.
+
+* Initial observations
+
+Codewhale's TUI spans a large product surface and depends on its own engine,
+protocol, runtime and many other crates. Copying it wholesale would introduce a
+second authority model. Marlin currently describes its =marlin= executable as a
+harness/debug surface, and its typed model gateway, graph execution and runtime
+receipts are separate building blocks. A terminal shell must integrate those
+blocks rather than treating the existing debug CLI's JSON output as its protocol.
+
+* Architecture and performance model
+:PROPERTIES:
+:CUSTOM_ID: tui-performance
+:END:
+
+The [[file:../../dev/sysml/tui-architecture.sysml][structural model]] separates
+inspected reference and Marlin behavior from proposed components and allocates
+requirements to their owners. The [[file:../../dev/sysml/tui-lifecycle.sysml][turn lifecycle]]
+models provisional output, runtime admission, cancellation and retirement.
+The [[file:../../dev/sysml/tui-declarative-engine.sysml][declarative UI engine model]]
+specifies the Scheme/Rust ownership boundary, candidate publication lifecycle,
+extension identities, incremental work and qualification requirements.
+The target model is not an implementation or a performance result.
+
+** Startup and hybrid execution decision
+
+The current =run= validates configuration, initializes the Scheme VM, resolves
+the package publication and opens the Scheme UI before entering terminal raw
+mode or drawing a frame. It cannot present a responsive workbench during that
+interval. The pinned SDK documents package export resolution as a startup
+operation that must not overlap unrelated environment or subprocess work; it
+also checks the VM owner thread. Simply spawning the current resolver beside
+the input/Tokio threads would violate that contract.
+
+The desired lifecycle separates (1) process start to a responsive terminal
+initialization state, (2) Scheme UI readiness and admission of its actions,
+and (3) terminal restoration and VM retirement. The design target is subsecond
+first interaction and Scheme readiness within a few seconds. These are target
+budgets, not measured results or replacements for the existing strict
+ten-second workbench and five-second exit tests. Initialization must visibly
+report pending, ready or failure, support cancellation and restoration, and
+never route Scheme-dependent actions before readiness. A fast loading screen
+alone is not a fast usable UI.
+
+| Candidate | Potential benefit | Evidence and qualification boundary |
+|-----------+-------------------+-------------------------------------|
+| Existing dynamic VM | Preserves live Scheme, Module selection and MOP | Current selected publication and first open are slow; the single sample below does not isolate macro expansion from source discovery or loading. |
+| Yuanxu-selected compiled closure linked with the VM | Move core selection and compilation to build time and reduce runtime filesystem and dynamic-loader work | The linked UI now opens without a Gerbil package tree. Release PTY observations vary between 3.90 s immediately after linking and 118–129 ms on subsequent runs; the application recorded a 72–83 ms first frame in the latter runs. Cold distribution performance remains unqualified. |
+| Restored Scheme-to-Rust IR plus VM | If the complete linked Release misses the startup budget, move measured residual work into native Rust while retaining VM-owned extensibility | [[https://github.com/tao3k/gerbil-scheme-rust/pull/17][Scheme Rust PR #17]] introduced a build-time typed IR, but commit =16a6172= removed that crate from the inspected SDK branch. Restoring and extending it is a separate project, including Scheme macro expansion, object and generic-method semantics where measurements justify them. |
+
+The selected core is now linked into the Darwin Release binary, and the
+source-free PTY gate covers UI publication, first frame and normal exit. The
+earlier 65 ms VM-only control did not cover the selected UI; it remains a
+historical control rather than product evidence. The Release startup spread
+requires a controlled cold-process study before deciding whether lowering
+Scheme work is useful. The application-internal first frame is already far
+shorter than the slow process-to-observation samples; attribution of that gap
+requires process and terminal measurements. If the full linked Release misses
+the cold budget, profile the remaining work before restoring the removed IR.
+The possible lowering
+scope then includes macro-expanded code and object/generic dispatch where they
+actually dominate, not just pure string functions. Any hybrid must preserve
+selected Module identities, method precedence, errors, extension behavior and
+typed boundaries. Runtime data crosses as Scheme and Rust types; the old JSON
+build interchange is not a runtime protocol.
+
+For each candidate, capture independent fresh-process cold and warm runs on the
+same machine and terminal: process-to-first interactive state, process-to-UI
+readiness, VM initialization, publication selection, first open, cleanup,
+CPU, allocations, RSS, source reads and dynamic images. Hold package revision,
+selected modules, input, extension set and retirement behavior fixed; report
+individual observations, distributions and failures. Attribute macro-expansion
+cost only with direct instrumentation rather than inferring it from elapsed
+startup. Include missing/substituted module and extension-dispatch controls,
+as well as terminal restoration when initialization fails or is cancelled.
+
+** Proposed Scheme UI extension plane
+
+The client now has a selected Gerbil/Yuanxu workbench with declared regions,
+focus order and CLOS event methods. Rust still paints the terminal, and a
+general plugin lifecycle, richer stateful widgets and module admission
+remain open. The current bounded text and field content slice is described
+below. The target extends that Scheme module so components, keymaps,
+composition and state transitions are authored as Scheme values.
+Rust owns the terminal, input decoding, layout and Ratatui painting, async
+I/O, typed runtime commands, and effect authorization. Model/session facts and
+receipts originate from their existing runtime owners, never from a UI plugin.
+
+The linked TUI executes Scheme in the Gerbil/Gambit VM. Gerbil and Gambit
+compile and link the selected module closure for that VM; the SDK package named
+=gerbil-scheme-aot-build= builds the linked program archive. Neither that
+package name nor the =tui-aot-*= recipes imply translation of Scheme modules to
+Rust. Scheme-to-Rust IR is a separate, currently unused backend with its own
+limitations; linked modules do not by themselves establish dynamic loading.
+
+The Scheme module, the Rust/Scheme calling boundary, and any AOT compilation or
+linking step are distinct responsibilities. The module must not import an AOT
+builder or require its host to use one image format. A native ABI adapter can
+export typed, rooted Scheme values, but C ABI describes the call convention;
+it does not itself establish a loader, a build policy, or authority. AOT is one
+possible packaging strategy, not the definition of the UI extension plane.
+Likewise, a Scheme VM must not be represented as already having dynamic module
+loading solely because the language or a subprocess toolchain can load Scheme.
+
+At the proposed =gerbil-scheme-rust= PR #18 pin =b3b50f0=, =GerbilRuntime::initialize=
+provides the process-global native runtime, while =bind_object_export= requires
+a function already belonging to that runtime's AOT graph. The SDK's package
+build/main entrypoints and separate toolchain subprocess APIs are not a typed
+live-module invocation API. An SDK-owned, typed module resolution and call
+capability must therefore be established and qualified before the UI can rely
+on runtime-loaded Scheme modules. Do not invent a Marlin text/eval protocol,
+start a second VM, or present an AOT-only adapter as a general dynamic loader.
+The actual implementation may support multiple execution or packaging modes,
+but each needs a proven owner, lifecycle and typed value boundary.
+
+The initial =scheme/ui= module publishes POO component and event prototypes,
+declarative CLOS method bundles and a bounded workbench projection. It is
+selected and exported by the same Yuanxu =init.ss= as the other Marlin modules;
+module management and publication do not depend on a separate UI entrypoint.
+The UI projection is a dependency of the selected UI module and is published
+as an operation of that module. The selected =c-abi= Module owns its Deck and
+UI adapter build inputs in its Build role; the adapter receives the complete
+selected Yuanxu publication and derives its UI child, rather than importing
+=init= or constructing a default scope. The Rust UI package resolves and retains
+the selected publication through the SDK's package-export API.
+The selected =c-abi= scope receives its UI, Context and Deck dependencies from
+the Module System; membership checks retain the linked objects instead of
+wrapping their function contracts again. The Scheme event generic produces
+submit, dismiss and scroll intents, and accepts a bounded caller-supplied focus
+order so component extensions can participate without editing the core focus
+methods. The workbench also accepts explicitly supplied POO extension regions,
+checks their identities and focusability, and derives a focus event from its
+composed regions. The native projection preserves their labels and focusability.
+The terminal renderer can paint these bounded labels and follows the focused
+extension when vertical space is limited. It sanitizes control characters and
+preserves transcript and composer space. The selected Modeline takes one row
+when space permits; host status contributions appear in the collapsed Mini
+Buffer. This is a presentation primitive, not
+plugin discovery or general extension event handling: Enter may dispatch a
+contributed submit method only to produce an admitted focus change; it cannot
+submit the user's draft. The current TUI opens its session with no extension
+contributions or method bundles.
+An ignored, toolchain-dependent Rust test builds a test-only Gerbil package
+through the SDK, resolves its contributed object and CLOS bundle in the same
+VM as the selected UI, and routes Tab and Enter through the terminal host. It
+also checks that an extension's forged draft-submission intent is rejected
+without replacing the admitted state. This verifies that fixture path, not
+production plugin discovery or complete plugin lifecycle authority.
+The UI ABI opens a Scheme-owned session from the selected publication, typed facts and
+an ordered vector of at most 16 Scheme CLOS method bundles. It composes those
+bundles on a fresh unpublished generic; an invalid bundle aborts session creation
+without changing an existing generic. Bundle protocol checks belong to Yuanxu's
+CLOS implementation. The vector limit is not a bound on the size of an
+individual bundle, and supplying a bundle is not proof of Module ownership.
+The session retains the workbench, generic and focus under an SDK strong root. A typed
+event produces a new session and intent; the old session remains valid. Scheme
+derives the focused component and event from that session, checks focus order,
+and rejects a focus result outside the workbench. These are consistency checks,
+not proof that the supplied scope was selected by the Module System.
+The dedicated =marlin-agent-ui= Rust package resolves the selected publication and the
+open, project and dispatch procedures through the SDK's package API, calls the
+rooted procedures through its C ABI, and converts rooted vectors,
+symbols, strings and booleans through the SDK into Marlin UI types. It checks
+the projected shape, built-in ordering, sizes and duplicate identifier spellings;
+the result remains a candidate, and an intent is not effect authorization.
+A typed Rust facts request now uses the same SDK to construct a rooted request
+from the supplied scope, display facts and ordered extension vectors. Host labels, status identities and
+outer contribution counts are checked before allocating the request; the SDK
+roots do not establish scope or extension provenance.
+When the model or session changes, the terminal host sends bounded labels as
+Scheme strings through the same rooted SDK interface. Scheme constructs a new
+workbench without an accumulating prototype chain; Rust admits it only if the
+requested labels match and the existing regions and focus remain unchanged.
+Unchanged labels do not trigger a VM call. Real-VM tests cover old-state
+retention, bounds, and an extension method after a label refresh; they do not
+establish complete provider/session switching acceptance.
+A native SDK test constructs real rooted Scheme values and exercises conversion,
+duplicate rejection and event decoding. A separate SDK =test_package= run loaded
+the compiled Yuanxu-selected UI in a Rust-owned VM and exercised all three UI C ABI
+entries through a compiled Scheme foreign-call fixture: session creation,
+projection, focus dispatch, extension-specific CLOS dispatch, invalid bundle
+rejection, old-state retention, borrowed-input retention and
+invalid-root rejection passed, and the
+process exited normally. This is not a Rust rooted-procedure call and does
+not prove runtime scope transfer, owner scheduling, complete transient-memory
+bounds, or end-to-end TUI integration. Symbol conversion copies a name before Marlin's
+length check; bounded identifier admission still requires an upstream or
+producer-side pre-copy bound. No latency or throughput result follows from this test.
+In the SDK-owned VM, a fresh Gerbil expander context imported the existing
+=init= export, observed the identical selected UI scope, and imported and called
+the adapter's exported session procedures. This establishes the standard
+Scheme module path in that environment. The SDK's
+=stage_package_load_closure= produces build resources and is not the runtime
+resolution API. SDK PR #18 revision =a00e62ea= adds package-export resolution
+and rooted procedure invocation through its C ABI. The SDK's real-VM package
+test passed export resolution, application to
+Scheme false, rejection of a non-procedure and a missing export, and reuse of
+the original procedure after the failed lookup. Its existing environment and
+package lifecycle checks also passed. A separate Rust-driven test using that
+local SDK resolved the selected Marlin =init= publication and the three UI
+procedures, opened and projected a session, dispatched a focus event and
+confirmed the prior state remained usable. It required the compiled SDK,
+Yuanxu, POO, ASCENT, Orgize and Parser libraries on the load path, including
+the lazy Parser dependency; missing paths produced real failures before the
+successful run. The successful run included startup and lazy loading and is not
+a frame-performance measurement. A subsequent unoptimized local diagnostic
+executed 512 focus transitions, each constructing the request, calling the
+rooted dispatch and projection procedures, decoding the result and releasing
+the previous session. All focus-intent consistency checks passed; one sample
+run observed median 2,179 microseconds, p99 55,395 microseconds and maximum
+279,155 microseconds. It includes no terminal painting, has no matched
+baseline or controlled machine load, and does not establish an SLO or a cause
+for the tails. A second diagnostic with per-phase timers observed total median
+2,349 microseconds and p99 48,467 microseconds; dispatch median/p99 was
+1,317/11,658 microseconds, intent snapshot and decode 9/75 microseconds, and
+projection plus decode 926/5,788 microseconds. These are independently
+ordered distributions, not additive percentile contributions. Marlin pins this
+SDK revision; a terminal integration exists in the working tree but has not
+passed the original startup acceptance gate. Package resolution uses the SDK's
+process-wide package tooling and is a startup operation; rooted invocation does
+not enter that tooling. A concurrent edit of SDK =program-build.ss= caused one
+subsequent rebuild to fail; later builds succeeded, but these tests do not
+qualify the complete SDK working tree or a clean remote revision.
+The local SDK now also returns an optional bounded Scheme diagnostic with a
+typed rooted-call failure. Its new supervised test passed normal calls,
+non-procedure rejection, exception diagnostics, missing-export recovery and
+natural cleanup in a 4.2-second binary replay. Earlier attempts exceeded the
+unchanged wall or inactivity gate, including one after all assertions reached
+cleanup; those failures are retained and their cause is unknown. Independent
+controls with and without a missing export exited naturally, but do not explain
+the supervised failure. Marlin's =UiModule= wrapper passed a real-VM test
+against the exact pinned revision, including session open, projection, focus
+dispatch, old-state retention and a caught Scheme failure. The test took
+34.33 seconds including startup and lazy loads; this is not a frame benchmark.
+The locked Cargo check, strict library Clippy, SDK-value projection test, and
+Bazel 9.2.0 repin also passed. Installed module-closure discovery, a vendor
+refresh and an offline Bazel build remain separate gates. The working-tree TUI
+initializes the SDK owner before Tokio, and admits projected successor states
+only when event, intent, focus and static regions agree. The original 15-second
+PTY first-frame gate failed twice; a separate diagnostic with a longer window
+passed focus, draft preservation, streaming and terminal restoration. The
+SDK revision =e18cd894= also emitted internal module-loading progress to the
+PTY before the workbench appeared. SDK revision =8cebc52e= adds an owner-local
+resolution progress policy; its supervised tests verify quiet resolution,
+visible errors, restored observation and unaffected build progress. TUI selects
+quiet resolution and the PTY fixture asserts the loader messages are absent.
+The current downstream PTY run did not reach a frame before the unchanged
+15-second deadline; it showed only the startup message. A separate diagnostic
+with first-frame and exit windows extended to 60 and 30 seconds respectively
+passed focus, Unicode paste, streaming, absence of loader progress and normal
+terminal restoration. That diagnostic does not pass either original timing gate.
+The diagnostic with only the first-frame window extended still exceeded the
+original five-second process-exit deadline. Terminal restoration was observed
+in the longer-exit diagnostic; the cause of delayed exit remains under study.
+The prior local binary passed its then-current PTY fixture, but that is
+not an exact-revision paired performance comparison. The extended diagnostic
+is not acceptance evidence for the original gate.
+The post-split Bazel repin completed, but its generated lock records SDK
+=0d92f7b= for =gerbil-scheme 0.1.0=, while the UI uses the newer SDK source.
+Cargo identifies both same-version sources: the older one is retained by the
+Context package's Rust Orgize dependency. Consequently this repin does not
+qualify a Bazel UI build. The intended Context/Org Scheme migration must remove
+that duplicate ownership or the build system must resolve the two sources
+without treating them as interchangeable; neither is established here. An
+offline Bazel build also stopped earlier because the configured vendor tree
+does not contain =rules_rust+=; it did not reach UI compilation.
+An additional single cold-start observation on the exact pinned SDK measured
+25 ms for VM initialization, 13,896 ms for resolving the selected =init=
+publication, 50/6/41 ms for resolving open/project/dispatch, 9,633 ms for the
+first open and 2 ms for the first projection; total to first projection was
+23,657 ms, with a separate natural test exit at 31.49 seconds. This is one
+uncontrolled observation, not an acceptance benchmark. It directs the next
+investigation toward selected publication and lazy initialization rather than
+assuming repeated UI export lookup is the dominant startup cost.
+A separate Gerbil control of the open operations observed 1.27 seconds for
+accessing =Marlin= and 5.32 seconds for its =ui= child, versus approximately
+1.4 milliseconds each for workbench and generic construction. This is not a
+matched end-to-end comparison: it imports the profile expressions separately.
+Its allocation counters are not qualified. A direct standard =load-module=
+control ranged from 19.8 seconds on one run to 1.3 seconds on another; a
+sampler produced no usable call graph. These observations do not establish the
+cause of the elapsed-time variation.
+An additional five-second sample began after the UI procedure exports were
+resolved, during the first open. The sampled test worker had 4,042 stack
+samples, of which 2,526 included Gambit's dynamic loader and 2,378 included
+macOS dyld's debugger-notification path; the image listing contained 647
+=.oN= images at sampling time. This is a single instrumented macOS run, and
+attaching the sampler may affect loader behavior. It identifies a candidate
+for further investigation, not a demonstrated saving or a reason to bypass
+Yuanxu selection. Any bundled precompiled Scheme-image experiment must retain
+the same declared Module graph and SDK VM/C ABI, and must be compared against
+the unchanged loader and PTY gates before adoption.
+A separate five-second sample immediately after Ctrl-Q observed all 4,021
+main-thread samples in SDK/Gambit dynamic-module cleanup, with 4,019 in
+=dlclose= and 3,725 in dyld debugger-unload notification. The sampler may
+affect timing; the uninstrumented diagnostic separately exceeded the unchanged
+five-second exit gate. Terminal restoration precedes runtime cleanup, but the
+process must still retire the VM normally; skipping cleanup is not a repair.
+On a later current-worktree build, the unchanged PTY test reached the
+interactive frame within its 15-second limit, completed the focus, paste and
+stream sequence, and then timed out waiting five seconds for process exit.
+This one run does not negate the earlier first-frame failures or establish a
+startup percentile.
+An isolated two-module Gambit control built a flat dynamically loadable image,
+then loaded a separately compiled extension in the same Gambit process and
+checked a cross-module result. The compiler was the paired installation and
+used its standard relocation options. This only establishes the small Gambit
+control: it did not use the SDK C ABI, Gerbil Module identity, Yuanxu selection,
+the real closure, or a measured matched performance comparison. In particular,
+the SDK's current custom-linked image does not automatically admit its package
+resolver; a production bundle would need that lifecycle and module semantics
+qualified, not a second module graph or a skipped VM shutdown.
+The root environment defaults =GERBIL_BUILD_CORES= only when unset. SDK
+revision =a00e62ea= nevertheless replaced a caller's value during package work;
+its successor =e18cd894= preserves explicit values and defaults to Gambit's CPU
+count only when absent. The supervised native fixture observed values 2, 0,
+and the unset default, including restoration after a deliberate failure, under
+the existing 15-second wall and 5-second inactivity gates. The old code failed
+the same explicit-2 test by exposing 12. Marlin's dependency update must also
+pass its own locked build and package tests.
+An order-only diagnostic rebuilt the same declared selection with =ui= before
+=context=, without adding another Module or loader. In A/B/B/A order, elapsed
+time to first projection was 12.306/18.684/8.009/12.037 seconds respectively.
+The runs used separate precompiled prefixes and were not a fully matched clean
+build; they do not demonstrate a reliable improvement. The original =init=
+order was restored byte-for-byte and the alternate was not adopted.
+The host must still establish publication provenance, validate and publish candidates,
+and authorize every resulting action; an intent is not a runtime receipt.
+This is not yet terminal event routing or automatic module discovery of
+extension components. Each contributed region snapshots and seals its identity,
+label and focusability while retaining the supplied component as a prototype
+for dispatch. Mutations to other inherited slots and whole-tree hot reload are
+not fenced; this is not a complete immutable snapshot guarantee.
+The current Yuanxu =std-make-spec= takes =(\"init\")= as its explicit root;
+a clean build produced the selected modules and both ABI adapters. The UI
+workbench test passed with that compiled package first on the load path.
+The working-tree terminal connection is not yet qualified, and this is not a
+complete component or plugin system. With the earlier SDK pin
+=b3b50f0=, the existing Deck Actor test
+still fails at VM startup with =Unbound variable: Context= in Yuanxu's
+publication reader. This reproduces independently of connecting the UI ABI;
+the cause is not established. The existing Deck AOT build path is
+still present and needs an explicit migration to the unified runtime rather than
+being duplicated or silently bypassed.
+
+In the reproduced Actor test, the staged native manifest does not list Yuanxu's
+publication reader, while the runtime's verbose bootstrap resolves the reader
+from an external Gerbil package. A run without that package on the explicit
+load path also failed, but its exception could not be formatted. These facts
+show that the static manifest alone does not describe the runtime load closure;
+they do not identify the cause of the unbound binding. Qualification must cover
+the actual module versions and loading path as well as the linked manifest.
+
+One event cycle delivers typed input and an immutable view of the relevant
+runtime state to the Scheme owner. The module returns a typed component tree
+and typed intents. Rust validates the result, admits intents through their
+owning runtime APIs, and paints the admitted tree. The native boundary projects
+Scheme types into Rust types; it is not a JSON, Org, or Scheme-text protocol.
+Stable domain identifiers, explicit focus ownership and versioned component
+identity permit incremental updates and state retention without depending on
+object addresses. Layout constraints, text, lists, panels, editor and overlays
+are capabilities to specify through that contract, not Scheme wrappers for
+each Ratatui method.
+
+Extensions register through the existing module system, with explicit ordering,
+key binding conflict handling and declared capabilities. A failed module or
+invalid projection must remain visible as an error and cannot produce effects;
+the last admitted UI state and terminal restoration remain Rust responsibilities.
+The design must not imply that arbitrary in-process Scheme is sandboxed: the
+actual trust and isolation properties depend on the VM and host capabilities.
+
+The implementation must establish VM ownership and scheduling from the actual
+runtime, bound event and projection size, batch crossings at a component/update
+boundary, and cache unchanged visible subtrees. No per-cell Scheme callback or
+unbounded event channel is a target. Benchmarks must compare matched terminal
+sizes and input/output loads, including long streaming output, resize, idle,
+slow extensions and allocation/latency across the native boundary. These are
+requirements, not measured performance claims.
+
+First deliver a vertical slice: publish a Scheme-owned workbench with a
+transcript region, composer and extension-contributed status component; drive
+real keyboard input through the native ABI to a Rust Ratatui frame and exercise
+registration, focus, resizing, failure and cleanup in a pseudo-terminal. Then
+migrate session navigation, model selection, menus and other Codewhale UI
+features on the same contract. Runtime-dependent approvals and tools require
+their real typed runtime capabilities before they can be interactive.
+
+** Evidence and design risks
+
+| Observation | Evidence and interpretation | Target response |
+|-------------+-----------------------------+-----------------|
+| Codewhale coalesces updates and limits frame rate | Reference =b8643a76=, =crates/tui/src/tui/frame_rate_limiter.rs= | Preserve event-driven redraw and distinguish idle, burst and low-motion policies. |
+| Codewhale keeps transcript and output caches | =tui/app.rs= viewport and =tui/output_rows_cache.rs=, which limits entry count and estimated bytes | Use bounded, versioned visible-row projections; qualify invalidation on width, style and content changes. |
+| A Codewhale translation event channel is unbounded | =tui/ui/event_loop.rs= creates an unbounded channel. Producer rate and impact are not measured. | Bound both event count and bytes, preserve control capacity, and measure overload behavior. |
+| Codewhale historically recorded long-session concerns | =crates/tui/CHANGELOG.md= under 0.10.1 describes growth, UI-task cloning, and duplicate resume reads. The entry is historical; current behavior has not been independently established. | Qualify retention, snapshot cost and resume reads on both current reference and Marlin. |
+| Marlin previously redrew on every poll and walked all transcript entries | The client now schedules dirty frames and uses a separate row-layout owner without the renderer's =u16= scroll limit. Deep scroll uses a capped sparse row index after its first full scan; resize and long individual lines still need measurement. | Qualify first-index, resize, long-line and deep-scroll tail behavior against the complete terminal path. |
+| Marlin bounds queued model events by count and accounted heap capacity | =event_queue.rs= uses 64 slots and a 32 MiB permit budget; Weaver chunks are at most 64 KiB. The input queue has eight slots. In-flight events, transport, accumulated response and transcript history are separate. | Bound producer and retained live memory independently, and provide durable retention for terminal evidence. |
+| The TUI has local request cancellation and optional durable history | =app.rs= aborts its task; it does not receive an authoritative runtime retirement receipt. An opt-in Turso journal records admission and terminal observations and blocks uncertain continuation. | Runtime owns cancellation outcome and late-event fencing; storage owns ordered, replayable facts. |
+| The graph controller captures events concurrently with an iteration | Previously its 64-item capture queue could fill while the controller waited for that same iteration to finish. The controller now drains during execution and the primary stream retains its backpressure behavior. | Captured iteration traces are still retained in an unbounded vector, are not durable, and need an explicit bounded persistence design before long-running TUI integration. |
+| Native graph proposal admission | Static compilation rejects native proposals, while the native compilation path requires a readiness receipt matching the ABI identity, version and exact required symbol set. | The receipt is a typed runtime observation, not cryptographic proof of a loaded library; TUI graph execution and durable graph evidence are still not wired. |
+
+The in-memory session backend maintains per-project/session event counts under
+the same mutex as event insertion. Replay's before/after count checks therefore
+use an indexed lookup instead of traversing all events in that session. Batch
+validation precedes index updates, so a rejected batch does not increment the
+count. This is an algorithmic change to the in-memory backend, not a measured
+end-to-end improvement or a change to Turso or the planned Org backend.
+The storage unit suite passed seven tests, including cross-project and
+cross-session counts and a rejected atomic batch that leaves counts unchanged.
+
+The readiness receipt encoding now includes its evaluated required symbols.
+Older serialized receipts lacking that field are rejected and must be
+regenerated from the original runtime readiness check; counts alone cannot
+establish the symbol identities.
+
+The AgentGraph execution-request builder also checks nested readiness evidence:
+the request, planning, projection, admission, timestamps, selected plan and
+root loop entry must agree before a request is produced. This checks consistency
+of supplied receipts, not their authenticity or the continued availability of
+the referenced runtime graph.
+
+These observations do not establish a comparative performance result or imply
+that all reference-project features have been examined. In particular, a
+bounded queue must not discard a denial, completion, or other semantic receipt
+to satisfy a memory limit. Display coalescing is distinct from event retention.
+
+** Issue-derived engineering requirements
+
+Issue observations are reports, not proof that current heads still have every
+reported defect. Statuses below were checked on 2026-11-11; regression coverage
+and current-version reproduction remain separate from issue closure.
+
+| Issue | Evidence and design consequence | Marlin verification status |
+|-------+---------------------------------+----------------------------|
+| [[https://github.com/codewhale-hq/Codewhale/issues/5981][Codewhale #5981]] | Closed with #5993: multiline paste was split into submitted turns; the fix addressed the startup path as well as paste detection. | Bracketed UTF-8/CRLF paste is one bounded event, with no submission before Enter; a local PTY test covers it. Unbracketed paste and platform matrix remain open. |
+| [[https://github.com/openai/codex/issues/13729][Codex #13729]] | Closed as duplicate of #31416; maintainers did not claim the Windows paste bug fixed. Newlines may submit without reliable paste boundaries. | Do not infer atomic paste on unbracketed input or extrapolate Unix PTY evidence to Windows. |
+| [[https://github.com/codewhale-hq/Codewhale/issues/6842][Codewhale #6842]] | Open report links long-session retained journal, oversized metadata, UI-thread snapshots and repeated resume reads. The 0.10.1 changelog records partial mitigations and remaining concerns. | Bound live projections independently from durable history; test retention, checkpoint, resume I/O and UI latency separately. Not implemented. |
+| [[https://github.com/openai/codex/issues/21945][Codex #21945]] | Open report identifies full-history overlay rebuilding and repeated wrapping as long-session costs; normal inline view has different behavior. | One bounded visible-viewport cache exists; changed content and dimensions still trigger layout. Benchmark real overlay and resize paths as well as ordinary frames. |
+| [[https://github.com/openai/codex/issues/23260][Codex #23260]] | Open report describes long-running subagent retention and an export that hydrates and clones large history on the UI task. | Bound producer, retained projection and export independently; qualify long sessions and cleanup with actual runtime ownership. |
+| [[https://github.com/openai/codex/issues/16165][Codex #16165]] | Closed after #18575 rebuilt source-backed transcript history on resize and cleared stale rows. | A deterministic backend compares cached repeated resize frames and cursor positions against fresh frames while a turn is active; one Unix PTY exercises shrink/grow during an open stream and subsequent scroll anchoring. Actual screen contents across terminal implementations remain unqualified. |
+| [[https://github.com/codewhale-hq/Codewhale/issues/6169][Codewhale #6169]] | Closed historical report and maintainer investigation describe terminal foreground ownership, suspend and checkpoint hazards; the report's mechanism needed correction. | Keyboard and external suspend now restore terminal modes before process stop, then reopen and redraw after continue. A real PTY covers both paths and retained draft. Shell foreground handoff and incomplete runtime work still require qualification. |
+| [[https://github.com/codewhale-hq/Codewhale/issues/6978][Codewhale #6978]] | Report includes replayed old queued messages and snapshot failure; do not conflate the two independent failure paths. | Durable event identities, acknowledgements and restart/crash tests must exclude duplicate turn dispatch and preserve failed-work evidence. Not implemented. |
+
+** Qualification plan
+
+Use the same terminal dimensions, fixture content, chunk timing, build profile,
+machine, OS, sampling method, and offline provider for each paired comparison.
+The primary comparison is an exact, frozen Marlin baseline against a Marlin
+candidate; a Codewhale comparison is a separate optional observation, not the
+definition of success or a requirement to match its interface. Record the
+exact Marlin revisions and dirty patch identities and, when comparing the
+reference, its revision =b8643a76e417c4fbc55251be1308cdb6862a80f5=. Warm up, run
+multiple paired repetitions and retain raw observations, failures, and p50,
+p95, p99 and maximum where meaningful. Report CPU time, allocation count and
+bytes, peak RSS, bytes read and written, queued bytes, redraw count, input to
+visible-frame latency, first-chunk to visible-frame latency, and cancellation to
+runtime retirement latency separately; never substitute component timing for a
+full user-visible measurement.
+
+Scenarios include an idle terminal; 1k, 10k and 100k transcript rows; bursts
+of short and large Unicode chunks; bounded slow-consumer overload; resize and
+scroll during streaming; large paste and multiline editing; failed and
+cancelled turns; and cold and warm session resume. Verify ordered delivery,
+no duplicate replay, correct viewport, grapheme boundaries, no lost terminal
+receipts, and restored terminal state in the same scenarios. Record retained
+and transient memory separately and use a real pseudo-terminal for end-to-end
+latency, while deterministic render and queue tests isolate mechanisms.
+
+Quantitative thresholds are not yet accepted: first collect baseline
+distributions and workload sizes, then choose explicit budgets and regression
+limits with the user. A local green test, SysML validation, reference project's
+historical claim, or a single run does not establish high-performance parity.
+
+* Initial implementation and evidence
+
+** Workspace top-layout component diagnostic (2026-11-11)
+
+For the new top-origin workspace projection, one local debug-build diagnostic
+compared the previous reverse scan to the forward projection in the same
+process, using the same 880,000-byte single Unicode line, 80-column width and
+12-row viewport. The test first asserted identical visible lines, then ran five
+reverse/forward pairs. On Darwin 25.6.0 arm64 with rustc 1.95.0, elapsed
+microseconds were =reverse [1080916, 1137290, 610020, 708251, 618865]= and
+=forward [371, 361, 1268, 354, 357]=. The checkout HEAD was
+=74731c34be0771c01c68c3a67234e33e9b0fb200= with uncommitted work; the
+measured =viewport.rs= SHA-256 was
+=a94645e8aadbad22d943ec544deda792533af5e4c54cf98c2a063f4f523114f5=,
+=wrap.rs= was =01235622bd95cebbb78ee5d9ef04f9e5f3b00745d8eac8a39c18e5d0aeaabe89=,
+and =tests/unit/viewport.rs= was
+=89d608ccac9496f6d711ebfbebe30c77615fa13dac2ee85beb825aa228458464=.
+This is a small, fixed-order component diagnostic with no contention control;
+it is not a terminal responsiveness, release-build, memory, deep-scroll or
+Codewhale comparison. Large individual graphemes may still require scanning
+outside the displayed columns.
+
+** Stream-open uncertainty (2026-11-11)
+
+The runtime edge timeout and Weaver's typed open-stage timeout or transport
+failure now produce typed unresolved observations rather than a completed
+failed turn. The session journal appends an explicit uncertainty event and
+retains the turn as unfinished; a failed uncertainty storage write relinquishes
+local authority because its commit status is unknown. Replay preserves the
+reason and blocks further turns. A local PTY fixture confirmed that a provider
+which had already received a request but did not respond is not contacted
+again after timeout and restart. This does not establish remote cancellation
+or a general exactly-once contract. After the stream opens, transport loss,
+timeout, invalid provider responses and missing terminal events are also
+recorded as unresolved; the observed pending prefix is checkpointed first.
+Invalid chunk sequence or size, local and provider byte-limit rejection, and
+an inconsistent completion now follow the same typed unresolved path; the
+first rejected chunk is not added to the persisted prefix. A malformed
+completion is treated conservatively even if the provider has actually stopped.
+Failed checkpoint and terminal writes relinquish local authority. Any otherwise
+unclassified error observed after stream open also becomes a typed unresolved
+observation; its original diagnostic is not retained by this path. Generic
+errors during stream opening are also unresolved unless the gateway explicitly
+reports that no downstream request was dispatched. Model-catalog rejection and
+edge readiness failure provide that local evidence. The unclassified error's
+original diagnostic is not retained. Historical failed events are not reclassified.
+When a pre-dispatch rejection reaches the TUI (after its journal observation is
+recorded in a persistent session), it restores the submitted prompt if the composer is empty; otherwise
+it preserves the new draft and the visible rejected prompt. The session can
+accept another turn. A rejection-labelled event from an already opened stream
+is treated as uncertain, and a failed terminal journal write does not release
+the session. These behaviors do not reconcile an incompatible continuation.
+The journal's terminal-write API accepts only completion or a pre-dispatch
+rejection, and rejects a pre-dispatch rejection after a checkpoint. Legacy
+failed and locally cancelled terminal records remain readable with their
+historical semantics; replaying them does not establish remote retirement.
+Their presence now blocks new journal claims, even when later historical turns
+exist. They remain inspectable, but there is no reconciliation command yet.
+
+** Provisional Bazel integration (2026-11-11)
+
+Recheck on 2026-11-11: the repository's configured executable is =bazelisk=.
+The default offline =bazelisk test //crates/marlin-agent-tui:unit= invocation
+=d0790031-93e2-4c58-bd03-8abbe01d6240= failed before analysis because
+=bazel/vendor= lacks =rules_rust+=. It executed no tests. The temporary vendor
+and source overrides described below are not part of the default build.
+
+Explicit TUI library, binary and unit targets now have supporting stream,
+runtime, environment, git-utils and session targets. Runtime and session
+targets distinguish the default storage graph from the Turso graph so the TUI
+uses one consistent Rust storage type. These BUILD targets remain provisional:
+they have passed only under the diagnostic overrides described below. The
+previous =Cargo.Bazel.lock= had pre-existing uncommitted changes and its TUI
+dependency map omitted =serde_json= and =tower=. A later isolated generator
+refresh changed only that crate's two mappings and the checksum; the resulting
+lock was byte-identical after those changes were applied to the workspace, and
+the pre-existing remaining contents were retained. =Cargo.lock= and
+=MODULE.bazel= were unchanged. The TUI BUILD now uses =crate_deps= for both.
+Configured analysis of the refreshed TUI binary and unit targets succeeded
+(invocation =6338dc8e-cb2c-4970-8de9-4905eb4d7aca=); it ran no build actions.
+After BUILD formatting, configured target analysis succeeded for the TUI unit
+and binary and the default runtime target (invocation
+=8deebcab-5e61-4aa8-a4a4-262f66be8bac=); analysis ran no build actions.
+
+The normal offline query failed because the local vendor tree lacks
+=rules_rust=. An isolated temporary vendor directory and network-enabled
+dependency preparation allowed analysis without changing the repository lock
+or vendor tree. On Darwin arm64, invocation
+=1852d2c1-bfc5-4aac-9200-8b05ec84fa2b= failed compiling =windows-future
+0.3.2=; configured dependency queries identify unconditional Windows edges
+from =process-wrap 9.1.1= and =sysinfo 0.39.6=. After applying diagnostic-only
+temporary external-repository overrides to those edges, invocation
+=9cc5cd0c-29fd-41e2-93ed-b4ea7dd7e1fc= failed compiling
+=meta-relational-reasoning=: its =include_bytes!=/=include_str!= paths to
+MRR repository-root proof files and =Cargo.lock= are absent in the flattened
+external crate repository. The dependency path starts at the TUI's Turso
+storage, through =mrr-data-backend=, =mrr-data-content= and =mrr-data-core=.
+The diagnostic also emitted Nix compiler-target warnings. No TUI test executed
+in either build; neither diagnostic override is a production fix or a valid
+Bazel qualification. Cross-platform Cargo-to-Bazel dependency resolution,
+MRR source layout, platform-aware lock generation, offline vendor preparation and actual test
+execution remain open.
+
+The isolated lock refresh did not repair the platform selection. Cargo's
+locked offline metadata reports both =process-wrap='s and =sysinfo='s
+=windows= dependency under =cfg(windows)=, while the refreshed Bazel lock still
+lists them unconditionally. Therefore these platform edges need a generator or
+dependency-configuration fix; repinning alone is insufficient.
+
+On the same host, a further diagnostic used a temporary copy of the complete
+MRR source at the exact locked revision
+=c202aa2753678c02dc7daafdec853f66f3368a70=, retaining its original proof
+files and =Cargo.lock=. The Cargo checkout had no tracked modifications; its
+only untracked entry was Cargo's =.cargo-ok=. The temporary generated BUILD
+used the original crate root inside the full repository. With that source
+layout and the two temporary platform overrides, invocation
+=4a0b5774-c7ff-4fec-89c2-950ce7ed76c3= built the TUI binary and ran its Bazel
+unit target: 72 passed, four ignored. This establishes the cause of the missing
+MRR inputs and verifies the provisional targets under those overrides. It is
+not a normal offline build or proof that a maintainable cross-platform Bazel
+integration exists; the overrides are outside the repository and the earlier
+Nix toolchain warnings remain relevant. The resulting Bazel binary also passed
+the local stream/paste and persisted-session/replay PTY fixtures. Those fixtures
+accept =MARLIN_TUI_BINARY= for selecting the tested executable; these runs used
+the diagnostic binary and do not qualify a normal Bazel build.
+
+** Weaver configuration ownership
+
+Weaver PR #4 revision =2cbb6bf7c6bcfddccde5105b809739323fa29d50= provides =Configuration= / =PreparedProfile=
+with explicit configuration first and Anthropic environment fallback for
+missing model, base URL and credential. Marlin pins this public, unmerged
+revision and uses the prepared profile. No context compression is introduced.
+
+** Provider continuation and thinking (2026-11-11)
+
+A local TUI smoke on 2026-11-11 used the project's =direnv= environment with
+an Anthropic-compatible DeepSeek base URL and credential, leaving model and
+endpoint to Weaver's environment fallback. A real streamed single-turn
+arithmetic request returned the expected result. The test recorded only a
+pass/fail marker, not the credential or response body. Two further local
+two-turn runs enabled adaptive thinking and returned the expected values in
+both turns; one explicitly confirmed that the TUI displayed a thinking
+segment. These runs did not enable a session journal, qualify a PR head, or
+establish Org-backed persistence or provider signature authentication.
+
+Marlin now pins Weaver PR #4 by Git revision. Weaver resolves missing Anthropic endpoint/model from the
+environment, while explicit TOML values win. The Marlin adapter carries
+Anthropic continuation and thinking fragments. The TUI checks observed answer
+and thinking against the retained Anthropic blocks before allowing a follow-up;
+this is a consistency check, not signature authentication.
+The local Anthropic PTY fixture passed two turns using =ANTHROPIC_BASE_URL=;
+it is not a live DeepSeek test. Bazel build qualification and Org-backed
+history remain required. Optional per-route
+Anthropic thinking, effort and token limits are parsed and validated by Weaver;
+an explicit request limit overrides a route default and is revalidated before
+dispatch.
+An Anthropic PTY fixture exercises streamed thinking and a signature, checks
+that the continuation was stored in the session database, and exercises live
+and reopened-session follow-ups. This fixture does not establish signature
+authenticity, Org persistence or live-provider behavior.
+The following paragraphs describe earlier pinned-revision observations.
+
+New Weaver continuations bind to a versioned fingerprint of the normalized
+destination, protocol, authentication mode, headers and credential. The adapter
+rejects mismatches before dispatch. Historical continuations without a binding
+remain readable but cannot be sent automatically; no reconciliation mechanism
+is implemented. Credential rotation also blocks continuation. This fingerprint
+is sensitive and can enable offline guessing of weak credentials; it is not
+server authentication, account identity, or authorization to rebind history.
+
+A real DeepSeek Anthropic-compatible exchange using the local Weaver worktree
+completed a streamed first turn and a second buffered request with the preserved
+assistant output; the model recalled the first turn. A subsequent two-turn live
+exchange using explicit adaptive thinking and low effort also delivered thinking
+fragments and recalled the first turn. These establish that the configured
+provider accepted those particular replays, not that the Marlin TUI performed
+them. Weaver retains ordered thinking, signatures and text in its typed opaque
+=AnthropicOutput=. Its local worktree also supplies typed Anthropic thinking and
+effort options, and exposes provider-returned thinking as a separate streaming
+event whose debug formatting redacts content. The upstream client suite passed
+81 tests with one ignored, and all-target Clippy passed against the isolated
+copy. They are now present in Marlin's pinned Weaver PR #4 revision.
+
+Marlin's message protocol now has an opaque, debug-redacted continuation
+carrier. The currently pinned Weaver's OpenAI Responses output is retained in
+both buffered and streaming completions, stored with the assistant message and
+sent back through Weaver. Existing journal serialization retains this field;
+replay and context admission count its bytes, and completion admission counts
+its owned heap capacity. A different logical provider/model/alias or an invalid
+payload is rejected before dispatch. This does not bind the actual URL or
+credential; changing the physical destination behind the same logical route is
+not detected. Historic messages without a continuation do not prove that no
+provider state was lost. These paths have a compilation check only and do not
+establish provider or restart interoperability.
+
+A local PTY fixture with streamed text and an empty Responses terminal output
+exposed a loss: pinned Weaver replays the empty provider output and omits the
+visible assistant text from the next request. The local Weaver worktree has a
+continuation/text consistency check, but Marlin's pinned revision does not.
+Local Weaver also checks a digest of streamed text against the terminal output
+before publishing a successful terminal event; this remains unpublished and
+is not present in Marlin's pinned dependency. The local Weaver LLM unit and
+client suites passed 102 tests, with one ignored; these are not Marlin
+integration or live-provider results.
+The session PTY fixture now emits a consistent provider output and separately
+checks that switching to an incompatible route preserves the draft and sends
+no request. That fixture passed locally; it does not qualify malformed
+provider output or Weaver PR #4 beyond those fixtures.
+
+The earlier pinned Anthropic decoder could not preserve thinking. The current
+PR dependency carries =AnthropicOutput= in both stream and buffered paths.
+Binding continuation to the prepared destination and validating durable
+Org-backed multi-turn replay remain required. No
+context compression or truncation is an acceptable substitute. Thinking
+configuration and verified follow-up remain separate requirements.
+
+The independent Session journal accepts thinking checkpoints in the same
+strict sequence as text checkpoints, with a combined per-turn byte limit.
+Replay retains the observed thinking and answer prefixes separately and
+reconstructs their interleaving from bounded channel spans. It blocks later
+requests when recorded thinking has not been verified against a provider
+continuation. A typed, debug-redacted thinking stream event now passes through
+bounded UI admission, ordered pre-display journal checkpoints and interleaved
+terminal display for a compliant generic gateway. UI admission bounds the
+combined thinking/answer bytes and rejects a turn after 4096 alternating
+display segments; it does not truncate and continue. The local Weaver adapter
+now produces that event. The guard still blocks a follow-up after thinking;
+this is not durable Org storage or proof that all provider thinking was observed.
+Adjacent same-channel checkpoints share a projection span; the source events
+and their full bytes remain unchanged. A replay exceeding the segment limit is
+rejected rather than silently dropping events.
+An in-memory journal/gateway/TUI fixture checked interleaved text and thinking,
+pre-display journal writes and the blocked follow-up; a separate Turso reopen
+test preserved thinking prefixes across storage reopening. These do not
+establish Org persistence, provider continuation validation or live behavior.
+The new event kind is an explicit journal protocol change: older readers
+reject it as unknown and must be upgraded before opening such a session.
+
+An offline Cargo check in an isolated Marlin copy, with only the Weaver Git
+source patched to the local LLM crate, failed at three compile sites: the
+buffered and streaming adapters do not handle =TurnEvent::Thinking=, and the
+Weaver =Message= initializer lacks =anthropic_output=. These are the first
+type-level migration blockers, not an exhaustive integration audit. A finished
+integration must carry the ordered continuation and thinking observations
+through the runtime, bounded UI, Org-backed session and replay without
+discarding them; merely adding match arms or dropping thinking is insufficient.
+
+** Current TUI
+
+For long logical lines at the live tail, the renderer can now retain a bounded
+ring of visible row slices and scan once instead of twice. It limits retained
+slice capacity to 16384 entries and falls back to the previous two-pass path
+when the slice or viewport budget is exceeded; a slice-budget overflow may
+therefore add a partial scan before fallback. Tests compare it to the previous
+layout, including Unicode and fallback cases. A same-process debug-build
+component diagnostic for a 250000-byte line at 80x12 measured eight paired
+samples: the previous path took 140083–429368 microseconds, the new path
+67763–123652 microseconds. This is not a full TUI, release-build, or sustained
+streaming benchmark. Layout still scans a changed line, and a narrow CJK
+fixture produced different wrapping from Ratatui's full renderer; the optimized
+path preserves Marlin's previous behavior rather than resolving that difference.
+
+=marlin-agent-tui= now provides a terminal client for a configured Marlin
+model gateway. Its first version has a grapheme-aware composer, multiline
+input, transcript scrolling, request cancellation and terminal restoration.
+The configured Weaver adapter also checks cumulative text before appending
+each chunk to its completion buffer; its limit is explicit and optional for
+other adapter users. The TUI checks cumulative model text before accepting each stream event in
+both persistent and nonpersistent sessions, rejecting a chunk that would cross
+16 MiB and keeping prior text provisional. A completion without chunks is
+checked too. The journal and UI also reject completion responses over 32 MiB
+of accounted owned heap capacity across metadata and all choices before journal
+cloning or queue admission; the journal records the prefix and typed uncertainty.
+The journal retains its independent persistence boundary. The UI
+guards cannot bound provider decoding or allocations made before an event is
+yielded, and do not provide a total-memory or runtime-retirement guarantee.
+Before model dispatch the TUI also budgets the complete model history and the
+next prompt against 10,000 exchanges and 64 MiB of accounted message data.
+It rejects an over-budget request without cloning, dispatching, losing the
+draft, or truncating history. Admission accounting includes message structure,
+text and optional names, not allocator capacity or all request metadata. A
+successful response can take retained history above the admission threshold;
+the next request is then rejected. This does not bound total process memory,
+transcript contents, or journal events, and the two 64 MiB limits for context
+and replay account different objects.
+Successful exchanges form the in-memory model context; failed and cancelled
+requests are visible but are excluded from subsequent context. The interface
+does not yet provide agent tools, approvals or graph receipts; local persistent
+sessions are optional. A typed gateway stream now displays text chunks
+before completion and includes only successfully completed turns in later
+model requests. Interrupted partial text remains visible with its error.
+The multiline composer follows the cursor across wrapped rows and normalizes
+its position when edits join grapheme clusters. Home/End and Ctrl-A/Ctrl-E
+move to logical-line boundaries even when a line wraps. A pseudo-terminal fixture checks
+a completed-session prompt history round trip while retaining the draft and
+isolating session context. Another fixture checks
+a five-line pasted draft, cursor visibility and exact submitted text. Composer
+layout still scans the draft prefix. Up and down navigate displayed rows while
+retaining the desired column across short rows and respecting grapheme boundaries.
+Ctrl-O opens a separate slash-command editor without consuming the message
+draft. Submission, cancellation and unsuccessful switches restore that draft;
+a successful session switch carries it into the newly selected session. The
+draft is not persisted across application exit.
+The session PTY fixture verifies that the carried draft is submitted with the
+target session's full context and that read-only inspection blocks dispatch.
+Its first cross-session assertion incorrectly expected an entire old answer in
+the incremental terminal byte stream; after changing the synchronization to a
+target-specific rendered fragment, the fixture passed.
+Raw-mode Ctrl-C cancels an active local turn or session load, or closes the
+command editor; when idle it arms exit and a second consecutive Ctrl-C exits.
+Other input disarms exit, and the first press retains the draft. This does not
+implement clipboard selection, remote retirement or shell job-control handoff.
+Codewhale's reference has a richer selection/copy and
+recoverable input-clearing priority; this implementation does not claim parity.
+Local Unix PTY checks exercised two idle Ctrl-C presses and restoration of raw,
+alternate-screen and bracketed-paste modes. The flood fixture also exercised
+Ctrl-C during active SSE output in both persistent and nonpersistent sessions;
+each observed local cancellation after 0.023 seconds in one run. These are
+not latency distributions, remote-cancellation receipts, or platform-wide
+qualification. A unit test confirms pasted ETX remains input data rather than
+being interpreted as an interrupt key.
+On Unix, signal handlers are installed before raw mode for SIGINT, SIGTERM and
+SIGHUP. During the terminal loop, an observed signal stops local work, restores
+terminal guards and returns =128 + signal number=. A local PTY sends each
+signal while idle and checks exit code and terminal modes; a second fixture
+sends SIGTERM during a persistent stream and verifies that the checkpointed
+prefix reopens as unfinished and no second provider call is made. These checks
+do not establish remote retirement, SIGKILL cleanup, disconnected-terminal
+restoration, bounded shutdown latency under blocked output, or suspend/resume.
+The composer caps the entire draft at 1 MiB UTF-8, including accumulated
+ordinary keys and pastes. An insertion exceeding the remaining space is
+rejected atomically, retains the draft, and displays a status message; deletion
+allows editing to resume. This bounds draft text bytes, not process memory or
+interactive latency. No matched worst-case latency measurement has been made.
+
+** Local composer component diagnostic
+
+On 2026-11-11, the same local unoptimized test binary profile and 98x3
+composer workload were measured before and after a printable-ASCII fast path.
+Seven samples per case were taken in fixed order; these are single-run
+component observations, not a release benchmark, p95, terminal-frame timing,
+memory measurement or Codewhale comparison. The retained ignored fixture is
+=composer_layout_diagnostic= in =tests/unit/composer.rs=.
+
+| Input | Before view median (us) | After view median (us) | Before up median (us) | After up median (us) |
+| 1,048,576 ASCII bytes, one line | 616058 | 13698 | 624589 | 13777 |
+| 255,000 ASCII bytes, 17,000 lines | 139063 | 4729 | 147974 | 4401 |
+| 250,000 mixed Unicode bytes | 71103 | 59387 | 73903 | 72580 |
+
+The up baseline was measured in a subsequent run after the view-only fast path;
+its navigation implementation was still the original one. Different sample
+sets and fixed execution order leave noise and ordering effects. ASCII input
+still requires a full classification scan, and non-ASCII drafts use the
+original grapheme path; bounded end-to-end editing latency is not established.
+An exhaustive small-input comparison covers ASCII line breaks, widths, cursor
+positions, repeated vertical moves and resize against the original layout.
+
+The configured gateway uses Marlin's =RuntimeEdgePolicy= when opening a model
+stream. The TUI retains the typed =RuntimeEdgePolicyReceipt= and displays its
+scope through =M-x runtime=. This timeout covers the open future only, not stream
+consumption. It is not the graph admission, tool approval, no-live-LLM, or
+runtime cancellation protocol, and does not establish full runtime integration.
+Focused tests cover successful stream opening, timeout, invalid timeout,
+preservation of a provider error, and the explicit absence of a stream-lifetime
+timeout. An in-memory session test verifies that an open timeout is persisted
+as a failed turn before the error reaches the caller. Local PTY fixtures cover
+receipt display, streamed output and persistent-session replay. The first
+receipt fixture used an invalid OpenAI model identifier and was corrected before
+it passed. The streaming adapter remains in the TUI and stores gateway failures
+as diagnostics; it does not supply typed graph policy or denial receipts.
+
+Twenty-six focused Rust tests passed, including a controlled SSE fixture that holds
+the terminal event until after a chunk is received and a truncated-stream
+fixture. TUI Clippy and standalone Marlin policy checks for the TUI and stream
+packages also passed. A loopback gateway fixture exercised a Unicode multiline
+request through a pseudo-terminal, observed a streamed chunk before the server
+completed, and verified restored terminal attributes and alternate-screen exit.
+The two existing =model_stream_= unit regressions in the stream package also
+passed; fifteen other tests in that target were filtered out.
+This is not a provider, platform, or full-feature acceptance test. The most
+recent workspace-wide policy gate stopped on =marlin-agent-context= warnings
+before reaching the TUI; its result does not establish the current state of
+other concurrent changes. All work and acceptance items above remain open.
+
+** Narrow idle-redraw experiment
+
+On 2026-11-11, a local Darwin 25.6.0 arm64 pseudo-terminal at 100x30 was
+allowed to show its initial frame and warm for 0.6 s; the probe then counted
+terminal output for one idle second. Three sequential old-version samples were
+468, 416 and 468 bytes; three later current-version samples were 0, 0 and 0.
+The code path now redraws dirty frames at a minimum 16 ms interval, while
+continuing to poll input and terminal size. The 50 ms idle wake is still present.
+
+The historical probe has since been migrated to the Rust
+[[file:../../crates/marlin-agent-tui/tests/pty.rs][PTY tests]]; the measurements
+below were made before that migration.
+Baseline executable SHA-256 was
+=69343504e2d0cdb73ad005b1ad3f07a91e48cba46906ada71c5b6225414062ac=
+and its app source SHA-256 was
+=d7c3be189c79ee322763106b01c6fdfb1f3ebc8c5d6dc47757cb0d65cabcb77a=.
+The current executable SHA-256 was
+=177a32fd8eac345ce36dae15f56b383c828bb8c75698c402d789ee4490fa321c=,
+app source SHA-256
+=5f5943e62501eece41c83559f56448575f56764b8f0d757261c2442500766a0a=,
+and workspace HEAD was =74731c34be0771c01c68c3a67234e33e9b0fb200= with the
+TUI and other changes uncommitted. The executable and source hashes identify
+this local observation; the baseline executable is temporary and not retained
+as a project artifact. Paste support also changed between these builds.
+
+This measures idle terminal bytes only, not CPU, latency, memory, or an A/B
+against Codewhale. Samples were sequential rather than interleaved and do not
+establish a general speedup. An earlier probe started sampling before startup
+and produced invalid data; those results were discarded.
+
+** Narrow transcript projection experiment
+
+On 2026-11-11, the ignored diagnostic in
+[[file:../../crates/marlin-agent-tui/tests/unit/viewport.rs][viewport.rs tests]]
+compared the earlier full-history projection to the suffix projection, including
+rendering to the same 80x12 Ratatui buffer. The fixture had 10,000 short ASCII
+records, bottom scroll and no provider activity. The rendered buffers were equal
+for this fixture. Each of 12 pairs ran the full path first; raw wall times in
+microseconds were:
+
+#+begin_example
+full:   336076 494326 447179 338743 756096 237220 343333 625519 517656 359262 327308 332239
+suffix:    641    672    188    716    545    181   5613    183    176    659    191    197
+#+end_example
+
+Medians were 351297.5 and 371 microseconds respectively; the maximum suffix
+sample was 5613 microseconds. This used the unoptimized Cargo test profile on
+Darwin 25.6.0 arm64, workspace HEAD =74731c34be0771c01c68c3a67234e33e9b0fb200=
+with uncommitted changes. The measured =viewport.rs= SHA-256 was
+=b408a545e12b59f7ddaf76ea13a95ab5099d3175416a9308a7e6c1ef1d95213e=;
+the test source SHA-256 was
+=4329171645cedc92058cbeb39f46349689d6b150d65145a92a0304056956d393=.
+Run with =cargo test -p marlin-agent-tui --test unit_test
+compare_full_and_suffix_transcript_projection --offline -- --ignored --nocapture=.
+
+This is a single local component diagnostic, ordered rather than randomized,
+with substantial timing variability. It is not a release-build, allocation,
+end-to-end, arbitrary-load or cross-product comparison. This is historical
+evidence for the earlier suffix implementation, not a measurement of the later
+independent layout engine. The earlier =u16= scroll ceiling is now removed;
+history scans, changed long-line remeasurement, and a byte-budgeted indexed
+history cache remain open.
+
+** Independent layout and deep scrolling
+
+The client now separates word layout and terminal-buffer drawing, and selects
+at most the visible rows using a =usize= history offset. Tests exercise 200,000
+rows of scrollback, a 150,001-character logical line, and a long line of Chinese
+graphemes. A one-column view shows a replacement marker when a wide grapheme
+cannot fit; the stored transcript remains unchanged. The layout adapts Ratatui
+Widgets 0.3.2 word wrapping, with its license retained in the TUI crate.
+
+One deterministic mixed-Unicode, two-column case panics in the pinned Ratatui
+0.30.2 reference renderer; the independent renderer completes on the same
+fixture. This is a local test of a particular dependency and input, not a claim
+about every Ratatui version. When an upstream row would exceed the viewport,
+the layout splits it at a grapheme boundary before buffer access. Common
+non-panicking reference cases are compared cell-for-cell; this repair can
+intentionally differ from the reference on unsafe rows.
+
+The current client keeps one visible viewport and reuses it on an unchanged
+transcript, pending state, terminal size and scroll offset. All transcript
+mutations pass through a revision owner; a different transcript has a distinct
+identity. The cache stores one viewport, not a copy of the history, with a 1 MiB
+budget accounting for vector capacities, span structures and owned string
+capacities. A viewport over budget is rendered but not retained. This is not an
+allocator-level or process-memory limit: the current frame, temporary wrap
+vectors, terminal buffer and stored transcript are outside that accounting.
+Control characters are normalized one grapheme at a time during layout rather
+than copying an entire line when it contains a control character. Consecutive
+zero-width graphemes are grouped as borrowed source ranges in wrapping state;
+the original text is preserved. An instrumented test observed at most three
+pending segments at iteration boundaries for 200,000 zero-width graphemes. This
+is a segment-count result,
+not a byte or process-memory bound: the materialized visible row can still be
+large, as can a single grapheme, and other temporary allocations remain.
+It avoids layout on composer-only redraws. For deep scrolling in a transcript of
+at least 256 entries, a width-specific index stores the cumulative row count
+every 128 entries. The index is invalidated by an old-entry edit, transcript
+replacement or resize; a tail append can update its row count incrementally.
+The checkpoint vector is capped at 1 MiB. Histories too large for that cap use
+the full scan path, so a failed index build is not repeated on every scroll.
+The transcript remains the source of rendered text; each deep scroll still
+layouts the suffix between its checkpoint and the requested viewport. Index
+construction and width changes still visit the full history once.
+
+In a local unoptimized 100,000-entry diagnostic, the first indexed deep scroll
+over short ASCII entries took 19.96 ms and retained 16,384 checkpoint bytes.
+Thirty-two subsequent indexed scrolls took 20.78 ms in total, versus 3.107 s
+for thirty-two full-history scans. With short Unicode labels and contents,
+the first indexed scroll took 88.25 ms versus 100.97 ms for a full scan. Each
+comparison asserts equal visible rows. These are component measurements in one
+process, not full-frame or tail-latency guarantees; the Unicode first-index
+cost remains visible. Reproduce with the ignored
+=compare_sparse_deep_scroll_with_full_history_scan= and
+=compare_unicode_first_deep_scroll_with_full_history_scan= Rust tests.
+The row counter now admits a short UTF-8 string directly when its byte length
+fits the terminal width and it contains no ASCII control byte. Every retained
+UTF-8 grapheme occupies no more display cells than source bytes, so this
+avoids repeated Unicode grapheme measurement for ordinary short messages
+without changing the renderer. A pre-change diagnostic of the same 100,000
+Unicode-entry fixture measured 87.95 ms for first indexing. Five separate
+post-change debug test processes measured 32.24, 24.86, 24.73, 24.91 and
+24.54 ms; each compared its visible rows with a full-history reference and
+retained 16,384 checkpoint bytes. The randomized deep-scroll property test
+also covers CJK, combining marks, emoji joiners, controls, resize, pending
+state and old-entry edits. These unmatched local debug observations support
+the short-row optimization but do not establish a full-frame p95 or prove
+the cost of index construction is gone; long entries and resize still require
+a complete row-count pass.
+The linked Release test build passed the same visible-row control. Five
+subsequent independent executions measured first-index times of 1.316, 1.247,
+1.204, 1.561 and 1.345 ms; their full-history scan controls measured
+12.29–12.65 ms. Each run retained 16,384 checkpoint bytes. This is a
+component-level optimized-build result for short Unicode entries, not a
+first-frame or whole-terminal response guarantee. The first Release test
+build took 2 min 54 s, a compilation cost excluded from interaction timing.
+
+One local unoptimized component diagnostic laid out an unchanged 150,000-grapheme
+mixed Chinese/ASCII line 20 times: uncached 2.202 seconds versus 708 ns for 20
+warm cache lookups after asserting equal output. These are single-process,
+fixed-order samples, not paired distributions, cold-resume measurements,
+full-frame latency or a comparison with Codewhale. The ignored fixture is
+=compare_cached_and_uncached_unchanged_long_line= in the TUI viewport tests.
+After zero-width run compression, a repeat produced 2.529 seconds uncached and
+1.542 microseconds cached for the same 20 calls. The higher uncached observation
+is retained as a possible regression; these unmatched single samples do not
+establish its magnitude or cause.
+
+A subsequent same-process diagnostic compares the frozen pre-compaction
+wrapper and the current wrapper on identical text, alternates run order, and
+asserts equal complete rows before timing. After reusing a row scratch vector
+and limiting compaction checks to buffer boundaries, eight unoptimized samples
+in microseconds were:
+
+#+begin_example
+mixed previous:  101931 112533 105101 143377  75280 108255 107129 109231
+mixed current:   187698 119017 138420 124956 212226 137444 109504 129307
+ascii previous:  149975 102738  62763  73271  87355  67906 144319 176898
+ascii current:   198800 145325  71524 145542  71644  81961 160656 184779
+zero previous:    89785  70162  67712  86435 142094  93011  69275  88050
+zero current:     81074  88574  71147 188795 252184  51304 113774  96864
+#+end_example
+
+These observations are noisy and show a potential cost for normal text; they
+do not close the performance gate. They exclude terminal drawing, storage and
+model streaming and are not optimized-release measurements. The reproducible
+ignored fixture and the frozen baseline are in =tests/unit/wrap_comparison.rs=;
+an additional deterministic test compares 200 mixed-Unicode inputs at five
+widths. A prior paired diagnostic before scratch reuse also showed higher
+current samples on most ASCII and mixed inputs; that negative result is not
+treated as resolved by the change.
+
+Another unoptimized paired run after reducing segment metadata and avoiding a
+second width calculation observed the following microsecond samples:
+
+#+begin_example
+mixed previous: 54898 55124 54879 55089 55051 54979 57637 59099
+mixed current:  48659 49412 48608 49082 49453 51498 51332 50333
+ascii previous: 38517 37728 38025 38569 37769 37890 37663 37748
+ascii current:  41726 41162 41222 41218 41207 41416 41602 41124
+zero previous:  37373 37586 43586 39068 39405 38129 36755 36552
+zero current:   30406 30932 31293 32577 31131 36287 30737 30420
+#+end_example
+
+In this run, mixed and zero-width inputs were faster while ASCII remained
+slower against the frozen reference. The result is limited to this debug-build
+component fixture; optimized builds, allocation counts and complete terminal
+latency remain unqualified. The earlier slower observations are retained.
+
+A repeat of the 10,000-short-record component diagnostic after the architectural
+change produced these local, unoptimized wall-clock samples in microseconds:
+
+#+begin_example
+full:    93167 96615 103321 160792 112760 133730 92411 89558 87535 90735 91346 88573
+layout:    152   132    144    134    130    132   130   131   131   140   158   126
+#+end_example
+
+The respective medians were 92789 and 132 microseconds. This is the same
+limited bottom-view fixture and fixed pair order, not end-to-end latency or a
+reference-product comparison. Workspace HEAD remained
+=74731c34be0771c01c68c3a67234e33e9b0fb200= with uncommitted changes;
+=viewport.rs= SHA-256 was
+=0e7e282b24225213a75f21c6dfa7011dcbcb2122dcbec882a610bd426014d4a5=,
+=wrap.rs= was
+=284348f7d72f29af8bd851eba181dad9e6cfeb0b17b7f8a1e1cc221d453bc8fd=,
+and the test source was
+=d071ba4cf9bb395ea9bc2dce46db339d6c15d2f08be3b1bd6908708369f0e914=.
+Those samples predate the sparse deep-scroll index described above. They do
+not characterize the current deep-scroll path. Index construction and resize
+still scan history and remeasure long lines, and may allocate a sanitized copy when a
+line contains terminal control characters. Input queues, persistent history,
+and cache budgets are not yet comprehensively bounded.
+
+** Event admission and control fairness
+
+The current UI queues at most 64 model events and accounts their owned string
+and choice-vector heap capacities against a 32 MiB semaphore. Gateway errors
+retain their typed interruption and uncertainty reasons through queue admission;
+owned error payload capacities count against the same budget. The transcript
+currently formats those errors for display and does not retain a separate typed
+failure projection. A permit remains
+with each queued item until the consumer takes it; cancelling a blocked sender
+releases its reservation. Oversized events become an explicit failed turn and
+stop the producer. The original oversized payload is not durably retained, so
+this does not yet meet the target requirement for durable terminal evidence.
+The Weaver adapter splits large text deltas at UTF-8 boundaries into ordered
+chunks no larger than 64 KiB. The event loop processes at most 16 model events
+before checking terminal input; the input channel holds at most eight events.
+
+The count and byte bounds apply to queues, not total process memory: the
+upstream SSE decoder, one producer-side event, completion response, transcript,
+history, and raw input decoder have independent lifetimes. A completion can
+therefore still fail admission if its owned capacity exceeds the budget. The
+limit on event count per iteration is not a time bound: layout of a very long
+line can still delay cancellation. There is no runtime-owned cancellation
+retirement receipt yet.
+
+Focused tests cover byte and item backpressure, permit release on cancellation,
+ordered completion, bounded batches, and reconstruction of a 150,000-byte
+Chinese SSE delta. Two local pseudo-terminal runs with a continuous loopback SSE
+producer observed the cancellation notice after 0.024 and 0.017 seconds and
+restored the terminal; these are individual observations, not a latency or
+reliability guarantee.
+The first version of that test falsely failed because it searched for contiguous
+text despite ANSI cursor sequences; the corrected test strips those sequences.
+The historical fixture has been migrated to the Rust
+[[file:../../crates/marlin-agent-tui/tests/pty.rs][PTY tests]]; the following
+measurements predate the migration.
+The final workspace run passed 26 tests with one manual diagnostic ignored;
+Clippy exited successfully with a Cargo warning that its =axum= dev-profile
+override matched no packages. A transient concurrent workspace manifest edit
+initially prevented Cargo metadata from loading; after the other work supplied
+its missing dependency, the original workspace was rechecked successfully.
+The head remained =74731c34be0771c01c68c3a67234e33e9b0fb200= with uncommitted
+changes; the tested =app.rs=, =event_queue.rs= and =streaming.rs= SHA-256s were
+=d26493c46311db31d0028c58ca886915b366d80f2e905aef2f8f35dfb02d0a2b=,
+=7cc1ac5b56b1964e64fa110fb05ca74173510bbf9f720efbea4283da41e4386c= and
+=9ec1ed440961525be7b5ded2e43f8f59489ec36fa29c5eafadf02fdb928766a0=.
+
+** Scheme command discovery and terminal qualification
+
+The workbench declares bounded command descriptions as Scheme values. The
+gerbil-scheme-rust native boundary projects them to typed Rust values; the
+terminal displays matching entries and completes unambiguous names. These
+descriptors do not register handlers or confer execution authority. The editor
+retains the message draft while the command editor is open. Rust admits a
+descriptor only when its name and argument flag match a typed terminal command;
+the same command type parses execution requests. A future extension command
+requires a host-owned handler registration before it can be admitted.
+Direct slash entry in the message editor uses the same descriptors and Tab
+completion. Prefix admission checks at most 32 bytes before inspecting the
+bounded command list, so a large draft is not scanned as a command on every
+frame. An ambiguous prefix is left unchanged; it does not switch focus.
+
+The selected Scheme module build and real VM projection passed locally, as did
+the TUI unit suite (150 passed, seven ignored), strict Clippy and SysML checks.
+One Unix PTY run reached the first frame within its 15-second deadline and
+displayed the menu, but failed the existing five-second process-exit deadline.
+A separate diagnostic with extended deadlines completed the streaming, draft,
+terminal restoration and shutdown checks. This is not a passing result for
+the original deadline and does not establish a general startup or shutdown
+performance improvement.
+A later merge-validation cut based on PR head =7a6de0e7= passed locked offline
+TUI/UI Cargo check, the TUI unit suite (152 passed, seven ignored), strict
+all-target Clippy, and Bazel 9.2.0 dependency repinning. The Bazel build
+itself remains unqualified, and the earlier same-version SDK alias conflict
+is not resolved by a successful repin.
+A subsequent original-deadline PTY run failed to reach the first frame in 15
+seconds; this remains negative evidence alongside the earlier exit failure.
+
+Shift-Tab now routes a typed reverse-focus event through the selected Scheme
+generic. It traverses the same declared focus order as Tab, including wrap,
+and the Rust host admits the returned focus intent before publishing the next
+state. A real VM test covers reverse traversal, wrap and preservation of the
+previous session; the Scheme workbench test covers the generic directly. A Unix
+PTY run observed both reverse and forward focus, command and streaming input,
+but again failed the unchanged five-second process-exit deadline.
+
+The workspace binary embeds the SDK VM, while Marlin's selected Scheme
+modules and SDK module metadata are still installed separately. A development
+launch from the repository root now restarts before VM initialization with
+the standard =scheme/.gerbil= package prefix when =GERBIL_PATH= is absent;
+an explicit prefix remains authoritative. With the pinned SDK Scheme package
+and the selected Marlin package built in that prefix, the exact
+=target/debug/marlin-tui crates/marlin-agent-tui/example.toml= command reached
+a terminal frame without inherited Gerbil path variables, using a placeholder
+credential and loopback endpoint without sending a provider request. The same
+binary failed the original 15-second first-frame gate under a separate run;
+an extended diagnostic passed menu navigation, stream and terminal restoration.
+This bootstrap does not make release builds self-contained or establish a
+performance improvement. The SDK currently restores a locally discovered load
+path before later rooted calls; a durable SDK-owned lifecycle is still needed.
+
+The streaming PTY acceptance now requires the alternate-screen workbench in
+under ten seconds from process creation, matching the requested startup limit;
+the five-second normal-exit gate remains. One separate observation of the exact
+example command reached its first frame in 53.7 seconds and did not exit within
+12 seconds; disk space was low, so this is an observation rather than a
+controlled benchmark. Neither static linkage nor a longer diagnostic deadline
+can substitute for passing both gates.
+With the development package bootstrap and the unchanged target binary, the
+new ten-second PTY gate failed: the only output was the startup progress line.
+The streaming and normal-exit portions did not run in that attempt.
+
+A build-only static-closure probe used the existing Yuanxu =build.ss spec=
+output and the pinned SDK's program staging interface. Staging with =init=
+alone produced 371 manifest modules but omitted selected UI modules. Passing
+the 62 compilation entries from Yuanxu's specification as runtime imports
+produced 844 manifest modules and included all 62 entries. The first attempt
+with a staging directory ahead of the installed package failed because it
+loaded compiler-generated Scheme as an application module; placing the
+installed package first allowed staging to complete. Manifest membership does
+not establish that the archive links, initializes without a package tree, or
+improves startup. The selection remains owned by Yuanxu, and this probe is not
+a production loader or a second declaration of the selected modules.
+The current =scheme/build.ss= already calls =defbuild-script= with the
+=std-make-spec= projection rooted at =("init")=. A fresh =spec= invocation
+prints selected =gxc:= targets for the UI modules, C ABI UI and =init=;
+it prints no =exe:= target. This is the authoritative build selection to
+reuse. The Rust link step must consume those compiled products through the
+SDK program archive and bind the selected publication. The =spec= call itself
+took tens of seconds; that is build-time work, not a linked Release startup
+measurement.
+The pinned SDK's archive builder compiled that candidate. An initial smoke
+binary incorrectly used the SDK's default dynamic runtime together with the
+linked graph; it crashed both with and without the development package path.
+Its call stack crossed the dynamic bridge's Gambit setup and the executable's
+linked kernel. This is an invalid combination: the SDK requires its
+=external-program= feature for an application-owned linked graph. The crash
+is not evidence that the correctly configured static graph fails, and the
+default binary also retained a dependency on the SDK's build dylib.
+With =external-program= enabled, a minimal executable linked the candidate
+archive and initialized and retired its VM with =GERBIL_HOME=, =GERBIL_PATH=
+and =GERBIL_LOADPATH= pointing to nonexistent paths. One observation measured
+65.5 ms through initialization and 65.6 ms through retirement. The executable
+did not depend on the SDK build dylib, but still used dynamic OpenSSL, zlib,
+SQLite and system libraries. This exercised the linked VM only: it did not
+force the selected publication, open a UI, or measure a terminal frame.
+A second probe imported the same selected =init= and used the SDK strong-root
+ABI to access =Marlin.ui=. With the development Gerbil package paths it
+initialized the VM in 34.9 ms, obtained that publication in 7.42 seconds,
+and retired in 10.17 seconds total. With all three Gerbil paths pointing to
+nonexistent directories, VM initialization succeeded in 78.5 ms, but the
+publication call failed with native status 3 and its Scheme exception could
+not be formatted. This comparison proves a dependency on the development
+loading environment, not which file or module is missing. Neither run
+opened a workbench or measured a terminal first frame, and the linked-object
+API currently returns the failure status without its diagnostic.
+With a real SDK home and compiled library load path but an absent package
+root, the captured exception is =Operation not permitted= while creating the
+package root. Its stack reaches =gerbil/tools/gxpkg#pkg-root-dir= through
+=yuanxu/module-system/source/init#module-init-source-root= during publication
+access. The selected declaration therefore still invokes source/package
+discovery at runtime. Fixing the release requires the Yuanxu-owned selection
+and provenance lifecycle to support a compiled closure, as well as Gerbil's
+module metadata and SDK loader semantics; a second hand-maintained module
+list or silently skipped admission would not satisfy that boundary.
+The [[https://github.com/tao3k/gerbil-bazel/blob/main/patches/gerbil-v19-darwin-aot-tools.patch][Gerbil Darwin AOT tools patch]] provides a useful design analogy:
+when =GERBIL_BUILD_AOT_TOOLS=yes=, =std/make= builds separate =optimized-exe=
+targets for =gxpkg=, =gxtags= and =gxtest=, and installation requires real
+executables rather than symlinks to the generic =gerbil= launcher. It also
+declares OpenSSL and optional zlib compiler/linker flags. This patch contains
+no Marlin timing result. Marlin's Rust host needs the corresponding SDK-owned
+linked program closure and Yuanxu compiled publication for the same selected
+=init= graph. A separate Gerbil command or a VM-only link would leave the
+TUI publication problem unresolved. Qualify the final Darwin binary by
+inspecting linked libraries, denying runtime package/source lookup, opening
+the real UI, and measuring first frame and shutdown with the fixed PTY gates.
+A separate =gxi= diagnostic of =(.get marlin-agent-core.init.exports Marlin
+ui)= used Yuanxu's existing callback-free scalar accounting. One process
+reported 33 role imports (6.92 seconds accumulated), 116 native imports
+(2.39 seconds accumulated), 1,891 source reads and 3,631 source stat
+operations; its context scope reported 3.93 seconds. These scopes can nest,
+so their times must not be added. This was not the TUI binary, a paired
+comparison, or a release measurement; it identifies the source/publication
+and import path as the next optimization target without weakening its checks.
+
+The Unix PTY fixtures are now Rust tests using the same binary, local provider
+fixtures and terminal-mode observations. The strict streaming acceptance still
+requires a usable first frame in under ten seconds and normal exit in five;
+an independent longer-window diagnostic is not a passing result for that gate.
+After clearing the repository's default =target= directory, an offline
+=cargo build --locked -p marlin-agent-tui --bin marlin-tui= compiled 387 crates
+and finished in 5 minutes 2 seconds. The resulting Darwin debug binary still
+linked =libgerbil_scheme_build.dylib=. The unchanged strict Rust PTY gate failed
+after 10.04 seconds with only =Starting interface…= on the terminal. The
+existing longer-window PTY diagnostic passed menu, paste, stream and terminal
+restoration in 107.72 seconds for the whole test process. That duration includes
+startup and shutdown, and cannot qualify the ten-second or five-second gates.
+During migration, the Anthropic environment and signed-thinking continuation,
+multi-session replay, workspace isolation, resize/scroll, signal recovery and
+ordinary interrupted-stream tests passed locally. The strict startup gate and
+some five-second shutdown checks failed. The oversized-stream case also
+received the generic invalid-response outcome instead of the expected provider
+byte-limit outcome; its original assertion remains in the Rust test.
+
+Weaver PR #4 revision =2cbb6bf7= classifies the SSE decoder's explicit
+size-limit error as the existing =Limit= variant while retaining =Response=
+for invalid UTF-8. A split-boundary Rust regression failed before that change
+and passed afterwards; 21 non-policy Weaver library tests also passed. The
+full Weaver library run additionally encountered two existing ASP style-gate
+findings in =config.rs= and =anthropic_output.rs=. A downstream oversized PTY
+retry did not establish end-to-end limit behavior: the fixture's original
+ten-second socket-write limit expired before the full large frame was sent,
+and the client observed an incomplete response. Its limit assertion and the
+original timeout remain unchanged.
+Independent Rust loopback tests send a valid prefix followed by an oversized
+event through Weaver and Marlin's journal gateway using both 4096-byte and
+the configured 8 MiB provider budgets. Both observe =ProviderByteLimit=,
+retain the prefix and replay the typed uncertain outcome. These do not replace
+the unresolved PTY acceptance at the 8 MiB limit.
+
+** Linked UI closure after the failed publication probe (2026-11-12)
+
+The failed publication probe above used a partial linked graph. The current
+Yuanxu compiled =init= records its programme namespace in the compiled product.
+The production staging step consumes exactly
+=((.get marlin-agent-core.init.exports std-make-spec) '("init"))=, derives the
+runtime imports from its selected compiler targets, and stages the SDK
+=external-program= archive. The staged graph contains 869 modules, including
+the Scheme UI roles and =c-abi/ui=. =tui-entry.ss= imports this selected =init=
+and publishes its existing =Marlin.ui= scope; it does not select a second
+Module graph. This is a build-time projection, with no Yuanxu dependency in
+Marlin's =gerbil.pkg= beyond its pinned Agentic AI Lab package. That Lab
+revision carries Yuanxu =9482264= as its =core= gitlink.
+
+The linked Rust TUI binds six C ABI exports and retains the selected UI scope
+under an SDK root. It uses the existing typed UI request/response path and
+Ratatui host. A source-free probe with =GERBIL_HOME=, =GERBIL_PATH= and
+=GERBIL_LOADPATH= pointed at absent directories initialized the VM in 40.7 ms,
+obtained the selected UI publication in 64.0 ms and retired in 64.1 ms in one
+run. The unchanged strict Rust PTY menu/paste/stream/terminal-restoration gate
+passed with the linked debug binary: the first usable frame appeared at 2.956 s
+and the whole test completed in 3.85 s. A separate Rust PTY test opened the
+workbench with all three Gerbil paths absent and exited in 3.01 s. The exact
+=target/debug/marlin-tui crates/marlin-agent-tui/example.toml= command also
+opened the linked workbench and exited normally. A real DeepSeek request via
+the configured Anthropic-compatible provider passed the existing PTY gate.
+These observations do not establish a distribution-wide latency percentile.
+
+=cargo build --locked --release -p marlin-agent-tui --bin marlin-tui --features linked-ui=
+finished on Darwin. The Release binary opened its workbench with all three
+Gerbil paths absent and exited normally. =otool -L= shows no Gerbil Scheme build
+dylib; it still lists dynamically linked OpenSSL, zlib, SQLite, iconv and
+system libraries. The Scheme programme is linked into the executable, while
+distribution of the other native libraries remains a packaging concern. A
+controlled cold-start distribution study remains open.
+
+A Rust PTY test now launches =target/release/marlin-tui= explicitly with all
+three Gerbil paths absent. The first run immediately after relinking reached
+the usable workbench in 3.899 s; two later runs of the same binary reached it
+in 129 ms and 118 ms. The application reported its first completed frame at
+83 ms and 72 ms in the latter runs, with normal terminal restoration. This
+spread is evidence of substantial process-to-application or PTY observation
+variation, not proof of a loader cause or a cold-start percentile. The fixed
+ten-second first-frame and five-second exit deadlines passed in these runs.
+After the Scheme candidate projection change, the Release binary was rebuilt
+from the current AOT archive. The isolation test now changes the process
+working directory to a temporary directory in addition to pointing all three
+Gerbil paths at a nonexistent location; it passed with a 2.74 s workbench
+observation. A subsequent run of the same Release binary and example config
+observed first output at 54 ms and a usable workbench at 161 ms; application
+trace measured VM initialization at 49.6 ms, UI publication at 106.1 ms and
+first frame at 106.9 ms. The 5 min 48 s Release rebuild is a build-time cost,
+separate from these startup measurements. The two launch observations do not
+establish a cold-start percentile or prove the cause of their variation.
+The isolated Release test also sends =M-x= and Down in one PTY write and checks
+the second Scheme-selected command before exit. It passed again with a 506 ms
+workbench observation, proving the linked candidate export works without the
+package tree; this later run is warm-file evidence.
+The maintained ignored Rust PTY benchmark now copies that Release binary to a
+fresh file and launches it twice from a temporary working directory with no
+Gerbil package paths. One paired run measured first output/workbench at
+2.492/2.648 s for the fresh copy and 58.2/177.4 ms for the same file's second
+execution. Each run restored terminal mode and exited normally. This is a
+paired host observation, not a cold-machine distribution or proof of its cause.
+With the current 20-command selected Scheme catalog, a second paired Release
+run measured 1.886/2.010 s for the fresh copy and 43.0/127.3 ms for its second
+launch. The source-free Release PTY gate also passed with =M-x= and the first
+Down key in the same input write. A separate first-copy diagnostic reported
+roughly 1.1 s to first PTY output, while application instrumentation measured
+VM initialization at 78.9 ms, selected UI publication at 129.6 ms and first
+frame at 130.7 ms after application entry. The gap precedes the measured
+application stages; these observations do not identify its OS or loader cause.
+First-copy latency and interactive M-x latency remain independent budgets.
+
+** Default linked debug and Scheme content slice (2026-11-12)
+
+The TUI's default Cargo feature is now =linked-ui=. =just tui-aot-debug=
+stages the selected Yuanxu programme and builds the exact
+=target/debug/marlin-tui= path. A deliberately dynamic build uses
+=--no-default-features= and can replace that same path; the previously observed
+12.392-second command was a dynamic binary, as its =otool -L= output showed
+=libgerbil_scheme_build.dylib= and its symbol table lacked the linked Marlin UI
+entry. The rebuilt default debug binary has the linked entry and no Gerbil
+build dylib. In one direct PTY run, the exact example configuration reached a
+usable workbench in 205.7 ms; a separate menu, paste, stream and restoration
+fixture reached it in 195.4 ms. These are local first-frame observations, not
+a cold distribution percentile or a claim about total test-run duration.
+
+Selected Scheme extensions can now contribute bounded =text= and =field=
+components through the existing POO/CLOS publication. The workbench checks at
+most 16 items per extension, copies each string (at most 256 characters) into
+an admitted snapshot, and projects typed values in one native batch. Rust
+validates their kinds and sizes, then Ratatui paints a focused region: a side
+panel on sufficiently wide terminals and a full transcript-area panel when
+narrow. Terminal focus and drawing remain with Rust. Scheme tests, Rust typed
+projection tests, and narrow/wide renderer tests passed locally. The real VM
+extension fixture also passed with rendered-content assertions when the
+selected Scheme package prefix and CLT SDK were provided; two initial attempts
+failed while the fixture could not resolve that package closure. The current
+content types do not constitute a general component lifecycle or a dynamically
+loaded plugin API.
+
+The architecture borrows iocraft's declarative component and state ideas while
+placing component identity, pure transition logic and generic-method dispatch
+in Scheme. Rust retains native admission, terminal lifecycle, layout measurement, painting
+and runtime effect authority. A future GPUI renderer is only an adapter
+direction: host-neutral component semantics could be reused, but this work
+does not compile the current Gerbil UI modules to JavaScript or implement GPUI.
+
+** Selected UI components and historical Guide prototype
+
+This section records the earlier Guide prototype and its validation. The
+Modeline revision below removes its default region and sidebar.
+
+The UI component vocabulary, bounded constructors and command catalog live
+in one selected =ui-components= Yuanxu Module. The =ui= Module declares that
+dependency and builds its workbench from the selected scope; it retains the
+generic/method event dispatch, composition and typed native projection. No
+second hand-maintained build inventory was added. The command catalog is
+composed inside =ui-components= with POO =.mix= and inherited
+=(entries => append ...)= slots, then read as one bounded value with =.get=.
+Rust admits each projected host capability, argument shape and fixed value;
+catalog composition grants no execution authority. The Scheme workbench test verified
+the catalog's exact order and the selected module identities.
+
+At this earlier revision, the selected module supplied a Guide component through the same text and
+field projection used by extensions. The terminal host shows it beside the
+transcript when wide enough, and preserves the full transcript by default on
+narrow terminals while allowing Guide focus through Tab. This is the first
+default user-visible Scheme content; it does not complete the general
+component lifecycle, external module admission or all reference TUI features.
+The Guide's Scheme content describes conversation actions rather than terminal
+keys. The terminal host maps keys and provides its shortcut hints. Shared
+=marlin-agent-ui= admission now checks event, intent and successor snapshot
+agreement before a renderer may execute an effect; the TUI separately checks
+terminal command handlers and focus. This keeps the Scheme publication usable
+as a future Sheprd UI input without adding GPUI, Sheprd or a desktop renderer
+to Marlin core. A Sheprd adapter should depend on Marlin core and map the typed
+snapshot to its own GUI; its future =gerbil.pkg= need only depend on Marlin core.
+The Rust UI library root now only declares and exports =model=, =runtime= and
+=projection= modules; the Scheme side keeps its coarse selected =ui-components=
+and =ui= Modules. The TUI and shared UI crates already declare the Marlin
+project Harness policy as a Cargo development dependency. Its package role
+configuration now treats the binary entry, event host and renderer as an
+interactive terminal, while =marlin-agent-ui= owns the shared protocol and
+effect boundary. The package-level Policy configuration tests passed locally.
+The linked debug PTY gate with the actual =example.toml= configuration found
+the Guide and usable workbench in 379.4 ms in one run. The source-free linked
+PTY gate and the menu/paste/stream/terminal-restoration gate passed. That
+interaction gate observed 2.294 s to first usable frame in one run, then
+93.9 ms on a traced run of the same binary. The application trace in the
+latter reported Scheme VM initialization at 42.9 ms, UI publication at
+82.4 ms and first frame at 85.7 ms.
+
+The PTY now times =spawn= return and the first process output separately from
+the application's configuration, VM, UI publication and first-frame stages.
+On this Darwin host, a fresh copy of the 121 MiB debug binary emitted its first
+output after 2.210 s and showed the workbench after 2.373 s; the same file's
+second execution reached those points at 8.0 ms and 91.5 ms. A fresh copy of
+the 98 MiB release binary took 2.170 s and 2.293 s, followed by 9.7 ms and
+98.3 ms on its second execution. The application measured 166 ms and 124 ms
+to its first frame on the two initial executions, respectively. Thus the
+dominant variable in these pairs precedes Rust application entry, including
+the Scheme VM. A freshly copied 17 KiB native C control also took 0.63 s on
+its first execution and near zero on its second; this host has a general
+first-execution cost. Explicit =codesign --verify= did not remove the TUI's
+delay; reading its file reduced but did not eliminate it. The compiled Scheme
+programme includes 849 archive objects, with 55 MiB of release =__text= and
+37 MiB of =__data=, so executable footprint is a plausible contributor, not
+an established cause. These are paired local probes, not a cold-start
+percentile or a macOS loader attribution. Qualify future changes with both
+fresh-file and repeated-file PTY timing; never infer an application regression
+from process wall time alone.
+
+The existing =release-size= Cargo profile recompiles the linked Scheme C
+objects at =-Oz= and produced an 89 MiB binary, versus 98 MiB for the regular
+Release profile. Its fresh-copy PTY run observed first output at 2.111 s and
+the workbench at 2.276 s; the same copy's second run observed 11.0 ms and
+101.6 ms. The 9 MiB reduction did not materially change the first-execution
+delay in this local comparison. It remains an optional size/distribution
+profile; these measurements do not justify changing the default optimization
+profile or moving Scheme initialization off the admitted UI path.
+After rebuilding the exact default =target/debug/marlin-tui= against the new
+Guide, the =example.toml= PTY test saw first output at 2.978 s and the usable
+workbench at 3.107 s, while the app's own first frame was 132 ms. Repeating
+the same test and binary immediately gave 8.4 ms to first output and 105.8 ms
+to the workbench. The test used fixture credentials and made no model request.
+
+** Conversation journal in progress
+
+The session layer now has a typed conversation journal over =AgentStorage=.
+It appends a unique, fixed-width turn start before a caller may dispatch, then
+appends the observed completion, failure with partial text, or explicitly local
+cancellation. A competing stale writer cannot claim the same start key. Replay
+uses storage pagination, checks event identity, order and parent linkage, and
+exposes an unfinished turn without retrying it. A freshly opened journal cannot
+finish that unowned turn: another process may still be its owner. An explicit
+recovery protocol with authoritative ownership is still required.
+
+This is not an exactly-once delivery or a process lease. A crash or uncertain
+storage acknowledgement can leave an admitted turn without a terminal event;
+there is intentionally no automatic recovery or duplicate dispatch. Replay
+callbacks are provisional until the full scan succeeds. Replay now compares
+committed event counts before and after scanning, and checks that the number of
+observed events matches; a mismatch rejects the replay. Under the append-only
+and consistent-read assumptions this detects committed additions during the
+scan. It is not a cross-page transaction, process lease, cross-replica
+guarantee, or protection against mutation outside the storage contract. Writes
+after the final check are handled separately by the existing unique start key.
+Both counts can scan the session index, and their long-history cost has not
+been qualified. One local unoptimized Turso diagnostic alternated eight scans
+of 1,000 unrelated 128-byte events (16 records per page): raw page iteration
+in microseconds was 55251, 54576, 54729, 55596, 53358, 52832, 53326, 53227;
+complete checked journal replay was 57108, 57890, 56869, 56063, 55890, 55206,
+55540, 57356. The latter performs additional validation as well as two count
+queries, so the difference does not isolate count cost. This is not a large
+history, optimized build, real-provider or end-to-end measurement.
+Record-count pagination is not a byte
+budget, and long sessions still require a complete scan. The optional TUI
+session path uses an asynchronous journal gateway: it persists admission
+before invoking the provider, validates the stream, and persists its terminal
+observation before delivering it. Cancellation or a failed turn requires
+reopening; an unfinished turn remains blocked because it has no recovery
+protocol. The first nonempty chunk is checkpointed before delivery; later
+chunks are checkpointed in accumulated batches of at least 64 KiB. While the
+stream is polled, a pending smaller batch is also attempted after one second;
+backpressure, scheduling, storage latency or process failure can delay it, so
+this is not a durability deadline. Each checkpoint is no larger than 128 KiB,
+with a 16 MiB partial-output cap. A crash can
+lose the uncheckpointed tail, and each checkpoint adds storage I/O; throughput
+and long-session storage costs are not yet qualified. Replay validates ordered
+checkpoint identifiers, parent links and the terminal text's prefix. A local
+command-line =--session= accepts a typed session identifier in the configured
+project and database. A new ID has empty history; an existing one replays its
+own history. A local PTY and SSE fixture exercised two isolated sessions and
+reopened the first before a subsequent request. A separate crash fixture chose
+a fresh session while the prior session remained unfinished and blocked.
+The storage contract also provides project-and-agent-scoped, ID-ordered
+session pages. The TUI's =M-x sessions= and =M-x sessions next= load 20 IDs per page
+asynchronously, allow one outstanding query, validate ordering and cursor, and
+mark the current ID. IDs above 512 bytes are omitted from that terminal view,
+with the command-line listing identified as the alternative. The count bound
+does not bound individual database fields or backend allocation. The
+command-line listing uses this contract without requiring a
+model credential, and lists sessions with events from any Marlin surface for
+that scope. It is not a recency list, session readiness check, or cross-page
+snapshot. =M-x session= takes a JSON-quoted ID, loads the target off the UI thread,
+and swaps the gateway, replayed history and current ID only on success. Failed
+or cancelled loading retains the previous session. Switching is disabled while
+a model turn is active; unfinished targets remain blocked, and switching away
+does not retire or retry their work. A local PTY fixture verifies both a failed
+foreign-agent switch retaining the old context and a successful switch to a
+previous session. The crash fixture's first in-app-switch assertion falsely
+looked for a complete ID in incremental terminal output; the renderer emitted
+only changed cells, so the fixture was corrected and rerun. Startup and switch
+now project only the fields needed by the interface and model context. Replay
+stops and returns an explicit error above 10,000 turns or 64 MiB of accounted
+projection data; it never silently sends a truncated history. A switch rejected
+by this budget retains the previous session. These values are provisional
+engineering guards, not measured or accepted performance targets. Read-only
+=M-x inspect= provides a window of at most 100 turns or 8 MiB of accounted
+projection; oversized individual turns are visibly omitted without changing
+storage. =M-x history-older= and =M-x history= rescan the full journal for each
+page. Their separate scans are not a shared snapshot, and storage pages and
+individual records are outside this projection budget. Inspection disables
+model submission and retains drafts; only successful full =M-x session= loading
+can restore model submission. Starting the TUI still requires model credentials.
+These are logical projection
+limits, not process-memory bounds: live history, storage page bodies, individual
+records, journal checkpoint reconstruction and allocator overhead are separate.
+The journal has no cross-page snapshot, and paging remains a full scan rather
+than a storage-indexed operation. The in-memory storage implementation seeks
+directly to the exclusive event cursor in its ordered map rather than scanning
+all earlier projects, sessions and event pages on every request. This removes
+repeated prefix traversal from that backend, but does not make a history window
+a bounded-cost query; no matched end-to-end performance measurement has yet
+been made for this change. History projection also evicts old items before
+cloning the next selected turn, avoiding temporary overlap of those projections;
+storage and replay allocations remain outside the window accounting.
+Turso uses an index over project, agent and
+session; opening an existing database initializes it if absent. Index creation
+cost and large-project listing performance have not been measured. The PTY fixture also
+verified restart and replay into a subsequent
+request. A separate local PTY fixture kills the client after the loopback
+provider received the request and sent a chunk, while its connection remains
+open; reopening shows the first chunk and a smaller tail checkpointed after the
+timer, and neither retries nor sends a new
+request during the observation. Its first run falsely failed because ANSI cursor
+movements split displayed words; the corrected assertion strips those sequences.
+This is not proof of remote cancellation or multi-process ownership. This path
+retains replayed history and up to 16 MiB of stream text in
+memory; it is not a bounded-history architecture. No-live-LLM typed denial
+evidence, authoritative recovery and complete partial-output retention remain pending.
+Eight focused session in-memory tests passed, covering stale and
+simultaneous claims, paging across a start/finish boundary, invalid outcomes,
+storage conflicts and unfinished replay. One local Turso integration test
+passed with 30 tests filtered out: it closes and reopens the database, verifies
+one completed and one unfinished turn, and rejects a stale journal claim. The
+two stale writers in that test share one in-process backend. A separate local
+test kills a child process after its start append returns and before any model
+dispatch, then reopens Turso and verifies that the unfinished turn remains and
+blocks a new start. This does not test competing processes, termination during
+commit, or an actual external provider request.
+
+The session catalog passed focused in-memory and local Turso pagination tests,
+including reopening the database and project/agent scoping, and the CLI fixture
+listed without a model credential or terminal. The first Marlin Rust policy
+check passed for the TUI but failed for =marlin-agent-storage= on pre-existing
+=RUST-MOD-R001= findings in =tests/unit/mod.rs=. That module's implementation
+was subsequently moved byte-for-byte to =tests/unit/storage_cases.rs=, retaining
+its module name and tests. The current TUI and storage policy checks passed;
+the storage unit suite passed eight tests, and the Turso conversation fixture
+passed three with one helper ignored. This is not a workspace-wide policy pass.
+
+The opt-in Rust PTY live-provider diagnostic passed once using the configured
+Anthropic-compatible environment, including response and normal exit; its test
+duration was 27.51 seconds. Its extended deadlines do not satisfy the separate
+ten-second startup acceptance or establish release startup performance.
+
+The local flood-cancellation fixture also passed once with a persisted session
+enabled, observing the local cancellation message after 0.023 seconds; it is
+not a repeated benchmark or a guarantee that a 64 KiB checkpoint occurred.
+
+** Doom-inspired Modeline and Mini Buffer
+
+Source study pinned =.data/doom-modeline= at =d41f69ab= and
+=.data/oh-my-pi= at =cfd8d04e= (both depth one, excluded from Git). Doom
+Modeline declares named segments and separate left/right layouts. oh-my-pi
+adds themed segment colors, width-aware priorities and cached status facts.
+Marlin uses these as design references; no Elisp or TypeScript implementation
+was copied. Its source of truth remains the selected Scheme/Rust UI protocol.
+
+The selected =ui-modeline= Yuanxu Module publishes eight ordered roles:
+brand, model, activity, turns, session and three gateway-state variants.
+Each role declares full/compact labels, semantic tones, width thresholds and
+an optional-segment retention priority. =ui= composes them with at most eight
+host status contributions. The Rust projection admits at most sixteen status
+items and rejects unknown roles, invalid tones, labels and bounded policy.
+The Ratatui host resolves live model, session and activity facts from the
+current admitted workbench and app state, maps the declared tones to terminal
+colors, and retains optional segments in Scheme priority order when width is
+scarce. Its former
+top status heading and
+default right Guide frame are removed; =M-x help= is the shortcut surface.
+The initial configured-gateway notice is shown as the Modeline's idle state,
+not as a synthetic transcript entry. A fish glyph marks the Marlin brand.
+The right session segment preserves the distinguishing tail of long Unicode
+identifiers within its allotted cells and drops the turn count first when
+space is scarce. Selecting a model clears the previous route's observed
+gateway status until the newly selected route has its own outcome.
+
+The bottom Mini Buffer is the existing ChatBox in a collapsed form. With no
+draft or command activity it occupies one row and can show host status that
+does not belong in the Modeline. Pointer movement into that row expands the
+ChatBox upward; moving above the expanded area collapses an empty ChatBox.
+Typing, command editing and history search keep it expanded. A nonempty draft
+stays visible after pointer exit. Termion's unsupported SGR no-button motion
+is decoded from its bounded raw event; the input thread stores only the latest
+pointer position, so pointer floods do not fill the eight-item key queue.
+The frame scheduler samples that position and repaints on state transitions.
+Some terminals may not report motion outside their window, so an external
+pointer leave is not currently a guaranteed collapse event. This design does
+not call Scheme on each rendered frame and adds no context-compression state.
+
+The selected =ui-layout= Module publishes ordinary-message and =M-x= frame
+specifications through the same Yuanxu publication as =ui-components= and
+=ui-modeline=. Each frame declares its transcript minimum, editor sizing,
+footer height, extension visibility, border and prompt. The policy also
+bounds expanded ChatBox and command candidate rows. The native projection
+validates these fields once per workbench; focus successors retain the frame
+specifications. Ratatui maps them to cell rectangles and clips to the actual
+terminal. The Rust adapter measures text, handles terminal input, owns the
+viewport cache and paints cells without calling Scheme on every frame.
+
+The focused extension now occupies the full content area instead of opening a
+right-side pane. =M-x runtime= uses that same area for a view of the actual
+Rust-owned =RuntimeEdgePolicyReceipt=. The receipt is projected to bounded
+display fields when the gateway is installed, so repainting never formats it
+again. Esc or Ctrl-C closes the view; a submitted draft also closes it.
+
+The selected Scheme modules own Doom and oh-my-pi-inspired Modeline profiles
+and palettes. =M-x= opens the Mini Buffer's command palette. =switch-themes= leads
+to theme candidates generated from the selected =ui-themes= profile registry;
+the default profile and palette selection read that same registry. The UI
+composition combines those candidates with =ui-components= once per opened
+session, so adding a profile does not add a Rust command branch or a second
+hand-maintained M-x name. A Scheme contract checks the bounded registry and
+the package test checks every offered profile against its Modeline and
+palette. The choice crosses one generic
+profile transition. Native admission preserves host status facts, focus and
+runtime authority while admitting the selected palette and Modeline slots.
+
+The command palette opens with =M-x= (with =Ctrl-O= as an alias). The single-line
+prompt follows the Modeline directly; candidates fill the available rows
+without a separate shortcut notice. The prompt reports selection index and
+candidate count. Enter
+chooses the first Scheme-ordered candidate unless the user moved selection.
+The command catalog uses names without slash prefixes, including =switch-themes=.
+There is no separate =/themes= grammar.
+The selected Scheme command module also projects the bounded, ordered candidate
+names whenever the Mini Buffer query changes. Rust admits those names against
+the projected catalog and caches the result. Repaint only lays out and clips
+that snapshot; completion and Enter use the same list. Arrow and wheel
+navigation continue through the Scheme browse operation, so the matching and
+ordering rule has one owner. The query projection is measured separately from
+the arrow-only path in the opt-in linked PTY benchmark. A Scheme property check
+exercises first Up/Down and wraparound against the projected candidate list
+for empty, filtered and missing queries.
+The =switch-buffer= and =switch-themes= commands open scoped Mini Buffer menus.
+Scheme supplies their prompt descriptions and candidate prefixes; Rust keeps
+the prefix only as a lookup key. The input shows =Switch to:= or =Theme:= and
+short candidate names, while completion and Enter still resolve the admitted
+full Scheme command. The query cache compares the visible text against its
+last full lookup key without allocating on unchanged frames. A PTY regression
+sends =C-x b= and the first Down in one write, then filters and selects the
+=*Messages*= Buffer; the theme menu is exercised through the same path.
+The linked debug PTY benchmark measured 30 =C-x b= plus immediate Down
+round trips at p50 19.81 ms / p95 20.71 ms (maximum 36.24 ms). In the same
+run, 30 ordinary M-x first-open arrows measured p50 18.54 ms / p95 20.03 ms.
+Both include input decoding, Scheme candidate selection and terminal redraw;
+they do not include process startup.
+With the scoped menus linked into the debug binary, one warm
+=example.toml= PTY launch reached the usable workbench in 2.344 s. This is a
+single local startup observation, not the cold first-copy qualification.
+
+Operational events enter a bounded typed message stream. UI, workspace, input
+and gateway failures publish source, severity, summary and detail to the
+independent =*Messages*= buffer. The Mini Buffer shows only the latest summary.
+Scheme owns buffer identities and a Frame containing a selected Window plus
+the Mini Buffer; =M-x switch-buffer= selects the conversation, =*Messages*=,
+or Scheme-authored =*Help*= binding. =M-x help= selects that same Help Buffer
+without appending a transcript line. The Scheme Buffer catalog also generates the corresponding
+=buffer-*= commands and bounded static content nodes, so the Frame, menu and
+informational Buffers read one set of identities. A selection produces a fresh
+Scheme session, then Rust admits the
+typed frame projection before changing native content painting. The Help
+content is a bounded nonfocusable Scheme component, while event messages and
+conversation remain in their owning Rust stores; switching does not copy the transcript
+through the VM. Repeated identical messages coalesce and older entries retire
+under a fixed bound. The terminal host retains a local diagnostic fallback
+for Scheme failures. The TUI now keeps the runtime event receiver and drains
+at most 16 events per frame into =*Messages*=. This preserves the runtime
+channel's backpressure and keeps its topic/message observations out of the
+conversation. Scheme-directed subscriptions and multiple window layouts
+remain future work; host effect receipts remain typed Rust values.
+Scheme rejects an external extension that reuses any Buffer identity, so a
+theme change cannot silently drop that extension during Frame reconstruction.
+The command, session, workspace, gateway and replay paths publish operational
+diagnostics to =*Messages*=, including a request rejected before dispatch and
+an uncertain turn recovered after restart. Successful conversation turns and
+explicit command results remain in the conversation. The normal PTY suite
+checks that an invalid M-x command leaves the transcript unchanged while its
+detail is available by switching buffers. Opt-in restart PTY cases check the
+same separation while preserving the no-resend rule for uncertain requests.
+
+The selected =ui-components/keymap.ss= module declares =M-x=, =C-o=,
+=C-g= and the =C-x b= prefix. It also binds =C-r=, =M-p/M-n=, =C-n=,
+=C-b/C-f/C-d= and =C-a/C-e= to finite typed editor actions. The movement and
+delete actions use the native composer's grapheme boundaries. Its bounded
+projection is admitted once; the same Scheme declarations generate shortcut
+rows in the Help Buffer, avoiding a second binding list. Lookup runs in Rust
+without a Scheme call per keystroke. Rust retains terminal
+byte decoding, Ctrl-C/Ctrl-Z process control and effect admission. A named
+key binding resolves through the same admitted command descriptor as =M-x=.
+Global and mode-scoped shortcuts now exceed the old 16-row Help content
+limit. Scheme and native projection both admit at most 64 rows, so the Help
+Buffer can show the complete finite keymap without truncating its choices.
+The selected =ui-elements= module provides native Scheme values for text
+spans, rows and columns. Rust admits a bounded tree and maps those primitives
+to Ratatui; transient groups use the same vocabulary, without a Hydra-specific
+renderer. This is an initial vocabulary, not a complete mapping of Ratatui.
+
+The selected =ui-hydra/config.ss= declares transient key groups with
+=defui-hydra=. One head declares its key, command capability, annotation and
+optional exit override. The command catalog is derived from that declaration;
+the Mini Buffer hint can be generated from heads or provided as a multiline
+docstring. For example, =M-x hydra-history= enters History; =p= and =n=
+invoke the same M-x commands repeatedly and =q= leaves the group. A foreign
+key follows the selected exit, warn or run policy. The terminal admits bounded
+Scheme projections before routing keys; it does not call the VM per key.
+The local Hydra reference is =abo-abo/hydra= at revision
+=59a2a45a35027948476d1d7751b0f0215b1e61aa=.
+The implementation was checked against =hydra--normalize-body=,
+=hydra--make-defun=, =hydra--clearfun= and =hydra--format=. Per-key color,
+dynamic docstring expressions, numeric arguments, hooks and timeout are not
+yet part of this projection; a plain hint must not be described as full
+Hydra compatibility.
+Mode precedence and conflict reporting are future extensions. Local references in
+=~/.emacs.d/.local/straight/repos/= include =vertico= (candidate display),
+=marginalia= (annotations), =general.el= (keymap declarations),
+=emacs-which-key= (prefix help) and =doom-modeline= (named segments). Their
+installed LICENSE files are GPLv3, so the design is adapted to Marlin's
+protocol rather than copying their Elisp into this dual-licensed package.
+
+Scheme now publishes bounded command descriptors with display name,
+annotation, argument rule, typed host capability and an optional fixed value.
+Rust admits and executes only registered capabilities. Command aliases,
+ordering, filters, profile values and key bindings can change in Scheme
+without editing a Rust command name table. A new host effect still requires a
+typed Rust capability and admission rule.
+The host gate requires the exact =status= and =diff= argument forms from
+the selected descriptors; a forged optional =status= or argument-free =diff=
+cannot enter the workspace capability. Scheme declares one =sessions= command;
+Rust admits only its optional =next= pagination argument. The separate
+=history= and =history-older= commands retain fixed capability values. This
+command migration does not add Scheme work to ordinary keypress or repaint paths.
+Scheme tests own the selected command catalog and completion order. Rust tests
+own descriptor admission, argument parsing, and observable host effects; native
+fixtures must not copy the full Scheme catalog or assert its exact ordering.
+This ownership extends to the rest of the UI: Scheme tests own profile labels,
+buffer declarations and declarative frame choices; Rust property tests own
+terminal cells, clipping, hit regions and bounded native state. A linked test
+checks that a real Scheme projection crosses the ABI and reaches native layout;
+it must not repeat the Scheme presentation assertions. PTY tests cover only
+behavior that depends on the terminal and actual input sequence. A new test
+must identify which boundary it protects before adding another assertion of
+an existing rule.
+Terminal bytes, cell width, cursor placement, viewport caching and Ratatui
+painting remain native; normal repaint must not call the VM.
+
+The maintained native hot-path benchmark is =cargo bench --locked -p
+marlin-agent-ui --bench ui_hot_path=. It fixes the projected workbench and
+measures key lookup, key-prefix lookup and buffer-transition admission after
+the VM projection. On the 2026-11-13 local Darwin run, Criterion's reported
+intervals were 7.10–8.52 ns for =M-x= lookup, 7.35–7.39 ns for =C-x= prefix
+lookup and 120.15–127.08 ns for transition admission (30 samples per case).
+After the keymap grew from four to ten entries, the benchmark fixture was
+updated to the full declared table. One local run measured =M-x= lookup at
+6.73–6.99 ns, =C-n= editor lookup at 44.21–46.46 ns and =C-x= prefix lookup
+at 11.09–11.56 ns. Lookup remains native and does not enter the VM; the
+linear table makes later entries cost more. These microbenchmarks do not
+measure terminal event decoding or redraw. The previously ignored PTY
+paste/stream/terminal-restoration and multi-session prompt-history tests were
+migrated from retired slash-command and Guide assertions to the current
+=M-x= interface and passed locally, alongside the history-search PTY test.
+The Scheme-ordered profile admission runs on profile changes, not repaint.
+Its first two local measurements, 338.92–341.79 ns and 337.05–338.36 ns,
+used an incomplete three-role fixture built with host-status values; those
+numbers cannot represent a production Modeline transition. The corrected
+benchmark asserts admission of all eight Modeline roles plus a host status,
+including order, width and priority-policy changes. Its first corrected
+30-sample baseline was 1.0651–1.1275 µs on the local Darwin checkout. After
+priority selection was added, one run varied to 3.4368–5.1804 µs; a same-process
+control run placed profile admission at 1.0811–1.1745 µs, while keymap M-x
+lookup was 7.7539–8.6558 ns and buffer admission 132.20–146.37 ns. The
+isolated high result is not a stable regression claim; repeat controlled
+measurements are needed before attribution. Criterion compared the corrected
+baseline against
+the old incomplete fixture and reported a regression; that comparison is not
+like-for-like. Future comparisons must use the corrected fixture.
+These numbers do not include terminal decoding, Scheme dispatch, redraw,
+startup or provider I/O; the linked PTY tests cover visible behavior and
+terminal restoration separately.
+
+The opt-in =cargo test --locked -p marlin-agent-tui --features linked-ui
+--test pty mx_navigation_pty_latency -- --ignored --nocapture= benchmark
+measures thirty alternating arrow presses from PTY write to visible redraw,
+including the Scheme browse call and the frame scheduler. One local Darwin
+run on 2026-11-13 measured p50 19.52 ms, p95 19.99 ms and maximum 20.12 ms.
+After the ordered-Modeline and wheel changes, another run measured p50 20.54 ms,
+p95 38.54 ms and maximum 54.21 ms. These are warm single-process samples
+taken in a shared development checkout; they do not establish a stable tail,
+cold startup or other machines' latency. The same opt-in test now also measures
+thirty =M-x= open plus immediate first-Down sequences, waiting for the preceding
+menu to disappear before each sample. A local Darwin run measured p50 18.61 ms,
+p95 25.38 ms and maximum 26.72 ms for this first-key path; its alternating
+warm-arrow control measured p50 19.84 ms, p95 21.84 ms and maximum 24.25 ms.
+These samples include the PTY round trip and scheduled redraw, and are not a
+cold-start or cross-machine latency guarantee. The non-ignored PTY regression
+also sends =M-x= and the first arrow in one write, without waiting for the
+menu's first frame: Down selects the second item and Up wraps to the last.
+Termion 4 also reports =CSI 1;1A/B= as unsupported even though this is an
+explicitly unmodified Up/Down encoding. Native input now admits these exact
+sequences alongside plain CSI and SS3, while retaining modified keys as
+distinct. A decoder regression checks the three encodings, and the linked PTY
+regression checks the first arrow both before and after the initial menu frame.
+On 2026-11-13, the opt-in PTY benchmark with all three encodings measured
+30 warm arrows at p50 19.84 ms / p95 21.32 ms, 30 menu opens plus first Down
+at p50 18.55 ms / p95 21.43 ms, and 10 first-menu arrows in new processes
+after the first workbench frame at p50 20.73 ms / p95 21.19 ms. These are
+debug, warm, local PTY timings after process startup, not cold-start figures.
+After Scheme-owned Modeline priority was added, a further 30-sample linked
+PTY run measured warm arrows at p50 19.95 ms and p95 21.42 ms, and first
+=M-x= plus Down at p50 18.85 ms and p95 20.66 ms. The observed values are
+single-run evidence, not a durable latency bound.
+The strengthened non-ignored PTY case sends =M-x=, Down and Enter in one
+write and verifies that the second command actually runs, rather than only
+checking the highlighted row. A further opt-in Darwin run measured thirty
+warm arrows at p50 20.51 ms / p95 24.12 ms, thirty repeat opens plus first
+Down at p50 18.60 ms / p95 20.73 ms, and ten separate processes' first
+=M-x= plus Down after their initial frame at p50 19.01 ms / p95 21.30 ms.
+The last series excludes startup time and does not flush the operating
+system's disk cache; it measures a new UI process, not a cold machine.
+After moving candidate filtering into the Scheme projection and caching its
+bounded result, a linked Darwin PTY run measured thirty warm arrows at p50
+19.94 ms / p95 21.28 ms, thirty repeat opens plus first Down at p50 18.77 ms /
+p95 20.95 ms, thirty alternating query edits (including Scheme projection) at
+p50 3.04 ms / p95 18.50 ms, and ten new processes' first arrow after the
+initial frame at p50 19.80 ms / p95 23.19 ms. These are end-to-end terminal
+observations from one local run, not isolated VM timings or a stable tail bound.
+After routing operational diagnostics to =*Messages*=, a 2026-11-13 debug
+PTY run measured 30 warm arrows at p50 24.57 ms / p95 26.76 ms, 30 repeated
+=M-x= plus first Down operations at p50 21.48 ms / p95 40.65 ms (maximum
+80.92 ms), 30 query edits at p50 3.04 ms / p95 29.16 ms, and ten new
+processes' first arrow after their initial frame at p50 25.43 ms / p95
+29.80 ms. The first-key tail varied from earlier local runs. This run has
+no controlled attribution or cold-machine guarantee.
+The ignored linked debug smoke test opened the repository =example.toml= in
+the same =target/debug/marlin-tui= binary with the local Anthropic-compatible
+environment and reached the workbench in 2.13 s on this run. The test did not
+send a provider request.
+After deriving =buffer-*= commands from the Scheme Buffer catalog, another
+single Darwin run measured warm arrows at p50 20.01 ms / p95 21.12 ms,
+repeat opens plus first Down at p50 18.42 ms / p95 20.51 ms, and ten
+new-process first-menu operations at p50 21.81 ms / p95 30.82 ms. The
+new-process tail varies across these two short runs; no stable regression or
+improvement is inferred from them.
+After generating theme commands from the selected Scheme profile registry,
+one clean-staged debug PTY run measured 30 warm arrows at p50 19.80 ms / p95
+22.02 ms, 30 repeated M-x plus first Down operations at p50 18.30 ms / p95
+21.07 ms, 30 query edits at p50 3.03 ms / p95 19.59 ms, and ten new
+processes' first arrow after the initial frame at p50 19.48 ms / p95 21.07
+ms. The profile catalog is composed at UI open, not on the paint or key path;
+these single-run values do not establish a stable latency distribution.
+The selected Scheme graph was rebuilt from this package's cleaned generated
+products, staged through =just tui-aot-stage= with the native macOS compiler
+environment, and linked into =target/debug/marlin-tui=. The staging recipe now
+selects that native compiler environment when launched from =direnv= on macOS.
+The normal PTY suite
+passed 10 cases; the opt-in =example.toml= startup smoke reached the workbench
+in 2.31 s without a provider request. An earlier attempt with Nix SDK compiler
+flags failed during C compilation and left mixed generated products; it is
+not startup latency evidence. The full Gerbil =t/all-test.ss= suite passed.
+
+After adding the sparse deep-scroll index, a linked debug PTY run measured
+30 warm M-x arrows at p50 19.91 ms / p95 21.38 ms, 30 repeated opens plus
+first Down at p50 18.99 ms / p95 20.58 ms, and ten new processes' first
+arrow after their initial frame at p50 20.48 ms / p95 21.03 ms. Thirty
+query edits including candidate projection measured p50 2.97 ms / p95
+18.57 ms. The non-ignored PTY regression passed the same-write M-x plus
+first-key and first-key-plus-Enter cases; the full normal PTY suite passed
+10 tests. These are single-machine, debug-build observations after the first
+workbench frame; they do not bound cold startup or machine-wide tail latency.
+After moving session and history page choices into Scheme-declared M-x
+commands, the menu contained 20 entries. A subsequent linked debug PTY run
+measured 30 warm arrows at p50 20.16 ms / p95 21.41 ms, 30 repeated opens plus
+first Down at p50 18.04 ms / p95 20.10 ms, 30 query edits at p50 3.24 ms /
+p95 17.07 ms, and ten new processes' first arrow after their initial frame
+at p50 20.86 ms / p95 21.42 ms. The normal PTY suite passed ten cases. These
+short local cohorts do not establish a stable performance distribution.
+The same linked debug binary opened =crates/marlin-agent-tui/example.toml= in
+2.42 s in one opt-in PTY smoke run and restored terminal mode on exit. No
+provider request was sent; this is not a Release startup measurement.
+A later run of the same opt-in real PTY benchmark showed wider tails: thirty
+warm arrows p50 24.03 ms / p95 56.83 ms (max 57.41 ms), thirty repeated
+opens plus first Down p50 29.78 ms / p95 71.31 ms (max 114.63 ms), thirty
+query edits p50 3.34 ms / p95 69.63 ms (max 95.29 ms), and ten new
+processes' first arrow after the initial frame p50 23.36 ms / p95 68.37 ms.
+The same-write first-Up/Down and first-Down-plus-Enter functional regression
+passed again. The native input decoder now also normalizes Termion's
+unsupported SS3 application-cursor Up/Down sequences, and the same-write
+first-key PTY regression covers both CSI and SS3. These local PTY timings
+include host scheduling and terminal
+observation; the tail variation still needs repeated controlled cohorts before
+setting a strict interaction p95 gate.
+After extending the PTY benchmark to alternate CSI and SS3 arrows, another
+linked debug run measured thirty warm arrows p50 19.93 ms / p95 21.01 ms,
+thirty repeated opens plus first arrow p50 18.45 ms / p95 20.13 ms, thirty
+query edits p50 3.23 ms / p95 15.83 ms, and ten new processes' first arrow
+after the initial frame p50 20.88 ms / p95 24.76 ms. Both terminal encodings
+executed the same selected Scheme browse path. This additional cohort confirms
+functional support for both encodings while retaining the earlier tail outlier
+as evidence of timing variability.
+
+The TUI ASP Rust package gate blocks Warning and Error diagnostics. Its
+remaining Info diagnostics describe owner boundaries still being refactored;
+they are advisory under ASP Rust's default severity contract and do not fail
+the TUI package gate.
+
+The selected Scheme Modeline determines the relative left and right segment
+order, minimum and compact-width thresholds, and optional retention priority.
+Doom One retains the model before session and turns; pi retains session and
+turns before the model. The profiles publish these policies from
+=ui-modeline/objects.ss=. Rust admits widths in =0..256= and priorities in
+=0..3=, with zero reserved for essential or host status roles.
+Profile admission verifies the same bounded role set and unchanged host facts.
+A Ratatui buffer test shows that a 68-column terminal omits Doom One's turn
+counter at its 72-column threshold but includes it under pi's 66-column
+threshold. At 44 columns, Doom retains the model while pi retains the session.
+A linked 44-column PTY test switches from Doom One to pi and back, verifies
+both visible choices and restores the terminal. Rust retains fit
+calculation, terminal width
+measurement, clipping, cursor placement and cell painting. The projection
+must be cached per profile or host fact change, not recomputed by the VM on
+every frame. This makes a future GUI host able to consume the same Scheme
+presentation semantics without sharing Ratatui code.
+
+Terminal SGR wheel events now route to the visible buffer's native viewport.
+Trackpad pulses are coalesced before the eight-item keyboard queue; one frame
+applies at most 48 rows, while an ordinary wheel tick moves three rows. Mouse
+motion remains out of the queue. The pointer and wheel event decoder and
+coalescing controls have Rust tests; the held-stream PTY scroll scenario is
+the visible-behavior check.
+When M-x is visible, a wheel gesture navigates its Scheme-ordered candidates
+through one bounded browse call (at most sixteen positions). The ordinary
+transcript is not scrolled behind the command menu. The linked PTY regression
+checks single ticks and ten-pulse forward/reverse bursts against visible
+candidate indices.
+
+The selected =ui-themes= Module now owns the default =doom-one= palette.
+It derives the canvas, foreground and semantic accents from
+[[https://github.com/doomemacs/themes/blob/a59202912ad55014e53a685eee6cd94130bdd4fd/themes/doom-one-theme.el][Doom One]]
+(upstream [[https://github.com/doomemacs/themes/blob/a59202912ad55014e53a685eee6cd94130bdd4fd/LICENSE][MIT license]]); Marlin chooses its own compact Modeline bar shade.
+The theme travels as eight RGB triples through the selected UI snapshot.
+The native boundary validates each channel before Ratatui paints the canvas,
+Modeline, focused border and command emphasis. A focus event cannot exchange
+the admitted palette, and rendering does not call Scheme per frame. The
+=switch-themes= Mini Buffer action selects a Scheme profile through the typed
+native transition.
+
+On 2026-11-13, =M-x help= became a Scheme-owned =*Help*= Buffer. Its command
+uses the same =select-buffer= capability as =buffer-help=; the Rust Help
+handler and transcript text were removed. The selected workbench publishes
+bounded Help content from the Buffer catalog, and a profile change excludes components already
+owned by the Frame's Buffer catalog before rebuilding. The linked PTY tests
+cover Help selection and return, first-arrow input in a single PTY write,
+and theme switching. The debug PTY benchmark measured 30 first-open arrows
+at p50 18.71 ms / p95 20.41 ms, 30 warm arrows at p50 20.20 ms / p95
+21.21 ms, and ten new-process first arrows after the initial frame at p50
+20.31 ms / p95 21.35 ms. Query edits crossed Scheme projection at p50
+3.18 ms / p95 17.29 ms. These are terminal round trips after startup, not
+startup measurements.
+After the Buffer catalog also became the single source for the Help alias and
+static content, the same debug PTY benchmark measured 30 first-open arrows at
+p50 18.87 ms / p95 20.90 ms, 30 warm arrows at p50 19.77 ms / p95 21.69 ms,
+and ten new-process first arrows after the initial frame at p50 19.04 ms /
+p95 20.48 ms. The two small local cohorts do not establish a population-level
+regression or improvement; both preserve the same interactive order of magnitude.
+The linked debug =example.toml= PTY startup reached the usable workbench in
+2.176 s on one warm local run. This does not qualify cold first-copy or Release
+startup, which retain separate gates.
+
+The project verification entry is =just property-gate=. It validates the
+MAR-UI-R10/R11 SysML requirements, the bounded Quint control model, POO Type
+generated Scheme status inputs, the typed native projection and Rust layout
+properties. The real PTY hover and terminal restoration tests remain a
+separate runtime check. Seeds, budgets and extension rules are recorded in
+[[file:../../dev/verification/README.org][the project verification map]].
+
+** Terminal suspension and foreground ownership
+
+The terminal host treats Ctrl-Z and external SIGTSTP as requests to suspend.
+It drops and flushes the Ratatui terminal before stopping the process, so raw
+mode, alternate screen, bracketed paste and mouse tracking are restored before
+the shell can regain the terminal. SIGCONT reopens those guards and forces a
+fresh frame from the retained App and UI snapshot. The signal observer does
+not claim to stop or cancel an in-flight model request; the process-wide stop
+holds its threads until continuation. A Unix PTY test observes both stop paths,
+the restored termios state, a new alternate screen and an unsent draft after
+each resume. It does not exercise an actual interactive shell's =fg= command
+or prove checkpoint recovery across process death.
+
+** Linked startup and first-input benchmark (2026-11-13)
+
+=just tui-performance-bench= stages and builds the selected linked programme,
+then runs the real PTY first-arrow regression, interaction benchmark, paired
+debug and Release fresh-copy startup benchmarks, and source-free Release
+qualification. The build occurs before any timing sample. The paired tests
+copy one binary to a temporary directory, launch it twice with Gerbil paths
+pointed at absent locations, and report first process output separately from
+the usable workbench. =MARLIN_TUI_STARTUP_TRACE= records configuration, VM,
+selected UI publication and first-frame stages after application entry.
+
+On this Darwin host, the current linked debug binary's fresh copy first
+emitted output at 5.778 s and showed the usable workbench at 5.907 s; the
+second launch of the same file measured 57.1 ms and 148.4 ms. The application
+reported 79.1 ms to VM initialization, 127.1 ms to UI publication and
+131.1 ms to first frame on the first launch; the second reported 40.7 ms,
+88.3 ms and 91.2 ms. The current linked Release binary's fresh copy measured
+2.076 s to first output and 2.206 s to the workbench; the same file's second
+launch measured 43.9 ms and 139.0 ms. Its application stages were 79.6 ms,
+128.5 ms and 129.7 ms on the first launch, then 42.7 ms, 94.0 ms and
+94.8 ms on the second. VM retirement completed normally. The Release binary
+also passed the source-free PTY gate from outside the checkout and accepted
+its first M-x Down action.
+
+The selected AOT programme currently contains 891 linked Scheme modules,
+including 628 entries marked deferred in =program.json=. The first-copy gap
+precedes the application's configuration trace on both profiles. This
+separates it from VM and UI initialization, but does not identify the OS,
+signature or file-loading cause. The module count and executable footprint
+are baselines for a source-preserving Module System projection improvement;
+they do not authorize a second handwritten dependency list or a runtime
+fallback to loading the source tree. Single paired runs do not establish a
+cold-machine percentile.
+
+A later same-binary debug pair measured first-copy first output/workbench at
+4.326/4.456 s and warm at 52/141 ms. Its application trace reached the first
+frame in 132/89 ms. This confirms that the long first-copy interval occurs
+before application entry in that cohort; it does not identify the OS cause.
+Two further fresh-copy pairs of the same 132,190,256-byte debug binary
+(SHA-256 =48c511860c94e45f7427d5af4d9a25286cde4eabaa28eea8c1c386b0f78598a1=)
+measured first output/workbench at 2.976/3.400 s and 2.845/3.172 s. Each
+copy's second launch measured 55/193 ms and 69/281 ms. The application traces
+reached first frame at 427/136 ms and 328/218 ms, respectively. Thus the
+fresh-copy gap remained before application entry in both pairs; a faster
+Scheme VM alone would not remove that observed interval. The binary is a
+linker-signed arm64 Mach-O with a 1,024,856-byte CodeDirectory and 32,023
+recorded page hashes, but this observation does not establish whether code
+signature validation, dyld, paging or another pre-main step dominates.
+An init-only runtime-import experiment used the SDK's own staging API and
+reduced the manifest from 891 modules (628 deferred) to 587 (324 deferred),
+and the debug binary from 131,838,000 to 112,754,752 bytes. The binary linked,
+but the source-free PTY failed at linked UI publication with native status 3.
+The full =std-make-spec= runtime-import projection was restored, staged,
+rebuilt and passed that same source-free PTY gate. This is a negative control:
+the compiler's static init dependency closure alone does not prove Yuanxu's
+selected publication can resolve its lazy runtime roles. Any smaller archive
+must preserve that publication and pass the source-free UI/first-input gate.
+A second candidate selected all UI-family targets from the same
+=std-make-spec= plus =init= (30 roots, 610 modules, 347 deferred). It also
+linked but failed the same source-free publication gate. The original full
+projection was restored again and passed the gate. Its selected publication
+needs implementation bodies outside the UI family; prefix filtering is not
+a safe substitute for an exact Module System dependency projection.
+The debug source-free PTY gate now sends M-x and its first Down key in one
+write after the usable frame, checking navigation without duplicating the
+Scheme profile's glyph and status-label assertions in Rust.
+
+The later size-profile diagnostic has its own Rust PTY and pre-UI launch
+tests, driven by =just tui-size-performance-bench= after =tui-aot-stage=.
+The observed ordinary Release artifact was 25 MiB and reached its first
+usable copied-file frame in 3.29 s (0.21 s on the same file's next run);
+its application stopwatch reached the first frame in 0.29/0.15 s. The
+size-profile artifact was 91 MiB, and its fresh pre-UI launch took 3.71 s
+versus 0.09 s on the same file. Its source-free PTY gate failed with
+=invalid terminal frame regions=. The shared checkout's Scheme programme
+manifest changed after the size-profile binary was written, so this
+failure cannot be attributed to compiler optimization without a stable,
+source-matched rerun. The failed gate remains evidence against selecting
+=release-size= for distribution today. The paired copy results distinguish
+pre-application loading from VM/UI costs but are not cold-machine tail
+percentiles.
+
+** Scheme-declared thinking folding (2026-11-13)
+
+The selected =ui-layout= module declares compact role labels, the initial
+thinking fold state and bounded thought headings; =ui-components= publishes
+=M-x toggle-thinking=. The native projection admits both as types. The
+Scheme command now accepts an optional newest-first ordinal, so
+=toggle-thinking 2= selects the preceding retained thought independently.
+The native handler validates a positive ordinal and uses an ordered fold-slot
+vector; ordinal selection is constant time, while a raw entry lookup uses a
+binary search. Pruning retained history rebases the slots. No toggle scans
+or copies raw thinking text.
+The conversation displays =› prompt=, an answer without a redundant role heading,
+and one =▸ Thought= row when thinking is folded. The Ratatui transcript keeps raw thinking
+stream out of the visible row cache while folded. A sparse index stores fold
+state only for foldable entries. Hidden chunks leave the visible revision
+unchanged; expanding swaps owned strings without copying the whole stream.
+Completion verification and signed continuation use raw
+thinking, including after journal replay. Folding does not compress or modify
+the model context.
+
+The Scheme workbench gate passed. The TUI's 177 active unit tests passed;
+the persistent Anthropic PTY fixture paused the provider stream and passed
+folded display, in-flight M-x expansion, restart, signed continuation and
+credential-denial checks. During an active turn, command browsing shows only
+the admitted thinking toggle. The 12 active PTY tests passed serially. One
+parallel PTY run timed out on Esc returning from
+*Messages*; the test passed alone and in the serial suite, so this remains a
+timing-sensitive test, not a proven fix. A focused viewport test checks that
+hidden stream appends avoid a cache rebuild. A property test checks raw stream
+prefixes across randomized fold and unfold sequences. A 10,000-fold debug
+microbenchmark exposed a middle-ordinal p50 of 198.458 µs with a =BTreeMap=
+reverse iterator. After switching to one ordered slot vector, a batched
+100 × 100 toggle run measured newest and middle p50 at 19 ns per operation.
+These use different sampling methods and are component diagnostics, not an
+input-to-frame latency or cold-start claim. The native tests also check that
+history pruning leaves the surviving thought addressable by ordinal.
+The Scheme workbench test owns the exact glyphs and role labels. Rust
+projection and viewport tests use different synthetic labels to check bounds,
+row geometry and raw-content preservation; the PTY test checks that the
+selected UI can fold and expand without asserting those glyphs again. Native
+modeline tests likewise use synthetic slots to check ordering, color mapping
+and mini buffer geometry without copying a Scheme profile's presentation. One
+serial run also observed a transient Ctrl-Z terminal-mode mismatch in the
+=PENDIN= bit; the isolated rerun and subsequent serial suite passed, so this
+remains an unresolved terminal timing observation.
+
+The runtime event stream is now retained by the TUI and drained in batches of
+at most 16 into =*Messages*=. Its topic is bounded to 256 characters and
+control characters cannot enter the Mini Buffer. A Rust test sends a runtime
+event burst through the real bounded channel and checks the batch boundary,
+message retention and conversation isolation. The TUI unit suite passed with
+178 active tests and 8 existing ignored tests; Clippy passed with warnings
+denied. Two same-source debug PTY latency cohorts after this change had M-x
+abbreviation p50/p95 of 73.94/158.78 ms and 20.05/60.75 ms respectively.
+The large spread prevents attributing the first cohort's tail to this event
+receiver; further controlled performance qualification is still needed.
+
+The runtime fanout previously sent to the parent before reserving space in its
+capture subscribers. A full capture queue could therefore leave the parent
+observing an event that the capture had not admitted. The sink now reserves
+capacity for every live subscriber before any delivery. A cancelled blocked
+publish releases its reservations without a partial event; a closed parent
+still reports an error while an active capture retains its evidence. Focused
+runtime tests cover these cases. This remains an item-bounded text event bus;
+it is not the typed graph/tool receipt stream or the full byte-budgeted event
+bus required for the eventual Ask workflow.
+An ignored fixed-load A/B/A debug benchmark sent 10,000 short events without
+backpressure: primary-only 4.799/4.273 ms and primary plus one capture
+7.686 ms. This measures admission and cloning in one local run, not an
+end-to-end TUI latency percentile or a cross-version regression threshold.
+That manual timer has been replaced by the maintained Criterion
+=runtime_events= bench, which excludes channel setup and measures 1,024
+uncontended sends plus receives per sample. It runs through
+=tui-performance-bench= alongside the linked PTY gates. One 20-sample,
+one-second diagnostic on 2026-11-14 measured 74.861-120.76 microseconds
+for the primary stream and 191.30-511.14 microseconds with one capture
+stream (95% confidence intervals per batch). Both cohorts had high outliers
+while other UI work was active. These are current absolute observations, not
+a frozen-source improvement claim or an input-to-frame latency bound.
+
+Tool Ask is a separate runtime integration. The provider-neutral completion
+protocol now has typed tool IDs, names, JSON-object arguments, offered tool
+schemas, choices, correlated tool-result messages and provider continuation.
+The Weaver adapter passes a two-request OpenAI Responses fixture through this
+Marlin API, including encrypted reasoning and the tool result. A separate
+stream fixture confirms that the TUI path emits a distinct tool-request
+terminal event only for a tool advertised by the runtime. The journal
+now admits =ToolRequested= as a distinct durable outcome, rejects tool calls
+in =Completed=, and blocks the next turn before and after replay. The TUI
+live and replay projections keep the request out of answer history and show a
+pending review message. The request is observable but cannot run until a live
+runtime authorization consumes it. Direct TUI model turns have no graph run,
+so they cannot reuse =HumanGateReceipt= by inventing a run and iteration.
+Their visible Ask menu requires a runtime-owned pending model-tool gate bound
+to the durable turn, provider call ID, advertised tool and registered handler;
+its typed decision receipt must be consumed once. Actual graph-run tools keep
+using the graph gate. A presentation-only menu would claim authority the
+current TUI does not have.
+An approved decision still cannot invoke a handler directly: the runtime must
+commit a one-shot execution claim first. If the process dies after that claim
+without a durable result, replay records an unknown external outcome and does
+not retry the effect. The Mini Buffer may display recovery choices but cannot
+turn the old claim into a second execution.
+The conversation journal now records typed review and claim events keyed by
+the committed session, turn and provider call IDs. A second claim, a stale
+review or a rejected request cannot produce a claim receipt. Reopening after a
+claim reports execution outcome unknown. Scheme now declares a separate
+=model-tool= Mini Buffer review menu with =approve-once= and =reject= choices.
+The native UI projection admits exactly those two typed presentation intents
+and rejects duplicate or unknown choices; neither intent is an execution
+receipt. The runtime now has a handler-backed model-tool catalog: provider
+definitions come only from registered =ToolRuntime= handlers. Each request
+retains an immutable offer snapshot, and a complete tool-call batch must match
+that snapshot before review; a later registration cannot enlarge an earlier
+offer. The persistent TUI gateway now checks the exact handler-backed offer
+before dispatch and rejects returned tool calls outside it. Yuanxu now selects
+a Scheme =tooling= Module. It composes a bounded Bash declaration using POO
+=.mix= and ==> append=, then projects native Scheme values through the linked
+ABI. Rust validates those values into a typed declaration and binds
+the reusable shell capability to its admitted name and argument schema. New
+tools using an existing capability can be declared in Scheme without adding a
+Rust command case. The catalog's registration API accepts typed declarations,
+not standalone provider schemas, so a Rust caller cannot silently advertise
+an unrelated tool definition. A new host capability still needs one Rust
+adapter; Scheme cannot create a Rust handler or grant its own approval. The
+catalog can consume the journal's one-shot execution claim. The journal now
+accepts one bounded, ordered result batch from the live claimant and replays
+its exact provider call IDs. A claim without results stays uncertain after
+restart; a committed result remains pending provider continuation. The linked
+TUI now projects the Scheme catalog when a persistent session is configured,
+binds its Bash capability, and attaches the exact offer to model requests.
+On a committed tool request, it presents Scheme's finite Ask choices in the
+Mini Buffer and shows the full arguments in a temporary request view; one
+selection commits the review, claim, and result through a managed Runtime
+task. The TUI now resumes the same provider turn with the committed tool
+result, or a denial result, without sending a synthetic user turn. The linked
+PTY fixture verifies the second provider request and final answer for both
+ApproveOnce and Reject. This fixture does not qualify a crash between result
+commit and provider continuation. The offer now builds
+a name index once; admission and execution reuse that index. The isolated
+catalog-admission benchmark excludes VM startup, handler execution and journal
+I/O. Its earlier timings predate the index change and need a fixed-cohort rerun
+before any performance claim.
+
+The graph-loop controller now records a produced =HumanGateReceipt= in the
+runtime run registry as =AwaitingHuman= instead of completing the run with the
+last execution result. The registry rejects terminal completion and duplicate
+gate admission while that gate is pending, checks its run and iteration, and
+exposes a distinct wait status. Cancellation clears the pending gate and
+terminates the run, including cancellation that races with gate admission.
+The kernel now also offers a bounded interactive review handle. It waits on
+the same run after publishing the gate, sends each submitted
+=HumanDecisionReceipt= through the runtime registry, and only executes the
+next graph after a matching approval is admitted. A stale gate is rejected;
+replay after approval is rejected; rejection terminates the run without
+executing the proposed graph. Questions and patch requests keep the gate
+pending. Closing the review handle cancels a run still awaiting review, and a
+cancel request takes precedence over a late successful execution result.
+This is an internal graph-loop path. Tool-call routing, typed event delivery
+to the UI and the Minibuffer Ask binding remain open.
+The controller checks a small run-status value before each iteration. A
+manual debug microbenchmark of the shared registry path measured 100,000
+uncontended lookups in 18.382 ms (183.8 ns per call) on this host. It does not
+measure cancellation tails, tool execution or TUI latency.
+The graph-loop registry now publishes a coalescing revision watch after each
+mutation scope. Its payload is only a revision; a consumer subscribes, then
+reads the authoritative typed =HumanGateReceipt= by run ID. A slow consumer
+can skip intermediate revisions without losing the pending gate, and a gate
+read does not clone the whole run observation. The standalone TUI has no
+graph-loop producer yet, so this is a runtime notification boundary rather
+than a working TUI Ask dialog.
+The selected Scheme =ui-components= module now declares the human review
+menu's prompt, labels and order and projects them through the rooted native
+UI ABI. Rust admits exactly the four existing typed =HumanDecision= variants,
+rejecting missing, duplicate and unknown decisions; the menu itself cannot
+authorize a graph step. Scheme tests own exact presentation strings, Rust
+tests own the native type and admission boundary, and the linked PTY test owns
+terminal startup and interaction. Rust tests do not replicate Scheme's
+command-catalog size or review-menu copy. The review menu is not yet bound to
+a live TUI Ask frame; the typed event route and graph producer remain open.
+The Rust Modeline renderer tests use synthetic brand and state labels; the
+selected Scheme profile tests own the actual fish icon and status copy.
+The model, turn count and session slots now carry bounded Scheme templates
+with one ={value}= placeholder. Rust fills those cached templates with live
+values and computes session truncation from their cell-width adornments;
+the profile owns the symbols and spacing. Neither profile switching nor
+redraws require a new Scheme call for a value change.
+The activity divider is also projected from the selected Scheme profile:
+Doom One uses =│=, while Pi uses =·=. The cached status labels already include
+that divider, so the renderer only measures and paints them. The Scheme
+workbench test owns the exact glyphs; the linked PTY tests verify profile
+switching and narrow-width retention without copying those assertions.
+The Modeline's runtime, workspace, recovery, continuation, history, working
+and reading presentations now live in the selected Scheme profile. Rust maps
+typed current state to the admitted slot and paints the cached label and tone;
+it does not call the VM per frame. The native profile benchmark uses the full
+fifteen-slot workload plus one host contribution.
+That workload exposed costly profile admission: a same-host Criterion
+run measured 8.2169 µs at the median while the admission path built two
+=HashSet=s. Replacing those sets with fixed-capacity sorted identity arrays,
+while still rejecting duplicates, measured 546.06 ns at the median on the
+same workload. These are profile-transition component samples, not a frame
+latency or startup claim.
+A later run of the same debug microbenchmark measured the 100,000 status
+lookups at 52.8 ns each and 100,000 empty mutation scopes with revision wake
+publication at 68.3 ns each. The earlier 183.8 ns lookup remains recorded;
+these separate samples show host/run variance and do not qualify a tail gate.
+
+** Reference UI synthesis for Marlin Buffers (2026-11-13)
+
+The local =.data/oh-my-pi= source separates assistant thinking display,
+tool receipt rendering and the interactive Ask dialog. Its thinking formatter
+uses bounded per-block cache slots and incremental line checkpoints; its Ask
+dialog has distinct submit, chat and cancel outcomes. The local
+=.data/Codewhale= source attaches fold state to original transcript cells,
+invalidates the cell cache when folding changes, and throttles active
+thinking revision bumps to avoid wrapping every delta. These are behavior and
+performance references, not component templates.
+
+Marlin retains its own selected Scheme =UiFrame=/=UiWindow=/=UiBuffer= and
+Minibuffer model. Conversation and =*Messages*= are different Buffer bindings
+for the selected Window; M-x browsing belongs to the Minibuffer. Agent
+thinking, tools and typed receipts will be semantic transcript cells, with
+their presentation selected by Scheme and clipped/rendered by Rust. A tool
+Ask request can temporarily bind a choice view to the Minibuffer while the
+runtime holds the pending gate; the choice must resolve that exact typed gate
+before the Window returns to its prior Buffer. This preserves the Emacs
+interaction idea while fitting Marlin's runtime authority and stream model.
+
+The UI Buffer is a view binding, not a second durable session or context
+container. Agentic AI Lab Context and ORG define the narrative and evidence
+semantics; MRR is the intended evidence and storage boundary. The current TUI
+still uses the Marlin conversation journal for recovery and provider
+continuation; it must not promote that journal into an independent Context
+model. A transcript cell refers
+to the typed event or receipt that produced it; changing Buffer, theme, fold
+state, or Window does not copy or reinterpret that evidence. Consequently,
+oh-my-pi and Codewhale session catalogs are
+interaction references only. Marlin must not adopt their conversation storage
+or reconstruction semantics.
+
+=ui-transcript= now owns profile-specific role labels and thinking fold
+defaults; =ui-layout= owns frame geometry. The selected Scheme workbench
+combines both into one bounded native projection. Rust reads that projection
+to paint cells and must not hard-code a second set of profile rules or call
+the VM on each frame.
+
+The previous =M-x context= command displayed only a local message-byte
+admission budget. It is now =M-x context-budget= with an explicit
+=context-budget= capability. No compatibility alias remains. An actual Context
+Buffer must consume a scoped ORG query and its MRR-backed evidence receipt;
+relabeling the existing session pager or byte counter would not provide that
+projection.
+
+Named Buffers now have one rendering route. Scheme declares the =*Processes*=
+identity and title with an empty content component, and the Rust Runtime
+owner atomically replaces only its bounded display content. The same route
+can later display an admitted Context/ORG query result without creating a new
+conversation or a one-off renderer. There is no query producer or Context
+Buffer binding in this change, so it does not yet expose ORG evidence in the
+TUI. The existing =ContextOrgMemoryQuery= checks common scope identities and
+executes a local Org projection, but its own contract explicitly does not
+authenticate the source cut or grant current use. A TUI Context Buffer needs
+the admitted Lab scope and an MRR-backed evidence receipt before that result
+can become a navigable view. The session pager remains a journal recovery tool
+until that producer exists; copying an external session catalog into the UI
+would give it the wrong authority.
+
+The =*Processes*= Buffer now caches the Runtime registry's managed revision and
+session identity. The TUI skips cloning and formatting its rows when neither
+changes. Runtime mutators increment the revision on managed registration,
+cleanup and completion; the terminal draw path reads the last bounded view.
+
+** Declarative input mapping probe (2026-11-13)
+
+The new input slot is measured separately from startup and Scheme VM work.
+=cargo bench --locked -p marlin-agent-tui --no-default-features --bench ui_mapping -- ui/mapping/input-tree=
+completed 30 Criterion samples on Darwin: estimated time
+=[5.2832, 6.8822, 9.4633] us= (lower, point, upper). Six samples were
+high-side outliers. Criterion reported =p=0.08= against its prior
+=input-tree= baseline, so this run does not qualify either a regression or
+an improvement. Another Cargo release task held the artifact lock during
+the run, the editor-slot changes were still uncommitted, and the earlier
+=ui/mapping/input= sample used a different build.
+
+That command is a historical observation, not the supported benchmark entry
+point. Cargo also builds =marlin-tui= for an explicit integration benchmark
+target and exposes it through =CARGO_BIN_EXE_marlin-tui=. Running with
+=--no-default-features= can therefore replace =target/release/marlin-tui=
+with a dynamic binary linked to the SDK build directory. The maintained
+=ui_mapping= benchmark now requires =linked-ui=; Cargo rejects the old command
+before building. Use =just tui-ui-mapping-bench= to stage the selected Scheme
+programme and measure the Rust mapping without initializing the VM in each
+sample. Release acceptance still checks the linked binary independently.
+
+The first linked benchmark qualification staged the selected programme and
+measured =selected-ask-frame-with-slots= over 30 samples at
+=[56.376, 81.747, 120.43]= µs (95% interval and point estimate); five
+measurements were high outliers under concurrent compilation. It built a
+124 MiB Release binary (SHA-256
+=af807f4f14d13651f2985527f2c985cf06a8e7208d6f1813f309c3de7e6c6e11=)
+without the SDK build-only Gerbil dylib. The source-free Release PTY first-frame
+gate passed. A fresh-copy PTY pair measured first output/workbench at
+=2.777/3.261= s, then =0.059/0.182= s on the same file; application tracing
+placed the first frame at =0.485/0.123= s. The first-copy gap and variable VM
+initialization remain outside this mapping benchmark, and the binary still
+depends on Nix OpenSSL, SQLite and libiconv images.
+The two input workloads must be measured from one fixed source cut without
+concurrent release work before assigning an overhead to the declarative tree.
+A later same-process run of =ui/mapping/input= and =ui/mapping/input-tree=
+from the then-current uncommitted tree estimated =[7.2565, 8.0906, 8.9957] us=
+and =[6.7000, 7.5765, 8.5473] us= respectively. Both changed substantially
+against their historical Criterion baselines; their current intervals overlap.
+This does not isolate the tree's cost. An immediate repeat failed to compile
+while the shared UI =Region= contract was changing from =scrollable= to
+=scroll_target=. No result from that failed build is treated as a sample.
+
+After =6f5f6ea2= was pushed, the next release benchmark compiled while another
+session changed TUI sources, so the binary has no qualified source cut. The
+first 30-sample pass estimated =input= at =[15.446, 18.774, 22.178] us= and
+=input-tree= at =[12.072, 17.023, 22.165] us=. Repeating the *same compiled
+binary* immediately estimated =[4.3113, 6.3174, 9.0730] us= and
+=[7.1207, 9.6734, 12.295] us= respectively. The direct input point estimate
+changed nearly threefold without a code change. The same binary measured
+=selected-frame-no-scroll= at =[325.52, 392.79, 491.05] ns= and
+=selected-frame-hit= at =[775.10, 958.01, 1209.2] ns=; these are separate
+workloads and do not isolate the cost of a scroll target. These observations
+show substantial host variance. Keep them as diagnostic evidence, then repeat
+from a stable source cut under controlled load before setting a performance
+threshold or attributing a regression to the declarative mapper.
+
+The next same-process 30-sample pair measured =input= at
+=[7.3837, 10.122, 12.393] us= and =input-tree= at
+=[6.4348, 8.5220, 10.792] us=. The intervals overlap and Criterion found
+no change against either prior baseline (=p=0.89= and =p=0.46=). The shared
+geometry implementation changed during the release benchmark: the working
+diff fingerprint moved from =3c4bb4f1= to =74471d85= and the untracked
+=ui_elements/geometry.rs= fingerprint also changed. This run is diagnostic
+only; it does not qualify the current source cut or establish tree overhead.
+
+** Wheel queue benchmark diagnostic (2026-11-14)
+
+The source-clean =8dd4b7bf= Release benchmark binary (SHA-256
+=35cb034a26425e987707696b35f377a3c9ef75a6bee51ac5e1f549054cf2075e=)
+measured the production bounded wheel queue without VM startup or terminal
+painting. Ten Criterion samples estimated =ui/input/wheel-coalesced-16= at
+=[165.69, 177.82, 193.14] ns= and =ui/input/wheel-two-regions= at
+=[71.71, 161.44, 282.26] ns= (lower bound, point estimate and upper bound
+of the 95% mean interval). These are queue microbenchmarks, not
+pointer-to-frame latency. The second interval is wide; the following
+minute's host load was 65.92 on 12 logical CPUs. Treat both as diagnostics
+and repeat a matched, source-fixed
+cohort after competing work subsides before setting a queue cost threshold.
+
+** Declarative scrolling and linked startup observations (2026-11-14)
+
+At =7f4cddb5=, generic painting and geometry share the calculation of scrolled
+child rectangles. A Rust property compares their visible regions across
+offsets, and a nested-region test checks that pointer routing selects the
+visible inner scroll target. This covers the terminal mapping boundary; Scheme
+tests retain ownership of UI presentation. Host-provided list rows still need
+their own row geometry, and the terminal host retains dedicated transcript,
+editor and list adapters. The native transcript cache remains in use.
+
+The =scroll-hit-layout-64= Criterion diagnostic took =[5.1787, 9.2567,
+12.720]= µs (95% mean interval and point estimate), with ten samples while
+other compilation was active. It does not establish a latency bound or a
+comparison against the previous implementation. A loopback PTY fixture passed
+resize, wheel up/down during streaming, history search and retained-scroll
+checks. The ordinary PTY suite passed 16 tests with 36 ignored on the final
+run; an earlier run failed the Ctrl-Z termios equality on the =PENDIN= state
+bit, which remains an unresolved timing observation.
+
+The selected Modeline nodes are now built once per workbench construction and
+used for both status items and the generic bar. The latest linked Release fresh
+copy emitted first output at 2.267 s and showed the workbench at 2.425 s. The
+same file's second launch measured 44.7 ms and 164.0 ms; its application
+trace reported 69.2 ms for UI session construction and 119.0 ms to first
+frame. A separate Release PTY launch from a temporary directory, with Gerbil
+paths set to an absent directory, reached the workbench in 2.866 s. These are
+single samples, not a controlled before/after comparison:
+the earlier pair measured 1.904/2.534 s and 53.6/479.8 ms under different
+load. Neither run identifies the cause of the fresh-copy pre-output gap or
+proves that eliminating duplicate Scheme node construction caused a speedup.
+
+** Painted list row hit testing (2026-11-14)
+
+The generic list mapper keeps the bounded identities and cell rectangles of
+painted rows for the current frame. Empty or hidden lists clear their prior
+hits. A left click selects an identity only if it remains in the current
+Scheme-ordered candidate set, using the existing Scheme browse operation;
+selection previews a buffer and does not confirm it. The model-tool Ask menu
+uses the same painted-row map with typed decision identities: a click changes
+only the highlighted Scheme-ordered choice; Enter still commits the runtime
+review request. An old command hit cannot match a review identity. Rust tests
+cover row geometry and native input. PTY tests exercise candidate clicks,
+keyboard and wheel navigation, and Messages preview before confirmation. Both
+linked Scheme Bash Ask PTY paths also pass with a clicked Deny preview followed
+by an explicit Enter: approval runs the tool once, while rejection does not.
+The ordinary PTY suite passed 16 tests, with 36 explicitly ignored.
+
+The maintained =ui/mapping/selected-ask-frame-with-slots= Criterion workload
+now paints a fixed 120×40 selected frame through the generic slot adapter:
+conversation slot, Modeline template, input and two keyed Ask rows. Its fixture
+asserts that the second choice was actually painted and is hit-testable. It
+excludes VM startup, live provider work, journal I/O and a real terminal.
+Two 30-sample local runs measured 95% intervals and point estimates of
+=[129.07, 181.53, 239.57]= µs and =[63.904, 69.999, 78.255]= µs.
+The host and shared source state varied, so this spread is evidence against
+claiming a speedup from these samples. A source-frozen paired cohort and full
+PTY input-to-frame measurement remain required for a rendering performance
+claim.
+
+Criterion's ten-sample list diagnostics used the TUI diff SHA-256
+=3a07cc2da7a23a5e571bb9d4c14f8fb3985e12a36a20fb006229a8e1b07abe3a=
+over =f3a4c1fa=. During concurrent compilation, the keyed ten-visible-row
+workload measured =[49.955, 77.560, 134.64]= µs and the unkeyed column
+workload measured =[88.451, 129.94, 174.24]= µs; Criterion flagged both
+unkeyed list baselines as regressions versus its saved previous run. A
+subsequent run of the same compiled executable measured the keyed workload
+=[33.598, 47.494, 78.074]= µs and the unkeyed column workload
+=[37.538, 47.182, 64.198]= µs. These are broad 95% intervals from separate
+workloads under varying system load, not a controlled overhead comparison or
+proof that a performance regression is absent. Repeat a source-fixed paired
+cohort under controlled load before setting an acceptance bound.
+
+** Whole-frame traversal and fact snapshot (2026-11-14)
+
+The selected Scheme frame tree is now painted by the generic mapper as a
+whole. A boundary test adds an ordinary region without a Rust paint branch and
+checks both its painted cell and hit geometry. Host adapters still supply the
+editor, native transcript cache, list data and transient/search views. Layout
+and paint use the same frame facts and metrics; the terminal reuses that
+snapshot for painting and sends wheel events to the last painted regions.
+Label refresh admission preserves layout and theme. A bounded three-pass
+collapse evaluation prevents an authored self-dependency from looping; an
+oscillating layout does not establish a converged collapse state.
+
+The linked TUI suite passed 243 unit tests (9 ignored) and 16 ordinary PTY
+tests (36 ignored); the separate loopback streaming/resize/wheel/search PTY and
+the clicked Ask preview/confirmation fixture also passed. One 30-sample M-x
+arrow PTY run during concurrent work measured p50/p95 21.24/204.38 ms before
+the shared snapshot; a subsequent snapshot run measured 20.28/27.48 ms.
+Implementations and host load differed, so these are diagnostic observations,
+not a controlled speedup or a guarantee on tail latency. The cold Release
+startup gap and a matched source-fixed performance cohort remain open.
+
+** Scheme-owned Mini Buffer prompts (2026-11-14)
+
+The selected =ui-layout= module now declares a bounded =ui-prompt= with a
+trailing editable field. The native projection admits only a template whose
+last span binds that field. The generic Ratatui mapper clips the value by
+grapheme and terminal-cell width and places the cursor; the history-search
+status line no longer needs a special Rust region paint branch. Scheme also
+selects the transient hint through a slot in the same frame tree. The host
+still owns the live query value and cursor mapping.
+
+At =601ff02c=, the selected Scheme build/stage, focused native Scheme
+=ui-workbench= test, 243 TUI library tests (9 ignored), strict TUI/UI Clippy,
+M-x first-arrow PTY, real resize/stream/scroll/history-search PTY, and strict
+SysML validation passed. The linked =ui_mapping= Criterion executable measured
+the 256-byte direct prompt at =[5.3778, 5.7437, 6.2216]= microseconds and
+the generic Prompt tree at =[5.6110, 6.4492, 7.6871]= microseconds (30 samples;
+95% interval and point estimate). Seven and six measurements respectively
+were high outliers, and the intervals overlap. These numbers cover terminal
+mapping only, under shared-host load after an artifact-lock wait. Criterion's
+saved-baseline change percentages compare different earlier binaries; they
+do not establish an improvement or regression for this design. The selected
+frame and first-input latency still require a source-fixed terminal cohort.
+
+** Inherited list scope (2026-11-14)
+
+List rows inherit the enclosing frame's facts and bindings; row bindings and
+the row's =selected= fact take precedence. The native mapping test exercises
+scope inheritance and shadowing. Scheme continues to own its list policies.
+At =75ba9d35=, the linked TUI library passed 244 tests (9 ignored), the
+unlinked library passed 253 (10 ignored), and the ordinary PTY suite passed
+16 (36 ignored). Strict TUI Clippy and the debug binary build also passed.
+
+One linked Criterion run with 10 samples and three inherited bindings measured
+the 256-item list with 10 visible keyed rows at =[36.290, 43.948, 50.457]=
+microseconds. The other list groups had wide intervals, and Criterion reported
+regressions against saved earlier binaries for the plain and keyed groups.
+Shared-host load and different source builds prevent attributing those changes;
+they remain an unresolved performance signal, not a passed regression gate.
+A controlled paired comparison with the full frame binding set is still needed.
+
+On the same =75ba9d35= list mapper, a later linked Criterion executable ran
+four 30-sample list workloads after a shared Cargo artifact-lock wait. Their
+point estimates were 34.412 microseconds (plain), 25.652 (column), 41.259
+(keyed hit) and 29.219 (three inherited frame bindings). Running that *same
+compiled executable* again gave 20.114, 37.748, 45.091 and 120.53
+microseconds respectively. Every group had high outliers; the inherited group
+varied more than fourfold without recompilation. These observations do not
+isolate binding overhead or establish a stable performance bound. The first
+run's inherited-binding 95% interval was =[22.298, 29.219, 41.437]=
+microseconds; the second's was =[86.546, 120.53, 162.69]= microseconds. The
+host load must be controlled before a comparison is used for an architecture
+decision.

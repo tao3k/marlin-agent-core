@@ -1,4 +1,9 @@
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+#
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 [package]
+license.workspace = true
 name = "marlin-agent-test-support"
 edition.workspace = true
 version.workspace = true
@@ -17,9 +22,5 @@ serde_json.workspace = true
 tokio.workspace = true
 wiremock.workspace = true
 
-[build-dependencies]
-marlin-rust-project-harness-policy.workspace = true
-
 [dev-dependencies]
 reqwest.workspace = true
-marlin-rust-project-harness-policy.workspace = true

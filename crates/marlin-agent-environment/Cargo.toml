@@ -1,4 +1,9 @@
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+#
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 [package]
+license.workspace = true
 name = "marlin-agent-environment"
 edition.workspace = true
 version.workspace = true
@@ -8,14 +13,11 @@ repository.workspace = true
 [dependencies]
 async-trait.workspace = true
 marlin-agent-protocol.workspace = true
-marlin-git-utils.workspace = true
-marlin-workspace-protocol.workspace = true
+marlin-agent-gitops.workspace = true
+serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 
-[build-dependencies]
-marlin-rust-project-harness-policy.workspace = true
-
 [dev-dependencies]
-marlin-rust-project-harness-policy.workspace = true
+tempfile.workspace = true

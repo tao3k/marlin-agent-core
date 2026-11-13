@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+#
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 {
   pkgs,
   lib,
@@ -62,10 +66,15 @@ in
     pkgs.bazelisk
     pkgs.buildifier
     pkgs.libiconv
+    pkgs.libffi
     pkgs.lean4
+    pkgs.openssl
     pkgs.pkg-config
     pkgs.protobuf
+    pkgs.sqlite
+    pkgs.zlib
     pkgs.just
+    pkgs.asciinema
   ];
 
   languages.rust = {

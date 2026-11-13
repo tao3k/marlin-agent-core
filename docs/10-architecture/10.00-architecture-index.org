@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+#
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 #+TITLE: 10.00 Architecture Index
 #+FILETAGS: :marlin:architecture:johnny_decimal:
 
@@ -9,6 +13,7 @@
 :END:
 
 ** Documents
+- [[file:../../dev/sysml/README.org][OpenSysML project model map]]
 - [[file:10.10-crate-boundaries.org][10.10 Crate Boundaries]]
 - [[file:10.20-kernel-boundary.org][10.20 Kernel Boundary]]
 - [[file:10.30-agent-harness-boundary.org][10.30 Agent Harness Boundary]]

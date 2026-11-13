@@ -1,0 +1,119 @@
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
+use marlin_agent_context::org::MemoryOrgWorkspace;
+use marlin_agent_context::org::workspace::OrgDocument;
+use marlin_workspace_status::WorkspaceTarget;
+use marlin_workspace_view::WorkspaceViewSpec;
+
+fn sequential_document_loads_accumulate_contract_facts() {
+    let workspace = MemoryOrgWorkspace::new();
+    workspace
+        .load_document(contract_document(
+            "doc:one",
+            "agent.one.v1",
+            "Task One",
+            "Goal",
+        ))
+        .expect("first document loaded");
+    let second_ids = workspace
+        .load_document(contract_document(
+            "doc:two",
+            "agent.two.v1",
+            "Task Two",
+            "Outcome",
+        ))
+        .expect("second document loaded");
+    let second_task = second_ids
+        .iter()
+        .find(|id| id.as_str().contains("task-two"))
+        .expect("second task id loaded")
+        .clone();
+
+    let status = workspace
+        .status(WorkspaceTarget::Workspace)
+        .expect("workspace status includes accumulated contract facts");
+    let contracts = status.contracts.expect("contract status");
+
+    assert_eq!(contracts.registry.contracts.len(), 2);
+    assert_eq!(contracts.resolved_references, 2);
+    assert_eq!(contracts.validation_receipts, 2);
+    assert_eq!(contracts.validation_passed, 2);
+    assert!(
+        contracts
+            .contract_expectation_summaries
+            .contains(&"agent.one.v1/task.has-required-child: count == 1".to_string())
+    );
+    assert!(
+        contracts
+            .contract_expectation_summaries
+            .contains(&"agent.two.v1/task.has-required-child: count == 1".to_string())
+    );
+
+    let view = workspace
+        .render_view(WorkspaceViewSpec::compact(vec![second_task]))
+        .expect("view renders accumulated contract facts");
+
+    assert!(view.text.contains("contracts.resolved: 2"), "{}", view.text);
+    assert!(
+        view.text.contains(
+            "contract.validation.expectation: agent.one.v1/task.has-required-child: count == 1"
+        ),
+        "{}",
+        view.text
+    );
+    assert!(
+        view.text.contains(
+            "contract.validation.expectation: agent.two.v1/task.has-required-child: count == 1"
+        ),
+        "{}",
+        view.text
+    );
+}
+
+fn contract_document(
+    document_id: &str,
+    contract_id: &str,
+    task_title: &str,
+    required_child_title: &str,
+) -> OrgDocument {
+    OrgDocument::new(
+        document_id,
+        format!(
+            r#"* {contract_id}
+:PROPERTIES:
+:CONTRACT_ID: {contract_id}
+:CONTRACT_SCOPE: subtree
+:CONTRACT_KIND: org-elements
+:END:
+
+** must-have-required-child
+:PROPERTIES:
+:ASSERT_ID: task.has-required-child
+:SEVERITY: error
+:END:
+
+#+BEGIN_SRC org-elements-query
+(headline :descendant-of $scope :summary (title "{required_child_title}"))
+#+END_SRC
+
+#+BEGIN_SRC org-elements-expect
+count == 1
+#+END_SRC
+
+* TODO {task_title}
+:PROPERTIES:
+:CONTRACT_ORG: {contract_id}
+:END:
+** {required_child_title}
+"#
+        ),
+    )
+}
+
+// Invoked after exclusive parser startup by unit_test.
+pub(super) const CASES: &[(&str, fn())] = &[(
+    "sequential_document_loads_accumulate_contract_facts",
+    sequential_document_loads_accumulate_contract_facts,
+)];

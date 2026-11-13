@@ -1,14 +1,18 @@
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 //! Release receipt bridges exposed by the core facade.
 
+use marlin_agent_context::org::store::{FileSystemReleaseStatusStore, OrgSourceStoreResult};
+use marlin_agent_context::org::workflow::{
+    GerbilReleaseStatusCommit, GerbilReleaseStatusCommitReceipt, GerbilReleaseStatusCommitter,
+};
 use marlin_agent_harness::{
     ReleaseGateExecutionReceipt, ReleaseGateExecutionStatus, release_gate_execution_receipt,
 };
 use marlin_gerbil_ir::{ReleaseGateSpec, ReleaseTopologySpec};
-use marlin_org_store::{FileSystemReleaseStatusStore, OrgSourceStoreResult};
-use marlin_org_workflow::{
-    GerbilReleaseStatusCommit, GerbilReleaseStatusCommitReceipt, GerbilReleaseStatusCommitter,
-};
-use marlin_workspace_protocol::{ReleaseGateReceipt, ReleaseGateState};
+use marlin_workspace_status::{ReleaseGateReceipt, ReleaseGateState};
 use std::process::Command;
 
 /// Result of executing one release gate command.

@@ -1,0 +1,56 @@
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+#
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
+name: Set up the Marlin Scheme toolchain
+description: Activate the immutable Gerbil SDK selected by Marlin's bridge.
+outputs:
+  toolchain:
+    description: Identity of the Gerbil release and host compiler environment.
+    value: ${{ steps.toolchain.outputs.fingerprint }}
+runs:
+  using: composite
+  steps:
+    - name: Set Gerbil build workers from the runner
+      shell: bash
+      run: |
+        if [[ "$RUNNER_OS" == macOS ]]; then
+          cores=$(sysctl -n hw.logicalcpu)
+        else
+          cores=$(nproc)
+        fi
+        [[ "$cores" =~ ^[1-9][0-9]*$ ]]
+        echo "GERBIL_BUILD_CORES=$cores" >> "$GITHUB_ENV"
+        echo "Gerbil build workers: $cores"
+    - uses: tao3k/gerbil-scheme-rust/.github/actions/setup-gerbil@dfe8b62b5dc64de88f8d70a77059a1741218ef80
+      with:
+        release-root: ${{ runner.temp }}/gerbil
+    - name: Install Orgize static link prerequisites
+      if: runner.os == 'Linux'
+      shell: bash
+      run: |
+        crypto_libs=$(pkg-config --static --libs libcrypto)
+        if [[ "$crypto_libs" == *libjitterentropy.a* ]]; then
+          sudo apt-get install -y --no-install-recommends libjitterentropy3-dev
+        fi
+    - name: Identify the Scheme build environment
+      id: toolchain
+      shell: bash
+      run: |
+        set -o pipefail
+        eval "$("$GERBIL_HOME/bin/gambuild-C")"
+        fingerprint=$(
+          {
+            cat "$GERBIL_PREFIX/gerbil-toolchain-release.json"
+            cc --version
+            "$C_COMPILER" --version
+            "$GERBIL_GSC" -v
+            pkg-config --modversion openssl sqlite3 zlib
+            if [[ "$RUNNER_OS" == macOS ]]; then
+              xcrun --show-sdk-build-version
+            else
+              ldd --version
+            fi
+          } | shasum -a 256 | cut -d' ' -f1
+        )
+        echo "fingerprint=$fingerprint" >> "$GITHUB_OUTPUT"

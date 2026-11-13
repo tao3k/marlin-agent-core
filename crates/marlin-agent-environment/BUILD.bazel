@@ -1,0 +1,23 @@
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+#
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
+load("@marlin_crates//:defs.bzl", "crate_deps", "crate_edition")
+load("//bazel:marlin_harness.bzl", "marlin_crate_with_policy_data")
+
+marlin_crate_with_policy_data(
+    name = "marlin_agent_environment",
+    srcs = glob(["src/**/*.rs"]),
+    edition = crate_edition(),
+    gate_data = glob(["tests/**/*.rs"]),
+    proc_macro_deps = crate_deps(["async-trait"]),
+    deps = crate_deps([
+        "serde",
+        "serde_json",
+        "thiserror",
+        "tokio",
+    ]) + [
+        "//crates/marlin-agent-protocol:marlin_agent_protocol",
+        "//crates/marlin-agent-gitops:marlin_agent_gitops",
+    ],
+)

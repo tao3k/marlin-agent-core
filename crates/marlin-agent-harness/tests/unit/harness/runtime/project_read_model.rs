@@ -1,11 +1,8 @@
-use marlin_agent_harness::{AgentHarness, AgentHarnessEvidenceKind};
-use marlin_agent_protocol::{
-    GraphQueryContext, GraphQueryFamily, GraphQueryRequest, ProjectMemoryRecallIntent,
-    ProjectMemoryRecallRequest, ProjectRuntimeMemoryCitation, TurnContextItemKind,
-    TurnContextItemViewReceipt,
-};
-use marlin_agent_test_support::project_runtime_read_model_replay_artifact_fixture;
-use marlin_org_memory::{
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
+use marlin_agent_context::org::{
     MemoryOrgWorkspace, PROJECT_MEMORY_CONTRACT_VALIDATED_PROPERTY, PROJECT_MEMORY_ID_PROPERTY,
     PROJECT_MEMORY_PROJECT_ID_PROPERTY, PROJECT_MEMORY_RECALL_QUERY_PROPERTY,
     PROJECT_MEMORY_ROOT_SESSION_ID_PROPERTY, PROJECT_MEMORY_WORKTREE_ID_PROPERTY,
@@ -14,7 +11,14 @@ use marlin_org_memory::{
     TOOL_CAPABILITY_PROJECT_ID_PROPERTY, TOOL_CAPABILITY_REQUIRED_CAPABILITIES_PROPERTY,
     TOOL_CAPABILITY_REQUIRED_RECEIPTS_PROPERTY, TOOL_CAPABILITY_WORKSPACE_ID_PROPERTY,
 };
-use marlin_org_model::{OrgNode, OrgNodeId};
+use marlin_agent_harness::{AgentHarness, AgentHarnessEvidenceKind};
+use marlin_agent_protocol::{
+    GraphQueryContext, GraphQueryFamily, GraphQueryRequest, ProjectMemoryRecallIntent,
+    ProjectMemoryRecallRequest, ProjectRuntimeMemoryCitation, TurnContextItemKind,
+    TurnContextItemViewReceipt,
+};
+use marlin_agent_test_support::project_runtime_read_model_replay_artifact_fixture;
+use marlin_context_org_model::{OrgNode, OrgNodeId};
 
 #[test]
 fn harness_accepts_project_runtime_read_model_replay_artifact() {

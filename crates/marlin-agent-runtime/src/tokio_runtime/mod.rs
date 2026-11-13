@@ -1,16 +1,25 @@
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 //! Tokio-backed execution substrate for agent providers, tools, and sub-agents.
 
 mod cleanup;
 mod context;
 mod events;
+mod fanout_item;
 mod handle;
 mod receipt;
 mod task;
 mod traits;
 
 pub use context::{RuntimeContext, RuntimeExecutionIdentity};
-pub use events::{EventStream, RuntimeEventSink, RuntimeEventStream};
-pub use handle::{TokioAgentRuntime, TokioAgentRuntimeBuildRequest, WorkingCopySubAgentFanoutItem};
+pub use events::{
+    EventStream, MAX_RUNTIME_EVENT_HEAP_BYTES, RuntimeEventSendError, RuntimeEventSink,
+    RuntimeEventSizeRejection, RuntimeEventStream,
+};
+pub use fanout_item::WorkingCopySubAgentFanoutItem;
+pub use handle::{RuntimeTaskScope, TokioAgentRuntime, TokioAgentRuntimeBuildRequest};
 pub use marlin_agent_environment::{
     WorkingCopyActiveBinding, WorkingCopyBaseRef, WorkingCopyBranchName,
     WorkingCopyCommandInvocation, WorkingCopyCommandProgram, WorkingCopyCommandProjection,
@@ -42,6 +51,10 @@ pub use receipt::{
     RuntimeTaskShutdownRequest, RuntimeTaskShutdownStatus, RuntimeTaskTrackerShutdownState,
     SubAgentSpawnReceipt,
 };
-pub use task::{RuntimeTask, RuntimeTaskOutcome, RuntimeTaskTracker};
+pub(crate) use task::RuntimeTaskGuard;
+pub use task::{
+    RuntimeAdmissionError, RuntimeOperationId, RuntimeProcessBudget, RuntimeResourceGeneration,
+    RuntimeResourceId, RuntimeTask, RuntimeTaskJoinError, RuntimeTaskOutcome, RuntimeTaskTracker,
+};
 pub use tokio_util::sync::CancellationToken;
 pub use traits::{HookRuntime, ProviderRuntime, RuntimeFuture, SubAgentRuntime, ToolRuntime};

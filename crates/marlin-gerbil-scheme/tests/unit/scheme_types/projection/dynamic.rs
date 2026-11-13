@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 use super::support::{
     StrategyDecisionProjection, StrategySelectionProjection, nested_strategy_manifest,
     strategy_decision_schema_id, strategy_decision_type_id, strategy_selection_manifest,

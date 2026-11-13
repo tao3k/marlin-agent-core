@@ -1,4 +1,9 @@
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+#
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 [package]
+license.workspace = true
 name = "marlin-workspace-view"
 edition.workspace = true
 version.workspace = true
@@ -6,12 +11,8 @@ authors.workspace = true
 repository.workspace = true
 
 [dependencies]
-marlin-org-model.workspace = true
+marlin-context-org-model.workspace = true
 serde.workspace = true
-
-[build-dependencies]
-marlin-rust-project-harness-policy.workspace = true
 
 [dev-dependencies]
 serde_json.workspace = true
-marlin-rust-project-harness-policy.workspace = true

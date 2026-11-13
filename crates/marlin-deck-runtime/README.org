@@ -1,0 +1,157 @@
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+#
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
+#+TITLE: Marlin Deck Runtime
+#+FILETAGS: :marlin:runtime:actor:
+
+* Ownership
+
+=DeckRuntime= owns one fixed OS thread, one single-processor Gerbil VM and a
+bounded Tokio admission channel. Gerbil creates mailbox Actors for logical
+Context identities and reuses them across turns. The host runtime schedules Rust futures on
+Tokio workers. Scheme publishes the Deck Module's metadata and
+version. The C ABI roots the Deck and Context runtime roles in the linked
+compiler graph; Yuanxu retains their checked publication and Feature selection.
+The startup receipt transfers the published module ID and version through the
+SDK's rooted string and u64vector APIs. =metadata()= exposes the resulting Rust
+snapshot after the owner is ready. Rust carries no table of Scheme versions;
+this runtime package uses the SDK directly for the receipt.
+It selects Context's =gerbil-scheme-abi= feature: rooted value mappings and linked
+entries. Context's =gerbil= feature additionally requires the SDK package-host
+image, whose package loader is absent from an =external-program= image.
+The SDK declares separate procedure lowering for the production mailbox module.
+=ContextAdmissionRequest= carries owned domain identifiers, immutable
+shared scope and an optional typed Session/turn pair. Lab's existing Scope
+admission operation owns Context semantics.
+
+* Admission and retirement
+
+Enable =actor-runtime= and construct =DeckRuntimeConfig::new(queue_capacity)=.
+=with_batch_capacity= selects 1..64 rows per Context C ABI transfer. The
+owner immediately submits ready work, independently collects completed
+messages, refills the in-flight window and limits
+projected text to Context's 32 KiB budget. Consecutive requests sharing an
+=Arc<ContextScope>= and Module instance materialize common fields once.
+The queue counts those shared fields once per actual projected group and adds
+only row text for its remaining requests. A different Module or Scope allocation
+starts a new group; returning to an earlier group charges its shared fields
+again. Cancelled and expired rows leave before this accounting. FIFO order and
+the transfer limits remain intact.
+
+=admit_context(request, budget, cancellation)= returns a =ContextScopeDigest=.
+The rooted SDK boundary carries strings, vectors, u64 message IDs, result
+status bytes and packed digest bytes. Rust checks packet cardinality and
+message identities before publishing any receipt;
+no JSON or command-line protocol crosses this boundary. A digest identifies a
+Lab-admitted Scope; it does not grant permission to perform an external effect.
+
+Cancellation and deadlines are checked before submission and before result
+delivery. Each completion releases its native roots on the owner.
+=shutdown().await= closes admission for every
+clone, drains accepted work, retires the Context service, drops the VM,
+publishes a typed receipt and joins the owner. Dropping the final handle also
+drains the channel. The upstream process lifecycle permits one VM
+initialization per process.
+
+Actors are keyed by bundle, organization, project, worktree, agent and Session.
+Source-cut and epoch changes travel as message data to the same Actor.
+Actors remain available until their owning Context Module retires or the runtime closes. Shutdown sends a stop
+message to every Actor and joins it. =DeckMailboxMetrics= records created and
+retired Actors and submitted and collected messages.
+
+* Verification
+
+=cargo test -p marlin-deck-runtime --features actor-runtime= exercises real
+linked Context actors, queue retirement and shutdown. The =single_vm_actor=
+bench accepts batch capacity and request count, for example
+=cargo bench -p marlin-deck-runtime --features actor-runtime --bench single_vm_actor -- 64 4096=.
+
+The qualification cohort uses four fresh processes, 64 warmup requests and
+4096 measured requests per process. Each returned digest and request index is
+retained. Independent known answers for this fixed Unicode/session fixture are
+prepared before VM startup; all warmup and measured identities are checked
+after timing. Missing, duplicate, foreign or substituted results fail the run.
+The oracle makes no extra Scheme admissions and reports its own elapsed time.
+Successful receipt counts alone do not establish result identity. Earlier
+benchmark results that discarded returned digests do not have this check.
+Exit success covers these semantic/lifecycle checks; the 20 ms latency target
+is assessed separately against every process in the complete cohort. Once the
+paired SDK and Scheme package are provisioned, run =just context-latency-gate=
+in that environment. It runs four separate processes under the 2 GiB Scheme
+heap ceiling and 180-second per-process watchdog. It retains every log and
+the benchmark binary identity under =target/=. Physical allocation still
+requires the separately qualified runtime and allocation-site evidence.
+On GitHub, the manual =Linked native AOT gate= accepts
+=qualify_context_latency=true=. It runs this same target after the linked
+checks and uploads the cohort logs, including failed runs. Compare timings
+with the runner and SDK identity attached to the workflow run.
+Run batch 1 and 64 in separate processes under matched conditions. The test
+and benchmark hosts each use four Tokio workers. Counters
+include 64 warmup requests; timed throughput and p50/p95/p99 cover request/reply.
+Qualification results belong in the [[file:../../docs/40-rfcs/40.166-plugin-contract.org::#single-vm-actor-runtime][Org RFC]].
+
+=cargo bench -p marlin-deck-runtime --features mailbox-benchmark --bench mailbox -- 1000000 1=
+uses the SDK's in-process VM and rooted C ABI. The qualification image includes
+the production mailbox transport and a lightweight handler. Its arguments select
+message count and logical identity count. The SDK applies its declared separate
+procedure layout to the mailbox and workload modules. Startup, compilation and
+warmup are excluded from the Scheme timer. Whole C ABI call time is reported
+separately. This workload checks the reply oracle and shutdown accounting.
+The Context benchmark additionally runs Lab admission and hashing. The signed VM accounting delta is diagnostic and never qualifies physical
+allocation bytes, even when positive. GC count, heap capacity and post-GC live
+bytes are separate observations. The component bench and constructor-site
+census distinguish the remaining costs.
+
+Append =latency 1000000= to measure planned arrivals at one million messages
+per second. The probe includes source debt, checks each result and exits with
+failure when p99 reaches 20 ms. Histogram upper bounds use 10 microsecond
+buckets. It reports p50, p95, p99, p99.9, maximum and the count over 20 ms.
+
+The TUI consumes the existing provider-neutral streaming gateway. Connecting a
+TUI conversation to this Context entry requires its actual project, worktree,
+source-cut and Session binding. Those identities must come from the runtime.
+
+* Independent Module lifetimes and timers
+
+=context_module()= returns the default Context Module;
+=activate_context_module().await= creates another instance of the registered
+Context factory in the same VM. Each instance has a Rust-minted
+=DeckModuleInstanceId=. =module.admit_context(...)= uses that Module's Actors.
+=module.retire().await= closes its admission, drains prior requests, joins only
+its Actors and timer threads and returns a checked =DeckModuleRetirementReceipt=.
+It is idempotent and leaves other Modules active. Queue refusal leaves admission
+open. Drop does not replace the explicit retirement boundary.
+
+=module.timer(delay).await= receives a =DeckTimerReceipt= even while no Context
+requests arrive. Scheme uses Gambit's timed mailbox wait and monotonic clock;
+Rust waits on the native event channel. Dropping the future abandons its reply,
+while the Module still owns the timer until collection or retirement. Retirement
+joins pending timers and rejects their reply slots. These are runtime timer
+observations; Lab retains temporal policy and durable Agenda semantics.
+
+* Cost diagnostics
+
+=context_profile= under =mailbox-benchmark= measures the existing decode,
+validation, admission, digest, encode and Actor operations independently. It
+checks and optionally writes all 4096 result digests. These prepared phases
+retain different live sets from the production =single_vm_actor= workload.
+
+Its =retention= mode is a separate zero-business-message diagnostic with forced
+GC. It reports both direct compiler registry entries and the wider phase,
+import/export ownership graph through the existing Gerbil accessors. Import
+and export totals count visits, not unique objects or allocation bytes. The
+maintained probe does not clear contexts, bindings, promises or registry roots;
+its timings do not qualify production latency.
+
+=context-profiling= records per-owner-turn C ABI stages, native GC and completion
+ages. It buffers at most 65,536 turns and explicitly reports truncation; output
+occurs after shutdown. Run the ordinary release benchmark without this feature
+for acceptance. Neither instrumentation nor component timing replaces full
+Context latency evidence in the [[file:../../docs/40-rfcs/40.166-plugin-contract.org::#context-runtime-cost-attribution][cost attribution RFC]].
+
+
+When opening the VM fails, debug builds also print the existing SDK call-error
+diagnostic. This consumes the SDK-owned diagnostic root on the VM owner;
+release profiling retains its opt-in diagnostics and ordinary receipts remain
+typed.

@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 use super::{
     decode_gerbil_policy_pack_projection_chain_receipt, policy_pack_envelope, policy_pack_fixture,
     policy_pack_fixture_with_budget_owner, policy_pack_registry,
@@ -29,7 +33,7 @@ fn policy_pack_projection_chain_decodes_typed_poo_receipts_without_json_boundary
         "gerbil-module-system"
     );
     assert_eq!(receipt.policy_projection_receipt.owner, "gerbil-poo");
-    assert_eq!(receipt.native_projection_payload.owner, "rust");
+    assert_eq!(receipt.abi_projection_payload.owner, "rust");
     assert_eq!(receipt.budget_receipt.owner, "rust");
     assert_eq!(receipt.catalog_resolution_receipt.owner, "rust");
     assert_eq!(receipt.catalog_resolution_allowed_hook_count, 2);

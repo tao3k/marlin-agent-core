@@ -1,0 +1,23 @@
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
+//! First-party `Org` document loading adapter for workspace backends.
+
+mod contract;
+mod document;
+mod error;
+mod standard_contracts;
+mod validation;
+
+pub use document::{OrgDocument, OrgDocumentId, OrgDocumentLoader, OrgDocumentWorkspace};
+pub use error::{WorkspaceError, WorkspaceResult};
+pub use orgize::initialize_native_runtime as initialize_org_runtime;
+pub use standard_contracts::{
+    STANDARD_AGENT_LOOP_CONTRACT_DOCUMENT_ID, STANDARD_AGENT_LOOP_CONTRACT_ORG,
+    STANDARD_AGENT_MEMORY_CONTRACT_DOCUMENT_ID, STANDARD_AGENT_MEMORY_CONTRACT_ORG,
+    STANDARD_AGENT_PLAN_CONTRACT_DOCUMENT_ID, STANDARD_AGENT_PLAN_CONTRACT_ORG,
+    STANDARD_AGENT_TASK_CONTRACT_DOCUMENT_ID, STANDARD_AGENT_TASK_CONTRACT_ORG,
+    STANDARD_AGENT_TOPOLOGY_CONTRACT_DOCUMENT_ID, STANDARD_AGENT_TOPOLOGY_CONTRACT_ORG,
+    load_standard_agent_contract_workspace, standard_agent_contract_documents,
+};

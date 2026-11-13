@@ -1,6 +1,12 @@
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 //! Typed tool-process side effects for `LoopProgram` handoff projections.
 
 use std::io;
+
+use marlin_agent_runtime::RuntimeProcessContainmentRequirement;
 
 use crate::{
     LoopProgramToolProcessProgram, LoopProgramToolProcessProjectionReceipt,
@@ -100,6 +106,7 @@ pub struct LoopProgramToolProcessCommandTemplate {
     argv: Box<[String]>,
     program: LoopProgramToolProcessProgram,
     args: Box<[String]>,
+    containment: RuntimeProcessContainmentRequirement,
 }
 
 impl LoopProgramToolProcessCommandTemplate {
@@ -117,6 +124,7 @@ impl LoopProgramToolProcessCommandTemplate {
             argv: argv.into_iter().map(Into::into).collect(),
             program,
             args: Box::new([]),
+            containment: RuntimeProcessContainmentRequirement::default(),
         }
     }
 
@@ -126,6 +134,11 @@ impl LoopProgramToolProcessCommandTemplate {
         S: Into<String>,
     {
         self.args = args.into_iter().map(Into::into).collect();
+        self
+    }
+
+    pub fn with_containment(mut self, containment: RuntimeProcessContainmentRequirement) -> Self {
+        self.containment = containment;
         self
     }
 
@@ -140,5 +153,6 @@ impl LoopProgramToolProcessCommandTemplate {
     ) -> LoopProgramToolProcessSpawnRequest {
         LoopProgramToolProcessSpawnRequest::new(projection, self.program.clone())
             .with_args(self.args.clone())
+            .with_containment(self.containment)
     }
 }

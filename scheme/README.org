@@ -1,0 +1,174 @@
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+#
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
+#+TITLE: Marlin Scheme Package
+#+LANGUAGE: en
+#+FILETAGS: :marlin:scheme:
+
+=gerbil.pkg= declares AI Agentic Lab as the sole direct package dependency.
+Cargo selects the Scheme bridge used by Rust and the linked programs.
+Lab's =core= submodule fixes Yuanxu's exact revision. Lab supplies the POO contracts, and the Context and Session
+implementations. =init.ss= selects =context +causal=, =ui-components=, =ui=,
+=hooks=, =policy=, and =deck-runtime=. A package-backed Lab window explicitly selects the upstream
+Context Module; Marlin Context requires its qualified identity.
+=context/types.ss= reuses Lab's =AiAgenticContextScopeType= for the input and
+output of the admission function. The typed decoder constructs the Lab Scope
+prototype, and =context/objects.ss= publishes Lab's admission procedure.
+Lab owns the Scope invariants and the returned scope digest.
+The =+causal= Feature publishes solve and replay operations over Lab's
+Temporal Causality exchange. It returns the original ASCENT answer with its
+receipt and verifies replay against the caller's exact exchange.
+
+| Role | Responsibility |
+|------+----------------|
+| =context/= | Adapt Lab's Context library to Marlin's runtime boundary. |
+| =ui-components/= | Publish component prototypes, bounded constructors, Guide and the POO-composed command catalog. |
+| =ui-layout/= | Publish bounded presentation geometry for native hosts; the terminal clips to actual cells. |
+| =ui-themes/= | Publish the selected semantic color palette; Doom One is the initial theme. |
+| =ui/= | Compose the selected component scope into a workbench; own generic event dispatch and typed native projection. |
+| =hooks/= | Publish Scheme hook selection, composable conditions, and higher-order matchers. |
+| =policy/= | Project graph policy, topology and continuation with a declared dependency on Hooks. |
+| =deck-runtime/= | Publish Scheme-owned runtime metadata and route Context messages to identity-owned mailbox Actors. |
+| =policy/projection/deck/= | Project policy packs. |
+| =policy/projection/graph/= | Project routing, topology and continuation for the Rust graph runtime. |
+| =c-abi/= | Own the C entry points and their bindings. |
+| =t/= | Exercise policy composition, projections, and receipt fixtures. |
+| =bench/= | Own the optional SDK-linked mailbox qualification workload. |
+
+The working-copy integration test loads the selected policy through the
+Rust-owned VM. It verifies that Scheme selects Git Worktree when Worktrunk is
+unavailable, then checks the resulting creation and removal in a temporary
+Git repository. It resolves the top level from a nested directory and checks
+that a configured post-checkout hook does not run. It also exercises
+Worktrunk listing, creation and removal through the same Rust request and
+receipt path. Removal uses the path returned by the provider.
+Use the same package prefix and library paths as the preceding =gerbil build=.
+An older compiled INIT can be rejected when Yuanxu checks the current source
+declaration.
+[[file:../crates/marlin-gerbil-scheme/tests/unit/working_copy_policy.rs][Working-copy integration test]]
+
+For SysML requirement =MAR-PKG-R04=, the Rust Environment suite exercises
+Worktrunk against a temporary Git repository. It checks the reported path
+and branch against Git's registered worktrees, rejects the unused requested
+path, and removes the worktree using the path from the receipt.
+[[file:../crates/marlin-agent-environment/tests/unit/environment/working_copy/driver.rs::worktrunk_reports_the_registered_worktree_and_removes_it_by_path][Rust Worktrunk acceptance]]
+
+Each module publishes its scope through =interface.ss=. The contract, objects,
+and validation live in =types.ss=, =objects.ss=, and =config.ss= respectively.
+Yuanxu owns Module selection, Feature refinement and option contracts. Deck
+Runtime creates a Gerbil mailbox Actor on first use of a logical Context
+identity and reuses it across turns. Each completed message carries its ID,
+status and Scope digest, independently of unfinished Actors. The owner closes
+the service explicitly. Rust maps the version from the published Scheme
+=metadata= record. The Deck C ABI roots the selected runtime roles in the
+compiler graph; Yuanxu retains checked publication and Feature selection.
+
+Gerbil compiles the C link units through Gambit and executes policy in the
+Scheme VM. The Rust adapter owns typed requests, authorization, and receipts.
+=marlin-agent-context= owns the typed Rust request and prepares a bounded
+batch for the owner-local C ABI. =context/batch.ss= adapts the batch to the
+published Context operation, and =c-abi/context-admission.ss= exposes the
+entry through gerbil-scheme-rust's rooted-object ABI. The batch transfers
+shared fields once and returns an ordered array of Lab scope digests.
+The =actor-runtime= feature links the single-VM image and submits owned
+Context/Session requests. Wiring a live TUI conversation to its authoritative
+Session binding remains integration work.
+
+Install the package dependencies with =just scheme-deps=. CI activates the
+bridge's SDK action. On a dependency cache miss, CI uses =gerbil build= on
+Cargo's selected bridge to provide the tools used by Orgize's Builder, then
+runs =gerbil deps --install= in Marlin's Scheme package. Run
+=just scheme-package-gate= to initialize the VM and call
+=GerbilRuntime::build_package= and =GerbilRuntime::test_package=.
+The platform workflow builds the Yuanxu-selected Scheme package once per
+runner platform. Rust checks, tests, Scheme ABI checks and linked AOT jobs
+restore that run's package artifact. The Context test calls the Lab-backed
+Scheme Org interface through typed Rust values. The TUI job stages its linked
+program from the shared package. Rust workspace checks that still consume
+Orgize directly use the parser program built during Scheme dependency install.
+The cross-run Scheme cache stores the installed dependencies before compiling
+Marlin modules. Its key includes the runner architecture, SDK and host
+toolchain identity and dependency locks.
+Each Rust job caches its own Cargo build artifacts and runs its checks on
+the current checkout. App Server HTTP/2, Quint, formatting and REUSE can
+start independently of Scheme preparation.
+CI sets =GERBIL_BUILD_CORES= to each runner's available logical CPU count
+before activating the SDK. Dependency builds, the package Builder, and Rust's
+embedded package build receive the same worker budget within a job.
+
+The Linux linked workflow at =dda113e= built the declared dependencies and
+failed when the Gerbil package manager ran =gxtags github.com= with exit 70.
+CI now directs Gambit errors to stderr during =gerbil deps --install= so the
+job log records the underlying worker failure. The diagnostic at =7a9c594=
+reported that =gxtags= worker 3, counting from zero, terminated with SIGSEGV
+while scanning its source list. The Ubuntu core at =c947bb5= locates the
+fault in =___H_grammar_7e_0_23_= inside Orgize's compiled
+=org-parser/grammar~0.o1= during module initialization. The follow-up at
+=7f4d9ce= instead faulted in the compiled =org-contract/expectation-grammar~0.o1=
+initializer. The instruction reads through =r11=, which held =-52= in that
+process. The initial diagnostic recognized only the parser grammar and did
+not run its import control. The Ubuntu diagnostic now covers both modules.
+It compares fresh imports and single-file indexing against the compiled
+dependencies from the failed full index. The job preserves the original
+dependency install status, command, and worker count.
+[[https://github.com/tao3k/marlin-agent-core/actions/runs/43485082047/job/132091275495][Linux failure]] ·
+[[https://github.com/tao3k/marlin-agent-core/actions/runs/43499112275/job/132139918408][Parser grammar core backtrace]] ·
+[[https://github.com/tao3k/marlin-agent-core/actions/runs/43505127121/job/132160665630][Expectation grammar core backtrace]]
+
+The macOS linked workflow at =7c5b926= installed and cached the dependencies.
+Marlin's =gerbil build= then failed inside Yuanxu's
+=reader-evaluation-observers= while normalizing a publication wrapper path
+whose temporary directory had already been removed. The Yuanxu candidate
+registers the path aliases while the wrapper exists and carries the original
+source through evaluation. Marlin's paired Lab and Yuanxu build still needs
+qualification.
+[[https://github.com/tao3k/marlin-agent-core/actions/runs/43486146039/job/132095014399][macOS failure]] ·
+[[https://github.com/tao3k/gebril-yuanxu/blob/ab7eed0e910d5ef2bea10d3f11b2ee79906cd8b9/module-system/source/reader-evaluation.ss][Yuanxu reader ownership]]
+
+The pinned Lab revision installs source declarations without eager library
+compilation. The package window in Marlin INIT gives Yuanxu the upstream
+source ownership needed to derive the combined library closure. The Context
+Module publishes its bounded bridge projection through its typed contract.
+=build.ss= hands the =std-make-spec= exported by =init.ss= to the native
+=defbuild-script= through Yuanxu's admitted build consumer, with =init= as its
+explicit root. The compiler consumes Yuanxu's checked cross-package source
+view. The selected =c-abi=
+Module contributes its own adapter inputs through its Build role.
+The project direnv configuration and Justfile default =GERBIL_BUILD_CORES= to
+the number of online processors when it is unset; an existing value is preserved.
+The pinned SDK's embedded package-build path also preserves an explicitly set
+value, and defaults to the CPU count only when the variable is absent.
+The full Scheme test fixtures additionally import Lab constructors outside
+the production closure. Put the pinned Lab source checkout on =GERBIL_LOADPATH=
+for that test invocation; CI does this without adding test modules to the
+production library. If a direct =gxi= aggregate run reports a missing
+=temporal-causality/time/objects= module or attempts to interpret native
+=##c-declare= forms, compile that test dependency from the pinned Lab checkout
+into a separate test library and add the library to =GERBIL_LOADPATH=. Keep the
+production Module selection unchanged.
+The rooted UI C ABI fixture =t/ui-c-abi-driver.ss= is test-only and must be
+compiled into the test package library before running =t/ui-c-abi-test.ss=;
+it is not an additional production Module or INIT root. The ignored Rust test
+=gerbil_tests_the_ui_c_abi_in_process= runs that suite through the SDK. The
+fixture calls the three native exports from Scheme inside the Rust-owned VM; it
+does not establish a Rust-bound export or live TUI integration.
+With the package dependencies and load path already configured, compile it from
+the repository root with =gxc -d "$GERBIL_PATH/lib" scheme/t/ui-c-abi-driver.ss=.
+Run =just agent-policy-routing-abi-gate= for the linked C ABI selector.
+
+The recorded loop-case trace in =t/fixtures/loop-case-trace.v1= was exported
+from Marlin =5cdd0b1b= using Gerbil =v0.18.2-4-gadd92248=. Rust tests use it
+to exercise typed receipt validation, no-live model denial, and replay.
+
+The Brief-to-Draft acceptance runs the init-selected Scheme settings and
+planning exports from a Rust-owned VM. The linked test admits a signed
+workflow, checks its project grant and activation generation, executes
+the render and file creation through the graph kernel, closes the
+generation, and starts a fresh Rust verifier after removing the worktree.
+The verifier reads the signed TOML manifest, archived receipts and retained
+digest with the Scheme environment cleared.
+The linked AOT workflow builds the Cargo-selected Scheme bridge into a
+temporary prefix, puts it first on the staging load path, and checks the
+Context and workflow configuration modules in the staged program manifest.
+[[file:../crates/marlin-agent-core/tests/integration/brief_to_draft_vm.rs][Brief-to-Draft host test]]

@@ -1,4 +1,9 @@
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+#
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 [package]
+license.workspace = true
 name = "marlin-agent-kernel"
 edition.workspace = true
 version.workspace = true
@@ -12,14 +17,11 @@ marlin-agent-runtime.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 
-[build-dependencies]
-marlin-rust-project-harness-policy.workspace = true
-
 [dev-dependencies]
+asp-rust.workspace = true
 tokio.workspace = true
 tokio-stream.workspace = true
 tempfile.workspace = true
-marlin-rust-project-harness-policy.workspace = true
 
 [[bench]]
 name = "loop_program_execution_shape"

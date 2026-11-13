@@ -1,14 +1,19 @@
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 use marlin_agent_runtime::observability;
+use marlin_agent_runtime::process;
 
 use super::RecordingSubscriber;
 
 #[test]
 fn runtime_process_registry_drops_finished_processes_from_active_tracking() {
-    let mut registry = observability::RuntimeProcessRegistry::new();
+    let mut registry = process::RuntimeProcessRegistry::new();
     registry.track(
-        observability::RuntimeProcessObservation::new(
+        process::RuntimeProcessObservation::new(
             42,
-            observability::RuntimeProcessKind::Tool,
+            process::RuntimeProcessKind::Tool,
             "tool:apply",
         )
         .with_started_at_ms(1),
@@ -17,10 +22,7 @@ fn runtime_process_registry_drops_finished_processes_from_active_tracking() {
     let finished = registry.finish(42, 10).expect("process is tracked");
 
     assert_eq!(finished.pid, 42);
-    assert_eq!(
-        finished.status,
-        observability::RuntimeProcessStatus::Finished
-    );
+    assert_eq!(finished.status, process::RuntimeProcessStatus::Finished);
     assert_eq!(finished.last_observed_at_ms(), Some(10));
     assert!(registry.get(42).is_none());
     assert!(registry.active_processes().is_empty());
@@ -28,12 +30,12 @@ fn runtime_process_registry_drops_finished_processes_from_active_tracking() {
 
 #[test]
 fn runtime_process_registry_rejects_duplicate_active_handle_and_allows_reuse_after_exit() {
-    let mut registry = observability::RuntimeProcessRegistry::new();
-    let handle = observability::RuntimeProcessHandle::new("tool:apply");
+    let mut registry = process::RuntimeProcessRegistry::new();
+    let handle = process::RuntimeProcessHandle::new("tool:apply");
     registry.track(
-        observability::RuntimeProcessObservation::new(
+        process::RuntimeProcessObservation::new(
             42,
-            observability::RuntimeProcessKind::Tool,
+            process::RuntimeProcessKind::Tool,
             "tool:apply:first",
         )
         .with_handle(handle.clone())
@@ -42,9 +44,9 @@ fn runtime_process_registry_rejects_duplicate_active_handle_and_allows_reuse_aft
 
     let duplicate = registry
         .try_track(
-            observability::RuntimeProcessObservation::new(
+            process::RuntimeProcessObservation::new(
                 43,
-                observability::RuntimeProcessKind::Tool,
+                process::RuntimeProcessKind::Tool,
                 "tool:apply:second",
             )
             .with_handle(handle.clone())
@@ -54,7 +56,7 @@ fn runtime_process_registry_rejects_duplicate_active_handle_and_allows_reuse_aft
 
     assert_eq!(
         duplicate,
-        observability::RuntimeProcessRegistrationError::DuplicateActiveHandle {
+        process::RuntimeProcessRegistrationError::DuplicateActiveHandle {
             handle: handle.clone(),
             existing_pid: 42,
             new_pid: 43,
@@ -68,9 +70,9 @@ fn runtime_process_registry_rejects_duplicate_active_handle_and_allows_reuse_aft
     registry.finish(42, 10).expect("process is tracked");
     registry
         .try_track(
-            observability::RuntimeProcessObservation::new(
+            process::RuntimeProcessObservation::new(
                 44,
-                observability::RuntimeProcessKind::Tool,
+                process::RuntimeProcessKind::Tool,
                 "tool:apply:third",
             )
             .with_handle(handle.clone())
@@ -86,19 +88,19 @@ fn runtime_process_registry_rejects_duplicate_active_handle_and_allows_reuse_aft
 
 #[test]
 fn runtime_process_registry_reports_orphan_cleanup_candidates() {
-    let mut registry = observability::RuntimeProcessRegistry::new();
+    let mut registry = process::RuntimeProcessRegistry::new();
     registry.track(
-        observability::RuntimeProcessObservation::new(
+        process::RuntimeProcessObservation::new(
             100,
-            observability::RuntimeProcessKind::SubAgent,
+            process::RuntimeProcessKind::SubAgent,
             "sub-agent:review",
         )
         .with_started_at_ms(1),
     );
     registry.track(
-        observability::RuntimeProcessObservation::new(
+        process::RuntimeProcessObservation::new(
             101,
-            observability::RuntimeProcessKind::Tool,
+            process::RuntimeProcessKind::Tool,
             "tool:cache-writer",
         )
         .with_started_at_ms(2),
@@ -115,45 +117,45 @@ fn runtime_process_registry_reports_orphan_cleanup_candidates() {
     assert_eq!(candidates.len(), 2);
     assert_eq!(
         registry.get(100).map(|process| &process.status),
-        Some(&observability::RuntimeProcessStatus::Orphaned)
+        Some(&process::RuntimeProcessStatus::Orphaned)
     );
     assert_eq!(
         registry.get(101).map(|process| &process.status),
-        Some(&observability::RuntimeProcessStatus::CleanupRequested)
+        Some(&process::RuntimeProcessStatus::CleanupRequested)
     );
 }
 
 #[test]
 fn runtime_process_registry_reports_count_only_snapshot() {
-    let registry = observability::RuntimeProcessRegistryHandle::new();
+    let registry = process::RuntimeProcessRegistryHandle::new();
     registry.track(
-        observability::RuntimeProcessObservation::new(
+        process::RuntimeProcessObservation::new(
             200,
-            observability::RuntimeProcessKind::Tool,
+            process::RuntimeProcessKind::Tool,
             "tool:running",
         )
         .with_started_at_ms(1),
     );
     registry.track(
-        observability::RuntimeProcessObservation::new(
+        process::RuntimeProcessObservation::new(
             201,
-            observability::RuntimeProcessKind::SubAgent,
+            process::RuntimeProcessKind::SubAgent,
             "sub-agent:orphaned",
         )
         .with_started_at_ms(2),
     );
     registry.track(
-        observability::RuntimeProcessObservation::new(
+        process::RuntimeProcessObservation::new(
             202,
-            observability::RuntimeProcessKind::Provider,
+            process::RuntimeProcessKind::Provider,
             "provider:cleanup",
         )
         .with_started_at_ms(3),
     );
     registry.track(
-        observability::RuntimeProcessObservation::new(
+        process::RuntimeProcessObservation::new(
             203,
-            observability::RuntimeProcessKind::Hook,
+            process::RuntimeProcessKind::Hook,
             "hook:finished",
         )
         .with_started_at_ms(4),
@@ -187,11 +189,11 @@ fn runtime_process_registry_reports_count_only_snapshot() {
 fn runtime_process_registry_emits_structured_lifecycle_events() {
     let subscriber = RecordingSubscriber::new();
     let _guard = tracing::subscriber::set_default(subscriber.clone());
-    let mut registry = observability::RuntimeProcessRegistry::new();
+    let mut registry = process::RuntimeProcessRegistry::new();
     registry.track(
-        observability::RuntimeProcessObservation::new(
+        process::RuntimeProcessObservation::new(
             500,
-            observability::RuntimeProcessKind::Tool,
+            process::RuntimeProcessKind::Tool,
             "tool:apply",
         )
         .with_handle("tool:apply:500")

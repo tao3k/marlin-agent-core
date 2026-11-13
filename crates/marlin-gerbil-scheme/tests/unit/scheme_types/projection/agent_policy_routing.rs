@@ -1,16 +1,18 @@
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 use marlin_agent_graph::{AgentCoordinationEvidenceKind, AgentPolicyRoutingDecision};
 use marlin_gerbil_scheme::{
-    GERBIL_AGENT_POLICY_ROUTING_NATIVE_PROJECTION_ABI_ID,
-    GERBIL_AGENT_POLICY_ROUTING_NATIVE_SYMBOL, GERBIL_AGENT_POLICY_ROUTING_SCHEMA_ID,
-    GERBIL_AGENT_POLICY_ROUTING_TYPE_ID, GerbilSchemeNativeAbiId,
-    GerbilSchemeNativeProjectionRequest, GerbilSchemeNativeProjectionStatus,
-    GerbilSchemeNativeSymbol, GerbilSchemeSchemaId, GerbilSchemeTypeDecodeError,
-    GerbilSchemeTypeId, GerbilSchemeTypeRegistry, GerbilSchemeTypedValue, GerbilSchemeValue,
-    decode_gerbil_agent_policy_routing_native_projection,
+    GERBIL_AGENT_POLICY_ROUTING_ABI_PROJECTION_ABI_ID, GERBIL_AGENT_POLICY_ROUTING_ABI_SYMBOL,
+    GERBIL_AGENT_POLICY_ROUTING_SCHEMA_ID, GERBIL_AGENT_POLICY_ROUTING_TYPE_ID,
+    GerbilSchemeAbiProjectionRequest, GerbilSchemeAbiProjectionStatus, GerbilSchemeAbiSymbol,
+    GerbilSchemeCAbiId, GerbilSchemeSchemaId, GerbilSchemeTypeDecodeError, GerbilSchemeTypeId,
+    GerbilSchemeTypeRegistry, GerbilSchemeTypedValue, GerbilSchemeValue,
+    decode_gerbil_agent_policy_routing_abi_projection,
     decode_gerbil_agent_policy_routing_projection,
-    gerbil_agent_policy_routing_native_projection_request,
-    gerbil_agent_policy_routing_type_manifest, project_gerbil_agent_policy_routing_native_receipt,
-    project_gerbil_agent_policy_routing_receipt,
+    gerbil_agent_policy_routing_abi_projection_request, gerbil_agent_policy_routing_type_manifest,
+    project_gerbil_agent_policy_routing_abi_receipt, project_gerbil_agent_policy_routing_receipt,
 };
 
 #[test]
@@ -41,16 +43,16 @@ fn gerbil_agent_policy_routing_projection_projects_typed_policy_receipt() {
 }
 
 #[test]
-fn gerbil_agent_policy_routing_native_projection_validates_abi_before_receipt_projection() {
+fn gerbil_agent_policy_routing_abi_projection_validates_abi_before_receipt_projection() {
     let registry = policy_routing_registry();
     let envelope = policy_routing_envelope(policy_routing_payload());
 
     let (native_receipt, projection) =
-        decode_gerbil_agent_policy_routing_native_projection(&registry, &envelope)
+        decode_gerbil_agent_policy_routing_abi_projection(&registry, &envelope)
             .expect("native AgentGraph policy routing projection decodes");
     assert_eq!(
         native_receipt.status,
-        GerbilSchemeNativeProjectionStatus::Projected
+        GerbilSchemeAbiProjectionStatus::Projected
     );
     assert_eq!(native_receipt.abi_id, policy_routing_abi_id());
     assert_eq!(native_receipt.symbol, policy_routing_symbol());
@@ -62,7 +64,7 @@ fn gerbil_agent_policy_routing_native_projection_validates_abi_before_receipt_pr
     );
 
     let (native_receipt, policy_receipt) =
-        project_gerbil_agent_policy_routing_native_receipt(&registry, &envelope)
+        project_gerbil_agent_policy_routing_abi_receipt(&registry, &envelope)
             .expect("native AgentGraph policy routing projection becomes a typed Rust receipt");
     assert_eq!(native_receipt.symbol, policy_routing_symbol());
     assert_eq!(
@@ -105,12 +107,12 @@ fn gerbil_agent_policy_routing_projection_rejects_wrong_envelope_schema_before_p
 }
 
 #[test]
-fn gerbil_agent_policy_routing_native_projection_request_declares_typed_contract() {
-    let request = gerbil_agent_policy_routing_native_projection_request();
+fn gerbil_agent_policy_routing_abi_projection_request_declares_typed_contract() {
+    let request = gerbil_agent_policy_routing_abi_projection_request();
 
     assert_eq!(
         request,
-        GerbilSchemeNativeProjectionRequest::new(
+        GerbilSchemeAbiProjectionRequest::new(
             policy_routing_abi_id(),
             1,
             policy_routing_symbol(),
@@ -162,12 +164,12 @@ fn policy_routing_schema_id() -> GerbilSchemeSchemaId {
     GerbilSchemeSchemaId::new(GERBIL_AGENT_POLICY_ROUTING_SCHEMA_ID)
 }
 
-fn policy_routing_abi_id() -> GerbilSchemeNativeAbiId {
-    GerbilSchemeNativeAbiId::new(GERBIL_AGENT_POLICY_ROUTING_NATIVE_PROJECTION_ABI_ID)
+fn policy_routing_abi_id() -> GerbilSchemeCAbiId {
+    GerbilSchemeCAbiId::new(GERBIL_AGENT_POLICY_ROUTING_ABI_PROJECTION_ABI_ID)
 }
 
-fn policy_routing_symbol() -> GerbilSchemeNativeSymbol {
-    GerbilSchemeNativeSymbol::new(GERBIL_AGENT_POLICY_ROUTING_NATIVE_SYMBOL)
+fn policy_routing_symbol() -> GerbilSchemeAbiSymbol {
+    GerbilSchemeAbiSymbol::new(GERBIL_AGENT_POLICY_ROUTING_ABI_SYMBOL)
 }
 
 fn assert_rust_projection_error(error: GerbilSchemeTypeDecodeError, needle: &str) {

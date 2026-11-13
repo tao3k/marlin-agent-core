@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 //! Agent protocol contracts for graph loops, scenarios, and transcripts.
 
 mod agent_flow;
@@ -6,14 +10,20 @@ mod event;
 mod graph;
 mod hook;
 mod loop_policy_ir;
+mod model;
 mod model_gateway;
-mod model_route;
+mod process;
 mod project_runtime;
 mod runtime_environment;
 mod runtime_state_home;
 mod scenario;
 mod sub_agent;
 mod trace;
+
+pub use process::{
+    BoundedProcessExecutor, BoundedProcessOutput, BoundedProcessRequest, ProcessEnvironmentPolicy,
+    ProcessExecutionError, ProcessMemorySample, ProcessMemorySampler,
+};
 
 pub use agent_flow::{
     AgentFlowDerivedSession, AgentFlowIntent, AgentFlowIntentId, AgentFlowMemoryIntent,
@@ -31,30 +41,30 @@ pub use graph::{
     GERBIL_LOOP_GRAPH_CONTINUATION_SCHEMA_ID, GERBIL_LOOP_GRAPH_POLICY_COMPILATION_SCHEMA_ID,
     GRAPH_POLICY_PROPOSAL_SCHEMA_ID, GerbilLoopGraphContinuationAction,
     GerbilLoopGraphContinuationCompileError, GerbilLoopGraphContinuationRequest,
-    GerbilLoopGraphPolicyCompilationRequest, GraphId, GraphLoopContinuationAction,
-    GraphLoopContinuationDecision, GraphLoopContinuationReceipt, GraphLoopEvent,
-    GraphLoopEventEnvelope, GraphLoopEventId, GraphLoopEvidencePolicy, GraphLoopExecutionBudget,
-    GraphLoopExecutionRequest, GraphLoopExecutionResult, GraphLoopExecutionStatus,
-    GraphLoopFailureKind, GraphLoopGovernancePolicy, GraphLoopGovernedContextNamespace,
-    GraphLoopGovernedSessionKind, GraphLoopInputDrainPolicy, GraphLoopInputLane,
-    GraphLoopInputQueueReceipt, GraphLoopIterationId, GraphLoopIterationReport,
+    GerbilLoopGraphPolicyCompilationRequest, GraphAbiSymbol, GraphCAbiId,
+    GraphCAbiReadinessReceipt, GraphCAbiReadinessStatus, GraphCAbiRequirement, GraphId,
+    GraphLoopContinuationAction, GraphLoopContinuationDecision, GraphLoopContinuationReceipt,
+    GraphLoopEvent, GraphLoopEventEnvelope, GraphLoopEventId, GraphLoopEvidencePolicy,
+    GraphLoopExecutionBudget, GraphLoopExecutionRequest, GraphLoopExecutionResult,
+    GraphLoopExecutionStatus, GraphLoopFailureKind, GraphLoopGovernancePolicy,
+    GraphLoopGovernedContextNamespace, GraphLoopGovernedSessionKind, GraphLoopInputDrainPolicy,
+    GraphLoopInputLane, GraphLoopInputQueueReceipt, GraphLoopIterationId, GraphLoopIterationReport,
     GraphLoopMessageRole, GraphLoopNextAction, GraphLoopQueuedInput, GraphLoopRunRequest,
     GraphLoopSandboxBackend, GraphLoopSandboxPolicy, GraphLoopSessionPolicy, GraphLoopStatePolicy,
     GraphLoopStopPolicy, GraphLoopStopReason, GraphLoopStopReceipt, GraphLoopStrategy,
     GraphLoopStrategyId, GraphLoopStrategyRuntime, GraphLoopStrategyVersion,
-    GraphLoopVerifierPolicy, GraphNativeAbiId, GraphNativeAbiReadinessReceipt,
-    GraphNativeAbiReadinessStatus, GraphNativeAbiRequirement, GraphNativeSymbol,
-    GraphNodeExecutionId, GraphNodeExecutionReceipt, GraphNodeExecutionStatus, GraphNodeInvocation,
-    GraphPolicyDigest, GraphPolicyProposal, GraphPolicyProposalReceipt, GraphPolicyProposalStatus,
-    GraphPolicyProposalValidationReport, GraphToolBatchDecision, GraphToolBatchExecutionMode,
-    GraphToolBatchExecutionReceipt, GraphToolCallId, GraphToolCallReceipt, GraphToolCallStatus,
-    HumanDecision, HumanDecisionReceipt, HumanGateId, HumanGateReceipt, HumanReviewKind,
-    HumanReviewerId, LoopContinuationCapability, LoopContinuationPolicy, LoopEdgeSpec,
-    LoopEvidenceCapturePolicy, LoopFailurePolicy, LoopGraph, LoopHumanGatePolicy, LoopMemoryPolicy,
-    LoopModelRoutePolicy, LoopNodeSpec, LoopPolicyProfile, LoopPolicyProfileId, LoopQueuePolicy,
-    LoopSelfEvolutionPolicy, LoopToolBatchPolicy, NodeId, RunId, RuntimePlanSnapshot,
-    compile_gerbil_loop_graph, compile_gerbil_loop_graph_continuation,
-    compile_gerbil_loop_graph_policy, validate_graph_policy_proposal,
+    GraphLoopVerifierPolicy, GraphNodeExecutionId, GraphNodeExecutionReceipt,
+    GraphNodeExecutionStatus, GraphNodeInvocation, GraphPolicyDigest, GraphPolicyProposal,
+    GraphPolicyProposalReceipt, GraphPolicyProposalStatus, GraphPolicyProposalValidationReport,
+    GraphToolBatchDecision, GraphToolBatchExecutionMode, GraphToolBatchExecutionReceipt,
+    GraphToolCallId, GraphToolCallReceipt, GraphToolCallStatus, HumanDecision,
+    HumanDecisionReceipt, HumanGateId, HumanGateReceipt, HumanReviewKind, HumanReviewerId,
+    LoopContinuationCapability, LoopContinuationPolicy, LoopEdgeSpec, LoopEvidenceCapturePolicy,
+    LoopFailurePolicy, LoopGraph, LoopHumanGatePolicy, LoopMemoryPolicy, LoopModelRoutePolicy,
+    LoopNodeSpec, LoopPolicyProfile, LoopPolicyProfileId, LoopQueuePolicy, LoopSelfEvolutionPolicy,
+    LoopToolBatchPolicy, NodeId, RunId, RuntimePlanSnapshot, compile_gerbil_loop_graph,
+    compile_gerbil_loop_graph_continuation, compile_gerbil_loop_graph_policy,
+    validate_graph_policy_proposal,
 };
 pub use hook::{
     HookAgentClass, HookAgentLineageNode, HookAgentScope, HookConfigurationReloadReceipt,
@@ -87,22 +97,18 @@ pub use loop_policy_ir::{
     RESOLVED_LOOP_POLICY_PACK_SCHEMA_VERSION, ResolvedLoopPolicyPack, ResourceClass, SlotHotness,
     SlotMergeAlgebra, SlotMergeReceipt, SlotMergeStatus, SlotProvenance, SourceLocation,
 };
-pub use model_gateway::{
-    ModelGateway, ModelGatewayCompletionChoice, ModelGatewayCompletionOptions,
-    ModelGatewayCompletionResponse, ModelGatewayError, ModelGatewayFuture, ModelGatewayMessage,
-    ModelGatewayMessageRole, ModelGatewayRequest, ModelGatewayResult, ModelGatewayTransport,
-    assistant_gateway_message, system_gateway_message, user_gateway_message,
+pub use model::{
+    LiteLlmModelId, ModelAlias, ModelEndpoint, ModelEndpointContractError, ModelName,
+    ModelProviderId,
 };
-pub use model_route::{
-    LiteLlmModelId, MODEL_ROUTE_ADMISSION_SCHEMA_ID, ModelAlias, ModelCommandKind,
-    ModelCommandMatcher, ModelContextForkMode, ModelEndpoint, ModelEndpointContractError,
-    ModelName, ModelProviderId, ModelRouteAdmissionMode, ModelRouteAdmissionRequest,
-    ModelRouteAdmissionResponse, ModelRouteAgentScope, ModelRouteArtifactProjection,
-    ModelRouteArtifactRef, ModelRouteDecision, ModelRouteEvidenceProfile, ModelRouteIntent,
-    ModelRouteModality, ModelRoutePrecisionTier, ModelRoutePrivacyTier, ModelRouteReceipt,
-    ModelRouteRequest, ModelRouteRule, ModelRouteRuleId, ModelRouteSessionId, ModelRouteSourceKind,
-    ModelRouteTaskKind, ModelSessionLifecycle, ModelSessionPersistenceKey, ModelSessionPolicy,
-    ModelSessionPoolId,
+pub use model_gateway::{
+    ModelContinuation, ModelContinuationKind, ModelDestinationBinding, ModelGateway,
+    ModelGatewayCompletionChoice, ModelGatewayCompletionOptions, ModelGatewayCompletionResponse,
+    ModelGatewayError, ModelGatewayFuture, ModelGatewayMessage, ModelGatewayMessageRole,
+    ModelGatewayRequest, ModelGatewayResult, ModelGatewayTransport, ModelStreamInterruption,
+    ModelToolCall, ModelToolCallId, ModelToolChoice, ModelToolDefinition, ModelToolName,
+    assistant_gateway_message, developer_gateway_message, system_gateway_message,
+    tool_gateway_message, user_gateway_message,
 };
 pub use project_runtime::{
     AgentContentCompressionState, AgentContentNode, AgentContentNodeInput, AgentContentRole,

@@ -1,8 +1,12 @@
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+#
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 #+title: 40.30 RFC: Org Contract Template Protocol
 
 * 40.30 RFC: Org Contract Template Protocol
 
-This RFC extends [[file:40.10-org-native-agent-work-protocol.org][40.10 Org-native Agent Work Protocol]] with parser-owned Org
+This RFC extends [[file:40.10-org-agent-work-protocol.org][40.10 Org-native Agent Work Protocol]] with parser-owned Org
 contracts as template and validation protocol input.
 
 ** Motivation
@@ -96,12 +100,11 @@ without owning template execution. Both surfaces carry the typed
 =OrgContractRegistry= and full validation report so rendered text is never the
 only contract fact channel.
 
-=marlin-gerbil-scheme= may pass =GerbilWorkspaceContractFacts= in
-=GerbilCompileRequest= so command-backed Gerbil control planes can select
-contract templates or emit patch intents from typed facts, including validation
-skip reasons.
-Workspace patch-intent compile requests carry default empty contract facts and
-can be overridden with real parser-owned facts.
+The Context workspace workflow consumes =GerbilWorkspaceContractFacts= when
+validating patch intents, including typed validation skip reasons. The former
+command-backed compile request is not evidence of Scheme VM execution; a
+native typed projection is still needed to make these facts available to the
+Scheme policy plane.
 
 =marlin-agent-core= re-exports =org_model= and =org_workspace= so callers can
 use contract registries from the facade without depending on parser internals.

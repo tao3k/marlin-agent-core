@@ -1,3 +1,9 @@
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
+#[path = "unit/runtime/plugin_lifecycle.rs"]
+mod plugin_lifecycle;
 #[path = "unit/runtime.rs"]
 mod runtime;
 #[path = "unit/runtime/agent_flow_loop.rs"]
@@ -14,8 +20,10 @@ mod runtime_events;
 mod runtime_graph_loop_run_registry;
 #[path = "unit/runtime/graph_loop_runtime.rs"]
 mod runtime_graph_loop_runtime;
-#[path = "unit/runtime/model_route/mod.rs"]
-mod runtime_model_route;
+#[path = "unit/runtime/model_gateway/mod.rs"]
+mod runtime_model_gateway;
+#[path = "unit/runtime/model_tool_catalog.rs"]
+mod runtime_model_tool_catalog;
 #[path = "unit/runtime/observability.rs"]
 mod runtime_observability;
 #[path = "unit/runtime/process/mod.rs"]
@@ -30,5 +38,3 @@ mod runtime_spawn_config;
 mod runtime_task_tracker;
 #[path = "unit/runtime/working_copy.rs"]
 mod runtime_working_copy;
-
-marlin_rust_project_harness_policy::scenario_performance_tests!();

@@ -1,0 +1,51 @@
+;;; SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+;;;
+;;; SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
+;;; -*- Gerbil -*-
+;;; Boundary: Test owns the Gerbil AgentGraph policy routing projection contract.
+
+(import :clan/poo/object
+        "../policy/projection/graph/routing.ss"
+        :std/test)
+
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
+(def routing-test-policy (.o name: "gerbil.scope.agent-topology"))
+
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
+(def routing-test-evidence
+  (list (make-marlin-agent-policy-routing-evidence
+         "gerbil_policy_receipt"
+         "gerbil.policy.receipt.1")))
+
+;;; Boundary: Definition keeps a parser-owned edit boundary for policy repair.
+;; MarlinResult <- MarlinInput
+(def (check-agent-policy-routing-abi-projection-contract)
+  (let (projection
+        (marlin-agent-policy-routing-project-poo-policy
+         routing-test-policy
+         "agent-graph.policy"
+         "planner"
+         '("planner-to-custom")
+         routing-test-evidence))
+    (check marlin-agent-policy-routing-abi-projection-abi-id
+           => "marlin.agent.policy-routing.native-projection")
+    (check marlin-agent-policy-routing-abi-projection-abi-version => 1)
+    (check marlin-agent-policy-routing-projection-symbol
+           => "marlin_agent_policy_routing_select_edges")
+    (check (.get projection type_id)
+           => marlin-agent-policy-routing-projection-type-id)
+    (check (.get projection schema_id)
+           => marlin-agent-policy-routing-projection-schema-id)
+    (check (.get projection graph_id) => "agent-graph.policy")
+    (check (.get projection policy_scope) => "gerbil.scope.agent-topology")
+    (check (.get projection root_node) => "planner")
+    (check (.get projection routing_decision) => "select_edges")
+    (check (.get projection candidate_edges) => '("planner-to-custom"))
+    (let (evidence (car (.get projection routing_evidence)))
+      (check (.get evidence evidence_kind) => "gerbil_policy_receipt")
+      (check (.get evidence evidence_id) => "gerbil.policy.receipt.1"))))
+
+(check-agent-policy-routing-abi-projection-contract)

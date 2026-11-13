@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 //! Tokio graph-loop kernel and node executor adapters.
 
 mod adapters;
@@ -14,11 +18,12 @@ mod loop_program_side_effects;
 pub use adapters::{ProviderNodeAdapter, SubAgentNodeAdapter, ToolNodeAdapter};
 pub use controller::{
     GraphLoopContinuationInput, GraphLoopContinuationPlanner, GraphLoopController,
-    TerminalGraphLoopContinuationPlanner, TokioGraphLoopController,
+    GraphLoopHumanReviewError, GraphLoopHumanReviewHandle, TerminalGraphLoopContinuationPlanner,
+    TokioGraphLoopController,
 };
 pub use driver::{
     GraphLoopKernel, GraphNodeExecutor, GraphPolicyProposalCompilation, TokioGraphLoopKernel,
-    compile_graph_policy_proposal, compile_graph_policy_proposal_with_native_abi_readiness,
+    compile_graph_policy_proposal_with_c_abi_readiness, compile_static_graph_policy_proposal,
 };
 pub use loop_machine::{
     GenericLoopMachine, GenericLoopMachineError, GenericLoopMachineReceipt, GenericLoopMachineStep,

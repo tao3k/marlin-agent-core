@@ -1,0 +1,50 @@
+;;; SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+;;;
+;;; SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
+;;; Module-owned timer observations use Gambit's own timed mailbox wait.
+;;; Temporal policy deadlines and durable Agenda remain owned by AI Agentic Lab.
+(import (only-in :clan/poo/object .o)
+        (only-in :agentic-ai-lab/modules/temporal-causality/runtime/monotonic-clock monotonic-seconds))
+(export open-deck-timers)
+(def (open-deck-timers module notify)
+  (def timers (make-hash-table-eqv))
+  (def owner (current-thread))
+  (def closed? #f)
+  (def (assert-open)
+    (unless (and (eq? owner (current-thread)) (not closed?))
+      (error "Deck timer owner is closed or foreign")))
+  (def (arm-timer! id delay-us)
+    (assert-open)
+    (unless (and (integer? id) (positive? id) (not (hash-key? timers id))
+                 (integer? delay-us) (positive? delay-us))
+      (error "invalid Module timer request"))
+    (def due (+ (monotonic-seconds) (/ delay-us 1000000.)))
+    (def expired (gensym 'timer-expired))
+    (hash-put! timers id
+      (spawn (lambda ()
+        (let wait ()
+          (def left (- due (monotonic-seconds)))
+          (cond
+            ((<= left 0)
+             (notify 1 module id
+               (inexact->exact (ceiling (* due 1000000.)))
+               (inexact->exact (ceiling (* (monotonic-seconds) 1000000.)))))
+            ((eq? (thread-receive left expired) expired) (wait))
+            (else (void)))))))
+    #t)
+  (def (collect-timer! id)
+    (assert-open)
+    (def timer (or (hash-get timers id) (error "unknown Module timer")))
+    (thread-join! timer)
+    (hash-remove! timers id)
+    #t)
+  (def (close-timers!)
+    (assert-open)
+    (def count (hash-length timers))
+    (for-each (lambda (timer) (thread-send timer 'stop)) (hash-values timers))
+    (for-each thread-join! (hash-values timers))
+    (hash-clear! timers)
+    (set! closed? #t)
+    count)
+  (.o arm: arm-timer! collected: collect-timer! close: close-timers!))

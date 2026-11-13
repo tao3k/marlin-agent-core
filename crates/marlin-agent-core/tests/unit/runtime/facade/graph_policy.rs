@@ -1,16 +1,20 @@
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 use marlin_agent_core::{
     AGENT_HARNESS_GRAPH_POLICY_PROPOSAL_VISIBILITY_SUBJECT_PREFIX, AgentHarnessEvidenceKind,
     AgentTraceSpanRecord, GERBIL_LOOP_GRAPH_POLICY_COMPILATION_SCHEMA_ID,
     GRAPH_POLICY_PROPOSAL_SPAN_NAME, GerbilLoopGraphPolicyCompilationRequest,
-    GraphLoopExecutionBudget, GraphLoopExecutionStatus, GraphLoopKernel, GraphLoopStrategy,
-    GraphLoopStrategyId, GraphNativeAbiReadinessReceipt, GraphNodeExecutionReceipt,
-    GraphNodeExecutionStatus, GraphNodeExecutor, GraphNodeInvocation, GraphPolicyProposal,
-    GraphPolicyProposalStatus, LoopGraph, LoopNodeSpec, RuntimeContext, RuntimeFuture,
-    TokioAgentRuntime, TokioGraphLoopKernel,
-    agent_harness_graph_policy_proposal_visibility_evidence, compile_gerbil_loop_graph_policy,
-    compile_graph_policy_proposal_with_native_abi_readiness,
+    GraphCAbiReadinessReceipt, GraphLoopExecutionBudget, GraphLoopExecutionStatus, GraphLoopKernel,
+    GraphLoopStrategy, GraphLoopStrategyId, GraphNodeExecutionReceipt, GraphNodeExecutionStatus,
+    GraphNodeExecutor, GraphNodeInvocation, GraphPolicyProposal, GraphPolicyProposalStatus,
+    LoopGraph, LoopNodeSpec, RuntimeContext, RuntimeFuture, TokioAgentRuntime,
+    TokioGraphLoopKernel, agent_harness_graph_policy_proposal_visibility_evidence,
+    compile_graph_policy_proposal_with_c_abi_readiness,
 };
-use marlin_agent_test_support::graph_native_abi_requirement_fixture;
+use marlin_agent_protocol::compile_gerbil_loop_graph_policy;
+use marlin_agent_test_support::graph_c_abi_requirement_fixture;
 use std::collections::BTreeMap;
 
 struct CoreFacadeGerbilExecutor;
@@ -30,7 +34,7 @@ impl GraphNodeExecutor for CoreFacadeGerbilExecutor {
 #[test]
 fn core_facade_compiles_policy_proposal_before_kernel_execution() {
     let proposal = GraphPolicyProposal::new(
-        GraphLoopStrategy::native_scheme("scheme-loop-ranker", "v1"),
+        GraphLoopStrategy::scheme_c_abi("scheme-loop-ranker", "v1"),
         LoopGraph {
             graph_id: "graph-1".to_owned(),
             nodes: vec![LoopNodeSpec {
@@ -43,14 +47,11 @@ fn core_facade_compiles_policy_proposal_before_kernel_execution() {
         "sha256:input",
         "sha256:output",
     )
-    .with_native_abi_requirement(graph_native_abi_requirement_fixture());
+    .with_c_abi_requirement(graph_c_abi_requirement_fixture());
 
-    let readiness = ready_graph_native_abi_receipt();
-    let compilation = compile_graph_policy_proposal_with_native_abi_readiness(
-        "run-proposal",
-        &proposal,
-        &readiness,
-    );
+    let readiness = ready_graph_c_abi_receipt();
+    let compilation =
+        compile_graph_policy_proposal_with_c_abi_readiness("run-proposal", &proposal, &readiness);
 
     assert!(compilation.is_accepted());
     assert_eq!(
@@ -97,7 +98,7 @@ fn core_facade_compiles_policy_proposal_before_kernel_execution() {
 fn core_facade_exposes_gerbil_graph_policy_and_budget_contracts() {
     let proposal = compile_gerbil_loop_graph_policy(
         GerbilLoopGraphPolicyCompilationRequest::new(
-            GraphLoopStrategy::native_gerbil("core-gerbil-loop-ranker", "v1"),
+            GraphLoopStrategy::gerbil_c_abi("core-gerbil-loop-ranker", "v1"),
             marlin_agent_core::gerbil_ir::CompiledLoopGraph {
                 graph_id: "core-gerbil-graph".to_owned(),
                 nodes: vec![marlin_agent_core::gerbil_ir::LoopNodeSpec {
@@ -110,12 +111,12 @@ fn core_facade_exposes_gerbil_graph_policy_and_budget_contracts() {
             "sha256:core-gerbil-input",
             "sha256:core-gerbil-output",
         )
-        .with_native_abi_requirement(graph_native_abi_requirement_fixture())
+        .with_c_abi_requirement(graph_c_abi_requirement_fixture())
         .with_diagnostic(GERBIL_LOOP_GRAPH_POLICY_COMPILATION_SCHEMA_ID),
     )
     .expect("core Gerbil loop graph should compile");
-    let readiness = ready_graph_native_abi_receipt();
-    let compilation = compile_graph_policy_proposal_with_native_abi_readiness(
+    let readiness = ready_graph_c_abi_receipt();
+    let compilation = compile_graph_policy_proposal_with_c_abi_readiness(
         "core-gerbil-run",
         &proposal,
         &readiness,
@@ -143,7 +144,7 @@ fn core_facade_exposes_gerbil_graph_policy_and_budget_contracts() {
 async fn core_facade_executes_gerbil_loop_graph_policy_through_kernel_with_node_receipts() {
     let proposal = compile_gerbil_loop_graph_policy(
         GerbilLoopGraphPolicyCompilationRequest::new(
-            GraphLoopStrategy::native_gerbil("core-gerbil-loop-executable", "v1"),
+            GraphLoopStrategy::gerbil_c_abi("core-gerbil-loop-executable", "v1"),
             marlin_agent_core::gerbil_ir::CompiledLoopGraph {
                 graph_id: "core-gerbil-executable-graph".to_owned(),
                 nodes: vec![
@@ -163,11 +164,11 @@ async fn core_facade_executes_gerbil_loop_graph_policy_through_kernel_with_node_
             "sha256:core-gerbil-executable-input",
             "sha256:core-gerbil-executable-output",
         )
-        .with_native_abi_requirement(graph_native_abi_requirement_fixture()),
+        .with_c_abi_requirement(graph_c_abi_requirement_fixture()),
     )
     .expect("core Gerbil executable loop graph should compile");
-    let readiness = ready_graph_native_abi_receipt();
-    let request = compile_graph_policy_proposal_with_native_abi_readiness(
+    let readiness = ready_graph_c_abi_receipt();
+    let request = compile_graph_policy_proposal_with_c_abi_readiness(
         "core-gerbil-executable-run",
         &proposal,
         &readiness,
@@ -211,10 +212,10 @@ async fn core_facade_executes_gerbil_loop_graph_policy_through_kernel_with_node_
 }
 
 #[test]
-fn core_facade_rejects_gerbil_loop_graph_policy_when_native_abi_readiness_fails_before_execution() {
+fn core_facade_rejects_gerbil_loop_graph_policy_when_c_abi_readiness_fails_before_execution() {
     let proposal = compile_gerbil_loop_graph_policy(
         GerbilLoopGraphPolicyCompilationRequest::new(
-            GraphLoopStrategy::native_gerbil("core-gerbil-loop-unready", "v1"),
+            GraphLoopStrategy::gerbil_c_abi("core-gerbil-loop-unready", "v1"),
             marlin_agent_core::gerbil_ir::CompiledLoopGraph {
                 graph_id: "core-gerbil-unready-graph".to_owned(),
                 nodes: vec![marlin_agent_core::gerbil_ir::LoopNodeSpec {
@@ -227,18 +228,15 @@ fn core_facade_rejects_gerbil_loop_graph_policy_when_native_abi_readiness_fails_
             "sha256:core-gerbil-unready-input",
             "sha256:core-gerbil-unready-output",
         )
-        .with_native_abi_requirement(graph_native_abi_requirement_fixture()),
+        .with_c_abi_requirement(graph_c_abi_requirement_fixture()),
     )
     .expect("core Gerbil unready loop graph should compile before ABI readiness gate");
-    let readiness = GraphNativeAbiReadinessReceipt::evaluate(
-        proposal
-            .native_abi
-            .as_ref()
-            .expect("native ABI requirement"),
+    let readiness = GraphCAbiReadinessReceipt::evaluate(
+        proposal.c_abi.as_ref().expect("native ABI requirement"),
         ["marlin_graph_loop_rank"],
     );
 
-    let compilation = compile_graph_policy_proposal_with_native_abi_readiness(
+    let compilation = compile_graph_policy_proposal_with_c_abi_readiness(
         "core-gerbil-unready-run",
         &proposal,
         &readiness,
@@ -254,11 +252,11 @@ fn core_facade_rejects_gerbil_loop_graph_policy_when_native_abi_readiness_fails_
         compilation
             .receipt
             .diagnostics
-            .contains(&"graph_policy_proposal.native_abi_readiness_not_ready".to_owned())
+            .contains(&"graph_policy_proposal.c_abi_readiness_not_ready".to_owned())
     );
     assert!(
         compilation.receipt.diagnostics.contains(
-            &"graph_policy_proposal.native_abi_readiness_missing_symbols:marlin_graph_loop_select"
+            &"graph_policy_proposal.c_abi_readiness_missing_symbols:marlin_graph_loop_select"
                 .to_owned()
         )
     );
@@ -327,12 +325,12 @@ fn core_facade_rejects_invalid_gerbil_loop_graph_shapes_before_execution() {
     for (strategy_id, graph, expected_error) in cases {
         let error = compile_gerbil_loop_graph_policy(
             GerbilLoopGraphPolicyCompilationRequest::new(
-                GraphLoopStrategy::native_gerbil(strategy_id, "v1"),
+                GraphLoopStrategy::gerbil_c_abi(strategy_id, "v1"),
                 graph,
                 "sha256:core-gerbil-invalid-input",
                 "sha256:core-gerbil-invalid-output",
             )
-            .with_native_abi_requirement(graph_native_abi_requirement_fixture())
+            .with_c_abi_requirement(graph_c_abi_requirement_fixture())
             .with_diagnostic(GERBIL_LOOP_GRAPH_POLICY_COMPILATION_SCHEMA_ID),
         )
         .expect_err("invalid Gerbil loop graph should fail before proposal execution");
@@ -341,9 +339,9 @@ fn core_facade_rejects_invalid_gerbil_loop_graph_shapes_before_execution() {
     }
 }
 
-fn ready_graph_native_abi_receipt() -> GraphNativeAbiReadinessReceipt {
-    GraphNativeAbiReadinessReceipt::evaluate(
-        &graph_native_abi_requirement_fixture(),
+fn ready_graph_c_abi_receipt() -> GraphCAbiReadinessReceipt {
+    GraphCAbiReadinessReceipt::evaluate(
+        &graph_c_abi_requirement_fixture(),
         ["marlin_graph_loop_rank", "marlin_graph_loop_select"],
     )
 }

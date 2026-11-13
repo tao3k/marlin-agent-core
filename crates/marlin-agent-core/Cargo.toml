@@ -1,11 +1,23 @@
+# SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+#
+# SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 [package]
+license.workspace = true
 name = "marlin-agent-core"
 edition.workspace = true
 version.workspace = true
 authors.workspace = true
 repository.workspace = true
 
+[features]
+brief-to-draft-vm-test = ["dep:gerbil-scheme-aot-build", "dep:gerbil-scheme-sys"]
+app-server = ["dep:marlin-agent-app-server", "marlin-agent-app-server/grpc"]
+actor-runtime = ["dep:marlin-deck-runtime", "marlin-deck-runtime/actor-runtime"]
+
 [dependencies]
+gerbil-scheme-sys = { workspace = true, optional = true }
+marlin-agent-app-server = { workspace = true, optional = true }
 marlin-gerbil-scheme.workspace = true
 marlin-agent-environment.workspace = true
 marlin-agent-graph.workspace = true
@@ -13,29 +25,33 @@ marlin-agent-harness.workspace = true
 marlin-agent-hooks.workspace = true
 marlin-agent-kernel.workspace = true
 marlin-agent-protocol.workspace = true
-marlin-agent-route.workspace = true
+marlin-agent-context = { workspace = true, features = ["org-memory", "org-workflow"] }
+marlin-deck-runtime = { workspace = true, optional = true }
 marlin-agent-runtime.workspace = true
 marlin-agent-sessions.workspace = true
 marlin-gerbil-ir.workspace = true
-marlin-org-model.workspace = true
-marlin-org-memory.workspace = true
-marlin-org-patch.workspace = true
-marlin-org-store.workspace = true
-marlin-org-workflow.workspace = true
-marlin-org-workspace.workspace = true
-marlin-workspace-protocol.workspace = true
+marlin-workspace-status.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+sha2.workspace = true
 tokio.workspace = true
 toml.workspace = true
 
 [build-dependencies]
-marlin-rust-project-harness-policy.workspace = true
+gerbil-scheme-aot-build = { workspace = true, optional = true }
 
 [dev-dependencies]
+gerbil-scheme.workspace = true
 marlin-agent-test-support.workspace = true
+ring = "0.17.14"
 tempfile.workspace = true
-tokio.workspace = true
 tokio-stream.workspace = true
-toml.workspace = true
-marlin-rust-project-harness-policy.workspace = true
+
+[[test]]
+name = "brief_to_draft_offline"
+path = "tests/integration/brief_to_draft_offline.rs"
+
+[[test]]
+name = "brief_to_draft_vm"
+path = "tests/integration/brief_to_draft_vm.rs"
+required-features = ["brief-to-draft-vm-test"]

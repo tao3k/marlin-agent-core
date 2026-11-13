@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: 2026 tao3k team and Contributors
+//
+// SPDX-License-Identifier: Apache-2.0 AND LGPL-2.1-or-later
+
 //! Runtime handoff execution receipts, routers, and typed handlers.
 
 use std::sync::{
@@ -11,8 +15,7 @@ use marlin_agent_protocol::{
     LoopProgramEventKind, LoopProgramId,
 };
 use marlin_agent_runtime::{
-    AgentFlowLoopStepRequest, observability::RuntimeCommandObservation,
-    project_agent_flow_loop_step,
+    AgentFlowLoopStepRequest, process::RuntimeCommandObservation, project_agent_flow_loop_step,
 };
 
 use crate::{
