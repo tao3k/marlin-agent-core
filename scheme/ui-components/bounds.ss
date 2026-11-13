@@ -10,7 +10,8 @@
 
 (def marlin-ui-max-contributions 8)
 (def marlin-ui-max-extensions 16)
-(def marlin-ui-max-content-items 16)
+;;; Help derives rows from the finite global and mode-scoped keymap.
+(def marlin-ui-max-content-items 64)
 (def max-label-length 256)
 
 (def (marlin-ui-required-object value slots)

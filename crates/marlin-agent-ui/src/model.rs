@@ -15,7 +15,8 @@ pub(crate) const MAX_HOST_STATUS: usize = 8;
 pub(crate) const MODELINE_SLOTS: usize = 15;
 pub(crate) const MAX_STATUS: usize = 23;
 pub(crate) const MAX_EXTENSIONS: usize = 16;
-pub(crate) const MAX_CONTENT_ITEMS: usize = 16;
+// Admit the bounded Help projection after global and modal keymaps compose.
+pub(crate) const MAX_CONTENT_ITEMS: usize = 64;
 pub(crate) const MAX_METHOD_BUNDLES: usize = 16;
 pub(crate) const MAX_COMMANDS: usize = 256;
 pub(crate) const MAX_TEXT_CHARS: usize = 256;
