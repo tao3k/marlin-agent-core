@@ -1843,6 +1843,14 @@ command migration does not add Scheme work to ordinary keypress or repaint paths
 Scheme tests own the selected command catalog and completion order. Rust tests
 own descriptor admission, argument parsing, and observable host effects; native
 fixtures must not copy the full Scheme catalog or assert its exact ordering.
+This ownership extends to the rest of the UI: Scheme tests own profile labels,
+buffer declarations and declarative frame choices; Rust property tests own
+terminal cells, clipping, hit regions and bounded native state. A linked test
+checks that a real Scheme projection crosses the ABI and reaches native layout;
+it must not repeat the Scheme presentation assertions. PTY tests cover only
+behavior that depends on the terminal and actual input sequence. A new test
+must identify which boundary it protects before adding another assertion of
+an existing rule.
 Terminal bytes, cell width, cursor placement, viewport caching and Ratatui
 painting remain native; normal repaint must not call the VM.
 

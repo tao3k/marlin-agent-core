@@ -49,26 +49,13 @@ fn prompt_clips_at_graphemes_and_positions_cursor() {
 }
 
 #[test]
-fn choice_uses_declared_order_and_fallback() {
+fn choice_intrinsic_rows_follow_the_selected_branch() {
     let text = |value: &str| {
         UiElement::Text(vec![UiSpan {
             text: value.into(),
             tone: UiTone::Normal,
         }])
     };
-    let tree = UiElement::Choice {
-        cases: vec![
-            (UiComponentId::new("notice").unwrap(), text("notice")),
-            (UiComponentId::new("messages").unwrap(), text("messages")),
-        ],
-        fallback: Box::new(text("default")),
-    };
-    assert_eq!(resolve_choice(&tree, &|_| true), &text("notice"));
-    assert_eq!(
-        resolve_choice(&tree, &|id| id.as_str() == "messages"),
-        &text("messages")
-    );
-    assert_eq!(resolve_choice(&tree, &|_| false), &text("default"));
     let nested = UiElement::Rows(vec![UiElement::Choice {
         cases: vec![(UiComponentId::new("tall").unwrap(), text("one\ntwo"))],
         fallback: Box::new(text("one")),

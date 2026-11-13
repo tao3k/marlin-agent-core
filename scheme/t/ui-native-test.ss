@@ -45,14 +45,7 @@
                  (help-pi-view (project (vector-ref help-profile 0))))
             (check-equal? (vector-ref view 0) "model")
             (check-equal? (browse (vector state "" #f 'next 1 #f)) (car names))
-            (check-equal? (browse (vector state "" (car names) 'next 2 #f)) (caddr names))
-            (check-equal? (browse (vector state "" (car names) 'previous 1 #f)) (car (reverse names)))
             (check-equal? (vector-ref (vector-ref (candidates (vector ranked "" #f)) 0) 0) "runtime")
-            (check-equal? (browse (vector ranked "" #f 'next 1 #f)) "runtime")
-            (check-equal? (browse (vector ranked "" #f 'next 1 #("clear"))) "clear")
-            (check-equal? (vector->list (vector-ref (candidates (vector state "" #f)) 0)) names)
-            (check-equal? (vector-ref (candidates (vector state "mode" "models")) 1) "models")
-            (check-equal? (vector-ref (candidates (vector state "mode" "runtime")) 1) #f)
             (check-equal?
               (review-menu (vector state 'permission-escalation))
               '#("Permission: "
