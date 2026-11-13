@@ -110,23 +110,22 @@ pub fn render_content(
     field_tone: UiTone,
     scroll: usize,
 ) {
-    let clean = |value: &str, limit| {
+    let clean = |value: &str| {
         value
             .chars()
-            .take(limit)
             .map(|ch| if ch.is_control() { '�' } else { ch })
             .collect::<String>()
     };
     let lines: Vec<Line<'static>> = content
         .iter()
         .map(|item| match item {
-            UiContent::Text(text) => Line::from(clean(text, 256)),
+            UiContent::Text(text) => Line::from(clean(text)),
             UiContent::Field { label, value } => Line::from(vec![
                 Span::styled(
-                    format!("{}: ", clean(label, 256)),
+                    format!("{}: ", clean(label)),
                     Style::default().fg(tone_color(field_tone, theme)),
                 ),
-                Span::raw(clean(value, 256)),
+                Span::raw(clean(value)),
             ]),
         })
         .collect();

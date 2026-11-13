@@ -26,7 +26,9 @@
                                   "Esc / Ctrl-C  Cancel · Ctrl-Q  Quit")))
                    "help")
              (processes "*Processes* managed Runtime processes"
-                        ("*Processes*" ()) #f)))
+                        ("*Processes*" ()) #f)
+             (models "*Models* configured model routes" ("*Models*" ()) #f)
+             (sessions "*Sessions* recorded conversations" ("*Sessions*" ()) #f)))
 (def marlin-ui-buffer-catalog (seal-object! UiBufferCatalog.))
 
 (def (marlin-ui-buffer-identities)

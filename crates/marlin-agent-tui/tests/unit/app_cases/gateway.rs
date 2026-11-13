@@ -228,12 +228,19 @@ fn model_selection_retains_draft_and_failed_selection_keeps_previous_route() {
     app.composer.insert_text("models");
     app.submit(&catalog, &runtime, &tx);
     assert_eq!(app.composer.text(), "draft");
+    assert!(app.transcript.is_empty());
+    assert_eq!(
+        app.ui_request,
+        Some(marlin_agent_ui::UiEvent::SelectBuffer(
+            marlin_agent_ui::UiBufferId::new("models").unwrap()
+        ))
+    );
     assert!(
-        app.transcript
-            .last()
+        app.dynamic_buffer_content
+            .get(&marlin_agent_ui::UiBufferId::new("models").unwrap())
             .unwrap()
-            .1
-            .contains("credential unavailable")
+            .iter()
+            .any(|item| matches!(item, marlin_agent_ui::UiContent::Text(text) if text.contains("credential unavailable")))
     );
     app.toggle_command();
     app.composer.insert_text("model alt");

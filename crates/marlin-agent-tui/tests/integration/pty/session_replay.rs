@@ -149,7 +149,7 @@ fn separate_sessions_preserve_history_and_route_authority() {
                     .any(|line| line.contains("Current session retained"))
         },
     );
-    terminal.send(b"\x1b");
+    terminal.send(b"\x07");
     terminal.wait_for(Duration::from_secs(20), "session B restored", |output| {
         screen_lines(output)[29].contains("Message: Enter send")
     });
@@ -157,17 +157,35 @@ fn separate_sessions_preserve_history_and_route_authority() {
     wait_raw(&mut terminal, b"answer-probe");
     thread::sleep(Duration::from_millis(500));
     terminal.send(b"\x0fsessions\r");
-    wait_raw(&mut terminal, b"session:A");
+    terminal.wait_for(Duration::from_secs(20), "Sessions Buffer", |output| {
+        let rows = screen_lines(output);
+        rows[29].contains("*Sessions*") && rows[..28].iter().any(|line| line.contains("session:A"))
+    });
     terminal.send(b"\x0fsession \"session:A\"\r");
     wait_raw(&mut terminal, b"answer-one");
-    terminal.send(b"third\x0fcontext\r");
-    wait_raw(&mut terminal, b"accounting:");
+    terminal.send(b"third\x0fcontext-budget\r");
+    terminal.wait_for(Duration::from_secs(20), "context budget notice", |output| {
+        screen_lines(output)[29].contains("Context budget")
+    });
+    terminal.send(b"\x18bmessages\r");
+    terminal.wait_for(
+        Duration::from_secs(20),
+        "context budget details",
+        |output| {
+            let rows = screen_lines(output);
+            rows[29].contains("*Messages*")
+                && rows[..28]
+                    .iter()
+                    .any(|line| line.contains("Next request accounting"))
+        },
+    );
+    terminal.send(b"\x07");
     assert_eq!(
         requests.lock().unwrap().len(),
         4,
         "context command dispatched a request"
     );
-    terminal.send(b"\x1bp\x1bn\r");
+    terminal.send(b"\r");
     wait_raw(&mut terminal, b"answer-three");
     thread::sleep(Duration::from_millis(500));
     terminal.send(b"blocked\x0finspect \"session:A\"\r");
@@ -213,7 +231,7 @@ fn separate_sessions_preserve_history_and_route_authority() {
                     .any(|line| line.contains("draft retained"))
         },
     );
-    terminal.send(b"\x1b");
+    terminal.send(b"\x07");
     terminal.wait_for(Duration::from_secs(20), "conversation restored", |output| {
         screen_lines(output)[29].contains("Message: Enter send")
     });

@@ -487,6 +487,13 @@ fn run(
                 .history_search
                 .as_mut()
                 .is_some_and(|search| search.step(&app.history));
+            if app.ui_request.is_some()
+                || app.command_history_request.is_some()
+                || app.transient_request.is_some()
+            {
+                apply_ui_request(&mut app, &mut ui);
+                schedule.mark_dirty();
+            }
             if processed > 0
                 || tool_review_finished
                 || tool_review_opened

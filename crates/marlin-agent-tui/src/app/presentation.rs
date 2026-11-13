@@ -171,6 +171,17 @@ impl App {
         Ok(true)
     }
 
+    /// Publish bounded owner content, then ask the Scheme frame to select it.
+    pub(crate) fn open_dynamic_buffer(
+        &mut self,
+        id: UiBufferId,
+        content: Vec<UiContent>,
+    ) -> Result<(), &'static str> {
+        self.replace_dynamic_buffer_content(id.clone(), content)?;
+        self.ui_request = Some(UiEvent::SelectBuffer(id));
+        Ok(())
+    }
+
     pub(crate) fn publish_message(&mut self, event: MessageEvent<'_>) {
         let summary: String = event
             .summary

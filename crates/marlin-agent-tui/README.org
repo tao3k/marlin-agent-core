@@ -98,7 +98,8 @@ protect the session database accordingly. No reconciliation tool exists yet.
 
 Optional =[models.<alias>]= entries configure additional explicit model
 endpoints; see =example.toml=. =M-x models= lists the configured identities and
-=M-x model <alias>= selects one while idle. The top-level model is =default=.
+=M-x model <alias>= selects one while idle. The list opens in the Scheme-owned
+=*Models*= Buffer without adding a conversation turn. The top-level model is =default=.
 Selection survives session switches but resets to =default= on restart. The
 next request sends retained conversation to the selected endpoint. A stored
 OpenAI Responses continuation is restricted to its original logical model route;
@@ -228,7 +229,8 @@ selected result that exceeds the limit is still rejected.
 
 With a persistent session configured, =M-x sessions= loads up to 20 session IDs
 in the background and =M-x sessions next= loads the next page. The current ID is
-marked. Use either form when no model turn is active. IDs longer than 512
+marked in the =*Sessions*= Buffer; listing does not add a conversation turn.
+Use either form when no model turn is active. IDs longer than 512
 bytes are omitted from the terminal list; use the command-line listing to see
 them. Listing does not prove that a session is safe to resume.
 

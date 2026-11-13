@@ -360,11 +360,15 @@ impl App {
 
     pub(super) fn show_models(&mut self) {
         let Some(models) = &self.models else {
-            self.transcript
-                .push(("Models".into(), "Model catalog is unavailable.".into()));
+            self.publish_message(MessageEvent {
+                source: MessageSource::Ui,
+                severity: MessageSeverity::Warning,
+                summary: "Models unavailable",
+                detail: "Model catalog is unavailable.",
+            });
             return;
         };
-        let mut text = String::new();
+        let mut content = Vec::new();
         for (alias, endpoint, available) in models.entries() {
             let marker = if endpoint == &self.endpoint { "*" } else { " " };
             let status = if available {
@@ -372,15 +376,24 @@ impl App {
             } else {
                 "credential unavailable"
             };
-            text.push_str(&format!(
-                "{marker} {}: {}/{} ({status})\n",
+            content.push(UiContent::Text(format!(
+                "{marker} {}: {}/{} ({status})",
                 alias.as_str(),
                 endpoint.provider.as_str(),
                 endpoint.model.as_str()
-            ));
+            )));
         }
-        text.push_str("Use M-x model <alias> to select. Credentials are read at startup.");
-        self.transcript.push(("Models".into(), text));
+        if let Err(reason) = self.open_dynamic_buffer(
+            UiBufferId::new("models").expect("static buffer ID"),
+            content,
+        ) {
+            self.publish_message(MessageEvent {
+                source: MessageSource::Ui,
+                severity: MessageSeverity::Error,
+                summary: "Model list unavailable",
+                detail: reason,
+            });
+        }
     }
 
     pub(super) fn select_model(&mut self, alias: &str) {
@@ -392,6 +405,9 @@ impl App {
         match result {
             Ok(endpoint) => {
                 self.endpoint = endpoint;
+                self.ui_request = Some(UiEvent::SelectBuffer(
+                    UiBufferId::new("conversation").expect("static buffer ID"),
+                ));
                 // A successful observation belongs to the selected route, not
                 // to every configured model in the catalog.
                 self.gateway_observation = GatewayObservation::Unchecked;
@@ -524,7 +540,21 @@ impl App {
                 output
             }
         };
-        self.transcript.push(("Sessions".into(), text));
+        let content = text
+            .lines()
+            .map(|line| UiContent::Text(line.to_owned()))
+            .collect();
+        if let Err(reason) = self.open_dynamic_buffer(
+            UiBufferId::new("sessions").expect("static buffer ID"),
+            content,
+        ) {
+            self.publish_message(MessageEvent {
+                source: MessageSource::Ui,
+                severity: MessageSeverity::Error,
+                summary: "Session list unavailable",
+                detail: reason,
+            });
+        }
         true
     }
 
@@ -661,8 +691,9 @@ impl App {
                 self.unverified_thinking = false;
                 self.scroll_up = 0;
                 self.current_session = Some(opened.id.clone());
-                self.transcript
-                    .push(("Session".into(), opened.id.as_str().to_owned()));
+                self.ui_request = Some(UiEvent::SelectBuffer(
+                    UiBufferId::new("conversation").expect("static buffer ID"),
+                ));
                 match opened.view {
                     OpenedView::Full(turns) => {
                         self.history_position = None;

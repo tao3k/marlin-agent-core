@@ -14,6 +14,27 @@ use proptest::{prop_assert, prop_assert_eq, proptest};
 use ratatui::{Terminal, backend::TestBackend, layout::Rect, style::Color};
 
 #[test]
+fn native_content_renderer_keeps_text_beyond_scheme_projection_limit() {
+    let theme = UiTheme::default();
+    let text = format!("{}END", "x".repeat(256));
+    let mut terminal = Terminal::new(TestBackend::new(260, 1)).unwrap();
+    terminal
+        .draw(|frame| {
+            super::ui_elements::render_content(
+                frame,
+                frame.area(),
+                &[marlin_agent_ui::UiContent::Text(text)],
+                &theme,
+                UiTone::Normal,
+                0,
+            );
+        })
+        .unwrap();
+    assert_eq!(terminal.backend().buffer()[(256, 0)].symbol(), "E");
+    assert_eq!(terminal.backend().buffer()[(258, 0)].symbol(), "D");
+}
+
+#[test]
 fn prompt_clips_at_graphemes_and_positions_cursor() {
     let tree = UiElement::Template {
         background: marlin_agent_ui::UiBackground::None,
