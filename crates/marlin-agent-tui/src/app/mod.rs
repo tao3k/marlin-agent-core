@@ -29,7 +29,7 @@ use super::{
     model_catalog::ModelCatalog,
     output_limit::{MAX_COMPLETION_HEAP_BYTES, MAX_RESPONSE_BYTES, OutputLimit},
     prompt_history::{HistorySearch, PromptHistory},
-    render::{draw, frame_regions, mouse_over_minibuffer},
+    render::{draw_with_snapshot, frame_snapshot, mouse_over_minibuffer},
     replay::{ReplayOutcome, ReplayTurn, load_session},
     session_browser::{OpenedView, SessionBrowser, SessionPageRequestError},
     signals::SignalMonitor,

@@ -4,7 +4,7 @@
 
 use super::{
     UiHost, UiKeyAction, admit_command_choice, admit_terminal_view, admit_transition,
-    complete_command, test_frame, test_layout,
+    complete_command, labels_only_successor, test_frame, test_layout,
 };
 use gerbil_scheme::GerbilRuntime;
 use marlin_agent_ui::{
@@ -237,6 +237,35 @@ fn view(focus: &str) -> UiWorkbench {
         keymap: Vec::new(),
         transients: Vec::new(),
     }
+}
+
+#[test]
+fn label_refresh_cannot_replace_layout_or_theme() {
+    let previous = view("composer");
+    let mut next = previous.clone();
+    next.model_label = "other".into();
+    next.session_label = "new-session".into();
+    assert!(labels_only_successor(
+        &previous,
+        &next,
+        "other",
+        "new-session"
+    ));
+    next.layout.max_chatbox_rows += 1;
+    assert!(!labels_only_successor(
+        &previous,
+        &next,
+        "other",
+        "new-session"
+    ));
+    next.layout = previous.layout.clone();
+    next.theme.canvas.red ^= 1;
+    assert!(!labels_only_successor(
+        &previous,
+        &next,
+        "other",
+        "new-session"
+    ));
 }
 
 #[test]

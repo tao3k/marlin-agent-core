@@ -48,7 +48,14 @@ package MarlinDeclarativeUi {
                    retains its native deep-scroll cache. A list publishes hit
                    identities only for rows actually painted in the current
                    frame; the host validates the identity against current
-                   candidates before dispatching Scheme navigation. Generic tree group
+                   candidates before dispatching Scheme navigation. Layout and
+                   paint share a frame fact and metric snapshot; terminal size
+                   changes or label refreshes rebuild it before painting, and
+                   wheel hits use the last painted regions. The derived editor
+                   collapse observation is evaluated with a bounded three-pass
+                   limit; an oscillating authored layout retains the final
+                   coherent input snapshot rather than claiming convergence.
+                   Generic tree group
                    coordinates remain terminal-sized.
                    Components have stable domain identity and explicit state;
                    generic functions and method bundles permit specialization

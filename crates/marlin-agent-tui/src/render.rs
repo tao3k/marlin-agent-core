@@ -112,6 +112,64 @@ fn main_view_fact(
     }
 }
 
+fn activity_fact(app: &App) -> &'static str {
+    match app.modeline_activity() {
+        ModelineActivity::Idle => match app.gateway_observation {
+            GatewayObservation::Unchecked => "",
+            GatewayObservation::Online => "activity-online",
+            GatewayObservation::Offline => "activity-offline",
+            GatewayObservation::Unknown => "activity-unknown",
+        },
+        ModelineActivity::Runtime => "activity-runtime",
+        ModelineActivity::Workspace => "activity-workspace",
+        ModelineActivity::Recovery => "activity-recovery",
+        ModelineActivity::ContinuationUnavailable => "activity-continuation",
+        ModelineActivity::History => "activity-history",
+        ModelineActivity::Working => "activity-working",
+        ModelineActivity::ReadingWorkspace => "activity-reading",
+    }
+}
+
+fn frame_fact(
+    app: &App,
+    ui: &UiWorkbench,
+    buffer: &BufferView,
+    previewing: bool,
+    collapsed: bool,
+    extra_count: usize,
+    name: &str,
+) -> bool {
+    match name {
+        "searching" => app
+            .history_search
+            .as_ref()
+            .is_some_and(|search| search.is_searching()),
+        "search-match" => app
+            .history_search
+            .as_ref()
+            .is_some_and(|search| search.preview().is_some()),
+        "search-no-match" => app.history_search.is_some(),
+        "notice" => app.minibuffer_notice.is_some(),
+        "static-buffer" => main_view_fact(app, ui, buffer, previewing, "static"),
+        "editor-collapsed" => collapsed,
+        "extra-one" => extra_count >= 1,
+        "extra-two" => extra_count >= 2,
+        "quit-armed" => app.quit_armed,
+        "draft-limit" => app.composer.limit_reached(),
+        "commands-focus" => ui.focus.as_str() == "commands",
+        "transcript-focus" => ui.focus.as_str() == "transcript",
+        "extension-focus" => ui.focus.as_str() != "composer",
+        "normal-mode" => {
+            app.command_draft.is_none()
+                && app.tool_review_prompt.is_none()
+                && app.key_mode == marlin_agent_ui::UiKeyMode::Normal
+        }
+        "has-turns" => app.history.len() >= 2,
+        name if name.starts_with("activity-") => name == activity_fact(app),
+        name => main_view_fact(app, ui, buffer, previewing, name),
+    }
+}
+
 pub(crate) struct EditorMeasurements<'a> {
     fixed: u16,
     measured: std::cell::Cell<Option<u16>>,
@@ -192,29 +250,103 @@ pub(crate) fn editor_measurements<'a>(
     }
 }
 
+#[cfg(test)]
 pub(crate) fn frame_regions(
     app: &App,
     ui: &UiWorkbench,
     area: Rect,
 ) -> Vec<super::ui_elements::HitRegion> {
-    use super::ui_elements::{RegionExtents, layout_regions_with_facts};
+    frame_snapshot(app, ui, area).regions
+}
+
+pub(crate) struct FrameSnapshot {
+    pub(crate) regions: Vec<super::ui_elements::HitRegion>,
+    pub(crate) area: Rect,
+    collapsed: bool,
+    extras: Vec<String>,
+}
+
+pub(crate) fn frame_snapshot(app: &App, ui: &UiWorkbench, area: Rect) -> FrameSnapshot {
+    use super::ui_elements::{Extent, RegionExtents, layout_regions_with_facts};
     let preview = app.preview_buffer();
     let buffer = preview.as_ref().unwrap_or(&app.buffer_view);
-    let facts = |id: &marlin_agent_ui::UiComponentId| {
-        main_view_fact(app, ui, buffer, preview.is_some(), id.as_str())
+    let suggestions = if app.history_search.is_none()
+        && app.command_draft.is_some()
+        && app.tool_review_prompt.is_none()
+    {
+        app.command_candidates.as_slice()
+    } else {
+        &[]
     };
-    let metrics = FrameMeasurements::new(app, ui, area, &facts);
-    let raw_extent = |id: &marlin_agent_ui::UiComponentId| metrics.extent(id);
-    let extents = RegionExtents::new(&ui.layout.frame_tree, &raw_extent, &facts);
-    let mut result = Vec::with_capacity(7);
-    layout_regions_with_facts(
-        &ui.layout.frame_tree,
-        area,
-        &|id| extents.extent(id),
-        &mut result,
-        &facts,
-    );
-    result
+    let prefix = app.command_menu.as_ref().map(|menu| menu.prefix.as_str());
+    let name_width = suggestions
+        .iter()
+        .map(|name| UnicodeWidthStr::width(menu_display_name(name.as_str(), prefix)))
+        .max()
+        .unwrap_or(0);
+    let mut collapsed = !editor_fact(app, &ui.layout, "editor-fixed")
+        && !editor_fact(app, &ui.layout, "editor-expanded");
+    // Derived editor state normally stabilizes immediately. If an authored
+    // layout oscillates, cap evaluation and retain one coherent fact snapshot.
+    for attempt in 0..3 {
+        let extras: Vec<_> = ui
+            .regions
+            .iter()
+            .filter_map(|region| match region {
+                UiRegion::Status(items) if collapsed => Some(items),
+                _ => None,
+            })
+            .flatten()
+            .filter(|item| !item.id.as_str().starts_with("modeline/"))
+            .take(2)
+            .map(|item| display_value(&item.label, 16))
+            .collect();
+        let facts = |id: &marlin_agent_ui::UiComponentId| {
+            frame_fact(
+                app,
+                ui,
+                buffer,
+                preview.is_some(),
+                collapsed,
+                extras.len(),
+                id.as_str(),
+            )
+        };
+        let metrics = FrameMeasurements::new(app, ui, area, &facts);
+        let raw_extent = |id: &marlin_agent_ui::UiComponentId| match id.as_str() {
+            "extra-one-width" | "extra-two-width" => {
+                let index = usize::from(id.as_str() == "extra-two-width");
+                Extent::Cells(extras.get(index).map_or(0, |text| {
+                    u16::try_from(UnicodeWidthStr::width(text.as_str())).unwrap_or(u16::MAX)
+                }))
+            }
+            "candidate-name-width" => Extent::Cells(u16::try_from(name_width).unwrap_or(u16::MAX)),
+            _ => metrics.extent(id),
+        };
+        let extents = RegionExtents::new(&ui.layout.frame_tree, &raw_extent, &facts);
+        let mut regions = Vec::with_capacity(7);
+        layout_regions_with_facts(
+            &ui.layout.frame_tree,
+            area,
+            &|id| extents.extent(id),
+            &mut regions,
+            &facts,
+        );
+        let actual = regions
+            .iter()
+            .find(|region| region.id.as_str() == "editor")
+            .is_none_or(|region| region.area.height == 0);
+        if actual == collapsed || attempt == 2 {
+            return FrameSnapshot {
+                regions,
+                area,
+                collapsed,
+                extras,
+            };
+        }
+        collapsed = actual;
+    }
+    unreachable!("bounded frame snapshot loop")
 }
 
 struct FrameMeasurements<'a> {
@@ -287,12 +419,25 @@ pub(crate) fn mouse_over_minibuffer(
         })
 }
 
+#[cfg(test)]
 pub(crate) fn draw(
     frame: &mut ratatui::Frame<'_>,
     app: &App,
     ui: &UiWorkbench,
     cache: &mut TranscriptViewportCache,
     anchor: &mut ScrollAnchor,
+) -> usize {
+    let snapshot = frame_snapshot(app, ui, frame.area());
+    draw_with_snapshot(frame, app, ui, cache, anchor, &snapshot)
+}
+
+pub(crate) fn draw_with_snapshot(
+    frame: &mut ratatui::Frame<'_>,
+    app: &App,
+    ui: &UiWorkbench,
+    cache: &mut TranscriptViewportCache,
+    anchor: &mut ScrollAnchor,
+    snapshot: &FrameSnapshot,
 ) -> usize {
     use super::ui_elements::{Extent, RegionExtents, UiRenderInputs};
 
@@ -328,10 +473,6 @@ pub(crate) fn draw(
             _ => None,
         })
         .collect();
-    let status_items = ui.regions.iter().find_map(|region| match region {
-        UiRegion::Status(items) if !items.is_empty() => Some(items),
-        _ => None,
-    });
     let suggestions = if app.history_search.is_none()
         && app.command_draft.is_some()
         && app.tool_review_prompt.is_none()
@@ -340,7 +481,7 @@ pub(crate) fn draw(
     } else {
         &[]
     };
-    let regions = frame_regions(app, ui, area);
+    let regions = &snapshot.regions;
     let part = |name: &str| {
         regions
             .iter()
@@ -427,21 +568,6 @@ pub(crate) fn draw(
         .map(|name| UnicodeWidthStr::width(menu_display_name(name.as_str(), menu_prefix)))
         .max()
         .unwrap_or(0);
-    let activity = match app.modeline_activity() {
-        ModelineActivity::Idle => match app.gateway_observation {
-            GatewayObservation::Unchecked => "",
-            GatewayObservation::Online => "activity-online",
-            GatewayObservation::Offline => "activity-offline",
-            GatewayObservation::Unknown => "activity-unknown",
-        },
-        ModelineActivity::Runtime => "activity-runtime",
-        ModelineActivity::Workspace => "activity-workspace",
-        ModelineActivity::Recovery => "activity-recovery",
-        ModelineActivity::ContinuationUnavailable => "activity-continuation",
-        ModelineActivity::History => "activity-history",
-        ModelineActivity::Working => "activity-working",
-        ModelineActivity::ReadingWorkspace => "activity-reading",
-    };
     let model = header_value(&ui.model_label);
     let session = header_value(&ui.session_label);
     let turns = (app.history.len() / 2).to_string();
@@ -449,47 +575,26 @@ pub(crate) fn draw(
     let panel_title = static_content
         .or(focused_content)
         .map_or_else(String::new, |(title, _)| header_value(title));
-    let mut extras = status_items
-        .into_iter()
-        .flatten()
-        .filter(|_| editor_area.height == 0)
-        .filter(|item| !item.id.as_str().starts_with("modeline/"))
-        .take(2)
-        .map(|item| display_value(&item.label, 16));
-    let extra_one = extras.next();
-    let extra_two = extras.next();
-    let facts = |id: &marlin_agent_ui::UiComponentId| match id.as_str() {
-        "searching" => app
-            .history_search
-            .as_ref()
-            .is_some_and(|search| search.is_searching()),
-        "search-match" => app
-            .history_search
-            .as_ref()
-            .is_some_and(|search| search.preview().is_some()),
-        "search-no-match" => app.history_search.is_some(),
-        "notice" => app.minibuffer_notice.is_some(),
-        "static-buffer" => static_name.is_some(),
-        "editor-collapsed" => editor_area.height == 0,
-        "extra-one" => extra_one.is_some(),
-        "extra-two" => extra_two.is_some(),
-        "quit-armed" => app.quit_armed,
-        "draft-limit" => app.composer.limit_reached(),
-        "commands-focus" => ui.focus.as_str() == "commands",
-        "transcript-focus" => ui.focus.as_str() == "transcript",
-        "extension-focus" => ui.focus.as_str() != "composer",
-        "normal-mode" => !command_active && app.key_mode == marlin_agent_ui::UiKeyMode::Normal,
-        "has-turns" => app.history.len() >= 2,
-        name if name == activity && !activity.is_empty() => true,
-        name => main_view_fact(app, ui, buffer, preview.is_some(), name),
+    let extra_one = snapshot.extras.first();
+    let extra_two = snapshot.extras.get(1);
+    let facts = |id: &marlin_agent_ui::UiComponentId| {
+        frame_fact(
+            app,
+            ui,
+            buffer,
+            preview.is_some(),
+            snapshot.collapsed,
+            snapshot.extras.len(),
+            id.as_str(),
+        )
     };
     let measurements = FrameMeasurements::new(app, ui, area, &facts);
     let raw_extent = |id: &marlin_agent_ui::UiComponentId| match id.as_str() {
         "extra-one-width" | "extra-two-width" => {
             let value = if id.as_str() == "extra-one-width" {
-                extra_one.as_deref()
+                extra_one.map(String::as_str)
             } else {
-                extra_two.as_deref()
+                extra_two.map(String::as_str)
             };
             Extent::Cells(value.map_or(0, |text| {
                 u16::try_from(UnicodeWidthStr::width(text)).unwrap_or(u16::MAX)
@@ -509,8 +614,8 @@ pub(crate) fn draw(
         ("model", model.as_str()),
         ("session", session.as_str()),
         ("turns", turns.as_str()),
-        ("extra-one", extra_one.as_deref().unwrap_or("")),
-        ("extra-two", extra_two.as_deref().unwrap_or("")),
+        ("extra-one", extra_one.map_or("", String::as_str)),
+        ("extra-two", extra_two.map_or("", String::as_str)),
         (
             "notice",
             app.minibuffer_notice.as_deref().unwrap_or("").trim_start(),

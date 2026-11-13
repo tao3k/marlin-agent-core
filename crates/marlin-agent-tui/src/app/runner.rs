@@ -12,7 +12,7 @@ use super::{
     SessionBrowser, SessionId, SharedGateway, SignalMonitor, TerminalInput, TerminalOwner,
     TranscriptViewportCache, TursoAgentStorage, TursoAgentStorageConfig, TursoBatchTransactionMode,
     TursoOptimizationProfile, UiBrowseDirection, UiHost, UiKeyAction, UiOpenFacts,
-    WheelAccumulator, config, draw, frame_regions, io, list_sessions, load_session,
+    WheelAccumulator, config, draw_with_snapshot, frame_snapshot, io, list_sessions, load_session,
     mouse_over_minibuffer, mpsc, parse_cli, reply_channel, thread,
 };
 use marlin_agent_telemetry::{OpenTelemetry, TelemetryServiceName, TraceTarget};
@@ -317,6 +317,7 @@ fn run(
     let mut schedule = FrameSchedule::new();
     let mut viewport_cache = TranscriptViewportCache::default();
     let mut scroll_anchor = ScrollAnchor::default();
+    let mut painted_regions = Vec::new();
     let mut last_size = None;
     let mut first_frame_elapsed = None;
     let mut failed_ui_labels: Option<(String, String)> = None;
@@ -465,11 +466,12 @@ fn run(
             }
             let mouse = mouse_position.load(Ordering::Relaxed);
             let area = ratatui::layout::Rect::new(0, 0, size.0, size.1);
-            let mut geometry = frame_regions(&app, ui.view(), area);
-            let hovered = mouse_over_minibuffer(&geometry, mouse as u16, (mouse >> 16) as u16);
+            let mut snapshot = frame_snapshot(&app, ui.view(), area);
+            let hovered =
+                mouse_over_minibuffer(&snapshot.regions, mouse as u16, (mouse >> 16) as u16);
             if hovered != app.minibuffer_hovered {
                 app.minibuffer_hovered = hovered;
-                geometry = frame_regions(&app, ui.view(), area);
+                snapshot = frame_snapshot(&app, ui.view(), area);
                 schedule.mark_dirty();
             }
             let now = Instant::now();
@@ -496,20 +498,27 @@ fn run(
                             &error,
                         );
                         failed_ui_labels = Some(attempted);
+                        snapshot = frame_snapshot(&app, ui.view(), area);
                     } else {
                         failed_ui_labels = None;
+                        snapshot = frame_snapshot(&app, ui.view(), area);
                     }
                 }
                 let mut effective_scroll = app.scroll_up;
                 terminal.active().draw(|frame| {
-                    effective_scroll = draw(
+                    if snapshot.area != frame.area() {
+                        snapshot = frame_snapshot(&app, ui.view(), frame.area());
+                    }
+                    effective_scroll = draw_with_snapshot(
                         frame,
                         &app,
                         ui.view(),
                         &mut viewport_cache,
                         &mut scroll_anchor,
+                        &snapshot,
                     )
                 })?;
+                painted_regions = std::mem::take(&mut snapshot.regions);
                 app.set_effective_scroll(effective_scroll);
                 schedule.drawn(Instant::now());
                 if first_frame_elapsed.is_none() {
@@ -531,7 +540,11 @@ fn run(
             let received = keys_rx.recv_timeout(wait);
             if let Some((up, pulses, column, row)) = wheel_steps.take_steps() {
                 let hit = if column > 0 && row > 0 {
-                    super::super::ui_elements::hit_test_scroll(&geometry, column - 1, row - 1)
+                    super::super::ui_elements::hit_test_scroll(
+                        &painted_regions,
+                        column - 1,
+                        row - 1,
+                    )
                 } else {
                     None
                 };

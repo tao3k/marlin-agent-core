@@ -25,7 +25,7 @@ fn linked_scheme_workbench_renders_through_the_native_boundary() {
         method_bundles: &[],
     };
     // SAFETY: the runtime and exports originate in the same linked programme.
-    let host = unsafe { TestUiHost::open_linked(&runtime, super::exports(), &facts) }.unwrap();
+    let mut host = unsafe { TestUiHost::open_linked(&runtime, super::exports(), &facts) }.unwrap();
     let candidates = host.command_candidates("mode", None).unwrap().names;
     assert!(!candidates.is_empty());
     assert_eq!(
@@ -144,4 +144,7 @@ fn linked_scheme_workbench_renders_through_the_native_boundary() {
             (expected_start..expected_start + 5).collect::<Vec<_>>()
         );
     }
+    host.refresh_labels("provider/next", "next-session").unwrap();
+    assert_eq!(host.view().model_label, "provider/next");
+    assert_eq!(host.view().session_label, "next-session");
 }

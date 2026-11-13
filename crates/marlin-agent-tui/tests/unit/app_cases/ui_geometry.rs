@@ -62,6 +62,73 @@ fn frame_tree_can_add_a_region_without_a_host_render_branch() {
 }
 
 #[test]
+fn conditional_region_paint_and_hit_use_the_same_frame_facts() {
+    use marlin_agent_ui::{
+        UiComponentId, UiElement, UiRegion, UiSize, UiSpan, UiTone, UiWorkbench,
+    };
+    use ratatui::{Terminal, backend::TestBackend, layout::Rect};
+    let mut app = App::new(ModelEndpoint::new("provider", "model"));
+    app.minibuffer_notice = Some("notice".into());
+    let mut view = UiWorkbench {
+        model_label: "model".into(),
+        session_label: "session".into(),
+        regions: vec![UiRegion::Transcript, UiRegion::Composer],
+        layout: test_layout(),
+        theme: Default::default(),
+        focus: UiComponentId::new("composer").unwrap(),
+        frame: test_frame(),
+        keymap: Vec::new(),
+        transients: Vec::new(),
+    };
+    if let UiElement::Rows(children) = &mut view.layout.frame_tree {
+        children.insert(
+            0,
+            UiElement::Sized {
+                size: UiSize::Choice {
+                    cases: vec![(UiComponentId::new("notice").unwrap(), UiSize::Cells(1))],
+                    fallback: Box::new(UiSize::Cells(0)),
+                },
+                child: Box::new(UiElement::Region {
+                    id: UiComponentId::new("conditional").unwrap(),
+                    scroll_target: None,
+                    child: Box::new(UiElement::Choice {
+                        cases: vec![(
+                            UiComponentId::new("notice").unwrap(),
+                            UiElement::Text(vec![UiSpan {
+                                text: "visible".into(),
+                                tone: UiTone::Normal,
+                            }]),
+                        )],
+                        fallback: Box::new(UiElement::Text(vec![])),
+                    }),
+                }),
+            },
+        );
+    }
+    let mut terminal = Terminal::new(TestBackend::new(40, 10)).unwrap();
+    terminal
+        .draw(|frame| {
+            super::render_draw(
+                frame,
+                &app,
+                &view,
+                &mut Default::default(),
+                &mut Default::default(),
+            );
+        })
+        .unwrap();
+    let geometry = super::super::render::frame_regions(&app, &view, Rect::new(0, 0, 40, 10));
+    assert_eq!(terminal.backend().buffer()[(0, 0)].symbol(), "v");
+    assert_eq!(
+        super::super::ui_elements::hit_test(&geometry, 0, 0)
+            .unwrap()
+            .id
+            .as_str(),
+        "conditional"
+    );
+}
+
+#[test]
 fn wheel_gestures_are_hit_tested_at_their_own_positions() {
     use marlin_agent_ui::{UiComponentId, UiRegion, UiWorkbench};
     let mut app = App::new(ModelEndpoint::new("provider", "model"));

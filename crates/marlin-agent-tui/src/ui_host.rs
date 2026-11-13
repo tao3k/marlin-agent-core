@@ -175,14 +175,7 @@ impl<'runtime> UiHost<'runtime> {
         let successor = self.module.refresh_labels(&self.session, model, session)?;
         let candidate = self.module.project(&successor)?;
         admit_terminal_view(&candidate)?;
-        if candidate.model_label != model
-            || candidate.session_label != session
-            || candidate.regions != self.view.regions
-            || candidate.focus != self.view.focus
-            || candidate.frame != self.view.frame
-            || candidate.keymap != self.view.keymap
-            || candidate.transients != self.view.transients
-        {
+        if !labels_only_successor(&self.view, &candidate, model, session) {
             return Err(UiProjectionError::Invalid(
                 "UI label refresh changed the workbench",
             ));
@@ -408,6 +401,23 @@ impl<'runtime> UiHost<'runtime> {
         self.view = candidate;
         Ok(intent)
     }
+}
+
+fn labels_only_successor(
+    previous: &UiWorkbench,
+    candidate: &UiWorkbench,
+    model: &str,
+    session: &str,
+) -> bool {
+    candidate.model_label == model
+        && candidate.session_label == session
+        && candidate.layout == previous.layout
+        && candidate.theme == previous.theme
+        && candidate.regions == previous.regions
+        && candidate.focus == previous.focus
+        && candidate.frame == previous.frame
+        && candidate.keymap == previous.keymap
+        && candidate.transients == previous.transients
 }
 
 fn key_token(key: Key) -> Option<String> {
