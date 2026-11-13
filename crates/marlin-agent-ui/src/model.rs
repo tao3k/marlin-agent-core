@@ -8,8 +8,8 @@ use gerbil_scheme::{NativeError, RootedCallError, RootedSchemeObject};
 use marlin_agent_protocol::HumanDecision;
 use std::sync::Arc;
 
-// Three core regions, four Scheme buffers, sixteen contributions, and status.
-pub(crate) const MAX_REGIONS: usize = 24;
+// Resource ceiling for the workbench, independent of Scheme's Buffer catalog.
+pub(crate) const MAX_REGIONS: usize = 64;
 pub(crate) const MAX_HOST_STATUS: usize = 8;
 // Five visible slots, ten runtime/transport observations and eight host contributions.
 pub(crate) const MODELINE_SLOTS: usize = 15;
@@ -22,9 +22,9 @@ pub(crate) const MAX_COMMANDS: usize = 256;
 pub(crate) const MAX_TEXT_CHARS: usize = 256;
 pub(crate) const MAX_ID_BYTES: usize = 1024;
 
-// Keep protocol admission and renderer capacity tied to the selected shape.
+// Keep host contributions inside the bounded projection envelope.
 const _: () = assert!(MAX_STATUS == MODELINE_SLOTS + MAX_HOST_STATUS);
-const _: () = assert!(MAX_REGIONS == 3 + 4 + MAX_EXTENSIONS + 1);
+const _: () = assert!(MAX_REGIONS > 3 + MAX_EXTENSIONS + 1);
 
 /// A UI component's domain identity, shared across projected hit regions.
 /// It is not a Scheme root or object address.
