@@ -51,6 +51,10 @@ use tokio::{
 use tokio_stream::wrappers::TcpListenerStream;
 use tonic::{Code, Request, Status, transport::Server};
 
+const SUBMISSION_PAYLOAD: &str = "fixture-input-1";
+const FIRST_CHECKPOINT: &str = "fixture-chunk-1";
+const SECOND_CHECKPOINT: &str = "fixture-chunk-2";
+
 struct Gateway {
     calls: AtomicUsize,
     release: Arc<Semaphore>,
@@ -135,12 +139,15 @@ impl ModelStreamingGateway for Gateway {
         }
         let release = self.release.clone();
         Box::pin(async move {
-            assert_eq!(request.messages().last().unwrap().content, "请开始");
+            assert_eq!(
+                request.messages().last().unwrap().content,
+                SUBMISSION_PAYLOAD
+            );
             let stream = async_stream::try_stream! {
                 yield ModelStreamEvent::Started { transport: ModelGatewayTransport::Sse };
-                yield ModelStreamEvent::Chunk(ModelStreamChunk::new(1, "第一段"));
+                yield ModelStreamEvent::Chunk(ModelStreamChunk::new(1, FIRST_CHECKPOINT));
                 release.acquire().await.unwrap().forget();
-                yield ModelStreamEvent::Chunk(ModelStreamChunk::new(2, "第二段"));
+                yield ModelStreamEvent::Chunk(ModelStreamChunk::new(2, SECOND_CHECKPOINT));
                 std::future::pending::<()>().await;
             };
             Ok(Box::pin(stream) as ModelGatewayEventStream)
@@ -187,7 +194,7 @@ async fn gui_reconnects_with_the_journal_cursor_and_cancels_its_runtime_task() {
             TcpListenerStream::new(listener), async { let _ = shutdown.await; },
         ));
         let mut client = AppServerClient::connect(address.clone()).await.unwrap();
-        let start = StartSessionTurnRequest { session_id: "gui-session".into(), user_text: "请开始".into(), after_turn: 0, submission_id: "gui-send-1".into() };
+        let start = StartSessionTurnRequest { session_id: "gui-session".into(), user_text: SUBMISSION_PAYLOAD.into(), after_turn: 0, submission_id: "gui-send-1".into() };
         let summary = || GetSessionSummaryRequest { session_id: start.session_id.clone() };
         assert_eq!(client.get_session_summary(summary()).await.unwrap_err().code(), Code::Unauthenticated);
         let empty = client.get_session_summary(authorized(summary())).await.unwrap().into_inner();
@@ -209,7 +216,7 @@ async fn gui_reconnects_with_the_journal_cursor_and_cancels_its_runtime_task() {
         assert_eq!(turn.ordinal, 1);
         assert_eq!(gateway.calls.load(Ordering::Relaxed), 0);
         let mut changed = start.clone();
-        changed.user_text.push('！');
+        changed.user_text.push_str("-modified");
         assert_eq!(client.start_session_turn(authorized(changed)).await.unwrap_err().code(), Code::AlreadyExists);
         let mut changed = start.clone();
         changed.after_turn = 1;
@@ -219,7 +226,7 @@ async fn gui_reconnects_with_the_journal_cursor_and_cancels_its_runtime_task() {
         let mut stream = client.watch_session_turn(watch(None)).await.unwrap().into_inner();
         assert!(matches!(stream.message().await.unwrap().unwrap().event, Some(Event::Started(_))));
         let first = stream.message().await.unwrap().unwrap();
-        assert!(matches!(first.event, Some(Event::TextCheckpoint(delta)) if delta.text == "第一段"));
+        assert!(matches!(first.event, Some(Event::TextCheckpoint(delta)) if delta.text == FIRST_CHECKPOINT));
         let active = client.get_session_summary(authorized(summary())).await.unwrap().into_inner();
         assert_eq!(active.recovery_state(), SessionRecoveryState::Active);
         assert_eq!(active.latest_turn, Some(turn.clone()));
@@ -242,7 +249,7 @@ async fn gui_reconnects_with_the_journal_cursor_and_cancels_its_runtime_task() {
         let mut resumed = client.watch_session_turn(watch(Some(first.event_id.clone()))).await.unwrap().into_inner();
         let next = resumed.message().await.unwrap().unwrap();
         assert!(next.event_id > first.event_id);
-        assert!(matches!(next.event, Some(Event::TextCheckpoint(delta)) if delta.text == "第二段"));
+        assert!(matches!(next.event, Some(Event::TextCheckpoint(delta)) if delta.text == SECOND_CHECKPOINT));
         let mut foreign = turn.clone();
         foreign.session_id = "other-session".into();
         assert_eq!(client.cancel_session_turn(authorized(CancelSessionTurnRequest { turn: Some(foreign) })).await.unwrap_err().code(), Code::NotFound);
@@ -277,7 +284,7 @@ async fn gui_reconnects_with_the_journal_cursor_and_cancels_its_runtime_task() {
 
         let journal = ConversationJournal::open(storage, project, SessionId::new("gui-session").unwrap(), agent, |_| {}).await.unwrap();
         let observed = journal.unfinished().unwrap();
-        assert_eq!(observed.partial_text, "第一段第二段");
+        assert_eq!(observed.partial_text, [FIRST_CHECKPOINT, SECOND_CHECKPOINT].concat());
         assert!(matches!(observed.outcome, Some(ConversationTurnOutcome::Uncertain {
             reason: ConversationUncertaintyReason::StreamInterrupted { reason: ModelStreamInterruption::CancelledLocally },
         })));
@@ -395,7 +402,7 @@ async fn turso_http2_recovers_cancellation_evidence_after_process_restart() {
         let turn = client
             .start_session_turn(authorized(StartSessionTurnRequest {
                 session_id: "gui-session".into(),
-                user_text: "请开始".into(),
+                user_text: SUBMISSION_PAYLOAD.into(),
                 after_turn: 0,
                 submission_id: "cancelled-send-1".into(),
             }))
@@ -510,7 +517,7 @@ async fn turso_http2_recovers_lost_submission_after_process_restart() {
         let mut client = AppServerClient::connect(address.clone()).await.unwrap();
         let request = StartSessionTurnRequest {
             session_id: "gui-session".into(),
-            user_text: "请开始".into(),
+            user_text: SUBMISSION_PAYLOAD.into(),
             after_turn: 0,
             submission_id: "restart-send-1".into(),
         };
@@ -551,7 +558,7 @@ async fn turso_http2_recovers_lost_submission_after_process_restart() {
         ));
         let checkpoint = events.message().await.unwrap().unwrap();
         assert!(
-            matches!(&checkpoint.event, Some(Event::TextCheckpoint(text)) if text.text == "第一段")
+            matches!(&checkpoint.event, Some(Event::TextCheckpoint(text)) if text.text == FIRST_CHECKPOINT)
         );
         drop(events);
         drop(client);
@@ -592,7 +599,7 @@ async fn turso_http2_recovers_lost_submission_after_process_restart() {
             .into_inner();
         assert_eq!(recovered.turn, Some(expected.clone()));
         let mut changed = request;
-        changed.user_text.push('！');
+        changed.user_text.push_str("-modified");
         assert_eq!(
             client
                 .start_session_turn(authorized(changed))
