@@ -189,7 +189,7 @@ impl App {
             self.messages.push((role, detail));
             self.messages.retain_latest(64);
         }
-        self.minibuffer_notice = Some(format!("{summary} · M-x switch-buffer → *Messages*"));
+        self.minibuffer_notice = Some(summary);
     }
 
     /// Drain the runtime's bounded event bus into the Scheme-selected Messages buffer.
