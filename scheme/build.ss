@@ -6,9 +6,14 @@
 ;;; Build the package selected by Yuanxu.
 
 (import (for-syntax
+          (only-in :gerbil/tools/gxpkg pkg-root-dir)
           (only-in :std/source this-source-file)
           (only-in :tao3k/yuanxu/module-system/building/source-package register-module-build-source!)))
 (begin-syntax
+  ;; Lab installs its source catalog. Its selected roles can import ordinary
+  ;; libraries before Yuanxu constructs the consumer's compiler inputs.
+  (register-module-build-source!
+    (path-expand "github.com/tao3k/agentic-ai-lab" (pkg-root-dir)) 'agentic-ai-lab)
   (register-module-build-source! (path-directory (this-source-file)) 'marlin-agent-core))
 
 (import (only-in :clan/poo/object .get .call)
