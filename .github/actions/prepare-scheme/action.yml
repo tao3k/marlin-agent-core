@@ -49,7 +49,8 @@ runs:
             (import :gerbil/tools/gxpkg)
             (pkg-update (getenv "ORGIZE_PACKAGE"))'
         )
-        (cd scheme && gerbil deps --install)
+        # gxpkg captures gxtags stdout. Send uncaught Gambit errors to stderr.
+        (cd scheme && GAMBOPT="${GAMBOPT:+$GAMBOPT,}debug=q2+" gerbil deps --install)
         test "$(git -C "$orgize_checkout" rev-parse HEAD)" = "$orgize_revision"
     - name: Save installed Scheme dependencies
       if: steps.dependencies.outputs.cache-hit != 'true'
