@@ -16,7 +16,7 @@ mod traits;
 pub use context::{RuntimeContext, RuntimeExecutionIdentity};
 pub use events::{
     EventStream, MAX_RUNTIME_EVENT_HEAP_BYTES, RuntimeEventSendError, RuntimeEventSink,
-    RuntimeEventStream,
+    RuntimeEventSizeRejection, RuntimeEventStream,
 };
 pub use fanout_item::WorkingCopySubAgentFanoutItem;
 pub use handle::{RuntimeTaskScope, TokioAgentRuntime, TokioAgentRuntimeBuildRequest};

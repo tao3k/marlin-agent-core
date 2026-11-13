@@ -22,24 +22,25 @@ pub const MAX_RUNTIME_EVENT_HEAP_BYTES: usize = 64 * 1024;
 #[derive(Debug)]
 pub enum RuntimeEventSendError {
     Closed(RuntimeEvent),
-    Oversized {
-        event: RuntimeEvent,
-        actual_bytes: usize,
-        limit_bytes: usize,
-    },
+    Oversized(RuntimeEventSizeRejection),
+}
+
+/// The rejected event and its measured heap usage at admission.
+#[derive(Debug)]
+pub struct RuntimeEventSizeRejection {
+    pub event: RuntimeEvent,
+    pub actual_bytes: usize,
+    pub limit_bytes: usize,
 }
 
 impl fmt::Display for RuntimeEventSendError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Closed(_) => formatter.write_str("runtime event stream closed"),
-            Self::Oversized {
-                actual_bytes,
-                limit_bytes,
-                ..
-            } => write!(
+            Self::Oversized(rejection) => write!(
                 formatter,
-                "runtime event retains {actual_bytes} bytes; limit is {limit_bytes} bytes"
+                "runtime event retains {} bytes; limit is {} bytes",
+                rejection.actual_bytes, rejection.limit_bytes
             ),
         }
     }
@@ -82,11 +83,13 @@ impl RuntimeEventSink {
             .capacity()
             .saturating_add(event.message.capacity());
         if actual_bytes > MAX_RUNTIME_EVENT_HEAP_BYTES {
-            return Err(RuntimeEventSendError::Oversized {
-                event,
-                actual_bytes,
-                limit_bytes: MAX_RUNTIME_EVENT_HEAP_BYTES,
-            });
+            return Err(RuntimeEventSendError::Oversized(
+                RuntimeEventSizeRejection {
+                    event,
+                    actual_bytes,
+                    limit_bytes: MAX_RUNTIME_EVENT_HEAP_BYTES,
+                },
+            ));
         }
         let Some((primary, captures)) = self.senders.split_first() else {
             return Err(RuntimeEventSendError::Closed(event));

@@ -4,7 +4,7 @@
 
 use marlin_agent_runtime::{
     MAX_RUNTIME_EVENT_HEAP_BYTES, RuntimeEvent, RuntimeEventSendError, RuntimeEventSink,
-    TokioAgentRuntime,
+    RuntimeEventSizeRejection, TokioAgentRuntime,
 };
 use tokio_stream::StreamExt;
 
@@ -16,11 +16,11 @@ async fn oversized_runtime_events_never_enter_primary_or_capture_queues() {
     let error = sink.emit(event).await.unwrap_err();
     assert!(matches!(
         error,
-        RuntimeEventSendError::Oversized {
+        RuntimeEventSendError::Oversized(RuntimeEventSizeRejection {
             event,
             actual_bytes,
             limit_bytes: MAX_RUNTIME_EVENT_HEAP_BYTES,
-        } if event.topic == "runtime.test" && actual_bytes > MAX_RUNTIME_EVENT_HEAP_BYTES
+        }) if event.topic == "runtime.test" && actual_bytes > MAX_RUNTIME_EVENT_HEAP_BYTES
     ));
     assert!(primary.try_next().is_none());
     assert!(capture.try_next().is_none());
@@ -29,7 +29,7 @@ async fn oversized_runtime_events_never_enter_primary_or_capture_queues() {
     retained.push('x');
     assert!(matches!(
         sink.emit(RuntimeEvent::new("runtime.test", retained)).await,
-        Err(RuntimeEventSendError::Oversized { .. })
+        Err(RuntimeEventSendError::Oversized(_))
     ));
     assert!(primary.try_next().is_none());
     assert!(capture.try_next().is_none());
