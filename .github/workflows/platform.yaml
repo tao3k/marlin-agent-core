@@ -66,6 +66,9 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: workspace-${{ matrix.gate }}-${{ hashFiles('.github/actions/setup-scheme/action.yml', 'scheme/gerbil.pkg') }}
+      - name: Install Protobuf compiler for Agent CORE App Server
+        if: matrix.gate == 'check'
+        run: sudo apt-get install -y protobuf-compiler
       - uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177 # v2
         if: matrix.gate == 'tui'
         with:
@@ -81,7 +84,10 @@ jobs:
           ORGIZE_GERBIL_PROGRAM_MANIFEST: ${{ matrix.gate != 'tui' && format('{0}/scheme/.gerbil/pkg/github.com/tao3k/orgize/target/gerbil-parser/program.json', github.workspace) || '' }}
         run: |
           case "$GATE" in
-            check) cargo check --workspace --exclude marlin-agent-tui --all-targets --locked ;;
+            check)
+              cargo check --workspace --exclude marlin-agent-tui --all-targets --locked \
+                --features marlin-agent-core/app-server
+              ;;
             lint) cargo clippy --workspace --exclude marlin-agent-tui --all-targets --locked -- -D warnings ;;
             test)
               cargo test --workspace --locked \
