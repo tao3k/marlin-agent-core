@@ -23,10 +23,34 @@ runs:
       run: |
         # Orgize's Builder imports bridge tools. Build them from Cargo's
         # selected source before Gerbil installs the Lab dependency graph.
-        bridge_manifest=$(cargo metadata --locked --format-version 1 |
-          jq -er '.packages[] | select(.name == "gerbil-scheme-build") | .manifest_path')
+        metadata=$(cargo metadata --locked --format-version 1)
+        bridge_manifest=$(jq -er '.packages[] | select(.name == "gerbil-scheme-build") | .manifest_path' <<< "$metadata")
         (cd "${bridge_manifest%/crates/gerbil-scheme-build/Cargo.toml}" && gerbil build)
+
+        # The pinned SDK checks out the requested revision before fetching it.
+        # Fetch the same Orgize Git object Cargo selected before Gerbil installs it.
+        orgize_repo=github.com/tao3k/orgize
+        orgize_revision=$(jq -er --arg repo "$orgize_repo" '
+          [.packages[] | select(.name == "orgize") | .source
+            | select(startswith("git+https://" + $repo + "?")) | split("#")[1]
+            | select(test("^[0-9a-f]{40}$"))]
+          | if length == 1 then .[0] else error("expected one locked Orgize revision") end
+        ' <<< "$metadata")
+        orgize_checkout="$GERBIL_PATH/pkg/$orgize_repo"
+        git init --quiet --initial-branch=main "$orgize_checkout"
+        git -C "$orgize_checkout" remote add origin "https://$orgize_repo.git"
+        git -C "$orgize_checkout" fetch --quiet --no-tags origin "$orgize_revision"
+        git -C "$orgize_checkout" cat-file -e "$orgize_revision^{tree}"
+        # Use the package manager's source-update API to register the revision.
+        # Dependency installation and indexing still run through gerbil deps.
+        (
+          cd scheme
+          ORGIZE_PACKAGE="$orgize_repo@$orgize_revision" gxi -e '
+            (import :gerbil/tools/gxpkg)
+            (pkg-update (getenv "ORGIZE_PACKAGE"))'
+        )
         (cd scheme && gerbil deps --install)
+        test "$(git -C "$orgize_checkout" rev-parse HEAD)" = "$orgize_revision"
     - name: Save installed Scheme dependencies
       if: steps.dependencies.outputs.cache-hit != 'true'
       uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
