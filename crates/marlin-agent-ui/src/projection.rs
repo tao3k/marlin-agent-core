@@ -131,17 +131,17 @@ pub fn decode_intent(value: RootedSchemeObject<'_>) -> Result<UiIntent, UiProjec
 
 /// Validate and copy one Scheme UI projection into independent Rust values.
 pub fn decode_workbench(value: RootedSchemeObject<'_>) -> Result<UiWorkbench, UiProjectionError> {
-    let root = vector(value, 9, 9)?;
-    let model = string(root.element(0)?)?;
-    let session = string(root.element(1)?)?;
+    let root = vector(value, 9, 9).map_err(|error| error.at("workbench"))?;
+    let model = string(root.element(0)?).map_err(|error| error.at("model"))?;
+    let session = string(root.element(1)?).map_err(|error| error.at("session"))?;
     let mut names = IdentifierBuffer::default();
-    let focus = identifier(root.element(3)?, &mut names)?;
-    let layout = decode_layout(root.element(4)?)?;
-    let theme = decode_theme(root.element(5)?)?;
-    let frame = decode_frame_state(root.element(6)?)?;
-    let keymap = decode_keymap(root.element(7)?)?;
-    let transients = decode_transients(root.element(8)?)?;
-    let regions = decode_regions(root.element(2)?, &focus)?;
+    let focus = identifier(root.element(3)?, &mut names).map_err(|error| error.at("focus"))?;
+    let layout = decode_layout(root.element(4)?).map_err(|error| error.at("layout"))?;
+    let theme = decode_theme(root.element(5)?).map_err(|error| error.at("theme"))?;
+    let frame = decode_frame_state(root.element(6)?).map_err(|error| error.at("frame"))?;
+    let keymap = decode_keymap(root.element(7)?).map_err(|error| error.at("keymap"))?;
+    let transients = decode_transients(root.element(8)?).map_err(|error| error.at("transients"))?;
+    let regions = decode_regions(root.element(2)?, &focus).map_err(|error| error.at("regions"))?;
     Ok(UiWorkbench {
         model_label: model,
         session_label: session,

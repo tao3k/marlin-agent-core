@@ -179,3 +179,19 @@ and Rust worktree changed during this build, and another Release artifact was
 rebuilt concurrently. This record neither attributes the failure to
 =opt-level="z"= nor qualifies =release-size= for distribution. Rebuild and
 compare only after staging, source, and binary identity can be held fixed.
+
+* Projection diagnosis and second size build, 2026-11-14
+
+The native workbench decoder now retains the top-level field name on failure;
+the extra allocation occurs only when constructing an error. Its focused Rust
+projection test passed. =just tui-aot-debug= restaged Scheme and rebuilt the
+linked Debug binary; the source-free paired PTY startup test passed.
+
+A second =release-size= build completed in 4m 21s. The binary was 96,472,960
+bytes, SHA-256
+=1e2706427685d569b4bf7936342b325ae132e3011cf5b1022db06e71ff055006=.
+The shared worktree changed during the build. Before the real PTY test began,
+another staging operation rewrote =program.json= at 04:44:55, after the binary
+was written at 04:44:07. The maintained test correctly rejected this stale
+pair before launch. This build supplies no new =release-size= workbench or
+performance result; the previous native projection failure remains unresolved.

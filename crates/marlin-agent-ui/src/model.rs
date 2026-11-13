@@ -767,7 +767,6 @@ impl std::fmt::Display for UiProjectionError {
         }
     }
 }
-impl std::error::Error for UiProjectionError {}
 impl From<RootedCallError> for UiProjectionError {
     fn from(error: RootedCallError) -> Self {
         Self::Call(error)
@@ -778,3 +777,24 @@ impl From<NativeError> for UiProjectionError {
         Self::Native(error)
     }
 }
+    Field {
+        name: &'static str,
+        source: Box<UiProjectionError>,
+    },
+}
+impl UiProjectionError {
+    pub(crate) fn at(self, name: &'static str) -> Self {
+        Self::Field {
+            name,
+            source: Box::new(self),
+        }
+    }
+            Self::Field { name, source } => write!(formatter, "UI projection {name}: {source}"),
+        }
+    }
+}
+impl std::error::Error for UiProjectionError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Field { source, .. } => Some(source),
+            _ => None,

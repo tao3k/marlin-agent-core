@@ -365,7 +365,7 @@ impl<'runtime> UiModule<'runtime> {
         )?;
         let steps = self
             .runtime
-            .scalar_object(SchemeScalar::Fixnum(isize::from(steps)))?;
+            .scalar_object(SchemeScalar::Fixnum(steps as isize))?;
         let allowed = if let Some(names) = allowed {
             if names.len() > MAX_COMMANDS {
                 return Err(UiProjectionError::Invalid(
