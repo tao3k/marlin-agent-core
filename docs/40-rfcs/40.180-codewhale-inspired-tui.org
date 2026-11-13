@@ -2670,3 +2670,16 @@ regressions against saved earlier binaries for the plain and keyed groups.
 Shared-host load and different source builds prevent attributing those changes;
 they remain an unresolved performance signal, not a passed regression gate.
 A controlled paired comparison with the full frame binding set is still needed.
+
+On the same =75ba9d35= list mapper, a later linked Criterion executable ran
+four 30-sample list workloads after a shared Cargo artifact-lock wait. Their
+point estimates were 34.412 microseconds (plain), 25.652 (column), 41.259
+(keyed hit) and 29.219 (three inherited frame bindings). Running that *same
+compiled executable* again gave 20.114, 37.748, 45.091 and 120.53
+microseconds respectively. Every group had high outliers; the inherited group
+varied more than fourfold without recompilation. These observations do not
+isolate binding overhead or establish a stable performance bound. The first
+run's inherited-binding 95% interval was =[22.298, 29.219, 41.437]=
+microseconds; the second's was =[86.546, 120.53, 162.69]= microseconds. The
+host load must be controlled before a comparison is used for an architecture
+decision.
