@@ -767,7 +767,9 @@ impl App {
     }
 
     pub(crate) fn scroll_lines(&mut self, up: bool, lines: usize) {
-        if matches!(self.buffer_view, super::BufferView::Named(_)) {
+        let preview = self.preview_buffer();
+        let buffer = preview.as_ref().unwrap_or(&self.buffer_view);
+        if matches!(buffer, super::BufferView::Named(_)) {
             self.static_buffer_scroll = if up {
                 self.static_buffer_scroll.saturating_sub(lines)
             } else {
@@ -775,13 +777,15 @@ impl App {
             };
             return;
         }
-        if self.buffer_view == super::BufferView::Messages {
+        if *buffer == super::BufferView::Messages {
             self.message_scroll_up = if up {
                 self.message_scroll_up.saturating_add(lines)
             } else {
                 self.message_scroll_up.saturating_sub(lines)
             };
-        } else if let Some(view) = self.workspace.view_mut() {
+        } else if preview.is_none()
+            && let Some(view) = self.workspace.view_mut()
+        {
             view.scroll_from_top = if up {
                 view.scroll_from_top.saturating_sub(lines)
             } else {
@@ -797,11 +801,17 @@ impl App {
     }
 
     pub(super) fn set_effective_scroll(&mut self, value: usize) {
-        if matches!(self.buffer_view, super::BufferView::Named(_)) {
+        let preview = self.preview_buffer();
+        let buffer = preview.as_ref().unwrap_or(&self.buffer_view);
+        if matches!(buffer, super::BufferView::Named(_)) {
             return;
         }
-        if self.buffer_view == super::BufferView::Messages {
+        if *buffer == super::BufferView::Messages {
             self.message_scroll_up = value;
+            return;
+        }
+        if preview.is_some() {
+            self.scroll_up = value;
             return;
         }
         match self.workspace.view_mut() {

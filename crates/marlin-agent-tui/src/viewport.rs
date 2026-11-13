@@ -207,7 +207,9 @@ struct TailLayout {
 /// Keeps a scrolled viewport at the same rows when only the transcript tail changes.
 #[derive(Default)]
 pub(crate) struct ScrollAnchor {
-    snapshot: Option<TailSnapshot>,
+    // The conversation and Messages can alternate during minibuffer preview.
+    // Keep both anchors without retaining an unbounded history of buffers.
+    snapshots: VecDeque<TailSnapshot>,
 }
 
 fn wrapped_rows(text: &str, width: u16) -> usize {
@@ -255,8 +257,14 @@ impl ScrollAnchor {
         height: u16,
         scroll: usize,
     ) -> usize {
+        let position = self
+            .snapshots
+            .iter()
+            .position(|item| item.identity == transcript.identity);
         if scroll == 0 || width == 0 || height == 0 {
-            self.snapshot = None;
+            if let Some(index) = position {
+                self.snapshots.remove(index);
+            }
             return scroll;
         }
         let pending_rows = if pending {
@@ -265,21 +273,28 @@ impl ScrollAnchor {
             0
         };
         let Some(last) = transcript.last() else {
-            self.snapshot = None;
+            if let Some(index) = position {
+                self.snapshots.remove(index);
+            }
             return scroll;
         };
-        let previous = self.snapshot.take();
-        if let Some(snapshot) = previous.as_ref()
-            && snapshot.identity == transcript.identity
+        if let Some(index) = position
+            && let Some(snapshot) = self.snapshots.get(index)
             && snapshot.non_tail_revision == transcript.non_tail_revision
             && snapshot.revision == transcript.revision
             && snapshot.width == width
             && snapshot.height == height
             && snapshot.pending_rows == pending_rows
         {
-            self.snapshot = previous;
+            // The active transcript is already most recent in the hot path.
+            if index > 0
+                && let Some(snapshot) = self.snapshots.remove(index)
+            {
+                self.snapshots.push_front(snapshot);
+            }
             return scroll;
         }
+        let previous = position.and_then(|index| self.snapshots.remove(index));
         let mut adjusted = scroll;
         let (layout, last_rows) = if let Some(mut snapshot) = previous
             && snapshot.identity == transcript.identity
@@ -307,7 +322,7 @@ impl ScrollAnchor {
             let last_rows = layout.rows(last, width);
             (layout, last_rows)
         };
-        self.snapshot = Some(TailSnapshot {
+        self.remember(TailSnapshot {
             identity: transcript.identity,
             non_tail_revision: transcript.non_tail_revision,
             revision: transcript.revision,
@@ -319,6 +334,14 @@ impl ScrollAnchor {
             layout,
         });
         adjusted
+    }
+
+    fn remember(&mut self, snapshot: TailSnapshot) {
+        const MAX_ANCHORS: usize = 2;
+        if self.snapshots.len() == MAX_ANCHORS {
+            self.snapshots.pop_back();
+        }
+        self.snapshots.push_front(snapshot);
     }
 }
 

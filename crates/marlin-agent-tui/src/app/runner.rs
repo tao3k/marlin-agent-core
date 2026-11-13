@@ -465,7 +465,8 @@ fn run(
             } else {
                 false
             };
-            let processes_changed = matches!(&app.buffer_view, super::BufferView::Named(id) if id.as_str() == "processes")
+            let preview_buffer = app.preview_buffer();
+            let processes_changed = matches!(preview_buffer.as_ref().unwrap_or(&app.buffer_view), super::BufferView::Named(id) if id.as_str() == "processes")
                 && app.refresh_process_content();
             let workspace_changed = if let Some(result) = app.workspace.poll() {
                 match result {

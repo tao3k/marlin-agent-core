@@ -2449,3 +2449,17 @@ against their historical Criterion baselines; their current intervals overlap.
 This does not isolate the tree's cost. An immediate repeat failed to compile
 while the shared UI =Region= contract was changing from =scrollable= to
 =scroll_target=. No result from that failed build is treated as a sample.
+
+After =6f5f6ea2= was pushed, the next release benchmark compiled while another
+session changed TUI sources, so the binary has no qualified source cut. The
+first 30-sample pass estimated =input= at =[15.446, 18.774, 22.178] us= and
+=input-tree= at =[12.072, 17.023, 22.165] us=. Repeating the *same compiled
+binary* immediately estimated =[4.3113, 6.3174, 9.0730] us= and
+=[7.1207, 9.6734, 12.295] us= respectively. The direct input point estimate
+changed nearly threefold without a code change. The same binary measured
+=selected-frame-no-scroll= at =[325.52, 392.79, 491.05] ns= and
+=selected-frame-hit= at =[775.10, 958.01, 1209.2] ns=; these are separate
+workloads and do not isolate the cost of a scroll target. These observations
+show substantial host variance. Keep them as diagnostic evidence, then repeat
+from a stable source cut under controlled load before setting a performance
+threshold or attributing a regression to the declarative mapper.

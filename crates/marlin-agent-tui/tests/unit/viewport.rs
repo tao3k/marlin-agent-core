@@ -613,6 +613,54 @@ fn anchor_resets_for_resize_clear_and_non_tail_mutation() {
 }
 
 #[test]
+fn previewing_another_transcript_preserves_a_streaming_scroll_anchor() {
+    let mut conversation = Transcript::new(vec![
+        (
+            "You".into(),
+            (0..40).map(|i| format!("line {i}\n")).collect(),
+        ),
+        ("Assistant".into(), "streaming".into()),
+    ]);
+    let messages = Transcript::new(vec![("UI".into(), "notice".into())]);
+    let mut anchor = ScrollAnchor::default();
+    let width = 30;
+    let height = 4;
+    let scroll = anchor.adjust(&conversation, true, width, height, 10);
+    let before = transcript_viewport(&conversation, true, width, height, scroll).lines;
+    assert_eq!(anchor.adjust(&messages, false, width, height, 0), 0);
+    conversation.append_content(1, "\none\ntwo\nthree\n");
+    let adjusted = anchor.adjust(&conversation, true, width, height, scroll);
+    assert_eq!(
+        transcript_viewport(&conversation, true, width, height, adjusted).lines,
+        before
+    );
+}
+
+#[test]
+fn alternating_scrolled_transcripts_retain_independent_anchors() {
+    let entries = || vec![("A".into(), (0..40).map(|i| format!("line {i}\n")).collect())];
+    let mut first = Transcript::new(entries());
+    let mut second = Transcript::new(entries());
+    let mut anchor = ScrollAnchor::default();
+    let first_scroll = anchor.adjust(&first, false, 30, 4, 10);
+    let second_scroll = anchor.adjust(&second, false, 30, 4, 10);
+    let first_before = transcript_viewport(&first, false, 30, 4, first_scroll).lines;
+    let second_before = transcript_viewport(&second, false, 30, 4, second_scroll).lines;
+    first.append_content(0, "one\ntwo\n");
+    second.append_content(0, "three\nfour\nfive\n");
+    let first_scroll = anchor.adjust(&first, false, 30, 4, first_scroll);
+    let second_scroll = anchor.adjust(&second, false, 30, 4, second_scroll);
+    assert_eq!(
+        transcript_viewport(&first, false, 30, 4, first_scroll).lines,
+        first_before
+    );
+    assert_eq!(
+        transcript_viewport(&second, false, 30, 4, second_scroll).lines,
+        second_before
+    );
+}
+
+#[test]
 fn incremental_tail_counts_match_full_layout_across_chunk_boundaries() {
     for width in [1, 3, 8, 30] {
         let mut transcript = Transcript::new(vec![("Assistant".into(), String::new())]);

@@ -5,7 +5,7 @@
 //! Scheme-selected Buffer views and bounded runtime presentation facts.
 
 use super::state::App;
-use super::{RuntimeEdgePolicyReceipt, UiBufferId, UiContent, UiWorkbench};
+use super::{Command, RuntimeEdgePolicyReceipt, UiBufferId, UiContent, UiEvent, UiWorkbench};
 
 const MAX_DYNAMIC_BUFFER_ITEMS: usize = 256;
 const MAX_DYNAMIC_BUFFER_BYTES: usize = 32 * 1024;
@@ -86,6 +86,35 @@ pub(crate) enum ModelineActivity {
 }
 
 impl App {
+    /// Read-only preview of a selected, admitted buffer command. The Scheme
+    /// window binding changes only when the user confirms the command.
+    pub(crate) fn preview_buffer(&self) -> Option<BufferView> {
+        if self.command_draft.is_none()
+            || self.history_search.is_some()
+            || self.tool_review_prompt.is_some()
+        {
+            return None;
+        }
+        let selected = self
+            .selected_command()
+            .filter(|name| self.command_candidates.contains(name))
+            .or_else(|| self.command_candidates.first())?;
+        let command = self
+            .command_catalog
+            .iter()
+            .find(|command| &command.name == selected)?;
+        let Command::SelectUi(UiEvent::SelectBuffer(buffer)) =
+            Command::parse(command, selected.as_str())?
+        else {
+            return None;
+        };
+        match buffer.as_str() {
+            "conversation" => Some(BufferView::Conversation),
+            "messages" => Some(BufferView::Messages),
+            _ => Some(BufferView::Named(buffer)),
+        }
+    }
+
     /// Mirror the admitted Scheme window binding for native content painting.
     /// No command or key handler may select this view independently.
     pub(crate) fn sync_window(&mut self, ui: &UiWorkbench) -> Result<(), &'static str> {

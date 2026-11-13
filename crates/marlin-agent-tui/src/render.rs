@@ -78,20 +78,27 @@ fn minibuffer_footer_rows(app: &App, base: u16) -> u16 {
 }
 
 // Layout and painting must choose the same Scheme branch for a given frame.
-fn main_view_fact(app: &App, ui: &UiWorkbench, name: &str) -> bool {
+fn main_view_fact(
+    app: &App,
+    ui: &UiWorkbench,
+    buffer: &BufferView,
+    previewing: bool,
+    name: &str,
+) -> bool {
     match name {
         "review" => app.tool_review_prompt.is_some(),
-        "messages" => app.buffer_view == BufferView::Messages,
-        "static" => match &app.buffer_view {
+        "messages" => *buffer == BufferView::Messages,
+        "static" => match buffer {
             BufferView::Named(buffer) => ui.regions.iter().any(|region| {
                 matches!(region, UiRegion::Extension { id, focusable: false, .. }
                     if id.as_str() == buffer.as_str())
             }),
             _ => false,
         },
-        "runtime" => app.runtime_receipt_open,
+        "runtime" => !previewing && app.runtime_receipt_open,
         "extension" => {
-            app.buffer_view == BufferView::Conversation
+            !previewing
+                && *buffer == BufferView::Conversation
                 && app.workspace.view().is_none()
                 && !app.runtime_receipt_open
                 && ui.regions.iter().any(|region| {
@@ -99,7 +106,7 @@ fn main_view_fact(app: &App, ui: &UiWorkbench, name: &str) -> bool {
                         if id == &ui.focus)
                 })
         }
-        "workspace" => app.workspace.view().is_some(),
+        "workspace" => !previewing && app.workspace.view().is_some(),
         "command" => app.command_draft.is_some() || app.tool_review_prompt.is_some(),
         "focused" => ui.focus.as_str() == "composer" || app.command_draft.is_some(),
         _ => false,
@@ -211,6 +218,8 @@ pub(crate) fn frame_regions(
         0
     };
     let mut result = Vec::with_capacity(7);
+    let preview = app.preview_buffer();
+    let buffer = preview.as_ref().unwrap_or(&app.buffer_view);
     layout_regions_with_facts(
         &ui.layout.frame_tree,
         area,
@@ -223,7 +232,7 @@ pub(crate) fn frame_regions(
             _ => Extent::Cells(0),
         },
         &mut result,
-        &|id| main_view_fact(app, ui, id.as_str()),
+        &|id| main_view_fact(app, ui, buffer, preview.is_some(), id.as_str()),
     );
     result
 }
@@ -508,7 +517,10 @@ pub(crate) fn draw(
         part("candidates"),
         part("minibuffer"),
     ];
-    let focused_content = if app.buffer_view == BufferView::Conversation
+    let preview = app.preview_buffer();
+    let buffer = preview.as_ref().unwrap_or(&app.buffer_view);
+    let focused_content = if preview.is_none()
+        && *buffer == BufferView::Conversation
         && app.workspace.view().is_none()
         && !app.runtime_receipt_open
     {
@@ -524,7 +536,7 @@ pub(crate) fn draw(
     } else {
         None
     };
-    let static_content = match &app.buffer_view {
+    let static_content = match buffer {
         BufferView::Named(buffer) => ui.regions.iter().find_map(|region| match region {
             UiRegion::Extension {
                 id,
@@ -549,7 +561,9 @@ pub(crate) fn draw(
     if transcript_policy.role_bold {
         role_style = role_style.add_modifier(Modifier::BOLD);
     }
-    let main_facts = |id: &marlin_agent_ui::UiComponentId| main_view_fact(app, ui, id.as_str());
+    let main_facts = |id: &marlin_agent_ui::UiComponentId| {
+        main_view_fact(app, ui, buffer, preview.is_some(), id.as_str())
+    };
     let mut slots = main_view::MainSlots {
         app,
         theme: &ui.theme,
@@ -751,12 +765,12 @@ pub(crate) fn draw(
                 .is_some_and(|search| search.preview().is_some()),
             "search-no-match" => app.history_search.is_some(),
             "notice" => app.minibuffer_notice.is_some(),
-            "messages" => app.buffer_view == BufferView::Messages,
+            "messages" => *buffer == BufferView::Messages,
             "static-buffer" => static_status.is_some(),
             "quit-armed" => app.quit_armed,
             "draft-limit" => app.composer.limit_reached(),
-            "runtime" => app.runtime_receipt_open,
-            "workspace" => app.workspace.view().is_some(),
+            "runtime" => preview.is_none() && app.runtime_receipt_open,
+            "workspace" => preview.is_none() && app.workspace.view().is_some(),
             "commands-focus" => ui.focus.as_str() == "commands",
             "transcript-focus" => ui.focus.as_str() == "transcript",
             "extension-focus" => ui.focus.as_str() != "composer",
