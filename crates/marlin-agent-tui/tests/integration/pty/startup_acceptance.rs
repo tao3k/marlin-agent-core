@@ -39,6 +39,23 @@ fn linked_fresh_copy_startup_pair(binary: &std::path::Path, profile: &str) {
     static STARTUP_BENCH_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
     let _serial = STARTUP_BENCH_LOCK.lock().expect("startup benchmark lock");
     assert!(binary.is_file(), "build the linked {profile} binary first");
+    #[cfg(target_os = "macos")]
+    {
+        let output = std::process::Command::new("otool")
+            .arg("-L")
+            .arg(binary)
+            .output()
+            .expect("inspect linked Mach-O images");
+        assert!(
+            output.status.success(),
+            "otool could not inspect {profile} binary"
+        );
+        let images = String::from_utf8_lossy(&output.stdout);
+        assert!(
+            !images.contains("libgerbil_scheme_build.dylib"),
+            "linked {profile} binary depends on the SDK build-only image: {images}"
+        );
+    }
     let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../scheme/.gerbil/native/tui/program.json");
     let binary_time = fs::metadata(binary).unwrap().modified().unwrap();

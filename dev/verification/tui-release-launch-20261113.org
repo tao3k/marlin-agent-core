@@ -242,3 +242,26 @@ and the column variant at 23.017-33.994 us. There were 5 and 3 severe high
 outliers respectively. Concurrent checkout edits changed the source-diff hash
 during this work, so these are artifact-specific diagnostics, not a release
 tail-latency or comparative performance gate.
+
+* Release linked image check, 2026-11-14
+
+A Release artifact observed before the standard rebuild was 26,368,024 bytes
+and =otool -L= showed an absolute dependency on
+=target/release/build/.../libgerbil_scheme_build.dylib=. That build-only image
+would make the copied executable depend on the checkout. After the selected
+Scheme programme had been staged, the standard
+=cargo build --offline --locked -p marlin-agent-tui --bin marlin-tui --release=
+produced a 106,272,960-byte binary (SHA-256
+=6d4f22631f3f2bd6945818fbd545bb97064b0f1f344eb5007a7a20f14997632e=).
+=otool -L= no longer listed the SDK build image. The maintained copied-binary
+PTY startup test now rejects any Mach-O that links that image, so a smaller
+but build-tree-dependent artifact cannot be mistaken for a linked release.
+
+The same test rendered the workbench with absent Gerbil package paths and
+restored the terminal. First-copy output/workbench times were 2.484/2.648 s;
+the same file's second run was 73/320 ms. The application's internal first
+frame was 164/265 ms. These are two observations, not cold-start percentiles.
+The checkout changed concurrently with the Release build, so this binary is
+not a frozen-source performance baseline. The artifact still dynamically
+links Nix OpenSSL, SQLite and libiconv; the new check qualifies the selected
+Scheme image boundary, not a fully static or portable distribution.
