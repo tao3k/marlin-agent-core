@@ -102,11 +102,16 @@ failed when the Gerbil package manager ran =gxtags github.com= with exit 70.
 CI now directs Gambit errors to stderr during =gerbil deps --install= so the
 job log records the underlying worker failure. The diagnostic at =7a9c594=
 reported that =gxtags= worker 3, counting from zero, terminated with SIGSEGV
-while scanning its source list. The linked workflow offers an optional crash
-backtrace on GitHub-hosted Ubuntu with the same dependency install command
-and worker count.
+while scanning its source list. The Ubuntu core at =c947bb5= locates the
+fault in =___H_grammar_7e_0_23_= inside Orgize's compiled
+=org-parser/grammar~0.o1= during module initialization. The optional Ubuntu
+diagnostic records the instruction and tests a direct import of the installed
+grammar in a fresh process after this crash. The direct import checks whether
+ordinary module loading can reproduce the fault independently of the tagger's
+expansion history. The job preserves the original dependency install status,
+command, and worker count.
 [[https://github.com/tao3k/marlin-agent-core/actions/runs/43485082047/job/132091275495][Linux failure]] ·
-[[https://github.com/tao3k/marlin-agent-core/actions/runs/43492113331/job/132115695841][Linux diagnostic run]]
+[[https://github.com/tao3k/marlin-agent-core/actions/runs/43499112275/job/132139918408][Ubuntu core backtrace]]
 
 The macOS linked workflow at =7c5b926= installed and cached the dependencies.
 Marlin's =gerbil build= then failed inside Yuanxu's

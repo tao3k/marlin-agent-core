@@ -6,7 +6,7 @@ name: Build the Scheme package
 description: Use the Gerbil package manager and Builder on the selected platform.
 inputs:
   trace-dependency-crash:
-    description: Print Gerbil process backtraces from crash dumps on hosted Ubuntu.
+    description: Inspect Gerbil crash dumps and test the compiled Org grammar import on hosted Ubuntu.
     default: 'false'
 runs:
   using: composite
@@ -66,12 +66,32 @@ runs:
         (cd scheme && GAMBOPT="${GAMBOPT:+$GAMBOPT,}debug=q2+" gerbil deps --install) || {
           status=$?
           if [[ -n "${crash_dir:-}" ]]; then
+            grammar_crashed=false
             for dump in "$crash_dir"/core.gxtags.* "$crash_dir"/core.gerbil.*; do
               [[ -f "$dump" ]] || continue
+              tool=${dump##*/core.}
+              tool=${tool%%.*}
+              backtrace="$dump.txt"
               gdb --batch --nx -iex 'set auto-load off' \
                 -ex 'set print frame-arguments none' -ex 'thread apply all bt' \
-                "$(command -v gxtags)" "$dump" || true
+                -ex 'info registers' -ex 'x/12i $pc' \
+                "$(command -v "$tool")" "$dump" 2>&1 | tee "$backtrace" || true
+              if grep -Fq 'org-parser/grammar~0.o1' "$backtrace"; then
+                grammar_crashed=true
+              fi
             done
+            if [[ "$grammar_crashed" == true ]]; then
+              # The failed index ran after dependency compilation. Use the
+              # exact installed module in a fresh process to separate ordinary
+              # module initialization from the tagger's expansion history.
+              ulimit -c 0
+              import_status=0
+              (cd "$GERBIL_PATH/pkg" && timeout 120s gxi -e '
+                (import :orgize/languages/org/modules/org-parser/grammar)
+                (unless org-mode-language-grammar (error "missing Org grammar"))
+                (displayln "compiled Org grammar imported")') || import_status=$?
+              echo "Direct Org grammar import exit status: $import_status"
+            fi
           fi
           exit "$status"
         }
